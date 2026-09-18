@@ -13,7 +13,10 @@
 4. [`--aob-extract` 段错误](#4---aob-extract-段错误)
 5. [源文件损坏被静默放行](#5-源文件损坏被静默放行)
 6. [末轨 AOB 少几字节](#6-末轨-aob-少几字节)
-7. [诊断手法速查](#7-诊断手法速查)
+7. [直连编码时位深丢失（产生非法音频组）](#7-直连编码时位深丢失产生非法音频组)
+8. [直连编码时时长不再可回读（校验失效风险）](#8-直连编码时时长不再可回读校验失效风险)
+9. [声道数不一致（预防性检查）](#9-声道数不一致预防性检查)
+10. [诊断手法速查](#10-诊断手法速查)
 
 ---
 
@@ -479,7 +482,243 @@ for aob in sorted(glob.glob(os.path.join(out, "AUDIO_TS", "*.AOB"))):
 
 ---
 
-## 7. 诊断手法速查
+## 7. 直连编码时位深丢失（产生非法音频组）
+
+### 背景
+
+为了省掉约 9 GB 的 WAV 落盘，把流程从「源 → WAV → MLP」改为「源 → MLP」。
+WAV 中转阶段原本**隐式承担了两个约束**，去掉后必须显式补回。
+
+这正是这类改写最危险的地方：**结果看起来完全正常，实际已经错了**。
+
+### 症状
+
+`dvda-author` 输出的轨道表里，某一轨位深与同组其他轨不同：
+
+```
+第 1 次（错误）：
+    1     01   48000   24   2 L-R     11612440
+    1     02   48000   24   2 L-R     11588000
+    1     03   48000   24   2 L-R     11636800
+    1     04   48000   16   2 L-R     11544000   ← 整组是 24-bit，这一轨却是 16-bit
+    1     05   48000   24   2 L-R     11612440
+```
+
+对应日志：
+
+```
+Group   Title  Track  First_Sect   Last_Sect  First_PTS  PTS_length cga
+    1   04/05     4       92380      111901          98    21645000   1
+```
+
+**注意工具链全程没有报错**，ISO 也照常生成、容量也正常。
+
+### 根因
+
+- 源文件是 44.1kHz / **16-bit**
+- 归一化决定「重采样到 48kHz / 24-bit」
+- 但 `aresample` **只改采样率，不改位深**
+- 旧流程的 `-c:a pcm_s24le`（WAV 输出编码器）把位深强制成 24
+- 直连后没有 WAV 这一步，MLP 编码器**沿用源的 16-bit**
+
+### 诊断
+
+让 `dvda-author` 报告每轨参数：
+
+```bash
+/root/dvda-author-mlp8/src/dvda-author-dev -g a.mlp b.mlp \
+  -o out -D tmp -W -P0 -n 2>&1 | grep -E 'Found MLP audio|MTabLayout|Track'
+```
+
+或直接用 `ffprobe`（MLP 不记录时长，但采样率/位深可读）：
+
+```bash
+ffprobe -v error -select_streams a:0 \
+  -show_entries stream=sample_rate,bits_per_raw_sample \
+  -of default=nw=1:nk=1 x.mlp
+# 48000
+# 24
+```
+
+### 修复：显式指定 `-sample_fmt`
+
+MLP 编码器只接受 planer 格式 `s16p` / `s32p`。
+注意**不能用 `s32`**，会报：
+
+```
+[mlp @ ...] Specified sample format s32 is not supported by the mlp encoder
+[mlp @ ...] Supported sample formats:
+[mlp @ ...]   s16p
+[mlp @ ...]   s32p
+```
+
+正确写法：
+
+```python
+cmd += ["-sample_fmt", "s16p" if bits == 16 else "s32p",
+        "-c:a", "mlp", "-strict", "-2", mlp]
+```
+
+### 验证等价性
+
+确认新写法与旧「WAV + pcm_s24le」路径**逐字节一致**（含解码后 PCM）：
+
+```bash
+# 基准：旧路径
+ffmpeg -i src.flac -af aresample=48000:resampler=soxr -c:a pcm_s24le ref.wav
+ffmpeg -i ref.wav -c:a mlp -strict -2 A_ref.mlp
+
+# 候选：直连
+ffmpeg -i src.flac -af aresample=48000:resampler=soxr \
+       -sample_fmt s32p -c:a mlp -strict -2 B.mlp
+
+cmp A_ref.mlp B.mlp && echo "一致 ✔"
+```
+
+实测结果：
+
+```
+A_ref              61018364 B
+B_sfmt_s32p        61018364 B   与基准一致 ✔
+C_aformat_s32      61018364 B   与基准一致 ✔
+D_aformat_s32p     61018364 B   与基准一致 ✔
+E_raw              39140014 B   与基准不同     ← 不指定位深就是这个结果
+
+解码 PCM：B / C / D 均与基准逐字节一致 ✔
+E_raw 解码 PCM 长度相同但内容不同（16-bit 左移到 24-bit）
+```
+
+### 加固
+
+`02_build.py` 编码后用 `ffprobe` 复核，不一致即删除文件并抛错：
+
+```python
+got = ffprobe_mlp(mlp)           # (sample_rate, bits_per_raw_sample)
+exp = (track["sr"], track["bits"])
+if got != exp:
+    os.remove(mlp)
+    raise RuntimeError(f"MLP 参数不符: 期望 {exp}, 实际 {got}")
+```
+
+---
+
+## 8. 直连编码时时长不再可回读（校验失效风险）
+
+### 症状
+
+MLP 容器**不记录时长**：
+
+```bash
+ffprobe -v error -show_entries format=duration -of default=nw=1 x.mlp
+# duration=N/A
+```
+
+原本的完整性校验靠比对「输出 WAV 时长 vs 源声明时长」，直连后这个手段消失。
+若不处理，损坏的源文件会**再次静默通过**（每次丢 4096 采样）。
+
+其实直连时损坏文件的表现更极端 —— 输出会被**提前截断**：
+
+```
+损坏 M4A 直连：  33,454,262 B
+损坏 M4A 经 WAV：53,084,192 B
+```
+
+但 stderr 仍完整报错，且截断本身也是信号。
+
+### 修复：改用 astats 采样数
+
+在同一次解码中读取采样数（`-f null -` 不落盘）：
+
+```bash
+ffmpeg -hide_banner -v info -i x.flac -af astats=metadata=1 -f null - 2>&1 \
+  | grep 'Number of samples'
+# [Parsed_astats_0 @ ...] Number of samples: 10267032
+```
+
+与「源声明时长 × 目标采样率」比对。实测精度极高（正常文件差 **+0** 采样）：
+
+```
+[PASS] 正常 FLAC 48k/24        期望 10267032 / 实解 10267032  差 +0      报错 0
+[PASS] 正常 FLAC 44.1k/24→48k  期望 11636770 / 实解 11636770  差 +0      报错 0
+[FAIL] 损坏 M4A (韩文版)       期望 10224000 / 实解 10192792  少 650ms  报错 14
+[FAIL] 损坏 M4A (英文版)       期望 10266144 / 实解 10262048  少 85ms   报错 2
+```
+
+**并且必须处理「取不到采样数」的情况** —— 否则校验手段失效时又会静默通过：
+
+```python
+if samples is None:
+    level = "FAIL"
+    reasons.append("未能读到解码采样数(astats 无输出)")
+```
+
+### 副作用：下游脚本需改数据来源
+
+`verify.sh` 与 `verify_pts_length.py` 原本从 WAV 路径反推时长，需改为读
+`02_build.py` 生成的 `mlp_index.json`：
+
+```json
+{
+  "/root/dvda-build/mlp/group_48000_24__0001__xxx.mlp": {
+    "src": "/mnt/c/.../01. xxx.flac",
+    "dur": 241.925667,
+    "sr": 48000,
+    "bits": 24,
+    "resample_to": null,
+    "title": "xxx"
+  }
+}
+```
+
+`verify.sh` 的比较基准也从「源 WAV」改为「源音源 + 同一条重采样滤镜链」：
+
+```bash
+ffmpeg -i "$src" -af "aresample=${rto}:resampler=soxr" -f s24le src.raw
+ffmpeg -i "$mlp" -f s24le dec.raw
+```
+
+---
+
+## 9. 声道数不一致（预防性检查）
+
+DVD-Audio 同一音频组内所有曲目须同声道数。单声道与立体声**无法无损互转**，
+所以本工具链不做声道转换，而是直接检查并在不一致时失败。
+
+### 实测：本项目全部音源均为立体声
+
+```bash
+ffprobe -v error -select_streams a:0 \
+  -show_entries stream=channels,channel_layout \
+  -of default=nw=1 src.flac
+```
+
+147 个文件的统计结果：
+
+```
+  2 声道: 147 个
+全部为 2ch / stereo ✔
+```
+
+参数组合：
+
+| 数量 | 声道 | 布局 | 采样率 | 位深 |
+|------|------|------|--------|------|
+| 128 | 2 | stereo | 48000 | 24 |
+| 13 | 2 | stereo | 44100 | 24 |
+| 4 | 2 | stereo | 44100 | 16 |
+| 1 | 2 | stereo | 48000 | 16 |
+| 1 | 2 | stereo | 96000 | 24 |
+
+`stereo` 布局即 FL（前左）+ FR（前右），对应 `dvda-author` 报告中的 `L-R`。
+归一化后最终只有两个音频组：`48000/24`（131 首）与 `44100/24`（16 首）。
+
+> 注意：`ffprobe -of default=nw=1` 会**去掉键名**，只输出值。
+> 解析时要用 `default=nw=1:nk=1` 并按行取值，或保留键名。
+> 否则会误判「标签不存在」。
+
+---
+
+## 10. 诊断手法速查
 
 ### 解析 AOB 的 PES 时间戳
 

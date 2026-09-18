@@ -15,29 +15,31 @@
 默认:
   ISO 目录 = /mnt/d/鸣潮DVD_Audio
   构建日志 = /root/dvda-build/build.log、finalrebuild.log、rebuild-final.log（取存在者）
+
+可用环境变量覆盖: DVDA_BUILD_DIR / DVDA_FINAL_DIR / DVDA_ISO_PREFIX
 """
-import pathlib
 import os
+import pathlib
 import re
 import shutil
 import subprocess
 import sys
 
-BUILD = os.environ.get("DVDA_BUILD_DIR", "/root/dvda-build")
-
+BUILD_DIR = os.environ.get("DVDA_BUILD_DIR", "/root/dvda-build")
+ISO_PREFIX = os.environ.get("DVDA_ISO_PREFIX", "Wuthering_Waves_Singles_EPs")
 ISO_DIR = pathlib.Path(sys.argv[1] if len(sys.argv) > 1
-                       else os.environ.get("DVDA_FINAL_DIR", "/mnt/d/鸣潮DVD_Audio"))
+                       else os.environ.get("DVDA_FINAL_DIR",
+                                           "/mnt/d/鸣潮DVD_Audio"))
 
 LOG_CANDIDATES = [
     pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None,
-    pathlib.Path(BUILD, "rebuild-final.log"),
-    pathlib.Path(BUILD, "finalrebuild.log"),
-    pathlib.Path(BUILD, "build.log"),
+    pathlib.Path(os.path.join(BUILD_DIR, "rebuild-final.log")),
+    pathlib.Path(os.path.join(BUILD_DIR, "finalrebuild.log")),
+    pathlib.Path(os.path.join(BUILD_DIR, "build.log")),
 ]
 LOG = next((p for p in LOG_CANDIDATES if p and p.exists()), None)
 
-WORK = pathlib.Path(BUILD, "disc-audit")
-ISO_PREFIX = os.environ.get("DVDA_ISO_PREFIX", "Wuthering_Waves_Singles_EPs")
+WORK = pathlib.Path(os.path.join(BUILD_DIR, "disc-audit"))
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # 轨道表行: 组 | 标题号/总数 | 轨号 | 首扇区 | 末扇区 | First_PTS | PTS_length | cga
 ROW = re.compile(
@@ -97,7 +99,8 @@ def main():
     summary = []
 
     for disc, groups in sorted(disc_rows.items()):
-        iso = next(ISO_DIR.glob("%s_%s.iso" % (ISO_PREFIX, disc[-1])), None)
+        iso = next(ISO_DIR.glob("%s_%s.iso" % (ISO_PREFIX, disc[-1])),
+                   None)
         print("=" * 72)
         if iso is None:
             print("!! 缺少 %s 的 ISO" % disc)

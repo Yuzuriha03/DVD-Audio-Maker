@@ -11,12 +11,10 @@
 # ============================================================================
 set -u
 
-# 路径可用同名环境变量覆盖（详见 README「路径配置」）
 FINAL_DIR="${DVDA_FINAL_DIR:-/mnt/d/鸣潮DVD_Audio}"
-WAV_DIR="${DVDA_WORK:-/root/dvda-build/wav}"
 MLP_DIR="${DVDA_MLP_DIR:-/root/dvda-build/mlp}"
+MLP_INDEX="${DVDA_MLP_INDEX:-/root/dvda-build/mlp_index.json}"
 NEW="${DVDA_AUTHOR:-/root/dvda-author-mlp8/src/dvda-author-dev}"
-TMP_ROOT="${DVDA_TMP_ROOT:-/root/dvda-build}"
 ISO_PREFIX="${DVDA_ISO_PREFIX:-Wuthering_Waves_Singles_EPs}"
 DVD5_BYTES=4707319808
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +26,7 @@ check_audit() {
   echo "=================== 光盘一致性审计 ==================="
   echo "核对：AOB 扇区数 / 轨间连续性 / PTS 完整性 / PTS 下降点是否落在轨边界"
   echo
-  python3 -u "$HERE/audit_disc.py" "$FINAL_DIR"
+  python3 -u "$HERE/audit_disc.py"
 }
 
 # ---------------------------------------------------------------- 容量
@@ -58,42 +56,58 @@ check_capacity() {
 }
 
 # ---------------------------------------------------------------- 无损
+# MLP 容器不记录时长，无法回读；源文件与重采样目标由 mlp_index.json 提供
+# （02_build.py 生成）。比对时对源施加与编码时相同的重采样链。
 check_lossless() {
   echo "=================== MLP 无损验证 ==================="
 
-  local first_wav
-  first_wav=$(ls "$WAV_DIR"/group_48000_24/*.wav 2>/dev/null | head -n1)
-  if [ -z "$first_wav" ]; then
-    echo "(未找到 WAV 工作文件，跳过)"
+  if [ ! -f "$MLP_INDEX" ]; then
+    echo "(未找到 $MLP_INDEX，请先运行 02_build.py，跳过)"
     return
   fi
 
-  local tmp="$TMP_ROOT/verify-tmp"
+  local info mlp src rto
+  mapfile -t info < <(python3 - "$MLP_INDEX" <<'PY'
+import json, os, sys
+idx = json.load(open(sys.argv[1], encoding="utf-8"))
+keys = sorted(k for k in idx if os.path.exists(k) and os.path.getsize(k) > 0)
+if not keys:
+    print(""); print(""); print(""); raise SystemExit
+k = keys[0]
+e = idx[k]
+print(k); print(e["src"]); print(e.get("resample_to") or "")
+PY
+)
+  mlp="${info[0]:-}"; src="${info[1]:-}"; rto="${info[2]:-}"
+  if [ -z "$mlp" ] || [ -z "$src" ]; then
+    echo "(MLP 缓存为空，跳过)"
+    return
+  fi
+
+  local tmp=/root/dvda-build/verify-tmp
   rm -rf "$tmp"; mkdir -p "$tmp"
 
-  local mlp="$MLP_DIR/$(basename "$first_wav" .wav).mlp"
-  mlp=$(ls "$MLP_DIR"/group_48000_24__0001__*.mlp 2>/dev/null | head -n1)
-  if [ -z "$mlp" ] || [ ! -f "$mlp" ]; then
-    echo "(未找到 MLP 缓存，跳过)"
-    return
-  fi
-
-  echo "源 WAV : $first_wav"
+  echo "源音源 : $src"
   echo "MLP    : $mlp"
+  [ -n "$rto" ] && echo "重采样 : -> ${rto}Hz (soxr)"
   echo
 
-  # 1) MLP 解码后 PCM 与源 WAV 比对
-  ffmpeg -hide_banner -loglevel error -y -i "$first_wav" -f s24le "$tmp/src.raw"
+  local ares=()
+  [ -n "$rto" ] && ares=(-af "aresample=${rto}:resampler=soxr")
+
+  # 1) MLP 解码后 PCM 与源音源（同样重采样后）比对
+  ffmpeg -hide_banner -loglevel error -y -i "$src" "${ares[@]}" -f s24le "$tmp/src.raw"
   ffmpeg -hide_banner -loglevel error -y -i "$mlp" -f s24le "$tmp/dec.raw"
   local n
   n=$(stat -c %s "$tmp/src.raw")
   head -c "$n" "$tmp/dec.raw" > "$tmp/dec_trim.raw"
 
   if cmp -s "$tmp/src.raw" "$tmp/dec_trim.raw"; then
-    echo "[1] MLP 解码 PCM 与源 WAV 逐字节一致  ✔"
+    echo "[1] MLP 解码 PCM 与源音源逐字节一致  ✔"
   else
-    echo "[1] MLP 解码 PCM 与源 WAV 存在差异  ✗"
-    cmp -l "$tmp/src.raw" "$tmp/dec_trim.raw" | head -n 3
+    echo "[1] MLP 解码 PCM 与源音源存在差异  ✗"
+    echo "    源 $(stat -c %s "$tmp/src.raw") 字节 / 解码 $(stat -c %s "$tmp/dec.raw") 字节"
+    cmp -l "$tmp/src.raw" "$tmp/dec_trim.raw" | head -n 3 | sed 's/^/    /'
   fi
 
   # 2) 成品 ISO 内音轨与源 MLP 比对
@@ -134,7 +148,7 @@ check_timeline() {
     return
   fi
 
-  local tmp="$TMP_ROOT/timeline-tmp"
+  local tmp=/root/dvda-build/timeline-tmp
   rm -rf "$tmp"; mkdir -p "$tmp"
 
   xorriso -osirrox on -indev "$iso" \
