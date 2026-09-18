@@ -5,28 +5,40 @@
 方法：
   1. 从构建日志解析 dvda-author 的命令行，得到每张盘每个组的文件顺序
   2. 解析轨道表（记录顺序与文件顺序一致）
-  3. 用 ffprobe 取对应 WAV 的时长，计算期望 tick = round(dur * 90000)
+  3. 用 mlp_index.json 查到对应源音频的时长，计算期望 tick = round(dur * 90000)
   4. 与 PTS_length 比对
+
+注：MLP 容器不记录时长（ffprobe 返回 N/A），无法直接回读，
+    故时长由 01_prepare.py 写入 manifest，再由 02_build.py 汇总成
+    mlp_index.json。
 """
-import pathlib
+import json
 import os
+import pathlib
 import re
-import subprocess
 import sys
 
-BUILD = os.environ.get("DVDA_BUILD_DIR", "/root/dvda-build")
-
-LOG = pathlib.Path(BUILD, "rebuild-final.log")
+BUILD_DIR = os.environ.get("DVDA_BUILD_DIR", "/root/dvda-build")
+LOG = pathlib.Path(os.path.join(BUILD_DIR, "rebuild-final.log"))
 if not LOG.exists():
     for cand in ("finalrebuild.log", "build.log"):
-        if pathlib.Path(BUILD, cand).exists():
-            LOG = pathlib.Path(BUILD, cand)
+        p = pathlib.Path(os.path.join(BUILD_DIR, cand))
+        if p.exists():
+            LOG = p
             break
 text = LOG.read_text(encoding="utf-8", errors="replace")
 text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)   # 剥离 ANSI
 
+INDEX = pathlib.Path(os.environ.get(
+    "DVDA_MLP_INDEX", os.path.join(BUILD_DIR, "mlp_index.json")))
+if not INDEX.exists():
+    print("!! 未找到 %s，请先运行 02_build.py" % INDEX)
+    sys.exit(1)
+mlp_index = json.loads(INDEX.read_text(encoding="utf-8"))
+print("mlp_index.json: %d 条" % len(mlp_index))
+
 # ---------- 解析每张盘的组与文件顺序（按 dvda-author 命令行） ----------
-PFX = os.environ.get("DVDA_MLP_DIR", os.path.join(BUILD, "mlp")) + "/"
+PFX = os.environ.get("DVDA_MLP_DIR", os.path.join(BUILD_DIR, "mlp")) + "/"
 cmds = []
 for line in text.splitlines():
     if not line.startswith("+ ") or " -g " not in line:
@@ -77,31 +89,22 @@ if len(expected) != len(rows):
     sys.exit(1)
 
 
-def wav_of(mlp):
-    name = mlp.split("/")[-1].replace("__", "/", 1)
-    if name.endswith(".mlp"):
-        name = name[:-4] + ".wav"
-    return os.environ.get("DVDA_WORK", os.path.join(BUILD, "wav")).rstrip("/") + "/" + name
-
-
-def dur(wav):
-    r = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=nw=1:nk=1", wav], capture_output=True, text=True)
-    try:
-        return float(r.stdout.strip())
-    except ValueError:
+def dur_of(mlp):
+    """从 mlp_index.json 取源音频时长（秒）；查不到返回 None。"""
+    e = mlp_index.get(mlp)
+    if not e:
         return None
+    d = e.get("dur")
+    return float(d) if d else None
 
 
 print()
 print("逐轨核对 PTS_length（容差 2 tick）:")
 bad, nodur, same = [], [], 0
 for i, (mlp, row) in enumerate(zip(expected, rows)):
-    wav = wav_of(mlp)
-    d = dur(wav)
+    d = dur_of(mlp)
     if d is None:
-        nodur.append((i, wav))
+        nodur.append((i, mlp))
         continue
     exp = round(d * 90000)
     diff = row["pts_len"] - exp
@@ -129,4 +132,4 @@ for r in rows:
 
 if not bad and not nodur:
     print()
-    print("结论: 全部 147 轨的 PTS_length 与源音频时长一致 ✔")
+    print("结论: 全部 %d 轨的 PTS_length 与源音频时长一致 ✔" % len(rows))

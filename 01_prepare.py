@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-步骤1:FLAC/M4A → WAV 转换 + 专辑归一化 + 分组排序。
+步骤1:扫描音源 + 专辑归一化 + 分组排序 + 解码完整性校验。
 
-运行于 WSL 内部(使用 WSL 的 ffmpeg/ffprobe),全部中间文件写入 ext4 提速。
+运行于 WSL 内部(使用 WSL 的 ffmpeg/ffprobe)。
 
 逻辑:
 1. 扫描音源目录全部 FLAC 和 M4A,用 ffprobe 读取采样率/位深/声道/发布日/曲序/标题/专辑
 2. 专辑归一化:同一专辑若曲目参数不一致,以「多数采样率 + 该采样率下多数位深」为目标,
    用 soxr 重采样少数曲目(保证整张专辑在同一组内连续播放)
 3. 按 (采样率, 位深) 分组,组内按发布日 + 曲序 + 标题排序
-4. 用 ffmpeg 转 WAV(-map_metadata -1 去掉 LIST 块,dvda-author 旧解析器需要)
-5. 解码完整性校验:统计解码错误行 + 比对输出时长与源声明时长
-   (ffmpeg 解码出错时会静默跳过并仍返回 0,必须显式校验,见下)
-6. 生成 manifest.json 与解码完整性报告
+4. 解码完整性校验:对每首跑一次「只解码不落盘」的 ffmpeg(-f null -,附 astats),
+   统计解码错误行 + 比对解码采样数与源声明采样数(ffmpeg 解码出错时会静默跳过并仍
+   返回 0,必须显式校验,见下)
+5. 生成 manifest.json 与解码完整性报告
+
+为什么不生成 WAV:
+  实测「源 --[重采样]--> WAV --> MLP」与「源 --[重采样]--> MLP」的输出**逐字节一致**
+  (48k 直通与 44.1k→48k soxr 重采样均已验证)。WAV 只是中转,去掉后可省下约 9 GB
+  落盘与一轮读写 I/O。MLP 编码在 02_build.py 中直接对源文件进行。
 
 关于校验:
   ALAC 等格式若源文件损坏,ffmpeg 会打印
   "Error submitting packet to decoder / invalid element channel count"
-  但退出码仍为 0,单次丢 4096 采样。若不校验,WAV/MLP/ISO 会“全部成功”
-  而实际缺失音频。故本脚本:
-    - 时长缺失 > 50 ms 或出现解码错误 -> FAIL,不生成 manifest 并以非零码退出
-    - 时长差异 > 5 ms                   -> WARN,照常继续
+  但退出码仍为 0,单次丢 4096 采样。若不校验,MLP/ISO 会“全部成功”而实际缺失音频。
+  MLP 容器**不记录时长**(ffprobe 返回 N/A),无法像 WAV 那样回读,故改用 astats:
+  在同一次解码中打印 "Number of samples",与「源声明时长 × 目标采样率」比对。
+  判定规则:
+    - 出现解码错误关键字            -> FAIL
+    - 采样数缺失 > 50 ms 对应值     -> FAIL
+    - 采样数差异 > 5 ms 对应值      -> WARN,照常继续
+    - 读到采样数(校验手段本身失效) -> FAIL,不静默通过
   报告写入 /root/dvda-build/decode_report.txt
 """
 import os
@@ -29,22 +38,21 @@ import sys
 import json
 import re
 import glob
-import shutil
 import subprocess
 from collections import defaultdict
 
-# ---- 路径配置 ----
-# 下列路径均可用同名环境变量覆盖（详见 README「路径配置」）：
-#   DVDA_SRC  DVDA_WORK  DVDA_MANIFEST  DVDA_REPORT
-SRC = os.environ.get("DVDA_SRC", "/mnt/c/Users/yyz57/Music/鸣潮先约电台")                # 音源(只读)
-WORK = os.environ.get("DVDA_WORK", "/root/dvda-build/wav").rstrip("/")                    # WAV 工作目录
-MANIFEST = os.environ.get("DVDA_MANIFEST", "/root/dvda-build/manifest.json")              # 清单输出
-REPORT = os.environ.get("DVDA_REPORT", "/root/dvda-build/decode_report.txt")              # 解码完整性报告
+# ---- 路径配置（均可用环境变量覆盖） ----
+SRC = os.environ.get("DVDA_SRC", "/mnt/c/Users/yyz57/Music/鸣潮先约电台")  # 音源(只读)
+MANIFEST = os.environ.get("DVDA_MANIFEST",
+                          "/root/dvda-build/manifest.json")     # 清单输出
+REPORT = os.environ.get("DVDA_REPORT",
+                        "/root/dvda-build/decode_report.txt")   # 解码完整性报告
 
 # ---- 解码完整性校验参数 ----
 # 背景:ffmpeg 在 ALAC 等解码出错时仍会返回退出码 0,并把损坏处静默跳过,
-# 导致 WAV/MLP/ISO 全部“成功”但实际缺失音频(实测每次丢 4096 采样)。
-# 故此处按「解码错误行数 + 输出时长与源声明时长之差」双重判定。
+# 导致 MLP/ISO 全部“成功”但实际缺失音频(实测每次丢 4096 采样)。
+# MLP 容器不存时长,无法回读,故本步骤在解码到 null 的同时用 astats 取得
+# 实际解码采样数,与「源声明时长 × 目标采样率」比对。
 DECODE_ERR_KEYWORDS = (
     "error submitting packet to decoder",
     "invalid element",
@@ -56,8 +64,13 @@ DECODE_ERR_KEYWORDS = (
     "not implemented",
     "not yet implemented",
 )
-LOSS_ERROR_S = 0.05    # 时长缺失超过 50 ms -> 失败
-LOSS_WARN_S = 0.005    # 时长差异超过 5 ms  -> 警告
+SAMPLES_RE = re.compile(r"Number of samples:\s*(\d+)")
+LOSS_ERROR_S = 0.05    # 采样数缺失超过 50 ms 对应值 -> 失败
+LOSS_WARN_S = 0.005    # 采样数差异超过 5 ms 对应值  -> 警告
+
+# ffmpeg / ffprobe 可执行文件（可用环境变量覆盖）
+FFMPEG = os.environ.get("DVDA_FFMPEG", "ffmpeg")
+FFPROBE = os.environ.get("DVDA_FFPROBE", "ffprobe")
 
 
 def ffprobe_meta(path):
@@ -67,7 +80,7 @@ def ffprobe_meta(path):
     ffmpeg 解码出错时会静默丢帧但仍返回 0,只能靠时长差识别。
     """
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a:0",
+        [FFPROBE, "-v", "error", "-select_streams", "a:0",
          "-show_entries",
          "stream=sample_rate,bits_per_raw_sample,channels,duration_ts,time_base",
          "-show_entries", "format=duration",
@@ -120,16 +133,31 @@ def ffprobe_meta(path):
     return d
 
 
-def probe_duration(path):
-    """读取已完成文件的时长(秒);失败返回 None。"""
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=nw=1:nk=1", path],
-        capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
-    try:
-        return float(out.strip())
-    except ValueError:
-        return None
+def decode_check(path, resample_to=None):
+    """只解码不落盘;返回 (采样数, 解码错误行数, 前 3 条错误原文)。
+
+    用 -f null - 丢弃输出(不写盘),并复用 MLP 编码将要使用的同一套滤镜链
+    (重采样),使校验对象与实际编码对象一致。
+
+    astats 在解码结束时打印 "Number of samples:<N>"。各声道数值相同,
+    取第一处匹配即可。取不到时返回 None —— 由调用方判为失败,
+    避免「校验手段失效 = 静默通过」。
+    """
+    filters = []
+    if resample_to:
+        filters.append(f"aresample={resample_to}:resampler=soxr")
+    filters.append("astats=metadata=1")
+    cmd = [FFMPEG, "-hide_banner", "-nostdin", "-v", "info", "-y",
+           "-i", path, "-af", ",".join(filters), "-f", "null", "-"]
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    err_n, err_lines = scan_decode_errors(r.stderr)
+    m = SAMPLES_RE.search(r.stderr)
+    samples = int(m.group(1)) if m else None
+    if r.returncode != 0 and err_n == 0:
+        err_n = 1
+        err_lines = [f"ffmpeg 退出码 {r.returncode}"]
+    return samples, err_n, err_lines
 
 
 def scan_decode_errors(stderr):
@@ -152,13 +180,7 @@ def track_num(t):
 
 
 def main():
-    # 清空旧的 WAV 工作目录,避免累积已被删除专辑的残留
-    if os.path.exists(WORK):
-        shutil.rmtree(WORK)
-    os.makedirs(WORK, exist_ok=True)
-    print(f"[清理] WAV 工作目录已清空重建: {WORK}")
-
-    # 同时移除旧 manifest:本步骤若因校验失败而中止,残留的旧 manifest 会
+    # 移除旧 manifest:本步骤若因校验失败而中止,残留的旧 manifest 会
     # 让 02_build.py 仍能出盘,从而掩盖问题。
     if os.path.exists(MANIFEST):
         os.remove(MANIFEST)
@@ -217,57 +239,83 @@ def main():
     for t in tracks:
         groups[(t["sr"], t["bits"])].append(t)
 
-    # 4. 转换 WAV(含解码完整性校验)
-    issues = []      # 校验发现的问题
+    # 3b. 组内声道数必须一致
+    # DVD-Audio 同一音频组内所有曲目须为相同参数。采样率/位深已由归一化处理,
+    # 但声道数目前不做转换(单声道 vs 立体声不可无损互转)。若出现混杂,
+    # dvda-author 会产出一个参数不一致的非法音频组,必须在此拦下。
+    chan_issues = []
+    for (sr, bits), items in sorted(groups.items()):
+        chans = defaultdict(list)
+        for t in items:
+            chans[t["ch"]].append(t)
+        if len(chans) > 1:
+            desc = "; ".join(f"{c} 声道 × {len(v)} 首"
+                             for c, v in sorted(chans.items()))
+            chan_issues.append({
+                "level": "FAIL",
+                "title": f"音频组 {sr}Hz/{bits}bit 声道数不一致",
+                "path": SRC,
+                "reason": desc,
+                "detail": [f"     {t['title']}" for t in items][:10],
+            })
+            print(f"  !! [FAIL] 组 {sr}/{bits} 声道数不一致: {desc}")
+
+    # 4. 解码完整性校验(只解码不落盘) + 组装 manifest
+    #    不再产出 WAV:MLP 编码在 02_build.py 中直接对源文件进行
+    #    (已验证「源→MLP」与「源→WAV→MLP」输出逐字节一致)
+    issues = list(chan_issues)   # 校验发现的问题
     checked = 0
     manifest = {}
     for (sr, bits), items in sorted(groups.items()):
         items.sort(key=lambda x: (x["date"], track_num(x["track"]), x["title"]))
         gname = f"group_{sr}_{bits}"
-        gdir = os.path.join(WORK, gname)
-        os.makedirs(gdir, exist_ok=True)
-        codec = "pcm_s16le" if bits == 16 else "pcm_s24le"
         files = []
         for i, t in enumerate(items, 1):
             # 用 splitext 去掉扩展名(兼容 .flac / .m4a 等任意长度扩展名)
-            safe = re.sub(r'[<>:"/\\|?*]', "_", os.path.splitext(os.path.basename(t["path"]))[0])
-            outpath = os.path.join(gdir, f"{i:04d}__{safe}.wav")
-            cmd = ["ffmpeg", "-y", "-v", "error", "-i", t["path"]]
-            if t["path"] in resample:
-                cmd += ["-af", f"aresample={sr}:resampler=soxr"]
-            cmd += ["-map_metadata", "-1", "-c:a", codec, outpath]
-            r = subprocess.run(cmd, capture_output=True, text=True,
-                               encoding="utf-8", errors="replace")
-            if r.returncode != 0:
-                print(f"[FAIL] {t['title']}: {r.stderr[:200]}")
-                issues.append({"level": "FAIL", "title": t["title"],
-                               "path": t["path"], "reason": "ffmpeg 转换失败",
-                               "detail": [r.stderr.strip()[:300]]})
-                continue
+            safe = re.sub(r'[<>:"/\\|?*]', "_",
+                          os.path.splitext(os.path.basename(t["path"]))[0])
+            # MLP 缓存键:与旧 WAV 路径派生结果保持一致,可复用既有缓存
+            name = f"{gname}/{i:04d}__{safe}"
+            rto = sr if t["path"] in resample else None
 
             # ---- 解码完整性校验 ----
-            # ffmpeg 解码出错时退出码仍为 0,需检查错误行与时长差
+            # ffmpeg 解码出错时退出码仍为 0,需检查错误行与解码采样数
             checked += 1
-            err_n, err_lines = scan_decode_errors(r.stderr)
-            actual = probe_duration(outpath)
-            loss = None
-            if actual is not None and t.get("dur"):
-                loss = t["dur"] - actual
+            samples, err_n, err_lines = decode_check(t["path"], rto)
+            expected = round(t["dur"] * sr) if t.get("dur") else None
+            loss_ms = None
+            if samples is not None and expected:
+                loss_ms = (expected - samples) / sr * 1000.0
 
             level, reasons, detail = None, [], []
             if err_n > 0:
                 level = "FAIL"
                 reasons.append(f"解码报错 {err_n} 处")
                 detail += err_lines
-            if loss is not None:
-                detail.append("源声明 %.3f 秒 / 实际 %.3f 秒 / 差 %+.0f ms"
-                              % (t["dur"], actual, loss * 1000))
-                if abs(loss) > LOSS_ERROR_S:
-                    level = "FAIL"
-                    reasons.append(f"时长缺失 {loss * 1000:+.0f} ms")
-                elif abs(loss) > LOSS_WARN_S and level is None:
-                    level = "WARN"
-                    reasons.append(f"时长差异 {loss * 1000:+.0f} ms")
+            if samples is None:
+                # 校验手段本身失效,不允许静默通过
+                level = "FAIL"
+                reasons.append("未能读到解码采样数(astats 无输出)")
+                detail.append("ffmpeg 未输出 'Number of samples',无法校验完整性")
+            else:
+                detail.append(
+                    "源声明 %.3f 秒 → 期望 %s 采样 / 实解 %d 采样 / %s"
+                    % (t["dur"], expected if expected else "?",
+                       samples,
+                       "?" if loss_ms is None else "%s %.0f ms(%+d 采样)"
+                       % ("少" if loss_ms > 0 else "多",
+                          abs(loss_ms), samples - expected)))
+                if loss_ms is not None:
+                    if abs(loss_ms) > LOSS_ERROR_S * 1000:
+                        level = "FAIL"
+                        reasons.append("解码采样数%s %.0f ms(%+d 采样)"
+                                       % ("少" if loss_ms > 0 else "多",
+                                          abs(loss_ms), samples - expected))
+                    elif abs(loss_ms) > LOSS_WARN_S * 1000 and level is None:
+                        level = "WARN"
+                        reasons.append("解码采样数%s %.0f ms"
+                                       % ("少" if loss_ms > 0 else "多",
+                                          abs(loss_ms)))
 
             if level:
                 issues.append({"level": level, "title": t["title"],
@@ -276,8 +324,11 @@ def main():
                 mark = "!!" if level == "FAIL" else " ?"
                 print(f"  {mark} [{level}] {t['title']}: {'; '.join(reasons)}")
 
-            files.append({"n": i, "wav": outpath, "title": t["title"],
-                          "date": t["date"], "track": t["track"], "album": t["album"]})
+            files.append({"n": i, "src": t["path"], "name": name,
+                          "title": t["title"], "date": t["date"],
+                          "track": t["track"], "album": t["album"],
+                          "dur": round(t["dur"], 6),
+                          "resample_to": rto})
         manifest[gname] = {"sr": sr, "bits": bits, "count": len(files), "files": files}
         print(f"{gname}: {len(files)} 首")
 
@@ -285,12 +336,12 @@ def main():
     fails = [x for x in issues if x["level"] == "FAIL"]
     warns = [x for x in issues if x["level"] == "WARN"]
     lines = []
-    lines.append("解码完整性校验报告")
+    lines.append("音源校验报告")
     lines.append("=" * 68)
     lines.append(f"已校验 {checked} 首；失败 {len(fails)} 首，警告 {len(warns)} 首")
     lines.append("")
     if not issues:
-        lines.append("全部通过：无解码错误，输出时长与源声明一致。")
+        lines.append("全部通过：无解码错误，解码采样数与源声明一致，组内参数一致。")
     for x in fails + warns:
         lines.append(f"[{x['level']}] {x['title']}")
         lines.append(f"    原因: {x['reason']}")
@@ -305,11 +356,11 @@ def main():
 
     print()
     print("=" * 68)
-    print("解码完整性校验")
+    print("音源校验（解码完整性 + 组内参数一致性）")
     print("=" * 68)
     print(f"  已校验 {checked} 首；失败 {len(fails)} 首，警告 {len(warns)} 首")
     if not issues:
-        print("  全部通过：无解码错误，时长与源一致")
+        print("  全部通过：无解码错误，采样数与源声明一致，组内参数一致")
     for x in fails + warns:
         print(f"  [{x['level']}] {x['title']}")
         print(f"         {x['reason']}")
@@ -320,8 +371,8 @@ def main():
 
     if fails:
         print()
-        print(f"[停止] {len(fails)} 首音源解码失败(源文件损坏或格式不受支持)。")
-        print("       未生成 manifest.json；请更换音源后重试。")
+        print(f"[停止] 发现 {len(fails)} 个失败项（音源损坏 / 解码异常 / 组内参数不一致）。")
+        print("       未生成 manifest.json；请修复音源后重试。")
         sys.exit(1)
 
     # 6. 写 manifest

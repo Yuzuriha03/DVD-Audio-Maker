@@ -62,11 +62,18 @@ PTS 值     98   98   98   98   98    98     98      98      98
 ### 3. 拦截源文件损坏
 
 FFmpeg 解码出错时（如损坏的 ALAC 帧）会**跳过损坏数据但退出码仍为 0**。
-不加校验的话，WAV → MLP → ISO 会一路"成功"，实际却缺失音频。
+不加校验的话，MLP → ISO 会一路"成功"，实际却缺失音频。
 
 `01_prepare.py` 现在会校验并在失败时**拒绝生成 manifest 并以非零码退出**。
 
-### 4. 其他修复
+### 4. 拦截位深与声道不一致
+
+- 直连编码时 MLP 编码器会沿用源位深，16-bit 源会被编成 16-bit MLP 混入 24-bit 组
+- 同组声道数不一致（如单声道混入立体声）会产出非法音频组
+
+现在两者都会在编码后被 `ffprobe` 复核，不一致即失败。
+
+### 5. 其他修复
 
 - `dvda-author` 的 ATSI 表缓冲固定 3 扇区，**单组超过约 70 轨会栈溢出**
 - 末轨 AOB 可能少写几字节填充，导致文件不是 2048 的整数倍（已自动补齐）
@@ -81,7 +88,7 @@ DVD-Audio-Maker/
 ├── LICENSE                      # GPL-3.0 全文
 ├── .gitignore
 ├── build.sh                     # 一键流水线
-├── 01_prepare.py                # 步骤1：音源 → WAV + 专辑归一化 + 解码校验
+├── 01_prepare.py                # 步骤1：扫描音源 + 专辑归一化 + 解码校验
 ├── 02_build.py                  # 步骤2：MLP 编码 → 分盘 → 出盘 → 打包 ISO
 ├── verify.sh                    # 成品校验入口
 ├── audit_disc.py                # 光盘一致性审计
@@ -149,7 +156,6 @@ bash $REPO/build_dvda_author_mlp.sh
 
 ```bash
 export DVDA_SRC="/path/to/音源"          # 音源目录（只读）
-export DVDA_WORK="/root/dvda-build/wav"  # WAV 工作目录
 export DVDA_BUILD_DIR="/root/dvda-build" # 构建根目录
 export DVDA_FINAL_DIR="/mnt/d/输出"      # ISO 最终输出目录
 export DVDA_AUTHOR="/root/dvda-author-mlp8/src/dvda-author-dev"
@@ -161,7 +167,6 @@ export DVDA_MKISOFS="/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs"
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `DVDA_SRC` | `/mnt/c/Users/yyz57/Music/鸣潮先约电台` | 音源目录（只读） |
-| `DVDA_WORK` | `/root/dvda-build/wav` | WAV 工作目录 |
 | `DVDA_MANIFEST` | `/root/dvda-build/manifest.json` | 清单输出 |
 | `DVDA_REPORT` | `/root/dvda-build/decode_report.txt` | 解码完整性报告 |
 | `DVDA_BUILD_DIR` | `/root/dvda-build` | 构建根目录（日志/审计/临时） |
@@ -169,6 +174,7 @@ export DVDA_MKISOFS="/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs"
 | `DVDA_TMP_ROOT` | `/root/dvda-build/tmp` | 临时目录 |
 | `DVDA_ISO_DIR` | `/root/dvda-build/iso` | ISO 暂存目录 |
 | `DVDA_MLP_DIR` | `/root/dvda-build/mlp` | MLP 缓存目录 |
+| `DVDA_MLP_INDEX` | `/root/dvda-build/mlp_index.json` | MLP → 源文件/时长/重采样索引 |
 | `DVDA_FINAL_DIR` | `/mnt/d/鸣潮DVD_Audio` | ISO 最终输出目录 |
 | `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
 | `DVDA_MKISOFS` | `/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs |
@@ -177,8 +183,7 @@ export DVDA_MKISOFS="/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs"
 | `DVDA_AUTHOR_ORIG` | `/opt/dvda-author` | 原始源码目录 |
 | `DVDA_ISO_PREFIX` | `Wuthering_Waves_Singles_EPs` | ISO 文件名前缀 |
 
-> **注意**：`DVDA_WORK` 与 `DVDA_MLP_DIR` 在 `01_prepare.py` 与 `02_build.py`
-> 之间必须一致 —— MLP 缓存文件名由 WAV 路径派生。
+> 缓存文件名由 `manifest.json` 中的 `name` 字段决定，两步脚本之间通过该字段对齐。
 
 ### 5. 运行
 
@@ -201,11 +206,68 @@ python3 02_build.py     # 出盘并打包 ISO
 2. **专辑归一化**：同一专辑若采样率/位深不一致，以「多数采样率 + 该采样率下多数位深」
    为目标重采样少数曲目，保证整张专辑在同一音频组内连续播放
 3. **分组排序**：按 (采样率, 位深) 分组，组内按发布日期 + 曲序排序
-4. **转 WAV** 并做**解码完整性校验**
-5. **MLP 编码**（无损，结果缓存复用）
+4. **解码完整性校验**：每首跑一次「只解码不落盘」的 ffmpeg（`-f null -` + `astats`），
+   比对解码采样数与源声明采样数
+5. **MLP 编码**：直接以**源文件**为输入（无损，结果缓存复用），
+   需归一化的曲目在同一命令内完成 soxr 重采样
 6. **分盘**：按专辑发布顺序，填满盘1 再装盘2；**专辑绝不拆散**
 7. **出盘**：`dvda-author` 生成 `AUDIO_TS`，补齐 AOB 扇区边界
 8. **打包**：`mkisofs -dvd-audio` 生成 ISO，复制到输出目录
+
+### 为什么不再生成 WAV（以及它带来的两个坑）
+
+传统做法是「源 → WAV → MLP」。实测两条路径的输出**逐字节一致**：
+
+| 场景 | 源 → MLP | 源 → WAV → MLP | 结果 |
+|------|----------|----------------|------|
+| 48k/24 FLAC（无需重采样） | 52,946,982 B | 52,946,982 B | 一致 ✔ |
+| 44.1k/24 FLAC（soxr → 48k） | 60,950,716 B | 60,950,716 B | 一致 ✔ |
+| 44.1k/**16** FLAC（soxr → 48k） | 61,018,364 B | 61,018,364 B | 一致 ✔ |
+| ↑ 解码后 PCM | 69,820,800 B | 69,820,800 B | 一致 ✔ |
+
+WAV 只是中转，去掉后可省下约 **9 GB**（147 首 × 平均 60 MB）落盘与一轮读写 I/O。
+
+但 WAV 中转阶段**隐式承担了两个约束**，去掉后必须显式补回，否则会静默产出错误结果：
+
+#### 坑 1：位深不再被强制（会导致非法音频组）
+
+旧流程用 `-c:a pcm_s24le` 把 WAV 统一成 24-bit，MLP 编码器读这个 WAV 自然就是 24-bit。
+直连后 MLP 编码器会**沿用源的位深**，于是 44.1k/16 的源重采样到 48k 后**仍是 16-bit**，
+混进 24-bit 的音频组 —— dvda-author 会把这种参数不一致的光盘照样做出来：
+
+```
+1  04  48000  16  2 L-R  ...   ← 错：整组是 24-bit，这一轨却是 16-bit
+```
+
+**修复**：显式指定 `-sample_fmt s32p`（MLP 只接受 planer 名，`s32` 会报
+`Specified sample format s32 is not supported`），并在编码后用 `ffprobe` 复核
+采样率与位深，不一致就删除文件并报错。
+
+#### 坑 2：时长不再可回读（导致校验失效）
+
+MLP 容器不记录 duration（`ffprobe` 返回 `N/A`），无法像 WAV 那样回读时长做校验。
+
+**修复**：改用 `astats` 采样数比对（见下文「解码完整性校验」），并由 `02_build.py`
+输出 `mlp_index.json` 记录「MLP → 源文件 / 声明时长 / 重采样目标」，供热时长校验脚本使用。
+
+### 声道数约束
+
+DVD-Audio 同一音频组内所有曲目须同声道数。本工具链**不做声道转换**
+（单声道与立体声无法无损互转），因此 `01_prepare.py` 会检查组内声道是否一致，
+不一致直接失败。
+
+实测本项目的全部 147 个音源均为 **2ch / stereo**（FL 前左 + FR 前右，即 dvda-author
+报的 `L-R`），无单声道、无多声道、无非标准布局：
+
+| 数量 | 声道 | 布局 | 采样率 | 位深 |
+|------|------|------|--------|------|
+| 128 | 2 | stereo | 48000 | 24 |
+| 13 | 2 | stereo | 44100 | 24 |
+| 4 | 2 | stereo | 44100 | 16 |
+| 1 | 2 | stereo | 48000 | 16 |
+| 1 | 2 | stereo | 96000 | 24 |
+
+归一化后最终只有两个音频组：**48000/24（131 首）** 与 **44100/24（16 首）**。
 
 ---
 
@@ -250,9 +312,13 @@ bash verify.sh lossless   # MLP 无损性
 | 条件 | 判定 |
 |------|------|
 | stderr 出现解码错误关键字 | **FAIL** |
-| 输出时长比源声明短 > 50 ms | **FAIL** |
-| 输出时长差异 > 5 ms | WARN |
+| 解码采样数比源声明少 > 50 ms 对应值 | **FAIL** |
+| 采样数差异 > 5 ms 对应值 | WARN |
+| `astats` 未输出采样数（校验手段本身失效） | **FAIL** |
+| 音频组内声道数不一致 | **FAIL** |
 | 其余 | 通过 |
+
+基准值 = `源声明时长 × 目标采样率`（重采样后按目标采样率计算）。
 
 关键字涵盖 `Error submitting packet to decoder`、`invalid element`、
 `Error while decoding`、`Invalid data found`、`CRC mismatch`、`corrupt`、
@@ -261,18 +327,16 @@ bash verify.sh lossless   # MLP 无损性
 **失败时**：打印问题清单 → 写入 `decode_report.txt` → **不生成 `manifest.json`**
 → 以非零码退出 → `build.sh` 的 `set -e` 立即中止。
 
-实测（3 个损坏的 ALAC 源文件）：
+实测（同一批音源）：
 
 ```
-[FAIL] 日文版   解码报错  6 处; 时长缺失 +256 ms
-[FAIL] 英文版   解码报错  2 处; 时长缺失  +85 ms
-[FAIL] 韩文版   解码报错 13 处; 时长缺失 +650 ms
-
-已校验 147 首；失败 3 首，警告 0 首
-[停止] 3 首音源解码失败(源文件损坏或格式不受支持)。
+[PASS] 正常 FLAC 48k/24        源声明 213.897s × 48000 = 10267032 / 实解 10267032  差 +0      报错 0
+[PASS] 正常 FLAC 44.1k/24→48k  源声明 242.433s × 48000 = 11636770 / 实解 11636770  差 +0      报错 0
+[FAIL] 损坏 M4A (韩文版)       源声明 213.000s × 48000 = 10224000 / 实解 10192792  差 -31208  报错 14
+[FAIL] 损坏 M4A (英文版)       源声明 213.878s × 48000 = 10266144 / 实解 10262048  差 -4096   报错 2
 ```
 
-同批正常 FLAC **零误报**（差异 +0 ms、报错 0 处）。
+正常 FLAC **零误报**（差 +0 采样、报错 0 处）。
 
 ---
 
