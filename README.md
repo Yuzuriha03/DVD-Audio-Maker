@@ -162,6 +162,39 @@ graph LR
 
 ---
 
+### 7. （可选）把 M4A / ALAC 音源转成 FLAC
+
+本流水线**可以直接读 M4A** —— `01_prepare.py` 会顺手修掉 Apple ALAC 的缺 END
+标记问题（见下方「自动修复」一节）。如果你想把音源先统一成 FLAC，用
+`m4a2flac.py`：
+
+```bash
+python3 m4a2flac.py /path/to/music           # 目录递归
+python3 m4a2flac.py a.m4a b.m4a --in-place   # 指定文件，转完删掉源
+python3 m4a2flac.py /path/to/music --dry-run # 先看会做什么
+```
+
+依赖 `ffmpeg` / `ffprobe` / `metaflac`（`sudo apt install ffmpeg flac`）。
+
+它做三件普通转换工具不做的事：
+
+| 项 | 普通转换工具 | `m4a2flac.py` |
+|---|---|---|
+| ALAC 缺 END 标记 | 静默丢帧，并被固化进 FLAC | 先修补再转 |
+| 标签名 | MP4 名原样写入（FLAC 播放器读不到） | 规范化，并剔除 MP4 容器专用标签 |
+| 封面 | `type=0 (Other)`、`depth=12` | 重导为 `type=3 (Cover front)`、`depth=24` |
+
+转完做三重校验：PCM MD5 与**修复后**的源逐字节一致、标签逐项比对、封面字节
+比对。任一不过就删掉半成品并报错。
+
+选项：`--in-place`（转成功后删源）、`--level 0-8`（默认 8）、`--jobs N`、
+`--no-repair`（跳过缺陷修复，不推荐）、`--dry-run`。
+
+> 输出与源**同目录同名**，只是扩展名换成 `.flac`。那里若已有同名 `.flac`
+> 会被覆盖。
+
+---
+
 ## 路径怎么写
 
 `config.sh` 里的路径是 **WSL 内**的写法。Windows 路径的换算规则：
@@ -265,6 +298,7 @@ DVD-Audio-Maker/
 ├── 02_build.py                  # 步骤2：MLP 编码 → 分盘 → 出盘 → 打包 ISO
 ├── mlp_align.py                 # MLP 输出合规性校验与修补
 ├── alac_endfix.py               # 修复 Apple ALAC 未压缩帧缺 END 标记
+├── m4a2flac.py                # M4A/ALAC → FLAC（修缺陷、规范化标签与封面）
 ├── verify.sh                    # 成品校验入口
 ├── audit_disc.py                # 光盘一致性审计
 ├── check_aob_pts.py             # AOB 逐扇区 PTS 检查
