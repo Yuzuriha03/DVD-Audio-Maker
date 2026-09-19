@@ -6,7 +6,8 @@
 #   bash build.sh --dry-run    只预览分盘结果，不出盘
 #   bash build.sh --config     只打印当前配置后退出
 #
-# 所有路径来自 config.sh。日志写入 <BUILD_DIR>/build.log。
+# 所有路径来自 config.sh。日志写入 <BUILD_DIR>/build.log
+# （--dry-run 时改写 build-dryrun.log，见下方说明）。
 # ============================================================================
 set -e
 set -o pipefail
@@ -34,7 +35,15 @@ fi
 DRY=""
 [ "${1:-}" = "--dry-run" ] && DRY="--dry-run"
 
-LOG="$DVDA_BUILD_LOG"
+# dry-run 不执行 dvda-author，日志里不会有轨道表。若覆盖 build.log，
+# audit_disc.py / verify.sh 就再也取不到上次真出盘的轨道表，会把正确
+# 无误的 ISO 判为失败（曾踩坑）。故 dry-run 单独写一份，
+# 与 02_build.py 内部的 BUILD_LOG 选择保持一致。
+if [ -n "$DRY" ]; then
+  LOG="$DVDA_BUILD_DIR/build-dryrun.log"
+else
+  LOG="$DVDA_BUILD_LOG"
+fi
 mkdir -p "$DVDA_BUILD_DIR"
 
 # ---- 环境自检 ----

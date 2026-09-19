@@ -15,7 +15,7 @@
 6. 每组超过 GROUP_TRACK_LIMIT 轨时按专辑边界再拆一组
    (dvda-author 的 ATSI 表缓冲仅 3 扇区,轨数过多会栈溢出)
 7. dvda-author 以 MLP 为输入生成 AUDIO_TS + mkisofs 打包 + 复制到输出目录
-8. 输出 mlp_index.json(MLP→源文件/时长/重采样),供 verify.sh 与
+8. 输出 mlp_index.json(MLP→源文件/时长/重采样 + 分盘计划),供 verify.sh 与
    verify_pts_length.py 使用(MLP 容器不记录时长,无法回读)
 
 注: 使用自编译的 dvda-author(链接系统 FFmpeg 8, 已适配 ch_layout 等 API),
@@ -46,7 +46,12 @@ TMP_ROOT = CFG.tmp_root
 ISO_DIR = CFG.iso_dir
 FINAL_DIR = CFG.final_dir
 MLP_DIR = CFG.mlp_dir                 # MLP 缓存目录
-MLP_INDEX = CFG.mlp_index             # MLP → 源/时长/重采样
+MLP_INDEX = CFG.mlp_index             # MLP → 源/时长/重采样 + 分盘计划
+
+# 本次运行的构建日志。main() 里按是否 --dry-run 重定向：
+# dry-run 不执行 dvda-author，日志里不会有轨道表，若覆盖 build.log 会让
+# audit_disc.py / verify.sh 失去上次真出盘的审计依据（曾因此误报）。
+BUILD_LOG = CFG.build_log
 
 # 带 MLP 编码支持的 dvda-author（链接系统 FFmpeg 8，已迁移 API）
 DVDA = CFG.dvda
@@ -85,7 +90,7 @@ def run(cmd, log_output=False):
     logf = None
     try:
         os.makedirs(BUILD_DIR, exist_ok=True)
-        logf = open(CFG.build_log, "a", encoding="utf-8")
+        logf = open(BUILD_LOG, "a", encoding="utf-8")
         logf.write(line + "\n")
         logf.flush()
     except OSError:
@@ -377,23 +382,38 @@ def main():
         print("       请先运行: python3 01_prepare.py")
         return 1
 
+    # dry-run 不执行 dvda-author，日志里不会有轨道表。若覆盖 build.log，
+    # audit_disc.py / verify.sh 就会拿不到上次真出盘的轨道表而误报，
+    # 因此 dry-run 单独写一份日志。
+    global BUILD_LOG
+    if dry_run:
+        BUILD_LOG = os.path.join(BUILD_DIR, "build-dryrun.log")
+    else:
+        BUILD_LOG = CFG.build_log
+
     # 构建日志：写入本次运行的分隔头与工具路径。
     # audit_disc.py / verify_pts_length.py 依赖此日志解析 dvda-author 命令行，
     # 所以无论通过 build.sh 还是直接运行本脚本，都必须留下日志。
     try:
         os.makedirs(BUILD_DIR, exist_ok=True)
-        with open(CFG.build_log, "a", encoding="utf-8") as f:
+        with open(BUILD_LOG, "a", encoding="utf-8") as f:
             f.write("\n" + "=" * 60 + "\n")
-            f.write("[02_build.py] %s\n" % time.strftime("%Y-%m-%d %H:%M:%S"))
+            f.write("[02_build.py]%s %s\n"
+                    % (" [DRY-RUN]" if dry_run else "",
+                       time.strftime("%Y-%m-%d %H:%M:%S")))
             f.write("  dvda-author : %s\n" % DVDA)
             f.write("  mkisofs     : %s\n" % MKISOFS)
             f.write("  output      : %s\n" % FINAL_DIR)
             f.write("  iso prefix  : %s\n" % CFG.iso_prefix)
             f.write("  title       : %s\n" % CFG.title)
             f.write("  max discs   : %s\n" % (NUM_DISCS or "unlimited"))
+            if dry_run:
+                f.write("  注: dry-run 未执行 dvda-author，本文件不含轨道表；\n")
+                f.write("      审计请用 build.log（上次真出盘）。\n")
             f.write("=" * 60 + "\n")
     except OSError as e:
-        print(f"[警告] 无法写入构建日志 {CFG.build_log}: {e}")
+        print(f"[警告] 无法写入构建日志 {BUILD_LOG}: {e}")
+    print(f"[日志] {BUILD_LOG}")
 
     with open(mp, encoding="utf-8") as f:
         manifest = json.load(f)
@@ -435,15 +455,12 @@ def main():
           f"(相对源压缩 {(1 - mlp_total/src_total)*100:.2f}%, "
           f"预计 AOB {mlp_total*AOB_OVERHEAD/1024**3:.2f} GiB)")
 
-    # 输出 MLP 索引：MLP 容器不记录时长，校验脚本需借助此表回溯源文件
-    idx = {t["mlp"]: {"src": t["src"], "dur": t["dur"],
-                      "sr": t["sr"], "bits": t["bits"],
-                      "resample_to": t["resample_to"],
-                      "title": t["title"]}
-           for t in tracks}
-    with open(MLP_INDEX, "w", encoding="utf-8") as f:
-        json.dump(idx, f, ensure_ascii=False, indent=2)
-    print(f"MLP 索引已写入: {MLP_INDEX} ({len(idx)} 条)")
+    # MLP 索引的逐曲部分：MLP 容器不记录时长，校验脚本需借助此表回溯源文件
+    idx_tracks = {t["mlp"]: {"src": t["src"], "dur": t["dur"],
+                             "sr": t["sr"], "bits": t["bits"],
+                             "resample_to": t["resample_to"],
+                             "title": t["title"]}
+                  for t in tracks}
 
     # 按专辑聚合(保持全局顺序)
     albums = OrderedDict()
@@ -460,24 +477,60 @@ def main():
         print(m)
 
     print(f"\n=== 分盘结果 ({len(discs)} 张) ===")
+    disc_groups = []
     for i, d in enumerate(discs, 1):
+        groups = group_by_rate(d)
+        disc_groups.append(groups)
         n = sum(len(trks) for _, trks in d)
         ms = sum(t["mlp_size"] for _, trks in d for t in trks)
         print(f"  第 {i} 盘: {n} 首, MLP {ms/1024**3:.2f} GiB "
               f"-> 估AOB {ms*AOB_OVERHEAD/1024**3:.2f} GiB  "
               f"卷标 \"{CFG.volid(i)}\"")
 
+    # 输出 MLP 索引。
+    # 除逐曲元信息外，还记录分盘构成：每盘有哪几组、每组有哪几轨。
+    # 意义：ATS_01_N.AOB 存的就是第 N 组，校验脚本据此能**直接定位**
+    # 某张盘某组的第 1 轨对应哪个源 MLP，无需解析构建日志
+    # （日志被 dry-run 重建或已轮替时，回退到「按文件名排序取第 1 条」
+    # 会选到另一组而误报不一致）。
+    idx_plan = []
+    for i, groups in enumerate(disc_groups, 1):
+        idx_plan.append({
+            "disc": i,
+            "volid": CFG.volid(i),
+            "iso": CFG.iso_name(i),
+            "groups": [
+                {"group": gi, "sr": sr, "bits": bits,
+                 "aob": f"ATS_01_{gi}.AOB",
+                 "tracks": [{"mlp": t["mlp"], "src": t["src"],
+                             "title": t["title"],
+                             "resample_to": t["resample_to"]}
+                            for t in files]}
+                for gi, (sr, bits, files) in enumerate(groups, 1)
+            ],
+        })
+    idx = {"__meta__": {"generated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "build_log": BUILD_LOG,
+                        "dry_run": dry_run,
+                        "discs": len(discs), "tracks": len(tracks),
+                        "aob_layout": "第 N 组 -> AUDIO_TS/ATS_01_N.AOB"},
+           "__discs__": idx_plan}
+    idx.update(idx_tracks)
+    with open(MLP_INDEX, "w", encoding="utf-8") as f:
+        json.dump(idx, f, ensure_ascii=False, indent=2)
+    print(f"MLP 索引已写入: {MLP_INDEX} "
+          f"({len(idx_tracks)} 条曲目 + {len(idx_plan)} 张盘计划)")
+
     if dry_run:
         print("\n[DRY-RUN] 仅预览,不实际生成。")
-        for i, d in enumerate(discs, 1):
-            groups = group_by_rate(d)
+        for i, groups in enumerate(disc_groups, 1):
             print(f"\n--- 第 {i} 盘: {len(groups)} 个组 ---")
             for sr, bits, files in groups:
                 print(f"    {sr}/{bits}: {len(files)} 首")
         return 0
 
-    for i, d in enumerate(discs, 1):
-        groups = group_by_rate(d)
+    for i, _ in enumerate(discs, 1):
+        groups = disc_groups[i - 1]
         print(f"\n--- 第 {i} 盘: {len(groups)} 个组 ---")
         for sr, bits, files in groups:
             print(f"    {sr}/{bits}: {len(files)} 首")

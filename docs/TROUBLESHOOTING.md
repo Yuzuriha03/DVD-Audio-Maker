@@ -18,7 +18,8 @@
 9. [声道数不一致（预防性检查）](#9-声道数不一致预防性检查)
 10. [审计误报：取到了上一次构建的日志](#10-审计误报取到了上一次构建的日志)
 11. [校验脚本的组匹配错误（ATS_01_1.AOB 是组1）](#11-校验脚本的组匹配错误ats_01_1aob-是组1)
-12. [诊断手法速查](#12-诊断手法速查)
+12. [审计/校验误报：dry-run 冲掉了构建日志](#12-审计校验误报dry-run-冲掉了构建日志)
+13. [诊断手法速查](#13-诊断手法速查)
 
 ---
 
@@ -718,7 +719,13 @@ if samples is None:
 
 ```json
 {
-  "/root/dvda-build/mlp/group_48000_24__0001__xxx.mlp": {
+  "__meta__":    { "discs": 2, "tracks": 147, "dry_run": false },
+  "__discs__":   [ { "disc": 1, "volid": "… 1",
+                     "groups": [ { "group": 1, "aob": "ATS_01_1.AOB",
+                                   "sr": 48000, "bits": 24,
+                                   "tracks": [ { "mlp": "…/group_48000_24__0001__01. xxx.mlp",
+                                                 "src": "…/01. xxx.flac" } ] } ] } ],
+  "…/group_48000_24__0001__01. xxx.mlp": {
     "src": "/mnt/c/.../01. xxx.flac",
     "dur": 241.925667,
     "sr": 48000,
@@ -728,6 +735,13 @@ if samples is None:
   }
 }
 ```
+
+其中逐曲条目以 **MLP 路径为键**；`__meta__` / `__discs__` 是元数据段，
+遍历索引统计曲目数时需跳过 `__` 开头的键
+（`verify_pts_length.py` 就是这么做的）。
+
+`__discs__` 记录「第 N 组 → `AUDIO_TS/ATS_01_N.AOB`」的对应关系，
+是 `verify.sh` 定位「第 1 盘 组1 第1轨」的依据，详见第 11 节。
 
 校验时的比对基准是「源音源 + 同一条重采样滤镜链」：
 
@@ -851,6 +865,9 @@ if LOG is not None:
 
 > **教训**：只要「比对 A 与 B」，就要确认 A 和 B 来自**同一次**构建。
 > 用固定的文件名顺序去猜哪个是当前产物，在存在历史残留时必然出错。
+>
+> 另一个更隐蔽的变体：`--dry-run` 把真出盘的日志**截断覆盖**了。
+> 见[第 12 节](#12-审计校验误报dry-run-冲掉了构建日志)。
 
 ---
 
@@ -904,9 +921,92 @@ for line in t.splitlines():
 [2] 成品 ISO 内音轨与源 MLP 一致  ✔
 ```
 
+### 后续加固：改用分盘计划定位，拿不到就报错
+
+上面只靠构建日志定位，仍有两个缺口：
+
+- 日志被 `--dry-run` 覆盖或轮替后，就再也解析不出 `-g` 命令行
+- 老代码在这种情况下**回退到 `sorted(keys)[0]`** —— 而 `group_44100_*`
+  按字典序排在 `group_48000_*` 之前，于是又会拿错组的 MLP，
+  把一个**完全正确**的 ISO 判为失败（同一个坑换了个入口）
+
+现在改成三级处理，**绝不再猜**：
+
+1. 先查构建日志里的 `dvda-author` 命令行
+2. 再查 `mlp_index.json` 的 `__discs__` 分盘计划
+   （`02_build.py` 直接写出「第 N 组 → `ATS_01_N.AOB`」与每轨的源 MLP，
+   不依赖日志是否还在）
+3. 两条路都拿不到 → 打印 `[FAIL]` 与原因，返回 1
+
+```
+定位依据: mlp_index.json 分盘计划（第1盘 组1 第1轨）
+```
+
 ---
 
-## 12. 诊断手法速查
+## 12. 审计/校验误报：dry-run 冲掉了构建日志
+
+### 症状
+
+跑完一遍 `bash build.sh --dry-run`（一切正常），再 `bash verify.sh` 却报错：
+
+```
+=================== 光盘一致性审计 ===================
+[跳过] 构建日志中未解析到轨道表
+
+=================== MLP 无损验证 ===================
+[2] 成品 ISO 内音轨校验失败  ✗
+
+=================== 存在问题，见上文 ✗ ===================
+```
+
+但 ISO 本身是对的 —— 手工比对可证：
+
+```bash
+got=$(dvda-author --aob-extract a.AOB -o ext -W -P0 -n 2>/dev/null; \
+      find ext -name 'track_01_title_01.mlp')
+cmp "$got" "$BUILD_DIR/mlp/group_48000_24__0001__01. xxx.mlp"   # 逐字节一致
+```
+
+### 根因
+
+`--dry-run` 不执行 dvda-author，所以它写出的日志里**根本没有轨道表**
+（`First_Sect` / `Last_Sect` / `PTS_length`）。而日志名沿用了 `build.log`，
+于是把上次真出盘积累的轨道表**截断覆盖**了。
+
+两处写入点都会截断，**都得改**：
+
+| 位置 | 行为 |
+|------|------|
+| `build.sh` | `python3 01_prepare.py 2>&1 \| tee "$LOG"` —— `tee` **不带 `-a` 就是截断** |
+| `02_build.py` | `run()` 与 `main()` 里的 `open(CFG.build_log, "a")`（追加，但前面已被 tee 清空） |
+
+审计需要轨道表才能比对 AOB 扇区号；无损校验在没有 `__discs__` 计划的
+旧索引下退化成 `sorted()[0]`，于是两个校验同时误报。
+
+### 修复
+
+1. `build.sh`：`--dry-run` 时 `LOG="$DVDA_BUILD_DIR/build-dryrun.log"`
+2. `02_build.py`：模块级 `BUILD_LOG`，`main()` 里按 `--dry-run` 重定向；
+   日志头加 `[DRY-RUN]` 标记与「本文件不含轨道表」说明
+3. `mlp_index.json` 增写 `__meta__`（含 `dry_run` 标记）与 `__discs__` 分盘计划
+4. `audit_disc.py`：跳过时调 `dryrun_hint()`，点明「这是 dry-run 日志」
+   与下一步该跑什么
+
+验证（dry-run 前后指纹不变）：
+
+```bash
+md5sum "$DVDA_BUILD_DIR/build.log" > /tmp/before.md5
+bash build.sh --dry-run
+md5sum -c /tmp/before.md5        # build.log: OK
+```
+
+> 教训：**同一份日志被两种运行模式共享**，就会互相破坏。
+> 让不同模式写不同文件，比在读取端猜“这份日志是否可用”可靠得多。
+
+---
+
+## 13. 诊断手法速查
 
 ### 解析 AOB 的 PES 时间戳
 

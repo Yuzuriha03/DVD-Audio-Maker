@@ -225,13 +225,20 @@ DVD-Audio-Maker/
 
 ```
 manifest.json     清单（步骤1 产出，步骤2 读取）
-mlp_index.json    MLP → 源文件/时长/重采样 索引
+mlp_index.json    MLP → 源文件/时长/重采样 索引 + 分盘计划
+                   （`__discs__` 段记录每盘/每组/每轨 → 源 MLP）
 decode_report.txt 解码完整性报告
-build.log         构建日志
+build.log         构建日志（真出盘；含 dvda-author 轨道表）
+build-dryrun.log  --dry-run 的日志（不含轨道表）
 mlp/              MLP 缓存（可复用，换源后仍有效）
 alacfix/          ALAC 修复产物（原文件不改动）
 out/ tmp/ iso/    出盘中间目录
 ```
+
+> 为什么 dry-run 要单独写一份日志：`--dry-run` 不执行 dvda-author，日志里
+> 不会有轨道表。若覆盖 `build.log`，`audit_disc.py` / `verify.sh` 就再也取不到
+> 上次真出盘的审计依据，会把正确无误的 ISO 判为失败（详见
+> [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 13 节）。
 
 用环境变量临时覆盖（不改文件）：
 
@@ -315,7 +322,10 @@ bash verify.sh config     # 打印当前配置
 
 > 审计会打印所用的构建日志及其修改时间。若目录里残留了上次构建的日志，
 > 会把新 AOB 与旧轨道表比对而**误报不一致**，所以脚本按 mtime 取最新者。
-> 正常情况下 `build.sh` 每次都会重写 `build.log`，保留这一份即可。
+> 正常情况下 `build.sh` 每次真出盘都会重写 `build.log`，保留这一份即可。
+>
+> 注意：`--dry-run` **不碰** `build.log`（只写 `build-dryrun.log`），
+> 否则会把真出盘的轨道表冲掉，导致审计与 ISO 无损校验双双误报。
 
 ---
 

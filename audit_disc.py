@@ -77,9 +77,35 @@ def parse_pts(b):
             | (((b[3] << 8) | b[4]) >> 1))
 
 
+def dryrun_hint(log_path):
+    """日志里没有轨道表时,判断是否因为这是 dry-run 日志,并给出可操作建议。"""
+    tips = []
+    try:
+        head = log_path.read_text(encoding="utf-8", errors="replace")[:4000]
+    except OSError:
+        head = ""
+    if "[DRY-RUN]" in head or "dry-run 未执行 dvda-author" in head:
+        tips.append("        该日志是 --dry-run 产生的：dry-run 不执行 dvda-author，"
+                    "本来就没有轨道表。")
+        tips.append("        解决：运行一次真正的出盘（bash build.sh），"
+                    "审计会自动改用新的 build.log。")
+    else:
+        tips.append("        可能原因：该日志不是出盘时写的"
+                    "（例如被 --dry-run 覆盖过，或只跑过 01_prepare/02_build 的一部分）。")
+        tips.append("        解决：运行一次真正的 bash build.sh 后再审计。")
+    dry = pathlib.Path(os.path.join(BUILD_DIR, "build-dryrun.log"))
+    if dry.exists() and dry != log_path:
+        tips.append(f"        另注：{dry.name} 是最新一次的 dry-run 日志"
+                    f"（mtime {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dry.stat().st_mtime))}），"
+                    f"它不含轨道表，不能用于审计。")
+    return tips
+
+
 def main():
     if LOG is None:
         print("[跳过] 未找到构建日志，无法解析轨道表")
+        print(f"        已查找：{', '.join(str(p) for p in _LOGS if p)}")
+        print("        解决：运行一次真正的 bash build.sh 生成日志后再审计。")
         return 2
 
     text = ANSI.sub("", LOG.read_text(encoding="utf-8", errors="replace"))
@@ -91,6 +117,8 @@ def main():
                      "first_pts": g[6], "pts_len": g[7]})
     if not rows:
         print("[跳过] 构建日志中未解析到轨道表")
+        for t in dryrun_hint(LOG):
+            print(t)
         return 2
 
     # 由 dvda-author 命令行确定每张盘的组数与顺序

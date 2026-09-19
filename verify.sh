@@ -86,17 +86,25 @@ check_lossless() {
     return 1
   fi
 
-  local info mlp src rto
+  local info mlp src rto how
   # 选取「第 1 张盘 组1 的第 1 轨」对应的 MLP —— 必须与 ATS_01_1.AOB 同组，
   # 否则会误报不一致（ATS_01_1.AOB 存的是组1 = 最先传入 -g 的那组）。
-  # 组顺序取自构建日志里 dvda-author 的命令行。
+  # 定位顺序：先查构建日志里 dvda-author 的命令行，再退回 mlp_index.json
+  # 里的分盘计划。两条路都拿不到时**明确报错**，绝不猜 —— 猜错会选到另一组
+  # 的第 1 轨（例如按文件名排序时 group_44100_* 排在 group_48000_* 之前），
+  # 结果是把正确无误的 ISO 判为失败。
   mapfile -t info < <(python3 - "$DVDA_MLP_INDEX" "$DVDA_BUILD_LOG" \
                                  "$DVDA_MLP_DIR" <<'PY'
 import json, os, re, sys
+
 idx = json.load(open(sys.argv[1], encoding="utf-8"))
 log = sys.argv[2] if len(sys.argv) > 2 else ""
 pfx = (sys.argv[3] if len(sys.argv) > 3 else "").rstrip("/") + "/"
+
 target = None
+how = ""
+
+# 途径一：构建日志里 dvda-author 的命令行（最贴近实际构建）
 if log and os.path.exists(log) and pfx != "/":
     t = open(log, encoding="utf-8", errors="replace").read()
     t = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", t)
@@ -115,22 +123,39 @@ if log and os.path.exists(log) and pfx != "/":
                 names.append(pfx + chunk[:e + 4])
         if names:
             target = names[0]
+            how = "构建日志（dvda-author 命令行）"
         break
-if target and target in idx and os.path.exists(target):
-    k = target
-else:
-    keys = sorted(k for k in idx
-                  if os.path.exists(k) and os.path.getsize(k) > 0)
-    if not keys:
-        print(""); print(""); print(""); raise SystemExit
-    k = keys[0]
-e = idx[k]
-print(k); print(e["src"]); print(e.get("resample_to") or "")
+
+# 途径二：mlp_index.json 的 __discs__ 分盘计划（不依赖日志是否还在）
+if target is None:
+    try:
+        tr = idx["__discs__"][0]["groups"][0]["tracks"][0]
+        target = tr["mlp"]
+        how = "mlp_index.json 分盘计划（第1盘 组1 第1轨）"
+    except (KeyError, IndexError, TypeError):
+        target = None
+
+if not target or not os.path.exists(target):
+    print("__NOINFO__"); print(""); print(""); print("")
+    raise SystemExit
+
+e = idx.get(target, {})
+print(target)
+print(e.get("src", ""))
+print(e.get("resample_to") or "__NONE__")
+print(how)
 PY
 )
-  mlp="${info[0]:-}"; src="${info[1]:-}"; rto="${info[2]:-}"
-  if [ -z "$mlp" ] || [ -z "$src" ]; then
-    echo "(MLP 缓存为空，跳过)"
+  mlp="${info[0]:-}"; src="${info[1]:-}"
+  rto="${info[2]:-}"; how="${info[3]:-}"
+  [ "$rto" = "__NONE__" ] && rto=""
+
+  if [ "$mlp" = "__NOINFO__" ] || [ -z "$mlp" ] || [ -z "$src" ]; then
+    echo "[FAIL] 无法确定「第 1 盘 组1 第1轨」对应的源 MLP，跳过比对。"
+    echo "       构建日志里没有 dvda-author 命令行（例如只跑过 --dry-run），"
+    echo "       且 mlp_index.json 里没有 __discs__ 分盘计划（旧版索引）。"
+    echo "       解决：运行一次真正的 bash build.sh 重建索引与日志，"
+    echo "             或不要用 --dry-run 覆盖日志（新版已分离为 build-dryrun.log）。"
     return 1
   fi
 
@@ -139,6 +164,7 @@ PY
   echo "源音源 : $src"
   echo "MLP    : $mlp"
   [ -n "$rto" ] && echo "重采样 : -> ${rto}Hz (soxr)"
+  [ -n "$how" ] && echo "定位依据: $how"
   echo
 
   local ares=()
