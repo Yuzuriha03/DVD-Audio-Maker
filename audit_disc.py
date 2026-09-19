@@ -14,7 +14,16 @@
   python3 audit_disc.py [ISO 目录] [构建日志]
 默认:
   ISO 目录 = /mnt/d/鸣潮DVD_Audio
-  构建日志 = /root/dvda-build/build.log、finalrebuild.log、rebuild-final.log（取存在者）
+  构建日志 = 取候选列表中**修改时间最新**者
+
+  候选（按名字）: build.log、rebuild-final.log、finalrebuild.log
+  build.sh 每次运行都会重写 build.log，因此它总是当前这次构建的日志。
+
+  ⚠ 不要按固定顺序取第一个存在的文件 —— 目录里可能残留上一次构建的
+    旧日志（如 rebuild-final.log），会导致：
+      · 轨道表来自旧构建、AOB 来自新构建 → 误报「扇区数不一致」
+      · PTS 下降点与旧轨边界比对 → 误报「未落在轨边界」
+    故这里改为按 mtime 取最新，并在输出中打印所用日志及其时间以便核对。
 
 可用环境变量覆盖: DVDA_BUILD_DIR / DVDA_FINAL_DIR / DVDA_ISO_PREFIX
 """
@@ -24,6 +33,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 BUILD_DIR = os.environ.get("DVDA_BUILD_DIR", "/root/dvda-build")
 ISO_PREFIX = os.environ.get("DVDA_ISO_PREFIX", "Wuthering_Waves_Singles_EPs")
@@ -31,13 +41,25 @@ ISO_DIR = pathlib.Path(sys.argv[1] if len(sys.argv) > 1
                        else os.environ.get("DVDA_FINAL_DIR",
                                            "/mnt/d/鸣潮DVD_Audio"))
 
-LOG_CANDIDATES = [
+_LOGS = [
     pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None,
+    pathlib.Path(os.path.join(BUILD_DIR, "build.log")),
     pathlib.Path(os.path.join(BUILD_DIR, "rebuild-final.log")),
     pathlib.Path(os.path.join(BUILD_DIR, "finalrebuild.log")),
-    pathlib.Path(os.path.join(BUILD_DIR, "build.log")),
 ]
-LOG = next((p for p in LOG_CANDIDATES if p and p.exists()), None)
+# 显式指定则直接用；否则在候选里取 mtime 最新者（避免读到旧构建日志）
+_existing = [p for p in _LOGS if p and p.exists()]
+LOG = max(_existing, key=lambda p: p.stat().st_mtime) if _existing else None
+if LOG is not None:
+    print(f"构建日志: {LOG}  "
+          f"(mtime {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(LOG.stat().st_mtime))}"
+          f", {LOG.stat().st_size:,} B)")
+    others = [p for p in _existing if p != LOG]
+    if others:
+        newest_other = max(p.stat().st_mtime for p in others)
+        if LOG.stat().st_mtime - newest_other < 60:
+            print(f"  ⚠ 另有 {len(others)} 个日志时间相近，"
+                  f"请确认所用日志对应本次构建")
 
 WORK = pathlib.Path(os.path.join(BUILD_DIR, "disc-audit"))
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
