@@ -22,9 +22,13 @@ import re
 import sys
 import time
 
-BUILD_DIR = os.environ.get("DVDA_BUILD_DIR", "/root/dvda-build")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dvda_config import load as load_config          # noqa: E402
+
+CFG = load_config(need=None, quiet=True)
+BUILD_DIR = CFG.build_dir
 _cands = [os.environ.get("DVDA_BUILD_LOG"),
-          os.path.join(BUILD_DIR, "build.log"),
+          CFG.build_log,
           os.path.join(BUILD_DIR, "rebuild-final.log"),
           os.path.join(BUILD_DIR, "finalrebuild.log")]
 _exist = [pathlib.Path(p) for p in _cands if p and pathlib.Path(p).exists()]
@@ -37,8 +41,7 @@ print(f"构建日志: {LOG}  "
 text = LOG.read_text(encoding="utf-8", errors="replace")
 text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)   # 剥离 ANSI
 
-INDEX = pathlib.Path(os.environ.get(
-    "DVDA_MLP_INDEX", os.path.join(BUILD_DIR, "mlp_index.json")))
+INDEX = pathlib.Path(CFG.mlp_index)
 if not INDEX.exists():
     print("!! 未找到 %s，请先运行 02_build.py" % INDEX)
     sys.exit(1)
@@ -46,7 +49,7 @@ mlp_index = json.loads(INDEX.read_text(encoding="utf-8"))
 print("mlp_index.json: %d 条" % len(mlp_index))
 
 # ---------- 解析每张盘的组与文件顺序（按 dvda-author 命令行） ----------
-PFX = os.environ.get("DVDA_MLP_DIR", os.path.join(BUILD_DIR, "mlp")) + "/"
+PFX = CFG.mlp_dir.rstrip("/") + "/"
 cmds = []
 for line in text.splitlines():
     if not line.startswith("+ ") or " -g " not in line:
@@ -131,13 +134,18 @@ for i, diff, name, d, act in bad[:15]:
           % (i, diff, diff / 90.0, d, act))
 
 print()
-print("组3（44.1kHz）逐轨:")
-for r in rows:
-    if r["group"] == 3:
-        print("   轨%2d  扇区 %6d..%-6d First_PTS=%-4d PTS_length=%-10d (%.3f 秒)"
+print("逐轨明细（按组）：")
+_groups = sorted({r["group"] for r in rows})
+for _g in _groups:
+    _rs = [r for r in rows if r["group"] == _g]
+    print("  --- 组 %d: %d 轨 ---" % (_g, len(_rs)))
+    for r in _rs:
+        print("   轨%2d  扇区 %8d..%-8d First_PTS=%-4d PTS_length=%-10d (%.3f 秒)"
               % (r["track"], r["first_sect"], r["last_sect"],
                  r["first_pts"], r["pts_len"], r["pts_len"] / 90000))
 
 if not bad and not nodur:
     print()
     print("结论: 全部 %d 轨的 PTS_length 与源音频时长一致 ✔" % len(rows))
+else:
+    sys.exit(1)

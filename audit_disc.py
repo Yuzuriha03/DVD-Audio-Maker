@@ -12,9 +12,9 @@
 
 用法:
   python3 audit_disc.py [ISO 目录] [构建日志]
-默认:
-  ISO 目录 = /mnt/d/鸣潮DVD_Audio
-  构建日志 = 取候选列表中**修改时间最新**者
+默认（取自 config.sh）:
+  ISO 目录 = DVDA_FINAL_DIR
+  构建日志 = <BUILD_DIR>/build.log（在候选里取 mtime 最新者）
 
   候选（按名字）: build.log、rebuild-final.log、finalrebuild.log
   build.sh 每次运行都会重写 build.log，因此它总是当前这次构建的日志。
@@ -24,8 +24,6 @@
       · 轨道表来自旧构建、AOB 来自新构建 → 误报「扇区数不一致」
       · PTS 下降点与旧轨边界比对 → 误报「未落在轨边界」
     故这里改为按 mtime 取最新，并在输出中打印所用日志及其时间以便核对。
-
-可用环境变量覆盖: DVDA_BUILD_DIR / DVDA_FINAL_DIR / DVDA_ISO_PREFIX
 """
 import os
 import pathlib
@@ -35,15 +33,18 @@ import subprocess
 import sys
 import time
 
-BUILD_DIR = os.environ.get("DVDA_BUILD_DIR", "/root/dvda-build")
-ISO_PREFIX = os.environ.get("DVDA_ISO_PREFIX", "Wuthering_Waves_Singles_EPs")
-ISO_DIR = pathlib.Path(sys.argv[1] if len(sys.argv) > 1
-                       else os.environ.get("DVDA_FINAL_DIR",
-                                           "/mnt/d/鸣潮DVD_Audio"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dvda_config import load as load_config          # noqa: E402
+
+CFG = load_config(need=None, quiet=True)
+BUILD_DIR = CFG.build_dir
+ISO_PREFIX = CFG.iso_prefix
+# 第 1 个位置参数是 ISO 目录，第 2 个是构建日志；两者都可省略
+ISO_DIR = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else CFG.final_dir)
 
 _LOGS = [
     pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None,
-    pathlib.Path(os.path.join(BUILD_DIR, "build.log")),
+    pathlib.Path(CFG.build_log),
     pathlib.Path(os.path.join(BUILD_DIR, "rebuild-final.log")),
     pathlib.Path(os.path.join(BUILD_DIR, "finalrebuild.log")),
 ]
@@ -103,6 +104,16 @@ def main():
         print("[跳过] 未解析到 dvda-author 命令行")
         return 2
 
+    def disc_no(tag):
+        """盘序号：discN -> N；无数字时给一个很大的值（排到后面）。"""
+        m = re.search(r"(\d+)$", tag)
+        return int(m.group(1)) if m else 10 ** 6
+
+    def disc_label(tag):
+        """盘显示名：discN -> 第 N 盘；否则原样。"""
+        m = re.fullmatch(r"disc(\d+)", tag)
+        return f"第 {m.group(1)} 盘" if m else tag
+
     idx, disc_rows = 0, {}
     for disc, ngrp in cmds:
         groups = []
@@ -120,12 +131,13 @@ def main():
     ok = True
     summary = []
 
-    for disc, groups in sorted(disc_rows.items()):
-        iso = next(ISO_DIR.glob("%s_%s.iso" % (ISO_PREFIX, disc[-1])),
+    for disc, groups in sorted(disc_rows.items(), key=lambda kv: disc_no(kv[0])):
+        iso = next(ISO_DIR.glob("%s_%d.iso" % (ISO_PREFIX, disc_no(disc))),
                    None)
         print("=" * 72)
         if iso is None:
-            print("!! 缺少 %s 的 ISO" % disc)
+            print("!! 缺少 %s 的 ISO（应在 %s 下找 %s_%d.iso）"
+                  % (disc, ISO_DIR, ISO_PREFIX, disc_no(disc)))
             ok = False
             continue
         print("### %s  (%d 字节)" % (iso.name, iso.stat().st_size))
@@ -203,10 +215,10 @@ def main():
 
     print("=" * 72)
     print("汇总:")
-    print("  盘/组   轨数   AOB扇区   轨道表扇区  PTS下降  轨边界")
+    print("  盘      组   轨数   AOB扇区   轨道表扇区  PTS下降  轨边界")
     for r in summary:
-        print("  %s 组%-2d %4d  %9d  %9d  %7d  %6d"
-              % (r[0], r[1], r[2], r[3], r[4], r[5], r[6]))
+        print("  %-8s %-4d %4d  %9d  %9d  %7d  %6d"
+              % (disc_label(r[0]), r[1], r[2], r[3], r[4], r[5], r[6]))
     print()
     print("审计结论:", "全部通过 ✔" if ok else "存在问题 ✗")
     return 0 if ok else 1

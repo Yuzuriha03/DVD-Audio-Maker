@@ -13,8 +13,8 @@
 4. [`--aob-extract` 段错误](#4---aob-extract-段错误)
 5. [ffmpeg 解码丢帧（Apple ALAC 未压缩帧缺 END 标记）](#5-ffmpeg-解码丢帧apple-alac-未压缩帧缺-end-标记)
 6. [末轨 AOB 少几字节](#6-末轨-aob-少几字节)
-7. [直连编码时位深丢失（产生非法音频组）](#7-直连编码时位深丢失产生非法音频组)
-8. [直连编码时时长不再可回读（校验失效风险）](#8-直连编码时时长不再可回读校验失效风险)
+7. [位深丢失（产生非法音频组）](#7-位深丢失产生非法音频组)
+8. [MLP 不记录时长（校验失效风险）](#8-mlp-不记录时长校验失效风险)
 9. [声道数不一致（预防性检查）](#9-声道数不一致预防性检查)
 10. [审计误报：取到了上一次构建的日志](#10-审计误报取到了上一次构建的日志)
 11. [校验脚本的组匹配错误（ATS_01_1.AOB 是组1）](#11-校验脚本的组匹配错误ats_01_1aob-是组1)
@@ -236,36 +236,7 @@ for (int s = 0; s < nframe; ++s)
   }
 ```
 
-### 2.5 编码结果与源不一致（WAV 头被当成音频）
-
-编码后校验发现 PCM 不匹配，源文件与 MLP 解码结果比对：
-
-```
-源 PCM 前 6 样本: [159, -145, 3, -42, -129, 164]
-MLP 解码前 6 样本: [4606290, 6471750, 5702417, ...]
-```
-
-把解码结果按字节看，开头是 `R I F F` —— **编码器把 WAV 文件头当成了音频样本**。
-
-**根因**：MLP 编码器按裸 PCM 读取输入，而流水线交给它的是带 44/100 字节头的 WAV。
-
-**修复**：新增 `wav_data_offset()` 定位 `data` 块起始偏移并 `fseek` 跳过。
-
-```c
-static long wav_data_offset(FILE *fp);   // 解析 RIFF/WAVE 与 data 块
-...
-long data_off = wav_data_offset(in_fp);
-fseek(in_fp, data_off, SEEK_SET);
-```
-
-修复后编码结果与 `ffmpeg` CLI 输出**逐字节一致**：
-
-```
-39831398  dvda-author 输出
-39831398  ffmpeg CLI 输出
-```
-
-### 2.6 链接错误
+### 2.5 链接错误
 
 ```
 cannot find /root/dvda-author-mlp8/local/lib/libswresample.a
@@ -292,7 +263,7 @@ done
 
 ```
 *** stack smashing detected ***: terminated
-[FAIL] dvda-author 生成 盘1 失败
+[FAIL] dvda-author 生成第 1 盘失败
 ```
 
 ### 定位
@@ -572,14 +543,7 @@ for aob in sorted(glob.glob(os.path.join(out, "AUDIO_TS", "*.AOB"))):
 
 ---
 
-## 7. 直连编码时位深丢失（产生非法音频组）
-
-### 背景
-
-为了省掉约 9 GB 的 WAV 落盘，把流程从「源 → WAV → MLP」改为「源 → MLP」。
-WAV 中转阶段原本**隐式承担了两个约束**，去掉后必须显式补回。
-
-这正是这类改写最危险的地方：**结果看起来完全正常，实际已经错了**。
+## 7. 位深丢失（产生非法音频组）
 
 ### 症状
 
@@ -602,14 +566,14 @@ Group   Title  Track  First_Sect   Last_Sect  First_PTS  PTS_length cga
 ```
 
 **注意工具链全程没有报错**，ISO 也照常生成、容量也正常。
+这类问题最危险的地方就是：**结果看起来完全正常，实际已经错了。**
 
 ### 根因
 
 - 源文件是 44.1kHz / **16-bit**
 - 归一化决定「重采样到 48kHz / 24-bit」
 - 但 `aresample` **只改采样率，不改位深**
-- 旧流程的 `-c:a pcm_s24le`（WAV 输出编码器）把位深强制成 24
-- 直连后没有 WAV 这一步，MLP 编码器**沿用源的 16-bit**
+- MLP 编码器**沿用输入的位深**，于是这一轨被编成 16-bit
 
 ### 诊断
 
@@ -649,33 +613,45 @@ cmd += ["-sample_fmt", "s16p" if bits == 16 else "s32p",
         "-c:a", "mlp", "-strict", "-2", mlp]
 ```
 
-### 验证等价性
+### 验证：指定位深前后必须不同
 
-确认新写法与旧「WAV + pcm_s24le」路径**逐字节一致**（含解码后 PCM）：
+以 44.1k/16 的源为例（重采样到 48k/24），对比「指定位深」与「不指定」：
 
 ```bash
-# 基准：旧路径
-ffmpeg -i src.flac -af aresample=48000:resampler=soxr -c:a pcm_s24le ref.wav
-ffmpeg -i ref.wav -c:a mlp -strict -2 A_ref.mlp
+SRC=x.flac
 
-# 候选：直连
-ffmpeg -i src.flac -af aresample=48000:resampler=soxr \
-       -sample_fmt s32p -c:a mlp -strict -2 B.mlp
+# A：显式指定 s32p
+ffmpeg -i "$SRC" -af aresample=48000:resampler=soxr \
+       -sample_fmt s32p -c:a mlp -strict -2 A.mlp
 
-cmp A_ref.mlp B.mlp && echo "一致 ✔"
+# E：不指定位深
+ffmpeg -i "$SRC" -af aresample=48000:resampler=soxr \
+       -c:a mlp -strict -2 E.mlp
+
+# 用 dvda-author 报告实际位深
+for f in A E; do
+  echo -n "$f: "
+  dvda-author-dev -g $f.mlp -o o -D t -W -P0 -n 2>&1 \
+    | grep -m1 'Found MLP audio'
+  rm -rf o t
+done
 ```
 
 实测结果：
 
 ```
-A_ref              61018364 B
-B_sfmt_s32p        61018364 B   与基准一致 ✔
-C_aformat_s32      61018364 B   与基准一致 ✔
-D_aformat_s32p     61018364 B   与基准一致 ✔
-E_raw              39140014 B   与基准不同     ← 不指定位深就是这个结果
+A: Found MLP audio: 2 channels, 24 bits per sample, 48000 Hz   ✔
+E: Found MLP audio: 2 channels, 16 bits per sample, 48000 Hz   ← 错
+A.mlp 61018364 B
+E.mlp 39140014 B        ← 体积差一半，因为位深浅了一半
+```
 
-解码 PCM：B / C / D 均与基准逐字节一致 ✔
-E_raw 解码 PCM 长度相同但内容不同（16-bit 左移到 24-bit）
+也可以用 `aformat` 达到同样效果（`aformat=sample_fmts=s32` 或 `s32p` 均可）：
+
+```
+A_sfmt_s32p        61018364 B
+C_aformat_s32      61018364 B
+D_aformat_s32p     61018364 B   三者输出逐字节一致
 ```
 
 ### 加固
@@ -692,7 +668,7 @@ if got != exp:
 
 ---
 
-## 8. 直连编码时时长不再可回读（校验失效风险）
+## 8. MLP 不记录时长（校验失效风险）
 
 ### 症状
 
@@ -703,17 +679,12 @@ ffprobe -v error -show_entries format=duration -of default=nw=1 x.mlp
 # duration=N/A
 ```
 
-原本的完整性校验靠比对「输出 WAV 时长 vs 源声明时长」，直连后这个手段消失。
-若不处理，损坏的源文件会**再次静默通过**（每次丢 4096 采样）。
+因此无法靠「回读输出时长」来核验完整性。若不另想办法，损坏的源文件会
+**静默通过**（每次丢 4096 采样）。
 
-其实直连时损坏文件的表现更极端 —— 输出会被**提前截断**：
-
-```
-损坏 M4A 直连：  33,454,262 B
-损坏 M4A 经 WAV：53,084,192 B
-```
-
-但 stderr 仍完整报错，且截断本身也是信号。
+一个有价值的旁证：源文件损坏时，编码产物会被**提前截断** ——
+例如某个损坏的 M4A，其 MLP 只有 33,454,262 B，而正常情况下应有 53,084,192 B。
+截断本身也是信号，但它依赖「事先知道正常体积」，不够可靠。
 
 ### 修复：改用 astats 采样数
 
@@ -742,10 +713,10 @@ if samples is None:
     reasons.append("未能读到解码采样数(astats 无输出)")
 ```
 
-### 副作用：下游脚本需改数据来源
+### 副作用：下游脚本需要另一套数据来源
 
-`verify.sh` 与 `verify_pts_length.py` 原本从 WAV 路径反推时长，需改为读
-`02_build.py` 生成的 `mlp_index.json`：
+`verify.sh` 与 `verify_pts_length.py` 需要每轨的**源音频时长**，
+而 MLP 里读不到。为此 `02_build.py` 输出 `mlp_index.json`：
 
 ```json
 {
@@ -760,7 +731,7 @@ if samples is None:
 }
 ```
 
-`verify.sh` 的比较基准也从「源 WAV」改为「源音源 + 同一条重采样滤镜链」：
+校验时的比对基准是「源音源 + 同一条重采样滤镜链」：
 
 ```bash
 ffmpeg -i "$src" -af "aresample=${rto}:resampler=soxr" -f s24le src.raw
@@ -774,7 +745,7 @@ ffmpeg -i "$mlp" -f s24le dec.raw
 DVD-Audio 同一音频组内所有曲目须同声道数。单声道与立体声**无法无损互转**，
 所以本工具链不做声道转换，而是直接检查并在不一致时失败。
 
-### 实测：本项目全部音源均为立体声
+### 实测：一整批音源全部为立体声
 
 ```bash
 ffprobe -v error -select_streams a:0 \
@@ -789,7 +760,7 @@ ffprobe -v error -select_streams a:0 \
 全部为 2ch / stereo ✔
 ```
 
-参数组合：
+参数组合（同一批次里采样率与位深可以混用，声道数不行）：
 
 | 数量 | 声道 | 布局 | 采样率 | 位深 |
 |------|------|------|--------|------|
@@ -815,7 +786,7 @@ ffprobe -v error -select_streams a:0 \
 重新出盘后审计报「扇区数不一致」，且 PTS 下降点也不落在轨边界：
 
 ```
-盘1 组1    65 轨
+第 1 盘 组1    65 轨
   A. 扇区数 AOB=1588763 轨道表=1588632  不一致 ✗
   D. PTS 下降点 64 个；落在轨边界 异常 ✗
     非轨边界的下降点: [834886, 861611, 888172, ...]
@@ -845,7 +816,7 @@ LOG = next((p for p in LOG_CANDIDATES if p and p.exists()), None)
 列出各日志的时间与其中的关键数值：
 
 ```
-日志                     时间              盘1组1 max last_sector
+日志                     时间              disc1组1 max last_sector
 rebuild-final.log        09-18 18:57        1588631  -> +1 = 1588632   ← 被误用
 finalrebuild.log         09-18 18:27        1588631  -> +1 = 1588632
 build.log（本次构建）    09-19 08:36        1588762  -> +1 = 1588763   ✔
@@ -906,13 +877,13 @@ if LOG is not None:
 
 ### 修复
 
-从构建日志解析盘1 的 `dvda-author` 命令行，取**组1 的第 1 轨**对应的 MLP：
+从构建日志解析第 1 张盘的 `dvda-author` 命令行，取**组1 的第 1 轨**对应的 MLP：
 
 ```python
 for line in t.splitlines():
     if not line.startswith("+ ") or " -g " not in line:
         continue
-    if "/盘1 " not in line and "/盘1\t" not in line:
+    if "/disc1 " not in line and "/disc1\t" not in line:
         continue
     seg = line.split(" -g ", 1)[1].split(" -o ", 1)[0]
     ...
@@ -995,20 +966,19 @@ run
 
 输出中最后一个 `arg=(nil)` 即崩溃点。
 
-### 判断是数据损坏还是工具问题
+### 判断是源的问题还是工具的问题
 
-关键思路：**比对流水线各阶段的中间产物**。
+关键思路：**比对「源解码」与「MLP 解码」的裸 PCM**。
 
 ```bash
-# 源 → 裸 PCM
-ffmpeg -v quiet -i src.m4a  -f s24le -acodec pcm_s24le a.raw
-# 流水线 WAV → 裸 PCM
-ffmpeg -v quiet -i pipe.wav -f s24le -acodec pcm_s24le b.raw
+# 源 → 裸 PCM（需施加与编码时相同的重采样）
+ffmpeg -v quiet -i src.m4a -f s24le a.raw
 # MLP → 裸 PCM
-ffmpeg -v quiet -i pipe.mlp -f s24le -acodec pcm_s24le c.raw
+ffmpeg -v quiet -i pipe.mlp -f s24le c.raw
 
-cmp a.raw b.raw    # 若一致 → 流水线忠实，问题在源
-cmp b.raw c.raw    # 若一致 → MLP 无损
+cmp a.raw c.raw    # 一致 → MLP 无损，编码链路忠实
 ```
 
-若 `a.raw` 与 `b.raw` 一致但两者都短于源声明时长，则**源文件本身损坏**。
+若两者一致但都短于源声明时长，说明 `ffmpeg` 解码源时就丢了数据 ——
+这时**不要急着判定源损坏**，先用另一条判据核对（见第 5 节）：
+同一文件在其它播放器里是否正常。

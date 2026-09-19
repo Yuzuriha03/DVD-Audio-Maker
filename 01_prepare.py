@@ -3,7 +3,7 @@
 """
 步骤1:扫描音源 + 专辑归一化 + 分组排序 + 解码完整性校验。
 
-运行于 WSL 内部(使用 WSL 的 ffmpeg/ffprobe)。
+运行于 WSL 内部(使用 ffmpeg/ffprobe)。
 
 逻辑:
 1. 扫描音源目录全部 FLAC 和 M4A,用 ffprobe 读取采样率/位深/声道/发布日/曲序/标题/专辑
@@ -15,23 +15,21 @@
    返回 0,必须显式校验,见下)
 5. 生成 manifest.json 与解码完整性报告
 
-为什么不生成 WAV:
-  实测「源 --[重采样]--> WAV --> MLP」与「源 --[重采样]--> MLP」的输出**逐字节一致**
-  (48k 直通与 44.1k→48k soxr 重采样均已验证)。WAV 只是中转,去掉后可省下约 9 GB
-  落盘与一轮读写 I/O。MLP 编码在 02_build.py 中直接对源文件进行。
+本步骤**不产出音频中间文件** —— MLP 编码在 02_build.py 中直接对源文件进行。
 
 关于校验:
-  ALAC 等格式若源文件损坏,ffmpeg 会打印
+  ALAC 等格式若源文件有问题,ffmpeg 会打印
   "Error submitting packet to decoder / invalid element channel count"
   但退出码仍为 0,单次丢 4096 采样。若不校验,MLP/ISO 会“全部成功”而实际缺失音频。
-  MLP 容器**不记录时长**(ffprobe 返回 N/A),无法像 WAV 那样回读,故改用 astats:
+
+  MLP 容器**不记录时长**(ffprobe 返回 N/A),无法靠回读时长来核验,故改用 astats:
   在同一次解码中打印 "Number of samples",与「源声明时长 × 目标采样率」比对。
   判定规则:
     - 出现解码错误关键字            -> FAIL
     - 采样数缺失 > 50 ms 对应值     -> FAIL
     - 采样数差异 > 5 ms 对应值      -> WARN,照常继续
     - 读到采样数(校验手段本身失效) -> FAIL,不静默通过
-  报告写入 /root/dvda-build/decode_report.txt
+  报告写入 <BUILD_DIR>/decode_report.txt
 """
 import os
 import sys
@@ -41,26 +39,24 @@ import glob
 import subprocess
 from collections import defaultdict
 
-# ---- 路径配置（均可用环境变量覆盖） ----
-SRC = os.environ.get("DVDA_SRC", "/mnt/c/Users/yyz57/Music/鸣潮先约电台")  # 音源(只读)
-MANIFEST = os.environ.get("DVDA_MANIFEST",
-                          "/root/dvda-build/manifest.json")     # 清单输出
-REPORT = os.environ.get("DVDA_REPORT",
-                        "/root/dvda-build/decode_report.txt")   # 解码完整性报告
-# ALAC 修复输出目录（不修改原文件）
-ALAC_FIX_DIR = os.environ.get("DVDA_ALAC_FIX_DIR",
-                              "/root/dvda-build/alacfix")
-
-# ---- ALAC「未压缩帧缺 END 标记」修复 ----
-# Apple 编码器周期性插入未压缩帧（raw PCM，用于随机访问），其后应写 END 标记
-# (3 位 111)，但 Apple 写的是 000；ffmpeg 于是读成 SCE(单声道)元素，第二次循环
-# 声道数溢出报错并丢整帧（每次 4096 采样 ≈ 85 ms @48k），而文件本身完全正常。
-# 详见 dvda_scripts/alac_endfix.py 与 docs/TROUBLESHOOTING.md。
+# 同目录的配置加载器与 ALAC 修复模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dvda_config import load as load_config          # noqa: E402
+
 try:
     import alac_endfix
 except ImportError:
     alac_endfix = None
+
+# ---- 读取配置（config.sh / 环境变量，见 dvda_config.py） ----
+CFG = load_config()
+SRC = CFG.src                      # 音源（只读）
+MANIFEST = CFG.manifest            # 清单输出
+REPORT = CFG.report                # 解码完整性报告
+ALAC_FIX_DIR = CFG.alac_fix_dir    # ALAC 修复产物（不修改原文件）
+FFMPEG = CFG.ffmpeg
+FFPROBE = CFG.ffprobe
+ALAC_REPAIR = CFG.alac_repair      # 是否自动修复 Apple ALAC 缺 END 标记
 
 # ---- 解码完整性校验参数 ----
 # 背景:ffmpeg 在 ALAC 等解码出错时仍会返回退出码 0,并把损坏处静默跳过,
@@ -79,12 +75,8 @@ DECODE_ERR_KEYWORDS = (
     "not yet implemented",
 )
 SAMPLES_RE = re.compile(r"Number of samples:\s*(\d+)")
-LOSS_ERROR_S = 0.05    # 采样数缺失超过 50 ms 对应值 -> 失败
-LOSS_WARN_S = 0.005    # 采样数差异超过 5 ms 对应值  -> 警告
-
-# ffmpeg / ffprobe 可执行文件（可用环境变量覆盖）
-FFMPEG = os.environ.get("DVDA_FFMPEG", "ffmpeg")
-FFPROBE = os.environ.get("DVDA_FFPROBE", "ffprobe")
+LOSS_ERROR_S = CFG.loss_error_s    # 采样数缺失超过此秒数 -> 失败
+LOSS_WARN_S = CFG.loss_warn_s      # 采样数差异超过此秒数 -> 警告
 
 
 def ffprobe_meta(path):
@@ -201,8 +193,10 @@ def try_alac_repair(path, expected, src_rate=None):
 
     成功时返回 (修复后路径, 补帧数, 逐帧说明)；不适用或未改善时返回
     (None, 0, [])。原文件不做任何修改，修复产物写入 ALAC_FIX_DIR。
+
+    可用 config.sh 的 DVDA_ALAC_REPAIR=0 关闭（届时仅报告，不修复）。
     """
-    if alac_endfix is None:
+    if alac_endfix is None or not ALAC_REPAIR:
         return None, 0, []
     if not path.lower().endswith((".m4a", ".mp4", ".alac")):
         return None, 0, []
@@ -332,8 +326,6 @@ def main():
             print(f"  !! [FAIL] 组 {sr}/{bits} 声道数不一致: {desc}")
 
     # 4. 解码完整性校验(只解码不落盘) + 组装 manifest
-    #    不再产出 WAV:MLP 编码在 02_build.py 中直接对源文件进行
-    #    (已验证「源→MLP」与「源→WAV→MLP」输出逐字节一致)
     issues = list(chan_issues)   # 校验发现的问题
     checked = 0
     manifest = {}
@@ -345,7 +337,7 @@ def main():
             # 用 splitext 去掉扩展名(兼容 .flac / .m4a 等任意长度扩展名)
             safe = re.sub(r'[<>:"/\\|?*]', "_",
                           os.path.splitext(os.path.basename(t["path"]))[0])
-            # MLP 缓存键:与旧 WAV 路径派生结果保持一致,可复用既有缓存
+            # MLP 缓存键由「组名 / 序号 / 曲名」组成；02_build.py 据此命名缓存文件
             name = f"{gname}/{i:04d}__{safe}"
             rto = sr if t["path"] in resample else None
 

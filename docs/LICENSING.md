@@ -83,8 +83,8 @@ MLP（Meridian Lossless Packing）是 **Dolby** 拥有的技术。FFmpeg 的 MLP
 被标记为 **experimental（实验性）** —— 这正是必须加 `-strict -2` 才能使用的原因：
 
 ```bash
-ffmpeg -i input.wav -c:a mlp -strict -2 output.mlp
-#                         ^^^^^^^^^^^^ 不加会报 "Experimental feature"
+ffmpeg -i input.flac -c:a mlp -strict -2 output.mlp
+#                          ^^^^^^^^^^^^ 不加会报 "Experimental feature"
 ```
 
 dvda-author 自身的帮助文本也明确写有：

@@ -249,7 +249,10 @@ rep(
     "avcodec_close → avcodec_free_context",
 )
 
-# ---------- 8. WAV 头中的 channel_layout（仅提取路径使用） ----------
+# ---------- 8. 声道掩码 dwChannelMask（仅提取路径使用） ----------
+# cga2wav_channels[] 是 dvda-author 自己的映射表：把 CGA（声道组分配）序号
+# 映射到标准的声道掩码位。原代码读 codecpar->channel_layout（已废弃的位掩码
+# 字段），FFmpeg 8 改为 ch_layout.nb_channels（声道数）。
 rep(
     """          header.dwChannelMask   = (codecpar->channel_layout < 21
                                     && codecpar->channel_layout > 0) ?
