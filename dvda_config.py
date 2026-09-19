@@ -42,6 +42,10 @@ DEFAULTS = {
     "DVDA_GROUP_TRACK_LIMIT": "64",
     "DVDA_DISC_BYTES": "",          # 留空用 DVD5_BYTES
 
+    # MLP 来源
+    "DVDA_MLP_SOURCE": "ffmpeg",    # ffmpeg | external
+    "DVDA_MLP_EXTERNAL_DIR": "",
+
     # 工具
     "DVDA_AUTHOR": "/root/dvda-author-mlp8/src/dvda-author-dev",
     "DVDA_MKISOFS": "/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs",
@@ -282,6 +286,22 @@ class Config:
         v = self.get_int("DVDA_DISC_BYTES")
         return v if v else DVD5_BYTES
 
+    # ---- MLP 来源 ----
+    @property
+    def mlp_source(self):
+        """MLP 从哪来："ffmpeg"（本工具链编码）或 "external"（外部产出）。"""
+        v = (self.get("DVDA_MLP_SOURCE") or "ffmpeg").strip().lower()
+        return v if v in ("ffmpeg", "external") else "ffmpeg"
+
+    @property
+    def mlp_external_dir(self):
+        """外部 MLP 根目录（仅 mlp_source == external 时有意义）。"""
+        return (self.get("DVDA_MLP_EXTERNAL_DIR") or "").strip().rstrip("/")
+
+    @property
+    def use_external_mlp(self):
+        return self.mlp_source == "external"
+
     # ---- 校验 ----
     @property
     def loss_error_s(self):
@@ -395,6 +415,8 @@ def main():
             ("DVDA_MAX_DISCS", str(cfg.max_discs)),
             ("DVDA_GROUP_TRACK_LIMIT", str(cfg.group_track_limit)),
             ("DVDA_DISC_BYTES", str(cfg.disc_bytes)),
+            ("DVDA_MLP_SOURCE", cfg.mlp_source),
+            ("DVDA_MLP_EXTERNAL_DIR", cfg.mlp_external_dir),
             ("DVDA_LOSS_ERROR_S", str(cfg.loss_error_s)),
             ("DVDA_LOSS_WARN_S", str(cfg.loss_warn_s)),
             ("DVDA_ALAC_REPAIR", "1" if cfg.alac_repair else "0"),
@@ -419,6 +441,15 @@ def main():
                       ("alac_fix_dir", cfg.alac_fix_dir),
                       ("build_log", cfg.build_log)):
         print(f"  {name:<14} = {val}")
+    print()
+    print("MLP 来源:")
+    if cfg.use_external_mlp:
+        d = cfg.mlp_external_dir
+        ok = "✔" if (d and os.path.isdir(d)) else "✗ 目录不存在"
+        print(f"  external      = {d or '(未设 DVDA_MLP_EXTERNAL_DIR)'}   {ok}")
+        print("                  （跳过编码；按 <外部目录>/<专辑目录>/<曲名>.mlp 取文件）")
+    else:
+        print(f"  ffmpeg        = 本工具链自行编码 -> {cfg.mlp_dir}")
     print()
     print("工具:")
     for name, val in (("dvda-author", cfg.dvda), ("mkisofs", cfg.mkisofs),
