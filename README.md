@@ -238,7 +238,7 @@ out/ tmp/ iso/    出盘中间目录
 > 为什么 dry-run 要单独写一份日志：`--dry-run` 不执行 dvda-author，日志里
 > 不会有轨道表。若覆盖 `build.log`，`audit_disc.py` / `verify.sh` 就再也取不到
 > 上次真出盘的审计依据，会把正确无误的 ISO 判为失败（详见
-> [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 13 节）。
+> [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 12 节）。
 
 用环境变量临时覆盖（不改文件）：
 
