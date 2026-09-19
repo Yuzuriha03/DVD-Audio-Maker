@@ -31,7 +31,7 @@ DEFAULTS = {
     # 路径
     "DVDA_SRC": "",
     "DVDA_FINAL_DIR": "",
-    "DVDA_BUILD_DIR": "/root/dvda-build",
+    "DVDA_BUILD_DIR": "/home/yyz57/dvda/build",
 
     # 光盘标识
     "DVDA_TITLE": "DVD-Audio",
@@ -46,17 +46,13 @@ DEFAULTS = {
     "DVDA_MLP_SOURCE": "ffmpeg",    # ffmpeg | external
     "DVDA_MLP_EXTERNAL_DIR": "",
 
-    # 编码参数对齐（仅 ffmpeg 模式）
-    "DVDA_MLP_MAX_INTERVAL": "",    # 空 = 编码器默认(16)；8 = 与 SurCode 一致
-    "DVDA_MLP_ALIGN": "0",          # 1 = 编码后把头部对齐到 SurCode
-
     # 工具
-    "DVDA_AUTHOR": "/root/dvda-author-mlp8/src/dvda-author-dev",
-    "DVDA_MKISOFS": "/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs",
+    "DVDA_AUTHOR": "/home/yyz57/dvda/tools/dvda-author-mlp8/src/dvda-author-dev",
+    "DVDA_MKISOFS": "/home/yyz57/dvda/tools/dvda-author/local.ubuntu.20.10/bin/mkisofs",
     "DVDA_FFMPEG": "ffmpeg",
     "DVDA_FFPROBE": "ffprobe",
-    "DVDA_AUTHOR_SRC": "/root/dvda-author-mlp8",
-    "DVDA_AUTHOR_ORIG": "/opt/dvda-author",
+    "DVDA_AUTHOR_SRC": "/home/yyz57/dvda/tools/dvda-author-mlp8",
+    "DVDA_AUTHOR_ORIG": "/home/yyz57/dvda/tools/dvda-author",
 
     # 校验
     "DVDA_LOSS_ERROR_S": "0.05",
@@ -306,21 +302,6 @@ class Config:
     def use_external_mlp(self):
         return self.mlp_source == "external"
 
-    # ---- 编码参数对齐（仅 ffmpeg 模式） ----
-    @property
-    def mlp_max_interval(self):
-        """major sync 之间最多几个 access unit；0 表示用编码器默认(16)。"""
-        v = self.get_int("DVDA_MLP_MAX_INTERVAL")
-        if v is None or v <= 0:
-            return 0
-        return max(8, min(v, 128))          # 编码器允许 8..128
-
-    @property
-    def mlp_align(self):
-        """是否在编码后把 MLP 头部对齐到参考实现（见 mlp_align.py）。"""
-        return (self.get("DVDA_MLP_ALIGN") or "0").strip() not in (
-            "0", "", "no", "off", "false")
-
     # ---- 校验 ----
     @property
     def loss_error_s(self):
@@ -436,8 +417,6 @@ def main():
             ("DVDA_DISC_BYTES", str(cfg.disc_bytes)),
             ("DVDA_MLP_SOURCE", cfg.mlp_source),
             ("DVDA_MLP_EXTERNAL_DIR", cfg.mlp_external_dir),
-            ("DVDA_MLP_MAX_INTERVAL", str(cfg.mlp_max_interval)),
-            ("DVDA_MLP_ALIGN", "1" if cfg.mlp_align else "0"),
             ("DVDA_LOSS_ERROR_S", str(cfg.loss_error_s)),
             ("DVDA_LOSS_WARN_S", str(cfg.loss_warn_s)),
             ("DVDA_ALAC_REPAIR", "1" if cfg.alac_repair else "0"),
@@ -471,10 +450,8 @@ def main():
         print("                  （跳过编码；按 <外部目录>/<专辑目录>/<曲名>.mlp 取文件）")
     else:
         print(f"  ffmpeg        = 本工具链自行编码 -> {cfg.mlp_dir}")
-        itv = cfg.mlp_max_interval or 16
-        print(f"  max_interval  = {itv}"
-              + ("   （与 SurCode 一致）" if itv == 8 else "   （编码器默认）"))
-        print(f"  头部对齐      = {'开（对齐到 SurCode）' if cfg.mlp_align else '关'}")
+        print("                  头部对齐 = 强制"
+              "（-max_interval 8 + 补 END_OF_STREAM，对齐 SurCode）")
     print()
     print("工具:")
     for name, val in (("dvda-author", cfg.dvda), ("mkisofs", cfg.mkisofs),

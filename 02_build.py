@@ -73,27 +73,29 @@ NUM_DISCS = CFG.max_discs             # 目标盘数；0 = 不限制
 USE_EXTERNAL_MLP = CFG.use_external_mlp
 MLP_EXTERNAL_DIR = CFG.mlp_external_dir
 
-# 编码参数对齐（仅 ffmpeg 模式）
+# MLP 头部对齐（ffmpeg 模式）——**自动且强制，没有开关也不需参数**。
 #
-# MAX_INTERVAL: major sync（解码器的重同步点）之间最多隔几个 access unit。
-#   编码器默认 16；参考实现 SurCode 用 8。设 8 后实测 access unit 数与
-#   major sync 数与 SurCode **完全相同**（每 8.0 个一个），代价约 +3.9% 体积。
-# ALIGN: 编码后做一次纯字节修补，把头部对齐到 SurCode（见 mlp_align.py）：
-#   peak_bitrate 用向上取整（使 (raw*sr+8)>>4 往返精确）、
-#   extended_substream_info 置 1、重算 major sync 校验和、
-#   末尾补 END_OF_STREAM 并修正 AU 长度/奇偶与子流校验。
-#   不重编码，音频逐字节不变。
-MLP_MAX_INTERVAL = CFG.mlp_max_interval     # 0 = 用编码器默认
-MLP_ALIGN = CFG.mlp_align
+# 只要走 ffmpeg 编码，就必然做这三件事：
+#   1. `-max_interval 8`：major sync（解码器重同步点）间隔对齐参考实现 SurCode。
+#      编码器默认 16；设 8 后实测 access unit 数与 major sync 数与 SurCode
+#      **完全相同**（每 8.0 个一个）。代价：体积约 +3.9%。
+#   2. 编码后调 mlp_align.align_bytes() 做纯字节修补（不重编码）：
+#      peak_bitrate 改向上取整（使 (raw*sr+8)>>4 往返精确）、
+#      extended_substream_info 置 1、重算 major sync 校验和、
+#      末尾补 END_OF_STREAM 并修正 AU 长度/奇偶与子流校验。
+#   3. 对齐后自检（校验和/奇偶/子流/结束标记全重算校验），不过就报错。
+#
+# 为什么不给开关：ffmpeg 的 mlp 编码器不写 END_OF_STREAM(0xD234D234)，
+# 而参考实现会写 —— 关掉只会产出更不规范的流；而修补带自检，
+# 不存在“关了更安全”的情形。
+# 外部模式（DVDA_MLP_SOURCE=external）不经过这段代码，不受影响。
+MLP_MAX_INTERVAL = 8
 
 # 缓存命中统计（每轮重置）
 _cache_stats = {"hit": 0, "stale": 0}
 
-if MLP_ALIGN:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import mlp_align
-else:
-    mlp_align = None
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mlp_align                                       # noqa: E402
 
 _SYNC_MAJOR = b"\xf8\x72\x6f"
 _EOS = b"\xd2\x34\xd2\x34"
@@ -242,26 +244,24 @@ def _mlp_cache_ok(path):
     if not head.startswith(b"\x00\x00\x00\x00") and head[4:7] != _SYNC_MAJOR:
         return False
 
-    # 1) major sync 刷新间隔
-    want_itv = MLP_MAX_INTERVAL or 16
+    # 1) major sync 刷新间隔（恒为 MLP_MAX_INTERVAL）
     iv = _mlp_interval(head)
-    if iv is not None and iv != want_itv:
+    if iv is not None and iv != MLP_MAX_INTERVAL:
         return False
 
-    # 2) 头部字段与末尾结束标记（仅在开启对齐时校验）
-    if MLP_ALIGN and mlp_align is not None:
-        if head[4:7] != _SYNC_MAJOR:
-            return False
-        b = head[4:32]
-        ratebits = (b[5] >> 4) & 0x0F
-        sr = (44100 if (ratebits & 8) else 48000) << (ratebits & 7)
-        v = int.from_bytes(b[14:16], "big")
-        if (v & 0x7FFF) != mlp_align.peak_bitrate_raw(sr):
-            return False
-        if (b[16] & 3) != 1:
-            return False
-        if _EOS not in tail:
-            return False
+    # 2) 头部字段与末尾结束标记（对齐是强制的，故总是校）
+    if head[4:7] != _SYNC_MAJOR:
+        return False
+    b = head[4:32]
+    ratebits = (b[5] >> 4) & 0x0F
+    sr = (44100 if (ratebits & 8) else 48000) << (ratebits & 7)
+    v = int.from_bytes(b[14:16], "big")
+    if (v & 0x7FFF) != mlp_align.peak_bitrate_raw(sr):
+        return False
+    if (b[16] & 3) != 1:
+        return False
+    if _EOS not in tail:
+        return False
     return True
 
 
@@ -293,9 +293,8 @@ def ensure_mlp(track):
         # MLP 只存音频,容器不带标签,无需 -map_metadata -1
         cmd += ["-af", f"aresample={track['resample_to']}:resampler=soxr"]
     cmd += ["-sample_fmt", mlp_sample_fmt(track["bits"])]
-    # major sync 间隔：对齐参考实现（见文件头的说明）
-    if MLP_MAX_INTERVAL:
-        cmd += ["-max_interval", str(MLP_MAX_INTERVAL)]
+    # major sync 间隔：固定对齐参考实现（见文件头说明）
+    cmd += ["-max_interval", str(MLP_MAX_INTERVAL)]
     cmd += ["-c:a", "mlp", "-strict", "-2", mlp]
     r = run(cmd)
     if r.returncode != 0 or not os.path.exists(mlp):
@@ -310,9 +309,8 @@ def ensure_mlp(track):
             f"MLP 参数不符: {track['title']} 期望 {exp[0]}Hz/{exp[1]}bit, "
             f"实际 {got[0]}Hz/{got[1]}bit  ({track['src']})")
 
-    # 头部对齐（不重编码；失败则删掉重来不如直接报错）
-    if MLP_ALIGN:
-        _align_in_place(mlp)
+    # 头部对齐（无条件执行；不重编码。自检不过就报错，不交出未验证的流）
+    _align_in_place(mlp)
     return mlp
 
 
@@ -737,10 +735,8 @@ def main():
                   "改为核对采样数，不强行逐字节比对。")
     else:
         print("开始无损 MLP 编码（已缓存则跳过）...")
-        if MLP_ALIGN or MLP_MAX_INTERVAL:
-            print("  编码参数：max_interval=%s，头部对齐=%s"
-                  % (MLP_MAX_INTERVAL or 16,
-                     "开" if MLP_ALIGN else "关"))
+        print("  头部对齐：自动（-max_interval %d + 补 END_OF_STREAM，"
+              "对齐 SurCode）" % MLP_MAX_INTERVAL)
         done = 0
         for t in tracks:
             t["mlp"] = ensure_mlp(t)
