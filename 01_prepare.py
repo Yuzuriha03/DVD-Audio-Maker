@@ -119,7 +119,11 @@ def ffprobe_meta(path):
                 pass
         elif line.startswith("TAG:") and "=" in line:
             k, v = line[4:].split("=", 1)
-            tags[k] = v
+            # 键名→小写：Vorbis 注释的字段名**大小写不敏感**，而 MP4 标签习惯
+            # 小写、FLAC 习惯大写（如 ALBUM vs album）。若按原样精确匹配，
+            # 同一个逻辑标签会因来源不同而读不到（曾把整张专辑的 album 读成空，
+            # 导致专辑被拆散、归一化静默跳过）。
+            tags[k.lower()] = v
 
     # 优先用流级 duration_ts * time_base,回退到容器 duration
     if dts and tb and "/" in tb:
@@ -132,7 +136,7 @@ def ffprobe_meta(path):
     if not d["dur"] and fmt_dur:
         d["dur"] = fmt_dur
 
-    d["date"] = tags.get("date") or tags.get("RELEASETIME") or ""
+    d["date"] = tags.get("date") or tags.get("releasetime") or ""
     d["track"] = tags.get("track", "")
     d["title"] = tags.get("title", os.path.splitext(os.path.basename(path))[0])
     d["album"] = tags.get("album", "")
