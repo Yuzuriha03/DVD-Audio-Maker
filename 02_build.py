@@ -10,17 +10,13 @@
 2. 每曲直接用 FFmpeg 对**源文件**编码为 MLP(Meridian Lossless Packing, 无损),
    需要归一化的曲目在同一命令内完成 soxr 重采样;结果缓存复用
 3. 全部曲目按 (发布日, 曲序) 全局排序
-4. 按专辑边界贪心分盘:每张不超过单层 DVD5 上限(专辑绝不跨盘、绝不拆散)
+4. 按专辑边界分盘:每张不超过单盘上限(专辑绝不跨盘、绝不拆散)
 5. 每张盘内部按 (采样率, 位深) 分组(DVD-Audio 同组内参数须一致)
 6. 每组超过 GROUP_TRACK_LIMIT 轨时按专辑边界再拆一组
    (dvda-author 的 ATSI 表缓冲仅 3 扇区,轨数过多会栈溢出)
-7. dvda-author 以 MLP 为输入生成 AUDIO_TS + mkisofs 打包 + 复制到 D 盘
+7. dvda-author 以 MLP 为输入生成 AUDIO_TS + mkisofs 打包 + 复制到输出目录
 8. 输出 mlp_index.json(MLP→源文件/时长/重采样),供 verify.sh 与
    verify_pts_length.py 使用(MLP 容器不记录时长,无法回读)
-
-为什么不经过 WAV:
-  实测「源 --[重采样]--> MLP」与「源 --[重采样]--> WAV --> MLP」输出逐字节一致,
-  WAV 仅为中转。去掉后可省约 9 GB 落盘与一轮读写 I/O。
 
 注: 使用自编译的 dvda-author(链接系统 FFmpeg 8, 已适配 ch_layout 等 API),
     可对 24-bit 音频做无损 MLP 编码。
@@ -32,41 +28,36 @@ import glob
 import json
 import shutil
 import subprocess
+import sys
+import time
 from collections import OrderedDict
 
-# ---- 路径配置（均可用环境变量覆盖） ----
-_E = os.environ.get
-BUILD_DIR = _E("DVDA_BUILD_DIR", "/root/dvda-build")
-MANIFEST_CANDIDATES = [
-    _E("DVDA_MANIFEST", os.path.join(BUILD_DIR, "manifest.json")),
-    "/mnt/c/Users/yyz57/dvda_work2/manifest.json",
-]
-OUT_ROOT = _E("DVDA_OUT_ROOT", os.path.join(BUILD_DIR, "out"))
-TMP_ROOT = _E("DVDA_TMP_ROOT", os.path.join(BUILD_DIR, "tmp"))
-ISO_DIR = _E("DVDA_ISO_DIR", os.path.join(BUILD_DIR, "iso"))
-FINAL_DIR = _E("DVDA_FINAL_DIR", "/mnt/d/鸣潮DVD_Audio")
-MLP_DIR = _E("DVDA_MLP_DIR", os.path.join(BUILD_DIR, "mlp"))   # MLP 缓存目录
-MLP_INDEX = _E("DVDA_MLP_INDEX",
-               os.path.join(BUILD_DIR, "mlp_index.json"))  # MLP → 源/时长/重采样
-ISO_PREFIX = _E("DVDA_ISO_PREFIX", "Wuthering_Waves_Singles_EPs")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dvda_config import load as load_config          # noqa: E402
+from dvda_config import (DVD5_BYTES, MAX_TRACKS,     # noqa: E402
+                         AOB_OVERHEAD, ISO_SAFETY)
+
+# ---- 读取配置（config.sh / 环境变量，见 dvda_config.py） ----
+CFG = load_config()
+BUILD_DIR = CFG.build_dir
+MANIFEST = CFG.manifest
+OUT_ROOT = CFG.out_root
+TMP_ROOT = CFG.tmp_root
+ISO_DIR = CFG.iso_dir
+FINAL_DIR = CFG.final_dir
+MLP_DIR = CFG.mlp_dir                 # MLP 缓存目录
+MLP_INDEX = CFG.mlp_index             # MLP → 源/时长/重采样
 
 # 带 MLP 编码支持的 dvda-author（链接系统 FFmpeg 8，已迁移 API）
-DVDA = _E("DVDA_AUTHOR", "/root/dvda-author-mlp8/src/dvda-author-dev")
-MKISOFS = _E("DVDA_MKISOFS",
-             "/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs")
-FFMPEG = _E("DVDA_FFMPEG", "ffmpeg")
+DVDA = CFG.dvda
+MKISOFS = CFG.mkisofs
+FFMPEG = CFG.ffmpeg
 
-MAX_TRACKS = 99              # DVD-Audio 每组协议上限
 # dvda-author 的 ATSI 表缓冲固定为 3 扇区(6144 字节)，每轨约 52 字节，
-# 超过约 70 轨会栈溢出（stack smashing）。这里取 64 作为安全上限，
-# 超出时按专辑边界再拆一个组（专辑仍不拆散）。
-GROUP_TRACK_LIMIT = 64
-DISC_CAP = 4.7 * 1024**3     # 单层 DVD 容量(字节,十进制 4.7GB)
-DVD5_BYTES = 4707319808      # 单层 DVD 物理上限(4.37 GiB)
-# MLP 进入 AOB 后的实测开销系数（实测 80,021,504 / 78,337,762 = 1.02150）
-AOB_OVERHEAD = 1.025         # 留少量安全余量
-ISO_SAFETY = 8 * 1024**2     # ISO 文件系统与 IFO 预留
-NUM_DISCS = 2                # 目标盘数
+# 超过约 70 轨会栈溢出（stack smashing）。config.sh 里可调，上限 70。
+GROUP_TRACK_LIMIT = CFG.group_track_limit
+DISC_LIMIT_BYTES = CFG.disc_bytes     # 单盘容量（默认单层 DVD5）
+NUM_DISCS = CFG.max_discs             # 目标盘数；0 = 不限制
 
 
 def to_wsl(p):
@@ -76,9 +67,48 @@ def to_wsl(p):
     return p
 
 
-def run(cmd):
-    print("+", " ".join(cmd))
-    return subprocess.run(cmd)
+def run(cmd, log_output=False):
+    """执行命令、回显，并把输出一并写入构建日志。
+
+    **为什么要写日志**：verify 侧的 `audit_disc.py` 与
+    `verify_pts_length.py` 需要从日志里解析两样东西 ——
+      · dvda-author 的命令行（据此得知每张盘有几个组、轨序如何）
+      · dvda-author 打印的轨道表（First_Sect / Last_Sect / PTS_length）
+    因此无论通过 `build.sh` 还是直接运行本脚本，日志都必须落盘。
+    `build.sh` 只是额外做了一份终端镜像。
+
+    log_output=True 时捕获 stdout/stderr 并同时写到日志与终端
+    （用于 dvda-author —— 它的轨道表在 stdout）。
+    """
+    line = "+ " + " ".join(cmd)
+    print(line)
+    logf = None
+    try:
+        os.makedirs(BUILD_DIR, exist_ok=True)
+        logf = open(CFG.build_log, "a", encoding="utf-8")
+        logf.write(line + "\n")
+        logf.flush()
+    except OSError:
+        logf = None
+
+    if not log_output:
+        r = subprocess.run(cmd)
+        if logf:
+            logf.close()
+        return r
+
+    # 捕获输出：边打印边写日志
+    r = subprocess.run(cmd, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT)
+    text = r.stdout.decode("utf-8", errors="replace")
+    sys.stdout.write(text)
+    sys.stdout.flush()
+    if logf:
+        logf.write(text)
+        logf.write("\n")
+        logf.flush()
+    # 返回一个带 returncode 的轻量对象即可（调用方只用到 returncode）
+    return r if False else type("R", (), {"returncode": r.returncode})()
 
 
 def ffprobe_mlp(path):
@@ -107,8 +137,8 @@ def mlp_path_for(track):
     """MLP 缓存文件路径。
 
     缓存键由 01_prepare.py 给出(track["name"],形如 group_48000_24/0001__标题),
-    与旧版「WAV 路径去掉 /root/dvda-build/wav/ 后把 / 换成 __」的结果完全一致,
-    因此可以复用此前已生成的 MLP 缓存。
+    这里把 / 换成 __ 得到平坦的文件名。缓存可以跨次复用 —— 源文件未变时
+    不重新编码，换源后按 mtime 自动失效。
     """
     return os.path.join(MLP_DIR, track["name"].replace("/", "__") + ".mlp")
 
@@ -117,11 +147,12 @@ def mlp_sample_fmt(bits):
     """按目标位深给出 MLP 编码器的采样格式名。
 
     MLP 编码器只接受 planer 格式:s16p(16-bit) / s32p(24-bit)。
-    必须显式指定,否则 FFmpeg 会沿用源的位深:
-      - 44.1k/16 的源重采样到 48k 后仍是 16-bit
-      - 会被编码成 16-bit MLP,混进 24-bit 的音频组
-        (旧流程靠 -c:a pcm_s24le 中转间接强制了位深,直连后会丢失该约束)
-    实测:加此参数后输出与旧「WAV + pcm_s24le」路径逐字节一致。
+
+    **必须显式指定**，否则 FFmpeg 会沿用源的位深：例如 44.1k/16 的源经
+    aresample 重采样到 48k 后**仍是 16-bit**（aresample 只改采样率，
+    不改位深），于是被编成 16-bit MLP 混进 24-bit 的音频组。
+    dvda-author 遇到这种参数不一致**不会报错**，照样出盘，
+    所以必须在这里强制指定位深，并在编码后复核（见 ensure_mlp）。
     """
     return "s16p" if bits == 16 else "s32p"
 
@@ -192,9 +223,78 @@ def group_by_rate(disc_albums):
     return result
 
 
-def build_disc(disc_name, volid, groups):
-    out = os.path.join(OUT_ROOT, disc_name)
-    tmp = os.path.join(TMP_ROOT, disc_name)
+def split_discs(album_list, disc_limit, num_discs):
+    """按专辑边界分盘，专辑绝不拆散。
+
+    album_list : [(专辑名, MLP 字节数, 曲目列表), ...]（保持全局顺序）
+    disc_limit : 单盘容量上限（字节，已扣除 ISO 预留）
+    num_discs  : 目标盘数；0 表示不限制（容量优先，尽量填满每张）
+
+    返回 (discs, msgs)：
+      discs = [[(专辑名, 曲目列表), ...], ...]   每张盘的专辑序列
+      msgs  = 面向用户的提示行
+
+    分盘策略：
+      · 指定盘数时，按「内容总量 / 盘数」均分，在专辑边界切分
+        —— 这样各盘容量接近，不会出现「前几张塞满、最后一张很空」
+      · 若均分目标超出单盘上限，改为容量优先，并提示至少需要几张
+      · 未指定盘数时直接容量优先
+    """
+    msgs = []
+    total = sum(sz for _, sz, _ in album_list)
+    total_aob = total * AOB_OVERHEAD
+    cnt = len(album_list)
+
+    if num_discs and num_discs > 0:
+        target = total_aob / num_discs
+        if target > disc_limit:
+            n_min = int(total_aob / disc_limit) + 1
+            msgs.append(
+                f"[分盘] 内容估 AOB {total_aob/1024**3:.2f} GiB，"
+                f"按 {num_discs} 张均分需 {target/1024**3:.2f} GiB/张，"
+                f"超出单盘上限 {disc_limit/1024**3:.2f} GiB")
+            msgs.append(f"[分盘] 至少需要 {n_min} 张盘；已改为容量优先")
+            target = disc_limit
+    else:
+        target = disc_limit
+
+    discs = []
+    cur = []
+    cur_size = 0
+    for album, sz, trks in album_list:
+        if cur and (cur_size + sz) * AOB_OVERHEAD > target:
+            discs.append(cur)
+            cur, cur_size = [], 0
+        cur.append((album, trks))
+        cur_size += sz
+    if cur:
+        discs.append(cur)
+
+    over = 0
+    for i, d in enumerate(discs, 1):
+        sz = sum(t["mlp_size"] for _, trks in d for t in trks)
+        aob = sz * AOB_OVERHEAD
+        if aob > disc_limit:
+            over += 1
+            msgs.append(f"[分盘][警告] 第 {i} 盘估 AOB {aob/1024**3:.2f} GiB "
+                        f"超出上限 {disc_limit/1024**3:.2f} GiB —— "
+                        f"单张专辑过大且不可拆分，请减少该专辑曲目")
+    if not over:
+        msgs.append(f"[分盘] {cnt} 张专辑 -> {len(discs)} 张盘，"
+                    f"每张均在 {disc_limit/1024**3:.2f} GiB 以内 ✔")
+    return discs, msgs
+
+
+def build_disc(disc_index, groups):
+    """生成第 disc_index 张盘（从 1 起）并打包为 ISO。
+
+    盘标识与卷标均取自 config.sh（DVDA_TITLE / DVDA_ISO_PREFIX）。
+    临时目录用 ASCII 名（discN），避开中文路径在某些工具链下的编码问题。
+    """
+    tag = f"disc{disc_index}"
+    volid = CFG.volid(disc_index)
+    out = os.path.join(OUT_ROOT, tag)
+    tmp = os.path.join(TMP_ROOT, tag)
     for d in (out, tmp):
         if os.path.exists(d):
             shutil.rmtree(d)
@@ -205,9 +305,11 @@ def build_disc(disc_name, volid, groups):
         args += ["-g"] + [f["mlp"] for f in files]
     # 注意：非 core 构建下 -9/-X 会触发 make_absolute 返回 NULL 而崩溃，故不传。
     args += ["-o", out, "-D", tmp, "-W", "-P0", "-n"]
-    r = run(args)
+    # log_output=True：dvda-author 会把轨道表打印到 stdout，
+    # 校验脚本要读它，所以这里捕获并写入构建日志。
+    r = run(args, log_output=True)
     if r.returncode != 0:
-        print(f"[FAIL] dvda-author 生成 {disc_name} 失败")
+        print(f"[FAIL] dvda-author 生成第 {disc_index} 盘失败")
         return False
 
     # 末轨最后一个 pack 可能少写几字节填充，导致 AOB 不是 2048 的整数倍。
@@ -221,30 +323,30 @@ def build_disc(disc_name, volid, groups):
                 fp.write(b"\x00" * (2048 - rem))
             print(f"[补齐] {os.path.basename(aob)} 补 {2048 - rem} 字节至扇区边界")
 
-    iso = os.path.join(ISO_DIR, f"{disc_name}.iso")
+    iso = os.path.join(ISO_DIR, f"{tag}.iso")
     os.makedirs(ISO_DIR, exist_ok=True)
     if os.path.exists(iso):
         os.remove(iso)
     r = run([MKISOFS, "-dvd-audio", "-V", volid, "-o", iso, out])
     if r.returncode != 0:
-        print(f"[FAIL] mkisofs 打包 {disc_name} 失败")
+        print(f"[FAIL] mkisofs 打包第 {disc_index} 盘失败")
         return False
 
     iso_size = os.path.getsize(iso)
-    if iso_size <= DVD5_BYTES:
-        print(f"[容量] {disc_name} ISO {iso_size} 字节, "
-              f"余 {DVD5_BYTES - iso_size} 字节, 可刻入 DVD5")
+    limit = DISC_LIMIT_BYTES
+    if iso_size <= limit:
+        print(f"[容量] 第 {disc_index} 盘 ISO {iso_size:,} 字节, "
+              f"余 {limit - iso_size:,} 字节, 可刻入")
     else:
-        print(f"[容量][警告] {disc_name} ISO {iso_size} 字节, "
-              f"超出 DVD5 上限 {iso_size - DVD5_BYTES} 字节")
+        print(f"[容量][警告] 第 {disc_index} 盘 ISO {iso_size:,} 字节, "
+              f"超出单盘上限 {iso_size - limit:,} 字节")
 
     os.makedirs(FINAL_DIR, exist_ok=True)
-    final = os.path.join(FINAL_DIR, f"{ISO_PREFIX}_{disc_name[-1]}.iso")
+    final = os.path.join(FINAL_DIR, CFG.iso_name(disc_index))
     try:
         shutil.copy2(iso, final)
     except PermissionError:
-        alt = os.path.join(FINAL_DIR,
-                           f"{ISO_PREFIX}_{disc_name[-1]}_new.iso")
+        alt = os.path.join(FINAL_DIR, CFG.iso_name(disc_index)[:-4] + "_new.iso")
         shutil.copy2(iso, alt)
         final = alt
     print(f"[OK] {final} ({os.path.getsize(final) / 1024**3:.2f} GB)")
@@ -257,11 +359,31 @@ def build_disc(disc_name, volid, groups):
 
 
 def main():
-    dry_run = "--dry-run" in __import__("sys").argv
-    mp = next((p for p in MANIFEST_CANDIDATES if os.path.exists(p)), None)
-    if not mp:
-        print("[FAIL] 找不到 manifest.json,请先运行 prepare.py")
-        return
+    dry_run = "--dry-run" in sys.argv
+    mp = MANIFEST
+    if not os.path.exists(mp):
+        print(f"[FAIL] 找不到 manifest.json: {mp}")
+        print("       请先运行: python3 01_prepare.py")
+        return 1
+
+    # 构建日志：写入本次运行的分隔头与工具路径。
+    # audit_disc.py / verify_pts_length.py 依赖此日志解析 dvda-author 命令行，
+    # 所以无论通过 build.sh 还是直接运行本脚本，都必须留下日志。
+    try:
+        os.makedirs(BUILD_DIR, exist_ok=True)
+        with open(CFG.build_log, "a", encoding="utf-8") as f:
+            f.write("\n" + "=" * 60 + "\n")
+            f.write("[02_build.py] %s\n" % time.strftime("%Y-%m-%d %H:%M:%S"))
+            f.write("  dvda-author : %s\n" % DVDA)
+            f.write("  mkisofs     : %s\n" % MKISOFS)
+            f.write("  output      : %s\n" % FINAL_DIR)
+            f.write("  iso prefix  : %s\n" % CFG.iso_prefix)
+            f.write("  title       : %s\n" % CFG.title)
+            f.write("  max discs   : %s\n" % (NUM_DISCS or "unlimited"))
+            f.write("=" * 60 + "\n")
+    except OSError as e:
+        print(f"[警告] 无法写入构建日志 {CFG.build_log}: {e}")
+
     with open(mp, encoding="utf-8") as f:
         manifest = json.load(f)
 
@@ -318,52 +440,44 @@ def main():
         albums.setdefault(t["album"], []).append(t)
     print(f"共 {len(albums)} 张专辑")
 
-    # 按专辑边界分盘:盘1 尽量填满(不拆专辑),考虑 AOB 开销
-    disc_limit = DVD5_BYTES - ISO_SAFETY
-    album_list = list(albums.items())
-    discs = []
-    cur = []
-    cur_size = 0
-    for album, trks in album_list:
-        sz = sum(t["mlp_size"] for t in trks)
-        # 当前已有内容且加本专辑后超出单层上限时切盘
-        if cur and (cur_size + sz) * AOB_OVERHEAD > disc_limit:
-            discs.append(cur)
-            cur = []
-            cur_size = 0
-        cur.append((album, trks))
-        cur_size += sz
-    if cur:
-        discs.append(cur)
+    # 按专辑边界分盘（专辑绝不拆散）
+    disc_limit = DISC_LIMIT_BYTES - ISO_SAFETY
+    album_list = [(a, sum(t["mlp_size"] for t in trks), trks)
+                  for a, trks in albums.items()]
+    discs, msgs = split_discs(album_list, disc_limit, NUM_DISCS)
+    for m in msgs:
+        print(m)
 
-    print(f"\n=== 分盘结果 ({len(discs)} 张, 盘1填满) ===")
+    print(f"\n=== 分盘结果 ({len(discs)} 张) ===")
     for i, d in enumerate(discs, 1):
         n = sum(len(trks) for _, trks in d)
         ms = sum(t["mlp_size"] for _, trks in d for t in trks)
-        print(f"  盘{i}: {n} 首, MLP {ms/1024**3:.2f} GiB -> 估AOB {ms*AOB_OVERHEAD/1024**3:.2f} GiB")
+        print(f"  第 {i} 盘: {n} 首, MLP {ms/1024**3:.2f} GiB "
+              f"-> 估AOB {ms*AOB_OVERHEAD/1024**3:.2f} GiB  "
+              f"卷标 \"{CFG.volid(i)}\"")
 
     if dry_run:
         print("\n[DRY-RUN] 仅预览,不实际生成。")
         for i, d in enumerate(discs, 1):
             groups = group_by_rate(d)
-            print(f"\n--- 盘{i}: {len(groups)} 个组 ---")
+            print(f"\n--- 第 {i} 盘: {len(groups)} 个组 ---")
             for sr, bits, files in groups:
                 print(f"    {sr}/{bits}: {len(files)} 首")
-        return
+        return 0
 
     for i, d in enumerate(discs, 1):
-        disc_name = f"盘{i}"
-        volid = f"Wuthering Waves Singles & EPs {i}"
         groups = group_by_rate(d)
-        print(f"\n--- 盘{i}: {len(groups)} 个组 ---")
+        print(f"\n--- 第 {i} 盘: {len(groups)} 个组 ---")
         for sr, bits, files in groups:
             print(f"    {sr}/{bits}: {len(files)} 首")
-        if not build_disc(disc_name, volid, groups):
-            print(f"[FAIL] 盘{i} 制作失败")
-            return
+        if not build_disc(i, groups):
+            print(f"[FAIL] 第 {i} 盘 制作失败")
+            return 1
 
     print("\n全部完成。")
+    print(f"产物目录: {FINAL_DIR}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

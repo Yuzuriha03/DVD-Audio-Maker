@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# 成品校验：DVD5 容量 + 光盘结构审计 + 时间轴 + MLP 无损
+# 成品校验：单盘容量 + 光盘结构审计 + 时间轴 + MLP 无损
 #
 # 用法（WSL 内）:
 #   bash verify.sh            # 全部检查
@@ -8,28 +8,32 @@
 #   bash verify.sh audit      # 仅光盘一致性审计（扇区/PTS/轨边界）
 #   bash verify.sh timeline   # 仅时间轴抽查
 #   bash verify.sh lossless   # 仅 MLP 无损
+#   bash verify.sh config     # 仅打印当前配置（排错用）
+#
+# 所有路径与工具位置都来自 config.sh（见该文件说明）。
 # ============================================================================
 set -u
 
-FINAL_DIR="${DVDA_FINAL_DIR:-/mnt/d/鸣潮DVD_Audio}"
-MLP_DIR="${DVDA_MLP_DIR:-/root/dvda-build/mlp}"
-MLP_INDEX="${DVDA_MLP_INDEX:-/root/dvda-build/mlp_index.json}"
-NEW="${DVDA_AUTHOR:-/root/dvda-author-mlp8/src/dvda-author-dev}"
-ISO_PREFIX="${DVDA_ISO_PREFIX:-Wuthering_Waves_Singles_EPs}"
-BUILD_DIR="${DVDA_BUILD_DIR:-/root/dvda-build}"
-# 构建日志：取候选里 mtime 最新者，避免读到上次构建的旧日志
-BUILD_LOG=""
-for f in "${DVDA_BUILD_LOG:-}" "$BUILD_DIR/build.log" \
-         "$BUILD_DIR/rebuild-final.log" "$BUILD_DIR/finalrebuild.log"; do
-  [ -n "$f" ] && [ -f "$f" ] || continue
-  if [ -z "$BUILD_LOG" ] || [ "$f" -nt "$BUILD_LOG" ]; then
-    BUILD_LOG="$f"
-  fi
-done
-DVD5_BYTES=4707319808
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ---- 加载配置（bash 与 Python 共用同一份解析结果） ----
+if ! CFG_SH="$(python3 "$HERE/dvda_config.py" --shell)"; then
+  echo "[配置错误] 无法读取配置，请检查 config.sh" >&2
+  exit 2
+fi
+eval "$CFG_SH"
+
 WHAT="${1:-all}"
+
+# 单盘容量上限（config.sh 未填则用内置默认值）
+DISC_LIMIT="${DVDA_DISC_BYTES:-4707319808}"
+# 校验用临时目录（放在工作目录下，便于清理）
+VDIR="$DVDA_BUILD_DIR/verify-tmp"
+
+# ---------------------------------------------------------------- 配置
+check_config() {
+  python3 "$HERE/dvda_config.py"
+}
 
 # ---------------------------------------------------------------- 审计
 check_audit() {
@@ -41,24 +45,30 @@ check_audit() {
 
 # ---------------------------------------------------------------- 容量
 check_capacity() {
-  echo "=================== DVD5 容量核对 ==================="
-  local found=0
+  echo "=================== 容量核对（上限 ${DISC_LIMIT} 字节/盘） ==================="
+  local found=0 n=0
   shopt -s nullglob
-  for f in "$FINAL_DIR"/${ISO_PREFIX}_*.iso; do
-    found=1
+  for f in "$DVDA_FINAL_DIR"/${DVDA_ISO_PREFIX}_*.iso; do
+    found=1; n=$((n+1))
     local s t
     s=$(stat -c %s "$f")
     t=$(stat -c %y "$f" | cut -d. -f1)
-    awk -v n="$(basename "$f")" -v s="$s" -v t="$t" -v l="$DVD5_BYTES" 'BEGIN{
-      printf "%-38s %13d B  %s  余 %d B  %s\n",
-             n, s, t, l-s, (s<=l ? "可刻入DVD5" : "!! 超出DVD5");
+    awk -v n="$(basename "$f")" -v s="$s" -v t="$t" -v l="$DISC_LIMIT" 'BEGIN{
+      printf "%-40s %13d B  %s  余 %d B  %s\n",
+             n, s, t, l-s, (s<=l ? "可刻入" : "!! 超出上限");
     }'
   done
-  [ "$found" = 1 ] || echo "(未找到 ISO，请先运行 02_build.py)"
+  if [ "$found" = 0 ]; then
+    echo "(未找到 ISO，请先运行 02_build.py)"
+    echo "  输出目录: $DVDA_FINAL_DIR"
+    echo "  文件名前缀: ${DVDA_ISO_PREFIX}_*.iso"
+    return 1
+  fi
+  echo "  共 $n 张"
 
   echo
   echo "--- 结构抽查（应只含 AUDIO_TS） ---"
-  for f in "$FINAL_DIR"/${ISO_PREFIX}_1.iso; do
+  for f in "$DVDA_FINAL_DIR"/${DVDA_ISO_PREFIX}_1.iso; do
     [ -f "$f" ] || continue
     xorriso -indev "$f" -ls / 2>/dev/null | tail -n 3
     echo "卷标: $(xorriso -indev "$f" -toc 2>/dev/null | grep 'ISO session' | sed 's/.*, *//')"
@@ -71,29 +81,30 @@ check_capacity() {
 check_lossless() {
   echo "=================== MLP 无损验证 ==================="
 
-  if [ ! -f "$MLP_INDEX" ]; then
-    echo "(未找到 $MLP_INDEX，请先运行 02_build.py，跳过)"
-    return
+  if [ ! -f "$DVDA_MLP_INDEX" ]; then
+    echo "(未找到 $DVDA_MLP_INDEX，请先运行 02_build.py，跳过)"
+    return 1
   fi
 
   local info mlp src rto
-  # 选取「盘1 组1 的第 1 轨」对应的 MLP —— 必须与 ATS_01_1.AOB 同组，
+  # 选取「第 1 张盘 组1 的第 1 轨」对应的 MLP —— 必须与 ATS_01_1.AOB 同组，
   # 否则会误报不一致（ATS_01_1.AOB 存的是组1 = 最先传入 -g 的那组）。
   # 组顺序取自构建日志里 dvda-author 的命令行。
-  mapfile -t info < <(python3 - "$MLP_INDEX" "$BUILD_LOG" "$MLP_DIR" <<'PY'
+  mapfile -t info < <(python3 - "$DVDA_MLP_INDEX" "$DVDA_BUILD_LOG" \
+                                 "$DVDA_MLP_DIR" <<'PY'
 import json, os, re, sys
 idx = json.load(open(sys.argv[1], encoding="utf-8"))
 log = sys.argv[2] if len(sys.argv) > 2 else ""
-pfx = (sys.argv[3] if len(sys.argv) > 3 else "/root/dvda-build/mlp").rstrip("/") + "/"
+pfx = (sys.argv[3] if len(sys.argv) > 3 else "").rstrip("/") + "/"
 target = None
-if log and os.path.exists(log):
+if log and os.path.exists(log) and pfx != "/":
     t = open(log, encoding="utf-8", errors="replace").read()
     t = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", t)
     for line in t.splitlines():
-        # dvda-author 命令行: + <author> -g <mlp...> -o <out>/盘1 -D ...
+        # dvda-author 命令行: + <author> -g <mlp...> -o <out>/disc1 -D ...
         if not line.startswith("+ ") or " -g " not in line:
             continue
-        if "/盘1 " not in line and "/盘1\t" not in line:
+        if "/disc1 " not in line and "/disc1\t" not in line:
             continue
         seg = line.split(" -g ", 1)[1].split(" -o ", 1)[0]
         # 文件名含空格，不能用 split()；按 MLP 目录前缀切分，逐个取到 .mlp 结尾
@@ -120,11 +131,10 @@ PY
   mlp="${info[0]:-}"; src="${info[1]:-}"; rto="${info[2]:-}"
   if [ -z "$mlp" ] || [ -z "$src" ]; then
     echo "(MLP 缓存为空，跳过)"
-    return
+    return 1
   fi
 
-  local tmp=/root/dvda-build/verify-tmp
-  rm -rf "$tmp"; mkdir -p "$tmp"
+  rm -rf "$VDIR"; mkdir -p "$VDIR"
 
   echo "源音源 : $src"
   echo "MLP    : $mlp"
@@ -134,44 +144,50 @@ PY
   local ares=()
   [ -n "$rto" ] && ares=(-af "aresample=${rto}:resampler=soxr")
 
+  local rc=0
   # 1) MLP 解码后 PCM 与源音源（同样重采样后）比对
-  ffmpeg -hide_banner -loglevel error -y -i "$src" "${ares[@]}" -f s24le "$tmp/src.raw"
-  ffmpeg -hide_banner -loglevel error -y -i "$mlp" -f s24le "$tmp/dec.raw"
+  "$DVDA_FFMPEG" -hide_banner -loglevel error -y -i "$src" "${ares[@]}" \
+    -f s24le "$VDIR/src.raw"
+  "$DVDA_FFMPEG" -hide_banner -loglevel error -y -i "$mlp" -f s24le "$VDIR/dec.raw"
   local n
-  n=$(stat -c %s "$tmp/src.raw")
-  head -c "$n" "$tmp/dec.raw" > "$tmp/dec_trim.raw"
+  n=$(stat -c %s "$VDIR/src.raw")
+  head -c "$n" "$VDIR/dec.raw" > "$VDIR/dec_trim.raw"
 
-  if cmp -s "$tmp/src.raw" "$tmp/dec_trim.raw"; then
+  if cmp -s "$VDIR/src.raw" "$VDIR/dec_trim.raw"; then
     echo "[1] MLP 解码 PCM 与源音源逐字节一致  ✔"
   else
+    rc=1
     echo "[1] MLP 解码 PCM 与源音源存在差异  ✗"
-    echo "    源 $(stat -c %s "$tmp/src.raw") 字节 / 解码 $(stat -c %s "$tmp/dec.raw") 字节"
-    cmp -l "$tmp/src.raw" "$tmp/dec_trim.raw" | head -n 3 | sed 's/^/    /'
+    echo "    源 $(stat -c %s "$VDIR/src.raw") 字节 / 解码 $(stat -c %s "$VDIR/dec.raw") 字节"
+    cmp -l "$VDIR/src.raw" "$VDIR/dec_trim.raw" | head -n 3 | sed 's/^/    /'
   fi
 
   # 2) 成品 ISO 内音轨与源 MLP 比对
-  local iso="$FINAL_DIR/${ISO_PREFIX}_1.iso"
+  local iso="$DVDA_FINAL_DIR/${DVDA_ISO_PREFIX}_1.iso"
   if [ -f "$iso" ]; then
-    mkdir -p "$tmp/chk" "$tmp/ext"
+    mkdir -p "$VDIR/chk" "$VDIR/ext"
     xorriso -osirrox on -indev "$iso" \
-      -extract /AUDIO_TS/ATS_01_1.AOB "$tmp/chk/a.AOB" >/dev/null 2>&1
+      -extract /AUDIO_TS/ATS_01_1.AOB "$VDIR/chk/a.AOB" >/dev/null 2>&1
 
-    # 注: --aob-extract 会在收尾阶段 abort，但所需文件已写出，故忽略返回码
-    "$NEW" --aob-extract "$tmp/chk/a.AOB" -o "$tmp/ext" -W -P0 -n >/dev/null 2>&1 || true
+    # 注: --aob-extract 会在收尾阶段段错误，但所需文件已写出，故忽略返回码
+    "$DVDA_AUTHOR" --aob-extract "$VDIR/chk/a.AOB" -o "$VDIR/ext" \
+      -W -P0 -n >/dev/null 2>&1 || true
 
     local got
-    got=$(find "$tmp/ext" -name 'track_01_title_01.mlp' 2>/dev/null | head -n1)
+    got=$(find "$VDIR/ext" -name 'track_01_title_01.mlp' 2>/dev/null | head -n1)
     if [ -n "$got" ] && cmp -s "$mlp" "$got"; then
       echo "[2] 成品 ISO 内音轨与源 MLP 一致  ✔"
       md5sum "$mlp" "$got" | sed 's/^/    /'
     else
+      rc=1
       echo "[2] 成品 ISO 内音轨校验失败  ✗"
     fi
   else
     echo "[2] (未找到成品 ISO，跳过)"
   fi
 
-  rm -rf "$tmp"
+  rm -rf "$VDIR"
+  return $rc
 }
 
 # ---------------------------------------------------------------- 时间轴
@@ -181,27 +197,40 @@ check_timeline() {
   echo "若全部相同，则播放器无法定位进度（进度条不可拖、可能变速播放）。"
   echo
 
-  local iso="$FINAL_DIR/${ISO_PREFIX}_1.iso"
+  local iso="$DVDA_FINAL_DIR/${DVDA_ISO_PREFIX}_1.iso"
   if [ ! -f "$iso" ]; then
     echo "(未找到成品 ISO，跳过)"
-    return
+    return 1
   fi
 
-  local tmp=/root/dvda-build/timeline-tmp
-  rm -rf "$tmp"; mkdir -p "$tmp"
-
+  rm -rf "$VDIR"; mkdir -p "$VDIR"
   xorriso -osirrox on -indev "$iso" \
-    -extract /AUDIO_TS/ATS_01_1.AOB "$tmp/a1.AOB" >/dev/null 2>&1
+    -extract /AUDIO_TS/ATS_01_1.AOB "$VDIR/a1.AOB" >/dev/null 2>&1
 
-  python3 "$HERE/check_aob_pts.py" "$tmp/a1.AOB"
-  rm -rf "$tmp"
+  python3 "$HERE/check_aob_pts.py" "$VDIR/a1.AOB"
+  rm -rf "$VDIR"
 }
 
 case "$WHAT" in
+  config)   check_config ;;
   capacity) check_capacity ;;
   audit)    check_audit ;;
   lossless) check_lossless ;;
   timeline) check_timeline ;;
-  all)      check_capacity; echo; check_audit; echo; check_lossless ;;
-  *)        echo "用法: bash verify.sh [capacity|audit|timeline|lossless|all]"; exit 1 ;;
+  all)
+    rc=0
+    check_capacity || rc=1
+    echo; check_audit || rc=1
+    echo; check_lossless || rc=1
+    echo
+    if [ $rc = 0 ]; then
+      echo "=================== 全部校验通过 ✔ ==================="
+    else
+      echo "=================== 存在问题，见上文 ✗ ==================="
+    fi
+    exit $rc
+    ;;
+  *)
+    echo "用法: bash verify.sh [config|capacity|audit|timeline|lossless|all]"
+    exit 1 ;;
 esac

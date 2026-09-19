@@ -89,7 +89,7 @@ else:
 t = SOX.read_text(encoding="utf-8", errors="surrogateescape")
 if "#ifdef WITHOUT_sox" not in t:
     STUB = '''#ifdef WITHOUT_sox
-/* 关闭 SoX 时的桩实现；本流程音频已预转 WAV，不会调用 */
+/* 关闭 SoX 时的桩实现；音频格式转换一律由 ffmpeg 预先完成，不会调用 */
 #include "c_utils.h"
 #include "structures.h"
 
