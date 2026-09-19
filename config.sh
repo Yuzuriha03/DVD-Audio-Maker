@@ -160,6 +160,18 @@ DVDA_DISC_BYTES=""
 DVDA_MLP_SOURCE="ffmpeg"
 DVDA_MLP_EXTERNAL_DIR=""
 
+# major sync 间隔：解码器的重同步点最多隔几个 access unit。
+#   留空 = 编码器默认（16）；8 = 与 SurCode MLP 一致（更耐错，体积约 +3.9%）
+DVDA_MLP_MAX_INTERVAL="8"
+
+# 编码后把 MLP 头部对齐到 SurCode MLP（纯字节修补，不重编码，详见 mlp_align.py）：
+#   · peak_bitrate 改向上取整，使 (raw*sr+8)>>4 往返精确（48000 -> 3200）
+#   · extended_substream_info 置 1
+#   · 末尾补 END_OF_STREAM（ffmpeg 不写，这是与参考实现的主要差异）
+#   · 重算 major sync 校验和、AU 头奇偶、子流 parity/checksum
+# 0 = 关闭
+DVDA_MLP_ALIGN="1"
+
 
 # ---------------------------------------------------------------------------
 # 7. 工具路径（可选，留空则用内置默认值）

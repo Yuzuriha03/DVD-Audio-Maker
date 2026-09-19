@@ -73,6 +73,31 @@ NUM_DISCS = CFG.max_discs             # 目标盘数；0 = 不限制
 USE_EXTERNAL_MLP = CFG.use_external_mlp
 MLP_EXTERNAL_DIR = CFG.mlp_external_dir
 
+# 编码参数对齐（仅 ffmpeg 模式）
+#
+# MAX_INTERVAL: major sync（解码器的重同步点）之间最多隔几个 access unit。
+#   编码器默认 16；参考实现 SurCode 用 8。设 8 后实测 access unit 数与
+#   major sync 数与 SurCode **完全相同**（每 8.0 个一个），代价约 +3.9% 体积。
+# ALIGN: 编码后做一次纯字节修补，把头部对齐到 SurCode（见 mlp_align.py）：
+#   peak_bitrate 用向上取整（使 (raw*sr+8)>>4 往返精确）、
+#   extended_substream_info 置 1、重算 major sync 校验和、
+#   末尾补 END_OF_STREAM 并修正 AU 长度/奇偶与子流校验。
+#   不重编码，音频逐字节不变。
+MLP_MAX_INTERVAL = CFG.mlp_max_interval     # 0 = 用编码器默认
+MLP_ALIGN = CFG.mlp_align
+
+# 缓存命中统计（每轮重置）
+_cache_stats = {"hit": 0, "stale": 0}
+
+if MLP_ALIGN:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mlp_align
+else:
+    mlp_align = None
+
+_SYNC_MAJOR = b"\xf8\x72\x6f"
+_EOS = b"\xd2\x34\xd2\x34"
+
 
 def to_wsl(p):
     p = p.replace("\\", "/")
@@ -177,6 +202,69 @@ def mlp_sample_fmt(bits):
     return "s16p" if bits == 16 else "s32p"
 
 
+def _mlp_interval(head):
+    """从前两个 major sync 的 AU 下标差算出刷新间隔；不足 2 个则返回 None。"""
+    pos, idx, n = 0, [], 0
+    while pos + 4 <= len(head) and len(idx) < 2:
+        h = int.from_bytes(head[pos:pos + 2], "big")
+        ln = (h & 0x0FFF) * 2
+        if ln < 4 or pos + ln > len(head):
+            return None
+        if head[pos + 4:pos + 7] == _SYNC_MAJOR:
+            idx.append(n)
+        n += 1
+        pos += ln
+    if len(idx) < 2:
+        return None
+    return idx[1] - idx[0]
+
+
+def _mlp_cache_ok(path):
+    """直接校验缓存文件的**实际编码参数**是否符合当前设置。
+
+    只读首 128 KiB 与末尾 64 字节，代价极小。
+
+    为什么不用一份「参数快照」文件：快照只能记录“上次跑时想要什么”，不能证明
+    “磁盘上这些文件真的是用什么编的”。一旦出现「快照已更新但文件未重编」，
+    快照就会说谎而缓存永远不再失效（已踩过）。验文件本身不会。
+    """
+    try:
+        size = os.path.getsize(path)
+        if size < 4096:
+            return False
+        with open(path, "rb") as f:
+            head = f.read(128 * 1024)
+            f.seek(max(0, size - 64))
+            tail = f.read()
+    except OSError:
+        return False
+
+    if not head.startswith(b"\x00\x00\x00\x00") and head[4:7] != _SYNC_MAJOR:
+        return False
+
+    # 1) major sync 刷新间隔
+    want_itv = MLP_MAX_INTERVAL or 16
+    iv = _mlp_interval(head)
+    if iv is not None and iv != want_itv:
+        return False
+
+    # 2) 头部字段与末尾结束标记（仅在开启对齐时校验）
+    if MLP_ALIGN and mlp_align is not None:
+        if head[4:7] != _SYNC_MAJOR:
+            return False
+        b = head[4:32]
+        ratebits = (b[5] >> 4) & 0x0F
+        sr = (44100 if (ratebits & 8) else 48000) << (ratebits & 7)
+        v = int.from_bytes(b[14:16], "big")
+        if (v & 0x7FFF) != mlp_align.peak_bitrate_raw(sr):
+            return False
+        if (b[16] & 3) != 1:
+            return False
+        if _EOS not in tail:
+            return False
+    return True
+
+
 def ensure_mlp(track):
     """确保该曲目已生成无损 MLP;返回 MLP 路径。已存在且不旧于源文件则复用。
 
@@ -189,15 +277,26 @@ def ensure_mlp(track):
     os.makedirs(MLP_DIR, exist_ok=True)
     mlp = mlp_path_for(track)
     if os.path.exists(mlp) and os.path.getsize(mlp) > 0:
-        if os.path.getmtime(mlp) >= os.path.getmtime(track["src"]):
+        fresh = os.path.getmtime(mlp) >= os.path.getmtime(track["src"])
+        if fresh and _mlp_cache_ok(mlp):
+            _cache_stats["hit"] += 1
             return mlp
+        # 源已更新或编码参数不符 → 删掉重编（缓存可以重建，不能将就）
+        _cache_stats["stale"] += 1
+        try:
+            os.remove(mlp)
+        except OSError:
+            pass
     cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
            "-i", track["src"]]
     if track.get("resample_to"):
         # MLP 只存音频,容器不带标签,无需 -map_metadata -1
         cmd += ["-af", f"aresample={track['resample_to']}:resampler=soxr"]
-    cmd += ["-sample_fmt", mlp_sample_fmt(track["bits"]),
-            "-c:a", "mlp", "-strict", "-2", mlp]
+    cmd += ["-sample_fmt", mlp_sample_fmt(track["bits"])]
+    # major sync 间隔：对齐参考实现（见文件头的说明）
+    if MLP_MAX_INTERVAL:
+        cmd += ["-max_interval", str(MLP_MAX_INTERVAL)]
+    cmd += ["-c:a", "mlp", "-strict", "-2", mlp]
     r = run(cmd)
     if r.returncode != 0 or not os.path.exists(mlp):
         raise RuntimeError(f"MLP 编码失败: {track['src']}")
@@ -210,7 +309,38 @@ def ensure_mlp(track):
         raise RuntimeError(
             f"MLP 参数不符: {track['title']} 期望 {exp[0]}Hz/{exp[1]}bit, "
             f"实际 {got[0]}Hz/{got[1]}bit  ({track['src']})")
+
+    # 头部对齐（不重编码；失败则删掉重来不如直接报错）
+    if MLP_ALIGN:
+        _align_in_place(mlp)
     return mlp
+
+
+def _align_in_place(path):
+    """对刚编码出的 MLP 做头部对齐，并自检结果。"""
+    data = open(path, "rb").read()
+    new, _info = mlp_align.align_bytes(data)
+    if new != data:
+        with open(path, "wb") as f:
+            f.write(new)
+    # 自检：所有 major sync 校验和、每个 AU 头奇偶、子流 parity/checksum
+    r = mlp_align.inspect(new)
+    bad = (r["ms_errors"] or r["au_parity_errors"] or r["sub_errors"])
+    if bad or not r["eos"]:
+        raise RuntimeError(
+            "MLP 对齐后自检失败: %s (ms=%d au=%d sub=%d eos=%s)"
+            % (os.path.basename(path), len(r["ms_errors"]),
+               len(r["au_parity_errors"]), len(r["sub_errors"]), r["eos"]))
+
+
+def _report_cache():
+    """报告 MLP 缓存的命中与失效情况（失效由 _mlp_cache_ok 逐件判定）。"""
+    hit, stale = _cache_stats["hit"], _cache_stats["stale"]
+    if stale:
+        print(f"[缓存] 复用 {hit} 个，{stale} 个因「源已更新或编码参数不符」"
+              f"被丢弃重编")
+    elif hit:
+        print(f"[缓存] 全部复用 {hit} 个（编码参数与源均未变）")
 
 
 # ---------------------------------------------------------------------------
@@ -481,10 +611,19 @@ def build_disc(disc_index, groups):
     final = os.path.join(FINAL_DIR, CFG.iso_name(disc_index))
     try:
         shutil.copy2(iso, final)
-    except PermissionError:
+    except PermissionError as e:
+        # 目标被占用（常见：Windows 侧播放器/资源管理器打开了它，或刻录软件
+        # 持有句柄）。此时**不能假装成功** —— 改名写 _new.iso 只是权宜之计，
+        # 必须把原因、路径与后续处理明确告诉用户，否则会留下两份同名 ISO
+        # 而不知该用哪份（已踩过）。
         alt = os.path.join(FINAL_DIR, CFG.iso_name(disc_index)[:-4] + "_new.iso")
         shutil.copy2(iso, alt)
         final = alt
+        print(f"[警告] 无法覆盖 {CFG.iso_name(disc_index)}：目标被占用")
+        print(f"       原因: {e}")
+        print(f"       已改写到 {os.path.basename(alt)}")
+        print(f"       处理: 关闭占用该文件的程序后，把它改名/替换回")
+        print(f"             {CFG.iso_name(disc_index)}")
     print(f"[OK] {final} ({os.path.getsize(final) / 1024**3:.2f} GB)")
 
     # 清理 dvda-author 临时目录(生成已完成,不再需要)
@@ -598,6 +737,10 @@ def main():
                   "改为核对采样数，不强行逐字节比对。")
     else:
         print("开始无损 MLP 编码（已缓存则跳过）...")
+        if MLP_ALIGN or MLP_MAX_INTERVAL:
+            print("  编码参数：max_interval=%s，头部对齐=%s"
+                  % (MLP_MAX_INTERVAL or 16,
+                     "开" if MLP_ALIGN else "关"))
         done = 0
         for t in tracks:
             t["mlp"] = ensure_mlp(t)
@@ -606,6 +749,7 @@ def main():
             done += 1
             if done % 20 == 0 or done == len(tracks):
                 print(f"  已处理 {done}/{len(tracks)}")
+        _report_cache()
 
     mlp_total = sum(t["mlp_size"] for t in tracks)
     d_gib = mlp_total / 1024**3

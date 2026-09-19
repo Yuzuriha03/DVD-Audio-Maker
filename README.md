@@ -214,6 +214,8 @@ DVD-Audio-Maker/
 | `DVDA_DISC_BYTES` | `4707319808` | 单盘容量上限（字节）；双层 DVD-9 可设 `8540123136` |
 | `DVDA_MLP_SOURCE` | `ffmpeg` | MLP 来源：`ffmpeg`（本工具链编码）/ `external`（用外部编码器产出） |
 | `DVDA_MLP_EXTERNAL_DIR` | *(空)* | 外部 MLP 根目录（仅 `external` 时用；结构须与音源一一对应） |
+| `DVDA_MLP_MAX_INTERVAL` | `8` | major sync 间隔；空 = 编码器默认(16)，`8` = 与 SurCode 一致 |
+| `DVDA_MLP_ALIGN` | `1` | 编码后把 MLP 头部对齐到 SurCode（纯字节修补，见 `mlp_align.py`） |
 | `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
 | `DVDA_MKISOFS` | `/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs |
 | `DVDA_FFMPEG` / `DVDA_FFPROBE` | `ffmpeg` / `ffprobe` | 用 PATH 解析 |
@@ -326,19 +328,53 @@ major sync 是解码器的重同步点，间隔越短越耐错。ffmpeg 的
 > `speaker_layout` / `source_format` / `copy_protection` 两边**都是 0**，
 > 不是缺陷（早期文档曾误以为 ffmpeg 写死成 0 有问题）。
 
-### 能不能把 ffmpeg 对齐到与 SurCode 一致？
+### 对齐到参考实现（已实现，默认开启）
 
-| 差异 | 能否对齐 | 难度 |
-|------|----------|------|
-| major sync 间隔 | ✔ 能 | 命令行 `-max_interval 8`，**无需改代码** |
-| 末尾 `END_OF_STREAM` | ✔ 能 | 需改源码（或后处理插入 + 重算校验和） |
-| `peak_bitrate` 3199→3200 | ✔ 能 | 改源码一行（`mlp_peak_bitrate()` 里的 `- 8` 使往返不精确） |
-| `extended_substream_info` 0→1 | ⚠ 不明 | 需先弄清该字段语义（解码器对 MLP 忽略它） |
-| **压缩载荷** | ✗ 不能 | 两边的 LPC 系数、Huffman 码本、矩阵、块划分都不同 |
+`mlp_align.py` 在编码后对 MLP 做一次**纯字节修补**（不重编码，音频逐字节不变），
+把头部对齐到 SurCode：
 
-关键在最后一行：**头部只描述参数，真正被解码的是压缩载荷**。
-即使把头部每一个字节都对齐，载荷仍是另一套编码决策，
-无法由此推出“硬件能播”。
+| 差异 | 状态 | 做法 |
+|------|------|------|
+| major sync 间隔 | ✔ 已对齐 | `DVDA_MLP_MAX_INTERVAL=8`（命令行开关） |
+| 末尾 `END_OF_STREAM` | ✔ 已对齐 | 插入 `0xD234D234`，并修正 AU 长度/奇偶、子流 parity/checksum |
+| `peak_bitrate` 3199→3200 | ✔ 已对齐 | 改**向上取整**，使 `(raw*sr+8)>>4` 往返精确 |
+| `extended_substream_info` 0→1 | ✔ 已对齐 | 直接置 1（SurCode 147/147 都是 1） |
+| **压缩载荷** | ✗ 无法对齐 | 两边的 LPC 系数、Huffman 码本、矩阵、块划分都不同 |
+
+配置开关：
+
+```bash
+DVDA_MLP_MAX_INTERVAL="8"    # 空 = 编码器默认(16)
+DVDA_MLP_ALIGN="1"           # 1 = 开启头部对齐
+```
+
+**实测结果**（48000/24 立体声同曲目，28 字节 major sync）：
+
+```
+对齐后: f8 72 6f bb 2f 0f 00 01 b7 52 40 00 00 00 8c 80 11 05 56 03 00 00 80 80 00 1b b9 60
+SurCode: f8 72 6f bb 2f 0f 00 01 b7 52 40 00 00 00 8c 80 11 05 56 03 00 00 80 80 00 1b b9 60
+→ 逐字节完全相同
+```
+
+验证手段：`mlp_align.py` 复刻了 ffmpeg 的 `av_crc`（`crc_2D` = poly 0x002D/16bit，
+`crc_63` = poly 0x0063/8bit，均需 `bswap32` 建表），因此能**重算**出
+所有 major sync 校验和、每个 access unit 的头奇偶、以及子流 parity/checksum ——
+这是“改动是否仍然合规”的判据。在两个编码器的真实文件上都验过。
+
+用法：
+
+```bash
+python3 mlp_align.py --check  a.mlp b.mlp     # 只报告差异
+python3 mlp_align.py --align  a.mlp           # 原地对齐
+python3 mlp_align.py --align -o 输出目录 a.mlp  # 写到别处
+```
+
+> **代价**：`-max_interval 8` 会让体积涨约 3.9%。本项目实测从 7.04 涨到
+> 7.30 GiB，第 1 盘从余 31 MiB 变成余 26 MiB（仍是 2 张）。
+>
+> **关键限制**：头部只描述参数，真正被解码的是压缩载荷。
+> 即使头部每一个字节都对齐，载荷仍是另一套编码决策，
+> **无法由此推出“硬件能播”** —— 见「已知限制」。
 
 ---
 
