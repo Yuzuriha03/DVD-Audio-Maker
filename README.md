@@ -80,6 +80,10 @@ bash build.sh --config     # 只打印配置
 bash verify.sh
 ```
 
+> **已经有 MLP 文件、不想再转码？** 把 `DVDA_MLP_SOURCE` 设为 `external`
+> 并指向 MLP 目录，流水线会**跳过编码**直接用它们出盘。
+> 见 [直接用已有 MLP](#直接用已有-mlp不再转码)。
+
 ---
 
 ## 路径怎么写
@@ -257,24 +261,85 @@ DVDA_SRC="/mnt/e/其他音源" DVDA_TITLE="Test" python3 01_prepare.py
 默认（`DVDA_MLP_SOURCE="ffmpeg"`）由本工具链用 ffmpeg 的 `mlp` 编码器直接
 从音源编码，不产生中间 WAV。
 
-也可以改用外部编码器（如 **SurCode MLP**，MLP 的参考实现）：
+也可以改用外部编码器（如 **SurCode MLP**，MLP 的参考实现），
+或者直接拿 **已有的 MLP 文件**。两种情形都走同一个开关。
+
+---
+
+### 直接用已有 MLP（不再转码）
+
+适用：你已用别的工具编好了 MLP，希望本工具链**只做出盘与校验**，
+不再碰音频编码。
+
+**第 1 步：把 MLP 按下面的结构放好**
+
+```
+<DVDA_MLP_EXTERNAL_DIR>/              ← 与音源**同构**，只是扩展名换成 .mlp
+├── Album A\
+│   ├── 01. First Song.mlp
+│   └── 02. Second Song.mlp
+├── Album B\
+│   └── 01. Song One.mlp
+└── …
+```
+
+即：**去掉音源根目录前缀、把扩展名换成 `.mlp`**。例如音源是
+`/mnt/d/Music/MyAlbums/Album A/01. First Song.flac`，
+对应的 MLP 就应是 `/mnt/d/Music/mlp/Album A/01. First Song.mlp`。
+
+镜像路径找不到时，会退回「按**文件名**在整个外部目录里搜一次」——
+所以就算 MLP 被平铺在别的层级下也大多能用（但要求文件名唯一）。
+
+**第 2 步：改两行配置**
 
 ```bash
 DVDA_MLP_SOURCE="external"
-DVDA_MLP_EXTERNAL_DIR="/mnt/c/Music/output/鸣潮先约电台"
+DVDA_MLP_EXTERNAL_DIR="/mnt/d/Music/mlp"
 ```
 
-要求外部产出的目录结构与音源**一一对应**：
+**第 3 步：先空跑看一眼**
+
+```bash
+bash build.sh --dry-run
+```
+
+重点看三处输出：
 
 ```
-音源： <DVDA_SRC>/<专辑目录>/<曲名>.flac
-外部： <DVDA_MLP_EXTERNAL_DIR>/<专辑目录>/<曲名>.mlp
+已定位 147/147 个外部 MLP            ← 必须 147/147，少了会直接报错退出
+[提示] 19 首的参数被外部编码器改过…   ← 外部改了采样率/位深时会列出
+--- 第 1 盘: N 个组 ---               ← 分组结果
 ```
 
-即去掉音源根目录前缀、只把扩展名换成 `.mlp`。镜像路径找不到时，会退回
-「按文件名在外部目录里全局搜」一次（容忍外部工具把文件放在别的层级下）。
+确认无误后 `bash build.sh` 正式出盘。
 
-### 外部模式的两个要点
+#### ⚠️ 音源文件仍然必须存在
+
+这是最容易踩的一点：**不能只给 MLP**。原因：
+
+| 还需要音源提供什么 | 用途 |
+|--------------------|------|
+| `album` / `date` / `track` 标签 | 专辑分组与曲目排序（MLP 容器不存标签） |
+| 时长 | 解码完整性校验（MLP 也不存时长） |
+| 原生采样率/位深 | 判定外部编码器是否改过参数 |
+
+所以 `DVDA_SRC` 仍要指向原来那批 FLAC/m4a，`01_prepare.py` 会照常扫它们。
+只是编码环节被跳过。
+
+> 即：**外部模式换的是“音频从哪来”，不是“元数据从哪来”。**
+
+---
+
+### 用外部编码器现场编码
+
+如果不已有 MLP、而是想让外部编码器现场编（例如 SurCode），
+配置与上面完全相同（`DVDA_MLP_SOURCE="external"`），
+只要把 `DVDA_MLP_EXTERNAL_DIR` 指向那个编码器的**输出目录**即可。
+本工具链不会去调用该编码器 —— 你需要先把 MLP 编好，再跑出盘。
+
+---
+
+### 外部模式的两个行为差异
 
 **1. 参数以实测为准，不信 manifest**
 
