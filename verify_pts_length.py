@@ -11,21 +11,29 @@
 注：MLP 容器不记录时长（ffprobe 返回 N/A），无法直接回读，
     故时长由 01_prepare.py 写入 manifest，再由 02_build.py 汇总成
     mlp_index.json。
+
+    构建日志取候选列表中**修改时间最新**者 —— 目录里可能残留上次构建的
+    旧日志（rebuild-final.log），按固定顺序取会拿到陈旧轨道表。
 """
 import json
 import os
 import pathlib
 import re
 import sys
+import time
 
 BUILD_DIR = os.environ.get("DVDA_BUILD_DIR", "/root/dvda-build")
-LOG = pathlib.Path(os.path.join(BUILD_DIR, "rebuild-final.log"))
-if not LOG.exists():
-    for cand in ("finalrebuild.log", "build.log"):
-        p = pathlib.Path(os.path.join(BUILD_DIR, cand))
-        if p.exists():
-            LOG = p
-            break
+_cands = [os.environ.get("DVDA_BUILD_LOG"),
+          os.path.join(BUILD_DIR, "build.log"),
+          os.path.join(BUILD_DIR, "rebuild-final.log"),
+          os.path.join(BUILD_DIR, "finalrebuild.log")]
+_exist = [pathlib.Path(p) for p in _cands if p and pathlib.Path(p).exists()]
+if not _exist:
+    print("!! 找不到构建日志")
+    sys.exit(1)
+LOG = max(_exist, key=lambda p: p.stat().st_mtime)
+print(f"构建日志: {LOG}  "
+      f"(mtime {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(LOG.stat().st_mtime))})")
 text = LOG.read_text(encoding="utf-8", errors="replace")
 text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)   # 剥离 ANSI
 

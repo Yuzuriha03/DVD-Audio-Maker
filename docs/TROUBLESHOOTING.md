@@ -16,7 +16,9 @@
 7. [直连编码时位深丢失（产生非法音频组）](#7-直连编码时位深丢失产生非法音频组)
 8. [直连编码时时长不再可回读（校验失效风险）](#8-直连编码时时长不再可回读校验失效风险)
 9. [声道数不一致（预防性检查）](#9-声道数不一致预防性检查)
-10. [诊断手法速查](#10-诊断手法速查)
+10. [审计误报：取到了上一次构建的日志](#10-审计误报取到了上一次构建的日志)
+11. [校验脚本的组匹配错误（ATS_01_1.AOB 是组1）](#11-校验脚本的组匹配错误ats_01_1aob-是组1)
+12. [诊断手法速查](#12-诊断手法速查)
 
 ---
 
@@ -806,7 +808,136 @@ ffprobe -v error -select_streams a:0 \
 
 ---
 
-## 10. 诊断手法速查
+## 10. 审计误报：取到了上一次构建的日志
+
+### 症状
+
+重新出盘后审计报「扇区数不一致」，且 PTS 下降点也不落在轨边界：
+
+```
+盘1 组1    65 轨
+  A. 扇区数 AOB=1588763 轨道表=1588632  不一致 ✗
+  D. PTS 下降点 64 个；落在轨边界 异常 ✗
+    非轨边界的下降点: [834886, 861611, 888172, ...]
+    应下降但未下降的轨起点: [1442050, 1072775, ...]
+```
+
+**但 AOB / IFO / ISO 本身完全正确。**
+
+### 根因
+
+`audit_disc.py` 原先按固定顺序取「第一个存在」的日志：
+
+```python
+LOG_CANDIDATES = [
+    pathlib.Path(os.path.join(BUILD_DIR, "rebuild-final.log")),
+    pathlib.Path(os.path.join(BUILD_DIR, "finalrebuild.log")),
+    pathlib.Path(os.path.join(BUILD_DIR, "build.log")),
+]
+LOG = next((p for p in LOG_CANDIDATES if p and p.exists()), None)
+```
+
+而 `build.sh` 每次运行写的是 `build.log`，**旧日志不会自动删除**。
+于是：新构建的 AOB 与旧构建的轨道表比对 → 必然不一致。
+
+### 诊断
+
+列出各日志的时间与其中的关键数值：
+
+```
+日志                     时间              盘1组1 max last_sector
+rebuild-final.log        09-18 18:57        1588631  -> +1 = 1588632   ← 被误用
+finalrebuild.log         09-18 18:27        1588631  -> +1 = 1588632
+build.log（本次构建）    09-19 08:36        1588762  -> +1 = 1588763   ✔
+```
+
+AOB 实际总扇区 = 1,588,763 —— 与**本次** build.log 的轨道表一致。
+
+用正确的日志复核：
+
+```
+A. 扇区数 AOB=1588763 轨道表=1588763  一致 ✔
+D. PTS 下降点 64 个；落在轨边界 全部命中 ✔
+```
+
+### 修复
+
+改为在候选列表中取 **mtime 最新**者，并打印所用日志路径与时间：
+
+```python
+_existing = [p for p in _LOGS if p and p.exists()]
+LOG = max(_existing, key=lambda p: p.stat().st_mtime) if _existing else None
+if LOG is not None:
+    print(f"构建日志: {LOG}  (mtime {time.strftime(...)})")
+```
+
+并在发现另有日志时间相近（< 60 秒）时给出提示：
+
+```
+⚠ 另有 1 个日志时间相近，请确认所用日志对应本次构建
+```
+
+`verify_pts_length.py` 与 `verify.sh` 同样修正，后者还支持
+`DVDA_BUILD_LOG` 环境变量显式指定。
+
+> **教训**：只要「比对 A 与 B」，就要确认 A 和 B 来自**同一次**构建。
+> 用固定的文件名顺序去猜哪个是当前产物，在存在历史残留时必然出错。
+
+---
+
+## 11. 校验脚本的组匹配错误（ATS_01_1.AOB 是组1）
+
+### 症状
+
+`verify.sh lossless` 报告：
+
+```
+[2] 成品 ISO 内音轨校验失败  ✗
+```
+
+### 根因
+
+第 2 项校验从 `mlp_index.json` 取「排序第一个」的 MLP，去与
+`ATS_01_1.AOB` 里提取出的音轨比对。但两者**未必同组**：
+
+- `ATS_01_1.AOB` 存的是**组1**（最先传入 `-g` 的那组）
+- `mlp_index.json` 按路径排序，第一个可能是 `group_44100_24__0001__*`
+  （属于组2），于是拿组2 的 MLP 去比组1 的 AOB → 必然失败
+
+### 修复
+
+从构建日志解析盘1 的 `dvda-author` 命令行，取**组1 的第 1 轨**对应的 MLP：
+
+```python
+for line in t.splitlines():
+    if not line.startswith("+ ") or " -g " not in line:
+        continue
+    if "/盘1 " not in line and "/盘1\t" not in line:
+        continue
+    seg = line.split(" -g ", 1)[1].split(" -o ", 1)[0]
+    ...
+```
+
+> **注意**：MLP 文件名含空格，**不能用 `split()` 切分**。
+> 须按 MLP 目录前缀逐个取到 `.mlp` 结尾（与 `verify_pts_length.py` 一致）：
+>
+> ```python
+> for chunk in seg.split(pfx)[1:]:
+>     e = chunk.find(".mlp")
+>     if e >= 0:
+>         names.append(pfx + chunk[:e + 4])
+> ```
+
+修正后：
+
+```
+[1] MLP 解码 PCM 与源音源逐字节一致  ✔
+[2] 成品 ISO 内音轨与源 MLP 一致  ✔
+```
+
+---
+
+## 12. 诊断手法速查
 
 ### 解析 AOB 的 PES 时间戳
 

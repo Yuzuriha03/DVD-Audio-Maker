@@ -16,6 +16,16 @@ MLP_DIR="${DVDA_MLP_DIR:-/root/dvda-build/mlp}"
 MLP_INDEX="${DVDA_MLP_INDEX:-/root/dvda-build/mlp_index.json}"
 NEW="${DVDA_AUTHOR:-/root/dvda-author-mlp8/src/dvda-author-dev}"
 ISO_PREFIX="${DVDA_ISO_PREFIX:-Wuthering_Waves_Singles_EPs}"
+BUILD_DIR="${DVDA_BUILD_DIR:-/root/dvda-build}"
+# 构建日志：取候选里 mtime 最新者，避免读到上次构建的旧日志
+BUILD_LOG=""
+for f in "${DVDA_BUILD_LOG:-}" "$BUILD_DIR/build.log" \
+         "$BUILD_DIR/rebuild-final.log" "$BUILD_DIR/finalrebuild.log"; do
+  [ -n "$f" ] && [ -f "$f" ] || continue
+  if [ -z "$BUILD_LOG" ] || [ "$f" -nt "$BUILD_LOG" ]; then
+    BUILD_LOG="$f"
+  fi
+done
 DVD5_BYTES=4707319808
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -67,13 +77,42 @@ check_lossless() {
   fi
 
   local info mlp src rto
-  mapfile -t info < <(python3 - "$MLP_INDEX" <<'PY'
-import json, os, sys
+  # 选取「盘1 组1 的第 1 轨」对应的 MLP —— 必须与 ATS_01_1.AOB 同组，
+  # 否则会误报不一致（ATS_01_1.AOB 存的是组1 = 最先传入 -g 的那组）。
+  # 组顺序取自构建日志里 dvda-author 的命令行。
+  mapfile -t info < <(python3 - "$MLP_INDEX" "$BUILD_LOG" "$MLP_DIR" <<'PY'
+import json, os, re, sys
 idx = json.load(open(sys.argv[1], encoding="utf-8"))
-keys = sorted(k for k in idx if os.path.exists(k) and os.path.getsize(k) > 0)
-if not keys:
-    print(""); print(""); print(""); raise SystemExit
-k = keys[0]
+log = sys.argv[2] if len(sys.argv) > 2 else ""
+pfx = (sys.argv[3] if len(sys.argv) > 3 else "/root/dvda-build/mlp").rstrip("/") + "/"
+target = None
+if log and os.path.exists(log):
+    t = open(log, encoding="utf-8", errors="replace").read()
+    t = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", t)
+    for line in t.splitlines():
+        # dvda-author 命令行: + <author> -g <mlp...> -o <out>/盘1 -D ...
+        if not line.startswith("+ ") or " -g " not in line:
+            continue
+        if "/盘1 " not in line and "/盘1\t" not in line:
+            continue
+        seg = line.split(" -g ", 1)[1].split(" -o ", 1)[0]
+        # 文件名含空格，不能用 split()；按 MLP 目录前缀切分，逐个取到 .mlp 结尾
+        names = []
+        for chunk in seg.split(pfx)[1:]:
+            e = chunk.find(".mlp")
+            if e >= 0:
+                names.append(pfx + chunk[:e + 4])
+        if names:
+            target = names[0]
+        break
+if target and target in idx and os.path.exists(target):
+    k = target
+else:
+    keys = sorted(k for k in idx
+                  if os.path.exists(k) and os.path.getsize(k) > 0)
+    if not keys:
+        print(""); print(""); print(""); raise SystemExit
+    k = keys[0]
 e = idx[k]
 print(k); print(e["src"]); print(e.get("resample_to") or "")
 PY
