@@ -57,7 +57,6 @@ DEFAULTS = {
     # 校验
     "DVDA_LOSS_ERROR_S": "0.05",
     "DVDA_LOSS_WARN_S": "0.005",
-    "DVDA_ALAC_REPAIR": "1",
 }
 
 # DVD-Audio 协议上限
@@ -313,10 +312,6 @@ class Config:
         v = self.get_float("DVDA_LOSS_WARN_S")
         return 0.005 if v is None else v
 
-    @property
-    def alac_repair(self):
-        return str(self.get("DVDA_ALAC_REPAIR")).strip() not in ("0", "no", "false", "")
-
     # ---- 诊断 ----
     def describe(self, keys=None):
         keys = keys or sorted(set(DEFAULTS) | set(self._values))
@@ -419,7 +414,6 @@ def main():
             ("DVDA_MLP_EXTERNAL_DIR", cfg.mlp_external_dir),
             ("DVDA_LOSS_ERROR_S", str(cfg.loss_error_s)),
             ("DVDA_LOSS_WARN_S", str(cfg.loss_warn_s)),
-            ("DVDA_ALAC_REPAIR", "1" if cfg.alac_repair else "0"),
         ]
         for k, v in pairs:
             # 单引号包裹，内部单引号做转义 —— bash eval 后值原样保留
