@@ -30,6 +30,15 @@ DISC_LIMIT="${DVDA_DISC_BYTES:-4707319808}"
 # 校验用临时目录（放在工作目录下，便于清理）
 VDIR="$DVDA_BUILD_DIR/verify-tmp"
 
+# xorriso 提取出的文件保留 ISO 上的只读权限，目录没有写位，直接 rm -rf 删不掉，
+# 会在下次运行时留下残留。先补写权限再删。
+rm_rf_rw() {
+  [ -e "$1" ] || return 0
+  find "$1" -mindepth 1 -exec chmod u+w {} + 2>/dev/null
+  chmod u+w "$1" 2>/dev/null
+  rm -rf "$1"
+}
+
 # ---------------------------------------------------------------- 配置
 check_config() {
   python3 "$HERE/dvda_config.py"
@@ -168,7 +177,7 @@ PY
     return 1
   fi
 
-  rm -rf "$VDIR"; mkdir -p "$VDIR"
+  rm_rf_rw "$VDIR"; mkdir -p "$VDIR"
 
   echo "源音源 : $src"
   echo "MLP    : $mlp"
@@ -258,7 +267,7 @@ PY
     echo "[2] (未找到成品 ISO，跳过)"
   fi
 
-  rm -rf "$VDIR"
+  rm_rf_rw "$VDIR"
   return $rc
 }
 
@@ -275,12 +284,12 @@ check_timeline() {
     return 1
   fi
 
-  rm -rf "$VDIR"; mkdir -p "$VDIR"
+  rm_rf_rw "$VDIR"; mkdir -p "$VDIR"
   xorriso -osirrox on -indev "$iso" \
     -extract /AUDIO_TS/ATS_01_1.AOB "$VDIR/a1.AOB" >/dev/null 2>&1
 
   python3 "$HERE/check_aob_pts.py" "$VDIR/a1.AOB"
-  rm -rf "$VDIR"
+  rm_rf_rw "$VDIR"
 }
 
 case "$WHAT" in
