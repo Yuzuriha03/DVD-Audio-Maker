@@ -242,7 +242,7 @@ for (int s = 0; s < nframe; ++s)
 ### 2.5 链接错误
 
 ```
-cannot find /home/yyz57/dvda/tools/dvda-author-mlp8/local/lib/libswresample.a
+cannot find /root/dvda-author-mlp8/local/lib/libswresample.a
 ```
 
 Makefile 硬编码了 `local/lib/*.a` 路径。
@@ -478,7 +478,7 @@ python3 alac_endfix.py x.m4a x.fixed.m4a      # 修复到新文件
 `01_prepare.py` 现在会在解码校验失败时**自动尝试修复**：
 
 1. 检测到解码报错 → 调 `alac_endfix.find_bad_frames()`
-2. 有可修帧 → 修复到 `$DVDA_ALAC_FIX_DIR`（默认 `/home/yyz57/dvda/build/alacfix`）
+2. 有可修帧 → 修复到 `$DVDA_ALAC_FIX_DIR`（默认 `/root/dvda-build/alacfix`）
 3. **原文件绝不修改**，manifest 指向修复后的副本
 4. 修复后重新解码校验，采样数必须精确达标，否则仍判 FAIL
 
@@ -581,7 +581,7 @@ Group   Title  Track  First_Sect   Last_Sect  First_PTS  PTS_length cga
 让 `dvda-author` 报告每轨参数：
 
 ```bash
-/home/yyz57/dvda/tools/dvda-author-mlp8/src/dvda-author-dev -g a.mlp b.mlp \
+/root/dvda-author-mlp8/src/dvda-author-dev -g a.mlp b.mlp \
   -o out -D tmp -W -P0 -n 2>&1 | grep -E 'Found MLP audio|MTabLayout|Track'
 ```
 
