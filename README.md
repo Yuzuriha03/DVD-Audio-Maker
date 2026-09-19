@@ -212,6 +212,8 @@ DVD-Audio-Maker/
 | `DVDA_MAX_DISCS` | `2` | 期望的盘数上限；仅用于「放不放得下」的判断与提示，**不参与切分**；`0` = 不检查 |
 | `DVDA_GROUP_TRACK_LIMIT` | `64` | 每组最多轨数，**不要超过 70**（栈溢出） |
 | `DVDA_DISC_BYTES` | `4707319808` | 单盘容量上限（字节）；双层 DVD-9 可设 `8540123136` |
+| `DVDA_MLP_SOURCE` | `ffmpeg` | MLP 来源：`ffmpeg`（本工具链编码）/ `external`（用外部编码器产出） |
+| `DVDA_MLP_EXTERNAL_DIR` | *(空)* | 外部 MLP 根目录（仅 `external` 时用；结构须与音源一一对应） |
 | `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
 | `DVDA_MKISOFS` | `/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs |
 | `DVDA_FFMPEG` / `DVDA_FFPROBE` | `ffmpeg` / `ffprobe` | 用 PATH 解析 |
@@ -245,6 +247,71 @@ out/ tmp/ iso/    出盘中间目录
 ```bash
 DVDA_SRC="/mnt/e/其他音源" DVDA_TITLE="Test" python3 01_prepare.py
 ```
+
+---
+
+## MLP 来源：自己编码还是用外部编码器
+
+默认（`DVDA_MLP_SOURCE="ffmpeg"`）由本工具链用 ffmpeg 的 `mlp` 编码器直接
+从音源编码，不产生中间 WAV。
+
+也可以改用外部编码器（如 **SurCode MLP**，MLP 的参考实现）：
+
+```bash
+DVDA_MLP_SOURCE="external"
+DVDA_MLP_EXTERNAL_DIR="/mnt/c/Music/output/鸣潮先约电台"
+```
+
+要求外部产出的目录结构与音源**一一对应**：
+
+```
+音源： <DVDA_SRC>/<专辑目录>/<曲名>.flac
+外部： <DVDA_MLP_EXTERNAL_DIR>/<专辑目录>/<曲名>.mlp
+```
+
+即去掉音源根目录前缀、只把扩展名换成 `.mlp`。镜像路径找不到时，会退回
+「按文件名在外部目录里全局搜」一次（容忍外部工具把文件放在别的层级下）。
+
+### 外部模式的两个要点
+
+**1. 参数以实测为准，不信 manifest**
+
+外部编码器可能改采样率/位深。例如 SurCode 会把**全部曲目统一到 48000/24**，
+于是 44100/24 的 13 首、44100/16 的 4 首、48000/16 的 1 首、乃至一首
+96000/24 都会被重采样或改位深。
+
+所以外部模式下会逐个 `ffprobe` 实际产出，用**真实参数**做分组与分盘，
+并打印一张「源原生 → 外部 MLP」的对照表。这也意味着**外部分盘的盘数与
+自己编码可能不同**。
+
+**2. 校验策略会自动放宽**
+
+`verify.sh` 的「MLP 解码 PCM 与源音源逐字节一致」在外部改过采样率时
+**不做逐字节比对** —— 外部编码器的重采样滤波器与 soxr 不同，
+LSB 差异属预期，强行比对只会误报。此时改为核对
+「解码采样数 == 时长 × MLP 采样率」（±50ms）且解码无错误；
+`[2] 成品 ISO 内音轨与源 MLP 一致` 仍然逐字节比对（那两边是同一份 MLP）。
+
+### 参考：两套编码器的实测差异
+
+拿 48000/24 立体声的同一首曲目对比 major sync（28 字节），
+**只有 3 处不同**，其余 25 字节全同：
+
+| 偏移 | 字段 | SurCode | ffmpeg |
+|------|------|---------|--------|
+| `[14:16]` | `peak_bitrate` | **3200** | 3199 |
+| `[16]` | `extended_substream_info` | **1** | 0 |
+| `[26:28]` | `checksum16` | 0xb960 | 0x2f92 |
+
+真正的差异在**流尾部**与**刷新频率**：
+
+| 项 | SurCode | ffmpeg |
+|----|---------|--------|
+| `END_OF_STREAM`（`0xD234D234`） | **147/147 都有** | **0/147** |
+| major sync 间隔 | 每 **8** 个 access unit | 每 16 个（更耐错） |
+
+> `speaker_layout` / `source_format` / `copy_protection` 两边**都是 0**，
+> 不是缺陷（早期文档曾误以为 ffmpeg 写死成 0 有问题）。
 
 ---
 
@@ -475,6 +542,15 @@ ffmpeg 于是读成 SCE（单声道）元素，第二次循环时声道数溢出
 - `--aob-extract` 提取音频时会在收尾阶段段错误退出（上游已知行为），
   但提取出的音轨数据完整（MD5 与源一致），不影响光盘播放
 - 光盘仅含 `AUDIO_TS`（纯 DVD-Audio），不含 `VIDEO_TS` 与菜单
+- **ffmpeg 的 `mlp` 编码器不写 `END_OF_STREAM`（`0xD234D234`）** ——
+  实测 147/147 个产出都缺，参考实现 SurCode 则 147/147 都有。
+  原因是该编码器未声明 `AV_CODEC_CAP_SMALL_LAST_FRAME`，导致末帧总被补齐成
+  完整 `frame_size`，编码器里 `shorten_by` 恒为 0，写结束标记的分支永不进入。
+  ffmpeg 自己的解码器对此宽容（只在剩余 ≥32 bit 时才检查），但硬件实现可能不宽容。
+  设 `DVDA_MLP_SOURCE="external"` 用外部编码器可回避；
+- **「foobar2000 能播放」不能推出硬件能播** —— 软件端几乎都用 libavcodec 的
+  `mlp` 解码器，与本工具链用的编码器同源，自洽性容易满足；
+  硬件实现是独立的一版，且厂商容错程度无从预判。唯一可靠的验证是真机刻盘
 
 ---
 
