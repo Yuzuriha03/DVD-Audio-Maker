@@ -382,18 +382,34 @@ DVDA_SRC="/mnt/e/其他音源" DVDA_TITLE="Test" python3 01_prepare.py
 **第 1 步：把 MLP 按下面的结构放好**
 
 ```
-<DVDA_MLP_EXTERNAL_DIR>/              ← 与音源**同构**，只是扩展名换成 .mlp
-├── Album A\
+<DVDA_MLP_EXTERNAL_DIR>/
+├── Album A/
 │   ├── 01. First Song.mlp
 │   └── 02. Second Song.mlp
-├── Album B\
+├── Album B/
 │   └── 01. Song One.mlp
 └── …
 ```
 
-即：**去掉音源根目录前缀、把扩展名换成 `.mlp`**。例如音源是
-`/mnt/d/Music/MyAlbums/Album A/01. First Song.flac`，
-对应的 MLP 就应是 `/mnt/d/Music/mlp/Album A/01. First Song.mlp`。
+规则只有一条：**把音源路径开头的 `DVDA_SRC` 换成 `DVDA_MLP_EXTERNAL_DIR`，
+中间的相对路径原样保留，只把扩展名换成 `.mlp`。**
+
+举例。音源根目录与其中一个文件是：
+
+```
+DVDA_SRC = /mnt/d/Music/MyAlbums
+音源     = /mnt/d/Music/MyAlbums/Album A/01. First Song.flac
+```
+
+设 `DVDA_MLP_EXTERNAL_DIR="/mnt/d/Music/mlp"`，则对应的 MLP 是：
+
+```
+MLP      = /mnt/d/Music/mlp/Album A/01. First Song.mlp
+```
+
+要换掉的是**整个音源根目录那一段**（上例的 `/mnt/d/Music/MyAlbums`），
+不是把它删掉就算了 —— 外部目录的层级完全可以与音源无关，只要
+「相对路径那一段」保持原样即可。
 
 镜像路径找不到时，会退回「按**文件名**在整个外部目录里搜一次」——
 所以就算 MLP 被平铺在别的层级下也大多能用（但要求文件名唯一）。
