@@ -26,8 +26,8 @@ ffmpeg -hide_banner -encoders | grep mlp
 ### 2. 获取 dvda-author 源码并打补丁
 
 ```bash
-sudo git clone https://github.com/fabnicol/dvda-author /home/yyz57/dvda/tools/dvda-author
-cd /home/yyz57/dvda/tools/dvda-author
+sudo git clone https://github.com/fabnicol/dvda-author /opt/dvda-author
+cd /opt/dvda-author
 
 # 上游 bug 修复（3 个，构建前提）
 python3 /path/to/DVD-Audio-Maker/fixes/fix_merged_and_audio_close.py
@@ -41,7 +41,7 @@ python3 /path/to/DVD-Audio-Maker/fixes/fix_secure_mkdir.py
 
 ```bash
 bash build_dvda_author_mlp.sh
-# 产物: /home/yyz57/dvda/tools/dvda-author-mlp8/src/dvda-author-dev
+# 产物: /root/dvda-author-mlp8/src/dvda-author-dev
 ```
 
 该脚本是**幂等**的，可重复运行。它会链接系统 FFmpeg 8 并把 `mlp.c`
@@ -90,9 +90,7 @@ bash verify.sh
 本节只对「想用外部工具生成 MLP」的人有意义，不需要就跳过。
 
 MLP 是封闭的专有格式，**SurCode MLP Encoder**（Minnetonka，Windows 商业软件）
-是参考实现；ffmpeg 的 `mlp` 编码器是开源替代品。本仓库默认用 ffmpeg，
-并**自动**把输出头部对齐到参考实现（见
-[对齐到参考实现](#对齐到参考实现自动无需配置)）。
+是参考实现；ffmpeg 的 `mlp` 编码器是开源替代品。
 
 三条路线：
 
@@ -108,9 +106,6 @@ MLP 是封闭的专有格式，**SurCode MLP Encoder**（Minnetonka，Windows �
 
 什么都不用装。`config.sh` 里 `DVDA_MLP_SOURCE="ffmpeg"`（默认）即可，
 `02_build.py` 会直接从音源编码 MLP，不产生中间 WAV。
-
-输出**自动对齐到参考实现的头部格式**（含补写 `END_OF_STREAM`），
-无开关、无参数。
 
 ---
 
@@ -204,7 +199,7 @@ D:\Music\MyAlbums\                      <- DVDA_SRC 指向这里
 ```bash
 DVDA_SRC="/mnt/d/Music/MyAlbums"
 DVDA_FINAL_DIR="/mnt/d/DVD_Output"
-DVDA_BUILD_DIR="/home/yyz57/dvda/build"      # 建议留在 WSL 内部
+DVDA_BUILD_DIR="/root/dvda-build"      # 建议留在 WSL 内部
 DVDA_TITLE="My DVD-Audio"              # 卷标: "My DVD-Audio 1", "My DVD-Audio 2"
 ```
 
@@ -223,9 +218,9 @@ D:\DVD_Output\My_DVD_Audio_2.iso
 ============================================================
   音源     : /mnt/d/Music/MyAlbums
   输出     : /mnt/d/DVD_Output
-  工作目录 : /home/yyz57/dvda/build
+  工作目录 : /root/dvda-build
   光盘标题 : My DVD-Audio    (卷标: "My DVD-Audio 1", ... ; 文件名前缀: My_DVD_Audio)
-  日志     : /home/yyz57/dvda/build/build.log
+  日志     : /root/dvda-build/build.log
 ```
 
 > **为什么工作目录建议放 WSL 内部**
@@ -268,6 +263,7 @@ DVD-Audio-Maker/
 ├── build.sh                     # 一键流水线
 ├── 01_prepare.py                # 步骤1：扫描 + 专辑归一化 + 解码校验
 ├── 02_build.py                  # 步骤2：MLP 编码 → 分盘 → 出盘 → 打包 ISO
+├── mlp_align.py                 # MLP 输出合规性校验与修补
 ├── alac_endfix.py               # 修复 Apple ALAC 未压缩帧缺 END 标记
 ├── verify.sh                    # 成品校验入口
 ├── audit_disc.py                # 光盘一致性审计
@@ -275,7 +271,7 @@ DVD-Audio-Maker/
 ├── verify_pts_length.py         # 逐轨 PTS_length 与源时长比对
 ├── build_dvda_author_mlp.sh     # 重编支持 24-bit MLP 的 dvda-author
 ├── patches/                     # 重编所需的源码补丁（5 个）
-├── fixes/                       # /home/yyz57/dvda/tools/dvda-author 的上游 bug 补丁（3 个）
+├── fixes/                       # /opt/dvda-author 的上游 bug 补丁（3 个）
 └── docs/
     ├── TROUBLESHOOTING.md       # 问题诊断记录与修复细节
     └── LICENSING.md             # 许可状况、第三方归属与法律说明
@@ -291,7 +287,7 @@ DVD-Audio-Maker/
 |--------|--------|------|
 | `DVDA_SRC` | *(空，必填)* | 音源根目录（只读） |
 | `DVDA_FINAL_DIR` | *(空，必填)* | ISO 输出目录 |
-| `DVDA_BUILD_DIR` | `/home/yyz57/dvda/build` | 中间产物根目录，**建议放 WSL 内部** |
+| `DVDA_BUILD_DIR` | `/root/dvda-build` | 中间产物根目录，**建议放 WSL 内部** |
 | `DVDA_TITLE` | `My DVD-Audio` | 光盘卷标；也是 ISO 文件名前缀的来源 |
 | `DVDA_ISO_PREFIX` | *(空)* | ISO 文件名前缀，留空由 `DVDA_TITLE` 派生 |
 | `DVDA_MAX_DISCS` | `2` | 期望的盘数上限；仅用于「放不放得下」的判断与提示，**不参与切分**；`0` = 不检查 |
@@ -299,11 +295,11 @@ DVD-Audio-Maker/
 | `DVDA_DISC_BYTES` | `4707319808` | 单盘容量上限（字节）；双层 DVD-9 可设 `8540123136` |
 | `DVDA_MLP_SOURCE` | `ffmpeg` | MLP 来源：`ffmpeg`（本工具链编码）/ `external`（用外部编码器产出） |
 | `DVDA_MLP_EXTERNAL_DIR` | *(空)* | 外部 MLP 根目录（仅 `external` 时用；结构须与音源一一对应） |
-| `DVDA_AUTHOR` | `/home/yyz57/dvda/tools/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
-| `DVDA_MKISOFS` | `/home/yyz57/dvda/tools/dvda-author/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs |
+| `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
+| `DVDA_MKISOFS` | `/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs |
 | `DVDA_FFMPEG` / `DVDA_FFPROBE` | `ffmpeg` / `ffprobe` | 用 PATH 解析 |
-| `DVDA_AUTHOR_SRC` | `/home/yyz57/dvda/tools/dvda-author-mlp8` | 编译目录 |
-| `DVDA_AUTHOR_ORIG` | `/home/yyz57/dvda/tools/dvda-author` | 原始源码目录 |
+| `DVDA_AUTHOR_SRC` | `/root/dvda-author-mlp8` | 编译目录 |
+| `DVDA_AUTHOR_ORIG` | `/opt/dvda-author` | 原始源码目录 |
 | `DVDA_LOSS_ERROR_S` | `0.05` | 解码采样数缺失超过此秒数 → FAIL |
 | `DVDA_LOSS_WARN_S` | `0.005` | 采样数差异超过此秒数 → WARN |
 | `DVDA_ALAC_REPAIR` | `1` | 是否自动修复 Apple ALAC 缺 END 标记 |
@@ -457,55 +453,11 @@ LSB 差异属预期，强行比对只会误报。此时改为核对
 | `END_OF_STREAM`（`0xD234D234`） | 有 | **无** |
 | major sync 间隔 | 每 **8** 个 access unit | 每 16 个（默认值） |
 
-major sync 是解码器的重同步点，间隔越短越耐错。ffmpeg 的 `-max_interval 8`
-可把间隔调到与 SurCode 一致，代价是体积约 +3.9%（单首 39.8 MB → 41.4 MB）。
+major sync 是解码器的重同步点，间隔越短越耐错。本工具链采用 **8** 个
+access unit 的间隔，代价是 MLP 体积约 +3.9%（单首 39.8 MB → 41.4 MB）。
 
 > `speaker_layout` / `source_format` / `copy_protection` 两边**都是 0**，
 > 属正常，不是缺陷。
-
-### 对齐到参考实现（自动，无需配置）
-
-`mlp_align.py` 在编码后对 MLP 做一次**纯字节修补**（不重编码，音频逐字节不变），
-把头部对齐到 SurCode：
-
-| 差异 | 状态 | 做法 |
-|------|------|------|
-| major sync 间隔 | ✔ 已对齐 | 编码时固定 `-max_interval 8` |
-| 末尾 `END_OF_STREAM` | ✔ 已对齐 | 插入 `0xD234D234`，并修正 AU 长度/奇偶、子流 parity/checksum |
-| `peak_bitrate` 3199→3200 | ✔ 已对齐 | 改**向上取整**，使 `(raw*sr+8)>>4` 往返精确 |
-| `extended_substream_info` 0→1 | ✔ 已对齐 | 直接置 1 |
-| **压缩载荷** | ✗ 无法对齐 | 两边的 LPC 系数、Huffman 码本、矩阵、块划分都不同 |
-
-> **只要用 ffmpeg 就会自动对齐，无开关、无参数。**
->
-> 外部模式（`DVDA_MLP_SOURCE="external"`）不经过这段代码 ——
-> 拿到的就是你自己编的 MLP，不会被改动。
->
-> **代价**：major sync 频率翻倍会让 MLP 体积约 +3.9%
-> （本项目实测 7.04 → 7.30 GiB）。
-
-**对齐效果**（48000/24 立体声同曲目，28 字节 major sync）：
-
-```
-对齐后: f8 72 6f bb 2f 0f 00 01 b7 52 40 00 00 00 8c 80 11 05 56 03 00 00 80 80 00 1b b9 60
-SurCode: f8 72 6f bb 2f 0f 00 01 b7 52 40 00 00 00 8c 80 11 05 56 03 00 00 80 80 00 1b b9 60
-→ 逐字节完全相同
-```
-
-脚本会重算并校验所有 major sync 校验和、每个 access unit 的头奇偶、
-以及子流 parity/checksum；自检不过就报错，不会交出未验证的流。
-
-单独使用：
-
-```bash
-python3 mlp_align.py --check  a.mlp b.mlp     # 只报告差异
-python3 mlp_align.py --align  a.mlp           # 原地对齐
-python3 mlp_align.py --align -o 输出目录 a.mlp  # 写到别处
-```
-
-> **关键限制**：头部只描述参数，真正被解码的是压缩载荷。
-> 即使头部每一个字节都对齐，载荷仍是另一套编码决策，
-> **无法由此推出“硬件能播”** —— 见「已知限制」。
 
 ---
 
@@ -674,8 +626,6 @@ ffmpeg 将其误读为单声道元素而丢弃整帧。
 
 - `dvda-author` 的 ATSI 表缓冲固定 3 扇区，**单组超过约 70 轨会栈溢出**
 - 末轨 AOB 可能少写几字节填充，导致文件不是 2048 的整数倍（已自动补齐）
-- 输出头部自动对齐到参考实现（见
-  [对齐到参考实现](#对齐到参考实现自动无需配置)）
 
 ---
 
@@ -691,9 +641,8 @@ ffmpeg 将其误读为单声道元素而丢弃整帧。
 - `--aob-extract` 提取音频时会在收尾阶段段错误退出（上游已知行为），
   但提取出的音轨数据完整（MD5 与源一致），不影响光盘播放
 - 光盘仅含 `AUDIO_TS`（纯 DVD-Audio），不含 `VIDEO_TS` 与菜单
-- 用 ffmpeg 编码时，输出会自动做头部对齐（见
-  [对齐到参考实现](#对齐到参考实现自动无需配置)）。
-  若需要与参考实现完全一致的载荷，请用 `DVDA_MLP_SOURCE="external"`
+- 用 ffmpeg 编码的 MLP 与参考实现在压缩载荷上不同。若需要完全一致的编码，
+  请用 `DVDA_MLP_SOURCE="external"` 提供自己编的 MLP
 - **「foobar2000 能播放」不能推出硬件能播** —— 软件端几乎都用 libavcodec 的
   `mlp` 解码器，与本工具链用的编码器同源，自洽性容易满足；
   硬件实现是独立的一版，且厂商容错程度无从预判。唯一可靠的验证是真机刻盘

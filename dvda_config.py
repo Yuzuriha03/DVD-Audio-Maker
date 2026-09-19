@@ -31,7 +31,7 @@ DEFAULTS = {
     # 路径
     "DVDA_SRC": "",
     "DVDA_FINAL_DIR": "",
-    "DVDA_BUILD_DIR": "/home/yyz57/dvda/build",
+    "DVDA_BUILD_DIR": "/root/dvda-build",
 
     # 光盘标识
     "DVDA_TITLE": "DVD-Audio",
@@ -47,12 +47,12 @@ DEFAULTS = {
     "DVDA_MLP_EXTERNAL_DIR": "",
 
     # 工具
-    "DVDA_AUTHOR": "/home/yyz57/dvda/tools/dvda-author-mlp8/src/dvda-author-dev",
-    "DVDA_MKISOFS": "/home/yyz57/dvda/tools/dvda-author/local.ubuntu.20.10/bin/mkisofs",
+    "DVDA_AUTHOR": "/root/dvda-author-mlp8/src/dvda-author-dev",
+    "DVDA_MKISOFS": "/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs",
     "DVDA_FFMPEG": "ffmpeg",
     "DVDA_FFPROBE": "ffprobe",
-    "DVDA_AUTHOR_SRC": "/home/yyz57/dvda/tools/dvda-author-mlp8",
-    "DVDA_AUTHOR_ORIG": "/home/yyz57/dvda/tools/dvda-author",
+    "DVDA_AUTHOR_SRC": "/root/dvda-author-mlp8",
+    "DVDA_AUTHOR_ORIG": "/opt/dvda-author",
 
     # 校验
     "DVDA_LOSS_ERROR_S": "0.05",
@@ -450,8 +450,6 @@ def main():
         print("                  （跳过编码；按 <外部目录>/<专辑目录>/<曲名>.mlp 取文件）")
     else:
         print(f"  ffmpeg        = 本工具链自行编码 -> {cfg.mlp_dir}")
-        print("                  头部对齐 = 强制"
-              "（-max_interval 8 + 补 END_OF_STREAM，对齐 SurCode）")
     print()
     print("工具:")
     for name, val in (("dvda-author", cfg.dvda), ("mkisofs", cfg.mkisofs),

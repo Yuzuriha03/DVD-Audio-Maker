@@ -154,11 +154,6 @@ DVDA_DISC_BYTES=""
 DVDA_MLP_SOURCE="ffmpeg"
 DVDA_MLP_EXTERNAL_DIR=""
 
-# 注：ffmpeg 模式下的 MLP 头部对齐是**自动**的，无开关也无参数：
-#   · major sync 间隔固定 8（与参考实现 SurCode 一致）
-#   · 补写 END_OF_STREAM、peak_bitrate 向上取整、extended_substream_info 置 1
-#   · 重算 major sync 校验和、AU 头奇偶、子流 parity/checksum
-# 代价：MLP 体积约 +3.9%。外部模式（DVDA_MLP_SOURCE=external）不受影响。
 
 
 # ---------------------------------------------------------------------------
