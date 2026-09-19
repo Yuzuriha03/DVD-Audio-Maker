@@ -49,8 +49,8 @@ MLP_DIR = CFG.mlp_dir                 # MLP 缓存目录
 MLP_INDEX = CFG.mlp_index             # MLP → 源/时长/重采样 + 分盘计划
 
 # 本次运行的构建日志。main() 里按是否 --dry-run 重定向：
-# dry-run 不执行 dvda-author，日志里不会有轨道表，若覆盖 build.log 会让
-# audit_disc.py / verify.sh 失去上次真出盘的审计依据（曾因此误报）。
+# dry-run 不执行 dvda-author，日志里不会有轨道表；若覆盖 build.log，
+# audit_disc.py / verify.sh 就取不到上次真出盘的审计依据。
 BUILD_LOG = CFG.build_log
 
 # 带 MLP 编码支持的 dvda-author（链接系统 FFmpeg 8，已迁移 API）
@@ -222,13 +222,12 @@ def _mlp_interval(head):
 
 
 def _mlp_cache_ok(path):
-    """直接校验缓存文件的**实际编码参数**是否符合当前设置。
+    """校验缓存文件的**实际编码参数**是否符合当前设置。
 
     只读首 128 KiB 与末尾 64 字节，代价极小。
 
-    为什么不用一份「参数快照」文件：快照只能记录“上次跑时想要什么”，不能证明
-    “磁盘上这些文件真的是用什么编的”。一旦出现「快照已更新但文件未重编」，
-    快照就会说谎而缓存永远不再失效（已踩过）。验文件本身不会。
+    直接验文件本身，而不是比对一份「参数快照」：快照只能记录“上次跑时想要
+    什么”，不能证明“磁盘上这些文件是用什么编的”。
     """
     try:
         size = os.path.getsize(path)
@@ -610,10 +609,8 @@ def build_disc(disc_index, groups):
     try:
         shutil.copy2(iso, final)
     except PermissionError as e:
-        # 目标被占用（常见：Windows 侧播放器/资源管理器打开了它，或刻录软件
-        # 持有句柄）。此时**不能假装成功** —— 改名写 _new.iso 只是权宜之计，
-        # 必须把原因、路径与后续处理明确告诉用户，否则会留下两份同名 ISO
-        # 而不知该用哪份（已踩过）。
+        # 目标被占用（Windows 侧播放器/资源管理器打开了它，或刻录软件持句柄）。
+        # 改名写 _new.iso 并把原因告知用户，避免留下两份同名 ISO 而不知用哪份。
         alt = os.path.join(FINAL_DIR, CFG.iso_name(disc_index)[:-4] + "_new.iso")
         shutil.copy2(iso, alt)
         final = alt

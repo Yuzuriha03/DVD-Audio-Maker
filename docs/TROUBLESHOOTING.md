@@ -20,7 +20,8 @@
 11. [校验脚本的组匹配错误（ATS_01_1.AOB 是组1）](#11-校验脚本的组匹配错误ats_01_1aob-是组1)
 12. [审计/校验误报：dry-run 冲掉了构建日志](#12-审计校验误报dry-run-冲掉了构建日志)
 13. [标签键名大小写导致专辑被拆散、归一化静默跳过](#13-标签键名大小写导致专辑被拆散归一化静默跳过)
-14. [诊断手法速查](#14-诊断手法速查)
+14. [ffmpeg 的 MLP 编码器不写 END_OF_STREAM](#14-ffmpeg-的-mlp-编码器不写-end_of_stream)
+15. [诊断手法速查](#15-诊断手法速查)
 
 ---
 
@@ -241,7 +242,7 @@ for (int s = 0; s < nframe; ++s)
 ### 2.5 链接错误
 
 ```
-cannot find /root/dvda-author-mlp8/local/lib/libswresample.a
+cannot find /home/yyz57/dvda/tools/dvda-author-mlp8/local/lib/libswresample.a
 ```
 
 Makefile 硬编码了 `local/lib/*.a` 路径。
@@ -477,7 +478,7 @@ python3 alac_endfix.py x.m4a x.fixed.m4a      # 修复到新文件
 `01_prepare.py` 现在会在解码校验失败时**自动尝试修复**：
 
 1. 检测到解码报错 → 调 `alac_endfix.find_bad_frames()`
-2. 有可修帧 → 修复到 `$DVDA_ALAC_FIX_DIR`（默认 `/root/dvda-build/alacfix`）
+2. 有可修帧 → 修复到 `$DVDA_ALAC_FIX_DIR`（默认 `/home/yyz57/dvda/build/alacfix`）
 3. **原文件绝不修改**，manifest 指向修复后的副本
 4. 修复后重新解码校验，采样数必须精确达标，否则仍判 FAIL
 
@@ -580,7 +581,7 @@ Group   Title  Track  First_Sect   Last_Sect  First_PTS  PTS_length cga
 让 `dvda-author` 报告每轨参数：
 
 ```bash
-/root/dvda-author-mlp8/src/dvda-author-dev -g a.mlp b.mlp \
+/home/yyz57/dvda/tools/dvda-author-mlp8/src/dvda-author-dev -g a.mlp b.mlp \
   -o out -D tmp -W -P0 -n 2>&1 | grep -E 'Found MLP audio|MTabLayout|Track'
 ```
 
@@ -1095,7 +1096,109 @@ d["album"] = tags.get("album", "")
 
 ---
 
-## 14. 诊断手法速查
+## 14. ffmpeg 的 MLP 编码器不写 END_OF_STREAM
+
+### 症状
+
+用 ffmpeg 编出的 MLP 拿去出盘，**ffmpeg 自己能正常解码**，但无法确认在
+硬件 DVD-Audio 播放器上是否正常 —— 与参考实现 SurCode MLP 的产出逐字节
+对比后，发现流末尾缺一个标记。
+
+### 根因
+
+MLP 规范要求流末尾写 `END_OF_STREAM`（`0xD234D234`）。ffmpeg 的编码器：
+
+```c
+if (ctx->last_frames == 0 && ctx->shorten_by) {
+    put_bits32(&pb, END_OF_STREAM);
+}
+```
+
+`shorten_by = frame_size - frame->nb_samples`。而 `mlp` 编码器**未声明**
+`AV_CODEC_CAP_SMALL_LAST_FRAME`（`truehd` 有）：
+
+```
+$ ffmpeg -h encoder=mlp     → dr1 delay exp            ← 没有 small
+$ ffmpeg -h encoder=truehd  → dr1 delay small exp      ← 有 small
+```
+
+于是 ffmpeg 通用层总把末帧补齐成完整 `frame_size`（40 样本），
+`shorten_by` 恒为 0，写结束标记的分支**永不进入**。
+这是必然结果，**靠命令行参数无法绕过**。
+
+### 排查
+
+用 access unit 解析器判定，**不要用子串搜索**：
+
+```python
+# ✗ 会误判：压缩数据里可能偶然出现 d234d234 这 4 个字节
+EOS in data
+
+# ✔ 只在「最后一个 AU 的第 1 个子流数据体末尾」找
+```
+
+实测 147 个文件中，有 1 个在压缩数据里偶然撞上该字节序列，
+按子串搜索会被误判为「已有结束标记」。
+
+### 修复
+
+`mlp_align.py` 做纯字节修补（详见该文件头部注释）。要点：
+
+1. 在最后一个 AU 的第 1 子流数据体**末尾**插入 4 字节 `d2 34 d2 34`
+2. 重算 `substream header` 的 `end`（+2 words）
+3. 重算 `access unit header` 的 `length`（+2 words）**及其 4 位奇偶校验**
+4. 重算该子流的 `parity` 与 `checksum`
+
+第 3 步容易漏 —— AU 头的 4 位奇偶是
+`XOR(input_timing, length_words, 各子流头字节)` 的折叠结果，length 变了它就得跟着变。
+
+### 验证手段
+
+要改一个带校验和的二进制流，前提是能**独立验证改动**。
+`mlp_align.py` 复刻了 ffmpeg 的 `av_crc`：
+
+```python
+crc_2D = 建表(poly=0x002D, bits=16, le=0)   # 建表后每个值 bswap32
+crc_63 = 建表(poly=0x0063, bits=8,  le=0)
+
+checksum16 = av_crc(crc_2D, 0, buf[:n-2]) ^ AV_RL16(buf[n-2:])
+checksum8  = av_crc(crc_63, 0x3c, buf[:n-1]) ^ buf[n-1]
+```
+
+判据：**能否重算出文件里已有的校验值**。在 ffmpeg 与 SurCode 两种真实产出上
+都验证通过（147 个文件、21 万+ 个 access unit 的 parity/checksum 全部对上）。
+
+修复后应满足：
+
+```
+[1] 对齐自检通过（校验和/奇偶/子流/结束标记）
+[2] ffmpeg 解码时出现 "End of stream indicated."
+[3] 解码 PCM 与修复前逐字节相同（音频未被改动）
+[4] 与 SurCode 的 major sync 逐字节相同
+```
+
+### 附带发现
+
+同曲目、同参数下，两套编码器的 major sync（28 字节）只差 3 处：
+
+| 偏移 | 字段 | SurCode | ffmpeg |
+|------|------|---------|--------|
+| `[14:16]` | `peak_bitrate` | 3200 | 3199 |
+| `[16]` | `extended_substream_info` | 1 | 0 |
+| `[26:28]` | `checksum16` | — | — |
+
+`peak_bitrate` 的差来自 ffmpeg 用向下取整 `((peak<<4)-8)/rate`，
+而解码公式是 `(raw*rate+8)>>4` —— 48000 Hz 下写 3199 会反算成 9597000。
+改向上取整即往返精确。
+
+> **教训**：「软件解码器能播」与「符合规范」是两件事。
+> 本项目的软件端几乎都用 libavcodec 的 `mlp` 解码器，与编码器同源，
+> 自洽性容易满足；要判断规范性必须找一个**独立实现**做参照
+> （这里是 SurCode），并逐字段比对。
+
+---
+
+## 15. 诊断手法速查
 
 ### 解析 AOB 的 PES 时间戳
 
