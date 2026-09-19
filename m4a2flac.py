@@ -48,7 +48,6 @@
 
     python3 m4a2flac.py <目录或文件>...
         --in-place      转换成功后删除源 m4a（默认保留；有任一文件失败就不删）
-        --no-repair     跳过 ALAC 修复（不推荐）
         --level N       FLAC 压缩级别 0-8（默认 8）
         --dry-run       只报告将要做什么
         --jobs N        并发数（默认 min(4, CPU 数)）
@@ -216,7 +215,7 @@ def has_cover(path):
     return bool(r.stdout.strip())
 
 
-def convert_one(src, level, do_repair, dry_run):
+def convert_one(src, level, dry_run):
     """转换单个文件。返回 (状态字符串, 详情 dict)"""
     base, _ = os.path.splitext(src)
     dst = base + ".flac"
@@ -233,7 +232,7 @@ def convert_one(src, level, do_repair, dry_run):
 
     if dry_run:
         n = 0
-        if do_repair and alac_endfix:
+        if alac_endfix:
             try:
                 frames, _ = alac_endfix.find_bad_frames(src)
                 n = len(frames)
@@ -246,15 +245,14 @@ def convert_one(src, level, do_repair, dry_run):
     try:
         # ---- 1. 缺陷修复（只在需要时落盘）----
         work = src
-        if do_repair:
-            if alac_endfix is None:
-                return bad("找不到 alac_endfix.py，无法检测缺陷")
-            frames, _ = alac_endfix.find_bad_frames(src)
-            if frames:
-                work = os.path.join(tmpdir, os.path.basename(src))
-                alac_endfix.repair(src, work, verbose=False)
-                info["repaired"] = len(frames)
-                info["bad_frames"] = [round(b["pts"], 3) for b in frames]
+        if alac_endfix is None:
+            return bad("找不到 alac_endfix.py，无法检测缺陷")
+        frames, _ = alac_endfix.find_bad_frames(src)
+        if frames:
+            work = os.path.join(tmpdir, os.path.basename(src))
+            alac_endfix.repair(src, work, verbose=False)
+            info["repaired"] = len(frames)
+            info["bad_frames"] = [round(b["pts"], 3) for b in frames]
 
         # ---- 2. 转换（音频 + 封面）----
         tags = normalize_tags(raw_tags)
@@ -353,8 +351,6 @@ def main():
     ap.add_argument("paths", nargs="+", help="目录或 .m4a 文件")
     ap.add_argument("--in-place", action="store_true",
                     help="转换成功后删除源 m4a（默认保留）")
-    ap.add_argument("--no-repair", action="store_true",
-                    help="跳过 ALAC 缺陷修复（不推荐）")
     ap.add_argument("--level", type=int, default=8, help="FLAC 压缩级别 0-8")
     ap.add_argument("--dry-run", action="store_true", help="只报告，不写文件")
     ap.add_argument("--jobs", type=int, default=min(4, os.cpu_count() or 1),
@@ -375,8 +371,7 @@ def main():
         return 1
 
     print(f"共 {len(files)} 个文件，压缩级别 {args.level}，"
-          f"并发 {args.jobs}，修复={'否' if args.no_repair else '是'}"
-          f"{'，DRY-RUN' if args.dry_run else ''}")
+          f"并发 {args.jobs}{'，DRY-RUN' if args.dry_run else ''}")
     print()
 
     ok = fail = 0
@@ -412,8 +407,7 @@ def main():
         print(f"  [OK] {name}  ({', '.join(bits)})")
 
     with futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
-        todo = {ex.submit(convert_one, f, args.level,
-                          not args.no_repair, args.dry_run): f
+        todo = {ex.submit(convert_one, f, args.level, args.dry_run): f
                 for f in files}
         for fu in futures.as_completed(todo):
             try:

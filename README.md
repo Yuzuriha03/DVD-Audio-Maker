@@ -188,7 +188,7 @@ python3 m4a2flac.py /path/to/music --dry-run # 先看会做什么
 比对。任一不过就删掉半成品并报错。
 
 选项：`--in-place`（转成功后删源）、`--level 0-8`（默认 8）、`--jobs N`、
-`--no-repair`（跳过缺陷修复，不推荐）、`--dry-run`。
+`--dry-run`。
 
 > 输出与源**同目录同名**，只是扩展名换成 `.flac`。那里若已有同名 `.flac`
 > 会被覆盖。
@@ -336,7 +336,6 @@ DVD-Audio-Maker/
 | `DVDA_AUTHOR_ORIG` | `/opt/dvda-author` | 原始源码目录 |
 | `DVDA_LOSS_ERROR_S` | `0.05` | 解码采样数缺失超过此秒数 → FAIL |
 | `DVDA_LOSS_WARN_S` | `0.005` | 采样数差异超过此秒数 → WARN |
-| `DVDA_ALAC_REPAIR` | `1` | 是否自动修复 Apple ALAC 缺 END 标记 |
 
 派生路径（都在 `DVDA_BUILD_DIR` 下，无需配置）：
 

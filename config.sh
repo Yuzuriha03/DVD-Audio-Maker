@@ -184,7 +184,3 @@ DVDA_AUTHOR_ORIG=""
 #   采样数差异        超过 DVDA_LOSS_WARN_S       → WARN
 DVDA_LOSS_ERROR_S="0.05"
 DVDA_LOSS_WARN_S="0.005"
-
-# Apple ALAC「未压缩帧缺 END 标记」自动修复
-#   1 = 开启（推荐）；0 = 关闭，仅报告不修复
-DVDA_ALAC_REPAIR="1"

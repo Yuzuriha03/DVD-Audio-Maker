@@ -56,7 +56,6 @@ REPORT = CFG.report                # 解码完整性报告
 ALAC_FIX_DIR = CFG.alac_fix_dir    # ALAC 修复产物（不修改原文件）
 FFMPEG = CFG.ffmpeg
 FFPROBE = CFG.ffprobe
-ALAC_REPAIR = CFG.alac_repair      # 是否自动修复 Apple ALAC 缺 END 标记
 
 # ---- 解码完整性校验参数 ----
 # 背景:ffmpeg 在 ALAC 等解码出错时仍会返回退出码 0,并把损坏处静默跳过,
@@ -197,9 +196,10 @@ def try_alac_repair(path, expected, src_rate=None):
     成功时返回 (修复后路径, 补帧数, 逐帧说明)；不适用或未改善时返回
     (None, 0, [])。原文件不做任何修改，修复产物写入 ALAC_FIX_DIR。
 
-    可用 config.sh 的 DVDA_ALAC_REPAIR=0 关闭（届时仅报告，不修复）。
+    检测到此类缺陷即修复，无开关。
     """
-    if alac_endfix is None or not ALAC_REPAIR:
+    if alac_endfix is None:
+        print("    [ALAC 修复] 不可用：找不到同目录的 alac_endfix.py")
         return None, 0, []
     if not path.lower().endswith((".m4a", ".mp4", ".alac")):
         return None, 0, []
