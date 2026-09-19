@@ -2,44 +2,31 @@
 # -*- coding: utf-8 -*-
 """把 ffmpeg 编码的 MLP 对齐到参考编码器（SurCode MLP）的头部
 
-背景
-----
-同曲目、同参数的 MLP，ffmpeg 与 SurCode 的 major sync（28 字节）
-实测只差 3 处，其余 25 字节全同：
+本工具链用 ffmpeg 编码 MLP，输出与参考实现在头部有两处差异，另有一处
+缺少流结束标记。本脚本做**纯字节修补**（不重编码，音频逐字节不变），
+把以下 4 点对齐：
 
-    [14:16] peak_bitrate                SurCode 3200   ffmpeg 3199
-    [16]    extended_substream_info     SurCode 1      ffmpeg 0
-    [26:28] checksum16                  （前两项的后果）
-
-另有一处不在 major sync 里：
-
-    流末尾                          SurCode 有 END_OF_STREAM   ffmpeg 无
-
-本脚本做**纯字节修补**（不重编码），把上述 4 处对齐：
-
-1. ``peak_bitrate``：ffmpeg 的 ``mlp_peak_bitrate()`` 用了
-   ``((peak << 4) - 8) / sample_rate``（整数截断），写出的值经解码公式
-   ``(raw * sr + 8) >> 4`` 反算**回不到** 9600000。
+1. ``peak_bitrate``
+   ffmpeg 用 ``((peak << 4) - 8) / sample_rate``（整数截断）写入，
+   该值经解码公式 ``(raw * sr + 8) >> 4`` 反算后回不到 9600000。
    改成向上取整 ``ceil((9600000 * 16 - 8) / sr)`` 即可往返精确：
-   48000 Hz -> 3200（与 SurCode 相同）、44100 Hz -> 3483。
-2. ``extended_substream_info`` -> 1（SurCode 147/147 都是 1）。
-   注意：ffmpeg 的解码器对 MLP 忽略此字段，且 ``mlp_get_major_sync_size()``
-   只在 TrueHD(0xba) 下才用它计算扩展长度，所以改它对 MLP 是**无副作用**的。
-3. 重算 major sync 的 ``checksum16``。
-4. 在最后一个 access unit 的第 1 个子流数据体**末尾**插入
-   ``END_OF_STREAM``（``0xD234D234``），并按规范修正：
+   48000 Hz -> 3200、44100 Hz -> 3483。
+2. ``extended_substream_info`` -> 1
+   （SurCode 全部产出都是 1。ffmpeg 的解码器对 MLP 忽略此字段，
+   且 ``mlp_get_major_sync_size()`` 只在 TrueHD(0xba) 下才用它，
+   故改它对 MLP 无副作用。）
+3. 重算 major sync 的 ``checksum16``（前两项的后果）。
+4. 流末尾补 ``END_OF_STREAM``（``0xD234D234``）
+   ffmpeg 的 ``mlp`` 编码器不写这个标记，插入位置为最后一个 access unit
+   的第 1 个子流数据体末尾，并按规范同步修正：
    ``substream header`` 的 ``end``（+2 words）、
    ``access unit header`` 的 ``length``（+2 words）、
    该 AU 头的 4 位奇偶校验、以及子流的 ``parity`` / ``checksum``。
 
-**不动压缩载荷**，所以音频内容逐字节不变（有自检可证）。
+处理完成后会重算并校验所有 major sync 校验和、每个 access unit 的头奇偶、
+以及子流 parity/checksum；自检不过就返回非零退出码。
 
-为什么 ffmpeg 不写 END_OF_STREAM
---------------------------------
-``mlp`` 编码器未声明 ``AV_CODEC_CAP_SMALL_LAST_FRAME``（``truehd`` 有），
-于是 ffmpeg 通用层总把末帧补齐成完整 ``frame_size``（40 样本），
-编码器里 ``shorten_by = frame_size - nb_samples`` 恒为 0，
-写 END_OF_STREAM 的分支永不进入 —— 这是**必然**结果，靠命令行参数无法绕过。
+在流水线中由 ``02_build.py`` 自动调用（ffmpeg 模式下无开关）。
 
 用法::
 
