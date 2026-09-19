@@ -84,6 +84,96 @@ bash verify.sh
 > 并指向 MLP 目录，流水线会**跳过编码**直接用它们出盘。
 > 见 [直接用已有 MLP](#直接用已有-mlp不再转码)。
 
+### 6. （可选）生成 MLP 要用什么工具
+
+本仓库默认用 ffmpeg 自己编码，**不需要额外工具**。
+本节只对「想用外部工具自己生成 MLP」的人有意义，不需要就跳过。
+
+**为什么会有这个问题**：MLP 是封闭的专有格式，**SurCode MLP Encoder**
+（Minnetonka，Windows 商业软件）是参考实现；ffmpeg 的 `mlp` 编码器是开源
+替代品，但被标记为 experimental，且不写流末尾的 `END_OF_STREAM` 标记。
+本仓库默认用 ffmpeg，并可用 `mlp_align.py` 把头部对齐到参考实现
+（见 [对齐到参考实现](#对齐到参考实现已实现默认开启)）。
+
+三条路线：
+
+| 路线 | 需要什么 | 说明 |
+|------|----------|------|
+| **A. ffmpeg**（默认） | 只需 ffmpeg | 本仓库已集成，无额外工具 |
+| **B. Batch MLP Encoder 3** | SurCode MLP + eac3to + .NET 4.6（Windows） | 半自动；见下 |
+| **C. SurCode MLP 手工操作** | SurCode MLP（Windows） | 最费事，见下 |
+
+---
+
+#### A. 用本仓库自带的 ffmpeg 编码（推荐）
+
+什么都不用装。`config.sh` 里 `DVDA_MLP_SOURCE="ffmpeg"`（默认）即可，
+`02_build.py` 会直接从音源编码 MLP，不产生中间 WAV。
+
+若想让输出在合规性上更接近参考实现，打开两项（默认已开）：
+
+```bash
+DVDA_MLP_MAX_INTERVAL="8"    # major sync 间隔对齐 SurCode
+DVDA_MLP_ALIGN="1"           # 头部对齐（含补写 END_OF_STREAM）
+```
+
+---
+
+#### B. Batch MLP Encoder 3
+
+**它解决什么问题**：SurCode **没有命令行**，只能通过 GUI 操作；而且它
+**只接受单声道 WAV** —— 立体声得先手工拆成 L/R 两个文件，再逐个导入。
+Batch MLP Encoder 就是把这套人工流程自动化：拖入 WAV/FLAC，
+它替你拆分并逐首驱动 SurCode。
+
+- 项目：`Batch MLP Encoder 3`（作者 SadPencil，GPL v2.0，v3.0.6）
+- 运行环境：**Windows**（Vista SP2 及以上）+ .NET Framework 4.6+
+- **依赖两个外部程序**（不自带，需自行安装，并在向导里指定路径）：
+  - `SurCode MLP Encoder`（`surcodemlp.exe`）
+  - `eac3to`（`eac3to.exe`）
+- 用法：向导式 5 步 —— 指定两个程序路径 → 拖入文件 → 选参数 →
+  设临时/输出目录 → 开始
+
+**它内部的流程**：
+
+```mermaid
+graph LR
+    A["WAV / FLAC"] --> B["eac3to<br/>拆成单声道<br/>L.wav / R.wav"]
+    B --> C["逐首驱动 SurCode GUI<br/>Open → Setup → Start"]
+    C --> D[".mlp"]
+```
+
+**已知坑**（都是程序自己的提示文本里写的，也都实测碰到过）：
+
+- **文件名或目录含特定字符（例如韩文）会让 SurCode 出错** ——
+  程序会自动换成临时名先编，编完再改回来
+- 它是 **GUI 自动化**（用 UI Automation 去点菜单），界面变化、弹窗、
+  超时都会失败；程序为每一步都写了超时与重试
+- **20-bit 没有对应的 WAV 容器**，会以 24-bit 存放，输出可能是 24-bit
+- 勾了重采样／升位深时，音频会被**改过** ——
+  例如勾 `-resampleTo48000` 后，全部曲目都会变成 48000 Hz
+  （见 [外部模式的两个行为差异](#外部模式的两个行为差异)）
+
+> 本仓库**不包含也不依赖**这个工具，也不替它做任何事。
+> 用它编完 MLP 后，再用本仓库的
+> [外部模式](#直接用已有-mlp不再转码)出盘即可。
+
+---
+
+#### C. 直接用 SurCode MLP 手工操作
+
+没有 Batch MLP Encoder 时的原始方法，需**每首曲目手动做一遍**：
+
+1. 用 eac3to（或其它工具）把音源拆成单声道 WAV
+2. 在 SurCode 里 `Open` 逐声道导入
+3. `Setup` 里设采样率/位深
+4. `Start` 编码，再 `Save` 到目标路径
+
+一首歌约 1 分钟，147 首就是两三个小时—— 这就是 Batch MLP Encoder 存在的理由。
+
+> 无论用 B 还是 C，**出盘时仍然需要音源文件**（MLP 容器不存标签也不存时长），
+> 原因见[直接用已有 MLP](#直接用已有-mlp不再转码)里的限制说明。
+
 ---
 
 ## 路径怎么写
@@ -334,7 +424,7 @@ bash build.sh --dry-run
 
 如果不已有 MLP、而是想让外部编码器现场编（例如 SurCode），
 配置与上面完全相同（`DVDA_MLP_SOURCE="external"`），
-只要把 `DVDA_MLP_EXTERNAL_DIR` 指向那个编码器的**输出目录**即可。
+只要把	t`DVDA_MLP_EXTERNAL_DIR` 指向那个编码器的**输出目录**即可。
 本工具链不会去调用该编码器 —— 你需要先把 MLP 编好，再跑出盘。
 
 ---
