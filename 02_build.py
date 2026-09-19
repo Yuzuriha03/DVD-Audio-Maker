@@ -228,41 +228,34 @@ def split_discs(album_list, disc_limit, num_discs):
 
     album_list : [(专辑名, MLP 字节数, 曲目列表), ...]（保持全局顺序）
     disc_limit : 单盘容量上限（字节，已扣除 ISO 预留）
-    num_discs  : 目标盘数；0 表示不限制（容量优先，尽量填满每张）
+    num_discs  : 期望的盘数上限；0 表示不限制。仅用于「是否放得下」的判断
+                 与提示，**不参与切分**。
 
     返回 (discs, msgs)：
       discs = [[(专辑名, 曲目列表), ...], ...]   每张盘的专辑序列
       msgs  = 面向用户的提示行
 
-    分盘策略：
-      · 指定盘数时，按「内容总量 / 盘数」均分，在专辑边界切分
-        —— 这样各盘容量接近，不会出现「前几张塞满、最后一张很空」
-      · 若均分目标超出单盘上限，改为容量优先，并提示至少需要几张
-      · 未指定盘数时直接容量优先
+    分盘策略：**逐盘填满**（贪心）——依次把专辑放进当前盘，放不下就开新盘。
+    专辑不拆散，所以这是「用最少盘数装下全部内容」的做法。
+
+    为什么不按盘数均分：
+      均分要把每张盘的目标定成「总量 ÷ 盘数」。但单盘实际能装更多时，
+      这个目标会让前面的盘提前停手，剩下的内容反而挤出一个新的盘。
+      例如总量 7.22 GiB、单盘上限 4.38 GiB：
+        · 逐盘填满 → 2 张（约 4.3 + 2.9 GiB）
+        · 均分 2 份 → 每张 3.61 GiB 就停，剩 0.10 GiB 变成第 3 张
     """
     msgs = []
     total = sum(sz for _, sz, _ in album_list)
     total_aob = total * AOB_OVERHEAD
     cnt = len(album_list)
 
-    if num_discs and num_discs > 0:
-        target = total_aob / num_discs
-        if target > disc_limit:
-            n_min = int(total_aob / disc_limit) + 1
-            msgs.append(
-                f"[分盘] 内容估 AOB {total_aob/1024**3:.2f} GiB，"
-                f"按 {num_discs} 张均分需 {target/1024**3:.2f} GiB/张，"
-                f"超出单盘上限 {disc_limit/1024**3:.2f} GiB")
-            msgs.append(f"[分盘] 至少需要 {n_min} 张盘；已改为容量优先")
-            target = disc_limit
-    else:
-        target = disc_limit
-
+    # 逐盘填满
     discs = []
     cur = []
     cur_size = 0
     for album, sz, trks in album_list:
-        if cur and (cur_size + sz) * AOB_OVERHEAD > target:
+        if cur and (cur_size + sz) * AOB_OVERHEAD > disc_limit:
             discs.append(cur)
             cur, cur_size = [], 0
         cur.append((album, trks))
@@ -270,18 +263,36 @@ def split_discs(album_list, disc_limit, num_discs):
     if cur:
         discs.append(cur)
 
+    # 单张专辑就超上限的情况（无法通过分盘解决）
     over = 0
     for i, d in enumerate(discs, 1):
         sz = sum(t["mlp_size"] for _, trks in d for t in trks)
         aob = sz * AOB_OVERHEAD
-        if aob > disc_limit:
+        if aob > disc_limit and len(d) == 1:
             over += 1
-            msgs.append(f"[分盘][警告] 第 {i} 盘估 AOB {aob/1024**3:.2f} GiB "
-                        f"超出上限 {disc_limit/1024**3:.2f} GiB —— "
-                        f"单张专辑过大且不可拆分，请减少该专辑曲目")
-    if not over:
-        msgs.append(f"[分盘] {cnt} 张专辑 -> {len(discs)} 张盘，"
+            msgs.append(
+                f"[分盘][警告] 第 {i} 盘只有一张专辑却已估 AOB "
+                f"{aob/1024**3:.2f} GiB，超出上限 "
+                f"{disc_limit/1024**3:.2f} GiB —— 专辑不可拆分，"
+                f"请减少该专辑曲目或改用更大容量的光盘")
+
+    # 与期望盘数比较
+    if num_discs and num_discs > 0 and len(discs) > num_discs:
+        msgs.append(
+            f"[分盘] 内容估 AOB {total_aob/1024**3:.2f} GiB，"
+            f"按单盘 {disc_limit/1024**3:.2f} GiB 需 {len(discs)} 张，"
+            f"超出期望的 {num_discs} 张")
+        msgs.append(
+            "[分盘] 若必须控制在 "
+            f"{num_discs} 张，可用 DVDA_DISC_BYTES 换更大容量"
+            "（如 DVD-9 = 8540123136），或精简内容")
+    elif over == 0:
+        extra = f"（期望不超过 {num_discs} 张）" if num_discs > 0 else ""
+        msgs.append(f"[分盘] {cnt} 张专辑 -> {len(discs)} 张盘{extra}，"
                     f"每张均在 {disc_limit/1024**3:.2f} GiB 以内 ✔")
+    else:
+        msgs.append(f"[分盘] {cnt} 张专辑 -> {len(discs)} 张盘，"
+                    f"其中 {over} 张超出上限（见上方警告）✗")
     return discs, msgs
 
 
