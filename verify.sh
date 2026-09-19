@@ -136,7 +136,9 @@ if target is None:
         target = None
 
 if not target or not os.path.exists(target):
-    print("__NOINFO__"); print(""); print(""); print("")
+    print("__NOINFO__")
+    for _ in range(7):
+        print("")
     raise SystemExit
 
 e = idx.get(target, {})
@@ -144,10 +146,17 @@ print(target)
 print(e.get("src", ""))
 print(e.get("resample_to") or "__NONE__")
 print(how)
+# 外部 MLP 信息：来源 / 是否被重采样 / 时长 / 采样率
+print(e.get("mlp_source") or "ffmpeg")
+print("1" if e.get("ext_resampled") else "0")
+print(e.get("dur") or 0)
+print(e.get("sr") or 0)
 PY
 )
   mlp="${info[0]:-}"; src="${info[1]:-}"
   rto="${info[2]:-}"; how="${info[3]:-}"
+  msrc="${info[4]:-ffmpeg}"; ext_rs="${info[5]:-0}"
+  dur="${info[6]:-0}"; msr="${info[7]:-0}"
   [ "$rto" = "__NONE__" ] && rto=""
 
   if [ "$mlp" = "__NOINFO__" ] || [ -z "$mlp" ] || [ -z "$src" ]; then
@@ -163,29 +172,66 @@ PY
 
   echo "源音源 : $src"
   echo "MLP    : $mlp"
+  echo "来源   : $msrc"
   [ -n "$rto" ] && echo "重采样 : -> ${rto}Hz (soxr)"
   [ -n "$how" ] && echo "定位依据: $how"
-  echo
+
+  local rc=0
+  local byte_exact=1
+  # ---- 外部编码器改过采样率时：不逐字节比对 ----
+  # 原因：外部编码器（如 SurCode）用的重采样滤波器与 soxr 不同，
+  # 输出的 PCM 在 LSB 上必然有差别，逐字节比对只会得到无意义的失败。
+  # 改而核对「解码采样数 == 时长 × MLP 采样率」，并在 ISO 那一项仍然
+  # 逐字节比对（因为那两边是同一份 MLP，应当完全一致）。
+  local byte_exact=1
+  if [ "$msrc" = "external" ] && [ "$ext_rs" = "1" ]; then
+    byte_exact=0
+    echo
+    echo "[1] 外部编码器改过采样率（源 $(python3 -c "import sys;print(round(float(sys.argv[1])))" "$dur" 2>/dev/null || echo ?)s × ${msr}Hz），"
+    echo "    跳过逐字节比对 —— 外部编码器的重采样滤波器与 soxr 不同，"
+    echo "    LSB 差异属预期，逐字节比只会误报。改为核对采样数："
+    local got_n
+    got_n=$("$DVDA_FFMPEG" -hide_banner -nostdin -v info -i "$mlp" \
+              -af astats=metadata=1 -f null - 2>&1 \
+            | grep -oP 'Number of samples:\s*\K[0-9]+' | head -n1)
+    local want_n
+    want_n=$(python3 -c "import sys;print(round(float(sys.argv[1])*int(sys.argv[2])))" "$dur" "$msr" 2>/dev/null || echo 0)
+    local err_n
+    err_n=$("$DVDA_FFMPEG" -hide_banner -nostdin -v info -i "$mlp" -f null - 2>&1 \
+            | grep -ciE 'error|invalid|not implemented' || true)
+    echo "    解码采样数 $got_n   期望 $want_n   解码错误 $err_n"
+    local tol=$(( msr / 20 ))          # 50 ms
+    if [ "$want_n" -gt 0 ] && [ "$got_n" -gt 0 ] \
+       && [ $(( got_n > want_n ? got_n - want_n : want_n - got_n )) -le "$tol" ] \
+       && [ "$err_n" = 0 ]; then
+      echo "[1] 采样数与时长吻合（±50ms 内）、解码无错  ✔"
+    else
+      rc=1
+      echo "[1] 采样数或解码异常  ✗"
+    fi
+    echo
+  fi
 
   local ares=()
   [ -n "$rto" ] && ares=(-af "aresample=${rto}:resampler=soxr")
 
-  local rc=0
-  # 1) MLP 解码后 PCM 与源音源（同样重采样后）比对
-  "$DVDA_FFMPEG" -hide_banner -loglevel error -y -i "$src" "${ares[@]}" \
-    -f s24le "$VDIR/src.raw"
-  "$DVDA_FFMPEG" -hide_banner -loglevel error -y -i "$mlp" -f s24le "$VDIR/dec.raw"
-  local n
-  n=$(stat -c %s "$VDIR/src.raw")
-  head -c "$n" "$VDIR/dec.raw" > "$VDIR/dec_trim.raw"
+  if [ "$byte_exact" = "1" ]; then
+    # 1) MLP 解码后 PCM 与源音源（同样重采样后）比对
+    "$DVDA_FFMPEG" -hide_banner -loglevel error -y -i "$src" "${ares[@]}" \
+      -f s24le "$VDIR/src.raw"
+    "$DVDA_FFMPEG" -hide_banner -loglevel error -y -i "$mlp" -f s24le "$VDIR/dec.raw"
+    local n
+    n=$(stat -c %s "$VDIR/src.raw")
+    head -c "$n" "$VDIR/dec.raw" > "$VDIR/dec_trim.raw"
 
-  if cmp -s "$VDIR/src.raw" "$VDIR/dec_trim.raw"; then
-    echo "[1] MLP 解码 PCM 与源音源逐字节一致  ✔"
-  else
-    rc=1
-    echo "[1] MLP 解码 PCM 与源音源存在差异  ✗"
-    echo "    源 $(stat -c %s "$VDIR/src.raw") 字节 / 解码 $(stat -c %s "$VDIR/dec.raw") 字节"
-    cmp -l "$VDIR/src.raw" "$VDIR/dec_trim.raw" | head -n 3 | sed 's/^/    /'
+    if cmp -s "$VDIR/src.raw" "$VDIR/dec_trim.raw"; then
+      echo "[1] MLP 解码 PCM 与源音源逐字节一致  ✔"
+    else
+      rc=1
+      echo "[1] MLP 解码 PCM 与源音源存在差异  ✗"
+      echo "    源 $(stat -c %s "$VDIR/src.raw") 字节 / 解码 $(stat -c %s "$VDIR/dec.raw") 字节"
+      cmp -l "$VDIR/src.raw" "$VDIR/dec_trim.raw" | head -n 3 | sed 's/^/    /'
+    fi
   fi
 
   # 2) 成品 ISO 内音轨与源 MLP 比对

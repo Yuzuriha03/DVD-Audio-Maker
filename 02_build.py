@@ -64,6 +64,15 @@ GROUP_TRACK_LIMIT = CFG.group_track_limit
 DISC_LIMIT_BYTES = CFG.disc_bytes     # 单盘容量（默认单层 DVD5）
 NUM_DISCS = CFG.max_discs             # 目标盘数；0 = 不限制
 
+# MLP 来源：ffmpeg = 本工具链编码；external = 用外部编码器（如 SurCode）的产出
+#
+# 外部模式的意义：SurCode 是 MLP 的参考实现，其输出在合规性上更可信
+# （实测它 147/147 都写了 END_OF_STREAM，ffmpeg 是 0/147）。但外部编码器
+# 可能改采样率/位深（SurCode 会把全部曲目统一到 48000/24），所以外部模式下
+# **以实际探测到的参数为准**来分组与分盘，不迷信 manifest。
+USE_EXTERNAL_MLP = CFG.use_external_mlp
+MLP_EXTERNAL_DIR = CFG.mlp_external_dir
+
 
 def to_wsl(p):
     p = p.replace("\\", "/")
@@ -116,15 +125,15 @@ def run(cmd, log_output=False):
     return r if False else type("R", (), {"returncode": r.returncode})()
 
 
-def ffprobe_mlp(path):
-    """读 MLP 的 (sample_rate, bits_per_raw_sample)。
+def probe_mlp_params(path):
+    """读 MLP 的 {sample_rate, channels, bits}。
 
-    注意:MLP 容器不记录时长(duration=N/A),但采样率与位深可读,
+    注意:MLP 容器不记录时长(duration=N/A),但采样率/声道/位深可读，
     可用于复核编码结果是否与音频组参数一致。
     """
     r = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "a:0",
-         "-show_entries", "stream=sample_rate,bits_per_raw_sample",
+         "-show_entries", "stream=sample_rate,channels,bits_per_raw_sample",
          "-of", "default=nw=1:nk=1", path],
         capture_output=True, text=True, encoding="utf-8", errors="replace")
     nums = []
@@ -133,9 +142,15 @@ def ffprobe_mlp(path):
             nums.append(int(line.strip()))
         except ValueError:
             nums.append(0)
-    while len(nums) < 2:
+    while len(nums) < 3:
         nums.append(0)
-    return nums[0], nums[1]
+    return {"sr": nums[0], "ch": nums[1], "bits": nums[2]}
+
+
+def ffprobe_mlp(path):
+    """读 MLP 的 (sample_rate, bits_per_raw_sample) —— 仅用于内部复核。"""
+    p = probe_mlp_params(path)
+    return p["sr"], p["bits"]
 
 
 def mlp_path_for(track):
@@ -196,6 +211,111 @@ def ensure_mlp(track):
             f"MLP 参数不符: {track['title']} 期望 {exp[0]}Hz/{exp[1]}bit, "
             f"实际 {got[0]}Hz/{got[1]}bit  ({track['src']})")
     return mlp
+
+
+# ---------------------------------------------------------------------------
+# 外部 MLP（如 SurCode 产出）
+# ---------------------------------------------------------------------------
+_EXT_INDEX = None       # {basename(无扩展): 完整路径}，按需构建
+
+
+def external_mlp_for(track):
+    """推导该曲目在 DVDA_MLP_EXTERNAL_DIR 里的 MLP 路径。
+
+    首选「镜像路径」：把音源路径的 <DVDA_SRC> 前缀换成外部目录，扩展名换 .mlp
+    （要求外部产出的目录结构与音源一一对应）。
+
+    镜像路径不存在时退回「按文件名全局搜」—— 外部工具可能把文件平铺在别的
+    层级下。两次都找不到则返回 (镜像路径, None)，由调用方报错。
+
+    返回 (镜像路径, 命中路径或 None)
+    """
+    global _EXT_INDEX
+    src = track["src"]
+    root = CFG.src.rstrip("/")
+    if src.startswith(root + "/"):
+        rel = src[len(root) + 1:]
+    else:
+        rel = os.path.basename(src)
+    mirror = os.path.join(MLP_EXTERNAL_DIR,
+                          os.path.splitext(rel)[0] + ".mlp")
+    if os.path.exists(mirror):
+        return mirror, mirror
+
+    if _EXT_INDEX is None:
+        _EXT_INDEX = {}
+        for r, _dirs, names in os.walk(MLP_EXTERNAL_DIR):
+            for n in names:
+                if n.lower().endswith(".mlp"):
+                    _EXT_INDEX.setdefault(os.path.splitext(n)[0],
+                                          os.path.join(r, n))
+    return mirror, _EXT_INDEX.get(os.path.splitext(os.path.basename(src))[0])
+
+
+def probe_audio_params(path):
+    """探测任意音频文件的 {sr, ch, bits}。
+
+    用于在外部模式下确定**源文件自身的原生参数**。
+    不能拿 manifest 的 resample_to 当源参数 —— 那个字段是**目标**采样率
+    （本组的归一化目标），不是源的原生采样率。
+    """
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=sample_rate,channels,bits_per_raw_sample",
+         "-of", "default=nw=1:nk=1", path],
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    nums = []
+    for line in r.stdout.splitlines():
+        try:
+            nums.append(int(line.strip()))
+        except ValueError:
+            nums.append(0)
+    while len(nums) < 3:
+        nums.append(0)
+    return {"sr": nums[0], "ch": nums[1], "bits": nums[2]}
+
+
+def collect_external_mlps(tracks):
+    """外部模式：定位并探测每首的 MLP，用**实际参数**覆盖 manifest 的值。
+
+    外部编码器可能改采样率/位深，所以分组与分盘必须以探测结果为准。
+    同时探测**源文件的原生参数**，用于判断外部编码器到底改了什么
+    （比对比 manifest 的组参数更有意义：manifest 记的是归一化目标，不是原生值）。
+
+    返回 (变更列表, 缺失列表, 声道分布)
+    """
+    changes, missing = [], []
+    chans = {}
+    for t in tracks:
+        mirror, hit = external_mlp_for(t)
+        if hit is None:
+            missing.append((t["title"], mirror))
+            continue
+        p = probe_mlp_params(hit)
+        if not p["sr"] or not p["bits"]:
+            missing.append((t["title"], hit))
+            continue
+        o = probe_audio_params(t["src"])
+
+        t["src_rate"] = o["sr"]
+        t["src_bits"] = o["bits"]
+        t["mlp"] = hit
+        t["mlp_size"] = os.path.getsize(hit)
+        t["sr"] = p["sr"]
+        t["bits"] = p["bits"]
+        t["ch"] = p["ch"]
+        # 供 verify 侧构造重采样链：MLP 采样率若与源原生值不同就得重采样
+        t["resample_to"] = p["sr"] if p["sr"] != o["sr"] else None
+        t["mlp_source"] = "external"
+        t["ext_resampled"] = bool(o["sr"] and p["sr"] != o["sr"])
+        t["ext_rebitded"] = bool(o["bits"] and p["bits"] != o["bits"])
+        t["param_changed"] = t["ext_resampled"] or t["ext_rebitded"]
+        if t["param_changed"]:
+            changes.append((t["title"],
+                            (o["sr"], o["bits"]),
+                            (p["sr"], p["bits"])))
+        chans.setdefault(p["ch"], []).append(t["title"])
+    return changes, missing, chans
 
 
 def group_by_rate(disc_albums):
@@ -440,25 +560,74 @@ def main():
     # 逐曲生成无损 MLP（缓存复用），并记录 MLP 体积用于分盘
     src_total = sum(t["size"] for t in tracks)
     print(f"总曲目 {len(tracks)} 首, 源文件合计 {src_total/1024**3:.2f} GiB")
-    print("开始无损 MLP 编码（已缓存则跳过）...")
 
-    done = 0
-    for t in tracks:
-        t["mlp"] = ensure_mlp(t)
-        t["mlp_size"] = os.path.getsize(t["mlp"])
-        done += 1
-        if done % 20 == 0 or done == len(tracks):
-            print(f"  已处理 {done}/{len(tracks)}")
+    if USE_EXTERNAL_MLP:
+        # ---- 外部模式：跳过编码，取外部编码器的产出 ----
+        print(f"MLP 来源: external（{MLP_EXTERNAL_DIR}）—— 跳过编码")
+        if not MLP_EXTERNAL_DIR or not os.path.isdir(MLP_EXTERNAL_DIR):
+            print(f"[FAIL] DVDA_MLP_EXTERNAL_DIR 无效: "
+                  f"{MLP_EXTERNAL_DIR or '(未设置)'}")
+            return 1
+        changes, missing, chans = collect_external_mlps(tracks)
+        print(f"已定位 {len(tracks) - len(missing)}/{len(tracks)} 个外部 MLP")
+        if missing:
+            print(f"[FAIL] 有 {len(missing)} 首找不到外部 MLP：")
+            for title, want in missing[:8]:
+                print(f"    {title}")
+                print(f"      期望: {want}")
+            if len(missing) > 8:
+                print(f"    ...（还有 {len(missing) - 8} 首）")
+            return 1
+
+        if len(chans) > 1:
+            print("[FAIL] 外部 MLP 的声道数不一致：")
+            for ch, titles in chans.items():
+                print(f"    {ch} 声道: {len(titles)} 首，例如 {titles[0]}")
+            print("       DVD-Audio 同批次必须同声道数，本工具链不做声道转换。")
+            return 1
+
+        if changes:
+            print(f"\n[提示] {len(changes)} 首的参数被外部编码器改过"
+                  f"（以下是「源原生 -> 外部 MLP」）：")
+            for title, old, new in changes[:12]:
+                print(f"    {title[:44]:<46} "
+                      f"{old[0]}/{old[1]}bit -> {new[0]}/{new[1]}bit")
+            if len(changes) > 12:
+                print(f"    ...（还有 {len(changes) - 12} 首）")
+            print("    已按**实际参数**分组与分盘；verify 侧对改过采样率的曲目"
+                  "改为核对采样数，不强行逐字节比对。")
+    else:
+        print("开始无损 MLP 编码（已缓存则跳过）...")
+        done = 0
+        for t in tracks:
+            t["mlp"] = ensure_mlp(t)
+            t["mlp_size"] = os.path.getsize(t["mlp"])
+            t["mlp_source"] = "ffmpeg"
+            done += 1
+            if done % 20 == 0 or done == len(tracks):
+                print(f"  已处理 {done}/{len(tracks)}")
 
     mlp_total = sum(t["mlp_size"] for t in tracks)
-    print(f"MLP 合计 {mlp_total/1024**3:.2f} GiB "
-          f"(相对源压缩 {(1 - mlp_total/src_total)*100:.2f}%, "
-          f"预计 AOB {mlp_total*AOB_OVERHEAD/1024**3:.2f} GiB)")
+    d_gib = mlp_total / 1024**3
+    if src_total:
+        print(f"MLP 合计 {d_gib:.2f} GiB "
+              f"(相对源 {100 * mlp_total / src_total - 100:+.2f}%, "
+              f"预计 AOB {mlp_total*AOB_OVERHEAD/1024**3:.2f} GiB)")
+    else:
+        print(f"MLP 合计 {d_gib:.2f} GiB "
+              f"(预计 AOB {mlp_total*AOB_OVERHEAD/1024**3:.2f} GiB)")
 
     # MLP 索引的逐曲部分：MLP 容器不记录时长，校验脚本需借助此表回溯源文件
     idx_tracks = {t["mlp"]: {"src": t["src"], "dur": t["dur"],
                              "sr": t["sr"], "bits": t["bits"],
+                             "ch": t.get("ch"),
+                             "src_rate": t.get("src_rate"),
+                             "src_bits": t.get("src_bits"),
                              "resample_to": t["resample_to"],
+                             "mlp_source": t.get("mlp_source", "ffmpeg"),
+                             "ext_resampled": t.get("ext_resampled", False),
+                             "ext_rebitded": t.get("ext_rebitded", False),
+                             "param_changed": t.get("param_changed", False),
                              "title": t["title"]}
                   for t in tracks}
 
@@ -512,6 +681,8 @@ def main():
     idx = {"__meta__": {"generated": time.strftime("%Y-%m-%d %H:%M:%S"),
                         "build_log": BUILD_LOG,
                         "dry_run": dry_run,
+                        "mlp_source": CFG.mlp_source,
+                        "mlp_external_dir": MLP_EXTERNAL_DIR or None,
                         "discs": len(discs), "tracks": len(tracks),
                         "aob_layout": "第 N 组 -> AUDIO_TS/ATS_01_N.AOB"},
            "__discs__": idx_plan}
