@@ -46,7 +46,11 @@ if not INDEX.exists():
     print("!! 未找到 %s，请先运行 02_build.py" % INDEX)
     sys.exit(1)
 mlp_index = json.loads(INDEX.read_text(encoding="utf-8"))
-print("mlp_index.json: %d 条" % len(mlp_index))
+# 索引里除逐曲条目外还有 __meta__ / __discs__ 两个元数据段，计数时排除
+_n_tracks = sum(1 for k in mlp_index if not k.startswith("__"))
+_n_discs = len(mlp_index.get("__discs__") or [])
+print("mlp_index.json: %d 条曲目%s"
+      % (_n_tracks, "，%d 张盘计划" % _n_discs if _n_discs else ""))
 
 # ---------- 解析每张盘的组与文件顺序（按 dvda-author 命令行） ----------
 PFX = CFG.mlp_dir.rstrip("/") + "/"
