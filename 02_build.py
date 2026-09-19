@@ -732,8 +732,6 @@ def main():
                   "改为核对采样数，不强行逐字节比对。")
     else:
         print("开始无损 MLP 编码（已缓存则跳过）...")
-        print("  头部对齐：自动（-max_interval %d + 补 END_OF_STREAM，"
-              "对齐 SurCode）" % MLP_MAX_INTERVAL)
         done = 0
         for t in tracks:
             t["mlp"] = ensure_mlp(t)
