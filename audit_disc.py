@@ -70,6 +70,33 @@ ROW = re.compile(
     re.M)
 
 
+def rmtree_rw(path):
+    """删除 xorriso 提取出来的目录树。
+
+    xorriso -osirrox 会保留 ISO 里的权限位（目录 dr-xr-xr-x、文件 -r-xr-xr-x），
+    那个目录没有写位，直接 rmtree/rm -rf 都删不掉里面的文件，只会留下残缺目录。
+    于是下一次运行 mkdir 会抛 FileExistsError —— 一份完全合格的 ISO 被判为失败。
+    故先把整棵树的写权限补回来再删。
+    """
+    if not path.exists():
+        return
+    for root, dirs, files in os.walk(path):
+        for name in dirs + files:
+            try:
+                os.chmod(os.path.join(root, name), 0o700)
+            except OSError:
+                pass
+        try:
+            os.chmod(root, 0o700)
+        except OSError:
+            pass
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass
+    shutil.rmtree(path, ignore_errors=True)
+
+
 def parse_pts(b):
     """解析 5 字节 PTS/DTS 字段。"""
     return ((((b[0] >> 1) & 0x07) << 30)
@@ -171,7 +198,7 @@ def main():
         print("### %s  (%d 字节)" % (iso.name, iso.stat().st_size))
 
         d = WORK / disc
-        shutil.rmtree(d, ignore_errors=True)
+        rmtree_rw(d)
         d.mkdir(parents=True)
         subprocess.run(["xorriso", "-osirrox", "on", "-indev", str(iso),
                         "-extract", "/AUDIO_TS", str(d / "AUDIO_TS")],
