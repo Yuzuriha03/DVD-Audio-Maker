@@ -19,7 +19,8 @@
 10. [审计误报：取到了上一次构建的日志](#10-审计误报取到了上一次构建的日志)
 11. [校验脚本的组匹配错误（ATS_01_1.AOB 是组1）](#11-校验脚本的组匹配错误ats_01_1aob-是组1)
 12. [审计/校验误报：dry-run 冲掉了构建日志](#12-审计校验误报dry-run-冲掉了构建日志)
-13. [诊断手法速查](#13-诊断手法速查)
+13. [标签键名大小写导致专辑被拆散、归一化静默跳过](#13-标签键名大小写导致专辑被拆散归一化静默跳过)
+14. [诊断手法速查](#14-诊断手法速查)
 
 ---
 
@@ -1006,7 +1007,95 @@ md5sum -c /tmp/before.md5        # build.log: OK
 
 ---
 
-## 13. 诊断手法速查
+## 13. 标签键名大小写导致专辑被拆散、归一化静默跳过
+
+### 症状
+
+把一批 Apple Music 的 m4a 转成 FLAC 后重新出盘，日志里出现异常：
+
+```
+共需重采样 9 首          ← 之前是 10 首
+group_44100_16: 1 首     ← 多出一个孤零零的组
+```
+
+原本应被归一化到 48000/24 的那首 `Lulala! Lululala! (韩文版)`（44100/16）
+不再出现在重采样列表里，而是自成一组。它所在的专辑有 5 首，其余 4 首都是
+48000/24，按「多数采样率」应当被归一化。
+
+**盘上会出现一个只有 1 轨的额外音频组，且该曲的采样率/位深与同专辑其他曲不同。**
+
+### 根因
+
+`01_prepare.py` 的标签读取是按**原样大小写**精确匹配的：
+
+```python
+d["album"] = tags.get("album", "")
+```
+
+而不同来源的标签习惯不同：
+
+| 来源 | 键名 |
+|------|------|
+| MP4 / m4a（Apple） | 小写 `album` / `title` / `date` |
+| FLAC（按 Vorbis 惯例，多数打标工具） | 大写 `ALBUM` / `TITLE` / `DATE` |
+
+于是同名专辑里：
+
+```
+01. 中文版.flac    album = 'Lulala! Lululala!(...) - EP'    ← 原有 FLAC，小写键
+02. 日文版.flac    album = ''                                ← 转出来的，大写 ALBUM
+03. 英文版.flac    album = ''
+04. 韩文版.flac    album = ''
+05. Instrumental  album = 'Lulala! Lululala!(...) - EP'      ← 原有 FLAC，小写键
+```
+
+专辑键变成 `''` 与真实名两种，分组被拆成 `{01, 05}` 和 `{02, 03, 04}`；
+後者里 44100/16 那一首与其余两首不同组内无法归一化，就形成独立组。
+
+> **规范依据**：Vorbis comment 的字段名**大小写不敏感**（
+> [vorbis-spec-ref](https://xiph.org/vorbis/doc/v-comment.html)：
+> "the field name ... is case-insensitive"）。
+> MP4 与 FLAC 两边都合法，**是读的一方有 bug**。
+
+### 诊断
+
+把 5 个文件的标签直接打出来：
+
+```bash
+for f in *.flac; do echo "--- $f"; \
+  metaflac --list --block-type=VORBIS_COMMENT "$f" | grep -i 'album'; done
+```
+
+会看到大写/小写两种键名。用 ffprobe 交叉验证更直接：
+
+```bash
+ffprobe -v error -show_format -of json "$f" | python3 -c \
+  "import json,sys; print(json.load(sys.stdin)['format']['tags'])"
+```
+
+ffprobe 对 FLAC 会**原样保留键名大小写**，所以能看出差异。
+
+### 修复
+
+读取时统一转小写：
+
+```python
+tags[k.lower()] = v
+...
+d["date"] = tags.get("date") or tags.get("releasetime") or ""
+d["title"] = tags.get("title", os.path.splitext(os.path.basename(path))[0])
+d["album"] = tags.get("album", "")
+```
+
+修复后重跑步骤1：重量采样数从 9 恢复到 10，多余的组消失。
+
+> **教训**：“新增一类音源”时不要把注意力全放在音频参数上。
+> 元数据也是接口，且**大小写、归一化、编码**都可能不一致。
+> 本次的音频流完全正确（无损、参数无误），出问题的只是字符串键名。
+
+---
+
+## 14. 诊断手法速查
 
 ### 解析 AOB 的 PES 时间戳
 
