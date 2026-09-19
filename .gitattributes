@@ -1,0 +1,31 @@
+# 行尾统一为 LF。
+#
+# 本工具链只在 WSL / Linux 下运行（bash + python3 + dvda-author + mkisofs）。
+# 此前仓库里 .py/.md 是 CRLF、.sh 是 LF，两者混放会让 git 把「改一行」报成
+# 整个文件重写，也会让跨平台的 checkout 出现意外（CRLF 的 .sh 会让 shebang
+# 失效）。此处一次性统一，之后新增文件无需再操心。
+#
+# `eol=lf` 的含义：无论在哪台机器上 checkout，工作区一律是 LF。
+
+* text=auto eol=lf
+
+# 源码与文档：显式声明为文本，不依赖自动探测
+*.py           text eol=lf
+*.sh           text eol=lf
+*.md           text eol=lf
+*.txt          text eol=lf
+LICENSE        text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf
+
+# 二进制：本仓库不附带音频（见 README），此处声明以免日后误加时被当作文本
+*.flac  binary
+*.wav   binary
+*.m4a   binary
+*.mlp   binary
+*.iso   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.zip   binary
+*.gz    binary
