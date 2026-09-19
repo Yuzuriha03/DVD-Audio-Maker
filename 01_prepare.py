@@ -47,6 +47,20 @@ MANIFEST = os.environ.get("DVDA_MANIFEST",
                           "/root/dvda-build/manifest.json")     # 清单输出
 REPORT = os.environ.get("DVDA_REPORT",
                         "/root/dvda-build/decode_report.txt")   # 解码完整性报告
+# ALAC 修复输出目录（不修改原文件）
+ALAC_FIX_DIR = os.environ.get("DVDA_ALAC_FIX_DIR",
+                              "/root/dvda-build/alacfix")
+
+# ---- ALAC「未压缩帧缺 END 标记」修复 ----
+# Apple 编码器周期性插入未压缩帧（raw PCM，用于随机访问），其后应写 END 标记
+# (3 位 111)，但 Apple 写的是 000；ffmpeg 于是读成 SCE(单声道)元素，第二次循环
+# 声道数溢出报错并丢整帧（每次 4096 采样 ≈ 85 ms @48k），而文件本身完全正常。
+# 详见 dvda_scripts/alac_endfix.py 与 docs/TROUBLESHOOTING.md。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import alac_endfix
+except ImportError:
+    alac_endfix = None
 
 # ---- 解码完整性校验参数 ----
 # 背景:ffmpeg 在 ALAC 等解码出错时仍会返回退出码 0,并把损坏处静默跳过,
@@ -173,6 +187,60 @@ def scan_decode_errors(stderr):
     return n, samples
 
 
+# ALAC 未压缩帧缺 END 标记的全部报错特征
+alac_endfix_importable = alac_endfix is not None
+
+
+def try_alac_repair(path, expected, src_rate=None):
+    """尝试修复 Apple ALAC 缺失 END 标记的问题。
+
+    `expected` 是**重采样后**的期望采样数（用于主校验）。
+    `src_rate` 是源文件采样率；修复效果的初步检验必须按源采样率换算
+    （用目标采样率算会误判：如 44100→48000 的源，修复后按 48000 算会
+    得到「采样数不足」的错误结论）。
+
+    成功时返回 (修复后路径, 补帧数, 逐帧说明)；不适用或未改善时返回
+    (None, 0, [])。原文件不做任何修改，修复产物写入 ALAC_FIX_DIR。
+    """
+    if alac_endfix is None:
+        return None, 0, []
+    if not path.lower().endswith((".m4a", ".mp4", ".alac")):
+        return None, 0, []
+    try:
+        bad, cookie = alac_endfix.find_bad_frames(path)
+    except Exception as e:                      # 非 ALAC / 解析失败
+        print(f"    [ALAC 修复] 跳过（{e}）")
+        return None, 0, []
+    if not bad:
+        print("    [ALAC 修复] 无缺失 END 标记的帧")
+        return None, 0, []
+
+    os.makedirs(ALAC_FIX_DIR, exist_ok=True)
+    out = os.path.join(ALAC_FIX_DIR, os.path.basename(path))
+    try:
+        r = alac_endfix.repair(path, out, verbose=False)
+    except Exception as e:
+        print(f"    [ALAC 修复] 失败: {e}")
+        return None, 0, []
+    print(f"    [ALAC 修复] 补回 {r['bad']} 帧的 END 标记 -> {out}")
+    detail = []
+    for b in r["patched"]:
+        mm, ss = divmod(b["pts"], 60)
+        line = (f"{b['pts']:>10.3f}s ({int(mm)}分{ss:05.2f}秒)  "
+                f"标记 {b['cur_bits']:03b} -> 111  ({b['n_samples']} 采样)")
+        detail.append(line)
+        print(f"       {line}")
+
+    # 验证修复效果：以【源采样率】为准（重采样由后续环节负责）
+    n2, e2 = alac_endfix.decode_samples(out)
+    rate = src_rate or cookie.get("sample_rate")
+    decl = alac_endfix.declared_samples(out)
+    if e2 == 0 and (decl is None or n2 == decl):
+        return out, r["bad"], detail
+    print(f"    [ALAC 修复] 未完全修复（采样 {n2}, 声明 {decl}, 报错 {e2} 行）")
+    return None, 0, []
+
+
 def track_num(t):
     """'1/5' -> 1"""
     m = re.match(r"\s*(\d+)", t or "")
@@ -231,7 +299,10 @@ def main():
     print(f"共需重采样 {len(resample)} 首")
 
     # 3. 应用重采样目标参数并分组
+    #    先记录源采样率/位深：ALAC 修复效果的初步检验需按源采样率换算
     for t in tracks:
+        t["_src_sr"] = t["sr"]
+        t["_src_bits"] = t["bits"]
         if t["path"] in resample:
             t["sr"], t["bits"] = resample[t["path"]]
 
@@ -281,8 +352,23 @@ def main():
             # ---- 解码完整性校验 ----
             # ffmpeg 解码出错时退出码仍为 0,需检查错误行与解码采样数
             checked += 1
-            samples, err_n, err_lines = decode_check(t["path"], rto)
             expected = round(t["dur"] * sr) if t.get("dur") else None
+            samples, err_n, err_lines = decode_check(t["path"], rto)
+            repaired = 0
+
+            # 解码异常时先尝试 ALAC END 标记修复（Apple 编码器特征问题）
+            # 实测:原文件完全正常,只是帧尾 3 位终结标记被写成 000,
+            # ffmpeg 会误判成 SCE 元素并丢掉整帧。修复后采样数精确达标。
+            if err_n > 0 or (samples is not None and expected
+                             and samples != expected):
+                fixed, repaired, rdetail = try_alac_repair(
+                    t["path"], expected, src_rate=t.get("_src_sr"))
+                if fixed:
+                    samples, err_n, err_lines = decode_check(fixed, rto)
+                    t["_repaired_from"] = t["path"]
+                    t["_repair_detail"] = rdetail
+                    t["path"] = fixed
+
             loss_ms = None
             if samples is not None and expected:
                 loss_ms = (expected - samples) / sr * 1000.0
@@ -316,6 +402,8 @@ def main():
                         reasons.append("解码采样数%s %.0f ms"
                                        % ("少" if loss_ms > 0 else "多",
                                           abs(loss_ms)))
+            if repaired:
+                detail.insert(0, "已修复 ALAC END 标记 %d 处（原文件未改动）" % repaired)
 
             if level:
                 issues.append({"level": level, "title": t["title"],
@@ -323,18 +411,33 @@ def main():
                                "reason": "; ".join(reasons), "detail": detail})
                 mark = "!!" if level == "FAIL" else " ?"
                 print(f"  {mark} [{level}] {t['title']}: {'; '.join(reasons)}")
+            elif repaired:
+                print(f"  ++ [已修复] {t['title']}: ALAC END 标记 {repaired} 处,"
+                      f"解码采样数已达标")
 
             files.append({"n": i, "src": t["path"], "name": name,
                           "title": t["title"], "date": t["date"],
                           "track": t["track"], "album": t["album"],
                           "dur": round(t["dur"], 6),
-                          "resample_to": rto})
+                          "resample_to": rto,
+                          "repaired": repaired,
+                          "repair_detail": t.get("_repair_detail"),
+                          "orig_src": t.get("_repaired_from")})
         manifest[gname] = {"sr": sr, "bits": bits, "count": len(files), "files": files}
         print(f"{gname}: {len(files)} 首")
 
     # 5. 解码完整性报告
     fails = [x for x in issues if x["level"] == "FAIL"]
     warns = [x for x in issues if x["level"] == "WARN"]
+    # 收集修复记录（按曲目）
+    repairs = []
+    for _gname, g in manifest.items():
+        for f in g["files"]:
+            if f.get("repaired"):
+                repairs.append({"title": f["title"], "n": f["repaired"],
+                                "orig": f.get("orig_src") or f["src"],
+                                "fixed": f["src"],
+                                "frames": f.get("repair_detail") or []})
     lines = []
     lines.append("音源校验报告")
     lines.append("=" * 68)
@@ -350,6 +453,26 @@ def main():
             lines.append(f"    {d}")
         lines.append("")
 
+    # ALAC END 标记修复记录
+    if repairs:
+        lines.append("")
+        lines.append("-" * 68)
+        lines.append("ALAC END 标记修复记录")
+        lines.append("-" * 68)
+        lines.append("说明：Apple 编码器产出的 ALAC 中，周期性插入的「未压缩帧」"
+                     "缺少帧尾")
+        lines.append("      END 终结标记（应为 111，实际为其他值），导致 ffmpeg "
+                     "误判为")
+        lines.append("      SCE 元素而丢弃整帧。原文件音频数据完好，仅补写该 3 位。")
+        lines.append("")
+        for r in repairs:
+            lines.append(f"[已修复 {r['n']} 帧] {r['title']}")
+            lines.append(f"    原文件: {r['orig']}")
+            lines.append(f"    修复后: {r['fixed']}")
+            for d in r["frames"]:
+                lines.append(f"    {d}")
+            lines.append("")
+
     os.makedirs(os.path.dirname(REPORT), exist_ok=True)
     with open(REPORT, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -359,6 +482,9 @@ def main():
     print("音源校验（解码完整性 + 组内参数一致性）")
     print("=" * 68)
     print(f"  已校验 {checked} 首；失败 {len(fails)} 首，警告 {len(warns)} 首")
+    if repairs:
+        print(f"  已自动修复 ALAC END 标记: {len(repairs)} 首"
+              f"（共 {sum(r['n'] for r in repairs)} 帧）")
     if not issues:
         print("  全部通过：无解码错误，采样数与源声明一致，组内参数一致")
     for x in fails + warns:
