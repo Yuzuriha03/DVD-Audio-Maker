@@ -368,7 +368,7 @@ DVD-Audio 制作工具链（[dvda-author](https://github.com/fabnicol/dvda-autho
 
 ### 2. 修复时间轴（播放加速 / 进度条不可拖）
 
-这是最隐蔽的一个。MLP 光盘的 PES 头时间戳依赖逐扇区的采样数累积，而
+MLP 光盘的 PES 头时间戳依赖逐扇区的采样数累积，而
 `avcodec_receive_frame()` 在返回 `EAGAIN` 前会**先 `av_frame_unref(frame)`**，
 导致循环外读 `frame->nb_samples` 恒为 0：
 
@@ -403,7 +403,9 @@ ffmpeg 退出码 = 0        ← 仍然报告成功
 **根因**：Apple 周期性插入「未压缩帧」（raw PCM，用于随机访问定位），
 间隔恰好 32 秒。这类帧的位数为
 
-$$\underbrace{23}_{\text{帧头}} + \underbrace{n \times ch \times \text{sample\_size}}_{\text{样本数据}}$$
+```
+帧头 23 位 + 采样数据 (n_samples × channels × 位深) 位
+```
 
 其后应按规范写 END 元素（3 位 `111`），但 Apple 写的是 `000`。
 ffmpeg 于是读成 SCE（单声道）元素，第二次循环时声道数溢出而丢整帧。
