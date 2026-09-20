@@ -298,13 +298,14 @@ DVD-Audio-Maker/
 ├── 02_build.py                  # 步骤2：MLP 编码 → 分盘 → 出盘 → 打包 ISO
 ├── mlp_align.py                 # MLP 输出合规性校验与修补
 ├── alac_endfix.py               # 修复 Apple ALAC 未压缩帧缺 END 标记
-├── m4a2flac.py                # M4A/ALAC → FLAC（修缺陷、规范化标签与封面）
+├── m4a2flac.py                  # M4A/ALAC → FLAC（修缺陷、规范化标签与封面）
 ├── verify.sh                    # 成品校验入口
+├── quick_check.py               # 快速结构校验（秒级，不解 AOB）
 ├── audit_disc.py                # 光盘一致性审计
 ├── check_aob_pts.py             # AOB 逐扇区 PTS 检查
 ├── verify_pts_length.py         # 逐轨 PTS_length 与源时长比对
 ├── build_dvda_author_mlp.sh     # 重编支持 24-bit MLP 的 dvda-author
-├── patches/                     # 重编所需的源码补丁（5 个）
+├── patches/                     # 重编所需的源码补丁（6 个）
 ├── fixes/                       # /opt/dvda-author 的上游 bug 补丁（3 个）
 └── docs/
     ├── TROUBLESHOOTING.md       # 问题诊断记录与修复细节
@@ -565,12 +566,25 @@ DVD-Audio 同一音频组内所有曲目须同声道数。本工具链**不做�
 
 ```bash
 bash verify.sh            # 全部
+bash verify.sh quick      # 快速结构校验（秒级）
 bash verify.sh capacity   # 单盘容量与结构
 bash verify.sh audit      # 光盘一致性审计
 bash verify.sh timeline   # AOB 时间轴抽查
 bash verify.sh lossless   # MLP 无损性
 bash verify.sh config     # 打印当前配置
 ```
+
+**`quick` 是平时该跑的那个**（约 3 秒），它不解 AOB、不解码 MLP，只做三件事：
+
+1. 构建日志里不得有 pack 补齐失败的记录
+2. 各音频组 IFO 声明的轨数之和 == 音源曲目数
+3. 每一轨的首扇区必须以 pack 头（`00 00 01 BA`）开头
+
+第 3 项是**唯一能查出「每盘少一首」的检查** —— 那种缺陷下 IFO 轨数、总时长、
+逐轨扇区表全都正常，只有字节对齐坏了，读盘端会整首丢弃（详见
+[TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 16 节）。
+
+`all` 会跑完整的一套（要解 4.5 GB 的 AOB 并解码 MLP，**很慢**），适合最终确认。
 
 `audit_disc.py` 按音频组独立核对（扇区号在各组内从 0 起）：
 
@@ -580,6 +594,8 @@ bash verify.sh config     # 打印当前配置
 | B | 组内各轨扇区首尾相接（无缝无叠） |
 | C | 每个扇区都有 PTS |
 | D | 每个 PTS 下降点恰好落在某轨的首个扇区 |
+| E | 各轨起点的 PTS 取值 |
+| F | 每一轨的首扇区以 pack 头开头 |
 
 > 审计会打印所用的构建日志及其修改时间。若目录里残留了上次构建的日志，
 > 会把新 AOB 与旧轨道表比对而**误报不一致**，所以脚本按 mtime 取最新者。
