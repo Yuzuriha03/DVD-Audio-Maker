@@ -102,6 +102,7 @@ echo "=== [5/7] 迁移 mlp.c 到 FFmpeg 8 API ==="
 python3 "$PATCHES/patch_read.py"      # channels/ch_layout、pkt_pos、av_read_frame
 python3 "$PATCHES/patch_read2.py"     # 提取分支的读取循环
 python3 "$PATCHES/patch_encode.py"    # planer 采样格式、放开 24-bit
+python3 "$PATCHES/patch_ats_pack.py"  # pack 补到 2048 边界（否则每盘丢 1 轨）
 
 echo "=== [6/7] 清理旧对象并重建系统库链接 ==="
 # 注意：只清理构建产物，不能删除 local/ 下的库符号链接

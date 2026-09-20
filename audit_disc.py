@@ -264,6 +264,27 @@ def main():
                            if r["first"] < n and pts[r["first"]] is not None})
             print("     E. 各轨起点 PTS 取值: %s" % vals)
 
+            # 每轨的首扇区必须以 pack 头 00 00 01 BA 开头。
+            # 若某轨最后一个 pack 没补齐到 2048 边界（dvda-author 的
+            # write_pes_padding 在余 1~6 字节时只报错不写），其后第一轨的 pack
+            # 头会落进扇区中间；按扇区取该轨的读盘端拿不到 stream id，会把整首
+            # 直接丢弃 —— 表现为「每张盘少 1 首」，而 PTS 检查完全看不出来。
+            nopack = [r["first"] for r in rs
+                      if r["first"] < n
+                      and buf[r["first"] * 2048:r["first"] * 2048 + 4]
+                      != b"\x00\x00\x01\xBA"]
+            f_ok = not nopack
+            print("     F. 首扇区以 pack 头开头 %s"
+                  % ("全部 ✔" if f_ok
+                     else "异常 %d 轨 ✗ 轨号 %s" % (len(nopack),
+                                                 [r["n"] for r in rs
+                                                  if r["first"] in nopack][:5])))
+            if not f_ok:
+                for s in nopack[:3]:
+                    print("        扇区 %d 开头: %s"
+                          % (s, buf[s * 2048:s * 2048 + 8].hex(" ")))
+            ok &= f_ok
+
             summary.append((disc, g, len(rs), sect, declared,
                             len(drops), len(starts)))
         print()
