@@ -302,6 +302,7 @@ case "$WHAT" in
     rc=0
     check_capacity || rc=1
     echo; check_audit || rc=1
+    echo; check_timeline || rc=1
     echo; check_lossless || rc=1
     echo
     if [ $rc = 0 ]; then
