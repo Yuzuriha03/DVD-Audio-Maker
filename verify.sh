@@ -4,6 +4,7 @@
 #
 # 用法（WSL 内）:
 #   bash verify.sh            # 全部检查
+#   bash verify.sh quick      # 仅快速结构校验（秒级，不解 AOB）
 #   bash verify.sh capacity   # 仅容量与结构
 #   bash verify.sh audit      # 仅光盘一致性审计（扇区/PTS/轨边界）
 #   bash verify.sh timeline   # 仅时间轴抽查
@@ -50,6 +51,15 @@ check_audit() {
   echo "核对：AOB 扇区数 / 轨间连续性 / PTS 完整性 / PTS 下降点是否落在轨边界"
   echo
   python3 -u "$HERE/audit_disc.py"
+}
+
+# ---------------------------------------------------------------- 快速
+check_quick() {
+  echo "=================== 快速结构校验 ==================="
+  echo "检查：pack 补齐日志 / IFO 轨数 / 每轨首扇区是 pack 头"
+  echo "（不解 AOB、不解码 MLP，几秒完成；完整校验见 bash verify.sh）"
+  echo
+  python3 -u "$HERE/quick_check.py" "$DVDA_FINAL_DIR" "$DVDA_BUILD_LOG"
 }
 
 # ---------------------------------------------------------------- 容量
@@ -294,6 +304,7 @@ check_timeline() {
 
 case "$WHAT" in
   config)   check_config ;;
+  quick)    check_quick ;;
   capacity) check_capacity ;;
   audit)    check_audit ;;
   lossless) check_lossless ;;
@@ -313,6 +324,6 @@ case "$WHAT" in
     exit $rc
     ;;
   *)
-    echo "用法: bash verify.sh [config|capacity|audit|timeline|lossless|all]"
+    echo "用法: bash verify.sh [config|quick|capacity|audit|timeline|lossless|all]"
     exit 1 ;;
 esac
