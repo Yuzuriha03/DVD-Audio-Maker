@@ -17,6 +17,8 @@
     3. AUDIO_TS.IFO 的扇区数足够容纳菜单表（上游 AMG 缓冲越界的判据）
     4. 每页的 spumux 按钮总数 >= 该盘曲目数（少了就有曲子点不到）
     5. ASVS 的静图扇区数 <= 1024（超出会被丢弃）
+   5b. 翻页链路：各页 cell 地址链连续、next/prev 菜单号正确
+   5c. 播放封面表：每首歌是否真能看到自己专辑的封面（见 check_stills）
     6. 菜单画面抽帧不是全黑（背景图真的生效了）
 """
 
@@ -211,7 +213,97 @@ def frame_stats(vob):
         return None
 
 
-def check_iso(iso, expect_tracks, expect_pages, tmpdir, label):
+# ASVS（AUDIO_SV.IFO，播放封面）字段位置（实测，对应 src/asvs.c）
+ASVS_TITLE_COUNT = 0x0C     # u16：声明的「有自己静图的曲目」条数
+ASVS_LAST_SECTOR = 0x14     # u32：静图总扇区数 - 1
+ASVS_TABLE = 0x60           # 第 k 条记录的起点，每条 8 字节
+ASVS_ENTRY_LEN = 0x08
+
+
+def asvs_titles(ifo_path):
+    """读 AUDIO_SV.IFO 的静图表，返回 (条数, [(图数, 起始图号, 起始扇区)], 总扇区-1)。
+
+    “播放时显示专辑封面”能不能成立，取决于两件事：
+
+      1. 每个专辑的**首轨**拿到自己的封面（否则那首歌看到的是上一张图）；
+      2. 同一专辑后续曲目**不声明**静图，播放器便维持上一张显示 —— 这就是
+         「每专辑一张」的实现方式（也确实省 ASVS 预算），
+
+    所以 `条数` 应该恰好等于「有封面的专辑数」，且每条只含 1 张图、
+    图号从 1 开始连续。
+    """
+    with open(ifo_path, "rb") as f:
+        d = f.read()
+    if len(d) < ASVS_TABLE + 4:
+        return 0, [], None
+    n = _u16(d, ASVS_TITLE_COUNT)
+    last = _u32(d, ASVS_LAST_SECTOR)
+    entries = []
+    for i in range(n):
+        off = ASVS_TABLE + i * ASVS_ENTRY_LEN
+        if off + ASVS_ENTRY_LEN > len(d):
+            return n, entries, last
+        entries.append((d[off], _u16(d, off + 2), _u32(d, off + 4)))
+    return n, entries, last
+
+
+def check_stills(iso, ifo_path, vob_path, expect_covered, expect_albums):
+    """从 ISO 取 ASVS 文件后交给 check_stills_data 校验。"""
+    if not extract(iso, "/AUDIO_TS/AUDIO_SV.IFO", ifo_path):
+        print("  [FAIL] 无法提取 AUDIO_SV.IFO，播放封面未能校验")
+        return False
+    return check_stills_data(ifo_path, vob_path, expect_covered,
+                             expect_albums)
+
+
+def check_stills_data(ifo_path, vob_path, expect_covered, expect_albums):
+    """校验播放封面（ASVS）表与「每专辑一张」的预期一致。
+
+    与取文件分开，是为了让校验逻辑本身可以被单独喂数据测试
+    （否则想验证「它真的会报错」时，内部那次解包会把改过的文件覆盖掉）。
+
+    expect_covered : 有 cover.jpg 的专辑数（应等于 ASVS 的条数）
+    expect_albums  : 全部专辑数（用于指出多少张专辑会显示别的封面）
+    """
+    n, entries, last = asvs_titles(ifo_path)
+    sectors = (os.path.getsize(vob_path) + 2047) // 2048
+    issues = []
+    if n != len(entries):
+        issues.append(f"IFO 声明 {n} 条静图记录，实际只读到 {len(entries)} 条")
+    if last != sectors - 1:
+        issues.append(f"IFO 记录的静图总扇区数 {last + 1} != AUDIO_SV.VOB 扇区数 {sectors}"
+                      f" —— 封面表与 VOB 对不上")
+    pics = 0
+    for i, (npics, start, sec) in enumerate(entries, 1):
+        if npics < 1:
+            issues.append(f"第 {i} 条记录的图数为 {npics}")
+        if start != 1 + pics:
+            issues.append(f"第 {i} 条记录的起始图号 {start}，应为 {1 + pics}"
+                          f" —— 图号不连续")
+        if sec * 2048 >= os.path.getsize(vob_path):
+            issues.append(f"第 {i} 条记录的起始扇区 {sec} 超出 AUDIO_SV.VOB")
+        pics += npics
+    if expect_covered is not None and n != expect_covered:
+        issues.append(f"静图条数 {n} != 有封面的专辑数 {expect_covered}")
+        if n < expect_covered:
+            issues.append("少的那几首会看到上一张封面（同专辑后续轨是靠"
+                          "沿用上一张显示实现的，所以断链会显错）")
+    if issues:
+        print(f"  [FAIL] 播放封面表异常（{n} 条记录，{pics} 张图）")
+        for msg in issues:
+            print(f"         · {msg}")
+        return False
+    lack = (expect_albums - expect_covered) if expect_albums else 0
+    print(f"  [OK]   播放封面：{n} 张图对应 {n} 个专辑（含 {pics} 张静图，"
+          f"{sectors} 扇区），图号与扇区偏移均连续")
+    if lack:
+        print(f"  [WARN] 共 {expect_albums} 个专辑，其中 {lack} 个没有 cover.jpg"
+              f" —— 这些专辑会显示上一张专辑的封面")
+    return True
+
+
+def check_iso(iso, expect_tracks, expect_pages, tmpdir, label,
+              expect_covered=None, expect_albums=None):
     print(f"\n=== {label}: {os.path.basename(iso)} ===")
     names = iso_files(iso)
     if not names:
@@ -266,6 +358,13 @@ def check_iso(iso, expect_tracks, expect_pages, tmpdir, label):
               f"(上限 {MAX_ASVS_SECTORS})")
         if sectors > MAX_ASVS_SECTORS:
             ok = False
+        # 5c. 播放封面表：每首歌是否真能看到自己专辑的封面
+        if not check_stills(iso, os.path.join(tmpdir, "AUDIO_SV.IFO"), sv,
+                            expect_covered, expect_albums):
+            ok = False
+    else:
+        print("  [FAIL] 无法提取 AUDIO_SV.VOB，播放封面未能校验")
+        ok = False
 
     # 5b. 翻页链路：各页 cell 地址链与 next/prev 菜单号
     # 这一项能查出「部分页 Previous 回不去」——每页 VOB 大小接近时，
@@ -344,8 +443,20 @@ def main():
             tracks = sum(len(g) for g in groups)
             pages, _ = menu_assets.group_pages(
                 [len(g) for g in groups], cfg.menu_tracks_per_page)
+            # 播放封面的预期：每个「连续同专辑」块发一张图，与 menu_assets 一致
+            album_dirs, seen = [], set()
+            for g in groups:
+                for t in g:
+                    d = os.path.dirname(t.get("src") or "")
+                    if d and d not in seen:
+                        seen.add(d)
+                        album_dirs.append(d)
+            covered = sum(1 for d in album_dirs
+                          if os.path.isdir(d) and menu_assets.find_cover(d))
+            expect_albums, expect_covered = len(album_dirs), covered
         else:
             tracks, pages = None, None
+            expect_albums = expect_covered = None
             print("[提示] 指定 --iso 时无法核对期望页数，只做存在性检查")
         if tracks is None:
             print(f"\n=== {os.path.basename(iso)} ===")
@@ -355,7 +466,7 @@ def main():
                 print(f"  [{'OK' if f in base else 'FAIL'}] AUDIO_TS/{f}")
             continue
         ok = check_iso(iso, tracks, pages, f"/tmp/verify-menu/disc{i}",
-                       f"第 {i} 盘")
+                       f"第 {i} 盘", expect_covered, expect_albums)
         all_ok = all_ok and ok
 
     print()
