@@ -128,6 +128,8 @@ python3 "$PATCHES/patch_stillpics_atsi_record.py"  # 播放封面不能被跳过
 # 上游因「MLP 不能无缝接轨」的猜测让每轨自成 title，而「下一段」是在
 # 同一 title 内换轨 → 点「下一段」切不了歌。去掉该条件，一个组 = 一个 title。
 python3 "$PATCHES/patch_mlp_one_title.py"
+# ATS_PTT_SRPT（PTT 搜索指针表）原版从不写 → 「下一曲」没有可落的分曲点。
+python3 "$PATCHES/patch_ats_ptt_srpt.py"
 
 echo "=== [5b/8] 应用菜单（AMG / ASVS）修复 ==="
 # 顺序敏感：layout 会把 command->maxntracks 换成 img->maxbuttons，
