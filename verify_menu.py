@@ -67,47 +67,130 @@ def amg_menu_count(ifo):
     return pgs, nmenus
 
 
+# AMG 菜单 PGC 表的字段位置（实测，见 docs/TROUBLESHOOTING.md 16.24/16.25）
+AMG_LU_OFF = 0x1810        # 语言单元起点：下面几个相对指针都以它为基准
+AMG_PGC_PTR = 0x181C       # 第 1 页 PGC 的相对指针
+AMG_INDEX_OFF = 0x1820     # 菜单 PGC 索引表（nmenus-1 项，每项 8 字节）
+PGC_STRIDE = 0x132         # 实测：相邻两页 PGC 起始地址之差
+PGC_NEXT_MENU = 0x09C      # 下一页菜单号（uint16）
+PGC_PREV_MENU = 0x09E      # 上一页菜单号（uint16）
+PGC_CELL_START = 0x11E     # cell 起始扇区（uint32）
+PGC_CELL_START2 = 0x126    # 同上，再写一遍
+PGC_CELL_END = 0x12A       # cell 结束扇区（uint32）
+
+
+def _u16(d, off):
+    return struct.unpack(">H", d[off:off + 2])[0]
+
+
+def _u32(d, off):
+    return struct.unpack(">I", d[off:off + 4])[0]
+
+
+def menu_pgc_bases(d, n):
+    """返回各页菜单 PGC 在 AUDIO_TS.IFO 里的起始地址（第 1 页在首位）。"""
+    bases = [AMG_LU_OFF + _u32(d, AMG_PGC_PTR)]
+    for k in range(n - 1):
+        bases.append(AMG_LU_OFF + _u32(d, AMG_INDEX_OFF + k * 8 + 4))
+    return bases
+
+
 def menu_cell_chain(ifo, vob):
-    """检查 AMG 菜单的 cell 地址链是否连续。
+    """校验 AMG 菜单各页 cell 的地址链与翻页目标。
 
     ## 为什么需要这一项
 
-    翻页按钮走 `jump menu N`，由播放器查 **AMG IFO 的菜单 PGC 表**；
+    翻页按钮走 `jump menu N`，由播放器查 **AMG IFO 的菜单 PGC 表**，
     而那张表是 `amg2.c` 手写的。它的 cell 结束地址曾经用错大小
     （恒用「最后一页」而不是当前页，见 patches/patch_menu_amg_cells.py），
-    于是**部分页面的 Previous 按了回不去**，而各页 VOB 大小接近时错误会
-    在某些页上相互抵消 —— 表现为「只有几页有问题」，极难靠现象定位。
+    于是**部分页面的 Previous 按了回不去**；而各页 VOB 大小接近时错误会在
+    某些页上相互抵消 —— 实测 8 页里 5 页错，表现为「只有几页有问题」，
+    极难靠现象定位。所以必须能机检。
 
-    ## 判据（不依赖具体字段偏移）
+    ## 字段位置
 
-    每个 cell 的 `start` 在同一项里写两次，`end` 只写一次；且正确的链要求
+    0x1820 起是 `nmenus-1` 项的「菜单 PGC 索引表」，每项 8 字节，末 4 字节是
+    从 0x1810 起算的相对指针；**第 1 页 PGC 的地址由 0x181C 的指针给出**
+    （索引表里没有它）。页内相对 PGC 起始：
 
-        start_{j+1} == end_j + 1
+        +0x09C 下一页菜单号    +0x09E 上一页菜单号    (uint16)
+        +0x11E cell 起始扇区   +0x126 同一值再写一遍 (uint32)
+        +0x12A cell 结束扇区                        (uint32)
 
-    所以：凡是「恰好出现 2 次」的值就是某个 start，则 `start - 1` 必须也能
-    在表里找到（它是上一个 cell 的 end）。找不到就说明链断了。
+    ⚠️ `amg2.c` 里自认为每页步长是 `0x13A`，**实际产物是 0x132**；
+    照 0x13A 去读会在第 2 页以后全部错位、读出无关数据（连“看着像对”
+    的假地址都有）。这里以**实测步长**为准，并把步长异常当作校验项报出来。
 
-    返回 (菜单数, start 序列, 断链的 start)。
+    ## 判据
+
+      1. 每页 `start` 的两份副本相等（同一值写两遍）；
+      2. `start_j == end_{j-1} + 1` —— 链连续，没有缝隙或重叠；
+      3. 各页 `[start, end]` 跨度之和 == VOB 扇区总数（无多余的页内空洞）；
+      4. 第 1 页 start == 0，末页 end == 总扇区数 - 1；
+      5. next/prev 菜单号分别为 `j+1` / `j-1`（末页 next=0）。
+
+    返回 (菜单数, [(start, end), ...], 问题描述列表)。问题列表为空即正常。
     """
     with open(ifo, "rb") as f:
         d = f.read()
-    if len(d) < 0x1812:
-        return 0, [], []
-    n = struct.unpack(">H", d[0x1810:0x1812])[0]
-    if n <= 1 or not os.path.exists(vob):
+    if len(d) < AMG_LU_OFF + 0x2C:
+        return 0, [], [f"AUDIO_TS.IFO 只有 {len(d)} 字节，读不到菜单表"]
+    n = _u16(d, AMG_LU_OFF)
+    if n <= 1:
         return n, [], []
+    if not os.path.exists(vob):
+        return n, [], ["缺少 AUDIO_TS.VOB，无法校验 cell 地址链"]
     total = os.path.getsize(vob) // 2048
-    # 跳过开头的「项索引」表（每项 8 字节，含 1..n-1 这些小整数）
-    lo = 0x1820 + 8 * (n - 1)
-    hi = 0x1820 + n * 0x13A
-    cnt = {}
-    for i in range(lo, min(hi, len(d)) - 3):
-        v = struct.unpack(">I", d[i:i + 4])[0]
-        if 0 < v <= total:
-            cnt[v] = cnt.get(v, 0) + 1
-    starts = sorted(v for v, c in cnt.items() if c == 2 and v >= 8)
-    bad = [v for v in starts if (v - 1) not in cnt]
-    return n, starts, bad
+
+    bases = menu_pgc_bases(d, n)
+    issues = []
+    if len(set(bases)) != n or bases != sorted(bases):
+        issues.append(f"菜单 PGC 地址不成递增序列 {[hex(b) for b in bases]}"
+                      f" —— 布局假设不成立，后续读数不可信")
+        return n, [], issues
+    for i in range(n - 1):
+        if bases[i + 1] - bases[i] != PGC_STRIDE:
+            issues.append(f"第 {i + 1}/{i + 2} 页 PGC 间距 "
+                          f"{hex(bases[i + 1] - bases[i])} != 预期 "
+                          f"{hex(PGC_STRIDE)} —— 布局假设不成立")
+            return n, [], issues
+    last = bases[-1] + PGC_CELL_END + 4
+    if last > len(d):
+        issues.append(f"菜单 PGC 表超出 IFO 范围（需要到 {hex(last)}，"
+                      f"IFO 只有 {hex(len(d))}）—— AMG 缓冲不够")
+        return n, [], issues
+
+    cells = []
+    prev_end = None
+    for j, b in enumerate(bases, 1):
+        st = _u32(d, b + PGC_CELL_START) if j > 1 else 0
+        st2 = _u32(d, b + PGC_CELL_START2) if j > 1 else 0
+        en = _u32(d, b + PGC_CELL_END)
+        nxt = _u16(d, b + PGC_NEXT_MENU)
+        prv = _u16(d, b + PGC_PREV_MENU)
+        cells.append((st, en))
+        if j > 1 and st2 != st:
+            issues.append(f"第 {j} 页 cell 起始地址的两份副本不一致："
+                          f"{st} vs {st2}")
+        if prev_end is not None and st != prev_end + 1:
+            issues.append(f"第 {j - 1} 页 cell 结束于 {prev_end}，"
+                          f"但第 {j} 页从 {st} 开始（应为 {prev_end + 1}）"
+                          f" —— 地址链断裂")
+        if en < st:
+            issues.append(f"第 {j} 页 cell 结束 {en} 小于起始 {st}")
+        if j < n and nxt != j + 1:
+            issues.append(f"第 {j} 页的 Next 指向菜单 {nxt}，应为 {j + 1}")
+        if j > 1 and prv != j - 1:
+            issues.append(f"第 {j} 页的 Previous 指向菜单 {prv}，应为 {j - 1}")
+        prev_end = en
+    if cells[-1][1] != total - 1:
+        issues.append(f"末页 cell 结束于 {cells[-1][1]}，"
+                      f"而 AUDIO_TS.VOB 共 {total} 扇区（应为 {total - 1}）")
+    span = sum(en - st + 1 for st, en in cells)
+    if span != total:
+        issues.append(f"各页 cell 跨度之和 {span} != AUDIO_TS.VOB 扇区数 "
+                      f"{total} —— 页边界与实际 VOB 对不上")
+    return n, cells, issues
 
 
 def frame_stats(vob):
@@ -184,29 +267,37 @@ def check_iso(iso, expect_tracks, expect_pages, tmpdir, label):
         if sectors > MAX_ASVS_SECTORS:
             ok = False
 
-    # 5b. 菜单 cell 地址链是否连续（翻页跳转的前提条件）
+    # 5b. 翻页链路：各页 cell 地址链与 next/prev 菜单号
     # 这一项能查出「部分页 Previous 回不去」——每页 VOB 大小接近时，
     # 旧的错误公式会在某些页上恰好抵消，只靠现象很难发现。
-    tv2 = os.path.join(tmpdir, "AUDIO_TS.VOB")
-    if os.path.exists(tv2) and nmenus and nmenus > 1:
-        cn, starts, broken = menu_cell_chain(ifo, tv2)
-        if not starts:
-            print("  [WARN] 读不到菜单 cell 的 start 序列，跳过链校验")
-        elif broken:
-            print(f"  [FAIL] 菜单 cell 地址链断裂：start={starts}，"
-                  f"这些 start 缺少前驱 {broken}")
-            print("         影响: 这些页的翻页按钮可能点了没反应 / "
-                  "回不到上一页")
-            print("         成因: amg2.c 的 cell 结束地址用错大小"
-                  "（见 patches/patch_menu_amg_cells.py）")
+    # 必须在这里解包：早期版本直接看文件在不在，而解包发生在第 6 项，
+    # 于是第一次运行（目录还是空的）会静默跳过 —— 正是它要防的「静默漏检」。
+    tv = os.path.join(tmpdir, "AUDIO_TS.VOB")
+    have_tv = extract(iso, "/AUDIO_TS/AUDIO_TS.VOB", tv)
+    if nmenus and nmenus > 1:
+        if not have_tv:
+            print("  [FAIL] 无法提取 AUDIO_TS.VOB，翻页链路未能校验")
             ok = False
         else:
-            print(f"  [OK]   菜单 cell 地址链连续（{cn} 页，"
-                  f"start={starts}）—— 翻页跳转前提成立")
+            cn, cells, issues = menu_cell_chain(ifo, tv)
+            if issues:
+                print(f"  [FAIL] 翻页链路校验未通过（{cn} 页）")
+                for msg in issues:
+                    print(f"         · {msg}")
+                print("         影响: 相关页的 Previous / Next 可能点了没反应")
+                print("         成因: amg2.c 的 cell 结束地址用错大小"
+                      "（见 patches/patch_menu_amg_cells.py）")
+                ok = False
+            else:
+                spans = "/".join(str(en - st + 1) for st, en in cells)
+                print(f"  [OK]   翻页链路：{cn} 页 cell 地址连续（跨度 "
+                      f"{spans}，末页 end={cells[-1][1]}），"
+                      f"next/prev 菜单号正确")
+                print(f"         地址链 {cells[0][0]}→{cells[-1][1]}"
+                      f" 与 AUDIO_TS.VOB 扇区边界逐页吻合")
 
     # 6. 菜单画面不是全黑
-    tv = os.path.join(tmpdir, "AUDIO_TS.VOB")
-    if extract(iso, "/AUDIO_TS/AUDIO_TS.VOB", tv):
+    if have_tv:
         st = frame_stats(tv)
         if st is None:
             print("  [WARN] 无法抽帧检查菜单画面")
