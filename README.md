@@ -357,6 +357,7 @@ DVD-Audio-Maker/
 |--------|--------|------|
 | `DVDA_SRC` | *(空，必填)* | 音源根目录（只读） |
 | `DVDA_FINAL_DIR` | *(空，必填)* | ISO 输出目录，**建议放 Linux 侧**（见下） |
+| `DVDA_WINDOWS_DEST` | *(空)* | ISO 的 Windows 侧目标目录（如 `D:\\目录`）。填了它，构建结束会自动用 Windows 的 robocopy 拷过去；留空则不拷 |
 | `DVDA_BUILD_DIR` | `/root/dvda-build` | 中间产物根目录，**建议放 WSL 内部** |
 | `DVDA_TITLE` | `My DVD-Audio` | 光盘卷标；也是 ISO 文件名前缀的来源 |
 | `DVDA_ISO_PREFIX` | *(空)* | ISO 文件名前缀，留空由 `DVDA_TITLE` 派生 |
@@ -397,38 +398,42 @@ out/ tmp/ iso/    出盘中间目录
 > 上次真出盘的审计依据，会把正确无误的 ISO 判为失败（详见
 > [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 12 节）。
 
-### 出盘后拷到 Windows：为什么别直接输出到 /mnt/c
+### ISO 输出到 Windows：自动拷，不用手动
 
 WSL2 里的 `/mnt/c`、`/mnt/d` 不是真正的挂载，而是通过 **9P 协议**跟 Windows
-侧的文件服务通信。两条路差别很大：
+侧通信：**写**要逐次跨虚拟机边界往返、**没有写回缓存**。实测同一个 2.92 GB
+文件：
 
-| 方式 | 读 | 写 |
-|---|---|---|
-| WSL 里 `cp` → `/mnt/d` | ext4（原生，快） | **9P → Windows 侧 → NTFS（慢）** |
-| Windows 侧 `robocopy` ← `\\wsl.localhost\...` | WSL 侧 9P 服务 | **NTFS 原生 + 缓存（快）** |
+| 方式 | 耗时 |
+|---|---|
+| 写本地 ext4 | 1.8 s |
+| **WSL 直写 `/mnt/d`（9P）** | **12.9 s** |
+| **Windows 侧 robocopy 拷出** | **7.3 s**（约 1.8×） |
 
-WSL 侧写 `/mnt/*` 慢在几点：每次写都要等 Windows 侧应答（**没有写回缓存**）、
-9P 单次请求负载有限（大文件变成大量往返）、且基本是单流串行。
-反过来 Windows 侧写 NTFS 走系统缓存、能多线程、`/J` 还能绕过缓冲做
-大文件顺序 I/O。所以**大文件（GB 级 ISO）别让 WSL 直接写 `/mnt/*`**。
+所以出盘落在 **Linux 侧**、再由 **Windows 原生**写出去更快。配置好之后**你
+仍然只跑一条命令**，构建的最后一步会自动做这件事：
 
-推荐做法：
-
-1. `DVDA_FINAL_DIR` 指到 **Linux 侧**（如 `/home/<你>/dvda/out`）；
-2. 构建完，在 **Windows** 上拷出去：
-
-```
-robocopy \\wsl.localhost\<发行版>\home\<你>\dvda\out  D:\目标目录  *.iso ^
-         /E /MT:16 /J /R:2 /W:2 /NP
+```bash
+DVDA_FINAL_DIR="/home/<你>/dvda/out"          # Linux 侧
+DVDA_WINDOWS_DEST="D:\鸣潮DVD_Audio_ext"      # Windows 侧（自动拷过去）
 ```
 
-- 发行版名用 `wsl -l -v` 看（也可以直接用 `\\wsl$\...` 旧写法）
-- `/MT:16` 多线程、`/J` 无缓冲大文件 I/O、`/R:2 /W:2` 限制重试
-  （默认重试次数极大，遇到占用会卡很久）
-- **`robocopy` 退出码 0~7 都算成功**，≥8 才是有文件没拷成
+`DVDA_WINDOWS_DEST` **留空**则不拷贝（产物只在 `DVDA_FINAL_DIR` 里）；
+**不在 WSL 里**（没有 `WSL_DISTRO_NAME`）时该项无意义，会跳过并提示。
 
-> 若目标目录装了杀毒实时扫描，写入侧会再叠一层开销；可临时对该目录关掉，
-> 拷完再开回来。
+实现细节（`02_build.py: win_copy_to`）：
+
+- 用 `\wsl.localhost\<发行版>\...` 作为源，由 **robocopy** 读 WSL 侧
+  并写到 Windows 目标（`/J` 无缓冲大文件 I/O + `/MT:8` 多线程）。
+- **直接调 `Robocopy.exe`，不经过 `cmd.exe`** —— `cmd /c "a b c"` 对引号有
+  一条恶心的规则（会吃掉首尾引号并加上当前盘符），实测会把参数拆坏。
+  Windows 的 exe 在 WSL 里可直接执行，参数由 WSL 直接传给 CreateProcess。
+- **robocopy 退出码 0~7 都算成功**（1 = 有文件被复制，正常），≥8 才是失败。
+- 拷贝失败**不影响盘本身**：产物已经在 `DVDA_FINAL_DIR` 里，脚本会提示
+  失败原因并指出产物位置。
+
+> 若 `DVDA_FINAL_DIR` 本身就在 `/mnt/...`，那就**不要**再设
+> `DVDA_WINDOWS_DEST`（否则等于走了两遍）。
 
 用环境变量临时覆盖（不改文件）：
 
