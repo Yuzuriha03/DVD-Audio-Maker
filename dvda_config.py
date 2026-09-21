@@ -31,6 +31,10 @@ DEFAULTS = {
     # 路径
     "DVDA_SRC": "",
     "DVDA_FINAL_DIR": "",
+    # ISO 的 Windows 侧目标目录（如 D:\鸣潮DVD_Audio_ext）。填了它，构建结束后
+    # 会用 Windows 的 robocopy 把 ISO 拷过去（比 WSL 直写 /mnt/* 快约 1.8×）。
+    # 留空 = 不拷贝。
+    "DVDA_WINDOWS_DEST": "",
     "DVDA_BUILD_DIR": "/root/dvda-build",
 
     # 光盘标识
@@ -191,6 +195,20 @@ class Config:
     @property
     def final_dir(self):
         return self.get("DVDA_FINAL_DIR").rstrip("/")
+
+    @property
+    def win_dest(self):
+        """ISO 的 **Windows 侧**目标目录（如 `D:\\鸣潮DVD_Audio_ext`）。
+
+        填了它，构建结束后会用 Windows 的 robocopy 把 ISO 从 Linux 侧拷过去。
+        为什么要绕这一下：WSL2 的 `/mnt/*` 是 9P 协议挂载，写入要逐次跨虚拟机
+        边界往返、没有写回缓存；实测 2.92 GB —— WSL 直写 /mnt/d 耗时 12.9 s，
+        而 robocopy 从 `\\wsl.localhost` 读、写 NTFS 只用 7.3 s（约 1.8×）。
+        所以 DVDA_FINAL_DIR 建议放 Linux 侧，本项填 Windows 目录。
+
+        留空则不拷贝（产物只在 DVDA_FINAL_DIR 里）。
+        """
+        return self.get("DVDA_WINDOWS_DEST").rstrip("/\\")
 
     @property
     def title(self):
@@ -437,6 +455,7 @@ def main():
         pairs = [
             ("DVDA_SRC", cfg.src),
             ("DVDA_FINAL_DIR", cfg.final_dir),
+            ("DVDA_WINDOWS_DEST", cfg.win_dest or "(不拷贝)"),
             ("DVDA_BUILD_DIR", cfg.build_dir),
             ("DVDA_TITLE", cfg.title),
             ("DVDA_ISO_PREFIX", cfg.iso_prefix),

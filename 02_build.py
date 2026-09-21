@@ -684,6 +684,61 @@ def check_menu_buttons(tmp):
     return True
 
 
+def win_copy_to(linux_path, win_dest):
+    """用 **Windows 侧的 robocopy** 把一个文件从 Linux 侧拷到 Windows 目录。
+
+    为什么不直接让 WSL 写 `/mnt/*`：WSL2 的 `/mnt/*` 是 9P 协议挂载，写入要
+    逐次跨虚拟机边界往返、没有写回缓存。实测同一个 2.92 GB 文件：
+
+        写本地 ext4            1.8 s
+        WSL 直写 /mnt/d (9P)  12.9 s
+        robocopy /MT:16        7.3 s     ← 约 1.8×
+
+    所以出盘落在 Linux 侧、再用 Windows 原生写出去更快。
+    只是把「WSL 慢写」换成了「Windows 快拷」，不是额外多一步。
+
+    robocopy 的退出码：**0~7 都是成功**（1 = 有文件被复制，属正常），
+    8 以上才表示有文件没拷成功。
+
+    返回 (ok, 说明)。
+    """
+    distro = os.environ.get("WSL_DISTRO_NAME")
+    if not distro:
+        return False, ("不在 WSL 里（WSL_DISTRO_NAME 未设置）—— "
+                       "DVDA_WINDOWS_DEST 只在 WSL 下有意义")
+    # 直接调 robocopy.exe，**不经过 cmd.exe**：cmd 对 `/c "a b c"` 里的引号有
+    # 恶心的一条规则（会吃掉首尾引号并加上当前盘符），实测会把参数拆坏成
+    # `C:\"\wsl.localhost\..."`。Windows 的 exe 在 WSL 里可直接执行，
+    # 参数由 WSL 直接传给 CreateProcess，没有这层引号解析。
+    robocopy = "/mnt/c/Windows/System32/Robocopy.exe"
+    if not os.path.exists(robocopy):
+        return False, f"找不到 {robocopy}（/mnt/c 未挂载？）"
+    # ⚠️ dirname / basename 必须在**Linux 路径**上取：Linux 上 os.path 是
+    # posixpath，只认 `/`；对已转成反斜杠的 Windows 路径取 basename 会原样
+    # 返回整串、取 dirname 会返回空串。（这两处都踩过一遍。）
+    src_dir = ("\\\\wsl.localhost\\" + distro
+               + os.path.dirname(linux_path).replace("/", "\\"))
+    dest = win_dest.replace("/", "\\")
+    name = os.path.basename(linux_path)
+    cmd = [robocopy, src_dir, dest, name,
+           "/J", "/MT:8", "/NP", "/R:2", "/W:2", "/NFL", "/NDL"]
+    print(f"[拷贝] Windows 侧 robocopy → {dest}")
+    print(f"       源: {src_dir}")
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           timeout=1800)
+    except subprocess.TimeoutExpired:
+        return False, "robocopy 超过 30 分钟未完成"
+    out = (r.stdout or b"").decode("utf-8", "replace")
+    if r.returncode < 8:
+        return True, (f"robocopy 退出码 {r.returncode}（0~7 均为成功）\n"
+                      f"       {dest}\\{name}")
+    lines = [l.rstrip() for l in out.replace("\r", "\n").split("\n") if l.strip()]
+    return False, ("robocopy 退出码 %d（>=8 表示有文件未拷成功）\n" % r.returncode
+                   + "\n".join("       " + l for l in lines[-10:]))
+
+
+
 def build_disc(disc_index, groups):
     """生成第 disc_index 张盘（从 1 起）并打包为 ISO。
 
@@ -791,6 +846,17 @@ def build_disc(disc_index, groups):
         print(f"       处理: 关闭占用该文件的程序后，把它改名/替换回")
         print(f"             {CFG.iso_name(disc_index)}")
     print(f"[OK] {final} ({os.path.getsize(final) / 1024**3:.2f} GB)")
+
+    # 可选：用 Windows 侧的 robocopy 拷到 Windows 目录（见 win_copy_to 的说明）。
+    # 配置 DVDA_WINDOWS_DEST 后自动执行，不需要手动拷。
+    if CFG.win_dest:
+        ok2, msg = win_copy_to(final, CFG.win_dest)
+        if ok2:
+            print(f"[拷贝] 完成 ✔ {msg}")
+        else:
+            # 拷不过去不影响盘本身：产物已在 DVDA_FINAL_DIR，告知即可
+            print(f"[拷贝][失败] {msg}")
+            print(f"       产物仍在: {final}")
 
     # 清理 dvda-author 临时目录(生成已完成,不再需要)
     # DVDA_KEEP_TMP=1 时保留：菜单的渲染结果（imagepic_N.png）就在里面，
