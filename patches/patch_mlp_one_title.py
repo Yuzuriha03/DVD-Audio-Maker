@@ -103,15 +103,40 @@ if (i < ntracks)
 
 ## 还原方法
 
-本补丁改动两处（`amg2.c` 去掉 MLP 分标题条件，`ats.c` 改为无条件按轨刷），
-把两处都改回原样即可；`build_dvda_author_mlp.sh` 的 `[1b]` 会把
-`src/amg2.c` 与 `src/ats.c` 从原始源码还原，所以停用本脚本即可回到旧行为。
+本补丁改动多处（`amg2.c` 去掉 MLP 分标题条件；`ats.c` 改为无条件按轨刷 +
+title 内 PTS 连续；`atsi2.c` 每轨都标记为曲目起点；`structures.h` 加字段），
+把各处改回原样即可；`build_dvda_author_mlp.sh` 的 `[1b]` 会把这些文件从原始
+源码还原，所以停用本脚本即可回到旧行为。
+
+## 各处的验证状态
+
+| 改动 | 状态 |
+|---|---|
+| `amg2.c` 一个 title | ✅ 已验证（`numtitles=1`、`tracks=N`） |
+| `ats.c` 按轨刷 pack | ✅ 已验证（不刷会段错误） |
+| `ats.c` title 内 PTS 连续 | ✅ 已验证（cell `first_pts` 递增，AOB 无回落） |
+| `atsi2.c` 每轨标为曲目起点 | ⚠️ **实验性，待真机验证** |
+
+### 关于 `atsi2.c` 的那个标记（0xC000）
+
+它在时间戳记录首字节，dvda-author 只给 `t == 0`（本 title 第 1 轨）加。
+原版「每轨一个 title」时每轨都是 t==0，所以**每轨都带**；合并成一个 title 后
+只有第 1 轨带（实测盘2：cell1 = `0xC010`，cell2..56 = `0x0010`）。
+
+实测现象支持「这个位是曲目起点」：PowerDVD 显示「0/56」→ 按下一曲变
+「1/56」但**音频不动**（也就是它认得出 56 个条目、知道下一首是谁，但只认得出
+**一个起点**，于是永远落到第一个起点 = 第 1 首）。把该位补到每一轨后，
+每轨都成为合法起点 —— **需在真机上确认「下一曲」是否恢复**。
+
+若无效，说明它只对 `t == 0` 有意义，把 `x |= 0xc000;` 换回
+`if (t == 0) x |= 0xc000;` 即可（其余改动保留）。
 """
 import pathlib
 import sys
 
 PATH = pathlib.Path("/root/dvda-author-mlp8/src/amg2.c")
 PATH_ATS = pathlib.Path("/root/dvda-author-mlp8/src/ats.c")
+PATH_ATSI = pathlib.Path("/root/dvda-author-mlp8/src/atsi2.c")
 PATH_SH = pathlib.Path("/root/dvda-author-mlp8/src/include/structures.h")
 
 # ---- amg2.c：去掉「MLP 只成 title」 ----
@@ -167,6 +192,39 @@ NEW = """          /* PATCH 2026-09-21  原版在这里额外加了
 # 幂等性标记
 MARK = "PATCH 2026-09-21  原版在这里额外加了"
 MARK_ATS = "每个音轨边界都必须把上一轨的余量刷成一个独立 pack"
+MARK_ATSI = "0xC000 = 「这里是一个曲目的起点」"
+
+# ---- atsi2.c：把「曲目起点」标记打到**每一轨**上 ----
+#
+# 每个 cell 的时间戳记录首字节是「轨类型」：dvda-author 只给 **t == 0**
+# （本 title 的第 1 轨）加上 0xC000。原版「每轨一个 title」时每轨都是 t == 0，
+# 所以**每一轨**都带这个标记；合并成一个 title 后只有第 1 轨带，其余变成
+# 0x0000 —— 实测盘2：cell1 = 0xC010，cell2..56 = 0x0010。
+# 如果这个位表示「曲目起点」，播放器就会变成「认得出 56 个条目（靠 indexes
+# 与时间戳表条数），但只认得出一个起点」——「下一曲」永远落到第一个起点，
+# 也就是第 1 首（实测现象：曲目号会从 0 变到 1，但音频不移动）。
+X_OLD = """          x = (x * 8) << 8;
+
+          if (t == 0)
+            {
+              x |= 0xc000;
+            }
+"""
+
+X_NEW = """          x = (x * 8) << 8;
+
+          /* 0xC000 = 「这里是一个曲目的起点」。
+
+             dvda-author 原来只给 t == 0（本 title 的第 1 轨）加这个位 ——
+             而原版是「每轨一个 title」，于是**每一轨**都是某个 title 的第 1 轨。
+             合并成一个 title 后只有第 1 轨带这个位，其余 55 轨变成 0x0000：
+             播放器认得出有多少个条目（indexes / 时间戳表条数），却只认得出
+             **一个起点**，于是「下一曲」永远落到第一个起点 = 第 1 首
+             （实测：曲目号会变，但音频不移动）。
+
+             故对所有轨都打上该标记，恢复到合并前的语义。 */
+          x |= 0xc000;
+"""
 
 # ---- fileinfo_t 追加 pts_shift ----
 FI_OLD = """    char    **given_channel;
@@ -354,8 +412,11 @@ def main():
         return 1
     if not apply(PATH_SH, [(FI_OLD, FI_NEW, "fileinfo_t 追加 pts_shift")]):
         return 1
+    if not apply(PATH_ATSI,
+                 [(X_OLD, X_NEW, "每一轨都标记为曲目起点（0xC000）")]):
+        return 1
 
-    print("\n单 title 补丁完成（一个音频组 = 一个 title，时间轴连续）")
+    print("\n单 title 补丁完成（一个音频组 = 一个 title，时间轴连续，每轨可寻址）")
     return 0
 
 
