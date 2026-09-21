@@ -112,6 +112,7 @@ import sys
 
 PATH = pathlib.Path("/root/dvda-author-mlp8/src/amg2.c")
 PATH_ATS = pathlib.Path("/root/dvda-author-mlp8/src/ats.c")
+PATH_SH = pathlib.Path("/root/dvda-author-mlp8/src/include/structures.h")
 
 # ---- amg2.c：去掉「MLP 只成 title」 ----
 
@@ -167,6 +168,60 @@ NEW = """          /* PATCH 2026-09-21  原版在这里额外加了
 MARK = "PATCH 2026-09-21  原版在这里额外加了"
 MARK_ATS = "每个音轨边界都必须把上一轨的余量刷成一个独立 pack"
 
+# ---- fileinfo_t 追加 pts_shift ----
+FI_OLD = """    char    **given_channel;
+    struct  MLP_LAYOUT *mlp_layout;
+} fileinfo_t;"""
+
+FI_NEW = """    char    **given_channel;
+    struct  MLP_LAYOUT *mlp_layout;
+    /* 该轨在一个 title（PGC）时间轴上的起点偏移。MLP 的 pts[] 是按轨的
+       （每轨从 PTS0 起算），合并成一个 title 后必须加上这个偏移才能让
+       title 内的时间轴连续 —— 否则每个 cell 的 first_pts 都是 98，
+       播放器按时间轴寻址任何一首都会落到第 1 首。
+       见 src/ats.c 里 write_pes_packet 与按轨刷 pack 处的说明。 */
+    uint32_t pts_shift;
+} fileinfo_t;"""
+
+# ---- create_ats 的变量声明 ----
+DECL_OLD = """  uint8_t audio_buf[AUDIO_BUFFER_SIZE];
+  uint64_t pack_in_title = 0;"""
+
+DECL_NEW = """  uint8_t audio_buf[AUDIO_BUFFER_SIZE];
+  uint64_t pack_in_title = 0;
+  /* 一个 title 内的 PTS 累计偏移（见下方按轨刷 pack 处与 write_pes_packet）。 */
+  uint32_t pts_shift = 0;"""
+
+# ---- write_pes_packet 的 PTS/DTS/SCR 平移 ----
+PTSOLD = """      mlp_flag = 0x80;
+      if (pack_in_title == 0) cumbytes = 0;
+      PTS = calc_PTS(info, pack_in_title, &cumbytes, globals);
+      SCR = calc_SCR(info, pack_in_title);
+    }
+
+  static bool wait_for_next_pack;"""
+
+PTSNEW = """      mlp_flag = 0x80;
+      if (pack_in_title == 0) cumbytes = 0;
+      PTS = calc_PTS(info, pack_in_title, &cumbytes, globals);
+      SCR = calc_SCR(info, pack_in_title);
+    }
+
+  /* 把本轨平移到它所属 title（PGC）的时间轴上。
+
+     MLP 的 pts[]/dts[]/scr[] 是按轨算的，每轨都从 PTS0（实测 98）起算。
+     原版每轨自成一个 title，所以每轨一条时间轴、没问题；合并成一个 title 后
+     必须整体平移，否则 PGC 的时间轴会断成 N 段各自从 98 开始：
+       · 每个 cell 的 first_pts 都等于 98（first_PTS 就是在这里取的首个 PTS）
+       · 播放器按时间轴寻址任何一首都会落到 PTS 98 = 第 1 首
+       · 症状：不管哪首按「下一曲」都跳回曲目 1
+     SCR 与 PTS 同源（27MHz / 90kHz = 300），按同比例平移以保持一致。 */
+  PTS += info->pts_shift;
+  DTS += info->pts_shift;
+  SCR += (uint64_t) info->pts_shift * 300;
+
+  static bool wait_for_next_pack;"""
+
 ATS_OLD = """              if (i < ntracks)
                 {
                   /* If the current track is a different audio format, we must
@@ -221,6 +276,21 @@ ATS_NEW = """              if (i < ntracks)
                     pack_in_title = 0;
                     totpayload = 0;
                   }
+
+                  /* 累计到下一轨的 PTS 偏移。
+
+                     MLP 的 pts[]/dts[]/scr[] 是**按轨**的（每轨从 PTS0 = 98
+                     起算、轨内单调）。原版每轨自成一个 title，每轨一条时间轴，
+                     这没问题；现在整组是一个 title，而 DVD 里一个 title（PGC）
+                     只有**一根时间轴**，必须把后续轨整体平移，否则 56 个 cell
+                     的 first_pts 全是 98 —— 播放器按时间轴寻址任何一首都会落到
+                     PTS 98 处，也就是**第 1 首**。
+                     症状：不管哪首按「下一曲」都跳回曲目 1。
+
+                     偏移量用上一轨声明的时长 PTS_length（与 AMG 里的 title
+                     长度同源），小幅间隔（实测 < 1000 ticks，< 11 ms）无害。 */
+                  pts_shift += files[i - 1].PTS_length;
+                  files[i].pts_shift = pts_shift;
 """
 
 def patch_one(path, marker, old, new, what):
@@ -243,6 +313,21 @@ def patch_one(path, marker, old, new, what):
     return True
 
 
+def apply(path, pairs):
+    """逐条替换；要求每条 OLD 恰好出现一次（多个副本必须查清再改）。"""
+    text = path.read_text(encoding="utf-8", errors="surrogateescape")
+    for old, new, what in pairs:
+        n = text.count(old)
+        if n != 1:
+            print("[FAIL] %s: %s 匹配 %d 次（应为 1）" % (path.name, what, n))
+            return False
+        text = text.replace(old, new, 1)
+    path.write_text(text, encoding="utf-8", errors="surrogateescape")
+    for _o, _n, what in pairs:
+        print("[OK]   %s：%s" % (path.name, what))
+    return True
+
+
 def main():
     # 「两行 MLP 子句」必须只有一处，否则说明上游有重复副本
     # （这个坑踩过一次，见 TROUBLESHOOTING 16.24）。
@@ -258,13 +343,19 @@ def main():
     if not patch_one(PATH, MARK, OLD, NEW,
                      "去掉 MLP 强制分 title（一个音频组 = 一个 title）"):
         return 1
-    # ⚠️ 必须同时改 ats.c：那个刷 pack 的块挂在 newtitle 上，去掉分 title
-    # 后会跨轨累加 pack_in_title → mlp_layout[] 越界 → 段错误。
-    if not patch_one(PATH_ATS, MARK_ATS, ATS_OLD, ATS_NEW,
-                     "按轨刷 pack 改为无条件"):
+    # ⚠️ 必须同时改 ats.c：那个刷 pack 的块挂在 newtitle 上，去掉分 title 后
+    # 会跨轨累加 pack_in_title → mlp_layout[] 越界 → 段错误；
+    # 而且 MLP 的 pts[] 是按轨的，必须加上累计偏移才能让一个 title 内时间轴连续。
+    if not apply(PATH_ATS, [
+            (ATS_OLD, ATS_NEW, "按轨刷 pack 改为无条件，并累计 title 内的 PTS 偏移"),
+            (DECL_OLD, DECL_NEW, "create_ats 声明 pts_shift"),
+            (PTSOLD, PTSNEW, "write_pes_packet 把 PTS/DTS/SCR 平移到 title 时间轴"),
+    ]):
+        return 1
+    if not apply(PATH_SH, [(FI_OLD, FI_NEW, "fileinfo_t 追加 pts_shift")]):
         return 1
 
-    print("\n单 title 补丁完成（一个音频组 = 一个 title）")
+    print("\n单 title 补丁完成（一个音频组 = 一个 title，时间轴连续）")
     return 0
 
 

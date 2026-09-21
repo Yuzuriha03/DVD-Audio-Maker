@@ -164,6 +164,44 @@ def main():
                     if sr + j * 12 + 12 > len(pgc):
                         break
                     all_bounds.append(u32(pgc, sr + j * 12 + 4))
+
+                # 一个 title（PGC）内的**时间轴必须连续**：所有 cell 的
+                # first_pts 严格递增，且末 cell 的结束对得上标题长度
+                # len_in_pts。违反时播放器按时间轴寻址任何一首都会落到 PTS
+                # 起点 = 第 1 首（症状：不管哪首按「下一曲」都跳回曲目 1）。
+                if n > 1:
+                    fps = []
+                    for j in range(n):
+                        o = tto + 16 + 20 * j
+                        if o + 20 > len(pgc):
+                            break
+                        fps.append((u32(pgc, o + 6), u32(pgc, o + 10)))
+                    tl = u32(pgc, tto + 4)
+                    if len(fps) != n:
+                        print("    ✗ %s: title %d 的 cell 时间戳表越界"
+                              % (name, i + 1))
+                        ok = False
+                    elif not all(fps[k][0] < fps[k + 1][0]
+                                 for k in range(n - 1)):
+                        print("    ✗ %s: title %d 的 PGC 时间轴不连续"
+                              "（%d 个 cell 的 first_pts 非递增）"
+                              % (name, i + 1, n))
+                        print("       后果: 播放器按时间轴寻址任何一首都会落到"
+                              "第 1 首")
+                        print("       成因: MLP 的 pts[] 是按轨的，合并成一个"
+                              " title 后没加累计偏移")
+                        print("             （见 patches/patch_mlp_one_title.py）")
+                        ok = False
+                    elif abs(fps[-1][0] + fps[-1][1] - tl) > 90000:
+                        print("    ✗ %s: title %d 末 cell 结束 %d 与标题长度 %d"
+                              " 相差超过 1 秒"
+                              % (name, i + 1, fps[-1][0] + fps[-1][1], tl))
+                        ok = False
+                    else:
+                        print("    [OK] %s: title %d 时间轴连续（%d 个 cell，"
+                              "PTS %d..%d）"
+                              % (name, i + 1, n, fps[0][0],
+                                 fps[-1][0] + fps[-1][1]))
             group_tracks[g] = tr
             group_titles[g] = cnt
             print("    组%d: %2d 轨, %d 个 title  (%s)" % (g, tr, cnt, name))
