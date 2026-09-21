@@ -73,6 +73,30 @@ def truncate_px(s, pointsize, budget=TEXT_BUDGET_PX):
     return (out.rstrip() + "~") if out else ""
 
 
+# `--screentext` 用 `=`、`:`、`,` 三个字符分层，而**没有转义机制**
+# （fn_strtok 就是简单按分隔符切）。曲名/专辑名里出现这三个字符就会把
+# 一条标签切成两条 —— 之后所有标签整体错位一格，看起来像「一首歌被拆成
+# 两个按钮」。实测本项目有 4 首曲名含 ASCII 逗号（如「繁星、新生,与你」）。
+#
+# 处理：换成**视觉等价**的全角形式（中文语境里更自然）；
+# 纯 ASCII 文本没有全角形式，改用间隔号 `·`。
+_DELIM_FIX = {",": "，", ":": "：", "=": "＝"}
+_DELIM_ASCII = {",": "·", ":": "·", "=": "·"}
+
+
+def sanitize(s):
+    """把 `--screentext` 的保留字符换成安全等价字符。
+
+    返回 (净化后的字符串, 是否改过)。
+    """
+    if not any(c in s for c in _DELIM_FIX):
+        return s, False
+    wide = any(_is_wide(c) for c in s)
+    table = _DELIM_FIX if wide else _DELIM_ASCII
+    out = "".join(table.get(c, c) for c in s)
+    return out, True
+
+
 def short_album(name, max_chars=24):
     """专辑名取「主标题」：截到第一个括号/方括号之前。
 
@@ -501,6 +525,7 @@ class MenuPlan:
         self.points = 0
         self.font = ""
         self.font_missing = set()
+        self.sanitized = []      # 因含分隔符而被换字的曲名
         self.fontwidth = 5
         self.screentext = ""
         self.backgrounds = []       # bg<N>.jpg，长度 = pages
@@ -678,7 +703,12 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
             multi = len(page_albums[page]) > 1
             prefix = (alb + " | ") if (multi and album_of[k] != prev_alb) else ""
             prev_alb = album_of[k]
-            texts.append(truncate_px(prefix + title, points))
+            # ⚠️ 必须净化，否则曲名里的 `,`/`:`/`=` 会把这条标签切开
+            # （实测「繁星、新生,与你」会被拆成两条，且之后全部错位一格）
+            label, fixed = sanitize(prefix + title)
+            if fixed:
+                plan.sanitized.append(title)
+            texts.append(truncate_px(label, points))
         # 每段是 `组标题=轨1,轨2,...`；组标题留空（页内专辑已在每轨文字里标出）
         chunks.append("=" + ",".join(texts))
         all_texts += texts
@@ -688,7 +718,8 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
     #    —— **组之间必须用 `:` 分隔**。漏了冒号会让整串只被解析成 1 个组：
     #    组1 的「组标题」变成组1 的轨名列表，而组2 的轨文字根本没定义
     #    （menu.c 之后按 ntracks[组] 索引 tracktext[组][轨] → 越界/段错误）。
-    plan.screentext = (cfg.title + "=" + ":".join(chunks))
+    disc_title, _ = sanitize(cfg.title)
+    plan.screentext = (disc_title + "=" + ":".join(chunks))
 
     # 字体必须在文字定下来之后选：要按「实际用到哪些字符集」挑。
     # 本项目曲名同时含中文、日文假名、韩文与 ASCII，缺任何一个都会变空白。
