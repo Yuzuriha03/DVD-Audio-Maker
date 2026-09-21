@@ -67,6 +67,49 @@ def amg_menu_count(ifo):
     return pgs, nmenus
 
 
+def menu_cell_chain(ifo, vob):
+    """检查 AMG 菜单的 cell 地址链是否连续。
+
+    ## 为什么需要这一项
+
+    翻页按钮走 `jump menu N`，由播放器查 **AMG IFO 的菜单 PGC 表**；
+    而那张表是 `amg2.c` 手写的。它的 cell 结束地址曾经用错大小
+    （恒用「最后一页」而不是当前页，见 patches/patch_menu_amg_cells.py），
+    于是**部分页面的 Previous 按了回不去**，而各页 VOB 大小接近时错误会
+    在某些页上相互抵消 —— 表现为「只有几页有问题」，极难靠现象定位。
+
+    ## 判据（不依赖具体字段偏移）
+
+    每个 cell 的 `start` 在同一项里写两次，`end` 只写一次；且正确的链要求
+
+        start_{j+1} == end_j + 1
+
+    所以：凡是「恰好出现 2 次」的值就是某个 start，则 `start - 1` 必须也能
+    在表里找到（它是上一个 cell 的 end）。找不到就说明链断了。
+
+    返回 (菜单数, start 序列, 断链的 start)。
+    """
+    with open(ifo, "rb") as f:
+        d = f.read()
+    if len(d) < 0x1812:
+        return 0, [], []
+    n = struct.unpack(">H", d[0x1810:0x1812])[0]
+    if n <= 1 or not os.path.exists(vob):
+        return n, [], []
+    total = os.path.getsize(vob) // 2048
+    # 跳过开头的「项索引」表（每项 8 字节，含 1..n-1 这些小整数）
+    lo = 0x1820 + 8 * (n - 1)
+    hi = 0x1820 + n * 0x13A
+    cnt = {}
+    for i in range(lo, min(hi, len(d)) - 3):
+        v = struct.unpack(">I", d[i:i + 4])[0]
+        if 0 < v <= total:
+            cnt[v] = cnt.get(v, 0) + 1
+    starts = sorted(v for v, c in cnt.items() if c == 2 and v >= 8)
+    bad = [v for v in starts if (v - 1) not in cnt]
+    return n, starts, bad
+
+
 def frame_stats(vob):
     """取菜单 VOB 的第一帧，返回（均值, 唯一色数）；全黑图两者都接近 0/1。"""
     png = "/tmp/_menu_frame.png"
@@ -140,6 +183,26 @@ def check_iso(iso, expect_tracks, expect_pages, tmpdir, label):
               f"(上限 {MAX_ASVS_SECTORS})")
         if sectors > MAX_ASVS_SECTORS:
             ok = False
+
+    # 5b. 菜单 cell 地址链是否连续（翻页跳转的前提条件）
+    # 这一项能查出「部分页 Previous 回不去」——每页 VOB 大小接近时，
+    # 旧的错误公式会在某些页上恰好抵消，只靠现象很难发现。
+    tv2 = os.path.join(tmpdir, "AUDIO_TS.VOB")
+    if os.path.exists(tv2) and nmenus and nmenus > 1:
+        cn, starts, broken = menu_cell_chain(ifo, tv2)
+        if not starts:
+            print("  [WARN] 读不到菜单 cell 的 start 序列，跳过链校验")
+        elif broken:
+            print(f"  [FAIL] 菜单 cell 地址链断裂：start={starts}，"
+                  f"这些 start 缺少前驱 {broken}")
+            print("         影响: 这些页的翻页按钮可能点了没反应 / "
+                  "回不到上一页")
+            print("         成因: amg2.c 的 cell 结束地址用错大小"
+                  "（见 patches/patch_menu_amg_cells.py）")
+            ok = False
+        else:
+            print(f"  [OK]   菜单 cell 地址链连续（{cn} 页，"
+                  f"start={starts}）—— 翻页跳转前提成立")
 
     # 6. 菜单画面不是全黑
     tv = os.path.join(tmpdir, "AUDIO_TS.VOB")

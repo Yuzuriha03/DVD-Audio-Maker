@@ -69,6 +69,7 @@ echo "=== [1b] 还原将被补丁修改的源文件（保证可重复执行） =
 for f in src/mlp.c \
          src/ats.c \
          src/atsi2.c \
+         src/amg2.c \
          src/menu.c \
          src/xml.c \
          src/auxiliary.c \
@@ -131,7 +132,8 @@ for p in patch_menu_paging.py \
          patch_menu_arrows.py \
          patch_menu_stillpics.py \
          patch_menu_stillpics_list.py \
-         patch_menu_amg_size.py ; do
+         patch_menu_amg_size.py \
+         patch_menu_amg_cells.py ; do
   echo "  -- $p"
   python3 "$PATCHES/$p" || { echo "[FAIL] $p 未全部应用" >&2; exit 3; }
 done
