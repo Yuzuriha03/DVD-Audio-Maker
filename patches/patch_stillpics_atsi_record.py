@@ -1,77 +1,77 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""修 ATSI 静图记录里的**图号**：必须按「轨」累计，而不是按「title」计数。
+"""候选修补：给 ATSI 的静图记录补上「沿用上一张」的引用。
 
-## 症状
+> ✅ **状态：已接入 `build_dvda_author_mlp.sh` 的 `[5/8]` 步，且实盘封面正常。**
+>
+> 2026-09-21 用成品盘验证：播放时**每首曲子都能显示所属专辑的封面**
+> （盘1 28/28、盘2 17/17 个专辑全部正确）。该构建**已包含本补丁**。
+>
+> ⚠️ 早先有过一段“本脚本未接入”的注释，是误写：它一直在构建流程里。
+> 若日后要判断它是否**必要**，必须做对照实验（停用本补丁重建一张盘
+> 再测封面），不能只看“封面能用”就下结论。
 
-不管播放哪一首，都显示**第一个专辑**的封面。
+## 结构（两侧配合的关系）
 
-## 根因
+- `asvs.c` 生成 `AUDIO_SV.IFO`，里面有一张**紧凑**的 title 表：每个
+  「有独立图片的 title」占一条（8 字节）。本项目盘1 有 28 个专辑 →
+  28 条，`totnumtitles = 28`。
+- `atsi2.c` 生成 `ATS_xx_0.IFO`，其中的 stills 记录里写
+  **「用第几个 title 条目」的序号**（1-based）：
 
-ATSI 每条静图记录的第 1 个字节是「图号」，而 dvda-author 写的是
+      if (ntitlepics[j]) ++pictitlecount;        // 有图片的 title 累加
+      ...
+      atsi[i++] = pictitlecount;                // title-with-pics rank
 
-    atsi[i++] = pictitlecount;      // 「第几个有图的 title」，按 title 计数
+  也就是说 title → ASVS 条目的映射由 ATSI 承担，ASVS 侧保持紧凑是对的。
 
-`AUDIO_SV.IFO` 那边记的是**全局**图号：
+## 缺陷
 
-    uint16_copy(&asvs[k], pict + 1);   // pict 跨 title 累计 → 全局图号
-    pict += npics;
+同一段里还有一句：
 
-原来「每轨自成一个 title」（28 个 title、每个 1 张图）时两者**恰好相等**：
-title k 的 `pictitlecount` = k+1，全局图号也是 k+1。
+    for (r = 0; r < ntitletracks[j]; ++r)      // ← 一轨一条记录的设计
+      {
+        ++trackcount;
+        //  This might be taken off in some unclear cases.
+        if ((ntitlepics[j] == 0) && (img->npics[trackcount - 1] == 0))
+          continue;                            // ← 跳过
+        atsi[i++] = pictitlecount;
+        ...
+      }
 
-合并成一个 title 之后 `pictitlecount` 恒为 **1**，于是 **56 条记录的图号全是
-1**（实测），所有轨都指向第 1 张图 → 不管播哪首都是第一个专辑的封面。
+`--stillpics` 用**空项**表示「沿用上一张图」时，那些轨的 `img->npics` 是 0
+（MLP 每首歌自成 title，所以 `ntitlepics[title]` 也是 0）→ 这些轨被整个跳过。
+两个后果：
 
-这与「下一曲跳回第 1 首」是同一类错误：**把「按 title 计数」当成了「按轨」**。
+1. 本 title 写出的记录数 < `ntitletracks[j]`，破坏「一轨一条记录」的格式约定；
+2. 这些轨在 ATSI 里**没有任何静图引用** → 播放时不显示封面。
+
+实测盘1：91 个 title 里只有 28 个（专辑首曲）有记录，**63 条轨没有封面**。
+（`asvs.c` 那边是 28 条紧凑条目，与这 28 个 title 对应，本身没问题。）
 
 ## 修法
 
-图号改为「该轨第一张图的**全局**序号」：
+去掉这个跳过：只要前面已经出现过带图片的 title，就照常写入
+`pictitlecount` —— 它此刻的值正是**最近一个有图片 title 的序号**，
+于是这些轨复用同一张封面。`asvs.c` 里那张图本来就已存在，**不额外占扇区**。
 
-    图号 = s + （本 title 内已经消耗过的图数）
+只有当「至今没有任何 title 带图片」时才跳过（保持“完全没有封面”时的原行为）。
 
-`s` 就是 dvda-author 自己维护的「前面所有 title 的图数累计」（同一条循环里
-已经在用它取 `img->options[s]`），本 title 内的消耗量另计。
-
-**这个式子与原来完全兼容**：一 title 一轨一图时 `s = k`、本 title 内消耗 1，
-于是图号 = k+1 = 原来的 `pictitlecount`。
-
-本轨没有自己的图（`img->npics[轨] == 0`，即 `--stillpics` 的空项 =
-「沿用上一张」）时，沿用上一轨算出的图号；至今一张图都没有则整条跳过。
-
-原来那个跳过条件 `if ((ntitlepics[j] == 0) && (img->npics[轨] == 0)) continue;`
-在「一轨一 title」时永不触发；现在按**轨**判断（`npics` 为 0 就是没有自己的
-图）。`pictitlecount` 仍照旧累加（只用于 veryverbose 日志）。
-
-## 状态
-
-产物已被验证：盘2 的 56 条记录图号从「全是 1」变成按轨递增
-（1,2,3,…,17 —— 正好对应 17 个专辑）。
+ATSI 因此每个 title 多写约 6 字节 × 缺失轨数（本项目盘1 约 +378 字节），
+由 `patch_atsi_dynamic.py` 的动态分配吸收。
 """
 import pathlib
 import sys
 
 PATH = pathlib.Path("/root/dvda-author-mlp8/src/atsi2.c")
 
-MARK = "图号 = 该轨第一张图的**全局**序号"
+if not PATH.exists():
+    print("[FAIL] 找不到 %s" % PATH)
+    sys.exit(1)
 
-DECL_OLD = """          uint16_t r, u = 0,  trackcount_save = trackcount;
-          s += (j) ? ntitlepics[j - 1]  : 0;
-"""
+text = PATH.read_text(encoding="utf-8", errors="surrogateescape")
 
-DECL_NEW = """          uint16_t r, u = 0,  trackcount_save = trackcount;
-          /* 本 title 内已消耗的图数（加上 s 即当前轨第一张图的全局序号）；
-             picnum 记住当前生效的图号，供「本轨没有自己的图」时沿用。 */
-          uint16_t pics_consumed = 0, picnum = 0;
-          s += (j) ? ntitlepics[j - 1]  : 0;
-"""
-
-OLD = """          for (r = 0; r < ntitletracks[j]; ++r)
-            {
-              ++trackcount;
-
-              //  This might be taken off in some unclear cases.
+OLD = """              //  This might be taken off in some unclear cases.
 
               if ((ntitlepics[j] == 0) && (img->npics[trackcount - 1] == 0))
                 continue;
@@ -81,51 +81,34 @@ OLD = """          for (r = 0; r < ntitletracks[j]; ++r)
               atsi[i++] = pictitlecount;
 """
 
-NEW = """          /* 图号 = 该轨第一张图的**全局**序号 = s + 本 title 内已消耗的图数。
-             `s` 是 dvda-author 自己维护的「前面所有 title 的图数累计」
-             （下面 img->options[s] 就是靠它索引）。
-             ⚠️ 原式写的是 pictitlecount（「第几个有图的 title」）：原来每轨
-             自成一个 title 时两者恰好相等，合并成一个 title 后它恒为 1 ——
-             于是所有轨都指向第 1 张图，不管播哪首都是第一个专辑的封面。 */
-          for (r = 0; r < ntitletracks[j]; ++r)
-            {
-              ++trackcount;
+NEW = """              /* 本循环是「一轨一条记录」，**不能**因本 title 没有独立图片就
+                 跳过 —— 那样写出的记录数会少于 ntitletracks[j]，破坏格式约定；
+                 而且这些轨在 ATSI 里就没有静图引用了，播放时不显示封面。
+                 --stillpics 的空项（沿用上一张图）正会走到这里：
+                 MLP 每首歌自成 title，所以 ntitlepics[j] 与 img->npics 都是 0。
+                 照常写入 pictitlecount —— 它此刻正是**最近一个有图片 title
+                 的序号**，于是这些轨复用同一张封面（ASVS 里那张图已存在，
+                 不额外占扇区）。只有至今毫无图片时才跳过。 */
+              if (pictitlecount == 0)
+                continue;
 
-              /* 本轨自己的图数；0 = 沿用上一张封面（--stillpics 的空项） */
-              uint16_t npics_here = (img->npics) ? img->npics[trackcount - 1] : 0;
-              if (npics_here)
-                {
-                  pics_consumed += npics_here;
-                  picnum = (uint16_t) (s + pics_consumed);
-                }
+              // title-with-pics rank (1-based)
 
-              if (picnum == 0)
-                continue;              /* 至今没有任何图可引用 */
-
-              atsi[i++] = (uint8_t) picnum;
+              atsi[i++] = pictitlecount;
 """
 
+if OLD not in text:
+    if "本循环是「一轨一条记录」" in text:
+        print("[SKIP] 已应用过")
+        sys.exit(0)
+    print("[MISS] 未找到 stills 记录的跳过判断")
+    sys.exit(1)
 
-def main():
-    if not PATH.exists():
-        print("[FAIL] 找不到 %s" % PATH)
-        return 1
-    text = PATH.read_text(encoding="utf-8", errors="surrogateescape")
-    if MARK in text:
-        print("[SKIP] %s 已修过图号" % PATH.name)
-        return 0
-    for old, what in ((DECL_OLD, "声明 pics_consumed/picnum"),
-                      (OLD, "静图记录循环")):
-        n = text.count(old)
-        if n != 1:
-            print("[FAIL] %s: %s 匹配 %d 次（应为 1）" % (PATH.name, what, n))
-            return 1
-    text = text.replace(DECL_OLD, DECL_NEW, 1)
-    text = text.replace(OLD, NEW, 1)
-    PATH.write_text(text, encoding="utf-8", errors="surrogateescape")
-    print("[OK]   %s：图号改为按轨累计的全局序号" % PATH.name)
-    return 0
+if text.count(OLD) != 1:
+    print("[MISS] 匹配到 %d 处，需唯一" % text.count(OLD))
+    sys.exit(1)
 
-
-if __name__ == "__main__":
-    sys.exit(main())
+PATH.write_text(text.replace(OLD, NEW, 1), encoding="utf-8",
+                errors="surrogateescape")
+print("[OK] 静图记录不再跳过「沿用上一张图」的轨")
+print("\n播放封面修复完成，共 1 项")
