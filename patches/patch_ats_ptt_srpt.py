@@ -1,61 +1,38 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""补写 `ATS_PTT_SRPT`（Part Of Title Search Pointer Table），让「下一曲 / 上一曲」
-能按曲目推进。
+"""补写 `ATS_PTT_SRPT`（Part Of Title Search Pointer Table）。
 
-## 症状与推断
+⚠️⚠️ 状态：**已废弃 · 不要接线**
 
-PowerDVD 里：曲目号显示 `0/56`，按「下一曲」变成 `1/56`，**但音频不移动**
-（同一首歌）。而**直接选曲能跳对**（无论是本工具链的菜单跳转，还是播放器
-自己的曲目列表）。
+试过一次，结果：
+  · 「下一曲」依然不前进；
+  · 而且 **PowerDVD 跳到后面的曲目会直接闪退**。
 
-这两件事在 DVD 里走的是不同机制：
+闪退说明这张表的布局/取值有错（或者它根本不是「下一曲」的解析入口）——
+播放器按错误的指针寻址就越界了。既然会崩，就绝不能留在构建流程里。
 
-- **直接选曲** = 显式寻址 —— 读 ATSI 里每轨的 PTS 表与扇区表。
-  我们有这两张表，且内容正确，所以能跳对。
-- **「下一曲」** = 跳到下一个 **PTT（Part Of Title）** ——
-  这正是 DVD-Video 里「下一章」的定义，靠 PTT 表解析。
+## 为什么错
 
-而 `ATSI_MAT` 的 `ATS_PTT_SRPT` 字段（偏移 `0xC8`）**dvda-author 从来不写**，
-恒为 0 —— 实测成品盘：`ats_pgcit = 1`，而 `ATS_PTT_SRPT = 0`。
-于是播放器找不到任何「分曲点」，只能把整个 title 当一个单元：
-曲目号会推进，但寻址总是回到第 1 个。
+本表结构是**从 DVD-Video 的 `VTS_PTT_SRPT` 类推**的：
+  · `foo_input_dvda` 的 `ifo.h` 里有 DVD-Video 版本的结构定义；
+  · dvda-author 源码里**完全没有** PTT 相关代码；
+  · 本地 Docs 与公开资料都查不到 DVD-Audio 版本的定义。
 
-## 表结构
+也就是说，**我并不知道 DVD-Audio 这张表的真实布局**，是靠类推写出来的。
+这类「猜一个二进制结构」的改动风险极高：错了不会报错，而是让播放器崩。
 
-与 DVD-Video 的 `VTS_PTT_SRPT` 同构（DVD-Audio 沿用同一套导航模型）：
+## 以后若要再试，必须先满足
 
-```
-+0x00  u16  nr_of_srpts            本 titleset 内的 title 数
-+0x02  u16  zero
-+0x04  u32  last_byte             表内最后一个字节的偏移（相对本表起点）
-+0x08  u32  ttu_offset[nr_of_srpts]   每个 title 的 TTU 偏移（相对本表起点）
+  1. 只接线本脚本、其他改动不动（失败可秒回退）；
+  2. 有一张**同类型的已知良好参考盘**（商业 DVD-Audio）可对比该字段，
+     而不是靠推断；
+  3. 先在可丢弃的测试盘上验证，不要动成品。
 
-TTU（每个 title 一个）：
-+0x00  u16  nr_of_ptts           该 title 内的曲目数
-+0x02  u16  zero
-+0x04  { u16 pgcn; u16 pgn; }[nr_of_ptts]   每项 4 字节
-             pgcn = PGC 号（本工具链每组只有一个 PGC，故恒为 1）
-             pgn  = program 号（= 曲目号）
-```
+## 下面的实现仅作记录
 
-即「第 n 首」被显式映射到 `(PGC 1, program n)`。这与本工具链现在的结构
-（一个 PGC、N 个 cell、每个 cell 一首歌）正好对应。
-
-## 放在哪里、以及为什么不会破坏别的字段
-
-表写在 ATSI 文件里 **PGCI 之后的扇区对齐位置**，并把 `atsi[0xC8]` 填成该
-扇区号。写完把 `i` 推进到表末尾，后面的
-`*atsi_sectors = ceil(i/2048)` 会**自动**把 ATSI 撑大 —— 而
-`atsi[196]`（AOB 起始扇区）、`atsi[28]`（ATSI 末扇区）、`atsi[12]`
-（ATS 末扇区）全都由 `*atsi_sectors` 派生，所以布局会自动跟着调整。
-
-## 状态
-
-⚠️ **实验性**：这是对「下一曲走 PTT 表」这一推断的实现，尚未在真机确认。
-若无效，从 `build_dvda_author_mlp.sh` 的补丁列表里去掉本脚本即可回退
-（`[1b]` 会把 `atsi2.c` 从原始源码还原）。
+`main()` 已被改成直接拒绝执行。
 """
+
 import pathlib
 import sys
 
@@ -116,7 +93,7 @@ NEW = """  // Pointer to following data
 """
 
 
-def main():
+def _disabled_main():
     if not PATH.exists():
         print("[FAIL] 找不到 %s" % PATH)
         return 1
@@ -134,5 +111,14 @@ def main():
     return 0
 
 
+
+def main():
+    print("[SKIP] patch_ats_ptt_srpt.py 已废弃 —— 上次尝试导致 PowerDVD 崩溃。")
+    print("       本表结构是类推出来的、未经证实；详见本脚本头部说明。")
+    print("       如确需再试，请先满足头部列出的三个前提。")
+    return 0
+
+
 if __name__ == "__main__":
+    import sys
     sys.exit(main())
