@@ -629,6 +629,47 @@ def menu_args(disc_index, groups):
     return args, plan
 
 
+def check_menu_buttons(tmp):
+    """自检：每页的「按钮跳转」与「按钮位置」数量/编号必须逐一对应。
+
+    dvda-author 生成两份 XML：
+      · `xmltemp`             —— 提交给 dvdauthor 的 amgm 项目，含每页的
+                                 `jump group/track` 与 `jump menu N` 指令
+      · `spu_xmltemp_<页>.xml` —— 提交给 spumux 的按钮矩形
+    dvdauthor 按**编号**把两者对应起来。任何一边多出按钮，多出来的那个
+    就没有高亮区域 —— 表现为「某个按钮选不中」，而**两边都不报错**。
+
+    实测过这个缺陷（末页出现 6 个重复的 Previous，amgm 13 个按钮 vs
+    spumux 8 个），所以这里逐页比对编号序列。
+    """
+    amgm = os.path.join(tmp, "xmltemp")
+    if not os.path.exists(amgm):
+        return True
+    pages = open(amgm, encoding="utf-8", errors="replace").read().split("<pgc>")[1:]
+    bad = []
+    for i, page in enumerate(pages):
+        a = [int(n) for n in re.findall(r'name="button(\d+)"', page)]
+        spu = os.path.join(tmp, f"spu_xmltemp_{i}.xml")
+        if not os.path.exists(spu):
+            bad.append((i + 1, len(a), None))
+            continue
+        s = [int(n) for n in re.findall(r'name="button(\d+)"',
+                                        open(spu, encoding="utf-8",
+                                             errors="replace").read())]
+        if a != s:
+            bad.append((i + 1, len(a), len(s)))
+    if bad:
+        print("[菜单][FAIL] 按钮数不一致（跳转 vs 位置）：")
+        for page, na, ns in bad:
+            print(f"       第 {page} 页: {na} vs "
+                  f"{'缺文件' if ns is None else ns}")
+        print("       说明: 两边的按钮编号必须逐个对应，否则多出来的按钮")
+        print("             没有高亮区域 → 该按钮选不中。")
+        return False
+    print(f"[菜单] 按钮数一致（{len(pages)} 页，跳转 == 位置）✔")
+    return True
+
+
 def build_disc(disc_index, groups):
     """生成第 disc_index 张盘（从 1 起）并打包为 ISO。
 
@@ -686,6 +727,10 @@ def build_disc(disc_index, groups):
                   f"({sectors} 扇区 / 上限 1024)")
         elif any(plan.stills):
             print("[菜单][警告] 未生成 AUDIO_SV.VOB（播放封面缺失）")
+
+        # 按钮一致性自检必须在删掉 tempdir 之前做（XML 就在里面）
+        if not check_menu_buttons(tmp):
+            return False
 
     # 末轨最后一个 pack 可能少写几字节填充，导致 AOB 不是 2048 的整数倍。
     # IFO 已按整扇区声明，故此处补零至扇区边界，使文件与声明严格一致。
