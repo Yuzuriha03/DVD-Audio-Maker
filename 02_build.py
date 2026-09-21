@@ -96,6 +96,17 @@ _cache_stats = {"hit": 0, "stale": 0}
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mlp_align                                       # noqa: E402
+import menu_assets                                     # noqa: E402
+
+# 选曲菜单（AMG 菜单 + ASVS 播放封面）。config.sh 的 DVDA_MENU 打开时，
+# build_disc() 会先生成菜单素材（分页 / 文字 / 每页背景 / 每轨封面）再调
+# dvda-author。菜单是 DVD-Audio 规范自带的 AMG 菜单，产出仍是纯 DVD-Audio。
+MENU_ON = CFG.menu
+MENU_DIR = os.path.join(BUILD_DIR, "menu")
+# 菜单所需的外部程序：dvdauthor/spumux 由 build_dvda_author_mlp.sh 编好后
+# 链接进 menu-bin，其余（mjpegtools / ImageMagick）来自系统包。
+MENU_BINS = ("dvdauthor", "spumux", "jpeg2yuv", "mpeg2enc", "mplex",
+             "mp2enc", "mogrify", "convert")
 
 _SYNC_MAJOR = b"\xf8\x72\x6f"
 _EOS = b"\xd2\x34\xd2\x34"
@@ -548,6 +559,76 @@ def split_discs(album_list, disc_limit, num_discs):
     return discs, msgs
 
 
+def menu_args(disc_index, groups):
+    """准备选曲菜单素材，返回要追加到 dvda-author 的参数。
+
+    groups 的顺序必须与传给 dvda-author 的 `-g` 完全一致 ——
+    菜单按钮写的是 `jump group G track K`，顺序错位就会点错曲目。
+
+    返回 (args, plan)；菜单关闭时返回 ([], None)。
+    """
+    if not MENU_ON:
+        return [], None
+
+    # 依赖检查：先给出可操作的提示，而不是等 dvda-author 中途失败
+    datadir = CFG.author_src
+    if not os.path.isdir(os.path.join(datadir, "menu")):
+        print(f"[菜单][FAIL] 找不到 {datadir}/menu（dvda-author 的素材目录）")
+        print("           请确认 config.sh 的 DVDA_AUTHOR_SRC 指向源码根目录")
+        return None, None
+    bindir = CFG.menu_bindir
+    missing = [b for b in MENU_BINS
+               if not (os.path.exists(os.path.join(bindir, b))
+                       or shutil.which(b))]
+    if missing:
+        print(f"[菜单][FAIL] 缺少辅助程序: {', '.join(missing)}")
+        print(f"           查找目录: {bindir}")
+        print("           处理: 先跑 bash build_dvda_author_mlp.sh"
+              "（会编出 dvdauthor/spumux 并链接进来）")
+        print("                 再确认已装 mjpegtools 与 imagemagick")
+        return None, None
+    if not menu_assets.have_magick():
+        print("[菜单][FAIL] 找不到 ImageMagick（convert/magick）")
+        print("           处理: sudo apt install imagemagick")
+        return None, None
+
+    menu_groups = [[t for t in files] for _, _, files in groups]
+    outdir = os.path.join(MENU_DIR, f"disc{disc_index}")
+    menulog = []          # 收集本模块的提示行，与 dvda-author 的输出分开
+    plan = menu_assets.build_menu(menu_groups, outdir, CFG,
+                                  log=lambda s: menulog.append(s))
+    for line in menulog:
+        print(line)
+
+    blankscreen = os.path.join(outdir, "blankscreen.png")
+    menu_assets.make_blankscreen(blankscreen)
+
+    if not plan.font:
+        print("[菜单][警告] 没有可用字体，菜单文字将不会显示")
+    if plan.font_missing:
+        print(f"[菜单][警告] 字体 {plan.font} 仍缺: "
+              f"{'、'.join(sorted(plan.font_missing))} —— 这些字会是空白")
+    # 自检：页数必须与 dvda-author 实际画出的页数一致，否则背景/文字会错位
+    r2, drawn = menu_assets.pages_for([len(g) for g in menu_groups], plan.pages)
+    if r2 != plan.rows or drawn != plan.pages:
+        print(f"[菜单][警告] 分页不自洽：按 --nmenus={plan.pages} 推得 "
+              f"{drawn} 页 x {r2} 行，本模块按 {plan.pages} 页 x "
+              f"{plan.rows} 行排版 → 背景可能与按钮错位")
+    print(f"[菜单] {plan.pages} 页, 每页 {plan.rows} 首, "
+          f"字号 {plan.points}, 下划线宽 {plan.fontwidth}, "
+          f"字体 {plan.font or '(无)'}")
+    print(f"[菜单] 分组: "
+          + ", ".join(f"组{i + 1}={len(g)}首" for i, g in enumerate(menu_groups))
+          + f" → 各组页数 "
+          + ", ".join(str(-(-len(g) // plan.rows)) for g in menu_groups))
+    print(f"[菜单] 每页背景 {plan.pages} 张"
+          + (f", 播放封面 {sum(1 for s in plan.stills if s)} 张"
+             if any(plan.stills) else ""))
+
+    args = plan.args(blankscreen, CFG.menu_font, datadir, bindir)
+    return args, plan
+
+
 def build_disc(disc_index, groups):
     """生成第 disc_index 张盘（从 1 起）并打包为 ISO。
 
@@ -568,12 +649,43 @@ def build_disc(disc_index, groups):
         args += ["-g"] + [f["mlp"] for f in files]
     # 注意：非 core 构建下 -9/-X 会触发 make_absolute 返回 NULL 而崩溃，故不传。
     args += ["-o", out, "-D", tmp, "-W", "-P0", "-n"]
+
+    # 选曲菜单（AMG）+ 播放封面（ASVS）。素材在 dvda-author 之前生成；
+    # out/tmp 必须已经存在（dvda-author 自己建不出来）。
+    margs, plan = menu_args(disc_index, groups)
+    if margs is None and MENU_ON:
+        print(f"[FAIL] 第 {disc_index} 盘菜单素材生成失败")
+        print("       如暂不需要菜单，把 config.sh 的 DVDA_MENU 改为 off")
+        return False
+    args += margs
+
     # log_output=True：dvda-author 会把轨道表打印到 stdout，
     # 校验脚本要读它，所以这里捕获并写入构建日志。
     r = run(args, log_output=True)
     if r.returncode != 0:
         print(f"[FAIL] dvda-author 生成第 {disc_index} 盘失败")
         return False
+
+    # 菜单是可选件：dvda-author 即使菜单环节出问题也可能照样退出 0，
+    # 所以这里显式核对菜单文件是否真的产出了。
+    if MENU_ON and plan is not None:
+        ts = os.path.join(out, "AUDIO_TS")
+        vob = os.path.join(ts, "AUDIO_TS.VOB")
+        if not os.path.exists(vob):
+            print(f"[FAIL] 第 {disc_index} 盘菜单文件 {vob} 未生成")
+            print("       （dvda-author 未报错，但菜单没做出来）")
+            print("       常见原因: 字号过大导致字幕遮罩无法识别、"
+                  "字体不可用、图片尺寸不是 720x576")
+            return False
+        print(f"[菜单] {os.path.basename(vob)} "
+              f"{os.path.getsize(vob):,} 字节 ✔")
+        sv = os.path.join(ts, "AUDIO_SV.VOB")
+        if os.path.exists(sv):
+            sectors = os.path.getsize(sv) // 2048
+            print(f"[菜单] {os.path.basename(sv)} {os.path.getsize(sv):,} 字节 "
+                  f"({sectors} 扇区 / 上限 1024)")
+        elif any(plan.stills):
+            print("[菜单][警告] 未生成 AUDIO_SV.VOB（播放封面缺失）")
 
     # 末轨最后一个 pack 可能少写几字节填充，导致 AOB 不是 2048 的整数倍。
     # IFO 已按整扇区声明，故此处补零至扇区边界，使文件与声明严格一致。
