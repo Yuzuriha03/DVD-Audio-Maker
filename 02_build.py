@@ -608,20 +608,34 @@ def menu_args(disc_index, groups):
     if plan.font_missing:
         print(f"[菜单][警告] 字体 {plan.font} 仍缺: "
               f"{'、'.join(sorted(plan.font_missing))} —— 这些字会是空白")
-    # 自检：页数必须与 dvda-author 实际画出的页数一致，否则背景/文字会错位
-    r2, drawn = menu_assets.pages_for([len(g) for g in menu_groups], plan.pages)
-    if r2 != plan.rows or drawn != plan.pages:
-        print(f"[菜单][警告] 分页不自洽：按 --nmenus={plan.pages} 推得 "
-              f"{drawn} 页 x {r2} 行，本模块按 {plan.pages} 页 x "
-              f"{plan.rows} 行排版 → 背景可能与按钮错位")
-    print(f"[菜单] {plan.pages} 页, 每页 {plan.rows} 首, "
+    # 自检：一页一个专辑时，页数、背景数、screentext 段数、各页曲目数之和
+    # 必须自洽。任一处不一致都会让按钮与文字错位 —— 而 dvda-author
+    # **不会报错**，只是点一首播成另一首，所以必须在这里挡下来。
+    segs = 0
+    if "=" in plan.screentext:
+        segs = plan.screentext.split("=", 1)[1].count(":") + 1
+    n_tracks = sum(len(g) for g in menu_groups)
+    bad = []
+    if segs != plan.pages:
+        bad.append(f"screentext 段数 {segs} != 页数 {plan.pages}")
+    if len(plan.backgrounds) != plan.pages:
+        bad.append(f"背景图 {len(plan.backgrounds)} 张 != 页数 {plan.pages}")
+    if sum(plan.rows_of_page) != n_tracks:
+        bad.append(f"各页曲目数之和 {sum(plan.rows_of_page)} != 总轨数 {n_tracks}")
+    if plan.points < menu_assets.MIN_POINTSIZE:
+        bad.append(f"字号 {plan.points} 低于下限 {menu_assets.MIN_POINTSIZE}")
+    if bad:
+        print("[菜单][FAIL] 分页不自洽，会点错曲子：")
+        for b in bad:
+            print(f"           · {b}")
+        return None, None
+    print(f"[菜单] {plan.pages} 页（一页一个专辑）, 每页最多 {plan.rows} 首, "
           f"字号 {plan.points}, 下划线宽 {plan.fontwidth}, "
           f"字体 {plan.font or '(无)'}")
-    print(f"[菜单] 分组: "
-          + ", ".join(f"组{i + 1}={len(g)}首" for i, g in enumerate(menu_groups))
-          + f" → 各组页数 "
-          + ", ".join(str(-(-len(g) // plan.rows)) for g in menu_groups))
-    print(f"[菜单] 每页背景 {plan.pages} 张"
+    print(f"[菜单] 各页曲目数: "
+          + ", ".join(str(n) for n in plan.rows_of_page[:12])
+          + ("…" if plan.pages > 12 else ""))
+    print(f"[菜单] 每页背景 {plan.pages} 张（各为该专辑封面）"
           + (f", 播放封面 {sum(1 for s in plan.stills if s)} 张"
              if any(plan.stills) else ""))
 
@@ -779,7 +793,11 @@ def build_disc(disc_index, groups):
     print(f"[OK] {final} ({os.path.getsize(final) / 1024**3:.2f} GB)")
 
     # 清理 dvda-author 临时目录(生成已完成,不再需要)
-    if os.path.exists(tmp):
+    # DVDA_KEEP_TMP=1 时保留：菜单的渲染结果（imagepic_N.png）就在里面，
+    # 排版有问题时可以直接看图，不必反复重建。
+    if os.environ.get("DVDA_KEEP_TMP") == "1":
+        print(f"[保留] 临时目录 {tmp}（DVDA_KEEP_TMP=1）")
+    elif os.path.exists(tmp):
         shutil.rmtree(tmp)
         print(f"[清理] 临时目录 {tmp} 已删除")
     return True
