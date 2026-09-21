@@ -137,6 +137,7 @@ def main():
 
         group_tracks = {}
         group_titles = {}
+        still_refs = {}
         all_bounds = []
         for name in sorted(ifos):
             lba, _n = ifos[name]
@@ -204,7 +205,27 @@ def main():
                                  fps[-1][0] + fps[-1][1]))
             group_tracks[g] = tr
             group_titles[g] = cnt
-            print("    组%d: %2d 轨, %d 个 title  (%s)" % (g, tr, cnt, name))
+            # ATSI 静图记录引用的「ASVS 记录号」最大值。它必须 <= ASVS 的记录
+            # 条数，否则播放器按越界记录号取封面 → **直接崩**（真机上「跳到
+            # 后面的曲目闪退」就是这个）。这项检查就是为了在出盘前拦住它。
+            max_still = 0
+            for i in range(cnt):
+                tto = u32(pgc, 8 + i * 8 + 4)
+                if tto + 16 > len(pgc):
+                    break
+                picptr = u16(pgc, tto + 14)
+                if not picptr:
+                    continue
+                for t in range(pgc[tto + 2]):
+                    o = tto + picptr + 6 * t
+                    if o + 6 > len(pgc):
+                        break
+                    if pgc[o] > max_still:
+                        max_still = pgc[o]
+            still_refs[g] = max_still or None
+            print("    组%d: %2d 轨, %d 个 title  (%s)%s"
+                  % (g, tr, cnt, name,
+                     "，静图最大引用号 %d" % max_still if max_still else ""))
 
         # 「下一段 / 上一段」是在**同一个 title 内**换轨，所以只要一组里有
         # 多个 title，在 title 边界上按「下一段」就会停住（上游原本因
@@ -221,6 +242,28 @@ def main():
                   "也可能是 patch_mlp_one_title 未生效。")
         else:
             print("    [OK]   每个组都是单 title（「下一段」可在组内逐轨前进）")
+
+        # 静图引用号 vs ASVS 记录条数：必须引用值 <= 条数，否则越界取图 → 崩溃
+        refs = [v for v in still_refs.values() if v]
+        if refs:
+            sv_lba, _ = iso_lba(iso, "AUDIO_SV.IFO")
+            if sv_lba is not None:
+                sv = iso_read(iso, sv_lba, 2)
+                if len(sv) >= 0xE:
+                    sv_n = u16(sv, 0xC)
+                    mx = max(refs)
+                    if mx <= sv_n:
+                        print("    [OK] 静图引用号 %d <= AUDIO_SV.IFO 记录数 "
+                              "%d ✔" % (mx, sv_n))
+                    else:
+                        print("    ✗ 静图引用号 %d > AUDIO_SV.IFO 记录数 %d"
+                              % (mx, sv_n))
+                        print("       后果: 播放器按越界记录号取封面 → "
+                              "**崩溃**（跳到后面的曲目时闪退）")
+                        print("       成因: ATSI 与 ASVS 的「按 title / 按轨」"
+                              "不一致，两者必须成对改")
+                        print("             （见 patches/patch_asvs_per_track.py）")
+                        ok = False
         n_tr = sum(group_tracks.values())
         total += n_tr
         print("    合计 %d 轨" % n_tr)

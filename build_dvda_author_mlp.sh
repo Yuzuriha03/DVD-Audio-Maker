@@ -69,6 +69,7 @@ echo "=== [1b] 还原将被补丁修改的源文件（保证可重复执行） =
 for f in src/mlp.c \
          src/ats.c \
          src/atsi2.c \
+         src/asvs.c \
          src/amg2.c \
          src/dvda-author.c \
          src/menu.c \
@@ -127,6 +128,9 @@ python3 "$PATCHES/patch_atsi_dynamic.py"  # ATSI 按曲目数动态分配（一�
 python3 "$PATCHES/patch_stillpics_atsi_record.py"  # 播放封面不能被跳过
 # 上游因「MLP 不能无缝接轨」的猜测让每轨自成 title，而「下一段」是在
 # 同一 title 内换轨 → 点「下一段」切不了歌。去掉该条件，一个组 = 一个 title。
+# 方案 B：静图表从「按 title」改成「按轨」（两边成对改）。
+# 用 DVDA_ASVS_PER_TRACK=1 启用；不设该变量则完全保持原行为。
+python3 "$PATCHES/patch_asvs_per_track.py"
 python3 "$PATCHES/patch_mlp_one_title.py"
 
 echo "=== [5b/8] 应用菜单（AMG / ASVS）修复 ==="
