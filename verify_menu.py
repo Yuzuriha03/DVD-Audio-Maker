@@ -262,7 +262,15 @@ def check_stills_data(ifo_path, vob_path, expect_covered, expect_albums):
     与取文件分开，是为了让校验逻辑本身可以被单独喂数据测试
     （否则想验证「它真的会报错」时，内部那次解包会把改过的文件覆盖掉）。
 
-    expect_covered : 有 cover.jpg 的专辑数（应等于 ASVS 的条数）
+    ⚠️ 判据是「**图的总数** == 有封面的专辑数」，**不是**「记录数 == 专辑数」。
+    `AUDIO_SV.IFO` 的记录是**按 ATS title** 分组的：
+      · 多 title（每轨一个 title）时 → 每专辑 1 条，共 N 条、各 1 张图；
+      · 单 title（一组一个 title，见 patch_mlp_one_title）时 → **1 条**记录
+        里含全部 N 张图。
+    两种结构都合法，播放时按轨取哪一张由 ATSI 的静图记录
+    （图号, 轨号, onset）决定，与这里的记录条数无关。
+
+    expect_covered : 有 cover.jpg 的专辑数（应等于**图的总数**）
     expect_albums  : 全部专辑数（用于指出多少张专辑会显示别的封面）
     """
     n, entries, last = asvs_titles(ifo_path)
@@ -283,9 +291,9 @@ def check_stills_data(ifo_path, vob_path, expect_covered, expect_albums):
         if sec * 2048 >= os.path.getsize(vob_path):
             issues.append(f"第 {i} 条记录的起始扇区 {sec} 超出 AUDIO_SV.VOB")
         pics += npics
-    if expect_covered is not None and n != expect_covered:
-        issues.append(f"静图条数 {n} != 有封面的专辑数 {expect_covered}")
-        if n < expect_covered:
+    if expect_covered is not None and pics != expect_covered:
+        issues.append(f"静图总数 {pics} != 有封面的专辑数 {expect_covered}")
+        if pics < expect_covered:
             issues.append("少的那几首会看到上一张封面（同专辑后续轨是靠"
                           "沿用上一张显示实现的，所以断链会显错）")
     if issues:
@@ -294,8 +302,9 @@ def check_stills_data(ifo_path, vob_path, expect_covered, expect_albums):
             print(f"         · {msg}")
         return False
     lack = (expect_albums - expect_covered) if expect_albums else 0
-    print(f"  [OK]   播放封面：{n} 张图对应 {n} 个专辑（含 {pics} 张静图，"
-          f"{sectors} 扇区），图号与扇区偏移均连续")
+    print(f"  [OK]   播放封面：{pics} 张图 = {pics} 个专辑（{n} 条记录，"
+          f"每条对应一个 ATS title），图号与扇区偏移连续，"
+          f"AUDIO_SV.VOB {sectors} 扇区")
     if lack:
         print(f"  [WARN] 共 {expect_albums} 个专辑，其中 {lack} 个没有 cover.jpg"
               f" —— 这些专辑会显示上一张专辑的封面")
@@ -441,8 +450,13 @@ def main():
         if idx is not None:
             groups = [[t for t in g["tracks"]] for g in idx["__discs__"][i - 1]["groups"]]
             tracks = sum(len(g) for g in groups)
-            pages, _ = menu_assets.group_pages(
-                [len(g) for g in groups], cfg.menu_tracks_per_page)
+            # 一页一个专辑：期望页数 = 专辑块数（超长专辑会拆页）
+            flat = [t for g in groups for t in g]
+            album_of = [os.path.basename(os.path.dirname(t.get("src") or ""))
+                        for t in flat]
+            pages = len(menu_assets.album_pages(
+                album_of, min(cfg.menu_tracks_per_page,
+                              menu_assets.MAX_MENU_ROWS)))
             # 播放封面的预期：每个「连续同专辑」块发一张图，与 menu_assets 一致
             album_dirs, seen = [], set()
             for g in groups:
