@@ -136,6 +136,7 @@ def main():
             continue
 
         group_tracks = {}
+        group_titles = {}
         all_bounds = []
         for name in sorted(ifos):
             lba, _n = ifos[name]
@@ -164,7 +165,24 @@ def main():
                         break
                     all_bounds.append(u32(pgc, sr + j * 12 + 4))
             group_tracks[g] = tr
-            print("    组%d: %2d 轨  (%s)" % (g, tr, name))
+            group_titles[g] = cnt
+            print("    组%d: %2d 轨, %d 个 title  (%s)" % (g, tr, cnt, name))
+
+        # 「下一段 / 上一段」是在**同一个 title 内**换轨，所以只要一组里有
+        # 多个 title，在 title 边界上按「下一段」就会停住（上游原本因
+        # 「MLP 不能无缝接轨」的猜测让每轨自成 title，见
+        # patches/patch_mlp_one_title.py）。这里把结构报出来，>1 就提示。
+        multi = {g: (t, group_tracks[g]) for g, t in group_titles.items() if t > 1}
+        if multi:
+            print("    [提示] 有 %d 个组的 title 数 > 1：%s"
+                  % (len(multi),
+                     "、".join("组%d(%d title/%d 轨)" % (g, t, n)
+                               for g, (t, n) in sorted(multi.items()))))
+            print("           组内有多个 title 时，「下一段」在 title 边界不会继续，")
+            print("           可能是组内音频属性中途变化（正常），"
+                  "也可能是 patch_mlp_one_title 未生效。")
+        else:
+            print("    [OK]   每个组都是单 title（「下一段」可在组内逐轨前进）")
         n_tr = sum(group_tracks.values())
         total += n_tr
         print("    合计 %d 轨" % n_tr)

@@ -39,7 +39,12 @@ import subprocess
 FRAME_W, FRAME_H = 720, 576
 MAX_BUTTONS = 32            # MAX_BUTTON_Y_NUMBER - 2
 MIN_POINTSIZE = 7
-MAX_POINTSIZE = 35
+# 上限 30：小标题（专辑名）是 `0.8 × 字号` 画的，而大标题（光盘标题）在
+# menu.c 里硬编码为 DEFAULT_POINTSIZE=25。限到 30 才能保证「大 > 小」。
+MAX_POINTSIZE = 30
+# 每页最多曲目行数：再大字号会小于 7pt（行距算不出来就重叠 → spumux 失败）。
+# 由 labelheight=(480-span*12)/span >= 5 反推：span=rows+4 <= 28 → rows <= 24。
+MAX_MENU_ROWS = 24
 ALBUM_TEXT_Y0 = 48          # 专辑标题基线（commonvars.h）
 TEXT_BUDGET_PX = 660        # 每行文字可占宽度（按钮 x0=33..x1=708）
 
@@ -172,11 +177,45 @@ def compute_fontsize(rows):
 
     menu.c 的 y()：labelheight = (576-96-(R+4)*12)/(R+4)，行距 = labelheight+12。
     下划线画在基线下 4~6 px，故在行距上留 10 px 余量。
+
+    一页一个专辑后各页行数不等，这里取**最大页**的值作全局字号
+    （行数少的页行距更大，不会重叠）。
     """
     span = rows + 4
     labelheight = (FRAME_H - 56 - 40 - span * 12) // span
     spacing = labelheight + 12
     return max(MIN_POINTSIZE, min(spacing - 10, MAX_POINTSIZE))
+
+
+def album_blocks(album_of):
+    """把曲目序列按「连续同专辑」切块，返回 [(专辑名, 起始, 结束), ...]。"""
+    blocks = []
+    for i, a in enumerate(album_of):
+        if blocks and blocks[-1][0] == a:
+            blocks[-1][2] = i + 1
+        else:
+            blocks.append([a, i, i + 1])
+    return [(a, s, e) for a, s, e in blocks]
+
+
+def album_pages(album_of, row_cap=MAX_MENU_ROWS):
+    """**一页一个专辑**：返回 [(专辑名, 起始, 结束, 是否续页), ...]。
+
+    菜单的 `--screentext` 每段对应一页（见 build_menu 里的说明），所以
+    「文字段 = 专辑」就等于「页 = 专辑」，新专辑自动换页。
+
+    专辑曲目数超过 row_cap 时切成多页（续页标题加「（续）」）——
+    屏幕放不下也只能拆。
+    """
+    pages = []
+    for a, s, e in album_blocks(album_of):
+        i, first = s, True
+        while i < e:
+            stop = min(i + row_cap, e)
+            pages.append((a, i, stop, not first))
+            first = False
+            i = stop
+    return pages
 
 
 def compute_fontwidth(texts, pointsize):
@@ -522,6 +561,9 @@ class MenuPlan:
         self.pages = 0
         self.drawn_pages = 0
         self.rows = 0
+        self.rows_of_page = []      # 每页曲目数（一页一个专辑）
+        self.album_of_page = []     # 每页的专辑名
+        self.pages_list = []        # [(专辑, 起始, 结束, 是否续页), ...]
         self.points = 0
         self.font = ""
         self.font_missing = set()
@@ -578,59 +620,36 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
         shutil.rmtree(outdir)
     os.makedirs(outdir)
 
-    sizes = [len(g) for g in groups]
-    pages, rows = group_pages(sizes, cfg.menu_tracks_per_page)
-    points = compute_fontsize(rows)
 
     flat = [t for g in groups for t in g]
-    # ---- 专辑块：按「连续同专辑」切（仅用于统计，不参与分页）----
     album_of = [(_album_of(t) if album_dir_of is None
                  else os.path.basename(album_dir_of(t))) for t in flat]
+
+    # ---- 分页：**一页一个专辑** ----
+    # 为什么能这样：menu.c 在 ncolumns=1 时的画页循环是「一次只画一个
+    # 文字段，段内曲目画完才换页」。所以让 --screentext 每段 = 一个专辑，
+    # 页数就等于专辑数，新专辑自动换页。
+    # 各页行数写在 --screentext 里，dvda-author 会按**该页实际曲目数**
+    # 取行距与按钮矩形（见 patches/patch_menu_one_album_per_page.py）。
+    row_cap = min(cfg.menu_tracks_per_page, MAX_MENU_ROWS)
+    pages_list = album_pages(album_of, row_cap)
+    pages = len(pages_list)
+    rows = max((e - s for _a, s, e, _c in pages_list), default=1)
+    points = compute_fontsize(rows)
 
     if album_dir_of is None:
         def album_dir_of(t):
             return os.path.dirname(t.get("src") or "")
 
-    # ---- 分页：**逐字复刻 dvda-author 的分配** ----
-    # dvda-author 自己按「逐页填满 R 行、组内连续、一页不跨组」来排，
-    # 我们只能跟着它算，否则背景/标题会和按钮错位。
-    # 特别注意：**不能**为了「页内专辑完整」而提前断页 —— 那样页数变多、
-    # 传给 --nmenus 的页数变大 → dvda-author 的 R 跟着变小 → 两套分页错开。
-    bounds, acc = [], 0
-    for n in sizes:
-        acc += n
-        bounds.append(acc)
-
-    page_of_track = [0] * len(flat)
-    page_albums = []
-    for start, end in ([(0, bounds[0])] + [(bounds[i], bounds[i + 1])
-                                           for i in range(len(bounds) - 1)]
-                       if bounds else []):
-        i = start
-        while i < end:
-            stop = min(i + rows, end)
-            page = len(page_albums)
-            for k in range(i, stop):
-                page_of_track[k] = page
-            albums, seen = [], set()
-            for k in range(i, stop):
-                if album_of[k] not in seen:
-                    seen.add(album_of[k])
-                    albums.append(album_of[k])
-            page_albums.append(albums)
-            i = stop
-
-    # 兜底：若实际页数少于 dvda-author 要画的页数（极端分组下可能），
-    # 用空页补足，保证 --background 的项数与 --nmenus 一致。
-    while len(page_albums) < pages:
-        page_albums.append([])
-
     plan = MenuPlan()
     plan.pages = pages
-    plan.drawn_pages = len(page_albums)
+    plan.drawn_pages = pages
     plan.rows = rows
+    plan.rows_of_page = [e - s for _a, s, e, _c in pages_list]
+    plan.album_of_page = [a for a, _s, _e, _c in pages_list]
     plan.points = points
     plan.album_of_track = album_of
+    plan.pages_list = pages_list
     # ---- 每页背景 + 静图 ----
     covers = {}          # 专辑名 -> 封面路径（可能为 None）
     for a in album_of:
@@ -646,14 +665,14 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
             % (len(missing), "、".join(missing[:3])
                + ("…" if len(missing) > 3 else "")))
 
+    # 每页背景 = **该页专辑的封面**（一页一个专辑，即单张封面铺满画面）。
+    # 缺封面时留黑；压暗是为了让白字读得清。
     plan.backgrounds = []
-    for pi, albums in enumerate(page_albums):
-        pics = [covers[a] for a in albums if covers.get(a)]
+    for pi, a in enumerate(plan.album_of_page):
+        cov = covers.get(a)
         path = os.path.join(outdir, "bg%d.jpg" % pi)
-        if pics:
-            make_background(pics, path, cfg.menu_cover_dim)
-        else:
-            make_background([], path, 0)
+        make_background([cov] if cov else [], path,
+                        cfg.menu_cover_dim if cov else 0)
         plan.backgrounds.append(path)
 
     # ---- 静图：每专辑一张，其余轨留空（沿用上一张）----
@@ -680,44 +699,55 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
                 plan.stills.append("")
                 still_index[a] = None
 
-    # ---- 文字链 ----
-    # 结构：专辑标题 = 组1标题 = 轨1,轨2,轨3 : 组2标题 = 轨4,轨5 ...
-    # 组标题为空（页内专辑已在每轨文字里标出，且页面头部空间有限）。
+    # ---- 文字链：一页一段，段标题 = 专辑名 ----
+    # 格式：`光盘标题=专辑1=轨1,轨2:专辑2=轨3,...`
+    #   · 第一个 `=` 之前 → `albumtext`，dvda-author 画在**每一页**顶部
+    #     （= 大标题，字号固定 DEFAULT_POINTSIZE=25）
+    #   · 每个 `:` 段 → 一页；段内第一个 `=` 之前 → `grouptext[页][0]`，
+    #     画在该页曲目之上（= 小标题，字号 = 0.8 × --fontsize）
+    # 一页只有一个专辑，所以不再需要给每轨加「专辑名 | 」前缀。
+    # 小标题用的专辑名。short_album() 会砍掉括号部分，不同专辑可能撞名
+    # （本项目盘2 的「星炬不熄」有两张：原版与毕业合唱版）。撞名时把
+    # **能区分它们的那个括号**补回去 —— 否则菜单上两页的小标题一模一样，
+    # 分不出是哪张专辑。
+    _shorts = {}
+    for _a in dict.fromkeys(plan.album_of_page):
+        _shorts.setdefault(short_album(_a), []).append(_a)
+    _dup = {s for s, v in _shorts.items() if len(v) > 1}
+
+    def menu_album(a):
+        s = short_album(a)
+        if s not in _dup:
+            return s
+        for br in re.findall(r"[(\[（【]([^)\]）】]*)[)\]）】]", a):
+            if not re.match(r"\s*游戏[《<]", br):     # 跳过「游戏《…》」这类通用词
+                return "%s [%s]" % (s, br.strip())
+        return s
+
     chunks = []
     all_texts = []
-    idx = 0
-    for gi, n in enumerate(sizes):
+    for a, s, e, cont in pages_list:
+        gtitle, fixed = sanitize(menu_album(a) + ("（续）" if cont else ""))
+        if fixed:
+            plan.sanitized.append(a)
         texts = []
-        prev_alb = None
-        prev_page = None
-        for k in range(idx, idx + n):
-            alb = short_album(album_of[k])
+        for k in range(s, e):
             title = flat[k].get("title") or os.path.basename(
                 flat[k].get("src") or "")
-            # 同一页里有多张专辑时，在**每张专辑的第一首**前面标出专辑名，
-            # 后续同专辑的曲目不重复（否则每行都挂个长前缀）。
-            # 换页时重置，使跨页延续的专辑在新页上重新标出。
-            page = page_of_track[k]
-            if page != prev_page:
-                prev_alb, prev_page = None, page
-            multi = len(page_albums[page]) > 1
-            prefix = (alb + " | ") if (multi and album_of[k] != prev_alb) else ""
-            prev_alb = album_of[k]
             # ⚠️ 必须净化，否则曲名里的 `,`/`:`/`=` 会把这条标签切开
             # （实测「繁星、新生,与你」会被拆成两条，且之后全部错位一格）
-            label, fixed = sanitize(prefix + title)
+            label, fixed = sanitize(title)
             if fixed:
                 plan.sanitized.append(title)
             texts.append(truncate_px(label, points))
-        # 每段是 `组标题=轨1,轨2,...`；组标题留空（页内专辑已在每轨文字里标出）
-        chunks.append("=" + ",".join(texts))
+        chunks.append(gtitle + "=" + ",".join(texts))
+        all_texts.append(gtitle)
         all_texts += texts
-        idx += n
 
-    # ⚠️ 格式是 `专辑标题=组1标题=轨1,轨2:组2标题=轨3,轨4:...`
-    #    —— **组之间必须用 `:` 分隔**。漏了冒号会让整串只被解析成 1 个组：
-    #    组1 的「组标题」变成组1 的轨名列表，而组2 的轨文字根本没定义
-    #    （menu.c 之后按 ntracks[组] 索引 tracktext[组][轨] → 越界/段错误）。
+    # ⚠️ 格式是 `光盘标题=专辑1=轨1,轨2:专辑2=轨3,轨4:...`
+    #    —— **段之间必须用 `:` 分隔**。漏了冒号会让整串只被解析成 1 个段：
+    #    段1 的「小标题」变成段1 的轨名列表，而段2 的轨文字根本没定义
+    #    （menu.c 之后按 ntracks[段] 索引 tracktext[段][轨] → 越界/段错误）。
     disc_title, _ = sanitize(cfg.title)
     plan.screentext = (disc_title + "=" + ":".join(chunks))
 

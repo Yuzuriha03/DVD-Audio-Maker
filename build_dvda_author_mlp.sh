@@ -70,8 +70,12 @@ for f in src/mlp.c \
          src/ats.c \
          src/atsi2.c \
          src/amg2.c \
+         src/dvda-author.c \
          src/menu.c \
          src/xml.c \
+         src/include/menu.h \
+         src/include/structures.h \
+         src/include/commonvars.h \
          src/auxiliary.c \
          src/command_line_parsing.c \
          src/launch_manager.c \
@@ -121,6 +125,9 @@ python3 "$PATCHES/patch_encode.py"    # planer 采样格式、放开 24-bit
 python3 "$PATCHES/patch_ats_pack.py"  # pack 补到 2048 边界（否则每盘丢 1 轨）
 python3 "$PATCHES/patch_atsi_dynamic.py"  # ATSI 按曲目数动态分配（一组可达 99 轨）
 python3 "$PATCHES/patch_stillpics_atsi_record.py"  # 播放封面不能被跳过
+# 上游因「MLP 不能无缝接轨」的猜测让每轨自成 title，而「下一段」是在
+# 同一 title 内换轨 → 点「下一段」切不了歌。去掉该条件，一个组 = 一个 title。
+python3 "$PATCHES/patch_mlp_one_title.py"
 
 echo "=== [5b/8] 应用菜单（AMG / ASVS）修复 ==="
 # 顺序敏感：layout 会把 command->maxntracks 换成 img->maxbuttons，
@@ -133,7 +140,8 @@ for p in patch_menu_paging.py \
          patch_menu_stillpics.py \
          patch_menu_stillpics_list.py \
          patch_menu_amg_size.py \
-         patch_menu_amg_cells.py ; do
+         patch_menu_amg_cells.py \
+         patch_menu_one_album_per_page.py ; do
   echo "  -- $p"
   python3 "$PATCHES/$p" || { echo "[FAIL] $p 未全部应用" >&2; exit 3; }
 done
