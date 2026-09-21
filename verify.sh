@@ -86,7 +86,7 @@ check_capacity() {
   echo "  共 $n 张"
 
   echo
-  echo "--- 结构抽查（应只含 AUDIO_TS） ---"
+  echo "--- 结构抽查（应为 AUDIO_TS；开菜单时另有菜单用的 VIDEO_TS） ---"
   for f in "$DVDA_FINAL_DIR"/${DVDA_ISO_PREFIX}_1.iso; do
     [ -f "$f" ] || continue
     xorriso -indev "$f" -ls / 2>/dev/null | tail -n 3
@@ -302,17 +302,29 @@ check_timeline() {
   rm_rf_rw "$VDIR"
 }
 
+# ---------------------------------------------------------------- 菜单
+check_menu() {
+  echo "=================== 菜单校验（AMG / ASVS） ==================="
+  echo "检查：菜单与封面文件是否产出 / 菜单页数 / AMG 表缓冲是否够大"
+  echo "      / 播放封面是否超 ASVS 预算 / 菜单画面不是纯色"
+  echo "（菜单是可选件；DVDA_MENU=off 时本项会提示并跳过）"
+  echo
+  python3 -u "$HERE/verify_menu.py"
+}
+
 case "$WHAT" in
   config)   check_config ;;
   quick)    check_quick ;;
   capacity) check_capacity ;;
   audit)    check_audit ;;
+  menu)     check_menu ;;
   lossless) check_lossless ;;
   timeline) check_timeline ;;
   all)
     rc=0
     check_capacity || rc=1
     echo; check_audit || rc=1
+    echo; check_menu || rc=1
     echo; check_timeline || rc=1
     echo; check_lossless || rc=1
     echo
@@ -324,6 +336,6 @@ case "$WHAT" in
     exit $rc
     ;;
   *)
-    echo "用法: bash verify.sh [config|quick|capacity|audit|timeline|lossless|all]"
+    echo "用法: bash verify.sh [config|quick|capacity|audit|menu|timeline|lossless|all]"
     exit 1 ;;
 esac

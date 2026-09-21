@@ -39,12 +39,19 @@ DEFAULTS = {
 
     # 分盘
     "DVDA_MAX_DISCS": "2",          # 0 = 不限制
-    "DVDA_GROUP_TRACK_LIMIT": "64",
+    "DVDA_GROUP_TRACK_LIMIT": "99",
     "DVDA_DISC_BYTES": "",          # 留空用 DVD5_BYTES
 
     # MLP 来源
     "DVDA_MLP_SOURCE": "ffmpeg",    # ffmpeg | external
     "DVDA_MLP_EXTERNAL_DIR": "",
+
+    # 选曲菜单（AMG 菜单 + ASVS 封面）
+    "DVDA_MENU": "off",            # off | on
+    "DVDA_MENU_TRACKS_PER_PAGE": "12",
+    "DVDA_MENU_STILLPICS": "on",   # 播放时显示所属专辑封面
+    "DVDA_MENU_COVER_DIM": "70",   # 菜单背景封面压暗百分比
+    "DVDA_MENU_FONT": "Noto-Sans-CJK-SC",  # 需覆盖 ASCII/汉字/假名/韩文
 
     # 工具
     "DVDA_AUTHOR": "/root/dvda-author-mlp8/src/dvda-author-dev",
@@ -63,8 +70,9 @@ DEFAULTS = {
 DVD5_BYTES = 4707319808            # 单层 DVD-5
 DVD9_BYTES = 8540123136            # 双层 DVD-9
 MAX_TRACKS = 99
-# dvda-author 的 ATSI 表缓冲固定 3 扇区，超过约 70 轨会栈溢出
-GROUP_TRACK_HARD_LIMIT = 70
+# dvda-author 的 ATSI 表缓冲（补丁后 4 扇区）可放 99 轨；
+# DVD-Audio 自身的单组轨数上限也是 99。
+GROUP_TRACK_HARD_LIMIT = 99
 
 # MLP 进入 AOB 后的实测开销系数（实测 80,021,504 / 78,337,762 = 1.02150）
 AOB_OVERHEAD = 1.025
@@ -277,7 +285,7 @@ class Config:
     def group_track_limit(self):
         v = self.get_int("DVDA_GROUP_TRACK_LIMIT")
         if v is None:
-            v = 64
+            v = GROUP_TRACK_HARD_LIMIT
         return max(1, min(v, GROUP_TRACK_HARD_LIMIT))
 
     @property
@@ -300,6 +308,46 @@ class Config:
     @property
     def use_external_mlp(self):
         return self.mlp_source == "external"
+
+    # ---- 选曲菜单 ----
+    @property
+    def menu(self):
+        """是否生成选曲菜单（AMG）与播放封面（ASVS）。"""
+        return (self.get("DVDA_MENU") or "off").strip().lower() in (
+            "on", "yes", "true", "1")
+
+    @property
+    def menu_tracks_per_page(self):
+        """每页最多几首（越小字越大、页越多）。受音频组划分限制，
+        实际行数可能更少。"""
+        v = self.get_int("DVDA_MENU_TRACKS_PER_PAGE")
+        return max(1, min(32, v if v else 12))
+
+    @property
+    def menu_stillpics(self):
+        """是否生成「播放时显示专辑封面」（占用 ASVS 预算，
+        每盘上限 1024 扇区 ≈ 2 MB）。"""
+        return (self.get("DVDA_MENU_STILLPICS") or "on").strip().lower() in (
+            "on", "yes", "true", "1")
+
+    @property
+    def menu_cover_dim(self):
+        """菜单背景图上封面压暗的百分比（0~100，越大越暗、白字越清楚）。"""
+        v = self.get_int("DVDA_MENU_COVER_DIM")
+        return max(0, min(100, 70 if v is None else v))
+
+    @property
+    def menu_font(self):
+        """菜单字体名（ImageMagick 字体名，**不能带空格**）。
+        留空或不可用时由 menu_assets.pick_font() 回退。"""
+        return (self.get("DVDA_MENU_FONT") or "").strip()
+
+    @property
+    def menu_bindir(self):
+        """菜单所需的辅助程序目录（dvdauthor / spumux / mjpegtools /
+        ImageMagick 的链接，由 build_dvda_author_mlp.sh 建立）。"""
+        return os.path.join(os.path.dirname(self.author_src) or ".",
+                            "menu-bin")
 
     # ---- 校验 ----
     @property

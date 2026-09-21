@@ -198,6 +198,38 @@ python3 m4a2flac.py /path/to/music --dry-run # 先看会做什么
 
 ---
 
+### 8. （可选）做出选曲菜单
+
+默认**不做菜单**：放进播放器直接播放，用播放器的曲目列表选曲。
+
+打开后，盘上会多出 DVD-Audio 规范自带的 **AMG 选曲菜单**（放进播放器先出菜单，
+可翻页浏览、按专辑查看并选曲），以及**播放每首曲子时显示所属专辑封面**。
+
+```bash
+# 1. 装菜单需要的工具（只需一次）
+sudo apt install -y mjpegtools imagemagick fonts-noto-cjk
+
+# 2. 重新编译 dvda-author（会顺便编出菜单用的 dvdauthor/spumux）
+bash build_dvda_author_mlp.sh
+
+# 3. 打开开关
+nano config.sh          # DVDA_MENU="on"
+
+# 4. 出盘
+bash build.sh
+```
+
+封面**不需要另外准备**：直接用音源目录里已有的 `cover.jpg`。
+没放封面的专辑，那一页背景就是黑色。
+
+> 仍然是纯 **DVD-Audio** —— 菜单走的是规范里的 AMG 菜单（`AUDIO_TS.IFO` +
+> `AUDIO_TS.VOB`），封面走 ASVS（`AUDIO_SV.IFO` + `AUDIO_SV.VOB`），
+> 音频本体（`ATS_*.AOB`）一个字节都不变。
+
+详见 [选曲菜单](#选曲菜单) 一节。
+
+---
+
 ## 路径怎么写
 
 `config.sh` 里的路径是 **WSL 内**的写法。Windows 路径的换算规则：
@@ -329,10 +361,15 @@ DVD-Audio-Maker/
 | `DVDA_TITLE` | `My DVD-Audio` | 光盘卷标；也是 ISO 文件名前缀的来源 |
 | `DVDA_ISO_PREFIX` | *(空)* | ISO 文件名前缀，留空由 `DVDA_TITLE` 派生 |
 | `DVDA_MAX_DISCS` | `2` | 期望的盘数上限；仅用于「放不放得下」的判断与提示，**不参与切分**；`0` = 不检查 |
-| `DVDA_GROUP_TRACK_LIMIT` | `64` | 每组最多轨数，**不要超过 70**（栈溢出） |
+| `DVDA_GROUP_TRACK_LIMIT` | `99` | 每组最多轨数，上限 **99**（ATSI 表按曲目数动态分配） |
 | `DVDA_DISC_BYTES` | `4707319808` | 单盘容量上限（字节）；双层 DVD-9 可设 `8540123136` |
 | `DVDA_MLP_SOURCE` | `ffmpeg` | MLP 来源：`ffmpeg`（本工具链编码）/ `external`（用外部编码器产出） |
 | `DVDA_MLP_EXTERNAL_DIR` | *(空)* | 外部 MLP 根目录（仅 `external` 时用；结构须与音源一一对应） |
+| `DVDA_MENU` | `off` | 是否做出选曲菜单 + 播放封面（`on` / `off`） |
+| `DVDA_MENU_TRACKS_PER_PAGE` | `12` | 菜单每页最多几首；越小字越大、页越多 |
+| `DVDA_MENU_STILLPICS` | `on` | 播放时是否显示所属专辑封面（占 ASVS 预算） |
+| `DVDA_MENU_COVER_DIM` | `70` | 菜单背景上封面压暗程度（0~100，越大越暗、白字越清楚） |
+| `DVDA_MENU_FONT` | `Droid-Sans-Fallback` | 菜单字体（ImageMagick 字体名，**不能带空格**）；不可用时会自动换 |
 | `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
 | `DVDA_MKISOFS` | `/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs |
 | `DVDA_FFMPEG` / `DVDA_FFPROBE` | `ffmpeg` / `ffprobe` | 用 PATH 解析 |
@@ -352,6 +389,7 @@ build.log         构建日志（真出盘；含 dvda-author 轨道表）
 build-dryrun.log  --dry-run 的日志（不含轨道表）
 mlp/              MLP 缓存（可复用，换源后仍有效）
 alacfix/          ALAC 修复产物（原文件不改动）
+menu/discN/       菜单素材（开 DVDA_MENU 时；背景图/封面/透明底图）
 out/ tmp/ iso/    出盘中间目录
 ```
 
@@ -365,6 +403,92 @@ out/ tmp/ iso/    出盘中间目录
 ```bash
 DVDA_SRC="/mnt/e/其他音源" DVDA_TITLE="Test" python3 01_prepare.py
 ```
+
+---
+
+## 选曲菜单
+
+`DVDA_MENU="on"` 时，每张盘会多出两样东西：
+
+| 内容 | 落在哪里 | 规范依据 |
+|---|---|---|
+| **选曲菜单**：放进播放器先出菜单，可翻页、按专辑浏览、选曲 | `AUDIO_TS.IFO` + `AUDIO_TS.VOB` | DVD-Audio 的 **AMG 菜单** |
+| **播放封面**：每首曲子播放时显示所属专辑封面 | `AUDIO_SV.IFO` + `AUDIO_SV.VOB` | DVD-Audio 的 **ASVS** |
+
+音频本体（`AUDIO_TS/ATS_*.AOB`）**一个字节都不变**，仍是纯 DVD-Audio 盘。
+
+### 需要什么
+
+```bash
+sudo apt install -y mjpegtools imagemagick fonts-noto-cjk
+bash build_dvda_author_mlp.sh      # 会顺便编出菜单用的 dvdauthor / spumux
+```
+
+- **`mjpegtools`**：菜单画面（MPEG-2 静帧）的编码
+- **`imagemagick`**：往画面上写曲名
+- **`fonts-noto-cjk`**：菜单文字要同时覆盖**中/日/韩 + ASCII**。
+  ⚠️ **别用 `fonts-wqy-microhei`** —— 它没有韩文；
+  ⚠️ **别用系统自带的 `fonts-droid-fallback`** —— 它是精简版，
+  有汉字/假名但**连 ASCII 都没有**，英文曲名会整条空白。
+  字体不对时脚本会告警并自动换，装一个覆盖全的即可。
+- `dvdauthor` / `spumux` 由 `build_dvda_author_mlp.sh` 自己编译。
+  **不要用 apt 的 `dvdauthor`** —— 它没有菜单需要的 `AMGM` 跳转补丁。
+
+### 封面从哪来
+
+**不需要另外准备**：直接读音源目录里的 `<专辑>/cover.jpg`
+（也认 `.jpeg` / `.png` / `.webp`）。没有封面的专辑那一页背景是黑的。
+
+音源目录本来就带封面，所以这一项零成本：
+
+```
+音源根/
+├── 某专辑 - EP/
+│   ├── 01. 曲名.flac
+│   ├── 02. 曲名.flac
+│   └── cover.jpg        ← 菜单用它做背景，播放时也显示它
+```
+
+### 菜单长什么样
+
+- 每个音频组占若干页，每页 `DVDA_MENU_TRACKS_PER_PAGE` 首（实际行数受
+  「同一音频组才能排在同一页」与屏幕高度限制，字号会自动算）。
+- 每页文字上是**曲名**；同一页里有多张专辑时，曲名前会带 `专辑名 | ` 前缀。
+- 每页背景是**该页涉及专辑的封面拼图**（压暗 `DVDA_MENU_COVER_DIM`% 以便读字）。
+- 页码多于 1 时，右下角有上一页 / 下一页按钮。
+- 同一专辑只存**一张**封面，专辑内后续曲目沿用同一张（省 ASVS 预算）。
+
+### 两个可以调的地方
+
+```bash
+DVDA_MENU_TRACKS_PER_PAGE="12"   # 调小 → 字更大、页更多
+DVDA_MENU_COVER_DIM="70"         # 调大 → 背景更暗、白字更清楚
+DVDA_MENU_STILLPICS="on"         # 设 off 则不显示播放封面（只做菜单）
+```
+
+### 注意
+
+1. **`--nmenus` 等短选项不要自己拼**：dvda-author 的 `-6`/`-7` 短选项没声明参数
+   （`atoi(NULL)` 直接段错误），本工具链一律用长选项 `--nmenus=N`。
+   你不需要手写这些参数 —— `02_build.py` 会算好。
+2. **菜单文字可能画不出来而不报错**：字号过大导致文字与下划线重叠时，
+   `spumux` 找不到按钮遮罩、菜单直接缺失，而 dvda-author 仍返回 0。
+   本工具链在构建后**显式核对** `AUDIO_TS.VOB` 是否真的产出，缺了就报错。
+3. **播放封面有容量上限**：ASVS 每盘上限 1024 扇区（≈2 MB）。
+   按「每专辑一张」算，一张盘能放约 46 张封面 —— 本项目盘1 有 27~28 张，宽裕。
+   若改成「每首一张」则**会超**，脚本不会替你挡，注意曲目数。
+4. **开菜单后 ISO 根目录会多一个 `VIDEO_TS`**：菜单最后要用 `dvdauthor`
+   写虚拟机命令，而它是 DVD-Video 工具，会按惯例建一个空的 `VIDEO_TS`。
+   它与 dvda-author 的 `-n/--no-videozone` 无关，是预期行为。
+
+### 关掉菜单
+
+```bash
+DVDA_MENU="off"
+```
+
+菜单素材是**可重建的中间产物**，关掉后不影响已有出盘结果；
+但要重出盘才会消失。
 
 ---
 
@@ -594,6 +718,7 @@ bash verify.sh            # 全部
 bash verify.sh quick      # 快速结构校验（秒级）
 bash verify.sh capacity   # 单盘容量与结构
 bash verify.sh audit      # 光盘一致性审计
+bash verify.sh menu       # 选曲菜单与播放封面（开 DVDA_MENU 时才有意义）
 bash verify.sh timeline   # AOB 时间轴抽查
 bash verify.sh lossless   # MLP 无损性
 bash verify.sh config     # 打印当前配置
@@ -607,7 +732,13 @@ bash verify.sh config     # 打印当前配置
 
 第 3 项是**唯一能查出「每盘少一首」的检查** —— 那种缺陷下 IFO 轨数、总时长、
 逐轨扇区表全都正常，只有字节对齐坏了，读盘端会整首丢弃（详见
-[TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 16 节）。
+[TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 15 节）。
+
+**`menu` 是开菜单后该加的检查**。菜单最危险的地方是「不报错但没做出来」——
+菜单画面编码失败时 `dvda-author` 照样返回 0。这一项核对：
+菜单与封面文件是否真的产出、菜单页数是否与分页计划一致、
+`AUDIO_TS.IFO` 扇区数是否够容纳菜单表（上游 AMG 缓冲越界的判据）、
+播放封面是否超 ASVS 预算、菜单画面不是纯色。
 
 `all` 会跑完整的一套（要解 4.5 GB 的 AOB 并解码 MLP，**很慢**），适合最终确认。
 
@@ -714,15 +845,19 @@ ffmpeg 将其误读为单声道元素而丢弃整帧。
 
 ### 6. 其他修复
 
-- `dvda-author` 的 ATSI 表缓冲固定 3 扇区，**单组超过约 70 轨会栈溢出**
+- `dvda-author` 的 ATSI 表原本是**固定 3 扇区的栈数组**，单组超过约 65 轨就
+  写爆栈。已改为**按曲目数动态分配**（实测每轨约 56.5 字节），
+  扇区数也按实际用量算 —— 单组可放到 99 轨，小组合仍只占 2 扇区
 - 末轨 AOB 可能少写几字节填充，导致文件不是 2048 的整数倍（已自动补齐）
+- `fn_strtok()` 处理空串时会写零长度的栈数组，把调用方的 `globals` 指针踩坏
+  （`--stillpics` 的空项就会触发，已修）
 
 ---
 
 ## 已知限制
 
-- 单组超过约 70 轨会栈溢出，故 `DVDA_GROUP_TRACK_LIMIT = 64`，
-  超出时按专辑边界再拆一组
+- 单组最多 **99 轨**（= `MAX_TRACKS`，也是 ATSI 表的上限）。
+  超过时按专辑边界再拆一组
 - 非 core 构建下**不能传 `-9`/`-X`**（会因 `make_absolute` 返回 NULL 崩溃）
 - MLP 只支持 `s16p` / `s32p`，即 16-bit 与 24-bit；其他位深需先转换
 - 不做声道转换：混用单声道与立体声会失败
@@ -730,7 +865,8 @@ ffmpeg 将其误读为单声道元素而丢弃整帧。
   但 Apple ALAC 的「缺 END 标记」问题**可以自动修复**
 - `--aob-extract` 提取音频时会在收尾阶段段错误退出（上游已知行为），
   但提取出的音轨数据完整（MD5 与源一致），不影响光盘播放
-- 光盘仅含 `AUDIO_TS`（纯 DVD-Audio），不含 `VIDEO_TS` 与菜单
+- 光盘仅含 `AUDIO_TS`（纯 DVD-Audio）。开 `DVDA_MENU` 后会多出菜单与封面，
+  以及菜单作者化顺带产生的空 `VIDEO_TS`（预期行为）
 - ffmpeg 编码的 MLP 与参考实现（SurCode）在**压缩载荷**上不同 —— 两者都是
   无损，解码结果一致，但字节流不同。若需要与参考实现完全一致的编码，
   只能改用 `DVDA_MLP_SOURCE="external"` 并提供自己编的 MLP

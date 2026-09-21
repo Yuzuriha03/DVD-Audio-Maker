@@ -22,7 +22,8 @@
 13. [标签键名大小写导致专辑被拆散、归一化静默跳过](#13-标签键名大小写导致专辑被拆散归一化静默跳过)
 14. [ffmpeg 的 MLP 编码器不写 END_OF_STREAM](#14-ffmpeg-的-mlp-编码器不写-end_of_stream)
 15. [每张盘少一首：pack 未补齐到扇区边界](#15-每张盘少一首pack-未补齐到扇区边界)
-16. [诊断手法速查](#16-诊断手法速查)
+16. [选曲菜单（AMG / ASVS）的坑（21 个小节）](#16-选曲菜单amg--asvs的坑)
+17. [诊断手法速查](#17-诊断手法速查)
 
 ---
 
@@ -294,15 +295,66 @@ int ntitletracks[99];
 ATSI 表缓冲固定 3 扇区，而每轨约需 52 字节 → **约 70 轨即写超出栈缓冲区**。
 且下游只支持 `atsi_sectors` 取 2 或 3，无法自动扩容。
 
-### 修复
+### 修复（两阶段）
 
-**在流水线层面限制**（不改上游代码）：`02_build.py`
+#### 第一阶段：在流水线层面限制（当时不改上游代码）
 
-```python
-GROUP_TRACK_LIMIT = 64      # 每组最多 64 轨，留出安全余量
+`02_build.py` 里设 `GROUP_TRACK_LIMIT = 64`（每组最多 64 轨，留安全余量），
+超出时按**专辑边界**再拆一组（专辑仍不拆散）。实测 93 轨拆成 3 组后零堆栈破坏。
+
+这解决了崩溃，但**代价是分组**：一张盘的曲目被拆成多个「音频组」。
+对 SurCode 产出的这版盘，盘1 被拆成 66+25 两组，而**两组的音频参数完全相同**
+（都是 48000/24）—— 也就是说分组**不是格式要求**，纯粹是这个上限的产物。
+
+#### 第二阶段：把 ATSI 表改成按曲目数动态分配（`patch_atsi_dynamic.py`）
+
+先测准每轨占用：从生产构建的 ATSI 里读出 `i` 字段（`atsi[0x804] + 0x801`）
+
+| 组 | 轨数 | `i` | 每轨 |
+|---|---|---|---|
+| 盘1 组1 | 65 | 5696 | 56.1 |
+| 盘1 组2 | 10 | 2616 | 56.7 |
+| 盘1 组3 | 14 | 2840 | 56.5 |
+
+基线 2049 字节（ATSI_MAT 等占 0x800）⇒ **每轨 ≈ 56.5 字节**，各轨数下高度一致。
+
+于是把固定栈数组换成**按曲目数分配的堆缓冲**：
+
+```c
+  /* 2049 基线 + 96 字节/轨（实测 56.5 的 ~1.7 倍余量），向上取整到扇区再多留一扇区 */
+  size_t atsi_cap = ((2049 + (size_t) ntracks * 96 + 2047) / 2048 + 1) * 2048;
+  uint8_t *atsi = (uint8_t *) calloc(atsi_cap, 1);
+  ...
+  /* 扇区数按实际用量算，不再固定 2/3 两档 */
+  *atsi_sectors = (uint8_t) ((i + 2047) / 2048);
+  if (*atsi_sectors < 2) *atsi_sectors = 2;
+  ...
+  FREE(atsi)
 ```
 
-超出时按**专辑边界**再拆一组（专辑仍不拆散）。实测 93 轨拆成 3 组后零堆栈破坏。
+99 轨（`MAX_TRACKS`）也只分配约 12 KB 的堆内存。实测扇区数随轨数正确增长：
+
+| 轨数 | `i` | 扇区 |
+|---|---|---|
+| 1 | 2112 | 2 |
+| 10 | 2616 | 2 |
+| 40 | 4296 | 3 |
+| 70 | 5976 | 3 |
+| 91 | 7152 | 4 |
+
+小组合仍是 2 扇区（不浪费盘），大组合按需增长。
+
+于是 `DVDA_GROUP_TRACK_LIMIT` 可以放到 **99**（= `MAX_TRACKS` = 单组轨数上限），
+本项目盘1 的 91 首从此在**一个组**里。这样还有两个附带好处：
+
+1. **菜单页数只由曲目总数决定**，不再受组划分影响（`dim == 1`）；
+2. 跨组那一类缺陷（分页不自洽、`tracktext` 条数不足、`cutloop` 静态变量泄漏）
+   **全部消失** —— 这一轮撞到的段错误全在跨组路径上。
+
+> **教训**：遇到「上游用固定大小缓冲截断了容量」时，先量准**每单位实际占用**
+> （读它自己写的长度字段最可靠），再决定扩多少 —— 这比拍一个「放宽到 N」
+> 的数字稳得多，也能顺手把扇区数从「固定分档」改成「按实际用量」，
+> 小输入不浪费、大输入不溢出。
 
 ---
 
@@ -1334,7 +1386,649 @@ bash verify.sh quick
 > （它的曲目表按路径缓存，重建 ISO 后需在 foobar 里移除该专辑再重新添加，
 > 否则可能显示的是上一次构建的结果 —— 这一点也要先排除。）
 
-## 16. 诊断手法速查
+## 16. 选曲菜单（AMG / ASVS）的坑
+
+给盘加「选曲菜单 + 播放封面」时踩到的一串问题。上有的 dvda-author 菜单功能
+**基本只在 1 组 + 单页 + 几十轨的规模下被测试过**，本项目是 3 组、91 曲、
+27 张封面，几乎每个规模假设都会被打破。
+
+修复全部落在 `scripts/patches/patch_menu_*.py` 与 `scripts/menu_assets.py`。
+
+### 16.1 分页公式写错：所有页加起来恒 ≤ 32 个按钮
+
+`menu.c` 两处（`menu_characteristics_coherence_test` 与 `generate_menu_pics`）：
+
+```c
+img->maxbuttons = Min(MAX_BUTTON_Y_NUMBER - 2, totntracks) / img->nmenus;
+img->resbuttons = Min(MAX_BUTTON_Y_NUMBER - 2, totntracks) % img->nmenus;
+```
+
+`maxbuttons` 应当是「**每页容量**」，但原式先截到 32 再除以页数 ——
+于是无论 `--nmenus` 设多大，**所有页合计最多只有 32 个按钮**。
+91 首的盘只有前 32 首能点，其余点不到，**且不报错**。
+
+对照：`xml.c` 的分层分支写的是 `Min(..., ntracks[groupcount])`（组的轨数），
+可见原意确实是「每页容量」，非分层分支写错了。
+
+**判断依据**：统计 `spu_xmltemp_*.xml` 里的 `<button>` 总数，
+应当 ≥ 曲目总数（多出的是翻页箭头）。
+
+**修复**：`patch_menu_paging.py` 改为
+`maxbuttons = Min(32, ceil(totntracks / nmenus))`，`resbuttons = 0`。
+
+### 16.2 页数护栏把非分层菜单也压小了
+
+同一函数里还有一段（原本只对分层菜单成立）：
+
+```c
+if ((img->ncolumns) * ngroups < img->nmenus - 1) img->nmenus = ngroups * ncolumns + 1;
+```
+
+非分层菜单的页数只受按钮总数约束，套用这个式子会把用户给的 `--nmenus`
+静默压掉（实测 3 组时 8 → 4）。**加 `img->hierarchical &&` 限定**。
+
+### 16.3 每页背景图全是同一张（`--background` 形同虚设）
+
+`-b/--background` 接受逗号分隔的**每页一张**背景 jpg，解析没错，但选项收尾
+的复制循环固定用 `backgroundpic[0]`：
+
+```c
+copy_file2dir_rename(img->backgroundpic[0], tempdir, "bgpic0.jpg", ...);
+for (u = 1; u < img->nmenus; u++)
+    copy_file2dir_rename(img->backgroundpic[0], tempdir, "bgpic<u>.jpg", ...);  // 又是 [0]
+```
+
+**验证手法**：跑完后逐页比对 `tmp/discN/bgpic<u>.jpg` 与源图的 md5。
+
+### 16.4 `--blankscreen` 反过来覆盖 `--background`
+
+选项收尾处：只要给了 `--blankscreen`，就把这个 png 转成 jpg **写进
+`backgroundpic[0]`**（写之前先 `unlink`）。于是
+`--background /tmp/bg0.jpg` 之后，`/tmp/bg0.jpg` 被就地改写成
+「blankscreen 转出的 jpg」（实测与随包的 `menu/black_PAL_720x576.jpg` 逐字节相同），
+用户给的封面图被删掉。
+
+两者语义并不冲突：`--blankscreen` 是**文字浮层底图**（`prepare_overlay_img()`
+把它拷成 `svpic.png` 再往上写字），`--background` 是**每页的背景视频图**。
+用 `cli_background_list` 标记记住「用户给了列表」，给了就不覆盖。
+
+### 16.5 `--blankscreen` 必须是全透明，且 `mogrify` 画不上 ASCII
+
+- `--blankscreen` png 是文字浮层底图：**全透明**才能让背景视频透出来
+  （`xc:none`，不要加 `-alpha set -depth 8 PNG32:` —— 那会变成叠加态）。
+- ⚠️ **这台机器上没有任何字体能同时画中英文**：
+
+| 字体 | ASCII | 汉字 | 假名 | 韩文 | CJK标点 |
+|---|---|---|---|---|---|
+| `fonts-droid-fallback`（系统自带） | **✗** | ✓ | ✓ | **✗** | ✓ |
+| `fonts-wqy-microhei` | ✓ | ✓ | ✓ | **✗** | ✓ |
+| `fonts-noto-cjk` | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+  Ubuntu 的 `fonts-droid-fallback` 是 **CJK-only 精简版**：
+  `fc-list ':charset=0041'` 都查不到它 —— 连 `A` 都没有。
+  而本项目曲名同时含**中文 + 日文假名 + 韩文**，缺任何一项那首曲子就是空白。
+
+  **判据必须用功能性检测**，不能查字体表：
+
+  ```bash
+  # 真的渲一小块看有没有墨迹（>0 才算能画）
+  convert -size 160x48 xc:none -font "$F" -pointsize 20 -fill white \
+          -annotate +2+32 "Ag" -format "%[fx:mean.a]" info:
+  ```
+
+  查 `fc-query` 的字符集会被骗过 —— Droid 的字体信息里写着覆盖 Basic Latin，
+  实际一个像素都不出，且 ImageMagick **不报错**。
+
+- ⚠️ **`-font` 名字里的空格会切断命令**：`menu.c` 拼的是
+  `snprintf(..., "-font", img->textfont, ...)`，**没有引号**。
+  传 `"Droid Sans Fallback"` 会被 shell 切成两个参数 →
+  `mogrify: no decode delegate for this image format 'Sans'` → 完全不画文字。
+  必须用 ImageMagick 的字体名（空格换成连字符）：`Droid-Sans-Fallback`。
+- ⚠️ **未知字体名会被静默替换**：ImageMagick 找不到名字时不报错、改用默认字体，
+  于是「拉丁可画」的检测结果来自别的字体，而汉字仍然画不出。
+  所以要先 `convert -list font` 确认名字存在，再做功能性检测
+  （`menu_assets.font_exists()` + `font_coverage()`）。
+
+### 16.6 字号过大 → 菜单直接缺失，而 dvda-author 返回 0
+
+`compute_pointsize(img, 10, img->maxbuttons, globals)` 把字号算到上限 35，
+而每页 11 行时行距只有约 34 px（`y()` 的 `labelheight + 12`）→
+文字与下划线矩形重叠 → `spumux` 报
+
+```
+spumux: src/subgen-image.c:901: imgfix: Assertion `useimg' failed.
+```
+
+**不产出 `AUDIO_TS.VOB`**，但 dvda-author 仍然 exit=0。
+
+实测各字号能否出 VOB（40 轨 4 页）：
+
+| `--fontsize` | 菜单 VOB |
+|---|---|
+| 自动（算出 35） | **无** |
+| 12 / 18 / 22 / 25 | 有 |
+
+**正确算法**（`menu_assets.compute_fontsize`）：
+
+```
+行数 R = Min(32, ceil(总轨数 / 页数))
+labelheight = (576 - 56 - 40 - (R+4)*12) / (R+4)      # 整数除法
+行距 S = labelheight + 12
+字号 P = min(S - 10, 35)，且 >= 7                       # 下划线在基线下 4~6px
+```
+
+**必须在构建后显式核对 `AUDIO_TS.VOB` 是否真的产出** —— 这是唯一能发现的判据。
+
+### 16.7 `> 34 轨的组` → `*** stack smashing detected ***`
+
+`xml.c` 的 `compute_coordinates()`：
+
+```c
+uint16_t y0[MAX_BUTTON_NUMBER], y1[MAX_BUTTON_NUMBER];   // 36
+for (j = 1; j < command->maxntracks + 2; ++j) { y1[j] = ...; y0[j] = ...; }
+```
+
+而 `command->maxntracks` 是 **`MAX(track, command->maxntracks)`** ——
+**整组轨数**，不是每页行数（`amg2.c:165`）。组内 ≥ 35 轨就越界写栈。
+盘1 的组1 有 65 轨，必然中招；没有菜单时不走这段代码，所以一直没暴露。
+
+**修复**：`patch_menu_layout.py` 把 `menu.c` / `xml.c` 里**全部**
+`command->maxntracks` 换成 `img->maxbuttons`（= 每页行数）。
+· `menu.c` 里写 `img->maxbuttons`（这些函数都有 `img` 参数）
+· `xml.c` 的 `compute_coordinates()` 只有 `command`，要写 `command->img->maxbuttons`
+  （`amg2.c:82` 有 `#define img command->img`，两处是同一对象）
+
+### 16.8 `--screentext` 一用就崩，而且曲名被截成 3 字节
+
+三处缺陷叠加，使 `-O/--screentext` **任何输入都段错误**：
+
+1. `basemotif = fn_strtok(chain, '=', ..., count=1, cutloop, remainder)`
+   —— `count` 是 `cutloop` 的「消费几个子串」计数器，传 1 时**第 1 个子串
+   就 return 0 而 break**；而 `fn_strtok` 在 break 时 `array[k]` 被置哨兵 NULL、
+   `remainder` = 第 k 个子串。于是 `albumtext = basemotif[0]` 变成 **NULL**。
+   传 **2** 才对。
+2. `dim` 是 `fn_strtok` 输出的**槽位数**（元素数 + 1 个哨兵），
+   但遍历写成 `for (k = 0; k < dim; k++)` → 最后一次读到
+   `grouparray[dim-1] == NULL` → `strlen(NULL)` 段错误。
+   上界要用 `arraylength()`。
+3. `size` 被复用：既作为列宽传入 `&size` 当输出参数，之后又当**字符串截断长度**：
+
+   ```c
+   size = (norm_x - 40 - 20*(ncolumns-1)) / ncolumns;      // 例如 213
+   basemotif = fn_strtok(..., &size, ...);                  // ← 被覆写成 3
+   ...
+   if (strlen(tracktext[g][t]) > size) tracktext[g][t][size] = '\0';   // 砍到 3 字节
+   ```
+
+   于是**每个曲名被截成 3 字节**（中文只剩 1 个字）。要用独立变量 `ncut`。
+
+另外 `remainder` / `rem` 是未初始化 VLA，而 `fn_strtok` 只在提前 break 时
+才写它们（子串数刚好用尽时**不写**）→ 读到未初始化栈内存。
+
+**修复**：`patch_menu_screentext.py`。
+
+### 16.9 纯菜单背景（无 `--stillpics`）会导致 `background_movie_N.mpg` 缺失
+
+`--blankscreen` 全透明且没给 `--background` 时，背景帧全黑，
+`mpeg2enc` 编不出有效 MPEG-2 → 后面报
+
+```
+[ERR] freopen (stdin)
+img->backgroundmpg[0]=.../background_movie_0.mpg errno=2: No such file or directory
+```
+
+**规避**：给每页一张不透明的背景图（本项目用封面拼图，压暗 70%）。
+
+### 16.10 `--stillpics` 文件列表模式必然 cd 失败（退出码 255）
+
+`: ` 分轨、`,` 分该轨的多张图。但**文件列表分支不设 `stillpicdir`**，
+而 `create_stillpic_directory()` 一进来就 `change_directory(stillpicdir)`；
+`stillpicdir` 的默认值在 `main()` 里**早于命令行解析**就已填好
+（那时 `-D/--tempdir` 还没生效），所以它是**编译期默认**的
+`<cwd>/.dvda-author/temp` —— 通常不存在：
+
+```
+[ERR]  Impossible to cd to /tmp/menu-test/.dvda-author/temp.
+[ERR]: No such file or directory          → 退出码 255
+```
+
+**修复**：`patch_menu_stillpics_list.py` 把 `stillpicdir` 指到当前 tempdir
+（同时也让「复制图片的目的地」与「读取图片的路径」一致）。
+
+### 16.11 `pict` 被置 NULL 后再次 sprintf → 段错误
+
+`generate_background_mpg()` 末尾有 `FREE(pict)`（= `free(pict); pict = NULL;`），
+而 `create_mpg()` 里 `pict` 是**文件级** static、分配判据 `s` 却是**函数内** static
+（不复位）：
+
+```c
+if (s == 0) { s = MAX(...); pict = calloc(s, sizeof(char *)); }
+sprintf(pict, "%s/pic_%03u.jpg", ...);      // ← 第二次进入时 pict == NULL
+```
+
+「先做菜单背景、再做静图背景」这条路上必然触发。
+
+**修复**：`patch_menu_stillpics.py`，判据加 `|| (pict == NULL)`。
+
+### 16.12 分页必须逐字复刻 dvda-author 的分配（否则背景与按钮错位）
+
+**这是我自己引入又修掉的一个坑**，值得单独记。
+
+dvda-author **自己**决定哪几首落在哪一页：
+`R = Min(32, ceil(总轨数 / 页数))`，逐页填满 R 行、组内连续、一页不跨组
+（`ncolumns=1` 时 `while ((group < img->ncolumns) && ...)` 保证不跨组）。
+我们的任务只是把「每页的背景图与文字」对上**它**的分配。
+
+我最初为了「页内专辑完整」在专辑边界**提前断页**，于是：
+
+1. 实际页数从 9 变成 10；
+2. 我把 10 传给 `--nmenus=10`；
+3. dvda-author 的 `R` 跟着变成 `ceil(91/10) = 10`（原来按 9 页算是 11）；
+4. 我按「11 行 + 专辑边界」排版，它按「10 行、不听专辑边界」排版
+   → **两套分页错开，背景与标题跟按钮对不上**。
+
+**判据**：解出 (页数 N, R) 后，用同一个公式反推
+`sum_g ceil(n_g / R)`，必须**恰好等于** N：
+
+```
+surcode 盘1  [66,25]     → 9 页 x 11   (6+3 = 9)  ✔
+surcode 盘2  [56]        → 5 页 x 12   (5   = 5)  ✔
+ffmpeg  盘1  [65,10,14]  → 14 页 x 7   (10+2+2 = 14) ✔
+ffmpeg  盘2  [56,2]      → 8 页 x 8    (7+1 = 8)  ✔
+```
+
+**修复**：`menu_assets.group_pages()` 只在 `p == pages` 时接受，
+`build_menu()` 去掉专辑边界断页，`02_build.py` 每次构建都跑这组自检。
+
+> **教训**：只要上游工具**自己也做一遍**我们想模拟的决策，
+> 就必须把它的算法**逐字复刻**并加自检 ——
+> 差一行除数，出来的是「看起来正常但内容错位」的盘。
+
+### 16.13 开菜单后 ISO 根目录多一个空 `VIDEO_TS`
+
+菜单最后要跑一次 `dvdauthor -o <outdir> -x <xml>` 写虚拟机命令，
+而 `dvdauthor` 是 **DVD-Video 工具**，会按惯例在 `-o` 目录下建一个空
+`VIDEO_TS`。它与 dvda-author 的 `-n/--no-videozone` **无关**（那个只管
+dvda-author 自己要不要建）。
+
+实测：同一套参数加 `--topmenu` 后，ISO 根目录从「只有 `AUDIO_TS`」
+变成「`AUDIO_TS` + `VIDEO_TS`」。
+
+**本项目保留它**（用户明确要求）。顺带一个反直觉的观察：
+删掉 `VIDEO_TS` 后 dvda-author 反而会多打一句
+`[ERR] Directory '<...>/VIDEO_TS'` —— 它记着这个目录的扇区账，
+留着反而日志更干净。
+
+### 16.14 `--aob-extract` 报 `Aborted` 是已知行为
+
+见第 4 节，与菜单无关；菜单盘上同样会出现。
+
+### 16.15 静图容量：1024 扇区/盘，且「同图复用」才省得下来
+
+`asvs.c` 里
+
+```c
+totpicsectors += img->stillpicvobsize[index + j];
+if (totpicsectors > 1024) foutput(ERR "Exceeding stillpic buffer limit (2 MB) ...");
+```
+
+`totpicsectors` 在**循环外**初始化 → 是**整盘累计**，上限 1024 扇区 ≈ 2 MB。
+
+而 `generate_background_mpg()` 对 STILLPICS 是**每轨各编一次再 `cat_file`
+拼接**，所以每张图都单独占额度，**同一张图重复给也照样占**。
+必须用**空项复用**才省得下来：
+
+```
+--stillpics A.jpg::C.jpg     ← 第 2 轨沿用 A，只占 2 份
+```
+
+实测（3 轨）：`A,B,C` → 75 扇区；`A::C`（1 张复用）→ 52 扇区。
+
+预算换算：约 **15 扇区/张** → 上限约 **46 张/盘**。
+· 本项目盘1 有 27~28 个专辑 ✔（每轨一张则 89 张 ✗ 超限）
+
+**注意**：`--stillpics` 的项数必须**恰好等于总轨数**，否则报
+`You forgot at least one track on --stillpics` 并退出 255。
+
+### 16.16 `[WAR] Coherence test for ISO start sector failed` 是上游既有现象
+
+```
+[WAR]  Coherence test for ISO start sector failed: start sector assessed as: 287 but should be: 289
+```
+
+它只是 `startsector == ntotalfiles + 272` 的账目核对（`launch_manager.c:518`）。
+实测**无菜单的生产构建同样是 287 vs 289**（差 2 扇区），与菜单无关；
+校验脚本也不扫 `[ERR]`/`[WAR]`，不影响判定。
+
+（若删掉空 `VIDEO_TS`，`ntotalfiles` 少 1 → 变成 `287 vs 288`，仍差 1。）
+
+### 16.17 页数一多就在「很远的地方」段错误（AMG 缓冲不随页数增长）
+
+**症状**：MLP 审计、写 AOB、菜单背景编码、`mogrify`、`spumux`、`dvdauthor`
+**全部正常完成**，日志最后一句是 `mplex` 的 `MUX STATUS: no under-runs detected.`，
+然后 dvda-author 段错误（`exit=139`），**没有任何 `[ERR]`**。
+
+`dmesg` / gdb 显示崩在 `amg2.c` 的 `create_amg()` 里 `uint32_copy()`：
+
+```
+uint32_copy (buf=0x8000000016d4 <Cannot access memory>, x=1081472) at c_utils.h:423
+#1  create_amg (...) at amg2.c:1357
+#2  launch_manager (...) at launch_manager.c:472
+```
+
+**根因**是 VLA 越界写栈：
+
+```c
+// launch_manager.c —— SIZE_AMG 是常量 3，所以恒为 4 扇区
+sectors.amg = SIZE_AMG + (globals->text ? 8 : 0) + (globals->topmenu <= TS_VOB_TYPE);
+
+// amg2.c —— 缓冲区大小由它决定
+uint8_t amg[sectors->amg * 2048];        // 4 * 2048 = 8192 字节
+```
+
+而菜单表（`menusector` 分支，从 `amg[0x1820]` 起）**随页数增长**：
+
+```
+需要 = 0x1820 + 8 * (nmenus - 1) + nmenus * 0x13A
+```
+
+| 页数 | 需要 | 缓冲 | 结果 |
+|---|---|---|---|
+| 1 | ~6490 | 8192 | ✔ |
+| 4 | ~7456 | 8192 | ✔ ← 40 轨测试盘就是这个页数，所以**当时没暴露** |
+| **9** | **~9066** | 8192 | **✗ 越界约 900 字节** |
+
+越界写的是**栈**（VLA），所以崩点离真正原因很远 —— 前面所有阶段都跑完了
+才崩，而且栈已被破坏（gdb 里 `create_amg` 的入参都是垃圾值）。
+
+**修复**：`patch_menu_amg_size.py` —— 在 `sectors.amg` 初始化后按
+`img->nmenus` 撑够：
+
+```c
+  if (globals->topmenu <= TS_VOB_TYPE && img->nmenus > 1)
+    {
+      uint32_t need = 0x1820 + 8 * (img->nmenus - 1) + img->nmenus * 0x13A;
+      uint32_t need_sectors = (need + 2047) / 2048;
+      if (need_sectors > sectors.amg) sectors.amg = need_sectors;
+    }
+```
+
+`nmenus` 在命令行解析阶段（`menu_characteristics_coherence_test`）已定型，
+所以这里读到的是最终值。`sectors.amg` 同时决定 `sizeofamg = sizeof(amg)`
+与写盘长度、以及各处扇区指针（`2*sectors->amg + ...`、`sectors->amg - 1`、
+`menusector * sectors->amg`），会自动跟着调整 —— 撑大后
+`AUDIO_TS.IFO` 从 4 扇区变成 5 扇区，**自洽**。
+
+**判据**：`AUDIO_TS.IFO` 的字节数 = `sectors.amg * 2048`；
+开 9 页菜单时应为 10240（5 扇区），若仍是 8192 就说明补丁没生效。
+
+> **教训**：VLA 越界写栈的崩点可以与原因相距极远（跑完十几分钟的全部流程
+> 才崩），而且**会破坏崩溃现场的参数**，让 gdb 显示一堆垃圾值。
+> 遇到「所有阶段都成功、最后莫名段错误」时，优先怀疑
+> **由外部变量决定大小的自动数组（VLA）**。
+
+### 16.18 `fn_strtok("")` 越界写栈，把调用方的 `globals` 踩坏
+
+**这是最隐蔽的一个**：崩点（`create_stillpic_directory` 里的 `change_directory`）
+与原因（`fn_strtok` 的一个零长度 VLA）隔了好几层，而且**完全取决于栈布局** ——
+同一个二进制 gdb 下不崩、直接跑崩；同一套参数换一张盘就只是「偶尔」崩。
+
+**症状**：dvda-author 把所有产物（AOB / `AUDIO_TS.VOB` / `AUDIO_SV.VOB` /
+`AUDIO_TS.IFO`）**全部生成完之后**才段错误；日志里只有启动横幅一行
+（stdout 全缓冲，崩溃前的输出全丢了），没有任何 `[ERR]`。
+
+**定位手法**（这组技巧值得复用）：
+
+```bash
+# 1. 打开 core dump（core_pattern=core，但 ulimit -c 默认是 0）
+python3 -c "import resource; resource.setrlimit(resource.RLIMIT_CORE, (-1,-1))
+import subprocess; subprocess.run([...])"
+
+# 2. 分析 core —— 完全不改变内存布局，所以必现（gdb 下反而可能不崩）
+gdb -batch -ex bt ./dvda-author-dev ./core.12345
+```
+
+core 里的回溯直指：
+
+```
+#0 create_stillpic_directory (string="", count=-1, globals=0x7ffd00000006)  ← globals 是垃圾
+gdb> info line
+Line 1363 of src/menu.c:  change_directory(globals->settings.stillpicdir, globals);
+```
+
+`globals` 的真值是 `0x7ffdd1a7ebf0`，却变成了 `0x7ffd00000006` ——
+典型的高位保留、低位被改写的**栈被踩**特征。
+
+**根因**在 `auxiliary.c` 的 `fn_strtok()`：
+
+```c
+  char *s = strdup(chain);          // chain == "" → 只分配 1 字节
+  uint32_t j = 1, k = 0;
+  int32_t cut[strlen(s) / 2];       // strlen("")/2 == 0 → 长度为 0 的 VLA
+  cut[0] = -1;                      // ← 越界写栈
+  do  if (s[j] == delim) { cut[++k] = j; }
+  while (s[j++] != '\0');           // ← 从 s[1] 起扫，空串时已越过分配
+  cut[k + 1] = j - 1;               // ← 再次越界
+```
+
+两个缺陷：
+
+1. **空串**：`strdup("")` 只有 1 字节，扫描却从 `s[1]` 开始 —— 越过分配边界，
+   会一路读到堆里第一个 `\0` 才停；`cut` 又是 0 长度 VLA，
+   `cut[0] = -1` 与 `cut[k+1]` 都是**越界写栈**。
+2. **`cut` 容量不够**：条目数 = 分隔符个数 + 2。原式按 `strlen(s)/2` 开，
+   而 `",,,"`（每字符都是分隔符）需要 5 项却只给 1 项。
+
+**什么时候会走到空串**：`--stillpics` 用**空项表示沿用上一张图**
+（`--stillpics A.jpg::C.jpg`），解析时对每个空项调用 `fn_strtok("", ',', ...)`。
+也就是说，**「每专辑只存一张封面」这个省 ASVS 预算的标准做法必然触发**。
+实测本项目盘2（56 轨 / 39 个空项）稳定段错误，而盘1（63 个空项）
+只是**侥幸**没崩 —— 两者共享同一份崩坏的栈布局，只是破坏到的位置不同。
+
+**修复**：`patch_fix_fn_strtok.py`
+
+```c
+  size_t slen = strlen(s);
+  int32_t cut[slen + 2];            // 最坏情况每字符都是分隔符
+  cut[0] = -1;
+  uint32_t j = 1, k = 0;
+  if (slen > 0)                     // 空串跳过扫描
+    do  if (s[j] == delim) { cut[++k] = j; }
+    while (s[j++] != '\0');
+  cut[k + 1] = j - 1;
+```
+
+修复后盘2 的 `returncode` 从 `-11` 变成 `0`，产物齐全。
+
+> **教训**：
+> 1. **「产物都在、最后才崩」= 找越界写，不要找逻辑错误**。
+>    所有文件都写出来了说明主流程没问题，崩的是清理阶段或后续步骤 ——
+>    也就是**前面某个越界写刚刚咬到关键变量**。
+> 2. **gdb 下不崩 + 直接跑必崩 → 用 core dump**。
+>    gdb 会改内存布局（默认还关 ASLR），`set disable-randomization off`
+>    也未必能复现；core dump 不影响布局，是这类 bug 的正解。
+> 3. **零长度 VLA（`int32_t x[strlen(s)/2]` + 空串）是经典地雷**。
+>    凡是「按输入长度开的 VLA」，都要问一句「长度为 0 时怎么办」。
+> 4. **别把「某张盘碰巧没崩」当成没问题**。盘1 与盘2 走的是同一条有缺陷
+>    的代码路径，只是一个踩中了关键变量、一个没踩中。
+
+### 16.19 `tracktext[组]` 条数不足 → `strlen(NULL)` 段错误
+
+`menu.c` 的 `generate_menu_pics()` 画文字时按 **`ntracks[组]`** 索引：
+
+```c
+do {
+      maxtracklength = MAX(maxtracklength, strlen(tracktext[group][track]));
+      ...
+      track++;
+} while (track < ntracks[group]);
+```
+
+而 `tracktext[组]` 由 `fn_strtok(rem, ',', ...)` 生成，条数取决于
+`--screentext` 里该组给了几个曲名。**条数少于 `ntracks[组]` 时，
+最后一个槽位是 `fn_strtok` 写的 NULL 哨兵 → `strlen(NULL)` 段错误。**
+
+⚠️ **与文字内容完全无关，只与条数有关**，所以「曲名看起来都对」也可能崩。
+
+两种成因：
+1. `--screentext` 少给了组（组定义数 < 音频组数）；
+2. **组间漏了 `:`** —— 格式是
+   `专辑标题=组1标题=轨1,轨2:组2标题=轨3,轨4`。
+   漏掉冒号时整串只解析成 1 个组：该组的「组标题」被赋成轨名列表，
+   而真正的轨文字落到下一个 `=` 之后，于是条数只剩原来的一小半。
+
+**修复**：`patch_menu_screentext.py` 在解析后**统一按 `ntracks[k]` 补足
+每一组**（不足处填空串），并对未定义的组补空组标题：
+
+```c
+      for (k = 0; k < dim; k++)
+        {
+          if (!grouptext[k]) { grouptext[k] = calloc(2, ...); grouptext[k][0] = strdup(""); }
+          int need = (k < (int) ngroups) ? (int) ntracks[k] : 0;
+          int have = tracktext[k] ? arraylength(tracktext[k]) : 0;
+          if (have >= need) continue;
+          tracktext[k] = realloc(tracktext[k], (need + 1) * sizeof(char *));
+          for (int i = have; i < need; ++i) tracktext[k][i] = strdup("");
+          tracktext[k][need] = NULL;
+        }
+```
+
+**判据**：gdb 下 `p tracktext[group][track]` —— 若是 `(char *) 0x0` 就是这个坑。
+
+### 16.20 教训小结
+
+1. **上游的「自动」功能往往只在小规模下被验证过**。加菜单前先在最小规模
+   （3 首 1 页）跑通，再逐项放大到真实规模（多组 / 多页 / 多专辑），
+   每一步都留一个可判定的判据。
+2. **「不报错」不等于「做对了」**。菜单这一串问题里，最危险的几个
+   （按钮只覆盖 32 首、菜单 VOB 根本没生成、AMG 缓冲越界）都是 exit=0 或
+   崩在毫无关联的地方。必须显式核对产物：按钮总数、`AUDIO_TS.VOB` /
+   `AUDIO_SV.VOB` 是否存在、`AUDIO_TS.IFO` 的扇区数。
+3. **凡是「我们也算一遍」的地方，都要与上游逐字对齐并加自检**（见 16.12）。
+4. **字体要按实际用到的字符集做功能性检测**（见 16.5），
+   而不是查字体表或只测一个「中文」探针 —— 韩文就是这么漏掉的。
+5. **`--stillpics` 的额度是「张数 × 15 扇区」，不是「图大小」**；
+   省额度的唯一手段是**复用**（空项），重复给同一路径不算省。
+6. **「所有阶段都成功、最后莫名段错误」→ 优先怀疑 VLA**
+   （由外部变量决定大小的自动数组）。它的崩点可以离原因十几分钟远，
+   并且会破坏崩溃现场的局部变量。
+7. **调试手段**：`stdout` 全缓冲会吞掉崩溃前的输出（GNU `foutput` 走 stdio）。
+   有效办法：`stdbuf -o0 -e0`、`dmesg`、以及**用同结构的小素材复现**
+   —— 把 91 首真实文件换成 91 个 1 秒小文件，复现从 ~10 分钟压到 ~1 分钟。
+   本项目可复用的复现脚本：`/tmp/m91/run.sh`（66+25 两组、9 页，
+   参数与真实构建一致）。
+8. **「产物都在、最后才崩」→ 找越界写，别找逻辑错误**。
+   所有文件都写出来了说明主流程是对的，崩的是清理阶段 ——
+   也就是**前面某个越界写刚咬到关键变量**（见 16.18）。
+9. **gdb 下不崩 + 直接跑必崩 → 用 core dump**。
+   gdb 会改内存布局（默认还关 ASLR），`set disable-randomization off` 也未必
+   能复现。core dump 不影响布局，是这类 bug 的正解：
+   `resource.setrlimit(RLIMIT_CORE, (-1,-1))` + `gdb -batch -ex bt prog core.N`
+10. **凡是「按输入长度开的 VLA」，都要问一句「长度为 0 时怎么办」**。
+   `int32_t cut[strlen(s) / 2]` + 空串就是经典地雷（见 16.18）。
+11. **别把「某张盘碰巧没崩」当成没问题**。盘1 与盘2 走同一条有缺陷的代码路径，
+   区别只是一个踩中了关键变量、一个没踩中。规模不同的两张盘都要跑。
+
+### 本项目修复的上游缺陷总览（10 个补丁脚本）
+
+| 补丁 | 目标文件 | 修的问题 |
+|---|---|---|
+| `patch_read` / `_read2` / `_encode` / `_ats_pack` | `mlp.c`、`ats.c` | FFmpeg 8 API 迁移、24-bit、pack 边界 |
+| `patch_fix_fn_strtok` | `auxiliary.c` | **空串时的零长度 VLA 越界写**（见 16.18） |
+| `patch_menu_paging` | `menu.c` | 分页公式（合计恒 ≤32 按钮）、页数护栏误伤 |
+| `patch_menu_backgrounds` | `command_line_parsing.c` | 每页背景取错、blankscreen 覆盖、堆越界 |
+| `patch_menu_screentext` | `menu.c` | `cutloop` 静态变量泄漏、条数不足、`size` 复用 |
+| `patch_menu_layout` | `menu.c`、`xml.c` | `maxntracks` 当行数用 → >34 轨砸栈 |
+| `patch_menu_arrows` | `menu.c`、`xml.c` | 翻页箭头文字错位、末页重复画（见 16.21） |
+| `patch_menu_stillpics` / `_list` | `menu.c`、`command_line_parsing.c` | `pict` 置 NULL、文件列表模式 cd 失败 |
+| `patch_menu_amg_size` | `launch_manager.c` | AMG 缓冲不随页数增长（见 16.17） |
+
+### 16.21 翻页箭头：文字从第 2 页起错位到顶部，末页重复画 5 次
+
+**症状**（用户报告）：「菜单翻页后不显示 Previous / Next」。
+
+**实测定位**（56 轨 5 页，逐页提取菜单文字图的墨迹行区间）：
+
+```
+页 0  墨迹 … 408-430, 441-455      ← 441-455 是底部的 Next    ✔
+页 1  墨迹 … 378-400, 408-429      ← 没有 441-455！箭头跑到第 1、2 行
+页 4  墨迹 … 288-309, 441-455      ← 底部是 Previous          ✔
+```
+
+也就是说**第 2 页到倒数第 2 页**，箭头文字压在最先两首曲名上，
+而底部箭头槽位置没有文字 —— 看起来就是「翻页后没有 Previous/Next」。
+
+**根因**：`menu.c` 画箭头时把 `offset` 传进了 `mogrify_img()`：
+
+```c
+mogrify_img(arrowstring, img->ncolumns - 1, img->maxbuttons,
+            img, img->maxbuttons, command1, command2, offset, img->arrowcolor);
+                                /* track 绝对行号 */  /* offset 传了进去 */
+```
+
+而 `mogrify_img()` 里是
+
+```c
+y0 = EVEN(y(track + 1 - offset, maxnumtracks + 4));
+```
+
+`offset` 的语义是「**本页首轨的全局序号**」，它是给曲名用的（让每页第 1 首
+都画在第 1 行）。但箭头用的是**固定的绝对行号** `img->maxbuttons` /
+`img->maxbuttons + 1`（页面底部的两个箭头槽，与 `xml.c` 输出的按钮坐标同源），
+**不该再减 offset**：
+
+| 页 | `offset` | `y(track+1-offset)` = `y(13-offset)` | 结果 |
+|---|---|---|---|
+| 第 1 页 | 0（初始值） | `y(13)` | 底部 ✔ |
+| 第 2 页起 | 12、24、… | `y(1)`、`y(-11)`… | **顶部第 1、2 行** ✗ |
+| 末页 | 0（走完整个组时复位） | `y(13)` | 底部 ✔ |
+
+**副作用（同一段代码）**：原来写的是
+`do { ... } while (buttons < menubuttons + arrowbuttons);`。
+`buttons` 进入循环前是**本页已画的按钮数**，而 `menubuttons` 仍是「满页容量」：
+曲目正好填满时两者接得上，但**末页只有 8 首**（56 − 4×12）时
+`buttons = 8`、目标 `12 + 1 = 13` → 循环 **5 轮**，把同一个 Previous
+重复画在同一位置。`xml.c` 里同构的循环会输出 5 个**完全重叠**的按钮：
+
+```
+页 4   button09..button13 全部 y0=440..470    ← 5 个重叠按钮
+```
+
+**修复**：`patch_menu_arrows.py`（同时改 `menu.c` 与 `xml.c`，两处必须一致 ——
+一个画文字、一个输出按钮）
+
+- 箭头调用一律传 `offset = 0`（用绝对行号定位）
+- 去掉 `do-while` 改成单次判断，并加 `arrows_drawn`/`arrows_emitted`
+  与 `arrowbuttons` 的调试比对（不一致时告警）
+- 顺手去掉 `char arrowstring[9]` + `strcpy`
+  （`DEFAULT_PREVIOUS` 是 8 字符 + NUL = 9，正好塞满这个缓冲，本来就贴边界），
+  直接把字面量传给 `mogrify_img()`
+
+**修复后实测**：
+
+```
+页 0  13 个按钮  箭头区 441-455
+页 1  14 个按钮  箭头区 441-455, 471-485     ← 底部两行，对上了
+页 2  14 个按钮  箭头区 441-455, 471-485
+页 3  14 个按钮  箭头区 441-455, 471-485
+页 4   9 个按钮  箭头区 441-455              ← 从 13 降到 9（去掉 5 个重叠）
+```
+
+末页 `button09` 的 `y1=470`，与前面页的 Previous 位置一致 ✔
+
+> **教训**：同一段代码里混用「相对行号」和「绝对行号」是这类错位的常见根源。
+> `mogrify_img(track, offset)` 这套签名要求调用方明确自己是哪一种 ——
+> **曲名用相对（配 offset）、箭头用绝对（offset 传 0）**。
+> 判断方法：把「画文字」与「输出按钮」两处坐标做**逐页比对**，
+> 再用抽帧看文字墨迹的实际行区间；只看菜单截图很容易以为「就是没画」。
+>
+> 另外：`do { ... } while (buttons < 目标)` 这种「按累计计数循环」的写法，
+> 一旦入口的 `buttons` 基数与 `目标` 的基准不同（一个含本页已画数、
+> 一个是满页容量），末页就会多转几轮 —— 改成单次判断更稳。
+
+---
+
+## 17. 诊断手法速查
 
 ### 解析 AOB 的 PES 时间戳
 
