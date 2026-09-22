@@ -37,7 +37,6 @@
 
 import argparse
 import os
-import struct
 import sys
 
 # ---- MLP 规范常量 ----

@@ -22,6 +22,8 @@
 #        apt 里的 dvdauthor 没有 AMGM / jump group 补丁，不能用）
 #
 # 本脚本幂等：可重复执行（会还原被补丁修改的源文件后重新应用）。
+#
+# 补丁清单、顺序约束、以及「哪些补丁有意不接入」见同目录 PATCHES.md。
 # ============================================================================
 set -e
 
@@ -119,34 +121,44 @@ fi
 # 去掉链接期 strip(-s)，便于崩溃时定位
 sed -i 's/ -s  dvda-author.o/ dvda-author.o/' "$SRC/src/Makefile" || true
 
-echo "=== [5/8] 迁移 mlp.c 到 FFmpeg 8 API ==="
-python3 "$PATCHES/patch_read.py"      # channels/ch_layout、pkt_pos、av_read_frame
-python3 "$PATCHES/patch_read2.py"     # 提取分支的读取循环
-python3 "$PATCHES/patch_encode.py"    # planer 采样格式、放开 24-bit
-python3 "$PATCHES/patch_ats_pack.py"  # pack 补到 2048 边界（否则每盘丢 1 轨）
-python3 "$PATCHES/patch_atsi_dynamic.py"  # ATSI 按曲目数动态分配（一组可达 99 轨）
-python3 "$PATCHES/patch_stillpics_atsi_record.py"  # 播放封面不能被跳过
-# 上游因「MLP 不能无缝接轨」的猜测让每轨自成 title，而「下一段」是在
-# 同一 title 内换轨 → 点「下一段」切不了歌。去掉该条件，一个组 = 一个 title。
-# 方案 B：静图表从「按 title」改成「按轨」（两边成对改）。
-# 用 DVDA_ASVS_PER_TRACK=1 启用；不设该变量则完全保持原行为。
-python3 "$PATCHES/patch_asvs_per_track.py"
-python3 "$PATCHES/patch_mlp_one_title.py"
-
-echo "=== [5b/8] 应用菜单（AMG / ASVS）修复 ==="
-# 顺序敏感：layout 会把 command->maxntracks 换成 img->maxbuttons，
-# 而 maxbuttons 由 paging 决定，所以 paging 必须先跑。
-for p in patch_menu_paging.py \
-         patch_menu_backgrounds.py \
-         patch_menu_screentext.py \
-         patch_menu_layout.py \
-         patch_menu_arrows.py \
-         patch_menu_stillpics.py \
-         patch_menu_stillpics_list.py \
-         patch_menu_amg_size.py \
-         patch_menu_amg_cells.py \
-         patch_menu_one_album_per_page.py ; do
-  echo "  -- $p"
+echo "=== [5/8] 应用源码补丁 ==="
+# 补丁清单与「为什么」见 scripts/PATCHES.md；此处只列顺序。
+#
+# ⚠️ 顺序敏感，勿随意调整：
+#   · patch_menu_paging 必须早于 patch_menu_layout
+#     （layout 会把 command->maxntracks 换成 img->maxbuttons，
+#       而 maxbuttons 由 paging 决定）
+#   · patch_menu_one_album_per_page 必须最后
+#     （它改的是 menu.c 的排版循环，前面几个补丁要先就位）
+#
+# ⚠️ 有意**不**接入的补丁（放在 patches/_experiments_18xx/）：
+#   · patch_asvs_per_track.py —— 把 ASVS 记录改成「按轨」，与商业盘
+#     「按 title」不同构，实测无效
+#   · patch_ats_ptt_srpt.py  —— 表结构是猜的，会让 PowerDVD 崩溃
+PATCH_SEQ=(
+  patch_read.py                    # FFmpeg 8：channels/ch_layout、pkt_pos
+  patch_read2.py                   # FFmpeg 8：提取分支的读取循环
+  patch_encode.py                  # FFmpeg 8：planer 采样格式、放开 24-bit
+  patch_ats_pack.py                # pack 补到 2048 边界（否则每盘丢 1 轨）
+  patch_atsi_dynamic.py            # ATSI 按曲目数动态分配（一组可达 99 轨）
+  patch_stillpics_atsi_record.py   # 静图记录不能跳过「沿用上一张」的轨
+  patch_mlp_one_title.py           # 去掉「MLP → 每轨自成 title」
+  patch_asvs_no_buttons.py         # ASVS 0x19「activates buttons」→ 0
+  patch_still_end_code.py          # 静图程序结束码独占扇区 + 补 0xFF
+  patch_asvs_image_sectors.py      # ASVS 每图偏移 base_sect + off_sect
+  patch_menu_paging.py             # 菜单分页（以下 10 个顺序敏感）
+  patch_menu_backgrounds.py
+  patch_menu_screentext.py
+  patch_menu_layout.py
+  patch_menu_arrows.py
+  patch_menu_stillpics.py
+  patch_menu_stillpics_list.py
+  patch_menu_amg_size.py
+  patch_menu_amg_cells.py
+  patch_menu_one_album_per_page.py # 必须最后
+)
+for p in "${PATCH_SEQ[@]}"; do
+  printf '  -- %s\n' "$p"
   python3 "$PATCHES/$p" || { echo "[FAIL] $p 未全部应用" >&2; exit 3; }
 done
 

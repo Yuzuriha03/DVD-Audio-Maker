@@ -7,8 +7,6 @@
 - 24-bit 原被直接拒绝；FFmpeg 8 支持 s32p，故放开并做 <<8 对齐。
 """
 import pathlib
-import re
-import sys
 
 PATH = pathlib.Path("/root/dvda-author-mlp8/src/mlp.c")
 text = PATH.read_text(encoding="utf-8", errors="surrogateescape")

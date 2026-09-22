@@ -755,8 +755,46 @@ def build_disc(disc_index, groups):
         os.makedirs(d)
 
     args = [DVDA]
+    # title 划分模式，由 DVDA_TITLE_MODE 控制：
+    #   "one"（**默认**）→ 整盘一个 title（一个音频组一个 title）
+    #   "album"          → 专辑边界切 title（对齐商业盘，但**实测有副作用**）
+    #   整数 N           → 每 N 轨一个 title（诊断用）
+    #
+    # 为什么默认 "one"：实测「按专辑切 title」会让**跨专辑连播失效**
+    # （一张盘播完一个专辑就停），且并没有改善上一曲/下一曲。
+    # 详见 patches/patch_mlp_one_title.py 开头的记录。
+    mode = (os.environ.get("DVDA_TITLE_MODE") or "one").strip().lower()
+    per = None
+    by_album = (mode == "album")
+    if not by_album and mode != "one":
+        try:
+            per = max(1, int(mode))
+        except ValueError:
+            per = None
+    nt_seen = 0
     for _, _, files in groups:
-        args += ["-g"] + [f["mlp"] for f in files]
+        # `-z` = dvda-author 的「下一个文件另起 title」。
+        # 只有显式要求时（album / 整数 N）才插，默认不插。
+        gl, prev_alb = ["-g"], None
+        for f in files:
+            alb = os.path.dirname(f.get("src") or "")
+            if per is not None:
+                need = nt_seen and nt_seen % per == 0
+            elif by_album:
+                need = prev_alb is not None and alb != prev_alb
+            else:
+                need = False
+            if need:
+                gl.append("-z")
+            gl.append(f["mlp"])
+            prev_alb = alb
+            nt_seen += 1
+        args += gl
+    if per is not None:
+        print(f"[title] 诊断模式：每 {per} 轨一个 title"
+              f"（共 {(nt_seen + per - 1) // per} 个）")
+    elif by_album:
+        print("[title] 专辑模式：每个专辑一个 title（⚠️ 跨专辑连播会失效）")
     # 注意：非 core 构建下 -9/-X 会触发 make_absolute 返回 NULL 而崩溃，故不传。
     args += ["-o", out, "-D", tmp, "-W", "-P0", "-n"]
 

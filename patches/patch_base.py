@@ -9,7 +9,6 @@
 3. libsoxconvert.c：加 WITHOUT_sox 守卫与桩函数。
 """
 import pathlib
-import sys
 
 ROOT = pathlib.Path("/root/dvda-author-mlp8")
 H = ROOT / "libutils/src/include/winport.h"
