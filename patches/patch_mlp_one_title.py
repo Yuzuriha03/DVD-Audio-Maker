@@ -2,6 +2,18 @@
 # -*- coding: utf-8 -*-
 """让一个音频组只生成**一个 title**，从而支持「下一首 / 上一首」逐轨切歌。
 
+## 不要按专辑切 title（实测负面结论，2026-09-22）
+
+曾尝试在专辑边界往命令行插 `-z`，让 title 粒度跟商业盘一致
+（Enigma《15 Years After》99 首 = 8 个 title，李娜精选 24 首 = 2 个 title）。
+**实测结果：既无收益又有副作用，已回滚。**
+
+  · **跨专辑连播失效** —— 一张盘播完一个专辑就停，不会继续下一个专辑；
+  · **上一曲/下一曲照样坏** —— 对齐 title 粒度**并没有**修好这个问题。
+
+所以本工程的布局固定为「**一个音频组 = 一个 title**，title 内每首歌一个 track」。
+`02_build.py` 的 `build_disc()` 里注明了「不要插 `-z`」，改动前请先看那段说明。
+
 ## 症状
 
 PowerDVD / 硬碟机里点「下一段」不能切歌：
@@ -293,15 +305,14 @@ ATS_NEW = """              if (i < ntracks)
 
                      MLP 的 pts[]/dts[]/scr[] 是**按轨**的（每轨从 PTS0 = 98
                      起算、轨内单调）。原版每轨自成一个 title，每轨一条时间轴，
-                     这没问题；现在整组是一个 title，而 DVD 里一个 title（PGC）
-                     只有**一根时间轴**，必须把后续轨整体平移，否则 56 个 cell
-                     的 first_pts 全是 98 —— 播放器按时间轴寻址任何一首都会落到
-                     PTS 98 处，也就是**第 1 首**。
-                     症状：不管哪首按「下一曲」都跳回曲目 1。
+                     这没问题。
 
-                     偏移量用上一轨声明的时长 PTS_length（与 AMG 里的 title
-                     长度同源），小幅间隔（实测 < 1000 ticks，< 11 ms）无害。 */
-                  pts_shift += files[i - 1].PTS_length;
+                     而 DVD 里**每个 title 一根时间轴**：实测商业盘（Enigma）
+                     各 title 的 first_pts 都从同一个 PTS0 起（585），title 内
+                     跨轨连续。所以遇到 newtitle 时偏移必须**清零**。 */
+                  pts_shift = files[i].newtitle
+                              ? 0
+                              : pts_shift + files[i - 1].PTS_length;
                   files[i].pts_shift = pts_shift;
 """
 

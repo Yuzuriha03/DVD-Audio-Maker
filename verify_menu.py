@@ -23,14 +23,20 @@
 """
 
 import os
-import re
 import struct
 import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-MAX_ASVS_SECTORS = 1024        # asvs.c 的累计上限
+# ASVS 静图预算。
+#
+# dvda-author 在超过 1024 扇区时会打印「Exceeding stillpic buffer limit
+# (2 MB)」的警告，但那是它自己的经验值、**不是规范上限**：商业盘
+# Enigma《15 Years After》的 AUDIO_SV.VOB 就有 1950 扇区（3.99 MB），
+# 播放完全正常。所以这里只把上限当作「异常放大」的报警线，并给足余量。
+MAX_ASVS_SECTORS = 4096
+# （参考值：Enigma 99 轨 → 1950 扇区、李娜 24 轨 → 436 扇区）
 BTN_PER_PAGE_MAX = 32          # MAX_BUTTON_Y_NUMBER - 2
 
 
@@ -247,31 +253,33 @@ def asvs_titles(ifo_path):
     return n, entries, last
 
 
-def check_stills(iso, ifo_path, vob_path, expect_covered, expect_albums):
+def check_stills(iso, ifo_path, vob_path, expect_pics, expect_albums=None):
     """从 ISO 取 ASVS 文件后交给 check_stills_data 校验。"""
     if not extract(iso, "/AUDIO_TS/AUDIO_SV.IFO", ifo_path):
         print("  [FAIL] 无法提取 AUDIO_SV.IFO，播放封面未能校验")
         return False
-    return check_stills_data(ifo_path, vob_path, expect_covered,
-                             expect_albums)
+    return check_stills_data(ifo_path, vob_path, expect_pics, expect_albums)
 
 
-def check_stills_data(ifo_path, vob_path, expect_covered, expect_albums):
-    """校验播放封面（ASVS）表与「每专辑一张」的预期一致。
+def check_stills_data(ifo_path, vob_path, expect_pics, expect_albums=None):
+    """校验播放封面（ASVS）表是否与「每轨一张静图」的实现一致。
 
     与取文件分开，是为了让校验逻辑本身可以被单独喂数据测试
     （否则想验证「它真的会报错」时，内部那次解包会把改过的文件覆盖掉）。
 
-    ⚠️ 判据是「**图的总数** == 有封面的专辑数」，**不是**「记录数 == 专辑数」。
-    `AUDIO_SV.IFO` 的记录是**按 ATS title** 分组的：
-      · 多 title（每轨一个 title）时 → 每专辑 1 条，共 N 条、各 1 张图；
-      · 单 title（一组一个 title，见 patch_mlp_one_title）时 → **1 条**记录
-        里含全部 N 张图。
-    两种结构都合法，播放时按轨取哪一张由 ATSI 的静图记录
-    （图号, 轨号, onset）决定，与这里的记录条数无关。
+    ⚠️ 判据是「**图的总数** == 有静图的轨数」，因为实现是
+    `--stillpics` 为**每一轨**都传一个图（同专辑复用同一张 jpg 文件）。
+    不能拿「专辑数」当期望值：那样会误报（实测 56 轨 / 17 专辑）。
 
-    expect_covered : 有 cover.jpg 的专辑数（应等于**图的总数**）
-    expect_albums  : 全部专辑数（用于指出多少张专辑会显示别的封面）
+    `AUDIO_SV.IFO` 的记录是**按 ATS title** 分组的：
+      · 单 title（一组一个 title，`patch_mlp_one_title`）→ **1 条**记录
+        含全部 N 张图；
+      · 多 title（一专辑一个 title）→ 每条记录「图数 = 该 title 的轨数」。
+    两种结构都合法，故这里只校验「图的总数」与「图号/扇区连续」，
+    不校验记录条数。
+
+    expect_pics   : 有静图的轨数（= 图的总数）
+    expect_albums : 专辑数（仅用于提示有多少张专辑缺 cover.jpg）
     """
     n, entries, last = asvs_titles(ifo_path)
     sectors = (os.path.getsize(vob_path) + 2047) // 2048
@@ -291,28 +299,24 @@ def check_stills_data(ifo_path, vob_path, expect_covered, expect_albums):
         if sec * 2048 >= os.path.getsize(vob_path):
             issues.append(f"第 {i} 条记录的起始扇区 {sec} 超出 AUDIO_SV.VOB")
         pics += npics
-    if expect_covered is not None and pics != expect_covered:
-        issues.append(f"静图总数 {pics} != 有封面的专辑数 {expect_covered}")
-        if pics < expect_covered:
-            issues.append("少的那几首会看到上一张封面（同专辑后续轨是靠"
-                          "沿用上一张显示实现的，所以断链会显错）")
+    if expect_pics is not None and pics != expect_pics:
+        issues.append(f"静图总数 {pics} != 有静图的轨数 {expect_pics}")
+        if pics < expect_pics:
+            issues.append("少的那些轨会看不到封面")
     if issues:
         print(f"  [FAIL] 播放封面表异常（{n} 条记录，{pics} 张图）")
         for msg in issues:
             print(f"         · {msg}")
         return False
-    lack = (expect_albums - expect_covered) if expect_albums else 0
-    print(f"  [OK]   播放封面：{pics} 张图 = {pics} 个专辑（{n} 条记录，"
-          f"每条对应一个 ATS title），图号与扇区偏移连续，"
-          f"AUDIO_SV.VOB {sectors} 扇区")
-    if lack:
-        print(f"  [WARN] 共 {expect_albums} 个专辑，其中 {lack} 个没有 cover.jpg"
-              f" —— 这些专辑会显示上一张专辑的封面")
+    extra = f"（{n} 条记录 / {expect_albums} 个专辑）" if expect_albums else \
+            f"（{n} 条记录）"
+    print(f"  [OK]   播放封面：{pics} 张图 = {pics} 轨{extra}，"
+          f"图号与扇区偏移连续，AUDIO_SV.VOB {sectors} 扇区")
     return True
 
 
 def check_iso(iso, expect_tracks, expect_pages, tmpdir, label,
-              expect_covered=None, expect_albums=None):
+              expect_pics=None, expect_albums=None):
     print(f"\n=== {label}: {os.path.basename(iso)} ===")
     names = iso_files(iso)
     if not names:
@@ -364,12 +368,12 @@ def check_iso(iso, expect_tracks, expect_pages, tmpdir, label,
         sectors = (os.path.getsize(sv) + 2047) // 2048
         mark = "OK]  " if sectors <= MAX_ASVS_SECTORS else "FAIL]"
         print(f"  [{mark} 播放封面 AUDIO_SV.VOB {sectors} 扇区 "
-              f"(上限 {MAX_ASVS_SECTORS})")
+              f"(报警线 {MAX_ASVS_SECTORS})")
         if sectors > MAX_ASVS_SECTORS:
             ok = False
         # 5c. 播放封面表：每首歌是否真能看到自己专辑的封面
         if not check_stills(iso, os.path.join(tmpdir, "AUDIO_SV.IFO"), sv,
-                            expect_covered, expect_albums):
+                            expect_pics, expect_albums):
             ok = False
     else:
         print("  [FAIL] 无法提取 AUDIO_SV.VOB，播放封面未能校验")
@@ -457,7 +461,8 @@ def main():
             pages = len(menu_assets.album_pages(
                 album_of, min(cfg.menu_tracks_per_page,
                               menu_assets.MAX_MENU_ROWS)))
-            # 播放封面的预期：每个「连续同专辑」块发一张图，与 menu_assets 一致
+            # 播放封面的预期：**每轨**一张图（同专辑复用同一张 jpg 文件），
+            # 所以期望张数 = 该盘的轨数，与 menu_assets 的做法一致。
             album_dirs, seen = [], set()
             for g in groups:
                 for t in g:
@@ -465,12 +470,11 @@ def main():
                     if d and d not in seen:
                         seen.add(d)
                         album_dirs.append(d)
-            covered = sum(1 for d in album_dirs
-                          if os.path.isdir(d) and menu_assets.find_cover(d))
-            expect_albums, expect_covered = len(album_dirs), covered
+            expect_albums = len(album_dirs)
+            expect_pics = sum(len(g) for g in groups)
         else:
             tracks, pages = None, None
-            expect_albums = expect_covered = None
+            expect_albums = expect_pics = None
             print("[提示] 指定 --iso 时无法核对期望页数，只做存在性检查")
         if tracks is None:
             print(f"\n=== {os.path.basename(iso)} ===")
@@ -480,7 +484,7 @@ def main():
                 print(f"  [{'OK' if f in base else 'FAIL'}] AUDIO_TS/{f}")
             continue
         ok = check_iso(iso, tracks, pages, f"/tmp/verify-menu/disc{i}",
-                       f"第 {i} 盘", expect_covered, expect_albums)
+                       f"第 {i} 盘", expect_pics, expect_albums)
         all_ok = all_ok and ok
 
     print()

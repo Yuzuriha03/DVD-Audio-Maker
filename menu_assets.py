@@ -29,7 +29,6 @@
 `jump group G track K` 会对不上。
 """
 
-import math
 import os
 import re
 import shutil
@@ -675,29 +674,33 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
                         cfg.menu_cover_dim if cov else 0)
         plan.backgrounds.append(path)
 
-    # ---- 静图：每专辑一张，其余轨留空（沿用上一张）----
+    # ---- 静图：**每轨一张**（严格对齐 Enigma）----
+    # Enigma《15 Years After》99 轨 → ASVS 里 99 张图，按 title 分组：
+    #   title1（15 轨）→ 记录「图数=15, 起始图号=1」
+    #   title2（12 轨）→ 记录「图数=12, 起始图号=16」
+    # 即**每轨都有自己的一张图**，同专辑的轨只是画面相同。
+    #
+    # 不能用 `--stillpics` 的空项（表示「沿用上一张」）：那样这些轨的
+    # `img->npics` 为 0，会被 atsi2.c 里的
+    #   `if (img->npics[trackcount - 1] == 0) continue;`
+    # 整个跳过、不写记录，ATS 的静图表就会缺项、ASVS 的「图数」也不是轨数。
+    # 同专辑复用同一个 jpg 文件，只是多引用几次 —— 与商业盘结构一致。
     if cfg.menu_stillpics:
         plan.stills = []
-        still_index = {}
-        for i, a in enumerate(album_of):
-            if a in still_index:
-                plan.stills.append("")
-                continue
-            src = covers.get(a)
-            path = os.path.join(outdir, "still%d.jpg" % len(still_index))
-            ok = False
-            if src:
-                try:
-                    make_still(src, path)
-                    ok = True
-                except RuntimeError as e:
-                    log("[菜单][警告] 生成静图失败（%s）：%s" % (a, e))
-            if ok:
-                still_index[a] = len(still_index)
-                plan.stills.append(path)
-            else:
-                plan.stills.append("")
-                still_index[a] = None
+        still_path = {}
+        for a in album_of:
+            if a not in still_path:
+                src = covers.get(a)
+                path = os.path.join(outdir, "still%d.jpg" % len(still_path))
+                ok = False
+                if src:
+                    try:
+                        make_still(src, path)
+                        ok = True
+                    except RuntimeError as e:
+                        log("[菜单][警告] 生成静图失败（%s）：%s" % (a, e))
+                still_path[a] = path if ok else ""
+            plan.stills.append(still_path[a])
 
     # ---- 文字链：一页一段，段标题 = 专辑名 ----
     # 格式：`光盘标题=专辑1=轨1,轨2:专辑2=轨3,...`

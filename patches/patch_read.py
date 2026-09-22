@@ -11,7 +11,6 @@
 - 编码端改用 planer 格式（s16p/s32p），并允许 24-bit
 """
 import pathlib
-import sys
 
 PATH = pathlib.Path("/root/dvda-author-mlp8/src/mlp.c")
 text = PATH.read_text(encoding="utf-8", errors="surrogateescape")
