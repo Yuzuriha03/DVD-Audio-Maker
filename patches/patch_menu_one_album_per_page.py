@@ -64,7 +64,6 @@ dvda-author 自己按「逐页填满 R 行」算的（R = ceil(总轨数/页数)
 `[1b]` 会把 menu.c / xml.c / amg2.c / structures.h 从原始源码还原。
 """
 import pathlib
-import re
 import sys
 
 SRC = pathlib.Path("/root/dvda-author-mlp8/src")
