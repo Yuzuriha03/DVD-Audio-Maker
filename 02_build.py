@@ -739,6 +739,140 @@ def win_copy_to(linux_path, win_dest):
 
 
 
+# ---- 静图导航扇区（AUDIO_SV.VOB 里每张静图的第 1 个扇区） ----------------
+#
+# mplex 的 `-f 8`（其手册原文: "DVD (with NAV sectors) … includes **empty
+# versions** of the peculiar VOBU start sectors"）写的是**空壳导航包**：
+# PCI 980 字节之后再挂一个整 1018 字节的 DSI，而 PCI/DSI 的内容基本全零。
+#
+# DSI（Data Search Information）装的是「前后 VOBU 的扇区指针」。
+# 全零即「下一个 VOBU 在扇区 0」→ 播放器一寻址就跳回 VOB 开头读垃圾。
+# 实测：从菜单跳到第 50 曲时播放器直接崩溃。
+#
+# 三张商业盘（巴赫 / 李娜 / Enigma）静图的导航扇区**逐字节相同**，
+# 形态为「PCI 745 字节 + 0xBE 填充」，**没有 DSI**：
+#
+#   00 00 01 BA | 00 00 01 BB 系统头(15B) | 00 00 01 BF 02 E9 PCI(745B)
+#   | 00 00 01 BE 04 E8 + 1256×0xFF
+#
+# 而它们的 PCI 里只有 11 个非零字节（Enigma 更只剩 1 个），
+# 且**第 1 张与第 2 张逐字节相同** —— 说明播放器根本不看 PCI 的内容，
+# 只要导航扇区「存在且不含误导性的 DSI」。故这里整块改写成商业盘形态。
+#
+# 扇区数不变（都是 1 扇区），所以 ASVS 偏移表、每图大小、其余任何表都不用动。
+_ASVS_NAV_TAIL = (
+    b"\x00\x00\x01\xbb\x00\x0f"                       # 系统头，长 15
+    b"\x80\xc4\xe1\x00\x61\x7f\xb9\xe0\xe8\xbd\xe0\x34\xbf\xe0\x01"
+    b"\x00\x00\x01\xbf\x02\xe9"                       # PCI 包，数据 745 字节
+    b"\x02" + b"\x00" * 4 + b"\x8c\xa0" + b"\xff" * 8 + b"\x00" * 730
+    + b"\x00\x00\x01\xbe\x04\xe8" + b"\xff" * 1256    # 填充包，数据 1256
+)
+
+
+def fix_spec_versions(ts):
+    """把四个 IFO（及其 .BUP）的**规范版本号**对齐到 0x11 / 0x00。
+
+    ## 为什么（2026-09-23 实测，五张盘）
+
+    | 盘 | AMG@0x21 | ATSI@0x21 | ASVS@0x0F | SAMG@0x0F | 表现 |
+    |---|---|---|---|---|---|
+    | 巴赫 | **0x11** | **0x11** | **0x00** | **0x00** | ✅ 静图完全正常 |
+    | 李娜 | **0x11** | **0x11** | **0x00** | **0x00** | ✅ 静图完全正常 |
+    | Enigma | 0x12 | 0x12 | 0x12 | 0x12 | ❌ 只有前几个专辑刷新 |
+    | 本工程 | 0x12 | 0x12 | 0x12 | 0x12 | ❌ 同上 + 偶发崩溃 |
+
+    `dvda-author` 上游无条件写 0x12（DVD-Audio 1.2），而两张**从不出现任何
+    问题**的商业盘用的都是 1.1 形态。PowerDVD 8 的 1.2 解析路径有缺陷 ——
+    其崩溃日志（AppData\\Local\\CyberLink\\CLHelper\\PowerDVD8.log）里
+    反复出现 `CLNavX.ax` 的 0xC0000094（整数除零）、0xC0000005（访问违规）
+    和 `CLVsd.ax` 的 0xC0000005，而测商业盘时从未出现。
+
+    同一版本时而正常时而不正常（用户实测），正是这类越界读取的典型表现。
+    """
+    RULES = {
+        b"DVDAUDIO-AMG":  (0x21, 0x11),   # AUDIO_TS.IFO / .BUP
+        b"DVDAUDIO-ATS":  (0x21, 0x11),   # ATS_xx_0.IFO / .BUP
+        b"DVDAUDIOASVS":  (0x0F, 0x00),   # AUDIO_SV.IFO / .BUP
+        b"DVDAUDIOSAPP":  (0x0F, 0x00),   # AUDIO_PP.IFO
+    }
+    changed = []
+    for name in sorted(os.listdir(ts)):
+        if not name.endswith((".IFO", ".BUP")):
+            continue
+        path = os.path.join(ts, name)
+        try:
+            with open(path, "r+b") as fp:
+                head = fp.read(0x30)
+                for ident, (off, want) in RULES.items():
+                    if not head.startswith(ident) or len(head) <= off:
+                        continue
+                    if head[off] != want:
+                        fp.seek(off)
+                        fp.write(bytes([want]))
+                        changed.append((name, head[off], want))
+                    break
+        except OSError as e:
+            print(f"[FAIL] 无法改写 {name} 的规范版本号：{e}")
+            return False
+    if changed:
+        print("[版本] 规范版本号对齐 1.1 形态 "
+              f"（{len(changed)} 处，如 {changed[0][0]} "
+              f"0x{changed[0][1]:02x}→0x{changed[0][2]:02x}）✔")
+    return True
+
+
+def fix_asvs_nav_sectors(ts):
+    """把 AUDIO_SV.VOB 里每张静图的导航扇区改成商业盘形态（去掉空 DSI）。
+
+    返回 True 表示成功（或无需处理）。只改每个静图第 1 个扇区的内容，
+    不改长度，故对其它任何表都没有影响。
+    """
+    ifo = os.path.join(ts, "AUDIO_SV.IFO")
+    vob = os.path.join(ts, "AUDIO_SV.VOB")
+    if not (os.path.exists(ifo) and os.path.exists(vob)):
+        return True
+
+    with open(ifo, "rb") as f:
+        h = f.read(4096)
+    with open(vob, "r+b") as f:
+        data = bytearray(f.read())
+
+    # ASVU 记录从 0x60 起（每条固定 8 字节），每图偏移表从 0x378 起
+    # （每条 2×图数）。两者是**独立游标**——与 asvs.c 的写出顺序一一对应。
+    n_asvu = int.from_bytes(h[0x0C:0x0E], "big")
+    k, t, total, fixed = 0x60, 0x378, 0, 0
+    for _ in range(n_asvu):
+        n_pics = h[k]
+        base = int.from_bytes(h[k + 4:k + 8], "big")
+        for i in range(n_pics):
+            sect = base + int.from_bytes(h[t + 2 * i:t + 2 * i + 2], "big")
+            off = sect * 2048
+            if off + 2048 > len(data):
+                print(f"[FAIL] 静图导航扇区 {sect} 超出 AUDIO_SV.VOB")
+                return False
+            total += 1
+            # 判据：PCI 之后紧接着 DSI（0x400 起 00 00 01 BF）= mplex 空壳
+            if data[off + 0x400:off + 0x404] == b"\x00\x00\x01\xbf":
+                ref = bytes(data[off:off + 0x0E]) + _ASVS_NAV_TAIL
+                if len(ref) != 2048:
+                    print(f"[FAIL] 参考导航扇区长度 {len(ref)} != 2048")
+                    return False
+                data[off:off + 2048] = ref
+                fixed += 1
+        t += 2 * n_pics
+        k += 8
+
+    if fixed == 0 and total:
+        print(f"[静图] 导航扇区已是商业盘形态（{total} 张）✔")
+        return True
+
+    with open(vob, "r+b") as f:
+        f.write(data)
+    print(f"[静图] 导航扇区改写 {fixed}/{total} 张（去掉 mplex 的空 DSI，"
+          f"对齐商业盘）✔")
+    return True
+
+
 def build_disc(disc_index, groups):
     """生成第 disc_index 张盘（从 1 起）并打包为 ISO。
 
@@ -755,46 +889,59 @@ def build_disc(disc_index, groups):
         os.makedirs(d)
 
     args = [DVDA]
-    # title 划分模式，由 DVDA_TITLE_MODE 控制：
-    #   "one"（**默认**）→ 整盘一个 title（一个音频组一个 title）
-    #   "album"          → 专辑边界切 title（对齐商业盘，但**实测有副作用**）
-    #   整数 N           → 每 N 轨一个 title（诊断用）
+    # title 划分模式。DVDA_TITLE_MODE 可临时覆盖：
+    #   "one"（默认）  → 整盘一个 title（ASVS 只写 1 条记录）
+    #   "album"        → 专辑边界切 title（⚠️ 多记录 ASVS，播放器刷新有缺陷）
+    #   整数 N         → 每 N 轨一个 title（诊断用）
     #
-    # 为什么默认 "one"：实测「按专辑切 title」会让**跨专辑连播失效**
-    # （一张盘播完一个专辑就停），且并没有改善上一曲/下一曲。
-    # 详见 patches/patch_mlp_one_title.py 开头的记录。
+    # 为什么默认 "one"：**播放器对「多记录 ASVS」支持有缺陷** ——
+    # PowerDVD 8 实测：
+    #   · 巴赫 1 条记录 / 18 图 → 全部正常
+    #   · 李娜 1 条记录 / 12 图 → 全部正常
+    #   · Enigma 8 条记录 / 99 图 → 只有前几个专辑刷新，之后不刷新
+    #   · 本工程 17 条记录 → 同样只有前几个专辑刷新
+    # 故对齐「单记录」形态（= 巴赫/李娜），每轨仍有自己的图、
+    # 壁纸照样随曲切换，只是不按专辑切 title。
     mode = (os.environ.get("DVDA_TITLE_MODE") or "one").strip().lower()
     per = None
-    by_album = (mode == "album")
-    if not by_album and mode != "one":
+    single_title = (mode == "one")
+    if mode not in ("album", "one"):
         try:
             per = max(1, int(mode))
         except ValueError:
             per = None
     nt_seen = 0
     for _, _, files in groups:
-        # `-z` = dvda-author 的「下一个文件另起 title」。
-        # 只有显式要求时（album / 整数 N）才插，默认不插。
+        # **一个专辑一个 title**（严格对齐商业盘）。
+        #
+        # `-z` = dvda-author 的「下一个文件另起 title」，在专辑边界插进去。
+        # 依据（实测商业盘）：
+        #   · Enigma《15 Years After》99 首 = 8 个 title（12~17 轨/title）
+        #   · 李娜精选 24 首 = 2 个 title（各 12 轨）
+        # 而 ASVS 的记录是**按 title 分组的**：Enigma title1 有 15 轨 →
+        # ASVS 记录「图数=15, 起始图号=1」，即每轨一张图、同 title 共用同一
+        # 画面。所以 title 粒度必须与专辑一致，ASVS/静图表才能对齐。
         gl, prev_alb = ["-g"], None
         for f in files:
             alb = os.path.dirname(f.get("src") or "")
-            if per is not None:
-                need = nt_seen and nt_seen % per == 0
-            elif by_album:
-                need = prev_alb is not None and alb != prev_alb
-            else:
+            if single_title:
                 need = False
+            elif per is not None:
+                need = nt_seen and nt_seen % per == 0
+            else:
+                need = prev_alb is not None and alb != prev_alb
             if need:
                 gl.append("-z")
             gl.append(f["mlp"])
             prev_alb = alb
             nt_seen += 1
         args += gl
-    if per is not None:
+    if single_title:
+        print(f"[title] 单 title 模式：整盘 1 个 title、{nt_seen} 轨"
+              f"（ASVS 将只有 1 条记录，对齐巴赫/李娜）")
+    elif per is not None:
         print(f"[title] 诊断模式：每 {per} 轨一个 title"
               f"（共 {(nt_seen + per - 1) // per} 个）")
-    elif by_album:
-        print("[title] 专辑模式：每个专辑一个 title（⚠️ 跨专辑连播会失效）")
     # 注意：非 core 构建下 -9/-X 会触发 make_absolute 返回 NULL 而崩溃，故不传。
     args += ["-o", out, "-D", tmp, "-W", "-P0", "-n"]
 
@@ -849,6 +996,17 @@ def build_disc(disc_index, groups):
             with open(aob, "ab") as fp:
                 fp.write(b"\x00" * (2048 - rem))
             print(f"[补齐] {os.path.basename(aob)} 补 {2048 - rem} 字节至扇区边界")
+
+    # 静图导航扇区：mplex 写的是带空 DSI 的"空壳"，会让播放器跳曲时崩溃。
+    # 必须在打包 ISO 之前做（只改扇区内容、不改长度，故不影响任何表）。
+    # 【已停用（回滚到 G 版本）】
+    if False and not fix_asvs_nav_sectors(os.path.join(out, "AUDIO_TS")):
+        return False
+
+    # 规范版本号对齐 1.1 形态（0x11/0x00）。
+    # 【已停用（回滚到 G 版本）】
+    if False and not fix_spec_versions(os.path.join(out, "AUDIO_TS")):
+        return False
 
     iso = os.path.join(ISO_DIR, f"{tag}.iso")
     os.makedirs(ISO_DIR, exist_ok=True)

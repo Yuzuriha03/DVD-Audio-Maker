@@ -144,7 +144,12 @@ PATCH_SEQ=(
   patch_stillpics_atsi_record.py   # 静图记录不能跳过「沿用上一张」的轨
   patch_mlp_one_title.py           # 去掉「MLP → 每轨自成 title」
   patch_asvs_no_buttons.py         # ASVS 0x19「activates buttons」→ 0
+  # patch_asvs_header_mode.py     # 已停用：0x0E 改 0x0000 实测会坏静图（保留 0x0012）
+  # patch_asvs_palette.py         # 已停用：调色板改 00101010 实测会坏静图（保留菜单配色）
+  # patch_stills_per_track_rank.py# 已停用：静图表改「按轨递进」实测会坏静图（保留上游常数）
+  # patch_still_bitrate.py           # 已停用：静图码率限制（用户要求高质量图）
   patch_still_end_code.py          # 静图程序结束码独占扇区 + 补 0xFF
+  # patch_still_headers.py        # 已停用（回滚到 G 版本：progressive=1 + 9000kbps）
   patch_asvs_image_sectors.py      # ASVS 每图偏移 base_sect + off_sect
   patch_menu_paging.py             # 菜单分页（以下 10 个顺序敏感）
   patch_menu_backgrounds.py
