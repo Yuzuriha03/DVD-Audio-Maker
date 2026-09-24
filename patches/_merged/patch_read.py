@@ -19,6 +19,12 @@ hits = []
 
 def rep(old, new, label, count=1):
     global text
+    # 幂等：插入式替换的 old 在插入后**依然存在**（新内容插在它之前），
+    # 故不能用 `old not in text` 判断是否已应用 —— 那会每次再插一份。
+    # 改看 new 是否已就位。
+    if new in text:
+        print("[SKIP] %s（已应用）" % label)
+        return True
     if old not in text:
         print("[MISS] %s" % label)
         return False

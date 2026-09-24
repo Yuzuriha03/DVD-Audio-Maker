@@ -113,6 +113,69 @@ static int dvda_rewrite_nav_sector(const char *path)
 放进 C 的好处：每张静图的 mpg 自己就带着那个导航扇区，
 **不必再回头读 `AUDIO_SV.IFO` 去反算扇区号**，少一层耦合。
 
+## ⚠️ 补丁必须幂等 —— 这里有三个曾经不是
+
+**插入式**替换的 `old` 在插入之后**依然存在**（新内容插在它之前），
+所以不能用 `old not in text` 判断「是否已应用」—— 那样每次运行都会**再插一份**。
+
+实测（2026-09-24）三个补丁犯过这个错：
+
+| 补丁 | 表现 |
+|---|---|
+| `patch_read.py` | `g_last_pkt_pos` 声明与 `g_last_nb_samples` 语句各叠了 3 份 |
+| `patch_encode.py` | 同类插入重复 |
+| `patch_menu_amg_size.py` | `NEW = OLD + 增长块`，OLD 永远匹配 → AMG 增长块叠了 3 份 |
+
+**判据**：`if new in text: SKIP`，而不是 `if old not in text: MISS`。
+三处都已修正，并用「快照 → 跑一遍 → 比对 md5 → 还原」的方法复测：
+**25 个补丁全部幂等**（对已固化的源码树运行不产生任何字节变化）。
+
+```bash
+# 复测方法（可复用）
+cd tools/dvda-author-mlp8
+find src libutils -type f \( -name '*.c' -o -name '*.h' \) | while read -r f; do
+  mkdir -p "/tmp/snap/$(dirname "$f")"; cp -p "$f" "/tmp/snap/$f"; done
+for p in scripts/patches/_merged/*.py; do
+  before=$(find src libutils -name '*.c' -o -name '*.h' | xargs md5sum | sort | md5sum)
+  python3 "$p" >/dev/null 2>&1
+  after=$(find src libutils -name '*.c' -o -name '*.h' | xargs md5sum | sort | md5sum)
+  [ "$before" != "$after" ] && echo "不幂等: $p"
+  # 不等就还原，再继续
+done
+```
+
+> 这些补丁**不参与构建**，只在「从上游重建」时手工执行。
+> 但即便是手工执行，不幂等也足以毁掉源码树 —— 所以必须修。
+
+---
+
+## ⚠️ `SOURCE-MANIFEST.txt` 用 `.o` 作 oracle 的验证法
+
+源码树改动后，怎么确认「改对了」？除了比对 `SOURCE-MANIFEST.txt` 的 md5，
+更强的手段是**用编译产物反查**：
+
+```bash
+# 1) 改源码前先备份全部 .o
+mkdir -p /tmp/ref_o && cp src/*.o /tmp/ref_o/
+
+# 2) 改完源码后重编，逐个比对**指令序列**（忽略 DWARF 行号）
+objdump -d --no-show-raw-insn /tmp/ref_o/foo.o | tail -n +3 > /tmp/a.dis
+objdump -d --no-show-raw-insn src/foo.o          | tail -n +3 > /tmp/b.dis
+diff /tmp/a.dis /tmp/b.dis      # 无输出 = 功能等价
+```
+
+要点：
+
+- **必须用一样的编译命令**。手工在 `src/` 里 `make` 与
+  `build_dvda_author_mlp.sh` 的 flags 不同（少了
+  `-Wno-error=incompatible-pointer-types` 等），会产生假差异 ——
+  实测 `ats.o` 因此报了 9990 行差异，**重跑真实构建后为 0**。
+- `.o` 的 md5 **不可复现**（DWARF 含行号），所以要比**指令序列**而不是 md5。
+- 也可反过来用：源码丢了但 `.o` 还在时，靠它把源码**精确重建**出来
+  （改注释不影响指令序列，只影响行号）。
+
+---
+
 ## 从上游重新开始
 
 ```bash
