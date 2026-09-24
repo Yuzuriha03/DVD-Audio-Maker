@@ -922,7 +922,7 @@ index 601750b..9c50485 100644
  int launch_sox(fileinfo_t *info, globalData* globals);
  command_t *scan_audiofile_characteristics(command_t *command, globalData*);
 diff --git a/src/include/commonvars.h b/src/include/commonvars.h
-index df1244e..7b997ec 100644
+index df1244e..a239c76 100644
 --- a/src/include/commonvars.h
 +++ b/src/include/commonvars.h
 @@ -393,6 +393,13 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
@@ -939,8 +939,18 @@ index df1244e..7b997ec 100644
  #define DEFAULT_POINTSIZE  25
  #define DEFAULT_FONTWIDTH  6  // 6 pixels for size 10 in Courier
  #define DEFAULT_SCREENTEXT "ALBUM=Group 1 - Track 1,Group 1 - Track 2:Group 2 - Track 1,Group 2 - Track 2";
+@@ -432,6 +439,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #define DEFAULT_GROUP_HEADER_UPPERCASE "GROUP "  // use uppercase, see explanation in menu.c
+ #define DEFAULT_NEXT "Next"
+ #define DEFAULT_PREVIOUS "Previous"
++/* 二级（选曲）页底部**第三个**槽位的文案：「返回专辑索引」。
++   只在存在索引页（`--index-pages > 0`）时才出现。 */
++#define DEFAULT_MENU_BUTTON "Menu"
+ 
+ #define ALBUM_TEXT_Y0 48
+ #define MAX_POINTSIZE  35
 diff --git a/src/include/menu.h b/src/include/menu.h
-index 5ab0a6a..25b922b 100644
+index 5ab0a6a..e3f371c 100644
 --- a/src/include/menu.h
 +++ b/src/include/menu.h
 @@ -15,6 +15,7 @@ int  launch_spumux(pic* img, globalData*);
@@ -951,7 +961,7 @@ index 5ab0a6a..25b922b 100644
  int create_stillpic_directory(char* string, int32_t count, globalData*);
  void create_activemenu(pic* img, globalData* globals);
  int create_mpg(pic* img, uint16_t rank, char* mp2track, char* tempfile, globalData*);
-@@ -23,5 +24,52 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
+@@ -23,5 +24,68 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
  void initialize_binary_paths(char level, globalData*);
  void menu_characteristics_coherence_test(pic* img, uint8_t ngroups, globalData*);
  void compute_pointsize(pic* img, uint16_t maxtracklength, uint8_t maxnumtracks, globalData*);
@@ -1002,6 +1012,22 @@ index 5ab0a6a..25b922b 100644
 +#define INDEX_ARROW_W    160
 +#define INDEX_PREV_X0     40
 +#define INDEX_NEXT_X0    520
++
++/* ---- 二级（选曲）页的「返回专辑索引」按钮 ----
++
++   占底部**第三个**槽位（前两个是 Next / Previous），内容固定是
++   `jump menu 1`（第一个菜单页 = 索引页 1）。
++
++   ⚠️ 行号必须三处一致：
++     · menu.c  generate_menu_pics()  —— 画文字（mogrify_img 的 track）
++     · xml.c   dvdauthor XML         —— 出 `jump menu 1`
++     · xml.c   spumux XML            —— 出按钮矩形
++   `compute_coordinates()` 会把 y 填到 MENU_BUTTON_ROW，
++   少填一行就会取到未初始化的坐标（曾经因此让 spumux 断言失败）。
++
++   只在 `--index-pages > 0` 时出现 —— 没有索引页就无处可回；
++   索引页自身也不画（那一页**就是**索引）。 */
++#define MENU_BUTTON_ROW(img) ((img)->maxbuttons + 2)
  #endif
  #endif // HAVE_MENU_C
 diff --git a/src/include/structures.h b/src/include/structures.h
@@ -1122,7 +1148,7 @@ index 92a8831..39305c0 100644
 +
 +#endif /* WITHOUT_sox */
 diff --git a/src/menu.c b/src/menu.c
-index facf72b..c1674aa 100644
+index facf72b..286fecc 100644
 --- a/src/menu.c
 +++ b/src/menu.c
 @@ -77,7 +77,10 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
@@ -1799,8 +1825,7 @@ index facf72b..c1674aa 100644
 +          free(albumtext);
 +          albumtext = strdup(DEFAULT_ALBUM_HEADER);
 +        }
- 
--      char remainder[strlen(img->screentextchain)];
++
 +      /* ':' 分组的解析用 f=NULL（没有计数器回调），无 static 泄漏风险 */
 +      grouparray = groupspec ? fn_strtok(groupspec, ':', grouparray,
 +                                         &dim, 0, NULL, NULL, globals)
@@ -1828,8 +1853,7 @@ index facf72b..c1674aa 100644
 +      grouptext = calloc(dim + 1, sizeof(char **));
 +      if (grouptext == NULL) perror(ERR "Group text allocation");
  
--      basemotif = fn_strtok(img->screentextchain, '=', basemotif, &size, 1, cutloop, remainder, globals) ;
--      albumtext = basemotif[0];
+-      char remainder[strlen(img->screentextchain)];
 +      for (k = 0; k < ndef && k < dim; k++)
 +        {
 +          char *q = strchr(grouparray[k], '=');
@@ -1845,7 +1869,9 @@ index facf72b..c1674aa 100644
 +                 （与文档一致：组标题在 '=' 之前） */
 +              trackspec = NULL;
 +            }
-+
+ 
+-      basemotif = fn_strtok(img->screentextchain, '=', basemotif, &size, 1, cutloop, remainder, globals) ;
+-      albumtext = basemotif[0];
 +          grouptext[k] = (char **) calloc(2, sizeof(char *));
 +          grouptext[k][0] = strdup(grouparray[k]);
 +          globals->grouptextsize[k] = 2;
@@ -1895,7 +1921,20 @@ index facf72b..c1674aa 100644
          }
  
        free(grouparray);
-@@ -1096,7 +1742,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1090,13 +1736,19 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+         }
+ 
+ 
+-      arrowbuttons = (menu < img->nmenus - 1) + (menu > 0);
++      /* 二级（选曲）页底部第三个槽位：「返回专辑索引」（jump menu 1）。
++         只在存在索引页时出现 —— 没有索引页就无处可回；索引页自身也不画
++         （那一页**就是**索引）。行号见 MENU_BUTTON_ROW()。 */
++      int has_menu_button = (img->index_pages > 0)
++        && !(img->page_ntracks && (menu < (unsigned) img->index_pages));
++
++      arrowbuttons = (menu < img->nmenus - 1) + (menu > 0) + has_menu_button;
+       menubuttons = (menu < img->nmenus - 1) ? img->maxbuttons : img->maxbuttons + img->resbuttons;
+ 
        buttons = 0;
  
  
@@ -1904,7 +1943,7 @@ index facf72b..c1674aa 100644
  
        prepare_overlay_img(albumtext, -1, img, command1, command2, menu, img->albumcolor, globals);
        //free(albumtext);  // segfault here under linux for unknown reasons. TO: fix it.
-@@ -1112,7 +1758,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1112,7 +1764,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                    /* Vicious issue here: use DEFAULT_GROUP_HEADER such that the underline for highlighting does not cut a letter.
                                   With lower-case "group", this happens as the underline cuts the 'p'. Two ways out: underline lower or use another label/use uppercase
                                   Note: This issue was tested to cause spumux crash */
@@ -1913,7 +1952,7 @@ index facf72b..c1674aa 100644
                    groupcount++;
                    buttons++;
  
-@@ -1123,13 +1769,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1123,13 +1775,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
            else if (groupcount < ngroups)
              {
@@ -1929,7 +1968,7 @@ index facf72b..c1674aa 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1143,19 +1789,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1143,19 +1795,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                  }
              }
          }
@@ -2004,7 +2043,7 @@ index facf72b..c1674aa 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1175,20 +1874,39 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1175,20 +1880,50 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -2051,6 +2090,17 @@ index facf72b..c1674aa 100644
 +                          command1, command2, 0, img->arrowcolor);
 +            }
 +
++          /* 第三个槽位：「返回专辑索引」。槽位顺序必须与 xml.c 里
++             两个 XML 的按钮编号顺序一致（Next → Previous → Menu）。 */
++          if (has_menu_button)
++            {
++              buttons++;
++              arrows_drawn++;
++              mogrify_img(DEFAULT_MENU_BUTTON, img->ncolumns - 1,
++                          MENU_BUTTON_ROW(img), img, img->maxbuttons,
++                          command1, command2, 0, img->arrowcolor);
++            }
++
 +          if (globals->debugging && (arrows_drawn != (int) arrowbuttons))
 +            foutput(WAR "Arrow count mismatch: %d drawn, %d expected\n",
 +                    arrows_drawn, (int) arrowbuttons);
@@ -2058,7 +2108,7 @@ index facf72b..c1674aa 100644
  
        char *q = quote(img->imagepic[menu]);
        strcat(command2, q);
-@@ -1238,7 +1956,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1238,7 +1973,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
    free(grouptext);
    free(tracktext);
  
@@ -2552,7 +2602,7 @@ index 4b9feae..2ac85d2 100644
    if (info->filename == NULL) EXIT_ON_RUNTIME_ERROR_VERBOSE("Could not copy MLP filename.")
  
 diff --git a/src/xml.c b/src/xml.c
-index e50464c..5ac7960 100644
+index e50464c..1229358 100644
 --- a/src/xml.c
 +++ b/src/xml.c
 @@ -102,6 +102,60 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
@@ -2616,15 +2666,14 @@ index e50464c..5ac7960 100644
        else
          {
            do
-@@ -135,17 +189,34 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
+@@ -135,17 +189,50 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
  
        if ((img->nmenus > 1) && (menu < img->nmenus))
          {
--
--          do
 +          /* 与按钮位置（generate_spumux_xml）**逐一对应**：
 +             槽 1 = Next（末页改 Previous，即不再有 Next），槽 2 = Previous
-+             （仅中间页）。编号顺序也必须一致（先槽 1 后槽 2）。
++             （仅中间页），槽 3 = Menu（仅二级页，返回专辑索引 1）。
++             编号顺序也必须一致（Next → Previous → Menu）。
 +             ⚠️ 原 do-while 在曲目不满一页的末页会因 buttons 基数偏低而多转
 +             几轮，重复输出同一个 Previous —— 实测末页出现 6 个
 +             （button08..button13，全是 jump menu 7），而 spumux 只定义了
@@ -2632,12 +2681,26 @@ index e50464c..5ac7960 100644
 +             按钮没有对应高亮区域，该页的 Previous 因此选不中 /
 +             回不到上一页。 */
 +          int jumps_emitted = 0;
++          /* 槽 3：「返回专辑索引」。只在二级（选曲）页出现 ——
++             没有索引页（--index-pages == 0）就没处可回；
++             索引页自身也不画（那一页**就是**索引）。 */
++          int has_menu_button = (img->index_pages > 0)
++            && !(img->page_ntracks
++                 && (menu < (unsigned) img->index_pages));
 +
 +          if (menu < img->nmenus - 1)
-             {
++            {
 +              buttons++;
 +              jumps_emitted++;
 +              fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", buttons, "\">jump menu ", menu + 2, ";</button>");
++            }
+ 
+-          do
++          if (menu)
+             {
++              buttons++;
++              jumps_emitted++;
++              fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", buttons, "\">jump menu ", menu, ";</button>");
 +            }
  
 -              if (menu < img->nmenus - 1) fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", ++buttons, "\">jump menu ", menu + 2, ";</button>");
@@ -2645,11 +2708,13 @@ index e50464c..5ac7960 100644
 -                {
 -                  fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", ++buttons, "\">jump menu ", menu, ";</button>");
 -                }
-+          if (menu)
++          /* 槽 3：「返回专辑索引」。第一个菜单页（menu 1）永远是索引页 1 ——
++             当 `--index-pages` 为 0 时本按钮不出现，所以不会指向曲目页。 */
++          if (has_menu_button)
 +            {
 +              buttons++;
 +              jumps_emitted++;
-+              fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", buttons, "\">jump menu ", menu, ";</button>");
++              fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", buttons, "\">jump menu ", 1, ";</button>");
              }
 -          while (buttons < menubuttons + arrowbuttons);
 +
@@ -2659,7 +2724,7 @@ index e50464c..5ac7960 100644
            fprintf(xmlfile, "%s%s%s\n", "       <vob pause=\"inf\" file=\"", img->topmenu[menu], "\"/>\n\
     </pgc>\n");
  
-@@ -187,11 +258,11 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
+@@ -187,11 +274,11 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
    int i, j;
    uint16_t delta = 0;
  
@@ -2674,19 +2739,23 @@ index e50464c..5ac7960 100644
  
    for (i = 1; i < ncol; ++i)
      {
-@@ -199,9 +270,9 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
+@@ -199,9 +286,13 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
        x0[i] = x1[i - 1] ;
      }
  
 -  for (j = 1; j < command->maxntracks + 2; ++j)
-+  for (j = 1; j < command->img->maxbuttons + 2; ++j)
++  /* 填到 `maxbuttons + 2`：底部第三个槽位是「返回专辑索引」按钮
++     （见 MENU_BUTTON_ROW）。少填一行就会取到未初始化的 y ——
++     历史上正是这种未初始化坐标让 spumux 报 "Button coordinates out
++     of range" 并输出 0 字节。 */
++  for (j = 1; j < command->img->maxbuttons + 3; ++j)
      {
 -      y1[j] = EVEN(y(j + 2, command->maxntracks + 4) - delta);
 +      y1[j] = EVEN(y(j + 2, command->img->maxbuttons + 4) - delta);
        y0[j] = y1[j - 1];
      }
  
-@@ -215,7 +286,7 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -215,7 +306,7 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
    uint16_t x0[ngroups], y0[MAX_BUTTON_NUMBER], x1[ngroups], y1[MAX_BUTTON_NUMBER];
    errno = 0;
    FILE *spu_xmlfile = NULL;
@@ -2695,7 +2764,7 @@ index e50464c..5ac7960 100644
  
    if (globals->spu_xml == NULL) globals->spu_xml = calloc(img->nmenus, sizeof(char *));
    if (globals->spu_xml == NULL) perror(ERR "spuxml\n");
-@@ -302,6 +373,51 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -302,6 +393,51 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
                  }
              }
          }
@@ -2747,7 +2816,7 @@ index e50464c..5ac7960 100644
        else
          {
  
-@@ -333,18 +449,52 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -333,18 +469,69 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
  
        if (img->nmenus > 1)
          {
@@ -2765,6 +2834,8 @@ index e50464c..5ac7960 100644
 +                          && (menu < (unsigned) img->index_pages));
 +          int is_last = (menu == (unsigned) img->nmenus - 1);
 +          int arrows_emitted = 0;
++          /* 槽 3：「返回专辑索引」。条件与 menu.c / dvdauthor XML 完全一致。 */
++          int has_menu_button = (img->index_pages > 0) && !is_index;
 +
 +          buttons++;
 +          arrows_emitted++;
@@ -2784,12 +2855,6 @@ index e50464c..5ac7960 100644
              {
                buttons++;
 -              fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks], "\"/>");
--
--              if ((menu) && (menu < img->nmenus - 1))
--                {
--                  buttons++;
--                  fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks + 1], "\"/>");
--                }
 +              arrows_emitted++;
 +              if (is_index)
 +                fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n",
@@ -2800,6 +2865,26 @@ index e50464c..5ac7960 100644
 +                        " y1=\"", INDEX_ARROW_Y1, "\"/>");
 +              else
 +                fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons + 1], "\"/>");
++            }
+ 
+-              if ((menu) && (menu < img->nmenus - 1))
+-                {
+-                  buttons++;
+-                  fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks + 1], "\"/>");
+-                }
++          /* 槽 3：索引页没有这个按钮（is_index 已排除），
++             所以坐标一律用 compute_coordinates() 的 y0/y1
++             —— 那一行由 MENU_BUTTON_ROW() 指定，两边必须一致。 */
++          if (has_menu_button)
++            {
++              buttons++;
++              arrows_emitted++;
++              fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n",
++                      "       <button x0=\"", x0[img->ncolumns - 1], "\"",
++                      " y0=\"", y0[MENU_BUTTON_ROW(img)], "\"",
++                      " x1=\"", x1[img->ncolumns - 1], "\"",
++                      " name=\"button", buttons, "\"",
++                      " y1=\"", y1[MENU_BUTTON_ROW(img)], "\"/>");
              }
 -          while (buttons < menubuttons + arrowbuttons);
 +
