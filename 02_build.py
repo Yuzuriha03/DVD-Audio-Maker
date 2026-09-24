@@ -641,7 +641,7 @@ def menu_args(disc_index, groups):
     return args, plan
 
 
-def check_menu_buttons(tmp):
+def check_menu_buttons(tmp, n_index=0):
     """自检：每页的「按钮跳转」与「按钮位置」数量/编号必须逐一对应。
 
     dvda-author 生成两份 XML：
@@ -653,12 +653,17 @@ def check_menu_buttons(tmp):
 
     实测过这个缺陷（末页出现 6 个重复的 Previous，amgm 13 个按钮 vs
     spumux 8 个），所以这里逐页比对编号序列。
+
+    `n_index > 0` 时额外查一件事：**每个专辑页的最后一个按钮必须是
+    `jump menu 1`**（返回专辑索引）。这条很容易被改坏（比如把槽位行号
+    或跳转目标改错），而画面与按钮数都看不出来。
     """
     amgm = os.path.join(tmp, "xmltemp")
     if not os.path.exists(amgm):
         return True
     pages = open(amgm, encoding="utf-8", errors="replace").read().split("<pgc>")[1:]
     bad = []
+    no_menu_btn = []
     for i, page in enumerate(pages):
         a = [int(n) for n in re.findall(r'name="button(\d+)"', page)]
         spu = os.path.join(tmp, f"spu_xmltemp_{i}.xml")
@@ -670,6 +675,11 @@ def check_menu_buttons(tmp):
                                              errors="replace").read())]
         if a != s:
             bad.append((i + 1, len(a), len(s)))
+
+        if n_index and i >= n_index:
+            jumps = re.findall(r'name="button\d+">jump menu (\d+);', page)
+            if not jumps or jumps[-1] != "1":
+                no_menu_btn.append(i + 1)
     if bad:
         print("[菜单][FAIL] 按钮数不一致（跳转 vs 位置）：")
         for page, na, ns in bad:
@@ -678,7 +688,16 @@ def check_menu_buttons(tmp):
         print("       说明: 两边的按钮编号必须逐个对应，否则多出来的按钮")
         print("             没有高亮区域 → 该按钮选不中。")
         return False
-    print(f"[菜单] 按钮数一致（{len(pages)} 页，跳转 == 位置）✔")
+    if no_menu_btn:
+        print("[菜单][FAIL] 这些专辑页缺少「返回索引」按钮（末尾不是 "
+              "jump menu 1）：")
+        print(f"       页: {no_menu_btn}")
+        print("       说明: 槽位是底部第三条（MENU_BUTTON_ROW = maxbuttons+2）。")
+        print("             menu.c 的画字、xml.c 的矩形与跳转三处必须一致，")
+        print("             见 docs/DVDA-AUTHOR-CHANGES.md。")
+        return False
+    extra = f"，{len(pages) - n_index} 个专辑页都带「返回索引」" if n_index else ""
+    print(f"[菜单] 按钮数一致（{len(pages)} 页，跳转 == 位置{extra}）✔")
     return True
 
 
@@ -939,7 +958,7 @@ def build_disc(disc_index, groups):
             print("[菜单][警告] 未生成 AUDIO_SV.VOB（播放封面缺失）")
 
         # 按钮一致性自检必须在删掉 tempdir 之前做（XML 就在里面）
-        if not check_menu_buttons(tmp):
+        if not check_menu_buttons(tmp, plan.index_pages):
             return False
         if not check_menu_overlay(tmp, plan.index_pages, plan.pages):
             return False
