@@ -35,7 +35,7 @@ import shutil
 import subprocess
 
 # ---- 画面常量（与 dvda-author 一致：PAL 720x576） ----
-FRAME_W, FRAME_H = 720, 576
+FRAME_W, FRAME_H = 720, 576          # 菜单 / 静图画面
 MAX_BUTTONS = 32            # MAX_BUTTON_Y_NUMBER - 2
 MIN_POINTSIZE = 7
 # 上限 30：小标题（专辑名）是 `0.8 × 字号` 画的，而大标题（光盘标题）在
@@ -473,7 +473,7 @@ def make_blankscreen(path):
 def make_still(cover, path):
     """播放时显示的封面：720x576，封面按 1:1 居中留黑边。
 
-    尺寸必须是 720x576 —— jpeg2yuv/mpeg2enc 按 PAL 尺寸编码，其它尺寸会失败。
+    尺寸必须与 menu.c 里静图的编码制式一致（jpeg2yuv/mpeg2enc 按该尺寸编码）。
     """
     _magick(cover, "-resize", "%dx%d" % (FRAME_H, FRAME_H),
             "-background", "black", "-gravity", "center",

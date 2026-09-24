@@ -63,7 +63,6 @@ DEFAULTS = {
     "DVDA_FFMPEG": "ffmpeg",
     "DVDA_FFPROBE": "ffprobe",
     "DVDA_AUTHOR_SRC": "/root/dvda-author-mlp8",
-    "DVDA_AUTHOR_ORIG": "/opt/dvda-author",
 
     # 校验
     "DVDA_LOSS_ERROR_S": "0.05",
@@ -288,10 +287,6 @@ class Config:
     def author_src(self):
         return self.get("DVDA_AUTHOR_SRC").rstrip("/")
 
-    @property
-    def author_orig(self):
-        return self.get("DVDA_AUTHOR_ORIG").rstrip("/")
-
     # ---- 分盘 ----
     @property
     def max_discs(self):
@@ -473,7 +468,6 @@ def main():
             ("DVDA_FFMPEG", cfg.ffmpeg),
             ("DVDA_FFPROBE", cfg.ffprobe),
             ("DVDA_AUTHOR_SRC", cfg.author_src),
-            ("DVDA_AUTHOR_ORIG", cfg.author_orig),
             ("DVDA_MAX_DISCS", str(cfg.max_discs)),
             ("DVDA_GROUP_TRACK_LIMIT", str(cfg.group_track_limit)),
             ("DVDA_DISC_BYTES", str(cfg.disc_bytes)),
