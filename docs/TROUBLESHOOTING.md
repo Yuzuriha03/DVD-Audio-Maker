@@ -3361,3 +3361,74 @@ copy_file(img->imagepic[menu], img->highlightpic[menu], globals);
    正确做法：**先合成为成品文件，再单独跑一遍 `-draw`**。
 3. **`rgba(0,0,0,alpha)` 的 alpha 在灰度图上被忽略** → 半透明白会随
    alpha 变化，半透明黑却永远是纯黑。要确定的效果就用**不透明色**。
+
+---
+
+## 25. ImageMagick 的 `-stroke` 是「粘住」的 —— 后面所有文字都被描边
+
+`mogrify_thumb()`（索引页的格子描边框）用
+
+```c
+" -fill none -stroke \"rgb(255,0,0)\" -strokewidth 6 -draw \"rectangle ...\""
+```
+
+`-stroke` **不是一次性设置**，它会一直留在参数流里，直到被改掉为止。而
+`-draw "text"` 是**同时用 `-fill` 和 `-stroke`** 画的（IM 对文本也描边），
+于是所有后续文字都套上了一层 6 px 宽的红色描边：
+
+```
+症状：专辑页底部和正文像是「红字」，其实底色是黑的
+      量出来 R>200,G<60 的像素有几千个 —— 但源码里那些文字的颜色是黑
+副作用：每个按钮的三色组合从 4 涨到 5 → spumux
+        ERR: Cannot pick button masks → 菜单整页丢失
+```
+
+**修法**：每处文字/多边形绘制前显式写 `-stroke none`。
+
+```c
+" -stroke none -fill \"rgb(%s)\" -font %s -pointsize %d"
+" -draw \"text %u,%u '%s'\" "
+```
+
+**教训**：往 mogrify/convert 拼命令时，**几何类设置（`-stroke`、
+`-strokewidth`、`-gravity`、`-fill`）会一直生效下去**。要么每段都完整
+指定一遍，要么就显式复位。只有「算子」（`-draw`、`-rotate`、`-repage`
+之类的动作）才是一次性的。
+
+---
+
+## 26. `snprintf` 格式串与参数对不上 → 段错误，且日志里什么都看不到
+
+给几处 `snprintf` 插入 `-stroke none` 时，**格式串里忘了同步补 `%s`**：
+
+```c
+snprintf(str, sizeof(str),
+         " -stroke none -fill \"rgb(%s)\" -font %s -pointsize %d"
+         " -draw \"text %u,%u '%s'\" ",   /* ← 6 个格式符，但下面是 7 个参数 */
+         q, img->textfont, (int) img->pointsize,      /* ... 只给了 5 个 */
+         cx, cy, (int) (spy + TEXT_ARROW_H), text);   /* 多出来的落到 %s */
+```
+
+后果：参数表整体错位，`(int)` 落到了 `%s` 上（整数当指针解引用）→
+`SIGSEGV`。
+
+```
+现象：dvda-author 退出码 **-11**（= 被信号 11 杀掉）
+      日志停在半截 mplex 输出，**没有任何 ERR / Assertion 字样**
+      构建日志里唯一线索是「最后一条命令是 dvda-author」
+```
+
+**查法**（别靠编译，gcc 默认不检查这个）：
+
+```bash
+# 1) 先让脚本把退出码打出来（负值 = 信号）
+python3 scripts/02_build.py   # [FAIL] ... 失败（退出码 -11）
+
+# 2) 逐个 snprintf 数「格式符」与「参数」是否相等
+#    注意字符串字面量会拼接，要先把相邻的 "" 合并再数
+```
+
+或者临时加 `-Wformat` 让编译器查（本例源码就是靠它过的）。
+
+**教训**：改 `snprintf` 的格式串时，**参数表必须一起改**。插一个
+`"-stroke", "none"` 就要同时插一个 `%s`。

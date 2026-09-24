@@ -705,14 +705,16 @@ def check_menu_overlay(tmp, n_index, n_pages):
     """自检：每页的「文字层」与「高亮层」都要真的画出东西。
 
     dvda-author 每页生成三张叠加图（subpicture 素材）：
-      `impic<N>.png`  文字层 —— 光盘标题；**索引页的翻页箭头也在这里**
-      `hlpic<N>.png`  高亮层 —— impic 的副本，再画按钮框 / 下划线；
-                                **专辑页的翻页箭头也在这里**
-      `slpic<N>.png`  选中层 —— impic 换色
+      `impic<N>.png`  文字层 —— 全部文字（白字身 + 黑描边）
+      `hlpic<N>.png`  高亮层 —— impic 的副本，再画**选中指示**：
+                                行左侧的红三角（专辑页）、
+                                格子红描边框（索引页）
+      `slpic<N>.png`  选中层 —— 与 impic 同色（只有按下态才不同）
 
-    所以 `hlpic` 的墨迹**必须多于** `impic`。两者相同就说明某条
-    `mogrify` 命令没生效 —— 而这**不会报错**：命令串末尾若与输出文件名
-    粘连（`… -draw "rectangle 5,5 175,139""/path/hlpic0.png"`），
+    所以 `hlpic` 的墨迹**必须多于** `impic`（多出来的是红三角 / 红框）。
+    两者相同就说明某条 `mogrify` 命令没生效 —— 而这**不会报错**：
+    命令串末尾若与输出文件名粘连
+    （`… -draw "rectangle 5,5 175,139""/path/hlpic0.png"`），
     mogrify 拿不到输出文件，把结果打到 stdout 并**返回 0**，
     文件一个像素都不变。
 
@@ -743,8 +745,8 @@ def check_menu_overlay(tmp, n_index, n_pages):
         elif b <= a:
             bad.append((m + 1, "高亮层没多出墨迹", a, b))
 
-    # 索引页的翻页箭头画在 impic 上（专辑页画在 hlpic 上），单独查一次 ——
-    # 否则「箭头没画但按钮框画了」会漏过上面的比较。
+    # 翻页箭头/格子框没画、但行首红三角画了的话，上面的「hlpic 多于 impic」
+    # 会照样通过 —— 所以索引页的箭头带单独查一次。
     y0, y1 = menu_assets.INDEX_ARROW_BAND
     no_arrow = []
     for m in range(min(n_index, n_pages)):
@@ -768,12 +770,13 @@ def check_menu_overlay(tmp, n_index, n_pages):
                   f"（文字层 {a} 像素, 高亮层 {b} 像素）")
         if no_arrow:
             print(f"       索引页缺翻页箭头: {no_arrow}")
-        print("       说明: 每页的 hlpic 必须比 impic 多出按钮框/下划线，")
-        print("             索引页的箭头必须有墨迹。完全不画 = 某条 mogrify")
-        print("             命令静默失效（最常见: 命令串末尾与输出文件名")
-        print("             之间少了空格，见 docs/TROUBLESHOOTING.md 第 22 节）")
+        print("       说明: 每页的 hlpic 必须比 impic 多出「选中指示」")
+        print("             （行首红三角 / 索引页格子红框），索引页的翻页")
+        print("             箭头必须有墨迹。完全不画 = 某条 mogrify 命令静默")
+        print("             失效（最常见: 命令串末尾与输出文件名之间少了空格，")
+        print("             见 docs/TROUBLESHOOTING.md 第 22 节）")
         return False
-    print(f"[菜单] 叠加图自检通过（{n_pages} 页：高亮层都有按钮框/下划线"
+    print(f"[菜单] 叠加图自检通过（{n_pages} 页：高亮层都有选中指示（红三角/红框）"
           + (f"，{n_index} 个索引页有翻页箭头" if n_index else "") + "）✔")
     return True
 
@@ -933,7 +936,11 @@ def build_disc(disc_index, groups):
     # 校验脚本要读它，所以这里捕获并写入构建日志。
     r = run(args, log_output=True)
     if r.returncode != 0:
-        print(f"[FAIL] dvda-author 生成第 {disc_index} 盘失败")
+        print(f"[FAIL] dvda-author 生成第 {disc_index} 盘失败"
+              f"（退出码 {r.returncode}）")
+        print("       [调试] 最后 3 行 stderr/stdout:")
+        for ln in (r.stdout or "")[-600:].splitlines()[-3:]:
+            print("       | " + ln[:150])
         return False
 
     # 菜单是可选件：dvda-author 即使菜单环节出问题也可能照样退出 0，
