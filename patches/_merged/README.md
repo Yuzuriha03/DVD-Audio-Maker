@@ -113,6 +113,31 @@ static int dvda_rewrite_nav_sector(const char *path)
 放进 C 的好处：每张静图的 mpg 自己就带着那个导航扇区，
 **不必再回头读 `AUDIO_SV.IFO` 去反算扇区号**，少一层耦合。
 
+## ⚠️ 对已固化的源码树跑这些补丁，**大部分会报 MISS —— 这是正常的**
+
+这些补丁是**按顺序**应用的，后一个补丁往往会改写前一个补丁的落点。
+所以拿它们逐个去跑已经全部应用完的源码树时，前几个的 `old` 早就被后面的
+补丁改掉了 → 报 `[MISS]`。这不代表改动丢了。
+
+**判据不看这些输出，看源码本身**。实测（2026-09-24）25 个补丁里
+18 个报 `[SKIP] 已应用`、7 个报 `[MISS]`，但逐个在源码里查证，
+**7 个的改动全部都在**：
+
+| 报 MISS 的补丁 | 源码里的证据 |
+|---|---|
+| `patch_asvs_image_sectors.py` | `asvs.c:162` `uint32_copy(&asvs[k], totpicsectors)`（base_sect 全局）；`:167` `titlesectors`（off_sect 相对） |
+| `patch_ats_pack.py` | `ats.c:300` `if (length < 6)` 补零分支；`:323` `uint8_t ff_buf[length + 1]` |
+| `patch_atsi_dynamic.py` | `atsi2.c:193` `atsi_cap = ((2049 + ntracks*96 + 2047)/2048 + 1) * 2048`；`:194` `calloc(atsi_cap,1)` |
+| `patch_menu_paging.py` | `menu.c` 里 `compute_menu_pages`（2 处） |
+| `patch_menu_backgrounds.py` | `command_line_parsing.c:199` `cli_background_list`；`:2517` 置位；`:2704` 用它 |
+| `patch_menu_screentext.py` | 同上那片已改写 |
+| `patch_asvs_nav_sectors.py` | `menu.c` 的 `dvda_rewrite_nav_sector()`（**它的效果现在在 C 里**，脚本本身已作废 —— 它要改的 `02_build.py` 代码段已被删除） |
+
+**最强判据还是 `.o` oracle**（下一节）：18 个 `.o` 与参考逐一比对，
+指令序列 **18/18 零差异** —— 说明当前源码与产生可用 ISO 的那份源码功能一致。
+
+---
+
 ## ⚠️ 补丁必须幂等 —— 这里有三个曾经不是
 
 **插入式**替换的 `old` 在插入之后**依然存在**（新内容插在它之前），
