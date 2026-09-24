@@ -13,12 +13,29 @@
 |---|---|---|
 | `patch_asvs_header_mode.py` | ASVS `0x0E` → `0x0000` | 实测会坏静图。15:48 那版（静图正常）用的是上游原值 `0x0012` |
 | `patch_asvs_palette.py` | ASVS 调色板 → `00101010 × 16` | 实测会坏静图。正常版用的是菜单配色（上游 `--active*-palette`） |
-| `patch_stills_per_track_rank.py` | ATS 静图表按轨递进 + `byte1=0x04` | `0x04` 的语义是**可翻页幻灯片**（`--stilloptions manual`），不是要的形态；正常版是上游常数 |
 | `patch_still_bitrate.py` | 静图编码加 `-b 3200` 降码率 | 依据是「ASVS 总量 2048 扇区上限」，但那是在硬件加速崩溃期测的，不可靠。用户要高质量图 |
 | `patch_still_headers.py` | 静图 `progressive_sequence` → 1、声明码率 → 9000 | 依据成立（商业盘确实都是 1），但**无条件改**和写死一样不可靠。已由 `_merged/patch_mpeg2_autodetect.py` 按实际画面**自检后**填写取代 |
 | `patch_still_ntsc.py` | 静图改 720×480 NTSC | 是「PAL 盘有问题」假设的一部分。制式已由 `patch_mpeg2_autodetect.py` 按码流自检，不必写死 |
 | `patch_asvs_video_attr.py` | ASVS `0x18` → `0x43`（NTSC） | 同上。它曾把 PAL 盘声明成 NTSC（「声明 NTSC 实播 PAL」），已由自检取代 |
 | `disc_spec_versions.py` | 四个 IFO 版本号 0x12 → 0x11 / 0x00 | 见下 |
+
+### ⚠️ 已平反：`patch_stills_per_track_rank.py`
+
+这个补丁曾列在这里（理由写的是「`0x04` 是可翻页幻灯片」），
+**2026-09-24 发现理由不成立，已移回 `_merged/`**：
+
+- 它的 `0x04` 只是**注释里解释了为什么不能写 0x04**；
+  而且上游本来就只在传了 `--stilloptions` 时才置 0x04 ——
+  本工程**从不传**这个选项，实测 byte1 一直是 `0x00`
+- 它真正做的事（静图表两个偏移字段改为按轨递进）**是对的**：
+  李娜/巴赫两张封面正常的商业盘都是按轨递进的，
+  上游的常量写法使同一专辑内所有轨都指回第 1 张图
+- 当初把它与其它几个一起停用（回滚到 G 形态），直接导致了
+  「同一专辑只有第一首显示封面」这个 bug（用户 2026-09-24 报告）
+
+**教训**：把几个补丁一起停用时，每个都要单独确认理由；
+一个补丁里包含两部分改动时，不能因为其中一部分可疑就连另一部分一起丢。
+停用后也应当有一个「当初为什么停用」的**实测**依据，而不是推断。
 
 ### `disc_spec_versions.py` 为什么单独拿出来
 
