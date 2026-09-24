@@ -23,7 +23,8 @@
 14. [ffmpeg 的 MLP 编码器不写 END_OF_STREAM](#14-ffmpeg-的-mlp-编码器不写-end_of_stream)
 15. [每张盘少一首：pack 未补齐到扇区边界](#15-每张盘少一首pack-未补齐到扇区边界)
 16. [选曲菜单（AMG / ASVS）的坑（34 个小节）](#16-选曲菜单amg--asvs的坑)
-17. [诊断手法速查](#17-诊断手法速查)
+17. [ISO 整体 md5 不可复现](#17-iso-整体-md5-不可复现)
+18. [诊断手法速查](#18-诊断手法速查)
 
 ---
 
@@ -2916,7 +2917,57 @@ ATSI 静图引用号 = [1,1,1,1,1,1, 2,2,2,2,2, 3,3,3,3,3,3, 4, 5,5, …]
 
 ---
 
-## 17. 诊断手法速查
+## 17. ISO 整体 md5 不可复现
+
+**现象**：同一份源码、同一份音频、同样参数，连续构建两次，
+`out/*.iso` 的 md5 不同。看起来像「构建结果不稳定」，但实际内容完全相同。
+
+**根因**：`mkisofs` 每次都会往 ISO 里写**当前时间**。
+
+最小复现（同一目录连打两次包）：
+
+```bash
+mkdir -p root/AUDIO_TS && echo hi > root/AUDIO_TS/X.TXT
+mkisofs -dvd-audio -V Repro -o a.iso root
+sleep 2
+mkisofs -dvd-audio -V Repro -o b.iso root
+md5sum a.iso b.iso
+# 48991b91c609827110441f382104f341  a.iso
+# e6045a79b002baf03db916c80eaa3d20  b.iso     ← 不同
+```
+
+差异**只有 52 字节**，分布在扇区 16 / 21 / 32 / 48 / 64 / 257 / 259 / 261 / 263
+（卷描述符与目录记录区），内容是 ISO9660 的 ASCII 时间戳
+（格式 `YYYYMMDDHHMMSScc`）：
+
+```
+首处差异 @0x8330:
+  a: 36 30 39 32 34 31 33 32 36 31 37 33 33   = "6092413261733"
+  b: 36 30 39 32 34 31 33 32 36 31 39 33 34   = "6092413261934"
+```
+
+**正确的核对方法**：比对 `AUDIO_TS/` 下的系统文件，而不是 ISO 整体。
+
+```bash
+for f in ATS_01_0.IFO ATS_01_0.BUP AUDIO_PP.IFO AUDIO_SV.IFO AUDIO_SV.BUP \
+         AUDIO_SV.VOB AUDIO_TS.IFO AUDIO_TS.BUP AUDIO_TS.VOB; do
+  xorriso -osirrox on -indev NEW.iso -extract "/AUDIO_TS/$f" /tmp/new/$f
+done
+md5sum /tmp/new/*
+```
+
+实测重建后 **9/9 系统文件逐字节相同** —— 这才是「构建可复现」的判据。
+
+**教训**：
+
+- 「md5 不同」不等于「内容变了」。先看差异的**位置与数量** ——
+  几十字节、集中在元数据扇区，就该怀疑时间戳而不是数据。
+- 音频数据要单独核对字节（`verify.sh lossless` 干的就是这件事：
+  解码 PCM 与源逐字节比、ISO 内音轨与源 MLP 比 md5）。
+
+---
+
+## 18. 诊断手法速查
 
 ### 解析 AOB 的 PES 时间戳
 

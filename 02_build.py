@@ -925,6 +925,23 @@ def build_disc(disc_index, groups):
     elif os.path.exists(tmp):
         shutil.rmtree(tmp)
         print(f"[清理] 临时目录 {tmp} 已删除")
+
+    # 清理中间产物：成品已在 FINAL_DIR —— ISO_DIR 里那份与它内容相同，
+    # dvda-author 的输出树也已打包进 ISO。两者下次构建都会重建，留着只是
+    # 白占空间（实测每盘约 6 GB）。想翻看 AUDIO_TS 里的文件时设
+    # DVDA_KEEP_INTERMEDIATE=1。
+    if os.environ.get("DVDA_KEEP_INTERMEDIATE") == "1":
+        print("[保留] 中间产物（DVDA_KEEP_INTERMEDIATE=1）")
+    else:
+        # 只有确认成品在位、且大小与中间 ISO 一致才删（避免误删唯一副本）
+        if (os.path.exists(iso) and os.path.exists(final)
+                and os.path.getsize(iso) == os.path.getsize(final)):
+            os.remove(iso)
+            print(f"[清理] 中间 ISO {iso}（成品已在 {FINAL_DIR}）")
+        if os.path.exists(out):
+            shutil.rmtree(out)
+            print(f"[清理] dvda-author 输出树 {out}")
+
     return True
 
 
