@@ -12,18 +12,24 @@
 #   且读写路径有缺陷。这里改为链接「系统 FFmpeg 8」并把 mlp.c 迁移到 8.x API，
 #   从而支持 24-bit 无损 MLP。
 #
+# 源码模型（2026-09-24 改）:
+#   DVDA_AUTHOR_SRC 是**手工维护的源码树**，本工程的改动已**固化在里面**
+#   （不再是「从上游还原 + 每次重放补丁」）。
+#   原本用在构建期重放的 24 个补丁存于 scripts/patches/_merged/，
+#   仅供对照与回溯；本脚本不再运行它们。
+#   改动清单与校验基线：scripts/patches/_merged/SOURCE-MANIFEST.txt
+#
 # 前置条件:
 #   · 系统已装 FFmpeg 8 开发库
 #       apt install libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
-#   · 已把 dvda-author 源码放到 DVDA_AUTHOR_ORIG（默认 /opt/dvda-author）
-#       并打过 fixes/ 下的上游补丁、configure 过 core 构建
+#   · DVDA_AUTHOR_SRC 存在（默认 /root/dvda-author-mlp8）
 #   · 要用菜单还需要：apt install mjpegtools imagemagick
 #       （dvdauthor/spumux 由本脚本自己编译，不装系统包 ——
 #        apt 里的 dvdauthor 没有 AMGM / jump group 补丁，不能用）
 #
-# 本脚本幂等：可重复执行（会还原被补丁修改的源文件后重新应用）。
+# 本脚本幂等：可重复执行（只清构建产物，不动源码）。
 #
-# 补丁清单、顺序约束、以及「哪些补丁有意不接入」见同目录 PATCHES.md。
+# 各改动的「为什么」见 scripts/patches/_merged/*.py 的文件头。
 # ============================================================================
 set -e
 
@@ -37,70 +43,67 @@ if [ -f "$HERE/config.sh" ] && [ -f "$HERE/dvda_config.py" ]; then
 fi
 
 SRC="${DVDA_AUTHOR_SRC:-/root/dvda-author-mlp8}"
-ORIG="${DVDA_AUTHOR_ORIG:-/opt/dvda-author}"
 SYS_LIB="${DVDA_SYS_LIB:-/usr/lib/x86_64-linux-gnu}"
-PATCHES="$HERE/patches"
+MANIFEST="$HERE/patches/_merged/SOURCE-MANIFEST.txt"
 LOGDIR="${DVDA_BUILD_DIR:-/root/dvda-build}"
 # 期望产出的可执行文件（取自配置）
 EXPECT="${DVDA_AUTHOR:-}"
 mkdir -p "$LOGDIR"
 
-echo "=== [0/8] 配置 ==="
+echo "=== [0/6] 配置 ==="
 echo "  源码目录 : $SRC"
-echo "  原始源码 : $ORIG"
 echo "  系统库   : $SYS_LIB"
 echo "  日志目录 : $LOGDIR"
 [ -n "$EXPECT" ] && echo "  期望产物 : $EXPECT"
 echo
 
-if [ ! -d "$ORIG" ]; then
-  echo "[失败] 原始源码不存在: $ORIG" >&2
-  echo "       请先 git clone https://github.com/fabnicol/dvda-author $ORIG" >&2
+echo "=== [1/6] 检查源码树 ==="
+if [ ! -d "$SRC" ]; then
+  echo "[失败] 源码树不存在: $SRC" >&2
+  echo "       本工程的源码树是手工维护的（上游 + 本工程改动已固化）。" >&2
+  echo "       从上游重建：" >&2
+  echo "         git clone https://github.com/fabnicol/dvda-author \"$SRC\"" >&2
+  echo "       然后按 patches/_merged/README.md 逐项重新打上改动。" >&2
   exit 2
 fi
+echo "  已存在 $SRC"
 
-echo "=== [1/8] 准备源码树 ==="
-if [ ! -d "$SRC" ]; then
-  cp -a "$ORIG" "$SRC"
-  echo "已复制 $ORIG → $SRC"
+# 改动自检：比对 patches/_merged/SOURCE-MANIFEST.txt 里的 md5。
+# 不符只告警而不中止 —— 手工改源码是允许的；
+# 但「改动凭空消失」（例如误用上游文件覆盖）必须看得见。
+if [ -f "$MANIFEST" ]; then
+  MISSING=0
+  DRIFT=0
+  DETAIL=""
+  while read -r want rel; do
+    case "$want" in \#*|"") continue ;; esac
+    f="$SRC/$rel"
+    if [ ! -f "$f" ]; then
+      MISSING=$((MISSING + 1))
+      DETAIL="$DETAIL\n         缺失 $rel"
+      continue
+    fi
+    got=$(md5sum "$f" | cut -d' ' -f1)
+    if [ "$got" != "$want" ]; then
+      DRIFT=$((DRIFT + 1))
+      DETAIL="$DETAIL\n         改动 $rel"
+    fi
+  done < "$MANIFEST"
+  if [ "$MISSING" -gt 0 ]; then
+    echo "  [警告] 有 $MISSING 个源文件丢失（改动可能已被覆盖）："
+    printf "$DETAIL\n"
+  elif [ "$DRIFT" -gt 0 ]; then
+    echo "  [提示] $DRIFT 个源文件与基线清单不同（手工改过？）："
+    printf "$DETAIL\n"
+    echo "         确认无误后可用  md5sum 重生成基线清单"
+  else
+    echo "  源码改动自检通过 ✔（$(grep -c -v '^#' "$MANIFEST") 个文件与基线一致）"
+  fi
 else
-  echo "已存在 $SRC"
+  echo "  [提示] 无基线清单 $MANIFEST —— 跳过改动自检"
 fi
 
-echo "=== [1b] 还原将被补丁修改的源文件（保证可重复执行） ==="
-for f in src/mlp.c \
-         src/ats.c \
-         src/atsi2.c \
-         src/asvs.c \
-         src/amg2.c \
-         src/dvda-author.c \
-         src/menu.c \
-         src/xml.c \
-         src/include/menu.h \
-         src/include/structures.h \
-         src/include/commonvars.h \
-         src/auxiliary.c \
-         src/command_line_parsing.c \
-         src/launch_manager.c \
-         libutils/src/winport.c \
-         libutils/src/include/winport.h \
-         src/libsoxconvert.c ; do
-  if [ -f "$ORIG/$f" ]; then
-    cp -f "$ORIG/$f" "$SRC/$f"
-    echo "  还原 $f"
-  else
-    echo "  [WARN] 缺少原始文件 $f"
-  fi
-done
-
-echo "=== [2/8] 应用与 FFmpeg 版本无关的基础修复 ==="
-python3 "$PATCHES/patch_base.py"
-
-# fn_strtok() 的越界写是通用缺陷（--stillpics 的空项=空串就触发），
-# 与菜单无关，但菜单的「每专辑一张封面」必然用到空项，所以一并修。
-python3 "$PATCHES/patch_fix_fn_strtok.py"
-
-echo "=== [3/8] configure（关闭不兼容的 SoX，启用 FFmpeg 音频栈） ==="
+echo "=== [2/6] configure（关闭不兼容的 SoX，启用 FFmpeg 音频栈） ==="
 cd "$SRC"
 ./configure \
   --enable-ffmpeg-build \
@@ -112,7 +115,7 @@ cd "$SRC"
 grep -m1 -E 'define HAVE_ffmpeg ' "$SRC/config.h"
 grep -m1 -E 'define HAVE_core_BUILD ' "$SRC/config.h"
 
-echo "=== [4/8] 关联系统 FFmpeg 8 与编译选项（Makefile 由 configure 生成，需在 configure 后处理） ==="
+echo "=== [3/6] 关联系统 FFmpeg 8 与编译选项（Makefile 由 configure 生成，需在 configure 后处理） ==="
 # 系统无 libavfilter.so 时从链接行移除
 if [ ! -e "$SYS_LIB/libavfilter.so" ]; then
   sed -i '/libavfilter\.a/d' "$SRC/src/Makefile"
@@ -121,53 +124,7 @@ fi
 # 去掉链接期 strip(-s)，便于崩溃时定位
 sed -i 's/ -s  dvda-author.o/ dvda-author.o/' "$SRC/src/Makefile" || true
 
-echo "=== [5/8] 应用源码补丁 ==="
-# 补丁清单与「为什么」见 scripts/PATCHES.md；此处只列顺序。
-#
-# ⚠️ 顺序敏感，勿随意调整：
-#   · patch_menu_paging 必须早于 patch_menu_layout
-#     （layout 会把 command->maxntracks 换成 img->maxbuttons，
-#       而 maxbuttons 由 paging 决定）
-#   · patch_menu_one_album_per_page 必须最后
-#     （它改的是 menu.c 的排版循环，前面几个补丁要先就位）
-#
-# ⚠️ 有意**不**接入的补丁（放在 patches/_experiments_18xx/）：
-#   · patch_asvs_per_track.py —— 把 ASVS 记录改成「按轨」，与商业盘
-#     「按 title」不同构，实测无效
-#   · patch_ats_ptt_srpt.py  —— 表结构是猜的，会让 PowerDVD 崩溃
-PATCH_SEQ=(
-  patch_read.py                    # FFmpeg 8：channels/ch_layout、pkt_pos
-  patch_read2.py                   # FFmpeg 8：提取分支的读取循环
-  patch_encode.py                  # FFmpeg 8：planer 采样格式、放开 24-bit
-  patch_ats_pack.py                # pack 补到 2048 边界（否则每盘丢 1 轨）
-  patch_atsi_dynamic.py            # ATSI 按曲目数动态分配（一组可达 99 轨）
-  patch_stillpics_atsi_record.py   # 静图记录不能跳过「沿用上一张」的轨
-  patch_mlp_one_title.py           # 去掉「MLP → 每轨自成 title」
-  patch_asvs_no_buttons.py         # ASVS 0x19「activates buttons」→ 0
-  # patch_asvs_header_mode.py     # 已停用：0x0E 改 0x0000 实测会坏静图（保留 0x0012）
-  # patch_asvs_palette.py         # 已停用：调色板改 00101010 实测会坏静图（保留菜单配色）
-  # patch_stills_per_track_rank.py# 已停用：静图表改「按轨递进」实测会坏静图（保留上游常数）
-  # patch_still_bitrate.py           # 已停用：静图码率限制（用户要求高质量图）
-  patch_still_end_code.py          # 静图程序结束码独占扇区 + 补 0xFF
-  # patch_still_headers.py        # 已停用（回滚到 G 版本：progressive=1 + 9000kbps）
-  patch_asvs_image_sectors.py      # ASVS 每图偏移 base_sect + off_sect
-  patch_menu_paging.py             # 菜单分页（以下 10 个顺序敏感）
-  patch_menu_backgrounds.py
-  patch_menu_screentext.py
-  patch_menu_layout.py
-  patch_menu_arrows.py
-  patch_menu_stillpics.py
-  patch_menu_stillpics_list.py
-  patch_menu_amg_size.py
-  patch_menu_amg_cells.py
-  patch_menu_one_album_per_page.py # 必须最后
-)
-for p in "${PATCH_SEQ[@]}"; do
-  printf '  -- %s\n' "$p"
-  python3 "$PATCHES/$p" || { echo "[FAIL] $p 未全部应用" >&2; exit 3; }
-done
-
-echo "=== [6/8] 清理旧对象并重建系统库链接 ==="
+echo "=== [4/6] 清理旧对象并重建系统库链接 ==="
 # 注意：只清理构建产物，不能删除 local/ 下的库符号链接
 find "$SRC/src" "$SRC/libutils" "$SRC/libfixwav" -name '*.o' -delete 2>/dev/null || true
 rm -f "$SRC/src/libfixwav.a" "$SRC/libfixwav/src/libfixwav.a" \
@@ -179,7 +136,7 @@ for l in avcodec avformat avutil swresample; do
   ln -sfn "$SYS_LIB/lib$l.so" "$SRC/local/lib/lib$l.a"
 done
 
-echo "=== [7/8] 编译 ==="
+echo "=== [5/6] 编译 ==="
 set +e
 # DEBUG_FLAGS=1 会让 Makefile 不往 LDFLAGS 里加 -s —— 保留调试符号，
 # 出现段错误时 gdb 才能拿到函数名与行号。
@@ -200,7 +157,7 @@ if [ -f "$SRC/src/dvda-author" ]; then
   mv -f "$SRC/src/dvda-author" "$SRC/src/dvda-author-dev"
 fi
 
-echo "=== [8/8] 编译菜单辅助程序并搭建 menu-bin ==="
+echo "=== [6/6] 编译菜单辅助程序并搭建 menu-bin ==="
 # 菜单（DVD-Audio 的 AMG 菜单）要用到：
 #   · dvdauthor —— **必须**是打过 AMGM 补丁的版本：菜单按钮写的是
 #     `<button>jump group G track K</button>` 这种跳转语法，apt 里的
