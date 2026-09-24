@@ -922,10 +922,10 @@ index 601750b..9c50485 100644
  int launch_sox(fileinfo_t *info, globalData* globals);
  command_t *scan_audiofile_characteristics(command_t *command, globalData*);
 diff --git a/src/include/commonvars.h b/src/include/commonvars.h
-index df1244e..cd37dba 100644
+index df1244e..e041431 100644
 --- a/src/include/commonvars.h
 +++ b/src/include/commonvars.h
-@@ -360,21 +360,36 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+@@ -360,21 +360,67 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  // It is always necessary to have distinct colors in pic generation, even if they will not surface on screen (this is because of the inner workings of dvdauthor and should be imporved)
  // The palettes only matter for actual rendition of colors. _PIC colors are what is actually generated, this is for advanced usage and should not have  importance for most users (--colors)
  //
@@ -957,19 +957,50 @@ index df1244e..cd37dba 100644
 +   下划线/按钮框用黑、正文用白、按下态留一个蓝做内部标记
 +   （它只在实际按下时才会显色 → 由 `DEFAULT_SELCOLOR_PALETTE` 决定）。
 +
-+   文字阴影（见 menu.c）画在**高亮层**，与下划线同色（黑）——
-+   子画面整幅只有 4 个调色板项，同一层内换色会被合并掉。 */
++   文字阴影（见 menu.c）画**两层各一遍**：
++     · 图像层（impic）用 `DEFAULT_BGCOLOR_PIC`（黑）→ **未选中**时看到的
++     · 高亮层（hlpic）用 `DEFAULT_HCOLOR_PIC`（红）→ **选中**时看到的
++   子画面整幅只有 4 个调色板项，同一层内不能有两种颜色，所以只能分层；
++   而最终那 4 个颜色由 dvdauthor 按「与 AMG 调色板就近合并」定下来
++   （见 dvdvob.c 的 remapbyte），所以**这两层用的颜色必须出现在上面的
++   `_PALETTE` 那一组里**，否则会被合并成别的颜色。 */
 +#define DEFAULT_ALBUMCOLOR "255,255,255"   // 白：标题（与正文同色，少占一个调色板项）
 +#define DEFAULT_GROUPCOLOR  "255,255,255"  // 白：专辑名
 +#define DEFAULT_ARROWCOLOR "255,255,255"   // 白：Next / Previous / Menu
-+#define DEFAULT_TEXTCOLOR_PALETTE "0xEB8080"  // 白 (Y=235 Cr=128 Cb=128)
-+#define DEFAULT_BGCOLOR_PALETTE   "0x108080"  // 黑 (Y=16)  背景/按下时的底色
-+#define DEFAULT_HCOLOR_PALETTE    "0x108080"  // 黑          下划线、按钮框、文字阴影
-+#define DEFAULT_SELCOLOR_PALETTE  "0x808080"  // 灰          按下态
++/* ⚠️ 这里有个硬约束：**三个 PNG 层加起来只能有 3 种不透明颜色**
++   （第 4 个调色板项要留给透明）。实测「白 + 黑 + 红」三种就会让
++   spumux 的 pickbuttongroups(useimg=1) 失败 —— 它退到 useimg=0 后
++   撞上 `assert(useimg)` 直接中止，表现为 `ERR: no VOBUs found`。
++
++   所以分层是这样的：
++     PNG 层（impic / hlpic / slpic）  只画 白 与 黑
++     屏幕上的颜色                    由这一组 `_PALETTE` 决定
++
++   而「选中时阴影变红」正是靠 `DEFAULT_HCOLOR_PALETTE`：选中态用的是
++   高亮色，把高亮槽设成红色，阴影/下划线在选中时就渲染成红色。
++
++   ⚠️ `_PIC` 三项**必须互不相同**（command_line_parsing.c 会检查，
++   任意两项相同就整套重置）。`DEFAULT_SELCOLOR_PIC` 取近白，这样
++   `convert -opaque` 那一遍几乎不改图，slpic 与 impic 同色，
++   也就不会多出一种颜色。 */
++#define DEFAULT_TEXTCOLOR_PALETTE "0xEB8080"  // 白  正文
++#define DEFAULT_BGCOLOR_PALETTE   "0x108080"  // 黑  未选中时：阴影 / 框
++#define DEFAULT_HCOLOR_PALETTE    "0x51F05A"  // 红  **选中时：高亮（阴影与下划线）变红**
++#define DEFAULT_SELCOLOR_PALETTE  "0x808080"  // 灰  按下态
 +#define DEFAULT_TEXTCOLOR_PIC "255,255,255"  // 白  正文
-+#define DEFAULT_BGCOLOR_PIC   "0,0,0"        // 黑  阴影
-+#define DEFAULT_HCOLOR_PIC   "0,0,0"         // 黑  下划线/按钮框/阴影
-+#define DEFAULT_SELCOLOR_PIC  "0,0,255"      // 蓝  仅内部标记（必须与上面两个都不同）
++#define DEFAULT_BGCOLOR_PIC   "0,0,0"        // 黑  阴影 / 下划线 / 按钮框
++/* 高亮层（hlpic）用**红**：spumux 把「选中态」的颜色取自这一层
++   （subgen.c 写 ST_COLI 时用 `s->hlt.pal`），所以红画在这里就等于
++   「选中时描边/下划线/按钮框变红」。未选中时看到的是图像层的黑。 */
++#define DEFAULT_HCOLOR_PIC   "255,0,0"       // 红：选中态的描边 / 下划线 / 按钮框
++/* ⚠️ 这里要用**等价的另一种写法**（`#ffffff` 而不是 `255,255,255`）：
++   `command_line_parsing.c` 会检查 `_PIC` 三项是否互不相同，相同就整套
++   重置；但 `selectpic` 是用 `convert -fill <selectfgcolor> -opaque
++   <textcolor>` 从 `impic` 生成的 —— 只要**渲染出的颜色一样**，slpic 就
++   与 impic 完全一致，不会多占一个调色板项。
++   实测用 `250,250,250`（近白）会多出一种颜色：加上 hlpic 的红，spumux
++   的 `pickbuttongroups()` 直接失败（`ERR: Cannot pick button masks`）。 */
++#define DEFAULT_SELCOLOR_PIC  "#ffffff"      // 白（写法与 TEXTCOLOR_PIC 不同）
 +#define DEFAULT_ACTIVETEXTCOLOR_PALETTE "0xEB8080"  // 白
 +#define DEFAULT_ACTIVEBGCOLOR_PALETTE   "0x108080"  // 黑
 +#define DEFAULT_ACTIVEHCOLOR_PALETTE    "0x108080"  // 黑
@@ -977,7 +1008,7 @@ index df1244e..cd37dba 100644
  
  
  #ifdef _WIN32
-@@ -393,6 +408,13 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+@@ -393,6 +439,13 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  #define DEFAULT_BACKGROUNDPIC_NTSC "menu/black_" "NTSC_720x480" ".jpg"  // for mpeg authoring
  #define DEFAULT_ACTIVEHEADER "menu/activeheader"
  #define DEFAULT_ASPECT_RATIO "4:3"
@@ -991,7 +1022,7 @@ index df1244e..cd37dba 100644
  #define DEFAULT_POINTSIZE  25
  #define DEFAULT_FONTWIDTH  6  // 6 pixels for size 10 in Courier
  #define DEFAULT_SCREENTEXT "ALBUM=Group 1 - Track 1,Group 1 - Track 2:Group 2 - Track 1,Group 2 - Track 2";
-@@ -432,6 +454,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+@@ -432,6 +485,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  #define DEFAULT_GROUP_HEADER_UPPERCASE "GROUP "  // use uppercase, see explanation in menu.c
  #define DEFAULT_NEXT "Next"
  #define DEFAULT_PREVIOUS "Previous"
@@ -1002,7 +1033,7 @@ index df1244e..cd37dba 100644
  #define ALBUM_TEXT_Y0 48
  #define MAX_POINTSIZE  35
 diff --git a/src/include/menu.h b/src/include/menu.h
-index 5ab0a6a..72ff1db 100644
+index 5ab0a6a..0ec8c40 100644
 --- a/src/include/menu.h
 +++ b/src/include/menu.h
 @@ -15,6 +15,7 @@ int  launch_spumux(pic* img, globalData*);
@@ -1013,7 +1044,7 @@ index 5ab0a6a..72ff1db 100644
  int create_stillpic_directory(char* string, int32_t count, globalData*);
  void create_activemenu(pic* img, globalData* globals);
  int create_mpg(pic* img, uint16_t rank, char* mp2track, char* tempfile, globalData*);
-@@ -23,5 +24,80 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
+@@ -23,5 +24,113 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
  void initialize_binary_paths(char level, globalData*);
  void menu_characteristics_coherence_test(pic* img, uint8_t ngroups, globalData*);
  void compute_pointsize(pic* img, uint16_t maxtracklength, uint8_t maxnumtracks, globalData*);
@@ -1081,17 +1112,50 @@ index 5ab0a6a..72ff1db 100644
 +   索引页自身也不画（那一页**就是**索引）。 */
 +#define MENU_BUTTON_ROW(img) ((img)->maxbuttons + 2)
 +
-+/* ---- 文字阴影的偏移（像素）----
++/* ---- 翻页按钮的可用性（menu.c 与 xml.c 必须用同一套）----
 +
-+   阴影画在**高亮层**（hlpic），用 `highlightcolor_pic`（黑）。
-+   不能画在图像层：子画面整幅只有 4 个调色板项，而 spumux 的
-+   `s->pal[]` 取自**图像层各像素自己的颜色** —— 同层内不同颜色
-+   要么被合并成同一项，要么直接报
-+   `Too many colors in base picture`（见 dvdauthor 的 subgen-image.c）。
++   ⚠️ 索引页的 Next **只在索引页之间翻** —— 不能拿 Next 从索引页跳到
++   专辑内容页（那是缩略图的活，而且跳过去会猜错用户想听哪张专辑）。
++   所以**最后一个索引页没有 Next**。
 +
-+   偏移小一点才不会糊：字号 25~30 时 2 px 刚好。 */
++   Previous 一律「不是第一页就有」。 */
++#define DVDA_HAS_PREV(img, menu) ((unsigned) (menu) > 0)
++#define DVDA_HAS_NEXT(img, menu)                                        \
++  (((img)->page_ntracks                                                 \
++    && (unsigned) (menu) < (unsigned) (img)->index_pages)               \
++   ? ((unsigned) (menu) + 1 < (unsigned) (img)->index_pages)            \
++   : ((unsigned) (menu) + 1 < (unsigned) (img)->nmenus))
++
++/* ---- 文字描边（白色字身 + 一圈深色）的偏移（像素）----
++
++   所有文字都画**两遍**：先在 (x+DX, y+DY) 画一遍深色的，再在 (x, y)
++   画白字 —— 也就是索引页专辑名那一套（`menu_assets` 里用 `caption:`
++   同样画两遍）。偏移 2 px，字号 25~30 时刚好，再大就糊。
++
++   ⚠️ 这两遍**分属两层**，颜色不同：
++     · 图像层 impic  → `bgcolor_pic`（黑）  = 未选中时看到的描边
++     · 高亮层 hlpic  → `highlightcolor_pic`（红）= 选中时看到的描边
++   spumux 把「选中态」的颜色取自 **hlpic 层**（见 subgen.c 里往 IFO 写
++   ST_COLI 的那段：`findmasterpal(s, s->hlt.pal + ...)`），所以红色必须
++   画在 hlpic 上，而不是靠 `_PALETTE` 换槽。 */
 +#define TEXT_SHADOW_DX 2
 +#define TEXT_SHADOW_DY 2
++
++/* ---- 选中指示：行左侧的小三角箭头 ----
++
++   ⚠️ 已放弃「选中时把描边变红」那套：描边是同一段文字偏移 2px，与字身
++   重叠处的三色组合会多出一种（实测 5 种），而 spumux 每个按钮的调色板
++   只有 4 项 → `pickbuttongroups()` 失败 → `ERR: Cannot pick button
++   masks` → 菜单全丢。所以文字**两种状态下完全一样**（白字 + 黑描边），
++   选中与否只靠这个箭头表示。
++
++   箭头画在文字**左边**（x0 - GAP - W 起），与「字身 + 向右下偏移 2px 的
++   描边」都不重叠 —— 这样三色组合恰好 4 种：透明 / 白字 / 黑描边 / 红箭头。
++
++   位置：x0=45（ncolumns=1）时左顶点在 34，按钮矩形从 33 开始，正好在里面。 */
++#define TEXT_ARROW_W    7
++#define TEXT_ARROW_H    6
++#define TEXT_ARROW_GAP  4
  #endif
  #endif // HAVE_MENU_C
 diff --git a/src/include/structures.h b/src/include/structures.h
@@ -1212,7 +1276,7 @@ index 92a8831..39305c0 100644
 +
 +#endif /* WITHOUT_sox */
 diff --git a/src/menu.c b/src/menu.c
-index facf72b..b260ef4 100644
+index facf72b..d763962 100644
 --- a/src/menu.c
 +++ b/src/menu.c
 @@ -77,7 +77,10 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
@@ -1605,17 +1669,66 @@ index facf72b..b260ef4 100644
        // The first backgroundmpg file is the one that is used to create AUDIO_SV.VOB in amg2.c
      }
  
-@@ -821,8 +1158,7 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks)
+@@ -820,9 +1157,45 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks)
+ }
  
  
- int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char *command2, int menu, char *albumcolor, globalData *globals)
--{
+-int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char *command2, int menu, char *albumcolor, globalData *globals)
++/* 把「同一段文字，偏移 (TEXT_SHADOW_DX, TEXT_SHADOW_DY)，颜色 color」
++   追加到 dest（一条给 mogrify 的命令串）。
++
++   为什么要分层画：子画面整幅只有 4 个调色板项，而 spumux 的 s->pal[]
++   是从**图像层各像素自己的颜色**取的 —— 同一层里再现第二种颜色要么被
++   合并、要么直接报 "Too many colors in base picture"。
++   所以「白字 + 阴影」只能是两层两个颜色：
++     · 图像层 impic ← 未选中时显示 → 阴影用 bgcolor_pic（黑）
++     · 高亮层 hlpic ← 选中时显示   → 阴影用 highlightcolor_pic（红）
++   详见 docs/TROUBLESHOOTING.md 第 23 节。
++
++   ⚠️ 追加的片段**末尾必须留空格**：调用方随后 strcat 的是输出文件路径，
++   少了空格两者会粘成一个参数，mogrify 就把结果打到 stdout 并返回 0
++   （静默什么都不画，见第 22 节）。 */
++static void append_shadow(char *dest, pic *img, const char *text,
++                          uint16_t x, uint16_t y, int pointsize,
++                          const char *color)
+ {
 -  initialize_binary_paths(3, globals);
++  char *q = quote((char *) color);
++  char str[2 * CHAR_BUFSIZ];
++
++  /* ⚠️ `-stroke none` 不能省！`mogrify_thumb()` 会把 `-stroke "rgb(红色)"`
++     留在参数流里（它是描边矩形），而这个设置**会一直生效到被改掉为止**。
++     `-draw "text"` 是同时用 `-fill` 和 `-stroke` 画的（IM 对文本也描边），
++     于是后面的文字全被 6px 宽的红色描边糊住 —— 实测整整排查了一轮：
++     图上看到的「红字」其实是「黑字 + 红描边」。 */
++  snprintf(str, sizeof(str),
++           " -stroke none -fill \"rgb(%s)\" -font %s -pointsize %d"
++           " -draw \"text %u,%u '%s'\" ",
++           q, img->textfont, pointsize,
++           (unsigned) (x + TEXT_SHADOW_DX), (unsigned) (y + TEXT_SHADOW_DY),
++           text);
++  free(q);
++  strcat(dest, str);
++}
++
++
++int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char *command2, int menu, char *albumcolor, globalData *globals)
 +{  initialize_binary_paths(3, globals);
  
    int size = strlen(globals->settings.tempdir) + 11;
    char picture_save[size];
-@@ -859,10 +1195,38 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
+@@ -839,8 +1212,8 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
+     {
+       uint16_t x0 = EVEN(x((group > 0 ? group : 0), img->ncolumns)) ;
+       char *q = quote(picture_save);
+-      snprintf(command, 2 * CHAR_BUFSIZ, "%s %s %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %c%s%s %s", mogrify,
+-               "+antialias", "-fill", albumcolor, "-font", img->textfont, "-pointsize", DEFAULT_POINTSIZE,
++      snprintf(command, 2 * CHAR_BUFSIZ, "%s %s %s %s %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %c%s%s %s", mogrify,
++               "+antialias", "-stroke", "none", "-fill", albumcolor, "-font", img->textfont, "-pointsize", DEFAULT_POINTSIZE,
+                "-draw", " \"text ", x0, ',', ALBUM_TEXT_Y0,  '\'', text, "\'\"", q);
+       free(q);
+       if (globals->debugging) foutput("%s%s\n", INF "Launching mogrify (title) with command line: ", command);
+@@ -859,10 +1232,35 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
    if (globals->debugging) foutput(INF "copying %s to %s for menu #%d\n", picture_save, img->imagepic[menu], menu);
    copy_file(picture_save, img->highlightpic[menu], globals);
    copy_file(picture_save, img->selectpic[menu], globals);
@@ -1639,54 +1752,92 @@ index facf72b..b260ef4 100644
 +  if ((group == -1) && text && img->highlightcolor_pic)
 +    {
 +      uint16_t xs = EVEN(x((group > 0 ? group : 0), img->ncolumns));
-+      char *qc = quote(img->highlightcolor_pic);
-+      char sh[2 * CHAR_BUFSIZ];
 +
-+      snprintf(sh, sizeof(sh),
-+               " -fill \"rgb(%s)\" -font %s -pointsize %d"
-+               " -draw \"text %u,%u '%s'\" ",
-+               qc, img->textfont, DEFAULT_POINTSIZE,
-+               (unsigned) (xs + TEXT_SHADOW_DX),
-+               (unsigned) (ALBUM_TEXT_Y0 + TEXT_SHADOW_DY), text);
-+      free(qc);
-+      strcat(command, sh);
++      /* 描边画两遍、分两层（见 menu.h 的 TEXT_SHADOW_DX 说明）：
++           command2 → impic  黑 = 未选中
++           command  → hlpic  红 = 选中   （command 在这里就是 command1） */
++      append_shadow(command2, img, text, xs, ALBUM_TEXT_Y0, DEFAULT_POINTSIZE,
++                    img->bgcolor_pic ? img->bgcolor_pic : DEFAULT_BGCOLOR_PIC);
++      append_shadow(command, img, text, xs, ALBUM_TEXT_Y0, DEFAULT_POINTSIZE,
++                    img->bgcolor_pic ? img->bgcolor_pic : DEFAULT_BGCOLOR_PIC);
 +    }
  
    return errno;
  }
-@@ -920,6 +1284,31 @@ int mogrify_img(char *text, int8_t group, int8_t track, pic *img, uint8_t maxnum
+@@ -911,22 +1309,68 @@ int mogrify_img(char *text, int8_t group, int8_t track, pic *img, uint8_t maxnum
+     }
+ 
+ 
++  /* ---- 选中指示：行左侧的小三角箭头（画进 command = hlpic）----
++     取代原来的「下划线／按钮框」矩形 —— 下划线是横贯文字的，与字身和
++     描边必然重叠，选中态就没法用另一种颜色表示（调色板只有 4 项）。
++     箭头放在文字左边，与文字完全不相交，所以能独立占一个调色板项。 */
+   if (track != -1)
+     {
++      int pts = (int) floor(img->pointsize * (1 - (track == -1) * 0.2));
++      int spy = y0 - pts / 2;                       /* 文字的垂直中心 */
++      int ax  = (int) x0 - TEXT_ARROW_GAP - TEXT_ARROW_W;
+       char *q = quote(img->highlightcolor_pic);
+-      snprintf(str, 10 * CHAR_BUFSIZ, " %s \"rgb(%s)\" %s %s %d%s%d %d%s%d%s ",
+-               "-fill", q, "-draw", " \"rectangle ", x0 + deltax0, ",", y0 + deltay0,  x0 + deltax1, ",", y0 + deltay1, "\""); // conversion works badly with -colors < 4
++
++      snprintf(str, 10 * CHAR_BUFSIZ,
++               " %s %s %s \"rgb(%s)\" %s %s %d,%d %d,%d %d,%d%s ",
++               "-stroke", "none", "-fill", q, "-draw", " \"polygon ",
++               ax, spy,
++               ax + TEXT_ARROW_W, spy - TEXT_ARROW_H,
++               ax + TEXT_ARROW_W, spy + TEXT_ARROW_H, "\"");
+       free(q);
      }
  
    strcat(command, str);
+-  snprintf(str2, 10 * CHAR_BUFSIZ, " %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
 +
-+  /* ---- 文字阴影 ----
-+     把同一段文字用 `highlightcolor_pic`（黑）再画一遍、偏移
-+     (TEXT_SHADOW_DX, TEXT_SHADOW_DY)，**画进 command = 高亮层**。
-+
-+     为什么必须在另一层：子画面整幅只有 4 个调色板项，而 spumux 的
-+     `s->pal[]` 是从**图像层各像素自己的颜色**取的 —— 同层里再来一种
-+     颜色要么被并成同一项，要么直接报 "Too many colors in base picture"。
-+     所以「白字 + 黑阴影」只能是两层两种颜色。
-+
-+     ⚠️ 格式串末尾**必须有空格**：后面 strcat 的是输出文件路径，
-+     少了空格两者会粘成一个参数，mogrify 就把结果打到 stdout
-+     并返回 0（静默什么都不画，很难查）。 */
++  /* ---- 文字描边：两层各画一遍（颜色不同）----
++     command2 → impic 用黑（**未选中**时看到）
++     command  → hlpic 用红（**选中**时看到）
++     spumux 把「选中态」的颜色取自 hlt 层（subgen.c 写 ST_COLI 时用
++     `s->hlt.pal`），所以红必须画在 hlpic 上。详见 menu.h 的 TEXT_SHADOW_DX。 */
 +  {
-+    char *qh = quote(img->highlightcolor_pic);
-+    snprintf(str, 10 * CHAR_BUFSIZ,
-+             " %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
-+             "-fill", qh, "-font", img->textfont, "-pointsize",
-+             (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
-+             "-draw", " \"text ", x0 + TEXT_SHADOW_DX, ',',
-+             y0 + TEXT_SHADOW_DY, "\'", text, "\'\"");
-+    free(qh);
-+    strcat(command, str);
++    int pts = (int) floor(img->pointsize * (1 - (track == -1) * 0.2));
++    append_shadow(command2, img, text, x0, y0, pts,
++                  img->bgcolor_pic ? img->bgcolor_pic : DEFAULT_BGCOLOR_PIC);
++    append_shadow(command, img, text, x0, y0, pts,
++                  img->bgcolor_pic ? img->bgcolor_pic : DEFAULT_BGCOLOR_PIC);
 +  }
 +
-   snprintf(str2, 10 * CHAR_BUFSIZ, " %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
++  snprintf(str2, 10 * CHAR_BUFSIZ, " %s %s %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
++           "-stroke", "none",
             "-fill", textcolor, "-font", img->textfont, "-pointsize", (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
             "-draw", " \"text ", x0, ',', y0, "\'", text, "\'\"");
-@@ -969,6 +1358,233 @@ void test_underline(char *text, pic *img, globalData *globals)
+ 
+   strcat(command2, str2);
+ 
+-  if (img->highlightformat == 1) strcat(command, str2); // because text will be overlayed. A more efficient method would be to use convert -composite for many tracks. For just a frew tracks, this is moot.
++  /* 文字**无条件**也画进 command（= hlpic）。
++
++     上游只在 `highlightformat == BUTTON` 时才这样（注释说「因为文字会被
++     覆盖」）。我们不这样不行：描边也是画在 hlpic 上的，而描边是同一段
++     文字偏移 2px —— 它与字身的笔画必然重叠。若 hlpic 里**只有描边没有
++     字身**，重叠处的三色组合会多出一种：
++         img=白(字身) hlt=红(描边) sel=白
++     加上
++         img=透明 hlt=透明 sel=透明   （背景）
++         img=白     hlt=透明 sel=白   （字身）
++         img=黑     hlt=红   sel=黑   （描边）
++         img=透明   hlt=红   sel=透明 （下划线）
++     共 **5 种**，而 spumux 每个按钮的调色板只有 4 项
++     （subgen-image.c 的 checkcolor：`if (p->numpal == 4) return false;`）
++     → `pickbuttongroups()` 全部失败 → `ERR: Cannot pick button masks`
++     → `assert(useimg)` 中止，菜单全丢（实测 85 次报错、VOB 少了 15 万字节）。
++
++     把字身也画进 hlpic 后，重叠处的 hlt 就是白（字身覆盖了红描边），
++     组合正好回到 4 种。屏幕上「选中」时看的是 hlpic：白字 + 红描边 + 红下划线。 */
++  strcat(command, str2);
+ 
+ 
+   if (errno) perror(ERR "mogrify");
+@@ -969,6 +1413,231 @@ void test_underline(char *text, pic *img, globalData *globals)
  }
  
  
@@ -1897,20 +2048,18 @@ index facf72b..b260ef4 100644
 +
 +  /* 末尾空格的原因同 mogrify_thumb() —— 后面紧跟的是输出文件路径。 */
 +  snprintf(str, sizeof(str),
-+           " -fill \"rgb(%s)\" -font %s -pointsize %d"
++           " -stroke none -fill \"rgb(%s)\" -font %s -pointsize %d"
 +           " -draw \"text %u,%u '%s'\" ",
 +           q, img->textfont, (int) img->pointsize,
 +           (unsigned) cx, (unsigned) cy, text);
 +  strcat(command2, str);
 +
-+  /* 阴影画进**高亮层**（command1），与下划线同色 —— 原因见 mogrify_img()。 */
-+  snprintf(str, sizeof(str),
-+           " -fill \"rgb(%s)\" -font %s -pointsize %d"
-+           " -draw \"text %u,%u '%s'\" ",
-+           qh, img->textfont, (int) img->pointsize,
-+           (unsigned) (cx + TEXT_SHADOW_DX), (unsigned) (cy + TEXT_SHADOW_DY),
-+           text);
-+  strcat(command1, str);
++  /* 描边两层各一遍：command2 = impic（黑，未选中）、
++     command1 = hlpic（红，选中）。见 menu.h 的 TEXT_SHADOW_DX。 */
++  append_shadow(command2, img, text, cx, cy, (int) img->pointsize,
++                img->bgcolor_pic ? img->bgcolor_pic : DEFAULT_BGCOLOR_PIC);
++  append_shadow(command1, img, text, cx, cy, (int) img->pointsize,
++                img->bgcolor_pic ? img->bgcolor_pic : DEFAULT_BGCOLOR_PIC);
 +  free(q);
 +  free(qh);
 +  return errno;
@@ -1920,7 +2069,7 @@ index facf72b..b260ef4 100644
  int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *ntracks,  globalData *globals)
  {
    if ((!img->refresh) || (!img->nmenus))   return 0;
-@@ -981,36 +1597,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -981,36 +1650,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
    if (!img->hierarchical)
      {
@@ -1972,8 +2121,7 @@ index facf72b..b260ef4 100644
 +          free(albumtext);
 +          albumtext = strdup(DEFAULT_ALBUM_HEADER);
 +        }
- 
--      char remainder[strlen(img->screentextchain)];
++
 +      /* ':' 分组的解析用 f=NULL（没有计数器回调），无 static 泄漏风险 */
 +      grouparray = groupspec ? fn_strtok(groupspec, ':', grouparray,
 +                                         &dim, 0, NULL, NULL, globals)
@@ -2000,7 +2148,8 @@ index facf72b..b260ef4 100644
 +      if (tracktext == NULL) perror(ERR "Track text allocation");
 +      grouptext = calloc(dim + 1, sizeof(char **));
 +      if (grouptext == NULL) perror(ERR "Group text allocation");
-+
+ 
+-      char remainder[strlen(img->screentextchain)];
 +      for (k = 0; k < ndef && k < dim; k++)
 +        {
 +          char *q = strchr(grouparray[k], '=');
@@ -2068,7 +2217,7 @@ index facf72b..b260ef4 100644
          }
  
        free(grouparray);
-@@ -1090,13 +1801,19 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1090,13 +1854,25 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -2079,7 +2228,13 @@ index facf72b..b260ef4 100644
 +      int has_menu_button = (img->index_pages > 0)
 +        && !(img->page_ntracks && (menu < (unsigned) img->index_pages));
 +
-+      arrowbuttons = (menu < img->nmenus - 1) + (menu > 0) + has_menu_button;
++      /* Next / Previous 的可用性。索引页的 Next **只在索引页之间翻**，
++         所以**最后一个索引页没有 Next**（去专辑靠缩略图）。
++         宏在 menu.h，xml.c 用同一套 —— 两边数量必须一致。 */
++      int  has_next = DVDA_HAS_NEXT(img, menu);
++      int  has_prev = DVDA_HAS_PREV(img, menu);
++
++      arrowbuttons = has_next + has_prev + has_menu_button;
        menubuttons = (menu < img->nmenus - 1) ? img->maxbuttons : img->maxbuttons + img->resbuttons;
  
        buttons = 0;
@@ -2090,7 +2245,7 @@ index facf72b..b260ef4 100644
  
        prepare_overlay_img(albumtext, -1, img, command1, command2, menu, img->albumcolor, globals);
        //free(albumtext);  // segfault here under linux for unknown reasons. TO: fix it.
-@@ -1112,7 +1829,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1112,7 +1888,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                    /* Vicious issue here: use DEFAULT_GROUP_HEADER such that the underline for highlighting does not cut a letter.
                                   With lower-case "group", this happens as the underline cuts the 'p'. Two ways out: underline lower or use another label/use uppercase
                                   Note: This issue was tested to cause spumux crash */
@@ -2099,7 +2254,7 @@ index facf72b..b260ef4 100644
                    groupcount++;
                    buttons++;
  
-@@ -1123,13 +1840,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1123,13 +1899,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
            else if (groupcount < ngroups)
              {
@@ -2115,7 +2270,7 @@ index facf72b..b260ef4 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1143,19 +1860,74 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1143,19 +1919,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                  }
              }
          }
@@ -2138,21 +2293,19 @@ index facf72b..b260ef4 100644
 +                  for (track = 0; track < img->maxbuttons; ++track)
 +                    mogrify_thumb(track, img, command1, globals);
 +
-+                  if (img->nmenus > 1)
++                  if (has_next || has_prev)
 +                    {
-+                      /* 与下面通用箭头同一套槽位判定：
-+                         第 1 槽放 Next（末页改放 Previous），中间页再补
-+                         一个 Previous。 */
-+                      int is_last = (menu == (unsigned) img->nmenus - 1);
-+
-+                      mogrify_arrow_abs(is_last ? DEFAULT_PREVIOUS
-+                                                : DEFAULT_NEXT,
-+                                        is_last ? INDEX_PREV_X0
-+                                                : INDEX_NEXT_X0,
++                      /* 与下面通用箭头同一套槽位判定。
++                         has_next 已按「索引页只在自己几页之间翻」算过 ——
++                         最后一个索引页没有 Next（也不会接到专辑页）。 */
++                      mogrify_arrow_abs(has_next ? DEFAULT_NEXT
++                                                 : DEFAULT_PREVIOUS,
++                                        has_next ? INDEX_NEXT_X0
++                                                 : INDEX_PREV_X0,
 +                                        img, command2, command1,
 +                                        img->arrowcolor);
 +
-+                      if (menu && !is_last)
++                      if (has_next && has_prev)
 +                        mogrify_arrow_abs(DEFAULT_PREVIOUS, INDEX_PREV_X0,
 +                                          img, command2, command1,
 +                                          img->arrowcolor);
@@ -2192,7 +2345,7 @@ index facf72b..b260ef4 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1175,20 +1947,50 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1175,20 +2004,56 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -2224,13 +2377,19 @@ index facf72b..b260ef4 100644
 +             而多转几轮，把同一个箭头重复画 5 次。 */
 +          int arrows_drawn = 0;
 +
-+          buttons++;
-+          arrows_drawn++;
-+          mogrify_img((menu == img->nmenus - 1) ? DEFAULT_PREVIOUS : DEFAULT_NEXT,
-+                      img->ncolumns - 1, img->maxbuttons, img,
-+                      img->maxbuttons, command1, command2, 0, img->arrowcolor);
++          /* 槽 1：有 Next 放 Next；没有 Next（末页）但有 Previous 就把
++             Previous 提上来 —— 否则槽 1 空着、看着像少了个按钮。 */
++          if (has_next || has_prev)
++            {
++              buttons++;
++              arrows_drawn++;
++              mogrify_img(has_next ? DEFAULT_NEXT : DEFAULT_PREVIOUS,
++                          img->ncolumns - 1, img->maxbuttons, img,
++                          img->maxbuttons, command1, command2, 0,
++                          img->arrowcolor);
++            }
 +
-+          if ((menu) && (menu < img->nmenus - 1))
++          if (has_next && has_prev)
 +            {
 +              buttons++;
 +              arrows_drawn++;
@@ -2257,7 +2416,7 @@ index facf72b..b260ef4 100644
  
        char *q = quote(img->imagepic[menu]);
        strcat(command2, q);
-@@ -1238,7 +2040,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1238,7 +2103,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
    free(grouptext);
    free(tracktext);
  
@@ -2751,7 +2910,7 @@ index 4b9feae..2ac85d2 100644
    if (info->filename == NULL) EXIT_ON_RUNTIME_ERROR_VERBOSE("Could not copy MLP filename.")
  
 diff --git a/src/xml.c b/src/xml.c
-index e50464c..1229358 100644
+index e50464c..e007550 100644
 --- a/src/xml.c
 +++ b/src/xml.c
 @@ -102,6 +102,60 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
@@ -2815,7 +2974,7 @@ index e50464c..1229358 100644
        else
          {
            do
-@@ -135,17 +189,50 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
+@@ -135,17 +189,57 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
  
        if ((img->nmenus > 1) && (menu < img->nmenus))
          {
@@ -2836,16 +2995,23 @@ index e50464c..1229358 100644
 +          int has_menu_button = (img->index_pages > 0)
 +            && !(img->page_ntracks
 +                 && (menu < (unsigned) img->index_pages));
++          /* 与 menu.c 同一套（宏在 menu.h）：索引页的 Next **只在索引页
++             之间翻**，所以最后一个索引页没有 Next。两边的按钮编号顺序
++             必须逐一对上，否则 dvdauthor 建出来的按钮没有高亮区域。 */
++          int has_next = DVDA_HAS_NEXT(img, menu);
++          int has_prev = DVDA_HAS_PREV(img, menu);
++          /* 槽 1：有 Next 放 Next；只剩 Previous 时把它提上来占槽 1。 */
++          int slot1 = has_next || has_prev;
 +
-+          if (menu < img->nmenus - 1)
++          if (slot1)
 +            {
 +              buttons++;
 +              jumps_emitted++;
-+              fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", buttons, "\">jump menu ", menu + 2, ";</button>");
++              fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", buttons, "\">jump menu ", has_next ? menu + 2 : menu, ";</button>");
 +            }
  
 -          do
-+          if (menu)
++          if (has_next && has_prev)
              {
 +              buttons++;
 +              jumps_emitted++;
@@ -2873,7 +3039,7 @@ index e50464c..1229358 100644
            fprintf(xmlfile, "%s%s%s\n", "       <vob pause=\"inf\" file=\"", img->topmenu[menu], "\"/>\n\
     </pgc>\n");
  
-@@ -187,11 +274,11 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
+@@ -187,11 +281,11 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
    int i, j;
    uint16_t delta = 0;
  
@@ -2888,7 +3054,7 @@ index e50464c..1229358 100644
  
    for (i = 1; i < ncol; ++i)
      {
-@@ -199,9 +286,13 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
+@@ -199,9 +293,13 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
        x0[i] = x1[i - 1] ;
      }
  
@@ -2904,7 +3070,7 @@ index e50464c..1229358 100644
        y0[j] = y1[j - 1];
      }
  
-@@ -215,7 +306,7 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -215,7 +313,7 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
    uint16_t x0[ngroups], y0[MAX_BUTTON_NUMBER], x1[ngroups], y1[MAX_BUTTON_NUMBER];
    errno = 0;
    FILE *spu_xmlfile = NULL;
@@ -2913,7 +3079,7 @@ index e50464c..1229358 100644
  
    if (globals->spu_xml == NULL) globals->spu_xml = calloc(img->nmenus, sizeof(char *));
    if (globals->spu_xml == NULL) perror(ERR "spuxml\n");
-@@ -302,6 +393,51 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -302,6 +400,51 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
                  }
              }
          }
@@ -2965,7 +3131,7 @@ index e50464c..1229358 100644
        else
          {
  
-@@ -333,18 +469,69 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -333,18 +476,77 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
  
        if (img->nmenus > 1)
          {
@@ -2981,29 +3147,42 @@ index e50464c..1229358 100644
 +             spumux 直接失败、topmenu 输出 0 字节。 */
 +          int is_index = (img->page_ntracks
 +                          && (menu < (unsigned) img->index_pages));
-+          int is_last = (menu == (unsigned) img->nmenus - 1);
 +          int arrows_emitted = 0;
++          int has_next = DVDA_HAS_NEXT(img, menu);
++          int has_prev = DVDA_HAS_PREV(img, menu);
++          int slot1 = has_next || has_prev;
 +          /* 槽 3：「返回专辑索引」。条件与 menu.c / dvdauthor XML 完全一致。 */
 +          int has_menu_button = (img->index_pages > 0) && !is_index;
 +
-+          buttons++;
-+          arrows_emitted++;
-+          if (is_index)
-+            fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n",
-+                    "       <button x0=\"",
-+                    (is_last ? INDEX_PREV_X0 : INDEX_NEXT_X0), "\"",
-+                    " y0=\"", INDEX_ARROW_Y0, "\"",
-+                    " x1=\"",
-+                    ((is_last ? INDEX_PREV_X0 : INDEX_NEXT_X0) + INDEX_ARROW_W),
-+                    "\"", " name=\"button", buttons, "\"",
-+                    " y1=\"", INDEX_ARROW_Y1, "\"/>");
-+          else
-+            fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons], "\"/>");
-+
-+          if ((menu) && (menu < img->nmenus - 1))
++          /* 槽 1：只有真的还有可翻的页才出按钮 —— 索引页的 Next 限定在
++             索引页之间，所以最后一个索引页这个槽是空的。 */
++          if (slot1)
              {
                buttons++;
 -              fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks], "\"/>");
++              arrows_emitted++;
++              if (is_index)
++                fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n",
++                        "       <button x0=\"",
++                        (has_next ? INDEX_NEXT_X0 : INDEX_PREV_X0), "\"",
++                        " y0=\"", INDEX_ARROW_Y0, "\"",
++                        " x1=\"",
++                        ((has_next ? INDEX_NEXT_X0 : INDEX_PREV_X0)
++                         + INDEX_ARROW_W),
++                        "\"", " name=\"button", buttons, "\"",
++                        " y1=\"", INDEX_ARROW_Y1, "\"/>");
++              else
++                fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons], "\"/>");
++            }
+ 
+-              if ((menu) && (menu < img->nmenus - 1))
+-                {
+-                  buttons++;
+-                  fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks + 1], "\"/>");
+-                }
++          if (has_next && has_prev)
++            {
++              buttons++;
 +              arrows_emitted++;
 +              if (is_index)
 +                fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n",
@@ -3014,13 +3193,9 @@ index e50464c..1229358 100644
 +                        " y1=\"", INDEX_ARROW_Y1, "\"/>");
 +              else
 +                fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons + 1], "\"/>");
-+            }
- 
--              if ((menu) && (menu < img->nmenus - 1))
--                {
--                  buttons++;
--                  fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks + 1], "\"/>");
--                }
+             }
+-          while (buttons < menubuttons + arrowbuttons);
++
 +          /* 槽 3：索引页没有这个按钮（is_index 已排除），
 +             所以坐标一律用 compute_coordinates() 的 y0/y1
 +             —— 那一行由 MENU_BUTTON_ROW() 指定，两边必须一致。 */
@@ -3034,8 +3209,7 @@ index e50464c..1229358 100644
 +                      " x1=\"", x1[img->ncolumns - 1], "\"",
 +                      " name=\"button", buttons, "\"",
 +                      " y1=\"", y1[MENU_BUTTON_ROW(img)], "\"/>");
-             }
--          while (buttons < menubuttons + arrowbuttons);
++            }
 +
 +          if (globals->debugging && (arrows_emitted != (int) arrowbuttons))
 +            foutput(WAR "Arrow button count mismatch: %d emitted, %d expected\n",
