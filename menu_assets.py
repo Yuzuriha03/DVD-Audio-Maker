@@ -85,6 +85,22 @@ INDEX_LABEL_MIN_POINTS = 9                      # 名称字号下限（再小看
 # 再加上下裕量 —— 这段区间里除了箭头不可能有别的墨迹，
 # 构建期自检靠它判断「箭头到底画了没有」。
 INDEX_ARROW_BAND = (488, 560)
+# 专辑名的阴影偏移（与 C 侧 TEXT_SHADOW_DX/DY 无关 —— 名称是 Python 画进
+# 背景图的，C 侧只管按钮矩形）。白字 + 黑阴影在模糊彩底上最清楚。
+INDEX_LABEL_SHADOW = 2
+# 缩略图的描边。画在**背景图**上（不是子画面），所以不影响按钮遮罩。
+# 用**不透明深灰**而不是「半透明白」：
+#   · 半透明白在亮封面上会消失（实测：亮图内侧 108 vs 框 58，反而更暗）；
+#   · 深灰描边不管封面明暗都能把它从背景（~74）里分出来；
+#   · `rgba(0,0,0,0.x)` 的 alpha 在灰度图上会被忽略成纯黑，别用。
+INDEX_THUMB_BORDER = "#2a2a2a"
+INDEX_THUMB_BORDER_W = 2
+# 索引页背景（模糊拼贴）的压暗 = 二级页封面压暗值 × 这个比例。
+# 背景是**重度模糊**的，可以比二级页亮得多（二级页要压暗才读得清字），
+# 取 0.4：默认 35 → 14，页内空隙均值约 74，而对角的缩略图约 116 ——
+# 背景看得出是「图」但又明显退到后面去；白字靠黑阴影也够清楚。
+# 想更亮/更暗就调这个比例，不必碰两个值。
+INDEX_BACKDROP_DIM_RATIO = 0.4
 # 索引页在 `--screentext` 里的「段标题」。名称是 Python 画进背景图的，
 # 所以这个字不会被显示，只是为了让 screentext 的段格式合法。
 INDEX_LABEL = "选择专辑"
@@ -643,7 +659,100 @@ def fit_index_label(text, width, height, font):
     return pick, shown
 
 
-def make_index_page(cells, path, font):
+def _covers_backdrop(cells, path, dim):
+    """把本页封面拼贴 → 重度模糊 → 压暗，当作背景（`DVDA_MENU_INDEX_BG=covers`）。
+
+    好处：每页底色都不一样，且与内容相关。坏处：一页里封面风格差异大时
+    底色会花。默认**不用**这个，改用 `make_index_backdrop()` 画的设计背景。
+    """
+    cs = [c for _n, c in cells if c]
+    if not cs:
+        _magick("-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:black",
+                "-quality", "90", path)
+        return path
+
+    cw, ch = FRAME_W // INDEX_COLS, FRAME_H // INDEX_ROWS     # 180 x 192
+    args = ["-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:black"]
+    for i in range(INDEX_PER_PAGE):
+        args += ["(", cs[i % len(cs)], "-resize", "%dx%d^" % (cw, ch),
+                 "-gravity", "center", "-extent", "%dx%d" % (cw, ch),
+                 "-repage", "+%d+%d" % ((i % INDEX_COLS) * cw,
+                                        (i // INDEX_COLS) * ch), ")"]
+    args += ["-flatten", "-blur", "0x28",
+             "-brightness-contrast", "-%dx0" % max(0, min(100, int(dim))),
+             "-quality", "90", path]
+    _magick(*args)
+    return path
+
+
+# ---- 设计背景的三个可调参数（不用外部素材，构建时现画）----
+# 对角线渐变的两端：左上亮、右下暗，给画面一个方向感。
+# 实测缩略图亮度在 35~143（中位 75），所以背景整体压在均值 ~54、
+# 局部最高 ~78 —— 是「一面墙」而不是「和照片抢亮度」。
+BACKDROP_FROM = "#8c8c8c"
+BACKDROP_TO = "#1a1a1a"
+# 与 4x3 格子对齐的细网格（白、低透明度）—— 让背景和版式有关系，
+# 看起来是「设计过的」而不是随手一张图。实测线比底色亮约 15 级，够含蓄。
+BACKDROP_GRID_ALPHA = 0.14
+# 径向暗角：中心不动、四周乘到这个灰度。压住四角，视线收拢到中间，
+# 同时保证边缘的字有对比度。
+# 缩略图外加一圈细边框（``INDEX_THUMB_BORDER``），把它们从背景里「托」出来
+# —— 封面本身明暗差很大（35~143），只靠背景深浅托不住所有图。
+BACKDROP_VIGNETTE = "#7a7a7a"
+
+
+def make_index_backdrop(path):
+    """生成索引页的**设计背景**（720x576，自带素材，不依赖任何图片文件）。
+
+    三层叠出来：
+
+      1. **对角线渐变** `BACKDROP_FROM` → `BACKDROP_TO`
+         用 `-sparse-color bilinear` 而不是「渐变图 + `-rotate`」——
+         后者会在旋转后新露出的画布角上填 `-background`（默认**白**），
+         实测中心裁切后仍有 14% 的像素是纯白，把整页顶亮。
+      2. **格子网格** 线画在 `INDEX_CELL_W/H` 的分界上、以及网格区
+         上下边界 —— 与按钮版式对齐。
+      3. **径向暗角**（`-compose multiply`）压住四角。
+
+    为什么程序生成而不是「上网找一张」：
+      · 授权干净：网上找的图不能随工程一起分发；
+      · 仓库不放二进制：构建时现画，改上面三个常量就换样式；
+      · 明度可控：正好落在「看得出是图、又不抢缩略图」的区间
+        （实测均值 73，缩略图区均值 ~116，白字+黑阴影在其上很清楚）。
+
+    想用自己的图：`DVDA_MENU_INDEX_BG=/path/to/img.jpg`（见 README）。
+    """
+    lines = []
+    for c in range(1, INDEX_COLS):
+        x = c * INDEX_CELL_W
+        lines.append("rectangle %d,0 %d,%d" % (x, x, FRAME_H - 1))
+    for r in range(INDEX_ROWS + 1):
+        y = INDEX_TOP + r * INDEX_CELL_H
+        lines.append("rectangle 0,%d %d,%d" % (y, FRAME_W - 1, y))
+
+    _magick("-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:" + BACKDROP_FROM,
+            "-sparse-color", "bilinear",
+            "0,0 %s %d,%d %s" % (BACKDROP_FROM, FRAME_W - 1, FRAME_H - 1,
+                                 BACKDROP_TO),
+            "-fill", "rgba(255,255,255,%s)" % BACKDROP_GRID_ALPHA,
+            "-draw", " ".join(lines),
+            "(", "-size", "%dx%d" % (FRAME_W, FRAME_H),
+            "radial-gradient:#ffffff-%s" % BACKDROP_VIGNETTE, ")",
+            "-compose", "multiply", "-composite",
+            "-quality", "92", path)
+    return path
+
+
+def fit_backdrop(src, path, dim):
+    """把用户给的图 `src` 铺满画面（填满再裁）并压暗 `dim`%，写到 `path`。"""
+    _magick("(", src, "-resize", "%dx%d^" % (FRAME_W, FRAME_H),
+            "-gravity", "center", "-extent", "%dx%d" % (FRAME_W, FRAME_H), ")",
+            "-brightness-contrast", "-%dx0" % max(0, min(100, int(dim))),
+            "-quality", "92", path)
+    return path
+
+
+def make_index_page(cells, path, font, dim=35, bg="auto"):
     """一级菜单（专辑索引页）：`4x3` = 正方缩略图 + 专辑名，整幅 720x576。
 
     cells 是本页最多 `INDEX_PER_PAGE`(12) 个 `(专辑名, 封面路径)`：
@@ -652,23 +761,36 @@ def make_index_page(cells, path, font):
     格子内部（从 `col*180+5, INDEX_TOP + row*140+5` 起，共 170x130）：
       · 缩略图：正方形 `INDEX_THUMB`(100)，水平居中
       · 名称  ：缩略图下方 `INDEX_THUMB_GAP`(2) px，宽 170、高 28，
-                居中，自动换行 + 缩字号
-   顶部 60 px 留黑，给 dvda-author 画的**大标题**；底部 480 以下留黑，
-   给翻页箭头。
+                居中，自动换行 + 缩字号，**白字 + 黑阴影**
+    背景由 `bg` 决定（`DVDA_MENU_INDEX_BG`）：
+      `auto`（默认） → `make_index_backdrop()` 画的设计背景
+      `covers`       → 本页封面的模糊拼贴（`_covers_backdrop()`）
+      图片路径        → 用这张图（`fit_backdrop()`，按 `dim`% 压暗）
+    顶部 60 px 留给 dvda-author 画的**大标题**（它自带阴影）；底部 480
+    以下留给翻页箭头。
 
     按钮区 = **整个格子内容区**（含名称），由 C 侧 xml.c 输出 ——
     所以这里改缩略图/名称的尺寸**不会**影响点击区。
 
     ⚠️ `-repage` 必须写在**括号内**：它是**算子**（operator）而不是设置项，
     不加括号时 IM 会对「当前图像列表里的每一张」生效 —— 包括开头那张
-    720x576 的黑底色。结果黑底也被挪到最后一格的位置，画布露出
+    720x576 的背景。结果背景也被挪到最后一格的位置，画布露出
     `-flatten` 的默认白底，于是整页只剩右下角一张封面、其余全白。
     """
     tw = INDEX_THUMB
     lw = INDEX_CELL_W - 2 * INDEX_INSET          # 名称条宽 = 170
     tx = INDEX_INSET + (lw - tw) // 2            # 缩略图左边距（居中）
+    dx = INDEX_LABEL_SHADOW
 
-    args = ["-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:black"]
+    bpath = path + ".bg.jpg"
+    if bg and bg != "auto" and bg != "covers":
+        fit_backdrop(bg, bpath, dim * INDEX_BACKDROP_DIM_RATIO)
+    elif bg == "covers":
+        _covers_backdrop(cells, bpath, dim * INDEX_BACKDROP_DIM_RATIO)
+    else:
+        make_index_backdrop(bpath)
+
+    args = [bpath]
     for i, (name, cov) in enumerate(cells[:INDEX_PER_PAGE]):
         ox = (i % INDEX_COLS) * INDEX_CELL_W
         oy = INDEX_TOP + (i // INDEX_COLS) * INDEX_CELL_H
@@ -680,17 +802,41 @@ def make_index_page(cells, path, font):
                      "-repage", "+%d+%d" % (ox + tx, oy + INDEX_INSET), ")"]
         if name:
             p, shown = fit_index_label(name, lw, INDEX_LABEL_H, font)
-            # `-repage` 同样必须在 `)` **之前** —— 写成 `) -repage` 就变成
-            # 作用到列表里每一张的算子，把所有层压回同一个位置。
-            args += ["(", "-background", "none", "-fill", "white",
-                     "-font", font, "-pointsize", str(p),
-                     "-size", "%dx%d" % (lw, INDEX_LABEL_H),
-                     "-gravity", "center", "caption:" + shown,
-                     "-repage", "+%d+%d" % (ox + INDEX_INSET,
-                                            oy + INDEX_INSET + tw
-                                            + INDEX_THUMB_GAP), ")"]
+            ly = oy + INDEX_INSET + tw + INDEX_THUMB_GAP
+            # 先黑阴影、后白字（flatten 里后画的在上面）；两层都用
+            # `caption:`，所以换行位置完全一致。
+            for sdx, sdy, fill in ((dx, dx, "black"), (0, 0, "white")):
+                args += ["(", "-background", "none", "-fill", fill,
+                         "-font", font, "-pointsize", str(p),
+                         "-size", "%dx%d" % (lw, INDEX_LABEL_H),
+                         "-gravity", "center", "caption:" + shown,
+                         "-repage", "+%d+%d" % (ox + INDEX_INSET + sdx,
+                                                ly + sdy), ")"]
     args += ["-flatten", "-quality", "90", path]
     _magick(*args)
+
+    # 缩略图细边框：**必须单独一遍画在已合成的成品上**。
+    # 拼在一起画不行：`-draw` 会作用到**图像列表里的每一张**（背景 + 每个
+    # 缩略图 + 每个名称层），而 `-flatten` 按列表顺序叠 —— 画在背景层上的
+    # 边框会被后面的缩略图整个盖掉；画在缩略图层上的又会因为那张图只有
+    # 100x100、坐标系不同而落到别处（实测边框像素取到 0 = 黑）。
+    borders = []
+    for i, (_n, cov) in enumerate(cells[:INDEX_PER_PAGE]):
+        if not cov:
+            continue
+        bx = (i % INDEX_COLS) * INDEX_CELL_W + tx
+        by = INDEX_TOP + (i // INDEX_COLS) * INDEX_CELL_H + INDEX_INSET
+        borders.append("rectangle %d,%d %d,%d"
+                       % (bx, by, bx + tw - 1, by + tw - 1))
+    if borders:
+        _magick(path, "-fill", "none", "-stroke", INDEX_THUMB_BORDER,
+                "-strokewidth", str(INDEX_THUMB_BORDER_W),
+                "-draw", " ".join(borders), "-quality", "90", path)
+
+    try:
+        os.remove(bpath)
+    except OSError:
+        pass
 
     size = image_size(path)
     if size != (FRAME_W, FRAME_H):
@@ -981,7 +1127,8 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
         for a in albs:
             lbl, _fixed = sanitize(menu_album(a))
             cells.append((lbl, covers.get(a)))
-        make_index_page(cells, index_paths[pi], plan.font)
+        make_index_page(cells, index_paths[pi], plan.font,
+                        cfg.menu_cover_dim, cfg.menu_index_bg)
 
     plan.fontwidth = compute_fontwidth(all_texts, points)
 

@@ -922,10 +922,62 @@ index 601750b..9c50485 100644
  int launch_sox(fileinfo_t *info, globalData* globals);
  command_t *scan_audiofile_characteristics(command_t *command, globalData*);
 diff --git a/src/include/commonvars.h b/src/include/commonvars.h
-index df1244e..a239c76 100644
+index df1244e..cd37dba 100644
 --- a/src/include/commonvars.h
 +++ b/src/include/commonvars.h
-@@ -393,6 +393,13 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+@@ -360,21 +360,36 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ // It is always necessary to have distinct colors in pic generation, even if they will not surface on screen (this is because of the inner workings of dvdauthor and should be imporved)
+ // The palettes only matter for actual rendition of colors. _PIC colors are what is actually generated, this is for advanced usage and should not have  importance for most users (--colors)
+ //
+-#define DEFAULT_ALBUMCOLOR "0,0,255" //blue              //Theoretical values, there are fewer possibilities for now, see comments below
+-#define DEFAULT_GROUPCOLOR  "0,0,255" // must be the same
+-#define DEFAULT_ARROWCOLOR "255,255,255"           //red
+-#define DEFAULT_TEXTCOLOR_PALETTE "0xE6807F"  // pure white text, highlighted or not highlighted
+-#define DEFAULT_BGCOLOR_PALETTE   "0x286DF0"  // album, group and select action text (turns navy blue on pressing the highlighted track)
+-#define DEFAULT_HCOLOR_PALETTE    "0x51F05A"  //red underline
+-#define DEFAULT_SELCOLOR_PALETTE  "0x88B33A"  // ochre background
+-#define DEFAULT_TEXTCOLOR_PIC "255,255,255"  // white  //
+-#define DEFAULT_BGCOLOR_PIC   "0,0,0"  // black
+-#define DEFAULT_HCOLOR_PIC   "255,0,0"  //red
+-#define DEFAULT_SELCOLOR_PIC  "0,0,255"  // blue
+-#define DEFAULT_ACTIVETEXTCOLOR_PALETTE "0xE6807F"  // white non-highlighted and highlighted text
+-#define DEFAULT_ACTIVEBGCOLOR_PALETTE   "0xE6807F"  // broken
+-#define DEFAULT_ACTIVEHCOLOR_PALETTE    "0x902235"	//green	 underline color
+-#define DEFAULT_ACTIVESELCOLOR_PALETTE "0x88B33A"  // ochre : the text turns ochre on pressing the remote for the highlighted text "0x286DF0"  // blue
++/* ---- 菜单配色：黑白 ----
++
++   屏幕上的颜色到底由 `_PALETTE` 还是 `_PIC` 决定，取决于渲染路径
++   （spumux 的 `s->pal[]` 取自**图像层各像素自己的颜色**，而
++   dvda-author 又会把自己那份调色板写进 AMG）。上游把两套默认值
++   **刻意设成同色**，所以这里也保持一致 —— 两套都改成黑白，
++   无论走哪条路结果都是黑白。
++
++   ⚠️ `_PIC` 三者**必须互不相同**：`command_line_parsing.c` 里有一处
++   强制检查，任意两项相同就整套重置回默认值。所以
++   下划线/按钮框用黑、正文用白、按下态留一个蓝做内部标记
++   （它只在实际按下时才会显色 → 由 `DEFAULT_SELCOLOR_PALETTE` 决定）。
++
++   文字阴影（见 menu.c）画在**高亮层**，与下划线同色（黑）——
++   子画面整幅只有 4 个调色板项，同一层内换色会被合并掉。 */
++#define DEFAULT_ALBUMCOLOR "255,255,255"   // 白：标题（与正文同色，少占一个调色板项）
++#define DEFAULT_GROUPCOLOR  "255,255,255"  // 白：专辑名
++#define DEFAULT_ARROWCOLOR "255,255,255"   // 白：Next / Previous / Menu
++#define DEFAULT_TEXTCOLOR_PALETTE "0xEB8080"  // 白 (Y=235 Cr=128 Cb=128)
++#define DEFAULT_BGCOLOR_PALETTE   "0x108080"  // 黑 (Y=16)  背景/按下时的底色
++#define DEFAULT_HCOLOR_PALETTE    "0x108080"  // 黑          下划线、按钮框、文字阴影
++#define DEFAULT_SELCOLOR_PALETTE  "0x808080"  // 灰          按下态
++#define DEFAULT_TEXTCOLOR_PIC "255,255,255"  // 白  正文
++#define DEFAULT_BGCOLOR_PIC   "0,0,0"        // 黑  阴影
++#define DEFAULT_HCOLOR_PIC   "0,0,0"         // 黑  下划线/按钮框/阴影
++#define DEFAULT_SELCOLOR_PIC  "0,0,255"      // 蓝  仅内部标记（必须与上面两个都不同）
++#define DEFAULT_ACTIVETEXTCOLOR_PALETTE "0xEB8080"  // 白
++#define DEFAULT_ACTIVEBGCOLOR_PALETTE   "0x108080"  // 黑
++#define DEFAULT_ACTIVEHCOLOR_PALETTE    "0x108080"  // 黑
++#define DEFAULT_ACTIVESELCOLOR_PALETTE "0x808080"  // 灰
+ 
+ 
+ #ifdef _WIN32
+@@ -393,6 +408,13 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  #define DEFAULT_BACKGROUNDPIC_NTSC "menu/black_" "NTSC_720x480" ".jpg"  // for mpeg authoring
  #define DEFAULT_ACTIVEHEADER "menu/activeheader"
  #define DEFAULT_ASPECT_RATIO "4:3"
@@ -939,7 +991,7 @@ index df1244e..a239c76 100644
  #define DEFAULT_POINTSIZE  25
  #define DEFAULT_FONTWIDTH  6  // 6 pixels for size 10 in Courier
  #define DEFAULT_SCREENTEXT "ALBUM=Group 1 - Track 1,Group 1 - Track 2:Group 2 - Track 1,Group 2 - Track 2";
-@@ -432,6 +439,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+@@ -432,6 +454,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  #define DEFAULT_GROUP_HEADER_UPPERCASE "GROUP "  // use uppercase, see explanation in menu.c
  #define DEFAULT_NEXT "Next"
  #define DEFAULT_PREVIOUS "Previous"
@@ -950,7 +1002,7 @@ index df1244e..a239c76 100644
  #define ALBUM_TEXT_Y0 48
  #define MAX_POINTSIZE  35
 diff --git a/src/include/menu.h b/src/include/menu.h
-index 5ab0a6a..e3f371c 100644
+index 5ab0a6a..72ff1db 100644
 --- a/src/include/menu.h
 +++ b/src/include/menu.h
 @@ -15,6 +15,7 @@ int  launch_spumux(pic* img, globalData*);
@@ -961,7 +1013,7 @@ index 5ab0a6a..e3f371c 100644
  int create_stillpic_directory(char* string, int32_t count, globalData*);
  void create_activemenu(pic* img, globalData* globals);
  int create_mpg(pic* img, uint16_t rank, char* mp2track, char* tempfile, globalData*);
-@@ -23,5 +24,68 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
+@@ -23,5 +24,80 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
  void initialize_binary_paths(char level, globalData*);
  void menu_characteristics_coherence_test(pic* img, uint8_t ngroups, globalData*);
  void compute_pointsize(pic* img, uint16_t maxtracklength, uint8_t maxnumtracks, globalData*);
@@ -1028,6 +1080,18 @@ index 5ab0a6a..e3f371c 100644
 +   只在 `--index-pages > 0` 时出现 —— 没有索引页就无处可回；
 +   索引页自身也不画（那一页**就是**索引）。 */
 +#define MENU_BUTTON_ROW(img) ((img)->maxbuttons + 2)
++
++/* ---- 文字阴影的偏移（像素）----
++
++   阴影画在**高亮层**（hlpic），用 `highlightcolor_pic`（黑）。
++   不能画在图像层：子画面整幅只有 4 个调色板项，而 spumux 的
++   `s->pal[]` 取自**图像层各像素自己的颜色** —— 同层内不同颜色
++   要么被合并成同一项，要么直接报
++   `Too many colors in base picture`（见 dvdauthor 的 subgen-image.c）。
++
++   偏移小一点才不会糊：字号 25~30 时 2 px 刚好。 */
++#define TEXT_SHADOW_DX 2
++#define TEXT_SHADOW_DY 2
  #endif
  #endif // HAVE_MENU_C
 diff --git a/src/include/structures.h b/src/include/structures.h
@@ -1148,7 +1212,7 @@ index 92a8831..39305c0 100644
 +
 +#endif /* WITHOUT_sox */
 diff --git a/src/menu.c b/src/menu.c
-index facf72b..286fecc 100644
+index facf72b..b260ef4 100644
 --- a/src/menu.c
 +++ b/src/menu.c
 @@ -77,7 +77,10 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
@@ -1551,7 +1615,78 @@ index facf72b..286fecc 100644
  
    int size = strlen(globals->settings.tempdir) + 11;
    char picture_save[size];
-@@ -969,6 +1305,221 @@ void test_underline(char *text, pic *img, globalData *globals)
+@@ -859,10 +1195,38 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
+   if (globals->debugging) foutput(INF "copying %s to %s for menu #%d\n", picture_save, img->imagepic[menu], menu);
+   copy_file(picture_save, img->highlightpic[menu], globals);
+   copy_file(picture_save, img->selectpic[menu], globals);
++
+   errno = 0;
+   snprintf(command, CHAR_BUFSIZ, "%s %s", mogrify, "+antialias");
+   snprintf(command2, CHAR_BUFSIZ, "%s %s", mogrify, "+antialias");
+ 
++  /* ---- 标题阴影 ----
++     标题（光盘标题）烘在 `svpic.png` 里、被复制到**三层**，所以它在三层
++     的像素一模一样 —— 想在它旁边加个**另一种颜色**的阴影，只能额外往
++     高亮层画一遍（同一层不能有两种颜色，见 mogrify_img 的说明）。
++
++     ⚠️ 必须**追加到 `command`（= command1，作用于 hlpic）**，
++     不能直接在这里改 `img->highlightpic[menu]` 这个文件：
++     `generate_menu_pics()` 紧接着就会
++         copy_file(img->imagepic[menu], img->highlightpic[menu], globals);
++     把 hlpic 用 impic 整个覆盖掉（实测标题阴影就是这样消失的）。
++
++     也要注意放在上面那次 `snprintf(command, ...)` **之后** —— 那句是重置。 */
++  if ((group == -1) && text && img->highlightcolor_pic)
++    {
++      uint16_t xs = EVEN(x((group > 0 ? group : 0), img->ncolumns));
++      char *qc = quote(img->highlightcolor_pic);
++      char sh[2 * CHAR_BUFSIZ];
++
++      snprintf(sh, sizeof(sh),
++               " -fill \"rgb(%s)\" -font %s -pointsize %d"
++               " -draw \"text %u,%u '%s'\" ",
++               qc, img->textfont, DEFAULT_POINTSIZE,
++               (unsigned) (xs + TEXT_SHADOW_DX),
++               (unsigned) (ALBUM_TEXT_Y0 + TEXT_SHADOW_DY), text);
++      free(qc);
++      strcat(command, sh);
++    }
+ 
+   return errno;
+ }
+@@ -920,6 +1284,31 @@ int mogrify_img(char *text, int8_t group, int8_t track, pic *img, uint8_t maxnum
+     }
+ 
+   strcat(command, str);
++
++  /* ---- 文字阴影 ----
++     把同一段文字用 `highlightcolor_pic`（黑）再画一遍、偏移
++     (TEXT_SHADOW_DX, TEXT_SHADOW_DY)，**画进 command = 高亮层**。
++
++     为什么必须在另一层：子画面整幅只有 4 个调色板项，而 spumux 的
++     `s->pal[]` 是从**图像层各像素自己的颜色**取的 —— 同层里再来一种
++     颜色要么被并成同一项，要么直接报 "Too many colors in base picture"。
++     所以「白字 + 黑阴影」只能是两层两种颜色。
++
++     ⚠️ 格式串末尾**必须有空格**：后面 strcat 的是输出文件路径，
++     少了空格两者会粘成一个参数，mogrify 就把结果打到 stdout
++     并返回 0（静默什么都不画，很难查）。 */
++  {
++    char *qh = quote(img->highlightcolor_pic);
++    snprintf(str, 10 * CHAR_BUFSIZ,
++             " %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
++             "-fill", qh, "-font", img->textfont, "-pointsize",
++             (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
++             "-draw", " \"text ", x0 + TEXT_SHADOW_DX, ',',
++             y0 + TEXT_SHADOW_DY, "\'", text, "\'\"");
++    free(qh);
++    strcat(command, str);
++  }
++
+   snprintf(str2, 10 * CHAR_BUFSIZ, " %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
+            "-fill", textcolor, "-font", img->textfont, "-pointsize", (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
+            "-draw", " \"text ", x0, ',', y0, "\'", text, "\'\"");
+@@ -969,6 +1358,233 @@ void test_underline(char *text, pic *img, globalData *globals)
  }
  
  
@@ -1747,10 +1882,12 @@ index facf72b..286fecc 100644
 +   而索引页的 maxbuttons 是格子数 —— 算出来的位置跑到画面外。
 +   矩形必须与 xml.c 输出的箭头按钮一致（INDEX_*_X0/Y0/W）。 */
 +static int mogrify_arrow_abs(const char *text, uint16_t x0, pic *img,
-+                             char *command2, const char *color)
++                             char *command2, char *command1,
++                             const char *color)
 +{
 +  char str[512];
 +  char *q = quote((char *) color);
++  char *qh = quote(img->highlightcolor_pic);
 +  int tw = (img->fontwidth * img->pointsize * (int) strlen(text)) / 10;
 +  uint16_t cx = (uint16_t) (x0 + ((INDEX_ARROW_W > tw)
 +                                  ? (INDEX_ARROW_W - tw) / 2 : 0));
@@ -1764,8 +1901,18 @@ index facf72b..286fecc 100644
 +           " -draw \"text %u,%u '%s'\" ",
 +           q, img->textfont, (int) img->pointsize,
 +           (unsigned) cx, (unsigned) cy, text);
-+  free(q);
 +  strcat(command2, str);
++
++  /* 阴影画进**高亮层**（command1），与下划线同色 —— 原因见 mogrify_img()。 */
++  snprintf(str, sizeof(str),
++           " -fill \"rgb(%s)\" -font %s -pointsize %d"
++           " -draw \"text %u,%u '%s'\" ",
++           qh, img->textfont, (int) img->pointsize,
++           (unsigned) (cx + TEXT_SHADOW_DX), (unsigned) (cy + TEXT_SHADOW_DY),
++           text);
++  strcat(command1, str);
++  free(q);
++  free(qh);
 +  return errno;
 +}
 +
@@ -1773,7 +1920,7 @@ index facf72b..286fecc 100644
  int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *ntracks,  globalData *globals)
  {
    if ((!img->refresh) || (!img->nmenus))   return 0;
-@@ -981,36 +1532,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -981,36 +1597,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
    if (!img->hierarchical)
      {
@@ -1825,7 +1972,8 @@ index facf72b..286fecc 100644
 +          free(albumtext);
 +          albumtext = strdup(DEFAULT_ALBUM_HEADER);
 +        }
-+
+ 
+-      char remainder[strlen(img->screentextchain)];
 +      /* ':' 分组的解析用 f=NULL（没有计数器回调），无 static 泄漏风险 */
 +      grouparray = groupspec ? fn_strtok(groupspec, ':', grouparray,
 +                                         &dim, 0, NULL, NULL, globals)
@@ -1852,8 +2000,7 @@ index facf72b..286fecc 100644
 +      if (tracktext == NULL) perror(ERR "Track text allocation");
 +      grouptext = calloc(dim + 1, sizeof(char **));
 +      if (grouptext == NULL) perror(ERR "Group text allocation");
- 
--      char remainder[strlen(img->screentextchain)];
++
 +      for (k = 0; k < ndef && k < dim; k++)
 +        {
 +          char *q = strchr(grouparray[k], '=');
@@ -1921,7 +2068,7 @@ index facf72b..286fecc 100644
          }
  
        free(grouparray);
-@@ -1090,13 +1736,19 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1090,13 +1801,19 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -1943,7 +2090,7 @@ index facf72b..286fecc 100644
  
        prepare_overlay_img(albumtext, -1, img, command1, command2, menu, img->albumcolor, globals);
        //free(albumtext);  // segfault here under linux for unknown reasons. TO: fix it.
-@@ -1112,7 +1764,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1112,7 +1829,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                    /* Vicious issue here: use DEFAULT_GROUP_HEADER such that the underline for highlighting does not cut a letter.
                                   With lower-case "group", this happens as the underline cuts the 'p'. Two ways out: underline lower or use another label/use uppercase
                                   Note: This issue was tested to cause spumux crash */
@@ -1952,7 +2099,7 @@ index facf72b..286fecc 100644
                    groupcount++;
                    buttons++;
  
-@@ -1123,13 +1775,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1123,13 +1840,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
            else if (groupcount < ngroups)
              {
@@ -1968,7 +2115,7 @@ index facf72b..286fecc 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1143,19 +1795,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1143,19 +1860,74 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                  }
              }
          }
@@ -2002,11 +2149,13 @@ index facf72b..286fecc 100644
 +                                                : DEFAULT_NEXT,
 +                                        is_last ? INDEX_PREV_X0
 +                                                : INDEX_NEXT_X0,
-+                                        img, command2, img->arrowcolor);
++                                        img, command2, command1,
++                                        img->arrowcolor);
 +
 +                      if (menu && !is_last)
 +                        mogrify_arrow_abs(DEFAULT_PREVIOUS, INDEX_PREV_X0,
-+                                          img, command2, img->arrowcolor);
++                                          img, command2, command1,
++                                          img->arrowcolor);
 +                    }
 +
 +                  buttons = img->maxbuttons;
@@ -2043,7 +2192,7 @@ index facf72b..286fecc 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1175,20 +1880,50 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1175,20 +1947,50 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -2108,7 +2257,7 @@ index facf72b..286fecc 100644
  
        char *q = quote(img->imagepic[menu]);
        strcat(command2, q);
-@@ -1238,7 +1973,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1238,7 +2040,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
    free(grouptext);
    free(tracktext);
  
