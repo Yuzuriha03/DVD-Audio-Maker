@@ -2,6 +2,16 @@
 # -*- coding: utf-8 -*-
 """把静图的导航扇区从 mplex 的「空壳」改成商业盘形态（去掉空 DSI）。
 
+> ## 🚫 本脚本已作废 —— 不要运行
+>
+> 它的效果**已经改由 C 实现**：`src/menu.c` 的
+> `dvda_rewrite_nav_sector()`，在 `generate_background_mpg()` 的静图循环里
+> 紧跟 `dvda_pad_program_end()` 调用。
+>
+> 本脚本要修改的目标（`02_build.py` 的 `build_disc()` 里的 AOB 补零段）
+> **已被删除**，所以它现在必定报 `[FAIL] 找不到 AOB 补零段`。
+> 下面的实现细节只是历史记录；要重新应用请照它写 C 代码，别跑这个脚本。
+
 ## 依据（2026-09-23 实测，五张盘）
 
 `AUDIO_SV.VOB` 里每张静图的**第 1 个扇区是导航扇区**：
