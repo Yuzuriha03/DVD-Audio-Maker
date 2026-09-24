@@ -263,14 +263,19 @@ def check_index_cells(vob, n_index_pages, n_albums, label):
     # 每格都判成「缺内容」。`identify -crop` 本身就按裁剪区统计。
     #
     # 三条判据缺一不可（只用第一条会漏，只用后两条也会漏）：
-    #  · 背景黑    —— 抓 `-repage` 作用域错：那时画布是 **白**底，
-    #                 而「缩略图区非黑」「名称区有亮像素」在白底上都会误判为通过
+    #  · 背景**不是白**—— 抓 `-repage` 作用域错：那时画布会变成 flatten 的
+    #                  **白**底（实测角落 ≈ 238），而「缩略图区非黑」「名称区
+    #                  有亮像素」在白底上都会误判为通过。
+    #                  ⚠️ 阈值不能像以前那样定成「接近黑」：索引页现在有
+    #                  **模糊拼贴背景图**，格子角落是背景（实测 ≈ 75），
+    #                  而对角的缩略图 ≈ 116 —— 用 160 既能放过背景，
+    #                  又远远低于白底的 238。
     #  · 缩略图非空—— 抓格子漏画（那种情况缺口是**黑**的）
     #  · 名称深底+亮字 —— 有白字说明名称画上了；纯色区域（黑/白）都不算
     for i in range(want):
         ox, oy = (i % ma.INDEX_COLS) * cw, top + (i // ma.INDEX_COLS) * ch
         bg = stat("%[fx:mean*255]", ox + 1, oy + 1, 3, 3)
-        if bg is None or bg > 20:
+        if bg is None or bg > 160:
             bad_bg.append(i)
         th = stat("%[fx:mean*255]", ox + tx, oy + ins, tw, tw)
         if th is None or th <= 3:
@@ -284,7 +289,7 @@ def check_index_cells(vob, n_index_pages, n_albums, label):
     if bad_bg or bad_thumb or bad_label:
         print(f"  [FAIL] 索引页格子内容异常（第 1 页，共 {want} 格）")
         if bad_bg:
-            print(f"         · 格子外背景不是黑的: {bad_bg}")
+            print(f"         · 格子角落发白（不该是白底）: {bad_bg}")
             print("           → 十有八九是 make_index_page() 的 `-repage`")
             print("             写到了 `( )` 外面，画布变成 flatten 的白底")
         if bad_thumb:

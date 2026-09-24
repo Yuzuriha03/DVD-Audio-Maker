@@ -3295,3 +3295,69 @@ identify -format "%[fx:mean.a*w*h]\n" impic0.png hlpic0.png
 
 **教训**：自己拼 `mogrify` 命令时，**每一段末尾都留空格**；
 或者干脆把输出文件名放在命令**开头之后立刻**拼接，别依赖前一段的尾巴。
+
+---
+
+## 23. 子画面只有 4 个调色板项 → 一层只能用一种颜色
+
+给菜单文字加「黑阴影」时踩到这条，值得记一下。
+
+DVD 子画面（subpicture）整幅**只有 4 个调色板项**。spumux 的
+`s->pal[]` 是按「**图像层各像素自己的颜色**」填的（见 dvdauthor 的
+`subgen-image.c`）：
+
+```c
+for (i = 0; i < w * h; i++) {
+    if (s->fimg[i] != 255) s->pal[s->fimg[i]] = s->img.pal[s->img.img[i]];
+}
+...
+for (j = 0; j < 4; j++) if (s->pal[j].a == 0 && s->pal[j].r == 255) {
+    s->pal[j] = *p; goto if_found;      /* 插入新颜色，最多 4 个 */
+}
+fprintf(stderr, "ERR:  Too many colors in base picture\n");
+```
+
+后果：
+
+* **同一层内不能出现第二种颜色** —— 要么被合并成同一个调色板项
+  （看起来还是一种色），要么直接报 `Too many colors`；
+* 而且 dvda-author 给 `impic` / `hlpic` / `slpic` 三层各写一次，
+  **最多三层颜色**（`s->pal` 里 fimg 占 3 个 + 1 个透明）。
+
+所以「白字 + 黑阴影」只能是**两层两种颜色**：
+
+| 层 | 内容 | 颜色 |
+|---|---|---|
+| 图像层 `impic` | 正文文字 | 白（`DEFAULT_TEXTCOLOR_PIC`）|
+| 高亮层 `hlpic` | 下划线 / 按钮框 / **文字阴影** | 黑（`DEFAULT_HCOLOR_PIC`）|
+
+`_PALETTE` 那一组才是屏幕上看到的颜色（`_PIC` 只是 dvda-author 内部标记），
+两组默认值在 `commonvars.h` 里刻意保持一致。
+
+⚠️ `_PIC` 三者**必须互不相同** —— `command_line_parsing.c` 里有一处检查，
+任意两项相同就整套重置回默认值。
+
+### 顺带一个坑：`prepare_overlay_img()` 里改 `hlpic` 会被覆盖
+
+标题（光盘标题）烘在 `svpic.png` 里、复制到三层，所以要在它旁边加阴影
+只能**追加到 `command1`**（作用于 hlpic 的那条 mogrify 命令）。直接在
+`prepare_overlay_img()` 里对 `img->highlightpic[menu]` 跑一次 mogrify
+**无效** —— `generate_menu_pics()` 紧接着就会
+
+```c
+copy_file(img->imagepic[menu], img->highlightpic[menu], globals);
+```
+
+把它整个覆盖掉。而且 `command1` 在那句 `copy_file` **之前**被
+`snprintf(command, ...)` 重置过一次，所以追加必须在重置之后。
+
+---
+
+## 24. `mogrify` / `-draw` 画不上：三个已踩过的原因
+
+1. **命令串末尾少空格** → 输出文件名与前一段粘连（第 22 节）。
+2. **`-draw` 作用在多层图像列表上** → 「先贴图再画边框」时，边框被
+   后面 `-flatten` 的叠加顺序盖掉，或落到某一张图自己的坐标系里。
+   正确做法：**先合成为成品文件，再单独跑一遍 `-draw`**。
+3. **`rgba(0,0,0,alpha)` 的 alpha 在灰度图上被忽略** → 半透明白会随
+   alpha 变化，半透明黑却永远是纯黑。要确定的效果就用**不透明色**。

@@ -56,6 +56,7 @@ DEFAULTS = {
     # 一级菜单（专辑索引页）：一页 4x4 缩略图，点一下跳到该专辑的选曲页。
     # 专辑数少于这个值就不做一级菜单。0 = 总是做。
     "DVDA_MENU_INDEX_MIN_ALBUMS": "4",
+    "DVDA_MENU_INDEX_BG": "auto",  # auto | covers | 图片路径
     "DVDA_MENU_STILLPICS": "on",   # 播放时显示所属专辑封面
     "DVDA_MENU_COVER_DIM": "35",   # 选曲页背景压暗百分比（越大越暗）
     "DVDA_MENU_FONT": "Noto-Sans-CJK-SC",  # 需覆盖 ASCII/汉字/假名/韩文
@@ -356,7 +357,18 @@ class Config:
     def menu_cover_dim(self):
         """菜单背景图上封面压暗的百分比（0~100，越大越暗、白字越清楚）。"""
         v = self.get_int("DVDA_MENU_COVER_DIM")
-        return max(0, min(100, 70 if v is None else v))
+        return max(0, min(100, 35 if v is None else v))
+
+    @property
+    def menu_index_bg(self):
+        """一级菜单（索引页）的背景。
+
+          `auto`（默认）  —— `menu_assets.make_index_backdrop()` 现画：
+                              对角渐变 + 与格子对齐的细网格 + 径向暗角
+          `covers`         —— 本页封面拼贴后重度模糊
+          `/path/img.jpg`  —— 用这张图（填满再裁 + 按 COVER_DIM 压暗）
+        """
+        return (self.get("DVDA_MENU_INDEX_BG") or "auto").strip()
 
     @property
     def menu_font(self):
