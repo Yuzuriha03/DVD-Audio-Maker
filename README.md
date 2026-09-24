@@ -91,7 +91,6 @@ bash verify.sh
 > **已经有 MLP 文件、不想再转码？** 把 `DVDA_MLP_SOURCE` 设为 `external`
 > 并指向 MLP 目录，流水线会**跳过编码**直接用它们出盘。
 > 见 [外部 MLP：怎么摆放与配置](#外部-mlp怎么摆放与配置)。
-
 ### 6. （可选）生成 MLP 要用什么工具
 
 本节只对「想用外部工具生成 MLP」的人有意义，不需要就跳过。
@@ -237,6 +236,92 @@ bash build.sh
 详见 [选曲菜单](#选曲菜单) 一节。
 
 ---
+
+---
+
+
+---
+
+## 从仓库到成品盘（完整流程）
+
+### 一次性准备（新机器）
+
+```bash
+# 1) 依赖
+sudo apt install python3 ffmpeg make gcc autoconf xorriso mjpegtools imagemagick \
+                 libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+
+# 2) 本仓库
+git clone <本仓库> DVD-Audio-Maker && cd DVD-Audio-Maker
+
+# 3) 工具链源码树（本工程对 dvda-author 的改动以 patch 形式在仓库里）
+git clone https://github.com/fabnicol/dvda-author ../tools/dvda-author-mlp8
+cd ../tools/dvda-author-mlp8
+git checkout 8fca43a
+git apply /path/to/DVD-Audio-Maker/docs/dvda-author-changes.patch
+cd -
+bash build_dvda_author_mlp.sh          # 编译出 dvda-author-dev 与 menu-bin
+
+# 4) 配置：只改 config.sh 一个文件
+#    DVDA_SRC              音源根目录
+#    DVDA_FINAL_DIR        ISO 输出目录
+#    DVDA_MLP_SOURCE / DVDA_MLP_EXTERNAL_DIR   用外部 MLP 时填
+#    DVDA_MENU             on = 选曲菜单 + 播放封面
+python3 dvda_config.py                 # 核对生效值
+```
+
+### 出盘
+
+```bash
+bash build.sh              # 全流程：扫描音源 → 编码/收取 MLP → 分盘
+                           #         → 生成 AUDIO_TS → 打包 ISO
+bash build.sh --dry-run    # 先看分盘计划（不出盘，秒级）
+bash verify.sh all         # 校验成品（结构 / 时间轴 / 无损性）
+```
+
+产物写在 `DVDA_FINAL_DIR`；若配了 `DVDA_WINDOWS_DEST`，会自动用
+Windows 侧 robocopy 拷到 Windows（比走 9P 快得多）。
+
+### 本工作副本的快捷入口
+
+日常工作副本（`/home/yyz57/dvda`）用 `local-bin/dvda.sh` ——
+它会**自动加载 `local-bin/env.sh`**（本机专用的覆盖值）：
+
+```bash
+bash local-bin/dvda.sh all                  # 只跑 02_build（沿用已有分盘计划）
+bash local-bin/dvda.sh one 2                # 只重建第 2 盘（快）
+bash local-bin/dvda.sh author               # 重编工具链
+bash local-bin/dvda.sh verify all           # 校验
+bash local-bin/dvda.sh copy out/xxx.iso     # robocopy 拷出
+```
+
+| 命令 | 做了什么 | 何时用 |
+|---|---|---|
+| `build.sh` | `01_prepare` + `02_build`（全流程） | 音源变过、要重算分盘 |
+| `dvda.sh all` | 只 `02_build` | 音源没变，只是重出盘 |
+| `dvda.sh one N` | 只出第 N 盘 | 只改了一盘的参数，省时间 |
+
+> ⚠️ **`build.sh` 也会加载 `local-bin/env.sh`**（若存在）。
+> 不加载它就会走 `config.sh` 的默认值 —— 例如用 ffmpeg 自编 MLP、
+> 写 `build/` 而不是 `build-ext/`，看起来像「配置坏了」。2026-09-24 修。
+
+### 改工具链源码
+
+改动**直接改源码树并 commit**，不再写补丁脚本：
+
+```bash
+cd tools/dvda-author-mlp8
+vim src/menu.c
+bash ../../dvda/local-bin/dvda.sh author          # 编译验证
+git commit -am "改了什么"                          # 提交到 dvda-maker 分支
+
+# 更新仓库里的改动集（供别的机器重建）
+git diff master -- src libutils \
+  > ../../dvda/scripts/docs/dvda-author-changes.patch
+```
+
+每项改动的依据见 [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.md)，
+试过但没接入的见 [`docs/DVDA-AUTHOR-DISABLED.md`](docs/DVDA-AUTHOR-DISABLED.md)。
 
 ## 路径怎么写
 
