@@ -483,7 +483,8 @@ DVD-Audio-Maker/
 | `DVDA_MENU` | `off` | 是否做出选曲菜单 + 播放封面（`on` / `off`） |
 | `DVDA_MENU_TRACKS_PER_PAGE` | `12` | 菜单每页最多几首；越小字越大、页越多 |
 | `DVDA_MENU_STILLPICS` | `on` | 播放时是否显示所属专辑封面（占 ASVS 预算） |
-| `DVDA_MENU_COVER_DIM` | `70` | 菜单背景上封面压暗程度（0~100，越大越暗、白字越清楚） |
+| `DVDA_MENU_COVER_DIM` | `35` | 二级菜单背景上封面压暗程度（0~100，越大越暗、白字越清楚） |
+| `DVDA_MENU_INDEX_MIN_ALBUMS` | `4` | 专辑数达到此值才做一级「专辑索引」页；`0` = 一直做 |
 | `DVDA_MENU_FONT` | `Droid-Sans-Fallback` | 菜单字体（ImageMagick 字体名，**不能带空格**）；不可用时会自动换 |
 | `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
 | `DVDA_MKISOFS` | `/root/dvda-author-mlp8/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs（支持 `-dvd-audio`） |
@@ -601,7 +602,16 @@ bash build_dvda_author_mlp.sh      # 会顺便编出菜单用的 dvdauthor / spu
 
 ### 菜单长什么样
 
-**一页一个专辑**，新专辑自动换页：
+菜单是**两级**的：
+
+**一级 = 专辑索引页**（专辑数 >= `DVDA_MENU_INDEX_MIN_ALBUMS` 时才做）
+
+- 4 列 x 3 行的**专辑封面缩略图**，一页最多 12 个专辑。
+- 按某个缩略图 → 跳到该专辑的选曲页（二级）。
+- 底部有上一页 / 下一页（专辑多于 12 个时才有意义）。
+- 专辑多于 12 个时一级菜单本身也会分页。
+
+**二级 = 选曲页**，一页一个专辑：
 
 - 页面顶部是**大标题 = 光盘标题**（每页都有）。
 - 接着是**小标题 = 该专辑名**（比大标题略小）。
@@ -609,6 +619,8 @@ bash build_dvda_author_mlp.sh      # 会顺便编出菜单用的 dvdauthor / spu
   一页只有一个专辑，不需要）。
 - 每页背景 = **该专辑的封面**（铺满画面，压暗 `DVDA_MENU_COVER_DIM`%
   以便读字；缺 `cover.jpg` 的专辑留黑）。
+- 二级菜单的压暗值刻意比商业盘更亮，封面能看清；正文用白字加描边
+  保证对比度。
 - 页码多于 1 时，右下角有上一页 / 下一页按钮。
 - 专辑曲目数超过 `DVDA_MENU_TRACKS_PER_PAGE` 时该专辑拆成两页
   （续页小标题带「（续）」）。
@@ -625,9 +637,10 @@ bash build_dvda_author_mlp.sh      # 会顺便编出菜单用的 dvdauthor / spu
 ### 可以调的地方
 
 ```bash
-DVDA_MENU_TRACKS_PER_PAGE="12"   # 一页最多几首（专辑超过才拆页）；越小字越大
-DVDA_MENU_COVER_DIM="70"         # 调大 → 背景更暗、白字更清楚
-DVDA_MENU_STILLPICS="on"         # 设 off 则不显示播放封面（只做菜单）
+DVDA_MENU_TRACKS_PER_PAGE="12"    # 一页最多几首（专辑超过才拆页）；越小字越大
+DVDA_MENU_COVER_DIM="35"          # 调大 → 背景更暗、白字更清楚
+DVDA_MENU_STILLPICS="on"          # 设 off 则不显示播放封面（只做菜单）
+DVDA_MENU_INDEX_MIN_ALBUMS="4"    # 专辑少于这个数就不做一级索引页
 ```
 
 ### 注意

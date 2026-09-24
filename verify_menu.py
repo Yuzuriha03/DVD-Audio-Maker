@@ -461,6 +461,12 @@ def main():
             pages = len(menu_assets.album_pages(
                 album_of, min(cfg.menu_tracks_per_page,
                               menu_assets.MAX_MENU_ROWS)))
+            # 一级菜单（专辑索引页）排在最前：每页 4x3 张缩略图。
+            # 页数要加上它们，否则「菜单页数 = 专辑数」的判据会误报。
+            n_idx = -(-pages // menu_assets.INDEX_PER_PAGE) if pages else 0
+            if n_idx and pages < cfg.menu_index_min_albums:
+                n_idx = 0
+            pages += n_idx
             # 播放封面的预期：**每轨**一张图（同专辑复用同一张 jpg 文件），
             # 所以期望张数 = 该盘的轨数，与 menu_assets 的做法一致。
             album_dirs, seen = [], set()

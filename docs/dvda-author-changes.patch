@@ -1,53 +1,3 @@
-From e65b3a0c7131e6d561ae488e0b5f6b3189ac0210 Mon Sep 17 00:00:00 2001
-From: yyz57 <yyz57@localhost>
-Date: Thu, 24 Sep 2026 17:52:56 +0800
-Subject: [PATCH] =?UTF-8?q?=E6=9C=AC=E5=B7=A5=E7=A8=8B=E7=9A=84=E5=85=A8?=
- =?UTF-8?q?=E9=83=A8=E6=94=B9=E5=8A=A8=EF=BC=8820=20=E4=B8=AA=E6=96=87?=
- =?UTF-8?q?=E4=BB=B6=EF=BC=89?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
-
-上游基线 8fca43a。改动集原先由 25 个 Python 补丁脚本重放，
-2026-09-24 起改为直接提交到这个分支 —— 更精确、天然幂等、可 diff / 可回滚。
-
-每项改动的依据（为什么、反例、实测数据）见
-scripts/docs/DVDA-AUTHOR-CHANGES.md；试过但没接入的见
-scripts/docs/DVDA-AUTHOR-DISABLED.md。
-
-主要内容：
-- FFmpeg 8 迁移（mlp.c：ch_layout / pkt_pos / 24-bit / planer 格式）
-- 一个音频组只生成一个 title（支持逐轨切歌，否则「下一曲」无效）
-- ASVS / 静图四处：0x19 置 0、每图偏移 base_sect+off_sect、
-  导航扇区去 mplex 空 DSI、结束码独占扇区
-- 静图记录的两个偏移字段按轨递进（否则同一专辑内切曲目不换封面）
-- 制式与逐行/隔行改为按实际码流自检（取代写死 0x53 / 无条件改 1）
-- 选曲菜单 10 项：分页、排版、箭头、AMG cell 地址、一页一专辑等
-- 上游缺陷：fn_strtok 空串越界写栈、write_pes_padding 漏写字节（每盘丢1轨）、
-  ATSI 固定 3 扇区缓冲（>70 轨栈溢出）
----
- libutils/src/include/winport.h |  13 +
- libutils/src/libc_utils.c      |   2 +-
- libutils/src/winport.c         |  15 +-
- src/amg2.c                     |  76 +++-
- src/asvs.c                     |  33 +-
- src/ats.c                      | 101 +++--
- src/atsi2.c                    | 106 +++--
- src/audio.c                    |  48 +--
- src/auxiliary.c                |  23 +-
- src/command_line_parsing.c     |  52 ++-
- src/dvda-author.c              |   7 +-
- src/include/audio2.h           |   1 +
- src/include/commonvars.h       |   7 +
- src/include/menu.h             |   4 +
- src/include/structures.h       |  19 +
- src/launch_manager.c           |  22 +-
- src/libsoxconvert.c            |  20 +
- src/menu.c                     | 686 +++++++++++++++++++++++++++++++--
- src/mlp.c                      | 260 ++++++-------
- src/xml.c                      | 110 ++++--
- 20 files changed, 1251 insertions(+), 354 deletions(-)
-
 diff --git a/libutils/src/include/winport.h b/libutils/src/include/winport.h
 index 8e1a52c..0a21ae8 100644
 --- a/libutils/src/include/winport.h
@@ -117,7 +67,7 @@ index 5460196..7c50d0b 100644
  
  DWORD write_to_child_stdin(
 diff --git a/src/amg2.c b/src/amg2.c
-index e6f9e21..94b314e 100644
+index e6f9e21..be435ec 100644
 --- a/src/amg2.c
 +++ b/src/amg2.c
 @@ -99,20 +99,24 @@ uint16_t create_tracktables(command_t *command, uint8_t naudio_groups, uint8_t n
@@ -194,19 +144,27 @@ index e6f9e21..94b314e 100644
            if (errno) perror("\n"ERR "AMG: amgm_xml\n");
          }
        if (img->nmenus && img->menuvobsize == NULL)
-@@ -488,7 +498,10 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+@@ -273,6 +283,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+                 foutput(MSG_TAG "Top menu is: %s with size %"PRIu32" KB\n", img->topmenu[menu], img->menuvobsize[menu]);
+             }
+ 
++
+       launch_dvdauthor(globals);
+       break;
+ 
+@@ -488,7 +499,10 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
    uint32_copy(sec2_ptr, 1);
    uint32_copy(sec3_ptr, 2);
    uint32_copy(sec4_ptr, (menusector) ? 3 : 0);
 -  uint32_copy(unknown2, menusector ? 0x53000000 : 0);
 +  /* 菜单区视频属性（制式）由 AUDIO_TS.VOB 自检得出，
-+     见 patches/patch_mpeg2_autodetect.py。 */
++     见 docs/DVDA-AUTHOR-CHANGES.md。 */
 +  uint32_copy(unknown2, (menusector)
 +              ? ((uint32_t) dvda_video_attr_of(img->tsvob, img, globals) << 24) : 0);
    uint32_copy(unknown3, menusector ? 0x00010000 : 0);
    uint32_copy(top_menu_lpcm_tag, (img->h + img->min + img->sec) ? 0x00018001 : 0);
    uint16_copy(n_totaltitles, totaltitles);
-@@ -858,7 +871,19 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+@@ -858,7 +872,19 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
                i += 4;
              }
            else i += 12;
@@ -227,7 +185,7 @@ index e6f9e21..94b314e 100644
            i += 4;
            uint32_check(&amg[i], 0x00010001);
            i += 4;
-@@ -889,7 +914,7 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+@@ -889,7 +915,7 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
  
        int c, d;
  
@@ -236,19 +194,19 @@ index e6f9e21..94b314e 100644
        i = d;
        memcpy(&amg[i], "DVDATXTDT-MG", 12);
        i += 12;
-@@ -1056,7 +1081,10 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+@@ -1056,7 +1082,10 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
    uint32_copy(&amg[0xc8], 2);  	// Pointer to sector 3
    uint32_copy(&amg[0xcc], (menusector) ? 3 : 0);  	// Pointer to sector 4
    uint32_copy(&amg[0xd4], (globals->text) ? 3 + (menusector) : 0);  	// Pointer to sector 5
 -  uint32_copy(&amg[0x100], (menusector) ? 0x53000000 : 0); // Unknown;  // 0x1E000000 used to be uset in SET2
 +  /* 菜单区视频属性（制式）由 AUDIO_TS.VOB 自检得出（上游硬编码 0x53=PAL），
-+     见 patches/patch_mpeg2_autodetect.py。 */
++     见 docs/DVDA-AUTHOR-CHANGES.md。 */
 +  uint32_copy(&amg[0x100], (menusector)
 +              ? ((uint32_t) dvda_video_attr_of(img->tsvob, img, globals) << 24) : 0);
    uint32_copy(&amg[0x154], (menusector) ? 0x00010000 : 0); // Unknown;
    uint32_copy(&amg[0x15C], (img->h + img->min + img->sec) ? 0x00018001 : 0); // 2ch 48k LPCM audio (signed big endian) in mpeg2 top menu, 1 stream,
  
-@@ -1395,7 +1423,19 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+@@ -1395,7 +1424,19 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
                i += 4;
              }
            else i += 12;
@@ -269,7 +227,7 @@ index e6f9e21..94b314e 100644
            i += 4;
            uint32_copy(&amg[i], 0x00010001);
            i += 4;
-@@ -1426,7 +1466,7 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+@@ -1426,7 +1467,7 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
  
        int c, d;
  
@@ -279,7 +237,7 @@ index e6f9e21..94b314e 100644
        memcpy(&amg[i], "DVDATXTDT-MG", 12);
        i += 12;
 diff --git a/src/asvs.c b/src/asvs.c
-index d13f6f5..9c6ca8f 100644
+index d13f6f5..3271260 100644
 --- a/src/asvs.c
 +++ b/src/asvs.c
 @@ -58,6 +58,7 @@
@@ -309,7 +267,7 @@ index d13f6f5..9c6ca8f 100644
 +  /* 视频属性（制式）由**实际产出的 AUDIO_SV.VOB** 自检得出：
 +     0x43 = 525/60 (NTSC)，0x53 = 625/50 (PAL)。
 +     上游此处硬编码 0x53，故传 -4 ntsc 时会写成「声明 PAL 实播 NTSC」。
-+     见 patches/patch_mpeg2_autodetect.py。 */
++     见 docs/DVDA-AUTHOR-CHANGES.md。 */
 +  asvs[0x18] = dvda_video_attr_of(img->stillvob, img, globals);
 +  /* 商业盘一致为 0（Enigma 0x53/0x00、李娜 0x43/0x00、巴赫 0x43/0x00）。
 +     原值 1 的语义是「激活按钮」，而 --stillpics 生成的静图**没有按钮**，
@@ -781,7 +739,7 @@ index d5c71b5..29d07c9 100644
    // exactly k=size-2 cuts, k+1 substrings and array filled with k+1 substrings and NULL-terminating pointer, so array is sized size*sizeof(char)
    *size = k + 2;
 diff --git a/src/command_line_parsing.c b/src/command_line_parsing.c
-index 4814ecc..ad9e82e 100644
+index 4814ecc..f7189cd 100644
 --- a/src/command_line_parsing.c
 +++ b/src/command_line_parsing.c
 @@ -196,6 +196,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
@@ -792,7 +750,42 @@ index 4814ecc..ad9e82e 100644
  
    // refreshing output and temporary directories by
  
-@@ -2513,6 +2514,7 @@ separated by a colon, with rgb components by commas");
+@@ -327,6 +328,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
+     {"lossy-rounding", no_argument, NULL, 'L'},
+     {"background-colors", required_argument, NULL, 2},
+     {"bindir", required_argument, NULL, 3},
++    {"index-pages", required_argument, NULL, 43},
+     {"topmenu-slides", required_argument, NULL, 6},
+     {"check-version", no_argument, NULL, 8},
+     {"import-topmenu", required_argument, NULL, 9},
+@@ -1984,8 +1986,7 @@ separated by a colon, with rgb components by commas");
+           fontchain = strdup(optarg);
+ 
+           if (fontchain)
+-            {
+-              img->fontwidth = (int8_t) atoi(fontchain);
++            {              img->fontwidth = (int8_t) atoi(fontchain);
+               foutput(ANSI_COLOR_MAGENTA "[PAR]" ANSI_COLOR_RESET
+                       "  Font width: %d\n", img->fontwidth);
+             }
+@@ -2054,6 +2055,16 @@ separated by a colon, with rgb components by commas");
+                   "  Using %d menu columns.\n", img->ncolumns);
+           break;
+ 
++        case 43:
++          /* 一级菜单（专辑索引页）：前 N 页是缩略图网格。
++             页上的「曲目」是专辑格子，按钮是 `jump menu`。
++             见 menu.c 的 compute_menu_pages 与 xml.c 的分支。 */
++          img->index_pages = (uint8_t) atoi(optarg);
++          foutput(ANSI_COLOR_MAGENTA "[PAR]" ANSI_COLOR_RESET
++                  "  First %d menu screen(s) are album index pages.\n",
++                  (int) img->index_pages);
++          break;
++
+         case 3:
+           free(globals->settings.bindir);
+           globals->settings.bindir = make_absolute(optarg);
+@@ -2513,6 +2524,7 @@ separated by a colon, with rgb components by commas");
  
          case 'b':
            str = strdup(optarg);
@@ -800,7 +793,7 @@ index 4814ecc..ad9e82e 100644
  
            if (img->backgroundmpg)
              {
-@@ -2536,10 +2538,20 @@ separated by a colon, with rgb components by commas");
+@@ -2536,10 +2548,20 @@ separated by a colon, with rgb components by commas");
                foutput("%s\n", WAR "You did not give enough filenames,"
                        " completing with last one");
  
@@ -825,7 +818,7 @@ index 4814ecc..ad9e82e 100644
              }
  
            free(str);
-@@ -2685,7 +2697,11 @@ separated by a colon, with rgb components by commas");
+@@ -2685,7 +2707,11 @@ separated by a colon, with rgb components by commas");
          }
      }
  
@@ -838,7 +831,7 @@ index 4814ecc..ad9e82e 100644
      {
        if (globals->veryverbose)
          foutput("%s\n", INF "Converting overlay .png blankscreen"
-@@ -2838,13 +2854,18 @@ separated by a colon, with rgb components by commas");
+@@ -2838,13 +2864,18 @@ separated by a colon, with rgb components by commas");
        copy_file2dir_rename(img->backgroundpic[0],
                             globals->settings.tempdir, "bgpic0.jpg", globals);
  
@@ -859,7 +852,7 @@ index 4814ecc..ad9e82e 100644
            }
  
        __attribute__((fallthrough));
-@@ -2965,6 +2986,16 @@ separated by a colon, with rgb components by commas");
+@@ -2965,6 +2996,16 @@ separated by a colon, with rgb components by commas");
                                       pics_per_track, &size, 0,
                                       NULL, NULL, globals);
            indir = false;
@@ -876,7 +869,16 @@ index 4814ecc..ad9e82e 100644
          }
  
        uint16_t dim, DIM = 0, w;
-@@ -4481,4 +4512,11 @@ void normalize_temporary_paths(pic *img, globalData *globals)
+@@ -4083,7 +4124,7 @@ void extract_list_parsing(const char *arg,
+                   " format is --extract=group1:track1,track11,...,track1n"
+                   "-...-groupN:trackN1,trackN2,...,trackNn");
+           foutput("%s\n", WAR "Example --extract=3:1,3,4-5:6,7\n"
+-                  "performs of extraction of tracks n�1, 3 and 4 in group 1"
++                  "performs of extraction of tracks n�1, 3 and 4 in group 1"
+                   " and tracks 6 and 7 in group 5.\n ");
+           return;
+         }
+@@ -4481,4 +4522,11 @@ void normalize_temporary_paths(pic *img, globalData *globals)
    globals->highlightpicsize = img->nmenus + 1;
    globals->backgroundmpgsize = img->nmenus + 1;
    globals->selectpicsize = img->nmenus + 1;
@@ -938,7 +940,7 @@ index df1244e..7b997ec 100644
  #define DEFAULT_FONTWIDTH  6  // 6 pixels for size 10 in Courier
  #define DEFAULT_SCREENTEXT "ALBUM=Group 1 - Track 1,Group 1 - Track 2:Group 2 - Track 1,Group 2 - Track 2";
 diff --git a/src/include/menu.h b/src/include/menu.h
-index 5ab0a6a..7388b94 100644
+index 5ab0a6a..f4fdbca 100644
 --- a/src/include/menu.h
 +++ b/src/include/menu.h
 @@ -15,6 +15,7 @@ int  launch_spumux(pic* img, globalData*);
@@ -949,17 +951,55 @@ index 5ab0a6a..7388b94 100644
  int create_stillpic_directory(char* string, int32_t count, globalData*);
  void create_activemenu(pic* img, globalData* globals);
  int create_mpg(pic* img, uint16_t rank, char* mp2track, char* tempfile, globalData*);
-@@ -23,5 +24,8 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
+@@ -23,5 +24,46 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
  void initialize_binary_paths(char level, globalData*);
  void menu_characteristics_coherence_test(pic* img, uint8_t ngroups, globalData*);
  void compute_pointsize(pic* img, uint16_t maxtracklength, uint8_t maxnumtracks, globalData*);
 +/* 由码流自检得出 DVD 视频属性字节（0x43 = NTSC，0x53 = PAL）。
-+   见 patches/patch_mpeg2_autodetect.py。 */
++   见 docs/DVDA-AUTHOR-CHANGES.md。 */
 +uint8_t dvda_video_attr_of(const char* path, pic* image, globalData* globals);
++/* ---- 一级菜单（专辑索引页）的缩略图网格 ----
++
++   前 `img->index_pages` 页是专辑缩略图网格，点一下跳到该专辑的
++   选曲页（`jump menu`）。格子几何必须三方一致：
++     · menu.c   mogrify_thumb()      —— 画按钮区域（描边矩形）
++     · xml.c    按钮 / spumux 坐标
++     · menu_assets.py  make_index_page() —— 缩放略图
++
++       格子(col,row) = (col*CELL_W + INSET, row*CELL_H + INSET)，尺寸 CELL_W-2*INSET
++
++   三方不一致就会出现「点到的不是想选的那张」。
++
++   ⚠️ 网格只占**上面 INDEX_ROWS 行**，底部 144 px 是翻页箭头带 ——
++   索引页也要能翻页（专辑多于一页时没箭头就走不掉）。
++   箭头用**绝对坐标**（下面的 INDEX_*_X0/Y0），不能走
++   compute_coordinates()：那里按「行」分行，而索引页的 maxbuttons
++   是格子数，两者不是一回事（曾经因此拿到未初始化的坐标，
++   spumux 直接报 "Button coordinates out of range" 并输出 0 字节）。 */
++#define INDEX_COLS   4
++#define INDEX_ROWS   3
++#define INDEX_INSET  5
++
++/* 格子尺寸是**显式常量**，不能写 norm_x/COLS、norm_y/ROWS ——
++   后者会把整个画面均分（576/3 = 192），而网格只占上面 432 px，
++   下面 144 px 要留给箭头带。两边不一致时按钮区与缩略图就错位。 */
++#define INDEX_CELL_W 180
++#define INDEX_CELL_H 144
++#define INDEX_PER_PAGE (INDEX_COLS * INDEX_ROWS)
++
++/* 索引页第 p 页、第 k 格的专辑，其内容页（菜单号 1-based）=
++     index_pages + p * INDEX_PER_PAGE + k + 1
++   menu_assets.py 的 INDEX_PER_PAGE 必须与此相同。 */
++
++#define INDEX_ARROW_Y0   476      /* 箭头带：网格下方，垂直居中 */
++#define INDEX_ARROW_Y1   532
++#define INDEX_ARROW_W    160
++#define INDEX_PREV_X0     40
++#define INDEX_NEXT_X0    520
  #endif
  #endif // HAVE_MENU_C
 diff --git a/src/include/structures.h b/src/include/structures.h
-index 3ca9470..6c18d50 100644
+index 3ca9470..ae75ef4 100644
 --- a/src/include/structures.h
 +++ b/src/include/structures.h
 @@ -81,6 +81,12 @@ typedef struct
@@ -975,7 +1015,7 @@ index 3ca9470..6c18d50 100644
  } fileinfo_t;
  
  typedef struct
-@@ -156,6 +162,19 @@ typedef struct
+@@ -156,6 +162,33 @@ typedef struct
      uint32_t* menuvobsize;
      stilloptions** options;
  
@@ -991,6 +1031,20 @@ index 3ca9470..6c18d50 100644
 +    uint8_t* page_group;
 +    uint16_t* page_t0;
 +    uint8_t  npages;
++
++    /* 一级菜单（专辑索引页）—— 对应命令行 `--index-pages N`。
++
++       N > 0 时，**前 N 页是缩略图网格**，而不是曲目列表：
++         · 这些页上的「曲目」其实是专辑格子（page_ntracks[p] = 格子数，
++           page_group/page_t0 无意义、置 0）
++         · 这些页**不画任何文字**（缩略图已经由菜单背景提供）
++         · 第 p 页第 k 格的按钮是 `jump menu (N + p*16 + k + 1)`
++           —— 纯位置映射，见 menu_assets.py 的 INDEX_* 常量
++
++       其余页仍是「一页一个专辑」的曲目列表。
++
++       ⚠️ 同样**必须追加在结构末尾**（pic 按位置初始化）。 */
++    uint8_t  index_pages;
 +
  } pic;
  
@@ -1061,7 +1115,7 @@ index 92a8831..39305c0 100644
 +
 +#endif /* WITHOUT_sox */
 diff --git a/src/menu.c b/src/menu.c
-index facf72b..6b2dbeb 100644
+index facf72b..eadf506 100644
 --- a/src/menu.c
 +++ b/src/menu.c
 @@ -77,7 +77,10 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
@@ -1094,7 +1148,7 @@ index facf72b..6b2dbeb 100644
  
  static char *pict;
  
-+/* 程序结束码独占扇区（对齐商业盘）：见 patches/patch_still_end_code.py。
++/* 程序结束码独占扇区（对齐商业盘）：见 docs/DVDA-AUTHOR-CHANGES.md。
 +   mplex 把 00 00 01 B9 写在本段最后一个扇区的最后 4 字节；商业盘则是让
 +   结束码独占一个扇区、其后补 0xFF 到扇区边界。这里把前者改写成后者。 */
 +static int dvda_pad_program_end(const char *path)
@@ -1232,7 +1286,7 @@ index facf72b..6b2dbeb 100644
  
 +/* ── MPEG-2 码流自检：制式（NTSC/PAL）与逐行/隔行 ──────────────────────
 +
-+   见 patches/patch_mpeg2_autodetect.py。
++   见 docs/DVDA-AUTHOR-CHANGES.md。
 +
 +   dvda-author 原先把视频属性写死成 PAL（0x53），并照抄 mpeg2enc 的
 +   progressive_sequence=0。这两项都能从**实际产出的码流**里读出来，
@@ -1454,7 +1508,17 @@ index facf72b..6b2dbeb 100644
        // The first backgroundmpg file is the one that is used to create AUDIO_SV.VOB in amg2.c
      }
  
-@@ -969,6 +1306,140 @@ void test_underline(char *text, pic *img, globalData *globals)
+@@ -821,8 +1158,7 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks)
+ 
+ 
+ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char *command2, int menu, char *albumcolor, globalData *globals)
+-{
+-  initialize_binary_paths(3, globals);
++{  initialize_binary_paths(3, globals);
+ 
+   int size = strlen(globals->settings.tempdir) + 11;
+   char picture_save[size];
+@@ -969,6 +1305,210 @@ void test_underline(char *text, pic *img, globalData *globals)
  }
  
  
@@ -1486,16 +1550,20 @@ index facf72b..6b2dbeb 100644
 +      return 0;
 +    }
 +
-+  uint8_t pc[256];                          /* 每页曲目数（nmenus 是 uint8_t） */
-+  int np = 0, total = 0;
++  uint8_t pc[256];                          /* 每页条目数（nmenus 是 uint8_t） */
++  int np = 0, total = 0;                    /* total = 仅**专辑页**的曲目数 */
 +  char *p = eq + 1;
++
++  /* 前 img->index_pages 段是「专辑索引页」：段内的条目是**专辑格子**，
++     不是曲目，所以不计入 total（total 要与音频总轨数对上）。 */
++  const int nidx = (int) img->index_pages;
 +
 +  while (*p && (np < 256))
 +    {
 +      char *colon = strchr(p, ':');
 +      char *segend = colon ? colon : (p + strlen(p));
 +
-+      /* 段格式：小标题'='曲名1,曲名2,...；有 '=' 且后面非空才算有曲目 */
++      /* 段格式：小标题'='条目1,条目2,...；有 '=' 且后面非空才算有条目 */
 +      char *g = (char *) memchr(p, '=', (size_t) (segend - p));
 +      int n = 0;
 +      if (g && (g + 1 < segend))
@@ -1509,8 +1577,9 @@ index facf72b..6b2dbeb 100644
 +          FREE(s);
 +          return 0;
 +        }
-+      pc[np++] = (uint8_t) n;
-+      total += n;
++      pc[np] = (uint8_t) n;
++      if (np >= nidx) total += n;          /* 索引页的格子不计入曲目总数 */
++      ++np;
 +
 +      if (!colon) break;
 +      p = colon + 1;
@@ -1519,7 +1588,9 @@ index facf72b..6b2dbeb 100644
 +  int total_audio = 0;
 +  for (int g = 0; g < ngroups; ++g) total_audio += ntracks[g];
 +
-+  if ((np == 0) || (np != (int) img->nmenus) || (total != total_audio))
++
++  if ((np == 0) || (np != (int) img->nmenus) || (total != total_audio)
++      || (nidx > np))
 +    {
 +      if (globals->debugging)
 +        foutput(WAR "Menu page structure mismatch: %d page(s)/%d track(s) "
@@ -1542,8 +1613,17 @@ index facf72b..6b2dbeb 100644
 +      return 0;
 +    }
 +
++  /* 索引页：格子数 = 该段的条目数；group/t0 无意义（置 0）。
++     xml.c 对这几页输出 `jump menu (nidx + p*16 + k + 1)`。 */
++  for (int q = 0; q < nidx; ++q)
++    {
++      pnt[q] = pc[q];
++      pgrp[q] = 1;
++      pt0[q] = 0;
++    }
++
 +  int g = 0, acc = 0, ok = 1;
-+  for (int q = 0; q < np; ++q)
++  for (int q = nidx; q < np; ++q)
 +    {
 +      /* 一页跨了两个音频组 → 无法用「单个 jump group」表示，放弃 */
 +      if ((g >= ngroups) || (acc + pc[q] > ntracks[g]))
@@ -1592,10 +1672,64 @@ index facf72b..6b2dbeb 100644
 +  return 1;
 +}
 +
++/* 专辑索引页：给第 cell 个缩略图格子画**按钮区域**。
++
++   画在 highlight 层（command1），用**描边**矩形而不是填充矩形 ——
++   填色会把缩略图整块盖住；描边只勾一个框，播放器按高亮状态给框上色。
++   颜色仍用 img->highlightcolor_pic（与曲目下划线同一套调色板机制）。
++
++   坐标与 menu_assets.py 的 make_index_page() 严格一致，见 INDEX_* 常量。 */
++static int mogrify_thumb(uint8_t cell, pic *img, char *command,
++                         globalData *globals)
++{
++  uint16_t x0 = (uint16_t) ((cell % INDEX_COLS) * INDEX_CELL_W + INDEX_INSET);
++  uint16_t y0 = (uint16_t) ((cell / INDEX_COLS) * INDEX_CELL_H + INDEX_INSET);
++  uint16_t x1 = (uint16_t) (x0 + INDEX_CELL_W - 2 * INDEX_INSET);
++  uint16_t y1 = (uint16_t) (y0 + INDEX_CELL_H - 2 * INDEX_INSET);
++  char *q = quote(img->highlightcolor_pic);
++  char str[512];
++
++  snprintf(str, sizeof(str),
++           " -fill none -stroke \"rgb(%s)\" -strokewidth 6"
++           " -draw \"rectangle %u,%u %u,%u\"",
++           q, x0, y0, x1, y1);
++  free(q);
++  strcat(command, str);
++  return errno;
++}
++
++
++/* 专辑索引页的翻页箭头：**绝对坐标**绘制。
++
++   不能走 mogrify_img()：它的 y 由 y(track, maxnumtracks) 按「行」算，
++   而索引页的 maxbuttons 是格子数 —— 算出来的位置跑到画面外。
++   矩形必须与 xml.c 输出的箭头按钮一致（INDEX_*_X0/Y0/W）。 */
++static int mogrify_arrow_abs(const char *text, uint16_t x0, pic *img,
++                             char *command2, const char *color)
++{
++  char str[512];
++  char *q = quote((char *) color);
++  int tw = (img->fontwidth * img->pointsize * (int) strlen(text)) / 10;
++  uint16_t cx = (uint16_t) (x0 + ((INDEX_ARROW_W > tw)
++                                  ? (INDEX_ARROW_W - tw) / 2 : 0));
++  uint16_t cy = (uint16_t) (INDEX_ARROW_Y0
++                            + (INDEX_ARROW_Y1 - INDEX_ARROW_Y0) / 2
++                            + img->pointsize / 2);
++
++  snprintf(str, sizeof(str),
++           " -fill \"rgb(%s)\" -font %s -pointsize %d -draw \"text %u,%u '%s'\"",
++           q, img->textfont, (int) img->pointsize,
++           (unsigned) cx, (unsigned) cy, text);
++  free(q);
++  strcat(command2, str);
++  return errno;
++}
++
++
  int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *ntracks,  globalData *globals)
  {
    if ((!img->refresh) || (!img->nmenus))   return 0;
-@@ -981,36 +1452,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -981,36 +1521,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
    if (!img->hierarchical)
      {
@@ -1693,21 +1827,21 @@ index facf72b..6b2dbeb 100644
 +                 （与文档一致：组标题在 '=' 之前） */
 +              trackspec = NULL;
 +            }
- 
--      grouparray = fn_strtok(remainder, ':', grouparray, &dim, 0, NULL, NULL, globals) ;
++
 +          grouptext[k] = (char **) calloc(2, sizeof(char *));
 +          grouptext[k][0] = strdup(grouparray[k]);
 +          globals->grouptextsize[k] = 2;
+ 
+-      grouparray = fn_strtok(remainder, ':', grouparray, &dim, 0, NULL, NULL, globals) ;
++          if (trackspec)
++            tracktext[k] = fn_strtok(trackspec, ',', tracktext[k],
++                                     &globals->tracktextsize[k], 0,
++                                     NULL, NULL, globals);
  
 -      tracktext = calloc(dim, sizeof(char **));
 -      if (tracktext == NULL) perror(ERR "Track text allocation");
 -      grouptext = calloc(dim, sizeof(char **));
 -      if (grouptext == NULL) perror(ERR "Group text allocation");
-+          if (trackspec)
-+            tracktext[k] = fn_strtok(trackspec, ',', tracktext[k],
-+                                     &globals->tracktextsize[k], 0,
-+                                     NULL, NULL, globals);
-+
 +          free(grouparray[k]);
 +        }
 +      free(grouparray);
@@ -1743,7 +1877,7 @@ index facf72b..6b2dbeb 100644
          }
  
        free(grouparray);
-@@ -1096,7 +1662,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1096,7 +1731,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
        buttons = 0;
  
  
@@ -1752,7 +1886,7 @@ index facf72b..6b2dbeb 100644
  
        prepare_overlay_img(albumtext, -1, img, command1, command2, menu, img->albumcolor, globals);
        //free(albumtext);  // segfault here under linux for unknown reasons. TO: fix it.
-@@ -1112,7 +1678,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1112,7 +1747,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                    /* Vicious issue here: use DEFAULT_GROUP_HEADER such that the underline for highlighting does not cut a letter.
                                   With lower-case "group", this happens as the underline cuts the 'p'. Two ways out: underline lower or use another label/use uppercase
                                   Note: This issue was tested to cause spumux crash */
@@ -1761,7 +1895,7 @@ index facf72b..6b2dbeb 100644
                    groupcount++;
                    buttons++;
  
-@@ -1123,13 +1689,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1123,13 +1758,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
            else if (groupcount < ngroups)
              {
@@ -1777,7 +1911,7 @@ index facf72b..6b2dbeb 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1143,19 +1709,41 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1143,19 +1778,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                  }
              }
          }
@@ -1792,15 +1926,46 @@ index facf72b..6b2dbeb 100644
 +            {
 +              img->maxbuttons = img->page_ntracks[menu];
 +
-+              mogrify_img(grouptext[menu][0], 0, -1, img, img->maxbuttons,
-+                          command1, command2, 0, img->groupcolor);
++              if (menu < (unsigned) img->index_pages)
++                {
++                  /* ---- 一级菜单（专辑索引页）----
++                     缩略图由菜单背景提供，这里**不画任何文字**；
++                     逐格画按钮区域（描边矩形），再在底部箭头带画翻页文字。 */
++                  for (track = 0; track < img->maxbuttons; ++track)
++                    mogrify_thumb(track, img, command1, globals);
 +
-+              for (track = 0; track < img->maxbuttons; ++track)
-+                mogrify_img(tracktext[menu][track], 0, track, img,
-+                            img->maxbuttons, command1, command2, 0,
-+                            img->textcolor_pic);
++                  if (img->nmenus > 1)
++                    {
++                      /* 与下面通用箭头同一套槽位判定：
++                         第 1 槽放 Next（末页改放 Previous），中间页再补
++                         一个 Previous。 */
++                      int is_last = (menu == (unsigned) img->nmenus - 1);
 +
-+              buttons = img->maxbuttons;
++                      mogrify_arrow_abs(is_last ? DEFAULT_PREVIOUS
++                                                : DEFAULT_NEXT,
++                                        is_last ? INDEX_PREV_X0
++                                                : INDEX_NEXT_X0,
++                                        img, command2, img->arrowcolor);
++
++                      if (menu && !is_last)
++                        mogrify_arrow_abs(DEFAULT_PREVIOUS, INDEX_PREV_X0,
++                                          img, command2, img->arrowcolor);
++                    }
++
++                  buttons = img->maxbuttons;
++                }
++              else
++                {
++                  mogrify_img(grouptext[menu][0], 0, -1, img, img->maxbuttons,
++                              command1, command2, 0, img->groupcolor);
++
++                  for (track = 0; track < img->maxbuttons; ++track)
++                    mogrify_img(tracktext[menu][track], 0, track, img,
++                                img->maxbuttons, command1, command2, 0,
++                                img->textcolor_pic);
++
++                  buttons = img->maxbuttons;
++                }
 +            }
 +        }
        else
@@ -1821,10 +1986,11 @@ index facf72b..6b2dbeb 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1176,19 +1764,37 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1175,20 +1863,39 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+         }
  
  
-       if ((img->nmenus > 1) && (menu < img->nmenus))
+-      if ((img->nmenus > 1) && (menu < img->nmenus))
 -        do
 -          {
 -            char arrowstring[9] = {0};
@@ -1838,6 +2004,8 @@ index facf72b..6b2dbeb 100644
 -              }
 -          }
 -        while (buttons < menubuttons + arrowbuttons);
++      if ((img->nmenus > 1) && (menu < img->nmenus)
++          && !(img->page_ntracks && (menu < (unsigned) img->index_pages)))
 +        {
 +          /* 箭头文字必须用**绝对行号**定位，与 xml.c 输出的按钮坐标一一对应：
 +             两者都取 img->maxbuttons / img->maxbuttons + 1 两行 ——
@@ -1872,7 +2040,7 @@ index facf72b..6b2dbeb 100644
  
        char *q = quote(img->imagepic[menu]);
        strcat(command2, q);
-@@ -1238,7 +1844,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1238,7 +1945,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
    free(grouptext);
    free(tracktext);
  
@@ -2366,10 +2534,10 @@ index 4b9feae..2ac85d2 100644
    if (info->filename == NULL) EXIT_ON_RUNTIME_ERROR_VERBOSE("Could not copy MLP filename.")
  
 diff --git a/src/xml.c b/src/xml.c
-index e50464c..a13c847 100644
+index e50464c..8a62513 100644
 --- a/src/xml.c
 +++ b/src/xml.c
-@@ -102,6 +102,26 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
+@@ -102,6 +102,60 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
              }
  
          }
@@ -2382,21 +2550,55 @@ index e50464c..a13c847 100644
 +              uint8_t  gp = img->page_group[menu];      /* 1-based */
 +              uint16_t t0 = img->page_t0[menu];         /* 0-based */
 +
-+              for (track = 0; track < img->page_ntracks[menu]; ++track)
++              if (menu < (unsigned) img->index_pages)
 +                {
-+                  buttons++;
-+                  fprintf(xmlfile, "       %s%02d%s%d%s%d%s\n", "<button name=\"button", buttons, "\">jump group ", gp, " track ", t0 + track + 1, ";</button>");
-+                  if (globals->debugging)
-+                    foutput(INF "Button: %d Group %d Track %d \n", buttons, gp, t0 + track + 1);
-+                }
++                  /* ---- 一级菜单（专辑索引页）----
++                     第 menu 页第 k 格 → 专辑号 a = menu*16 + k
++                     → 该专辑的内容页（0-based）= index_pages + a
++                     → 菜单号（1-based）= index_pages + menu*16 + k + 1。
 +
-+              buttons = img->page_ntracks[menu];
++                     这是**纯位置映射**，与 menu_assets.py 的
++                     `--index-pages` 计算一致；越界（末页不足 16 格、
++                     或专辑数不够）时跳过，不出按钮。 */
++                  int ncells = (int) img->page_ntracks[menu];
++                  uint16_t nmenus = img->nmenus;
++
++                  for (track = 0; track < ncells; ++track)
++                    {
++                      uint16_t tgt = (uint16_t) (img->index_pages
++                                                 + menu * INDEX_PER_PAGE
++                                                 + track + 1);
++                      if (tgt > nmenus) break;   /* 末页补位，无对应专辑 */
++
++                      buttons++;
++                      fprintf(xmlfile, "       %s%02d%s%d%s\n",
++                              "<button name=\"button", buttons,
++                              "\">jump menu ", tgt, ";</button>");
++                      if (globals->debugging)
++                        foutput(INF "Index button: %d -> menu %d\n",
++                                buttons, tgt);
++                    }
++
++                  buttons = ncells;
++                }
++              else
++                {
++                  for (track = 0; track < img->page_ntracks[menu]; ++track)
++                    {
++                      buttons++;
++                      fprintf(xmlfile, "       %s%02d%s%d%s%d%s\n", "<button name=\"button", buttons, "\">jump group ", gp, " track ", t0 + track + 1, ";</button>");
++                      if (globals->debugging)
++                        foutput(INF "Button: %d Group %d Track %d \n", buttons, gp, t0 + track + 1);
++                    }
++
++                  buttons = img->page_ntracks[menu];
++                }
 +            }
 +        }
        else
          {
            do
-@@ -135,17 +155,34 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
+@@ -135,17 +189,34 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
  
        if ((img->nmenus > 1) && (menu < img->nmenus))
          {
@@ -2439,7 +2641,7 @@ index e50464c..a13c847 100644
            fprintf(xmlfile, "%s%s%s\n", "       <vob pause=\"inf\" file=\"", img->topmenu[menu], "\"/>\n\
     </pgc>\n");
  
-@@ -187,11 +224,11 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
+@@ -187,11 +258,11 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
    int i, j;
    uint16_t delta = 0;
  
@@ -2454,7 +2656,7 @@ index e50464c..a13c847 100644
  
    for (i = 1; i < ncol; ++i)
      {
-@@ -199,9 +236,9 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
+@@ -199,9 +270,9 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
        x0[i] = x1[i - 1] ;
      }
  
@@ -2466,7 +2668,7 @@ index e50464c..a13c847 100644
        y0[j] = y1[j - 1];
      }
  
-@@ -215,7 +252,7 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -215,7 +286,7 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
    uint16_t x0[ngroups], y0[MAX_BUTTON_NUMBER], x1[ngroups], y1[MAX_BUTTON_NUMBER];
    errno = 0;
    FILE *spu_xmlfile = NULL;
@@ -2475,7 +2677,7 @@ index e50464c..a13c847 100644
  
    if (globals->spu_xml == NULL) globals->spu_xml = calloc(img->nmenus, sizeof(char *));
    if (globals->spu_xml == NULL) perror(ERR "spuxml\n");
-@@ -302,6 +339,25 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -302,6 +373,51 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
                  }
              }
          }
@@ -2487,21 +2689,47 @@ index e50464c..a13c847 100644
 +          if ((unsigned) menu < img->npages)
 +            {
 +              img->maxbuttons = img->page_ntracks[menu];
-+              compute_coordinates(command, img->ncolumns, x0, y0, x1, y1);
 +
-+              for (track = 0; track < img->maxbuttons; ++track)
++              if (menu < (unsigned) img->index_pages)
 +                {
-+                  buttons++;
-+                  fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[0], "\"", " y0=\"", y0[track], "\"", " x1=\"", x1[0], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[track], "\"/>");
-+                }
++                  /* 一级菜单（专辑索引页）：按钮是**网格矩形**，
++                     不能用 compute_coordinates（那按行分行）。
++                     坐标必须与 menu.c 的 mogrify_thumb()、
++                     menu_assets.py 的 make_index_page() 完全一致。 */
++                  for (track = 0; track < img->maxbuttons; ++track)
++                    {
++                      uint16_t bx0 = (uint16_t) ((track % INDEX_COLS)
++                                                 * INDEX_CELL_W + INDEX_INSET);
++                      uint16_t by0 = (uint16_t) ((track / INDEX_COLS)
++                                                 * INDEX_CELL_H + INDEX_INSET);
++                      uint16_t bx1 = (uint16_t) (bx0 + INDEX_CELL_W
++                                                 - 2 * INDEX_INSET);
++                      uint16_t by1 = (uint16_t) (by0 + INDEX_CELL_H
++                                                 - 2 * INDEX_INSET);
++                      buttons++;
++                      fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", bx0, "\"", " y0=\"", by0, "\"", " x1=\"", bx1, "\"", " name=\"button", buttons, "\"", " y1=\"", by1, "\"/>");
++                    }
 +
-+              buttons = img->maxbuttons;
++                  buttons = img->maxbuttons;
++                }
++              else
++                {
++                  compute_coordinates(command, img->ncolumns, x0, y0, x1, y1);
++
++                  for (track = 0; track < img->maxbuttons; ++track)
++                    {
++                      buttons++;
++                      fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[0], "\"", " y0=\"", y0[track], "\"", " x1=\"", x1[0], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[track], "\"/>");
++                    }
++
++                  buttons = img->maxbuttons;
++                }
 +            }
 +        }
        else
          {
  
-@@ -333,18 +389,26 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+@@ -333,18 +449,52 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
  
        if (img->nmenus > 1)
          {
@@ -2509,12 +2737,30 @@ index e50464c..a13c847 100644
 +          /* 与 menu.c 的箭头文字一一对应（同一套槽位与页判定）：
 +             第 1 个槽放 Next（末页改放 Previous），中间页再补一个 Previous。
 +             ⚠️ 原 do-while 在曲目不满一页的末页会因 buttons 基数偏低而多转
-+             几轮，输出 5 个完全重叠的按钮。 */
++             几轮，输出 5 个完全重叠的按钮。
++
++             ⚠️ 索引页必须用**网格几何**：那几页不调 compute_coordinates()，
++             x0[]/y0[]/x1[]/y1[] 全是未初始化的值 —— 曾经因此输出
++             "Button coordinates out of range (720,576): (33,10944)-(708,35056)"，
++             spumux 直接失败、topmenu 输出 0 字节。 */
++          int is_index = (img->page_ntracks
++                          && (menu < (unsigned) img->index_pages));
++          int is_last = (menu == (unsigned) img->nmenus - 1);
 +          int arrows_emitted = 0;
 +
 +          buttons++;
 +          arrows_emitted++;
-+          fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons], "\"/>");
++          if (is_index)
++            fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n",
++                    "       <button x0=\"",
++                    (is_last ? INDEX_PREV_X0 : INDEX_NEXT_X0), "\"",
++                    " y0=\"", INDEX_ARROW_Y0, "\"",
++                    " x1=\"",
++                    ((is_last ? INDEX_PREV_X0 : INDEX_NEXT_X0) + INDEX_ARROW_W),
++                    "\"", " name=\"button", buttons, "\"",
++                    " y1=\"", INDEX_ARROW_Y1, "\"/>");
++          else
++            fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons], "\"/>");
 +
 +          if ((menu) && (menu < img->nmenus - 1))
              {
@@ -2527,7 +2773,15 @@ index e50464c..a13c847 100644
 -                  fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks + 1], "\"/>");
 -                }
 +              arrows_emitted++;
-+              fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons + 1], "\"/>");
++              if (is_index)
++                fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n",
++                        "       <button x0=\"", INDEX_PREV_X0, "\"",
++                        " y0=\"", INDEX_ARROW_Y0, "\"",
++                        " x1=\"", (INDEX_PREV_X0 + INDEX_ARROW_W), "\"",
++                        " name=\"button", buttons, "\"",
++                        " y1=\"", INDEX_ARROW_Y1, "\"/>");
++              else
++                fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons + 1], "\"/>");
              }
 -          while (buttons < menubuttons + arrowbuttons);
 +
@@ -2537,6 +2791,3 @@ index e50464c..a13c847 100644
          }
        menu++;
        buttons = 0;
--- 
-2.53.0
-

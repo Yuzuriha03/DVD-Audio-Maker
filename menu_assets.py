@@ -47,6 +47,26 @@ MAX_MENU_ROWS = 24
 ALBUM_TEXT_Y0 = 48          # 专辑标题基线（commonvars.h）
 TEXT_BUDGET_PX = 660        # 每行文字可占宽度（按钮 x0=33..x1=708）
 
+# ---- 一级菜单：专辑索引页（缩略图网格）--------------------------------
+# 4x3 是量出来的：格子 180x144（5:4，接近方形封面，裁剪少），缩略图 170x134；
+# disc1（28 张）→ 3 页、disc2（17 张）→ 2 页。
+#
+# ⚠️ 网格只占**上面 3 行**（432 px），**底部 144 px 是翻页箭头带** ——
+# 索引页也要能翻页（专辑多于一页时没箭头就走不掉）。
+#
+# ⚠️ 这几个值必须与 C 侧一致（menu.h / menu.c / xml.c 里的同名常量）：
+#    缩略图位置 = (col*CELL_W + INSET, row*CELL_H + INSET)，尺寸 CELL_W-2*INSET
+#    按钮矩形  = 同一个矩形
+#   箭头矩形  = INDEX_NEXT_X0/INDEX_PREV_X0, INDEX_ARROW_Y0..Y1
+# 改了这里就要同步改 C 侧，否则点击区与图不对齐。
+INDEX_COLS, INDEX_ROWS = 4, 3
+INDEX_CELL_W = FRAME_W // INDEX_COLS            # 180
+INDEX_CELL_H = 144                              # 与 C 侧一致（3 行 = 432 px）
+INDEX_INSET = 5                                 # 缩略图与格子边缘的间隙
+INDEX_PER_PAGE = INDEX_COLS * INDEX_ROWS        # 12
+# 索引页的「段标题」。这一页不画文字，它只是为了让 screentext 的段合法。
+INDEX_LABEL = "选择专辑"
+
 _CJK_LO, _CJK_HI = 0x2E80, 0x9FFF        # 常用 CJK 区段
 _FULLWIDTH = 0xFF00
 
@@ -539,6 +559,38 @@ def make_background(covers, path, dim):
     return path
 
 
+def make_index_page(covers, path):
+    """一级菜单（专辑索引页）：4x4 缩略图网格，整幅 720x576。
+
+    covers 是本页最多 16 张封面路径（不足的格子留黑）。
+    **不画专辑名** —— 按钮区就是这里的缩略图矩形，与 C 侧 xml.c 输出的
+    坐标严格一致（都是 `col*180+5, row*144+5` 起、`170x134`）。
+
+    实现用 `-repage +x+y` 给每层定位再 `-flatten` —— 比逐个 `-composite`
+    少写一堆 `( )`，也不会踩「composite 取错上一层」的坑。
+    """
+    w = INDEX_CELL_W - 2 * INDEX_INSET
+    h = INDEX_CELL_H - 2 * INDEX_INSET
+
+    args = ["-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:black"]
+    for i, cov in enumerate(covers[:INDEX_PER_PAGE]):
+        if not cov:
+            continue
+        x = (i % INDEX_COLS) * INDEX_CELL_W + INDEX_INSET
+        y = (i // INDEX_COLS) * INDEX_CELL_H + INDEX_INSET
+        args += ["(", cov, "-resize", "%dx%d^" % (w, h),
+                 "-gravity", "center", "-extent", "%dx%d" % (w, h), ")",
+                 "-repage", "+%d+%d" % (x, y)]
+    args += ["-flatten", "-quality", "90", path]
+    _magick(*args)
+
+    size = image_size(path)
+    if size != (FRAME_W, FRAME_H):
+        raise RuntimeError("%s 尺寸为 %dx%d，应为 %dx%d"
+                           % (path, size[0], size[1], FRAME_W, FRAME_H))
+    return path
+
+
 def image_size(path):
     """返回 (宽, 高)。"""
     exe = shutil.which("identify")
@@ -560,9 +612,17 @@ class MenuPlan:
         self.pages = 0
         self.drawn_pages = 0
         self.rows = 0
+        # ⚠️ rows_of_page / album_of_page / pages_list 都只描述**专辑页**
+        #    （不含前面的索引页）。校验脚本用 sum(rows_of_page) == 总轨数，
+        #    索引页没有曲目，所以不能进去。
         self.rows_of_page = []      # 每页曲目数（一页一个专辑）
         self.album_of_page = []     # 每页的专辑名
         self.pages_list = []        # [(专辑, 起始, 结束, 是否续页), ...]
+        # ---- 一级菜单（专辑索引页）----
+        # index_pages   : 开头的索引页数（0 = 关闭二级菜单）
+        # index_albums  : 每页索引页放哪些专辑（顺序 = 格子顺序）
+        self.index_pages = 0
+        self.index_albums = []
         self.points = 0
         self.font = ""
         self.font_missing = set()
@@ -580,6 +640,10 @@ class MenuPlan:
              "--background", ",".join(self.backgrounds),
              "--screentext", self.screentext,
              "--bindir", bindir, "--datadir", datadir]
+        if self.index_pages:
+            # 一级菜单：前 N 页是专辑索引页（缩略图网格）。
+            # C 侧据此把这几页当索引页：不画文字、按钮是 `jump menu`。
+            a += ["--index-pages", str(self.index_pages)]
         if fontname or self.font:
             a += ["--fontname", fontname or self.font]
         if self.points:
@@ -632,17 +696,36 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
     # 取行距与按钮矩形（见 `docs/DVDA-AUTHOR-CHANGES.md`）。
     row_cap = min(cfg.menu_tracks_per_page, MAX_MENU_ROWS)
     pages_list = album_pages(album_of, row_cap)
-    pages = len(pages_list)
+    n_albums = len(pages_list)
     rows = max((e - s for _a, s, e, _c in pages_list), default=1)
     points = compute_fontsize(rows)
+
+    # ---- 一级菜单：专辑索引页 ----
+    # 页序 = [索引页 0..I-1] + [专辑页 0..A-1]。
+    # 索引页 p 的第 k 个格子 → 专辑号 a = p*16+k → 其内容页 (0-based) = I+a
+    #   → 按钮 `jump menu (I+a+1)`（菜单号 1-based）。
+    # 这套映射是**纯位置**的，C 侧只拿到 --index-pages=I 就能算出全部目标，
+    # 不必再传一张表。
+    idx_pages = -(-n_albums // INDEX_PER_PAGE) if n_albums else 0
+    cnt = cfg.menu_index_min_albums      # 少于这么多专辑就不做一级菜单
+    if idx_pages and n_albums < cnt:
+        log("[菜单] 只有 %d 张专辑（少于 %d），跳过一级菜单" % (n_albums, cnt))
+        idx_pages = 0
+    index_albums = []
+    for p in range(idx_pages):
+        s = p * INDEX_PER_PAGE
+        index_albums.append([a for a, _s, _e, _c in
+                             pages_list[s:s + INDEX_PER_PAGE]])
 
     if album_dir_of is None:
         def album_dir_of(t):
             return os.path.dirname(t.get("src") or "")
 
     plan = MenuPlan()
-    plan.pages = pages
-    plan.drawn_pages = pages
+    plan.pages = idx_pages + n_albums        # 总页数 = 索引页 + 专辑页
+    plan.drawn_pages = idx_pages + n_albums
+    plan.index_pages = idx_pages
+    plan.index_albums = index_albums
     plan.rows = rows
     plan.rows_of_page = [e - s for _a, s, e, _c in pages_list]
     plan.album_of_page = [a for a, _s, _e, _c in pages_list]
@@ -664,9 +747,15 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
             % (len(missing), "、".join(missing[:3])
                + ("…" if len(missing) > 3 else "")))
 
-    # 每页背景 = **该页专辑的封面**（一页一个专辑，即单张封面铺满画面）。
-    # 缺封面时留黑；压暗是为了让白字读得清。
+    # 页序：先索引页（缩略图网格），再专辑页（该专辑封面）。
+    # 顺序必须与 screentext 的段序、以及 C 侧算出的 jump 目标一致。
     plan.backgrounds = []
+    for pi, albs in enumerate(index_albums):
+        path = os.path.join(outdir, "idx%d.jpg" % pi)
+        make_index_page([covers.get(a) for a in albs], path)
+        plan.backgrounds.append(path)
+
+    # 专辑页背景 = 该专辑封面（压暗是为了让白字读得清）。缺封面时留黑。
     for pi, a in enumerate(plan.album_of_page):
         cov = covers.get(a)
         path = os.path.join(outdir, "bg%d.jpg" % pi)
@@ -729,6 +818,20 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
 
     chunks = []
     all_texts = []
+
+    # 索引页的段：格式与专辑页相同（`标签=名字1,名字2,...`），
+    # 但 C 侧在索引页上**不画文字** —— 这里的名字只是为了给出
+    # 「本页几个格子」（= page_ntracks），顺便留作调试参考。
+    for albs in index_albums:
+        names = []
+        for a in albs:
+            lbl, fixed = sanitize(menu_album(a))
+            if fixed:
+                plan.sanitized.append(a)
+            names.append(truncate_px(lbl, points))
+        label, _ = sanitize(INDEX_LABEL)
+        chunks.append(label + "=" + ",".join(names))
+
     for a, s, e, cont in pages_list:
         gtitle, fixed = sanitize(menu_album(a) + ("（续）" if cont else ""))
         if fixed:
