@@ -685,20 +685,22 @@ def _covers_backdrop(cells, path, dim):
     return path
 
 
-# ---- 设计背景的三个可调参数（不用外部素材，构建时现画）----
+# ---- 设计背景的可调参数（不用外部素材，构建时现画）----
 # 对角线渐变的两端：左上亮、右下暗，给画面一个方向感。
-# 实测缩略图亮度在 35~143（中位 75），所以背景整体压在均值 ~54、
-# 局部最高 ~78 —— 是「一面墙」而不是「和照片抢亮度」。
-BACKDROP_FROM = "#8c8c8c"
-BACKDROP_TO = "#1a1a1a"
+#
+# ⚠️ **必须用彩色**。实测缩略图亮度在 35~143（中位 75），所以背景整体压在
+# 均值 ~60：是「一面墙」而不是「和照片抢亮度」。
+# 但**灰度背景会把整页变成灰度** —— `-flatten` 的输出色彩空间看**第一张图**
+# （也就是背景），背景是 Grayscale 时封面的彩色会被全部丢掉
+# （实测整页 `%k` 只剩 256 色、`%[colorspace]` = Gray）。
+# 所以这里给渐变带上青蓝 → 深靛的色相，并在保存前显式 `-colorspace sRGB`。
+BACKDROP_FROM = "#3e6b8a"   # 左上：青蓝
+BACKDROP_TO = "#221630"     # 右下：深靛（偏紫，和鸣潮的冷色调一致）
 # 与 4x3 格子对齐的细网格（白、低透明度）—— 让背景和版式有关系，
 # 看起来是「设计过的」而不是随手一张图。实测线比底色亮约 15 级，够含蓄。
 BACKDROP_GRID_ALPHA = 0.14
-# 径向暗角：中心不动、四周乘到这个灰度。压住四角，视线收拢到中间，
-# 同时保证边缘的字有对比度。
-# 缩略图外加一圈细边框（``INDEX_THUMB_BORDER``），把它们从背景里「托」出来
-# —— 封面本身明暗差很大（35~143），只靠背景深浅托不住所有图。
-BACKDROP_VIGNETTE = "#7a7a7a"
+# 径向暗角：中心不动、四周乘到这个灰度（灰的 → 只压亮度、不改色相）。
+BACKDROP_VIGNETTE = "#8090a0"
 
 
 def make_index_backdrop(path):
@@ -739,6 +741,11 @@ def make_index_backdrop(path):
             "(", "-size", "%dx%d" % (FRAME_W, FRAME_H),
             "radial-gradient:#ffffff-%s" % BACKDROP_VIGNETTE, ")",
             "-compose", "multiply", "-composite",
+            # ⚠️ `-colorspace sRGB` 必须显式写：不写时 IM 可能按内容把图判成
+            # Grayscale（`xc:` + `-sparse-color` 这条路径就会），而
+            # make_index_page() 的 `-flatten` 会跟着用 Gray
+            # → 封面的彩色全部丢掉，整页变黑白。
+            "-colorspace", "sRGB", "-type", "TrueColor",
             "-quality", "92", path)
     return path
 
@@ -812,7 +819,10 @@ def make_index_page(cells, path, font, dim=35, bg="auto"):
                          "-gravity", "center", "caption:" + shown,
                          "-repage", "+%d+%d" % (ox + INDEX_INSET + sdx,
                                                 ly + sdy), ")"]
-    args += ["-flatten", "-quality", "90", path]
+    # `-colorspace sRGB -type TrueColor` 是保险：万一背景是灰度或某张封面
+    # 是 CMYK，不加这两句整页会降成灰度（见 make_index_backdrop 的注释）。
+    args += ["-flatten", "-colorspace", "sRGB", "-type", "TrueColor",
+             "-quality", "90", path]
     _magick(*args)
 
     # 缩略图细边框：**必须单独一遍画在已合成的成品上**。
@@ -831,7 +841,9 @@ def make_index_page(cells, path, font, dim=35, bg="auto"):
     if borders:
         _magick(path, "-fill", "none", "-stroke", INDEX_THUMB_BORDER,
                 "-strokewidth", str(INDEX_THUMB_BORDER_W),
-                "-draw", " ".join(borders), "-quality", "90", path)
+                "-draw", " ".join(borders),
+                "-colorspace", "sRGB", "-type", "TrueColor",
+                "-quality", "90", path)
 
     try:
         os.remove(bpath)
