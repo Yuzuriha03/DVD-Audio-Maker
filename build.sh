@@ -6,7 +6,13 @@
 #   bash build.sh --dry-run    只预览分盘结果，不出盘
 #   bash build.sh --config     只打印当前配置后退出
 #
-# 所有路径来自 config.sh。日志写入 <BUILD_DIR>/build.log
+# 所有路径来自 config.sh（可用环境变量覆盖）。
+# 若工作副本的 local-bin/env.sh 存在，会先加载它 —— 那里放的是**本机专用**
+# 的覆盖值（音源/MLP 目录/工作目录/ISO 前缀/菜单开关）。
+# 不加载它就会走 config.sh 的默认值（例如 ffmpeg 自编 MLP、写 build/），
+# 而不是直接用外部的 SurCode MLP。曾因此误判「配置不对」。
+#
+# 日志写入 <BUILD_DIR>/build.log
 # （--dry-run 时改写 build-dryrun.log，见下方说明）。
 # ============================================================================
 set -e
@@ -14,6 +20,13 @@ set -o pipefail
 cd "$(dirname "$0")"
 
 HERE="$(pwd)"
+
+# ---- 加载本机覆盖值（存在才加载，便于仓库在别处也能跑）----
+ENVSH="$HERE/../local-bin/env.sh"
+if [ -f "$ENVSH" ]; then
+  # shellcheck disable=SC1090
+  . "$ENVSH"
+fi
 
 # ---- 加载配置 ----
 if ! CFG_SH="$(python3 "$HERE/dvda_config.py" --shell)"; then
