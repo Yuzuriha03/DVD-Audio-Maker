@@ -73,10 +73,14 @@ NEW = """  // Late initialization
     }
 """
 
+# 幂等判据必须先看「新内容是否已就位」：
+# OLD 是 NEW 的**前缀**（NEW = OLD + 增长块），所以应用之后 OLD 依然能匹配 ——
+# 用 `if OLD not in text` 作守卫会每次再插一份（实测曾因此叠出 3 份）。
+if "AMG buffer grown for" in text:
+    print("[SKIP] 已应用过")
+    sys.exit(0)
+
 if OLD not in text:
-    if "AMG buffer grown for" in text:
-        print("[SKIP] 已应用过")
-        sys.exit(0)
     print("[MISS] 未找到 sectors.amg 初始化")
     sys.exit(1)
 

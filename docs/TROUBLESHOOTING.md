@@ -25,7 +25,8 @@
 16. [选曲菜单（AMG / ASVS）的坑（34 个小节）](#16-选曲菜单amg--asvs的坑)
 17. [ISO 整体 md5 不可复现](#17-iso-整体-md5-不可复现)
 18. [静图只在每张专辑第一首刷新](#18-静图只在每张专辑第一首刷新)
-19. [诊断手法速查](#19-诊断手法速查)
+19. [补丁不幂等，批量重跑时会叠出重复代码](#19-补丁不幂等批量重跑时会叠出重复代码)
+20. [诊断手法速查](#20-诊断手法速查)
 
 ---
 
@@ -3046,7 +3047,101 @@ diff = [i for i in range(len(A)) if A[i] != B[i]]        # A=新, B=旧
 
 ---
 
-## 19. 诊断手法速查
+## 19. 补丁不幂等，批量重跑时会叠出重复代码
+
+**怎么踩到的（2026-09-24）**：为了清点「哪些改动还没固化进源码」，
+我写了个循环把 `patches/_merged/*.py` **全部跑了一遍**看各自的输出。
+结果有三个补丁**往已经改好的源码里又插了一份**：
+
+```
+mlp.c   : g_last_pkt_pos 声明 ×3、g_last_nb_samples 语句 ×3
+launch_manager.c : 「AMG buffer grown for」增长块 ×3
+```
+
+前两处直接是**重复定义**（编译不过）；第三处是死代码。
+
+### 根因：`old not in text` 不能当「已应用」的判据
+
+这些补丁是**插入式**的 —— 把新内容插到 `old` **之前**，而 `old` 本身保留：
+
+```python
+def rep(old, new, label):
+    if old not in text:        # ✘ 插入之后 old 依然存在！
+        print("[MISS]")
+        return False
+    text = text.replace(old, new, 1)
+```
+
+于是**每次运行都再插一份**。`patch_menu_amg_size.py` 更隐蔽：
+它的 `NEW = OLD + 增长块`，即 `OLD` 是 `NEW` 的**前缀** —— 
+它的守卫写的是 `if OLD not in text: ... SKIP`，只是多套了一层，
+同样永远走不到 SKIP 分支。
+
+**正确判据是看 `new` 是否已就位**：
+
+```python
+def rep(old, new, label):
+    if new in text:            # ✔ 已经改好了
+        print("[SKIP] %s（已应用）" % label)
+        return True
+    if old not in text:
+        print("[MISS] %s" % label)
+        return False
+    text = text.replace(old, new, 1)
+```
+
+### 怎么找出全部不幂等的补丁
+
+**快照 → 跑一遍 → 比对 md5 → 还原**。源码树此时已是「全部已应用」状态，
+所以任何字节变化都意味着不幂等：
+
+```bash
+cd tools/dvda-author-mlp8
+rm -rf /tmp/snap && mkdir -p /tmp/snap
+find src libutils -type f \( -name '*.c' -o -name '*.h' \) | while read -r f; do
+  mkdir -p "/tmp/snap/$(dirname "$f")"; cp -p "$f" "/tmp/snap/$f"
+done
+for p in scripts/patches/_merged/*.py; do
+  before=$(find src libutils -name '*.c' -o -name '*.h' | xargs md5sum | sort | md5sum)
+  python3 "$p" >/dev/null 2>&1
+  after=$(find src libutils -name '*.c' -o -name '*.h' | xargs md5sum | sort | md5sum)
+  if [ "$before" != "$after" ]; then
+    echo "不幂等: $p"
+    (cd /tmp/snap && find . -type f) | while read -r f; do cp -p "/tmp/snap/$f" "$f"; done
+  fi
+done
+```
+
+实测查出 3 个（`patch_read.py` / `patch_encode.py` / `patch_menu_amg_size.py`），
+修正后复测：**25 个全部幂等**（跑一遍不产生任何字节变化）。
+
+### ⚠️ 二次事故：不要用 `git checkout` 还原源码树
+
+发现 `launch_manager.c` 被搞坏后，我本能地 `git checkout -- src/launch_manager.c`
+—— **这把我们的改动（未提交）一起抹掉了**，因为源码树的 git 里没有这些改动。
+
+**教训**：`tools/dvda-author-mlp8` 的 git **只跟踪上游状态**，
+本工程的改动全部是「未提交的工作区修改」。所以：
+
+- ❌ 不要对该树的文件用 `git checkout` / `git restore` / `git stash`
+- ✔ 改坏前先 `cp` 一份到 `/tmp`
+- ✔ 需要「改前状态」时就靠 `SOURCE-MANIFEST.txt` + `.o` oracle（见
+  `patches/_merged/README.md`）
+
+### 用编译产物当「标准答案」
+
+源码被改坏但**旧的 `.o` 还在**（`build_dvda_author_mlp.sh` 每次会清 `.o`，
+所以要在构建后立刻备份），就能反推：
+
+1. 候选源码编出来的 `.o` 与旧的比对**指令序列**（`objdump -d --no-show-raw-insn`）
+2. 差异为 0 → 功能等价（注释/行号不同不影响指令序列）
+
+实测：`launch_manager.c` 重写后指令序列差异 **0**；`mlp.c` 去掉重复块后
+md5 **与基线完全相同**（说明去重精确还原了原文件）。
+
+---
+
+## 20. 诊断手法速查
 
 ### 解析 AOB 的 PES 时间戳
 
