@@ -62,7 +62,7 @@ def extract(iso, inner, dest):
 def amg_menu_count(ifo):
     """从 AUDIO_TS.IFO 的 sector 4 读菜单（语言单元）数。
 
-    布局（见 patches/patch_menu_paging.py 的说明与 amg2.c）：
+    布局（见 docs/DVDA-AUTHOR-CHANGES.md 与 amg2.c）：
         ATSI 指针在 IFO 偏移 204（大端 u32，扇区号）
         sector 4 里：0x1800 语言单元数、0x1810 菜单数（u16, BE）
     """
@@ -110,7 +110,7 @@ def menu_cell_chain(ifo, vob):
 
     翻页按钮走 `jump menu N`，由播放器查 **AMG IFO 的菜单 PGC 表**，
     而那张表是 `amg2.c` 手写的。它的 cell 结束地址曾经用错大小
-    （恒用「最后一页」而不是当前页，见 patches/patch_menu_amg_cells.py），
+    （恒用「最后一页」而不是当前页，见 docs/DVDA-AUTHOR-CHANGES.md），
     于是**部分页面的 Previous 按了回不去**；而各页 VOB 大小接近时错误会在
     某些页上相互抵消 —— 实测 8 页里 5 页错，表现为「只有几页有问题」，
     极难靠现象定位。所以必须能机检。
@@ -398,7 +398,7 @@ def check_iso(iso, expect_tracks, expect_pages, tmpdir, label,
                     print(f"         · {msg}")
                 print("         影响: 相关页的 Previous / Next 可能点了没反应")
                 print("         成因: amg2.c 的 cell 结束地址用错大小"
-                      "（见 patches/patch_menu_amg_cells.py）")
+                      "（见 docs/DVDA-AUTHOR-CHANGES.md）")
                 ok = False
             else:
                 spans = "/".join(str(en - st + 1) for st, en in cells)

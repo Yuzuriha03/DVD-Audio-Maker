@@ -191,7 +191,7 @@ def main():
                               "第 1 首")
                         print("       成因: MLP 的 pts[] 是按轨的，合并成一个"
                               " title 后没加累计偏移")
-                        print("             （见 patches/patch_mlp_one_title.py）")
+                        print("             （见 docs/DVDA-AUTHOR-CHANGES.md）")
                         ok = False
                     elif abs(fps[-1][0] + fps[-1][1] - tl) > 90000:
                         print("    ✗ %s: title %d 末 cell 结束 %d 与标题长度 %d"
@@ -230,7 +230,7 @@ def main():
         # 「下一段 / 上一段」是在**同一个 title 内**换轨，所以只要一组里有
         # 多个 title，在 title 边界上按「下一段」就会停住（上游原本因
         # 「MLP 不能无缝接轨」的猜测让每轨自成 title，见
-        # patches/patch_mlp_one_title.py）。这里把结构报出来，>1 就提示。
+        # docs/DVDA-AUTHOR-CHANGES.md）。这里把结构报出来，>1 就提示。
         multi = {g: (t, group_tracks[g]) for g, t in group_titles.items() if t > 1}
         if multi:
             print("    [提示] 有 %d 个组的 title 数 > 1：%s"
@@ -262,7 +262,7 @@ def main():
                               "**崩溃**（跳到后面的曲目时闪退）")
                         print("       成因: ATSI 与 ASVS 的「按 title / 按轨」"
                               "不一致，两者必须成对改")
-                        print("             （见 patches/patch_asvs_per_track.py）")
+                        print("             （见 docs/DVDA-AUTHOR-DISABLED.md）")
                         ok = False
         n_tr = sum(group_tracks.values())
         total += n_tr

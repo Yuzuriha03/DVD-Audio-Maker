@@ -16,7 +16,7 @@
 菜单按钮是 `jump group G track K`，而 dvda-author 的画页循环
 （menu.c / xml.c 的非分层分支）在 `--ncolumns=1` 时**一页只能装一个音频组**
 （`do { ... } while ((group < img->ncolumns) && ...)`，group 每完成一个组 +1）。
-每页行数 `R = min(32, ceil(总轨数 / 页数))`（见 patches/patch_menu_paging.py）。
+每页行数 `R = min(32, ceil(总轨数 / 页数))`（见 `docs/DVDA-AUTHOR-CHANGES.md`）。
 
 所以页数必须满足 `sum_g ceil(n_g / R) <= 页数`，否则排在后面的组的曲目
 **不会出现在菜单里**（不报错）。这里用迭代求满足条件的最小页数。
@@ -120,7 +120,7 @@ def short_album(name, max_chars=24):
 def rows_per_page(total_tracks, pages):
     """dvda-author **自己**会用的每页行数。
 
-    必须逐字复刻它的算法（patches/patch_menu_paging.py 改过的那两处）：
+    必须逐字复刻它的算法（`docs/DVDA-AUTHOR-CHANGES.md` 改过的那两处）：
         maxbuttons = Min(MAX_BUTTON_Y_NUMBER - 2, ceil(totntracks / nmenus))
     因为分页是 dvda-author 自己做的（逐页填满 R 行，不按专辑边界断页），
     我们只是把每页的背景与文字对上它。两边算法不一致就会错位。
@@ -629,7 +629,7 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
     # 文字段，段内曲目画完才换页」。所以让 --screentext 每段 = 一个专辑，
     # 页数就等于专辑数，新专辑自动换页。
     # 各页行数写在 --screentext 里，dvda-author 会按**该页实际曲目数**
-    # 取行距与按钮矩形（见 patches/patch_menu_one_album_per_page.py）。
+    # 取行距与按钮矩形（见 `docs/DVDA-AUTHOR-CHANGES.md`）。
     row_cap = min(cfg.menu_tracks_per_page, MAX_MENU_ROWS)
     pages_list = album_pages(album_of, row_cap)
     pages = len(pages_list)

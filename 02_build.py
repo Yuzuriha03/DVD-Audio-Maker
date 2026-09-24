@@ -15,8 +15,8 @@
 6. 每组超过 GROUP_TRACK_LIMIT 轨时按专辑边界再拆一组
    (dvda-author 的 ATSI 表缓冲仅 3 扇区,轨数过多会栈溢出)
 7. dvda-author 以 MLP 为输入生成 AUDIO_TS + mkisofs 打包 + 复制到输出目录
-8. 输出 mlp_index.json(MLP→源文件/时长/重采样 + 分盘计划),供 verify.sh 与
-   verify_pts_length.py 使用(MLP 容器不记录时长,无法回读)
+8. 输出 mlp_index.json(MLP→源文件/时长/重采样 + 分盘计划),供 verify 侧使用
+   (MLP 容器不记录时长,无法回读)
 
 注: 使用自编译的 dvda-author(链接系统 FFmpeg 8, 已适配 ch_layout 等 API),
     可对 24-bit 音频做无损 MLP 编码。
@@ -121,8 +121,7 @@ def to_wsl(p):
 def run(cmd, log_output=False):
     """执行命令、回显，并把输出一并写入构建日志。
 
-    **为什么要写日志**：verify 侧的 `audit_disc.py` 与
-    `verify_pts_length.py` 需要从日志里解析两样东西 ——
+    **为什么要写日志**：verify 侧的 `audit_disc.py` 需要从日志里解析两样东西 ——
       · dvda-author 的命令行（据此得知每张盘有几个组、轨序如何）
       · dvda-author 打印的轨道表（First_Sect / Last_Sect / PTS_length）
     因此无论通过 `build.sh` 还是直接运行本脚本，日志都必须落盘。
@@ -750,7 +749,7 @@ def win_copy_to(linux_path, win_dest):
 # 规范版本号（IFO 的 0x12 → 0x11 / 0x00）曾有一个 `fix_spec_versions()`
 # 后处理，已停用并移出 —— 它的 ASVS 部分与实测会坏静图的
 # `patch_asvs_header_mode.py` 是同一个改动。存于
-# `patches/_disabled/disc_spec_versions.py`。
+# `docs/DVDA-AUTHOR-DISABLED.md`。
 
 
 def build_disc(disc_index, groups):
@@ -868,7 +867,7 @@ def build_disc(disc_index, groups):
 
     # 末轨 AOB 的扇区边界补齐曾在这里做（`[补齐] *.AOB 补 N 字节`）。
     # 现已无必要：根因是 `ats.c` 的 `write_pes_padding()` 在 length 为 1~6 时
-    # 一个字节都不写（已在源码修好，见 patches/_merged/patch_ats_pack.py），
+    # 一个字节都不写（已在源码修好，见 `docs/DVDA-AUTHOR-CHANGES.md`），
     # 修好后实测该分支再未触发过。
 
     iso = os.path.join(ISO_DIR, f"{tag}.iso")
@@ -963,7 +962,7 @@ def main():
         BUILD_LOG = CFG.build_log
 
     # 构建日志：写入本次运行的分隔头与工具路径。
-    # audit_disc.py / verify_pts_length.py 依赖此日志解析 dvda-author 命令行，
+    # audit_disc.py 依赖此日志解析 dvda-author 命令行，
     # 所以无论通过 build.sh 还是直接运行本脚本，都必须留下日志。
     try:
         os.makedirs(BUILD_DIR, exist_ok=True)

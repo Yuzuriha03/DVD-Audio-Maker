@@ -41,14 +41,19 @@ bash build_dvda_author_mlp.sh
 该脚本只做「检查源码树 → configure → make」，可重复运行。它链接系统 FFmpeg 8
 并把 `mlp.c` 迁移到 8.x API（详见下文「为什么需要重新编译」）。
 
-> **源码树是手工维护的，改动已固化在里面。** 脚本第 `[1/6]` 步会用
-> `patches/_merged/SOURCE-MANIFEST.txt` 的 md5 比对改动是否还在（缺失告警、
-> 改过提示，都不中止）。
+> **源码树是手工维护的，改动已提交在它的 `dvda-maker` 分支上。**
+> 脚本第 `[1/6]` 步会比对改动是否还在（缺失告警、改过提示，都不中止）。
 >
-> 从**全新上游 clone** 开始时，还需要按
-> [`patches/_merged/README.md`](patches/_merged/README.md) 打上固化的改动、
-> 按 [`patches/_merged/upstream-fixes/`](patches/_merged/upstream-fixes/README.md)
-> 做 3 项上游缺陷修复。
+> 从**全新上游 clone** 开始时，只需应用改动集：
+>
+> ```bash
+> git clone https://github.com/fabnicol/dvda-author tools/dvda-author-mlp8
+> cd tools/dvda-author-mlp8 && git checkout 8fca43a
+> git apply /path/to/scripts/docs/dvda-author-changes.patch
+> ```
+>
+> 每项改动的依据见 [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.md)，
+> 试过但没接入的见 [`docs/DVDA-AUTHOR-DISABLED.md`](docs/DVDA-AUTHOR-DISABLED.md)。
 
 ### 4. 改配置
 
@@ -362,13 +367,11 @@ DVD-Audio-Maker/
 ├── quick_check.py               # 快速结构校验（秒级，不解 AOB）
 ├── audit_disc.py                # 光盘一致性审计
 ├── check_aob_pts.py             # AOB 逐扇区 PTS 检查
-├── verify_pts_length.py         # 逐轨 PTS_length 与源时长比对
 ├── build_dvda_author_mlp.sh     # 重编支持 24-bit MLP 的 dvda-author
-├── patches/                     # 工具链源码改动
-│   ├── _merged/                 #   已固化进源码树，仅供对照回溯
-│   │   └── upstream-fixes/      #   3 项上游自身缺陷的修复记录
-│   └── _disabled/               #   试过但有害/无效的改动
 └── docs/
+    ├── DVDA-AUTHOR-CHANGES.md   # 工具链改动清单与依据
+    ├── DVDA-AUTHOR-DISABLED.md  # 试过但没接入的改动
+    ├── dvda-author-changes.patch# 改动集（可直接 apply 到上游）
     ├── TROUBLESHOOTING.md       # 问题诊断记录与修复细节
     └── LICENSING.md             # 许可状况、第三方归属与法律说明
 ```
@@ -778,7 +781,7 @@ MLP 容器**不记录 duration**（`ffprobe` 返回 `N/A`），无法靠回读�
 
 **处理**：用 `astats` 在同一次解码中取实际采样数，与「源声明时长 × 目标采样率」
 比对；并由 `02_build.py` 输出 `mlp_index.json` 记录「MLP → 源文件 / 声明时长 /
-重采样目标」，供后续的时长校验脚本（`verify_pts_length.py`）使用。
+重采样目标」，供 verify 侧使用。
 
 ### 声道数约束
 
@@ -983,8 +986,9 @@ ffmpeg 将其误读为单声道元素而丢弃整帧。
 
 **本仓库以 [GPL-3.0](LICENSE) 发布。**
 
-原因：`patches/` 是对 [dvda-author](https://github.com/fabnicol/dvda-author)
-（GPL-3.0）源码的**修改**记录，属衍生作品，需与其许可保持一致。
+原因：本工程对 [dvda-author](https://github.com/fabnicol/dvda-author)
+（GPL-3.0）源码做了大量**修改**，仓库里含这些改动的 patch 与说明，
+属衍生作品，需与其许可保持一致。
 
 | 组件 | 许可 |
 |------|------|

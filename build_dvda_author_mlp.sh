@@ -13,11 +13,13 @@
 #   从而支持 24-bit 无损 MLP。
 #
 # 源码模型（2026-09-24 改）:
-#   DVDA_AUTHOR_SRC 是**手工维护的源码树**，本工程的改动已**固化在里面**
-#   （不再是「从上游还原 + 每次重放补丁」）。
-#   原本用在构建期重放的 24 个补丁存于 scripts/patches/_merged/，
-#   仅供对照与回溯；本脚本不再运行它们。
-#   改动清单与校验基线：scripts/patches/_merged/SOURCE-MANIFEST.txt
+#   DVDA_AUTHOR_SRC 是**手工维护的源码树**，本工程的改动以 git 提交保存在
+#   它的 `dvda-maker` 分支上（上游基线 8fca43a）。
+#
+#   改动集也可从 docs/dvda-author-changes.patch 恢复（可直接 apply 到上游）。
+#
+#   在此之前用的是「25 个 Python 补丁每次重放」的旧机制 —— 已停用，
+#   原因见 docs/DVDA-AUTHOR-CHANGES.md 末尾「为什么改用 git 提交」。
 #
 # 前置条件:
 #   · 系统已装 FFmpeg 8 开发库
@@ -29,7 +31,7 @@
 #
 # 本脚本幂等：可重复执行（只清构建产物，不动源码）。
 #
-# 各改动的「为什么」见 scripts/patches/_merged/*.py 的文件头。
+# 各改动的「为什么」见 docs/DVDA-AUTHOR-CHANGES.md。
 # ============================================================================
 set -e
 
@@ -44,7 +46,7 @@ fi
 
 SRC="${DVDA_AUTHOR_SRC:-/root/dvda-author-mlp8}"
 SYS_LIB="${DVDA_SYS_LIB:-/usr/lib/x86_64-linux-gnu}"
-MANIFEST="$HERE/patches/_merged/SOURCE-MANIFEST.txt"
+PATCHFILE="$HERE/docs/dvda-author-changes.patch"
 LOGDIR="${DVDA_BUILD_DIR:-/root/dvda-build}"
 # 期望产出的可执行文件（取自配置）
 EXPECT="${DVDA_AUTHOR:-}"
@@ -60,47 +62,33 @@ echo
 echo "=== [1/6] 检查源码树 ==="
 if [ ! -d "$SRC" ]; then
   echo "[失败] 源码树不存在: $SRC" >&2
-  echo "       本工程的源码树是手工维护的（上游 + 本工程改动已固化）。" >&2
-  echo "       从上游重建：" >&2
+  echo "       从上游重建（需先有改动集）：" >&2
   echo "         git clone https://github.com/fabnicol/dvda-author \"$SRC\"" >&2
-  echo "       然后按 patches/_merged/README.md 逐项重新打上改动。" >&2
+  echo "         cd \"$SRC\" && git checkout 8fca43a" >&2
+  echo "         git apply \"$PATCHFILE\"" >&2
   exit 2
 fi
 echo "  已存在 $SRC"
 
-# 改动自检：比对 patches/_merged/SOURCE-MANIFEST.txt 里的 md5。
-# 不符只告警而不中止 —— 手工改源码是允许的；
-# 但「改动凭空消失」（例如误用上游文件覆盖）必须看得见。
-if [ -f "$MANIFEST" ]; then
-  MISSING=0
-  DRIFT=0
-  DETAIL=""
-  while read -r want rel; do
-    case "$want" in \#*|"") continue ;; esac
-    f="$SRC/$rel"
-    if [ ! -f "$f" ]; then
-      MISSING=$((MISSING + 1))
-      DETAIL="$DETAIL\n         缺失 $rel"
-      continue
-    fi
-    got=$(md5sum "$f" | cut -d' ' -f1)
-    if [ "$got" != "$want" ]; then
-      DRIFT=$((DRIFT + 1))
-      DETAIL="$DETAIL\n         改动 $rel"
-    fi
-  done < "$MANIFEST"
-  if [ "$MISSING" -gt 0 ]; then
-    echo "  [警告] 有 $MISSING 个源文件丢失（改动可能已被覆盖）："
-    printf "$DETAIL\n"
-  elif [ "$DRIFT" -gt 0 ]; then
-    echo "  [提示] $DRIFT 个源文件与基线清单不同（手工改过？）："
-    printf "$DETAIL\n"
-    echo "         确认无误后可用  md5sum 重生成基线清单"
+# 改动自检：本工程的改动提交在源码树的 dvda-maker 分支上（上游基线 8fca43a）。
+# 与提交不一致只提示而不中止 —— 手工改源码是允许的；
+# 但「改动凭空消失」（例如误用上游文件覆盖、误用 git checkout）必须看得见。
+if [ -d "$SRC/.git" ]; then
+  base=$(git -C "$SRC" merge-base HEAD master 2>/dev/null || echo 8fca43a)
+  n_diff=$(git -C "$SRC" diff --name-only "$base" -- src libutils 2>/dev/null | wc -l)
+  n_dirty=$(git -C "$SRC" diff --name-only -- src libutils 2>/dev/null | wc -l)
+  if [ "$n_diff" -eq 0 ]; then
+    echo "  [警告] 源码树里没有任何改动（基线 $base）—— 可能被还原成了上游"
+    echo "         若确实如此：git -C \"$SRC\" checkout dvda-maker"
+  elif [ "$n_dirty" -gt 0 ]; then
+    echo "  [提示] $n_dirty 个源文件有未提交修改（手工改过？）："
+    git -C "$SRC" --no-pager diff --stat -- src libutils 2>/dev/null | tail -n 3 | sed 's/^/         /'
+    echo "         确认无误后：git -C \"$SRC\" commit -am \"...\""
   else
-    echo "  源码改动自检通过 ✔（$(grep -c -v '^#' "$MANIFEST") 个文件与基线一致）"
+    echo "  源码改动自检通过 ✔（$n_diff 个文件，与 dvda-maker 提交一致）"
   fi
 else
-  echo "  [提示] 无基线清单 $MANIFEST —— 跳过改动自检"
+  echo "  [提示] $SRC 不是 git 仓库 —— 跳过改动自检"
 fi
 
 echo "=== [2/6] configure（关闭不兼容的 SoX，启用 FFmpeg 音频栈） ==="

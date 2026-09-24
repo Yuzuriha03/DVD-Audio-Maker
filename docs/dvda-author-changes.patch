@@ -1,0 +1,2542 @@
+From e65b3a0c7131e6d561ae488e0b5f6b3189ac0210 Mon Sep 17 00:00:00 2001
+From: yyz57 <yyz57@localhost>
+Date: Thu, 24 Sep 2026 17:52:56 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=9C=AC=E5=B7=A5=E7=A8=8B=E7=9A=84=E5=85=A8?=
+ =?UTF-8?q?=E9=83=A8=E6=94=B9=E5=8A=A8=EF=BC=8820=20=E4=B8=AA=E6=96=87?=
+ =?UTF-8?q?=E4=BB=B6=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+上游基线 8fca43a。改动集原先由 25 个 Python 补丁脚本重放，
+2026-09-24 起改为直接提交到这个分支 —— 更精确、天然幂等、可 diff / 可回滚。
+
+每项改动的依据（为什么、反例、实测数据）见
+scripts/docs/DVDA-AUTHOR-CHANGES.md；试过但没接入的见
+scripts/docs/DVDA-AUTHOR-DISABLED.md。
+
+主要内容：
+- FFmpeg 8 迁移（mlp.c：ch_layout / pkt_pos / 24-bit / planer 格式）
+- 一个音频组只生成一个 title（支持逐轨切歌，否则「下一曲」无效）
+- ASVS / 静图四处：0x19 置 0、每图偏移 base_sect+off_sect、
+  导航扇区去 mplex 空 DSI、结束码独占扇区
+- 静图记录的两个偏移字段按轨递进（否则同一专辑内切曲目不换封面）
+- 制式与逐行/隔行改为按实际码流自检（取代写死 0x53 / 无条件改 1）
+- 选曲菜单 10 项：分页、排版、箭头、AMG cell 地址、一页一专辑等
+- 上游缺陷：fn_strtok 空串越界写栈、write_pes_padding 漏写字节（每盘丢1轨）、
+  ATSI 固定 3 扇区缓冲（>70 轨栈溢出）
+---
+ libutils/src/include/winport.h |  13 +
+ libutils/src/libc_utils.c      |   2 +-
+ libutils/src/winport.c         |  15 +-
+ src/amg2.c                     |  76 +++-
+ src/asvs.c                     |  33 +-
+ src/ats.c                      | 101 +++--
+ src/atsi2.c                    | 106 +++--
+ src/audio.c                    |  48 +--
+ src/auxiliary.c                |  23 +-
+ src/command_line_parsing.c     |  52 ++-
+ src/dvda-author.c              |   7 +-
+ src/include/audio2.h           |   1 +
+ src/include/commonvars.h       |   7 +
+ src/include/menu.h             |   4 +
+ src/include/structures.h       |  19 +
+ src/launch_manager.c           |  22 +-
+ src/libsoxconvert.c            |  20 +
+ src/menu.c                     | 686 +++++++++++++++++++++++++++++++--
+ src/mlp.c                      | 260 ++++++-------
+ src/xml.c                      | 110 ++++--
+ 20 files changed, 1251 insertions(+), 354 deletions(-)
+
+diff --git a/libutils/src/include/winport.h b/libutils/src/include/winport.h
+index 8e1a52c..0a21ae8 100644
+--- a/libutils/src/include/winport.h
++++ b/libutils/src/include/winport.h
+@@ -127,6 +127,15 @@ void ErrorExit(PTSTR lpszFunction);
+ #   endif
+ #endif
+ 
++ static inline void close_file_descriptors(FILE_DESCRIPTOR a, FILE_DESCRIPTOR b, FILE_DESCRIPTOR c, FILE_DESCRIPTOR d)
++{
++#ifdef _WIN32
++    CloseHandle(a); CloseHandle(b); CloseHandle(c); CloseHandle(d);
++#else
++    close(a); close(b); close(c); close(d);
++#endif
++}
++
+  void  pipe_to_child_stdin(const char* name,
+                           char** args,
+                           int GCC_UNUSED  buffer_size,
+@@ -150,3 +159,7 @@ DWORD pipe_to_parent_stderr(FILE_DESCRIPTOR GCC_UNUSED  g_hChildStd_ERR_Rd,
+ 
+  #endif
+ #endif // WINPORT_H_INCLUDED
++
++#ifndef _WIN32
++void close_handles(int tube0, int tube1, int tubeerr0, int tubeerr1);
++#endif
+diff --git a/libutils/src/libc_utils.c b/libutils/src/libc_utils.c
+index 61f7f44..d9d5729 100644
+--- a/libutils/src/libc_utils.c
++++ b/libutils/src/libc_utils.c
+@@ -857,7 +857,7 @@ int secure_mkdir (const char* path, mode_t mode, globalData *globals)
+     if (path == NULL || path[0]=='\0')
+     {
+      fprintf(stderr, "%s%s%s","\n"ERR "Could not create directory with empty or null path. Using temporary directory : ", globals->settings.tempdir, "\n");
+-     return secure_mkdir(path, globals->access_rights, globals);
++     return -1;
+     }
+ 
+     len = strlen (path);
+diff --git a/libutils/src/winport.c b/libutils/src/winport.c
+index 5460196..7c50d0b 100644
+--- a/libutils/src/winport.c
++++ b/libutils/src/winport.c
+@@ -324,17 +324,12 @@ void pipe_to_child_stdin(const char* name,
+         return;
+  }
+ 
+-void close_handles(
+-        int* tube0,
+-        int* tube1,
+-        int* tubeerr0,
+-        int* tubeerr1,
+-        int* GCC_UNUSED parent_stderr)
++void close_handles(int tube0, int tube1, int tubeerr0, int tubeerr1)
+ {
+-      close(*tube1);
+-      close(*tube0);
+-      close(*tubeerr1);
+-      close(*tubeerr0);
++      close(tube1);
++      close(tube0);
++      close(tubeerr1);
++      close(tubeerr0);
+ }
+ 
+ DWORD write_to_child_stdin(
+diff --git a/src/amg2.c b/src/amg2.c
+index e6f9e21..94b314e 100644
+--- a/src/amg2.c
++++ b/src/amg2.c
+@@ -99,20 +99,24 @@ uint16_t create_tracktables(command_t *command, uint8_t naudio_groups, uint8_t n
+         {
+           // counts the number of tracks with same-type audio characteristics, per group and title
+           // into ntitletracks[group][numtitles[group]], and corresponding PTS length in titlelength[group][numtitles[group]]
+-          // PATCH 13.11 on 12.06
+-          // PATCH MLP: TODO check this
+-          // Note: apparently MLP does not allow "gapless" same-audio characteristics titles, which
+-          // means that 3 following tracks with same audio specs will create 3 titles instead of 1 for
+-          // gapless PCM. TODO: check if this is software-dependent
+-
++          /* PATCH 2026-09-21  原版在这里额外加了
++                「本轨或前一轨是 MLP → 另起 title」，依据是「MLP 不允许无缝接轨」
++                的猜测（见原注释）。后果是**每首歌都自成一个 title**，而 DVD 的
++                「下一段 / 上一段」是在同一 title 内换轨 → 播放器无处可去，
++                表现为按了没反应或跳回本首开头。
++
++                去掉这两个 MLP 子句后，一个音频组 = 一个 title、title 内每首歌
++                一个 track（商业 DVD-Audio 盘的常规布局），
++                「下一段」就能逐轨前进，整组也能连续播放到底。
++
++                保留音频属性比较：组内若中途中采样率/位深/声道数变化，
++                仍会正确地切成多个 title。 */
+           if (track)
+             {
+               if (command->files[group][track].samplerate     != command->files[group][track - 1].samplerate
+                   || command->files[group][track].bitspersample != command->files[group][track - 1].bitspersample
+                   || command->files[group][track].channels      != command->files[group][track - 1].channels
+-                  || command->files[group][track].cga           != command->files[group][track - 1].cga
+-                  || command->files[group][track].type          == AFMT_MLP
+-                  || command->files[group][track - 1].type      == AFMT_MLP)
++                  || command->files[group][track].cga           != command->files[group][track - 1].cga)
+                 {
+                   command->files[group][track].newtitle = 1;
+                 }
+@@ -219,6 +223,12 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+   sprintf(outfile, "%s" SEPARATOR "AUDIO_TS.VOB", audiotsdir);
+   img->action = ANIMATEDVIDEO;
+ 
++  /* 「一页一个专辑」：先算出「每页曲目数」与「页 -> (音频组, 组内首轨)」。
++     成功时菜单每页一个专辑（文字段 == 页），失败则整条退回旧的按组排版。 */
++  int by_page = compute_menu_pages(img, ngroups, ntracks, globals);
++  uint8_t  m_ngroups = by_page ? img->npages : ngroups;
++  uint8_t *m_ntracks = by_page ? img->page_ntracks : ntracks;
++
+   switch (globals->topmenu)
+     {
+     // If only active menus, no top menus, create automatic top menus to be unlinked later on
+@@ -237,7 +247,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+ 
+     case RUN_GENERATE_PICS_SPUMUX_DVDAUTHOR:
+ 
+-      generate_menu_pics(command, img, ngroups, ntracks, globals);
++      generate_menu_pics(command, img, m_ngroups, m_ntracks, globals);
+ 
+     // calling xml project file subroutine for dvdauthor
+ 
+@@ -245,7 +255,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+ 
+       allocate_topmenus(command, globals);
+ 
+-      errno = generate_spumux_xml(command, ngroups, ntracks, img, globals);
++      errno = generate_spumux_xml(command, m_ngroups, m_ntracks, img, globals);
+       if (errno) perror("\n"ERR "AMG: spumux_xml\n");
+ 
+       errno = launch_spumux(img, globals);
+@@ -256,7 +266,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+       if (!globals->xml)
+         {
+           if (globals->debugging) foutput("%s\n", INF "Generating AMGM Xml project for dvdauthor (patched)...");
+-          errno = generate_amgm_xml(ngroups, ntracks, img, globals);
++          errno = generate_amgm_xml(m_ngroups, m_ntracks, img, globals);
+           if (errno) perror("\n"ERR "AMG: amgm_xml\n");
+         }
+       if (img->nmenus && img->menuvobsize == NULL)
+@@ -488,7 +498,10 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+   uint32_copy(sec2_ptr, 1);
+   uint32_copy(sec3_ptr, 2);
+   uint32_copy(sec4_ptr, (menusector) ? 3 : 0);
+-  uint32_copy(unknown2, menusector ? 0x53000000 : 0);
++  /* 菜单区视频属性（制式）由 AUDIO_TS.VOB 自检得出，
++     见 patches/patch_mpeg2_autodetect.py。 */
++  uint32_copy(unknown2, (menusector)
++              ? ((uint32_t) dvda_video_attr_of(img->tsvob, img, globals) << 24) : 0);
+   uint32_copy(unknown3, menusector ? 0x00010000 : 0);
+   uint32_copy(top_menu_lpcm_tag, (img->h + img->min + img->sec) ? 0x00018001 : 0);
+   uint16_copy(n_totaltitles, totaltitles);
+@@ -858,7 +871,19 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+               i += 4;
+             }
+           else i += 12;
+-          uint32_check(&amg[i], menuvobsize_sum + img->menuvobsize[img->nmenus - 1] - 1 - 1);
++          /* cell 结束地址：必须用**当前这一页**的大小（j-1），
++             原式写的是 menuvobsize[nmenus-1]（恒为最后一页），
++             只有 nmenus == 1 时才恰好正确 —— 多页时第 1..n-1 页的结束地址全错，
++             表现为「翻页按钮点了没反应 / 回不到上一页」，
++             而各页 VOB 大小接近时错误会在某些页上相互抵消（实测 8 页里 5 页错）。
++             起始地址一侧不用改：cell j 的 start = menuvobsize_sum
++             = cell j-1 的 end + 1，两边自洽。 */
++          uint32_t cell_end = menuvobsize_sum + img->menuvobsize[j - 1] - 1 - 1;
++          uint32_check(&amg[i], cell_end);
++          if (globals->debugging)
++            foutput("%s%d%s%u%s%u%s%u%s", MSG_TAG "AMG menu cell ", j,
++                    ": start=", menuvobsize_sum, " end=", cell_end,
++                    " (vob size=", img->menuvobsize[j - 1], " sectors)\n");
+           i += 4;
+           uint32_check(&amg[i], 0x00010001);
+           i += 4;
+@@ -889,7 +914,7 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+ 
+       int c, d;
+ 
+-      d = (sectors->amg - 1) * 0x800;
++      d = SIZE_AMG * 0x800;
+       i = d;
+       memcpy(&amg[i], "DVDATXTDT-MG", 12);
+       i += 12;
+@@ -1056,7 +1081,10 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+   uint32_copy(&amg[0xc8], 2);  	// Pointer to sector 3
+   uint32_copy(&amg[0xcc], (menusector) ? 3 : 0);  	// Pointer to sector 4
+   uint32_copy(&amg[0xd4], (globals->text) ? 3 + (menusector) : 0);  	// Pointer to sector 5
+-  uint32_copy(&amg[0x100], (menusector) ? 0x53000000 : 0); // Unknown;  // 0x1E000000 used to be uset in SET2
++  /* 菜单区视频属性（制式）由 AUDIO_TS.VOB 自检得出（上游硬编码 0x53=PAL），
++     见 patches/patch_mpeg2_autodetect.py。 */
++  uint32_copy(&amg[0x100], (menusector)
++              ? ((uint32_t) dvda_video_attr_of(img->tsvob, img, globals) << 24) : 0);
+   uint32_copy(&amg[0x154], (menusector) ? 0x00010000 : 0); // Unknown;
+   uint32_copy(&amg[0x15C], (img->h + img->min + img->sec) ? 0x00018001 : 0); // 2ch 48k LPCM audio (signed big endian) in mpeg2 top menu, 1 stream,
+ 
+@@ -1395,7 +1423,19 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+               i += 4;
+             }
+           else i += 12;
+-          uint32_copy(&amg[i], menuvobsize_sum + img->menuvobsize[img->nmenus - 1] - 1 - 1);
++          /* cell 结束地址：必须用**当前这一页**的大小（j-1），
++             原式写的是 menuvobsize[nmenus-1]（恒为最后一页），
++             只有 nmenus == 1 时才恰好正确 —— 多页时第 1..n-1 页的结束地址全错，
++             表现为「翻页按钮点了没反应 / 回不到上一页」，
++             而各页 VOB 大小接近时错误会在某些页上相互抵消（实测 8 页里 5 页错）。
++             起始地址一侧不用改：cell j 的 start = menuvobsize_sum
++             = cell j-1 的 end + 1，两边自洽。 */
++          uint32_t cell_end = menuvobsize_sum + img->menuvobsize[j - 1] - 1 - 1;
++          uint32_copy(&amg[i], cell_end);
++          if (globals->debugging)
++            foutput("%s%d%s%u%s%u%s%u%s", MSG_TAG "AMG menu cell ", j,
++                    ": start=", menuvobsize_sum, " end=", cell_end,
++                    " (vob size=", img->menuvobsize[j - 1], " sectors)\n");
+           i += 4;
+           uint32_copy(&amg[i], 0x00010001);
+           i += 4;
+@@ -1426,7 +1466,7 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+ 
+       int c, d;
+ 
+-      d = (sectors->amg - 1) * 0x800;
++      d = SIZE_AMG * 0x800;
+       i = d;
+       memcpy(&amg[i], "DVDATXTDT-MG", 12);
+       i += 12;
+diff --git a/src/asvs.c b/src/asvs.c
+index d13f6f5..9c6ca8f 100644
+--- a/src/asvs.c
++++ b/src/asvs.c
+@@ -58,6 +58,7 @@
+ #include "winport.h"
+ #include "auxiliary.h"
+ #include "asvs.h"
++#include "menu.h"
+ 
+ int create_asvs(char *audiotsdir,
+                 int naudio_groups,
+@@ -73,6 +74,9 @@ int create_asvs(char *audiotsdir,
+   memset(asvs, 0, sectors_asvs * 2048);
+ 
+   uint16_t pict = 0, npics = 0, totnumtitles = 0, k, j, t;
++  /* 本 title 内归零的相对偏移（见 patch_asvs_image_sectors.py）。
++     totpicsectors 是全局累计，用作 base_sect；两者不能混用。 */
++  uint16_t titlesectors = 0;
+   errno = 0;
+   uint32_t totpicsectors = 0;
+ 
+@@ -80,8 +84,17 @@ int create_asvs(char *audiotsdir,
+ 
+   uint16_copy(&asvs[0xE], 0x0012);  // DVD Spec
+   asvs[0x13] = 2; // unknown
+-  asvs[0x18] = 0x53; // unknown, or 0x43
+-  asvs[0x19] = 0x1; // activates buttons // number of menus ? // or 0
++  /* 视频属性（制式）由**实际产出的 AUDIO_SV.VOB** 自检得出：
++     0x43 = 525/60 (NTSC)，0x53 = 625/50 (PAL)。
++     上游此处硬编码 0x53，故传 -4 ntsc 时会写成「声明 PAL 实播 NTSC」。
++     见 patches/patch_mpeg2_autodetect.py。 */
++  asvs[0x18] = dvda_video_attr_of(img->stillvob, img, globals);
++  /* 商业盘一致为 0（Enigma 0x53/0x00、李娜 0x43/0x00、巴赫 0x43/0x00）。
++     原值 1 的语义是「激活按钮」，而 --stillpics 生成的静图**没有按钮**，
++     声明与实物不符；播放器可能据此进入按钮导航模式，把「上一段/下一段」
++     吞掉（实测症状：曲目显示 0、上一段无反应、下一段跳回第 1 首）。
++     源码注释本身也写了「or 0」。 */
++  asvs[0x19] = 0x0;
+ 
+   // This palette is taken as is from a commercial DVD: unselected
+   // text (display)
+@@ -136,16 +149,28 @@ int create_asvs(char *audiotsdir,
+           uint16_copy(&asvs[k], pict + 1); // 1-based
+           pict += npics;
+           k += 2;
++          /* base_sect = 本 title 的**全局起始扇区**（商业盘写法）。
++
++             规范里绝对位置 = base_sect + off_sect。因此：
++               · base_sect 写本 title 在 AUDIO_SV.VOB 里的全局起点
++               · 每图的 off_sect 写**本 title 内的相对偏移**（首图恒为 0）
++             这正是 Enigma/李娜/巴赫 的形态：
++                 Enigma title1: base=0,   off = 0 23 46 ... 322
++                 Enigma title2: base=345, off = 0 20 40 ... 220
++             （此前写成了「每 title 归零的相对表」，等价于把 base_sect 当 0
++               且 off 用相对值 —— 绝对位置全错，只有 title1 碰巧正确。） */
+           uint32_copy(&asvs[k], totpicsectors);
++
++          titlesectors = 0;
+           for (j = 0; j < npics; ++j)
+             {
+-              if (j)
+-                uint16_copy(&asvs[t], totpicsectors);
++              uint16_copy(&asvs[t], titlesectors);
+               t += 2;
+ 
+               //pict [] is 0-based: pict[0] for first track
+ 
+               totpicsectors += img->stillpicvobsize[index + j];
++              titlesectors  += (uint16_t) img->stillpicvobsize[index + j];
+               if (totpicsectors > 1024)
+                 foutput(ERR "Exceeding stillpic buffer limit (2 MB) \
+ at pict #%d.\n", j);
+diff --git a/src/ats.c b/src/ats.c
+index ad24a38..51a38a8 100644
+--- a/src/ats.c
++++ b/src/ats.c
+@@ -297,18 +297,22 @@ inline static void write_pes_padding(FILE *fp,
+       return;
+     }
+ 
+-  if (length > 6)
+-    {
+-      length -= 6; // We have 6 bytes of PES header.
+-      if (globals->maxverbose)
+-        foutput("%s %d %s\n", INF " Padding with ", length, " bytes.");
+-    }
+-  else
+-    {
+-      foutput("%s\n", ERR "pes_padding length must be higher than 6;");
++  if (length < 6)
++    {
++      /* 不足一个 PES 填充包的头部（6 字节），只能补零。
++         原先此处只报错并直接 return，一个字节都不写：该轨最后一个 pack 会短
++         1~5 字节，文件不再按 2048 对齐，其后第一轨的 pack 头落进扇区中间，
++         读盘端取不到 pack 头会把整首丢掉。 */
++      uint8_t zero[6];
++      memset(zero, 0, length);
++      fwrite(zero, length, 1, fp);
+       return;
+     }
+ 
++  length -= 6; // We have 6 bytes of PES header.
++  if (globals->maxverbose)
++    foutput("%s %d %s\n", INF " Padding with ", length, " bytes.");
++
+   length_bytes[0] = (length & 0xFF00) >> 8;
+ 
+   /* Take number of bytes to pad in sector (=2048-length)
+@@ -316,7 +320,7 @@ inline static void write_pes_padding(FILE *fp,
+ 
+   length_bytes[1] = length & 0xFF;
+ 
+-  uint8_t ff_buf[length];
++  uint8_t ff_buf[length + 1]; /* length 可为 0，多留 1 字节避免零长数组 */
+ 
+   memset(ff_buf, 0xff, length);
+ 
+@@ -1266,6 +1270,19 @@ inline static int write_pes_packet(FILE *fp,
+       SCR = calc_SCR(info, pack_in_title);
+     }
+ 
++  /* 把本轨平移到它所属 title（PGC）的时间轴上。
++
++     MLP 的 pts[]/dts[]/scr[] 是按轨算的，每轨都从 PTS0（实测 98）起算。
++     原版每轨自成一个 title，所以每轨一条时间轴、没问题；合并成一个 title 后
++     必须整体平移，否则 PGC 的时间轴会断成 N 段各自从 98 开始：
++       · 每个 cell 的 first_pts 都等于 98（first_PTS 就是在这里取的首个 PTS）
++       · 播放器按时间轴寻址任何一首都会落到 PTS 98 = 第 1 首
++       · 症状：不管哪首按「下一曲」都跳回曲目 1
++     SCR 与 PTS 同源（27MHz / 90kHz = 300），按同比例平移以保持一致。 */
++  PTS += info->pts_shift;
++  DTS += info->pts_shift;
++  SCR += (uint64_t) info->pts_shift * 300;
++
+   static bool wait_for_next_pack;
+ 
+   // Two cases arise: if new file is new title, then pack_in_title == 0
+@@ -1907,6 +1924,8 @@ int create_ats(char *audiotsdir,
+   uint32_t bytesinbuf = 0, n = 0, lpcm_payload = 0;
+   uint8_t audio_buf[AUDIO_BUFFER_SIZE];
+   uint64_t pack_in_title = 0;
++  /* 一个 title 内的 PTS 累计偏移（见下方按轨刷 pack 处与 write_pes_packet）。 */
++  uint32_t pts_shift = 0;
+ 
+   STRING_WRITE_CHAR_BUFSIZ(outfile, "%s/ATS_%02d_%d.AOB", audiotsdir,
+                            titleset, fileno)
+@@ -1977,26 +1996,48 @@ int create_ats(char *audiotsdir,
+ 
+               if (i < ntracks)
+                 {
+-                  /* If the current track is a different audio format, we must
+-                     start a new title. */
+-
+-                  if (files[i].newtitle)
+-                    {
+-                      // Empty audio buffer
+-
+-                      write_pes_packet(fpout,
+-                                       &files[i - 1],
+-                                       audio_buf,
+-                                       bytesinbuf,
+-                                       pack_in_title,
+-                                       start_of_file,
+-                                       globals);
+-
+-                      ++pack;
+-                      bytesinbuf = 0;
+-                      pack_in_title = 0;
+-                      totpayload = 0;
+-                    }
++                  /* 每个音轨边界都必须把上一轨的余量刷成一个独立 pack。
++
++                     这件事原来挂在 `files[i].newtitle` 上 —— 原版每轨都自成一个
++                     title，所以恰好每轨都刷。去掉 MLP 分 title 条件后必须改成
++                     **无条件**，否则会出两个问题：
++
++                       1. `pack_in_title` 跨轨累加，而 MLP 的
++                          `info->mlp_layout[]` 是**按轨**分配的
++                          （allocate_mlp_tracktable），
++                          write_lpcm_header() 里
++                          `mlp_layout[pack_in_title]` 会越界读 → 段错误；
++                       2. `files[i].first_sector = files[i-1].last_sector + 1`
++                          不再成立于 pack 边界，下一轨从扇区中途开始，
++                          读盘端取不到 pack 头 → 整首被丢弃。 */
++                  {
++                    write_pes_packet(fpout,
++                                     &files[i - 1],
++                                     audio_buf,
++                                     bytesinbuf,
++                                     pack_in_title,
++                                     start_of_file,
++                                     globals);
++
++                    ++pack;
++                    bytesinbuf = 0;
++                    pack_in_title = 0;
++                    totpayload = 0;
++                  }
++
++                  /* 累计到下一轨的 PTS 偏移。
++
++                     MLP 的 pts[]/dts[]/scr[] 是**按轨**的（每轨从 PTS0 = 98
++                     起算、轨内单调）。原版每轨自成一个 title，每轨一条时间轴，
++                     这没问题。
++
++                     而 DVD 里**每个 title 一根时间轴**：实测商业盘（Enigma）
++                     各 title 的 first_pts 都从同一个 PTS0 起（585），title 内
++                     跨轨连续。所以遇到 newtitle 时偏移必须**清零**。 */
++                  pts_shift = files[i].newtitle
++                              ? 0
++                              : pts_shift + files[i - 1].PTS_length;
++                  files[i].pts_shift = pts_shift;
+ 
+                   files[i].first_sector = files[i - 1].last_sector + 1;
+ 
+diff --git a/src/atsi2.c b/src/atsi2.c
+index b8d7217..1e60c9b 100644
+--- a/src/atsi2.c
++++ b/src/atsi2.c
+@@ -182,8 +182,22 @@ int create_atsi(command_t *command,
+   char basename[CHAR_BUFSIZ + 12 + 1];
+ 
+   // PATCH 09.07  ATS_ files do not need 3 sectors in most cases
+-
+-  uint8_t atsi[2048 * 3];
++  // PATCH 2026-09-21  size the table from the track count (was a fixed
++  //                   3-sector stack array, which capped a group at ~65 tracks)
++
++  /* ATSI 表按**曲目数**动态分配。
++     实测每轨约占 56.5 字节（读出 ATSI 内部的 i 字段），另有 2049 字节基线
++     （ATSI_MAT 等占 0x800）。这里按 96 字节/轨留足余量，向上取整到扇区，
++     再多留一个扇区。99 轨（MAX_TRACKS）也只分配约 12 KB 的**堆**内存 ——
++     不再是固定大小的栈数组，也就不会因曲目变多而写爆缓冲。 */
++  size_t atsi_cap = ((2049 + (size_t) ntracks * 96 + 2047) / 2048 + 1) * 2048;
++  uint8_t *atsi = (uint8_t *) calloc(atsi_cap, 1);
++
++  if (atsi == NULL)
++    {
++      perror(ERR "ATSI table allocation");
++      clean_exit(EXIT_FAILURE, globals);
++    }
+   int numtitles;
+   int ntitletracks[99];
+   uint64_t title_length;
+@@ -195,7 +209,7 @@ int create_atsi(command_t *command,
+   static uint16_t trackcount, pictitlecount;
+   bool maybe_multichannel = false;
+ 
+-  memset(atsi, 0, sizeof(atsi));
++  memset(atsi, 0, atsi_cap);
+   memcpy(&atsi[0], "DVDAUDIO-ATS", 12);
+   uint16_copy(&atsi[0x20], 0x0012);  // DVD Specifications version
+   uint32_copy(&atsi[0x80], 0x07ff); // End byte address of ATSI_MAT
+@@ -586,6 +600,11 @@ int create_atsi(command_t *command,
+           /* Stills records */
+ 
+           uint16_t r, u = 0,  trackcount_save = trackcount;
++          /* 本 title 内、本轨**之前**已写出的图片数。
++             两条偏移字段都相对本 title 的静图表起点，而表的布局是
++             「先 6 字节/轨的记录，紧跟 10 字节/图的清单」；
++             故第 r 轨的清单起点 = 6×轨数 + 10×（前 r 轨的图数之和）。 */
++          uint16_t pics_before = 0;
+           s += (j) ? ntitlepics[j - 1]  : 0;
+ 
+           if (ntitlepics[j])
+@@ -601,9 +620,15 @@ int create_atsi(command_t *command,
+             {
+               ++trackcount;
+ 
+-              //  This might be taken off in some unclear cases.
+-
+-              if ((ntitlepics[j] == 0) && (img->npics[trackcount - 1] == 0))
++              /* 本循环是「一轨一条记录」，**不能**因本 title 没有独立图片就
++                 跳过 —— 那样写出的记录数会少于 ntitletracks[j]，破坏格式约定；
++                 而且这些轨在 ATSI 里就没有静图引用了，播放时不显示封面。
++                 --stillpics 的空项（沿用上一张图）正会走到这里：
++                 MLP 每首歌自成 title，所以 ntitlepics[j] 与 img->npics 都是 0。
++                 照常写入 pictitlecount —— 它此刻正是**最近一个有图片 title
++                 的序号**，于是这些轨复用同一张封面（ASVS 里那张图已存在，
++                 不额外占扇区）。只有至今毫无图片时才跳过。 */
++              if (pictitlecount == 0)
+                 continue;
+ 
+               // title-with-pics rank (1-based)
+@@ -617,28 +642,40 @@ int create_atsi(command_t *command,
+ 
+               i++;
+ 
+-              // track rank index
+-
+-              uint16_copy(&atsi[i], 0x06 * ntitletracks[j]);
+-              i += 2;
++              /* 本轨的图片清单在静图表里的**起止字节偏移**（相对表起点）。
++
++                 表布局：先 6 字节/轨的记录，紧跟 10 字节/图的清单。
++                 上游把这两项写成与轨无关的常量：
++                   起 = 0x06×轨数                （只有第 1 轨碰巧正确）
++                   止 = (轨数-1)×6 + 0x0F + (图数-1)×0xA
++                        = 6×轨数 + 10×图数 - 1    （只有末轨碰巧正确）
++                 于是同一 title 内**所有轨都指回第 1 张图** —— 表现为
++                 「只在换专辑时刷新封面，同一专辑内切轨不换图」。
++
++                 两张正常工作的商业盘都是按轨递进的：
++                   李娜 轨1: a=72=6×12+10×0,  b=81=a+9
++                   李娜 轨2: a=82=6×12+10×1,  b=91=a+9
++                   巴赫 轨1: a=108=6×18+10×0, b=117=a+9
++
++                 （第三方实现 foo_input_dvda 也按「每轨各自的起止」解读
++                   这两个字段。） */
++              {
++                uint16_t pic_start = (uint16_t)(0x06 * ntitletracks[j]
++                                                + 0x0A * pics_before);
++                uint16_t pic_num   = (uint16_t) img->npics[trackcount - 1];
++
++                uint16_copy(&atsi[i], pic_start);
++                i += 2;
++                uint16_copy(&atsi[i],
++                            (uint16_t)(pic_start + 0x0A * pic_num - 1));
++                i += 2;
++
++                pics_before = (uint16_t)(pics_before + pic_num);
++              }
+ 
+               if (globals->veryverbose)
+                 foutput(MSG_TAG "ntitlepics[%d]=%d, ntitletracks[%d]=%d\n",
+                         j, ntitlepics[j], j, ntitletracks[j]);
+-
+-              //if (ntitlepics[j] > ntitletracks[j])  // conditions to be tested
+-
+-              // track rank index (backup)
+-
+-              uint16_copy(&atsi[i],
+-                          (ntitletracks[j] - 1) * 0x6
+-                          + 0x0F + (ntitlepics[j] - 1) * 0xA);
+-
+-              //else
+-              //uint16_copy(&atsi[i],(ntitletracks[j]-1)*0x10+0x0F);
+-              //// track rank index (backup)
+-
+-              i += 2;
+             }
+ 
+           trackcount = trackcount_save;
+@@ -717,16 +754,23 @@ int create_atsi(command_t *command,
+   uint32_copy(&atsi[0x0804], i - 0x801);
+ 
+   // PATCH 09.07: i > 2048*2 instead of i > 2048
++  // PATCH 2026-09-21: sectors are computed from the actual size, not a
++  //                   hardcoded 2/3 choice
+ 
+-  if (i > 4096)
++  /* 自检：分配量按 96 字节/轨算，实测只占 56.5，正常不会命中；
++     命中说明每轨开销比预期大，此时宁可报错也不要静默越界。 */
++  if ((size_t) i > atsi_cap)
+     {
+-      *atsi_sectors = 3;
+-    }
+-  else
+-    {
+-      *atsi_sectors = 2;
++      foutput("%s%d%s%zu%s", ERR "ATSI needs ", i,
++              " bytes but only ", atsi_cap, " were allocated");
++      FREE(atsi)
++      EXIT_ON_RUNTIME_ERROR_VERBOSE("ATSI table overflow");
+     }
+ 
++  /* 扇区数按**实际用量**向上取整，下限 2 扇区（ATSI 规范要求）。 */
++  *atsi_sectors = (uint8_t) ((i + 2047) / 2048);
++  if (*atsi_sectors < 2) *atsi_sectors = 2;
++
+   // Pointer to last sector in ATS (i.e. numsectors-1)
+ 
+   uint32_copy(&atsi[12], files[ntracks - 1].last_sector + 2 * *atsi_sectors);
+@@ -745,6 +789,8 @@ int create_atsi(command_t *command,
+   nb_atsi_files += create_file(audiotsdir, basename, atsi,
+                                2048 * (*atsi_sectors), globals);
+ 
++  FREE(atsi)
++
+   return (nb_atsi_files);
+ #undef files
+ #undef ntracks
+diff --git a/src/audio.c b/src/audio.c
+index 7692c79..62c7591 100644
+--- a/src/audio.c
++++ b/src/audio.c
+@@ -1842,36 +1842,6 @@ Now follows the actual manipulation code.  Note that performing the transformati
+ 
+ 
+ 
+-inline static void interleave_sample_extended_merged(int channels, int count, uint8_t *buf, globalData *globals)
+-{
+-  int i, size = channels * 4;
+-  uint8_t x;
+-  uint8_t _buf[size];
+-
+-  switch (channels)
+-    {
+-    case 1:
+-    case 2:
+-      for (i = 0; i < count; i += 2)
+-        {
+-          x = buf[i + 1];
+-          buf[i + 1] = buf[i];
+-          buf[i] = x;
+-        }   // check this out
+-      break;
+-
+-    default:
+-
+-      for (i = 0; i < count; i += size)
+-        {
+-          // TODO: fix bug here, S is not the right table, need 1 more dim
+-          permutation_merged(buf, _buf, 0, channels, S, size);
+-          for (int w = 0; w < channels; ++w) buf[w] += i;
+-        }
+-      break;
+-    }
+-}
+-// At the end we have what looks like a simple uint8_t* and we shall used this recast array juste like buf in the simple interleave.
+ 
+ 
+ inline static void interleave_sample_extended(int channels, int count, uint8_t *buf)
+@@ -1900,18 +1870,6 @@ inline static void interleave_sample_extended(int channels, int count, uint8_t *
+     }
+ }
+ 
+-inline static void interleave_24_bit_sample_extended_merged(int channels, int count, uint8_t **buf)
+-{
+-  int i, size = channels * 6;
+-  uint8_t _buf[size];
+-
+-  for (i = 0; i < count; i += size)
+-    {
+-      permutation_merged(buf, _buf, 1, channels, S, size);
+-      for (int w = 0; w < channels; ++w) buf[w] += size;
+-
+-    }
+-}
+ 
+ inline static void interleave_24_bit_sample_extended(int channels, int count, uint8_t *buf)
+ {
+@@ -2170,7 +2128,7 @@ out:
+ 
+ int audio_close(fileinfo_t *info, globalData *globals)
+ {
+-  if (info->mergeflag) return audio_close_merged(info);
++  if (info->mergeflag) return audio_close_merged(info, globals);
+ 
+   if (globals->debugging) foutput("%s %s\n", INF "Closing audio file", info->filename);
+   if (info->type == AFMT_WAVE)
+@@ -2322,12 +2280,12 @@ uint32_t audio_read_merged(fileinfo_t *info, uint8_t *_buf, uint32_t *bytesinbuf
+     {
+     case 24:
+       // Processing 24-bit audio
+-      interleave_24_bit_sample_extended_merged(info->channels, buffer_increment, buf);
++      interleave_24_bit_sample_extended(info->channels, buffer_increment, buf);
+       break;
+ 
+     case 16:
+       // Processing 16-bit audio
+-      interleave_sample_extended_merged(info->channels, buffer_increment, buf, globals);
++      interleave_sample_extended(info->channels, buffer_increment, buf);
+       break;
+ 
+     default:
+diff --git a/src/auxiliary.c b/src/auxiliary.c
+index d5c71b5..29d07c9 100644
+--- a/src/auxiliary.c
++++ b/src/auxiliary.c
+@@ -695,14 +695,23 @@ char **fn_strtok(char *chain, char delim, char **array, uint32_t *size, int32_t
+     }
+   errno = 0;
+ 
+-  uint32_t j = 1, k = 0;
+-  int32_t cut[strlen(s) / 2];
++  /* cut 的条目数 = 分隔符个数 + 2。最坏情况每个字符都是分隔符（如 ",,,"，
++     --stillpics 里的 ":::" 就是），所以按 slen + 2 开 ——
++     原来的 strlen(s) / 2 在那种串上不够，会越界写栈。 */
++  size_t slen = strlen(s);
++  int32_t cut[slen + 2];
+   cut[0] = -1;
+-  do  if (s[j] == delim)
+-      {
+-        cut[++k] = j;
+-      }
+-  while (s[j++] != '\0');
++  uint32_t j = 1, k = 0;
++  /* 空串必须跳过扫描：原式从 s[1] 起，而空串只有 1 字节（含结尾 '\0'），
++     s[1] 已越过分配 —— 会一路扫到堆里第一个 '\0'，并把 cut 越界写到栈上，
++     踩坏调用方保存的 globals 指针（随后在 create_stillpic_directory() 里
++     段错误）。--stillpics 的空项（表示沿用上一张图）正是空串。 */
++  if (slen > 0)
++    do  if (s[j] == delim)
++        {
++          cut[++k] = j;
++        }
++    while (s[j++] != '\0');
+   cut[k + 1] = j - 1;
+   // exactly k=size-2 cuts, k+1 substrings and array filled with k+1 substrings and NULL-terminating pointer, so array is sized size*sizeof(char)
+   *size = k + 2;
+diff --git a/src/command_line_parsing.c b/src/command_line_parsing.c
+index 4814ecc..ad9e82e 100644
+--- a/src/command_line_parsing.c
++++ b/src/command_line_parsing.c
+@@ -196,6 +196,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
+   bool allocate_files = false;
+   bool logrefresh = false;
+   bool refresh_tempdir = true;
++  bool cli_background_list = false; // --background 是否给了「每页一张」的列表
+ 
+   // refreshing output and temporary directories by
+ 
+@@ -2513,6 +2514,7 @@ separated by a colon, with rgb components by commas");
+ 
+         case 'b':
+           str = strdup(optarg);
++          cli_background_list = true;
+ 
+           if (img->backgroundmpg)
+             {
+@@ -2536,10 +2538,20 @@ separated by a colon, with rgb components by commas");
+               foutput("%s\n", WAR "You did not give enough filenames,"
+                       " completing with last one");
+ 
+-              for (u = 0; u + backgroundpic_arraylength < img->nmenus; ++u)
+-                copy_file(img->backgroundpic[backgroundpic_arraylength - 1],
+-                          img->backgroundpic[u + backgroundpic_arraylength],
+-                          globals);
++              /* fn_strtok 只分配了 arraylength+1 个槽，而原式写
++                 [arraylength .. nmenus-1]：既堆越界（且 dst 指向未分配内存，
++                 copy_file 会再往里 strcpy）。先扩到 nmenus+1 再补齐。 */
++              img->backgroundpic = realloc(img->backgroundpic,
++                                           (img->nmenus + 1) * sizeof(char *));
++              if (img->backgroundpic == NULL)
++                EXIT_ON_RUNTIME_ERROR_VERBOSE("backgroundpic realloc");
++
++              for (u = backgroundpic_arraylength; u < (int) img->nmenus; ++u)
++                img->backgroundpic[u] =
++                  strdup(img->backgroundpic[backgroundpic_arraylength - 1]);
++
++              img->backgroundpic[img->nmenus] = NULL;
++              globals->backgroundpicsize = img->nmenus + 1;
+             }
+ 
+           free(str);
+@@ -2685,7 +2697,11 @@ separated by a colon, with rgb components by commas");
+         }
+     }
+ 
+-  if (img->nmenus && img->blankscreen && globals->topmenu < NO_MENU)
++  /* --blankscreen 是「文字浮层底图」，但原式会把它转成 jpg 覆盖
++     backgroundpic[0]（先 unlink 再写），把 --background 给的每页背景图
++     全变成同一张 blankscreen。给了列表就不该覆盖。 */
++  if (img->nmenus && img->blankscreen && globals->topmenu < NO_MENU
++      && !cli_background_list)
+     {
+       if (globals->veryverbose)
+         foutput("%s\n", INF "Converting overlay .png blankscreen"
+@@ -2838,13 +2854,18 @@ separated by a colon, with rgb components by commas");
+       copy_file2dir_rename(img->backgroundpic[0],
+                            globals->settings.tempdir, "bgpic0.jpg", globals);
+ 
++      /* 每页各取自己那张背景图。原式固定用 [0]，使 --background
++         的逗号列表失效（所有页共用第 1 张）。 */
+       if (img->nmenus > 1)
+         for (u = 1; u < img->nmenus; u++)
+           {
+             char name[13];
+             sprintf(name, "%s%d%s", "bgpic", u, ".jpg");
+-            copy_file2dir_rename(img->backgroundpic[0],
+-                                 globals->settings.tempdir, name, globals);
++            const char *srcpic =
++              (u < globals->backgroundpicsize && img->backgroundpic[u])
++              ? img->backgroundpic[u] : img->backgroundpic[0];
++            copy_file2dir_rename(srcpic, globals->settings.tempdir,
++                                 name, globals);
+           }
+ 
+       __attribute__((fallthrough));
+@@ -2965,6 +2986,16 @@ separated by a colon, with rgb components by commas");
+                                      pics_per_track, &size, 0,
+                                      NULL, NULL, globals);
+           indir = false;
++
++          /* 文件列表模式没有可 cd 的目录，而 create_stillpic_directory()
++             一进来就 change_directory(stillpicdir)（不存在则 clean_exit(-1)）。
++             stillpicdir 的默认值在 main() 里早于命令行解析就已填好，那时
++             -D/--tempdir 还没生效，所以它是编译期默认的 <cwd>/.dvda-author/temp
++             —— 通常不存在，于是本模式以前必然以退出码 255 结束。
++             指到当前 tempdir 既避开 cd 失败，又与 create_stillpic_directory()
++             复制图片的目的地、create_mpg() 读取图片的路径三者一致。 */
++          free(globals->settings.stillpicdir);
++          globals->settings.stillpicdir = strdup(globals->settings.tempdir);
+         }
+ 
+       uint16_t dim, DIM = 0, w;
+@@ -4481,4 +4512,11 @@ void normalize_temporary_paths(pic *img, globalData *globals)
+   globals->highlightpicsize = img->nmenus + 1;
+   globals->backgroundmpgsize = img->nmenus + 1;
+   globals->selectpicsize = img->nmenus + 1;
++
++  /* 上面把 backgroundpic 重新分配成 nmenus+1 槽（只填了前 nmenus 个），
++     但长度仍停在 --background 解析出的旧值（= 文件名数 + 1）。
++     页数变小后它会大于实际槽数 —— free_memory 里的
++     free2(backgroundpic) 按它遍历就会越界 free，
++     实测报 “free(): invalid pointer” 而中止。必须与实际槽数对齐。 */
++  globals->backgroundpicsize = img->nmenus + 1;
+ }
+diff --git a/src/dvda-author.c b/src/dvda-author.c
+index b94ddd9..ebde680 100644
+--- a/src/dvda-author.c
++++ b/src/dvda-author.c
+@@ -184,9 +184,12 @@ int main(int argc,  char *const argv[])
+ 
+   uint32_t tab0[9] = {0};
+   tab0[0] = 1;
+-  uint32_t tab1[9] = {0};
++  /* grouptextsize / tracktextsize：menu.c 按**文字段号**直接写这两个数组
++     （一段 = 一个菜单页），容量必须容纳最大页数，否则越界写栈。
++     见 commonvars.h 的 MENU_TEXT_GROUP_MAX。 */
++  uint32_t tab1[MENU_TEXT_GROUP_MAX] = {0};
+   tab1[0] = 1;
+-  uint32_t tab2[9] = {0};
++  uint32_t tab2[MENU_TEXT_GROUP_MAX] = {0};
+   tab2[0] = 1;
+   char   **tab3    = calloc(1, sizeof(char *));
+   tab3[0] = strdup(DEFAULT_BACKGROUNDPIC);
+diff --git a/src/include/audio2.h b/src/include/audio2.h
+index 601750b..9c50485 100644
+--- a/src/include/audio2.h
++++ b/src/include/audio2.h
+@@ -73,6 +73,7 @@ int audio_open(fileinfo_t* info, globalData*);
+ uint32_t audio_read(fileinfo_t* info, uint8_t* _buf, uint32_t *bytesinbuffer, globalData* globals);
+ uint32_t audio_read_merged(fileinfo_t* info, uint8_t* _buf, uint32_t *bytesinbuffer, globalData* globals);
+ int audio_close(fileinfo_t* info, globalData* );
++int audio_close_merged(fileinfo_t* info, globalData* globals);
+ int fixwav_repair(fileinfo_t *info, globalData*);
+ int launch_sox(fileinfo_t *info, globalData* globals);
+ command_t *scan_audiofile_characteristics(command_t *command, globalData*);
+diff --git a/src/include/commonvars.h b/src/include/commonvars.h
+index df1244e..7b997ec 100644
+--- a/src/include/commonvars.h
++++ b/src/include/commonvars.h
+@@ -393,6 +393,13 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #define DEFAULT_BACKGROUNDPIC_NTSC "menu/black_" "NTSC_720x480" ".jpg"  // for mpeg authoring
+ #define DEFAULT_ACTIVEHEADER "menu/activeheader"
+ #define DEFAULT_ASPECT_RATIO "4:3"
++/* 菜单文字段（= 菜单页）数量的上限。
++   ⚠️ dvda-author.c 里 main 用**局部栈数组**保存每段的 grouptextsize /
++   tracktextsize，而 menu.c 会直接往里面写（`globals->grouptextsize[k] = ...`）。
++   段数超过数组容量就是越界写栈 —— 症状是运行结束时突然报
++   "*** stack smashing detected ***"。取 256 是因为 --nmenus 是 uint8_t。 */
++#define MENU_TEXT_GROUP_MAX 256
++
+ #define DEFAULT_POINTSIZE  25
+ #define DEFAULT_FONTWIDTH  6  // 6 pixels for size 10 in Courier
+ #define DEFAULT_SCREENTEXT "ALBUM=Group 1 - Track 1,Group 1 - Track 2:Group 2 - Track 1,Group 2 - Track 2";
+diff --git a/src/include/menu.h b/src/include/menu.h
+index 5ab0a6a..7388b94 100644
+--- a/src/include/menu.h
++++ b/src/include/menu.h
+@@ -15,6 +15,7 @@ int  launch_spumux(pic* img, globalData*);
+ int  launch_dvdauthor(globalData*);
+ int mogrify_img(char* text, int8_t group, int8_t track, pic *img, uint8_t maxnumtracks, char* command, char* command2,  int8_t offset, char* textcolor);
+ int  generate_menu_pics(command_t* , pic* img, uint8_t ngroups, uint8_t *numtracks, globalData*);
++int  compute_menu_pages(pic* img, uint8_t ngroups, uint8_t *ntracks, globalData* globals);
+ int create_stillpic_directory(char* string, int32_t count, globalData*);
+ void create_activemenu(pic* img, globalData* globals);
+ int create_mpg(pic* img, uint16_t rank, char* mp2track, char* tempfile, globalData*);
+@@ -23,5 +24,8 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
+ void initialize_binary_paths(char level, globalData*);
+ void menu_characteristics_coherence_test(pic* img, uint8_t ngroups, globalData*);
+ void compute_pointsize(pic* img, uint16_t maxtracklength, uint8_t maxnumtracks, globalData*);
++/* 由码流自检得出 DVD 视频属性字节（0x43 = NTSC，0x53 = PAL）。
++   见 patches/patch_mpeg2_autodetect.py。 */
++uint8_t dvda_video_attr_of(const char* path, pic* image, globalData* globals);
+ #endif
+ #endif // HAVE_MENU_C
+diff --git a/src/include/structures.h b/src/include/structures.h
+index 3ca9470..6c18d50 100644
+--- a/src/include/structures.h
++++ b/src/include/structures.h
+@@ -81,6 +81,12 @@ typedef struct
+     char    *mlp_filename;
+     char    **given_channel;
+     struct  MLP_LAYOUT *mlp_layout;
++    /* 该轨在一个 title（PGC）时间轴上的起点偏移。MLP 的 pts[] 是按轨的
++       （每轨从 PTS0 起算），合并成一个 title 后必须加上这个偏移才能让
++       title 内的时间轴连续 —— 否则每个 cell 的 first_pts 都是 98，
++       播放器按时间轴寻址任何一首都会落到第 1 首。
++       见 src/ats.c 里 write_pes_packet 与按轨刷 pack 处的说明。 */
++    uint32_t pts_shift;
+ } fileinfo_t;
+ 
+ typedef struct
+@@ -156,6 +162,19 @@ typedef struct
+     uint32_t* menuvobsize;
+     stilloptions** options;
+ 
++    /* 按页的菜单布局（「一页一个专辑」，见 menu.c 的 compute_menu_pages）。
++       page_ntracks[p] = 第 p 页的曲目数；
++       page_group[p]   = 第 p 页所属音频组号（1-based，给 jump group 用）；
++       page_t0[p]      = 第 p 页首轨在该音频组内的序号（0-based，给 jump track 用）。
++       任一为 NULL 时退回「按音频组分页」的旧行为。
++
++       ⚠️ 必须**追加在结构末尾**：dvda-author.c 里 pic 是按位置初始化的
++       （`pic img0 = {1, 0, 0, ...}`），插在中间会让后面所有字段错位。 */
++    uint8_t* page_ntracks;
++    uint8_t* page_group;
++    uint16_t* page_t0;
++    uint8_t  npages;
++
+ } pic;
+ 
+ typedef struct
+diff --git a/src/launch_manager.c b/src/launch_manager.c
+index 71fc7c9..668480d 100644
+--- a/src/launch_manager.c
++++ b/src/launch_manager.c
+@@ -93,7 +93,27 @@ int launch_manager(command_t *command, globalData *globals)
+ 
+ 
+   // Late initialization
+-  sectors.amg = SIZE_AMG + globals->text + (globals->topmenu <= TS_VOB_TYPE);
++  sectors.amg = SIZE_AMG + (globals->text ? 8 : 0) + (globals->topmenu <= TS_VOB_TYPE);
++
++  /* 菜单页数多时把 AMG 撑够。amg2.c 的 create_amg() 用
++     `uint8_t amg[sectors->amg * 2048]` 这个 VLA，而菜单表（从 amg[0x1820]
++     起，每页 0x13A 字节 + 8*(nmenus-1) 页索引）随页数增长 ——
++     固定 4 扇区（8192 字节）在 9 页时需 ~9066 字节，越界写栈。
++     越界后崩点离原因很远（跑完菜单编码/spumux/dvdauthor 才在
++     create_amg() 里段错误），故必须在这里撑够。
++     nmenus 在命令行解析阶段（menu_characteristics_coherence_test）已定型。 */
++  if (globals->topmenu <= TS_VOB_TYPE && img->nmenus > 1)
++    {
++      uint32_t need = 0x1820 + 8 * (img->nmenus - 1) + img->nmenus * 0x13A;
++      uint32_t need_sectors = (need + 2047) / 2048;
++      if (need_sectors > sectors.amg)
++        {
++          if (globals->debugging)
++            foutput("%s%d%s%u\\n", MSG_TAG "AMG buffer grown for ",
++                    img->nmenus, " menu screens (sectors): ", need_sectors);
++          sectors.amg = need_sectors;
++        }
++    }
+   sectors.samg = SIZE_SAMG;
+   sectors.asvs = ((img->count) || (img->stillvob) || (img->active)) ? SIZE_ASVS : 0;
+   sectors.topvob = 0;
+diff --git a/src/libsoxconvert.c b/src/libsoxconvert.c
+index 92a8831..39305c0 100644
+--- a/src/libsoxconvert.c
++++ b/src/libsoxconvert.c
+@@ -1,3 +1,21 @@
++#ifdef WITHOUT_sox
++/* 关闭 SoX 时的桩实现；音频格式转换一律由 ffmpeg 预先完成，不会调用 */
++#include "c_utils.h"
++#include "structures.h"
++
++int soxconvert(char *input, char *output, globalData *globals)
++{
++  (void) input; (void) output; (void) globals;
++  return -1;
++}
++
++int resample(char *in, char *out, unsigned int channels, unsigned int bitrate, unsigned int samplerate)
++{
++  (void) in; (void) out; (void) channels; (void) bitrate; (void) samplerate;
++  return -1;
++}
++
++#else
+ /* Simple example of using SoX libraries
+  *
+  * Copyright (c) 2007-8 robs@users.sourceforge.net
+@@ -176,3 +194,5 @@ int resample(char *infile, char *outfile, unsigned int channels, unsigned int bi
+   return 0;
+ }
+ 
++
++#endif /* WITHOUT_sox */
+diff --git a/src/menu.c b/src/menu.c
+index facf72b..6b2dbeb 100644
+--- a/src/menu.c
++++ b/src/menu.c
+@@ -77,7 +77,10 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
+ 
+           img->ncolumns = ngroups / (img->nmenus - img->hierarchical) + (ngroups % (img->nmenus - img->hierarchical) > 0);
+ 
+-          if ((img->ncolumns)*ngroups < img->nmenus - 1)
++          /* 该上限只对「分层菜单」成立（首页列组 + 每组一页）。
++             非分层菜单的页数只受按钮总数约束，套用此式会把用户给的
++             --nmenus 静默压成 ngroups*ncolumns+1（实测 3 组时 8 -> 4）。 */
++          if (img->hierarchical && ((img->ncolumns)*ngroups < img->nmenus - 1))
+             {
+               foutput(WAR "Hierarchical menus should have at most %d*%d+1=%d menus...\n       Resetting value for --nmenus=%d\n", img->ncolumns, ngroups, img->ncolumns * ngroups + 1, img->ncolumns * ngroups + 1);
+               img->nmenus = ngroups * img->ncolumns + 1;
+@@ -85,8 +88,11 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
+ 
+         }
+ 
+-      img->maxbuttons = Min(MAX_BUTTON_Y_NUMBER - 2, totntracks) / img->nmenus;
+-      img->resbuttons = Min(MAX_BUTTON_Y_NUMBER - 2, totntracks) % img->nmenus;
++      /* 每页容量：总数按页数均分（向上取整），再受屏幕上限约束。
++         原式先截 32 再除页数，导致所有页合计恒 <=32 个按钮。 */
++      img->maxbuttons = Min(MAX_BUTTON_Y_NUMBER - 2,
++                            (totntracks + img->nmenus - 1) / img->nmenus);
++      img->resbuttons = 0;
+     }
+ 
+ 
+@@ -335,12 +341,134 @@ void initialize_binary_paths(char level, globalData *globals)
+ 
+ static char *pict;
+ 
++/* 程序结束码独占扇区（对齐商业盘）：见 patches/patch_still_end_code.py。
++   mplex 把 00 00 01 B9 写在本段最后一个扇区的最后 4 字节；商业盘则是让
++   结束码独占一个扇区、其后补 0xFF 到扇区边界。这里把前者改写成后者。 */
++static int dvda_pad_program_end(const char *path)
++{
++  FILE *f = fopen(path, "rb+");
++  unsigned char tail[4];
++  unsigned char *blk;
++  long sz;
++
++  if (f == NULL) return -1;
++  if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return -1; }
++  sz = ftell(f);
++  if (sz < 2048 || (sz % 2048) != 0) { fclose(f); return -1; }
++
++  if (fseek(f, sz - 4, SEEK_SET) != 0) { fclose(f); return -1; }
++  if (fread(tail, 1, 4, f) != 4) { fclose(f); return -1; }
++
++  /* 已经是商业盘形态（结束码在扇区开头）或本段没有结束码 → 不动 */
++  if (!(tail[0] == 0x00 && tail[1] == 0x00
++        && tail[2] == 0x01 && tail[3] == 0xB9))
++    {
++      fclose(f);
++      return 0;
++    }
++
++  {
++    unsigned char ff[4] = {0xFF, 0xFF, 0xFF, 0xFF};
++    if (fseek(f, sz - 4, SEEK_SET) != 0) { fclose(f); return -1; }
++    if (fwrite(ff, 1, 4, f) != 4) { fclose(f); return -1; }
++  }
++
++  blk = (unsigned char *) malloc(2048);
++  if (blk == NULL) { fclose(f); return -1; }
++  memset(blk, 0xFF, 2048);
++  blk[0] = 0x00; blk[1] = 0x00; blk[2] = 0x01; blk[3] = 0xB9;
++
++  if (fseek(f, 0, SEEK_END) != 0) { fclose(f); free(blk); return -1; }
++  if (fwrite(blk, 1, 2048, f) != 2048) { fclose(f); free(blk); return -1; }
++  free(blk);
++  fclose(f);
++  return 0;
++}
++
++/* 静图导航扇区改写成商业盘形态。
++
++   mplex 的 `-f 8` 写出的是**空壳**导航包（其手册原文：includes empty
++   versions of the peculiar VOBU start sectors）：PCI 之后紧跟一个 DSI，
++   而 DSI 里「前后 VOBU 扇区指针」全是 0 —— 播放器据此寻址会跳回 VOB 开头。
++   四张盘实测：巴赫 / 李娜 / Enigma 三张商业盘的导航扇区**都没有 DSI**，
++   且盘内恒定（同一张盘上第 1 张与第 2 张逐字节相同）；只有本工程带空 DSI。
++
++   每张静图的 mpg 都以自己的导航扇区开头，故此处按扇区原地改写：
++   保留首 14 字节 pack 头（与商业盘逐字节相同），其后换成固定的
++       系统头(21B) + PCI(751B) + 填充包(1262B)
++   合计恒为 2048 字节，扇区数不变 —— 因此 ASVS 偏移表、每图大小、
++   其余任何表都不用动。
++
++   商业盘 PCI 里只有 6 个非零字节（Enigma 更只剩 1 个）→ 播放器并不读 PCI
++   的内容，只要导航扇区「存在且不含误导性的 DSI」。
++
++   判据是「0x400 处是否为 DSI 起始码」，故本函数幂等。 */
++static int dvda_rewrite_nav_sector(const char *path)
++{
++  static const unsigned char SYS_HDR[15] = {
++    0x80, 0xC4, 0xE1, 0x00, 0x61, 0x7F, 0xB9, 0xE0,
++    0xE8, 0xBD, 0xE0, 0x34, 0xBF, 0xE0, 0x01
++  };
++  unsigned char blk[2048];
++  FILE *f;
++
++  if (path == NULL) return -1;
++
++  f = fopen(path, "rb+");
++  if (f == NULL) return -1;
++
++  if (fread(blk, 1, sizeof blk, f) != sizeof blk)
++    {
++      fclose(f);
++      return 0;                 /* 不足一扇区，不该发生 */
++    }
++
++  /* 已经是商业盘形态（0x400 落在全 0xFF 的填充区）→ 不动 */
++  if (memcmp(blk + 0x400, "\x00\x00\x01\xBF", 4) != 0)
++    {
++      fclose(f);
++      return 0;
++    }
++
++  /* 系统头：长 15 */
++  blk[14] = 0x00; blk[15] = 0x00; blk[16] = 0x01; blk[17] = 0xBB;
++  blk[18] = 0x00; blk[19] = 0x0F;
++  memcpy(blk + 20, SYS_HDR, sizeof SYS_HDR);
++
++  /* PCI 包：数据 745 字节，只有 6 个非零字节 */
++  blk[35] = 0x00; blk[36] = 0x00; blk[37] = 0x01; blk[38] = 0xBF;
++  blk[39] = 0x02; blk[40] = 0xE9;
++  memset(blk + 41, 0x00, 745);
++  blk[41] = 0x02;
++  blk[46] = 0x8C; blk[47] = 0xA0;
++  memset(blk + 48, 0xFF, 8);
++
++  /* 填充包：数据 1256 字节，补满整扇区 */
++  blk[786] = 0x00; blk[787] = 0x00; blk[788] = 0x01; blk[789] = 0xBE;
++  blk[790] = 0x04; blk[791] = 0xE8;
++  memset(blk + 792, 0xFF, 1256);
++
++  if (fseek(f, 0, SEEK_SET) != 0
++      || fwrite(blk, 1, sizeof blk, f) != sizeof blk)
++    {
++      fclose(f);
++      return -1;
++    }
++
++  fclose(f);
++  return 1;
++}
++
+ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalData *globals)
+ {
+   errno = 0;
+   static unsigned long s;
+ 
+-  if (s == 0)
++  /* pict 是文件级 static，且 generate_background_mpg() 末尾会 FREE(pict)
++     把它置 NULL；而 s 是本函数 static、不会复位。于是第二次进入本函数
++     （先菜单背景、再静图背景）时 s != 0 但 pict == NULL，
++     下一句 sprintf 就写到 NULL —— 实测段错误。判据里补上 pict 是否为空。 */
++  if ((s == 0) || (pict == NULL))
+     {
+       s = MAX(strlen(globals->settings.stillpicdir) + 26, strlen(img->backgroundpic[rank]) + 1);
+       pict  = calloc(s, sizeof(char *));
+@@ -618,6 +746,205 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
+ 
+ 
+ 
++/* ── MPEG-2 码流自检：制式（NTSC/PAL）与逐行/隔行 ──────────────────────
++
++   见 patches/patch_mpeg2_autodetect.py。
++
++   dvda-author 原先把视频属性写死成 PAL（0x53），并照抄 mpeg2enc 的
++   progressive_sequence=0。这两项都能从**实际产出的码流**里读出来，
++   故此处改为探测后如实填写，不再依赖硬编码。 */
++
++typedef struct
++{
++  int      seq_ok;          /* 找到序列头 */
++  int      ext_ok;          /* 找到序列扩展 */
++  int      pce_ok;          /* 找到图像编码扩展 */
++  int      ntsc;            /* 1 = 525/60 (NTSC)，0 = 625/50 (PAL/SECAM) */
++  int      width, height;   /* 序列头里的画面尺寸 */
++  int      aspect;          /* aspect_ratio_information */
++  int      frame_rate;      /* frame_rate_code */
++  uint32_t bit_rate_kbps;   /* 序列头声明的码率 */
++  int      progressive;     /* 序列扩展的 progressive_sequence */
++  int      progressive_pic; /* 图像编码扩展：整帧 + frame_pred_frame_dct
++                               + progressive_frame */
++  long     ext_at;          /* 序列扩展起始码在文件内的偏移 */
++} dvda_mpeg2_t;
++
++/* 序列头/序列扩展/图像编码扩展都在文件开头，读前 64 KB 足够 */
++#define DVDA_PROBE_BYTES 65536
++
++static int dvda_mpeg2_probe(const char *path, dvda_mpeg2_t *p)
++{
++  unsigned char buf[DVDA_PROBE_BYTES];
++  FILE *f;
++  size_t n, i;
++  long seq = -1, ext = -1, pce = -1;
++
++  memset(p, 0, sizeof *p);
++  if (path == NULL) return 0;
++
++  f = fopen(path, "rb");
++  if (f == NULL) return 0;
++  n = fread(buf, 1, sizeof buf, f);
++  fclose(f);
++  if (n < 16) return 0;
++
++  for (i = 0; i + 4 <= n; ++i)
++    {
++      unsigned id;
++
++      if (buf[i] != 0x00 || buf[i + 1] != 0x00 || buf[i + 2] != 0x01)
++        continue;
++
++      if (buf[i + 3] == 0xB3 && seq < 0 && i + 12 <= n)
++        {
++          seq = (long) i;
++          continue;
++        }
++
++      if (buf[i + 3] != 0xB5 || i + 10 > n) continue;
++
++      id = buf[i + 4] >> 4;
++      if (id == 1 && ext < 0)      ext = (long) i;  /* sequence_extension */
++      else if (id == 8 && pce < 0) pce = (long) i;  /* picture_coding_ext */
++
++      if (seq >= 0 && ext >= 0 && pce >= 0) break;
++    }
++
++  if (seq >= 0)
++    {
++      const unsigned char *b = buf + seq + 4;
++      int by_size = -1;
++
++      p->seq_ok     = 1;
++      p->width      = (b[0] << 4) | (b[1] >> 4);
++      p->height     = ((b[1] & 0x0F) << 8) | b[2];
++      p->aspect     = b[3] >> 4;
++      p->frame_rate = b[3] & 0x0F;
++      /* bit_rate_value 单位 400 bps */
++      p->bit_rate_kbps = (uint32_t)((((unsigned long) b[4] << 10)
++                                     | ((unsigned long) b[5] << 2)
++                                     | (b[6] >> 6)) * 400UL / 1000UL);
++
++      if (p->height == 480 || p->height == 240)      by_size = 1; /* 525/60 */
++      else if (p->height == 576 || p->height == 288) by_size = 0; /* 625/50 */
++
++      /* frame_rate_code: 1=23.976 2=24 3=25 4=29.97 5=30 6=50 7=59.94 8=60 */
++      if (p->frame_rate == 3 || p->frame_rate == 6)      p->ntsc = 0;
++      else if (p->frame_rate >= 1 && p->frame_rate <= 8) p->ntsc = 1;
++      else                                               p->ntsc = (by_size == 1);
++
++      /* 画面高度是显示制式的直接判据；与帧率冲突时以它为准 */
++      if (by_size >= 0 && by_size != p->ntsc) p->ntsc = by_size;
++    }
++
++  if (ext >= 0)
++    {
++      p->ext_ok      = 1;
++      p->ext_at      = ext;
++      p->progressive = (buf[ext + 5] >> 3) & 1;
++    }
++
++  if (pce >= 0)
++    {
++      const unsigned char *b = buf + pce + 4;
++      int structure = (b[2] >> 6) & 3;   /* 3 = 整帧 */
++      int fpfd      = (b[3] >> 6) & 1;   /* frame_pred_frame_dct */
++      int pf        = (b[4] >> 7) & 1;   /* progressive_frame */
++
++      p->pce_ok          = 1;
++      p->progressive_pic = (structure == 3 && fpfd && pf);
++    }
++
++  return p->seq_ok;
++}
++
++/* DVD 视频属性字节：0x43 = 525/60 (NTSC)，0x53 = 625/50 (PAL)。
++   取自码流自检；探测不到时退回 --norm 的设置（上游默认 pal）并告警。 */
++uint8_t dvda_video_attr_of(const char *path, pic *image, globalData *globals)
++{
++  dvda_mpeg2_t p;
++  int ntsc;
++
++  if (dvda_mpeg2_probe(path, &p) && p.seq_ok)
++    {
++      ntsc = p.ntsc;
++      foutput(MSG_TAG "视频属性自检: %s\n"
++              "       %dx%d, %s, 帧率码 %d, 声明 %u kbps, 图像编码 %s\n",
++              (path != NULL) ? path : "(none)",
++              p.width, p.height, ntsc ? "NTSC" : "PAL",
++              p.frame_rate, (unsigned) p.bit_rate_kbps,
++              p.pce_ok ? (p.progressive_pic ? "逐行" : "隔行") : "未检出");
++    }
++  else
++    {
++      ntsc = (image != NULL && image->norm != NULL
++              && strcmp(image->norm, "ntsc") == 0);
++      foutput(WAR "视频属性自检: %s 读不到序列头，退回 --norm=%s → %s\n",
++              (path != NULL) ? path : "(none)",
++              (image != NULL && image->norm != NULL) ? image->norm : "pal",
++              ntsc ? "NTSC" : "PAL");
++    }
++
++  return (uint8_t)(ntsc ? 0x43 : 0x53);
++}
++
++/* 序列扩展的 progressive_sequence：mpeg2enc 无条件写 0，但它产出的每张静图
++   实际就是单个逐行 I 帧（图像编码扩展写明 整帧 + frame_pred_frame_dct
++   + progressive_frame）。此处按实际内容写回 1；实际是隔行则一个字节都不动。
++
++   必须排在 stat_file_size() 之前（同 patch_still_end_code.py），
++   否则 ASVS 的扇区指针与实物不符。 */
++static unsigned long dvda_prog_seen = 0, dvda_prog_fixed = 0;
++
++static int dvda_fix_sequence_progressive(const char *path, globalData *globals)
++{
++  dvda_mpeg2_t p;
++  FILE *f;
++  unsigned char b;
++
++  ++dvda_prog_seen;
++
++  if (!dvda_mpeg2_probe(path, &p) || !p.ext_ok || !p.pce_ok) return 0;
++
++  if (dvda_prog_seen == 1)   /* 所有静图共用一套编码参数，报一次即可 */
++    foutput(MSG_TAG "静图码流自检: %dx%d %s, 序列扩展=%s, 图像编码=%s\n",
++            p.width, p.height, p.ntsc ? "NTSC" : "PAL",
++            p.progressive ? "逐行" : "隔行",
++            p.progressive_pic ? "逐行" : "隔行");
++
++  if (p.progressive || !p.progressive_pic) return 0;   /* 已如实描述 */
++
++  f = fopen(path, "rb+");
++  if (f == NULL) return -1;
++
++  if (fseek(f, p.ext_at + 5, SEEK_SET) != 0 || fread(&b, 1, 1, f) != 1)
++    {
++      fclose(f);
++      return -1;
++    }
++
++  b = (unsigned char)(b | 0x08);   /* progressive_sequence = 1 */
++
++  if (fseek(f, p.ext_at + 5, SEEK_SET) != 0 || fwrite(&b, 1, 1, f) != 1)
++    {
++      fclose(f);
++      return -1;
++    }
++
++  fclose(f);
++  ++dvda_prog_fixed;
++  return 1;
++}
++
++static void dvda_report_sequence_progressive(globalData *globals)
++{
++  if (dvda_prog_seen == 0) return;
++
++  foutput(MSG_TAG "静图 progressive_sequence 自检: %lu/%lu 张按实际画面写回 1，"
++          "其余保持原值\n", dvda_prog_fixed, dvda_prog_seen);
++}
++
+ int generate_background_mpg(pic *img, globalData *globals)
+ {
+   uint16_t rank = 0;
+@@ -664,11 +991,21 @@ int generate_background_mpg(pic *img, globalData *globals)
+         while (rank < img->count)
+           {
+             create_mpg(img, rank, mp2track, tempfile, globals);
++            /* 结束码独占扇区（对齐商业盘）。必须在 stat_file_size 之前做，
++               否则 stillpicvobsize 与 ASVS 表里的扇区指针会与实物不符。 */
++            dvda_pad_program_end(img->backgroundmpg[rank]);
++            /* 导航扇区去掉 mplex 的空 DSI（对齐商业盘）。等长改写，
++               故对 stillpicvobsize 无影响。 */
++            dvda_rewrite_nav_sector(img->backgroundmpg[rank]);
++            /* 序列扩展的 progressive_sequence 按实际画面写回。
++               同样必须在 stat_file_size 之前。 */
++            dvda_fix_sequence_progressive(img->backgroundmpg[rank], globals);
+             img->stillpicvobsize[rank] = (uint32_t)(stat_file_size(img->backgroundmpg[rank]) / 0x800);
+             if (img->stillpicvobsize[rank] > 1024) foutput("%s", WAR "Size of slideshow in excess of the 2MB track limit... some stillpics may not be displayed.\n");
+             if (rank) cat_file(img->backgroundmpg[rank], img->backgroundmpg[0], globals);
+             ++rank;
+           }
++      dvda_report_sequence_progressive(globals);
+       // The first backgroundmpg file is the one that is used to create AUDIO_SV.VOB in amg2.c
+     }
+ 
+@@ -969,6 +1306,140 @@ void test_underline(char *text, pic *img, globalData *globals)
+ }
+ 
+ 
++/* ---------------------------------------------------------------------------
++   把「页」映射到「音频组 + 组内首轨」。
++
++   --screentext 的每段对应一页，段内曲目数就是该页的曲目数；音频组的轨数
++   由调用方给出。两者按顺序切分：每页必须完整落在某一个音频组内
++   （素材侧保证专辑不跨组，而一页 = 一个专辑）。全部对得上才启用按页布局。
++
++   返回 1 = 已填好 img->page_*（按页布局可用）；0 = 不可用，调用方退回旧行为。
++--------------------------------------------------------------------------- */
++int compute_menu_pages(pic *img, uint8_t ngroups, uint8_t *ntracks,
++                       globalData *globals)
++{
++  if (img->page_ntracks) return 1;          /* 已经算过 */
++  if (!img->screentextchain || !img->screentextchain[0]) return 0;
++  if ((img->nmenus == 0) || (ngroups == 0)) return 0;
++
++  /* ⚠️ 不能改 img->screentextchain：generate_menu_pics() 会把第一个 '='
++     改成 '\0'，那是**就地修改**。这里用副本解析，免得依赖调用顺序。 */
++  char *s = strdup(img->screentextchain);
++  if (s == NULL) return 0;
++
++  char *eq = strchr(s, '=');
++  if (eq == NULL)
++    {
++      FREE(s);
++      return 0;
++    }
++
++  uint8_t pc[256];                          /* 每页曲目数（nmenus 是 uint8_t） */
++  int np = 0, total = 0;
++  char *p = eq + 1;
++
++  while (*p && (np < 256))
++    {
++      char *colon = strchr(p, ':');
++      char *segend = colon ? colon : (p + strlen(p));
++
++      /* 段格式：小标题'='曲名1,曲名2,...；有 '=' 且后面非空才算有曲目 */
++      char *g = (char *) memchr(p, '=', (size_t) (segend - p));
++      int n = 0;
++      if (g && (g + 1 < segend))
++        {
++          n = 1;
++          for (char *q = g + 1; q < segend; ++q)
++            if (*q == ',') ++n;
++        }
++      if ((n < 1) || (n > (int) (MAX_BUTTON_Y_NUMBER - 2)))
++        {
++          FREE(s);
++          return 0;
++        }
++      pc[np++] = (uint8_t) n;
++      total += n;
++
++      if (!colon) break;
++      p = colon + 1;
++    }
++
++  int total_audio = 0;
++  for (int g = 0; g < ngroups; ++g) total_audio += ntracks[g];
++
++  if ((np == 0) || (np != (int) img->nmenus) || (total != total_audio))
++    {
++      if (globals->debugging)
++        foutput(WAR "Menu page structure mismatch: %d page(s)/%d track(s) "
++                "in --screentext against %d menu(s)/%d track(s) in %d audio "
++                "group(s); keeping group-based layout\n",
++                np, total, (int) img->nmenus, total_audio, (int) ngroups);
++      FREE(s);
++      return 0;
++    }
++
++  uint8_t  *pnt = (uint8_t *) calloc((size_t) np, sizeof(uint8_t));
++  uint8_t  *pgrp = (uint8_t *) calloc((size_t) np, sizeof(uint8_t));
++  uint16_t *pt0 = (uint16_t *) calloc((size_t) np, sizeof(uint16_t));
++  if (!pnt || !pgrp || !pt0)
++    {
++      if (pnt) FREE(pnt);
++      if (pgrp) FREE(pgrp);
++      if (pt0) FREE(pt0);
++      FREE(s);
++      return 0;
++    }
++
++  int g = 0, acc = 0, ok = 1;
++  for (int q = 0; q < np; ++q)
++    {
++      /* 一页跨了两个音频组 → 无法用「单个 jump group」表示，放弃 */
++      if ((g >= ngroups) || (acc + pc[q] > ntracks[g]))
++        {
++          ok = 0;
++          break;
++        }
++      pnt[q] = pc[q];
++      pgrp[q] = (uint8_t) (g + 1);          /* 1-based */
++      pt0[q] = (uint16_t) acc;
++      acc += pc[q];
++      if (acc == ntracks[g]) { ++g; acc = 0; }
++    }
++  if (ok && (g != ngroups)) ok = 0;
++
++  if (!ok)
++    {
++      if (globals->debugging)
++        foutput("%s", WAR "Menu pages do not line up with audio groups "
++                "(a page spans two groups); keeping group-based layout\n");
++      FREE(pnt);
++      FREE(pgrp);
++      FREE(pt0);
++      FREE(s);
++      return 0;
++    }
++
++  img->page_ntracks = pnt;
++  img->page_group = pgrp;
++  img->page_t0 = pt0;
++  img->npages = (uint8_t) np;
++
++  /* 一页一列：x() 与 compute_coordinates() 都以 ncolumns 均分宽度，
++     一页一个专辑就必须占满整宽。 */
++  img->ncolumns = 1;
++
++  if (globals->debugging)
++    {
++      foutput(MSG_TAG "One album per menu: %d page(s)\n", np);
++      for (int q = 0; q < np; ++q)
++        foutput(MSG_TAG "  page %d: %d track(s), audio group %d, track %d\n",
++                q + 1, pnt[q], pgrp[q], pt0[q] + 1);
++    }
++
++  FREE(s);
++  return 1;
++}
++
+ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *ntracks,  globalData *globals)
+ {
+   if ((!img->refresh) || (!img->nmenus))   return 0;
+@@ -981,36 +1452,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+ 
+   if (!img->hierarchical)
+     {
+-      img->maxbuttons = Min(MAX_BUTTON_Y_NUMBER - 2, totntracks) / img->nmenus;
+-      img->resbuttons = Min(MAX_BUTTON_Y_NUMBER - 2, totntracks) % img->nmenus;
++      /* 每页容量：总数按页数均分（向上取整），再受屏幕上限约束。
++         原式先截 32 再除页数，导致所有页合计恒 <=32 个按钮。 */
++      img->maxbuttons = Min(MAX_BUTTON_Y_NUMBER - 2,
++                            (totntracks + img->nmenus - 1) / img->nmenus);
++      img->resbuttons = 0;
+     }
+ 
+   if (img->screentextchain)
+     {
++      /* ⚠️ 这里**不能**用 fn_strtok(..., count, cutloop, ...)：
++         cutloop 的 `static int32_t loop` 会在调用之间**泄漏** ——
++         `++loop; if (count > loop) return 1; else { loop = 0; return 0; }`
++         当某次调用的子串数**少于** count 时循环自然结束，loop **不归零**；
++         下一次调用就会在**第一个子串上 break**，而 fn_strtok 在 break 时
++         把 array[0] 置成**哨兵 NULL**。
++         实测后果：`--screentext` 的段0 只有一个 '='（如
++         `ALBUM==曲1,曲2`）→ 子串数 1 < count=2 → loop 留下 1
++         → 段1 的 grouptext[1][0] 变成 NULL
++         → 画组标题时 mogrify_img(strlen(NULL)) 段错误。
++         所以改成**手工按第一个分隔符切分**，不依赖任何 static 状态。 */
++
++      /* size 只用于「按像素预算截断曲名」，绝不能同时当 fn_strtok 的输出参数
++         （那会被覆写成子串个数，把曲名截成几个字节）。 */
+       uint32_t size;
+-
+       size = (uint16_t)((norm_x - 40 - 20 * (img->ncolumns - 1)) / img->ncolumns);
+ 
+-      // to avoid using reentrant version of strtok (strtok_r, not mingw32 protable)
++      char *psep = strchr(img->screentextchain, '=');
++      char *groupspec;
++      if (psep)
++        {
++          *psep = '\0';
++          albumtext = strdup(img->screentextchain);
++          groupspec = psep + 1;
++        }
++      else
++        {
++          albumtext = strdup(img->screentextchain);
++          groupspec = NULL;
++        }
++      if (!albumtext || !albumtext[0])
++        {
++          free(albumtext);
++          albumtext = strdup(DEFAULT_ALBUM_HEADER);
++        }
+ 
+-      char remainder[strlen(img->screentextchain)];
++      /* ':' 分组的解析用 f=NULL（没有计数器回调），无 static 泄漏风险 */
++      grouparray = groupspec ? fn_strtok(groupspec, ':', grouparray,
++                                         &dim, 0, NULL, NULL, globals)
++                             : NULL;
++
++      /* dim 是槽位数（含末尾 NULL 哨兵），实际定义的组数要用 arraylength。
++         后面画页面时按 dim 索引 grouptext[]/tracktext[]（含释放循环），
++         所以 dim 至少要 >= ngroups。 */
++      int ndef = grouparray ? arraylength(grouparray) : 0;
++      if (ndef < (int) ngroups)
++        foutput(WAR "Screen text defines only %d group(s) but the disc has "
++                "%d：missing groups will get blank labels.\n",
++                ndef, (int) ngroups);
++      dim = (ndef > (int) ngroups) ? ndef : (int) ngroups;
++
++      /* globals->grouptextsize / tracktextsize 指向 dvda-author.c 里 main 的
++         栈数组，容量 = MENU_TEXT_GROUP_MAX。段数超了必须报错，
++         绝不能越界写栈（那会表现为 "stack smashing detected"）。 */
++      if (dim > MENU_TEXT_GROUP_MAX)
++        EXIT_ON_RUNTIME_ERROR_VERBOSE("Too many menu text groups")
++
++
++      tracktext = calloc(dim + 1, sizeof(char **));
++      if (tracktext == NULL) perror(ERR "Track text allocation");
++      grouptext = calloc(dim + 1, sizeof(char **));
++      if (grouptext == NULL) perror(ERR "Group text allocation");
+ 
+-      basemotif = fn_strtok(img->screentextchain, '=', basemotif, &size, 1, cutloop, remainder, globals) ;
+-      albumtext = basemotif[0];
++      for (k = 0; k < ndef && k < dim; k++)
++        {
++          char *q = strchr(grouparray[k], '=');
++          char *trackspec;
++          if (q)
++            {
++              *q = '\0';              /* 组标题到此为止 */
++              trackspec = q + 1;       /* 之后是曲名列表 */
++            }
++          else
++            {
++              /* 没有 '=' → 整段只是组标题，轨名留空。
++                 （与文档一致：组标题在 '=' 之前） */
++              trackspec = NULL;
++            }
+ 
+-      grouparray = fn_strtok(remainder, ':', grouparray, &dim, 0, NULL, NULL, globals) ;
++          grouptext[k] = (char **) calloc(2, sizeof(char *));
++          grouptext[k][0] = strdup(grouparray[k]);
++          globals->grouptextsize[k] = 2;
+ 
+-      tracktext = calloc(dim, sizeof(char **));
+-      if (tracktext == NULL) perror(ERR "Track text allocation");
+-      grouptext = calloc(dim, sizeof(char **));
+-      if (grouptext == NULL) perror(ERR "Group text allocation");
++          if (trackspec)
++            tracktext[k] = fn_strtok(trackspec, ',', tracktext[k],
++                                     &globals->tracktextsize[k], 0,
++                                     NULL, NULL, globals);
++
++          free(grouparray[k]);
++        }
++      free(grouparray);
++      grouparray = NULL;
+ 
++      /* 统一补齐：menu.c 画文字时按 ntracks[组] 索引 tracktext[组][轨]，
++         条数不足就会读到 NULL 哨兵 → strlen(NULL) 段错误。
++         **与文字内容无关，只与条数有关**，故这里无条件补够。 */
+       for (k = 0; k < dim; k++)
+         {
+-          char rem[strlen(grouparray[k])];
+-          grouptext[k] = fn_strtok(grouparray[k], '=', grouptext[k], &globals->grouptextsize[k], 1, cutloop, rem, globals);
+-          tracktext[k] = fn_strtok(rem, ',', tracktext[k], &globals->tracktextsize[k], 0, NULL, NULL, globals);
+-          free(grouparray[k]);
++          if (!grouptext[k])
++            {
++              grouptext[k] = (char **) calloc(2, sizeof(char *));
++              grouptext[k][0] = strdup("");
++              globals->grouptextsize[k] = 2;
++            }
++
++          int need = (k < (int) ngroups) ? (int) ntracks[k] : 0;
++          int have = tracktext[k] ? arraylength(tracktext[k]) : 0;
++          if (have >= need) continue;
++
++          char **grown = (char **) realloc(tracktext[k],
++                                           (need + 1) * sizeof(char *));
++          if (!grown) { perror(ERR "tracktext realloc"); continue; }
++          tracktext[k] = grown;
++          for (int i = have; i < need; ++i) tracktext[k][i] = strdup("");
++          tracktext[k][need] = NULL;
++          globals->tracktextsize[k] = need + 1;
+         }
+ 
+       free(grouparray);
+@@ -1096,7 +1662,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+       buttons = 0;
+ 
+ 
+-      compute_pointsize(img, 10, command->maxntracks, globals);
++      compute_pointsize(img, 10, img->maxbuttons, globals);
+ 
+       prepare_overlay_img(albumtext, -1, img, command1, command2, menu, img->albumcolor, globals);
+       //free(albumtext);  // segfault here under linux for unknown reasons. TO: fix it.
+@@ -1112,7 +1678,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+                   /* Vicious issue here: use DEFAULT_GROUP_HEADER such that the underline for highlighting does not cut a letter.
+                                  With lower-case "group", this happens as the underline cuts the 'p'. Two ways out: underline lower or use another label/use uppercase
+                                  Note: This issue was tested to cause spumux crash */
+-                  mogrify_img(grouptext[groupcount][0], 0, groupcount, img, command->maxntracks, command1, command2, 0, img->textcolor_pic);
++                  mogrify_img(grouptext[groupcount][0], 0, groupcount, img, img->maxbuttons, command1, command2, 0, img->textcolor_pic);
+                   groupcount++;
+                   buttons++;
+ 
+@@ -1123,13 +1689,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+ 
+           else if (groupcount < ngroups)
+             {
+-              mogrify_img(grouptext[groupcount][0], 0, -1, img, command->maxntracks, command1, command2, 0, img->groupcolor);
++              mogrify_img(grouptext[groupcount][0], 0, -1, img, img->maxbuttons, command1, command2, 0, img->groupcolor);
+               offset = track;
+ 
+               do
+                 {
+                   buttons++;
+-                  mogrify_img(tracktext[groupcount][track], 0, track, img, command->maxntracks, command1, command2, offset, img->textcolor_pic);
++                  mogrify_img(tracktext[groupcount][track], 0, track, img, img->maxbuttons, command1, command2, offset, img->textcolor_pic);
+                   track++;
+                 }
+               while ((buttons < menubuttons) && (track < ntracks[groupcount]));
+@@ -1143,19 +1709,41 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+                 }
+             }
+         }
++      else if (img->page_ntracks)
++        {
++          /* 一页一个专辑（见 compute_menu_pages）：
++             文字段号 == 页号，行数取本页实际曲目数。
++             行距（mogrify_img 的 maxnumtracks）与按钮矩形（xml.c 里
++             compute_coordinates 用的 img->maxbuttons）是同一个值，所以
++             两边必然对齐；x 一律取第 0 列，让文字占满整宽。 */
++          if ((unsigned) menu < img->npages)
++            {
++              img->maxbuttons = img->page_ntracks[menu];
++
++              mogrify_img(grouptext[menu][0], 0, -1, img, img->maxbuttons,
++                          command1, command2, 0, img->groupcolor);
++
++              for (track = 0; track < img->maxbuttons; ++track)
++                mogrify_img(tracktext[menu][track], 0, track, img,
++                            img->maxbuttons, command1, command2, 0,
++                            img->textcolor_pic);
++
++              buttons = img->maxbuttons;
++            }
++        }
+       else
+         {
+           do
+             {
+ 
+-              mogrify_img(grouptext[groupcount][0], group, -1, img, command->maxntracks, command1, command2, 0, img->groupcolor);
++              mogrify_img(grouptext[groupcount][0], group, -1, img, img->maxbuttons, command1, command2, 0, img->groupcolor);
+               offset = track;
+ 
+               do
+                 {
+ 
+                   buttons++;
+-                  mogrify_img(tracktext[groupcount][track], group, track, img, command->maxntracks, command1, command2, offset, img->textcolor_pic);
++                  mogrify_img(tracktext[groupcount][track], group, track, img, img->maxbuttons, command1, command2, offset, img->textcolor_pic);
+                   track++;
+                 }
+               while ((buttons < menubuttons) && (track < ntracks[groupcount]));
+@@ -1176,19 +1764,37 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+ 
+ 
+       if ((img->nmenus > 1) && (menu < img->nmenus))
+-        do
+-          {
+-            char arrowstring[9] = {0};
+-            strcpy(arrowstring, (menu == img->nmenus - 1) ? DEFAULT_PREVIOUS : DEFAULT_NEXT);
+-            buttons++;
+-            mogrify_img(arrowstring, img->ncolumns - 1, command->maxntracks, img, command->maxntracks, command1, command2, offset, img->arrowcolor);
+-            if ((menu) && (menu < img->nmenus - 1))
+-              {
+-                buttons++;
+-                mogrify_img(DEFAULT_PREVIOUS, img->ncolumns - 1, command->maxntracks + 1, img, command->maxntracks, command1, command2, offset, img->arrowcolor);
+-              }
+-          }
+-        while (buttons < menubuttons + arrowbuttons);
++        {
++          /* 箭头文字必须用**绝对行号**定位，与 xml.c 输出的按钮坐标一一对应：
++             两者都取 img->maxbuttons / img->maxbuttons + 1 两行 ——
++             也就是页面底部的两个箭头槽。
++             ⚠️ 原式把 offset 传了进来，而 offset 是「本页首轨的全局序号」，
++             mogrify_img() 里算的是 y(track + 1 - offset)。于是第 2 页起
++             算到的是**页面顶部**：箭头压在第 1、2 行的曲名上，而底部真正的
++             按钮位置没有文字。（第 1 页与末页的 offset 恰为 0，所以正常。）
++             另外原来的 do-while 在曲目不满一页的末页会因 buttons 基数偏低
++             而多转几轮，把同一个箭头重复画 5 次。 */
++          int arrows_drawn = 0;
++
++          buttons++;
++          arrows_drawn++;
++          mogrify_img((menu == img->nmenus - 1) ? DEFAULT_PREVIOUS : DEFAULT_NEXT,
++                      img->ncolumns - 1, img->maxbuttons, img,
++                      img->maxbuttons, command1, command2, 0, img->arrowcolor);
++
++          if ((menu) && (menu < img->nmenus - 1))
++            {
++              buttons++;
++              arrows_drawn++;
++              mogrify_img(DEFAULT_PREVIOUS, img->ncolumns - 1,
++                          img->maxbuttons + 1, img, img->maxbuttons,
++                          command1, command2, 0, img->arrowcolor);
++            }
++
++          if (globals->debugging && (arrows_drawn != (int) arrowbuttons))
++            foutput(WAR "Arrow count mismatch: %d drawn, %d expected\n",
++                    arrows_drawn, (int) arrowbuttons);
++        }
+ 
+       char *q = quote(img->imagepic[menu]);
+       strcat(command2, q);
+@@ -1238,7 +1844,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+   free(grouptext);
+   free(tracktext);
+ 
+-  if (img->screentextchain)
++  if (img->screentextchain && basemotif)
+     {
+       free(basemotif[0]);
+       free(basemotif[1]);
+diff --git a/src/mlp.c b/src/mlp.c
+index 4b9feae..2ac85d2 100644
+--- a/src/mlp.c
++++ b/src/mlp.c
+@@ -14,6 +14,16 @@ static uint32_t cga2wav_channels[21] = {0x4, 0x3, 0x103,  0x33,
+ #define AUDIO_INBUF_SIZE 20480
+ #define AUDIO_REFILL_THRESH 4096
+ 
++/* FFmpeg 8 已移除 AVFrame.pkt_pos，这里自行记录当前输入包的位置，
++   供 MLP 扇区布局计算使用。 */
++static int64_t g_last_pkt_pos = 0;
++
++/* 关键修复：avcodec_receive_frame() 在返回 EAGAIN/EOF 前会 av_frame_unref(frame)，
++   导致循环外读取 frame->nb_samples 恒为 0，进而使 MLP 时间轴全部失效
++   (PTS_length=0、每扇区 PTS 恒定 → 进度条不可用、播放变速)。
++   故在成功收到帧的当下立即保存采样数。 */
++static int g_last_nb_samples = 0;
++
+ uint64_t decode(AVCodecContext *context,
+                 const AVCodec *codec,
+                 AVCodecParameters *codecpar,
+@@ -66,6 +76,10 @@ uint64_t decode(AVCodecContext *context,
+           exit(1);
+         }
+ 
++      /* 必须在 avcodec_receive_frame 返回 EAGAIN 之前取走 nb_samples：
++         EAGAIN 前 frame 会被 unref，循环外读到的一律为 0（见文件头说明）。 */
++      g_last_nb_samples = frame->nb_samples;
++
+       int data_size = av_get_bytes_per_sample(context->sample_fmt);
+ 
+       if (data_size < 0)
+@@ -83,7 +97,7 @@ uint64_t decode(AVCodecContext *context,
+ 
+           if (sampleSize == 2)
+             {
+-              unpadded_linesize = frame->channels * sampleSize * frame->nb_samples;
++              unpadded_linesize = frame->ch_layout.nb_channels * sampleSize * frame->nb_samples;
+               bytes_written = fwrite(frame->extended_data[0], 1, unpadded_linesize, fp);
+             }
+           else if (sampleSize == 4)   // 32 bits -> 24 bits (codec->bits_per_raw_sample)
+@@ -92,9 +106,9 @@ uint64_t decode(AVCodecContext *context,
+ 
+               for (int s = 0; s < frame->nb_samples; ++s)
+                 {
+-                  for (int c = 0; c < codecpar->channels; ++c)
++                  for (int c = 0; c < codecpar->ch_layout.nb_channels; ++c)
+                     {
+-                      uint32_t val = ((int32_t *) frame->extended_data[0])[s * codecpar->channels + c];
++                      uint32_t val = ((int32_t *) frame->extended_data[0])[s * codecpar->ch_layout.nb_channels + c];
+                       val  >>= 8; // sampleSize * 8 - codec->bits_per_raw_sample
+ 
+                       bytes_written_sample += fwrite(&val, 1, 3, fp);
+@@ -116,13 +130,11 @@ uint64_t decode(AVCodecContext *context,
+       if (globals->maxverbose)
+         {
+           fprintf(stderr,
+-                  "Bytes_written: %d Nb samples: %d FR_PTS: %ld PKT_POS: %ld PKT_DURATION: %ld FR_PKT_SIZE; %ld\n",
+-                  cumbytes_written,
++                  "Bytes_written: %ld Nb samples: %d FR_PTS: %ld PKT_POS: %ld\n",
++                  (long) cumbytes_written,
+                   frame->nb_samples,
+-                  frame->pts,
+-                  frame->pkt_pos,
+-                  frame->pkt_duration,
+-                  frame->pkt_size);
++                  (long) frame->pts,
++                  (long) packet->pos);
+         }
+     }
+ 
+@@ -142,7 +154,6 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+   AVCodecContext *context;
+   AVStream *stream;
+   AVCodecParameters *codecpar;
+-  AVPacket packet;
+ 
+   FILE *fp_in = NULL;
+   FILE *fp_out = NULL;
+@@ -222,17 +233,15 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+ 
+   // prepare to read data
+ 
+-  av_init_packet(&packet);
+-
+-  int64_t cumbytes_written = 0;
+-
+-  parser = av_parser_init(codec->id);
+-  if (!parser)
++  AVPacket *packet = av_packet_alloc();
++  if (!packet)
+     {
+-      fprintf(stderr, "Parser not found\n");
++      fprintf(stderr, "Could not allocate packet\n");
+       exit(1);
+     }
+ 
++  int64_t cumbytes_written = 0;
++
+   fp_in = fopen(info->filename, "rb");
+   if (fp_in == NULL)
+     {
+@@ -298,13 +307,13 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+           // WaveHeader info : audio and header characteristics
+ 
+           header.header_size_out = 80;
+-          header.channels        = codecpar->channels;
++          header.channels        = codecpar->ch_layout.nb_channels;
+           header.is_extensible   = header.channels > 2;
+-          header.nBlockAlign     = (codecpar->channels * codecpar->bits_per_raw_sample) / 8 ;
++          header.nBlockAlign     = (codecpar->ch_layout.nb_channels * codecpar->bits_per_raw_sample) / 8 ;
+           header.wBitsPerSample  = codecpar->bits_per_raw_sample;
+-          header.dwChannelMask   = (codecpar->channel_layout < 21
+-                                    && codecpar->channel_layout > 0) ?
+-                                   cga2wav_channels[codecpar->channel_layout] : 0;
++          header.dwChannelMask   = (codecpar->ch_layout.nb_channels > 0
++                                    && codecpar->ch_layout.nb_channels < 21) ?
++                                   cga2wav_channels[codecpar->ch_layout.nb_channels] : 0;
+           header.dwSamplesPerSec = codecpar->sample_rate;
+ 
+           // Prepend header to empty file. Will close files.
+@@ -328,8 +337,14 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+           exit(1);
+         }
+ 
+-      while (data_size > 0)
++      while (av_read_frame(format, packet) >= 0)
+         {
++          if (packet->stream_index != stream_index)
++            {
++              av_packet_unref(packet);
++              continue;
++            }
++
+           if (! frame)
+             {
+               if (!(frame = av_frame_alloc()))
+@@ -339,47 +354,22 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+                 }
+             }
+ 
+-          int ret;
+-
+-          ret = av_parser_parse2(parser, context,
+-                                 &packet.data, &packet.size,
+-                                 data, data_size,
+-                                 AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+-
+-          if (ret < 0)
+-            {
+-              fprintf(stderr, "Error while parsing\n");
+-              exit(1);
+-            }
+-
+-          data      += ret;
+-          data_size -= ret;
++          g_last_pkt_pos = packet->pos;
+ 
+-          if (packet.size)
++          if (packet->size)
+             cumbytes_written = decode(context, codec,
+-                                      codecpar, &packet,
++                                      codecpar, packet,
+                                       frame, fp_out,
+                                       info, cumbytes_written,
+                                       globals);
+ 
+-          if (data_size < AUDIO_REFILL_THRESH)
+-            {
+-              memmove(inbuf, data, data_size);
+-              data = inbuf;
+-              int len = fread(data + data_size, 1,
+-                              AUDIO_INBUF_SIZE - data_size, fp_in);
+-              if (len > 0)
+-                data_size += len;
+-            }
++          av_packet_unref(packet);
+         }
+ 
+-      // Flush
+-
+-      packet.data = NULL;
+-      packet.size = 0;
++      // Flush：av_read_frame 到 EOF 后 packet 为空，用于排空解码器
+ 
+       decode(context, codec,
+-             codecpar, &packet,
++             codecpar, packet,
+              frame, fp_out,
+              info, cumbytes_written,
+              globals);
+@@ -450,8 +440,14 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+           goto clean_up; // do sth more verbose
+         }
+ 
+-      while (data_size > 0)
++      while (av_read_frame(format, packet) >= 0)
+         {
++          if (packet->stream_index != stream_index)
++            {
++              av_packet_unref(packet);
++              continue;
++            }
++
+           if (! frame)
+             {
+               if (!(frame = av_frame_alloc()))
+@@ -461,44 +457,21 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+                 }
+             }
+ 
+-          int ret;
+-
+-          ret = av_parser_parse2(parser, context,
+-                                 &packet.data, &packet.size,
+-                                 data, data_size,
+-                                 AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+-
+-          if (ret < 0)
+-            {
+-              fprintf(stderr, "Error while parsing\n");
+-              exit(1);
+-            }
+-
+-          data      += ret;
+-          data_size -= ret;
++          g_last_pkt_pos = packet->pos;
+ 
+-          if (packet.size)
++          if (packet->size)
+             cumbytes_written = decode(context, codec, codecpar,
+-                                      &packet, frame, NULL,
++                                      packet, frame, NULL,
+                                       info, cumbytes_written,
+                                       globals);
+ 
+-          if (data_size < AUDIO_REFILL_THRESH)
+-            {
+-              if (info->file_size > AUDIO_INBUF_SIZE)
+-                {
+-                  if (data_size < AUDIO_INBUF_SIZE)
+-                    data_size += AUDIO_INBUF_SIZE - data_size;
+-                }
+-              else
+-                data_size += AUDIO_INBUF_SIZE - info->file_size;
+-            }
++          av_packet_unref(packet);
+ 
+           if (frame)
+             {
+               if (HEADER_OFFSET == 0) HEADER_OFFSET = 64;
+ 
+-              PKT_POS_SECT = frame->pkt_pos + HEADER_OFFSET;
++              PKT_POS_SECT = g_last_pkt_pos + HEADER_OFFSET;
+ 
+               SECT_RANK_OLD = SECT_RANK;
+               SECT_RANK = (PKT_POS_SECT - 1) / 2048;
+@@ -508,25 +481,23 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+               if (new_sector || rank == 0)
+                 {
+                   if (new_sector) HEADER_OFFSET     += 43;
+-                  info->mlp_layout[rank].pkt_pos    = frame->pkt_pos;
++                  info->mlp_layout[rank].pkt_pos    = g_last_pkt_pos;
+                   info->mlp_layout[rank].nb_samples = totnbsamples;
+                   info->mlp_layout[rank].rank       = SECT_RANK;
+ 
+                   ++rank;
+                 }
+ 
+-              totnbsamples += frame->nb_samples;
++              totnbsamples += g_last_nb_samples;
+ 
+               if (globals->maxverbose)
+                 {
+-                  fprintf(stderr, "Sect: %lu samples_written: %d Nb samples: %d FR_PTS: %ld PKT_POS: %ld PKT_DURATION: %ld FR_PKT_SIZE; %ld\n",
++                  fprintf(stderr, "Sect: %lu samples_written: %d Nb samples: %d FR_PTS: %ld PKT_POS: %ld\n",
+                           SECT_RANK,
+                           totnbsamples,
+                           frame->nb_samples,
+-                          frame->pts,
+-                          frame->pkt_pos,
+-                          frame->pkt_duration,
+-                          frame->pkt_size);
++                          (long) frame->pts,
++                          (long) g_last_pkt_pos);
+                 }
+             }
+           else
+@@ -536,7 +507,7 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+ 
+         }
+ 
+-      info->mlp_layout[rank].pkt_pos = frame->pkt_pos;
++      info->mlp_layout[rank].pkt_pos = g_last_pkt_pos;
+       info->mlp_layout[rank].nb_samples = totnbsamples;
+       info->mlp_layout[rank].rank = SECT_RANK;
+       info->mlp_layout_size = rank + 1;
+@@ -550,7 +521,8 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+ clean_up:
+ 
+   av_frame_free(&frame);
+-  avcodec_close(context);
++  av_packet_free(&packet);
++  avcodec_free_context(&context);
+   avformat_free_context(format);
+ 
+   return errno;
+@@ -726,38 +698,33 @@ static void encode(AVCodecContext *ctx, AVFrame *frame, AVPacket *pkt, FILE *out
+ 
+ inline static uint64_t encode_fmt_s32(AVCodecContext *c, AVFrame *frame, AVPacket *pkt, FILE *in_fp, FILE *out_fp, globalData *globals)
+ {
+-  int load = c->channels * 4 * c->frame_size;
+-
+-  uint16_t samples[load];
+-  memset(samples, 0, load);
+-
+-  int res = -1, bytes_read_per_sample = -1, bytes_read_per_frame = -1;
++  /* 24-bit PCM → s32p：planer 格式，需按通道 plane 分别填充；
++     小端下 24-bit 样本存放在 4 字节样本的高 3 字节（等价 <<8）。 */
++  const int nch    = c->ch_layout.nb_channels;
++  const int nframe = c->frame_size;
+   static uint64_t bytes_read;
++  uint64_t read_this_call = 0;
++  int eof = 0;
+ 
+-  for (int s = 0; res != 0 && s < c->frame_size; ++s)
+-    {
+-      for (int ch = 0; res != 0 && ch < c->channels; ++ch)
+-        {
+-
+-          res = fread(&samples[(s * c->channels + ch) * 4 + 1], 1, 3, in_fp);
+-
+-          bytes_read_per_sample += res;
+-        }
+-
+-      bytes_read_per_frame += bytes_read_per_sample;
++  for (int ch = 0; ch < nch; ++ch)
++    memset(frame->data[ch], 0, (size_t) nframe * 4);
+ 
+-      if (globals->maxverbose)
+-        foutput(MSG_TAG "Bytes read per sample: %d Bytes read per frame: %d\n",
+-                bytes_read_per_sample,
+-                bytes_read_per_frame);
+-    }
++  for (int s = 0; s < nframe && !eof; ++s)
++    for (int ch = 0; ch < nch && !eof; ++ch)
++      {
++        uint8_t *dst = (uint8_t *) frame->data[ch] + (size_t) s * 4 + 1;
++        size_t n = fread(dst, 1, 3, in_fp);
++        read_this_call += n;
++        if (n < 3) eof = 1;
++      }
+ 
+-  memcpy((uint16_t *) frame->data[0], samples, load);
+-
+-  if (bytes_read_per_frame > 0)
++  if (read_this_call)
+     {
+       encode(c, frame, pkt, out_fp, globals);
+-      bytes_read += bytes_read_per_frame;
++      bytes_read += read_this_call;
++
++      if (globals->maxverbose)
++        foutput(MSG_TAG "Bytes read per frame: %lu\n", (unsigned long) read_this_call);
+     }
+ 
+   return bytes_read;
+@@ -765,24 +732,34 @@ inline static uint64_t encode_fmt_s32(AVCodecContext *c, AVFrame *frame, AVPacke
+ 
+ inline static uint64_t encode_fmt_s16(AVCodecContext *c, AVFrame *frame, AVPacket *pkt, FILE *in_fp, FILE *out_fp, globalData *globals)
+ {
+-  int load = c->channels * 2 * c->frame_size;
+-
+-  uint16_t *samples = (uint16_t *) frame->data[0];
++  /* 16-bit PCM → s16p：planer 格式，按通道 plane 填充 */
++  const int nch    = c->ch_layout.nb_channels;
++  const int nframe = c->frame_size;
+   static uint64_t bytes_read;
+-  uint16_t bytes_read_per_frame;
++  uint64_t read_this_call = 0;
++  int eof = 0;
++
++  for (int ch = 0; ch < nch; ++ch)
++    memset(frame->data[ch], 0, (size_t) nframe * 2);
+ 
+-  bytes_read_per_frame = fread(samples, 1, load, in_fp);
++  for (int s = 0; s < nframe && !eof; ++s)
++    for (int ch = 0; ch < nch && !eof; ++ch)
++      {
++        uint8_t *dst = (uint8_t *) frame->data[ch] + (size_t) s * 2;
++        size_t n = fread(dst, 1, 2, in_fp);
++        read_this_call += n;
++        if (n < 2) eof = 1;
++      }
+ 
+-  if (bytes_read_per_frame)
++  if (read_this_call)
+     {
+       encode(c, frame, pkt, out_fp, globals);
++      bytes_read += read_this_call;
+ 
+       if (globals->maxverbose)
+-        foutput(MSG_TAG "Bytes read per frame: %d\n", bytes_read_per_frame);
++        foutput(MSG_TAG "Bytes read per frame: %lu\n", (unsigned long) read_this_call);
+     }
+ 
+-  bytes_read += bytes_read_per_frame;
+-
+   return bytes_read;
+ }
+ 
+@@ -791,10 +768,12 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+   // initialize all muxers, demuxers and protocols for libavformat
+   // (does nothing if called twice during the course of one program execution)
+ 
+-  if (info->bitspersample == 24)
++  /* [FFmpeg8 迁移] 原先 24-bit 被直接跳过；编码器已改用 s32p，故放开。
++     注意：若此处提前 return，mlp_filename 会保持为空并在后续崩溃。 */
++  if (info->bitspersample != 16 && info->bitspersample != 24)
+     {
+-      foutput(WAR "Currently 24-bit MLP support is still under development. Balking at concerting file %s\n", info->filename);
+-      return 0;
++      foutput(ERR "Unsupported bit depth for MLP: %d\n", info->bitspersample);
++      return -1;
+     }
+ 
+   if (globals->debugging)
+@@ -826,7 +805,7 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+ 
+   /* put sample parameters */
+ 
+-  c->sample_fmt = info->bitspersample == 16 ? AV_SAMPLE_FMT_S16 : AV_SAMPLE_FMT_S32;
++  c->sample_fmt = info->bitspersample == 16 ? AV_SAMPLE_FMT_S16P : AV_SAMPLE_FMT_S32P;
+ 
+   if (!check_sample_fmt(codec, c->sample_fmt))
+     {
+@@ -836,8 +815,11 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+     }
+ 
+   c->sample_rate    = info->samplerate;
+-  c->channel_layout = select_channel_layout(info, globals);
+-  c->channels       = info->channels;
++
++  uint64_t chmask = select_channel_layout(info, globals);
++
++  if (chmask == 0 || av_channel_layout_from_mask(&c->ch_layout, chmask) < 0)
++    av_channel_layout_default(&c->ch_layout, info->channels);
+   c->bits_per_coded_sample = info->bitspersample;
+ 
+   /* open it */
+@@ -853,9 +835,10 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+ 
+   path_t *fn = parse_filepath(info->filename, globals);
+ 
+-  char *out_filename = (char *) calloc(strlen(globals->settings.tempdir) + 1 + strlen(fn->rawfilename) + 12 + 1, sizeof(char));
++  const char *tempdir = globals->settings.tempdir ? globals->settings.tempdir : "/tmp";
++  char *out_filename = (char *) calloc(strlen(tempdir) + 1 + strlen(fn->rawfilename) + 12 + 1, sizeof(char));
+ 
+-  sprintf(out_filename, "%s%s%s%s", globals->settings.tempdir, SEPARATOR, fn->rawfilename, "_enc_wav.mlp");
++  sprintf(out_filename, "%s%s%s%s", tempdir, SEPARATOR, fn->rawfilename, "_enc_wav.mlp");
+ 
+   free_filepath(fn);
+ 
+@@ -893,7 +876,7 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+ 
+   frame->nb_samples     = c->frame_size;
+   frame->format         = c->sample_fmt;
+-  frame->channel_layout = c->channel_layout;
++  av_channel_layout_copy(&frame->ch_layout, &c->ch_layout);
+ 
+   // allocate the data buffers
+ 
+@@ -950,6 +933,11 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+ void transport_to_mlp(fileinfo_t *info, globalData *globals)
+ {
+ 
++  if (info->mlp_filename == NULL)
++    {
++      foutput(ERR "MLP file was not created for %s\n", info->filename);
++      EXITING
++    }
+   info->filename = strdup(info->mlp_filename);
+   if (info->filename == NULL) EXIT_ON_RUNTIME_ERROR_VERBOSE("Could not copy MLP filename.")
+ 
+diff --git a/src/xml.c b/src/xml.c
+index e50464c..a13c847 100644
+--- a/src/xml.c
++++ b/src/xml.c
+@@ -102,6 +102,26 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
+             }
+ 
+         }
++      else if (img->page_ntracks)
++        {
++          /* 一页一个专辑：按钮是 `jump group G track K`，G/K 是「音频组 +
++             组内曲目号」，与「页」无关，必须换算（compute_menu_pages）。 */
++          if ((unsigned) menu < img->npages)
++            {
++              uint8_t  gp = img->page_group[menu];      /* 1-based */
++              uint16_t t0 = img->page_t0[menu];         /* 0-based */
++
++              for (track = 0; track < img->page_ntracks[menu]; ++track)
++                {
++                  buttons++;
++                  fprintf(xmlfile, "       %s%02d%s%d%s%d%s\n", "<button name=\"button", buttons, "\">jump group ", gp, " track ", t0 + track + 1, ";</button>");
++                  if (globals->debugging)
++                    foutput(INF "Button: %d Group %d Track %d \n", buttons, gp, t0 + track + 1);
++                }
++
++              buttons = img->page_ntracks[menu];
++            }
++        }
+       else
+         {
+           do
+@@ -135,17 +155,34 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
+ 
+       if ((img->nmenus > 1) && (menu < img->nmenus))
+         {
+-
+-          do
++          /* 与按钮位置（generate_spumux_xml）**逐一对应**：
++             槽 1 = Next（末页改 Previous，即不再有 Next），槽 2 = Previous
++             （仅中间页）。编号顺序也必须一致（先槽 1 后槽 2）。
++             ⚠️ 原 do-while 在曲目不满一页的末页会因 buttons 基数偏低而多转
++             几轮，重复输出同一个 Previous —— 实测末页出现 6 个
++             （button08..button13，全是 jump menu 7），而 spumux 只定义了
++             1 个（button08）→ 两边按钮数 13 vs 8 不一致，dvdauthor 多建的
++             按钮没有对应高亮区域，该页的 Previous 因此选不中 /
++             回不到上一页。 */
++          int jumps_emitted = 0;
++
++          if (menu < img->nmenus - 1)
+             {
++              buttons++;
++              jumps_emitted++;
++              fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", buttons, "\">jump menu ", menu + 2, ";</button>");
++            }
+ 
+-              if (menu < img->nmenus - 1) fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", ++buttons, "\">jump menu ", menu + 2, ";</button>");
+-              if (menu)
+-                {
+-                  fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", ++buttons, "\">jump menu ", menu, ";</button>");
+-                }
++          if (menu)
++            {
++              buttons++;
++              jumps_emitted++;
++              fprintf(xmlfile, "       %s%02d%s%d%s\n", "<button name=\"button", buttons, "\">jump menu ", menu, ";</button>");
+             }
+-          while (buttons < menubuttons + arrowbuttons);
++
++          if (globals->debugging && (jumps_emitted != (int) arrowbuttons))
++            foutput(WAR "Arrow jump count mismatch: %d emitted, %d expected\n",
++                    jumps_emitted, (int) arrowbuttons);
+           fprintf(xmlfile, "%s%s%s\n", "       <vob pause=\"inf\" file=\"", img->topmenu[menu], "\"/>\n\
+    </pgc>\n");
+ 
+@@ -187,11 +224,11 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
+   int i, j;
+   uint16_t delta = 0;
+ 
+-  delta = EVEN((norm_y - 60) / ((command->maxntracks + 4) * 2));
++  delta = EVEN((norm_y - 60) / ((command->img->maxbuttons + 4) * 2));
+   x1[0] = EVEN(x(1, ncol)) - 12;
+   x0[0] = EMPIRICAL_X_SHIFT + 20 - 12;
+-  y0[0] = EVEN(y(1, command->maxntracks + 4) - delta);
+-  y1[0] = EVEN(y(2, command->maxntracks + 4) - delta);
++  y0[0] = EVEN(y(1, command->img->maxbuttons + 4) - delta);
++  y1[0] = EVEN(y(2, command->img->maxbuttons + 4) - delta);
+ 
+   for (i = 1; i < ncol; ++i)
+     {
+@@ -199,9 +236,9 @@ static inline void compute_coordinates(command_t *command, uint8_t ncol, uint16_
+       x0[i] = x1[i - 1] ;
+     }
+ 
+-  for (j = 1; j < command->maxntracks + 2; ++j)
++  for (j = 1; j < command->img->maxbuttons + 2; ++j)
+     {
+-      y1[j] = EVEN(y(j + 2, command->maxntracks + 4) - delta);
++      y1[j] = EVEN(y(j + 2, command->img->maxbuttons + 4) - delta);
+       y0[j] = y1[j - 1];
+     }
+ 
+@@ -215,7 +252,7 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+   uint16_t x0[ngroups], y0[MAX_BUTTON_NUMBER], x1[ngroups], y1[MAX_BUTTON_NUMBER];
+   errno = 0;
+   FILE *spu_xmlfile = NULL;
+-  if (globals->debugging) foutput(MSG_TAG "Max ntracks: %d\n", command->maxntracks);
++  if (globals->debugging) foutput(MSG_TAG "Max ntracks: %d\n", command->img->maxbuttons);
+ 
+   if (globals->spu_xml == NULL) globals->spu_xml = calloc(img->nmenus, sizeof(char *));
+   if (globals->spu_xml == NULL) perror(ERR "spuxml\n");
+@@ -302,6 +339,25 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+                 }
+             }
+         }
++      else if (img->page_ntracks)
++        {
++          /* 一页一个专辑：按钮矩形必须与 menu.c 的文字**同一套行距**。
++             compute_coordinates() 是按 img->maxbuttons 分行，所以要先把它
++             设成本页曲目数，再算坐标。 */
++          if ((unsigned) menu < img->npages)
++            {
++              img->maxbuttons = img->page_ntracks[menu];
++              compute_coordinates(command, img->ncolumns, x0, y0, x1, y1);
++
++              for (track = 0; track < img->maxbuttons; ++track)
++                {
++                  buttons++;
++                  fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[0], "\"", " y0=\"", y0[track], "\"", " x1=\"", x1[0], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[track], "\"/>");
++                }
++
++              buttons = img->maxbuttons;
++            }
++        }
+       else
+         {
+ 
+@@ -333,18 +389,26 @@ int  generate_spumux_xml(command_t *command, uint8_t ngroups, uint8_t *ntracks,
+ 
+       if (img->nmenus > 1)
+         {
+-          do
++          /* 与 menu.c 的箭头文字一一对应（同一套槽位与页判定）：
++             第 1 个槽放 Next（末页改放 Previous），中间页再补一个 Previous。
++             ⚠️ 原 do-while 在曲目不满一页的末页会因 buttons 基数偏低而多转
++             几轮，输出 5 个完全重叠的按钮。 */
++          int arrows_emitted = 0;
++
++          buttons++;
++          arrows_emitted++;
++          fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons], "\"/>");
++
++          if ((menu) && (menu < img->nmenus - 1))
+             {
+               buttons++;
+-              fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks], "\"/>");
+-
+-              if ((menu) && (menu < img->nmenus - 1))
+-                {
+-                  buttons++;
+-                  fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->maxntracks + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->maxntracks + 1], "\"/>");
+-                }
++              arrows_emitted++;
++              fprintf(spu_xmlfile, "%s%d%s%s%d%s%s%d%s%s%02d%s%s%d%s\n", "       <button x0=\"", x0[img->ncolumns - 1], "\"", " y0=\"", y0[command->img->maxbuttons + 1], "\"", " x1=\"", x1[img->ncolumns - 1], "\"", " name=\"button", buttons, "\"", " y1=\"", y1[command->img->maxbuttons + 1], "\"/>");
+             }
+-          while (buttons < menubuttons + arrowbuttons);
++
++          if (globals->debugging && (arrows_emitted != (int) arrowbuttons))
++            foutput(WAR "Arrow button count mismatch: %d emitted, %d expected\n",
++                    arrows_emitted, (int) arrowbuttons);
+         }
+       menu++;
+       buttons = 0;
+-- 
+2.53.0
+
