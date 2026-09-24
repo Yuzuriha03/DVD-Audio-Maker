@@ -53,8 +53,11 @@ DEFAULTS = {
     # 选曲菜单（AMG 菜单 + ASVS 封面）
     "DVDA_MENU": "off",            # off | on
     "DVDA_MENU_TRACKS_PER_PAGE": "12",
+    # 一级菜单（专辑索引页）：一页 4x4 缩略图，点一下跳到该专辑的选曲页。
+    # 专辑数少于这个值就不做一级菜单。0 = 总是做。
+    "DVDA_MENU_INDEX_MIN_ALBUMS": "4",
     "DVDA_MENU_STILLPICS": "on",   # 播放时显示所属专辑封面
-    "DVDA_MENU_COVER_DIM": "70",   # 菜单背景封面压暗百分比
+    "DVDA_MENU_COVER_DIM": "35",   # 选曲页背景压暗百分比（越大越暗）
     "DVDA_MENU_FONT": "Noto-Sans-CJK-SC",  # 需覆盖 ASCII/汉字/假名/韩文
 
     # 工具
@@ -342,6 +345,12 @@ class Config:
         每盘上限 1024 扇区 ≈ 2 MB）。"""
         return (self.get("DVDA_MENU_STILLPICS") or "on").strip().lower() in (
             "on", "yes", "true", "1")
+
+    @property
+    def menu_index_min_albums(self):
+        """专辑数少于这个值就不做一级菜单（索引页）。0 = 总是做。"""
+        v = self.get_int("DVDA_MENU_INDEX_MIN_ALBUMS")
+        return 0 if v is None else v
 
     @property
     def menu_cover_dim(self):

@@ -1205,6 +1205,95 @@ diff /tmp/a.dis /tmp/b.dis      # 无输出 = 功能等价
 
 ---
 
+## 一级菜单（专辑索引页）：缩略图网格 + `--index-pages`
+
+**需求**：选曲前先来一屏专辑封面缩略图，点哪张进哪个专辑的选曲页。
+
+### 为什么不用上游的 `--menustyle hierarchical`
+
+上游确实有分层菜单（`img->hierarchical`，`nmenus = ngroups + 1`），
+但它**按音频组分层**。本工程每张盘只有 **1 个音频组**（曲目参数统一后
+自然合并），所以那个机制只会给出 2 屏，没有意义。故按**专辑**自己做一层。
+
+### 页序与映射（纯位置，不必传表）
+
+```
+页序： [索引页 0..I-1] [专辑页 0..A-1]
+
+索引页 p 的第 k 格 → 专辑号 a = p * INDEX_PER_PAGE + k
+                  → 菜单号（1-based）= index_pages + p * INDEX_PER_PAGE + k + 1
+```
+
+C 侧只需要一个数字 `--index-pages I` 就能算出全部跳转目标。
+`INDEX_PER_PAGE = INDEX_COLS * INDEX_ROWS = 4 * 3 = 12`。
+
+### 关键实现点
+
+| 位置 | 做法 |
+|---|---|
+| `command_line_parsing.c` | 新增 `--index-pages N`（选项号 43）→ `img->index_pages` |
+| `structures.h` | `pic` 末尾追加 `index_pages`（`pic` 按位置初始化，必须放最后） |
+| `menu.c` `compute_menu_pages()` | 前 N 段是索引页：格子数**不计入** `total`（`total` 要与音频总轨数相等）；这几页 `page_group/t0` 置 0 |
+| `menu.c` `generate_menu_pics()` | 索引页**不画文字**（缩略图由菜单背景提供），只逐格画按钮描边 + 底部箭头 |
+| `xml.c` | 索引用 `jump menu T`；spumux 用**网格矩形**，不能走 `compute_coordinates()` |
+| `menu_assets.py` | `make_index_page()` 拼 4x3 缩略图网格；`MenuPlan.index_pages` 驱动 `--index-pages` |
+
+### ⚠️ 踩过的两个坑（都很难查）
+
+**1. 索引页的翻页箭头拿到了未初始化的坐标**
+
+翻页箭头的代码在 `if/else` 链**之后无条件执行**，用的是
+`x0[]/y0[]/x1[]/y1[]` —— 那几张数组由 `compute_coordinates()` 填，
+而索引页根本不调它（网格不用「按行分行」）。结果是垃圾值：
+
+```
+ERR: Button coordinates out of range (720,576): (33,10944)-(708,35056)
+spumux: subgen-image.c:901: imgfix: Assertion `useimg' failed.
+```
+
+spumux 直接失败、`topmenu0/topmenu1` **输出 0 字节**，于是
+`menuvobsize[0..1] = 0` → `create_amg()` 里
+`cell_end = sum + 0 - 2` **下溢成 0xFFFFFFFE** → IFO 的 cell 地址链坏掉。
+
+**修法**：网格只占上面 3 行（432 px），**底部 144 px 留给箭头带**；
+箭头用**绝对坐标**（`INDEX_ARROW_Y0/Y1`、`INDEX_PREV_X0/INDEX_NEXT_X0`），
+`menu.c` 与 `xml.c` 两侧都用同一套常量。
+
+**2. 格子尺寸不能写 `norm_x / COLS`**
+
+`norm_y / INDEX_ROWS = 576/3 = 192` 会把整幅画面均分，而网格只占 432 px。
+必须用**显式常量** `INDEX_CELL_W=180` / `INDEX_CELL_H=144`，
+否则按钮区与 Python 生成的缩略图错开（实测 y1 差 48 px）。
+
+**3. 别把 `12` 硬编码进跳转公式**
+
+改每页格数时容易漏掉某处。实测 `menu * 16` 没跟着改：
+索引页 2 的第 2 格算出 `tgt = 20 > nmenus(19)` → `break`，
+只输出 1 个按钮，而 spumux 侧输出 5 个 →
+自检 `按钮数一致（跳转 == 位置）` **抓住了它**：
+
+```
+[菜单][FAIL] 按钮数不一致（跳转 vs 位置）：第 2 页: 3 vs 7
+```
+
+### 验证
+
+```bash
+source local-bin/env.sh && python3 scripts/verify_menu.py
+```
+
+disc2（17 专辑 / 56 轨）实测：
+
+```
+[OK] 菜单页数 = 19（期望 19）          ← 2 索引页 + 17 专辑页
+[OK] 翻页链路：19 页 cell 地址连续（跨度 27/28/41/41/43/...,  末页 end=746）
+     地址链 0→746 与 AUDIO_TS.VOB 扇区边界逐页吻合
+[OK] 菜单画面非纯色（均值 231, 标准差 71）—— 背景图生效
+```
+
+> 画面均值从 100 升到 231 —— 二级菜单背景的压暗从 70% 降到 35%
+> （`DVDA_MENU_COVER_DIM`）。
+
 ---
 
 ## 为什么改用 git 提交
