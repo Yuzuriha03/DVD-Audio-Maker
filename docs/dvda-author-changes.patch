@@ -940,7 +940,7 @@ index df1244e..7b997ec 100644
  #define DEFAULT_FONTWIDTH  6  // 6 pixels for size 10 in Courier
  #define DEFAULT_SCREENTEXT "ALBUM=Group 1 - Track 1,Group 1 - Track 2:Group 2 - Track 1,Group 2 - Track 2";
 diff --git a/src/include/menu.h b/src/include/menu.h
-index 5ab0a6a..f4fdbca 100644
+index 5ab0a6a..25b922b 100644
 --- a/src/include/menu.h
 +++ b/src/include/menu.h
 @@ -15,6 +15,7 @@ int  launch_spumux(pic* img, globalData*);
@@ -951,7 +951,7 @@ index 5ab0a6a..f4fdbca 100644
  int create_stillpic_directory(char* string, int32_t count, globalData*);
  void create_activemenu(pic* img, globalData* globals);
  int create_mpg(pic* img, uint16_t rank, char* mp2track, char* tempfile, globalData*);
-@@ -23,5 +24,46 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
+@@ -23,5 +24,52 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
  void initialize_binary_paths(char level, globalData*);
  void menu_characteristics_coherence_test(pic* img, uint8_t ngroups, globalData*);
  void compute_pointsize(pic* img, uint16_t maxtracklength, uint8_t maxnumtracks, globalData*);
@@ -964,42 +964,48 @@ index 5ab0a6a..f4fdbca 100644
 +   选曲页（`jump menu`）。格子几何必须三方一致：
 +     · menu.c   mogrify_thumb()      —— 画按钮区域（描边矩形）
 +     · xml.c    按钮 / spumux 坐标
-+     · menu_assets.py  make_index_page() —— 缩放略图
++     · menu_assets.py  make_index_page() —— 缩放略图 + 专辑名
 +
-+       格子(col,row) = (col*CELL_W + INSET, row*CELL_H + INSET)，尺寸 CELL_W-2*INSET
++       格子(col,row) = (col*CELL_W + INSET, INDEX_TOP + row*CELL_H + INSET)
++       尺寸 = CELL_W-2*INSET x CELL_H-2*INSET
 +
 +   三方不一致就会出现「点到的不是想选的那张」。
 +
-+   ⚠️ 网格只占**上面 INDEX_ROWS 行**，底部 144 px 是翻页箭头带 ——
-+   索引页也要能翻页（专辑多于一页时没箭头就走不掉）。
-+   箭头用**绝对坐标**（下面的 INDEX_*_X0/Y0），不能走
-+   compute_coordinates()：那里按「行」分行，而索引页的 maxbuttons
-+   是格子数，两者不是一回事（曾经因此拿到未初始化的坐标，
-+   spumux 直接报 "Button coordinates out of range" 并输出 0 字节）。 */
++   ⚠️ 顶部 INDEX_TOP 是**留给大标题（光盘标题）的带子**：
++   标题由 prepare_overlay_img() 在**每一页**画在 y≈28..54，
++   网格从 0 开始就会压在缩略图上（实测过）。
++
++   ⚠️ 网格占 INDEX_TOP..INDEX_TOP+INDEX_ROWS*INDEX_CELL_H（60..432），
++   底部 144 px 是翻页箭头带 —— 索引页也要能翻页（专辑多于一页时
++   没箭头就走不掉）。箭头用**绝对坐标**（下面的 INDEX_*_X0/Y0），
++   不能走 compute_coordinates()：那里按「行」分行，而索引页的
++   maxbuttons 是格子数，两者不是一回事（曾经因此拿到未初始化的
++   坐标，spumux 直接报 "Button coordinates out of range" 并输出 0 字节）。 */
 +#define INDEX_COLS   4
 +#define INDEX_ROWS   3
 +#define INDEX_INSET  5
++#define INDEX_TOP    60      /* 大标题带：0..59 留给标题墨迹 */
 +
 +/* 格子尺寸是**显式常量**，不能写 norm_x/COLS、norm_y/ROWS ——
-+   后者会把整个画面均分（576/3 = 192），而网格只占上面 432 px，
-+   下面 144 px 要留给箭头带。两边不一致时按钮区与缩略图就错位。 */
++   后者会把画面均分（576/3 = 192），而网格只占一段。
++   两边不一致时按钮区与缩略图就错位。 */
 +#define INDEX_CELL_W 180
-+#define INDEX_CELL_H 144
++#define INDEX_CELL_H 140     /* 60 + 3*140 = 480 = 网格底 */
 +#define INDEX_PER_PAGE (INDEX_COLS * INDEX_ROWS)
 +
 +/* 索引页第 p 页、第 k 格的专辑，其内容页（菜单号 1-based）=
 +     index_pages + p * INDEX_PER_PAGE + k + 1
 +   menu_assets.py 的 INDEX_PER_PAGE 必须与此相同。 */
 +
-+#define INDEX_ARROW_Y0   476      /* 箭头带：网格下方，垂直居中 */
-+#define INDEX_ARROW_Y1   532
++#define INDEX_ARROW_Y0   496      /* 箭头带：网格下方（480..576），垂直居中 */
++#define INDEX_ARROW_Y1   552
 +#define INDEX_ARROW_W    160
 +#define INDEX_PREV_X0     40
 +#define INDEX_NEXT_X0    520
  #endif
  #endif // HAVE_MENU_C
 diff --git a/src/include/structures.h b/src/include/structures.h
-index 3ca9470..ae75ef4 100644
+index 3ca9470..8f013d8 100644
 --- a/src/include/structures.h
 +++ b/src/include/structures.h
 @@ -81,6 +81,12 @@ typedef struct
@@ -1015,7 +1021,7 @@ index 3ca9470..ae75ef4 100644
  } fileinfo_t;
  
  typedef struct
-@@ -156,6 +162,33 @@ typedef struct
+@@ -156,6 +162,34 @@ typedef struct
      uint32_t* menuvobsize;
      stilloptions** options;
  
@@ -1038,8 +1044,9 @@ index 3ca9470..ae75ef4 100644
 +         · 这些页上的「曲目」其实是专辑格子（page_ntracks[p] = 格子数，
 +           page_group/page_t0 无意义、置 0）
 +         · 这些页**不画任何文字**（缩略图已经由菜单背景提供）
-+         · 第 p 页第 k 格的按钮是 `jump menu (N + p*16 + k + 1)`
-+           —— 纯位置映射，见 menu_assets.py 的 INDEX_* 常量
++         · 第 p 页第 k 格的按钮是
++           `jump menu (N + p*INDEX_PER_PAGE + k + 1)`
++           —— 纯位置映射，见 menu.h / menu_assets.py 的 INDEX_* 常量
 +
 +       其余页仍是「一页一个专辑」的曲目列表。
 +
@@ -1115,7 +1122,7 @@ index 92a8831..39305c0 100644
 +
 +#endif /* WITHOUT_sox */
 diff --git a/src/menu.c b/src/menu.c
-index facf72b..eadf506 100644
+index facf72b..c1674aa 100644
 --- a/src/menu.c
 +++ b/src/menu.c
 @@ -77,7 +77,10 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
@@ -1518,7 +1525,7 @@ index facf72b..eadf506 100644
  
    int size = strlen(globals->settings.tempdir) + 11;
    char picture_save[size];
-@@ -969,6 +1305,210 @@ void test_underline(char *text, pic *img, globalData *globals)
+@@ -969,6 +1305,221 @@ void test_underline(char *text, pic *img, globalData *globals)
  }
  
  
@@ -1614,7 +1621,7 @@ index facf72b..eadf506 100644
 +    }
 +
 +  /* 索引页：格子数 = 该段的条目数；group/t0 无意义（置 0）。
-+     xml.c 对这几页输出 `jump menu (nidx + p*16 + k + 1)`。 */
++     xml.c 对这几页输出 `jump menu (nidx + p*INDEX_PER_PAGE + k + 1)`。 */
 +  for (int q = 0; q < nidx; ++q)
 +    {
 +      pnt[q] = pc[q];
@@ -1683,15 +1690,24 @@ index facf72b..eadf506 100644
 +                         globalData *globals)
 +{
 +  uint16_t x0 = (uint16_t) ((cell % INDEX_COLS) * INDEX_CELL_W + INDEX_INSET);
-+  uint16_t y0 = (uint16_t) ((cell / INDEX_COLS) * INDEX_CELL_H + INDEX_INSET);
++  uint16_t y0 = (uint16_t) (INDEX_TOP + (cell / INDEX_COLS) * INDEX_CELL_H
++                            + INDEX_INSET);
 +  uint16_t x1 = (uint16_t) (x0 + INDEX_CELL_W - 2 * INDEX_INSET);
 +  uint16_t y1 = (uint16_t) (y0 + INDEX_CELL_H - 2 * INDEX_INSET);
 +  char *q = quote(img->highlightcolor_pic);
 +  char str[512];
 +
++  /* 末尾**必须有空格**：调用方接着 strcat 的是输出文件路径，少了这个
++     空格两者会粘成一个参数
++
++       … -draw "rectangle 545,293 715,427""/path/hlpic0.png"
++
++     → mogrify 拿不到输出文件，把结果打到 stdout、**返回 0**，
++       于是静默什么都不画（查了很久）。mogrify_img() 的格式串末尾
++       也有这个空格，跟它保持一致。 */
 +  snprintf(str, sizeof(str),
 +           " -fill none -stroke \"rgb(%s)\" -strokewidth 6"
-+           " -draw \"rectangle %u,%u %u,%u\"",
++           " -draw \"rectangle %u,%u %u,%u\" ",
 +           q, x0, y0, x1, y1);
 +  free(q);
 +  strcat(command, str);
@@ -1716,8 +1732,10 @@ index facf72b..eadf506 100644
 +                            + (INDEX_ARROW_Y1 - INDEX_ARROW_Y0) / 2
 +                            + img->pointsize / 2);
 +
++  /* 末尾空格的原因同 mogrify_thumb() —— 后面紧跟的是输出文件路径。 */
 +  snprintf(str, sizeof(str),
-+           " -fill \"rgb(%s)\" -font %s -pointsize %d -draw \"text %u,%u '%s'\"",
++           " -fill \"rgb(%s)\" -font %s -pointsize %d"
++           " -draw \"text %u,%u '%s'\" ",
 +           q, img->textfont, (int) img->pointsize,
 +           (unsigned) cx, (unsigned) cy, text);
 +  free(q);
@@ -1729,7 +1747,7 @@ index facf72b..eadf506 100644
  int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *ntracks,  globalData *globals)
  {
    if ((!img->refresh) || (!img->nmenus))   return 0;
-@@ -981,36 +1521,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -981,36 +1532,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
    if (!img->hierarchical)
      {
@@ -1877,7 +1895,7 @@ index facf72b..eadf506 100644
          }
  
        free(grouparray);
-@@ -1096,7 +1731,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1096,7 +1742,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
        buttons = 0;
  
  
@@ -1886,7 +1904,7 @@ index facf72b..eadf506 100644
  
        prepare_overlay_img(albumtext, -1, img, command1, command2, menu, img->albumcolor, globals);
        //free(albumtext);  // segfault here under linux for unknown reasons. TO: fix it.
-@@ -1112,7 +1747,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1112,7 +1758,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                    /* Vicious issue here: use DEFAULT_GROUP_HEADER such that the underline for highlighting does not cut a letter.
                                   With lower-case "group", this happens as the underline cuts the 'p'. Two ways out: underline lower or use another label/use uppercase
                                   Note: This issue was tested to cause spumux crash */
@@ -1895,7 +1913,7 @@ index facf72b..eadf506 100644
                    groupcount++;
                    buttons++;
  
-@@ -1123,13 +1758,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1123,13 +1769,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
            else if (groupcount < ngroups)
              {
@@ -1911,7 +1929,7 @@ index facf72b..eadf506 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1143,19 +1778,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1143,19 +1789,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                  }
              }
          }
@@ -1986,7 +2004,7 @@ index facf72b..eadf506 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1175,20 +1863,39 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1175,20 +1874,39 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -2040,7 +2058,7 @@ index facf72b..eadf506 100644
  
        char *q = quote(img->imagepic[menu]);
        strcat(command2, q);
-@@ -1238,7 +1945,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1238,7 +1956,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
    free(grouptext);
    free(tracktext);
  
@@ -2534,7 +2552,7 @@ index 4b9feae..2ac85d2 100644
    if (info->filename == NULL) EXIT_ON_RUNTIME_ERROR_VERBOSE("Could not copy MLP filename.")
  
 diff --git a/src/xml.c b/src/xml.c
-index e50464c..8a62513 100644
+index e50464c..5ac7960 100644
 --- a/src/xml.c
 +++ b/src/xml.c
 @@ -102,6 +102,60 @@ int  generate_amgm_xml(uint8_t ngroups, uint8_t *ntracks, pic *img, globalData *
@@ -2553,13 +2571,13 @@ index e50464c..8a62513 100644
 +              if (menu < (unsigned) img->index_pages)
 +                {
 +                  /* ---- 一级菜单（专辑索引页）----
-+                     第 menu 页第 k 格 → 专辑号 a = menu*16 + k
++                     第 menu 页第 k 格 → 专辑号 a = menu*INDEX_PER_PAGE + k
 +                     → 该专辑的内容页（0-based）= index_pages + a
-+                     → 菜单号（1-based）= index_pages + menu*16 + k + 1。
++                     → 菜单号（1-based）= index_pages + menu*INDEX_PER_PAGE + k + 1。
 +
 +                     这是**纯位置映射**，与 menu_assets.py 的
-+                     `--index-pages` 计算一致；越界（末页不足 16 格、
-+                     或专辑数不够）时跳过，不出按钮。 */
++                     `--index-pages` 计算一致；越界（末页不足
++                     INDEX_PER_PAGE 格、或专辑数不够）时跳过，不出按钮。 */
 +                  int ncells = (int) img->page_ntracks[menu];
 +                  uint16_t nmenus = img->nmenus;
 +
@@ -2700,7 +2718,7 @@ index e50464c..8a62513 100644
 +                    {
 +                      uint16_t bx0 = (uint16_t) ((track % INDEX_COLS)
 +                                                 * INDEX_CELL_W + INDEX_INSET);
-+                      uint16_t by0 = (uint16_t) ((track / INDEX_COLS)
++                      uint16_t by0 = (uint16_t) (INDEX_TOP + (track / INDEX_COLS)
 +                                                 * INDEX_CELL_H + INDEX_INSET);
 +                      uint16_t bx1 = (uint16_t) (bx0 + INDEX_CELL_W
 +                                                 - 2 * INDEX_INSET);

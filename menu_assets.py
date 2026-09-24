@@ -48,23 +48,45 @@ ALBUM_TEXT_Y0 = 48          # 专辑标题基线（commonvars.h）
 TEXT_BUDGET_PX = 660        # 每行文字可占宽度（按钮 x0=33..x1=708）
 
 # ---- 一级菜单：专辑索引页（缩略图网格）--------------------------------
-# 4x3 是量出来的：格子 180x144（5:4，接近方形封面，裁剪少），缩略图 170x134；
+# 4x3 是量出来的：格子 180x140，缩略图 100x100；
 # disc1（28 张）→ 3 页、disc2（17 张）→ 2 页。
 #
-# ⚠️ 网格只占**上面 3 行**（432 px），**底部 144 px 是翻页箭头带** ——
+# ⚠️ 顶部 `INDEX_TOP`(60) 是**留给大标题（光盘标题）的带子**：
+# 标题由 dvda-author 的 prepare_overlay_img() 在**每一页**画在 y≈28..54，
+# 网格从 0 开始就会压在缩略图上（实测过：标题墨迹 362x26 在 (47,28)，
+# 而第一行缩略图是 y=5..109）。
+#
+# ⚠️ 网格占 60..480，底部 `INDEX_ARROW_Y0..Y1`(496..552) 是翻页箭头带 ——
 # 索引页也要能翻页（专辑多于一页时没箭头就走不掉）。
 #
-# ⚠️ 这几个值必须与 C 侧一致（menu.h / menu.c / xml.c 里的同名常量）：
-#    缩略图位置 = (col*CELL_W + INSET, row*CELL_H + INSET)，尺寸 CELL_W-2*INSET
-#    按钮矩形  = 同一个矩形
-#   箭头矩形  = INDEX_NEXT_X0/INDEX_PREV_X0, INDEX_ARROW_Y0..Y1
-# 改了这里就要同步改 C 侧，否则点击区与图不对齐。
+# ⚠️ 格子几何必须与 C 侧一致（menu.h / menu.c / xml.c 里的同名常量）：
+#    按钮矩形 = 整个格子内容区
+#               (col*CELL_W + INSET, INDEX_TOP + row*CELL_H + INSET)
+#               尺寸 CELL_W-2*INSET x CELL_H-2*INSET
+#    箭头矩形 = INDEX_NEXT_X0/INDEX_PREV_X0, INDEX_ARROW_Y0..Y1
+# 注意：**缩略图占多大、专辑名画在哪，C 侧不关心** —— 按钮是整格，
+# 名称也落在可点区里。所以下面这几个尺寸只影响 Python 的排版。
 INDEX_COLS, INDEX_ROWS = 4, 3
 INDEX_CELL_W = FRAME_W // INDEX_COLS            # 180
-INDEX_CELL_H = 144                              # 与 C 侧一致（3 行 = 432 px）
-INDEX_INSET = 5                                 # 缩略图与格子边缘的间隙
+INDEX_CELL_H = 140                              # 与 C 侧一致（60 + 3*140 = 480）
+INDEX_TOP = 60                                  # 大标题带高度（与 C 侧一致）
+INDEX_INSET = 5                                 # 格子内容与格子边缘的间隙
 INDEX_PER_PAGE = INDEX_COLS * INDEX_ROWS        # 12
-# 索引页的「段标题」。这一页不画文字，它只是为了让 screentext 的段合法。
+# 格子内部：上面正方缩略图，下面专辑名（换行 + 不够宽/高时自动缩字号）。
+#   100 + 2 + 28 = 130 = INDEX_CELL_H - 2*INDEX_INSET
+# 封面实测全是 3000x3000，所以缩略图取**正方形且不裁切** ——
+# 若铺满 170x130（1.3:1），正方形封面会被裁掉上下约 23% 的高度。
+INDEX_THUMB = 100                               # 缩略图边长（正方形）
+INDEX_THUMB_GAP = 2                             # 缩略图与名称条的间隙
+INDEX_LABEL_H = 28                              # 名称条高度
+INDEX_LABEL_MAX_POINTS = 17                     # 名称字号上限（一行放不下就缩）
+INDEX_LABEL_MIN_POINTS = 9                      # 名称字号下限（再小看不清）
+# 翻页箭头带（与 C 侧 INDEX_ARROW_Y0/Y1 一致）。网格底是 480，
+# 再加上下裕量 —— 这段区间里除了箭头不可能有别的墨迹，
+# 构建期自检靠它判断「箭头到底画了没有」。
+INDEX_ARROW_BAND = (488, 560)
+# 索引页在 `--screentext` 里的「段标题」。名称是 Python 画进背景图的，
+# 所以这个字不会被显示，只是为了让 screentext 的段格式合法。
 INDEX_LABEL = "选择专辑"
 
 _CJK_LO, _CJK_HI = 0x2E80, 0x9FFF        # 常用 CJK 区段
@@ -559,28 +581,114 @@ def make_background(covers, path, dim):
     return path
 
 
-def make_index_page(covers, path):
-    """一级菜单（专辑索引页）：4x4 缩略图网格，整幅 720x576。
+def _caption_height(text, width, font, points):
+    """`caption:` 在这个宽度/字号下**自动换行**后的高度（px）。出错返回 None。
 
-    covers 是本页最多 16 张封面路径（不足的格子留黑）。
-    **不画专辑名** —— 按钮区就是这里的缩略图矩形，与 C 侧 xml.c 输出的
-    坐标严格一致（都是 `col*180+5, row*144+5` 起、`170x134`）。
-
-    实现用 `-repage +x+y` 给每层定位再 `-flatten` —— 比逐个 `-composite`
-    少写一堆 `( )`，也不会踩「composite 取错上一层」的坑。
+    交给 ImageMagick 自己排版来量，比在 Python 里估算字符宽度靠得住 ——
+    中英混排（如 `Lulala! Lululala!`）按字符数猜行数必错。
+    `-size Wx`（高度留空）就是「按宽度换行，高度自适应」。
     """
-    w = INDEX_CELL_W - 2 * INDEX_INSET
-    h = INDEX_CELL_H - 2 * INDEX_INSET
+    exe = _magick_exe()
+    if not exe:
+        return None
+    r = subprocess.run(
+        [exe, "-background", "none", "-fill", "white", "-font", font,
+         "-pointsize", str(points), "-size", "%dx" % width,
+         "caption:" + text, "-format", "%h", "info:"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if r.returncode != 0:
+        return None
+    try:
+        return int(r.stdout.decode().strip())
+    except ValueError:
+        return None
+
+
+_INDEX_FIT = {}
+
+
+def fit_index_label(text, width, height, font):
+    """给专辑名挑 `(字号, 实际显示的文本)`。
+
+    **先换行、行数超了再缩字号**：从上限逐级往下试，取第一个
+    「换行后自然高度 <= height」的。只缩字号是不够的 ——
+    `Running For Your Life` 在 18pt 下换行后高 56px（>28），要降到 17pt。
+
+    ① 名称条只有 28px 高，所以**装得下两行**的情况很少（两行至少 30px），
+       实测本项目最长的专辑名（21 字符）在 17pt 单行刚好压线，所以
+       正常都是单行 + 满字号；换行只在名称特别长时才发生。
+    ② 连下限字号都塞不下时**截断加省略号** —— 否则 `caption:` 会直接把
+       下半行裁掉，看起来像「少了一半的字」而且不会报错。
+
+    同一个名字在多页上重复出现（如「星炬不熄」），结果按
+    (文本, 宽, 高, 字体) 缓存，省掉重复调 IM 的开销。
+    """
+    key = (text, width, height, font)
+    if key in _INDEX_FIT:
+        return _INDEX_FIT[key]
+
+    pick, shown = INDEX_LABEL_MIN_POINTS, text
+    for p in range(INDEX_LABEL_MAX_POINTS, INDEX_LABEL_MIN_POINTS - 1, -1):
+        h = _caption_height(text, width, font, p)
+        if h is None or h <= height:     # None = 量不出来，按最小字号画
+            pick = p
+            break
+    else:
+        while shown and _caption_height(shown + "…", width, font,
+                                        INDEX_LABEL_MIN_POINTS) > height:
+            shown = shown[:-1]
+        shown = (shown + "…") if shown else ""
+
+    _INDEX_FIT[key] = (pick, shown)
+    return pick, shown
+
+
+def make_index_page(cells, path, font):
+    """一级菜单（专辑索引页）：`4x3` = 正方缩略图 + 专辑名，整幅 720x576。
+
+    cells 是本页最多 `INDEX_PER_PAGE`(12) 个 `(专辑名, 封面路径)`：
+    封面为 None 的格子留黑，专辑名为空则不画名称。
+
+    格子内部（从 `col*180+5, INDEX_TOP + row*140+5` 起，共 170x130）：
+      · 缩略图：正方形 `INDEX_THUMB`(100)，水平居中
+      · 名称  ：缩略图下方 `INDEX_THUMB_GAP`(2) px，宽 170、高 28，
+                居中，自动换行 + 缩字号
+   顶部 60 px 留黑，给 dvda-author 画的**大标题**；底部 480 以下留黑，
+   给翻页箭头。
+
+    按钮区 = **整个格子内容区**（含名称），由 C 侧 xml.c 输出 ——
+    所以这里改缩略图/名称的尺寸**不会**影响点击区。
+
+    ⚠️ `-repage` 必须写在**括号内**：它是**算子**（operator）而不是设置项，
+    不加括号时 IM 会对「当前图像列表里的每一张」生效 —— 包括开头那张
+    720x576 的黑底色。结果黑底也被挪到最后一格的位置，画布露出
+    `-flatten` 的默认白底，于是整页只剩右下角一张封面、其余全白。
+    """
+    tw = INDEX_THUMB
+    lw = INDEX_CELL_W - 2 * INDEX_INSET          # 名称条宽 = 170
+    tx = INDEX_INSET + (lw - tw) // 2            # 缩略图左边距（居中）
 
     args = ["-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:black"]
-    for i, cov in enumerate(covers[:INDEX_PER_PAGE]):
-        if not cov:
-            continue
-        x = (i % INDEX_COLS) * INDEX_CELL_W + INDEX_INSET
-        y = (i // INDEX_COLS) * INDEX_CELL_H + INDEX_INSET
-        args += ["(", cov, "-resize", "%dx%d^" % (w, h),
-                 "-gravity", "center", "-extent", "%dx%d" % (w, h), ")",
-                 "-repage", "+%d+%d" % (x, y)]
+    for i, (name, cov) in enumerate(cells[:INDEX_PER_PAGE]):
+        ox = (i % INDEX_COLS) * INDEX_CELL_W
+        oy = INDEX_TOP + (i // INDEX_COLS) * INDEX_CELL_H
+        if cov:
+            # `^` + `-extent` 是「填满再裁」：封面本来就是 1:1，等于不裁；
+            # 万一是非方形也不会撑破格子的正方形版式。
+            args += ["(", cov, "-resize", "%dx%d^" % (tw, tw),
+                     "-gravity", "center", "-extent", "%dx%d" % (tw, tw),
+                     "-repage", "+%d+%d" % (ox + tx, oy + INDEX_INSET), ")"]
+        if name:
+            p, shown = fit_index_label(name, lw, INDEX_LABEL_H, font)
+            # `-repage` 同样必须在 `)` **之前** —— 写成 `) -repage` 就变成
+            # 作用到列表里每一张的算子，把所有层压回同一个位置。
+            args += ["(", "-background", "none", "-fill", "white",
+                     "-font", font, "-pointsize", str(p),
+                     "-size", "%dx%d" % (lw, INDEX_LABEL_H),
+                     "-gravity", "center", "caption:" + shown,
+                     "-repage", "+%d+%d" % (ox + INDEX_INSET,
+                                            oy + INDEX_INSET + tw
+                                            + INDEX_THUMB_GAP), ")"]
     args += ["-flatten", "-quality", "90", path]
     _magick(*args)
 
@@ -702,8 +810,8 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
 
     # ---- 一级菜单：专辑索引页 ----
     # 页序 = [索引页 0..I-1] + [专辑页 0..A-1]。
-    # 索引页 p 的第 k 个格子 → 专辑号 a = p*16+k → 其内容页 (0-based) = I+a
-    #   → 按钮 `jump menu (I+a+1)`（菜单号 1-based）。
+    # 索引页 p 的第 k 个格子 → 专辑号 a = p*INDEX_PER_PAGE+k
+    #   → 其内容页 (0-based) = I+a → 按钮 `jump menu (I+a+1)`（1-based）。
     # 这套映射是**纯位置**的，C 侧只拿到 --index-pages=I 就能算出全部目标，
     # 不必再传一张表。
     idx_pages = -(-n_albums // INDEX_PER_PAGE) if n_albums else 0
@@ -749,10 +857,15 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
 
     # 页序：先索引页（缩略图网格），再专辑页（该专辑封面）。
     # 顺序必须与 screentext 的段序、以及 C 侧算出的 jump 目标一致。
+    #
+    # ⚠️ 索引页要画**专辑名**，而字体是下面 pick_font() 才定下来的
+    # （字体缺字 = 名称一片空白且不报错），所以这里只**登记路径**，
+    # 真正的绘制挪到 pick_font() 之后。
     plan.backgrounds = []
-    for pi, albs in enumerate(index_albums):
+    index_paths = []
+    for pi in range(idx_pages):
         path = os.path.join(outdir, "idx%d.jpg" % pi)
-        make_index_page([covers.get(a) for a in albs], path)
+        index_paths.append(path)
         plan.backgrounds.append(path)
 
     # 专辑页背景 = 该专辑封面（压暗是为了让白字读得清）。缺封面时留黑。
@@ -861,6 +974,14 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
     # 本项目曲名同时含中文、日文假名、韩文与 ASCII，缺任何一个都会变空白。
     all_texts.append(cfg.title)
     plan.font, plan.font_missing = pick_font(cfg.menu_font, all_texts, log)
+
+    # ---- 一级菜单：字体定了才画（专辑名要按实际排版换行 + 缩字号）----
+    for pi, albs in enumerate(index_albums):
+        cells = []
+        for a in albs:
+            lbl, _fixed = sanitize(menu_album(a))
+            cells.append((lbl, covers.get(a)))
+        make_index_page(cells, index_paths[pi], plan.font)
 
     plan.fontwidth = compute_fontwidth(all_texts, points)
 

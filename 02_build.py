@@ -682,6 +682,83 @@ def check_menu_buttons(tmp):
     return True
 
 
+def check_menu_overlay(tmp, n_index, n_pages):
+    """自检：每页的「文字层」与「高亮层」都要真的画出东西。
+
+    dvda-author 每页生成三张叠加图（subpicture 素材）：
+      `impic<N>.png`  文字层 —— 光盘标题；**索引页的翻页箭头也在这里**
+      `hlpic<N>.png`  高亮层 —— impic 的副本，再画按钮框 / 下划线；
+                                **专辑页的翻页箭头也在这里**
+      `slpic<N>.png`  选中层 —— impic 换色
+
+    所以 `hlpic` 的墨迹**必须多于** `impic`。两者相同就说明某条
+    `mogrify` 命令没生效 —— 而这**不会报错**：命令串末尾若与输出文件名
+    粘连（`… -draw "rectangle 5,5 175,139""/path/hlpic0.png"`），
+    mogrify 拿不到输出文件，把结果打到 stdout 并**返回 0**，
+    文件一个像素都不变。
+
+    实测因此出过一盘：索引页既没有翻页箭头、也没有按钮框，
+    而 dvda-author 全程无告警、按钮数自检也通过（那只查 XML 里的编号）。
+    """
+    if not menu_assets.have_magick():
+        return True
+
+    import subprocess as _sp
+
+    def ink(path):
+        if not os.path.exists(path):
+            return None
+        r = _sp.run(["identify", "-format", "%[fx:mean.a*w*h]", path],
+                    stdout=_sp.PIPE, stderr=_sp.DEVNULL)
+        try:
+            return float(r.stdout.decode().strip())
+        except ValueError:
+            return None
+
+    bad = []
+    for m in range(n_pages):
+        a = ink(os.path.join(tmp, f"impic{m}.png"))
+        b = ink(os.path.join(tmp, f"hlpic{m}.png"))
+        if a is None or b is None:
+            bad.append((m + 1, "缺文件", a, b))
+        elif b <= a:
+            bad.append((m + 1, "高亮层没多出墨迹", a, b))
+
+    # 索引页的翻页箭头画在 impic 上（专辑页画在 hlpic 上），单独查一次 ——
+    # 否则「箭头没画但按钮框画了」会漏过上面的比较。
+    y0, y1 = menu_assets.INDEX_ARROW_BAND
+    no_arrow = []
+    for m in range(min(n_index, n_pages)):
+        p = os.path.join(tmp, f"impic{m}.png")
+        if not os.path.exists(p) or n_pages <= 1:
+            continue
+        r = _sp.run(["identify", "-crop", f"720x{y1 - y0}+0+{y0}",
+                     "-format", "%[fx:maxima.a]", p],
+                    stdout=_sp.PIPE, stderr=_sp.DEVNULL)
+        try:
+            v = float(r.stdout.decode().strip())
+        except ValueError:
+            continue
+        if v <= 0:
+            no_arrow.append(m + 1)
+
+    if bad or no_arrow:
+        print("[菜单][FAIL] 叠加图自检未通过：")
+        for pg, why, a, b in bad[:6]:
+            print(f"       第 {pg} 页: {why}"
+                  f"（文字层 {a} 像素, 高亮层 {b} 像素）")
+        if no_arrow:
+            print(f"       索引页缺翻页箭头: {no_arrow}")
+        print("       说明: 每页的 hlpic 必须比 impic 多出按钮框/下划线，")
+        print("             索引页的箭头必须有墨迹。完全不画 = 某条 mogrify")
+        print("             命令静默失效（最常见: 命令串末尾与输出文件名")
+        print("             之间少了空格，见 docs/TROUBLESHOOTING.md 第 22 节）")
+        return False
+    print(f"[菜单] 叠加图自检通过（{n_pages} 页：高亮层都有按钮框/下划线"
+          + (f"，{n_index} 个索引页有翻页箭头" if n_index else "") + "）✔")
+    return True
+
+
 def win_copy_to(linux_path, win_dest):
     """用 **Windows 侧的 robocopy** 把一个文件从 Linux 侧拷到 Windows 目录。
 
@@ -863,6 +940,8 @@ def build_disc(disc_index, groups):
 
         # 按钮一致性自检必须在删掉 tempdir 之前做（XML 就在里面）
         if not check_menu_buttons(tmp):
+            return False
+        if not check_menu_overlay(tmp, plan.index_pages, plan.pages):
             return False
 
     # 末轨 AOB 的扇区边界补齐曾在这里做（`[补齐] *.AOB 补 N 字节`）。

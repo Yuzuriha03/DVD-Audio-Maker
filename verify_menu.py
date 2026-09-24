@@ -219,6 +219,84 @@ def frame_stats(vob):
         return None
 
 
+def check_index_cells(vob, n_index_pages, n_albums, label):
+    """一级索引页：**逐格**确认封面与专辑名都画上了。
+
+    为什么要专门查这个：`verify_menu.py` 原来只判「整页非纯色」，而
+    `make_index_page()` 的 `-repage` 写错作用域时，整页会变成
+    **白底 + 右下角一张封面** —— 均值 238、颜色数上万，那条判据照样
+    报「背景图生效 ✔」。实测这个 bug 就这样漏了过去，只能靠人眼看盘。
+
+    判据（取第 1 个索引页，即 VOB 第一帧）：
+      · 每格的缩略图区域不是纯黑（封面画上了）
+      · 每格的名称条里有接近白的像素（专辑名画上了）
+    """
+    import menu_assets as ma
+
+    png = "/tmp/_index_frame.png"
+    if os.path.exists(png):
+        os.remove(png)
+    rc, _ = _run(["ffmpeg", "-v", "error", "-y", "-i", vob,
+                  "-frames:v", "1", png])
+    if rc != 0 or not os.path.exists(png):
+        print("  [WARN] 无法抽帧检查索引页")
+        return True
+
+    cw, ch, ins = ma.INDEX_CELL_W, ma.INDEX_CELL_H, ma.INDEX_INSET
+    top = ma.INDEX_TOP
+    tw, gap, lh = ma.INDEX_THUMB, ma.INDEX_THUMB_GAP, ma.INDEX_LABEL_H
+    lw = cw - 2 * ins
+    tx = ins + (lw - tw) // 2
+    want = min(n_albums, ma.INDEX_PER_PAGE)
+
+    def stat(expr, x, y, w, h):
+        rc, out = _run(["identify", "-crop", f"{w}x{h}+{x}+{y}",
+                        "-format", expr, png])
+        try:
+            return float(out.strip())
+        except ValueError:
+            return None
+
+    bad_bg, bad_thumb, bad_label = [], [], []
+    # ⚠️ `identify` **没有** `+repage` 这个选项（那是 convert/mogrify 的），
+    # 多写一个就会以「unrecognized option」失败、输出为空 → 解析成 0 →
+    # 每格都判成「缺内容」。`identify -crop` 本身就按裁剪区统计。
+    #
+    # 三条判据缺一不可（只用第一条会漏，只用后两条也会漏）：
+    #  · 背景黑    —— 抓 `-repage` 作用域错：那时画布是 **白**底，
+    #                 而「缩略图区非黑」「名称区有亮像素」在白底上都会误判为通过
+    #  · 缩略图非空—— 抓格子漏画（那种情况缺口是**黑**的）
+    #  · 名称深底+亮字 —— 有白字说明名称画上了；纯色区域（黑/白）都不算
+    for i in range(want):
+        ox, oy = (i % ma.INDEX_COLS) * cw, top + (i // ma.INDEX_COLS) * ch
+        bg = stat("%[fx:mean*255]", ox + 1, oy + 1, 3, 3)
+        if bg is None or bg > 20:
+            bad_bg.append(i)
+        th = stat("%[fx:mean*255]", ox + tx, oy + ins, tw, tw)
+        if th is None or th <= 3:
+            bad_thumb.append(i)
+        ly = oy + ins + tw + gap
+        lmax = stat("%[fx:maxima*255]", ox + ins, ly, lw, lh)
+        lmean = stat("%[fx:mean*255]", ox + ins, ly, lw, lh)
+        if lmax is None or lmean is None or lmax <= 200 or lmean > 200:
+            bad_label.append(i)
+
+    if bad_bg or bad_thumb or bad_label:
+        print(f"  [FAIL] 索引页格子内容异常（第 1 页，共 {want} 格）")
+        if bad_bg:
+            print(f"         · 格子外背景不是黑的: {bad_bg}")
+            print("           → 十有八九是 make_index_page() 的 `-repage`")
+            print("             写到了 `( )` 外面，画布变成 flatten 的白底")
+        if bad_thumb:
+            print(f"         · 缩略图为空（纯黑）的格子: {bad_thumb}")
+        if bad_label:
+            print(f"         · 专辑名没画上的格子: {bad_label}")
+        print("         成因与修法见 docs/TROUBLESHOOTING.md 第 21 节。")
+        return False
+    print(f"  [OK]   索引页第 1 页 {want} 格：缩略图与专辑名都在 ✔")
+    return True
+
+
 # ASVS（AUDIO_SV.IFO，播放封面）字段位置（实测，对应 src/asvs.c）
 ASVS_TITLE_COUNT = 0x0C     # u16：声明的「有自己静图的曲目」条数
 ASVS_LAST_SECTOR = 0x14     # u32：静图总扇区数 - 1
@@ -316,7 +394,7 @@ def check_stills_data(ifo_path, vob_path, expect_pics, expect_albums=None):
 
 
 def check_iso(iso, expect_tracks, expect_pages, tmpdir, label,
-              expect_pics=None, expect_albums=None):
+              expect_pics=None, expect_albums=None, expect_index_pages=0):
     print(f"\n=== {label}: {os.path.basename(iso)} ===")
     names = iso_files(iso)
     if not names:
@@ -421,6 +499,14 @@ def check_iso(iso, expect_tracks, expect_pages, tmpdir, label,
             else:
                 print(f"  [WARN] 菜单画面接近纯色（均值 {mean:.0f}, "
                       f"标准差 {sd:.0f}, 颜色 {colors}）—— 背景图可能没生效")
+
+    # 7. 一级索引页：**逐格**查缩略图与专辑名
+    # 上面的「非纯色」判据漏掉过「白底 + 只剩一个格子」这种坏页
+    # （白底均值 238、颜色上万，看起来很像正常），所以单独查一次。
+    if have_tv and expect_index_pages and expect_tracks:
+        if not check_index_cells(tv, expect_index_pages, expect_albums or 0,
+                                 label):
+            ok = False
     return ok
 
 
@@ -480,7 +566,7 @@ def main():
             expect_pics = sum(len(g) for g in groups)
         else:
             tracks, pages = None, None
-            expect_albums = expect_pics = None
+            expect_albums = expect_pics = n_idx = None
             print("[提示] 指定 --iso 时无法核对期望页数，只做存在性检查")
         if tracks is None:
             print(f"\n=== {os.path.basename(iso)} ===")
@@ -490,7 +576,7 @@ def main():
                 print(f"  [{'OK' if f in base else 'FAIL'}] AUDIO_TS/{f}")
             continue
         ok = check_iso(iso, tracks, pages, f"/tmp/verify-menu/disc{i}",
-                       f"第 {i} 盘", expect_pics, expect_albums)
+                       f"第 {i} 盘", expect_pics, expect_albums, n_idx or 0)
         all_ok = all_ok and ok
 
     print()
