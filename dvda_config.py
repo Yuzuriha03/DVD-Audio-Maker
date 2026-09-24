@@ -59,7 +59,7 @@ DEFAULTS = {
 
     # 工具
     "DVDA_AUTHOR": "/root/dvda-author-mlp8/src/dvda-author-dev",
-    "DVDA_MKISOFS": "/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs",
+    "DVDA_MKISOFS": "/root/dvda-author-mlp8/local.ubuntu.20.10/bin/mkisofs",
     "DVDA_FFMPEG": "ffmpeg",
     "DVDA_FFPROBE": "ffprobe",
     "DVDA_AUTHOR_SRC": "/root/dvda-author-mlp8",

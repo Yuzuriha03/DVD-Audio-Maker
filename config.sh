@@ -172,8 +172,8 @@ DVDA_FFMPEG="ffmpeg"
 DVDA_FFPROBE="ffprobe"
 
 # dvda-author 源码目录（build_dvda_author_mlp.sh 用）
+# 这是**手工维护的源码树** —— 本工程的改动已固化在里面，不再每次重放补丁。
 DVDA_AUTHOR_SRC=""
-DVDA_AUTHOR_ORIG=""
 
 
 # ============================================================================

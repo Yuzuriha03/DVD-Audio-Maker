@@ -23,19 +23,13 @@ ffmpeg -hide_banner -encoders | grep mlp
 # 应输出:  A..X.D mlp   MLP (Meridian Lossless Packing)
 ```
 
-### 2. 获取 dvda-author 源码并打补丁
+### 2. 获取 dvda-author 源码
 
 ```bash
-sudo git clone https://github.com/fabnicol/dvda-author /opt/dvda-author
-cd /opt/dvda-author
-
-# 上游 bug 修复（3 个，构建前提）
-python3 /path/to/DVD-Audio-Maker/fixes/fix_merged_and_audio_close.py
-python3 /path/to/DVD-Audio-Maker/fixes/fix_close_handles.py
-python3 /path/to/DVD-Audio-Maker/fixes/fix_secure_mkdir.py
-
-./configure --enable-core-build && make -j2
+git clone https://github.com/fabnicol/dvda-author /root/dvda-author-mlp8
 ```
+
+默认路径就是 `DVDA_AUTHOR_SRC`（`config.sh` 可改）。
 
 ### 3. 构建支持 24-bit MLP 的 dvda-author
 
@@ -44,8 +38,17 @@ bash build_dvda_author_mlp.sh
 # 产物: /root/dvda-author-mlp8/src/dvda-author-dev
 ```
 
-该脚本是**幂等**的，可重复运行。它会链接系统 FFmpeg 8 并把 `mlp.c`
-迁移到 8.x API（详见下文「为什么需要重新编译」）。
+该脚本只做「检查源码树 → configure → make」，可重复运行。它链接系统 FFmpeg 8
+并把 `mlp.c` 迁移到 8.x API（详见下文「为什么需要重新编译」）。
+
+> **源码树是手工维护的，改动已固化在里面。** 脚本第 `[1/6]` 步会用
+> `patches/_merged/SOURCE-MANIFEST.txt` 的 md5 比对改动是否还在（缺失告警、
+> 改过提示，都不中止）。
+>
+> 从**全新上游 clone** 开始时，还需要按
+> [`patches/_merged/README.md`](patches/_merged/README.md) 打上固化的改动、
+> 按 [`patches/_merged/upstream-fixes/`](patches/_merged/upstream-fixes/README.md)
+> 做 3 项上游缺陷修复。
 
 ### 4. 改配置
 
@@ -340,8 +343,10 @@ DVD-Audio-Maker/
 ├── check_aob_pts.py             # AOB 逐扇区 PTS 检查
 ├── verify_pts_length.py         # 逐轨 PTS_length 与源时长比对
 ├── build_dvda_author_mlp.sh     # 重编支持 24-bit MLP 的 dvda-author
-├── patches/                     # 重编所需的源码补丁（6 个）
-├── fixes/                       # /opt/dvda-author 的上游 bug 补丁（3 个）
+├── patches/                     # 工具链源码改动
+│   ├── _merged/                 #   已固化进源码树，仅供对照回溯
+│   │   └── upstream-fixes/      #   3 项上游自身缺陷的修复记录
+│   └── _disabled/               #   试过但有害/无效的改动
 └── docs/
     ├── TROUBLESHOOTING.md       # 问题诊断记录与修复细节
     └── LICENSING.md             # 许可状况、第三方归属与法律说明
@@ -372,10 +377,9 @@ DVD-Audio-Maker/
 | `DVDA_MENU_COVER_DIM` | `70` | 菜单背景上封面压暗程度（0~100，越大越暗、白字越清楚） |
 | `DVDA_MENU_FONT` | `Droid-Sans-Fallback` | 菜单字体（ImageMagick 字体名，**不能带空格**）；不可用时会自动换 |
 | `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
-| `DVDA_MKISOFS` | `/opt/dvda-author/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs |
+| `DVDA_MKISOFS` | `/root/dvda-author-mlp8/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs（支持 `-dvd-audio`） |
 | `DVDA_FFMPEG` / `DVDA_FFPROBE` | `ffmpeg` / `ffprobe` | 用 PATH 解析 |
-| `DVDA_AUTHOR_SRC` | `/root/dvda-author-mlp8` | 编译目录 |
-| `DVDA_AUTHOR_ORIG` | `/opt/dvda-author` | 原始源码目录 |
+| `DVDA_AUTHOR_SRC` | `/root/dvda-author-mlp8` | 工具链源码树（改动已固化） |
 | `DVDA_LOSS_ERROR_S` | `0.05` | 解码采样数缺失超过此秒数 → FAIL |
 | `DVDA_LOSS_WARN_S` | `0.005` | 采样数差异超过此秒数 → WARN |
 
@@ -958,8 +962,8 @@ ffmpeg 将其误读为单声道元素而丢弃整帧。
 
 **本仓库以 [GPL-3.0](LICENSE) 发布。**
 
-原因：`patches/` 与 `fixes/` 是对 [dvda-author](https://github.com/fabnicol/dvda-author)
-（GPL-3.0）源码的**修改**，属衍生作品，需与其许可保持一致。
+原因：`patches/` 是对 [dvda-author](https://github.com/fabnicol/dvda-author)
+（GPL-3.0）源码的**修改**记录，属衍生作品，需与其许可保持一致。
 
 | 组件 | 许可 |
 |------|------|
