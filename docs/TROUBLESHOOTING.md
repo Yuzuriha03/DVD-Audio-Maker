@@ -117,7 +117,7 @@ nb_samples 恒为 0
 
 ### 修复
 
-在**成功收到帧的当下**立即保存采样数（`patches/patch_read.py`）：
+在**成功收到帧的当下**立即保存采样数（`docs/DVDA-AUTHOR-CHANGES.md`）：
 
 ```c
 static int g_last_nb_samples = 0;      // 文件头部新增
@@ -174,7 +174,7 @@ libsoxconvert.c:152: error: request for member 'signal' in something
 
 系统 SoX 头文件与源码期望的 14.4.2 版本不匹配。
 
-**修复**：编译时关闭 SoX 并加桩函数（`patches/patch_base.py`）。
+**修复**：编译时关闭 SoX 并加桩函数（`docs/DVDA-AUTHOR-CHANGES.md`）。
 
 ```bash
 CFLAGS="-DWITHOUT_sox"     # 必须放 CFLAGS
@@ -772,7 +772,7 @@ if samples is None:
 
 ### 副作用：下游脚本需要另一套数据来源
 
-`verify.sh` 与 `verify_pts_length.py` 需要每轨的**源音频时长**，
+`verify.sh` 与 `verify_pts_length.py`（已删） 需要每轨的**源音频时长**，
 而 MLP 里读不到。为此 `02_build.py` 输出 `mlp_index.json`：
 
 ```json
@@ -796,7 +796,7 @@ if samples is None:
 
 其中逐曲条目以 **MLP 路径为键**；`__meta__` / `__discs__` 是元数据段，
 遍历索引统计曲目数时需跳过 `__` 开头的键
-（`verify_pts_length.py` 就是这么做的）。
+（`verify_pts_length.py`（已删） 就是这么做的）。
 
 `__discs__` 记录「第 N 组 → `AUDIO_TS/ATS_01_N.AOB`」的对应关系，
 是 `verify.sh` 定位「第 1 盘 组1 第1轨」的依据，详见第 11 节。
@@ -918,7 +918,7 @@ if LOG is not None:
 ⚠ 另有 1 个日志时间相近，请确认所用日志对应本次构建
 ```
 
-`verify_pts_length.py` 与 `verify.sh` 同样修正，后者还支持
+`verify_pts_length.py`（已删） 与 `verify.sh` 同样修正，后者还支持
 `DVDA_BUILD_LOG` 环境变量显式指定。
 
 > **教训**：只要「比对 A 与 B」，就要确认 A 和 B 来自**同一次**构建。
@@ -963,7 +963,7 @@ for line in t.splitlines():
 ```
 
 > **注意**：MLP 文件名含空格，**不能用 `split()` 切分**。
-> 须按 MLP 目录前缀逐个取到 `.mlp` 结尾（与 `verify_pts_length.py` 一致）：
+> 须按 MLP 目录前缀逐个取到 `.mlp` 结尾（与 `verify_pts_length.py`（已删） 一致）：
 >
 > ```python
 > for chunk in seg.split(pfx)[1:]:
@@ -1337,7 +1337,7 @@ else
 
 ### 修复
 
-`patches/patch_ats_pack.py`（已挂在 `build_dvda_author_mlp.sh` 的第 [5/7] 步）：
+`docs/DVDA-AUTHOR-CHANGES.md`（已挂在 `build_dvda_author_mlp.sh` 的第 [5/7] 步）：
 
 - `length < 6` → 补零到边界（与 `length == 0` 分支同样的处理）
 - 放开 `length == 6` → 正常写 PES 填充包
@@ -1395,7 +1395,7 @@ bash verify.sh quick
 **基本只在 1 组 + 单页 + 几十轨的规模下被测试过**，本项目是 3 组、91 曲、
 27 张封面，几乎每个规模假设都会被打破。
 
-修复全部落在 `scripts/patches/patch_menu_*.py` 与 `scripts/menu_assets.py`。
+修复全部落在 `docs/DVDA-AUTHOR-CHANGES.md`（选曲菜单一节） 与 `scripts/menu_assets.py`。
 
 ### 16.1 分页公式写错：所有页加起来恒 ≤ 32 个按钮
 
@@ -2288,7 +2288,7 @@ uint32_copy(&amg[i], menuvobsize_sum
 > 第一版合成一个函数，测试时想喂「改坏的数据」却发现**内部会重新解包，
 > 把改动覆盖掉**，于是「报错测试」永远失败（看起来像检查无效）。
 
-#### 关于 `patches/patch_stillpics_atsi_record.py`
+#### 关于 `docs/DVDA-AUTHOR-CHANGES.md`
 
 它针对的是 `atsi2.c` 里那个 `continue` —— 当某轨没有独立图片时跳过写
 ATSI 的静图引用，理由是「ATSI 没有引用的轨播放时不显示封面」。
@@ -2326,7 +2326,7 @@ title**（实测盘1 = 91 个 title、盘2 = 56 个 title，每个 title 恰好 
 而 DVD 里「下一段 / 上一段」（下一章 / 上一章）的语义是
 **在同一个 title 内前进到下一轨**。每个 title 只有一轨，播放器就无处可去。
 
-**修法**：去掉那两个 MLP 子句（`patches/patch_mlp_one_title.py`），
+**修法**：去掉那两个 MLP 子句（`docs/DVDA-AUTHOR-CHANGES.md`），
 一个音频组 = 一个 title、title 内每首歌一个 track —— 这是商业 DVD-Audio
 盘的常规布局。连带收益是一张盘可以**连续播放到底**。
 
@@ -3043,14 +3043,15 @@ diff = [i for i in range(len(A)) if A[i] != B[i]]        # A=新, B=旧
 `patch_stills_per_track_rank.py` 里包含两部分改动（按轨递进的偏移 +
 一句关于 0x04 的注释），当初因为「0x04 可疑」把整个补丁丢掉了，
 而实际构建根本不传 `--stilloptions` —— 于是白丢了一个正确的修复，
-直接造成这个 bug。详见 `patches/_disabled/README.md` 的「已平反」一节。
+直接造成这个 bug。详见 `docs/DVDA-AUTHOR-DISABLED.md` 的「已平反」一节。
 
 ---
 
 ## 19. 补丁不幂等，批量重跑时会叠出重复代码
 
 **怎么踩到的（2026-09-24）**：为了清点「哪些改动还没固化进源码」，
-我写了个循环把 `patches/_merged/*.py` **全部跑了一遍**看各自的输出。
+我写了个循环把当时 `patches/_merged/` 下的 25 个补丁脚本**全部跑了一遍**看各自的输出。
+（该目录已于同日删除，补丁机制改由 git 提交取代 —— 见 `docs/DVDA-AUTHOR-CHANGES.md`；本节保留为事故记录。）
 结果有三个补丁**往已经改好的源码里又插了一份**：
 
 ```
@@ -3126,7 +3127,7 @@ done
 - ❌ 不要对该树的文件用 `git checkout` / `git restore` / `git stash`
 - ✔ 改坏前先 `cp` 一份到 `/tmp`
 - ✔ 需要「改前状态」时就靠 `SOURCE-MANIFEST.txt` + `.o` oracle（见
-  `patches/_merged/README.md`）
+  `docs/DVDA-AUTHOR-CHANGES.md`）
 
 ### 用编译产物当「标准答案」
 

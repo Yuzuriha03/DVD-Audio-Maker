@@ -10,11 +10,16 @@
 
 ### 为什么必须是 GPL-3.0
 
-`patches/` 与 `fixes/` 是对 [dvda-author](https://github.com/fabnicol/dvda-author)
-源码的**修改**，属于衍生作品，需与原项目许可保持一致。其中：
+本工程对 [dvda-author](https://github.com/fabnicol/dvda-author) 源码做了**大量修改**，
+属于衍生作品，需与原项目许可保持一致。仓库里包含：
 
-- `patches/patch_read.py`、`patch_encode.py` 等**内联引用了 dvda-author 的原始代码**（作为替换文本）
-- `fixes/*.py` 直接改写 `winport.h`、`libsoxconvert.c` 等文件
+- `docs/dvda-author-changes.patch` —— 对 20 个源文件的完整改动（可直接 apply）
+- `docs/DVDA-AUTHOR-CHANGES.md` / `DVDA-AUTHOR-DISABLED.md` —— 改动的依据
+  与代码片段
+- `scripts/build_dvda_author_mlp.sh` —— 用本工程的改动集构建工具链
+
+> 改动本身提交在 `tools/dvda-author-mlp8` 的 `dvda-maker` 分支上，
+> 该目录不在仓库里（它是一份 1.7 GB 的上游 clone），但 patch 文件在。
 
 而 dvda-author 的许可状况：
 
@@ -46,7 +51,7 @@ Copyright Lee and Tim Feldkamp 2008-2009
 License: GPL-3.0
 ```
 
-`patches/` 中所有补丁均基于上述代码，版权归原作者所有。本仓库仅提供修改补丁。
+上述代码的版权归原作者所有。本仓库提供的是基于它的改动集（patch）与说明文档。
 
 ### FFmpeg
 
