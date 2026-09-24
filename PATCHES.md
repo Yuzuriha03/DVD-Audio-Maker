@@ -1,66 +1,82 @@
-# 源码补丁清单
+# 工具链源码改动清单
 
-`build_dvda_author_mlp.sh` 是**幂等**的：每次运行都会先把下面这些源文件从
-`DVDA_AUTHOR_ORIG`（原始源码）还原，再按本清单**按顺序**重新打一遍补丁。
-所以只要本清单是完整的，工具链就能从零复现。
+## 现在的模型（2026-09-24 起）：源码树即事实来源
 
-源文件：`DVDA_AUTHOR_SRC`（默认 `tools/dvda-author-mlp8`）
-原始源码：`DVDA_AUTHOR_ORIG`（默认 `tools/dvda-author`）
+`tools/dvda-author-mlp8` 是**手工维护的源码树**，本工程的改动**已固化在里面**。
+`build_dvda_author_mlp.sh` 只做「检查源码树 → configure → make」，
+**不再还原上游、也不再重放补丁**。
+
+原先的机制是每次构建都「从 `tools/dvda-author` 还原 17 个源文件 + 依次重放
+23 个补丁」，踩过三个坑，所以改掉了：
+
+1. **补丁静默失效** —— 构建脚本只看退出码，而补丁打印 `[MISS]` 时未必返回非零。
+   曾有一个补丁「写在脚本里但从未编译进去」，连查两轮都以为它生效了。
+2. **还原会抹掉工作** —— 还原是 `cp -f` 无条件覆盖，不在补丁链里的源码改动
+   一次 `author` 就无声消失。
+3. **无法用 grep 判断现状** —— 要回答「这行代码现在长什么样」得把补丁在脑子里
+   跑一遍，而不是直接看源码。
+
+改动的完整清单与依据：**`patches/_merged/README.md`**。
+试过但没接入的：**`patches/_disabled/README.md`**。
+
+### 改动自检
+
+`patches/_merged/SOURCE-MANIFEST.txt` 记录 20 个改动文件的 md5，
+构建脚本第 `[1/6]` 步比对。文件缺失 → 告警；md5 不同 → 提示（手工改过）。
+都不中止，因为手工改源码是允许的；要挡的是「改动凭空消失」。
+
+### 目录
+
+```
+patches/
+  _merged/        24 个 —— 改动已固化进源码树，仅供对照与回溯
+  _disabled/       7 个 —— 试过但有害/无效
+    _experiments_18xx/  6 个 —— 更早期的结构试验
+```
+
+### 从上游重建
+
+上游基线是 `https://github.com/fabnicol/dvda-author.git` 的 commit `8fca43a`。
+重新 clone 后按 `_merged/README.md` 的清单逐个执行补丁脚本即可
+（它们幂等：已应用会打 `[SKIP]`，匹配不到会打 `[FAIL]`）。
+唯一例外是 `patch_asvs_nav_sectors.py` —— 它的效果现在写在 `src/menu.c` 的
+`dvda_rewrite_nav_sector()` 里，需要手工补。
+
+⚠️ 补丁脚本里的路径是**写死的绝对路径**（`/root/dvda-author-mlp8/src`），
+换机器要先改掉。
 
 ---
 
-## 顺序总表
+## ⚠️ 商业盘之间并不一致 —— 别把某一张当标准
 
-`[1b]` 还原 → `[2]` 基础 → `[3]` configure → `[4]` Makefile → `[5]` 全部源码补丁
+排查静图问题时反复踩到的一点。凡是「两张一致、一张不同」的字段，
+都是**该盘自己的编码参数**，不是规范要求，照抄哪一张都可能对不上自己盘的实物：
 
-| # | 补丁 | 目标 | 目的 |
+| 字段 | 巴赫 | 李娜 | Enigma |
 |---|---|---|---|
-| — | `patch_base.py` | 多个 | 与 FFmpeg 版本无关的基础修复 |
-| — | `patch_fix_fn_strtok.py` | `auxiliary.c` | `fn_strtok()` 越界写：`--stillpics` 的空项（空串）就触发 |
-| 1 | `patch_read.py` | `mlp.c` | FFmpeg 8：`channels`/`ch_layout`、`pkt_pos` |
-| 2 | `patch_read2.py` | `mlp.c` | FFmpeg 8：提取分支的读取循环 |
-| 3 | `patch_encode.py` | `mlp.c` | FFmpeg 8：planer 采样格式、放开 24-bit |
-| 4 | `patch_ats_pack.py` | `ats.c` | pack 补到 2048 边界（否则每盘丢 1 轨）|
-| 5 | `patch_atsi_dynamic.py` | `atsi2.c` | ATSI 按曲目数动态分配（一组可达 99 轨）|
-| 6 | `patch_stillpics_atsi_record.py` | `atsi2.c` | 静图记录不能跳过「沿用上一张」的轨 |
-| 7 | `patch_mlp_one_title.py` | `amg2.c` `ats.c` `structures.h` | 去掉「MLP → 每轨自成 title」 |
-| 8 | `patch_asvs_no_buttons.py` | `asvs.c` | `0x19`「activates buttons」→ 0 |
-| 9 | `patch_still_end_code.py` | `menu.c` | 静图程序结束码独占扇区 + 补 `0xFF` |
-| 10 | `patch_asvs_image_sectors.py` | `asvs.c` | ASVS 每图偏移 = `base_sect` + `off_sect` |
-| 11 | `patch_menu_paging.py` | `menu.c` `xml.c` | 菜单分页 |
-| 12 | `patch_menu_backgrounds.py` | `menu.c` | 每页背景图 |
-| 13 | `patch_menu_screentext.py` | `menu.c` | `--screentext` 解析 |
-| 14 | `patch_menu_layout.py` | `menu.c` `xml.c` | 按钮矩形按页分行 |
-| 15 | `patch_menu_arrows.py` | `menu.c` `xml.c` | 上/下/左/右箭头按钮 |
-| 16 | `patch_menu_stillpics.py` | `menu.c` | `create_mpg` 的 `pict` 重新分配判据 |
-| 17 | `patch_menu_stillpics_list.py` | `menu.c` | 文件列表模式指向 tempdir |
-| 18 | `patch_menu_amg_size.py` | `amg2.c` | `sectors.amg` 按菜单页数撑大 |
-| 19 | `patch_menu_amg_cells.py` | `amg2.c` | 菜单 cell 结束地址用当前页大小 |
-| 20 | `patch_menu_one_album_per_page.py` | `menu.c` `xml.c` `amg2.c` `structures.h` 等 | 一页一个专辑（**必须最后**）|
+| ASVS `0x18` 视频属性 | `0x43` NTSC | `0x43` NTSC | `0x53` PAL |
+| ASVS `0x0E` | `0x0000` | `0x0000` | `0x0012` |
+| ASVS 调色板 | `00101010 × 16` | `00101010 × 16` | `00108080 × 16` |
+| 菜单 `AUDIO_TS.VOB` 的 `progressive_sequence` | （无菜单） | **0** | **1** |
+| 静图总数 / title 数 | 18 / 1 | 12 / 1 | 99 / 8 |
+| VIDEO_TS | 有（340 MB 音乐会实况） | 无 | 无 |
 
-### 顺序约束（改动清单前务必确认）
+正确的做法是**从自己的码流里读出这些值** —— 这正是
+`patch_mpeg2_autodetect.py`（已固化）做的事：制式由序列头的画面尺寸 / 帧率码
+判定，`progressive_sequence` 由图像编码扩展的实际内容判定，读不出来才退回
+`--norm` 并告警。
 
-- `patch_menu_paging` 必须早于 `patch_menu_layout`
-  —— layout 会把 `command->maxntracks` 换成 `img->maxbuttons`，
-  而 `maxbuttons` 由 paging 决定。
-- `patch_menu_one_album_per_page` 必须最后
-  —— 它改的是 `menu.c` 的排版循环，要求前面几个补丁已就位。
 
 ---
 
-## 有意**不**接入的补丁
+## 「G 版本」形态（2026-09-23 回滚基准）—— ⚠️ 历史记录
 
-放在 `patches/_experiments_18xx/`，仅供查阅：
-
-| 补丁 | 为什么不用 |
-|---|---|
-| `patch_asvs_per_track.py` | 把 ASVS 记录从「按 title」改成「按轨」。三张商业盘都是**按 title**（Enigma 8 title → 8 条记录，每条「图数 = 该 title 的轨数」），改成按轨与商业盘不同构，实测也修不好上一曲/下一曲 |
-| `patch_ats_ptt_srpt.py` | PTT 表结构是按 DVD-Video 猜的（参考盘上 `ATS_PTT_SRPT = 0`），实装后 **PowerDVD 直接崩溃** |
-| `patch_asvs_per_image.py`<br>`patch_ats_album_rank.py`<br>`patch_ats_still_pertrack.py`<br>`patch_ats_still_manual.py` | 2026-09-22 18:04~18:32 的实验性改动（把 ASVS 改成「每图一条」等），未产出可用结果 |
-
----
-
-## 「G 版本」形态（2026-09-23 回滚基准）
+> **本节描述的是一个已经过去的中间状态，不是当前形态。**
+> 2026-09-23 为排查静图问题曾整体回滚到 G 形态；之后（09-24）又加入了
+> `patch_mpeg2_autodetect.py`（制式/逐行自检）与 `dvda_rewrite_nav_sector()`
+> （导航扇区改写）。所以下面的「静图 MPEG 头部 = 上游原样」「静图导航扇区 =
+> mplex 原生」「四个 IFO 版本号 = 0x12」三条**已不是现状**。
+> 保留此表是因为「三张商业盘逐字节量出来的字段取值」这部分数据仍然有效。
 
 盘2 的 `测试_G_单记录.iso` 曾在真机（PowerDVD 8）上正常显示静图，
 其形态作为**回滚基准**记录如下，重建时应能逐项复现：
