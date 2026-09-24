@@ -297,6 +297,16 @@ def main():
               % (disc_label(r[0]), r[1], r[2], r[3], r[4], r[5], r[6]))
     print()
     print("审计结论:", "全部通过 ✔" if ok else "存在问题 ✗")
+
+    # 解包出来的只是审计用的中间数据（每次运行都会重新解包），用完即删，
+    # 否则每跑一次 verify 就在构建目录里留下 ~7 GB。想留着翻看时设
+    # DVDA_KEEP_AUDIT=1。
+    if os.environ.get("DVDA_KEEP_AUDIT") == "1":
+        print("解包目录保留在 %s（DVDA_KEEP_AUDIT=1）" % WORK)
+    elif WORK.exists():
+        rmtree_rw(WORK)
+        print("已清理解包目录 %s" % WORK)
+
     return 0 if ok else 1
 
 

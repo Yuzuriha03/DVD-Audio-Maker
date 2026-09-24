@@ -321,6 +321,27 @@ D:\DVD_Output\My_DVD_Audio_2.iso
 输出目录  约 = 源文件总大小 × 1.1   (ISO)
 ```
 
+构建与校验过程中的中间产物**用完自动清理**，不会长期占地方：
+
+| 中间产物 | 何时产生 | 大小 | 何时清理 |
+|---|---|---|---|
+| `<BUILD_DIR>/iso/discN.iso` | 构建 | ≈ ISO | packed 完成、成品拷到 `DVDA_FINAL_DIR` 后 |
+| `<BUILD_DIR>/out/discN/` | 构建 | ≈ ISO | 同上（内容已打包进 ISO） |
+| `<BUILD_DIR>/tmp/discN/` | 构建 | 数百 MB | 同上 |
+| `<BUILD_DIR>/disc-audit/` | 校验 | ≈ 2×ISO | 审计结束 |
+
+要留着翻看（检查 `AUDIO_TS` 里的文件、菜单渲染结果等）就设对应的环境变量：
+
+```bash
+DVDA_KEEP_INTERMEDIATE=1 bash local-bin/dvda.sh one 2        # 保留 iso/ 与 out/
+DVDA_KEEP_TMP=1          bash local-bin/dvda.sh one 2        # 保留 tmp/（菜单渲染图在这）
+DVDA_KEEP_AUDIT=1        bash local-bin/dvda.sh verify all   # 保留 disc-audit/
+```
+
+> 删除 `disc-audit/` 这类 xorriso 解出的目录**要先补写权限** ——
+> 它保留 ISO 里的只读位，裸 `rm -rf` 会报 Permission denied 并留下残缺目录。
+> 脚本里的 `rmtree_rw()` 已经这么做了。
+
 ---
 
 ## 目录结构
