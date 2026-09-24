@@ -76,6 +76,7 @@ done
 |---|---|
 | `patch_asvs_no_buttons.py` | `asvs[0x19]`「activates buttons」1 → 0（三张商业盘全 0） |
 | `patch_asvs_image_sectors.py` | 每图偏移 = `base_sect` + 本 title 内相对 `off_sect` |
+| `patch_stills_per_track_rank.py` | 静图表两个偏移字段改为**按轨递进** —— 不修就是「同一专辑只有第一首显示封面」 |
 | `patch_still_end_code.py` | 静图程序结束码 `00 00 01 B9` 独占扇区 + 补 0xFF |
 | `patch_mpeg2_autodetect.py` | 制式（NTSC/PAL）与 `progressive_sequence` 改为**按实际码流自检**后如实填写 |
 | `patch_asvs_nav_sectors.py` | 静图导航扇区去掉 mplex 的空 DSI —— **现已改由 C 实现**（见下） |
