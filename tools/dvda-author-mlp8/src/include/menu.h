@@ -181,5 +181,36 @@ int dvda_make_index_pages(pic *img, globalData *globals);
 #define TEXT_ARROW_W    7
 #define TEXT_ARROW_H    6
 #define TEXT_ARROW_GAP  4
+
+/* ---- 静图 / 菜单背景的 MPEG-2 编码质量 ----
+
+   这些画面都是**单帧静止图**：`create_mpg()` 每次只喂一帧给 jpeg2yuv，
+   码流里只有 1 个 I 帧。播放时它要停住整个音轨，所以「码率」对观感毫无
+   意义 —— 决定清晰度的只有**这一帧总共用了多少比特**。
+
+   ⚠️ 原先只传 `-f 8 -n <norm> -a <aspect>`，**既没有 `-q` 也没有 `-b`**，
+   单帧比特数走 mpeg2enc 的默认值，把清晰度死死卡住了。实测封面静图
+   PSNR 只有 30.6 dB；而且把 `-q` 单独调到 1 也只到 30.8 dB —— 天花板是
+   **码率**不是量化。补上 `-b` 后同一张图到 33.3 dB（+2.7 dB）。
+
+   ⚠️ `-b` 9800 是 **DVD 视频码率的规格上限**，这里是刻意顶格使用：
+   再高 mpeg2enc 直接拒绝并输出 **0 字节**（`-b 20000` / `-b 50000` /
+   `--no-constraints` 配 `-b 20000` 实测全部 0 字节），所以这已经是
+   合规范围内能做到的最好。
+
+   `-H`（keep-hf：I 帧不做高频抑制）再贡献约 0.15 dB，是 MPEG-2 标准
+   特性，不影响 DVD 兼容性。`-K hi-res` 实测与 `-H` 等价，且自定义量化
+   矩阵会额外引入播放器兼容性风险，故不用。
+
+   ⚠️ 这组参数**必须与 `DVDA_TITLE_MODE=album` 配套**。曾经在
+   `TITLE_MODE=one`（整盘 1 个 title、ASVS 只写 1 条记录）下加过同样的
+   `-q`/`-b`，结果静图**完全不显示**；换成 album（ASVS 记录数 = title 数）
+   后正常 —— 真正的要求是「ASVS 记录数 = title 数」，与码率无关。
+   （当时误判成「加 -b 会让播放器读不出静图」，其实错在 title 模式。）
+
+   代价：每帧 23 → 32 扇区。静图上限是 1024 扇区/轨，余量巨大；但
+   `AUDIO_SV.VOB` 会变大，这是**预期内的**变化（音频侧不受影响）。 */
+#define MPEG2ENC_QUALITY  "1"      /* -q：量化因子 1..31，1 最好 */
+#define MPEG2ENC_BITRATE  "9800"   /* -b：DVD 视频码率上限 kbit/s */
 #endif
 #endif // HAVE_MENU_C

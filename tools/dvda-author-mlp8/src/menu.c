@@ -528,7 +528,12 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
 
   char *argsmp2enc[] = {MP2ENC_BASENAME, "-o", mp2track, NULL};
   char *argsjpeg2yuv[] = {JPEG2YUV_BASENAME, "-f", img->framerate, "-I", "p", "-n", "1", "-j", pict, "-A", img->aspectratio, NULL};
-  char *argsmpeg2enc[] = {MPEG2ENC_BASENAME,  "-f", "8", "-n", norm,  "-o", tempfile, "-a", img->aspect, NULL};
+  /* 与 album 模式配套：静图是单帧画面，播放时它要停住整个音轨，所以决定
+     清晰度的只有「这一帧用了多少比特」。不传 -q/-b 时被 mpeg2enc 默认值
+     卡在 30.6 dB，顶到 DVD 规格上限 9800 kbit/s 后 33.0 dB。
+     详见 menu.h 里 MPEG2ENC_QUALITY 那段。 */
+  char *argsmpeg2enc[] = {MPEG2ENC_BASENAME,  "-f", "8", "-n", norm,  "-o", tempfile, "-a", img->aspect,
+                          "-q", MPEG2ENC_QUALITY, "-b", MPEG2ENC_BITRATE, "-H", NULL};
   const char *argsmplex[] = {MPLEX_BASENAME, "-f", "8",  "-o", img->backgroundmpg[rank], tempfile, mp2track, NULL};
 
   //////////////////////////
