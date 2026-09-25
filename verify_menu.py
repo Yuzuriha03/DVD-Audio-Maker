@@ -223,7 +223,7 @@ def check_index_cells(vob, n_index_pages, n_albums, label):
     """一级索引页：**逐格**确认封面与专辑名都画上了。
 
     为什么要专门查这个：`verify_menu.py` 原来只判「整页非纯色」，而
-    `make_index_page()` 的 `-repage` 写错作用域时，整页会变成
+    C 侧 `dvda_make_index_pages()` 的 `-repage` 写错作用域时，整页会变成
     **白底 + 右下角一张封面** —— 均值 238、颜色数上万，那条判据照样
     报「背景图生效 ✔」。实测这个 bug 就这样漏了过去，只能靠人眼看盘。
 
@@ -290,7 +290,7 @@ def check_index_cells(vob, n_index_pages, n_albums, label):
         print(f"  [FAIL] 索引页格子内容异常（第 1 页，共 {want} 格）")
         if bad_bg:
             print(f"         · 格子角落发白（不该是白底）: {bad_bg}")
-            print("           → 十有八九是 make_index_page() 的 `-repage`")
+            print("           → 十有八九是 dvda_make_index_pages() 的 `-repage`")
             print("             写到了 `( )` 外面，画布变成 flatten 的白底")
         if bad_thumb:
             print(f"         · 缩略图为空（纯黑）的格子: {bad_thumb}")

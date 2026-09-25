@@ -1232,13 +1232,68 @@ C 侧只需要一个数字 `--index-pages I` 就能算出全部跳转目标。
 | 位置 | 做法 |
 |---|---|
 | `command_line_parsing.c` | 新增 `--index-pages N`（选项号 43）→ `img->index_pages` |
-| `structures.h` | `pic` 末尾追加 `index_pages`（`pic` 按位置初始化，必须放最后） |
+| `command_line_parsing.c` | 新增 `--index-covers`（选项号 44）→ `img->indexcovers`（扁平列表，页序 × 格子序） |
+| `structures.h` | `pic` 末尾追加 `index_pages`、`indexcovers`、`indexcoverssize`（`pic` 按位置初始化，必须放最后） |
 | `menu.c` `compute_menu_pages()` | 前 N 段是索引页：格子数**不计入** `total`（`total` 要与音频总轨数相等）；这几页 `page_group/t0` 置 0 |
-| `menu.c` `generate_menu_pics()` | 索引页**不画文字**（缩略图 + 专辑名全部由菜单背景提供），只逐格画按钮描边 + 底部箭头 |
+| `menu.c` `dvda_make_index_pages()` | **画面在这里现画**（见下节）：背景渐变 + 网格 + 暗角、4x3 封面拼贴、专辑名、缩略图描边 |
+| `amg2.c` `create_topmenu()` | 在 `compute_menu_pages()` 之后、`generate_background_mpg()` 之前调用上者 |
+| `command_line_parsing.c` | 背景拷贝**跳过**索引页（那几页的画面由上面现画）；`--background` 的语义变成「只覆盖非索引页」 |
+| `menu.c` `generate_menu_pics()` | 索引页**不画文字**，只逐格画按钮描边 + 底部箭头 |
 | `xml.c` | 索引用 `jump menu T`；spumux 用**网格矩形**，不能走 `compute_coordinates()` |
-| `menu_assets.py` | `make_index_page()` 拼 4x3 = 正方缩略图 + 专辑名；`MenuPlan.index_pages` 驱动 `--index-pages` |
+| `menu_assets.py` | 只提供**素材**：`MenuPlan.index_covers` 铺平封面路径驱动 `--index-covers`，专辑名走 `--screentext` |
 
-### 几何（必须三方一致）
+### 画面由 C 现画（`dvda_make_index_pages()`）
+
+**为什么搬进 C**：以前画面是外部脚本用 ImageMagick 拼好、经 `--background`
+传进来的。那样几何常量存在**两份**（`menu.h` 与脚本各一份），改一处忘另一处
+就会「点到的不是想选的那张」。搬进 C 之后几何的**唯一来源**是 `menu.h`。
+
+素材分工：
+- **封面路径** ← `--index-covers`（逗号分隔的扁平列表，顺序 = 页序 × 格子序）
+- **专辑名**   ← `--screentext`（索引页那几段的 `标签=名字1,名字2,...`）
+
+画面 = 三层背景 + 每格 [封面 + 专辑名] + 缩略图描边：
+
+```
+背景   对角渐变（左上青蓝 → 右下深靛）+ 与格子对齐的细网格 + 径向暗角
+格子   封面缩到 INDEX_THUMB 见方居中；下方 INDEX_LABEL_H 放专辑名
+名称   白字 + `caption:` 自动换行；字号按 index_label_units() 估
+描边   每个格子描一圈深灰，把封面从背景里「托」出来
+```
+
+专辑名的字号在 C 里估：`index_label_units()` 按字符数（全角 10、ASCII 5，
+UTF-8 首字节判断），再 `size = 10 * INDEX_LABEL_W / units` 夹到
+`INDEX_LABEL_FONT_MIN..MAX`。`caption:` 自己也会换行，所以估偏只是行数变多、
+字被缩小居中，**不会溢出格子**。
+
+#### ⚠️ 四个踩过的坑
+
+1. **`-stroke` / `-fill` / `-compose` 都是「粘住」的**。它们是**设置**而不是
+   算子，会一直生效到被改掉。`-compose multiply` 用完不复位时，后面的
+   `-flatten` 也按 multiply 合成 —— 整页被压暗、封面与背景相乘
+   （实测整页均值从 ~60 掉到 44、封面从 ~116 掉到 ~40）。所以画完暗角
+   必须 `-compose over`；画文字前必须 `-stroke none`。
+2. **`-repage` 必须写在 `( )` 内部**。它是**算子**，不加括号会对列表里每一张
+   生效（包括开头那张底色），结果底色被挪到最后一格、画布露出 `-flatten`
+   的默认白底 —— 整页只剩右下角一张图。
+3. **描边要单独一遍画在 `-flatten` 之后**。`-draw` 会作用到列表里的每一张，
+   拼在一起画时边框会被后续叠加顺序盖掉、或落到某张小图自己的坐标系里。
+4. **封面的下标是全局连续的**：`--index-covers` 是扁平列表，每页从 0 重来的话
+   第 2 页会重复第 1 页的封面（实测两页画面完全相同）。
+
+#### ⚠️ 生成命令必须检查**退出码**
+
+上游到处都是 `if (system(...) == -1)` —— 那只在 **fork 失败**时为真。命令
+本身失败（参数错、文件读不到）时返回的是 `状态 << 8`，会被当成成功。
+所以我们出过「convert 静默失败、背景图不存在，只看到后面一句
+『背景图读不到』」的情况。`run_convert()` 现在检查
+`WIFEXITED && WEXITSTATUS == 0`，并把失败的命令原样打出来。
+
+配错参数时最典型的一条：`xc:rgb(62,107,138)` 里的括号是 shell 的语法字符，
+**不加引号就是 `syntax error near unexpected token '('`** —— 所以所有
+`rgb(...)` 都要走 `cs_arg()` 加引号。
+
+### 几何（唯一的定义在 `menu.h`）
 
 ```
 屏幕 720x576
@@ -1253,6 +1308,9 @@ C 侧只需要一个数字 `--index-pages I` 就能算出全部跳转目标。
 - **顶部 60 px 是大标题带**：标题由 `prepare_overlay_img()` 在**每一页**
   画在 y≈28..54。网格从 0 开始就会被标题压住（实测过：标题墨迹
   362x26 在 (47,28)，而缩略图从 y=5 开始）。
+- 这些常量**只在 `menu.h` 定义一份**。`menu_assets.py` 里还有一份，但
+  只用于两件事：算「一页放几张专辑」（`INDEX_PER_PAGE`）和**校验**
+  （`verify_menu.py` 按它独立采样像素，核对 C 画出来的位置）。
 - 网格底 = 480，箭头在 496..552，两者不相交。
 
 ### 文字样式与选中指示

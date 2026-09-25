@@ -67,7 +67,7 @@ index 5460196..7c50d0b 100644
  
  DWORD write_to_child_stdin(
 diff --git a/src/amg2.c b/src/amg2.c
-index e6f9e21..be435ec 100644
+index e6f9e21..51f6167 100644
 --- a/src/amg2.c
 +++ b/src/amg2.c
 @@ -99,20 +99,24 @@ uint16_t create_tracktables(command_t *command, uint8_t naudio_groups, uint8_t n
@@ -104,7 +104,7 @@ index e6f9e21..be435ec 100644
                  {
                    command->files[group][track].newtitle = 1;
                  }
-@@ -219,6 +223,12 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+@@ -219,6 +223,19 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
    sprintf(outfile, "%s" SEPARATOR "AUDIO_TS.VOB", audiotsdir);
    img->action = ANIMATEDVIDEO;
  
@@ -114,10 +114,17 @@ index e6f9e21..be435ec 100644
 +  uint8_t  m_ngroups = by_page ? img->npages : ngroups;
 +  uint8_t *m_ntracks = by_page ? img->page_ntracks : ntracks;
 +
++  /* 一级菜单（专辑索引页）的**画面**在这里现画，直接写成
++     `<tempdir>/bgpic<p>.jpg` —— 紧接着的 generate_background_mpg() 就会去
++     读它们。必须在这个位置：compute_menu_pages() 先填好 `page_ntracks`
++     （每页放几张专辑），而命令行解析阶段还没有这个数据。 */
++  if (img->index_pages)
++    dvda_make_index_pages(img, globals);
++
    switch (globals->topmenu)
      {
      // If only active menus, no top menus, create automatic top menus to be unlinked later on
-@@ -237,7 +247,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+@@ -237,7 +254,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
  
      case RUN_GENERATE_PICS_SPUMUX_DVDAUTHOR:
  
@@ -126,7 +133,7 @@ index e6f9e21..be435ec 100644
  
      // calling xml project file subroutine for dvdauthor
  
-@@ -245,7 +255,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+@@ -245,7 +262,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
  
        allocate_topmenus(command, globals);
  
@@ -135,7 +142,7 @@ index e6f9e21..be435ec 100644
        if (errno) perror("\n"ERR "AMG: spumux_xml\n");
  
        errno = launch_spumux(img, globals);
-@@ -256,7 +266,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+@@ -256,7 +273,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
        if (!globals->xml)
          {
            if (globals->debugging) foutput("%s\n", INF "Generating AMGM Xml project for dvdauthor (patched)...");
@@ -144,7 +151,7 @@ index e6f9e21..be435ec 100644
            if (errno) perror("\n"ERR "AMG: amgm_xml\n");
          }
        if (img->nmenus && img->menuvobsize == NULL)
-@@ -273,6 +283,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
+@@ -273,6 +290,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
                  foutput(MSG_TAG "Top menu is: %s with size %"PRIu32" KB\n", img->topmenu[menu], img->menuvobsize[menu]);
              }
  
@@ -152,7 +159,7 @@ index e6f9e21..be435ec 100644
        launch_dvdauthor(globals);
        break;
  
-@@ -488,7 +499,10 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+@@ -488,7 +506,10 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
    uint32_copy(sec2_ptr, 1);
    uint32_copy(sec3_ptr, 2);
    uint32_copy(sec4_ptr, (menusector) ? 3 : 0);
@@ -164,7 +171,7 @@ index e6f9e21..be435ec 100644
    uint32_copy(unknown3, menusector ? 0x00010000 : 0);
    uint32_copy(top_menu_lpcm_tag, (img->h + img->min + img->sec) ? 0x00018001 : 0);
    uint16_copy(n_totaltitles, totaltitles);
-@@ -858,7 +872,19 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+@@ -858,7 +879,19 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
                i += 4;
              }
            else i += 12;
@@ -185,7 +192,7 @@ index e6f9e21..be435ec 100644
            i += 4;
            uint32_check(&amg[i], 0x00010001);
            i += 4;
-@@ -889,7 +915,7 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
+@@ -889,7 +922,7 @@ uint8_t *decode_amg(const char *audiotsdir, command_t *command, sect *sectors, u
  
        int c, d;
  
@@ -194,7 +201,7 @@ index e6f9e21..be435ec 100644
        i = d;
        memcpy(&amg[i], "DVDATXTDT-MG", 12);
        i += 12;
-@@ -1056,7 +1082,10 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+@@ -1056,7 +1089,10 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
    uint32_copy(&amg[0xc8], 2);  	// Pointer to sector 3
    uint32_copy(&amg[0xcc], (menusector) ? 3 : 0);  	// Pointer to sector 4
    uint32_copy(&amg[0xd4], (globals->text) ? 3 + (menusector) : 0);  	// Pointer to sector 5
@@ -206,7 +213,7 @@ index e6f9e21..be435ec 100644
    uint32_copy(&amg[0x154], (menusector) ? 0x00010000 : 0); // Unknown;
    uint32_copy(&amg[0x15C], (img->h + img->min + img->sec) ? 0x00018001 : 0); // 2ch 48k LPCM audio (signed big endian) in mpeg2 top menu, 1 stream,
  
-@@ -1395,7 +1424,19 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+@@ -1395,7 +1431,19 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
                i += 4;
              }
            else i += 12;
@@ -227,7 +234,7 @@ index e6f9e21..be435ec 100644
            i += 4;
            uint32_copy(&amg[i], 0x00010001);
            i += 4;
-@@ -1426,7 +1467,7 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
+@@ -1426,7 +1474,7 @@ int create_amg(char *audiotsdir, command_t *command, sect *sectors, uint32_t *vi
  
        int c, d;
  
@@ -739,7 +746,7 @@ index d5c71b5..29d07c9 100644
    // exactly k=size-2 cuts, k+1 substrings and array filled with k+1 substrings and NULL-terminating pointer, so array is sized size*sizeof(char)
    *size = k + 2;
 diff --git a/src/command_line_parsing.c b/src/command_line_parsing.c
-index 4814ecc..f7189cd 100644
+index 4814ecc..6442a00 100644
 --- a/src/command_line_parsing.c
 +++ b/src/command_line_parsing.c
 @@ -196,6 +196,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
@@ -750,15 +757,16 @@ index 4814ecc..f7189cd 100644
  
    // refreshing output and temporary directories by
  
-@@ -327,6 +328,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
+@@ -327,6 +328,8 @@ command_t *command_line_parsing(int argc, char *const argv[],
      {"lossy-rounding", no_argument, NULL, 'L'},
      {"background-colors", required_argument, NULL, 2},
      {"bindir", required_argument, NULL, 3},
 +    {"index-pages", required_argument, NULL, 43},
++    {"index-covers", required_argument, NULL, 44},
      {"topmenu-slides", required_argument, NULL, 6},
      {"check-version", no_argument, NULL, 8},
      {"import-topmenu", required_argument, NULL, 9},
-@@ -1984,8 +1986,7 @@ separated by a colon, with rgb components by commas");
+@@ -1984,8 +1987,7 @@ separated by a colon, with rgb components by commas");
            fontchain = strdup(optarg);
  
            if (fontchain)
@@ -768,7 +776,7 @@ index 4814ecc..f7189cd 100644
                foutput(ANSI_COLOR_MAGENTA "[PAR]" ANSI_COLOR_RESET
                        "  Font width: %d\n", img->fontwidth);
              }
-@@ -2054,6 +2055,16 @@ separated by a colon, with rgb components by commas");
+@@ -2054,6 +2056,74 @@ separated by a colon, with rgb components by commas");
                    "  Using %d menu columns.\n", img->ncolumns);
            break;
  
@@ -782,10 +790,68 @@ index 4814ecc..f7189cd 100644
 +                  (int) img->index_pages);
 +          break;
 +
++        case 44:
++          /* 索引页每格的封面图清单 —— **一个文件，每行一个路径**，
++             顺序 = 「页序 × 格子序」（第 p 页第 k 格 = 第
++             p * INDEX_PER_PAGE + k 行）。C 按 `page_ntracks[p]` 取用。
++
++             ⚠️ 为什么不是逗号分隔的列表：专辑目录名里**有 ASCII 逗号**
++             （实测 `奔流,因你不息(游戏《鸣潮》原声音乐) - Single`），
++             用 `,` 分会把一条路径切成两条。`--screentext` 早就有这个
++             毛病（标签里不能出现 `=`/`:`/`,`）。改用行分隔后，
++             唯一不能出现的字符是换行 —— 而文件名里本来就没有换行。
++
++             画面本身由 C 现画（menu.c 的 dvda_make_index_pages()），
++             这里只提供素材路径。 */
++          if (img->indexcovers)
++            {
++              foutput("%s\n", ERR "Index covers already specified,"
++                      " skipping...");
++              break;
++            }
++          {
++            char *listpath = make_absolute(optarg);
++            FILE *lf = fopen(listpath, "r");
++            if (!lf)
++              EXIT_ON_RUNTIME_ERROR_VERBOSE("Cannot read the album cover"
++                                            " list file")
++
++            int cap = 64, n = 0;
++            img->indexcovers = calloc(cap, sizeof(char *));
++            if (!img->indexcovers)
++              EXIT_ON_RUNTIME_ERROR_VERBOSE("Out of memory")
++
++            char line[CHAR_BUFSIZ];
++            while (fgets(line, sizeof(line), lf))
++              {
++                size_t len = strlen(line);
++                while (len && (line[len - 1] == '\n' || line[len - 1] == '\r'))
++                  line[--len] = '\0';
++                if (!len) continue;                    /* 跳过空行 */
++
++                if (n == cap)
++                  {
++                    cap *= 2;
++                    char **g = realloc(img->indexcovers, cap * sizeof(char *));
++                    if (!g) EXIT_ON_RUNTIME_ERROR_VERBOSE("Out of memory")
++                    img->indexcovers = g;
++                  }
++                img->indexcovers[n++] = strdup(line);
++              }
++            fclose(lf);
++            img->indexcoverssize = n;
++
++            foutput(ANSI_COLOR_MAGENTA "[PAR]" ANSI_COLOR_RESET
++                    "  %d album cover(s) for the index pages (from %s).\n",
++                    n, listpath);
++            free(listpath);
++          }
++          break;
++
          case 3:
            free(globals->settings.bindir);
            globals->settings.bindir = make_absolute(optarg);
-@@ -2513,6 +2524,7 @@ separated by a colon, with rgb components by commas");
+@@ -2513,6 +2583,7 @@ separated by a colon, with rgb components by commas");
  
          case 'b':
            str = strdup(optarg);
@@ -793,7 +859,7 @@ index 4814ecc..f7189cd 100644
  
            if (img->backgroundmpg)
              {
-@@ -2536,10 +2548,20 @@ separated by a colon, with rgb components by commas");
+@@ -2536,10 +2607,20 @@ separated by a colon, with rgb components by commas");
                foutput("%s\n", WAR "You did not give enough filenames,"
                        " completing with last one");
  
@@ -818,7 +884,7 @@ index 4814ecc..f7189cd 100644
              }
  
            free(str);
-@@ -2685,7 +2707,11 @@ separated by a colon, with rgb components by commas");
+@@ -2685,7 +2766,11 @@ separated by a colon, with rgb components by commas");
          }
      }
  
@@ -831,28 +897,50 @@ index 4814ecc..f7189cd 100644
      {
        if (globals->veryverbose)
          foutput("%s\n", INF "Converting overlay .png blankscreen"
-@@ -2838,13 +2864,18 @@ separated by a colon, with rgb components by commas");
-       copy_file2dir_rename(img->backgroundpic[0],
-                            globals->settings.tempdir, "bgpic0.jpg", globals);
+@@ -2834,18 +2919,31 @@ separated by a colon, with rgb components by commas");
+     case TEMPORARY_AUTOMATIC_MENU:
+     case AUTOMATIC_MENU:
+     case RUN_MJPEG_GENERATE_PICS_SPUMUX_DVDAUTHOR :
+-      change_directory(globals->settings.datadir, globals);
+-      copy_file2dir_rename(img->backgroundpic[0],
+-                           globals->settings.tempdir, "bgpic0.jpg", globals);
++      /* 非索引页各取自己那张背景图。
++
++         ⚠️ **索引页在这里被跳过** —— 它们的画面由
++         `dvda_make_index_pages()` 现画，而那个函数要等
++         `compute_menu_pages()` 填好 `page_ntracks` 才能跑，
++         也就是在 amg2.c 里、本阶段之后。
++
++         ⚠️ `--background` 的语义因此是**只覆盖非索引页**：
++         第 u 页（u >= index_pages）用 `backgroundpic[u - index_pages]`。
++         没有索引页时（默认）就是原来的 1:1 对应，行为不变。
++         原式还固定用 [0]，使逗号列表失效（所有页共用第 1 张）—— 已改。 */
++      for (u = 0; u < (int) img->nmenus; ++u)
++        {
++          if (u < (int) img->index_pages) continue;   /* 已由 C 画好 */
  
-+      /* 每页各取自己那张背景图。原式固定用 [0]，使 --background
-+         的逗号列表失效（所有页共用第 1 张）。 */
-       if (img->nmenus > 1)
-         for (u = 1; u < img->nmenus; u++)
-           {
-             char name[13];
-             sprintf(name, "%s%d%s", "bgpic", u, ".jpg");
+-      if (img->nmenus > 1)
+-        for (u = 1; u < img->nmenus; u++)
+-          {
+-            char name[13];
+-            sprintf(name, "%s%d%s", "bgpic", u, ".jpg");
 -            copy_file2dir_rename(img->backgroundpic[0],
 -                                 globals->settings.tempdir, name, globals);
-+            const char *srcpic =
-+              (u < globals->backgroundpicsize && img->backgroundpic[u])
-+              ? img->backgroundpic[u] : img->backgroundpic[0];
-+            copy_file2dir_rename(srcpic, globals->settings.tempdir,
-+                                 name, globals);
-           }
+-          }
++          char name[16];
++          sprintf(name, "%s%d%s", "bgpic", u, ".jpg");
++
++          int bidx = u - (int) img->index_pages;
++          const char *srcpic =
++            (bidx < globals->backgroundpicsize && img->backgroundpic[bidx])
++            ? img->backgroundpic[bidx] : img->backgroundpic[0];
++          copy_file2dir_rename(srcpic, globals->settings.tempdir,
++                               name, globals);
++        }
  
        __attribute__((fallthrough));
-@@ -2965,6 +2996,16 @@ separated by a colon, with rgb components by commas");
+ 
+@@ -2965,6 +3063,16 @@ separated by a colon, with rgb components by commas");
                                       pics_per_track, &size, 0,
                                       NULL, NULL, globals);
            indir = false;
@@ -869,7 +957,7 @@ index 4814ecc..f7189cd 100644
          }
  
        uint16_t dim, DIM = 0, w;
-@@ -4083,7 +4124,7 @@ void extract_list_parsing(const char *arg,
+@@ -4083,7 +4191,7 @@ void extract_list_parsing(const char *arg,
                    " format is --extract=group1:track1,track11,...,track1n"
                    "-...-groupN:trackN1,trackN2,...,trackNn");
            foutput("%s\n", WAR "Example --extract=3:1,3,4-5:6,7\n"
@@ -878,7 +966,7 @@ index 4814ecc..f7189cd 100644
                    " and tracks 6 and 7 in group 5.\n ");
            return;
          }
-@@ -4481,4 +4522,11 @@ void normalize_temporary_paths(pic *img, globalData *globals)
+@@ -4481,4 +4589,11 @@ void normalize_temporary_paths(pic *img, globalData *globals)
    globals->highlightpicsize = img->nmenus + 1;
    globals->backgroundmpgsize = img->nmenus + 1;
    globals->selectpicsize = img->nmenus + 1;
@@ -1033,7 +1121,7 @@ index df1244e..e041431 100644
  #define ALBUM_TEXT_Y0 48
  #define MAX_POINTSIZE  35
 diff --git a/src/include/menu.h b/src/include/menu.h
-index 5ab0a6a..0ec8c40 100644
+index 5ab0a6a..bc5a950 100644
 --- a/src/include/menu.h
 +++ b/src/include/menu.h
 @@ -15,6 +15,7 @@ int  launch_spumux(pic* img, globalData*);
@@ -1044,7 +1132,7 @@ index 5ab0a6a..0ec8c40 100644
  int create_stillpic_directory(char* string, int32_t count, globalData*);
  void create_activemenu(pic* img, globalData* globals);
  int create_mpg(pic* img, uint16_t rank, char* mp2track, char* tempfile, globalData*);
-@@ -23,5 +24,113 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
+@@ -23,5 +24,150 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
  void initialize_binary_paths(char level, globalData*);
  void menu_characteristics_coherence_test(pic* img, uint8_t ngroups, globalData*);
  void compute_pointsize(pic* img, uint16_t maxtracklength, uint8_t maxnumtracks, globalData*);
@@ -1153,13 +1241,50 @@ index 5ab0a6a..0ec8c40 100644
 +   描边」都不重叠 —— 这样三色组合恰好 4 种：透明 / 白字 / 黑描边 / 红箭头。
 +
 +   位置：x0=45（ncolumns=1）时左顶点在 34，按钮矩形从 33 开始，正好在里面。 */
++/* ---- 一级菜单（专辑索引页）的**画面**常量 ----
++   画面由 C 现画（`dvda_make_index_pages()`），不再由外部脚本预先拼图 ——
++   几何常量只在 `menu.h` 定义一份，`menu.c`（画）、`xml.c`（按钮矩形）
++   都取它，不存在「两边不一致」的可能。
++
++   画面 = 三层背景 + 每格 [封面 + 专辑名] + 缩略图描边：
++
++     背景   对角渐变 + 与格子对齐的细网格 + 径向暗角
++     格子   封面缩到 INDEX_THUMB 见方居中；下方 INDEX_LABEL_H 放专辑名
++     名称   白字 + `caption:` 自动换行；字号按文字宽度估（见
++            `index_label_pointsize()`）
++     描边   单元格子最后单独一遍画（`-flatten` 之后列表只剩一张，
++            `-draw` 才安全 —— 见 TROUBLESHOOTING 第 22 节） */
++#define INDEX_THUMB          100   /* 缩略图边长（正方形，封面是 1:1） */
++#define INDEX_THUMB_GAP        2   /* 缩略图与名称条的间隙 */
++#define INDEX_LABEL_H         28   /* 名称条高度 */
++#define INDEX_LABEL_W         (INDEX_CELL_W - 2 * INDEX_INSET)   /* 170 */
++#define INDEX_LABEL_FONT_MAX  17   /* 名称字号上限（一行放不下就缩） */
++#define INDEX_LABEL_FONT_MIN   9   /* 名称字号下限（再小看不清） */
++
++/* 色彩用 `rgb(...)` 而不是 `#rrggbb` —— 前者在 shell 里只需引号包住，
++   后者虽然也能过，但 `#` 在别处容易被当注释，改写时容易踩坑。
++   ⚠️ **必须是彩色**：`-flatten` 的输出色彩空间看**第一张图**（= 背景），
++   背景是灰度时封面的彩色会被全部丢掉（整页变黑白）。 */
++#define INDEX_BG_FROM      "rgb(62,107,138)"    /* 左上：青蓝 */
++#define INDEX_BG_TO        "rgb(34,22,48)"      /* 右下：深靛（暖紫调） */
++#define INDEX_BG_GRID      "rgba(255,255,255,0.14)"
++#define INDEX_BG_VIGNETTE  "#8090a0"            /* 暗角：只压亮度不改色相 */
++#define INDEX_BORDER_COLOR "rgb(42,42,42)"
++#define INDEX_BORDER_W     2
++
++/* 生成全部索引页的画面（写 `<tempdir>/bgpic<p>.jpg`）。
++   封面路径来自 `--index-covers`（扁平列表，页序 × 格子序），
++   专辑名从 `--screentext` 的前 index_pages 段里取。
++   返回 0 成功。 */
++int dvda_make_index_pages(pic *img, globalData *globals);
++
 +#define TEXT_ARROW_W    7
 +#define TEXT_ARROW_H    6
 +#define TEXT_ARROW_GAP  4
  #endif
  #endif // HAVE_MENU_C
 diff --git a/src/include/structures.h b/src/include/structures.h
-index 3ca9470..8f013d8 100644
+index 3ca9470..3d6a132 100644
 --- a/src/include/structures.h
 +++ b/src/include/structures.h
 @@ -81,6 +81,12 @@ typedef struct
@@ -1175,7 +1300,7 @@ index 3ca9470..8f013d8 100644
  } fileinfo_t;
  
  typedef struct
-@@ -156,6 +162,34 @@ typedef struct
+@@ -156,6 +162,46 @@ typedef struct
      uint32_t* menuvobsize;
      stilloptions** options;
  
@@ -1206,6 +1331,18 @@ index 3ca9470..8f013d8 100644
 +
 +       ⚠️ 同样**必须追加在结构末尾**（pic 按位置初始化）。 */
 +    uint8_t  index_pages;
++
++    /* 索引页每格的**封面图路径**，对应命令行 `--index-covers`。
++       扁平列表、顺序 = 「页序 × 格子序」，即第 p 页第 k 格是
++       indexcovers[p * INDEX_PER_PAGE + k]。
++       个数由 `page_ntracks[p]` 决定（C 按它逐个取用）。
++
++       索引页的画面由 C 现画（menu.c 的 `dvda_make_index_pages()`），
++       这里只提供素材路径。
++
++       ⚠️ 同样**必须追加在结构末尾**（pic 按位置初始化）。 */
++    char    **indexcovers;
++    int       indexcoverssize;
 +
  } pic;
  
@@ -1276,10 +1413,19 @@ index 92a8831..39305c0 100644
 +
 +#endif /* WITHOUT_sox */
 diff --git a/src/menu.c b/src/menu.c
-index facf72b..d763962 100644
+index facf72b..c9a8dc9 100644
 --- a/src/menu.c
 +++ b/src/menu.c
-@@ -77,7 +77,10 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
+@@ -3,6 +3,8 @@
+ 
+ #if !defined HAVE_core_BUILD || !HAVE_core_BUILD
+ 
++#include <stddef.h>
++#include <stdarg.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdint.h>
+@@ -77,7 +79,10 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
  
            img->ncolumns = ngroups / (img->nmenus - img->hierarchical) + (ngroups % (img->nmenus - img->hierarchical) > 0);
  
@@ -1291,7 +1437,7 @@ index facf72b..d763962 100644
              {
                foutput(WAR "Hierarchical menus should have at most %d*%d+1=%d menus...\n       Resetting value for --nmenus=%d\n", img->ncolumns, ngroups, img->ncolumns * ngroups + 1, img->ncolumns * ngroups + 1);
                img->nmenus = ngroups * img->ncolumns + 1;
-@@ -85,8 +88,11 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
+@@ -85,8 +90,11 @@ void menu_characteristics_coherence_test(pic *img, uint8_t ngroups, globalData *
  
          }
  
@@ -1305,7 +1451,7 @@ index facf72b..d763962 100644
      }
  
  
-@@ -335,12 +341,134 @@ void initialize_binary_paths(char level, globalData *globals)
+@@ -335,12 +343,134 @@ void initialize_binary_paths(char level, globalData *globals)
  
  static char *pict;
  
@@ -1441,7 +1587,7 @@ index facf72b..d763962 100644
      {
        s = MAX(strlen(globals->settings.stillpicdir) + 26, strlen(img->backgroundpic[rank]) + 1);
        pict  = calloc(s, sizeof(char *));
-@@ -618,6 +746,205 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
+@@ -618,6 +748,205 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
  
  
  
@@ -1647,7 +1793,7 @@ index facf72b..d763962 100644
  int generate_background_mpg(pic *img, globalData *globals)
  {
    uint16_t rank = 0;
-@@ -664,11 +991,21 @@ int generate_background_mpg(pic *img, globalData *globals)
+@@ -664,11 +993,21 @@ int generate_background_mpg(pic *img, globalData *globals)
          while (rank < img->count)
            {
              create_mpg(img, rank, mp2track, tempfile, globals);
@@ -1669,7 +1815,7 @@ index facf72b..d763962 100644
        // The first backgroundmpg file is the one that is used to create AUDIO_SV.VOB in amg2.c
      }
  
-@@ -820,9 +1157,45 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks)
+@@ -820,9 +1159,45 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks)
  }
  
  
@@ -1717,7 +1863,7 @@ index facf72b..d763962 100644
  
    int size = strlen(globals->settings.tempdir) + 11;
    char picture_save[size];
-@@ -839,8 +1212,8 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
+@@ -839,8 +1214,8 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
      {
        uint16_t x0 = EVEN(x((group > 0 ? group : 0), img->ncolumns)) ;
        char *q = quote(picture_save);
@@ -1728,7 +1874,7 @@ index facf72b..d763962 100644
                 "-draw", " \"text ", x0, ',', ALBUM_TEXT_Y0,  '\'', text, "\'\"", q);
        free(q);
        if (globals->debugging) foutput("%s%s\n", INF "Launching mogrify (title) with command line: ", command);
-@@ -859,10 +1232,35 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
+@@ -859,10 +1234,35 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
    if (globals->debugging) foutput(INF "copying %s to %s for menu #%d\n", picture_save, img->imagepic[menu], menu);
    copy_file(picture_save, img->highlightpic[menu], globals);
    copy_file(picture_save, img->selectpic[menu], globals);
@@ -1764,7 +1910,7 @@ index facf72b..d763962 100644
  
    return errno;
  }
-@@ -911,22 +1309,68 @@ int mogrify_img(char *text, int8_t group, int8_t track, pic *img, uint8_t maxnum
+@@ -911,22 +1311,68 @@ int mogrify_img(char *text, int8_t group, int8_t track, pic *img, uint8_t maxnum
      }
  
  
@@ -1837,7 +1983,7 @@ index facf72b..d763962 100644
  
  
    if (errno) perror(ERR "mogrify");
-@@ -969,6 +1413,231 @@ void test_underline(char *text, pic *img, globalData *globals)
+@@ -969,6 +1415,612 @@ void test_underline(char *text, pic *img, globalData *globals)
  }
  
  
@@ -2066,10 +2212,391 @@ index facf72b..d763962 100644
 +}
 +
 +
++/* ===========================================================================
++   一级菜单（专辑索引页）的画面 —— 由 C 现画
++   ===========================================================================
++
++   以前这一页的画面是外部脚本用 ImageMagick 拼好、通过 `--background` 传进来
++   的。那样几何常量存在两份（menu.h 与脚本各一份），改一处忘另一处就会
++   「点到的不是想选的那张」。现在整块搬进 C：素材（封面路径 + 专辑名）由
++   命令行给，画面在这里拼。
++
++   画面 = 三层背景 + 每格 [封面 + 专辑名] + 缩略图描边：
++
++     背景   对角渐变（左上亮、右下暗，给画面一个方向感）
++            + 与 4x3 格子对齐的细网格（让背景和版式有关系）
++            + 径向暗角（压住四角，视线收拢到中间）
++     格子   封面缩到 INDEX_THUMB 见方居中；下方 INDEX_LABEL_H 放专辑名
++     名称   白字 + `caption:` 自动换行（字号按文字宽度估，见下）
++     描边   每个格子描一圈深灰，把封面从背景里「托」出来
++
++   ⚠️ 三条踩过的坑都体现在下面的命令里：
++
++   1. **`-repage` 必须写在 `( )` 内部**。它是**算子**，不加括号会对列表里
++      每一张生效（包括开头那张底色），结果底色被挪到最后一格、画布露出
++      `-flatten` 的默认白底 —— 整页只剩右下角一张图。
++   2. **描边要单独一遍画在 `-flatten` 之后**。`-draw` 会作用到列表里的
++      每一张，拼在一起画时边框会被后续叠加顺序盖掉、或落到某张小图自己的
++      坐标系里（实测取到纯黑）。
++   3. **背景必须是彩色**。`-flatten` 的输出色彩空间看**第一张图**，
++      背景是灰度时封面的彩色会被全部丢掉（整页变黑白，实测 `%k` 只剩 256）。
++      所以显式 `-colorspace sRGB -type TrueColor`。
++   =========================================================================== */
++
++/* 命令串拼接器：长度动态增长，参数按需要加 shell 引号。
++   固定 2 KB 装不下 —— 12 个格子各带一条封面路径和一段专辑名，
++   实测单页命令串 8~12 KB。 */
++struct cmdstr
++{
++  char  *buf;
++  size_t cap;
++  size_t len;
++};
++
++static void cs_grow(struct cmdstr *c, size_t extra)
++{
++  if (c->len + extra + 1 <= c->cap) return;
++  size_t cap = c->cap ? c->cap : 4096;
++  while (cap < c->len + extra + 1) cap *= 2;
++  char *b = realloc(c->buf, cap);
++  if (!b)
++    {
++      perror(ERR "Out of memory building the album index page command line");
++      exit(EXIT_FAILURE);
++    }
++  c->buf = b;
++  c->cap = cap;
++}
++
++static void cs_raw(struct cmdstr *c, const char *s)
++{
++  size_t n = strlen(s);
++  cs_grow(c, n);
++  memcpy(c->buf + c->len, s, n + 1);
++  c->len += n;
++}
++
++static void cs_fmt(struct cmdstr *c, const char *fmt, ...)
++{
++  char tmp[1024];
++  va_list ap;
++  va_start(ap, fmt);
++  vsnprintf(tmp, sizeof(tmp), fmt, ap);
++  va_end(ap);
++  cs_raw(c, tmp);
++}
++
++/* 加**一个**参数，自动加 shell 引号（路径和专辑名都可能带空格/中文）。 */
++static void cs_arg(struct cmdstr *c, const char *s)
++{
++  char *q = quote(s);
++  cs_raw(c, " ");
++  cs_raw(c, q);
++  free(q);
++}
++
++/* 加一个已经写好的开关（如 `-flatten`），不加引号。 */
++static void cs_opt(struct cmdstr *c, const char *s)
++{
++  cs_raw(c, " ");
++  cs_raw(c, s);
++}
++
++/* 专辑名的「宽度」，单位 = 0.1 个全角字宽。
++
++   为什么不复用全局的 `img->fontwidth`：那是按**全部**文字（曲名 + 专辑名）
++   算出来的平均值，用它估单个专辑名会偏。这里逐字符数更准：
++   全角（汉字/假名/韩文）= 10，ASCII ≈ 5（半个全角宽）。
++   UTF-8 首字节即可判断：<0x80 单字节、0xC0 段双字节、0xE0 段三字节。 */
++static int index_label_units(const char *s)
++{
++  int u = 0;
++  const unsigned char *p = (const unsigned char *) s;
++
++  while (*p)
++    {
++      if (*p < 0x80)                { u += 5;  p += 1; }
++      else if ((*p & 0xE0) == 0xC0) { u += 10; p += 2; }
++      else if ((*p & 0xF0) == 0xE0) { u += 10; p += 3; }
++      else                          { u += 10; p += 4; }
++    }
++  return u ? u : 10;
++}
++
++/* 专辑名的字号：让「units/10 个全角宽 × 字号」不超 INDEX_LABEL_W。
++   `caption:` 自己也会换行，所以估偏了只是行数变多、字被缩小居中，
++   不会溢出格子。 */
++static int index_label_pointsize(const char *label)
++{
++  int size = (10 * INDEX_LABEL_W) / index_label_units(label);
++
++  if (size > INDEX_LABEL_FONT_MAX) size = INDEX_LABEL_FONT_MAX;
++  if (size < INDEX_LABEL_FONT_MIN) size = INDEX_LABEL_FONT_MIN;
++  return size;
++}
++
++/* 取第 `page` 个索引页第 `cell` 格的专辑名（malloc，调用方 free）。
++
++   `--screentext` 的格式是 `光盘标题=段1:段2:...`，索引页的段形如
++   `选择专辑=名字1,名字2,...`（那段的「标题」不会显示，只是让段格式合法）。
++
++   为什么在这里自己解析：`generate_menu_pics()` 里有完整的 screentext 解析，
++   但它在**后台**晚于背景图生成 —— 而背景图正是这里要写的。 */
++static char *index_label_of(pic *img, int page, int cell)
++{
++  if (!img->screentextchain) return NULL;
++
++  const char *p = strchr(img->screentextchain, '=');   /* 跳过光盘标题 */
++  if (!p) return NULL;
++  ++p;
++
++  for (int s = 0; s < page; ++s)                        /* 走到第 page 段 */
++    {
++      p = strchr(p, ':');
++      if (!p) return NULL;
++      ++p;
++    }
++
++  const char *segend = strchr(p, ':');
++  const char *seq    = strchr(p, '=');                  /* 段内 `标签=列表` */
++  if (seq && (!segend || seq < segend)) p = seq + 1;
++
++  for (int k = 0; k < cell; ++k)                        /* 走到第 cell 个 */
++    {
++      const char *comma = strchr(p, ',');
++      if (!comma || (segend && comma > segend)) return NULL;
++      p = comma + 1;
++    }
++
++  const char *end = p;
++  while (*end && *end != ',' && (!segend || end < segend)) ++end;
++  if (end == p) return NULL;
++
++  size_t n = (size_t) (end - p);
++  char *out = calloc(n + 1, 1);
++  if (out) memcpy(out, p, n);
++  return out;
++}
++
++/* 执行拼好的 convert 命令。
++
++   ⚠️ 必须检查**退出码**，不能只判 `system(...) == -1` —— 后者只在 fork
++   失败时为真，命令本身失败（参数错、文件读不到）时返回的是
++   `状态 << 8`，会被当成成功。上游到处只判 -1，所以我们以前出过
++   「convert 静默失败、菜单缺图但没人报错」的情况。 */
++static int run_convert(struct cmdstr *courier, globalData *globals)
++{
++  if (globals->debugging)
++    foutput(INF "Launching convert (album index page) with command line: %s\n",
++            courier->buf);
++
++  int rc = system(win32quote(courier->buf));
++  if (rc == -1 || !WIFEXITED(rc) || WEXITSTATUS(rc) != 0)
++    {
++      fprintf(stderr, "%s", ERR "convert failed while authoring an album "
++              "index page\n");
++      fprintf(stderr, "       command: %s\n", courier->buf);
++      fprintf(stderr, "       exit status: %d\n", rc);
++      clean_exit(EXIT_FAILURE, globals);
++    }
++  return 0;
++}
++
++int dvda_make_index_pages(pic *img, globalData *globals)
++{
++  if (!img->index_pages) return 0;
++  if (!img->page_ntracks)
++    EXIT_ON_RUNTIME_ERROR_VERBOSE("Index pages need the per-page layout"
++                                  " (page_ntracks)")
++
++  char *convert = NULL;
++  convert = create_binary_path(convert, CONVERT, SEPARATOR CONVERT_BASENAME,
++                               globals);
++  if (!convert) EXIT_ON_RUNTIME_ERROR_VERBOSE("No convert binary")
++
++  for (int page = 0; page < (int) img->index_pages; ++page)
++    {
++      int ncells = (int) img->page_ntracks[page];
++      if (ncells > INDEX_PER_PAGE) ncells = INDEX_PER_PAGE;
++      if (ncells <= 0) continue;
++
++      char out[CHAR_BUFSIZ];
++      snprintf(out, sizeof(out), "%s%s%s%d%s", globals->settings.tempdir,
++               SEPARATOR, "bgpic", page, ".jpg");
++
++      struct cmdstr c = { 0 };
++      cs_arg(&c, convert);
++      cs_opt(&c, "+antialias");
++      cs_opt(&c, "-size");
++      cs_fmt(&c, " %dx%d", norm_x, norm_y);
++
++      /* ---- 1) 背景：渐变 + 网格 + 暗角，整体包成一个图层 ---- */
++      cs_arg(&c, "(");
++      /* ⚠️ 必须走 cs_arg（加引号）：`rgb(...)` 里的括号是 shell 的语法
++         字符，不加引号直接就是 "syntax error near unexpected token `('"。
++         实测就是这么炸的 —— 而 system() 的返回值当时没检查，只看到
++         「背景图不存在」。 */
++      {
++        char xc[128];
++        snprintf(xc, sizeof(xc), "xc:%s", INDEX_BG_FROM);
++        cs_arg(&c, xc);
++      }
++      cs_arg(&c, "-sparse-color");
++      cs_arg(&c, "bilinear");
++      {
++        char stops[256];
++        snprintf(stops, sizeof(stops), "0,0 %s %d,%d %s",
++                 INDEX_BG_FROM, norm_x - 1, norm_y - 1, INDEX_BG_TO);
++        cs_arg(&c, stops);
++      }
++      cs_arg(&c, "-stroke");
++      cs_arg(&c, "none");
++      cs_arg(&c, "-fill");
++      cs_arg(&c, INDEX_BG_GRID);
++      {
++        char grid[1024];
++        int  g = 0;
++        for (int col = 1; col < INDEX_COLS; ++col)
++          g += snprintf(grid + g, sizeof(grid) - g, "rectangle %d,0 %d,%d ",
++                        col * INDEX_CELL_W, col * INDEX_CELL_W, norm_y - 1);
++        for (int row = 0; row <= INDEX_ROWS; ++row)
++          {
++            int y = INDEX_TOP + row * INDEX_CELL_H;
++            g += snprintf(grid + g, sizeof(grid) - g, "rectangle 0,%d %d,%d ",
++                          y, norm_x - 1, y);
++          }
++        cs_arg(&c, "-draw");
++        cs_arg(&c, grid);
++      }
++      cs_arg(&c, "(");
++      cs_opt(&c, "-size");
++      cs_fmt(&c, " %dx%d", norm_x, norm_y);
++      {
++        char vig[64];
++        snprintf(vig, sizeof(vig), "radial-gradient:#ffffff-%s",
++                 INDEX_BG_VIGNETTE);
++        cs_arg(&c, vig);
++      }
++      cs_arg(&c, ")");
++      cs_opt(&c, "-compose");
++      cs_opt(&c, "multiply");
++      cs_opt(&c, "-composite");
++      /* ⚠️ `-compose` 与 `-stroke`/`-fill` 一样是**粘住的**：不复位的话
++         后面的 `-flatten` 也会按 multiply 合成 —— 整页被压暗、封面与背景
++         相乘（实测整页均值从 ~60 掉到 44、封面从 ~116 掉到 ~40）。 */
++      cs_opt(&c, "-compose");
++      cs_opt(&c, "over");
++      cs_opt(&c, "-colorspace");
++      cs_opt(&c, "sRGB");
++      cs_opt(&c, "-type");
++      cs_opt(&c, "TrueColor");
++      cs_arg(&c, ")");
++
++      /* ---- 2) 每格：封面 + 专辑名 ----
++         ⚠️ 封面的下标是**全局连续**的：`--index-covers` 是扁平列表，
++         顺序为「页序 × 格子序」。每页从 0 重来的话第 2 页会重复第 1 页
++         的封面（实测两页画面完全相同）。 */
++      int coverbase = page * INDEX_PER_PAGE;
++      for (int cell = 0; cell < ncells; ++cell)
++        {
++          int ox = (cell % INDEX_COLS) * INDEX_CELL_W;
++          int oy = INDEX_TOP + (cell / INDEX_COLS) * INDEX_CELL_H;
++          int tx = ox + INDEX_INSET + (INDEX_LABEL_W - INDEX_THUMB) / 2;
++          int ty = oy + INDEX_INSET;
++
++          int cidx = coverbase + cell;
++          if (img->indexcovers && cidx < img->indexcoverssize
++              && img->indexcovers[cidx])
++            {
++              cs_arg(&c, "(");
++              cs_arg(&c, img->indexcovers[cidx]);
++              cs_arg(&c, "-resize");
++              cs_fmt(&c, " %dx%d^", INDEX_THUMB, INDEX_THUMB);
++              cs_opt(&c, "-gravity");
++              cs_opt(&c, "center");
++              cs_arg(&c, "-extent");
++              cs_fmt(&c, " %dx%d", INDEX_THUMB, INDEX_THUMB);
++              cs_arg(&c, "-repage");           /* ← 必须在 `)` 内！ */
++              cs_fmt(&c, " +%d+%d", tx, ty);
++              cs_arg(&c, ")");
++            }
++
++          char *label = index_label_of(img, page, cell);
++          if (label)
++            {
++              char cap[CHAR_BUFSIZ];
++              int  lx = ox + INDEX_INSET;
++              int  ly = oy + INDEX_INSET + INDEX_THUMB + INDEX_THUMB_GAP;
++              snprintf(cap, sizeof(cap), "caption:%s", label);
++
++              cs_arg(&c, "(");
++              cs_opt(&c, "-background");
++              cs_opt(&c, "none");
++              cs_opt(&c, "-stroke");
++              cs_opt(&c, "none");              /* mogrify_thumb 会留下 -stroke */
++              cs_opt(&c, "-fill");
++              cs_opt(&c, "white");
++              cs_opt(&c, "-font");
++              cs_arg(&c, img->textfont);
++              cs_opt(&c, "-pointsize");
++              cs_fmt(&c, " %d", index_label_pointsize(label));
++              cs_opt(&c, "-size");
++              cs_fmt(&c, " %dx%d", INDEX_LABEL_W, INDEX_LABEL_H);
++              cs_opt(&c, "-gravity");
++              cs_opt(&c, "center");
++              cs_arg(&c, cap);
++              cs_arg(&c, "-repage");           /* ← 必须在 `)` 内！ */
++              cs_fmt(&c, " +%d+%d", lx, ly);
++              cs_arg(&c, ")");
++              free(label);
++            }
++        }
++
++      /* ---- 3) 合成 + 缩略图描边（必须单独一遍，见文件头注释）---- */
++      cs_opt(&c, "-flatten");
++      cs_arg(&c, "-stroke");
++      cs_arg(&c, INDEX_BORDER_COLOR);
++      cs_opt(&c, "-strokewidth");
++      cs_fmt(&c, " %d", INDEX_BORDER_W);
++      cs_arg(&c, "-fill");
++      cs_arg(&c, "none");
++      {
++        char rect[2048];
++        int  r = 0;
++        for (int cell = 0; cell < ncells; ++cell)
++          {
++            int ox = (cell % INDEX_COLS) * INDEX_CELL_W;
++            int oy = INDEX_TOP + (cell / INDEX_COLS) * INDEX_CELL_H;
++            int tx = ox + INDEX_INSET + (INDEX_LABEL_W - INDEX_THUMB) / 2;
++            int ty = oy + INDEX_INSET;
++            r += snprintf(rect + r, sizeof(rect) - r,
++                          "rectangle %d,%d %d,%d ", tx, ty,
++                          tx + INDEX_THUMB - 1, ty + INDEX_THUMB - 1);
++          }
++        cs_arg(&c, "-draw");
++        cs_arg(&c, rect);
++      }
++      cs_opt(&c, "-colorspace");
++      cs_opt(&c, "sRGB");
++      cs_opt(&c, "-type");
++      cs_opt(&c, "TrueColor");
++      cs_opt(&c, "-quality");
++      cs_opt(&c, "92");
++      cs_arg(&c, out);
++
++      run_convert(&c, globals);
++      free(c.buf);
++    }
++
++  free(convert);
++  return 0;
++}
++
++
  int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *ntracks,  globalData *globals)
  {
    if ((!img->refresh) || (!img->nmenus))   return 0;
-@@ -981,36 +1650,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -981,36 +2033,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
    if (!img->hierarchical)
      {
@@ -2121,7 +2648,8 @@ index facf72b..d763962 100644
 +          free(albumtext);
 +          albumtext = strdup(DEFAULT_ALBUM_HEADER);
 +        }
-+
+ 
+-      char remainder[strlen(img->screentextchain)];
 +      /* ':' 分组的解析用 f=NULL（没有计数器回调），无 static 泄漏风险 */
 +      grouparray = groupspec ? fn_strtok(groupspec, ':', grouparray,
 +                                         &dim, 0, NULL, NULL, globals)
@@ -2149,7 +2677,8 @@ index facf72b..d763962 100644
 +      grouptext = calloc(dim + 1, sizeof(char **));
 +      if (grouptext == NULL) perror(ERR "Group text allocation");
  
--      char remainder[strlen(img->screentextchain)];
+-      basemotif = fn_strtok(img->screentextchain, '=', basemotif, &size, 1, cutloop, remainder, globals) ;
+-      albumtext = basemotif[0];
 +      for (k = 0; k < ndef && k < dim; k++)
 +        {
 +          char *q = strchr(grouparray[k], '=');
@@ -2166,22 +2695,20 @@ index facf72b..d763962 100644
 +              trackspec = NULL;
 +            }
  
--      basemotif = fn_strtok(img->screentextchain, '=', basemotif, &size, 1, cutloop, remainder, globals) ;
--      albumtext = basemotif[0];
+-      grouparray = fn_strtok(remainder, ':', grouparray, &dim, 0, NULL, NULL, globals) ;
 +          grouptext[k] = (char **) calloc(2, sizeof(char *));
 +          grouptext[k][0] = strdup(grouparray[k]);
 +          globals->grouptextsize[k] = 2;
- 
--      grouparray = fn_strtok(remainder, ':', grouparray, &dim, 0, NULL, NULL, globals) ;
-+          if (trackspec)
-+            tracktext[k] = fn_strtok(trackspec, ',', tracktext[k],
-+                                     &globals->tracktextsize[k], 0,
-+                                     NULL, NULL, globals);
  
 -      tracktext = calloc(dim, sizeof(char **));
 -      if (tracktext == NULL) perror(ERR "Track text allocation");
 -      grouptext = calloc(dim, sizeof(char **));
 -      if (grouptext == NULL) perror(ERR "Group text allocation");
++          if (trackspec)
++            tracktext[k] = fn_strtok(trackspec, ',', tracktext[k],
++                                     &globals->tracktextsize[k], 0,
++                                     NULL, NULL, globals);
++
 +          free(grouparray[k]);
 +        }
 +      free(grouparray);
@@ -2217,7 +2744,7 @@ index facf72b..d763962 100644
          }
  
        free(grouparray);
-@@ -1090,13 +1854,25 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1090,13 +2237,25 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -2245,7 +2772,7 @@ index facf72b..d763962 100644
  
        prepare_overlay_img(albumtext, -1, img, command1, command2, menu, img->albumcolor, globals);
        //free(albumtext);  // segfault here under linux for unknown reasons. TO: fix it.
-@@ -1112,7 +1888,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1112,7 +2271,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                    /* Vicious issue here: use DEFAULT_GROUP_HEADER such that the underline for highlighting does not cut a letter.
                                   With lower-case "group", this happens as the underline cuts the 'p'. Two ways out: underline lower or use another label/use uppercase
                                   Note: This issue was tested to cause spumux crash */
@@ -2254,7 +2781,7 @@ index facf72b..d763962 100644
                    groupcount++;
                    buttons++;
  
-@@ -1123,13 +1899,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1123,13 +2282,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
            else if (groupcount < ngroups)
              {
@@ -2270,7 +2797,7 @@ index facf72b..d763962 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1143,19 +1919,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1143,19 +2302,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                  }
              }
          }
@@ -2345,7 +2872,7 @@ index facf72b..d763962 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1175,20 +2004,56 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1175,20 +2387,56 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -2416,7 +2943,7 @@ index facf72b..d763962 100644
  
        char *q = quote(img->imagepic[menu]);
        strcat(command2, q);
-@@ -1238,7 +2103,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1238,7 +2486,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
    free(grouptext);
    free(tracktext);
  

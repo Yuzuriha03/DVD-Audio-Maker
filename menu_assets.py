@@ -59,7 +59,12 @@ TEXT_BUDGET_PX = 660        # 每行文字可占宽度（按钮 x0=33..x1=708）
 # ⚠️ 网格占 60..480，底部 `INDEX_ARROW_Y0..Y1`(496..552) 是翻页箭头带 ——
 # 索引页也要能翻页（专辑多于一页时没箭头就走不掉）。
 #
-# ⚠️ 格子几何必须与 C 侧一致（menu.h / menu.c / xml.c 里的同名常量）：
+# ⚠️ 这些常量**只用于两件事**：算「一页放几张专辑」（INDEX_PER_PAGE）
+# 和**校验**（verify_menu.py 按它采样像素，独立核对 C 画出来的位置）。
+# 画面本身由 C 现画（menu.c 的 dvda_make_index_pages()），几何的**唯一
+# 来源**是 menu.h —— 这里是为了「能独立验证」才重复一份。
+#
+# 与 C 侧 menu.h 的同名常量对应：
 #    按钮矩形 = 整个格子内容区
 #               (col*CELL_W + INSET, INDEX_TOP + row*CELL_H + INSET)
 #               尺寸 CELL_W-2*INSET x CELL_H-2*INSET
@@ -79,28 +84,10 @@ INDEX_PER_PAGE = INDEX_COLS * INDEX_ROWS        # 12
 INDEX_THUMB = 100                               # 缩略图边长（正方形）
 INDEX_THUMB_GAP = 2                             # 缩略图与名称条的间隙
 INDEX_LABEL_H = 28                              # 名称条高度
-INDEX_LABEL_MAX_POINTS = 17                     # 名称字号上限（一行放不下就缩）
-INDEX_LABEL_MIN_POINTS = 9                      # 名称字号下限（再小看不清）
 # 翻页箭头带（与 C 侧 INDEX_ARROW_Y0/Y1 一致）。网格底是 480，
 # 再加上下裕量 —— 这段区间里除了箭头不可能有别的墨迹，
 # 构建期自检靠它判断「箭头到底画了没有」。
 INDEX_ARROW_BAND = (488, 560)
-# 专辑名的阴影偏移（与 C 侧 TEXT_SHADOW_DX/DY 无关 —— 名称是 Python 画进
-# 背景图的，C 侧只管按钮矩形）。白字 + 黑阴影在模糊彩底上最清楚。
-INDEX_LABEL_SHADOW = 2
-# 缩略图的描边。画在**背景图**上（不是子画面），所以不影响按钮遮罩。
-# 用**不透明深灰**而不是「半透明白」：
-#   · 半透明白在亮封面上会消失（实测：亮图内侧 108 vs 框 58，反而更暗）；
-#   · 深灰描边不管封面明暗都能把它从背景（~74）里分出来；
-#   · `rgba(0,0,0,0.x)` 的 alpha 在灰度图上会被忽略成纯黑，别用。
-INDEX_THUMB_BORDER = "#2a2a2a"
-INDEX_THUMB_BORDER_W = 2
-# 索引页背景（模糊拼贴）的压暗 = 二级页封面压暗值 × 这个比例。
-# 背景是**重度模糊**的，可以比二级页亮得多（二级页要压暗才读得清字），
-# 取 0.4：默认 35 → 14，页内空隙均值约 74，而对角的缩略图约 116 ——
-# 背景看得出是「图」但又明显退到后面去；白字靠黑阴影也够清楚。
-# 想更亮/更暗就调这个比例，不必碰两个值。
-INDEX_BACKDROP_DIM_RATIO = 0.4
 # 索引页在 `--screentext` 里的「段标题」。名称是 Python 画进背景图的，
 # 所以这个字不会被显示，只是为了让 screentext 的段格式合法。
 INDEX_LABEL = "选择专辑"
@@ -597,266 +584,6 @@ def make_background(covers, path, dim):
     return path
 
 
-def _caption_height(text, width, font, points):
-    """`caption:` 在这个宽度/字号下**自动换行**后的高度（px）。出错返回 None。
-
-    交给 ImageMagick 自己排版来量，比在 Python 里估算字符宽度靠得住 ——
-    中英混排（如 `Lulala! Lululala!`）按字符数猜行数必错。
-    `-size Wx`（高度留空）就是「按宽度换行，高度自适应」。
-    """
-    exe = _magick_exe()
-    if not exe:
-        return None
-    r = subprocess.run(
-        [exe, "-background", "none", "-fill", "white", "-font", font,
-         "-pointsize", str(points), "-size", "%dx" % width,
-         "caption:" + text, "-format", "%h", "info:"],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    if r.returncode != 0:
-        return None
-    try:
-        return int(r.stdout.decode().strip())
-    except ValueError:
-        return None
-
-
-_INDEX_FIT = {}
-
-
-def fit_index_label(text, width, height, font):
-    """给专辑名挑 `(字号, 实际显示的文本)`。
-
-    **先换行、行数超了再缩字号**：从上限逐级往下试，取第一个
-    「换行后自然高度 <= height」的。只缩字号是不够的 ——
-    `Running For Your Life` 在 18pt 下换行后高 56px（>28），要降到 17pt。
-
-    ① 名称条只有 28px 高，所以**装得下两行**的情况很少（两行至少 30px），
-       实测本项目最长的专辑名（21 字符）在 17pt 单行刚好压线，所以
-       正常都是单行 + 满字号；换行只在名称特别长时才发生。
-    ② 连下限字号都塞不下时**截断加省略号** —— 否则 `caption:` 会直接把
-       下半行裁掉，看起来像「少了一半的字」而且不会报错。
-
-    同一个名字在多页上重复出现（如「星炬不熄」），结果按
-    (文本, 宽, 高, 字体) 缓存，省掉重复调 IM 的开销。
-    """
-    key = (text, width, height, font)
-    if key in _INDEX_FIT:
-        return _INDEX_FIT[key]
-
-    pick, shown = INDEX_LABEL_MIN_POINTS, text
-    for p in range(INDEX_LABEL_MAX_POINTS, INDEX_LABEL_MIN_POINTS - 1, -1):
-        h = _caption_height(text, width, font, p)
-        if h is None or h <= height:     # None = 量不出来，按最小字号画
-            pick = p
-            break
-    else:
-        while shown and _caption_height(shown + "…", width, font,
-                                        INDEX_LABEL_MIN_POINTS) > height:
-            shown = shown[:-1]
-        shown = (shown + "…") if shown else ""
-
-    _INDEX_FIT[key] = (pick, shown)
-    return pick, shown
-
-
-def _covers_backdrop(cells, path, dim):
-    """把本页封面拼贴 → 重度模糊 → 压暗，当作背景（`DVDA_MENU_INDEX_BG=covers`）。
-
-    好处：每页底色都不一样，且与内容相关。坏处：一页里封面风格差异大时
-    底色会花。默认**不用**这个，改用 `make_index_backdrop()` 画的设计背景。
-    """
-    cs = [c for _n, c in cells if c]
-    if not cs:
-        _magick("-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:black",
-                "-quality", "90", path)
-        return path
-
-    cw, ch = FRAME_W // INDEX_COLS, FRAME_H // INDEX_ROWS     # 180 x 192
-    args = ["-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:black"]
-    for i in range(INDEX_PER_PAGE):
-        args += ["(", cs[i % len(cs)], "-resize", "%dx%d^" % (cw, ch),
-                 "-gravity", "center", "-extent", "%dx%d" % (cw, ch),
-                 "-repage", "+%d+%d" % ((i % INDEX_COLS) * cw,
-                                        (i // INDEX_COLS) * ch), ")"]
-    args += ["-flatten", "-blur", "0x28",
-             "-brightness-contrast", "-%dx0" % max(0, min(100, int(dim))),
-             "-quality", "90", path]
-    _magick(*args)
-    return path
-
-
-# ---- 设计背景的可调参数（不用外部素材，构建时现画）----
-# 对角线渐变的两端：左上亮、右下暗，给画面一个方向感。
-#
-# ⚠️ **必须用彩色**。实测缩略图亮度在 35~143（中位 75），所以背景整体压在
-# 均值 ~60：是「一面墙」而不是「和照片抢亮度」。
-# 但**灰度背景会把整页变成灰度** —— `-flatten` 的输出色彩空间看**第一张图**
-# （也就是背景），背景是 Grayscale 时封面的彩色会被全部丢掉
-# （实测整页 `%k` 只剩 256 色、`%[colorspace]` = Gray）。
-# 所以这里给渐变带上青蓝 → 深靛的色相，并在保存前显式 `-colorspace sRGB`。
-BACKDROP_FROM = "#3e6b8a"   # 左上：青蓝
-BACKDROP_TO = "#221630"     # 右下：深靛（偏紫，和鸣潮的冷色调一致）
-# 与 4x3 格子对齐的细网格（白、低透明度）—— 让背景和版式有关系，
-# 看起来是「设计过的」而不是随手一张图。实测线比底色亮约 15 级，够含蓄。
-BACKDROP_GRID_ALPHA = 0.14
-# 径向暗角：中心不动、四周乘到这个灰度（灰的 → 只压亮度、不改色相）。
-BACKDROP_VIGNETTE = "#8090a0"
-
-
-def make_index_backdrop(path):
-    """生成索引页的**设计背景**（720x576，自带素材，不依赖任何图片文件）。
-
-    三层叠出来：
-
-      1. **对角线渐变** `BACKDROP_FROM` → `BACKDROP_TO`
-         用 `-sparse-color bilinear` 而不是「渐变图 + `-rotate`」——
-         后者会在旋转后新露出的画布角上填 `-background`（默认**白**），
-         实测中心裁切后仍有 14% 的像素是纯白，把整页顶亮。
-      2. **格子网格** 线画在 `INDEX_CELL_W/H` 的分界上、以及网格区
-         上下边界 —— 与按钮版式对齐。
-      3. **径向暗角**（`-compose multiply`）压住四角。
-
-    为什么程序生成而不是「上网找一张」：
-      · 授权干净：网上找的图不能随工程一起分发；
-      · 仓库不放二进制：构建时现画，改上面三个常量就换样式；
-      · 明度可控：正好落在「看得出是图、又不抢缩略图」的区间
-        （实测均值 73，缩略图区均值 ~116，白字+黑阴影在其上很清楚）。
-
-    想用自己的图：`DVDA_MENU_INDEX_BG=/path/to/img.jpg`（见 README）。
-    """
-    lines = []
-    for c in range(1, INDEX_COLS):
-        x = c * INDEX_CELL_W
-        lines.append("rectangle %d,0 %d,%d" % (x, x, FRAME_H - 1))
-    for r in range(INDEX_ROWS + 1):
-        y = INDEX_TOP + r * INDEX_CELL_H
-        lines.append("rectangle 0,%d %d,%d" % (y, FRAME_W - 1, y))
-
-    _magick("-size", "%dx%d" % (FRAME_W, FRAME_H), "xc:" + BACKDROP_FROM,
-            "-sparse-color", "bilinear",
-            "0,0 %s %d,%d %s" % (BACKDROP_FROM, FRAME_W - 1, FRAME_H - 1,
-                                 BACKDROP_TO),
-            "-fill", "rgba(255,255,255,%s)" % BACKDROP_GRID_ALPHA,
-            "-draw", " ".join(lines),
-            "(", "-size", "%dx%d" % (FRAME_W, FRAME_H),
-            "radial-gradient:#ffffff-%s" % BACKDROP_VIGNETTE, ")",
-            "-compose", "multiply", "-composite",
-            # ⚠️ `-colorspace sRGB` 必须显式写：不写时 IM 可能按内容把图判成
-            # Grayscale（`xc:` + `-sparse-color` 这条路径就会），而
-            # make_index_page() 的 `-flatten` 会跟着用 Gray
-            # → 封面的彩色全部丢掉，整页变黑白。
-            "-colorspace", "sRGB", "-type", "TrueColor",
-            "-quality", "92", path)
-    return path
-
-
-def fit_backdrop(src, path, dim):
-    """把用户给的图 `src` 铺满画面（填满再裁）并压暗 `dim`%，写到 `path`。"""
-    _magick("(", src, "-resize", "%dx%d^" % (FRAME_W, FRAME_H),
-            "-gravity", "center", "-extent", "%dx%d" % (FRAME_W, FRAME_H), ")",
-            "-brightness-contrast", "-%dx0" % max(0, min(100, int(dim))),
-            "-quality", "92", path)
-    return path
-
-
-def make_index_page(cells, path, font, dim=35, bg="auto"):
-    """一级菜单（专辑索引页）：`4x3` = 正方缩略图 + 专辑名，整幅 720x576。
-
-    cells 是本页最多 `INDEX_PER_PAGE`(12) 个 `(专辑名, 封面路径)`：
-    封面为 None 的格子留黑，专辑名为空则不画名称。
-
-    格子内部（从 `col*180+5, INDEX_TOP + row*140+5` 起，共 170x130）：
-      · 缩略图：正方形 `INDEX_THUMB`(100)，水平居中
-      · 名称  ：缩略图下方 `INDEX_THUMB_GAP`(2) px，宽 170、高 28，
-                居中，自动换行 + 缩字号，**白字 + 黑阴影**
-    背景由 `bg` 决定（`DVDA_MENU_INDEX_BG`）：
-      `auto`（默认） → `make_index_backdrop()` 画的设计背景
-      `covers`       → 本页封面的模糊拼贴（`_covers_backdrop()`）
-      图片路径        → 用这张图（`fit_backdrop()`，按 `dim`% 压暗）
-    顶部 60 px 留给 dvda-author 画的**大标题**（它自带阴影）；底部 480
-    以下留给翻页箭头。
-
-    按钮区 = **整个格子内容区**（含名称），由 C 侧 xml.c 输出 ——
-    所以这里改缩略图/名称的尺寸**不会**影响点击区。
-
-    ⚠️ `-repage` 必须写在**括号内**：它是**算子**（operator）而不是设置项，
-    不加括号时 IM 会对「当前图像列表里的每一张」生效 —— 包括开头那张
-    720x576 的背景。结果背景也被挪到最后一格的位置，画布露出
-    `-flatten` 的默认白底，于是整页只剩右下角一张封面、其余全白。
-    """
-    tw = INDEX_THUMB
-    lw = INDEX_CELL_W - 2 * INDEX_INSET          # 名称条宽 = 170
-    tx = INDEX_INSET + (lw - tw) // 2            # 缩略图左边距（居中）
-    dx = INDEX_LABEL_SHADOW
-
-    bpath = path + ".bg.jpg"
-    if bg and bg != "auto" and bg != "covers":
-        fit_backdrop(bg, bpath, dim * INDEX_BACKDROP_DIM_RATIO)
-    elif bg == "covers":
-        _covers_backdrop(cells, bpath, dim * INDEX_BACKDROP_DIM_RATIO)
-    else:
-        make_index_backdrop(bpath)
-
-    args = [bpath]
-    for i, (name, cov) in enumerate(cells[:INDEX_PER_PAGE]):
-        ox = (i % INDEX_COLS) * INDEX_CELL_W
-        oy = INDEX_TOP + (i // INDEX_COLS) * INDEX_CELL_H
-        if cov:
-            # `^` + `-extent` 是「填满再裁」：封面本来就是 1:1，等于不裁；
-            # 万一是非方形也不会撑破格子的正方形版式。
-            args += ["(", cov, "-resize", "%dx%d^" % (tw, tw),
-                     "-gravity", "center", "-extent", "%dx%d" % (tw, tw),
-                     "-repage", "+%d+%d" % (ox + tx, oy + INDEX_INSET), ")"]
-        if name:
-            p, shown = fit_index_label(name, lw, INDEX_LABEL_H, font)
-            ly = oy + INDEX_INSET + tw + INDEX_THUMB_GAP
-            # 先黑阴影、后白字（flatten 里后画的在上面）；两层都用
-            # `caption:`，所以换行位置完全一致。
-            for sdx, sdy, fill in ((dx, dx, "black"), (0, 0, "white")):
-                args += ["(", "-background", "none", "-fill", fill,
-                         "-font", font, "-pointsize", str(p),
-                         "-size", "%dx%d" % (lw, INDEX_LABEL_H),
-                         "-gravity", "center", "caption:" + shown,
-                         "-repage", "+%d+%d" % (ox + INDEX_INSET + sdx,
-                                                ly + sdy), ")"]
-    # `-colorspace sRGB -type TrueColor` 是保险：万一背景是灰度或某张封面
-    # 是 CMYK，不加这两句整页会降成灰度（见 make_index_backdrop 的注释）。
-    args += ["-flatten", "-colorspace", "sRGB", "-type", "TrueColor",
-             "-quality", "90", path]
-    _magick(*args)
-
-    # 缩略图细边框：**必须单独一遍画在已合成的成品上**。
-    # 拼在一起画不行：`-draw` 会作用到**图像列表里的每一张**（背景 + 每个
-    # 缩略图 + 每个名称层），而 `-flatten` 按列表顺序叠 —— 画在背景层上的
-    # 边框会被后面的缩略图整个盖掉；画在缩略图层上的又会因为那张图只有
-    # 100x100、坐标系不同而落到别处（实测边框像素取到 0 = 黑）。
-    borders = []
-    for i, (_n, cov) in enumerate(cells[:INDEX_PER_PAGE]):
-        if not cov:
-            continue
-        bx = (i % INDEX_COLS) * INDEX_CELL_W + tx
-        by = INDEX_TOP + (i // INDEX_COLS) * INDEX_CELL_H + INDEX_INSET
-        borders.append("rectangle %d,%d %d,%d"
-                       % (bx, by, bx + tw - 1, by + tw - 1))
-    if borders:
-        _magick(path, "-fill", "none", "-stroke", INDEX_THUMB_BORDER,
-                "-strokewidth", str(INDEX_THUMB_BORDER_W),
-                "-draw", " ".join(borders),
-                "-colorspace", "sRGB", "-type", "TrueColor",
-                "-quality", "90", path)
-
-    try:
-        os.remove(bpath)
-    except OSError:
-        pass
-
-    size = image_size(path)
-    if size != (FRAME_W, FRAME_H):
-        raise RuntimeError("%s 尺寸为 %dx%d，应为 %dx%d"
-                           % (path, size[0], size[1], FRAME_W, FRAME_H))
-    return path
-
-
 def image_size(path):
     """返回 (宽, 高)。"""
     exe = shutil.which("identify")
@@ -887,8 +614,13 @@ class MenuPlan:
         # ---- 一级菜单（专辑索引页）----
         # index_pages   : 开头的索引页数（0 = 关闭二级菜单）
         # index_albums  : 每页索引页放哪些专辑（顺序 = 格子顺序）
+        # index_covers  : 每格封面的**扁平**路径列表（页序 × 格子序），
+        #                 由 build_menu() 写成清单文件，路径经
+        #                 `--index-covers <file>` 传给 C（那里再拼画面）
         self.index_pages = 0
         self.index_albums = []
+        self.index_covers = []
+        self.index_covers_file = None
         self.points = 0
         self.font = ""
         self.font_missing = set()
@@ -910,6 +642,12 @@ class MenuPlan:
             # 一级菜单：前 N 页是专辑索引页（缩略图网格）。
             # C 侧据此把这几页当索引页：不画文字、按钮是 `jump menu`。
             a += ["--index-pages", str(self.index_pages)]
+            # 每格封面走**清单文件**（每行一个路径），不用逗号列表 ——
+            # 专辑目录名里就有 ASCII 逗号（实测
+            # `奔流,因你不息(游戏《鸣潮》原声音乐) - Single`）。
+            # 画面（背景/拼贴/专辑名）由 C 现画，见 menu.h。
+            if self.index_covers_file:
+                a += ["--index-covers", self.index_covers_file]
         if fontname or self.font:
             a += ["--fontname", fontname or self.font]
         if self.points:
@@ -1013,20 +751,28 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
             % (len(missing), "、".join(missing[:3])
                + ("…" if len(missing) > 3 else "")))
 
-    # 页序：先索引页（缩略图网格），再专辑页（该专辑封面）。
-    # 顺序必须与 screentext 的段序、以及 C 侧算出的 jump 目标一致。
-    #
-    # ⚠️ 索引页要画**专辑名**，而字体是下面 pick_font() 才定下来的
-    # （字体缺字 = 名称一片空白且不报错），所以这里只**登记路径**，
-    # 真正的绘制挪到 pick_font() 之后。
-    plan.backgrounds = []
-    index_paths = []
-    for pi in range(idx_pages):
-        path = os.path.join(outdir, "idx%d.jpg" % pi)
-        index_paths.append(path)
-        plan.backgrounds.append(path)
+    # ---- 背景 ----
+    # 索引页的画面**由 C 现画**（menu.c 的 dvda_make_index_pages()）：
+    # 背景渐变、4x3 封面拼贴、专辑名全在那边完成，几何常量只在 menu.h
+    # 定义一份。这里只把每格的**封面路径**按「页序 × 格子序」铺平传过去
+    # （`--index-covers`）；专辑名走已有的 `--screentext`。
+    plan.index_covers = []
+    for albs in index_albums:
+        for a in albs:
+            cov = covers.get(a)
+            if not cov:
+                log("[菜单][警告] 专辑 %s 没有 cover.jpg，索引页格子留空" % a)
+                continue
+            plan.index_covers.append(cov)
+
+    if idx_pages:
+        plan.index_covers_file = os.path.join(outdir, "index_covers.txt")
+        with open(plan.index_covers_file, "w", encoding="utf-8") as fh:
+            for cov in plan.index_covers:
+                fh.write(cov + "\n")
 
     # 专辑页背景 = 该专辑封面（压暗是为了让白字读得清）。缺封面时留黑。
+    # ⚠️ `--background` 只覆盖**非索引页**，所以这里不夹索引页占位。
     for pi, a in enumerate(plan.album_of_page):
         cov = covers.get(a)
         path = os.path.join(outdir, "bg%d.jpg" % pi)
@@ -1132,15 +878,6 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
     # 本项目曲名同时含中文、日文假名、韩文与 ASCII，缺任何一个都会变空白。
     all_texts.append(cfg.title)
     plan.font, plan.font_missing = pick_font(cfg.menu_font, all_texts, log)
-
-    # ---- 一级菜单：字体定了才画（专辑名要按实际排版换行 + 缩字号）----
-    for pi, albs in enumerate(index_albums):
-        cells = []
-        for a in albs:
-            lbl, _fixed = sanitize(menu_album(a))
-            cells.append((lbl, covers.get(a)))
-        make_index_page(cells, index_paths[pi], plan.font,
-                        cfg.menu_cover_dim, cfg.menu_index_bg)
 
     plan.fontwidth = compute_fontwidth(all_texts, points)
 

@@ -3353,7 +3353,7 @@ copy_file(img->imagepic[menu], img->highlightpic[menu], globals);
 
 ---
 
-## 24. `mogrify` / `-draw` 画不上：三个已踩过的原因
+## 24. `mogrify` / `-draw` 画不上：已踩过的几个原因
 
 1. **命令串末尾少空格** → 输出文件名与前一段粘连（第 22 节）。
 2. **`-draw` 作用在多层图像列表上** → 「先贴图再画边框」时，边框被
@@ -3361,6 +3361,8 @@ copy_file(img->imagepic[menu], img->highlightpic[menu], globals);
    正确做法：**先合成为成品文件，再单独跑一遍 `-draw`**。
 3. **`rgba(0,0,0,alpha)` 的 alpha 在灰度图上被忽略** → 半透明白会随
    alpha 变化，半透明黑却永远是纯黑。要确定的效果就用**不透明色**。
+4. **`rgb(...)` 没加引号** → 括号是 shell 的语法字符，
+   直接就是 `syntax error near unexpected token '('`。见第 27 节。
 
 ---
 
@@ -3432,3 +3434,89 @@ python3 scripts/02_build.py   # [FAIL] ... 失败（退出码 -11）
 
 **教训**：改 `snprintf` 的格式串时，**参数表必须一起改**。插一个
 `"-stroke", "none"` 就要同时插一个 `%s`。
+
+---
+
+## 27. ImageMagick 的「设置」和「算子」不要混为一谈
+
+这是踩得最多的一类坑，集中记一下。IM 的参数分两种：
+
+| 类型 | 例子 | 作用范围 |
+|---|---|---|
+| **设置**（setting） | `-stroke` `-fill` `-compose` `-gravity` `-font` `-pointsize` | **一直生效**，直到被改掉 |
+| **算子**（operator） | `-draw` `-compose` 之后的 `-composite` `-flatten` `-rotate` `-repage` `-resize` | 只作用于**当前那一刻**的图像列表 |
+
+后果有三类：
+
+**1. 设置残留，后面的操作被污染**
+
+```bash
+magick base.png -stroke "rgb(255,0,0)" -draw "rectangle ..."   # 画描边框
+        -draw "text 10,20 'hello'"                             # ← 文字也被红描边糊住
+```
+`-draw "text"` 是**同时用 `-fill` 和 `-stroke`** 画的（IM 对文本也描边）。
+修法：文字前显式 `-stroke none`。
+
+`-compose` 同理：`-compose multiply -composite` 之后不复位，后面的
+`-flatten` 也会按 multiply 合成（实测整页被压暗、封面与背景相乘）。
+修法：用完 `-compose over`。
+
+**2. 算子写到括号外面，作用到整张列表**
+
+```bash
+magick xc:black \( a.jpg \) -repage +38+5 \( b.jpg \) -repage +218+5 -flatten
+                         ^^^^^^^^ 在括号外 → 作用到「当前列表」的全部
+```
+底色也被挪走，画布露出 `-flatten` 的默认白底。修法：算子写进 `( )` 内。
+
+**3. `-draw` 在多层列表上会逐层生效**
+
+```bash
+magick bg.jpg \( cover.jpg -repage +40+65 \) -flatten -draw "rectangle ..."
+```
+`-draw` 会作用到列表里的**每一张**，而 `-flatten` 又按列表顺序叠 ——
+画在背景上的框被封面盖掉，画在封面上的框因为坐标系不同而落到别处。
+修法：**先 `-flatten` 成成品，再单独跑一遍 `-draw`**。
+
+---
+
+## 28. `rgb(...)` 在 shell 里必须加引号
+
+```bash
+magick -size 720x576 xc:rgb(62,107,138) ...     # ✗ syntax error near '('
+magick -size 720x576 'xc:rgb(62,107,138)' ...   # ✓
+```
+
+圆括号是 shell 的**元字符**，不加引号就是语法错误。C 里拼命令时特别容易
+忘 —— 因为 `"rgb(%s)"` 这种写法在 `-fill "rgb(...)"` 里看着「有引号」，
+而 `xc:rgb(...)` 是拼成一个整体参数的，很容易漏。
+
+**教训**：凡是要拼进 shell 命令的字符串（尤其是路径和颜色），
+统一走「加引号」的那个封装（本项目是 `cs_arg()`），不要手工 `snprintf`
+到中间去。
+
+---
+
+## 29. `system()` 的返回值不能只判 `-1`
+
+```c
+if (system(cmd) == -1) EXIT_ON_RUNTIME_ERROR("failed");   // ✗ 几乎永远不触发
+```
+
+`system()` 返回的是 `wait()` 的状态字：
+
+* `-1` —— 只在 **fork/exec 失败**（比如 shell 都起不来）时为真
+* `N << 8` —— 命令**自己**失败（参数错、文件读不到）时是这个
+
+所以「命令失败」必须这样判：
+
+```c
+int rc = system(cmd);
+if (rc == -1 || !WIFEXITED(rc) || WEXITSTATUS(rc) != 0) { ... }
+```
+
+上游到处只判 `-1`，结果我们出过「`convert` 参数错、静默失败、背景图根本没
+生成」，而日志里只有后面那句「背景图读不到」—— 排查方向从一开始就偏了。
+
+**教训**：拼外部命令时，失败路径要**把命令原样打出来**（本项目
+`run_convert()` 会打 `command:` 和 `exit status:`），否则只能靠猜。
