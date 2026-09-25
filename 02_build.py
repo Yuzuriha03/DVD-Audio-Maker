@@ -616,8 +616,17 @@ def menu_args(disc_index, groups):
     bad = []
     if segs != plan.pages:
         bad.append(f"screentext 段数 {segs} != 页数 {plan.pages}")
-    if len(plan.backgrounds) != plan.pages:
-        bad.append(f"背景图 {len(plan.backgrounds)} 张 != 页数 {plan.pages}")
+    # `--background` 只覆盖**非索引页**（索引页的画面由 C 现画，
+    # 见 menu.c 的 dvda_make_index_pages()）。
+    n_album_pages = plan.pages - plan.index_pages
+    if len(plan.backgrounds) != n_album_pages:
+        bad.append(f"背景图 {len(plan.backgrounds)} 张 != 非索引页数 "
+                   f"{n_album_pages}（共 {plan.pages} 页，索引 {plan.index_pages}）")
+    # 索引页每格一张封面，张数 = 各索引页格子数之和
+    n_index_cells = sum(len(a) for a in plan.index_albums)
+    if plan.index_pages and len(plan.index_covers) + 0 < n_index_cells:
+        bad.append(f"索引页封面 {len(plan.index_covers)} 张 < 格子数 "
+                   f"{n_index_cells}（缺 cover.jpg 的专辑会留空）")
     if sum(plan.rows_of_page) != n_tracks:
         bad.append(f"各页曲目数之和 {sum(plan.rows_of_page)} != 总轨数 {n_tracks}")
     if plan.points < menu_assets.MIN_POINTSIZE:
@@ -633,8 +642,10 @@ def menu_args(disc_index, groups):
     print(f"[菜单] 各页曲目数: "
           + ", ".join(str(n) for n in plan.rows_of_page[:12])
           + ("…" if plan.pages > 12 else ""))
-    print(f"[菜单] 每页背景 {plan.pages} 张（各为该专辑封面）"
-          + (f", 播放封面 {sum(1 for s in plan.stills if s)} 张"
+    print(f"[菜单] 每页背景 {len(plan.backgrounds)} 张（各为该专辑封面）"
+          + (f"，索引页 {plan.index_pages} 页 / {len(plan.index_covers)} 个封面"
+             "（画面由 C 现画）" if plan.index_pages else "")
+          + (f"，播放封面 {sum(1 for s in plan.stills if s)} 张"
              if any(plan.stills) else ""))
 
     args = plan.args(blankscreen, CFG.menu_font, datadir, bindir)

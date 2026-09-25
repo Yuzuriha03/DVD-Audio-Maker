@@ -485,7 +485,6 @@ DVD-Audio-Maker/
 | `DVDA_MENU_STILLPICS` | `on` | 播放时是否显示所属专辑封面（占 ASVS 预算） |
 | `DVDA_MENU_COVER_DIM` | `35` | 二级菜单背景上封面压暗程度（0~100，越大越暗、白字越清楚） |
 | `DVDA_MENU_INDEX_MIN_ALBUMS` | `4` | 专辑数达到此值才做一级「专辑索引」页；`0` = 一直做 |
-| `DVDA_MENU_INDEX_BG` | `auto` | 索引页背景：`auto` 现画 / `covers` 封面模糊拼贴 / 图片路径 |
 | `DVDA_MENU_FONT` | `Droid-Sans-Fallback` | 菜单字体（ImageMagick 字体名，**不能带空格**）；不可用时会自动换 |
 | `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
 | `DVDA_MKISOFS` | `/root/dvda-author-mlp8/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs（支持 `-dvd-audio`） |
@@ -677,21 +676,24 @@ DVDA_MENU_COVER_DIM="35"          # 调大 → 背景更暗、白字更清楚
 DVDA_MENU_STILLPICS="on"          # 设 off 则不显示播放封面（只做菜单）
 DVDA_MENU_INDEX_MIN_ALBUMS="4"    # 专辑少于这个数就不做一级索引页
 
-# 索引页的背景。三个选择：
-DVDA_MENU_INDEX_BG="auto"                  # 现画（默认）
-DVDA_MENU_INDEX_BG="covers"                # 本页封面拼贴后重度模糊
-DVDA_MENU_INDEX_BG="/home/me/我的背景.jpg"  # 用自己的图
 ```
 
-`auto` 那张是脚本用 ImageMagick 现画的（`menu_assets.make_index_backdrop()`），
-**不依赖任何外部素材**，也不往仓库里塞二进制。想换样式就改
-`menu_assets.py` 顶部的三个常量：
+索引页的画面**由 C 现画**（`menu.c` 的 `dvda_make_index_pages()`），
+不依赖任何外部素材，也不往仓库里塞二进制。它由三层背景 + 每格的
+[封面 + 专辑名] + 缩略图描边合成：
 
-```python
-BACKDROP_FROM / BACKDROP_TO   # 对角渐变的两端（左上 → 右下）
-BACKDROP_GRID_ALPHA           # 格子网格的透明度（0 = 不要网格）
-BACKDROP_VIGNETTE             # 暗角强度（越黑 → 四周越暗）
 ```
+背景   对角渐变（左上青蓝 → 右下深靛）+ 与格子对齐的细网格 + 径向暗角
+格子   封面缩到正方形居中（封面本身是 1:1，不裁切）
+名称   白字 + 自动换行；字号按文字宽度估（放不下就缩）
+描边   每个格子描一圈深灰，把封面从背景里「托」出来
+```
+
+几何常量（格子大小、缩略图边长、名称字号上下限、背景配色）**只在
+`tools/dvda-author-mlp8/src/include/menu.h` 定义一份**，改那里即可。
+
+> 以前这页是脚本拼好再传给 dvda-author 的，几何在脚本和 C 里各有一份，
+> 改一处忘另一处就会出现「点到的不是想选的那张」。搬进 C 之后只有一份。
 
 配色是**黑白**：正文全白、下划线与按钮框全黑，所有文字带 2 px 黑色阴影
 （阴影画在子画面的高亮层 —— 详见 `docs/TROUBLESHOOTING.md` 第 23 节）。
