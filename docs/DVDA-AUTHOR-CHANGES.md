@@ -8,7 +8,14 @@
 |---|---|
 | 上游基线 | `github.com/fabnicol/dvda-author` @ `8fca43a` |
 | 改动集 | 源码树 `dvda-maker` 分支，或导出的 `dvda-author-changes.patch` |
-| 改动规模 | 20 个文件，1251 插入 / 354 删除 |
+| **源码** | 另在仓库镜像一份：`tools/dvda-author-mlp8/`（约 1.2 MB） |
+| 改动规模 | 20 个文件，1251 插入 / 354 删除（此后又有多轮改动，见下） |
+
+> **源码在哪读**：不想先 `git apply` 补丁就能看代码的话，直接看
+> `tools/dvda-author-mlp8/` —— 那是改动后源码的**只读镜像**
+> （`src/` 与 `libutils/` 下的 `.c`/`.h`，逐字节同步），
+> 说明见该目录下的 `README.md`。修改请改工作机的源码树，
+> 再跑 `python3 local-bin/sync_repo.py` 刷新镜像。
 
 
 ---
