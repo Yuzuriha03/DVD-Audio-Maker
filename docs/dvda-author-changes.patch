@@ -1121,7 +1121,7 @@ index df1244e..e041431 100644
  #define ALBUM_TEXT_Y0 48
  #define MAX_POINTSIZE  35
 diff --git a/src/include/menu.h b/src/include/menu.h
-index 5ab0a6a..bc5a950 100644
+index 5ab0a6a..b91cb61 100644
 --- a/src/include/menu.h
 +++ b/src/include/menu.h
 @@ -15,6 +15,7 @@ int  launch_spumux(pic* img, globalData*);
@@ -1132,7 +1132,7 @@ index 5ab0a6a..bc5a950 100644
  int create_stillpic_directory(char* string, int32_t count, globalData*);
  void create_activemenu(pic* img, globalData* globals);
  int create_mpg(pic* img, uint16_t rank, char* mp2track, char* tempfile, globalData*);
-@@ -23,5 +24,150 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
+@@ -23,5 +24,162 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks);
  void initialize_binary_paths(char level, globalData*);
  void menu_characteristics_coherence_test(pic* img, uint8_t ngroups, globalData*);
  void compute_pointsize(pic* img, uint16_t maxtracklength, uint8_t maxnumtracks, globalData*);
@@ -1206,8 +1206,20 @@ index 5ab0a6a..bc5a950 100644
 +   专辑内容页（那是缩略图的活，而且跳过去会猜错用户想听哪张专辑）。
 +   所以**最后一个索引页没有 Next**。
 +
-+   Previous 一律「不是第一页就有」。 */
-+#define DVDA_HAS_PREV(img, menu) ((unsigned) (menu) > 0)
++   Previous 对称：**只在同一块内翻**（索引块 / 专辑块各自为一块）——
++   第一张索引页、以及**第一张专辑页**都没有。
++   第一张专辑页的「上一页」按页序是**最后一个索引页**（属于跨块），
++   而「回到索引」已经有专门的 `Menu` 按钮（跳第 1 页）；两个按钮都干这件事
++   只会让人不知道该按哪个。
++
++   ⚠️ `Menu` 的行号是**固定**的（`MENU_BUTTON_ROW`），所以第一张专辑页
++   那里会空出一行（Next 在槽 1、Menu 在槽 3）。这是有意的：Menu 在每页
++   都在同一个位置，比「挤上去」更好按。 */
++#define DVDA_HAS_PREV(img, menu)                                        \
++  (((img)->page_ntracks                                                 \
++    && (unsigned) (menu) < (unsigned) (img)->index_pages)               \
++   ? ((unsigned) (menu) > 0)                                            \
++   : ((unsigned) (menu) > (unsigned) (img)->index_pages))
 +#define DVDA_HAS_NEXT(img, menu)                                        \
 +  (((img)->page_ntracks                                                 \
 +    && (unsigned) (menu) < (unsigned) (img)->index_pages)               \

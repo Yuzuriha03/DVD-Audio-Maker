@@ -1381,13 +1381,33 @@ UTF-8 首字节判断），再 `size = 10 * INDEX_LABEL_W / units` 夹到
 `copy_file(impic, hlpic)` 把它整个覆盖掉。而且 `command1` 在那句之前被
 `snprintf(command, ...)` 重置过一次，追加必须在重置之后。
 
-### 索引页的 Next 只在自己几页之间翻
+### 翻页按钮：只在**同一块**内翻
 
-索引页的 Next **不能**用它跳到专辑内容页（去专辑靠点缩略图，用 Next 会
-猜错用户想听哪张）。所以 `DVDA_HAS_NEXT()`（`menu.h`，`menu.c` 与两个
-XML 共用）把它限定为 `menu + 1 < index_pages` —— **最后一个索引页没有
-Next**。Previous 仍是「不是第一页就有」。
-槽 1 在「没有 Next 但有 Previous」时放 Previous，不会留下空槽。
+页序是 `[索引页 0..I-1] [专辑页 0..A-1]`，两组各自成一块。`menu.h` 里的
+`DVDA_HAS_NEXT()` / `DVDA_HAS_PREV()`（`menu.c` 与两个 XML 共用同一套）
+把翻页限定在块内：
+
+| | 索引页 | 专辑页 |
+|---|---|---|
+| `Next` | `menu + 1 < index_pages` | `menu + 1 < nmenus` |
+| `Previous` | `menu > 0` | `menu > index_pages` |
+
+也就是说：
+
+* **最后一个索引页没有 Next** —— 不能拿它跳到专辑内容页（去专辑靠点缩略图，
+  用 Next 会猜错用户想听哪张）
+* **第一张专辑页没有 Previous** —— 它按页序往回是**最后一个索引页**（跨块），
+  而「回到索引」已经有专门的 `Menu` 按钮（跳第 1 页）；两个按钮都干这件事
+  只会让人不知道该按哪个
+
+槽 1（行 `maxbuttons`）在「没有 Next 但有 Previous」时放 Previous，
+不会留下空槽；`Menu` 的行号是**固定的**（`MENU_BUTTON_ROW`），所以
+第一张专辑页会空出一行（Next 在槽 1、Menu 在槽 3）—— 这是有意的：
+`Menu` 在每页都在同一个位置，比「挤上去」更好按。
+
+> 注意 `AUDIO_TS.IFO` 里的 next/prev 链是 **amg2.c 按 `j±1` 固定写**的，
+> 与「按钮是否存在」无关。所以 `verify_menu.py` 查的是那条链，
+> 按钮的有无请看 `xmltemp` / `spu_xmltemp_*.xml`。
 
 ### 二级页的「返回专辑索引」按钮（Menu）
 
