@@ -36,6 +36,11 @@ import subprocess
 
 # ---- 画面常量（与 dvda-author 一致：PAL 720x576） ----
 FRAME_W, FRAME_H = 720, 576          # 菜单 / 静图画面
+
+# 静图的像素宽高比（PAR）。PAL 720x576 声明 DAR 4:3（menu.c 的默认值），
+# 所以 SAR = (4/3)/(720/576) = 16/15，即单个像素横宽竖窄，播放时画面
+# 横向被拉宽 6.7%。make_still() 用它把封面预先压窄，显示时才是正圆。
+PIXEL_ASPECT = 16.0 / 15.0
 MAX_BUTTONS = 32            # MAX_BUTTON_Y_NUMBER - 2
 MIN_POINTSIZE = 7
 # 上限 30：小标题（专辑名）是 `0.8 × 字号` 画的，而大标题（光盘标题）在
@@ -516,13 +521,34 @@ def make_blankscreen(path):
 
 
 def make_still(cover, path):
-    """播放时显示的封面：720x576，封面按 1:1 居中留黑边。
+    """播放时显示的封面：720x576，整张封面居中、左右留黑边，且**不变形**。
 
     尺寸必须与 menu.c 里静图的编码制式一致（jpeg2yuv/mpeg2enc 按该尺寸编码）。
+
+    ⚠️ 三步不可省（老代码两处都错了）：
+
+    1. **像素宽高比补偿**。静图是 PAL 720x576、DAR 4:3（menu.c 用默认值：
+       `jpeg2yuv -A 4:3` / `mpeg2enc -a 2`），单个像素是 **16:15**
+       （SAR 1.0667），播放时**横向被拉宽 6.7%**。要显示成正圆就得先在
+       样本空间把图横向压窄同样的比例。
+
+    2. **装进画面**。老代码先 `-resize 720x720` 再 `-extent 720x576`，而
+       `-extent` 对**更大**的图是**裁切**：720 高的图裁成 576，上下各丢
+       72px —— 整个封面丢掉 20%（注释写的「居中留黑边」和实际行为相反，
+       是个写错了的注释 + 行为）。改成先 `-resize` 装进 720x576（fit，
+       不裁），再用黑底 `-extent` 补边。
+
+    3. 于是封面占样本 540x576 → 显示 576x576，比例 1.000，双方框都不裁。
+
+    中间图质量取 92：实测 85/90/92/95 四档在 4 张封面上比端到端 PSNR，
+    92 全面最好（再高只是把高频噪声喂给 MPEG-2，反而更差、扇区还更多）。
     """
-    _magick(cover, "-resize", "%dx%d" % (FRAME_H, FRAME_H),
+    _magick(cover,
+            "-resize", "%g%%x100%%!" % (100.0 / PIXEL_ASPECT),   # 1. PAR 补偿
+            "-resize", "%dx%d" % (FRAME_W, FRAME_H),             # 2. fit 入画，不裁
             "-background", "black", "-gravity", "center",
-            "-extent", "%dx%d" % (FRAME_W, FRAME_H), "-quality", "90", path)
+            "-extent", "%dx%d" % (FRAME_W, FRAME_H),             # 3. 补黑边
+            "-quality", "92", path)
     w, h = image_size(path)
     if (w, h) != (FRAME_W, FRAME_H):
         raise RuntimeError("%s 尺寸为 %dx%d，应为 %dx%d"

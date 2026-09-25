@@ -879,19 +879,30 @@ def build_disc(disc_index, groups):
 
     args = [DVDA]
     # title 划分模式。DVDA_TITLE_MODE 可临时覆盖：
-    #   "one"（默认）  → 整盘一个 title（ASVS 只写 1 条记录）
-    #   "album"        → 专辑边界切 title（⚠️ 多记录 ASVS，播放器刷新有缺陷）
+    #   "album"（默认）→ 专辑边界切 title（一个专辑一个 title，对齐商业盘）
+    #   "one"          → 整盘一个 title（ASVS 只写 1 条记录）
     #   整数 N         → 每 N 轨一个 title（诊断用）
     #
-    # 为什么默认 "one"：**播放器对「多记录 ASVS」支持有缺陷** ——
-    # PowerDVD 8 实测：
-    #   · 巴赫 1 条记录 / 18 图 → 全部正常
-    #   · 李娜 1 条记录 / 12 图 → 全部正常
-    #   · Enigma 8 条记录 / 99 图 → 只有前几个专辑刷新，之后不刷新
-    #   · 本工程 17 条记录 → 同样只有前几个专辑刷新
-    # 故对齐「单记录」形态（= 巴赫/李娜），每轨仍有自己的图、
-    # 壁纸照样随曲切换，只是不按专辑切 title。
-    mode = (os.environ.get("DVDA_TITLE_MODE") or "one").strip().lower()
+    # ⚠️⚠️ **必须用 "album"**。这里曾经默认 "one"，理由是「播放器对多记录
+    # ASVS 支持有缺陷」——**那个判断是错的**，已用实测推翻：
+    #
+    #   拿一份能正常显示静图的盘（E:\鸣潮DVD_Audio_ext，当天 00:57 的构建）
+    #   与 "one" 产物逐文件对拍：
+    #     · AUDIO_SV.VOB（静图本体）      **md5 完全相同**
+    #     · AUDIO_SV.IFO（静图索引）
+    #         E盘     nr_of_asvus = 28 / 17（= 专辑数）
+    #         "one"   nr_of_asvus =  1
+    #     · E盘 AMG 的 n_totaltitles 也是 28 / 17，与 ASVS 记录数一致
+    #   → 静图读不出来的原因**不是**「多记录有缺陷」，而是**记录数必须等于
+    #     title 数**。用 "one" 时两张盘都是 1 条记录、而 E 盘是 28/17 条，
+    #     形态对不上，播放器就不认。
+    #
+    #   改成 "album" 重建后，静图相关文件与 E 盘**逐字节相同**：
+    #     AUDIO_SV.IFO / AUDIO_SV.VOB / ATS_01_0.IFO 全部 md5 相同（两张盘）
+    #
+    #   （当初"one"看着能用的原因：那几次比对的对象本身就是 "one" 产物，
+    #     拿一个读不出图的盘当基准，自然得出"按专辑切会坏"的反向结论。）
+    mode = (os.environ.get("DVDA_TITLE_MODE") or "album").strip().lower()
     per = None
     single_title = (mode == "one")
     if mode not in ("album", "one"):
