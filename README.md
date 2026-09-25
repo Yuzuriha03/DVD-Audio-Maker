@@ -44,6 +44,11 @@ bash build_dvda_author_mlp.sh
 > **源码树是手工维护的，改动已提交在它的 `dvda-maker` 分支上。**
 > 脚本第 `[1/6]` 步会比对改动是否还在（缺失告警、改过提示，都不中止）。
 >
+> 改动过的**源码另在仓库里镜像了一份**（`tools/dvda-author-mlp8/`，只有
+> `src/` 与 `libutils/` 下的 `.c`/`.h`，约 1.2 MB），便于直接在仓库里读和搜。
+> 那棵镜像是**只读副本**，以工作树为准（`local-bin/sync_repo.py` 会重新生成）；
+> 不含 `.o`、可执行文件、Makefile、第三方的 ffmpeg/ImageMagick 源码树。
+>
 > 从**全新上游 clone** 开始时，只需应用改动集：
 >
 > ```bash
@@ -318,7 +323,14 @@ git commit -am "改了什么"                          # 提交到 dvda-maker �
 # 更新仓库里的改动集（供别的机器重建）
 git diff master -- src libutils \
   > ../../dvda/scripts/docs/dvda-author-changes.patch
+
+# 更新仓库里的源码镜像（这个脚本也会一起刷新）
+python3 ../../dvda/local-bin/sync_repo.py
 ```
+
+`sync_repo.py` 会把 `src/` 与 `libutils/` 下的 `.c`/`.h` **逐字节**拷进
+仓库的 `tools/dvda-author-mlp8/`，并**删掉仓库里多出来的**（源码树删了文件，
+仓库不能留旧版）。
 
 每项改动的依据见 [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.md)，
 试过但没接入的见 [`docs/DVDA-AUTHOR-DISABLED.md`](docs/DVDA-AUTHOR-DISABLED.md)。
@@ -459,6 +471,12 @@ DVD-Audio-Maker/
     ├── dvda-author-changes.patch# 改动集（可直接 apply 到上游）
     ├── TROUBLESHOOTING.md       # 问题诊断记录与修复细节
     └── LICENSING.md             # 许可状况、第三方归属与法律说明
+
+tools/                           # 工具链源码镜像（只读副本，别在这改）
+└── dvda-author-mlp8/
+    ├── README.md                # 镜像说明：含什么/不含什么/怎么重建
+    ├── src/**/*.{c,h}           # 改动过的 dvda-author 源码（逐字节同步）
+    └── libutils/src/**/*.{c,h}
 ```
 
 ---
