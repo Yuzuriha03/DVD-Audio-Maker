@@ -94,8 +94,20 @@ uint8_t dvda_video_attr_of(const char* path, pic* image, globalData* globals);
    专辑内容页（那是缩略图的活，而且跳过去会猜错用户想听哪张专辑）。
    所以**最后一个索引页没有 Next**。
 
-   Previous 一律「不是第一页就有」。 */
-#define DVDA_HAS_PREV(img, menu) ((unsigned) (menu) > 0)
+   Previous 对称：**只在同一块内翻**（索引块 / 专辑块各自为一块）——
+   第一张索引页、以及**第一张专辑页**都没有。
+   第一张专辑页的「上一页」按页序是**最后一个索引页**（属于跨块），
+   而「回到索引」已经有专门的 `Menu` 按钮（跳第 1 页）；两个按钮都干这件事
+   只会让人不知道该按哪个。
+
+   ⚠️ `Menu` 的行号是**固定**的（`MENU_BUTTON_ROW`），所以第一张专辑页
+   那里会空出一行（Next 在槽 1、Menu 在槽 3）。这是有意的：Menu 在每页
+   都在同一个位置，比「挤上去」更好按。 */
+#define DVDA_HAS_PREV(img, menu)                                        \
+  (((img)->page_ntracks                                                 \
+    && (unsigned) (menu) < (unsigned) (img)->index_pages)               \
+   ? ((unsigned) (menu) > 0)                                            \
+   : ((unsigned) (menu) > (unsigned) (img)->index_pages))
 #define DVDA_HAS_NEXT(img, menu)                                        \
   (((img)->page_ntracks                                                 \
     && (unsigned) (menu) < (unsigned) (img)->index_pages)               \
