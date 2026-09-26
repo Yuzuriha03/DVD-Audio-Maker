@@ -34,7 +34,8 @@ from collections import OrderedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dvda_config import load as load_config          # noqa: E402
 from dvda_config import (DVD5_BYTES, MAX_TRACKS,     # noqa: E402
-                         AOB_OVERHEAD, ISO_SAFETY)
+                         AOB_OVERHEAD, ISO_SAFETY,
+                         magick_identify_cmd)
 
 # ---- 读取配置（config.sh / 环境变量，见 dvda_config.py） ----
 CFG = load_config()
@@ -107,6 +108,32 @@ MENU_DIR = os.path.join(BUILD_DIR, "menu")
 MENU_BINS = ("dvdauthor", "spumux", "jpeg2yuv", "mpeg2enc", "mplex",
              "mp2enc", "mogrify", "convert")
 
+
+def _menu_exe(name):
+    """菜单辅助程序在**本平台**上的文件名。
+
+    ⚠️ Windows 上它们都带 `.exe`，而下面的检查既看 `menu_bindir/名字`
+    也用 `shutil.which(名字)` —— 两者都找不到无扩展名的 `dvdauthor`，
+    于是明明文件都在却报「缺少辅助程序」。
+    （`shutil.which` 在 Windows 上其实会自动补 PATHEXT 里的扩展名，
+     但那只在 **PATH 里**才有效，而我们优先查的是 menu_bindir。）
+    """
+    return name + ".exe" if os.name == "nt" else name
+
+
+def _prepend_to_path(d):
+    """把目录插到 PATH 最前面 —— 让 `shutil.which()` 也能找到菜单程序。
+
+    dvda-author 自己是通过 `--bindir` 找的，但 Python 侧的
+    `have_magick()` / `m4a2flac` 之类的检查走的是 PATH。
+    插到**最前**是为了优先用我们自编的（含 AMGM 补丁的 dvdauthor、
+    7.0.8 的 ImageMagick），而不是系统里可能存在的其它版本。
+    """
+    if not d or not os.path.isdir(d):
+        return
+    os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+
+
 _SYNC_MAJOR = b"\xf8\x72\x6f"
 _EOS = b"\xd2\x34\xd2\x34"
 
@@ -157,8 +184,10 @@ def run(cmd, log_output=False):
         logf.write(text)
         logf.write("\n")
         logf.flush()
-    # 返回一个带 returncode 的轻量对象即可（调用方只用到 returncode）
-    return r if False else type("R", (), {"returncode": r.returncode})()
+    # 返回一个带 returncode / stdout 的轻量对象。
+    # 调用方主要用 returncode，但失败分支还要打印 stdout 尾部当调试信息 ——
+    # 早期版本只带了 returncode，导致 AttributeError 把真正的错误盖掉。
+    return type("R", (), {"returncode": r.returncode, "stdout": text})()
 
 
 def probe_mlp_params(path):
@@ -575,8 +604,11 @@ def menu_args(disc_index, groups):
         print("           请确认 config.sh 的 DVDA_AUTHOR_SRC 指向源码根目录")
         return None, None
     bindir = CFG.menu_bindir
+    # 让 shutil.which() 也能找到菜单程序（Windows 上文件名带 .exe，
+    # 且 have_magick() 走的是 PATH 而不是这个目录）。
+    _prepend_to_path(bindir)
     missing = [b for b in MENU_BINS
-               if not (os.path.exists(os.path.join(bindir, b))
+               if not (os.path.exists(os.path.join(bindir, _menu_exe(b)))
                        or shutil.which(b))]
     if missing:
         print(f"[菜单][FAIL] 缺少辅助程序: {', '.join(missing)}")
@@ -737,10 +769,18 @@ def check_menu_overlay(tmp, n_index, n_pages):
 
     import subprocess as _sp
 
+    # ImageMagick 7 没有独立的 identify.exe（Windows 上是 `magick identify`），
+    # 这个辅助函数会给出正确的前缀，见 dvda_config.magick_identify_cmd()。
+    try:
+        IM_ID = magick_identify_cmd()
+    except RuntimeError as e:
+        print(f"[菜单][警告] 跳过叠加图自检: {e}")
+        return True
+
     def ink(path):
         if not os.path.exists(path):
             return None
-        r = _sp.run(["identify", "-format", "%[fx:mean.a*w*h]", path],
+        r = _sp.run(IM_ID + ["-format", "%[fx:mean.a*w*h]", path],
                     stdout=_sp.PIPE, stderr=_sp.DEVNULL)
         try:
             return float(r.stdout.decode().strip())
@@ -764,8 +804,8 @@ def check_menu_overlay(tmp, n_index, n_pages):
         p = os.path.join(tmp, f"impic{m}.png")
         if not os.path.exists(p) or n_pages <= 1:
             continue
-        r = _sp.run(["identify", "-crop", f"720x{y1 - y0}+0+{y0}",
-                     "-format", "%[fx:maxima.a]", p],
+        r = _sp.run(IM_ID + ["-crop", f"720x{y1 - y0}+0+{y0}",
+                             "-format", "%[fx:maxima.a]", p],
                     stdout=_sp.PIPE, stderr=_sp.DEVNULL)
         try:
             v = float(r.stdout.decode().strip())

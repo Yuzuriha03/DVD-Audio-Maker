@@ -47,6 +47,28 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #  define SEPARATOR "\\"
 #  define STRLEN_SEPARATOR 2
 #  define WAIT 0
+
+/* ---- POSIX 的 wait()/getsubopt() 在 Windows 上缺失，这里补上 ----
+
+   ⚠️ MinGW **既没有** <sys/wait.h>（menu.c 已经用 `#ifndef __WIN32__` 把它跳过）
+   **也没有** getsubopt()，而代码里两处都在用，所以必须自己提供：
+
+   1) menu.c 的 run_convert() 用 system() 的返回值判断外部程序（convert）
+      是否失败：
+              rc == -1 || !WIFEXITED(rc) || WEXITSTATUS(rc) != 0
+      Linux 的 system() 返回 **wait() 状态字**（退出码在 bit 8..15，低 7 位是
+      信号），而 MSVCRT 的 system() **直接返回退出码**。所以这里：
+        WIFEXITED   → 恒为真（Win32 没有信号概念，子进程只会「正常退出」）
+        WEXITSTATUS → 原样返回（即上面那个退出码）
+      于是同一句判断在 Windows 上依然能正确识别「命令返回非 0」。
+
+   2) command_line_parsing.c 用 getsubopt() 解析 `--fixwav=a,b=c` 这类
+      逗号分隔子选项。声明与 glibc <stdlib.h> 一致，实现在 libc_utils.c。 */
+#  define WIFEXITED(status)   (1)
+#  define WEXITSTATUS(status) (status)
+#  define WTERMSIG(status)    (0)
+
+int getsubopt(char **optionp, char *const *tokens, char **valuep);
 #
 #else
 #

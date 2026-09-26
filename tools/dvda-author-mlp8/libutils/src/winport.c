@@ -132,15 +132,22 @@ void  pipe_to_child_stdin(const char* name,
    char* commandline = join(name, cli, " ");
    free(cli);
 
-   int result = _setmode( _fileno( g_hChildStd_IN_Wr ), _O_BINARY );
-   if  ( result == -1 )
-        {
-           perror( ERR "Cannot set mode" );
-           clean_exit(EXIT_FAILURE, globals);
-        }
-     else
-     if ( globals->veryverbose)
-          foutput("%s", MSG_TAG "'stdout successfully changed to binary mode\n" );
+   /* ⚠️ 这里原本是：
+    *      _setmode( _fileno( g_hChildStd_IN_Wr ), _O_BINARY );
+    * 编译不过（GCC 14+ 直接报 incompatible-pointer-types）：
+    * g_hChildStd_IN_Wr 是 HANDLE*（CreatePipe 的输出参数），而 _fileno()
+    * 要的是 FILE*。显然是从 ats2wav.c 里
+    *      _setmode(_fileno(stdout), _O_BINARY)
+    * 那处正确写法抄过来时把 stdout 换成了管道句柄。
+    *
+    * 这里也**不需要** _setmode：CreatePipe 造出的是 Win32 句柄，父进程用
+    * WriteFile 往它写，不经过 CRT 流，因此不存在文本/二进制模式转换
+    * （_setmode 管的是 FILE* 流的 CRLF 转换）。真正的二进制写入在
+    * write_to_child_stdin() 里做。
+    * 客户端（子进程）那一侧的 stdout 是否要设二进制，由它自己负责 ——
+    * 见 ats2wav.c 里那处 _setmode(_fileno(stdout), ...)。 */
+   if ( globals->veryverbose)
+        foutput("%s", MSG_TAG "child stdin pipe is binary (Win32 handle, no CRT translation)\n" );
 
    bSuccess = CreateProcessA(
       name,

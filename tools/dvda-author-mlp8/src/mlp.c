@@ -93,7 +93,17 @@ uint64_t decode(AVCodecContext *context,
         {
           size_t unpadded_linesize = 0;
 
+#if LIBAVCODEC_VERSION_MAJOR >= 63
+          /* 同 check_sample_fmt：FFmpeg 9 删了 AVCodec.sample_fmts。
+             这里原本取 sample_fmts[0]（静态列表首项），用新接口等价取回。 */
+          const enum AVSampleFormat *sup = NULL;
+          int nsup = 0;
+          avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT,
+                                       0, (const void **) &sup, &nsup);
+          int sampleSize = (sup && nsup > 0) ? av_get_bytes_per_sample(sup[0]) : 0;
+#else
           int sampleSize = av_get_bytes_per_sample(codec->sample_fmts[0]);
+#endif
 
           if (sampleSize == 2)
             {
@@ -533,6 +543,24 @@ clean_up:
 
 static int check_sample_fmt(const AVCodec *codec, enum AVSampleFormat sample_fmt)
 {
+#if LIBAVCODEC_VERSION_MAJOR >= 63
+  /* ⚠️ FFmpeg 9（libavcodec 63）**删除了** AVCodec.sample_fmts
+     （FFmpeg 8 里已标 @deprecated，指向 avcodec_get_supported_config）。
+     传 NULL 作 avctx 取的是**静态**支持列表，与原来的 codec->sample_fmts 一致；
+     新接口不保证以 AV_SAMPLE_FMT_NONE 结尾，而是返回条数，故改用 nsup 遍历。 */
+  const enum AVSampleFormat *sup = NULL;
+  int nsup = 0, i;
+
+  if (avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT,
+                                   0, (const void **) &sup, &nsup) < 0 || !sup)
+    return 0;
+
+  for (i = 0; i < nsup; i++)
+    if (sup[i] == sample_fmt)
+      return 1;
+
+  return 0;
+#else
   const enum AVSampleFormat *p = codec->sample_fmts;
 
   while (*p != AV_SAMPLE_FMT_NONE)
@@ -542,6 +570,7 @@ static int check_sample_fmt(const AVCodec *codec, enum AVSampleFormat sample_fmt
       p++;
     }
   return 0;
+#endif
 }
 
 #if 0

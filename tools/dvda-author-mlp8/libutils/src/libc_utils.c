@@ -2439,3 +2439,59 @@ char* get_current_directory (globalData* globals)
      perror("getcwd() error");
      return NULL;
 }
+
+#ifdef _WIN32
+/* ---------------------------------------------------------------------------
+   getsubopt()：MinGW 不提供，这里给一份与 glibc 语义一致的实现。
+
+   用途见 c_utils.h 里的说明（command_line_parsing.c 解析逗号分隔的子选项）。
+   算法照搬 glibc 的 stdlib/getsubopt.c，**不修改**输入串（glibc 用带长度的
+   比较而非写 '\0'），这样 Windows 与 Linux 行为完全一致：
+
+     · *optionp 指向逗号分隔的串，每项形如 `name` 或 `name=value`
+     · 拿 name 部分与 tokens[] 逐项精确比较（必须整段相等，不是前缀）
+     · 命中 → *valuep = 值（无 '=' 则为 NULL），*optionp 越过本项与逗号，
+              返回 tokens[] 里的下标
+     · 未命中 → *valuep = 该项起始位置，*optionp 越过本项与逗号，返回 -1
+     · 串已空 → 直接返回 -1（**不清** *valuep）
+
+   ⚠️ 别把这里换成 gcc 的 libiberty 版本 —— 上游的 .win64.pro 引用了
+   libiberty/src/getsubopt.c，但那个目录并不在源码树里（需另外下载）。 */
+int getsubopt(char **optionp, char *const *tokens, char **valuep)
+{
+  char *endp, *vstart;
+  int   cnt;
+
+  if (**optionp == '\0')
+    return -1;
+
+  /* 找下一项的分隔逗号 */
+  endp = strchr(*optionp, ',');
+  if (endp == NULL)
+    endp = *optionp + strlen(*optionp);
+
+  /* 找 '=' 以切出 name / value */
+  vstart = memchr(*optionp, '=', endp - *optionp);
+  if (vstart == NULL)
+    vstart = endp;
+
+  /* 拿 name 与 tokens[] 逐项比较 */
+  for (cnt = 0; tokens[cnt] != NULL; ++cnt)
+    if (strncmp(*optionp, tokens[cnt], vstart - *optionp) == 0
+        && tokens[cnt][vstart - *optionp] == '\0')
+      {
+        *valuep = (vstart == endp) ? NULL : vstart + 1;
+        *optionp = endp;
+        if (**optionp != '\0')
+          ++*optionp;   /* 越过逗号 */
+        return cnt;
+      }
+
+  /* 认不得这一项 */
+  *valuep = *optionp;
+  *optionp = endp;
+  if (**optionp != '\0')
+    ++*optionp;
+  return -1;
+}
+#endif /* _WIN32 */

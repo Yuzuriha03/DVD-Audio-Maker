@@ -24,7 +24,70 @@ bash 脚本可以直接 `source config.sh`，但 Python 不能可靠地 source b
 
 import os
 import re
+import shutil
 import sys
+
+
+def _fix_console_encoding():
+    """把 stdout/stderr 切成 UTF-8 —— Windows 上的**必需**修复。
+
+    ⚠️ Windows 的 Python 默认按系统 ANSI 代码页（简体中文机器上是 GBK/CP936）
+    编码 stdout。而我们的曲名里有**韩文谚文**（`자유로운 영혼의왕`）、日文假名、
+    中文，GBK 编不出这些字符，一 print 就：
+
+        UnicodeEncodeError: 'gbk' codec can't encode character '\\uc790'
+
+    而且是**中途崩**——前面已经打印了几十行才炸，看起来像「跑到一半挂了」。
+
+    `errors="replace"` 是兜底：极少数控制台字体仍显示不出的字符会变成 `?`，
+    但**日志文件**（`build.log`，用 UTF-8 写）保持完整。
+
+    ⚠️ 用 try 包住：`reconfigure()` 要 Python 3.7+ 且 stdout 必须是真的
+    TextIOWrapper；被重定向到某些对象（或嵌入式解释器）时可能不可用，
+    那种情况下静默跳过即可，不该因此让整个构建失败。
+    """
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_fix_console_encoding()
+
+
+def magick_identify_cmd():
+    """ImageMagick 的 identify —— 返回**命令前缀列表**，可直接往后接参数。
+
+    ⚠️ 为什么需要这个函数：ImageMagick 7 把各工具合并成了单一的 `magick`，
+    独立的 `identify` 可执行文件**不再随包提供**：
+
+        Linux/IM6 :  identify -format ... file
+        Windows/IM7:  magick identify -format ... file
+
+    我们的 Windows 发行目录 `menu-bin/` 里的 ImageMagick 就是 IM7，
+    只有 `magick.exe`/`convert.exe`/`mogrify.exe`，**没有** `identify.exe`，
+    所以直接 `subprocess.run(["identify", ...])` 会：
+
+        FileNotFoundError: [WinError 2] 系统找不到指定的文件。
+
+    优先用独立的 `identify`（Linux 上的常规情况），退化到 `magick identify`。
+
+    返回的是 `shutil.which()` 解析出的**绝对路径**：Windows 的
+    `CreateProcess` 与 cmd 的行内 `set PATH` 有若干怪癖，用绝对路径最稳。
+    """
+    exe = shutil.which("identify")
+    if exe:
+        return [exe]
+    exe = shutil.which("magick")
+    if exe:
+        return [exe, "identify"]
+    raise RuntimeError(
+        "找不到 ImageMagick 的 identify（PATH 里既没有 identify 也没有 magick）\n"
+        "        Linux:  apt install imagemagick\n"
+        "        Windows: 请确认 menu-bin 里有 magick.exe 或 identify.exe"
+    )
+
 
 # ---- 内置默认值（config.sh 未填时使用） ----
 DEFAULTS = {
