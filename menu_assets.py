@@ -423,7 +423,13 @@ def _other_face(font, tag):
     if not m:
         return ""
     cand = os.path.join(d, "%s%s%s" % (m.group(1), tag, m.group(3)))
-    return cand if os.path.isfile(cand) else ""
+    if not os.path.isfile(cand):
+        return ""
+    # ⚠️ `os.path.join()` 在 Windows 上会拼出**反斜杠**（而且是混合分隔符，
+    #    如 `D:/x/fonts\y.otf`）—— 而 ImageMagick 遇到反斜杠会把反斜杠
+    #    **静默丢掉**（`UnableToReadFont 'D:xy.otf'`），于是该语言的行落到
+    #    默认字体。所以这里统一过一道 font_spec()。
+    return font_spec(cand)
 
 
 def _ink(text, font, size=20):
@@ -794,14 +800,31 @@ class MenuPlan:
             # 画面（背景/拼贴/专辑名）由 C 现画，见 menu.h。
             if self.index_covers_file:
                 a += ["--index-covers", self.index_covers_file]
+        # ---- 交给 ImageMagick 的字体值一律过 font_spec() ----
+        # ⚠️ 这里曾经漏掉 font_jp / font_kr，而 _other_face() 用
+        #    os.path.join() 在 Windows 上会拼出**反斜杠**路径 ——
+        #    ImageMagick 会把反斜杠静默丢掉：
+        #        UnableToReadFont `D:devwinbuildelease...fontsNotoSansCJKjp-Regular.otf'
+        #    结果日文/韩文行落到**默认字体**（很可能缺字），而构建照样成功
+        #    （退出码 0、日志无错）—— 只在画面上才看得出来。
+        #    所以在这里收口，并在下面加了一道护栏。
+        def _f(v):
+            return font_spec(v) if v else v
+
         if fontname or self.font:
-            a += ["--fontname", font_spec(fontname or self.font)]
-        # 按语言分派的 face：“日文歌名的汉字用 JP、韩文用 KR”。
-        # 不传时 C 侧全部回退到 --fontname（旧行为）。
+            a += ["--fontname", _f(fontname or self.font)]
         if self.font_jp:
-            a += ["--fontname-jp", self.font_jp]
+            a += ["--fontname-jp", _f(self.font_jp)]
         if self.font_kr:
-            a += ["--fontname-kr", self.font_kr]
+            a += ["--fontname-kr", _f(self.font_kr)]
+
+        # ---- 护栏：字体值里不能留反斜杠 ----
+        # 症状是「菜单上某些行缺字」而构建毫无报错，所以宁可在这里中止。
+        for k, v in zip(a, a[1:]):
+            if k.startswith("--fontname") and "\\" in v:
+                raise RuntimeError(
+                    "%s 的值含反斜杠，ImageMagick 会静默丢掉反斜杠导致字体加载失败: %r\n"
+                    "        处理: 过一道 font_spec()（Windows 上换成正斜杠）" % (k, v))
         if self.points:
             a += ["--fontsize", str(self.points)]
         a += ["--fontwidth", str(self.fontwidth)]

@@ -63,6 +63,7 @@
     - 35.4 [差分验证](#354-差分验证本节最硬的一步)
     - 35.5 [顺带修掉的构造脚本 bug](#355-顺带修掉的构造脚本-bug)
     - 35.6 [教训](#356-教训)
+    - 35.7 [补记：`--fontname-jp/-kr` 传了反斜杠路径](#357--补记--fontname-jp-kr-传了反斜杠路径--静默回退默认字体)
 
 ---
 
@@ -4290,3 +4291,65 @@ dvda-author: da-utf8.o
 - **构建产物要同步到使用它的目录**：产物在 `src/src/`，而测试脚本用
   `menu-bin/` 里的副本 —— 我因此白跑一轮（日志只打印了 `Fontname:`，
   没有 `Fontname (JP):`，且退出码 4294967295）
+
+### 35.7 ★ 补记：`--fontname-jp/-kr` 传了**反斜杠**路径 → 静默回退默认字体
+
+本节的实现第一次跑完整构建时**踩了自己的坑**：日志里
+
+```
+--fontname     D:/dev/.../fonts/NotoSansCJKsc-Regular.otf     ← 正斜杠
+--fontname-jp  D:\dev\...\fonts\NotoSansCJKjp-Regular.otf     ← 反斜杠！
+--fontname-kr  D:\dev\...\fonts\NotoSansCJKkr-Regular.otf     ← 反斜杠！
+```
+
+而 34.3 已经证明：**ImageMagick 会把反斜杠路径里的反斜杠全部丢掉**，
+
+```
+UnableToReadFont `D:devwinbuildeleaseDVD-Audio-Makermenu-binfontsNotoSansCJKjp-Regular.otf'
+```
+
+于是日文/韩文行落到**默认字体**（很可能缺字），**而构建照样成功**
+（退出码 0、日志无报错）—— 完全符合 34 节记的「只在画面上看得出来」。
+
+#### 根因：两处叠加
+
+1. `_other_face()` 用 `os.path.join()` 拼路径。Windows 上
+   `os.path.join("D:/x/fonts", "a.otf")` 给出 **`D:/x/fonts\a.otf`**
+   —— 注意是**混合分隔符**，前半正斜杠、后半反斜杠。人工 review 时
+   很不容易看出问题。
+2. `MenuPlan.args()` 只对**主字体**调了 `font_spec()`（34.3 加的修复），
+   新加的 `font_jp` / `font_kr` 直接原样塞进参数表 —— 漏了。
+
+#### 修法：收口 + 护栏
+
+```python
+# args(): 所有交给 ImageMagick 的字体值一律过 font_spec()
+def _f(v):
+    return font_spec(v) if v else v
+
+if fontname or self.font:
+    a += ["--fontname", _f(fontname or self.font)]
+if self.font_jp:
+    a += ["--fontname-jp", _f(self.font_jp)]
+if self.font_kr:
+    a += ["--fontname-kr", _f(self.font_kr)]
+
+# 护栏：字体值里不能留反斜杠，否则直接中止
+for k, v in zip(a, a[1:]):
+    if k.startswith("--fontname") and "\\" in v:
+        raise RuntimeError(...)
+```
+
+`_other_face()` 的返回值也过一道 `font_spec()`（双保险）。
+
+#### 教训
+
+- **同类修复要一次性收口**：34.3 只修了当时存在的那个调用点，
+  新加的参数就漏了。**要么统一走一个 helper，要么加断言** ——
+  靠「记得每个调用点都过一遍」必然漏。
+- **`os.path.join()` 在 Windows 上产出反斜杠**，且与已有的正斜杠
+  组成**混合分隔符**。跨平台拼路径后交给外部工具时，一律显式统一。
+- **这类缺陷没有运行时错误**：正好让它值得加一条**构建时就中止**的护栏
+  （否则唯一的发现途径是真机看画面）。
+- 发现路径：读构建日志里 `dvda-author` 的完整命令行，比对三个
+  `--fontname*` 的**值**。**光看「参数传了没有」不够，要看值的形态。**
