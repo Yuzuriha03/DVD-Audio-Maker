@@ -202,6 +202,26 @@ typedef struct
     char    **indexcovers;
     int       indexcoverssize;
 
+    /* 按文字语言切换的字体 face（命令行 `--fontname-jp` / `--fontname-kr`）。
+
+       ⚠️ 为什么需要：Noto Sans CJK 的 JP / SC face 对**同一批汉字**有区域性
+       变体字形（直 / 骨 / 令 / 次 / 别 …），而整盘只有一条 `--fontname`。
+       实测（真实曲名、逐像素比对，见 docs/TROUBLESHOOTING.md 第 35 节）：
+
+           日文曲名   SC vs JP   最多 1464 像素不同
+           中文曲名   SC vs JP   最多 2624 像素不同
+           韩文曲名   SC vs JP/KR  完全相同（谚文无区域性变体）
+
+       所以日文标题必须走 JP、中文走 SC，否则字形是错的。
+
+       取值规则见 menu.c 的 textfont_for()：含谚文 -> KR，含假名 -> JP，
+       其余（中文 / 拉丁）-> textfont。两个字段为 NULL 时全部回到
+       textfont —— 即旧行为，不影响任何现有用法。
+
+       ⚠️ 必须**追加在结构末尾**（pic 按位置初始化）。 */
+    char* textfont_jp;
+    char* textfont_kr;
+
 } pic;
 
 typedef struct

@@ -1178,6 +1178,94 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks)
    ⚠️ 追加的片段**末尾必须留空格**：调用方随后 strcat 的是输出文件路径，
    少了空格两者会粘成一个参数，mogrify 就把结果打到 stdout 并返回 0
    （静默什么都不画，见第 22 节）。 */
+
+/* 取下一个 UTF-8 码点并把 *p 前移。非法字节按单字节处理（不中断扫描）。
+   自己实现而不引第三方：这里只需要「认出谚文与假名的区段」这一件事。 */
+static unsigned int utf8_next(const char **p)
+{
+  const unsigned char *s = (const unsigned char *) *p;
+  unsigned int c = *s;
+
+  if (c < 0x80)
+    { *p = (const char *) (s + 1); return c; }
+
+  if (((c & 0xE0) == 0xC0) && ((s[1] & 0xC0) == 0x80))
+    {
+      *p = (const char *) (s + 2);
+      return ((c & 0x1F) << 6) | (s[1] & 0x3F);
+    }
+
+  if (((c & 0xF0) == 0xE0) && ((s[1] & 0xC0) == 0x80)
+      && ((s[2] & 0xC0) == 0x80))
+    {
+      *p = (const char *) (s + 3);
+      return ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+    }
+
+  if (((c & 0xF8) == 0xF0) && ((s[1] & 0xC0) == 0x80)
+      && ((s[2] & 0xC0) == 0x80) && ((s[3] & 0xC0) == 0x80))
+    {
+      *p = (const char *) (s + 4);
+      return ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12)
+           | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    }
+
+  *p = (const char *) (s + 1);
+  return c;
+}
+
+/* 按文字内容选字体 face —— 日文标题用 JP、韩文标题用 KR、
+   其余（中文 / 拉丁）用默认（SC）。
+
+   ⚠️ 为什么必须按语言切：Noto Sans CJK 的 JP 与 SC face 对同一批汉字有
+   区域性变体字形（直 / 骨 / 令 / 次 / 别 …）。实测真实曲名、逐像素比对：
+
+       日文曲名  SC vs JP   最多 1464 像素不同
+       中文曲名  SC vs JP   最多 2624 像素不同
+       韩文曲名  SC vs JP/KR  完全相同（谚文没有区域性变体）
+
+   即：中文用 JP 是错的，日文用 SC 也是错的；韩文两者皆可。
+
+   整盘菜单只跑两次 mogrify（基础层 + 高亮层），但 ImageMagick 的 `-font`
+   是**持久设置** —— 每条文字前重发一次就能在同一命令内切换，不必拆命令。
+
+   判定顺序：谚文（한글）优先于假名。实测本项目 147 首里没有同时含两者的
+   标题（日文 9 首、韩文 9 首、中文 99 首），顺序在有混合时才有意义；
+   万一将来混了，按「韩文优先」处理更接近原生排版习惯（韩文标题里的
+   汉字是朝鲜文汉字）。
+
+   两个 face 都没配（textfont_jp / textfont_kr 为 NULL）时，直接返回
+   默认 face —— 即完全保持旧行为。 */
+static const char *textfont_for(const char *text, const pic *img)
+{
+  int has_kana = 0, has_hangul = 0;
+  const char *p;
+
+  if (!img || !img->textfont) return NULL;
+  if (!text || !*text) return img->textfont;
+  if (!img->textfont_jp && !img->textfont_kr) return img->textfont;
+
+  for (p = text; *p; )
+    {
+      unsigned int c = utf8_next(&p);
+
+      /* 谚文音节（가..힣）与字母（ᄀ..ᇿ）—— 韩文 */
+      if ((c >= 0xAC00 && c <= 0xD7A3) || (c >= 0x1100 && c <= 0x11FF))
+        has_hangul = 1;
+      /* 平假名 / 片假名 —— 日文（标题里的汉字也归日文） */
+      else if (c >= 0x3040 && c <= 0x30FF)
+        has_kana = 1;
+
+      if (has_hangul && has_kana) break;
+    }
+
+  if (has_hangul && img->textfont_kr) return img->textfont_kr;
+  if (has_kana && img->textfont_jp) return img->textfont_jp;
+
+  /* 中文与纯拉丁走默认 face。中文必须如此：交给 JP face 会用日文字形。 */
+  return img->textfont;
+}
+
 static void append_shadow(char *dest, pic *img, const char *text,
                           uint16_t x, uint16_t y, int pointsize,
                           const char *color)
@@ -1193,7 +1281,7 @@ static void append_shadow(char *dest, pic *img, const char *text,
   snprintf(str, sizeof(str),
            " -stroke none -fill \"rgb(%s)\" -font %s -pointsize %d"
            " -draw \"text %u,%u '%s'\" ",
-           q, img->textfont, pointsize,
+           q, textfont_for(text, img), pointsize,
            (unsigned) (x + TEXT_SHADOW_DX), (unsigned) (y + TEXT_SHADOW_DY),
            text);
   free(q);
@@ -1220,7 +1308,7 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char 
       uint16_t x0 = EVEN(x((group > 0 ? group : 0), img->ncolumns)) ;
       char *q = quote(picture_save);
       snprintf(command, 2 * CHAR_BUFSIZ, "%s %s %s %s %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %c%s%s %s", mogrify,
-               "+antialias", "-stroke", "none", "-fill", albumcolor, "-font", img->textfont, "-pointsize", DEFAULT_POINTSIZE,
+               "+antialias", "-stroke", "none", "-fill", albumcolor, "-font", textfont_for(text, img), "-pointsize", DEFAULT_POINTSIZE,
                "-draw", " \"text ", x0, ',', ALBUM_TEXT_Y0,  '\'', text, "\'\"", q);
       free(q);
       if (globals->debugging) foutput("%s%s\n", INF "Launching mogrify (title) with command line: ", command);
@@ -1353,7 +1441,7 @@ int mogrify_img(char *text, int8_t group, int8_t track, pic *img, uint8_t maxnum
 
   snprintf(str2, 10 * CHAR_BUFSIZ, " %s %s %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
            "-stroke", "none",
-           "-fill", textcolor, "-font", img->textfont, "-pointsize", (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
+           "-fill", textcolor, "-font", textfont_for(text, img), "-pointsize", (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
            "-draw", " \"text ", x0, ',', y0, "\'", text, "\'\"");
 
   strcat(command2, str2);

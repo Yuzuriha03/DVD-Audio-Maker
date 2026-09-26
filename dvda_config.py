@@ -122,6 +122,11 @@ DEFAULTS = {
     "DVDA_MENU_STILLPICS": "on",   # 播放时显示所属专辑封面
     "DVDA_MENU_COVER_DIM": "35",   # 选曲页背景压暗百分比（越大越暗）
     "DVDA_MENU_FONT": "Noto-Sans-CJK-SC",  # 需覆盖 ASCII/汉字/假名/韩文
+    # 按语言分派的 face（日文标题用 JP、韩文用 KR）。留空则按主字体推导：
+    #   文件路径（Windows 发行包）NotoSansCJKsc-Regular.otf -> ...jp-Regular.otf
+    #   家族名（Linux）           Noto-Sans-CJK-SC         -> Noto-Sans-CJK-JP
+    "DVDA_MENU_FONT_JP": "",
+    "DVDA_MENU_FONT_KR": "",
 
     # 工具
     "DVDA_AUTHOR": "/root/dvda-author-mlp8/src/dvda-author-dev",
@@ -427,6 +432,16 @@ class Config:
         """菜单字体名（ImageMagick 字体名，**不能带空格**）。
         留空或不可用时由 menu_assets.pick_font() 回退。"""
         return (self.get("DVDA_MENU_FONT") or "").strip()
+
+    @property
+    def menu_font_jp(self):
+        """日文标题专用的 face（对应 `--fontname-jp`）。留空则自动推导。"""
+        return (self.get("DVDA_MENU_FONT_JP") or "").strip()
+
+    @property
+    def menu_font_kr(self):
+        """韩文标题专用的 face（对应 `--fontname-kr`）。留空则自动推导。"""
+        return (self.get("DVDA_MENU_FONT_KR") or "").strip()
 
     @property
     def menu_bindir(self):
