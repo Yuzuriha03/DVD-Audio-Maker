@@ -27,6 +27,42 @@
 18. [静图只在每张专辑第一首刷新](#18-静图只在每张专辑第一首刷新)
 19. [补丁不幂等，批量重跑时会叠出重复代码](#19-补丁不幂等批量重跑时会叠出重复代码)
 20. [诊断手法速查](#20-诊断手法速查)
+21. [ImageMagick `-repage` 是**算子**](#21-imagemagick--repage-是算子不加括号会毁掉整页)
+22. [`mogrify` 命令串末尾少了空格 → 静默什么都不画](#22-mogrify-命令串末尾少了空格--静默什么都不画返回-0)
+23. [子画面只有 4 个调色板项](#23-子画面只有-4-个调色板项--一层只能用一种颜色)
+24. [`mogrify` / `-draw` 画不上：已踩过的几个原因](#24-mogrify---draw-画不上已踩过的几个原因)
+25. [ImageMagick 的 `-stroke` 是「粘住」的](#25-imagemagick-的--stroke-是粘住的--后面所有文字都被描边)
+26. [`snprintf` 格式串与参数对不上 → 段错误](#26-snprintf-格式串与参数对不上--段错误且日志里什么都看不到)
+27. [ImageMagick 的「设置」和「算子」不要混为一谈](#27-imagemagick-的设置和算子不要混为一谈)
+28. [`rgb(...)` 在 shell 里必须加引号](#28-rgb-在-shell-里必须加引号)
+29. [`system()` 的返回值不能只判 `-1`](#29-system-的返回值不能只判--1)
+30. [静图不显示的真因：ASVS 记录数必须等于 title 数](#30-静图不显示的真因asvs-记录数必须等于-title-数)
+31. [`-extent` 是**裁切**不是**补边**](#31--extent-是裁切不是补边封面被裁掉-20)
+32. [静图编码不传 `-q`/`-b` → 清晰度卡在 30.6 dB](#32-静图编码不传--q-b--清晰度被默认值卡死在-306-db)
+33. [Windows 原生移植（脱离 WSL）](#33-windows-原生移植脱离-wsl)
+    - 33.1 [argv 里的非 ASCII 文件名变成 `?`](#331-argv-里的非-ascii-文件名变成-)
+    - 33.2 [`Could not open default file dvda-author.conf` 是假警报](#332-could-not-open-default-file-dvda-authorconf-是假警报)
+    - 33.3 [ImageMagick 7 没有独立的 `identify.exe`](#333-imagemagick-7-没有独立的-identifyexe)
+    - 33.4 [错误处理自己把真正的错误盖住了](#334-错误处理自己把真正的错误盖住了)
+    - 33.5 [其它 Windows 适配清单](#335-其它-windows-适配清单)
+    - 33.6 [构建环境的三个坑](#336-构建环境的三个坑)
+    - 33.7 [在 MSYS2 里装 ImageMagick：输出与 Linux 不同](#337-在-msys2-里装-imagemagick输出与-linux-不同)
+    - 33.8 [发布目录布局](#338-发布目录布局)
+34. [中文菜单用了**日文字形** + 字体覆盖检测全线失效](#34-中文菜单用了日文字形--字体覆盖检测全线失效)
+    - 34.1 [症状](#341-症状)
+    - 34.2 [根因一：`.ttc` 集合 + 文件路径 = 取到 JP face](#342-根因一ttc-集合--文件路径--取到-jp-face)
+    - 34.3 [根因二：反斜杠字体路径被静默吞掉](#343-根因二反斜杠字体路径被-imagemagick-静默吞掉)
+    - 34.4 [附带：Windows 上探针字符不能走 argv](#344-附带windows-上探针字符不能走-argv)
+    - 34.5 [★ 教训：没有阴性对照的探针会说谎](#345--教训没有阴性对照的探针会说谎)
+    - 34.6 [现在打包进去的是什么](#346-现在打包进去的是什么)
+    - 34.7 [顺带给配置侧的护栏](#347-顺带给配置侧的护栏)
+35. [按语言分派字体 face（日文用 JP、韩文用 KR）](#35-按语言分派字体-face日文用-jp韩文用-kr)
+    - 35.1 [先把「需要哪些 face」量出来](#351-先把需要哪些-face量出来再动手)
+    - 35.2 [可行性：同一命令内切换字体](#352-可行性同一命令内切换字体)
+    - 35.3 [实现](#353-实现)
+    - 35.4 [差分验证](#354-差分验证本节最硬的一步)
+    - 35.5 [顺带修掉的构造脚本 bug](#355-顺带修掉的构造脚本-bug)
+    - 35.6 [教训](#356-教训)
 
 ---
 
@@ -3635,3 +3671,622 @@ disc2 1424→1960。静图上限是 1024 扇区/轨，余量充足；
 （q90 → q100 掉约 0.7 dB），因为固定的比特预算被高频量化噪声吃掉了。
 实测 85/90/92/95 四档在 4 张封面上比端到端 PSNR，**92 全面最好**
 （85 只在个别封面胜出），所以 `make_still()` 用 `-quality 92`。
+
+---
+
+## 33. Windows 原生移植（脱离 WSL）
+
+目标：让工具链在**没有 WSL 的 Windows 机器**上直接可用，
+产物是一个自包含目录（自带全部 DLL、exe、字体、ImageMagick 配置）。
+
+### 33.1 `argv` 里的非 ASCII 文件名变成 `?`
+
+#### 症状
+
+```
+[ERR]  Le terme D:/.../EP/04. ??? ?? ??.mlp n'est pas un fichier.  Fin du programme...
+```
+
+韩文曲目名的 MLP 文件认不出来，整个第 1 盘构建失败。
+注意**只有部分曲目中招** —— 中文、日文能过，纯韩文不行。
+
+#### 根因
+
+MinGW 程序拿到的 `argv` 是 **ANSI（系统代码页）** 编码的，
+不是 UTF-8。简体中文机器上代码页是 **CP936(GBK)**：
+
+```
+CP936 能表示  → 中文、日文假名/汉字（大部分）
+CP936 不能表示 → 韩文谚文（자유로운 영혼의왕）、片假名长音符等
+```
+
+编不出来的字符被替换成 `?`，于是文件路径到不了真正的文件名。
+
+**关键判据**：同一个 MLP 在 Linux 上正常，在 Windows 上报
+`n'est pas un fichier` —— 而文件明明存在。这就是编码问题而非路径问题。
+
+#### 修复
+
+给 exe 链入一个声明 `activeCodePage=UTF-8` 的 manifest（资源类型 24）：
+
+```xml
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>
+```
+
+```bash
+printf '1 24 "da-utf8.manifest"\n' > da-utf8.rc
+windres -i da-utf8.rc -o da-utf8.o      # 加入 OBJECTS
+```
+
+需要 Windows 10 1903+。
+
+#### ⚠️⚠️ 光加 `.o` **不生效**（最坑的一步）
+
+GCC 的 specs 里有：
+
+```
+%{!shared:%:if-exists(default-manifest.o%s)}
+```
+
+它会自动把 mingw 自带的 `default-manifest.o` 链进去，
+**排在前面并覆盖**我们的 manifest（链接器取第一个）。表现是：
+加了 `da-utf8.o`、编译通过、`windres` 也没报错，但 `argv` 照样坏。
+
+修法是把这个默认 manifest 换成垃圾：
+
+```bash
+DFM="$MSYS/lib/default-manifest.o"
+[ -f "$DFM.orig" ] || cp -p "$DFM" "$DFM.orig"    # 备份（幂等）
+printf 'int __dvda_empty_default_manifest;\n' > /tmp/e.c
+gcc -c /tmp/e.c -o "$DFM"
+```
+
+**验证方法**（别只看编译成功）：
+
+```bash
+grep -c activeCodePage menu-bin/dvda-author-dev.exe    # 应为 1
+```
+
+另外 manifest 内容**保持纯 ASCII** —— 注释里写中文有过解析风险。
+
+### 33.2 `Could not open default file dvda-author.conf` 是**假警报**
+
+#### 现象
+
+直接手工跑 `dvda-author-dev.exe` 会看到：
+
+```
+[ERR]  fopen(/d/dev/winbuild/src/install/share/applications/dvda-author-dev/dvda-author.conf, "rb") crashed
+[ERR]  Could not open default file dvda-author.conf
+```
+
+退出码 255。`src/lexer.c` 里这是 `exit(-1)`，**看起来**很致命。
+
+#### 根因：正式流程根本不读这个文件
+
+`02_build.py` 传了 **`-W`**（= `--disable-lexer`）：
+
+```python
+args += ["-o", out, "-D", tmp, "-W", "-P0", "-n"]
+```
+
+`dvda-author.c` 在扫描 `argv` 时遇到 `-W` 就直接 `goto launch`，
+**跳过了 `lexer_analysis()`**，也就是不读 conf。日志里的铁证是：
+
+```
+[PAR]  Lexer was deactivated
+```
+
+**我当时被这个错误带偏了一轮**：手工单测 exe 时漏传 `-W`，
+就以为构建也会失败。实际上 Linux 版同样报、同样 255 ——
+也就是说这个报错**从来不是构建失败的原因**。
+
+#### 教训
+
+> 单测命令与生产调用**参数不一致**时，得出的失败结论不可信。
+> 要先从日志里捞出生产的完整命令行，照抄它。
+
+#### 附带发现：`install/` 目录被删过
+
+二进制里编译进去的 `INSTALL_CONF_DIR` 来自 configure 的 `SHORTLINKDIR`
+（可用 `--with-config=DIR` 覆盖）。Linux 侧的 `install/` 曾被清理掉，
+于是**直接运行** `src/dvda-author-dev` 也会崩 —— 但构建不受影响
+（有 `-W`）。补一份到预期路径即可让手工调用也正常。
+
+⚠️ 还有个潜在雷：Windows 二进制里的路径是 **MSYS 风格**
+（`/d/dev/winbuild/...`），MinGW 程序不认识。
+所以**永远不要手工跑 exe 而不带 `-W`**。
+
+### 33.3 ImageMagick 7 没有独立的 `identify.exe`
+
+#### 症状
+
+第 1 盘 **91 轨全部编码完成、菜单也生成好了**，然后在自检那一步炸：
+
+```
+FileNotFoundError: [WinError 2] 系统找不到指定的文件。
+  File "02_build.py", line 774, in ink
+    r = _sp.run(["identify", "-format", "%[fx:mean.a*w*h]", path], ...)
+```
+
+#### 根因
+
+ImageMagick 7 把各工具合并成单一的 `magick`，
+`identify` 变成**子命令**（`magick identify`）。
+我们用的 Windows 发行目录里只有 `magick.exe` / `convert.exe` / `mogrify.exe`。
+
+```
+Linux  /usr/bin/identify            ← IM6/7 的独立可执行
+Windows menu-bin/magick.exe         ← IM7，没有 identify.exe
+```
+
+**为什么很久才发现**：报错点在流程**很靠后**的位置，
+90 多轨的编码白做了一遍。
+
+#### 修复
+
+新增 `dvda_config.magick_identify_cmd()`，返回**命令前缀列表**：
+
+```python
+exe = shutil.which("identify")
+if exe:
+    return [exe]
+exe = shutil.which("magick")
+if exe:
+    return [exe, "identify"]
+raise RuntimeError(...)
+```
+
+三处调用点改用它：`02_build.py` 的 `check_menu_overlay()`（2 处）
+与 `menu_assets.image_size()`。返回 `which()` 的**绝对路径**，
+避开 Windows 上 `CreateProcess` 与 cmd 行内 `set PATH` 的怪癖
+（\*\*`set PATH=X&& exe` 在**同一行内**不生效，测试时会误判）。
+
+### 33.4 错误处理自己把真正的错误盖住了
+
+`02_build.py` 的 `run()` 在 `log_output=True` 时返回一个轻量对象：
+
+```python
+return type("R", (), {"returncode": r.returncode})()      # ✘
+```
+
+但失败分支要打印调试信息：
+
+```python
+for ln in (r.stdout or "")[-600:].splitlines()[-3:]:
+```
+
+→ `AttributeError: 'R' object has no attribute 'stdout'`，
+**把真正的失败原因彻底淹没**。修法就是把这个字段带上：
+
+```python
+return type("R", (), {"returncode": r.returncode, "stdout": text})()   # ✔
+```
+
+> 教训：**错误路径的代码不会被正常流程测试到**。
+> 它一旦出错，你失去的正好是定位问题的唯一线索。
+
+### 33.5 其它 Windows 适配清单
+
+| 位置 | 问题 | 处理 |
+|---|---|---|
+| `dvda_config` | Windows Python 按 GBK 编码 stdout，韩文一 print 就 `UnicodeEncodeError`（**中途**崩，像跑挂了） | `_fix_console_encoding()`：`reconfigure(encoding="utf-8")` |
+| `02_build` | 菜单程序名没扩展名，`which()` 找不到 | `_menu_exe()` 补 `.exe`；`_prepend_to_path()` 把 bindir 插到 PATH 最前 |
+| `menu_assets` / `command_line_parsing.c` | `--stillpics` 按 `:` 分割轨间路径，**Windows 路径本身含 `:`**（`D:`）→ 盘符被切碎 | Windows 上用 `;`（路径里的非法字符）；Linux 保持 `:` 逐字节不变 |
+| `winport.h` | `truncate`/`ftruncate` 缺声明 | MinGW 的 `<unistd.h>` 由 libmingwex 提供真实实现 |
+| `winport.c` | `_setmode(_fileno(g_hChildStd_IN_wr), _O_BINARY)` | HANDLE\* 不是 FILE\*；`CreatePipe`+`WriteFile` 本来就绕过 CRT 流转换 |
+| `c_utils.h` | `WIFEXITED`/`WEXITSTATUS` 缺失 | MSVCRT 的 `system()` **直接返回退出码**，不像 Linux 返回 wait 状态 |
+| `c_utils.h` | `getsubopt()` 缺失 | 补 glibc 等效实现（**不修改**输入串，比较时带长度） |
+| `fixwav_auxiliary` | `isok()` 声明无原型、定义带 `globals` 参数，调用者都传 0 个 | C99 的「无原型」掩盖了它，**C23(GCC 14+) 直接报冲突类型** → 统一成 `isok(void)` |
+| `compat.h` (dvdauthor) | `mkdir`/`fsync` 缺 | 加 `da_mkdir`/`da_fsync` **垫片函数**。⚠️ `mkdir` **不能用宏** —— `<io.h>` 的声明只有 1 个参数，会报 `macro 'mkdir' requires 2 arguments` |
+| `compat.h` | `htonl` 家族、`bzero`/`bcopy` 缺 | `__builtin_bswap32/16`（零依赖）、`memset`/`memmove` 宏 |
+| `compat.c` | `nl_langinfo(CODESET)` 缺 | `snprintf(buf, size, "CP%u", GetACP())` |
+| `dvdauthor` | `mpeg2desc` 编不出来 | 用 `select()` 监听 stdin+文件，**Win32 select 只支持套接字** → 跳过（`dvdauthor`/`spumux` 不需要它） |
+
+### 33.6 构建环境的三个坑
+
+1. **`configure` 会清空 `local/`**（configure 第 4288 行
+   `rm -rf "local" && mkdir "local"`）→ FFmpeg 的导入库/头文件
+   必须在 configure **之后**复制进去。
+2. **`PKG_CONFIG_PATH` 要显式给** —— MSYS2 的 pkg-config 只搜
+   `/usr/lib/pkgconfig`，找不到 mingw64 的 `.pc`：
+   `PKG_CONFIG_PATH=/mingw64/lib/pkgconfig:/mingw64/share/pkgconfig`
+3. **make 目标名带 `-C src` 和 `.exe`**：
+   `make -C src dvdauthor.exe spumux.exe spuunmux.exe`
+   （`util_make` 那套目标名在 Windows 上不存在）
+
+从 WSL 调 MSYS2 的**唯一可用姿势**：
+
+```bash
+/mnt/d/dev/msys64/usr/bin/bash.exe -lc 'export MSYSTEM=MINGW64; export PATH=/mingw64/bin:$PATH; <cmd>'
+```
+
+- ✗ `MSYSTEM=MINGW64 bash.exe -lc '...'` —— PATH 没设上
+- ✗ `mingw64.exe -lc '...'` —— 从 WSL 调用时**没有任何输出**
+
+### 33.7 在 MSYS2 里装 ImageMagick：**输出与 Linux 不同**
+
+顺手装了 MSYS2 的 `mingw-w64-x86_64-imagemagick`（7.1.2-31），
+与 Linux（7.1.2-18）同系列，想看能不能把产物对齐到逐字节。
+
+同一张封面、同一串命令，三个实现：
+
+| 实现 | 字节数 | md5 |
+|---|---|---|
+| Linux IM 7.1.2-18 **Q16** | 115334 | `13a65eb8…` |
+| 旧 `local.w10` IM 7.0.8-47 **Q16** | 115422 | `427a46b8…` |
+| MSYS2 IM 7.1.2-31 **Q16-HDRI** | 115422 | `427a46b8…` |
+
+**两个 Windows 实现逐字节相同，都与 Linux 不同** ——
+说明差异来自**平台**（libjpeg/浮点路径），不是 IM 版本。
+换 IM 没有收益，所以保持原先已在用的 `local.w10` 版本。
+
+#### 这个差异要不要紧：**不要紧**（已量化）
+
+Windows 产物与权威基准盘逐文件对比：
+
+| 文件 | 结果 |
+|---|---|
+| **`ATS_01_*.AOB`（音频本体，8 个）** | **逐字节相同** ✔ |
+| **`ATS_01_0.IFO` / `.BUP`（含 ATSI：全部轨道表 + 静图表）** | **逐字节相同** ✔ |
+| `AUDIO_PP.IFO` / `AUDIO_SV.BUP` / `AUDIO_TS.BUP` | 大小相同，内容不同 |
+| `AUDIO_SV.VOB`（静图）+ `AUDIO_TS.VOB`（菜单） | 大几 KB |
+
+结构字段全部一致：ASVS 记录数 28/17、每段图数、起始图号、合计静图 91/56、
+AMG 总标题 28/17、视频属性 `0x53`、buttons `0x19=0`、ATSI 记录数。
+
+`AUDIO_SV.VOB` 里只有 `base_sect`（每段首图的**扇区号**）随静图编码体积变化，
+**图数与起始图号完全一致** —— 也就是说播放器的定位逻辑不受影响。
+
+静图解码后的像素差异量化：
+
+```
+最大绝对差 = 18/255      平均绝对差 = 0.24
+RMSE = 0.783             PSNR = 50.26 dB
+```
+
+50 dB 属于「肉眼无法区分」，差异是 JPEG 编码器的内部舍入。
+
+### 33.8 发布目录布局
+
+一个自包含目录，拷到任何 Windows 机器即可用：
+
+```
+DVD-Audio-Maker\
+  dvda.cmd              启动器（设工具路径 + UTF-8 控制台，再调 python）
+  README.md / THIRD-PARTY.md / LICENSE / MANIFEST.txt
+  scripts\              .py + 发行版 config.sh（只留用户要改的项）
+  menu-bin\             12 exe + 100 dll + 11 个 IM 配置 xml
+    fonts\              NotoSansCJK-Regular.ttc
+  data\menu\            dvda-author 的素材目录（silence.wav、activeheader）
+```
+
+#### 为什么用启动器而不是把路径写进 `config.sh`
+
+`dvda_config` 的优先级是 **环境变量 > config.sh > 内置默认值**，
+所以启动器把工具路径设成环境变量，`config.sh` 就只剩用户真正要改的东西
+（音源、输出目录）。整个目录随之**可以任意移动**。
+
+#### ⚠️ 安装路径不能含空格
+
+`dvda-author` 拼 `mogrify` 命令时**不给路径加引号**
+（`" -font %s -pointsize %d"`）——带空格的目录会被命令解析切断，
+字体和素材路径一起失效，现象是**菜单上文字变空白**（不报错）。
+
+#### ⚠️ `.cmd` / `.ps1` 必须纯 ASCII
+
+`cmd.exe` 按 OEM 代码页、PowerShell 5.1 按 ANSI 读取脚本文件。
+UTF-8 的中文注释会让解析器报语法错。发布脚本里有一段自动检查：
+
+```bash
+LC_ALL=C grep -q '[^ -~]' dvda.cmd && echo "[警告] 含非 ASCII 字符"
+```
+
+#### 字体必须自带
+
+Windows 系统**没有**哪个字体能单独覆盖中日韩四语：
+
+| 字体 | 中文 | 日文 | 韩文 |
+|---|---|---|---|
+| NotoSansSC-VF | ✔ | △ | ✘ |
+| NotoSansJP-VF | △ | ✔ | ✘ |
+| msyh.ttc | ✔ | △ | ✘ |
+| malgun.ttf | ✘ | ✘ | ✔ |
+| **NotoSansCJK-Regular.ttc** | ✔ | ✔ | ✔ |
+
+而我们的盘子四语标题都有（同一首歌的中/日/英/韩版），
+所以必须随包带上 `NotoSansCJK-Regular.ttc`（18.6 MB，SIL OFL 1.1 允许再分发）。
+
+传给 `dvda-author` 的是**字体文件全路径**（`--fontname D:/…/NotoSansCJK-Regular.ttc`），
+ImageMagick 能按路径加载任意 `.ttc`，不受系统字体列表限制
+（Windows 的 IM 字体列表里只有 `Noto-Sans-SC`/`Noto-Sans-JP`，都没有谚文）。
+
+---
+
+## 34. 中文菜单用了**日文字形** + 字体覆盖检测全线失效
+
+两个独立缺陷叠在一起，**都不报错**，只在画面上看得见。
+
+### 34.1 症状
+
+菜单上中文的「直 / 骨 / 令 / 次」等字写法与预期不同（偏日文），
+而 Linux 侧构建同样的盘是对的。
+
+### 34.2 根因一：`.ttc` 集合 + 文件路径 = 取到 **JP face**
+
+`NotoSansCJK-Regular.ttc` 里有 **10 个 face**：
+
+```
+[0] Noto Sans CJK JP      ← ImageMagick 按路径加载时取的就是它
+[1] Noto Sans CJK KR
+[2] Noto Sans CJK SC      ← 我们要的
+[3] Noto Sans CJK TC
+[4] Noto Sans CJK HK
+[5..9] Noto Sans Mono CJK {JP,KR,SC,TC,HK}
+```
+
+**ImageMagick 只支持「按文件路径」或「按家族名」两种指定方式，两者都有坑**：
+
+| 方式 | Linux | Windows |
+|---|---|---|
+| 家族名 `Noto-Sans-CJK-SC` | ✔ 经 fontconfig 正确落到 SC | ✘ `UnableToReadFont`（IM 7.0.8 的 `type.xml` 里没有这些 CJK 名） |
+| 文件路径 `.../NotoSansCJK-Regular.ttc` | ✘ 也会取 face 0 | ✘ 取 face 0 = **JP** |
+| `...ttc[2]` / `...:index=2` | ✘ `UnableToReadFont` | ✘ `UnableToReadFont` |
+
+**实测证据**（同一 IM、同一文件，只换 face 指定）——逐字墨迹像素数：
+
+| 字 | 按路径（face 0） | SC face | JP face |
+|---|---|---|---|
+| 直 | **1341** | 1363 | **1341** |
+| 骨 | **1244** | 1320 | **1244** |
+| 令 | 901 | 846 | 906 |
+| 次 | 957 | 962 | 958 |
+| 别 | 1168 | 1167 | 1167 |
+
+按路径的值与 **JP 逐字精确相同** → 确认取的是 JP。
+
+**修法**：把 SC face 抽成**单 face 文件**，让「按路径加载」无歧义。
+
+```
+bash make-menu-font.sh          # 产出 NotoSansCJKsc-Regular.otf（16.4 MB）
+```
+
+用 fontTools（MSYS2: `pacman -S mingw-w64-x86_64-python-fonttools`）按
+**family 名**定位 face（比硬编码索引稳，索引会随 Noto 版本变）。
+抽出后逐字复测：**5/5 与 SC 完全一致**。
+
+> ⚠️ 不要在抽取脚本里写死 `fonts[2]` —— 用
+> `f["name"].getDebugName(1) == "Noto Sans CJK SC"` 来匹配。
+
+### 34.3 根因二：反斜杠字体路径被 ImageMagick **静默吞掉**
+
+`-font` 给一个**反斜杠**路径时：
+
+```
+UnableToReadFont `D:devwinbuildmenu-binfontsNotoSansCJKsc-Regular.otf'
+                   ↑ 反斜杠全没了
+```
+
+同一文件用**正斜杠**就正常：
+
+| 字体值 | 探针 `Ag(` | 探针 `汉字` |
+|---|---|---|
+| `D:\dev\...\NotoSansCJKsc-Regular.otf` | 0.021322 ← **默认字体** | **0** |
+| `D:/dev/.../NotoSansCJKsc-Regular.otf` | 0.0204667 | **0.0249964** ✔ |
+
+**这就是最阴的地方**：ASCII 探针靠 ImageMagick 的**默认字体兜底**照样有墨迹，
+看起来「字体能用」；于是 `font_coverage()` 对任何反斜杠路径都报
+「只有 ASCII、缺汉字/假名/韩文」—— 一路不报错，只在画面上留白。
+
+**修法**：统一过一道 `menu_assets.font_spec()`，Windows 上把 `\` 换成 `/`。
+两处要用：`_ink()`（探测）与 `MenuPlan.args()`（传给 `--fontname`，
+因为 `dvda-author` 会把它拼进 mogrify 命令，同样会中招）。
+
+### 34.4 附带：Windows 上探针字符不能走 argv
+
+`magick.exe` 是 2019 年的构建（**没有 UTF-8 manifest**），拿到的 argv 是
+ANSI 代码页 —— 探针里的汉字/假名/谚文在到达 ImageMagick 之前就变成 `?`。
+这在 `dvda-author` 上有同源问题（见 §33.1）。
+
+修法：Windows 上把探针文本写进临时文件，用 `-annotate @file` 读
+（IM 支持；Linux 的 IM 安全策略禁止 `@`，所以只在 Windows 上这么做）。
+已用**私用区字符**（U+E000，任何字体都没有）做对照确认可靠：
+
+```
+汉字(直骨令) = 452.895
+私用区(对照) = 0.0        ← 确认真画出了字
+```
+
+### 34.5 ★ 教训：**没有阴性对照的探针会说谎**
+
+这个 bug 拖了一整轮才定位，因为探测方法有两层「能蒙混过关」的通路：
+
+1. ASCII 探针 → 默认字体兜底 → 有墨迹 → 看起来方法有效
+2. 其他字符集全 0 → 被解释成「字体缺字」（合理结论），而不是
+   「字体根本没加载上」
+
+真正的判据是那个 **U+E000 私用区对照**：任何字体都不可能有它的字形，
+所以它的墨迹量就是「画不出」的基准。有了它，两个假设立刻可分：
+
+- 字体缺字 → 私用区也是 0，但 CJK 应该**非 0**
+- 字体没加载 → 私用区 0 **且** CJK 也是 0
+
+**凡是「用 A 正常 ⇒ 方法可信」的探测，都要配一个「A 必然失败」的阴性对照。**
+（这与 §30 那次的教训同构：基准选错，结论会整个反向。）
+
+### 34.6 现在打包进去的是什么
+
+| | |
+|---|---|
+| 文件 | `menu-bin/fonts/NotoSansCJKsc-Regular.otf`（单 face SC，16.4 MB） |
+| 生成 | `make-menu-font.sh`（可重复；带单 face + family + 四语编码表自检） |
+| 许可 | Noto Sans CJK，SIL OFL 1.1（允许再分发） |
+| 四语覆盖 | ASCII / 汉字 / 假名 / 谚文 / CJK 标点 —— 实测**全部有墨迹** |
+
+**没有**采用 `NotoSansCJK-VF.otf.ttc`（可变字体集合）：
+它同样是集合（face 0 = JP），且其默认实例实测**笔画只有静态 Regular 的约
+1/2.4**（同一字同字号墨迹 63.4 vs 153.1），菜单文字会明显变细。
+它的 four-script 覆盖没问题，但不适合当前用途。
+
+### 34.7 顺带给配置侧的护栏
+
+`menu_assets.pick_font()` 现在会对 `.ttc` 结尾的 `DVDA_MENU_FONT` 主动告警：
+集合字体 + 文件路径 = 必定取 face 0（JP），中文会变日文字形。
+这类缺陷没有运行时错误，只能靠护栏提示。
+
+---
+
+## 35. 按语言分派字体 face（日文用 JP、韩文用 KR）
+
+第 34 节把 `.ttc` 换成了**单 face SC**，解决了「中文用了日文字形」。
+但那只做对了一半 —— SC 单 face 会让**日文**标题显示成简体字形。
+本节把它改成按**文字内容**逐条选 face。
+
+### 35.1 先把「需要哪些 face」量出来，再动手
+
+Noto Sans CJK 的各个 face **都含**中文/日文/韩文/拉丁四个字符集，
+所以这**不是**「缺字」问题，而是**同一批汉字的区域性变体字形**问题
+（直 / 骨 / 令 / 次 / 别 … 写法不同）。
+
+拿本项目**真实曲名**渲染、逐像素比对（渲染到固定画布再比灰度 raw）：
+
+| 分组 | 曲目数 | SC vs JP | SC vs KR | JP vs KR |
+|---|---|---|---|---|
+| 日文（含假名） | 9 | **最多 1464 px** | 同量级 | 0–309 |
+| **韩文（谚文）** | 9 | **0** | **0** | **0** |
+| 中文（纯汉字） | 99 | **最多 2624 px** | 同量级 | 243–706 |
+
+两个结论直接决定了实现：
+
+1. **中文必须 SC、日文必须 JP** —— 用错是字形错（且完全不报错）
+2. **韩文用哪个 face 输出逐像素完全相同** —— 谚文在 Noto CJK 各 face 里
+   **没有**区域性变体（不像汉字）。所以 KR 在本项目上是 no-op，
+   但机制一并做了（对称，且将来韩文标题里混朝鲜文汉字时才有用）
+
+另外统计了脚本分布：147 首里 **日文 9 / 韩文 9 / 中文 99**，
+**日与韩没有一首混排** —— 判定顺序无歧义（实现里「谚文优先于假名」）。
+
+### 35.2 可行性：同一命令内切换字体
+
+先确认架构允许。菜单每页只跑 **2 次 `mogrify`**（基础层 `impic` +
+高亮层 `hlpic`），而三条画字路径：
+
+| 位置 | 画什么 |
+|---|---|
+| `append_shadow()` | 文字的阴影/描边（两层各一遍，颜色不同） |
+| `mogrify_img()` 的 `str2` | 文字**字身** |
+| `prepare_overlay_img()` | 专辑标题（二级菜单首行） |
+
+**三条都各自重发一次 `-font img->textfont`**，而 ImageMagick 的 `-font`
+是**持久设置** —— 所以只要把这三处的字体值改成「按文字内容选」，
+就能在同一命令内切换，**完全不必拆命令或改动布局**。
+
+### 35.3 实现
+
+**C 侧**
+
+```c
+/* menu.c：按内容选 face（谚文优先于假名）；两个字段都为 NULL 时返回默认 */
+static const char *textfont_for(const char *text, const pic *img);
+static unsigned int utf8_next(const char **p);   /* 自己写，只认 4 种长度 */
+```
+
+- `structures.h` 的 `pic` **末尾**追加 `char* textfont_jp; char* textfont_kr;`
+  —— ⚠️ 必须末尾：`dvda-author.c` 里 `pic img0 = {1, 0, 0, ...}` 是**按位置
+  初始化**的，插在中间会让后面所有字段错位
+- `command_line_parsing.c` 新增 `--fontname-jp`(45) / `--fontname-kr`(46)
+  （option id 44 之后未被占用）
+
+**Python 侧**
+
+- `DVDA_MENU_FONT_JP` / `DVDA_MENU_FONT_KR`（留空则**自动推导**）
+- `menu_assets._other_face(font, tag)` 按**同族命名**推，两种形态都支持：
+
+  ```
+  文件路径（Windows 发行包）  NotoSansCJKsc-Regular.otf  ->  ...jp-Regular.otf
+  家族名（Linux + fontconfig） Noto-Sans-CJK-SC           ->  Noto-Sans-CJK-JP
+  ```
+
+不传这两个选项时，C 侧全部回退到 `--fontname` —— **旧行为完全不变**。
+
+### 35.4 差分验证（本节最硬的一步）
+
+同一页面渲染三次，**按文字行带**比像素：
+
+```
+A = 只 --fontname（全 SC）
+B = --fontname + --fontname-jp/kr（分派）
+C = 只 --fontname 但给 JP（全 JP）
+```
+
+行基线由 `menu.c` 的 `y()` 反推（`maxbuttons=3` → `maxnumtracks=7`，
+`labelheight=(576-56-40-7*12)/7=56`）：
+
+```
+y = 56 + t*(56+12) + 28  ->  84(标题) / 152(曲1) / 220(曲2) / 288(曲3)
+```
+
+| 行 | A vs B | A vs C | B vs C | 判定 |
+|---|---|---|---|---|
+| 专辑标题 (ASCII) | 0 | 0 | 0 | OK |
+| **曲目1 中文** | **0** | 192 | 192 | OK ← 分派下仍用 SC |
+| **曲目2 日文** | **118** | 118 | **0** | OK ← 分派下与全 JP 相同 |
+| **曲目3 韩文** | 0 | 0 | 0 | OK |
+
+**100% 符合预期** —— 既证明了日文切换生效，又证明了中文**没有**被切换
+（只看「日文变了」是不够的，必须同时确认其它语言没被误伤）。
+
+交叉印证：日志里同一条 `mogrify` 命令出现 **9 处 `-font`，去重后
+sc / jp / kr 三个 face 都在**；三条 `[PAR] Fontname...` 也都打印正确。
+
+### 35.5 顺带修掉的构造脚本 bug
+
+**`da-utf8.o` 不能加进 `OBJECTS`**（第 33 节的 manifest）。Makefile 里有：
+
+```make
+$(OBJECTS): %.o: $(ROOT)/src/%.c
+```
+
+make 会**合并同一目标的多个规则的前提**，于是 `da-utf8.o` 多出一个
+`da-utf8.c` 前提：
+
+```
+make[1]: *** 没有规则可制作目标".../src/da-utf8.c"，由"da-utf8.o" 需求
+```
+
+⚠️ 而且**编译错误计数为 0**（`grep -c "error:"`），很容易误判成
+「没报错但没产物」而一头雾水。
+
+正确接法是把它作为**链接前提**：
+
+```make
+dvda-author: da-utf8.o
+```
+
+`dvda-author` 没有显式配方，用的是 make 内建 `%: %.o` 规则，
+它取 **`$^`（全部前提）** 拼进链接命令 —— 加一个前提就等于把 `.o`
+加进链接行，且完全绕开那条静态模式规则。
+
+同类坑：**MSYS2 把 `foo` 与 `foo.exe` 视作同一个文件**，所以
+`mv -f dvda-author-dev dvda-author-dev.exe` 会报
+「为同一文件」并**非零退出**，被 `set -e` 抓住让整个构建报失败
+（而产物其实早就好了）。改名前先判
+`[ "$src" -ef "$TARGET" ]`。
+
+### 35.6 教训
+
+- **先量后做**：动手前用真实数据量出「哪些语言真的需要哪个 face」，
+  结果直接推翻了「三个都要」的直觉 —— 韩文其实是 no-op
+- **验证要能证明「没被误伤」**：只测「日文变了」不够，必须同时确认
+  中文行**逐像素不变**。单变量对照（A/B/C 三组）才能排除侥幸
+- **改动头文件必须清 `.o`**：`pic` 布局改了，旧对象文件会让行为诡异
+- **构建产物要同步到使用它的目录**：产物在 `src/src/`，而测试脚本用
+  `menu-bin/` 里的副本 —— 我因此白跑一轮（日志只打印了 `Fontname:`，
+  没有 `Fontname (JP):`，且退出码 4294967295）

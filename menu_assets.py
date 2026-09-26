@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dvda_config import magick_identify_cmd          # noqa: E402
@@ -352,6 +353,32 @@ def _norm(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
+def font_spec(name):
+    """把 `-font` 的值规范成 ImageMagick 真正吃得下的形式。
+
+    ⚠️ **Windows 上反斜杠路径加载不了字体**（实测）：
+
+        -font D:\\dev\\winbuild\\menu-bin\\fonts\\NotoSansCJKsc-Regular.otf
+        → UnableToReadFont `D:devwinbuildmenu-binfontsNotoSansCJKsc-Regular.otf'
+
+    反斜杠被丢掉了；同一个文件换成正斜杠就能正常渲出汉字
+    （实测墨迹 0 vs 0.0249964）。
+
+    更阴的是：ASCII 探测会被 ImageMagick 的**默认字体**顶上、
+    看上去「能用」，于是 `font_coverage()` 把任何反斜杠路径都报成
+    「只有 ASCII」—— 完全不报错，只有在画面上才看得出。
+
+    所以凡是把字体交给 ImageMagick 的地方都过这一道；
+    `dvda-author` 把它拼进 mogrify 命令时同样会中招，
+    所以传给 `--fontname` 之前也要过。
+    """
+    if not name:
+        return name
+    if os.name == "nt" and "\\" in name:
+        return name.replace("\\", "/")
+    return name
+
+
 def font_exists(name):
     """这个 -font 名字（或文件路径）真的可用吗。"""
     if not name or any(c.isspace() for c in name):
@@ -366,6 +393,39 @@ def font_exists(name):
     return False
 
 
+def _other_face(font, tag):
+    """由主字体推出同族的另一个 face（sc/jp/kr/tc/hk）。
+
+    两种形态都要支持 —— 两种平台的用法不同：
+
+      · **文件路径**（Windows 发行包，ImageMagick 按路径加载）
+            NotoSansCJKsc-Regular.otf  ->  NotoSansCJKjp-Regular.otf
+      · **家族名**（Linux + fontconfig）
+            Noto-Sans-CJK-SC           ->  Noto-Sans-CJK-JP
+
+    返回 "" 表示推不出来（调用方据此跳过该选项，退回旧行为）。
+    """
+    if not font:
+        return ""
+
+    # ---- 家族名形态 ----
+    if "/" not in font and "\\" not in font:
+        m = re.search(r"(Noto-Sans-CJK)-(SC|JP|KR|TC|HK)", font, re.I)
+        if m:
+            cand = "%s-%s%s" % (m.group(1), tag.upper(), font[m.end():])
+            if font_exists(cand):
+                return cand
+        return ""
+
+    # ---- 文件路径形态 ----
+    d, base = os.path.split(font)
+    m = re.match(r"(NotoSansCJK)(sc|jp|kr|tc|hk)(-.*)$", base, re.I)
+    if not m:
+        return ""
+    cand = os.path.join(d, "%s%s%s" % (m.group(1), tag, m.group(3)))
+    return cand if os.path.isfile(cand) else ""
+
+
 def _ink(text, font, size=20):
     """渲一小块文字，返回平均 alpha —— 0 表示这个字体画不出这些字。
 
@@ -373,19 +433,45 @@ def _ink(text, font, size=20):
     **精简版**（拉丁字形已被删掉，因为假定 DejaVu 提供），字体信息里仍写着
     覆盖 Basic Latin，但 ImageMagick 画 ASCII 时一个像素都不出
     —— 而且不报错，菜单上就是一片空白。
+
+    ⚠️ Windows 上**不能靠 argv 传探针字符**：`magick.exe` 是 2019 年的构建
+    （没有 UTF-8 manifest），拿到的 argv 是 ANSI 代码页 —— 汉字/假名/谚文
+    在到达 ImageMagick 之前就变成了 `?`，于是 `font_coverage()` 误判
+    「这个字体画不出这些字」而实际能画。实测：随包的 Noto Sans CJK 在
+    Windows 上被报成「只有 ASCII」，而它其实四语齐备。
+    ImageMagick 支持 `-annotate @file` 从文件读文本，可绕开 argv 编码；
+    已用私用区字符（U+E000，任何字体都没有）做对照确认可靠。
+    （Linux 的 IM 安全策略禁止 `@`，所以只在 Windows 上改走文件。）
     """
     exe = _magick_exe()
     if not exe:
         return 0.0
-    r = subprocess.run(
-        [exe, "-size", "160x48", "xc:none", "-font", font, "-pointsize",
-         str(size), "-fill", "white", "-annotate", "+2+32", text,
-         "-format", "%[fx:mean.a]", "info:"],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+    cmd = [exe, "-size", "160x48", "xc:none", "-font", font_spec(font),
+           "-pointsize", str(size), "-fill", "white"]
+    tmp = None
+    if os.name == "nt":
+        fd, tmp = tempfile.mkstemp(suffix=".txt")
+        os.close(fd)
+        with open(tmp, "wb") as f:
+            f.write(text.encode("utf-8"))
+        cmd += ["-annotate", "+2+32", "@" + tmp.replace("\\", "/")]
+    else:
+        cmd += ["-annotate", "+2+32", text]
+    cmd += ["-format", "%[fx:mean.a]", "info:"]
+
     try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL)
         return float(r.stdout.decode().strip() or 0)
     except ValueError:
         return 0.0
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 def font_coverage(name):
@@ -479,6 +565,19 @@ def pick_font(preferred, texts, log=print):
     返回 (字体名, 仍缺的字符集集合)。仍缺时调用方应告警 ——
     缺字在菜单上就是空白，不会报错。
     """
+    # ⚠️ `.ttc` 集合陷阱（Windows 上是真会中的）：
+    # 传**文件路径**时 ImageMagick 只取 **face 0**，而 Noto Sans CJK 的
+    # face 0 是 **JP** —— 于是中文用日文字形（直/骨/令/次 写法不同），
+    # 而且**不报错**，只在画面上看得见。
+    # （Linux 侧传的是家族名 `Noto-Sans-CJK-SC`，经 fontconfig 落到 SC，不受影响。）
+    # IM 也不支持 `.ttc[N]` / `:index=N`，所以只能换单 face 文件。
+    if preferred and preferred.lower().endswith(".ttc"):
+        log("[菜单][警告] 字体是 .ttc 集合，ImageMagick 按路径加载只会取 face 0"
+            "（Noto Sans CJK 的 face 0 是 JP）—— 中文会变日文字形，"
+            "且此问题不报错、只在画面上看得见。"
+            "处理: 换用抽出的单 face 文件（NotoSansCJKsc-Regular.otf，"
+            "见源码树 make-menu-font.sh）")
+
     need = needed_scripts(texts)
     if not need:
         return (preferred or ""), set()
@@ -666,6 +765,10 @@ class MenuPlan:
         self.index_covers_file = None
         self.points = 0
         self.font = ""
+        # 按语言分派的 face（日文标题 -> JP、韩文 -> KR）。
+        # 空串 = 不传对应选项，全部文字用 self.font —— 即旧行为。
+        self.font_jp = ""
+        self.font_kr = ""
         self.font_missing = set()
         self.sanitized = []      # 因含分隔符而被换字的曲名
         self.fontwidth = 5
@@ -692,7 +795,13 @@ class MenuPlan:
             if self.index_covers_file:
                 a += ["--index-covers", self.index_covers_file]
         if fontname or self.font:
-            a += ["--fontname", fontname or self.font]
+            a += ["--fontname", font_spec(fontname or self.font)]
+        # 按语言分派的 face：“日文歌名的汉字用 JP、韩文用 KR”。
+        # 不传时 C 侧全部回退到 --fontname（旧行为）。
+        if self.font_jp:
+            a += ["--fontname-jp", self.font_jp]
+        if self.font_kr:
+            a += ["--fontname-kr", self.font_kr]
         if self.points:
             a += ["--fontsize", str(self.points)]
         a += ["--fontwidth", str(self.fontwidth)]
@@ -926,6 +1035,33 @@ def build_menu(groups, outdir, cfg, log=print, album_dir_of=None):
     # 本项目曲名同时含中文、日文假名、韩文与 ASCII，缺任何一个都会变空白。
     all_texts.append(cfg.title)
     plan.font, plan.font_missing = pick_font(cfg.menu_font, all_texts, log)
+
+    # ---- 按语言分派的 face ----
+    # ⚠️ 这不是「覆盖」问题而是「**字形选择**」问题：Noto Sans CJK 的各 face
+    # 都含四个字符集，但同一批**汉字**有区域性变体字形（直/骨/令/次/别 …）。
+    # 实测真实曲名、逐像素比对：
+    #
+    #     日文曲名  SC vs JP   最多 1464 像素不同
+    #     中文曲名  SC vs JP   最多 2624 像素不同
+    #     韩文曲名  SC vs JP/KR  完全相同（谚文没有区域性变体）
+    #
+    # 所以中文必须用 SC、日文必须用 JP，否则字形是错的（实测过）。
+    # 没配置时按主字体的同族命名自动推导（发行包里三个 face 并排）。
+    for tag, attr, cfgval in (("jp", "font_jp", cfg.menu_font_jp),
+                              ("kr", "font_kr", cfg.menu_font_kr)):
+        cand = font_spec(cfgval) if cfgval else _other_face(plan.font, tag)
+        if not cand:
+            log("[菜单] 未提供 %s face，%s标题将与主字体同字形"
+                % (tag.upper(), "日文" if tag == "jp" else "韩文"))
+            continue
+        if not font_exists(cand):
+            log("[菜单][警告] %s face 不可用，已忽略: %r" % (tag.upper(), cand))
+            continue
+        setattr(plan, attr, cand)
+    if plan.font_jp or plan.font_kr:
+        log("[菜单] 按语言分派字体: 日文 -> %s | 韩文 -> %s"
+            % (os.path.basename(plan.font_jp) if plan.font_jp else "（同主字体）",
+               os.path.basename(plan.font_kr) if plan.font_kr else "（同主字体）"))
 
     plan.fontwidth = compute_fontwidth(all_texts, points)
 

@@ -343,6 +343,8 @@ command_t *command_line_parsing(int argc, char *const argv[],
     {"bindir", required_argument, NULL, 3},
     {"index-pages", required_argument, NULL, 43},
     {"index-covers", required_argument, NULL, 44},
+    {"fontname-jp", required_argument, NULL, 45},
+    {"fontname-kr", required_argument, NULL, 46},
     {"topmenu-slides", required_argument, NULL, 6},
     {"check-version", no_argument, NULL, 8},
     {"import-topmenu", required_argument, NULL, 9},
@@ -2003,6 +2005,34 @@ separated by a colon, with rgb components by commas");
             {              img->fontwidth = (int8_t) atoi(fontchain);
               foutput(ANSI_COLOR_MAGENTA "[PAR]" ANSI_COLOR_RESET
                       "  Font width: %d\n", img->fontwidth);
+            }
+
+          globals->topmenu = Min(globals->topmenu,
+                                 RUN_GENERATE_PICS_SPUMUX_DVDAUTHOR);
+          img->refresh = 1;
+          break;
+
+        case 45:
+        case 46:
+          /* 按语言分派的字体 face（配合 --fontname）。
+
+             `--fontname-jp` 给日文标题用，`--fontname-kr` 给韩文标题用；
+             其余（中文 / 拉丁）继续用 `--fontname`。整盘菜单只跑两次
+             mogrify，但 IM 的 `-font` 是**持久设置**，所以 menu.c 在每条
+             文字前重发一次 `-font` 即可在同一命令内切换。
+
+             不传这两个选项时行为与以前完全一致。 */
+          fontchain = strdup(optarg);
+
+          if (fontchain)
+            {
+              char **slot = (c == 45) ? &img->textfont_jp : &img->textfont_kr;
+              free(*slot);
+              *slot = fontchain;
+
+              foutput(ANSI_COLOR_MAGENTA "[PAR]" ANSI_COLOR_RESET
+                      "  Fontname (%s): %s\n",
+                      (c == 45) ? "JP" : "KR", *slot);
             }
 
           globals->topmenu = Min(globals->topmenu,
