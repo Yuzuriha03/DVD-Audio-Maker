@@ -52,6 +52,19 @@
 /*  #define _GNU_SOURCE must appear before <string.h> and <getopt.h> for strndup
     and getopt_long*/
 
+/* `--stillpics` 的文件列表模式用**单个字符**分隔各轨的图片路径。
+   ⚠️ 不能用 `:` 作为 Windows 上的分隔符 —— **路径本身含 `:`**
+   （盘符，如 `D:/dev/.../still0.jpg`），按 `:` 切会把盘符切碎、
+   整串路径全部解析错。Linux 侧路径不含 `:`，故保持原样不动
+   （Linux 行为必须逐字节不变，不要改）。
+   `;` 在 Windows 路径里是**非法字符**，因此是安全的分隔符。
+   Python 侧 menu_assets.MenuPlan.args() 用同一个规则拼串。 */
+#ifdef _WIN32
+#  define DVDA_STILLPICS_SEP ';'
+#else
+#  define DVDA_STILLPICS_SEP ':'
+#endif
+
 unsigned int startsector;
 extern char *OUTDIR, *LOGFILE, *WORKDIR,  *LPLEXTEMPDIR;
 static fileinfo_t **files;
@@ -3059,7 +3072,7 @@ separated by a colon, with rgb components by commas");
       else
         {
           uint32_t size = 0;
-          pics_per_track = fn_strtok(stillpic_string, ':',
+          pics_per_track = fn_strtok(stillpic_string, DVDA_STILLPICS_SEP,
                                      pics_per_track, &size, 0,
                                      NULL, NULL, globals);
           indir = false;

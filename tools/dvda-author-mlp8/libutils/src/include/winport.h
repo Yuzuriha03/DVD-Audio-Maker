@@ -22,6 +22,12 @@
 #define STRSAFE_NO_DEPRECATE
 #  include <strsafe.h>
 
+/* ⚠️ MinGW 的 unistd.h 是POSIX 垫片层，提供 truncate()/ftruncate()/usleep()
+   等函数（**这是真实库函数，不是宏**，链接时由 libmingwex 提供）。
+   不包含它，audio.c 里的 truncate() 就是隐式声明（GCC 14+ 直接报错）。
+   与 windows.h 共存无冲突（实测两者一起 include 可编译、可链接）。 */
+#  include <unistd.h>
+
   void ErrorExit(PTSTR);
 
 #else

@@ -33,6 +33,10 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dvda_config import magick_identify_cmd          # noqa: E402
 
 # ---- 画面常量（与 dvda-author 一致：PAL 720x576） ----
 FRAME_W, FRAME_H = 720, 576          # 菜单 / 静图画面
@@ -41,6 +45,12 @@ FRAME_W, FRAME_H = 720, 576          # 菜单 / 静图画面
 # 所以 SAR = (4/3)/(720/576) = 16/15，即单个像素横宽竖窄，播放时画面
 # 横向被拉宽 6.7%。make_still() 用它把封面预先压窄，显示时才是正圆。
 PIXEL_ASPECT = 16.0 / 15.0
+
+# `--stillpics` 文件列表模式的**轨间分隔符**。
+# ⚠️ Windows 上不能用 `:` —— 路径本身含 `:`（盘符 `D:`），按它切会把
+# 盘符切碎、整串路径全错。`;` 在 Windows 路径里是非法字符，故安全。
+# C 侧用同一规则（command_line_parsing.c 的 DVDA_STILLPICS_SEP）。
+STILLPICS_SEP = ";" if os.name == "nt" else ":"
 MAX_BUTTONS = 32            # MAX_BUTTON_Y_NUMBER - 2
 MIN_POINTSIZE = 7
 # 上限 30：小标题（专辑名）是 `0.8 × 字号` 画的，而大标题（光盘标题）在
@@ -611,11 +621,18 @@ def make_background(covers, path, dim):
 
 
 def image_size(path):
-    """返回 (宽, 高)。"""
-    exe = shutil.which("identify")
-    if not exe:
+    """返回 (宽, 高)。
+
+    ImageMagick 7 没有独立的 identify.exe（Windows 上是 `magick identify`），
+    所以走 dvda_config.magick_identify_cmd() 拿正确前缀。
+    拿不到 ImageMagick 时退回默认尺寸 —— 该函数只用于**校验**尺寸，
+    不该因为环境缺 IM 就让构建直接失败。
+    """
+    try:
+        exe = magick_identify_cmd()
+    except RuntimeError:
         return FRAME_W, FRAME_H
-    r = subprocess.run([exe, "-format", "%w %h", path],
+    r = subprocess.run(exe + ["-format", "%w %h", path],
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     parts = r.stdout.decode("utf-8", "replace").split()
     if r.returncode != 0 or len(parts) != 2:
@@ -680,7 +697,12 @@ class MenuPlan:
             a += ["--fontsize", str(self.points)]
         a += ["--fontwidth", str(self.fontwidth)]
         if any(self.stills):
-            a += ["--stillpics", ":".join(self.stills)]
+            # `--stillpics` 的文件列表模式用**单个字符**分隔各轨的图片路径。
+            # ⚠️ Windows 上不能用 `:` —— **路径本身含 `:`**（盘符），
+            # 按 `:` 切会把 `D:` 切碎、整串路径解析错。
+            # C 侧 command_line_parsing.c 用同一套规则（DVDA_STILLPICS_SEP），
+            # Linux 保持 `:` 不变。
+            a += ["--stillpics", STILLPICS_SEP.join(self.stills)]
         return a
 
 
