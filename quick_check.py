@@ -14,9 +14,14 @@
      其中 nr_of_titles 与各 title 的 tracks。
 
   3. 每轨首扇区必须以 pack 头 00 00 01 BA 开头
-     直接按 IFO 给的扇区号去 ISO 里 dd 那一个扇区，逐个确认。
+     直接按 IFO 给的扇区号去 ISO 里读那一个扇区，逐个确认。
 
 IFO 与单个扇区都极小，全程只读几百 KB，故可在每次出盘后随手跑。
+
+⚠️ **纯 Python，不依赖任何外部命令**。早期版本用 `xorriso`（查 LBA）与
+`dd`（读扇区），这两个在 Windows 上都没有（**MSYS2 也没有 xorriso 这个包**），
+导致 Windows 上跑不了本脚本。现在自己解析 ISO9660（`iso_list`）并用
+seek+read 读扇区，两个平台都能跑。
 
 用法:
     python3 quick_check.py [ISO 目录] [构建日志]
@@ -26,7 +31,6 @@ import json
 import os
 import re
 import struct
-import subprocess
 import sys
 import pathlib
 
@@ -51,26 +55,99 @@ def u32(b, o):
     return struct.unpack(">I", b[o:o + 4])[0]
 
 
+SEC = 2048
+
+
 def iso_read(path, lba, nsec):
-    """按扇区读 ISO 里的一小段（不挂载、不解整盘）。"""
-    r = subprocess.run(["dd", "if=%s" % path, "bs=2048",
-                        "skip=%d" % lba, "count=%d" % nsec, "status=none"],
-                       capture_output=True)
-    return r.stdout
+    """按扇区读 ISO 里的一小段（不挂载、不解整盘）。
+
+    ⚠️ 原来调外部的 `dd`。Windows 的 PATH 里没有 dd（MSYS2 里有，但发布包的
+    目标机不保证有），所以改成**纯 Python 的 seek+read** —— 少一个外部依赖、
+    少一次子进程，行为完全一样（就是按 2048 字节扇区读）。
+    """
+    with open(path, "rb") as f:
+        f.seek(lba * SEC)
+        return f.read(nsec * SEC)
+
+
+def _iso9660_records(blob):
+    """解析一段 ISO9660 目录内容 -> [(name, lba, bytes, flags), ...]。
+
+    目录记录是**变长**的、紧凑排列；长度字节为 0 表示本扇区剩余部分是填充，
+    要跳到下一个扇区边界继续。
+    """
+    out = []
+    i = 0
+    while i < len(blob):
+        ln = blob[i]
+        if ln == 0:
+            i = (i // SEC + 1) * SEC
+            continue
+        rec = blob[i:i + ln]
+        if len(rec) < 33:
+            break
+        lba = struct.unpack("<I", rec[2:6])[0]
+        size = struct.unpack("<I", rec[10:14])[0]
+        flags = rec[25]
+        nlen = rec[32]
+        raw = rec[33:33 + nlen]
+        i += ln
+        if nlen == 1 and raw in (b"\x00", b"\x01"):
+            continue                       # "." 与 ".."
+        try:
+            name = raw.decode("ascii")
+        except UnicodeDecodeError:
+            continue                       # Joliet 的 UTF-16BE 条目，跳过
+        name = re.sub(r";\d+$", "", name)  # 去掉 ISO 的版本后缀 ";1"
+        out.append((name, lba, size, flags))
+    return out
+
+
+def iso_list(path, dirname):
+    """列出 ISO 某个**顶层**目录下的条目 -> {名字: (lba, 字节数)}。
+
+    只用标准库解析 ISO9660（Primary Volume Descriptor + 目录记录）。
+    DVD-Audio 的目录与文件名（AUDIO_TS / ATS_01_0.IFO / ATS_01_1.AOB）都是
+    ISO level 1 合法名，一定在 PVD 里，不需要 Joliet/Rock Ridge。
+    """
+    with open(path, "rb") as f:
+        pvd = None
+        for lba in range(16, 16 + 32):      # 卷描述符从扇区 16 起
+            f.seek(lba * SEC)
+            s = f.read(SEC)
+            if len(s) < SEC or s[0] != 1 or s[1:6] != b"CD001":
+                continue
+            pvd = s
+            break
+        if pvd is None:
+            return {}
+        root = pvd[156:156 + 34]
+        root_lba = struct.unpack("<I", root[2:6])[0]
+        root_len = struct.unpack("<I", root[10:14])[0]
+        f.seek(root_lba * SEC)
+        rootblob = f.read(root_len)
+
+        want = dirname.strip("/").upper()
+        for name, lba, size, flags in _iso9660_records(rootblob):
+            if name.upper() != want or not (flags & 0x02):
+                continue
+            f.seek(lba * SEC)
+            blob = f.read(size)
+            return {n: (l, sz)
+                    for n, l, sz, fl in _iso9660_records(blob)
+                    if not (fl & 0x02)}
+    return {}
 
 
 def iso_lba(path, name):
-    """用 xorriso 查某个文件的起始 LBA 与块数。"""
-    r = subprocess.run(["xorriso", "-indev", str(path), "-find", "/AUDIO_TS",
-                        "-name", name, "-exec", "report_lba"],
-                       capture_output=True, text=True)
-    for line in (r.stdout or "").splitlines():
-        if "File data lba:" in line:
-            f = [x.strip() for x in line.split(",")]
-            try:
-                return int(f[1]), int(f[2])
-            except (IndexError, ValueError):
-                return None, None
+    """查 /AUDIO_TS 下某个文件的起始 LBA 与块数 -> (lba, blocks)。
+
+    ⚠️ 原来调外部的 `xorriso`。Windows 上没有这个程序（**MSYS2 也没有这个
+    包**，实测 `pacman -Ss xorriso` 查不到），所以改成自己解析 ISO9660。
+    """
+    for n, (lba, size) in iso_list(path, "AUDIO_TS").items():
+        if n.upper() == name.upper():
+            return lba, (size + SEC - 1) // SEC
     return None, None
 
 
@@ -118,18 +195,11 @@ def main():
     total = 0
     for iso in isos:
         print("### %s  (%d 字节)" % (iso.name, iso.stat().st_size))
-        # 列出 AUDIO_TS 下的 IFO 与 AOB
-        r = subprocess.run(["xorriso", "-indev", str(iso), "-find", "/AUDIO_TS",
-                            "-name", "*.IFO", "-exec", "report_lba"],
-                           capture_output=True, text=True)
-        ifos = {}
-        for line in (r.stdout or "").splitlines():
-            mm = re.search(r"(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'([^']+)'", line)
-            if mm:
-                ifos[os.path.basename(mm.group(4))] = (int(mm.group(1)),
-                                                       int(mm.group(2)))
-        ifos = {k: v for k, v in ifos.items()
-                if re.match(r"ATS_\d+_0\.IFO$", k) and "BUP" not in k}
+        # 列出 AUDIO_TS 下的 IFO 与 AOB（自己解析 ISO9660，不依赖 xorriso）
+        ents = iso_list(iso, "AUDIO_TS")
+        ifos = {k: v for k, v in ents.items()
+                if re.match(r"ATS_\d+_0\.IFO$", k, re.I)
+                and "BUP" not in k.upper()}
         if not ifos:
             print("    ✗ 未找到 ATS_xx_0.IFO")
             ok = False
@@ -269,15 +339,8 @@ def main():
         print("    合计 %d 轨" % n_tr)
 
         # 逐轨首扇区检查：需要知道每个扇区落在哪个 AOB 的哪个偏移
-        r = subprocess.run(["xorriso", "-indev", str(iso), "-find", "/AUDIO_TS",
-                            "-name", "*.AOB", "-exec", "report_lba"],
-                           capture_output=True, text=True)
-        aobs = []
-        for line in (r.stdout or "").splitlines():
-            mm = re.search(r"(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'([^']+)'", line)
-            if mm:
-                aobs.append((os.path.basename(mm.group(4)), int(mm.group(1)),
-                             int(mm.group(2))))
+        aobs = [(k, v[0], v[1]) for k, v in ents.items()
+                if re.match(r"ATS_\d+_\d+\.AOB$", k, re.I)]
         if not aobs:
             print("    ✗ 未找到 AOB")
             ok = False

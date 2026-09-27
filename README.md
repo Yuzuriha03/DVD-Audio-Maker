@@ -9,22 +9,333 @@
 
 ---
 
-## Windows 原生构建（MSYS2，不需要 WSL）
+## Windows 从零开始（不需要 WSL）
 
-本仓库除了在 WSL / Linux 下构建，也可以在 **Windows 上用 MSYS2 原生构建** ——
-不依赖 WSL，也不需要 `\\wsl.localhost`。
+> **本节是「一台干净的 Windows 机器 → 两张成品 ISO」的完整流程。**
+> 全程只用 Windows 原生程序 —— MSYS2 的 `bash.exe` 本身就是 PE 可执行文件
+> （`uname -o` 报 `Msys`，不是 `Linux`），不是 WSL。
+> **不调用 WSL、不访问 `\\wsl.localhost`、不依赖 `/mnt/*`。**
 
-    tools\win-build\build-all.bat
+### 0. 总览
 
-一键完成：体检 → 编 dvda-author（含 MLP）→ 编 dvdauthor/spumux（AMGM 补丁）
-→ 组装工具目录 → 打出可分发的发布包。
+| 阶段 | 做什么 | 命令 | 耗时 |
+|---|---|---|---|
+| 1 | 装 MSYS2 + 工具链 | `pacman -S ...` | 一次性，约 10 分钟 |
+| 2 | 取 `dvda-author` 源码树 | `git clone` + 应用改动集 | 一次性 |
+| 3 | **编工具链** | `build-all.bat` | 约 2 分钟 |
+| 4 | 准备音源 | 拷 FLAC 进去 | — |
+| 5 | 改配置 | 编辑 `config.sh` | — |
+| 6 | 扫描 + 校验音源 | `dvda.cmd 01_prepare.py` | 约 3 分钟 |
+| 7 | **出盘** | `dvda.cmd 02_build.py` | 约 1 小时 |
+| 8 | 校验成品 | `dvda.cmd quick_check.py` 等 | 约 1 分钟 |
 
-细节（前置条件、环境变量、常见问题）见 `tools/win-build/README.md`。
+阶段 1、2 只需做一次。之后换音源重出盘，只走 4~8。
 
-产出的发布目录是**自包含**的（12 个 exe + 100 个 DLL + 三语字体 +
-ImageMagick 配置），目标机器只需 Python 3.8+ 与 FFmpeg。
+### 1. 装 MSYS2 与工具链
 
-## 快速开始
+用**免安装版**最省事：
+
+1. 下载 `msys2-base-x86_64-*.tar.xz`
+2. 用 Windows 自带的 `tar.exe` 解压到**不含空格**的目录（如 `D:\msys64`）
+3. 跑一次 `<root>\usr\bin\bash.exe`，然后装包：
+
+```bash
+pacman -Syu
+pacman -S --needed mingw-w64-x86_64-gcc \
+                   mingw-w64-x86_64-ffmpeg \
+                   mingw-w64-x86_64-pkgconf \
+                   mingw-w64-x86_64-freetype \
+                   mingw-w64-x86_64-fontconfig \
+                   mingw-w64-x86_64-libpng \
+                   mingw-w64-x86_64-imagemagick \
+                   mingw-w64-x86_64-python-fonttools \
+                   make
+```
+
+国内网络慢的话先换镜像（清华 TUNA）：
+`/etc/pacman.d/mirrorlist.mingw64` 里换成 `Server = https://mirrors.tuna.tsinghua.edu.cn/msys2/mingw/mingw64/`。
+
+> **为什么不用 WSL**：上游 `dvda-author` 是 autotools 的 —— `configure`
+> 本身就是个 20 万行的 `/bin/sh` 脚本，`make` 也递归调 shell。
+> 要在 Windows 上跑 autotools 就得有个 POSIX shell，MSYS2 提供的正是
+> **原生 Windows 的**那个。上游自己的 `BUILD.MSYS2` 也是这么写的。
+>
+> ⚠️ **不要用裸 `bash`**：Windows 上 `where.exe bash` 会命中
+> `...\WindowsApps\bash.exe`，那是 **WSL 的启动器**。本工具包统一用
+> `/usr/bin/bash` 绝对路径，并且 `common.sh` 里加了硬拦截 ——
+> 一旦检测到 `WSL_DISTRO_NAME` 或 `uname -s` 报 `Linux` 就直接退出。
+
+### 2. 取源码树（含本工程的改动）
+
+工具链的源码是上游 `dvda-author`，本工程对它做了改动（24-bit MLP、
+时间轴修复、按语言分派字体等）。改动以**改动集**形式存在仓库里：
+
+```bash
+git clone https://github.com/fabnicol/dvda-author  <工具包>\src
+cd <工具包>\src
+git apply <仓库>\docs\dvda-author-changes.patch
+```
+
+源码树必须是**完整的**，编译脚本会检查这些：
+
+```
+configure  configure.ac  Makefile.in      autotools 入口
+src/  libutils/  libfixwav/               源码
+menu/silence.wav  menu/activeheader       菜单运行期素材（C 代码直接读）
+m4.extra.dvdauthor/                       dvdauthor 的 autotools 辅助 m4
+dvdauthor-0.7.1/                          **含 AMGM 补丁**（菜单必需）
+local.w10/bin/                            mkisofs / mjpegtools 等预编译二进制
+```
+
+> **为什么 `dvdauthor-0.7.1` 和 `local.w10/bin` 必须随源码树来**：
+> - 菜单按钮用的是 `<button>jump group G track K</button>`，发行版 dvdauthor
+>   不认这个语法，需要 AMGM 补丁
+> - **MSYS2 没有 mjpegtools 包，也没有 mkisofs / cdrkit / xorriso 包**
+>   （`pacman -Ss` 查不到）。静图编码与 ISO 打包只能靠上游那套预编译二进制
+
+字体只需要**一个静态 `.ttc`**：`NotoSansCJK-Regular.ttc`，放在源码树根
+（或用 `DVDA_FONT_SRC` 指定）。工具包会从它抽出 SC / JP / KR 三个单 face。
+
+> ⚠️ **不要**用 Windows 自带的 `NotoSansSC-VF.ttf` / `NotoSansJP-VF.ttf` ——
+> 那些是**单语**字体（SC 版没有谚文），会给韩文标题开出空白。
+> ⚠️ 也**不要**直接把 `.ttc` 当菜单字体用：ImageMagick 按文件路径加载
+> `.ttc` 只取 face 0，而 Noto Sans CJK 的 face 0 是 **JP** —— 中文菜单会
+> 显示成日文字形，而且**不报错**。这就是要抽单 face 的原因。
+
+### 3. 编工具链
+
+工具包放在**仓库的 `tools\win-build\`** 下最省事（它会自动找到仓库根的
+`01_prepare.py`），源码树放在 `tools\win-build\src\`。然后：
+
+```
+tools\win-build\build-all.bat
+```
+
+依次做 5 件事，任一失败即中止：
+
+| 步骤 | 做什么 | 单独跑 |
+|---|---|---|
+| 1 | 体检：源码树、工具链、FFmpeg 开发库、字体 | `check-src.sh` |
+| 2 | 编 `dvda-author-dev.exe`（含 MLP + 按语言分派字体） | `build-author.sh` |
+| 3 | 编 `dvdauthor` / `spumux` / `spuunmux`（AMGM 补丁） | `build-dvdauthor.sh` |
+| 4 | 组装工具目录（exe + DLL + ImageMagick + 字体） | `assemble-menu-bin.sh` |
+| 5 | 打出发布包 | `make-release.sh` |
+
+产出：
+
+```
+<源码树>\..\menu-bin\                   中间产物（工具目录）
+tools\win-build\release\DVD-Audio-Maker\       ← 下面要用的发布目录
+tools\win-build\release\DVD-Audio-Maker.tar.gz
+tools\win-build\logs\                    各步骤日志
+```
+
+发布目录是**自包含**的（12 个 exe + 100 个 DLL + 三语字体 + ImageMagick
+配置），拷到任何 Windows 机器都能跑，**目标机器不需要 MSYS2**。
+
+> 工具链源码改过之后重新编：再跑一次 `build-all.bat` 即可，它会重跑
+> `configure` 与 `make`。刻意**不做** configure 缓存 —— 产物里写死了源码树
+> 绝对路径，复用要改写路径，而路径改写是最容易**静默出错**的地方。
+
+### 4. 音源
+
+把 FLAC（或 M4A/ALAC）按**一个子目录一张专辑**摆好：
+
+```
+D:\Music\MyAlbums\
+  专辑甲\
+    01. 曲名.flac
+    02. 曲名.flac
+    cover.jpg          ← 可选，专辑封面（选曲菜单 + 播放封面用）
+  专辑乙\
+    ...
+```
+
+要求：
+
+- **递归**扫描，子目录即专辑（子目录可以再嵌套）
+- 同一批必须能分成有限的「采样率 + 位深」组（本工程实测只有
+  `48000/24` 与 `44100/24` 两组）
+- 需要重采样的会自动重采样（`aresample=resampler=soxr`）并报出来
+- 封面图放进专辑目录即可，文件名任意（`cover.jpg` / `folder.jpg` 之类）
+
+### 5. 配置
+
+**只需要改一个文件**：`release\DVD-Audio-Maker\scripts\config.sh`。
+
+```bash
+DVDA_SRC="D:/Music/MyAlbums"                       # 音源根目录（递归扫描）
+DVDA_FINAL_DIR="D:/DVD_Output"                     # 成品 ISO 放这里
+DVDA_BUILD_DIR="D:/DVD_Output/_work"               # 中间产物（约需 20 GB）
+DVDA_TITLE="My DVD-Audio Collection"               # 光盘标题
+DVDA_ISO_PREFIX="MyCollection"                     # ISO 文件名前缀
+DVDA_MAX_DISCS="2"                                 # 盘数上限（只检查不切分）
+DVDA_MENU="on"                                     # 选曲菜单 + 播放封面
+```
+
+工具链路径**不在这里配** —— `dvda.cmd` 会按目录布局自动设
+`DVDA_AUTHOR` / `DVDA_MKISOFS` / `DVDA_AUTHOR_SRC` / `DVDA_MENU_FONT`
+（环境变量优先级最高，会覆盖 `config.sh` 里的值）。
+
+⚠️ **路径不要含空格**：`dvda-author` 拼 ImageMagick 命令时不给路径加引号，
+带空格的目录会被截断（字体、素材路径都会失效）。
+
+### 6. 出盘
+
+```bat
+cd tools\win-build\release\DVD-Audio-Maker
+dvda.cmd 01_prepare.py      :: 扫描 + 归一化 + 解码校验 + 生成 manifest
+dvda.cmd 02_build.py        :: 编码 MLP + 分盘 + 生成菜单 + 出 ISO
+```
+
+`01_prepare.py` 做四件事，**不产 WAV**（省空间）：
+
+1. 扫描音源，探测采样率 / 位深 / 声道 / 时长
+2. 校验**解码完整性**（顺带自动修复 Apple ALAC「未压缩帧缺 END 标记」的缺陷）
+3. 组内参数一致性检查（同一组里采样率/位深/声道必须一致）
+4. 写出 `manifest.json`（`02_build.py` 读它）
+
+这一步**必须通过**才继续。成功的样子：
+
+```
+发现 147 个音频文件 (FLAC/M4A)
+  [重采样] ... 共需重采样 10 首
+group_44100_24: 16 首
+group_48000_24: 131 首
+  已校验 147 首；失败 0 首，警告 0 首
+manifest.json 已生成
+```
+
+`02_build.py` 逐曲编 MLP（**已编码的会缓存复用**）、按体积逐盘填满、
+生成菜单与封面、调 `dvda-author` 出盘、`mkisofs` 打包成 ISO。
+
+> 想先看它打算怎么分盘、不真出盘：加 `--dry-run`。
+>
+> 用外部编码器（SurCode 等）产出的 MLP 时，把
+> `DVDA_MLP_SOURCE="external"` 与 `DVDA_MLP_EXTERNAL_DIR=` 设好，
+> 外部目录结构需与音源同构：`<外部目录>\<专辑>\<曲名>.mlp`。
+
+### 7. 校验成品
+
+```bat
+:: 注意：quick_check 收的是「ISO 所在**目录**」，不是单个 .iso 文件
+dvda.cmd quick_check.py   D:\DVD_Output
+dvda.cmd check_aob_pts.py D:\DVD_Output\Wuthering_Waves_Singles_EPs_1.iso
+```
+
+| 脚本 | 参数 | 查什么 |
+|---|---|---|
+| `quick_check.py` | ISO **目录** | 结构：IFO 声明轨数、每轨首扇区是 pack 头、时间轴（cell PTS）是否连续、静图引用号是否越界 |
+| `check_aob_pts.py` | 单个 `.iso` | AOB 里每个扇区的 PES 时间戳是否随播放推进（**进度条能不能拖**就看它） |
+| `verify_menu.py` | 单个 `.iso` | 菜单：按钮数、跳转目标、高亮层 |
+| `audit_disc.py` | 单个 `.iso` | 从构建日志解析轨道表，与 IFO 对账 |
+
+`quick_check.py` 成功的样子：
+
+```
+### Wuthering_Waves_Singles_EPs_1.iso  (4691195904 字节)
+    [OK] ATS_01_0.IFO: title 1 时间轴连续（2 个 cell，PTS 98..32091848）
+    ...
+    组1: 75 轨, 23 个 title  (ATS_01_0.IFO)，静图最大引用号 23
+    组2: 14 轨, 4 个 title   (ATS_02_0.IFO)，静图最大引用号 27
+    [OK] 静图引用号 27 <= AUDIO_SV.IFO 记录数 27 ✔
+    合计 89 轨
+    抽查 89 轨首扇区
+    全部以 pack 头开头 ✔
+全部盘合计 147 轨
+与音源曲目数一致（147）✔
+快速校验 全部通过 ✔
+```
+
+> **这些校验脚本是纯 Python，不需要任何外部命令**。早期版本用 `xorriso`
+> 查 ISO 里的 LBA、用 `dd` 读扇区，而这两个在 Windows 上都没有
+> （**MSYS2 也没有 xorriso 这个包**），导致 Windows 上跑不了。
+> 现在自己解析 ISO9660 并用 `seek+read` 读扇区，两个平台都能跑
+> （实测 disc 1 + 2 从 3 秒降到 **0.33 秒**）。
+>
+> `verify_menu.py` 与 `audit_disc.py` 仍依赖 `xorriso`，在 Windows 上不可用。
+
+### 8. 常见问题
+
+**`[失败] 检测到 WSL`**
+工具包拒绝在 WSL 里运行。用 `build-all.bat` 启动，别用 WSL 的 `bash`。
+
+**`MSYS2 not found`**
+设 `MSYS2_ROOT`，或装到 `C:\msys64` / `D:\msys64`。
+
+**`configure: error: C compiler cannot create executables`**
+PATH 里混进了别的工具链。工具包会把 MSYS2 的 `mingw64\bin` 与 `usr\bin`
+放到 PATH 最前面；若仍报错，检查 `MSYS2_ROOT` 是否指错。
+
+**体检报 FFmpeg 缺失但 `pacman` 说装了**
+先确认：`pkg-config --modversion libavcodec`。若它有输出而体检报缺，
+那是工具包的 bug（历史上出过一次：给 `libavcodec` 又拼了一次 `lib` 前缀）。
+
+**菜单文字是空白 / 中文显示成日文字形**
+看 `menu-bin\fonts\` 下三个 `.otf` 是否都在；菜单字体不能指向 `.ttc`。
+
+**`FileNotFoundError: [WinError 3] ... '/mnt/d/...'`**
+清单里存的是 `D:/...`，是路径转换逻辑把它改坏成了 WSL 形式。
+已修（`02_build.py` 的 `to_native()` 会判断平台）。若再出现，
+先确认 `manifest.json` 里的 `src` 是不是 `D:/...` 开头。
+
+**构建很慢 / 每个进程好几秒**
+先看杀软的**内核过滤驱动**。实测：装了卡巴斯基（21 个 `kl*` 过滤驱动）时
+`fork/exec` 要 **2~4 秒/次**，`configure` 一步就要 **约 1 小时**；
+关掉后 **27 毫秒/次**，`configure` 约 **1 分钟**，整条 `build-all.bat`
+**1 分 41 秒**。差了 **100 倍**。
+
+**体检报 `--fontname-jp/-kr` 缺失 / 菜单里日文显示成简体字形**
+源码树是**旧的**：改动集没打上，或 `docs/dvda-author-changes.patch` 是旧版。
+按第 2 节重新 `git apply`。验证：
+
+```bash
+grep -rl textfont_jp src libutils        # 应输出 3 个文件
+grep -rl fontname-jp src libutils        # 应输出 2 个文件
+```
+
+> 这个坑真实存在过：`docs/dvda-author-changes.patch` 曾停留在 2026-09-25，
+> 不含按语言分派字体的改动。照它构建出来的工具链会让日文标题用简体字形，
+> 而**构建全程不报错** —— 只有真机看画面才发现。现在补丁已重新生成，
+> 并验证过「应用到纯净上游 → 21 个文件全部 clean → 与开发分支的
+> `.c`/`.h` 逐字节相同」。
+
+### 9. 实测数据（2026-09-27，Windows 全流程）
+
+供对照，看自己的环境是否正常：
+
+| 阶段 | 用时 | 产物 |
+|---|---|---|
+| `build-all.bat`（含 configure + 两个项目 + 组装 + 打包） | **1 分 41 秒** | `release\DVD-Audio-Maker\` 203 MB |
+| `01_prepare.py`（147 首扫描 + 解码校验） | **约 2 分钟** | `manifest.json` 87 KB |
+| `02_build.py` 首次（147 首 MLP 编码） | **约 12 分钟** | — |
+| `02_build.py` 再次（MLP 全缓存） | **5 分 48 秒** | 两张 ISO |
+| `quick_check.py` | **0.33 秒** | 全部通过 |
+
+音源：45 张专辑 / 147 首 FLAC，6.43 GiB → MLP 7.30 GiB（+13.49%）
+
+```
+Wuthering_Waves_Singles_EPs_1.iso   4,691,195,904  (89 首, 余 16 MB)
+Wuthering_Waves_Singles_EPs_2.iso   3,328,147,456  (58 首, 余 1.38 GB)
+```
+
+独立验证（都不是「构建自己说自己对」）：
+
+| 检查 | 方法 | 结果 |
+|---|---|---|
+| 音频**无损** | 源 FLAC 与对应 MLP 都解码成 `s32le` 裸流，逐字节比 | **共同前缀 SHA256 相同**；仅尾部 232 字节 0 填充（29 帧 / 0.6 ms，解码器补帧） |
+| AOB 可解码 | `ffmpeg -i <抽取出的 AOB>` | 识别为 `mpeg` / `Audio: mlp, 48000 Hz, stereo, s32 (24 bit)` |
+| AOB 边界 | 抽取扇区 5173..2290469，末字节须落 2048 边界 | ✔ |
+| AOB 体积 | AOB ÷ MLP = 1.0208 | 与既有开销系数 1.0215~1.0220 吻合 |
+| 结构 | `quick_check.py` | 147 轨齐全、89+58 轨首扇区全为 pack 头、时间轴连续、静图引用号不越界 |
+| 时间轴 | `check_aob_pts.py` | 两盘均「PTS 随播放单调递增，时间轴正常」 |
+
+---
+
+细节（工具链前置条件、环境变量、逐条排错）见 `tools/win-build/README.md`；
+踩过的坑与诊断手法见 `docs/TROUBLESHOOTING.md` 的第 33~36 节。
+
+## 快速开始（WSL / Linux）
 
 ### 1. 准备环境（WSL2 + Ubuntu）
 

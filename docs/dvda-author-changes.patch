@@ -1,8 +1,54 @@
+diff --git a/libutils/src/include/c_utils.h b/libutils/src/include/c_utils.h
+index 48f354b..b6addd7 100644
+--- a/libutils/src/include/c_utils.h
++++ b/libutils/src/include/c_utils.h
+@@ -47,6 +47,28 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #  define SEPARATOR "\\"
+ #  define STRLEN_SEPARATOR 2
+ #  define WAIT 0
++
++/* ---- POSIX 的 wait()/getsubopt() 在 Windows 上缺失，这里补上 ----
++
++   ⚠️ MinGW **既没有** <sys/wait.h>（menu.c 已经用 `#ifndef __WIN32__` 把它跳过）
++   **也没有** getsubopt()，而代码里两处都在用，所以必须自己提供：
++
++   1) menu.c 的 run_convert() 用 system() 的返回值判断外部程序（convert）
++      是否失败：
++              rc == -1 || !WIFEXITED(rc) || WEXITSTATUS(rc) != 0
++      Linux 的 system() 返回 **wait() 状态字**（退出码在 bit 8..15，低 7 位是
++      信号），而 MSVCRT 的 system() **直接返回退出码**。所以这里：
++        WIFEXITED   → 恒为真（Win32 没有信号概念，子进程只会「正常退出」）
++        WEXITSTATUS → 原样返回（即上面那个退出码）
++      于是同一句判断在 Windows 上依然能正确识别「命令返回非 0」。
++
++   2) command_line_parsing.c 用 getsubopt() 解析 `--fixwav=a,b=c` 这类
++      逗号分隔子选项。声明与 glibc <stdlib.h> 一致，实现在 libc_utils.c。 */
++#  define WIFEXITED(status)   (1)
++#  define WEXITSTATUS(status) (status)
++#  define WTERMSIG(status)    (0)
++
++int getsubopt(char **optionp, char *const *tokens, char **valuep);
+ #
+ #else
+ #
 diff --git a/libutils/src/include/winport.h b/libutils/src/include/winport.h
-index 8e1a52c..0a21ae8 100644
+index 8e1a52c..05e5954 100644
 --- a/libutils/src/include/winport.h
 +++ b/libutils/src/include/winport.h
-@@ -127,6 +127,15 @@ void ErrorExit(PTSTR lpszFunction);
+@@ -22,6 +22,12 @@
+ #define STRSAFE_NO_DEPRECATE
+ #  include <strsafe.h>
+ 
++/* ⚠️ MinGW 的 unistd.h 是POSIX 垫片层，提供 truncate()/ftruncate()/usleep()
++   等函数（**这是真实库函数，不是宏**，链接时由 libmingwex 提供）。
++   不包含它，audio.c 里的 truncate() 就是隐式声明（GCC 14+ 直接报错）。
++   与 windows.h 共存无冲突（实测两者一起 include 可编译、可链接）。 */
++#  include <unistd.h>
++
+   void ErrorExit(PTSTR);
+ 
+ #else
+@@ -127,6 +133,15 @@ void ErrorExit(PTSTR lpszFunction);
  #   endif
  #endif
  
@@ -18,7 +64,7 @@ index 8e1a52c..0a21ae8 100644
   void  pipe_to_child_stdin(const char* name,
                            char** args,
                            int GCC_UNUSED  buffer_size,
-@@ -150,3 +159,7 @@ DWORD pipe_to_parent_stderr(FILE_DESCRIPTOR GCC_UNUSED  g_hChildStd_ERR_Rd,
+@@ -150,3 +165,7 @@ DWORD pipe_to_parent_stderr(FILE_DESCRIPTOR GCC_UNUSED  g_hChildStd_ERR_Rd,
  
   #endif
  #endif // WINPORT_H_INCLUDED
@@ -27,7 +73,7 @@ index 8e1a52c..0a21ae8 100644
 +void close_handles(int tube0, int tube1, int tubeerr0, int tubeerr1);
 +#endif
 diff --git a/libutils/src/libc_utils.c b/libutils/src/libc_utils.c
-index 61f7f44..d9d5729 100644
+index 61f7f44..3d66cd2 100644
 --- a/libutils/src/libc_utils.c
 +++ b/libutils/src/libc_utils.c
 @@ -857,7 +857,7 @@ int secure_mkdir (const char* path, mode_t mode, globalData *globals)
@@ -39,11 +85,103 @@ index 61f7f44..d9d5729 100644
      }
  
      len = strlen (path);
+@@ -2439,3 +2439,59 @@ char* get_current_directory (globalData* globals)
+      perror("getcwd() error");
+      return NULL;
+ }
++
++#ifdef _WIN32
++/* ---------------------------------------------------------------------------
++   getsubopt()：MinGW 不提供，这里给一份与 glibc 语义一致的实现。
++
++   用途见 c_utils.h 里的说明（command_line_parsing.c 解析逗号分隔的子选项）。
++   算法照搬 glibc 的 stdlib/getsubopt.c，**不修改**输入串（glibc 用带长度的
++   比较而非写 '\0'），这样 Windows 与 Linux 行为完全一致：
++
++     · *optionp 指向逗号分隔的串，每项形如 `name` 或 `name=value`
++     · 拿 name 部分与 tokens[] 逐项精确比较（必须整段相等，不是前缀）
++     · 命中 → *valuep = 值（无 '=' 则为 NULL），*optionp 越过本项与逗号，
++              返回 tokens[] 里的下标
++     · 未命中 → *valuep = 该项起始位置，*optionp 越过本项与逗号，返回 -1
++     · 串已空 → 直接返回 -1（**不清** *valuep）
++
++   ⚠️ 别把这里换成 gcc 的 libiberty 版本 —— 上游的 .win64.pro 引用了
++   libiberty/src/getsubopt.c，但那个目录并不在源码树里（需另外下载）。 */
++int getsubopt(char **optionp, char *const *tokens, char **valuep)
++{
++  char *endp, *vstart;
++  int   cnt;
++
++  if (**optionp == '\0')
++    return -1;
++
++  /* 找下一项的分隔逗号 */
++  endp = strchr(*optionp, ',');
++  if (endp == NULL)
++    endp = *optionp + strlen(*optionp);
++
++  /* 找 '=' 以切出 name / value */
++  vstart = memchr(*optionp, '=', endp - *optionp);
++  if (vstart == NULL)
++    vstart = endp;
++
++  /* 拿 name 与 tokens[] 逐项比较 */
++  for (cnt = 0; tokens[cnt] != NULL; ++cnt)
++    if (strncmp(*optionp, tokens[cnt], vstart - *optionp) == 0
++        && tokens[cnt][vstart - *optionp] == '\0')
++      {
++        *valuep = (vstart == endp) ? NULL : vstart + 1;
++        *optionp = endp;
++        if (**optionp != '\0')
++          ++*optionp;   /* 越过逗号 */
++        return cnt;
++      }
++
++  /* 认不得这一项 */
++  *valuep = *optionp;
++  *optionp = endp;
++  if (**optionp != '\0')
++    ++*optionp;
++  return -1;
++}
++#endif /* _WIN32 */
 diff --git a/libutils/src/winport.c b/libutils/src/winport.c
-index 5460196..7c50d0b 100644
+index 5460196..89b84bb 100644
 --- a/libutils/src/winport.c
 +++ b/libutils/src/winport.c
-@@ -324,17 +324,12 @@ void pipe_to_child_stdin(const char* name,
+@@ -132,15 +132,22 @@ void  pipe_to_child_stdin(const char* name,
+    char* commandline = join(name, cli, " ");
+    free(cli);
+ 
+-   int result = _setmode( _fileno( g_hChildStd_IN_Wr ), _O_BINARY );
+-   if  ( result == -1 )
+-        {
+-           perror( ERR "Cannot set mode" );
+-           clean_exit(EXIT_FAILURE, globals);
+-        }
+-     else
+-     if ( globals->veryverbose)
+-          foutput("%s", MSG_TAG "'stdout successfully changed to binary mode\n" );
++   /* ⚠️ 这里原本是：
++    *      _setmode( _fileno( g_hChildStd_IN_Wr ), _O_BINARY );
++    * 编译不过（GCC 14+ 直接报 incompatible-pointer-types）：
++    * g_hChildStd_IN_Wr 是 HANDLE*（CreatePipe 的输出参数），而 _fileno()
++    * 要的是 FILE*。显然是从 ats2wav.c 里
++    *      _setmode(_fileno(stdout), _O_BINARY)
++    * 那处正确写法抄过来时把 stdout 换成了管道句柄。
++    *
++    * 这里也**不需要** _setmode：CreatePipe 造出的是 Win32 句柄，父进程用
++    * WriteFile 往它写，不经过 CRT 流，因此不存在文本/二进制模式转换
++    * （_setmode 管的是 FILE* 流的 CRLF 转换）。真正的二进制写入在
++    * write_to_child_stdin() 里做。
++    * 客户端（子进程）那一侧的 stdout 是否要设二进制，由它自己负责 ——
++    * 见 ats2wav.c 里那处 _setmode(_fileno(stdout), ...)。 */
++   if ( globals->veryverbose)
++        foutput("%s", MSG_TAG "child stdin pipe is binary (Win32 handle, no CRT translation)\n" );
+ 
+    bSuccess = CreateProcessA(
+       name,
+@@ -324,17 +331,12 @@ void pipe_to_child_stdin(const char* name,
          return;
   }
  
@@ -746,10 +884,30 @@ index d5c71b5..29d07c9 100644
    // exactly k=size-2 cuts, k+1 substrings and array filled with k+1 substrings and NULL-terminating pointer, so array is sized size*sizeof(char)
    *size = k + 2;
 diff --git a/src/command_line_parsing.c b/src/command_line_parsing.c
-index 4814ecc..6442a00 100644
+index 4814ecc..ad82fee 100644
 --- a/src/command_line_parsing.c
 +++ b/src/command_line_parsing.c
-@@ -196,6 +196,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
+@@ -52,6 +52,19 @@
+ /*  #define _GNU_SOURCE must appear before <string.h> and <getopt.h> for strndup
+     and getopt_long*/
+ 
++/* `--stillpics` 的文件列表模式用**单个字符**分隔各轨的图片路径。
++   ⚠️ 不能用 `:` 作为 Windows 上的分隔符 —— **路径本身含 `:`**
++   （盘符，如 `D:/dev/.../still0.jpg`），按 `:` 切会把盘符切碎、
++   整串路径全部解析错。Linux 侧路径不含 `:`，故保持原样不动
++   （Linux 行为必须逐字节不变，不要改）。
++   `;` 在 Windows 路径里是**非法字符**，因此是安全的分隔符。
++   Python 侧 menu_assets.MenuPlan.args() 用同一个规则拼串。 */
++#ifdef _WIN32
++#  define DVDA_STILLPICS_SEP ';'
++#else
++#  define DVDA_STILLPICS_SEP ':'
++#endif
++
+ unsigned int startsector;
+ extern char *OUTDIR, *LOGFILE, *WORKDIR,  *LPLEXTEMPDIR;
+ static fileinfo_t **files;
+@@ -196,6 +209,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
    bool allocate_files = false;
    bool logrefresh = false;
    bool refresh_tempdir = true;
@@ -757,16 +915,18 @@ index 4814ecc..6442a00 100644
  
    // refreshing output and temporary directories by
  
-@@ -327,6 +328,8 @@ command_t *command_line_parsing(int argc, char *const argv[],
+@@ -327,6 +341,10 @@ command_t *command_line_parsing(int argc, char *const argv[],
      {"lossy-rounding", no_argument, NULL, 'L'},
      {"background-colors", required_argument, NULL, 2},
      {"bindir", required_argument, NULL, 3},
 +    {"index-pages", required_argument, NULL, 43},
 +    {"index-covers", required_argument, NULL, 44},
++    {"fontname-jp", required_argument, NULL, 45},
++    {"fontname-kr", required_argument, NULL, 46},
      {"topmenu-slides", required_argument, NULL, 6},
      {"check-version", no_argument, NULL, 8},
      {"import-topmenu", required_argument, NULL, 9},
-@@ -1984,8 +1987,7 @@ separated by a colon, with rgb components by commas");
+@@ -1984,8 +2002,7 @@ separated by a colon, with rgb components by commas");
            fontchain = strdup(optarg);
  
            if (fontchain)
@@ -776,7 +936,42 @@ index 4814ecc..6442a00 100644
                foutput(ANSI_COLOR_MAGENTA "[PAR]" ANSI_COLOR_RESET
                        "  Font width: %d\n", img->fontwidth);
              }
-@@ -2054,6 +2056,74 @@ separated by a colon, with rgb components by commas");
+@@ -1995,6 +2012,34 @@ separated by a colon, with rgb components by commas");
+           img->refresh = 1;
+           break;
+ 
++        case 45:
++        case 46:
++          /* 按语言分派的字体 face（配合 --fontname）。
++
++             `--fontname-jp` 给日文标题用，`--fontname-kr` 给韩文标题用；
++             其余（中文 / 拉丁）继续用 `--fontname`。整盘菜单只跑两次
++             mogrify，但 IM 的 `-font` 是**持久设置**，所以 menu.c 在每条
++             文字前重发一次 `-font` 即可在同一命令内切换。
++
++             不传这两个选项时行为与以前完全一致。 */
++          fontchain = strdup(optarg);
++
++          if (fontchain)
++            {
++              char **slot = (c == 45) ? &img->textfont_jp : &img->textfont_kr;
++              free(*slot);
++              *slot = fontchain;
++
++              foutput(ANSI_COLOR_MAGENTA "[PAR]" ANSI_COLOR_RESET
++                      "  Fontname (%s): %s\n",
++                      (c == 45) ? "JP" : "KR", *slot);
++            }
++
++          globals->topmenu = Min(globals->topmenu,
++                                 RUN_GENERATE_PICS_SPUMUX_DVDAUTHOR);
++          img->refresh = 1;
++          break;
++
+         case '2':
+           still_options_string = strdup(optarg);
+           break;
+@@ -2054,6 +2099,74 @@ separated by a colon, with rgb components by commas");
                    "  Using %d menu columns.\n", img->ncolumns);
            break;
  
@@ -851,7 +1046,7 @@ index 4814ecc..6442a00 100644
          case 3:
            free(globals->settings.bindir);
            globals->settings.bindir = make_absolute(optarg);
-@@ -2513,6 +2583,7 @@ separated by a colon, with rgb components by commas");
+@@ -2513,6 +2626,7 @@ separated by a colon, with rgb components by commas");
  
          case 'b':
            str = strdup(optarg);
@@ -859,7 +1054,7 @@ index 4814ecc..6442a00 100644
  
            if (img->backgroundmpg)
              {
-@@ -2536,10 +2607,20 @@ separated by a colon, with rgb components by commas");
+@@ -2536,10 +2650,20 @@ separated by a colon, with rgb components by commas");
                foutput("%s\n", WAR "You did not give enough filenames,"
                        " completing with last one");
  
@@ -884,7 +1079,7 @@ index 4814ecc..6442a00 100644
              }
  
            free(str);
-@@ -2685,7 +2766,11 @@ separated by a colon, with rgb components by commas");
+@@ -2685,7 +2809,11 @@ separated by a colon, with rgb components by commas");
          }
      }
  
@@ -897,7 +1092,7 @@ index 4814ecc..6442a00 100644
      {
        if (globals->veryverbose)
          foutput("%s\n", INF "Converting overlay .png blankscreen"
-@@ -2834,18 +2919,31 @@ separated by a colon, with rgb components by commas");
+@@ -2834,18 +2962,31 @@ separated by a colon, with rgb components by commas");
      case TEMPORARY_AUTOMATIC_MENU:
      case AUTOMATIC_MENU:
      case RUN_MJPEG_GENERATE_PICS_SPUMUX_DVDAUTHOR :
@@ -940,7 +1135,12 @@ index 4814ecc..6442a00 100644
  
        __attribute__((fallthrough));
  
-@@ -2965,6 +3063,16 @@ separated by a colon, with rgb components by commas");
+@@ -2961,10 +3102,20 @@ separated by a colon, with rgb components by commas");
+       else
+         {
+           uint32_t size = 0;
+-          pics_per_track = fn_strtok(stillpic_string, ':',
++          pics_per_track = fn_strtok(stillpic_string, DVDA_STILLPICS_SEP,
                                       pics_per_track, &size, 0,
                                       NULL, NULL, globals);
            indir = false;
@@ -957,7 +1157,7 @@ index 4814ecc..6442a00 100644
          }
  
        uint16_t dim, DIM = 0, w;
-@@ -4083,7 +4191,7 @@ void extract_list_parsing(const char *arg,
+@@ -4083,7 +4234,7 @@ void extract_list_parsing(const char *arg,
                    " format is --extract=group1:track1,track11,...,track1n"
                    "-...-groupN:trackN1,trackN2,...,trackNn");
            foutput("%s\n", WAR "Example --extract=3:1,3,4-5:6,7\n"
@@ -966,7 +1166,7 @@ index 4814ecc..6442a00 100644
                    " and tracks 6 and 7 in group 5.\n ");
            return;
          }
-@@ -4481,4 +4589,11 @@ void normalize_temporary_paths(pic *img, globalData *globals)
+@@ -4481,4 +4632,11 @@ void normalize_temporary_paths(pic *img, globalData *globals)
    globals->highlightpicsize = img->nmenus + 1;
    globals->backgroundmpgsize = img->nmenus + 1;
    globals->selectpicsize = img->nmenus + 1;
@@ -1327,7 +1527,7 @@ index 5ab0a6a..28117ee 100644
  #endif
  #endif // HAVE_MENU_C
 diff --git a/src/include/structures.h b/src/include/structures.h
-index 3ca9470..3d6a132 100644
+index 3ca9470..8dcd180 100644
 --- a/src/include/structures.h
 +++ b/src/include/structures.h
 @@ -81,6 +81,12 @@ typedef struct
@@ -1343,7 +1543,7 @@ index 3ca9470..3d6a132 100644
  } fileinfo_t;
  
  typedef struct
-@@ -156,6 +162,46 @@ typedef struct
+@@ -156,6 +162,66 @@ typedef struct
      uint32_t* menuvobsize;
      stilloptions** options;
  
@@ -1386,6 +1586,26 @@ index 3ca9470..3d6a132 100644
 +       ⚠️ 同样**必须追加在结构末尾**（pic 按位置初始化）。 */
 +    char    **indexcovers;
 +    int       indexcoverssize;
++
++    /* 按文字语言切换的字体 face（命令行 `--fontname-jp` / `--fontname-kr`）。
++
++       ⚠️ 为什么需要：Noto Sans CJK 的 JP / SC face 对**同一批汉字**有区域性
++       变体字形（直 / 骨 / 令 / 次 / 别 …），而整盘只有一条 `--fontname`。
++       实测（真实曲名、逐像素比对，见 docs/TROUBLESHOOTING.md 第 35 节）：
++
++           日文曲名   SC vs JP   最多 1464 像素不同
++           中文曲名   SC vs JP   最多 2624 像素不同
++           韩文曲名   SC vs JP/KR  完全相同（谚文无区域性变体）
++
++       所以日文标题必须走 JP、中文走 SC，否则字形是错的。
++
++       取值规则见 menu.c 的 textfont_for()：含谚文 -> KR，含假名 -> JP，
++       其余（中文 / 拉丁）-> textfont。两个字段为 NULL 时全部回到
++       textfont —— 即旧行为，不影响任何现有用法。
++
++       ⚠️ 必须**追加在结构末尾**（pic 按位置初始化）。 */
++    char* textfont_jp;
++    char* textfont_kr;
 +
  } pic;
  
@@ -1456,7 +1676,7 @@ index 92a8831..39305c0 100644
 +
 +#endif /* WITHOUT_sox */
 diff --git a/src/menu.c b/src/menu.c
-index facf72b..639e156 100644
+index facf72b..13173e3 100644
 --- a/src/menu.c
 +++ b/src/menu.c
 @@ -3,6 +3,8 @@
@@ -1872,7 +2092,7 @@ index facf72b..639e156 100644
        // The first backgroundmpg file is the one that is used to create AUDIO_SV.VOB in amg2.c
      }
  
-@@ -820,9 +1164,45 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks)
+@@ -820,9 +1164,133 @@ uint16_t y(uint8_t track, uint8_t maxnumtracks)
  }
  
  
@@ -1891,6 +2111,94 @@ index facf72b..639e156 100644
 +   ⚠️ 追加的片段**末尾必须留空格**：调用方随后 strcat 的是输出文件路径，
 +   少了空格两者会粘成一个参数，mogrify 就把结果打到 stdout 并返回 0
 +   （静默什么都不画，见第 22 节）。 */
++
++/* 取下一个 UTF-8 码点并把 *p 前移。非法字节按单字节处理（不中断扫描）。
++   自己实现而不引第三方：这里只需要「认出谚文与假名的区段」这一件事。 */
++static unsigned int utf8_next(const char **p)
++{
++  const unsigned char *s = (const unsigned char *) *p;
++  unsigned int c = *s;
++
++  if (c < 0x80)
++    { *p = (const char *) (s + 1); return c; }
++
++  if (((c & 0xE0) == 0xC0) && ((s[1] & 0xC0) == 0x80))
++    {
++      *p = (const char *) (s + 2);
++      return ((c & 0x1F) << 6) | (s[1] & 0x3F);
++    }
++
++  if (((c & 0xF0) == 0xE0) && ((s[1] & 0xC0) == 0x80)
++      && ((s[2] & 0xC0) == 0x80))
++    {
++      *p = (const char *) (s + 3);
++      return ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
++    }
++
++  if (((c & 0xF8) == 0xF0) && ((s[1] & 0xC0) == 0x80)
++      && ((s[2] & 0xC0) == 0x80) && ((s[3] & 0xC0) == 0x80))
++    {
++      *p = (const char *) (s + 4);
++      return ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12)
++           | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
++    }
++
++  *p = (const char *) (s + 1);
++  return c;
++}
++
++/* 按文字内容选字体 face —— 日文标题用 JP、韩文标题用 KR、
++   其余（中文 / 拉丁）用默认（SC）。
++
++   ⚠️ 为什么必须按语言切：Noto Sans CJK 的 JP 与 SC face 对同一批汉字有
++   区域性变体字形（直 / 骨 / 令 / 次 / 别 …）。实测真实曲名、逐像素比对：
++
++       日文曲名  SC vs JP   最多 1464 像素不同
++       中文曲名  SC vs JP   最多 2624 像素不同
++       韩文曲名  SC vs JP/KR  完全相同（谚文没有区域性变体）
++
++   即：中文用 JP 是错的，日文用 SC 也是错的；韩文两者皆可。
++
++   整盘菜单只跑两次 mogrify（基础层 + 高亮层），但 ImageMagick 的 `-font`
++   是**持久设置** —— 每条文字前重发一次就能在同一命令内切换，不必拆命令。
++
++   判定顺序：谚文（한글）优先于假名。实测本项目 147 首里没有同时含两者的
++   标题（日文 9 首、韩文 9 首、中文 99 首），顺序在有混合时才有意义；
++   万一将来混了，按「韩文优先」处理更接近原生排版习惯（韩文标题里的
++   汉字是朝鲜文汉字）。
++
++   两个 face 都没配（textfont_jp / textfont_kr 为 NULL）时，直接返回
++   默认 face —— 即完全保持旧行为。 */
++static const char *textfont_for(const char *text, const pic *img)
++{
++  int has_kana = 0, has_hangul = 0;
++  const char *p;
++
++  if (!img || !img->textfont) return NULL;
++  if (!text || !*text) return img->textfont;
++  if (!img->textfont_jp && !img->textfont_kr) return img->textfont;
++
++  for (p = text; *p; )
++    {
++      unsigned int c = utf8_next(&p);
++
++      /* 谚文音节（가..힣）与字母（ᄀ..ᇿ）—— 韩文 */
++      if ((c >= 0xAC00 && c <= 0xD7A3) || (c >= 0x1100 && c <= 0x11FF))
++        has_hangul = 1;
++      /* 平假名 / 片假名 —— 日文（标题里的汉字也归日文） */
++      else if (c >= 0x3040 && c <= 0x30FF)
++        has_kana = 1;
++
++      if (has_hangul && has_kana) break;
++    }
++
++  if (has_hangul && img->textfont_kr) return img->textfont_kr;
++  if (has_kana && img->textfont_jp) return img->textfont_jp;
++
++  /* 中文与纯拉丁走默认 face。中文必须如此：交给 JP face 会用日文字形。 */
++  return img->textfont;
++}
++
 +static void append_shadow(char *dest, pic *img, const char *text,
 +                          uint16_t x, uint16_t y, int pointsize,
 +                          const char *color)
@@ -1907,7 +2215,7 @@ index facf72b..639e156 100644
 +  snprintf(str, sizeof(str),
 +           " -stroke none -fill \"rgb(%s)\" -font %s -pointsize %d"
 +           " -draw \"text %u,%u '%s'\" ",
-+           q, img->textfont, pointsize,
++           q, textfont_for(text, img), pointsize,
 +           (unsigned) (x + TEXT_SHADOW_DX), (unsigned) (y + TEXT_SHADOW_DY),
 +           text);
 +  free(q);
@@ -1920,18 +2228,18 @@ index facf72b..639e156 100644
  
    int size = strlen(globals->settings.tempdir) + 11;
    char picture_save[size];
-@@ -839,8 +1219,8 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
+@@ -839,8 +1307,8 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
      {
        uint16_t x0 = EVEN(x((group > 0 ? group : 0), img->ncolumns)) ;
        char *q = quote(picture_save);
 -      snprintf(command, 2 * CHAR_BUFSIZ, "%s %s %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %c%s%s %s", mogrify,
 -               "+antialias", "-fill", albumcolor, "-font", img->textfont, "-pointsize", DEFAULT_POINTSIZE,
 +      snprintf(command, 2 * CHAR_BUFSIZ, "%s %s %s %s %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %c%s%s %s", mogrify,
-+               "+antialias", "-stroke", "none", "-fill", albumcolor, "-font", img->textfont, "-pointsize", DEFAULT_POINTSIZE,
++               "+antialias", "-stroke", "none", "-fill", albumcolor, "-font", textfont_for(text, img), "-pointsize", DEFAULT_POINTSIZE,
                 "-draw", " \"text ", x0, ',', ALBUM_TEXT_Y0,  '\'', text, "\'\"", q);
        free(q);
        if (globals->debugging) foutput("%s%s\n", INF "Launching mogrify (title) with command line: ", command);
-@@ -859,10 +1239,35 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
+@@ -859,10 +1327,35 @@ int prepare_overlay_img(char *text, int8_t group, pic *img, char *command, char
    if (globals->debugging) foutput(INF "copying %s to %s for menu #%d\n", picture_save, img->imagepic[menu], menu);
    copy_file(picture_save, img->highlightpic[menu], globals);
    copy_file(picture_save, img->selectpic[menu], globals);
@@ -1967,7 +2275,7 @@ index facf72b..639e156 100644
  
    return errno;
  }
-@@ -911,22 +1316,68 @@ int mogrify_img(char *text, int8_t group, int8_t track, pic *img, uint8_t maxnum
+@@ -911,22 +1404,68 @@ int mogrify_img(char *text, int8_t group, int8_t track, pic *img, uint8_t maxnum
      }
  
  
@@ -1995,6 +2303,7 @@ index facf72b..639e156 100644
  
    strcat(command, str);
 -  snprintf(str2, 10 * CHAR_BUFSIZ, " %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
+-           "-fill", textcolor, "-font", img->textfont, "-pointsize", (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
 +
 +  /* ---- 文字描边：两层各画一遍（颜色不同）----
 +     command2 → impic 用黑（**未选中**时看到）
@@ -2011,7 +2320,7 @@ index facf72b..639e156 100644
 +
 +  snprintf(str2, 10 * CHAR_BUFSIZ, " %s %s %s \"rgb(%s)\" %s %s %s %d %s %s %d%c%d %s%s%s ",
 +           "-stroke", "none",
-            "-fill", textcolor, "-font", img->textfont, "-pointsize", (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
++           "-fill", textcolor, "-font", textfont_for(text, img), "-pointsize", (int) floor(img->pointsize * (1 - (track == -1) * 0.2)),
             "-draw", " \"text ", x0, ',', y0, "\'", text, "\'\"");
  
    strcat(command2, str2);
@@ -2040,7 +2349,7 @@ index facf72b..639e156 100644
  
  
    if (errno) perror(ERR "mogrify");
-@@ -969,6 +1420,612 @@ void test_underline(char *text, pic *img, globalData *globals)
+@@ -969,6 +1508,612 @@ void test_underline(char *text, pic *img, globalData *globals)
  }
  
  
@@ -2653,7 +2962,7 @@ index facf72b..639e156 100644
  int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *ntracks,  globalData *globals)
  {
    if ((!img->refresh) || (!img->nmenus))   return 0;
-@@ -981,36 +2038,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -981,36 +2126,131 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
    if (!img->hierarchical)
      {
@@ -2801,7 +3110,7 @@ index facf72b..639e156 100644
          }
  
        free(grouparray);
-@@ -1090,13 +2242,25 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1090,13 +2330,25 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -2829,7 +3138,7 @@ index facf72b..639e156 100644
  
        prepare_overlay_img(albumtext, -1, img, command1, command2, menu, img->albumcolor, globals);
        //free(albumtext);  // segfault here under linux for unknown reasons. TO: fix it.
-@@ -1112,7 +2276,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1112,7 +2364,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                    /* Vicious issue here: use DEFAULT_GROUP_HEADER such that the underline for highlighting does not cut a letter.
                                   With lower-case "group", this happens as the underline cuts the 'p'. Two ways out: underline lower or use another label/use uppercase
                                   Note: This issue was tested to cause spumux crash */
@@ -2838,7 +3147,7 @@ index facf72b..639e156 100644
                    groupcount++;
                    buttons++;
  
-@@ -1123,13 +2287,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1123,13 +2375,13 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
  
            else if (groupcount < ngroups)
              {
@@ -2854,7 +3163,7 @@ index facf72b..639e156 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1143,19 +2307,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1143,19 +2395,72 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
                  }
              }
          }
@@ -2929,7 +3238,7 @@ index facf72b..639e156 100644
                    track++;
                  }
                while ((buttons < menubuttons) && (track < ntracks[groupcount]));
-@@ -1175,20 +2392,56 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1175,20 +2480,56 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
          }
  
  
@@ -3000,7 +3309,7 @@ index facf72b..639e156 100644
  
        char *q = quote(img->imagepic[menu]);
        strcat(command2, q);
-@@ -1238,7 +2491,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
+@@ -1238,7 +2579,7 @@ int generate_menu_pics(command_t *command, pic *img, uint8_t ngroups, uint8_t *n
    free(grouptext);
    free(tracktext);
  
@@ -3010,7 +3319,7 @@ index facf72b..639e156 100644
        free(basemotif[0]);
        free(basemotif[1]);
 diff --git a/src/mlp.c b/src/mlp.c
-index 4b9feae..2ac85d2 100644
+index 4b9feae..1a98bb2 100644
 --- a/src/mlp.c
 +++ b/src/mlp.c
 @@ -14,6 +14,16 @@ static uint32_t cga2wav_channels[21] = {0x4, 0x3, 0x103,  0x33,
@@ -3041,7 +3350,21 @@ index 4b9feae..2ac85d2 100644
        int data_size = av_get_bytes_per_sample(context->sample_fmt);
  
        if (data_size < 0)
-@@ -83,7 +97,7 @@ uint64_t decode(AVCodecContext *context,
+@@ -79,11 +93,21 @@ uint64_t decode(AVCodecContext *context,
+         {
+           size_t unpadded_linesize = 0;
+ 
++#if LIBAVCODEC_VERSION_MAJOR >= 63
++          /* 同 check_sample_fmt：FFmpeg 9 删了 AVCodec.sample_fmts。
++             这里原本取 sample_fmts[0]（静态列表首项），用新接口等价取回。 */
++          const enum AVSampleFormat *sup = NULL;
++          int nsup = 0;
++          avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT,
++                                       0, (const void **) &sup, &nsup);
++          int sampleSize = (sup && nsup > 0) ? av_get_bytes_per_sample(sup[0]) : 0;
++#else
+           int sampleSize = av_get_bytes_per_sample(codec->sample_fmts[0]);
++#endif
  
            if (sampleSize == 2)
              {
@@ -3050,7 +3373,7 @@ index 4b9feae..2ac85d2 100644
                bytes_written = fwrite(frame->extended_data[0], 1, unpadded_linesize, fp);
              }
            else if (sampleSize == 4)   // 32 bits -> 24 bits (codec->bits_per_raw_sample)
-@@ -92,9 +106,9 @@ uint64_t decode(AVCodecContext *context,
+@@ -92,9 +116,9 @@ uint64_t decode(AVCodecContext *context,
  
                for (int s = 0; s < frame->nb_samples; ++s)
                  {
@@ -3062,7 +3385,7 @@ index 4b9feae..2ac85d2 100644
                        val  >>= 8; // sampleSize * 8 - codec->bits_per_raw_sample
  
                        bytes_written_sample += fwrite(&val, 1, 3, fp);
-@@ -116,13 +130,11 @@ uint64_t decode(AVCodecContext *context,
+@@ -116,13 +140,11 @@ uint64_t decode(AVCodecContext *context,
        if (globals->maxverbose)
          {
            fprintf(stderr,
@@ -3080,7 +3403,7 @@ index 4b9feae..2ac85d2 100644
          }
      }
  
-@@ -142,7 +154,6 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -142,7 +164,6 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
    AVCodecContext *context;
    AVStream *stream;
    AVCodecParameters *codecpar;
@@ -3088,7 +3411,7 @@ index 4b9feae..2ac85d2 100644
  
    FILE *fp_in = NULL;
    FILE *fp_out = NULL;
-@@ -222,17 +233,15 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -222,17 +243,15 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
  
    // prepare to read data
  
@@ -3111,7 +3434,7 @@ index 4b9feae..2ac85d2 100644
    fp_in = fopen(info->filename, "rb");
    if (fp_in == NULL)
      {
-@@ -298,13 +307,13 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -298,13 +317,13 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
            // WaveHeader info : audio and header characteristics
  
            header.header_size_out = 80;
@@ -3130,7 +3453,7 @@ index 4b9feae..2ac85d2 100644
            header.dwSamplesPerSec = codecpar->sample_rate;
  
            // Prepend header to empty file. Will close files.
-@@ -328,8 +337,14 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -328,8 +347,14 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
            exit(1);
          }
  
@@ -3146,12 +3469,13 @@ index 4b9feae..2ac85d2 100644
            if (! frame)
              {
                if (!(frame = av_frame_alloc()))
-@@ -339,47 +354,22 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -339,47 +364,22 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
                  }
              }
  
 -          int ret;
--
++          g_last_pkt_pos = packet->pos;
+ 
 -          ret = av_parser_parse2(parser, context,
 -                                 &packet.data, &packet.size,
 -                                 data, data_size,
@@ -3165,8 +3489,7 @@ index 4b9feae..2ac85d2 100644
 -
 -          data      += ret;
 -          data_size -= ret;
-+          g_last_pkt_pos = packet->pos;
- 
+-
 -          if (packet.size)
 +          if (packet->size)
              cumbytes_written = decode(context, codec,
@@ -3200,7 +3523,7 @@ index 4b9feae..2ac85d2 100644
               frame, fp_out,
               info, cumbytes_written,
               globals);
-@@ -450,8 +440,14 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -450,8 +450,14 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
            goto clean_up; // do sth more verbose
          }
  
@@ -3216,7 +3539,7 @@ index 4b9feae..2ac85d2 100644
            if (! frame)
              {
                if (!(frame = av_frame_alloc()))
-@@ -461,44 +457,21 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -461,44 +467,21 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
                  }
              }
  
@@ -3266,7 +3589,7 @@ index 4b9feae..2ac85d2 100644
  
                SECT_RANK_OLD = SECT_RANK;
                SECT_RANK = (PKT_POS_SECT - 1) / 2048;
-@@ -508,25 +481,23 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -508,25 +491,23 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
                if (new_sector || rank == 0)
                  {
                    if (new_sector) HEADER_OFFSET     += 43;
@@ -3297,7 +3620,7 @@ index 4b9feae..2ac85d2 100644
                  }
              }
            else
-@@ -536,7 +507,7 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -536,7 +517,7 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
  
          }
  
@@ -3306,7 +3629,7 @@ index 4b9feae..2ac85d2 100644
        info->mlp_layout[rank].nb_samples = totnbsamples;
        info->mlp_layout[rank].rank = SECT_RANK;
        info->mlp_layout_size = rank + 1;
-@@ -550,7 +521,8 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -550,7 +531,8 @@ int decode_mlp_file(fileinfo_t *info, globalData *globals)
  clean_up:
  
    av_frame_free(&frame);
@@ -3316,7 +3639,40 @@ index 4b9feae..2ac85d2 100644
    avformat_free_context(format);
  
    return errno;
-@@ -726,38 +698,33 @@ static void encode(AVCodecContext *ctx, AVFrame *frame, AVPacket *pkt, FILE *out
+@@ -561,6 +543,24 @@ clean_up:
+ 
+ static int check_sample_fmt(const AVCodec *codec, enum AVSampleFormat sample_fmt)
+ {
++#if LIBAVCODEC_VERSION_MAJOR >= 63
++  /* ⚠️ FFmpeg 9（libavcodec 63）**删除了** AVCodec.sample_fmts
++     （FFmpeg 8 里已标 @deprecated，指向 avcodec_get_supported_config）。
++     传 NULL 作 avctx 取的是**静态**支持列表，与原来的 codec->sample_fmts 一致；
++     新接口不保证以 AV_SAMPLE_FMT_NONE 结尾，而是返回条数，故改用 nsup 遍历。 */
++  const enum AVSampleFormat *sup = NULL;
++  int nsup = 0, i;
++
++  if (avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT,
++                                   0, (const void **) &sup, &nsup) < 0 || !sup)
++    return 0;
++
++  for (i = 0; i < nsup; i++)
++    if (sup[i] == sample_fmt)
++      return 1;
++
++  return 0;
++#else
+   const enum AVSampleFormat *p = codec->sample_fmts;
+ 
+   while (*p != AV_SAMPLE_FMT_NONE)
+@@ -570,6 +570,7 @@ static int check_sample_fmt(const AVCodec *codec, enum AVSampleFormat sample_fmt
+       p++;
+     }
+   return 0;
++#endif
+ }
+ 
+ #if 0
+@@ -726,38 +727,33 @@ static void encode(AVCodecContext *ctx, AVFrame *frame, AVPacket *pkt, FILE *out
  
  inline static uint64_t encode_fmt_s32(AVCodecContext *c, AVFrame *frame, AVPacket *pkt, FILE *in_fp, FILE *out_fp, globalData *globals)
  {
@@ -3338,21 +3694,10 @@ index 4b9feae..2ac85d2 100644
 -    {
 -      for (int ch = 0; res != 0 && ch < c->channels; ++ch)
 -        {
--
--          res = fread(&samples[(s * c->channels + ch) * 4 + 1], 1, 3, in_fp);
--
--          bytes_read_per_sample += res;
--        }
--
--      bytes_read_per_frame += bytes_read_per_sample;
 +  for (int ch = 0; ch < nch; ++ch)
 +    memset(frame->data[ch], 0, (size_t) nframe * 4);
  
--      if (globals->maxverbose)
--        foutput(MSG_TAG "Bytes read per sample: %d Bytes read per frame: %d\n",
--                bytes_read_per_sample,
--                bytes_read_per_frame);
--    }
+-          res = fread(&samples[(s * c->channels + ch) * 4 + 1], 1, 3, in_fp);
 +  for (int s = 0; s < nframe && !eof; ++s)
 +    for (int ch = 0; ch < nch && !eof; ++ch)
 +      {
@@ -3362,6 +3707,17 @@ index 4b9feae..2ac85d2 100644
 +        if (n < 3) eof = 1;
 +      }
  
+-          bytes_read_per_sample += res;
+-        }
+-
+-      bytes_read_per_frame += bytes_read_per_sample;
+-
+-      if (globals->maxverbose)
+-        foutput(MSG_TAG "Bytes read per sample: %d Bytes read per frame: %d\n",
+-                bytes_read_per_sample,
+-                bytes_read_per_frame);
+-    }
+-
 -  memcpy((uint16_t *) frame->data[0], samples, load);
 -
 -  if (bytes_read_per_frame > 0)
@@ -3376,7 +3732,7 @@ index 4b9feae..2ac85d2 100644
      }
  
    return bytes_read;
-@@ -765,24 +732,34 @@ inline static uint64_t encode_fmt_s32(AVCodecContext *c, AVFrame *frame, AVPacke
+@@ -765,24 +761,34 @@ inline static uint64_t encode_fmt_s32(AVCodecContext *c, AVFrame *frame, AVPacke
  
  inline static uint64_t encode_fmt_s16(AVCodecContext *c, AVFrame *frame, AVPacket *pkt, FILE *in_fp, FILE *out_fp, globalData *globals)
  {
@@ -3420,7 +3776,7 @@ index 4b9feae..2ac85d2 100644
    return bytes_read;
  }
  
-@@ -791,10 +768,12 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -791,10 +797,12 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
    // initialize all muxers, demuxers and protocols for libavformat
    // (does nothing if called twice during the course of one program execution)
  
@@ -3436,7 +3792,7 @@ index 4b9feae..2ac85d2 100644
      }
  
    if (globals->debugging)
-@@ -826,7 +805,7 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -826,7 +834,7 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
  
    /* put sample parameters */
  
@@ -3445,7 +3801,7 @@ index 4b9feae..2ac85d2 100644
  
    if (!check_sample_fmt(codec, c->sample_fmt))
      {
-@@ -836,8 +815,11 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -836,8 +844,11 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
      }
  
    c->sample_rate    = info->samplerate;
@@ -3459,7 +3815,7 @@ index 4b9feae..2ac85d2 100644
    c->bits_per_coded_sample = info->bitspersample;
  
    /* open it */
-@@ -853,9 +835,10 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -853,9 +864,10 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
  
    path_t *fn = parse_filepath(info->filename, globals);
  
@@ -3472,7 +3828,7 @@ index 4b9feae..2ac85d2 100644
  
    free_filepath(fn);
  
-@@ -893,7 +876,7 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -893,7 +905,7 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
  
    frame->nb_samples     = c->frame_size;
    frame->format         = c->sample_fmt;
@@ -3481,7 +3837,7 @@ index 4b9feae..2ac85d2 100644
  
    // allocate the data buffers
  
-@@ -950,6 +933,11 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
+@@ -950,6 +962,11 @@ int encode_mlp_file(fileinfo_t *info, globalData *globals)
  void transport_to_mlp(fileinfo_t *info, globalData *globals)
  {
  
