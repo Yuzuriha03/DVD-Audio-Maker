@@ -20,8 +20,8 @@ IFO 与单个扇区都极小，全程只读几百 KB，故可在每次出盘后�
 
 ⚠️ **纯 Python，不依赖任何外部命令**。早期版本用 `xorriso`（查 LBA）与
 `dd`（读扇区），这两个在 Windows 上都没有（**MSYS2 也没有 xorriso 这个包**），
-导致 Windows 上跑不了本脚本。现在自己解析 ISO9660（`iso_list`）并用
-seek+read 读扇区，两个平台都能跑。
+导致 Windows 上跑不了本脚本。现在 ISO 访问统一走共享模块 `iso9660.py`，
+两个平台都能跑。
 
 用法:
     python3 quick_check.py [ISO 目录] [构建日志]
@@ -36,6 +36,7 @@ import pathlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dvda_config import load as load_config          # noqa: E402
+from iso9660 import Iso9660, IsoError                # noqa: E402
 
 CFG = load_config(need=None, quiet=True)
 ISO_DIR = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else CFG.final_dir)
@@ -57,97 +58,59 @@ def u32(b, o):
 
 SEC = 2048
 
+# ISO9660 读取统一走共享模块（见 iso9660.py：为什么不用 xorriso/dd）。
+# 这里保留同名的小包装，是为了不改动下面十几处调用点。
+_ISO = {}
+
+
+def _iso(path):
+    """按路径缓存 Iso9660 实例（同一张盘会被反复查询，重建代价不必要）。"""
+    key = str(path)
+    if key not in _ISO:
+        _ISO[key] = Iso9660(key)
+    return _ISO[key]
+
 
 def iso_read(path, lba, nsec):
     """按扇区读 ISO 里的一小段（不挂载、不解整盘）。
 
-    ⚠️ 原来调外部的 `dd`。Windows 的 PATH 里没有 dd（MSYS2 里有，但发布包的
-    目标机不保证有），所以改成**纯 Python 的 seek+read** —— 少一个外部依赖、
-    少一次子进程，行为完全一样（就是按 2048 字节扇区读）。
+    ⚠️ 原来调外部的 `dd`，后来改成内联的 seek+read，现在统一到 iso9660.py
+    （理由见该模块：Windows 上没有 dd，MSYS2 也没有 xorriso 包）。
     """
-    with open(path, "rb") as f:
-        f.seek(lba * SEC)
-        return f.read(nsec * SEC)
-
-
-def _iso9660_records(blob):
-    """解析一段 ISO9660 目录内容 -> [(name, lba, bytes, flags), ...]。
-
-    目录记录是**变长**的、紧凑排列；长度字节为 0 表示本扇区剩余部分是填充，
-    要跳到下一个扇区边界继续。
-    """
-    out = []
-    i = 0
-    while i < len(blob):
-        ln = blob[i]
-        if ln == 0:
-            i = (i // SEC + 1) * SEC
-            continue
-        rec = blob[i:i + ln]
-        if len(rec) < 33:
-            break
-        lba = struct.unpack("<I", rec[2:6])[0]
-        size = struct.unpack("<I", rec[10:14])[0]
-        flags = rec[25]
-        nlen = rec[32]
-        raw = rec[33:33 + nlen]
-        i += ln
-        if nlen == 1 and raw in (b"\x00", b"\x01"):
-            continue                       # "." 与 ".."
-        try:
-            name = raw.decode("ascii")
-        except UnicodeDecodeError:
-            continue                       # Joliet 的 UTF-16BE 条目，跳过
-        name = re.sub(r";\d+$", "", name)  # 去掉 ISO 的版本后缀 ";1"
-        out.append((name, lba, size, flags))
-    return out
+    try:
+        return _iso(path).read_sectors(lba, nsec)
+    except IsoError:
+        return b""
 
 
 def iso_list(path, dirname):
-    """列出 ISO 某个**顶层**目录下的条目 -> {名字: (lba, 字节数)}。
+    """列出 ISO 某个**顶层**目录下的条目 -> {名字: (lba, 扇区数)}。
 
-    只用标准库解析 ISO9660（Primary Volume Descriptor + 目录记录）。
-    DVD-Audio 的目录与文件名（AUDIO_TS / ATS_01_0.IFO / ATS_01_1.AOB）都是
-    ISO level 1 合法名，一定在 PVD 里，不需要 Joliet/Rock Ridge。
+    ⚠️ **第二个字段是扇区数（blocks），不是字节数。** 这是照原实现
+    （xorriso 的 `report_lba`：`lba , blocks , bytes , 'path'`）的契约来的：
+    调用方把 AOB 的这些值当作扇区累加，再与 IFO 里的 cell 起始扇区号比较。
+
+    曾经把它写成字节数 —— 而**检查照样通过**，因为 AOB 里每个扇区都以 pack 头
+    开头，算错的偏移仍然落在连续的 pack 区域里。所以这个错很难被发现，
+    改动这里时务必保持「扇区」语义。
     """
-    with open(path, "rb") as f:
-        pvd = None
-        for lba in range(16, 16 + 32):      # 卷描述符从扇区 16 起
-            f.seek(lba * SEC)
-            s = f.read(SEC)
-            if len(s) < SEC or s[0] != 1 or s[1:6] != b"CD001":
-                continue
-            pvd = s
-            break
-        if pvd is None:
-            return {}
-        root = pvd[156:156 + 34]
-        root_lba = struct.unpack("<I", root[2:6])[0]
-        root_len = struct.unpack("<I", root[10:14])[0]
-        f.seek(root_lba * SEC)
-        rootblob = f.read(root_len)
-
-        want = dirname.strip("/").upper()
-        for name, lba, size, flags in _iso9660_records(rootblob):
-            if name.upper() != want or not (flags & 0x02):
-                continue
-            f.seek(lba * SEC)
-            blob = f.read(size)
-            return {n: (l, sz)
-                    for n, l, sz, fl in _iso9660_records(blob)
-                    if not (fl & 0x02)}
-    return {}
+    try:
+        ents = _iso(path).listdir(dirname)
+    except IsoError:
+        return {}
+    out = {}
+    for e in ents:
+        if e.is_dir:
+            continue
+        out[e.name] = (e.lba, (e.size + SEC - 1) // SEC)
+    return out
 
 
 def iso_lba(path, name):
-    """查 /AUDIO_TS 下某个文件的起始 LBA 与块数 -> (lba, blocks)。
-
-    ⚠️ 原来调外部的 `xorriso`。Windows 上没有这个程序（**MSYS2 也没有这个
-    包**，实测 `pacman -Ss xorriso` 查不到），所以改成自己解析 ISO9660。
-    """
-    for n, (lba, size) in iso_list(path, "AUDIO_TS").items():
+    """查 /AUDIO_TS 下某个文件的起始 LBA 与扇区数 -> (lba, blocks)。"""
+    for n, lba_blocks in iso_list(path, "AUDIO_TS").items():
         if n.upper() == name.upper():
-            return lba, (size + SEC - 1) // SEC
+            return lba_blocks
     return None, None
 
 
