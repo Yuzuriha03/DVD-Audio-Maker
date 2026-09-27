@@ -24,41 +24,30 @@ step "[1/5] configure"
 #   （测量要注意：早期我用 `$(date)` 取时间戳，而 `date` 本身就是个 fork，
 #    测出来的值被它自己要测的开销撑大了 —— 改用内建 $EPOCHREALTIME 才准。）
 #
-#   而 autotools 的 configure 要跑几百个 conftest 的「编译+运行」，
-#   所以这一步在慢环境下最痛。目标平台是确定的（MSYS2/MinGW64 +
-#   指定 gcc + 指定 FFmpeg），configure 的结果也就确定了 —— 用缓存复用，
-#   见 common.sh。想强制重跑：RECONFIGURE=1 bash build-author.sh
-NEED_CONFIGURE=0
-if [ "${RECONFIGURE:-0}" = "1" ]; then
-    echo "  RECONFIGURE=1 —— 强制重跑 configure"
-    rm -f "$CONFIGURE_CACHE_META"
-    NEED_CONFIGURE=1
-elif configure_cache_usable && restore_configure_cache; then
-    NEED_CONFIGURE=0          # 缓存可用
-else
-    echo "  没有可用缓存（首次构建 / 工具链变了 / 校验失败）"
-    echo "  注: 这一步在 Windows 上较慢，因为它要跑几百个 conftest 的编译+运行"
-    NEED_CONFIGURE=1
-fi
+# ★ 这里**每次都真跑 configure**，不做缓存。
+#   曾经做过「把 configure 产物存下来复用」的机制，已去掉，理由：
+#     · configure 产物里写死了源码树的绝对路径，复用时要 sed 改写 + 自校验，
+#       而那条路径正是最容易出错的地方（踩过：cygpath 把路径压成 `/`，
+#       于是缓存恢复出一个路径错乱的 Makefile，报一堆莫名找不到文件）
+#     · 误判的代价不对称：缓存失效没检测出来 → 编译出错误的东西且**能通过**；
+#       而多跑一次 configure 只是花几分钟
+#     · 快环境（无杀软驱动）下它本来只要 2~3 分钟，为省这点时间引入
+#       一层路径改写逻辑，不值得
+#   ⇒ 宁可慢一点，也要行为确定。手动缓存需求请自行处理源码树。
+rm -f config.h config.status config.log
+rm -f Makefile src/Makefile libutils/src/Makefile libfixwav/src/Makefile
 
-if [ "$NEED_CONFIGURE" = "1" ] || [ ! -f "$SRC/config.status" ]; then
-    rm -f config.h config.status config.log
-    rm -f Makefile src/Makefile libutils/src/Makefile libfixwav/src/Makefile
+# CFLAGS 与 Linux 侧保持一致：
+#   -Wno-error=incompatible-pointer-types  上游代码本来就需要的
+#   -Wno-error=implicit-function-declaration  Windows 上还有几处 POSIX 函数
+export CFLAGS="-O2 -DWITHOUT_sox -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
 
-    # CFLAGS 与 Linux 侧保持一致：
-    #   -Wno-error=incompatible-pointer-types  上游代码本来就需要的
-    #   -Wno-error=implicit-function-declaration  Windows 上还有几处 POSIX 函数
-    export CFLAGS="-O2 -DWITHOUT_sox -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
-
-    ./configure \
-        --prefix="$SRC/install" \
-        CPPFLAGS="-DWITHOUT_sox -I$SRC/local/include" \
-        LDFLAGS="-L$SRC/local/lib" \
-        CFLAGS="$CFLAGS" \
-        > "$LOGDIR/configure.log" 2>&1
-
-    save_configure_cache
-fi
+./configure \
+    --prefix="$SRC/install" \
+    CPPFLAGS="-DWITHOUT_sox -I$SRC/local/include" \
+    LDFLAGS="-L$SRC/local/lib" \
+    CFLAGS="$CFLAGS" \
+    > "$LOGDIR/configure.log" 2>&1
 
 grep -m1 -E 'define HAVE_ffmpeg '     config.h
 grep -m1 -E 'define HAVE_core_BUILD ' config.h
