@@ -80,6 +80,17 @@
     - 36.13 [关于 configure 缓存：做过又去掉了](#3613-关于-configure-缓存做过又去掉了)
     - 36.14 [分发与使用](#3614-分发与使用)
     - 36.15 [教训汇总](#3615-教训汇总)
+37. [Windows 从零构建端到端跑通](#37-windows-从零构建端到端跑通)
+    - 37.1 [`to_wsl()` 把 Windows 路径改坏 —— 报错指向的位置是错的](#371-to_wsl-把-windows-路径改坏--报错指向的位置是错的)
+    - 37.2 [校验脚本依赖 `xorriso` / `dd` —— Windows 上完全不可用](#372-校验脚本依赖-xorriso--dd--windows-上完全不可用)
+    - 37.3 [改动集过期：构建不报错，但功能缺失](#373-改动集过期构建不报错但功能缺失)
+    - 37.4 [ImageMagick：模块化构建与自包含构建的区别](#374-imagemagick模块化构建与自包含构建的区别)
+    - 37.5 [如何证明「全程真的没用 WSL」](#375-如何证明全程真的没用-wsl)
+    - 37.6 [双向同步时的覆盖陷阱（把自己刚写的文档覆盖了）](#376-双向同步时的覆盖陷阱把自己刚写的文档覆盖了)
+    - 37.7 [GitHub 间歇性不可达](#377-github-间歇性不可达)
+    - 37.8 [独立验证：不要用「构建自己的校验脚本」当唯一证据](#378-独立验证不要用构建自己的校验脚本当唯一证据)
+    - 37.9 [实测数据（2026-09-27，Windows 全流程）](#379-实测数据2026-09-27windows-全流程)
+    - 37.10 [教训汇总](#3710-教训汇总)
 
 ---
 
@@ -4824,3 +4835,428 @@ build-all.bat      # 体检 → 编 dvda-author → 编 dvdauthor → 组装 →
   在 GBK 下按 2 字节配对，奇数字节会**吃掉下一行开头的字符**
   （`REM ...` 变成 `EM ...`），报出 `'Windows' 不是内部或外部命令` 这种
   完全指不到问题的错误。**注释行也不能幸免** —— 解析发生在解码之后。
+
+---
+
+## 37. Windows 从零构建端到端跑通
+
+第 36 节把**工具链**做成了 Windows 原生。本节记录第一次真正走完
+「干净 Windows 机器 → 两张成品 ISO」全流程时暴露的问题。
+
+三个缺陷有共同形态：**构建/校验不报错，或者报错指错了地方**。所以这一节
+的重点不是「怎么修」，而是「怎么发现」和「怎么不被误导」。
+
+### 37.1 ★★★★★ `to_wsl()` 把 Windows 路径改坏 —— 报错指向的位置是错的
+
+`02_build.py` 读清单时要给每条曲目记录源文件大小：
+
+```python
+src = to_wsl(f["src"])        # 原代码
+...
+"size": os.path.getsize(src),
+```
+
+`to_wsl()` 无条件把 `D:/x` 转成 `/mnt/d/x`（WSL 里的挂载点写法），
+于是 Windows 上第一步就崩：
+
+```
+FileNotFoundError: [WinError 3] 系统找不到指定的路径。:
+  '/mnt/d/yyz57/Music/completed/…/01. Waking of a World (feat. Gigi Yim) [Chinese Version].flac'
+```
+
+> **★ 这个错误极具误导性。** 它看起来像「`manifest.json` 里的路径写错了」，
+> 而实际上清单里 **147 条全是正确的 `D:/…`** —— 是这段转换逻辑把它改坏的。
+>
+> 所以排查顺序应该是：**先打印清单里的原值**，再去怀疑转换逻辑。
+> 一个 `json.load` + 打印前 3 条的 `src` 字段，10 秒就能定性；
+> 反过来去翻生成清单的 `01_prepare.py`，会白看很久。
+
+修法是加平台判断，并且**只在非 Windows 上转换**：
+
+```python
+def to_native(p):
+    """把清单里的源路径转成当前平台 Python 能直接打开的形式。
+
+    · WSL / Linux：`D:/x` -> `/mnt/d/x`
+    · Windows：原样返回（Windows 的 Python 本来就认 `D:/x`，
+      转成 `/mnt/d/x` 反而打不开）
+    """
+    p = p.replace("\\", "/")
+    if os.name != "nt" and re.match(r"^[a-zA-Z]:", p):
+        p = "/mnt/" + p[0].lower() + p[2:]
+    return p
+```
+
+**教训**：跨平台脚本里凡是「把 A 形式转成 B 形式」的函数，都要问一句
+**「目标平台上这个转换还成立吗」**。这类函数的名字往往就写明了它的适用平台
+（`to_wsl`），但调用点很容易在移植时漏改。
+
+### 37.2 ★★★★★ 校验脚本依赖 `xorriso` / `dd` —— Windows 上完全不可用
+
+`quick_check.py`（每次出盘后都会跑的「快速结构校验」）用两个外部命令：
+
+```python
+subprocess.run(["dd", "if=%s" % path, "bs=2048", "skip=%d" % lba, ...])   # 读扇区
+subprocess.run(["xorriso", "-indev", str(path), "-find", "/AUDIO_TS",
+                "-name", name, "-exec", "report_lba"])                    # 查 LBA
+```
+
+Windows 上都没有。而且**这不是「装一下就有了」的问题**：
+
+```
+$ pacman -Ss xorriso
+（无输出）
+```
+
+**MSYS2 没有 xorriso 包** —— 所以这个脚本在 Windows 上没有任何办法可用，
+而它同时在 WSL 侧是主力校验工具。移植时很容易漏掉这类「间接依赖」。
+
+修法是**自己解析 ISO9660**（只用标准库）：
+
+```python
+def iso_read(path, lba, nsec):
+    """按扇区读 ISO 里的一小段（不挂载、不解整盘）。"""
+    with open(path, "rb") as f:
+        f.seek(lba * SEC)
+        return f.read(nsec * SEC)
+
+
+def iso_list(path, dirname):
+    """列出 ISO 某个顶层目录下的条目 -> {名字: (lba, 字节数)}。
+
+    只用标准库解析 ISO9660（PVD + 目录记录）。
+    DVD-Audio 的目录与文件名（AUDIO_TS / ATS_01_0.IFO / ATS_01_1.AOB）
+    都是 ISO level 1 合法名，一定在 PVD 里，不需要 Joliet/Rock Ridge。
+    """
+```
+
+要点：
+
+- **Primary Volume Descriptor 在扇区 16 起**，`CD001` 签名 + 类型字节 `1`
+- **根目录记录**在 PVD 的偏移 156、长度 34；取其 LBA 与字节数
+- **目录记录是变长的**：长度字节为 0 表示本扇区剩余部分是填充，
+  要跳到下一个扇区边界（`i = (i // SEC + 1) * SEC`）
+- 名字要去掉 ISO 的版本后缀 `;1`
+- 目录项用 `flags & 0x02` 判断
+- Joliet 的条目是 UTF-16BE，`decode("ascii")` 会抛异常 —— 直接跳过即可，
+  因为我们要找的名字都是纯 ASCII
+
+顺带一个意外收获：**快了约 10 倍**（disc 1 + 2 从 3 秒降到 **0.33 秒**），
+因为不再为每个扇区起一个 `dd` 子进程。
+
+**教训**：移植 checklist 里要专门列一项「本脚本调用了哪些外部命令」。
+`grep -n 'subprocess\|os.system\|shutil.which' *.py` 就能列全，
+比逐个脚本通读可靠。
+
+### 37.3 ★★★★★ 改动集过期：构建**不报错**，但功能缺失
+
+本工程对上游 `dvda-author` 的改动以补丁形式存在仓库里
+（`docs/dvda-author-changes.patch`）。第一次照 README 说的
+
+```bash
+git clone https://github.com/fabnicol/dvda-author tools/win-build/src
+cd tools/win-build/src
+git apply docs/dvda-author-changes.patch
+```
+
+打出来的源码树**不含按语言分派字体的改动**。核对该补丁：
+
+```
+textfont_jp          0 处
+textfont_kr          0 处
+fontname-jp          0 处
+fontname-kr          0 处
+utf8_next            0 处
+textfont_for         0 处
+DVDA_STILLPICS_SEP   0 处
+```
+
+而源码树（开发分支）里这些都有 —— 补丁停在 **2026-09-25**，
+而字体分派是 **09-27** 才做的。
+
+后果分两层：
+
+1. **显式失败**：`check-src.sh` 会报缺（它专门检查
+   `src/command_line_parsing.c` 里有没有 `--fontname-jp/-kr`）。
+2. **更糟的情况 —— 静默出错**：即使绕过体检把它编出来，
+   菜单会让**日文标题用简体字形**（`直`/`骨`/`令` 写法不同），
+   而构建全程返回 0、日志里一个错都没有。**只有真机看画面才发现**。
+
+修法就是重新生成（README 里记了命令）：
+
+```bash
+cd <源码树>
+git diff master -- src libutils > <仓库>/docs/dvda-author-changes.patch
+```
+
+172,444 → 187,286 字节。
+
+#### ★★★★ 「改动集能不能用」必须实测，不能看出来像就行
+
+只对比文件大小是没有说服力的。**决定性检验是「应用到纯净上游」**：
+
+```bash
+cd <源码树>
+git worktree add --detach /tmp/applytest master     # 一份纯净的上游
+cd /tmp/applytest
+git apply --check -v <补丁>                          # 先干跑
+git apply -v <补丁>                                  # 再真打
+```
+
+- 干跑时每个文件都应有 `Checking patch <file>...`，无报错
+- 真打后**逐项搜特性**（`textfont_jp` 应在 3 个文件里、`fontname-jp` 在 2 个）
+- 最后**与开发分支逐字节比对**：
+
+```bash
+diff -r --brief /tmp/applytest/src     <源码树>/src
+diff -r --brief /tmp/applytest/libutils <源码树>/libutils
+```
+
+只应差 `*.o` / `Makefile` / 可执行文件等编译产物，**所有 `.c`/`.h` 必须相同**。
+
+> 用 `git worktree` 本地建「纯净上游」而不是真去 `git clone` GitHub ——
+> 本机网络到 GitHub 经常不通（见 37.7），而 `master` 分支本来就在本地仓库里，
+> 效果等价。
+
+**教训**：这类「产物是另一个仓库的衍生物」的项目，改动集**必须有一个
+可执行的验证步骤**进 CI 或出盘前的 checklist。它太容易过期，而过期的后果
+是「编译通过、功能悄悄缺失」。
+
+### 37.4 ★★★ ImageMagick：模块化构建与自包含构建的区别
+
+第一次出盘在生成菜单时失败：
+
+```
+magick.EXE: UnableToOpenConfigureFile `delegates.xml' @ warning/configure.c
+magick.EXE: NoDecodeDelegateForThisImageFormat `…cover.jpg' @ error/constitute.c
+```
+
+不是「文件找不到」，是 **ImageMagick 找不到自己的配置**。
+
+原因：MSYS2 的 ImageMagick 是 **`--with-modules` 构建** —— 编解码器
+（JPEG 等）是独立的 `.dll`，放在 `modules-Q16HDRI/coders/` 下，
+另需 `etc/ImageMagick-7/*.xml` 配置。它是为**装着 MSYS2 的本机**设计的。
+
+而上游自带的 `local.w10/bin/` 那套是 **7.0.8-47 的自包含构建**：
+单个 6.8 MB exe，只依赖 Windows 系统 DLL（GDI32 / gdiplus / ole32 …），
+**零第三方依赖** —— 实测把它放进空目录、不给任何 xml、不给 modules，
+照样能解 JPEG。
+
+**这对我们是决定性的**：dvda-author 是**把 ImageMagick 当子进程调用**的
+（不是链接它），所以工具目录里放哪一版都行；但发布包要能拷到任意机器上跑，
+就必须用**自包含**那版。
+
+而且——`local.w10` 的 7.0.8 正是产出 E 盘已验证基准（AOB 与基准逐字节相同）
+的那一版。换回它既解决依赖问题，又与历史产物对齐。
+
+**教训**：选同名的外部工具时，**不要只看版本号**，要看
+**部署形态**（自包含 vs 依赖运行时/配置/模块目录）。后者在「本机开发能用、
+拷给别人就崩」的项目里是常见坑。
+
+### 37.5 ★★★★ 如何证明「全程真的没用 WSL」
+
+「不需要 WSL」这句话很容易说，但值得实证。四条独立证据：
+
+**(1) 进程的可执行路径与 PE 头**
+
+```powershell
+Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(python|ffmpeg|…)\.exe$' } |
+    Select-Object Name, ProcessId, ExecutablePath
+```
+
+构建的 `python.exe` 路径是 `E:\Python314\python.exe`，父进程是
+`C:\Windows\system32\cmd.exe`，祖父是 `powershell.exe`；
+`ffmpeg.exe` 路径在 `C:\Users\…\WinGet\…\ffmpeg-9.0-full_build\bin\`。
+路径里没有 `wsl` / `/mnt/` 字样，且首两字节是 `4D 5A`（`MZ` = PE）。
+
+**(2) 进程加载了哪些模块（最硬的一条）**
+
+```powershell
+Get-Process -Id <pid> -Module | ForEach-Object { $_.FileName }
+```
+
+这次的 python 加载了 20 个模块，目录只有 `C:\Windows\System32`、
+`E:\Python314`、`E:\Python314\DLLs` —— **WSL 相关为 0**。
+如果真在用 WSL 的文件系统，一定会加载 9P / 网络文件系统相关的组件。
+
+**(3) 构建日志里的路径计数**
+
+```powershell
+$pats = '/mnt/', 'home/yyz57', 'wsl.localhost', 'wsl.exe', 'WSL_DISTRO'
+```
+
+实测：以上全部为 **0**，而 `D:/` 出现 **126** 次。
+
+**(4) WSL 虚拟机是否在参与 I/O**
+
+```powershell
+$a = (Get-Process vmmemWSL).ReadOperationCount
+Start-Sleep 3
+$b = (Get-Process vmmemWSL).ReadOperationCount
+```
+
+3 秒内 read/write ops delta **都是 0** —— 它完全空闲。
+
+> ⚠️ **注意**：`vmmemWSL` 进程**存在**并不代表在用 WSL。本机上它一直存在，
+> 是因为当前 VS Code 的**工作区目录就在 WSL 里**
+> （`\\wsl.localhost\Ubuntu-26.04\…`）—— 窗口开着，WSL 就会被维持。
+> 所以「证明没用 WSL」不能靠「WSL 进程不存在」，要靠上面 (1)~(4)。
+>
+> ⚠️ 另外：**不要在关机后再去调那个 shim 做测试**。
+> `WindowsApps\bash.exe -c 'echo x'` 这个动作本身会**启动一个 WSL 实例**
+> （`vmmemWSL` 的 pid 每次都变），属于自败测试。
+
+### 37.6 ★★★ 双向同步时的覆盖陷阱（把自己刚写的文档覆盖了）
+
+工具链修复在 WSL 侧做、再同步回仓库，所以我写了个同步脚本，规则里包含：
+
+```powershell
+foreach ($n in @('dvda-author-changes.patch','DVDA-AUTHOR-CHANGES.md','TROUBLESHOOTING.md')) {
+    Copy-Item (Join-Path $wsl "docs\$n") (Join-Path $repo "docs\$n") -Force
+}
+```
+
+结果把**仓库里的 `TROUBLESHOOTING.md` 覆盖了**：
+那是**今天刚写、含第 36 节**的版本（200,552 字节），
+而 WSL 侧那份是旧的（179,647 字节）——
+于是刚写完的 20 KB 文档瞬间消失。
+
+恢复（文件已经 commit 过，所以很好办）：
+
+```bash
+git checkout -- docs/TROUBLESHOOTING.md
+```
+
+**教训**：
+
+- 同步规则里**每一项都要能回答「哪一侧是权威」**。同一个仓库里不同的文件
+  可以有不同的权威侧：`.py` 脚本以 WSL 为权威（那边在开发），
+  **`docs/` 以仓库为权威**（文档只在仓库里写）。混在一起就会互相覆盖。
+- 覆盖类操作**先比对再动手**，别无条件 `Copy-Item -Force`。
+  上面那段如果加一句「大小/哈希不同就停下并报告」，就不会出事。
+- 好在 `docs/TROUBLESHOOTING.md` 早就提交过，`git checkout` 一句话恢复。
+  **未提交的文件被覆盖就只能重写** —— 所以长文档随手 commit 是值得的。
+
+### 37.7 GitHub 间歇性不可达
+
+同一台机器、同一个会话里：
+
+```
+（早先）git push origin main   →  8e3f379..e1c821b  main -> main     成功
+（稍后）git push origin main   →  Failed to connect to github.com:443 after 21079 ms
+        Test-NetConnection github.com -Port 443   →   False
+```
+
+所以：
+
+- 本仓库的「从零开始」流程**不能依赖 GitHub 可达**。
+  改动集走本地 `git worktree` 验证（37.3），不要指望现 clone。
+- 推送失败**不代表本地有问题** —— 提交已经在本地仓库里，网络恢复后再推即可。
+- 检查网络用 `Test-NetConnection <host> -Port 443`，比等 git 超时快。
+
+### 37.8 ★★★★ 独立验证：不要用「构建自己的校验脚本」当唯一证据
+
+构建附带的 `quick_check.py` / `check_aob_pts.py` 很有用，但它们和构建
+出自同一套代码 —— **共同的前提错误会让两边一起错**。所以还要有
+**不依赖那些脚本**的验证。
+
+#### (1) 音频无损：解码成裸流后逐字节比
+
+```bash
+# 源 FLAC 与对应 MLP 都解码成 s32le 裸流
+ffmpeg -i <源>.flac -f s32le -acodec pcm_s32le - > src.raw
+ffmpeg -i <对应>.mlp  -f s32le -acodec pcm_s32le - > mlp.raw
+
+sha256sum src.raw mlp.raw            # 长度可能差几帧（解码器补帧）
+# 比**共同前缀**
+head -c $n src.raw > a.pfx ; head -c $n mlp.raw > b.pfx
+sha256sum a.pfx b.pfx
+```
+
+实测：
+
+```
+src.raw : 68627928    mlp.raw : 68628160        （差 232 字节）
+src prefix sha256 : b87e7ae7f5b18090efed3f6b1b64cb60…
+mlp prefix sha256 : b87e7ae7f5b18090efed3f6b1b64cb60…   ← 相同
+=> 无损；差异只是尾部 232 字节 0 填充（29 帧 / 0.6 ms）
+```
+
+时长也对得上：`src 178.718562 s` vs `mlp 178.719167 s`（差 0.0006 s）。
+
+> **为什么不直接比整个流**：解码器在流末尾会补帧到整数帧，
+> 于是长度差几帧是**正常**的。看到「长度不等」就判失败会得到假警报；
+> 正确做法是比共同前缀，并证明**多出来的部分是纯 0**。
+
+#### (2) AOB 能被标准工具认出来
+
+```bash
+ffmpeg -i <抽取出的 AOB>
+#   Input #0, mpeg, from '…ATS_01_1.AOB':
+#     Duration: 00:07:40.41, bitrate: 81324 kb/s
+#     Stream #0:0[0xa1]: Audio: mlp, 48000 Hz, stereo, s32 (24 bit)
+```
+
+#### (3) 用扇区边界找 AOB 并核对体积
+
+AOB 的起点可以从 ISO 里扫出来（扇区对齐的 DVD pack 头
+`00 00 01 BA` + 扇区内含 MLP 同步字 `F8 72 6F`）：
+
+```
+找出一段**连续**的命中起点：扇区 5173
+末扇区（来自构建日志的 `Absolute sector pointer to last AOB sector`）：2290469
+抽取 2285297 扇区 = 4,680,288,256 字节
+末字节必须落在 2048 边界上 ✔
+```
+
+再核对体积比：`AOB ÷ MLP = 4.685e9 / 4.588e9 = 1.0208`，
+与既有实测系数 **1.0215~1.0220** 吻合 —— 说明没有多出或少掉整段音频。
+
+### 37.9 实测数据（2026-09-27，Windows 全流程）
+
+音源：45 张专辑 / 147 首 FLAC，6.43 GiB → MLP 7.30 GiB（+13.49%）
+
+| 阶段 | 用时 |
+|---|---|
+| `build-all.bat`（configure + 两个项目 + 组装 + 打包） | **1 分 41 秒** |
+| `01_prepare.py`（扫描 + 解码校验 147 首） | 约 2 分钟 |
+| `02_build.py` 首次（147 首 MLP 编码） | 约 12 分钟 |
+| `02_build.py` 再次（MLP 全缓存） | **5 分 48 秒** |
+| `quick_check.py` | **0.33 秒** |
+
+产物：
+
+```
+Wuthering_Waves_Singles_EPs_1.iso   4,691,195,904  (89 首, 余 16 MB)
+Wuthering_Waves_Singles_EPs_2.iso   3,328,147,456  (58 首, 余 1.38 GB)
+```
+
+结构校验（`quick_check.py`）：
+
+```
+disc1: 组1 75 轨 / 23 title + 组2 14 轨 / 4 title = 89 轨
+       静图引用号 27 <= AUDIO_SV.IFO 记录数 27 ✔
+       抽查 89 轨首扇区，全部以 pack 头开头 ✔
+disc2: 组1 56 轨 / 17 title + 组2  2 轨 / 1 title = 58 轨
+       抽查 58 轨首扇区，全部以 pack 头开头 ✔
+全部盘合计 147 轨，与音源曲目数一致 ✔
+```
+
+### 37.10 教训汇总
+
+- **报错指向的位置不一定是要修的位置**。37.1 的错在说「文件找不到」，
+  而清单里路径全对 —— 是读取时的转换改坏的。**先打印原始数据**再怀疑逻辑。
+- **移植 checklist 要专门查「外部命令依赖」**：
+  `grep -n 'subprocess\|os.system\|shutil.which' *.py`。
+  有些依赖（如 `xorriso`）在目标平台**根本没有包可装**。
+- **衍生产物（补丁/生成物）必须有可执行的有效性检验**，
+  而且检验要证到「与源逐字节相同」，不能只看大小（37.3）。
+- **选同名外部工具要看部署形态**，不只是版本号：
+  自包含 vs 依赖运行时/配置/模块目录（37.4）。
+- **「没用 WSL」这类声明要能实证**：进程路径 + PE 头 + 加载的模块 +
+  日志路径计数 + 虚拟机 I/O 计数（37.5）。注意「进程存在」≠「在参与」。
+- **双向同步必须区分权威侧**；覆盖前先比对，别无条件 `-Force`（37.6）。
+- **验证不要只用自己的校验脚本** —— 加一条完全独立的通道（裸流比对、
+  第三方工具识别、扇区边界、体积比）（37.8）。
+- **看「长度不等」先别判失败**：解码器会在尾部补帧，
+  要比共同前缀并证明多出来的部分是纯填充。
