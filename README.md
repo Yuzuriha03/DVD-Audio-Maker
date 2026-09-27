@@ -9,6 +9,21 @@
 
 ---
 
+## Windows 原生构建（MSYS2，不需要 WSL）
+
+本仓库除了在 WSL / Linux 下构建，也可以在 **Windows 上用 MSYS2 原生构建** ——
+不依赖 WSL，也不需要 `\\wsl.localhost`。
+
+    tools\win-build\build-all.bat
+
+一键完成：体检 → 编 dvda-author（含 MLP）→ 编 dvdauthor/spumux（AMGM 补丁）
+→ 组装工具目录 → 打出可分发的发布包。
+
+细节（前置条件、环境变量、常见问题）见 `tools/win-build/README.md`。
+
+产出的发布目录是**自包含**的（12 个 exe + 100 个 DLL + 三语字体 +
+ImageMagick 配置），目标机器只需 Python 3.8+ 与 FFmpeg。
+
 ## 快速开始
 
 ### 1. 准备环境（WSL2 + Ubuntu）
