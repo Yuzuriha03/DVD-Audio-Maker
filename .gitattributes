@@ -25,6 +25,15 @@ LICENSE        text eol=lf
 *.bat  text eol=crlf
 *.cmd  text eol=crlf
 
+# windres 资源源码：被**原样**编译进 .exe 的资源节。
+# da-utf8.manifest（应用程序清单，XML）与 da-utf8.rc（资源脚本）由
+# tools/win-build 的 windres 嵌入二进制，其中的行尾字节会直接影响产物
+# 的哈希。若按文本归一化，clone 后得到的字节与出产已验证 exe 的字节不同，
+# 可复现构建就断了。故声明为二进制，git 一律不做任何转换。
+# （XML 空白本身无语义差异，这里纯粹是为了字节级可复现。）
+*.manifest -text
+*.rc       -text
+
 # 二进制：本仓库不附带音频（见 README），此处声明以免日后误加时被当作文本
 *.flac  binary
 *.wav   binary
