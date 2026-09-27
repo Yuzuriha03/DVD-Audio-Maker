@@ -19,7 +19,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BIN="${1:-$BINDIR}"
 UPSTREAM="${2:-$SRC/local.w10/bin}"
-SEARCH="$BIN $MSYS/bin $MSYS_ROOT/usr/bin $UPSTREAM"
+# ⚠️ 用 $MSYSBASE（不是 $MSYS_ROOT）：根为 `/` 时 $MSYS_ROOT/usr/bin 会拼成
+#    "//usr/bin"，被 MSYS2 当 UNC -> 取不到那里的 msys-2.0.dll。
+SEARCH="$BIN $MSYS/bin $MSYSBASE/usr/bin $UPSTREAM"
 
 is_system() {
     case "$(echo "$1" | tr 'A-Z' 'a-z')" in

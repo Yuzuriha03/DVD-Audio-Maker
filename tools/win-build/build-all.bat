@@ -69,7 +69,20 @@ set "PATH=%MSYS2_ROOT%\mingw64\bin;%MSYS2_ROOT%\usr\bin;%PATH%"
 
 REM DVDA_SRC_TREE / DVDA_FONT_SRC / DVDA_SCRIPTS / MSYS2_ROOT are inherited
 REM from the environment automatically, so they are not repeated here.
-"%MSYS2_ROOT%\usr\bin\bash.exe" -lc "cd $(cygpath -u '%KITS%') && exec bash ./build-all.sh"
+REM
+REM NOTE: the inner shell is /usr/bin/bash, deliberately NOT a bare "bash".
+REM   On Windows a bare "bash" resolves to
+REM       C:\Users\<u>\AppData\Local\Microsoft\WindowsApps\bash.exe
+REM   which is the WSL LAUNCHER (verified: where.exe bash points there).
+REM   Inside MSYS2 /usr/bin usually wins, so a bare "bash" happens to work
+REM   today - but then whether the build uses WSL depends on PATH, silently
+REM   and per machine.  /usr/bin/bash can only ever be MSYS2 itself.
+REM
+REM KEEP THIS FILE PURE ASCII.  cmd.exe decodes .bat as OEM (CP936 here);
+REM UTF-8 text - even inside REM - desynchronises the byte pairs of the
+REM GBK decoding and can swallow an ASCII char of the NEXT line, turning
+REM "REM ..." into "EM ...".  Hit this for real; see TROUBLESHOOTING.md.
+"%MSYS2_ROOT%\usr\bin\bash.exe" -lc "cd $(cygpath -u '%KITS%') && exec /usr/bin/bash ./build-all.sh"
 
 set "RC=%ERRORLEVEL%"
 echo.

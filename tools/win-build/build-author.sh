@@ -13,14 +13,21 @@ export ROOTDIR="$SRC"
 cd "$SRC"
 
 step "[1/5] configure"
-# ⚠️ 这一步在 Windows 上很慢（实测 1~2 小时）：
-#    MSYS2 的 fork/exec 约 4~7 秒/次（关掉杀软也一样，C 盘 D 盘同样慢），
-#    而 autotools 的 configure 要跑几百个 conftest 的「编译+运行」，
-#    实测每个 check ≈ 15 秒。Linux 上这一步只要 30 秒。
+# ⚠️ 这一步在 Windows 上**可能**很慢，快慢取决于杀软的**内核过滤驱动**：
 #
-#    目标平台是确定的（MSYS2/MinGW64 + 指定 gcc + 指定 FFmpeg），
-#    configure 的结果也就确定了 —— 所以用缓存复用，见 common.sh。
-#    想强制重跑：RECONFIGURE=1 bash build-author.sh
+#   有卡巴斯基（21 个 kl* 过滤驱动驻留）时：每个 check ≈ 15 秒，
+#       fork/exec ≈ 2~4 秒/次 → 整个 configure ≈ 1 小时
+#   卸掉卡巴斯基 + 重启后：               每个 check ≈ 0.4 秒，
+#       fork/exec ≈ **27 ms**/次  → 整个 configure ≈ 2~3 分钟
+#
+#   即快慢是 **100 倍**的差距，不是「MSYS2 fork 天生慢」。
+#   （测量要注意：早期我用 `$(date)` 取时间戳，而 `date` 本身就是个 fork，
+#    测出来的值被它自己要测的开销撑大了 —— 改用内建 $EPOCHREALTIME 才准。）
+#
+#   而 autotools 的 configure 要跑几百个 conftest 的「编译+运行」，
+#   所以这一步在慢环境下最痛。目标平台是确定的（MSYS2/MinGW64 +
+#   指定 gcc + 指定 FFmpeg），configure 的结果也就确定了 —— 用缓存复用，
+#   见 common.sh。想强制重跑：RECONFIGURE=1 bash build-author.sh
 NEED_CONFIGURE=0
 if [ "${RECONFIGURE:-0}" = "1" ]; then
     echo "  RECONFIGURE=1 —— 强制重跑 configure"
@@ -84,7 +91,7 @@ step "[2b/5] UTF-8 argv manifest（Windows 上的必需修复）"
 #    它会自动把 mingw 自带的 default-manifest.o 链进去，**排在前面并覆盖**
 #    我们的 manifest（链接器取第一个）。所以必须把
 #    <MSYS>/lib/default-manifest.o 换成空对象，同时备份原文件。
-DFM="$MSYS_ROOT/mingw64/lib/default-manifest.o"
+DFM="$MSYSBASE/mingw64/lib/default-manifest.o"
 [ -f "$DFM" ] || DFM="$MSYS/lib/default-manifest.o"
 if [ -f "$DFM" ]; then
     [ -f "$DFM.orig" ] || cp -p "$DFM" "$DFM.orig"
