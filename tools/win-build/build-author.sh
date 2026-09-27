@@ -13,20 +13,45 @@ export ROOTDIR="$SRC"
 cd "$SRC"
 
 step "[1/5] configure"
-rm -f config.h config.status config.log
-rm -f Makefile src/Makefile libutils/src/Makefile libfixwav/src/Makefile
+# ⚠️ 这一步在 Windows 上很慢（实测 1~2 小时）：
+#    MSYS2 的 fork/exec 约 4~7 秒/次（关掉杀软也一样，C 盘 D 盘同样慢），
+#    而 autotools 的 configure 要跑几百个 conftest 的「编译+运行」，
+#    实测每个 check ≈ 15 秒。Linux 上这一步只要 30 秒。
+#
+#    目标平台是确定的（MSYS2/MinGW64 + 指定 gcc + 指定 FFmpeg），
+#    configure 的结果也就确定了 —— 所以用缓存复用，见 common.sh。
+#    想强制重跑：RECONFIGURE=1 bash build-author.sh
+NEED_CONFIGURE=0
+if [ "${RECONFIGURE:-0}" = "1" ]; then
+    echo "  RECONFIGURE=1 —— 强制重跑 configure"
+    rm -f "$CONFIGURE_CACHE_META"
+    NEED_CONFIGURE=1
+elif configure_cache_usable && restore_configure_cache; then
+    NEED_CONFIGURE=0          # 缓存可用
+else
+    echo "  没有可用缓存（首次构建 / 工具链变了 / 校验失败）"
+    echo "  注: 这一步在 Windows 上较慢，因为它要跑几百个 conftest 的编译+运行"
+    NEED_CONFIGURE=1
+fi
 
-# CFLAGS 与 Linux 侧保持一致：
-#   -Wno-error=incompatible-pointer-types  上游代码本来就需要的
-#   -Wno-error=implicit-function-declaration  Windows 上还有几处 POSIX 函数
-export CFLAGS="-O2 -DWITHOUT_sox -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
+if [ "$NEED_CONFIGURE" = "1" ] || [ ! -f "$SRC/config.status" ]; then
+    rm -f config.h config.status config.log
+    rm -f Makefile src/Makefile libutils/src/Makefile libfixwav/src/Makefile
 
-./configure \
-    --prefix="$SRC/install" \
-    CPPFLAGS="-DWITHOUT_sox -I$SRC/local/include" \
-    LDFLAGS="-L$SRC/local/lib" \
-    CFLAGS="$CFLAGS" \
-    > "$LOGDIR/configure.log" 2>&1
+    # CFLAGS 与 Linux 侧保持一致：
+    #   -Wno-error=incompatible-pointer-types  上游代码本来就需要的
+    #   -Wno-error=implicit-function-declaration  Windows 上还有几处 POSIX 函数
+    export CFLAGS="-O2 -DWITHOUT_sox -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
+
+    ./configure \
+        --prefix="$SRC/install" \
+        CPPFLAGS="-DWITHOUT_sox -I$SRC/local/include" \
+        LDFLAGS="-L$SRC/local/lib" \
+        CFLAGS="$CFLAGS" \
+        > "$LOGDIR/configure.log" 2>&1
+
+    save_configure_cache
+fi
 
 grep -m1 -E 'define HAVE_ffmpeg '     config.h
 grep -m1 -E 'define HAVE_core_BUILD ' config.h

@@ -167,3 +167,112 @@ find_py_fonttools() {
     done
     return 1
 }
+
+# ============================================================================
+#  configure 结果缓存
+# ============================================================================
+# ⚠️ 为什么需要（实测）：MSYS2 在 Windows 上的 **fork/exec 约 4~7 秒/次**
+#    （不是杀软的问题 —— 关掉卡巴斯基后仍然如此；C 盘与 D 盘一样慢）。
+#    实测基准：
+#        true（bash 内建，零进程）   1.8 s
+#        外部 echo                   4.1 s
+#        运行一个空 exe              4.6 s
+#        编译一个空 .c               4.4 s
+#    autotools 的 configure 要跑**几百个** conftest 的「编译 + 运行」，
+#    于是整步要 **1~2 小时**（实测每个 check ≈ 15 秒；Linux 上 configure 只要
+#    30 秒）。
+#
+#    而目标平台是**确定的**（MSYS2/MinGW64 + 指定 gcc + 指定 FFmpeg），
+#    所以 configure 的结果是确定的 —— 把产物存下来复用即可。
+#    后续构建（含改了源码之后）就只跑 `make`，几分钟搞定。
+#
+# ⚠️ 唯一要处理的麻烦：configure 的产物里**写死了源码树的绝对路径**
+#    （config.status 的 ac_pwd、各 Makefile 的 ROOTDIR/CPPFLAGS/LDLIBS…）。
+#    所以缓存里记下当时的路径，恢复时把旧路径 sed 成当前路径。
+# ============================================================================
+
+# 缓存标识：工具链变了就不能复用
+configure_cache_key() {
+    local gccv ffv
+    gccv="$(gcc -dumpversion 2>/dev/null || echo unknown)"
+    ffv="$(pkg-config --modversion libavcodec 2>/dev/null || echo noffmpeg)"
+    echo "gcc${gccv}-avcodec${ffv}-$(uname -m)"
+}
+
+CONFIGURE_CACHE="$KIT/configure-cache"
+CONFIGURE_CACHE_META="$CONFIGURE_CACHE/META"
+
+# 缓存里包含哪些文件（相对源码树的路径）
+CONFIGURE_CACHE_FILES="config.h Makefile src/Makefile libutils/src/Makefile
+libfixwav/src/Makefile config.status"
+
+# 把当前 configure 的产物存进缓存
+save_configure_cache() {
+    [ -f "$SRC/config.status" ] || return 0
+    mkdir -p "$CONFIGURE_CACHE"
+    local f
+    for f in $CONFIGURE_CACHE_FILES; do
+        [ -f "$SRC/$f" ] || continue
+        mkdir -p "$CONFIGURE_CACHE/$(dirname "$f")"
+        cp -f "$SRC/$f" "$CONFIGURE_CACHE/$f"
+    done
+    cat > "$CONFIGURE_CACHE_META" <<EOF
+# configure 结果缓存 —— 由 build-author.sh 写入
+# 恢复时会把 SRC_PATH 替成当前源码树路径（configure 产物里写死了绝对路径）
+key=$(configure_cache_key)
+SRC_PATH=$SRC
+MSYS=$MSYS
+saved=$(date '+%Y-%m-%d %H:%M:%S')
+EOF
+    echo "  已缓存 configure 结果 -> $CONFIGURE_CACHE"
+    echo "  （下次构建会跳过 configure，直接 make）"
+}
+
+# 能不能用缓存
+configure_cache_usable() {
+    [ -f "$CONFIGURE_CACHE_META" ] || return 1
+    [ -f "$CONFIGURE_CACHE/config.h" ] || return 1
+    local k
+    k="$(configure_cache_key)"
+    local ck
+    ck="$(sed -n 's/^key=//p' "$CONFIGURE_CACHE_META" | head -1)"
+    if [ "$k" != "$ck" ]; then
+        echo "  缓存失效：工具链变了（缓存=$ck  当前=$k）"
+        return 1
+    fi
+    return 0
+}
+
+# 恢复缓存（并把旧路径改成当前路径）
+restore_configure_cache() {
+    local old_src
+    old_src="$(sed -n 's/^SRC_PATH=//p' "$CONFIGURE_CACHE_META" | head -1)"
+    local f n=0
+    for f in $CONFIGURE_CACHE_FILES; do
+        [ -f "$CONFIGURE_CACHE/$f" ] || continue
+        mkdir -p "$SRC/$(dirname "$f")"
+        cp -f "$CONFIGURE_CACHE/$f" "$SRC/$f"
+        n=$((n + 1))
+    done
+    # 关键：把写死的旧源码树路径改成本次的位置
+    if [ -n "$old_src" ] && [ "$old_src" != "$SRC" ]; then
+        echo "  改写缓存里的路径: $old_src -> $SRC"
+        for f in $CONFIGURE_CACHE_FILES; do
+            [ -f "$SRC/$f" ] || continue
+            sed -i "s|$old_src|$SRC|g" "$SRC/$f"
+        done
+    fi
+    echo "  已从缓存恢复 $n 个文件（跳过 configure）"
+
+    # ⚠️ 自校验：改写后产物里应该能看到**当前**源码树路径。
+    #    校验不过就当作缓存不可用，让调用方回退到真正跑 configure ——
+    #    否则会拿一份路径错乱的 Makefile 去编译，报出一堆莫名其妙找不到文件。
+    if [ -n "$old_src" ] && [ "$old_src" != "$SRC" ]; then
+        if ! grep -qF "$SRC" "$SRC/src/Makefile" 2>/dev/null; then
+            echo "  [警告] 缓存恢复后校验失败（路径改写不完整）—— 将重跑 configure"
+            rm -f "$SRC/config.status"
+            return 1
+        fi
+    fi
+    return 0
+}
