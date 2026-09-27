@@ -8,6 +8,11 @@
   B. 组内各轨扇区首尾相接（无缝无叠）
   C. 每个扇区都有 PTS（时间轴完整）
   D. 每个 PTS 下降点的位置恰好是某轨的首个扇区（轨边界）
+     且**每个 title 的起点必须有一个下降点**
+     （为什么是 title 而不是每轨：本工程的 patch_mlp_one_title 把同一
+     组的各轨合并进**一个 title**，时间轴在 title 内是**连续**的 ——
+     即 PTS 从上一轨延续，不会每轨重置。所以下降点只出现在
+     新 title 开始处。早先按「每轨都该重置」判，会永远报失败。）
   E. 各轨起点的 PTS 取值
 
 用法:
@@ -29,12 +34,12 @@ import os
 import pathlib
 import re
 import shutil
-import subprocess
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dvda_config import load as load_config          # noqa: E402
+from iso9660 import Iso9660, IsoError                # noqa: E402
 
 CFG = load_config(need=None, quiet=True)
 BUILD_DIR = CFG.build_dir
@@ -71,12 +76,18 @@ ROW = re.compile(
 
 
 def rmtree_rw(path):
-    """删除 xorriso 提取出来的目录树。
+    """删除提取出来的目录树（含 Windows 只读属性）。
 
-    xorriso -osirrox 会保留 ISO 里的权限位（目录 dr-xr-xr-x、文件 -r-xr-xr-x），
-    那个目录没有写位，直接 rmtree/rm -rf 都删不掉里面的文件，只会留下残缺目录。
-    于是下一次运行 mkdir 会抛 FileExistsError —— 一份完全合格的 ISO 被判为失败。
-    故先把整棵树的写权限补回来再删。
+    历史背景：以前用 `xorriso -osirrox` 提取，它会**保留 ISO 里的权限位**
+    （目录 dr-xr-xr-x、文件 -r-xr-xr-x），那个目录没有写位，直接 rmtree 删不掉
+    里面的文件，只会留下残缺目录；下一次运行 mkdir 抛 FileExistsError ——
+    一份完全合格的 ISO 被判为失败。
+
+    现在提取改由 `iso9660.py` 自己做（权限是普通值），不再会有这个问题；
+    这里保留处理是为了两点：
+      · 目录可能在上一次运行中已存在（旧版本留下的残骸）
+      · Windows 的**只读属性**同样会让 shutil.rmtree 失败，
+        而 os.chmod 在 Windows 上能清掉该属性
     """
     if not path.exists():
         return
@@ -140,7 +151,8 @@ def main():
     rows = []
     for m in ROW.finditer(text):
         g = [int(x) for x in m.groups()]
-        rows.append({"group": g[0], "track": g[3], "first": g[4], "last": g[5],
+        rows.append({"group": g[0], "title": g[1], "track": g[3],
+                     "first": g[4], "last": g[5],
                      "first_pts": g[6], "pts_len": g[7]})
     if not rows:
         print("[跳过] 构建日志中未解析到轨道表")
@@ -200,9 +212,20 @@ def main():
         d = WORK / disc
         rmtree_rw(d)
         d.mkdir(parents=True)
-        subprocess.run(["xorriso", "-osirrox", "on", "-indev", str(iso),
-                        "-extract", "/AUDIO_TS", str(d / "AUDIO_TS")],
-                       capture_output=True)
+        # ⚠️ 原来是 `xorriso -osirrox on -indev <iso> -extract /AUDIO_TS <dest>`。
+        #    Windows 上没有 xorriso，而且 **MSYS2 也没有这个包**
+        #    （实测 `pacman -Ss xorriso` 查不到）⇒ 改用共享模块 iso9660.py
+        #    自己提取（纯标准库，两个平台都能跑）。
+        try:
+            with Iso9660(str(iso)) as h:
+                if not h.extract("AUDIO_TS", str(d / "AUDIO_TS")):
+                    print("  !! ISO 里没有 AUDIO_TS 目录")
+                    ok = False
+                    continue
+        except IsoError as e:
+            print("  !! 读取 ISO 失败: %s" % e)
+            ok = False
+            continue
         audio = d / "AUDIO_TS"
 
         for g, rs in groups:
@@ -248,16 +271,28 @@ def main():
             drops = [i for i in range(1, n)
                      if pts[i] is not None and pts[i - 1] is not None
                      and pts[i] < pts[i - 1]]
+            # 下降点必须落在**某个轨的起点**上（title 起点必然也是轨起点）
             starts = {r["first"] for r in rs if r["first"] != 0}
+            # 而「应该下降」的地方是**title**的起点，不是每轨起点。
+            # 本工程把同组各轨合并进一个 title，时间轴在 title 内连续，
+            # 所以只有新 title 开始处才会出现 PTS 重置。
+            t_starts = set()
+            prev_t = None
+            for r in rs:
+                if r["title"] != prev_t:
+                    if r["first"] != 0:
+                        t_starts.add(r["first"])
+                    prev_t = r["title"]
             not_boundary = [i for i in drops if i not in starts]
-            missing = [s for s in starts if s < n and s not in drops]
+            missing = [s for s in t_starts if s < n and s not in drops]
             d_ok = (not not_boundary) and (not missing)
-            print("     D. PTS 下降点 %d 个；落在轨边界 %s"
-                  % (len(drops), "全部命中 ✔" if d_ok else "异常 ✗"))
+            print("     D. PTS 下降点 %d 个（title 起点 %d 个）；落在轨边界 %s"
+                  % (len(drops), len(t_starts),
+                     "全部命中 ✔" if d_ok else "异常 ✗"))
             if not_boundary:
                 print("        非轨边界的下降点: %s" % not_boundary[:8])
             if missing:
-                print("        应下降但未下降的轨起点: %s" % missing[:8])
+                print("        应下降但未下降的 title 起点: %s" % missing[:8])
             ok &= d_ok
 
             vals = sorted({pts[r["first"]] for r in rs
@@ -277,7 +312,7 @@ def main():
             print("     F. 首扇区以 pack 头开头 %s"
                   % ("全部 ✔" if f_ok
                      else "异常 %d 轨 ✗ 轨号 %s" % (len(nopack),
-                                                 [r["n"] for r in rs
+                                                 [r["track"] for r in rs
                                                   if r["first"] in nopack][:5])))
             if not f_ok:
                 for s in nopack[:3]:

@@ -74,11 +74,14 @@ DVD-Audio-Maker\
     02_build.py         第二步
     menu_assets.py      菜单素材生成
     dvda_config.py      配置加载器
+    iso9660.py          ISO 读取（纯 Python，校验脚本共用）
+    alac_endfix.py      Apple ALAC「未压缩帧缺 END 标记」修复
     mlp_align.py        MLP 头部对齐工具
     m4a2flac.py         （可选）M4A/ALAC 转 FLAC
-    audit_disc.py       校验：拆 ISO 逐项核对（需 xorriso）
-    verify_menu.py      校验：菜单按钮与跳转（需 xorriso）
-    quick_check.py      快速自检（纯 Python，无需任何外部命令）
+    quick_check.py      校验：结构与时间轴（快，推荐先跑）
+    check_aob_pts.py    校验：AOB 里的 PES 时间戳是否推进
+    audit_disc.py      校验：扇区/轨边界/PTS 逐项审计
+    verify_menu.py      校验：菜单按钮、跳转、封面图
   menu-bin\             工具链（12 个 exe + 100 个 DLL + ImageMagick 配置）
     fonts\
       NotoSansCJKsc-Regular.otf    简体中文（含拉丁）
@@ -127,31 +130,48 @@ Python 装在别处可以临时指定：`set DVDA_PYTHON=C:\Python314\python.exe
 ImageMagick 7 把各工具合并成 `magick`，没有独立的 `identify.exe`。
 本包脚本已按 `magick identify` 处理；若自行改动脚本请保留这一处理。
 
-## 5. 可选：校验成品
+## 5. 校验成品
 
-**`quick_check.py` 推荐先跑** —— 几秒出结果，而且**不需要任何外部命令**：
+**全部校验脚本都是纯 Python，不需要 xorriso、dd 或其他外部工具**
+（只需 Python；`verify_menu.py` 另需 ffmpeg 用来抽帧看画面）。
+
+出盘后建议按这个顺序跑：
 
 ```
+REM 1) 结构与时间轴 —— 几秒出结果，先跑这个
 dvda.cmd quick_check.py D:\DVD_Output
+
+REM 2) AOB 里的时间戳是否随播放推进（进度条能不能拖就看它）
+dvda.cmd check_aob_pts.py D:\DVD_Output\Wuthering_Waves_Singles_EPs_1.iso
+
+REM 3) 逐项审计：扇区数、轨边界、PTS 下降点、pack 头
+dvda.cmd audit_disc.py
+
+REM 4) 菜单：页数、按钮跳转、封面图、索引页逐格
+dvda.cmd verify_menu.py
 ```
 
-> 注意它收的是 **ISO 所在目录**（不是单个 `.iso` 文件），目录里所有 `*.iso`
-> 都会被校验。它查四件事：
+| 脚本 | 参数 | 查什么 |
+|---|---|---|
+| `quick_check.py` | ISO **目录** | ① 构建日志无 pack 补齐失败 ② IFO 声明轨数 == 音源曲目数 ③ 每轨首扇区是 pack 头 `00 00 01 BA` ④ 各 title 内 cell 时间戳连续、静图引用号不越界 |
+| `check_aob_pts.py` | 单个 `.iso` | AOB 里每个扇区的 PES 时间戳是否单调推进；时间轴有问题时播放器会「加速」、进度条拖不动 |
+| `audit_disc.py` | 无（读 config） | 按音频组：AOB 扇区总数 vs 轨道表、轨间是否首尾相接、每扇区有无 PTS、PTS 下降点是否落在 title 起点、首扇区是否 pack 头 |
+| `verify_menu.py` | 无（读 config） | 菜单页数、IFO 容量、各页 cell 地址链与 next/prev、播放封面表、菜单画面是不是真的画上了、索引页每格缩略图与专辑名 |
+
+> `quick_check.py` 收的是 **ISO 所在目录**（不是单个 `.iso`），目录里所有
+> `*.iso` 都会被校验 —— 因为出盘会有两张盘，这样一次跑完。
 >
-> 1. 构建日志里没有 pack 补齐失败
-> 2. 各音频组 IFO 声明的轨数之和 == 音源曲目数
-> 3. 每轨首扇区都以 pack 头 `00 00 01 BA` 开头（不是的话读盘端会丢掉那一首）
-> 4. 各 title 的 cell 时间戳连续（不然进度条拖不动）、静图引用号不越界
+> `audit_disc.py` / `verify_menu.py` 不带参数，直接从 `config.sh` 读
+> `DVDA_FINAL_DIR` / `DVDA_BUILD_DIR` / `DVDA_ISO_PREFIX`。
 
-下面两个需要 **xorriso**（<https://www.videohelp.com/software/xorriso>）在 PATH 里：
+**判读结果**：输出里 `[OK]` / `✔` 是通过，`[FAIL]` / `✗` 是失败，
+脚本退出码 0 = 全部通过。全部通过的样子：
 
 ```
-dvda.cmd audit_disc.py  D:\DVD_Output\xxx_1.iso
-dvda.cmd verify_menu.py D:\DVD_Output\xxx_1.iso
+快速校验 全部通过 ✔                     （quick_check.py）
+审计结论: 全部通过 ✔                    （audit_disc.py）
+菜单校验全部通过 ✔                      （verify_menu.py）
 ```
-
-> `check_aob_pts.py` 也不需要外部命令，但它收的是**单个 `.iso`**，
-> 用来查 AOB 里的 PES 时间戳是否随播放推进（**进度条能不能拖**就看它）。
 
 ## 6. 许可
 

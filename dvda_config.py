@@ -75,6 +75,19 @@ def magick_identify_cmd():
 
     返回的是 `shutil.which()` 解析出的**绝对路径**：Windows 的
     `CreateProcess` 与 cmd 的行内 `set PATH` 有若干怪癖，用绝对路径最稳。
+
+    ⚠️ **还要兜底找「随包携带」的那一份**。`dvda.cmd` 只设了
+    `DVDA_AUTHOR` / `DVDA_MKISOFS` / `DVDA_AUTHOR_SRC` / `DVDA_MENU_FONT`
+    这几个环境变量，**没有把 `menu-bin/` 加进 PATH**（故意的：那里面有 106 个
+    DLL，把整目录塞进 PATH 会让别的程序误加载同名旧版 DLL，反而更容易出
+    0xC0000139）。于是像 `verify_menu.py` 这种**独立**校验脚本直接调
+    `shutil.which("magick")` 就找不到 —— 表现为：
+
+        FileNotFoundError: [WinError 2] 系统找不到指定的文件。
+
+    而 `02_build.py` 自己有 `_prepend_to_path()`，所以构建时不会遇到。
+    这里改成也要看 `<脚本目录>/../menu-bin/`（发布包的布局），
+    这样独立脚本不用改 PATH 也能用。
     """
     exe = shutil.which("identify")
     if exe:
@@ -82,10 +95,21 @@ def magick_identify_cmd():
     exe = shutil.which("magick")
     if exe:
         return [exe, "identify"]
+
+    # 退化：找随包携带的 ImageMagick（<scripts>/../menu-bin/）
+    here = os.path.dirname(os.path.abspath(__file__))
+    for names in (("magick.exe", "identify"), ("magick", "identify"),
+                  ("identify.exe",), ("identify",)):
+        cand = os.path.join(os.path.dirname(here), "menu-bin", names[0])
+        if os.path.exists(cand):
+            return [cand] + list(names[1:])
+
     raise RuntimeError(
-        "找不到 ImageMagick 的 identify（PATH 里既没有 identify 也没有 magick）\n"
+        "找不到 ImageMagick 的 identify（PATH 里既没有 identify 也没有 magick，\n"
+        "        随包目录 <scripts>/../menu-bin/ 下也没有）\n"
         "        Linux:  apt install imagemagick\n"
-        "        Windows: 请确认 menu-bin 里有 magick.exe 或 identify.exe"
+        "        Windows: 确认 menu-bin 里有 magick.exe 或 identify.exe；\n"
+        "                 或把它的绝对路径加进 PATH"
     )
 
 

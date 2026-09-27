@@ -29,6 +29,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from iso9660 import Iso9660, IsoError                # noqa: E402
+
 # ASVS 静图预算。
 #
 # dvda-author 在超过 1024 扇区时会打印「Exceeding stillpic buffer limit
@@ -45,18 +47,68 @@ def _run(cmd):
     return r.returncode, r.stdout.decode("utf-8", "replace")
 
 
+def _identify_cmd():
+    """ImageMagick 的 identify 命令前缀。
+
+    ⚠️ IM 7 把各工具合并进 `magick`，**没有独立的 identify**；
+    本工程在 `dvda_config.magick_identify_cmd()` 里统一处理
+    （PATH 里的 identify → PATH 里的 magick identify → 随包的
+    `<scripts>/../menu-bin/`）。早期这里写死了 `identify`，在只有
+    `magick` 的安装上会 FileNotFoundError。
+    """
+    try:
+        import dvda_config
+        return dvda_config.magick_identify_cmd()
+    except Exception:
+        here = os.path.dirname(os.path.abspath(__file__))
+        for names in (("magick.exe", "identify"), ("magick", "identify")):
+            cand = os.path.join(os.path.dirname(here), "menu-bin", names[0])
+            if os.path.exists(cand):
+                return [cand] + list(names[1:])
+        return ["magick", "identify"]
+
+
+def _tmp(name):
+    """跨平台的临时文件路径。
+
+    ⚠️ 原来是写死的 `/tmp/…` —— 那是 Linux 的约定，Windows 上会变成
+    当前盘的 `\\tmp\\…`（通常不存在，于是抽帧那两步静默失败）。
+    改用 tempfile.gettempdir()。
+    """
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), name)
+
+
 def iso_files(iso):
-    """ISO 里的所有路径（相对于 /）。"""
-    rc, out = _run(["xorriso", "-indev", iso, "-find", "/"])
-    if rc != 0:
+    """ISO 里的所有路径（相对于 /）。
+
+    ⚠️ 原来是 `xorriso -indev <iso> -find /`。Windows 上没有 xorriso，
+    而且 **MSYS2 也没有这个包**（实测 `pacman -Ss xorriso` 查不到），
+    所以改用共享模块 iso9660.py 自己解析（纯标准库）。
+
+    调用方只用 `os.path.basename()` 判断关键文件在不在，而那些名字
+    （AUDIO_TS.VOB / AUDIO_SV.VOB / ATS_01_0.IFO …）都是 ISO level 1 短名，
+    一定在 PVD 里，不需要 Joliet / Rock Ridge。
+    """
+    try:
+        with Iso9660(iso) as h:
+            return h.all_paths()
+    except (IsoError, OSError):
         return []
-    return [l.strip().strip("'") for l in out.splitlines() if l.strip()]
 
 
 def extract(iso, inner, dest):
-    rc, out = _run(["xorriso", "-osirrox", "on", "-indev", iso,
-                    "-extract", inner, dest])
-    return rc == 0 and os.path.exists(dest)
+    """把 ISO 里的 inner 取到 dest（文件/目录都行）。
+
+    ⚠️ 原来是 `xorriso -osirrox on -indev <iso> -extract <inner> <dest>`，
+    同样因为 Windows 上不可用而换成 iso9660.py。
+    成功返回 True；条目不存在返回 False。
+    """
+    try:
+        with Iso9660(iso) as h:
+            return h.extract(inner, dest)
+    except (IsoError, OSError):
+        return False
 
 
 def amg_menu_count(ifo):
@@ -203,15 +255,15 @@ def menu_cell_chain(ifo, vob):
 
 def frame_stats(vob):
     """取菜单 VOB 的第一帧，返回（均值, 唯一色数）；全黑图两者都接近 0/1。"""
-    png = "/tmp/_menu_frame.png"
+    png = _tmp("_menu_frame.png")
     if os.path.exists(png):
         os.remove(png)
     rc, _ = _run(["ffmpeg", "-v", "error", "-y", "-i", vob,
                   "-frames:v", "1", png])
     if rc != 0 or not os.path.exists(png):
         return None
-    rc, out = _run(["identify", "-format", "%[fx:mean] %[fx:standard_deviation] "
-                    "%k", png])
+    rc, out = _run(_identify_cmd() +
+                   ["-format", "%[fx:mean] %[fx:standard_deviation] %k", png])
     try:
         parts = out.split()
         return float(parts[0]) * 255, float(parts[1]) * 255, int(parts[2])
@@ -233,7 +285,7 @@ def check_index_cells(vob, n_index_pages, n_albums, label):
     """
     import menu_assets as ma
 
-    png = "/tmp/_index_frame.png"
+    png = _tmp("_index_frame.png")
     if os.path.exists(png):
         os.remove(png)
     rc, _ = _run(["ffmpeg", "-v", "error", "-y", "-i", vob,
@@ -250,8 +302,11 @@ def check_index_cells(vob, n_index_pages, n_albums, label):
     want = min(n_albums, ma.INDEX_PER_PAGE)
 
     def stat(expr, x, y, w, h):
-        rc, out = _run(["identify", "-crop", f"{w}x{h}+{x}+{y}",
-                        "-format", expr, png])
+        # ⚠️ 不要写死 `identify`：IM7 只有 `magick identify`。
+        #    这里以前是 `["identify", …]`，在只有 magick 的安装上直接
+        #    FileNotFoundError（不是「识别失败」，是程序都没启动）。
+        rc, out = _run(_identify_cmd() + ["-crop", f"{w}x{h}+{x}+{y}",
+                                          "-format", expr, png])
         try:
             return float(out.strip())
         except ValueError:
@@ -403,7 +458,7 @@ def check_iso(iso, expect_tracks, expect_pages, tmpdir, label,
     print(f"\n=== {label}: {os.path.basename(iso)} ===")
     names = iso_files(iso)
     if not names:
-        print("  [FAIL] 读不到 ISO 内容（xorriso 失败？）")
+        print("  [FAIL] 读不到 ISO 内容（iso9660 解析失败？）")
         return False
     base = {os.path.basename(n) for n in names}
     ok = True
@@ -580,7 +635,7 @@ def main():
             for f in ("AUDIO_TS.VOB", "AUDIO_SV.VOB"):
                 print(f"  [{'OK' if f in base else 'FAIL'}] AUDIO_TS/{f}")
             continue
-        ok = check_iso(iso, tracks, pages, f"/tmp/verify-menu/disc{i}",
+        ok = check_iso(iso, tracks, pages, _tmp(os.path.join("verify-menu", "disc%d" % i)),
                        f"第 {i} 盘", expect_pics, expect_albums, n_idx or 0)
         all_ok = all_ok and ok
 
