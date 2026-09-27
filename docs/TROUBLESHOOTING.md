@@ -89,8 +89,11 @@
     - 37.6 [双向同步时的覆盖陷阱（把自己刚写的文档覆盖了）](#376-双向同步时的覆盖陷阱把自己刚写的文档覆盖了)
     - 37.7 [GitHub 间歇性不可达](#377-github-间歇性不可达)
     - 37.8 [独立验证：不要用「构建自己的校验脚本」当唯一证据](#378-独立验证不要用构建自己的校验脚本当唯一证据)
-    - 37.9 [实测数据（2026-09-27，Windows 全流程）](#379-实测数据2026-09-27windows-全流程)
-    - 37.10 [教训汇总](#3710-教训汇总)
+    - 37.9 [被我自己的改动掩蔽的语义错误：`blocks` 是扇区，不是字节](#379-被我自己的改动掩蔽的语义错误blocks-是扇区不是字节)
+    - 37.10 [审计判据会随实现演进而过期（D 项：每轨 vs 每 title）](#3710-审计判据会随实现演进而过期d-项每轨-vs-每-title)
+    - 37.11 [独立脚本的隐蔽依赖：`identify`、`menu-bin` 不在 PATH、写死的 `/tmp`](#3711-独立脚本的隐蔽依赖identifymenu-bin-不在-path写死的-tmp)
+    - 37.12 [实测数据（2026-09-27，Windows 全流程）](#3712-实测数据2026-09-27windows-全流程)
+    - 37.13 [教训汇总](#3713-教训汇总)
 
 ---
 
@@ -4893,12 +4896,13 @@ def to_native(p):
 
 ### 37.2 ★★★★★ 校验脚本依赖 `xorriso` / `dd` —— Windows 上完全不可用
 
-`quick_check.py`（每次出盘后都会跑的「快速结构校验」）用两个外部命令：
+三个校验脚本都需要访问 ISO 的内容，各用了外部命令：
 
 ```python
-subprocess.run(["dd", "if=%s" % path, "bs=2048", "skip=%d" % lba, ...])   # 读扇区
-subprocess.run(["xorriso", "-indev", str(path), "-find", "/AUDIO_TS",
-                "-name", name, "-exec", "report_lba"])                    # 查 LBA
+subprocess.run(["dd", "if=%s" % path, "bs=2048", "skip=%d" % lba, ...])      # 按扇区读
+subprocess.run(["xorriso", "-indev", str(path), "-find", "/AUDIO_TS", ...])  # 列目录
+subprocess.run(["xorriso", "-osirrox", "on", "-indev", iso,
+                "-extract", "/AUDIO_TS", dest])                             # 取文件/目录
 ```
 
 Windows 上都没有。而且**这不是「装一下就有了」的问题**：
@@ -4908,38 +4912,41 @@ $ pacman -Ss xorriso
 （无输出）
 ```
 
-**MSYS2 没有 xorriso 包** —— 所以这个脚本在 Windows 上没有任何办法可用，
-而它同时在 WSL 侧是主力校验工具。移植时很容易漏掉这类「间接依赖」。
+**MSYS2 没有 xorriso 包** —— 所以这些脚本在 Windows 上没有任何办法可用，
+而它们在 WSL 侧是主力校验工具。移植时很容易漏掉这类「间接依赖」。
 
-修法是**自己解析 ISO9660**（只用标准库）：
+修法是写一个**共享模块 `iso9660.py`**（只用标准库），三个脚本都从它取：
 
 ```python
-def iso_read(path, lba, nsec):
-    """按扇区读 ISO 里的一小段（不挂载、不解整盘）。"""
-    with open(path, "rb") as f:
-        f.seek(lba * SEC)
-        return f.read(nsec * SEC)
+from iso9660 import Iso9660, IsoError
 
-
-def iso_list(path, dirname):
-    """列出 ISO 某个顶层目录下的条目 -> {名字: (lba, 字节数)}。
-
-    只用标准库解析 ISO9660（PVD + 目录记录）。
-    DVD-Audio 的目录与文件名（AUDIO_TS / ATS_01_0.IFO / ATS_01_1.AOB）
-    都是 ISO level 1 合法名，一定在 PVD 里，不需要 Joliet/Rock Ridge。
-    """
+with Iso9660(iso_path) as iso:
+    names = iso.all_paths()                          # 列出所有路径
+    data  = iso.read_file('AUDIO_TS/AUDIO_TS.IFO')   # 取一个文件
+    iso.extract('AUDIO_TS', r'D:\tmp\AUDIO_TS')      # 取文件或整个目录
+    raw   = iso.read_sectors(5173, 8)                # 按扇区读（替代 dd）
 ```
 
-要点：
+**为什么做成共享模块而不是各自内联**：同一件事（解析 ISO9660）写三份
+必然会漂移 —— 第 34 节已经因为「同类修复没收口」踩过一次。
+三份里错一份，就会出现「一个脚本说通过、另一个说失败」的假矛盾。
 
-- **Primary Volume Descriptor 在扇区 16 起**，`CD001` 签名 + 类型字节 `1`
-- **根目录记录**在 PVD 的偏移 156、长度 34；取其 LBA 与字节数
+解析要点：
+
+- **Primary Volume Descriptor 在扇区 16 起**，`CD001` 签名 + 类型字节 `1`；
+  扇区大小读 PVD 偏移 128，不要写死 2048
+- **根目录记录**在 PVD 偏移 156、长度 34；取其 LBA 与字节数
 - **目录记录是变长的**：长度字节为 0 表示本扇区剩余部分是填充，
   要跳到下一个扇区边界（`i = (i // SEC + 1) * SEC`）
-- 名字要去掉 ISO 的版本后缀 `;1`
-- 目录项用 `flags & 0x02` 判断
+- 数据不一定从 extent 的第一个字节开始：记录偏移 1 是「扩展属性记录长度」
+  （以**扇区**计），实际数据在 `lba + xar`
+- 名字要去掉版本后缀 `;1`。注意 `ATSI;1` 这种**没有点**的，
+  不能用 `split('.')` 处理
+- 目录项判 `flags & 0x02`；`flags & 0x80` 是「多段文件」——
+  本工程的 AOB 每个约 1 GiB（< 4 GiB）不会命中，但命中时要**显式报错**，
+  不能静默截断
 - Joliet 的条目是 UTF-16BE，`decode("ascii")` 会抛异常 —— 直接跳过即可，
-  因为我们要找的名字都是纯 ASCII
+  因为要找的名字都是 ISO level 1 短名
 
 顺带一个意外收获：**快了约 10 倍**（disc 1 + 2 从 3 秒降到 **0.33 秒**），
 因为不再为每个扇区起一个 `dd` 子进程。
@@ -4947,6 +4954,9 @@ def iso_list(path, dirname):
 **教训**：移植 checklist 里要专门列一项「本脚本调用了哪些外部命令」。
 `grep -n 'subprocess\|os.system\|shutil.which' *.py` 就能列全，
 比逐个脚本通读可靠。
+
+> ⚠️ 换实现时还要确认**返回值的单位与含义**。
+> 我就在这里栽了一次 —— 见 37.9。
 
 ### 37.3 ★★★★★ 改动集过期：构建**不报错**，但功能缺失
 
@@ -5212,7 +5222,168 @@ AOB 的起点可以从 ISO 里扫出来（扇区对齐的 DVD pack 头
 再核对体积比：`AOB ÷ MLP = 4.685e9 / 4.588e9 = 1.0208`，
 与既有实测系数 **1.0215~1.0220** 吻合 —— 说明没有多出或少掉整段音频。
 
-### 37.9 实测数据（2026-09-27，Windows 全流程）
+### 37.9 ★★★★★ 被我自己的改动掩蔽的语义错误：`blocks` 是扇区，不是字节
+
+把 `xorriso` 换掉时，我重写了「列目录」的函数。原实现（xorriso 的
+`report_lba`）输出是 `lba , blocks , bytes , 'path'`，代码取的是前两个：
+
+```python
+ifos[name] = (int(mm.group(1)), int(mm.group(2)))       # (lba, blocks)
+aobs.append((..., int(mm.group(1)), int(mm.group(2))))  # (lba, blocks)
+...
+for _i, name, lba, blocks in lst:
+    base.append((off, off + blocks, name, lba))         # 按**扇区**累加
+    off += blocks
+```
+
+也就是说 `blocks` 必须是**扇区数**。而我重写时返回了**字节数**：
+
+```python
+out[e.name] = (e.lba, e.size)          # ← 错：size 是字节
+```
+
+**为什么没被发现**：这段代码给「组内扇区号 → 盘内 LBA」建映射，映射错位之后，
+查到的 LBA 会落到**别的 AOB** 里 —— 而 AOB 里**每个扇区都以 pack 头
+`00 00 01 BA` 开头**。于是「该扇区是不是 pack 头」这条判据**照样通过**，
+只是它验的根本不是那条轨的位置。
+
+跨 AOB 的组才可能暴露（只有 1 个 AOB 的组 `off` 从 0 开始，碰巧是对的），
+而即使跨了，前后都是连续的 pack 区域，结果仍然「看起来正常」。
+
+**它是怎么被抓到的**：同一张盘上还有另一条**独立**的判据 ——
+`audit_disc.py` 的 A 项「组内 AOB 扇区总数 == 轨道表最大末扇区 + 1」。
+用字节数时不可能相等（差 2048 倍），一跑就报。修好之后：
+
+```
+A. 扇区数 AOB=1939135 轨道表=1939135  一致 ✔
+D. PTS 下降点 22 个（title 起点 22 个）；落在轨边界 全部命中 ✔
+```
+
+**教训**：
+
+- **重写一个函数时，先弄清返回值的单位与含义**。「同一个位置的两个数」
+  很容易在重写时把 `blocks` 写成 `size`，而类型都是 `int`，没人拦你。
+- **一条判据被「连续区域的同质化」掩盖时，需要另一条独立判据兜底**。
+  这里 A 项（总量对账）救了 B/C/D/F 项的命。
+- 面对这种错，`--verbose` 打印中间量（每个 AOB 的 lba/blocks）是最快的路：
+  一眼就能看出 `blocks=1073741824` 不可能是扇区数。
+
+### 37.10 ★★★★ 审计判据会随实现演进而过期（D 项：每轨 vs 每 title）
+
+`audit_disc.py` 的 D 项原文是「**每个轨**起点都应出现 PTS 下降点」——
+因为早期每轨自成 title，PTS 在每轨重置。后来
+`patch_mlp_one_title` 把同组各轨合并进**一个 title**，时间轴在 title 内
+变成**连续**的（这正是修「播放加速／进度条拖不动」的那个改动），
+于是下降点只在**新 title 开始处**出现。
+
+结果是 D 项按原判据**永远失败**，而且失败信息很有误导性：
+
+```
+D. PTS 下降点 22 个；落在轨边界 异常 ✗
+   应下降但未下降的轨起点: [1316224, 1421312, 1702785, ...]
+```
+
+看上去像「时间轴没接上」，实际上 22 个下降点恰好等于**该组的 22 个 title**
+（组1 23 title → 22 个下降点、组2 4 title → 3 个、disc2 组1 17 title → 16 个、
+disc2 组2 1 title → 0 个）。**数字本身就是答案**。
+
+修法是把「应该下降」的位置从**轨起点**改成 **title 起点**：
+
+```python
+t_starts = set()
+prev_t = None
+for r in rs:
+    if r["title"] != prev_t:
+        if r["first"] != 0:
+            t_starts.add(r["first"])
+        prev_t = r["title"]
+not_boundary = [i for i in drops if i not in starts]        # 仍对轨起点
+missing = [s for s in t_starts if s < n and s not in drops]  # 改为 title 起点
+```
+
+修好后 D 项直接变成自证明的输出：
+
+```
+D. PTS 下降点 22 个（title 起点 22 个）；落在轨边界 全部命中 ✔
+```
+
+**教训**：
+
+- **判据要写清它依赖的「实现约定」**。D 项依赖「每轨自成 title」这一约定，
+  而那个约定被后续改动推翻了。判据本身没写这件事，所以没人记得去改它。
+- **一个长期失败的检查会被忽略**（谁都不看永远红的灯），
+  从而把它本来能抓的真问题一起埋掉。**红着的灯必须要么修好、要么删掉。**
+- 读判据失败信息时，**先看数字有没有显然的解释**
+  （22 个下降点 vs 22 个 title），比通读代码快得多。
+
+### 37.11 ★★★ 独立脚本的隐蔽依赖：`identify`、`menu-bin` 不在 PATH、写死的 `/tmp`
+
+`verify_menu.py` 在 Linux 上一直好用，移植到 Windows 时连着崩了三次，
+每次都是**另一处**漏掉的 Windows 假设：
+
+**(1) 写死的 `identify`**
+
+```python
+rc, _ = _run(["identify", "-crop", ...])     # 有两处这么写
+```
+
+IM 7 把各工具合并进 `magick`，**没有独立的 `identify.exe`**。
+本工程早就为此写了 `dvda_config.magick_identify_cmd()`，但这两个调用点
+没走它 → `FileNotFoundError: [WinError 2] 系统找不到指定的文件`。
+
+> ⚠️ 注意这个错误的形态：**不是「识别失败」，是程序根本没启动**。
+> 只看输出为空、解析成 0 的话，会误判成「图没画对」。
+
+**(2) `menu-bin` 不在 PATH**
+
+`magick_identify_cmd()` 原来只查 `shutil.which("identify")` /
+`shutil.which("magick")`。而 `dvda.cmd` **故意不把 `menu-bin\` 加进 PATH**
+（那里面有 106 个 DLL，整目录塞进 PATH 会让别的程序误加载同名旧版 DLL，
+反而更容易撞 `0xC0000139`）。于是：
+
+- `02_build.py` 没事 —— 它自己有 `_prepend_to_path()`
+- `verify_menu.py` 这类**独立**脚本直接崩
+
+修法是在 `magick_identify_cmd()` 里**兜底找随包那一份**
+（`<脚本目录>/../menu-bin/`），所有脚本一起受益：
+
+```python
+here = os.path.dirname(os.path.abspath(__file__))
+for names in (("magick.exe", "identify"), ("magick", "identify"),
+              ("identify.exe",), ("identify",)):
+    cand = os.path.join(os.path.dirname(here), "menu-bin", names[0])
+    if os.path.exists(cand):
+        return [cand] + list(names[1:])
+```
+
+> 为什么不去改 `dvda.cmd` 让它把 `menu-bin` 加进 PATH：那会引入
+> DLL 抢载风险，而「谁需要哪个工具」本来就该由解析函数的兜底路径解决。
+> **修在离问题最近、影响面最小的那一层。**
+
+**(3) 写死的 `/tmp/…`**
+
+```python
+png = "/tmp/_menu_frame.png"          # 抽帧
+png = "/tmp/_index_frame.png"
+...    f"/tmp/verify-menu/disc{i}"    # 解包目录
+```
+
+Linux 约定。Windows 上会变成当前盘的 `\tmp\…`（通常不存在），
+于是**抽帧那两步静默失败**（`return True` 走掉了，看起来像「跳过检查」）。
+改用 `tempfile.gettempdir()`。
+
+**教训**：
+
+- 「这份脚本在 Linux 上一直好用」**不能推出**它在 Windows 上能用。
+  要**逐项列出它调用的外部命令与写死的路径**：
+  `grep -n 'subprocess\|os.system\|shutil.which\|"/tmp' *.py`
+- 同一个能力（找 identify）**不要在多处各写一份**。这里就是
+  `dvda_config` 有一份正确实现、`verify_menu` 里另有两处写死的。
+  **同类修复要一次性收口**（这条在第 34 节已经踩过一次）。
+- 解析外部工具的函数应当**自带兜底**（PATH → 随包目录），
+  而不是把「PATH 里必须有」这个要求散落到每个调用点。
+
+### 37.12 实测数据（2026-09-27，Windows 全流程）
 
 音源：45 张专辑 / 147 首 FLAC，6.43 GiB → MLP 7.30 GiB（+13.49%）
 
@@ -5242,7 +5413,7 @@ disc2: 组1 56 轨 / 17 title + 组2  2 轨 / 1 title = 58 轨
 全部盘合计 147 轨，与音源曲目数一致 ✔
 ```
 
-### 37.10 教训汇总
+### 37.13 教训汇总
 
 - **报错指向的位置不一定是要修的位置**。37.1 的错在说「文件找不到」，
   而清单里路径全对 —— 是读取时的转换改坏的。**先打印原始数据**再怀疑逻辑。
