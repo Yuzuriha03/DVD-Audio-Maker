@@ -247,13 +247,30 @@ dvda.cmd check_aob_pts.py D:\DVD_Output\Wuthering_Waves_Singles_EPs_1.iso
 快速校验 全部通过 ✔
 ```
 
-> **这些校验脚本是纯 Python，不需要任何外部命令**。早期版本用 `xorriso`
-> 查 ISO 里的 LBA、用 `dd` 读扇区，而这两个在 Windows 上都没有
-> （**MSYS2 也没有 xorriso 这个包**），导致 Windows 上跑不了。
-> 现在自己解析 ISO9660 并用 `seek+read` 读扇区，两个平台都能跑
-> （实测 disc 1 + 2 从 3 秒降到 **0.33 秒**）。
->
-> `verify_menu.py` 与 `audit_disc.py` 仍依赖 `xorriso`，在 Windows 上不可用。
+> **全部校验脚本都是纯 Python，不需要 xorriso、dd 或其他外部命令**
+> （只需 Python；`verify_menu.py` 另需 ffmpeg 抽帧看画面）。
+> 早期版本用 `xorriso` 查 ISO 里的 LBA/列目录、用 `dd` 读扇区，
+> 而这两个在 Windows 上都没有（**MSYS2 也没有 xorriso 这个包**），
+> 导致校验在 Windows 上完全没法做。
+> 现在 ISO 访问统一走 `scripts/iso9660.py`（纯标准库，解析 PVD），
+> 两个平台都能跑，顺带快了约 10 倍（disc 1 + 2 从 3 秒降到 **0.33 秒**）。
+
+各脚本的参数形式**不一样**，容易搞错：
+
+| 脚本 | 参数 |
+|---|---|
+| `quick_check.py` | ISO **所在目录**（会校验目录里所有 `*.iso`） |
+| `check_aob_pts.py` | 单个 `.iso` |
+| `audit_disc.py` | 无参数，读 `config.sh` 的 `DVDA_FINAL_DIR` / `DVDA_BUILD_DIR` / `DVDA_ISO_PREFIX` |
+| `verify_menu.py` | 同上（无参数） |
+
+全部通过的样子：
+
+```
+快速校验 全部通过 ✔                     （quick_check.py）
+审计结论: 全部通过 ✔                    （audit_disc.py）
+菜单校验全部通过 ✔                      （verify_menu.py）
+```
 
 ### 8. 常见问题
 
@@ -766,9 +783,11 @@ DVDA_KEEP_TMP=1          bash local-bin/dvda.sh one 2        # 保留 tmp/（菜
 DVDA_KEEP_AUDIT=1        bash local-bin/dvda.sh verify all   # 保留 disc-audit/
 ```
 
-> 删除 `disc-audit/` 这类 xorriso 解出的目录**要先补写权限** ——
-> 它保留 ISO 里的只读位，裸 `rm -rf` 会报 Permission denied 并留下残缺目录。
-> 脚本里的 `rmtree_rw()` 已经这么做了。
+> 删除 `disc-audit/` 目录**要先补写权限** —— 里面可能是**旧版本
+> `xorriso -osirrox` 解出来的**（那种会保留 ISO 里的只读位，裸 `rm -rf`
+> 会报 Permission denied 并留下残缺目录）；Windows 的只读属性也会让
+> `shutil.rmtree` 失败。脚本里的 `rmtree_rw()` 两种情况都处理了
+> （`os.chmod` 在 Windows 上能清掉只读属性）。
 
 ---
 
