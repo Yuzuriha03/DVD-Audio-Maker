@@ -138,9 +138,27 @@ _SYNC_MAJOR = b"\xf8\x72\x6f"
 _EOS = b"\xd2\x34\xd2\x34"
 
 
-def to_wsl(p):
+def to_native(p):
+    """把清单里的源路径转成**当前平台** Python 能直接打开的形式。
+
+    · WSL / Linux：`D:/x` -> `/mnt/d/x`
+      这是为了兼容「在 WSL 里跑、但 config.sh 写的是 Windows 路径」。
+    · Windows：**原样返回**。Windows 的 Python 本来就认 `D:/x`
+      （`os.path.getsize("D:/x")` 可以），转成 `/mnt/d/x` 反而打不开。
+
+    ⚠️ 这个平台判断是必需的，不是可有可无的优化。
+       早期版本无条件转换，结果 Windows 上第一步就崩：
+
+           FileNotFoundError: [WinError 3] 系统找不到指定的路径。:
+             '/mnt/d/.../01. Waking of a World ... .flac'
+
+       而这个错误出现在「读清单、算源文件大小时」，看起来像是
+       manifest 里的路径写错了 —— 实际上清单里存的是正确的 `D:/...`，
+       是这里把它改坏的。所以排查时**要先确认清单内容**（147 条全对），
+       再去怀疑转换逻辑。
+    """
     p = p.replace("\\", "/")
-    if re.match(r"^[a-zA-Z]:", p):
+    if os.name != "nt" and re.match(r"^[a-zA-Z]:", p):
         p = "/mnt/" + p[0].lower() + p[2:]
     return p
 
@@ -1160,7 +1178,7 @@ def main():
     for gname, g in manifest.items():
         sr, bits = g["sr"], g["bits"]
         for f in g["files"]:
-            src = to_wsl(f["src"])
+            src = to_native(f["src"])
             tracks.append({
                 "date": f["date"], "track": f["track"], "title": f["title"],
                 "album": f["album"] or f["title"], "sr": sr, "bits": bits,
