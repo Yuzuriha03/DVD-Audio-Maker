@@ -224,15 +224,46 @@ DVDA_LOSS_WARN_S="0.02"                   # 超过它 → 只警告
 CONFEOF
 
 step "[6/6] 文档与许可"
+# ⚠️ 必须把 `$SCRIPTS/docs/` 也列进来。
+#    实测踩到：仓库布局是 <仓库>/docs/{README.md,THIRD-PARTY.md,LICENSE}，
+#    只找 `$HERE/docs/`（工具包自己的）和 `$SCRIPTS/`（仓库根）都找不到，
+#    于是发布包里**静默地没有 README / LICENSE** —— 而这一步还报「完成」。
+#    现在每个文件都回显是否拷到，缺了就列出来。
+doc_miss=0
 for d in README.md THIRD-PARTY.md LICENSE; do
-    for c in "$HERE/docs/$d" "$SCRIPTS/$d"; do
-        [ -f "$c" ] && { cp -f "$c" "$DEST/"; break; }
+    got=""
+    for c in "$HERE/docs/$d" "$SCRIPTS/docs/$d" "$SCRIPTS/$d" "$SRC/../docs/$d"; do
+        [ -f "$c" ] && { cp -f "$c" "$DEST/"; got="$c"; break; }
     done
+    if [ -n "$got" ]; then
+        echo "  $d  <- $got"
+    else
+        echo "  [缺] $d  （四个候选位置都没有）"
+        doc_miss=$((doc_miss + 1))
+    fi
 done
-ls -1 "$DEST"/*.md "$DEST"/LICENSE 2>/dev/null | xargs -n1 basename | sed 's/^/  /'
+[ "$doc_miss" -gt 0 ] && echo "  【注意】缺 $doc_miss 份文档，发布包不完整"
 
-bash "$HERE/make-release-manifest.sh" "$DEST"
+"$SELF_BASH" "$HERE/make-release-manifest.sh" "$DEST"
 
 step "完成"
 du -sh "$DEST"
-echo "  打包: cd \"$(dirname "$DEST")\" && tar -czf DVD-Audio-Maker.tar.gz DVD-Audio-Maker"
+
+# ---- 打包成 tar.gz ----
+# ⚠️ 这里原来是一句 `echo "  打包: cd ... && tar -czf ..."` ——
+#    只**打印**了命令，从来没有真的执行。所以发布目录里一直没有
+#    .tar.gz，而日志里那一行还让人以为已经打好了。
+#    想跳过：DVDA_TARBALL=0
+if [ "${DVDA_TARBALL:-1}" = "1" ]; then
+    TG_NAME="$(basename "$DEST").tar.gz"
+    TG_DIR="$(dirname "$DEST")"
+    rm -f "$TG_DIR/$TG_NAME"
+    ( cd "$TG_DIR" && tar -czf "$TG_NAME" "$(basename "$DEST")" )
+    if [ -f "$TG_DIR/$TG_NAME" ]; then
+        echo "  tar.gz: $TG_DIR/$TG_NAME  ($(du -h "$TG_DIR/$TG_NAME" | cut -f1))"
+    else
+        echo "  [警告] tar.gz 未生成（tar 失败？）"
+    fi
+else
+    echo "  (已跳过 tar.gz：DVDA_TARBALL=0)"
+fi

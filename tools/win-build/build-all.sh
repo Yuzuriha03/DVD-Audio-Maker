@@ -32,7 +32,7 @@ echo "============================================================"
 echo "  DVD-Audio Maker —— Windows 原生构建"
 echo "============================================================"
 echo "  工具包   : $KIT"
-echo "  MSYS2    : $MSYS_ROOT"
+echo "  MSYS2    : $MSYS_ROOT_WIN   (bash 侧: $MSYS)"
 echo "  源码树   : $SRC"
 echo "  工具输出 : $BINDIR"
 echo "  并行数   : ${JOBS:-$(nproc)}"
@@ -41,27 +41,27 @@ echo "============================================================"
 # ---- [1] 体检 ----
 echo
 echo "########## [1/5] 体检 ##########"
-bash "$HERE/check-src.sh"
+"$SELF_BASH" "$HERE/check-src.sh"
 
 # ---- [2] dvda-author ----
 echo
 echo "########## [2/5] 构建 dvda-author（含 MLP）##########"
-bash "$HERE/build-author.sh"
+"$SELF_BASH" "$HERE/build-author.sh"
 
 # ---- [3] dvdauthor / spumux ----
 echo
 echo "########## [3/5] 构建 dvdauthor / spumux ##########"
-bash "$HERE/build-dvdauthor.sh"
+"$SELF_BASH" "$HERE/build-dvdauthor.sh"
 
 # ---- [4] 组装工具目录 ----
 echo
 echo "########## [4/5] 组装工具目录 ##########"
-bash "$HERE/assemble-menu-bin.sh"
+"$SELF_BASH" "$HERE/assemble-menu-bin.sh"
 
 # ---- [5] 打发布包 ----
 echo
 echo "########## [5/5] 打包发布 ##########"
-bash "$HERE/make-release.sh"
+"$SELF_BASH" "$HERE/make-release.sh"
 
 T1=$(date +%s)
 echo

@@ -23,25 +23,32 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ---- Windows 路径 -> MSYS 路径 ----
 # 让调用方（.bat / 命令行）可以**直接传 `D:\x\y` 这种 Windows 路径**，
 # 不必自己往 /d/x/y 上转 —— 那件事很容易出错，而且 .bat 里做子串运算很难看。
+#
+# ★ 故意**不用 cygpath**（实测踩到，很阴）：
+#       cygpath -u 'D:\dev\msys64'  ->  /              ← 坏！
+#       cygpath -m 'D:\dev\msys64'  ->  D:/dev/msys64  ← 对
+#       cygpath -u 'D:\'            ->  /d/            ← 单级反而对
+#   在 MSYSTEM=MINGW64 下 cygpath -u 会把**多级** Windows 路径压成 `/`。
+#   后果：`[ -d "$MSYS2_ROOT" ]` 对 `/` 成立 ⇒ 「指定 MSYS2_ROOT」这个功能
+#   整个失灵，而且**完全不报错**（根变成 `/`，之后的标准挂载点探测照样
+#   能找到 /mingw64）。症状只在别处显现：某些子脚本里根是 `//`、MSYS 变成
+#   `//ucrt64`，集 DLL 时取不到 msys-2.0.dll。
+#   纯字符串转换则完全确定，且**零 fork**（不需要 cygpath/tr/sed）。
 to_unix() {
-    local p="${1:-}"
+    local p="${1:-}" d rest
     [ -n "$p" ] || { printf ''; return 0; }
+    # 已经是 unix 形式就不动
+    case "$p" in /*) printf '%s' "$p"; return 0 ;; esac
+    # 去掉 Windows 的长路径前缀 \\?\ 和 //./
+    p="${p#\\\\?\\}"
     case "$p" in
-        [A-Za-z]:[\\/]*)
-            if command -v cygpath >/dev/null 2>&1; then
-                cygpath -u "$p"
-            else
-                local d
-                d="$(printf '%s' "${p:0:1}" | tr 'A-Z' 'a-z')"
-                printf '/%s%s' "$d" "$(printf '%s' "${p:2}" | tr '\\' '/')"
-            fi
-            ;;
         [A-Za-z]:*)
-            printf '%s' "$p" | tr '\\' '/' | sed 's|^\([A-Za-z]\):|/\L\1|'
+            d="${p:0:1}"; d="${d,,}"      # bash 4 的 ${var,,} 小写化，零 fork
+            rest="${p:2}"
+            rest="${rest//\\//}"           # 反斜杠全换成正斜杠
+            printf '/%s%s' "$d" "$rest"
             ;;
-        *)
-            printf '%s' "$p"
-            ;;
+        *) printf '%s' "$p" ;;
     esac
 }
 
@@ -105,18 +112,129 @@ if ! MSYS="$(find_msys_prefix)"; then
 EOM
     exit 1
 fi
-MSYS_ROOT="$(cd "$MSYS/.." && pwd)"
+# ---- 归一化前缀，并由它推出安装根 ----
+#
+# ⚠️ 三条规矩，每条都对应一个实测踩到的坑：
+#
+#  1) **压掉多于一个的前导斜杠**。MSYS2 把 `//x` 当 UNC，`[ -e //usr/bin/x ]`
+#     为假；但 `///x` 又会被折回 `/x` 而为真 —— 于是这类 bug **不报错**，
+#     只是让 `[ -f ]`/PATH 查找静静地失败。
+#     所以 `$MSYS` 必须**恰好一个**前导斜杠。
+#
+#  2) **不要用 `cd .. && pwd` 推安装根**。那会 fork 一个子壳；更要命的是
+#     在 MSYS2 里 `/mingw64/..` 就是 `/`，得到的字符串是 `/`，
+#     再去拼 `/usr/bin` 就成了 `//usr/bin`（见 1）。
+#     改用纯字符串 `${VAR%/*}`。
+#
+#  3) **拼路径一律用 `MSYSBASE`**。它去掉尾部斜杠：根为 `/` 时是空串，
+#     于是 `"$MSYSBASE/usr/bin"` 正好是 `/usr/bin`。
+_normalize_slashes() {
+    local n="$1"
+    [ -n "$n" ] || { printf ''; return 0; }
+    while [ "${n#//}" != "$n" ]; do n="/${n#//}"; done
+    printf '%s' "$n"
+}
 
-# ⚠️ 归一化前缀，别拼出双斜杠。
-#    MSYS2 的安装根在 bash 里就是 `/`，于是 `$MSYS_ROOT/mingw64` 会得到
-#    **`//mingw64`** —— 而 MSYS2 把 `//` 当成 **UNC/网络路径**，所有
-#    `[ -f //mingw64/... ]` 都不成立。症状是各步骤报「FFmpeg 未安装」之类的
-#    **假阴性**，而同一台机器上路径明明存在（实测：
-#    `[ -d //mingw64/include/libavcodec ]` = 假，`/mingw64/...` = 真）。
-#    用 `${VAR%/}` 去尾斜杠再拼，`/` 与前缀两种情况都对。
-MSYS="${MSYS_ROOT%/}/$(basename "$MSYS")"
-export PATH="$MSYS/bin:$MSYS_ROOT/usr/bin:$PATH"
+MSYS="$(_normalize_slashes "$MSYS")"
+MSYS="${MSYS%/}"
+[ -n "$MSYS" ] || MSYS=/mingw64
+
+# 归一化之后才能判 pkgconfig —— 之前 MSYS 可能带 `//`，那样会误报
+if [ ! -d "$MSYS/lib/pkgconfig" ]; then
+    echo "[失败] MSYS2 前缀无效：MSYS='$MSYS'" >&2
+    exit 1
+fi
+
+# 安装根 = 前缀的上一级（纯字符串）
+case "$MSYS" in
+    /*/*) MSYSBASE="${MSYS%/*}" ;;
+    *)   MSYSBASE="" ;;
+esac
+MSYSBASE="$(_normalize_slashes "$MSYSBASE")"
+MSYSBASE="${MSYSBASE%/}"
+MSYS_ROOT="${MSYSBASE:-/}"
+
+# 供**显示**用的 Windows 形式（纯字符串，零 fork）。
+# ⚠️ 在 MSYS2 里安装根在 bash 里就是 `/`，那不是 bug —— 但打印成
+#    `MSYS2 : /` 会让人以为路径解析坏了。显示成 `D:/dev/msys64` 才直观。
+unix_to_win() {
+    local p="$1" d
+    [ -n "$p" ] || { printf ''; return 0; }
+    case "$p" in
+        /*/*) d="${p:1:1}"; d="${d^^}"; printf '%s:%s' "$d" "${p:2}" ;;
+        *)   printf '%s' "$p" ;;
+    esac
+}
+MSYS_ROOT_WIN="$(unix_to_win "$MSYS_ROOT")"
+
+export MSYSBASE MSYS_ROOT MSYS MSYS_ROOT_WIN
+export PATH="$MSYS/bin:$MSYSBASE/usr/bin:$PATH"
 export PKG_CONFIG_PATH="$MSYS/lib/pkgconfig:$MSYS/share/pkgconfig"
+
+# ---- 调用子脚本时用的 bash ----
+# ⚠️ **不要用裸 `bash`**。实测：在 Windows 的 cmd/PowerShell 里
+#      where.exe bash
+#        -> C:\Users\<u>\AppData\Local\Microsoft\WindowsApps\bash.exe
+#    那是 **WSL 的启动器**，不是 MSYS2。进了 MSYS2 之后 PATH 确实会先
+#    命中 /usr/bin/bash，所以裸 `bash` 眼下能用；但一旦 PATH 被改坏、
+#    或被从别的 shell 调起，就会静默跑到 WSL 里去（那是完全不同的
+#    Linux 环境，工具链、路径、字体全不一样，报错还很难懂）。
+#    $BASH 就是“正在跑的这个 bash”自己的路径，最准。
+SELF_BASH="${BASH:-$MSYSBASE/usr/bin/bash}"
+[ -x "$SELF_BASH" ] || SELF_BASH="$MSYSBASE/usr/bin/bash"
+export SELF_BASH
+
+# 自检 —— 刻意加的：上面那类拼接错误**不会**让构建失败，只会让各步骤
+# 静默跳过（manifest 置空失效、DLL 漏收、automake/compile 找不到…），
+# 编译输出照样是 "OK"。宁可在入口处直接停下来。
+if [ ! -d "$MSYSBASE/usr/bin" ] || [ ! -d "$MSYS/lib/pkgconfig" ]; then
+    echo "[失败] MSYS2 路径拼接异常，拒绝继续：" >&2
+    echo "        MSYS_ROOT='$MSYS_ROOT'  MSYSBASE='$MSYSBASE'  MSYS='$MSYS'" >&2
+    exit 1
+fi
+
+# ---- 绝不能跑到 WSL 里去 ----
+# 本工具包的卖点就是「关掉 WSL 也能构建」。但在 Windows 上裸 `bash` 会命中
+#     C:\Users\<u>\AppData\Local\Microsoft\WindowsApps\bash.exe
+# 那是 **WSL 的启动器**（本机 `where.exe bash` 实测就指向它）。
+# 进了 MSYS2 之后 /usr/bin 通常优先，所以裸 `bash` 有时也能跑 —— 但那意味着
+# 构建是否走 WSL 取决于 PATH，是**静默**的、机器相关的。这里直接判定：
+# 一旦检测到 WSL 痕迹就拒绝继续。
+if [ -n "${WSL_DISTRO_NAME:-}${WSL_INTEROP:-}" ]; then
+    echo "[失败] 检测到 WSL（WSL_DISTRO_NAME=${WSL_DISTRO_NAME:-<unset>}）。" >&2
+    echo "        本工具包必须跑在 MSYS2 里，请用 build-all.bat 启动。" >&2
+    exit 1
+fi
+case "$(uname -s 2>/dev/null)" in
+    Linux|*Linux*)
+        echo "[失败] uname -s 报的是 Linux —— 这是 WSL/容器，不是 MSYS2。" >&2
+        echo "        本工具包必须跑在 MSYS2 里，请用 build-all.bat 启动。" >&2
+        exit 1
+        ;;
+esac
+# 正在跑的这个 shell 自己必须属于 MSYS2 安装树
+# （纯字符串比较，**不用 cygpath** —— `cygpath -u` 在本机会把多级路径压成 `/`）
+if [ -n "${BASH:-}" ]; then
+    case "${BASH%/*}" in
+        "$MSYSBASE/usr/bin"|"$MSYSBASE/bin"|/usr/bin|/bin) ;;
+        *)
+            echo "[警告] 当前 bash 不在 MSYS2 树内：BASH=$BASH" >&2
+            echo "        期望 $MSYSBASE/usr/bin/bash。仍继续，但请留意。" >&2
+            ;;
+    esac
+fi
+# 裸 `bash` / `sh` 必须解析到 MSYS2，而不是 WindowsApps
+for _c in bash sh; do
+    _p="$(command -v "$_c" 2>/dev/null)" || continue
+    case "$_p" in
+        "$MSYSBASE"/usr/bin/*|"$MSYSBASE"/bin/*|/usr/bin/*|/bin/*) ;;
+        *)
+            echo "[警告] \`$_c\` 解析到 $_p（不是 MSYS2）—— 子脚本可能误入 WSL。" >&2
+            echo "        脚本内部统一用 \$SELF_BASH，不用裸 bash。" >&2
+            ;;
+    esac
+done
+unset _c _p
 
 # ---- 找源码树 ----
 # 优先 $DVDA_SRC_TREE；否则找 <kit>/src 或 <kit>/../src。
@@ -151,6 +269,41 @@ fi
 BINDIR="$(dirname "$SRC")/menu-bin"
 export BINDIR
 
+# ---- 字体：源 ttc 与已抽好的单 face ----
+#
+# ★ 关键认识：**单 face OTF 才是构建真正需要的东西**，ttc 只是生成它的手段。
+#   用户机器上 ttc 很可能是临时下载/临时拷来的，用完就没了；而抽好的 face
+#   已经在 menu-bin/fonts 里（那是构建产物的一部分）。只认 ttc 会在这种
+#   情况下报「找不到字体」，让人以为得重新弄一份 ttc —— 其实完全不必。
+FONT_FACES="NotoSansCJKsc-Regular.otf NotoSansCJKjp-Regular.otf NotoSansCJKkr-Regular.otf"
+
+find_font_ttc() {
+    local c
+    for c in "${DVDA_FONT_SRC:-}" \
+             "$SRC/NotoSansCJK-Regular.ttc" \
+             "$SRC/fonts/NotoSansCJK-Regular.ttc" \
+             "$KIT/NotoSansCJK-Regular.ttc" \
+             "$KIT/fonts/NotoSansCJK-Regular.ttc" \
+             /c/Windows/Fonts/NotoSansCJK-Regular.ttc \
+             /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc; do
+        [ -n "$c" ] && [ -f "$c" ] && { printf '%s' "$c"; return 0; }
+    done
+    return 1
+}
+
+# 三个单 face 都在哪个目录？输出目录路径。
+font_faces_dir() {
+    local d f
+    for d in "${DVDA_FONT_DIR:-}" "$BINDIR/fonts" "$SRC/menu-bin/fonts" \
+             "$KIT/fonts" "$KIT/../fonts"; do
+        [ -n "$d" ] && [ -d "$d" ] || continue
+        local ok=1
+        for f in $FONT_FACES; do [ -f "$d/$f" ] || { ok=0; break; }; done
+        [ "$ok" = "1" ] && { printf '%s' "$d"; return 0; }
+    done
+    return 1
+}
+
 # ---- 小工具 ----
 log()  { printf '%s\n' "$*"; }
 hr()   { printf '%s\n' "------------------------------------------------------------"; }
@@ -171,16 +324,25 @@ find_py_fonttools() {
 # ============================================================================
 #  configure 结果缓存
 # ============================================================================
-# ⚠️ 为什么需要（实测）：MSYS2 在 Windows 上的 **fork/exec 约 4~7 秒/次**
-#    （不是杀软的问题 —— 关掉卡巴斯基后仍然如此；C 盘与 D 盘一样慢）。
-#    实测基准：
-#        true（bash 内建，零进程）   1.8 s
-#        外部 echo                   4.1 s
-#        运行一个空 exe              4.6 s
-#        编译一个空 .c               4.4 s
+# ⚠️ 为什么需要（实测）：这一步的耗时**完全取决于杀软的内核过滤驱动**。
+#
+#    有卡巴斯基（21 个 kl* 驱动驻留）时：
+#        fork/exec ≈ 2~4 秒/次，每个 check ≈ 15 秒，整步 ≈ 1 小时
+#        基准：外部 echo 4.1 s、空 exe 4.6 s、编一个空 .c 4.4 s
+#    卸掉卡巴斯基 + 重启后：
+#        fork/exec ≈ **27 ms**/次，每个 check ≈ 0.4 秒，整步 ≈ 2~3 分钟
+#        基准（$EPOCHREALTIME，零 fork 取时）：
+#            true                      x10 :  61 ms
+#            /usr/bin/true (fork+exec) x10 : 272 ms
+#            uname -s                  x5  : 155 ms
+#
+#    ★ 两者差 **100 倍**。所以早期笔记里「MSYS2 fork 就是 4~7 秒/次」
+#      是错的 —— 那是杀软在位时的数字，不是 MSYS2 的固有成本。
+#    ★ 测量方法也有坑：用 `$(date)` 取时间戳会把**它自己的 fork 开销**
+#      算进去，把结果撑大。零 fork 的 $EPOCHREALTIME（bash 内建）才准。
+#
 #    autotools 的 configure 要跑**几百个** conftest 的「编译 + 运行」，
-#    于是整步要 **1~2 小时**（实测每个 check ≈ 15 秒；Linux 上 configure 只要
-#    30 秒）。
+#    所以在慢环境下这一步最难。
 #
 #    而目标平台是**确定的**（MSYS2/MinGW64 + 指定 gcc + 指定 FFmpeg），
 #    所以 configure 的结果是确定的 —— 把产物存下来复用即可。

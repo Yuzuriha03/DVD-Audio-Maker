@@ -28,7 +28,7 @@ for m in iconv.m4 lib-ld.m4 lib-link.m4 lib-prefix.m4 libxml.m4; do
 done
 # autotools/compile 由 automake 提供；MSYS2 里找一份
 if [ ! -f "$MENU_SRC/autotools/compile" ]; then
-    AM_COMPILE="$(ls "$MSYS_ROOT"/usr/share/automake-*/compile 2>/dev/null | tail -n1)"
+    AM_COMPILE="$(ls "$MSYSBASE"/usr/share/automake-*/compile 2>/dev/null | tail -n1)"
     [ -n "$AM_COMPILE" ] && cp -f "$AM_COMPILE" "$MENU_SRC/autotools/compile"
 fi
 

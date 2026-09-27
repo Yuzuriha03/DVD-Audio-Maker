@@ -27,6 +27,34 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="${1:-$BINDIR/fonts}"
 mkdir -p "$DEST"
 
+# ---- 已经抽好了？直接复用 ----
+#
+# ★ 单 face OTF 才是构建**真正需要**的东西，ttc 只是生成它的手段。
+#   实测踩到：用户的 ttc 是临时拷来的，后来没了；如果这一步只认 ttc，
+#   就会硬报「找不到字体」—— 而抽好的三个 face 其实好好躺在
+#   menu-bin/fonts 里（那是构建产物）。白白让人以为要重新弄 ttc。
+#
+#   想强制重抽：FONT_REEXTRACT=1 bash make-menu-font.sh
+if [ "${FONT_REEXTRACT:-0}" != "1" ] && FACE_SRC="$(font_faces_dir)"; then
+    same=0
+    case "$FACE_SRC" in
+        "$DEST"|"$DEST"/*) same=1 ;;
+    esac
+    if [ "$same" = "0" ]; then
+        for f in $FONT_FACES; do
+            cp -f "$FACE_SRC/$f" "$DEST/$f" 2>/dev/null || true
+        done
+    fi
+    ok=1
+    for f in $FONT_FACES; do [ -f "$DEST/$f" ] || ok=0; done
+    if [ "$ok" = "1" ]; then
+        echo "  复用已有单 face: $FACE_SRC"
+        echo "  产物: $DEST/NotoSansCJK{sc,jp,kr}-Regular.otf  ($(du -sh "$DEST" | cut -f1))"
+        exit 0
+    fi
+    echo "  [警告] $FACE_SRC 里的 face 不全，回退到从 ttc 重抽"
+fi
+
 # ---- 找源 ttc ----
 # ⚠️ 必须是 **Noto Sans CJK 的静态版**（NotoSansCJK-Regular.ttc）。
 #    不要用 Windows 自带的 NotoSansSC-VF.ttf / NotoSansJP-VF.ttf ——
