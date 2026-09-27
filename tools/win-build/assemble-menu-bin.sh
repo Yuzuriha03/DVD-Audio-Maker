@@ -67,10 +67,10 @@ else
 fi
 
 step "[3/5] 字体（中/日/韩 三语单 face）"
-bash "$HERE/make-menu-font.sh" "$DEST/fonts" || MSG="$MSG font"
+"$SELF_BASH" "$HERE/make-menu-font.sh" "$DEST/fonts" || MSG="$MSG font"
 
 step "[4/5] 收集 DLL（递归传递依赖）"
-bash "$HERE/collect-dlls.sh" "$DEST" "$SRC/local.w10/bin"
+"$SELF_BASH" "$HERE/collect-dlls.sh" "$DEST" "$SRC/local.w10/bin"
 
 step "[5/5] 汇总"
 hr

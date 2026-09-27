@@ -5,7 +5,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/common.sh"
 
 echo "  工具包   : $KIT"
-echo "  MSYS2    : $MSYS_ROOT   (mingw64 前缀: $MSYS)"
+echo "  MSYS2    : $MSYS_ROOT_WIN   (bash 侧: $MSYS)"
 echo "  源码树   : $SRC"
 echo "  工具输出 : $BINDIR"
 echo
@@ -79,19 +79,32 @@ for c in avcodec avformat avutil swresample; do
 done
 
 echo
-echo "=== 字体（三语单 face 由 ttc 抽出）==="
-if FONT_TTC="$(ls "$SRC"/NotoSansCJK-Regular.ttc 2>/dev/null | head -1)"; then
-    printf '  ok    %-42s %s\n' "NotoSansCJK-Regular.ttc" "$FONT_TTC"
+echo "=== 字体（三语单 face）==="
+# ⚠️ 这里曾经是 `if FONT_TTC="$(ls ... | head -1)"` —— **假阳性**：
+#    `head` 对空输入也返回 0，所以文件不存在时照样打印 "ok"。
+#    字体是构建必需项，报假 ok 比不检查更糟。改成真正的 [ -f ] 判定。
+if FONT_FACES_IN="$(font_faces_dir)"; then
+    printf '  ok    %-42s %s\n' "三语单 face" "$FONT_FACES_IN"
+elif FONT_TTC_IN="$(find_font_ttc)"; then
+    printf '  ok    %-42s %s\n' "NotoSansCJK-Regular.ttc" "$FONT_TTC_IN"
+    printf '         %-42s %s\n' "(将由 ttc 抽出三个单 face)"
 else
-    printf '  提示  %-42s %s\n' "NotoSansCJK-Regular.ttc" \
-        "未见；可用 DVDA_FONT_SRC=<路径> 指定，或让工具包自动下载/查找"
+    printf '  缺!!  %-42s %s\n' "CJK 字体" "既没有抽好的单 face，也没有静态 ttc"
+    printf '         %-42s %s\n' "" "见 tools/win-build/README.md 的「字体」一节"
+    miss=$((miss + 1))
 fi
 if PY="$(find_py_fonttools)"; then
     printf '  ok    %-42s %s\n' "python + fontTools" "$PY"
 else
-    printf '  缺!!  %-42s %s\n' "python + fontTools" \
-        "pacman -S mingw-w64-x86_64-python-fonttools"
-    miss=$((miss + 1))
+    # 只有在**需要从 ttc 抽 face** 时才是必需项
+    if font_faces_dir >/dev/null 2>&1; then
+        printf '  提示  %-42s %s\n' "python + fontTools" \
+            "未见；已有单 face，本步不需要（仅刷新字体时才要）"
+    else
+        printf '  缺!!  %-42s %s\n' "python + fontTools" \
+            "pacman -S mingw-w64-x86_64-python-fonttools"
+        miss=$((miss + 1))
+    fi
 fi
 
 echo
