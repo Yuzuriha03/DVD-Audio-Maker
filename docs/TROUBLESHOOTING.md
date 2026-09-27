@@ -64,6 +64,22 @@
     - 35.5 [顺带修掉的构造脚本 bug](#355-顺带修掉的构造脚本-bug)
     - 35.6 [教训](#356-教训)
     - 35.7 [补记：`--fontname-jp/-kr` 传了反斜杠路径](#357--补记--fontname-jp-kr-传了反斜杠路径--静默回退默认字体)
+36. [Windows 原生构建工具包（脱离 WSL）](#36-windows-原生构建工具包脱离-wsl)
+    - 36.1 [先查清哪里真的依赖 WSL](#361-先查清哪里真的依赖-wsl)
+    - 36.2 [工具包设计（两条原则）](#362-工具包设计两条原则)
+    - 36.3 [build-all.bat 的两个 Windows 细节](#363-build-allbat-的两个-windows-细节)
+    - 36.4 [假阴性一号：`lib` 前缀拼了两次](#364-假阴性一号lib-前缀拼了两次)
+    - 36.5 [假阴性二号：双斜杠被当成 UNC 路径](#365-假阴性二号双斜杠被当成-unc-路径)
+    - 36.6 [假阴性三号：`cygpath -u` 把多级路径压成根](#366-假阴性三号cygpath--u-把多级路径压成根)
+    - 36.7 [裸 `bash` 就是 WSL —— 必须用绝对路径](#367-裸-bash-就是-wsl--必须用绝对路径)
+    - 36.8 [体检脚本的假阳性比没有体检更糟](#368-体检脚本的假阳性比没有体检更糟)
+    - 36.9 [字体：单 face 才是产物，ttc 只是手段](#369-字体单-face-才是产物ttc-只是手段)
+    - 36.10 [打包与文档的静默缺失](#3610-打包与文档的静默缺失)
+    - 36.11 [如何判断两次构建是行为等价还是代码变了](#3611-如何判断两次构建是行为等价还是代码变了)
+    - 36.12 [fork 开销差 100 倍，而且测量方法本身有坑](#3612-fork-开销差-100-倍而且测量方法本身有坑)
+    - 36.13 [关于 configure 缓存：做过又去掉了](#3613-关于-configure-缓存做过又去掉了)
+    - 36.14 [分发与使用](#3614-分发与使用)
+    - 36.15 [教训汇总](#3615-教训汇总)
 
 ---
 
@@ -4353,3 +4369,458 @@ for k, v in zip(a, a[1:]):
   （否则唯一的发现途径是真机看画面）。
 - 发现路径：读构建日志里 `dvda-author` 的完整命令行，比对三个
   `--fontname*` 的**值**。**光看「参数传了没有」不够，要看值的形态。**
+
+---
+
+## 36. Windows 原生构建工具包（脱离 WSL）
+
+第 33 节把构建**跑通**在 MSYS2 上，但编排脚本仍依赖 WSL（硬编码
+`/d/dev/winbuild/...` 日志路径、从 `/home/yyz57/dvda/scripts` 取 `.py`）。
+本节把编排也做成 Windows 原生的：一个**位置无关、零 WSL 调用**的工具包
+`tools/win-build/`。
+
+本节后半部分（36.4 起）记录的几乎全是**「不报错、但结果错」**的缺陷 ——
+先把这里踩过的都列清楚，因为它们有共同的形态，而且诊断手法可以复用。
+
+### 36.1 先查清哪里真的依赖 WSL
+
+| 环节 | 是否依赖 WSL |
+|---|---|
+| 编译 dvda-author | ✘ MSYS2 本来就够 |
+| 编译 dvdauthor / spumux | ✘ 同上 |
+| 运行期素材 `menu/` | ✘ 已随源码树 |
+| 预编译二进制 `local.w10/bin/` | ✘ 已随源码树 |
+| 字体 | ✘ 只要有一个静态 `.ttc`，与 WSL 无关 |
+| **编排脚本** | ✔ **硬编码日志路径、从 WSL 目录取 `.py`** |
+
+所以要做的是**改写编排**，不是改构建本身。
+
+> **顺带纠正一个概念**：MSYS2 的 `bash.exe` 是**真正的 Windows 程序**
+> （PE 头 `4D 5A`，`uname -s` 报 `MSYS_NT-10.0-26200`，`uname -o` 报 `Msys`），
+> 不是 `Linux`。它只是**语法解释器**，调用的每个工具（`gcc.exe`、`make.exe`、
+> `windres.exe`）都是 Windows 程序，产出的也是 PE。
+>
+> 所以「`.sh` 在 Windows 上跑不了」并不成立 —— 准确说法是
+> **`.sh` 需要一个 POSIX shell 来跑**，`.bat` 需要 `cmd.exe`、`.py` 需要
+> `python.exe`，而 MSYS2 正好提供了 `bash.exe`。**上游 dvda-author 是
+> autotools 的**（`configure` 本身就是个 20 万行的 `/bin/sh` 脚本），
+> 要在 Windows 上跑 autotools 就得有 POSIX shell —— 这也正是上游自己的
+> `BUILD.MSYS2` 文档推荐的路径。
+>
+> 而**发布包不需要任何 shell**：里面只有 `.exe` / `.dll` / `.py` / `.otf`，
+> 入口 `dvda.cmd` 是原生批处理。
+
+### 36.2 工具包设计（两条原则）
+
+1. **位置无关**：一切路径从 `common.sh` 自己的位置推出来。
+   整包可以放任何目录（`D:\build`、U 盘…），不需要改脚本。
+2. **零 WSL 调用**：只依赖 MSYS2。脚本里不出现
+   `wsl.exe` / `\\wsl.localhost` / `/mnt/c`。
+
+探测 MSYS2 时要探**前缀**而不是猜安装根：
+
+```bash
+for pfx in /mingw64 /clang64 /ucrt64 /mingw32 /clang32; do
+    [ -d "$pfx/lib/pkgconfig" ] && { echo "$pfx"; return 0; }
+done
+```
+
+MSYS2 在 bash 里 `/` 就是安装根，而 `/mingw64`、`/ucrt64`、`/clang64` 是它的
+不同工具链变体 —— 按前缀探测更可靠。
+
+### 36.3 build-all.bat 的两个 Windows 细节
+
+1. **8.3 短路径消掉空格**：`set "KITS=%~sdp0"`。目录名里有空格时
+   `bash.exe -lc "cd /c/My Dir && ..."` 的引号很容易被破坏；
+   短路径保证无空格，bash 调用因此可以写得很简单。
+2. **环境变量自动继承**：`DVDA_SRC_TREE` / `DVDA_FONT_SRC` / `DVDA_SCRIPTS` /
+   `MSYS2_ROOT` 由 cmd 自动传给子进程，`.bat` 里**不必**再显式重传一遍
+   （少一层引号转义的坑）。它们的值可以是 Windows 形式（`D:\x\y`），
+   bash 侧统一转换。
+
+### 36.4 假阴性一号：`lib` 前缀拼了两次
+
+```bash
+for h in libavcodec libavformat ...          # $h 已含 "lib"
+    [ -f "$MSYS/lib/lib$h.dll.a" ]           # → liblibavcodec.dll.a ✗
+```
+
+体检因此报「FFmpeg 未安装」，而 `pkg-config --modversion libavcodec`
+明明有输出。**同一份逻辑在旧的 `build.sh` 里是对的**（那边写
+`for l in avcodec ...`）—— 抄的时候把变量含义搞混了。
+
+### 36.5 假阴性二号：双斜杠被当成 UNC 路径
+
+```bash
+MSYS_ROOT="$(cd "$MSYS/.." && pwd)"   # -> "/"
+MSYS="$MSYS_ROOT/mingw64"             # -> "//mingw64"
+```
+
+**MSYS2 把 `//` 当作 UNC/网络路径**，于是所有 `[ -f //mingw64/... ]`
+**都不成立**。实测对照：
+
+```
+[ -e //usr/bin/grep ]    -> 假
+[ -e ///usr/bin/grep ]   -> 真      ← 注意 /// 反而成立！
+[ -d /mingw64/include/libavcodec ]   -> 真
+```
+
+`///` 会被折回 `/` 因而**能用**，这一点决定了这个 bug 的隐蔽性：
+它**不会报错**，只是让 `[ -f ]` 和 PATH 查找静静地失败。
+
+症状与 36.4 **一模一样**（报 FFmpeg 缺），所以第一次修完仍然失败，
+看起来像「修复没生效」—— 实际上是**两个独立 bug 叠在同一个症状上**。
+
+修法是引入去尾斜杠的 `MSYSBASE`，并**只用它**拼路径：
+
+```bash
+MSYSBASE="${MSYS_ROOT%/}"      # 根为 "/" 时是空串
+MSYS="${MSYSBASE}/$(basename "$MSYS")"
+export PATH="$MSYS/bin:$MSYSBASE/usr/bin:$PATH"
+# 此时 "$MSYSBASE/usr/bin" 正好是 "/usr/bin"
+```
+
+并在 `common.sh` 入口加**自检直接 `exit 1`**：
+
+```bash
+if [ ! -d "$MSYSBASE/usr/bin" ] || [ ! -d "$MSYS/lib/pkgconfig" ]; then
+    echo "[失败] MSYS2 路径拼接异常，拒绝继续：" >&2
+    echo "        MSYS_ROOT='$MSYS_ROOT'  MSYSBASE='$MSYSBASE'  MSYS='$MSYS'" >&2
+    exit 1
+fi
+```
+
+> 值得加这个检查，是因为**这类缺陷不会让构建失败**：编译输出照样是
+> 「错误数 0」「BUILD OK」，只是行为悄悄不对。宁可在入口处直接停下来。
+
+### 36.6 假阴性三号：`cygpath -u` 把多级路径压成根
+
+这个是本轮最阴的一个。`to_unix()` 原本用 `cygpath -u` 把
+`D:\x\y` 转成 MSYS 路径。实测（`MSYSTEM=MINGW64`）：
+
+```
+cygpath -u 'D:\dev\msys64'   ->  /                 ← 坏！
+cygpath -m 'D:\dev\msys64'   ->  D:/dev/msys64     ← 对
+cygpath -u 'D:\'             ->  /d/               ← 单级反而对
+```
+
+**多级路径被压成了 `/`。** 于是：
+
+```
+to_unix("D:\dev\msys64") -> "/"
+  → [ -d "$MSYS2_ROOT" ] 对 "/" 成立
+  → 「指定 MSYS2_ROOT」这条分支整体退化成「探测 / 下的 mingw64」
+  → MSYS_ROOT 变成 "/"
+  → 子脚本里 "$MSYS_ROOT/ucrt64" 拼出 "//ucrt64"
+  → 收集 DLL 时取不到 msys-2.0.dll
+```
+
+**全程没有任何报错**，只是「指定 MSYS2_ROOT」这个功能静默地不生效，
+而因为 `/mingw64` 恰好能被探到，构建还能继续往下走。
+
+修法是**不再用 `cygpath`**，改成纯字符串转换：确定、且零 fork。
+
+```bash
+to_unix() {
+    local p="${1:-}" d rest
+    [ -n "$p" ] || { printf ''; return 0; }
+    case "$p" in /*) printf '%s' "$p"; return 0 ;; esac
+    p="${p#\\\\?\\}"
+    case "$p" in
+        [A-Za-z]:*)
+            d="${p:0:1}"; d="${d,,}"      # ${var,,} 小写化，零 fork
+            rest="${p:2}"; rest="${rest//\\//}"
+            printf '/%s%s' "$d" "$rest" ;;
+        *) printf '%s' "$p" ;;
+    esac
+}
+```
+
+> 同理把 `MSYS_ROOT="$(cd "$MSYS/.." && pwd)"` 也换成了纯字符串
+> `${MSYS%/*}` —— 既省掉一次 fork，也避免再出现「`cd` 之后 `pwd` 是 `/`」
+> 这种依赖环境的取值。
+>
+> 显示上也做了处理：MSYS2 里安装根在 bash 里就是 `/`，直接打印
+> `MSYS2 : /` 会让人以为路径解析坏了，所以额外算一个 Windows 形式
+> （`D:/dev/msys64`）用于显示。
+
+### 36.7 裸 `bash` 就是 WSL —— 必须用绝对路径
+
+```
+在 PowerShell 里:  where.exe bash → C:\...\WindowsApps\bash.exe    ← WSL 启动器
+在 MSYS2 bash 里:  where.exe bash → D:\dev\msys64\usr\bin\bash.exe ← 正确
+```
+
+**同一个 `bash`，结果取决于 PATH。** 进了 MSYS2 之后 `/usr/bin` 通常优先，
+所以裸 `bash` 眼下能用 —— 但那就意味着「构建走不走 WSL」是静默的、机器相关的。
+
+处理分三层：
+
+1. **统一用 `$SELF_BASH`**（= `${BASH}`，即 `/usr/bin/bash`）调用子脚本，
+   `build-all.bat` 内层也用 `exec /usr/bin/bash`（原来写的 `exec bash`）。
+2. **`common.sh` 硬拦截**：
+
+   ```bash
+   if [ -n "${WSL_DISTRO_NAME:-}${WSL_INTEROP:-}" ]; then
+       echo "[失败] 检测到 WSL（WSL_DISTRO_NAME=...）" >&2; exit 1
+   fi
+   case "$(uname -s 2>/dev/null)" in
+       Linux|*Linux*) echo "[失败] 这是 WSL/容器，不是 MSYS2" >&2; exit 1 ;;
+   esac
+   ```
+
+   负向测试：`WSL_DISTRO_NAME=U bash -c '. common.sh'` → 退出码 1，被拒绝。
+3. 裸 `bash` / `sh` 若解析到 WindowsApps 就**警告**。
+
+> ⚠️ **验证「WSL 已关」时不要再碰那个 shim** ——
+> `WindowsApps\bash.exe -c 'echo x'` 本身就会**启动一个 WSL 实例**
+> （`vmmemWSL` 的 pid 每次都变），属于自败测试。
+> 另外本机上 WSL 关不掉的原因是**当前 VS Code 工作区就在 WSL 里**
+> （`\\wsl.localhost\...`），窗口开着就维持 distro。
+
+### 36.8 体检脚本的假阳性比没有体检更糟
+
+`check-src.sh` 判断字体时原本写的是：
+
+```bash
+if FONT_TTC="$(ls "$SRC"/NotoSansCJK-Regular.ttc 2>/dev/null | head -1)"; then
+    printf '  ok    ...'
+```
+
+**`head` 对空输入也返回 0**，所以文件不存在时照样打印 `ok`。
+我因此以为字体齐备，直到构建走到第 4 步才失败。
+
+> 反过来看：体检输出的 `ok` 是**结论**而不是证据。凡是打印
+> 「OK / 就绪」的地方，都要问一句「这个判断真的可能为假吗」。
+
+修法：改成真正会为假的判定，并对同一事实**交叉验证**：
+
+- `font_faces_dir()` —— 三个单 face 是否都在
+- `find_font_ttc()` —— 是否有源 ttc
+- 两者都没有才报「缺!!」
+- `python + fontTools` **只在需要从 ttc 抽 face 时**才算必需项
+
+实测修好后体检输出变成：
+
+```
+ok    三语单 face      /d/dev/winbuild/menu-bin/fonts
+```
+
+而不是原来那个空洞的 `ok  NotoSansCJK-Regular.ttc`。
+
+### 36.9 字体：单 face 才是产物，ttc 只是手段
+
+第 34/35 节已经说明「必须用单 face OTF」。这里补一条运维层面的教训：
+`make-menu-font.sh` 原本**只认 ttc**，ttc 一丢就硬报「找不到字体」，
+让人以为要去重新弄一份 —— 而**抽好的三个 face 一直好好躺在
+`menu-bin/fonts/` 里**（那是构建产物）。
+
+```
+[失败] 找不到 NotoSansCJK-Regular.ttc
+```
+
+修法：新增 `font_faces_dir()`，找到就**直接复用**；`FONT_REEXTRACT=1`
+可强制重抽。
+
+> 教训：**要分清「产出物」和「生成它的手段」**。手段可以是一次性的、
+> 随时会没有的（临时下载的文件），产出物才是构建真正的依赖。
+
+### 36.10 打包与文档的静默缺失
+
+两个都属「报了完成、但其实没做」：
+
+**打包命令只被 `echo` 出来，从没执行。**
+
+```bash
+# make-release.sh 结尾
+echo "  打包: cd \"$(dirname "$DEST")\" && tar -czf DVD-Audio-Maker.tar.gz ..."
+```
+
+发布目录因此一直没有 `.tar.gz`，而日志里那一行还让人以为打好了
+（之前那个 tar.gz 是手工补的）。改成真的执行，并加
+`DVDA_TARBALL=0` 用于跳过。
+
+**文档查找漏了一级目录。**
+
+```bash
+for c in "$HERE/docs/$d" "$SCRIPTS/$d"; do ... done    # 少了 $SCRIPTS/docs/
+```
+
+仓库布局是 `<仓库>/docs/{README.md,THIRD-PARTY.md,LICENSE}`，于是发布包里
+**静默地没有 README / LICENSE / THIRD-PARTY**，而这一步照样报「完成」。
+修成四个候选位置 + 每个文件回显来源 + 缺了显式告警。
+
+**顺带修的同类问题**：`xargs` 没加 `-r`，空输入时仍会执行一次命令 ——
+
+```
+basename: 缺少操作数
+```
+
+### 36.11 如何判断两次构建是行为等价还是代码变了
+
+同源、同参数、同工具链，两次构建的 exe **大小完全相同但 32849 字节不同**。
+这种时候不能靠「看起来差不多」，要按下面三步走。
+
+**第一步：逐节区统计差异**（`objdump -h` 取节区表）
+
+```
+section        bytes       diff
+.text          333472       2063  differs
+.rdata         106320      30214  differs
+.pdata           5568          0  IDENTICAL
+.xdata           6112          0  IDENTICAL
+.idata           6484          0  IDENTICAL
+```
+
+`.pdata`（逐函数展开信息）差异为 **0** → **函数边界和数量都没变**。
+这已经强烈提示「不是代码改写」。
+
+**第二步：只看反汇编的助记符序列**（`objdump -d --no-show-raw-insn`）
+
+```
+instructions : old=75994  new=75994
+operand-differing lines  : 1685
+MNEMONIC-differing lines : 0        ← 决定性
+```
+
+**75994 条指令两边完全一致，助记符不同的行数为 0** ——
+即编译器的**指令选择、控制流、顺序**全都相同，只有 1685 行的**操作数**不同。
+
+**第三步：看差异的形态**
+
+```asm
+mov 0x6c7bc(%rip),%rbx # 14006d880 <.refptr.__native_startup_lock>
+mov 0x6c7fc(%rip),%rbx # 14006d8c0 <.refptr.__native_startup_lock>   ← 目标后移 0x40
+```
+
+全是 **RIP 相对位移**，指向 `.refptr.*` 这类 CRT 符号；delta 集中在
+64（944 处）/ 56（836 处）。另外 `.text` 的差异只有 1~2 字节长
+（1309 处单字节 + 374 处双字节，**没有任何 4 字节游程**）——
+这种「散落的 1~2 字节」本身就是位移漂移的指纹，不是代码改写。
+
+**最后用字符串集找到根因**（`strings -n 6 | sort -u` + `comm`）：
+
+```
+unique strings: old=3368  new=3368
+--- only in OLD ---                --- only in NEW ---
+/mingw64/bin/convert               /d/dev/msys64/mingw64/bin/convert
+/mingw64/bin/curl                  /d/dev/msys64/mingw64/bin/curl
+/mingw64/bin/mogrify               /d/dev/msys64/mingw64/bin/mogrify
+```
+
+**每条长了 13 字节** —— 这 13 字节写进 `.data`，使其后的数据整体后移
+（约 64 字节），于是所有 RIP 相对位移与 `.rdata` 里的指针表跟着漂移。
+差异**完全解释清楚了**，且与代码无关。
+
+> **★ 由此得到一条可复用的判断**：exe 里烧了本机路径 ≠ 不可移植，
+> 要先看这条路径在目标流程里是否**可达**。
+>
+> 本例中它不可达 —— `libutils/src/libc_utils.c` 的 `create_binary_path()`：
+>
+> ```c
+> if (symbolic_constant[0]) {
+>     if (globals->settings.bindir == NULL)
+>         local = strdup(symbolic_constant);                    // 用编译期路径
+>     else
+>         local = win32quote(conc(bindir, basename + ".exe"));  // 用 --bindir
+> }
+> ```
+>
+> 而 `menu_assets.py` 的 `args()` **显式传了 `--bindir <menu-bin>`**，
+> 所以永远走 `else` 分支 —— 编译期那两个 MSYS2 路径是**死代码**。
+> **这也正是发布包能在没装 MSYS2 的机器上跑起来的原因**
+> （`menu-bin/` 里打包了 `mogrify.exe`）。
+
+### 36.12 fork 开销差 100 倍，而且测量方法本身有坑
+
+| 环境 | fork/exec | 每个 check | configure 整步 |
+|---|---|---|---|
+| 卡巴斯基 21 个 `kl*` 过滤驱动驻留 | **2~4 秒/次** | ≈ 15 秒 | **≈ 1 小时** |
+| 卸载卡巴 + 重启 | **27 毫秒/次** | ≈ 0.4 秒 | **≈ 1 分钟** |
+
+完整构建（configure + 两个项目 + 组装 + 打包）在快环境下 **1 分 40 秒**。
+
+> ⚠️ **两次实测**：本轮先跑了一次「68 分钟还没跑完 configure」，重启后
+> **100 秒跑完全部**。差别不在 MSYS2，而在杀软的**内核过滤驱动**。
+> 所以早期笔记里「MSYS2 fork 就是 4~7 秒/次」的说法是**错的**。
+
+**测量方法本身也有坑**：第一次测的时候我用 `$(date)` 取时间戳，
+而 `date` 本身就是个 fork —— 量的和被量的是同一个开销，结果被撑大。
+改用 bash 内建的 `$EPOCHREALTIME`（零 fork）才准：
+
+```bash
+a=$EPOCHREALTIME; for i in $(seq 1 10); do /usr/bin/true; done; b=$EPOCHREALTIME
+awk -v a="$a" -v b="$b" 'BEGIN{printf "%.0f ms\n",(b-a)*100}'
+# -> /usr/bin/true (fork+exec) x10 : 272 ms   （约 27 ms/次）
+```
+
+### 36.13 关于 configure 缓存：做过又去掉了
+
+一度做过「把 configure 产物存下来复用」的机制（缓存 + 路径改写 + 自校验），
+后来**去掉**了，理由是三条：
+
+1. **configure 产物里写死了源码树的绝对路径**，复用时要 `sed` 改写。
+   而路径改写正是最容易**静默出错**的地方 —— 36.6 那个 `cygpath` 缺陷
+   如果配合缓存，就会恢复出一份**路径错乱但看起来正常**的 Makefile，
+   报一堆「莫名其妙找不到文件」。
+2. **代价不对称**：缓存失效没被检出 → 编译出错误的东西、而构建照样报 OK；
+   多跑一次 configure → 只花 1 分钟。
+3. **收益本来就小**：实测带缓存 1 分 40 秒 vs 无缓存 1 分 41 秒。
+   为省这点时间维护一层路径改写逻辑，不值得。
+
+> 结论：`build-author.sh` 现在**每次都真跑 configure**（无条件清旧产物）。
+> 慢环境下的正解是**处理杀软**（见 36.12），而不是在构建脚本里加一层间接。
+
+### 36.14 分发与使用
+
+```
+DVD-Audio-Maker\                     <- 仓库根
+  01_prepare.py  02_build.py ...     <- python 脚本
+  docs\                              <- 发布包的文档来源
+  tools\win-build\                   <- 本工具包
+    build-all.bat                    <- 一键（Windows 入口）
+    build-all.sh
+    check-src.sh  build-author.sh  build-dvdauthor.sh
+    assemble-menu-bin.sh  collect-dlls.sh  make-menu-font.sh
+    make-release.sh  make-release-manifest.sh
+    common.sh  da-utf8.manifest  da-utf8.rc
+    README.md
+```
+
+```
+build-all.bat      # 体检 → 编 dvda-author → 编 dvdauthor → 组装 → 打包
+```
+
+产物：
+
+```
+<源码树>/../menu-bin/                 工具目录（中间产物）
+<工具包>/release/DVD-Audio-Maker/     可分发（自包含）
+<工具包>/release/DVD-Audio-Maker.tar.gz
+<工具包>/logs/                        各步骤日志
+```
+
+**目标机器只需要**：Windows 10 1903+ / Python 3.8+ / FFmpeg 在 PATH。
+不需要 MSYS2、不需要 WSL、不需要装字体。
+
+### 36.15 教训汇总
+
+- **一个症状可能对应多个独立缺陷**。修完一个必须**重跑**再判断，
+  不能因为「症状还在」就认定修复无效（36.4 + 36.5 就是两个 bug 同一个症状）。
+- **`//x` 与 `///x` 在 MSYS2 里行为不同**（前者是 UNC、后者折回 `/`），
+  所以「双斜杠」这类错误**不报错**。拼路径前先 `"${VAR%/}"`。
+  这类问题只在「根是 `/`」时出现，正好是最容易漏测的情形。
+- **报告 OK 的地方要问「它真可能为假吗」**。`head` 对空输入返回 0
+  这类假阳性，会让体检把注意力引向错误方向（36.8）。
+- **分不清「产出物」和「生成它的手段」**，就会把一次性文件当成必需依赖（36.9）。
+- **`echo` 一行命令不等于执行它**；发布包里少文件比报错更难发现（36.10）。
+- **判断 exe 是否等价，不要靠大小或感觉**，按「节区 → 助记符序列 → 操作数形态」
+  三步走，通常到第二步就能定论（36.11）。
+- **测量的工具本身可能引入偏差**（`$(date)` 会 fork）；
+  耗时测量优先用内建变量（36.12）。
+- **工具包/脚本本身也要能被体检** —— 一个会误报的体检脚本比没有更糟。
+- **`.bat` / `.cmd` / `.ps1` 必须是纯 ASCII**：cmd.exe 按 OEM 代码页（本机
+  CP936）解码 `.bat`，PowerShell 5.1 按 ANSI 解码 `.ps1`；UTF-8 中文
+  在 GBK 下按 2 字节配对，奇数字节会**吃掉下一行开头的字符**
+  （`REM ...` 变成 `EM ...`），报出 `'Windows' 不是内部或外部命令` 这种
+  完全指不到问题的错误。**注释行也不能幸免** —— 解析发生在解码之后。
