@@ -64,6 +64,14 @@ desktop.ini
 *.lo
 *.la
 
+# ---- .NET ----
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+*.nupkg
+
 # ---- 敏感信息（防误提交）----
 .git-credentials
 .netrc

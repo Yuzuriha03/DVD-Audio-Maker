@@ -38,8 +38,9 @@ set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- 加载配置（若存在 config.sh；否则用内置默认值） ----
-if [ -f "$HERE/config.sh" ] && [ -f "$HERE/dvda_config.py" ]; then
-  if CFG_SH="$(python3 "$HERE/dvda_config.py" --shell 2>/dev/null)"; then
+CLI_PROJECT="$HERE/src/DvdaMaker.Cli/DvdaMaker.Cli.csproj"
+if [ -f "$HERE/config.sh" ] && [ -f "$CLI_PROJECT" ]; then
+  if CFG_SH="$(dotnet run --project "$CLI_PROJECT" -- config --shell 2>/dev/null)"; then
     eval "$CFG_SH"
   fi
 fi

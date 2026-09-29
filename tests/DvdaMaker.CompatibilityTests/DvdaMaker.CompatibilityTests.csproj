@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DvdaMaker.Building\DvdaMaker.Building.csproj" />
+    <ProjectReference Include="..\..\src\DvdaMaker.Configuration\DvdaMaker.Configuration.csproj" />
+    <ProjectReference Include="..\..\src\DvdaMaker.Formats\DvdaMaker.Formats.csproj" />
+    <ProjectReference Include="..\..\src\DvdaMaker.Processes\DvdaMaker.Processes.csproj" />
+    <ProjectReference Include="..\..\src\DvdaMaker.Preparation\DvdaMaker.Preparation.csproj" />
+  </ItemGroup>
+</Project>
