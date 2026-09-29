@@ -337,7 +337,7 @@ if (command == "build")
         {
             Console.WriteLine($"MLP 索引已写入: {result.IndexPath}");
         }
-        if (options.MlpSource == "ffmpeg")
+        if (options.MlpSource is "ffmpeg" or "mlp-batch")
         {
             Console.WriteLine(
                 $"[缓存] 复用 {result.Acquisition.CacheHits} 个，" +
@@ -868,12 +868,24 @@ static void PrintConfiguration(DvdaOptions options)
 
     Console.WriteLine();
     Console.WriteLine("MLP 来源:");
-    if (options.MlpSource == "external")
+    if (options.MlpSource is "external" or "MLP")
     {
         var directory = options.MlpExternalDirectory;
         var status = directory.Length > 0 && Directory.Exists(directory) ? "✔" : "✗ 目录不存在";
         Console.WriteLine($"  external      = {(directory.Length > 0 ? directory : "(未设 DVDA_MLP_EXTERNAL_DIR)")}   {status}");
         Console.WriteLine("                  （跳过编码；按 <外部目录>/<专辑目录>/<曲名>.mlp 取文件）");
+    }
+    else if (options.MlpSource == "mlp-batch")
+    {
+        var encoder = MlpEncoderProvider.ResolveBatchEncoder(options.MlpBatchEncoder);
+        Console.WriteLine($"  mlp-batch = {options.MlpBatchEncoder}   " +
+            (encoder is null ? "✗ 找不到 Batch-MLP-Encoder-3.exe" : "✔"));
+        Console.WriteLine($"  output/cache  = {options.MlpExternalDirectory}");
+        Console.WriteLine($"  MlpEncoder    = {options.MlpMLPExecutable}   " +
+            (File.Exists(options.MlpMLPExecutable) ? "✔" : "✗ 不存在"));
+        Console.WriteLine($"  eac3to        = {options.MlpEac3toExecutable}   " +
+            (File.Exists(options.MlpEac3toExecutable) ? "✔" : "✗ 不存在"));
+        Console.WriteLine($"  format        = {options.MlpMLPSampleRate} Hz / {options.MlpMLPBits} bit");
     }
     else
     {
