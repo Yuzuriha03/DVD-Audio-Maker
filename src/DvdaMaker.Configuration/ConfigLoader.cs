@@ -33,8 +33,8 @@ public sealed partial class ConfigLoader
 
         var candidates = new[]
         {
-            Path.Combine(AppContext.BaseDirectory, "config.sh"),
-            Path.Combine(workingDirectory ?? Environment.CurrentDirectory, "config.sh"),
+            Path.Combine(AppContext.BaseDirectory, "config.env"),
+            Path.Combine(workingDirectory ?? Environment.CurrentDirectory, "config.env"),
         };
         return candidates.FirstOrDefault(File.Exists);
     }

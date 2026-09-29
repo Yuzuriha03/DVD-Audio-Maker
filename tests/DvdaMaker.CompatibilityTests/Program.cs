@@ -1,4 +1,5 @@
 using DvdaMaker.Building;
+using DvdaMaker.SurcodeTool;
 using DvdaMaker.Configuration;
 using DvdaMaker.FontTool;
 using DvdaMaker.Formats.Iso9660;
@@ -43,18 +44,6 @@ if (fixtureProcessName.StartsWith("fake-mkisofs", StringComparison.OrdinalIgnore
     File.WriteAllBytes(args[outputIndex + 1], [0x49, 0x53, 0x4F, 0x21]);
     Console.WriteLine("fixture ISO created");
     return 0;
-}
-if (fixtureProcessName.StartsWith("fake-robocopy", StringComparison.OrdinalIgnoreCase))
-{
-    var sourcePath = Path.Combine(args[0].TrimEnd('\\'), args[2]);
-    var destinationPath = Path.Combine(args[1], args[2]);
-    if (Directory.Exists(args[1]))
-    {
-        Directory.CreateDirectory(args[1]);
-        File.Copy(sourcePath, destinationPath, overwrite: true);
-    }
-    return Environment.GetEnvironmentVariable("FAKE_ROBOCOPY_EXIT") is { Length: > 0 } exitText &&
-        int.TryParse(exitText, out var exitCode) ? exitCode : 1;
 }
 if (fixtureProcessName.StartsWith("fake-ffprobe", StringComparison.OrdinalIgnoreCase))
 {
@@ -122,13 +111,15 @@ var tests = new (string Name, Action Run)[]
 {
     ("解析引号、注释和无效行", ParseAssignments),
     ("Windows 路径规范化", NormalizeWindowsPaths),
-    ("环境变量优先于 config.sh", EnvironmentWins),
+    ("环境变量优先于 config.env", EnvironmentWins),
     ("空环境变量不覆盖配置", EmptyEnvironmentDoesNotOverride),
     ("默认值与数值回退", DefaultsAndNumericFallbacks),
     ("派生路径和 ISO 名称", DerivedPathsAndNames),
     ("限制组轨数量", ClampGroupTrackLimit),
     ("规范化 MLP 来源", NormalizeMlpSource),
-    ("SurCode Batch 参数与路径", BuildSurcodeBatchArguments),
+    ("SurCode 内置任务与路径", BuildSurcodeBatchJob),
+    ("SurCode SSF 立体声格式", WriteSurcodeStereoSsf),
+    ("SurCode PCM 16 位升至 24 位", UpconvertSurcodePcmWav),
     ("Shell 单引号转义", EscapeShellAssignment),
     ("Shell 默认键集兼容 Python", PreserveLegacyShellKeySet),
     ("配置来源与有效键集合", DescribeConfigurationSources),
@@ -179,8 +170,6 @@ var tests = new (string Name, Action Run)[]
     ("MLP 索引拒绝重复路径", RejectDuplicateMlpIndexKeys),
     ("正式出盘执行器端到端", BuildDiscEndToEnd),
     ("出盘失败保留诊断现场", PreserveFailedDiscWorkspace),
-    ("Robocopy 0-7 退出码兼容", AcceptRobocopySuccessCodes),
-    ("Robocopy 复制失败不丢 ISO", PreserveIsoOnWindowsCopyFailure),
     ("菜单配置派生值", LoadMenuConfiguration),
     ("菜单按专辑分页与索引", PlanAlbumMenuPages),
     ("菜单文字净化与截断", SanitizeMenuText),
@@ -264,7 +253,9 @@ static void DefaultsAndNumericFallbacks()
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_DISC_BYTES=bad", path =>
     {
         var options = Load(path);
-        Equal("/root/dvda-build", options.BuildDirectory);
+        Equal(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "DVD-Audio-Maker", "build"), options.BuildDirectory);
         Equal(ConfigDefaults.Dvd5Bytes, options.DiscBytes);
         Equal(2, options.MaxDiscs);
     });
@@ -304,12 +295,11 @@ static void NormalizeMlpSource()
         Equal("ffmpeg", Load(path).MlpSource));
 }
 
-static void BuildSurcodeBatchArguments()
+static void BuildSurcodeBatchJob()
 {
     WithConfig(
         "DVDA_SRC=C:/Music\nDVDA_FINAL_DIR=C:/Out\n" +
         "DVDA_MLP_SOURCE=surcode-batch\nDVDA_MLP_EXTERNAL_DIR=C:/MLP\n" +
-        "DVDA_MLP_BATCH_ENCODER=C:/Batch\n" +
         "DVDA_MLP_BATCH_TEMP_DIR=C:/ConfiguredTemp\n" +
         "DVDA_MLP_BATCH_OUTPUT_DIR=C:/ConfiguredOutput\n" +
         "DVDA_MLP_SURCODE_EXE=C:/SurCode/surcodemlp.exe\n" +
@@ -320,16 +310,35 @@ static void BuildSurcodeBatchArguments()
             Equal("C:/ConfiguredTemp", options.MlpBatchTempDirectory);
             Equal("C:/ConfiguredOutput", options.MlpBatchOutputDirectory);
             var provider = new SurcodeMlpProvider(options, new ProcessRunner());
-            var arguments = provider.BuildArguments(
-                "C:/Temp", "C:/Stage", ["C:/Music/Album/01.flac", "C:/Music/Album/02.flac"]);
-            SequenceEqual(new[]
+            var first = new BuildTrack
             {
-                "--batch", "--temp", "C:\\Temp", "--output", "C:\\Stage",
-                "--sample-rate", "48000", "--bits", "24",
-                "--surcode", "C:\\SurCode\\surcodemlp.exe",
-                "--eac3to", "C:\\eac3to\\eac3to.exe", "--",
-                "C:\\Music\\Album\\01.flac", "C:\\Music\\Album\\02.flac",
-            }, arguments);
+                Date = "2026", Track = "1", Title = "One", Album = "Album",
+                SampleRate = 48_000, Bits = 24,
+                SourcePath = "C:/Music/Album/01.flac", ManifestName = "01.flac",
+                Duration = 60, SourceSize = 1, MlpPath = "", MlpSize = 0,
+                SourceSampleRate = 44_100, SourceBits = 16,
+            };
+            var second = first with
+            {
+                Track = "2", Title = "Two", SourcePath = "C:/Music/Album/02.flac",
+                ManifestName = "02.flac",
+            };
+            var job = provider.BuildJob("C:/Temp", "C:/Stage",
+            [
+                new SurcodeMlpProvider.PendingTrack(first, "C:/MLP/Album/01.mlp"),
+                new SurcodeMlpProvider.PendingTrack(second, "C:/MLP/Album/02.mlp"),
+            ]);
+            Equal("C:\\Temp", job.TemporaryDirectory);
+            Equal("C:\\Stage", job.OutputDirectory);
+            Equal("C:\\SurCode\\surcodemlp.exe", job.SurcodeExecutable);
+            Equal("C:\\eac3to\\eac3to.exe", job.Eac3toExecutable);
+            Equal(48_000, job.SampleRate);
+            Equal(24, job.Bits);
+            Equal(2, job.Tracks.Count);
+            Equal("__surcode_0001", job.Tracks[0].WorkName);
+            Equal("__surcode_0002", job.Tracks[1].WorkName);
+            Equal(44_100, job.Tracks[0].SourceSampleRate);
+            Equal(16, job.Tracks[0].SourceBits);
             Equal(
                 Path.Combine("C:/MLP", "Album", "01.mlp"),
                 SurcodeMlpProvider.DestinationPath(
@@ -337,6 +346,90 @@ static void BuildSurcodeBatchArguments()
                     Path.GetFullPath("C:/Music"),
                     "C:/MLP"));
         });
+}
+
+static void WriteSurcodeStereoSsf()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-ssf-tests", Guid.NewGuid().ToString("N"));
+    var wav = Path.Combine(root, "wav");
+    var output = Path.Combine(root, "mlp");
+    Directory.CreateDirectory(wav);
+    Directory.CreateDirectory(output);
+    try
+    {
+        const string name = "__surcode_0001";
+        File.WriteAllBytes(Path.Combine(wav, name + ".L.wav"), [1]);
+        File.WriteAllBytes(Path.Combine(wav, name + ".R.wav"), [2]);
+
+        var ssf = SurcodeSsfWriter.Write(name, wav, wav, output);
+        var bytes = File.ReadAllBytes(ssf);
+        True(bytes.Length > 120, "SSF 应包含固定头和九个路径字段");
+        Equal((byte)1, bytes[^4]);
+        SequenceEqual(new byte[] { 0, 0, 0 }, bytes[^3..]);
+
+        var text = System.Text.Encoding.Latin1.GetString(bytes);
+        True(text.Contains(name + ".L.wav", StringComparison.Ordinal),
+            "SSF 应写入左声道路径");
+        True(text.Contains(name + ".R.wav", StringComparison.Ordinal),
+            "SSF 应写入右声道路径");
+        True(text.Contains(name + ".mlp", StringComparison.Ordinal),
+            "SSF 应写入目标 MLP 路径");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void UpconvertSurcodePcmWav()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-surcode-wav", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        const string name = "__surcode_0001";
+        var path = Path.Combine(root, name + ".L.wav");
+        using (var writer = new BinaryWriter(File.Create(path)))
+        {
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+            writer.Write(42);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));
+            writer.Write(16);
+            writer.Write((short)1);
+            writer.Write((short)1);
+            writer.Write(48_000);
+            writer.Write(96_000);
+            writer.Write((short)2);
+            writer.Write((short)16);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+            writer.Write(6);
+            writer.Write(short.MinValue);
+            writer.Write((short)0);
+            writer.Write(short.MaxValue);
+        }
+
+        SurcodePcmWav.UpconvertProducedFiles(root, name, 24);
+        var layout = SurcodePcmWav.ReadLayout(path);
+        Equal(24, layout.ContainerBits);
+        Equal(24, layout.ValidBits);
+        Equal(3, layout.BytesPerSample);
+        Equal(9L, layout.DataSize);
+
+        using var stream = File.OpenRead(path);
+        stream.Position = layout.DataOffset;
+        var samples = new byte[9];
+        stream.ReadExactly(samples);
+        SequenceEqual(new byte[]
+        {
+            0x00, 0x00, 0x80,
+            0x00, 0x00, 0x00,
+            0x00, 0xFF, 0x7F,
+        }, samples);
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
 }
 
 static void EscapeShellAssignment() =>
@@ -669,7 +762,7 @@ static void WriteMlpIndex()
 {
     var root = Path.Combine(Path.GetTempPath(), "dvda-index-tests", Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(root);
-    var config = Path.Combine(root, "config.sh");
+    var config = Path.Combine(root, "config.env");
     File.WriteAllText(config,
         $"DVDA_SRC={root}/src\nDVDA_FINAL_DIR={root}/final\nDVDA_BUILD_DIR={root}/build\nDVDA_TITLE=Test Disc");
     try
@@ -839,7 +932,7 @@ static void PreserveLegacyShellKeySet()
         var keys = Load(path).ToShellPairs().Select(pair => pair.Key).ToArray();
         SequenceEqual(new[]
         {
-            "DVDA_SRC", "DVDA_FINAL_DIR", "DVDA_WINDOWS_DEST", "DVDA_BUILD_DIR",
+            "DVDA_SRC", "DVDA_FINAL_DIR", "DVDA_BUILD_DIR",
             "DVDA_TITLE", "DVDA_ISO_PREFIX", "DVDA_MANIFEST", "DVDA_REPORT",
             "DVDA_OUT_ROOT", "DVDA_TMP_ROOT", "DVDA_ISO_DIR", "DVDA_MLP_DIR",
             "DVDA_MLP_INDEX", "DVDA_ALAC_FIX_DIR", "DVDA_BUILD_LOG", "DVDA_AUTHOR",
@@ -863,8 +956,8 @@ static void DescribeConfigurationSources()
             ["DVDA_TITLE"] = "",
         });
         Equal("环境变量", options.ValueSource("DVDA_SRC"));
-        Equal("config.sh", options.ValueSource("DVDA_FINAL_DIR"));
-        Equal("config.sh", options.ValueSource("CUSTOM_VALUE"));
+        Equal("config.env", options.ValueSource("DVDA_FINAL_DIR"));
+        Equal("config.env", options.ValueSource("CUSTOM_VALUE"));
         Equal("默认值", options.ValueSource("DVDA_TITLE"));
         True(options.HasEnvironmentOverrides(), "应识别非空环境变量覆盖");
         True(options.EffectiveKeys().Contains("CUSTOM_VALUE"), "显式配置的扩展键应出现在诊断输出");
@@ -892,7 +985,7 @@ static void WriteCompatibleBuildLog()
 {
     var root = Path.Combine(Path.GetTempPath(), "dvda-log-tests", Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(root);
-    var config = Path.Combine(root, "config.sh");
+    var config = Path.Combine(root, "config.env");
     File.WriteAllText(config,
         $"DVDA_SRC={root}/src\nDVDA_FINAL_DIR={root}/final\nDVDA_BUILD_DIR={root}/build");
     try
@@ -1372,7 +1465,7 @@ static void RejectDuplicateMlpIndexKeys()
 {
     var root = Path.Combine(Path.GetTempPath(), "dvda-duplicate-index", Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(root);
-    var config = Path.Combine(root, "config.sh");
+    var config = Path.Combine(root, "config.env");
     File.WriteAllText(config,
         $"DVDA_SRC={root}/src\nDVDA_FINAL_DIR={root}/final\nDVDA_BUILD_DIR={root}/build");
     try
@@ -1486,72 +1579,6 @@ static void PreserveFailedDiscWorkspace()
     }
     finally
     {
-        Directory.Delete(root, recursive: true);
-    }
-}
-
-static void AcceptRobocopySuccessCodes()
-{
-    var root = Path.Combine(Path.GetTempPath(), "dvda-robocopy-success", Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(root);
-    var previousRobocopy = Environment.GetEnvironmentVariable("DVDA_ROBOCOPY");
-    try
-    {
-        var source = Path.Combine(root, "disc.iso");
-        File.WriteAllBytes(source, [1, 2, 3]);
-        var robocopy = CreateFixtureExecutable(root, "fake-robocopy.exe");
-        Environment.SetEnvironmentVariable("DVDA_ROBOCOPY", robocopy);
-        var result = new WindowsIsoCopier(new ProcessRunner())
-            .CopyAsync(source, Path.Combine(root, "windows-dest"), "fixture", default)
-            .GetAwaiter().GetResult();
-
-        True(result.Succeeded, "robocopy 退出码 1 是成功（有文件已复制）");
-        Equal(1, result.ExitCode);
-    }
-    finally
-    {
-        Environment.SetEnvironmentVariable("DVDA_ROBOCOPY", previousRobocopy);
-        Directory.Delete(root, recursive: true);
-    }
-}
-
-static void PreserveIsoOnWindowsCopyFailure()
-{
-    var root = Path.Combine(Path.GetTempPath(), "dvda-robocopy-failure", Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(root);
-    var previousRobocopy = Environment.GetEnvironmentVariable("DVDA_ROBOCOPY");
-    var previousExit = Environment.GetEnvironmentVariable("FAKE_ROBOCOPY_EXIT");
-    try
-    {
-        var author = CreateFixtureExecutable(root, "fake-dvda-author.exe");
-        var mkisofs = CreateFixtureExecutable(root, "fake-mkisofs.exe");
-        var robocopy = CreateFixtureExecutable(root, "fake-robocopy.exe");
-        Environment.SetEnvironmentVariable("DVDA_ROBOCOPY", robocopy);
-        Environment.SetEnvironmentVariable("FAKE_ROBOCOPY_EXIT", "8");
-        var options = CreateExecutorOptions(root, author, mkisofs, windowsDestination: "E:/Published");
-        var mlp = Path.Combine(root, "track.mlp");
-        File.WriteAllBytes(mlp, [1]);
-        var track = BuildTrack("Track", "1", "1", 1) with { MlpPath = mlp };
-        var disc = new DiscPlanner()
-            .Plan([track], ConfigDefaults.Dvd5Bytes, 1, 70)
-            .Discs.Single();
-
-        DiscBuildResult result;
-        using (var log = new BuildLogWriter(options, dryRun: false))
-        {
-            result = new DiscBuildExecutor(options, new ProcessRunner(), log)
-                .BuildAsync(disc).GetAwaiter().GetResult();
-        }
-
-        True(result.Succeeded, "Windows 侧复制失败不应使已发布 ISO 构建失败");
-        True(result.Diagnostics.Any(item => item.Code == "WINDOWS_ISO_COPY_FAILED"),
-            "复制失败应作为 warning 返回");
-        True(File.Exists(result.PublishedIsoPath), "源输出位置的 ISO 必须保留");
-    }
-    finally
-    {
-        Environment.SetEnvironmentVariable("DVDA_ROBOCOPY", previousRobocopy);
-        Environment.SetEnvironmentVariable("FAKE_ROBOCOPY_EXIT", previousExit);
         Directory.Delete(root, recursive: true);
     }
 }
@@ -2019,10 +2046,9 @@ static void ValidateAsvsFixtures()
 static DvdaOptions CreateExecutorOptions(
     string root,
     string author,
-    string mkisofs,
-    string? windowsDestination = null)
+    string mkisofs)
 {
-    var config = Path.Combine(root, "config.sh");
+    var config = Path.Combine(root, "config.env");
     File.WriteAllText(config, string.Join('\n',
     [
         $"DVDA_SRC={Path.Combine(root, "src").Replace('\\', '/')}",
@@ -2030,7 +2056,6 @@ static DvdaOptions CreateExecutorOptions(
         $"DVDA_BUILD_DIR={Path.Combine(root, "build").Replace('\\', '/')}",
         $"DVDA_AUTHOR={author.Replace('\\', '/')}",
         $"DVDA_MKISOFS={mkisofs.Replace('\\', '/')}",
-        $"DVDA_WINDOWS_DEST={windowsDestination ?? string.Empty}",
         "DVDA_TITLE=Fixture Disc",
         "DVDA_KEEP_TMP=off",
         "DVDA_KEEP_INTERMEDIATE=off",
@@ -2114,7 +2139,7 @@ static void WithConfig(string content, Action<string> action)
 {
     var directory = Path.Combine(Path.GetTempPath(), "dvda-config-tests", Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(directory);
-    var path = Path.Combine(directory, "config.sh");
+    var path = Path.Combine(directory, "config.env");
     File.WriteAllText(path, content);
     try
     {

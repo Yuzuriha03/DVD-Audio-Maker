@@ -13,7 +13,7 @@
 - `DvdaMaker.CompatibilityTests`：不依赖 NuGet 测试框架的兼容性基线（当前 68 项）。
 
 C# 已覆盖配置、准备、转换、构建、菜单素材、字体覆盖探测、AMG/ASVS、
-菜单视觉和成品审计；`build.sh` 与 `verify.sh` 只是 C# CLI 的兼容薄包装。
+菜单视觉和成品审计；`build.cmd` 与 `verify.cmd` 是 C# CLI 的 Windows 原生薄包装。
 根目录旧 Python 业务脚本已于 2026-09-29 删除；删除前的最终版本保存在
 Git 标签 `python-reference-final`（提交 `5aa4164`）中。
 
@@ -116,9 +116,8 @@ EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP
 正式出盘执行器已通过成功与失败两条端到端 fixture：成功路径验证 author 输出、
 轨道表日志、mkisofs、ISO 发布及清理；失败路径验证错误诊断、禁止发布和现场保留。
 
-`DVDA_WINDOWS_DEST` 已接入 C# 正式出盘：在 WSL 中通过 `Robocopy.exe` 使用
-`\\wsl.localhost\\<发行版>` 源路径复制 ISO。Robocopy 退出码 0~7 视为成功；复制
-失败只生成 warning，不会删除或隐藏 `DVDA_FINAL_DIR` 中已经发布的 ISO。
+`DVDA_FINAL_DIR` 是唯一最终输出目录。正式出盘事务完成后，ISO 直接发布到该目录，
+不再经过 Robocopy 或第二个目标目录。
 
 ## 保留边界
 
@@ -134,7 +133,7 @@ EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP
 
 ## 已冻结的配置契约
 
-- 优先级：环境变量 > `config.sh` > 内置默认值。
+- 优先级：环境变量 > `config.env` > 内置默认值。
 - 只解析 `KEY=VALUE`，不执行变量展开或命令替换。
 - 支持成对单引号、双引号和未加引号值的行尾注释。
 - 疑似路径中的反斜杠转换为 `/`，保持 Python 当前行为。

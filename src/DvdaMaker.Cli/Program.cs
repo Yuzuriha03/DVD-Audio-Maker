@@ -793,7 +793,7 @@ if (arguments.Contains("--check"))
     }
     else
     {
-        Console.Error.WriteLine("  未找到 config.sh —— 请把它与程序放在同一目录，");
+        Console.Error.WriteLine("  未找到 config.env —— 请把它与程序放在同一目录，");
         Console.Error.WriteLine("  或设置环境变量 DVDA_CONFIG 指向它");
     }
     Console.Error.WriteLine();
@@ -806,12 +806,12 @@ if (arguments.Contains("--check"))
             _ => key,
         };
         Console.Error.WriteLine($"  还未填写: {label}");
-        Console.Error.WriteLine($"            {key}=\"/你的/路径\"");
+        Console.Error.WriteLine($"            {key}=\"D:/你的/路径\"");
     }
     Console.Error.WriteLine();
     Console.Error.WriteLine("  示例:");
-    Console.Error.WriteLine("    DVDA_SRC=\"/mnt/d/Music/我的专辑\"");
-    Console.Error.WriteLine("    DVDA_FINAL_DIR=\"/mnt/d/DVD_Output\"");
+    Console.Error.WriteLine("    DVDA_SRC=\"D:/Music/我的专辑\"");
+    Console.Error.WriteLine("    DVDA_FINAL_DIR=\"D:/DVD_Output\"");
     Console.Error.WriteLine();
     return 2;
 }
@@ -840,8 +840,8 @@ return 0;
 static void PrintConfiguration(DvdaOptions options)
 {
     var keys = options.EffectiveKeys();
-    Console.WriteLine($"配置文件: {options.ConfigPath ?? "（未找到 config.sh，使用默认值）"}");
-    Console.WriteLine("优先级  : 环境变量 > config.sh > 内置默认值" +
+    Console.WriteLine($"配置文件: {options.ConfigPath ?? "（未找到 config.env，使用默认值）"}");
+    Console.WriteLine("优先级  : 环境变量 > config.env > 内置默认值" +
         (options.HasEnvironmentOverrides(keys) ? "（当前有环境变量覆盖）" : string.Empty));
     foreach (var key in keys)
     {
@@ -877,9 +877,7 @@ static void PrintConfiguration(DvdaOptions options)
     }
     else if (options.MlpSource == "surcode-batch")
     {
-        var encoder = SurcodeMlpProvider.ResolveBatchEncoder(options.MlpBatchEncoder);
-        Console.WriteLine($"  surcode-batch = {options.MlpBatchEncoder}   " +
-            (encoder is null ? "✗ 找不到 Batch-MLP-Encoder-3.exe" : "✔"));
+        Console.WriteLine("  surcode-batch = dvda.exe 内置 SurCode 编码类库   ✔");
         Console.WriteLine($"  output/cache  = {options.MlpExternalDirectory}");
         Console.WriteLine($"  surcodemlp    = {options.MlpSurcodeExecutable}   " +
             (File.Exists(options.MlpSurcodeExecutable) ? "✔" : "✗ 不存在"));

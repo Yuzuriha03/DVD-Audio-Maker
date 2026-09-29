@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DvdaMaker.Building\DvdaMaker.Building.csproj" />
@@ -9,5 +12,6 @@
     <ProjectReference Include="..\..\src\DvdaMaker.Formats\DvdaMaker.Formats.csproj" />
     <ProjectReference Include="..\..\src\DvdaMaker.Processes\DvdaMaker.Processes.csproj" />
     <ProjectReference Include="..\..\src\DvdaMaker.Preparation\DvdaMaker.Preparation.csproj" />
+    <ProjectReference Include="..\..\src\DvdaMaker.SurcodeTool\DvdaMaker.SurcodeTool.csproj" />
   </ItemGroup>
 </Project>

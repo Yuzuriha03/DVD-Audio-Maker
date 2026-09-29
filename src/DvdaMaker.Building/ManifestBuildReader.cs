@@ -60,17 +60,11 @@ public sealed partial class ManifestBuildReader
 
     public static string ToNativePath(string path)
     {
-        var normalized = path.Replace('\\', '/');
-        if (!OperatingSystem.IsWindows() && WindowsDriveRegex().IsMatch(normalized))
-        {
-            return $"/mnt/{char.ToLowerInvariant(normalized[0])}{normalized[2..]}";
-        }
-        return normalized;
+        return path.Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar);
     }
 
     [GeneratedRegex(@"^\s*(\d+)")]
     private static partial Regex TrackNumberRegex();
 
-    [GeneratedRegex(@"^[A-Za-z]:")]
-    private static partial Regex WindowsDriveRegex();
 }

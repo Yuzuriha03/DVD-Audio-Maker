@@ -72,6 +72,7 @@ TestResults/
 *.user
 *.suo
 *.nupkg
+tools/win-build/publish/
 
 # ---- 敏感信息（防误提交）----
 .git-credentials
@@ -81,4 +82,3 @@ TestResults/
 *.key
 .env
 .env.*
-config_workspace.sh

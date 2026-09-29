@@ -78,7 +78,6 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
                 var result = await executor.BuildAsync(
                     disc,
                     stagingDirectory,
-                    copyToWindows: false,
                     cancellationToken).ConfigureAwait(false);
                 discResults.Add(result);
                 if (!result.Succeeded)
@@ -107,8 +106,6 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
                         };
                     }
                     indexPublished = true;
-                    await CopyPublishedIsosToWindowsAsync(
-                        discResults, log, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception exception) when (
                     exception is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -146,38 +143,6 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
 
     internal static string PendingIndexPath(string formalIndexPath) =>
         WithSuffix(formalIndexPath, ".pending");
-
-    private async Task CopyPublishedIsosToWindowsAsync(
-        IList<DiscBuildResult> discResults,
-        BuildLogWriter log,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(options.WindowsDestination)) return;
-        var copier = new WindowsIsoCopier(_runner);
-        for (var index = 0; index < discResults.Count; index++)
-        {
-            var copy = await copier.CopyAsync(
-                discResults[index].PublishedIsoPath,
-                options.WindowsDestination,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (copy.Succeeded)
-            {
-                log.WriteLine($"[Windows copy] {copy.Message}");
-                continue;
-            }
-            var current = discResults[index];
-            discResults[index] = current with
-            {
-                Diagnostics = current.Diagnostics.Concat([
-                    new BuildDiagnostic(
-                        BuildDiagnosticSeverity.Warning,
-                        "WINDOWS_ISO_COPY_FAILED",
-                        $"Windows 侧复制失败；ISO 仍保留在 {current.PublishedIsoPath}。" +
-                        $"{Environment.NewLine}{copy.Message}"),
-                ]).ToArray(),
-            };
-        }
-    }
 
     private static string WithSuffix(string path, string suffix)
     {

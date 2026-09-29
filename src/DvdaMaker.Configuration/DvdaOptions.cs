@@ -39,7 +39,6 @@ public sealed partial class DvdaOptions
     public string SourceDirectory => TrimSlash(Get("DVDA_SRC"));
     public string FinalDirectory => TrimSlash(Get("DVDA_FINAL_DIR"));
     public string BuildDirectory => TrimSlash(Get("DVDA_BUILD_DIR"));
-    public string WindowsDestination => Get("DVDA_WINDOWS_DEST").TrimEnd('/', '\\');
     public string Title => Get("DVDA_TITLE");
     public string IsoPrefix => Get("DVDA_ISO_PREFIX") is { Length: > 0 } prefix
         ? prefix
@@ -79,7 +78,6 @@ public sealed partial class DvdaOptions
         _ => "ffmpeg",
     };
     public string MlpExternalDirectory => TrimSlash(Get("DVDA_MLP_EXTERNAL_DIR").Trim());
-    public string MlpBatchEncoder => TrimSlash(Get("DVDA_MLP_BATCH_ENCODER").Trim());
     public string MlpBatchTempDirectory => TrimSlash(Get("DVDA_MLP_BATCH_TEMP_DIR").Trim());
     public string MlpBatchOutputDirectory => TrimSlash(Get("DVDA_MLP_BATCH_OUTPUT_DIR").Trim());
     public string MlpSurcodeExecutable => Get("DVDA_MLP_SURCODE_EXE").Trim();
@@ -149,7 +147,7 @@ public sealed partial class DvdaOptions
         }
         if (_fileValues.TryGetValue(key, out var fileValue) && fileValue.Length > 0)
         {
-            return "config.sh";
+            return Path.GetFileName(ConfigPath ?? "config.env");
         }
         return "默认值";
     }
@@ -163,7 +161,6 @@ public sealed partial class DvdaOptions
         {
             ["DVDA_SRC"] = SourceDirectory,
             ["DVDA_FINAL_DIR"] = FinalDirectory,
-            ["DVDA_WINDOWS_DEST"] = WindowsDestination.Length > 0 ? WindowsDestination : "(不拷贝)",
             ["DVDA_BUILD_DIR"] = BuildDirectory,
             ["DVDA_TITLE"] = Title,
             ["DVDA_ISO_PREFIX"] = IsoPrefix,
@@ -193,7 +190,6 @@ public sealed partial class DvdaOptions
     public IReadOnlyList<KeyValuePair<string, string>> ToShellPairsAll() =>
         ToShellPairs().Concat(new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["DVDA_MLP_BATCH_ENCODER"] = MlpBatchEncoder,
             ["DVDA_MLP_BATCH_TEMP_DIR"] = MlpBatchTempDirectory,
             ["DVDA_MLP_BATCH_OUTPUT_DIR"] = MlpBatchOutputDirectory,
             ["DVDA_MLP_SURCODE_EXE"] = MlpSurcodeExecutable,

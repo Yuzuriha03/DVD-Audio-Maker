@@ -18,6 +18,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DvdaMaker.CompatibilityTest
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DvdaMaker.FontTool", "src\DvdaMaker.FontTool\DvdaMaker.FontTool.csproj", "{F2064ED5-3CF9-46DC-9E2C-C1EBA2F381CE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DvdaMaker.SurcodeTool", "src\DvdaMaker.SurcodeTool\DvdaMaker.SurcodeTool.csproj", "{69BAFE9D-4CB1-4DD0-A49E-E542D3D5AB26}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DvdaMaker.Toolchain", "src\DvdaMaker.Toolchain\DvdaMaker.Toolchain.csproj", "{4C371E39-8763-47C9-9775-DC6D9885CF24}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -56,5 +60,13 @@ Global
 		{F2064ED5-3CF9-46DC-9E2C-C1EBA2F381CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F2064ED5-3CF9-46DC-9E2C-C1EBA2F381CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F2064ED5-3CF9-46DC-9E2C-C1EBA2F381CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{69BAFE9D-4CB1-4DD0-A49E-E542D3D5AB26}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{69BAFE9D-4CB1-4DD0-A49E-E542D3D5AB26}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{69BAFE9D-4CB1-4DD0-A49E-E542D3D5AB26}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{69BAFE9D-4CB1-4DD0-A49E-E542D3D5AB26}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4C371E39-8763-47C9-9775-DC6D9885CF24}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4C371E39-8763-47C9-9775-DC6D9885CF24}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4C371E39-8763-47C9-9775-DC6D9885CF24}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4C371E39-8763-47C9-9775-DC6D9885CF24}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

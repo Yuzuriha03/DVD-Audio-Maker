@@ -1,8 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\DvdaMaker.Configuration\DvdaMaker.Configuration.csproj" />
     <ProjectReference Include="..\DvdaMaker.Formats\DvdaMaker.Formats.csproj" />
     <ProjectReference Include="..\DvdaMaker.Preparation\DvdaMaker.Preparation.csproj" />
     <ProjectReference Include="..\DvdaMaker.Processes\DvdaMaker.Processes.csproj" />
+    <ProjectReference Include="..\DvdaMaker.SurcodeTool\DvdaMaker.SurcodeTool.csproj" />
   </ItemGroup>
 </Project>
