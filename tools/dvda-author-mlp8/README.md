@@ -1,260 +1,99 @@
-# dvda-author version 20.10 (Oct 2020)  
-
-&nbsp;  
-**Note**: For updated builds of dvda-author and its companion tools, its is 
-advised to pull Docker images:
-
-    # (sudo) docker pull fabnicol/dvda-author:latest
+# dvda-author 修改源码镜像
 
-Please read the [Docker repository webpage](https://hub.docker.com/repository/docker/fabnicol/dvda-author)
-for usage tips and examples.   
-   
-&nbsp;  
-  
-## 1. Quick start  
-
-### 1.1 Building the toolchain from source:
+本目录保存 DVD-Audio Maker 对 `dvda-author` 修改过的核心 C/C++ 源文件，主要用于：
 
-        ./autogen   
-        ./configure    
-
-with elevated rights under *nix platforms:
-   
-        (sudo) make && (sudo) make install   
-   
-The patched toolchain source code is inlined in the repository
-downloaded with git. If you would like to refresh the toolchain 
-using the vanilla packages and applying the patches, you can do
-it by configuring as follows:
+- 在仓库中审阅和搜索修改后的实现。
+- 记录 MLP、时间轴、菜单、字体和 Windows 兼容性改动。
+- 与完整工作树或补丁文件进行差异核对。
+- 避免把完整上游源码、第三方依赖和编译产物提交到主仓库。
 
-         ./configure --enable-all-all
+## 重要说明
 
-You can also download each 
-[toolchain package from 
-Sourceforge](https://sourceforge.net/projects/dvd-audio/files/dvda-author/Dependencies/)   
-    
-If you do not run ./configure and build the toolchain dependencies 
-by hand, please mind to apply the patches in the **patches** 
-subdirectory of this URL.
-	
-The building system has been tested under linux, Free-BSD
-and Cygwin. For Windows, you can use the codeblocks project to (re)build
-the target application once the dependencies have been built using Cygwin. 
-It is advised to use the [MSYS2 port](https://www.msys2.org/) of the GNU GCC 
-compiler for `dvda-author` itself, yet most dependencies should be built using
-Cygwin. Builds with a recent MSYS2 port of gcc and the codeblocks project yield 
-better results than with Cygwin.
- 
-### 1.2 Running dvda-author-dev
+**这里不是完整、可独立构建的 dvda-author 源码树。**
 
-See file **commandline.txt** for usage examples.  See file 
-**dvda-author-(version).html** 
-for usage details.
+本目录通常只包含：
 
-As this is a local deployment package, if you create menus or discs, add:
+```text
+src/          修改过的 dvda-author 核心源码
+libutils/     修改过的公共工具源码
+MIRROR-NOTES.md
+README.md
+```
 
-        --bindir=/path/to/executable/dependencies    
-		
-to your  commandline when running `dvda-author-dev`. If you built the whole 
-toolchain from source using the configure script, this directory is **local/bin** 
-under the package root directory. You may place this directory elsewhere, 
-changing the `--bindir` path argument accordingly.      
-    
-	
-Some common examples for Windows builds:     
+它不包含完整构建所需的内容，例如：
 
-1. Simple two-group disc, just the disc system files:  
+```text
+configure
+configure.ac
+Makefile.in
+libfixwav/
+menu/
+m4.extra.dvdauthor/
+dvdauthor-0.7.1/
+local.w10/
+```
 
-        local\bin\dvda-author.exe -g C:\Docs\a2_24_44.wav \ 
-		-g C:\Docs\a2_24_48.wav -W -o output   
+因此不要在本目录运行 `configure`、`make` 或 Windows 工具链脚本。
 
-2. Simple two-group disc, just the ISO:  
+## 权威来源
 
-        local\bin\dvda-author.exe -g C:\Docs\a2_24_44.wav \
-		-g C:\Docs\a2_24_48.wav -W --mkisofs
+构建时应使用完整的 `dvda-author` 工作树，并应用本项目改动。推荐固定到上游提交 `8fca43a`：
 
-**dvd.iso** will be created under **dvda-author\\temp** as well as DVD-audio files.      
+```bash
+git clone https://github.com/fabnicol/dvda-author /path/to/dvda-author
+cd /path/to/dvda-author
+git checkout 8fca43a
+git apply /path/to/DVD-Audio-Maker/docs/dvda-author-changes.patch
+```
 
-3. Simple two-group disc, to be burned on a DVD:  
+完整改动集：
 
-        local\bin\dvda-author.exe -g C:\Docs\a2_24_44.wav \
-		-g C:\Docs\a2_24_48.wav -W --cdrecord
+- [`../../docs/dvda-author-changes.patch`](../../docs/dvda-author-changes.patch)
 
-You might have to run this with administrative rights in some cases. 
-If you have several DVD writers, you may have to change your disc to the one
-that will be automatically selected.
+改动说明及依据：
 
-4. Three-group disc, just the disc system files, with a variety of audio formats
- as input (-S), and increased verbosity (-t):  
+- [`../../docs/DVDA-AUTHOR-CHANGES.md`](../../docs/DVDA-AUTHOR-CHANGES.md)
 
-        local\bin\dvda-author.exe -g C:\Docs\a2_24_44.wav \
-		-g C:\Docs\a4_16_96.flac C:\Docs\a.aiff C:\Docs\b.au \
-		-g C:\Docs\a2_24_48.flac -W -S -t
+试验过但未启用的改动：
 
-DVD files with be created under **dvda-author\\temp**
+- [`../../docs/DVDA-AUTHOR-DISABLED.md`](../../docs/DVDA-AUTHOR-DISABLED.md)
 
-5. Simple two-group disc with DVD top menu, burned to disc:  
+实际构建入口：
 
-        local\bin\dvda-author.exe -g C:\Docs\a2_24_44.wav \
-		-g C:\Docs\a2_16_192.wav -W --bindir local\bin -t \
-		--topmenu  --cdrecord
+- Linux/WSL：[`../../build_dvda_author_mlp.sh`](../../build_dvda_author_mlp.sh)
+- Windows/MSYS2：[`../win-build/README.md`](../win-build/README.md)
 
-You might have to run this with administrative rights in some cases. 
+## 主要改动范围
 
-6. Complex two-group disc with DVD top menu, from a variety of audio formats, and
-an extra group/track link from the DVD-Audio zone to the pre-authored DVD-Video
-zone of the disc, and burn it:  
+镜像中的代码可能包括以下类别的修改：
 
-        local\bin\dvda-author.exe -g Docs\a2_24_44.wav \
-		-g Docs\a2_16_192.flac Docs\a2_24_44.aiff -S -W \
-		--bindir local\bin --topmenu --cdrecord \
-		--videodir C:\my_DVD\VIDEO_TS -T 1    
+- 24-bit MLP 输入和 FFmpeg 新版 API 适配。
+- MLP 帧、轨道边界和字节对齐处理。
+- ATSI、AOB、PTS 和标题时间轴修复。
+- 菜单生成、AMG/ASVS 关联和播放静图处理。
+- SC、JP、KR 字体按文本语言分派。
+- Windows/MinGW 路径、进程、管道和 UTF-8 兼容性。
+- 上游崩溃、缓冲区限制和资源清理问题的修复。
 
-7. Complex 1-group disc with DVD top menu, which remains on-screen on playback,
-and two extra group/track links from the DVD-Audio zone to the pre-authored 
-DVD-Video zone of the disc, just the ISO:  
+具体内容以补丁和完整工作树为准，不应仅根据此目录推断全部变更。
 
-        local\bin\dvda-author.exe -g Docs\a*.{wav,flac,aiff} -S -W \
-		--bindir local\bin --topmenu  --mkisofs \
-		--videodir C:\my_DVD\VIDEO_TS -T 1 -T 2  
+## 同步规则
 
+当完整工作树中的修改发生变化时：
 
-## 2. Details
+1. 更新完整工作树并确认能编译、测试。
+2. 重新生成 `docs/dvda-author-changes.patch`。
+3. 将修改过的 `src/`、`libutils/` 文件同步到本镜像。
+4. 比较镜像、补丁应用结果与完整工作树，确保对应文件逐字节一致。
+5. 不要同步对象文件、可执行文件、生成的 Makefile、第三方库或大型素材。
 
-### 2.1. Description
+镜像是审阅副本，不应反向覆盖未经核对的完整工作树。
 
-`dvda-author` creates high-definition DVD-Audio disc structures from
-either WAV, FLAC/Ogg FLAC, or SoX-supported
-audio formats (.au, .aiff, .gsm, etc.)
+## 许可
 
-This version supports multichannel audio up to 5.1 and implements experimental
-support for MLP (mono, stereo and multichannel), 
-[using the `ffmpeg`API](https://ffmpeg.org), currently only for 16-bit audio 
-and multichannel up to 6 channels, 88.2 kHz.   
+本目录中的文件来源于 `dvda-author`，并包含本项目的修改。其许可和第三方说明见：
 
-The software also supports *hybrid* or *universal* DVD-Audio/Video disc
-structures, which contain both DVD-Audio and DVD-Video zones.
+- [`../../LICENSE`](../../LICENSE)
+- [`../../docs/LICENSING.md`](../../docs/LICENSING.md)
 
-A navigation feature makes it possible to start playing a video title
-from within audio zone or an audio title from within video zone.
-
-Inctructions for use are given in the following files:
-
-  + man page: **dvda-author-(version).1**   
-  + html page: **dvda-author-(version).html**   
-  + **EXAMPLES**   
-  + **TROUBLESHOOT** (user-mentioned issues)   
-  + **HOWTO.conf** (for configuration files)   
-  + **dvda-author.conf.example**   
-  
-See website for further details.
-
-### 2.2. Website
-
-The latest version of the software is available
-on the [DVD-Audio tools website](https://dvd-audio.sourceforge.io)
-
-
-### 2.3. Build environment
-
-A GNU-style make system is shipped with this package.
-
-Details on building issues are given in **INSTALL**.
-
-### 2.4. Files
-
-Source code directories are notably:
-
-  + **src**:  main source code files  
-
-  + **libutils**:  Source code for the libc_utils static library   
-
-  + **libats2wav**:  Source code for ats2wav, a DVD-Audio titleset extracter 
-  that converts .AOB files into .wav audio files.   
-
-  + **libfixwav**:  Source code for a special library that checks and
-  fixes .wav file headers    
-
-  + **libiberty**:  GNU libc code for function replacement(alternative to
-  -liberty). Mainly for aging building systems. Will probably be deprecated
-  in the near future.   
-
-  + **m4, m4.extra, m4.extra.dvdauthor** M4 macros, especially:   
-
-	* **dvda.m4**:  general-purpose macros that could be reused in other 
-	projects.    
-	* **auxiliary.m4**: shorter general-purpose macros.   
-	* **dependencies.m4**: dvda-author-specific parameters submitted to 
-	other M4 macros (using lists).    
-	* Other third-party macros may be copied here as
-	some platforms may not include them and they are used by nested
-	configure scripts.   
-
-Builds are provided in directory **local.xyz** for various platforms.  
-
-Important DATA-type files are:     
-
-+ **dvda-author(version).1**: Man(1) page   
-+ **dvda-author(verion).html**: HTML version of the man page   
-+ **dvda-author.desktop**: KDE/gnome desktop configuration file     
-+ **dvda-author.conf**: configuration file (default command-line options)    
-+ **dvda-author.png or .ico** images for desktop.   
-+ **dvda-author.nsi**: NSIS script for generating Windows installer.   
-+ **BUGS**     
-+ **LIMITATIONS**    
-+ **HOWTO.conf**: Help file on how to generate a configuration file and use it     
-+ **dvda-author.conf.example**: Example of a complex configuration file project   
-+ **commandline.txt**:  Complex command line examples        
-
-### 2.5. Installation
-
-This application performs limited patching of other open source
-utilities used for creating audio and video menus (`dvdauthor`),
-analyzing audio content (`sox`) or creating a special ISO dic image
-(`mkisofs`). The patch against `mkisofs` was integrated into recent code by its 
-author and maintainer (J. Schilling). A Cygwin patch has been added to
-`help2man`. 
-
-The special patches used in this process are automatically downloaded
-and applied by the autotools configure script.
-
-If you do not use the GNU build system, check that the configuration
-file **dvda-author.conf** is in the same directory as the main executable
-(see **INSTALL** for other options).
-  
-### 2.6. Credits      
-    
-The core application for stereo audio authoring was created
-by David Champan in 2005.  
-It was extented to multichannel (with T&L Feldkamp's help),
-by Fabrice Nicol between 2008 and 2020. 
-Menu-authoring capabilities were added by Fabrice Nicol in 2010.   
-A complete redesign of DVD-Audio extraction to PCM, initially written
-by D. Chapman (ats2wav, archived) was performed in 2019 by Fabrice Nicol.  
-Authoring of DVD-Audio with MLP tracks, with experimental
-encoding/decoding of PCM files to/from MLP was added in 2020.
-
-Thanks to:   
-
-  Bahman Negahban for useful hints on FLAC 1.2.1 integration  
-  Tomasz Belinea for testing version 08.07.  
-  Lee Feldkamp for testing Windows executables and adding experimental audio
-  options (-j,-s)  
-  Lee and Tim Feldkamp for authoring experimental multichannel support in 2008 
-  (corrected and redesigned by F. Nicol in 2018-2020).   
-  Jörg Schilling for adding the `-dvd-audio/-dvd-hybrid` feature patch to 
-  **cdrtools**  
-  and all other authors (see file **AUTHORS** for details).
-
-### 2.7. News
-
-See file **NEWS**
-
-### 2.8. Bugs
-
-See file **BUGS**
-
-### 2.9. Mailing list
-
-   **dvd-audio-devel@lists.sourceforge.net**
-
+使用、修改或重新分发时，需要同时遵守上游项目及其依赖的许可条款。

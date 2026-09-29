@@ -1,46 +1,61 @@
-# Windows 原生构建（不需要 WSL）
+# Windows 原生工具链构建
 
-从源码构建出 `dvda-author`（含 24-bit 无损 MLP）、`dvdauthor` / `spumux`
-（含 AMGM 补丁），并组装成**可分发**的发布目录。
+本目录用于在 **Windows + MSYS2/MinGW-w64** 环境中编译 DVD-Audio Maker 的第三方工具链，并生成可复制到其他 Windows 机器使用的自包含发布包。
 
-**全部在 MSYS2 / MinGW-w64 下完成** —— MSYS2 是 Windows 原生环境，
-所以这套流程：**不调用 WSL、不使用 `\\wsl.localhost`、不依赖 `/mnt/*`**。
+运行本构建流程时不需要 WSL，也不允许误用 WSL 的 `bash.exe`。推荐始终从 `build-all.bat` 启动。
 
----
+## 产物
 
-## 1. 一键构建
+完整构建会生成：
 
-```
-build-all.bat
-```
+```text
+tools/win-build/
+├── logs/                              configure 与 make 日志
+├── publish/win-x64/                  C# CLI 发布中间目录
+└── release/
+    ├── DVD-Audio-Maker/              可直接使用的发布目录
+    └── DVD-Audio-Maker.tar.gz        压缩包（默认生成）
 
-它会依次做 5 件事，任一失败即中止（这样不会在坏的基础上继续）：
-
-| 步骤 | 做什么 | 单独跑 |
-|---|---|---|
-| 1 | 体检：源码树、工具链、FFmpeg 开发库、字体、字体工具 | `check-src.sh` |
-| 2 | 编 `dvda-author-dev.exe`（含 MLP + 按语言分派字体） | `build-author.sh` |
-| 3 | 编 `dvdauthor` / `spumux` / `spuunmux`（AMGM 补丁） | `build-dvdauthor.sh` |
-| 4 | 组装工具目录（exe + DLL + ImageMagick + 字体） | `assemble-menu-bin.sh` |
-| 5 | 打出可分发目录 `release/DVD-Audio-Maker/` | `make-release.sh` |
-
-产出：
-
-```
-<源码树>/../menu-bin/                   中间产物（工具目录）
-<工具包>/release/DVD-Audio-Maker/       可分发（自带 exe/DLL/字体/配置）
-<工具包>/logs/                          各步骤日志
+<dvda-author 源码树的父目录>/
+└── menu-bin/                          编译、组装后的本地工具目录
 ```
 
-## 2. 前置条件
+发布包包含：
 
-### 2.1 MSYS2
+- `.NET 10` 自包含的 `dvda.exe`
+- `dvda-author-dev.exe`
+- 带 AMGM 补丁的 `dvdauthor.exe`、`spumux.exe`、`spuunmux.exe`
+- `mkisofs.exe`、mjpegtools 和 ImageMagick
+- SC、JP、KR 三个独立的 Noto Sans CJK 字体 face
+- 菜单运行期素材、配置、许可文件和启动器 `dvda.cmd`
 
-免安装版最简单：
+目标机器不需要安装 Python、MSYS2、WSL 或 .NET Runtime。FFmpeg、FFprobe 和 Metaflac 仍需位于 `PATH`，或在发布包的 `config.sh` 中填写完整路径。
 
-1. 下载 `msys2-base-x86_64-*.tar.xz`
-2. 用 Windows 自带的 `tar.exe` 解压到某目录（如 `D:\msys64`）
-3. 跑一次 `<root>\usr\bin\bash.exe`，然后：
+## 前置条件
+
+### .NET 10 SDK
+
+用于发布 C# CLI，并在需要时运行仓库内的字体提取工具：
+
+```bat
+dotnet --version
+```
+
+版本应为 `10.x`。
+
+### MSYS2 MINGW64 工具链
+
+建议安装或解压到以下任一位置：
+
+```text
+D:\dev\msys64
+C:\msys64
+D:\msys64
+```
+
+也可通过 `MSYS2_ROOT` 指定其他位置。
+
+进入 MSYS2 后安装依赖：
 
 ```bash
 pacman -Syu
@@ -54,136 +69,179 @@ pacman -S --needed mingw-w64-x86_64-gcc \
                    make
 ```
 
-MSYS2 不在默认位置时设 `MSYS2_ROOT`（本工具包会自动探测
-`<工具包>\..\msys64`、`D:\dev\msys64`、`C:\msys64`、`D:\msys64`）。
+构建脚本还会使用 `g++`、`windres`、`objdump` 以及 MSYS2 自带的 autotools 辅助文件。
 
-### 2.2 源码树
+## 准备 dvda-author 源码树
 
-需要一棵**完整的** dvda-author 源码树，包含：
+仓库中的 [`../dvda-author-mlp8`](../dvda-author-mlp8/README.md) 只是便于审阅差异的局部源码镜像，不能直接拿来构建。
 
-```
-configure  configure.ac  Makefile.in      autotools 入口
-src/  libutils/  libfixwav/               源码
-menu/                                     运行期素材（C 代码直接引用）
-  silence.wav   静音轨（菜单用）
-  activeheader  菜单激活头
-m4.extra.dvdauthor/                       dvdauthor 的 autotools 辅助 m4
-dvdauthor-0.7.1/                          **含 AMGM 补丁**（菜单必需）
-local.w10/bin/                            mkisofs / mjpegtools 等预编译二进制
-NotoSansCJK-Regular.ttc                   Noto Sans CJK 静态版（抽字体用）
-```
+构建需要完整的上游源码树，至少包括：
 
-放在 `<工具包>\src` 即可，或用 `DVDA_SRC_TREE` 指定。
-
-> **为什么 `dvdauthor-0.7.1` 和 `local.w10/bin` 必需且不能从 MSYS2 拿**：
-> - 菜单按钮写的是 `<button>jump group G track K</button>`，发行版里的
->   dvdauthor 不认这个语法（需要 AMGM 补丁）
-> - **MSYS2 没有 mjpegtools 包、也没有 mkisofs/cdrkit/xorriso 包**
->   （实测 `pacman -Ss` 查不到），所以静图编码与 ISO 打包只能靠上游那套
->   预编译二进制
-
-### 2.3 字体
-
-需要一个 **Noto Sans CJK 的静态 `.ttc`**（`NotoSansCJK-Regular.ttc`）。
-工具包会在以下位置找：
-
-1. `$DVDA_FONT_SRC`
-2. `<源码树>/NotoSansCJK-Regular.ttc`
-3. `<源码树>/fonts/NotoSansCJK-Regular.ttc`
-4. `<工具包>/NotoSansCJK-Regular.ttc`
-5. `C:\Windows\Fonts\NotoSansCJK-Regular.ttc`
-
-从 TTC 按 family 名提取 SC、JP、KR 三个单 face 字体的工作由仓库内
-`src/DvdaMaker.FontTool` 完成。该工具使用纯 C# 重建 standalone OpenType，
-修复表偏移和 `head.checkSumAdjustment`，并检查 family、PostScript name 及
-汉字、假名、谚文、拉丁字符覆盖；不需要 Python/fontTools。
-
-> ⚠️ **不要**用 Windows 自带的 `NotoSansSC-VF.ttf` / `NotoSansJP-VF.ttf` ——
-> 那些是**单语**字体（SC 版没有谚文），会给别的语言开出空白。
-
-Linux 上装 `fonts-noto-cjk` 后，文件在
-`/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`，拷过来即可。
-
-## 3. 可选环境变量
-
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `MSYS2_ROOT` | 自动探测 | MSYS2 安装根 |
-| `DVDA_SRC_TREE` | `<工具包>\src` | 源码树 |
-| `DVDA_FONT_SRC` | 自动查找 | Noto CJK 静态 ttc |
-| `JOBS` | CPU 核数 | make 并行数 |
-
-Windows 形式（`D:\x\y`）与 MSYS 形式（`/d/x/y`）都接受 ——
-bash 侧会用 `cygpath` 转换。
-
-## 4. 装到哪里
-
-把本工具包放在**仓库的 `tools/win-build/`** 下最省事：
-
-```
-DVD-Audio-Maker\                    <- 仓库根
-  src\DvdaMaker.Cli\               <- C# CLI 项目
-  docs\README.md  THIRD-PARTY.md    <- 发布包的文档
-  tools\win-build\                  <- 本工具包
-    build-all.bat ...
+```text
+configure
+configure.ac
+Makefile.in
+src/
+libutils/
+libfixwav/
+menu/
+m4.extra.dvdauthor/
+dvdauthor-0.7.1/
+local.w10/bin/
 ```
 
-然后 `tools\win-build\build-all.bat` 一把跑完。
+其中：
 
-## 5. 目标机器需要什么
+- `menu/silence.wav`、`menu/activeheader` 等是运行期素材。
+- `dvdauthor-0.7.1` 必须包含 AMGM 和 `jump group ... track ...` 支持。
+- `local.w10/bin` 提供 MSYS2 仓库中没有的 `mkisofs`、mjpegtools 和已验证的 ImageMagick 构建。
 
-发布目录是自包含的（C# CLI + 工具链 exe/DLL + 字体 + ImageMagick 配置），
-目标机器**只需要**：
+从固定上游版本准备源码树的示例：
 
-- Windows 10 1903+ / 11（依赖 UTF-8 代码页支持）
-- **FFmpeg**（在 PATH 里，或用 `config.sh` 给全路径）
+```bash
+git clone https://github.com/fabnicol/dvda-author tools/win-build/src
+cd tools/win-build/src
+git checkout 8fca43a
+git apply ../../../docs/dvda-author-changes.patch
+```
 
-**不需要** MSYS2、不需要 WSL、不需要装字体。
+源码树默认放在 `tools/win-build/src`。也可以设置：
 
-## 6. 常见问题
+```bat
+set DVDA_SRC_TREE=D:\src\dvda-author
+```
 
-**`MSYS2 not found`**
-设 `MSYS2_ROOT`，或装到 `C:\msys64` / `D:\msys64`。
+## 字体
 
-**`找不到 MSYS2 的 mingw 前缀`**
-MSYS2 装了但缺 `mingw64/lib/pkgconfig` —— 说明还没装工具链，
-按 2.1 的 `pacman -S` 装上。
+菜单需要三个独立字体：
 
-**体检报 FFmpeg 缺失但 `pacman` 说装了**
-先确认真装了：`pkg-config --modversion libavcodec`。
-如果这个能出结果而体检仍报缺，那是本工具包的 bug（历史上出过一次：
-把 `libavcodec` 又拼了一次 `lib` 前缀，成了 `liblibavcodec.dll.a`）。
+```text
+NotoSansCJKsc-Regular.otf
+NotoSansCJKjp-Regular.otf
+NotoSansCJKkr-Regular.otf
+```
 
-**`configure: error: C compiler cannot create executables`**
-PATH 里混进了别的工具链（例如 WSL 的 `bash.exe`）。
-本工具包会把 MSYS2 的 `mingw64\bin` 与 `usr\bin` 放到 PATH **最前面**；
-如果仍报错，检查是否有 `MSYS2_ROOT` 指向了错误的目录。
+构建脚本会优先复用已有单 face 字体；若没有，则从静态版 `NotoSansCJK-Regular.ttc` 中提取。
 
-**`make` 报 `没有规则可制作目标".../da-utf8.c"`**
-说明构建脚本被改动过。`da-utf8.o` **不能**加进 `OBJECTS`（Makefile 里那条
-静态模式规则会因此多出一个不存在的 `da-utf8.c` 前提）；它只能作为
-`dvda-author:` 的前提。见 `build-author.sh` 的注释。
+可以把 TTC 放在源码树根目录，或显式指定：
 
-**菜单文字是空白**
-看 `<源码树>/../menu-bin/fonts/` 下三个 `.otf` 是否都在。
-若只有 `.ttc`，说明抽 face 那步没跑成功。
+```bat
+set DVDA_FONT_SRC=D:\fonts\NotoSansCJK-Regular.ttc
+```
 
-**中文菜单显示成日文字形**
-`DVDA_MENU_FONT` 指向了 `.ttc`。ImageMagick 按文件路径加载 `.ttc` 时
-**只取 face 0**，而 Noto Sans CJK 的 face 0 是 JP。用抽好的单 face `.otf`。
+不要使用 `NotoSansSC-VF.ttf`、`NotoSansJP-VF.ttf` 等单语可变字体。也不要直接把 TTC 作为菜单字体：ImageMagick 按文件路径加载 TTC 时通常只取 face 0，即 JP face，中文会显示为日文字形且不会报错。
 
-## 7. 这套工具包与 Linux 构建的关系
+字体提取由仓库中的 `.NET 10` 字体工具完成，不再依赖 Python/fontTools。
 
-同一份 C# 业务实现和 dvda-author 源码，两个平台各自编排：
+## 一键构建
 
-| | Linux | Windows |
-|---|---|---|
-| 编排 | `scripts/build_dvda_author_mlp.sh` + `build.sh` | 本工具包 |
-| 编译器 | 系统 gcc + 系统 FFmpeg | MinGW-w64 gcc + MSYS2 FFmpeg |
-| 菜单辅助 | apt 的 mjpegtools / ImageMagick + 自编 dvdauthor | 上游预编译二进制 + MSYS2 ImageMagick + 自编 dvdauthor |
-| 字体 | fontconfig 家族名（`Noto-Sans-CJK-SC`） | 单 face 文件路径（`.otf`） |
-| 特有处理 | —— | UTF-8 argv manifest、反斜杠路径归一化、MSVCRT 兼容垫片 |
+在仓库根目录运行：
 
-两边的产物已实测**音频本体（AOB）与 ATSI 表逐字节相同**；
-仅静图/菜单的 VOB 因两版 ImageMagick 的 JPEG 舍入略有差异
-（静态图解码 PSNR 50.26 dB，肉眼不可分）。
+```bat
+tools\win-build\build-all.bat
+```
+
+MSYS2 不在默认位置时：
+
+```bat
+set MSYS2_ROOT=D:\dev\msys64
+tools\win-build\build-all.bat
+```
+
+其他可选变量：
+
+```bat
+set DVDA_SRC_TREE=D:\src\dvda-author
+set DVDA_FONT_SRC=D:\fonts\NotoSansCJK-Regular.ttc
+set JOBS=8
+set DVDA_TARBALL=0
+```
+
+`build-all.bat` 会用 MSYS2 自己的 `/usr/bin/bash` 启动 `build-all.sh`，依次执行：
+
+1. `check-src.sh`：检查源码树、工具链、FFmpeg 开发库、字体和 .NET SDK。
+2. `build-author.sh`：编译支持 24-bit MLP 和多语言字体的 `dvda-author-dev.exe`。
+3. `build-dvdauthor.sh`：编译带 AMGM 补丁的菜单工具。
+4. `assemble-menu-bin.sh`：组装 EXE、DLL、ImageMagick 和字体。
+5. `make-release.sh`：发布自包含 C# CLI 并生成最终目录。
+
+## 单独运行某一步
+
+调试时可以在 MSYS2 MINGW64 shell 中运行：
+
+```bash
+cd /path/to/DVD-Audio-Maker/tools/win-build
+bash check-src.sh
+bash build-author.sh
+bash build-dvdauthor.sh
+bash assemble-menu-bin.sh
+bash make-release.sh
+```
+
+一般情况下仍建议重新运行完整的 `build-all.bat`。`build-author.sh` 会重新执行 `configure`，不复用可能含有旧绝对路径的缓存。
+
+## 发布包使用
+
+构建成功后：
+
+```bat
+cd tools\win-build\release\DVD-Audio-Maker
+
+dvda.cmd config --check
+dvda.cmd prepare
+dvda.cmd build --dry-run
+dvda.cmd build
+dvda.cmd verify all
+```
+
+发布包内的详细用户说明见 [`docs/README.md`](docs/README.md)。
+
+## 常见问题
+
+### `MSYS2 not found`
+
+设置 `MSYS2_ROOT`，并确认以下文件存在：
+
+```text
+<MSYS2_ROOT>\usr\bin\bash.exe
+```
+
+### 检测到 WSL 或 `uname -s` 返回 Linux
+
+说明启动了 WindowsApps 中的 WSL 启动器，而不是 MSYS2 Bash。退出后直接运行 `build-all.bat`，不要从 PATH 调用裸 `bash`。
+
+### FFmpeg 开发库缺失
+
+确认命令能返回版本：
+
+```bash
+pkg-config --modversion libavcodec
+pkg-config --modversion libavformat
+pkg-config --modversion libavutil
+pkg-config --modversion libswresample
+```
+
+不能只检查 `ffmpeg.exe`；编译 `dvda-author` 还需要头文件和导入库。
+
+### ImageMagick 无法读取 JPEG
+
+组装阶段优先使用上游 `local.w10/bin` 中已验证的非模块化 ImageMagick。MSYS2 的模块化 ImageMagick 若缺少 coder 模块，会报 `NoDecodeDelegateForThisImageFormat`。`assemble-menu-bin.sh` 会用真实 JPEG 做提前自检。
+
+### `configure` 极慢
+
+大量短进程可能被实时杀毒软件的文件系统过滤驱动显著拖慢。检查安全软件，而不是先假定 MSYS2 本身必然很慢。
+
+### 修改头文件后行为异常
+
+上游 Makefile 不完整跟踪头文件依赖。`build-author.sh` 会主动清理旧对象；不要手动跳过该步骤。
+
+### 中文、日文或韩文路径变成 `?`
+
+Windows MinGW 程序默认 argv 受系统代码页限制。构建脚本会向 `dvda-author-dev.exe` 嵌入 UTF-8 active code page manifest，并检查 `activeCodePage` 是否存在。
+
+## 相关文档
+
+- [`../../README.md`](../../README.md)：项目总览与使用说明
+- [`../../docs/DVDA-AUTHOR-CHANGES.md`](../../docs/DVDA-AUTHOR-CHANGES.md)：上游改动说明
+- [`../../docs/TROUBLESHOOTING.md`](../../docs/TROUBLESHOOTING.md)：历史问题与诊断记录
+- [`../../docs/LICENSING.md`](../../docs/LICENSING.md)：第三方许可
