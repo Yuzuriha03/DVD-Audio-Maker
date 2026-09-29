@@ -106,7 +106,6 @@ if ! MSYS="$(find_msys_prefix)"; then
                           mingw-w64-x86_64-fontconfig \
                           mingw-w64-x86_64-libpng \
                           mingw-w64-x86_64-imagemagick \
-                          mingw-w64-x86_64-python-fonttools \
                           make
 EOM
     exit 1
@@ -307,15 +306,4 @@ font_faces_dir() {
 log()  { printf '%s\n' "$*"; }
 hr()   { printf '%s\n' "------------------------------------------------------------"; }
 step() { printf '\n########## %s ##########\n' "$*"; }
-
-# 需要 MSYS2 自带的 python（带了 fontTools）
-find_py_fonttools() {
-    local c
-    for c in "$MSYS/bin/python.exe" python python3; do
-        if command -v "$c" >/dev/null 2>&1 && \
-           "$c" -c 'import fontTools' >/dev/null 2>&1; then
-            echo "$c"; return 0
-        fi
-    done
-    return 1
-}
+# End of shared helpers.

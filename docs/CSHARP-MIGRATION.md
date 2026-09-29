@@ -10,7 +10,7 @@
 - `DvdaMaker.Processes`：统一外部程序执行、参数传递、输出捕获、超时和取消。
 - `DvdaMaker.Preparation`：音源扫描、ffprobe 元数据、专辑归一化、ffmpeg 解码校验及 manifest 生成。
 - `DvdaMaker.Building`：读取 manifest、全局排序、按专辑贪心分盘及盘内参数分组。
-- `DvdaMaker.CompatibilityTests`：不依赖 NuGet 测试框架的兼容性基线（当前 67 项）。
+- `DvdaMaker.CompatibilityTests`：不依赖 NuGet 测试框架的兼容性基线（当前 68 项）。
 
 C# 已覆盖配置、准备、转换、构建、菜单素材、字体覆盖探测、AMG/ASVS、
 菜单视觉和成品审计；`build.sh` 与 `verify.sh` 只是 C# CLI 的兼容薄包装。
@@ -24,7 +24,7 @@ Git 标签 `python-reference-final`（提交 `5aa4164`）中。
     dotnet build DVD-Audio-Maker.sln
     dotnet run --project tests/DvdaMaker.CompatibilityTests
 
-当前普通兼容性测试共 67 项，覆盖配置、格式解析、外部进程、音源准备、ALAC 修复、
+当前普通兼容性测试共 68 项，覆盖配置、格式解析、外部进程、音源准备、ALAC 修复、
 M4A dry-run 零写入、非 ALAC 拒绝、文件级失败隔离、审计日志解析、MLP 获取与索引、
 分盘分组，以及假 `dvda-author`/`mkisofs` 正式出盘端到端流程。
 
@@ -126,8 +126,9 @@ EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP
     C 工具构建入口，不属于 Python 业务流程。
 - Windows 发布包现通过 `dotnet publish -r win-x64 --self-contained` 携带 C# CLI，
     不再复制或启动 Python 业务脚本，目标机器无需 Python 或 .NET Runtime。
-- `tools/win-build/make-menu-font.sh` 在构建三语字体 face 时仍使用 Python/fontTools；
-    这是开发/打包期依赖，不进入发布包运行链。
+- `tools/win-build/make-menu-font.sh` 已改用 `DvdaMaker.FontTool`：按 family 名从
+    TTC 提取 SC、JP、KR face，以纯 C# 重建 standalone OpenType，修复校验和并
+    校验四种字符覆盖。开发/打包期也不再依赖 Python/fontTools。
 - 已删除的 Python 参考实现可通过 `git show python-reference-final:<文件名>` 查看，
     或从 `python-reference-final` 标签建立临时 worktree；不再在主分支保留双份实现。
 
@@ -144,7 +145,7 @@ EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP
 
 ## 后续验证
 
-1. 持续运行 67 项普通兼容测试及真实 ISO/SurCode MLP 3 项基线。
+1. 持续运行 68 项普通兼容测试及真实 ISO/SurCode MLP 3 项基线。
 2. 对新增的真实 ALAC 样本核对标签、封面和 PCM MD5。
 3. 对真实多页菜单 ISO 逐页抽帧，并在 Windows self-contained 发布包中做 smoke test。
 4. 若需追查迁移差异，以 `python-reference-final` 标签为只读历史基准。

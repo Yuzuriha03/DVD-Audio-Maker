@@ -1,5 +1,6 @@
 using DvdaMaker.Building;
 using DvdaMaker.Configuration;
+using DvdaMaker.FontTool;
 using DvdaMaker.Formats.Iso9660;
 using DvdaMaker.Formats.Mlp;
 using DvdaMaker.Formats.Mpeg;
@@ -182,6 +183,7 @@ var tests = new (string Name, Action Run)[]
     ("菜单文字净化与截断", SanitizeMenuText),
     ("菜单 author 参数结构", BuildMenuAuthorArguments),
     ("菜单字体脚本识别与区域 face", ResolveMenuFontRules),
+    ("纯 C# TTC face 提取与校验", ExtractOpenTypeCollectionFaces),
     ("菜单视觉阈值与 Python 一致", VerifyMenuVisualThresholds),
     ("菜单多索引页格数与 cell 范围", VerifyMultiIndexPageLayout),
     ("AMG 菜单 cell 链损坏检测", ValidateAmgCellChainFixtures),
@@ -1580,6 +1582,172 @@ static void ResolveMenuFontRules()
             "C:/fonts/NotoSansCJKsc-Regular.otf", "kr",
             value => value == "C:/fonts/NotoSansCJKkr-Regular.otf"));
 }
+
+static void ExtractOpenTypeCollectionFaces()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-font-tests", Guid.NewGuid().ToString("N"));
+    var source = Path.Combine(root, "NotoSansCJK-Regular.ttc");
+    var output = Path.Combine(root, "fonts");
+    Directory.CreateDirectory(root);
+    try
+    {
+        File.WriteAllBytes(source, BuildSyntheticTtc(
+            "Noto Sans CJK JP",
+            "Noto Sans CJK KR",
+            "Noto Sans CJK SC"));
+
+        var extracted = OpenTypeFontTool.ExtractNotoCjkFaces(source, output);
+        Equal(3, extracted.Count);
+        SequenceEqual(new[] { 2, 0, 1 }, extracted.Select(item => item.SourceFaceIndex));
+
+        foreach (var (family, fileName) in new[]
+        {
+            ("Noto Sans CJK SC", "NotoSansCJKsc-Regular.otf"),
+            ("Noto Sans CJK JP", "NotoSansCJKjp-Regular.otf"),
+            ("Noto Sans CJK KR", "NotoSansCJKkr-Regular.otf"),
+        })
+        {
+            var path = Path.Combine(output, fileName);
+            True(File.Exists(path), $"缺少提取结果: {fileName}");
+            var inspection = OpenTypeFontTool.VerifyFace(path, family);
+            True(inspection.ChecksumValid, $"{fileName} 的全字体校验和应有效");
+            True(inspection.HasHan && inspection.HasKana && inspection.HasHangul && inspection.HasLatin,
+                $"{fileName} 应包含四种测试字符");
+        }
+
+        var rejectedTtc = false;
+        try
+        {
+            OpenTypeFontTool.InspectFace(source);
+        }
+        catch (InvalidDataException)
+        {
+            rejectedTtc = true;
+        }
+        True(rejectedTtc, "单 face 校验必须拒绝 TTC 集合");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static byte[] BuildSyntheticTtc(params string[] families)
+{
+    var faces = families.Select(BuildSyntheticSfnt).ToArray();
+    var offsets = new int[faces.Length];
+    var length = Align4ForFixture(12 + faces.Length * 4);
+    for (var index = 0; index < faces.Length; index++)
+    {
+        offsets[index] = length;
+        length = checked(length + Align4ForFixture(faces[index].Length));
+    }
+
+    var result = new byte[length];
+    WriteFixtureU32(result, 0, 0x74746366);
+    WriteFixtureU32(result, 4, 0x00010000);
+    WriteFixtureU32(result, 8, checked((uint)faces.Length));
+    for (var index = 0; index < faces.Length; index++)
+    {
+        WriteFixtureU32(result, 12 + index * 4, checked((uint)offsets[index]));
+        faces[index].CopyTo(result, offsets[index]);
+        var tableCount = ReadFixtureU16(result, offsets[index] + 4);
+        for (var tableIndex = 0; tableIndex < tableCount; tableIndex++)
+        {
+            var record = offsets[index] + 12 + tableIndex * 16;
+            WriteFixtureU32(
+                result,
+                record + 8,
+                checked(ReadFixtureU32(result, record + 8) + (uint)offsets[index]));
+        }
+    }
+    return result;
+}
+
+static byte[] BuildSyntheticSfnt(string family)
+{
+    var postScript = family.Replace(" ", string.Empty, StringComparison.Ordinal) + "-Regular";
+    var familyBytes = System.Text.Encoding.BigEndianUnicode.GetBytes(family);
+    var postScriptBytes = System.Text.Encoding.BigEndianUnicode.GetBytes(postScript);
+
+    var name = new byte[6 + 24 + familyBytes.Length + postScriptBytes.Length];
+    WriteFixtureU16(name, 2, 2);
+    WriteFixtureU16(name, 4, 30);
+    WriteNameRecord(name, 6, 1, familyBytes.Length, 0);
+    WriteNameRecord(name, 18, 6, postScriptBytes.Length, familyBytes.Length);
+    familyBytes.CopyTo(name, 30);
+    postScriptBytes.CopyTo(name, 30 + familyBytes.Length);
+
+    var codePoints = new uint[] { 0x0041, 0x3042, 0x6C49, 0xAC00 };
+    var cmap = new byte[12 + 16 + codePoints.Length * 12];
+    WriteFixtureU16(cmap, 2, 1);
+    WriteFixtureU16(cmap, 4, 3);
+    WriteFixtureU16(cmap, 6, 10);
+    WriteFixtureU32(cmap, 8, 12);
+    WriteFixtureU16(cmap, 12, 12);
+    WriteFixtureU32(cmap, 16, checked((uint)(cmap.Length - 12)));
+    WriteFixtureU32(cmap, 24, checked((uint)codePoints.Length));
+    for (var index = 0; index < codePoints.Length; index++)
+    {
+        var group = 28 + index * 12;
+        WriteFixtureU32(cmap, group, codePoints[index]);
+        WriteFixtureU32(cmap, group + 4, codePoints[index]);
+        WriteFixtureU32(cmap, group + 8, checked((uint)(index + 1)));
+    }
+
+    var tables = new[]
+    {
+        (Tag: "cmap", Data: cmap),
+        (Tag: "head", Data: new byte[54]),
+        (Tag: "name", Data: name),
+    };
+    var resultLength = 12 + tables.Length * 16;
+    foreach (var table in tables)
+        resultLength = checked(Align4ForFixture(resultLength) + Align4ForFixture(table.Data.Length));
+    var result = new byte[resultLength];
+    WriteFixtureU32(result, 0, 0x00010000);
+    WriteFixtureU16(result, 4, checked((ushort)tables.Length));
+    WriteFixtureU16(result, 6, 32);
+    WriteFixtureU16(result, 8, 1);
+    WriteFixtureU16(result, 10, 16);
+
+    var offset = 12 + tables.Length * 16;
+    for (var index = 0; index < tables.Length; index++)
+    {
+        offset = Align4ForFixture(offset);
+        var record = 12 + index * 16;
+        System.Text.Encoding.ASCII.GetBytes(tables[index].Tag).CopyTo(result, record);
+        WriteFixtureU32(result, record + 8, checked((uint)offset));
+        WriteFixtureU32(result, record + 12, checked((uint)tables[index].Data.Length));
+        tables[index].Data.CopyTo(result, offset);
+        offset += Align4ForFixture(tables[index].Data.Length);
+    }
+    return result;
+}
+
+static void WriteNameRecord(byte[] data, int offset, ushort nameId, int length, int stringOffset)
+{
+    WriteFixtureU16(data, offset, 3);
+    WriteFixtureU16(data, offset + 2, 1);
+    WriteFixtureU16(data, offset + 4, 0x0409);
+    WriteFixtureU16(data, offset + 6, nameId);
+    WriteFixtureU16(data, offset + 8, checked((ushort)length));
+    WriteFixtureU16(data, offset + 10, checked((ushort)stringOffset));
+}
+
+static int Align4ForFixture(int value) => checked((value + 3) & ~3);
+
+static ushort ReadFixtureU16(byte[] data, int offset) =>
+    System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2));
+
+static uint ReadFixtureU32(byte[] data, int offset) =>
+    System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4));
+
+static void WriteFixtureU16(byte[] data, int offset, ushort value) =>
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(offset, 2), value);
+
+static void WriteFixtureU32(byte[] data, int offset, uint value) =>
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(offset, 4), value);
 
 static void VerifyMenuVisualThresholds()
 {

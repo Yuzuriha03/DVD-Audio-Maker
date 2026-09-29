@@ -4099,12 +4099,13 @@ ImageMagick 能按路径加载任意 `.ttc`，不受系统字体列表限制
 bash make-menu-font.sh          # 产出 NotoSansCJKsc-Regular.otf（16.4 MB）
 ```
 
-用 fontTools（MSYS2: `pacman -S mingw-w64-x86_64-python-fonttools`）按
-**family 名**定位 face（比硬编码索引稳，索引会随 Noto 版本变）。
+现由仓库内的纯 C# `DvdaMaker.FontTool` 按 **family 名**定位 face
+（比硬编码索引稳，索引会随 Noto 版本变），并重建 standalone OpenType、
+修复表偏移和校验和。
 抽出后逐字复测：**5/5 与 SC 完全一致**。
 
-> ⚠️ 不要在抽取脚本里写死 `fonts[2]` —— 用
-> `f["name"].getDebugName(1) == "Noto Sans CJK SC"` 来匹配。
+> ⚠️ 不要在抽取工具里写死 face 2 —— 应解析 `name` 表并匹配
+> family `Noto Sans CJK SC`。
 
 ### 34.3 根因二：反斜杠字体路径被 ImageMagick **静默吞掉**
 
@@ -4622,7 +4623,7 @@ if FONT_TTC="$(ls "$SRC"/NotoSansCJK-Regular.ttc 2>/dev/null | head -1)"; then
 - `font_faces_dir()` —— 三个单 face 是否都在
 - `find_font_ttc()` —— 是否有源 ttc
 - 两者都没有才报「缺!!」
-- `python + fontTools` **只在需要从 ttc 抽 face 时**才算必需项
+- `.NET 10 SDK` **只在需要从 ttc 重抽 face 或构建 C# 发布包时**才算必需项
 
 实测修好后体检输出变成：
 

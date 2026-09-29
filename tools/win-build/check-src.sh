@@ -93,19 +93,24 @@ else
     printf '         %-42s %s\n' "" "见 tools/win-build/README.md 的「字体」一节"
     miss=$((miss + 1))
 fi
-if PY="$(find_py_fonttools)"; then
-    printf '  ok    %-42s %s\n' "python + fontTools" "$PY"
+if command -v dotnet >/dev/null 2>&1 && dotnet --version 2>/dev/null | grep -q '^10\.'; then
+    printf '  ok    %-42s %s\n' ".NET SDK" "$(dotnet --version)"
 else
-    # 只有在**需要从 ttc 抽 face** 时才是必需项
+    # 只有在需要从 ttc 重新抽 face 时，字体工具才必须现场运行。
     if font_faces_dir >/dev/null 2>&1; then
-        printf '  提示  %-42s %s\n' "python + fontTools" \
-            "未见；已有单 face，本步不需要（仅刷新字体时才要）"
+        printf '  提示  %-42s %s\n' ".NET 10 SDK" \
+            "未见；已有单 face，本步不需要（但发布 C# CLI 时仍需要）"
     else
-        printf '  缺!!  %-42s %s\n' "python + fontTools" \
-            "pacman -S mingw-w64-x86_64-python-fonttools"
+        printf '  缺!!  %-42s %s\n' ".NET 10 SDK" \
+            "从 ttc 抽 face 及发布 C# CLI 均需要"
         miss=$((miss + 1))
     fi
 fi
+[ -f "$KIT/../../src/DvdaMaker.FontTool/DvdaMaker.FontTool.csproj" ] || {
+    printf '  缺!!  %-42s %s\n' "C# 字体工具项目" \
+        "$KIT/../../src/DvdaMaker.FontTool/DvdaMaker.FontTool.csproj"
+    miss=$((miss + 1))
+}
 
 echo
 hr

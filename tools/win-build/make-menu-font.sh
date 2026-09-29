@@ -18,8 +18,7 @@
 #      即中文用 JP、日文用 SC 都是字形错。菜单按每条文字所属语言自动选
 #      face（C 侧 menu.c 的 textfont_for()，配 --fontname-jp/-kr）。
 #
-# 前置：MSYS2 的 python + fontTools
-#       pacman -S mingw-w64-x86_64-python-fonttools
+# 前置：.NET 10 SDK。字体提取和 OpenType 校验由仓库内纯 C# 工具完成。
 set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/common.sh"
@@ -86,77 +85,31 @@ EOM
     exit 1
 fi
 
-PY="$(find_py_fonttools)" || {
-    echo "[失败] 找不到带 fontTools 的 python"
-    echo "       pacman -S mingw-w64-x86_64-python-fonttools"
+command -v dotnet >/dev/null 2>&1 || {
+    echo "[失败] 找不到 dotnet；从 ttc 抽 face 需要 .NET 10 SDK"
     exit 1
 }
 
-cat > "$KIT/extract_face.py" <<'PYEOF'
-# -*- coding: utf-8 -*-
-"""按 **family 名**从 .ttc 里抽一个 face 出来，存成单 face 字体。
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+FONT_TOOL_PROJECT="$REPO_ROOT/src/DvdaMaker.FontTool/DvdaMaker.FontTool.csproj"
+FONT_TOOL_DLL="$REPO_ROOT/src/DvdaMaker.FontTool/bin/Release/net10.0/dvda-font.dll"
+[ -f "$FONT_TOOL_PROJECT" ] || {
+    echo "[失败] 找不到 C# 字体工具项目: $FONT_TOOL_PROJECT"
+    exit 1
+}
 
-按名字而不按索引：face 顺序随 Noto 版本变，`Noto Sans CJK SC` 这个名字不变。
-"""
-from fontTools.ttLib import TTCollection
-import os
-import sys
-
-src, dst, want = sys.argv[1], sys.argv[2], sys.argv[3]
-ttc = TTCollection(src, lazy=False)
-for i, f in enumerate(ttc.fonts):
-    fam = f["name"].getDebugName(1) or ""
-    if fam == want:
-        f.save(dst)
-        ps = f["name"].getDebugName(6) or ""
-        print(f"face[{i}] '{fam}' ps='{ps}' -> {os.path.basename(dst)}"
-              f" ({os.path.getsize(dst)} bytes)")
-        raise SystemExit(0)
-fams = [f["name"].getDebugName(1) for f in ttc.fonts]
-raise SystemExit(f"[FAIL] family='{want}' not found; available: {fams}")
-PYEOF
-
-cat > "$KIT/verify_face.py" <<'PYEOF'
-# -*- coding: utf-8 -*-
-"""校验：确实是单 face、family 正确、四个字符集编码齐备。"""
-from fontTools.ttLib import TTFont
-import sys
-
-p, want = sys.argv[1], sys.argv[2]
-try:
-    f = TTFont(p, lazy=True)
-except Exception as e:
-    raise SystemExit(f"  [X] 不是单 face 字体（.ttc？）：{e}")
-
-fam = f["name"].getDebugName(1) or ""
-ps = f["name"].getDebugName(6) or ""
-if fam != want:
-    raise SystemExit(f"  [X] family 应为 '{want}'，实为 '{fam}'")
-
-# 编码表必须同时有汉字、假名、谚文 —— 缺谚文是最常见的坑
-# （Windows 自带的 NotoSansSC-VF.ttf 就是单语字体）
-cmap = f.getBestCmap()
-need = {"汉字": 0x6C49, "假名": 0x3042, "谚文": 0xAC00, "拉丁": 0x0041}
-miss = [k for k, cp in need.items() if cp not in cmap]
-flags = " ".join(f"{k}={'Y' if cp in cmap else 'N'}" for k, cp in need.items())
-print(f"family='{fam}' ps='{ps}'  {flags}")
-if miss:
-    raise SystemExit(f"  [X] 缺字符集: {miss}")
-PYEOF
+dotnet build "$FONT_TOOL_PROJECT" --configuration Release --nologo || exit 1
+[ -f "$FONT_TOOL_DLL" ] || {
+    echo "[失败] 字体工具编译后未生成: $FONT_TOOL_DLL"
+    exit 1
+}
 
 step "抽 SC / JP / KR face"
 echo "  源   : $SRC_TTC"
 echo "  目标 : $DEST"
-for f in sc jp kr; do
-    case $f in
-        sc) fam="Noto Sans CJK SC" ;;
-        jp) fam="Noto Sans CJK JP" ;;
-        kr) fam="Noto Sans CJK KR" ;;
-    esac
-    out="$DEST/NotoSansCJK$f-Regular.otf"
-    printf '  [%s] ' "$f"
-    "$PY" "$KIT/extract_face.py" "$SRC_TTC" "$out" "$fam" || exit 1
-    [ -s "$out" ] || { echo "    [X] 产出为空"; exit 1; }
+dotnet "$FONT_TOOL_DLL" extract "$SRC_TTC" "$DEST" || exit 1
+for f in $FONT_FACES; do
+    [ -s "$DEST/$f" ] || { echo "  [X] 产出为空: $DEST/$f"; exit 1; }
 done
 
 # 旧版直接拷的 .ttc（如果有残留）删掉：留着会被误用
@@ -170,7 +123,7 @@ for f in sc jp kr; do
         kr) fam="Noto Sans CJK KR" ;;
     esac
     printf '  [%s] ' "$f"
-    "$PY" "$KIT/verify_face.py" "$DEST/NotoSansCJK$f-Regular.otf" "$fam" || exit 1
+    dotnet "$FONT_TOOL_DLL" verify "$DEST/NotoSansCJK$f-Regular.otf" "$fam" || exit 1
 done
 
 echo

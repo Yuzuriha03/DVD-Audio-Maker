@@ -51,7 +51,6 @@ pacman -S --needed mingw-w64-x86_64-gcc \
                    mingw-w64-x86_64-fontconfig \
                    mingw-w64-x86_64-libpng \
                    mingw-w64-x86_64-imagemagick \
-                   mingw-w64-x86_64-python-fonttools \
                    make
 ```
 
@@ -93,6 +92,11 @@ NotoSansCJK-Regular.ttc                   Noto Sans CJK 静态版（抽字体用
 3. `<源码树>/fonts/NotoSansCJK-Regular.ttc`
 4. `<工具包>/NotoSansCJK-Regular.ttc`
 5. `C:\Windows\Fonts\NotoSansCJK-Regular.ttc`
+
+从 TTC 按 family 名提取 SC、JP、KR 三个单 face 字体的工作由仓库内
+`src/DvdaMaker.FontTool` 完成。该工具使用纯 C# 重建 standalone OpenType，
+修复表偏移和 `head.checkSumAdjustment`，并检查 family、PostScript name 及
+汉字、假名、谚文、拉丁字符覆盖；不需要 Python/fontTools。
 
 > ⚠️ **不要**用 Windows 自带的 `NotoSansSC-VF.ttf` / `NotoSansJP-VF.ttf` ——
 > 那些是**单语**字体（SC 版没有谚文），会给别的语言开出空白。
