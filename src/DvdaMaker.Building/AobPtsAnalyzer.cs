@@ -37,24 +37,33 @@ public static class AobPtsAnalyzer
         ReadOnlySpan<byte> data,
         string path = "<memory>",
         int? maximumSectors = null)
-    {
-        var sectorCount = data.Length / SectorSize;
-        if (maximumSectors is > 0)
-        {
-            sectorCount = Math.Min(sectorCount, maximumSectors.Value);
-        }
+        => AnalyzeChunks([data.ToArray()], path, maximumSectors);
 
+    public static AobPtsAnalysis AnalyzeChunks(
+        IEnumerable<ReadOnlyMemory<byte>> chunks,
+        string path = "<memory>",
+        int? maximumSectors = null)
+    {
         var values = new List<long>();
-        for (var sectorIndex = 0; sectorIndex < sectorCount; sectorIndex++)
+        var sectorCount = 0;
+        foreach (var chunkMemory in chunks)
         {
-            var sector = data.Slice(sectorIndex * SectorSize, SectorSize);
-            if (!sector[..4].SequenceEqual(PackHeader)) continue;
-            var relative = sector.Slice(4, Math.Min(60, sector.Length - 4))
-                .IndexOf(PrivateStreamHeader);
-            if (relative < 0) continue;
-            var marker = relative + 4;
-            if (marker + 14 > sector.Length || (sector[marker + 7] & 0x80) == 0) continue;
-            values.Add(PesTimestampParser.ParsePts(sector.Slice(marker + 9, 5)));
+            var chunk = chunkMemory.Span;
+            var chunkSectors = chunk.Length / SectorSize;
+            for (var index = 0; index < chunkSectors; index++)
+            {
+                if (maximumSectors is > 0 && sectorCount >= maximumSectors.Value) break;
+                var sector = chunk.Slice(index * SectorSize, SectorSize);
+                sectorCount++;
+                if (!sector[..4].SequenceEqual(PackHeader)) continue;
+                var relative = sector.Slice(4, Math.Min(60, sector.Length - 4))
+                    .IndexOf(PrivateStreamHeader);
+                if (relative < 0) continue;
+                var marker = relative + 4;
+                if (marker + 14 > sector.Length || (sector[marker + 7] & 0x80) == 0) continue;
+                values.Add(PesTimestampParser.ParsePts(sector.Slice(marker + 9, 5)));
+            }
+            if (maximumSectors is > 0 && sectorCount >= maximumSectors.Value) break;
         }
 
         var issues = new List<VerificationIssue>();

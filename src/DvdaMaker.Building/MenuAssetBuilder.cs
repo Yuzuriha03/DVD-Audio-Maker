@@ -318,6 +318,7 @@ public sealed class MenuAssetBuilder(
         {
             FileName = identify.Executable,
             Arguments = arguments,
+            Timeout = TimeSpan.FromSeconds(30),
         }, cancellationToken).ConfigureAwait(false);
         var parts = result.StandardOutput.Split(
             [' ', '\r', '\n', '\t'],
