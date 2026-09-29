@@ -11,7 +11,6 @@ public sealed class DiscBuildExecutor(
     public async Task<DiscBuildResult> BuildAsync(
         DiscPlan disc,
         string? publishDirectory = null,
-        bool copyToWindows = true,
         CancellationToken cancellationToken = default)
     {
         var diagnostics = new List<BuildDiagnostic>();
@@ -138,25 +137,6 @@ public sealed class DiscBuildExecutor(
         if (published.Diagnostic is not null)
         {
             diagnostics.Add(published.Diagnostic);
-        }
-
-        if (copyToWindows && !string.IsNullOrWhiteSpace(options.WindowsDestination))
-        {
-            var copy = await new WindowsIsoCopier(runner).CopyAsync(
-                published.Path,
-                options.WindowsDestination,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!copy.Succeeded)
-            {
-                diagnostics.Add(new BuildDiagnostic(
-                    BuildDiagnosticSeverity.Warning,
-                    "WINDOWS_ISO_COPY_FAILED",
-                    $"Windows 侧复制失败；ISO 仍保留在 {published.Path}。{Environment.NewLine}{copy.Message}"));
-            }
-            else
-            {
-                log.WriteLine($"[Windows copy] {copy.Message}");
-            }
         }
 
         if (!options.KeepTemporary)
