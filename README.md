@@ -230,6 +230,14 @@ dvda.cmd verify all
 | `verify menu` | 无（读 config） | 菜单页、跳转链、播放静图和索引页视觉内容 |
 | `verify all` | 无（读 config） | 容量、结构、审计、菜单、时间轴与 MLP 无损验证 |
 
+也可脱离默认配置路径检查指定输入：
+
+```bat
+dvda.cmd quick-check --iso-dir D:\DVD_Output --manifest D:\work\manifest.json --log D:\work\build.log
+dvda.cmd audit --iso-dir D:\DVD_Output --manifest D:\work\manifest.json --log D:\work\build.log
+dvda.cmd verify menu --iso D:\DVD_Output\MyCollection_1.iso
+```
+
 `dvda verify quick` 成功输出会逐盘列出结构检查结果，并以 `[OK] 校验通过` 收尾。
 
 ```
@@ -616,28 +624,29 @@ bash verify.sh all         # 校验成品（结构 / 时间轴 / 无损性）
 产物写在 `DVDA_FINAL_DIR`；若配了 `DVDA_WINDOWS_DEST`，会自动用
 Windows 侧 robocopy 拷到 Windows（比走 9P 快得多）。
 
-### 本工作副本的快捷入口
+### 开发工作副本的入口
 
-日常工作副本（`/home/yyz57/dvda`）用 `local-bin/dvda.sh` ——
-它会**自动加载 `local-bin/env.sh`**（本机专用的覆盖值）：
+正式业务入口统一为 C# CLI；不要再调用迁移前的 Python 脚本：
 
 ```bash
-bash local-bin/dvda.sh all                  # 只跑 02_build（沿用已有分盘计划）
-bash local-bin/dvda.sh one 2                # 只重建第 2 盘（快）
-bash local-bin/dvda.sh author               # 重编工具链
-bash local-bin/dvda.sh verify all           # 校验
-bash local-bin/dvda.sh copy out/xxx.iso     # robocopy 拷出
+bash build.sh --dry-run
+bash build.sh
+bash verify.sh all
+
+dotnet run --project src/DvdaMaker.Cli -- plan
+dotnet run --project src/DvdaMaker.Cli -- build
+dotnet run --project src/DvdaMaker.Cli -- verify all
 ```
 
-| 命令 | 做了什么 | 何时用 |
-|---|---|---|
-| `build.sh` | `01_prepare` + `02_build`（全流程） | 音源变过、要重算分盘 |
-| `dvda.sh all` | 只 `02_build` | 音源没变，只是重出盘 |
-| `dvda.sh one N` | 只出第 N 盘 | 只改了一盘的参数，省时间 |
+`build.sh` 执行 `prepare` 后再执行 `build`；已有有效 manifest、只想重新出盘时，
+可直接运行 C# CLI 的 `build`。工具链重编仍使用 `build_dvda_author_mlp.sh`。
 
-> ⚠️ **`build.sh` 也会加载 `local-bin/env.sh`**（若存在）。
-> 不加载它就会走 `config.sh` 的默认值 —— 例如用 ffmpeg 自编 MLP、
-> 写 `build/` 而不是 `build-ext/`，看起来像「配置坏了」。2026-09-24 修。
+迁移前的 12 个根目录 Python 业务脚本已删除。需要查阅其最终版本时使用
+`python-reference-final` 标签，例如：
+
+```bash
+git show python-reference-final:02_build.py
+```
 
 ### 改工具链源码
 
@@ -771,7 +780,7 @@ DVDA_KEEP_AUDIT=1        bash local-bin/dvda.sh verify all   # 保留 disc-audit
 > 删除 `disc-audit/` 目录**要先补写权限** —— 里面可能是**旧版本
 > `xorriso -osirrox` 解出来的**（那种会保留 ISO 里的只读位，裸 `rm -rf`
 > 会报 Permission denied 并留下残缺目录）；Windows 的只读属性也会让
-> 旧 Python 实现中的 `shutil.rmtree` 会因此失败；当前 C# 清理逻辑会先恢复
+> 迁移前实现中的 `shutil.rmtree` 会因此失败；当前 C# 清理逻辑会先恢复
 > 写权限，再递归删除这些目录。
 
 ---
