@@ -107,7 +107,6 @@ Linux 上装 `fonts-noto-cjk` 后，文件在
 | `MSYS2_ROOT` | 自动探测 | MSYS2 安装根 |
 | `DVDA_SRC_TREE` | `<工具包>\src` | 源码树 |
 | `DVDA_FONT_SRC` | 自动查找 | Noto CJK 静态 ttc |
-| `DVDA_SCRIPTS` | `<工具包>\..\..` | 含 `01_prepare.py` 的目录 |
 | `JOBS` | CPU 核数 | make 并行数 |
 
 Windows 形式（`D:\x\y`）与 MSYS 形式（`/d/x/y`）都接受 ——
@@ -119,7 +118,7 @@ bash 侧会用 `cygpath` 转换。
 
 ```
 DVD-Audio-Maker\                    <- 仓库根
-  01_prepare.py  02_build.py ...    <- python 脚本（工具包按 <kit>/../.. 找）
+  src\DvdaMaker.Cli\               <- C# CLI 项目
   docs\README.md  THIRD-PARTY.md    <- 发布包的文档
   tools\win-build\                  <- 本工具包
     build-all.bat ...
@@ -129,11 +128,10 @@ DVD-Audio-Maker\                    <- 仓库根
 
 ## 5. 目标机器需要什么
 
-发布目录是自包含的（12 个 exe + 100 个 DLL + 字体 + ImageMagick 配置），
+发布目录是自包含的（C# CLI + 工具链 exe/DLL + 字体 + ImageMagick 配置），
 目标机器**只需要**：
 
 - Windows 10 1903+ / 11（依赖 UTF-8 代码页支持）
-- **Python 3.8+**（在 PATH 里）
 - **FFmpeg**（在 PATH 里，或用 `config.sh` 给全路径）
 
 **不需要** MSYS2、不需要 WSL、不需要装字体。
@@ -172,7 +170,7 @@ PATH 里混进了别的工具链（例如 WSL 的 `bash.exe`）。
 
 ## 7. 这套工具包与 Linux 构建的关系
 
-同一份源码、同一份脚本，两个平台各自编排：
+同一份 C# 业务实现和 dvda-author 源码，两个平台各自编排：
 
 | | Linux | Windows |
 |---|---|---|

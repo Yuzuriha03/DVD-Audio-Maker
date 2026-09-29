@@ -56,9 +56,8 @@ to_unix() {
 [ -n "${MSYS2_ROOT:-}" ]      && MSYS2_ROOT="$(to_unix "$MSYS2_ROOT")"
 [ -n "${DVDA_SRC_TREE:-}" ]   && DVDA_SRC_TREE="$(to_unix "$DVDA_SRC_TREE")"
 [ -n "${DVDA_FONT_SRC:-}" ]   && DVDA_FONT_SRC="$(to_unix "$DVDA_FONT_SRC")"
-[ -n "${DVDA_SCRIPTS:-}" ]    && DVDA_SCRIPTS="$(to_unix "$DVDA_SCRIPTS")"
 [ -n "${DVDA_WIN_ROOT:-}" ]   && DVDA_WIN_ROOT="$(to_unix "$DVDA_WIN_ROOT")"
-export MSYS2_ROOT DVDA_SRC_TREE DVDA_FONT_SRC DVDA_SCRIPTS
+export MSYS2_ROOT DVDA_SRC_TREE DVDA_FONT_SRC
 
 # ---- 找 MSYS2 ----
 # 思路：直接探测 **MSYS2 的 mingw 前缀**（/mingw64 /clang64 /ucrt64 /mingw32…），
