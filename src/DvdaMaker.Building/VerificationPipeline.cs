@@ -259,18 +259,15 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
 
                 foreach (var group in groups)
                 {
-                    var segments = iso.ListDirectory("AUDIO_TS")
+                    var entries = iso.ListDirectory("AUDIO_TS")
                         .Where(entry => Regex.IsMatch(
                             entry.Name,
                             $@"^ATS_{group:00}_\d+\.AOB$",
                             RegexOptions.IgnoreCase))
                         .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
-                        .Select(entry => (
-                            Path: $"{isoPath}:/AUDIO_TS/{entry.Name}",
-                            Data: iso.ReadFile($"AUDIO_TS/{entry.Name}")))
                         .ToArray();
-                    var analysis = AnalyzeAobGroup(
-                        segments,
+                    var analysis = AobPtsAnalyzer.AnalyzeChunks(
+                        ReadAobChunks(iso, entries),
                         $"{Path.GetFileName(isoPath)} 组 {group}");
                     issues.AddRange(analysis.Issues);
                 }
@@ -288,22 +285,27 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
     internal static AobPtsAnalysis AnalyzeAobGroup(
         IReadOnlyList<(string Path, byte[] Data)> segments,
         string label)
+        => AobPtsAnalyzer.AnalyzeChunks(
+            segments.Select(segment => (ReadOnlyMemory<byte>)segment.Data), label);
+
+    private static IEnumerable<ReadOnlyMemory<byte>> ReadAobChunks(
+        Iso9660Reader iso,
+        IReadOnlyList<IsoDirectoryEntry> entries)
     {
-        var length = segments.Sum(segment => (long)segment.Data.Length);
-        if (length > int.MaxValue)
+        const int sectorsPerChunk = 4096;
+        foreach (var entry in entries)
         {
-            return new AobPtsAnalysis(
-                label, 0, 0, null, null, 0, 0, 0, 0, 0, 0, 0, [],
-                [new VerificationIssue("AOB_GROUP_TOO_LARGE", $"{label} 超过内存校验上限")]);
+            var lba = iso.GetDataLogicalBlockAddress($"AUDIO_TS/{entry.Name}");
+            var remaining = (long)entry.Size / iso.SectorSize;
+            var offset = 0L;
+            while (remaining > 0)
+            {
+                var count = (int)Math.Min(sectorsPerChunk, remaining);
+                yield return iso.ReadSectors(lba + offset, count);
+                offset += count;
+                remaining -= count;
+            }
         }
-        var combined = new byte[(int)length];
-        var offset = 0;
-        foreach (var segment in segments)
-        {
-            segment.Data.CopyTo(combined, offset);
-            offset += segment.Data.Length;
-        }
-        return AobPtsAnalyzer.Analyze(combined, label);
     }
 
     public async Task<VerificationSectionResult> VerifyLosslessAsync(
@@ -471,7 +473,8 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
     private string[] FindIsoFiles()
     {
         if (!Directory.Exists(options.FinalDirectory)) return [];
-        return Directory.EnumerateFiles(options.FinalDirectory, $"{options.IsoPrefix}_*.iso")
+        return Directory.EnumerateFiles(options.FinalDirectory, "*.iso")
+            .Where(path => DiscVerifier.MatchesCurrentIsoName(path, options.IsoPrefix))
             .OrderBy(path => ParseDiscNumber(path) ?? int.MaxValue)
             .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();

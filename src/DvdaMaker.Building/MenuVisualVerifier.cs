@@ -271,6 +271,7 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
         {
             FileName = executable,
             Arguments = arguments,
+            Timeout = TimeSpan.FromSeconds(30),
         }, cancellationToken).ConfigureAwait(false);
         if (!result.Succeeded) return null;
         var values = result.StandardOutput.Split(
@@ -317,6 +318,7 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
         {
             FileName = executable,
             Arguments = arguments,
+            Timeout = TimeSpan.FromSeconds(30),
         }, cancellationToken).ConfigureAwait(false);
         return result.Succeeded && double.TryParse(
             result.StandardOutput.Trim(), NumberStyles.Float,
