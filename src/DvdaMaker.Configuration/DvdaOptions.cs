@@ -71,9 +71,21 @@ public sealed partial class DvdaOptions
     public long DiscBytes => GetLong("DVDA_DISC_BYTES") is { } value && value != 0
         ? value
         : ConfigDefaults.Dvd5Bytes;
-    public string MlpSource => Get("DVDA_MLP_SOURCE").Trim().ToLowerInvariant() is
-        "external" ? "external" : "ffmpeg";
+    public string MlpSource => Get("DVDA_MLP_SOURCE").Trim().ToLowerInvariant() switch
+    {
+        "external" => "external",
+        "MLP" => "MLP",
+        "mlp-batch" => "mlp-batch",
+        _ => "ffmpeg",
+    };
     public string MlpExternalDirectory => TrimSlash(Get("DVDA_MLP_EXTERNAL_DIR").Trim());
+    public string MlpBatchEncoder => TrimSlash(Get("DVDA_MLP_BATCH_ENCODER").Trim());
+    public string MlpBatchTempDirectory => TrimSlash(Get("DVDA_MLP_BATCH_TEMP_DIR").Trim());
+    public string MlpBatchOutputDirectory => TrimSlash(Get("DVDA_MLP_BATCH_OUTPUT_DIR").Trim());
+    public string MlpMLPExecutable => Get("DVDA_MLP_MLP_EXE").Trim();
+    public string MlpEac3toExecutable => Get("DVDA_MLP_EAC3TO_EXE").Trim();
+    public int MlpMLPSampleRate => GetInt("DVDA_MlpSampleRate") ?? 48_000;
+    public int MlpMLPBits => GetInt("DVDA_MlpBits") ?? 24;
     public bool MenuEnabled => GetBool("DVDA_MENU");
     public int MenuTracksPerPage => Math.Clamp(
         GetInt("DVDA_MENU_TRACKS_PER_PAGE") ?? 12,
@@ -181,6 +193,13 @@ public sealed partial class DvdaOptions
     public IReadOnlyList<KeyValuePair<string, string>> ToShellPairsAll() =>
         ToShellPairs().Concat(new Dictionary<string, string>(StringComparer.Ordinal)
         {
+            ["DVDA_MLP_BATCH_ENCODER"] = MlpBatchEncoder,
+            ["DVDA_MLP_BATCH_TEMP_DIR"] = MlpBatchTempDirectory,
+            ["DVDA_MLP_BATCH_OUTPUT_DIR"] = MlpBatchOutputDirectory,
+            ["DVDA_MLP_MLP_EXE"] = MlpMLPExecutable,
+            ["DVDA_MLP_EAC3TO_EXE"] = MlpEac3toExecutable,
+            ["DVDA_MlpSampleRate"] = MlpMLPSampleRate.ToString(CultureInfo.InvariantCulture),
+            ["DVDA_MlpBits"] = MlpMLPBits.ToString(CultureInfo.InvariantCulture),
             ["DVDA_MENU_DIR"] = MenuDirectory,
             ["DVDA_METAFLAC"] = Metaflac,
             ["DVDA_MENU_BINDIR"] = MenuBinaryDirectory,

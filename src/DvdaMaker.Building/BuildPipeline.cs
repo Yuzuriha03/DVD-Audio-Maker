@@ -27,11 +27,15 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
             log.WriteLine($"[诊断] DVDA_ALBUM_LIMIT={options.DiagnosticAlbumLimit}: " +
                 $"仅处理 {DiscPlanner.AggregateAlbums(initial).Count} 张专辑 / {initial.Count} 轨");
         }
-        MlpAcquisitionResult acquisition = options.MlpSource == "external"
-            ? await new ExternalMlpProvider(options, _runner)
-                .AcquireAsync(initial, cancellationToken).ConfigureAwait(false)
-            : await new FfmpegMlpProvider(options, _runner)
-                .AcquireAsync(initial, cancellationToken).ConfigureAwait(false);
+        MlpAcquisitionResult acquisition = options.MlpSource switch
+        {
+            "external" or "MLP" => await new ExternalMlpProvider(options, _runner)
+                .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
+            "mlp-batch" => await new MlpEncoderProvider(options, _runner)
+                .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
+            _ => await new FfmpegMlpProvider(options, _runner)
+                .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
+        };
 
         var plan = new DiscPlanner().Plan(
             acquisition.Tracks,
