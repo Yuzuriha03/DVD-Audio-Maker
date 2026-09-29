@@ -1,43 +1,60 @@
 # DVD-Audio Maker
 
-把高解析度音频（FLAC / ALAC-M4A）制作成 **DVD-Audio** 光盘 ISO 的工具链。
+将 FLAC 或 ALAC/M4A 音源制作成标准 **DVD-Audio ISO** 的工具链。
 
-针对 **24-bit / 48 kHz、44.1 kHz** 音源，使用 **MLP（Meridian Lossless Packing）
-无损压缩** —— 约 9 GB 的源文件可压到约 7 GB，从而装入两张单层 DVD-5。
+项目以 **.NET 10 / C#** 实现音源准备、MLP 管理、分盘、菜单生成、ISO 发布和成品校验；底层使用经过修改的 `dvda-author` 与支持 `-dvd-audio` 的 `mkisofs`。
 
-> 本仓库**不包含任何音频文件**。你需要自备音源。
+> 本仓库不包含音频、商业编码器或预编译第三方工具。使用者需要自备音源，并自行确认相关软件与内容的授权。
+
+## 功能
+
+- 递归扫描 FLAC 和 ALAC/M4A
+- 读取专辑、曲名、曲序和日期标签
+- 检查解码完整性、声道数和音频参数
+- 自动修复特定 Apple ALAC 文件缺失 END 标记的问题
+- 按专辑归一化采样率与位深，必要时使用 SoXr 重采样
+- 使用 FFmpeg 编码 MLP，或复用 SurCode 等工具生成的外部 MLP
+- 保持专辑完整，按容量逐盘填满
+- 可选 DVD-Audio AMG 选曲菜单与 ASVS 播放封面
+- 事务式发布整套 ISO，失败时保留上一套成品
+- 校验 ISO、IFO、AOB、PTS、菜单、容量和无损性
+- 支持 Windows 原生自包含发布包及 WSL/Linux 开发流程
+
+## 当前实现
+
+业务入口统一为 C# CLI：
+
+```text
+src/DvdaMaker.Cli             命令行入口
+src/DvdaMaker.Configuration   配置解析
+src/DvdaMaker.Preparation     扫描、归一化、解码校验、ALAC 修复
+src/DvdaMaker.Building        MLP、分盘、菜单、出盘、发布与校验
+src/DvdaMaker.Formats         ISO9660、MLP、MPEG/PTS 解析
+src/DvdaMaker.Processes       外部进程执行
+tests/                        兼容性与端到端测试
+```
+
+`build.sh` 和 `verify.sh` 是 C# CLI 的便捷包装。迁移前的 Python 业务实现已从主分支删除，最终版本保存在 Git 标签 `python-reference-final`。
+
+## 选择运行方式
+
+| 场景 | 推荐方式 |
+|---|---|
+| 普通 Windows 用户 | 构建或获取 Windows 自包含发布包，运行 `dvda.cmd` |
+| 在仓库中开发或使用 Linux 工具链 | 在 WSL/Linux 中运行 `build.sh` |
+| 只需检查配置、规划或 ISO | 直接运行 C# CLI |
 
 ---
 
-## Windows 从零开始（不需要 WSL）
+# Windows 原生流程
 
-> **本节是「一台干净的 Windows 机器 → 两张成品 ISO」的完整流程。**
-> 全程只用 Windows 原生程序 —— MSYS2 的 `bash.exe` 本身就是 PE 可执行文件
-> （`uname -o` 报 `Msys`，不是 `Linux`），不是 WSL。
-> **不调用 WSL、不访问 `\\wsl.localhost`、不依赖 `/mnt/*`。**
+Windows 发布包在运行时不需要 WSL、MSYS2、Python 或单独安装 .NET Runtime。MSYS2 只用于从源码构建发布包。
 
-### 0. 总览
+## 1. 构建发布包
 
-| 阶段 | 做什么 | 命令 | 耗时 |
-|---|---|---|---|
-| 1 | 装 MSYS2 + 工具链 | `pacman -S ...` | 一次性，约 10 分钟 |
-| 2 | 取 `dvda-author` 源码树 | `git clone` + 应用改动集 | 一次性 |
-| 3 | **编工具链** | `build-all.bat` | 约 2 分钟 |
-| 4 | 准备音源 | 拷 FLAC 进去 | — |
-| 5 | 改配置 | 编辑 `config.sh` | — |
-| 6 | 扫描 + 校验音源 | `dvda.cmd prepare` | 约 3 分钟 |
-| 7 | **出盘** | `dvda.cmd build` | 约 1 小时 |
-| 8 | 校验成品 | `dvda.cmd verify all` | 约 1 分钟 |
+### 安装 MSYS2 依赖
 
-阶段 1、2 只需做一次。之后换音源重出盘，只走 4~8。
-
-### 1. 装 MSYS2 与工具链
-
-用**免安装版**最省事：
-
-1. 下载 `msys2-base-x86_64-*.tar.xz`
-2. 用 Windows 自带的 `tar.exe` 解压到**不含空格**的目录（如 `D:\msys64`）
-3. 跑一次 `<root>\usr\bin\bash.exe`，然后装包：
+将 MSYS2 安装或解压到 `D:\dev\msys64`、`C:\msys64` 等目录，然后在 MINGW64 环境运行：
 
 ```bash
 pacman -Syu
@@ -51,1457 +68,495 @@ pacman -S --needed mingw-w64-x86_64-gcc \
                    make
 ```
 
-国内网络慢的话先换镜像（清华 TUNA）：
-`/etc/pacman.d/mirrorlist.mingw64` 里换成 `Server = https://mirrors.tuna.tsinghua.edu.cn/msys2/mingw/mingw64/`。
+### 准备 dvda-author 源码树
 
-> **为什么不用 WSL**：上游 `dvda-author` 是 autotools 的 —— `configure`
-> 本身就是个 20 万行的 `/bin/sh` 脚本，`make` 也递归调 shell。
-> 要在 Windows 上跑 autotools 就得有个 POSIX shell，MSYS2 提供的正是
-> **原生 Windows 的**那个。上游自己的 `BUILD.MSYS2` 也是这么写的。
->
-> ⚠️ **不要用裸 `bash`**：Windows 上 `where.exe bash` 会命中
-> `...\WindowsApps\bash.exe`，那是 **WSL 的启动器**。本工具包统一用
-> `/usr/bin/bash` 绝对路径，并且 `common.sh` 里加了硬拦截 ——
-> 一旦检测到 `WSL_DISTRO_NAME` 或 `uname -s` 报 `Linux` 就直接退出。
+需要完整源码树，其中包括：
 
-### 2. 取源码树（含本工程的改动）
+```text
+configure、src/、libutils/、libfixwav/
+menu/silence.wav、menu/activeheader
+m4.extra.dvdauthor/
+dvdauthor-0.7.1/
+local.w10/bin/
+NotoSansCJK-Regular.ttc
+```
 
-工具链的源码是上游 `dvda-author`，本工程对它做了改动（24-bit MLP、
-时间轴修复、按语言分派字体等）。改动以**改动集**形式存在仓库里：
+可以从固定上游版本应用本仓库的改动集：
 
 ```bash
-git clone https://github.com/fabnicol/dvda-author  <工具包>\src
-cd <工具包>\src
-git apply <仓库>\docs\dvda-author-changes.patch
+git clone https://github.com/fabnicol/dvda-author tools/win-build/src
+cd tools/win-build/src
+git checkout 8fca43a
+git apply ../../../docs/dvda-author-changes.patch
 ```
 
-源码树必须是**完整的**，编译脚本会检查这些：
+### 执行构建
 
-```
-configure  configure.ac  Makefile.in      autotools 入口
-src/  libutils/  libfixwav/               源码
-menu/silence.wav  menu/activeheader       菜单运行期素材（C 代码直接读）
-m4.extra.dvdauthor/                       dvdauthor 的 autotools 辅助 m4
-dvdauthor-0.7.1/                          **含 AMGM 补丁**（菜单必需）
-local.w10/bin/                            mkisofs / mjpegtools 等预编译二进制
-```
+在仓库根目录运行：
 
-> **为什么 `dvdauthor-0.7.1` 和 `local.w10/bin` 必须随源码树来**：
-> - 菜单按钮用的是 `<button>jump group G track K</button>`，发行版 dvdauthor
->   不认这个语法，需要 AMGM 补丁
-> - **MSYS2 没有 mjpegtools 包，也没有 mkisofs / cdrkit / xorriso 包**
->   （`pacman -Ss` 查不到）。静图编码与 ISO 打包只能靠上游那套预编译二进制
-
-字体只需要**一个静态 `.ttc`**：`NotoSansCJK-Regular.ttc`，放在源码树根
-（或用 `DVDA_FONT_SRC` 指定）。工具包会从它抽出 SC / JP / KR 三个单 face。
-提取、OpenType 重建、校验和修复及字符覆盖检查均由仓库内的
-`DvdaMaker.FontTool` 纯 C# 工具完成，不再需要 Python/fontTools。
-
-> ⚠️ **不要**用 Windows 自带的 `NotoSansSC-VF.ttf` / `NotoSansJP-VF.ttf` ——
-> 那些是**单语**字体（SC 版没有谚文），会给韩文标题开出空白。
-> ⚠️ 也**不要**直接把 `.ttc` 当菜单字体用：ImageMagick 按文件路径加载
-> `.ttc` 只取 face 0，而 Noto Sans CJK 的 face 0 是 **JP** —— 中文菜单会
-> 显示成日文字形，而且**不报错**。这就是要抽单 face 的原因。
-
-### 3. 编工具链
-
-工具包放在**仓库的 `tools\win-build\`** 下最省事（它会自动找到仓库根的
-C# CLI 项目），源码树放在 `tools\win-build\src\`。然后：
-
-```
+```bat
 tools\win-build\build-all.bat
 ```
 
-依次做 5 件事，任一失败即中止：
+若 MSYS2 不在自动探测位置：
 
-| 步骤 | 做什么 | 单独跑 |
-|---|---|---|
-| 1 | 体检：源码树、工具链、FFmpeg 开发库、字体 | `check-src.sh` |
-| 2 | 编 `dvda-author-dev.exe`（含 MLP + 按语言分派字体） | `build-author.sh` |
-| 3 | 编 `dvdauthor` / `spumux` / `spuunmux`（AMGM 补丁） | `build-dvdauthor.sh` |
-| 4 | 组装工具目录（exe + DLL + ImageMagick + 字体） | `assemble-menu-bin.sh` |
-| 5 | 打出发布包 | `make-release.sh` |
-
-产出：
-
-```
-<源码树>\..\menu-bin\                   中间产物（工具目录）
-tools\win-build\release\DVD-Audio-Maker\       ← 下面要用的发布目录
-tools\win-build\release\DVD-Audio-Maker.tar.gz
-tools\win-build\logs\                    各步骤日志
+```bat
+set MSYS2_ROOT=D:\dev\msys64
+tools\win-build\build-all.bat
 ```
 
-发布目录是**自包含**的（C# CLI、.NET 运行时、工具链 exe/DLL、三语字体和
-ImageMagick 配置），拷到任何 Windows 机器都能跑，目标机器不需要 Python、
-.NET Runtime、MSYS2 或 WSL。
+发布目录位于：
 
-> 工具链源码改过之后重新编：再跑一次 `build-all.bat` 即可，它会重跑
-> `configure` 与 `make`。刻意**不做** configure 缓存 —— 产物里写死了源码树
-> 绝对路径，复用要改写路径，而路径改写是最容易**静默出错**的地方。
-
-### 4. 音源
-
-把 FLAC（或 M4A/ALAC）按**一个子目录一张专辑**摆好：
-
-```
-D:\Music\MyAlbums\
-  专辑甲\
-    01. 曲名.flac
-    02. 曲名.flac
-    cover.jpg          ← 可选，专辑封面（选曲菜单 + 播放封面用）
-  专辑乙\
-    ...
+```text
+tools\win-build\release\DVD-Audio-Maker\
 ```
 
-要求：
+构建过程会编译 `dvda-author-dev.exe`、带 AMGM 补丁的菜单工具，组装 DLL、ImageMagick 配置和中日韩字体，并发布自包含的 C# CLI。
 
-- **递归**扫描，子目录即专辑（子目录可以再嵌套）
-- 同一批必须能分成有限的「采样率 + 位深」组（本工程实测只有
-  `48000/24` 与 `44100/24` 两组）
-- 需要重采样的会自动重采样（`aresample=resampler=soxr`）并报出来
-- 封面图放进专辑目录即可，文件名任意（`cover.jpg` / `folder.jpg` 之类）
+详细说明见 [`tools/win-build/README.md`](tools/win-build/README.md)。
 
-### 5. 配置
+## 2. 配置发布包
 
-**只需要改一个文件**：`release\DVD-Audio-Maker\config.sh`。
+编辑发布目录中的 `config.sh`：
 
 ```bash
-DVDA_SRC="D:/Music/MyAlbums"                       # 音源根目录（递归扫描）
-DVDA_FINAL_DIR="D:/DVD_Output"                     # 成品 ISO 放这里
-DVDA_BUILD_DIR="D:/DVD_Output/_work"               # 中间产物（约需 20 GB）
-DVDA_TITLE="My DVD-Audio Collection"               # 光盘标题
-DVDA_ISO_PREFIX="MyCollection"                     # ISO 文件名前缀
-DVDA_MAX_DISCS="2"                                 # 盘数上限（只检查不切分）
-DVDA_MENU="on"                                     # 选曲菜单 + 播放封面
+DVDA_SRC="D:/Music/MyAlbums"
+DVDA_FINAL_DIR="D:/DVD_Output"
+DVDA_BUILD_DIR="D:/DVD_Output/_work"
+DVDA_TITLE="My DVD-Audio"
+DVDA_ISO_PREFIX="MyCollection"
+DVDA_MAX_DISCS="2"
+DVDA_MENU="on"
 ```
 
-工具链路径**不在这里配** —— `dvda.cmd` 会按目录布局自动设
-`DVDA_AUTHOR` / `DVDA_MKISOFS` / `DVDA_AUTHOR_SRC` / `DVDA_MENU_FONT`
-（环境变量优先级最高，会覆盖 `config.sh` 里的值）。
+Windows 路径建议使用正斜杠。工具链和菜单字体路径由 `dvda.cmd` 根据发布包布局自动设置。
 
-⚠️ **路径不要含空格**：`dvda-author` 拼 ImageMagick 命令时不给路径加引号，
-带空格的目录会被截断（字体、素材路径都会失效）。
+> 为兼容第三方 C 工具，发布包、工作目录和字体路径最好不要包含空格或特殊符号。
 
-### 6. 出盘
+## 3. 准备、出盘与校验
 
 ```bat
 cd tools\win-build\release\DVD-Audio-Maker
-dvda.cmd prepare            :: 扫描 + 归一化 + 解码校验 + 生成 manifest
-dvda.cmd build              :: 编码 MLP + 分盘 + 生成菜单 + 出 ISO
-```
 
-`dvda prepare` 做四件事，**不产 WAV**（省空间）：
-
-1. 扫描音源，探测采样率 / 位深 / 声道 / 时长
-2. 校验**解码完整性**（顺带自动修复 Apple ALAC「未压缩帧缺 END 标记」的缺陷）
-3. 组内参数一致性检查（同一组里采样率/位深/声道必须一致）
-4. 写出 `manifest.json`（`dvda build` 读它）
-
-这一步**必须通过**才继续。成功的样子：
-
-```
-发现 147 个音频文件 (FLAC/M4A)
-  [重采样] ... 共需重采样 10 首
-group_44100_24: 16 首
-group_48000_24: 131 首
-  已校验 147 首；失败 0 首，警告 0 首
-manifest.json 已生成
-```
-
-`dvda build` 逐曲编 MLP（**已编码的会缓存复用**）、按体积逐盘填满、
-生成菜单与封面、调 `dvda-author` 出盘、`mkisofs` 打包成 ISO。
-
-> 想先看它打算怎么分盘、不真出盘：加 `--dry-run`。
->
-> 用外部编码器（SurCode 等）产出的 MLP 时，把
-> `DVDA_MLP_SOURCE="external"` 与 `DVDA_MLP_EXTERNAL_DIR=` 设好，
-> 外部目录结构需与音源同构：`<外部目录>\<专辑>\<曲名>.mlp`。
-
-### 7. 校验成品
-
-```bat
-dvda.cmd verify quick
+dvda.cmd config --check
+dvda.cmd prepare
+dvda.cmd build --dry-run
+dvda.cmd build
 dvda.cmd verify all
 ```
 
-| 命令 | 参数 | 查什么 |
-|---|---|---|
-| `verify quick` | 无（读 config） | IFO 轨数、轨首 pack、cell 时间轴与静图引用 |
-| `verify audit` | 无（读 config） | AOB 扇区、轨边界、PTS 与构建日志对账 |
-| `verify menu` | 无（读 config） | 菜单页、跳转链、播放静图和索引页视觉内容 |
-| `verify all` | 无（读 config） | 容量、结构、审计、菜单、时间轴与 MLP 无损验证 |
-
-也可脱离默认配置路径检查指定输入：
+只做快速结构检查：
 
 ```bat
-dvda.cmd quick-check --iso-dir D:\DVD_Output --manifest D:\work\manifest.json --log D:\work\build.log
-dvda.cmd audit --iso-dir D:\DVD_Output --manifest D:\work\manifest.json --log D:\work\build.log
-dvda.cmd verify menu --iso D:\DVD_Output\MyCollection_1.iso
+dvda.cmd verify quick
 ```
-
-`dvda verify quick` 成功输出会逐盘列出结构检查结果，并以 `[OK] 校验通过` 收尾。
-
-```
-### Wuthering_Waves_Singles_EPs_1.iso  (4691195904 字节)
-    [OK] ATS_01_0.IFO: title 1 时间轴连续（2 个 cell，PTS 98..32091848）
-    ...
-    组1: 75 轨, 23 个 title  (ATS_01_0.IFO)，静图最大引用号 23
-    组2: 14 轨, 4 个 title   (ATS_02_0.IFO)，静图最大引用号 27
-    [OK] 静图引用号 27 <= AUDIO_SV.IFO 记录数 27 ✔
-    合计 89 轨
-    抽查 89 轨首扇区
-    全部以 pack 头开头 ✔
-全部盘合计 147 轨
-与音源曲目数一致（147）✔
-快速校验 全部通过 ✔
-```
-
-> 校验逻辑已内置于 C# CLI，不需要 Python、xorriso 或 dd；菜单画面抽帧仍使用
-> FFmpeg 与随工具链提供的 ImageMagick。
-> 早期版本用 `xorriso` 查 ISO 里的 LBA/列目录、用 `dd` 读扇区，
-> 而这两个在 Windows 上都没有（**MSYS2 也没有 xorriso 这个包**），
-> 导致校验在 Windows 上完全没法做。
-> 现在 ISO 访问统一由 C# `Iso9660Reader` 完成，不依赖 xorriso、dd 或 Python，
-> Windows 与 Linux 使用同一套解析和校验逻辑。
-
-`verify quick`、`verify audit`、`verify menu` 和 `verify all` 都从 `config.sh`
-读取成品目录、构建日志和 ISO 前缀；独立 `aob-pts` 命令接收一个或多个 `.AOB`。
-
-### 8. 常见问题
-
-**`[失败] 检测到 WSL`**
-工具包拒绝在 WSL 里运行。用 `build-all.bat` 启动，别用 WSL 的 `bash`。
-
-**`MSYS2 not found`**
-设 `MSYS2_ROOT`，或装到 `C:\msys64` / `D:\msys64`。
-
-**`configure: error: C compiler cannot create executables`**
-PATH 里混进了别的工具链。工具包会把 MSYS2 的 `mingw64\bin` 与 `usr\bin`
-放到 PATH 最前面；若仍报错，检查 `MSYS2_ROOT` 是否指错。
-
-**体检报 FFmpeg 缺失但 `pacman` 说装了**
-先确认：`pkg-config --modversion libavcodec`。若它有输出而体检报缺，
-那是工具包的 bug（历史上出过一次：给 `libavcodec` 又拼了一次 `lib` 前缀）。
-
-**菜单文字是空白 / 中文显示成日文字形**
-看 `menu-bin\fonts\` 下三个 `.otf` 是否都在；菜单字体不能指向 `.ttc`。
-
-**`FileNotFoundError: [WinError 3] ... '/mnt/d/...'`**
-清单里存的是 `D:/...`，是路径转换逻辑把它改坏成了 WSL 形式。
-已在 C# 路径规范化逻辑中修复。若再出现，
-先确认 `manifest.json` 里的 `src` 是不是 `D:/...` 开头。
-
-**构建很慢 / 每个进程好几秒**
-先看杀软的**内核过滤驱动**。实测：装了卡巴斯基（21 个 `kl*` 过滤驱动）时
-`fork/exec` 要 **2~4 秒/次**，`configure` 一步就要 **约 1 小时**；
-关掉后 **27 毫秒/次**，`configure` 约 **1 分钟**，整条 `build-all.bat`
-**1 分 41 秒**。差了 **100 倍**。
-
-**体检报 `--fontname-jp/-kr` 缺失 / 菜单里日文显示成简体字形**
-源码树是**旧的**：改动集没打上，或 `docs/dvda-author-changes.patch` 是旧版。
-按第 2 节重新 `git apply`。验证：
-
-```bash
-grep -rl textfont_jp src libutils        # 应输出 3 个文件
-grep -rl fontname-jp src libutils        # 应输出 2 个文件
-```
-
-> 这个坑真实存在过：`docs/dvda-author-changes.patch` 曾停留在 2026-09-25，
-> 不含按语言分派字体的改动。照它构建出来的工具链会让日文标题用简体字形，
-> 而**构建全程不报错** —— 只有真机看画面才发现。现在补丁已重新生成，
-> 并验证过「应用到纯净上游 → 21 个文件全部 clean → 与开发分支的
-> `.c`/`.h` 逐字节相同」。
-
-### 9. 实测数据（2026-09-27，Windows 全流程）
-
-供对照，看自己的环境是否正常：
-
-| 阶段 | 用时 | 产物 |
-|---|---|---|
-| `build-all.bat`（含 configure + 两个项目 + 组装 + 打包） | **1 分 41 秒** | `release\DVD-Audio-Maker\` 203 MB |
-| `dvda prepare`（147 首扫描 + 解码校验） | **约 2 分钟** | `manifest.json` 87 KB |
-| `dvda build` 首次（147 首 MLP 编码） | **约 12 分钟** | — |
-| `dvda build` 再次（MLP 全缓存） | **5 分 48 秒** | 两张 ISO |
-| `dvda verify quick` | **约 1 秒** | 全部通过 |
-
-音源：45 张专辑 / 147 首 FLAC，6.43 GiB → MLP 7.30 GiB（+13.49%）
-
-```
-Wuthering_Waves_Singles_EPs_1.iso   4,691,195,904  (89 首, 余 16 MB)
-Wuthering_Waves_Singles_EPs_2.iso   3,328,147,456  (58 首, 余 1.38 GB)
-```
-
-独立验证（都不是「构建自己说自己对」）：
-
-| 检查 | 方法 | 结果 |
-|---|---|---|
-| 音频**无损** | 源 FLAC 与对应 MLP 都解码成 `s32le` 裸流，逐字节比 | **共同前缀 SHA256 相同**；仅尾部 232 字节 0 填充（29 帧 / 0.6 ms，解码器补帧） |
-| AOB 可解码 | `ffmpeg -i <抽取出的 AOB>` | 识别为 `mpeg` / `Audio: mlp, 48000 Hz, stereo, s32 (24 bit)` |
-| AOB 边界 | 抽取扇区 5173..2290469，末字节须落 2048 边界 | ✔ |
-| AOB 体积 | AOB ÷ MLP = 1.0208 | 与既有开销系数 1.0215~1.0220 吻合 |
-| 结构 | `dvda verify quick` | 147 轨齐全、89+58 轨首扇区全为 pack 头、时间轴连续、静图引用号不越界 |
-| 时间轴 | `dvda verify audit` / `dvda aob-pts` | PTS 随播放单调递增，下降点与 title 边界一致 |
 
 ---
 
-细节（工具链前置条件、环境变量、逐条排错）见 `tools/win-build/README.md`；
-踩过的坑与诊断手法见 `docs/TROUBLESHOOTING.md` 的第 33~36 节。
+# WSL / Linux 流程
 
-## 快速开始（WSL / Linux）
+## 1. 安装依赖
 
-### 1. 准备环境（WSL2 + Ubuntu）
+以 Ubuntu 为例：
 
 ```bash
-# 基础依赖
-sudo apt install dotnet-sdk-10.0 ffmpeg make gcc autoconf xorriso \
-                 libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
-
-# 确认 ffmpeg 支持 MLP 编解码
-ffmpeg -hide_banner -encoders | grep mlp
-# 应输出:  A..X.D mlp   MLP (Meridian Lossless Packing)
+sudo apt install dotnet-sdk-10.0 ffmpeg flac \
+  make gcc autoconf \
+  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
 ```
 
-### 2. 获取 dvda-author 源码
+启用菜单时还需要：
+
+```bash
+sudo apt install mjpegtools imagemagick fonts-noto-cjk
+```
+
+确认 FFmpeg 包含 MLP 编码器：
+
+```bash
+ffmpeg -hide_banner -encoders | grep mlp
+```
+
+## 2. 准备并编译 dvda-author
 
 ```bash
 git clone https://github.com/fabnicol/dvda-author /root/dvda-author-mlp8
-```
-
-默认路径就是 `DVDA_AUTHOR_SRC`（`config.sh` 可改）。
-
-### 3. 构建支持 24-bit MLP 的 dvda-author
-
-```bash
-bash build_dvda_author_mlp.sh
-# 产物: /root/dvda-author-mlp8/src/dvda-author-dev
-```
-
-该脚本只做「检查源码树 → configure → make」，可重复运行。它链接系统 FFmpeg 8
-并把 `mlp.c` 迁移到 8.x API（详见下文「为什么需要重新编译」）。
-
-> **源码树是手工维护的，改动已提交在它的 `dvda-maker` 分支上。**
-> 脚本第 `[1/6]` 步会比对改动是否还在（缺失告警、改过提示，都不中止）。
->
-> 改动过的**源码另在仓库里镜像了一份**（`tools/dvda-author-mlp8/`，只有
-> `src/` 与 `libutils/` 下的 `.c`/`.h`，约 1.2 MB），便于直接在仓库里读和搜。
-> 那棵镜像是**只读副本**，以实际 dvda-author 工作树为准；
-> 不含 `.o`、可执行文件、Makefile、第三方的 ffmpeg/ImageMagick 源码树。
->
-> 从**全新上游 clone** 开始时，只需应用改动集：
->
-> ```bash
-> git clone https://github.com/fabnicol/dvda-author tools/dvda-author-mlp8
-> cd tools/dvda-author-mlp8 && git checkout 8fca43a
-> git apply /path/to/scripts/docs/dvda-author-changes.patch
-> ```
->
-> 每项改动的依据见 [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.md)，
-> 试过但没接入的见 [`docs/DVDA-AUTHOR-DISABLED.md`](docs/DVDA-AUTHOR-DISABLED.md)。
-
-### 4. 改配置
-
-**只需要改 `config.sh` 这一个文件。**
-
-```bash
-cp config.sh config.sh.bak    # 可选
-nano config.sh
-```
-
-最简情况下只改 2 行：
-
-```bash
-DVDA_SRC="/mnt/d/MyMusic"        # 你的音源根目录
-DVDA_FINAL_DIR="/mnt/d/DVD_Out"  # ISO 输出到哪里
-```
-
-查看当前生效的配置：
-
-```bash
-dotnet run --project src/DvdaMaker.Cli -- config
-```
-
-### 5. 运行
-
-```bash
-bash build.sh              # 完整流水线
-bash build.sh --dry-run    # 只预览分盘结果，不出盘
-bash build.sh --config     # 只打印配置
-
-# 校验成品
-bash verify.sh
-```
-
-> **已经有 MLP 文件、不想再转码？** 把 `DVDA_MLP_SOURCE` 设为 `external`
-> 并指向 MLP 目录，流水线会**跳过编码**直接用它们出盘。
-> 见 [外部 MLP：怎么摆放与配置](#外部-mlp怎么摆放与配置)。
-### 6. （可选）生成 MLP 要用什么工具
-
-本节只对「想用外部工具生成 MLP」的人有意义，不需要就跳过。
-
-MLP 是封闭的专有格式。**SurCode MLP Encoder**（Minnetonka，Windows 商业软件）
-是参考实现；ffmpeg 的 `mlp` 编码器是开源替代品。两者的取舍、各自优缺点见
-[MLP 来源：自己编码，还是用外部编码器](#mlp-来源自己编码还是用外部编码器)，
-**本工具链不替你选**。
-
-三条路线：
-
-| 路线 | 需要什么 | 说明 |
-|------|----------|------|
-| **A. ffmpeg**（`config.sh` 的初始值） | 只需 ffmpeg | 本仓库已集成，无额外工具 |
-| **B. Batch MLP Encoder 3** | SurCode MLP + eac3to + .NET 4.6（Windows） | 半自动；见下 |
-| **C. SurCode MLP 手工操作** | SurCode MLP（Windows） | 每首手工做一遍；见下 |
-
----
-
-#### A. 用本仓库自带的 ffmpeg 编码
-
-什么都不用装。`config.sh` 里 `DVDA_MLP_SOURCE="ffmpeg"`（初始值）即可，
-`dvda build` 会直接从音源编码 MLP，不产生中间 WAV。
-
-取舍见 [MLP 来源](#mlp-来源自己编码还是用外部编码器) 一节。
-
----
-
-#### B. Batch MLP Encoder 3
-
-用于把 SurCode 的操作流程自动化：SurCode **没有命令行**且**只接受单声道 WAV**，
-本工具会替你拆成 `L.wav`/`R.wav` 并逐首驱动 SurCode。
-
-- 项目：`Batch MLP Encoder 3`（作者 SadPencil，GPL v2.0，v3.0.6）
-- 运行环境：**Windows**（Vista SP2 及以上）+ .NET Framework 4.6+
-- **依赖两个外部程序**（不自带，需自行安装，并在向导里指定路径）：
-  - `SurCode MLP Encoder`（`surcodemlp.exe`）
-  - `eac3to`（`eac3to.exe`）
-- 用法：向导式 5 步 —— 指定两个程序路径 → 拖入文件 → 选参数 →
-  设临时/输出目录 → 开始
-
-内部流程：
-
-```mermaid
-graph LR
-    A["WAV / FLAC"] --> B["eac3to<br/>拆成单声道<br/>L.wav / R.wav"]
-    B --> C["逐首驱动 SurCode GUI<br/>Open → Setup → Start"]
-    C --> D[".mlp"]
-```
-
-**使用注意事项**：
-
-- **文件名或目录含特定字符（例如韩文）会让 SurCode 出错** ——
-  程序会自动换成临时名先编，编完再改回
-- 它是 **GUI 自动化**（用 UI Automation 点菜单），界面变化、弹窗、
-  超时都会失败；程序为每步都设了超时与重试
-- **20-bit 没有对应的 WAV 容器**，会以 24-bit 存放，输出可能是 24-bit
-- 勾了重采样／升位深时，音频会被**改过** ——
-  例如勾 `-resampleTo48000` 后，全部曲目都会变成 48000 Hz
-  （见 [外部模式的两个行为差异](#外部模式的两个行为差异)）
-
-> 本仓库**不包含也不依赖**这个工具，也不替它做任何事。
-> 用它编完 MLP 后，再用本仓库的
-> [外部模式](#外部-mlp怎么摆放与配置)出盘即可。
-
----
-
-#### C. 直接用 SurCode MLP 手工操作
-
-没有 Batch MLP Encoder 时的原始方法，需**每首曲目手动做一遍**：
-
-1. 用 eac3to（或其它工具）把音源拆成单声道 WAV
-2. 在 SurCode 里 `Open` 逐声道导入
-3. `Setup` 里设采样率/位深
-4. `Start` 编码，再 `Save` 到目标路径
-
-> 无论用 B 还是 C，**出盘时仍然需要音源文件**（MLP 容器不存标签也不存时长），
-> 见[外部 MLP：怎么摆放与配置](#外部-mlp怎么摆放与配置)里的限制说明。
-
----
-
-### 7. （可选）把 M4A / ALAC 音源转成 FLAC
-
-本流水线**可以直接读 M4A** —— `dvda prepare` 会顺手修掉 Apple ALAC 的缺 END
-标记问题（见下方「自动修复」一节）。如果你想把音源先统一成 FLAC，用
-`dvda convert`：
-
-```bash
-dotnet run --project src/DvdaMaker.Cli -- convert /path/to/music
-dotnet run --project src/DvdaMaker.Cli -- convert a.m4a b.m4a --in-place
-dotnet run --project src/DvdaMaker.Cli -- convert /path/to/music --dry-run
-```
-
-依赖 `ffmpeg` / `ffprobe` / `metaflac`（`sudo apt install ffmpeg flac`）。
-
-它做三件普通转换工具不做的事：
-
-| 项 | 普通转换工具 | `dvda convert` |
-|---|---|---|
-| ALAC 缺 END 标记 | 静默丢帧，并被固化进 FLAC | 先修补再转 |
-| 标签名 | MP4 名原样写入（FLAC 播放器读不到） | 规范化，并剔除 MP4 容器专用标签 |
-| 封面 | `type=0 (Other)`、`depth=12` | 重导为 `type=3 (Cover front)`、`depth=24` |
-
-转完做三重校验：PCM MD5 与**修复后**的源逐字节一致、标签逐项比对、封面字节
-比对。任一不过就删掉半成品并报错。
-
-选项：`--in-place`（转成功后删源）、`--level 0-8`（默认 8）、`--jobs N`、
-`--dry-run`。
-
-> 输出与源**同目录同名**，只是扩展名换成 `.flac`。那里若已有同名 `.flac`
-> 会被覆盖。
-
----
-
-### 8. （可选）做出选曲菜单
-
-默认**不做菜单**：放进播放器直接播放，用播放器的曲目列表选曲。
-
-打开后，盘上会多出 DVD-Audio 规范自带的 **AMG 选曲菜单**（放进播放器先出菜单，
-可翻页浏览、按专辑查看并选曲），以及**播放每首曲子时显示所属专辑封面**。
-
-```bash
-# 1. 装菜单需要的工具（只需一次）
-sudo apt install -y mjpegtools imagemagick fonts-noto-cjk
-
-# 2. 重新编译 dvda-author（会顺便编出菜单用的 dvdauthor/spumux）
-bash build_dvda_author_mlp.sh
-
-# 3. 打开开关
-nano config.sh          # DVDA_MENU="on"
-
-# 4. 出盘
-bash build.sh
-```
-
-封面**不需要另外准备**：直接用音源目录里已有的 `cover.jpg`。
-没放封面的专辑，那一页背景就是黑色。
-
-> 仍然是纯 **DVD-Audio** —— 菜单走的是规范里的 AMG 菜单（`AUDIO_TS.IFO` +
-> `AUDIO_TS.VOB`），封面走 ASVS（`AUDIO_SV.IFO` + `AUDIO_SV.VOB`），
-> 音频本体（`ATS_*.AOB`）一个字节都不变。
-
-详见 [选曲菜单](#选曲菜单) 一节。
-
----
-
----
-
-
----
-
-## 从仓库到成品盘（完整流程）
-
-### 一次性准备（新机器）
-
-```bash
-# 1) 依赖
-sudo apt install dotnet-sdk-10.0 ffmpeg make gcc autoconf xorriso mjpegtools imagemagick \
-                 libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
-
-# 2) 本仓库
-git clone <本仓库> DVD-Audio-Maker && cd DVD-Audio-Maker
-
-# 3) 工具链源码树（本工程对 dvda-author 的改动以 patch 形式在仓库里）
-git clone https://github.com/fabnicol/dvda-author ../tools/dvda-author-mlp8
-cd ../tools/dvda-author-mlp8
+cd /root/dvda-author-mlp8
 git checkout 8fca43a
 git apply /path/to/DVD-Audio-Maker/docs/dvda-author-changes.patch
-cd -
-bash build_dvda_author_mlp.sh          # 编译出 dvda-author-dev 与 menu-bin
 
-# 4) 配置：只改 config.sh 一个文件
-#    DVDA_SRC              音源根目录
-#    DVDA_FINAL_DIR        ISO 输出目录
-#    DVDA_MLP_SOURCE / DVDA_MLP_EXTERNAL_DIR   用外部 MLP 时填
-#    DVDA_MENU             on = 选曲菜单 + 播放封面
-dotnet run --project src/DvdaMaker.Cli -- config   # 核对生效值
+cd /path/to/DVD-Audio-Maker
+bash build_dvda_author_mlp.sh
 ```
 
-### 出盘
+默认工具路径：
 
-```bash
-bash build.sh              # 全流程：扫描音源 → 编码/收取 MLP → 分盘
-                           #         → 生成 AUDIO_TS → 打包 ISO
-bash build.sh --dry-run    # 先看分盘计划（不出盘，秒级）
-bash verify.sh all         # 校验成品（结构 / 时间轴 / 无损性）
+```text
+/root/dvda-author-mlp8/src/dvda-author-dev
+/root/dvda-author-mlp8/local.ubuntu.20.10/bin/mkisofs
 ```
 
-产物写在 `DVDA_FINAL_DIR`；若配了 `DVDA_WINDOWS_DEST`，会自动用
-Windows 侧 robocopy 拷到 Windows（比走 9P 快得多）。
+源码树不在默认位置时，在 `config.sh` 中设置 `DVDA_AUTHOR`、`DVDA_MKISOFS` 和 `DVDA_AUTHOR_SRC`。
 
-### 开发工作副本的入口
+## 3. 配置
 
-正式业务入口统一为 C# CLI；不要再调用迁移前的 Python 脚本：
-
-```bash
-bash build.sh --dry-run
-bash build.sh
-bash verify.sh all
-
-dotnet run --project src/DvdaMaker.Cli -- plan
-dotnet run --project src/DvdaMaker.Cli -- build
-dotnet run --project src/DvdaMaker.Cli -- verify all
-```
-
-`build.sh` 执行 `prepare` 后再执行 `build`；已有有效 manifest、只想重新出盘时，
-可直接运行 C# CLI 的 `build`。工具链重编仍使用 `build_dvda_author_mlp.sh`。
-
-迁移前的 12 个根目录 Python 业务脚本已删除。需要查阅其最终版本时使用
-`python-reference-final` 标签，例如：
-
-```bash
-git show python-reference-final:02_build.py
-```
-
-### 改工具链源码
-
-改动**直接改源码树并 commit**，不再写补丁脚本：
-
-```bash
-cd tools/dvda-author-mlp8
-vim src/menu.c
-bash ../../dvda/local-bin/dvda.sh author          # 编译验证
-git commit -am "改了什么"                          # 提交到 dvda-maker 分支
-
-# 更新仓库里的改动集（供别的机器重建）
-git diff master -- src libutils \
-  > ../../dvda/scripts/docs/dvda-author-changes.patch
-
-# 更新仓库里的源码镜像时，将 src/ 与 libutils/ 下的 .c/.h
-# 从实际 dvda-author 工作树同步到 tools/dvda-author-mlp8/
-```
-
-同步时应把 `src/` 与 `libutils/` 下的 `.c`/`.h` **逐字节**复制进仓库的
-`tools/dvda-author-mlp8/`，并删除镜像中已不存在于工作树的旧文件。
-
-每项改动的依据见 [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.md)，
-试过但没接入的见 [`docs/DVDA-AUTHOR-DISABLED.md`](docs/DVDA-AUTHOR-DISABLED.md)。
-
-## 路径怎么写
-
-`config.sh` 里的路径是 **WSL 内**的写法。Windows 路径的换算规则：
-
-| Windows | WSL |
-|---------|-----|
-| `C:\Users\me\Music` | `/mnt/c/Users/me/Music` |
-| `D:\Music\Albums` | `/mnt/d/Music/Albums` |
-| `E:\` | `/mnt/e` |
-
-要点：
-
-- 盘符小写，`\` 换成 `/`
-- 路径含空格时**保留引号**：`DVDA_SRC="/mnt/d/My Music/Albums"`
-- 输出目录**不需要预先创建**，出盘时会自动建
-
-### 完整示例
-
-假设你的音乐在 `D:\Music\MyAlbums\`，按专辑分了子目录：
-
-```
-D:\Music\MyAlbums\                      <- DVDA_SRC 指向这里
-├── Album A (2024)\
-│   ├── 01. First Song.flac
-│   └── 02. Second Song.flac
-├── Album B (2025)\
-│   ├── 01. Song One.flac
-│   └── 02. Song Two.m4a
-└── Album C - Single\
-    └── 01. Only Song.flac
-```
-
-想让 ISO 出现在 `D:\DVD_Output\`，则 `config.sh` 中：
+最少需要设置音源和输出目录：
 
 ```bash
 DVDA_SRC="/mnt/d/Music/MyAlbums"
-DVDA_FINAL_DIR="/mnt/d/DVD_Output"
-DVDA_BUILD_DIR="/root/dvda-build"      # 建议留在 WSL 内部
-DVDA_TITLE="My DVD-Audio"              # 卷标: "My DVD-Audio 1", "My DVD-Audio 2"
+DVDA_FINAL_DIR="/home/user/dvda/out"
+DVDA_BUILD_DIR="/home/user/dvda/build"
+DVDA_TITLE="My DVD-Audio"
+DVDA_ISO_PREFIX="MyCollection"
 ```
 
-产出：
+Windows 与 WSL 路径的对应关系：
 
-```
-D:\DVD_Output\My_DVD_Audio_1.iso
-D:\DVD_Output\My_DVD_Audio_2.iso
-```
-
-启动时 `build.sh` 会回显所有生效路径，运行前可先核对一遍：
-
-```
-============================================================
- DVD-Audio Maker
-============================================================
-  音源     : /mnt/d/Music/MyAlbums
-  输出     : /mnt/d/DVD_Output
-  工作目录 : /root/dvda-build
-  光盘标题 : My DVD-Audio    (卷标: "My DVD-Audio 1", ... ; 文件名前缀: My_DVD_Audio)
-  日志     : /root/dvda-build/build.log
-```
-
-> **为什么工作目录建议放 WSL 内部**
->
-> 从 `/mnt/c`（9p 文件系统）读写比 WSL 内的 ext4 慢一个数量级。
-> MLP 缓存可达数 GB，放在 `/mnt/c` 会让整个流程慢好几倍。
-> 音源和输出放 Windows 盘没问题（音源只读一次、输出是最终复制）。
-
-### 音源的组织要求
-
-| 要求 | 原因 |
-|------|------|
-| 格式 `.flac` 或 `.m4a`（ALAC） | 递归扫描，深度不限 |
-| 带 `date` 标签 | 决定专辑先后顺序 |
-| 带 `track` 标签 | 专辑内曲序 |
-| 带 `album` 标签，**同专辑必须完全一致** | 专辑归一化与「专辑不拆散」分盘都依赖它 |
-| 声道数一致（全立体声或全单声道） | 本工具不做声道转换 |
-
-采样率与位深**可以混用**（44.1k / 48k / 96k，16-bit / 24-bit）：C# 准备流程会按专辑
-做归一化 —— 同专辑内以「多数采样率 + 该采样率下多数位深」为准，少数曲目自动
-重采样，保证整张专辑连续播放。
-
-### 磁盘空间
-
-```
-工作目录  约 = 源文件总大小 × 0.9   (MLP 缓存)
-输出目录  约 = 源文件总大小 × 1.1   (ISO)
-```
-
-构建与校验过程中的中间产物**用完自动清理**，不会长期占地方：
-
-| 中间产物 | 何时产生 | 大小 | 何时清理 |
-|---|---|---|---|
-| `<BUILD_DIR>/iso/discN.iso` | 构建 | ≈ ISO | packed 完成、成品拷到 `DVDA_FINAL_DIR` 后 |
-| `<BUILD_DIR>/out/discN/` | 构建 | ≈ ISO | 同上（内容已打包进 ISO） |
-| `<BUILD_DIR>/tmp/discN/` | 构建 | 数百 MB | 同上 |
-| `<BUILD_DIR>/disc-audit/` | 校验 | ≈ 2×ISO | 审计结束 |
-
-要留着翻看（检查 `AUDIO_TS` 里的文件、菜单渲染结果等）就设对应的环境变量：
-
-```bash
-DVDA_KEEP_INTERMEDIATE=1 bash local-bin/dvda.sh one 2        # 保留 iso/ 与 out/
-DVDA_KEEP_TMP=1          bash local-bin/dvda.sh one 2        # 保留 tmp/（菜单渲染图在这）
-DVDA_KEEP_AUDIT=1        bash local-bin/dvda.sh verify all   # 保留 disc-audit/
-```
-
-> 删除 `disc-audit/` 目录**要先补写权限** —— 里面可能是**旧版本
-> `xorriso -osirrox` 解出来的**（那种会保留 ISO 里的只读位，裸 `rm -rf`
-> 会报 Permission denied 并留下残缺目录）；Windows 的只读属性也会让
-> 迁移前实现中的 `shutil.rmtree` 会因此失败；当前 C# 清理逻辑会先恢复
-> 写权限，再递归删除这些目录。
-
----
-
-## 目录结构
-
-```
-DVD-Audio-Maker/
-├── README.md
-├── LICENSE                      # GPL-3.0 全文
-├── config.sh                    # ★ 唯一需要修改的文件
-├── build.sh                     # 一键流水线
-├── verify.sh                    # 成品校验入口
-├── src/                         # .NET 10 C# 业务实现
-├── tests/                       # 兼容性和二进制 fixture
-├── build_dvda_author_mlp.sh     # 重编支持 24-bit MLP 的 dvda-author
-└── docs/
-    ├── DVDA-AUTHOR-CHANGES.md   # 工具链改动清单与依据
-    ├── DVDA-AUTHOR-DISABLED.md  # 试过但没接入的改动
-    ├── dvda-author-changes.patch# 改动集（可直接 apply 到上游）
-    ├── TROUBLESHOOTING.md       # 问题诊断记录与修复细节
-    └── LICENSING.md             # 许可状况、第三方归属与法律说明
-
-tools/                           # 工具链源码镜像（只读副本，别在这改）
-└── dvda-author-mlp8/
-    ├── README.md                # 镜像说明：含什么/不含什么/怎么重建
-    ├── src/**/*.{c,h}           # 改动过的 dvda-author 源码（逐字节同步）
-    └── libutils/src/**/*.{c,h}
-```
-
----
-
-## 配置项一览
-
-全部在 `config.sh` 中。**优先级：环境变量 > config.sh > 内置默认值**。
-
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `DVDA_SRC` | *(空，必填)* | 音源根目录（只读） |
-| `DVDA_FINAL_DIR` | *(空，必填)* | ISO 输出目录，**建议放 Linux 侧**（见下） |
-| `DVDA_WINDOWS_DEST` | *(空)* | ISO 的 Windows 侧目标目录（如 `D:\\目录`）。填了它，构建结束会自动用 Windows 的 robocopy 拷过去；留空则不拷 |
-| `DVDA_BUILD_DIR` | `/root/dvda-build` | 中间产物根目录，**建议放 WSL 内部** |
-| `DVDA_TITLE` | `My DVD-Audio` | 光盘卷标；也是 ISO 文件名前缀的来源 |
-| `DVDA_ISO_PREFIX` | *(空)* | ISO 文件名前缀，留空由 `DVDA_TITLE` 派生 |
-| `DVDA_MAX_DISCS` | `2` | 期望的盘数上限；仅用于「放不放得下」的判断与提示，**不参与切分**；`0` = 不检查 |
-| `DVDA_GROUP_TRACK_LIMIT` | `99` | 每组最多轨数，上限 **99**（ATSI 表按曲目数动态分配） |
-| `DVDA_DISC_BYTES` | `4707319808` | 单盘容量上限（字节）；双层 DVD-9 可设 `8540123136` |
-| `DVDA_MLP_SOURCE` | `ffmpeg` | MLP 来源：`ffmpeg`（本工具链编码）/ `external`（用外部编码器产出） |
-| `DVDA_MLP_EXTERNAL_DIR` | *(空)* | 外部 MLP 根目录（仅 `external` 时用；结构须与音源一一对应） |
-| `DVDA_MENU` | `off` | 是否做出选曲菜单 + 播放封面（`on` / `off`） |
-| `DVDA_MENU_TRACKS_PER_PAGE` | `12` | 菜单每页最多几首；越小字越大、页越多 |
-| `DVDA_MENU_STILLPICS` | `on` | 播放时是否显示所属专辑封面（占 ASVS 预算） |
-| `DVDA_MENU_COVER_DIM` | `35` | 二级菜单背景上封面压暗程度（0~100，越大越暗、白字越清楚） |
-| `DVDA_MENU_INDEX_MIN_ALBUMS` | `4` | 专辑数达到此值才做一级「专辑索引」页；`0` = 一直做 |
-| `DVDA_MENU_FONT` | `Droid-Sans-Fallback` | 菜单字体（ImageMagick 字体名，**不能带空格**）；不可用时会自动换 |
-| `DVDA_AUTHOR` | `/root/dvda-author-mlp8/src/dvda-author-dev` | 自编译 dvda-author |
-| `DVDA_MKISOFS` | `/root/dvda-author-mlp8/local.ubuntu.20.10/bin/mkisofs` | patched mkisofs（支持 `-dvd-audio`） |
-| `DVDA_FFMPEG` / `DVDA_FFPROBE` | `ffmpeg` / `ffprobe` | 用 PATH 解析 |
-| `DVDA_AUTHOR_SRC` | `/root/dvda-author-mlp8` | 工具链源码树（改动已固化） |
-| `DVDA_LOSS_ERROR_S` | `0.05` | 解码采样数缺失超过此秒数 → FAIL |
-| `DVDA_LOSS_WARN_S` | `0.005` | 采样数差异超过此秒数 → WARN |
-
-派生路径（都在 `DVDA_BUILD_DIR` 下，无需配置）：
-```
-manifest.json     清单（步骤1 产出，步骤2 读取）
-mlp_index.json    MLP → 源文件/时长/重采样 索引 + 分盘计划
-                   （`__discs__` 段记录每盘/每组/每轨 → 源 MLP）
-decode_report.txt 解码完整性报告
-build.log         构建日志（真出盘；含 dvda-author 轨道表）
-build-dryrun.log  --dry-run 的日志（不含轨道表）
-mlp/              MLP 缓存（可复用，换源后仍有效）
-alacfix/          ALAC 修复产物（原文件不改动）
-menu/discN/       菜单素材（开 DVDA_MENU 时；背景图/封面/透明底图）
-out/ tmp/ iso/    出盘中间目录
-```
-
-> 为什么 dry-run 要单独写一份日志：`--dry-run` 不执行 dvda-author，日志里
-> 不会有轨道表。若覆盖 `build.log`，`dvda verify audit` 就再也取不到
-> 上次真出盘的审计依据，会把正确无误的 ISO 判为失败（详见
-> [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 12 节）。
-
-### ISO 输出到 Windows：自动拷，不用手动
-
-WSL2 里的 `/mnt/c`、`/mnt/d` 不是真正的挂载，而是通过 **9P 协议**跟 Windows
-侧通信：**写**要逐次跨虚拟机边界往返、**没有写回缓存**。实测同一个 2.92 GB
-文件：
-
-| 方式 | 耗时 |
+| Windows | WSL |
 |---|---|
-| 写本地 ext4 | 1.8 s |
-| **WSL 直写 `/mnt/d`（9P）** | **12.9 s** |
-| **Windows 侧 robocopy 拷出** | **7.3 s**（约 1.8×） |
+| `C:\Users\me\Music` | `/mnt/c/Users/me/Music` |
+| `D:\Music\Albums` | `/mnt/d/Music/Albums` |
 
-所以出盘落在 **Linux 侧**、再由 **Windows 原生**写出去更快。配置好之后**你
-仍然只跑一条命令**，构建的最后一步会自动做这件事：
+建议把 `DVDA_BUILD_DIR` 放在 WSL 的 ext4 文件系统中。MLP 缓存包含大量读写，放在 `/mnt/c` 或 `/mnt/d` 会明显变慢。
 
-```bash
-DVDA_FINAL_DIR="/home/<你>/dvda/out"          # Linux 侧
-DVDA_WINDOWS_DEST="D:\鸣潮DVD_Audio_ext"      # Windows 侧（自动拷过去）
-```
-
-`DVDA_WINDOWS_DEST` **留空**则不拷贝（产物只在 `DVDA_FINAL_DIR` 里）；
-**不在 WSL 里**（没有 `WSL_DISTRO_NAME`）时该项无意义，会跳过并提示。
-
-实现细节（C# ISO 发布与 Windows 复制实现）：
-
-- 用 `\wsl.localhost\<发行版>\...` 作为源，由 **robocopy** 读 WSL 侧
-  并写到 Windows 目标（`/J` 无缓冲大文件 I/O + `/MT:8` 多线程）。
-- **直接调 `Robocopy.exe`，不经过 `cmd.exe`** —— `cmd /c "a b c"` 对引号有
-  一条恶心的规则（会吃掉首尾引号并加上当前盘符），实测会把参数拆坏。
-  Windows 的 exe 在 WSL 里可直接执行，参数由 WSL 直接传给 CreateProcess。
-- **robocopy 退出码 0~7 都算成功**（1 = 有文件被复制，正常），≥8 才是失败。
-- 拷贝失败**不影响盘本身**：产物已经在 `DVDA_FINAL_DIR` 里，CLI 会提示
-  失败原因并指出产物位置。
-
-> 若 `DVDA_FINAL_DIR` 本身就在 `/mnt/...`，那就**不要**再设
-> `DVDA_WINDOWS_DEST`（否则等于走了两遍）。
-
-用环境变量临时覆盖（不改文件）：
+查看并检查生效配置：
 
 ```bash
-DVDA_SRC="/mnt/e/其他音源" DVDA_TITLE="Test" \
-  dotnet run --project src/DvdaMaker.Cli -- prepare
+dotnet run --project src/DvdaMaker.Cli -- config
+dotnet run --project src/DvdaMaker.Cli -- config --check
 ```
+
+配置优先级：
+
+```text
+环境变量 > config.sh > 内置默认值
+```
+
+配置文件只解析 `KEY=VALUE`，不会执行变量展开或命令替换。请填写绝对路径，不要在值中引用其他变量。
+
+## 4. 一键构建
+
+```bash
+bash build.sh --dry-run   # prepare + 预演分盘，不生成 ISO
+bash build.sh             # prepare + 正式出盘
+bash verify.sh all        # 完整校验
+```
+
+指定另一份配置：
+
+```bash
+bash build.sh --config /path/to/config.sh
+bash verify.sh all --config /path/to/config.sh
+```
+
+VS Code 内置任务：
+
+- `WSL: 预演分盘 (build.sh --dry-run)`
+- `WSL: 完整出盘 (build.sh)`
+- `WSL: 校验成品 (verify.sh)`
 
 ---
 
-## 选曲菜单
+# 音源要求
 
-`DVDA_MENU="on"` 时，每张盘会多出两样东西：
+推荐一个目录对应一张专辑：
 
-| 内容 | 落在哪里 | 规范依据 |
-|---|---|---|
-| **选曲菜单**：放进播放器先出菜单，可翻页、按专辑浏览、选曲 | `AUDIO_TS.IFO` + `AUDIO_TS.VOB` | DVD-Audio 的 **AMG 菜单** |
-| **播放封面**：每首曲子播放时显示所属专辑封面 | `AUDIO_SV.IFO` + `AUDIO_SV.VOB` | DVD-Audio 的 **ASVS** |
+```text
+音源根目录/
+├── Album A/
+│   ├── 01. First Song.flac
+│   ├── 02. Second Song.flac
+│   └── cover.jpg
+└── Album B/
+    ├── 01. Song One.m4a
+    └── 02. Song Two.m4a
+```
 
-音频本体（`AUDIO_TS/ATS_*.AOB`）**一个字节都不变**，仍是纯 DVD-Audio 盘。
+支持：
 
-### 需要什么
+- FLAC
+- M4A 容器中的 ALAC
+
+每个文件建议具有以下标签：
+
+| 标签 | 用途 |
+|---|---|
+| `date` | 决定专辑顺序 |
+| `track` | 决定专辑内曲序 |
+| `album` | 识别专辑及保持专辑完整 |
+| `title` | 曲目名称及菜单显示 |
+
+同一批音源必须使用相同声道数。采样率和位深可以混用；准备阶段会按专辑选择主要参数并处理少数不一致曲目。
+
+封面支持常见的 JPG、PNG 和 WebP。封面只用于菜单及播放静图，不会修改音频本体。
+
+# MLP 来源
+
+## 使用 FFmpeg
 
 ```bash
-sudo apt install -y mjpegtools imagemagick fonts-noto-cjk
-bash build_dvda_author_mlp.sh      # 会顺便编出菜单用的 dvdauthor / spumux
+DVDA_MLP_SOURCE="ffmpeg"
+DVDA_MLP_EXTERNAL_DIR=""
 ```
 
-- **`mjpegtools`**：菜单画面（MPEG-2 静帧）的编码
-- **`imagemagick`**：往画面上写曲名
-- **`fonts-noto-cjk`**：菜单文字要同时覆盖**中/日/韩 + ASCII**。
-  ⚠️ **别用 `fonts-wqy-microhei`** —— 它没有韩文；
-  ⚠️ **别用系统自带的 `fonts-droid-fallback`** —— 它是精简版，
-  有汉字/假名但**连 ASCII 都没有**，英文曲名会整条空白。
-  字体不对时 C# 字体解析器会告警并自动换，装一个覆盖全的即可。
-- `dvdauthor` / `spumux` 由 `build_dvda_author_mlp.sh` 自己编译。
-  **不要用 apt 的 `dvdauthor`** —— 它没有菜单需要的 `AMGM` 跳转补丁。
+构建器会从音源生成 MLP，执行结构检查、字节对齐及 EOS 校验。有效缓存保存在工作目录中，之后可以复用。
 
-### 封面从哪来
-
-**不需要另外准备**：直接读音源目录里的 `<专辑>/cover.jpg`
-（也认 `.jpeg` / `.png` / `.webp`）。没有封面的专辑那一页背景是黑的。
-
-音源目录本来就带封面，所以这一项零成本：
-
-```
-音源根/
-├── 某专辑 - EP/
-│   ├── 01. 曲名.flac
-│   ├── 02. 曲名.flac
-│   └── cover.jpg        ← 菜单用它做背景，播放时也显示它
-```
-
-### 菜单长什么样
-
-菜单是**两级**的：
-
-**一级 = 专辑索引页**（专辑数 >= `DVDA_MENU_INDEX_MIN_ALBUMS` 时才做）
-
-- 顶部一条**大标题**（光盘标题，与二级菜单同一条），下面才是网格。
-- 背景**不是纯黑**：默认由脚本现画（对角渐变 + 与格子对齐的细网格 +
-  径向暗角），每张缩略图外面还有一圈深灰描边把它「托」出来。
-- 4 列 x 3 行的**专辑封面缩略图**，一页最多 12 个专辑。
-- 每张缩略图**下方是专辑名**（取主标题，括号里的说明去掉）。
-  一行放不下就自动换行、再放不下就缩字号；极小号也放不下才截断加 `…`。
-- 缩略图是**正方形且不裁切**（封面本身是 1:1，铺满格子会裁掉上下两成）。
-- 按某个缩略图（连名称一起都算按钮区）→ 跳到该专辑的选曲页（二级）。
-  选中哪个格子，那格会亮起一圈**红框**。
-- 底部有上一页 / 下一页。⚠️ 翻页**只在同一块内**：索引页之间、或专辑页之间，
-  不跨块（去专辑靠点缩略图，用 Next 会猜错你想听哪张；从第一张专辑页往回
-  是最后一个索引页，那是跨块）。所以**最后一个索引页没有「下一页」**、
-  **第一张专辑页没有「上一页」**。
-- 专辑多于 12 个时一级菜单本身也会分页。
-- 索引页自己**不带** 「Menu」按钮（这一页就是索引）。
-
-**二级 = 选曲页**，一页一个专辑：
-
-- 页面顶部是**大标题 = 光盘标题**（每页都有）。
-- 接着是**小标题 = 该专辑名**（比大标题略小）。
-- 小标题下面就是这个专辑的**曲目列表**（不再给每首曲子加专辑名前缀 ——
-  一页只有一个专辑，不需要）。
-- 每页背景 = **该专辑的封面**（铺满画面，压暗 `DVDA_MENU_COVER_DIM`%
-  以便读字；缺 `cover.jpg` 的专辑留黑）。
-- 二级菜单的压暗值刻意比商业盘更亮，封面能看清；正文用白字加描边
-  保证对比度。
-- 光标停在某一首时，那一首**左边会出现一个红色小三角**（选中指示）。
-- 左下角依次堆叠三个按钮：**Next**、**Previous**、**Menu**
-  （Menu = 返回专辑索引页，只在做了索引页时才有）。三者都**只在有意义时**
-  才出现，位置固定不变：
-  · 第一张专辑页**没有 Previous**（往回是索引页，属于跨块）；
-    那一行留空，`Menu` 仍在原来的位置
-  · 最后一页**没有 Next**
-  · `Menu` 只在做了索引页时才有
-- 专辑曲目数超过 `DVDA_MENU_TRACKS_PER_PAGE` 时该专辑拆成两页
-  （续页小标题带「（续）」）。
-
-播放时**一首播完会自动接下一首**（整组在一个「title」里，等同 CD 的连续
-播放），播放器的「下一段 / 上一段」也能逐轨前进；按专辑分组只影响菜单，
-不影响播放顺序。
-
-- 同一专辑只存**一张**封面，专辑内后续曲目沿用同一张（省 ASVS 预算）。
-  ⚠️ 「沿用上一张」是按顺序生效的：若某个专辑没有 `cover.jpg`，
-  它之后那几首会显示**上一个专辑**的封面，而不会留空。
-  `dvda verify menu` 会把这种情况报成 `[WARN]`。
-
-### 文字样式与「选中」是怎么表示的
-
-**所有文字一套样式**：白色字身 + 在右下方 2 px 处再画一遍黑字（相当于
-描边/阴影）。索引页的专辑名也使用同一规则；素材由 C# 菜单生成器组织，
-实际文字绘制由 ImageMagick 与 dvda-author 完成。
-
-**选中与未选中时文字完全一样** —— 选中只靠**红色**表示，而且红只出现在
-**与文字不相交**的图形上：
-
-| 位置 | 未选中 | 选中 |
-|---|---|---|
-| 曲名 / 专辑名 / 箭头文字 | 白字 + 黑描边 | 同左（不变） |
-| 行左侧的三角箭头 | 不显示 | **红色三角** |
-| 索引页格子 | 无框 | **红框** |
-
-> 为什么不做成「选中时描边变红」：DVD 子画面**整幅只有 4 个调色板项**
-> （spumux 还会对**每个按钮**再限一次 4 项）。描边是同一段文字偏移 2 px，
-> 与字身必然重叠，重叠处会多出一种「白字身 + 红描边」的组合 ——
-> 实测每组按钮涨到 **5 种**，spumux 直接失败
-> （`ERR: Cannot pick button masks`），菜单整页丢失。
-> 详见 `docs/TROUBLESHOOTING.md` 第 23 节。
-
-### 可以调的地方
+## 使用外部 MLP
 
 ```bash
-DVDA_MENU_TRACKS_PER_PAGE="12"    # 一页最多几首（专辑超过才拆页）；越小字越大
-DVDA_MENU_COVER_DIM="35"          # 调大 → 背景更暗、白字更清楚
-DVDA_MENU_STILLPICS="on"          # 设 off 则不显示播放封面（只做菜单）
-DVDA_MENU_INDEX_MIN_ALBUMS="4"    # 专辑少于这个数就不做一级索引页
-
+DVDA_MLP_SOURCE="external"
+DVDA_MLP_EXTERNAL_DIR="/path/to/mlp-root"
 ```
 
-索引页的画面**由 C 现画**（`menu.c` 的 `dvda_make_index_pages()`），
-不依赖任何外部素材，也不往仓库里塞二进制。它由三层背景 + 每格的
-[封面 + 专辑名] + 缩略图描边合成：
+外部目录必须与音源目录同构：
 
-```
-背景   对角渐变（左上青蓝 → 右下深靛）+ 与格子对齐的细网格 + 径向暗角
-格子   封面缩到正方形居中（封面本身是 1:1，不裁切）
-名称   白字 + 自动换行；字号按文字宽度估（放不下就缩）
-描边   每个格子描一圈深灰，把封面从背景里「托」出来
+```text
+音源：<DVDA_SRC>/Album/01 Song.flac
+MLP ：<DVDA_MLP_EXTERNAL_DIR>/Album/01 Song.mlp
 ```
 
-几何常量（格子大小、缩略图边长、名称字号上下限、背景配色）**只在
-`tools/dvda-author-mlp8/src/include/menu.h` 定义一份**，改那里即可。
+构建器会探测 MLP 的实际参数，并拒绝空文件、重名歧义、缺少 EOS、无效结构或多个曲目复用同一文件。
 
-> 以前这页是脚本拼好再传给 dvda-author 的，几何在脚本和 C 里各有一份，
-> 改一处忘另一处就会出现「点到的不是想选的那张」。搬进 C 之后只有一份。
+外部模式仍需要原始音源，因为曲序、专辑、标题、封面及时长校验来自音源元数据。
 
-配色是**黑白**：正文全白、下划线与按钮框全黑，所有文字带 2 px 黑色阴影
-（阴影画在子画面的高亮层 —— 详见 `docs/TROUBLESHOOTING.md` 第 23 节）。
+# 分盘规则
 
-### 注意
+- 以专辑为最小单位，默认不拆散专辑
+- 按全局曲序逐盘填满，而不是按盘数平均分配
+- `DVDA_MAX_DISCS` 只设置允许的盘数上限，不参与切分
+- 默认单盘容量为 DVD-5：`4,707,319,808` 字节
+- DVD-9 可设置 `DVDA_DISC_BYTES="8540123136"`
+- 每个 DVD-Audio 音频组最多 99 轨
 
-1. **`--nmenus` 等短选项不要自己拼**：dvda-author 的 `-6`/`-7` 短选项没声明参数
-   （`atoi(NULL)` 直接段错误），本工具链一律用长选项 `--nmenus=N`。
-  你不需要手写这些参数 —— `dvda build` 会自动计算。
-2. **菜单文字可能画不出来而不报错**：字号过大导致文字与下划线重叠时，
-   `spumux` 找不到按钮遮罩、菜单直接缺失，而 dvda-author 仍返回 0。
-   本工具链在构建后**显式核对** `AUDIO_TS.VOB` 是否真的产出，缺了就报错。
-3. **播放封面有容量上限**：ASVS 每盘上限 1024 扇区（≈2 MB）。
-   按「每专辑一张」算，一张盘能放约 46 张封面 —— 本项目盘1 有 27~28 张，宽裕。
-   若改成「每首一张」则**会超**，脚本不会替你挡，注意曲目数。
-  构建后 `dvda verify menu` 会核对封面表与实际专辑数是否对得上。
-4. **开菜单后 ISO 根目录会多一个 `VIDEO_TS`**：菜单最后要用 `dvdauthor`
-   写虚拟机命令，而它是 DVD-Video 工具，会按惯例建一个空的 `VIDEO_TS`。
-   它与 dvda-author 的 `-n/--no-videozone` 无关，是预期行为。
+常用配置：
 
-### 关掉菜单
+```bash
+DVDA_MAX_DISCS="2"
+DVDA_GROUP_TRACK_LIMIT="99"
+DVDA_DISC_BYTES=""
+```
+
+# 菜单与播放封面
+
+菜单默认关闭：
 
 ```bash
 DVDA_MENU="off"
 ```
 
-菜单素材是**可重建的中间产物**，关掉后不影响已有出盘结果；
-但要重出盘才会消失。
-
----
-
-## MLP 来源：自己编码，还是用外部编码器
-
-本工具链**不替你挑编码器**。两条路都能出合格的盘，差别在于你要不要多装一套
-工具、以及愿意在兼容性上留多少余量。下面把两者的取舍讲清，你按自己的情况定。
-
----
-
-### A 路线：用本工具链自带的 ffmpeg 编码
-
-`DVDA_MLP_SOURCE="ffmpeg"`（**config.sh 里的初始值**）。不需要任何额外工具，
-只要系统装了带 `mlp` 编码器的 ffmpeg。
-
-**优点**
-
-- 零额外安装、零额外操作，`bash build.sh` 一条命令走完
-- 与出盘、校验同一条流水线，编码参数不会与分盘结果脱节
-- 采样率/位深按源本身走（不做无谓的重采样），因此 MLP 体积通常更小、
-  分盘更宽松
-
-**缺点**
-
-- ffmpeg 的 `mlp` 编码器在官方源码里被标记为 **experimental**，含多处 TODO：
-  不支持 20-bit、LPC 阶数上限 8、restart header 只实现了 `0x31ea` 一种变体
-- 它**不是 MLP 的参考实现**。产出在压缩载荷上与参考实现不同（这是无损编码，
-  载荷本就允许不同，不影响解码结果）
-- 需要本工具链做一次头部修补才符合参考实现的头部格式（这一步是自动的，
-  见下文「两者都会做的事」）
-
-**适合**：想一条命令出盘、不介意用非参考实现。
-
----
-
-### B 路线：用 SurCode MLP 等外部编码器
-
-`DVDA_MLP_SOURCE="external"` + `DVDA_MLP_EXTERNAL_DIR="<你的 MLP 目录>"`。
-
-**优点**
-
-- **SurCode MLP 是 MLP 的参考实现**，头部与流结构即基准，不需要任何事后修补
-- 硬件兼容性上少一层不确定性 —— 若你打算实机刻盘并在硬件播放机用，
-  参考实现的产出是更保守的选择
-
-**缺点**
-
-- 要另装工具，且 SurCode 没有命令行界面、只接受单声道 WAV，立体声需先拆分
-  左右声道再逐个导入。Windows 上有 GUI 自动化包装器（如
-  「Batch MLP Encoder」）可代劳，但它依赖 UI 自动化，界面变化/弹窗/超时都会
-  失败
-- 需要你自己把 MLP 编好、再按下面的结构摆好，本工具链**不会去调用该编码器**
-- 部分工具会把**全部曲目统一采样率/位深**（例如一律重采样到 48000/24）。
-  这会改变音频本身（不再是你给的那份），分盘结果也会随之变化
-- 体积上两版各有大小，**不能一概而论**：本项目 147 首实测，ffmpeg 版
-  7.30 GiB、SurCode 版 7.09 GiB —— 后者反而更小，因为 A 路线为了让
-  头部与参考实现一致，把 major sync 间隔压到 8 个 access unit，
-  代价约 +3.9%
-
-**适合**：想用参考实现、或对硬件播放有顾虑、且愿意多花一道手工工序。
-
----
-
-### 两者都会做的事
-
-不论走哪条路，下面这些都由本工具链负责，你不需要为它们做选择：
-
-- 以**实际探测到的参数**分组与分盘（外部编码器改过参数时以改后的为准）
-- 头部合规性修补（仅在 A 路线需要）与出盘、打包、校验
-
----
-
-## 外部 MLP：怎么摆放与配置
-
-**第 1 步：把 MLP 按下面的结构放好**
-
-```
-<DVDA_MLP_EXTERNAL_DIR>/
-├── Album A/
-│   ├── 01. First Song.mlp
-│   └── 02. Second Song.mlp
-├── Album B/
-│   └── 01. Song One.mlp
-└── …
-```
-
-规则只有一条：**把音源路径开头的 `DVDA_SRC` 换成 `DVDA_MLP_EXTERNAL_DIR`，
-中间的相对路径原样保留，只把扩展名换成 `.mlp`。**
-
-举例。音源根目录与其中一个文件是：
-
-```
-DVDA_SRC = /mnt/d/Music/MyAlbums
-音源     = /mnt/d/Music/MyAlbums/Album A/01. First Song.flac
-```
-
-设 `DVDA_MLP_EXTERNAL_DIR="/mnt/d/Music/mlp"`，则对应的 MLP 是：
-
-```
-MLP      = /mnt/d/Music/mlp/Album A/01. First Song.mlp
-```
-
-要换掉的是**整个音源根目录那一段**（上例的 `/mnt/d/Music/MyAlbums`），
-不是把它删掉就算了 —— 外部目录的层级完全可以与音源无关，只要
-「相对路径那一段」保持原样即可。
-
-镜像路径找不到时，会退回「按**文件名**在整个外部目录里搜一次」——
-所以就算 MLP 被平铺在别的层级下也大多能用（但要求文件名唯一）。
-
-**第 2 步：改两行配置**
+启用菜单：
 
 ```bash
-DVDA_MLP_SOURCE="external"
-DVDA_MLP_EXTERNAL_DIR="/mnt/d/Music/mlp"
+DVDA_MENU="on"
+DVDA_MENU_TRACKS_PER_PAGE="12"
+DVDA_MENU_INDEX_MIN_ALBUMS="4"
+DVDA_MENU_STILLPICS="on"
+DVDA_MENU_COVER_DIM="35"
 ```
 
-**第 3 步：先空跑看一眼**
+生成内容包括：
+
+- AMG 专辑索引和选曲页：`AUDIO_TS.IFO`、`AUDIO_TS.VOB`
+- ASVS 播放封面：`AUDIO_SV.IFO`、`AUDIO_SV.VOB`
+- 中、日、韩及拉丁字符覆盖检查
+- 页面、按钮跳转、封面数量和视觉内容验证
+
+菜单仍属于 DVD-Audio 规范；音频保存在 `ATS_*.AOB` 中，不会转成 DVD-Video 音频。
+
+> 不要使用发行版自带的普通 `dvdauthor` 替代本项目编译的版本。菜单跳转依赖 AMGM 补丁。
+
+# 输出到 Windows
+
+在 WSL 中，建议先将 ISO 生成到 Linux 文件系统，再由 Windows 原生 `Robocopy.exe` 拷出：
 
 ```bash
-bash build.sh --dry-run
+DVDA_FINAL_DIR="/home/user/dvda/out"
+DVDA_WINDOWS_DEST="D:\DVD_Output"
 ```
 
-重点看三处输出：
+复制使用 `\\wsl.localhost\<发行版>\...` 作为源。Robocopy 退出码 0–7 视为成功；复制失败只产生警告，不会删除 Linux 侧已发布的 ISO。
 
-```
-已定位 147/147 个外部 MLP            ← 必须 147/147，少了会直接报错退出
-[提示] 19 首的参数被外部编码器改过…   ← 外部改了采样率/位深时会列出
---- 第 1 盘: N 个组 ---               ← 分组结果
-```
+如果 `DVDA_FINAL_DIR` 本身就在 `/mnt/c` 或 `/mnt/d`，不要再设置 `DVDA_WINDOWS_DEST`。
 
-确认无误后 `bash build.sh` 正式出盘。
+# 命令参考
 
-#### ⚠️ 音源文件仍然必须存在
+以下示例使用源码工作区中的 CLI。Windows 发布包中将命令前缀替换为 `dvda.cmd`。
 
-这是最容易踩的一点：**不能只给 MLP**。原因：
+## 配置
 
-| 还需要音源提供什么 | 用途 |
-|--------------------|------|
-| `album` / `date` / `track` 标签 | 专辑分组与曲目排序（MLP 容器不存标签） |
-| 时长 | 解码完整性校验（MLP 也不存时长） |
-| 原生采样率/位深 | 判定外部编码器是否改过参数 |
-
-所以 `DVDA_SRC` 仍要指向原来那批 FLAC/M4A，`dvda prepare` 会照常扫描它们。
-只是编码环节被跳过。
-
-> 即：**外部模式换的是「音频从哪来」，不是「元数据从哪来」。**
-
----
-
-## 外部模式的两个行为差异
-
-**1. 参数以实测为准，不信 manifest**
-
-外部编码器可能改采样率/位深。例如 SurCode 会把**全部曲目统一到 48000/24**，
-于是 44100/24 的 13 首、44100/16 的 4 首、48000/16 的 1 首、乃至一首
-96000/24 都会被重采样或改位深。
-
-所以外部模式下会逐个 `ffprobe` 实际产出，用**真实参数**做分组与分盘，
-并打印一张「源原生 → 外部 MLP」的对照表。这也意味着**外部分盘的盘数与
-自己编码可能不同**。
-
-**2. 校验策略会自动放宽**
-
-`verify.sh` 的「MLP 解码 PCM 与源音源逐字节一致」在外部改过采样率时
-**不做逐字节比对** —— 外部编码器的重采样滤波器与 soxr 不同，
-LSB 差异属预期，强行比对只会误报。此时改为核对
-「解码采样数 == 时长 × MLP 采样率」（±50ms）且解码无错误；
-`[2] 成品 ISO 内音轨与源 MLP 一致` 仍然逐字节比对（那两边是同一份 MLP）。
-
----
-
-## 处理逻辑
-
-1. **扫描** FLAC / M4A，用 `ffprobe` 读取参数与标签
-2. **专辑归一化**：同一专辑若采样率/位深不一致，以「多数采样率 + 该采样率下多数
-   位深」为目标重采样少数曲目，保证整张专辑在同一音频组内连续播放
-3. **分组排序**：按 (采样率, 位深) 分组，组内按发布日期 + 曲序排序
-4. **解码完整性校验**：每首跑一次「只解码不落盘」的 ffmpeg（`-f null -` + `astats`），
-   比对解码采样数与源声明采样数
-5. **MLP 编码**：直接以**源文件**为输入（无损，结果缓存复用），
-   需归一化的曲目在同一命令内完成 soxr 重采样
-6. **分盘**：按专辑发布顺序，**专辑不拆散**，逐盘填满
-7. **出盘**：`dvda-author` 生成 `AUDIO_TS`，补齐 AOB 扇区边界
-8. **打包**：`mkisofs -dvd-audio` 生成 ISO，复制到输出目录
-
-全程**不产生音频中间文件** —— MLP 直接由源文件编码而来，省下与源同等体量的
-落盘和一轮读写 I/O。
-
-### 两条容易被忽略的约束
-
-以下两点若处理不当，会**静默产出错误结果**（`dvda-author` 不会报错），
-C# 构建流程已强制处理。
-
-#### 1. 必须显式指定位深
-
-MLP 编码器会**沿用输入的位深**。而 `aresample` 只改采样率、**不改位深** ——
-44.1k/16 的源重采样到 48k 后仍是 16-bit，于是被编成 16-bit MLP 混进 24-bit
-的音频组：
-
-```
-1  04  48000  16  2 L-R  ...   ← 错：整组是 24-bit，这一轨却是 16-bit
+```bash
+dotnet run --project src/DvdaMaker.Cli -- config
+dotnet run --project src/DvdaMaker.Cli -- config --check
+dotnet run --project src/DvdaMaker.Cli -- config --shell
 ```
 
-**处理**：显式传 `-sample_fmt s16p` 或 `s32p`（MLP 只接受 planer 名，
-写 `s32` 会报 `not supported`），并在编码后用 `ffprobe` 复核采样率与位深。
+## 准备与构建
 
-#### 2. 时长不可回读，校验要用采样数
+```bash
+dotnet run --project src/DvdaMaker.Cli -- prepare
+dotnet run --project src/DvdaMaker.Cli -- plan
+dotnet run --project src/DvdaMaker.Cli -- build --dry-run
+dotnet run --project src/DvdaMaker.Cli -- build
+```
 
-MLP 容器**不记录 duration**（`ffprobe` 返回 `N/A`），无法靠回读时长核验完整性。
-
-**处理**：用 `astats` 在同一次解码中取实际采样数，与「源声明时长 × 目标采样率」
-比对；并由 `dvda build` 输出 `mlp_index.json` 记录「MLP → 源文件 / 声明时长 /
-重采样目标」，供 verify 侧使用。
-
-### 声道数约束
-
-DVD-Audio 同一音频组内所有曲目须同声道数。本工具链**不做声道转换**
-（单声道与立体声无法无损互转），因此 `dvda prepare` 会检查组内声道是否一致，
-不一致直接失败。
-
----
+`prepare` 生成 `manifest.json` 和解码报告。`plan` 使用已有 MLP 计算分盘，不调用 `dvda-author` 或 `mkisofs`。
 
 ## 校验
 
 ```bash
-bash verify.sh            # 全部
-bash verify.sh quick      # 快速结构校验（秒级）
-bash verify.sh capacity   # 单盘容量与结构
-bash verify.sh audit      # 光盘一致性审计
-bash verify.sh menu       # 选曲菜单与播放封面（开 DVDA_MENU 时才有意义）
-bash verify.sh timeline   # AOB 时间轴抽查
-bash verify.sh lossless   # MLP 无损性
-bash verify.sh config     # 打印当前配置
+dotnet run --project src/DvdaMaker.Cli -- verify quick
+dotnet run --project src/DvdaMaker.Cli -- verify capacity
+dotnet run --project src/DvdaMaker.Cli -- verify audit
+dotnet run --project src/DvdaMaker.Cli -- verify menu
+dotnet run --project src/DvdaMaker.Cli -- verify timeline
+dotnet run --project src/DvdaMaker.Cli -- verify lossless
+dotnet run --project src/DvdaMaker.Cli -- verify all
 ```
 
-**`quick` 是平时该跑的那个**（不解 AOB、不解码 MLP），做四件事：
+| 模式 | 检查内容 |
+|---|---|
+| `quick` | ISO、IFO、轨数、轨首 pack、cell 时间轴、静图引用 |
+| `capacity` | ISO 是否超过配置容量 |
+| `audit` | AOB 扇区、轨边界、PTS 与构建日志对账 |
+| `menu` | AMG/ASVS 结构、按钮跳转与页面视觉内容 |
+| `timeline` | 规划与成品时间轴 |
+| `lossless` | 源音频与 MLP 解码结果 |
+| `all` | 执行全部适用检查 |
 
-1. 构建日志里不得有 pack 补齐失败的记录
-2. 各音频组 IFO 声明的轨数之和 == 音源曲目数
-3. 每一轨的首扇区必须以 pack 头（`00 00 01 BA`）开头
-4. **每个 title（PGC）内的时间轴必须连续**：所有 cell 的 `first_pts` 严格递增、
-   末 cell 的结束对得上 `len_in_pts`；并报告每组「轨数 / title 数」
+指定输入：
 
-第 3 项是**唯一能查出「每盘少一首」的检查** —— 那种缺陷下 IFO 轨数、总时长、
-逐轨扇区表全都正常，只有字节对齐坏了，读盘端会整首丢弃（详见
-[TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 15 节）。
+```bash
+dotnet run --project src/DvdaMaker.Cli -- quick-check \
+  --iso-dir /path/to/iso \
+  --manifest /path/to/manifest.json \
+  --log /path/to/build.log
 
-第 4 项查的是**定位类**缺陷：把多首歌并进一个 title 时，若各自从 0 开始的
-PTS 没有整体平移，时间轴就会断成 N 段 —— 声音完全正常，但播放器按时间轴
-寻址任何一首都会落到第 1 首（「下一曲」跳回曲目 1，见 16.29）。
-它同时会告诉你「是不是每个组都只有一个 title」（多 title 时「下一曲」在
-title 边界不会继续，见 16.27）。
+dotnet run --project src/DvdaMaker.Cli -- verify menu --iso /path/to/disc.iso
+```
 
-**`menu` 是开菜单后该加的检查**。菜单最危险的地方是「不报错但没做出来」——
-菜单画面编码失败时 `dvda-author` 照样返回 0。这一项核对：
-菜单与封面文件是否真的产出、菜单页数是否与分页计划一致、
-`AUDIO_TS.IFO` 扇区数是否够容纳菜单表（上游 AMG 缓冲越界的判据）、
-播放封面是否超 ASVS 预算且封面表与实际专辑数对得上、
-**翻页链路**（各页 cell 地址链连续、next/prev 菜单号正确）、
-菜单画面不是纯色。
+## ALAC 与 M4A
 
-其中「翻页链路」与「封面表」两项都是**先把旧缺陷复现成报错**才留下的
-（见 [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 16.25 / 16.26）——
-否则你无法判断一条永远通过的检查到底有没有在做事。
+```bash
+dotnet run --project src/DvdaMaker.Cli -- alac check input.m4a
+dotnet run --project src/DvdaMaker.Cli -- alac repair input.m4a output.m4a
 
-`all` 会跑完整的一套（要解 4.5 GB 的 AOB 并解码 MLP，**很慢**），适合最终确认。
+dotnet run --project src/DvdaMaker.Cli -- convert /path/to/music --dry-run
+dotnet run --project src/DvdaMaker.Cli -- convert /path/to/music
+dotnet run --project src/DvdaMaker.Cli -- convert input.m4a --in-place
+```
 
-`dvda verify audit` 按音频组独立核对（扇区号在各组内从 0 起）：
+转换器会检查 PCM、标签和封面；`--in-place` 仅在转换及校验成功后删除源文件。
 
-| 检查 | 内容 |
-|------|------|
-| A | 组内 AOB 扇区总数 == 该组轨道表最大末扇区 + 1 |
-| B | 组内各轨扇区首尾相接（无缝无叠） |
-| C | 每个扇区都有 PTS |
-| D | 每个 PTS 下降点恰好落在某轨的首个扇区 |
-| E | 各轨起点的 PTS 取值 |
-| F | 每一轨的首扇区以 pack 头开头 |
+## MLP、AOB 与 ISO 工具
 
-> 审计会打印所用的构建日志及其修改时间。若目录里残留了上次构建的日志，
-> 会把新 AOB 与旧轨道表比对而**误报不一致**，所以脚本按 mtime 取最新者。
-> 正常情况下 `build.sh` 每次真出盘都会重写 `build.log`，保留这一份即可。
->
-> 注意：`--dry-run` **不碰** `build.log`（只写 `build-dryrun.log`），
-> 否则会把真出盘的轨道表冲掉，导致审计与 ISO 无损校验双双误报。
+```bash
+dotnet run --project src/DvdaMaker.Cli -- mlp --check file.mlp
+dotnet run --project src/DvdaMaker.Cli -- mlp --align file.mlp
+dotnet run --project src/DvdaMaker.Cli -- aob-pts ATS_01_1.AOB
+dotnet run --project src/DvdaMaker.Cli -- iso list disc.iso /AUDIO_TS
+dotnet run --project src/DvdaMaker.Cli -- iso extract disc.iso /AUDIO_TS/ATS_01_1.AOB output.aob
+```
 
----
+# 工作目录
 
-## 解码完整性校验
+`DVDA_BUILD_DIR` 下的主要内容：
 
-**判定规则**（`dvda prepare`）：
+```text
+manifest.json           音源清单
+decode_report.txt       解码完整性报告
+mlp/                    FFmpeg MLP 缓存
+mlp_index.json          正式 MLP 索引与分盘计划
+mlp_index-dryrun.json   预演索引，不覆盖正式索引
+alacfix/                ALAC 修复副本
+menu/                   菜单素材
+build.log               正式构建日志
+build-dryrun.log        预演日志
+out/、tmp/、iso/        出盘临时目录
+```
 
-| 条件 | 判定 |
-|------|------|
-| stderr 出现解码错误关键字 | **FAIL** |
-| 解码采样数比源声明少 > `DVDA_LOSS_ERROR_S` 对应值 | **FAIL** |
-| 采样数差异 > `DVDA_LOSS_WARN_S` 对应值 | WARN |
-| `astats` 未输出采样数（校验手段本身失效） | **FAIL** |
-| 音频组内声道数不一致 | **FAIL** |
-| 其余 | 通过 |
+正式构建成功后会清理可重建的大型中间目录。调试时可以临时设置：
 
-基准值 = `源声明时长 × 目标采样率`。
+```bash
+DVDA_KEEP_INTERMEDIATE=1 bash build.sh
+DVDA_KEEP_TMP=1 bash build.sh
+```
 
-### 自动修复：Apple ALAC 缺 END 标记
+# 开发与测试
 
-检测到解码异常时，会先尝试 C# ALAC END 修复器（见下一节）。
-修复成功则重新校验，采样数必须**精确等于**容器声明值，否则仍判 FAIL。
+需要 .NET 10 SDK：
 
-**原文件绝不修改**，修复产物写入 `<BUILD_DIR>/alacfix`，manifest 中通过
-`repaired` / `orig_src` 字段记录溯源信息。
+```bash
+dotnet build DVD-Audio-Maker.sln
+dotnet run --project tests/DvdaMaker.CompatibilityTests
+```
 
-**失败时**：打印问题清单 → 写入 `decode_report.txt` → **不生成 `manifest.json`**
-→ 以非零码退出 → `build.sh` 的 `set -e` 立即中止。
+真实样本测试：
 
----
+```bash
+dotnet run --project tests/DvdaMaker.CompatibilityTests -- \
+  --real-fixtures \
+  "/path/to/reference-discs" \
+  "/path/to/external-mlp"
+```
 
-## 它解决了什么
+真实 ISO 和 MLP 不进入仓库；测试只保存可重复验证的结构、哈希和扇区基线。
 
-DVD-Audio 制作工具链（[dvda-author](https://github.com/fabnicol/dvda-author)）
-停留在 2020 年，直接使用会遇到若干硬障碍。本仓库的主要内容就是这些障碍的
-**修复补丁与 C# 验证器**。下面是这些问题在本工具链里已得到的处理，
-排查细节见 [TROUBLESHOOTING](docs/TROUBLESHOOTING.md)。
+# 常见问题
 
-### 1. 启用 24-bit 无损 MLP 压缩
+## 找不到 `dotnet`
 
-原版 `dvda-author` 是 core 构建，**不含 MLP**；随包的 FFmpeg 4.2.4 的 MLP
-编码器**只支持 16-bit**；`mlp.c` 也是按 FFmpeg 4.x API 写的。
+源码运行需要 .NET 10 SDK。Windows 自包含发布包不需要另装 .NET。
 
-**处理**：重新编译，链接系统 FFmpeg 8，迁移 API，放开 24-bit，并把填充逻辑
-改为按 plane 写入。
+## 找不到 `dvda-author` 或 `mkisofs`
 
-**结果**：24-bit 音源压缩率约 **18%**，且**解码后与源 PCM 逐字节一致**。
+先检查配置：
 
-### 2. 修复时间轴（播放加速 / 进度条不可拖）
+```bash
+dotnet run --project src/DvdaMaker.Cli -- config --check
+```
 
-原版的 PES 时间戳计算有缺陷，导致**每个扇区的 PTS 都是常量**，播放器拿不到
-推进的时间戳 —— 表现为**进度条无法拖动**，并可能**加速播放**。
+工具树不在默认 `/root/dvda-author-mlp8` 时设置：
 
-**处理**：修正采样数累积。
+```bash
+DVDA_AUTHOR="/path/to/dvda-author-dev"
+DVDA_MKISOFS="/path/to/mkisofs"
+DVDA_AUTHOR_SRC="/path/to/dvda-author-tree"
+```
 
-| 指标 | 修复前 | 修复后 |
-|------|--------|--------|
-| `PTS_length` | 0 | 16,084,725 |
-| 扇区 PTS | 恒定 98 | 98 → 16,084,673 递增 |
-| 时间跨度 | 0 秒 | 178.718 秒（与源一致） |
-| 异常步长 | 100% | 0.000% |
+`DVDA_AUTHOR_SRC` 的父目录还用于定位 `menu-bin`，启用菜单时不能遗漏。
 
-### 3. 修复 Apple ALAC 的解码丢帧
+## Windows 构建误用了 WSL Bash
 
-Apple 编码器产出的 ALAC（Apple Music 等）会在 ffmpeg 下**静默丢帧**，
-而同一文件在 foobar2000 / Apple 播放器里播放完全正常。
+不要运行 PATH 中来源不明的裸 `bash`。Windows 工具链应从 `build-all.bat` 启动；它会定位 MSYS2 的 `usr\bin\bash.exe` 并拒绝 WSL 环境。
 
-**根因**：Apple 周期性插入的「未压缩帧」缺少规范的 END 标记，
-ffmpeg 将其误读为单声道元素而丢弃整帧。
+## 菜单文字为空或中文显示成日文字形
 
-**处理**：把 END 标记写回（只改帧尾填充的 3 位，**不触碰任何样本数据**）。
-修复后采样数精确等于容器声明值，解码报错归零，且无损性经两层验证。
+确认发布包或 `menu-bin/fonts/` 中存在独立的 SC、JP、KR 字体。不要直接把 `.ttc` 交给 ImageMagick；它通常只使用 face 0，而 Noto Sans CJK 的 face 0 是日文字形。
 
-**只影响 m4a 音源**；若你的音源是 FLAC，可忽略此项。
+## 构建很慢
 
-### 4. 拦截源文件损坏
+- 将工作目录放在本地 ext4 或 NTFS，而不是 WSL 9P 路径
+- 检查实时杀毒软件是否拖慢 `configure`、`make` 或大量短进程
+- 保留并复用有效的 MLP 缓存
+- 已有 SurCode MLP 时可以使用 `external` 模式
 
-真正的数据损坏会被解码完整性校验拦下，且**拒绝生成 `manifest.json`**。
+## `verify audit` 报缺少构建日志或轨道表
 
-### 5. 拦截位深与声道不一致
+审计依赖正式构建产生的 `build.log`。`--dry-run` 写入独立的 `build-dryrun.log`，不会替代正式日志。
 
-编码后用 `ffprobe` 复核，与所属音频组参数不一致即失败 —— 这类不一致
-`dvda-author` 不会报错，会直接产出参数混杂的非法音频组。
+## WSL 启动时提示无法转换某个 Windows PATH
 
-### 6. 其他修复
+这通常是 Windows PATH 中存在当前不可访问的盘符或目录，与 DVD-Audio 构建本身无关。只要所需的 .NET、FFmpeg 和工具链路径可用即可。
 
-- `dvda-author` 的 ATSI 表原本是**固定 3 扇区的栈数组**，单组超过约 65 轨就
-  写爆栈。已改为**按曲目数动态分配**（实测每轨约 56.5 字节），
-  扇区数也按实际用量算 —— 单组可放到 99 轨，小组合仍只占 2 扇区
-- 末轨 AOB 可能少写几字节填充，导致文件不是 2048 的整数倍（已自动补齐）
-- `fn_strtok()` 处理空串时会写零长度的栈数组，把调用方的 `globals` 指针踩坏
-  （`--stillpics` 的空项就会触发，已修）
+# 文档
 
----
+- [`docs/CSHARP-MIGRATION.md`](docs/CSHARP-MIGRATION.md)：C# 迁移状态与实现边界
+- [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.md)：`dvda-author` 改动及依据
+- [`docs/DVDA-AUTHOR-DISABLED.md`](docs/DVDA-AUTHOR-DISABLED.md)：试验过但未启用的改动
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)：历史问题、诊断与修复记录
+- [`docs/LICENSING.md`](docs/LICENSING.md)：第三方组件及许可说明
+- [`tools/win-build/README.md`](tools/win-build/README.md)：Windows 原生工具链构建
 
-## 已知限制
+# 许可
 
-- 单组最多 **99 轨**（= `MAX_TRACKS`，也是 ATSI 表的上限）。
-  超过时按专辑边界再拆一组
-- 非 core 构建下**不能传 `-9`/`-X`**（会因 `make_absolute` 返回 NULL 崩溃）
-- MLP 只支持 `s16p` / `s32p`，即 16-bit 与 24-bit；其他位深需先转换
-- 不做声道转换：混用单声道与立体声会失败
-- 源文件若**真正损坏**（数据缺失）无法修复，只能拦下；
-  但 Apple ALAC 的「缺 END 标记」问题**可以自动修复**
-- `--aob-extract` 提取音频时会在收尾阶段段错误退出（上游已知行为），
-  但提取出的音轨数据完整（MD5 与源一致），不影响光盘播放
-- 光盘仅含 `AUDIO_TS`（纯 DVD-Audio）。开 `DVDA_MENU` 后会多出菜单与封面，
-  以及菜单作者化顺带产生的空 `VIDEO_TS`（预期行为）
-- ffmpeg 编码的 MLP 与参考实现（SurCode）在**压缩载荷**上不同 —— 两者都是
-  无损，解码结果一致，但字节流不同。若需要与参考实现完全一致的编码，
-  只能改用 `DVDA_MLP_SOURCE="external"` 并提供自己编的 MLP
-- **「foobar2000 能播放」不能推出硬件能播** —— 软件端几乎都用 libavcodec 的
-  `mlp` 解码器，与本工具链用的编码器同源，自洽性容易满足；
-  硬件实现是独立的一版，且厂商容错程度无从预判。唯一可靠的验证是真机刻盘
-- **播放器的「上一曲 / 下一曲」按钮不可用**（其他功能不受影响）。
-  实测（PowerDVD，两组单 title 的盘）：播放任意一首都显示 `曲目0/56` ——
-  播放器**始终不知道当前播到第几首**，所以「上一曲」无反应、「下一曲」只会
-  回到第 1 首。而**选曲菜单、播放器的「跳转至」曲目列表、自动连播、播放封面
-  都正常**。
-  成因：DVD-Audio 里「当前位置 → 第几首」需要一张**分曲区间表**
-  （`ATSI_MAT` 的 `ATS_PTT_SRPT`），而 dvda-author **从不写它**；
-  而这张表在 DVD-Audio 里的确切布局我没有权威定义（照 DVD-Video 的同名表
-  类推着写过一次，结果「下一曲」没改善、还会让播放器崩 —— 已撤下）。
-  详见 [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 16.31 与 16.34。
-  要继续攻它，需要一张**商业 DVD-Audio 参考盘**来对比该字段，或 DVD-Audio
-  规范 Part 4（ATS 章节）里的表定义
-
----
-
-## 许可与法律
-
-**本仓库以 [GPL-3.0](LICENSE) 发布。**
-
-原因：本工程对 [dvda-author](https://github.com/fabnicol/dvda-author)
-（GPL-3.0）源码做了大量**修改**，仓库里含这些改动的 patch 与说明，
-属衍生作品，需与其许可保持一致。
-
-| 组件 | 许可 |
-|------|------|
-
-详见 [docs/LICENSING.md](docs/LICENSING.md)。
+本仓库代码按 [`GPL-3.0`](LICENSE) 发布。第三方源码、工具、字体、FFmpeg、`dvda-author`、`dvdauthor`、SurCode 及音频内容分别适用其各自许可；详情见 [`docs/LICENSING.md`](docs/LICENSING.md)。
