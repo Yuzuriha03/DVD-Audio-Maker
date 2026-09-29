@@ -48,7 +48,6 @@ pacman -S --needed mingw-w64-x86_64-gcc \
                    mingw-w64-x86_64-fontconfig \
                    mingw-w64-x86_64-libpng \
                    mingw-w64-x86_64-imagemagick \
-                   mingw-w64-x86_64-python-fonttools \
                    make
 ```
 
@@ -95,6 +94,8 @@ local.w10/bin/                            mkisofs / mjpegtools 等预编译二�
 
 字体只需要**一个静态 `.ttc`**：`NotoSansCJK-Regular.ttc`，放在源码树根
 （或用 `DVDA_FONT_SRC` 指定）。工具包会从它抽出 SC / JP / KR 三个单 face。
+提取、OpenType 重建、校验和修复及字符覆盖检查均由仓库内的
+`DvdaMaker.FontTool` 纯 C# 工具完成，不再需要 Python/fontTools。
 
 > ⚠️ **不要**用 Windows 自带的 `NotoSansSC-VF.ttf` / `NotoSansJP-VF.ttf` ——
 > 那些是**单语**字体（SC 版没有谚文），会给韩文标题开出空白。

@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DvdaMaker.Building\DvdaMaker.Building.csproj" />
     <ProjectReference Include="..\..\src\DvdaMaker.Configuration\DvdaMaker.Configuration.csproj" />
+    <ProjectReference Include="..\..\src\DvdaMaker.FontTool\DvdaMaker.FontTool.csproj" />
     <ProjectReference Include="..\..\src\DvdaMaker.Formats\DvdaMaker.Formats.csproj" />
     <ProjectReference Include="..\..\src\DvdaMaker.Processes\DvdaMaker.Processes.csproj" />
     <ProjectReference Include="..\..\src\DvdaMaker.Preparation\DvdaMaker.Preparation.csproj" />
