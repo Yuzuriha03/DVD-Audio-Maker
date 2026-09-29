@@ -319,6 +319,26 @@ MLP ：<DVDA_MLP_EXTERNAL_DIR>/Album/01 Song.mlp
 
 外部模式仍需要原始音源，因为曲序、专辑、标题、封面及时长校验来自音源元数据。
 
+## 直接调用 SurCode Batch MLP Encoder
+
+```bash
+DVDA_MLP_SOURCE="surcode-batch"
+DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
+DVDA_MLP_BATCH_ENCODER="C:/path/to/Batch-MLP-Encoder-3"
+DVDA_MLP_SURCODE_EXE="C:/path/to/SurCode MLP/surcodemlp.exe"
+DVDA_MLP_EAC3TO_EXE="C:/path/to/eac3to/eac3to.exe"
+DVDA_MLP_SURCODE_SAMPLE_RATE="48000"
+DVDA_MLP_SURCODE_BITS="24"
+```
+
+构建器会把缺少或过期的 FLAC 按专辑作为命令行参数传给 Batch MLP Encoder，
+将输出暂存到纯 ASCII 工作目录，再移动到与音源同构的 MLP 缓存目录。留空
+`DVDA_MLP_SURCODE_EXE` 和 `DVDA_MLP_EAC3TO_EXE` 必须在 `config.sh` 中显式配置，
+不会使用 Batch MLP Encoder GUI 曾经保存的路径。已有且通过结构校验的 MLP 会直接复用。
+
+旧的 `surcode` 值仅复用现成 MLP，行为与 `external` 相同；只有
+`surcode-batch` 会把 FLAC 传给 Batch MLP Encoder 并调用官方 SurCode 编码器。
+
 # 分盘规则
 
 - 以专辑为最小单位，默认不拆散专辑

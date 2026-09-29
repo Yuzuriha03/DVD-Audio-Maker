@@ -329,7 +329,7 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
         Directory.CreateDirectory(work);
         try
         {
-            if (firstTrack.MlpSource == "external" && firstTrack.ExternalResampled)
+            if (firstTrack.MlpSource is "external" or "surcode-batch" && firstTrack.ExternalResampled)
             {
                 var decoded = await ReadDecodedSampleCountAsync(
                     firstTrack.MlpPath, cancellationToken).ConfigureAwait(false);

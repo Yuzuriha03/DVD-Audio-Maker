@@ -141,6 +141,9 @@ DVDA_DISC_BYTES=""
 # ---------------------------------------------------------------------------
 # ffmpeg   = 本工具链自己编码（默认）
 # external = 使用已编好的 MLP，跳过编码阶段
+# surcode  = 旧分支：直接使用 SurCode 已经编码好的 MLP（等同 external）
+# surcode-batch = 新分支：调用 Batch-MLP-Encoder-3，将 FLAC 交给官方
+#                 surcodemlp.exe 主动编码
 #
 # 选 external 时需同时设 DVDA_MLP_EXTERNAL_DIR，且目录结构要与音源一一对应：
 #
@@ -154,6 +157,15 @@ DVDA_DISC_BYTES=""
 # 本工具链以**实际探测到的参数**为准来分组与分盘，并在与源不一致时给出提示。
 DVDA_MLP_SOURCE="ffmpeg"
 DVDA_MLP_EXTERNAL_DIR=""
+DVDA_MLP_BATCH_ENCODER=""
+# 通过 --temp 和 --output 传给 Batch MLP Encoder；留空则使用工作目录下的默认路径。
+DVDA_MLP_BATCH_TEMP_DIR=""
+DVDA_MLP_BATCH_OUTPUT_DIR=""
+# surcode-batch 模式下，以下两项必须指向实际存在的 EXE。
+DVDA_MLP_SURCODE_EXE=""
+DVDA_MLP_EAC3TO_EXE=""
+DVDA_MLP_SURCODE_SAMPLE_RATE="48000"
+DVDA_MLP_SURCODE_BITS="24"
 
 
 

@@ -128,6 +128,7 @@ var tests = new (string Name, Action Run)[]
     ("派生路径和 ISO 名称", DerivedPathsAndNames),
     ("限制组轨数量", ClampGroupTrackLimit),
     ("规范化 MLP 来源", NormalizeMlpSource),
+    ("SurCode Batch 参数与路径", BuildSurcodeBatchArguments),
     ("Shell 单引号转义", EscapeShellAssignment),
     ("Shell 默认键集兼容 Python", PreserveLegacyShellKeySet),
     ("配置来源与有效键集合", DescribeConfigurationSources),
@@ -295,8 +296,47 @@ static void NormalizeMlpSource()
 {
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=EXTERNAL", path =>
         Equal("external", Load(path).MlpSource));
+    WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=SURCODE", path =>
+        Equal("surcode", Load(path).MlpSource));
+    WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=SURCODE-BATCH", path =>
+        Equal("surcode-batch", Load(path).MlpSource));
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=unknown", path =>
         Equal("ffmpeg", Load(path).MlpSource));
+}
+
+static void BuildSurcodeBatchArguments()
+{
+    WithConfig(
+        "DVDA_SRC=C:/Music\nDVDA_FINAL_DIR=C:/Out\n" +
+        "DVDA_MLP_SOURCE=surcode-batch\nDVDA_MLP_EXTERNAL_DIR=C:/MLP\n" +
+        "DVDA_MLP_BATCH_ENCODER=C:/Batch\n" +
+        "DVDA_MLP_BATCH_TEMP_DIR=C:/ConfiguredTemp\n" +
+        "DVDA_MLP_BATCH_OUTPUT_DIR=C:/ConfiguredOutput\n" +
+        "DVDA_MLP_SURCODE_EXE=C:/SurCode/surcodemlp.exe\n" +
+        "DVDA_MLP_EAC3TO_EXE=C:/eac3to/eac3to.exe\n",
+        path =>
+        {
+            var options = Load(path);
+            Equal("C:/ConfiguredTemp", options.MlpBatchTempDirectory);
+            Equal("C:/ConfiguredOutput", options.MlpBatchOutputDirectory);
+            var provider = new SurcodeMlpProvider(options, new ProcessRunner());
+            var arguments = provider.BuildArguments(
+                "C:/Temp", "C:/Stage", ["C:/Music/Album/01.flac", "C:/Music/Album/02.flac"]);
+            SequenceEqual(new[]
+            {
+                "--batch", "--temp", "C:\\Temp", "--output", "C:\\Stage",
+                "--sample-rate", "48000", "--bits", "24",
+                "--surcode", "C:\\SurCode\\surcodemlp.exe",
+                "--eac3to", "C:\\eac3to\\eac3to.exe", "--",
+                "C:\\Music\\Album\\01.flac", "C:\\Music\\Album\\02.flac",
+            }, arguments);
+            Equal(
+                Path.Combine("C:/MLP", "Album", "01.mlp"),
+                SurcodeMlpProvider.DestinationPath(
+                    Path.GetFullPath("C:/Music/Album/01.flac"),
+                    Path.GetFullPath("C:/Music"),
+                    "C:/MLP"));
+        });
 }
 
 static void EscapeShellAssignment() =>
