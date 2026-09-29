@@ -25,9 +25,9 @@
 | 3 | **编工具链** | `build-all.bat` | 约 2 分钟 |
 | 4 | 准备音源 | 拷 FLAC 进去 | — |
 | 5 | 改配置 | 编辑 `config.sh` | — |
-| 6 | 扫描 + 校验音源 | `dvda.cmd 01_prepare.py` | 约 3 分钟 |
-| 7 | **出盘** | `dvda.cmd 02_build.py` | 约 1 小时 |
-| 8 | 校验成品 | `dvda.cmd quick_check.py` 等 | 约 1 分钟 |
+| 6 | 扫描 + 校验音源 | `dvda.cmd prepare` | 约 3 分钟 |
+| 7 | **出盘** | `dvda.cmd build` | 约 1 小时 |
+| 8 | 校验成品 | `dvda.cmd verify all` | 约 1 分钟 |
 
 阶段 1、2 只需做一次。之后换音源重出盘，只走 4~8。
 
@@ -105,7 +105,7 @@ local.w10/bin/                            mkisofs / mjpegtools 等预编译二�
 ### 3. 编工具链
 
 工具包放在**仓库的 `tools\win-build\`** 下最省事（它会自动找到仓库根的
-`01_prepare.py`），源码树放在 `tools\win-build\src\`。然后：
+C# CLI 项目），源码树放在 `tools\win-build\src\`。然后：
 
 ```
 tools\win-build\build-all.bat
@@ -130,8 +130,9 @@ tools\win-build\release\DVD-Audio-Maker.tar.gz
 tools\win-build\logs\                    各步骤日志
 ```
 
-发布目录是**自包含**的（12 个 exe + 100 个 DLL + 三语字体 + ImageMagick
-配置），拷到任何 Windows 机器都能跑，**目标机器不需要 MSYS2**。
+发布目录是**自包含**的（C# CLI、.NET 运行时、工具链 exe/DLL、三语字体和
+ImageMagick 配置），拷到任何 Windows 机器都能跑，目标机器不需要 Python、
+.NET Runtime、MSYS2 或 WSL。
 
 > 工具链源码改过之后重新编：再跑一次 `build-all.bat` 即可，它会重跑
 > `configure` 与 `make`。刻意**不做** configure 缓存 —— 产物里写死了源码树
@@ -161,7 +162,7 @@ D:\Music\MyAlbums\
 
 ### 5. 配置
 
-**只需要改一个文件**：`release\DVD-Audio-Maker\scripts\config.sh`。
+**只需要改一个文件**：`release\DVD-Audio-Maker\config.sh`。
 
 ```bash
 DVDA_SRC="D:/Music/MyAlbums"                       # 音源根目录（递归扫描）
@@ -184,16 +185,16 @@ DVDA_MENU="on"                                     # 选曲菜单 + 播放封面
 
 ```bat
 cd tools\win-build\release\DVD-Audio-Maker
-dvda.cmd 01_prepare.py      :: 扫描 + 归一化 + 解码校验 + 生成 manifest
-dvda.cmd 02_build.py        :: 编码 MLP + 分盘 + 生成菜单 + 出 ISO
+dvda.cmd prepare            :: 扫描 + 归一化 + 解码校验 + 生成 manifest
+dvda.cmd build              :: 编码 MLP + 分盘 + 生成菜单 + 出 ISO
 ```
 
-`01_prepare.py` 做四件事，**不产 WAV**（省空间）：
+`dvda prepare` 做四件事，**不产 WAV**（省空间）：
 
 1. 扫描音源，探测采样率 / 位深 / 声道 / 时长
 2. 校验**解码完整性**（顺带自动修复 Apple ALAC「未压缩帧缺 END 标记」的缺陷）
 3. 组内参数一致性检查（同一组里采样率/位深/声道必须一致）
-4. 写出 `manifest.json`（`02_build.py` 读它）
+4. 写出 `manifest.json`（`dvda build` 读它）
 
 这一步**必须通过**才继续。成功的样子：
 
@@ -206,7 +207,7 @@ group_48000_24: 131 首
 manifest.json 已生成
 ```
 
-`02_build.py` 逐曲编 MLP（**已编码的会缓存复用**）、按体积逐盘填满、
+`dvda build` 逐曲编 MLP（**已编码的会缓存复用**）、按体积逐盘填满、
 生成菜单与封面、调 `dvda-author` 出盘、`mkisofs` 打包成 ISO。
 
 > 想先看它打算怎么分盘、不真出盘：加 `--dry-run`。
@@ -218,19 +219,18 @@ manifest.json 已生成
 ### 7. 校验成品
 
 ```bat
-:: 注意：quick_check 收的是「ISO 所在**目录**」，不是单个 .iso 文件
-dvda.cmd quick_check.py   D:\DVD_Output
-dvda.cmd check_aob_pts.py D:\DVD_Output\Wuthering_Waves_Singles_EPs_1.iso
+dvda.cmd verify quick
+dvda.cmd verify all
 ```
 
-| 脚本 | 参数 | 查什么 |
+| 命令 | 参数 | 查什么 |
 |---|---|---|
-| `quick_check.py` | ISO **目录** | 结构：IFO 声明轨数、每轨首扇区是 pack 头、时间轴（cell PTS）是否连续、静图引用号是否越界 |
-| `check_aob_pts.py` | 单个 `.iso` | AOB 里每个扇区的 PES 时间戳是否随播放推进（**进度条能不能拖**就看它） |
-| `verify_menu.py` | 单个 `.iso` | 菜单：按钮数、跳转目标、高亮层 |
-| `audit_disc.py` | 单个 `.iso` | 从构建日志解析轨道表，与 IFO 对账 |
+| `verify quick` | 无（读 config） | IFO 轨数、轨首 pack、cell 时间轴与静图引用 |
+| `verify audit` | 无（读 config） | AOB 扇区、轨边界、PTS 与构建日志对账 |
+| `verify menu` | 无（读 config） | 菜单页、跳转链、播放静图和索引页视觉内容 |
+| `verify all` | 无（读 config） | 容量、结构、审计、菜单、时间轴与 MLP 无损验证 |
 
-`quick_check.py` 成功的样子：
+`dvda verify quick` 成功输出会逐盘列出结构检查结果，并以 `[OK] 校验通过` 收尾。
 
 ```
 ### Wuthering_Waves_Singles_EPs_1.iso  (4691195904 字节)
@@ -247,30 +247,16 @@ dvda.cmd check_aob_pts.py D:\DVD_Output\Wuthering_Waves_Singles_EPs_1.iso
 快速校验 全部通过 ✔
 ```
 
-> **全部校验脚本都是纯 Python，不需要 xorriso、dd 或其他外部命令**
-> （只需 Python；`verify_menu.py` 另需 ffmpeg 抽帧看画面）。
+> 校验逻辑已内置于 C# CLI，不需要 Python、xorriso 或 dd；菜单画面抽帧仍使用
+> FFmpeg 与随工具链提供的 ImageMagick。
 > 早期版本用 `xorriso` 查 ISO 里的 LBA/列目录、用 `dd` 读扇区，
 > 而这两个在 Windows 上都没有（**MSYS2 也没有 xorriso 这个包**），
 > 导致校验在 Windows 上完全没法做。
-> 现在 ISO 访问统一走 `scripts/iso9660.py`（纯标准库，解析 PVD），
-> 两个平台都能跑，顺带快了约 10 倍（disc 1 + 2 从 3 秒降到 **0.33 秒**）。
+> 现在 ISO 访问统一由 C# `Iso9660Reader` 完成，不依赖 xorriso、dd 或 Python，
+> Windows 与 Linux 使用同一套解析和校验逻辑。
 
-各脚本的参数形式**不一样**，容易搞错：
-
-| 脚本 | 参数 |
-|---|---|
-| `quick_check.py` | ISO **所在目录**（会校验目录里所有 `*.iso`） |
-| `check_aob_pts.py` | 单个 `.iso` |
-| `audit_disc.py` | 无参数，读 `config.sh` 的 `DVDA_FINAL_DIR` / `DVDA_BUILD_DIR` / `DVDA_ISO_PREFIX` |
-| `verify_menu.py` | 同上（无参数） |
-
-全部通过的样子：
-
-```
-快速校验 全部通过 ✔                     （quick_check.py）
-审计结论: 全部通过 ✔                    （audit_disc.py）
-菜单校验全部通过 ✔                      （verify_menu.py）
-```
+`verify quick`、`verify audit`、`verify menu` 和 `verify all` 都从 `config.sh`
+读取成品目录、构建日志和 ISO 前缀；独立 `aob-pts` 命令接收一个或多个 `.AOB`。
 
 ### 8. 常见问题
 
@@ -293,7 +279,7 @@ PATH 里混进了别的工具链。工具包会把 MSYS2 的 `mingw64\bin` 与 `
 
 **`FileNotFoundError: [WinError 3] ... '/mnt/d/...'`**
 清单里存的是 `D:/...`，是路径转换逻辑把它改坏成了 WSL 形式。
-已修（`02_build.py` 的 `to_native()` 会判断平台）。若再出现，
+已在 C# 路径规范化逻辑中修复。若再出现，
 先确认 `manifest.json` 里的 `src` 是不是 `D:/...` 开头。
 
 **构建很慢 / 每个进程好几秒**
@@ -324,10 +310,10 @@ grep -rl fontname-jp src libutils        # 应输出 2 个文件
 | 阶段 | 用时 | 产物 |
 |---|---|---|
 | `build-all.bat`（含 configure + 两个项目 + 组装 + 打包） | **1 分 41 秒** | `release\DVD-Audio-Maker\` 203 MB |
-| `01_prepare.py`（147 首扫描 + 解码校验） | **约 2 分钟** | `manifest.json` 87 KB |
-| `02_build.py` 首次（147 首 MLP 编码） | **约 12 分钟** | — |
-| `02_build.py` 再次（MLP 全缓存） | **5 分 48 秒** | 两张 ISO |
-| `quick_check.py` | **0.33 秒** | 全部通过 |
+| `dvda prepare`（147 首扫描 + 解码校验） | **约 2 分钟** | `manifest.json` 87 KB |
+| `dvda build` 首次（147 首 MLP 编码） | **约 12 分钟** | — |
+| `dvda build` 再次（MLP 全缓存） | **5 分 48 秒** | 两张 ISO |
+| `dvda verify quick` | **约 1 秒** | 全部通过 |
 
 音源：45 张专辑 / 147 首 FLAC，6.43 GiB → MLP 7.30 GiB（+13.49%）
 
@@ -344,8 +330,8 @@ Wuthering_Waves_Singles_EPs_2.iso   3,328,147,456  (58 首, 余 1.38 GB)
 | AOB 可解码 | `ffmpeg -i <抽取出的 AOB>` | 识别为 `mpeg` / `Audio: mlp, 48000 Hz, stereo, s32 (24 bit)` |
 | AOB 边界 | 抽取扇区 5173..2290469，末字节须落 2048 边界 | ✔ |
 | AOB 体积 | AOB ÷ MLP = 1.0208 | 与既有开销系数 1.0215~1.0220 吻合 |
-| 结构 | `quick_check.py` | 147 轨齐全、89+58 轨首扇区全为 pack 头、时间轴连续、静图引用号不越界 |
-| 时间轴 | `check_aob_pts.py` | 两盘均「PTS 随播放单调递增，时间轴正常」 |
+| 结构 | `dvda verify quick` | 147 轨齐全、89+58 轨首扇区全为 pack 头、时间轴连续、静图引用号不越界 |
+| 时间轴 | `dvda verify audit` / `dvda aob-pts` | PTS 随播放单调递增，下降点与 title 边界一致 |
 
 ---
 
@@ -358,7 +344,7 @@ Wuthering_Waves_Singles_EPs_2.iso   3,328,147,456  (58 首, 余 1.38 GB)
 
 ```bash
 # 基础依赖
-sudo apt install python3 ffmpeg make gcc autoconf xorriso \
+sudo apt install dotnet-sdk-10.0 ffmpeg make gcc autoconf xorriso \
                  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
 
 # 确认 ffmpeg 支持 MLP 编解码
@@ -389,7 +375,7 @@ bash build_dvda_author_mlp.sh
 >
 > 改动过的**源码另在仓库里镜像了一份**（`tools/dvda-author-mlp8/`，只有
 > `src/` 与 `libutils/` 下的 `.c`/`.h`，约 1.2 MB），便于直接在仓库里读和搜。
-> 那棵镜像是**只读副本**，以工作树为准（`local-bin/sync_repo.py` 会重新生成）；
+> 那棵镜像是**只读副本**，以实际 dvda-author 工作树为准；
 > 不含 `.o`、可执行文件、Makefile、第三方的 ffmpeg/ImageMagick 源码树。
 >
 > 从**全新上游 clone** 开始时，只需应用改动集：
@@ -422,7 +408,7 @@ DVDA_FINAL_DIR="/mnt/d/DVD_Out"  # ISO 输出到哪里
 查看当前生效的配置：
 
 ```bash
-python3 dvda_config.py
+dotnet run --project src/DvdaMaker.Cli -- config
 ```
 
 ### 5. 运行
@@ -461,7 +447,7 @@ MLP 是封闭的专有格式。**SurCode MLP Encoder**（Minnetonka，Windows �
 #### A. 用本仓库自带的 ffmpeg 编码
 
 什么都不用装。`config.sh` 里 `DVDA_MLP_SOURCE="ffmpeg"`（初始值）即可，
-`02_build.py` 会直接从音源编码 MLP，不产生中间 WAV。
+`dvda build` 会直接从音源编码 MLP，不产生中间 WAV。
 
 取舍见 [MLP 来源](#mlp-来源自己编码还是用外部编码器) 一节。
 
@@ -522,21 +508,21 @@ graph LR
 
 ### 7. （可选）把 M4A / ALAC 音源转成 FLAC
 
-本流水线**可以直接读 M4A** —— `01_prepare.py` 会顺手修掉 Apple ALAC 的缺 END
+本流水线**可以直接读 M4A** —— `dvda prepare` 会顺手修掉 Apple ALAC 的缺 END
 标记问题（见下方「自动修复」一节）。如果你想把音源先统一成 FLAC，用
-`m4a2flac.py`：
+`dvda convert`：
 
 ```bash
-python3 m4a2flac.py /path/to/music           # 目录递归
-python3 m4a2flac.py a.m4a b.m4a --in-place   # 指定文件，转完删掉源
-python3 m4a2flac.py /path/to/music --dry-run # 先看会做什么
+dotnet run --project src/DvdaMaker.Cli -- convert /path/to/music
+dotnet run --project src/DvdaMaker.Cli -- convert a.m4a b.m4a --in-place
+dotnet run --project src/DvdaMaker.Cli -- convert /path/to/music --dry-run
 ```
 
 依赖 `ffmpeg` / `ffprobe` / `metaflac`（`sudo apt install ffmpeg flac`）。
 
 它做三件普通转换工具不做的事：
 
-| 项 | 普通转换工具 | `m4a2flac.py` |
+| 项 | 普通转换工具 | `dvda convert` |
 |---|---|---|
 | ALAC 缺 END 标记 | 静默丢帧，并被固化进 FLAC | 先修补再转 |
 | 标签名 | MP4 名原样写入（FLAC 播放器读不到） | 规范化，并剔除 MP4 容器专用标签 |
@@ -596,7 +582,7 @@ bash build.sh
 
 ```bash
 # 1) 依赖
-sudo apt install python3 ffmpeg make gcc autoconf xorriso mjpegtools imagemagick \
+sudo apt install dotnet-sdk-10.0 ffmpeg make gcc autoconf xorriso mjpegtools imagemagick \
                  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
 
 # 2) 本仓库
@@ -615,7 +601,7 @@ bash build_dvda_author_mlp.sh          # 编译出 dvda-author-dev 与 menu-bin
 #    DVDA_FINAL_DIR        ISO 输出目录
 #    DVDA_MLP_SOURCE / DVDA_MLP_EXTERNAL_DIR   用外部 MLP 时填
 #    DVDA_MENU             on = 选曲菜单 + 播放封面
-python3 dvda_config.py                 # 核对生效值
+dotnet run --project src/DvdaMaker.Cli -- config   # 核对生效值
 ```
 
 ### 出盘
@@ -667,13 +653,12 @@ git commit -am "改了什么"                          # 提交到 dvda-maker �
 git diff master -- src libutils \
   > ../../dvda/scripts/docs/dvda-author-changes.patch
 
-# 更新仓库里的源码镜像（这个脚本也会一起刷新）
-python3 ../../dvda/local-bin/sync_repo.py
+# 更新仓库里的源码镜像时，将 src/ 与 libutils/ 下的 .c/.h
+# 从实际 dvda-author 工作树同步到 tools/dvda-author-mlp8/
 ```
 
-`sync_repo.py` 会把 `src/` 与 `libutils/` 下的 `.c`/`.h` **逐字节**拷进
-仓库的 `tools/dvda-author-mlp8/`，并**删掉仓库里多出来的**（源码树删了文件，
-仓库不能留旧版）。
+同步时应把 `src/` 与 `libutils/` 下的 `.c`/`.h` **逐字节**复制进仓库的
+`tools/dvda-author-mlp8/`，并删除镜像中已不存在于工作树的旧文件。
 
 每项改动的依据见 [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.md)，
 试过但没接入的见 [`docs/DVDA-AUTHOR-DISABLED.md`](docs/DVDA-AUTHOR-DISABLED.md)。
@@ -755,7 +740,7 @@ D:\DVD_Output\My_DVD_Audio_2.iso
 | 带 `album` 标签，**同专辑必须完全一致** | 专辑归一化与「专辑不拆散」分盘都依赖它 |
 | 声道数一致（全立体声或全单声道） | 本工具不做声道转换 |
 
-采样率与位深**可以混用**（44.1k / 48k / 96k，16-bit / 24-bit）：脚本会按专辑
+采样率与位深**可以混用**（44.1k / 48k / 96k，16-bit / 24-bit）：C# 准备流程会按专辑
 做归一化 —— 同专辑内以「多数采样率 + 该采样率下多数位深」为准，少数曲目自动
 重采样，保证整张专辑连续播放。
 
@@ -786,8 +771,8 @@ DVDA_KEEP_AUDIT=1        bash local-bin/dvda.sh verify all   # 保留 disc-audit
 > 删除 `disc-audit/` 目录**要先补写权限** —— 里面可能是**旧版本
 > `xorriso -osirrox` 解出来的**（那种会保留 ISO 里的只读位，裸 `rm -rf`
 > 会报 Permission denied 并留下残缺目录）；Windows 的只读属性也会让
-> `shutil.rmtree` 失败。脚本里的 `rmtree_rw()` 两种情况都处理了
-> （`os.chmod` 在 Windows 上能清掉只读属性）。
+> 旧 Python 实现中的 `shutil.rmtree` 会因此失败；当前 C# 清理逻辑会先恢复
+> 写权限，再递归删除这些目录。
 
 ---
 
@@ -798,17 +783,10 @@ DVD-Audio-Maker/
 ├── README.md
 ├── LICENSE                      # GPL-3.0 全文
 ├── config.sh                    # ★ 唯一需要修改的文件
-├── dvda_config.py               # 配置加载器（bash 与 Python 共用）
 ├── build.sh                     # 一键流水线
-├── 01_prepare.py                # 步骤1：扫描 + 专辑归一化 + 解码校验
-├── 02_build.py                  # 步骤2：MLP 编码 → 分盘 → 出盘 → 打包 ISO
-├── mlp_align.py                 # MLP 输出合规性校验与修补
-├── alac_endfix.py               # 修复 Apple ALAC 未压缩帧缺 END 标记
-├── m4a2flac.py                  # M4A/ALAC → FLAC（修缺陷、规范化标签与封面）
 ├── verify.sh                    # 成品校验入口
-├── quick_check.py               # 快速结构校验（秒级，不解 AOB）
-├── audit_disc.py                # 光盘一致性审计
-├── check_aob_pts.py             # AOB 逐扇区 PTS 检查
+├── src/                         # .NET 10 C# 业务实现
+├── tests/                       # 兼容性和二进制 fixture
 ├── build_dvda_author_mlp.sh     # 重编支持 24-bit MLP 的 dvda-author
 └── docs/
     ├── DVDA-AUTHOR-CHANGES.md   # 工具链改动清单与依据
@@ -871,7 +849,7 @@ out/ tmp/ iso/    出盘中间目录
 ```
 
 > 为什么 dry-run 要单独写一份日志：`--dry-run` 不执行 dvda-author，日志里
-> 不会有轨道表。若覆盖 `build.log`，`audit_disc.py` / `verify.sh` 就再也取不到
+> 不会有轨道表。若覆盖 `build.log`，`dvda verify audit` 就再也取不到
 > 上次真出盘的审计依据，会把正确无误的 ISO 判为失败（详见
 > [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) 第 12 节）。
 
@@ -898,7 +876,7 @@ DVDA_WINDOWS_DEST="D:\鸣潮DVD_Audio_ext"      # Windows 侧（自动拷过去�
 `DVDA_WINDOWS_DEST` **留空**则不拷贝（产物只在 `DVDA_FINAL_DIR` 里）；
 **不在 WSL 里**（没有 `WSL_DISTRO_NAME`）时该项无意义，会跳过并提示。
 
-实现细节（`02_build.py: win_copy_to`）：
+实现细节（C# ISO 发布与 Windows 复制实现）：
 
 - 用 `\wsl.localhost\<发行版>\...` 作为源，由 **robocopy** 读 WSL 侧
   并写到 Windows 目标（`/J` 无缓冲大文件 I/O + `/MT:8` 多线程）。
@@ -906,7 +884,7 @@ DVDA_WINDOWS_DEST="D:\鸣潮DVD_Audio_ext"      # Windows 侧（自动拷过去�
   一条恶心的规则（会吃掉首尾引号并加上当前盘符），实测会把参数拆坏。
   Windows 的 exe 在 WSL 里可直接执行，参数由 WSL 直接传给 CreateProcess。
 - **robocopy 退出码 0~7 都算成功**（1 = 有文件被复制，正常），≥8 才是失败。
-- 拷贝失败**不影响盘本身**：产物已经在 `DVDA_FINAL_DIR` 里，脚本会提示
+- 拷贝失败**不影响盘本身**：产物已经在 `DVDA_FINAL_DIR` 里，CLI 会提示
   失败原因并指出产物位置。
 
 > 若 `DVDA_FINAL_DIR` 本身就在 `/mnt/...`，那就**不要**再设
@@ -915,7 +893,8 @@ DVDA_WINDOWS_DEST="D:\鸣潮DVD_Audio_ext"      # Windows 侧（自动拷过去�
 用环境变量临时覆盖（不改文件）：
 
 ```bash
-DVDA_SRC="/mnt/e/其他音源" DVDA_TITLE="Test" python3 01_prepare.py
+DVDA_SRC="/mnt/e/其他音源" DVDA_TITLE="Test" \
+  dotnet run --project src/DvdaMaker.Cli -- prepare
 ```
 
 ---
@@ -944,7 +923,7 @@ bash build_dvda_author_mlp.sh      # 会顺便编出菜单用的 dvdauthor / spu
   ⚠️ **别用 `fonts-wqy-microhei`** —— 它没有韩文；
   ⚠️ **别用系统自带的 `fonts-droid-fallback`** —— 它是精简版，
   有汉字/假名但**连 ASCII 都没有**，英文曲名会整条空白。
-  字体不对时脚本会告警并自动换，装一个覆盖全的即可。
+  字体不对时 C# 字体解析器会告警并自动换，装一个覆盖全的即可。
 - `dvdauthor` / `spumux` 由 `build_dvda_author_mlp.sh` 自己编译。
   **不要用 apt 的 `dvdauthor`** —— 它没有菜单需要的 `AMGM` 跳转补丁。
 
@@ -1013,13 +992,13 @@ bash build_dvda_author_mlp.sh      # 会顺便编出菜单用的 dvdauthor / spu
 - 同一专辑只存**一张**封面，专辑内后续曲目沿用同一张（省 ASVS 预算）。
   ⚠️ 「沿用上一张」是按顺序生效的：若某个专辑没有 `cover.jpg`，
   它之后那几首会显示**上一个专辑**的封面，而不会留空。
-  `verify.sh menu` 会把这种情况报成 `[WARN]`。
+  `dvda verify menu` 会把这种情况报成 `[WARN]`。
 
 ### 文字样式与「选中」是怎么表示的
 
 **所有文字一套样式**：白色字身 + 在右下方 2 px 处再画一遍黑字（相当于
-描边/阴影）。索引页的专辑名也是这套（那边是 Python 用 ImageMagick 的
-`caption:` 画两遍，其余是 dvda-author 用 `-draw "text"` 画两遍）。
+描边/阴影）。索引页的专辑名也使用同一规则；素材由 C# 菜单生成器组织，
+实际文字绘制由 ImageMagick 与 dvda-author 完成。
 
 **选中与未选中时文字完全一样** —— 选中只靠**红色**表示，而且红只出现在
 **与文字不相交**的图形上：
@@ -1071,14 +1050,14 @@ DVDA_MENU_INDEX_MIN_ALBUMS="4"    # 专辑少于这个数就不做一级索引�
 
 1. **`--nmenus` 等短选项不要自己拼**：dvda-author 的 `-6`/`-7` 短选项没声明参数
    （`atoi(NULL)` 直接段错误），本工具链一律用长选项 `--nmenus=N`。
-   你不需要手写这些参数 —— `02_build.py` 会算好。
+  你不需要手写这些参数 —— `dvda build` 会自动计算。
 2. **菜单文字可能画不出来而不报错**：字号过大导致文字与下划线重叠时，
    `spumux` 找不到按钮遮罩、菜单直接缺失，而 dvda-author 仍返回 0。
    本工具链在构建后**显式核对** `AUDIO_TS.VOB` 是否真的产出，缺了就报错。
 3. **播放封面有容量上限**：ASVS 每盘上限 1024 扇区（≈2 MB）。
    按「每专辑一张」算，一张盘能放约 46 张封面 —— 本项目盘1 有 27~28 张，宽裕。
    若改成「每首一张」则**会超**，脚本不会替你挡，注意曲目数。
-   构建后 `verify.sh menu` 会核对封面表与实际专辑数是否对得上。
+  构建后 `dvda verify menu` 会核对封面表与实际专辑数是否对得上。
 4. **开菜单后 ISO 根目录会多一个 `VIDEO_TS`**：菜单最后要用 `dvdauthor`
    写虚拟机命令，而它是 DVD-Video 工具，会按惯例建一个空的 `VIDEO_TS`。
    它与 dvda-author 的 `-n/--no-videozone` 无关，是预期行为。
@@ -1233,7 +1212,7 @@ bash build.sh --dry-run
 | 时长 | 解码完整性校验（MLP 也不存时长） |
 | 原生采样率/位深 | 判定外部编码器是否改过参数 |
 
-所以 `DVDA_SRC` 仍要指向原来那批 FLAC/m4a，`01_prepare.py` 会照常扫它们。
+所以 `DVDA_SRC` 仍要指向原来那批 FLAC/M4A，`dvda prepare` 会照常扫描它们。
 只是编码环节被跳过。
 
 > 即：**外部模式换的是「音频从哪来」，不是「元数据从哪来」。**
@@ -1282,7 +1261,7 @@ LSB 差异属预期，强行比对只会误报。此时改为核对
 ### 两条容易被忽略的约束
 
 以下两点若处理不当，会**静默产出错误结果**（`dvda-author` 不会报错），
-脚本里已强制处理。
+C# 构建流程已强制处理。
 
 #### 1. 必须显式指定位深
 
@@ -1302,13 +1281,13 @@ MLP 编码器会**沿用输入的位深**。而 `aresample` 只改采样率、**
 MLP 容器**不记录 duration**（`ffprobe` 返回 `N/A`），无法靠回读时长核验完整性。
 
 **处理**：用 `astats` 在同一次解码中取实际采样数，与「源声明时长 × 目标采样率」
-比对；并由 `02_build.py` 输出 `mlp_index.json` 记录「MLP → 源文件 / 声明时长 /
+比对；并由 `dvda build` 输出 `mlp_index.json` 记录「MLP → 源文件 / 声明时长 /
 重采样目标」，供 verify 侧使用。
 
 ### 声道数约束
 
 DVD-Audio 同一音频组内所有曲目须同声道数。本工具链**不做声道转换**
-（单声道与立体声无法无损互转），因此 `01_prepare.py` 会检查组内声道是否一致，
+（单声道与立体声无法无损互转），因此 `dvda prepare` 会检查组内声道是否一致，
 不一致直接失败。
 
 ---
@@ -1358,7 +1337,7 @@ title 边界不会继续，见 16.27）。
 
 `all` 会跑完整的一套（要解 4.5 GB 的 AOB 并解码 MLP，**很慢**），适合最终确认。
 
-`audit_disc.py` 按音频组独立核对（扇区号在各组内从 0 起）：
+`dvda verify audit` 按音频组独立核对（扇区号在各组内从 0 起）：
 
 | 检查 | 内容 |
 |------|------|
@@ -1380,7 +1359,7 @@ title 边界不会继续，见 16.27）。
 
 ## 解码完整性校验
 
-**判定规则**（`01_prepare.py`）：
+**判定规则**（`dvda prepare`）：
 
 | 条件 | 判定 |
 |------|------|
@@ -1395,7 +1374,7 @@ title 边界不会继续，见 16.27）。
 
 ### 自动修复：Apple ALAC 缺 END 标记
 
-检测到解码异常时，会先尝试 `alac_endfix.py` 的修复（见下一节）。
+检测到解码异常时，会先尝试 C# ALAC END 修复器（见下一节）。
 修复成功则重新校验，采样数必须**精确等于**容器声明值，否则仍判 FAIL。
 
 **原文件绝不修改**，修复产物写入 `<BUILD_DIR>/alacfix`，manifest 中通过
@@ -1410,7 +1389,7 @@ title 边界不会继续，见 16.27）。
 
 DVD-Audio 制作工具链（[dvda-author](https://github.com/fabnicol/dvda-author)）
 停留在 2020 年，直接使用会遇到若干硬障碍。本仓库的主要内容就是这些障碍的
-**修复补丁与验证脚本**。下面是这些问题在本工具链里已得到的处理，
+**修复补丁与 C# 验证器**。下面是这些问题在本工具链里已得到的处理，
 排查细节见 [TROUBLESHOOTING](docs/TROUBLESHOOTING.md)。
 
 ### 1. 启用 24-bit 无损 MLP 压缩

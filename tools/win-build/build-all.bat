@@ -8,7 +8,6 @@ REM  Optional environment variables (set before running):
 REM      MSYS2_ROOT       path to MSYS2 if not in a default location
 REM      DVDA_SRC_TREE    source tree if not in <kit>\src
 REM      DVDA_FONT_SRC    path to NotoSansCJK-Regular.ttc
-REM      DVDA_SCRIPTS     directory holding 01_prepare.py (default: repo root)
 REM      JOBS             parallel make jobs (default: CPU count)
 REM
 REM  Windows-style values (D:\x\y) are accepted; the bash side converts them.
@@ -67,7 +66,7 @@ set "MSYSTEM=MINGW64"
 set "CHERE_INVOKING=1"
 set "PATH=%MSYS2_ROOT%\mingw64\bin;%MSYS2_ROOT%\usr\bin;%PATH%"
 
-REM DVDA_SRC_TREE / DVDA_FONT_SRC / DVDA_SCRIPTS / MSYS2_ROOT are inherited
+REM DVDA_SRC_TREE / DVDA_FONT_SRC / MSYS2_ROOT are inherited
 REM from the environment automatically, so they are not repeated here.
 REM
 REM NOTE: the inner shell is /usr/bin/bash, deliberately NOT a bare "bash".

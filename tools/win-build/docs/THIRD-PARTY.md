@@ -40,9 +40,10 @@
 
 OFL 允许随软件再分发与嵌入。**不要**把字体单独作为商品出售。
 
-## 本工程自身的脚本
+## 本工程自身程序
 
-`scripts/` 下的 Python 脚本：**GPL v3**（与 dvda-author 一致）。
+随包的 `app/dvda.exe` 及其 C# 源码：**GPL v3**（与 dvda-author 一致）。
+发布包不再包含或调用 Python 业务脚本。
 
 ---
 

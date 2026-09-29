@@ -12,7 +12,6 @@
 #      MSYS2_ROOT=<MSYS2 根>        MSYS2 不在默认位置时
 #      DVDA_SRC_TREE=<源码树>       源码树不在 <工具包>/src 时
 #      DVDA_FONT_SRC=<ttc 路径>     Noto CJK 静态 ttc 的位置
-#      DVDA_SCRIPTS=<py 脚本目录>   默认 <工具包>/../..（仓库根）
 #      JOBS=<并行数>                默认 nproc
 #
 #  各步骤可单独跑（调试时有用）：
@@ -74,6 +73,6 @@ echo "  日志     : $KIT/logs/"
 echo
 echo "  下一步："
 echo "    1) 把 release/DVD-Audio-Maker 拷到目标机器（或打包成 tar.gz）"
-echo "    2) 目标机器只需装 Python 3.8+ 与 FFmpeg（在 PATH 里）"
-echo "    3) 改 scripts/config.sh 的 DVDA_SRC / DVDA_FINAL_DIR"
-echo "    4) dvda.cmd 01_prepare.py   然后   dvda.cmd 02_build.py"
+echo "    2) 目标机器只需 FFmpeg（在 PATH 里）；C# CLI 与 .NET 运行时已自带"
+echo "    3) 改 config.sh 的 DVDA_SRC / DVDA_FINAL_DIR"
+echo "    4) dvda.cmd prepare   然后   dvda.cmd build"
