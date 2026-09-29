@@ -1548,7 +1548,9 @@ mogrify 拿不到输出文件 → 把结果写到 stdout → **退出码 0**、�
 ### 验证
 
 ```bash
-source local-bin/env.sh && python3 scripts/verify_menu.py
+dotnet run --project src/DvdaMaker.Cli -- verify menu
+# 检查指定 ISO：
+dotnet run --project src/DvdaMaker.Cli -- verify menu --iso /path/to/disc.iso
 ```
 disc2（17 专辑 / 56 轨）实测：
 

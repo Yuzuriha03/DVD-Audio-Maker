@@ -3,6 +3,11 @@
 本文档汇总开发过程中遇到的实际问题、诊断方法与修复方案。
 每个案例都包含可复现的验证命令。
 
+> **迁移说明（2026-09-29）**：根目录 Python 业务脚本已经删除，现行命令均由
+> C# CLI 提供。文中提到 `01_prepare.py`、`02_build.py`、`verify_menu.py` 等名称时，
+> 若属于事故复盘或实现沿革，应按历史记录理解；最终源码保存在 Git 标签
+> `python-reference-final`。不要从旧段落复制 Python 命令用于当前主分支。
+
 ---
 
 ## 目录
@@ -110,7 +115,8 @@
 直接解析 AOB 内每个扇区的 PES 头时间戳，检查是否随播放推进：
 
 ```bash
-python3 check_aob_pts.py /path/to/ATS_01_1.AOB
+dotnet run --project src/DvdaMaker.Cli -- aob-pts /path/to/ATS_01_1.AOB
+# 发布包中：dvda aob-pts /path/to/ATS_01_1.AOB
 ```
 
 **异常时的输出**：
@@ -569,11 +575,13 @@ eb_raw 分布: 0=3, 1=2504
 修复:  200003cc 598a6a34 ... [样本数据] ... 111
 ```
 
-工具：`dvda_scripts/alac_endfix.py`
+现行工具：C# CLI 的 `alac` 子命令。
 
 ```bash
-python3 alac_endfix.py --check x.m4a          # 只检测
-python3 alac_endfix.py x.m4a x.fixed.m4a      # 修复到新文件
+dotnet run --project src/DvdaMaker.Cli -- alac check x.m4a
+dotnet run --project src/DvdaMaker.Cli -- alac repair x.m4a x.fixed.m4a
+# 发布包中：dvda alac check x.m4a
+#           dvda alac repair x.m4a x.fixed.m4a
 ```
 
 修复效果（**采样数分毫不差**）：
@@ -598,9 +606,9 @@ python3 alac_endfix.py x.m4a x.fixed.m4a      # 修复到新文件
 
 ### 接入流水线
 
-`01_prepare.py` 现在会在解码校验失败时**自动尝试修复**：
+C# `dvda prepare` 会在解码校验失败时**自动尝试修复**：
 
-1. 检测到解码报错 → 调 `alac_endfix.find_bad_frames()`
+1. 检测到解码报错 → 调用 `AlacEndRepairer` 定位可修帧
 2. 有可修帧 → 修复到 `$DVDA_ALAC_FIX_DIR`（默认 `/root/dvda-build/alacfix`）
 3. **原文件绝不修改**，manifest 指向修复后的副本
 4. 修复后重新解码校验，采样数必须精确达标，否则仍判 FAIL
@@ -1099,24 +1107,25 @@ cmp "$got" "$BUILD_DIR/mlp/group_48000_24__0001__01. xxx.mlp"   # 逐字节一�
 （`First_Sect` / `Last_Sect` / `PTS_length`）。而日志名沿用了 `build.log`，
 于是把上次真出盘积累的轨道表**截断覆盖**了。
 
-两处写入点都会截断，**都得改**：
+迁移前有两处写入点都会截断：
 
 | 位置 | 行为 |
 |------|------|
-| `build.sh` | `python3 01_prepare.py 2>&1 \| tee "$LOG"` —— `tee` **不带 `-a` 就是截断** |
-| `02_build.py` | `run()` 与 `main()` 里的 `open(CFG.build_log, "a")`（追加，但前面已被 tee 清空） |
+| 旧 `build.sh` | prepare 输出经不带 `-a` 的 `tee` 写入日志，导致截断 |
+| 旧 Python 构建器 | 以追加模式打开日志，但此前日志已经被截断 |
 
 审计需要轨道表才能比对 AOB 扇区号；无损校验在没有 `__discs__` 计划的
 旧索引下退化成 `sorted()[0]`，于是两个校验同时误报。
 
 ### 修复
 
-1. `build.sh`：`--dry-run` 时 `LOG="$DVDA_BUILD_DIR/build-dryrun.log"`
-2. `02_build.py`：模块级 `BUILD_LOG`，`main()` 里按 `--dry-run` 重定向；
-   日志头加 `[DRY-RUN]` 标记与「本文件不含轨道表」说明
-3. `mlp_index.json` 增写 `__meta__`（含 `dry_run` 标记）与 `__discs__` 分盘计划
-4. `audit_disc.py`：跳过时调 `dryrun_hint()`，点明「这是 dry-run 日志」
-   与下一步该跑什么
+当前 C# 实现采用更严格的隔离方式：
+
+1. dry-run 日志写入 `build-dryrun.log`，不覆盖正式 `build.log`
+2. dry-run 索引写入 `mlp_index-dryrun.json`，并带 `dry_run=true`
+3. 正式索引先写入 `mlp_index.pending.json`
+4. 全部 ISO 构建成功后，ISO 集合与正式索引才作为可回滚事务一起发布
+5. 审计和无损校验拒绝把 dry-run 索引当作正式成品依据
 
 验证（dry-run 前后指纹不变）：
 
@@ -3490,8 +3499,9 @@ snprintf(str, sizeof(str),
 **查法**（别靠编译，gcc 默认不检查这个）：
 
 ```bash
-# 1) 先让脚本把退出码打出来（负值 = 信号）
-python3 scripts/02_build.py   # [FAIL] ... 失败（退出码 -11）
+# 1) 运行当前构建入口并观察 dvda-author 退出码（负值 = 信号）
+dotnet run --project src/DvdaMaker.Cli -- build
+# 发布包中：dvda build
 
 # 2) 逐个 snprintf 数「格式符」与「参数」是否相等
 #    注意字符串字面量会拼接，要先把相邻的 "" 合并再数

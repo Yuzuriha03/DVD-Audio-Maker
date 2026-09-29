@@ -1,10 +1,10 @@
 # C# 迁移状态
 
-## 当前阶段
+## 迁移完成状态
 
 已建立第一批可独立编译的 .NET 10 项目：
 
-- `DvdaMaker.Configuration`：兼容 `dvda_config.py` 的配置解析和派生值。
+- `DvdaMaker.Configuration`：实现配置解析、来源优先级和派生值。
 - `DvdaMaker.Cli`：提供配置、准备、规划、构建、M4A 转换及成品校验入口。
 - `DvdaMaker.Formats`：ISO9660 读取、MLP 对齐校验和 PES PTS 解析。
 - `DvdaMaker.Processes`：统一外部程序执行、参数传递、输出捕获、超时和取消。
@@ -12,8 +12,10 @@
 - `DvdaMaker.Building`：读取 manifest、全局排序、按专辑贪心分盘及盘内参数分组。
 - `DvdaMaker.CompatibilityTests`：不依赖 NuGet 测试框架的兼容性基线（当前 67 项）。
 
-C# 已覆盖核心流程、菜单素材生成、字体覆盖探测、AMG/ASVS 和菜单视觉校验；
-`build.sh` 和 `verify.sh` 现在只是兼容旧参数的 C# CLI 薄包装。
+C# 已覆盖配置、准备、转换、构建、菜单素材、字体覆盖探测、AMG/ASVS、
+菜单视觉和成品审计；`build.sh` 与 `verify.sh` 只是 C# CLI 的兼容薄包装。
+根目录旧 Python 业务脚本已于 2026-09-29 删除；删除前的最终版本保存在
+Git 标签 `python-reference-final`（提交 `5aa4164`）中。
 
 ## 构建与测试
 
@@ -33,7 +35,7 @@ M4A dry-run 零写入、非 ALAC 拒绝、文件级失败隔离、审计日志�
             "E:\DISCs\DVD-Audio\Wuthering Waves Singles EPs" \
             "D:\yyz57\Music\output\鸣潮先约电台"
 
-真实样本测试不会把数 GB 的 ISO/MLP 复制进仓库，只固化 Python 原实现读取出的
+真实样本测试不会把数 GB 的 ISO/MLP 复制进仓库，只固化迁移前参考实现读取出的
 路径、LBA、文件哈希、扇区样本哈希和 MLP 结构统计。缺少外部样本时，普通测试
 仍可独立运行。
 
@@ -51,10 +53,10 @@ M4A dry-run 零写入、非 ALAC 拒绝、文件级失败隔离、审计日志�
 
     dotnet run --project src/DvdaMaker.Cli -- plan
 
-`plan` 不调用 `dvda-author` 或 `mkisofs`；缺少对应 MLP 缓存时会列出错误。它已迁移
-`02_build.py` 的曲目排序、专辑聚合、容量估算、贪心分盘、参数分组和专辑边界规则。
+`plan` 不调用 `dvda-author` 或 `mkisofs`；缺少对应 MLP 缓存时会列出错误。它实现
+曲目排序、专辑聚合、容量估算、贪心分盘、参数分组和专辑边界规则。
 
-执行与 Python `--dry-run` 对应的核心流程：
+执行构建预演：
 
     dotnet run --project src/DvdaMaker.Cli -- build --dry-run
 
@@ -68,7 +70,7 @@ FFmpeg 产物会强制 `-max_interval 8`、执行 MLP 字节对齐并
     dotnet run --project src/DvdaMaker.Cli -- build
 
 正式模式已接入 `dvda-author`、patched `mkisofs`、审计兼容构建日志、ISO 容量检查、
-最终发布、被占用时 `_new.iso` 回退和成功后的中间产物清理。`DVDA_MENU=on` 时，
+最终发布和成功后的中间产物清理。`DVDA_MENU=on` 时，
 C# 会生成菜单素材并执行菜单出盘及成品菜单校验。正式索引先写入
 `mlp_index.pending.json`。全部计划盘先发布到独立 staging 目录，随后将整套 ISO 与索引
 作为一个可回滚事务提交；任一目标被占用、复制失败、超出容量、取消或中途失败时，
@@ -118,14 +120,16 @@ EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP
 `\\wsl.localhost\\<发行版>` 源路径复制 ISO。Robocopy 退出码 0~7 视为成功；复制
 失败只生成 warning，不会删除或隐藏 `DVDA_FINAL_DIR` 中已经发布的 ISO。
 
-明确保留给 shell 的边界：
+## 保留边界
 
 - `build_dvda_author_mlp.sh` 及 `tools/` 内部工具链编译脚本仍保留；它们是第三方/本地
     C 工具构建入口，不属于 Python 业务流程。
 - Windows 发布包现通过 `dotnet publish -r win-x64 --self-contained` 携带 C# CLI，
     不再复制或启动 Python 业务脚本，目标机器无需 Python 或 .NET Runtime。
-- `01_prepare.py`、`02_build.py`、`verify_menu.py`、`audit_disc.py` 等 Python 文件暂作
-    参考实现和对拍工具，不再由 `build.sh`/`verify.sh` 业务入口调用。
+- `tools/win-build/make-menu-font.sh` 在构建三语字体 face 时仍使用 Python/fontTools；
+    这是开发/打包期依赖，不进入发布包运行链。
+- 已删除的 Python 参考实现可通过 `git show python-reference-final:<文件名>` 查看，
+    或从 `python-reference-final` 标签建立临时 worktree；不再在主分支保留双份实现。
 
 ## 已冻结的配置契约
 
@@ -138,10 +142,9 @@ EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP
 - `--shell-all` 输出 C# 新增的菜单、metaflac 和派生目录配置键。
 - `--check` 缺少必填路径时返回退出码 2。
 
-## 下一阶段
+## 后续验证
 
-1. 用 Python 与 C# 对同一组配置 fixture 做 stdout、退出码和 `--shell` 快照对拍。
-2. 对真实 ALAC 音源执行 Python/C# M4A 转换结果、标签、封面和 PCM MD5 对拍。
-3. 为 MLP/AOB/AMG/ASVS/菜单视觉补充损坏和边界 fixture，并进行真实菜单 ISO 对拍。
-4. 在现有真实 ISO/SurCode MLP fixture 上定期执行回归测试，并在可控样本上试运行
-    C# `build --dry-run`。
+1. 持续运行 67 项普通兼容测试及真实 ISO/SurCode MLP 3 项基线。
+2. 对新增的真实 ALAC 样本核对标签、封面和 PCM MD5。
+3. 对真实多页菜单 ISO 逐页抽帧，并在 Windows self-contained 发布包中做 smoke test。
+4. 若需追查迁移差异，以 `python-reference-final` 标签为只读历史基准。
