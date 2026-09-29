@@ -192,7 +192,7 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
             return null;
         }
 
-        var arguments = new List<string>(prefixArguments) { image };
+        var arguments = new List<string>(prefixArguments);
         if (crop is not null)
         {
             arguments.AddRange(["-crop", crop]);
@@ -200,13 +200,14 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
         arguments.AddRange([
             "-format",
             crop is null ? "%[fx:mean.a*w*h]" : "%[fx:maxima.a]",
-            "info:",
+            image,
         ]);
         log?.WriteCommand(executable, arguments);
         var result = await runner.RunAsync(new ProcessRequest
         {
             FileName = executable,
             Arguments = arguments,
+            Timeout = TimeSpan.FromSeconds(30),
         }, cancellationToken).ConfigureAwait(false);
         if (!result.Succeeded)
         {

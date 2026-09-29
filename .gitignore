@@ -1,3 +1,4 @@
+跑surcode模式
 # ---- 音源与产物（绝不入库）----
 # 音频
 *.flac
@@ -80,3 +81,4 @@ TestResults/
 *.key
 .env
 .env.*
+config_workspace.sh

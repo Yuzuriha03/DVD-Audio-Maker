@@ -33,12 +33,16 @@ public sealed class DiscVerifier
     public IReadOnlyList<DiscVerificationResult> QuickCheck(
         string isoDirectory,
         string? manifestPath = null,
-        string? buildLogPath = null)
+        string? buildLogPath = null,
+        string? isoPrefix = null)
     {
         var expected = ReadManifestTrackCount(manifestPath);
         var logIssues = ReadPaddingIssues(buildLogPath);
         var files = Directory.Exists(isoDirectory)
-            ? Directory.EnumerateFiles(isoDirectory, "*.iso").OrderBy(path => path).ToArray()
+            ? Directory.EnumerateFiles(isoDirectory, "*.iso")
+                .Where(path => MatchesCurrentIsoName(path, isoPrefix))
+                .OrderBy(path => path)
+                .ToArray()
             : [];
         if (files.Length == 0)
         {
@@ -132,12 +136,13 @@ public sealed class DiscVerifier
         string isoDirectory,
         string buildLogPath,
         string? manifestPath = null,
-        bool allowLogFallback = true)
+        bool allowLogFallback = true,
+        string? isoPrefix = null)
     {
         var selectedLog = allowLogFallback
             ? SelectLatestBuildLog(buildLogPath)
             : File.Exists(buildLogPath) ? buildLogPath : null;
-        var results = QuickCheck(isoDirectory, manifestPath, selectedLog)
+        var results = QuickCheck(isoDirectory, manifestPath, selectedLog, isoPrefix)
             .Select(result => result with { Issues = result.Issues.ToArray() })
             .ToArray();
         if (selectedLog is null)
@@ -146,8 +151,7 @@ public sealed class DiscVerifier
         }
 
         var log = ParseAuditLog(selectedLog);
-        var rows = log.Rows;
-        if (rows.Count == 0)
+        if (log.Rows.Count == 0)
         {
             return MarkUnavailable(
                 results, "TRACK_TABLE_MISSING", "构建日志中未解析到 dvda-author 轨道表");
@@ -158,21 +162,13 @@ public sealed class DiscVerifier
                 results, "DVDA_COMMAND_MISSING", "构建日志中未解析到 dvda-author 命令行");
         }
 
-        var rowIndex = 0;
         var layouts = new List<DiscLayout>();
         foreach (var command in log.Commands)
         {
-            var groups = new List<IReadOnlyList<TrackRow>>();
-            for (var groupIndex = 0; groupIndex < command.GroupCount && rowIndex < rows.Count; groupIndex++)
-            {
-                var groupNumber = rows[rowIndex].Group;
-                var groupRows = new List<TrackRow>();
-                while (rowIndex < rows.Count && rows[rowIndex].Group == groupNumber)
-                {
-                    groupRows.Add(rows[rowIndex++]);
-                }
-                groups.Add(groupRows);
-            }
+            var groups = command.Rows
+                .GroupBy(row => row.Group)
+                .Select(group => (IReadOnlyList<TrackRow>)group.ToArray())
+                .ToArray();
             layouts.Add(new DiscLayout(command.DiscTag, groups));
         }
 
@@ -199,6 +195,12 @@ public sealed class DiscVerifier
                 issues.Add(new VerificationIssue(
                     "DISC_TRACK_MAPPING_MISMATCH",
                     $"日志映射 {rowsForDisc.Length} 轨 != ISO IFO 声明 {result.TrackCount} 轨"));
+                results[resultIndex] = result with
+                {
+                    Issues = issues,
+                    Unavailable = true,
+                };
+                continue;
             }
             foreach (var group in rowsForDisc.GroupBy(row => row.Group))
             {
@@ -419,33 +421,58 @@ public sealed class DiscVerifier
 
     internal static AuditLogData ParseAuditLog(string path)
     {
-        var text = AnsiPattern.Replace(File.ReadAllText(path), string.Empty);
-        var rows = TrackRowPattern.Matches(text)
-            .Select(match => new TrackRow(
+        var text = SelectLatestFormalBuildSection(
+            AnsiPattern.Replace(File.ReadAllText(path), string.Empty));
+        var commands = new List<DiscCommand>();
+        DiscCommandBuilder? current = null;
+        foreach (var line in text.Split('\n'))
+        {
+            var trimmed = line.TrimEnd('\r');
+            if (trimmed.StartsWith("+ ", StringComparison.Ordinal))
+            {
+                var groupCount = Regex.Matches(trimmed, "(?:^|\\s)-g(?:\\s|$)").Count;
+                var output = OutputArgumentPattern.Match(trimmed);
+                if (groupCount == 0 || !output.Success) continue;
+                if (current is not null) commands.Add(current.Build());
+                var outputPath = output.Groups["double"].Success ? output.Groups["double"].Value
+                    : output.Groups["single"].Success ? output.Groups["single"].Value
+                    : output.Groups["bare"].Value;
+                current = new DiscCommandBuilder(
+                    Path.GetFileName(outputPath.TrimEnd('/', '\\')), groupCount);
+                continue;
+            }
+
+            var match = TrackRowPattern.Match(trimmed);
+            if (current is null || !match.Success) continue;
+            current.Rows.Add(new TrackRow(
                 int.Parse(match.Groups["group"].Value),
                 int.Parse(match.Groups["title"].Value),
                 int.Parse(match.Groups["track"].Value),
                 int.Parse(match.Groups["first"].Value),
                 int.Parse(match.Groups["last"].Value),
                 long.Parse(match.Groups["pts"].Value),
-                long.Parse(match.Groups["length"].Value)))
-            .ToArray();
-        var commands = new List<DiscCommand>();
-        foreach (var line in text.Split('\n'))
-        {
-            var trimmed = line.TrimEnd('\r');
-            if (!trimmed.StartsWith("+ ", StringComparison.Ordinal)) continue;
-            var groupCount = Regex.Matches(trimmed, "(?:^|\\s)-g(?:\\s|$)").Count;
-            if (groupCount == 0) continue;
-            var output = OutputArgumentPattern.Match(trimmed);
-            if (!output.Success) continue;
-            var outputPath = output.Groups["double"].Success ? output.Groups["double"].Value
-                : output.Groups["single"].Success ? output.Groups["single"].Value
-                : output.Groups["bare"].Value;
-            var discTag = Path.GetFileName(outputPath.TrimEnd('/', '\\'));
-            commands.Add(new DiscCommand(discTag, groupCount));
+                long.Parse(match.Groups["length"].Value)));
         }
+        if (current is not null) commands.Add(current.Build());
+        var rows = commands.SelectMany(command => command.Rows).ToArray();
         return new AuditLogData(rows, commands);
+    }
+
+    private static string SelectLatestFormalBuildSection(string text)
+    {
+        var matches = Regex.Matches(
+            text,
+            @"(?m)^\[C# build\](?! \[DRY-RUN\]).*$");
+        return matches.Count == 0 ? text : text[matches[^1].Index..];
+    }
+
+    internal static bool MatchesCurrentIsoName(string path, string? isoPrefix)
+    {
+        if (string.IsNullOrWhiteSpace(isoPrefix)) return true;
+        return Regex.IsMatch(
+            Path.GetFileName(path),
+            $"^{Regex.Escape(isoPrefix)}_\\d+\\.iso$",
+            RegexOptions.IgnoreCase);
     }
 
     internal static string? SelectLatestBuildLog(string requestedPath)
@@ -509,7 +536,15 @@ public sealed class DiscVerifier
         BinaryPrimitives.ReadUInt32BigEndian(data[offset..]);
 
     internal sealed record TrackRow(int Group, int Title, int Track, int First, int Last, long Pts, long Length);
-    internal sealed record DiscCommand(string DiscTag, int GroupCount);
+    internal sealed record DiscCommand(
+        string DiscTag,
+        int GroupCount,
+        IReadOnlyList<TrackRow> Rows);
+    private sealed class DiscCommandBuilder(string discTag, int groupCount)
+    {
+        public List<TrackRow> Rows { get; } = [];
+        public DiscCommand Build() => new(discTag, groupCount, Rows.ToArray());
+    }
     private sealed record DiscLayout(string DiscTag, IReadOnlyList<IReadOnlyList<TrackRow>> Groups);
     internal sealed record AuditLogData(IReadOnlyList<TrackRow> Rows, IReadOnlyList<DiscCommand> Commands);
     private sealed record GroupParseResult(

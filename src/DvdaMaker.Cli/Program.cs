@@ -569,8 +569,13 @@ if (command == "verify")
             var manifest = File.Exists(options.ManifestPath) ? options.ManifestPath : null;
             var log = File.Exists(options.BuildLogPath) ? options.BuildLogPath : null;
             var results = mode == "quick"
-                ? verifier.QuickCheck(options.FinalDirectory, manifest, log)
-                : verifier.Audit(options.FinalDirectory, log ?? options.BuildLogPath, manifest);
+                ? verifier.QuickCheck(
+                    options.FinalDirectory, manifest, log, options.IsoPrefix)
+                : verifier.Audit(
+                    options.FinalDirectory,
+                    log ?? options.BuildLogPath,
+                    manifest,
+                    isoPrefix: options.IsoPrefix);
             foreach (var result in results)
             {
                 Console.WriteLine($"=== {Path.GetFileName(result.IsoPath)}: {result.TrackCount} 轨 ===");
@@ -688,8 +693,10 @@ if (command is "quick-check" or "audit")
                 isoDirectory,
                 buildLogPath ?? options.BuildLogPath,
                 manifestPath,
-                allowLogFallback: !explicitBuildLog)
-            : verifier.QuickCheck(isoDirectory, manifestPath, buildLogPath);
+                allowLogFallback: !explicitBuildLog,
+                isoPrefix: options.IsoPrefix)
+            : verifier.QuickCheck(
+                isoDirectory, manifestPath, buildLogPath, options.IsoPrefix);
         var failed = false;
         var unavailable = false;
         foreach (var result in results)

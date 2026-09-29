@@ -171,6 +171,8 @@ var tests = new (string Name, Action Run)[]
     ("时间轴覆盖后续 AOB 分段", AnalyzeAllAobSegments),
     ("AOB PTS 损坏边界检测", ValidateAobPtsDamageFixtures),
     ("审计解析多行 ANSI 轨道表", ParseAnsiAuditLog),
+    ("审计只解析最后一次正式构建", ParseLatestFormalAuditLog),
+    ("校验只选择当前编号 ISO", SelectCurrentIsoNames),
     ("审计按时间选择最新日志", SelectNewestAuditLog),
     ("外部 MLP 重名歧义", DetectExternalMlpAmbiguity),
     ("MLP 索引拒绝重复路径", RejectDuplicateMlpIndexKeys),
@@ -1223,14 +1225,62 @@ static void ParseAnsiAuditLog()
         Equal(2, parsed.Commands.Count);
         Equal("disc1", parsed.Commands[0].DiscTag);
         Equal(2, parsed.Commands[0].GroupCount);
+        Equal(2, parsed.Commands[0].Rows.Count);
         Equal("disc2", parsed.Commands[1].DiscTag);
         Equal(1, parsed.Commands[1].GroupCount);
+        Equal(1, parsed.Commands[1].Rows.Count);
         Equal(100, parsed.Rows[1].First);
     }
     finally
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+static void ParseLatestFormalAuditLog()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-audit-latest", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    var path = Path.Combine(root, "build.log");
+    try
+    {
+        File.WriteAllText(path, string.Join('\n',
+        [
+            "[C# build] 2026-09-28 10:00:00",
+            "+ dvda-author -g old.mlp -o /work/output/disc1",
+            "1  1/1  1  0  9  0  9000  0",
+            "[C# build] [DRY-RUN] 2026-09-28 11:00:00",
+            "[C# build] 2026-09-29 12:00:00",
+            "+ dvda-author -g one.mlp two.mlp -o /work/output/disc1",
+            "1  1/2  1  0  19  0  9000  0",
+            "1  1/2  2  20  39  9000  9000  0",
+            "+ dvda-author -g three.mlp -o /work/output/disc2",
+            "1  1/1  1  0  29  0  9000  0",
+        ]));
+
+        var parsed = DiscVerifier.ParseAuditLog(path);
+        Equal(2, parsed.Commands.Count);
+        Equal(3, parsed.Rows.Count);
+        Equal(2, parsed.Commands[0].Rows.Count);
+        Equal(1, parsed.Commands[1].Rows.Count);
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void SelectCurrentIsoNames()
+{
+    True(DiscVerifier.MatchesCurrentIsoName(
+        "Wuthering_Waves_Singles_EPs_1.iso", "Wuthering_Waves_Singles_EPs"),
+        "当前第 1 盘应被选中");
+    True(DiscVerifier.MatchesCurrentIsoName(
+        "Wuthering_Waves_Singles_EPs_2.ISO", "Wuthering_Waves_Singles_EPs"),
+        "扩展名大小写不应影响匹配");
+    False(DiscVerifier.MatchesCurrentIsoName(
+        "Wuthering_Waves_Singles_EPs_SurCode_2.iso", "Wuthering_Waves_Singles_EPs"),
+        "历史 SurCode ISO 不应被纳入当前构建校验");
 }
 
 static void SelectNewestAuditLog()
