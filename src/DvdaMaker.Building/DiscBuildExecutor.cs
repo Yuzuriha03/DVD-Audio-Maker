@@ -1,5 +1,6 @@
 using DvdaMaker.Configuration;
 using DvdaMaker.Processes;
+using System.Diagnostics;
 
 namespace DvdaMaker.Building;
 
@@ -11,7 +12,8 @@ public sealed class DiscBuildExecutor(
     public async Task<DiscBuildResult> BuildAsync(
         DiscPlan disc,
         string? publishDirectory = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool stageForTransactionalPublication = false)
     {
         var diagnostics = new List<BuildDiagnostic>();
         var tag = $"disc{disc.Number}";
@@ -63,6 +65,7 @@ public sealed class DiscBuildExecutor(
                 log.WriteLine(line);
             },
         }, cancellationToken).ConfigureAwait(false);
+        log.WriteLine($"[耗时] 第 {disc.Number} 盘 dvda-author: {author.Duration}");
         if (!author.Succeeded)
         {
             diagnostics.Add(new BuildDiagnostic(
@@ -71,7 +74,6 @@ public sealed class DiscBuildExecutor(
                 $"dvda-author 生成第 {disc.Number} 盘失败（退出码 {author.ExitCode}）。"));
             return new DiscBuildResult(disc.Number, iso, string.Empty, 0, diagnostics);
         }
-
         var audioTs = Path.Combine(output, "AUDIO_TS");
         if (!Directory.Exists(audioTs))
         {
@@ -113,6 +115,7 @@ public sealed class DiscBuildExecutor(
                 log.WriteLine(line);
             },
         }, cancellationToken).ConfigureAwait(false);
+        log.WriteLine($"[耗时] 第 {disc.Number} 盘 mkisofs: {mkisofs.Duration}");
         if (!mkisofs.Succeeded || !File.Exists(iso) || new FileInfo(iso).Length == 0)
         {
             diagnostics.Add(new BuildDiagnostic(
@@ -121,7 +124,6 @@ public sealed class DiscBuildExecutor(
                 $"mkisofs 打包第 {disc.Number} 盘失败（退出码 {mkisofs.ExitCode}）。"));
             return new DiscBuildResult(disc.Number, iso, string.Empty, 0, diagnostics);
         }
-
         var isoSize = new FileInfo(iso).Length;
         if (isoSize > options.DiscBytes)
         {
@@ -132,8 +134,13 @@ public sealed class DiscBuildExecutor(
             return new DiscBuildResult(disc.Number, iso, string.Empty, isoSize, diagnostics);
         }
 
-        var published = DiscPublisher.Publish(
-            iso, publishDirectory ?? options.FinalDirectory, options.IsoName(disc.Number));
+        var publicationStarted = Stopwatch.GetTimestamp();
+        var published = stageForTransactionalPublication && !options.KeepIntermediate
+            ? DiscPublisher.StageIso(
+                iso, publishDirectory ?? options.FinalDirectory, options.IsoName(disc.Number))
+            : DiscPublisher.Publish(
+                iso, publishDirectory ?? options.FinalDirectory, options.IsoName(disc.Number));
+        log.WriteLine($"[耗时] 第 {disc.Number} 盘 ISO 暂存: {Stopwatch.GetElapsedTime(publicationStarted)}");
         if (published.Diagnostic is not null)
         {
             diagnostics.Add(published.Diagnostic);

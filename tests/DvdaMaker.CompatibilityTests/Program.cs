@@ -150,7 +150,9 @@ var tests = new (string Name, Action Run)[]
     ("mkisofs 参数构造", BuildMkisofsArguments),
     ("构建日志命令格式", WriteCompatibleBuildLog),
     ("ISO 发布长度校验", PublishIso),
+    ("同卷 ISO 暂存移动与冲突保护", StageIsoWithoutCopy),
     ("多盘与索引事务发布回滚", PublishDiscSetTransactionally),
+    ("多盘同卷移动发布与失败回滚", PublishMovedDiscSetTransactionally),
     ("ALAC magic cookie 解析", ParseAlacMagicCookie),
     ("ALAC END 标记修补", PatchAlacEndMarker),
     ("ALAC extra bits 行为与 Python 一致", PatchAlacWithExtraBits),
@@ -169,6 +171,7 @@ var tests = new (string Name, Action Run)[]
     ("外部 MLP 重名歧义", DetectExternalMlpAmbiguity),
     ("MLP 索引拒绝重复路径", RejectDuplicateMlpIndexKeys),
     ("正式出盘执行器端到端", BuildDiscEndToEnd),
+    ("事务暂存移动与保留中间 ISO", StageDiscAndKeepIntermediate),
     ("出盘失败保留诊断现场", PreserveFailedDiscWorkspace),
     ("菜单配置派生值", LoadMenuConfiguration),
     ("菜单按专辑分页与索引", PlanAlbumMenuPages),
@@ -846,6 +849,8 @@ static void PublishDiscSetTransactionally()
         Equal("new-disc-2", File.ReadAllText(final2));
         Equal("new-index", File.ReadAllText(formal));
         False(File.Exists(pending), "事务成功后 pending 索引应删除");
+        Equal("new-disc-1", File.ReadAllText(staged1));
+        Equal("new-disc-2", File.ReadAllText(staged2));
 
         File.WriteAllText(staged1, "broken-new-disc-1");
         File.WriteAllText(staged2, "broken-new-disc-2");
@@ -867,6 +872,116 @@ static void PublishDiscSetTransactionally()
         Equal("new-disc-1", File.ReadAllText(final1));
         Equal("new-index", File.ReadAllText(formal));
         True(Directory.Exists(final2), "失败目标目录不得被事务破坏");
+        Equal("broken-new-disc-1", File.ReadAllText(staged1));
+        Equal("broken-new-disc-2", File.ReadAllText(staged2));
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void PublishMovedDiscSetTransactionally()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-moved-publish-set", Guid.NewGuid().ToString("N"));
+    var stage = Path.Combine(root, "stage");
+    var final = Path.Combine(root, "final");
+    Directory.CreateDirectory(stage);
+    Directory.CreateDirectory(final);
+    try
+    {
+        var staged1 = Path.Combine(stage, "disc1.iso");
+        var staged2 = Path.Combine(stage, "disc2.iso");
+        var final1 = Path.Combine(final, "disc1.iso");
+        var final2 = Path.Combine(final, "disc2.iso");
+        var pending = Path.Combine(root, "mlp_index.pending.json");
+        var formal = Path.Combine(root, "mlp_index.json");
+        File.WriteAllText(staged1, "new-disc-1");
+        File.WriteAllText(staged2, "new-disc-2");
+        File.WriteAllText(final1, "old-disc-1");
+        File.WriteAllText(final2, "old-disc-2");
+        File.WriteAllText(pending, "new-index");
+        File.WriteAllText(formal, "old-index");
+
+        DiscPublisher.PublishSet(
+            [(staged1, "disc1.iso"), (staged2, "disc2.iso")],
+            final, pending, formal, moveStagedIsos: true);
+        False(File.Exists(staged1), "同卷提交后不应保留暂存 ISO");
+        False(File.Exists(staged2), "同卷提交后不应保留暂存 ISO");
+        Equal("new-disc-1", File.ReadAllText(final1));
+        Equal("new-disc-2", File.ReadAllText(final2));
+        Equal("new-index", File.ReadAllText(formal));
+        False(File.Exists(pending), "成功后应清理待发布索引");
+        False(Directory.EnumerateFiles(final).Any(path =>
+            path.Contains(".backup-", StringComparison.Ordinal) ||
+            path.Contains(".publishing-", StringComparison.Ordinal)),
+            "成功后应清理备份和临时文件");
+
+        File.WriteAllText(staged1, "retry-disc-1");
+        File.WriteAllText(staged2, "retry-disc-2");
+        File.WriteAllText(pending, "retry-index");
+        File.Delete(final2);
+        Directory.CreateDirectory(final2);
+        var failed = false;
+        try
+        {
+            DiscPublisher.PublishSet(
+                [(staged1, "disc1.iso"), (staged2, "disc2.iso")],
+                final, pending, formal, moveStagedIsos: true);
+        }
+        catch (IOException)
+        {
+            failed = true;
+        }
+        True(failed, "第二盘无法提交时应失败");
+        Equal("retry-disc-1", File.ReadAllText(staged1));
+        Equal("retry-disc-2", File.ReadAllText(staged2));
+        Equal("new-disc-1", File.ReadAllText(final1));
+        Equal("new-index", File.ReadAllText(formal));
+        True(Directory.Exists(final2), "失败目标目录应保持原样");
+        Equal("retry-index", File.ReadAllText(pending));
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void StageIsoWithoutCopy()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-stage-iso", Guid.NewGuid().ToString("N"));
+    var stage = Path.Combine(root, "stage");
+    var final = Path.Combine(root, "final");
+    Directory.CreateDirectory(root);
+    try
+    {
+        var source = Path.Combine(root, "disc1.iso");
+        var pending = Path.Combine(root, "mlp_index.pending.json");
+        var formal = Path.Combine(root, "mlp_index.json");
+        File.WriteAllText(source, "new-disc");
+        File.WriteAllText(pending, "new-index");
+        var staged = DiscPublisher.StageIso(source, stage, "disc1.iso");
+        False(File.Exists(source), "同卷暂存应移动 ISO 而非留下原件");
+        Equal("new-disc", File.ReadAllText(staged.Path));
+        True(staged.Diagnostic is null, "正常暂存不应产生警告");
+        File.WriteAllText(source, "another-disc");
+        var rejected = false;
+        try
+        {
+            DiscPublisher.StageIso(source, stage, "disc1.iso");
+        }
+        catch (IOException)
+        {
+            rejected = true;
+        }
+        True(rejected, "暂存目标已存在时不得覆盖");
+        Equal("another-disc", File.ReadAllText(source));
+        Equal("new-disc", File.ReadAllText(staged.Path));
+
+        var published = DiscPublisher.PublishSet(
+            [(staged.Path, "disc1.iso")], final, pending, formal);
+        Equal("new-disc", File.ReadAllText(published.Single()));
+        Equal("new-index", File.ReadAllText(formal));
     }
     finally
     {
@@ -1583,6 +1698,49 @@ static void PreserveFailedDiscWorkspace()
     }
 }
 
+static void StageDiscAndKeepIntermediate()
+{
+    foreach (var keepIntermediate in new[] { false, true })
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dvda-stage-executor", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var author = CreateFixtureExecutable(root, "fake-dvda-author.exe");
+            var mkisofs = CreateFixtureExecutable(root, "fake-mkisofs.exe");
+            var options = CreateExecutorOptions(root, author, mkisofs, keepIntermediate);
+            var mlp = Path.Combine(root, "track.mlp");
+            File.WriteAllBytes(mlp, [1, 2, 3]);
+            var track = BuildTrack("Track", "1", "1", 3, album: "Album") with
+            {
+                MlpPath = mlp,
+            };
+            var disc = new DiscPlanner().Plan([track], ConfigDefaults.Dvd5Bytes, 1, 70)
+                .Discs.Single();
+            var stage = Path.Combine(options.BuildDirectory, "publish-staging", "fixture");
+            DiscBuildResult result;
+            using (var log = new BuildLogWriter(options, dryRun: false))
+            {
+                result = new DiscBuildExecutor(options, new ProcessRunner(), log)
+                    .BuildAsync(disc, stageForTransactionalPublication: true,
+                        publishDirectory: stage).GetAwaiter().GetResult();
+            }
+
+            True(result.Succeeded, "事务暂存执行器应成功");
+            Equal(Path.Combine(stage, options.IsoName(1)), result.PublishedIsoPath);
+            Equal(4L, new FileInfo(result.PublishedIsoPath).Length);
+            Equal(keepIntermediate, File.Exists(result.IntermediateIsoPath));
+            var logText = File.ReadAllText(options.BuildLogPath);
+            True(logText.Contains("[耗时] 第 1 盘 ISO 暂存:", StringComparison.Ordinal),
+                "应记录 ISO 暂存耗时");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+}
+
 static void LoadMenuConfiguration()
 {
     WithConfig(string.Join('\n',
@@ -2046,7 +2204,8 @@ static void ValidateAsvsFixtures()
 static DvdaOptions CreateExecutorOptions(
     string root,
     string author,
-    string mkisofs)
+    string mkisofs,
+    bool keepIntermediate = false)
 {
     var config = Path.Combine(root, "config.env");
     File.WriteAllText(config, string.Join('\n',
@@ -2058,7 +2217,7 @@ static DvdaOptions CreateExecutorOptions(
         $"DVDA_MKISOFS={mkisofs.Replace('\\', '/')}",
         "DVDA_TITLE=Fixture Disc",
         "DVDA_KEEP_TMP=off",
-        "DVDA_KEEP_INTERMEDIATE=off",
+        $"DVDA_KEEP_INTERMEDIATE={(keepIntermediate ? "on" : "off")}",
     ]));
     return Load(config);
 }

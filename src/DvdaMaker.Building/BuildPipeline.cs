@@ -1,5 +1,6 @@
 using DvdaMaker.Configuration;
 using DvdaMaker.Processes;
+using System.Diagnostics;
 
 namespace DvdaMaker.Building;
 
@@ -27,6 +28,7 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
             log.WriteLine($"[诊断] DVDA_ALBUM_LIMIT={options.DiagnosticAlbumLimit}: " +
                 $"仅处理 {DiscPlanner.AggregateAlbums(initial).Count} 张专辑 / {initial.Count} 轨");
         }
+        var acquisitionStarted = Stopwatch.GetTimestamp();
         MlpAcquisitionResult acquisition = options.MlpSource switch
         {
             "external" or "surcode" => await new ExternalMlpProvider(options, _runner)
@@ -36,6 +38,7 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
             _ => await new FfmpegMlpProvider(options, _runner)
                 .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
         };
+            log.WriteLine($"[耗时] MLP 获取: {Stopwatch.GetElapsedTime(acquisitionStarted)}");
 
         var plan = new DiscPlanner().Plan(
             acquisition.Tracks,
@@ -78,7 +81,8 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
                 var result = await executor.BuildAsync(
                     disc,
                     stagingDirectory,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    stageForTransactionalPublication: true).ConfigureAwait(false);
                 discResults.Add(result);
                 if (!result.Succeeded)
                 {
@@ -91,13 +95,16 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
             {
                 try
                 {
+                    var publicationStarted = Stopwatch.GetTimestamp();
                     var finalPaths = DiscPublisher.PublishSet(
                         discResults.Select(result => (
                             result.PublishedIsoPath,
                             options.IsoName(result.DiscNumber))).ToArray(),
                         options.FinalDirectory,
                         pendingIndexPath,
-                        options.MlpIndexPath);
+                        options.MlpIndexPath,
+                        moveStagedIsos: true);
+                    log.WriteLine($"[耗时] 正式 ISO 集合与索引发布: {Stopwatch.GetElapsedTime(publicationStarted)}");
                     for (var index = 0; index < discResults.Count; index++)
                     {
                         discResults[index] = discResults[index] with
@@ -134,7 +141,14 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
             {
                 DeletePendingIndex(pendingIndexPath);
             }
-            TryDeleteDirectory(stagingDirectory);
+            if (indexPublished || !Directory.EnumerateFileSystemEntries(stagingDirectory).Any())
+            {
+                TryDeleteDirectory(stagingDirectory);
+            }
+            else
+            {
+                log.WriteLine($"[警告] 构建或正式发布失败，保留暂存 ISO 供排查: {stagingDirectory}");
+            }
         }
     }
 
