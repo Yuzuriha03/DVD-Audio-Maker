@@ -6,6 +6,10 @@
 
 使用“导入 config.env”读取旧配置，也可打开/保存 JSON 方案。日常配置自动保存至 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`，无需手工修改 env；CLI 与 `--config` 保留。MLP 编码直接调用内嵌 x64 DLL，不启动编码 EXE。
 
+界面按“开始设置 / 音频编码 / 光盘菜单 / 工具与高级”分组，高级参数默认收起；光盘容量可直接选择 DVD5、DVD9 或自定义。下方默认显示中文任务摘要、当前阶段、耗时与下一步提示，可以拖动分隔条调整日志区大小。
+
+日志可切换为详细输出、只看提醒、暂停实时更新、复制当前内容或导出完整任务日志。正常的工具进度不会被当作任务失败；错误和警告仍会保留。完整任务记录自动保存在 `%LOCALAPPDATA%/DVD-Audio-Maker/logs`，窗口仅显示最近记录以限制内存占用。启动异常也会写入该目录。
+
 实施方案和范围：[GUI 与 DLL 方案](docs/GUI-AND-DLL-PLAN.md)。
 
 
@@ -247,7 +251,7 @@ dotnet build DVD-Audio-Maker.sln --configuration Release
 dotnet run --project tests\DvdaMaker.CompatibilityTests --configuration Release
 ```
 
-当前兼容测试基线为 97 项。
+当前兼容测试基线为 100 项。
 
 ## 文档
 

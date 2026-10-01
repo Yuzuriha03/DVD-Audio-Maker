@@ -15,4 +15,8 @@
     <ProjectReference Include="..\..\src\DvdaMaker.Preparation\DvdaMaker.Preparation.csproj" />
     <ProjectReference Include="..\..\src\DvdaMaker.SurcodeTool\DvdaMaker.SurcodeTool.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\DvdaMaker.Desktop\TaskLogPresentation.cs" Link="Desktop\TaskLogPresentation.cs" />
+    <Compile Include="..\..\src\DvdaMaker.Desktop\SettingDefinition.cs" Link="Desktop\SettingDefinition.cs" />
+  </ItemGroup>
 </Project>

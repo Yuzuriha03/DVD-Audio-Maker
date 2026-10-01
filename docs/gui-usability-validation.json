@@ -1,0 +1,81 @@
+{
+  "status": "PASS",
+  "cases": [
+    {
+      "case": "log-controls",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    },
+    {
+      "case": "preview",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    },
+    {
+      "case": "build",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    },
+    {
+      "case": "verify",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    },
+    {
+      "case": "invalid-settings",
+      "exit": 1,
+      "expected": 1,
+      "image": true
+    },
+    {
+      "case": "cancel",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    },
+    {
+      "case": "audio-minimum",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    },
+    {
+      "case": "dvd9",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    },
+    {
+      "case": "custom-capacity",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    },
+    {
+      "case": "legacy-env",
+      "exit": 0,
+      "expected": 0,
+      "image": true
+    }
+  ],
+  "iso_files": [
+    "build/gui-friendly-smoke/output/gui_friendly_1.iso"
+  ],
+  "date": "2026-10-01",
+  "architecture": "AMD64",
+  "compatibility_tests": {
+    "passed": 100,
+    "total": 100
+  },
+  "release_manifest_verified_files": 146,
+  "fixed_regressions": [
+    "Preserve blank/default DVD5 capacity during GUI roundtrip",
+    "Read and export active log files with compatible sharing",
+    "Expose verification diagnostics in the task summary"
+  ],
+  "details": "Complete session diagnostics remain in logs; the GUI keeps a bounded recent view. The lossless verification step samples the first track."
+}
