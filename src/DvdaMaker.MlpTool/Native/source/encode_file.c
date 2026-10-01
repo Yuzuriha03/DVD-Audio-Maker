@@ -421,9 +421,29 @@ typedef struct host_stream {
     mlp_encoder_read read;mlp_encoder_write write;void *input,*output;
     mlp_encoder_result *result;unsigned caller_fp;
 } host_stream;
+/* Windows x64 _controlfp does not provide x87 precision control.
+ * Keep the original 53-bit x87 evaluation and round-to-nearest explicitly,
+ * and restore both x87 and SSE state around managed host callbacks. */
+static unsigned host_current_fp(void)
+{
+#if defined(_WIN32) && defined(__x86_64__)
+    uint16_t cw;uint32_t mxcsr;
+    __asm__ __volatile__("fnstcw %0" : "=m"(cw));
+    __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
+    return ((unsigned)cw<<16)|(mxcsr&65535u);
+#elif defined(_WIN32)
+    return _controlfp(0,0);
+#else
+    return 0;
+#endif
+}
 static void host_fp(unsigned control)
 {
-#ifdef _WIN32
+#if defined(_WIN32) && defined(__x86_64__)
+    uint16_t cw=(uint16_t)(control>>16);uint32_t mxcsr=control&65535u;
+    __asm__ __volatile__("fldcw %0" : : "m"(cw));
+    __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
+#elif defined(_WIN32)
     _controlfp(control,_MCW_PC|_MCW_RC);
 #else
     (void)control;
@@ -431,7 +451,9 @@ static void host_fp(unsigned control)
 }
 static unsigned codec_fp(void)
 {
-#ifdef _WIN32
+#if defined(_WIN32) && defined(__x86_64__)
+    return 0x027f1f80u;
+#elif defined(_WIN32)
     return _PC_53|_RC_NEAR;
 #else
     return 0;
@@ -482,7 +504,7 @@ static int encode_stream_common(const mlp_encoder_config *c,
     matrix->original_scale=matrix->enable_matrix=matrix->joint_search=1;
     mlp_output_queue_init(queue,host_write,&host);
 #ifdef _WIN32
-    host.caller_fp=_controlfp(0,0);
+    host.caller_fp=host_current_fp();
 #endif
     host_fp(codec_fp());result->status=MLP_ENCODER_OK;
     ok=encode(&pcm,NULL,interval,pcm.format.sample_rate/pcm.format.au_samples,1,matrix,0,pending,queue,&stamp);
