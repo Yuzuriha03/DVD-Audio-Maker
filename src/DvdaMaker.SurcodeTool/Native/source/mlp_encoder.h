@@ -44,6 +44,8 @@ enum { MLP_ENCODER_ABI_VERSION=1,MLP_ENCODER_OK=0,MLP_ENCODER_INVALID=-1,
  * Defaults: restart_interval=0 selects preferred span 8; original cycle,
  * scale/matrix, joint
  * prediction search, zero-tail padding and output timing are always active.
+ * Oversized restart intervals may retry losslessly without prediction;
+ * successful normal plans remain byte-identical. AU size/FIFO limits remain.
  * Results are final only on return 0. On error the host discards previously
  * received partial output. All allocations and FP state are restored.
  * Current full-file evidence is documented separately from API capability. */

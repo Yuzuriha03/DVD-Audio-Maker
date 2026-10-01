@@ -9,7 +9,7 @@ namespace DvdaMaker.SurcodeTool;
 /// <summary>In-process bridge to the pinned x64 encoder. No encoder process or output rewriting.</summary>
 public static class MlpEncoder
 {
-    public const string BinarySha256 = "1eaa3a212a8a703d416874583688c46532fec393266a63ea402253e2f29905e4";
+    public const string BinarySha256 = "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8";
     public const string MetadataPolicy = "empty-auxiliary-tlv-v1";
     private static readonly Lazy<EncodeDelegate> Encoder = new(LoadEncoder);
 

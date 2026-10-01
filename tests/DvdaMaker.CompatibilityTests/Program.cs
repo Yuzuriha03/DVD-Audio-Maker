@@ -188,6 +188,12 @@ if (args.Length > 0 && args[0] == "--process-fixture-fail")
     return 7;
 }
 
+if (args.Length == 1 && args[0] == "--oversized-au-integration")
+{
+    MlpEncoderTests.OversizedAccessUnitIntegration();
+    return 0;
+}
+
 if (args.Length == 1 && args[0] == "--mlpencoder-integration")
 {
     MlpEncoderTests.RealIntegration();
@@ -218,7 +224,7 @@ if (args.Length > 0)
     }
 
     Console.Error.WriteLine(
-        "用法: DvdaMaker.CompatibilityTests [--real-fixtures <ISO目录> <MLP根目录> | --mlpencoder-integration | --mlpencoder-batch-integration <eac3to.exe>]");
+        "用法: DvdaMaker.CompatibilityTests [--real-fixtures <ISO目录> <MLP根目录> | --mlpencoder-integration | --oversized-au-integration | --mlpencoder-batch-integration <eac3to.exe>]");
     return 2;
 }
 
@@ -239,6 +245,7 @@ var tests = new (string Name, Action Run)[]
     ("GUI 完整行与并发日志捕获", GuiPresentationTests.CompleteLineCapture),
     ("GUI 友好选项保留配置原值", GuiPresentationTests.ChoiceValuesRemainStable),
     ("进程内 DLL 取消与失败保护", MlpEncoderTests.DllCancellation),
+    ("超大 AU 无损回退与大小上限", MlpEncoderTests.OversizedAccessUnit),
     ("eac3to 奇数 PCM 尾部封装", MlpEncoderTests.OddPcmTail),
     ("SurCode 内置任务与路径", BuildSurcodeBatchJob),
     ("MLP 编码核心确定性元数据", MlpEncoderTests.Metadata),

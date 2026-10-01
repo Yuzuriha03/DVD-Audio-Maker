@@ -1,13 +1,14 @@
 {
   "validation_date": "2026-10-01",
   "source_sha256": {
-    "encode_file.c": "c95a0e5d007a6bf7474cd79f343327bbe02f79b1b9018ae173709531f3f54e1f",
+    ".gitattributes": "9dea0194ecb47f0c3ae950f0264ddfee5efaf448770ec41846c3437cb9c19f07",
+    "encode_file.c": "d67132de10fd46b6c495ffe982a463b57408b620f32afe7525f3797375661ccf",
     "encode_two_stream.c": "44ebde7befbe192af8217831257e28a971481d88f6c92678b8e831a1176251fe",
     "mlp_bits.c": "3cf93b520cb4e4faa67387b3af2f7e96472dbd53443e70a8edd98b2d02348c39",
     "mlp_bits.h": "72d1c667a3f1ead879c3b0f1d73f5f20201bdf692c24025566afea259d15ca29",
     "mlp_cost.c": "258ae86f67c0d04ab949f50389b94778430181d84db54a3f0061f13e36dd648b",
     "mlp_cost.h": "303d96eb8caa16eed5d018afd18bc717c2a088d9b0d1eb8554c6a190e636b7d7",
-    "mlp_encoder.h": "8c4b41e9d3a32f7f38789a800be9046acae0f1e695308934b1d4c8bdd13414b3",
+    "mlp_encoder.h": "c0ce80593f598c432ad0ad4efab05899983dc137e17a9f8173048712629132fe",
     "mlp_entropy.c": "4a02aaebf1440e128617205756ee6a892df31fc826a91c6562326e42155ea354",
     "mlp_entropy.h": "05f75faf393e8ae4e6a880749c4b7f1313b414bb250adbb7e69457d45268e412",
     "mlp_format.c": "2a437923b4a082cd63ab38c25b45a9872b1031596afae2cf10cd383139dc57be",
@@ -57,8 +58,8 @@
     "exports": []
   },
   "encoder": {
-    "sha256": "1eaa3a212a8a703d416874583688c46532fec393266a63ea402253e2f29905e4",
-    "bytes": 343862,
+    "sha256": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8",
+    "bytes": 345509,
     "machine": "PE32+ AMD64",
     "compiler": "x86_64-w64-mingw32-gcc 13.2.0",
     "flags": [
@@ -145,5 +146,85 @@
   "x64_port_changes": [
     "encode_file.c: explicit x87 PC53/nearest and SSE FP state save/restore across callbacks",
     "mlp_group_input.inc: use host_current_fp for callback state"
-  ]
+  ],
+  "previous_encoder": {
+    "sha256": "1eaa3a212a8a703d416874583688c46532fec393266a63ea402253e2f29905e4",
+    "bytes": 343862,
+    "machine": "PE32+ AMD64",
+    "compiler": "x86_64-w64-mingw32-gcc 13.2.0",
+    "flags": [
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-O2",
+      "-static-libgcc",
+      "-mfpmath=387",
+      "-fexcess-precision=standard",
+      "-ffp-contract=off",
+      "-DMLP_ENCODER_LIBRARY",
+      "-DMLP_ENCODER_BUILD",
+      "-shared",
+      "-Wl,--no-insert-timestamp"
+    ],
+    "exports": [
+      "mlp_encode_stream",
+      "mlp_encode_stream_depths",
+      "mlp_encode_stream_groups",
+      "mlp_encode_stream_layout",
+      "mlp_encoder_abi_version"
+    ]
+  },
+  "oversized_au_fallback": {
+    "date": "2026-10-02",
+    "previous_encoder_sha256": "1eaa3a212a8a703d416874583688c46532fec393266a63ea402253e2f29905e4",
+    "policy": "Keep encoding byte-identical when all access units fit. Before committing an oversized interval, retry the same PCM with unpredicted lossless coding; keep 1536-byte AU and FIFO limits. No output rewriting.",
+    "focused_validation": "PASS: FFmpeg and original/verifiers preserve PCM; 198/198 PCM fixtures pass, 197 previous outputs unchanged; all 78 original profiles (95,138,694 bytes) match.",
+    "validation_record": "docs/mlp-oversize-fix-validation.json",
+    "original_same_sample": "Confirmed original application rejects the identical 11042-frame PCM with Access unit too large; no nonempty original MLP exists.",
+    "compatibility_tests": "101/101 PASS",
+    "release_validation": "PASS: x64 GUI stress encoding/cache, ISO build/verify, 146 manifest entries."
+  },
+  "previous_source_sha256": {
+    "encode_file.c": "c95a0e5d007a6bf7474cd79f343327bbe02f79b1b9018ae173709531f3f54e1f",
+    "encode_two_stream.c": "44ebde7befbe192af8217831257e28a971481d88f6c92678b8e831a1176251fe",
+    "mlp_bits.c": "3cf93b520cb4e4faa67387b3af2f7e96472dbd53443e70a8edd98b2d02348c39",
+    "mlp_bits.h": "72d1c667a3f1ead879c3b0f1d73f5f20201bdf692c24025566afea259d15ca29",
+    "mlp_cost.c": "258ae86f67c0d04ab949f50389b94778430181d84db54a3f0061f13e36dd648b",
+    "mlp_cost.h": "303d96eb8caa16eed5d018afd18bc717c2a088d9b0d1eb8554c6a190e636b7d7",
+    "mlp_encoder.h": "8c4b41e9d3a32f7f38789a800be9046acae0f1e695308934b1d4c8bdd13414b3",
+    "mlp_entropy.c": "4a02aaebf1440e128617205756ee6a892df31fc826a91c6562326e42155ea354",
+    "mlp_entropy.h": "05f75faf393e8ae4e6a880749c4b7f1313b414bb250adbb7e69457d45268e412",
+    "mlp_format.c": "2a437923b4a082cd63ab38c25b45a9872b1031596afae2cf10cd383139dc57be",
+    "mlp_format.h": "655d31fffb4023f6d1fafbd85ea56a712cbaedad1de18d94fc62fcf23d8bf826",
+    "mlp_group_input.inc": "fa7e57687ddb03760e5aab4a6849e485b7af2a238ee0f9a45781ba9ff998a92d",
+    "mlp_interval.c": "4b19f8f44a16123c715944cd56d7bb68bc8fff031443603067b2a6c361725588",
+    "mlp_interval.h": "da392b222715753e1f2ffbb6e64f1e973eb6f7a502652924e973568422c91391",
+    "mlp_matrix.c": "60a3640cb30cb6a52e94a52339362a41ea0ea29f77fc6ef6ffe829ea16467689",
+    "mlp_matrix.h": "34053c75e13211bb904e32a1e2d819ae7f7997e65be57bd4626cc5151bfc6746",
+    "mlp_output_queue.c": "2bf81abc8b21a9b12431c0559c763020cf6176bd3c68c395f1a9814f051ed148",
+    "mlp_output_queue.h": "0a4899c087e1045097d4807af84f2ce4bae045a3536e11ffc6743c20719bfbe0",
+    "mlp_output_timing.c": "4eed23895a1bc0b19d2a48a241f0bae776638547cc27c07141ff57e684d4a027",
+    "mlp_output_timing.h": "9a92a72e429858a3cdf87064efe50ae919b7b9054cfc0fca6eb6da8ba2f58a0e",
+    "mlp_parameters.c": "e395c92c12eae0efa4c417fbe6959849fd3da51cd240ae257fb6b87e0821ab40",
+    "mlp_parameters.h": "62c2ff451dcd95aef53e528b6c66a8a6b11cbb5013bef25a684e6e95c5d317ab",
+    "mlp_pcm.c": "0ae77851ec6ffe5b3e71a882a861d49f2dc29852eadd169a70c69d66abd6be15",
+    "mlp_pcm.h": "76e410a5dc4bd722020612b49daed86bed246b4fd085128f9fe967d7de36f20f",
+    "mlp_predict.c": "e014d6a7b6f9baa7e55895f7c0fcea983d0ee239efacae3d7ccb99b922becf5e",
+    "mlp_predict.h": "d586506231d989e5ac1c8a79b5c30271809452fa16a8f591840493e6d059a6fa",
+    "mlp_rate.c": "497f1a3d1613cddbe8947ce26caa147d6ff2d201da5540f438ba9c58610db4ce",
+    "mlp_rate.h": "48c153bb4d8b22e0cf1565ef81af1dbffd6a5b544c23c3d2a1ad65d7a578501f",
+    "mlp_restart.c": "0a8ca5dccf2d4d06230108216cc0ae17c177aa3241cc25e50513f2f85bca5d30",
+    "mlp_restart.h": "f3f7fe387ad57d1e6e309433453fa86a4dfc36d9eec259491ddc365ac8cddbaa",
+    "mlp_scale.c": "3db45af24ef2714f8bf9bd289bc300905dfb4a433825e7fbd7d3a2a44ba4b8f9",
+    "mlp_scale.h": "e363a17f39d630740a4206383f4b69f64802d78686e1ddf3de1a88b5acd49ada",
+    "mlp_search.c": "65d03d3239b2bd555374659eb3b5ec16667c9ec77d6b66c220de9229d1e6ebd7",
+    "mlp_search.h": "6a3c213e1d4108b90886828db97f6a03c535620182214e1cb661893fe60e5ca3",
+    "mlp_select.c": "3197dcf761c7ef2fb7541f448e342bd1b8dca67a2a5cf29fa398a40735db5292",
+    "mlp_stamp.c": "1e51663b87beb10ea64261291095734a7dfd13dbaab422bad87bb948669100e6",
+    "mlp_stamp.h": "9abf34b9dde54fef0b71b748cf34d2df1f872c7e47140eed90592f3868117093",
+    "mlp_substream.c": "945f6873bc1e7e9666b7b26f40a36b1b931c13de2531e0a2d873da468e0f3070",
+    "mlp_substream.h": "96fce9acc04da4254a08889bf0d211e359be74d45fe0b2482dd8eea0276b6b23",
+    "mlp_upsample_coefficients.inc": "835b768c735268ed5a04b7d0f82bb12ef8f309202b8f1e72aec9d98cd6f154e7"
+  }
 }

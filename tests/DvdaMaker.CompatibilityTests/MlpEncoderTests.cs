@@ -232,6 +232,70 @@ internal static class MlpEncoderTests
         if ((size & 1) != 0) writer.Write((byte)0); return raw;
     }
 
+    public static void OversizedAccessUnit() => CheckOversizedAccessUnit(false);
+    public static void OversizedAccessUnitIntegration() => CheckOversizedAccessUnit(true);
+
+    private static void CheckOversizedAccessUnit(bool decode)
+    {
+        var root = NewRoot();
+        try
+        {
+            const int rate = 88200, channels = 6, frames = rate / 8 + 17;
+            var wave = Path.Combine(root, "noise.wav");
+            var expected = WriteWave(wave, rate, 24, channels, frames);
+            uint state = 0x713291abu;
+            for (var n = 0; n < frames; n++) for (var ch = 0; ch < channels; ch++)
+            {
+                state = unchecked(state * 1664525 + 1013904223);
+                var value = (n % 4096) switch
+                { 0 => -8388608, 1 => 8388607, 2 => 0, 3 => 1, 4 => -1, _ => (int)(state >> 8) - 8388608 };
+                var at = (n * channels + ch) * 3;
+                expected[at] = (byte)value; expected[at + 1] = (byte)(value >> 8); expected[at + 2] = (byte)(value >> 16);
+            }
+            var layout = SurcodePcmWav.ReadLayout(wave);
+            using (var stream = new FileStream(wave, FileMode.Open, FileAccess.Write))
+            { stream.Position = layout.DataOffset; stream.Write(expected); }
+            var output = Path.Combine(root, "noise.mlp");
+            MlpEncoder.EncodeAsync(wave, output, "", TimeSpan.FromSeconds(120), CancellationToken.None).GetAwaiter().GetResult();
+            Require(MlpCacheValidator.IsEncoderValid(output), "oversized-AU stream structure");
+            var bytes = File.ReadAllBytes(output); var offset = 0; var units = 0;
+            while (offset < bytes.Length)
+            {
+                Require(offset + 4 <= bytes.Length, "Truncated AU header");
+                var size = (BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(offset)) & 0xfff) * 2;
+                Require(size >= 8 && size <= 1536 && offset + size <= bytes.Length, "AU exceeds unchanged 1536-byte limit");
+                offset += size; units++;
+            }
+            Require(units == (frames + 79) / 80, "fallback changed AU count or metadata alignment");
+            var repeat = Path.Combine(root, "repeat.mlp");
+            var context = Path.Combine(root, "metadata.stampctx");
+            var explicitOutput = Path.Combine(root, "explicit.mlp");
+            MlpEncoder.WriteMetadata(context, frames, rate);
+            Task.WhenAll(
+                MlpEncoder.EncodeAsync(wave, repeat, "", TimeSpan.FromSeconds(120), CancellationToken.None),
+                MlpEncoder.EncodeAsync(wave, explicitOutput, context, TimeSpan.FromSeconds(120), CancellationToken.None)
+            ).GetAwaiter().GetResult();
+            Require(File.ReadAllBytes(repeat).AsSpan().SequenceEqual(bytes), "Concurrent oversized-AU fallback is not deterministic");
+            Require(File.ReadAllBytes(explicitOutput).AsSpan().SequenceEqual(bytes), "fallback changed explicit metadata alignment");
+            if (decode)
+            {
+                var raw = Path.Combine(root, "decoded.raw");
+                var result = new ProcessRunner().RunAsync(new ProcessRequest
+                {
+                    FileName = "ffmpeg", Arguments = ["-nostdin", "-v", "error", "-xerror", "-f", "mlp", "-i", output,
+                        "-c:a", "pcm_s24le", "-f", "s24le", raw], Timeout = TimeSpan.FromSeconds(120)
+                }).GetAwaiter().GetResult();
+                Require(result.Succeeded, "Oversized-AU independent decode: " + result.StandardError);
+                var actual = File.ReadAllBytes(raw);
+                Require(actual.Length == units * 80 * channels * 3, "Incorrect padded PCM length");
+                Require(actual.AsSpan(0, expected.Length).SequenceEqual(expected), "fallback changed source PCM");
+                Require(actual.AsSpan(expected.Length).IndexOfAnyExcept((byte)0) < 0, "Nonzero final AU padding");
+                Console.WriteLine("PASS: oversized-AU lossless fallback; artifacts: " + root);
+            }
+        }
+        finally { if (!decode) Directory.Delete(root, true); }
+    }
+
     public static void RealIntegration()
     {
         var root = NewRoot(); Console.WriteLine("Integration artifacts: " + root);
