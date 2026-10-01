@@ -6,7 +6,7 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
     <ProjectReference Include="..\DvdaMaker.Processes\DvdaMaker.Processes.csproj" />
+    <EmbeddedResource Include="Native\win-x86\mlp_encode.exe" LogicalName="DvdaMaker.MlpEncoder.Encoder" />
   </ItemGroup>
 </Project>

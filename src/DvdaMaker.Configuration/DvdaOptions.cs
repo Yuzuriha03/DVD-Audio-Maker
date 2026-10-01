@@ -77,13 +77,15 @@ public sealed partial class DvdaOptions
     {
         "external" => "external",
         "surcode" => "surcode",
-        "surcode-batch" => "surcode-batch",
-        _ => "ffmpeg",
+        "surcode-batch" or "batch-surcode" => "surcode-batch",
+        "ffmpeg" => throw new ArgumentException("FFmpeg MLP 编码分支已移除，请将 DVDA_MLP_SOURCE 改为 surcode-batch 或 external。"),
+        _ => throw new ArgumentException("DVDA_MLP_SOURCE 仅支持 surcode-batch、external 或 surcode（外部文件）。"),
     };
-    public string MlpExternalDirectory => TrimSlash(Get("DVDA_MLP_EXTERNAL_DIR").Trim());
+    public string MlpExternalDirectory => TrimSlash(Get("DVDA_MLP_EXTERNAL_DIR").Trim()) is { Length: > 0 } directory
+        ? directory : MlpSource == "surcode-batch" ? MlpDirectory : string.Empty;
     public string MlpBatchTempDirectory => TrimSlash(Get("DVDA_MLP_BATCH_TEMP_DIR").Trim());
     public string MlpBatchOutputDirectory => TrimSlash(Get("DVDA_MLP_BATCH_OUTPUT_DIR").Trim());
-    public string MlpSurcodeExecutable => Get("DVDA_MLP_SURCODE_EXE").Trim();
+    public string MlpMetadataContext => Get("DVDA_MLP_METADATA_CONTEXT").Trim();
     public string MlpEac3toExecutable => Get("DVDA_MLP_EAC3TO_EXE").Trim();
     public int MlpSurcodeSampleRate => GetInt("DVDA_MLP_SURCODE_SAMPLE_RATE") ?? 48_000;
     public int MlpSurcodeBits => GetInt("DVDA_MLP_SURCODE_BITS") ?? 24;
@@ -198,7 +200,7 @@ public sealed partial class DvdaOptions
         {
             ["DVDA_MLP_BATCH_TEMP_DIR"] = MlpBatchTempDirectory,
             ["DVDA_MLP_BATCH_OUTPUT_DIR"] = MlpBatchOutputDirectory,
-            ["DVDA_MLP_SURCODE_EXE"] = MlpSurcodeExecutable,
+            ["DVDA_MLP_METADATA_CONTEXT"] = MlpMetadataContext,
             ["DVDA_MLP_EAC3TO_EXE"] = MlpEac3toExecutable,
             ["DVDA_MLP_SURCODE_SAMPLE_RATE"] = MlpSurcodeSampleRate.ToString(CultureInfo.InvariantCulture),
             ["DVDA_MLP_SURCODE_BITS"] = MlpSurcodeBits.ToString(CultureInfo.InvariantCulture),

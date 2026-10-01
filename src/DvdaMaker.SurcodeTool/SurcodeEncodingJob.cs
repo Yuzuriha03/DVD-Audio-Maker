@@ -2,7 +2,7 @@ namespace DvdaMaker.SurcodeTool;
 
 public sealed record SurcodeEncodingJob
 {
-    public required string SurcodeExecutable { get; init; }
+    public string MetadataContext { get; init; } = string.Empty;
 
     public required string Eac3toExecutable { get; init; }
 
@@ -13,6 +13,8 @@ public sealed record SurcodeEncodingJob
     public required int SampleRate { get; init; }
 
     public required int Bits { get; init; }
+
+    public int Jobs { get; init; } = 1;
 
     public IReadOnlyList<SurcodeEncodingTrack> Tracks { get; init; } = [];
 }

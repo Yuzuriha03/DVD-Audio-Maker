@@ -31,7 +31,7 @@ public static class DiskSpacePlanner
         var available = freeSpace ?? AvailableBytes;
         var items = new List<(string Root, string Purpose, long Bytes)>();
 
-        if (options.MlpSource is "ffmpeg" or "surcode-batch")
+        if (options.MlpSource == "surcode-batch")
         {
             // MLP 尚未生成时，用源文件大小作为编码输出的粗略下界。
             var missingMlpBytes = tracks
@@ -39,7 +39,7 @@ public static class DiskSpacePlanner
                 .Sum(track => Math.Max(0, track.SourceSize));
             if (missingMlpBytes > 0)
             {
-                items.Add((Root(options.MlpDirectory), "MLP 编码输出", missingMlpBytes));
+                items.Add((Root(options.MlpExternalDirectory), "MLP 编码输出", missingMlpBytes));
             }
         }
 

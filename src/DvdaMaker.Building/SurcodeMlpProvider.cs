@@ -3,6 +3,7 @@ using DvdaMaker.Formats.Mlp;
 using DvdaMaker.Preparation;
 using DvdaMaker.Processes;
 using DvdaMaker.SurcodeTool;
+using System.Security.Cryptography;
 
 namespace DvdaMaker.Building;
 
@@ -27,18 +28,10 @@ public sealed class SurcodeMlpProvider
             diagnostics.Add(new BuildDiagnostic(
                 BuildDiagnosticSeverity.Error,
                 "SURCODE_WINDOWS_REQUIRED",
-                "内置 SurCode 编码分支只能在 Windows 上运行。"));
+                "MLP 编码核心编码分支只能在 Windows 上运行。"));
             return new MlpAcquisitionResult(tracks, 0, 0, diagnostics);
         }
 
-        if (string.IsNullOrWhiteSpace(_options.MlpSurcodeExecutable) ||
-            !File.Exists(_options.MlpSurcodeExecutable))
-        {
-            diagnostics.Add(new BuildDiagnostic(
-                BuildDiagnosticSeverity.Error,
-                "SURCODE_EXECUTABLE_MISSING",
-                $"surcode-batch 模式需要通过 DVDA_MLP_SURCODE_EXE 指定有效的 surcodemlp.exe: {_options.MlpSurcodeExecutable}"));
-        }
         if (string.IsNullOrWhiteSpace(_options.MlpEac3toExecutable) ||
             !File.Exists(_options.MlpEac3toExecutable))
         {
@@ -63,6 +56,10 @@ public sealed class SurcodeMlpProvider
             return new MlpAcquisitionResult(tracks, 0, 0, diagnostics);
         }
         Directory.CreateDirectory(outputRoot);
+        var cachePath = MlpCacheIndex.PathFor(outputRoot);
+        var cacheIndex = MlpCacheIndex.Load(cachePath);
+        var encoderIdentity = EncodingIdentity();
+        var sourceIdentities = new Dictionary<string, FileIdentity>(StringComparer.OrdinalIgnoreCase);
 
         var pending = new List<PendingTrack>();
         var hits = 0;
@@ -79,10 +76,13 @@ public sealed class SurcodeMlpProvider
 
             var destination = DestinationPath(track.SourcePath, sourceRoot, outputRoot);
             var mlp = new FileInfo(destination);
-            var source = new FileInfo(track.SourcePath);
+            var source = FileIdentityProbe.Compute(track.SourcePath)
+                ?? throw new IOException($"无法读取源文件身份: {track.SourcePath}");
+            sourceIdentities[track.SourcePath] = source;
             if (mlp.Exists && mlp.Length > 0 &&
-                mlp.LastWriteTimeUtc >= source.LastWriteTimeUtc &&
-                MlpCacheValidator.IsValid(destination))
+                cacheIndex.Match(destination, source, encoderIdentity, _options.MlpSurcodeBits,
+                    _options.MlpSurcodeSampleRate, MlpCacheValidator.RequiredMajorSyncInterval) is not null &&
+                MlpCacheValidator.IsEncoderValid(destination))
             {
                 hits++;
                 continue;
@@ -113,9 +113,9 @@ public sealed class SurcodeMlpProvider
             try
             {
                 var job = BuildJob(tempDirectory, stageDirectory, pending);
-                Console.WriteLine($"[SurCode] 进程内提交 {pending.Count} 个 FLAC 给编码类库");
-                Console.WriteLine($"[SurCode] 临时目录: {tempDirectory}");
-                Console.WriteLine($"[SurCode] MLP 输出目录: {stageDirectory}");
+                Console.WriteLine($"[MLP] 提交 {pending.Count} 个音源给MLP 编码核心");
+                Console.WriteLine($"[MLP] 临时目录: {tempDirectory}");
+                Console.WriteLine($"[MLP] MLP 输出目录: {stageDirectory}");
                 var succeeded = false;
                 try
                 {
@@ -128,7 +128,7 @@ public sealed class SurcodeMlpProvider
                     diagnostics.Add(new BuildDiagnostic(
                         BuildDiagnosticSeverity.Error,
                         "SURCODE_TOOL_FAILED",
-                        $"内置 SurCode 编码类库失败（单批 {pending.Count} 首）：{exception.Message}"));
+                        $"MLP 编码核心编码类库失败（单批 {pending.Count} 首）：{exception.Message}"));
                 }
                 if (succeeded)
                 {
@@ -141,7 +141,7 @@ public sealed class SurcodeMlpProvider
                             diagnostics.Add(new BuildDiagnostic(
                                 BuildDiagnosticSeverity.Error,
                                 "SURCODE_OUTPUT_MISSING",
-                                $"内置 SurCode 编码工具未生成 MLP: {item.Track.Title}"));
+                                $"MLP 编码核心编码工具未生成 MLP: {item.Track.Title}"));
                             continue;
                         }
                         try
@@ -153,7 +153,7 @@ public sealed class SurcodeMlpProvider
                                 diagnostics.Add(new BuildDiagnostic(
                                     BuildDiagnosticSeverity.Error,
                                     "SURCODE_OUTPUT_INVALID",
-                                    $"SurCode MLP 结构校验失败: {item.Track.Title}"));
+                                    $"MLP 编码核心 MLP 结构校验失败: {item.Track.Title}"));
                                 continue;
                             }
                         }
@@ -162,16 +162,25 @@ public sealed class SurcodeMlpProvider
                             diagnostics.Add(new BuildDiagnostic(
                                 BuildDiagnosticSeverity.Error,
                                 "SURCODE_OUTPUT_INVALID",
-                                $"SurCode MLP 无法解析: {item.Track.Title}（{exception.Message}）"));
+                                $"MLP 编码核心 MLP 无法解析: {item.Track.Title}（{exception.Message}）"));
                             continue;
                         }
 
                         Directory.CreateDirectory(Path.GetDirectoryName(item.Destination)!);
+                        if (!FileIdentityProbe.Matches(item.Track.SourcePath, sourceIdentities[item.Track.SourcePath]))
+                            throw new IOException($"编码过程中源文件发生变化: {item.Track.SourcePath}");
                         File.Move(staged, item.Destination, overwrite: true);
                         var identity = FileIdentityProbe.Compute(item.Destination);
                         if (identity is not null)
                         {
                             verifiedOutputs[Path.GetFullPath(item.Destination)] = identity;
+                            cacheIndex.Record(item.Destination, new MlpCacheEntry
+                            {
+                                Source = sourceIdentities[item.Track.SourcePath], Output = identity,
+                                Encoder = encoderIdentity, Bits = _options.MlpSurcodeBits,
+                                ResampleTo = _options.MlpSurcodeSampleRate,
+                                MaxInterval = MlpCacheValidator.RequiredMajorSyncInterval,
+                            });
                         }
                         rebuilt++;
                     }
@@ -184,6 +193,9 @@ public sealed class SurcodeMlpProvider
             }
         }
 
+        cacheIndex.Save(cachePath);
+        if (diagnostics.Any(d => d.Severity == BuildDiagnosticSeverity.Error))
+            return new MlpAcquisitionResult(tracks, hits, rebuilt, diagnostics);
         var external = await new ExternalMlpProvider(_options, _runner)
             .AcquireAsync(tracks, verifiedOutputs, cancellationToken).ConfigureAwait(false);
         var normalized = external.Tracks.Select(track =>
@@ -202,12 +214,13 @@ public sealed class SurcodeMlpProvider
     {
         return new SurcodeEncodingJob
         {
-            SurcodeExecutable = NormalizeBatchPath(_options.MlpSurcodeExecutable),
+            MetadataContext = string.IsNullOrEmpty(_options.MlpMetadataContext) ? string.Empty : NormalizeBatchPath(_options.MlpMetadataContext),
             Eac3toExecutable = NormalizeBatchPath(_options.MlpEac3toExecutable),
             TemporaryDirectory = NormalizeBatchPath(tempDirectory),
             OutputDirectory = NormalizeBatchPath(outputDirectory),
             SampleRate = _options.MlpSurcodeSampleRate,
             Bits = _options.MlpSurcodeBits,
+            Jobs = _options.MlpJobs,
             Tracks = pending.Select((item, index) => new SurcodeEncodingTrack
             {
                 SourcePath = NormalizeBatchPath(item.Track.SourcePath),
@@ -236,6 +249,14 @@ public sealed class SurcodeMlpProvider
     }
 
     private static string WorkName(int index) => $"__surcode_{index + 1:D4}";
+
+    private string EncodingIdentity()
+    {
+        static string Hash(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
+        var metadata = string.IsNullOrEmpty(_options.MlpMetadataContext)
+            ? MlpEncoder.MetadataPolicy : Hash(_options.MlpMetadataContext);
+        return $"|{MlpEncoder.BinarySha256}|eac3to:{Hash(_options.MlpEac3toExecutable)}|metadata:{metadata}|pcm-wave-v1";
+    }
 
     private static void TryDeleteDirectory(string path)
     {

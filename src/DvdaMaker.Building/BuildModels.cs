@@ -18,7 +18,7 @@ public sealed record BuildTrack
     public int? Channels { get; init; }
     public int? SourceSampleRate { get; init; }
     public int? SourceBits { get; init; }
-    public string MlpSource { get; init; } = "ffmpeg";
+    public string MlpSource { get; init; } = "surcode-batch";
     public bool ExternalResampled { get; init; }
     public bool ExternalRebitded { get; init; }
     public bool ParametersChanged { get; init; }

@@ -44,8 +44,7 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
                 .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
             "surcode-batch" => await new SurcodeMlpProvider(options, _runner)
                 .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
-            _ => await new FfmpegMlpProvider(options, _runner)
-                .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
+            _ => throw new InvalidOperationException("不支持的 MLP 来源。"),
         };
         log.WriteLine($"[耗时] MLP 获取: {Stopwatch.GetElapsedTime(acquisitionStarted)}");
 
@@ -76,7 +75,10 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
         if (plan.HasErrors)
         {
             throw new InvalidOperationException(
-                "MLP 获取或构建规划包含错误；未写入索引，也未执行出盘。" );
+                "MLP 获取或构建规划包含错误；未写入索引，也未执行出盘。" + Environment.NewLine +
+                string.Join(Environment.NewLine, plan.Diagnostics
+                    .Where(diagnostic => diagnostic.Severity == BuildDiagnosticSeverity.Error)
+                    .Select(diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
         }
 
         if (dryRun)

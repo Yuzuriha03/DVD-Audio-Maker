@@ -23,7 +23,8 @@ public sealed record MlpInspection(
         AccessUnitCount > 0 &&
         MajorSyncCount > 0 &&
         SampleRate is > 0 &&
-        PeakBitrateRaw == MlpStreamAligner.PeakBitrateRaw(SampleRate.Value) &&
+        PeakBitrateRaw >= (long)MlpStreamAligner.BasePeakBitrate * 16 / SampleRate.Value &&
+        PeakBitrateRaw <= MlpStreamAligner.PeakBitrateRaw(SampleRate.Value) &&
         ExtendedSubstreamInfo == 1 &&
         HasEndOfStream &&
         MajorSyncErrors.Count == 0 &&

@@ -82,23 +82,12 @@ if (fixtureProcessName.StartsWith("fake-magick", StringComparison.OrdinalIgnoreC
     }
     return 0;
 }
-if (fixtureProcessName.StartsWith("fake-ffmpeg-encode", StringComparison.OrdinalIgnoreCase))
+if (fixtureProcessName.StartsWith("fake-eac3to", StringComparison.OrdinalIgnoreCase))
 {
     RecordFixtureCall("encode");
-    // 夹具进程不引用库程序集，MLP 内容由测试进程预先写好的模板文件提供。
     var template = Environment.GetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE");
-    if (string.IsNullOrEmpty(template) || !File.Exists(template))
-    {
-        Console.Error.WriteLine("missing DVDA_MLP_FIXTURE_TEMPLATE");
-        return 3;
-    }
-    var outputPath = args[^1];
-    var parent = Path.GetDirectoryName(outputPath);
-    if (!string.IsNullOrEmpty(parent))
-    {
-        Directory.CreateDirectory(parent);
-    }
-    File.Copy(template, outputPath, overwrite: true);
+    if (string.IsNullOrEmpty(template) || !File.Exists(template)) return 3;
+    File.Copy(template, args[1], overwrite: false);
     return 0;
 }
 if (fixtureProcessName.StartsWith("fake-ffmpeg", StringComparison.OrdinalIgnoreCase))
@@ -199,6 +188,18 @@ if (args.Length > 0 && args[0] == "--process-fixture-fail")
     return 7;
 }
 
+if (args.Length == 1 && args[0] == "--mlpencoder-integration")
+{
+    MlpEncoderTests.RealIntegration();
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--mlpencoder-batch-integration")
+{
+    MlpEncoderTests.RealBatchIntegration(args[1]);
+    return 0;
+}
+
 if (args.Length > 0)
 {
     if (args.Length == 3 && args[0] == "--real-fixtures")
@@ -217,7 +218,7 @@ if (args.Length > 0)
     }
 
     Console.Error.WriteLine(
-        "用法: DvdaMaker.CompatibilityTests [--real-fixtures <ISO目录> <MLP根目录>]");
+        "用法: DvdaMaker.CompatibilityTests [--real-fixtures <ISO目录> <MLP根目录> | --mlpencoder-integration | --mlpencoder-batch-integration <eac3to.exe>]");
     return 2;
 }
 
@@ -231,8 +232,9 @@ var tests = new (string Name, Action Run)[]
     ("派生路径和 ISO 名称", DerivedPathsAndNames),
     ("限制组轨数量", ClampGroupTrackLimit),
     ("规范化 MLP 来源", NormalizeMlpSource),
+    ("eac3to 奇数 PCM 尾部封装", MlpEncoderTests.OddPcmTail),
     ("SurCode 内置任务与路径", BuildSurcodeBatchJob),
-    ("SurCode SSF 立体声格式", WriteSurcodeStereoSsf),
+    ("MLP 编码核心确定性元数据", MlpEncoderTests.Metadata),
     ("SurCode PCM 16 位升至 24 位", UpconvertSurcodePcmWav),
     ("Shell 单引号转义", EscapeShellAssignment),
     ("Shell 默认键集兼容 Python", PreserveLegacyShellKeySet),
@@ -254,7 +256,7 @@ var tests = new (string Name, Action Run)[]
     ("专辑不跨盘", KeepAlbumOnOneDisc),
     ("按参数与专辑边界分组", GroupAtAlbumBoundaries),
     ("组轨超限诊断", DiagnoseOversizedAlbumGroup),
-    ("MLP 编码参数构造", BuildMlpEncodingArguments),
+    ("MLP 编码核心内嵌产物身份", MlpEncoderTests.EmbeddedCore),
     ("外部 MLP 镜像路径优先", ResolveExternalMlp),
     ("MLP 索引结构", WriteMlpIndex),
     ("构建索引预演与失败隔离", PreserveFormalMlpIndex),
@@ -309,12 +311,12 @@ var tests = new (string Name, Action Run)[]
     ("审计 PTS 流式扇区扫描", ScanPtsSectorsStreamingly),
     ("共享 AOB 扫描保持审计与时间轴语义", SharedAobScanPreservesDiagnostics),
     ("SurCode 新产物校验凭据失效回退", ReuseValidatedSurcodeOutput),
-    ("ffmpeg MLP 缓存凭据复用", FfmpegMlpCacheIdentity),
+    ("MLP 编码核心 MLP 缓存凭据复用", MlpEncoderTests.Cache),
     ("MLP 缓存索引存储与淘汰", MlpCacheIndexStorage),
     ("逐盘续跑凭据规则", DiscResumeStoreRules),
     ("出盘签名随配置与 MLP 变化", DiscSignatureChanges),
     ("构建流水线逐盘续跑", BuildPipelineResumesDiscs),
-    ("MLP 有界并发编码等效性", FfmpegMlpParallelEncoding),
+    ("MLP 有界并发编码等效性", MlpEncoderTests.Parallel),
 };
 
 var failed = 0;
@@ -426,8 +428,10 @@ static void NormalizeMlpSource()
         Equal("surcode", Load(path).MlpSource));
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=SURCODE-BATCH", path =>
         Equal("surcode-batch", Load(path).MlpSource));
+    WithConfig("DVDA_MLP_SOURCE=ffmpeg", RejectRemovedSource);
+    WithConfig("DVDA_MLP_SOURCE=batch-surcode", path => Equal("surcode-batch", Load(path).MlpSource));
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=unknown", path =>
-        Equal("ffmpeg", Load(path).MlpSource));
+        RejectRemovedSource(path));
 }
 
 static void BuildSurcodeBatchJob()
@@ -437,7 +441,7 @@ static void BuildSurcodeBatchJob()
         "DVDA_MLP_SOURCE=surcode-batch\nDVDA_MLP_EXTERNAL_DIR=C:/MLP\n" +
         "DVDA_MLP_BATCH_TEMP_DIR=C:/ConfiguredTemp\n" +
         "DVDA_MLP_BATCH_OUTPUT_DIR=C:/ConfiguredOutput\n" +
-        "DVDA_MLP_SURCODE_EXE=C:/SurCode/surcodemlp.exe\n" +
+        "DVDA_MLP_METADATA_CONTEXT=C:/Contexts/job.stampctx\n" +
         "DVDA_MLP_EAC3TO_EXE=C:/eac3to/eac3to.exe\n",
         path =>
         {
@@ -465,7 +469,7 @@ static void BuildSurcodeBatchJob()
             ]);
             Equal("C:\\Temp", job.TemporaryDirectory);
             Equal("C:\\Stage", job.OutputDirectory);
-            Equal("C:\\SurCode\\surcodemlp.exe", job.SurcodeExecutable);
+            Equal("C:\\Contexts\\job.stampctx", job.MetadataContext);
             Equal("C:\\eac3to\\eac3to.exe", job.Eac3toExecutable);
             Equal(48_000, job.SampleRate);
             Equal(24, job.Bits);
@@ -483,38 +487,6 @@ static void BuildSurcodeBatchJob()
         });
 }
 
-static void WriteSurcodeStereoSsf()
-{
-    var root = Path.Combine(Path.GetTempPath(), "dvda-ssf-tests", Guid.NewGuid().ToString("N"));
-    var wav = Path.Combine(root, "wav");
-    var output = Path.Combine(root, "mlp");
-    Directory.CreateDirectory(wav);
-    Directory.CreateDirectory(output);
-    try
-    {
-        const string name = "__surcode_0001";
-        File.WriteAllBytes(Path.Combine(wav, name + ".L.wav"), [1]);
-        File.WriteAllBytes(Path.Combine(wav, name + ".R.wav"), [2]);
-
-        var ssf = SurcodeSsfWriter.Write(name, wav, wav, output);
-        var bytes = File.ReadAllBytes(ssf);
-        True(bytes.Length > 120, "SSF 应包含固定头和九个路径字段");
-        Equal((byte)1, bytes[^4]);
-        SequenceEqual(new byte[] { 0, 0, 0 }, bytes[^3..]);
-
-        var text = System.Text.Encoding.Latin1.GetString(bytes);
-        True(text.Contains(name + ".L.wav", StringComparison.Ordinal),
-            "SSF 应写入左声道路径");
-        True(text.Contains(name + ".R.wav", StringComparison.Ordinal),
-            "SSF 应写入右声道路径");
-        True(text.Contains(name + ".mlp", StringComparison.Ordinal),
-            "SSF 应写入目标 MLP 路径");
-    }
-    finally
-    {
-        Directory.Delete(root, recursive: true);
-    }
-}
 
 static void UpconvertSurcodePcmWav()
 {
@@ -543,7 +515,9 @@ static void UpconvertSurcodePcmWav()
             writer.Write(short.MaxValue);
         }
 
-        SurcodePcmWav.UpconvertProducedFiles(root, name, 24);
+        var converted = Path.Combine(root, "normalized.wav");
+        SurcodePcmWav.Normalize(path, converted, 48_000, 24);
+        path = converted;
         var layout = SurcodePcmWav.ReadLayout(path);
         Equal(24, layout.ContainerBits);
         Equal(24, layout.ValidBits);
@@ -854,23 +828,6 @@ static void DiagnoseOversizedAlbumGroup()
         "应报告单专辑超过组轨上限");
 }
 
-static void BuildMlpEncodingArguments()
-{
-    WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out", path =>
-    {
-        var provider = new FfmpegMlpProvider(Load(path), new ProcessRunner());
-        var track = BuildTrack("A", "1", "1", 0) with
-        {
-            Bits = 16,
-            ResampleTo = 48_000,
-        };
-        var arguments = provider.BuildArguments(track).ToArray();
-        True(arguments.Contains("aresample=48000:resampler=soxr"), "应使用 soxr 重采样");
-        Equal("s16p", arguments[Array.IndexOf(arguments, "-sample_fmt") + 1]);
-        Equal("8", arguments[Array.IndexOf(arguments, "-max_interval") + 1]);
-        Equal(track.MlpPath, arguments[^1]);
-    });
-}
 
 static void ResolveExternalMlp()
 {
@@ -1756,9 +1713,6 @@ static int FixtureCallCount(string root, string tool)
 static void SetFixtureCallLogDirectory(string? directory) =>
     Environment.SetEnvironmentVariable("DVDA_FIXTURE_CALL_LOG_DIR", directory);
 
-static void SetFixtureTemplatePath(string? path) =>
-    Environment.SetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE", path);
-
 static DvdaOptions CreatePrepareOptions(string root, string ffprobe, string ffmpeg)
 {
     var source = Path.Combine(root, "src");
@@ -2111,22 +2065,6 @@ static void SharedAobScanPreservesDiagnostics()
     Equal(4, timeline.PtsSectorCount);
 }
 
-static DvdaOptions CreateMlpProviderOptions(string root, string ffprobe, string ffmpeg)
-{
-    Directory.CreateDirectory(Path.Combine(root, "src"));
-    var config = Path.Combine(root, "config.env");
-    File.WriteAllText(config, string.Join('\n',
-    [
-        $"DVDA_SRC={Path.Combine(root, "src").Replace('\\', '/')}",
-        $"DVDA_FINAL_DIR={Path.Combine(root, "final").Replace('\\', '/')}",
-        $"DVDA_BUILD_DIR={Path.Combine(root, "build").Replace('\\', '/')}",
-        $"DVDA_FFPROBE={ffprobe.Replace('\\', '/')}",
-        $"DVDA_FFMPEG={ffmpeg.Replace('\\', '/')}",
-        "DVDA_MLP_SOURCE=ffmpeg",
-        "DVDA_TITLE=Mlp Fixture",
-    ]));
-    return Load(config);
-}
 
 static void ReuseValidatedSurcodeOutput()
 {
@@ -2185,70 +2123,6 @@ static void ReuseValidatedSurcodeOutput()
     }
 }
 
-static void FfmpegMlpCacheIdentity()
-{
-    var root = Path.Combine(Path.GetTempPath(), "dvda-mlp-cache", Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(root);
-    SetFixtureCallLogDirectory(root);
-    var template = Path.Combine(root, "mlp-template.mlp");
-    File.WriteAllBytes(template, BuildValidMlpFixture());
-    SetFixtureTemplatePath(template);
-    try
-    {
-        var ffprobe = CreateFixtureExecutable(root, "fake-ffprobe.exe");
-        var ffmpeg = CreateFixtureExecutable(root, "fake-ffmpeg-encode.exe");
-        var options = CreateMlpProviderOptions(root, ffprobe, ffmpeg);
-        var source = Path.Combine(options.SourceDirectory, "song.flac");
-        File.WriteAllBytes(source, Enumerable.Repeat((byte)0x11, 4096).ToArray());
-        var mlp = Path.Combine(options.MlpDirectory, "song.mlp");
-        var track = BuildTrack("Song", "1", "1", 0) with
-        {
-            SourcePath = source,
-            MlpPath = mlp,
-            SourceSize = 4096,
-        };
-        var provider = new FfmpegMlpProvider(options, new ProcessRunner());
-
-        var first = provider.AcquireAsync([track]).GetAwaiter().GetResult();
-        Equal(0, first.CacheHits);
-        True(first.CacheRebuilt == 1, $"首次应重新编码，实际 {first.CacheRebuilt}，" +
-            $"诊断 {(first.Diagnostics.Count > 0 ? first.Diagnostics[0].Code + ": " + first.Diagnostics[0].Message : "无")}");
-        Equal(0, first.Diagnostics.Count);
-        True(FixtureCallCount(root, "encode") == 1,
-            $"应调用一次编码夹具，实际 {FixtureCallCount(root, "encode")}");
-        True(File.Exists(mlp), "首次应产出 MLP");
-        True(MlpCacheValidator.IsValid(mlp), "夹具 MLP 应能通过缓存结构校验");
-        True(File.Exists(MlpCacheIndex.PathFor(options.MlpDirectory)), "应写出 MLP 缓存索引");
-
-        var second = provider.AcquireAsync([track]).GetAwaiter().GetResult();
-        True(second.CacheHits == 1,
-            $"第二次应命中缓存，实际命中 {second.CacheHits} / 重建 {second.CacheRebuilt}");
-        Equal(0, second.CacheRebuilt);
-        True(FixtureCallCount(root, "encode") == 1, "命中缓存时不应再次编码");
-
-        // 删掉 MLP 本体后必须重新编码。
-        File.Delete(mlp);
-        var third = provider.AcquireAsync([track]).GetAwaiter().GetResult();
-        Equal(0, third.CacheHits);
-        True(third.CacheRebuilt == 1, $"MLP 丢失后应重新编码，实际 {third.CacheRebuilt}");
-        True(FixtureCallCount(root, "encode") == 2, "MLP 丢失后应再次调用编码夹具");
-
-        // 同长度、同修改时间但源内容变化：必须重新编码。
-        var lastWrite = File.GetLastWriteTimeUtc(source);
-        File.WriteAllBytes(source, Enumerable.Repeat((byte)0x22, 4096).ToArray());
-        File.SetLastWriteTimeUtc(source, lastWrite);
-        var fourth = provider.AcquireAsync([track]).GetAwaiter().GetResult();
-        Equal(0, fourth.CacheHits);
-        True(fourth.CacheRebuilt == 1, $"源内容变化后应重新编码，实际 {fourth.CacheRebuilt}");
-        True(FixtureCallCount(root, "encode") == 3, "源内容变化后应再次调用编码夹具");
-    }
-    finally
-    {
-        SetFixtureCallLogDirectory(null);
-        SetFixtureTemplatePath(null);
-        Directory.Delete(root, recursive: true);
-    }
-}
 
 static void MlpCacheIndexStorage()
 {
@@ -2271,7 +2145,7 @@ static void MlpCacheIndexStorage()
         {
             Source = sourceIdentity,
             Output = outputIdentity,
-            Encoder = "ffmpeg|1",
+            Encoder = "|1",
             Bits = 24,
             ResampleTo = null,
             MaxInterval = MlpCacheValidator.RequiredMajorSyncInterval,
@@ -2280,27 +2154,27 @@ static void MlpCacheIndexStorage()
 
         var reloaded = MlpCacheIndex.Load(MlpCacheIndex.PathFor(mlpDirectory));
         Equal(1, reloaded.Count);
-        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 24, null,
+        True(reloaded.Match(output, sourceIdentity, "|1", 24, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is not null,
             "凭据一致时应命中");
-        True(reloaded.Match(output, sourceIdentity, "ffmpeg|2", 24, null,
+        True(reloaded.Match(output, sourceIdentity, "|2", 24, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "编码器身份变化时不得命中");
-        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 16, null,
+        True(reloaded.Match(output, sourceIdentity, "|1", 16, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "位深变化时不得命中");
-        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 24, 44_100,
+        True(reloaded.Match(output, sourceIdentity, "|1", 24, 44_100,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "重采样目标变化时不得命中");
-        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 24, null, 4) is null,
+        True(reloaded.Match(output, sourceIdentity, "|1", 24, null, 4) is null,
             "major sync 间隔变化时不得命中");
-        True(reloaded.Match(output, new FileIdentity(source, 1, 0, "a", "b"), "ffmpeg|1", 24, null,
+        True(reloaded.Match(output, new FileIdentity(source, 1, 0, "a", "b"), "|1", 24, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "源身份变化时不得命中");
 
         // 输出文件被改动后必须重新编码。
         File.WriteAllBytes(output, Enumerable.Repeat((byte)0x44, 4096).ToArray());
-        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 24, null,
+        True(reloaded.Match(output, sourceIdentity, "|1", 24, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "MLP 被改动后不得命中");
 
@@ -2569,75 +2443,6 @@ static void BuildPipelineResumesDiscs()
     }
 }
 
-static void FfmpegMlpParallelEncoding()
-{
-    var root = Path.Combine(Path.GetTempPath(), "dvda-mlp-jobs", Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(root);
-    SetFixtureCallLogDirectory(root);
-    var template = Path.Combine(root, "mlp-template.mlp");
-    File.WriteAllBytes(template, BuildValidMlpFixture());
-    SetFixtureTemplatePath(template);
-    try
-    {
-        var ffprobe = CreateFixtureExecutable(root, "fake-ffprobe.exe");
-        var ffmpeg = CreateFixtureExecutable(root, "fake-ffmpeg-encode.exe");
-        var config = Path.Combine(root, "config.env");
-        File.WriteAllText(config, string.Join('\n',
-        [
-            $"DVDA_SRC={Path.Combine(root, "src").Replace('\\', '/')}",
-            $"DVDA_FINAL_DIR={Path.Combine(root, "final").Replace('\\', '/')}",
-            $"DVDA_BUILD_DIR={Path.Combine(root, "build").Replace('\\', '/')}",
-            $"DVDA_FFPROBE={ffprobe.Replace('\\', '/')}",
-            $"DVDA_FFMPEG={ffmpeg.Replace('\\', '/')}",
-            "DVDA_MLP_SOURCE=ffmpeg",
-            "DVDA_MLP_JOBS=4",
-        ]));
-        var options = Load(config);
-        Directory.CreateDirectory(options.SourceDirectory);
-        Equal(4, options.MlpJobs);
-
-        var tracks = new List<BuildTrack>();
-        for (var index = 1; index <= 4; index++)
-        {
-            var source = Path.Combine(options.SourceDirectory, $"song{index}.flac");
-            File.WriteAllBytes(source, Enumerable.Repeat((byte)index, 4096).ToArray());
-            tracks.Add(BuildTrack($"Song{index}", "1", index.ToString(), 0) with
-            {
-                SourcePath = source,
-                MlpPath = Path.Combine(options.MlpDirectory, $"song{index}.mlp"),
-                SourceSize = 4096,
-            });
-        }
-
-        var provider = new FfmpegMlpProvider(options, new ProcessRunner());
-        var first = provider.AcquireAsync(tracks).GetAwaiter().GetResult();
-        Equal(0, first.CacheHits);
-        True(first.CacheRebuilt == 4, $"四轨应全部编码，实际 {first.CacheRebuilt}，" +
-            $"诊断 {(first.Diagnostics.Count > 0 ? first.Diagnostics[0].Message : "无")}");
-        True(FixtureCallCount(root, "encode") == 4,
-            $"应调用四次编码夹具，实际 {FixtureCallCount(root, "encode")}");
-        foreach (var track in first.Tracks)
-        {
-            True(File.Exists(track.MlpPath), $"应产出 {track.MlpPath}");
-            True(MlpCacheValidator.IsValid(track.MlpPath), "并发产出的 MLP 结构应有效");
-        }
-
-        // 并发路径同样要能命中缓存，且结果与串行一致。
-        var second = provider.AcquireAsync(tracks).GetAwaiter().GetResult();
-        Equal(4, second.CacheHits);
-        Equal(0, second.CacheRebuilt);
-        True(FixtureCallCount(root, "encode") == 4, "命中缓存后不应再次编码");
-        SequenceEqual(
-            first.Tracks.Select(track => track.MlpSize).OrderBy(size => size),
-            second.Tracks.Select(track => track.MlpSize).OrderBy(size => size));
-    }
-    finally
-    {
-        SetFixtureCallLogDirectory(null);
-        SetFixtureTemplatePath(null);
-        Directory.Delete(root, recursive: true);
-    }
-}
 
 static byte[] BuildValidMlpFixture()
 {
@@ -2772,7 +2577,7 @@ static void EstimateDiskSpaceRequirements()
             BuildTrack("Track", "1", "1", 0) with { SourceSize = 5_000_000 },
         };
         var encoded = DiskSpacePlanner.Estimate(
-            LoadSpaceOptions(buildDirectory, finalOtherVolume, false, false, "ffmpeg"),
+            LoadSpaceOptions(buildDirectory, finalOtherVolume, false, false, "surcode-batch"),
             missingMlp, discs, freeSpace: _ => 1L << 40);
         Equal(isoBytes + 5_000_000, encoded.Single(item =>
             item.Root.StartsWith(Path.GetPathRoot(temp)!, StringComparison.OrdinalIgnoreCase))
@@ -3837,4 +3642,11 @@ static void SequenceEqual<T>(IEnumerable<T> expected, IEnumerable<T> actual)
         throw new InvalidOperationException(
             $"期望 <{string.Join(", ", expected)}>，实际 <{string.Join(", ", actual)}>");
     }
+}
+
+static void RejectRemovedSource(string path)
+{
+    try { _ = Load(path).MlpSource; }
+    catch (ArgumentException) { return; }
+    throw new Exception("Unknown/removed MLP source must be rejected");
 }

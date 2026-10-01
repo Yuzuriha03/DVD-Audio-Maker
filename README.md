@@ -4,7 +4,7 @@
 
 项目使用 **.NET 10 / C#** 实现音源准备、MLP 管理、分盘、菜单生成、ISO 发布和成品校验；底层使用经过修改的 `dvda-author` 与支持 `-dvd-audio` 的 `mkisofs`。
 
-> 本仓库不包含音频、商业编码器或预编译第三方工具。使用者需要自行准备所需程序，并确认相关软件与内容的授权。
+> 仓库内含本项目MLP 编码核心源码及固定版本 Windows 产物；不包含原版 SurCode、音频或其他外部工具。
 
 ## 功能
 
@@ -13,7 +13,7 @@
 - 检查解码完整性、声道数和音频参数
 - 修复特定 Apple ALAC 文件缺失 END 标记的问题
 - 按专辑归一化采样率与位深
-- 使用 FFmpeg、外部 MLP 或内置 SurCode 辅助工具取得 MLP
+- 使用MLP 编码核心或导入外部 MLP
 - 保持专辑完整并按容量逐盘填满
 - 可选 DVD-Audio AMG 选曲菜单与 ASVS 播放封面
 - 事务式发布整套 ISO
@@ -29,7 +29,7 @@ src/DvdaMaker.Preparation     扫描、归一化、解码校验、ALAC 修复
 src/DvdaMaker.Building        MLP、分盘、菜单、出盘、发布与校验
 src/DvdaMaker.Formats         ISO9660、MLP、MPEG/PTS 解析
 src/DvdaMaker.Processes       外部进程执行
-src/DvdaMaker.SurcodeTool     并入 dvda.exe 的 Windows x64 SurCode 类库
+src/DvdaMaker.SurcodeTool     eac3to PCM 准备与Windows MLP 核心
 src/DvdaMaker.FontTool        OpenType/TTC 字体工具
 src/DvdaMaker.Toolchain       Windows 发布包组装器
 tests/                        兼容性与端到端测试
@@ -47,11 +47,8 @@ tests/                        兼容性与端到端测试
 - 已构建的 Windows 版 `dvda-author-dev.exe` 与 `mkisofs.exe`
 - 启用菜单时所需的菜单工具、ImageMagick、字体和运行期素材
 
-确认 FFmpeg 支持 MLP：
-
-```bat
-ffmpeg -hide_banner -encoders | findstr /i mlp
-```
+FFmpeg 保留用于音源转换、解码和校验，不再用于 MLP 编码。
+批量编码需要配置 eac3to；无需安装原版 SurCode。
 
 ## 配置
 
@@ -125,25 +122,15 @@ dotnet run --project src\DvdaMaker.Cli -- verify all
 | --- | --- | --- |
 | `DVDA_PREPARE_CACHE` | `on` | 音源探测与解码校验结论缓存，位于 `build/prepare-cache.json` |
 | `DVDA_RESUME` | `on` | 逐盘续跑，记录位于 `build/publish-staging/resume.json` |
-| `DVDA_MLP_JOBS` | `1` | ffmpeg 分支 MLP 编码并发路数（1～16） |
+| `DVDA_MLP_JOBS` | `1` | MLP 编码核心的 MLP 编码并发路数（1～16） |
 | `DVDA_KEEP_TMP` | `off` | 保留 `build/tmp` 供排查（开启后不自动清理） |
 | `DVDA_KEEP_INTERMEDIATE` | `off` | 保留 author 输出与中间 ISO；**开启时逐盘续跑自动关闭** |
 
 - 音源缓存只在文件身份（长度、修改时间、首尾各 64 KiB 哈希）与归一化参数完全一致时复用；未通过校验的轨道永不写入缓存。
 - 逐盘续跑只在签名（源/MLP 身份、author/mkisofs 工具身份、影响输出的配置、菜单设置）一致且暂存 ISO 未被改动时跳过该盘；最终仍由整套事务发布 ISO 与索引。构建失败会保留 `build/publish-staging`，下次运行从那里续跑。
-- `DVDA_MLP_JOBS` 大于 1 会让多路 ffmpeg 同时编码，编码前的缓存凭据（源身份 + 编码器身份 + 编码参数 + 输出身份）依旧生效；是否提速取决于磁盘吞吐与 CPU，默认保持 1 路。
+- `DVDA_MLP_JOBS` 大于 1 会让多个独立MLP 编码核心进程同时编码，编码前的缓存凭据（源身份 + 编码器身份 + 编码参数 + 输出身份）依旧生效；是否提速取决于磁盘吞吐与 CPU，默认保持 1 路。
 
 ## MLP 来源
-
-### FFmpeg
-
-```text
-DVDA_MLP_SOURCE="ffmpeg"
-DVDA_MLP_EXTERNAL_DIR=""
-```
-
-首次构建编码 MLP，之后复用工作目录中的有效缓存。
-缓存命中除了结构校验外还要求源身份、编码器身份与编码参数一致（见“重跑与缓存”）。
 
 ### 外部 MLP
 
@@ -159,20 +146,34 @@ DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
 MLP ：D:/Music/MLP/Album/01 Song.mlp
 ```
 
-### SurCode 批量编码
+### MLP 编码核心批量编码（默认）
 
 ```text
 DVDA_MLP_SOURCE="surcode-batch"
 DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
 DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
 DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
-DVDA_MLP_SURCODE_EXE="C:/Tools/SurCode MLP/surcodemlp.exe"
+DVDA_MLP_METADATA_CONTEXT=""
 DVDA_MLP_EAC3TO_EXE="C:/Tools/eac3to/eac3to.exe"
 DVDA_MLP_SURCODE_SAMPLE_RATE="48000"
 DVDA_MLP_SURCODE_BITS="24"
 ```
 
-内置 Windows x64 辅助进程通过 JSON 任务调用 eac3to 和官方 SurCode，并将结果写入与音源同构的 MLP 缓存目录。
+保留 `surcode-batch` 配置名兼容现有任务，执行链为：
+
+`源音频 → eac3to → 整数 PCM → MLP 核心 → MLP 缓存`。
+
+64 位主程序内嵌固定哈希的 Windows x86 编码核心，运行时提取并校验后调用；
+不启动原版 SurCode，不加载它的 DLL，不写 SSF，也不进行编码后的字节修补。
+MLP 缓存目录留空时使用 `<build>/mlp`。旧的 `DVDA_MLP_SOURCE=ffmpeg` 会明确报错，
+请改为 `surcode-batch`；`DVDA_MLP_SURCODE_EXE` 已删除。
+
+默认使用固定空辅助 TLV，使相同 PCM/设置的输出可重复。需要与历史原版文件
+逐字节比较时，可指定该音轨完整的 `DVDA_MLP_METADATA_CONTEXT`；时间元数据不同
+会导致整文件不同，不能只靠相同音频推断字节相同。不会将参考音频载荷传入编码器。
+旧的无来源凭据缓存会重新生成；失败的重新编码不覆盖已有的有效产物。
+
+接口、精度、声道、缓存及复现说明见 [MLP 编码核心集成](docs/MLP-ENCODER.md)。
 
 ## 分盘与菜单
 
@@ -236,9 +237,11 @@ dotnet build DVD-Audio-Maker.sln --configuration Release
 dotnet run --project tests\DvdaMaker.CompatibilityTests --configuration Release
 ```
 
-当前兼容测试基线为 88 项。
+当前兼容测试基线为 93 项。
 
 ## 文档
+
+- [MLP 编码核心 MLP 编码与验证结果](docs/MLP-ENCODER.md)：新批量调用链、元数据配置与逐字节对照范围
 
 - [`docs/CSHARP-MIGRATION.md`](docs/CSHARP-MIGRATION.md)：C# 迁移状态与实现边界
 - [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.md)：`dvda-author` 改动及依据

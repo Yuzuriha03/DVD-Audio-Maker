@@ -41,6 +41,12 @@ for (var index = 0; index < arguments.Count;)
 }
 
 var options = new ConfigLoader().Load(configPath);
+try { _ = options.MlpSource; }
+catch (ArgumentException exception)
+{
+    Console.Error.WriteLine($"[配置错误] {exception.Message}");
+    return 2;
+}
 
 if (command == "aob-pts")
 {
@@ -338,7 +344,7 @@ if (command == "build")
         {
             Console.WriteLine($"MLP 索引已写入: {result.IndexPath}");
         }
-        if (options.MlpSource is "ffmpeg" or "surcode-batch")
+        if (options.MlpSource == "surcode-batch")
         {
             Console.WriteLine(
                 $"[缓存] 复用 {result.Acquisition.CacheHits} 个，" +
@@ -891,17 +897,13 @@ static void PrintConfiguration(DvdaOptions options)
     }
     else if (options.MlpSource == "surcode-batch")
     {
-        Console.WriteLine("  surcode-batch = dvda.exe 内置 SurCode 编码类库   ✔");
+        Console.WriteLine("  surcode-batch = Windows MLP 编码核心   ✔");
         Console.WriteLine($"  output/cache  = {options.MlpExternalDirectory}");
-        Console.WriteLine($"  surcodemlp    = {options.MlpSurcodeExecutable}   " +
-            (File.Exists(options.MlpSurcodeExecutable) ? "✔" : "✗ 不存在"));
+        Console.WriteLine("  encoder       = 随程序内嵌，无需原版 SurCode");
+        Console.WriteLine($"  metadata      = {(string.IsNullOrEmpty(options.MlpMetadataContext) ? "固定空辅助 TLV" : options.MlpMetadataContext)}");
         Console.WriteLine($"  eac3to        = {options.MlpEac3toExecutable}   " +
             (File.Exists(options.MlpEac3toExecutable) ? "✔" : "✗ 不存在"));
         Console.WriteLine($"  format        = {options.MlpSurcodeSampleRate} Hz / {options.MlpSurcodeBits} bit");
-    }
-    else
-    {
-        Console.WriteLine($"  ffmpeg        = 本工具链自行编码 -> {options.MlpDirectory}");
     }
 
     Console.WriteLine();

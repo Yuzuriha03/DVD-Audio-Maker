@@ -1,222 +1,133 @@
-using System.Text;
+using System.Buffers.Binary;
 
 namespace DvdaMaker.SurcodeTool;
 
+/// <summary>Integer WAVE validation and lossless storage/valid-bit normalization.</summary>
 public static class SurcodePcmWav
 {
-    private static readonly string[] ChannelSuffixes =
-        [".L.wav", ".R.wav", ".C.wav", ".LFE.wav", ".SL.wav", ".SR.wav", ".S.wav"];
-
-    public static void UpconvertProducedFiles(string directory, string baseName, int targetBits)
-    {
-        foreach (var suffix in ChannelSuffixes)
-        {
-            var path = Path.Combine(directory, baseName + suffix);
-            if (!File.Exists(path))
-            {
-                continue;
-            }
-
-            var layout = ReadLayout(path);
-            var sourceBits = layout.ValidBits > 0 ? layout.ValidBits : layout.ContainerBits;
-            if (sourceBits >= targetBits)
-            {
-                continue;
-            }
-
-            var temporary = path + ".up.wav";
-            File.Delete(temporary);
-            ConvertBitDepth(path, temporary, targetBits, layout);
-            File.Move(temporary, path, overwrite: true);
-        }
-    }
+    private static ReadOnlySpan<byte> PcmGuid => [1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113];
+    public sealed record WavLayout(int ContainerBits, int ValidBits, int Channels, int SampleRate,
+        long DataOffset, long DataSize, int BytesPerSample, uint ChannelMask);
 
     public static WavLayout ReadLayout(string path)
     {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        Span<byte> header = stackalloc byte[12];
-        if (stream.Read(header) != header.Length ||
-            Encoding.ASCII.GetString(header[..4]) != "RIFF" ||
-            Encoding.ASCII.GetString(header[8..]) != "WAVE")
+        using var stream = File.OpenRead(path);
+        Span<byte> head = stackalloc byte[12]; stream.ReadExactly(head);
+        if (!head[..4].SequenceEqual("RIFF"u8) || !head[8..].SequenceEqual("WAVE"u8))
+            throw new InvalidDataException("编码输入必须是整数 RIFF/WAVE PCM。");
+        var end = checked((long)BinaryPrimitives.ReadUInt32LittleEndian(head[4..]) + 8);
+        if (end > stream.Length || end < 12) throw new InvalidDataException("WAVE 长度字段无效或文件截断。");
+        int bits = 0, valid = 0, channels = 0, rate = 0, align = 0; uint mask = 0;
+        long data = -1, size = 0; Span<byte> chunk = stackalloc byte[8];
+        while (stream.Position + 8 <= end)
         {
-            throw new InvalidDataException($"不是有效的 WAV 文件: {path}");
-        }
-
-        var containerBits = 0;
-        var validBits = 0;
-        var channels = 0;
-        var sampleRate = 0;
-        long dataOffset = -1;
-        long dataSize = 0;
-        Span<byte> chunkHeader = stackalloc byte[8];
-        while (stream.Position + chunkHeader.Length <= stream.Length)
-        {
-            if (stream.Read(chunkHeader) != chunkHeader.Length)
+            stream.ReadExactly(chunk);
+            var length = (long)BinaryPrimitives.ReadUInt32LittleEndian(chunk[4..]);
+            var next = checked(stream.Position + length + (length & 1));
+            // eac3to omits the RIFF alignment byte after an odd final data chunk.
+            // Accept only that terminal case; actual PCM truncation still fails.
+            if ((length & 1) != 0 && chunk[..4].SequenceEqual("data"u8) &&
+                stream.Position + length == end && end == stream.Length) next = end;
+            if (next > end) throw new InvalidDataException("WAVE 块超出文件边界。");
+            if (chunk[..4].SequenceEqual("fmt "u8))
             {
-                break;
-            }
-            var chunkId = Encoding.ASCII.GetString(chunkHeader[..4]);
-            var chunkSize = BitConverter.ToInt32(chunkHeader[4..]);
-            if (chunkSize < 0)
-            {
-                break;
-            }
-
-            if (chunkId == "fmt ")
-            {
-                if (chunkSize is < 16 or > 4096)
+                if (bits != 0 || length is < 16 or > 4096) throw new InvalidDataException("WAVE fmt 块无效。");
+                var fmt = new byte[(int)length]; stream.ReadExactly(fmt);
+                var tag = BinaryPrimitives.ReadUInt16LittleEndian(fmt);
+                channels = BinaryPrimitives.ReadUInt16LittleEndian(fmt.AsSpan(2));
+                rate = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(fmt.AsSpan(4)));
+                align = BinaryPrimitives.ReadUInt16LittleEndian(fmt.AsSpan(12));
+                bits = BinaryPrimitives.ReadUInt16LittleEndian(fmt.AsSpan(14)); valid = bits;
+                if (tag == 0xfffe)
                 {
-                    throw new InvalidDataException($"WAV fmt 块无效: {path}");
+                    if (length < 40 || BinaryPrimitives.ReadUInt16LittleEndian(fmt.AsSpan(16)) < 22 ||
+                        !fmt.AsSpan(24, 16).SequenceEqual(PcmGuid)) throw new InvalidDataException("WAVE 扩展格式不是整数 PCM。");
+                    valid = BinaryPrimitives.ReadUInt16LittleEndian(fmt.AsSpan(18));
+                    mask = BinaryPrimitives.ReadUInt32LittleEndian(fmt.AsSpan(20));
+                    if (valid == 0) valid = bits;
                 }
-                var format = new byte[chunkSize];
-                stream.ReadExactly(format);
-                var formatTag = BitConverter.ToUInt16(format, 0);
-                channels = BitConverter.ToUInt16(format, 2);
-                sampleRate = BitConverter.ToInt32(format, 4);
-                containerBits = BitConverter.ToUInt16(format, 14);
-                validBits = containerBits;
-                if (formatTag == 0xFFFE && format.Length >= 20)
-                {
-                    var declaredValidBits = BitConverter.ToUInt16(format, 18);
-                    if (declaredValidBits > 0)
-                    {
-                        validBits = declaredValidBits;
-                    }
-                }
-                if ((chunkSize & 1) != 0)
-                {
-                    stream.Seek(1, SeekOrigin.Current);
-                }
-                continue;
+                else if (tag != 1) throw new InvalidDataException("拒绝浮点或压缩 WAVE 输入。");
             }
-
-            if (chunkId == "data")
+            else if (chunk[..4].SequenceEqual("data"u8))
             {
-                dataOffset = stream.Position;
-                dataSize = Math.Min(chunkSize, stream.Length - dataOffset);
-                break;
+                if (data >= 0) throw new InvalidDataException("重复的 WAVE data 块。");
+                data = stream.Position; size = length;
             }
-
-            stream.Seek(chunkSize + (chunkSize & 1), SeekOrigin.Current);
+            stream.Position = next;
         }
-
-        if (containerBits <= 0 || channels <= 0 || sampleRate <= 0 || dataOffset < 0)
-        {
-            throw new InvalidDataException($"WAV 头不完整: {path}");
-        }
-        return new WavLayout(
-            containerBits,
-            validBits,
-            channels,
-            sampleRate,
-            dataOffset,
-            dataSize,
-            containerBits / 8);
+        if (stream.Position != end || bits is not (16 or 24 or 32) || valid < 1 || valid > bits ||
+            channels is < 1 or > 6 || align != channels * (bits / 8) || data < 0 || size <= 0 || size % align != 0 ||
+            rate is not (44100 or 48000 or 88200 or 96000 or 176400 or 192000) || (rate > 96000 && channels > 2))
+            throw new InvalidDataException("WAVE PCM 参数或帧边界不符合 DVD-Audio 格式。");
+        if (mask == 0) mask = channels switch { 1 => 4u, 2 => 3u, 3 => 7u, 4 => 0x33u, 5 => 0x37u, 6 => 0x3fu, _ => 0u };
+        if (System.Numerics.BitOperations.PopCount(mask) != channels) throw new InvalidDataException("WAVE 声道掩码与声道数不符。");
+        return new(bits, valid, channels, rate, data, size, bits / 8, mask);
     }
 
-    private static void ConvertBitDepth(
-        string sourcePath,
-        string destinationPath,
-        int targetBits,
-        WavLayout layout)
+    public static void Normalize(string source, string destination, int rate, int bits, CancellationToken token = default)
     {
-        var sourceBits = layout.ValidBits > 0 ? layout.ValidBits : layout.ContainerBits;
-        var outputBits = targetBits <= 16 ? 16 : 24;
-        if (outputBits < sourceBits)
+        if (bits is not (16 or 20 or 24)) throw new InvalidDataException("目标位深必须是 16/20/24。");
+        var layout = ReadLayout(source);
+        if (layout.SampleRate != rate) throw new InvalidDataException("eac3to 输出采样率与任务不符。");
+        // eac3to labels DVD surround Ls/Rs as WAVE SIDE_LEFT/RIGHT. With no
+        // separate rear pair these name the same two speakers, in the same order.
+        var channelMask = layout.ChannelMask;
+        if ((channelMask & 0x600) != 0)
         {
-            throw new InvalidOperationException(
-                $"拒绝在内部升位步骤中降低位深: {sourceBits} -> {outputBits} bit");
+            if ((channelMask & 0x30) != 0 || (channelMask & 0x100) != 0)
+                throw new InvalidDataException("不能把同时存在的侧置、后置或后中置声道合并为 DVD 环绕声道。");
+            channelMask = (channelMask & ~0x600u) | ((channelMask & 0x600u) >> 5);
         }
-        if (layout.BytesPerSample is <= 0 or > 4)
+        var outputWidth = bits == 16 ? 2 : 3;
+        var sourceFrame = layout.Channels * layout.BytesPerSample;
+        var frames = layout.DataSize / sourceFrame;
+        var outputSize = checked(frames * layout.Channels * outputWidth);
+        if (outputSize + 60 + (outputSize & 1) > uint.MaxValue) throw new InvalidDataException("PCM 超出 RIFF 4 GiB 限制；请拆分过长音轨。");
+        using var input = File.OpenRead(source);
+        var created = false;
+        try
         {
-            throw new InvalidDataException(
-                $"不支持的 WAV 样本宽度: {layout.BytesPerSample} bytes");
-        }
-
-        var outputBytesPerSample = outputBits / 8;
-        var sourceFrameBytes = layout.Channels * layout.BytesPerSample;
-        var outputBlockAlign = layout.Channels * outputBytesPerSample;
-        var frames = layout.DataSize / sourceFrameBytes;
-        var outputDataSize = frames * outputBlockAlign;
-        if (outputDataSize > int.MaxValue)
-        {
-            throw new InvalidDataException("WAV 数据超过 RIFF 32 位长度限制。");
-        }
-
-        using var input = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var output = new BinaryWriter(new FileStream(destinationPath, FileMode.Create));
-        output.Write(Encoding.ASCII.GetBytes("RIFF"));
-        output.Write(checked((int)(36 + outputDataSize)));
-        output.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
-        output.Write(16);
-        output.Write((short)1);
-        output.Write(checked((short)layout.Channels));
-        output.Write(layout.SampleRate);
-        output.Write(checked(layout.SampleRate * outputBlockAlign));
-        output.Write(checked((short)outputBlockAlign));
-        output.Write(checked((short)outputBits));
-        output.Write(Encoding.ASCII.GetBytes("data"));
-        output.Write(checked((int)outputDataSize));
-
-        input.Seek(layout.DataOffset, SeekOrigin.Begin);
-        const int bufferFrames = 65_536;
-        var inputBuffer = new byte[bufferFrames * sourceFrameBytes];
-        var outputBuffer = new byte[bufferFrames * outputBlockAlign];
-        var remaining = layout.DataSize;
-        var shift = outputBits - sourceBits;
-        while (remaining > 0)
-        {
-            var wanted = checked((int)Math.Min(inputBuffer.Length, remaining));
-            wanted -= wanted % sourceFrameBytes;
-            if (wanted <= 0)
+            using (var output = new BinaryWriter(new FileStream(destination, FileMode.CreateNew, FileAccess.Write)))
             {
-                break;
-            }
-            input.ReadExactly(inputBuffer.AsSpan(0, wanted));
-
-            var frameCount = wanted / sourceFrameBytes;
-            var outputPosition = 0;
-            for (var frame = 0; frame < frameCount; frame++)
-            {
-                for (var channel = 0; channel < layout.Channels; channel++)
+                created = true;
+                output.Write("RIFF"u8); output.Write((uint)(60 + outputSize + (outputSize & 1))); output.Write("WAVEfmt "u8);
+                output.Write(40u); output.Write((ushort)0xfffe); output.Write((ushort)layout.Channels); output.Write(rate);
+                output.Write(checked(rate * layout.Channels * outputWidth)); output.Write((ushort)(layout.Channels * outputWidth));
+                output.Write((ushort)(outputWidth * 8)); output.Write((ushort)22); output.Write((ushort)bits);
+                output.Write(channelMask); output.Write(PcmGuid); output.Write("data"u8); output.Write((uint)outputSize);
+                input.Position = layout.DataOffset;
+                var buffer = new byte[8192 * sourceFrame]; var converted = new byte[8192 * layout.Channels * outputWidth];
+                var remaining = layout.DataSize;
+                while (remaining > 0)
                 {
-                    var offset = (frame * layout.Channels + channel) * layout.BytesPerSample;
-                    var value = ReadSignedSample(inputBuffer, offset, layout.BytesPerSample);
-                    var scaled = shift == 0 ? value : value << shift;
-                    outputBuffer[outputPosition++] = (byte)(scaled & 0xFF);
-                    outputBuffer[outputPosition++] = (byte)((scaled >> 8) & 0xFF);
-                    if (outputBytesPerSample == 3)
+                    token.ThrowIfCancellationRequested();
+                    var wanted = (int)Math.Min(buffer.Length, remaining); input.ReadExactly(buffer.AsSpan(0, wanted));
+                    var pos = 0;
+                    for (var at = 0; at < wanted; at += layout.BytesPerSample)
                     {
-                        outputBuffer[outputPosition++] = (byte)((scaled >> 16) & 0xFF);
+                        long sample = layout.BytesPerSample switch
+                        {
+                            2 => (long)BinaryPrimitives.ReadInt16LittleEndian(buffer.AsSpan(at)) << 8,
+                            3 => (int)((uint)(buffer[at] | buffer[at + 1] << 8 | buffer[at + 2] << 16) << 8) >> 8,
+                            4 => BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(at)),
+                            _ => throw new InvalidDataException("无效的 PCM 宽度。"),
+                        };
+                        if (layout.BytesPerSample == 4)
+                        {
+                            if ((sample & 255) != 0) throw new InvalidDataException("32 位存储包含超过 24 位的有效 PCM。");
+                            sample >>= 8;
+                        }
+                        if ((sample & ((1L << (24 - bits)) - 1)) != 0)
+                            throw new InvalidDataException("PCM 有效精度高于目标位深；拒绝静默截断，请检查 eac3to 转换。");
+                        if (bits == 16) sample >>= 8;
+                        converted[pos++] = (byte)sample; converted[pos++] = (byte)(sample >> 8);
+                        if (outputWidth == 3) converted[pos++] = (byte)(sample >> 16);
                     }
+                    output.Write(converted, 0, pos); remaining -= wanted;
                 }
+                if ((outputSize & 1) != 0) output.Write((byte)0);
             }
-            output.Write(outputBuffer, 0, outputPosition);
-            remaining -= wanted;
         }
+        catch { if (created) File.Delete(destination); throw; }
     }
-
-    private static int ReadSignedSample(byte[] buffer, int offset, int bytesPerSample) =>
-        bytesPerSample switch
-        {
-            1 => buffer[offset] - 128,
-            2 => (short)(buffer[offset] | buffer[offset + 1] << 8),
-            3 => SignExtend24(
-                buffer[offset] | buffer[offset + 1] << 8 | buffer[offset + 2] << 16),
-            4 => buffer[offset] | buffer[offset + 1] << 8 |
-                buffer[offset + 2] << 16 | buffer[offset + 3] << 24,
-            _ => throw new InvalidDataException("不支持的 PCM 样本宽度。"),
-        };
-
-    private static int SignExtend24(int value) =>
-        value >= 0x800000 ? value - 0x1000000 : value;
-
-    public sealed record WavLayout(
-        int ContainerBits,
-        int ValidBits,
-        int Channels,
-        int SampleRate,
-        long DataOffset,
-        long DataSize,
-        int BytesPerSample);
 }
