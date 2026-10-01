@@ -1,0 +1,1792 @@
+{
+  "date": "2026-10-02",
+  "status": "PASS",
+  "encoder_sha256": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8",
+  "architecture": "Windows x64 / AMD64",
+  "policy": "Keep normally successful encoded bytes; lossless unpredicted restart-interval retry only on AU size overflow. Existing AU/FIFO limits remain. No post-encode repair.",
+  "original_same_sample": {
+    "pid": 28720,
+    "input_pcm_sha256": "23eb35666d6ee93d0e132ae024fd6ba92e238d8ab1c91e27256d0f3883454644",
+    "source_wave": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\ffmpeg-pcm-acceptance-20261002\\run1\\native_88200_24_6\\input.wav",
+    "setup": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\mlp-oversize-fix-20261002\\original-repro\\job.ssf",
+    "scope": "Original application on the exact short noise PCM; owned process and outputs only.",
+    "activation_exit": 3,
+    "original_exit": 0,
+    "output_bytes": 0,
+    "encoder_log": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\mlp-oversize-fix-20261002\\original-repro\\original.mlp.encoder.log",
+    "access_unit_too_large": true,
+    "original_encoding_failed": true
+  },
+  "focused_fallback": {
+    "status": "PASS",
+    "ffmpeg_pcm_equal": true,
+    "au_count": 139,
+    "max_au_bytes": 1530,
+    "formerly_oversized_au_bytes": 1526,
+    "native_verifiers": [
+      {
+        "kind": "{'original': True}",
+        "exit": 0,
+        "diagnostics": {
+          "compliant": "1",
+          "fatal": "0",
+          "sync": "1",
+          "units": "139",
+          "consumed": "202826/202826",
+          "callbacks": "139",
+          "frames": "11120",
+          "pcm_fnv": "865a9953",
+          "pcm_substream": "0",
+          "pcm_channels": "6"
+        },
+        "pcm_equal": true
+      },
+      {
+        "kind": "{}",
+        "exit": 0,
+        "diagnostics": {
+          "compliant": "1",
+          "fatal": "0",
+          "sync": "1",
+          "units": "139",
+          "consumed": "202826/202826",
+          "callbacks": "139",
+          "frames": "11120",
+          "pcm_fnv": "865a9953",
+          "pcm_substream": "0",
+          "pcm_channels": "6"
+        },
+        "pcm_equal": true
+      },
+      {
+        "kind": "{'dll': True}",
+        "exit": 0,
+        "diagnostics": {
+          "compliant": "1",
+          "fatal": "0",
+          "sync": "1",
+          "units": "139",
+          "consumed": "202826/202826",
+          "callbacks": "139",
+          "frames": "11120",
+          "pcm_fnv": "865a9953",
+          "pcm_substream": "0",
+          "pcm_channels": "6"
+        },
+        "pcm_equal": true
+      }
+    ]
+  },
+  "compatibility": {
+    "passed": 101,
+    "total": 101
+  },
+  "pcm_regression": {
+    "passed": 198,
+    "total": 198,
+    "previous_successful_whole_files_unchanged": 197,
+    "newly_supported": 1,
+    "profiles_and_cases": [
+      {
+        "name": "run1_native_176400_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 392
+      },
+      {
+        "name": "run1_native_176400_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 720
+      },
+      {
+        "name": "run1_native_176400_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 472
+      },
+      {
+        "name": "run1_native_176400_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 880
+      },
+      {
+        "name": "run1_native_176400_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 540
+      },
+      {
+        "name": "run1_native_176400_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1026
+      },
+      {
+        "name": "run1_native_192000_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 380
+      },
+      {
+        "name": "run1_native_192000_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 704
+      },
+      {
+        "name": "run1_native_192000_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 460
+      },
+      {
+        "name": "run1_native_192000_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 864
+      },
+      {
+        "name": "run1_native_192000_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 536
+      },
+      {
+        "name": "run1_native_192000_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1018
+      },
+      {
+        "name": "run1_native_44100_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 148
+      },
+      {
+        "name": "run1_native_44100_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 230
+      },
+      {
+        "name": "run1_native_44100_16_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 330
+      },
+      {
+        "name": "run1_native_44100_16_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 416
+      },
+      {
+        "name": "run1_native_44100_16_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 508
+      },
+      {
+        "name": "run1_native_44100_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 604
+      },
+      {
+        "name": "run1_native_44100_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 168
+      },
+      {
+        "name": "run1_native_44100_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 270
+      },
+      {
+        "name": "run1_native_44100_20_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 390
+      },
+      {
+        "name": "run1_native_44100_20_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 496
+      },
+      {
+        "name": "run1_native_44100_20_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 608
+      },
+      {
+        "name": "run1_native_44100_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 724
+      },
+      {
+        "name": "run1_native_44100_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 188
+      },
+      {
+        "name": "run1_native_44100_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 312
+      },
+      {
+        "name": "run1_native_44100_24_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 454
+      },
+      {
+        "name": "run1_native_44100_24_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 582
+      },
+      {
+        "name": "run1_native_44100_24_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 714
+      },
+      {
+        "name": "run1_native_44100_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 854
+      },
+      {
+        "name": "run1_native_48000_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 150
+      },
+      {
+        "name": "run1_native_48000_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 228
+      },
+      {
+        "name": "run1_native_48000_16_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 312
+      },
+      {
+        "name": "run1_native_48000_16_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 396
+      },
+      {
+        "name": "run1_native_48000_16_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 482
+      },
+      {
+        "name": "run1_native_48000_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 564
+      },
+      {
+        "name": "run1_native_48000_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 170
+      },
+      {
+        "name": "run1_native_48000_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 268
+      },
+      {
+        "name": "run1_native_48000_20_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 372
+      },
+      {
+        "name": "run1_native_48000_20_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 476
+      },
+      {
+        "name": "run1_native_48000_20_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 582
+      },
+      {
+        "name": "run1_native_48000_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 684
+      },
+      {
+        "name": "run1_native_48000_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 192
+      },
+      {
+        "name": "run1_native_48000_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 310
+      },
+      {
+        "name": "run1_native_48000_24_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 438
+      },
+      {
+        "name": "run1_native_48000_24_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 562
+      },
+      {
+        "name": "run1_native_48000_24_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 690
+      },
+      {
+        "name": "run1_native_48000_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 814
+      },
+      {
+        "name": "run1_native_88200_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 226
+      },
+      {
+        "name": "run1_native_88200_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 400
+      },
+      {
+        "name": "run1_native_88200_16_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 570
+      },
+      {
+        "name": "run1_native_88200_16_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 740
+      },
+      {
+        "name": "run1_native_88200_16_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 912
+      },
+      {
+        "name": "run1_native_88200_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1092
+      },
+      {
+        "name": "run1_native_88200_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 266
+      },
+      {
+        "name": "run1_native_88200_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 480
+      },
+      {
+        "name": "run1_native_88200_20_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 690
+      },
+      {
+        "name": "run1_native_88200_20_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 900
+      },
+      {
+        "name": "run1_native_88200_20_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1112
+      },
+      {
+        "name": "run1_native_88200_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1332
+      },
+      {
+        "name": "run1_native_88200_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 306
+      },
+      {
+        "name": "run1_native_88200_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 562
+      },
+      {
+        "name": "run1_native_88200_24_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 814
+      },
+      {
+        "name": "run1_native_88200_24_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1064
+      },
+      {
+        "name": "run1_native_88200_24_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1318
+      },
+      {
+        "name": "run1_native_88200_24_6",
+        "old_bytes_equal": null,
+        "pcm_equal": true,
+        "max_au_bytes": 1530
+      },
+      {
+        "name": "run1_native_96000_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 220
+      },
+      {
+        "name": "run1_native_96000_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 382
+      },
+      {
+        "name": "run1_native_96000_16_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 548
+      },
+      {
+        "name": "run1_native_96000_16_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 710
+      },
+      {
+        "name": "run1_native_96000_16_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 874
+      },
+      {
+        "name": "run1_native_96000_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1038
+      },
+      {
+        "name": "run1_native_96000_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 260
+      },
+      {
+        "name": "run1_native_96000_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 462
+      },
+      {
+        "name": "run1_native_96000_20_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 668
+      },
+      {
+        "name": "run1_native_96000_20_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 870
+      },
+      {
+        "name": "run1_native_96000_20_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1074
+      },
+      {
+        "name": "run1_native_96000_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1278
+      },
+      {
+        "name": "run1_native_96000_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 300
+      },
+      {
+        "name": "run1_native_96000_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 546
+      },
+      {
+        "name": "run1_native_96000_24_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 792
+      },
+      {
+        "name": "run1_native_96000_24_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1038
+      },
+      {
+        "name": "run1_native_96000_24_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1284
+      },
+      {
+        "name": "run1_native_96000_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 1530
+      },
+      {
+        "name": "run1_quantize24to16",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 564
+      },
+      {
+        "name": "run1_quantize24to20",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 684
+      },
+      {
+        "name": "run1_resample441to48_16",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 242
+      },
+      {
+        "name": "run1_resample441to48_20",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 282
+      },
+      {
+        "name": "run1_resample441to48_24",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 326
+      },
+      {
+        "name": "run1_resample96to48_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 144
+      },
+      {
+        "name": "run1_resample96to48_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 230
+      },
+      {
+        "name": "run1_resample96to48_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 570
+      },
+      {
+        "name": "run1_resample96to48_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 164
+      },
+      {
+        "name": "run1_resample96to48_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 270
+      },
+      {
+        "name": "run1_resample96to48_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 688
+      },
+      {
+        "name": "run1_resample96to48_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 186
+      },
+      {
+        "name": "run1_resample96to48_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 312
+      },
+      {
+        "name": "run1_resample96to48_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 820
+      },
+      {
+        "name": "run1_upconvert16to24",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 552
+      },
+      {
+        "name": "run2-smooth_native_176400_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 202
+      },
+      {
+        "name": "run2-smooth_native_176400_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 298
+      },
+      {
+        "name": "run2-smooth_native_176400_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 282
+      },
+      {
+        "name": "run2-smooth_native_176400_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 458
+      },
+      {
+        "name": "run2-smooth_native_176400_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 364
+      },
+      {
+        "name": "run2-smooth_native_176400_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 618
+      },
+      {
+        "name": "run2-smooth_native_192000_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 202
+      },
+      {
+        "name": "run2-smooth_native_192000_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 348
+      },
+      {
+        "name": "run2-smooth_native_192000_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 282
+      },
+      {
+        "name": "run2-smooth_native_192000_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 508
+      },
+      {
+        "name": "run2-smooth_native_192000_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 364
+      },
+      {
+        "name": "run2-smooth_native_192000_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 672
+      },
+      {
+        "name": "run2-smooth_native_44100_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 96
+      },
+      {
+        "name": "run2-smooth_native_44100_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 130
+      },
+      {
+        "name": "run2-smooth_native_44100_16_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 160
+      },
+      {
+        "name": "run2-smooth_native_44100_16_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 188
+      },
+      {
+        "name": "run2-smooth_native_44100_16_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 218
+      },
+      {
+        "name": "run2-smooth_native_44100_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 258
+      },
+      {
+        "name": "run2-smooth_native_44100_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 116
+      },
+      {
+        "name": "run2-smooth_native_44100_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 156
+      },
+      {
+        "name": "run2-smooth_native_44100_20_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 194
+      },
+      {
+        "name": "run2-smooth_native_44100_20_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 230
+      },
+      {
+        "name": "run2-smooth_native_44100_20_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 262
+      },
+      {
+        "name": "run2-smooth_native_44100_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 292
+      },
+      {
+        "name": "run2-smooth_native_44100_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 140
+      },
+      {
+        "name": "run2-smooth_native_44100_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 174
+      },
+      {
+        "name": "run2-smooth_native_44100_24_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 208
+      },
+      {
+        "name": "run2-smooth_native_44100_24_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 238
+      },
+      {
+        "name": "run2-smooth_native_44100_24_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 268
+      },
+      {
+        "name": "run2-smooth_native_44100_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 322
+      },
+      {
+        "name": "run2-smooth_native_48000_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 96
+      },
+      {
+        "name": "run2-smooth_native_48000_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 120
+      },
+      {
+        "name": "run2-smooth_native_48000_16_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 156
+      },
+      {
+        "name": "run2-smooth_native_48000_16_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 188
+      },
+      {
+        "name": "run2-smooth_native_48000_16_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 218
+      },
+      {
+        "name": "run2-smooth_native_48000_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 258
+      },
+      {
+        "name": "run2-smooth_native_48000_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 116
+      },
+      {
+        "name": "run2-smooth_native_48000_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 136
+      },
+      {
+        "name": "run2-smooth_native_48000_20_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 188
+      },
+      {
+        "name": "run2-smooth_native_48000_20_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 222
+      },
+      {
+        "name": "run2-smooth_native_48000_20_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 246
+      },
+      {
+        "name": "run2-smooth_native_48000_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 308
+      },
+      {
+        "name": "run2-smooth_native_48000_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 140
+      },
+      {
+        "name": "run2-smooth_native_48000_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 164
+      },
+      {
+        "name": "run2-smooth_native_48000_24_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 202
+      },
+      {
+        "name": "run2-smooth_native_48000_24_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 248
+      },
+      {
+        "name": "run2-smooth_native_48000_24_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 322
+      },
+      {
+        "name": "run2-smooth_native_48000_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 392
+      },
+      {
+        "name": "run2-smooth_native_88200_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 132
+      },
+      {
+        "name": "run2-smooth_native_88200_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 172
+      },
+      {
+        "name": "run2-smooth_native_88200_16_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 248
+      },
+      {
+        "name": "run2-smooth_native_88200_16_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 270
+      },
+      {
+        "name": "run2-smooth_native_88200_16_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 294
+      },
+      {
+        "name": "run2-smooth_native_88200_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 320
+      },
+      {
+        "name": "run2-smooth_native_88200_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 172
+      },
+      {
+        "name": "run2-smooth_native_88200_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 222
+      },
+      {
+        "name": "run2-smooth_native_88200_20_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 338
+      },
+      {
+        "name": "run2-smooth_native_88200_20_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 364
+      },
+      {
+        "name": "run2-smooth_native_88200_20_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 390
+      },
+      {
+        "name": "run2-smooth_native_88200_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 428
+      },
+      {
+        "name": "run2-smooth_native_88200_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 214
+      },
+      {
+        "name": "run2-smooth_native_88200_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 252
+      },
+      {
+        "name": "run2-smooth_native_88200_24_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 410
+      },
+      {
+        "name": "run2-smooth_native_88200_24_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 436
+      },
+      {
+        "name": "run2-smooth_native_88200_24_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 472
+      },
+      {
+        "name": "run2-smooth_native_88200_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 484
+      },
+      {
+        "name": "run2-smooth_native_96000_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 132
+      },
+      {
+        "name": "run2-smooth_native_96000_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 158
+      },
+      {
+        "name": "run2-smooth_native_96000_16_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 204
+      },
+      {
+        "name": "run2-smooth_native_96000_16_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 226
+      },
+      {
+        "name": "run2-smooth_native_96000_16_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 252
+      },
+      {
+        "name": "run2-smooth_native_96000_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 326
+      },
+      {
+        "name": "run2-smooth_native_96000_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 172
+      },
+      {
+        "name": "run2-smooth_native_96000_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 238
+      },
+      {
+        "name": "run2-smooth_native_96000_20_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 258
+      },
+      {
+        "name": "run2-smooth_native_96000_20_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 284
+      },
+      {
+        "name": "run2-smooth_native_96000_20_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 372
+      },
+      {
+        "name": "run2-smooth_native_96000_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 486
+      },
+      {
+        "name": "run2-smooth_native_96000_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 214
+      },
+      {
+        "name": "run2-smooth_native_96000_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 318
+      },
+      {
+        "name": "run2-smooth_native_96000_24_3",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 322
+      },
+      {
+        "name": "run2-smooth_native_96000_24_4",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 342
+      },
+      {
+        "name": "run2-smooth_native_96000_24_5",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 476
+      },
+      {
+        "name": "run2-smooth_native_96000_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 626
+      },
+      {
+        "name": "run2-smooth_quantize24to16",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 258
+      },
+      {
+        "name": "run2-smooth_quantize24to20",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 308
+      },
+      {
+        "name": "run2-smooth_resample441to48_16",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 132
+      },
+      {
+        "name": "run2-smooth_resample441to48_20",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 170
+      },
+      {
+        "name": "run2-smooth_resample441to48_24",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 192
+      },
+      {
+        "name": "run2-smooth_resample96to48_16_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 100
+      },
+      {
+        "name": "run2-smooth_resample96to48_16_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 126
+      },
+      {
+        "name": "run2-smooth_resample96to48_16_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 232
+      },
+      {
+        "name": "run2-smooth_resample96to48_20_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 120
+      },
+      {
+        "name": "run2-smooth_resample96to48_20_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 162
+      },
+      {
+        "name": "run2-smooth_resample96to48_20_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 320
+      },
+      {
+        "name": "run2-smooth_resample96to48_24_1",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 142
+      },
+      {
+        "name": "run2-smooth_resample96to48_24_2",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 208
+      },
+      {
+        "name": "run2-smooth_resample96to48_24_6",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 432
+      },
+      {
+        "name": "run2-smooth_upconvert16to24",
+        "old_bytes_equal": true,
+        "pcm_equal": true,
+        "max_au_bytes": 318
+      }
+    ]
+  },
+  "original_byte_regression": {
+    "passed": 78,
+    "total": 78,
+    "total_bytes": 95138694,
+    "cases": [
+      {
+        "name": "44100_16_1",
+        "bytes": 230756,
+        "original_bytes_equal": true,
+        "sha256": "D63E7D474FCD2FAFE35A1FC5CD8598B4E6435AFECB7056E058F408B759CDFDA6"
+      },
+      {
+        "name": "44100_16_2",
+        "bytes": 373232,
+        "original_bytes_equal": true,
+        "sha256": "8116D0ECFC720666748D402A02E8F1A45EE85D4D6D75BDC92A19809DA29FECEF"
+      },
+      {
+        "name": "44100_16_3",
+        "bytes": 491098,
+        "original_bytes_equal": true,
+        "sha256": "7DE6CE5ABE61FAD04222146BE6CB3B22E5D2E01E41A2C99FFA00789BFB66389E"
+      },
+      {
+        "name": "44100_16_4",
+        "bytes": 611402,
+        "original_bytes_equal": true,
+        "sha256": "AFE2F8BBA4686D4D5377175C94B93BE6BEA740F6F32B45D1297627A4F8675E65"
+      },
+      {
+        "name": "44100_16_5",
+        "bytes": 725086,
+        "original_bytes_equal": true,
+        "sha256": "0F8DF9CE43A99B8CFC2959E68F574ECAF9BF20B74A1451A8BE20348369D11992"
+      },
+      {
+        "name": "44100_16_6",
+        "bytes": 847530,
+        "original_bytes_equal": true,
+        "sha256": "0534CE32428364DE8B828FCAAE7238A1FA66BFA918D729C5953B1D9BA3EDA6E6"
+      },
+      {
+        "name": "44100_20_1",
+        "bytes": 271918,
+        "original_bytes_equal": true,
+        "sha256": "82402756FA0917D761342670AA34B9BAF6F8E8292E4D552A80DA93023B0CEF6B"
+      },
+      {
+        "name": "44100_20_2",
+        "bytes": 450822,
+        "original_bytes_equal": true,
+        "sha256": "57CC70B12572A2790DCC076631476AD3C342D5666FB283A3DF40C527E2430B21"
+      },
+      {
+        "name": "44100_20_3",
+        "bytes": 598870,
+        "original_bytes_equal": true,
+        "sha256": "21DA87223D3B79991F60204C11399C6F77CF2523EFB0FCE647FEA3FEDF115DB8"
+      },
+      {
+        "name": "44100_20_4",
+        "bytes": 747532,
+        "original_bytes_equal": true,
+        "sha256": "79A7222A3B2A27F157F11F1862284EC13033599C8CADA6522FD8FDFEA615D5AE"
+      },
+      {
+        "name": "44100_20_5",
+        "bytes": 890916,
+        "original_bytes_equal": true,
+        "sha256": "4F2C47487E787BBCD046BAAC6E980CC219F0A8382C64F10982B5BE899781381D"
+      },
+      {
+        "name": "44100_20_6",
+        "bytes": 1039200,
+        "original_bytes_equal": true,
+        "sha256": "923B0363520F66977CD75367D4247E1B86F024CEF477E14AAB2C210D92DA42F8"
+      },
+      {
+        "name": "44100_24_1",
+        "bytes": 327102,
+        "original_bytes_equal": true,
+        "sha256": "1C4D50A8BA0D3F68278D872F9EED39784F6CC92CD7A0DA6EE509BBFB654E8EDB"
+      },
+      {
+        "name": "44100_24_2",
+        "bytes": 551258,
+        "original_bytes_equal": true,
+        "sha256": "208FECE5AC969259A8ABF1A9C036FC5ADB7918D2FAB1E581A3823755C3E24BEB"
+      },
+      {
+        "name": "44100_24_3",
+        "bytes": 728634,
+        "original_bytes_equal": true,
+        "sha256": "E3182BFC357F019B8F0835019AB43C536204484D9C02ABC0CAD25BE9A22B4FBA"
+      },
+      {
+        "name": "44100_24_4",
+        "bytes": 919382,
+        "original_bytes_equal": true,
+        "sha256": "20DC2B85CB47C68E14727C6CCE870EDA44E4FAE46E00323B5C588FD7B9E58F56"
+      },
+      {
+        "name": "44100_24_5",
+        "bytes": 1097638,
+        "original_bytes_equal": true,
+        "sha256": "C08499702BF775CA5BE1512EAB5C579DE9BF6044D9156189DD6955949DDACF0D"
+      },
+      {
+        "name": "44100_24_6",
+        "bytes": 1283340,
+        "original_bytes_equal": true,
+        "sha256": "E0FF2BE315BA045D5CF8C9CC4D5BB7A7647E2E8484D55E34DBB7D34F30BF5751"
+      },
+      {
+        "name": "48000_16_1",
+        "bytes": 224552,
+        "original_bytes_equal": true,
+        "sha256": "18C83D549338C7256CB588A999757EB3C1AE4189E3D115454AB76E8C548096D3"
+      },
+      {
+        "name": "48000_16_2",
+        "bytes": 331512,
+        "original_bytes_equal": true,
+        "sha256": "7942418BCD35DADA4C05F51249CBADB020BAE31A4A8448F973B0002F493E80CC"
+      },
+      {
+        "name": "48000_16_3",
+        "bytes": 438870,
+        "original_bytes_equal": true,
+        "sha256": "ADC1A099C4511D92FEB85034FF3E3EDB980DE726BD99F18E6713A3C3DE9B54BE"
+      },
+      {
+        "name": "48000_16_4",
+        "bytes": 542192,
+        "original_bytes_equal": true,
+        "sha256": "99068B468E5F02ABA68DB163F92BC9592A0FB2C614DBB586DF809AB8909BE2DC"
+      },
+      {
+        "name": "48000_16_5",
+        "bytes": 643872,
+        "original_bytes_equal": true,
+        "sha256": "AFD9BE040037EF440817F93D4D43897B20E73047F957827D1873A8404A4AAA56"
+      },
+      {
+        "name": "48000_16_6",
+        "bytes": 745902,
+        "original_bytes_equal": true,
+        "sha256": "B6DB66EAF8A084247226689239C279302236079B66F01A1AEED017A1F302E0F9"
+      },
+      {
+        "name": "48000_20_1",
+        "bytes": 252158,
+        "original_bytes_equal": true,
+        "sha256": "15C0868246DF3A277155B7032FCB4D90A1A67CD1A86EF0D91AE0BA276028BB24"
+      },
+      {
+        "name": "48000_20_2",
+        "bytes": 372832,
+        "original_bytes_equal": true,
+        "sha256": "2FB5034156C5A6ADCEB08016467FA1A47A730B39C62B7C39C3B21932F706F53D"
+      },
+      {
+        "name": "48000_20_3",
+        "bytes": 497546,
+        "original_bytes_equal": true,
+        "sha256": "D9A8AF3B5EA8002F2E9F4BB156BD7197D3F646383D6D6E4BE033A8F92F936DAF"
+      },
+      {
+        "name": "48000_20_4",
+        "bytes": 615564,
+        "original_bytes_equal": true,
+        "sha256": "B2EB2F7521AF68A5D4E1D51C523D7A79F4C211D53C6EAC47DBEAF6E5BA8232F4"
+      },
+      {
+        "name": "48000_20_5",
+        "bytes": 732000,
+        "original_bytes_equal": true,
+        "sha256": "97D1F1C6B1249D4E91C6250F119ADADAF47289388A10AF1D1566C5DF50F3FDB0"
+      },
+      {
+        "name": "48000_20_6",
+        "bytes": 847426,
+        "original_bytes_equal": true,
+        "sha256": "298DCC96947527E1B25A337A1F86E98BE5C7E26184A952F34A8CE9D4A09C75E2"
+      },
+      {
+        "name": "48000_24_1",
+        "bytes": 263558,
+        "original_bytes_equal": true,
+        "sha256": "0FAD4E00FF32F9D9EC9271BDCCCDC677A56A407D74B57645C7262CB698C73707"
+      },
+      {
+        "name": "48000_24_2",
+        "bytes": 397374,
+        "original_bytes_equal": true,
+        "sha256": "B00DD447DE9CB2FB624579CB9F9175AF78966AFAF4F71BAC8E7A1DB1BBD6EE5D"
+      },
+      {
+        "name": "48000_24_3",
+        "bytes": 527136,
+        "original_bytes_equal": true,
+        "sha256": "A91720162DE02BEF4AF547414F82D7699CFF3290265871E62F381DAA697900B0"
+      },
+      {
+        "name": "48000_24_4",
+        "bytes": 657318,
+        "original_bytes_equal": true,
+        "sha256": "B94EA34C117AABAE4835B82BA55DCE1AD407C55EF671AF40D7F57855FA2D8B7E"
+      },
+      {
+        "name": "48000_24_5",
+        "bytes": 787204,
+        "original_bytes_equal": true,
+        "sha256": "6E73C1F34BCF7B6AB1EDF04CE75B9058F400D3262A191071AAA2797B4FE86852"
+      },
+      {
+        "name": "48000_24_6",
+        "bytes": 916182,
+        "original_bytes_equal": true,
+        "sha256": "9FB68456A8D78AE6861C9ACA1E20C02EE4A4551CB1135717129D848CBA77CABD"
+      },
+      {
+        "name": "88200_16_1",
+        "bytes": 445466,
+        "original_bytes_equal": true,
+        "sha256": "BC43AC2208BCCC9909522ABD283283A085D690D7F4717FDA328BABA930066FD8"
+      },
+      {
+        "name": "88200_16_2",
+        "bytes": 817276,
+        "original_bytes_equal": true,
+        "sha256": "633441EA283ECD3CD20D7C846C0BA2218A2BF409CA18288785545CC2F10F9903"
+      },
+      {
+        "name": "88200_16_3",
+        "bytes": 1102544,
+        "original_bytes_equal": true,
+        "sha256": "6EECA6C6A7E5FFB96D265FC550C23A5059FF9CEED17AD95AE2D25FFFFEDD1EFA"
+      },
+      {
+        "name": "88200_16_4",
+        "bytes": 1393020,
+        "original_bytes_equal": true,
+        "sha256": "684C6D849F3A4864A97FA6188B4CE2612BE61722AE7A24C35AB6FEFC96B2AC14"
+      },
+      {
+        "name": "88200_16_5",
+        "bytes": 1675934,
+        "original_bytes_equal": true,
+        "sha256": "A6CA62B37A52E7045048E7861151FF4550AF9D6D84015E6B243BDDA8CF70B3A7"
+      },
+      {
+        "name": "88200_16_6",
+        "bytes": 1966930,
+        "original_bytes_equal": true,
+        "sha256": "59C1C695D2F49BF9436FD13E8EA3F0360C83242B3C69FF3B3AAD528B1CC8D743"
+      },
+      {
+        "name": "88200_20_1",
+        "bytes": 557630,
+        "original_bytes_equal": true,
+        "sha256": "DA8D9B7A47CC5B8D32A0CE4BF9EDC1163F6312F867D1EF29A3DD3D9AA60A7F60"
+      },
+      {
+        "name": "88200_20_2",
+        "bytes": 1043152,
+        "original_bytes_equal": true,
+        "sha256": "BCE580588D8C0E437511D519BBCDB85C8866A3D689C34D330741B8165BD8E26C"
+      },
+      {
+        "name": "88200_20_3",
+        "bytes": 1420228,
+        "original_bytes_equal": true,
+        "sha256": "042CB5ABB22678CE9D64723D0B0F65D80A11337DFF00E1D489C9275149004FD7"
+      },
+      {
+        "name": "88200_20_4",
+        "bytes": 1805438,
+        "original_bytes_equal": true,
+        "sha256": "B4178893ACDD751016D7B6BA1A788FD940D771317CDE8A05DEDCE5DAB81E68F0"
+      },
+      {
+        "name": "88200_20_5",
+        "bytes": 2175182,
+        "original_bytes_equal": true,
+        "sha256": "CA5E386289EA1C62EA91C4702318B1AB795436711ECEA7BA62C74B0142EB955D"
+      },
+      {
+        "name": "88200_20_6",
+        "bytes": 2556164,
+        "original_bytes_equal": true,
+        "sha256": "E9F16E17AE0F659072DA7522F2531921EF2492B420CBBE673F57E161A163E46C"
+      },
+      {
+        "name": "88200_24_1",
+        "bytes": 744296,
+        "original_bytes_equal": true,
+        "sha256": "BE3B3015ABE57F5F1F1CE808C1D3775D30B573A3E029B3DF6BFBB7A7C5E70F3D"
+      },
+      {
+        "name": "88200_24_2",
+        "bytes": 1369962,
+        "original_bytes_equal": true,
+        "sha256": "B0F82FCA99BA7A720980B49523A0015E64A3BB0F99044E11BC3DBD5963BC271F"
+      },
+      {
+        "name": "88200_24_3",
+        "bytes": 1901312,
+        "original_bytes_equal": true,
+        "sha256": "450ED7EEC471E52D594FE17DF70FDD65B256BEAC069DE8964F4A37B048625B29"
+      },
+      {
+        "name": "88200_24_4",
+        "bytes": 2416248,
+        "original_bytes_equal": true,
+        "sha256": "EC39FF58C6590D8AB5F0115D5F5A0917350CA3526B5CD54EF686B26C3BF142B9"
+      },
+      {
+        "name": "88200_24_5",
+        "bytes": 2931436,
+        "original_bytes_equal": true,
+        "sha256": "DC5019997209178750BBFDA302D22CE08B8AB8D8F6017605A48411C0F55F624F"
+      },
+      {
+        "name": "88200_24_6",
+        "bytes": 2881656,
+        "original_bytes_equal": true,
+        "sha256": "0EAF6673891EDE3B439E5DEF76613A07ADDF0644700461CE044D4F59355499EA"
+      },
+      {
+        "name": "96000_16_1",
+        "bytes": 443950,
+        "original_bytes_equal": true,
+        "sha256": "00C1055F3DF7E60E24E3EB7E468454AA136070D03F85241AB5F9BA6B6940580A"
+      },
+      {
+        "name": "96000_16_2",
+        "bytes": 786128,
+        "original_bytes_equal": true,
+        "sha256": "04C28AE6F398FB3C46C5586A56C0AE79BF35738E5383613A1EFF1D4FD962C415"
+      },
+      {
+        "name": "96000_16_3",
+        "bytes": 1117596,
+        "original_bytes_equal": true,
+        "sha256": "F5A7D2ED519FC7C697E6934CF0BA008756C8098E800339A6C68590F602B633E9"
+      },
+      {
+        "name": "96000_16_4",
+        "bytes": 1437172,
+        "original_bytes_equal": true,
+        "sha256": "DD4ECE8E6DECC9B24D661A86F63930A4DC6FFC4C2DCAEF807B657554E650A5AE"
+      },
+      {
+        "name": "96000_16_5",
+        "bytes": 1744228,
+        "original_bytes_equal": true,
+        "sha256": "3CC230BEE912C1C29E5CF7DF5B11EC1FA6CC7C01D3BCAB3209656D373FE8E8D7"
+      },
+      {
+        "name": "96000_16_6",
+        "bytes": 2071256,
+        "original_bytes_equal": true,
+        "sha256": "D605CB2CB7544093EDC7D31F13DAF9498D6AA592FF756CD009044D564CAB9582"
+      },
+      {
+        "name": "96000_20_1",
+        "bytes": 542872,
+        "original_bytes_equal": true,
+        "sha256": "0D951E9D441BA831B6020081070D9E858DD32B378D39A1BB243EDD713333BB6E"
+      },
+      {
+        "name": "96000_20_2",
+        "bytes": 989280,
+        "original_bytes_equal": true,
+        "sha256": "E7B00CD2422FF7E7CC8A59FBD65BE6E9570D782A4C927409560CE960270BC206"
+      },
+      {
+        "name": "96000_20_3",
+        "bytes": 1408170,
+        "original_bytes_equal": true,
+        "sha256": "7188DCBBE22E978E88ED768FB3E8740FEDA7D07B172B3BC343EFDBDF171F5FD9"
+      },
+      {
+        "name": "96000_20_4",
+        "bytes": 1824034,
+        "original_bytes_equal": true,
+        "sha256": "4D2040413098BE68A91D9170745674C77D15236693D9927A73B131686AD58557"
+      },
+      {
+        "name": "96000_20_5",
+        "bytes": 2202244,
+        "original_bytes_equal": true,
+        "sha256": "2837725585D18304938408DFD485C84ED95C310BA236F624329D48F564E393E2"
+      },
+      {
+        "name": "96000_20_6",
+        "bytes": 2620764,
+        "original_bytes_equal": true,
+        "sha256": "EB9C052A1F49F941C0E1D79E5C787437C4573794E7F16186D07DB6576E649076"
+      },
+      {
+        "name": "96000_24_1",
+        "bytes": 699844,
+        "original_bytes_equal": true,
+        "sha256": "CACA536EC9F90FF08DDE71F050317D2E053F700A5EBC5C51F9A49246B3D114B4"
+      },
+      {
+        "name": "96000_24_2",
+        "bytes": 1279922,
+        "original_bytes_equal": true,
+        "sha256": "9DFBF6A59078522B55CCE5DDED8BD17103062A4C8A7B6B6A3001C11F218DB673"
+      },
+      {
+        "name": "96000_24_3",
+        "bytes": 1852812,
+        "original_bytes_equal": true,
+        "sha256": "A4043C21334867E24F536488F5A3107AC77D89D3B7D2FEA8BC1526273FDB27AB"
+      },
+      {
+        "name": "96000_24_4",
+        "bytes": 2395890,
+        "original_bytes_equal": true,
+        "sha256": "35A637D86A6855A817E3E25F9B608FB27D4D689A381E962C5D0AA3C90E305D00"
+      },
+      {
+        "name": "96000_24_5",
+        "bytes": 2915186,
+        "original_bytes_equal": true,
+        "sha256": "AA0D5B7636885F033CE69187D7949081DF61CA2BE4966142685E2DF1E5C33C90"
+      },
+      {
+        "name": "96000_24_6",
+        "bytes": 2853614,
+        "original_bytes_equal": true,
+        "sha256": "48889B2935C3F5A4D792657925106B05186E5A95279A344D1F3C6B957E2266CA"
+      },
+      {
+        "name": "176400_16_2",
+        "bytes": 1801520,
+        "original_bytes_equal": true,
+        "sha256": "BF5A020257860EA8793B19EE1EC4B09955FA4E0358FE196992628CCAE6D5E673"
+      },
+      {
+        "name": "176400_20_2",
+        "bytes": 2329598,
+        "original_bytes_equal": true,
+        "sha256": "CFDE5FFAE823A43DBB7B556562CB1BF6DC8F2449FDD5B3BD866189531A54F629"
+      },
+      {
+        "name": "176400_24_2",
+        "bytes": 3161782,
+        "original_bytes_equal": true,
+        "sha256": "7B6A42772C0E5CCCC8FCE4A2D95DD05BACE825DACC4537E273C46EB1C8BEB065"
+      },
+      {
+        "name": "192000_16_2",
+        "bytes": 1849332,
+        "original_bytes_equal": true,
+        "sha256": "7D03AF304FFD98AA84C2948E76D93DCE2D59AA0D1E8122547033EB4B1BAF353C"
+      },
+      {
+        "name": "192000_20_2",
+        "bytes": 2427302,
+        "original_bytes_equal": true,
+        "sha256": "8E264ABD44BC74D8F4EBAA4B5DC7FBAB112F9D6B12B0E6EA570D5B328AAAE683"
+      },
+      {
+        "name": "192000_24_2",
+        "bytes": 3201410,
+        "original_bytes_equal": true,
+        "sha256": "AE445C631750B65D1A651A2DC13E4519626E76AAD3379C972F5EF4544DBD26E1"
+      }
+    ]
+  },
+  "release": {
+    "status": "PASS",
+    "cases": [
+      {
+        "case": "noise-preview",
+        "exit": 0,
+        "image": true
+      },
+      {
+        "case": "noise-cache",
+        "exit": 0,
+        "image": true
+      },
+      {
+        "case": "normal-build",
+        "exit": 0,
+        "image": true
+      },
+      {
+        "case": "normal-verify",
+        "exit": 0,
+        "image": true
+      }
+    ],
+    "published_noise_bytes_equal_tested_core": true,
+    "noise_mlp": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\mlp-oversize-fix-20261002\\release-smoke\\noise-work\\mlp\\noise.mlp",
+    "architecture": {
+      "GUI": "AMD64",
+      "CLI": "AMD64",
+      "MLP DLL": "AMD64"
+    },
+    "manifest_verified_files": 146,
+    "iso_files": [
+      "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\mlp-oversize-fix-20261002\\release-smoke\\normal-output\\mlp_fix_smoke_1.iso"
+    ],
+    "release_zip_exists": true
+  }
+}
