@@ -63,7 +63,7 @@ internal static class ToolchainProgram
         var outputBase = ResolvePath(options.OutputDirectory ??
             Path.Combine(repository, "tools", "win-build", "release"));
         var destination = Path.Combine(outputBase, "DVD-Audio-Maker");
-        var publish = Path.Combine(repository, "tools", "win-build", "publish", "win-x64");
+        var publish = Path.Combine(repository, "tools", "win-build", "publish", "cli-win-x64");
 
         ValidatePrebuilt(prebuilt);
         ValidateSourceTree(sourceTree);
@@ -88,6 +88,18 @@ internal static class ToolchainProgram
             "-p:DebugSymbols=false",
         ], repository);
 
+        var guiPublish = Path.Combine(repository, "tools", "win-build", "publish", "gui-win-x64");
+        RecreateDirectory(guiPublish);
+        await RunAsync("dotnet",
+        [
+            "publish", Path.Combine(repository, "src", "DvdaMaker.Desktop", "DvdaMaker.Desktop.csproj"),
+            "--configuration", "Release", "--runtime", "win-x64", "--self-contained", "true",
+            "--output", guiPublish, "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true",
+            "-p:DebugType=None", "-p:DebugSymbols=false",
+        ], repository);
+        if (!File.Exists(Path.Combine(guiPublish, "DVD-Audio-Maker.exe")))
+            throw new InvalidOperationException("GUI publish did not create DVD-Audio-Maker.exe");
+
         var executable = Path.Combine(publish, "dvda.exe");
         if (!File.Exists(executable))
         {
@@ -96,6 +108,7 @@ internal static class ToolchainProgram
 
         RecreateDirectory(destination);
         CopyDirectory(publish, Path.Combine(destination, "app"));
+        CopyDirectory(guiPublish, destination);
         CopyDirectory(prebuilt, Path.Combine(destination, "menu-bin"));
         CopyDirectory(Path.Combine(sourceTree, "menu"), Path.Combine(destination, "data", "menu"));
         File.Copy(Path.Combine(repository, "config.env"), Path.Combine(destination, "config.env"), true);
@@ -208,6 +221,10 @@ internal static class ToolchainProgram
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 set "ROOT=%~dp0"
+if "%~1"=="" (
+    start "" "%ROOT%DVD-Audio-Maker.exe"
+    exit /b 0
+)
 set "DVDA_AUTHOR=%ROOT%menu-bin\dvda-author-dev.exe"
 set "DVDA_MKISOFS=%ROOT%menu-bin\mkisofs.exe"
 set "DVDA_AUTHOR_SRC=%ROOT%data"

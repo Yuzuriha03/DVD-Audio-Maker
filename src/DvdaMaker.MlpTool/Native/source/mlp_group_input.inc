@@ -54,7 +54,7 @@ static int MLP_ENCODER_CALL group_read(void *opaque,int32_t *pcm,size_t capacity
     uint64_t last;
     if(capacity>160 || !capacity) return -1;
 #ifdef _WIN32
-    caller=_controlfp(0,0);
+    caller=host_current_fp();
 #else
     caller=0;
 #endif
