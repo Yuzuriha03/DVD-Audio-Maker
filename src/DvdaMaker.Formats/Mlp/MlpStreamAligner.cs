@@ -142,7 +142,8 @@ public static class MlpStreamAligner
             {
                 majorSyncErrors.Add(new MlpMajorSyncError(offset, "采样率未知"));
             }
-            else if (currentPeak != PeakBitrateRaw(currentSampleRate.Value))
+            else if (currentPeak < (long)BasePeakBitrate * 16 / currentSampleRate.Value ||
+                     currentPeak > PeakBitrateRaw(currentSampleRate.Value))
             {
                 majorSyncErrors.Add(new MlpMajorSyncError(
                     offset,

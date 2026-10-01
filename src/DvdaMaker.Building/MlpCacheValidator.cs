@@ -10,6 +10,20 @@ public static class MlpCacheValidator
 
     public const int RequiredMajorSyncInterval = 8;
 
+    // Original scheduling may balance restart spans; validate rather than rewrite its output.
+    public static bool IsEncoderValid(string path)
+    {
+        try
+        {
+            var inspection = MlpStreamAligner.Inspect(File.ReadAllBytes(path));
+            return inspection.IsValid && inspection.HasEndOfStream;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     public static bool IsValid(string path)
     {
         try

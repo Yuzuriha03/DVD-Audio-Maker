@@ -61,10 +61,9 @@ PCM 等长比对、工作盘空间预检、音源校验缓存、MLP 缓存凭据
 
     dotnet run --project src/DvdaMaker.Cli -- build --dry-run
 
-该命令会按配置使用 FFmpeg 编码/复用 MLP，或定位并探测外部 MLP，然后完成分盘并
+该命令会按配置使用MLP 编码核心编码/复用 MLP，或定位并探测外部 MLP，然后完成分盘并
 写出独立的 `mlp_index-dryrun.json`，不会覆盖正式成品使用的 `mlp_index.json`。
-FFmpeg 产物会强制 `-max_interval 8`、执行 MLP 字节对齐并
-做完整自检。
+MLP 编码核心在序列化时生成完整头部、校验及终止标志；输出只验证，不进行编码后修补。
 
 无菜单正式出盘：
 

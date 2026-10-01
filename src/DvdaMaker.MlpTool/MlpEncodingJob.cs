@@ -2,7 +2,7 @@ namespace DvdaMaker.MLPTool;
 
 public sealed record MlpEncodingJob
 {
-    public required string MLPExecutable { get; init; }
+    public string MetadataContext { get; init; } = string.Empty;
 
     public required string Eac3toExecutable { get; init; }
 
@@ -13,6 +13,8 @@ public sealed record MlpEncodingJob
     public required int SampleRate { get; init; }
 
     public required int Bits { get; init; }
+
+    public int Jobs { get; init; } = 1;
 
     public IReadOnlyList<MLPEncodingTrack> Tracks { get; init; } = [];
 }
