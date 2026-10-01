@@ -10,7 +10,7 @@ public sealed class SurcodeBatchEncoder(ProcessRunner runner)
         Validate(job);
         Directory.CreateDirectory(job.TemporaryDirectory);
         Directory.CreateDirectory(job.OutputDirectory);
-        _ = MlpEncoder.ExtractExecutable();
+        _ = MlpEncoder.ExtractLibrary();
         await Parallel.ForEachAsync(job.Tracks, new ParallelOptions
         {
             MaxDegreeOfParallelism = Math.Clamp(job.Jobs, 1, 16),
@@ -40,7 +40,7 @@ public sealed class SurcodeBatchEncoder(ProcessRunner runner)
                 var prepared = Path.Combine(folder, "input.wav");
                 SurcodePcmWav.Normalize(input, prepared, job.SampleRate, job.Bits, token);
                 File.Delete(input);
-                await MlpEncoder.EncodeAsync(runner, prepared,
+                await MlpEncoder.EncodeAsync( prepared,
                     Path.Combine(job.OutputDirectory, track.WorkName + ".mlp"), job.MetadataContext,
                     TimeSpan.FromSeconds(Math.Max(300, track.DurationSeconds * 3 + 120)), token).ConfigureAwait(false);
             }

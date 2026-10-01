@@ -29,10 +29,10 @@ internal static class MlpEncoderTests
 
     public static void EmbeddedCore()
     {
-        var executable = MlpEncoder.ExtractExecutable();
+        var executable = MlpEncoder.ExtractLibrary();
         using var stream = File.OpenRead(executable);
         Require(Convert.ToHexString(SHA256.HashData(stream)).Equals(MlpEncoder.BinarySha256, StringComparison.OrdinalIgnoreCase), "Pinned encoder hash");
-        Require(executable == MlpEncoder.ExtractExecutable(), "Extraction cache");
+        Require(executable == MlpEncoder.ExtractLibrary(), "Extraction cache");
         var options = new ConfigLoader(new Dictionary<string, string?>()).Load(workingDirectory: NewRootForConfig());
         Require(options.MlpSource == "surcode-batch", "Default must use encoder");
     }
@@ -150,6 +150,37 @@ internal static class MlpEncoderTests
         finally { Environment.SetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE", saved); Directory.Delete(root, true); }
     }
 
+    public static void DllCancellation()
+    {
+        var root = NewRoot();
+        try
+        {
+            Require(Path.GetExtension(MlpEncoder.ExtractLibrary()) == ".dll", "Encoder must load a DLL");
+            var wave = Path.Combine(root, "input.wav");
+            WriteWave(wave, 48000, 24, 2, 960017);
+            var output = Path.Combine(root, "canceled.mlp");
+            using var cancellation = new CancellationTokenSource();
+            var operation = MlpEncoder.EncodeAsync(wave, output, "", TimeSpan.FromSeconds(30), cancellation.Token);
+            for (var i = 0; i < 1000 && !operation.IsCompleted && !Directory.EnumerateFiles(root, "*.partial").Any(); i++)
+                Thread.Sleep(2);
+            Require(!operation.IsCompleted, "Cancellation fixture finished before entering the native call");
+            cancellation.Cancel();
+            try { operation.GetAwaiter().GetResult(); throw new Exception("Cancellation was ignored"); }
+            catch (OperationCanceledException) { }
+            Require(!File.Exists(output) && !Directory.EnumerateFiles(root, "*.partial").Any(), "Canceled native output was published or leaked");
+            File.WriteAllBytes(output, [1, 2, 3]);
+            try { MlpEncoder.EncodeAsync(wave, output, "", TimeSpan.FromSeconds(10), CancellationToken.None).GetAwaiter().GetResult(); throw new Exception("Existing native output was overwritten"); }
+            catch (IOException) { }
+            Require(File.ReadAllBytes(output).SequenceEqual(new byte[] { 1, 2, 3 }), "Existing output changed");
+            var context = Path.Combine(root, "bad.stampctx"); MlpEncoder.WriteMetadata(context, 40, 48000);
+            var mismatch = Path.Combine(root, "mismatch.mlp");
+            try { MlpEncoder.EncodeAsync(wave, mismatch, context, TimeSpan.FromSeconds(10), CancellationToken.None).GetAwaiter().GetResult(); throw new Exception("Mismatched metadata accepted"); }
+            catch (InvalidDataException) { }
+            Require(!File.Exists(mismatch), "Bad metadata produced an output file");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     public static void OddPcmTail()
     {
         var root = NewRoot();
@@ -212,7 +243,7 @@ internal static class MlpEncoderTests
                     var folder = Path.Combine(root, $"{rate}_{bits}_{channels}"); Directory.CreateDirectory(folder);
                     var wave = Path.Combine(folder, "input.wav"); var expected = WriteWave(wave, rate, bits, channels, 817);
                     var output = Path.Combine(root, $"{rate}_{bits}_{channels}.mlp");
-                    MlpEncoder.EncodeAsync(runner, wave, output, "", TimeSpan.FromSeconds(120), CancellationToken.None).GetAwaiter().GetResult();
+                    MlpEncoder.EncodeAsync( wave, output, "", TimeSpan.FromSeconds(120), CancellationToken.None).GetAwaiter().GetResult();
                     Require(MlpCacheValidator.IsEncoderValid(output), $"Inspect rejected {rate}/{bits}/{channels}");
                     var raw = Path.Combine(folder, "decoded.raw");
                     var result = runner.RunAsync(new ProcessRequest
@@ -273,7 +304,7 @@ internal static class MlpEncoderTests
             var directFolder = Path.Combine(folder, "direct"); Directory.CreateDirectory(directFolder);
             var directWave = Path.Combine(directFolder, "input.wav"); SurcodePcmWav.Normalize(wav, directWave, rate, bits);
             var direct = Path.Combine(folder, "direct.mlp");
-            MlpEncoder.EncodeAsync(runner, directWave, direct, "", TimeSpan.FromSeconds(120), CancellationToken.None).GetAwaiter().GetResult();
+            MlpEncoder.EncodeAsync( directWave, direct, "", TimeSpan.FromSeconds(120), CancellationToken.None).GetAwaiter().GetResult();
             Require(File.ReadAllBytes(output).SequenceEqual(File.ReadAllBytes(direct)), "Batch output differs from direct algorithm");
             passed.Add(new { rate, bits, channels, bytes = new FileInfo(output).Length, pcm_equal = true, direct_bytes_equal = true });
             Console.WriteLine($"PASS real batch {rate}/{bits}/{channels}");

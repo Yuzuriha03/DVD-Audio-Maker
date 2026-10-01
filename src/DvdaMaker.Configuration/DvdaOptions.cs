@@ -18,6 +18,11 @@ public sealed partial class DvdaOptions
         _environment = environment;
     }
 
+    /// <summary>Creates a snapshot from explicit application settings without ambient environment overrides.</summary>
+    public static DvdaOptions FromValues(IReadOnlyDictionary<string, string> values) =>
+        new(null, new Dictionary<string, string>(values, StringComparer.Ordinal),
+            new Dictionary<string, string?>());
+
     public string? ConfigPath { get; }
 
     public string Get(string key, string? fallback = null)

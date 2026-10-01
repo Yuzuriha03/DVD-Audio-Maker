@@ -1,5 +1,14 @@
 # DVD-Audio Maker
 
+## 图形界面（Windows x64）
+
+开发工作区双击 `gui.cmd`；自包含发布包双击根目录的 `DVD-Audio-Maker.exe`。GUI 可选择目录、编辑编码与菜单选项，执行检查、预演、制作和验证；支持取消及实时日志。
+
+使用“导入 config.env”读取旧配置，也可打开/保存 JSON 方案。日常配置自动保存至 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`，无需手工修改 env；CLI 与 `--config` 保留。MLP 编码直接调用内嵌 x64 DLL，不启动编码 EXE。
+
+实施方案和范围：[GUI 与 DLL 方案](docs/GUI-AND-DLL-PLAN.md)。
+
+
 将 FLAC 或 ALAC/M4A 音源制作成标准 **DVD-Audio ISO** 的 Windows 原生工具链。
 
 项目使用 **.NET 10 / C#** 实现音源准备、MLP 管理、分盘、菜单生成、ISO 发布和成品校验；底层使用经过修改的 `dvda-author` 与支持 `-dvd-audio` 的 `mkisofs`。
@@ -23,8 +32,9 @@
 ## 项目结构
 
 ```text
+src/DvdaMaker.Desktop         Windows x64 图形入口
 src/DvdaMaker.Cli             命令行入口
-src/DvdaMaker.Configuration   config.env 配置解析
+src/DvdaMaker.Configuration   GUI JSON 方案与 config.env 配置解析
 src/DvdaMaker.Preparation     扫描、归一化、解码校验、ALAC 修复
 src/DvdaMaker.Building        MLP、分盘、菜单、出盘、发布与校验
 src/DvdaMaker.Formats         ISO9660、MLP、MPEG/PTS 解析
@@ -35,7 +45,7 @@ src/DvdaMaker.Toolchain       Windows 发布包组装器
 tests/                        兼容性与端到端测试
 ```
 
-仓库不再使用 WSL、PowerShell、Bash 或 `.sh` 脚本。日常入口是 `build.cmd`、`verify.cmd` 和 C# CLI。
+日常使用和发布包组装无需 WSL、PowerShell 或 Bash。图形入口是 `gui.cmd`（源码工作区）或 `DVD-Audio-Maker.exe`（发布包）；`build.cmd`、`verify.cmd` 和 C# CLI 继续保留。
 
 ## 前置条件
 
@@ -50,9 +60,9 @@ tests/                        兼容性与端到端测试
 FFmpeg 保留用于音源转换、解码和校验，不再用于 MLP 编码。
 批量编码需要配置 eac3to；无需安装原版 SurCode。
 
-## 配置
+## CLI 与旧 env 配置
 
-仓库提供可提交的示例 `config.env`。
+GUI 配置可在界面编辑并保存为 JSON；以下优先级仅适用于 CLI。仓库提供可提交的示例 `config.env`。
 
 自动发现优先级：
 
@@ -128,7 +138,7 @@ dotnet run --project src\DvdaMaker.Cli -- verify all
 
 - 音源缓存只在文件身份（长度、修改时间、首尾各 64 KiB 哈希）与归一化参数完全一致时复用；未通过校验的轨道永不写入缓存。
 - 逐盘续跑只在签名（源/MLP 身份、author/mkisofs 工具身份、影响输出的配置、菜单设置）一致且暂存 ISO 未被改动时跳过该盘；最终仍由整套事务发布 ISO 与索引。构建失败会保留 `build/publish-staging`，下次运行从那里续跑。
-- `DVDA_MLP_JOBS` 大于 1 会让多个独立MLP 编码核心进程同时编码，编码前的缓存凭据（源身份 + 编码器身份 + 编码参数 + 输出身份）依旧生效；是否提速取决于磁盘吞吐与 CPU，默认保持 1 路。
+- `DVDA_MLP_JOBS` 大于 1 会让多个独立的进程内 DLL 编码状态并发工作，编码前的缓存凭据（源身份 + 编码器身份 + 编码参数 + 输出身份）依旧生效；是否提速取决于磁盘吞吐与 CPU，默认保持 1 路。
 
 ## MLP 来源
 
@@ -163,7 +173,7 @@ DVDA_MLP_SURCODE_BITS="24"
 
 `源音频 → eac3to → 整数 PCM → MLP 核心 → MLP 缓存`。
 
-64 位主程序内嵌固定哈希的 Windows x86 编码核心，运行时提取并校验后调用；
+原生 x64 主程序内嵌固定哈希的 Windows x64 编码 DLL，运行时提取、校验并在进程内调用；
 不启动原版 SurCode，不加载它的 DLL，不写 SSF，也不进行编码后的字节修补。
 MLP 缓存目录留空时使用 `<build>/mlp`。旧的 `DVDA_MLP_SOURCE=ffmpeg` 会明确报错，
 请改为 `surcode-batch`；`DVDA_MLP_SURCODE_EXE` 已删除。
@@ -237,7 +247,7 @@ dotnet build DVD-Audio-Maker.sln --configuration Release
 dotnet run --project tests\DvdaMaker.CompatibilityTests --configuration Release
 ```
 
-当前兼容测试基线为 93 项。
+当前兼容测试基线为 97 项。
 
 ## 文档
 

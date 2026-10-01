@@ -1,8 +1,16 @@
+# Windows x64 GUI 发布包
+
+双击根目录 `DVD-Audio-Maker.exe` 启动图形界面；无参数运行 `dvda.cmd` 也启动 GUI。带命令参数时继续执行 CLI。
+
+配置通过界面编辑并自动保存在用户目录；“导入 config.env”保留读取旧配置的能力，“打开方案 / 保存方案”处理 JSON 配置。首次没有 GUI 设置时读取旁边的旧 env。MLP 编码使用进程内原生 x64 DLL，不需要编码 EXE；eac3to、FFmpeg 解码与制盘工具仍保留。
+
+“构建预演”执行音源准备和 MLP 编码但不创建 ISO；“开始制作”完成出盘。“验证成品”的 PCM 无损检查沿用首轨抽样范围。任务可取消，日志可保存。
+
 # DVD-Audio Maker for Windows
 
 此文档随 Windows x64 自包含发布包分发。
 
-发布包包含已并入 `dvda.exe` 的 MLP 编码核心，以及 `dvda-author`、`mkisofs`、菜单工具、ImageMagick 和中日韩字体。运行时不需要 WSL、Bash、MSYS2、PowerShell、Python 或单独安装 .NET Runtime。
+GUI 和 CLI 均内嵌原生 x64 MLP DLL，发布包同时包含 `dvda-author`、`mkisofs`、菜单工具、ImageMagick 和中日韩字体。运行时不需要 WSL、Bash、MSYS2、PowerShell、Python 或单独安装 .NET Runtime。
 
 ## 外部依赖
 
@@ -10,9 +18,9 @@ FFmpeg、FFprobe 和 Metaflac 需位于 `PATH`，也可以在 `config.env` 中�
 
 FFmpeg 仅用于转换、解码和校验。批量编码需配置 eac3to，无需原版 SurCode。
 
-## 配置
+## 旧配置与 CLI
 
-编辑发布包根目录中的 `config.env`：
+GUI 可通过“导入 config.env”读取旧配置；日常设置可直接在界面中编辑。使用 CLI 时，也可以编辑发布包根目录中的 `config.env`：
 
 ```text
 DVDA_SRC="D:/Music/MyAlbums"
@@ -27,7 +35,7 @@ DVDA_MLP_EAC3TO_EXE="C:/Tools/eac3to/eac3to.exe"
 DVDA_MENU="on"
 ```
 
-配置优先级：
+CLI 配置优先级：
 
 ```text
 环境变量 > config.env > 内置默认值
@@ -35,7 +43,7 @@ DVDA_MENU="on"
 
 配置文件只解析 `KEY=VALUE`。不会执行命令或展开变量。请使用绝对 Windows 路径。
 
-工具路径和菜单字体由 `dvda.cmd` 根据发布包布局设置，通常不需要手工配置。
+工具路径和菜单字体由 GUI 或 `dvda.cmd` 根据发布包布局设置，通常不需要手工配置。
 
 ## 构建 ISO
 

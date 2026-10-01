@@ -108,6 +108,8 @@ public sealed class ProcessRunner
         catch (OperationCanceledException)
         {
             TryKill(process);
+            try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+            catch (TimeoutException) { /* Preserve the cancellation result if termination is delayed. */ }
             if (timeoutSource?.IsCancellationRequested == true &&
                 !cancellationToken.IsCancellationRequested)
             {

@@ -1,0 +1,51 @@
+namespace DvdaMaker.Desktop;
+
+internal enum SettingKind { Text, Folder, File, Boolean, Number, Choice }
+internal sealed record SettingDefinition(string Key, string Label, string Group, SettingKind Kind,
+    string Help = "", string[]? Choices = null, decimal Minimum = 0, decimal Maximum = 10000000000)
+{
+    public static IReadOnlyList<SettingDefinition> All { get; } =
+    [
+        new("DVDA_SRC", "音源目录", "项目", SettingKind.Folder, "递归读取 FLAC / M4A 音源。"),
+        new("DVDA_FINAL_DIR", "成品输出目录", "项目", SettingKind.Folder, "生成的 ISO 发布到此目录。"),
+        new("DVDA_BUILD_DIR", "构建缓存目录", "项目", SettingKind.Folder, "保存清单、MLP、菜单和临时构建文件。"),
+        new("DVDA_TITLE", "光盘标题", "项目", SettingKind.Text),
+        new("DVDA_ISO_PREFIX", "ISO 文件名前缀", "项目", SettingKind.Text, "留空时由光盘标题生成。"),
+        new("DVDA_DISC_BYTES", "单盘容量（字节）", "项目", SettingKind.Number, "0 使用 DVD5 默认容量；DVD9 为 8540123136。"),
+        new("DVDA_MAX_DISCS", "最多光盘数", "项目", SettingKind.Number, "0 表示不限制。", Maximum: 999),
+        new("DVDA_GROUP_TRACK_LIMIT", "每组最多音轨", "项目", SettingKind.Number, Minimum: 1, Maximum: 99),
+        new("DVDA_PREPARE_CACHE", "复用音源检查缓存", "项目", SettingKind.Boolean),
+        new("DVDA_RESUME", "启用出盘续跑", "项目", SettingKind.Boolean),
+        new("DVDA_MLP_SOURCE", "MLP 来源", "MLP 编码", SettingKind.Choice,
+            "surcode-batch：内置 DLL 编码；external / surcode：读取已有 MLP。", ["surcode-batch", "external", "surcode"]),
+        new("DVDA_MLP_SURCODE_SAMPLE_RATE", "目标采样率（Hz）", "MLP 编码", SettingKind.Choice,
+            "176400 / 192000 Hz 最多双声道，其余最多六声道。", ["44100", "48000", "88200", "96000", "176400", "192000"]),
+        new("DVDA_MLP_SURCODE_BITS", "目标位深（bit）", "MLP 编码", SettingKind.Choice, "降位深/重采样由 eac3to 完成。", ["16", "20", "24"]),
+        new("DVDA_MLP_JOBS", "并行编码数", "MLP 编码", SettingKind.Number, "每个任务独立 DLL 状态；增加并行度会增加内存占用。", Minimum: 1, Maximum: 16),
+        new("DVDA_MLP_EAC3TO_EXE", "eac3to 程序", "MLP 编码", SettingKind.File, "用于准备 PCM；MLP 编码在应用进程内完成。"),
+        new("DVDA_MLP_EXTERNAL_DIR", "MLP 缓存 / 导入目录", "MLP 编码", SettingKind.Folder, "内置编码时留空使用构建目录下的 mlp。"),
+        new("DVDA_MLP_METADATA_CONTEXT", "历史元数据上下文", "MLP 编码", SettingKind.File, "通常留空。复现历史原版字节时指定匹配该音轨的 stampctx 文件。"),
+        new("DVDA_MLP_BATCH_TEMP_DIR", "PCM 临时目录", "MLP 编码", SettingKind.Folder, "留空使用构建目录。"),
+        new("DVDA_MLP_BATCH_OUTPUT_DIR", "MLP 暂存目录", "MLP 编码", SettingKind.Folder, "留空使用构建目录。"),
+        new("DVDA_MENU", "生成光盘菜单", "菜单", SettingKind.Boolean),
+        new("DVDA_MENU_TRACKS_PER_PAGE", "每页音轨数", "菜单", SettingKind.Number, Minimum: 1, Maximum: 32),
+        new("DVDA_MENU_INDEX_MIN_ALBUMS", "专辑索引启用数量", "菜单", SettingKind.Number, Maximum: 1000),
+        new("DVDA_MENU_STILLPICS", "包含静态封面", "菜单", SettingKind.Boolean),
+        new("DVDA_MENU_COVER_DIM", "封面暗化百分比", "菜单", SettingKind.Number, Maximum: 100),
+        new("DVDA_MENU_FONT", "中文字体", "菜单", SettingKind.File, "字体名称或独立 OTF/TTF 文件。"),
+        new("DVDA_MENU_FONT_JP", "日文字体", "菜单", SettingKind.File),
+        new("DVDA_MENU_FONT_KR", "韩文字体", "菜单", SettingKind.File),
+        new("DVDA_AUTHOR", "dvda-author", "工具与高级", SettingKind.File),
+        new("DVDA_MKISOFS", "mkisofs", "工具与高级", SettingKind.File),
+        new("DVDA_FFMPEG", "FFmpeg", "工具与高级", SettingKind.File, "仅用于音源转换、解码与验证。"),
+        new("DVDA_FFPROBE", "FFprobe", "工具与高级", SettingKind.File),
+        new("DVDA_METAFLAC", "metaflac", "工具与高级", SettingKind.File),
+        new("DVDA_AUTHOR_SRC", "制盘素材根目录", "工具与高级", SettingKind.Folder, "应包含 menu 子目录。"),
+        new("DVDA_KEEP_TMP", "保留临时文件", "工具与高级", SettingKind.Boolean),
+        new("DVDA_KEEP_INTERMEDIATE", "保留中间产物", "工具与高级", SettingKind.Boolean),
+        new("DVDA_LOSS_WARN_S", "时长差异警告（秒）", "工具与高级", SettingKind.Text),
+        new("DVDA_LOSS_ERROR_S", "时长差异错误（秒）", "工具与高级", SettingKind.Text),
+        new("DVDA_ALBUM_LIMIT", "诊断专辑数量限制", "工具与高级", SettingKind.Text, "留空表示处理全部专辑。"),
+        new("DVDA_TITLE_MODE", "诊断 title 分组", "工具与高级", SettingKind.Text, "album、one 或正整数；通常使用 album。"),
+    ];
+}

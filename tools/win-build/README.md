@@ -73,13 +73,14 @@ tools\win-build\build-all.cmd ^
 | `--prebuilt` | Windows 第三方工具目录 |
 | `--output` | 发布输出根目录 |
 
-`build-all.cmd` 启动 `src/DvdaMaker.Toolchain`，依次检查文件、发布 C# CLI、复制第三方工具和菜单素材、写入 `dvda.cmd`、生成 SHA-256 清单并创建 ZIP。
+`build-all.cmd` 启动 `src/DvdaMaker.Toolchain`，依次检查文件、发布原生 x64 的 C# GUI 和 CLI、复制第三方工具和菜单素材、写入 `dvda.cmd`、生成 SHA-256 清单并创建 ZIP。
 
 ## 产物
 
 ```text
 tools\win-build\release\
 ├── DVD-Audio-Maker\
+│   ├── DVD-Audio-Maker.exe
 │   ├── app\
 │   ├── menu-bin\
 │   ├── data\menu\
@@ -92,7 +93,9 @@ tools\win-build\release\
 └── DVD-Audio-Maker.zip
 ```
 
-目标机器不需要安装 .NET Runtime。FFmpeg、FFprobe 和 Metaflac 仍需位于 `PATH`，或在 `config.env` 中配置完整路径。
+目标机器不需要安装 .NET Runtime。双击 `DVD-Audio-Maker.exe` 或无参数运行 `dvda.cmd` 打开 GUI；带参数时保留 CLI。GUI 可导入旧 `config.env`，并独立保存 JSON 方案。MLP 编码使用内嵌原生 x64 DLL，不运行独立编码 EXE。
+
+FFmpeg、FFprobe、Metaflac 和 eac3to 仍需放在包内 `menu-bin`、位于 `PATH`，或在 GUI / `config.env` 中配置完整路径。
 
 ## 使用发布包
 

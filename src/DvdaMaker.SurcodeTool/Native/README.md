@@ -1,9 +1,9 @@
-# MLP core
+# MLP core — Windows x64
 
-Frozen on 2026-10-01. `win-x86/mlp_encode.exe` is embedded by the managed project; it does not launch or load the original SurCode executable. SHA256: `88d52e9d1726a54a44bc23d7062a906a8e9ce573726510455b9a6130fa7b3afd`.
+The application embeds `win-x64/mlp_encoder.dll` and calls its streaming C ABI in process. There is no standalone MLP encoder EXE or x86 proxy in the product. The DLL exports are declared in `source/mlp_encoder.h`. GUI and CLI both target win-x64.
 
-`source/` contains the 40 source/header/include dependencies of this standalone encoder, copied byte-for-byte from the source snapshot. File hashes and the upstream validation scope are in `mlpencoder-validation.json`. The core only imports Windows KERNEL32 and MSVCRT.
+The x64 port uses explicit x87 PC53/round-to-nearest and saves/restores x87 and SSE control state around host callbacks. Compile with MinGW-w64 GCC and `-mfpmath=387 -fexcess-precision=standard -ffp-contract=off`; do not silently change floating-point options. Only `encode_file.c` and `mlp_group_input.inc` change the native host FP bridge relative to the source snapshot; the encoding decisions and bit serialization remain the algorithm.
 
-Use `build.cmd` with Windows MinGW-w64 i686 GCC on PATH to produce `win-x86/mlp_encode.rebuilt.exe`. Set `MLP_CC` to the compiler path if needed. Rebuilds do not replace the pinned validated binary. Compiler changes can affect encoding decisions and must pass original whole-file comparisons before updating the pinned resource and its C# SHA256 constant.
+Current DLL/source fingerprints, compiler flags, and original source fingerprints are recorded in `mlpencoder-validation.json`. The Windows build recipe is `build.cmd`; set MLP_CC to a Windows x86_64-w64-mingw32-gcc executable if necessary. Rebuilds produce a separate .rebuilt.dll and do not replace the pinned tested artifact. The delivered application needs no compiler or WSL.
 
-Keep the x86 floating-point implementation; the x64 .NET host invokes it as a child process to preserve validated x87 precision. No original program or vendor DLL is required. See [application behavior and metadata policy](../../../docs/MLP-ENCODER.md).
+Managed input/output uses bounded streaming buffers, validates explicit metadata, propagates cancellation/exceptions and publishes only complete output. No encoded-output byte patching is performed. See [application integration](../../../docs/MLP-ENCODER.md) and [GUI plan](../../../docs/GUI-AND-DLL-PLAN.md).
