@@ -7,9 +7,10 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        ApplicationConfiguration.Initialize();
         try
         {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
+            ApplicationConfiguration.Initialize();
             string? config = null;
             var smoke = false;
             for (var i = 0; i < args.Length; i++)
@@ -35,7 +36,20 @@ internal static class Program
         }
         catch (Exception exception)
         {
-            MessageBox.Show(exception.Message, "DVD-Audio Maker 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Console.Error.WriteLine(exception.ToString());
+            var detail = "";
+            try
+            {
+                var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DVD-Audio-Maker", "logs");
+                Directory.CreateDirectory(directory);
+                var path = Path.Combine(directory, $"startup-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+                File.WriteAllText(path, exception.ToString());
+                detail = "\n\n详细错误记录：" + path;
+            }
+            catch (Exception) { /* Preserve the original startup failure if logging is unavailable. */ }
+            if (!args.Contains("--smoke-test"))
+                MessageBox.Show("程序暂时无法打开，请查看下方原因。\n\n" + exception.Message + detail,
+                    "无法打开 DVD-Audio Maker", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
