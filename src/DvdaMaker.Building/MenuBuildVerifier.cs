@@ -142,12 +142,26 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
         {
             var normal = Path.Combine(temporaryDirectory, $"impic{page}.png");
             var highlighted = Path.Combine(temporaryDirectory, $"hlpic{page}.png");
-            var normalInk = await ReadInkAsync(
-                executable, prefixArguments, normal, null, cancellationToken)
-                .ConfigureAwait(false);
-            var highlightedInk = await ReadInkAsync(
-                executable, prefixArguments, highlighted, null, cancellationToken)
-                .ConfigureAwait(false);
+            var needsArrow = page < plan.IndexPages && plan.TotalPages > 1;
+            double? normalInk;
+            double? highlightedInk;
+            double? arrowInk = null;
+            if (prefixArguments.Count == 1 &&
+                prefixArguments[0].Equals("identify", StringComparison.OrdinalIgnoreCase))
+            {
+                (normalInk, highlightedInk, arrowInk) = await ReadOverlayBatchAsync(
+                    executable, normal, highlighted, needsArrow, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                normalInk = await ReadInkAsync(
+                    executable, prefixArguments, normal, null, cancellationToken)
+                    .ConfigureAwait(false);
+                highlightedInk = await ReadInkAsync(
+                    executable, prefixArguments, highlighted, null, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             if (normalInk is null || highlightedInk is null)
             {
                 diagnostics.Add(Error(
@@ -162,14 +176,14 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
                     $"第 {page + 1} 页高亮层没有比文字层增加墨迹。"));
             }
 
-            if (page < plan.IndexPages && plan.TotalPages > 1)
+            if (needsArrow)
             {
-                var arrowInk = await ReadInkAsync(
-                    executable,
-                    prefixArguments,
-                    normal,
-                    "720x72+0+488",
-                    cancellationToken).ConfigureAwait(false);
+                if (prefixArguments.Count == 0)
+                {
+                    arrowInk = await ReadInkAsync(
+                        executable, prefixArguments, normal, "720x72+0+488",
+                        cancellationToken).ConfigureAwait(false);
+                }
                 if (arrowInk is not null && arrowInk <= 0)
                 {
                     diagnostics.Add(Error(
@@ -178,6 +192,56 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
                 }
             }
         }
+    }
+
+    internal async Task<(double? Normal, double? Highlighted, double? Arrow)> ReadOverlayBatchAsync(
+        string executable, string normal, string highlighted, bool needsArrow,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(normal) || !File.Exists(highlighted)) return (null, null, null);
+        var arguments = new List<string>
+        {
+            normal, "-format", "N|%[fx:mean.a*w*h]\\n", "-write", "info:",
+        };
+        if (needsArrow)
+        {
+            arguments.AddRange(["(", "+clone", "-crop", "720x72+0+488", "+repage",
+                "-format", "A|%[fx:maxima.a]\\n", "-write", "info:", ")", "-delete", "-1"]);
+        }
+        arguments.AddRange(["-delete", "0", highlighted,
+            "-format", "H|%[fx:mean.a*w*h]\\n", "-write", "info:", "null:"]);
+        log?.WriteCommand(executable, arguments);
+        var result = await runner.RunAsync(new ProcessRequest
+        {
+            FileName = executable,
+            Arguments = arguments,
+            Timeout = TimeSpan.FromSeconds(60),
+        }, cancellationToken).ConfigureAwait(false);
+        return ParseOverlayBatchOutput(result.StandardOutput, needsArrow, result.Succeeded);
+    }
+
+    internal static (double? Normal, double? Highlighted, double? Arrow) ParseOverlayBatchOutput(
+        string output, bool needsArrow, bool succeeded)
+    {
+        if (!succeeded) return (null, null, null);
+        var values = new Dictionary<string, double>(StringComparer.Ordinal);
+        var duplicates = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.TrimEnd('\r').Split('|');
+            if (parts.Length == 0 || parts[0] is not ("N" or "H" or "A")) continue;
+            if (parts.Length != 2 ||
+                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out var value) || !double.IsFinite(value))
+            {
+                duplicates.Add(parts[0]);
+                continue;
+            }
+            if (!values.TryAdd(parts[0], value)) duplicates.Add(parts[0]);
+        }
+        double? Get(string kind) => duplicates.Contains(kind) || !values.TryGetValue(kind, out var value)
+            ? null : value;
+        return (Get("N"), Get("H"), needsArrow ? Get("A") : null);
     }
 
     private async Task<double?> ReadInkAsync(

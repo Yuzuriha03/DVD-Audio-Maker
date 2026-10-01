@@ -87,10 +87,20 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
                         $"无法抽取菜单第 {pageIndex + 1} 页首帧（ffmpeg 退出码 {extraction.ExitCode}）。");
                 }
 
-                var frameStats = await ReadStatsAsync(
-                    imageMagick, identifyPrefixArguments, frame,
-                    "%[fx:mean] %[fx:standard_deviation] %k",
-                    cancellationToken).ConfigureAwait(false);
+                var expected = pageIndex < indexPages
+                    ? ExpectedIndexCells(albumCount, pageIndex) : 0;
+                var useBatch = expected > 0 && identifyPrefixArguments.Count == 1 &&
+                    identifyPrefixArguments[0].Equals("identify", StringComparison.OrdinalIgnoreCase);
+                var batch = useBatch
+                    ? await ReadIndexPageBatchAsync(imageMagick, frame, expected, cancellationToken)
+                        .ConfigureAwait(false)
+                    : null;
+                var frameStats = useBatch
+                    ? batch?.FrameStats
+                    : await ReadStatsAsync(
+                        imageMagick, identifyPrefixArguments, frame,
+                        "%[fx:mean] %[fx:standard_deviation] %k",
+                        cancellationToken).ConfigureAwait(false);
                 if (frameStats is null || frameStats.Length < 3)
                 {
                     return Unavailable($"ImageMagick 无法读取菜单第 {pageIndex + 1} 页统计。");
@@ -108,14 +118,23 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
 
                 if (pageIndex < indexPages)
                 {
-                    await VerifyIndexPageAsync(
-                        imageMagick,
-                        identifyPrefixArguments,
-                        frame,
-                        pageIndex,
-                        ExpectedIndexCells(albumCount, pageIndex),
-                        issues,
-                        cancellationToken).ConfigureAwait(false);
+                    if (useBatch && batch is not null)
+                    {
+                        var (background, thumbnail, label) = ParseIndexBatchOutput(
+                            batch.Output, expected, true);
+                        AddIndexIssue(issues, "MENU_INDEX_BACKGROUND_INVALID", pageIndex,
+                            "格子角落发白，疑似画布布局错误", background);
+                        AddIndexIssue(issues, "MENU_INDEX_THUMBNAIL_MISSING", pageIndex,
+                            "缩略图为空", thumbnail);
+                        AddIndexIssue(issues, "MENU_INDEX_LABEL_MISSING", pageIndex,
+                            "专辑名未检测到亮字", label);
+                    }
+                    else if (!useBatch)
+                    {
+                        await VerifyIndexPageAsync(
+                            imageMagick, identifyPrefixArguments, frame, pageIndex, expected,
+                            issues, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
 
@@ -214,6 +233,106 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
         AddIndexIssue(issues, "MENU_INDEX_LABEL_MISSING", pageIndex,
             "专辑名未检测到亮字", badLabel);
     }
+
+    internal sealed record IndexPageBatch(double[] FrameStats, string Output);
+
+    internal async Task<IndexPageBatch?> ReadIndexPageBatchAsync(
+        string imageMagick,
+        string frame,
+        int expected,
+        CancellationToken cancellationToken)
+    {
+        // 这里使用 magick 的图像栈，而不是其 identify 子命令。
+        var arguments = new List<string>
+        {
+            frame, "-format", "F|%[fx:mean]|%[fx:standard_deviation]|%k\\n",
+            "-write", "info:",
+        };
+        var labelWidth = IndexCellWidth - 2 * IndexInset;
+        var thumbnailX = IndexInset + (labelWidth - IndexThumb) / 2;
+        for (var index = 0; index < expected; index++)
+        {
+            var offsetX = (index % IndexColumns) * IndexCellWidth;
+            var offsetY = IndexTop + (index / IndexColumns) * IndexCellHeight;
+            var labelY = offsetY + IndexInset + IndexThumb + IndexThumbGap;
+            arguments.AddRange(["(", "+clone", "-crop", $"3x3+{offsetX + 1}+{offsetY + 1}",
+                "+repage", "-format", $"B|{index + 1}|%[fx:mean*255]\\n", "-write", "info:", ")", "-delete", "-1"]);
+            arguments.AddRange(["(", "+clone", "-crop", $"{IndexThumb}x{IndexThumb}+{offsetX + thumbnailX}+{offsetY + IndexInset}",
+                "+repage", "-format", $"T|{index + 1}|%[fx:mean*255]\\n", "-write", "info:", ")", "-delete", "-1"]);
+            arguments.AddRange(["(", "+clone", "-crop", $"{labelWidth}x{IndexLabelHeight}+{offsetX + IndexInset}+{labelY}",
+                "+repage", "-format", $"L|{index + 1}|%[fx:maxima*255]|%[fx:mean*255]\\n", "-write", "info:", ")", "-delete", "-1"]);
+        }
+        arguments.Add("null:");
+        var result = await runner.RunAsync(new ProcessRequest
+        {
+            FileName = imageMagick,
+            Arguments = arguments,
+            Timeout = TimeSpan.FromSeconds(120),
+        }, cancellationToken).ConfigureAwait(false);
+        var frameStats = result.Succeeded ? ParseBatchFrameStats(result.StandardOutput) : null;
+        return frameStats is null ? null : new IndexPageBatch(frameStats, result.StandardOutput);
+    }
+
+    internal static double[]? ParseBatchFrameStats(string output)
+    {
+        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.TrimEnd('\r'))
+            .Where(line => line.StartsWith("F|", StringComparison.Ordinal))
+            .ToArray();
+        if (lines.Length != 1) return null;
+        var fields = lines[0].Split('|');
+        return fields.Length == 4 && TryParse(fields[1], out var mean) &&
+            TryParse(fields[2], out var deviation) && TryParse(fields[3], out var colors)
+            ? [mean, deviation, colors]
+            : null;
+    }
+
+    internal static (IReadOnlyList<int> Background, IReadOnlyList<int> Thumbnail,
+        IReadOnlyList<int> Label) ParseIndexBatchOutput(string output, int expected, bool succeeded)
+    {
+        var records = new Dictionary<(string Kind, int Index), string[]>();
+        var duplicates = new HashSet<(string Kind, int Index)>();
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fields = line.TrimEnd('\r').Split('|');
+            if (fields.Length < 3 || fields[0] is not ("B" or "T" or "L") ||
+                !int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture,
+                    out var index) || index < 1 || index > expected)
+            {
+                continue;
+            }
+            var key = (fields[0], index);
+            if (!records.TryAdd(key, fields)) duplicates.Add(key);
+        }
+
+        bool Valid(string kind, int index, int count, out double first, out double second)
+        {
+            first = second = 0;
+            var key = (kind, index);
+            return succeeded && !duplicates.Contains(key) &&
+                records.TryGetValue(key, out var fields) && fields.Length == count &&
+                TryParse(fields[2], out first) &&
+                (count == 3 || TryParse(fields[3], out second));
+        }
+
+        var background = new List<int>();
+        var thumbnail = new List<int>();
+        var label = new List<int>();
+        for (var index = 1; index <= expected; index++)
+        {
+            if (!Valid("B", index, 3, out var value, out _) ||
+                IsIndexBackgroundInvalid(value)) background.Add(index);
+            if (!Valid("T", index, 3, out value, out _) ||
+                IsIndexThumbnailMissing(value)) thumbnail.Add(index);
+            if (!Valid("L", index, 4, out var maximum, out var mean) ||
+                IsIndexLabelMissing(maximum, mean)) label.Add(index);
+        }
+        return (background, thumbnail, label);
+    }
+
+    private static bool TryParse(string value, out double result) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result) &&
+        double.IsFinite(result);
 
     private static void AddIndexIssue(
         ICollection<VerificationIssue> issues,

@@ -20,6 +20,7 @@ public sealed class DiscVerifier
 {
     private const int SectorSize = 2048;
     private static readonly byte[] PackHeader = [0, 0, 1, 0xBA];
+    private static readonly byte[] PesPackStart = [0, 0, 1, 0xBD];
     private static readonly Regex TrackRowPattern = new(
         "^\\s*(?<group>\\d+)\\s+(?<title>\\d+)/\\d+\\s+(?<track>\\d+)\\s+(?<first>\\d+)\\s+(?<last>\\d+)\\s+(?<pts>\\d+)\\s+(?<length>\\d+)\\s+\\d+\\s*$",
         RegexOptions.Compiled | RegexOptions.Multiline);
@@ -138,6 +139,15 @@ public sealed class DiscVerifier
         string? manifestPath = null,
         bool allowLogFallback = true,
         string? isoPrefix = null)
+        => Audit(isoDirectory, buildLogPath, manifestPath, allowLogFallback, isoPrefix, null);
+
+    public IReadOnlyList<DiscVerificationResult> Audit(
+        string isoDirectory,
+        string buildLogPath,
+        string? manifestPath,
+        bool allowLogFallback,
+        string? isoPrefix,
+        IReadOnlyDictionary<(string IsoPath, int Group), AuditPtsObservation>? observations)
     {
         var selectedLog = allowLogFallback
             ? SelectLatestBuildLog(buildLogPath)
@@ -223,7 +233,15 @@ public sealed class DiscVerifier
                             "AOB_SECTOR_MISMATCH",
                             $"组 {group.Key} AOB 扇区 {aobSectors} != 轨道表 {declared}"));
                     }
-                    ValidatePts(result.IsoPath, group.Key, groupRows, issues);
+                    if (observations is not null && observations.TryGetValue(
+                            (result.IsoPath, group.Key), out var observation))
+                    {
+                        observation.AddIssues(groupRows, group.Key, issues);
+                    }
+                    else
+                    {
+                        ValidatePts(result.IsoPath, group.Key, groupRows, issues);
+                    }
                 }
             }
             results[resultIndex] = result with { Issues = issues };
@@ -359,37 +377,94 @@ public sealed class DiscVerifier
     private static int ParseGroupNumber(string name) =>
         int.TryParse(name.AsSpan(4, 2), out var value) ? value : 0;
 
-    private static void ValidatePts(
-        string isoPath,
-        int group,
+    internal sealed record PtsScanResult(int SectorCount, IReadOnlySet<int> Drops);
+
+    public sealed class AuditPtsObservation
+    {
+        private long _previous = -1;
+        private bool _stopped;
+        private readonly List<int> _drops = [];
+        private int? _missingSector;
+        private int _sectorCount;
+
+        public void Observe(ReadOnlyMemory<byte> data)
+        {
+            if (_stopped) return;
+            var sectorIndex = _sectorCount++;
+            var sector = data.Span;
+            if (sector.Length < 64) return;
+            var relativeMarker = sector[4..64].IndexOf(PesPackStart);
+            var marker = relativeMarker < 0 ? -1 : relativeMarker + 4;
+            if (marker < 0 || marker + 14 > sector.Length || (sector[marker + 7] & 0x80) == 0)
+            {
+                _stopped = true;
+                _missingSector = sectorIndex;
+                return;
+            }
+            var current = PesTimestampParser.ParsePts(sector.Slice(marker + 9, 5));
+            if (_previous >= 0 && current < _previous) _drops.Add(sectorIndex);
+            _previous = current;
+        }
+
+        internal void AddIssues(IReadOnlyList<TrackRow> rows, int group,
+            ICollection<VerificationIssue> issues)
+        {
+            var boundaries = rows.Select(row => row.First).ToHashSet();
+            foreach (var index in _drops)
+            {
+                if (!boundaries.Contains(index))
+                {
+                    issues.Add(new VerificationIssue("PTS_DROP_OFF_BOUNDARY",
+                        $"组 {group} PTS 在非轨道边界扇区 {index} 下降"));
+                }
+            }
+            if (_missingSector is not null)
+            {
+                issues.Add(new VerificationIssue("PTS_MISSING", $"组 {group} 存在缺少 PTS 的扇区"));
+            }
+            var previousTitle = -1;
+            foreach (var row in rows)
+            {
+                if (row.Title == previousTitle) continue;
+                if (row.First != 0 && row.First < _sectorCount && !_drops.Contains(row.First))
+                {
+                    issues.Add(new VerificationIssue("PTS_RESET_MISSING",
+                        $"组 {group} title {row.Title} 起点扇区 {row.First} 应出现 PTS 下降但未下降"));
+                }
+                previousTitle = row.Title;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 流式扫描 AOB 扇区，不把整组 AOB 载入内存。
+    /// 遇到缺少 PTS 的扇区立即停止，避免继续读取剩余数据。
+    /// </summary>
+    internal static PtsScanResult ScanPtsSectors(
+        IEnumerable<ReadOnlyMemory<byte>> sectors,
         IReadOnlyList<TrackRow> rows,
+        int group,
         ICollection<VerificationIssue> issues)
     {
-        using var reader = new Iso9660Reader(isoPath);
-        var aobs = reader.ListDirectory("AUDIO_TS")
-            .Where(entry => Regex.IsMatch(entry.Name, $"^ATS_{group:00}_\\d+\\.AOB$",
-                RegexOptions.IgnoreCase))
-            .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
-            .SelectMany(entry => reader.ReadFile($"AUDIO_TS/{entry.Name}")
-                .Chunk(SectorSize)
-                .SelectMany(chunk => chunk.Length == SectorSize
-                    ? new[] { chunk }
-                    : Array.Empty<byte[]>()))
-            .ToArray();
         var previous = -1L;
         var drops = new HashSet<int>();
-        for (var sectorIndex = 0; sectorIndex < aobs.Length; sectorIndex++)
+        var sectorIndex = -1;
+        foreach (var sectorData in sectors)
         {
-            var sector = aobs[sectorIndex];
-            var relativeMarker = sector.AsSpan(4, Math.Min(60, sector.Length - 4))
-                .IndexOf(new byte[] { 0, 0, 1, 0xBD });
+            sectorIndex++;
+            var sector = sectorData.Span;
+            if (sector.Length < 64)
+            {
+                continue;
+            }
+            var relativeMarker = sector[4..64].IndexOf(PesPackStart);
             var marker = relativeMarker < 0 ? -1 : relativeMarker + 4;
             if (marker < 0 || marker + 14 > sector.Length || (sector[marker + 7] & 0x80) == 0)
             {
                 issues.Add(new VerificationIssue("PTS_MISSING", $"组 {group} 存在缺少 PTS 的扇区"));
                 break;
             }
-            var current = PesTimestampParser.ParsePts(sector.AsSpan(marker + 9, 5));
+            var current = PesTimestampParser.ParsePts(sector.Slice(marker + 9, 5));
             if (previous >= 0 && current < previous)
             {
                 drops.Add(sectorIndex);
@@ -403,18 +478,64 @@ public sealed class DiscVerifier
             previous = current;
         }
 
+        var result = new PtsScanResult(sectorIndex + 1, drops);
+
+        // 每个 title 起点都应出现 PTS 重置。
         var previousTitle = -1;
         foreach (var row in rows)
         {
-            if (row.Title != previousTitle)
+            if (row.Title == previousTitle)
             {
-                if (row.First != 0 && row.First < aobs.Length && !drops.Contains(row.First))
+                continue;
+            }
+            if (row.First != 0 && row.First < result.SectorCount &&
+                !result.Drops.Contains(row.First))
+            {
+                issues.Add(new VerificationIssue(
+                    "PTS_RESET_MISSING",
+                    $"组 {group} title {row.Title} 起点扇区 {row.First} 应出现 PTS 下降但未下降"));
+            }
+            previousTitle = row.Title;
+        }
+
+        return result;
+    }
+
+    private static void ValidatePts(
+        string isoPath,
+        int group,
+        IReadOnlyList<TrackRow> rows,
+        ICollection<VerificationIssue> issues)
+    {
+        using var reader = new Iso9660Reader(isoPath);
+        var entries = reader.ListDirectory("AUDIO_TS")
+            .Where(entry => Regex.IsMatch(entry.Name, $"^ATS_{group:00}_\\d+\\.AOB$",
+                RegexOptions.IgnoreCase))
+            .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        ScanPtsSectors(ReadAobSectors(reader, entries), rows, group, issues);
+    }
+
+    private static IEnumerable<ReadOnlyMemory<byte>> ReadAobSectors(
+        Iso9660Reader reader,
+        IReadOnlyList<IsoDirectoryEntry> entries)
+    {
+        const int sectorsPerChunk = 4096;
+        foreach (var entry in entries)
+        {
+            var lba = reader.GetDataLogicalBlockAddress($"AUDIO_TS/{entry.Name}");
+            var remaining = (long)(entry.Size / SectorSize);
+            var offset = 0L;
+            while (remaining > 0)
+            {
+                var count = (int)Math.Min(sectorsPerChunk, remaining);
+                var data = reader.ReadSectors(lba + offset, count);
+                for (var start = 0; start + SectorSize <= data.Length; start += SectorSize)
                 {
-                    issues.Add(new VerificationIssue(
-                        "PTS_RESET_MISSING",
-                        $"组 {group} title {row.Title} 起点扇区 {row.First} 应出现 PTS 下降但未下降"));
+                    yield return data.AsMemory(start, SectorSize);
                 }
-                previousTitle = row.Title;
+                offset += count;
+                remaining -= count;
             }
         }
     }
