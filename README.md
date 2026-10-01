@@ -43,7 +43,7 @@ src/DvdaMaker.Preparation     扫描、归一化、解码校验、ALAC 修复
 src/DvdaMaker.Building        MLP、分盘、菜单、出盘、发布与校验
 src/DvdaMaker.Formats         ISO9660、MLP、MPEG/PTS 解析
 src/DvdaMaker.Processes       外部进程执行
-src/DvdaMaker.SurcodeTool     eac3to PCM 准备与Windows MLP 核心
+src/DvdaMaker.SurcodeTool     FFmpeg PCM 准备与Windows MLP 核心
 src/DvdaMaker.FontTool        OpenType/TTC 字体工具
 src/DvdaMaker.Toolchain       Windows 发布包组装器
 tests/                        兼容性与端到端测试
@@ -62,7 +62,7 @@ tests/                        兼容性与端到端测试
 - 启用菜单时所需的菜单工具、ImageMagick、字体和运行期素材
 
 FFmpeg 保留用于音源转换、解码和校验，不再用于 MLP 编码。
-批量编码需要配置 eac3to；无需安装原版 SurCode。
+批量编码使用 DVDA_FFMPEG 指定的 FFmpeg（默认在 PATH 查找）；无需 eac3to 或原版 SurCode。
 
 ## CLI 与旧 env 配置
 
@@ -168,17 +168,19 @@ DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
 DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
 DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
 DVDA_MLP_METADATA_CONTEXT=""
-DVDA_MLP_EAC3TO_EXE="C:/Tools/eac3to/eac3to.exe"
+DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
 DVDA_MLP_SURCODE_SAMPLE_RATE="48000"
 DVDA_MLP_SURCODE_BITS="24"
 ```
 
 保留 `surcode-batch` 配置名兼容现有任务，执行链为：
 
-`源音频 → eac3to → 整数 PCM → MLP 核心 → MLP 缓存`。
+`源音频 → FFmpeg → 整数 PCM → MLP 核心 DLL → MLP 缓存`。
 
 原生 x64 主程序内嵌固定哈希的 Windows x64 编码 DLL，运行时提取、校验并在进程内调用；
 不启动原版 SurCode，不加载它的 DLL，不写 SSF，也不进行编码后的字节修补。
+旧配置中的 DVDA_MLP_EAC3TO_EXE 仍可读取但不再使用；在 GUI 的“音频编码”页设置 FFmpeg 即可。重采样/降位深采用 FFmpeg 的转换结果，不承诺复现 eac3to 的处理字节；相同目标 PCM 和元数据仍要求 MLP 逐字节相同。迁移方案与验收见 [FFmpeg PCM 迁移](docs/FFMPEG-PCM-MIGRATION.md)。
+
 MLP 缓存目录留空时使用 `<build>/mlp`。旧的 `DVDA_MLP_SOURCE=ffmpeg` 会明确报错，
 请改为 `surcode-batch`；`DVDA_MLP_SURCODE_EXE` 已删除。
 

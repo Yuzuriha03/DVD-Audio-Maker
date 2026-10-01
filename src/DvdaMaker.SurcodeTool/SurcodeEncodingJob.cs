@@ -4,7 +4,7 @@ public sealed record SurcodeEncodingJob
 {
     public string MetadataContext { get; init; } = string.Empty;
 
-    public required string Eac3toExecutable { get; init; }
+    public required string FfmpegExecutable { get; init; }
 
     public required string TemporaryDirectory { get; init; }
 

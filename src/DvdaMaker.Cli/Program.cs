@@ -901,8 +901,8 @@ static void PrintConfiguration(DvdaOptions options)
         Console.WriteLine($"  output/cache  = {options.MlpExternalDirectory}");
         Console.WriteLine("  encoder       = 随程序内嵌，无需原版 SurCode");
         Console.WriteLine($"  metadata      = {(string.IsNullOrEmpty(options.MlpMetadataContext) ? "固定空辅助 TLV" : options.MlpMetadataContext)}");
-        Console.WriteLine($"  eac3to        = {options.MlpEac3toExecutable}   " +
-            (File.Exists(options.MlpEac3toExecutable) ? "✔" : "✗ 不存在"));
+        Console.WriteLine($"  PCM / FFmpeg  = {options.Ffmpeg}   " +
+            (ExecutablePath.Resolve(options.Ffmpeg) is not null ? "✔" : "✗ 不存在或未加入 PATH"));
         Console.WriteLine($"  format        = {options.MlpSurcodeSampleRate} Hz / {options.MlpSurcodeBits} bit");
     }
 

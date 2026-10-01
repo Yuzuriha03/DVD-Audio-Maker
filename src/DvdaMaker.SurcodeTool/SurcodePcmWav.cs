@@ -68,8 +68,8 @@ public static class SurcodePcmWav
     {
         if (bits is not (16 or 20 or 24)) throw new InvalidDataException("目标位深必须是 16/20/24。");
         var layout = ReadLayout(source);
-        if (layout.SampleRate != rate) throw new InvalidDataException("eac3to 输出采样率与任务不符。");
-        // eac3to labels DVD surround Ls/Rs as WAVE SIDE_LEFT/RIGHT. With no
+        if (layout.SampleRate != rate) throw new InvalidDataException("PCM 输出采样率与任务不符。");
+        // WAVE sources may label DVD surround Ls/Rs as SIDE_LEFT/RIGHT. With no
         // separate rear pair these name the same two speakers, in the same order.
         var channelMask = layout.ChannelMask;
         if ((channelMask & 0x600) != 0)
@@ -118,7 +118,7 @@ public static class SurcodePcmWav
                             sample >>= 8;
                         }
                         if ((sample & ((1L << (24 - bits)) - 1)) != 0)
-                            throw new InvalidDataException("PCM 有效精度高于目标位深；拒绝静默截断，请检查 eac3to 转换。");
+                            throw new InvalidDataException("PCM 有效精度高于目标位深；拒绝静默截断，请检查音源转换设置。");
                         if (bits == 16) sample >>= 8;
                         converted[pos++] = (byte)sample; converted[pos++] = (byte)(sample >> 8);
                         if (outputWidth == 3) converted[pos++] = (byte)(sample >> 16);

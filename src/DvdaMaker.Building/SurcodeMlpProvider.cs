@@ -32,13 +32,13 @@ public sealed class SurcodeMlpProvider
             return new MlpAcquisitionResult(tracks, 0, 0, diagnostics);
         }
 
-        if (string.IsNullOrWhiteSpace(_options.MlpEac3toExecutable) ||
-            !File.Exists(_options.MlpEac3toExecutable))
+        var ffmpeg = ExecutablePath.Resolve(_options.Ffmpeg);
+        if (ffmpeg is null)
         {
             diagnostics.Add(new BuildDiagnostic(
                 BuildDiagnosticSeverity.Error,
-                "EAC3TO_EXECUTABLE_MISSING",
-                $"surcode-batch 模式需要通过 DVDA_MLP_EAC3TO_EXE 指定有效的 eac3to.exe: {_options.MlpEac3toExecutable}"));
+                "FFMPEG_EXECUTABLE_MISSING",
+                $"找不到音源转换工具 FFmpeg，请检查 DVDA_FFMPEG 或 PATH: {_options.Ffmpeg}"));
         }
         if (diagnostics.Count > 0)
         {
@@ -58,7 +58,7 @@ public sealed class SurcodeMlpProvider
         Directory.CreateDirectory(outputRoot);
         var cachePath = MlpCacheIndex.PathFor(outputRoot);
         var cacheIndex = MlpCacheIndex.Load(cachePath);
-        var encoderIdentity = EncodingIdentity();
+        var encoderIdentity = EncodingIdentity(ffmpeg!);
         var sourceIdentities = new Dictionary<string, FileIdentity>(StringComparer.OrdinalIgnoreCase);
 
         var pending = new List<PendingTrack>();
@@ -112,7 +112,7 @@ public sealed class SurcodeMlpProvider
             Directory.CreateDirectory(stageDirectory);
             try
             {
-                var job = BuildJob(tempDirectory, stageDirectory, pending);
+                var job = BuildJob(tempDirectory, stageDirectory, pending) with { FfmpegExecutable = ffmpeg! };
                 Console.WriteLine($"[MLP] 提交 {pending.Count} 个音源给MLP 编码核心");
                 Console.WriteLine($"[MLP] 临时目录: {tempDirectory}");
                 Console.WriteLine($"[MLP] MLP 输出目录: {stageDirectory}");
@@ -215,7 +215,7 @@ public sealed class SurcodeMlpProvider
         return new SurcodeEncodingJob
         {
             MetadataContext = string.IsNullOrEmpty(_options.MlpMetadataContext) ? string.Empty : NormalizeBatchPath(_options.MlpMetadataContext),
-            Eac3toExecutable = NormalizeBatchPath(_options.MlpEac3toExecutable),
+            FfmpegExecutable = _options.Ffmpeg,
             TemporaryDirectory = NormalizeBatchPath(tempDirectory),
             OutputDirectory = NormalizeBatchPath(outputDirectory),
             SampleRate = _options.MlpSurcodeSampleRate,
@@ -250,12 +250,12 @@ public sealed class SurcodeMlpProvider
 
     private static string WorkName(int index) => $"__surcode_{index + 1:D4}";
 
-    private string EncodingIdentity()
+    private string EncodingIdentity(string ffmpeg)
     {
         static string Hash(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
         var metadata = string.IsNullOrEmpty(_options.MlpMetadataContext)
             ? MlpEncoder.MetadataPolicy : Hash(_options.MlpMetadataContext);
-        return $"|{MlpEncoder.BinarySha256}|eac3to:{Hash(_options.MlpEac3toExecutable)}|metadata:{metadata}|pcm-wave-v1";
+        return $"|{MlpEncoder.BinarySha256}|ffmpeg:{Hash(ffmpeg)}|metadata:{metadata}|{FfmpegPcmConverter.Policy}";
     }
 
     private static void TryDeleteDirectory(string path)

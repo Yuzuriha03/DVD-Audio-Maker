@@ -6,7 +6,7 @@ internal static class GuiPresentationTests
     private static void Require(bool value, string message) { if (!value) throw new Exception(message); }
     public static void ImportantDiagnosticsSurvive()
     {
-        foreach (var text in new[] { "[ERROR] Cannot write file", "[FAIL] 音频检查失败", "[WARN] 缓存不可用", "[eac3to] Error: unsupported format", "unexpected tool: failed to open track", "[ERR] Directory not recognized.", "[WAR] Coherence test for ISO start sector failed: 278 != 280" })
+        foreach (var text in new[] { "[ERROR] Cannot write file", "[FAIL] 音频检查失败", "[WARN] 缓存不可用", "[eac3to] Error: unsupported format", "[FFmpeg PCM] [error] Invalid data found", "unexpected tool: failed to open track", "[ERR] Directory not recognized.", "[WAR] Coherence test for ISO start sector failed: 278 != 280" })
         {
             var message = TaskLogPresentation.Present(text);
             Require(message is not null && !message.ActivityOnly && message.Level is TaskLogLevel.Warning or TaskLogLevel.Error, "A diagnostic disappeared from summary: " + text);
@@ -14,6 +14,9 @@ internal static class GuiPresentationTests
         Require(TaskLogPresentation.Present("[错误] VOLUME_ID_MISMATCH: unexpected label") is { Level: TaskLogLevel.Error }, "Verification issue omitted from summary");
         Require(TaskLogPresentation.ErrorSummary(new InvalidOperationException("无法启动外部程序 C:/Tools/author.exe: file missing")).Contains("author.exe"), "Missing-tool hint omitted tool name");
         Require(TaskLogPresentation.Present("[eac3to] process: 73%") is { ActivityOnly: true, Level: TaskLogLevel.Information }, "Normal conversion progress classified as a problem");
+        Require(TaskLogPresentation.Present("[PCM] 示例：73%") is { ActivityOnly: true, Level: TaskLogLevel.Information }, "PCM progress is not friendly activity");
+        Require(TaskLogPresentation.Present("[FFmpeg PCM] [warning] unusual input") is { Level: TaskLogLevel.Warning }, "FFmpeg warning lost");
+        Require(TaskLogPresentation.Present("[FFmpeg PCM] unknown diagnostic") is { Level: TaskLogLevel.Warning }, "Unknown converter diagnostic lost");
         Require(TaskLogPresentation.Present("[eac3to] Done.") is null, "Routine tool chatter flooded the summary");
         Require(TaskLogPresentation.Present("[MLP] 临时目录: C:\\temp\\guid") is null, "Internal temporary path leaked into summary");
         Require(TaskLogPresentation.Present("[MLP] 曲名")?.Message.Contains("曲名") == true, "Track name lost");

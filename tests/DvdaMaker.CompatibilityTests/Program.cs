@@ -82,12 +82,14 @@ if (fixtureProcessName.StartsWith("fake-magick", StringComparison.OrdinalIgnoreC
     }
     return 0;
 }
-if (fixtureProcessName.StartsWith("fake-eac3to", StringComparison.OrdinalIgnoreCase))
+if (fixtureProcessName.StartsWith("fake-ffmpeg-pcm", StringComparison.OrdinalIgnoreCase))
 {
     RecordFixtureCall("encode");
     var template = Environment.GetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE");
     if (string.IsNullOrEmpty(template) || !File.Exists(template)) return 3;
-    File.Copy(template, args[1], overwrite: false);
+    if (fixtureProcessName.Contains("fail")) { Console.Error.WriteLine("[error] fixture conversion failed"); return 7; }
+    File.Copy(template, args[^1], overwrite: false);
+    if (fixtureProcessName.Contains("slow")) Thread.Sleep(30000);
     return 0;
 }
 if (fixtureProcessName.StartsWith("fake-ffmpeg", StringComparison.OrdinalIgnoreCase))
@@ -206,6 +208,18 @@ if (args.Length == 2 && args[0] == "--mlpencoder-batch-integration")
     return 0;
 }
 
+if (args.Length == 3 && args[0] == "--ffmpeg-original-corpus")
+{
+    FfmpegPcmTests.OriginalCorpus(args[1], args[2]);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--ffmpeg-pcm-integration")
+{
+    FfmpegPcmTests.Integration(args[1]);
+    return 0;
+}
+
 if (args.Length > 0)
 {
     if (args.Length == 3 && args[0] == "--real-fixtures")
@@ -224,7 +238,7 @@ if (args.Length > 0)
     }
 
     Console.Error.WriteLine(
-        "用法: DvdaMaker.CompatibilityTests [--real-fixtures <ISO目录> <MLP根目录> | --mlpencoder-integration | --oversized-au-integration | --mlpencoder-batch-integration <eac3to.exe>]");
+        "用法: DvdaMaker.CompatibilityTests [--real-fixtures <ISO目录> <MLP根目录> | --mlpencoder-integration | --oversized-au-integration | --mlpencoder-batch-integration <ffmpeg.exe> | --ffmpeg-pcm-integration <output目录> | --ffmpeg-original-corpus <原版矩阵.json> <output目录>]");
     return 2;
 }
 
@@ -245,6 +259,9 @@ var tests = new (string Name, Action Run)[]
     ("GUI 完整行与并发日志捕获", GuiPresentationTests.CompleteLineCapture),
     ("GUI 友好选项保留配置原值", GuiPresentationTests.ChoiceValuesRemainStable),
     ("进程内 DLL 取消与失败保护", MlpEncoderTests.DllCancellation),
+    ("FFmpeg 参数保留声道与显式目标精度", FfmpegPcmTests.ConversionContract),
+    ("FFmpeg 失败取消与 PATH 配置", FfmpegPcmTests.FailureAndCancellation),
+    ("旧 eac3to 配置迁移与 FFmpeg 工具设置", FfmpegPcmTests.LegacySettings),
     ("超大 AU 无损回退与大小上限", MlpEncoderTests.OversizedAccessUnit),
     ("eac3to 奇数 PCM 尾部封装", MlpEncoderTests.OddPcmTail),
     ("SurCode 内置任务与路径", BuildSurcodeBatchJob),
@@ -456,7 +473,7 @@ static void BuildSurcodeBatchJob()
         "DVDA_MLP_BATCH_TEMP_DIR=C:/ConfiguredTemp\n" +
         "DVDA_MLP_BATCH_OUTPUT_DIR=C:/ConfiguredOutput\n" +
         "DVDA_MLP_METADATA_CONTEXT=C:/Contexts/job.stampctx\n" +
-        "DVDA_MLP_EAC3TO_EXE=C:/eac3to/eac3to.exe\n",
+        "DVDA_FFMPEG=C:/FFmpeg/ffmpeg.exe\n",
         path =>
         {
             var options = Load(path);
@@ -484,7 +501,7 @@ static void BuildSurcodeBatchJob()
             Equal("C:\\Temp", job.TemporaryDirectory);
             Equal("C:\\Stage", job.OutputDirectory);
             Equal("C:\\Contexts\\job.stampctx", job.MetadataContext);
-            Equal("C:\\eac3to\\eac3to.exe", job.Eac3toExecutable);
+            Equal("C:/FFmpeg/ffmpeg.exe", job.FfmpegExecutable);
             Equal(48_000, job.SampleRate);
             Equal(24, job.Bits);
             Equal(2, job.Tracks.Count);

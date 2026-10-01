@@ -1,3 +1,4 @@
+using DvdaMaker.Processes;
 using System.Text;
 using System.Text.Json;
 
@@ -62,8 +63,8 @@ public sealed class ProjectSettings
         try
         {
             _ = options.MlpSource;
-            if (requireEncoding && options.MlpSource == "surcode-batch" && !File.Exists(options.MlpEac3toExecutable))
-                errors.Add("请选择有效的 eac3to.exe 路径。");
+            if (requireEncoding && options.MlpSource == "surcode-batch" && ExecutablePath.Resolve(options.Ffmpeg) is null)
+                errors.Add("找不到 FFmpeg。请选择有效的 ffmpeg.exe 路径，或将它加入 PATH。");
             if (requireEncoding && options.MlpSource is "external" or "surcode" && !Directory.Exists(options.MlpExternalDirectory))
                 errors.Add("导入外部 MLP 时必须选择存在的 MLP 目录。");
         }
@@ -86,7 +87,6 @@ public sealed class ProjectSettings
             ["DVDA_FFMPEG"] = Path.Combine(tools, "ffmpeg.exe"),
             ["DVDA_FFPROBE"] = Path.Combine(tools, "ffprobe.exe"),
             ["DVDA_METAFLAC"] = Path.Combine(tools, "metaflac.exe"),
-            ["DVDA_MLP_EAC3TO_EXE"] = Path.Combine(tools, "eac3to.exe"),
             ["DVDA_MENU_FONT"] = Path.Combine(tools, "fonts", "NotoSansCJKsc-Regular.otf"),
             ["DVDA_MENU_FONT_JP"] = Path.Combine(tools, "fonts", "NotoSansCJKjp-Regular.otf"),
             ["DVDA_MENU_FONT_KR"] = Path.Combine(tools, "fonts", "NotoSansCJKkr-Regular.otf"),

@@ -31,6 +31,14 @@ internal static class TaskLogPresentation
         match = Regex.Match(text, @"^\[MLP DLL\].* / (\d+) Hz / (\d+) bit / (\d+) 声道，([\d,]+) 字节");
         if (match.Success) return new(TaskLogLevel.Success,
             $"音轨编码完成 · {double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) / 1000:0.###} kHz · {match.Groups[2]} 位 · {match.Groups[3]} 声道");
+        if (text.StartsWith("[PCM] ")) return new(TaskLogLevel.Information, text[6..], true);
+        if (text.StartsWith("[FFmpeg PCM] "))
+        {
+            var message = text[13..].Trim();
+            if (Regex.IsMatch(message, @"(?i)\[(error|fatal|panic)\]|\b(error|failed|failure|fatal|cannot|invalid|not found)\b"))
+                return new(TaskLogLevel.Error, "音源转换失败：" + message);
+            return new(TaskLogLevel.Warning, "音源转换提醒：" + message);
+        }
         if (text.StartsWith("[eac3to]"))
         {
             var message = text[8..].Trim();

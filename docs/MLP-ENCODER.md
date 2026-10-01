@@ -4,7 +4,7 @@
 
 `surcode-batch`（也接受 `batch-surcode`）现在调用项目内嵌的MLP 编码核心：
 
-`音源 → eac3to → 整数 PCM WAVE → 进程内MLP 编码核心 DLL → 只读校验 → MLP 缓存 → 出盘`
+`音源 → FFmpeg → 整数 PCM WAVE → 进程内MLP 编码核心 DLL → 只读校验 → MLP 缓存 → 出盘`
 
 原版 `surcodemlp.exe`、GUI 自动化和 SSF 会话文件已经从运行链中移除。FFmpeg 的 MLP 编码提供器也已删除；FFmpeg/FFprobe 继续用于音源处理、解码、探测和成品校验。已有外部 MLP 的 `external` / `surcode` 导入模式仍可用。配置 `DVDA_MLP_SOURCE=ffmpeg` 会明确报错。
 
@@ -12,7 +12,7 @@
 
 ```ini
 DVDA_MLP_SOURCE=surcode-batch
-DVDA_MLP_EAC3TO_EXE=C:/tools/eac3to/eac3to.exe
+DVDA_FFMPEG=C:/tools/ffmpeg/bin/ffmpeg.exe
 DVDA_MLP_SURCODE_SAMPLE_RATE=48000
 DVDA_MLP_SURCODE_BITS=24
 DVDA_MLP_JOBS=1
@@ -22,7 +22,7 @@ DVDA_MLP_METADATA_CONTEXT=
 
 旧采样率和位深配置名保留兼容性；它们设置本批次的目标格式。采样率支持 44100、48000、88200、96000、176400、192000 Hz，位深支持 16、20、24 bit。声道沿用输入布局，低四档采样率支持最多六声道，高两档最多双声道。空的 MLP 输出目录使用构建目录下的 `mlp`。不再需要 `DVDA_MLP_SURCODE_EXE`。
 
-转换时保留 PCM 声道顺序，处理 eac3to 的侧环绕声道标签和末尾 data 块省略的 RIFF 对齐字节；不会用输出补丁修正编码结果。采样率转换或降位深仍由 eac3to 完成。当前批量界面使用单一采样率、单一位深；MLP 编码核心的混合声道组接口尚未暴露为项目配置。
+转换时保留声道布局与 PCM 顺序，由 FFmpeg 完成采样率和位深准备；现有 WAVE 规范化检查有效位并处理侧环绕标签，仍兼容旧 PCM 的末尾 RIFF 对齐字节省略。20 位使用显式量化和 24 位存储容器；无重采样/降精度时 PCM 不变，不会用输出补丁修正编码结果。当前批量界面使用单一采样率、单一位深；MLP 编码核心的混合声道组接口尚未暴露为项目配置。
 
 ## 逐字节一致的条件
 
@@ -34,23 +34,23 @@ DVDA_MLP_METADATA_CONTEXT=
 
 GUI、CLI 与内嵌 DLL 均为 Windows x64。主程序直接通过流式 C ABI 调用MLP 编码核心，显式保持 x87 PC53 算术及回调前后的浮点控制状态；没有 MLP 编码子进程。核心和编码源码位于 `src/DvdaMaker.SurcodeTool/Native`；不依赖旧外部工作区或原版程序安装目录。
 
-单文件发布包含该资源，运行时解压到 `%LOCALAPPDATA%/DVD-Audio-Maker/native/<SHA256>/mlp_encoder.dll` 并核验 SHA256。用户不需要安装 C 编译器。升级缓存依据源文件内容、核心、eac3to、元数据上下文、格式参数及输出内容；缺少来源记录的旧缓存会重建。准备和编码失败时保留已发布的 MLP。
+单文件发布包含该资源，运行时解压到 `%LOCALAPPDATA%/DVD-Audio-Maker/native/<SHA256>/mlp_encoder.dll` 并核验 SHA256。用户不需要安装 C 编译器。升级缓存依据源文件内容、核心、实际 FFmpeg 二进制、PCM 转换策略、元数据上下文、格式参数及输出内容；缺少来源记录的旧缓存会重建。准备和编码失败时保留已发布的 MLP。
 
 当前 WAVE 输入使用 RIFF 32 位长度，单轨超过约 4 GiB 的 PCM 需另行支持 RF64/流式输入；遇到不支持的布局、浮点 PCM、有效位精度丢失或损坏输入会报错。
 
 ## 验证范围与复跑
 
-最终 Windows x64 自包含单文件发布包通过 78 组完整原版对照：从合成 FLAC 经真实 eac3to、项目批量入口和MLP 编码核心编码，共 **95,138,694 字节**与对应原版文件逐字节一致；每组同时验证独立核心解压及第二次缓存命中。对照使用相同 PCM 和显式辅助元数据上下文。
+迁移前的 Windows x64 自包含单文件发布包已通过 78 组完整原版对照：从合成 FLAC 经真实 eac3to、项目批量入口和MLP 编码核心编码，共 **95,138,694 字节**与对应原版文件逐字节一致；每组同时验证独立核心解压及第二次缓存命中。对照使用相同 PCM 和显式辅助元数据上下文。
 
-本项目已经通过 84 组默认声道布局的原生编码、独立 FFmpeg 解码及 PCM 精确比较；另外 7 组真实 FLAC → eac3to → MLP 编码核心链路通过 PCM 比较及与直接核心编码的完整字节比较。涵盖中文目录、末尾 AU 零填充、16/20/24 bit 与所有六档采样率。缓存/并发/失败保护纳入兼容性测试，97/97 项通过。
+本项目已经通过 84 组默认声道布局的原生编码、独立 FFmpeg 解码及 PCM 精确比较；迁移前另外 7 组真实 FLAC → eac3to → MLP 编码核心链路通过 PCM 比较及与直接核心编码的完整字节比较。涵盖中文目录、末尾 AU 零填充、16/20/24 bit 与所有六档采样率。缓存/并发/失败保护纳入兼容性测试，97/97 项通过。
 
 ```powershell
 dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release
 dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release -- --mlpencoder-integration
-dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release -- --mlpencoder-batch-integration C:/tools/eac3to/eac3to.exe
+dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release -- --mlpencoder-batch-integration C:/tools/ffmpeg/bin/ffmpeg.exe
 ```
 
-后两项需要真实 FFmpeg；批量测试还需要 eac3to。测试只生成合成音频，并打印保留测试材料的临时目录。
+后两项需要真实 FFmpeg；批量入口已无需 eac3to。测试只生成合成音频，并打印保留测试材料的临时目录。
 
 编码器验证工作区此前的 720 组核心参数检查、78 组原版文件比较属于上游证据，不等同于本项目已经暴露所有混合组配置。源码和固定二进制指纹、上游范围见 `Native/mlpencoder-validation.json`。历史 EXE 接入的复测结果见 `mlpencoder-integration.json`。
 
@@ -67,3 +67,9 @@ MLP 编码核心现在在提交每个重启区间前检查 AU 大小。正常编
 新增回归入口（需要 FFmpeg）：
 
     dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release -- --oversized-au-integration
+
+## FFmpeg 音源预处理迁移（2026-10-02）
+
+批量入口现在读取 DVDA_FFMPEG，支持绝对路径和 PATH。旧 eac3to 配置保留读取但不再执行；转换器或策略改变会使旧 MLP 缓存重建。原生编码源码和固定 DLL 均未改动。详见 [迁移方案和验收](FFMPEG-PCM-MIGRATION.md)。
+
+迁移后验收：202/202 FFmpeg 批量 PCM 用例、78/78 原版整文件字节对照、104/104 兼容性测试，以及 x64 GUI 发布版转码、旧缓存迁移、ISO 制作和成品验证均通过。

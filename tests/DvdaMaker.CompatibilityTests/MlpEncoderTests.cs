@@ -42,7 +42,7 @@ internal static class MlpEncoderTests
     private static string NewRoot()
     { var path = Path.Combine(Path.GetTempPath(), "dvda--中文-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
 
-    private static string FixtureExecutable(string root, string name)
+    internal static string FixtureExecutable(string root, string name)
     {
         foreach (var path in Directory.EnumerateFiles(AppContext.BaseDirectory))
         {
@@ -54,12 +54,12 @@ internal static class MlpEncoderTests
         return result;
     }
 
-    private static DvdaOptions Options(string root, string eac3to, string probe, int jobs = 1, int bits = 24, int rate = 48000)
+    private static DvdaOptions Options(string root, string ffmpeg, string probe, int jobs = 1, int bits = 24, int rate = 48000)
     {
         var path = Path.Combine(root, "config.env");
         var lines = new[]{"DVDA_SRC="+Path.Combine(root,"src"),"DVDA_FINAL_DIR="+Path.Combine(root,"final"),
             "DVDA_BUILD_DIR="+Path.Combine(root,"build"),"DVDA_MLP_SOURCE=surcode-batch",
-            "DVDA_MLP_EAC3TO_EXE="+eac3to,"DVDA_FFPROBE="+probe,"DVDA_MLP_JOBS="+jobs,
+            "DVDA_FFMPEG="+ffmpeg,"DVDA_FFPROBE="+probe,"DVDA_MLP_JOBS="+jobs,
             "DVDA_MLP_SURCODE_BITS="+bits,"DVDA_MLP_SURCODE_SAMPLE_RATE="+rate};
         File.WriteAllLines(path, lines);
         return new ConfigLoader(new Dictionary<string, string?>()).Load(path);
@@ -89,7 +89,7 @@ internal static class MlpEncoderTests
         {
             var template = Path.Combine(root, "template.wav"); WriteWave(template, 48000, 24, 2, 817);
             Environment.SetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE", template);
-            var options = Options(root, FixtureExecutable(root, "fake-eac3to.exe"), FixtureExecutable(root, "fake-ffprobe.exe"));
+            var options = Options(root, FixtureExecutable(root, "fake-ffmpeg-pcm.exe"), FixtureExecutable(root, "fake-ffprobe.exe"));
             Directory.CreateDirectory(options.SourceDirectory);
             var source = Path.Combine(options.SourceDirectory, "source.flac"); File.WriteAllBytes(source, new byte[4096]);
             var track = Track(source); var provider = new SurcodeMlpProvider(options, new ProcessRunner());
@@ -99,6 +99,8 @@ internal static class MlpEncoderTests
             Require(MlpCacheValidator.IsEncoderValid(output), "Small original-policy MLP must pass validation");
             var second = provider.AcquireAsync([track]).GetAwaiter().GetResult();
             Require(second.CacheHits == 1 && second.CacheRebuilt == 0, "Valid cache must be reused");
+            using (var binary = new FileStream(options.Ffmpeg, FileMode.Append, FileAccess.Write)) binary.WriteByte(0);
+            Require(provider.AcquireAsync([track]).GetAwaiter().GetResult().CacheRebuilt == 1, "FFmpeg binary change must invalidate cache");
             var timestamp = File.GetLastWriteTimeUtc(source); var changed = new byte[4096]; changed[0] = 42;
             File.WriteAllBytes(source, changed); File.SetLastWriteTimeUtc(source, timestamp);
             Require(provider.AcquireAsync([track]).GetAwaiter().GetResult().CacheRebuilt == 1, "Same size/time content change must invalidate");
@@ -123,12 +125,12 @@ internal static class MlpEncoderTests
         {
             var wave = Path.Combine(root, "source.wav"); WriteWave(wave, 48000, 24, 2, 1457);
             Environment.SetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE", wave);
-            var decoder = FixtureExecutable(root, "fake-eac3to.exe");
+            var decoder = FixtureExecutable(root, "fake-ffmpeg-pcm.exe");
             var tracks = Enumerable.Range(1, 4).Select(n => new SurcodeEncodingTrack
             { SourcePath = wave, WorkName = "track" + n, DisplayName = "Track " + n, DurationSeconds = 0.1, SourceSampleRate = 48000, SourceBits = 24 }).ToArray();
             var job = new SurcodeEncodingJob
             {
-                Eac3toExecutable = decoder,
+                FfmpegExecutable = decoder,
                 TemporaryDirectory = Path.Combine(root, "temp"),
                 OutputDirectory = Path.Combine(root, "parallel"),
                 SampleRate = 48000,
@@ -329,7 +331,7 @@ internal static class MlpEncoderTests
         Console.WriteLine("PASS: embedded Windows core, Unicode directories and independent PCM equality for all 84 default-layout profiles");
     }
 
-    public static void RealBatchIntegration(string eac3to)
+    public static void RealBatchIntegration(string ffmpeg)
     {
         var root = NewRoot(); Console.WriteLine("Real batch artifacts: " + root);
         var runner = new ProcessRunner(); var passed = new List<object>();
@@ -343,7 +345,7 @@ internal static class MlpEncoderTests
             Require(conversion.Succeeded, "Synthetic FLAC creation: " + conversion.StandardError);
             var job = new SurcodeEncodingJob
             {
-                Eac3toExecutable = Path.GetFullPath(eac3to),
+                FfmpegExecutable = ffmpeg,
                 TemporaryDirectory = Path.Combine(folder, "temp"),
                 OutputDirectory = Path.Combine(folder, "output"),
                 SampleRate = rate,
@@ -361,7 +363,7 @@ internal static class MlpEncoderTests
             }).GetAwaiter().GetResult();
             Require(decoding.Succeeded, "Real batch decode: " + decoding.StandardError);
             var actual = File.ReadAllBytes(decoded);
-            Require(actual.Length >= raw.Length && actual.AsSpan(0, raw.Length).SequenceEqual(raw), "eac3to/native pipeline changed PCM");
+            Require(actual.Length >= raw.Length && actual.AsSpan(0, raw.Length).SequenceEqual(raw), "FFmpeg/native pipeline changed PCM");
             Require(actual.AsSpan(raw.Length).IndexOfAnyExcept((byte)0) < 0, "Nonzero batch tail");
             Require(MlpCacheValidator.IsEncoderValid(output), "Batch stream structure failed");
             // Bypass the converter using the exact synthetic PCM: identical final bytes prove no post-encode repair.
@@ -374,6 +376,6 @@ internal static class MlpEncoderTests
             Console.WriteLine($"PASS real batch {rate}/{bits}/{channels}");
         }
         File.WriteAllText(Path.Combine(root, "result.json"), JsonSerializer.Serialize(new { status = "PASS", profiles = passed, encoder = MlpEncoder.BinarySha256 }));
-        Console.WriteLine("PASS: real FLAC -> eac3to -> MLP core; native PCM and direct encoded bytes equal");
+        Console.WriteLine("PASS: real FLAC -> FFmpeg -> MLP core; native PCM and direct encoded bytes equal");
     }
 }

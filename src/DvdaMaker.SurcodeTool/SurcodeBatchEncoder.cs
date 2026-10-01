@@ -7,6 +7,8 @@ public sealed class SurcodeBatchEncoder(ProcessRunner runner)
 {
     public async Task RunAsync(SurcodeEncodingJob job, CancellationToken cancellationToken)
     {
+        var ffmpeg = ExecutablePath.Resolve(job.FfmpegExecutable)
+            ?? throw new FileNotFoundException("找不到 FFmpeg，请设置 DVDA_FFMPEG 或将 ffmpeg.exe 加入 PATH。", job.FfmpegExecutable);
         Validate(job);
         Directory.CreateDirectory(job.TemporaryDirectory);
         Directory.CreateDirectory(job.OutputDirectory);
@@ -23,20 +25,8 @@ public sealed class SurcodeBatchEncoder(ProcessRunner runner)
             {
                 Console.WriteLine($"[MLP] {track.DisplayName}");
                 var input = Path.Combine(folder, "decoded.wav");
-                var arguments = new List<string> { track.SourcePath, input };
-                if (track.SourceSampleRate != job.SampleRate) arguments.Add($"-resampleTo{job.SampleRate}");
-                var effectiveBits = track.SourceSampleRate != job.SampleRate ? 24 : track.SourceBits;
-                if (job.Bits < effectiveBits) arguments.Add($"-down{job.Bits}");
-                var result = await runner.RunAsync(new ProcessRequest
-                {
-                    FileName = job.Eac3toExecutable,
-                    WorkingDirectory = Path.GetDirectoryName(job.Eac3toExecutable),
-                    Arguments = arguments,
-                    Timeout = TimeSpan.FromSeconds(Math.Max(300, track.DurationSeconds * 2 + 120)),
-                    OnOutputLine = line => Console.WriteLine($"[eac3to] {line}"),
-                    OnErrorLine = line => Console.Error.WriteLine($"[eac3to] {line}"),
-                }, token).ConfigureAwait(false);
-                if (!result.Succeeded) throw new InvalidOperationException($"eac3to 退出码 {result.ExitCode}: {track.DisplayName}");
+                await FfmpegPcmConverter.ConvertAsync(runner, ffmpeg, track, input,
+                    job.SampleRate, job.Bits, token).ConfigureAwait(false);
                 var prepared = Path.Combine(folder, "input.wav");
                 SurcodePcmWav.Normalize(input, prepared, job.SampleRate, job.Bits, token);
                 File.Delete(input);
@@ -54,7 +44,6 @@ public sealed class SurcodeBatchEncoder(ProcessRunner runner)
 
     private static void Validate(SurcodeEncodingJob job)
     {
-        if (!File.Exists(job.Eac3toExecutable)) throw new FileNotFoundException("找不到 eac3to.exe。", job.Eac3toExecutable);
         if (!string.IsNullOrEmpty(job.MetadataContext) && !File.Exists(job.MetadataContext))
             throw new FileNotFoundException("找不到显式 MLP 元数据上下文。", job.MetadataContext);
         if (job.SampleRate is not (44_100 or 48_000 or 88_200 or 96_000 or 176_400 or 192_000))
