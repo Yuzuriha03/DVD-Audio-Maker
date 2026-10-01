@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -23,8 +24,15 @@ public sealed class PreparationPipeline
     }
 
     public async Task<PreparationResult> RunAsync(
+        bool forceRevalidation = false,
         CancellationToken cancellationToken = default)
     {
+        var startedAt = Stopwatch.GetTimestamp();
+        var cache = _options.PrepareCacheEnabled
+            ? PrepareCache.Load(_options.PrepareCachePath)
+            : null;
+        var reuseEvidence = cache is not null && !forceRevalidation;
+        var cachedEntries = new Dictionary<string, PrepareCacheEntry>(StringComparer.OrdinalIgnoreCase);
         if (File.Exists(_options.ManifestPath))
         {
             File.Delete(_options.ManifestPath);
@@ -39,10 +47,24 @@ public sealed class PreparationPipeline
         Console.WriteLine($"发现 {sources.Length} 个音频文件 (FLAC/M4A)");
 
         var tracks = new List<AudioTrackMetadata>(sources.Length);
+        var metadataStarted = Stopwatch.GetTimestamp();
+        var reusedMetadata = 0;
         foreach (var path in sources)
         {
+            var cached = reuseEvidence ? cache!.Match(path) : null;
+            if (cached is not null)
+            {
+                cachedEntries[path] = cached;
+                reusedMetadata++;
+                tracks.Add(ToMetadata(path, cached.Probe));
+                continue;
+            }
             tracks.Add(await _metadataReader.ReadAsync(path, cancellationToken).ConfigureAwait(false));
         }
+        Console.WriteLine($"[耗时] 元数据探测 {sources.Length} 首: " +
+            $"{Stopwatch.GetElapsedTime(metadataStarted)}");
+        Console.WriteLine(
+            $"[缓存] 复用元数据 {reusedMetadata} 首 / 重新探测 {sources.Length - reusedMetadata} 首");
 
         AlbumNormalizer.Apply(tracks);
         foreach (var track in tracks.Where(track => track.ResampleTo is not null))
@@ -57,6 +79,8 @@ public sealed class PreparationPipeline
         var manifest = new Dictionary<string, ManifestGroup>(StringComparer.Ordinal);
         var repairs = new List<AppliedAudioRepair>();
         var checkedTracks = 0;
+        var reusedValidation = 0;
+        var decodeStarted = Stopwatch.GetTimestamp();
 
         foreach (var parameterGroup in tracks
                      .GroupBy(track => (track.SampleRate, track.Bits))
@@ -79,52 +103,77 @@ public sealed class PreparationPipeline
                 var originalSource = (string?)null;
                 IReadOnlyList<string>? repairDetail = null;
                 var repaired = 0;
-                var check = await _decodeValidator.CheckAsync(
-                    sourcePath, track.ResampleTo, cancellationToken).ConfigureAwait(false);
+                var patches = Array.Empty<AlacFramePatch>();
                 var expected = track.Duration > 0
                     ? (long)Math.Round(track.Duration * track.SampleRate)
                     : (long?)null;
-                if (check.ErrorCount > 0 ||
-                    (check.Samples is not null && expected is not null && check.Samples != expected))
+                var cached = cachedEntries.GetValueOrDefault(track.Path);
+                if (cached is not null && IsReusable(cached, track, expected))
                 {
-                    var repair = await _alacRepairer.TryRepairAsync(
-                        sourcePath, _options.AlacFixDirectory, cancellationToken).ConfigureAwait(false);
-                    if (repair is not null)
+                    reusedValidation++;
+                    if (cached.Validation.RepairedFile is { } repairedFile)
                     {
-                        var repairedCheck = await _decodeValidator.CheckAsync(
-                            repair.OutputPath, track.ResampleTo, cancellationToken).ConfigureAwait(false);
-                        if (repairedCheck.ErrorCount == 0 && repairedCheck.Samples is not null &&
-                            (expected is null || repairedCheck.Samples == expected))
+                        originalSource = track.Path;
+                        sourcePath = repairedFile.Path;
+                        patches = cached.Validation.Patches?.ToArray() ?? [];
+                        repaired = patches.Length;
+                        repairDetail = patches.Select(FormatRepairDetail).ToArray();
+                        repairs.Add(new AppliedAudioRepair(originalSource, sourcePath, patches));
+                        Console.WriteLine(
+                            $"  ++ [缓存复用] {track.Title}: 已校验的 ALAC 修复结果（{repaired} 处）");
+                    }
+                }
+                else
+                {
+                    var check = await _decodeValidator.CheckAsync(
+                        sourcePath, track.ResampleTo, cancellationToken).ConfigureAwait(false);
+                    if (check.ErrorCount > 0 ||
+                        (check.Samples is not null && expected is not null && check.Samples != expected))
+                    {
+                        var repair = await _alacRepairer.TryRepairAsync(
+                            sourcePath, _options.AlacFixDirectory, cancellationToken).ConfigureAwait(false);
+                        if (repair is not null)
                         {
-                            originalSource = sourcePath;
-                            sourcePath = repair.OutputPath;
-                            check = repairedCheck;
-                            repaired = repair.Patches.Count;
-                            repairDetail = repair.Patches.Select(FormatRepairDetail).ToArray();
-                            repairs.Add(new AppliedAudioRepair(
-                                originalSource, sourcePath, repair.Patches));
-                            Console.WriteLine(
-                                $"  ++ [已修复] {track.Title}: ALAC END 标记 {repaired} 处，解码采样数已达标");
-                        }
-                        else
-                        {
-                            try
+                            var repairedCheck = await _decodeValidator.CheckAsync(
+                                repair.OutputPath, track.ResampleTo, cancellationToken).ConfigureAwait(false);
+                            if (repairedCheck.ErrorCount == 0 && repairedCheck.Samples is not null &&
+                                (expected is null || repairedCheck.Samples == expected))
                             {
-                                File.Delete(repair.OutputPath);
+                                originalSource = sourcePath;
+                                sourcePath = repair.OutputPath;
+                                check = repairedCheck;
+                                patches = repair.Patches.ToArray();
+                                repaired = patches.Length;
+                                repairDetail = patches.Select(FormatRepairDetail).ToArray();
+                                repairs.Add(new AppliedAudioRepair(
+                                    originalSource, sourcePath, patches));
+                                Console.WriteLine(
+                                    $"  ++ [已修复] {track.Title}: ALAC END 标记 {repaired} 处，解码采样数已达标");
                             }
-                            catch (IOException)
+                            else
                             {
+                                try
+                                {
+                                    File.Delete(repair.OutputPath);
+                                }
+                                catch (IOException)
+                                {
+                                }
                             }
                         }
                     }
-                }
 
-                var issue = Evaluate(track, sourcePath, check, expected, repaired);
-                if (issue is not null)
-                {
-                    issues.Add(issue);
-                    Console.WriteLine($"  {(issue.Level == "FAIL" ? "!!" : " ?")} " +
-                                      $"[{issue.Level}] {track.Title}: {issue.Reason}");
+                    var issue = Evaluate(track, sourcePath, check, expected, repaired);
+                    if (issue is not null)
+                    {
+                        issues.Add(issue);
+                        Console.WriteLine($"  {(issue.Level == "FAIL" ? "!!" : " ?")} " +
+                                          $"[{issue.Level}] {track.Title}: {issue.Reason}");
+                    }
+                    else if (cache is not null)
+                    {
+                        RecordCacheEntry(cache, track, sourcePath, expected, check, patches);
+                    }
                 }
 
                 files.Add(new ManifestTrack
@@ -155,12 +204,113 @@ public sealed class PreparationPipeline
         }
 
         var result = new PreparationResult(manifest, issues, checkedTracks, repairs);
+        Console.WriteLine(
+            $"[耗时] 解码校验 {checkedTracks} 首: {Stopwatch.GetElapsedTime(decodeStarted)}");
+        Console.WriteLine(
+            $"[缓存] 复用已校验结果 {reusedValidation} 首 / 重新校验 {checkedTracks - reusedValidation} 首");
+        SaveCache(cache);
         WriteReport(result);
         if (result.FailureCount == 0)
         {
             WriteManifest(manifest);
         }
+        Console.WriteLine($"[耗时] prepare 总计: {Stopwatch.GetElapsedTime(startedAt)}");
         return result;
+    }
+
+    private static AudioTrackMetadata ToMetadata(string path, AudioProbeFacts probe) => new()
+    {
+        Path = path,
+        SampleRate = probe.SampleRate,
+        Bits = probe.Bits,
+        Channels = probe.Channels,
+        Date = probe.Date,
+        Track = probe.Track,
+        Title = probe.Title,
+        Album = probe.Album,
+        Duration = probe.Duration,
+        SourceSampleRate = probe.SampleRate,
+        SourceBits = probe.Bits,
+    };
+
+    internal static bool IsReusable(
+        PrepareCacheEntry entry,
+        AudioTrackMetadata track,
+        long? expected)
+    {
+        var validation = entry.Validation;
+        if (validation.DecodedSamples <= 0 ||
+            validation.SampleRate != track.SampleRate ||
+            validation.Bits != track.Bits ||
+            validation.ResampleTo != track.ResampleTo ||
+            validation.ExpectedSamples != expected)
+        {
+            return false;
+        }
+        return validation.RepairedFile is not { } repairedFile ||
+            FileIdentityProbe.Matches(repairedFile.Path, repairedFile);
+    }
+
+    private static void RecordCacheEntry(
+        PrepareCache cache,
+        AudioTrackMetadata track,
+        string validatedPath,
+        long? expected,
+        DecodeCheckResult check,
+        IReadOnlyList<AlacFramePatch> patches)
+    {
+        var sourceIdentity = FileIdentityProbe.Compute(track.Path);
+        if (sourceIdentity is null || check.Samples is null)
+        {
+            return;
+        }
+        var validatedIdentity = validatedPath == track.Path
+            ? null
+            : FileIdentityProbe.Compute(validatedPath);
+        cache.Record(track.Path, new PrepareCacheEntry
+        {
+            Identity = sourceIdentity,
+            Probe = new AudioProbeFacts
+            {
+                SampleRate = track.SourceSampleRate,
+                Bits = track.SourceBits,
+                Channels = track.Channels,
+                Date = track.Date,
+                Track = track.Track,
+                Title = track.Title,
+                Album = track.Album,
+                Duration = track.Duration,
+            },
+            Validation = new PrepareValidationFacts
+            {
+                SampleRate = track.SampleRate,
+                Bits = track.Bits,
+                ResampleTo = track.ResampleTo,
+                ExpectedSamples = expected,
+                DecodedSamples = check.Samples.Value,
+                Patches = patches.Count > 0 ? patches : null,
+                RepairedFile = validatedIdentity,
+            },
+        });
+    }
+
+    private void SaveCache(PrepareCache? cache)
+    {
+        if (cache is null)
+        {
+            return;
+        }
+        try
+        {
+            cache.Save(_options.PrepareCachePath);
+            Console.WriteLine(
+                $"[缓存] 已更新 {cache.Count} 条音源校验记录 -> {_options.PrepareCachePath}");
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"[警告] 准备缓存写入失败: {exception.Message}");
+        }
     }
 
     private IEnumerable<ValidationIssue> ValidateChannels(

@@ -1,5 +1,6 @@
 using DvdaMaker.Configuration;
 using DvdaMaker.Formats.Mlp;
+using DvdaMaker.Preparation;
 using DvdaMaker.Processes;
 using DvdaMaker.MLPTool;
 
@@ -90,6 +91,7 @@ public sealed class MlpEncoderProvider
         }
 
         var rebuilt = 0;
+        var verifiedOutputs = new Dictionary<string, FileIdentity>(StringComparer.OrdinalIgnoreCase);
         var defaultWorkRoot = Path.Combine(_options.BuildDirectory, "mlp-batch");
         var tempRoot = string.IsNullOrWhiteSpace(_options.MlpBatchTempDirectory)
             ? Path.Combine(defaultWorkRoot, "temp")
@@ -166,6 +168,11 @@ public sealed class MlpEncoderProvider
 
                         Directory.CreateDirectory(Path.GetDirectoryName(item.Destination)!);
                         File.Move(staged, item.Destination, overwrite: true);
+                        var identity = FileIdentityProbe.Compute(item.Destination);
+                        if (identity is not null)
+                        {
+                            verifiedOutputs[Path.GetFullPath(item.Destination)] = identity;
+                        }
                         rebuilt++;
                     }
                 }
@@ -178,7 +185,7 @@ public sealed class MlpEncoderProvider
         }
 
         var external = await new ExternalMlpProvider(_options, _runner)
-            .AcquireAsync(tracks, cancellationToken).ConfigureAwait(false);
+            .AcquireAsync(tracks, verifiedOutputs, cancellationToken).ConfigureAwait(false);
         var normalized = external.Tracks.Select(track =>
             track.MlpSource == "external" ? track with { MlpSource = "mlp-batch" } : track).ToArray();
         return new MlpAcquisitionResult(

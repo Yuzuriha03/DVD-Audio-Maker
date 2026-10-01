@@ -32,19 +32,27 @@ echo [ERROR] Unknown argument: %~1
 exit /b 2
 
 :run
-if defined CONFIG_PATH (
-  dotnet run --project "%PROJECT%" -- prepare --config "%CONFIG_PATH%"
-) else (
-  dotnet run --project "%PROJECT%" -- prepare
-)
-if errorlevel 1 exit /b %ERRORLEVEL%
-if defined CONFIG_PATH if defined DRY_RUN (
-  dotnet run --project "%PROJECT%" -- build --dry-run --config "%CONFIG_PATH%"
-) else if defined CONFIG_PATH (
-  dotnet run --project "%PROJECT%" -- build --config "%CONFIG_PATH%"
-) else if defined DRY_RUN (
-  dotnet run --project "%PROJECT%" -- build --dry-run
-) else (
-  dotnet run --project "%PROJECT%" -- build
-)
+if defined CONFIG_PATH goto run_with_config
+goto run_without_config
+
+:run_with_config
+call dotnet run --project "%PROJECT%" -- prepare --config "%CONFIG_PATH%"
+if errorlevel 1 exit /b 1
+if defined DRY_RUN goto dry_with_config
+call dotnet run --project "%PROJECT%" -- build --config "%CONFIG_PATH%"
+exit /b %ERRORLEVEL%
+
+:dry_with_config
+call dotnet run --project "%PROJECT%" -- build --dry-run --config "%CONFIG_PATH%"
+exit /b %ERRORLEVEL%
+
+:run_without_config
+call dotnet run --project "%PROJECT%" -- prepare
+if errorlevel 1 exit /b 1
+if defined DRY_RUN goto dry_without_config
+call dotnet run --project "%PROJECT%" -- build
+exit /b %ERRORLEVEL%
+
+:dry_without_config
+call dotnet run --project "%PROJECT%" -- build --dry-run
 exit /b %ERRORLEVEL%

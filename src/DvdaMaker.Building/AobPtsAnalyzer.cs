@@ -43,6 +43,13 @@ public static class AobPtsAnalyzer
         IEnumerable<ReadOnlyMemory<byte>> chunks,
         string path = "<memory>",
         int? maximumSectors = null)
+        => AnalyzeChunks(chunks, path, maximumSectors, null);
+
+    internal static AobPtsAnalysis AnalyzeChunks(
+        IEnumerable<ReadOnlyMemory<byte>> chunks,
+        string path,
+        int? maximumSectors,
+        Action<ReadOnlyMemory<byte>>? observeSector)
     {
         var values = new List<long>();
         var sectorCount = 0;
@@ -55,6 +62,7 @@ public static class AobPtsAnalyzer
                 if (maximumSectors is > 0 && sectorCount >= maximumSectors.Value) break;
                 var sector = chunk.Slice(index * SectorSize, SectorSize);
                 sectorCount++;
+                observeSector?.Invoke(chunkMemory.Slice(index * SectorSize, SectorSize));
                 if (!sector[..4].SequenceEqual(PackHeader)) continue;
                 var relative = sector.Slice(4, Math.Min(60, sector.Length - 4))
                     .IndexOf(PrivateStreamHeader);
