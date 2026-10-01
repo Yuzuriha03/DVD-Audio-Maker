@@ -26,6 +26,7 @@ public static class ConfigDefaults
             ["DVDA_MLP_BATCH_TEMP_DIR"] = "",
             ["DVDA_MLP_BATCH_OUTPUT_DIR"] = "",
             ["DVDA_MLP_METADATA_CONTEXT"] = "",
+            // Legacy import/export compatibility only; PCM conversion uses DVDA_FFMPEG.
             ["DVDA_MLP_EAC3TO_EXE"] = "",
             ["DVDA_MlpSampleRate"] = "48000",
             ["DVDA_MlpBits"] = "24",
