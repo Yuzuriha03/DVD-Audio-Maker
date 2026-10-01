@@ -8,7 +8,7 @@ using DvdaMaker.Processes;
 namespace DvdaMaker.Building;
 
 /// <summary>
-/// 我们自己产出的 MLP（ffmpeg 分支）的缓存凭据。
+/// MLP 编码核心产出的 MLP 缓存凭据。
 /// 只有源文件身份、编码器身份与编码参数都一致，且 MLP 文件本身未被改动时才复用。
 /// </summary>
 public sealed record MlpCacheEntry

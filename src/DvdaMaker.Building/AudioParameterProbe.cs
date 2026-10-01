@@ -10,6 +10,9 @@ public sealed class AudioParameterProbe(ProcessRunner runner, string ffprobe)
         string path,
         CancellationToken cancellationToken = default)
     {
+        // Tiny valid streams may be shorter than FFprobe's MLP detection window.
+        string[] inputFormat = Path.GetExtension(path).Equals(".mlp", StringComparison.OrdinalIgnoreCase)
+            ? ["-f", "mlp"] : [];
         var result = await runner.RunAsync(new ProcessRequest
         {
             FileName = ffprobe,
@@ -19,6 +22,7 @@ public sealed class AudioParameterProbe(ProcessRunner runner, string ffprobe)
                 "-select_streams", "a:0",
                 "-show_entries", "stream=sample_rate,channels,bits_per_raw_sample",
                 "-of", "default=nw=1:nk=1",
+                .. inputFormat,
                 path,
             ],
         }, cancellationToken).ConfigureAwait(false);
