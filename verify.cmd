@@ -9,8 +9,8 @@ if not exist "%PROJECT%" (
 )
 
 if "%~1"=="" (
-  dotnet run --project "%PROJECT%" -- verify all
+  call dotnet run --project "%PROJECT%" -- verify all
 ) else (
-  dotnet run --project "%PROJECT%" -- verify %*
+  call dotnet run --project "%PROJECT%" -- verify %*
 )
 exit /b %ERRORLEVEL%

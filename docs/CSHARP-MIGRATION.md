@@ -10,7 +10,7 @@
 - `DvdaMaker.Processes`：统一外部程序执行、参数传递、输出捕获、超时和取消。
 - `DvdaMaker.Preparation`：音源扫描、ffprobe 元数据、专辑归一化、ffmpeg 解码校验及 manifest 生成。
 - `DvdaMaker.Building`：读取 manifest、全局排序、按专辑贪心分盘及盘内参数分组。
-- `DvdaMaker.CompatibilityTests`：不依赖 NuGet 测试框架的兼容性基线（当前 68 项）。
+- `DvdaMaker.CompatibilityTests`：不依赖 NuGet 测试框架的兼容性基线（当前 88 项）。
 
 C# 已覆盖配置、准备、转换、构建、菜单素材、字体覆盖探测、AMG/ASVS、
 菜单视觉和成品审计；`build.cmd` 与 `verify.cmd` 是 C# CLI 的 Windows 原生薄包装。
@@ -24,9 +24,10 @@ Git 标签 `python-reference-final`（提交 `5aa4164`）中。
     dotnet build DVD-Audio-Maker.sln
     dotnet run --project tests/DvdaMaker.CompatibilityTests
 
-当前普通兼容性测试共 68 项，覆盖配置、格式解析、外部进程、音源准备、ALAC 修复、
+当前普通兼容性测试共 88 项，覆盖配置、格式解析、外部进程、音源准备、ALAC 修复、
 M4A dry-run 零写入、非 ALAC 拒绝、文件级失败隔离、审计日志解析、MLP 获取与索引、
-分盘分组，以及假 `dvda-author`/`mkisofs` 正式出盘端到端流程。
+分盘分组、假 `dvda-author`/`mkisofs` 正式出盘端到端流程，以及 `build.cmd` 参数分支、
+PCM 等长比对、工作盘空间预检、音源校验缓存、MLP 缓存凭据、逐盘续跑与并发编码。
 
 真实参考盘与 SurCode MLP 对拍：
 
@@ -144,7 +145,7 @@ EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP
 
 ## 后续验证
 
-1. 持续运行 68 项普通兼容测试及真实 ISO/SurCode MLP 3 项基线。
+1. 持续运行 88 项普通兼容测试及真实 ISO/SurCode MLP 3 项基线。
 2. 对新增的真实 ALAC 样本核对标签、封面和 PCM MD5。
 3. 对真实多页菜单 ISO 逐页抽帧，并在 Windows self-contained 发布包中做 smoke test。
 4. 若需追查迁移差异，以 `python-reference-final` 标签为只读历史基准。

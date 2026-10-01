@@ -1,5 +1,6 @@
 using DvdaMaker.Configuration;
 using DvdaMaker.Formats.Mlp;
+using DvdaMaker.Preparation;
 using DvdaMaker.Processes;
 
 namespace DvdaMaker.Building;
@@ -17,6 +18,12 @@ public sealed class ExternalMlpProvider
 
     public async Task<MlpAcquisitionResult> AcquireAsync(
         IReadOnlyList<BuildTrack> tracks,
+        CancellationToken cancellationToken = default)
+        => await AcquireAsync(tracks, null, cancellationToken).ConfigureAwait(false);
+
+    internal async Task<MlpAcquisitionResult> AcquireAsync(
+        IReadOnlyList<BuildTrack> tracks,
+        IReadOnlyDictionary<string, FileIdentity>? verifiedOutputs,
         CancellationToken cancellationToken = default)
     {
         var diagnostics = new List<BuildDiagnostic>();
@@ -63,18 +70,24 @@ public sealed class ExternalMlpProvider
                 continue;
             }
 
+            var alreadyVerified = verifiedOutputs is not null &&
+                verifiedOutputs.TryGetValue(Path.GetFullPath(hit), out var identity) &&
+                FileIdentityProbe.Matches(hit, identity);
             try
             {
-                var inspection = MlpStreamAligner.Inspect(await File.ReadAllBytesAsync(
-                    hit, cancellationToken).ConfigureAwait(false));
-                if (!inspection.IsValid || !inspection.HasEndOfStream)
+                if (!alreadyVerified)
                 {
-                    diagnostics.Add(new BuildDiagnostic(
-                        BuildDiagnosticSeverity.Error,
-                        "EXTERNAL_MLP_INVALID",
-                        $"外部 MLP 结构校验失败: {hit}"));
-                    output.Add(track);
-                    continue;
+                    var inspection = MlpStreamAligner.Inspect(await File.ReadAllBytesAsync(
+                        hit, cancellationToken).ConfigureAwait(false));
+                    if (!inspection.IsValid || !inspection.HasEndOfStream)
+                    {
+                        diagnostics.Add(new BuildDiagnostic(
+                            BuildDiagnosticSeverity.Error,
+                            "EXTERNAL_MLP_INVALID",
+                            $"外部 MLP 结构校验失败: {hit}"));
+                        output.Add(track);
+                        continue;
+                    }
                 }
             }
             catch (InvalidDataException exception)

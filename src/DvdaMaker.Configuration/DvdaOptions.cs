@@ -53,6 +53,9 @@ public sealed partial class DvdaOptions
     public string AlacFixDirectory => UnderBuild("alacfix");
     public string MenuDirectory => UnderBuild("menu");
     public string BuildLogPath => UnderBuild("build.log");
+    public string PrepareCachePath => UnderBuild("prepare-cache.json");
+    public bool PrepareCacheEnabled => Get("DVDA_PREPARE_CACHE", "on").Trim().ToLowerInvariant() is not
+        ("off" or "0" or "false" or "no");
     public string DvdaAuthor => Get("DVDA_AUTHOR");
     public string Mkisofs => Get("DVDA_MKISOFS");
     public string Ffmpeg => Get("DVDA_FFMPEG");
@@ -84,6 +87,7 @@ public sealed partial class DvdaOptions
     public string MlpEac3toExecutable => Get("DVDA_MLP_EAC3TO_EXE").Trim();
     public int MlpSurcodeSampleRate => GetInt("DVDA_MLP_SURCODE_SAMPLE_RATE") ?? 48_000;
     public int MlpSurcodeBits => GetInt("DVDA_MLP_SURCODE_BITS") ?? 24;
+    public int MlpJobs => Math.Clamp(GetInt("DVDA_MLP_JOBS") ?? 1, 1, 16);
     public bool MenuEnabled => GetBool("DVDA_MENU");
     public int MenuTracksPerPage => Math.Clamp(
         GetInt("DVDA_MENU_TRACKS_PER_PAGE") ?? 12,
@@ -102,6 +106,8 @@ public sealed partial class DvdaOptions
     public string MenuFontKorean => Get("DVDA_MENU_FONT_KR").Trim();
     public bool KeepTemporary => GetBool("DVDA_KEEP_TMP");
     public bool KeepIntermediate => GetBool("DVDA_KEEP_INTERMEDIATE");
+    public bool ResumeEnabled => Get("DVDA_RESUME", "on").Trim().ToLowerInvariant() is not
+        ("off" or "0" or "false" or "no");
     public double LossErrorSeconds => GetDouble("DVDA_LOSS_ERROR_S") ?? 0.05;
     public double LossWarningSeconds => GetDouble("DVDA_LOSS_WARN_S") ?? 0.005;
     public int? DiagnosticAlbumLimit

@@ -225,13 +225,24 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
     }
 
     public VerificationSectionResult VerifyTimeline()
+        => VerifyTimelineCore(collectAuditObservations: false).Timeline;
+
+    public (VerificationSectionResult Timeline,
+        IReadOnlyDictionary<(string IsoPath, int Group), DiscVerifier.AuditPtsObservation> Observations)
+        VerifyTimelineWithAuditObservations()
+        => VerifyTimelineCore(collectAuditObservations: true);
+
+    private (VerificationSectionResult Timeline,
+        IReadOnlyDictionary<(string IsoPath, int Group), DiscVerifier.AuditPtsObservation> Observations)
+        VerifyTimelineCore(bool collectAuditObservations)
     {
+        var observations = new Dictionary<(string IsoPath, int Group), DiscVerifier.AuditPtsObservation>();
         var isoFiles = FindIsoFiles();
         if (isoFiles.Length == 0)
         {
-            return new VerificationSectionResult(
+            return (new VerificationSectionResult(
                 "timeline",
-                [new VerificationIssue("NO_ISO", "未找到成品 ISO")]);
+                [new VerificationIssue("NO_ISO", "未找到成品 ISO")]), observations);
         }
 
         var issues = new List<VerificationIssue>();
@@ -266,19 +277,34 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                             RegexOptions.IgnoreCase))
                         .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
                         .ToArray();
+                    var observation = collectAuditObservations
+                        ? new DiscVerifier.AuditPtsObservation() : null;
+                    Action<ReadOnlyMemory<byte>>? observeSector = null;
+                    if (observation is not null)
+                    {
+                        observeSector = observation.Observe;
+                    }
                     var analysis = AobPtsAnalyzer.AnalyzeChunks(
                         ReadAobChunks(iso, entries),
-                        $"{Path.GetFileName(isoPath)} 组 {group}");
+                        $"{Path.GetFileName(isoPath)} 组 {group}", null,
+                        observeSector);
+                    if (observation is not null)
+                    {
+                        observations.Add((isoPath, group), observation);
+                    }
                     issues.AddRange(analysis.Issues);
                 }
             }
-            return new VerificationSectionResult("timeline", issues);
+            return (new VerificationSectionResult("timeline", issues), observations);
         }
         catch (Exception exception) when (exception is Iso9660Exception or IOException)
         {
-            return new VerificationSectionResult(
+            // 任一组读取失败时，已收集的观察值不再代表完整的一轮扫描。
+            // 审计回退到自身的读取路径，保持原有诊断语义。
+            observations.Clear();
+            return (new VerificationSectionResult(
                 "timeline",
-                [new VerificationIssue("TIMELINE_UNAVAILABLE", exception.Message)]);
+                [new VerificationIssue("TIMELINE_UNAVAILABLE", exception.Message)]), observations);
         }
     }
 
@@ -376,10 +402,26 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                     issues.Add(new VerificationIssue(
                         "PCM_DECODE_FAILED", "ffmpeg 无法解码源音频或 MLP"));
                 }
-                else if (!FilesEqualPrefix(sourceRaw, decodedRaw))
+                else
                 {
-                    issues.Add(new VerificationIssue(
-                        "SOURCE_PCM_MISMATCH", "MLP 解码 PCM 与源音频不一致"));
+                    // SurCode 可在流末补入不足 1 ms 的零采样帧；仅对明确的
+                    // SurCode 来源启用，不放宽 ffmpeg/其他外部 MLP 的默认校验。
+                    var surcode = (options.MlpSource is "surcode" or "surcode-batch") &&
+                        (firstTrack.MlpSource is "external" or "surcode-batch") &&
+                        firstTrack.Channels > 0 && firstTrack.SampleRate > 1000;
+                    var comparison = surcode
+                        ? PcmComparer.Compare(sourceRaw, decodedRaw,
+                            bytesPerSampleFrame: checked(3 * firstTrack.Channels),
+                            maxTrailingZeroFrames: (firstTrack.SampleRate - 1) / 1000)
+                        : PcmComparer.Compare(sourceRaw, decodedRaw);
+                    if (!comparison.Match)
+                    {
+                        issues.Add(new VerificationIssue(
+                            comparison.SourceBytes == comparison.DecodedBytes
+                                ? "SOURCE_PCM_MISMATCH"
+                                : "SOURCE_PCM_LENGTH_MISMATCH",
+                            "MLP 解码 PCM 与源音频不一致: " + comparison.Reason));
+                    }
                 }
             }
 
@@ -404,17 +446,27 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                 {
                     var extractDirectory = Path.Combine(work, "aob-extract");
                     Directory.CreateDirectory(extractDirectory);
-                    await RunAsync(
+                    var extraction = await RunAsync(
                         options.DvdaAuthor,
                         ["--aob-extract", aobPath, "-o", extractDirectory, "-W", "-P0", "-n"],
                         cancellationToken).ConfigureAwait(false);
                     var extracted = Directory.EnumerateFiles(
                             extractDirectory, "track_01_title_01.mlp", SearchOption.AllDirectories)
                         .FirstOrDefault();
-                    if (extracted is null || !FilesEqual(firstTrack.MlpPath, extracted))
+                    if (extracted is null)
                     {
                         issues.Add(new VerificationIssue(
-                            "ISO_MLP_MISMATCH", "成品 ISO 内提取出的首轨 MLP 与源 MLP 不一致"));
+                            "ISO_MLP_EXTRACT_MISSING",
+                            $"--aob-extract 未产出 track_01_title_01.mlp（退出码 {extraction.ExitCode}）"));
+                    }
+                    else if (!FilesEqual(firstTrack.MlpPath, extracted))
+                    {
+                        // dvda-author 的 --aob-extract 可能以非零码结束但数据完整，
+                        // 因此只在字节不一致时报告，并在消息里给出退出码供排查。
+                        issues.Add(new VerificationIssue(
+                            "ISO_MLP_MISMATCH",
+                            "成品 ISO 内提取出的首轨 MLP 与源 MLP 不一致" +
+                            $"（--aob-extract 退出码 {extraction.ExitCode}）"));
                     }
                 }
             }
@@ -556,7 +608,12 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                             detail.ValueKind == JsonValueKind.Object &&
                             detail.TryGetProperty("sr", out var sampleRate)
                                 ? sampleRate.GetInt32()
-                                : groupElement.GetProperty("sr").GetInt32()));
+                                : groupElement.GetProperty("sr").GetInt32(),
+                            detail.ValueKind == JsonValueKind.Object &&
+                            detail.TryGetProperty("ch", out var channels) &&
+                            channels.ValueKind == JsonValueKind.Number
+                                ? channels.GetInt32()
+                                : 0));
                     }
                     groups.Add(new VerificationGroup(
                         groupElement.GetProperty("group").GetInt32(), tracks));
@@ -658,15 +715,6 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
         return match.Success ? int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) : null;
     }
 
-    private static bool FilesEqualPrefix(string sourcePath, string decodedPath)
-    {
-        var sourceLength = new FileInfo(sourcePath).Length;
-        if (new FileInfo(decodedPath).Length < sourceLength) return false;
-        using var source = File.OpenRead(sourcePath);
-        using var decoded = File.OpenRead(decodedPath);
-        return StreamsEqual(source, decoded, sourceLength);
-    }
-
     private static bool FilesEqual(string leftPath, string rightPath)
     {
         var length = new FileInfo(leftPath).Length;
@@ -714,7 +762,8 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
         string MlpSource,
         bool ExternalResampled,
         double Duration,
-        int SampleRate);
+        int SampleRate,
+        int Channels);
     private sealed record DecodedSampleResult(
         long? SampleCount,
         int DecodeErrors,

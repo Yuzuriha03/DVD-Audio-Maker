@@ -17,7 +17,7 @@
 - 保持专辑完整并按容量逐盘填满
 - 可选 DVD-Audio AMG 选曲菜单与 ASVS 播放封面
 - 事务式发布整套 ISO
-- 校验 ISO、IFO、AOB、PTS、菜单、容量和无损性
+- 校验 ISO、IFO、AOB、PTS、菜单、容量与首轨抽样无损性
 - Windows x64 自包含发布
 
 ## 项目结构
@@ -112,6 +112,27 @@ dotnet run --project src\DvdaMaker.Cli -- build
 dotnet run --project src\DvdaMaker.Cli -- verify all
 ```
 
+`plan` 只读取现有 `manifest.json` 与 MLP 大小，不获取或编码 MLP，适合快速查看分盘结果。
+`build --dry-run` 会执行完整的 MLP 获取流程并写独立预演索引，不是零写入操作。
+`prepare --force` 忽略音源校验缓存，强制重新探测与解码校验。
+`build --no-resume` 关闭逐盘续跑，强制重新出盘全部盘。
+
+`verify lossless` 只抽样比对**第 1 盘 / 组 1 / 第 1 轨**：源解码 PCM 与 MLP 解码 PCM 逐字节比较，再从成品 ISO 抽出首轨 MLP 与源 MLP 做字节比较。默认要求等长；仅在 SurCode 模式下允许共同内容完全一致、末尾额外不足 1 ms 且由完整零采样帧构成的填充。截短、非零尾部或内容差异仍报错。它不是全盘逐轨无损验证。
+
+## 重跑与缓存
+
+| 配置 | 默认 | 作用 |
+| --- | --- | --- |
+| `DVDA_PREPARE_CACHE` | `on` | 音源探测与解码校验结论缓存，位于 `build/prepare-cache.json` |
+| `DVDA_RESUME` | `on` | 逐盘续跑，记录位于 `build/publish-staging/resume.json` |
+| `DVDA_MLP_JOBS` | `1` | ffmpeg 分支 MLP 编码并发路数（1～16） |
+| `DVDA_KEEP_TMP` | `off` | 保留 `build/tmp` 供排查（开启后不自动清理） |
+| `DVDA_KEEP_INTERMEDIATE` | `off` | 保留 author 输出与中间 ISO；**开启时逐盘续跑自动关闭** |
+
+- 音源缓存只在文件身份（长度、修改时间、首尾各 64 KiB 哈希）与归一化参数完全一致时复用；未通过校验的轨道永不写入缓存。
+- 逐盘续跑只在签名（源/MLP 身份、author/mkisofs 工具身份、影响输出的配置、菜单设置）一致且暂存 ISO 未被改动时跳过该盘；最终仍由整套事务发布 ISO 与索引。构建失败会保留 `build/publish-staging`，下次运行从那里续跑。
+- `DVDA_MLP_JOBS` 大于 1 会让多路 ffmpeg 同时编码，编码前的缓存凭据（源身份 + 编码器身份 + 编码参数 + 输出身份）依旧生效；是否提速取决于磁盘吞吐与 CPU，默认保持 1 路。
+
 ## MLP 来源
 
 ### FFmpeg
@@ -122,6 +143,7 @@ DVDA_MLP_EXTERNAL_DIR=""
 ```
 
 首次构建编码 MLP，之后复用工作目录中的有效缓存。
+缓存命中除了结构校验外还要求源身份、编码器身份与编码参数一致（见“重跑与缓存”）。
 
 ### 外部 MLP
 
@@ -214,7 +236,7 @@ dotnet build DVD-Audio-Maker.sln --configuration Release
 dotnet run --project tests\DvdaMaker.CompatibilityTests --configuration Release
 ```
 
-当前兼容测试基线为 73 项。
+当前兼容测试基线为 88 项。
 
 ## 文档
 

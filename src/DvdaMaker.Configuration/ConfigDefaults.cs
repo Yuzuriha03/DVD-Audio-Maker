@@ -29,6 +29,7 @@ public static class ConfigDefaults
             ["DVDA_MLP_EAC3TO_EXE"] = "",
             ["DVDA_MLP_SURCODE_SAMPLE_RATE"] = "48000",
             ["DVDA_MLP_SURCODE_BITS"] = "24",
+            ["DVDA_MLP_JOBS"] = "1",
             ["DVDA_MENU"] = "off",
             ["DVDA_MENU_TRACKS_PER_PAGE"] = "12",
             ["DVDA_MENU_INDEX_MIN_ALBUMS"] = "4",
@@ -43,6 +44,8 @@ public static class ConfigDefaults
             ["DVDA_FFPROBE"] = "ffprobe",
             ["DVDA_METAFLAC"] = "metaflac",
             ["DVDA_AUTHOR_SRC"] = "",
+            ["DVDA_PREPARE_CACHE"] = "on",
+            ["DVDA_RESUME"] = "on",
             ["DVDA_LOSS_ERROR_S"] = "0.05",
             ["DVDA_LOSS_WARN_S"] = "0.005",
         };

@@ -15,6 +15,26 @@ public sealed class DiscBuildExecutor(
         CancellationToken cancellationToken = default,
         bool stageForTransactionalPublication = false)
     {
+        var startedAt = Stopwatch.GetTimestamp();
+        try
+        {
+            return await BuildCoreAsync(
+                disc, publishDirectory, cancellationToken,
+                stageForTransactionalPublication).ConfigureAwait(false);
+        }
+        finally
+        {
+            log.WriteLine(
+                $"[耗时] 第 {disc.Number} 盘总耗时: {Stopwatch.GetElapsedTime(startedAt)}");
+        }
+    }
+
+    private async Task<DiscBuildResult> BuildCoreAsync(
+        DiscPlan disc,
+        string? publishDirectory,
+        CancellationToken cancellationToken,
+        bool stageForTransactionalPublication)
+    {
         var diagnostics = new List<BuildDiagnostic>();
         var tag = $"disc{disc.Number}";
         var output = Path.Combine(options.OutputRoot, tag);
@@ -32,9 +52,12 @@ public sealed class DiscBuildExecutor(
         MenuAssets? menuAssets = null;
         if (options.MenuEnabled)
         {
+            var menuStarted = Stopwatch.GetTimestamp();
             var menuPlan = MenuPlanner.Create(disc, options);
             menuAssets = await new MenuAssetBuilder(options, runner, log)
                 .BuildAsync(disc, menuPlan, cancellationToken).ConfigureAwait(false);
+            log.WriteLine(
+                $"[耗时] 第 {disc.Number} 盘菜单素材: {Stopwatch.GetElapsedTime(menuStarted)}");
             diagnostics.AddRange(menuAssets.Diagnostics);
             if (menuAssets.HasErrors)
             {
@@ -86,9 +109,12 @@ public sealed class DiscBuildExecutor(
 
         if (menuAssets is not null)
         {
+            var verifyStarted = Stopwatch.GetTimestamp();
             var menuDiagnostics = await new MenuBuildVerifier(runner, log)
                 .VerifyAsync(audioTs, temporary, menuAssets, cancellationToken)
                 .ConfigureAwait(false);
+            log.WriteLine(
+                $"[耗时] 第 {disc.Number} 盘菜单结构校验: {Stopwatch.GetElapsedTime(verifyStarted)}");
             diagnostics.AddRange(menuDiagnostics);
             if (menuDiagnostics.Any(item =>
                     item.Severity == BuildDiagnosticSeverity.Error))
@@ -160,6 +186,9 @@ public sealed class DiscBuildExecutor(
             }
         }
 
+        log.WriteLine(
+            $"[结果] 第 {disc.Number} 盘: {disc.Tracks.Count} 轨 / " +
+            $"MLP {disc.MlpBytes:N0} B / ISO {isoSize:N0} B -> {published.Path}");
         return new DiscBuildResult(disc.Number, iso, published.Path, isoSize, diagnostics);
     }
 

@@ -14,9 +14,17 @@ Console.InputEncoding = System.Text.Encoding.UTF8;
 var fixtureProcessName = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? string.Empty);
 if (fixtureProcessName.StartsWith("fake-dvda-author", StringComparison.OrdinalIgnoreCase))
 {
+    RecordFixtureCall("author");
     if (fixtureProcessName.Contains("fail", StringComparison.OrdinalIgnoreCase))
     {
         Console.Error.WriteLine("fixture author failure");
+        return 9;
+    }
+    var failDisc = Environment.GetEnvironmentVariable("DVDA_FIXTURE_FAIL_DISC");
+    if (!string.IsNullOrEmpty(failDisc) &&
+        args.Any(argument => argument.Contains(failDisc, StringComparison.OrdinalIgnoreCase)))
+    {
+        Console.Error.WriteLine($"fixture author failure for {failDisc}");
         return 9;
     }
 
@@ -34,6 +42,7 @@ if (fixtureProcessName.StartsWith("fake-dvda-author", StringComparison.OrdinalIg
 }
 if (fixtureProcessName.StartsWith("fake-mkisofs", StringComparison.OrdinalIgnoreCase))
 {
+    RecordFixtureCall("mkisofs");
     var outputIndex = Array.IndexOf(args, "-o");
     if (outputIndex < 0 || outputIndex + 1 >= args.Length)
     {
@@ -45,8 +54,66 @@ if (fixtureProcessName.StartsWith("fake-mkisofs", StringComparison.OrdinalIgnore
     Console.WriteLine("fixture ISO created");
     return 0;
 }
+if (fixtureProcessName.StartsWith("fake-magick", StringComparison.OrdinalIgnoreCase))
+{
+    RecordFixtureCall("magick");
+    if (args.Length == 0 || args[0] == "identify" || !args.Contains("null:"))
+    {
+        Console.Error.WriteLine("expected a single batch command without identify");
+        return 8;
+    }
+    for (var index = 0; index < args.Length - 1; index++)
+    {
+        if (args[index] != "-format") continue;
+        var format = args[index + 1];
+        var prefix = format.Split('%')[0];
+        var value = prefix[0] switch
+        {
+            'F' => "0.5|0.1|1234",
+            'B' => "75",
+            'T' => "116",
+            'L' => "240|80",
+            'N' => "10",
+            'H' => "20",
+            'A' => "1",
+            _ => "bad",
+        };
+        Console.WriteLine(prefix + value);
+    }
+    return 0;
+}
+if (fixtureProcessName.StartsWith("fake-ffmpeg-encode", StringComparison.OrdinalIgnoreCase))
+{
+    RecordFixtureCall("encode");
+    // 夹具进程不引用库程序集，MLP 内容由测试进程预先写好的模板文件提供。
+    var template = Environment.GetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE");
+    if (string.IsNullOrEmpty(template) || !File.Exists(template))
+    {
+        Console.Error.WriteLine("missing DVDA_MLP_FIXTURE_TEMPLATE");
+        return 3;
+    }
+    var outputPath = args[^1];
+    var parent = Path.GetDirectoryName(outputPath);
+    if (!string.IsNullOrEmpty(parent))
+    {
+        Directory.CreateDirectory(parent);
+    }
+    File.Copy(template, outputPath, overwrite: true);
+    return 0;
+}
+if (fixtureProcessName.StartsWith("fake-ffmpeg", StringComparison.OrdinalIgnoreCase))
+{
+    RecordFixtureCall("ffmpeg");
+    // DecodeValidator 从 stderr 读取 astats 的采样数；mismatch 变体用于制造采样数不吻合。
+    var samples = fixtureProcessName.Contains("mismatch", StringComparison.OrdinalIgnoreCase)
+        ? 100
+        : 48_000;
+    Console.Error.WriteLine($"Number of samples: {samples}");
+    return 0;
+}
 if (fixtureProcessName.StartsWith("fake-ffprobe", StringComparison.OrdinalIgnoreCase))
 {
+    RecordFixtureCall("ffprobe");
     var source = args.LastOrDefault() ?? string.Empty;
     if (source.Contains("broken", StringComparison.OrdinalIgnoreCase))
     {
@@ -69,8 +136,55 @@ if (fixtureProcessName.StartsWith("fake-ffprobe", StringComparison.OrdinalIgnore
         Console.WriteLine("0.000000,0.021333,4100,64");
         return 0;
     }
+    if (args.Contains("stream=sample_rate,channels,bits_per_raw_sample"))
+    {
+        // AudioParameterProbe 的应答（default=nw=1:nk=1）。
+        Console.WriteLine("48000");
+        Console.WriteLine("2");
+        Console.WriteLine("24");
+        return 0;
+    }
+    if (args.Contains("stream=sample_rate,bits_per_raw_sample,channels,duration_ts,time_base"))
+    {
+        // AudioMetadataReader 的探测应答（default=noprint_wrappers=1）。
+        Console.WriteLine("sample_rate=48000");
+        Console.WriteLine("bits_per_raw_sample=24");
+        Console.WriteLine("channels=2");
+        Console.WriteLine("duration_ts=48000");
+        Console.WriteLine("time_base=1/48000");
+        Console.WriteLine("TAG:title=Fixture Song");
+        Console.WriteLine("TAG:album=Fixture Album");
+        Console.WriteLine("TAG:track=1");
+        Console.WriteLine("TAG:date=2026");
+        return 0;
+    }
     Console.WriteLine();
     return 0;
+}
+
+static void RecordFixtureCall(string tool)
+{
+    var directory = Environment.GetEnvironmentVariable("DVDA_FIXTURE_CALL_LOG_DIR");
+    if (string.IsNullOrWhiteSpace(directory))
+    {
+        return;
+    }
+    for (var attempt = 0; attempt < 10; attempt++)
+    {
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.AppendAllText(
+                Path.Combine(directory, $"fixture-calls-{tool}.txt"),
+                "call" + Environment.NewLine);
+            return;
+        }
+        catch (IOException)
+        {
+            // 并发夹具可能同时写同一个计数文件，短暂重试即可。
+            Thread.Sleep(20);
+        }
+    }
 }
 
 if (args.Length > 0 && args[0] == "--process-fixture")
@@ -180,9 +294,27 @@ var tests = new (string Name, Action Run)[]
     ("菜单字体脚本识别与区域 face", ResolveMenuFontRules),
     ("纯 C# TTC face 提取与校验", ExtractOpenTypeCollectionFaces),
     ("菜单视觉阈值与 Python 一致", VerifyMenuVisualThresholds),
+    ("菜单批量统计解析与缺失回退", ParseBatchedMenuStatistics),
+    ("菜单批量统计单页单进程", BatchMenuProcessCalls),
     ("菜单多索引页格数与 cell 范围", VerifyMultiIndexPageLayout),
     ("AMG 菜单 cell 链损坏检测", ValidateAmgCellChainFixtures),
     ("ASVS 静图表损坏检测", ValidateAsvsFixtures),
+    ("build.cmd 参数分支依次准备并出盘", BuildScriptBranching),
+    ("build.cmd prepare 失败不进入出盘", BuildScriptStopsAfterPrepareFailure),
+    ("PCM 严格比较与 SurCode 有界零尾", ComparePcmFixtures),
+    ("工作盘空间预检估算", EstimateDiskSpaceRequirements),
+    ("准备缓存复用与源变化失效", PrepareCacheReuseAndInvalidation),
+    ("准备缓存不记录未通过校验的轨道", PrepareCacheSkipsFailedTracks),
+    ("准备缓存身份与存储规则", PrepareCacheIdentityAndStorage),
+    ("审计 PTS 流式扇区扫描", ScanPtsSectorsStreamingly),
+    ("共享 AOB 扫描保持审计与时间轴语义", SharedAobScanPreservesDiagnostics),
+    ("SurCode 新产物校验凭据失效回退", ReuseValidatedSurcodeOutput),
+    ("ffmpeg MLP 缓存凭据复用", FfmpegMlpCacheIdentity),
+    ("MLP 缓存索引存储与淘汰", MlpCacheIndexStorage),
+    ("逐盘续跑凭据规则", DiscResumeStoreRules),
+    ("出盘签名随配置与 MLP 变化", DiscSignatureChanges),
+    ("构建流水线逐盘续跑", BuildPipelineResumesDiscs),
+    ("MLP 有界并发编码等效性", FfmpegMlpParallelEncoding),
 };
 
 var failed = 0;
@@ -1610,6 +1742,1291 @@ static void RejectDuplicateMlpIndexKeys()
     }
 }
 
+static DiscPlan SpaceDisc(int number, long mlpBytes) => new(
+    number,
+    [new AlbumPlan($"Album{number}", [BuildTrack($"Track{number}", "1", "1", mlpBytes)])],
+    []);
+
+static int FixtureCallCount(string root, string tool)
+{
+    var path = Path.Combine(root, $"fixture-calls-{tool}.txt");
+    return File.Exists(path) ? File.ReadAllLines(path).Length : 0;
+}
+
+static void SetFixtureCallLogDirectory(string? directory) =>
+    Environment.SetEnvironmentVariable("DVDA_FIXTURE_CALL_LOG_DIR", directory);
+
+static void SetFixtureTemplatePath(string? path) =>
+    Environment.SetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE", path);
+
+static DvdaOptions CreatePrepareOptions(string root, string ffprobe, string ffmpeg)
+{
+    var source = Path.Combine(root, "src");
+    Directory.CreateDirectory(source);
+    var config = Path.Combine(root, "config.env");
+    File.WriteAllText(config, string.Join('\n',
+    [
+        $"DVDA_SRC={source.Replace('\\', '/')}",
+        $"DVDA_FINAL_DIR={Path.Combine(root, "final").Replace('\\', '/')}",
+        $"DVDA_BUILD_DIR={Path.Combine(root, "build").Replace('\\', '/')}",
+        $"DVDA_FFPROBE={ffprobe.Replace('\\', '/')}",
+        $"DVDA_FFMPEG={ffmpeg.Replace('\\', '/')}",
+        "DVDA_TITLE=Prepare Fixture",
+    ]));
+    return Load(config);
+}
+
+static void PrepareCacheReuseAndInvalidation()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-prepare-cache", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    SetFixtureCallLogDirectory(root);
+    try
+    {
+        var ffprobe = CreateFixtureExecutable(root, "fake-ffprobe.exe");
+        var ffmpeg = CreateFixtureExecutable(root, "fake-ffmpeg.exe");
+        var options = CreatePrepareOptions(root, ffprobe, ffmpeg);
+        var source = Path.Combine(options.SourceDirectory, "song.flac");
+        File.WriteAllBytes(source, new byte[4096]);
+
+        var first = new PreparationPipeline(options).RunAsync().GetAwaiter().GetResult();
+        Equal(1, first.CheckedTracks);
+        Equal(0, first.FailureCount);
+        Equal(1, FixtureCallCount(root, "ffprobe"));
+        Equal(1, FixtureCallCount(root, "ffmpeg"));
+        True(File.Exists(options.PrepareCachePath), "首次运行应写出准备缓存");
+
+        var second = new PreparationPipeline(options).RunAsync().GetAwaiter().GetResult();
+        Equal(0, second.FailureCount);
+        Equal(1, FixtureCallCount(root, "ffprobe"));
+        Equal(1, FixtureCallCount(root, "ffmpeg"));
+        Equal(second.Manifest.Count, first.Manifest.Count);
+        True(second.Manifest.Values.SelectMany(group => group.Files)
+                .All(file => file.Title == "Fixture Song"),
+            "复用缓存时应能还原标签");
+
+        // 同长度、同修改时间但内容变化：必须重新探测与校验。
+        var lastWrite = File.GetLastWriteTimeUtc(source);
+        File.WriteAllBytes(source, Enumerable.Repeat((byte)0xA5, 4096).ToArray());
+        File.SetLastWriteTimeUtc(source, lastWrite);
+        var third = new PreparationPipeline(options).RunAsync().GetAwaiter().GetResult();
+        Equal(0, third.FailureCount);
+        Equal(2, FixtureCallCount(root, "ffprobe"));
+        Equal(2, FixtureCallCount(root, "ffmpeg"));
+
+        // --force 必须忽略已有记录。
+        var forced = new PreparationPipeline(options)
+            .RunAsync(forceRevalidation: true).GetAwaiter().GetResult();
+        Equal(0, forced.FailureCount);
+        Equal(3, FixtureCallCount(root, "ffprobe"));
+        Equal(3, FixtureCallCount(root, "ffmpeg"));
+    }
+    finally
+    {
+        SetFixtureCallLogDirectory(null);
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void PrepareCacheSkipsFailedTracks()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-prepare-fail", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    SetFixtureCallLogDirectory(root);
+    try
+    {
+        var ffprobe = CreateFixtureExecutable(root, "fake-ffprobe.exe");
+        var ffmpeg = CreateFixtureExecutable(root, "fake-ffmpeg-mismatch.exe");
+        var options = CreatePrepareOptions(root, ffprobe, ffmpeg);
+        File.WriteAllBytes(Path.Combine(options.SourceDirectory, "song.flac"), new byte[4096]);
+
+        var first = new PreparationPipeline(options).RunAsync().GetAwaiter().GetResult();
+        True(first.FailureCount > 0, "采样数不吻合应判为失败");
+        False(File.Exists(options.ManifestPath), "失败时不得生成 manifest");
+
+        var second = new PreparationPipeline(options).RunAsync().GetAwaiter().GetResult();
+        True(second.FailureCount > 0, "失败记录不得被缓存");
+        Equal(2, FixtureCallCount(root, "ffprobe"));
+        Equal(2, FixtureCallCount(root, "ffmpeg"));
+    }
+    finally
+    {
+        SetFixtureCallLogDirectory(null);
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void PrepareCacheIdentityAndStorage()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-identity", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        var file = Path.Combine(root, "sample.bin");
+        File.WriteAllBytes(file, [1, 2, 3, 4, 5, 6, 7, 8]);
+        var identity = FileIdentityProbe.Compute(file);
+        True(identity is not null, "应能计算文件身份");
+        Equal(8L, identity!.Size);
+        True(FileIdentityProbe.Matches(file, identity), "未变化时应匹配");
+        Equal(identity.HeadHash, identity.TailHash);
+
+        File.WriteAllBytes(file, [9, 9, 9, 4, 5, 6, 7, 8]);
+        False(FileIdentityProbe.Matches(file, identity), "内容变化后必须不匹配");
+        var currentIdentity = FileIdentityProbe.Compute(file);
+        True(currentIdentity is not null, "应能重新计算文件身份");
+        True(currentIdentity!.HeadHash != identity.HeadHash,
+            "同长度不同内容应由首尾哈希陶汰");
+
+        // 缓存存储往返：补丁与修复文件身份必须保留。
+        var cachePath = Path.Combine(root, "nested", PrepareCache.FileName);
+        var patches = new[] { new AlacFramePatch(3, 32.0, 4096, 64, 4096, 100, 0b000) };
+        var entry = new PrepareCacheEntry
+        {
+            Identity = currentIdentity!,
+            Probe = new AudioProbeFacts
+            {
+                SampleRate = 48_000, Bits = 24, Channels = 2,
+                Title = "T", Album = "A", Date = "2026", Track = "1", Duration = 1.0,
+            },
+            Validation = new PrepareValidationFacts
+            {
+                SampleRate = 44_100, Bits = 24, ResampleTo = 44_100,
+                ExpectedSamples = 44_100, DecodedSamples = 44_100,
+                Patches = patches, RepairedFile = currentIdentity,
+            },
+        };
+        var cache = PrepareCache.Load(cachePath);
+        Equal(0, cache.Count);
+        cache.Record(file, entry);
+        cache.Save(cachePath);
+        True(File.Exists(cachePath), "保存应创建目录与文件");
+
+        var reloaded = PrepareCache.Load(cachePath);
+        Equal(1, reloaded.Count);
+        var roundTrip = reloaded.Match(file);
+        True(roundTrip is not null, "身份一致时应能命申缓存");
+        Equal("T", roundTrip!.Probe.Title);
+        Equal(44_100, roundTrip.Validation.ResampleTo);
+        Equal(1, roundTrip.Validation.Patches!.Count);
+        Equal(32.0, roundTrip.Validation.Patches[0].PresentationTime);
+        True(roundTrip.Validation.RepairedFile is not null, "修复文件身份应保留");
+        Equal(0, PrepareCache.Load(Path.Combine(root, "missing.json")).Count);
+
+        // 损坏文件不得抛异常，也不得返回陈旧记录。
+        var broken = Path.Combine(root, "broken.json");
+        File.WriteAllText(broken, "{ not json");
+        Equal(0, PrepareCache.Load(broken).Count);
+
+        // 复用规则：归一化参数或期望采样数不一致，以及修复文件缺失，都必须重新校验。
+        var track = Track("song.flac", 48_000, 24);
+        var reusableEntry = new PrepareCacheEntry
+        {
+            Identity = currentIdentity!,
+            Validation = new PrepareValidationFacts
+            {
+                SampleRate = 48_000, Bits = 24, ExpectedSamples = 48_000, DecodedSamples = 48_000,
+            },
+        };
+        True(PreparationPipeline.IsReusable(reusableEntry, track, 48_000),
+            "参数一致且校验通过时应可复用");
+        False(PreparationPipeline.IsReusable(reusableEntry, track, 44_100),
+            "期望采样数变化后不得复用");
+        False(PreparationPipeline.IsReusable(new PrepareCacheEntry
+        {
+            Identity = currentIdentity!,
+            Validation = new PrepareValidationFacts
+            {
+                SampleRate = 48_000, Bits = 24, ResampleTo = 44_100,
+                ExpectedSamples = 48_000, DecodedSamples = 48_000,
+            },
+        }, track, 48_000), "重采样目标变化后不得复用");
+        False(PreparationPipeline.IsReusable(new PrepareCacheEntry
+        {
+            Identity = currentIdentity!,
+            Validation = new PrepareValidationFacts
+            {
+                SampleRate = 48_000, Bits = 24, ExpectedSamples = 48_000, DecodedSamples = 48_000,
+                RepairedFile = new FileIdentity(
+                    Path.Combine(root, "missing-repaired.m4a"), 8, 0, "a", "a"),
+            },
+        }, track, 48_000), "修复文件已消失时不得复用");
+        False(PreparationPipeline.IsReusable(new PrepareCacheEntry
+        {
+            Identity = currentIdentity!,
+            Validation = new PrepareValidationFacts
+            {
+                SampleRate = 48_000, Bits = 24, ExpectedSamples = 48_000, DecodedSamples = 0,
+            },
+        }, track, 48_000), "没有采样数证据时不得复用");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void ScanPtsSectorsStreamingly()
+{
+    static byte[] Sector(long? pts)
+    {
+        var sector = new byte[2048];
+        sector[0] = 0;
+        sector[1] = 0;
+        sector[2] = 1;
+        sector[3] = 0xBA;
+        if (pts is null)
+        {
+            return sector;
+        }
+        sector[4] = 0;
+        sector[5] = 0;
+        sector[6] = 1;
+        sector[7] = 0xBD;
+        sector[11] = 0x80;
+        EncodePts(pts.Value).CopyTo(sector, 13);
+        return sector;
+    }
+
+    static List<DiscVerifier.TrackRow> Rows(params (int Title, int First)[] values) =>
+        values.Select(value => new DiscVerifier.TrackRow(1, value.Title, 1, value.First, 0, 0, 0))
+            .ToList();
+
+    static List<VerificationIssue> Scan(
+        IEnumerable<byte[]> sectors,
+        IReadOnlyList<DiscVerifier.TrackRow> rows,
+        out DiscVerifier.PtsScanResult result)
+    {
+        var issues = new List<VerificationIssue>();
+        result = DiscVerifier.ScanPtsSectors(
+            sectors.Select(sector => (ReadOnlyMemory<byte>)sector), rows, 1, issues);
+        return issues;
+    }
+
+    // 正常递增：不计问题，扇区数准确。
+    var issues = Scan(
+        [Sector(100), Sector(200), Sector(300)],
+        Rows((1, 0)),
+        out var normal);
+    Equal(0, issues.Count);
+    Equal(3, normal.SectorCount);
+    Equal(0, normal.Drops.Count);
+
+    // 轨道边界处的 PTS 下降属于预期，不计问题。
+    issues = Scan(
+        [Sector(300), Sector(100)],
+        Rows((1, 0), (2, 1)),
+        out var boundary);
+    Equal(0, issues.Count);
+    Equal(1, boundary.Drops.Count);
+    True(boundary.Drops.Contains(1), "边界下降应记录为 drop");
+
+    // 非边界的 PTS 下降必须报告。
+    issues = Scan(
+        [Sector(300), Sector(100)],
+        Rows((1, 0)),
+        out _);
+    True(issues.Count == 1, $"非边界下降应报告一次，实际 {issues.Count}");
+    True(issues.Count > 0 && issues[0].Code == "PTS_DROP_OFF_BOUNDARY",
+        $"非边界下降的代码应为 PTS_DROP_OFF_BOUNDARY，实际 {(issues.Count > 0 ? issues[0].Code : "<无>")}");
+
+    // 轨道起点缺少 PTS 下降必须报告。
+    issues = Scan(
+        [Sector(100), Sector(200), Sector(300)],
+        Rows((1, 0), (2, 1)),
+        out _);
+    True(issues.Count == 1, $"缺失重置应报告一次，实际 {issues.Count}");
+    True(issues.Count > 0 && issues[0].Code == "PTS_RESET_MISSING",
+        $"缺失重置的代码应为 PTS_RESET_MISSING，实际 {(issues.Count > 0 ? issues[0].Code : "<无>")}");
+
+    // 缺少 PTS 的扇区应立即停止解析，不再读取后续扇区。
+    var produced = 0;
+    IEnumerable<byte[]> Tracked()
+    {
+        produced++;
+        yield return Sector(100);
+        produced++;
+        yield return Sector(null);
+        produced++;
+        yield return Sector(300);
+    }
+    issues = Scan(Tracked(), Rows((1, 0)), out var stopped);
+    True(issues.Count == 1, $"缺少 PTS 应报告一次，实际 {issues.Count}");
+    True(issues.Count > 0 && issues[0].Code == "PTS_MISSING",
+        $"缺少 PTS 的代码应为 PTS_MISSING，实际 {(issues.Count > 0 ? issues[0].Code : "<无>")}");
+    Equal(2, stopped.SectorCount);
+    Equal(2, produced);
+
+    // 大批扇区：扇区数与 drop 序号在长序列中保持正确。
+    var many = Enumerable.Range(0, 9000).Select(index => Sector(index * 100L + 100)).ToArray();
+    many[5000] = Sector(0);
+    issues = Scan(many, Rows((1, 0), (2, 5000)), out var large);
+    True(issues.Count == 0, $"长序列不应报告问题，实际 {issues.Count}: " +
+        $"{(issues.Count > 0 ? issues[0].Code : string.Empty)}");
+    Equal(9000, large.SectorCount);
+    True(large.Drops.Count == 1, $"长序列应记录一次下降，实际 {large.Drops.Count}");
+    True(large.Drops.Contains(5000), "长序列中的下降扇区序号应准确");
+}
+
+static void SharedAobScanPreservesDiagnostics()
+{
+    static byte[] Sector(long? pts)
+    {
+        var sector = new byte[2048];
+        sector[0] = 0; sector[1] = 0; sector[2] = 1; sector[3] = 0xBA;
+        if (pts is not null)
+        {
+            sector[4] = 0; sector[5] = 0; sector[6] = 1; sector[7] = 0xBD;
+            sector[11] = 0x80;
+            EncodePts(pts.Value).CopyTo(sector, 13);
+        }
+        return sector;
+    }
+
+    var sectors = new[] { Sector(300), Sector(200), Sector(null), Sector(400), Sector(500) };
+    var rows = new[]
+    {
+        new DiscVerifier.TrackRow(1, 1, 1, 0, 0, 0, 0),
+        new DiscVerifier.TrackRow(1, 2, 1, 1, 0, 0, 0),
+        new DiscVerifier.TrackRow(1, 3, 1, 2, 0, 0, 0),
+    };
+    var originalIssues = new List<VerificationIssue>();
+    var original = DiscVerifier.ScanPtsSectors(
+        sectors.Select(sector => (ReadOnlyMemory<byte>)sector), rows, 1, originalIssues);
+    var observations = new DiscVerifier.AuditPtsObservation();
+    var enumerations = 0;
+    IEnumerable<ReadOnlyMemory<byte>> Chunks()
+    {
+        enumerations++;
+        yield return sectors.Take(2).SelectMany(sector => sector).ToArray();
+        yield return sectors.Skip(2).SelectMany(sector => sector).ToArray();
+    }
+    var timeline = AobPtsAnalyzer.AnalyzeChunks(Chunks(), "shared", null, observations.Observe);
+    var sharedIssues = new List<VerificationIssue>();
+    observations.AddIssues(rows, 1, sharedIssues);
+    Equal(1, enumerations);
+    Equal(3, original.SectorCount);
+    Equal(5, timeline.SectorCount);
+    True(originalIssues.SequenceEqual(sharedIssues),
+        "共享扫描应保持审计诊断代码、消息及顺序，且缺失 PTS 后继续时间轴扫描");
+    Equal(4, timeline.PtsSectorCount);
+}
+
+static DvdaOptions CreateMlpProviderOptions(string root, string ffprobe, string ffmpeg)
+{
+    Directory.CreateDirectory(Path.Combine(root, "src"));
+    var config = Path.Combine(root, "config.env");
+    File.WriteAllText(config, string.Join('\n',
+    [
+        $"DVDA_SRC={Path.Combine(root, "src").Replace('\\', '/')}",
+        $"DVDA_FINAL_DIR={Path.Combine(root, "final").Replace('\\', '/')}",
+        $"DVDA_BUILD_DIR={Path.Combine(root, "build").Replace('\\', '/')}",
+        $"DVDA_FFPROBE={ffprobe.Replace('\\', '/')}",
+        $"DVDA_FFMPEG={ffmpeg.Replace('\\', '/')}",
+        "DVDA_MLP_SOURCE=ffmpeg",
+        "DVDA_TITLE=Mlp Fixture",
+    ]));
+    return Load(config);
+}
+
+static void ReuseValidatedSurcodeOutput()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-surcode-reuse", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    SetFixtureCallLogDirectory(root);
+    try
+    {
+        var probe = CreateFixtureExecutable(root, "fake-ffprobe.exe");
+        var external = Path.Combine(root, "external");
+        var sourceRoot = Path.Combine(root, "source");
+        Directory.CreateDirectory(external);
+        Directory.CreateDirectory(sourceRoot);
+        var config = Path.Combine(root, "config.env");
+        File.WriteAllText(config, string.Join('\n',
+        [
+            $"DVDA_SRC={sourceRoot.Replace('\\', '/')}",
+            $"DVDA_FINAL_DIR={Path.Combine(root, "final").Replace('\\', '/')}",
+            $"DVDA_BUILD_DIR={Path.Combine(root, "build").Replace('\\', '/')}",
+            $"DVDA_MLP_EXTERNAL_DIR={external.Replace('\\', '/')}",
+            $"DVDA_FFPROBE={probe.Replace('\\', '/')}",
+            "DVDA_MLP_SOURCE=surcode-batch",
+        ]));
+        var options = Load(config);
+        var source = Path.Combine(sourceRoot, "song.flac");
+        var output = Path.Combine(external, "song.mlp");
+        File.WriteAllBytes(source, [1, 2, 3]);
+        File.WriteAllBytes(output, BuildValidMlpFixture());
+        var track = BuildTrack("Song", "1", "1", 0) with { SourcePath = source };
+        var provider = new ExternalMlpProvider(options, new ProcessRunner());
+        var identity = FileIdentityProbe.Compute(output)!;
+        var verified = new Dictionary<string, FileIdentity>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Path.GetFullPath(output)] = identity,
+        };
+
+        var reused = provider.AcquireAsync([track], verified).GetAwaiter().GetResult();
+        Equal(0, reused.Diagnostics.Count);
+        Equal(2, FixtureCallCount(root, "ffprobe"));
+        Equal(Path.GetFullPath(output), Path.GetFullPath(reused.Tracks[0].MlpPath));
+
+        // 修改后的文件必须回退到完整结构检查，而非信任旧凭据。
+        var changed = File.ReadAllBytes(output);
+        changed[0] = 0;
+        File.WriteAllBytes(output, changed);
+        File.SetLastWriteTimeUtc(output, new DateTime(identity.LastWriteUtcTicks, DateTimeKind.Utc));
+        var rejected = provider.AcquireAsync([track], verified).GetAwaiter().GetResult();
+        True(rejected.Diagnostics.Any(diagnostic => diagnostic.Code == "EXTERNAL_MLP_INVALID"),
+            "凭据失效后必须重新完整检查并拒绝损坏的 MLP");
+        Equal(2, FixtureCallCount(root, "ffprobe"));
+    }
+    finally
+    {
+        SetFixtureCallLogDirectory(null);
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void FfmpegMlpCacheIdentity()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-mlp-cache", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    SetFixtureCallLogDirectory(root);
+    var template = Path.Combine(root, "mlp-template.mlp");
+    File.WriteAllBytes(template, BuildValidMlpFixture());
+    SetFixtureTemplatePath(template);
+    try
+    {
+        var ffprobe = CreateFixtureExecutable(root, "fake-ffprobe.exe");
+        var ffmpeg = CreateFixtureExecutable(root, "fake-ffmpeg-encode.exe");
+        var options = CreateMlpProviderOptions(root, ffprobe, ffmpeg);
+        var source = Path.Combine(options.SourceDirectory, "song.flac");
+        File.WriteAllBytes(source, Enumerable.Repeat((byte)0x11, 4096).ToArray());
+        var mlp = Path.Combine(options.MlpDirectory, "song.mlp");
+        var track = BuildTrack("Song", "1", "1", 0) with
+        {
+            SourcePath = source,
+            MlpPath = mlp,
+            SourceSize = 4096,
+        };
+        var provider = new FfmpegMlpProvider(options, new ProcessRunner());
+
+        var first = provider.AcquireAsync([track]).GetAwaiter().GetResult();
+        Equal(0, first.CacheHits);
+        True(first.CacheRebuilt == 1, $"首次应重新编码，实际 {first.CacheRebuilt}，" +
+            $"诊断 {(first.Diagnostics.Count > 0 ? first.Diagnostics[0].Code + ": " + first.Diagnostics[0].Message : "无")}");
+        Equal(0, first.Diagnostics.Count);
+        True(FixtureCallCount(root, "encode") == 1,
+            $"应调用一次编码夹具，实际 {FixtureCallCount(root, "encode")}");
+        True(File.Exists(mlp), "首次应产出 MLP");
+        True(MlpCacheValidator.IsValid(mlp), "夹具 MLP 应能通过缓存结构校验");
+        True(File.Exists(MlpCacheIndex.PathFor(options.MlpDirectory)), "应写出 MLP 缓存索引");
+
+        var second = provider.AcquireAsync([track]).GetAwaiter().GetResult();
+        True(second.CacheHits == 1,
+            $"第二次应命中缓存，实际命中 {second.CacheHits} / 重建 {second.CacheRebuilt}");
+        Equal(0, second.CacheRebuilt);
+        True(FixtureCallCount(root, "encode") == 1, "命中缓存时不应再次编码");
+
+        // 删掉 MLP 本体后必须重新编码。
+        File.Delete(mlp);
+        var third = provider.AcquireAsync([track]).GetAwaiter().GetResult();
+        Equal(0, third.CacheHits);
+        True(third.CacheRebuilt == 1, $"MLP 丢失后应重新编码，实际 {third.CacheRebuilt}");
+        True(FixtureCallCount(root, "encode") == 2, "MLP 丢失后应再次调用编码夹具");
+
+        // 同长度、同修改时间但源内容变化：必须重新编码。
+        var lastWrite = File.GetLastWriteTimeUtc(source);
+        File.WriteAllBytes(source, Enumerable.Repeat((byte)0x22, 4096).ToArray());
+        File.SetLastWriteTimeUtc(source, lastWrite);
+        var fourth = provider.AcquireAsync([track]).GetAwaiter().GetResult();
+        Equal(0, fourth.CacheHits);
+        True(fourth.CacheRebuilt == 1, $"源内容变化后应重新编码，实际 {fourth.CacheRebuilt}");
+        True(FixtureCallCount(root, "encode") == 3, "源内容变化后应再次调用编码夹具");
+    }
+    finally
+    {
+        SetFixtureCallLogDirectory(null);
+        SetFixtureTemplatePath(null);
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void MlpCacheIndexStorage()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-mlp-index", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        var mlpDirectory = Path.Combine(root, "mlp");
+        Directory.CreateDirectory(mlpDirectory);
+        var source = Path.Combine(root, "song.flac");
+        var output = Path.Combine(mlpDirectory, "song.mlp");
+        File.WriteAllBytes(source, Enumerable.Repeat((byte)0x33, 4096).ToArray());
+        File.WriteAllBytes(output, BuildValidMlpFixture());
+
+        var sourceIdentity = FileIdentityProbe.Compute(source)!;
+        var outputIdentity = FileIdentityProbe.Compute(output)!;
+        var index = MlpCacheIndex.Load(MlpCacheIndex.PathFor(mlpDirectory));
+        Equal(0, index.Count);
+        index.Record(output, new MlpCacheEntry
+        {
+            Source = sourceIdentity,
+            Output = outputIdentity,
+            Encoder = "ffmpeg|1",
+            Bits = 24,
+            ResampleTo = null,
+            MaxInterval = MlpCacheValidator.RequiredMajorSyncInterval,
+        });
+        index.Save(MlpCacheIndex.PathFor(mlpDirectory));
+
+        var reloaded = MlpCacheIndex.Load(MlpCacheIndex.PathFor(mlpDirectory));
+        Equal(1, reloaded.Count);
+        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 24, null,
+            MlpCacheValidator.RequiredMajorSyncInterval) is not null,
+            "凭据一致时应命中");
+        True(reloaded.Match(output, sourceIdentity, "ffmpeg|2", 24, null,
+            MlpCacheValidator.RequiredMajorSyncInterval) is null,
+            "编码器身份变化时不得命中");
+        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 16, null,
+            MlpCacheValidator.RequiredMajorSyncInterval) is null,
+            "位深变化时不得命中");
+        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 24, 44_100,
+            MlpCacheValidator.RequiredMajorSyncInterval) is null,
+            "重采样目标变化时不得命中");
+        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 24, null, 4) is null,
+            "major sync 间隔变化时不得命中");
+        True(reloaded.Match(output, new FileIdentity(source, 1, 0, "a", "b"), "ffmpeg|1", 24, null,
+            MlpCacheValidator.RequiredMajorSyncInterval) is null,
+            "源身份变化时不得命中");
+
+        // 输出文件被改动后必须重新编码。
+        File.WriteAllBytes(output, Enumerable.Repeat((byte)0x44, 4096).ToArray());
+        True(reloaded.Match(output, sourceIdentity, "ffmpeg|1", 24, null,
+            MlpCacheValidator.RequiredMajorSyncInterval) is null,
+            "MLP 被改动后不得命中");
+
+        // 损坏的索引文件不得抛异常，也不得返回陈旧凭据。
+        var indexPath = MlpCacheIndex.PathFor(mlpDirectory);
+        File.WriteAllText(indexPath, "{ not json");
+        Equal(0, MlpCacheIndex.Load(indexPath).Count);
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static int CountOccurrences(string text, string value)
+{
+    var count = 0;
+    var index = 0;
+    while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+    {
+        count++;
+        index += value.Length;
+    }
+    return count;
+}
+
+static void WriteBuildManifest(
+    string path,
+    params (string Album, string Title, string Source, string Name)[] tracks)
+{
+    var directory = Path.GetDirectoryName(path);
+    if (!string.IsNullOrEmpty(directory))
+    {
+        Directory.CreateDirectory(directory);
+    }
+    var group = new ManifestGroup
+    {
+        SampleRate = 48_000,
+        Bits = 24,
+        Count = tracks.Length,
+        Files = tracks.Select((track, index) => new ManifestTrack
+        {
+            Number = index + 1,
+            Source = track.Source.Replace('\\', '/'),
+            Name = track.Name,
+            Title = track.Title,
+            Date = "2026",
+            Track = (index + 1).ToString(),
+            Album = track.Album,
+            Duration = 1,
+        }).ToArray(),
+    };
+    var manifest = new Dictionary<string, ManifestGroup> { ["group_48000_24"] = group };
+    File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(
+        manifest, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+}
+
+static void DiscResumeStoreRules()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-resume-store", Guid.NewGuid().ToString("N"));
+    var directory = Path.Combine(root, "staging");
+    Directory.CreateDirectory(directory);
+    try
+    {
+        var store = DiscResumeStore.Load(directory);
+        Equal(0, store.Count);
+
+        // 没有暂存 ISO 时记录应被忽略。
+        store.Record(1, "sig", "Disc_1.iso");
+        Equal(0, store.Count);
+
+        var isoPath = Path.Combine(directory, "Disc_1.iso");
+        File.WriteAllBytes(isoPath, [1, 2, 3, 4]);
+        store.Record(1, "sig", "Disc_1.iso");
+        Equal(1, store.Count);
+        store.Save();
+
+        var reloaded = DiscResumeStore.Load(directory);
+        Equal(1, reloaded.Count);
+        True(reloaded.TryReuse(1, "sig", "Disc_1.iso") is not null, "签名与产物一致时应可复用");
+        True(reloaded.TryReuse(1, "other", "Disc_1.iso") is null, "签名不同不得复用");
+        True(reloaded.TryReuse(2, "sig", "Disc_1.iso") is null, "无记录的盘号不得复用");
+
+        // 同长度、同时间但产物变化：不得复用。
+        var lastWrite = File.GetLastWriteTimeUtc(isoPath);
+        File.WriteAllBytes(isoPath, [9, 9, 9, 4]);
+        File.SetLastWriteTimeUtc(isoPath, lastWrite);
+        True(DiscResumeStore.Load(directory).TryReuse(1, "sig", "Disc_1.iso") is null,
+            "暂存产物变化后不得复用");
+
+        // Discard 同时清理产物与记录。
+        File.WriteAllBytes(isoPath, [1, 2, 3, 4]);
+        var third = DiscResumeStore.Load(directory);
+        third.Record(1, "sig", "Disc_1.iso");
+        third.Save();
+        var fourth = DiscResumeStore.Load(directory);
+        fourth.Discard(1, "Disc_1.iso");
+        Equal(0, fourth.Count);
+        False(File.Exists(isoPath), "Discard 应删除暂存产物");
+
+        // 损坏的续跑记录不得抛异常。
+        File.WriteAllText(
+            Path.Combine(directory, DiscResumeStore.IndexFileName), "{ broken");
+        Equal(0, DiscResumeStore.Load(directory).Count);
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void DiscSignatureChanges()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-signature", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        var mlp = Path.Combine(root, "a.mlp");
+        File.WriteAllBytes(mlp, BuildValidMlpFixture());
+        var configOne = Path.Combine(root, "one.env");
+        var configTwo = Path.Combine(root, "two.env");
+        File.WriteAllText(configOne, string.Join('\n',
+        [
+            $"DVDA_SRC={root}/src",
+            $"DVDA_FINAL_DIR={root}/final",
+            $"DVDA_BUILD_DIR={root}/build",
+            "DVDA_TITLE=Title One",
+        ]));
+        File.WriteAllText(configTwo, string.Join('\n',
+        [
+            $"DVDA_SRC={root}/src",
+            $"DVDA_FINAL_DIR={root}/final",
+            $"DVDA_BUILD_DIR={root}/build",
+            "DVDA_TITLE=Title Two",
+        ]));
+        var track = BuildTrack("Track", "1", "1", 100) with { MlpPath = mlp };
+        var disc = new DiscPlanner().Plan([track], ConfigDefaults.Dvd5Bytes, 1, 70).Discs.Single();
+        var runner = new ProcessRunner();
+
+        var first = DiscSignature.ComputeAsync(Load(configOne), disc, runner)
+            .GetAwaiter().GetResult();
+        var second = DiscSignature.ComputeAsync(Load(configOne), disc, runner)
+            .GetAwaiter().GetResult();
+        Equal(first, second);
+
+        var other = DiscSignature.ComputeAsync(Load(configTwo), disc, runner)
+            .GetAwaiter().GetResult();
+        True(!string.Equals(first, other, StringComparison.Ordinal), "标题变化应改变签名");
+
+        var lastWrite = File.GetLastWriteTimeUtc(mlp);
+        var data = File.ReadAllBytes(mlp);
+        data[100] ^= 0xFF;
+        File.WriteAllBytes(mlp, data);
+        File.SetLastWriteTimeUtc(mlp, lastWrite);
+        var changed = DiscSignature.ComputeAsync(Load(configOne), disc, runner)
+            .GetAwaiter().GetResult();
+        True(!string.Equals(first, changed, StringComparison.Ordinal),
+            "MLP 内容变化应改变签名");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void BuildPipelineResumesDiscs()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-resume-build", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    SetFixtureCallLogDirectory(root);
+    try
+    {
+        var author = CreateFixtureExecutable(root, "fake-dvda-author.exe");
+        var mkisofs = CreateFixtureExecutable(root, "fake-mkisofs.exe");
+        var ffprobe = CreateFixtureExecutable(root, "fake-ffprobe.exe");
+        var sourceRoot = Path.Combine(root, "src");
+        var externalRoot = Path.Combine(root, "external");
+        var externalMlpA = Path.Combine(externalRoot, "AlbumA", "a.mlp");
+        var externalMlpB = Path.Combine(externalRoot, "AlbumB", "b.mlp");
+        foreach (var path in new[] { externalMlpA, externalMlpB })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, BuildValidMlpFixture());
+        }
+        var sourceA = Path.Combine(sourceRoot, "AlbumA", "a.flac");
+        var sourceB = Path.Combine(sourceRoot, "AlbumB", "b.flac");
+        foreach (var path in new[] { sourceA, sourceB })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, Enumerable.Repeat((byte)0x55, 1024).ToArray());
+        }
+
+        var buildDirectory = Path.Combine(root, "build");
+        var config = Path.Combine(root, "config.env");
+        File.WriteAllText(config, string.Join('\n',
+        [
+            $"DVDA_SRC={sourceRoot.Replace('\\', '/')}",
+            $"DVDA_FINAL_DIR={Path.Combine(root, "final").Replace('\\', '/')}",
+            $"DVDA_BUILD_DIR={buildDirectory.Replace('\\', '/')}",
+            $"DVDA_AUTHOR={author.Replace('\\', '/')}",
+            $"DVDA_MKISOFS={mkisofs.Replace('\\', '/')}",
+            $"DVDA_FFPROBE={ffprobe.Replace('\\', '/')}",
+            "DVDA_MLP_SOURCE=external",
+            $"DVDA_MLP_EXTERNAL_DIR={externalRoot.Replace('\\', '/')}",
+            "DVDA_TITLE=Resume Fixture",
+            "DVDA_MENU=off",
+            "DVDA_MAX_DISCS=2",
+            // 单盘容量小于安全余量时每个专辑各占一张盘。
+            "DVDA_DISC_BYTES=1000000",
+            "DVDA_RESUME=on",
+        ]));
+        var options = Load(config);
+        WriteBuildManifest(
+            options.ManifestPath,
+            ("AlbumA", "A", sourceA, "group_48000_24/0001__a"),
+            ("AlbumB", "B", sourceB, "group_48000_24/0002__b"));
+
+        // 第一次：第 2 盘故意失败，第 1 盘的暂存 ISO 与续跑记录应保留。
+        Environment.SetEnvironmentVariable("DVDA_FIXTURE_FAIL_DISC", "disc2");
+        var first = new BuildPipeline(options).RunAsync(false).GetAwaiter().GetResult();
+        Equal(2, first.DiscResults.Count);
+        True(first.DiscResults[0].Succeeded, "第 1 盘应成功");
+        False(first.DiscResults[1].Succeeded, "第 2 盘应失败");
+        Equal(string.Empty, first.IndexPath);
+        True(FixtureCallCount(root, "author") == 2,
+            $"第一次应出盘两次，实际 {FixtureCallCount(root, "author")}");
+        var stagingDirectory = DiscResumeStore.DirectoryFor(options);
+        True(File.Exists(Path.Combine(stagingDirectory, options.IsoName(1))),
+            "失败的运行应保留第 1 盘暂存 ISO");
+        True(File.Exists(Path.Combine(stagingDirectory, DiscResumeStore.IndexFileName)),
+            "失败的运行应写出续跑记录");
+
+        // 第二次：MLP 内容变化（长度与时间不变）后签名失效，第 1 盘必须重新出盘。
+        var lastWrite = File.GetLastWriteTimeUtc(externalMlpA);
+        var mlpBytes = File.ReadAllBytes(externalMlpA);
+        mlpBytes[100] ^= 0xFF;
+        File.WriteAllBytes(externalMlpA, mlpBytes);
+        File.SetLastWriteTimeUtc(externalMlpA, lastWrite);
+        var second = new BuildPipeline(options).RunAsync(false).GetAwaiter().GetResult();
+        Equal(2, second.DiscResults.Count);
+        False(second.DiscResults[1].Succeeded, "第 2 盘仍应失败");
+        True(FixtureCallCount(root, "author") == 4,
+            $"签名失效后第 1 盘应重新出盘，实际 {FixtureCallCount(root, "author")}");
+
+        // 第三次：签名恢复一致，第 1 盘应直接复用暂存 ISO。
+        Environment.SetEnvironmentVariable("DVDA_FIXTURE_FAIL_DISC", null);
+        var third = new BuildPipeline(options).RunAsync(false).GetAwaiter().GetResult();
+        Equal(2, third.DiscResults.Count);
+        True(third.DiscResults.All(result => result.Succeeded), "第三次应全部成功");
+        Equal(options.MlpIndexPath, third.IndexPath);
+        True(FixtureCallCount(root, "author") == 5,
+            $"第三次只应为第 2 盘出盘，实际 {FixtureCallCount(root, "author")}");
+        True(CountOccurrences(File.ReadAllText(options.BuildLogPath), "[恢复] 第 1 盘") == 1,
+            "第三次应复用第 1 盘暂存 ISO");
+        True(File.Exists(Path.Combine(options.FinalDirectory, options.IsoName(1))),
+            "第 1 盘应发布到成品目录");
+        True(File.Exists(Path.Combine(options.FinalDirectory, options.IsoName(2))),
+            "第 2 盘应发布到成品目录");
+        False(Directory.Exists(stagingDirectory), "发布成功后应清理暂存目录");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("DVDA_FIXTURE_FAIL_DISC", null);
+        SetFixtureCallLogDirectory(null);
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void FfmpegMlpParallelEncoding()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-mlp-jobs", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    SetFixtureCallLogDirectory(root);
+    var template = Path.Combine(root, "mlp-template.mlp");
+    File.WriteAllBytes(template, BuildValidMlpFixture());
+    SetFixtureTemplatePath(template);
+    try
+    {
+        var ffprobe = CreateFixtureExecutable(root, "fake-ffprobe.exe");
+        var ffmpeg = CreateFixtureExecutable(root, "fake-ffmpeg-encode.exe");
+        var config = Path.Combine(root, "config.env");
+        File.WriteAllText(config, string.Join('\n',
+        [
+            $"DVDA_SRC={Path.Combine(root, "src").Replace('\\', '/')}",
+            $"DVDA_FINAL_DIR={Path.Combine(root, "final").Replace('\\', '/')}",
+            $"DVDA_BUILD_DIR={Path.Combine(root, "build").Replace('\\', '/')}",
+            $"DVDA_FFPROBE={ffprobe.Replace('\\', '/')}",
+            $"DVDA_FFMPEG={ffmpeg.Replace('\\', '/')}",
+            "DVDA_MLP_SOURCE=ffmpeg",
+            "DVDA_MLP_JOBS=4",
+        ]));
+        var options = Load(config);
+        Directory.CreateDirectory(options.SourceDirectory);
+        Equal(4, options.MlpJobs);
+
+        var tracks = new List<BuildTrack>();
+        for (var index = 1; index <= 4; index++)
+        {
+            var source = Path.Combine(options.SourceDirectory, $"song{index}.flac");
+            File.WriteAllBytes(source, Enumerable.Repeat((byte)index, 4096).ToArray());
+            tracks.Add(BuildTrack($"Song{index}", "1", index.ToString(), 0) with
+            {
+                SourcePath = source,
+                MlpPath = Path.Combine(options.MlpDirectory, $"song{index}.mlp"),
+                SourceSize = 4096,
+            });
+        }
+
+        var provider = new FfmpegMlpProvider(options, new ProcessRunner());
+        var first = provider.AcquireAsync(tracks).GetAwaiter().GetResult();
+        Equal(0, first.CacheHits);
+        True(first.CacheRebuilt == 4, $"四轨应全部编码，实际 {first.CacheRebuilt}，" +
+            $"诊断 {(first.Diagnostics.Count > 0 ? first.Diagnostics[0].Message : "无")}");
+        True(FixtureCallCount(root, "encode") == 4,
+            $"应调用四次编码夹具，实际 {FixtureCallCount(root, "encode")}");
+        foreach (var track in first.Tracks)
+        {
+            True(File.Exists(track.MlpPath), $"应产出 {track.MlpPath}");
+            True(MlpCacheValidator.IsValid(track.MlpPath), "并发产出的 MLP 结构应有效");
+        }
+
+        // 并发路径同样要能命中缓存，且结果与串行一致。
+        var second = provider.AcquireAsync(tracks).GetAwaiter().GetResult();
+        Equal(4, second.CacheHits);
+        Equal(0, second.CacheRebuilt);
+        True(FixtureCallCount(root, "encode") == 4, "命中缓存后不应再次编码");
+        SequenceEqual(
+            first.Tracks.Select(track => track.MlpSize).OrderBy(size => size),
+            second.Tracks.Select(track => track.MlpSize).OrderBy(size => size));
+    }
+    finally
+    {
+        SetFixtureCallLogDirectory(null);
+        SetFixtureTemplatePath(null);
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static byte[] BuildValidMlpFixture()
+{
+    var units = new List<byte[]>();
+    for (var index = 0; index < 16; index++)
+    {
+        units.Add(BuildMlpFixtureUnit(
+            majorSync: index % 8 == 0,
+            endOfStream: index == 15));
+    }
+    return units.SelectMany(unit => unit).ToArray();
+}
+
+static byte[] BuildMlpFixtureUnit(bool majorSync, bool endOfStream)
+{
+    const int bodySize = 250;
+    var body = new byte[bodySize];
+    for (var index = 0; index < body.Length; index++)
+    {
+        body[index] = (byte)(index & 0xFF);
+    }
+    if (endOfStream)
+    {
+        body[^4] = 0xD2;
+        body[^3] = 0x34;
+        body[^2] = 0xD2;
+        body[^1] = 0x34;
+    }
+    var majorSize = majorSync ? MlpStreamAligner.MajorSyncSize : 0;
+    var substreamLength = body.Length + 2;
+    var length = 4 + majorSize + 2 + substreamLength;
+    var data = new byte[length];
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(2, 2), 0);
+
+    if (majorSync)
+    {
+        var major = data.AsSpan(4, MlpStreamAligner.MajorSyncSize);
+        major[0] = 0xF8;
+        major[1] = 0x72;
+        major[2] = 0x6F;
+        major[5] = 0x00;
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(major[8..10], 0xB752);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(
+            major[14..16], (ushort)MlpStreamAligner.PeakBitrateRaw(48_000));
+        major[16] = 1;
+        var checksum = MlpStreamAligner.Checksum16(major, MlpStreamAligner.MajorSyncSize - 2);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(major[26..28], checksum);
+    }
+
+    var substreamOffset = 4 + majorSize;
+    var substreamHeader = (ushort)(substreamLength / 2);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(
+        data.AsSpan(substreamOffset, 2), substreamHeader);
+    body.CopyTo(data.AsSpan(substreamOffset + 2));
+
+    var lengthWords = length / 2;
+    var parity = lengthWords ^ (substreamHeader >> 8) ^ (substreamHeader & 0xFF);
+    parity ^= parity >> 8;
+    parity ^= parity >> 4;
+    parity &= 0xF;
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(
+        data.AsSpan(0, 2), (ushort)(((parity ^ 0xF) << 12) | lengthWords));
+    return data;
+}
+
+static DvdaOptions LoadSpaceOptions(
+    string buildDirectory,
+    string finalDirectory,
+    bool keepIntermediate,
+    bool menu,
+    string mlpSource)
+{
+    var directory = Path.Combine(
+        Path.GetTempPath(), "dvda-space-config", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    var config = Path.Combine(directory, "config.env");
+    File.WriteAllText(config, string.Join('\n',
+    [
+        "DVDA_SRC=D:/fixture-src",
+        $"DVDA_FINAL_DIR={finalDirectory}",
+        $"DVDA_BUILD_DIR={buildDirectory}",
+        $"DVDA_MLP_SOURCE={mlpSource}",
+        $"DVDA_KEEP_INTERMEDIATE={(keepIntermediate ? "on" : "off")}",
+        $"DVDA_MENU={(menu ? "on" : "off")}",
+    ]));
+    return Load(config);
+}
+
+static void EstimateDiskSpaceRequirements()
+{
+    var temp = Path.Combine(Path.GetTempPath(), "dvda-space", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(temp);
+    try
+    {
+        var buildDirectory = Path.Combine(temp, "build");
+        var finalSameVolume = Path.Combine(temp, "final");
+        const string finalOtherVolume = @"\\dvda-fixture\share\final";
+        var tracks = new[] { BuildTrack("Track", "1", "1", 1_000_000) };
+        var discs = new[] { SpaceDisc(1, 1_000_000), SpaceDisc(2, 2_000_000) };
+        var isoBytes = discs.Sum(disc => disc.EstimatedAobBytes);
+
+        // 同卷：中间产物与成品集合合并统计。
+        var sameVolume = DiskSpacePlanner.Estimate(
+            LoadSpaceOptions(buildDirectory, finalSameVolume, false, false, "external"),
+            tracks, discs, freeSpace: _ => 1L << 40);
+        Equal(1, sameVolume.Count);
+        Equal(2 * isoBytes, sameVolume[0].RequiredBytes);
+        True(sameVolume[0].IsSufficient == true, "空间充足不应报不足");
+        Equal(0, DiskSpacePlanner.Evaluate(sameVolume).Count);
+
+        // 跨卷：构建卷与成品卷分别统计。
+        var crossVolume = DiskSpacePlanner.Estimate(
+            LoadSpaceOptions(buildDirectory, finalOtherVolume, false, false, "external"),
+            tracks, discs, freeSpace: _ => 1L << 40);
+        Equal(2, crossVolume.Count);
+        Equal(isoBytes, crossVolume.Single(item =>
+            item.Root.Contains("dvda-fixture", StringComparison.OrdinalIgnoreCase)).RequiredBytes);
+        Equal(isoBytes, crossVolume.Single(item =>
+            item.Root.StartsWith(Path.GetPathRoot(temp)!, StringComparison.OrdinalIgnoreCase))
+            .RequiredBytes);
+
+        // 保留中间产物 + 菜单：额外一份 ISO 与固定余量。
+        var keep = DiskSpacePlanner.Estimate(
+            LoadSpaceOptions(buildDirectory, finalSameVolume, true, true, "external"),
+            tracks, discs, freeSpace: _ => 1L << 40);
+        Equal(1, keep.Count);
+        Equal(3 * isoBytes + DiskSpacePlanner.MenuSafetyBytes, keep[0].RequiredBytes);
+
+        // ffmpeg 模式且 MLP 缺失：按源大小预留编码输出。
+        var missingMlp = new[]
+        {
+            BuildTrack("Track", "1", "1", 0) with { SourceSize = 5_000_000 },
+        };
+        var encoded = DiskSpacePlanner.Estimate(
+            LoadSpaceOptions(buildDirectory, finalOtherVolume, false, false, "ffmpeg"),
+            missingMlp, discs, freeSpace: _ => 1L << 40);
+        Equal(isoBytes + 5_000_000, encoded.Single(item =>
+            item.Root.StartsWith(Path.GetPathRoot(temp)!, StringComparison.OrdinalIgnoreCase))
+            .RequiredBytes);
+
+        // 空间不足：产生警告而不是错误。
+        var tight = DiskSpacePlanner.Estimate(
+            LoadSpaceOptions(buildDirectory, finalSameVolume, false, false, "external"),
+            tracks, discs, freeSpace: _ => 1);
+        var warnings = DiskSpacePlanner.Evaluate(tight);
+        Equal(tight.Count, warnings.Count);
+        True(warnings.All(item =>
+                item.Code == "DISK_SPACE_LOW" &&
+                item.Severity == BuildDiagnosticSeverity.Warning),
+            "空间不足应只产生警告");
+        True(DiskSpacePlanner.Describe(tight).Contains("需要", StringComparison.Ordinal),
+            "空间描述应包含需求量");
+
+        // 无法得知可用空间时不得误报。
+        var unknown = DiskSpacePlanner.Estimate(
+            LoadSpaceOptions(buildDirectory, finalSameVolume, false, false, "external"),
+            tracks, discs, freeSpace: _ => null);
+        True(unknown.All(item => item.IsSufficient is null), "未知可用空间应为未知状态");
+        Equal(0, DiskSpacePlanner.Evaluate(unknown).Count);
+        True(DiskSpacePlanner.AvailableBytes(@"\\dvda-nonexistent\share\") is null,
+            "无法访问的卷应返回未知可用空间");
+
+        // 外部 MLP 模式且没有分盘计划时无需估算。
+        Equal(0, DiskSpacePlanner.Estimate(
+            LoadSpaceOptions(buildDirectory, finalSameVolume, false, false, "external"),
+            tracks, discs: null, freeSpace: _ => 1).Count);
+    }
+    finally
+    {
+        Directory.Delete(temp, recursive: true);
+    }
+}
+
+static void ComparePcmFixtures()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-pcm", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        var source = Path.Combine(root, "source.raw");
+        var same = Path.Combine(root, "same.raw");
+        var longer = Path.Combine(root, "longer.raw");
+        var shorter = Path.Combine(root, "shorter.raw");
+        var tailDiffers = Path.Combine(root, "tail.raw");
+        File.WriteAllBytes(source, [1, 2, 3, 4, 5, 6, 7, 8]);
+        File.WriteAllBytes(same, [1, 2, 3, 4, 5, 6, 7, 8]);
+        File.WriteAllBytes(longer, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        File.WriteAllBytes(shorter, [1, 2, 3, 4, 5, 6, 7]);
+        File.WriteAllBytes(tailDiffers, [1, 2, 3, 4, 5, 6, 7, 9]);
+
+        var match = PcmComparer.Compare(source, same);
+        True(match.Match, "等长且内容一致应判定一致");
+        Equal(8L, match.SourceBytes);
+        Equal(8L, match.DecodedBytes);
+        True(match.Reason is null, "一致时不应给出原因");
+
+        var extended = PcmComparer.Compare(source, longer);
+        False(extended.Match, "解码结果比源更长必须判为不一致");
+        Equal(9L, extended.DecodedBytes);
+        True(extended.Reason!.Contains("相差 1", StringComparison.Ordinal),
+            $"长度不一致应说明差值: {extended.Reason}");
+
+        // 仅显式允许完整的零采样帧；默认比较仍须等长。
+        var padded = Path.Combine(root, "padded.raw");
+        var nonzeroPadding = Path.Combine(root, "nonzero-padding.raw");
+        var excessivePadding = Path.Combine(root, "excessive-padding.raw");
+        var changedPrefix = Path.Combine(root, "changed-prefix.raw");
+        var partialFrame = Path.Combine(root, "partial-frame.raw");
+        File.WriteAllBytes(padded, [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0]);
+        File.WriteAllBytes(nonzeroPadding, [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 1, 0]);
+        File.WriteAllBytes(excessivePadding, [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0]);
+        File.WriteAllBytes(changedPrefix, [1, 2, 3, 4, 5, 6, 7, 9, 0, 0, 0, 0]);
+        File.WriteAllBytes(partialFrame, [1, 2, 3, 4, 5, 6, 7, 8, 0]);
+        False(PcmComparer.Compare(source, padded).Match, "默认必须拒绝零尾");
+        var allowed = PcmComparer.Compare(source, padded, 2, 2);
+        True(allowed.Match, "有界完整零采样帧可以接受");
+        Equal(4L, allowed.TrailingZeroBytes);
+        False(PcmComparer.Compare(source, nonzeroPadding, 2, 2).Match,
+            "非零填充不能通过");
+        False(PcmComparer.Compare(source, excessivePadding, 2, 2).Match,
+            "超出上限不能通过");
+        False(PcmComparer.Compare(source, changedPrefix, 2, 2).Match,
+            "源 PCM 内容变化不能通过");
+        False(PcmComparer.Compare(source, partialFrame, 2, 2).Match,
+            "不足完整采样帧不能通过");
+        False(PcmComparer.Compare(source, shorter, 2, 2).Match,
+            "截短不能通过宽容比较");
+
+        // 48 kHz、双声道、24-bit：实际遇到的 29 帧零尾应通过，
+        // 但恰好 1 ms（48 帧）必须拒绝。
+        var stereoSource = Path.Combine(root, "stereo-source.raw");
+        var surcodeTail = Path.Combine(root, "surcode-tail.raw");
+        var millisecondTail = Path.Combine(root, "millisecond-tail.raw");
+        var stereoSamples = new byte[] { 1, 2, 3, 4, 5, 6 };
+        File.WriteAllBytes(stereoSource, stereoSamples);
+        File.WriteAllBytes(surcodeTail, [.. stereoSamples, .. new byte[29 * 6]]);
+        File.WriteAllBytes(millisecondTail, [.. stereoSamples, .. new byte[48 * 6]]);
+        var surcodeResult = PcmComparer.Compare(stereoSource, surcodeTail, 6, 47);
+        True(surcodeResult.Match, "SurCode 29 帧零尾应通过");
+        Equal(174L, surcodeResult.TrailingZeroBytes);
+        False(PcmComparer.Compare(stereoSource, millisecondTail, 6, 47).Match,
+            "整 1 ms 的零尾不能通过");
+
+        var truncated = PcmComparer.Compare(source, shorter);
+        False(truncated.Match, "解码结果比源更短必须判为不一致");
+
+        var tail = PcmComparer.Compare(source, tailDiffers);
+        False(tail.Match, "同长但尾部不同必须判为不一致");
+        True(tail.Reason!.Contains("偏移 7", StringComparison.Ordinal),
+            $"内容不一致应报告首个不同偏移: {tail.Reason}");
+
+        // 跨越 128 KiB 缓冲边界的差异，必须定位到真实偏移。
+        var large = new byte[300 * 1024];
+        var largeCopy = (byte[])large.Clone();
+        largeCopy[200_000] = 0xFF;
+        var largeSource = Path.Combine(root, "large.raw");
+        var largeDecoded = Path.Combine(root, "large-decoded.raw");
+        File.WriteAllBytes(largeSource, large);
+        File.WriteAllBytes(largeDecoded, largeCopy);
+        var largeResult = PcmComparer.Compare(largeSource, largeDecoded);
+        False(largeResult.Match, "跨缓冲区差异必须判为不一致");
+        True(largeResult.Reason!.Contains(200_000.ToString("N0"), StringComparison.Ordinal),
+            $"跨缓冲区应报告真实偏移: {largeResult.Reason}");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void BuildScriptBranching()
+{
+    var scenarios = new (string[] Arguments, string[] Expected)[]
+    {
+        ([], ["prepare", "build"]),
+        (["--dry-run"], ["prepare", "build --dry-run"]),
+        (["--config", "{config}"], ["prepare --config", "build --config"]),
+        (["--dry-run", "--config", "{config}"],
+            ["prepare --config", "build --dry-run --config"]),
+        (["--config", "{config}", "--dry-run"],
+            ["prepare --config", "build --dry-run --config"]),
+    };
+
+    foreach (var scenario in scenarios)
+    {
+        var outcome = RunBuildScript(scenario.Arguments, stubExitCode: 0);
+        if (outcome is null)
+        {
+            return;
+        }
+        var (exitCode, calls) = outcome.Value;
+        Equal(0, exitCode);
+        Equal(scenario.Expected.Length, calls.Count);
+        for (var index = 0; index < scenario.Expected.Length; index++)
+        {
+            True(calls[index].Contains(scenario.Expected[index], StringComparison.Ordinal),
+                $"build.cmd 第 {index + 1} 次调用应包含 “{scenario.Expected[index]}”，" +
+                $"实际: {calls[index]}");
+        }
+    }
+}
+
+static void BuildScriptStopsAfterPrepareFailure()
+{
+    var outcome = RunBuildScript([], stubExitCode: 3);
+    if (outcome is null)
+    {
+        return;
+    }
+    var (exitCode, calls) = outcome.Value;
+    Equal(1, exitCode);
+    Equal(1, calls.Count);
+    True(calls[0].Contains("prepare", StringComparison.Ordinal),
+        "准备失败时只应调用 prepare");
+}
+
+static (int ExitCode, IReadOnlyList<string> Calls)? RunBuildScript(
+    IReadOnlyList<string> arguments,
+    int stubExitCode)
+{
+    const string configToken = "{config}";
+    if (!OperatingSystem.IsWindows())
+    {
+        Console.WriteLine("  (跳过: 该用例需要 Windows cmd.exe)");
+        return null;
+    }
+    var root = FindRepositoryRoot();
+    if (root is null)
+    {
+        Console.WriteLine("  (跳过: 未找到含 build.cmd 的仓库根目录)");
+        return null;
+    }
+
+    var work = Path.Combine(Path.GetTempPath(), "dvda-buildcmd", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(work);
+    try
+    {
+        var log = Path.Combine(work, "calls.txt");
+        File.WriteAllText(Path.Combine(work, "dotnet.cmd"),
+            "@echo off" + Environment.NewLine +
+            "echo %* >> \"%~dp0calls.txt\"" + Environment.NewLine +
+            $"exit /b {stubExitCode}" + Environment.NewLine);
+        var config = Path.Combine(work, "config.env");
+        File.WriteAllText(config, "DVDA_TITLE=fixture" + Environment.NewLine);
+        var effective = arguments
+            .Select(argument => argument == configToken ? config : argument)
+            .ToArray();
+
+        var request = new ProcessRequest
+        {
+            FileName = "cmd.exe",
+            Arguments = new[] { "/d", "/c", Path.Combine(root, "build.cmd") }
+                .Concat(effective).ToArray(),
+            WorkingDirectory = work,
+            Environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["PATH"] = work + Path.PathSeparator +
+                    (Environment.GetEnvironmentVariable("PATH") ?? string.Empty),
+            },
+        };
+        var result = new ProcessRunner().RunAsync(request).GetAwaiter().GetResult();
+        IReadOnlyList<string> calls = File.Exists(log)
+            ? File.ReadAllLines(log).Where(line => line.Trim().Length > 0).ToArray()
+            : [];
+        True(result.ExitCode == stubExitCode || calls.Count > 0,
+            $"build.cmd 未按预期调用 dotnet: {result.StandardError}");
+        return (result.ExitCode, calls);
+    }
+    finally
+    {
+        Directory.Delete(work, recursive: true);
+    }
+}
+
+static string? FindRepositoryRoot()
+{
+    var directory = new DirectoryInfo(AppContext.BaseDirectory);
+    while (directory is not null)
+    {
+        if (File.Exists(Path.Combine(directory.FullName, "build.cmd")) &&
+            File.Exists(Path.Combine(directory.FullName, "DVD-Audio-Maker.sln")))
+        {
+            return directory.FullName;
+        }
+        directory = directory.Parent;
+    }
+    return null;
+}
+
 static void BuildDiscEndToEnd()
 {
     var root = Path.Combine(Path.GetTempPath(), "dvda-build-e2e", Guid.NewGuid().ToString("N"));
@@ -1652,6 +3069,10 @@ static void BuildDiscEndToEnd()
             "日志应记录 mkisofs 命令");
         True(logText.Contains("1  1/1  1  0  99  0  90000  0"),
             "日志应保留 author 轨道表供审计解析");
+        True(logText.Contains("[耗时] 第 1 盘总耗时:", StringComparison.Ordinal),
+            "日志应记录按盘总耗时");
+        True(logText.Contains("[结果] 第 1 盘:", StringComparison.Ordinal),
+            "日志应记录按盘结果行");
     }
     finally
     {
@@ -2046,6 +3467,81 @@ static void VerifyMenuVisualThresholds()
         "颜色过少的首帧应判为近纯色");
     False(MenuVisualVerifier.IsFrameNearSolid(20, 1000),
         "正常菜单首帧应通过纯色检查");
+}
+
+static void ParseBatchedMenuStatistics()
+{
+    var output = "F|0.5|0.1|1234\n" +
+        "B|1|75\nT|1|116\nL|1|240|80\n" +
+        "B|2|238\nT|2|0\nL|2|150|80\n";
+    var frame = MenuVisualVerifier.ParseBatchFrameStats(output);
+    True(frame is not null && frame.Length == 3 && frame[2] == 1234,
+        "完整整帧统计应可解析");
+    var parsed = MenuVisualVerifier.ParseIndexBatchOutput(output, 2, true);
+    SequenceEqual(new[] { 2 }, parsed.Background);
+    SequenceEqual(new[] { 2 }, parsed.Thumbnail);
+    SequenceEqual(new[] { 2 }, parsed.Label);
+
+    var damaged = "B|1|75\nB|1|75\nT|1|NaN\nL|1|240|80\n";
+    parsed = MenuVisualVerifier.ParseIndexBatchOutput(damaged, 2, true);
+    SequenceEqual(new[] { 1, 2 }, parsed.Background);
+    SequenceEqual(new[] { 1, 2 }, parsed.Thumbnail);
+    SequenceEqual(new[] { 2 }, parsed.Label);
+    parsed = MenuVisualVerifier.ParseIndexBatchOutput(output, 2, false);
+    SequenceEqual(new[] { 1, 2 }, parsed.Background);
+    SequenceEqual(new[] { 1, 2 }, parsed.Thumbnail);
+    SequenceEqual(new[] { 1, 2 }, parsed.Label);
+    True(MenuVisualVerifier.ParseBatchFrameStats("F|0.5|NaN|1234\n") is null,
+        "整帧非有限数值不得通过");
+
+    var overlay = MenuBuildVerifier.ParseOverlayBatchOutput(
+        "N|10\nA|0\nH|20\n", true, true);
+    True(overlay.Normal == 10 && overlay.Highlighted == 20 && overlay.Arrow == 0,
+        "叠加图数值和箭头墨迹应正确解析");
+    overlay = MenuBuildVerifier.ParseOverlayBatchOutput("N|10\nN|10\nH|20\n", true, true);
+    True(overlay.Normal is null && overlay.Highlighted == 20 && overlay.Arrow is null,
+        "重复统计不得被信任；缺失箭头保持未知");
+    overlay = MenuBuildVerifier.ParseOverlayBatchOutput("N|10\nH|20\n", false, false);
+    True(overlay.Normal is null && overlay.Highlighted is null,
+        "失败的图像命令不得被当作有效数据");
+}
+
+static void BatchMenuProcessCalls()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-magick-batch", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    SetFixtureCallLogDirectory(root);
+    try
+    {
+        var magick = CreateFixtureExecutable(root, "fake-magick.exe");
+        var frame = Path.Combine(root, "frame with spaces.png");
+        var normal = Path.Combine(root, "impic0.png");
+        var highlighted = Path.Combine(root, "hlpic0.png");
+        File.WriteAllBytes(frame, [1]);
+        File.WriteAllBytes(normal, [1]);
+        File.WriteAllBytes(highlighted, [1]);
+
+        var visual = new MenuVisualVerifier(new ProcessRunner());
+        var batch = visual.ReadIndexPageBatchAsync(magick, frame, 12, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        True(batch is not null, "索引页批量命令应返回整帧与逐格结果");
+        Equal(1, FixtureCallCount(root, "magick"));
+        Equal(1234d, batch!.FrameStats[2]);
+        var parsed = MenuVisualVerifier.ParseIndexBatchOutput(batch.Output, 12, true);
+        Equal(0, parsed.Background.Count + parsed.Thumbnail.Count + parsed.Label.Count);
+
+        var overlay = new MenuBuildVerifier(new ProcessRunner())
+            .ReadOverlayBatchAsync(magick, normal, highlighted, true, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        True(overlay.Normal == 10 && overlay.Highlighted == 20 && overlay.Arrow == 1,
+            "叠加图批量命令应返回两层及箭头区域数值");
+        Equal(2, FixtureCallCount(root, "magick"));
+    }
+    finally
+    {
+        SetFixtureCallLogDirectory(null);
+        Directory.Delete(root, recursive: true);
+    }
 }
 
 static void VerifyMultiIndexPageLayout()

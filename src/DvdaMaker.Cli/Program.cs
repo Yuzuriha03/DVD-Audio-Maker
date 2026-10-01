@@ -322,16 +322,17 @@ if (command == "iso")
 
 if (command == "build")
 {
-    var unknown = arguments.Where(argument => argument != "--dry-run").ToArray();
+    var unknown = arguments.Where(argument => argument is not ("--dry-run" or "--no-resume")).ToArray();
     if (unknown.Length > 0)
     {
         Console.Error.WriteLine($"[错误] build 未知参数: {unknown[0]}");
         return 2;
     }
     var dryRun = arguments.Contains("--dry-run");
+    var noResume = arguments.Contains("--no-resume");
     try
     {
-        var result = await new BuildPipeline(options).RunAsync(dryRun);
+        var result = await new BuildPipeline(options).RunAsync(dryRun, noResume);
         BuildPlanService.Print(result.Plan, options, Console.Out);
         if (result.IndexPath.Length > 0)
         {
@@ -548,6 +549,9 @@ if (command == "verify")
         var pipeline = new VerificationPipeline(options);
         var failed = false;
         var unavailable = false;
+        var sharedTimeline = mode == "all"
+            ? pipeline.VerifyTimelineWithAuditObservations()
+            : default;
 
         if (mode is "all" or "capacity")
         {
@@ -575,7 +579,9 @@ if (command == "verify")
                     options.FinalDirectory,
                     log ?? options.BuildLogPath,
                     manifest,
-                    isoPrefix: options.IsoPrefix);
+                    allowLogFallback: true,
+                    isoPrefix: options.IsoPrefix,
+                    observations: mode == "all" ? sharedTimeline.Observations : null);
             foreach (var result in results)
             {
                 Console.WriteLine($"=== {Path.GetFileName(result.IsoPath)}: {result.TrackCount} 轨 ===");
@@ -612,16 +618,19 @@ if (command == "verify")
         if (mode is "all" or "timeline")
         {
             Console.WriteLine("=================== 时间轴校验（PTS） ===================");
-            var result = pipeline.VerifyTimeline();
+            var result = mode == "all" ? sharedTimeline.Timeline : pipeline.VerifyTimeline();
             PrintIssues(result.Issues, result.Unavailable, ref failed, ref unavailable);
             if (result.Succeeded) Console.WriteLine("[OK] 全部盘、全部音频组 PTS 时间轴通过");
         }
         if (mode is "all" or "lossless")
         {
-            Console.WriteLine("=================== MLP 无损验证 ===================");
+            Console.WriteLine("=================== MLP 无损验证（抽样：第 1 盘 / 组 1 / 第 1 轨）===================");
             var result = await pipeline.VerifyLosslessAsync();
             PrintIssues(result.Issues, result.Unavailable, ref failed, ref unavailable);
-            if (result.Succeeded) Console.WriteLine("[OK] 源 PCM 与成品 MLP 校验通过");
+            if (result.Succeeded)
+            {
+                Console.WriteLine("[OK] 首轨抽样无损校验通过（源 PCM 逐字节比对；SurCode 仅容许不足 1 ms 的完整零采样帧尾部填充；成品 MLP 字节比对；非全盘逐轨）");
+            }
         }
         if (mode == "all") return failed ? 1 : unavailable ? 2 : 0;
         return failed ? 1 : unavailable ? 2 : 0;
@@ -719,6 +728,7 @@ if (command is "quick-check" or "audit")
 
 if (command == "prepare")
 {
+    var force = arguments.Remove("--force");
     if (arguments.Count > 0)
     {
         Console.Error.WriteLine($"[错误] prepare 未知参数: {arguments[0]}");
@@ -738,7 +748,11 @@ if (command == "prepare")
 
     try
     {
-        var result = await new PreparationPipeline(options).RunAsync();
+        if (force)
+        {
+            Console.WriteLine("[缓存] --force: 忽略已有校验记录，全部重新探测与解码校验。");
+        }
+        var result = await new PreparationPipeline(options).RunAsync(force);
         Console.WriteLine();
         Console.WriteLine(
             $"已校验 {result.CheckedTracks} 首；失败 {result.FailureCount} 首，" +
