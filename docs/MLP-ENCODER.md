@@ -1,4 +1,4 @@
-# MLP 编码核心 MLP 编码（2026-10-01）
+# MLP 编码核心 MLP 编码（2026-10-02）
 
 ## 当前调用链
 
@@ -57,3 +57,13 @@ dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release -- --mlpencod
 ## GUI / x64 DLL 接入
 
 GUI 的目录和参数控件替代手工编辑配置；旧 env 可以导入，CLI 仍可读取。GUI 直接调用同一业务流水线。DLL 接入后的独立回归结果记录在 gui-dll-validation.json；它与较早的 EXE 接入记录分别保存。
+
+## 超大 AU 无损回退（2026-10-02）
+
+MLP 编码核心现在在提交每个重启区间前检查 AU 大小。正常编码计划没有超过既有 1536 字节上限时，完整输出保持原样；只有超限区间才改用不带预测滤波器的无损编码，保留实际 PCM、可逆矩阵、声道顺序、AU 数量和显式元数据。回退仍须通过原有大小与 FIFO 检查，没有降位深、降采样或输出补丁。
+
+本次 88.2 kHz / 24 位 / 六声道高噪声样本的超限块从 1582 字节降到 1526 字节，FFmpeg、原版 VFY 与编码器版 VFY 都确认 PCM 完整还原。198 个 PCM 测试全部通过，197 个原来成功的输出字节不变；78 组原版对照共 95,138,694 字节仍逐字节一致。具体实现、边界与验证记录见 [修复说明](MLP-OVERSIZE-FIX.md)。
+
+新增回归入口（需要 FFmpeg）：
+
+    dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release -- --oversized-au-integration

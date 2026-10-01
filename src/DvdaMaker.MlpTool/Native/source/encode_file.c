@@ -41,14 +41,72 @@ static int put_word(FILE *file, unsigned word)
 #endif
 typedef struct planned_au {
     mlp_parameters initial,main,previous;
-    int32_t residual[960];uint8_t bypass[160];
+    int32_t residual[960],unpredicted[960];uint8_t bypass[160];
     unsigned count,bypass_bits,single_restart,end_markers,stamp;
 } planned_au;
 typedef struct interval_output {
     planned_au au[128];unsigned aus;
     unsigned maximum_lsbs;
     mlp_restart restart;
+    const char *failure;
 } interval_output;
+static int serialize_planned(mlp_bits *writer,const interval_output *pending,
+    unsigned au,const mlp_format *format)
+{
+    const planned_au *p=pending->au+au;mlp_substream stream={0};
+    stream.restart=au==0?&pending->restart:NULL;stream.initial=&p->initial;
+    stream.main=&p->main;stream.previous=&p->previous;stream.residual=p->residual;
+    stream.stride=format->channels;stream.count=p->count;stream.primary=1;
+    stream.end_markers=p->end_markers;stream.single_restart=p->single_restart;
+    stream.bypass=p->bypass;stream.bypass_bits=p->bypass_bits;
+    return mlp_substream_put(writer,&stream);
+}
+/* Check the entire restart interval before committing bytes or timing state.
+ * The normal plan is retained byte-for-byte whenever it fits. */
+static int interval_fits(interval_output *pending,const mlp_format *format)
+{
+    unsigned au;
+    pending->restart.maximum_lsbs=pending->maximum_lsbs;
+    for(au=0;au<pending->aus;++au) {
+        uint32_t payload[2048];mlp_bits writer;
+        mlp_bits_init(&writer,payload,2048);
+        if(serialize_planned(&writer,pending,au,format)) return -1;
+        if(writer.count+(au==0?17u:3u)>0x300u) return 0;
+    }
+    return 1;
+}
+/* An unpredicted restart interval avoids large FIR/IIR parameter overhead.
+ * Saved values are the exact reversible-matrix PCM divided by its existing
+ * QSS. Keep matrix/bypass, shifts, AU boundaries, checks and metadata intact. */
+static int unpredicted_interval(interval_output *pending,const mlp_format *format)
+{
+    mlp_parameters previous=pending->au[0].previous;unsigned au,ch,i;
+    pending->maximum_lsbs=0;
+    for(au=0;au<pending->aus;++au) {
+        planned_au *p=pending->au+au;unsigned first=au==0 && !p->single_restart?8u:0u;
+        p->previous=previous;
+        memset(p->main.a,0,sizeof(p->main.a));memset(p->main.b,0,sizeof(p->main.b));
+        memset(p->main.state,0,sizeof(p->main.state));
+        memset(p->initial.a,0,sizeof(p->initial.a));memset(p->initial.b,0,sizeof(p->initial.b));
+        memset(p->initial.state,0,sizeof(p->initial.state));
+        memcpy(p->residual,p->unpredicted,p->count*format->channels*sizeof(*p->residual));
+        for(ch=0;ch<format->channels;++ch) {
+            int32_t mono[160];unsigned qss=p->main.qss[ch];
+            int limit=32-((ch==0 || ch==format->channels-1)?(int)p->bypass_bits:0);
+            for(i=0;i<p->count;++i) mono[i]=p->unpredicted[i*format->channels+ch];
+            p->main.a[ch].precision=p->initial.a[ch].precision=8;
+            if(first && mlp_cost_select(mono,first,qss,&previous.coding[ch],1,limit,&p->initial.coding[ch])) return 0;
+            if(mlp_cost_select(mono+first,p->count-first,qss,first?&p->initial.coding[ch]:&previous.coding[ch],
+                0,limit,&p->main.coding[ch])) return 0;
+            if((unsigned)p->main.coding[ch].total_width>pending->maximum_lsbs)
+                pending->maximum_lsbs=(unsigned)p->main.coding[ch].total_width;
+            if(first && (unsigned)p->initial.coding[ch].total_width>pending->maximum_lsbs)
+                pending->maximum_lsbs=(unsigned)p->initial.coding[ch].total_width;
+        }
+        previous=p->main;
+    }
+    return 1;
+}
 #ifndef MLP_ENCODER_LIBRARY
 static int emit_words(void *opaque,const uint32_t *words,size_t count)
 {
@@ -60,22 +118,23 @@ static int emit_words(void *opaque,const uint32_t *words,size_t count)
 static int flush_interval(mlp_output_queue *queue,interval_output *pending,
     const mlp_format *format,mlp_rate_state *rate,uint64_t *words_total)
 {
-    unsigned au;
+    unsigned au;int fits;
     if (!pending->aus) return 1;
-    pending->restart.maximum_lsbs = pending->maximum_lsbs;
+    fits=interval_fits(pending,format);
+    if(fits==0) {
+        if(!unpredicted_interval(pending,format)) { pending->failure="Cannot build lossless oversized-AU fallback";return 0; }
+        fits=interval_fits(pending,format);
+    }
+    if(fits!=1) { pending->failure=fits==0?"Access unit too large after lossless fallback (1536-byte limit)":
+        "Cannot serialize lossless access unit";return 0; }
     /* Match 10008510: all interval costs/widths are known before
      * 1000d9a0 serializes any substream. No header/checksum backpatch. */
     for(au=0;au<pending->aus;++au) {
-        planned_au *p=pending->au+au;mlp_substream stream={0};mlp_bits writer;
+        planned_au *p=pending->au+au;mlp_bits writer;
         uint32_t payload[2048],words[2065],flags=0;uint16_t major[14],arrival;
         unsigned is_restart=au==0,length,directory,parity,i;size_t position=0;
-        stream.restart=is_restart?&pending->restart:NULL;stream.initial=&p->initial;
-        stream.main=&p->main;stream.previous=&p->previous;stream.residual=p->residual;
-        stream.stride=format->channels;stream.count=p->count;stream.primary=1;
-        stream.end_markers=p->end_markers;stream.single_restart=p->single_restart;
-        stream.bypass=p->bypass;stream.bypass_bits=p->bypass_bits;
         mlp_bits_init(&writer,payload,2048);
-        if(mlp_substream_put(&writer,&stream)) return 0;
+        if(serialize_planned(&writer,pending,au,format)) return 0;
         length=(is_restart?17:3)+(unsigned)writer.count;
         {
             int32_t next=rate->arrival;
@@ -83,7 +142,10 @@ static int flush_interval(mlp_output_queue *queue,interval_output *pending,
             if(next>(int32_t)rate->decode+0x4000) next-=0x10000;
             if(next<earliest) rate->arrival=(uint16_t)earliest;
         }
-        if(mlp_rate_update(rate,p->count,length,format->rate_field,&flags,&arrival) || (flags&0x2000)) return 0;
+        if(mlp_rate_update(rate,p->count,length,format->rate_field,&flags,&arrival) || (flags&0x2000)) {
+            pending->failure=(flags&0x2000)?"Access unit too large (1536-byte limit)":
+                "MLP FIFO rate limit exceeded; input cannot be encoded at the required delivery rate";return 0;
+        }
         directory=(is_restart?0x2000:0x6000)|(unsigned)writer.count|(p->stamp<<12);
         parity=mlp_au_parity(length,arrival,&directory,1);
         words[position++]=parity<<12|length;words[position++]=arrival;
@@ -233,7 +295,7 @@ static int encode(mlp_pcm *in, FILE *out, unsigned restart_interval, unsigned cy
         }
     }
     while (frames < in->frames) {
-        int32_t pcm[960], residual[960];
+        int32_t pcm[960], residual[960],unpredicted[960];
         mlp_parameters p = base, initial = base;
         mlp_restart restart = {0};
         mlp_substream stream = {0};
@@ -317,7 +379,10 @@ static int encode(mlp_pcm *in, FILE *out, unsigned restart_interval, unsigned cy
             int rc = MLP_PREDICT_OK;
             int searched = matrix && matrix->joint_search && matrix->search_ready[ch] &&
                 (!is_restart || first) && !((count-first)&1);
-            for (i = 0; i < count; ++i) input[i] = pcm[i*channels+ch];
+            for (i = 0; i < count; ++i) {
+                input[i] = pcm[i*channels+ch];
+                unpredicted[i*channels+ch]=input[i]/(int32_t)(1u<<qss);
+            }
             p.qss[ch] = initial.qss[ch] = qss;
             if (!is_restart && qss != previous.qss[ch]) ++qss_changes;
             for (i = 0; i < first; ++i) {
@@ -388,6 +453,7 @@ static int encode(mlp_pcm *in, FILE *out, unsigned restart_interval, unsigned cy
             planned->count=(unsigned)count;planned->single_restart=is_restart && !first;
             planned->end_markers=frames+count==in->frames;planned->bypass_bits=stream.bypass_bits;
             memcpy(planned->residual,residual,count*channels*sizeof(*residual));
+            memcpy(planned->unpredicted,unpredicted,count*channels*sizeof(*unpredicted));
             if(stream.bypass_bits) memcpy(planned->bypass,stream.bypass,count);
             planned->stamp=0;if(stamp && !mlp_stamp_next(stamp,&planned->stamp)) return 0;
             if(is_restart) pending->restart=restart;
@@ -482,7 +548,7 @@ static int encode_stream_common(const mlp_encoder_config *c,
 {
     mlp_pcm pcm={0};mlp_stamp_state stamp={0};unsigned interval;
     matrix_interval *matrix=NULL;interval_output *pending=NULL;mlp_output_queue *queue=NULL;
-    host_stream host={read,write,input,output,result,0};int ok=0;
+    host_stream host={read,write,input,output,result,0};int ok=0;const char *failure=NULL;
     if(!result) return MLP_ENCODER_INVALID;
     memset(result,0,sizeof(*result));result->status=MLP_ENCODER_INVALID;
     if(!c || c->struct_size!=sizeof(*c) || c->abi_version!=MLP_ENCODER_ABI_VERSION ||
@@ -512,8 +578,10 @@ static int encode_stream_common(const mlp_encoder_config *c,
     if(ok) result->encoded_frames=pcm.frames;
     else if(result->status==MLP_ENCODER_OK) result->status=pcm.error[0]?MLP_ENCODER_INPUT:MLP_ENCODER_FAILED;
 done:
+    if(pending) failure=pending->failure;
     mlp_output_queue_dispose(queue);free(queue);free(pending);free(matrix);
     if(result->status) snprintf(result->error,sizeof(result->error),"%s",pcm.error[0]?pcm.error:
+        failure?failure:
         result->status==MLP_ENCODER_MEMORY?"Encoder allocation failed":
         result->status==MLP_ENCODER_OUTPUT?"Host output callback failed; discard partial output":
         "Encoding failed; discard partial output");
