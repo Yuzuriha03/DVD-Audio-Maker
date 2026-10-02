@@ -1,9 +1,11 @@
+using DvdaMaker.Localization;
+
 namespace DvdaMaker.Desktop;
 
 internal enum SettingKind { Text, Folder, File, Boolean, Number, Choice, Capacity }
 internal sealed record SettingChoice(string Value, string Label)
 {
-    public override string ToString() => Label;
+    public override string ToString() => L.T(Label);
 }
 internal sealed record SettingDefinition(string Key, string Label, string Group, SettingKind Kind,
     string Help = "", string[]? Choices = null, decimal Minimum = 0, decimal Maximum = 10000000000, bool Advanced = false)

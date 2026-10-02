@@ -1,4 +1,5 @@
 using DvdaMaker.Configuration;
+using DvdaMaker.Localization;
 
 namespace DvdaMaker.Desktop;
 
@@ -9,6 +10,10 @@ internal static class Program
     {
         try
         {
+            var arguments = args.ToList();
+            var selectedLanguage = L.TakeLanguage(arguments) ?? Environment.GetEnvironmentVariable("DVDA_LANGUAGE");
+            L.SetLanguage(selectedLanguage);
+            args = arguments.ToArray();
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             ApplicationConfiguration.Initialize();
             string? config = null;
@@ -17,7 +22,7 @@ internal static class Program
             {
                 if (args[i] == "--config" && i + 1 < args.Length) config = args[++i];
                 else if (args[i] == "--smoke-test") smoke = true;
-                else throw new ArgumentException("用法：DVD-Audio-Maker [--config 配置.env或.json]");
+                else throw new ArgumentException("Usage: DVD-Audio-Maker [--config settings.env|profile.json] [--language auto|en|zh-CN]");
             }
             var settings = ProjectSettings.Defaults();
             var origin = "新建配置";
@@ -30,9 +35,16 @@ internal static class Program
                 origin = path;
             }
             settings.ApplyBundledToolDefaults(AppContext.BaseDirectory);
-            using var form = new MainForm(settings, origin, smoke);
-            Application.Run(form);
-            return form.SmokeExitCode;
+            L.SetLanguage(selectedLanguage ?? settings.Language);
+            while (true)
+            {
+                using var form = new MainForm(settings, origin, smoke);
+                Application.Run(form);
+                if (form.RequestedLanguage is null) return form.SmokeExitCode;
+                settings = form.CurrentSettings;
+                origin = form.ProfileOrigin;
+                L.SetLanguage(form.RequestedLanguage);
+            }
         }
         catch (Exception exception)
         {
@@ -44,12 +56,12 @@ internal static class Program
                 Directory.CreateDirectory(directory);
                 var path = Path.Combine(directory, $"startup-{DateTime.Now:yyyyMMdd-HHmmss}.log");
                 File.WriteAllText(path, exception.ToString());
-                detail = "\n\n详细错误记录：" + path;
+                detail = L.T("\n\n详细错误记录：" + path);
             }
             catch (Exception) { /* Preserve the original startup failure if logging is unavailable. */ }
             if (!args.Contains("--smoke-test"))
-                MessageBox.Show("程序暂时无法打开，请查看下方原因。\n\n" + exception.Message + detail,
-                    "无法打开 DVD-Audio Maker", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(L.T("程序暂时无法打开，请查看下方原因。\n\n") + L.T(exception.Message) + detail,
+                    L.T("无法打开 DVD-Audio Maker"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }

@@ -1,5 +1,7 @@
 # FFmpeg 音源预处理迁移（2026-10-02）
 
+[简体中文](FFMPEG-PCM-MIGRATION.md) | [English](FFMPEG-PCM-MIGRATION.en.md)
+
 ## 目标与范围
 
 将 surcode-batch 的音源解码、重采样和目标位深准备统一交给 DVDA_FFMPEG。MLP 仍由现有 Windows x64 进程内MLP 编码核心 DLL 编码；不修改原生编码算法，不恢复 FFmpeg 的 MLP 编码分支。

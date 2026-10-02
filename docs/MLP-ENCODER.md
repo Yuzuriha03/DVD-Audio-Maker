@@ -1,5 +1,7 @@
 # MLP 编码核心 MLP 编码（2026-10-02）
 
+[简体中文](MLP-ENCODER.md) | [English](MLP-ENCODER.en.md)
+
 ## 当前调用链
 
 `surcode-batch`（也接受 `batch-surcode`）现在调用项目内嵌的MLP 编码核心：

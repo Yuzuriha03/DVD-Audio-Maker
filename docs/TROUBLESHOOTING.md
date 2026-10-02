@@ -1,4 +1,8 @@
 > 2026-10-01 更新：FFmpeg MLP 编码及原版 SurCode 自动化已由MLP 编码核心替代；
+
+[简体中文](TROUBLESHOOTING.md) | [English](TROUBLESHOOTING.en.md)
+
+> 历史工程记录：本文保留当时的实验、假设和验证结果，部分结论已被后续实验修正。已禁用的方案不是当前配置建议；当前支持的流程请参阅[项目说明](../README.md)。
 > 下文相关编码/补丁过程属于历史排障记录。当前流程见 MLP-ENCODER.md。
 
 # 故障排查记录
@@ -5166,7 +5170,7 @@ git checkout -- docs/TROUBLESHOOTING.md
 同一台机器、同一个会话里：
 
 ```
-（早先）git push origin main   →  8e3f379..e1c821b  main -> main     成功
+（早先）git push origin main   →  2bd95f9..a5e9833  main -> main     成功
 （稍后）git push origin main   →  Failed to connect to github.com:443 after 21079 ms
         Test-NetConnection github.com -Port 443   →   False
 ```

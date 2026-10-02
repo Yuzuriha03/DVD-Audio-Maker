@@ -246,6 +246,14 @@ exit /b %ERRORLEVEL%
     {
         var candidates = new Dictionary<string, string[]>
         {
+            ["README.en.md"] =
+            [
+                Path.Combine(repository, "tools", "win-build", "docs", "README.en.md"),
+            ],
+            ["THIRD-PARTY.en.md"] =
+            [
+                Path.Combine(repository, "tools", "win-build", "docs", "THIRD-PARTY.en.md"),
+            ],
             ["README.md"] =
             [
                 Path.Combine(repository, "tools", "win-build", "docs", "README.md"),

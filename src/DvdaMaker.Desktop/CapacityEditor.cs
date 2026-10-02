@@ -1,3 +1,4 @@
+using DvdaMaker.Localization;
 using System.Globalization;
 
 namespace DvdaMaker.Desktop;
@@ -10,9 +11,10 @@ internal sealed class CapacityEditor : FlowLayoutPanel
     public CapacityEditor()
     {
         AutoSize = true; WrapContents = true; Margin = Padding.Empty;
-        _choice.Items.AddRange(["DVD5 · 标准单层", "DVD9 · 双层", "自定义容量（字节）"]);
+        _choice.Items.AddRange([L.T("DVD5 · 标准单层"), L.T("DVD9 · 双层"), L.T("自定义容量（字节）")]);
         _choice.SelectedIndexChanged += (_, _) => { _custom.Visible = _choice.SelectedIndex == 2; _defaultValue = "0"; };
         Controls.Add(_choice); Controls.Add(_custom); _choice.SelectedIndex = 0;
+        HandleCreated += (_, _) => _choice.Width = _choice.Items.Cast<string>().Max(item => TextRenderer.MeasureText(item, _choice.Font).Width) + SystemInformation.VerticalScrollBarWidth + 16;
     }
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public string Value

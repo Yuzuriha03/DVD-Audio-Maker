@@ -1,14 +1,28 @@
 # Windows x64 GUI 发布包
 
+[简体中文](README.md) | [English](README.en.md)
+
+
+## 界面与日志语言
+
+右上角可切换“中文 / English”，界面和任务日志随之切换。选择会随 JSON 方案和日常设置保存；首次启动按 Windows 界面语言自动选择。切换语言不改变路径、曲目标签、配置值或编码数据。任务执行时暂时禁用语言切换。
+
+GUI 与 CLI 均接受 `--language en`、`--language zh-CN` 或 `--language auto`。也可设置 `DVDA_LANGUAGE`。命令行参数优先于该环境变量；GUI 随后使用保存的语言偏好，未设置时跟随系统。CLI 的 `--shell` / `--shell-all` 输出保持机器可读，不翻译配置值。
+
+```bat
+DVD-Audio-Maker.exe --language en
+dvda.cmd config --language en
+```
+
 双击根目录 `DVD-Audio-Maker.exe` 启动图形界面；无参数运行 `dvda.cmd` 也启动 GUI。带命令参数时继续执行 CLI。
 
-配置通过界面编辑并自动保存在用户目录；“导入 config.env”保留读取旧配置的能力，“打开方案 / 保存方案”处理 JSON 配置。首次没有 GUI 设置时读取旁边的旧 env。MLP 编码使用进程内原生 x64 DLL，不需要编码 EXE；eac3to、FFmpeg 解码与制盘工具仍保留。
+配置通过界面编辑并自动保存在用户目录；“导入 config.env”保留读取旧配置的能力，“打开方案 / 保存方案”处理 JSON 配置。首次没有 GUI 设置时读取旁边的旧 env。MLP 编码使用进程内原生 x64 DLL，不需要编码 EXE；FFmpeg 音源准备、解码与制盘工具仍保留；不再需要 eac3to。
 
 “预演制作”执行音源准备和 MLP 编码但不创建 ISO；“开始制作”完成出盘。“验证成品”的 PCM 无损检查沿用首轨抽样范围。任务可取消，日志可保存。
 
 界面中的“更多设置”展开较少使用的参数。光盘容量可选 DVD5 / DVD9 / 自定义，采样率和编码方式显示为易读名称。
 
-日志默认显示中文任务摘要；可切换详细日志、只看提醒、暂停实时更新、复制内容和导出完整任务日志。拖动中间分隔条可以调整日志区高度。完整日志自动写入 `%LOCALAPPDATA%/DVD-Audio-Maker/logs`，包含工具原始诊断信息；窗口仅保留最近记录。
+日志默认按所选界面语言显示任务摘要；可切换详细日志、只看提醒、暂停实时更新、复制内容和导出完整任务日志。拖动中间分隔条可以调整日志区高度。完整日志自动写入 `%LOCALAPPDATA%/DVD-Audio-Maker/logs`，包含工具原始诊断信息；窗口仅保留最近记录。
 
 # DVD-Audio Maker for Windows
 
@@ -20,7 +34,7 @@ GUI 和 CLI 均内嵌原生 x64 MLP DLL，发布包同时包含 `dvda-author`、
 
 FFmpeg、FFprobe 和 Metaflac 需位于 `PATH`，也可以在 `config.env` 中填写完整路径。
 
-FFmpeg 仅用于转换、解码和校验。批量编码需配置 eac3to，无需原版 SurCode。
+FFmpeg 仅用于转换、解码和校验。批量编码使用 FFmpeg 准备 PCM，再由内嵌 DLL 编码，无需 eac3to 或原版 SurCode。
 
 ## 旧配置与 CLI
 

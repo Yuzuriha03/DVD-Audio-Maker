@@ -1,3 +1,4 @@
+using DvdaMaker.Localization;
 using DvdaMaker.Building;
 using DvdaMaker.Configuration;
 using DvdaMaker.Formats.Iso9660;
@@ -9,6 +10,9 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 Console.InputEncoding = System.Text.Encoding.UTF8;
 
 var arguments = args.ToList();
+try { L.SetLanguage(L.TakeLanguage(arguments) ?? Environment.GetEnvironmentVariable("DVDA_LANGUAGE")); }
+catch (ArgumentException exception) { Console.Error.WriteLine(exception.Message); return 2; }
+if (!arguments.Contains("--shell") && !arguments.Contains("--shell-all")) L.LocalizeConsole();
 var command = arguments.Count > 0 && !arguments[0].StartsWith("--", StringComparison.Ordinal)
     ? arguments[0]
     : "config";
@@ -779,7 +783,7 @@ if (command == "prepare")
 
 if (command != "config")
 {
-    Console.Error.WriteLine("用法: dvda [config|prepare|plan|build|convert|verify|quick-check|audit|aob-pts|mlp|alac|iso] [--config PATH]");
+    Console.Error.WriteLine(L.T("用法: dvda [config|prepare|plan|build|convert|verify|quick-check|audit|aob-pts|mlp|alac|iso] [--config PATH]") + " [--language auto|en|zh-CN]");
     return 2;
 }
 
@@ -865,7 +869,7 @@ static void PrintConfiguration(DvdaOptions options)
         (options.HasEnvironmentOverrides(keys) ? "（当前有环境变量覆盖）" : string.Empty));
     foreach (var key in keys)
     {
-        Console.WriteLine($"  {key,-24} = {QuoteConfigurationValue(options.Get(key))}  [{options.ValueSource(key)}]");
+        Console.WriteLine($"  {key,-24} = {QuoteConfigurationValue(options.Get(key))}  [{L.T(options.ValueSource(key))}]");
     }
 
     Console.WriteLine();
@@ -891,8 +895,8 @@ static void PrintConfiguration(DvdaOptions options)
     if (options.MlpSource is "external" or "surcode")
     {
         var directory = options.MlpExternalDirectory;
-        var status = directory.Length > 0 && Directory.Exists(directory) ? "✔" : "✗ 目录不存在";
-        Console.WriteLine($"  external      = {(directory.Length > 0 ? directory : "(未设 DVDA_MLP_EXTERNAL_DIR)")}   {status}");
+        var status = directory.Length > 0 && Directory.Exists(directory) ? "✔" : L.T("✗ 目录不存在");
+        Console.WriteLine($"  external      = {(directory.Length > 0 ? directory : L.T("(未设 DVDA_MLP_EXTERNAL_DIR)"))}   {status}");
         Console.WriteLine("                  （跳过编码；按 <外部目录>/<专辑目录>/<曲名>.mlp 取文件）");
     }
     else if (options.MlpSource == "surcode-batch")
@@ -900,9 +904,9 @@ static void PrintConfiguration(DvdaOptions options)
         Console.WriteLine("  surcode-batch = Windows MLP 编码核心   ✔");
         Console.WriteLine($"  output/cache  = {options.MlpExternalDirectory}");
         Console.WriteLine("  encoder       = 随程序内嵌，无需原版 SurCode");
-        Console.WriteLine($"  metadata      = {(string.IsNullOrEmpty(options.MlpMetadataContext) ? "固定空辅助 TLV" : options.MlpMetadataContext)}");
+        Console.WriteLine($"  metadata      = {(string.IsNullOrEmpty(options.MlpMetadataContext) ? L.T("固定空辅助 TLV") : options.MlpMetadataContext)}");
         Console.WriteLine($"  PCM / FFmpeg  = {options.Ffmpeg}   " +
-            (ExecutablePath.Resolve(options.Ffmpeg) is not null ? "✔" : "✗ 不存在或未加入 PATH"));
+            (ExecutablePath.Resolve(options.Ffmpeg) is not null ? "✔" : L.T("✗ 不存在或未加入 PATH")));
         Console.WriteLine($"  format        = {options.MlpSurcodeSampleRate} Hz / {options.MlpSurcodeBits} bit");
     }
 
@@ -918,12 +922,12 @@ static void PrintConfiguration(DvdaOptions options)
     {
         var isPath = pair.Item2.Contains('/') || pair.Item2.Contains('\\');
         var status = isPath ? (File.Exists(pair.Item2) ? "✔" : "✗ 不存在") : "(用 PATH 解析)";
-        Console.WriteLine($"  {pair.Item1,-14} = {pair.Item2}   {status}");
+        Console.WriteLine($"  {pair.Item1,-14} = {pair.Item2}   {L.T(status)}");
     }
 
     Console.WriteLine();
     Console.WriteLine("分盘:");
-    Console.WriteLine($"  max_discs         = {(options.MaxDiscs == 0 ? "不限制" : options.MaxDiscs)}");
+    Console.WriteLine($"  max_discs         = {(options.MaxDiscs == 0 ? L.T("不限制") : options.MaxDiscs)}");
     Console.WriteLine($"  group_track_limit = {options.GroupTrackLimit}");
     Console.WriteLine($"  disc_bytes        = {options.DiscBytes:N0}");
 
@@ -941,6 +945,7 @@ static string QuoteConfigurationValue(string value) =>
 
 static void PrintDirectoryStatus(string label, string directory, bool allowMissing)
 {
+    label = L.T(label);
     if (directory.Length == 0)
     {
         Console.WriteLine($"  {label,-8} = (未配置)");

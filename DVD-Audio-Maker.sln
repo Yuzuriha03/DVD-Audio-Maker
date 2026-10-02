@@ -24,6 +24,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DvdaMaker.Toolchain", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DvdaMaker.Desktop", "src\DvdaMaker.Desktop\DvdaMaker.Desktop.csproj", "{000D5A29-18C2-4AEA-ABBC-2211D4CC6157}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DvdaMaker.Localization", "src\DvdaMaker.Localization\DvdaMaker.Localization.csproj", "{59484964-EBE0-4981-A80A-0C08BA790CF5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -120,6 +122,14 @@ Global
 		{000D5A29-18C2-4AEA-ABBC-2211D4CC6157}.Release|Any CPU.Build.0 = Release|Any CPU
 		{000D5A29-18C2-4AEA-ABBC-2211D4CC6157}.Release|x64.ActiveCfg = Release|Any CPU
 		{000D5A29-18C2-4AEA-ABBC-2211D4CC6157}.Release|x64.Build.0 = Release|Any CPU
+		{59484964-EBE0-4981-A80A-0C08BA790CF5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{59484964-EBE0-4981-A80A-0C08BA790CF5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{59484964-EBE0-4981-A80A-0C08BA790CF5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{59484964-EBE0-4981-A80A-0C08BA790CF5}.Debug|x64.Build.0 = Debug|Any CPU
+		{59484964-EBE0-4981-A80A-0C08BA790CF5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{59484964-EBE0-4981-A80A-0C08BA790CF5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{59484964-EBE0-4981-A80A-0C08BA790CF5}.Release|x64.ActiveCfg = Release|Any CPU
+		{59484964-EBE0-4981-A80A-0C08BA790CF5}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

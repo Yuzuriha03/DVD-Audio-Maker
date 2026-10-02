@@ -1,5 +1,7 @@
 # Windows 原生发布包组装
 
+[简体中文](README.md) | [English](README.en.md)
+
 本目录使用纯 Windows CMD 和 C# 组装 DVD-Audio Maker 自包含发布包。
 
 组装过程不调用 PowerShell、WSL、Bash、MSYS2、Autotools 或 Make。
@@ -95,7 +97,7 @@ tools\win-build\release\
 
 目标机器不需要安装 .NET Runtime。双击 `DVD-Audio-Maker.exe` 或无参数运行 `dvda.cmd` 打开 GUI；带参数时保留 CLI。GUI 可导入旧 `config.env`，并独立保存 JSON 方案。MLP 编码使用内嵌原生 x64 DLL，不运行独立编码 EXE。
 
-FFmpeg、FFprobe、Metaflac 和 eac3to 仍需放在包内 `menu-bin`、位于 `PATH`，或在 GUI / `config.env` 中配置完整路径。
+FFmpeg、FFprobe 和 Metaflac 仍需放在包内 `menu-bin`、位于 `PATH`，或在 GUI / `config.env` 中配置完整路径。
 
 ## 使用发布包
 

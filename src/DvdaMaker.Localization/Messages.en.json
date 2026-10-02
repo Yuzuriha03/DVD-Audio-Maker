@@ -1,0 +1,5727 @@
+[
+  {
+    "Source": "有效 PTS 只有 {0} 个，时间轴缺失",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Only {0} valid PTS values; the timeline is incomplete"
+  },
+  {
+    "Source": "首末 PTS 相同，时间轴没有推进",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "First and last PTS are identical; the timeline did not advance"
+  },
+  {
+    "Source": "异常步长 {0}/{1}，占比 {2}% > 1%",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Unexpected steps: {0}/{1} ({2}% > 1%)"
+  },
+  {
+    "Source": "ffprobe 无法探测 {0}（退出码 {1}）: {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "ffprobe could not probe {0} (exit code {1}): {2}"
+  },
+  {
+    "Source": "ffprobe 无法探测 {0}（退出码 {1}）: ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "ffprobe could not probe {0} (exit code {1}): "
+  },
+  {
+    "Source": "  注: dry-run 未执行 dvda-author，本文件不含轨道表；",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  Note: dry-run did not execute dvda-author; this file contains no track table."
+  },
+  {
+    "Source": "      审计请用 build.log（上次真出盘）。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "      Use build.log from the last actual build for auditing."
+  },
+  {
+    "Source": "找不到 manifest.json，请先运行 prepare。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "manifest.json was not found. Run prepare first."
+  },
+  {
+    "Source": "[诊断] DVDA_ALBUM_LIMIT={0}: 仅处理 {1} 张专辑 / {2} 轨",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "[Diagnostic] DVDA_ALBUM_LIMIT={0}: processing only {1} albums / {2} tracks"
+  },
+  {
+    "Source": "[诊断] DVDA_ALBUM_LIMIT={0}: ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Diagnostic] DVDA_ALBUM_LIMIT={0}: "
+  },
+  {
+    "Source": "仅处理 {0} 张专辑 / {1} 轨",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "processing only {0} albums / {1} tracks"
+  },
+  {
+    "Source": "[空间] MLP 获取阶段: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Space] MLP preparation: {0}"
+  },
+  {
+    "Source": "[警告] {0}: {1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "[WARN] {0}: {1}"
+  },
+  {
+    "Source": "[警告] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[WARN] {0}"
+  },
+  {
+    "Source": "不支持的 MLP 来源。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unsupported MLP source."
+  },
+  {
+    "Source": "[耗时] MLP 获取: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Timing] MLP preparation: {0}"
+  },
+  {
+    "Source": "[空间] 出盘阶段: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Space] Disc build: {0}"
+  },
+  {
+    "Source": "MLP 获取或构建规划包含错误；未写入索引，也未执行出盘。{0}{1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "MLP preparation or build planning failed. No index was written and no discs were built.{0}{1}"
+  },
+  {
+    "Source": "MLP 获取或构建规划包含错误；未写入索引，也未执行出盘。{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "MLP preparation or build planning failed. No index was written and no discs were built.{0}"
+  },
+  {
+    "Source": "MLP 获取或构建规划包含错误；未写入索引，也未执行出盘。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP preparation or build planning failed. No index was written and no discs were built."
+  },
+  {
+    "Source": "[汇总] 预演: {0} 盘 / {1} 轨, MLP {2} B, 缓存复用 {3} / 重新编码 {4}",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "[Summary] Preview: {0} discs / {1} tracks, MLP {2} B, cache reused {3} / re-encoded {4}"
+  },
+  {
+    "Source": "[汇总] 预演: {0} 盘 / {1} 轨, MLP {2} B, ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "[Summary] Preview: {0} discs / {1} tracks, MLP {2} B, "
+  },
+  {
+    "Source": "[汇总] 预演: {0} 盘 / {1} 轨, ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Summary] Preview: {0} discs / {1} tracks, "
+  },
+  {
+    "Source": "缓存复用 {0} / 重新编码 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "cache reused {0} / re-encoded {1}"
+  },
+  {
+    "Source": "[耗时] build 预演总计: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Timing] Total build preview: {0}"
+  },
+  {
+    "Source": "[续跑] 已启用逐盘续跑，暂存目录: {0}，已有记录 {1} 盘",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Resume] Per-disc resume enabled; staging folder: {0}; {1} discs recorded"
+  },
+  {
+    "Source": "[续跑] 已启用逐盘续跑，暂存目录: {0}，",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Resume] Per-disc resume enabled; staging folder: {0}; "
+  },
+  {
+    "Source": "已有记录 {0} 盘",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} discs recorded"
+  },
+  {
+    "Source": "[恢复] 第 {0} 盘签名一致，复用暂存 ISO（{1} B）: {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "[fallback] Disc {0} signature matches; reusing staged ISO ({1} B): {2}"
+  },
+  {
+    "Source": "[恢复] 第 {0} 盘签名一致，",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[fallback] Disc {0} signature matches; "
+  },
+  {
+    "Source": "复用暂存 ISO（{0} B）: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "reusing staged ISO ({0} B): {1}"
+  },
+  {
+    "Source": "[警告] 续跑记录写入失败: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[WARN] Could not write the resume record: {0}"
+  },
+  {
+    "Source": "[耗时] 正式 ISO 集合与索引发布: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Timing] Publish final ISO set and index: {0}"
+  },
+  {
+    "Source": "正式 ISO 集合与索引发布失败，旧成品已回滚: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Publishing the final ISO set and index failed; previous output was restored: {0}"
+  },
+  {
+    "Source": "[汇总] 成功 {0}/{1} 盘 / {2} 轨, MLP {3} B, ISO {4} B, 缓存复用 {5} / 重新编码 {6}, 续跑复用 {7} 盘, 索引已发布: {8}",
+    "Parameters": 9,
+    "Nested": [
+      8
+    ],
+    "English": "[Summary] Completed {0}/{1} discs / {2} tracks, MLP {3} B, ISO {4} B, cache reused {5} / re-encoded {6}, resumed {7} discs, index published: {8}"
+  },
+  {
+    "Source": "[汇总] 成功 {0}/{1} 盘 / {2} 轨, MLP {3} B, ISO {4} B, 缓存复用 {5} / 重新编码 {6}, 续跑复用 {7} 盘, ",
+    "Parameters": 8,
+    "Nested": [],
+    "English": "[Summary] Completed {0}/{1} discs / {2} tracks, MLP {3} B, ISO {4} B, cache reused {5} / re-encoded {6}, resumed {7} discs, "
+  },
+  {
+    "Source": "[汇总] 成功 {0}/{1} 盘 / {2} 轨, MLP {3} B, ISO {4} B, 缓存复用 {5} / 重新编码 {6}, ",
+    "Parameters": 7,
+    "Nested": [],
+    "English": "[Summary] Completed {0}/{1} discs / {2} tracks, MLP {3} B, ISO {4} B, cache reused {5} / re-encoded {6}, "
+  },
+  {
+    "Source": "[汇总] 成功 {0}/{1} 盘 / {2} 轨, MLP {3} B, ISO {4} B, ",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "[Summary] Completed {0}/{1} discs / {2} tracks, MLP {3} B, ISO {4} B, "
+  },
+  {
+    "Source": "[汇总] 成功 {0}/{1} 盘 / {2} 轨, MLP {3} B, ",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "[Summary] Completed {0}/{1} discs / {2} tracks, MLP {3} B, "
+  },
+  {
+    "Source": "[汇总] 成功 {0}/{1} 盘 / {2} 轨, ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "[Summary] Completed {0}/{1} discs / {2} tracks, "
+  },
+  {
+    "Source": "缓存复用 {0} / 重新编码 {1}, ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "cache reused {0} / re-encoded {1}, "
+  },
+  {
+    "Source": "续跑复用 {0} 盘, ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "resumed {0} discs, "
+  },
+  {
+    "Source": "索引已发布: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "index published: {0}"
+  },
+  {
+    "Source": "是",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "yes"
+  },
+  {
+    "Source": "否",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "no"
+  },
+  {
+    "Source": "[耗时] build 总计: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Timing] Total build: {0}"
+  },
+  {
+    "Source": "[警告] 构建或正式发布失败，保留暂存 ISO 与续跑记录供排查/续跑: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[WARN] Build or publication failed. Staged ISOs and resume records were kept for investigation or retry: {0}"
+  },
+  {
+    "Source": "总曲目 {0} 首，共 {1} 张专辑",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Total: {0} tracks across {1} albums"
+  },
+  {
+    "Source": "=== 分盘结果 ({0} 张) ===",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "=== Disc plan ({0} discs) ==="
+  },
+  {
+    "Source": "  第 {0} 盘: {1} 首, MLP {2} GiB -> 估AOB {3} GiB  卷标 \"{4}\"",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "  Disc {0}: {1} tracks, MLP {2} GiB -> estimated AOB {3} GiB  volume label \"{4}\""
+  },
+  {
+    "Source": "  第 {0} 盘: {1} 首, MLP {2} GiB ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "  Disc {0}: {1} tracks, MLP {2} GiB "
+  },
+  {
+    "Source": "-> 估AOB {0} GiB  卷标 \"{1}\"",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "-> estimated AOB {0} GiB  volume label \"{1}\""
+  },
+  {
+    "Source": "    第 {0} 组 {1}/{2}: {3} 首",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "    Group {0} {1}/{2}: {3} tracks"
+  },
+  {
+    "Source": "[耗时] 第 {0} 盘总耗时: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Timing] Disc {0} total: {1}"
+  },
+  {
+    "Source": "[耗时] 第 {0} 盘菜单素材: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Timing] Disc {0} menu assets: {1}"
+  },
+  {
+    "Source": "[诊断] DVDA_TITLE_MODE={0}；非 album 模式可能导致 ASVS/title 结构与商业盘不一致。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Diagnostic] DVDA_TITLE_MODE={0}; modes other than album may produce ASVS/title structures that differ from commercial discs."
+  },
+  {
+    "Source": "[诊断] DVDA_TITLE_MODE={0}；",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Diagnostic] DVDA_TITLE_MODE={0}; "
+  },
+  {
+    "Source": "非 album 模式可能导致 ASVS/title 结构与商业盘不一致。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "modes other than album may produce ASVS/title structures that differ from commercial discs."
+  },
+  {
+    "Source": "[耗时] 第 {0} 盘 dvda-author: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Timing] Disc {0} dvda-author: {1}"
+  },
+  {
+    "Source": "dvda-author 生成第 {0} 盘失败（退出码 {1}）。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "dvda-author failed to build disc {0} (exit code {1})."
+  },
+  {
+    "Source": "dvda-author 未生成第 {0} 盘的 AUDIO_TS。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "dvda-author did not create AUDIO_TS for disc {0}."
+  },
+  {
+    "Source": "[耗时] 第 {0} 盘菜单结构校验: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Timing] Disc {0} menu structure checks: {1}"
+  },
+  {
+    "Source": "[耗时] 第 {0} 盘 mkisofs: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Timing] Disc {0} mkisofs: {1}"
+  },
+  {
+    "Source": "mkisofs 打包第 {0} 盘失败（退出码 {1}）。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "mkisofs failed to package disc {0} (exit code {1})."
+  },
+  {
+    "Source": "第 {0} 盘 ISO 超出配置容量 {1} 字节。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Disc {0} ISO exceeds the configured capacity by {1} bytes."
+  },
+  {
+    "Source": "[耗时] 第 {0} 盘 ISO 暂存: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Timing] Disc {0} ISO staging: {1}"
+  },
+  {
+    "Source": "[结果] 第 {0} 盘: {1} 轨 / MLP {2} B / ISO {3} B -> {4}",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "[Result] Disc {0}: {1} tracks / MLP {2} B / ISO {3} B -> {4}"
+  },
+  {
+    "Source": "[结果] 第 {0} 盘: {1} 轨 / ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Result] Disc {0}: {1} tracks / "
+  },
+  {
+    "Source": "清理目录失败 {0}: {1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Could not remove directory {0}: {1}"
+  },
+  {
+    "Source": "清理文件失败 {0}: {1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Could not remove file {0}: {1}"
+  },
+  {
+    "Source": "找不到或无法读取 MLP: {0}（{1}）",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "MLP file missing or unreadable: {0} ({1})"
+  },
+  {
+    "Source": "按容量需 {0} 张盘，超出期望的 {1} 张。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Capacity requires {0} discs, exceeding the requested {1}."
+  },
+  {
+    "Source": "第 {0} 盘仅含专辑“{1}”，估算 AOB 已超过容量上限；专辑不会被拆分。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Disc {0} contains only album \"{1}\", whose estimated AOB size exceeds capacity. Albums are not split."
+  },
+  {
+    "Source": "专辑“{0}”在 {1}Hz/{2}bit 组中有 {3} 轨，超过组轨上限 {4}；为保持专辑完整未拆分。",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "Album \"{0}\" has {3} tracks in its {1} Hz/{2}-bit group, exceeding the group limit of {4}. The album was kept intact."
+  },
+  {
+    "Source": "发布集合包含重复 ISO 文件名: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The publication set contains duplicate ISO file names: {0}"
+  },
+  {
+    "Source": "发布集合包含重复 ISO 文件名: ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The publication set contains duplicate ISO file names: "
+  },
+  {
+    "Source": "无法覆盖 {0}（{1}），已改写为 {2}。",
+    "Parameters": 3,
+    "Nested": [
+      1
+    ],
+    "English": "Could not overwrite {0} ({1}); wrote {2} instead."
+  },
+  {
+    "Source": "文件复制长度不一致: {0} != {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Copied file length mismatch: {0} != {1}"
+  },
+  {
+    "Source": "[警告] 续跑记录无法读取，将重新出盘: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[WARN] Could not read resume records; discs will be rebuilt: {0}"
+  },
+  {
+    "Source": "未找到 ISO: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "ISO not found: {0}"
+  },
+  {
+    "Source": "AUDIO_TS 下没有 ATS_xx_0.IFO",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No ATS_xx_0.IFO files under AUDIO_TS"
+  },
+  {
+    "Source": "{0} 的轨道首扇区 {1} 不是 pack 头",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "The first sector {1} of a track in {0} is not a pack header"
+  },
+  {
+    "Source": "静图引用号 {0} > AUDIO_SV.IFO 记录数 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Still-picture reference {0} exceeds the {1} AUDIO_SV.IFO records"
+  },
+  {
+    "Source": "全部 ISO 的 IFO 声明轨数 {0} != manifest 曲目数 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "IFO track count across all ISOs {0} != manifest track count {1}"
+  },
+  {
+    "Source": "未找到可用于审计的构建日志",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No build log is available for auditing"
+  },
+  {
+    "Source": "构建日志中未解析到 dvda-author 轨道表",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No dvda-author track table was found in the build log"
+  },
+  {
+    "Source": "构建日志中未解析到 dvda-author 命令行",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No dvda-author command line was found in the build log"
+  },
+  {
+    "Source": "无法把 ISO 映射到构建日志中的 dvda-author 命令",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot map the ISO to a dvda-author command in the build log"
+  },
+  {
+    "Source": "日志映射 {0} 轨 != ISO IFO 声明 {1} 轨",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Log maps {0} tracks, but ISO IFO declares {1}"
+  },
+  {
+    "Source": "组 {0} 轨道表存在扇区断点",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Group {0} track table has a sector discontinuity"
+  },
+  {
+    "Source": "组 {0} AOB 扇区 {1} != 轨道表 {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Group {0} AOB sectors {1} != track table {2}"
+  },
+  {
+    "Source": "{0} 文件过短",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} is too short"
+  },
+  {
+    "Source": "{0} 的 PGCI 指针越界",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} PGCI pointer is out of bounds"
+  },
+  {
+    "Source": "{0} 的 PGC 越界",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} PGC is out of bounds"
+  },
+  {
+    "Source": "{0} 的 title {1} 越界",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} title {1} is out of bounds"
+  },
+  {
+    "Source": "{0} 的 title {1} cell 时间戳表越界",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} title {1} cell timestamp table is out of bounds"
+  },
+  {
+    "Source": "{0} 的 title {1} cell first_pts 非严格递增",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} title {1} cell first_pts values are not strictly increasing"
+  },
+  {
+    "Source": "{0} 的 title {1} 末 cell 结束 {2} 与标题长度 {3} 相差超过 1 秒",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "{0} title {1} final cell end {2} differs from title length {3} by more than one second"
+  },
+  {
+    "Source": "{0} 的 cell 表越界",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} cell table is out of bounds"
+  },
+  {
+    "Source": "组 {0} PTS 在非轨道边界扇区 {1} 下降",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Group {0} PTS decreases at sector {1}, which is not a track boundary"
+  },
+  {
+    "Source": "组 {0} 存在缺少 PTS 的扇区",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Group {0} contains sectors without PTS"
+  },
+  {
+    "Source": "组 {0} title {1} 起点扇区 {2} 应出现 PTS 下降但未下降",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Group {0} title {1} starting sector {2} should reset PTS but does not"
+  },
+  {
+    "Source": "构建日志包含 pack 补齐失败",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The build log reports pack-padding failures"
+  },
+  {
+    "Source": "MLP 编码输出",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP encoder output"
+  },
+  {
+    "Source": "author 中间产物与暂存 ISO",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Authoring intermediates and staged ISOs"
+  },
+  {
+    "Source": "成品 ISO 集合",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Final ISO set"
+  },
+  {
+    "Source": "{0} 上“{1}”预计需要 {2} 字节，但仅剩 {3} 字节（约缺 {4} 字节）。估算为保守值，仅供参考。",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "\"{1}\" on {0} is estimated to need {2} bytes, but only {3} remain (approximately {4} bytes short). This is a conservative estimate for reference."
+  },
+  {
+    "Source": "{0} 上“{1}”预计需要 {2} 字节，但仅剩 {3} 字节",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "\"{1}\" on {0} is estimated to need {2} bytes, but only {3} remain"
+  },
+  {
+    "Source": "{0} 上“{1}”预计需要 ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "\"{1}\" on {0} is estimated to need "
+  },
+  {
+    "Source": "{0} 字节，但仅剩 {1} 字节",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} bytes, but only {1} remain"
+  },
+  {
+    "Source": "（约缺 {0} 字节）。估算为保守值，仅供参考。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": " (approximately {0} bytes short). This is a conservative estimate for reference."
+  },
+  {
+    "Source": "无需额外估算的写入阶段。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No additional write stages require a space estimate."
+  },
+  {
+    "Source": "{0} “{1}” 需要 {2} B{3}",
+    "Parameters": 4,
+    "Nested": [
+      3
+    ],
+    "English": "{0} \"{1}\" requires {2} B{3}"
+  },
+  {
+    "Source": "{0} “{1}” 需要 {2} B",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "{0} \"{1}\" requires {2} B"
+  },
+  {
+    "Source": "，可用未知",
+    "Parameters": 0,
+    "Nested": [],
+    "English": ", available space unknown"
+  },
+  {
+    "Source": "，可用 {0} B",
+    "Parameters": 1,
+    "Nested": [],
+    "English": ", {0} B available"
+  },
+  {
+    "Source": "外部 MLP 目录无效: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Invalid external MLP directory: {0}"
+  },
+  {
+    "Source": "外部 MLP 文件名重复，无法安全回退匹配: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Duplicate external MLP file names prevent a safe fallback match: {0}"
+  },
+  {
+    "Source": "找不到外部 MLP: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "External MLP file not found: {0}"
+  },
+  {
+    "Source": "外部 MLP 是空文件: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "External MLP file is empty: {0}"
+  },
+  {
+    "Source": "外部 MLP 结构校验失败: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "External MLP structure verification failed: {0}"
+  },
+  {
+    "Source": "外部 MLP 无法解析: {0}（{1}）",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Cannot parse external MLP: {0} ({1})"
+  },
+  {
+    "Source": "无法探测外部 MLP 参数: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Cannot probe external MLP parameters: {0}"
+  },
+  {
+    "Source": "外部 MLP 声道数不一致: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "External MLP channel count mismatch: {0}"
+  },
+  {
+    "Source": "外部 MLP 声道数不一致: ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "External MLP channel count mismatch: "
+  },
+  {
+    "Source": "{0} 声道 × {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} channels × {1}"
+  },
+  {
+    "Source": "manifest 内容为空: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Manifest is empty: {0}"
+  },
+  {
+    "Source": "找不到 dvda-author 菜单素材目录: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "dvda-author menu assets directory not found: {0}"
+  },
+  {
+    "Source": "找不到菜单辅助程序 {0}；查找目录: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Menu helper {0} was not found; search directory: {1}"
+  },
+  {
+    "Source": "找不到 ImageMagick（magick/convert）。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ImageMagick (magick/convert) was not found."
+  },
+  {
+    "Source": "找不到 ImageMagick identify，无法验证菜单图片尺寸。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ImageMagick identify was not found; cannot verify menu image dimensions."
+  },
+  {
+    "Source": "{0} 张专辑没有 cover.jpg/jpeg/png/webp，页面将使用黑色背景: {1}{2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "{0} albums have no cover.jpg/jpeg/png/webp and will use a black background: {1}{2}"
+  },
+  {
+    "Source": "{0} 张专辑没有 cover.jpg/jpeg/png/webp，页面将使用黑色背景: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} albums have no cover.jpg/jpeg/png/webp and will use a black background: {1}"
+  },
+  {
+    "Source": "{0} 张专辑没有 cover.jpg/jpeg/png/webp，页面将使用黑色背景: ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} albums have no cover.jpg/jpeg/png/webp and will use a black background: "
+  },
+  {
+    "Source": "一级菜单按位置解释封面清单，不能压缩缺项；缺少封面的专辑: {0}{1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "The top-level menu interprets the cover list by position; missing items cannot be removed. Albums without artwork: {0}{1}"
+  },
+  {
+    "Source": "一级菜单按位置解释封面清单，不能压缩缺项；缺少封面的专辑: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The top-level menu interprets the cover list by position; missing items cannot be removed. Albums without artwork: {0}"
+  },
+  {
+    "Source": "一级菜单按位置解释封面清单，不能压缩缺项；缺少封面的专辑: ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The top-level menu interprets the cover list by position; missing items cannot be removed. Albums without artwork: "
+  },
+  {
+    "Source": "索引封面清单 {0} 项 != 索引格子 {1} 项。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Index cover list contains {0} entries, but there are {1} index cells."
+  },
+  {
+    "Source": "生成专辑 {0} 的播放静图失败: {1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Could not generate playback still for album {0}: {1}"
+  },
+  {
+    "Source": "ImageMagick 失败（退出码 {0}）{1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "ImageMagick failed (exit code {0}){1}"
+  },
+  {
+    "Source": "ImageMagick 失败（退出码 {0}）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "ImageMagick failed (exit code {0})"
+  },
+  {
+    "Source": "无法读取菜单图片尺寸: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Cannot read menu image dimensions: {0}"
+  },
+  {
+    "Source": "{0} 尺寸为 {1}x{2}，应为 {3}x{4}",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "{0} dimensions are {1}x{2}; expected {3}x{4}"
+  },
+  {
+    "Source": "{0} 尺寸为 {1}x{2}，应为 ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "{0} dimensions are {1}x{2}; expected "
+  },
+  {
+    "Source": "未生成菜单透明底图。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No transparent menu base image was generated."
+  },
+  {
+    "Source": "菜单背景图数量或文件不完整: {0}/{1}。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Menu background images are missing or incomplete: {0}/{1}."
+  },
+  {
+    "Source": "播放静图列表 {0} 项 != 曲目数 {1}。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Playback still list contains {0} entries, but there are {1} tracks."
+  },
+  {
+    "Source": "总菜单页数与索引页、专辑页之和不一致。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Total menu pages do not equal index pages plus album pages."
+  },
+  {
+    "Source": "screentext 段数 {0} != 菜单页数 {1}。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "screentext sections {0} != menu pages {1}."
+  },
+  {
+    "Source": "dvda-author 未生成菜单文件 {0}。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "dvda-author did not generate menu file {0}."
+  },
+  {
+    "Source": "已配置播放封面，但未生成 AUDIO_SV.VOB。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Playback artwork was configured, but AUDIO_SV.VOB was not generated."
+  },
+  {
+    "Source": "找不到 ImageMagick，跳过菜单叠加图墨迹自检。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ImageMagick was not found; skipping menu overlay ink checks."
+  },
+  {
+    "Source": "找不到菜单跳转 XML: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Menu navigation XML not found: {0}"
+  },
+  {
+    "Source": "菜单跳转 XML 有 {0} 页，规划为 {1} 页。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Menu navigation XML contains {0} pages; the plan specifies {1}."
+  },
+  {
+    "Source": "第 {0} 页缺少按钮位置 XML。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Page {0} has no button-position XML."
+  },
+  {
+    "Source": "第 {0} 页按钮编号不一致：跳转 [{1}]，位置 [{2}]。",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Page {0} button numbers differ: navigation [{1}], positions [{2}]."
+  },
+  {
+    "Source": "第 {0} 页按钮编号不一致：跳转 [{1}]，",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Page {0} button numbers differ: navigation [{1}], "
+  },
+  {
+    "Source": "第 {0} 页按钮编号不一致：",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Page {0} button numbers differ: "
+  },
+  {
+    "Source": "跳转 [{0}]，",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "navigation [{0}], "
+  },
+  {
+    "Source": "位置 [{0}]。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "positions [{0}]."
+  },
+  {
+    "Source": "第 {0} 个菜单页缺少末尾的 jump menu 1 返回索引按钮。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Menu page {0} is missing the final jump menu 1 button that returns to the index."
+  },
+  {
+    "Source": "第 {0} 页缺少可读取的文字层或高亮层。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Page {0} has no readable text or highlight layer."
+  },
+  {
+    "Source": "第 {0} 页高亮层没有比文字层增加墨迹。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Page {0} highlight layer adds no ink beyond the text layer."
+  },
+  {
+    "Source": "第 {0} 个索引页的翻页箭头区域没有墨迹。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Index page {0} has no ink in its page-navigation arrow regions."
+  },
+  {
+    "Source": "AUDIO_TS 下缺少 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Missing {0} under AUDIO_TS"
+  },
+  {
+    "Source": "AMG 声明 {0} 页，规划为 {1} 页",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "AMG declares {0} pages; the plan specifies {1}"
+  },
+  {
+    "Source": "规划包含播放静图，但成品缺少 ASVS 文件",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Playback stills were planned, but ASVS files are missing from the output"
+  },
+  {
+    "Source": "AUDIO_TS.IFO 只有 {0} 字节，读不到菜单表",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "AUDIO_TS.IFO is only {0} bytes; the menu table cannot be read"
+  },
+  {
+    "Source": "AUDIO_TS.IFO 只有 {0} 字节，菜单表至少需要 {1} 字节",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "AUDIO_TS.IFO is only {0} bytes; the menu table needs at least {1}"
+  },
+  {
+    "Source": "AMG 菜单 PGC 索引被截断",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "AMG menu PGC index is truncated"
+  },
+  {
+    "Source": "AMG 菜单 PGC 地址不是唯一递增序列",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "AMG menu PGC addresses are not unique and strictly increasing"
+  },
+  {
+    "Source": "第 {0}/{1} 页 PGC 间距 0x{2} != 0x{3}",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "Page {0}/{1} PGC spacing 0x{2} != 0x{3}"
+  },
+  {
+    "Source": "第 {0}/{1} 页 PGC 间距 ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Page {0}/{1} PGC spacing "
+  },
+  {
+    "Source": "AMG 菜单 PGC 表超出 AUDIO_TS.IFO",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "AMG menu PGC table extends beyond AUDIO_TS.IFO"
+  },
+  {
+    "Source": "第 {0} 页 cell 起始地址副本 {1}/{2} 不一致",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Page {0} cell start-address copies {1}/{2} differ"
+  },
+  {
+    "Source": "第 {0} 页从 {1} 开始，应为 {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Page {0} starts at {1}; expected {2}"
+  },
+  {
+    "Source": "第 {0} 页 cell 结束 {1} 小于起始 {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Page {0} cell end {1} precedes its start {2}"
+  },
+  {
+    "Source": "第 {0} 页 Next={1}，应为 {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Page {0} Next={1}; expected {2}"
+  },
+  {
+    "Source": "末页 Next={0}，应为 0",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Final page Next={0}; expected 0"
+  },
+  {
+    "Source": "第 {0} 页 Previous={1}，应为 {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Page {0} Previous={1}; expected {2}"
+  },
+  {
+    "Source": "末页结束于 {0}，VOB 末扇区为 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "The final page ends at {0}; the last VOB sector is {1}"
+  },
+  {
+    "Source": "各页 cell 跨度之和 {0} != AUDIO_TS.VOB 扇区数 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Combined page cell span {0} != AUDIO_TS.VOB sector count {1}"
+  },
+  {
+    "Source": "第 {0} 页 cell 范围无效: {1}-{2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Page {0} has an invalid cell range: {1}-{2}"
+  },
+  {
+    "Source": "AUDIO_SV.IFO 太短",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "AUDIO_SV.IFO is too short"
+  },
+  {
+    "Source": "IFO 记录 {0} 扇区，AUDIO_SV.VOB 实际 {1} 扇区",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "IFO declares {0} sectors; AUDIO_SV.VOB has {1}"
+  },
+  {
+    "Source": "AUDIO_SV.VOB 有 {0} 扇区，超过报警线 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "AUDIO_SV.VOB has {0} sectors, exceeding warning threshold {1}"
+  },
+  {
+    "Source": "ASVS 声明 {0} 条记录，但第 {1} 条越界",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "ASVS declares {0} records, but record {1} is out of bounds"
+  },
+  {
+    "Source": "第 {0} 条静图记录的图数为 0",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Still-picture record {0} has zero pictures"
+  },
+  {
+    "Source": "第 {0} 条起始图号 {1}，应为 {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Record {0} starts at picture {1}; expected {2}"
+  },
+  {
+    "Source": "第 {0} 条起始扇区 {1} 超出 AUDIO_SV.VOB",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Record {0} starting sector {1} lies beyond AUDIO_SV.VOB"
+  },
+  {
+    "Source": "静图总数 {0} != 规划数 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Total still pictures {0} != planned count {1}"
+  },
+  {
+    "Source": "汉字",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Han characters"
+  },
+  {
+    "Source": "中文",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Chinese"
+  },
+  {
+    "Source": "平假名",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Hiragana"
+  },
+  {
+    "Source": "片假名",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Katakana"
+  },
+  {
+    "Source": "韩文",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Korean"
+  },
+  {
+    "Source": "CJK标点",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "CJK punctuation"
+  },
+  {
+    "Source": "主字体是 TTC 集合；ImageMagick 按文件路径通常只使用 face 0，Noto Sans CJK 可能因此把中文显示为日文字形。建议使用独立 SC OTF。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The primary font is a TTC collection. ImageMagick usually selects face 0 when given a file path, which can render Chinese using Japanese Noto Sans CJK glyphs. Use a standalone SC OTF font."
+  },
+  {
+    "Source": "主字体是 TTC 集合；ImageMagick 按文件路径通常只使用 face 0，",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The primary font is a TTC collection. ImageMagick usually selects face 0 when given a file path. "
+  },
+  {
+    "Source": "Noto Sans CJK 可能因此把中文显示为日文字形。建议使用独立 SC OTF。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Noto Sans CJK may therefore render Chinese using Japanese glyphs. Use a standalone SC OTF font."
+  },
+  {
+    "Source": "字体 {0} 实际画不出 {1}，正在寻找候选字体。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Font {0} cannot render {1}; looking for an alternative."
+  },
+  {
+    "Source": "字体 {0} 实际画不出 {1}，",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Font {0} cannot render {1}; "
+  },
+  {
+    "Source": "正在寻找候选字体。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "looking for an alternative."
+  },
+  {
+    "Source": "字体不可用或名称含空格，正在寻找候选字体: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The font is unavailable or its name contains spaces; looking for an alternative: {0}"
+  },
+  {
+    "Source": "找不到能渲染菜单文字的字体；建议安装 fonts-noto-cjk。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No font can render the menu text. Install fonts-noto-cjk."
+  },
+  {
+    "Source": "字体 {0} 仍无法渲染: {1}。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Font {0} still cannot render: {1}."
+  },
+  {
+    "Source": "日文",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Japanese"
+  },
+  {
+    "Source": "{0}字体不可用，继续使用主字体: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} font is unavailable; continuing with the primary font: {1}"
+  },
+  {
+    "Source": "{0}字体无法实际渲染{1}，继续使用主字体: {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "{0} font cannot render {1}; continuing with the primary font: {2}"
+  },
+  {
+    "Source": "菜单背景图 {0} 张 != 专辑页 {1} 页。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Menu background count {0} != album page count {1}."
+  },
+  {
+    "Source": "选择专辑={0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Choose an album={0}"
+  },
+  {
+    "Source": "选择专辑=",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose an album="
+  },
+  {
+    "Source": "（续）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "(continued)"
+  },
+  {
+    "Source": "曲目与专辑列表长度必须一致。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The track and album lists must have the same length."
+  },
+  {
+    "Source": "无法从 ISO 提取 AUDIO_TS.VOB，无法进行菜单画面校验。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot extract AUDIO_TS.VOB from the ISO; menu image verification is unavailable."
+  },
+  {
+    "Source": "无法定位菜单页画面范围: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Cannot locate the menu page image range: {0}"
+  },
+  {
+    "Source": "无法抽取菜单第 {0} 页首帧（ffmpeg 退出码 {1}）。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Cannot extract the first frame of menu page {0} (ffmpeg exit code {1})."
+  },
+  {
+    "Source": "ImageMagick 无法读取菜单第 {0} 页统计。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "ImageMagick cannot read statistics for menu page {0}."
+  },
+  {
+    "Source": "菜单第 {0} 页接近纯色（均值 {1}，标准差 {2}，颜色 {3}），背景图可能未生效。",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "Menu page {0} is almost uniform (mean {1}, standard deviation {2}, colors {3}); its background may not have been applied."
+  },
+  {
+    "Source": "菜单第 {0} 页接近纯色（均值 {1}，",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Menu page {0} is almost uniform (mean {1}, "
+  },
+  {
+    "Source": "标准差 {0}，颜色 {1}），背景图可能未生效。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "standard deviation {0}, colors {1}); its background may not have been applied."
+  },
+  {
+    "Source": "格子角落发白，疑似画布布局错误",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "cell corners are white, suggesting a canvas layout error"
+  },
+  {
+    "Source": "缩略图为空",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "thumbnail is empty"
+  },
+  {
+    "Source": "专辑名未检测到亮字",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "no bright album-title text detected"
+  },
+  {
+    "Source": "读取 ISO 菜单 VOB 失败: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Could not read the ISO menu VOB: {0}"
+  },
+  {
+    "Source": "菜单视觉校验文件操作失败: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "File operation failed during menu visual verification: {0}"
+  },
+  {
+    "Source": "索引第 {0} 页{1}，页内格号: {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Index page {0}: {1}; cells on this page: {2}"
+  },
+  {
+    "Source": "菜单 VOB cell 范围超出文件结尾",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Menu VOB cell range extends beyond the end of the file"
+  },
+  {
+    "Source": "[警告] MLP 缓存索引无法读取，将重新编码: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[WARN] Could not read the MLP cache index; audio will be re-encoded: {0}"
+  },
+  {
+    "Source": "多首曲目映射到同一个 MLP，索引会发生覆盖: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Multiple tracks map to one MLP file and would overwrite index entries: {0}"
+  },
+  {
+    "Source": "多首曲目映射到同一个 MLP，索引会发生覆盖: ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Multiple tracks map to one MLP file and would overwrite index entries: "
+  },
+  {
+    "Source": "第 N 组 -> AUDIO_TS/ATS_01_N.AOB",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Group N -> AUDIO_TS/ATS_01_N.AOB"
+  },
+  {
+    "Source": "解码 PCM {0} 字节 != 源 PCM {1} 字节（相差 {2} 字节）",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Decoded PCM {0} bytes != source PCM {1} bytes (difference: {2} bytes)"
+  },
+  {
+    "Source": "解码 PCM {0} 字节 != 源 PCM {1} 字节",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Decoded PCM {0} bytes != source PCM {1} bytes"
+  },
+  {
+    "Source": "（相差 {0} 字节）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": " (difference: {0} bytes)"
+  },
+  {
+    "Source": "MLP 解码 PCM 的尾部填充包含非零字节或读取不完整",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP decoded PCM tail padding contains nonzero bytes or could not be read completely"
+  },
+  {
+    "Source": "读取长度不一致（偏移 {0} 字节处）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Read length mismatch at byte offset {0}"
+  },
+  {
+    "Source": "PCM 内容不一致（首个不同字节偏移 {0}）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "PCM content differs; first mismatch at byte offset {0}"
+  },
+  {
+    "Source": "MLP 编码核心编码分支只能在 Windows 上运行。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The encoder is supported only on Windows."
+  },
+  {
+    "Source": "找不到音源转换工具 FFmpeg，请检查 DVDA_FFMPEG 或 PATH: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "FFmpeg was not found for audio conversion. Check DVDA_FFMPEG or PATH: {0}"
+  },
+  {
+    "Source": "surcode-batch 模式需要设置 DVDA_MLP_EXTERNAL_DIR 作为 MLP 缓存目录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "surcode-batch requires DVDA_MLP_EXTERNAL_DIR as the MLP cache directory."
+  },
+  {
+    "Source": "源文件不存在: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Source file does not exist: {0}"
+  },
+  {
+    "Source": "无法读取源文件身份: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Cannot read source file identity: {0}"
+  },
+  {
+    "Source": "[MLP] 提交 {0} 个音源给MLP 编码核心",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[MLP] Submitting {0} sources to the encoder"
+  },
+  {
+    "Source": "[MLP] 临时目录: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[MLP] Temporary folder: {0}"
+  },
+  {
+    "Source": "[MLP] MLP 输出目录: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[MLP] MLP output folder: {0}"
+  },
+  {
+    "Source": "MLP 编码核心编码类库失败（单批 {0} 首）：{1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "encoder library failed ({0} tracks in batch): {1}"
+  },
+  {
+    "Source": "MLP 编码核心编码工具未生成 MLP: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The encoder did not create MLP output: {0}"
+  },
+  {
+    "Source": "MLP 编码核心 MLP 结构校验失败: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "MLP structure verification failed: {0}"
+  },
+  {
+    "Source": "MLP 编码核心 MLP 无法解析: {0}（{1}）",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Cannot parse MLP: {0} ({1})"
+  },
+  {
+    "Source": "编码过程中源文件发生变化: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Source file changed during encoding: {0}"
+  },
+  {
+    "Source": "ISO 超出单盘上限 {0} 字节",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "ISO exceeds the per-disc limit of {0} bytes"
+  },
+  {
+    "Source": "ISO 根目录缺少 AUDIO_TS",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "AUDIO_TS is missing from the ISO root"
+  },
+  {
+    "Source": "卷标 {0} != 期望 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Volume label {0} != expected {1}"
+  },
+  {
+    "Source": "无法读取 mlp_index.json",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot read mlp_index.json"
+  },
+  {
+    "Source": "找不到 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Cannot find {0}"
+  },
+  {
+    "Source": "找不到 ImageMagick，无法抽帧检查菜单画面。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ImageMagick was not found; cannot check extracted menu frames."
+  },
+  {
+    "Source": "未找到成品 ISO",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No completed ISO was found"
+  },
+  {
+    "Source": "{0} 没有 ATS_xx_n.AOB",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} has no ATS_xx_n.AOB"
+  },
+  {
+    "Source": "{0} 组 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} group {1}"
+  },
+  {
+    "Source": "无法从 mlp_index.json 定位第 1 盘、组 1、第 1 轨 MLP",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot locate the MLP for disc 1, group 1, track 1 in mlp_index.json"
+  },
+  {
+    "Source": "MLP 解码采样数 {0}，期望 {1}（容差 {2}），解码错误 {3}，退出成功 {4}",
+    "Parameters": 5,
+    "Nested": [
+      0
+    ],
+    "English": "MLP decoded samples {0}, expected {1} (tolerance {2}), decoding errors {3}, successful exit {4}"
+  },
+  {
+    "Source": "MLP 解码采样数 {0}，期望 {1}（容差 {2}），",
+    "Parameters": 3,
+    "Nested": [
+      0
+    ],
+    "English": "MLP decoded samples {0}, expected {1} (tolerance {2}), "
+  },
+  {
+    "Source": "MLP 解码采样数 {0}，",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "MLP decoded samples {0}, "
+  },
+  {
+    "Source": "未知",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "unknown"
+  },
+  {
+    "Source": "期望 {0}（容差 {1}），",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "expected {0} (tolerance {1}), "
+  },
+  {
+    "Source": "解码错误 {0}，退出成功 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "decoding errors {0}, successful exit {1}"
+  },
+  {
+    "Source": "ffmpeg 无法解码源音频或 MLP",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ffmpeg cannot decode the source audio or MLP"
+  },
+  {
+    "Source": "MLP 解码 PCM 与源音频不一致: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "MLP decoded PCM differs from source audio: {0}"
+  },
+  {
+    "Source": "MLP 解码 PCM 与源音频不一致: ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP decoded PCM differs from source audio: "
+  },
+  {
+    "Source": "未找到第 1 张成品 ISO",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The first completed ISO was not found"
+  },
+  {
+    "Source": "无法从 ISO 提取 ATS_01_1.AOB",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot extract ATS_01_1.AOB from the ISO"
+  },
+  {
+    "Source": "--aob-extract 未产出 track_01_title_01.mlp（退出码 {0}）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "--aob-extract did not produce track_01_title_01.mlp (exit code {0})"
+  },
+  {
+    "Source": "成品 ISO 内提取出的首轨 MLP 与源 MLP 不一致（--aob-extract 退出码 {0}）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The first-track MLP extracted from the completed ISO differs from the source MLP (--aob-extract exit code {0})"
+  },
+  {
+    "Source": "成品 ISO 内提取出的首轨 MLP 与源 MLP 不一致",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The first-track MLP extracted from the completed ISO differs from the source MLP"
+  },
+  {
+    "Source": "（--aob-extract 退出码 {0}）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": " (--aob-extract exit code {0})"
+  },
+  {
+    "Source": "mlp_index.json 缺少 __discs__",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "mlp_index.json is missing __discs__"
+  },
+  {
+    "Source": "无法读取 mlp_index.json: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Cannot read mlp_index.json: {0}"
+  },
+  {
+    "Source": "找不到正式索引: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Final index not found: {0}"
+  },
+  {
+    "Source": "当前索引来自 dry-run，不能作为现有成品 ISO 的校验依据",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The current index came from a dry-run and cannot verify existing completed ISOs"
+  },
+  {
+    "Source": "[配置错误] --config 只能指定一次",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[Configuration error] Specify --config only once"
+  },
+  {
+    "Source": "[配置错误] --config 后需要路径",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[Configuration error] --config requires a path"
+  },
+  {
+    "Source": "[配置错误] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[Configuration error] {0}"
+  },
+  {
+    "Source": "用法: dvda aob-pts <AOB 文件>...",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: dvda aob-pts <AOB file>..."
+  },
+  {
+    "Source": "[FAIL] 不是文件: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[FAIL] Not a file: {0}"
+  },
+  {
+    "Source": "文件: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "File: {0}"
+  },
+  {
+    "Source": "总扇区: {0}  含PTS扇区: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Total sectors: {0}  Sectors with PTS: {1}"
+  },
+  {
+    "Source": "首个 PTS: {0}  末个 PTS: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "First PTS: {0}  Last PTS: {1}"
+  },
+  {
+    "Source": "时间跨度: {0} 秒 ({1} 分钟)",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Time span: {0} seconds ({1} minutes)"
+  },
+  {
+    "Source": "步长: 最小 {0} 最大 {1}  负步长 {2} 个  零步长 {3} 个",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "Steps: min {0}, max {1}; {2} negative steps, {3} zero steps"
+  },
+  {
+    "Source": "步长: 最小 {0} 最大 {1}  ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Steps: min {0}, max {1}; "
+  },
+  {
+    "Source": "负步长 {0} 个  零步长 {1} 个",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} negative steps, {1} zero steps"
+  },
+  {
+    "Source": "步长中位数: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Median step: {0}"
+  },
+  {
+    "Source": "异常步长数量: {0} 占比 {1}%",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Unexpected steps: {0} ({1}%)"
+  },
+  {
+    "Source": "[OK] PTS 时间轴正常",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] PTS timeline is valid"
+  },
+  {
+    "Source": "[错误] -o/--outdir 后需要目录",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[ERROR] -o/--outdir requires a directory"
+  },
+  {
+    "Source": "用法: dvda mlp (--check|--align) [-o 目录] [-q] <MLP 文件>...",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: dvda mlp (--check|--align) [-o directory] [-q] <MLP file>..."
+  },
+  {
+    "Source": "[错误] --check 不能与 -o/--outdir 同时使用",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[ERROR] --check cannot be combined with -o/--outdir"
+  },
+  {
+    "Source": "[跳过] 不是文件: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Skip] Not a file: {0}"
+  },
+  {
+    "Source": "       AU {0}，major sync {1}（每 {2} 个），peak={3}，ext={4}，EOS={5}",
+    "Parameters": 6,
+    "Nested": [],
+    "English": "       AU {0}, major sync {1} (every {2}), peak={3}, ext={4}, EOS={5}"
+  },
+  {
+    "Source": "       AU {0}，major sync {1}（每 {2} 个），peak={3}，",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "       AU {0}, major sync {1} (every {2}), peak={3}, "
+  },
+  {
+    "Source": "（每 {0} 个），peak={1}，",
+    "Parameters": 2,
+    "Nested": [],
+    "English": " (every {0}), peak={1}, "
+  },
+  {
+    "Source": "       major sync 异常 {0} 处",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "       {0} major sync errors"
+  },
+  {
+    "Source": "       AU 奇偶异常 {0} 处",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "       {0} AU parity errors"
+  },
+  {
+    "Source": "       子流校验异常 {0} 处",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "       {0} substream checksum errors"
+  },
+  {
+    "Source": "[已对齐] {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Already aligned] {0}"
+  },
+  {
+    "Source": "[对齐] {0}   peak×{1} ext×{2} cksum×{3} EOS={4} (+{5} 字节)",
+    "Parameters": 6,
+    "Nested": [],
+    "English": "[Aligned] {0}   peak×{1} ext×{2} cksum×{3} EOS={4} (+{5} bytes)"
+  },
+  {
+    "Source": "[对齐] {0}   peak×{1} ext×{2} cksum×{3} EOS={4} ",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "[Aligned] {0}   peak×{1} ext×{2} cksum×{3} EOS={4} "
+  },
+  {
+    "Source": "[对齐] {0}   peak×{1} ext×{2} ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "[Aligned] {0}   peak×{1} ext×{2} "
+  },
+  {
+    "Source": "[对齐] {0}   ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Aligned] {0}   "
+  },
+  {
+    "Source": "(+{0} 字节)",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "(+{0} bytes)"
+  },
+  {
+    "Source": "用法: dvda alac check <文件> | dvda alac repair <输入> [输出]",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: dvda alac check <file> | dvda alac repair <input> [output]"
+  },
+  {
+    "Source": "[错误] 找不到文件: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] File not found: {0}"
+  },
+  {
+    "Source": "[错误] 找不到 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] Cannot find {0}"
+  },
+  {
+    "Source": "  解码采样 {0} / 声明 {1} / 报错 {2} 行",
+    "Parameters": 3,
+    "Nested": [
+      0,
+      1
+    ],
+    "English": "  Decoded samples {0} / declared {1} / {2} error lines"
+  },
+  {
+    "Source": "  解码采样 {0} / 声明 {1} / ",
+    "Parameters": 2,
+    "Nested": [
+      0,
+      1
+    ],
+    "English": "  Decoded samples {0} / declared {1} / "
+  },
+  {
+    "Source": "  解码采样 {0} / ",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "  Decoded samples {0} / "
+  },
+  {
+    "Source": "声明 {0} / ",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "declared {0} / "
+  },
+  {
+    "Source": "报错 {0} 行",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} error lines"
+  },
+  {
+    "Source": "  待修补帧: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "  Frames requiring repair: {0}"
+  },
+  {
+    "Source": "    {0}s  size={1} 标记={2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "    {0}s  size={1} marker={2}"
+  },
+  {
+    "Source": "标记={0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "marker={0}"
+  },
+  {
+    "Source": "[已正常] 无需修补，已复制到 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Already valid] No repair needed; copied to {0}"
+  },
+  {
+    "Source": "[已修复] {0} 帧 -> {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Repaired] {0} frames -> {1}"
+  },
+  {
+    "Source": "  修复前: 采样 {0}  报错 {1} 行",
+    "Parameters": 2,
+    "Nested": [
+      0
+    ],
+    "English": "  Before repair: samples {0}, {1} error lines"
+  },
+  {
+    "Source": "  修复前: 采样 {0}  ",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "  Before repair: samples {0}, "
+  },
+  {
+    "Source": "  修复后: 采样 {0}  报错 {1} 行  (容器声明 {2})",
+    "Parameters": 3,
+    "Nested": [
+      0,
+      2
+    ],
+    "English": "  After repair: samples {0}, {1} error lines (container declares {2})"
+  },
+  {
+    "Source": "  修复后: 采样 {0}  报错 {1} 行  ",
+    "Parameters": 2,
+    "Nested": [
+      0
+    ],
+    "English": "  After repair: samples {0}, {1} error lines "
+  },
+  {
+    "Source": "  修复后: 采样 {0}  ",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "  After repair: samples {0}, "
+  },
+  {
+    "Source": "报错 {0} 行  ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} error lines "
+  },
+  {
+    "Source": "(容器声明 {0})",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "(container declares {0})"
+  },
+  {
+    "Source": "  结果: 完全修复 ✔",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  Result: fully repaired ✔"
+  },
+  {
+    "Source": "  结果: 仍有问题 ✗",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  Result: issues remain ✗"
+  },
+  {
+    "Source": "[ALAC 失败] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[ALAC failed] {0}"
+  },
+  {
+    "Source": "用法: dvda iso list <ISO> [目录] | dvda iso extract <ISO> <内部路径> <目标>",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: dvda iso list <ISO> [directory] | dvda iso extract <ISO> <internal path> <destination>"
+  },
+  {
+    "Source": "用法: dvda iso extract <ISO> <内部路径> <目标>",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: dvda iso extract <ISO> <internal path> <destination>"
+  },
+  {
+    "Source": "[FAIL] ISO 中不存在 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[FAIL] {0} does not exist in the ISO"
+  },
+  {
+    "Source": "[ISO 失败] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[ISO failed] {0}"
+  },
+  {
+    "Source": "[错误] build 未知参数: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] Unknown build argument: {0}"
+  },
+  {
+    "Source": "MLP 索引已写入: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "MLP index written: {0}"
+  },
+  {
+    "Source": "[缓存] 复用 {0} 个，重新编码 {1} 个",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Cache] Reused {0}, re-encoded {1}"
+  },
+  {
+    "Source": "[缓存] 复用 {0} 个，",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Cache] Reused {0}, "
+  },
+  {
+    "Source": "重新编码 {0} 个",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "re-encoded {0}"
+  },
+  {
+    "Source": "[DRY-RUN] 已完成 MLP 获取、分盘规划和独立预演索引生成；未执行出盘，也未覆盖正式索引。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[DRY-RUN] MLP preparation, disc planning and a separate preview index are complete. No discs were built and the final index was not overwritten."
+  },
+  {
+    "Source": "[索引] 构建未全部成功，正式 mlp_index.json 保持不变。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[Index] The build did not fully succeed; final mlp_index.json is unchanged."
+  },
+  {
+    "Source": "[构建失败] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[Build failed] {0}"
+  },
+  {
+    "Source": "[错误] --level 必须是 0-8 的整数",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[ERROR] --level must be an integer from 0 to 8"
+  },
+  {
+    "Source": "[错误] --jobs 必须是正整数",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[ERROR] --jobs must be a positive integer"
+  },
+  {
+    "Source": "[错误] 未知参数: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] Unknown argument: {0}"
+  },
+  {
+    "Source": "[错误] --level 必须在 0-8 之间",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[ERROR] --level must be between 0 and 8"
+  },
+  {
+    "Source": "用法: dvda convert <目录或 .m4a 文件>... [--in-place] [--dry-run] [--level N] [--jobs N]",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: dvda convert <directory or .m4a file>... [--in-place] [--dry-run] [--level N] [--jobs N]"
+  },
+  {
+    "Source": "需修补 {0} 帧",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} frames need repair"
+  },
+  {
+    "Source": "无需修补",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "no repair needed"
+  },
+  {
+    "Source": "修补 {0} 帧",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "repaired {0} frames"
+  },
+  {
+    "Source": "标签 {0} 项",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} metadata tags"
+  },
+  {
+    "Source": "封面逐字节一致",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "artwork is byte-identical"
+  },
+  {
+    "Source": "封面存在",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "artwork present"
+  },
+  {
+    "Source": "缺标签 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "missing tags {0}"
+  },
+  {
+    "Source": "缺标签 ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "missing tags "
+  },
+  {
+    "Source": "封面 type={0} {1} {2}x{3}/{4}bit",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "artwork type={0} {1} {2}x{3}/{4}-bit"
+  },
+  {
+    "Source": "封面 type={0} {1} ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "artwork type={0} {1} "
+  },
+  {
+    "Source": "源文件删除失败: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Could not delete source file: {0}"
+  },
+  {
+    "Source": "[转换失败] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[Conversion failed] {0}"
+  },
+  {
+    "Source": "[错误] plan 未知参数: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] Unknown plan argument: {0}"
+  },
+  {
+    "Source": "[规划失败] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[Planning failed] {0}"
+  },
+  {
+    "Source": "用法: dvda verify [config|quick|capacity|audit|menu|timeline|lossless|all] [--iso FILE]",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: dvda verify [config|quick|capacity|audit|menu|timeline|lossless|all] [--iso FILE]"
+  },
+  {
+    "Source": "[错误] verify {0} 未知参数: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[ERROR] Unknown verify {0} argument: {1}"
+  },
+  {
+    "Source": "=================== 容量与结构 ===================",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=================== Capacity and structure ==================="
+  },
+  {
+    "Source": "{0} {1} B  余 {2} B  卷标: {3}",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "{0} {1} B  remaining {2} B  volume label: {3}"
+  },
+  {
+    "Source": "余 {0} B  卷标: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "remaining {0} B  volume label: {1}"
+  },
+  {
+    "Source": "[OK] 容量与顶层结构通过",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] Capacity and top-level structure passed"
+  },
+  {
+    "Source": "=================== 快速结构校验 ===================",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=================== Quick structure checks ==================="
+  },
+  {
+    "Source": "=================== 光盘一致性审计 ===================",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=================== Disc consistency audit ==================="
+  },
+  {
+    "Source": "=== {0}: {1} 轨 ===",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "=== {0}: {1} tracks ==="
+  },
+  {
+    "Source": "[OK] 校验通过",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] Verification passed"
+  },
+  {
+    "Source": "=================== 菜单校验（AMG / ASVS） ===================",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=================== Menu verification (AMG / ASVS) ==================="
+  },
+  {
+    "Source": "=== {0}: 菜单 {1} 页 / 静图 {2} 张 ===",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "=== {0}: {1} menu pages / {2} still pictures ==="
+  },
+  {
+    "Source": "菜单 {0} 页 / 静图 {1} 张 ===",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} menu pages / {1} still pictures ==="
+  },
+  {
+    "Source": "[OK] AMG/ASVS 结构与菜单画面通过",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] AMG/ASVS structure and menu images passed"
+  },
+  {
+    "Source": "[跳过] DVDA_MENU=off，成品按预期没有菜单。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[Skip] DVDA_MENU=off; the output has no menus, as expected."
+  },
+  {
+    "Source": "[OK] AMG/ASVS 结构通过",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] AMG/ASVS structure passed"
+  },
+  {
+    "Source": "=================== 时间轴校验（PTS） ===================",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=================== Timeline verification (PTS) ==================="
+  },
+  {
+    "Source": "[OK] 全部盘、全部音频组 PTS 时间轴通过",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] PTS timelines passed for all discs and audio groups"
+  },
+  {
+    "Source": "=================== MLP 无损验证（抽样：第 1 盘 / 组 1 / 第 1 轨）===================",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=================== MLP lossless verification (sample: disc 1 / group 1 / track 1) ==================="
+  },
+  {
+    "Source": "[OK] 首轨抽样无损校验通过（源 PCM 逐字节比对；SurCode 仅容许不足 1 ms 的完整零采样帧尾部填充；成品 MLP 字节比对；非全盘逐轨）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] First-track lossless sample passed (source PCM byte comparison; SurCode permits only complete zero-sample tail frames shorter than 1 ms; output MLP byte comparison; not a check of every track)"
+  },
+  {
+    "Source": "[校验失败] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[Verification failed] {0}"
+  },
+  {
+    "Source": "用法: dvda {0} [--iso-dir DIR] [--manifest FILE] [--log FILE]",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Usage: dvda {0} [--iso-dir DIR] [--manifest FILE] [--log FILE]"
+  },
+  {
+    "Source": "[错误] ISO 目录不存在: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] ISO directory does not exist: {0}"
+  },
+  {
+    "Source": "[错误] manifest 不存在: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] Manifest does not exist: {0}"
+  },
+  {
+    "Source": "[错误] 构建日志不存在: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] Build log does not exist: {0}"
+  },
+  {
+    "Source": "[错误] prepare 未知参数: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] Unknown prepare argument: {0}"
+  },
+  {
+    "Source": "[配置缺失] {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Missing configuration] {0}"
+  },
+  {
+    "Source": "[缺少] 音源目录不存在: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Missing] Source directory does not exist: {0}"
+  },
+  {
+    "Source": "[缓存] --force: 忽略已有校验记录，全部重新探测与解码校验。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[Cache] --force: ignoring cached checks; probing and decoding every source again."
+  },
+  {
+    "Source": "已校验 {0} 首；失败 {1} 首，警告 {2} 首",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Checked {0} tracks; {1} failed, {2} with warnings"
+  },
+  {
+    "Source": "已校验 {0} 首；失败 {1} 首，",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Checked {0} tracks; {1} failed, "
+  },
+  {
+    "Source": "警告 {0} 首",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} with warnings"
+  },
+  {
+    "Source": "未生成 manifest.json；请修复音源后重试。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "manifest.json was not generated. Fix the source audio and retry."
+  },
+  {
+    "Source": "[准备失败] {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[Preparation failed] {0}"
+  },
+  {
+    "Source": "用法: dvda [config|prepare|plan|build|convert|verify|quick-check|audit|aob-pts|mlp|alac|iso] [--config PATH]",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: dvda [config|prepare|plan|build|convert|verify|quick-check|audit|aob-pts|mlp|alac|iso] [--config PATH]"
+  },
+  {
+    "Source": "[错误] config 未知参数: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] Unknown config argument: {0}"
+  },
+  {
+    "Source": "[错误] config 的 --check、--shell 与 --shell-all 不能重复或同时使用",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[ERROR] config options --check, --shell and --shell-all cannot be repeated or combined"
+  },
+  {
+    "Source": "[配置缺失] 请编辑配置文件后重试",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[Missing configuration] Edit the configuration file and retry"
+  },
+  {
+    "Source": "  配置文件: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "  Configuration file: {0}"
+  },
+  {
+    "Source": "  未找到 config.env —— 请把它与程序放在同一目录，",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  config.env was not found. Put it alongside the application,"
+  },
+  {
+    "Source": "  或设置环境变量 DVDA_CONFIG 指向它",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  or point the DVDA_CONFIG environment variable to it"
+  },
+  {
+    "Source": "音源目录",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Source directory"
+  },
+  {
+    "Source": "ISO 输出目录",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ISO output directory"
+  },
+  {
+    "Source": "  还未填写: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "  Not yet set: {0}"
+  },
+  {
+    "Source": "            {0}=\"D:/你的/路径\"",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "            {0}=\"D:/your/path\""
+  },
+  {
+    "Source": "  示例:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  Example:"
+  },
+  {
+    "Source": "    DVDA_SRC=\"D:/Music/我的专辑\"",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "    DVDA_SRC=\"D:/Music/MyAlbum\""
+  },
+  {
+    "Source": "配置文件: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Configuration file: {0}"
+  },
+  {
+    "Source": "（未找到 config.env，使用默认值）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "(config.env not found; using defaults)"
+  },
+  {
+    "Source": "优先级  : 环境变量 > 所选配置文件 > 内置默认值{0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Priority: environment variables > selected configuration file > built-in defaults{0}"
+  },
+  {
+    "Source": "优先级  : 环境变量 > 所选配置文件 > 内置默认值",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Priority: environment variables > selected configuration file > built-in defaults"
+  },
+  {
+    "Source": "（当前有环境变量覆盖）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": " (environment overrides are active)"
+  },
+  {
+    "Source": "派生路径:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Derived paths:"
+  },
+  {
+    "Source": "MLP 来源:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP source:"
+  },
+  {
+    "Source": "✗ 目录不存在",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "✗ directory does not exist"
+  },
+  {
+    "Source": "(未设 DVDA_MLP_EXTERNAL_DIR)",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "(DVDA_MLP_EXTERNAL_DIR is not set)"
+  },
+  {
+    "Source": "                  （跳过编码；按 <外部目录>/<专辑目录>/<曲名>.mlp 取文件）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "                  (encoding skipped; files read from <external directory>/<album directory>/<track>.mlp)"
+  },
+  {
+    "Source": "  surcode-batch = Windows MLP 编码核心   ✔",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  surcode-batch = Windows MLP encoder   ✔"
+  },
+  {
+    "Source": "  encoder       = 随程序内嵌，无需原版 SurCode",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  encoder       = embedded with the application; original SurCode is not required"
+  },
+  {
+    "Source": "固定空辅助 TLV",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "fixed empty auxiliary TLV"
+  },
+  {
+    "Source": "✗ 不存在或未加入 PATH",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "✗ missing or not on PATH"
+  },
+  {
+    "Source": "工具:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Tools:"
+  },
+  {
+    "Source": "✗ 不存在",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "✗ not found"
+  },
+  {
+    "Source": "(用 PATH 解析)",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "(resolved through PATH)"
+  },
+  {
+    "Source": "分盘:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Disc planning:"
+  },
+  {
+    "Source": "不限制",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "unlimited"
+  },
+  {
+    "Source": "目录就绪检查:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Directory readiness:"
+  },
+  {
+    "Source": "音源",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "source"
+  },
+  {
+    "Source": "输出",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "output"
+  },
+  {
+    "Source": "工作目录",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "working directory"
+  },
+  {
+    "Source": "  {0} = (未配置)",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "  {0} = (not configured)"
+  },
+  {
+    "Source": "  {0} = {1}   （尚不存在，出盘时会自动创建）",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "  {0} = {1}   (does not exist yet; created during the build)"
+  },
+  {
+    "Source": "  {0} = {1}   ✗ 不存在",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "  {0} = {1}   ✗ does not exist"
+  },
+  {
+    "Source": "[跳过] {0}: {1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "[Skip] {0}: {1}"
+  },
+  {
+    "Source": "FFmpeg MLP 编码分支已移除，请将 DVDA_MLP_SOURCE 改为 surcode-batch 或 external。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The FFmpeg MLP encoding branch has been removed. Set DVDA_MLP_SOURCE to surcode-batch or external."
+  },
+  {
+    "Source": "DVDA_MLP_SOURCE 仅支持 surcode-batch、external 或 surcode（外部文件）。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "DVDA_MLP_SOURCE supports only surcode-batch, external or surcode (external files)."
+  },
+  {
+    "Source": "环境变量",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "environment variable"
+  },
+  {
+    "Source": "默认值",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "default"
+  },
+  {
+    "Source": "找不到配置文件。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Configuration file not found."
+  },
+  {
+    "Source": "配置方案为空。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The project profile is empty."
+  },
+  {
+    "Source": "配置方案版本或内容无效。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The project profile version or content is invalid."
+  },
+  {
+    "Source": "请选择存在的音源目录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose an existing source audio directory."
+  },
+  {
+    "Source": "请选择构建缓存目录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose a build cache directory."
+  },
+  {
+    "Source": "请选择成品输出目录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose an output directory."
+  },
+  {
+    "Source": "找不到 FFmpeg。请选择有效的 ffmpeg.exe 路径，或将它加入 PATH。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "FFmpeg was not found. Select a valid ffmpeg.exe path or add it to PATH."
+  },
+  {
+    "Source": "导入外部 MLP 时必须选择存在的 MLP 目录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Importing external MLP requires an existing MLP directory."
+  },
+  {
+    "Source": "指定的 MLP 元数据上下文文件不存在。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The specified MLP metadata context file does not exist."
+  },
+  {
+    "Source": "MLP 目标采样率无效。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid target sample rate for MLP."
+  },
+  {
+    "Source": "MLP 目标位深必须为 16、20 或 24。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP target bit depth must be 16, 20 or 24."
+  },
+  {
+    "Source": "DVD5 · 标准单层",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "DVD5 · Single layer"
+  },
+  {
+    "Source": "DVD9 · 双层",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "DVD9 · Dual layer"
+  },
+  {
+    "Source": "自定义容量（字节）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Custom capacity (bytes)"
+  },
+  {
+    "Source": "正在检查音源",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking source audio"
+  },
+  {
+    "Source": "读取曲目信息并确认音频能够正常解码，请稍候。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Reading track information and checking audio decoding. Please wait."
+  },
+  {
+    "Source": "音源检查失败 {0} 项，请查看日志。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Source checks failed for {0} items. See the log for details."
+  },
+  {
+    "Source": "音源检查完成",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Source checks complete"
+  },
+  {
+    "Source": "可以预演分盘，或直接点击“开始制作”。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Preview the disc layout, or click \"Build discs\" to continue."
+  },
+  {
+    "Source": "正在预演制作",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Previewing disc layout"
+  },
+  {
+    "Source": "正在制作光盘",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Building discs"
+  },
+  {
+    "Source": "准备无损编码、计算分盘并处理光盘内容；较长音轨需要一些时间。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Preparing lossless audio, planning discs and building disc content. Long tracks may take some time."
+  },
+  {
+    "Source": "构建未全部成功，请查看日志和构建目录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Some build steps failed. Check the log and working folder."
+  },
+  {
+    "Source": "索引：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Index: {0}"
+  },
+  {
+    "Source": "成品：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Output: {0}"
+  },
+  {
+    "Source": "预演完成",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Preview complete"
+  },
+  {
+    "Source": "共 {0} 首曲目，计划制作 {1} 张光盘。尚未生成 ISO；点击“开始制作”继续。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} tracks will fit on {1} discs. No ISO files have been created. Click \"Build discs\" to continue."
+  },
+  {
+    "Source": "制作完成",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Build complete"
+  },
+  {
+    "Source": "已制作 {0} 张光盘。点击“查看成品”打开保存位置，建议再运行“验证成品”。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Created {0} discs. Click \"Open output\" to open the folder, then run \"Verify output\"."
+  },
+  {
+    "Source": "正在检查光盘容量",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking disc capacity"
+  },
+  {
+    "Source": "确认已制作的光盘镜像与容量限制。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking the completed disc images against the capacity limit."
+  },
+  {
+    "Source": "容量检查：{0}，{1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Capacity check: {0}, {1}"
+  },
+  {
+    "Source": "通过",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Passed"
+  },
+  {
+    "Source": "失败",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Failed"
+  },
+  {
+    "Source": "正在检查曲目索引",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking track indexes"
+  },
+  {
+    "Source": "核对光盘中的曲目与制作记录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Comparing the tracks on each disc with the build records."
+  },
+  {
+    "Source": "部分光盘索引验证缺少必要材料。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Some disc index checks are missing required input files."
+  },
+  {
+    "Source": "正在检查播放时间轴",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking playback timelines"
+  },
+  {
+    "Source": "检查所有音频组的播放时间和顺序。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking playback timing and order in every audio group."
+  },
+  {
+    "Source": "时间轴验证不可用。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Timeline verification is unavailable."
+  },
+  {
+    "Source": "正在检查选曲菜单",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking track menus"
+  },
+  {
+    "Source": "确认菜单结构和跳转目标。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking menu structure and navigation targets."
+  },
+  {
+    "Source": "菜单验证不可用。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Menu verification is unavailable."
+  },
+  {
+    "Source": "正在抽样检查音频",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking an audio sample"
+  },
+  {
+    "Source": "比较首轨音源与成品中的音频。此项为首轨抽样，不代表逐轨检查。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Comparing the first source track with its disc audio. This is a first-track sample, not a check of every track."
+  },
+  {
+    "Source": "抽样无损验证不可用。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Sampled lossless verification is unavailable."
+  },
+  {
+    "Source": "[错误] {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[ERROR] {0}"
+  },
+  {
+    "Source": "[错误] ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[ERROR] "
+  },
+  {
+    "Source": "验证有 {0} 项未通过，请查看日志。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} verification checks failed. See the log for details."
+  },
+  {
+    "Source": "成品验证通过",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Output verification passed"
+  },
+  {
+    "Source": "容量、索引、时间轴及已启用的菜单检查完成；无损检查为首轨抽样。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Capacity, indexes, timelines and enabled menus have been checked. Lossless verification samples the first track."
+  },
+  {
+    "Source": "停止任务",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Stop task"
+  },
+  {
+    "Source": "准备就绪",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Ready"
+  },
+  {
+    "Source": "只看提醒",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Issues only"
+  },
+  {
+    "Source": "实时更新",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Live updates"
+  },
+  {
+    "Source": "暂无问题提示",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No issues reported"
+  },
+  {
+    "Source": "选择音源和成品位置，然后点击“开始制作”。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose your source and output folders, then click \"Build discs\"."
+  },
+  {
+    "Source": "尚未开始任务",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No task started"
+  },
+  {
+    "Source": "把音乐制作成 DVD-Audio 光盘镜像",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Create DVD-Audio disc images from your music"
+  },
+  {
+    "Source": "打开方案",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Open profile"
+  },
+  {
+    "Source": "保存方案",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Save profile"
+  },
+  {
+    "Source": "导入旧配置…",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Import env…"
+  },
+  {
+    "Source": "任务摘要",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Task summary"
+  },
+  {
+    "Source": "详细日志",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Detailed log"
+  },
+  {
+    "Source": "取消勾选可停留在当前内容，后台仍完整记录。再次勾选同步最新内容。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Uncheck to keep the current view while recording continues. Check again to show the latest messages."
+  },
+  {
+    "Source": "摘要展示重要步骤与问题。详细日志显示最近的原始记录；导出保存完整任务日志。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The summary shows key steps and issues. The detailed view shows recent raw messages; export saves the complete task log."
+  },
+  {
+    "Source": "复制当前内容",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Copy view"
+  },
+  {
+    "Source": "导出详细日志…",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Export log…"
+  },
+  {
+    "Source": "检查音源",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Check sources"
+  },
+  {
+    "Source": "检查曲目信息和解码是否正常，不制作光盘。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Check track information and decoding without building discs."
+  },
+  {
+    "Source": "预演制作",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Preview layout"
+  },
+  {
+    "Source": "准备编码文件并计算分盘，但不生成 ISO。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Prepare encoded audio and plan discs without creating ISO files."
+  },
+  {
+    "Source": "开始制作",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Build discs"
+  },
+  {
+    "Source": "自动检查音源、编码并生成 ISO 光盘镜像。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Check sources, encode audio and create ISO disc images."
+  },
+  {
+    "Source": "验证成品",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Verify output"
+  },
+  {
+    "Source": "验证已制作的光盘结构、时间轴和菜单；无损项为首轨抽样。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Verify disc structure, timelines and menus. Lossless verification samples the first track."
+  },
+  {
+    "Source": "查看成品",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Open output"
+  },
+  {
+    "Source": "尚未找到成品文件夹，请先完成制作或检查保存位置。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The output folder does not exist yet. Build discs first or check the output location."
+  },
+  {
+    "Source": "已用时 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Elapsed: {0}"
+  },
+  {
+    "Source": "已用时 ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Elapsed: "
+  },
+  {
+    "Source": "先选择音源文件夹和成品保存位置。其他选项可按需调整。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose your source and output folders first. Adjust the other settings as needed."
+  },
+  {
+    "Source": "“预演制作”会准备编码文件和分盘方案，但不会生成 ISO。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "\"Preview layout\" prepares encoded audio and the disc plan without creating ISO files."
+  },
+  {
+    "Source": "开始设置",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Getting started"
+  },
+  {
+    "Source": "选择音乐、保存位置和光盘容量，即可开始制作。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose your music, output folder and disc capacity to begin."
+  },
+  {
+    "Source": "音频编码",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio encoding"
+  },
+  {
+    "Source": "通常使用内置无损编码；也可以导入已经准备好的 MLP 文件。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Use the built-in lossless encoder, or import existing MLP files."
+  },
+  {
+    "Source": "光盘菜单",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Disc menus"
+  },
+  {
+    "Source": "设置播放器中的选曲菜单与专辑封面。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Configure track menus and album artwork for disc players."
+  },
+  {
+    "Source": "发布包通常已经配好工具，仅在更换工具或排查问题时调整。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The release includes tool defaults. Change these only when replacing tools or troubleshooting."
+  },
+  {
+    "Source": "更多设置  ▾",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "More settings  ▾"
+  },
+  {
+    "Source": "收起更多设置  ▴",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Fewer settings  ▴"
+  },
+  {
+    "Source": "开启",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Enabled"
+  },
+  {
+    "Source": "浏览…",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Browse…"
+  },
+  {
+    "Source": "浏览{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Browse {0}"
+  },
+  {
+    "Source": "浏览",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Browse"
+  },
+  {
+    "Source": "所有文件|*.*",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "All files|*.*"
+  },
+  {
+    "Source": "当前方案：{0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Current profile: {0}"
+  },
+  {
+    "Source": "当前方案：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Current profile: "
+  },
+  {
+    "Source": "新建配置",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "New profile"
+  },
+  {
+    "Source": "{0}\n开始任务或退出时自动保存当前设置。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0}\nSettings are saved automatically when a task starts or the application closes."
+  },
+  {
+    "Source": "\n开始任务或退出时自动保存当前设置。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "\nSettings are saved automatically when a task starts or the application closes."
+  },
+  {
+    "Source": "导入旧配置文件",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Import an env configuration"
+  },
+  {
+    "Source": "环境配置|*.env|所有文件|*.*",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Environment configuration|*.env|All files|*.*"
+  },
+  {
+    "Source": "已导入旧配置，原文件不会被修改。请确认目录后开始制作。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Configuration imported. The original file is unchanged. Check the folders before building."
+  },
+  {
+    "Source": "打开配置方案",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Open project profile"
+  },
+  {
+    "Source": "配置方案|*.json",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Project profiles|*.json"
+  },
+  {
+    "Source": "已打开方案：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Opened profile: {0}"
+  },
+  {
+    "Source": "已打开方案：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Opened profile: "
+  },
+  {
+    "Source": "保存配置方案",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Save project profile"
+  },
+  {
+    "Source": "已保存：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Saved: {0}"
+  },
+  {
+    "Source": "已保存：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Saved: "
+  },
+  {
+    "Source": "制作方案已保存。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Project profile saved."
+  },
+  {
+    "Source": "制作光盘",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Disc build"
+  },
+  {
+    "Source": "正在{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Running: {0}"
+  },
+  {
+    "Source": "正在",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Running: "
+  },
+  {
+    "Source": "开始{0}。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Starting {0}."
+  },
+  {
+    "Source": "开始{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Starting {0}"
+  },
+  {
+    "Source": "开始",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Starting "
+  },
+  {
+    "Source": "请先完善设置",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Complete the settings first"
+  },
+  {
+    "Source": "按下方提示调整设置，然后重新点击任务按钮。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Follow the messages below, then start the task again."
+  },
+  {
+    "Source": " · 有提示待查看",
+    "Parameters": 0,
+    "Nested": [],
+    "English": " · Review reported issues"
+  },
+  {
+    "Source": "任务已停止",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Task stopped"
+  },
+  {
+    "Source": "需要时可以重新开始；程序会按设置复用已有检查和制作结果。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "You can restart when ready. Existing checks and completed builds will be reused according to your settings."
+  },
+  {
+    "Source": "已按你的要求停止任务。已完成的成品不会被删除。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The task was stopped at your request. Completed output has been kept."
+  },
+  {
+    "Source": "{0}未完成",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} incomplete"
+  },
+  {
+    "Source": "未完成",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "incomplete"
+  },
+  {
+    "Source": "本次用时 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Task duration: {0}"
+  },
+  {
+    "Source": "本次用时 ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Task duration: "
+  },
+  {
+    "Source": "正在停止任务…",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Stopping task…"
+  },
+  {
+    "Source": "等待当前操作结束并释放文件，请稍候。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Waiting for the current operation to finish and release its files."
+  },
+  {
+    "Source": "{0} 条提醒 / 问题",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} warnings / issues"
+  },
+  {
+    "Source": "无法继续保存完整日志，窗口仅保留最近记录。请检查磁盘空间或目录权限。{0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "The complete log can no longer be saved. Only recent messages remain in the window. Check disk space and folder permissions. {0}"
+  },
+  {
+    "Source": "无法继续保存完整日志，窗口仅保留最近记录。请检查磁盘空间或目录权限。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The complete log can no longer be saved. Only recent messages remain in the window. Check disk space and folder permissions."
+  },
+  {
+    "Source": "完成",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Done"
+  },
+  {
+    "Source": "提醒",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Warning"
+  },
+  {
+    "Source": "问题",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Issue"
+  },
+  {
+    "Source": "进度",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Progress"
+  },
+  {
+    "Source": "请选择其他文件名，不能覆盖正在记录的日志。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose a different file name. The active log cannot be overwritten."
+  },
+  {
+    "Source": "导出当前缓存日志",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Export cached log"
+  },
+  {
+    "Source": "导出完整任务日志",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Export complete task log"
+  },
+  {
+    "Source": "文本日志|*.txt",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Text logs|*.txt"
+  },
+  {
+    "Source": "DVD-Audio-日志-{0}.txt",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "DVD-Audio-log-{0}.txt"
+  },
+  {
+    "Source": "详细日志已导出，可用于排查问题。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Detailed log exported for troubleshooting."
+  },
+  {
+    "Source": "暂时无法完成此操作",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unable to complete this operation"
+  },
+  {
+    "Source": "{0} 小时 {1} 分 {2} 秒",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "{0} h {1} min {2} s"
+  },
+  {
+    "Source": "{0} 分 {1} 秒",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} min {1} s"
+  },
+  {
+    "Source": "完整日志保存或窗口缓存限制失效。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Complete log saving or the window cache limit is not working."
+  },
+  {
+    "Source": "详细日志未显示最新内容。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The detailed log does not show the latest messages."
+  },
+  {
+    "Source": "摘要问题筛选失效。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The summary issue filter is not working."
+  },
+  {
+    "Source": "暂停查看时内容发生跳动。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The paused log view moved unexpectedly."
+  },
+  {
+    "Source": "恢复实时日志时丢失消息。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Messages were lost when live updates resumed."
+  },
+  {
+    "Source": "GUI 设置控件未完整构建。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The GUI settings controls are incomplete."
+  },
+  {
+    "Source": "选项显示改变了配置值：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The displayed choice changed its configuration value: {0}"
+  },
+  {
+    "Source": "选项显示改变了配置值：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The displayed choice changed its configuration value: "
+  },
+  {
+    "Source": "用法：DVD-Audio-Maker [--config 配置.env或.json]",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage: DVD-Audio-Maker [--config settings.env|profile.json]"
+  },
+  {
+    "Source": "\n\n详细错误记录：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "\n\nDetailed error log: {0}"
+  },
+  {
+    "Source": "\n\n详细错误记录：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "\n\nDetailed error log: "
+  },
+  {
+    "Source": "程序暂时无法打开，请查看下方原因。\n\n{0}{1}",
+    "Parameters": 2,
+    "Nested": [
+      0
+    ],
+    "English": "The application could not start. See the reason below.\n\n{0}{1}"
+  },
+  {
+    "Source": "程序暂时无法打开，请查看下方原因。\n\n{0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "The application could not start. See the reason below.\n\n{0}"
+  },
+  {
+    "Source": "程序暂时无法打开，请查看下方原因。\n\n",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The application could not start. See the reason below.\n\n"
+  },
+  {
+    "Source": "无法打开 DVD-Audio Maker",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unable to open DVD-Audio Maker"
+  },
+  {
+    "Source": "内置无损编码（推荐）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Built-in lossless encoder (recommended)"
+  },
+  {
+    "Source": "导入已有 MLP 文件",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Import existing MLP files"
+  },
+  {
+    "Source": "导入旧 SurCode 输出",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Import legacy SurCode output"
+  },
+  {
+    "Source": "{0} 位",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0}-bit"
+  },
+  {
+    "Source": " 位",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "-bit"
+  },
+  {
+    "Source": "音源文件夹",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Source music folder"
+  },
+  {
+    "Source": "选择音乐所在目录，自动包含子文件夹中的 FLAC 和 M4A。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Select your music folder. FLAC and M4A files in subfolders are included automatically."
+  },
+  {
+    "Source": "成品保存位置",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Output folder"
+  },
+  {
+    "Source": "制作完成的 ISO 光盘镜像保存在这里。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Completed ISO disc images are saved here."
+  },
+  {
+    "Source": "光盘名称",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Disc title"
+  },
+  {
+    "Source": "显示在光盘卷标中，例如：My Music。为兼容制盘工具，建议使用英文和数字。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Used as the volume label, for example My Music. English letters and digits work best with the authoring tools."
+  },
+  {
+    "Source": "光盘容量",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Disc capacity"
+  },
+  {
+    "Source": "普通单层光盘选 DVD5；双层光盘选 DVD9。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose DVD5 for a standard single-layer disc, or DVD9 for a dual-layer disc."
+  },
+  {
+    "Source": "最多制作几张",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Maximum disc count"
+  },
+  {
+    "Source": "填 0 表示不限张数，曲目会自动分盘。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Set to 0 for no limit. Tracks are assigned to discs automatically."
+  },
+  {
+    "Source": "工作文件夹",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Working folder"
+  },
+  {
+    "Source": "存放编码缓存和制作中的文件，建议选择空间充足的磁盘。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Stores encoding caches and work in progress. Choose a drive with enough free space."
+  },
+  {
+    "Source": "镜像文件名前缀",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ISO file name prefix"
+  },
+  {
+    "Source": "留空时根据光盘名称生成。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Leave empty to derive it from the disc title."
+  },
+  {
+    "Source": "每组最多曲目",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Maximum tracks per group"
+  },
+  {
+    "Source": "通常保留默认值 99。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Normally leave this at 99."
+  },
+  {
+    "Source": "复用检查结果",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Reuse source checks"
+  },
+  {
+    "Source": "未改变的音源无需重复检查，可以加快下一次制作。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unchanged audio does not need to be checked again, speeding up the next build."
+  },
+  {
+    "Source": "继续未完成的制作",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Resume incomplete builds"
+  },
+  {
+    "Source": "重试时复用已完成且校验一致的光盘。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Reuse completed discs that pass validation when retrying a build."
+  },
+  {
+    "Source": "音频编码方式",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Encoding method"
+  },
+  {
+    "Source": "通常使用内置编码；已有 MLP 文件时可以选择导入。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Use the built-in encoder, or select import if you already have MLP files."
+  },
+  {
+    "Source": "采样率",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Sample rate"
+  },
+  {
+    "Source": "176.4 / 192 kHz 最多支持双声道，其余采样率最多六声道。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "176.4 / 192 kHz supports up to two channels. Other sample rates support up to six."
+  },
+  {
+    "Source": "音频位深",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Bit depth"
+  },
+  {
+    "Source": "通常选 24 位。降低位深可能丢失原音频精度。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "24-bit is the usual choice. Reducing bit depth may discard source precision."
+  },
+  {
+    "Source": "音源转换与校验工具",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio conversion and verification"
+  },
+  {
+    "Source": "选择 ffmpeg.exe，或填 ffmpeg 使用 PATH。用于准备 PCM、解码和校验，MLP 由内置核心编码。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Select ffmpeg.exe, or enter ffmpeg to use PATH. It prepares PCM, decodes and verifies audio; the built-in core encodes MLP."
+  },
+  {
+    "Source": "MLP 文件夹",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP folder"
+  },
+  {
+    "Source": "内置编码可留空；导入已有 MLP 时请选择与音源结构对应的目录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Leave empty for built-in encoding. For imported MLP files, select a folder that mirrors the source layout."
+  },
+  {
+    "Source": "同时编码几首",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Concurrent encoding jobs"
+  },
+  {
+    "Source": "默认 1。增加数量可同时处理更多音轨，也会占用更多内存。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Default: 1. More jobs process tracks concurrently and use more memory."
+  },
+  {
+    "Source": "历史文件复现信息",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Historical file reproduction context"
+  },
+  {
+    "Source": "通常留空。仅在复现历史原版文件字节时选择对应的 stampctx 文件。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Normally leave empty. Select the matching stampctx file only when reproducing the exact bytes of a historical original file."
+  },
+  {
+    "Source": "音源转换临时位置",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio conversion temporary folder"
+  },
+  {
+    "Source": "留空使用工作文件夹。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Leave empty to use the working folder."
+  },
+  {
+    "Source": "编码结果暂存位置",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Encoded audio staging folder"
+  },
+  {
+    "Source": "制作选曲菜单",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Create track menus"
+  },
+  {
+    "Source": "在支持 DVD-Audio 的播放器中显示曲目菜单。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Show track menus in players that support DVD-Audio."
+  },
+  {
+    "Source": "每页显示几首",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Tracks per page"
+  },
+  {
+    "Source": "控制选曲菜单每页的曲目数量。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The number of tracks shown on each menu page."
+  },
+  {
+    "Source": "显示专辑封面",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Show album artwork"
+  },
+  {
+    "Source": "将专辑图片作为静态封面加入光盘。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Include album artwork as still pictures on the disc."
+  },
+  {
+    "Source": "封面暗化程度（%）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Artwork dimming (%)"
+  },
+  {
+    "Source": "数值越大，封面越暗。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Higher values make the artwork darker."
+  },
+  {
+    "Source": "专辑目录启用门槛",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Album index threshold"
+  },
+  {
+    "Source": "达到此专辑数量时，添加专辑索引页。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Add an album index when the number of albums reaches this threshold."
+  },
+  {
+    "Source": "中文菜单字体",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Chinese menu font"
+  },
+  {
+    "Source": "一般使用随程序附带的字体。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Normally use the font included with the application."
+  },
+  {
+    "Source": "日文菜单字体",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Japanese menu font"
+  },
+  {
+    "Source": "韩文菜单字体",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Korean menu font"
+  },
+  {
+    "Source": "光盘制作工具",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Disc authoring tool"
+  },
+  {
+    "Source": "工具与高级",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Tools & advanced"
+  },
+  {
+    "Source": "dvda-author-dev.exe，通常由发布包自动配置。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "dvda-author-dev.exe; normally configured by the release package."
+  },
+  {
+    "Source": "镜像打包工具",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ISO creation tool"
+  },
+  {
+    "Source": "mkisofs.exe，通常由发布包自动配置。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "mkisofs.exe; normally configured by the release package."
+  },
+  {
+    "Source": "音频信息读取",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio information tool"
+  },
+  {
+    "Source": "FLAC 信息工具",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "FLAC metadata tool"
+  },
+  {
+    "Source": "菜单素材文件夹",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Menu assets folder"
+  },
+  {
+    "Source": "应包含 menu 子文件夹；发布包通常自动配置。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Must contain a menu subfolder. The release package normally sets this automatically."
+  },
+  {
+    "Source": "保留临时文件",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Keep temporary files"
+  },
+  {
+    "Source": "仅在排查问题时启用，会占用额外磁盘空间。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Enable only for troubleshooting. This uses additional disk space."
+  },
+  {
+    "Source": "保留制作中间文件",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Keep intermediate build files"
+  },
+  {
+    "Source": "仅在排查问题时启用；启用后不复用之前的制作结果。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Enable only for troubleshooting. Previous build results will not be reused while this is enabled."
+  },
+  {
+    "Source": "时长差异提醒（秒）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Duration warning threshold (seconds)"
+  },
+  {
+    "Source": "时长差异上限（秒）",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Duration error threshold (seconds)"
+  },
+  {
+    "Source": "仅处理前几个专辑",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Limit albums for diagnostics"
+  },
+  {
+    "Source": "留空处理全部专辑，仅用于诊断。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Leave empty to process all albums. Intended for diagnostics only."
+  },
+  {
+    "Source": "音频标题分组规则",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio title grouping"
+  },
+  {
+    "Source": "通常保留 album；诊断时可用 one 或正整数。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Normally leave this as album. Use one or a positive integer for diagnostics."
+  },
+  {
+    "Source": "光盘名称与成品卷标不一致。请确认所选方案对应这份成品；名称含中文时，可改用英文名称重新制作。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The disc title does not match the output volume label. Check that the selected profile belongs to this output. If the title contains Chinese characters, try an English title and rebuild."
+  },
+  {
+    "Source": "找到 {0} 首音频，正在检查曲目信息。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Found {0} audio tracks. Checking track information."
+  },
+  {
+    "Source": "音源采样率符合设置，无需重采样。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Source sample rates match the settings. No resampling is needed."
+  },
+  {
+    "Source": "有 {0} 首音频需要调整采样率。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} audio tracks need sample-rate conversion."
+  },
+  {
+    "Source": "音源检查：{0} 首使用已有结果，{1} 首完成重新检查。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Source checks: reused {0} results and rechecked {1} tracks."
+  },
+  {
+    "Source": "开始无损编码，共 {0} 首音频。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Starting lossless encoding for {0} audio tracks."
+  },
+  {
+    "Source": "[MLP] 临时目录:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[MLP] Temporary folder:"
+  },
+  {
+    "Source": "[MLP] MLP 输出目录:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[MLP] MLP output folder:"
+  },
+  {
+    "Source": "正在编码：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Encoding: {0}"
+  },
+  {
+    "Source": "正在编码：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Encoding: "
+  },
+  {
+    "Source": "音轨编码完成 · {0} kHz · {1} 位 · {2} 声道",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Track encoded · {0} kHz · {1}-bit · {2} channels"
+  },
+  {
+    "Source": "音源转换失败：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Audio conversion failed: {0}"
+  },
+  {
+    "Source": "音源转换失败：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio conversion failed: "
+  },
+  {
+    "Source": "音源转换提醒：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Audio conversion warning: {0}"
+  },
+  {
+    "Source": "音源转换提醒：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio conversion warning: "
+  },
+  {
+    "Source": "音源转换工具报告问题：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The audio conversion tool reported an issue: {0}"
+  },
+  {
+    "Source": "音源转换工具报告问题：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The audio conversion tool reported an issue: "
+  },
+  {
+    "Source": "音源转换工具提醒：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Audio conversion tool warning: {0}"
+  },
+  {
+    "Source": "音源转换工具提醒：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio conversion tool warning: "
+  },
+  {
+    "Source": "正在{0}音源 · 当前转换 {1}%",
+    "Parameters": 2,
+    "Nested": [
+      0
+    ],
+    "English": "{0} source audio · conversion {1}%"
+  },
+  {
+    "Source": "分析",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Analyzing"
+  },
+  {
+    "Source": "转换",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Converting"
+  },
+  {
+    "Source": "制盘工具提示目录无法识别；最终结果以任务状态和成品验证为准。详情已保留。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The authoring tool could not recognize a directory. Use the final task status and output verification to assess the result. Details have been retained."
+  },
+  {
+    "Source": "制盘工具报告目录问题。详细路径已保留，请结合最终任务状态与成品验证结果判断。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The authoring tool reported a directory issue. The full path is in the detailed log; check the final task status and output verification."
+  },
+  {
+    "Source": "制盘工具报告问题：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The authoring tool reported an issue: {0}"
+  },
+  {
+    "Source": "制盘工具报告问题：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The authoring tool reported an issue: "
+  },
+  {
+    "Source": "制盘工具报告扇区位置差异。制作后请运行“验证成品”，详细信息已保留。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The authoring tool reported a sector-position difference. Run \"Verify output\" after building. Details have been retained."
+  },
+  {
+    "Source": "工具提示：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Tool message: {0}"
+  },
+  {
+    "Source": "工具提示：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Tool message: "
+  },
+  {
+    "Source": "总曲目 ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Total tracks "
+  },
+  {
+    "Source": "第 ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Disc "
+  },
+  {
+    "Source": "容量检查：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Capacity check: "
+  },
+  {
+    "Source": "=== 分盘结果",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=== Disc plan"
+  },
+  {
+    "Source": "成品：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Output: "
+  },
+  {
+    "Source": "已生成光盘镜像：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Created disc image: {0}"
+  },
+  {
+    "Source": "已生成光盘镜像：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Created disc image: "
+  },
+  {
+    "Source": "[续跑]",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[Resume]"
+  },
+  {
+    "Source": "[恢复]",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[fallback]"
+  },
+  {
+    "Source": "无法启动外部程序 ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unable to start external program "
+  },
+  {
+    "Source": "所需工具",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "required tool"
+  },
+  {
+    "Source": "无法启动 {0}。请确认程序路径正确，并且该程序可以运行。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Unable to start {0}. Check that the program path is correct and the program can run."
+  },
+  {
+    "Source": "无法访问所选文件或文件夹，当前账户可能没有所需权限。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot access the selected file or folder. Your account may not have the required permissions."
+  },
+  {
+    "Source": "找不到所选文件夹，请检查目录或外接磁盘是否可用。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The selected folder was not found. Check the path and any external drive."
+  },
+  {
+    "Source": "当前操作等待时间过长，任务已停止。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The operation timed out and the task has stopped."
+  },
+  {
+    "Source": "请选择有写入权限的输出与工作目录，然后重试。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose output and working folders that you can write to, then retry."
+  },
+  {
+    "Source": "处理超时。请检查音源和工具状态；可导出详细日志排查。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Processing timed out. Check the audio sources and tools; export the detailed log for troubleshooting."
+  },
+  {
+    "Source": "无法启动外部程序",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unable to start external program"
+  },
+  {
+    "Source": "请在“音频编码”或“工具与高级”中检查程序及文件路径，然后重试。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Check program and file paths under \"Audio encoding\" or \"Tools & advanced\", then retry."
+  },
+  {
+    "Source": "请检查所选目录是否存在，以及移动硬盘或网络盘是否已连接。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Check that the selected folder exists and any external or network drive is connected."
+  },
+  {
+    "Source": "查看下方问题提示，调整设置后重试；需要排查时可导出详细日志。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Review the issues below, adjust the settings and retry. Export the detailed log if you need to investigate further."
+  },
+  {
+    "Source": "输入不是包含多个 face 的 TTC 字体集合。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The input is not a TTC font collection with multiple faces."
+  },
+  {
+    "Source": "family='{0}' 应恰好出现一次，实际 {1} 次；可用 family: {2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "family='{0}' must occur exactly once; found {1}. Available families: {2}"
+  },
+  {
+    "Source": "family='{0}' 应恰好出现一次，实际 {1} 次；可用 family: ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "family='{0}' must occur exactly once; found {1}. Available families: "
+  },
+  {
+    "Source": "family='{0}' 应恰好出现一次，实际 {1} 次；",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "family='{0}' must occur exactly once; found {1}. "
+  },
+  {
+    "Source": "可用 family: ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Available families: "
+  },
+  {
+    "Source": "期望单 face 字体，实际仍是 TTC 字体集合。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Expected a single-face font, but the input is still a TTC collection."
+  },
+  {
+    "Source": "family 应为 '{0}'，实为 '{1}'。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Expected family '{0}', found '{1}'."
+  },
+  {
+    "Source": "假名",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Kana"
+  },
+  {
+    "Source": "谚文",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Hangul"
+  },
+  {
+    "Source": "拉丁",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Latin"
+  },
+  {
+    "Source": "字体缺少字符集: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The font is missing character sets: {0}"
+  },
+  {
+    "Source": "字体缺少字符集: ",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The font is missing character sets: "
+  },
+  {
+    "Source": "OpenType 全字体校验和无效。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid OpenType whole-font checksum."
+  },
+  {
+    "Source": "字体头",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "font header"
+  },
+  {
+    "Source": "TTC 头",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "TTC header"
+  },
+  {
+    "Source": "TTC face 数",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "TTC face count"
+  },
+  {
+    "Source": "TTC face 数无效: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Invalid TTC face count: {0}"
+  },
+  {
+    "Source": "TTC face 偏移表",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "TTC face offset table"
+  },
+  {
+    "Source": "face 偏移",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "face offset"
+  },
+  {
+    "Source": "SFNT 头",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "SFNT header"
+  },
+  {
+    "Source": "不支持的 SFNT scaler type: 0x{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Unsupported SFNT scaler type: 0x{0}"
+  },
+  {
+    "Source": "SFNT 表数量无效: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Invalid SFNT table count: {0}"
+  },
+  {
+    "Source": "SFNT 表目录",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "SFNT table directory"
+  },
+  {
+    "Source": "{0} 偏移",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} offset"
+  },
+  {
+    "Source": "{0} 长度",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} length"
+  },
+  {
+    "Source": "{0} 表",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} table"
+  },
+  {
+    "Source": "SFNT 表目录包含重复 tag: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The SFNT table directory contains a duplicate tag: {0}"
+  },
+  {
+    "Source": "name 表头",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "name table header"
+  },
+  {
+    "Source": "name 表过短。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The name table is too short."
+  },
+  {
+    "Source": "name 记录",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "name records"
+  },
+  {
+    "Source": "name 字符串",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "name string"
+  },
+  {
+    "Source": "name 表缺少 name ID {0}。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The name table is missing name ID {0}."
+  },
+  {
+    "Source": "cmap 表过短。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The cmap table is too short."
+  },
+  {
+    "Source": "cmap 编码记录",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "cmap encoding records"
+  },
+  {
+    "Source": "cmap 子表偏移",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "cmap subtable offset"
+  },
+  {
+    "Source": "cmap 子表",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "cmap subtable"
+  },
+  {
+    "Source": "cmap format 12 长度",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "cmap format 12 length"
+  },
+  {
+    "Source": "cmap format 12 group 数",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "cmap format 12 group count"
+  },
+  {
+    "Source": "cmap format 12 group 表越界。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The cmap format 12 group table is out of bounds."
+  },
+  {
+    "Source": "cmap format 4 segment 表越界。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The cmap format 4 segment table is out of bounds."
+  },
+  {
+    "Source": "head 表过短。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The head table is too short."
+  },
+  {
+    "Source": "字体缺少 head 表。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The font is missing a head table."
+  },
+  {
+    "Source": "无法生成有效的 OpenType checkSumAdjustment。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot generate a valid OpenType checkSumAdjustment."
+  },
+  {
+    "Source": "字体缺少 {0} 表。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The font is missing the {0} table."
+  },
+  {
+    "Source": "{0} 超出支持范围: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} is outside the supported range: {1}"
+  },
+  {
+    "Source": "{0} 越界: offset={1}, length={2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "{0} is out of bounds: offset={1}, length={2}"
+  },
+  {
+    "Source": "family='{0}' ps='{1}'  汉字={2} 假名={3} 谚文={4} 拉丁={5}",
+    "Parameters": 6,
+    "Nested": [],
+    "English": "family='{0}' ps='{1}'  Han={2} Kana={3} Hangul={4} Latin={5}"
+  },
+  {
+    "Source": "family='{0}' ps='{1}'  汉字={2} 假名={3} 谚文={4} ",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "family='{0}' ps='{1}'  Han={2} Kana={3} Hangul={4} "
+  },
+  {
+    "Source": "family='{0}' ps='{1}'  汉字={2} 假名={3} ",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "family='{0}' ps='{1}'  Han={2} Kana={3} "
+  },
+  {
+    "Source": "family='{0}' ps='{1}'  汉字={2} ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "family='{0}' ps='{1}'  Han={2} "
+  },
+  {
+    "Source": "汉字={0} ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Han={0} "
+  },
+  {
+    "Source": "假名={0} ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Kana={0} "
+  },
+  {
+    "Source": "谚文={0} ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Hangul={0} "
+  },
+  {
+    "Source": "拉丁={0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Latin={0}"
+  },
+  {
+    "Source": "用法:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Usage:"
+  },
+  {
+    "Source": "  dvda-font extract <NotoSansCJK-Regular.ttc> <输出目录>",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  dvda-font extract <NotoSansCJK-Regular.ttc> <output directory>"
+  },
+  {
+    "Source": "  dvda-font verify <单 face OTF/TTF> <期望 family>",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  dvda-font verify <single-face OTF/TTF> <expected family>"
+  },
+  {
+    "Source": "不支持的 ALAC 容器扩展名: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Unsupported ALAC container extension: {0}"
+  },
+  {
+    "Source": "无法读取 ALAC magic cookie，可能不是 ALAC 文件",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot read the ALAC magic cookie; the input may not be ALAC"
+  },
+  {
+    "Source": "ffprobe 无法枚举 ALAC 包（退出码 {0}）: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "ffprobe could not enumerate ALAC packets (exit code {0}): {1}"
+  },
+  {
+    "Source": "ffprobe 无法读取 {0}（退出码 {1}）{2}{3}",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "ffprobe could not read {0} (exit code {1}){2}{3}"
+  },
+  {
+    "Source": "ffprobe 无法读取 {0}（退出码 {1}）{2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "ffprobe could not read {0} (exit code {1}){2}"
+  },
+  {
+    "Source": "ffmpeg 退出码 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "ffmpeg exit code {0}"
+  },
+  {
+    "Source": "FLAC 压缩级别必须在 0-8 之间。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "FLAC compression level must be between 0 and 8."
+  },
+  {
+    "Source": "并发数必须是正整数。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Concurrency must be a positive integer."
+  },
+  {
+    "Source": "没有可处理的 .m4a 文件。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "No .m4a files are available for processing."
+  },
+  {
+    "Source": "读不到首音频流编码",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot read the first audio stream codec"
+  },
+  {
+    "Source": "首音频流不是 ALAC: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "The first audio stream is not ALAC: {0}"
+  },
+  {
+    "Source": "读不到标签",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot read metadata tags"
+  },
+  {
+    "Source": "缺陷检测失败: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Defect detection failed: {0}"
+  },
+  {
+    "Source": "ffmpeg 转换失败: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "ffmpeg conversion failed: {0}"
+  },
+  {
+    "Source": "PCM MD5 不一致 基准={0} 输出={1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "PCM MD5 mismatch: reference={0}, output={1}"
+  },
+  {
+    "Source": "导出 FLAC 封面失败",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Could not export FLAC artwork"
+  },
+  {
+    "Source": "封面规范化失败",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Artwork normalization failed"
+  },
+  {
+    "Source": "无法读取规范化后的 FLAC PICTURE 描述",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot read the normalized FLAC PICTURE descriptor"
+  },
+  {
+    "Source": "FLAC PICTURE 描述不合规: type={0}, mime={1}, {2}x{3}, depth={4}",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "Invalid FLAC PICTURE descriptor: type={0}, mime={1}, {2}x{3}, depth={4}"
+  },
+  {
+    "Source": "FLAC PICTURE 描述不合规: type={0}, ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Invalid FLAC PICTURE descriptor: type={0}, "
+  },
+  {
+    "Source": "提取源封面失败",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Could not extract source artwork"
+  },
+  {
+    "Source": "封面字节数不符: 源 {0} / 输出 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Artwork byte count differs: source {0} / output {1}"
+  },
+  {
+    "Source": "封面字节内容不一致",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Artwork bytes differ"
+  },
+  {
+    "Source": "ffprobe 读取失败（退出码 {0}）: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "ffprobe read failed (exit code {0}): {1}"
+  },
+  {
+    "Source": "[清理] 旧 manifest 已移除: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Cleanup] Removed old manifest: {0}"
+  },
+  {
+    "Source": "发现 {0} 个音频文件 (FLAC/M4A)",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Found {0} audio files (FLAC/M4A)"
+  },
+  {
+    "Source": "[耗时] 元数据探测 {0} 首: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Timing] Metadata probe for {0} tracks: {1}"
+  },
+  {
+    "Source": "[耗时] 元数据探测 {0} 首: ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Timing] Metadata probe for {0} tracks: "
+  },
+  {
+    "Source": "[缓存] 复用元数据 {0} 首 / 重新探测 {1} 首",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Cache] Reused metadata for {0} tracks / probed {1} tracks again"
+  },
+  {
+    "Source": "  [重采样] {0}: {1}/{2} -> {3}/{4}",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "  [Resample] {0}: {1}/{2} -> {3}/{4}"
+  },
+  {
+    "Source": "  [重采样] {0}: {1}/{2} -> ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "  [Resample] {0}: {1}/{2} -> "
+  },
+  {
+    "Source": "共需重采样 {0} 首",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} tracks require resampling"
+  },
+  {
+    "Source": "  ++ [缓存复用] {0}: 已校验的 ALAC 修复结果（{1} 处）",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "  ++ [Cache reused] {0}: validated ALAC repair ({1} fixes)"
+  },
+  {
+    "Source": "  ++ [已修复] {0}: ALAC END 标记 {1} 处，解码采样数已达标",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "  ++ [Repaired] {0}: {1} ALAC END markers; decoded sample count now meets the requirement"
+  },
+  {
+    "Source": "{0}: {1} 首",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0}: {1} tracks"
+  },
+  {
+    "Source": "[耗时] 解码校验 {0} 首: {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Timing] Decode verification for {0} tracks: {1}"
+  },
+  {
+    "Source": "[缓存] 复用已校验结果 {0} 首 / 重新校验 {1} 首",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Cache] Reused checks for {0} tracks / rechecked {1} tracks"
+  },
+  {
+    "Source": "[耗时] prepare 总计: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Timing] Total preparation: {0}"
+  },
+  {
+    "Source": "[缓存] 已更新 {0} 条音源校验记录 -> {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Cache] Updated {0} source verification records -> {1}"
+  },
+  {
+    "Source": "[警告] 准备缓存写入失败: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[WARN] Could not write the preparation cache: {0}"
+  },
+  {
+    "Source": "{0} 声道 × {1} 首",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "{0} channels × {1} tracks"
+  },
+  {
+    "Source": "音频组 {0}Hz/{1}bit 声道数不一致",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Audio group {0} Hz/{1}-bit has inconsistent channel counts"
+  },
+  {
+    "Source": "已修复 ALAC END 标记 {0} 处（原文件未改动）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Repaired {0} ALAC END markers (original file unchanged)"
+  },
+  {
+    "Source": "解码报错 {0} 处",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} decoding errors"
+  },
+  {
+    "Source": "未能读到解码采样数(astats 无输出)",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Could not read the decoded sample count (no astats output)"
+  },
+  {
+    "Source": "ffmpeg 未输出 'Number of samples',无法校验完整性",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ffmpeg did not output 'Number of samples'; completeness cannot be verified"
+  },
+  {
+    "Source": "源声明 {0} 秒 -> 期望 {1} 采样 / 实解 {2} 采样 / {3}",
+    "Parameters": 4,
+    "Nested": [
+      3
+    ],
+    "English": "Source declares {0} seconds -> expected {1} samples / decoded {2} samples / {3}"
+  },
+  {
+    "Source": "源声明 {0} 秒 -> 期望 {1} 采样 / 实解 {2} 采样 / ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Source declares {0} seconds -> expected {1} samples / decoded {2} samples / "
+  },
+  {
+    "Source": "源声明 {0} 秒 -> 期望 {1} 采样 / ",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Source declares {0} seconds -> expected {1} samples / "
+  },
+  {
+    "Source": "实解 {0} 采样 / ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "decoded {0} samples / "
+  },
+  {
+    "Source": "少",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "short by"
+  },
+  {
+    "Source": "多",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "over by"
+  },
+  {
+    "Source": "解码采样数{0} {1} ms",
+    "Parameters": 2,
+    "Nested": [
+      0
+    ],
+    "English": "Decoded sample count is {0} {1} ms"
+  },
+  {
+    "Source": "解码采样数{0} ",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "Decoded sample count is {0} "
+  },
+  {
+    "Source": "{0}s ({1}分{2}秒)  标记 {3} -> 111  ({4} 采样)",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "{0}s ({1} min {2} s)  marker {3} -> 111  ({4} samples)"
+  },
+  {
+    "Source": "{0}s ({1}分{2}秒)  标记 {3} -> 111  ",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "{0}s ({1} min {2} s)  marker {3} -> 111  "
+  },
+  {
+    "Source": "{0}s ({1}分{2}秒)  ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "{0}s ({1} min {2} s)  "
+  },
+  {
+    "Source": "标记 {0} -> 111  ",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "marker {0} -> 111  "
+  },
+  {
+    "Source": "({0} 采样)",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "({0} samples)"
+  },
+  {
+    "Source": "manifest.json 已生成 -> {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "manifest.json created -> {0}"
+  },
+  {
+    "Source": "总计 {0} 首",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Total: {0} tracks"
+  },
+  {
+    "Source": "音源校验报告",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Source audio verification report"
+  },
+  {
+    "Source": "全部通过：无解码错误，解码采样数与源声明一致，组内参数一致。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "All checks passed: no decoding errors, decoded sample counts match source declarations, and parameters are consistent within each group."
+  },
+  {
+    "Source": "    原因: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "    Reason: {0}"
+  },
+  {
+    "Source": "    源文件: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "    Source file: {0}"
+  },
+  {
+    "Source": "ALAC END 标记修复记录",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "ALAC END marker repair log"
+  },
+  {
+    "Source": "说明：仅补写 Apple ALAC 未压缩帧尾缺失的 3 位 END 标记，原文件不修改。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Note: only the missing 3-bit END marker at the end of Apple ALAC uncompressed frames is added. Original files are unchanged."
+  },
+  {
+    "Source": "[已修复 {0} 帧] {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "[Repaired {0} frames] {1}"
+  },
+  {
+    "Source": "    原文件: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "    Original file: {0}"
+  },
+  {
+    "Source": "    修复后: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "    Repaired file: {0}"
+  },
+  {
+    "Source": "报告已写入: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Report written: {0}"
+  },
+  {
+    "Source": "[警告] 准备缓存无法读取，将全部重新校验: {0}",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[WARN] Could not read the preparation cache; all sources will be checked again: {0}"
+  },
+  {
+    "Source": "外部程序退出码 {0}: {1}{2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "External program exit code {0}: {1}{2}"
+  },
+  {
+    "Source": "无法启动外部程序: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Unable to start external program: {0}"
+  },
+  {
+    "Source": "无法启动外部程序 {0}: {1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Unable to start external program {0}: {1}"
+  },
+  {
+    "Source": "外部程序运行超时: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "External program timed out: {0}"
+  },
+  {
+    "Source": "PCM 目标格式必须符合 DVD-Audio 采样率及 16/20/24 位要求。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Target PCM must use a DVD-Audio sample rate and 16, 20 or 24 bits."
+  },
+  {
+    "Source": "[PCM] 正在准备音源：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[PCM] Preparing source: {0}"
+  },
+  {
+    "Source": "音源转换失败：{0}（FFmpeg 退出码 {1}）。{2}",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Audio conversion failed: {0} (FFmpeg exit code {1}). {2}"
+  },
+  {
+    "Source": "[PCM] 音源准备完成：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[PCM] Source ready: {0}"
+  },
+  {
+    "Source": "MLP DLL 需要 Windows x64 主程序，请使用 win-x64 发布包。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The MLP DLL requires a Windows x64 host. Use the win-x64 release."
+  },
+  {
+    "Source": "发布包缺少MLP DLL。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The MLP DLL is missing from the release package."
+  },
+  {
+    "Source": "MLP DLL 哈希不符，请清理损坏的原生核心缓存后重试。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP DLL hash mismatch. Remove the corrupted native-core cache and retry."
+  },
+  {
+    "Source": "MLP DLL ABI 布局不匹配。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP DLL ABI layout mismatch."
+  },
+  {
+    "Source": "不支持的 MLP DLL ABI。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unsupported MLP DLL ABI."
+  },
+  {
+    "Source": "无效的 PCM 帧数或采样率。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid PCM frame count or sample rate."
+  },
+  {
+    "Source": "MLP DLL 编码超时，已取消并清理临时输出。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP DLL encoding timed out. The operation was canceled and temporary output was removed."
+  },
+  {
+    "Source": "拒绝覆盖已有的 MLP 输出文件。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Refusing to overwrite an existing MLP output file."
+  },
+  {
+    "Source": "不支持的 PCM 存储格式。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unsupported PCM storage format."
+  },
+  {
+    "Source": "32 位 PCM 包含无法无损表示的有效低位。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "32-bit PCM contains significant low bits that cannot be represented losslessly."
+  },
+  {
+    "Source": "MLP DLL 输出块超过 ABI 上限。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "An MLP DLL output block exceeds the ABI limit."
+  },
+  {
+    "Source": "MLP DLL 编码失败（{0}）：{1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "MLP DLL encoding failed ({0}): {1}"
+  },
+  {
+    "Source": "[MLP DLL] {0} 帧 / {1} Hz / {2} bit / {3} 声道，{4} 字节",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "[MLP DLL] {0} frames / {1} Hz / {2} bit / {3} channels, {4} bytes"
+  },
+  {
+    "Source": "不支持的 DVD-Audio 声道掩码：0x{0}。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Unsupported DVD-Audio channel mask: 0x{0}."
+  },
+  {
+    "Source": "MLP 元数据上下文格式或 AU 总数与输入不符。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP metadata context format or total AU count does not match the input."
+  },
+  {
+    "Source": "元数据记录数量无效。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid metadata record count."
+  },
+  {
+    "Source": "元数据记录长度无效。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid metadata record length."
+  },
+  {
+    "Source": "元数据上下文已截断。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Metadata context is truncated."
+  },
+  {
+    "Source": "元数据上下文包含多余数据。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Metadata context contains trailing data."
+  },
+  {
+    "Source": "找不到 FFmpeg，请设置 DVDA_FFMPEG 或将 ffmpeg.exe 加入 PATH。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "FFmpeg was not found. Set DVDA_FFMPEG or add ffmpeg.exe to PATH."
+  },
+  {
+    "Source": "找不到显式 MLP 元数据上下文。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The explicitly specified MLP metadata context was not found."
+  },
+  {
+    "Source": "不支持的目标采样率: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Unsupported target sample rate: {0}"
+  },
+  {
+    "Source": "不支持的目标位深: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Unsupported target bit depth: {0}"
+  },
+  {
+    "Source": "编码任务不包含任何音轨。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The encoding job contains no tracks."
+  },
+  {
+    "Source": "找不到待编码音源。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The source audio to encode was not found."
+  },
+  {
+    "Source": "工作文件名必须是唯一的安全 ASCII 名称: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Work file names must be unique, safe ASCII names: {0}"
+  },
+  {
+    "Source": "无效的音轨时长。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid track duration."
+  },
+  {
+    "Source": "拒绝覆盖已有的暂存 MLP 文件。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Refusing to overwrite an existing staged MLP file."
+  },
+  {
+    "Source": "编码输入必须是整数 RIFF/WAVE PCM。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Encoder input must be integer RIFF/WAVE PCM."
+  },
+  {
+    "Source": "WAVE 长度字段无效或文件截断。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid WAVE length field or truncated file."
+  },
+  {
+    "Source": "WAVE 块超出文件边界。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "A WAVE chunk extends beyond the file boundary."
+  },
+  {
+    "Source": "WAVE fmt 块无效。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid WAVE fmt chunk."
+  },
+  {
+    "Source": "WAVE 扩展格式不是整数 PCM。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The WAVE extensible format is not integer PCM."
+  },
+  {
+    "Source": "拒绝浮点或压缩 WAVE 输入。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Floating-point or compressed WAVE input is not accepted."
+  },
+  {
+    "Source": "重复的 WAVE data 块。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Duplicate WAVE data chunk."
+  },
+  {
+    "Source": "WAVE PCM 参数或帧边界不符合 DVD-Audio 格式。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "WAVE PCM parameters or frame boundaries do not meet DVD-Audio requirements."
+  },
+  {
+    "Source": "WAVE 声道掩码与声道数不符。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The WAVE channel mask does not match the channel count."
+  },
+  {
+    "Source": "目标位深必须是 16/20/24。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Target bit depth must be 16, 20 or 24."
+  },
+  {
+    "Source": "PCM 输出采样率与任务不符。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The PCM output sample rate does not match the job."
+  },
+  {
+    "Source": "不能把同时存在的侧置、后置或后中置声道合并为 DVD 环绕声道。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Side, rear and rear-center channels present together cannot be merged into DVD surround channels."
+  },
+  {
+    "Source": "PCM 超出 RIFF 4 GiB 限制；请拆分过长音轨。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "PCM exceeds the RIFF 4 GiB limit. Split the oversized track."
+  },
+  {
+    "Source": "无效的 PCM 宽度。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Invalid PCM width."
+  },
+  {
+    "Source": "32 位存储包含超过 24 位的有效 PCM。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "32-bit storage contains PCM with more than 24 significant bits."
+  },
+  {
+    "Source": "PCM 有效精度高于目标位深；拒绝静默截断，请检查音源转换设置。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "PCM precision exceeds the target bit depth. Silent truncation is refused; check the audio conversion settings."
+  },
+  {
+    "Source": "无法打开 ISO {0}: {1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Cannot open ISO {0}: {1}"
+  },
+  {
+    "Source": "ISO 流必须可读且可定位。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The ISO stream must be readable and seekable."
+  },
+  {
+    "Source": "请求读取的数据过大: {0} 字节",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Requested read is too large: {0} bytes"
+  },
+  {
+    "Source": "ISO 里没有 {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} does not exist in the ISO"
+  },
+  {
+    "Source": "{0} 是目录，不是文件",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} is a directory, not a file"
+  },
+  {
+    "Source": "{0} 是多段（multi-extent）文件，本读取器不支持。",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "{0} is a multi-extent file, which this reader does not support."
+  },
+  {
+    "Source": "PVD 里的根目录记录被截断",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The PVD root directory record is truncated"
+  },
+  {
+    "Source": "在 {0} 里找不到 ISO9660 Primary Volume Descriptor（扇区 16..{1}）",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "No ISO9660 Primary Volume Descriptor found in {0} (sectors 16..{1})"
+  },
+  {
+    "Source": "access unit 在 offset {0} 处长度非法 ({1})",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Invalid access unit length ({1}) at offset {0}"
+  },
+  {
+    "Source": "access unit 未覆盖整个文件（余 {0} 字节）",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Access units do not cover the entire file ({0} bytes remain)"
+  },
+  {
+    "Source": "截断",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "truncated"
+  },
+  {
+    "Source": "checksum16 不符",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "checksum16 mismatch"
+  },
+  {
+    "Source": "采样率未知",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "unknown sample rate"
+  },
+  {
+    "Source": "peak={0}，期望 {1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "peak={0}, expected {1}"
+  },
+  {
+    "Source": "extended_substream_info={0}，期望 1",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "extended_substream_info={0}, expected 1"
+  },
+  {
+    "Source": "major sync 采样率不一致",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "major sync sample rate mismatch"
+  },
+  {
+    "Source": "major sync peak 字段不一致",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "major sync peak field mismatch"
+  },
+  {
+    "Source": "major sync ext 字段不一致",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "major sync ext field mismatch"
+  },
+  {
+    "Source": "MLP 文件不包含 access unit。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The MLP file contains no access units."
+  },
+  {
+    "Source": "offset {0} 的 major sync 被截断",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Truncated major sync at offset {0}"
+  },
+  {
+    "Source": "offset {0} 的 major sync 采样率未知",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Unknown major sync sample rate at offset {0}"
+  },
+  {
+    "Source": "最后一个 access unit 缺少子流头。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The last access unit is missing a substream header."
+  },
+  {
+    "Source": "最后一个 access unit 的子流长度非法。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The last access unit has an invalid substream length."
+  },
+  {
+    "Source": "PTS 至少需要 5 字节。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "PTS requires at least 5 bytes."
+  }
+]

@@ -3,4 +3,5 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>dvda-font</AssemblyName>
   </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\DvdaMaker.Localization\DvdaMaker.Localization.csproj" /></ItemGroup>
 </Project>

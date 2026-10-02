@@ -1,5 +1,7 @@
 # GUI 与进程内 MLP 编码实施方案
 
+[简体中文](GUI-AND-DLL-PLAN.md) | [English](GUI-AND-DLL-PLAN.en.md)
+
 日期：2026-10-01。状态：完成；按最新要求交付原生 x64。
 
 ## 目标和边界
