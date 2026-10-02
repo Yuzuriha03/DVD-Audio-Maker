@@ -50,7 +50,10 @@ venv/
 env/
 
 # ---- 编辑器与系统 ----
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *~
