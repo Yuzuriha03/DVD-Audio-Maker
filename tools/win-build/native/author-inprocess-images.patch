@@ -1,0 +1,116 @@
+--- a/src/menu.c
++++ b/src/menu.c
+@@ -1,3 +1,4 @@
++extern int dvda_image_command(const char *);
+ 
+ //#undef __STRICT_ANSI__
+ 
+@@ -268,8 +269,8 @@
+     case CREATE_IMAGEMAGICK:
+       if (!count4)
+         {
+-          mogrify = create_binary_path(mogrify, MOGRIFY, SEPARATOR MOGRIFY_BASENAME, globals);
+-          convert = create_binary_path(convert, CONVERT, SEPARATOR CONVERT_BASENAME, globals);
++          mogrify = strdup("mogrify");
++          convert = strdup("convert");
+           count4++;
+         }
+       break;
+@@ -510,12 +511,12 @@
+           if (globals->veryverbose) foutput("%s\n", INF "Colorizing background jpg files prior to multiplexing...");
+           char command[500];
+ 
+-          mogrify = create_binary_path(mogrify, MOGRIFY, SEPARATOR MOGRIFY_BASENAME, globals);
++          mogrify = strdup("mogrify");
+ 
+           snprintf(command, 500, "%s -fill \"rgb(%s)\" -colorize 66%% %s", mogrify, img->backgroundcolors[rank], img->backgroundpic[rank]);
+ 
+           if (globals->debugging) foutput(INF "Launching mogrify to colorize menu: %d with command line %s\n", rank, command);
+-          if (system(win32quote(command)) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed")
++          if (dvda_image_command(command) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed")
+             fflush(NULL);
+         }
+     }
+@@ -1312,7 +1313,7 @@
+                "-draw", " \"text ", x0, ',', ALBUM_TEXT_Y0,  '\'', text, "\'\"", q);
+       free(q);
+       if (globals->debugging) foutput("%s%s\n", INF "Launching mogrify (title) with command line: ", command);
+-      if (system(win32quote(command)) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed")
++      if (dvda_image_command(command) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed")
+         fflush(NULL);
+     }
+ 
+@@ -1911,8 +1912,8 @@
+     foutput(INF "Launching convert (album index page) with command line: %s\n",
+             courier->buf);
+ 
+-  int rc = system(win32quote(courier->buf));
+-  if (rc == -1 || !WIFEXITED(rc) || WEXITSTATUS(rc) != 0)
++  int rc = dvda_image_command(courier->buf);
++  if (rc != 0)
+     {
+       fprintf(stderr, "%s", ERR "convert failed while authoring an album "
+               "index page\n");
+@@ -1931,8 +1932,7 @@
+                                   " (page_ntracks)")
+ 
+   char *convert = NULL;
+-  convert = create_binary_path(convert, CONVERT, SEPARATOR CONVERT_BASENAME,
+-                               globals);
++  convert = strdup("convert");
+   if (!convert) EXIT_ON_RUNTIME_ERROR_VERBOSE("No convert binary")
+ 
+   for (int page = 0; page < (int) img->index_pages; ++page)
+@@ -2535,7 +2535,7 @@
+       strcat(command2, q);
+       free(q);
+       if (globals->veryverbose) foutput(INF "Menu: %d/%d, groupcount: %d/%d.\n       Launching mogrify (image) with command line: %s\n", menu, img->nmenus, groupcount, ngroups, command2);
+-      if (system(win32quote(command2)) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed");
++      if (dvda_image_command(command2) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed");
+       free(command2);
+       command2 = NULL;
+       copy_file(img->imagepic[menu], img->highlightpic[menu], globals);
+@@ -2543,7 +2543,7 @@
+       strcat(command1, q);
+       free(q);
+       if (globals->veryverbose) foutput(INF "Menu: %d/%d, groupcount: %d/%d.\n       Launching mogrify (highlight) with command line: %s\n", menu, img->nmenus, groupcount, ngroups, command1);
+-      if (system(win32quote(command1)) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed");
++      if (dvda_image_command(command1) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed");
+       free(command1);
+       command1 = NULL;
+       char command3[500];
+@@ -2557,7 +2557,7 @@
+       free(q3);
+       free(q4);
+       if (globals->veryverbose) foutput(INF "Menu: %d/%d, groupcount: %d/%d.\n       Launching convert (select) with command line: %s\n", menu, img->nmenus, groupcount, ngroups, command3);
+-      if (system(win32quote(command3)) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed");
++      if (dvda_image_command(command3) == -1) EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed");
+ 
+       menu++;
+       group = 0;
+--- a/src/command_line_parsing.c
++++ b/src/command_line_parsing.c
+@@ -1,3 +1,4 @@
++extern int dvda_image_command(const char *);
+ /* File command_line_parsing.c: Parse command line and initialize states.
+ 
+ * Copyright (C) 2007-2022 Fabrice Nicol fabnicol@users.sourceforge.net
+@@ -2808,8 +2809,7 @@
+ 
+       char *convert = NULL;
+       char cl[500]; //do not use command as an array name !
+-      convert = create_binary_path(convert, CONVERT,
+-                                   SEPARATOR CONVERT_BASENAME, globals);
++      convert = strdup("convert");
+ 
+       if (file_exists(img->backgroundpic[0])) unlink(img->backgroundpic[0]);
+ 
+@@ -2821,7 +2821,7 @@
+       if (globals->veryverbose)
+         foutput(INF "Launching convert with command line %s\n",  cl);
+ 
+-      if (system(win32quote(cl)) == -1)
++      if (dvda_image_command(cl) == -1)
+         {
+           EXIT_ON_RUNTIME_ERROR_VERBOSE("System command failed")
+         }

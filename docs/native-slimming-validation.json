@@ -1,0 +1,272 @@
+{
+  "date": "2026-10-02",
+  "status": "PASS_FOR_DOCUMENTED_SCOPE",
+  "package": "build/native-slim-x64-release/DVD-Audio-Maker.zip",
+  "candidate": {
+    "zip_bytes": 80716656,
+    "unpacked_bytes": 180913726,
+    "zip_sha256": "e39417ca1d30f072356002179eb554143e5d236d8cf2a5ee6a733270e5b2801f",
+    "zip_reduction_vs_shared_fonts_baseline": 0.1659862970376687,
+    "zip_reduction_vs_v1_0_baseline": 0.34545929415272425
+  },
+  "shared_fonts_baseline": {
+    "zip_bytes": 96780971,
+    "unpacked_bytes": 202740701,
+    "zip_sha256": "2cdad133addfe64ef4527a829730597cbf6dbe7949d3e155ee059ed7cf643901"
+  },
+  "v1_0_baseline": {
+    "zip_bytes": 123318008,
+    "unpacked_bytes": 234706536,
+    "zip_sha256": "f2d55e4fcb2466b3a7526de191434910deaebf8d146110cf9401646522d14809"
+  },
+  "compatibility_tests": {
+    "passed": 108,
+    "total": 108
+  },
+  "forwarder_checks": {
+    "status": "PASS",
+    "checks": [
+      "forwarder is AMD64",
+      "binary stdout and image expression quoting",
+      "regional font and quoted text SC",
+      "regional font and quoted text JP",
+      "regional font and quoted text KR",
+      "generate png",
+      "png input and relative path",
+      "decode old.png",
+      "decode new.png",
+      "png in-place mogrify pixels",
+      "generate jpg",
+      "jpg input and relative path",
+      "decode old.jpg",
+      "decode new.jpg",
+      "jpg in-place mogrify pixels",
+      "generate webp",
+      "webp input and relative path",
+      "decode old.webp",
+      "decode new.webp",
+      "webp in-place mogrify pixels",
+      "binary stdin forwarding",
+      "nonzero exit and stderr forwarded",
+      "missing core fails without PATH fallback",
+      "long-running child observed",
+      "cancellation kills supervised child"
+    ],
+    "shim_bytes": 5632,
+    "shim_sha256": "f867e492fb02c637e25c1c8b7491a8246e44df1a1e25ffd2855ed1f6ab64c17b"
+  },
+  "integration": {
+    "status": "PASS",
+    "checks": [
+      "ZIP and unpacked sizes both reduced",
+      "ZIP compression setting unchanged",
+      "manifest covers every released file",
+      "manifest hashes match",
+      "ZIP contents match manifest",
+      "ZIP remains standard Deflate",
+      "only six reviewed native DLLs removed",
+      "only two forwarding entrypoints changed",
+      "image core and all remaining native libraries byte-identical",
+      "MLP managed assembly and native core unchanged",
+      "no bundled .NET runtime or CLI",
+      "GUI remains x64",
+      "fonts stored once with explicit regional mapping",
+      "sc every original SFNT table preserved byte-for-byte",
+      "sc extracted face preserves all font data",
+      "jp every original SFNT table preserved byte-for-byte",
+      "jp extracted face preserves all font data",
+      "kr every original SFNT table preserved byte-for-byte",
+      "kr extracted face preserves all font data",
+      "sc 18 old loads font without fallback",
+      "sc 18 new loads font without fallback",
+      "sc 18 menu pixels identical after relocation",
+      "sc 36 old loads font without fallback",
+      "sc 36 new loads font without fallback",
+      "sc 36 menu pixels identical after relocation",
+      "jp 18 old loads font without fallback",
+      "jp 18 new loads font without fallback",
+      "jp 18 menu pixels identical after relocation",
+      "jp 36 old loads font without fallback",
+      "jp 36 new loads font without fallback",
+      "jp 36 menu pixels identical after relocation",
+      "kr 18 old loads font without fallback",
+      "kr 18 new loads font without fallback",
+      "kr 18 menu pixels identical after relocation",
+      "kr 36 old loads font without fallback",
+      "kr 36 new loads font without fallback",
+      "kr 36 menu pixels identical after relocation",
+      "zh-CN GUI and log controls",
+      "en GUI and log controls",
+      "48000_16_1 complete MLP byte identity",
+      "48000_24_2 complete MLP byte identity",
+      "96000_24_6 complete MLP byte identity",
+      "before full multilingual menu ISO built",
+      "before ISO menu timeline and lossless verification",
+      "after full multilingual menu ISO built",
+      "after ISO menu timeline and lossless verification",
+      "all six authoring MLP files identical",
+      "menu and still-image file sets identical",
+      "menu pixels menu/disc1/bg0.jpg",
+      "menu pixels menu/disc1/bg1.jpg",
+      "menu pixels menu/disc1/bg2.jpg",
+      "menu pixels menu/disc1/bg3.jpg",
+      "menu pixels menu/disc1/bg4.jpg",
+      "menu pixels menu/disc1/bg5.jpg",
+      "menu pixels menu/disc1/blankscreen.png",
+      "menu pixels menu/disc1/still0.jpg",
+      "menu pixels menu/disc1/still1.jpg",
+      "menu pixels menu/disc1/still2.jpg",
+      "menu pixels tmp/disc1/bgpic0.jpg",
+      "menu pixels tmp/disc1/bgpic1.jpg",
+      "menu pixels tmp/disc1/bgpic2.jpg",
+      "menu pixels tmp/disc1/bgpic3.jpg",
+      "menu pixels tmp/disc1/bgpic4.jpg",
+      "menu pixels tmp/disc1/bgpic5.jpg",
+      "menu pixels tmp/disc1/blankscreen_1.png",
+      "menu pixels tmp/disc1/hlpic0.png",
+      "menu pixels tmp/disc1/hlpic1.png",
+      "menu pixels tmp/disc1/hlpic2.png",
+      "menu pixels tmp/disc1/hlpic3.png",
+      "menu pixels tmp/disc1/hlpic4.png",
+      "menu pixels tmp/disc1/hlpic5.png",
+      "menu pixels tmp/disc1/impic0.png",
+      "menu pixels tmp/disc1/impic1.png",
+      "menu pixels tmp/disc1/impic2.png",
+      "menu pixels tmp/disc1/impic3.png",
+      "menu pixels tmp/disc1/impic4.png",
+      "menu pixels tmp/disc1/impic5.png",
+      "menu pixels tmp/disc1/pic_000.jpg",
+      "menu pixels tmp/disc1/pic_001.jpg",
+      "menu pixels tmp/disc1/pic_002.jpg",
+      "menu pixels tmp/disc1/pic_003.jpg",
+      "menu pixels tmp/disc1/pic_004.jpg",
+      "menu pixels tmp/disc1/pic_005.jpg",
+      "menu pixels tmp/disc1/slpic0.png",
+      "menu pixels tmp/disc1/slpic1.png",
+      "menu pixels tmp/disc1/slpic2.png",
+      "menu pixels tmp/disc1/slpic3.png",
+      "menu pixels tmp/disc1/slpic4.png",
+      "menu pixels tmp/disc1/slpic5.png",
+      "menu pixels tmp/disc1/svpic.png"
+    ],
+    "encoding": [
+      {
+        "case": "48000_16_1",
+        "whole_file_equal": true,
+        "sha256": "0f674af6f4091bbb6aa97ce071a8498970a49725f2a264e0e5bc9e404d563843"
+      },
+      {
+        "case": "48000_24_2",
+        "whole_file_equal": true,
+        "sha256": "717060da6946dda7d757213e3e8b1163b5ac87143e29271c7a68832272511779"
+      },
+      {
+        "case": "96000_24_6",
+        "whole_file_equal": true,
+        "sha256": "2ed2b97b35a263c70eb729c58be57419a32e8fabed3c3a81d6c107c5e9cb358a"
+      }
+    ],
+    "fonts": [
+      {
+        "region": "sc",
+        "size": 18,
+        "pixel_equal": true,
+        "sha256": "44c7e018125d881934d22856f0788d1ee9cb504d874cf45462c4258f9536bef2"
+      },
+      {
+        "region": "sc",
+        "size": 36,
+        "pixel_equal": true,
+        "sha256": "53df0b141e538d6f5b5ba65280c5e5df160074492c4a2638ab2347671ea34c05"
+      },
+      {
+        "region": "jp",
+        "size": 18,
+        "pixel_equal": true,
+        "sha256": "bf95c793f141db1bc0a002c2552c9a487d99fc1336a7300c5872c7c24133c10f"
+      },
+      {
+        "region": "jp",
+        "size": 36,
+        "pixel_equal": true,
+        "sha256": "a5cd4ba7570b907c08ffe6d4a0245c71d303490d3a27957e2126af058e14aaa7"
+      },
+      {
+        "region": "kr",
+        "size": 18,
+        "pixel_equal": true,
+        "sha256": "12848befb6d62560a712a4fbc87b0d0822640a3e8012c8bcb282bf333ab9399b"
+      },
+      {
+        "region": "kr",
+        "size": 36,
+        "pixel_equal": true,
+        "sha256": "a57874b5d4fbbfe30e7f0fbe976377ff10c5a6c04dd2dfab76fe45b7b15d86aa"
+      }
+    ],
+    "existing_limitations": [
+      "The bundled ImageMagick cannot load font files from a non-ASCII installation path in either the original OTF package or the shared-TTC package; both returned exit code 1 in the separate relocation probe."
+    ],
+    "before": {
+      "zip_bytes": 123318008,
+      "unpacked_bytes": 234706536,
+      "zip_sha256": "f2d55e4fcb2466b3a7526de191434910deaebf8d146110cf9401646522d14809"
+    },
+    "after": {
+      "zip_bytes": 80716268,
+      "unpacked_bytes": 180912984,
+      "zip_sha256": "98162fb9cb840b1de9ac2106341248f7494ea1e5eb96f7fa6c89c723346d075d"
+    },
+    "native_delta": {
+      "removed": [
+        "menu-bin/libMagickCore-7.Q16HDRI-10.dll",
+        "menu-bin/libMagickWand-7.Q16HDRI-10.dll",
+        "menu-bin/libfftw3-3.dll",
+        "menu-bin/liblqr-1-0.dll",
+        "menu-bin/libltdl-7.dll",
+        "menu-bin/libraqm-0.dll"
+      ],
+      "replaced": [
+        "menu-bin/convert.exe",
+        "menu-bin/mogrify.exe"
+      ],
+      "controlled_path": "C:\\Windows\\System32;C:\\Windows;C:\\Program Files\\dotnet"
+    },
+    "shared_fonts_baseline": {
+      "zip_bytes": 96780971,
+      "unpacked_bytes": 202740701,
+      "zip_sha256": "2cdad133addfe64ef4527a829730597cbf6dbe7949d3e155ee059ed7cf643901"
+    }
+  },
+  "final_repackage": {
+    "changed_from_tested_candidate": [
+      "THIRD-PARTY.en.md",
+      "THIRD-PARTY.md"
+    ],
+    "all_runtime_files_byte_identical": true,
+    "manifest_and_zip_verified": true,
+    "zip_settings_unchanged": true,
+    "gui_languages_passed": [
+      "zh-CN",
+      "en"
+    ]
+  },
+  "scope": {
+    "authoring_albums": 3,
+    "authoring_tracks": 6,
+    "track_seconds": 4,
+    "cover_formats": [
+      "JPG",
+      "PNG",
+      "WebP"
+    ],
+    "compared_menu_images": 42,
+    "index_pages_tested": false,
+    "index_exclusion": "Baseline single-index-page MENU_INDEX_ARROW_MISSING; album menus and still pictures were tested."
+  },
+  "publication": {
+    "committed": false,
+    "published": false,
+    "existing_v1_0_unchanged": true
+  }
+}

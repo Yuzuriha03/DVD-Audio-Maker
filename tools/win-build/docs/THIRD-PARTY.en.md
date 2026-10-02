@@ -22,21 +22,26 @@ are provided as a patch applicable with `git apply`.
 |---|---|---|
 | **cdrtools / mkisofs** (`mkisofs.exe`) | 3.02a | **CDDL** for the mkisofs component |
 | **mjpegtools** (`jpeg2yuv` / `mpeg2enc` / `mplex` / `mp2enc`) | 2.1.0 | **GPL v2** |
-| **ImageMagick** (`magick` / `convert` / `mogrify` plus 11 `.xml` files) | 7.0.8-47 Q16 | **ImageMagick License**, Apache-2.0-style |
+| **ImageMagick** (`image-native/dvda-image.dll`) | 7.0.8-47 Q16 HDRI | **ImageMagick License**, Apache-2.0-style |
+| **FFmpeg libraries** (menu-bin, media-native) | 9.0.2; Windows x64 builds tailored to each role | **GPL v3 or later** for this configuration |
 | Other DLLs | Respective MSYS2/MinGW-w64 builds | See each project |
+
+## FFmpeg build
+
+FFmpeg libraries use unmodified source from `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`. Source SHA-256: `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. menu-bin retains MLP authoring capabilities; media-native adds FLAC/ALAC/AAC/PCM/MLP decoding, FLAC/PCM output, SWR/SOXR resampling and MPEG-2/PNG/JPEG processing for the GUI process. The MLP encoding core remains separate.
+
+Build recipes are tools/win-build/build-minimal-ffmpeg.py (mlp / media profiles) and build-media-bridge.py. media-native/media-build.json records configuration, source hashes and all DLL hashes/imports. libsoxr, zlib and their runtime dependencies are included; FFmpeg / FFprobe command-line executables are not. The project's dvda-media.dll interface is implemented in tools/win-build/native/dvda-media.c under the project's GPL v3 license. See docs/MINIMAL-FFMPEG.en.md and docs/INPROCESS-MEDIA.en.md for configuration and validation.
+
 
 ## Fonts
 
 | File | License |
 |---|---|
-| `menu-bin/fonts/NotoSansCJKsc-Regular.otf` | **SIL Open Font License 1.1**（Google Noto Sans CJK） |
-| `menu-bin/fonts/NotoSansCJKjp-Regular.otf` | Same as above |
-| `menu-bin/fonts/NotoSansCJKkr-Regular.otf` | Same as above |
+| `menu-bin/fonts/DvdaNotoCJK-Regular.ttc` (SC / JP / KR faces) | **SIL Open Font License 1.1**（Google Noto Sans CJK） |
 
-These three files are standalone SC, JP and KR faces extracted from `NotoSansCJK-Regular.ttc`,
-so ImageMagick can load them by path. See `make-menu-font.sh`.
+Identical OpenType tables are shared in one collection containing the complete SC, JP and KR faces. Every glyph, character mapping and regional distinction is retained. `image-native/type.xml` registers three names with explicit face indices, so ImageMagick selects the intended region instead of always loading face 0.
 
-**Why three fonts:** the issue is glyph selection, not missing characters. Each face covers
+**Why three faces:** the issue is glyph selection, not missing characters. Each face covers
 Chinese, Japanese, Korean and Latin, but shared Han characters have regional glyph variants (for example 直/骨/令/次/别).
 The menu chooses a face for each text item: Chinese → SC, Japanese → JP, Korean → KR.
 
@@ -56,3 +61,7 @@ This package distributes executables. If you redistribute it or a modified versi
 - Retain `LICENSE` and this document.
 - Provide the corresponding source: upstream plus this project's patch. GPL v3 section 6 permits
   certain written-offer arrangements instead of accompanying source; providing source access alongside the package is the straightforward approach described here.
+
+## Tailored image runtime
+
+The image DLL statically includes the required ImageMagick core, FreeType outline fonts, JPEG/PNG codecs, WebP decoding and zlib. JPEG/PNG are readable and writable; WebP is input-only. External delegates and loadable coder modules are disabled. The project bridges are tools/win-build/native/dvda-image.c and author-image-loader.c; recipes are build-image-runtime.py, build-image-bridge.py and build-image-author.py. Runtime provenance and source patch hashes are recorded in image-native/image-build.json and author-build.json. Component license texts are included in image-native/NOTICE.txt.

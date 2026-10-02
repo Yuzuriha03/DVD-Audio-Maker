@@ -46,7 +46,7 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
             diagnostics.Add(new BuildDiagnostic(
                 BuildDiagnosticSeverity.Warning,
                 "MENU_OVERLAY_CHECK_SKIPPED",
-                "找不到 ImageMagick，跳过菜单叠加图墨迹自检。"));
+                "内置图像组件缺失，无法完成菜单文字与高亮检查。"));
             return diagnostics;
         }
 
@@ -142,7 +142,7 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
         {
             var normal = Path.Combine(temporaryDirectory, $"impic{page}.png");
             var highlighted = Path.Combine(temporaryDirectory, $"hlpic{page}.png");
-            var needsArrow = page < plan.IndexPages && plan.TotalPages > 1;
+            var needsArrow = page < plan.IndexPages && plan.IndexPages > 1;
             double? normalInk;
             double? highlightedInk;
             double? arrowInk = null;
@@ -300,6 +300,7 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
 
     private static string? FindExecutable(string name, string preferredDirectory)
     {
+        if (BuiltinImages.IsImageTool(name)) return BuiltinImages.IsAvailable ? BuiltinImages.Tool(name) : null;
         var names = OperatingSystem.IsWindows()
             ? new[] { name + ".exe", name + ".cmd", name + ".bat", name }
             : new[] { name };

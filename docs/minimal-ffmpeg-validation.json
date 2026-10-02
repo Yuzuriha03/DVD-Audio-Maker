@@ -1,0 +1,1275 @@
+{
+  "date": "2026-10-02",
+  "status": "PASS_FOR_DOCUMENTED_SCOPE",
+  "package": "build/ffmpeg-minimal-x64-release/DVD-Audio-Maker.zip",
+  "candidate": {
+    "zip_bytes": 33669495,
+    "unpacked_bytes": 54524247,
+    "zip_sha256": "e4ef8c1e80b501fa302e6c4423934368f109093948b4ec3cd24542fda45330a8",
+    "zip_reduction_vs_shared_fonts_baseline": 0.6521062492749737,
+    "zip_reduction_vs_v1_0_baseline": 0.7269701680552608,
+    "zip_reduction_vs_native_slim_baseline": 0.5828680638107704
+  },
+  "shared_fonts_baseline": {
+    "zip_bytes": 96780971,
+    "unpacked_bytes": 202740701,
+    "zip_sha256": "2cdad133addfe64ef4527a829730597cbf6dbe7949d3e155ee059ed7cf643901"
+  },
+  "v1_0_baseline": {
+    "zip_bytes": 123318008,
+    "unpacked_bytes": 234706536,
+    "zip_sha256": "f2d55e4fcb2466b3a7526de191434910deaebf8d146110cf9401646522d14809"
+  },
+  "compatibility_tests": {
+    "passed": 108,
+    "total": 108
+  },
+  "native_decode": {
+    "status": "PASS",
+    "cases": [
+      {
+        "case": "44100_16_1",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 10032,
+        "mlp_sha256": "7ec83b0c5c0e07723a6f64bcc0a1cb902ed999400fcca7d84bf3279114739f77",
+        "pcm_sha256": "000bb2178c5f7fabd212a978409b0af37b3aff1582193b12338cea8eb81c07fc",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_16_2",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 16592,
+        "mlp_sha256": "0a626169e5647655b64b68ee33fbe0b8e428f2ef5899d5b4ae85cd418c3e884b",
+        "pcm_sha256": "7e95e7cb10fdc764ab1a2958c2e4d89086656ea3fe96aa59e39b158c328fceff",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_16_3",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 23118,
+        "mlp_sha256": "c362fd94b3a2d9b9d259ceff1f599818fcbafd3d0c0fadee01d855cc6ec04dd1",
+        "pcm_sha256": "7a8b496b62196c95ed2128f1b13e4a8be6bbf9896b4d1ce9014ea1f1fd850947",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_16_4",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 29704,
+        "mlp_sha256": "e3ba3e54aa0883fa4e04ae0122f604e72f2e57b6ddef6432e9d86be88cc96d4f",
+        "pcm_sha256": "4c843652744e9709c28a241c9f554c00a38b7cb7758bd8918cc08e9c8621c5dc",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_16_5",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 36344,
+        "mlp_sha256": "e38ff459b14857a2ce9b5cf09b2551cbe4aa1cfa02d028b0945a4bd99140fc56",
+        "pcm_sha256": "6c848625eb2fd613cca18daf075533aa4f8d00bb5fb2a588b640ba0237564aca",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_16_6",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 42960,
+        "mlp_sha256": "4b4b3d53b884bda91a4ba35e3e45b2ddaaade407daddfbb6cd1c2cb7ea9fb616",
+        "pcm_sha256": "45d3a39c715e5c5e89acecabba35e008c6e214659d02111735b289fa900b3bf1",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_20_1",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 11312,
+        "mlp_sha256": "d1f938f8b30fa9e56e606ca5507592b9748efddaeff0944aa186c7d7ec2a827d",
+        "pcm_sha256": "44b5ea0838c07bb3c1fa3ec849328a856de8e8f6821b06c1380532157aa72322",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_20_2",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 19108,
+        "mlp_sha256": "f005f122a7bf1d052eb44a87d777a3e7bb7cebe79651fcc2230ef9cdc6e414d3",
+        "pcm_sha256": "e46497f1f49142a7050b7e3a3418d102f901271757447fd6dcff4ad9b0e62c8f",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_20_3",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 26942,
+        "mlp_sha256": "a88240f7fc336b199178cd716bb02717d8a53c0b263c712acc31cda78c08d822",
+        "pcm_sha256": "e86c388ecf7bfd2349ec19c3b02b102981240fafc2008361e3eb2525e3d3a22a",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_20_4",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 34838,
+        "mlp_sha256": "2285296ed3fc7b5e46ff463b3ef3e4f66d0527f059d633971be87635b93c00eb",
+        "pcm_sha256": "308a93b70fc42ddd71c74bb1bac3639e811467ae59a4a8e725e13625d50760f6",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_20_5",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 42776,
+        "mlp_sha256": "d9ab2a4947ea75f008bef042903237d3bee64101014a6e39549657bf753f1e60",
+        "pcm_sha256": "fd4cd9e411dffa691f294ee995036227a92ac16afdacca3527b7ae9d412e431b",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_20_6",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 50782,
+        "mlp_sha256": "8dc1c891b4441492813662afd2c7949ba9dab39af8aedefb9bac3d1ec39d1852",
+        "pcm_sha256": "ca0cd11a68d2b72160018e96bf0fdf57b97ff471c736455eb1be84f31380eab4",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_24_1",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 13024,
+        "mlp_sha256": "8f23ffde3a5d09c27298d4a5d3b3e5175cfd41de75f76570321d594f1a857c41",
+        "pcm_sha256": "eb4968ea81886b362fdf235a24c29acb74d4793b32044ca4811fa8263b5c0306",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_24_2",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 22442,
+        "mlp_sha256": "bff8a5ca1abd6e283263cda5cdc0f782d28ad34b1d0270e741b4b100c2673ee2",
+        "pcm_sha256": "28a4b5a93bc4f4913f0f8baa3eccb239ead0757d9dbfa66e8a6233353328352d",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_24_3",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 32156,
+        "mlp_sha256": "e3c5ee8e3c9fe3b36c976d83e8f745823b7fe52216d15e58d9c8cfd2e368a3f4",
+        "pcm_sha256": "677b4ae61e7046758774f452cae58e8ca7cfdda5292e6f75bb04606395e7c7d7",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_24_4",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 42070,
+        "mlp_sha256": "c78be2667c5b226098022c9ba85b97d8643eeb85c987a798684421b58180135c",
+        "pcm_sha256": "cd11259e89f09e97cfb41c9fbd0bb38722c05e23b86721c352d50b254e1392b2",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_24_5",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 52038,
+        "mlp_sha256": "53e56f13d8628fb66a96111a6bb14890e03c45837e53d6e2baa6171e6da5edb7",
+        "pcm_sha256": "6c5bbf80ddfd13024c2af408e9b4bd2bf26733e4780be19ba88c478556fc080a",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "44100_24_6",
+        "input_frames": 8857,
+        "decoded_frames": 8880,
+        "mlp_bytes": 62198,
+        "mlp_sha256": "c81fcffbe216ff5ade43ec3cd84be73715ad5a6ce76bd9183bb008248a83ab5d",
+        "pcm_sha256": "c5ca3b8d06687e7bf82501239a92ee7e49659db3e082396329cd13abc54bd861",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_16_1",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 10916,
+        "mlp_sha256": "06720da4e6b1890a88fca94df877da1664b6cf647a9bea9fe9941ab42603aeca",
+        "pcm_sha256": "6759b136a31af2f3602b4ecd0bdeeaa9c8792cc81500ebd6f59c5a69e6544c8a",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_16_2",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 18048,
+        "mlp_sha256": "02e8ecd2a6592696ca8d2983ab76b0dbeaca16560883b3bc940d4fc7c15f934e",
+        "pcm_sha256": "e5a44210df1177a476624b64a4a37dc9031d9787ce03e06afc84c0db15156654",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_16_3",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 25166,
+        "mlp_sha256": "712cab215637fa2682b8861522e16266d6cb57a54a103fe4035d785c8855b9dd",
+        "pcm_sha256": "9a39ba3a10a22fb0338e8bdea695dfe4ad1838f09d63577c60086f27966276fe",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_16_4",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 32312,
+        "mlp_sha256": "b531b5b32efd396ce87d42c80707485c98472be02628ac6e923bfdeb592c187d",
+        "pcm_sha256": "1ad912517e1c6799808d52144df6c55f4d023867f1a5a77995c81c6626507bd6",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_16_5",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 39456,
+        "mlp_sha256": "0ab9575fe52e8ead680a72179aa9cda2739952add769944954bb64aeb3d2326c",
+        "pcm_sha256": "16824b5813b411ee4c47e66381cb55b111148fd6839ef6fbe147b772f87814d2",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_16_6",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 46678,
+        "mlp_sha256": "4ee10891468334eb71b87828e5f9f2ce62a30ed17d660c66edb3d702be90dd9a",
+        "pcm_sha256": "9a779acd4c03367d5e89e193df79401987a29cd60f727a8f01a91ec687e04abe",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_20_1",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 12242,
+        "mlp_sha256": "adb59d1037073aea914b569064a3002c037820411a23af69e552e134a324b01a",
+        "pcm_sha256": "edb8a0db7f176dea37e0744ac8058f6241b09ffd7f5ff15f8d64f568dc77d05e",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_20_2",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 20732,
+        "mlp_sha256": "9dfb2b956b29b2a031513cee98db026cc26a4ab21f140fbc3c866b093c7cb645",
+        "pcm_sha256": "ada1033f880e9a8b4d3353209dbed9fdd94d52bc313e99ca755e8b255e69e464",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_20_3",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 29176,
+        "mlp_sha256": "aa9e487d9f50177bbe2e12d88fb93410b2ebba526ee12921eccb0822fe6c51d1",
+        "pcm_sha256": "6ee9f3be5edbd5c948ac9a4c9add2344411506a1b487b8d0f005d21aad703657",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_20_4",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 37692,
+        "mlp_sha256": "87cf76022edbb8ddf71094fd46dbe19936cf5d318decb008d770788a78a2bb9e",
+        "pcm_sha256": "34148dc59cc40216fa33e6a13b2fa5475eea5d097c2def2264eeef35849b1a13",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_20_5",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 46234,
+        "mlp_sha256": "5bb9eda028ea0d72b31f496e5cc30bb5da2220e2d9facf309a8d58713625d4c1",
+        "pcm_sha256": "8fcb0f87d63b34e4fc37a98e8dd39aec416795f93ef8d9a482e518ce18872bf9",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_20_6",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 54846,
+        "mlp_sha256": "ff9d3aff317a11dd96f26c1eab1989285cc3593e1533fee6118cc394751a646c",
+        "pcm_sha256": "d4f949ca4cd0ac898d790c8e4402095d6f46606400d1adce659a88fb1d61e6f9",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_24_1",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 13956,
+        "mlp_sha256": "a1db6a9d461fc57371097c384120348280d38ab909ffa6326271bb2a10b5cb0f",
+        "pcm_sha256": "2b2544050a47533f7b9f81e3acf5f86c1358c7ce54970201380a46c972f0bd82",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_24_2",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 24228,
+        "mlp_sha256": "77cd0e70914baae8a7da9c8465e6000de2a418293e374693694d2544f8e2753f",
+        "pcm_sha256": "2a609937f9901b7beed01665320be8e6d91ed24e20227a02780e553eced9e908",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_24_3",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 34608,
+        "mlp_sha256": "2b89c55a70489b00c5458a094363bb959f0f5af96e1fd00af460c973f50261a3",
+        "pcm_sha256": "1cc2368d45d320f8aad34c381e6fad8137f762148044df8503cc6ccc5d451878",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_24_4",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 45084,
+        "mlp_sha256": "381c7cb8ba47a4de91f05a93dc9237832bc9639b1dc6415834c8755824755ac2",
+        "pcm_sha256": "21a236004ca9c346a907636557dbb911041562fd2ac11e092154b6bf030407de",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_24_5",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 55820,
+        "mlp_sha256": "a1aaf0b25a8a5259340cdb58d52b09abf044b9e594bbbe5d47ccbe92c44f7fcc",
+        "pcm_sha256": "6b0a874b1edb767120fe56db1f31a800c2b9250a3fb85414b6ae54a31336b890",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "48000_24_6",
+        "input_frames": 9637,
+        "decoded_frames": 9640,
+        "mlp_bytes": 66822,
+        "mlp_sha256": "4d0534c7cf6af6f1aa3982ff3124db727e20bb1fd5f84f4a38a911c9099d6fb0",
+        "pcm_sha256": "f0eb8c2384f9b0bdd07ee45458c31f08a487edeba8cad9f6142dc4127b689cbb",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_16_1",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 15396,
+        "mlp_sha256": "0f83a377321144202d22a10f0a932f583e9ca288b171e3f75e7ca21c7d6bb093",
+        "pcm_sha256": "38ef1e5d6d5c881e7a35f773c9f7c22a3653cf2c3a61340d2d58b72c892f3e00",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_16_2",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 27338,
+        "mlp_sha256": "266928b4e1dd2aa5c3ceb46afd9b6770a3d5c52633ea9ae4cbf8d3f135b278a5",
+        "pcm_sha256": "f760742eb46b9f9fbf1a07211a760ee9b1f616e157c1a6a83def9108f11ce332",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_16_3",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 39146,
+        "mlp_sha256": "f60b04c7ff64b0fc52b6351924d9c94d156a51565281150f577f0ddd4d9a9538",
+        "pcm_sha256": "5986c0bd8a651f11163b92b5227ea9818332dff30ad688721063ba2d1df8e6cd",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_16_4",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 51086,
+        "mlp_sha256": "d85995488e6b708eef3cf569a9062bc61dae4a841e03e0847837edc493d0b221",
+        "pcm_sha256": "59f9b6b18b2d5d94e005cea2e2e5ea89aa311f66e2140accb9aa9c93a4fda1fe",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_16_5",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 62844,
+        "mlp_sha256": "0e7db941a7f6725dbe6cafb0fed2e9ae4b428ea3bb58cee4acdc2b94dee1c6f4",
+        "pcm_sha256": "e8e2dbeb53a09f8cc30b30506cdee6254095fa2c592bf06300a166e6b0d3a9ca",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_16_6",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 74962,
+        "mlp_sha256": "cb2b37a4fe0b2fbe16d9a087285518bb1c2c62234c9e1458b5e5981abfe5a54e",
+        "pcm_sha256": "383172d8fdc2e5960ba47cceb3cabbffbbf22e55f29baee68dfc84856442c4b9",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_20_1",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 16710,
+        "mlp_sha256": "922bc3bda31f4ada03ce23e232fecc6a8d9219ae247efaaf3f64204495c0cb1b",
+        "pcm_sha256": "56229c714d29d8d5b95236aac657140c3f823b8f8413b846b67845f71d2d4063",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_20_2",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 29856,
+        "mlp_sha256": "ec01e60a17ca15d40b46d7feca4eb45669cccc403b2f269efd72b02f745f91e7",
+        "pcm_sha256": "0db2c305872feae311fb359f8960ee521eeb9d221000e3e1bdc8abc6c4e7d0ca",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_20_3",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 42896,
+        "mlp_sha256": "feefc738ebfb1b950994216a37d1558563ab8f8388731e48de1ef2dd287ac38d",
+        "pcm_sha256": "b7fd09f7473ed23ee4c3a5789312e868e60bbfc47629f5465be0e28f2afe41ca",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_20_4",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 56158,
+        "mlp_sha256": "fac10e208531caa5c6bb56f5dfe8f1525c8bc4fa35dee61e18eaf9a043dda4ca",
+        "pcm_sha256": "12a5a7c5501dd78057e3216c14abf602cec390a4c1eaded3283ec0a6a060a432",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_20_5",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 69586,
+        "mlp_sha256": "f14e628be881036128eeacb064f6e103b1044cb4af31d6be56c6802381a949bf",
+        "pcm_sha256": "4577d6793e84132a494cb8f8539218601560f7302dc3d4bf7e1600729f4c115b",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_20_6",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 82976,
+        "mlp_sha256": "e1ac205bf892b459c4e8fcecb9ec68760e79b1191c6fccb84e3d71b0bdb37784",
+        "pcm_sha256": "1f2ad5dd8df2474d688eafca8f8a3793813149f2f021dc6c325952c3e63f5bb6",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_24_1",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 19016,
+        "mlp_sha256": "5ce2f355b0687f666cdb45d1898326fc3694be70e7661fc29f11ec02f43aaa7d",
+        "pcm_sha256": "c2aded29d11d843f9722e5114240597ece618bf7921f06b7c6cb5acb925036e4",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_24_2",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 34516,
+        "mlp_sha256": "c1ed15974ebf00448cae8f2ca6dec3342de0a1055729004297f391ec86826f64",
+        "pcm_sha256": "c2b06242c380c469124e6d1c7ccae4f257f9de8fcb3a067e66bb449fe00976be",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_24_3",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 50400,
+        "mlp_sha256": "9128fcb76564c4388996f407d7fa35ce37f5a2b453b4f401dac03f3e7b4f3d8d",
+        "pcm_sha256": "2093ecc4f19be109d9dc33474a713f8ae454a8ba78253e0d9a1a96f9f02694a3",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_24_4",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 66100,
+        "mlp_sha256": "09235e91bd6edf1645901b611c01296f6f063b02e66e496c0f4499fe4c2feeca",
+        "pcm_sha256": "54603ad07e0ab452d124e6d0f106947a656293490f6c6ed17f8904d04f0ce610",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_24_5",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 81966,
+        "mlp_sha256": "05d227cef7d8f04b9c247c3b2ab592f55376a63f961d12669aaa513e83593b20",
+        "pcm_sha256": "51ef31e96aeab212cd01caacf594fd19edd6bd8f13d422de66480c32b83dcc60",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "88200_24_6",
+        "input_frames": 17677,
+        "decoded_frames": 17680,
+        "mlp_bytes": 97990,
+        "mlp_sha256": "52f231c5d2e77fd2045b3ba4bebcbb8f479e8df63dc01a007181065e1c63b0e8",
+        "pcm_sha256": "24d46e4e2f7c12ae663a28d7e8e17b5d0ba8121256944f2ee3abe1c39de0ced2",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_16_1",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 16714,
+        "mlp_sha256": "494cc90c58290d2a3728796bc05576ea02b131f43e273fb97515fb66e7944bff",
+        "pcm_sha256": "15438eb21f8ec386159849d0e91b353e5ba1160bfd6b6a9d56dad891344a72ed",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_16_2",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 29666,
+        "mlp_sha256": "87a2a786fde6b6e97dbe55a54a0569511877277d6a08eac90a1a111dd2d1bb29",
+        "pcm_sha256": "dabf05cbeed6a37455a34a3b665a98f70d7e3519ad604753bb0388365bcac7fa",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_16_3",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 42750,
+        "mlp_sha256": "0f5a6360f17af788e95ef72c3d4dbd2b2b07147bf6b085024a635017f5acd32c",
+        "pcm_sha256": "16709748b49c956853b1149a5cf03ee381ea919b71a96ce9eb97e32b326dc96d",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_16_4",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 55462,
+        "mlp_sha256": "9a202feea3e66c90d1eb9b31537692f74a1c94575fdecb3fa95ee55d280e9298",
+        "pcm_sha256": "78496dcc6516b50e3fc604f1799ac842a58b9d52e609e96aa9a13299a8b0e68a",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_16_5",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 68354,
+        "mlp_sha256": "b3cfcd9aa1f18011f15ed8421c2026ebcc56153722908d1c431a3d43e82fba76",
+        "pcm_sha256": "171c7cb2ce1e6e98f55639ed673c1746eab218b76bdb5fe852505693a2be438a",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_16_6",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 80986,
+        "mlp_sha256": "0de26ddbf420e7b907aa64c3ebf7edb93b2cc617c6cbcfa9e1e99251a88b46d0",
+        "pcm_sha256": "3337a72fa737298836694b023941228c14988e1a5e7cec2456665087cf67160c",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_20_1",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 18210,
+        "mlp_sha256": "e1b0681bda37d6c257e552e6f3bc2b09dc9adc737787922539d35acef91ae6fa",
+        "pcm_sha256": "bd9a858880232c1db4cfb3201a1a61492e0c4b7a71b4cfabf48231357076cebb",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_20_2",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 32550,
+        "mlp_sha256": "20b4efe8045caf029e52698a229f840d33af969dce8d5d3d7cfe6d174c8378de",
+        "pcm_sha256": "42044fba3255c9bd7420b86419931e31aa945ad02ba99d45a1f3226889d7b774",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_20_3",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 46866,
+        "mlp_sha256": "0b148cef45b0b78c21b559595b3581684b9a52aa95aa6d0b112e416733e69911",
+        "pcm_sha256": "a888b4495001008d32eeefa15880902c2903f95bc06690a2943a2ce17082a83b",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_20_4",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 61284,
+        "mlp_sha256": "e82c09d6e8ef7b700a77ae6c954acf5f9bef7118fc666cc0aa9adefde3e6a668",
+        "pcm_sha256": "4669c4139a4f1524eacf74b128a15080f764b0f8582c59adc7e35e10ad87f94f",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_20_5",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 75758,
+        "mlp_sha256": "efab59c7c0b148acfa798caafda5af9710460a9e4dd4a3f1a009847437d01f2a",
+        "pcm_sha256": "df900d6d2bc50beb80d9fd5e71d813ecf539b94b4504e6d22a25e9fc9070c0a3",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_20_6",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 90372,
+        "mlp_sha256": "95d3f581e637e8b9480c38b8242e93f3e0276d2dfa8b57510306a9e125f0c9d5",
+        "pcm_sha256": "3fe775294e0a18574909bc7a1e55a25c1e1086f24fa3a69d174db767e867c9e0",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_24_1",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 20624,
+        "mlp_sha256": "da8c7c9bd997625e68ad6c6821adf07f7ce8c9a730ab1a30c75ba0023bf3479e",
+        "pcm_sha256": "7d8d041cbeefbd9df7a9689e3e8dcacd32599a2a5821d56d25073d872c16b55d",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_24_2",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 37526,
+        "mlp_sha256": "19661fc498d8ad7ed911f14c500a4336158fbef833e96c9674d54c885c15a215",
+        "pcm_sha256": "5a7fbcb66ca283ea4de5a013545cbba44587f9e6118468b7da85bd7d3ae4f250",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_24_3",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 54658,
+        "mlp_sha256": "dc9b61f8f4c4d9ff85f4e13e8d117bb26ea879d1b7c31483e7fc7e055969c8c7",
+        "pcm_sha256": "1817f3df3167961fcd0f05248af3c2856e0f831c22f68833a17448b3fd78dc5e",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_24_4",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 71902,
+        "mlp_sha256": "f8207795b1d8e50eee217d55755deb3983e95d751ddccdf987208116c5216c6d",
+        "pcm_sha256": "fb176f13be6461a213940dd91b874230597e376dfbb8d1565fbddcc858af766e",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_24_5",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 89024,
+        "mlp_sha256": "9c4d59b41f4c7935624ac31c0808cec0d8327cd33ddd6ea6f63e6dbd46d3c80f",
+        "pcm_sha256": "663e341b4f83b9d033571566676bad411a9aecda85548b0dffb91d7bdbbfe55a",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "96000_24_6",
+        "input_frames": 19237,
+        "decoded_frames": 19280,
+        "mlp_bytes": 106536,
+        "mlp_sha256": "573e0e84e1483b944ed61fb10426d9851982a9ba19663737de93791279e6e40f",
+        "pcm_sha256": "4cc052460b26ebcd11e1d7988e082f661eba1f34bccabd14119b1ef1077769c7",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "176400_16_1",
+        "input_frames": 35317,
+        "decoded_frames": 35360,
+        "mlp_bytes": 26430,
+        "mlp_sha256": "8e37e1982e84270de9585b85c19d72e6b21eceabe17121a35cdc8d8eaaa2191f",
+        "pcm_sha256": "fdfb7ab62a673a7b9ad99fd8c131babff0737841a48531133a464255f2dbef76",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "176400_16_2",
+        "input_frames": 35317,
+        "decoded_frames": 35360,
+        "mlp_bytes": 49300,
+        "mlp_sha256": "f5682c356fa7178b6e266b04a46c6992b01390c3ea27112adb562a554b9d9cc9",
+        "pcm_sha256": "d40b7d5182aba7d7fa7ab7873efc97f030c5c4c447cce38a614d029c8d136fce",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "176400_20_1",
+        "input_frames": 35317,
+        "decoded_frames": 35360,
+        "mlp_bytes": 27860,
+        "mlp_sha256": "34fbf25f96e89ee5e8f5eb4782281403ab8e44a82b9ce196e2c1348911bb54be",
+        "pcm_sha256": "fff3b73ef7e5e4808c0c4e24eb74565dd32de25401ac642d362173e8c2572913",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "176400_20_2",
+        "input_frames": 35317,
+        "decoded_frames": 35360,
+        "mlp_bytes": 52284,
+        "mlp_sha256": "53bc681e091757026eeb3f92a7a1ffb1372b071139cefc0f0c691a435a69216c",
+        "pcm_sha256": "8e9f084b76561e3b58d5d8a4803f8300ad9f13fbe6f5e1c96f62438c43ca9e23",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "176400_24_1",
+        "input_frames": 35317,
+        "decoded_frames": 35360,
+        "mlp_bytes": 31326,
+        "mlp_sha256": "8ec090cc95d37b82088b5aabf5fb59532a1a2257ed9eda9db9914408d5f4bf2b",
+        "pcm_sha256": "0e8a2eefc27b9a1a654af364878a328e1ca1a81f1133973ff0261afd87bd9e69",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "176400_24_2",
+        "input_frames": 35317,
+        "decoded_frames": 35360,
+        "mlp_bytes": 59168,
+        "mlp_sha256": "cd83bf14adfdcb4bc91cb9fb28e21c7c268af0b14520ace0e4f68d523984e874",
+        "pcm_sha256": "e7f582692d8fb78f6f0481efc980620a7cf7aef2fa934c80b0164abe05d894e0",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "192000_16_1",
+        "input_frames": 38437,
+        "decoded_frames": 38560,
+        "mlp_bytes": 28758,
+        "mlp_sha256": "5b6f71cb9c047534cbe7dcc2dd80fdf42c09aeab75171265b01eaaa35c0efc3a",
+        "pcm_sha256": "4dc112995f1bd75485d687bb6fdce916908cdc0bcf5951fb6dcb8c221ff15104",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "192000_16_2",
+        "input_frames": 38437,
+        "decoded_frames": 38560,
+        "mlp_bytes": 53688,
+        "mlp_sha256": "56fcd395d9297af22ca2dd5722aafcdd2ca099af2c0765136e6b24c549403032",
+        "pcm_sha256": "20eb4f2e21036cd169033864e0220d16d4fe22060ea8c05b5a439ce5032c1f7a",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "192000_20_1",
+        "input_frames": 38437,
+        "decoded_frames": 38560,
+        "mlp_bytes": 30198,
+        "mlp_sha256": "bac10afb2c659f3acedb61fad170e144a559dfde2b81be70d6c691a4c933befc",
+        "pcm_sha256": "d828172e3fbb4ac5c01576c4dbf856fd7f10d78e6333153f89d5ca581cd97ba4",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "192000_20_2",
+        "input_frames": 38437,
+        "decoded_frames": 38560,
+        "mlp_bytes": 56768,
+        "mlp_sha256": "561fe8d9c77f5eb934794defeac3338402daf69421efaf819a4ba4d34bfcbbe2",
+        "pcm_sha256": "6aa46e90e7f391a4a6c3e00dd9b3c275ec6a98e16febfbaf13041375fa27c8cd",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "192000_24_1",
+        "input_frames": 38437,
+        "decoded_frames": 38560,
+        "mlp_bytes": 33882,
+        "mlp_sha256": "4ad98b022aaee79a0413f17c9160cea82617fcf2c7f887533d273f5c9cd545c9",
+        "pcm_sha256": "531b1d5366af4e2f2fb6b25c0ed71a66b9b04373708d6c08c8836ed6bedc057c",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      },
+      {
+        "case": "192000_24_2",
+        "input_frames": 38437,
+        "decoded_frames": 38560,
+        "mlp_bytes": 64106,
+        "mlp_sha256": "19cbd1a13988383a339e44fe9ccfeed1fca971a10a6a8f0dc3defee5123b2057",
+        "pcm_sha256": "273dc2b87605c1def4397ed895324be2aa8b3965a4dfa99d95b9e322e150ab8a",
+        "original_pcm_equal": true,
+        "baseline_decoder_equal": true
+      }
+    ],
+    "libraries": {
+      "avcodec-63.dll": {
+        "sha256": "34ec7620e52e76e54e356c09e4237148111534b630e3b6e519b0f76260375796",
+        "bytes": 370688,
+        "imports": [
+          "avutil-61.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ]
+      },
+      "avformat-63.dll": {
+        "sha256": "e95533dbaeda506d13947aa5dbd6ccba1a7313a249f9a77947e859c8e54c8606",
+        "bytes": 261120,
+        "imports": [
+          "avcodec-63.dll",
+          "avutil-61.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ]
+      },
+      "avutil-61.dll": {
+        "sha256": "dc0df03dbd6fb592120f92258005ad6529d6070a4560588219ad15a280264700",
+        "bytes": 1775616,
+        "imports": [
+          "bcrypt.dll",
+          "kernel32.dll",
+          "libwinpthread-1.dll",
+          "msvcrt.dll"
+        ]
+      }
+    },
+    "exports_checked": 86,
+    "capabilities": {
+      "codec_version": 4129126,
+      "format_version": 4129126,
+      "util_version": 3998054,
+      "codecs": 2,
+      "demuxers": 1,
+      "muxers": 1,
+      "input_protocols": 2
+    }
+  },
+  "native_build": {
+    "version": "9.0.2",
+    "source_url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+    "source_sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+    "signer": "FCF986EA15E6E293A5644F10B4322F04D67658D8",
+    "nasm_url": "https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip",
+    "nasm_sha256": "3ee4782247bcb874378d02f7eab4e294a84d3d15f3f6ee2de2f47a46aa7226e6",
+    "compiler": "gcc.exe (Rev4, Built by MSYS2 project) 16.2.0",
+    "configure": [
+      "SOURCE/configure",
+      "--prefix=INSTALL",
+      "--target-os=mingw32",
+      "--arch=x86_64",
+      "--cpu=x86-64",
+      "--cc=gcc",
+      "--cxx=g++",
+      "--enable-shared",
+      "--disable-static",
+      "--disable-programs",
+      "--disable-doc",
+      "--disable-debug",
+      "--disable-autodetect",
+      "--disable-everything",
+      "--disable-network",
+      "--disable-avdevice",
+      "--disable-avfilter",
+      "--disable-swscale",
+      "--disable-swresample",
+      "--enable-avcodec",
+      "--enable-avformat",
+      "--enable-avutil",
+      "--enable-decoder=mlp",
+      "--enable-encoder=mlp",
+      "--enable-parser=mlp",
+      "--enable-demuxer=mlp",
+      "--enable-muxer=mlp",
+      "--enable-protocol=file,pipe",
+      "--disable-pthreads",
+      "--enable-w32threads",
+      "--enable-small",
+      "--enable-gpl",
+      "--enable-version3",
+      "--x86asmexe=NASM/nasm.exe",
+      "--extra-cflags=-ffunction-sections -fdata-sections",
+      "--extra-ldflags=-Wl,--gc-sections -Wl,--no-insert-timestamp -static-libgcc"
+    ],
+    "target": "Windows x64",
+    "files": {
+      "avcodec-63.dll": {
+        "sha256": "34ec7620e52e76e54e356c09e4237148111534b630e3b6e519b0f76260375796",
+        "bytes": 370688
+      },
+      "avformat-63.dll": {
+        "sha256": "e95533dbaeda506d13947aa5dbd6ccba1a7313a249f9a77947e859c8e54c8606",
+        "bytes": 261120
+      },
+      "avutil-61.dll": {
+        "sha256": "dc0df03dbd6fb592120f92258005ad6529d6070a4560588219ad15a280264700",
+        "bytes": 1775616
+      }
+    },
+    "pristine_source_files_verified": 10399
+  },
+  "native_slim_baseline": {
+    "zip_bytes": 80716656,
+    "unpacked_bytes": 180913726,
+    "zip_sha256": "e39417ca1d30f072356002179eb554143e5d236d8cf2a5ee6a733270e5b2801f",
+    "zip_reduction_vs_shared_fonts_baseline": 0.1659862970376687,
+    "zip_reduction_vs_v1_0_baseline": 0.34545929415272425
+  },
+  "integration": {
+    "status": "PASS",
+    "checks": [
+      "ZIP and unpacked sizes both reduced",
+      "ZIP compression setting unchanged",
+      "manifest covers every released file",
+      "manifest hashes match",
+      "ZIP contents match manifest",
+      "ZIP remains standard Deflate",
+      "only 80 reviewed native DLLs removed",
+      "only two forwarding entrypoints and three rebuilt FFmpeg libraries changed",
+      "rebuilt FFmpeg matches validated profile",
+      "image core and other native libraries byte-identical",
+      "MLP managed assembly and native core unchanged",
+      "no bundled .NET runtime or CLI",
+      "GUI remains x64",
+      "fonts stored once with explicit regional mapping",
+      "sc every original SFNT table preserved byte-for-byte",
+      "sc extracted face preserves all font data",
+      "jp every original SFNT table preserved byte-for-byte",
+      "jp extracted face preserves all font data",
+      "kr every original SFNT table preserved byte-for-byte",
+      "kr extracted face preserves all font data",
+      "sc 18 old loads font without fallback",
+      "sc 18 new loads font without fallback",
+      "sc 18 menu pixels identical after relocation",
+      "sc 36 old loads font without fallback",
+      "sc 36 new loads font without fallback",
+      "sc 36 menu pixels identical after relocation",
+      "jp 18 old loads font without fallback",
+      "jp 18 new loads font without fallback",
+      "jp 18 menu pixels identical after relocation",
+      "jp 36 old loads font without fallback",
+      "jp 36 new loads font without fallback",
+      "jp 36 menu pixels identical after relocation",
+      "kr 18 old loads font without fallback",
+      "kr 18 new loads font without fallback",
+      "kr 18 menu pixels identical after relocation",
+      "kr 36 old loads font without fallback",
+      "kr 36 new loads font without fallback",
+      "kr 36 menu pixels identical after relocation",
+      "zh-CN GUI and log controls",
+      "en GUI and log controls",
+      "48000_16_1 complete MLP byte identity",
+      "48000_24_2 complete MLP byte identity",
+      "96000_24_6 complete MLP byte identity",
+      "before full multilingual menu ISO built",
+      "before ISO menu timeline and lossless verification",
+      "after full multilingual menu ISO built",
+      "after ISO menu timeline and lossless verification",
+      "all six authoring MLP files identical",
+      "menu and still-image file sets identical",
+      "menu pixels menu/disc1/bg0.jpg",
+      "menu pixels menu/disc1/bg1.jpg",
+      "menu pixels menu/disc1/bg2.jpg",
+      "menu pixels menu/disc1/bg3.jpg",
+      "menu pixels menu/disc1/bg4.jpg",
+      "menu pixels menu/disc1/bg5.jpg",
+      "menu pixels menu/disc1/blankscreen.png",
+      "menu pixels menu/disc1/still0.jpg",
+      "menu pixels menu/disc1/still1.jpg",
+      "menu pixels menu/disc1/still2.jpg",
+      "menu pixels tmp/disc1/bgpic0.jpg",
+      "menu pixels tmp/disc1/bgpic1.jpg",
+      "menu pixels tmp/disc1/bgpic2.jpg",
+      "menu pixels tmp/disc1/bgpic3.jpg",
+      "menu pixels tmp/disc1/bgpic4.jpg",
+      "menu pixels tmp/disc1/bgpic5.jpg",
+      "menu pixels tmp/disc1/blankscreen_1.png",
+      "menu pixels tmp/disc1/hlpic0.png",
+      "menu pixels tmp/disc1/hlpic1.png",
+      "menu pixels tmp/disc1/hlpic2.png",
+      "menu pixels tmp/disc1/hlpic3.png",
+      "menu pixels tmp/disc1/hlpic4.png",
+      "menu pixels tmp/disc1/hlpic5.png",
+      "menu pixels tmp/disc1/impic0.png",
+      "menu pixels tmp/disc1/impic1.png",
+      "menu pixels tmp/disc1/impic2.png",
+      "menu pixels tmp/disc1/impic3.png",
+      "menu pixels tmp/disc1/impic4.png",
+      "menu pixels tmp/disc1/impic5.png",
+      "menu pixels tmp/disc1/pic_000.jpg",
+      "menu pixels tmp/disc1/pic_001.jpg",
+      "menu pixels tmp/disc1/pic_002.jpg",
+      "menu pixels tmp/disc1/pic_003.jpg",
+      "menu pixels tmp/disc1/pic_004.jpg",
+      "menu pixels tmp/disc1/pic_005.jpg",
+      "menu pixels tmp/disc1/slpic0.png",
+      "menu pixels tmp/disc1/slpic1.png",
+      "menu pixels tmp/disc1/slpic2.png",
+      "menu pixels tmp/disc1/slpic3.png",
+      "menu pixels tmp/disc1/slpic4.png",
+      "menu pixels tmp/disc1/slpic5.png",
+      "menu pixels tmp/disc1/svpic.png"
+    ],
+    "encoding": [
+      {
+        "case": "48000_16_1",
+        "whole_file_equal": true,
+        "sha256": "0f674af6f4091bbb6aa97ce071a8498970a49725f2a264e0e5bc9e404d563843"
+      },
+      {
+        "case": "48000_24_2",
+        "whole_file_equal": true,
+        "sha256": "717060da6946dda7d757213e3e8b1163b5ac87143e29271c7a68832272511779"
+      },
+      {
+        "case": "96000_24_6",
+        "whole_file_equal": true,
+        "sha256": "2ed2b97b35a263c70eb729c58be57419a32e8fabed3c3a81d6c107c5e9cb358a"
+      }
+    ],
+    "fonts": [
+      {
+        "region": "sc",
+        "size": 18,
+        "pixel_equal": true,
+        "sha256": "44c7e018125d881934d22856f0788d1ee9cb504d874cf45462c4258f9536bef2"
+      },
+      {
+        "region": "sc",
+        "size": 36,
+        "pixel_equal": true,
+        "sha256": "53df0b141e538d6f5b5ba65280c5e5df160074492c4a2638ab2347671ea34c05"
+      },
+      {
+        "region": "jp",
+        "size": 18,
+        "pixel_equal": true,
+        "sha256": "bf95c793f141db1bc0a002c2552c9a487d99fc1336a7300c5872c7c24133c10f"
+      },
+      {
+        "region": "jp",
+        "size": 36,
+        "pixel_equal": true,
+        "sha256": "a5cd4ba7570b907c08ffe6d4a0245c71d303490d3a27957e2126af058e14aaa7"
+      },
+      {
+        "region": "kr",
+        "size": 18,
+        "pixel_equal": true,
+        "sha256": "12848befb6d62560a712a4fbc87b0d0822640a3e8012c8bcb282bf333ab9399b"
+      },
+      {
+        "region": "kr",
+        "size": 36,
+        "pixel_equal": true,
+        "sha256": "a57874b5d4fbbfe30e7f0fbe976377ff10c5a6c04dd2dfab76fe45b7b15d86aa"
+      }
+    ],
+    "existing_limitations": [
+      "The bundled ImageMagick cannot load font files from a non-ASCII installation path in either the original OTF package or the shared-TTC package; both returned exit code 1 in the separate relocation probe."
+    ],
+    "before": {
+      "zip_bytes": 123318008,
+      "unpacked_bytes": 234706536,
+      "zip_sha256": "f2d55e4fcb2466b3a7526de191434910deaebf8d146110cf9401646522d14809"
+    },
+    "after": {
+      "zip_bytes": 33669483,
+      "unpacked_bytes": 54524212,
+      "zip_sha256": "94b537e20de303065afb270549f682fd6aab8f0bea6e8e2c01dd344e9979c019"
+    },
+    "native_delta": {
+      "removed": [
+        "menu-bin/libLerc.dll",
+        "menu-bin/libMagickCore-7.Q16HDRI-10.dll",
+        "menu-bin/libMagickWand-7.Q16HDRI-10.dll",
+        "menu-bin/libSvtAv1Enc-4.dll",
+        "menu-bin/libaom.dll",
+        "menu-bin/libbluray-4.dll",
+        "menu-bin/libbrotlienc.dll",
+        "menu-bin/libcairo-2.dll",
+        "menu-bin/libcairo-gobject-2.dll",
+        "menu-bin/libcrypto-3-x64.dll",
+        "menu-bin/libdatrie-1.dll",
+        "menu-bin/libdav1d-7.dll",
+        "menu-bin/libdeflate.dll",
+        "menu-bin/libffi-8.dll",
+        "menu-bin/libfftw3-3.dll",
+        "menu-bin/libgdk_pixbuf-2.0-0.dll",
+        "menu-bin/libgio-2.0-0.dll",
+        "menu-bin/libgme.dll",
+        "menu-bin/libgmodule-2.0-0.dll",
+        "menu-bin/libgmp-10.dll",
+        "menu-bin/libgnutls-30.dll",
+        "menu-bin/libgobject-2.0-0.dll",
+        "menu-bin/libgomp-1.dll",
+        "menu-bin/libgsm.dll",
+        "menu-bin/libhogweed-7.dll",
+        "menu-bin/libhwy.dll",
+        "menu-bin/libidn2-0.dll",
+        "menu-bin/libjbig-0.dll",
+        "menu-bin/libjpeg-8.dll",
+        "menu-bin/libjxl.dll",
+        "menu-bin/libjxl_cms.dll",
+        "menu-bin/libjxl_threads.dll",
+        "menu-bin/liblc3-1.dll",
+        "menu-bin/liblcms2-2.dll",
+        "menu-bin/liblqr-1-0.dll",
+        "menu-bin/libltdl-7.dll",
+        "menu-bin/liblzma-5.dll",
+        "menu-bin/libmodplug-1.dll",
+        "menu-bin/libmp3lame-0.dll",
+        "menu-bin/libnettle-9.dll",
+        "menu-bin/libogg-0.dll",
+        "menu-bin/libopencore-amrnb-0.dll",
+        "menu-bin/libopencore-amrwb-0.dll",
+        "menu-bin/libopenjp2-7.dll",
+        "menu-bin/libopus-0.dll",
+        "menu-bin/libp11-kit-0.dll",
+        "menu-bin/libpango-1.0-0.dll",
+        "menu-bin/libpangocairo-1.0-0.dll",
+        "menu-bin/libpangoft2-1.0-0.dll",
+        "menu-bin/libpangowin32-1.0-0.dll",
+        "menu-bin/libpixman-1-0.dll",
+        "menu-bin/libraqm-0.dll",
+        "menu-bin/librav1e.dll",
+        "menu-bin/librsvg-2-2.dll",
+        "menu-bin/librtmp-1.dll",
+        "menu-bin/libsharpyuv-0.dll",
+        "menu-bin/libsoxr.dll",
+        "menu-bin/libspeex-1.dll",
+        "menu-bin/libsrt.dll",
+        "menu-bin/libssh.dll",
+        "menu-bin/libtasn1-6.dll",
+        "menu-bin/libthai-0.dll",
+        "menu-bin/libtheoradec-2.dll",
+        "menu-bin/libtheoraenc-2.dll",
+        "menu-bin/libtiff-6.dll",
+        "menu-bin/libunistring-5.dll",
+        "menu-bin/libva.dll",
+        "menu-bin/libva_win32.dll",
+        "menu-bin/libvorbis-0.dll",
+        "menu-bin/libvorbisenc-2.dll",
+        "menu-bin/libvpl-2.dll",
+        "menu-bin/libvpx-1.dll",
+        "menu-bin/libwebp-7.dll",
+        "menu-bin/libwebpmux-3.dll",
+        "menu-bin/libx264-165.dll",
+        "menu-bin/libx265-217.dll",
+        "menu-bin/libzstd.dll",
+        "menu-bin/libzvbi-0.dll",
+        "menu-bin/swresample-7.dll",
+        "menu-bin/xvidcore.dll"
+      ],
+      "replaced": [
+        "menu-bin/avcodec-63.dll",
+        "menu-bin/avformat-63.dll",
+        "menu-bin/avutil-61.dll",
+        "menu-bin/convert.exe",
+        "menu-bin/mogrify.exe"
+      ],
+      "controlled_path": "C:\\Windows\\System32;C:\\Windows;C:\\Program Files\\dotnet"
+    },
+    "shared_fonts_baseline": {
+      "zip_bytes": 96780971,
+      "unpacked_bytes": 202740701,
+      "zip_sha256": "2cdad133addfe64ef4527a829730597cbf6dbe7949d3e155ee059ed7cf643901"
+    }
+  },
+  "final_repackage": {
+    "changed_from_tested_candidate": [
+      "THIRD-PARTY.en.md",
+      "THIRD-PARTY.md"
+    ],
+    "all_runtime_files_byte_identical": true,
+    "manifest_and_zip_verified": true,
+    "zip_settings_unchanged": true,
+    "gui_languages_passed": [
+      "zh-CN",
+      "en"
+    ]
+  },
+  "scope": {
+    "authoring_albums": 3,
+    "authoring_tracks": 6,
+    "track_seconds": 4,
+    "cover_formats": [
+      "JPG",
+      "PNG",
+      "WebP"
+    ],
+    "compared_menu_images": 42,
+    "index_pages_tested": false,
+    "index_exclusion": "Baseline single-index-page MENU_INDEX_ARROW_MISSING; album menus and still pictures were tested."
+  },
+  "publication": {
+    "committed": false,
+    "published": false,
+    "existing_v1_0_unchanged": true
+  }
+}
