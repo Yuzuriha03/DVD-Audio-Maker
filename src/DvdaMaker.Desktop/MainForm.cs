@@ -13,7 +13,7 @@ internal sealed class MainForm : Form
     private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly FlowLayoutPanel _profileBar = new() { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(6), WrapContents = false };
     private readonly List<Button> _actions = [];
-    private readonly Button _cancel = new() { Text = "取消任务", Enabled = false, AutoSize = true, Height = 32 };
+    private readonly Button _cancel = MakeCommandButton("停止任务");
     private readonly Label _origin = new() { AutoSize = true, Margin = new Padding(14, 9, 0, 0) };
     private readonly Label _status = new() { Text = "准备就绪", AutoSize = true, Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold), ForeColor = Color.FromArgb(31, 48, 63) };
     private readonly ProgressBar _progress = new() { Dock = DockStyle.Top, Height = 5, MarqueeAnimationSpeed = 25, Margin = new Padding(3, 5, 3, 8) };
@@ -53,37 +53,50 @@ internal sealed class MainForm : Form
         AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
         StartPosition = FormStartPosition.CenterScreen; MinimumSize = new Size(950, 730); Size = new Size(1160, 900);
         BackColor = Color.FromArgb(244, 247, 250); ForeColor = Color.FromArgb(31, 48, 63);
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1, Padding = new Padding(18) };
-        root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
-        root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); Controls.Add(root);
-        var header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, Padding = new Padding(2, 0, 0, 6) };
-        header.Controls.Add(new Label { Text = "DVD-Audio Maker", Font = new Font(Font.FontFamily, 21F, FontStyle.Bold), AutoSize = true, Margin = Padding.Empty });
-        header.Controls.Add(new Label { Text = "把音乐制作成 DVD-Audio 光盘镜像", ForeColor = Color.FromArgb(98, 113, 128), AutoSize = true, Margin = new Padding(1, 5, 0, 0) });
-        root.Controls.Add(header, 0, 0);
-        _profileBar.WrapContents = true;
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, Padding = new Padding(14) };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100));
+        root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100));
+        root.RowStyles.Add(new(SizeType.AutoSize)); Controls.Add(root);
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 0, 0, 10) };
+        header.ColumnStyles.Add(new(SizeType.Percent, 100)); header.ColumnStyles.Add(new(SizeType.AutoSize));
+        var branding = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, Margin = Padding.Empty };
+        branding.Controls.Add(new Label { Text = "DVD-Audio Maker", Font = new Font(Font.FontFamily, 18F, FontStyle.Bold), AutoSize = true, Margin = Padding.Empty });
+        branding.Controls.Add(new Label { Text = "把音乐制作成 DVD-Audio 光盘镜像", ForeColor = Color.FromArgb(98, 113, 128), AutoSize = true, Margin = new Padding(1, 3, 0, 0) });
+        var profiles = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = Padding.Empty };
+        profiles.ColumnStyles.Add(new(SizeType.Percent, 100));
+        _profileBar.WrapContents = false; _profileBar.Padding = Padding.Empty; _profileBar.Margin = Padding.Empty;
         AddProfileButton("打开方案", OpenProfile); AddProfileButton("保存方案", SaveProfile); AddProfileButton("导入旧配置…", ImportEnv);
-        _profileBar.Controls.Add(_origin); root.Controls.Add(_profileBar, 0, 1);
+        _origin.AutoSize = false; _origin.AutoEllipsis = true; _origin.Dock = DockStyle.Fill;
+        _origin.Height = 24; _origin.TextAlign = ContentAlignment.MiddleRight; _origin.Margin = new Padding(0, 3, 6, 0);
+        profiles.Controls.Add(_profileBar); profiles.Controls.Add(_origin);
+        header.Controls.Add(branding, 0, 0); header.Controls.Add(profiles, 1, 0); root.Controls.Add(header, 0, 0);
         var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, Size = new Size(1050, 640), SplitterWidth = 8, SplitterDistance = 355, Panel1MinSize = 180, Panel2MinSize = 190 };
-        BuildEditors(); _tabs.Padding = new Point(18, 8); split.Panel1.Controls.Add(_tabs); root.Controls.Add(split, 0, 2);
-        var logPanel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, ColumnCount = 1, Padding = new Padding(14, 10, 14, 10), BackColor = Color.White };
+        BuildEditors(); _tabs.Padding = new Point(18, 8); split.Panel1.Controls.Add(_tabs); root.Controls.Add(split, 0, 1);
+        var logPanel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, ColumnCount = 1, Padding = new Padding(12, 8, 12, 8), BackColor = Color.White };
+        logPanel.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (var i = 0; i < 4; i++) logPanel.RowStyles.Add(new(SizeType.AutoSize));
         logPanel.RowStyles.Add(new(SizeType.Percent, 100));
-        var statusHeading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
-        statusHeading.ColumnStyles.Add(new(SizeType.Percent, 100)); statusHeading.ColumnStyles.Add(new(SizeType.AutoSize));
-        statusHeading.Controls.Add(_status, 0, 0); statusHeading.Controls.Add(_elapsedLabel, 1, 0);
+        var statusHeading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3 };
+        statusHeading.ColumnStyles.Add(new(SizeType.Percent, 100)); statusHeading.ColumnStyles.Add(new(SizeType.AutoSize)); statusHeading.ColumnStyles.Add(new(SizeType.AutoSize));
+        _logCount.Anchor = AnchorStyles.Right; _logCount.Margin = new Padding(12, 0, 12, 0);
+        statusHeading.Controls.Add(_status, 0, 0); statusHeading.Controls.Add(_logCount, 1, 0); statusHeading.Controls.Add(_elapsedLabel, 2, 0);
         logPanel.Controls.Add(statusHeading, 0, 0); logPanel.Controls.Add(_activity, 0, 1); logPanel.Controls.Add(_progress, 0, 2);
         logPanel.SizeChanged += (_, _) => _activity.MaximumSize = new Size(Math.Max(200, logPanel.ClientSize.Width - 34), 0);
-        var logBar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
+        var logBar = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Padding = new Padding(0, 3, 0, 5), Margin = Padding.Empty };
+        logBar.ColumnStyles.Add(new(SizeType.Percent, 100)); logBar.ColumnStyles.Add(new(SizeType.AutoSize));
+        var logFilters = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        var logActions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = Padding.Empty };
         _logView.Items.AddRange(["任务摘要", "详细日志"]); _logView.SelectedIndex = 0;
         _logView.SelectedIndexChanged += (_, _) => { _onlyProblems.Enabled = _logView.SelectedIndex == 0; RenderLog(true, true); };
         _onlyProblems.CheckedChanged += (_, _) => RenderLog(true, true);
         _live.CheckedChanged += (_, _) => { if (_live.Checked) RenderLog(true, true); };
         _tips.SetToolTip(_live, "取消勾选可停留在当前内容，后台仍完整记录。再次勾选同步最新内容。");
         _tips.SetToolTip(_logView, "摘要展示重要步骤与问题。详细日志显示最近的原始记录；导出保存完整任务日志。");
-        logBar.Controls.AddRange([_logView, _onlyProblems, _live]);
+        logFilters.Controls.AddRange([_logView, _onlyProblems, _live]);
         var copy = MakeButton("复制当前内容"); copy.Click += (_, _) => Guard(() => { if (_log.TextLength > 0) Clipboard.SetText(_log.Text); });
         var save = MakeButton("导出详细日志…"); save.Click += (_, _) => Guard(SaveLog);
-        logBar.Controls.Add(copy); logBar.Controls.Add(save); logBar.Controls.Add(_logCount);
+        logActions.Controls.Add(copy); logActions.Controls.Add(save);
+        logBar.Controls.Add(logFilters, 0, 0); logBar.Controls.Add(logActions, 1, 0);
         logPanel.Controls.Add(logBar, 0, 3); logPanel.Controls.Add(_log, 0, 4); split.Panel2.Controls.Add(logPanel);
         var commands = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(0, 10, 0, 0), WrapContents = true };
         foreach (var (text, action, help) in new[] {
@@ -92,19 +105,27 @@ internal sealed class MainForm : Form
             ("开始制作", WorkflowAction.Build, "自动检查音源、编码并生成 ISO 光盘镜像。"),
             ("验证成品", WorkflowAction.Verify, "验证已制作的光盘结构、时间轴和菜单；无损项为首轨抽样。") })
         {
-            var button = MakeButton(text); button.Padding = new Padding(14, 6, 14, 6);
+            var button = MakeCommandButton(text);
             if (action == WorkflowAction.Build) { button.BackColor = Color.FromArgb(22, 111, 116); button.ForeColor = Color.White; }
             button.Click += (_, _) => { if (_active is null) _active = RunAsync(action); };
             _tips.SetToolTip(button, help); _actions.Add(button); commands.Controls.Add(button);
         }
-        _cancel.Text = "停止任务"; _cancel.Click += (_, _) => CancelTask(); commands.Controls.Add(_cancel);
-        var open = MakeButton("查看成品"); open.Click += (_, _) => Guard(() =>
+        _cancel.ForeColor = Color.White;
+        _cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(169, 45, 34);
+        _cancel.FlatAppearance.MouseDownBackColor = Color.FromArgb(145, 35, 26);
+        _cancel.EnabledChanged += (_, _) =>
+        {
+            _cancel.BackColor = _cancel.Enabled ? Color.FromArgb(192, 57, 43) : Color.FromArgb(246, 221, 218);
+            _cancel.FlatAppearance.BorderColor = _cancel.Enabled ? Color.FromArgb(192, 57, 43) : Color.FromArgb(226, 171, 164);
+        };
+        _cancel.Enabled = false; _cancel.Click += (_, _) => CancelTask(); commands.Controls.Add(_cancel);
+        var open = MakeCommandButton("查看成品"); open.Click += (_, _) => Guard(() =>
         {
             var path = CaptureSettings().ToOptions().FinalDirectory;
             if (!Directory.Exists(path)) throw new DirectoryNotFoundException("尚未找到成品文件夹，请先完成制作或检查保存位置。");
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         });
-        commands.Controls.Add(open); root.Controls.Add(commands, 0, 3);
+        commands.Controls.Add(open); root.Controls.Add(commands, 0, 2);
         Populate(settings, origin); Console.SetOut(_output); Console.SetError(_error);
         _timer.Tick += (_, _) => { DrainLog(); if (_running) _elapsedLabel.Text = "已用时 " + FormatDuration(_elapsed.Elapsed); }; _timer.Start();
         FormClosing += OnClosing;
@@ -112,7 +133,7 @@ internal sealed class MainForm : Form
         Shown += (_, _) =>
         {
             if (split.Height > split.Panel1MinSize + split.Panel2MinSize + split.SplitterWidth)
-                split.SplitterDistance = Math.Clamp((int)(split.Height * .57), split.Panel1MinSize, split.Height - split.Panel2MinSize - split.SplitterWidth);
+                split.SplitterDistance = Math.Clamp((int)(split.Height * .55), split.Panel1MinSize, split.Height - split.Panel2MinSize - split.SplitterWidth);
             Post(TaskLogLevel.Information, "先选择音源文件夹和成品保存位置。其他选项可按需调整。");
             Post(TaskLogLevel.Information, "“预演制作”会准备编码文件和分盘方案，但不会生成 ISO。");
             DrainLog(true); if (_smoke) RunSmoke();
@@ -124,14 +145,14 @@ internal sealed class MainForm : Form
         foreach (var group in SettingDefinition.All.GroupBy(item => item.Group))
         {
             var page = new TabPage(group.Key) { AutoScroll = true, BackColor = Color.White };
-            var content = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, Padding = new Padding(18, 14, 18, 18) };
+            var content = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, Padding = new Padding(14, 10, 14, 10) };
             content.ColumnStyles.Add(new(SizeType.Percent, 100));
             content.Controls.Add(new Label { Text = group.Key switch {
                 "开始设置" => "选择音乐、保存位置和光盘容量，即可开始制作。",
                 "音频编码" => "通常使用内置无损编码；也可以导入已经准备好的 MLP 文件。",
                 "光盘菜单" => "设置播放器中的选曲菜单与专辑封面。",
                 _ => "发布包通常已经配好工具，仅在更换工具或排查问题时调整。" },
-                AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 14) });
+                AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 10) });
             content.Controls.Add(BuildFields(group.Where(d => !d.Advanced)));
             var advanced = BuildFields(group.Where(d => d.Advanced)); advanced.Visible = false;
             var expand = MakeButton("更多设置  ▾"); expand.ForeColor = Color.FromArgb(22, 111, 116); expand.FlatAppearance.BorderSize = 0;
@@ -142,12 +163,17 @@ internal sealed class MainForm : Form
     private Control BuildFields(IEnumerable<SettingDefinition> definitions)
     {
         var table = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
-        table.ColumnStyles.Add(new(SizeType.Absolute, 148)); table.ColumnStyles.Add(new(SizeType.Percent, 100));
-        var row = 0;
+        table.ColumnStyles.Add(new(SizeType.Percent, 50)); table.ColumnStyles.Add(new(SizeType.Percent, 50));
+        var index = 0;
         foreach (var definition in definitions)
         {
-            table.RowStyles.Add(new(SizeType.AutoSize));
-            table.Controls.Add(new Label { Text = definition.Label, AutoSize = true, Margin = new Padding(0, 8, 8, 0) }, 0, row);
+            var row = index / 2; var column = index % 2;
+            if (column == 0) table.RowStyles.Add(new(SizeType.AutoSize));
+            var field = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Top, ColumnCount = 1,
+                Margin = new Padding(column == 0 ? 0 : 10, 0, column == 0 ? 10 : 0, 10) };
+            field.ColumnStyles.Add(new(SizeType.Percent, 100));
+            field.Controls.Add(new Label { Text = definition.Label, AutoSize = true,
+                Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, 0, 0, 4) });
             Control editor = definition.Kind switch {
                 SettingKind.Boolean => new CheckBox { Text = "开启", AutoSize = true },
                 SettingKind.Number => new NumericUpDown { Minimum = definition.Minimum, Maximum = definition.Maximum, ThousandsSeparator = true },
@@ -155,24 +181,23 @@ internal sealed class MainForm : Form
                 SettingKind.Capacity => new CapacityEditor(), _ => new TextBox(),
             };
             if (editor is ComboBox combo) foreach (var value in definition.Choices!) combo.Items.Add(new SettingChoice(value, definition.DisplayValue(value)));
-            editor.Name = definition.Key; editor.AccessibleName = definition.Label; editor.Dock = DockStyle.Top; editor.Margin = new Padding(0, 4, 0, 0);
+            editor.Name = definition.Key; editor.AccessibleName = definition.Label; editor.Dock = DockStyle.Top; editor.Margin = Padding.Empty;
             _editors.Add(definition.Key, editor); _tips.SetToolTip(editor, definition.Help);
-            var body = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Top, ColumnCount = 1, Margin = new Padding(0, 0, 0, 12) };
-            body.ColumnStyles.Add(new(SizeType.Percent, 100));
             if (definition.Kind is SettingKind.Folder or SettingKind.File)
             {
                 var picker = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Top, ColumnCount = 2, Margin = Padding.Empty };
                 picker.ColumnStyles.Add(new(SizeType.Percent, 100)); picker.ColumnStyles.Add(new(SizeType.AutoSize));
                 var browse = MakeButton("浏览…"); browse.Margin = new Padding(7, 0, 0, 0); browse.AccessibleName = "浏览" + definition.Label;
-                browse.Click += (_, _) => Browse(definition, editor); picker.Controls.Add(editor, 0, 0); picker.Controls.Add(browse, 1, 0); body.Controls.Add(picker);
+                editor.Margin = new Padding(0, 4, 0, 0);
+                browse.Click += (_, _) => Browse(definition, editor); picker.Controls.Add(editor, 0, 0); picker.Controls.Add(browse, 1, 0); field.Controls.Add(picker);
             }
-            else body.Controls.Add(editor);
+            else field.Controls.Add(editor);
             if (definition.Help.Length > 0)
             {
-                var help = new Label { Text = definition.Help, AutoSize = true, ForeColor = Color.FromArgb(98, 113, 128), Margin = new Padding(0, 5, 0, 0), MaximumSize = new Size(750, 0) };
-                body.SizeChanged += (_, _) => help.MaximumSize = new Size(Math.Max(180, body.ClientSize.Width - 4), 0); body.Controls.Add(help);
+                var help = new Label { Text = definition.Help, AutoSize = true, ForeColor = Color.FromArgb(98, 113, 128), Margin = new Padding(0, 4, 0, 0), MaximumSize = new Size(450, 0) };
+                field.SizeChanged += (_, _) => help.MaximumSize = new Size(Math.Max(120, field.ClientSize.Width - 4), 0); field.Controls.Add(help);
             }
-            table.Controls.Add(body, 1, row++);
+            table.Controls.Add(field, column, row); index++;
         }
         return table;
     }
@@ -429,6 +454,13 @@ internal sealed class MainForm : Form
     {
         var button = new Button { Text = text, AutoSize = true, FlatStyle = FlatStyle.Flat, BackColor = Color.White, Padding = new Padding(10, 4, 10, 4), Margin = new Padding(3, 3, 6, 3), Cursor = Cursors.Hand };
         button.FlatAppearance.BorderColor = Color.FromArgb(210, 219, 226); return button;
+    }
+    private static Button MakeCommandButton(string text)
+    {
+        var button = MakeButton(text);
+        button.AutoSizeMode = AutoSizeMode.GrowAndShrink; button.MinimumSize = new Size(104, 40);
+        button.Padding = new Padding(14, 6, 14, 6);
+        return button;
     }
     private static string FormatDuration(TimeSpan time) => time.TotalHours >= 1 ? $"{(int)time.TotalHours} 小时 {time.Minutes} 分 {time.Seconds} 秒" : $"{(int)time.TotalMinutes} 分 {time.Seconds} 秒";
     private void Snapshot(string? path)

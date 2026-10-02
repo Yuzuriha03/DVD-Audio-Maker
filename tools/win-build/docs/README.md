@@ -35,17 +35,17 @@ DVDA_ISO_PREFIX="MyCollection"
 DVDA_MAX_DISCS="2"
 DVDA_MLP_SOURCE="surcode-batch"
 DVDA_MLP_EXTERNAL_DIR=""
-DVDA_MLP_EAC3TO_EXE="C:/Tools/eac3to/eac3to.exe"
+DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
 DVDA_MENU="on"
 ```
 
 CLI 配置优先级：
 
 ```text
-环境变量 > config.env > 内置默认值
+环境变量 > 所选配置文件 > 内置默认值
 ```
 
-配置文件只解析 `KEY=VALUE`。不会执行命令或展开变量。请使用绝对 Windows 路径。
+使用 `--config` 或 `DVDA_CONFIG` 选择配置文件，默认读取 `config.env`。配置文件只解析 `KEY=VALUE`。不会执行命令或展开变量。请使用绝对 Windows 路径。
 
 工具路径和菜单字体由 GUI 或 `dvda.cmd` 根据发布包布局设置，通常不需要手工配置。
 
@@ -70,7 +70,7 @@ dvda.cmd verify all
 ```text
 DVDA_MLP_SOURCE="surcode-batch"
 DVDA_MLP_EXTERNAL_DIR=""
-DVDA_MLP_EAC3TO_EXE="C:/Tools/eac3to/eac3to.exe"
+DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
 ```
 
 外部 MLP：
@@ -88,7 +88,7 @@ DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
 DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
 DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
 DVDA_MLP_METADATA_CONTEXT=""
-DVDA_MLP_EAC3TO_EXE="C:/Tools/eac3to/eac3to.exe"
+DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
 ```
 
 ## 校验模式
