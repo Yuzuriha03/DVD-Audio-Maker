@@ -1,48 +1,53 @@
-# Windows x64 GUI release
+# DVD-Audio Maker — Windows x64
 
 [简体中文](README.md) | [English](README.en.md)
 
 <!-- RUNTIME_REQUIREMENTS -->
 
-Double-click `DVD-Audio-Maker.exe` in the package root. Standard releases provide only the graphical entry point. Extract and retain the entire directory, including DLLs, JSON files and resources; do not copy the EXE alone.
+Create DVD-Audio ISOs from FLAC and ALAC/M4A sources, with a Chinese/English GUI, MLP encoding, automatic disc planning, optional menus and output verification.
 
-See [RUNTIME.en.md](RUNTIME.en.md) for this package: the compact framework-dependent package requires .NET 10 Desktop Runtime for Windows x64, while the self-contained package includes its runtime.
-
-Covers, menu drawing, fonts and image verification use a tailored in-process x64 image library. ImageMagick command-line programs are neither launched nor required. Keep image-native and menu-bin/fonts intact.
+Extract the entire package and double-click `DVD-Audio-Maker.exe`. The standard package provides the GUI only. Retain every DLL, JSON file, language resource and the `media-native`, `image-native`, `menu-bin` and `data` directories. Do not copy only the main EXE. Also see [RUNTIME.en.md](RUNTIME.en.md).
 
 ## Make a disc
 
-1. Select your audio source, working directory, destination, title and disc capacity.
-2. Choose sample rate and bit depth in the audio settings; configure menus if needed.
-3. Check the sources. Preview prepares sources, encodes MLP and plans discs without creating ISO images.
-4. Build the discs, then verify the output. Lossless audio verification samples the first track; it does not check every track.
+1. Select source, working and output directories; set the title, capacity and disc-count limit.
+2. Choose the target sample rate and bit depth, and optionally enable track menus, album indexes and playback covers.
+3. Check the sources, then preview. Preview prepares sources and encodes MLP, using working-directory space, but does not create an ISO.
+4. Build the discs, then verify the output. Completed ISOs appear in the configured output directory.
 
-Tasks support cancellation. Closing during a task first cancels it and waits for cleanup.
+Keep each album in its own folder with album, title, track and date tags. JPEG, PNG and WebP covers are supported; Chinese/Japanese/Korean menu fonts are bundled. Tasks can be canceled. Closing the window cancels the task and waits for cleanup.
 
 ## Configuration and language
 
-Edit everyday settings in the GUI. Open/save JSON profiles and import existing config.env files. Without saved settings, first launch reads an adjacent config.env. Import accepts KEY=VALUE only, without executing commands or expanding variables. Use absolute Windows paths.
+Open/save JSON profiles or import an existing `config.env`. On first launch without saved settings, the bundled configuration is read. Configuration parsing reads key/value pairs without running commands or expanding variables; use absolute Windows paths.
 
-The language selector supports Chinese and English and saves the selection with the profile. First launch follows the Windows UI language. You can also use `DVD-Audio-Maker.exe --language en` or `--language zh-CN`, and `--config` with an env or JSON file.
+The upper-right selector switches between Chinese and English, with the choice saved in the profile. Language changes do not alter paths, audio tags or encoded data. You may also use `--language en`, `--language zh-CN` or `--config` with an env/JSON file.
 
-## Tools and encoding
+Daily settings: `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
 
-The package includes dvda-author, mkisofs, menu tools, the in-process image library and Chinese/Japanese/Korean fonts. The GUI detects their bundled paths. Retain the menu-bin/fonts directory.
+## Bundled components
 
-Source conversion, metadata, decoding and verification use bundled x64 media libraries inside the application. No FFmpeg or FFprobe process or installation is required. Retain the media-native directory. MLP encoding uses the native x64 DLL and requires neither eac3to nor original SurCode.
+Source conversion, probing, decoding and media verification use bundled x64 media libraries. Images, fonts and menu drawing use the in-process image library. No FFmpeg, FFprobe or ImageMagick installation is needed, and these operations do not launch their command-line programs. MLP uses the embedded MLP core without original SurCode or eac3to.
 
-The optional M4A/ALAC-to-FLAC feature still uses Metaflac to normalize artwork and tags. For this feature, place Metaflac on PATH or configure its location in the GUI. Old FFmpeg / FFprobe paths remain importable from config.env; the GUI automatically uses the bundled components.
+Authoring, menu-video encoding/muxing and ISO creation still use bundled tools, so retain menu-bin. The optional M4A/ALAC-to-FLAC organization feature needs Metaflac for tags and artwork; configure its path or place it in menu-bin/on PATH when using that feature.
 
-Sources include FLAC and M4A/ALAC, with JPG, PNG or WebP artwork. Use one directory per album and supply date, track, album and title tags.
+Legacy FFmpeg/FFprobe settings remain importable; the GUI automatically selects built-in components. Complete SC/JP/KR font faces are included without a separate font installation.
 
-## Logs and troubleshooting
+## Verification scope
 
-The log panel offers a summary, details, issue filtering, pause, copy and export. Full logs and startup errors are in `%LOCALAPPDATA%/DVD-Audio-Maker/logs`. Configure missing tools in settings. Disc auditing requires build.log from a real build; preview logs cannot replace it.
+Output verification checks disc structures, capacity, timing and menus. Lossless audio verification samples disc 1, group 1, track 1; it does not verify every track. Auditing requires build.log from an actual completed build; a preview log is insufficient.
 
-## Development diagnostics
+Encoded MLP is not patched. Comparing complete historical original files requires matching target PCM, settings and auxiliary metadata context. Identical audio alone does not guarantee identical complete files.
 
-The source checkout retains CLI and test projects, with `cli.cmd`, `gui-debug.cmd` and VS Code debug configurations. Add `--include-cli` explicitly when packaging a portable developer diagnostic build; that package includes CLI-TOOLS.en.md.
+## Logs and common issues
 
-## License and byte identity
+Logs default to task summaries, with detailed output, warning filters, paused display, copy and export options. Full task logs and startup errors are stored in `%LOCALAPPDATA%/DVD-Audio-Maker/logs`.
 
-Project code follows LICENSE; third-party components are listed in THIRD-PARTY.md. The native MLP core is embedded in an application assembly and verified with SHA-256. Encoded output is not patched. Historical original byte comparisons require identical PCM, settings and explicit metadata context.
+- Cannot start: check that the .NET 10 Desktop Runtime x64 required by this package is installed.
+- Missing DLL, font or menu tool: extract the complete package again instead of mixing versions.
+- Build failure: export the complete log and retain the corresponding working directory for investigation.
+- Large working directory: previews and encoding generate caches; removing them means repeating the relevant steps.
+
+## License
+
+See [LICENSE](LICENSE) and [THIRD-PARTY.en.md](THIRD-PARTY.en.md). Retain bundled licenses and component notices.

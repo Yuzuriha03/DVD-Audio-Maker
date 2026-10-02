@@ -1,175 +1,134 @@
-# Native Windows release assembly
+# Windows x64 builds and packaging
 
 [简体中文](README.md) | [English](README.en.md)
 
-This directory assembles a self-contained DVD-Audio Maker release using Windows CMD and C#.
+The current distribution profile is **GUI-only, Windows x64, framework-dependent**. Users install .NET 10 Desktop Runtime x64; developers and packagers use the .NET 10 SDK. Pass `--framework-dependent` explicitly. Omitting it still creates a self-contained package.
 
-Assembly does not invoke PowerShell, WSL, Bash, an MSYS2 shell, Autotools or Make. Native image/media maintenance builds use Python and MSYS2/MinGW-w64 on Windows; normal C# GUI builds reuse verified artifacts.
+Routine C# builds and packaging reuse prepared Windows artifacts. Python, MSYS2/MinGW-w64, Make and development libraries are needed only when maintaining native components, not when running the product.
 
-## Architecture boundaries
+## Packaging inputs
 
-The C# projects build directly with the .NET 10 SDK. Third-party C tools currently have no maintained CMake or Visual Studio projects, so the packager does not attempt to translate the upstream Autotools build.
+| Input | Default location or option | Contents |
+|---|---|---|
+| GUI media runtime | `build/media-native` | DLLs and media-build.json |
+| Image runtime | `build/image-native` | dvda-image.dll, image-build.json, XML and NOTICE.txt |
+| Author with in-process images | `build/image-author` or `--image-author` | dvda-author-dev.exe and author-build.json |
+| Tools and fonts | `--prebuilt` or DVDA_PREBUILT_DIR | Complete menu-bin runtime dependencies |
+| Authoring assets | `--source` or DVDA_SRC_TREE | menu/silence.wav and menu/activeheader |
 
-Prepare a complete Windows x64 tool directory in advance. Its default location is:
+Git does not contain the full third-party tool bundle. tools/dvda-author-mlp8 is a partial review mirror, not an independently buildable tree or complete asset source.
 
-```text
-tools\win-build\prebuilt\
-```
-
-Alternatively, set:
-
-```bat
-set DVDA_PREBUILT_DIR=D:\dev\winbuild\menu-bin
-```
-
-## Required third-party files
-
-The prebuilt directory must contain at least:
+The prebuilt directory needs these programs and their DLL dependencies:
 
 ```text
-dvda-author-dev.exe
-mkisofs.exe
-dvdauthor.exe
-spumux.exe
-spuunmux.exe
-jpeg2yuv.exe
-mpeg2enc.exe
-mplex.exe
-mp2enc.exe
-fonts\NotoSansCJKsc-Regular.otf
-fonts\NotoSansCJKjp-Regular.otf
-fonts\NotoSansCJKkr-Regular.otf
+dvda-author-dev.exe   mkisofs.exe      dvdauthor.exe
+spumux.exe            spuunmux.exe     jpeg2yuv.exe
+mpeg2enc.exe          mplex.exe        mp2enc.exe
 ```
 
-Include the native tool DLLs and other runtime files. ImageMagick EXEs/XML are no longer required inputs; image-native supplies its own configuration. The packager does not download dependencies. It prunes DLLs only for fully fingerprinted, verified profiles: six unused ImageMagick DLLs for the original profile, plus 74 unused DLLs when the validated MLP-only FFmpeg libraries are present. Unknown builds are retained.
+Provide NotoSansCJKsc/jp/kr-Regular.otf, or the verified `fonts/DvdaNotoCJK-Regular.ttc`. Packaging shares identical font tables while retaining all glyphs and regional faces. magick.exe, convert.exe, mogrify.exe and identify.exe are no longer required inputs.
 
-The packager shares identical tables from the three OTF fonts in a standard TTC collection, retaining every SC, JP and KR glyph and regional mapping. It generates ImageMagick configuration with explicit face indices. The prebuilt directory may instead supply fonts/DvdaNotoCJK-Regular.ttc from a previous package; all three regional faces are checked. No characters are removed and the ZIP compression settings are unchanged.
+The base author must include the project's MLP, timeline, UTF-8 and menu fixes. Packaging replaces its staging copy with the verified `--image-author` build. The other menu tools still need the appropriate AMGM/jump support.
 
-`dvda-author-dev.exe` must include this project's 24-bit MLP, menu, multilingual font and UTF-8 argv fixes. Menu tools must support AMGM and `jump group ... track ...`.
+## Build the compact package
 
-## Runtime assets
-
-Packaging also requires these files from a complete asset tree:
-
-```text
-menu\silence.wav
-menu\activeheader
-```
-
-The default is `tools\dvda-author-mlp8\`. If the partial mirror lacks assets, set `DVDA_SRC_TREE` or use `--source`.
-
-## Build a release
+Run from the repository root, replacing example paths with prepared directories:
 
 ```bat
 tools\win-build\build-all.cmd ^
+  --framework-dependent ^
   --source "D:\dev\winbuild\src" ^
   --prebuilt "D:\dev\winbuild\menu-bin" ^
-  --output "D:\DVD-Audio-Maker-Release"
+  --image-author "build\image-author"
 ```
 
-Available options:
-
-| Option | Description |
+| Option | Purpose |
 |---|---|
-| `--repo` | Repository root; normally discovered automatically |
-| `--source` | Complete runtime asset tree |
-| `--prebuilt` | Windows third-party tool directory |
+| `--repo` | Repository root, normally detected automatically |
+| `--source` | Full asset tree; packaging does not compile this tree |
+| `--prebuilt` | Windows tools/fonts, default tools/win-build/prebuilt |
+| `--image-author` | Rebuilt author directory, default build/image-author |
 | `--output` | Release output root |
-| `--include-cli` | Optional developer diagnostic package with CLI; the default is GUI only |
-| `--framework-dependent` | Compact package without .NET; users install .NET 10 Desktop Runtime x64 |
-| `--image-author` | Rebuilt native author and author-build.json directory; default build/image-author |
-| `--ffmpeg-libraries` | Verified MLP-only x64 FFmpeg DLL directory; replaces three libraries and prunes fingerprinted unused dependencies |
+| `--framework-dependent` | Exclude .NET; the current distribution profile |
+| `--include-cli` | Optional developer diagnostic package |
+| `--ffmpeg-libraries` | Optional verified MLP-only authoring library replacements |
 
-`build-all.cmd` starts `src/DvdaMaker.Toolchain`, checks inputs, publishes only the x64 GUI by default, copies tools and assets, generates a SHA-256 manifest and creates the ZIP. The standard package neither builds nor includes CLI files or `dvda.cmd`.
+The compact profile defaults to:
 
-Add `--framework-dependent` to omit .NET. Without --output, this profile writes to tools/win-build/release-framework-dependent. Omitting the flag retains self-contained publishing. Both modes generate their runtime requirements at the top of README and in RUNTIME.en.md.
-
-Only `--include-cli` adds the developer CLI, `dvda.cmd` and CLI documentation. That profile shares the GUI runtime, requires identical bytes for duplicate assembly names and fails on conflicts. WinForms and every font glyph are retained. The ZIP compression level is unchanged.
-
-## Native image library
-
-GUI image preparation and the native author use the same x64 `image-native/dvda-image.dll`. ImageMagick EXEs and their old XML configuration are removed from release staging. Build these artifacts once before packaging, or reuse verified image-native and image-author directories:
-
-```bat
-python tools\win-build\build-image-runtime.py --msys-root "D:\dev\msys64"
-python tools\win-build\build-image-bridge.py --msys-root "D:\dev\msys64"
-python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64"
-tools\win-build\build-all.cmd --source "D:\dev\winbuild\src" --prebuilt "D:\dev\winbuild\menu-bin" --framework-dependent
+```text
+tools/win-build/release-framework-dependent/
+├── DVD-Audio-Maker/
+│   ├── DVD-Audio-Maker.exe
+│   ├── Application DLLs, JSON and language resources
+│   ├── media-native/
+│   ├── image-native/
+│   ├── menu-bin/fonts/
+│   ├── data/menu/
+│   ├── config.env, MANIFEST.txt
+│   └── README, RUNTIME, THIRD-PARTY, LICENSE
+└── DVD-Audio-Maker.zip
 ```
 
-ImageMagick and FreeType archives are pinned by SHA-256; extracted upstream files are verified and project patches are regenerated. Recipes use Python 3.12+, MSYS2/MinGW-w64, JPEG/PNG/WebP/zlib development archives and static linking. The author is built from a private snapshot; the supplied source tree and compiler installation are not modified. The old forwarding EXEs are historical test tools.
+Without `--framework-dependent`, output defaults to tools/win-build/release and includes .NET. The normal package has no dvda.exe/dvda.cmd; source-tree cli.cmd and VS Code debugging remain available. Releases stay in ignored directories, and ZIPs are distributed through GitHub Releases rather than Git commits.
 
-Daily C# development may copy a complete verified `image-native` directory to `build/image-native` or set `DVDA_IMAGE_NATIVE_DIR` at runtime. Keep configuration, notices and provenance with the DLL. Release type.xml resolves fonts relative to image-native; retain the sibling menu-bin/fonts directory too. See [capabilities and validation](../../docs/INPROCESS-IMAGES.en.md).
+## Reuse native components for C# debugging
 
-An already optimized `menu-bin` can be reused as `--prebuilt` without rebuilding or supplying replacement options. `NativeOptimizationProfile.json` pins the original 118-file bundle; `MinimalFfmpegProfile.json` pins the three rebuilt libraries and 74 additional unused DLLs. Normal imports, delay imports and binary/XML name references are checked before deletion. Unknown or referenced files are retained, and input directories are never modified.
-
-The separate FFmpeg maintenance build requires Windows x64, Python 3.12+, MSYS2 Make/GPG and MinGW-w64 GCC. It verifies the pinned FFmpeg 9.0.2 archive and signature and a pinned NASM download, producing native Windows x64 DLLs.
+Point runtime loading at a complete release that matches the current source, retaining its font/configuration layout:
 
 ```bat
-python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64"
-tools\win-build\build-all.cmd --source "D:\dev\winbuild\src" --prebuilt "D:\dev\winbuild\menu-bin" --framework-dependent --ffmpeg-libraries "build\ffmpeg-minimal\install\bin"
+set "DVDA_MEDIA_NATIVE_DIR=D:\DVD-Audio-Maker\media-native"
+set "DVDA_IMAGE_NATIVE_DIR=D:\DVD-Audio-Maker\image-native"
+gui-debug.cmd
 ```
 
-A changed compiler, configuration or version changes the hashes. The packager rejects unverified replacements. Complete the interface, audio and authoring checks described in [the rebuild record](../../docs/MINIMAL-FFMPEG.en.md) before updating the profile. The default mlp profile serves the menu-bin authoring tools; the MLP encoder is a separate component.
+These variables select runtime locations; packaging still needs the build inputs above. When copying components, retain media provenance and image configuration/notices. Release type.xml resolves fonts relative to image-native: copying only the DLL, or using that configuration without the sibling menu-bin/fonts directory, is insufficient.
 
-## In-process GUI media libraries
+Native output defaults to build. MSBuild properties NativeMediaDirectory and NativeImageDirectory select alternative component inputs. Configure valid author, mkisofs and asset paths separately in the GUI. See [development/debugging](../../docs/DEVELOPMENT.en.md).
 
-GUI audio processing no longer starts external FFmpeg / FFprobe programs. For routine C# development, copy media-native from a validated release to build/media-native; rebuilding native code is unnecessary. The NativeMediaDirectory MSBuild property can select another build input, and DVDA_MEDIA_NATIVE_DIR can select a runtime directory for debugging. Packaging requires all DLLs plus media-build.json and validates hashes, x64 architecture and imported dependencies.
+## Rebuild native components when needed
 
-For native maintenance, build the separate media profile (MSYS2 also needs libsoxr and zlib development libraries):
+Use Windows x64, Python 3.12+ and MSYS2/MinGW-w64. Media builds also use Make/GPG, a pinned NASM archive and libsoxr/zlib. Image builds use static JPEG/PNG/WebP/zlib development archives. Recipes and manifests record source versions, archive hashes, configuration and dependency hashes.
+
+### GUI media runtime
 
 ```bat
 python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64" --work-directory build\ffmpeg-media --profile media
 python tools\win-build\build-media-bridge.py --msys-root "D:\dev\msys64"
 ```
 
-This runtime includes audio decoding, SWR/SOXR, MPEG-2/PNG and a small C interface, without FFmpeg command-line executables. It is separate from the MLP-only authoring libraries in menu-bin. See [in-process media](../../docs/INPROCESS-MEDIA.en.md) for scope and validation.
+This supplies the required audio decoders, SWR/SOXR, menu-video reading and C interface, without FFmpeg/FFprobe executables. MLP encoding remains a separate MLP core. See [in-process media](../../docs/INPROCESS-MEDIA.en.md).
 
-Developer check: `python tools/win-build/test-magick-shim.py <old-menu-bin> <forwarder-exe> <new-test-output-directory>`. Python is used only for development tests and is not shipped.
-
-## Output
-
-```text
-tools\win-build\release\
-├── DVD-Audio-Maker\
-│   ├── DVD-Audio-Maker.exe
-│   ├── *.dll / *.json / language resources
-│   ├── menu-bin\
-│   ├── image-native\
-│   ├── media-native\
-│   ├── data\menu\
-│   ├── config.env
-│   ├── MANIFEST.txt
-│   ├── README.md
-│   ├── THIRD-PARTY.md
-│   └── LICENSE
-└── DVD-Audio-Maker.zip
-```
-
-The self-contained package needs no installed .NET runtime. The compact package requires .NET 10 Desktop Runtime for Windows x64. Double-click DVD-Audio-Maker.exe for the GUI, which imports existing config.env files and saves JSON profiles. MLP uses the embedded native x64 DLL without a standalone encoder EXE.
-
-Extract and distribute the entire directory. The executable depends on the adjacent runtime and application assemblies and cannot be copied on its own.
-
-The GUI requires no FFmpeg or FFprobe installation. The optional M4A/ALAC-to-FLAC normalization feature still needs Metaflac in menu-bin, on PATH or configured in the GUI. The developer CLI retains explicit external FFmpeg paths as a reference backend.
-
-## Use the release
+### Image runtime and native author
 
 ```bat
-cd tools\win-build\release\DVD-Audio-Maker
-DVD-Audio-Maker.exe
+python tools\win-build\build-image-runtime.py --msys-root "D:\dev\msys64"
+python tools\win-build\build-image-bridge.py --msys-root "D:\dev\msys64"
+python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64"
 ```
 
-Check, preview, build and verify from the GUI. The source checkout retains cli.cmd, gui-debug.cmd and VS Code F5 configurations; see [Development](../../docs/DEVELOPMENT.en.md).
+ImageMagick/FreeType archives are pinned by SHA-256. The recipe verifies upstream files and regenerates project patches. The image runtime retains Q16 HDRI, JPEG/PNG reading/writing, WebP reading, drawing/captions/statistics and required font functionality. External delegates and loadable coders are disabled. One x64 image DLL imports only Windows system libraries.
 
-## Diagnosing failures
+The author script snapshots the full tree with base project changes, then transforms image calls. Do not pre-apply the same image delta. It does not overwrite the source tree or compiler installation. See [mirror boundaries](../dvda-author-mlp8/README.en.md) and [in-process images](../../docs/INPROCESS-IMAGES.en.md). The old magick-shim remains solely for historical reference tests.
 
-- A missing prebuilt directory produces an explicit failure, with no Bash or WSL fallback.
-- Incomplete directories report each missing EXE or font.
-- DLLs are not checked against a fixed list; the provider of the prebuilt directory must ensure it is complete.
-- If assets are missing, use `--source` to point to a complete tree containing `menu`.
+### MLP-only authoring decoder libraries
 
-## Related documentation
+```bat
+python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64"
+```
 
-- [`../../README.md`](../../README.en.md): project overview
-- [`../../docs/DVDA-AUTHOR-CHANGES.md`](../../docs/DVDA-AUTHOR-CHANGES.en.md): third-party source changes
-- [`../../docs/LICENSING.md`](../../docs/LICENSING.en.md): third-party licenses
+The default mlp profile serves menu-bin authoring tools. It is separate from the GUI media profile and encoder. Pass `--ffmpeg-libraries build\ffmpeg-minimal\install\bin` when replacements are needed. The packager verifies the known profile before pruning unused dependencies. Compiler/configuration changes require regression testing before fingerprints are updated. See [the minimal-library record](../../docs/MINIMAL-FFMPEG.en.md).
+
+## Validation and cache maintenance
+
+Packaging verifies hashes, x64 architecture and imports, produces MANIFEST.txt, and inserts runtime-specific notices into bilingual README/RUNTIME files. All font glyphs remain. ZIP format and compression settings are not changed as a size-reduction technique.
+
+```bat
+dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
+tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
+```
+
+Current recorded checks pass 108/108 compatibility cases and 23/23 image cases. Full GUI process tracing covers regular menus and single/multiple index pages without external ImageMagick, FFmpeg/FFprobe or SurCode. Necessary menu encoders/muxers and ISO tools still run externally.
+
+`test-image-release.py` requires an independent old package, matching source/reference fixtures and a fresh output directory. Old ImageMagick runs only in the test's reference branch. See [the validation record](../../docs/inprocess-images-validation.json).
+
+Local build/README.md describes retained components, references and the current package. These are not supplied by a Git clone. Keep source and personal settings. bin/obj and publishing staging areas can be regenerated; deleting native components under build affects debugging/packaging unless reusable artifacts or a rebuild are available.

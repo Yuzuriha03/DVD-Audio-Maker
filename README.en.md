@@ -2,86 +2,66 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-**The compact package without .NET requires .NET 10 Desktop Runtime for Windows x64.** Select the Windows x64 installer under .NET Desktop Runtime on the [official Microsoft page](https://dotnet.microsoft.com/download/dotnet/10.0). The plain .NET Runtime or .NET Framework 4.x is insufficient. Self-contained packages need no separate installation; the bundled README identifies the mode.
+A Windows x64 application that turns FLAC and ALAC/M4A sources into **DVD-Audio ISOs**, with a bilingual GUI, MLP encoding, disc planning, optional menus and output verification.
 
+The current distribution profile is **a compact GUI-only package without .NET**. Install [.NET 10 Desktop Runtime for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0), extract the entire package, then run `DVD-Audio-Maker.exe`. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework 4.x alone is insufficient. Historical releases may differ; follow their bundled instructions.
 
-Cover processing, menu drawing, fonts and image verification use a tailored in-process x64 image library. No ImageMagick command-line program is launched. Keep the image-native directory intact; JPG/PNG/WebP covers and Chinese/Japanese/Korean fonts are supported.
+## Quick start
 
-## Interface and log language
+1. Select the source, working and ISO output directories; set the title and capacity.
+2. Choose the target sample rate, bit depth and optional menus. Keep each album in its own folder with album, title, track and date tags.
+3. Check the sources, then preview the build. Preview prepares sources and encodes MLP but does not create ISOs.
+4. Build the discs and verify the output. Lossless audio verification samples the first track; it does not verify every track on every disc.
 
-Use the language selector at the top right to switch between Chinese and English. The interface and task logs follow the selected language, which is saved with JSON profiles and everyday settings. On first launch, the Windows UI language determines the default. Switching language preserves paths, track tags, configuration values and encoded data. The selector is disabled while a task is running.
+Keep the complete package, including `media-native`, `image-native`, `menu-bin/fonts` and `data/menu`. The main EXE alone cannot run the full workflow.
 
-Both GUI and CLI accept `--language en`, `--language zh-CN` or `--language auto`. You can also set `DVDA_LANGUAGE`. The command-line option takes precedence over that environment variable; the GUI then falls back to its saved preference and finally the system language. CLI `--shell` / `--shell-all` output stays machine-readable and does not translate configuration values.
+## Configuration, language and logs
+
+The GUI replaces manual env editing while retaining `config.env` import and JSON profile loading/saving. Daily settings live in `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`. The CLI and `--config` remain available.
+
+The upper-right language selector switches the UI and task logs between Chinese and English without changing paths, track tags, settings or encoded data. The initial language follows Windows; switching is disabled while a task runs. GUI and CLI accept `--language en`, `--language zh-CN`, `--language auto` and `DVDA_LANGUAGE`.
+
+Logs default to stage summaries, with detailed output, warning filters, paused display, copy and export options. Tasks can be canceled. Full logs and startup errors are stored in `%LOCALAPPDATA%/DVD-Audio-Maker/logs`.
+
+## Encoding and tools
+
+| Task | Implementation |
+|---|---|
+| Source reading, conversion, decoding and media verification | In-process x64 media libraries; no FFmpeg/FFprobe EXE |
+| MLP encoding | Embedded MLP core DLL; no original SurCode or eac3to |
+| Covers, text, menu images, fonts and image verification | The GUI and native author each call the tailored image DLL in process |
+| Menu encoding/muxing, authoring and ISO creation | Bundled dvda-author, menu tools, mkisofs and related executables |
+| Optional M4A/ALAC-to-FLAC organization | Metaflac remains necessary for artwork and tags |
+
+No separate FFmpeg, FFprobe or ImageMagick installation is needed. The GUI replaces imported legacy media paths with built-in components; the developer CLI and reference tests can still use explicit external converters. Images support JPEG/PNG reading and writing plus WebP cover reading, with complete SC/JP/KR font faces. General video, PDF/SVG and other image delegate chains are excluded.
+
+The batch interface supports one to six channels at 44.1, 48, 88.2 and 96 kHz, and mono/stereo at 176.4 and 192 kHz, with 16-, 20- or 24-bit target samples. Input channel layouts are retained. Mixed-rate/depth channel groups are not exposed as GUI settings. Some high-noise material can still exceed available MLP stream limits; it is not made to fit through lossy processing.
+
+Byte-identical MLP requires **identical target PCM, encoding parameters and auxiliary metadata context**. Encoded output is not patched. Identical audio with different historical metadata does not imply identical complete files. See [MLP core integration](docs/MLP-ENCODER.en.md) and [current media processing](docs/INPROCESS-MEDIA.en.md).
+
+## Source development
+
+The application uses .NET 10 / C#. The GUI, CLI and native encoding core target Windows x64. Development needs the .NET 10 SDK plus matching native libraries, authoring tools and assets; the Git repository does not contain the complete external tool bundle.
 
 ```bat
-DVD-Audio-Maker.exe --language en
-cli.cmd config --language en
+gui-debug.cmd
+cli.cmd config
+dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
 ```
 
-## Graphical interface (Windows x64)
+VS Code retains F5 profiles for the GUI, CLI and compatibility tests. Routine C# changes reuse verified native components; native maintenance additionally needs Python, MSYS2/MinGW-w64 and development libraries. See [development/debugging](docs/DEVELOPMENT.en.md) and [Windows builds](tools/win-build/README.en.md).
 
-In a source checkout, double-click `gui.cmd`. In the self-contained release, open `DVD-Audio-Maker.exe` in the package root. The GUI lets you select folders, configure encoding and menus, check sources, preview disc layouts, build discs and verify output, with cancellation and live logs.
-
-Use "Import env…" to read an existing configuration, or open/save JSON profiles. Everyday settings are saved automatically to `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`; no manual env editing is required. The CLI and `--config` remain available. MLP encoding calls the embedded x64 DLL directly and does not launch an encoder EXE.
-
-Settings are grouped into "Getting started / Audio encoding / Disc menus / Tools & advanced", with advanced options collapsed initially. Choose DVD5, DVD9 or a custom capacity. The lower pane shows task summaries, the current stage, elapsed time and next steps. Drag the divider to resize the log area.
-
-Switch to detailed output, filter issues, pause live updates, copy the current view or export the full task log. Normal tool progress is not treated as failure; errors and warnings remain visible. Complete task logs are saved automatically under `%LOCALAPPDATA%/DVD-Audio-Maker/logs`, while the window retains only recent entries to limit memory use. Startup failures are logged there too.
-
-Implementation plan and scope: [GUI and DLL plan](docs/GUI-AND-DLL-PLAN.en.md).
-
-
-A native Windows toolchain for creating standard **DVD-Audio ISO** images from FLAC or ALAC/M4A audio.
-
-The project uses **.NET 10 / C#** for source preparation, MLP management, disc planning, menu generation, ISO publication and output verification. It uses a modified `dvda-author` and a `mkisofs` build supporting `-dvd-audio` underneath.
-
-> The repository includes the MLP encoder source and pinned Windows binaries. It does not include the original SurCode application, audio content or other external tools.
-
-## Features
-
-- Recursively scan FLAC and ALAC/M4A files
-- Read album, track title, track number and date tags
-- Check decoding completeness, channel counts and audio parameters
-- Repair missing END markers in certain Apple ALAC files
-- Normalize sample rate and bit depth by album
-- Encode with the MLP core or import external MLP files
-- Keep albums intact and fill discs sequentially by capacity
-- Optional DVD-Audio AMG track menus and ASVS playback artwork
-- Publish the complete ISO set transactionally
-- Verify ISO, IFO, AOB, PTS, menus, capacity and a first-track lossless sample
-- Self-contained Windows x64 release
-
-## Project layout
-
-```text
-src/DvdaMaker.Desktop         Windows x64 graphical entry point
-src/DvdaMaker.Cli             Command-line entry point
-src/DvdaMaker.Configuration   GUI JSON profiles and config.env parsing
-src/DvdaMaker.Localization    Chinese/English interface and log resources
-src/DvdaMaker.Preparation     Scanning, normalization, decoding checks, ALAC repair
-src/DvdaMaker.Building        MLP, disc planning, menus, authoring, publication, verification
-src/DvdaMaker.Formats         ISO9660, MLP and MPEG/PTS parsers
-src/DvdaMaker.Processes       External process execution
-src/DvdaMaker.SurcodeTool     FFmpeg PCM preparation and Windows MLP core
-src/DvdaMaker.FontTool        OpenType/TTC font utilities
-src/DvdaMaker.Toolchain       Windows release package assembler
-tests/                        Compatibility and end-to-end tests
-```
-
-Everyday use and release assembly do not require WSL, PowerShell or Bash. Launch the GUI with `gui.cmd` in the source checkout or `DVD-Audio-Maker.exe` in the release package. Standard releases contain only the GUI entry point. The checkout retains CLI source, `cli.cmd`, `gui-debug.cmd`, build/verify scripts and VS Code F5 configurations. Add `--include-cli` only for a developer diagnostic package. See [Development](docs/DEVELOPMENT.en.md).
-
-## Prerequisites
-
-Running from source requires:
-
-- Windows 10/11 x64
-- .NET 10 SDK
-- The in-process media runtime (build/media-native; copy from a validated release or build as described in tools/win-build/README.en.md)
-- Metaflac for the optional M4A/ALAC-to-FLAC normalization feature
-- Prebuilt Windows `dvda-author-dev.exe` and `mkisofs.exe`
-- Menu tools, ImageMagick, fonts and runtime assets when menus are enabled
-
-Source conversion, metadata, decoding and verification call bundled FFmpeg libraries inside the application, without external FFmpeg / FFprobe processes. The default configuration uses the built-in components; the developer CLI can explicitly select external programs for reference comparisons. The MLP core remains independent. Neither eac3to nor original SurCode is required.
+| Directory | Purpose |
+|---|---|
+| `src/DvdaMaker.Desktop` / `Cli` | GUI and developer command-line entry points |
+| `src/DvdaMaker.Configuration` / `Localization` | Settings, profiles and bilingual resources |
+| `src/DvdaMaker.Preparation` / `Building` | Source preparation, MLP, disc planning, menus and verification |
+| `src/DvdaMaker.Processes` | In-process media/images and remaining external process management |
+| `src/DvdaMaker.SurcodeTool/Native` | Pinned MLP core sources and x64 DLL |
+| `src/DvdaMaker.Formats` / `FontTool` | Stream parsing and shared font utilities |
+| `src/DvdaMaker.Toolchain` / `tools/win-build` | Native builds, packaging and regression scripts |
+| `tests` / `docs` | Compatibility tests, designs and validation records |
+| `build` | Git-ignored local components, packages, fixtures and caches |
 
 ## CLI and existing env configurations
 
@@ -153,14 +133,14 @@ dotnet run --project src\DvdaMaker.Cli -- verify all
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `DVDA_PREPARE_CACHE` | `on` | Source probing and decoding-check cache at `build/prepare-cache.json` |
-| `DVDA_RESUME` | `on` | Per-disc resumption, recorded at `build/publish-staging/resume.json` |
+| `DVDA_PREPARE_CACHE` | `on` | Source probing and decoding-check cache at `<DVDA_BUILD_DIR>/prepare-cache.json` |
+| `DVDA_RESUME` | `on` | Per-disc resumption, recorded at `<DVDA_BUILD_DIR>/publish-staging/resume.json` |
 | `DVDA_MLP_JOBS` | `1` | MLP encoder concurrency, from 1 to 16 jobs |
-| `DVDA_KEEP_TMP` | `off` | Keep `build/tmp` for diagnostics; disables automatic cleanup |
+| `DVDA_KEEP_TMP` | `off` | Keep `<DVDA_BUILD_DIR>/tmp` for diagnostics; disables automatic cleanup |
 | `DVDA_KEEP_INTERMEDIATE` | `off` | Keep authoring output and intermediate ISOs; **disables per-disc resumption while enabled** |
 
 - Source caches are reused only when file identity (length, modification time and hashes of the first and last 64 KiB) and normalization parameters match exactly. Tracks that fail verification are never cached.
-- Per-disc resumption skips a disc only when its signature matches (source/MLP identity, author/mkisofs identity, output-affecting settings and menu configuration) and its staged ISO is unchanged. Final publication still commits the entire ISO set and index as one transaction. Failed builds retain `build/publish-staging` for the next attempt.
+- Per-disc resumption skips a disc only when its signature matches (source/MLP identity, author/mkisofs identity, output-affecting settings and menu configuration) and its staged ISO is unchanged. Final publication still commits the entire ISO set and index as one transaction. Failed builds retain `<DVDA_BUILD_DIR>/publish-staging` for the next attempt.
 - `DVDA_MLP_JOBS` above 1 runs multiple independent in-process DLL encoder states concurrently. Cache credentials still include source identity, encoder identity, encoding parameters and output identity. Performance depends on disk throughput and CPU capacity; the default remains one job.
 
 ## MLP sources
@@ -197,11 +177,11 @@ The `surcode-batch` configuration name is retained for existing jobs. The execut
 
 `Source audio → in-process media DLLs → integer PCM → MLP core DLL → MLP cache`.
 
-The native x64 host embeds a pinned Windows x64 encoder DLL, extracts and verifies it at runtime, then calls it in-process.
+The Windows x64 application embeds a pinned Windows x64 encoder DLL, extracts and verifies it at runtime, then calls it in-process.
 It does not start the original SurCode, load its DLLs, write SSF files or patch encoded output bytes.
 The old DVDA_MLP_EAC3TO_EXE setting remains readable but is unused. The GUI automatically uses the bundled media libraries, ignoring legacy FFmpeg / FFprobe paths. Resampling and bit-depth reduction retain the validated SWR and 20-bit quantization behavior; eac3to-identical PCM is not promised. Identical target PCM and metadata must still yield byte-identical MLP. See [in-process media](docs/INPROCESS-MEDIA.en.md) for the current design and validation, and [FFmpeg PCM migration](docs/FFMPEG-PCM-MIGRATION.en.md) for the earlier migration.
 
-An empty MLP cache directory defaults to `<build>/mlp`. The former `DVDA_MLP_SOURCE=ffmpeg` value reports an explicit error;
+An empty MLP cache directory defaults to `<DVDA_BUILD_DIR>/mlp`. The former `DVDA_MLP_SOURCE=ffmpeg` value reports an explicit error;
 change it to `surcode-batch`. `DVDA_MLP_SURCODE_EXE` has been removed.
 
 A fixed empty auxiliary TLV is used by default, making output reproducible for identical PCM and settings. For byte-for-byte comparison with a historical original file,
@@ -233,58 +213,41 @@ The bundled TTC registers separate SC, JP and KR faces through type.xml. The GUI
 
 `DVDA_FINAL_DIR` is the final output directory. After a successful build, ISOs are published directly there without an additional copy stage.
 
-## Self-contained Windows release
+## Build the compact package
 
-The repository no longer runs Autotools, Make, MSYS2, Bash or WSL during release assembly. Third-party C tools must be built beforehand and collected in a Windows directory.
-
-Default prebuilt directory:
-
-```text
-tools\win-build\prebuilt\
-```
-
-Build the release package:
-
-```bat
-tools\win-build\build-all.cmd
-```
-
-Specify third-party tools and the runtime asset tree:
+Prepare the media/image libraries, rebuilt native author and assets following [the build guide](tools/win-build/README.en.md), then run:
 
 ```bat
 tools\win-build\build-all.cmd ^
+  --framework-dependent ^
   --prebuilt "D:\dev\winbuild\menu-bin" ^
   --source "D:\dev\winbuild\src"
 ```
 
-Outputs are located at:
+Replace the example paths with your prepared Windows tools and full asset tree. Output defaults to `tools/win-build/release-framework-dependent/DVD-Audio-Maker` and its sibling ZIP; `--output` selects another location. The standard package contains only the GUI. `--include-cli` adds developer diagnostics. Omitting `--framework-dependent` still produces a self-contained package, with the size cost of bundling .NET.
 
-```text
-tools\win-build\release\DVD-Audio-Maker\
-tools\win-build\release\DVD-Audio-Maker.zip
-```
+Packaging reuses existing Windows artifacts rather than invoking the native compiler chain. Generated releases, source audio, caches and ZIPs stay out of Git; distributable archives belong in GitHub Releases.
 
-See [`tools/win-build/README.md`](tools/win-build/README.en.md) for detailed requirements.
-
-## Development and tests
+## Validation and maintenance
 
 ```bat
-dotnet build DVD-Audio-Maker.sln --configuration Release
-dotnet run --project tests\DvdaMaker.CompatibilityTests --configuration Release
+dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
+tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
 ```
 
-The current compatibility suite contains 107 tests, including English catalog coverage, path preservation and language persistence.
+As of **2026-10-03**, the post-cleanup Debug build has zero warnings/errors; **108/108 compatibility checks and 23/23 image checks pass**. Regular menus, single/multiple index pages and authoring/verification under Unicode paths have been exercised. Complete MLP comparisons retain byte identity. Text overlay glyph-edge differences are documented; universal menu pixel identity is not claimed.
+
+The validated local compact package is under `build/inprocess-images-x64-release`. Local `build/README.md` describes retained working directories; these are not included in a Git clone. The separate media baseline remains a development reference, not the current release.
 
 ## Documentation
 
-- [MLP encoding and validation results](docs/MLP-ENCODER.en.md): batch execution, metadata settings and byte-comparison coverage
-
-- [`docs/CSHARP-MIGRATION.md`](docs/CSHARP-MIGRATION.en.md): C# migration status and implementation boundaries
-- [`docs/DVDA-AUTHOR-CHANGES.md`](docs/DVDA-AUTHOR-CHANGES.en.md): `dvda-author` changes and supporting evidence
-- [`docs/DVDA-AUTHOR-DISABLED.md`](docs/DVDA-AUTHOR-DISABLED.en.md): experiments that are not enabled
-- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.en.md): historical issues, diagnostics and fixes
-- [`docs/LICENSING.md`](docs/LICENSING.en.md): third-party components and licensing
+- [Development/debugging](docs/DEVELOPMENT.en.md), [native builds/packaging](tools/win-build/README.en.md)
+- [MLP core and byte identity](docs/MLP-ENCODER.en.md), [native-core maintenance](src/DvdaMaker.SurcodeTool/Native/README.md)
+- [In-process media](docs/INPROCESS-MEDIA.en.md), [in-process images](docs/INPROCESS-IMAGES.en.md)
+- [Minimal media libraries](docs/MINIMAL-FFMPEG.en.md), [shared fonts](docs/SHARED-FONTS.en.md)
+- [Author changes](docs/DVDA-AUTHOR-CHANGES.en.md), [historical troubleshooting](docs/TROUBLESHOOTING.en.md)
+- [Image validation record](docs/inprocess-images-validation.json), [third-party licensing](docs/LICENSING.en.md)
 
 ## License
 
-Repository code is distributed under [`GPL-3.0`](LICENSE). Third-party source, tools, fonts, FFmpeg, `dvda-author`, `dvdauthor`, SurCode and audio content remain subject to their respective licenses.
+Repository code is distributed under [GPL-3.0](LICENSE). Third-party sources, tools, fonts and audio remain subject to their respective licenses. Original SurCode is not distributed with this project.
