@@ -244,6 +244,9 @@ if (args.Length > 0)
 
 var tests = new (string Name, Action Run)[]
 {
+    ("English catalog template coverage", LocalizationTests.CatalogCoverage),
+    ("Language preserves paths and numeric culture", LocalizationTests.OpaqueValuesAndCulture),
+    ("Language profile and argument compatibility", LocalizationTests.ProfileAndArguments),
     ("解析引号、注释和无效行", ParseAssignments),
     ("Windows 路径规范化", NormalizeWindowsPaths),
     ("环境变量优先于 config.env", EnvironmentWins),

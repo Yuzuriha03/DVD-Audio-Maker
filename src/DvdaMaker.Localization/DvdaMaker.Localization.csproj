@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <EmbeddedResource Include="Messages.en.json" WithCulture="false" LogicalName="DvdaMaker.Localization.Messages.en.json" />
+  </ItemGroup>
+</Project>

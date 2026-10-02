@@ -1,5 +1,11 @@
 using DvdaMaker.FontTool;
+using DvdaMaker.Localization;
 
+var arguments = args.ToList();
+try { L.SetLanguage(L.TakeLanguage(arguments) ?? Environment.GetEnvironmentVariable("DVDA_LANGUAGE")); }
+catch (ArgumentException exception) { Console.Error.WriteLine(exception.Message); return 2; }
+args = arguments.ToArray();
+L.LocalizeConsole();
 return FontToolProgram.Run(args, Console.Out, Console.Error);
 
 internal static class FontToolProgram

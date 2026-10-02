@@ -1,5 +1,9 @@
 # C# 迁移状态
 
+[简体中文](CSHARP-MIGRATION.md) | [English](CSHARP-MIGRATION.en.md)
+
+> 历史工程记录：本文保留当时的实验、假设和验证结果，部分结论已被后续实验修正。已禁用的方案不是当前配置建议；当前支持的流程请参阅[项目说明](../README.md)。
+
 ## 迁移完成状态
 
 已建立第一批可独立编译的 .NET 10 项目：
@@ -15,7 +19,7 @@
 C# 已覆盖配置、准备、转换、构建、菜单素材、字体覆盖探测、AMG/ASVS、
 菜单视觉和成品审计；`build.cmd` 与 `verify.cmd` 是 C# CLI 的 Windows 原生薄包装。
 根目录旧 Python 业务脚本已于 2026-09-29 删除；删除前的最终版本保存在
-Git 标签 `python-reference-final`（提交 `5aa4164`）中。
+Git 标签 `python-reference-final`（提交 `0afe53a`）中。
 
 ## 构建与测试
 

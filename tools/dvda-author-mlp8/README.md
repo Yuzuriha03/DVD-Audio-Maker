@@ -1,5 +1,7 @@
 # dvda-author 修改源码镜像
 
+[简体中文](README.md) | [English](README.en.md)
+
 本目录保存 DVD-Audio Maker 对 `dvda-author` 修改过的核心 C/C++ 源文件，主要用于：
 
 - 在仓库中审阅和搜索修改后的实现。
