@@ -1,5 +1,7 @@
 # 组件与许可（THIRD-PARTY）
 
+[简体中文](THIRD-PARTY.md) | [English](THIRD-PARTY.en.md)
+
 本包是若干开源程序的再分发（含针对本用途的修改）。清单如下。
 
 ## 主程序

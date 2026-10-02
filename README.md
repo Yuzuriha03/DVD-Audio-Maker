@@ -1,12 +1,26 @@
 # DVD-Audio Maker
 
+[简体中文](README.md) | [English](README.en.md)
+
+
+## 界面与日志语言
+
+右上角可切换“中文 / English”，界面和任务日志随之切换。选择会随 JSON 方案和日常设置保存；首次启动按 Windows 界面语言自动选择。切换语言不改变路径、曲目标签、配置值或编码数据。任务执行时暂时禁用语言切换。
+
+GUI 与 CLI 均接受 `--language en`、`--language zh-CN` 或 `--language auto`。也可设置 `DVDA_LANGUAGE`。命令行参数优先于该环境变量；GUI 随后使用保存的语言偏好，未设置时跟随系统。CLI 的 `--shell` / `--shell-all` 输出保持机器可读，不翻译配置值。
+
+```bat
+DVD-Audio-Maker.exe --language en
+dvda.cmd config --language en
+```
+
 ## 图形界面（Windows x64）
 
 开发工作区双击 `gui.cmd`；自包含发布包双击根目录的 `DVD-Audio-Maker.exe`。GUI 可选择目录、编辑编码与菜单选项，执行检查、预演、制作和验证；支持取消及实时日志。
 
 使用“导入 config.env”读取旧配置，也可打开/保存 JSON 方案。日常配置自动保存至 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`，无需手工修改 env；CLI 与 `--config` 保留。MLP 编码直接调用内嵌 x64 DLL，不启动编码 EXE。
 
-界面按“开始设置 / 音频编码 / 光盘菜单 / 工具与高级”分组，高级参数默认收起；光盘容量可直接选择 DVD5、DVD9 或自定义。下方默认显示中文任务摘要、当前阶段、耗时与下一步提示，可以拖动分隔条调整日志区大小。
+界面按“开始设置 / 音频编码 / 光盘菜单 / 工具与高级”分组，高级参数默认收起；光盘容量可直接选择 DVD5、DVD9 或自定义。下方默认按所选界面语言显示任务摘要、当前阶段、耗时与下一步提示，可以拖动分隔条调整日志区大小。
 
 日志可切换为详细输出、只看提醒、暂停实时更新、复制当前内容或导出完整任务日志。正常的工具进度不会被当作任务失败；错误和警告仍会保留。完整任务记录自动保存在 `%LOCALAPPDATA%/DVD-Audio-Maker/logs`，窗口仅显示最近记录以限制内存占用。启动异常也会写入该目录。
 
@@ -39,6 +53,7 @@
 src/DvdaMaker.Desktop         Windows x64 图形入口
 src/DvdaMaker.Cli             命令行入口
 src/DvdaMaker.Configuration   GUI JSON 方案与 config.env 配置解析
+src/DvdaMaker.Localization    中英界面与日志资源，不改变配置值或编码数据
 src/DvdaMaker.Preparation     扫描、归一化、解码校验、ALAC 修复
 src/DvdaMaker.Building        MLP、分盘、菜单、出盘、发布与校验
 src/DvdaMaker.Formats         ISO9660、MLP、MPEG/PTS 解析
@@ -253,7 +268,7 @@ dotnet build DVD-Audio-Maker.sln --configuration Release
 dotnet run --project tests\DvdaMaker.CompatibilityTests --configuration Release
 ```
 
-当前兼容测试基线为 100 项。
+当前兼容测试基线为 107 项。
 
 ## 文档
 

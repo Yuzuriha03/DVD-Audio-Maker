@@ -8,6 +8,7 @@ namespace DvdaMaker.Configuration;
 public sealed class ProjectSettings
 {
     public int Version { get; set; } = 1;
+    public string Language { get; set; } = "auto";
     public Dictionary<string, string> Values { get; set; } = new(StringComparer.Ordinal);
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DVD-Audio-Maker", "settings.json");
@@ -17,7 +18,7 @@ public sealed class ProjectSettings
         Values = new Dictionary<string, string>(ConfigDefaults.Values, StringComparer.Ordinal),
     };
 
-    public ProjectSettings Clone() => new() { Version = Version, Values = new(Values, StringComparer.Ordinal) };
+    public ProjectSettings Clone() => new() { Version = Version, Language = Language, Values = new(Values, StringComparer.Ordinal) };
     public DvdaOptions ToOptions() => DvdaOptions.FromValues(Values);
 
     public static ProjectSettings ImportEnv(string path)
@@ -36,6 +37,8 @@ public sealed class ProjectSettings
         if (settings.Version != 1 || settings.Values is null || settings.Values.Any(p => p.Value is null))
             throw new InvalidDataException("配置方案版本或内容无效。");
         var result = Defaults();
+        result.Language = settings.Language;
+        _ = DvdaMaker.Localization.L.Normalize(result.Language);
         foreach (var pair in settings.Values) result.Values[pair.Key] = pair.Value;
         return result;
     }
