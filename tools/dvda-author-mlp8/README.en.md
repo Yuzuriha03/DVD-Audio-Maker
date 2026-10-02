@@ -41,11 +41,11 @@ Do not run `configure`, `make` or Windows toolchain scripts in this directory.
 
 Build from a complete `dvda-author` working tree with this project's changes applied. The recommended upstream pin is `8fca43a`:
 
-```bash
-git clone https://github.com/fabnicol/dvda-author /path/to/dvda-author
-cd /path/to/dvda-author
+```bat
+git clone https://github.com/fabnicol/dvda-author "D:/work/dvda-author"
+cd /d "D:/work/dvda-author"
 git checkout 8fca43a
-git apply /path/to/DVD-Audio-Maker/docs/dvda-author-changes.patch
+git apply "D:/work/DVD-Audio-Maker/docs/dvda-author-changes.patch"
 ```
 
 Complete patch set:
@@ -60,10 +60,15 @@ Experiments that are not enabled:
 
 - [`../../docs/DVDA-AUTHOR-DISABLED.md`](../../docs/DVDA-AUTHOR-DISABLED.en.md)
 
-Actual build entry point:
+The product targets Windows x64. Native maintenance uses MSYS2/MinGW-w64 on Windows; routine C# development and release assembly reuse verified artifacts. See [Windows build instructions](../win-build/README.en.md).
 
-- Linux/WSL：[`../../build_dvda_author_mlp.sh`](../../build_dvda_author_mlp.sh)
-- Windows/MSYS2：[`../win-build/README.md`](../win-build/README.en.md)
+## Current menu image calls
+
+This directory and the base patch remain review copies of the underlying implementation. The current author is built by [build-image-author.py](../win-build/build-image-author.py) from an isolated snapshot of the full tree. The script migrates seven external ImageMagick calls to the x64 image DLL. See [author-inprocess-images.patch](../win-build/native/author-inprocess-images.patch) and the [native loader](../win-build/native/author-image-loader.c).
+
+Keep base changes separate from this build-time transformation. The script expects the base tree without the image delta already applied; do not manually apply the same delta before invoking it. It does not overwrite the supplied full tree. Input and output hashes are recorded in build/image-author/author-build.json.
+
+The GUI and native author use image-native/dvda-image.dll. Menu encoders, muxers and ISO tools retain their own executable entry points. See [in-process images](../../docs/INPROCESS-IMAGES.en.md) for capabilities and validation limits.
 
 ## Main areas of change
 
