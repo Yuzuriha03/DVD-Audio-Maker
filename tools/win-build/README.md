@@ -74,8 +74,14 @@ tools\win-build\build-all.cmd ^
 | `--source` | 完整运行期素材树 |
 | `--prebuilt` | Windows 第三方工具目录 |
 | `--output` | 发布输出根目录 |
+| `--include-cli` | 可选：生成包含 CLI 的开发诊断包；默认只发布 GUI |
+| `--framework-dependent` | 精简模式：不包含 .NET 运行时；用户需安装 .NET 10 Desktop Runtime x64 |
 
-`build-all.cmd` 启动 `src/DvdaMaker.Toolchain`，依次检查文件、发布原生 x64 的 C# GUI 和 CLI、复制第三方工具和菜单素材、写入 `dvda.cmd`、生成 SHA-256 清单并创建 ZIP。
+`build-all.cmd` 启动 `src/DvdaMaker.Toolchain`，默认只发布 x64 GUI，复制第三方工具和菜单素材、生成 SHA-256 清单并创建 ZIP。标准包不构建或复制 CLI，也没有 `dvda.cmd`。
+
+添加 `--framework-dependent` 可生成无 .NET 运行时的精简包；未指定 --output 时输出到 `tools/win-build/release-framework-dependent`。不加该参数仍生成自包含包。两种模式均在 README 开头生成对应运行要求，并附 RUNTIME.md。
+
+显式传入 `--include-cli` 才会附加 CLI、`dvda.cmd` 和开发说明；该模式仍与 GUI 共享运行库，逐字节核对同名程序集，不允许不同内容互相覆盖。不裁剪 WinForms、字体或第三方动态库；ZIP 使用最小体积压缩等级。
 
 ## 产物
 
@@ -83,11 +89,10 @@ tools\win-build\build-all.cmd ^
 tools\win-build\release\
 ├── DVD-Audio-Maker\
 │   ├── DVD-Audio-Maker.exe
-│   ├── app\
+│   ├── *.dll / *.json / 语言资源目录
 │   ├── menu-bin\
 │   ├── data\menu\
 │   ├── config.env
-│   ├── dvda.cmd
 │   ├── MANIFEST.txt
 │   ├── README.md
 │   ├── THIRD-PARTY.md
@@ -95,7 +100,9 @@ tools\win-build\release\
 └── DVD-Audio-Maker.zip
 ```
 
-目标机器不需要安装 .NET Runtime。双击 `DVD-Audio-Maker.exe` 或无参数运行 `dvda.cmd` 打开 GUI；带参数时保留 CLI。GUI 可导入旧 `config.env`，并独立保存 JSON 方案。MLP 编码使用内嵌原生 x64 DLL，不运行独立编码 EXE。
+自包含包不需要另装 .NET；精简包要求目标机器安装 .NET 10 Desktop Runtime（Windows x64）。双击 `DVD-Audio-Maker.exe` 打开 GUI，可导入旧 `config.env` 并保存 JSON 方案。MLP 编码使用内嵌原生 x64 DLL，不运行独立编码 EXE。
+
+请完整解压并分发整个目录；EXE 依赖同目录的运行库和应用程序集，不能单独拷贝。
 
 FFmpeg、FFprobe 和 Metaflac 仍需放在包内 `menu-bin`、位于 `PATH`，或在 GUI / `config.env` 中配置完整路径。
 
@@ -103,12 +110,10 @@ FFmpeg、FFprobe 和 Metaflac 仍需放在包内 `menu-bin`、位于 `PATH`，�
 
 ```bat
 cd tools\win-build\release\DVD-Audio-Maker
-dvda.cmd config --check
-dvda.cmd prepare
-dvda.cmd build --dry-run
-dvda.cmd build
-dvda.cmd verify all
+DVD-Audio-Maker.exe
 ```
+
+在界面中完成检查、预演、制作和验证。开发目录保留 `cli.cmd`、`gui-debug.cmd` 和 VS Code F5 配置，详见 [开发调试](../../docs/DEVELOPMENT.md)。
 
 ## 失败诊断
 

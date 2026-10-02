@@ -44,7 +44,7 @@ OFL permits redistribution and embedding with software. Do not sell the font by 
 
 ## This project's own programs
 
-The bundled `app/dvda.exe` and its C# source are **GPL v3**, matching dvda-author.
+`DVD-Audio-Maker.exe`, the optional developer CLI `dvda.exe`, and their C# source are **GPL v3**, matching dvda-author.
 The release no longer contains or invokes Python business scripts.
 
 ---

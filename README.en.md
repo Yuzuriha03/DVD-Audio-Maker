@@ -2,6 +2,8 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
+**The compact package without .NET requires .NET 10 Desktop Runtime for Windows x64.** Select the Windows x64 installer under .NET Desktop Runtime on the [official Microsoft page](https://dotnet.microsoft.com/download/dotnet/10.0). The plain .NET Runtime or .NET Framework 4.x is insufficient. Self-contained packages need no separate installation; the bundled README identifies the mode.
+
 
 ## Interface and log language
 
@@ -11,7 +13,7 @@ Both GUI and CLI accept `--language en`, `--language zh-CN` or `--language auto`
 
 ```bat
 DVD-Audio-Maker.exe --language en
-dvda.cmd config --language en
+cli.cmd config --language en
 ```
 
 ## Graphical interface (Windows x64)
@@ -64,7 +66,7 @@ src/DvdaMaker.Toolchain       Windows release package assembler
 tests/                        Compatibility and end-to-end tests
 ```
 
-Everyday use and release assembly do not require WSL, PowerShell or Bash. Launch the GUI with `gui.cmd` in the source checkout or `DVD-Audio-Maker.exe` in the release package. `build.cmd`, `verify.cmd` and the C# CLI remain available.
+Everyday use and release assembly do not require WSL, PowerShell or Bash. Launch the GUI with `gui.cmd` in the source checkout or `DVD-Audio-Maker.exe` in the release package. Standard releases contain only the GUI entry point. The checkout retains CLI source, `cli.cmd`, `gui-debug.cmd`, build/verify scripts and VS Code F5 configurations. Add `--include-cli` only for a developer diagnostic package. See [Development](docs/DEVELOPMENT.en.md).
 
 ## Prerequisites
 

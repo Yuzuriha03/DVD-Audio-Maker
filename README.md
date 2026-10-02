@@ -11,12 +11,16 @@ GUI 与 CLI 均接受 `--language en`、`--language zh-CN` 或 `--language auto`
 
 ```bat
 DVD-Audio-Maker.exe --language en
-dvda.cmd config --language en
+cli.cmd config --language en
 ```
 
 ## 图形界面（Windows x64）
 
+**使用不含 .NET 的精简发布包前，请安装 .NET 10 Desktop Runtime（Windows x64）**。在 [微软官方下载页](https://dotnet.microsoft.com/download/dotnet/10.0) 的 .NET Desktop Runtime 栏选择 x64；普通 .NET Runtime 或 .NET Framework 4.x 不能替代桌面运行时。自包含包无需另装，随包 README 会标明所用模式。
+
 开发工作区双击 `gui.cmd`；自包含发布包双击根目录的 `DVD-Audio-Maker.exe`。GUI 可选择目录、编辑编码与菜单选项，执行检查、预演、制作和验证；支持取消及实时日志。
+
+标准发布包仅提供 GUI。开发工作区保留 CLI 源码：`cli.cmd` 运行 Debug CLI，`gui-debug.cmd` 运行 Debug GUI，VS Code 可按 F5 调试。需要携带 CLI 的诊断包时，打包添加 `--include-cli`。详见 [开发调试](docs/DEVELOPMENT.md)。
 
 使用“导入 config.env”读取旧配置，也可打开/保存 JSON 方案。日常配置自动保存至 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`，无需手工修改 env；CLI 与 `--config` 保留。MLP 编码直接调用内嵌 x64 DLL，不启动编码 EXE。
 

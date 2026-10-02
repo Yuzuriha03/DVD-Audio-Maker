@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "GUI (Debug x64)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Debug: build GUI x64",
+      "program": "${workspaceFolder}/src/DvdaMaker.Desktop/bin/Debug/net10.0-windows/win-x64/DVD-Audio-Maker.dll",
+      "cwd": "${workspaceFolder}",
+      "args": [],
+      "console": "internalConsole",
+      "justMyCode": true
+    },
+    {
+      "name": "CLI (Debug x64)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Debug: build CLI x64",
+      "program": "${workspaceFolder}/src/DvdaMaker.Cli/bin/Debug/net10.0-windows/win-x64/dvda.dll",
+      "cwd": "${workspaceFolder}",
+      "args": ["config"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Compatibility tests (Debug x64)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Debug: build compatibility tests x64",
+      "program": "${workspaceFolder}/tests/DvdaMaker.CompatibilityTests/bin/Debug/net10.0-windows/win-x64/DvdaMaker.CompatibilityTests.dll",
+      "cwd": "${workspaceFolder}",
+      "args": [],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

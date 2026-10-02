@@ -2,144 +2,43 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
+<!-- RUNTIME_REQUIREMENTS -->
 
-## Interface and log language
+Double-click `DVD-Audio-Maker.exe` in the package root. Standard releases provide only the graphical entry point. Extract and retain the entire directory, including DLLs, JSON files and resources; do not copy the EXE alone.
 
-Use the language selector at the top right to switch between Chinese and English. The interface and task logs follow the selected language, which is saved with JSON profiles and everyday settings. On first launch, the Windows UI language determines the default. Switching language preserves paths, track tags, configuration values and encoded data. The selector is disabled while a task is running.
+See [RUNTIME.en.md](RUNTIME.en.md) for this package: the compact framework-dependent package requires .NET 10 Desktop Runtime for Windows x64, while the self-contained package includes its runtime.
 
-Both GUI and CLI accept `--language en`, `--language zh-CN` or `--language auto`. You can also set `DVDA_LANGUAGE`. The command-line option takes precedence over that environment variable; the GUI then falls back to its saved preference and finally the system language. CLI `--shell` / `--shell-all` output stays machine-readable and does not translate configuration values.
+## Make a disc
 
-```bat
-DVD-Audio-Maker.exe --language en
-dvda.cmd config --language en
-```
+1. Select your audio source, working directory, destination, title and disc capacity.
+2. Choose sample rate, bit depth and FFmpeg location in the audio settings; configure menus if needed.
+3. Check the sources. Preview prepares sources, encodes MLP and plans discs without creating ISO images.
+4. Build the discs, then verify the output. Lossless audio verification samples the first track; it does not check every track.
 
-Double-click `DVD-Audio-Maker.exe` in the package root, or run `dvda.cmd` without arguments, to open the GUI. Command arguments continue to invoke the CLI.
+Tasks support cancellation. Closing during a task first cancels it and waits for cleanup.
 
-Edit settings in the interface; they are saved automatically in your user directory. "Import env…" reads existing configurations, and "Open profile / Save profile" handles JSON profiles. Without saved GUI settings, first launch reads an adjacent config.env. MLP uses a native x64 in-process DLL, with no encoder EXE. FFmpeg conversion/decoding and disc-authoring tools remain external programs.
+## Configuration and language
 
-"Preview layout" prepares sources and encodes MLP without creating ISOs. "Build discs" completes authoring. "Verify output" retains first-track sampling for lossless PCM checks. Tasks can be canceled and logs exported.
+Edit everyday settings in the GUI. Open/save JSON profiles and import existing config.env files. Without saved settings, first launch reads an adjacent config.env. Import accepts KEY=VALUE only, without executing commands or expanding variables. Use absolute Windows paths.
 
-Use "More settings" for less common options. Choose DVD5, DVD9 or custom capacity; sample rates and encoding methods have readable labels.
+The language selector supports Chinese and English and saves the selection with the profile. First launch follows the Windows UI language. You can also use `DVD-Audio-Maker.exe --language en` or `--language zh-CN`, and `--config` with an env or JSON file.
 
-Logs show a task summary by default. Switch to detailed logs, filter issues, pause live updates, copy content or export the complete task log. Drag the divider to resize the log area. Full logs are saved under `%LOCALAPPDATA%/DVD-Audio-Maker/logs` and retain external-tool diagnostics. The window keeps only recent entries.
+## Tools and encoding
 
-# DVD-Audio Maker for Windows
+The package includes dvda-author, mkisofs, menu tools, ImageMagick and Chinese/Japanese/Korean fonts. The GUI detects their bundled paths. Retain the menu-bin/fonts directory.
 
-This document ships with the self-contained Windows x64 release.
+FFmpeg, FFprobe and Metaflac must be on PATH or configured with full paths in the GUI. FFmpeg prepares, decodes and verifies audio. MLP encoding uses a native x64 DLL in process and requires neither eac3to nor original SurCode.
 
-GUI and CLI embed the native x64 MLP DLL. The package also includes `dvda-author`, `mkisofs`, menu tools, ImageMagick and Chinese/Japanese/Korean fonts. Runtime does not require WSL, Bash, MSYS2, PowerShell, Python or a separate .NET Runtime installation.
+Sources include FLAC and M4A/ALAC, with JPG, PNG or WebP artwork. Use one directory per album and supply date, track, album and title tags.
 
-## External dependencies
+## Logs and troubleshooting
 
-FFmpeg, FFprobe and Metaflac must be on `PATH` or configured with full paths in `config.env`.
+The log panel offers a summary, details, issue filtering, pause, copy and export. Full logs and startup errors are in `%LOCALAPPDATA%/DVD-Audio-Maker/logs`. Configure missing tools in settings. Disc auditing requires build.log from a real build; preview logs cannot replace it.
 
-FFmpeg performs conversion, decoding and verification. Batch encoding uses the embedded MLP DLL and requires neither eac3to nor original SurCode.
+## Development diagnostics
 
-## Existing configurations and CLI
+The source checkout retains CLI and test projects, with `cli.cmd`, `gui-debug.cmd` and VS Code debug configurations. Add `--include-cli` explicitly when packaging a portable developer diagnostic build; that package includes CLI-TOOLS.en.md.
 
-Use "Import env…" for existing configurations, or edit everyday settings directly in the GUI. For CLI use, you can edit `config.env` in the package root:
+## License and byte identity
 
-```text
-DVDA_SRC="D:/Music/MyAlbums"
-DVDA_FINAL_DIR="D:/DVD_Output"
-DVDA_BUILD_DIR="D:/DVD_Output/_work"
-DVDA_TITLE="My DVD-Audio Collection"
-DVDA_ISO_PREFIX="MyCollection"
-DVDA_MAX_DISCS="2"
-DVDA_MLP_SOURCE="surcode-batch"
-DVDA_MLP_EXTERNAL_DIR=""
-DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
-DVDA_MENU="on"
-```
-
-CLI configuration priority:
-
-```text
-Environment variables > selected configuration file > built-in defaults
-```
-
-Select a file with `--config` or `DVDA_CONFIG`; the default is `config.env`. Parsing accepts only `KEY=VALUE`, with no command execution or variable expansion. Use absolute Windows paths.
-
-GUI or `dvda.cmd` sets tool and menu-font paths according to package layout; manual configuration is normally unnecessary.
-
-## Build ISO images
-
-```bat
-dvda.cmd config --check
-dvda.cmd prepare
-dvda.cmd build --dry-run
-dvda.cmd build
-dvda.cmd verify all
-```
-
-## Source audio
-
-FLAC, M4A/ALAC and JPG, PNG or WebP artwork are supported. Use one subdirectory per album and supply `date`, `track`, `album` and `title` tags.
-
-## MLP source
-
-Default MLP core:
-
-```text
-DVDA_MLP_SOURCE="surcode-batch"
-DVDA_MLP_EXTERNAL_DIR=""
-DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
-```
-
-External MLP:
-
-```text
-DVDA_MLP_SOURCE="external"
-DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
-```
-
-MLP core batch encoding (retaining existing setting names):
-
-```text
-DVDA_MLP_SOURCE="surcode-batch"
-DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
-DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
-DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
-DVDA_MLP_METADATA_CONTEXT=""
-DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
-```
-
-## Verification modes
-
-```bat
-dvda.cmd verify quick
-dvda.cmd verify capacity
-dvda.cmd verify audit
-dvda.cmd verify menu
-dvda.cmd verify timeline
-dvda.cmd verify lossless
-dvda.cmd verify all
-```
-
-## Troubleshooting
-
-### External program not found
-
-Set full paths in `config.env`:
-
-```text
-DVDA_FFMPEG="D:/Tools/ffmpeg/bin/ffmpeg.exe"
-DVDA_FFPROBE="D:/Tools/ffmpeg/bin/ffprobe.exe"
-DVDA_METAFLAC="D:/Tools/flac/metaflac.exe"
-```
-
-### Missing menu text or wrong glyphs
-
-Do not move or delete `menu-bin\fonts`. The launcher automatically configures separate SC, JP and KR font paths.
-
-### `verify audit` reports missing logs
-
-`audit` requires the `build.log` from an actual build. A preview log cannot replace it.
-
-## License
-
-Project code is distributed under the included `LICENSE`. Third-party components retain their own licenses; see `THIRD-PARTY.md`.
-
-The MLP core is embedded and SHA-256-verified. Encoded output is not patched. Auxiliary metadata is fixed to empty by default.
-Historical original byte comparisons require matching PCM, settings and explicit metadata context. Empty context does not impersonate historical timestamps.
+Project code follows LICENSE; third-party components are listed in THIRD-PARTY.md. The native MLP core is embedded in an application assembly and verified with SHA-256. Encoded output is not patched. Historical original byte comparisons require identical PCM, settings and explicit metadata context.

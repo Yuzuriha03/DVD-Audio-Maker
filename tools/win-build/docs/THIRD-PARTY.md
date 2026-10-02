@@ -44,7 +44,7 @@ OFL 允许随软件再分发与嵌入。**不要**把字体单独作为商品出
 
 ## 本工程自身程序
 
-随包的 `app/dvda.exe` 及其 C# 源码：**GPL v3**（与 dvda-author 一致）。
+`DVD-Audio-Maker.exe`、可选开发包中的 `dvda.exe` 及其 C# 源码：**GPL v3**（与 dvda-author 一致）。
 发布包不再包含或调用 Python 业务脚本。
 
 ---
