@@ -861,7 +861,7 @@ static void PrintConfiguration(DvdaOptions options)
 {
     var keys = options.EffectiveKeys();
     Console.WriteLine($"配置文件: {options.ConfigPath ?? "（未找到 config.env，使用默认值）"}");
-    Console.WriteLine("优先级  : 环境变量 > config.env > 内置默认值" +
+    Console.WriteLine("优先级  : 环境变量 > 所选配置文件 > 内置默认值" +
         (options.HasEnvironmentOverrides(keys) ? "（当前有环境变量覆盖）" : string.Empty));
     foreach (var key in keys)
     {
