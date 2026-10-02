@@ -161,6 +161,17 @@ public static class DiscSignature
             .Append(options.MenuFont).Append('|')
             .Append(options.MenuFontJapanese).Append('|')
             .Append(options.MenuFontKorean).Append('\n');
+        if (options.MenuEnabled && BuiltinImages.IsAvailable)
+        {
+            // Rebuild staged menus when their in-process renderer/configuration changes.
+            foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(BuiltinImages.LibraryPath)!)
+                .Where(path => Path.GetExtension(path) is ".dll" or ".xml").Order(StringComparer.Ordinal))
+            {
+                using var stream = File.OpenRead(file);
+                builder.Append("image=").Append(Path.GetFileName(file)).Append('|')
+                    .Append(Convert.ToHexString(SHA256.HashData(stream))).Append('\n');
+            }
+        }
 
         foreach (var track in disc.Tracks)
         {

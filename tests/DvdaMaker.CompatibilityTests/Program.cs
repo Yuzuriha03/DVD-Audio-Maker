@@ -220,6 +220,24 @@ if (args.Length == 2 && args[0] == "--ffmpeg-pcm-integration")
     return 0;
 }
 
+if (args.Length == 2 && args[0] == "--builtin-pcm-integration")
+{
+    FfmpegPcmTests.Integration(args[1], builtin: true);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--builtin-media-integration")
+{
+    await BuiltinMediaTests.Integration(args[1]);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--builtin-images-integration")
+{
+    await BuiltinImagesTests.Integration(args[1]);
+    return 0;
+}
+
 if (args.Length > 0)
 {
     if (args.Length == 3 && args[0] == "--real-fixtures")
@@ -329,6 +347,7 @@ var tests = new (string Name, Action Run)[]
     ("菜单 author 参数结构", BuildMenuAuthorArguments),
     ("菜单字体脚本识别与区域 face", ResolveMenuFontRules),
     ("纯 C# TTC face 提取与校验", ExtractOpenTypeCollectionFaces),
+    ("原生依赖普通与延迟导入及保守清理", NativeOptimizerTests.Run),
     ("菜单视觉阈值与 Python 一致", VerifyMenuVisualThresholds),
     ("菜单批量统计解析与缺失回退", ParseBatchedMenuStatistics),
     ("菜单批量统计单页单进程", BatchMenuProcessCalls),
@@ -1405,6 +1424,9 @@ static void ParseFlacPictureDescriptor()
 {
     var descriptor = M4aFlacConverter.ParsePictureDescriptor("""
         METADATA block #2
+          type: 6 (PICTURE)
+          is last: false
+          length: 32487
           type: 3 (Cover (front))
           MIME type: image/jpeg
           width: 1200
@@ -3160,6 +3182,47 @@ static void ExtractOpenTypeCollectionFaces()
             rejectedTtc = true;
         }
         True(rejectedTtc, "单 face 校验必须拒绝 TTC 集合");
+
+        var packed = Path.Combine(root, "shared.ttc");
+        OpenTypeFontTool.PackNotoCjkFaces(output, packed);
+        OpenTypeFontTool.VerifyNotoCjkCollection(packed);
+        True(new FileInfo(packed).Length < extracted.Sum(item => new FileInfo(item.OutputPath).Length),
+            "共同字体表应共享存储，不能只是串接三个完整字体");
+        var roundTrip = OpenTypeFontTool.ExtractNotoCjkFaces(packed, Path.Combine(root, "roundtrip"));
+        SequenceEqual(new[] { 0, 1, 2 }, roundTrip.Select(item => item.SourceFaceIndex));
+        foreach (var face in roundTrip)
+            SequenceEqual(File.ReadAllBytes(Path.Combine(output, Path.GetFileName(face.OutputPath))),
+                File.ReadAllBytes(face.OutputPath));
+        var firstPack = File.ReadAllBytes(packed);
+        OpenTypeFontTool.PackNotoCjkFaces(output, packed);
+        SequenceEqual(firstPack, File.ReadAllBytes(packed));
+
+        var bundle = Path.Combine(root, "bundle");
+        Directory.CreateDirectory(Path.Combine(bundle, "menu-bin", "fonts"));
+        File.Copy(packed, Path.Combine(bundle, "menu-bin", "fonts", "DvdaNotoCJK-Regular.ttc"));
+        File.WriteAllText(Path.Combine(bundle, "menu-bin", "type-dvda-cjk.xml"), "<typemap/>");
+        var settings = ProjectSettings.Defaults();
+        settings.ApplyBundledToolDefaults(bundle);
+        Equal("DVDA-Noto-Sans-CJK-SC", settings.ToOptions().MenuFont);
+        Equal("DVDA-Noto-Sans-CJK-JP", settings.ToOptions().MenuFontJapanese);
+        Equal("DVDA-Noto-Sans-CJK-KR", settings.ToOptions().MenuFontKorean);
+        settings.Values["DVDA_MENU_FONT"] = "C:/custom/font.otf";
+        settings.ApplyBundledToolDefaults(bundle);
+        Equal("C:/custom/font.otf", settings.ToOptions().MenuFont);
+        settings.Values["DVDA_MENU_FONT_JP"] = Path.Combine(bundle, "menu-bin", "fonts", "NotoSansCJKjp-Regular.otf");
+        settings.Values["DVDA_MENU_FONT_KR"] = Path.Combine(bundle, "menu-bin", "fonts", "NotoSansCJKkr-Regular.otf").Replace('\\', '/');
+        settings.ApplyBundledToolDefaults(bundle);
+        Equal("DVDA-Noto-Sans-CJK-JP", settings.ToOptions().MenuFontJapanese);
+        Equal("DVDA-Noto-Sans-CJK-KR", settings.ToOptions().MenuFontKorean);
+        Equal("C:/custom/font.otf", settings.ToOptions().MenuFont);
+
+        File.Copy(Path.Combine(output, "NotoSansCJKjp-Regular.otf"),
+            Path.Combine(output, "NotoSansCJKsc-Regular.otf"), overwrite: true);
+        var rejectedWrongRegion = false;
+        try { OpenTypeFontTool.PackNotoCjkFaces(output, packed); }
+        catch (InvalidDataException) { rejectedWrongRegion = true; }
+        True(rejectedWrongRegion, "合并必须拒绝错误的区域 face");
+        SequenceEqual(firstPack, File.ReadAllBytes(packed));
     }
     finally
     {

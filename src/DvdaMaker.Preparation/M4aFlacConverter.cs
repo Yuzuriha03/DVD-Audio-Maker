@@ -36,9 +36,9 @@ public sealed class M4aFlacConverter(
 {
     private static readonly Regex Md5Pattern = new("MD5=([0-9a-fA-F]+)", RegexOptions.Compiled);
     private static readonly Regex CommentPattern = new(
-        @"^\s*comment\[\d+\]:\s*(.*)$", RegexOptions.Multiline | RegexOptions.Compiled);
+        @"^\s*comment\[\d+\]:\s*([^\r\n]*)", RegexOptions.Multiline | RegexOptions.Compiled);
     private static readonly Regex PictureTypePattern = new(
-        @"^\s*type:\s*(\d+)", RegexOptions.Multiline | RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        @"^\s*type:\s*(\d+)(?!\d)(?![^\r\n]*\(PICTURE\))", RegexOptions.Multiline | RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PictureMimePattern = new(
         @"^\s*MIME type:\s*(\S+)", RegexOptions.Multiline | RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PictureWidthPattern = new(
@@ -376,7 +376,8 @@ public sealed class M4aFlacConverter(
         var result = await runner.RunAsync(new ProcessRequest
         {
             FileName = metaflac,
-            Arguments = ["--list", "--block-type=VORBIS_COMMENT", path],
+            Arguments = ["--no-utf8-convert", "--list", "--block-type=VORBIS_COMMENT", path],
+            OutputEncoding = System.Text.Encoding.UTF8,
         }, token).ConfigureAwait(false);
         return CommentPattern.Matches(result.StandardOutput)
             .Select(match => match.Groups[1].Value)

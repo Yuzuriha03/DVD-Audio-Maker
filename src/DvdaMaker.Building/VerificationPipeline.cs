@@ -209,7 +209,7 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                 true);
         }
 
-        var identifyPrefix = Path.GetFileNameWithoutExtension(imageMagick)
+        var identifyPrefix = BuiltinImages.IsBuiltin(imageMagick) || Path.GetFileNameWithoutExtension(imageMagick)
             .Equals("magick", StringComparison.OrdinalIgnoreCase)
             ? (IReadOnlyList<string>)["identify"]
             : [];
@@ -534,6 +534,7 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
 
     private static string? FindExecutable(string name, string preferredDirectory)
     {
+        if (BuiltinImages.IsImageTool(name)) return BuiltinImages.IsAvailable ? BuiltinImages.Tool(name) : null;
         var names = OperatingSystem.IsWindows() && Path.GetExtension(name).Length == 0
             ? new[] { name + ".exe", name + ".cmd", name + ".bat", name }
             : new[] { name };
