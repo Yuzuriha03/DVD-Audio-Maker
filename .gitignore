@@ -77,6 +77,11 @@ TestResults/
 *.nupkg
 tools/win-build/publish/
 
+# Release packages are uploaded to GitHub Releases, not committed.
+tools/win-build/release/
+tools/win-build/release-framework-dependent/
+DVD-Audio-Maker*.zip
+
 # ---- 敏感信息（防误提交）----
 .git-credentials
 .netrc
