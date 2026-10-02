@@ -1,0 +1,63 @@
+{
+  "version": "9.0.2",
+  "source_url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+  "source_sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+  "signer": "FCF986EA15E6E293A5644F10B4322F04D67658D8",
+  "nasm_url": "https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip",
+  "nasm_sha256": "3ee4782247bcb874378d02f7eab4e294a84d3d15f3f6ee2de2f47a46aa7226e6",
+  "compiler": "gcc.exe (Rev4, Built by MSYS2 project) 16.2.0",
+  "configure": [
+    "SOURCE/configure",
+    "--prefix=INSTALL",
+    "--target-os=mingw32",
+    "--arch=x86_64",
+    "--cpu=x86-64",
+    "--cc=gcc",
+    "--cxx=g++",
+    "--enable-shared",
+    "--disable-static",
+    "--disable-programs",
+    "--disable-doc",
+    "--disable-debug",
+    "--disable-autodetect",
+    "--disable-everything",
+    "--disable-network",
+    "--disable-avdevice",
+    "--disable-avfilter",
+    "--disable-swscale",
+    "--disable-swresample",
+    "--enable-avcodec",
+    "--enable-avformat",
+    "--enable-avutil",
+    "--enable-decoder=mlp",
+    "--enable-encoder=mlp",
+    "--enable-parser=mlp",
+    "--enable-demuxer=mlp",
+    "--enable-muxer=mlp",
+    "--enable-protocol=file,pipe",
+    "--disable-pthreads",
+    "--enable-w32threads",
+    "--enable-small",
+    "--enable-gpl",
+    "--enable-version3",
+    "--x86asmexe=NASM/nasm.exe",
+    "--extra-cflags=-ffunction-sections -fdata-sections",
+    "--extra-ldflags=-Wl,--gc-sections -Wl,--no-insert-timestamp -static-libgcc"
+  ],
+  "target": "Windows x64",
+  "files": {
+    "avcodec-63.dll": {
+      "sha256": "34ec7620e52e76e54e356c09e4237148111534b630e3b6e519b0f76260375796",
+      "bytes": 370688
+    },
+    "avformat-63.dll": {
+      "sha256": "e95533dbaeda506d13947aa5dbd6ccba1a7313a249f9a77947e859c8e54c8606",
+      "bytes": 261120
+    },
+    "avutil-61.dll": {
+      "sha256": "dc0df03dbd6fb592120f92258005ad6529d6070a4560588219ad15a280264700",
+      "bytes": 1775616
+    }
+  },
+  "pristine_source_files_verified": 10399
+}

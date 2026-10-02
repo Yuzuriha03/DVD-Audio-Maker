@@ -8,7 +8,9 @@ public sealed class SurcodeBatchEncoder(ProcessRunner runner)
     public async Task RunAsync(SurcodeEncodingJob job, CancellationToken cancellationToken)
     {
         var ffmpeg = ExecutablePath.Resolve(job.FfmpegExecutable)
-            ?? throw new FileNotFoundException("找不到 FFmpeg，请设置 DVDA_FFMPEG 或将 ffmpeg.exe 加入 PATH。", job.FfmpegExecutable);
+            ?? throw new FileNotFoundException(BuiltinMedia.IsBuiltin(job.FfmpegExecutable)
+                ? "内置媒体组件缺失，请完整解压发布包。"
+                : "找不到参考 FFmpeg，请检查开发用转换器路径。", job.FfmpegExecutable);
         Validate(job);
         Directory.CreateDirectory(job.TemporaryDirectory);
         Directory.CreateDirectory(job.OutputDirectory);

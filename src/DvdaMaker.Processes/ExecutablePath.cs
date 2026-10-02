@@ -7,6 +7,8 @@ public static class ExecutablePath
     {
         var value = configured.Trim().Trim('"');
         if (value.Length == 0) return null;
+        if (BuiltinMedia.IsBuiltin(value)) return BuiltinMedia.IsAvailable ? value : null;
+        if (BuiltinImages.IsBuiltin(value)) return BuiltinImages.IsAvailable ? value : null;
         var names = OperatingSystem.IsWindows() && Path.GetExtension(value).Length == 0
             ? new[] { value + ".exe", value } : new[] { value };
         if (Path.IsPathRooted(value) || value.Contains('/') || value.Contains('\\'))

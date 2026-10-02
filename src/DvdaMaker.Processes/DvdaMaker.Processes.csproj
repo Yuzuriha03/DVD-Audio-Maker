@@ -1,1 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk" />
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <NativeMediaDirectory Condition="'$(NativeMediaDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\build\media-native</NativeMediaDirectory>
+    <NativeImageDirectory Condition="'$(NativeImageDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\build\image-native</NativeImageDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(NativeMediaDirectory)\*.dll;$(NativeMediaDirectory)\*.json" Link="media-native\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(NativeImageDirectory)\*.dll;$(NativeImageDirectory)\*.json;$(NativeImageDirectory)\*.xml;$(NativeImageDirectory)\*.txt" Link="image-native\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

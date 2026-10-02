@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace DvdaMaker.FontTool;
@@ -29,6 +30,99 @@ public static class OpenTypeFontTool
         new("Noto Sans CJK JP", "NotoSansCJKjp-Regular.otf"),
         new("Noto Sans CJK KR", "NotoSansCJKkr-Regular.otf"),
     ];
+
+    /// <summary>Shares identical SFNT tables while retaining every regional face and glyph.</summary>
+    public static void PackNotoCjkFaces(string sourceDirectory, string destinationPath)
+    {
+        var sources = NotoCjkTargets.Select(target =>
+        {
+            var path = Path.Combine(sourceDirectory, target.FileName);
+            VerifyFace(path, target.FamilyName);
+            var data = File.ReadAllBytes(path);
+            return (Data: data, Face: ParseFace(data, 0));
+        }).ToArray();
+        var directories = new int[sources.Length];
+        var length = 12 + sources.Length * 4;
+        for (var index = 0; index < sources.Length; index++)
+        {
+            directories[index] = length;
+            length = checked(length + 12 + sources[index].Face.Tables.Count * 16);
+        }
+
+        var shared = new Dictionary<string, (int Offset, byte[] Data)>(StringComparer.Ordinal);
+        var offsets = new List<int[]>();
+        foreach (var source in sources)
+        {
+            var faceOffsets = new int[source.Face.Tables.Count];
+            for (var index = 0; index < source.Face.Tables.Count; index++)
+            {
+                var table = source.Face.Tables[index];
+                var bytes = source.Data.AsSpan(table.Offset, table.Length);
+                var key = table.Tag + Convert.ToHexString(SHA256.HashData(bytes));
+                if (!shared.TryGetValue(key, out var entry))
+                {
+                    entry = (length, bytes.ToArray());
+                    shared.Add(key, entry);
+                    length = checked(length + Align4(bytes.Length));
+                }
+                else if (!bytes.SequenceEqual(entry.Data))
+                    throw new InvalidDataException("字体表哈希冲突，不能合并。");
+                faceOffsets[index] = entry.Offset;
+            }
+            offsets.Add(faceOffsets);
+        }
+
+        var output = new byte[length];
+        WriteU32(output, 0, TrueTypeCollectionTag);
+        WriteU32(output, 4, 0x00010000);
+        WriteU32(output, 8, checked((uint)sources.Length));
+        for (var index = 0; index < sources.Length; index++)
+        {
+            var source = sources[index];
+            var directory = directories[index];
+            WriteU32(output, 12 + index * 4, checked((uint)directory));
+            source.Data.AsSpan(0, 12).CopyTo(output.AsSpan(directory));
+            for (var tableIndex = 0; tableIndex < source.Face.Tables.Count; tableIndex++)
+            {
+                var sourceRecord = 12 + tableIndex * 16;
+                var record = directory + sourceRecord;
+                source.Data.AsSpan(sourceRecord, 16).CopyTo(output.AsSpan(record));
+                WriteU32(output, record + 8, checked((uint)offsets[index][tableIndex]));
+            }
+        }
+        foreach (var entry in shared.Values) entry.Data.CopyTo(output, entry.Offset);
+
+        var roundTrip = ReadFaces(output);
+        for (var index = 0; index < sources.Length; index++)
+            if (!BuildStandaloneFace(sources[index].Data, sources[index].Face).AsSpan()
+                    .SequenceEqual(BuildStandaloneFace(output, roundTrip[index])))
+                throw new InvalidDataException("合并字体后区域 face 内容不一致。");
+        var fullPath = Path.GetFullPath(destinationPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        var temporary = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllBytes(temporary, output);
+            File.Move(temporary, fullPath, overwrite: true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+
+    public static void VerifyNotoCjkCollection(string path)
+    {
+        var data = File.ReadAllBytes(path);
+        var faces = ReadFaces(data);
+        if (faces.Count != NotoCjkTargets.Length)
+            throw new InvalidDataException("菜单字体集合必须包含 SC、JP、KR 三个 face。");
+        for (var index = 0; index < faces.Count; index++)
+        {
+            var face = faces[index];
+            if (face.FamilyName != NotoCjkTargets[index].FamilyName ||
+                !new uint[] { 0x6C49, 0x3042, 0xAC00, 0x0041 }.All(code => HasCodePoint(data, face, code)))
+                throw new InvalidDataException($"菜单字体集合 face[{index}] 的区域或字符覆盖不正确。");
+            _ = BuildStandaloneFace(data, face);
+        }
+    }
 
     public static IReadOnlyList<ExtractedFontFace> ExtractNotoCjkFaces(
         string sourcePath,

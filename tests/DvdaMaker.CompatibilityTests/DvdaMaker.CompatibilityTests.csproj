@@ -18,5 +18,8 @@
   <ItemGroup>
     <Compile Include="..\..\src\DvdaMaker.Desktop\TaskLogPresentation.cs" Link="Desktop\TaskLogPresentation.cs" />
     <Compile Include="..\..\src\DvdaMaker.Desktop\SettingDefinition.cs" Link="Desktop\SettingDefinition.cs" />
+    <Compile Include="..\..\src\DvdaMaker.Toolchain\NativeToolOptimizer.cs" Link="Toolchain\NativeToolOptimizer.cs" />
+    <EmbeddedResource Include="..\..\src\DvdaMaker.Toolchain\NativeOptimizationProfile.json" LogicalName="DvdaMaker.NativeOptimizationProfile" />
+    <EmbeddedResource Include="..\..\src\DvdaMaker.Toolchain\MinimalFfmpegProfile.json" LogicalName="DvdaMaker.MinimalFfmpegProfile" />
   </ItemGroup>
 </Project>

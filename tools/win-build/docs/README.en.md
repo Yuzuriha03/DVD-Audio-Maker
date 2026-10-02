@@ -8,10 +8,12 @@ Double-click `DVD-Audio-Maker.exe` in the package root. Standard releases provid
 
 See [RUNTIME.en.md](RUNTIME.en.md) for this package: the compact framework-dependent package requires .NET 10 Desktop Runtime for Windows x64, while the self-contained package includes its runtime.
 
+Covers, menu drawing, fonts and image verification use a tailored in-process x64 image library. ImageMagick command-line programs are neither launched nor required. Keep image-native and menu-bin/fonts intact.
+
 ## Make a disc
 
 1. Select your audio source, working directory, destination, title and disc capacity.
-2. Choose sample rate, bit depth and FFmpeg location in the audio settings; configure menus if needed.
+2. Choose sample rate and bit depth in the audio settings; configure menus if needed.
 3. Check the sources. Preview prepares sources, encodes MLP and plans discs without creating ISO images.
 4. Build the discs, then verify the output. Lossless audio verification samples the first track; it does not check every track.
 
@@ -25,9 +27,11 @@ The language selector supports Chinese and English and saves the selection with 
 
 ## Tools and encoding
 
-The package includes dvda-author, mkisofs, menu tools, ImageMagick and Chinese/Japanese/Korean fonts. The GUI detects their bundled paths. Retain the menu-bin/fonts directory.
+The package includes dvda-author, mkisofs, menu tools, the in-process image library and Chinese/Japanese/Korean fonts. The GUI detects their bundled paths. Retain the menu-bin/fonts directory.
 
-FFmpeg, FFprobe and Metaflac must be on PATH or configured with full paths in the GUI. FFmpeg prepares, decodes and verifies audio. MLP encoding uses a native x64 DLL in process and requires neither eac3to nor original SurCode.
+Source conversion, metadata, decoding and verification use bundled x64 media libraries inside the application. No FFmpeg or FFprobe process or installation is required. Retain the media-native directory. MLP encoding uses the native x64 DLL and requires neither eac3to nor original SurCode.
+
+The optional M4A/ALAC-to-FLAC feature still uses Metaflac to normalize artwork and tags. For this feature, place Metaflac on PATH or configure its location in the GUI. Old FFmpeg / FFprobe paths remain importable from config.env; the GUI automatically uses the bundled components.
 
 Sources include FLAC and M4A/ALAC, with JPG, PNG or WebP artwork. Use one directory per album and supply date, track, album and title tags.
 

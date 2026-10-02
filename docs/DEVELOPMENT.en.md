@@ -4,6 +4,8 @@
 
 Standard user packages contain only the GUI entry point. CLI source, solution projects and tests remain available. The GUI calls shared workflow libraries directly and does not spawn the CLI. Development requires Windows x64 and the .NET 10 SDK.
 
+Media operations now use in-process DLLs. Copy media-native from a validated release to build/media-native before running from source, or follow the [Windows build instructions](../tools/win-build/README.en.md). Routine C# changes do not require native recompilation. NativeMediaDirectory selects the MSBuild input; DVDA_MEDIA_NATIVE_DIR can select a runtime directory. The GUI needs no FFmpeg/FFprobe installation; comparison integration tests still need reference tools.
+
 ## Source-checkout commands
 
 ```bat
@@ -44,3 +46,7 @@ Removing CLI cannot remove runtime and shared workflow libraries needed by the G
 - The native encoder fingerprint, tools, fonts and menu assets are unchanged; manifests and ZIP contents pass validation.
 
 See [gui-only-validation.json](gui-only-validation.json).
+
+## Image component debugging
+
+The GUI and native author share image-native/dvda-image.dll. Copy image-native and its sibling menu-bin/fonts from a verified release, or set DVDA_IMAGE_NATIVE_DIR to the complete image directory. Ordinary C# changes do not require rebuilding ImageMagick. See [image processing](INPROCESS-IMAGES.en.md) and [native builds](../tools/win-build/README.en.md).

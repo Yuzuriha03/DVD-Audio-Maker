@@ -8,10 +8,12 @@
 
 运行条件见 [RUNTIME.md](RUNTIME.md)：精简包不含 .NET，需要安装 .NET 10 Desktop Runtime（Windows x64）；自包含包无需另装。
 
+封面、菜单绘制、字体和图像校验由精简的内置 x64 图像库完成，不启动 ImageMagick 命令行程序，也无需安装 ImageMagick。请保留 image-native 和 menu-bin/fonts 目录。
+
 ## 开始制作
 
 1. 在“开始设置”中选择音源、工作目录和成品目录，填写光盘标题与容量。
-2. 在“音频编码”中选择采样率、位深和 FFmpeg 路径，按需设置光盘菜单。
+2. 在“音频编码”中选择采样率和位深，按需设置光盘菜单。
 3. 点击“检查音源”检查输入；“预演制作”会准备音源、编码 MLP 并规划分盘，但不创建 ISO。
 4. 点击“开始制作”生成 ISO，完成后使用“验证成品”。无损音频验证沿用首轨抽样，不代表逐轨验证。
 
@@ -25,9 +27,11 @@
 
 ## 外部工具与编码
 
-发布包包含 dvda-author、mkisofs、菜单工具、ImageMagick 和中日韩字体。GUI 根据包内布局设置工具及字体路径。请保留 menu-bin/fonts 目录。
+发布包包含 dvda-author、mkisofs、菜单工具、内置图像库和中日韩字体。GUI 根据包内布局设置工具及字体路径。请保留 menu-bin/fonts 目录。
 
-FFmpeg、FFprobe、Metaflac 需要位于 PATH，或在 GUI 中设置完整路径。FFmpeg 用于音源转换、解码和校验；MLP 编码由进程内原生 x64 DLL 完成，不需要 eac3to 或原版 SurCode。
+音源转换、信息读取、解码和校验使用随包的 x64 媒体库，在主程序内完成，不再启动 FFmpeg 或 FFprobe，也无需安装它们。请保留 media-native 目录。MLP 编码由原生 x64 DLL 完成，不需要 eac3to 或原版 SurCode。
+
+可选的 M4A/ALAC 转 FLAC 功能仍使用 Metaflac 整理封面和标签；使用此功能时，在 PATH 或 GUI 中配置 Metaflac。旧 config.env 中的 FFmpeg / FFprobe 路径可以导入，GUI 会自动改用内置组件。
 
 支持 FLAC、M4A/ALAC 音源和 JPG、PNG、WebP 封面。建议一张专辑一个目录，并提供 date、track、album、title 标签。
 

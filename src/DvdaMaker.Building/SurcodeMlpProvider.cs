@@ -38,7 +38,8 @@ public sealed class SurcodeMlpProvider
             diagnostics.Add(new BuildDiagnostic(
                 BuildDiagnosticSeverity.Error,
                 "FFMPEG_EXECUTABLE_MISSING",
-                $"找不到音源转换工具 FFmpeg，请检查 DVDA_FFMPEG 或 PATH: {_options.Ffmpeg}"));
+                BuiltinMedia.IsBuiltin(_options.Ffmpeg) ? "内置媒体组件缺失，请完整解压发布包。"
+                    : $"找不到参考音源转换工具，请检查开发用路径: {_options.Ffmpeg}"));
         }
         if (diagnostics.Count > 0)
         {
@@ -255,7 +256,8 @@ public sealed class SurcodeMlpProvider
         static string Hash(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
         var metadata = string.IsNullOrEmpty(_options.MlpMetadataContext)
             ? MlpEncoder.MetadataPolicy : Hash(_options.MlpMetadataContext);
-        return $"|{MlpEncoder.BinarySha256}|ffmpeg:{Hash(ffmpeg)}|metadata:{metadata}|{FfmpegPcmConverter.Policy}";
+        var converter = BuiltinMedia.IsBuiltin(ffmpeg) ? BuiltinMedia.Identity : Hash(ffmpeg);
+        return $"|{MlpEncoder.BinarySha256}|converter:{converter}|metadata:{metadata}|{FfmpegPcmConverter.Policy}";
     }
 
     private static void TryDeleteDirectory(string path)

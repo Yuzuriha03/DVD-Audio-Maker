@@ -1,7 +1,12 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Xml.Linq;
+using DvdaMaker.FontTool;
+using DvdaMaker.Toolchain;
 
 return await ToolchainProgram.RunAsync(args);
 
@@ -18,7 +23,6 @@ internal static class ToolchainProgram
         "mpeg2enc.exe",
         "mplex.exe",
         "mp2enc.exe",
-        "magick.exe",
     ];
 
     private static readonly string[] RequiredFonts =
@@ -70,6 +74,12 @@ internal static class ToolchainProgram
 
         ValidatePrebuilt(prebuilt);
         ValidateSourceTree(sourceTree);
+        var imageAuthor = ResolvePath(options.ImageAuthor ?? Path.Combine(repository, "build", "image-author"));
+        NativeImagePackager.ValidateAuthor(imageAuthor);
+        var magickShim = options.MagickShim is null ? null : ResolvePath(options.MagickShim);
+        if (magickShim is not null) NativeToolOptimizer.ValidateShim(magickShim);
+        var ffmpegLibraries = options.FfmpegLibraries is null ? null : ResolvePath(options.FfmpegLibraries);
+        if (ffmpegLibraries is not null) NativeToolOptimizer.ValidateMinimalFfmpeg(ffmpegLibraries);
 
         Console.WriteLine("DVD-Audio Maker native Windows packager");
         Console.WriteLine($"  repository : {repository}");
@@ -113,6 +123,8 @@ internal static class ToolchainProgram
         ], repository);
         if (!File.Exists(Path.Combine(guiPublish, "DVD-Audio-Maker.exe")))
             throw new InvalidOperationException("GUI publish did not create DVD-Audio-Maker.exe");
+        ValidateMediaRuntime(Path.Combine(guiPublish, "media-native"));
+        NativeImagePackager.ValidateRuntime(Path.Combine(guiPublish, "image-native"));
 
         RecreateDirectory(destination);
         CopyDirectory(guiPublish, destination);
@@ -125,6 +137,16 @@ internal static class ToolchainProgram
                     Path.Combine(destination, name));
         }
         CopyDirectory(prebuilt, Path.Combine(destination, "menu-bin"));
+        if (ffmpegLibraries is not null)
+        {
+            NativeToolOptimizer.InstallMinimalFfmpeg(Path.Combine(destination, "menu-bin"), ffmpegLibraries);
+            Console.WriteLine("  native FFmpeg: verified x64 MLP-only libraries");
+        }
+        var removedNative = NativeToolOptimizer.Optimize(Path.Combine(destination, "menu-bin"), magickShim);
+        if (magickShim is not null) Console.WriteLine("  shared ImageMagick: two native forwarding entrypoints");
+        if (removedNative.Count > 0) Console.WriteLine("  unused native libraries removed: " + string.Join(", ", removedNative));
+        PackMenuFonts(Path.Combine(destination, "menu-bin"));
+        NativeImagePackager.Install(destination, imageAuthor);
         CopyDirectory(Path.Combine(sourceTree, "menu"), Path.Combine(destination, "data", "menu"));
         File.Copy(Path.Combine(repository, "config.env"), Path.Combine(destination, "config.env"), true);
         CopyDocumentation(repository, destination);
@@ -145,6 +167,9 @@ internal static class ToolchainProgram
         string? source = null;
         string? prebuilt = null;
         string? output = null;
+        string? magickShim = null;
+        string? ffmpegLibraries = null;
+        string? imageAuthor = null;
         var includeCli = false;
         var frameworkDependent = false;
         for (var index = 0; index < args.Length; index++)
@@ -153,7 +178,7 @@ internal static class ToolchainProgram
             if (value.Equals("package", StringComparison.OrdinalIgnoreCase)) continue;
             if (value == "--include-cli") { includeCli = true; continue; }
             if (value == "--framework-dependent") { frameworkDependent = true; continue; }
-            if (value is "--repo" or "--source" or "--prebuilt" or "--output")
+            if (value is "--repo" or "--source" or "--prebuilt" or "--output" or "--magick-shim" or "--ffmpeg-libraries" or "--image-author")
             {
                 if (++index >= args.Length)
                 {
@@ -165,12 +190,15 @@ internal static class ToolchainProgram
                     case "--source": source = args[index]; break;
                     case "--prebuilt": prebuilt = args[index]; break;
                     case "--output": output = args[index]; break;
+                    case "--magick-shim": magickShim = args[index]; break;
+                    case "--ffmpeg-libraries": ffmpegLibraries = args[index]; break;
+                    case "--image-author": imageAuthor = args[index]; break;
                 }
                 continue;
             }
             throw new ArgumentException($"Unknown argument: {value}");
         }
-        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent);
+        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent, magickShim, ffmpegLibraries, imageAuthor);
     }
 
     private static void ValidatePrebuilt(string directory)
@@ -181,13 +209,14 @@ internal static class ToolchainProgram
                 "No native third-party binary directory was found. " +
                 $"Create '{directory}' or set DVDA_PREBUILT_DIR. " +
                 "The directory must contain already-built Windows x64 dvda-author/menu tools and their DLLs; " +
-                "this repository no longer invokes Autotools, Make, MSYS2, Bash, or WSL.");
+                "normal GUI packaging does not invoke native build tools; optional native rebuilds are separate.");
         }
 
         var missing = RequiredExecutables
             .Where(name => !File.Exists(Path.Combine(directory, name)))
-            .Concat(RequiredFonts.Where(name =>
-                !File.Exists(Path.Combine(directory, "fonts", name))))
+            .Concat(File.Exists(Path.Combine(directory, "fonts", "DvdaNotoCJK-Regular.ttc"))
+                ? []
+                : RequiredFonts.Where(name => !File.Exists(Path.Combine(directory, "fonts", name))))
             .ToArray();
         if (missing.Length > 0)
         {
@@ -195,6 +224,69 @@ internal static class ToolchainProgram
                 $"Prebuilt directory is incomplete: {directory}{Environment.NewLine}" +
                 string.Join(Environment.NewLine, missing.Select(name => $"  missing: {name}")));
         }
+    }
+
+    private static void ValidateMediaRuntime(string directory)
+    {
+        var manifest = Path.Combine(directory, "media-build.json");
+        if (!File.Exists(manifest))
+            throw new InvalidOperationException("Missing in-process media runtime. Build it with " +
+                "tools/win-build/build-media-bridge.py, or supply the prebuilt files in build/media-native.");
+        using var record = JsonDocument.Parse(File.ReadAllText(manifest));
+        var files = record.RootElement.GetProperty("files").EnumerateObject()
+            .ToDictionary(x => x.Name, x => x.Value, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in new[] { "dvda-media.dll", "avcodec-63.dll", "avformat-63.dll", "avutil-61.dll", "swresample-7.dll", "swscale-10.dll" })
+            if (!files.ContainsKey(name)) throw new InvalidDataException("Incomplete media manifest: " + name);
+        var actual = Directory.EnumerateFiles(directory, "*.dll").Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!actual.SetEquals(files.Keys)) throw new InvalidDataException("Media DLL files do not match their build manifest.");
+        foreach (var (name, metadata) in files)
+        {
+            if (Path.GetFileName(name) != name || !name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Invalid media library name: " + name);
+            var path = Path.Combine(directory, name);
+            using var stream = File.OpenRead(path);
+            if (stream.Length != metadata.GetProperty("bytes").GetInt64() ||
+                !Convert.ToHexString(SHA256.HashData(stream)).Equals(metadata.GetProperty("sha256").GetString(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Media library checksum mismatch: " + name);
+            stream.Position = 0;
+            using var pe = new PEReader(stream);
+            if (pe.PEHeaders.CoffHeader.Machine != Machine.Amd64)
+                throw new InvalidDataException("Media library must be Windows x64: " + name);
+            foreach (var import in NativeToolOptimizer.ReadImports(path))
+                if (!files.ContainsKey(import) && !File.Exists(Path.Combine(Environment.SystemDirectory, import)))
+                    throw new InvalidDataException("Missing media library dependency: " + import);
+        }
+        Console.WriteLine($"  in-process media: {files.Count} verified x64 libraries");
+    }
+
+    private static void PackMenuFonts(string directory)
+    {
+        var fonts = Path.Combine(directory, "fonts");
+        var collection = Path.Combine(fonts, "DvdaNotoCJK-Regular.ttc");
+        if (RequiredFonts.All(name => File.Exists(Path.Combine(fonts, name))))
+            OpenTypeFontTool.PackNotoCjkFaces(fonts, collection);
+        OpenTypeFontTool.VerifyNotoCjkCollection(collection);
+        var map = new XElement("typemap");
+        var regions = new[] { "SC", "JP", "KR" };
+        for (var index = 0; index < regions.Length; index++)
+            map.Add(new XElement("type",
+                new XAttribute("name", "DVDA-Noto-Sans-CJK-" + regions[index]),
+                new XAttribute("family", "DVDA Noto Sans CJK " + regions[index]),
+                new XAttribute("format", "truetype"), new XAttribute("style", "normal"),
+                new XAttribute("stretch", "normal"), new XAttribute("weight", "400"),
+                new XAttribute("face", index),
+                new XAttribute("glyphs", "fonts/DvdaNotoCJK-Regular.ttc")));
+        new XDocument(map).Save(Path.Combine(directory, "type-dvda-cjk.xml"));
+        var typesPath = Path.Combine(directory, "type.xml");
+        var types = File.Exists(typesPath) ? XDocument.Load(typesPath) : new XDocument(new XElement("typemap"));
+        if (types.Root is not { Name.LocalName: "typemap" } root)
+            throw new InvalidDataException("ImageMagick type.xml has no typemap root.");
+        if (!root.Elements("include").Any(element => (string?)element.Attribute("file") == "type-dvda-cjk.xml"))
+            root.AddFirst(new XElement("include", new XAttribute("file", "type-dvda-cjk.xml")));
+        types.Save(typesPath);
+        // Remove only the three source copies in the freshly built destination.
+        foreach (var name in RequiredFonts) File.Delete(Path.Combine(fonts, name));
+        Console.WriteLine($"  shared fonts: {new FileInfo(collection).Length:N0} bytes (SC / JP / KR)");
     }
 
     private static void ValidateSourceTree(string directory)
@@ -247,9 +339,9 @@ if "%~1"=="" (
 set "DVDA_AUTHOR=%ROOT%menu-bin\dvda-author-dev.exe"
 set "DVDA_MKISOFS=%ROOT%menu-bin\mkisofs.exe"
 set "DVDA_AUTHOR_SRC=%ROOT%data"
-set "DVDA_MENU_FONT=%ROOT%menu-bin\fonts\NotoSansCJKsc-Regular.otf"
-set "DVDA_MENU_FONT_JP=%ROOT%menu-bin\fonts\NotoSansCJKjp-Regular.otf"
-set "DVDA_MENU_FONT_KR=%ROOT%menu-bin\fonts\NotoSansCJKkr-Regular.otf"
+set "DVDA_MENU_FONT=DVDA-Noto-Sans-CJK-SC"
+set "DVDA_MENU_FONT_JP=DVDA-Noto-Sans-CJK-JP"
+set "DVDA_MENU_FONT_KR=DVDA-Noto-Sans-CJK-KR"
 if not exist "%ROOT%dvda.exe" (
     echo [ERROR] Missing dvda.exe
     exit /b 2
@@ -305,9 +397,9 @@ exit /b %ERRORLEVEL%
             ? "This compact package excludes the .NET runtime. **Before first use, install .NET 10 Desktop Runtime for Windows x64.** On the [official Microsoft download page](https://dotnet.microsoft.com/download/dotnet/10.0), choose the Windows x64 installer under .NET Desktop Runtime. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework 4.x alone is insufficient. An existing compatible Microsoft.WindowsDesktop.App 10.0.x installation can be reused."
             : "This package includes its Windows x64 .NET runtime; no separate .NET installation is needed.";
         File.WriteAllText(Path.Combine(destination, "RUNTIME.md"),
-            "# 运行要求\n\n" + chinese + "\n\n请完整解压整个目录；安装 .NET 运行时不会代替 FFmpeg 等已有外部工具要求。\n", new UTF8Encoding(false));
+            "# 运行要求\n\n" + chinese + "\n\n请完整解压整个目录，包括 media-native 和 menu-bin。媒体处理组件已随包提供，无需安装 FFmpeg 或 FFprobe。\n", new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(destination, "RUNTIME.en.md"),
-            "# Runtime requirements\n\n" + english + "\n\nExtract the complete directory. Installing .NET does not replace the existing external tool requirements such as FFmpeg.\n", new UTF8Encoding(false));
+            "# Runtime requirements\n\n" + english + "\n\nExtract the complete directory, including media-native and menu-bin. Media processing is bundled; no FFmpeg or FFprobe installation is required.\n", new UTF8Encoding(false));
         foreach (var (name, notice) in new[]
         {
             ("README.md", "> **运行环境：** " + chinese),
@@ -399,7 +491,7 @@ exit /b %ERRORLEVEL%
     }
 
     private static void PrintUsage() => Console.Error.WriteLine(
-        "Usage: build-all.cmd [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent]");
+        "Usage: build-all.cmd [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent] [--ffmpeg-libraries <verified MLP DLL directory>] [--image-author <rebuilt native author directory>]");
 
     private sealed record ToolchainOptions(
         string? Repository,
@@ -407,5 +499,8 @@ exit /b %ERRORLEVEL%
         string? PrebuiltDirectory,
         string? OutputDirectory,
         bool IncludeCli,
-        bool FrameworkDependent);
+        bool FrameworkDependent,
+        string? MagickShim,
+        string? FfmpegLibraries,
+        string? ImageAuthor);
 }

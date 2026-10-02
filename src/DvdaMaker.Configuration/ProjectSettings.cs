@@ -19,7 +19,11 @@ public sealed class ProjectSettings
     };
 
     public ProjectSettings Clone() => new() { Version = Version, Language = Language, Values = new(Values, StringComparer.Ordinal) };
-    public DvdaOptions ToOptions() => DvdaOptions.FromValues(Values);
+    public DvdaOptions ToOptions() => DvdaOptions.FromValues(new Dictionary<string, string>(Values, StringComparer.Ordinal)
+    {
+        ["DVDA_FFMPEG"] = BuiltinMedia.Converter,
+        ["DVDA_FFPROBE"] = BuiltinMedia.Probe,
+    });
 
     public static ProjectSettings ImportEnv(string path)
     {
@@ -67,7 +71,7 @@ public sealed class ProjectSettings
         {
             _ = options.MlpSource;
             if (requireEncoding && options.MlpSource == "surcode-batch" && ExecutablePath.Resolve(options.Ffmpeg) is null)
-                errors.Add("找不到 FFmpeg。请选择有效的 ffmpeg.exe 路径，或将它加入 PATH。");
+                errors.Add("内置媒体组件缺失，请完整解压发布包；开发环境请准备 media-native 目录。");
             if (requireEncoding && options.MlpSource is "external" or "surcode" && !Directory.Exists(options.MlpExternalDirectory))
                 errors.Add("导入外部 MLP 时必须选择存在的 MLP 目录。");
         }
@@ -83,12 +87,26 @@ public sealed class ProjectSettings
     public void ApplyBundledToolDefaults(string root)
     {
         var tools = Path.Combine(root, "menu-bin");
+        if (File.Exists(Path.Combine(tools, "fonts", "DvdaNotoCJK-Regular.ttc")) &&
+            File.Exists(Path.Combine(tools, "type-dvda-cjk.xml")))
+        {
+            foreach (var (key, region, fileName) in new[]
+            {
+                ("DVDA_MENU_FONT", "SC", "NotoSansCJKsc-Regular.otf"),
+                ("DVDA_MENU_FONT_JP", "JP", "NotoSansCJKjp-Regular.otf"),
+                ("DVDA_MENU_FONT_KR", "KR", "NotoSansCJKkr-Regular.otf"),
+            })
+                if (!Values.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value) ||
+                    value == ConfigDefaults.Values.GetValueOrDefault(key) ||
+                    string.Equals(value.Replace('\\', '/'),
+                        Path.Combine(tools, "fonts", fileName).Replace('\\', '/'),
+                        StringComparison.OrdinalIgnoreCase))
+                    Values[key] = "DVDA-Noto-Sans-CJK-" + region;
+        }
         var candidates = new Dictionary<string, string>
         {
             ["DVDA_AUTHOR"] = Path.Combine(tools, "dvda-author-dev.exe"),
             ["DVDA_MKISOFS"] = Path.Combine(tools, "mkisofs.exe"),
-            ["DVDA_FFMPEG"] = Path.Combine(tools, "ffmpeg.exe"),
-            ["DVDA_FFPROBE"] = Path.Combine(tools, "ffprobe.exe"),
             ["DVDA_METAFLAC"] = Path.Combine(tools, "metaflac.exe"),
             ["DVDA_MENU_FONT"] = Path.Combine(tools, "fonts", "NotoSansCJKsc-Regular.otf"),
             ["DVDA_MENU_FONT_JP"] = Path.Combine(tools, "fonts", "NotoSansCJKjp-Regular.otf"),

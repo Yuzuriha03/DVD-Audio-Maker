@@ -10,6 +10,10 @@ public sealed class ProcessRunner
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.FileName);
+        if (BuiltinImages.IsBuiltin(request.FileName))
+            return await BuiltinImages.RunAsync(request, cancellationToken).ConfigureAwait(false);
+        if (BuiltinMedia.IsBuiltin(request.FileName))
+            return await BuiltinMedia.RunAsync(request, cancellationToken).ConfigureAwait(false);
 
         var startInfo = new ProcessStartInfo
         {

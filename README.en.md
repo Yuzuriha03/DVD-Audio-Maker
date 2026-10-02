@@ -5,6 +5,8 @@
 **The compact package without .NET requires .NET 10 Desktop Runtime for Windows x64.** Select the Windows x64 installer under .NET Desktop Runtime on the [official Microsoft page](https://dotnet.microsoft.com/download/dotnet/10.0). The plain .NET Runtime or .NET Framework 4.x is insufficient. Self-contained packages need no separate installation; the bundled README identifies the mode.
 
 
+Cover processing, menu drawing, fonts and image verification use a tailored in-process x64 image library. No ImageMagick command-line program is launched. Keep the image-native directory intact; JPG/PNG/WebP covers and Chinese/Japanese/Korean fonts are supported.
+
 ## Interface and log language
 
 Use the language selector at the top right to switch between Chinese and English. The interface and task logs follow the selected language, which is saved with JSON profiles and everyday settings. On first launch, the Windows UI language determines the default. Switching language preserves paths, track tags, configuration values and encoded data. The selector is disabled while a task is running.
@@ -74,12 +76,12 @@ Running from source requires:
 
 - Windows 10/11 x64
 - .NET 10 SDK
-- FFmpeg, FFprobe and Metaflac
+- The in-process media runtime (build/media-native; copy from a validated release or build as described in tools/win-build/README.en.md)
+- Metaflac for the optional M4A/ALAC-to-FLAC normalization feature
 - Prebuilt Windows `dvda-author-dev.exe` and `mkisofs.exe`
 - Menu tools, ImageMagick, fonts and runtime assets when menus are enabled
 
-FFmpeg is used for source conversion, decoding and verification, not MLP encoding.
-Batch encoding uses the FFmpeg specified by DVDA_FFMPEG, resolving it through PATH by default. Neither eac3to nor the original SurCode is required.
+Source conversion, metadata, decoding and verification call bundled FFmpeg libraries inside the application, without external FFmpeg / FFprobe processes. The default configuration uses the built-in components; the developer CLI can explicitly select external programs for reference comparisons. The MLP core remains independent. Neither eac3to nor original SurCode is required.
 
 ## CLI and existing env configurations
 
@@ -185,18 +187,19 @@ DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
 DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
 DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
 DVDA_MLP_METADATA_CONTEXT=""
-DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
+DVDA_FFMPEG="builtin:media"
+DVDA_FFPROBE="builtin:probe"
 DVDA_MLP_SURCODE_SAMPLE_RATE="48000"
 DVDA_MLP_SURCODE_BITS="24"
 ```
 
 The `surcode-batch` configuration name is retained for existing jobs. The execution chain is:
 
-`Source audio → FFmpeg → integer PCM → MLP core DLL → MLP cache`.
+`Source audio → in-process media DLLs → integer PCM → MLP core DLL → MLP cache`.
 
 The native x64 host embeds a pinned Windows x64 encoder DLL, extracts and verifies it at runtime, then calls it in-process.
 It does not start the original SurCode, load its DLLs, write SSF files or patch encoded output bytes.
-The old DVDA_MLP_EAC3TO_EXE setting remains readable but is unused. Set FFmpeg on the GUI's "Audio encoding" page. Resampling and bit-depth reduction use FFmpeg's conversion results and do not promise eac3to-identical PCM; identical target PCM and metadata must still yield byte-identical MLP. See [FFmpeg PCM migration](docs/FFMPEG-PCM-MIGRATION.en.md) for the migration plan and acceptance results.
+The old DVDA_MLP_EAC3TO_EXE setting remains readable but is unused. The GUI automatically uses the bundled media libraries, ignoring legacy FFmpeg / FFprobe paths. Resampling and bit-depth reduction retain the validated SWR and 20-bit quantization behavior; eac3to-identical PCM is not promised. Identical target PCM and metadata must still yield byte-identical MLP. See [in-process media](docs/INPROCESS-MEDIA.en.md) for the current design and validation, and [FFmpeg PCM migration](docs/FFMPEG-PCM-MIGRATION.en.md) for the earlier migration.
 
 An empty MLP cache directory defaults to `<build>/mlp`. The former `DVDA_MLP_SOURCE=ffmpeg` value reports an explicit error;
 change it to `surcode-batch`. `DVDA_MLP_SURCODE_EXE` has been removed.
@@ -226,7 +229,7 @@ DVDA_MENU_STILLPICS="on"
 DVDA_MENU_COVER_DIM="35"
 ```
 
-Do not use a TTC collection directly as a menu font. Use separate SC, JP and KR OTF faces.
+The bundled TTC registers separate SC, JP and KR faces through type.xml. The GUI selects regional faces automatically. For custom fonts, specify registered regional names or the corresponding OTF files.
 
 `DVDA_FINAL_DIR` is the final output directory. After a successful build, ISOs are published directly there without an additional copy stage.
 

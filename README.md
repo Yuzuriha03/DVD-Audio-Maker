@@ -3,6 +3,8 @@
 [简体中文](README.md) | [English](README.en.md)
 
 
+封面、菜单绘制、字体和图像校验也使用进程内的精简 x64 图像库，不启动 ImageMagick 命令行程序。请完整保留 image-native 目录；支持 JPG/PNG/WebP 封面和中日韩字体。
+
 ## 界面与日志语言
 
 右上角可切换“中文 / English”，界面和任务日志随之切换。选择会随 JSON 方案和日常设置保存；首次启动按 Windows 界面语言自动选择。切换语言不改变路径、曲目标签、配置值或编码数据。任务执行时暂时禁用语言切换。
@@ -76,12 +78,12 @@ tests/                        兼容性与端到端测试
 
 - Windows 10/11 x64
 - .NET 10 SDK
-- FFmpeg、FFprobe 和 Metaflac
+- 内置媒体运行库（build/media-native；可从已验证的发布包复制，或按 tools/win-build/README.md 构建）
+- 可选 M4A/ALAC 转 FLAC 整理功能需要 Metaflac
 - 已构建的 Windows 版 `dvda-author-dev.exe` 与 `mkisofs.exe`
 - 启用菜单时所需的菜单工具、ImageMagick、字体和运行期素材
 
-FFmpeg 保留用于音源转换、解码和校验，不再用于 MLP 编码。
-批量编码使用 DVDA_FFMPEG 指定的 FFmpeg（默认在 PATH 查找）；无需 eac3to 或原版 SurCode。
+音源转换、信息读取、解码和校验在主程序内调用随包 FFmpeg 动态库，不再启动外部 FFmpeg / FFprobe。默认配置使用内置媒体组件；开发 CLI 可以显式指定外部程序做参考对照。MLP 编码核心独立运行，无需 eac3to 或原版 SurCode。
 
 ## CLI 与旧 env 配置
 
@@ -187,18 +189,19 @@ DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
 DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
 DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
 DVDA_MLP_METADATA_CONTEXT=""
-DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
+DVDA_FFMPEG="builtin:media"
+DVDA_FFPROBE="builtin:probe"
 DVDA_MLP_SURCODE_SAMPLE_RATE="48000"
 DVDA_MLP_SURCODE_BITS="24"
 ```
 
 保留 `surcode-batch` 配置名兼容现有任务，执行链为：
 
-`源音频 → FFmpeg → 整数 PCM → MLP 核心 DLL → MLP 缓存`。
+`源音频 → 内置媒体 DLL → 整数 PCM → MLP 核心 DLL → MLP 缓存`。
 
 原生 x64 主程序内嵌固定哈希的 Windows x64 编码 DLL，运行时提取、校验并在进程内调用；
 不启动原版 SurCode，不加载它的 DLL，不写 SSF，也不进行编码后的字节修补。
-旧配置中的 DVDA_MLP_EAC3TO_EXE 仍可读取但不再使用；在 GUI 的“音频编码”页设置 FFmpeg 即可。重采样/降位深采用 FFmpeg 的转换结果，不承诺复现 eac3to 的处理字节；相同目标 PCM 和元数据仍要求 MLP 逐字节相同。迁移方案与验收见 [FFmpeg PCM 迁移](docs/FFMPEG-PCM-MIGRATION.md)。
+旧配置中的 DVDA_MLP_EAC3TO_EXE 仍可读取但不再使用。GUI 自动使用内置媒体库，旧 FFmpeg / FFprobe 路径不会继续启动外部程序。重采样/降位深沿用已验证的 SWR 与 20 位量化行为，不承诺复现 eac3to 的处理字节；相同目标 PCM 和元数据仍要求 MLP 逐字节相同。当前方案与验收见 [内置媒体处理](docs/INPROCESS-MEDIA.md)，早期迁移记录见 [FFmpeg PCM 迁移](docs/FFMPEG-PCM-MIGRATION.md)。
 
 MLP 缓存目录留空时使用 `<build>/mlp`。旧的 `DVDA_MLP_SOURCE=ffmpeg` 会明确报错，
 请改为 `surcode-batch`；`DVDA_MLP_SURCODE_EXE` 已删除。
@@ -228,7 +231,7 @@ DVDA_MENU_STILLPICS="on"
 DVDA_MENU_COVER_DIM="35"
 ```
 
-不要直接把 TTC 作为菜单字体；应使用 SC、JP、KR 三个独立 OTF face。
+随包 TTC 通过 type.xml 分别注册 SC、JP、KR 三个 face，GUI 自动选择区域字体。自定义字体请填写已注册的区域字体名称，或分别提供对应 OTF 文件。
 
 `DVDA_FINAL_DIR` 就是最终输出目录。构建成功后 ISO 会直接发布到该目录，不再执行额外复制。
 

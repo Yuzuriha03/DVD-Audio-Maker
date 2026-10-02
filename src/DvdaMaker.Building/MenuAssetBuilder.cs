@@ -11,7 +11,7 @@ public sealed class MenuAssetBuilder(
     private static readonly string[] RequiredMenuPrograms =
     [
         "dvdauthor", "spumux", "jpeg2yuv", "mpeg2enc", "mplex",
-        "mp2enc", "mogrify",
+        "mp2enc",
     ];
 
     public async Task<MenuAssets> BuildAsync(
@@ -47,14 +47,14 @@ public sealed class MenuAssetBuilder(
         {
             diagnostics.Add(Error(
                 "IMAGEMAGICK_MISSING",
-                "找不到 ImageMagick（magick/convert）。"));
+                "内置图像组件缺失，请完整解压发布包并保留 image-native 目录。"));
         }
         var imageIdentify = FindImageMagickIdentify(options.MenuBinaryDirectory);
         if (imageIdentify is null)
         {
             diagnostics.Add(Error(
                 "IMAGEMAGICK_IDENTIFY_MISSING",
-                "找不到 ImageMagick identify，无法验证菜单图片尺寸。"));
+                "内置图像组件缺失，无法验证菜单图片尺寸。请完整解压发布包。"));
         }
 
         if (diagnostics.Any(item => item.Severity == BuildDiagnosticSeverity.Error))
@@ -434,6 +434,7 @@ public sealed class MenuAssetBuilder(
 
     private static string? FindExecutable(string name, string preferredDirectory)
     {
+        if (BuiltinImages.IsImageTool(name)) return BuiltinImages.IsAvailable ? BuiltinImages.Tool(name) : null;
         var names = OperatingSystem.IsWindows() && Path.GetExtension(name).Length == 0
             ? new[] { name + ".exe", name + ".cmd", name + ".bat", name }
             : new[] { name };

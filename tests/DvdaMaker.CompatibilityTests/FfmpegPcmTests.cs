@@ -46,11 +46,11 @@ internal static class FfmpegPcmTests
             Require(settings.Validate(false).Count == 0, "Legacy eac3to setting incorrectly required");
             Require(settings.Values["DVDA_MLP_EAC3TO_EXE"].Contains("missing"), "Legacy value lost on import");
             settings.ApplyBundledToolDefaults(root);
-            Require(settings.ToOptions().Ffmpeg == ffmpeg, "Bundled converter default");
+            Require(settings.ToOptions().Ffmpeg == BuiltinMedia.Converter && settings.ToOptions().Ffprobe == BuiltinMedia.Probe, "GUI must use in-process media");
             Require(ExecutablePath.Resolve(Path.Combine(root, "missing.exe")) is null, "Missing explicit path resolved");
             Require(ExecutablePath.Resolve("\"" + ffmpeg + "\"") == ffmpeg, "Quoted executable path failed");
             settings.Values["DVDA_FFMPEG"] = Path.Combine(root, "missing.exe");
-            Require(settings.Validate(false).Any(x => x.Contains("FFmpeg")), "Missing converter accepted");
+            Require(settings.Validate(false).Count == 0, "Legacy external path must not affect GUI media processing");
         }
         finally { Environment.SetEnvironmentVariable("PATH", oldPath); Directory.Delete(root, true); }
     }
@@ -81,7 +81,7 @@ internal static class FfmpegPcmTests
         finally { Environment.SetEnvironmentVariable("DVDA_MLP_FIXTURE_TEMPLATE", old); Directory.Delete(root, true); }
     }
 
-    public static void Integration(string directory)
+    public static void Integration(string directory, bool builtin = false)
     {
         var root = Path.GetFullPath(directory);
         if (Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any()) throw new IOException("Integration output must be empty.");
@@ -104,7 +104,7 @@ internal static class FfmpegPcmTests
             Check($"side_{channels}", 48000, 24, 48000, 24, channels, false, mask, true);
         Check("alac_6ch", 48000, 24, 48000, 24, 6, false, 0, false, true);
         var result = new { status = failures.Count == 0 ? "PASS" : "FAIL", passed_count = passed.Count, failed_count = failures.Count,
-            encoder = MlpEncoder.BinarySha256, converter = ffmpeg, converter_sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(ffmpeg))),
+            encoder = MlpEncoder.BinarySha256, converter = builtin ? BuiltinMedia.Identity : ffmpeg, reference_converter_sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(ffmpeg))),
             policy = FfmpegPcmConverter.Policy, passed, failures };
         File.WriteAllText(Path.Combine(root, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         Require(failures.Count == 0, $"FFmpeg PCM integration: {failures.Count} failures; {root}");
@@ -128,7 +128,7 @@ internal static class FfmpegPcmTests
                     input = Path.Combine(folder, alac ? "音源.m4a" : "音源.flac");
                     Run("-nostdin", "-v", "error", "-xerror", "-n", "-i", source, "-c:a", alac ? "alac" : "flac", input);
                 }
-                var job = Job(folder, ffmpeg, input, rate, bits) with { Tracks = [Track(input, sourceRate, sourceBits)] };
+                var job = Job(folder, builtin ? BuiltinMedia.Converter : ffmpeg, input, rate, bits) with { Tracks = [Track(input, sourceRate, sourceBits)] };
                 new SurcodeBatchEncoder(runner).RunAsync(job, CancellationToken.None).GetAwaiter().GetResult();
                 var output = Path.Combine(job.OutputDirectory, "track.mlp");
                 var converted = Path.Combine(folder, "reference.wav");
@@ -221,7 +221,7 @@ internal static class FfmpegPcmTests
         for (var i = 0; i < bytes.Length / 2; i++) { result[i * 3 + 1] = bytes[i * 2]; result[i * 3 + 2] = bytes[i * 2 + 1]; }
         return result;
     }
-    private static byte[] WriteWave(string path, int rate, int bits, int channels, bool noise, uint mask)
+    internal static byte[] WriteWave(string path, int rate, int bits, int channels, bool noise, uint mask)
     {
         var frames = rate / 8 + 17; var width = bits == 16 ? 2 : 3; var size = frames * channels * width; var raw = new byte[frames * channels * 3];
         using var writer = new BinaryWriter(File.Create(path));

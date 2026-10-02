@@ -4,6 +4,8 @@
 
 标准用户包只包含 GUI；CLI 源码、解决方案项目和测试继续保留。GUI 直接调用公共制作模块，不需要 CLI 子进程。开发使用 .NET 10 SDK、Windows x64。
 
+媒体处理现在使用进程内 DLL。源码运行前，把已验证发布包的 media-native 目录复制到 build/media-native，或按 [Windows 构建说明](../tools/win-build/README.md) 构建。日常修改 C# 后无需重新编译原生库；MSBuild 的 NativeMediaDirectory 和运行时的 DVDA_MEDIA_NATIVE_DIR 可指定其他目录。GUI 不再要求安装 FFmpeg/FFprobe，对照集成测试仍需要参考程序。
+
 ## 快捷入口
 
 在源码根目录执行：
@@ -58,3 +60,7 @@ tools\win-build\build-all.cmd --source "D:\dev\winbuild\src" --prebuilt "D:\dev\
 - 原生 MLP 核心指纹、工具、字体和菜单素材保持不变；两个包的清单及 ZIP 内容均已校验。
 
 详见 [gui-only-validation.json](gui-only-validation.json)。
+
+## 图像组件调试
+
+GUI 与原生制盘共用 image-native/dvda-image.dll。从已验证发布包复制 image-native 和相邻 menu-bin/fonts，或设置 DVDA_IMAGE_NATIVE_DIR 指向完整图像目录。普通 C# 修改不需要重新编译 ImageMagick。构建及错误/取消回归方法见 [内置图像处理](INPROCESS-IMAGES.md) 与 [原生构建](../tools/win-build/README.md)。

@@ -1046,6 +1046,7 @@ static async Task<(
 
 static bool ToolExists(string tool)
 {
+    if (BuiltinMedia.IsBuiltin(tool)) return BuiltinMedia.IsAvailable;
     if (string.IsNullOrWhiteSpace(tool)) return false;
     if (Path.IsPathRooted(tool) || tool.Contains(Path.DirectorySeparatorChar) ||
         tool.Contains(Path.AltDirectorySeparatorChar))
