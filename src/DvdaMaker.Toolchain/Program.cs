@@ -61,9 +61,12 @@ internal static class ToolchainProgram
             Environment.GetEnvironmentVariable("DVDA_PREBUILT_DIR") ??
             Path.Combine(repository, "tools", "win-build", "prebuilt"));
         var outputBase = ResolvePath(options.OutputDirectory ??
-            Path.Combine(repository, "tools", "win-build", "release"));
+            Path.Combine(repository, "tools", "win-build",
+                options.FrameworkDependent ? "release-framework-dependent" : "release"));
         var destination = Path.Combine(outputBase, "DVD-Audio-Maker");
         var publish = Path.Combine(repository, "tools", "win-build", "publish", "cli-win-x64");
+        var artifacts = Path.Combine(repository, "tools", "win-build", "publish", "build-artifacts-win-x64");
+        var selfContained = options.FrameworkDependent ? "false" : "true";
 
         ValidatePrebuilt(prebuilt);
         ValidateSourceTree(sourceTree);
@@ -73,52 +76,64 @@ internal static class ToolchainProgram
         Console.WriteLine($"  source tree: {sourceTree}");
         Console.WriteLine($"  prebuilt   : {prebuilt}");
         Console.WriteLine($"  output     : {destination}");
+        Console.WriteLine($"  entrypoints: {(options.IncludeCli ? "GUI + developer CLI" : "GUI only")}");
+        Console.WriteLine($"  runtime    : {(options.FrameworkDependent ? "Requires installed .NET 10 Desktop Runtime x64" : "Self-contained")}");
 
-        RecreateDirectory(publish);
-        await RunAsync("dotnet",
-        [
-            "publish", Path.Combine(repository, "src", "DvdaMaker.Cli", "DvdaMaker.Cli.csproj"),
-            "--configuration", "Release",
-            "--runtime", "win-x64",
-            "--self-contained", "true",
-            "--output", publish,
-            "-p:PublishSingleFile=true",
-            "-p:IncludeNativeLibrariesForSelfExtract=true",
-            "-p:DebugType=None",
-            "-p:DebugSymbols=false",
-        ], repository);
+        // Keep packaging independent of Debug/test builds in the workspace bin/obj.
+        RecreateDirectory(artifacts);
+
+        if (options.IncludeCli)
+        {
+            RecreateDirectory(publish);
+            await RunAsync("dotnet",
+            [
+                "publish", Path.Combine(repository, "src", "DvdaMaker.Cli", "DvdaMaker.Cli.csproj"),
+                "--configuration", "Release",
+                "--runtime", "win-x64",
+                "--self-contained", selfContained,
+                "--output", publish,
+                "--artifacts-path", artifacts,
+                "-p:PublishSingleFile=false",
+                "-p:ShareDesktopRuntime=true",
+                "-p:DebugType=None",
+                "-p:DebugSymbols=false",
+            ], repository);
+            if (!File.Exists(Path.Combine(publish, "dvda.exe")))
+                throw new InvalidOperationException("CLI publish did not create dvda.exe");
+        }
 
         var guiPublish = Path.Combine(repository, "tools", "win-build", "publish", "gui-win-x64");
         RecreateDirectory(guiPublish);
         await RunAsync("dotnet",
         [
             "publish", Path.Combine(repository, "src", "DvdaMaker.Desktop", "DvdaMaker.Desktop.csproj"),
-            "--configuration", "Release", "--runtime", "win-x64", "--self-contained", "true",
-            "--output", guiPublish, "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true",
+            "--configuration", "Release", "--runtime", "win-x64", "--self-contained", selfContained,
+            "--output", guiPublish, "--artifacts-path", artifacts, "-p:PublishSingleFile=false",
             "-p:DebugType=None", "-p:DebugSymbols=false",
         ], repository);
         if (!File.Exists(Path.Combine(guiPublish, "DVD-Audio-Maker.exe")))
             throw new InvalidOperationException("GUI publish did not create DVD-Audio-Maker.exe");
 
-        var executable = Path.Combine(publish, "dvda.exe");
-        if (!File.Exists(executable))
-        {
-            throw new InvalidOperationException($"dotnet publish did not create {executable}");
-        }
-
         RecreateDirectory(destination);
-        CopyDirectory(publish, Path.Combine(destination, "app"));
         CopyDirectory(guiPublish, destination);
+        if (options.IncludeCli)
+        {
+            MergeSharedPublish(publish, destination);
+            WriteLauncher(destination);
+            foreach (var name in new[] { "CLI-TOOLS.md", "CLI-TOOLS.en.md" })
+                File.Copy(Path.Combine(repository, "tools", "win-build", "docs", name),
+                    Path.Combine(destination, name));
+        }
         CopyDirectory(prebuilt, Path.Combine(destination, "menu-bin"));
         CopyDirectory(Path.Combine(sourceTree, "menu"), Path.Combine(destination, "data", "menu"));
         File.Copy(Path.Combine(repository, "config.env"), Path.Combine(destination, "config.env"), true);
-        WriteLauncher(destination);
         CopyDocumentation(repository, destination);
+        WriteRuntimeRequirements(destination, options.FrameworkDependent);
         WriteManifest(destination);
 
         var archive = destination + ".zip";
         if (File.Exists(archive)) File.Delete(archive);
-        ZipFile.CreateFromDirectory(destination, archive, CompressionLevel.Optimal, false);
+        ZipFile.CreateFromDirectory(destination, archive, CompressionLevel.SmallestSize, false);
 
         Console.WriteLine($"[OK] Release directory: {destination}");
         Console.WriteLine($"[OK] ZIP archive: {archive}");
@@ -130,10 +145,14 @@ internal static class ToolchainProgram
         string? source = null;
         string? prebuilt = null;
         string? output = null;
+        var includeCli = false;
+        var frameworkDependent = false;
         for (var index = 0; index < args.Length; index++)
         {
             var value = args[index];
             if (value.Equals("package", StringComparison.OrdinalIgnoreCase)) continue;
+            if (value == "--include-cli") { includeCli = true; continue; }
+            if (value == "--framework-dependent") { frameworkDependent = true; continue; }
             if (value is "--repo" or "--source" or "--prebuilt" or "--output")
             {
                 if (++index >= args.Length)
@@ -151,7 +170,7 @@ internal static class ToolchainProgram
             }
             throw new ArgumentException($"Unknown argument: {value}");
         }
-        return new ToolchainOptions(repository, source, prebuilt, output);
+        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent);
     }
 
     private static void ValidatePrebuilt(string directory)
@@ -231,12 +250,12 @@ set "DVDA_AUTHOR_SRC=%ROOT%data"
 set "DVDA_MENU_FONT=%ROOT%menu-bin\fonts\NotoSansCJKsc-Regular.otf"
 set "DVDA_MENU_FONT_JP=%ROOT%menu-bin\fonts\NotoSansCJKjp-Regular.otf"
 set "DVDA_MENU_FONT_KR=%ROOT%menu-bin\fonts\NotoSansCJKkr-Regular.otf"
-if not exist "%ROOT%app\dvda.exe" (
-    echo [ERROR] Missing app\dvda.exe
+if not exist "%ROOT%dvda.exe" (
+    echo [ERROR] Missing dvda.exe
     exit /b 2
 )
 cd /d "%ROOT%"
-"%ROOT%app\dvda.exe" %*
+"%ROOT%dvda.exe" %*
 exit /b %ERRORLEVEL%
 """;
         File.WriteAllText(Path.Combine(destination, "dvda.cmd"), content, Encoding.ASCII);
@@ -274,6 +293,34 @@ exit /b %ERRORLEVEL%
             var source = pair.Value.FirstOrDefault(File.Exists) ??
                 throw new InvalidOperationException($"Required release document is missing: {pair.Key}");
             File.Copy(source, Path.Combine(destination, pair.Key), true);
+        }
+    }
+
+    private static void WriteRuntimeRequirements(string destination, bool frameworkDependent)
+    {
+        var chinese = frameworkDependent
+            ? "本精简包不包含 .NET 运行时。**首次运行前，请安装 .NET 10 Desktop Runtime（Windows x64）**。打开 [微软官方下载页](https://dotnet.microsoft.com/download/dotnet/10.0)，在 .NET Desktop Runtime 栏选择 Windows x64 安装程序。只有普通 .NET Runtime、ASP.NET Core Runtime 或 .NET Framework 4.x 不够。已安装兼容的 Microsoft.WindowsDesktop.App 10.0.x 则无需重复安装。"
+            : "本包自带 Windows x64 .NET 运行时，无需单独安装 .NET。";
+        var english = frameworkDependent
+            ? "This compact package excludes the .NET runtime. **Before first use, install .NET 10 Desktop Runtime for Windows x64.** On the [official Microsoft download page](https://dotnet.microsoft.com/download/dotnet/10.0), choose the Windows x64 installer under .NET Desktop Runtime. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework 4.x alone is insufficient. An existing compatible Microsoft.WindowsDesktop.App 10.0.x installation can be reused."
+            : "This package includes its Windows x64 .NET runtime; no separate .NET installation is needed.";
+        File.WriteAllText(Path.Combine(destination, "RUNTIME.md"),
+            "# 运行要求\n\n" + chinese + "\n\n请完整解压整个目录；安装 .NET 运行时不会代替 FFmpeg 等已有外部工具要求。\n", new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(destination, "RUNTIME.en.md"),
+            "# Runtime requirements\n\n" + english + "\n\nExtract the complete directory. Installing .NET does not replace the existing external tool requirements such as FFmpeg.\n", new UTF8Encoding(false));
+        foreach (var (name, notice) in new[]
+        {
+            ("README.md", "> **运行环境：** " + chinese),
+            ("README.en.md", "> **Runtime requirement:** " + english),
+        })
+        {
+            var path = Path.Combine(destination, name);
+            var content = File.ReadAllText(path);
+            const string marker = "<!-- RUNTIME_REQUIREMENTS -->";
+            content = content.Contains(marker, StringComparison.Ordinal)
+                ? content.Replace(marker, notice, StringComparison.Ordinal)
+                : content.Insert(content.IndexOf('\n') + 1, "\n" + notice + "\n");
+            File.WriteAllText(path, content, new UTF8Encoding(false));
         }
     }
 
@@ -329,12 +376,36 @@ exit /b %ERRORLEVEL%
         }
     }
 
+    private static void MergeSharedPublish(string source, string destination)
+    {
+        // GUI and optional CLI share dependencies in either runtime profile.
+        // Never silently overwrite a dependency compiled with different settings.
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(source, file);
+            var target = Path.Combine(destination, relative);
+            if (File.Exists(target))
+            {
+                using var existing = File.OpenRead(target);
+                using var incoming = File.OpenRead(file);
+                if (existing.Length != incoming.Length ||
+                    !SHA256.HashData(existing).AsSpan().SequenceEqual(SHA256.HashData(incoming)))
+                    throw new InvalidOperationException($"GUI/CLI shared dependency differs: {relative}");
+                continue;
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target);
+        }
+    }
+
     private static void PrintUsage() => Console.Error.WriteLine(
-        "Usage: build-all.cmd [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>]");
+        "Usage: build-all.cmd [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent]");
 
     private sealed record ToolchainOptions(
         string? Repository,
         string? SourceTree,
         string? PrebuiltDirectory,
-        string? OutputDirectory);
+        string? OutputDirectory,
+        bool IncludeCli,
+        bool FrameworkDependent);
 }

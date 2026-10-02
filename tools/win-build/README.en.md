@@ -74,8 +74,14 @@ Available options:
 | `--source` | Complete runtime asset tree |
 | `--prebuilt` | Windows third-party tool directory |
 | `--output` | Release output root |
+| `--include-cli` | Optional developer diagnostic package with CLI; the default is GUI only |
+| `--framework-dependent` | Compact package without .NET; users install .NET 10 Desktop Runtime x64 |
 
-`build-all.cmd` starts `src/DvdaMaker.Toolchain`, checks inputs, publishes the native x64 C# GUI and CLI, copies tools and assets, writes `dvda.cmd`, generates a SHA-256 manifest and creates the ZIP.
+`build-all.cmd` starts `src/DvdaMaker.Toolchain`, checks inputs, publishes only the x64 GUI by default, copies tools and assets, generates a SHA-256 manifest and creates the ZIP. The standard package neither builds nor includes CLI files or `dvda.cmd`.
+
+Add `--framework-dependent` to omit .NET. Without --output, this profile writes to tools/win-build/release-framework-dependent. Omitting the flag retains self-contained publishing. Both modes generate their runtime requirements at the top of README and in RUNTIME.en.md.
+
+Only `--include-cli` adds the developer CLI, `dvda.cmd` and CLI documentation. That profile shares the GUI runtime, requires identical bytes for duplicate assembly names and fails on conflicts. WinForms, fonts and third-party libraries are retained. ZIP uses the smallest-size compression level.
 
 ## Output
 
@@ -83,11 +89,10 @@ Available options:
 tools\win-build\release\
 ├── DVD-Audio-Maker\
 │   ├── DVD-Audio-Maker.exe
-│   ├── app\
+│   ├── *.dll / *.json / language resources
 │   ├── menu-bin\
 │   ├── data\menu\
 │   ├── config.env
-│   ├── dvda.cmd
 │   ├── MANIFEST.txt
 │   ├── README.md
 │   ├── THIRD-PARTY.md
@@ -95,7 +100,9 @@ tools\win-build\release\
 └── DVD-Audio-Maker.zip
 ```
 
-The target machine needs no installed .NET Runtime. Double-click `DVD-Audio-Maker.exe` or run `dvda.cmd` without arguments for the GUI. Commands with arguments use the CLI. The GUI imports existing `config.env` files and saves independent JSON profiles. MLP uses the embedded native x64 DLL, without a standalone encoder EXE.
+The self-contained package needs no installed .NET runtime. The compact package requires .NET 10 Desktop Runtime for Windows x64. Double-click DVD-Audio-Maker.exe for the GUI, which imports existing config.env files and saves JSON profiles. MLP uses the embedded native x64 DLL without a standalone encoder EXE.
+
+Extract and distribute the entire directory. The executable depends on the adjacent runtime and application assemblies and cannot be copied on its own.
 
 FFmpeg, FFprobe and Metaflac must be in `menu-bin`, on `PATH`, or configured with full paths in the GUI / `config.env`. eac3to is no longer required.
 
@@ -103,12 +110,10 @@ FFmpeg, FFprobe and Metaflac must be in `menu-bin`, on `PATH`, or configured wit
 
 ```bat
 cd tools\win-build\release\DVD-Audio-Maker
-dvda.cmd config --check
-dvda.cmd prepare
-dvda.cmd build --dry-run
-dvda.cmd build
-dvda.cmd verify all
+DVD-Audio-Maker.exe
 ```
+
+Check, preview, build and verify from the GUI. The source checkout retains cli.cmd, gui-debug.cmd and VS Code F5 configurations; see [Development](../../docs/DEVELOPMENT.en.md).
 
 ## Diagnosing failures
 

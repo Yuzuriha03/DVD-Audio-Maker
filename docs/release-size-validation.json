@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-02",
+  "status": "PASS",
+  "before": { "directory": "build/gui-x64-release/DVD-Audio-Maker", "files": 147, "bytes": 424911644, "zip_bytes": 206580409 },
+  "after": { "directory": "build/gui-x64-compact-release/DVD-Audio-Maker", "files": 428, "bytes": 357745743, "zip_bytes": 173045784 },
+  "compatibility_tests": { "passed": 107, "failed": 0 },
+  "release_checks": { "passed": 32, "failed": 0, "report": "build/release-size-verification/run-20261002-103607/report.json" },
+  "entrypoints_amd64": true,
+  "gui_languages": ["zh-CN", "en"],
+  "packaged_coreclr_confirmed_by_host_trace": true,
+  "global_dotnet_uninstalled_for_test": false,
+  "third_party_tools_fonts_assets_byte_identical": true,
+  "manifest_and_zip_sha256_verified": true,
+  "native_encoder_sha256": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8",
+  "encoding_comparison": "Old and new release packages, generated PCM sources; no changes to encoder code or options.",
+  "encoding": [
+    { "sample_rate": 48000, "bits": 16, "channels": 1, "mlp_bytes": 15698, "mlp_sha256": "0f674af6f4091bbb6aa97ce071a8498970a49725f2a264e0e5bc9e404d563843", "whole_file_equal": true, "pcm_equal": true },
+    { "sample_rate": 48000, "bits": 24, "channels": 2, "mlp_bytes": 49026, "mlp_sha256": "717060da6946dda7d757213e3e8b1163b5ac87143e29271c7a68832272511779", "whole_file_equal": true, "pcm_equal": true },
+    { "sample_rate": 96000, "bits": 24, "channels": 6, "mlp_bytes": 183976, "mlp_sha256": "2ed2b97b35a263c70eb729c58be57419a32e8fabed3c3a81d6c107c5e9cb358a", "whole_file_equal": true, "pcm_equal": true }
+  ]
+}

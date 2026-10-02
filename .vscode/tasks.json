@@ -1,0 +1,71 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Debug: build GUI x64",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/src/DvdaMaker.Desktop/DvdaMaker.Desktop.csproj", "-c", "Debug", "-r", "win-x64", "-p:SelfContained=false"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Debug: build CLI x64",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/src/DvdaMaker.Cli/DvdaMaker.Cli.csproj", "-c", "Debug", "-r", "win-x64", "-p:SelfContained=false"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Debug: build compatibility tests x64",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/tests/DvdaMaker.CompatibilityTests/DvdaMaker.CompatibilityTests.csproj", "-c", "Debug", "-r", "win-x64", "-p:SelfContained=false"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Debug: run compatibility tests",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["run", "--project", "${workspaceFolder}/tests/DvdaMaker.CompatibilityTests/DvdaMaker.CompatibilityTests.csproj", "-c", "Debug"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Windows: 预演分盘",
+      "detail": "只预览分盘结果，不产出 ISO",
+      "type": "process",
+      "command": "${workspaceFolder}\\build.cmd",
+      "args": ["--dry-run"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Windows: 完整出盘",
+      "detail": "完整流水线：转码 → MLP 编码 → 分盘 → 生成 ISO",
+      "type": "process",
+      "command": "${workspaceFolder}\\build.cmd",
+      "args": [],
+      "problemMatcher": []
+    },
+    {
+      "label": "Windows: 校验成品",
+      "type": "process",
+      "command": "${workspaceFolder}\\verify.cmd",
+      "args": [],
+      "problemMatcher": []
+    },
+    {
+      "label": "Windows: 打印当前配置",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["run", "--project", "${workspaceFolder}\\src\\DvdaMaker.Cli\\DvdaMaker.Cli.csproj", "--", "config"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Windows: 构建工具链",
+      "detail": "使用原生 Windows CMD 工具链入口",
+      "type": "process",
+      "command": "${workspaceFolder}\\tools\\win-build\\build-all.cmd",
+      "args": [],
+      "problemMatcher": []
+    }
+  ]
+}
