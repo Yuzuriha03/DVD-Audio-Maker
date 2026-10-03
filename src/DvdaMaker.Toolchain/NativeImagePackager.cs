@@ -98,6 +98,17 @@ internal static class NativeImagePackager
         File.Copy(authorManifest, Path.Combine(images, "author-build.json"), true);
         foreach (var name in new[] { "menu-build.json", "menu-NOTICE.txt" })
             File.Copy(Path.Combine(author, name), Path.Combine(native, name), true);
+        // ValidateAuthor has checked the full import closure, including the
+        // explicitly loaded menu modules. The old prebuilt bundle can contain
+        // DLLs for tools that the current author no longer uses. Only prune
+        // the newly assembled release, never the supplied prebuilt directory.
+        var requiredLibraries = runtime.EnumerateObject().Select(property => property.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var obsoleteLibraries = Directory.EnumerateFiles(native, "*.dll")
+            .Where(path => !requiredLibraries.Contains(Path.GetFileName(path))).ToArray();
+        foreach (var path in obsoleteLibraries) File.Delete(path);
+        if (obsoleteLibraries.Length > 0)
+            Console.WriteLine($"  obsolete prebuilt DLLs omitted: {obsoleteLibraries.Length}");
         // Only the new release staging directory is pruned. No source/prebuilt files are changed.
         foreach (var name in new[] { "magick.exe", "convert.exe", "mogrify.exe", "identify.exe",
             "colors.xml", "delegates.xml", "english.xml", "locale.xml", "log.xml", "mime.xml", "policy.xml",
