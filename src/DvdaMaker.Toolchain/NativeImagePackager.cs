@@ -31,7 +31,7 @@ internal static class NativeImagePackager
             "Missing rebuilt native author. Run build-image-author.py, or pass --image-author <its output directory>.");
         using var document = JsonDocument.Parse(File.ReadAllText(manifest));
         if (!document.RootElement.TryGetProperty("ffmpeg_linkage", out var linkage) ||
-            !string.Equals(linkage.GetString(), "shared-source-built-menu-profile", StringComparison.Ordinal))
+            linkage.GetString() is not ("shared-source-built-menu-profile" or "shared-source-built-shared-profile"))
             throw new InvalidDataException(
                 "Native author must use the shared FFmpeg menu profile built from source; rebuild it with build-image-author.py.");
         ValidateBinary(Path.Combine(directory, "dvda-author-dev.exe"),

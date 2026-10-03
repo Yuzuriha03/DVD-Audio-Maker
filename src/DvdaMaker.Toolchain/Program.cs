@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using DvdaMaker.FontTool;
 using DvdaMaker.Toolchain;
+using DvdaMaker.Packaging;
 
 return await ToolchainProgram.RunAsync(args);
 
@@ -58,15 +59,20 @@ internal static class ToolchainProgram
             Path.Combine(repository, "tools", "win-build", "prebuilt"));
         var outputBase = ResolvePath(options.OutputDirectory ??
             Path.Combine(repository, "tools", "win-build",
-                options.FrameworkDependent ? "release-framework-dependent" : "release"));
-        var destination = Path.Combine(outputBase, "DVD-Audio-Maker");
+                options.OneFile ? "release-onefile" : options.FrameworkDependent ? "release-framework-dependent" : "release"));
+        var destination = options.OneFile
+            ? Path.Combine(repository, "tools", "win-build", "publish", "package-stage-win-x64")
+            : Path.Combine(outputBase, "DVD-Audio-Maker");
         var publish = Path.Combine(repository, "tools", "win-build", "publish", "cli-win-x64");
         var artifacts = Path.Combine(repository, "tools", "win-build", "publish", "build-artifacts-win-x64");
         var selfContained = options.FrameworkDependent ? "false" : "true";
+        var nativeMedia = ResolvePath(options.MediaRuntime ?? Path.Combine(repository, "build",
+            options.OneFile ? "media-native-shared" : "media-native"));
 
         ValidatePrebuilt(prebuilt);
         ValidateSourceTree(sourceTree);
-        var imageAuthor = ResolvePath(options.ImageAuthor ?? Path.Combine(repository, "build", "image-author"));
+        var imageAuthor = ResolvePath(options.ImageAuthor ?? Path.Combine(repository, "build",
+            options.OneFile ? "image-author-shared" : "image-author"));
         NativeImagePackager.ValidateAuthor(imageAuthor);
         var magickShim = options.MagickShim is null ? null : ResolvePath(options.MagickShim);
         if (magickShim is not null) NativeToolOptimizer.ValidateShim(magickShim);
@@ -78,6 +84,7 @@ internal static class ToolchainProgram
         Console.WriteLine($"  source tree: {sourceTree}");
         Console.WriteLine($"  prebuilt   : {prebuilt}");
         Console.WriteLine($"  output     : {destination}");
+        Console.WriteLine($"  format     : {(options.OneFile ? "Single EXE with cached native components" : "Directory + ZIP")}");
         Console.WriteLine($"  entrypoints: {(options.IncludeCli ? "GUI + developer CLI" : "GUI only")}");
         Console.WriteLine($"  runtime    : {(options.FrameworkDependent ? "Requires installed .NET 10 Desktop Runtime x64" : "Self-contained")}");
 
@@ -99,6 +106,7 @@ internal static class ToolchainProgram
                 "-p:ShareDesktopRuntime=true",
                 "-p:DebugType=None",
                 "-p:DebugSymbols=false",
+                "-p:NativeMediaDirectory=" + nativeMedia, "-m:1",
             ], repository);
             if (!File.Exists(Path.Combine(publish, "dvda.exe")))
                 throw new InvalidOperationException("CLI publish did not create dvda.exe");
@@ -111,7 +119,8 @@ internal static class ToolchainProgram
             "publish", Path.Combine(repository, "src", "DvdaMaker.Desktop", "DvdaMaker.Desktop.csproj"),
             "--configuration", "Release", "--runtime", "win-x64", "--self-contained", selfContained,
             "--output", guiPublish, "--artifacts-path", artifacts, "-p:PublishSingleFile=false",
-            "-p:DebugType=None", "-p:DebugSymbols=false",
+            "-p:DebugType=None", "-p:DebugSymbols=false", "-m:1",
+            "-p:NativeMediaDirectory=" + nativeMedia,
         ], repository);
         if (!File.Exists(Path.Combine(guiPublish, "DVD-Audio-Maker.exe")))
             throw new InvalidOperationException("GUI publish did not create DVD-Audio-Maker.exe");
@@ -166,11 +175,19 @@ internal static class ToolchainProgram
         if (removedNative.Count > 0) Console.WriteLine("  unused native libraries removed: " + string.Join(", ", removedNative));
         PackMenuFonts(Path.Combine(destination, "menu-bin"));
         NativeImagePackager.Install(destination, imageAuthor);
+        ConsolidateSharedMedia(destination, options.OneFile);
         CopyDirectory(Path.Combine(sourceTree, "menu"), Path.Combine(destination, "data", "menu"));
-        File.Copy(Path.Combine(repository, "config.env"), Path.Combine(destination, "config.env"), true);
         CopyDocumentation(repository, destination);
-        WriteRuntimeRequirements(destination, options.FrameworkDependent);
+        File.Copy(Path.Combine(repository, "config.env"),
+            Path.Combine(destination, options.OneFile ? "config.env.example" : "config.env"), true);
+        WriteRuntimeRequirements(destination, options.FrameworkDependent, options.OneFile);
         WriteManifest(destination);
+
+        if (options.OneFile)
+        {
+            await PublishOneFileAsync(repository, destination, outputBase, artifacts);
+            return;
+        }
 
         var archive = destination + ".zip";
         if (File.Exists(archive)) File.Delete(archive);
@@ -178,6 +195,120 @@ internal static class ToolchainProgram
 
         Console.WriteLine($"[OK] Release directory: {destination}");
         Console.WriteLine($"[OK] ZIP archive: {archive}");
+    }
+
+    private static async Task PublishOneFileAsync(string repository, string stage, string outputBase, string artifacts)
+    {
+        var bundle = Path.Combine(repository, "tools", "win-build", "publish", "runtime-bundle-win-x64");
+        var publish = Path.Combine(repository, "tools", "win-build", "publish", "onefile-win-x64");
+        RecreateDirectory(bundle);
+        RecreateDirectory(publish);
+        // Explicit runtime allowlist: documentation, notices and build provenance
+        // accompany the EXE, while the SDK separately bundles managed code.
+        var required = new[]
+        {
+            "image-native/dvda-image.dll", "image-native/colors.xml",
+            "image-native/policy.xml", "image-native/type.xml",
+            "menu-bin/dvda-author-dev.exe", "menu-bin/fonts/DvdaNotoCJK-Regular.ttc",
+            "data/menu/activeheader", "data/menu/silence.wav",
+            "data/menu/black_PAL_720x576.jpg", "data/menu/black_PAL_720x576.png",
+            "data/menu/black_NTSC_720x480.jpg", "data/menu/black_NTSC_720x480.png",
+        };
+        var files = required.Select(name => Path.Combine(stage, name))
+            .Concat(Directory.EnumerateFiles(Path.Combine(stage, "menu-bin"), "*.dll")).ToArray();
+        foreach (var file in files)
+            if (!File.Exists(file)) throw new FileNotFoundException("Required single-file runtime asset is missing.", file);
+        var record = RuntimeArchive.Create(stage, files, Path.Combine(bundle, "runtime.br"), Path.Combine(bundle, "runtime.json"));
+        var unpacked = record.Blobs.Sum(blob => blob.Length * blob.Paths.Length);
+        var unique = record.Blobs.Sum(blob => blob.Length);
+        Console.WriteLine($"  runtime assets: {files.Length} paths, {record.Blobs.Length} unique contents");
+        Console.WriteLine($"  deduplicated : {unpacked - unique:N0} bytes before compression");
+        Console.WriteLine($"  payload      : {new FileInfo(Path.Combine(bundle, "runtime.br")).Length:N0} bytes (from {unpacked:N0})");
+        await RunAsync("dotnet",
+        [
+            "publish", Path.Combine(repository, "src", "DvdaMaker.Desktop", "DvdaMaker.Desktop.csproj"),
+            "--configuration", "Release", "--runtime", "win-x64", "--self-contained", "false", "-m:1",
+            "--output", publish, "--artifacts-path", Path.Combine(artifacts, "onefile"),
+            "-p:PublishSingleFile=true", "-p:PublishReadyToRun=false", "-p:PublishTrimmed=false",
+            "-p:EnableCompressionInSingleFile=false", "-p:DebugType=None", "-p:DebugSymbols=false",
+            "-p:OneFilePayloadDirectory=" + bundle,
+        ], repository);
+        var executable = Path.Combine(publish, "DVD-Audio-Maker.exe");
+        if (!File.Exists(executable) || Directory.EnumerateFiles(publish, "*", SearchOption.AllDirectories).Count() != 1)
+            throw new InvalidOperationException("Single-file publish must produce exactly one executable.");
+        Directory.CreateDirectory(outputBase);
+        var destination = Path.Combine(outputBase, "DVD-Audio-Maker.exe");
+        var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.Copy(executable, temporary); File.Move(temporary, destination, true); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        var sidecars = new[]
+        {
+            "README.md", "README.en.md", "RUNTIME.md", "RUNTIME.en.md",
+            "LICENSE", "THIRD-PARTY.md", "THIRD-PARTY.en.md", "config.env.example",
+        };
+        foreach (var name in sidecars) File.Copy(Path.Combine(stage, name), Path.Combine(outputBase, name), true);
+        var records = new[]
+        {
+            "image-native/NOTICE.txt", "image-native/image-build.json", "image-native/author-build.json",
+            "menu-bin/menu-NOTICE.txt", "menu-bin/menu-build.json", "menu-bin/media-build.json",
+        };
+        foreach (var name in records)
+        {
+            var target = Path.Combine(outputBase, "components", name);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(Path.Combine(stage, name), target, true);
+        }
+        var packaged = sidecars.Concat(records.Select(name => "components/" + name))
+            .Append("DVD-Audio-Maker.exe").Order(StringComparer.Ordinal).ToArray();
+        File.WriteAllLines(Path.Combine(outputBase, "MANIFEST.txt"), packaged.Select(name =>
+            RuntimeArchive.HashFile(Path.Combine(outputBase, name)) + "  " + name), new UTF8Encoding(false));
+        var archive = Path.Combine(outputBase, "DVD-Audio-Maker-win-x64-GUI-only.zip");
+        var temporaryArchive = archive + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var zip = ZipFile.Open(temporaryArchive, ZipArchiveMode.Create))
+                foreach (var name in packaged.Append("MANIFEST.txt"))
+                    zip.CreateEntryFromFile(Path.Combine(outputBase, name), name, CompressionLevel.SmallestSize);
+            File.Move(temporaryArchive, archive, true);
+        }
+        finally { if (File.Exists(temporaryArchive)) File.Delete(temporaryArchive); }
+        Console.WriteLine($"[OK] Single EXE: {destination} ({new FileInfo(destination).Length:N0} bytes)");
+        Console.WriteLine($"[OK] SHA-256: {RuntimeArchive.HashFile(destination)}");
+        Console.WriteLine($"[OK] Release ZIP with documentation and notices: {archive}");
+    }
+
+    private static void ConsolidateSharedMedia(string destination, bool requireShared)
+    {
+        var media = Path.Combine(destination, "media-native");
+        var native = Path.Combine(destination, "menu-bin");
+        using var mediaRecord = JsonDocument.Parse(File.ReadAllText(Path.Combine(media, "media-build.json")));
+        using var authorRecord = JsonDocument.Parse(File.ReadAllText(Path.Combine(destination, "image-native", "author-build.json")));
+        var shared = mediaRecord.RootElement.TryGetProperty("profile", out var profile) && profile.GetString() == "shared" &&
+            authorRecord.RootElement.GetProperty("ffmpeg_profile").GetString() == "build-minimal-ffmpeg.py:shared";
+        if (!shared)
+        {
+            if (requireShared) throw new InvalidOperationException(
+                "Onefile requires both consumers built against the shared FFmpeg profile. " +
+                "Build --profile shared, then rebuild the media bridge and author against that prefix; use --media-runtime and --image-author.");
+            return;
+        }
+        // Verify all collisions before removing any staged duplicate. Both consumers
+        // must link the same source build; name/ABI equality alone is insufficient.
+        var files = Directory.EnumerateFiles(media).ToArray();
+        foreach (var source in files)
+        {
+            var target = Path.Combine(native, Path.GetFileName(source));
+            if (File.Exists(target) && RuntimeArchive.HashFile(source) != RuntimeArchive.HashFile(target))
+                throw new InvalidDataException("Shared native component differs between consumers: " + Path.GetFileName(source));
+        }
+        foreach (var source in files)
+        {
+            var target = Path.Combine(native, Path.GetFileName(source));
+            if (File.Exists(target)) File.Delete(source);
+            else File.Move(source, target);
+        }
+        Directory.Delete(media);
+        Console.WriteLine("  shared source build: GUI bridge and author use one DLL set in menu-bin");
     }
 
     private static ToolchainOptions Parse(string[] args)
@@ -189,15 +320,20 @@ internal static class ToolchainProgram
         string? magickShim = null;
         string? ffmpegLibraries = null;
         string? imageAuthor = null;
+        string? mediaRuntime = null;
         var includeCli = false;
-        var frameworkDependent = false;
+        var frameworkDependent = true;
+        var oneFile = true;
         for (var index = 0; index < args.Length; index++)
         {
             var value = args[index];
             if (value.Equals("package", StringComparison.OrdinalIgnoreCase)) continue;
             if (value == "--include-cli") { includeCli = true; continue; }
             if (value == "--framework-dependent") { frameworkDependent = true; continue; }
-            if (value is "--repo" or "--source" or "--prebuilt" or "--output" or "--magick-shim" or "--ffmpeg-libraries" or "--image-author")
+            if (value == "--self-contained") { frameworkDependent = false; continue; }
+            if (value == "--onefile") { oneFile = true; continue; }
+            if (value == "--directory") { oneFile = false; continue; }
+            if (value is "--repo" or "--source" or "--prebuilt" or "--output" or "--magick-shim" or "--ffmpeg-libraries" or "--image-author" or "--media-runtime")
             {
                 if (++index >= args.Length)
                 {
@@ -212,12 +348,15 @@ internal static class ToolchainProgram
                     case "--magick-shim": magickShim = args[index]; break;
                     case "--ffmpeg-libraries": ffmpegLibraries = args[index]; break;
                     case "--image-author": imageAuthor = args[index]; break;
+                    case "--media-runtime": mediaRuntime = args[index]; break;
                 }
                 continue;
             }
             throw new ArgumentException($"Unknown argument: {value}");
         }
-        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent, magickShim, ffmpegLibraries, imageAuthor);
+        if (oneFile && (includeCli || !frameworkDependent))
+            throw new ArgumentException("The compact onefile release is GUI-only and framework-dependent. Use --directory for --include-cli or --self-contained.");
+        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent, magickShim, ffmpegLibraries, imageAuthor, oneFile, mediaRuntime);
     }
 
     private static void ValidatePrebuilt(string directory)
@@ -406,7 +545,7 @@ exit /b %ERRORLEVEL%
         }
     }
 
-    private static void WriteRuntimeRequirements(string destination, bool frameworkDependent)
+    private static void WriteRuntimeRequirements(string destination, bool frameworkDependent, bool oneFile)
     {
         var chinese = frameworkDependent
             ? "本精简包不包含 .NET 运行时。**首次运行前，请安装 .NET 10 Desktop Runtime（Windows x64）**。打开 [微软官方下载页](https://dotnet.microsoft.com/download/dotnet/10.0)，在 .NET Desktop Runtime 栏选择 Windows x64 安装程序。只有普通 .NET Runtime、ASP.NET Core Runtime 或 .NET Framework 4.x 不够。已安装兼容的 Microsoft.WindowsDesktop.App 10.0.x 则无需重复安装。"
@@ -414,10 +553,14 @@ exit /b %ERRORLEVEL%
         var english = frameworkDependent
             ? "This compact package excludes the .NET runtime. **Before first use, install .NET 10 Desktop Runtime for Windows x64.** On the [official Microsoft download page](https://dotnet.microsoft.com/download/dotnet/10.0), choose the Windows x64 installer under .NET Desktop Runtime. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework 4.x alone is insufficient. An existing compatible Microsoft.WindowsDesktop.App 10.0.x installation can be reused."
             : "This package includes its Windows x64 .NET runtime; no separate .NET installation is needed.";
+        var layoutZh = oneFile ? "运行 DVD-Audio-Maker.exe。EXE 只内嵌必需运行组件，首次自动释放到 %LOCALAPPDATA%/DVD-Audio-Maker/runtime；以后复用并校验缓存。文档、配置示例和许可随 ZIP 单独提供，请保留随包授权声明。"
+            : "请完整解压整个目录，保留所有组件子目录。";
+        var layoutEn = oneFile ? "Run DVD-Audio-Maker.exe. Only required runtime components are embedded and automatically extracted into %LOCALAPPDATA%/DVD-Audio-Maker/runtime, then verified/reused. Documentation, example configuration and licenses accompany the EXE in the ZIP; retain the license notices."
+            : "Extract the complete directory and retain all component subdirectories.";
         File.WriteAllText(Path.Combine(destination, "RUNTIME.md"),
-            "# 运行要求\n\n" + chinese + "\n\n请完整解压整个目录，包括 media-native 和 menu-bin。媒体处理组件已随包提供，无需安装 FFmpeg 或 FFprobe。\n", new UTF8Encoding(false));
+            "# 运行要求\n\n" + chinese + "\n\n" + layoutZh + "媒体与图像处理组件已内置，无需安装 FFmpeg、FFprobe 或 ImageMagick。\n", new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(destination, "RUNTIME.en.md"),
-            "# Runtime requirements\n\n" + english + "\n\nExtract the complete directory, including media-native and menu-bin. Media processing is bundled; no FFmpeg or FFprobe installation is required.\n", new UTF8Encoding(false));
+            "# Runtime requirements\n\n" + english + "\n\n" + layoutEn + " Media and image processing are bundled; no FFmpeg, FFprobe or ImageMagick installation is required.\n", new UTF8Encoding(false));
         foreach (var (name, notice) in new[]
         {
             ("README.md", "> **运行环境：** " + chinese),
@@ -509,7 +652,7 @@ exit /b %ERRORLEVEL%
     }
 
     private static void PrintUsage() => Console.Error.WriteLine(
-        "Usage: build-all.cmd [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent] [--ffmpeg-libraries <verified MLP DLL directory>] [--image-author <rebuilt native author directory>]");
+        "Usage: build-all.cmd [--onefile | --directory] [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent | --self-contained] [--ffmpeg-libraries <verified MLP DLL directory>] [--image-author <rebuilt native author directory>] [--media-runtime <verified shared media directory>]");
 
     private sealed record ToolchainOptions(
         string? Repository,
@@ -520,5 +663,7 @@ exit /b %ERRORLEVEL%
         bool FrameworkDependent,
         string? MagickShim,
         string? FfmpegLibraries,
-        string? ImageAuthor);
+        string? ImageAuthor,
+        bool OneFile,
+        string? MediaRuntime);
 }

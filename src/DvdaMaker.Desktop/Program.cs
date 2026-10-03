@@ -1,5 +1,6 @@
 using DvdaMaker.Configuration;
 using DvdaMaker.Localization;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Desktop;
 
@@ -13,6 +14,7 @@ internal static class Program
             var arguments = args.ToList();
             var selectedLanguage = L.TakeLanguage(arguments) ?? Environment.GetEnvironmentVariable("DVDA_LANGUAGE");
             L.SetLanguage(selectedLanguage);
+            BundledRuntime.Initialize(typeof(Program).Assembly);
             args = arguments.ToArray();
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             ApplicationConfiguration.Initialize();
@@ -34,7 +36,7 @@ internal static class Program
                     ? ProjectSettings.Load(path) : ProjectSettings.ImportEnv(path);
                 origin = path;
             }
-            settings.ApplyBundledToolDefaults(AppContext.BaseDirectory);
+            settings.ApplyBundledToolDefaults(BundledRuntime.Root);
             L.SetLanguage(selectedLanguage ?? settings.Language);
             while (true)
             {

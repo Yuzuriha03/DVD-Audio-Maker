@@ -29,11 +29,26 @@ Managed breakpoint locations include DesktopWorkflow, BuildPipeline, SurcodeMlpP
 
 ## Packaging
 
-Add `--framework-dependent` to omit .NET and require .NET 10 Desktop Runtime x64 on the target machine. Omitting this flag retains self-contained publishing. Source debugging scripts and F5 configurations are unaffected.
+Default publishing creates a framework-dependent Windows x64 GUI single EXE, requiring .NET 10 Desktop Runtime x64. Only runtime components are embedded; instructions, licenses, example configuration and component records accompany the EXE in one release ZIP. Compressed assets are embedded only when publishing. Debug bin/obj, PDBs, the CLI and F5 remain available.
 
-The normal build-all.cmd invocation publishes only the GUI and omits dvda.exe, dvda.dll, its deps/runtimeconfig JSON files, and dvda.cmd. Add `--include-cli` explicitly for a developer diagnostic package that shares GUI dependencies and includes CLI-TOOLS.en.md. Both entry-point profiles remain x64 and retain config.env import. Use --framework-dependent to exclude .NET; otherwise the runtime is bundled.
+```bat
+tools\win-build\build-all.cmd ^
+  --source "D:\dev\winbuild\src" ^
+  --prebuilt "D:\dev\winbuild\menu-bin" ^
+  --media-runtime "build\media-native-shared" ^
+  --image-author "build\image-author-shared"
 
-Removing CLI cannot remove runtime and shared workflow libraries needed by the GUI. Compared with the deduplicated package, this saves 255,425 unpacked bytes (about 0.24 MiB) and 99,313 ZIP bytes (about 0.09 MiB). The main benefit is a simpler user-facing entry point.
+rem Optional diagnostic folder with the same native builds
+tools\win-build\build-all.cmd ^
+  --source "D:\dev\winbuild\src" ^
+  --prebuilt "D:\dev\winbuild\menu-bin" ^
+  --media-runtime "build\media-native-shared" ^
+  --image-author "build\image-author-shared" --directory --include-cli --output "D:\release-diagnostics"
+```
+
+Media and menus use one shared FFmpeg build and one DLL set in menu-bin. DVDA_MEDIA_NATIVE_DIR may point there; DVDA_IMAGE_NATIVE_DIR points to sibling image-native. The cache defaults to %LOCALAPPDATA%/DVD-Audio-Maker/runtime; tests may isolate it with DVDA_BUNDLE_CACHE_ROOT. See [Windows builds](../tools/win-build/README.en.md) and [onefile design](ONEFILE-PUBLISH.md).
+
+The historical validation below does not describe current package sizes or runtime defaults.
 
 ## Validation: 2026-10-02
 

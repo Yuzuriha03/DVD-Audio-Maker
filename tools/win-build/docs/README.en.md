@@ -6,7 +6,7 @@
 
 Create DVD-Audio ISOs from FLAC and ALAC/M4A sources, with a Chinese/English GUI, MLP encoding, automatic disc planning, optional menus and output verification.
 
-Extract the entire package and double-click `DVD-Audio-Maker.exe`. The standard package provides the GUI only. Retain every DLL, JSON file, language resource and the `media-native`, `image-native`, `menu-bin` and `data` directories. Do not copy only the main EXE. Also see [RUNTIME.en.md](RUNTIME.en.md).
+Extract the release ZIP and double-click `DVD-Audio-Maker.exe`. It embeds only required runtime components and fonts, extracted into `%LOCALAPPDATA%/DVD-Audio-Maker/runtime` on first launch, then verified and reused. README/runtime instructions, licenses, example configuration and `components/` records accompany the EXE. Retain the license notices. `config.env.example` is not loaded automatically; copy or import your own configuration when needed. See [RUNTIME.en.md](RUNTIME.en.md). Historical/developer directory packages still require all runtime files.
 
 ## Make a disc
 
@@ -19,7 +19,7 @@ Keep each album in its own folder with album, title, track and date tags. JPEG, 
 
 ## Configuration and language
 
-Open/save JSON profiles or import an existing `config.env`. On first launch without saved settings, the bundled configuration is read. Configuration parsing reads key/value pairs without running commands or expanding variables; use absolute Windows paths.
+Open/save JSON profiles or import an existing `config.env`. With no saved profile, config.env beside the EXE or in the working directory is used when present. The single-file GUI also opens without a configuration file. Use `--config` to select one explicitly. Configuration parsing reads key/value pairs without running commands or expanding variables; use absolute Windows paths.
 
 The upper-right selector switches between Chinese and English, with the choice saved in the profile. Language changes do not alter paths, audio tags or encoded data. You may also use `--language en`, `--language zh-CN` or `--config` with an env/JSON file.
 
@@ -29,7 +29,7 @@ Daily settings: `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
 
 Source conversion, probing, decoding and media verification use bundled x64 media libraries. Images, fonts and menu drawing use the in-process image library. No FFmpeg, FFprobe or ImageMagick installation is needed, and these operations do not launch their command-line programs. MLP uses the embedded MLP core without original SurCode or eac3to.
 
-The author uses bundled C modules for menu encoding/muxing, button overlays, navigation and ISO writing without starting the old menu tools. Retain the complete menu-bin directory. Optional M4A/ALAC-to-FLAC organization uses the in-process metadata editor and does not need Metaflac.
+The author uses bundled C modules for menu encoding/muxing, button overlays, navigation and ISO writing without starting the old menu tools. The single-file release prepares these components automatically. Optional M4A/ALAC-to-FLAC organization uses the in-process metadata editor and does not need Metaflac.
 
 Legacy FFmpeg/FFprobe settings remain importable; the GUI automatically selects built-in components. Complete SC/JP/KR font faces are included without a separate font installation.
 
@@ -44,7 +44,7 @@ Encoded MLP is not patched. Comparing complete historical original files require
 Logs default to task summaries, with detailed output, warning filters, paused display, copy and export options. Full task logs and startup errors are stored in `%LOCALAPPDATA%/DVD-Audio-Maker/logs`.
 
 - Cannot start: check that the .NET 10 Desktop Runtime x64 required by this package is installed.
-- Missing DLL, font or menu tool: extract the complete package again instead of mixing versions.
+- Missing DLL, font or menu tool: close all instances and launch again; the single-file release verifies and restores its cache. Directory packages require complete extraction.
 - Build failure: export the complete log and retain the corresponding working directory for investigation.
 - Large working directory: previews and encoding generate caches; removing them means repeating the relevant steps.
 

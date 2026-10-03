@@ -18,18 +18,24 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--package',type=Path,required=True)
     p.add_argument('--baseline',type=Path,required=True);p.add_argument('--fixtures',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True);p.add_argument('--index',action='store_true')
-    p.add_argument('--single-index',action='store_true');a=p.parse_args()
+    p.add_argument('--single-index',action='store_true')
+    p.add_argument('--onefile',type=Path,help='Launch this isolated EXE; --package is its extracted runtime')
+    p.add_argument('--provenance',type=Path,help='External component build records for onefile packages')
+    a=p.parse_args()
     if a.index and a.single_index:p.error('Choose one index fixture.')
     after=a.package.resolve();before=a.baseline.resolve();fixtures=a.fixtures.resolve();work=a.output.resolve();work.mkdir(parents=True,exist_ok=False)
+    provenance=a.provenance.resolve() if a.provenance else after
     env={k:v for k,v in os.environ.items() if not k.upper().startswith(('DVDA_','MAGICK_','DOTNET_','COREHOST_','FONTCONFIG_'))}
     env['PATH']=os.pathsep.join([os.environ['SystemRoot']+'/System32',os.environ['SystemRoot'],str(Path(shutil.which('dotnet')).parent)])
+    executable=a.onefile.resolve() if a.onefile else after/'DVD-Audio-Maker.exe'
+    if a.onefile:env['DVDA_BUNDLE_CACHE_ROOT']=str(after.parent)
     report={'status':'RUNNING','checks':[],'processes':[],'pixels':[]}
     def check(name,ok):
         if not ok:raise AssertionError(name)
         report['checks'].append(name);print('PASS '+name,flush=True)
     def gui(name,config,action):
         extra={'DVDA_GUI_SMOKE_DIRECTORY':str(work),'DVDA_GUI_SMOKE_RAW_OUTPUT':str(work/(name+'.log')),'DVDA_GUI_SMOKE_ACTION':action}
-        result,processes=trace.run_traced([after/'DVD-Audio-Maker.exe','--smoke-test','--config',config,'--language','en'],work,env|extra,600)
+        result,processes=trace.run_traced([executable,'--smoke-test','--config',config,'--language','en'],work,env|extra,600)
         (work/(name+'.stdout')).write_bytes(result.stdout);(work/(name+'.stderr')).write_bytes(result.stderr)
         report['processes'].extend(processes)
         check(name+' GUI success (see '+name+'.log)',result.returncode==0)
@@ -53,18 +59,28 @@ def main():
         header,frame=y4m.read_bytes().split(b'\nFRAME\n',1)
         check('YUV4MPEG2 header, frame size and BT.601 conversion',header==b'YUV4MPEG2 W4 H4 F25:1 Ip A4:3 C420jpeg' and len(frame)==24 and frame[:16]==bytes([82])*16 and frame[16:20]==bytes([90])*4 and frame[20:]==bytes([240])*4)
         check('MLP core unchanged',sha(repo/'src/DvdaMaker.SurcodeTool/Native/win-x64/mlp_encoder.dll')=='ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8')
-        check('Audio/media libraries unchanged',all((after/'media-native'/x.name).read_bytes()==x.read_bytes() for x in (before/'media-native').glob('*.dll')))
+        media_dir=after/('menu-bin' if (after/'menu-bin/dvda-media.dll').exists() else 'media-native')
+        media_record=json.loads((provenance/media_dir.name/'media-build.json').read_text('utf-8'))
+        if media_record.get('profile')=='shared':
+            check('Shared media runtime matches its build manifest',all(sha(media_dir/name)==item['sha256'] for name,item in media_record['files'].items()))
+            check('GUI and author use one physical FFmpeg set',media_dir==after/'menu-bin' and not (after/'media-native').exists())
+        else:check('Audio/media libraries unchanged',all((after/'media-native'/x.name).read_bytes()==x.read_bytes() for x in (before/'media-native').glob('*.dll')))
         check('Fonts remain shared and unchanged',(after/'menu-bin/fonts/DvdaNotoCJK-Regular.ttc').read_bytes()==(before/'menu-bin/fonts/DvdaNotoCJK-Regular.ttc').read_bytes())
         check('No bundled .NET or developer CLI',not any((after/x).exists() for x in ['coreclr.dll','hostfxr.dll','dvda.exe','dvda.dll']))
-        entries={line.split('  ',1)[1]:line.split('  ',1)[0] for line in (after/'MANIFEST.txt').read_text().splitlines() if line and not line.startswith('#')}
+        manifest_name='BUNDLE-MANIFEST.json' if a.onefile else 'MANIFEST.txt'
+        if a.onefile:
+            bundle=json.loads((after/manifest_name).read_text('utf-8'))
+            entries={name:blob['Sha256'] for blob in bundle['Blobs'] for name in blob['Paths']}
+        else:entries={line.split('  ',1)[1]:line.split('  ',1)[0] for line in (after/manifest_name).read_text().splitlines() if line and not line.startswith('#')}
         check('Package hashes verified',all(sha(after/name)==value for name,value in entries.items()))
-        check('Package manifest complete',set(entries)=={p.relative_to(after).as_posix() for p in after.rglob('*') if p.is_file() and p.name!='MANIFEST.txt'})
-        author_record=json.loads((after/'image-native/author-build.json').read_text(encoding='utf-8'))
-        check('Menu DLLs exactly match the validated author runtime',
+        check('Package manifest complete',set(entries)=={p.relative_to(after).as_posix() for p in after.rglob('*') if p.is_file() and p.name!=manifest_name})
+        author_record=json.loads((provenance/'image-native/author-build.json').read_text(encoding='utf-8'))
+        check('Native DLLs exactly match both validated runtime manifests',
             {x.name.lower() for x in (after/'menu-bin').glob('*.dll')} ==
-            {name.lower() for name in author_record['runtime_files']})
+            ({name.lower() for name in author_record['runtime_files']} |
+             ({name.lower() for name in media_record['files']} if media_dir==after/'menu-bin' else set())))
         author_imports=Pe(after/'menu-bin/dvda-author-dev.exe').imports()
-        check('Author dynamically links the source-built menu profile',author_record.get('ffmpeg_linkage')=='shared-source-built-menu-profile' and {'avcodec-63.dll','avformat-63.dll','avutil-61.dll'} <= set(author_imports))
+        check('Author dynamically links the source-built menu/shared profile',author_record.get('ffmpeg_linkage') in ['shared-source-built-menu-profile','shared-source-built-shared-profile'] and {'avcodec-63.dll','avformat-63.dll','avutil-61.dll'} <= set(author_imports))
         check('Menu media, subpicture and navigation tools are in process',not any((after/'menu-bin'/name).exists() for name in ['mpeg2enc.exe','mplex.exe','mp2enc.exe','spumux.exe','dvdauthor.exe']))
         check('Source-built menu and full-disc verification DLLs are bundled',all((after/'menu-bin'/name).is_file() for name in ['dvda-menu-spu.dll','dvda-menu-nav.dll','dvda-disc-verify.dll']))
         values=profile(fixtures/'after-menu.env');values.pop('DVDA_MKISOFS', None);values.update({'DVDA_BUILD_DIR':str(work/'disc-build'),'DVDA_FINAL_DIR':str(work/'isos'),
@@ -82,6 +98,9 @@ def main():
             values.update(DVDA_SRC=str(music),DVDA_MENU_INDEX_MIN_ALBUMS='2')
         else:values['DVDA_SRC']=str(fixtures/'music')
         config=work/'project.env';save(config,values)
+        if a.onefile:
+            # Exercise bundled defaults instead of supplying paths into the cache.
+            values.update(DVDA_AUTHOR='',DVDA_AUTHOR_SRC='');save(config,values)
         gui('preview',config,'Preview');gui('build',config,'Build');gui('verify',config,'Verify')
         check('Complete ISO produced',len(list((work/'isos').glob('*.iso')))==1)
         forbidden={'ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe','jpeg2yuv.exe','mpeg2enc.exe','mplex.exe','mp2enc.exe','surcodemlp.exe','spumux.exe','dvdauthor.exe','mkisofs.exe','metaflac.exe'}
@@ -106,8 +125,11 @@ def main():
                     differences=[abs(x-y) for x,y in zip(*pixels)]
                     record.update(max_delta=max(differences),mean_delta=sum(differences)/len(differences),changed_channels=sum(x!=0 for x in differences))
                 report['pixels'].append(record)
-        report['size']={key:{'zip':root.with_suffix('.zip').stat().st_size,'unpacked':sum(x.stat().st_size for x in root.rglob('*') if x.is_file())} for key,root in [('before',before),('after',after)]}
-        check('ZIP and extracted package both smaller',all(report['size']['after'][k]<report['size']['before'][k] for k in ['zip','unpacked']))
+        if a.onefile:
+            report['size']={'exe':executable.stat().st_size,'cache_logical':sum(x.stat().st_size for x in after.rglob('*') if x.is_file())}
+        else:
+            report['size']={key:{'zip':root.with_suffix('.zip').stat().st_size,'unpacked':sum(x.stat().st_size for x in root.rglob('*') if x.is_file())} for key,root in [('before',before),('after',after)]}
+            check('ZIP and extracted package both smaller',all(report['size']['after'][k]<report['size']['before'][k] for k in ['zip','unpacked']))
         report['status']='PASS'
     except Exception as error:report.update(status='FAIL',error=str(error));raise
     finally:

@@ -7,16 +7,20 @@ def main():
     p.add_argument('--package',type=Path,required=True)
     p.add_argument('--fixtures',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--onefile',type=Path)
     a=p.parse_args();package=a.package.resolve();fixtures=a.fixtures.resolve();out=a.output.resolve()
     out.mkdir(parents=True,exist_ok=False)
     spec=importlib.util.spec_from_file_location('release',Path(__file__).with_name('test-image-release.py'))
     helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
     env={k:v for k,v in os.environ.items() if not k.upper().startswith(('DVDA_','MAGICK_','DOTNET_','COREHOST_','FONTCONFIG_'))}
     env['PATH']=os.pathsep.join([os.environ['SystemRoot']+'/System32',os.environ['SystemRoot'],str(Path(shutil.which('dotnet')).parent)])
+    executable=a.onefile.resolve() if a.onefile else package/'DVD-Audio-Maker.exe'
+    if a.onefile:env['DVDA_BUNDLE_CACHE_ROOT']=str(package.parent)
     base=dict((k,v.strip('"')) for line in (fixtures/'after-menu.env').read_text('utf-8').splitlines() if '=' in line and not line.startswith('#') for k,v in [line.split('=',1)])
     base.update(DVDA_SRC=str(fixtures/'music'),DVDA_AUTHOR=helper.short(package/'menu-bin/dvda-author-dev.exe'),
                 DVDA_AUTHOR_SRC=helper.short(package/'data'),DVDA_MENU_FONT='',DVDA_MENU_FONT_JP='',DVDA_MENU_FONT_KR='',
                 DVDA_FFMPEG=str(out/'missing-ffmpeg.exe'),DVDA_FFPROBE=str(out/'missing-ffprobe.exe'),DVDA_RESUME='off')
+    if a.onefile:base.update(DVDA_AUTHOR='',DVDA_AUTHOR_SRC='')
     report={'status':'RUNNING','checks':[],'processes':[]}
     def check(name,ok):
         if not ok:raise AssertionError(name)
@@ -29,7 +33,7 @@ def main():
             config.write_text(''.join(f'{k}="{v}"\n' for k,v in values.items()),encoding='utf-8')
             for action in ['Build','Verify']:
                 runenv=env|{'DVDA_GUI_SMOKE_DIRECTORY':str(work),'DVDA_GUI_SMOKE_RAW_OUTPUT':str(work/(action+'.log')),'DVDA_GUI_SMOKE_ACTION':action}
-                result,processes=helper.trace.run_traced([package/'DVD-Audio-Maker.exe','--smoke-test','--config',config,'--language','en'],work,runenv,600)
+                result,processes=helper.trace.run_traced([executable,'--smoke-test','--config',config,'--language','en'],work,runenv,600)
                 (work/(action+'.stdout')).write_bytes(result.stdout);(work/(action+'.stderr')).write_bytes(result.stderr)
                 report['processes']+=processes;check(name+' '+action,result.returncode==0)
             index=json.loads((work/'disc-build/mlp_index.json').read_text('utf-8'))

@@ -4,7 +4,7 @@
 
 将 FLAC、ALAC/M4A 音源制作成 **DVD-Audio ISO** 的 Windows x64 工具，提供中英文图形界面、MLP 编码、自动分盘、可选菜单和成品校验。
 
-当前方案为 **GUI-only 精简包，不包含 .NET 运行时**。首次使用请安装 [.NET 10 Desktop Runtime（Windows x64）](https://dotnet.microsoft.com/download/dotnet/10.0)，然后完整解压并运行 `DVD-Audio-Maker.exe`。普通 .NET Runtime、ASP.NET Core Runtime 或 .NET Framework 4.x 不能单独替代桌面运行时。其他历史发布包的要求以随包说明为准。
+当前默认发布 **Windows x64 GUI 单 EXE，不包含 .NET 运行时**。首次使用请安装 [.NET 10 Desktop Runtime（Windows x64）](https://dotnet.microsoft.com/download/dotnet/10.0)，然后直接运行 `DVD-Audio-Maker.exe`。普通 .NET Runtime、ASP.NET Core Runtime 或 .NET Framework 4.x 不能单独替代桌面运行时。历史目录包仍须完整解压。
 
 ## 快速开始
 
@@ -13,7 +13,7 @@
 3. 运行“检查音源”，再运行“预演制作”。预演会准备音源并编码 MLP，但不生成 ISO。
 4. 运行“开始制作”，完成后执行“验证成品”，检查全部轨道、菜单和 ISO。
 
-请保留整个发布目录，尤其是 `media-native`、`image-native`、`menu-bin/fonts` 和 `data/menu`。只复制主 EXE 无法运行完整工作流。
+发布 ZIP 包含单文件 EXE，以及独立的使用说明、配置示例、许可和组件清单。EXE 只内嵌运行必需组件与完整中日韩字体，首次启动释放到 `%LOCALAPPDATA%/DVD-Audio-Maker/runtime`，之后校验并复用缓存。媒体处理和制盘共用同一次源码构建的 FFmpeg 库，每个 DLL 只有一份。关闭所有实例后可以清理此缓存，下次会自动恢复。请保留随包授权声明；`config.env.example` 不会自动载入，仍可导入已有 `config.env`。详见 [单文件构建](docs/ONEFILE-PUBLISH.md)。
 
 ## 配置、语言与日志
 

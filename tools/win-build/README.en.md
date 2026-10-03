@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-The current distribution profile is **GUI-only, Windows x64, framework-dependent**. Users install .NET 10 Desktop Runtime x64; developers and packagers use the .NET 10 SDK. Pass `--framework-dependent` explicitly. Omitting it still creates a self-contained package.
+The default release is **one Windows x64 GUI EXE without .NET**. Users install .NET 10 Desktop Runtime x64; builds require the .NET 10 SDK. Defaults are `--onefile --framework-dependent`. Use `--directory` for a diagnostic folder or explicitly `--directory --self-contained` to include .NET.
 
 Routine C# builds and packaging reuse prepared Windows artifacts. Python, MSYS2/MinGW-w64, Make and development libraries are needed only when maintaining native components, not when running the product.
 
@@ -10,9 +10,9 @@ Routine C# builds and packaging reuse prepared Windows artifacts. Python, MSYS2/
 
 | Input | Default location or option | Contents |
 |---|---|---|
-| GUI media runtime | `build/media-native` | DLLs and media-build.json |
+| GUI media runtime | `build/media-native-shared` or `--media-runtime` | Shared-profile DLLs and media-build.json |
 | Image runtime | `build/image-native` | dvda-image.dll, image-build.json, XML and NOTICE.txt |
-| Author with in-process images | `build/image-author` or `--image-author` | dvda-author-dev.exe and author-build.json |
+| Author with in-process images | `build/image-author-shared` or `--image-author` | dvda-author-dev.exe and author-build.json |
 | Tools and fonts | `--prebuilt` or DVDA_PREBUILT_DIR | Complete menu-bin runtime dependencies |
 | Authoring assets | `--source` or DVDA_SRC_TREE | menu/silence.wav and menu/activeheader |
 
@@ -29,53 +29,39 @@ Provide NotoSansCJKsc/jp/kr-Regular.otf, or the verified `fonts/DvdaNotoCJK-Regu
 
 The base author must include the project's MLP, timeline, UTF-8 and menu fixes. Packaging replaces its staging copy with the verified `--image-author` build. Legacy menu executables are no longer required and are removed from staging.
 
-## Build the compact package
+## Build the compact single EXE
 
-Run from the repository root, replacing example paths with prepared directories:
+Build shared FFmpeg, the media bridge and author as described below, then run:
 
 ```bat
 tools\win-build\build-all.cmd ^
-  --framework-dependent ^
   --source "D:\dev\winbuild\src" ^
   --prebuilt "D:\dev\winbuild\menu-bin" ^
-  --image-author "build\image-author"
+  --media-runtime "build\media-native-shared" ^
+  --image-author "build\image-author-shared"
 ```
+
+Default output directory: `tools/win-build/release-onefile`. `DVD-Audio-Maker.exe` embeds only required runtime components. README/runtime instructions, licenses, `config.env.example` and `components/` build records accompany it in `DVD-Audio-Maker-win-x64-GUI-only.zip`. No .NET runtime is included, and the example configuration is not loaded automatically. Runtime assets are extracted to the user cache. Debug builds, the source CLI and F5 remain available.
 
 | Option | Purpose |
 |---|---|
-| `--repo` | Repository root, normally detected automatically |
-| `--source` | Full asset tree; packaging does not compile this tree |
-| `--prebuilt` | Windows tools/fonts, default tools/win-build/prebuilt |
-| `--image-author` | Rebuilt author directory, default build/image-author |
-| `--output` | Release output root |
-| `--framework-dependent` | Exclude .NET; the current distribution profile |
-| `--include-cli` | Optional developer diagnostic package |
-| --ffmpeg-libraries | Legacy MLP-only reference option; current author libraries come from --image-author |
+| `--onefile` | Default: GUI single EXE; requires shared native builds |
+| `--directory` | Folder plus ZIP for diagnostics |
+| `--framework-dependent` | Default: exclude .NET |
+| `--self-contained` | Directory mode only: include .NET |
+| `--include-cli` | Directory mode only: add developer CLI |
+| `--media-runtime` / `--image-author` | Verified media and author builds |
+| `--source` / `--prebuilt` | Menu assets and fonts |
+| `--output` / `--repo` | Output directory and repository root |
 
-The compact profile defaults to:
-
-```text
-tools/win-build/release-framework-dependent/
-├── DVD-Audio-Maker/
-│   ├── DVD-Audio-Maker.exe
-│   ├── Application DLLs, JSON and language resources
-│   ├── media-native/
-│   ├── image-native/
-│   ├── menu-bin/fonts/
-│   ├── data/menu/
-│   ├── config.env, MANIFEST.txt
-│   └── README, RUNTIME, THIRD-PARTY, LICENSE
-└── DVD-Audio-Maker.zip
-```
-
-Without `--framework-dependent`, output defaults to tools/win-build/release and includes .NET. The normal package has no dvda.exe/dvda.cmd; source-tree cli.cmd and VS Code debugging remain available. Releases stay in ignored directories, and ZIPs are distributed through GitHub Releases rather than Git commits.
+Directory mode retains build/media-native and build/image-author defaults. Passing the shared builds explicitly produces the same single DLL set as onefile. Artifacts stay ignored by Git and are distributed through GitHub Releases. See [onefile design](../../docs/ONEFILE-PUBLISH.md).
 
 ## Reuse native components for C# debugging
 
 Point runtime loading at a complete release that matches the current source, retaining its font/configuration layout:
 
 ```bat
-set "DVDA_MEDIA_NATIVE_DIR=D:\DVD-Audio-Maker\media-native"
+set "DVDA_MEDIA_NATIVE_DIR=D:\DVD-Audio-Maker\menu-bin"
 set "DVDA_IMAGE_NATIVE_DIR=D:\DVD-Audio-Maker\image-native"
 gui-debug.cmd
 ```
@@ -87,6 +73,18 @@ Native output defaults to build. MSBuild properties NativeMediaDirectory and Nat
 ## Rebuild native components when needed
 
 Use Windows x64, Python 3.12+ and MSYS2/MinGW-w64. Media builds also use Make/GPG, a pinned NASM archive and libsoxr/zlib. Image builds use static JPEG/PNG/WebP/zlib development archives. Recipes and manifests record source versions, archive hashes, configuration and dependency hashes.
+
+### Shared FFmpeg source build (required for onefile)
+
+```bat
+python tools\win-build\build-minimal-ffmpeg.py --profile shared --work-directory build\ffmpeg-shared --msys-root "D:\dev\msys64"
+python tools\win-build\build-media-bridge.py --prefix build\ffmpeg-shared\install --output build\media-native-shared --msys-root "D:\dev\msys64"
+python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --ffmpeg-runtime build\ffmpeg-shared\install --work-directory build\image-author-shared --msys-root "D:\dev\msys64"
+```
+
+The shared profile combines the media and menu codecs, parsers, demuxers, muxers, swscale, swresample, SOXR and zlib in one pinned source build. Both C consumers link that prefix. Packaging verifies both manifests and all colliding DLL hashes, then keeps one copy of every DLL in menu-bin for both consumers. The MSYS2 location is an example and must provide matching soxr/zlib headers and import libraries; the build does not change compilers.
+
+Separate profiles below remain available for historical comparisons; default onefile publishing rejects mixed builds.
 
 ### GUI media runtime
 

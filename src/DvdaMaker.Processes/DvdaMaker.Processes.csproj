@@ -4,6 +4,9 @@
     <NativeImageDirectory Condition="'$(NativeImageDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\build\image-native</NativeImageDirectory>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Shared\RuntimeArchive.cs" Link="Packaging\RuntimeArchive.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OneFilePayloadDirectory)' == ''">
     <Content Include="$(NativeMediaDirectory)\*.dll;$(NativeMediaDirectory)\*.json" Link="media-native\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(NativeImageDirectory)\*.dll;$(NativeImageDirectory)\*.json;$(NativeImageDirectory)\*.xml;$(NativeImageDirectory)\*.txt" Link="image-native\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
