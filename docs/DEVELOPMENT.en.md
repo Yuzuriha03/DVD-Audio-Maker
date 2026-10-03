@@ -29,7 +29,7 @@ Managed breakpoint locations include DesktopWorkflow, BuildPipeline, SurcodeMlpP
 
 ## Packaging
 
-Default publishing creates a framework-dependent Windows x64 GUI single EXE, requiring .NET 10 Desktop Runtime x64. Only runtime components are embedded; instructions, licenses, example configuration and component records accompany the EXE in one release ZIP. Compressed assets are embedded only when publishing. Debug bin/obj, PDBs, the CLI and F5 remain available.
+Default publishing creates a framework-dependent Windows x64 GUI single EXE, requiring .NET 10 Desktop Runtime x64. Only runtime components are embedded; instructions, licenses, example configuration and component notices accompany the EXE in one release ZIP. Compressed assets are embedded only when publishing. Debug bin/obj, PDBs, the CLI and F5 remain available.
 
 ```bat
 tools\win-build\build-all.cmd ^

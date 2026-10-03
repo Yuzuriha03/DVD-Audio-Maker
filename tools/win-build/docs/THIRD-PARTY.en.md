@@ -4,14 +4,14 @@
 
 This package redistributes several open-source programs, including modifications for this use. The inventory follows.
 
-For the single-file release, binary paths below are relative to the automatically extracted runtime cache. License notices and build provenance accompany the EXE under `components/` in the ZIP, preserving their relative directories, such as `components/menu-bin/media-build.json` and `components/image-native/NOTICE.txt`. These documents and records are not embedded in the EXE.
+For the single-file release, binary paths below are relative to the automatically extracted runtime cache. License notices accompany the EXE at the ZIP root as `NOTICE-Image.txt` and `NOTICE-Menu.txt`. Build provenance JSON files are used only for local packaging validation and are not shipped to users.
 
 ## Main programs
 
 | Component | Version | License | Notes |
 |---|---|---|---|
 | **dvda-author** (`menu-bin/dvda-author-dev.exe`) | Upstream `8fca43a` plus project changes | **GPL v3** | See `LICENSE`. Changes include 24-bit lossless MLP, FFmpeg 9 compatibility, menu/still-picture fixes and Windows support |
-| **dvdauthor/spumux C subset** (dvda-menu-nav.dll / dvda-menu-spu.dll) | 0.7.1 + AMGM/project changes | **GPL v2 or later** (source headers) | tools/menu-native/vendor; ORIGIN.json and COPYING; menu-NOTICE.txt |
+| **dvdauthor/spumux C subset** (dvda-menu-nav.dll / dvda-menu-spu.dll) | 0.7.1 + AMGM/project changes | **GPL v2 or later** (source headers) | tools/menu-native/vendor; ORIGIN.json and COPYING; NOTICE-Menu.txt |
 
 The main programs are GPL-licensed. The package includes the license text in `LICENSE`.
 Upstream source is available from `github.com/fabnicol/dvda-author`; project modifications
@@ -29,7 +29,7 @@ are provided as a patch applicable with `git apply`.
 
 FFmpeg libraries use unmodified source from `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`. Source SHA-256: `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. The shared profile builds MLP authoring, MPEG-2/MP2 menu encoding, DVD MPEG-PS muxing, FLAC/ALAC/AAC/PCM/MLP decoding, FLAC/PCM output, SWR/SOXR resampling and MPEG-2/PNG/JPEG processing together. The GUI media bridge and author both link this install prefix. Releases keep one copy of each required DLL in menu-bin. The MLP encoding core remains separate. No FFmpeg command-line executable is shipped.
 
-Build recipes are tools/win-build/build-minimal-ffmpeg.py (shared release profile; mlp / menu / media profiles remain for comparisons) and build-media-bridge.py. menu-bin/media-build.json records configuration, source hashes and all DLL hashes/imports. libsoxr, zlib and their runtime dependencies are included; FFmpeg / FFprobe command-line executables are not. The project's dvda-media.dll interface is implemented in tools/win-build/native/dvda-media.c under the project's GPL v3 license. See docs/MINIMAL-FFMPEG.en.md and docs/INPROCESS-MEDIA.en.md for configuration and validation.
+Build recipes are tools/win-build/build-minimal-ffmpeg.py (shared release profile; mlp / menu / media profiles remain for comparisons) and build-media-bridge.py. The local build output media-build.json records configuration, source hashes and all DLL hashes/imports. libsoxr, zlib and their runtime dependencies are included; FFmpeg / FFprobe command-line executables are not. The project's dvda-media.dll interface is implemented in tools/win-build/native/dvda-media.c under the project's GPL v3 license. See docs/MINIMAL-FFMPEG.en.md and docs/INPROCESS-MEDIA.en.md for configuration and validation.
 
 
 ## Fonts
@@ -63,4 +63,4 @@ This package distributes executables. If you redistribute it or a modified versi
 
 ## Tailored image runtime
 
-The image DLL statically includes the required ImageMagick core, FreeType outline fonts, JPEG/PNG codecs, WebP decoding and zlib. JPEG/PNG are readable and writable; WebP is input-only. External delegates and loadable coder modules are disabled. The project bridges are tools/win-build/native/dvda-image.c and author-image-loader.c; recipes are build-image-runtime.py, build-image-bridge.py and build-image-author.py. Runtime provenance and source patch hashes are recorded in image-native/image-build.json and author-build.json. Component license texts are included in image-native/NOTICE.txt.
+The image DLL statically includes the required ImageMagick core, FreeType outline fonts, JPEG/PNG codecs, WebP decoding and zlib. JPEG/PNG are readable and writable; WebP is input-only. External delegates and loadable coder modules are disabled. The project bridges are tools/win-build/native/dvda-image.c and author-image-loader.c; recipes are build-image-runtime.py, build-image-bridge.py and build-image-author.py. Runtime provenance and source patch hashes are recorded in the local build outputs image-build.json and author-build.json. Component license texts are included in NOTICE-Image.txt.

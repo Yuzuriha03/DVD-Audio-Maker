@@ -7,8 +7,8 @@
 - 缩小实际 EXE：按内容去重原生素材，压缩内嵌资源，省略符号与开发入口；不是调整 ZIP 参数。
 - 用户只需复制 EXE。首次运行自动将原生组件和字体释放到用户缓存；运行过程中仍会调用项目自己的原生制盘程序。
 - 支持相邻 config.env、显式 --config、GUI 导入和已保存 JSON 配置。
-- EXE 内只保留运行需要的 DLL、author、图像配置、完整字体和菜单素材。README、运行说明、配置示例、许可证、组件授权声明及构建来源清单全部作为旁文件；示例命名为 config.env.example，避免覆盖用户配置。
-- 用运行素材白名单排除未使用的 archive.7z。内嵌的资源索引保留文件哈希与路径，用于缓存完整性检查；构建来源清单移至旁文件 components/。
+- EXE 内只保留运行需要的 DLL、author、图像配置、完整字体和菜单素材。README、运行说明、配置示例、许可证及组件授权声明作为旁文件；示例命名为 config.env.example，避免覆盖用户配置。两个组件授权文件以 NOTICE-Image.txt、NOTICE-Menu.txt 放在 ZIP 根目录，不创建子文件夹。
+- 用运行素材白名单排除未使用的 archive.7z。内嵌的资源索引保留文件哈希与路径，用于缓存完整性检查；构建来源 JSON 仅留在本地构建目录供打包校验，不进入发布包。
 
 ## 实现步骤
 
@@ -26,6 +26,15 @@
 按用户要求，在源码构建层面合并 FFmpeg 功能：`build-minimal-ffmpeg.py --profile shared` 一次构建媒体与菜单功能的并集，媒体 C 接口和 author 均重新链接该安装前缀。打包核对两份构建清单及重名文件 SHA-256 后，将原生媒体组件统一放在 `menu-bin`；GUI 从这里加载 dvda-media.dll，author 从其自身目录解析相同 FFmpeg DLL。单文件资源和释放缓存都不再保留第二套 DLL。旧目录构建仍可用于对照。
 
 ## 当前发布验收（2026-10-04）
+
+- 最终 ZIP 所有文件平铺在根目录：主 EXE、README、运行说明、LICENSE、THIRD-PARTY、config.env.example、NOTICE-Image.txt、NOTICE-Menu.txt 和 MANIFEST.txt；没有子目录或开发 JSON。
+- ZIP：15,351,318 字节（14.64 MiB），SHA-256 为 637240b384d31559183fae96e1b19f443bec5ca5feccdef8e5b1c454462c1c51。
+- EXE：16,109,154 字节，SHA-256 为 03496d69a1bba8e8872ee837f08e0b0561adf2b664bc835180b20162ef08ce7b。仅内嵌 25 个运行所需文件，解压资源 29,289,124 字节。
+- 构建成功，26 项轻量检查通过，包括 ZIP 平铺布局、无开发 JSON、文件哈希、冷启动、并发启动、缓存复用与修复、配置导入和旧方案路径迁移。按用户要求，没有重跑完整制盘流程。
+- 本机产物：build/release-v1.0-onefile/DVD-Audio-Maker-win-x64-GUI-only.zip；报告：build/onefile-validation/release-v1.0-flat-smoke/report.json。
+- 发布附件命名为 DVD-Audio-Maker-v1.0-win-x64-GUIonly.zip。发布物不进入 Git，仅上传到 v1.0 Release；源码与开发用构建记录仍保留。
+
+## 旁文件初版验收（2026-10-04，移除开发 JSON 前）
 
 - 发布物是一个 ZIP，包含单 EXE、README、运行说明、许可、config.env.example、components/ 来源与授权清单以及 MANIFEST.txt。只上传这个 ZIP；EXE 和旁文件不拆开分发。
 - 本机成品目录：`build/release-v1.0-onefile`。ZIP 为 `DVD-Audio-Maker-win-x64-GUI-only.zip`，15,370,105 字节（14.66 MiB）；发布附件命名为 `DVD-Audio-Maker-v1.0-win-x64-GUIonly.zip`。

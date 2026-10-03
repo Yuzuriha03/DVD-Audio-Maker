@@ -6,7 +6,7 @@
 
 Create DVD-Audio ISOs from FLAC and ALAC/M4A sources, with a Chinese/English GUI, MLP encoding, automatic disc planning, optional menus and output verification.
 
-Extract the release ZIP and double-click `DVD-Audio-Maker.exe`. It embeds only required runtime components and fonts, extracted into `%LOCALAPPDATA%/DVD-Audio-Maker/runtime` on first launch, then verified and reused. README/runtime instructions, licenses, example configuration and `components/` records accompany the EXE. Retain the license notices. `config.env.example` is not loaded automatically; copy or import your own configuration when needed. See [RUNTIME.en.md](RUNTIME.en.md). Historical/developer directory packages still require all runtime files.
+Extract the release ZIP and double-click `DVD-Audio-Maker.exe`. It embeds only required runtime components and fonts, extracted into `%LOCALAPPDATA%/DVD-Audio-Maker/runtime` on first launch, then verified and reused. README/runtime instructions, licenses, example configuration and `NOTICE-Image.txt` and `NOTICE-Menu.txt` at the ZIP root accompany the EXE. Retain the license notices. `config.env.example` is not loaded automatically; copy or import your own configuration when needed. See [RUNTIME.en.md](RUNTIME.en.md). Historical/developer directory packages still require all runtime files.
 
 ## Make a disc
 

@@ -5,7 +5,7 @@
 ## 本次更新
 
 - 精简为单文件主程序，使用说明、配置示例与许可放在旁边，统一放进一个发布 ZIP。
-- 发布包约 **14.66 MiB**，支持 **Windows x64**，保留完整中日韩菜单字体。
+- 发布包约 **14.64 MiB**，支持 **Windows x64**，保留完整中日韩菜单字体。
 - 音频处理、MLP 编码、图像处理和制盘所需组件已内置，无需另外安装 FFmpeg、FFprobe、ImageMagick、eac3to 或原版 SurCode。
 - 保留中英文界面与日志、JSON 方案保存和旧 config.env 配置导入。
 
@@ -24,7 +24,7 @@ config.env.example 仅为示例，不会自动加载。可以继续导入已有 
 
 Create DVD-Audio ISO images from FLAC and M4A/ALAC music, with lossless MLP encoding, disc splitting, menus, cover images and output verification. The interface and logs support Chinese and English.
 
-Download **DVD-Audio-Maker-v1.0-win-x64-GUIonly.zip** (approximately **14.66 MiB**) for **64-bit Windows**. It contains one application EXE plus separate documentation, example configuration and license notices. Complete Chinese, Japanese and Korean menu fonts are retained.
+Download **DVD-Audio-Maker-v1.0-win-x64-GUIonly.zip** (approximately **14.64 MiB**) for **64-bit Windows**. It contains one application EXE plus separate documentation, example configuration and license notices. Complete Chinese, Japanese and Korean menu fonts are retained.
 
 Install [.NET 10 Desktop Runtime for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0), extract the ZIP and run DVD-Audio-Maker.exe. Required media, image and authoring components are built in; no separate FFmpeg, FFprobe, ImageMagick, eac3to or original SurCode installation is needed. Components are prepared automatically on first launch and reused afterward. Retain the included license notices.
 

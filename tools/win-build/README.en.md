@@ -41,7 +41,7 @@ tools\win-build\build-all.cmd ^
   --image-author "build\image-author-shared"
 ```
 
-Default output directory: `tools/win-build/release-onefile`. `DVD-Audio-Maker.exe` embeds only required runtime components. README/runtime instructions, licenses, `config.env.example` and `components/` build records accompany it in `DVD-Audio-Maker-win-x64-GUI-only.zip`. No .NET runtime is included, and the example configuration is not loaded automatically. Runtime assets are extracted to the user cache. Debug builds, the source CLI and F5 remain available.
+Default output directory: `tools/win-build/release-onefile`. `DVD-Audio-Maker.exe` embeds only required runtime components. README/runtime instructions, licenses, `config.env.example` and `NOTICE-Image.txt` and `NOTICE-Menu.txt` at the ZIP root accompany it in `DVD-Audio-Maker-win-x64-GUI-only.zip`. No .NET runtime is included, and the example configuration is not loaded automatically. Runtime assets are extracted to the user cache. Debug builds, the source CLI and F5 remain available.
 
 | Option | Purpose |
 |---|---|

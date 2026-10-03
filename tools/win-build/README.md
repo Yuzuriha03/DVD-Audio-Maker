@@ -41,7 +41,7 @@ tools\win-build\build-all.cmd ^
   --image-author "build\image-author-shared"
 ```
 
-默认输出目录为 `tools/win-build/release-onefile`：`DVD-Audio-Maker.exe` 只嵌入运行必需组件；README、运行说明、许可、`config.env.example` 和 `components/` 构建清单作为旁文件，合并生成 `DVD-Audio-Maker-win-x64-GUI-only.zip`。不附带 .NET，示例配置不会自动载入。运行资源自动释放到用户缓存；托管 Debug、CLI 和 F5 调试仍按原方式工作。
+默认输出目录为 `tools/win-build/release-onefile`：`DVD-Audio-Maker.exe` 只嵌入运行必需组件；README、运行说明、许可、`config.env.example` 和 根目录的 `NOTICE-Image.txt`、`NOTICE-Menu.txt` 授权声明作为旁文件，合并生成 `DVD-Audio-Maker-win-x64-GUI-only.zip`。不附带 .NET，示例配置不会自动载入。运行资源自动释放到用户缓存；托管 Debug、CLI 和 F5 调试仍按原方式工作。
 
 | 参数 | 说明 |
 |---|---|

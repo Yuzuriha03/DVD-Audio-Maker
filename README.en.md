@@ -13,7 +13,7 @@ The default release is **one Windows x64 GUI EXE without the .NET runtime**. Ins
 3. Check the sources, then preview the build. Preview prepares sources and encodes MLP but does not create ISOs.
 4. Build the discs and verify every track, menu and output ISO.
 
-The release ZIP contains the single-file EXE plus separate instructions, example configuration, licenses and component records. Only required runtime components and complete CJK fonts are embedded in the EXE, extracted into `%LOCALAPPDATA%/DVD-Audio-Maker/runtime` on first launch, then verified/reused. Media processing and authoring share one FFmpeg source build, with one copy of each DLL. Close all instances before clearing this cache; it is restored automatically. Retain the license notices. `config.env.example` is not loaded automatically; existing `config.env` files remain importable. See [single-file builds](docs/ONEFILE-PUBLISH.md).
+The release ZIP contains the single-file EXE plus separate instructions, example configuration, licenses and component notices. Only required runtime components and complete CJK fonts are embedded in the EXE, extracted into `%LOCALAPPDATA%/DVD-Audio-Maker/runtime` on first launch, then verified/reused. Media processing and authoring share one FFmpeg source build, with one copy of each DLL. Close all instances before clearing this cache; it is restored automatically. Retain the license notices. `config.env.example` is not loaded automatically; existing `config.env` files remain importable. See [single-file builds](docs/ONEFILE-PUBLISH.md).
 
 ## Configuration, language and logs
 
