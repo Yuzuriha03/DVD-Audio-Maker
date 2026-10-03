@@ -112,6 +112,8 @@ ImageMagick/FreeType 归档固定 SHA-256；脚本核对上游源文件，并重
 build-image-author.py 对已配置完整源码树建立隔离快照，复制当前镜像及 C 接口，链接 FFmpeg menu 配置并加入菜单模块。默认读取 build/ffmpeg-menu/install 和 build/menu-native，可用 --ffmpeg-runtime、--menu-runtime 指定。不改动原源码树或编译器，也不构建/启动 ffmpeg.exe。
 生成目录中的 `dvda-author-dev.exe` 必须与 `author-build.json` 的 `runtime_files` 一起使用；脚本会按 PE 导入闭包收集这些 DLL，只复制 exe 并不完整。正式打包也会把这些 DLL 一并放入 `menu-bin`。
 
+正式打包按已验证的 author 运行库清单保留 menu-bin 中的 DLL，移除旧工具包遗留、清单之外的 DLL。清理仅作用于新发布暂存目录，不修改 --prebuilt 输入、源码或编译工具链。
+
 ### 历史 MLP 专用配置
 
 ```bat

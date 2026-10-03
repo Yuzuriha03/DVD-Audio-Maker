@@ -112,6 +112,8 @@ ImageMagick/FreeType archives are pinned by SHA-256. The recipe verifies upstrea
 The author script snapshots a configured full project tree, copies the current mirror and C interfaces, and links the FFmpeg menu profile plus menu modules. Defaults: build/ffmpeg-menu/install and build/menu-native; overrides: --ffmpeg-runtime and --menu-runtime. It leaves source/compiler installations unchanged and never builds or starts ffmpeg.exe.
 The generated `dvda-author-dev.exe` must be used with the `runtime_files` listed in `author-build.json`; the script collects that PE import closure, so copying only the executable is incomplete. Release packaging copies those DLLs into `menu-bin` as well.
 
+Release packaging retains only the DLLs in the validated author runtime manifest in menu-bin, removing leftovers from the old tool bundle. This cleanup applies only to the new release staging directory; it does not modify --prebuilt inputs, source trees or compiler installations.
+
 ### Historical MLP-only profile
 
 ```bat
