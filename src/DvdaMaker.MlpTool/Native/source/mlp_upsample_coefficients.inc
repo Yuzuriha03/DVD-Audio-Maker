@@ -1,6 +1,6 @@
-/* Symmetric half-band interpolation coefficients, from the
- * hash-verified original table 10018138..1001846f. Each coefficient
- * multiplies a left/right sample pair; the original samples are retained. */
+/* Symmetric half-band interpolation coefficients. Each coefficient
+ *
+ * multiplies a left/right sample pair; input samples are retained. */
 static const double mlp_upsample_coefficients[103] = {
     0x1.45e4c4de2c91ep-1, -0x1.b1ee6292e024cp-3, 0x1.03a5cffda88eap-3, -0x1.716814d82379dp-4,
     0x1.1dbf8fd3a24bap-4, -0x1.d0663fa2f54abp-5, 0x1.85bd03025adecp-5, -0x1.4e8ca8e13cde8p-5,

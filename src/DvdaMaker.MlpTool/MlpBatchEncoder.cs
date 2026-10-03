@@ -2,7 +2,7 @@ using DvdaMaker.Processes;
 
 namespace DvdaMaker.MLPTool;
 
-/// <summary>Compatibility name for the MLP core batch pipeline; never automates MLP.</summary>
+/// <summary>Compatibility name for the mlpencoder batch pipeline; never automates MLP.</summary>
 public sealed class MlpBatchEncoder(ProcessRunner runner)
 {
     public async Task RunAsync(MlpEncodingJob job, CancellationToken cancellationToken)

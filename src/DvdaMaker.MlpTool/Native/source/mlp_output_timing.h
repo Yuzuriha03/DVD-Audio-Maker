@@ -13,7 +13,7 @@ typedef struct mlp_output_timing {
     unsigned write,read;
     uint32_t times[100],sizes[100][3],totals[3];
 } mlp_output_timing;
-/* 10006bb0/10007440 and 10006c60/100069d0. The caller
+/* The caller
  * supplies the next lookahead descriptor and the AU being released.
  * Empty descriptors have words=0. No timestamps come from reference files. */
 MLP_BITS_API void mlp_output_timing_init(mlp_output_timing *state);

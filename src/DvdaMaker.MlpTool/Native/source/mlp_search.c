@@ -125,7 +125,7 @@ int mlp_search_correlation(const int32_t *pcm, const size_t *lengths,
     return 0;
 }
 
-/* Symmetric scratch has explicit space for the reference's negative indices. */
+/* Symmetric scratch has explicit space for negative indices. */
 static int reflect(double r[9], unsigned order, double out[8])
 {
     double storage[17], *s = storage+8;

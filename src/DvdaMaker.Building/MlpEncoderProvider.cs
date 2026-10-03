@@ -83,7 +83,7 @@ public sealed class MlpEncoderProvider
             if (mlp.Exists && mlp.Length > 0 &&
                 cacheIndex.Match(destination, source, encoderIdentity, _options.MlpMLPBits,
                     _options.MlpMLPSampleRate, MlpCacheValidator.RequiredMajorSyncInterval) is not null &&
-                MlpCacheValidator.IsEncoderValid(destination))
+                MlpCacheValidator.IsMlpEncoderValid(destination))
             {
                 hits++;
                 continue;
@@ -257,7 +257,7 @@ public sealed class MlpEncoderProvider
         var metadata = string.IsNullOrEmpty(_options.MlpMetadataContext)
             ? MlpEncoder.MetadataPolicy : Hash(_options.MlpMetadataContext);
         var converter = BuiltinMedia.IsBuiltin(ffmpeg) ? BuiltinMedia.Identity : Hash(ffmpeg);
-        return $"|{MlpEncoder.BinarySha256}|converter:{converter}|metadata:{metadata}|{FfmpegPcmConverter.Policy}";
+        return $"mlpencoder|{MlpEncoder.BinarySha256}|converter:{converter}|metadata:{metadata}|{FfmpegPcmConverter.Policy}";
     }
 
     private static void TryDeleteDirectory(string path)

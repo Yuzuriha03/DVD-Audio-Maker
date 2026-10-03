@@ -1,4 +1,4 @@
-/* Application assembly around components; not the VC6 job ABI. */
+/* Application assembly around mlpencoder components; not the VC6 job ABI. */
 #define _POSIX_C_SOURCE 200809L
 #include "mlp_pcm.h"
 #include "mlp_substream.h"
@@ -62,7 +62,7 @@ static int serialize_planned(mlp_bits *writer,const interval_output *pending,
     return mlp_substream_put(writer,&stream);
 }
 /* Check the entire restart interval before committing bytes or timing state.
- * The normal plan is retained byte-for-byte whenever it fits. */
+ * The normal mlpencoder plan is retained byte-for-byte whenever it fits. */
 static int interval_fits(interval_output *pending,const mlp_format *format)
 {
     unsigned au;
@@ -402,7 +402,7 @@ static int encode(mlp_pcm *in, FILE *out, unsigned restart_interval, unsigned cy
                 }
             }
             if ((count-first)&1) {
-                /* The predictor consumes pairs; an odd final block
+                /* The mlpencoder predictor consumes pairs; an odd final block
                  * uses unpredicted coding without padding the source. */
                 for (i = first; i < count; ++i) {
                     unsigned k;
@@ -477,7 +477,7 @@ static int encode(mlp_pcm *in, FILE *out, unsigned restart_interval, unsigned cy
         matrix_intervals,matrix_primitives,matrix_bypasses,matrix_truncated);
     if (matrix && matrix->original_scale) fprintf(stderr,"Scaling intervals=%u shifted_channels=%u qss_changes=%u\n",
         scale_intervals,shifted_channels,qss_changes);
-    if (cycle) fprintf(stderr,"boundary cycle=%u preferred_span=%u restarts=%u\n",cycle,restart_interval,restarted);
+    if (cycle) fprintf(stderr,"MlpEncoder boundary cycle=%u preferred_span=%u restarts=%u\n",cycle,restart_interval,restarted);
     if (matrix && matrix->joint_search) fprintf(stderr,"Search channel_intervals=%u skipped=%u feedback_AU_channels=%u\n",
         search_intervals,search_skipped,feedback_channels);
     }
@@ -710,8 +710,8 @@ usage:
     fprintf(stderr,"Usage: mlp_encode input.wav|aiff output.mlp [--raw RATE BITS CHANNELS] [--restart 1..128] [--cycle 1..1264] [--no-predict|--joint-search] [--matrix|--matrix-bypass|--original-scale]\n"
                    "Raw PCM: signed little-endian, 16 bits in 2 bytes or 20/24 bits left-aligned in 3 bytes.\n"
                    "Standard layouts: mono, stereo, 3.0, quad, 5.0, 5.1. Existing output is never overwritten.\n"
-                   "Matrix options use selection with an independent fixed-interval policy.\n"
-                   "--original-scale also uses shift/QSS planning; restart interval is limited to 32.\n"
+                   "Matrix options use mlpencoder selection with an independent fixed-interval policy.\n"
+                   "--original-scale also uses mlpencoder shift/QSS planning; restart interval is limited to 32.\n"
                    "--cycle enables original balanced restart decisions, using --restart as the preferred span.\n");
     fprintf(stderr,"--stamp-context FILE reproduces explicit metadata TLVs/update timing; it contains no audio data.\n");
     fprintf(stderr,"--pad-final zero-pads the last AU. --original selects preferred restart=8, original cycle/scale/matrix, joint search and final padding.\n");

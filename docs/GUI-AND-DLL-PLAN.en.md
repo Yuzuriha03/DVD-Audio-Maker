@@ -8,7 +8,7 @@ Date: October 1, 2026. Status: complete; delivered as native x64 as requested.
 
 Use a Windows GUI as the everyday entry point. Folder pickers, option controls and task buttons cover preparation, preview, authoring and verification without requiring manual config.env editing. Keep the CLI and config.env reader, reusing existing build, menu, verification and cache logic.
 
-Replace launching mlp_encode.exe with direct calls to the mlp_encoder.dll. No MLP encoding subprocess runs. At this checkpoint, eac3to, FFmpeg decoding and authoring tools remained external tools. The application itself is a normal Windows GUI EXE.
+Replace launching mlp_encode.exe with direct calls to the mlpencoder mlp_encoder.dll. No MLP encoding subprocess runs. At this checkpoint, eac3to, FFmpeg decoding and authoring tools remained external tools. The application itself is a normal Windows GUI EXE.
 
 ## Technical choices
 
@@ -16,7 +16,7 @@ Replace launching mlp_encode.exe with direct calls to the mlp_encoder.dll. No ML
 - The GUI calls PreparationPipeline, BuildPipeline and VerificationPipeline directly, without temporary env files or CLI subprocesses for passing settings.
 - Store independent JSON settings in the user directory and support opening/saving profiles. Explicit env imports preserve the existing format and unknown keys. First launch can discover an existing env file and shows its source; saved GUI settings take priority to avoid silent replacement.
 - Group settings into paths/discs, encoding, menus and advanced tools, with validation. Visible GUI values take priority for GUI tasks, so hidden environment variables cannot override controls. CLI environment precedence stays unchanged.
-- Use the pinned Windows x64 DLL and synchronous streaming callback API. GUI/CLI target win-x64 and can invoke external x64 tools. Native x64 is required. Preserve the algorithm and explicit floating-point precision semantics, and rerun full-file original comparisons for acceptance.
+- Use the pinned Windows x64 encoder DLL and synchronous streaming callback API. GUI/CLI target win-x64 and can invoke external x64 tools. Native x64 is required. Preserve the algorithm and explicit floating-point precision semantics, and rerun full-file original comparisons for acceptance.
 - Embed the DLL and extract/load it by SHA256. Managed streaming callbacks carry PCM and output, supporting Chinese paths, bounded buffers, cancellation, timeouts, exception propagation and failure cleanup. Independent per-job state supports concurrency.
 - Supply auxiliary metadata before encoding. Do not read a reference file as encoding input or patch finished MLP. Preserve the default empty-metadata policy and explicit historical-context support.
 
