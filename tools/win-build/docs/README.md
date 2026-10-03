@@ -6,7 +6,7 @@
 
 将 FLAC、ALAC/M4A 音源制作成 DVD-Audio ISO，支持中文/英文界面、MLP 编码、自动分盘、可选菜单及成品验证。
 
-解压发布 ZIP，双击 `DVD-Audio-Maker.exe`。EXE 只包含运行必需组件与字体，首次运行自动释放到 `%LOCALAPPDATA%/DVD-Audio-Maker/runtime`；之后校验并复用缓存。README、运行说明、许可、配置示例和 `components/` 清单放在 EXE 旁，请保留随包授权声明。`config.env.example` 不会自动加载，需要时可复制或导入自己的配置。运行条件见 [RUNTIME.md](RUNTIME.md)。历史或开发目录包仍须完整保留所有运行文件。
+解压发布 ZIP，双击 `DVD-Audio-Maker.exe`。EXE 只包含运行必需组件与字体，首次运行自动释放到 `%LOCALAPPDATA%/DVD-Audio-Maker/runtime`；之后校验并复用缓存。README、运行说明、许可、配置示例和 根目录的 `NOTICE-Image.txt`、`NOTICE-Menu.txt` 授权声明放在 EXE 旁，请保留随包授权声明。`config.env.example` 不会自动加载，需要时可复制或导入自己的配置。运行条件见 [RUNTIME.md](RUNTIME.md)。历史或开发目录包仍须完整保留所有运行文件。
 
 ## 开始制作
 
