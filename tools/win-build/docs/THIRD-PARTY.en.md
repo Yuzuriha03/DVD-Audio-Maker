@@ -20,7 +20,6 @@ are provided as a patch applicable with `git apply`.
 
 | Component | Version | License |
 |---|---|---|
-| **cdrtools / mkisofs** (`mkisofs.exe`) | 3.02a | **CDDL** for the mkisofs component |
 | **mjpegtools** (`jpeg2yuv` / `mpeg2enc` / `mplex` / `mp2enc`) | 2.1.0 | **GPL v2** |
 | **ImageMagick** (`image-native/dvda-image.dll`) | 7.0.8-47 Q16 HDRI | **ImageMagick License**, Apache-2.0-style |
 | **FFmpeg libraries** (menu-bin, media-native) | 9.0.2; Windows x64 builds tailored to each role | **GPL v3 or later** for this configuration |

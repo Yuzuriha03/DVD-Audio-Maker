@@ -12,7 +12,6 @@ internal static class BuiltinMediaTests
         var runner = new ProcessRunner();
         var ffmpeg = ExecutablePath.Resolve("ffmpeg") ?? throw new FileNotFoundException("Reference FFmpeg");
         var ffprobe = ExecutablePath.Resolve("ffprobe") ?? throw new FileNotFoundException("Reference FFprobe");
-        var metaflac = ExecutablePath.Resolve(Environment.GetEnvironmentVariable("DVDA_TEST_METAFLAC") ?? "metaflac") ?? throw new FileNotFoundException("Metaflac");
         var passed = new List<string>();
         void Check(string name, bool valid) { if (!valid) throw new InvalidDataException(name); lock (passed) passed.Add(name); Console.WriteLine("PASS " + name); }
         async Task<ProcessResult> Run(string tool, params string[] args)
@@ -34,7 +33,7 @@ internal static class BuiltinMediaTests
         var externalRepair = await new AlacEndRepairer(runner, ffprobe).InspectAsync(source);
         var nativeRepair = await new AlacEndRepairer(runner, BuiltinMedia.Probe).InspectAsync(source);
         Check("ALAC packet inspection", externalRepair.Cookie == nativeRepair.Cookie && externalRepair.Patches.SequenceEqual(nativeRepair.Patches));
-        var converter = new M4aFlacConverter(runner, BuiltinMedia.Converter, BuiltinMedia.Probe, metaflac, new AlacEndRepairer(runner, BuiltinMedia.Probe));
+        var converter = new M4aFlacConverter(runner, BuiltinMedia.Converter, BuiltinMedia.Probe, new AlacEndRepairer(runner, BuiltinMedia.Probe));
         var converted = (await converter.ConvertAsync([source])).Single();
         Check("ALAC to FLAC with exact cover and tags: " + JsonSerializer.Serialize(converted, new JsonSerializerOptions { IncludeFields = true }),
             converted.Status == "OK" && converted.CoverExact && converted.HasCover && converted.MissingTags?.Count == 0);

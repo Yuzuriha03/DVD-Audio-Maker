@@ -27,6 +27,9 @@
 #include "launch_manager.h"
 #include "videoimport.h"
 #include "mlp.h"
+#include "iso_writer.h"
+
+char *dvda_iso_volume_identifier = NULL;
 
 /* Remark on data structures:
  *   - command-line data belong to 'command' structures
@@ -600,19 +603,12 @@ int launch_manager(command_t *command, globalData *globals)
 
       if (file_exists(dvdisopath)) unlink(dvdisopath);
       uint64_t size;
-      char *mkisofs = NULL;
       errno = 0;
-      if ((mkisofs = create_binary_path(mkisofs, MKISOFS, SEPARATOR MKISOFS_BASENAME, globals)))
-        {
-          const char *args[] = {mkisofs, "-dvd-audio", "-v", "-o", dvdisopath, globals->settings.outdir, NULL};
-          foutput("%s%s%s\n", INF "Launching: ", mkisofs, " to create image");
-
-          run(mkisofs, args, WAIT, FORK, globals);
-
-          free(mkisofs);
-        }
-      else
-        foutput("%s\n", ERR "Could not access mkisofs binary.");
+      foutput("%s\n", INF "Creating ISO with the in-process C ISO writer.");
+      if (dvda_iso_write(globals->settings.outdir, dvdisopath,
+                         dvda_iso_volume_identifier && dvda_iso_volume_identifier[0]
+                           ? dvda_iso_volume_identifier : "DVD-AUDIO") != 0)
+        foutput("%s\n", ERR "Could not create ISO image with the in-process writer.");
 
 
       size = stat_file_size(dvdisopath) / 1024;
@@ -620,7 +616,7 @@ int launch_manager(command_t *command, globalData *globals)
       else
         {
           foutput("%s\n", ERR "ISO file creation failed -- fix issue.");
-          perror("mkisofs");
+          perror("in-process ISO writer");
         }
     }
 

@@ -43,6 +43,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #include "ports.h"
 #include "audio2.h"
 #include "auxiliary.h"
+extern char *dvda_iso_volume_identifier;
 #include "c_utils.h"
 #include "file_input_parsing.h"
 #include "ports.h"
@@ -233,7 +234,7 @@ void help()
 
   printf("%s", "Disc authoring\n\n");
 
-  printf("%s", "-I, --mkisofs(=file)     Run mkisofs to author disc image using file" J "as an ISO image. If file is empty, use tempdir/dvd.iso.\n\n");
+  printf("%s", "-I, --mkisofs(=file)     Write an ISO image in-process using file" J "as the destination. If file is empty, use tempdir/dvd.iso.\n\n");
   printf("%s", "-r, --cdrecord(=a,b,c)   Run cdrecord to burn disc image." J "Unless specified, --mkisofs will be automatically triggered with default tempdir/dvd.iso value." J "Device is of the form a,b,c, see cdrecord -scanbus. It can be omitted" J "if there is just one writer.\n\n");
   printf("%s", "-R, --growisofs /dev/dvd Run growisofs to burn disc image." J "Device is of the form /dev/scd0 under many GNU/Linux distributions." J "It cannot be omitted.\n\n");
 
@@ -575,6 +576,8 @@ void free_memory(command_t *command, globalData *globals)
   //free(globals->settings.fixwav_database)
   free(globals->settings.dvdisopath);
   free(globals->settings.stillpicdir);
+  free(dvda_iso_volume_identifier);
+  dvda_iso_volume_identifier = NULL;
 
 
   if (command && command->img)
@@ -777,5 +780,3 @@ int arraylength(char **tab)
       }
   return w;
 }
-
-

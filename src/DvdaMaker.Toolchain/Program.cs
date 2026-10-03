@@ -15,7 +15,6 @@ internal static class ToolchainProgram
     private static readonly string[] RequiredExecutables =
     [
         "dvda-author-dev.exe",
-        "mkisofs.exe",
         "dvdauthor.exe",
         "spumux.exe",
         "spuunmux.exe",
@@ -137,6 +136,12 @@ internal static class ToolchainProgram
                     Path.Combine(destination, name));
         }
         CopyDirectory(prebuilt, Path.Combine(destination, "menu-bin"));
+        var legacyMkisofs = Path.Combine(destination, "menu-bin", "mkisofs.exe");
+        if (File.Exists(legacyMkisofs))
+        {
+            File.Delete(legacyMkisofs);
+            Console.WriteLine("  built-in ISO writer: legacy mkisofs.exe omitted");
+        }
         if (ffmpegLibraries is not null)
         {
             NativeToolOptimizer.InstallMinimalFfmpeg(Path.Combine(destination, "menu-bin"), ffmpegLibraries);
@@ -337,7 +342,6 @@ if "%~1"=="" (
     exit /b 0
 )
 set "DVDA_AUTHOR=%ROOT%menu-bin\dvda-author-dev.exe"
-set "DVDA_MKISOFS=%ROOT%menu-bin\mkisofs.exe"
 set "DVDA_AUTHOR_SRC=%ROOT%data"
 set "DVDA_MENU_FONT=DVDA-Noto-Sans-CJK-SC"
 set "DVDA_MENU_FONT_JP=DVDA-Noto-Sans-CJK-JP"

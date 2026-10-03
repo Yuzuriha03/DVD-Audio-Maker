@@ -37,6 +37,17 @@ if (fixtureProcessName.StartsWith("fake-dvda-author", StringComparison.OrdinalIg
     var audioTs = Path.Combine(args[outputIndex + 1], "AUDIO_TS");
     Directory.CreateDirectory(audioTs);
     File.WriteAllBytes(Path.Combine(audioTs, "AUDIO_TS.IFO"), [1, 2, 3]);
+    var isoArgument = args.FirstOrDefault(argument =>
+        argument.StartsWith("--iso=", StringComparison.OrdinalIgnoreCase) ||
+        argument.StartsWith("--mkisofs=", StringComparison.OrdinalIgnoreCase));
+    if (isoArgument is not null)
+    {
+        var separator = isoArgument.IndexOf('=');
+        var isoPath = isoArgument[(separator + 1)..];
+        Directory.CreateDirectory(Path.GetDirectoryName(isoPath)!);
+        File.WriteAllBytes(isoPath, [0x49, 0x53, 0x4F, 0x21]);
+        Console.WriteLine("fixture in-process ISO created");
+    }
     Console.WriteLine("1  1/1  1  0  99  0  90000  0");
     return 0;
 }
@@ -262,6 +273,7 @@ if (args.Length > 0)
 
 var tests = new (string Name, Action Run)[]
 {
+    ("FLAC metadata in-process read/write", FlacMetadataTests.InProcessEditor),
     ("English catalog template coverage", LocalizationTests.CatalogCoverage),
     ("Language preserves paths and numeric culture", LocalizationTests.OpaqueValuesAndCulture),
     ("Language profile and argument compatibility", LocalizationTests.ProfileAndArguments),
@@ -315,7 +327,7 @@ var tests = new (string Name, Action Run)[]
     ("dvda-author 参数与 title 边界", BuildDvdaAuthorArguments),
     ("诊断 title 划分模式", BuildDiagnosticTitleModes),
     ("诊断专辑数量限制", LimitDiagnosticAlbums),
-    ("mkisofs 参数构造", BuildMkisofsArguments),
+    ("内置 ISO 写入参数构造", BuildInProcessIsoArguments),
     ("构建日志命令格式", WriteCompatibleBuildLog),
     ("ISO 发布长度校验", PublishIso),
     ("同卷 ISO 暂存移动与冲突保护", StageIsoWithoutCopy),
@@ -1224,7 +1236,7 @@ static void DescribeConfigurationSources()
     });
 }
 
-static void BuildMkisofsArguments()
+static void BuildInProcessIsoArguments()
 {
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_TITLE=Test", path =>
     {
@@ -1232,9 +1244,10 @@ static void BuildMkisofsArguments()
         var disc = new DiscPlan(1, [], []);
         SequenceEqual(new[]
         {
-            "-dvd-audio", "-V", "Test 1", "-o", "/work/disc1.iso", "/work/disc1",
-        }, DvdaAuthorCommandBuilder.BuildMkisofsArguments(
-            options, disc, "/work/disc1.iso", "/work/disc1"));
+            "-o", "/work/disc1", "-D", "/work/tmp", "-W", "-P0", "-n",
+            "--iso=/work/disc1.iso",
+        }, DvdaAuthorCommandBuilder.BuildArguments(
+            disc, "/work/disc1", "/work/tmp", isoPath: "/work/disc1.iso"));
     });
 }
 
@@ -1348,7 +1361,7 @@ static void M4aDryRunDoesNotWrite()
         var source = Path.Combine(root, "track.m4a");
         WriteAlacFixture(source);
         var converter = new M4aFlacConverter(
-            new ProcessRunner(), "unused-ffmpeg", ffprobe, "unused-metaflac",
+            new ProcessRunner(), "unused-ffmpeg", ffprobe,
             new AlacEndRepairer(new ProcessRunner(), ffprobe));
 
         var before = Directory.EnumerateFileSystemEntries(root).OrderBy(path => path).ToArray();
@@ -1378,7 +1391,7 @@ static void RejectNonAlacM4a()
         var source = Path.Combine(root, "aac-track.m4a");
         File.WriteAllBytes(source, [1, 2, 3]);
         var converter = new M4aFlacConverter(
-            new ProcessRunner(), "unused-ffmpeg", ffprobe, "unused-metaflac",
+            new ProcessRunner(), "unused-ffmpeg", ffprobe,
             new AlacEndRepairer(new ProcessRunner(), ffprobe));
 
         var result = converter.ConvertAsync([source], dryRun: true)
@@ -1405,7 +1418,7 @@ static void IsolateM4aFileFailures()
         WriteAlacFixture(good);
         File.WriteAllBytes(broken, [1]);
         var converter = new M4aFlacConverter(
-            new ProcessRunner(), "unused-ffmpeg", ffprobe, "unused-metaflac",
+            new ProcessRunner(), "unused-ffmpeg", ffprobe,
             new AlacEndRepairer(new ProcessRunner(), ffprobe));
 
         var results = converter.ConvertAsync([good, broken], dryRun: true, jobs: 2)
@@ -2926,8 +2939,10 @@ static void BuildDiscEndToEnd()
         var logText = File.ReadAllText(options.BuildLogPath);
         True(logText.Contains("fake-dvda-author", StringComparison.OrdinalIgnoreCase),
             "日志应记录 dvda-author 命令");
-        True(logText.Contains("fake-mkisofs", StringComparison.OrdinalIgnoreCase),
-            "日志应记录 mkisofs 命令");
+        False(logText.Contains("fake-mkisofs", StringComparison.OrdinalIgnoreCase),
+            "日志不应再记录外部 mkisofs 命令");
+        True(logText.Contains("ISO writer", StringComparison.OrdinalIgnoreCase),
+            "日志应说明使用内置 ISO 写入器");
         True(logText.Contains("1  1/1  1  0  99  0  90000  0"),
             "日志应保留 author 轨道表供审计解析");
         True(logText.Contains("[耗时] 第 1 盘总耗时:", StringComparison.Ordinal),
