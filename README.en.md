@@ -28,7 +28,7 @@ Logs default to stage summaries, with detailed output, warning filters, paused d
 | Task | Implementation |
 |---|---|
 | Source reading, conversion, decoding and media verification | In-process x64 media libraries; no FFmpeg/FFprobe EXE |
-| MLP encoding | Embedded MLP core DLL; no original SurCode or eac3to |
+| MLP encoding | Embedded mlpencoder DLL; no original SurCode or eac3to |
 | Covers, text, menu images, fonts and image verification | The GUI and native author each call the tailored image DLL in process |
 | Menu encoding/muxing, authoring and ISO creation | Project author with in-process C menu modules and ISO writer |
 | Optional M4A/ALAC-to-FLAC organization | In-process FLAC metadata editor handles artwork and tags |
@@ -37,7 +37,7 @@ No separate FFmpeg, FFprobe or ImageMagick installation is needed. The GUI repla
 
 The batch interface supports one to six channels at 44.1, 48, 88.2 and 96 kHz, and mono/stereo at 176.4 and 192 kHz, with 16-, 20- or 24-bit target samples. Input channel layouts are retained. Mixed-rate/depth channel groups are not exposed as GUI settings. Some high-noise material can still exceed available MLP stream limits; it is not made to fit through lossy processing.
 
-Byte-identical MLP requires **identical target PCM, encoding parameters and auxiliary metadata context**. Encoded output is not patched. Identical audio with different historical metadata does not imply identical complete files. See [MLP core integration](docs/MLP-ENCODER.en.md) and [current media processing](docs/INPROCESS-MEDIA.en.md).
+Byte-identical MLP requires **identical target PCM, encoding parameters and auxiliary metadata context**. Encoded output is not patched. Identical audio with different historical metadata does not imply identical complete files. See [mlpencoder integration](docs/MLP-ENCODER.en.md) and [current media processing](docs/INPROCESS-MEDIA.en.md).
 
 ## Source development
 
@@ -57,7 +57,7 @@ VS Code retains F5 profiles for the GUI, CLI and compatibility tests. Routine C#
 | `src/DvdaMaker.Configuration` / `Localization` | Settings, profiles and bilingual resources |
 | `src/DvdaMaker.Preparation` / `Building` | Source preparation, MLP, disc planning, menus and verification |
 | `src/DvdaMaker.Processes` | In-process media/images and remaining external process management |
-| `src/DvdaMaker.SurcodeTool/Native` | Pinned MLP core sources and x64 DLL |
+| `src/DvdaMaker.SurcodeTool/Native` | Pinned mlpencoder sources and x64 DLL |
 | `src/DvdaMaker.Formats` / `FontTool` | Stream parsing and shared font utilities |
 | `src/DvdaMaker.Toolchain` / `tools/win-build` | Native builds, packaging and regression scripts |
 | `tests` / `docs` | Compatibility tests, designs and validation records |
@@ -135,7 +135,7 @@ verify lossless checks every disc, group and track: complete target PCM is compa
 | --- | --- | --- |
 | `DVDA_PREPARE_CACHE` | `on` | Source probing and decoding-check cache at `<DVDA_BUILD_DIR>/prepare-cache.json` |
 | `DVDA_RESUME` | `on` | Per-disc resumption, recorded at `<DVDA_BUILD_DIR>/publish-staging/resume.json` |
-| `DVDA_MLP_JOBS` | `1` | MLP encoder concurrency, from 1 to 16 jobs |
+| `DVDA_MLP_JOBS` | `1` | MlpEncoder encoder concurrency, from 1 to 16 jobs |
 | `DVDA_KEEP_TMP` | `off` | Keep `<DVDA_BUILD_DIR>/tmp` for diagnostics; disables automatic cleanup |
 | `DVDA_KEEP_INTERMEDIATE` | `off` | Keep authoring output and intermediate ISOs; **disables per-disc resumption while enabled** |
 
@@ -159,7 +159,7 @@ Source: D:/Music/MyAlbums/Album/01 Song.flac
 MLP ：D:/Music/MLP/Album/01 Song.mlp
 ```
 
-### MLP core batch encoding (default)
+### MlpEncoder-core batch encoding (default)
 
 ```text
 DVDA_MLP_SOURCE="surcode-batch"
@@ -175,7 +175,7 @@ DVDA_MLP_SURCODE_BITS="24"
 
 The `surcode-batch` configuration name is retained for existing jobs. The execution chain is:
 
-`Source audio → in-process media DLLs → integer PCM → MLP core DLL → MLP cache`.
+`Source audio → in-process media DLLs → integer PCM → mlpencoder MLP core DLL → MLP cache`.
 
 The Windows x64 application embeds a pinned Windows x64 encoder DLL, extracts and verifies it at runtime, then calls it in-process.
 It does not start the original SurCode, load its DLLs, write SSF files or patch encoded output bytes.
@@ -189,7 +189,7 @@ supply the track's complete `DVDA_MLP_METADATA_CONTEXT`. Different timestamp met
 produces a different complete file; identical audio alone does not imply identical bytes. Reference audio payloads are never fed to the encoder.
 Old caches without provenance credentials are rebuilt. A failed re-encode does not overwrite an existing valid output.
 
-See [MLP core integration](docs/MLP-ENCODER.en.md) for interfaces, precision, channels, caches and reproduction details.
+See [MlpEncoder-core integration](docs/MLP-ENCODER.en.md) for interfaces, precision, channels, caches and reproduction details.
 
 ## Disc planning and menus
 
@@ -242,7 +242,7 @@ The validated compact package is under build/release-menu-final; artifacts stay 
 ## Documentation
 
 - [Development/debugging](docs/DEVELOPMENT.en.md), [native builds/packaging](tools/win-build/README.en.md)
-- [MLP core and byte identity](docs/MLP-ENCODER.en.md), [native-core maintenance](src/DvdaMaker.SurcodeTool/Native/README.md)
+- [MlpEncoder core and byte identity](docs/MLP-ENCODER.en.md), [native-core maintenance](src/DvdaMaker.SurcodeTool/Native/README.md)
 - [In-process media](docs/INPROCESS-MEDIA.en.md), [in-process images](docs/INPROCESS-IMAGES.en.md)
 - [Minimal media libraries](docs/MINIMAL-FFMPEG.en.md), [shared fonts](docs/SHARED-FONTS.en.md)
 - [Author changes](docs/DVDA-AUTHOR-CHANGES.en.md), [historical troubleshooting](docs/TROUBLESHOOTING.en.md)

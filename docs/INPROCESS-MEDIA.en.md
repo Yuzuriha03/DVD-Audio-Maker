@@ -19,7 +19,7 @@ The native bridge implements probing, first-audio-stream decoding, ALAC packet i
 
 The media build includes FFmpeg 9.0.2 avcodec, avformat, avutil, swresample and swscale, plus libsoxr, zlib and necessary runtime libraries. It is separate from the MLP/menu authoring DLLs in menu-bin. Packaging validates the DLL manifest, SHA-256, AMD64 architecture and normal/delay imports.
 
-MLP preparation retains SWR, disabled dithering, the existing 20-bit rounding/clipping policy and WAVE normalization. The native MLP core remains pinned to SHA-256 ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8. Media DLL hashes participate in cache identity, so an upgrade rebuilds old-identity cache entries. Encoded files are never patched to obtain byte identity.
+MLP preparation retains SWR, disabled dithering, the existing 20-bit rounding/clipping policy and WAVE normalization. The mlpencoder native MLP core remains pinned to SHA-256 ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8. Media DLL hashes participate in cache identity, so an upgrade rebuilds old-identity cache entries. Encoded files are never patched to obtain byte identity.
 
 ## Validation
 

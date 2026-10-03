@@ -34,13 +34,13 @@ internal static class MlpEncoderTests
         Require(Convert.ToHexString(SHA256.HashData(stream)).Equals(MlpEncoder.BinarySha256, StringComparison.OrdinalIgnoreCase), "Pinned encoder hash");
         Require(executable == MlpEncoder.ExtractLibrary(), "Extraction cache");
         var options = new ConfigLoader(new Dictionary<string, string?>()).Load(workingDirectory: NewRootForConfig());
-        Require(options.MlpSource == "surcode-batch", "Default must use encoder");
+        Require(options.MlpSource == "surcode-batch", "Default must use MLP encoder");
     }
 
     // No directory is created: a nonexistent path prevents discovery of the user's local config.
     private static string NewRootForConfig() => Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
     private static string NewRoot()
-    { var path = Path.Combine(Path.GetTempPath(), "dvda--中文-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
+    { var path = Path.Combine(Path.GetTempPath(), "dvda-mlpencoder-中文-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
 
     internal static string FixtureExecutable(string root, string name)
     {
@@ -94,9 +94,9 @@ internal static class MlpEncoderTests
             var source = Path.Combine(options.SourceDirectory, "source.flac"); File.WriteAllBytes(source, new byte[4096]);
             var track = Track(source); var provider = new SurcodeMlpProvider(options, new ProcessRunner());
             var first = provider.AcquireAsync([track]).GetAwaiter().GetResult();
-            Require(first.CacheRebuilt == 1 && first.Diagnostics.Count == 0, "First encode: " + string.Join(';', first.Diagnostics.Select(d => d.Message)));
+            Require(first.CacheRebuilt == 1 && first.Diagnostics.Count == 0, "First mlpencoder encode: " + string.Join(';', first.Diagnostics.Select(d => d.Message)));
             var output = first.Tracks[0].MlpPath; var original = File.ReadAllBytes(output);
-            Require(MlpCacheValidator.IsEncoderValid(output), "Small original-policy MLP must pass validation");
+            Require(MlpCacheValidator.IsMlpEncoderValid(output), "Small original-policy MLP must pass validation");
             var second = provider.AcquireAsync([track]).GetAwaiter().GetResult();
             Require(second.CacheHits == 1 && second.CacheRebuilt == 0, "Valid cache must be reused");
             using (var binary = new FileStream(options.Ffmpeg, FileMode.Append, FileAccess.Write)) binary.WriteByte(0);
@@ -259,7 +259,7 @@ internal static class MlpEncoderTests
             { stream.Position = layout.DataOffset; stream.Write(expected); }
             var output = Path.Combine(root, "noise.mlp");
             MlpEncoder.EncodeAsync(wave, output, "", TimeSpan.FromSeconds(120), CancellationToken.None).GetAwaiter().GetResult();
-            Require(MlpCacheValidator.IsEncoderValid(output), "oversized-AU stream structure");
+            Require(MlpCacheValidator.IsMlpEncoderValid(output), "MlpEncoder oversized-AU stream structure");
             var bytes = File.ReadAllBytes(output); var offset = 0; var units = 0;
             while (offset < bytes.Length)
             {
@@ -268,7 +268,7 @@ internal static class MlpEncoderTests
                 Require(size >= 8 && size <= 1536 && offset + size <= bytes.Length, "AU exceeds unchanged 1536-byte limit");
                 offset += size; units++;
             }
-            Require(units == (frames + 79) / 80, "fallback changed AU count or metadata alignment");
+            Require(units == (frames + 79) / 80, "Recovery changed AU count or metadata alignment");
             var repeat = Path.Combine(root, "repeat.mlp");
             var context = Path.Combine(root, "metadata.stampctx");
             var explicitOutput = Path.Combine(root, "explicit.mlp");
@@ -278,7 +278,7 @@ internal static class MlpEncoderTests
                 MlpEncoder.EncodeAsync(wave, explicitOutput, context, TimeSpan.FromSeconds(120), CancellationToken.None)
             ).GetAwaiter().GetResult();
             Require(File.ReadAllBytes(repeat).AsSpan().SequenceEqual(bytes), "Concurrent oversized-AU fallback is not deterministic");
-            Require(File.ReadAllBytes(explicitOutput).AsSpan().SequenceEqual(bytes), "fallback changed explicit metadata alignment");
+            Require(File.ReadAllBytes(explicitOutput).AsSpan().SequenceEqual(bytes), "Recovery changed explicit metadata alignment");
             if (decode)
             {
                 var raw = Path.Combine(root, "decoded.raw");
@@ -290,9 +290,9 @@ internal static class MlpEncoderTests
                 Require(result.Succeeded, "Oversized-AU independent decode: " + result.StandardError);
                 var actual = File.ReadAllBytes(raw);
                 Require(actual.Length == units * 80 * channels * 3, "Incorrect padded PCM length");
-                Require(actual.AsSpan(0, expected.Length).SequenceEqual(expected), "fallback changed source PCM");
+                Require(actual.AsSpan(0, expected.Length).SequenceEqual(expected), "Recovery changed source PCM");
                 Require(actual.AsSpan(expected.Length).IndexOfAnyExcept((byte)0) < 0, "Nonzero final AU padding");
-                Console.WriteLine("PASS: oversized-AU lossless fallback; artifacts: " + root);
+                Console.WriteLine("PASS: oversized-AU lossless recovery; artifacts: " + root);
             }
         }
         finally { if (!decode) Directory.Delete(root, true); }
@@ -310,7 +310,7 @@ internal static class MlpEncoderTests
                     var wave = Path.Combine(folder, "input.wav"); var expected = WriteWave(wave, rate, bits, channels, 817);
                     var output = Path.Combine(root, $"{rate}_{bits}_{channels}.mlp");
                     MlpEncoder.EncodeAsync( wave, output, "", TimeSpan.FromSeconds(120), CancellationToken.None).GetAwaiter().GetResult();
-                    Require(MlpCacheValidator.IsEncoderValid(output), $"Inspect rejected {rate}/{bits}/{channels}");
+                    Require(MlpCacheValidator.IsMlpEncoderValid(output), $"Inspect rejected {rate}/{bits}/{channels}");
                     var raw = Path.Combine(folder, "decoded.raw");
                     var result = runner.RunAsync(new ProcessRequest
                     {
@@ -365,17 +365,17 @@ internal static class MlpEncoderTests
             var actual = File.ReadAllBytes(decoded);
             Require(actual.Length >= raw.Length && actual.AsSpan(0, raw.Length).SequenceEqual(raw), "FFmpeg/native pipeline changed PCM");
             Require(actual.AsSpan(raw.Length).IndexOfAnyExcept((byte)0) < 0, "Nonzero batch tail");
-            Require(MlpCacheValidator.IsEncoderValid(output), "Batch stream structure failed");
+            Require(MlpCacheValidator.IsMlpEncoderValid(output), "Batch stream structure failed");
             // Bypass the converter using the exact synthetic PCM: identical final bytes prove no post-encode repair.
             var directFolder = Path.Combine(folder, "direct"); Directory.CreateDirectory(directFolder);
             var directWave = Path.Combine(directFolder, "input.wav"); SurcodePcmWav.Normalize(wav, directWave, rate, bits);
             var direct = Path.Combine(folder, "direct.mlp");
             MlpEncoder.EncodeAsync( directWave, direct, "", TimeSpan.FromSeconds(120), CancellationToken.None).GetAwaiter().GetResult();
-            Require(File.ReadAllBytes(output).SequenceEqual(File.ReadAllBytes(direct)), "Batch output differs from direct algorithm");
+            Require(File.ReadAllBytes(output).SequenceEqual(File.ReadAllBytes(direct)), "Batch output differs from direct mlpencoder algorithm");
             passed.Add(new { rate, bits, channels, bytes = new FileInfo(output).Length, pcm_equal = true, direct_bytes_equal = true });
             Console.WriteLine($"PASS real batch {rate}/{bits}/{channels}");
         }
         File.WriteAllText(Path.Combine(root, "result.json"), JsonSerializer.Serialize(new { status = "PASS", profiles = passed, encoder = MlpEncoder.BinarySha256 }));
-        Console.WriteLine("PASS: real FLAC -> FFmpeg -> MLP core; native PCM and direct encoded bytes equal");
+        Console.WriteLine("PASS: real FLAC -> FFmpeg -> MLP encoder; native PCM and direct encoded bytes equal");
     }
 }

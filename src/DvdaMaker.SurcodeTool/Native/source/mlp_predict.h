@@ -3,7 +3,7 @@
 #include "mlp_bits.h"
 /* Independent API; not the original descriptor ABI. Newest history first.
  * Coefficients are already scaled; qss applies only to output residuals.
- * This models the mathematics, not arbitrary x87 rounding modes. */
+ * This models the mlpencoder mathematics, not arbitrary x87 rounding modes. */
 typedef struct mlp_predict_filter {
     unsigned changed;
     unsigned order;

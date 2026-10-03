@@ -2,7 +2,7 @@
 #define MLP_SEARCH_H
 #include "mlp_parameters.h"
 /* Independent ABI. Source: 10008790/10008900/10008a10/10009f50.
- * Double arithmetic models math, not exact x87 execution.
+ * Double arithmetic models mlpencoder math, not exact x87 execution.
  * Blocks are contiguous mono signed24 PCM, lengths 8..160, even.
  * A single block uses only the rising window, as in the original.
  * Invalid calls leave outputs unchanged. */
@@ -78,7 +78,7 @@ typedef struct mlp_search_plan {
  * Joint mode uses lag 8..49 and first-40 feedback fitting. Caller must
  * reapply the selected filters to each AU, including after local overflow.
  * Blocks must be even, 8..160. Joint mode requires total >=40.
- * Floating arithmetic is the model, not an x87 identity claim. */
+ * Floating arithmetic is the mlpencoder model, not an x87 identity claim. */
 MLP_BITS_API int mlp_search_interval(mlp_search_pool *pool,
     const int32_t *pcm, const size_t *lengths, size_t blocks,
     unsigned maximum_a, unsigned maximum_b, unsigned lag, unsigned mode_flags,

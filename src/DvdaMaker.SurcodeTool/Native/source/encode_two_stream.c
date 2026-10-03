@@ -1,5 +1,5 @@
 /* Two-substream application: stereo downmix + full channel output.
- * wire writers; independent fixed-16-AU, unpredicted policy.
+ * MlpEncoder wire writers; independent fixed-16-AU, unpredicted policy.
  * Optional original downmix design/scale/application with explicit matrices. */
 #define _POSIX_C_SOURCE 200809L
 #include "mlp_pcm.h"

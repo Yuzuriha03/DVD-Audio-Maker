@@ -3,7 +3,7 @@ using DvdaMaker.Processes;
 
 namespace DvdaMaker.SurcodeTool;
 
-/// <summary>Prepare integer PCM only. The DLL remains the sole MLP encoder.</summary>
+/// <summary>Prepare integer PCM only. The encoder DLL remains the sole MLP encoder.</summary>
 public static class FfmpegPcmConverter
 {
     // Bump when conversion semantics change, even if the FFmpeg binary does not.

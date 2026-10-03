@@ -175,13 +175,13 @@
     "Source": "[恢复] 第 {0} 盘签名一致，复用暂存 ISO（{1} B）: {2}",
     "Parameters": 3,
     "Nested": [],
-    "English": "[fallback] Disc {0} signature matches; reusing staged ISO ({1} B): {2}"
+    "English": "[Recovery] Disc {0} signature matches; reusing staged ISO ({1} B): {2}"
   },
   {
     "Source": "[恢复] 第 {0} 盘签名一致，",
     "Parameters": 1,
     "Nested": [],
-    "English": "[fallback] Disc {0} signature matches; "
+    "English": "[Recovery] Disc {0} signature matches; "
   },
   {
     "Source": "复用暂存 ISO（{0} B）: {1}",
@@ -1467,7 +1467,7 @@
     "Source": "MLP 编码核心编码分支只能在 Windows 上运行。",
     "Parameters": 0,
     "Nested": [],
-    "English": "The encoder is supported only on Windows."
+    "English": "The MLP encoder is supported only on Windows."
   },
   {
     "Source": "找不到音源转换工具 FFmpeg，请检查 DVDA_FFMPEG 或 PATH: {0}",
@@ -1497,7 +1497,7 @@
     "Source": "[MLP] 提交 {0} 个音源给MLP 编码核心",
     "Parameters": 1,
     "Nested": [],
-    "English": "[MLP] Submitting {0} sources to the encoder"
+    "English": "[MLP] Submitting {0} sources to the MLP encoder"
   },
   {
     "Source": "[MLP] 临时目录: {0}",
@@ -1517,19 +1517,19 @@
     "Nested": [
       1
     ],
-    "English": "encoder library failed ({0} tracks in batch): {1}"
+    "English": "MlpEncoder encoder library failed ({0} tracks in batch): {1}"
   },
   {
     "Source": "MLP 编码核心编码工具未生成 MLP: {0}",
     "Parameters": 1,
     "Nested": [],
-    "English": "The encoder did not create MLP output: {0}"
+    "English": "The MLP encoder did not create MLP output: {0}"
   },
   {
     "Source": "MLP 编码核心 MLP 结构校验失败: {0}",
     "Parameters": 1,
     "Nested": [],
-    "English": "MLP structure verification failed: {0}"
+    "English": "MlpEncoder structure verification failed: {0}"
   },
   {
     "Source": "MLP 编码核心 MLP 无法解析: {0}（{1}）",
@@ -1537,7 +1537,7 @@
     "Nested": [
       1
     ],
-    "English": "Cannot parse MLP: {0} ({1})"
+    "English": "Cannot parse mlpencoder MLP: {0} ({1})"
   },
   {
     "Source": "编码过程中源文件发生变化: {0}",
@@ -2626,7 +2626,7 @@
     "Source": "  surcode-batch = Windows MLP 编码核心   ✔",
     "Parameters": 0,
     "Nested": [],
-    "English": "  surcode-batch = Windows MLP encoder   ✔"
+    "English": "  surcode-batch = mlpencoder Windows MLP encoder   ✔"
   },
   {
     "Source": "  encoder       = 随程序内嵌，无需原版 SurCode",
@@ -4404,7 +4404,7 @@
     "Source": "[恢复]",
     "Parameters": 0,
     "Nested": [],
-    "English": "[fallback]"
+    "English": "[Recovery]"
   },
   {
     "Source": "无法启动外部程序 ",
@@ -5315,16 +5315,16 @@
     "English": "[PCM] Source ready: {0}"
   },
   {
-    "Source": "MLP DLL 需要 Windows x64 主程序，请使用 win-x64 发布包。",
+    "Source": "MLP 编码器 DLL 需要 Windows x64 主程序，请使用 win-x64 发布包。",
     "Parameters": 0,
     "Nested": [],
-    "English": "The MLP DLL requires a Windows x64 host. Use the win-x64 release."
+    "English": "The mlpencoder MLP DLL requires a Windows x64 host. Use the win-x64 release."
   },
   {
-    "Source": "发布包缺少MLP DLL。",
+    "Source": "发布包缺少MLP 编码器 DLL。",
     "Parameters": 0,
     "Nested": [],
-    "English": "The MLP DLL is missing from the release package."
+    "English": "The mlpencoder MLP DLL is missing from the release package."
   },
   {
     "Source": "MLP DLL 哈希不符，请清理损坏的原生核心缓存后重试。",
@@ -5351,10 +5351,10 @@
     "English": "Invalid PCM frame count or sample rate."
   },
   {
-    "Source": "MLP DLL 编码超时，已取消并清理临时输出。",
+    "Source": "MLP 编码器 DLL 编码超时，已取消并清理临时输出。",
     "Parameters": 0,
     "Nested": [],
-    "English": "MLP DLL encoding timed out. The operation was canceled and temporary output was removed."
+    "English": "MlpEncoder DLL encoding timed out. The operation was canceled and temporary output was removed."
   },
   {
     "Source": "拒绝覆盖已有的 MLP 输出文件。",
@@ -5381,10 +5381,10 @@
     "English": "An MLP DLL output block exceeds the ABI limit."
   },
   {
-    "Source": "MLP DLL 编码失败（{0}）：{1}",
+    "Source": "MLP 编码器 DLL 编码失败（{0}）：{1}",
     "Parameters": 2,
     "Nested": [],
-    "English": "MLP DLL encoding failed ({0}): {1}"
+    "English": "MlpEncoder DLL encoding failed ({0}): {1}"
   },
   {
     "Source": "[MLP DLL] {0} 帧 / {1} Hz / {2} bit / {3} 声道，{4} 字节",

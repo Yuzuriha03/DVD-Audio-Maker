@@ -178,8 +178,8 @@
   "oversized_au_fallback": {
     "date": "2026-10-02",
     "previous_encoder_sha256": "1eaa3a212a8a703d416874583688c46532fec393266a63ea402253e2f29905e4",
-    "policy": "Keep encoding byte-identical when all access units fit. Before committing an oversized interval, retry the same PCM with unpredicted lossless coding; keep 1536-byte AU and FIFO limits. No output rewriting.",
-    "focused_validation": "PASS: FFmpeg and original/verifiers preserve PCM; 198/198 PCM fixtures pass, 197 previous outputs unchanged; all 78 original profiles (95,138,694 bytes) match.",
+    "policy": "Keep mlpencoder encoding byte-identical when all access units fit. Before committing an oversized interval, retry the same PCM with unpredicted lossless coding; keep 1536-byte AU and FIFO limits. No output rewriting.",
+    "focused_validation": "PASS: FFmpeg and original/mlpencoder verifiers preserve PCM; 198/198 PCM fixtures pass, 197 previous outputs unchanged; all 78 original profiles (95,138,694 bytes) match.",
     "validation_record": "docs/mlp-oversize-fix-validation.json",
     "original_same_sample": "Confirmed original application rejects the identical 11042-frame PCM with Access unit too large; no nonempty original MLP exists.",
     "compatibility_tests": "101/101 PASS",

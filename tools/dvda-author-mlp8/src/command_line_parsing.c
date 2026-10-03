@@ -2585,7 +2585,7 @@ separated by a colon, with rgb components by commas");
                   "files will not be used.");
           foutput("%s\n", PAR "Use this mode if IFO files are missing "
                   "or mangled, or AOB files have been partially"
-                  " restored using fallback tools.");
+                  " restored using recovery tools.");
           use_ifo_files = false;
           break;
 

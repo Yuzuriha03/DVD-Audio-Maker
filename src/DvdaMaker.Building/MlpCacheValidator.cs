@@ -11,7 +11,7 @@ public static class MlpCacheValidator
     public const int RequiredMajorSyncInterval = 8;
 
     // Original scheduling may balance restart spans; validate rather than rewrite its output.
-    public static bool IsEncoderValid(string path)
+    public static bool IsMlpEncoderValid(string path)
     {
         try
         {

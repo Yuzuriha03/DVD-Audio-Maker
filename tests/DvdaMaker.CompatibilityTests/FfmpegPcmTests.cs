@@ -151,7 +151,7 @@ internal static class FfmpegPcmTests
                 Require(actual.Length == (frames + block - 1) / block * block * channels * 3, "Wrong decoded frame count");
                 Require(actual.AsSpan(0, expected.Length).SequenceEqual(expected), "Decoded MLP differs from target PCM");
                 Require(actual.AsSpan(expected.Length).IndexOfAnyExcept((byte)0) < 0, "Nonzero AU padding");
-                Require(MlpCacheValidator.IsEncoderValid(output), "MLP structure invalid");
+                Require(MlpCacheValidator.IsMlpEncoderValid(output), "MLP structure invalid");
                 var directWave = prepared;
                 if (rate == sourceRate && bits >= sourceBits)
                 { directWave = Path.Combine(folder, "direct.wav"); SurcodePcmWav.Normalize(source, directWave, rate, bits); }

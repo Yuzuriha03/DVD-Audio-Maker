@@ -93,7 +93,7 @@ python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64" --wor
 python tools\win-build\build-media-bridge.py --msys-root "D:\dev\msys64"
 ```
 
-This supplies the required audio decoders, SWR/SOXR, menu-video reading and C interface, without FFmpeg/FFprobe executables. MLP encoding remains a separate MLP core. See [in-process media](../../docs/INPROCESS-MEDIA.en.md).
+This supplies the required audio decoders, SWR/SOXR, menu-video reading and C interface, without FFmpeg/FFprobe executables. MLP encoding remains a separate MLP encoder. See [in-process media](../../docs/INPROCESS-MEDIA.en.md).
 
 ### Image runtime and native author
 

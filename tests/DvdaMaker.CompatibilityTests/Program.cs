@@ -2216,7 +2216,7 @@ static void MlpCacheIndexStorage()
         {
             Source = sourceIdentity,
             Output = outputIdentity,
-            Encoder = "|1",
+            Encoder = "mlpencoder|1",
             Bits = 24,
             ResampleTo = null,
             MaxInterval = MlpCacheValidator.RequiredMajorSyncInterval,
@@ -2225,27 +2225,27 @@ static void MlpCacheIndexStorage()
 
         var reloaded = MlpCacheIndex.Load(MlpCacheIndex.PathFor(mlpDirectory));
         Equal(1, reloaded.Count);
-        True(reloaded.Match(output, sourceIdentity, "|1", 24, null,
+        True(reloaded.Match(output, sourceIdentity, "mlpencoder|1", 24, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is not null,
             "凭据一致时应命中");
-        True(reloaded.Match(output, sourceIdentity, "|2", 24, null,
+        True(reloaded.Match(output, sourceIdentity, "mlpencoder|2", 24, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "编码器身份变化时不得命中");
-        True(reloaded.Match(output, sourceIdentity, "|1", 16, null,
+        True(reloaded.Match(output, sourceIdentity, "mlpencoder|1", 16, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "位深变化时不得命中");
-        True(reloaded.Match(output, sourceIdentity, "|1", 24, 44_100,
+        True(reloaded.Match(output, sourceIdentity, "mlpencoder|1", 24, 44_100,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "重采样目标变化时不得命中");
-        True(reloaded.Match(output, sourceIdentity, "|1", 24, null, 4) is null,
+        True(reloaded.Match(output, sourceIdentity, "mlpencoder|1", 24, null, 4) is null,
             "major sync 间隔变化时不得命中");
-        True(reloaded.Match(output, new FileIdentity(source, 1, 0, "a", "b"), "|1", 24, null,
+        True(reloaded.Match(output, new FileIdentity(source, 1, 0, "a", "b"), "mlpencoder|1", 24, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "源身份变化时不得命中");
 
         // 输出文件被改动后必须重新编码。
         File.WriteAllBytes(output, Enumerable.Repeat((byte)0x44, 4096).ToArray());
-        True(reloaded.Match(output, sourceIdentity, "|1", 24, null,
+        True(reloaded.Match(output, sourceIdentity, "mlpencoder|1", 24, null,
             MlpCacheValidator.RequiredMajorSyncInterval) is null,
             "MLP 被改动后不得命中");
 

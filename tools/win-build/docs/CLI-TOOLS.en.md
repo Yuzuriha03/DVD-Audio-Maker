@@ -83,7 +83,7 @@ FLAC, M4A/ALAC and JPG, PNG or WebP artwork are supported. Use one subdirectory 
 
 ## MLP source
 
-Default MLP core:
+Default MLP encoder:
 
 ```text
 DVDA_MLP_SOURCE="surcode-batch"
@@ -98,7 +98,7 @@ DVDA_MLP_SOURCE="external"
 DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
 ```
 
-MLP core batch encoding (retaining existing setting names):
+MlpEncoder-core batch encoding (retaining existing setting names):
 
 ```text
 DVDA_MLP_SOURCE="surcode-batch"

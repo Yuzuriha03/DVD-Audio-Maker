@@ -4,7 +4,7 @@
 
 ## Goal and scope
 
-Use DVDA_FFMPEG for surcode-batch source decoding, resampling and target bit-depth preparation. MLP remains encoded by the existing Windows x64 in-process DLL. Do not change the native encoding algorithm or restore FFmpeg's MLP encoding branch.
+Use DVDA_FFMPEG for surcode-batch source decoding, resampling and target bit-depth preparation. MLP remains encoded by the existing Windows x64 in-process encoder DLL. Do not change the native encoding algorithm or restore FFmpeg's MLP encoding branch.
 
 ## Implementation sequence
 

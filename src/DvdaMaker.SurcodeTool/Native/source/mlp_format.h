@@ -12,7 +12,7 @@ typedef struct mlp_format {
 /* DVD-Audio format admission: 16/20/24 bits; 44.1/48/88.2/96 kHz with
  * 1..6 channels; 176.4/192 kHz with 1..2 channels. Uniform sample rate/depth,
  * standard mono through 5.1 layouts. This is not SurCode GUI validation.
- * Header fields from 10004dd0, 10004e40, Init and 1000d850. */
+ */
 MLP_BITS_API int mlp_format_init(mlp_format *format, unsigned rate,
     unsigned bits, unsigned channels);
 /* Explicit DVD-Audio assignment 0..20. PCM input remains WAVE-mask order;

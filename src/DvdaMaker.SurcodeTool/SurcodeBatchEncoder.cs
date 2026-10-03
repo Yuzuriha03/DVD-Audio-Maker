@@ -2,7 +2,7 @@ using DvdaMaker.Processes;
 
 namespace DvdaMaker.SurcodeTool;
 
-/// <summary>Compatibility name for the MLP core batch pipeline; never automates SurCode.</summary>
+/// <summary>Compatibility name for the mlpencoder batch pipeline; never automates SurCode.</summary>
 public sealed class SurcodeBatchEncoder(ProcessRunner runner)
 {
     public async Task RunAsync(SurcodeEncodingJob job, CancellationToken cancellationToken)

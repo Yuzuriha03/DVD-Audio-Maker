@@ -1,12 +1,12 @@
-# MLP core MLP encoding (October 2, 2026)
+# MlpEncoder-core MLP encoding (October 2, 2026)
 
 [简体中文](MLP-ENCODER.md) | [English](MLP-ENCODER.en.md)
 
 ## Current execution chain
 
-`surcode-batch` (also accepting `batch-surcode`) now invokes the MLP core embedded in this project:
+`surcode-batch` (also accepting `batch-surcode`) now invokes the MLP encoder embedded in this project:
 
-`Source → FFmpeg → integer PCM WAVE → in-process DLL → read-only verification → MLP cache → disc authoring`
+`Source → FFmpeg → integer PCM WAVE → in-process encoder DLL → read-only verification → MLP cache → disc authoring`
 
 The original `surcodemlp.exe`, GUI automation and SSF sessions have been removed from the execution chain. The FFmpeg MLP encoding provider is also removed. FFmpeg/FFprobe remain for source processing, decoding, probing and output verification. Existing external MLP import through `external` / `surcode` remains available. `DVDA_MLP_SOURCE=ffmpeg` now produces an explicit error.
 
@@ -24,7 +24,7 @@ DVDA_MLP_METADATA_CONTEXT=
 
 The existing sample-rate and bit-depth setting names remain for compatibility and define the batch target format. Supported rates are 44100, 48000, 88200, 96000, 176400 and 192000 Hz; supported depths are 16, 20 and 24 bits. Channels follow the input layout: up to six at the four lower rates, and up to two at the two higher rates. An empty MLP output directory uses `mlp` under the build directory. `DVDA_MLP_SURCODE_EXE` is no longer required.
 
-Conversion preserves channel layout and PCM order. FFmpeg prepares sample rate and bit depth; WAVE normalization checks significant bits and handles side-surround labels, retaining compatibility with legacy PCM that omits a final RIFF alignment byte. 20-bit PCM uses explicit quantization in 24-bit storage. Without resampling or precision reduction, PCM is unchanged. Encoded output is never repaired with patches. The batch GUI currently uses one sample rate and bit depth; the MLP core's mixed channel-group interface is not exposed as project configuration.
+Conversion preserves channel layout and PCM order. FFmpeg prepares sample rate and bit depth; WAVE normalization checks significant bits and handles side-surround labels, retaining compatibility with legacy PCM that omits a final RIFF alignment byte. 20-bit PCM uses explicit quantization in 24-bit storage. Without resampling or precision reduction, PCM is unchanged. Encoded output is never repaired with patches. The batch GUI currently uses one sample rate and bit depth; the MLP encoder's mixed channel-group interface is not exposed as project configuration.
 
 ## Conditions for byte identity
 
@@ -34,7 +34,7 @@ Explicit context contains AU totals and intervals and must match the input track
 
 ## Release and caches
 
-GUI, CLI and embedded DLL are Windows x64. The host calls the MLP core directly through a streaming C ABI, explicitly preserving x87 PC53 arithmetic and floating-point control state around callbacks. No MLP encoding subprocess runs. The core and source are under `src/DvdaMaker.SurcodeTool/Native`; the old encoder validation workspace and original installation directory are not dependencies.
+GUI, CLI and embedded DLL are Windows x64. The host calls the MLP encoder directly through a streaming C ABI, explicitly preserving x87 PC53 arithmetic and floating-point control state around callbacks. No MLP encoding subprocess runs. The core and encoder source are under `src/DvdaMaker.SurcodeTool/Native`; the external development workspace and original installation directory are not dependencies.
 
 Single-file releases contain the resource. At runtime it is extracted to `%LOCALAPPDATA%/DVD-Audio-Maker/native/<SHA256>/mlp_encoder.dll` and SHA256-verified. Users need no C compiler. Cache identity includes source content, core, actual FFmpeg binary, PCM conversion policy, metadata context, format parameters and output content. Old caches without provenance are rebuilt. Preparation or encoding failure preserves published MLP.
 
@@ -42,9 +42,9 @@ Current WAVE input uses RIFF's 32-bit length. Tracks exceeding approximately 4 G
 
 ## Validation coverage and reruns
 
-Before the FFmpeg preparation migration, the self-contained Windows x64 single-file package passed 78 complete original comparisons: synthetic FLAC through actual eac3to, the project's batch entry and the encoder produced **95,138,694 bytes** identical to the original files. Each case also checked independent core decoding and a second-run cache hit, with matching PCM and explicit auxiliary metadata.
+Before the FFmpeg preparation migration, the self-contained Windows x64 single-file package passed 78 complete original comparisons: synthetic FLAC through actual eac3to, the project's batch entry and the MLP encoder produced **95,138,694 bytes** identical to the original files. Each case also checked independent core decoding and a second-run cache hit, with matching PCM and explicit auxiliary metadata.
 
-The project passed 84 default channel-layout cases through native encoding, independent FFmpeg decoding and exact PCM comparison. Before migration, seven additional real FLAC → eac3to → MLP core cases passed PCM comparisons and full-file comparisons against direct core encoding. Coverage included Chinese paths, final-AU zero padding, 16/20/24 bits and all six rates. Cache, concurrency and failure protection were included in the 97/97 compatibility checkpoint.
+The project passed 84 default channel-layout cases through native encoding, independent FFmpeg decoding and exact PCM comparison. Before migration, seven additional real FLAC → eac3to → mlpencoder cases passed PCM comparisons and full-file comparisons against direct core encoding. Coverage included Chinese paths, final-AU zero padding, 16/20/24 bits and all six rates. Cache, concurrency and failure protection were included in the 97/97 compatibility checkpoint.
 
 ```powershell
 dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release
@@ -54,7 +54,7 @@ dotnet run --project tests/DvdaMaker.CompatibilityTests -c Release -- --mlpencod
 
 The final two commands require real FFmpeg. The batch entry no longer requires eac3to. Tests generate only synthetic audio and print the temporary directory retaining their evidence.
 
-The encoder validation workspace's earlier 720 core-parameter checks and 78 original comparisons are upstream evidence; they do not mean every mixed-group configuration is exposed here. See `Native/mlpencoder-validation.json` for source/binary fingerprints and upstream scope. Historical EXE-integration results are in `mlpencoder-integration.json`.
+The earlier 720 core-parameter checks and 78 original comparisons are upstream evidence; they do not mean every mixed-group configuration is exposed here. See `Native/mlpencoder-validation.json` for source/binary fingerprints and upstream scope. Historical EXE-integration results are in `mlpencoder-integration.json`.
 
 ## GUI / x64 DLL integration
 
@@ -62,9 +62,9 @@ GUI controls replace manual configuration editing. Existing env files can be imp
 
 ## Lossless oversized-AU fallback (October 2, 2026)
 
-The MLP core now checks AU size before committing each restart interval. If the normal encoding plan fits the existing 1,536-byte limit, complete output remains unchanged. Only overflowing intervals use lossless coding without prediction filters, preserving actual PCM, reversible matrices, channel order, AU count and explicit metadata. The fallback must still pass existing size and FIFO checks, with no bit-depth reduction, resampling or output patching.
+The MLP encoder now checks AU size before committing each restart interval. If the normal encoding plan fits the existing 1,536-byte limit, complete output remains unchanged. Only overflowing intervals use lossless coding without prediction filters, preserving actual PCM, reversible matrices, channel order, AU count and explicit metadata. The fallback must still pass existing size and FIFO checks, with no bit-depth reduction, resampling or output patching.
 
-The 88.2 kHz / 24-bit / six-channel high-noise fixture's oversized block decreased from 1,582 to 1,526 bytes. FFmpeg, original VFY and VFY all confirmed complete PCM fallback. All 198 PCM cases passed; 197 previously successful outputs were unchanged, and all 78 original comparisons totaling 95,138,694 bytes remained identical. See the [fix notes](MLP-OVERSIZE-FIX.en.md) for implementation, limits and results.
+The 88.2 kHz / 24-bit / six-channel high-noise fixture's oversized block decreased from 1,582 to 1,526 bytes. FFmpeg, original VFY and mlpencoder VFY all confirmed complete PCM fallback. All 198 PCM cases passed; 197 previously successful outputs were unchanged, and all 78 original comparisons totaling 95,138,694 bytes remained identical. See the [fix notes](MLP-OVERSIZE-FIX.en.md) for implementation, limits and results.
 
 New regression entry point (requires FFmpeg):
 

@@ -26,7 +26,7 @@ Their open-source algorithms are still used where needed. Necessary FFmpeg/Image
 
 tools/win-build/native/dvda-menu-media.c encodes one YUV420 frame as an MPEG-2 I-frame, optionally encodes 48 kHz, 16-bit stereo WAV to MP2, and muxes DVD MPEG-PS with 2048-byte packs. It supports PAL 720×576 / 25 fps, NTSC 720×480 / 30000÷1001 fps, and 4:3/16:9. Stills do not require audio. Invalid dimensions, truncated YUV/WAV, wrong rates and empty audio fail; opened partial outputs are removed.
 
-The FFmpeg menu profile includes only required MLP/PCM, MPEG-2, MP2, parsing and muxing. It dynamically links avcodec, avformat and avutil, disabling programs, networking, filters and SWS/SWR. The GUI media profile is separate. The MLP core still performs MLP encoding.
+The FFmpeg menu profile includes only required MLP/PCM, MPEG-2, MP2, parsing and muxing. It dynamically links avcodec, avformat and avutil, disabling programs, networking, filters and SWS/SWR. The GUI media profile is separate. The MLP encoder still performs MLP encoding.
 
 ### Subpictures, buttons and navigation
 
@@ -45,7 +45,7 @@ verify lossless and GUI verification visit every disc, group and track in the fo
 3. For batch-surcode, regenerate target PCM using the same SWR, bit-depth conversion and WAV normalization, then compare against decoded MLP PCM.
 4. Require equal PCM lengths by default. The established SurCode policy only permits complete zero tail frames shorter than 1 ms. Truncation, nonzero tails and differences fail. Unknown conversion policies for old external MLP cannot pass through similar sample counts.
 
-Verification never modifies MLP/AOB. Regression covers missing later tracks, final-track corruption, truncated sectors, invalid PES lengths and cancellation. The MLP core and whole-file requirement are unchanged: identical target PCM, settings and metadata context must produce identical MLP through encoder behavior, without post-encoding patches.
+Verification never modifies MLP/AOB. Regression covers missing later tracks, final-track corruption, truncated sectors, invalid PES lengths and cancellation. The MLP encoder and whole-file requirement are unchanged: identical target PCM, settings and metadata context must produce identical MLP through encoder behavior, without post-encoding patches.
 
 ## Explicit exclusions
 

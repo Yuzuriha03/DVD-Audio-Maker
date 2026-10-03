@@ -27,7 +27,7 @@ Daily settings: `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
 
 ## Bundled components
 
-Source conversion, probing, decoding and media verification use bundled x64 media libraries. Images, fonts and menu drawing use the in-process image library. No FFmpeg, FFprobe or ImageMagick installation is needed, and these operations do not launch their command-line programs. MLP uses the embedded MLP core without original SurCode or eac3to.
+Source conversion, probing, decoding and media verification use bundled x64 media libraries. Images, fonts and menu drawing use the in-process image library. No FFmpeg, FFprobe or ImageMagick installation is needed, and these operations do not launch their command-line programs. MLP uses the embedded MLP encoder without original SurCode or eac3to.
 
 The author uses bundled C modules for menu encoding/muxing, button overlays, navigation and ISO writing without starting the old menu tools. The single-file release prepares these components automatically. Optional M4A/ALAC-to-FLAC organization uses the in-process metadata editor and does not need Metaflac.
 

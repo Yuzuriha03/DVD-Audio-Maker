@@ -1,4 +1,4 @@
-> 2026-10-01 Update: FFmpeg MLP encoding and the original SurCode automation have been replaced by the fallback core;
+> 2026-10-01 Update: FFmpeg MLP encoding and the original SurCode automation have been replaced by the MLP encoder;
 
 [简体中文](TROUBLESHOOTING.md) | [English](TROUBLESHOOTING.en.md)
 
@@ -5140,7 +5140,7 @@ That was **the version just written today, including section 36** (200,552 bytes
 while the WSL side version was older (179,647 bytes) —
 Then the just-written 20 KB document instantly disappeared.
 
-fallback (the file was already committed, so it was easy):
+Recovery (the file was already committed, so it was easy):
 
 ```bash
 git checkout -- docs/TROUBLESHOOTING.md
@@ -5153,7 +5153,7 @@ git checkout -- docs/TROUBLESHOOTING.md
   **`docs/` the repository is authoritative** (documents are written only in the repository). Mixing them together will overwrite each other.
 - Before performing overwrite operations **compare first, then act**, do not do it unconditionally `Copy-Item -Force`.
   If the previous section included a sentence like 'stop and report if the size/hash is different,' accidents would not happen.
-- Fortunately, `docs/TROUBLESHOOTING.md` it had already been committed, `git checkout` fallback was just one sentence.
+- Fortunately, `docs/TROUBLESHOOTING.md` it had already been committed, `git checkout` recovery was just one sentence.
   **If uncommitted files are overwritten, they can only be rewritten** — so committing long documents casually is worthwhile.
 
 ### 37.7 GitHub intermittently unreachable
