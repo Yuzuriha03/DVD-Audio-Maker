@@ -27,7 +27,9 @@ public static class BuiltinMedia
     public static bool IsAvailable => File.Exists(LibraryPath);
     public static string LibraryPath => Path.Combine(
         Environment.GetEnvironmentVariable("DVDA_MEDIA_NATIVE_DIR") is { Length: > 0 } configured
-            ? Path.GetFullPath(configured) : Path.Combine(AppContext.BaseDirectory, "media-native"), "dvda-media.dll");
+            ? Path.GetFullPath(configured) : Path.Combine(BundledRuntime.Root,
+                File.Exists(Path.Combine(BundledRuntime.Root, "menu-bin", "dvda-media.dll"))
+                    ? "menu-bin" : "media-native"), "dvda-media.dll");
 
     private static RunDelegate Load()
     {

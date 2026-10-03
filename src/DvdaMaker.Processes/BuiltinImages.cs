@@ -12,7 +12,7 @@ public static class BuiltinImages
     private static readonly Lazy<RunDelegate> Entry = new(Load);
     public static string LibraryPath => Path.Combine(
         Environment.GetEnvironmentVariable("DVDA_IMAGE_NATIVE_DIR") is { Length: > 0 } directory
-            ? Path.GetFullPath(directory) : Path.Combine(AppContext.BaseDirectory, "image-native"), "dvda-image.dll");
+            ? Path.GetFullPath(directory) : Path.Combine(BundledRuntime.Root, "image-native"), "dvda-image.dll");
     public static bool IsAvailable => File.Exists(LibraryPath);
     public static bool IsBuiltin(string name) => name.StartsWith(Prefix, StringComparison.Ordinal);
     public static bool IsImageTool(string name) => name is "magick" or "convert" or "identify" or "mogrify";

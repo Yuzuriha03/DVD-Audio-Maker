@@ -4,6 +4,8 @@
 
 This package redistributes several open-source programs, including modifications for this use. The inventory follows.
 
+For the single-file release, binary paths below are relative to the automatically extracted runtime cache. License notices and build provenance accompany the EXE under `components/` in the ZIP, preserving their relative directories, such as `components/menu-bin/media-build.json` and `components/image-native/NOTICE.txt`. These documents and records are not embedded in the EXE.
+
 ## Main programs
 
 | Component | Version | License | Notes |
@@ -20,14 +22,14 @@ are provided as a patch applicable with `git apply`.
 | Component | Version | License |
 |---|---|---|
 | **ImageMagick** (`image-native/dvda-image.dll`) | 7.0.8-47 Q16 HDRI | **ImageMagick License**, Apache-2.0-style |
-| **FFmpeg libraries** (menu-bin, media-native) | 9.0.2; Windows x64 builds tailored to each role | **GPL v3 or later** for this configuration |
+| **FFmpeg libraries** (menu-bin) | 9.0.2; one Windows x64 source build shared by media and menus | **GPL v3 or later** for this configuration |
 | Other DLLs | Respective MSYS2/MinGW-w64 builds | See each project |
 
 ## FFmpeg build
 
-FFmpeg libraries use unmodified source from `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`. Source SHA-256: `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. menu-bin includes MLP authoring plus MPEG-2/MP2 menu encoding and DVD MPEG-PS muxing; the author dynamically links three source-built shared libraries; `media-native` adds FLAC/ALAC/AAC/PCM/MLP decoding, FLAC/PCM output, SWR/SOXR resampling and MPEG-2/PNG/JPEG processing for the GUI process. The MLP encoding core remains separate. No FFmpeg command-line executable is shipped.
+FFmpeg libraries use unmodified source from `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`. Source SHA-256: `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. The shared profile builds MLP authoring, MPEG-2/MP2 menu encoding, DVD MPEG-PS muxing, FLAC/ALAC/AAC/PCM/MLP decoding, FLAC/PCM output, SWR/SOXR resampling and MPEG-2/PNG/JPEG processing together. The GUI media bridge and author both link this install prefix. Releases keep one copy of each required DLL in menu-bin. The MLP encoding core remains separate. No FFmpeg command-line executable is shipped.
 
-Build recipes are tools/win-build/build-minimal-ffmpeg.py (mlp / menu / media profiles) and build-media-bridge.py. media-native/media-build.json records configuration, source hashes and all DLL hashes/imports. libsoxr, zlib and their runtime dependencies are included; FFmpeg / FFprobe command-line executables are not. The project's dvda-media.dll interface is implemented in tools/win-build/native/dvda-media.c under the project's GPL v3 license. See docs/MINIMAL-FFMPEG.en.md and docs/INPROCESS-MEDIA.en.md for configuration and validation.
+Build recipes are tools/win-build/build-minimal-ffmpeg.py (shared release profile; mlp / menu / media profiles remain for comparisons) and build-media-bridge.py. menu-bin/media-build.json records configuration, source hashes and all DLL hashes/imports. libsoxr, zlib and their runtime dependencies are included; FFmpeg / FFprobe command-line executables are not. The project's dvda-media.dll interface is implemented in tools/win-build/native/dvda-media.c under the project's GPL v3 license. See docs/MINIMAL-FFMPEG.en.md and docs/INPROCESS-MEDIA.en.md for configuration and validation.
 
 
 ## Fonts

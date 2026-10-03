@@ -35,19 +35,26 @@ preLaunchTask 自动构建对应项目，工作目录固定在仓库根目录。
 
 ## 发布配置
 
-需要不含 .NET 的精简包时，在下列打包命令中追加 `--framework-dependent`；运行机器须安装 .NET 10 Desktop Runtime x64。不加此参数仍是自包含包。开发调试脚本与 F5 配置不受该发布选项影响。
+默认生成 framework-dependent Windows x64 GUI 单 EXE；运行端需要 .NET 10 Desktop Runtime x64。EXE 只内嵌运行组件，说明、许可、配置示例及组件清单作为旁文件，一起打包进一个发布 ZIP。只在发布阶段嵌入压缩资源；Debug 的 bin/obj、PDB、CLI 和 F5 不变。
 
 ```bat
-rem Standard GUI-only release
-tools\win-build\build-all.cmd --source "D:\dev\winbuild\src" --prebuilt "D:\dev\winbuild\menu-bin" --output "D:\release-gui"
+tools\win-build\build-all.cmd ^
+  --source "D:\dev\winbuild\src" ^
+  --prebuilt "D:\dev\winbuild\menu-bin" ^
+  --media-runtime "build\media-native-shared" ^
+  --image-author "build\image-author-shared"
 
-rem Optional portable diagnostics, including CLI
-tools\win-build\build-all.cmd --source "D:\dev\winbuild\src" --prebuilt "D:\dev\winbuild\menu-bin" --output "D:\release-diagnostics" --include-cli
+rem Optional diagnostic folder, using the same native builds
+tools\win-build\build-all.cmd ^
+  --source "D:\dev\winbuild\src" ^
+  --prebuilt "D:\dev\winbuild\menu-bin" ^
+  --media-runtime "build\media-native-shared" ^
+  --image-author "build\image-author-shared" --directory --include-cli --output "D:\release-diagnostics"
 ```
 
-默认包不发布 CLI，也不包含 dvda.exe、dvda.dll、dvda.deps.json、dvda.runtimeconfig.json、dvda.cmd。可选诊断包增加这些入口并复用 GUI 依赖；另附 CLI-TOOLS.md。两种入口模式都保持 x64 和 config.env 导入能力；是否携带 .NET 由 --framework-dependent 控制。
+媒体与菜单从同一个 shared FFmpeg 前缀构建，目录/缓存中的单套 DLL 位于 menu-bin。可用 DVDA_MEDIA_NATIVE_DIR 指向该目录，DVDA_IMAGE_NATIVE_DIR 指向相邻 image-native。缓存默认 %LOCALAPPDATA%/DVD-Audio-Maker/runtime；开发测试可设置 DVDA_BUNDLE_CACHE_ROOT 隔离缓存。完整步骤见 [Windows 构建说明](../tools/win-build/README.md)，验收设计见 [单文件发布](ONEFILE-PUBLISH.md)。
 
-去掉 CLI 不会去掉 GUI 所需的运行库及公共模块。本次相对已去重的发布包，解压后减少 255,425 字节（约 0.24 MiB），ZIP 减少 99,313 字节（约 0.09 MiB）；主要收益是简化用户入口。
+下面保留历史验收记录，其体积及自包含行为不代表当前默认发布。
 
 ## 2026-10-02 验收
 

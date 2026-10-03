@@ -4,6 +4,8 @@
 
 本包是若干开源程序的再分发（含针对本用途的修改）。清单如下。
 
+单文件发布中，下文的二进制路径相对于程序自动生成的运行缓存。许可和构建来源清单放在 ZIP 中 EXE 旁的 `components/`，保留原相对目录：例如 `components/menu-bin/media-build.json` 和 `components/image-native/NOTICE.txt`。这些说明与清单不嵌入 EXE。
+
 ## 主程序
 
 | 组件 | 版本 | 许可 | 说明 |
@@ -20,14 +22,14 @@
 | 组件 | 版本 | 许可 |
 |---|---|---|
 | **ImageMagick**（`image-native/dvda-image.dll`） | 7.0.8-47 Q16 HDRI | **ImageMagick License**（Apache 2.0 风格） |
-| **FFmpeg 动态库**（menu-bin、media-native） | 9.0.2，按用途裁剪的 Windows x64 构建 | **GPL v3 或更高版本**（本构建配置） |
+| **FFmpeg 动态库**（menu-bin） | 9.0.2，媒体和菜单共用的 Windows x64 源码构建 | **GPL v3 或更高版本**（本构建配置） |
 | 其余 DLL | 各自的 MSYS2/MinGW-w64 构建 | 见各项目 |
 
 ## FFmpeg 构建
 
-FFmpeg 库来自未经修改的 `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`。源码 SHA-256：`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`。menu-bin 保留 MLP 制盘与 MPEG-2/MP2 菜单编码、DVD MPEG-PS 复用，author 动态链接源码构建的三个共享库；media-native 另含 FLAC/ALAC/AAC/PCM/MLP 解码、FLAC/PCM 输出、SWR/SOXR 重采样及 MPEG-2/PNG/JPEG 处理，供 GUI 进程内调用。MLP 编码核心仍是独立组件。发布包不含 FFmpeg 命令行程序。
+FFmpeg 库来自未经修改的 `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`。源码 SHA-256：`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`。shared 配置一次构建 MLP 制盘与 MPEG-2/MP2 菜单编码、DVD MPEG-PS 复用，以及 FLAC/ALAC/AAC/PCM/MLP 解码、FLAC/PCM 输出、SWR/SOXR 重采样和 MPEG-2/PNG/JPEG 处理。GUI 的媒体 C 接口和 author 都链接同一安装前缀；发布版将所需 DLL 统一放在 menu-bin，每个文件只保留一份。MLP 编码核心仍是独立组件。发布包不含 FFmpeg 命令行程序。
 
-构建脚本为本仓库 `tools/win-build/build-minimal-ffmpeg.py`（mlp / menu / media 配置）与 `build-media-bridge.py`；media-native/media-build.json 记录配置、源文件与所有 DLL 的哈希及导入依赖。随包还有 libsoxr、zlib 及其运行库；不包含 FFmpeg / FFprobe 命令行程序。本项目的 dvda-media.dll 接口源码位于 tools/win-build/native/dvda-media.c，遵循项目 GPL v3 许可。配置及验证见 docs/MINIMAL-FFMPEG.md 和 docs/INPROCESS-MEDIA.md。
+构建脚本为本仓库 `tools/win-build/build-minimal-ffmpeg.py`（默认发布使用 shared 配置，保留 mlp / menu / media 对照配置）与 `build-media-bridge.py`；menu-bin/media-build.json 记录配置、源文件与所有 DLL 的哈希及导入依赖。随包还有 libsoxr、zlib 及其运行库；不包含 FFmpeg / FFprobe 命令行程序。本项目的 dvda-media.dll 接口源码位于 tools/win-build/native/dvda-media.c，遵循项目 GPL v3 许可。配置及验证见 docs/MINIMAL-FFMPEG.md 和 docs/INPROCESS-MEDIA.md。
 
 
 ## 字体
