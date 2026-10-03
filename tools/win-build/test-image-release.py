@@ -60,6 +60,9 @@ def main():
         check('Package hashes verified',all(sha(after/name)==value for name,value in entries.items()))
         check('Package manifest complete',set(entries)=={p.relative_to(after).as_posix() for p in after.rglob('*') if p.is_file() and p.name!='MANIFEST.txt'})
         author_record=json.loads((after/'image-native/author-build.json').read_text(encoding='utf-8'))
+        check('Menu DLLs exactly match the validated author runtime',
+            {x.name.lower() for x in (after/'menu-bin').glob('*.dll')} ==
+            {name.lower() for name in author_record['runtime_files']})
         author_imports=Pe(after/'menu-bin/dvda-author-dev.exe').imports()
         check('Author dynamically links the source-built menu profile',author_record.get('ffmpeg_linkage')=='shared-source-built-menu-profile' and {'avcodec-63.dll','avformat-63.dll','avutil-61.dll'} <= set(author_imports))
         check('Menu media, subpicture and navigation tools are in process',not any((after/'menu-bin'/name).exists() for name in ['mpeg2enc.exe','mplex.exe','mp2enc.exe','spumux.exe','dvdauthor.exe']))
