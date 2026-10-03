@@ -24,7 +24,7 @@ The previous implementation used `mkisofs.exe`; that dependency has been replace
 
 ### Subpicture buttons
 
-\`spumux.exe\` and \`spuunmux.exe\` provide button states, transparency, color tables, subpicture RLE encoding/parsing, coordinates and navigation validation. These operations must become an in-process menu component.
+The GUI workflow invokes only \`spumux.exe\` to encode button states, transparency, palettes and button coordinates into DVD subpictures. \`spuunmux.exe\` is a reverse parser that the workflow never starts, so it has been removed from required package inputs and releases. The migration scope is limited to the subpicture encoding and button overlay work performed by \`spumux\`.
 
 ### MPEG-2 menu video
 
@@ -65,7 +65,7 @@ Items 1 through 3 below are complete. The next remaining runtime migrations are 
 2. Remove `mkisofs.exe` in menu-off mode. **Complete.**
 3. FLAC metadata editing. **Complete.**
 4. Menu MPEG video, menu audio and multiplexing.
-5. Subpictures and DVD-Video authoring.
+5. \`spumux\` subpicture buttons and DVD-Video authoring.
 6. Connect the menu API to `dvda-author-dev`.
 7. Full in-process verification.
 

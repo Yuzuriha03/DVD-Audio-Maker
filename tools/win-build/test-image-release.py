@@ -37,6 +37,7 @@ def main():
     try:
         check('No external media or ImageMagick executables bundled',not any(p.name.lower() in ['ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe'] for p in after.rglob('*.exe')))
         check('No legacy mkisofs executable bundled', not (after/'menu-bin/mkisofs.exe').exists())
+        check('Unused spuunmux reverse parser is omitted', not (after/'menu-bin/spuunmux.exe').exists())
         check('MLP core unchanged',sha(repo/'src/DvdaMaker.SurcodeTool/Native/win-x64/mlp_encoder.dll')=='ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8')
         check('Audio/media libraries unchanged',all((after/'media-native'/x.name).read_bytes()==x.read_bytes() for x in (before/'media-native').glob('*.dll')))
         check('Fonts remain shared and unchanged',(after/'menu-bin/fonts/DvdaNotoCJK-Regular.ttc').read_bytes()==(before/'menu-bin/fonts/DvdaNotoCJK-Regular.ttc').read_bytes())

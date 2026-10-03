@@ -29,7 +29,7 @@ DiscBuildExecutor 将 ISO 目标直接传给 author，不再启动外部进程�
 
 ### 子图像和按钮覆盖
 
-当前由 spumux.exe / spuunmux.exe 完成。需要迁入 normal、selected、activated 状态，透明度和调色板，子图像 RLE 编解码，按钮坐标和导航校验。
+GUI 制作流程只调用 spumux.exe，把按钮状态、透明度、调色板和按钮坐标编码成 DVD 子图像；spuunmux.exe 是反向解析工具，当前流程从不启动，已从打包必需项和发布包中排除。待迁入功能只包含 spumux 实际承担的子图像编码和按钮覆盖。
 
 ### MPEG-2 菜单视频
 
@@ -68,7 +68,7 @@ M4A/ALAC 转 FLAC 的可选封面和标签整理已经迁入 `FlacMetadataEditor
 2. 无菜单模式移除 mkisofs.exe：已完成。
 3. 内置 FLAC metadata：已完成。
 4. 菜单 MPEG 视频、菜单音频和复用。
-5. 子图像按钮和 DVD-Video authoring。
+5. spumux 子图像按钮覆盖和 DVD-Video authoring。
 6. 将菜单 API 接入 dvda-author-dev。
 7. 扩展全盘内置验证。
 
