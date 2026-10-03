@@ -22,7 +22,7 @@ Git 仓库不携带完整第三方工具包。`tools/dvda-author-mlp8` 是局部
 
 ```text
 dvda-author-dev.exe   dvdauthor.exe
-spumux.exe            spuunmux.exe     jpeg2yuv.exe
+spumux.exe                           jpeg2yuv.exe
 mpeg2enc.exe          mplex.exe        mp2enc.exe
 ```
 

@@ -17,7 +17,6 @@ internal static class ToolchainProgram
         "dvda-author-dev.exe",
         "dvdauthor.exe",
         "spumux.exe",
-        "spuunmux.exe",
         "jpeg2yuv.exe",
         "mpeg2enc.exe",
         "mplex.exe",
@@ -141,6 +140,12 @@ internal static class ToolchainProgram
         {
             File.Delete(legacyMkisofs);
             Console.WriteLine("  built-in ISO writer: legacy mkisofs.exe omitted");
+        }
+        var unusedSpuunmux = Path.Combine(destination, "menu-bin", "spuunmux.exe");
+        if (File.Exists(unusedSpuunmux))
+        {
+            File.Delete(unusedSpuunmux);
+            Console.WriteLine("  unused reverse subpicture parser: spuunmux.exe omitted");
         }
         if (ffmpegLibraries is not null)
         {
