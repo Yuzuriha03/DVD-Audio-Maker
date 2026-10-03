@@ -31,12 +31,9 @@ public sealed class M4aFlacConverter(
     ProcessRunner runner,
     string ffmpeg,
     string ffprobe,
-    string metaflac,
     AlacEndRepairer alacRepairer)
 {
     private static readonly Regex Md5Pattern = new("MD5=([0-9a-fA-F]+)", RegexOptions.Compiled);
-    private static readonly Regex CommentPattern = new(
-        @"^\s*comment\[\d+\]:\s*([^\r\n]*)", RegexOptions.Multiline | RegexOptions.Compiled);
     private static readonly Regex PictureTypePattern = new(
         @"^\s*type:\s*(\d+)(?!\d)(?![^\r\n]*\(PICTURE\))", RegexOptions.Multiline | RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PictureMimePattern = new(
@@ -226,33 +223,25 @@ public sealed class M4aFlacConverter(
             {
                 var ext = await CoverExtensionAsync(source, cancellationToken).ConfigureAwait(false);
                 var cover = Path.Combine(temporary, "cover_pic" + ext);
-                var export = await runner.RunAsync(new ProcessRequest
+                var pictureBlock = FlacMetadataEditor.ReadPicture(destination);
+                if (pictureBlock is null)
                 {
-                    FileName = metaflac,
-                    Arguments = [$"--export-picture-to={cover}", destination],
-                }, cancellationToken).ConfigureAwait(false);
-                if (!export.Succeeded || !File.Exists(cover))
+                    File.Delete(destination);
+                    return Failure(source, destination, "FLAC PICTURE block is missing");
+                }
+                var normalizedPicture = pictureBlock with
+                {
+                    Descriptor = pictureBlock.Descriptor with { Type = 3 },
+                    Description = string.Empty,
+                };
+                FlacMetadataEditor.ExportPicture(destination, cover);
+                FlacMetadataEditor.ReplacePicture(destination, cover, normalizedPicture);
+                if (!File.Exists(cover))
                 {
                     File.Delete(destination);
                     return Failure(source, destination, "导出 FLAC 封面失败");
                 }
-                var remove = await runner.RunAsync(new ProcessRequest
-                {
-                    FileName = metaflac,
-                    Arguments = ["--remove", "--block-type=PICTURE", destination],
-                }, cancellationToken).ConfigureAwait(false);
-                var import = await runner.RunAsync(new ProcessRequest
-                {
-                    FileName = metaflac,
-                    Arguments = [$"--import-picture-from={cover}", destination],
-                }, cancellationToken).ConfigureAwait(false);
-                if (!remove.Succeeded || !import.Succeeded)
-                {
-                    File.Delete(destination);
-                    return Failure(source, destination, "封面规范化失败");
-                }
-                picture = await ReadPictureDescriptorAsync(destination, cancellationToken)
-                    .ConfigureAwait(false);
+                picture = normalizedPicture.Descriptor;
                 var expectedMime = ext.ToLowerInvariant() switch
                 {
                     ".png" => "image/png",
@@ -371,35 +360,10 @@ public sealed class M4aFlacConverter(
             : null;
     }
 
-    private async Task<IReadOnlyList<(string Key, string Value)>> ReadVorbisTagsAsync(string path, CancellationToken token)
+    private Task<IReadOnlyList<(string Key, string Value)>> ReadVorbisTagsAsync(string path, CancellationToken token)
     {
-        var result = await runner.RunAsync(new ProcessRequest
-        {
-            FileName = metaflac,
-            Arguments = ["--no-utf8-convert", "--list", "--block-type=VORBIS_COMMENT", path],
-            OutputEncoding = System.Text.Encoding.UTF8,
-        }, token).ConfigureAwait(false);
-        return CommentPattern.Matches(result.StandardOutput)
-            .Select(match => match.Groups[1].Value)
-            .Where(value => value.Contains('='))
-            .Select(value =>
-            {
-                var parts = value.Split('=', 2);
-                return (parts[0], parts[1]);
-            })
-            .ToArray();
-    }
-
-    private async Task<FlacPictureDescriptor?> ReadPictureDescriptorAsync(
-        string path,
-        CancellationToken token)
-    {
-        var result = await runner.RunAsync(new ProcessRequest
-        {
-            FileName = metaflac,
-            Arguments = ["--list", "--block-type=PICTURE", path],
-        }, token).ConfigureAwait(false);
-        return result.Succeeded ? ParsePictureDescriptor(result.StandardOutput) : null;
+        token.ThrowIfCancellationRequested();
+        return Task.FromResult(FlacMetadataEditor.ReadVorbisComments(path));
     }
 
     internal static FlacPictureDescriptor? ParsePictureDescriptor(string text)
