@@ -17,15 +17,15 @@ Final local package: `build/ffmpeg-minimal-x64-release/DVD-Audio-Maker.zip`. Bui
 
 ## Changes
 
-- Rebuild `avcodec-63.dll`, `avformat-63.dll` and `avutil-61.dll` from signature-verified, unmodified FFmpeg 9.0.2 source. ABI versions remain 63.1.102, 63.1.102 and 61.1.102.
-- Enable only the MLP decoder, encoder, parser, raw MLP demuxer/muxer and file/pipe protocols. The encoder preserves the native tool's existing interface; GUI encoding still uses the separate encoder DLL.
+- Rebuild `avcodec-63.dll`, `avformat-63.dll` and `avutil-61.dll` from signature-verified, unmodified FFmpeg 9.0.2 source. The native author links their import libraries dynamically; ABI versions remain 63.1.102, 63.1.102 and 61.1.102.
+- Enable only the MLP decoder, encoder, parser, raw MLP demuxer/muxer and file/pipe protocols. The shared author link preserves the native tool's existing interface; GUI encoding still uses the separate encoder DLL.
 - Disable video codecs, networking, external codec libraries and unrelated modules. Retain x86 assembly and runtime CPU detection. The three rebuilt libraries total 2,407,424 bytes.
 - Remove 74 newly unused DLLs, including x264/x265, AOM/dav1d/SVT-AV1, JPEG XL, Rsvg and networking dependencies. Together with the previous six removals, the native bundle contains 80 fewer DLLs than v1.0.
 - Keep shared runtimes that are still imported, including libwinpthread. Fonts, the ImageMagick core, authoring executables and menu video tools retain their original bytes.
 
 The original bundle and replacement hashes are pinned in `NativeOptimizationProfile.json` and `MinimalFfmpegProfile.json`. The packager checks normal/delay imports and binary/XML references and preserves transitive dependencies before deleting files. Unknown files or builds disable automatic pruning. Input directories are not overwritten.
 
-GUI audio conversion, decoding and disc verification still use the externally configured FFmpeg. Neither the MLP encoder DLL nor its managed assembly changes. Encoded files receive no output patching.
+GUI audio conversion, decoding and disc verification use the bundled `media-native` FFmpeg libraries in process and do not start `ffmpeg.exe` or `ffprobe.exe`. The author uses the separate source-built MLP shared libraries described above. Neither the MLP encoder DLL nor its managed assembly changes. Encoded files receive no output patching.
 
 ## Validation
 
@@ -48,7 +48,7 @@ Ordinary C# GUI development still requires only the .NET 10 SDK. Optional native
 python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64"
 ```
 
-Source, NASM, logs, import libraries and DLLs go into the ignored `build/ffmpeg-minimal` directory. Use `--work-directory` or `--jobs` to adjust. Paths with spaces use Windows 8.3 names; choose a space-free work directory if short names are unavailable.
+Source, NASM, logs, import libraries and DLLs go into the ignored `build/ffmpeg-minimal` directory. The MLP author build consumes `lib/*.dll.a` and the three DLLs from this prefix through `build-image-author.py --ffmpeg-runtime`; it does not link the old FFmpeg archives in the configured author snapshot. Use `--work-directory` or `--jobs` to adjust. Paths with spaces use Windows 8.3 names; choose a space-free work directory if short names are unavailable.
 
 The recipe pins source/NASM hashes and verifies the FFmpeg release signature and extracted source. See [minimal-ffmpeg-build.json](minimal-ffmpeg-build.json) for provenance, the compiler version and full configuration. A different compiler, path or configuration can change the resulting hashes; this is a repeatable recipe, not a promise of identical binaries across toolchains.
 

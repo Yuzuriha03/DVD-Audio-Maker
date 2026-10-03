@@ -20,14 +20,14 @@ are provided as a patch applicable with `git apply`.
 
 | Component | Version | License |
 |---|---|---|
-| **mjpegtools** (`jpeg2yuv` / `mpeg2enc` / `mplex` / `mp2enc`) | 2.1.0 | **GPL v2** |
+| **mjpegtools** (`mpeg2enc` / `mplex` / `mp2enc`; `jpeg2yuv` source only) | 2.1.0 | **GPL v2** |
 | **ImageMagick** (`image-native/dvda-image.dll`) | 7.0.8-47 Q16 HDRI | **ImageMagick License**, Apache-2.0-style |
 | **FFmpeg libraries** (menu-bin, media-native) | 9.0.2; Windows x64 builds tailored to each role | **GPL v3 or later** for this configuration |
 | Other DLLs | Respective MSYS2/MinGW-w64 builds | See each project |
 
 ## FFmpeg build
 
-FFmpeg libraries use unmodified source from `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`. Source SHA-256: `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. menu-bin retains MLP authoring capabilities; media-native adds FLAC/ALAC/AAC/PCM/MLP decoding, FLAC/PCM output, SWR/SOXR resampling and MPEG-2/PNG/JPEG processing for the GUI process. The MLP encoding core remains separate.
+FFmpeg libraries use unmodified source from `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`. Source SHA-256: `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. `menu-bin` retains MLP authoring capabilities and the author dynamically links the three MLP shared libraries produced by the source build; `media-native` adds FLAC/ALAC/AAC/PCM/MLP decoding, FLAC/PCM output, SWR/SOXR resampling and MPEG-2/PNG/JPEG processing for the GUI process. The MLP encoding core remains separate. No FFmpeg command-line executable is shipped.
 
 Build recipes are tools/win-build/build-minimal-ffmpeg.py (mlp / media profiles) and build-media-bridge.py. media-native/media-build.json records configuration, source hashes and all DLL hashes/imports. libsoxr, zlib and their runtime dependencies are included; FFmpeg / FFprobe command-line executables are not. The project's dvda-media.dll interface is implemented in tools/win-build/native/dvda-media.c under the project's GPL v3 license. See docs/MINIMAL-FFMPEG.en.md and docs/INPROCESS-MEDIA.en.md for configuration and validation.
 
