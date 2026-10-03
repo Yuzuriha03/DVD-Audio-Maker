@@ -23,7 +23,7 @@ public sealed class BuildLogWriter : IDisposable
         WriteLine(new string('=', 60));
         WriteLine($"[C# build]{(dryRun ? " [DRY-RUN]" : string.Empty)} {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         WriteLine($"  dvda-author : {options.DvdaAuthor}");
-        WriteLine($"  mkisofs     : {options.Mkisofs}");
+        WriteLine("  ISO writer  : dvda-author in-process C writer");
         WriteLine($"  output      : {options.FinalDirectory}");
         WriteLine($"  iso prefix  : {options.IsoPrefix}");
         WriteLine($"  title       : {options.Title}");

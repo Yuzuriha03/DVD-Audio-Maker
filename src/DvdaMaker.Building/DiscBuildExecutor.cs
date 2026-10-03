@@ -66,7 +66,8 @@ public sealed class DiscBuildExecutor(
         }
 
         var authorArguments = DvdaAuthorCommandBuilder.BuildArguments(
-            disc, output, temporary, menuAssets, options.DiagnosticTitleMode);
+            disc, output, temporary, menuAssets, options.DiagnosticTitleMode, iso,
+            options.VolumeId(disc.Number));
         if (options.DiagnosticTitleMode != "album")
         {
             log.WriteLine($"[诊断] DVDA_TITLE_MODE={options.DiagnosticTitleMode}；" +
@@ -88,7 +89,7 @@ public sealed class DiscBuildExecutor(
                 log.WriteLine(line);
             },
         }, cancellationToken).ConfigureAwait(false);
-        log.WriteLine($"[耗时] 第 {disc.Number} 盘 dvda-author: {author.Duration}");
+        log.WriteLine($"[耗时] 第 {disc.Number} 盘制盘与 ISO 写入: {author.Duration}");
         if (!author.Succeeded)
         {
             diagnostics.Add(new BuildDiagnostic(
@@ -123,31 +124,12 @@ public sealed class DiscBuildExecutor(
             }
         }
 
-        var mkisofsArguments = DvdaAuthorCommandBuilder.BuildMkisofsArguments(
-            options, disc, iso, output);
-        log.WriteCommand(options.Mkisofs, mkisofsArguments);
-        var mkisofs = await runner.RunAsync(new ProcessRequest
-        {
-            FileName = options.Mkisofs,
-            Arguments = mkisofsArguments,
-            OnOutputLine = line =>
-            {
-                Console.WriteLine(line);
-                log.WriteLine(line);
-            },
-            OnErrorLine = line =>
-            {
-                Console.Error.WriteLine(line);
-                log.WriteLine(line);
-            },
-        }, cancellationToken).ConfigureAwait(false);
-        log.WriteLine($"[耗时] 第 {disc.Number} 盘 mkisofs: {mkisofs.Duration}");
-        if (!mkisofs.Succeeded || !File.Exists(iso) || new FileInfo(iso).Length == 0)
+        if (!File.Exists(iso) || new FileInfo(iso).Length == 0)
         {
             diagnostics.Add(new BuildDiagnostic(
                 BuildDiagnosticSeverity.Error,
-                "MKISOFS_FAILED",
-                $"mkisofs 打包第 {disc.Number} 盘失败（退出码 {mkisofs.ExitCode}）。"));
+                "ISO_WRITER_FAILED",
+                $"内置 ISO 写入器没有生成第 {disc.Number} 盘镜像。"));
             return new DiscBuildResult(disc.Number, iso, string.Empty, 0, diagnostics);
         }
         var isoSize = new FileInfo(iso).Length;

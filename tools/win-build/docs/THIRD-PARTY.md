@@ -20,7 +20,6 @@
 
 | 组件 | 版本 | 许可 |
 |---|---|---|
-| **cdrtools / mkisofs** (`mkisofs.exe`) | 3.02a | **CDDL**（mkisofs 部分） |
 | **mjpegtools** (`jpeg2yuv` / `mpeg2enc` / `mplex` / `mp2enc`) | 2.1.0 | **GPL v2** |
 | **ImageMagick**（`image-native/dvda-image.dll`） | 7.0.8-47 Q16 HDRI | **ImageMagick License**（Apache 2.0 风格） |
 | **FFmpeg 动态库**（menu-bin、media-native） | 9.0.2，按用途裁剪的 Windows x64 构建 | **GPL v3 或更高版本**（本构建配置） |

@@ -29,7 +29,7 @@ Daily settings: `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
 
 Source conversion, probing, decoding and media verification use bundled x64 media libraries. Images, fonts and menu drawing use the in-process image library. No FFmpeg, FFprobe or ImageMagick installation is needed, and these operations do not launch their command-line programs. MLP uses the embedded MLP core without original SurCode or eac3to.
 
-Authoring, menu-video encoding/muxing and ISO creation still use bundled tools, so retain menu-bin. The optional M4A/ALAC-to-FLAC organization feature needs Metaflac for tags and artwork; configure its path or place it in menu-bin/on PATH when using that feature.
+Authoring, menu-video encoding/muxing and ISO creation still use bundled tools, so retain menu-bin. The optional M4A/ALAC-to-FLAC organization feature uses the in-process metadata editor for tags and artwork and does not need Metaflac.
 
 Legacy FFmpeg/FFprobe settings remain importable; the GUI automatically selects built-in components. Complete SC/JP/KR font faces are included without a separate font installation.
 

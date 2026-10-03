@@ -437,7 +437,7 @@ if (command is "convert" or "m4a2flac")
         Console.Error.WriteLine("用法: dvda convert <目录或 .m4a 文件>... [--in-place] [--dry-run] [--level N] [--jobs N]");
         return 2;
     }
-    foreach (var tool in new[] { options.Ffmpeg, options.Ffprobe, options.Metaflac })
+    foreach (var tool in new[] { options.Ffmpeg, options.Ffprobe })
     {
         if (!ToolExists(tool))
         {
@@ -448,7 +448,7 @@ if (command is "convert" or "m4a2flac")
     try
     {
         var converter = new M4aFlacConverter(
-            new ProcessRunner(), options.Ffmpeg, options.Ffprobe, options.Metaflac,
+            new ProcessRunner(), options.Ffmpeg, options.Ffprobe,
             new AlacEndRepairer(new ProcessRunner(), options.Ffprobe));
         var results = await converter.ConvertAsync(paths, level, dryRun, jobs, inPlace);
         foreach (var result in results)
@@ -915,7 +915,6 @@ static void PrintConfiguration(DvdaOptions options)
     foreach (var pair in new[]
     {
         ("dvda-author", options.DvdaAuthor),
-        ("mkisofs", options.Mkisofs),
         ("ffmpeg", options.Ffmpeg),
         ("ffprobe", options.Ffprobe),
     })

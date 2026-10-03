@@ -21,7 +21,7 @@ Git 仓库不携带完整第三方工具包。`tools/dvda-author-mlp8` 是局部
 预编译工具目录需要以下入口及其完整 DLL 依赖：
 
 ```text
-dvda-author-dev.exe   mkisofs.exe      dvdauthor.exe
+dvda-author-dev.exe   dvdauthor.exe
 spumux.exe            spuunmux.exe     jpeg2yuv.exe
 mpeg2enc.exe          mplex.exe        mp2enc.exe
 ```
@@ -83,7 +83,7 @@ gui-debug.cmd
 
 环境变量仅指定运行时库位置；打包仍要准备表中的构建输入。需要复制到构建目录时，保留媒体清单和图像配置/许可。特别注意：发布版 type.xml 的字体路径相对 image-native，不能只复制 DLL 或把相对字体配置放到缺少相邻 menu-bin/fonts 的调试目录。
 
-原生编译输出默认位于 build 下；MSBuild 的 NativeMediaDirectory、NativeImageDirectory 属性可指定组件输入。GUI 的 author、mkisofs 和素材路径另在设置中指向有效工具包。详见 [开发调试](../../docs/DEVELOPMENT.md)。
+原生编译输出默认位于 build 下；MSBuild 的 NativeMediaDirectory、NativeImageDirectory 属性可指定组件输入。GUI 只需配置 author 和素材路径，ISO 已由 author 内置写入器完成，不再需要 mkisofs 路径。详见 [开发调试](../../docs/DEVELOPMENT.md)。
 
 ## 按需重编译原生组件
 
@@ -109,6 +109,7 @@ python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --ms
 ImageMagick/FreeType 归档固定 SHA-256；脚本核对上游源文件，并重建项目补丁。图像库保留 Q16 HDRI、JPG/PNG 读写、WebP 读取、绘图/字幕/统计及必要字体功能，禁用外部 delegates 和动态 coder。只生成一份依赖 Windows 系统库的 x64 图像 DLL。
 
 `build-image-author.py` 从已经应用基础项目改动的完整工作树创建独立快照，再转换图像调用；不要事先手工应用同一图像增量补丁。它不覆盖原始工作树或编译器安装。详见 [源码镜像边界](../dvda-author-mlp8/README.md) 与 [内置图像处理](../../docs/INPROCESS-IMAGES.md)。旧 magick-shim 仅用于历史参考测试，当前发布不使用它。
+生成目录中的 `dvda-author-dev.exe` 必须与 `author-build.json` 的 `runtime_files` 一起使用；脚本会按 PE 导入闭包收集这些 DLL，只复制 exe 并不完整。正式打包也会把这些 DLL 一并放入 `menu-bin`。
 
 ### MLP 专用制盘解码库（独立维护）
 
@@ -127,7 +128,7 @@ dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
 tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
 ```
 
-当前记录为 108/108 兼容性检查和 23/23 图像专项通过。完整 GUI 流程的进程树检查覆盖普通、单页及多页索引，不启动外部 ImageMagick/FFmpeg/FFprobe/SurCode；必要的菜单编码、复用及 ISO 工具仍会启动。
+当前记录为 109/109 兼容性检查和 23/23 图像专项通过。完整 GUI 流程的进程树检查覆盖普通、单页及多页索引，不启动外部 ImageMagick/FFmpeg/FFprobe/SurCode/mkisofs/metaflac；菜单开启时仍会启动必要的菜单编码与复用工具。
 
 图像回归脚本 `test-image-release.py` 需要独立旧包、对应音源/基准输出及一个全新的输出目录。旧 ImageMagick 仅在测试的参考分支运行。输入要求与结果见 [验证记录](../../docs/inprocess-images-validation.json)。
 

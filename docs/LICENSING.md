@@ -77,12 +77,6 @@ License: GPL-3.0
 （不加 `--enable-gpl`、`--enable-nonfree`），本工具链只需 `libavcodec`、
 `libavformat`、`libavutil`、`libswresample` 与 MLP 编解码器。
 
-### mkisofs（cdrtools）
-
-`mkisofs -dvd-audio` 由 Jörg Schilling 为 cdrtools 提供的补丁实现，采用 **CDDL**
-（Common Development and Distribution License）。本仓库**不包含**该二进制，
-仅通过命令行调用，使用前请自行获取并遵守其许可。
-
 ---
 
 ## 3. MLP 编码的法律提示

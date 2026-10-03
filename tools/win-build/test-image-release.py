@@ -36,6 +36,7 @@ def main():
     def save(path,values):path.write_text(''.join(f'{k}="{v}"\n' for k,v in values.items()),encoding='utf-8')
     try:
         check('No external media or ImageMagick executables bundled',not any(p.name.lower() in ['ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe'] for p in after.rglob('*.exe')))
+        check('No legacy mkisofs executable bundled', not (after/'menu-bin/mkisofs.exe').exists())
         check('MLP core unchanged',sha(repo/'src/DvdaMaker.SurcodeTool/Native/win-x64/mlp_encoder.dll')=='ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8')
         check('Audio/media libraries unchanged',all((after/'media-native'/x.name).read_bytes()==x.read_bytes() for x in (before/'media-native').glob('*.dll')))
         check('Fonts remain shared and unchanged',(after/'menu-bin/fonts/DvdaNotoCJK-Regular.ttc').read_bytes()==(before/'menu-bin/fonts/DvdaNotoCJK-Regular.ttc').read_bytes())
@@ -43,8 +44,8 @@ def main():
         entries={line.split('  ',1)[1]:line.split('  ',1)[0] for line in (after/'MANIFEST.txt').read_text().splitlines() if line and not line.startswith('#')}
         check('Package hashes verified',all(sha(after/name)==value for name,value in entries.items()))
         check('Package manifest complete',set(entries)=={p.relative_to(after).as_posix() for p in after.rglob('*') if p.is_file() and p.name!='MANIFEST.txt'})
-        values=profile(fixtures/'after-menu.env');values.update({'DVDA_BUILD_DIR':str(work/'disc-build'),'DVDA_FINAL_DIR':str(work/'isos'),
-            'DVDA_AUTHOR':short(after/'menu-bin/dvda-author-dev.exe'),'DVDA_MKISOFS':short(after/'menu-bin/mkisofs.exe'),'DVDA_AUTHOR_SRC':short(after/'data'),
+        values=profile(fixtures/'after-menu.env');values.pop('DVDA_MKISOFS', None);values.update({'DVDA_BUILD_DIR':str(work/'disc-build'),'DVDA_FINAL_DIR':str(work/'isos'),
+            'DVDA_AUTHOR':short(after/'menu-bin/dvda-author-dev.exe'),'DVDA_AUTHOR_SRC':short(after/'data'),
             'DVDA_MENU_FONT':'','DVDA_MENU_FONT_JP':'','DVDA_MENU_FONT_KR':'','DVDA_FFMPEG':str(work/'unavailable-ffmpeg.exe'),
             'DVDA_FFPROBE':str(work/'unavailable-ffprobe.exe'),'DVDA_RESUME':'off'})
         indexed = a.index or a.single_index

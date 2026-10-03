@@ -30,7 +30,7 @@ Git 标签 `python-reference-final`（提交 `0afe53a`）中。
 
 当前普通兼容性测试共 88 项，覆盖配置、格式解析、外部进程、音源准备、ALAC 修复、
 M4A dry-run 零写入、非 ALAC 拒绝、文件级失败隔离、审计日志解析、MLP 获取与索引、
-分盘分组、假 `dvda-author`/`mkisofs` 正式出盘端到端流程，以及 `build.cmd` 参数分支、
+分盘分组、假 `dvda-author` 正式出盘端到端流程，以及 `build.cmd` 参数分支、
 PCM 等长比对、工作盘空间预检、音源校验缓存、MLP 缓存凭据、逐盘续跑与并发编码。
 
 真实参考盘与 SurCode MLP 对拍：
@@ -58,7 +58,7 @@ PCM 等长比对、工作盘空间预检、音源校验缓存、MLP 缓存凭据
 
     dotnet run --project src/DvdaMaker.Cli -- plan
 
-`plan` 不调用 `dvda-author` 或 `mkisofs`；缺少对应 MLP 缓存时会列出错误。它实现
+`plan` 不调用 `dvda-author` 或内置 ISO 写入器；缺少对应 MLP 缓存时会列出错误。它实现
 曲目排序、专辑聚合、容量估算、贪心分盘、参数分组和专辑边界规则。
 
 执行构建预演：
@@ -73,7 +73,7 @@ MLP 编码核心在序列化时生成完整头部、校验及终止标志；输�
 
     dotnet run --project src/DvdaMaker.Cli -- build
 
-正式模式已接入 `dvda-author`、patched `mkisofs`、审计兼容构建日志、ISO 容量检查、
+正式模式已接入 `dvda-author` 内置 ISO 写入器、审计兼容构建日志、ISO 容量检查、
 最终发布和成功后的中间产物清理。`DVDA_MENU=on` 时，
 C# 会生成菜单素材并执行菜单出盘及成品菜单校验。正式索引先写入
 `mlp_index.pending.json`。全部计划盘先发布到独立 staging 目录，随后将整套 ISO 与索引
@@ -118,7 +118,7 @@ VOB 和 PGC cell 范围仍可读取，也会继续视觉检查并合并报告，
 EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP 路径。
 
 正式出盘执行器已通过成功与失败两条端到端 fixture：成功路径验证 author 输出、
-轨道表日志、mkisofs、ISO 发布及清理；失败路径验证错误诊断、禁止发布和现场保留。
+轨道表日志、ISO 发布及清理；失败路径验证错误诊断、禁止发布和现场保留。
 
 `DVDA_FINAL_DIR` 是唯一最终输出目录。正式出盘事务完成后，ISO 直接发布到该目录，
 不再经过 Robocopy 或第二个目标目录。
@@ -143,7 +143,7 @@ EOS 校验；写入 `mlp_index.json` 前也会拒绝多个曲目复用同一 MLP
 - 疑似路径中的反斜杠转换为 `/`，保持 Python 当前行为。
 - 保持派生路径、ISO 前缀、卷标、文件名和数值限制规则。
 - `--shell` 保持 Bash 单引号转义规则和既有键集合。
-- `--shell-all` 输出 C# 新增的菜单、metaflac 和派生目录配置键。
+- `--shell-all` 输出 C# 新增的菜单、旧版元数据工具兼容键和派生目录配置键。
 - `--check` 缺少必填路径时返回退出码 2。
 
 ## 后续验证

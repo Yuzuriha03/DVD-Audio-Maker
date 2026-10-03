@@ -9,7 +9,9 @@ public static class DvdaAuthorCommandBuilder
         string outputDirectory,
         string temporaryDirectory,
         MenuAssets? menuAssets = null,
-        string titleMode = "album")
+        string titleMode = "album",
+        string? isoPath = null,
+        string? isoVolume = null)
     {
         var arguments = new List<string>();
         var normalizedMode = NormalizeTitleMode(titleMode);
@@ -51,6 +53,18 @@ public static class DvdaAuthorCommandBuilder
                 menuAssets.StillPictures,
                 OperatingSystem.IsWindows() ? ';' : ':'));
         }
+        if (!string.IsNullOrWhiteSpace(isoPath))
+        {
+            // dvda-author owns the in-process C ISO writer. Use an attached
+            // optional argument because getopt does not consume a separate
+            // token for --iso when its argument is optional.
+            arguments.Add("--iso=" + isoPath);
+            if (!string.IsNullOrWhiteSpace(isoVolume))
+            {
+                arguments.Add("--iso-volume");
+                arguments.Add(isoVolume);
+            }
+        }
         return arguments;
     }
 
@@ -63,10 +77,4 @@ public static class DvdaAuthorCommandBuilder
             : "album";
     }
 
-    public static IReadOnlyList<string> BuildMkisofsArguments(
-        DvdaOptions options,
-        DiscPlan disc,
-        string isoPath,
-        string outputDirectory) =>
-        ["-dvd-audio", "-V", options.VolumeId(disc.Number), "-o", isoPath, outputDirectory];
 }

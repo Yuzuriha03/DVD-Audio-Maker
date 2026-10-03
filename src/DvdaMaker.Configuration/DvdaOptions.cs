@@ -65,7 +65,6 @@ public sealed partial class DvdaOptions
     public string Mkisofs => Get("DVDA_MKISOFS");
     public string Ffmpeg => Get("DVDA_FFMPEG");
     public string Ffprobe => Get("DVDA_FFPROBE");
-    public string Metaflac => Get("DVDA_METAFLAC");
     public string AuthorSource => TrimSlash(Get("DVDA_AUTHOR_SRC"));
     public string MenuBinaryDirectory => CombinePortable(
         ParentDirectoryPortable(AuthorSource),
@@ -210,7 +209,6 @@ public sealed partial class DvdaOptions
             ["DVDA_MLP_SURCODE_SAMPLE_RATE"] = MlpSurcodeSampleRate.ToString(CultureInfo.InvariantCulture),
             ["DVDA_MLP_SURCODE_BITS"] = MlpSurcodeBits.ToString(CultureInfo.InvariantCulture),
             ["DVDA_MENU_DIR"] = MenuDirectory,
-            ["DVDA_METAFLAC"] = Metaflac,
             ["DVDA_MENU_BINDIR"] = MenuBinaryDirectory,
             ["DVDA_MENU"] = MenuEnabled ? "on" : "off",
             ["DVDA_MENU_TRACKS_PER_PAGE"] = MenuTracksPerPage.ToString(CultureInfo.InvariantCulture),

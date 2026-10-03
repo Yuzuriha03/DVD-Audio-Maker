@@ -43,6 +43,7 @@ public static class ConfigDefaults
             ["DVDA_MKISOFS"] = "mkisofs.exe",
             ["DVDA_FFMPEG"] = "builtin:media",
             ["DVDA_FFPROBE"] = "builtin:probe",
+            // Legacy config.env key retained for import compatibility; the converter no longer reads it.
             ["DVDA_METAFLAC"] = "metaflac",
             ["DVDA_AUTHOR_SRC"] = "",
             ["DVDA_PREPARE_CACHE"] = "on",

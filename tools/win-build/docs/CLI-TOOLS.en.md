@@ -32,11 +32,11 @@ Logs show a task summary by default. Switch to detailed logs, filter issues, pau
 
 This document ships with the self-contained Windows x64 release.
 
-GUI and CLI use the embedded native x64 MLP DLL. The package also includes `dvda-author`, `mkisofs`, menu tools, ImageMagick and Chinese/Japanese/Korean fonts. WSL, Bash, MSYS2, PowerShell and Python are not needed; see RUNTIME.en.md for .NET requirements.
+GUI and CLI use the embedded native x64 MLP DLL. The package includes `dvda-author`, the built-in ISO writer, menu tools, ImageMagick and Chinese/Japanese/Korean fonts. `mkisofs.exe` is not needed. WSL, Bash, MSYS2, PowerShell and Python are not needed; see RUNTIME.en.md for .NET requirements.
 
 ## External dependencies
 
-FFmpeg, FFprobe and Metaflac must be on `PATH` or configured with full paths in `config.env`.
+FFmpeg and FFprobe must be on `PATH` or configured with full paths in `config.env`. FLAC tags and artwork use the in-process editor and do not need Metaflac.
 
 FFmpeg performs conversion, decoding and verification. Batch encoding uses the embedded MLP DLL and requires neither eac3to nor original SurCode.
 
@@ -130,7 +130,6 @@ Set full paths in `config.env`:
 ```text
 DVDA_FFMPEG="D:/Tools/ffmpeg/bin/ffmpeg.exe"
 DVDA_FFPROBE="D:/Tools/ffmpeg/bin/ffprobe.exe"
-DVDA_METAFLAC="D:/Tools/flac/metaflac.exe"
 ```
 
 ### Missing menu text or wrong glyphs

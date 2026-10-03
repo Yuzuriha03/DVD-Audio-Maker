@@ -32,11 +32,11 @@ GUI 和 CLI 共享应用依赖，CLI 位于根目录 `dvda.exe`。请完整解�
 
 此文档随 Windows x64 自包含发布包分发。
 
-GUI 和 CLI 使用内嵌的原生 x64 MLP DLL，发布包同时包含 `dvda-author`、`mkisofs`、菜单工具、ImageMagick 和中日韩字体。不需要 WSL、Bash、MSYS2、PowerShell 或 Python；.NET 要求见 RUNTIME.md。
+GUI 和 CLI 使用内嵌的原生 x64 MLP DLL，发布包同时包含 `dvda-author`、内置 ISO 写入器、菜单工具、ImageMagick 和中日韩字体，不再需要 `mkisofs.exe`。不需要 WSL、Bash、MSYS2、PowerShell 或 Python；.NET 要求见 RUNTIME.md。
 
 ## 外部依赖
 
-FFmpeg、FFprobe 和 Metaflac 需位于 `PATH`，也可以在 `config.env` 中填写完整路径。
+FFmpeg 和 FFprobe 需位于 `PATH`，也可以在 `config.env` 中填写完整路径。FLAC 标签和封面整理使用进程内编辑器，不需要 Metaflac。
 
 FFmpeg 仅用于转换、解码和校验。批量编码使用 FFmpeg 准备 PCM，再由内嵌 DLL 编码，无需 eac3to 或原版 SurCode。
 
@@ -130,7 +130,6 @@ dvda.cmd verify all
 ```text
 DVDA_FFMPEG="D:/Tools/ffmpeg/bin/ffmpeg.exe"
 DVDA_FFPROBE="D:/Tools/ffmpeg/bin/ffprobe.exe"
-DVDA_METAFLAC="D:/Tools/flac/metaflac.exe"
 ```
 
 ### 菜单文字为空或字形错误

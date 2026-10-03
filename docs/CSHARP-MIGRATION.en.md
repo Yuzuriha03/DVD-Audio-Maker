@@ -30,7 +30,7 @@ Requires the .NET 10 SDK:
 
 The migration checkpoint had 88 ordinary compatibility checks covering configuration, format parsing, external processes, source preparation, ALAC repair,
 zero-write M4A dry-runs, rejection of non-ALAC inputs, per-file failure isolation, audit-log parsing, MLP acquisition and indexing,
-disc planning and grouping, end-to-end builds using fake `dvda-author`/`mkisofs`, `build.cmd` argument branches,
+disc planning and grouping, end-to-end builds using fake `dvda-author`, `build.cmd` argument branches,
 equal-length PCM comparison, working-drive space preflight, source caches, MLP cache credentials, per-disc resumption and concurrent encoding.
 
 Compare against real reference discs and SurCode MLP:
@@ -58,7 +58,7 @@ Preview a C# build plan using an existing MLP cache:
 
     dotnet run --project src/DvdaMaker.Cli -- plan
 
-`plan` does not invoke `dvda-author` or `mkisofs`; it reports errors for missing MLP cache entries. It handles
+`plan` does not invoke `dvda-author` or the in-process ISO writer; it reports errors for missing MLP cache entries. It handles
 track ordering, album aggregation, size estimates, greedy disc allocation, parameter grouping and album boundaries.
 
 Run a build preview:
@@ -73,7 +73,7 @@ Build actual discs without menus:
 
     dotnet run --project src/DvdaMaker.Cli -- build
 
-The real build path integrates `dvda-author`, patched `mkisofs`, audit-compatible build logs, ISO capacity checks,
+The real build path integrates `dvda-author` and its in-process ISO writer, audit-compatible build logs, ISO capacity checks,
 final publication and cleanup after success. With `DVDA_MENU=on`,
 C# generates menu assets, authors menus and verifies the finished menus. The final index is first written to
 `mlp_index.pending.json`. All planned discs are staged separately, then the full ISO set and index
@@ -118,7 +118,7 @@ External MLP mode now prefers mirrored paths, rejects ambiguous basenames and em
 EOS. It also rejects multiple tracks sharing one MLP path before writing `mlp_index.json`.
 
 The actual disc executor passed both success and failure end-to-end fixtures. The success path verifies authoring output,
-track-table logs, mkisofs, ISO publication and cleanup. The failure path verifies diagnostics, blocked publication and retained evidence.
+track-table logs, ISO publication and cleanup. The failure path verifies diagnostics, blocked publication and retained evidence.
 
 `DVDA_FINAL_DIR` is the only final output directory. Once the publication transaction succeeds, ISOs go directly there,
 without Robocopy or a second destination directory.
@@ -143,7 +143,7 @@ without Robocopy or a second destination directory.
 - Convert backslashes in likely paths to `/`, retaining the Python implementation's behavior.
 - Preserve rules for derived paths, ISO prefixes, volume labels, file names and numeric limits.
 - `--shell` preserves Bash single-quote escaping and the original key set.
-- `--shell-all` includes C# additions for menus, metaflac and derived directories.
+- `--shell-all` includes C# additions for menus, the legacy metadata-tool compatibility key and derived directories.
 - `--check` returns exit code 2 when required paths are missing.
 
 ## Continued validation

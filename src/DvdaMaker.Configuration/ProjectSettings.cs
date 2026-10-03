@@ -106,8 +106,6 @@ public sealed class ProjectSettings
         var candidates = new Dictionary<string, string>
         {
             ["DVDA_AUTHOR"] = Path.Combine(tools, "dvda-author-dev.exe"),
-            ["DVDA_MKISOFS"] = Path.Combine(tools, "mkisofs.exe"),
-            ["DVDA_METAFLAC"] = Path.Combine(tools, "metaflac.exe"),
             ["DVDA_MENU_FONT"] = Path.Combine(tools, "fonts", "NotoSansCJKsc-Regular.otf"),
             ["DVDA_MENU_FONT_JP"] = Path.Combine(tools, "fonts", "NotoSansCJKjp-Regular.otf"),
             ["DVDA_MENU_FONT_KR"] = Path.Combine(tools, "fonts", "NotoSansCJKkr-Regular.otf"),

@@ -32,6 +32,32 @@ internal static class NativeImagePackager
         using var document = JsonDocument.Parse(File.ReadAllText(manifest));
         ValidateBinary(Path.Combine(directory, "dvda-author-dev.exe"),
             document.RootElement.GetProperty("files").GetProperty("dvda-author-dev.exe"));
+        if (!document.RootElement.TryGetProperty("runtime_files", out var runtime) ||
+            runtime.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException(
+                "Native author manifest has no runtime dependency list. Rebuild it with the current build-image-author.py.");
+
+        var names = runtime.EnumerateObject().Select(property => property.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var actual = Directory.EnumerateFiles(directory, "*.dll")
+            .Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!actual.SetEquals(names))
+            throw new InvalidDataException("Native author DLL files do not match author-build.json.");
+        foreach (var property in runtime.EnumerateObject())
+        {
+            if (Path.GetFileName(property.Name) != property.Name ||
+                !property.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Invalid native author DLL name: " + property.Name);
+            ValidateBinary(Path.Combine(directory, property.Name), property.Value);
+        }
+
+        foreach (var path in Directory.EnumerateFiles(directory, "*.dll").Append(Path.Combine(directory, "dvda-author-dev.exe")))
+            foreach (var import in NativeToolOptimizer.ReadImports(path))
+                if (!names.Contains(import) &&
+                    !import.StartsWith("api-ms-win-", StringComparison.OrdinalIgnoreCase) &&
+                    !import.StartsWith("ext-ms-win-", StringComparison.OrdinalIgnoreCase) &&
+                    !File.Exists(Path.Combine(Environment.SystemDirectory, import)))
+                    throw new InvalidDataException("Missing native author dependency: " + import);
     }
 
     private static void ValidateBinary(string path, JsonElement metadata)
@@ -52,8 +78,14 @@ internal static class NativeImagePackager
         var native = Path.Combine(destination, "menu-bin");
         var images = Path.Combine(destination, "image-native");
         ValidateRuntime(images);
+        var authorManifest = Path.Combine(author, "author-build.json");
+        using var authorDocument = JsonDocument.Parse(File.ReadAllText(authorManifest));
         File.Copy(Path.Combine(author, "dvda-author-dev.exe"), Path.Combine(native, "dvda-author-dev.exe"), true);
-        File.Copy(Path.Combine(author, "author-build.json"), Path.Combine(images, "author-build.json"), true);
+        if (authorDocument.RootElement.TryGetProperty("runtime_files", out var runtime) &&
+            runtime.ValueKind == JsonValueKind.Object)
+            foreach (var property in runtime.EnumerateObject())
+                File.Copy(Path.Combine(author, property.Name), Path.Combine(native, property.Name), true);
+        File.Copy(authorManifest, Path.Combine(images, "author-build.json"), true);
         // Only the new release staging directory is pruned. No source/prebuilt files are changed.
         foreach (var name in new[] { "magick.exe", "convert.exe", "mogrify.exe", "identify.exe",
             "colors.xml", "delegates.xml", "english.xml", "locale.xml", "log.xml", "mime.xml", "policy.xml",

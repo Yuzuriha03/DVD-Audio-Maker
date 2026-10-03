@@ -18,7 +18,7 @@
     "unpacked_bytes": 54524247
   },
   "compatibility": {
-    "passed": 108,
+    "passed": 109,
     "failed": 0
   },
   "pcm_encoding_matrix": {
@@ -3421,7 +3421,7 @@
     "SOXR is used only for diagnostic resampled sample counts, not MLP preparation. Counts match; two fixture raw-PCM probes differ by at most one 24-bit LSB across libsoxr builds. MLP preparation uses SWR and passed exact PCM and whole-file MLP tests.",
     "Full ISO lossless verification retains the existing first-track sampling policy; six authored MLP files were separately compared byte-for-byte.",
     "The authoring fixture disables the existing single-page index-menu issue (MENU_INDEX_ARROW_MISSING) and uses short native tool paths, as in the baseline.",
-    "Metaflac remains an external dependency for the optional ALAC-to-FLAC artwork normalization feature. Other authoring tools remain external processes.",
+    "The optional ALAC-to-FLAC artwork normalization uses the in-process FLAC metadata editor. Menu authoring tools remain external processes.",
     "Explicit external FFmpeg paths remain available to developer CLI and reference tests; GUI imports always use bundled media."
   ],
   "final_location_smoke": {

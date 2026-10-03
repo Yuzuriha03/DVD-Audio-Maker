@@ -149,10 +149,7 @@ public static class DiscSignature
             .Append(await ToolIdentity.DescribeAsync(runner, options.DvdaAuthor, cancellationToken)
                 .ConfigureAwait(false))
             .Append('\n');
-        builder.Append("mkisofs=").Append(options.Mkisofs).Append('|')
-            .Append(await ToolIdentity.DescribeAsync(runner, options.Mkisofs, cancellationToken)
-                .ConfigureAwait(false))
-            .Append('\n');
+        builder.Append("iso_writer=in-process-c-v2\n");
         builder.Append("menu=").Append(options.MenuEnabled).Append('|')
             .Append(options.MenuTracksPerPage).Append('|')
             .Append(options.MenuIndexMinimumAlbums).Append('|')

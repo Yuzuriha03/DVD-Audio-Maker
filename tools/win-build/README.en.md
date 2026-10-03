@@ -21,7 +21,7 @@ Git does not contain the full third-party tool bundle. tools/dvda-author-mlp8 is
 The prebuilt directory needs these programs and their DLL dependencies:
 
 ```text
-dvda-author-dev.exe   mkisofs.exe      dvdauthor.exe
+dvda-author-dev.exe   dvdauthor.exe
 spumux.exe            spuunmux.exe     jpeg2yuv.exe
 mpeg2enc.exe          mplex.exe        mp2enc.exe
 ```
@@ -83,7 +83,7 @@ gui-debug.cmd
 
 These variables select runtime locations; packaging still needs the build inputs above. When copying components, retain media provenance and image configuration/notices. Release type.xml resolves fonts relative to image-native: copying only the DLL, or using that configuration without the sibling menu-bin/fonts directory, is insufficient.
 
-Native output defaults to build. MSBuild properties NativeMediaDirectory and NativeImageDirectory select alternative component inputs. Configure valid author, mkisofs and asset paths separately in the GUI. See [development/debugging](../../docs/DEVELOPMENT.en.md).
+Native output defaults to build. MSBuild properties NativeMediaDirectory and NativeImageDirectory select alternative component inputs. Configure the author and asset paths separately in the GUI; final ISO writing is built into the author and no `mkisofs.exe` path is needed. See [development/debugging](../../docs/DEVELOPMENT.en.md).
 
 ## Rebuild native components when needed
 
@@ -109,6 +109,7 @@ python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --ms
 ImageMagick/FreeType archives are pinned by SHA-256. The recipe verifies upstream files and regenerates project patches. The image runtime retains Q16 HDRI, JPEG/PNG reading/writing, WebP reading, drawing/captions/statistics and required font functionality. External delegates and loadable coders are disabled. One x64 image DLL imports only Windows system libraries.
 
 The author script snapshots the full tree with base project changes, then transforms image calls. Do not pre-apply the same image delta. It does not overwrite the source tree or compiler installation. See [mirror boundaries](../dvda-author-mlp8/README.en.md) and [in-process images](../../docs/INPROCESS-IMAGES.en.md). The old magick-shim remains solely for historical reference tests.
+The generated `dvda-author-dev.exe` must be used with the `runtime_files` listed in `author-build.json`; the script collects that PE import closure, so copying only the executable is incomplete. Release packaging copies those DLLs into `menu-bin` as well.
 
 ### MLP-only authoring decoder libraries
 
@@ -127,7 +128,7 @@ dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
 tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
 ```
 
-Current recorded checks pass 108/108 compatibility cases and 23/23 image cases. Full GUI process tracing covers regular menus and single/multiple index pages without external ImageMagick, FFmpeg/FFprobe or SurCode. Necessary menu encoders/muxers and ISO tools still run externally.
+Current recorded checks pass 109/109 compatibility cases and 23/23 image cases. Full GUI process tracing covers regular menus and single/multiple index pages without external ImageMagick, FFmpeg/FFprobe, SurCode, mkisofs or metaflac. Necessary menu encoders/muxers still run externally for menu-on builds.
 
 `test-image-release.py` requires an independent old package, matching source/reference fixtures and a fresh output directory. Old ImageMagick runs only in the test's reference branch. See [the validation record](../../docs/inprocess-images-validation.json).
 

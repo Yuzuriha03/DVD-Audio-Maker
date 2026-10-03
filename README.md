@@ -30,8 +30,8 @@ GUI 替代手工编辑 env：可导入旧 `config.env`，也可打开和保存 J
 | 音源读取、转换、解码和媒体校验 | 进程内 x64 媒体库，不启动 FFmpeg/FFprobe EXE |
 | MLP 编码 | 内嵌MLP 编码核心 DLL，不启动原版 SurCode，也不调用 eac3to |
 | 封面、文字、菜单图像、字体及图像校验 | GUI 与原生制盘程序各自在进程内调用精简图像 DLL |
-| 菜单编码、复用、制盘及 ISO 生成 | 随包的 dvda-author、菜单工具、mkisofs 等独立程序 |
-| 可选 M4A/ALAC 转 FLAC 整理 | 仍需 Metaflac 处理封面与标签 |
+| 菜单编码、复用、制盘及 ISO 生成 | 随包的 dvda-author 内置 ISO 写入器及菜单工具 |
+| 可选 M4A/ALAC 转 FLAC 整理 | 进程内 FLAC 元数据编辑器处理封面与标签 |
 
 无需另装 FFmpeg、FFprobe 或 ImageMagick。GUI 导入的旧媒体工具路径会自动改用内置组件；开发 CLI 和参考测试仍允许显式外部转换器。图像库支持 JPG/PNG 读写和 WebP 封面读取，保留完整 SC/JP/KR 字体 face；未包含通用视频、PDF/SVG 等图像委托链。
 
@@ -140,7 +140,7 @@ dotnet run --project src\DvdaMaker.Cli -- verify all
 | `DVDA_KEEP_INTERMEDIATE` | `off` | 保留 author 输出与中间 ISO；**开启时逐盘续跑自动关闭** |
 
 - 音源缓存只在文件身份（长度、修改时间、首尾各 64 KiB 哈希）与归一化参数完全一致时复用；未通过校验的轨道永不写入缓存。
-- 逐盘续跑只在签名（源/MLP 身份、author/mkisofs 工具身份、影响输出的配置、菜单设置）一致且暂存 ISO 未被改动时跳过该盘；最终仍由整套事务发布 ISO 与索引。构建失败会保留 `<DVDA_BUILD_DIR>/publish-staging`，下次运行从那里续跑。
+- 逐盘续跑只在签名（源/MLP 身份、author/ISO 写入器身份、影响输出的配置、菜单设置）一致且暂存 ISO 未被改动时跳过该盘；最终仍由整套事务发布 ISO 与索引。构建失败会保留 `<DVDA_BUILD_DIR>/publish-staging`，下次运行从那里续跑。
 - `DVDA_MLP_JOBS` 大于 1 会让多个独立的进程内 DLL 编码状态并发工作，编码前的缓存凭据（源身份 + 编码器身份 + 编码参数 + 输出身份）依旧生效；是否提速取决于磁盘吞吐与 CPU，默认保持 1 路。
 
 ## MLP 来源

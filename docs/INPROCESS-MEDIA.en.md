@@ -9,7 +9,7 @@
 - Retain the complete media-native directory. The standard package is x64 GUI-only and framework-dependent, requiring .NET 10 Desktop Runtime x64.
 - Existing config.env and JSON profiles remain readable. The GUI selects bundled media automatically and removes FFmpeg / FFprobe path controls.
 - Defaults are DVDA_FFMPEG=builtin:media and DVDA_FFPROBE=builtin:probe. Explicit external paths remain available to the developer CLI for reference comparisons. The GUI ignores these legacy paths and does not fall back to external tools when libraries are missing.
-- Optional ALAC-to-FLAC artwork/tag normalization still requires Metaflac. Other authoring tools, including ImageMagick, dvda-author and mkisofs, retain their existing workflows.
+- Optional ALAC-to-FLAC artwork/tag normalization uses the in-process `FlacMetadataEditor` and no longer requires Metaflac. ImageMagick is already in-process, and ISO creation is now provided by dvda-author's built-in writer; menu MPEG authoring tools retain their existing workflow.
 
 ## Implementation
 
@@ -23,11 +23,11 @@ MLP preparation retains SWR, disabled dithering, the existing 20-bit rounding/cl
 
 ## Validation
 
-- 108/108 compatibility tests passed.
+- 109/109 compatibility tests passed.
 - 202/202 PCM/MLP comparisons passed: 84 native format combinations with smooth/noise signals, plus resampling, 16/20/24-bit conversion, side-surround layouts and six-channel ALAC. Target PCM matches the reference exactly; whole MLP files match direct reference encoding byte-for-byte.
 - 35 media integration assertions passed: Unicode tags/paths, ALAC packets, exact FLAC artwork preservation, PCM MD5, SOXR diagnostic sample counts, menu-frame pixels, invalid input, cancellation and concurrent decoders.
 - 94 release regression assertions passed. With PATH restricted to Windows/.NET and GUI profiles deliberately naming missing FFmpeg/FFprobe executables, the package completed bilingual startup, three encoding fixtures, multilingual menu ISO authoring and output verification. Three fixture MLPs and six authored track MLPs match the old package byte-for-byte; 42 menu/still images have identical decoded pixels.
-- Existing Metaflac parsing issues were fixed: metadata block type 6 is no longer mistaken for the cover type; tag reads explicitly use UTF-8 and exclude Windows carriage returns.
+- Added the in-process FLAC metadata editor: it parses Vorbis Comment and PICTURE blocks, exports/imports artwork, atomically rewrites the metadata prefix and preserves audio frames byte-for-byte.
 - The final directory and ZIP match the tested package by file hashes. The package contains 89 files; all files except the manifest itself pass manifest hash checks. All media DLLs are x64; FFmpeg/FFprobe executables, CLI and .NET runtime files are absent.
 
 Scope: SOXR is used only for diagnostic resampled sample counts, never MLP preparation. Those counts match exactly. Two additional 24-bit SOXR PCM probes showed at most one LSB rounding difference across libsoxr builds; arbitrary cross-build SOXR output is not claimed to be byte-identical. The actual SWR/quantization/MLP encoding path requires and passes exact comparisons.
@@ -55,4 +55,4 @@ dotnet run --project tests/DvdaMaker.CompatibilityTests -- --builtin-pcm-integra
 dotnet run --project tests/DvdaMaker.CompatibilityTests -- --builtin-media-integration <empty-directory>
 ```
 
-Integration comparisons use reference FFmpeg/FFprobe programs to create and inspect fixtures; these are not GUI runtime requirements. Media-operation tests also need Metaflac, optionally selected with DVDA_TEST_METAFLAC. Full checks, build configuration, DLL hashes and limitations are in [inprocess-media-validation.json](inprocess-media-validation.json).
+Integration comparisons use reference FFmpeg/FFprobe programs to create and inspect fixtures; these are not GUI runtime requirements. Media-operation tests no longer need Metaflac. Full checks, build configuration, DLL hashes and limitations are in [inprocess-media-validation.json](inprocess-media-validation.json).

@@ -77,12 +77,6 @@ To avoid GPL-enabled FFmpeg components, you can build **LGPL-only** FFmpeg yours
 without `--enable-gpl` or `--enable-nonfree`. The historical workflow needed `libavcodec`,
 `libavformat`, `libavutil`, `libswresample` and the MLP codecs.
 
-### mkisofs（cdrtools）
-
-`mkisofs -dvd-audio` comes from Jörg Schilling's cdrtools patch and uses **CDDL**
-(Common Development and Distribution License). The repository does not include that binary;
-it invokes it through the command line. Obtain it separately and follow its license.
-
 ---
 
 ## 3. Legal considerations for MLP encoding

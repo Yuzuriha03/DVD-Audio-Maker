@@ -29,7 +29,7 @@
 
 音源转换、探测、解码和媒体校验使用随包的 x64 媒体库；图像、字体及菜单绘图使用内置图像库。无需安装 FFmpeg、FFprobe 或 ImageMagick，这些操作不会启动它们的命令行程序。MLP 编码使用内嵌的MLP 编码核心，不需要原版 SurCode 或 eac3to。
 
-制盘、菜单视频编码/复用和 ISO 生成仍由随包工具完成，因此 menu-bin 也必须完整保留。可选的 M4A/ALAC 转 FLAC 整理功能需要 Metaflac 处理标签与封面；使用该功能时在设置中指定路径，或将它放在 menu-bin/PATH。
+制盘、菜单视频编码/复用和 ISO 生成仍由随包工具完成，因此 menu-bin 也必须完整保留。可选的 M4A/ALAC 转 FLAC 整理功能使用进程内元数据编辑器处理标签与封面，不需要 Metaflac。
 
 旧配置中的 FFmpeg/FFprobe 路径可以导入，GUI 自动使用内置组件。字体包含完整 SC/JP/KR face；无需另行安装字体包。
 

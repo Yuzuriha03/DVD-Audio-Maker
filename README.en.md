@@ -30,8 +30,8 @@ Logs default to stage summaries, with detailed output, warning filters, paused d
 | Source reading, conversion, decoding and media verification | In-process x64 media libraries; no FFmpeg/FFprobe EXE |
 | MLP encoding | Embedded MLP core DLL; no original SurCode or eac3to |
 | Covers, text, menu images, fonts and image verification | The GUI and native author each call the tailored image DLL in process |
-| Menu encoding/muxing, authoring and ISO creation | Bundled dvda-author, menu tools, mkisofs and related executables |
-| Optional M4A/ALAC-to-FLAC organization | Metaflac remains necessary for artwork and tags |
+| Menu encoding/muxing, authoring and ISO creation | Bundled dvda-author with its in-process ISO writer, plus menu tools |
+| Optional M4A/ALAC-to-FLAC organization | In-process FLAC metadata editor handles artwork and tags |
 
 No separate FFmpeg, FFprobe or ImageMagick installation is needed. The GUI replaces imported legacy media paths with built-in components; the developer CLI and reference tests can still use explicit external converters. Images support JPEG/PNG reading and writing plus WebP cover reading, with complete SC/JP/KR font faces. General video, PDF/SVG and other image delegate chains are excluded.
 
@@ -140,7 +140,7 @@ dotnet run --project src\DvdaMaker.Cli -- verify all
 | `DVDA_KEEP_INTERMEDIATE` | `off` | Keep authoring output and intermediate ISOs; **disables per-disc resumption while enabled** |
 
 - Source caches are reused only when file identity (length, modification time and hashes of the first and last 64 KiB) and normalization parameters match exactly. Tracks that fail verification are never cached.
-- Per-disc resumption skips a disc only when its signature matches (source/MLP identity, author/mkisofs identity, output-affecting settings and menu configuration) and its staged ISO is unchanged. Final publication still commits the entire ISO set and index as one transaction. Failed builds retain `<DVDA_BUILD_DIR>/publish-staging` for the next attempt.
+- Per-disc resumption skips a disc only when its signature matches (source/MLP identity, author/ISO-writer identity, output-affecting settings and menu configuration) and its staged ISO is unchanged. Final publication still commits the entire ISO set and index as one transaction. Failed builds retain `<DVDA_BUILD_DIR>/publish-staging` for the next attempt.
 - `DVDA_MLP_JOBS` above 1 runs multiple independent in-process DLL encoder states concurrently. Cache credentials still include source identity, encoder identity, encoding parameters and output identity. Performance depends on disk throughput and CPU capacity; the default remains one job.
 
 ## MLP sources

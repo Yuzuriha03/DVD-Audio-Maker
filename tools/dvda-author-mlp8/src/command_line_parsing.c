@@ -33,6 +33,7 @@
 #include "audio2.h"
 #include "audio.h"
 #include "auxiliary.h"
+extern char *dvda_iso_volume_identifier;
 #include "ports.h"
 #include "file_input_parsing.h"
 #include "launch_manager.h"
@@ -312,6 +313,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
     {"stillvob", required_argument, NULL, '1'},
     {"stilloptions", required_argument, NULL, '2'},
     {"mkisofs", optional_argument, NULL, 'I'},
+    {"iso", optional_argument, NULL, 'I'},
     {"cdrecord", optional_argument, NULL, 'r'},
     {"growisofs", required_argument, NULL, 'R'},
     {"highlight", required_argument, NULL, 'E'},
@@ -345,6 +347,7 @@ command_t *command_line_parsing(int argc, char *const argv[],
     {"index-covers", required_argument, NULL, 44},
     {"fontname-jp", required_argument, NULL, 45},
     {"fontname-kr", required_argument, NULL, 46},
+    {"iso-volume", required_argument, NULL, 47},
     {"topmenu-slides", required_argument, NULL, 6},
     {"check-version", no_argument, NULL, 8},
     {"import-topmenu", required_argument, NULL, 9},
@@ -1375,7 +1378,7 @@ an integer between 1 and 16");
         //  'x' Must come AFTER 'o' and 'w'
 
         case 'I':
-          foutput("%s\n", PAR "Run mkisofs to author disc image.");
+          foutput("%s\n", PAR "Write ISO image with the in-process C writer.");
           globals->runmkisofs = 1;
 
           if (optarg)
@@ -2038,6 +2041,13 @@ separated by a colon, with rgb components by commas");
           globals->topmenu = Min(globals->topmenu,
                                  RUN_GENERATE_PICS_SPUMUX_DVDAUTHOR);
           img->refresh = 1;
+          break;
+
+        case 47:
+          free(dvda_iso_volume_identifier);
+          dvda_iso_volume_identifier = strdup(optarg ? optarg : "");
+          foutput("%s%s\n", PAR "ISO volume identifier: ",
+                  dvda_iso_volume_identifier ? dvda_iso_volume_identifier : "");
           break;
 
         case '2':
