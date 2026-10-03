@@ -1,80 +1,69 @@
-# Removing External Runtime Dependencies
+# External runtime migration checklist
 
 [简体中文](NO-EXTERNAL-RUNTIME-MIGRATION.md)
 
-This document lists only the external runtime functions that still need to move into the current GUI full-disc workflow. Project code, the MLP core, the in-process media/image libraries and \`dvda-author-dev.exe\` are excluded because they can already be built from this repository and its existing native source. Their compilers and build inputs remain development dependencies, not user runtime dependencies.
+Scope is the complete Windows x64 GUI DVD-Audio workflow. All seven steps are implemented, retaining the existing components and development uses explicitly excluded below. New media interfaces, menu modules, XML adaptation, resource management and the AOB byte comparator use C.
 
-## Boundary
+## Completion status
 
-**Current status:** the ISO writer and FLAC metadata migrations are complete. Menu-off builds now create ISO9660 images inside `dvda-author-dev.exe` and no longer require or package `mkisofs.exe`. M4A/ALAC organization now reads and rewrites FLAC metadata in process and no longer starts `metaflac.exe`. Menu images now convert to YUV4MPEG2 through the in-process ImageMagick bridge, so `jpeg2yuv.exe` is no longer required or packaged. Menu video encoding and DVD-Video authoring still use external tools.
+| Work | Current implementation | Status |
+|---|---|---|
+| ISO9660 writing and removal of mkisofs | Streaming 2048-byte writer dvda_iso_write inside the author | Complete |
+| FLAC metadata and covers | Atomic FlacMetadataEditor, preserving audio frames | Complete |
+| Image to YUV4MPEG2 | In-process dvda-image.dll | Complete |
+| MPEG-2, MP2 and DVD MPEG-PS | C dvda_menu_create_mpg, dynamically linked source-built FFmpeg | Complete |
+| Subpictures and button overlays | dvda-menu-spu.dll | Complete |
+| AMGM menus/navigation integration | dvda-menu-nav.dll inside the author | Complete |
+| Full-disc, every-track verification | C dvda-disc-verify.dll, existing ISO reader, media decoder and PCM comparison | Complete |
 
-The author now dynamically links three shared FFmpeg libraries (avcodec, avformat and avutil) built from the signature-verified source profile. They contain only the MLP functions needed by the author and no MPEG-2 video encoder. The menu-image migration reuses the existing ImageMagick bridge without expanding that FFmpeg profile. The runtime DLLs are copied beside the author in `menu-bin`; the source build produces no FFmpeg command-line program and the release workflow does not start `ffmpeg.exe`.
+## Runtime boundary
 
-The target release keeps the application and its DLLs, Windows x64 system DLLs, and .NET 10 Desktop Runtime x64 (or a bundled runtime for a self-contained build). Menu-off builds no longer need the ISO executable; menu-on builds still carry the menu authoring tools until their migrations are complete. Historical regression programs, old FFmpeg branches, ImageMagick reference tools, CLI comparison paths and build tools are outside this list.
+The GUI retains the project-built dvda-author-dev.exe authoring process. Images, menu encoding/muxing, subpictures, navigation and ISO writing run inside it. It no longer launches jpeg2yuv, mpeg2enc, mp2enc, mplex, spumux, dvdauthor or mkisofs executables. GUI media/image operations also do not start FFmpeg, FFprobe, ImageMagick, Metaflac, eac3to or original SurCode.
 
-## Required migrations
+Their open-source algorithms are still used where needed. Necessary FFmpeg/ImageMagick components are built from source and bundled. Windows system libraries and .NET 10 Desktop Runtime x64 remain prerequisites. Releases are GUI-only and framework-dependent; the developer CLI remains in source.
 
-### ISO writer
+### Menu media
 
-**Status: implemented.** The new C `dvda_iso_write` implementation writes primary and terminator descriptors, both path tables, directory records, 2048-byte sectors and streamed file content. `DiscBuildExecutor` passes the destination to the author, keeps its capacity/staging/publish checks, and no longer starts an external process. The generated image is read back by `Iso9660Reader`; compatibility coverage is 109/109. The release packager omits `mkisofs.exe`, while the legacy `DVDA_MKISOFS` configuration key remains readable for old config files.
+tools/win-build/native/dvda-menu-media.c encodes one YUV420 frame as an MPEG-2 I-frame, optionally encodes 48 kHz, 16-bit stereo WAV to MP2, and muxes DVD MPEG-PS with 2048-byte packs. It supports PAL 720×576 / 25 fps, NTSC 720×480 / 30000÷1001 fps, and 4:3/16:9. Stills do not require audio. Invalid dimensions, truncated YUV/WAV, wrong rates and empty audio fail; opened partial outputs are removed.
 
-The previous implementation used `mkisofs.exe`; that dependency has been replaced by the C writer described above. The reader remains responsible for verification.
+The FFmpeg menu profile includes only required MLP/PCM, MPEG-2, MP2, parsing and muxing. It dynamically links avcodec, avformat and avutil, disabling programs, networking, filters and SWS/SWR. The GUI media profile is separate. The MLP core still performs MLP encoding.
 
-### Menu image to YUV4MPEG2
+### Subpictures, buttons and navigation
 
-The Windows menu path decodes each still image inside the process through the existing `dvda-image.dll` and writes one YUV4MPEG2 frame for the remaining `mpeg2enc.exe` stage. It no longer starts or packages `jpeg2yuv.exe`.
+tools/menu-native/vendor contains the required dvdauthor 0.7.1 C subset with existing AMGM/jump changes. ORIGIN.json records provenance and pre-import hashes; copyright and COPYING are retained. Only the project ABI is exposed. PNG pixels come from the existing image library; Windows XmlLite parses XML with DTD/external entities disabled.
 
-### DVD-Video menu authoring
+Each call loads independent module state and tracks a private heap, files, directories and COM objects. Legacy exits and assertions return errors instead of terminating the host. Resources are released and the DLL unloaded after each call. Author DLL contents participate in resume signatures, so a library upgrade invalidates staged discs. Authoring propagates failures instead of accepting empty menus.
 
-\`dvdauthor.exe\` currently creates VMG/VTS menus, PGCs, buttons, navigation commands, VOB/IFO/BUP files and connections between menus and DVD-Audio entries. \`dvda-author-dev.exe\` already provides the project's DVD-Audio authoring, but it does not automatically provide these DVD-Video menu functions. They may be merged into its authoring core or exposed through an in-process project DLL.
+Scope is the AMGM menus, subpictures and navigation generated by the GUI. General DVD-Video titles, text subtitles, SVCD and reverse extraction through spuunmux are unused and do not gain extra tools or APIs.
 
-### Subpicture buttons
+### Full-disc verification
 
-The GUI workflow invokes only \`spumux.exe\` to encode button states, transparency, palettes and button coordinates into DVD subpictures. \`spuunmux.exe\` is a reverse parser that the workflow never starts, so it has been removed from required package inputs and releases. The migration scope is limited to the subpicture encoding and button overlay work performed by \`spumux\`.
+verify lossless and GUI verification visit every disc, group and track in the formal index:
 
-### MPEG-2 menu video
+1. Read every ATS_NN_n.AOB segment in order through the ISO reader.
+2. Parse PES in read-only C and compare every MLP byte in track order, including headers and end markers; skip only container padding.
+3. For batch-surcode, regenerate target PCM using the same SWR, bit-depth conversion and WAV normalization, then compare against decoded MLP PCM.
+4. Require equal PCM lengths by default. The established SurCode policy only permits complete zero tail frames shorter than 1 ms. Truncation, nonzero tails and differences fail. Unknown conversion policies for old external MLP cannot pass through similar sample counts.
 
-Image decoding and YUV4MPEG2 generation now run through the in-process ImageMagick bridge. `mpeg2enc.exe` still encodes MPEG-2 menu video and is also used by imported-VOB menu handling. The remaining work is the MPEG-2 I-frame encoder, including PAL/NTSC, menu frame rates, sequence headers, GOP/end markers, DVD menu bitrate and output checks.
-
-### Menu audio and multiplexing
-
-\`mp2enc.exe\` and \`mplex.exe\` provide menu audio and MPEG-PS multiplexing. The replacement must cover menu silence/background audio, audio encoding, PTS/SCR, pack alignment and VOB output.
-
-## Later migrations
-
-The optional M4A/ALAC-to-FLAC organization feature is now handled by `FlacMetadataEditor`. It parses Vorbis Comment and PICTURE blocks, exports/imports artwork and atomically rewrites the metadata prefix while copying audio frames byte-for-byte. It does not start `metaflac.exe`, and a new FLAC audio encoder is unnecessary.
-
-Full in-process verification can later add an ISO/AOB reader, MLP decoder, full-track PCM comparison and menu/PTS parsers. The current first-track sample can remain while authoring migration proceeds.
+Verification never modifies MLP/AOB. Regression covers missing later tracks, final-track corruption, truncated sectors, invalid PES lengths and cancellation. The MLP core and whole-file requirement are unchanged: identical target PCM, settings and metadata context must produce identical MLP through encoder behavior, without post-encoding patches.
 
 ## Explicit exclusions
 
-The following are not migration targets because they are already buildable from the repository or existing project native source, or are development/regression-only:
+These existing components and development uses need no further migration or deletion:
 
-- C# GUI, CLI, shared libraries and tests;
-- \`mlp_encoder.dll\` and \`Native/source\`;
-- \`dvda-media.dll\`, \`dvda-image.dll\` and bridge code;
-- \`dvda-author-dev.exe\` and its project patches;
-- MLP parsing, caching, disc planning, menu planning and logging;
-- historical external FFmpeg/FFprobe comparison paths;
-- ImageMagick reference tools, magick-shim and image regression helpers;
-- eac3to, original SurCode and old \`surcode.exe\` entry points;
-- Python, MSYS2, MinGW, Make, GPG and NASM build tools;
-- independent regression packages and third-party reference binaries.
+- C# GUI, CLI, business libraries and tests;
+- mlp_encoder.dll and Native/source;
+- dvda-media.dll, dvda-image.dll and source build recipes;
+- dvda-author-dev.exe and project patches; the partial mirror still needs a configured complete author source tree;
+- MLP parsing, caches, disc/menu planning and logs;
+- Historical FFmpeg/FFprobe, ImageMagick and magick-shim comparisons;
+- eac3to, original SurCode, old surcode.exe and independent baselines;
+- Python, MSYS2 GCC, Make, GPG, NASM and other development tools.
 
-Exclusion means these functions do not need to be reimplemented as runtime components outside the repository. Developers may still use the tools to rebuild or test native components.
+These are not unfinished migration items. Old DVDA_MKISOFS, DVDA_METAFLAC, eac3to and media-path keys remain importable for config.env compatibility without restoring GUI process calls.
 
-## Order
+## Build and acceptance
 
-Items 1 through 3 below are complete. The next remaining runtime migrations are menu MPEG video, menu audio/multiplexing, subpictures and DVD-Video authoring.
+See [Windows build instructions](../tools/win-build/README.en.md) and [validation records](menu-migration-validation.json). Build libraries with build-minimal-ffmpeg.py --profile menu, the three C modules with build-menu-runtime.py, and integrate through build-image-author.py. Run compatibility checks with dotnet run --project tests/DvdaMaker.CompatibilityTests.
 
-1. ISO writer. **Complete.**
-2. Remove `mkisofs.exe` in menu-off mode. **Complete.**
-3. FLAC metadata editing. **Complete.**
-4. Menu MPEG-2 video encoding, menu audio and multiplexing; image-to-YUV4MPEG2 is complete.
-5. \`spumux\` subpicture buttons and DVD-Video authoring.
-6. Connect the menu API to `dvda-author-dev`.
-7. Full in-process verification.
-
-Use C language for all new codes much as possible. Each step needs regression comparison against current directory layouts, track tables, navigation, PTS, AOB and ISO output. MLP acceptance remains byte identity when target PCM, encoding settings and metadata context match.
-
-The current boundary is therefore: a menu-off disc is fully in-process for authoring and ISO creation; menu-on discs still invoke the listed menu encoders and DVD-Video authoring tools until those C implementations are migrated.
+Tests: test-menu-media.py covers PAL/NTSC and invalid inputs; test-menu-native.py compares whole outputs with legacy algorithms; test-disc-verify.py injects late-track/container corruption; test-image-release.py and test-menu-workflows.py trace GUI processes and check regular/index menus, multiple discs/groups and rate/bit-depth conversion. Artifacts stay ignored. Automated checks do not substitute for physical-player playback.

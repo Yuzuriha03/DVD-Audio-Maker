@@ -9,8 +9,7 @@ This package redistributes several open-source programs, including modifications
 | Component | Version | License | Notes |
 |---|---|---|---|
 | **dvda-author** (`menu-bin/dvda-author-dev.exe`) | Upstream `8fca43a` plus project changes | **GPL v3** | See `LICENSE`. Changes include 24-bit lossless MLP, FFmpeg 9 compatibility, menu/still-picture fixes and Windows support |
-| **dvdauthor** (`menu-bin/dvdauthor.exe`) | 0.7.1 | **GPL v2** | Includes AMGM menus and `jump group` patches; upstream does not recognize that navigation syntax |
-| **spumux** / **spuunmux** | 0.7.1 | **GPL v2** | Built from the same source as dvdauthor |
+| **dvdauthor/spumux C subset** (dvda-menu-nav.dll / dvda-menu-spu.dll) | 0.7.1 + AMGM/project changes | **GPL v2 or later** (source headers) | tools/menu-native/vendor; ORIGIN.json and COPYING; menu-NOTICE.txt |
 
 The main programs are GPL-licensed. The package includes the license text in `LICENSE`.
 Upstream source is available from `github.com/fabnicol/dvda-author`; project modifications
@@ -20,16 +19,15 @@ are provided as a patch applicable with `git apply`.
 
 | Component | Version | License |
 |---|---|---|
-| **mjpegtools** (`mpeg2enc` / `mplex` / `mp2enc`; `jpeg2yuv` source only) | 2.1.0 | **GPL v2** |
 | **ImageMagick** (`image-native/dvda-image.dll`) | 7.0.8-47 Q16 HDRI | **ImageMagick License**, Apache-2.0-style |
 | **FFmpeg libraries** (menu-bin, media-native) | 9.0.2; Windows x64 builds tailored to each role | **GPL v3 or later** for this configuration |
 | Other DLLs | Respective MSYS2/MinGW-w64 builds | See each project |
 
 ## FFmpeg build
 
-FFmpeg libraries use unmodified source from `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`. Source SHA-256: `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. `menu-bin` retains MLP authoring capabilities and the author dynamically links the three MLP shared libraries produced by the source build; `media-native` adds FLAC/ALAC/AAC/PCM/MLP decoding, FLAC/PCM output, SWR/SOXR resampling and MPEG-2/PNG/JPEG processing for the GUI process. The MLP encoding core remains separate. No FFmpeg command-line executable is shipped.
+FFmpeg libraries use unmodified source from `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`. Source SHA-256: `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. menu-bin includes MLP authoring plus MPEG-2/MP2 menu encoding and DVD MPEG-PS muxing; the author dynamically links three source-built shared libraries; `media-native` adds FLAC/ALAC/AAC/PCM/MLP decoding, FLAC/PCM output, SWR/SOXR resampling and MPEG-2/PNG/JPEG processing for the GUI process. The MLP encoding core remains separate. No FFmpeg command-line executable is shipped.
 
-Build recipes are tools/win-build/build-minimal-ffmpeg.py (mlp / media profiles) and build-media-bridge.py. media-native/media-build.json records configuration, source hashes and all DLL hashes/imports. libsoxr, zlib and their runtime dependencies are included; FFmpeg / FFprobe command-line executables are not. The project's dvda-media.dll interface is implemented in tools/win-build/native/dvda-media.c under the project's GPL v3 license. See docs/MINIMAL-FFMPEG.en.md and docs/INPROCESS-MEDIA.en.md for configuration and validation.
+Build recipes are tools/win-build/build-minimal-ffmpeg.py (mlp / menu / media profiles) and build-media-bridge.py. media-native/media-build.json records configuration, source hashes and all DLL hashes/imports. libsoxr, zlib and their runtime dependencies are included; FFmpeg / FFprobe command-line executables are not. The project's dvda-media.dll interface is implemented in tools/win-build/native/dvda-media.c under the project's GPL v3 license. See docs/MINIMAL-FFMPEG.en.md and docs/INPROCESS-MEDIA.en.md for configuration and validation.
 
 
 ## Fonts

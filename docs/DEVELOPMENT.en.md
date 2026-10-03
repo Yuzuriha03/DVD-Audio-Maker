@@ -49,4 +49,6 @@ See [gui-only-validation.json](gui-only-validation.json).
 
 ## Image component debugging
 
+Menu development also needs a matching author, menu-bin DLLs, image-native and data/menu. Set DVDA_AUTHOR in a test profile to the new package's menu-bin/dvda-author-dev.exe and DVDA_AUTHOR_SRC to its data directory. Keep the complete runtime together. Run gui-debug.cmd --config <test-profile>; DVDA_IMAGE_NATIVE_DIR and DVDA_MEDIA_NATIVE_DIR can point to the package's image-native/media-native directories. Rebuild the three C modules with tools/win-build/build-menu-runtime.py and integrate them with build-image-author.py --menu-runtime <module-directory> --ffmpeg-runtime <menu-profile-prefix>.
+
 The GUI and native author share image-native/dvda-image.dll. Copy image-native and its sibling menu-bin/fonts from a verified release, or set DVDA_IMAGE_NATIVE_DIR to the complete image directory. Ordinary C# changes do not require rebuilding ImageMagick. See [image processing](INPROCESS-IMAGES.en.md) and [native builds](../tools/win-build/README.en.md).

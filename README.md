@@ -11,7 +11,7 @@
 1. 选择音源目录、工作目录和 ISO 成品目录，填写标题与容量。
 2. 设置目标采样率、位深及菜单。建议每张专辑单独一个目录，保留 album、title、track、date 标签。
 3. 运行“检查音源”，再运行“预演制作”。预演会准备音源并编码 MLP，但不生成 ISO。
-4. 运行“开始制作”，完成后执行“验证成品”。音频无损检查为首轨抽样，不代表全盘逐轨验证。
+4. 运行“开始制作”，完成后执行“验证成品”，检查全部轨道、菜单和 ISO。
 
 请保留整个发布目录，尤其是 `media-native`、`image-native`、`menu-bin/fonts` 和 `data/menu`。只复制主 EXE 无法运行完整工作流。
 
@@ -30,7 +30,7 @@ GUI 替代手工编辑 env：可导入旧 `config.env`，也可打开和保存 J
 | 音源读取、转换、解码和媒体校验 | 进程内 x64 媒体库，不启动 FFmpeg/FFprobe EXE |
 | MLP 编码 | 内嵌MLP 编码核心 DLL，不启动原版 SurCode，也不调用 eac3to |
 | 封面、文字、菜单图像、字体及图像校验 | GUI 与原生制盘程序各自在进程内调用精简图像 DLL |
-| 菜单编码、复用、制盘及 ISO 生成 | 随包的 dvda-author 内置 ISO 写入器及菜单工具 |
+| 菜单编码、复用、制盘及 ISO 生成 | 项目 author 内置 C 菜单模块和 ISO 写入器 |
 | 可选 M4A/ALAC 转 FLAC 整理 | 进程内 FLAC 元数据编辑器处理封面与标签 |
 
 无需另装 FFmpeg、FFprobe 或 ImageMagick。GUI 导入的旧媒体工具路径会自动改用内置组件；开发 CLI 和参考测试仍允许显式外部转换器。图像库支持 JPG/PNG 读写和 WebP 封面读取，保留完整 SC/JP/KR 字体 face；未包含通用视频、PDF/SVG 等图像委托链。
@@ -127,7 +127,7 @@ dotnet run --project src\DvdaMaker.Cli -- verify all
 `prepare --force` 忽略音源校验缓存，强制重新探测与解码校验。
 `build --no-resume` 关闭逐盘续跑，强制重新出盘全部盘。
 
-`verify lossless` 只抽样比对**第 1 盘 / 组 1 / 第 1 轨**：源解码 PCM 与 MLP 解码 PCM 逐字节比较，再从成品 ISO 抽出首轨 MLP 与源 MLP 做字节比较。默认要求等长；仅在 SurCode 模式下允许共同内容完全一致、末尾额外不足 1 ms 且由完整零采样帧构成的填充。截短、非零尾部或内容差异仍报错。它不是全盘逐轨无损验证。
+verify lossless 逐盘、逐组、逐轨比较全部目标 PCM，并由只读 C 解析器核对成品 ISO 所有 AOB 分段中的全部 MLP 字节。batch-surcode 按编码时相同的 SWR、位深转换和 WAV 规范化重建目标 PCM；默认等长，SurCode 仅容许不足 1 ms 的完整零采样帧尾部填充。截短、非零尾部和内容差异仍失败；转换策略未知的旧外部 MLP 不用采样数相近代替一致性证明。验证不修改编码文件。
 
 ## 重跑与缓存
 
@@ -235,9 +235,9 @@ dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
 tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
 ```
 
-截至 **2026-10-03**，本地清理后 Debug 构建为零警告、零错误，**108/108 兼容性测试、23/23 图像专项通过**。已验证普通菜单、单页/多页索引及 Unicode 路径下的制盘和校验。完整 MLP 对照保持字节一致；文字叠加图存在已记录的字形边缘像素差异，不承诺所有菜单图像像素相同。
+迁移回归通过 109/109 兼容性检查、41 项菜单媒体检查、32 项菜单模块检查和 14 项全流损坏检查。GUI 覆盖普通/索引菜单、多盘多组及 44.1 kHz／20 位转换。菜单模块由源码构建并取代旧菜单 EXE；MLP 核心及整文件字节一致性不变，MPEG-2 菜单不要求与旧编码器输出逐字节相同。
 
-本地验收精简包位于 `build/inprocess-images-x64-release`；清理后的目录用途见本机 `build/README.md`。这些目录不会随 Git 克隆自动出现。保留独立媒体基准用于开发回归，不应将它误认为当前发布包。
+本地验收精简包位于 build/release-menu-final，产物保持忽略。范围见[迁移清单](docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)，结果见[验证记录](docs/menu-migration-validation.json)。历史基准仅用于开发对照。
 
 ## 文档
 

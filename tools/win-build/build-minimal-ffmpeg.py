@@ -67,7 +67,7 @@ def main():
     parser.add_argument('--msys-root', type=Path, default=Path(os.environ.get('MSYS2_ROOT', 'C:/msys64')))
     parser.add_argument('--work-directory', type=Path, default=Path(__file__).resolve().parents[2] / 'build/ffmpeg-minimal')
     parser.add_argument('--jobs', type=int, default=min(8, os.cpu_count() or 1))
-    parser.add_argument('--profile', choices=['mlp', 'media'], default='mlp')
+    parser.add_argument('--profile', choices=['mlp', 'menu', 'media'], default='mlp')
     args = parser.parse_args()
     if os.name != 'nt' or args.jobs < 1:
         parser.error('Run on Windows with --jobs >= 1.')
@@ -132,10 +132,18 @@ def main():
         '--disable-pthreads', '--enable-w32threads', '--enable-small', '--enable-gpl', '--enable-version3',
         '--x86asmexe=' + short_path(nasm), '--extra-cflags=-ffunction-sections -fdata-sections',
         '--extra-ldflags=-Wl,--gc-sections -Wl,--no-insert-timestamp -static-libgcc']
-    if args.profile == 'media':
+    if args.profile in ('menu', 'media'):
         configure = [item for item in configure if not item.startswith(('--enable-decoder=', '--enable-encoder=',
                      '--enable-parser=', '--enable-demuxer=', '--enable-muxer='))
                      and item not in ('--disable-swscale', '--disable-swresample')]
+    if args.profile == 'menu':
+        configure += ['--disable-swscale', '--disable-swresample']
+        configure += ['--enable-decoder=mlp,pcm_s16le,pcm_s24le,pcm_s32le',
+                      '--enable-encoder=mlp,mpeg2video,mp2',
+                      '--enable-parser=mlp,mpegvideo,mpegaudio',
+                      '--enable-demuxer=mlp,wav',
+                      '--enable-muxer=mlp,mpeg2dvd']
+    if args.profile == 'media':
         configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr', '--enable-zlib',
             '--enable-decoder=mlp,flac,alac,aac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video,png,mjpeg',
             '--enable-encoder=mlp,flac,pcm_s16le,pcm_s24le,png',

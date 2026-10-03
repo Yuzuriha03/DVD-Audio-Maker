@@ -9,7 +9,7 @@
 - 发布包保留完整 media-native 目录。标准包为 x64 GUI-only，不含 .NET；运行需要 .NET 10 Desktop Runtime x64。
 - GUI 继续读取旧 config.env 和 JSON 方案，自动改用内置媒体组件，界面不再提供 FFmpeg / FFprobe 路径设置。
 - 默认配置为 DVDA_FFMPEG=builtin:media、DVDA_FFPROBE=builtin:probe。开发 CLI 仍接受显式外部路径，用于参考对照；GUI 不使用旧路径，也不在组件缺失时自动回退到外部程序。
-- 可选 ALAC 转 FLAC 的封面/标签整理使用进程内 `FlacMetadataEditor`，不再需要 Metaflac。ImageMagick 已改为进程内组件，ISO 由 dvda-author 内置写入器完成；菜单 MPEG 制作工具沿用既有流程。
+- 可选 ALAC 转 FLAC 的封面/标签整理使用进程内 `FlacMetadataEditor`，不再需要 Metaflac。ImageMagick 已改为进程内组件，ISO 由 dvda-author 内置写入器完成；菜单编码、复用、子图像和导航也已接入进程内 C 模块。
 
 ## 实现范围
 
@@ -17,7 +17,7 @@ BuiltinMedia 把项目已有的媒体请求映射到小型 C ABI，通过 P/Invo
 
 原生代码负责探测、首音频流解码、ALAC 包枚举、PCM/FLAC 输出、MD5、封面复制及 DVD 菜单首帧提取。保留进度回调、超时和取消；文件先写入同目录临时文件，成功才替换目标，失败/取消清理临时产物。DLL 从 media-native 及 Windows 系统目录加载，不借用 PATH 中的库。
 
-media 配置使用 FFmpeg 9.0.2 的 avcodec、avformat、avutil、swresample、swscale，并包含 libsoxr、zlib 及必要运行库。与 menu-bin 中供原生制盘工具使用的 MLP 专用库分开。打包器检查 DLL 清单、SHA-256、AMD64 架构与普通/延迟导入依赖。
+media 配置使用 FFmpeg 9.0.2 的 avcodec、avformat、avutil、swresample、swscale，并包含 libsoxr、zlib 及必要运行库。与 menu-bin 中供原生制盘工具使用的 MLP/菜单专用库分开。打包器检查 DLL 清单、SHA-256、AMD64 架构与普通/延迟导入依赖。
 
 MLP 准备沿用 SWR、禁用抖动、既有 20 位舍入和限幅，以及 WAVE 规范化。MLP 编码核心 SHA-256：ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8。媒体转换器的 DLL 哈希进入缓存身份，升级后重建旧身份缓存。编码输出不进行字节修补。
 
@@ -32,7 +32,7 @@ MLP 准备沿用 SWR、禁用抖动、既有 20 位舍入和限幅，以及 WAVE
 
 范围说明：SOXR 仅用于诊断重采样后的采样数，不进入 MLP 编码准备。该计数完全相同；额外探测的两份 24 位 SOXR 原始 PCM 与外部 libsoxr 构建存在最多 1 LSB 的舍入差异，因此不宣称不同构建的任意 SOXR 输出逐字节相同。实际编码链的 SWR/量化/MLP 对照全部要求并实现逐字节相同。
 
-ISO 无损校验保留既有首轨抽样策略，六个 MLP 文件另行整文件对照。制盘回归沿用基准的工具短路径和 MENU_INDEX_MIN_ALBUMS=99，未把已有的单页索引菜单问题计为已修复。
+本节保留早期媒体迁移基准。后续已扩展全盘逐轨 PCM/MLP 检查并验证单页/多页索引，见[当前完成状态](NO-EXTERNAL-RUNTIME-MIGRATION.md)。
 
 ## 发布包与体积
 

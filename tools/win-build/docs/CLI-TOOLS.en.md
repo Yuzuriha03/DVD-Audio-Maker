@@ -22,7 +22,7 @@ GUI and CLI share application dependencies; the CLI is `dvda.exe` in the package
 
 Edit settings in the interface; they are saved automatically in your user directory. "Import env…" reads existing configurations, and "Open profile / Save profile" handles JSON profiles. Without saved GUI settings, first launch reads an adjacent config.env. MLP uses a native x64 in-process DLL, with no encoder EXE. FFmpeg conversion/decoding and disc-authoring tools remain external programs.
 
-"Preview layout" prepares sources and encodes MLP without creating ISOs. "Build discs" completes authoring. "Verify output" retains first-track sampling for lossless PCM checks. Tasks can be canceled and logs exported.
+"Preview layout" prepares sources and encodes MLP without creating ISOs. "Build discs" completes authoring. "Verify output" compares target PCM for every track and all MLP bytes inside every disc. Tasks can be canceled and logs exported.
 
 Use "More settings" for less common options. Choose DVD5, DVD9 or custom capacity; sample rates and encoding methods have readable labels.
 

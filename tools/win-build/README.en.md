@@ -21,14 +21,13 @@ Git does not contain the full third-party tool bundle. tools/dvda-author-mlp8 is
 The prebuilt directory needs these programs and their DLL dependencies:
 
 ```text
-dvda-author-dev.exe   dvdauthor.exe
-spumux.exe            mpeg2enc.exe     mplex.exe
-mp2enc.exe
+dvda-author-dev.exe
+# The final author and required DLLs come from --image-author.
 ```
 
 Provide NotoSansCJKsc/jp/kr-Regular.otf, or the verified `fonts/DvdaNotoCJK-Regular.ttc`. Packaging shares identical font tables while retaining all glyphs and regional faces. magick.exe, convert.exe, mogrify.exe and identify.exe are no longer required inputs.
 
-The base author must include the project's MLP, timeline, UTF-8 and menu fixes. Packaging replaces its staging copy with the verified `--image-author` build. The other menu tools still need the appropriate AMGM/jump support.
+The base author must include the project's MLP, timeline, UTF-8 and menu fixes. Packaging replaces its staging copy with the verified `--image-author` build. Legacy menu executables are no longer required and are removed from staging.
 
 ## Build the compact package
 
@@ -51,7 +50,7 @@ tools\win-build\build-all.cmd ^
 | `--output` | Release output root |
 | `--framework-dependent` | Exclude .NET; the current distribution profile |
 | `--include-cli` | Optional developer diagnostic package |
-| `--ffmpeg-libraries` | Optional verified MLP-only authoring library replacements |
+| --ffmpeg-libraries | Legacy MLP-only reference option; current author libraries come from --image-author |
 
 The compact profile defaults to:
 
@@ -103,21 +102,23 @@ This supplies the required audio decoders, SWR/SOXR, menu-video reading and C in
 ```bat
 python tools\win-build\build-image-runtime.py --msys-root "D:\dev\msys64"
 python tools\win-build\build-image-bridge.py --msys-root "D:\dev\msys64"
-python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64" --ffmpeg-runtime "build\ffmpeg-minimal\install"
+python tools\win-build\build-minimal-ffmpeg.py --profile menu --work-directory build\ffmpeg-menu --msys-root "C:\msys64"
+python tools\win-build\build-menu-runtime.py --msys-root "C:\msys64"
+python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64" --ffmpeg-runtime "build\ffmpeg-menu\install"
 ```
 
 ImageMagick/FreeType archives are pinned by SHA-256. The recipe verifies upstream files and regenerates project patches. The image runtime retains Q16 HDRI, JPEG/PNG reading/writing, WebP reading, drawing/captions/statistics and required font functionality. External delegates and loadable coders are disabled. One x64 image DLL imports only Windows system libraries.
 
-The author script snapshots the full tree with base project changes, then transforms image calls. Do not pre-apply the same image delta. It does not overwrite the source tree or compiler installation. By default it reads `build/ffmpeg-minimal/install`; use `--ffmpeg-runtime` or `DVDA_FFMPEG_RUNTIME_DIR` to select the prefix produced by `build-minimal-ffmpeg.py`. The author links only the three FFmpeg import libraries from that prefix, excludes the snapshot's old FFmpeg archives, and neither builds nor starts `ffmpeg.exe`. See [mirror boundaries](../dvda-author-mlp8/README.en.md) and [in-process images](../../docs/INPROCESS-IMAGES.en.md). The old magick-shim remains solely for historical reference tests.
+The author script snapshots a configured full project tree, copies the current mirror and C interfaces, and links the FFmpeg menu profile plus menu modules. Defaults: build/ffmpeg-menu/install and build/menu-native; overrides: --ffmpeg-runtime and --menu-runtime. It leaves source/compiler installations unchanged and never builds or starts ffmpeg.exe.
 The generated `dvda-author-dev.exe` must be used with the `runtime_files` listed in `author-build.json`; the script collects that PE import closure, so copying only the executable is incomplete. Release packaging copies those DLLs into `menu-bin` as well.
 
-### MLP-only authoring decoder libraries
+### Historical MLP-only profile
 
 ```bat
 python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64"
 ```
 
-The default mlp profile serves menu-bin authoring tools. It is separate from the GUI media profile and encoder. Pass `--ffmpeg-libraries build\ffmpeg-minimal\install\bin` when replacements are needed. The packager verifies the known profile before pruning unused dependencies. Compiler/configuration changes require regression testing before fingerprints are updated. See [the minimal-library record](../../docs/MINIMAL-FFMPEG.en.md).
+The old mlp profile remains for reference and independent maintenance. Current author builds require --profile menu; do not replace their libraries with MLP-only binaries. The GUI uses the separate media profile. Source versions and manifests remain pinned.
 
 ## Validation and cache maintenance
 
@@ -128,7 +129,7 @@ dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
 tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
 ```
 
-Current recorded checks pass 109/109 compatibility cases and 23/23 image cases. Full GUI process tracing covers regular menus and single/multiple index pages without external ImageMagick, FFmpeg/FFprobe, SurCode, mkisofs or metaflac. Necessary menu encoders/muxers still run externally for menu-on builds.
+Migration passes compatibility, menu media, native comparisons and full-stream corruption checks. GUI tracing covers regular/index menus, menu-off, multiple discs/groups and converted PCM without external image/media/menu tools. See [completion records](../../docs/menu-migration-validation.json).
 
 `test-image-release.py` requires an independent old package, matching source/reference fixtures and a fresh output directory. Old ImageMagick runs only in the test's reference branch. See [the validation record](../../docs/inprocess-images-validation.json).
 

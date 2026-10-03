@@ -61,7 +61,9 @@ def main():
         check('Package manifest complete',set(entries)=={p.relative_to(after).as_posix() for p in after.rglob('*') if p.is_file() and p.name!='MANIFEST.txt'})
         author_record=json.loads((after/'image-native/author-build.json').read_text(encoding='utf-8'))
         author_imports=Pe(after/'menu-bin/dvda-author-dev.exe').imports()
-        check('Author dynamically links the source-built MLP profile',author_record.get('ffmpeg_linkage')=='shared-source-built-mlp-profile' and {'avcodec-63.dll','avformat-63.dll','avutil-61.dll'} <= set(author_imports))
+        check('Author dynamically links the source-built menu profile',author_record.get('ffmpeg_linkage')=='shared-source-built-menu-profile' and {'avcodec-63.dll','avformat-63.dll','avutil-61.dll'} <= set(author_imports))
+        check('Menu media, subpicture and navigation tools are in process',not any((after/'menu-bin'/name).exists() for name in ['mpeg2enc.exe','mplex.exe','mp2enc.exe','spumux.exe','dvdauthor.exe']))
+        check('Source-built menu and full-disc verification DLLs are bundled',all((after/'menu-bin'/name).is_file() for name in ['dvda-menu-spu.dll','dvda-menu-nav.dll','dvda-disc-verify.dll']))
         values=profile(fixtures/'after-menu.env');values.pop('DVDA_MKISOFS', None);values.update({'DVDA_BUILD_DIR':str(work/'disc-build'),'DVDA_FINAL_DIR':str(work/'isos'),
             'DVDA_AUTHOR':short(after/'menu-bin/dvda-author-dev.exe'),'DVDA_AUTHOR_SRC':short(after/'data'),
             'DVDA_MENU_FONT':'','DVDA_MENU_FONT_JP':'','DVDA_MENU_FONT_KR':'','DVDA_FFMPEG':str(work/'unavailable-ffmpeg.exe'),
@@ -79,7 +81,7 @@ def main():
         config=work/'project.env';save(config,values)
         gui('preview',config,'Preview');gui('build',config,'Build');gui('verify',config,'Verify')
         check('Complete ISO produced',len(list((work/'isos').glob('*.iso')))==1)
-        forbidden={'ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe','jpeg2yuv.exe','surcodemlp.exe'}
+        forbidden={'ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe','jpeg2yuv.exe','mpeg2enc.exe','mplex.exe','mp2enc.exe','surcodemlp.exe','spumux.exe','dvdauthor.exe','mkisofs.exe','metaflac.exe'}
         check('Process trace contains no external image/media/MLP encoder',not any(Path(x['path']).resolve().name.lower() in forbidden for x in report['processes']))
         check('Native author actually ran',any(Path(x['path']).resolve().name.lower()=='dvda-author-dev.exe' for x in report['processes']))
         expected={x.relative_to(fixtures/'after-menu/mlp').as_posix():sha(x) for x in (fixtures/'after-menu/mlp').rglob('*.mlp')}

@@ -150,6 +150,19 @@ public static class DiscSignature
                 .ConfigureAwait(false))
             .Append('\n');
         builder.Append("iso_writer=in-process-c-v2\n");
+        // The author's dynamically loaded algorithms can change independently
+        // of its executable. Never resume an ISO made with different DLLs.
+        if (Directory.Exists(options.MenuBinaryDirectory))
+        {
+            foreach (var file in Directory.EnumerateFiles(options.MenuBinaryDirectory, "*.dll")
+                .Order(StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var stream = File.OpenRead(file);
+                builder.Append("author_library=").Append(Path.GetFileName(file)).Append('|')
+                    .Append(Convert.ToHexString(SHA256.HashData(stream))).Append('\n');
+            }
+        }
         builder.Append("menu=").Append(options.MenuEnabled).Append('|')
             .Append(options.MenuTracksPerPage).Append('|')
             .Append(options.MenuIndexMinimumAlbums).Append('|')

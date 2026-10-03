@@ -9,7 +9,7 @@
 - Retain the complete media-native directory. The standard package is x64 GUI-only and framework-dependent, requiring .NET 10 Desktop Runtime x64.
 - Existing config.env and JSON profiles remain readable. The GUI selects bundled media automatically and removes FFmpeg / FFprobe path controls.
 - Defaults are DVDA_FFMPEG=builtin:media and DVDA_FFPROBE=builtin:probe. Explicit external paths remain available to the developer CLI for reference comparisons. The GUI ignores these legacy paths and does not fall back to external tools when libraries are missing.
-- Optional ALAC-to-FLAC artwork/tag normalization uses the in-process `FlacMetadataEditor` and no longer requires Metaflac. ImageMagick is already in-process, and ISO creation is now provided by dvda-author's built-in writer; menu MPEG authoring tools retain their existing workflow.
+- Optional ALAC-to-FLAC artwork/tag normalization uses the in-process `FlacMetadataEditor` and no longer requires Metaflac. ImageMagick is already in-process, and ISO creation is now provided by dvda-author's built-in writer; menu encoding, muxing, subpictures and navigation now use in-process C modules.
 
 ## Implementation
 
@@ -17,7 +17,7 @@ BuiltinMedia maps the application's existing media requests to a small C ABI, ca
 
 The native bridge implements probing, first-audio-stream decoding, ALAC packet inspection, PCM/FLAC output, MD5, artwork copying and DVD menu frame extraction. Progress, timeout and cancellation remain available. Outputs are staged beside the destination and replaced only on success; failure or cancellation removes the temporary file. Libraries load from media-native and Windows system directories, without borrowing PATH libraries.
 
-The media build includes FFmpeg 9.0.2 avcodec, avformat, avutil, swresample and swscale, plus libsoxr, zlib and necessary runtime libraries. It is separate from the MLP-only authoring DLLs in menu-bin. Packaging validates the DLL manifest, SHA-256, AMD64 architecture and normal/delay imports.
+The media build includes FFmpeg 9.0.2 avcodec, avformat, avutil, swresample and swscale, plus libsoxr, zlib and necessary runtime libraries. It is separate from the MLP/menu authoring DLLs in menu-bin. Packaging validates the DLL manifest, SHA-256, AMD64 architecture and normal/delay imports.
 
 MLP preparation retains SWR, disabled dithering, the existing 20-bit rounding/clipping policy and WAVE normalization. The native MLP core remains pinned to SHA-256 ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8. Media DLL hashes participate in cache identity, so an upgrade rebuilds old-identity cache entries. Encoded files are never patched to obtain byte identity.
 
@@ -32,7 +32,7 @@ MLP preparation retains SWR, disabled dithering, the existing 20-bit rounding/cl
 
 Scope: SOXR is used only for diagnostic resampled sample counts, never MLP preparation. Those counts match exactly. Two additional 24-bit SOXR PCM probes showed at most one LSB rounding difference across libsoxr builds; arbitrary cross-build SOXR output is not claimed to be byte-identical. The actual SWR/quantization/MLP encoding path requires and passes exact comparisons.
 
-ISO lossless verification retains the existing first-track sampling policy; all six authored MLP files were compared separately. Authoring regression retains the baseline's short native-tool paths and MENU_INDEX_MIN_ALBUMS=99. The existing single-page index-menu issue is not claimed as fixed.
+This section records the earlier media migration baseline. Subsequent migration adds every-track PCM/MLP checks and validates single/multiple index pages; see [current completion status](NO-EXTERNAL-RUNTIME-MIGRATION.en.md).
 
 ## Package size
 

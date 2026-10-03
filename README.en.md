@@ -11,7 +11,7 @@ The current distribution profile is **a compact GUI-only package without .NET**.
 1. Select the source, working and ISO output directories; set the title and capacity.
 2. Choose the target sample rate, bit depth and optional menus. Keep each album in its own folder with album, title, track and date tags.
 3. Check the sources, then preview the build. Preview prepares sources and encodes MLP but does not create ISOs.
-4. Build the discs and verify the output. Lossless audio verification samples the first track; it does not verify every track on every disc.
+4. Build the discs and verify every track, menu and output ISO.
 
 Keep the complete package, including `media-native`, `image-native`, `menu-bin/fonts` and `data/menu`. The main EXE alone cannot run the full workflow.
 
@@ -30,7 +30,7 @@ Logs default to stage summaries, with detailed output, warning filters, paused d
 | Source reading, conversion, decoding and media verification | In-process x64 media libraries; no FFmpeg/FFprobe EXE |
 | MLP encoding | Embedded MLP core DLL; no original SurCode or eac3to |
 | Covers, text, menu images, fonts and image verification | The GUI and native author each call the tailored image DLL in process |
-| Menu encoding/muxing, authoring and ISO creation | Bundled dvda-author with its in-process ISO writer, plus menu tools |
+| Menu encoding/muxing, authoring and ISO creation | Project author with in-process C menu modules and ISO writer |
 | Optional M4A/ALAC-to-FLAC organization | In-process FLAC metadata editor handles artwork and tags |
 
 No separate FFmpeg, FFprobe or ImageMagick installation is needed. The GUI replaces imported legacy media paths with built-in components; the developer CLI and reference tests can still use explicit external converters. Images support JPEG/PNG reading and writing plus WebP cover reading, with complete SC/JP/KR font faces. General video, PDF/SVG and other image delegate chains are excluded.
@@ -127,7 +127,7 @@ dotnet run --project src\DvdaMaker.Cli -- verify all
 `prepare --force` bypasses source verification caches and repeats probing and decoding checks.
 `build --no-resume` disables per-disc resumption and rebuilds every disc.
 
-`verify lossless` samples only **disc 1 / group 1 / track 1**. It compares source-decoded PCM with MLP-decoded PCM byte for byte, then extracts the first-track MLP from the completed ISO and compares it with the source MLP. Equal length is required by default. Only SurCode mode permits identical shared content followed by less than 1 ms of complete, zero-valued sample frames. Truncation, nonzero tails and content differences remain errors. This is not a lossless check of every track on every disc.
+verify lossless checks every disc, group and track: complete target PCM is compared, and a read-only C parser checks every MLP byte in all AOB segments inside the ISO. Batch-surcode regenerates target PCM using the same SWR, bit-depth conversion and WAV normalization as encoding. Equal length is required by default; SurCode only permits complete zero-valued tail frames shorter than 1 ms. Truncation, nonzero tails and differences fail. Unknown conversion policies for old external MLP cannot pass through similar sample counts. Verification never modifies encoded files.
 
 ## Reruns and caches
 
@@ -235,9 +235,9 @@ dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
 tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
 ```
 
-As of **2026-10-03**, the post-cleanup Debug build has zero warnings/errors; **108/108 compatibility checks and 23/23 image checks pass**. Regular menus, single/multiple index pages and authoring/verification under Unicode paths have been exercised. Complete MLP comparisons retain byte identity. Text overlay glyph-edge differences are documented; universal menu pixel identity is not claimed.
+The migration passes 109/109 compatibility checks, 41 menu-media checks, 32 native-menu checks and 14 full-stream corruption checks. GUI tests cover regular/indexed menus, multiple discs/groups and 44.1 kHz / 20-bit conversion. Source-built menu modules replace the old menu executables. MLP core identity and whole-file byte equality remain; MPEG-2 menu bytes need not match the former encoder.
 
-The validated local compact package is under `build/inprocess-images-x64-release`. Local `build/README.md` describes retained working directories; these are not included in a Git clone. The separate media baseline remains a development reference, not the current release.
+The validated compact package is under build/release-menu-final; artifacts stay ignored. See the [migration checklist](docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md) and [validation record](docs/menu-migration-validation.json). Historical baselines remain development references.
 
 ## Documentation
 

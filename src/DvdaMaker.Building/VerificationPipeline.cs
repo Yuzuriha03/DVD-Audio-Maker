@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using DvdaMaker.Configuration;
 using DvdaMaker.Formats.Iso9660;
 using DvdaMaker.Processes;
+using DvdaMaker.SurcodeTool;
 
 namespace DvdaMaker.Building;
 
@@ -338,179 +339,98 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
         CancellationToken cancellationToken = default)
     {
         var index = ReadIndex(out var indexIssue);
-        var firstTrack = index?.Discs.FirstOrDefault()?.Groups.FirstOrDefault()?.Tracks.FirstOrDefault();
-        if (firstTrack is null || string.IsNullOrWhiteSpace(firstTrack.MlpPath) ||
-            !File.Exists(firstTrack.MlpPath))
-        {
-            return new VerificationSectionResult(
-                "lossless",
-                [indexIssue ?? new VerificationIssue(
-                    "LOSSLESS_SOURCE_MISSING",
-                    "无法从 mlp_index.json 定位第 1 盘、组 1、第 1 轨 MLP")],
-                Unavailable: indexIssue is not null);
-        }
+        if (index is null || index.Discs.Count == 0 || index.Discs.Any(disc => disc.Tracks.Count == 0))
+            return new VerificationSectionResult("lossless",
+                [indexIssue ?? new VerificationIssue("LOSSLESS_SOURCE_MISSING", "正式索引不包含可校验的音轨。")], true);
 
         var issues = new List<VerificationIssue>();
         var work = Path.Combine(options.BuildDirectory, "verify-tmp", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         try
         {
-            if (firstTrack.MlpSource is "external" or "surcode-batch" && firstTrack.ExternalResampled)
+            foreach (var disc in index.Discs)
             {
-                var decoded = await ReadDecodedSampleCountAsync(
-                    firstTrack.MlpPath, cancellationToken).ConfigureAwait(false);
-                var expectedSamples = checked((long)Math.Round(
-                    firstTrack.Duration * firstTrack.SampleRate));
-                var tolerance = firstTrack.SampleRate / 20;
-                if (!decoded.ProcessSucceeded || decoded.SampleCount is null ||
-                    decoded.DecodeErrors > 0 ||
-                    Math.Abs(decoded.SampleCount.Value - expectedSamples) > tolerance)
+                cancellationToken.ThrowIfCancellationRequested();
+                var isoPath = Path.Combine(options.FinalDirectory, disc.IsoName);
+                try
                 {
-                    issues.Add(new VerificationIssue(
-                        "MLP_SAMPLE_COUNT_MISMATCH",
-                        $"MLP 解码采样数 {decoded.SampleCount?.ToString() ?? "未知"}，" +
-                        $"期望 {expectedSamples}（容差 {tolerance}），" +
-                        $"解码错误 {decoded.DecodeErrors}，退出成功 {decoded.ProcessSucceeded}"));
-                }
-            }
-            else
-            {
-                var sourceRaw = Path.Combine(work, "source.raw");
-                var decodedRaw = Path.Combine(work, "decoded.raw");
-                var sourceArguments = new List<string>
-                {
-                    "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
-                    "-i", firstTrack.SourcePath,
-                };
-                if (firstTrack.ResampleTo is not null)
-                {
-                    sourceArguments.AddRange([
-                        "-af", $"aresample={firstTrack.ResampleTo}:resampler=soxr",
-                    ]);
-                }
-                sourceArguments.AddRange(["-f", "s24le", sourceRaw]);
-                var sourceDecode = await RunAsync(
-                    options.Ffmpeg, sourceArguments, cancellationToken).ConfigureAwait(false);
-                var mlpDecode = await RunAsync(
-                    options.Ffmpeg,
-                    [
-                        "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
-                        "-i", firstTrack.MlpPath, "-f", "s24le", decodedRaw,
-                    ], cancellationToken).ConfigureAwait(false);
-                if (!sourceDecode.Succeeded || !mlpDecode.Succeeded)
-                {
-                    issues.Add(new VerificationIssue(
-                        "PCM_DECODE_FAILED", "ffmpeg 无法解码源音频或 MLP"));
-                }
-                else
-                {
-                    // SurCode 可在流末补入不足 1 ms 的零采样帧；仅对明确的
-                    // SurCode 来源启用，不放宽 ffmpeg/其他外部 MLP 的默认校验。
-                    var surcode = (options.MlpSource is "surcode" or "surcode-batch") &&
-                        (firstTrack.MlpSource is "external" or "surcode-batch") &&
-                        firstTrack.Channels > 0 && firstTrack.SampleRate > 1000;
-                    var comparison = surcode
-                        ? PcmComparer.Compare(sourceRaw, decodedRaw,
-                            bytesPerSampleFrame: checked(3 * firstTrack.Channels),
-                            maxTrailingZeroFrames: (firstTrack.SampleRate - 1) / 1000)
-                        : PcmComparer.Compare(sourceRaw, decodedRaw);
-                    if (!comparison.Match)
+                    using var iso = new Iso9660Reader(isoPath);
+                    var entries = iso.ListDirectory("AUDIO_TS");
+                    foreach (var group in disc.Groups)
                     {
-                        issues.Add(new VerificationIssue(
-                            comparison.SourceBytes == comparison.DecodedBytes
-                                ? "SOURCE_PCM_MISMATCH"
-                                : "SOURCE_PCM_LENGTH_MISMATCH",
-                            "MLP 解码 PCM 与源音频不一致: " + comparison.Reason));
+                        var segments = entries.Where(entry => Regex.IsMatch(entry.Name,
+                            $@"^ATS_{group.Number:00}_\d+\.AOB$", RegexOptions.IgnoreCase))
+                            .OrderBy(entry => int.Parse(entry.Name.Split('_')[2].Split('.')[0], CultureInfo.InvariantCulture))
+                            .ToArray();
+                        if (segments.Length == 0 || segments.Any(entry => entry.Size % iso.SectorSize != 0))
+                            throw new InvalidDataException($"第 {disc.Number} 盘组 {group.Number} 的 AOB 缺失或扇区不完整。");
+                        NativeDiscVerifier.Verify(options.MenuBinaryDirectory,
+                            group.Tracks.Select(track => track.MlpPath).ToArray(), ReadAobChunks(iso, segments), cancellationToken);
+                        Console.WriteLine($"[校验] 第 {disc.Number} 盘组 {group.Number}：{group.Tracks.Count} 轨成品 MLP 全部字节一致。");
                     }
                 }
-            }
-
-            var firstIso = FindIsoFiles().FirstOrDefault();
-            if (firstIso is null)
-            {
-                issues.Add(new VerificationIssue("NO_ISO", "未找到第 1 张成品 ISO"));
-            }
-            else
-            {
-                var aobPath = Path.Combine(work, "ATS_01_1.AOB");
-                using (var iso = new Iso9660Reader(firstIso))
+                catch (Exception error) when (error is Iso9660Exception or IOException or InvalidDataException or
+                    InvalidOperationException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
                 {
-                    if (!iso.Extract("AUDIO_TS/ATS_01_1.AOB", aobPath))
-                    {
-                        issues.Add(new VerificationIssue(
-                            "AOB_EXTRACT_FAILED", "无法从 ISO 提取 ATS_01_1.AOB"));
-                    }
+                    issues.Add(new VerificationIssue("ISO_MLP_MISMATCH", $"第 {disc.Number} 盘：{error.Message}"));
                 }
 
-                if (File.Exists(aobPath))
+                for (var number = 0; number < disc.Tracks.Count; number++)
                 {
-                    var extractDirectory = Path.Combine(work, "aob-extract");
-                    Directory.CreateDirectory(extractDirectory);
-                    var extraction = await RunAsync(
-                        options.DvdaAuthor,
-                        ["--aob-extract", aobPath, "-o", extractDirectory, "-W", "-P0", "-n"],
-                        cancellationToken).ConfigureAwait(false);
-                    var extracted = Directory.EnumerateFiles(
-                            extractDirectory, "track_01_title_01.mlp", SearchOption.AllDirectories)
-                        .FirstOrDefault();
-                    if (extracted is null)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var track = disc.Tracks[number];
+                    var label = $"第 {disc.Number} 盘第 {number + 1} 轨（{Path.GetFileName(track.SourcePath)}）";
+                    var folder = Path.Combine(work, $"disc{disc.Number}-track{number + 1}");
+                    Directory.CreateDirectory(folder);
+                    try
                     {
-                        issues.Add(new VerificationIssue(
-                            "ISO_MLP_EXTRACT_MISSING",
-                            $"--aob-extract 未产出 track_01_title_01.mlp（退出码 {extraction.ExitCode}）"));
+                        if (!File.Exists(track.SourcePath) || !File.Exists(track.MlpPath))
+                            throw new IOException("缺少源音频或编码 MLP，无法完成逐轨校验。");
+                        var sourceRaw = Path.Combine(folder, "source.raw");
+                        var decodedRaw = Path.Combine(folder, "decoded.raw");
+                        var source = track.SourcePath;
+                        if (track.MlpSource == "surcode-batch")
+                        {
+                            // Reuse the exact conversion policy used before encoding. This
+                            // regenerates target PCM; no encoded stream is changed.
+                            var converted = Path.Combine(folder, "converted.wav");
+                            var result = await RunAsync(options.Ffmpeg,
+                                FfmpegPcmConverter.Arguments(source, converted, track.SampleRate, track.Bits),
+                                cancellationToken).ConfigureAwait(false);
+                            if (!result.Succeeded) throw new InvalidDataException("无法重建编码输入 PCM：" + result.StandardError);
+                            source = Path.Combine(folder, "input.wav");
+                            SurcodePcmWav.Normalize(converted, source, track.SampleRate, track.Bits, cancellationToken);
+                            File.Delete(converted);
+                        }
+                        else if (track.ExternalResampled || track.ResampleTo is not null)
+                            throw new InvalidDataException("旧外部 MLP 的转换策略未知；不能用采样数相近代替 PCM 一致性校验。");
+                        var sourceDecode = await RunAsync(options.Ffmpeg,
+                            ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", source, "-f", "s24le", sourceRaw],
+                            cancellationToken).ConfigureAwait(false);
+                        var mlpDecode = await RunAsync(options.Ffmpeg,
+                            ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", track.MlpPath, "-f", "s24le", decodedRaw],
+                            cancellationToken).ConfigureAwait(false);
+                        if (!sourceDecode.Succeeded || !mlpDecode.Succeeded)
+                            throw new InvalidDataException("内置媒体组件无法解码目标 PCM 或 MLP。");
+                        var surcode = track.MlpSource == "surcode-batch" ||
+                            options.MlpSource == "surcode" && track.MlpSource == "external";
+                        var comparison = surcode && track.Channels > 0 && track.SampleRate > 1000
+                            ? PcmComparer.Compare(sourceRaw, decodedRaw, checked(3 * track.Channels), (track.SampleRate - 1) / 1000)
+                            : PcmComparer.Compare(sourceRaw, decodedRaw);
+                        if (!comparison.Match) throw new InvalidDataException(comparison.Reason);
+                        Console.WriteLine($"[校验] {label}：完整目标 PCM 一致。");
                     }
-                    else if (!FilesEqual(firstTrack.MlpPath, extracted))
+                    catch (Exception error) when (error is IOException or InvalidDataException or
+                        InvalidOperationException or ArgumentException)
                     {
-                        // dvda-author 的 --aob-extract 可能以非零码结束但数据完整，
-                        // 因此只在字节不一致时报告，并在消息里给出退出码供排查。
-                        issues.Add(new VerificationIssue(
-                            "ISO_MLP_MISMATCH",
-                            "成品 ISO 内提取出的首轨 MLP 与源 MLP 不一致" +
-                            $"（--aob-extract 退出码 {extraction.ExitCode}）"));
+                        issues.Add(new VerificationIssue("TRACK_PCM_MISMATCH", $"{label}：{error.Message}"));
                     }
+                    finally { Directory.Delete(folder, recursive: true); }
                 }
             }
         }
-        catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            issues.Add(new VerificationIssue("LOSSLESS_FAILED", exception.Message));
-        }
-        finally
-        {
-            try
-            {
-                if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
-            }
-            catch (IOException)
-            {
-            }
-        }
+        finally { if (Directory.Exists(work)) Directory.Delete(work, recursive: true); }
         return new VerificationSectionResult("lossless", issues);
-    }
-
-    private async Task<DecodedSampleResult> ReadDecodedSampleCountAsync(
-        string path,
-        CancellationToken cancellationToken)
-    {
-        var result = await RunAsync(
-            options.Ffmpeg,
-            [
-                "-hide_banner", "-nostdin", "-v", "info", "-i", path,
-                "-af", "astats=metadata=1", "-f", "null", "-",
-            ], cancellationToken).ConfigureAwait(false);
-        var text = result.StandardOutput + Environment.NewLine + result.StandardError;
-        var match = Regex.Match(text, @"Number of samples:\s*(\d+)");
-        long? sampleCount = match.Success && long.TryParse(
-            match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : null;
-        var decodeErrors = text.Split('\n').Count(line =>
-            line.Contains("Error submitting", StringComparison.OrdinalIgnoreCase) ||
-            line.Contains("invalid element", StringComparison.OrdinalIgnoreCase) ||
-            line.Contains("not implemented", StringComparison.OrdinalIgnoreCase) ||
-            line.Contains("Error while decoding", StringComparison.OrdinalIgnoreCase));
-        return new DecodedSampleResult(sampleCount, decodeErrors, result.Succeeded);
     }
 
     private Task<ProcessResult> RunAsync(
@@ -614,7 +534,9 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                             detail.TryGetProperty("ch", out var channels) &&
                             channels.ValueKind == JsonValueKind.Number
                                 ? channels.GetInt32()
-                                : 0));
+                                : 0,
+                            detail.ValueKind == JsonValueKind.Object && detail.TryGetProperty("bits", out var bits)
+                                ? bits.GetInt32() : groupElement.GetProperty("bits").GetInt32()));
                     }
                     groups.Add(new VerificationGroup(
                         groupElement.GetProperty("group").GetInt32(), tracks));
@@ -716,35 +638,6 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
         return match.Success ? int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) : null;
     }
 
-    private static bool FilesEqual(string leftPath, string rightPath)
-    {
-        var length = new FileInfo(leftPath).Length;
-        if (new FileInfo(rightPath).Length != length) return false;
-        using var left = File.OpenRead(leftPath);
-        using var right = File.OpenRead(rightPath);
-        return StreamsEqual(left, right, length);
-    }
-
-    private static bool StreamsEqual(Stream left, Stream right, long length)
-    {
-        var leftBuffer = new byte[128 * 1024];
-        var rightBuffer = new byte[leftBuffer.Length];
-        long readTotal = 0;
-        while (readTotal < length)
-        {
-            var wanted = (int)Math.Min(leftBuffer.Length, length - readTotal);
-            var leftRead = left.Read(leftBuffer, 0, wanted);
-            var rightRead = right.Read(rightBuffer, 0, wanted);
-            if (leftRead != rightRead || leftRead == 0) return false;
-            if (!leftBuffer.AsSpan(0, leftRead).SequenceEqual(rightBuffer.AsSpan(0, rightRead)))
-            {
-                return false;
-            }
-            readTotal += leftRead;
-        }
-        return true;
-    }
-
     private sealed record VerificationIndex(IReadOnlyList<VerificationDisc> Discs);
     private sealed record VerificationDisc(
         int Number,
@@ -764,9 +657,6 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
         bool ExternalResampled,
         double Duration,
         int SampleRate,
-        int Channels);
-    private sealed record DecodedSampleResult(
-        long? SampleCount,
-        int DecodeErrors,
-        bool ProcessSucceeded);
+        int Channels,
+        int Bits);
 }

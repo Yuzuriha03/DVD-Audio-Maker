@@ -247,7 +247,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
 
       // do not overwrite !
 
-      generate_background_mpg(img, globals);
+      if(generate_background_mpg(img, globals)) exit(EXIT_FAILURE);
       /* fall through */
       __attribute__((fallthrough));
 
@@ -263,10 +263,10 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
       allocate_topmenus(command, globals);
 
       errno = generate_spumux_xml(command, m_ngroups, m_ntracks, img, globals);
-      if (errno) perror("\n"ERR "AMG: spumux_xml\n");
+      if (errno) { perror("\n"ERR "AMG: spumux_xml\n"); exit(EXIT_FAILURE); }
 
       errno = launch_spumux(img, globals);
-      if (errno) perror("\n"ERR "AMG: spumux\n");
+      if (errno) { perror("\n"ERR "AMG: spumux\n"); exit(EXIT_FAILURE); }
 
     case  RUN_DVDAUTHOR :
 
@@ -274,7 +274,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
         {
           if (globals->debugging) foutput("%s\n", INF "Generating AMGM Xml project for dvdauthor (patched)...");
           errno = generate_amgm_xml(m_ngroups, m_ntracks, img, globals);
-          if (errno) perror("\n"ERR "AMG: amgm_xml\n");
+          if (errno) { perror("\n"ERR "AMG: amgm_xml\n"); exit(EXIT_FAILURE); }
         }
       if (img->nmenus && img->menuvobsize == NULL)
         {
@@ -291,7 +291,7 @@ uint32_t create_topmenu(char *audiotsdir, command_t *command, globalData *global
             }
 
 
-      launch_dvdauthor(globals);
+      if(launch_dvdauthor(globals)) exit(EXIT_FAILURE);
       break;
 
     case TS_VOB_TYPE:
@@ -354,7 +354,7 @@ int create_stillpics(char *audiotsdir, uint8_t naudio_groups, uint8_t *numtitles
 
   if (image->stillvob == NULL)
     {
-      generate_background_mpg(image, globals);
+      if(generate_background_mpg(image, globals)) exit(EXIT_FAILURE);
       if (image->backgroundmpg == NULL)
         {
           image->backgroundmpg = calloc(1, sizeof(char *));

@@ -21,7 +21,7 @@ This is an application-specific runtime; TIFF/PDF/SVG and WebP output are not pr
 - Six regular-menu MLP files and six/fourteen index-fixture files retain exact baseline bytes. The MLP core and media DLLs are unchanged; no encoded-file patching is used.
 - All 42 regular-menu images retain their dimensions. 24 are pixel-identical after decoding; 18 text overlays have glyph-edge differences. Content, layout and legibility were reviewed. Universal image pixel identity is not claimed.
 
-The native index command now accepts leading whitespace. A single index page no longer incorrectly requires a paging arrow. See [the validation record](inprocess-images-validation.json) for execution results, hashes and package sizes. Necessary external menu encoders/muxers and ISO tools remain in use.
+The native index command now accepts leading whitespace. A single index page no longer incorrectly requires a paging arrow. See [the validation record](inprocess-images-validation.json) for execution results, hashes and package sizes. That record describes the image migration stage; menu media, subpictures, navigation and ISO writing are now in process. See the [subsequent migration checklist](NO-EXTERNAL-RUNTIME-MIGRATION.en.md).
 
 ## Development
 

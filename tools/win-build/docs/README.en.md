@@ -29,13 +29,13 @@ Daily settings: `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
 
 Source conversion, probing, decoding and media verification use bundled x64 media libraries. Images, fonts and menu drawing use the in-process image library. No FFmpeg, FFprobe or ImageMagick installation is needed, and these operations do not launch their command-line programs. MLP uses the embedded MLP core without original SurCode or eac3to.
 
-Authoring, menu-video encoding/muxing and ISO creation still use bundled tools, so retain menu-bin. The optional M4A/ALAC-to-FLAC organization feature uses the in-process metadata editor for tags and artwork and does not need Metaflac.
+The author uses bundled C modules for menu encoding/muxing, button overlays, navigation and ISO writing without starting the old menu tools. Retain the complete menu-bin directory. Optional M4A/ALAC-to-FLAC organization uses the in-process metadata editor and does not need Metaflac.
 
 Legacy FFmpeg/FFprobe settings remain importable; the GUI automatically selects built-in components. Complete SC/JP/KR font faces are included without a separate font installation.
 
 ## Verification scope
 
-Output verification checks disc structures, capacity, timing and menus. Lossless audio verification samples disc 1, group 1, track 1; it does not verify every track. Auditing requires build.log from an actual completed build; a preview log is insufficient.
+Output verification checks disc structure, capacity, timing and menus, then compares target PCM and all disc MLP bytes for every disc, group and track. SurCode only permits complete zero-valued tail frames shorter than 1 ms. Auditing requires build.log from an actual completed build; a preview log is insufficient.
 
 Encoded MLP is not patched. Comparing complete historical original files requires matching target PCM, settings and auxiliary metadata context. Identical audio alone does not guarantee identical complete files.
 

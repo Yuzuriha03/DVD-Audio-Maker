@@ -64,12 +64,12 @@ internal static class DesktopWorkflow
                 if (menu.Unavailable) errors.Add("菜单验证不可用。");
             }
         }
-        progress.Report(new("正在抽样检查音频", "比较首轨音源与成品中的音频。此项为首轨抽样，不代表逐轨检查。"));
+        progress.Report(new("正在逐轨检查音频", "逐轨比较目标 PCM，并核对每张盘内的全部 MLP 字节。"));
         var lossless = await pipeline.VerifyLosslessAsync(token).ConfigureAwait(false);
         foreach (var issue in lossless.Issues) errors.Add($"{issue.Code}: {issue.Message}");
-        if (lossless.Unavailable) errors.Add("抽样无损验证不可用。");
+        if (lossless.Unavailable) errors.Add("逐轨无损验证不可用。");
         foreach (var error in errors) Console.Error.WriteLine("[错误] " + error);
         if (errors.Count > 0) throw new InvalidOperationException($"验证有 {errors.Count} 项未通过，请查看日志。");
-        return new("成品验证通过", "容量、索引、时间轴及已启用的菜单检查完成；无损检查为首轨抽样。");
+        return new("成品验证通过", "容量、索引、时间轴、菜单和全部轨道的无损检查完成。");
     }
 }

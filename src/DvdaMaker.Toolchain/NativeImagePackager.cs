@@ -31,9 +31,9 @@ internal static class NativeImagePackager
             "Missing rebuilt native author. Run build-image-author.py, or pass --image-author <its output directory>.");
         using var document = JsonDocument.Parse(File.ReadAllText(manifest));
         if (!document.RootElement.TryGetProperty("ffmpeg_linkage", out var linkage) ||
-            !string.Equals(linkage.GetString(), "shared-source-built-mlp-profile", StringComparison.Ordinal))
+            !string.Equals(linkage.GetString(), "shared-source-built-menu-profile", StringComparison.Ordinal))
             throw new InvalidDataException(
-                "Native author must use the shared FFmpeg MLP profile built from source; rebuild it with build-image-author.py.");
+                "Native author must use the shared FFmpeg menu profile built from source; rebuild it with build-image-author.py.");
         ValidateBinary(Path.Combine(directory, "dvda-author-dev.exe"),
             document.RootElement.GetProperty("files").GetProperty("dvda-author-dev.exe"));
         if (!document.RootElement.TryGetProperty("runtime_files", out var runtime) ||
@@ -43,9 +43,12 @@ internal static class NativeImagePackager
 
         var names = runtime.EnumerateObject().Select(property => property.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in new[] { "avcodec-63.dll", "avformat-63.dll", "avutil-61.dll" })
+        if (!document.RootElement.TryGetProperty("menu_linkage", out var menuLinkage) ||
+            menuLinkage.GetString() != "in-process-source-built")
+            throw new InvalidDataException("Rebuild the native author with the in-process menu libraries.");
+        foreach (var name in new[] { "avcodec-63.dll", "avformat-63.dll", "avutil-61.dll", "dvda-menu-spu.dll", "dvda-menu-nav.dll", "dvda-disc-verify.dll" })
             if (!names.Contains(name))
-                throw new InvalidDataException("Native author is missing the shared FFmpeg MLP dependency: " + name);
+                throw new InvalidDataException("Native author is missing the shared FFmpeg menu dependency: " + name);
         var actual = Directory.EnumerateFiles(directory, "*.dll")
             .Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!actual.SetEquals(names))
@@ -93,6 +96,8 @@ internal static class NativeImagePackager
             foreach (var property in runtime.EnumerateObject())
                 File.Copy(Path.Combine(author, property.Name), Path.Combine(native, property.Name), true);
         File.Copy(authorManifest, Path.Combine(images, "author-build.json"), true);
+        foreach (var name in new[] { "menu-build.json", "menu-NOTICE.txt" })
+            File.Copy(Path.Combine(author, name), Path.Combine(native, name), true);
         // Only the new release staging directory is pruned. No source/prebuilt files are changed.
         foreach (var name in new[] { "magick.exe", "convert.exe", "mogrify.exe", "identify.exe",
             "colors.xml", "delegates.xml", "english.xml", "locale.xml", "log.xml", "mime.xml", "policy.xml",
@@ -106,6 +111,6 @@ internal static class NativeImagePackager
                 new XAttribute("style", "normal"), new XAttribute("stretch", "normal"), new XAttribute("weight", 400),
                 new XAttribute("face", index), new XAttribute("glyphs", "../menu-bin/fonts/DvdaNotoCJK-Regular.ttc")));
         new XDocument(types).Save(Path.Combine(images, "type.xml"));
-        Console.WriteLine("  native author: in-process image calls; ImageMagick executables removed");
+        Console.WriteLine("  native author: in-process images, media, subpictures and navigation");
     }
 }

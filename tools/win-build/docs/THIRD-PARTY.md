@@ -9,8 +9,7 @@
 | 组件 | 版本 | 许可 | 说明 |
 |---|---|---|---|
 | **dvda-author** (`menu-bin/dvda-author-dev.exe`) | 上游 `8fca43a` + 本工程改动 | **GPL v3** | 见 `LICENSE`。改动：24-bit 无损 MLP 支持、FFmpeg 9 适配、菜单/静图多项修复、Windows 移植 |
-| **dvdauthor** (`menu-bin/dvdauthor.exe`) | 0.7.1 | **GPL v2** | 含 AMGM 菜单与 `jump group` 补丁（上游版本不认菜单跳转语法） |
-| **spumux** / **spuunmux** | 0.7.1 | **GPL v2** | 与 dvdauthor 同一份源码 |
+| **dvdauthor/spumux C subset** (dvda-menu-nav.dll / dvda-menu-spu.dll) | 0.7.1 + AMGM/project changes | **GPL v2 or later** (source headers) | tools/menu-native/vendor; ORIGIN.json and COPYING; menu-NOTICE.txt |
 
 主程序均以 GPL 发布；本包随附完整许可证文本（`LICENSE`）。
 源码可从上游 `github.com/fabnicol/dvda-author` 获取，本工程的改动集
@@ -20,16 +19,15 @@
 
 | 组件 | 版本 | 许可 |
 |---|---|---|
-| **mjpegtools**（`mpeg2enc` / `mplex` / `mp2enc`；`jpeg2yuv` 仅保留源码） | 2.1.0 | **GPL v2** |
 | **ImageMagick**（`image-native/dvda-image.dll`） | 7.0.8-47 Q16 HDRI | **ImageMagick License**（Apache 2.0 风格） |
 | **FFmpeg 动态库**（menu-bin、media-native） | 9.0.2，按用途裁剪的 Windows x64 构建 | **GPL v3 或更高版本**（本构建配置） |
 | 其余 DLL | 各自的 MSYS2/MinGW-w64 构建 | 见各项目 |
 
 ## FFmpeg 构建
 
-FFmpeg 库来自未经修改的 `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`。源码 SHA-256：`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`。menu-bin 仅保留制盘所需的 MLP 功能，author 动态链接源码构建生成的三个 MLP 共享库；media-native 另含 FLAC/ALAC/AAC/PCM/MLP 解码、FLAC/PCM 输出、SWR/SOXR 重采样及 MPEG-2/PNG/JPEG 处理，供 GUI 进程内调用。MLP 编码核心仍是独立组件。发布包不含 FFmpeg 命令行程序。
+FFmpeg 库来自未经修改的 `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`。源码 SHA-256：`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`。menu-bin 保留 MLP 制盘与 MPEG-2/MP2 菜单编码、DVD MPEG-PS 复用，author 动态链接源码构建的三个共享库；media-native 另含 FLAC/ALAC/AAC/PCM/MLP 解码、FLAC/PCM 输出、SWR/SOXR 重采样及 MPEG-2/PNG/JPEG 处理，供 GUI 进程内调用。MLP 编码核心仍是独立组件。发布包不含 FFmpeg 命令行程序。
 
-构建脚本为本仓库 `tools/win-build/build-minimal-ffmpeg.py`（mlp / media 配置）与 `build-media-bridge.py`；media-native/media-build.json 记录配置、源文件与所有 DLL 的哈希及导入依赖。随包还有 libsoxr、zlib 及其运行库；不包含 FFmpeg / FFprobe 命令行程序。本项目的 dvda-media.dll 接口源码位于 tools/win-build/native/dvda-media.c，遵循项目 GPL v3 许可。配置及验证见 docs/MINIMAL-FFMPEG.md 和 docs/INPROCESS-MEDIA.md。
+构建脚本为本仓库 `tools/win-build/build-minimal-ffmpeg.py`（mlp / menu / media 配置）与 `build-media-bridge.py`；media-native/media-build.json 记录配置、源文件与所有 DLL 的哈希及导入依赖。随包还有 libsoxr、zlib 及其运行库；不包含 FFmpeg / FFprobe 命令行程序。本项目的 dvda-media.dll 接口源码位于 tools/win-build/native/dvda-media.c，遵循项目 GPL v3 许可。配置及验证见 docs/MINIMAL-FFMPEG.md 和 docs/INPROCESS-MEDIA.md。
 
 
 ## 字体

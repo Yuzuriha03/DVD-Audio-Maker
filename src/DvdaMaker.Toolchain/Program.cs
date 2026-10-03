@@ -15,11 +15,6 @@ internal static class ToolchainProgram
     private static readonly string[] RequiredExecutables =
     [
         "dvda-author-dev.exe",
-        "dvdauthor.exe",
-        "spumux.exe",
-        "mpeg2enc.exe",
-        "mplex.exe",
-        "mp2enc.exe",
     ];
 
     private static readonly string[] RequiredFonts =
@@ -151,6 +146,15 @@ internal static class ToolchainProgram
         {
             File.Delete(unusedJpeg2Yuv);
             Console.WriteLine("  in-process menu image conversion: jpeg2yuv.exe omitted");
+        }
+        foreach (var name in new[] { "mpeg2enc.exe", "mplex.exe", "mp2enc.exe", "spumux.exe", "dvdauthor.exe" })
+        {
+            var path = Path.Combine(destination, "menu-bin", name);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                Console.WriteLine("  in-process menu media encoding: " + name + " omitted");
+            }
         }
         if (ffmpegLibraries is not null)
         {

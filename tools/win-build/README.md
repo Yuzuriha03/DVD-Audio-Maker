@@ -21,14 +21,13 @@ Git 仓库不携带完整第三方工具包。`tools/dvda-author-mlp8` 是局部
 预编译工具目录需要以下入口及其完整 DLL 依赖：
 
 ```text
-dvda-author-dev.exe   dvdauthor.exe
-spumux.exe            mpeg2enc.exe     mplex.exe
-mp2enc.exe
+dvda-author-dev.exe
+# The final author and required DLLs come from --image-author.
 ```
 
 字体可提供三份 NotoSansCJKsc/jp/kr-Regular.otf，或经过验证的 `fonts/DvdaNotoCJK-Regular.ttc`。打包时共享 SC/JP/KR 的相同字体表，保留全部字形和区域 face。图像库不再要求 magick.exe、convert.exe、mogrify.exe 或 identify.exe。
 
-基础制盘工具必须已经包含本项目的 MLP、时间轴、UTF-8 和菜单修复。最终打包会用 `--image-author` 中的版本替换暂存目录里的 author；其余菜单工具仍需相应的 AMGM/跳转支持。
+基础制盘工具必须已经包含本项目的 MLP、时间轴、UTF-8 和菜单修复。最终打包会用 `--image-author` 中的版本替换暂存目录里的 author；旧菜单 EXE 不再是输入要求，打包时从暂存区移除。
 
 ## 生成精简包
 
@@ -51,7 +50,7 @@ tools\win-build\build-all.cmd ^
 | `--output` | 发布输出根目录 |
 | `--framework-dependent` | 不打包 .NET；当前推荐分发模式 |
 | `--include-cli` | 可选开发诊断包，附加 CLI 及说明 |
-| `--ffmpeg-libraries` | 可选：已验证的 MLP 专用制盘库替换目录 |
+| --ffmpeg-libraries | 历史 MLP-only 对照选项；当前 author 运行库由 --image-author 提供 |
 
 默认精简输出为：
 
@@ -103,21 +102,23 @@ python tools\win-build\build-media-bridge.py --msys-root "D:\dev\msys64"
 ```bat
 python tools\win-build\build-image-runtime.py --msys-root "D:\dev\msys64"
 python tools\win-build\build-image-bridge.py --msys-root "D:\dev\msys64"
-python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64" --ffmpeg-runtime "build\ffmpeg-minimal\install"
+python tools\win-build\build-minimal-ffmpeg.py --profile menu --work-directory build\ffmpeg-menu --msys-root "C:\msys64"
+python tools\win-build\build-menu-runtime.py --msys-root "C:\msys64"
+python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64" --ffmpeg-runtime "build\ffmpeg-menu\install"
 ```
 
 ImageMagick/FreeType 归档固定 SHA-256；脚本核对上游源文件，并重建项目补丁。图像库保留 Q16 HDRI、JPG/PNG 读写、WebP 读取、绘图/字幕/统计及必要字体功能，禁用外部 delegates 和动态 coder。只生成一份依赖 Windows 系统库的 x64 图像 DLL。
 
-`build-image-author.py` ???????????????????????????????????????????????????????????????????????? `build/ffmpeg-minimal/install`???? `--ffmpeg-runtime` ? `DVDA_FFMPEG_RUNTIME_DIR` ??? `build-minimal-ffmpeg.py` ????????author ?????????? FFmpeg ??????????? FFmpeg ????????? `ffmpeg.exe`???[??????](../dvda-author-mlp8/README.md)?[???????](../../docs/INPROCESS-IMAGES.md)?? magick-shim ??????????
+build-image-author.py 对已配置完整源码树建立隔离快照，复制当前镜像及 C 接口，链接 FFmpeg menu 配置并加入菜单模块。默认读取 build/ffmpeg-menu/install 和 build/menu-native，可用 --ffmpeg-runtime、--menu-runtime 指定。不改动原源码树或编译器，也不构建/启动 ffmpeg.exe。
 生成目录中的 `dvda-author-dev.exe` 必须与 `author-build.json` 的 `runtime_files` 一起使用；脚本会按 PE 导入闭包收集这些 DLL，只复制 exe 并不完整。正式打包也会把这些 DLL 一并放入 `menu-bin`。
 
-### MLP 专用制盘解码库（独立维护）
+### 历史 MLP 专用配置
 
 ```bat
 python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64"
 ```
 
-默认 mlp 配置服务 menu-bin 中的制盘工具，与 GUI 的 media 配置及编码核心分开。需要替换时传 `--ffmpeg-libraries build\ffmpeg-minimal\install\bin`。打包器依据已验证配置检查哈希并清理闲置依赖；编译器或配置变化后先完成回归，再更新指纹。见 [精简媒体库记录](../../docs/MINIMAL-FFMPEG.md)。
+旧 mlp 配置保留作对照和独立库维护；当前 author 必须使用 --profile menu，不应替换为旧 MLP-only 库。GUI 使用独立 media 配置，来源和清单继续固定校验。
 
 ## 验证与缓存维护
 
@@ -128,7 +129,7 @@ dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
 tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
 ```
 
-当前记录为 109/109 兼容性检查和 23/23 图像专项通过。完整 GUI 流程的进程树检查覆盖普通、单页及多页索引，不启动外部 ImageMagick/FFmpeg/FFprobe/SurCode/mkisofs/metaflac；菜单开启时仍会启动必要的菜单编码与复用工具。
+迁移通过兼容性、菜单媒体、原生算法对照和全流损坏检查。GUI 进程树覆盖普通/索引菜单、无菜单、多盘多组及转换后的 PCM，不启动外部图像/媒体/菜单工具。见[完成记录](../../docs/menu-migration-validation.json)。
 
 图像回归脚本 `test-image-release.py` 需要独立旧包、对应音源/基准输出及一个全新的输出目录。旧 ImageMagick 仅在测试的参考分支运行。输入要求与结果见 [验证记录](../../docs/inprocess-images-validation.json)。
 

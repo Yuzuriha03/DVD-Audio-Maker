@@ -634,12 +634,12 @@ if (command == "verify")
         }
         if (mode is "all" or "lossless")
         {
-            Console.WriteLine("=================== MLP 无损验证（抽样：第 1 盘 / 组 1 / 第 1 轨）===================");
+            Console.WriteLine("=================== MLP 无损验证（全部光盘 / 全部轨道）===================");
             var result = await pipeline.VerifyLosslessAsync();
             PrintIssues(result.Issues, result.Unavailable, ref failed, ref unavailable);
             if (result.Succeeded)
             {
-                Console.WriteLine("[OK] 首轨抽样无损校验通过（源 PCM 逐字节比对；SurCode 仅容许不足 1 ms 的完整零采样帧尾部填充；成品 MLP 字节比对；非全盘逐轨）");
+                Console.WriteLine("[OK] 全盘逐轨校验通过：全部目标 PCM 一致，成品内全部 MLP 字节一致。");
             }
         }
         if (mode == "all") return failed ? 1 : unavailable ? 2 : 0;

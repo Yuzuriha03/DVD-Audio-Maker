@@ -96,9 +96,7 @@ static unsigned char chroma_v(unsigned int red, unsigned int green, unsigned int
     return clamp_byte(((112 * (int)red - 94 * (int)green - 18 * (int)blue + 128) >> 8) + 128);
 }
 
-/* Replace jpeg2yuv for the menu path. The author keeps the existing mpeg2enc
- * process, while this bridge reads the still image in process and writes one
- * progressive YUV4MPEG2 frame for its standard input. */
+/* Read a menu still in process for the native MPEG-2 encoder. */
 __declspec(dllexport) int __cdecl dvda_image_write_y4m(const char *input, const char *output,
                                                        const char *frame_rate, const char *aspect)
 {
@@ -176,8 +174,8 @@ __declspec(dllexport) int __cdecl dvda_image_write_y4m(const char *input, const 
         report(ErrorException, "Could not open YUV4MPEG2 output", output);
         goto done;
     }
-    if (fprintf(file, "YUV4MPEG2 W%zu H%zu F%s:1 Ip A%s C420jpeg\nFRAME\n",
-                width, height, frame_rate, aspect) < 0 ||
+    if (fprintf(file, "YUV4MPEG2 W%zu H%zu F%s Ip A%s C420jpeg\nFRAME\n",
+                width, height, !strcmp(frame_rate,"30") ? "30000:1001" : "25:1", aspect) < 0 ||
         fwrite(y_plane, 1, pixels, file) != pixels ||
         fwrite(u_plane, 1, chroma, file) != chroma ||
         fwrite(v_plane, 1, chroma, file) != chroma || fflush(file) != 0 || ferror(file))
@@ -194,6 +192,24 @@ done:
     active = NULL;
     LeaveCriticalSection(&gate);
     return result;
+}
+
+/* Caller-owned RGBA buffer: no allocator crosses the DLL boundary. */
+__declspec(dllexport) int __cdecl dvda_image_read_rgba(const char *input,
+    unsigned char *rgba, size_t capacity, unsigned *width, unsigned *height)
+{
+    if(!input || !rgba || !width || !height || !InitOnceExecuteOnce(&once,initialize,NULL,NULL))return -1;
+    EnterCriticalSection(&gate);
+    MagickWand *wand=NewMagickWand();int result=-1;
+    if(wand && MagickReadImage(wand,input)!=MagickFalse) {
+        size_t w=MagickGetImageWidth(wand),h=MagickGetImageHeight(wand);
+        if(w && h && w<=720 && h<=576 && w*h<=capacity/4 &&
+           MagickExportImagePixels(wand,0,0,w,h,"RGBA",CharPixel,rgba)!=MagickFalse) {
+            *width=(unsigned)w;*height=(unsigned)h;result=0;
+        }
+    }
+    if(wand)DestroyMagickWand(wand);
+    LeaveCriticalSection(&gate);return result;
 }
 
 /* argv includes a logical command name: magick, convert, identify or mogrify.

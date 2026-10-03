@@ -63,4 +63,6 @@ tools\win-build\build-all.cmd --source "D:\dev\winbuild\src" --prebuilt "D:\dev\
 
 ## 图像组件调试
 
+当前菜单开发还需要与源码匹配的 author、menu-bin DLL、image-native 和 data/menu。将测试配置的 DVDA_AUTHOR 指向完整新包的 menu-bin/dvda-author-dev.exe，DVDA_AUTHOR_SRC 指向同包 data；不要只换 EXE 或继续配合旧菜单工具。可运行 gui-debug.cmd --config <测试配置>；DVDA_IMAGE_NATIVE_DIR 可指向新包 image-native，DVDA_MEDIA_NATIVE_DIR 指向 media-native。三份新增 C 模块用 tools/win-build/build-menu-runtime.py 重建，author 用 build-image-author.py --menu-runtime <模块目录> --ffmpeg-runtime <menu配置安装目录> 接入。
+
 GUI 与原生制盘共用 image-native/dvda-image.dll。从已验证发布包复制 image-native 和相邻 menu-bin/fonts，或设置 DVDA_IMAGE_NATIVE_DIR 指向完整图像目录。普通 C# 修改不需要重新编译 ImageMagick。构建及错误/取消回归方法见 [内置图像处理](INPROCESS-IMAGES.md) 与 [原生构建](../tools/win-build/README.md)。
