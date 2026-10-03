@@ -18,20 +18,46 @@ def main():
     p.add_argument('--source',type=Path,required=True)
     p.add_argument('--msys-root',type=Path,required=True)
     p.add_argument('--work-directory',type=Path,default=Path('build/image-author'))
+    repo=Path(__file__).resolve().parents[2]
+    default_ffmpeg=Path(os.environ.get('DVDA_FFMPEG_RUNTIME_DIR', str(repo/'build/ffmpeg-minimal/install')))
+    p.add_argument('--ffmpeg-runtime',type=Path,default=default_ffmpeg,
+                   help='FFmpeg install prefix built by build-minimal-ffmpeg.py')
     a=p.parse_args(); source=a.source.resolve(); work=a.work_directory.resolve(); work.mkdir(parents=True,exist_ok=True)
+    ffmpeg_runtime=a.ffmpeg_runtime.resolve()
+    ffmpeg_lib=ffmpeg_runtime/'lib'
+    ffmpeg_bin=ffmpeg_runtime/'bin'
+    ffmpeg_imports={
+        'avformat': ffmpeg_lib/'libavformat.dll.a',
+        'avcodec': ffmpeg_lib/'libavcodec.dll.a',
+        'avutil': ffmpeg_lib/'libavutil.dll.a',
+    }
+    ffmpeg_dlls=['avformat-63.dll','avcodec-63.dll','avutil-61.dll']
+    ffmpeg_headers=[ffmpeg_runtime/'include/libavcodec/avcodec.h',
+                    ffmpeg_runtime/'include/libavformat/avformat.h',
+                    ffmpeg_runtime/'include/libavutil/avutil.h']
+    missing=[str(path) for path in [*ffmpeg_imports.values(), *(ffmpeg_bin/name for name in ffmpeg_dlls), *ffmpeg_headers] if not path.is_file()]
+    if missing:
+        raise FileNotFoundError('FFmpeg MLP shared build is incomplete; run build-minimal-ffmpeg.py first: '+', '.join(missing))
     snapshot=work/'source'; snapshot.mkdir(exist_ok=True)
     inputs={}
-    for folder in ['src','libutils/src','libfixwav/src','local/include','local/lib']:
+    for folder in ['src','libutils/src','libfixwav/src','local/include']:
         for file in (source/folder).rglob('*'):
             if file.is_file() and (file.suffix in ['.c','.h','.a','.rc','.manifest']):
                 relative=file.relative_to(source); target=snapshot/relative; target.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copy2(file,target); inputs[relative.as_posix()]=sha(file)
     shutil.copy2(source/'config.h',snapshot/'config.h'); inputs['config.h']=sha(source/'config.h')
+    for name, path in ffmpeg_imports.items():
+        inputs[f'ffmpeg-runtime/lib/{path.name}']=sha(path)
+    for name in ffmpeg_dlls:
+        inputs[f'ffmpeg-runtime/bin/{name}']=sha(ffmpeg_bin/name)
+    ffmpeg_manifest=ffmpeg_runtime/'build-manifest.json'
+    if ffmpeg_manifest.is_file(): inputs['ffmpeg-runtime/build-manifest.json']=sha(ffmpeg_manifest)
     # Keep the configured snapshot aligned with the repository's native
     # migration sources. The configured tree supplies generated headers,
-    # libraries and menu data; these files carry the in-process ISO path.
+    # libraries and menu data; these files carry the in-process ISO and menu
+    # image paths.
     mirror_root=Path(__file__).resolve().parents[2] / 'tools/dvda-author-mlp8/src'
-    for name in ['launch_manager.c', 'iso_writer.c', 'iso_writer.h', 'command_line_parsing.c', 'auxiliary.c']:
+    for name in ['launch_manager.c', 'iso_writer.c', 'iso_writer.h', 'menu.c', 'command_line_parsing.c', 'auxiliary.c']:
         source_file=mirror_root/name
         target=snapshot/'src'/name
         shutil.copy2(source_file, target)
@@ -56,7 +82,7 @@ def main():
     (work/'inprocess-images.patch').write_text(''.join(patches),encoding='utf-8')
     msys=a.msys_root.resolve(); compiler=str(msys/'mingw64/bin/gcc.exe')
     env=os.environ|{'PATH':str(msys/'mingw64/bin')+os.pathsep+os.environ['PATH']}
-    include=[snapshot/'libutils/src/include',snapshot/'libutils/src/private',snapshot/'src/include',snapshot/'libfixwav/src/include',snapshot,snapshot/'local/include']
+    include=[snapshot/'libutils/src/include',snapshot/'libutils/src/private',snapshot/'src/include',snapshot/'libfixwav/src/include',snapshot,ffmpeg_runtime/'include',snapshot/'local/include']
     flags=['-O2','-std=gnu11','-D_GNU_SOURCE','-DHAVE_CONFIG_H','-DWITHOUT_sox','-DWITHOUT_FLAC','-DWITHOUT_libogg','-ffunction-sections','-fdata-sections','-Wno-error=incompatible-pointer-types','-Wno-error=implicit-function-declaration']+['-I'+str(x) for x in include]
     names='amg2 ats atsi2 audio auxiliary dvda-author file_input_parsing samg2 launch_manager command_line_parsing lexer ats2wav mlp menu asvs xml sound videoimport libsoxconvert iso_writer'.split()
     files=[snapshot/'src'/(name+'.c') for name in names]
@@ -78,14 +104,16 @@ def main():
     specs=re.sub(r'%\{!shared:%:if-exists\(default-manifest\.o%s\)\}', '', specs)
     specs_path=work/'gcc.specs'; specs_path.write_text(specs,encoding='utf-8')
     output=work/'dvda-author-dev.exe'
-    libraries=[snapshot/'local/lib'/('lib'+name+'.a') for name in ['swresample','avformat','avfilter','avcodec','avutil']]
+    # The MLP author imports only the three shared libraries produced by the
+    # signed, source-built minimal FFmpeg profile.  The configured snapshot
+    # still supplies generated/configuration headers. Its old static FFmpeg
+    # archives are neither copied into the snapshot nor used by this link.
+    libraries=[ffmpeg_imports['avformat'], ffmpeg_imports['avcodec'], ffmpeg_imports['avutil']]
     command=[compiler,'-specs='+str(specs_path),'-s','-static-libgcc','-Wl,--gc-sections','-Wl,--no-insert-timestamp',*built,str(objects/'manifest.o'),*[str(x) for x in libraries],'-lwinmm','-lbcrypt','-lm','-o',str(output)]
     with (work/'link.log').open('wb') as log: subprocess.run(command,env=env,stdout=log,stderr=subprocess.STDOUT,check=True)
     if b'<activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>' not in output.read_bytes():
         raise ValueError('Missing UTF-8 process manifest')
-    repo=Path(__file__).resolve().parents[2]
-    runtime_source=Path(os.environ.get('DVDA_FFMPEG_RUNTIME_DIR', str(repo/'build/media-native'))).resolve()
-    runtime_roots=[snapshot/'local/lib', runtime_source, repo/'build/ffmpeg-media/compile', msys/'mingw64/bin']
+    runtime_roots=[ffmpeg_bin, snapshot/'local/lib', repo/'build/media-native', repo/'build/ffmpeg-media/compile', msys/'mingw64/bin']
     system_root=Path(os.environ.get('SystemRoot', r'C:\Windows')).resolve()
     system_roots={system_root/'System32', system_root, msys/'bin', msys/'usr/bin'}
     system_names={'kernel32.dll','user32.dll','advapi32.dll','bcrypt.dll','combase.dll','gdi32.dll',
@@ -133,7 +161,10 @@ def main():
             pending.append(destination)
     runtime_files={p.name:{'sha256':sha(p),'bytes':p.stat().st_size,'imports':sorted(Pe(p).imports())}
                    for p in sorted(work.glob('*.dll'))}
-    record={'target':'Windows x64','files':{output.name:{'sha256':sha(output),'bytes':output.stat().st_size}},'runtime_files':runtime_files,'source_inputs':inputs,'patch_sha256':sha(work/'inprocess-images.patch'),'compiler':subprocess.check_output([compiler,'--version'],env=env).decode().splitlines()[0]}
+    record={'target':'Windows x64','ffmpeg_linkage':'shared-source-built-mlp-profile',
+            'ffmpeg_profile':'build-minimal-ffmpeg.py:mlp','files':{output.name:{'sha256':sha(output),'bytes':output.stat().st_size}},
+            'runtime_files':runtime_files,'source_inputs':inputs,'patch_sha256':sha(work/'inprocess-images.patch'),
+            'compiler':subprocess.check_output([compiler,'--version'],env=env).decode().splitlines()[0]}
     (work/'author-build.json').write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(record['files']),flush=True)
 

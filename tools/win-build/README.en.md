@@ -22,8 +22,8 @@ The prebuilt directory needs these programs and their DLL dependencies:
 
 ```text
 dvda-author-dev.exe   dvdauthor.exe
-spumux.exe                           jpeg2yuv.exe
-mpeg2enc.exe          mplex.exe        mp2enc.exe
+spumux.exe            mpeg2enc.exe     mplex.exe
+mp2enc.exe
 ```
 
 Provide NotoSansCJKsc/jp/kr-Regular.otf, or the verified `fonts/DvdaNotoCJK-Regular.ttc`. Packaging shares identical font tables while retaining all glyphs and regional faces. magick.exe, convert.exe, mogrify.exe and identify.exe are no longer required inputs.
@@ -103,12 +103,12 @@ This supplies the required audio decoders, SWR/SOXR, menu-video reading and C in
 ```bat
 python tools\win-build\build-image-runtime.py --msys-root "D:\dev\msys64"
 python tools\win-build\build-image-bridge.py --msys-root "D:\dev\msys64"
-python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64"
+python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64" --ffmpeg-runtime "build\ffmpeg-minimal\install"
 ```
 
 ImageMagick/FreeType archives are pinned by SHA-256. The recipe verifies upstream files and regenerates project patches. The image runtime retains Q16 HDRI, JPEG/PNG reading/writing, WebP reading, drawing/captions/statistics and required font functionality. External delegates and loadable coders are disabled. One x64 image DLL imports only Windows system libraries.
 
-The author script snapshots the full tree with base project changes, then transforms image calls. Do not pre-apply the same image delta. It does not overwrite the source tree or compiler installation. See [mirror boundaries](../dvda-author-mlp8/README.en.md) and [in-process images](../../docs/INPROCESS-IMAGES.en.md). The old magick-shim remains solely for historical reference tests.
+The author script snapshots the full tree with base project changes, then transforms image calls. Do not pre-apply the same image delta. It does not overwrite the source tree or compiler installation. By default it reads `build/ffmpeg-minimal/install`; use `--ffmpeg-runtime` or `DVDA_FFMPEG_RUNTIME_DIR` to select the prefix produced by `build-minimal-ffmpeg.py`. The author links only the three FFmpeg import libraries from that prefix, excludes the snapshot's old FFmpeg archives, and neither builds nor starts `ffmpeg.exe`. See [mirror boundaries](../dvda-author-mlp8/README.en.md) and [in-process images](../../docs/INPROCESS-IMAGES.en.md). The old magick-shim remains solely for historical reference tests.
 The generated `dvda-author-dev.exe` must be used with the `runtime_files` listed in `author-build.json`; the script collects that PE import closure, so copying only the executable is incomplete. Release packaging copies those DLLs into `menu-bin` as well.
 
 ### MLP-only authoring decoder libraries

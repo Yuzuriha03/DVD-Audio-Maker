@@ -25,7 +25,7 @@
 
 `NativeOptimizationProfile.json` 和 `MinimalFfmpegProfile.json` 固定完整工具集及替换库的 SHA-256。删除前还检查普通/延迟导入、二进制和 XML 名称引用，并保留传递依赖。未知文件或版本不进入自动清理范围。原始输入目录不被覆盖。
 
-GUI 的音源转换、解码检查和成品校验仍使用用户配置的外部 FFmpeg。MLP 编码 DLL 和承载它的程序集未改动，也没有在输出文件上打补丁。
+GUI 的音源转换、解码检查和成品校验使用随包的 `media-native` FFmpeg 库进程内完成，不启动 `ffmpeg.exe` 或 `ffprobe.exe`。author 使用上文所述的源码构建 MLP 共享库。MLP 编码 DLL 和承载它的程序集未改动，也没有在输出文件上打补丁。
 
 ## 验证范围
 

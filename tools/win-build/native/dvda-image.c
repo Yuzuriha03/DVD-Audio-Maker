@@ -74,6 +74,128 @@ static MagickBooleanType monitor(const char *tag, const MagickOffsetType offset,
     return call->cancel && call->cancel(call->state) ? MagickFalse : MagickTrue;
 }
 
+static unsigned char clamp_byte(int value)
+{
+    if (value < 0) return 0;
+    if (value > 255) return 255;
+    return (unsigned char)value;
+}
+
+static unsigned char luma(unsigned int red, unsigned int green, unsigned int blue)
+{
+    return clamp_byte(((66 * (int)red + 129 * (int)green + 25 * (int)blue + 128) >> 8) + 16);
+}
+
+static unsigned char chroma_u(unsigned int red, unsigned int green, unsigned int blue)
+{
+    return clamp_byte(((-38 * (int)red - 74 * (int)green + 112 * (int)blue + 128) >> 8) + 128);
+}
+
+static unsigned char chroma_v(unsigned int red, unsigned int green, unsigned int blue)
+{
+    return clamp_byte(((112 * (int)red - 94 * (int)green - 18 * (int)blue + 128) >> 8) + 128);
+}
+
+/* Replace jpeg2yuv for the menu path. The author keeps the existing mpeg2enc
+ * process, while this bridge reads the still image in process and writes one
+ * progressive YUV4MPEG2 frame for its standard input. */
+__declspec(dllexport) int __cdecl dvda_image_write_y4m(const char *input, const char *output,
+                                                       const char *frame_rate, const char *aspect)
+{
+    if (!input || !*input || !output || !*output || !frame_rate || !aspect ||
+        (strcmp(frame_rate, "25") && strcmp(frame_rate, "30")) ||
+        (strcmp(aspect, "1:1") && strcmp(aspect, "4:3") && strcmp(aspect, "16:9") && strcmp(aspect, "2.21:1")))
+        return -1;
+    if (!InitOnceExecuteOnce(&once, initialize, NULL, NULL)) return -1;
+
+    while (!TryEnterCriticalSection(&gate)) Sleep(5);
+    Call call = {NULL, NULL, NULL};
+    active = &call;
+    int result = -1;
+    MagickWand *wand = NewMagickWand();
+    unsigned char *rgb = NULL, *y_plane = NULL, *u_plane = NULL, *v_plane = NULL;
+    wchar_t *output_path = NULL;
+    FILE *file = NULL;
+    size_t width = 0, height = 0, pixels = 0, chroma = 0;
+
+    if (!wand || MagickReadImage(wand, input) == MagickFalse ||
+        MagickTransformImageColorspace(wand, sRGBColorspace) == MagickFalse)
+    {
+        ExceptionType severity = UndefinedException;
+        char *message = wand ? MagickGetException(wand, &severity) : NULL;
+        report(severity, "Could not decode menu image", message);
+        if (message) MagickRelinquishMemory(message);
+        goto done;
+    }
+    width = MagickGetImageWidth(wand);
+    height = MagickGetImageHeight(wand);
+    if (!width || !height || (width & 1) || (height & 1) || width > 16384 || height > 16384 ||
+        width > SIZE_MAX / height || width * height > SIZE_MAX / 3)
+    {
+        report(ErrorException, "Menu image must have nonzero even dimensions no larger than 16384 pixels", NULL);
+        goto done;
+    }
+    pixels = width * height;
+    chroma = pixels / 4;
+    rgb = malloc(pixels * 3);
+    y_plane = malloc(pixels);
+    u_plane = malloc(chroma);
+    v_plane = malloc(chroma);
+    if (!rgb || !y_plane || !u_plane || !v_plane ||
+        MagickExportImagePixels(wand, 0, 0, width, height, "RGB", CharPixel, rgb) == MagickFalse)
+    {
+        report(ErrorException, "Could not convert menu image pixels", NULL);
+        goto done;
+    }
+
+    for (size_t row = 0; row < height; ++row)
+        for (size_t column = 0; column < width; ++column)
+        {
+            const unsigned char *pixel = rgb + (row * width + column) * 3;
+            y_plane[row * width + column] = luma(pixel[0], pixel[1], pixel[2]);
+        }
+    for (size_t row = 0; row < height; row += 2)
+        for (size_t column = 0; column < width; column += 2)
+        {
+            unsigned int red = 0, green = 0, blue = 0;
+            for (size_t dy = 0; dy < 2; ++dy)
+                for (size_t dx = 0; dx < 2; ++dx)
+                {
+                    const unsigned char *pixel = rgb + ((row + dy) * width + column + dx) * 3;
+                    red += pixel[0]; green += pixel[1]; blue += pixel[2];
+                }
+            red = (red + 2) / 4; green = (green + 2) / 4; blue = (blue + 2) / 4;
+            size_t offset = (row / 2) * (width / 2) + column / 2;
+            u_plane[offset] = chroma_u(red, green, blue);
+            v_plane[offset] = chroma_v(red, green, blue);
+        }
+
+    output_path = wide(output);
+    if (!output_path || !(file = _wfopen(output_path, L"wb")))
+    {
+        report(ErrorException, "Could not open YUV4MPEG2 output", output);
+        goto done;
+    }
+    if (fprintf(file, "YUV4MPEG2 W%zu H%zu F%s:1 Ip A%s C420jpeg\nFRAME\n",
+                width, height, frame_rate, aspect) < 0 ||
+        fwrite(y_plane, 1, pixels, file) != pixels ||
+        fwrite(u_plane, 1, chroma, file) != chroma ||
+        fwrite(v_plane, 1, chroma, file) != chroma || fflush(file) != 0 || ferror(file))
+    {
+        report(ErrorException, "Could not write YUV4MPEG2 menu frame", output);
+        goto done;
+    }
+    result = 0;
+done:
+    if (file && fclose(file) != 0) result = -1;
+    if (result != 0 && output_path) _wremove(output_path);
+    if (wand) DestroyMagickWand(wand);
+    free(rgb); free(y_plane); free(u_plane); free(v_plane); free(output_path);
+    active = NULL;
+    LeaveCriticalSection(&gate);
+    return result;
+}
+
 /* argv includes a logical command name: magick, convert, identify or mogrify.
  * INFO output goes to per-request files, avoiding process-wide stdout redirection.
  * The DLL serializes ImageMagick's global configuration and legacy CLI state.

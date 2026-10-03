@@ -27,6 +27,10 @@
 #include "menu.h"
 #include "commonvars.h"
 
+#ifdef _WIN32
+extern int dvda_image_write_y4m(const char *, const char *, const char *, const char *);
+#endif
+
 
 
 // Automated top-menu generation using patched dvdauthor
@@ -241,7 +245,9 @@ void initialize_binary_paths(char level, globalData *globals)
           // if not installed with autotools, then use command line value or last-resort hard-code set defaults and test for result
 
           mp2enc   = create_binary_path(mp2enc, MP2ENC, SEPARATOR MP2ENC_BASENAME, globals);
+#ifndef _WIN32
           jpeg2yuv = create_binary_path(jpeg2yuv, JPEG2YUV, SEPARATOR JPEG2YUV_BASENAME, globals);
+#endif
           mpeg2enc = create_binary_path(mpeg2enc, MPEG2ENC, SEPARATOR MPEG2ENC_BASENAME, globals);
           mplex    = create_binary_path(mplex, MPLEX, SEPARATOR MPLEX_BASENAME, globals);
           pgmtoy4m = create_binary_path(pgmtoy4m, MPLEX, SEPARATOR MPLEX_BASENAME, globals);
@@ -296,8 +302,10 @@ void initialize_binary_paths(char level, globalData *globals)
         {
           free((char *) mp2enc);
           mp2enc = NULL;
+#ifndef _WIN32
           free((char *) jpeg2yuv);
           jpeg2yuv = NULL;
+#endif
           free((char *) mpeg2enc);
           mpeg2enc = NULL;
           free((char *) mplex);
@@ -342,6 +350,115 @@ void initialize_binary_paths(char level, globalData *globals)
 }
 
 static char *pict;
+
+#ifdef _WIN32
+/* Start a menu encoder with an explicit command line and optional file stdin.
+   system() asks cmd.exe to parse the whole string, which breaks when the
+   configured bindir contains spaces. CreateProcess receives the executable
+   path separately and therefore preserves the path exactly. */
+static int run_windows_menu_process(const char *application, const char *options,
+                                    const char *input_file, const char *output_file,
+                                    globalData *globals)
+{
+  size_t app_len, command_len;
+  char *executable, *command_line;
+  HANDLE input = INVALID_HANDLE_VALUE;
+  HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+  HANDLE error = GetStdHandle(STD_ERROR_HANDLE);
+  SECURITY_ATTRIBUTES security;
+  STARTUPINFOA startup;
+  PROCESS_INFORMATION process;
+  DWORD status = ERROR_SUCCESS;
+  BOOL created;
+
+  if (application == NULL || options == NULL) return ERROR_INVALID_PARAMETER;
+  app_len = strlen(application);
+  executable = malloc(app_len + 1);
+  if (executable == NULL) return ERROR_NOT_ENOUGH_MEMORY;
+  memcpy(executable, application, app_len + 1);
+  if (app_len >= 2 && executable[0] == '"' && executable[app_len - 1] == '"')
+    {
+      memmove(executable, executable + 1, app_len - 2);
+      executable[app_len - 2] = 0;
+    }
+
+  if (input_file != NULL)
+    {
+      security.nLength = sizeof security;
+      security.lpSecurityDescriptor = NULL;
+      security.bInheritHandle = TRUE;
+      input = CreateFileA(input_file, GENERIC_READ, FILE_SHARE_READ, &security,
+                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+      if (input == INVALID_HANDLE_VALUE)
+        {
+          foutput(ERR "Could not open menu encoder input %s\n", input_file);
+          free(executable);
+          return (int)GetLastError();
+        }
+    }
+  else
+    input = GetStdHandle(STD_INPUT_HANDLE);
+
+  if (output_file != NULL)
+    {
+      security.nLength = sizeof security;
+      security.lpSecurityDescriptor = NULL;
+      security.bInheritHandle = TRUE;
+      output = CreateFileA(output_file, GENERIC_WRITE, FILE_SHARE_READ, &security,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+      if (output == INVALID_HANDLE_VALUE)
+        {
+          foutput(ERR "Could not open menu encoder output %s\n", output_file);
+          if (input_file != NULL) CloseHandle(input);
+          free(executable);
+          return (int)GetLastError();
+        }
+    }
+
+  command_len = strlen(executable) + strlen(options) + 4;
+  command_line = malloc(command_len);
+  if (command_line == NULL)
+    {
+      if (input_file != NULL) CloseHandle(input);
+      if (output_file != NULL) CloseHandle(output);
+      free(executable);
+      return ERROR_NOT_ENOUGH_MEMORY;
+    }
+  snprintf(command_line, command_len, "\"%s\" %s", executable, options);
+
+  memset(&startup, 0, sizeof startup);
+  memset(&process, 0, sizeof process);
+  startup.cb = sizeof startup;
+  startup.dwFlags = STARTF_USESTDHANDLES;
+  startup.hStdInput = input;
+  startup.hStdOutput = output;
+  startup.hStdError = error;
+  created = CreateProcessA(executable, command_line, NULL, NULL, TRUE,
+                           CREATE_NO_WINDOW, NULL, NULL, &startup, &process);
+  if (input_file != NULL) CloseHandle(input);
+  if (output_file != NULL) CloseHandle(output);
+  if (!created)
+    {
+      DWORD error_code = GetLastError();
+      foutput(ERR "Could not launch menu encoder %s (Win32 error %lu)\n",
+              executable, (unsigned long)error_code);
+      free(command_line);
+      free(executable);
+      return (int)error_code;
+    }
+  if (globals != NULL && globals->debugging)
+    foutput(INF "Running menu encoder: %s\n", command_line);
+  WaitForSingleObject(process.hProcess, INFINITE);
+  if (!GetExitCodeProcess(process.hProcess, &status)) status = ERROR_PROCESS_ABORTED;
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+  if (globals != NULL && globals->debugging)
+    foutput(INF "Menu encoder exited with status %lu\n", (unsigned long)status);
+  free(command_line);
+  free(executable);
+  return (int)status;
+}
+#endif
 
 /* 程序结束码独占扇区（对齐商业盘）：见 docs/DVDA-AUTHOR-CHANGES.md。
    mplex 把 00 00 01 B9 写在本段最后一个扇区的最后 4 字节；商业盘则是让
@@ -527,7 +644,9 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
   norm[1] = 0;
 
   char *argsmp2enc[] = {MP2ENC_BASENAME, "-o", mp2track, NULL};
+#ifndef _WIN32
   char *argsjpeg2yuv[] = {JPEG2YUV_BASENAME, "-f", img->framerate, "-I", "p", "-n", "1", "-j", pict, "-A", img->aspectratio, NULL};
+#endif
   /* 与 album 模式配套：静图是单帧画面，播放时它要停住整个音轨，所以决定
      清晰度的只有「这一帧用了多少比特」。不传 -q/-b 时被 mpeg2enc 默认值
      卡在 30.6 dB，顶到 DVD 规格上限 9800 kbit/s 后 33.0 dB。
@@ -583,12 +702,13 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
         }
 #else
       const char *s = get_command_line(argsmp2enc, globals);
-      uint16_t size = strlen(s);
-      char cml[strlen(mp2enc) + size + 3 + strlen(img->soundtrack[0][0]) + 1 + 1 + 2];
-      sprintf(cml, "%s %s < %s", mp2enc, s, win32quote(img->soundtrack[0][0]));
-      foutput("%s %s\n", INF "Launching: ", cml);
+      int encode_result = run_windows_menu_process(mp2enc, s, soundtrack, NULL, globals);
       free((char *) s);
-      system(win32quote(cml));
+      if (encode_result != 0)
+        {
+          foutput(ERR "mp2enc failed while creating the menu soundtrack (status %d)\n", encode_result);
+          errno = EIO;
+        }
 #endif
     }
 
@@ -725,27 +845,34 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
 
 #else
 
-  char *mpeg2enccl = get_command_line(argsmpeg2enc, globals);
-  char *jpeg2yuvcl = get_command_line(argsjpeg2yuv, globals);
+  char y4mfile[strlen(globals->settings.tempdir) + 40];
+  snprintf(y4mfile, sizeof(y4mfile), "%s" SEPARATOR "menu-frame-%03u.y4m", globals->settings.tempdir, rank);
+  if (dvda_image_write_y4m(pict, y4mfile, img->framerate, img->aspectratio) != 0)
+    {
+      foutput(ERR "Could not convert menu image to YUV4MPEG2: %s\n", pict);
+      errno = EIO;
+      return errno;
+    }
 
-// This is unsatisfactory yet will do for porting purposes.
+  char *mpeg2enccl = get_command_line(argsmpeg2enc, globals);
+  int encode_result = run_windows_menu_process(mpeg2enc, mpeg2enccl, y4mfile, NULL, globals);
+  free(mpeg2enccl);
+  unlink(y4mfile);
+  if (encode_result != 0)
+    {
+      foutput(ERR "mpeg2enc failed while encoding the menu frame (status %d)\n", encode_result);
+      errno = EIO;
+      return errno;
+    }
 
   const char *mplexcl = get_command_line(argsmplex, globals);
-
-  char cml2[strlen(jpeg2yuv) + 1 + strlen(jpeg2yuvcl) + 3 + strlen(mpeg2enc) + 1 + strlen(mpeg2enccl) + 1];
-
-  sprintf(cml2, "%s %s | %s %s", jpeg2yuv, jpeg2yuvcl, mpeg2enc, mpeg2enccl);
-
-  system(win32quote(cml2));
-
-  char cml3[strlen(mplex) + 1 + strlen(mplexcl) + 1];
-
-  sprintf(cml3, "%s %s", mplex, mplexcl);
-  system(win32quote(cml3));
-
-  free((char *) jpeg2yuvcl);
-  free((char *) mpeg2enccl);
+  int mplex_result = run_windows_menu_process(mplex, mplexcl, NULL, NULL, globals);
   free((char *) mplexcl);
+  if (mplex_result != 0)
+    {
+      foutput(ERR "mplex failed while creating the menu MPEG file (status %d)\n", mplex_result);
+      errno = EIO;
+    }
 #endif
 
   return errno;
@@ -1106,11 +1233,16 @@ int launch_spumux(pic *img, globalData *globals)
 #else
 
       char *s = get_command_line(argsspumux, globals);
-      uint16_t size = strlen(s);
-      char cml[strlen(spumux) + 1 + size + 3 + strlen(img->backgroundmpg[menu]) + 2 + 3 + strlen(img->topmenu[menu]) + 2 + 1];
-      sprintf(cml, "%s %s < %s > %s", spumux, s, win32quote(img->backgroundmpg[menu]), win32quote(img->topmenu[menu]));
-      system(win32quote(cml));
+      int spumux_result = run_windows_menu_process(spumux, s,
+                                                   img->backgroundmpg[menu],
+                                                   img->topmenu[menu], globals);
       free((char *) s);
+      if (spumux_result != 0)
+        {
+          foutput(ERR "spumux failed while creating menu %d (status %d)\n",
+                  menu + 1, spumux_result);
+          errno = EIO;
+        }
 
 #endif
 
@@ -2658,15 +2790,6 @@ int create_stillpic_directory(char *string, int32_t count, globalData *globals)
 
 }
 #endif
-
-
-
-
-
-
-
-
-
 
 
 
