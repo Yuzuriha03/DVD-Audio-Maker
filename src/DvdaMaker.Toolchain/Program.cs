@@ -17,7 +17,6 @@ internal static class ToolchainProgram
         "dvda-author-dev.exe",
         "dvdauthor.exe",
         "spumux.exe",
-        "jpeg2yuv.exe",
         "mpeg2enc.exe",
         "mplex.exe",
         "mp2enc.exe",
@@ -146,6 +145,12 @@ internal static class ToolchainProgram
         {
             File.Delete(unusedSpuunmux);
             Console.WriteLine("  unused reverse subpicture parser: spuunmux.exe omitted");
+        }
+        var unusedJpeg2Yuv = Path.Combine(destination, "menu-bin", "jpeg2yuv.exe");
+        if (File.Exists(unusedJpeg2Yuv))
+        {
+            File.Delete(unusedJpeg2Yuv);
+            Console.WriteLine("  in-process menu image conversion: jpeg2yuv.exe omitted");
         }
         if (ffmpegLibraries is not null)
         {

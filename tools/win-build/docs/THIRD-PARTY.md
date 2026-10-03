@@ -20,14 +20,14 @@
 
 | 组件 | 版本 | 许可 |
 |---|---|---|
-| **mjpegtools** (`jpeg2yuv` / `mpeg2enc` / `mplex` / `mp2enc`) | 2.1.0 | **GPL v2** |
+| **mjpegtools**（`mpeg2enc` / `mplex` / `mp2enc`；`jpeg2yuv` 仅保留源码） | 2.1.0 | **GPL v2** |
 | **ImageMagick**（`image-native/dvda-image.dll`） | 7.0.8-47 Q16 HDRI | **ImageMagick License**（Apache 2.0 风格） |
 | **FFmpeg 动态库**（menu-bin、media-native） | 9.0.2，按用途裁剪的 Windows x64 构建 | **GPL v3 或更高版本**（本构建配置） |
 | 其余 DLL | 各自的 MSYS2/MinGW-w64 构建 | 见各项目 |
 
 ## FFmpeg 构建
 
-FFmpeg 库来自未经修改的 `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`。源码 SHA-256：`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`。menu-bin 仅保留制盘所需的 MLP 功能；media-native 另含 FLAC/ALAC/AAC/PCM/MLP 解码、FLAC/PCM 输出、SWR/SOXR 重采样及 MPEG-2/PNG/JPEG 处理，供 GUI 进程内调用。MLP 编码核心仍是独立组件。
+FFmpeg 库来自未经修改的 `https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz`。源码 SHA-256：`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`。menu-bin 仅保留制盘所需的 MLP 功能，author 动态链接源码构建生成的三个 MLP 共享库；media-native 另含 FLAC/ALAC/AAC/PCM/MLP 解码、FLAC/PCM 输出、SWR/SOXR 重采样及 MPEG-2/PNG/JPEG 处理，供 GUI 进程内调用。MLP 编码核心仍是独立组件。发布包不含 FFmpeg 命令行程序。
 
 构建脚本为本仓库 `tools/win-build/build-minimal-ffmpeg.py`（mlp / media 配置）与 `build-media-bridge.py`；media-native/media-build.json 记录配置、源文件与所有 DLL 的哈希及导入依赖。随包还有 libsoxr、zlib 及其运行库；不包含 FFmpeg / FFprobe 命令行程序。本项目的 dvda-media.dll 接口源码位于 tools/win-build/native/dvda-media.c，遵循项目 GPL v3 许可。配置及验证见 docs/MINIMAL-FFMPEG.md 和 docs/INPROCESS-MEDIA.md。
 

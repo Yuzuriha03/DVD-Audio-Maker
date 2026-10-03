@@ -22,8 +22,8 @@ Git 仓库不携带完整第三方工具包。`tools/dvda-author-mlp8` 是局部
 
 ```text
 dvda-author-dev.exe   dvdauthor.exe
-spumux.exe                           jpeg2yuv.exe
-mpeg2enc.exe          mplex.exe        mp2enc.exe
+spumux.exe            mpeg2enc.exe     mplex.exe
+mp2enc.exe
 ```
 
 字体可提供三份 NotoSansCJKsc/jp/kr-Regular.otf，或经过验证的 `fonts/DvdaNotoCJK-Regular.ttc`。打包时共享 SC/JP/KR 的相同字体表，保留全部字形和区域 face。图像库不再要求 magick.exe、convert.exe、mogrify.exe 或 identify.exe。
@@ -103,12 +103,12 @@ python tools\win-build\build-media-bridge.py --msys-root "D:\dev\msys64"
 ```bat
 python tools\win-build\build-image-runtime.py --msys-root "D:\dev\msys64"
 python tools\win-build\build-image-bridge.py --msys-root "D:\dev\msys64"
-python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64"
+python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --msys-root "D:\dev\msys64" --ffmpeg-runtime "build\ffmpeg-minimal\install"
 ```
 
 ImageMagick/FreeType 归档固定 SHA-256；脚本核对上游源文件，并重建项目补丁。图像库保留 Q16 HDRI、JPG/PNG 读写、WebP 读取、绘图/字幕/统计及必要字体功能，禁用外部 delegates 和动态 coder。只生成一份依赖 Windows 系统库的 x64 图像 DLL。
 
-`build-image-author.py` 从已经应用基础项目改动的完整工作树创建独立快照，再转换图像调用；不要事先手工应用同一图像增量补丁。它不覆盖原始工作树或编译器安装。详见 [源码镜像边界](../dvda-author-mlp8/README.md) 与 [内置图像处理](../../docs/INPROCESS-IMAGES.md)。旧 magick-shim 仅用于历史参考测试，当前发布不使用它。
+`build-image-author.py` ???????????????????????????????????????????????????????????????????????? `build/ffmpeg-minimal/install`???? `--ffmpeg-runtime` ? `DVDA_FFMPEG_RUNTIME_DIR` ??? `build-minimal-ffmpeg.py` ????????author ?????????? FFmpeg ??????????? FFmpeg ????????? `ffmpeg.exe`???[??????](../dvda-author-mlp8/README.md)?[???????](../../docs/INPROCESS-IMAGES.md)?? magick-shim ??????????
 生成目录中的 `dvda-author-dev.exe` 必须与 `author-build.json` 的 `runtime_files` 一起使用；脚本会按 PE 导入闭包收集这些 DLL，只复制 exe 并不完整。正式打包也会把这些 DLL 一并放入 `menu-bin`。
 
 ### MLP 专用制盘解码库（独立维护）

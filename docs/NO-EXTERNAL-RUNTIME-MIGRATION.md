@@ -6,7 +6,9 @@
 
 ## 当前边界
 
-ISO 写入器和 FLAC 元数据迁移已经完成。无菜单制作由 dvda-author-dev.exe 内置 C ISO9660 写入器直接生成镜像，不再需要或打包 mkisofs.exe；M4A/ALAC 整理由 C# 进程内 FLAC metadata 编辑器读写标签和封面，不再启动 metaflac.exe。菜单开启时仍会使用下列菜单编码和 DVD-Video authoring 工具，这些是下一阶段迁移内容。
+ISO 写入器和 FLAC 元数据迁移已经完成。无菜单制作由 dvda-author-dev.exe 内置 C ISO9660 写入器直接生成镜像，不再需要或打包 mkisofs.exe；M4A/ALAC 整理由 C# 进程内 FLAC metadata 编辑器读写标签和封面，不再启动 metaflac.exe。菜单图像已由进程内 ImageMagick 桥接转换为 YUV4MPEG2，不再需要或打包 jpeg2yuv.exe；菜单视频编码与 DVD-Video authoring 仍使用外部工具。
+
+author ?????????????????? FFmpeg MLP ????avcodec?avformat?avutil????? MLP ??????? MPEG-2 ???????????????? ImageMagick ?????? FFmpeg ?????????? ffmpeg.exe???? DLL ? author ???? menu-bin????????????? FFmpeg ??????
 
 ## 已完成
 
@@ -21,6 +23,10 @@ ISO 写入器和 FLAC 元数据迁移已经完成。无菜单制作由 dvda-auth
 
 DiscBuildExecutor 将 ISO 目标直接传给 author，不再启动外部进程。生成的 ISO 已由仓库 Iso9660Reader 回读，兼容性测试目前为 109/109。旧 DVDA_MKISOFS 配置键仍可读取，以兼容旧 config.env，但运行时不会解析或启动该程序。
 
+### 菜单图像转 YUV4MPEG2
+
+Windows 菜单流程通过现有 `dvda-image.dll` 在进程内解码菜单静图并生成一帧 YUV4MPEG2 数据，再交给仍在迁移中的 `mpeg2enc.exe`。该路径不再启动或打包 `jpeg2yuv.exe`。
+
 ## 仍需迁入
 
 ### DVD-Video 菜单 authoring
@@ -33,7 +39,7 @@ GUI 制作流程只调用 spumux.exe，把按钮状态、透明度、调色板�
 
 ### MPEG-2 菜单视频
 
-当前由 jpeg2yuv.exe 和 mpeg2enc.exe 完成。需要覆盖 JPEG/PNG 到 YUV、PAL/NTSC 720x576/720x480、菜单帧率、序列头、GOP、结束标记、DVD 菜单码率和 I-frame 输出。
+图像解码和 YUV4MPEG2 生成已迁入进程内 ImageMagick 桥接；MPEG-2 菜单视频仍由 `mpeg2enc.exe` 编码，且 VOB 菜单导入路径也会启动它。剩余工作是替换 MPEG-2 I-frame 编码，覆盖 PAL/NTSC、菜单帧率、序列头、GOP、结束标记、DVD 菜单码率和输出校验。
 
 ### 菜单音频和 MPEG-PS 复用
 
@@ -67,7 +73,7 @@ M4A/ALAC 转 FLAC 的可选封面和标签整理已经迁入 `FlacMetadataEditor
 1. ISO writer：已完成。
 2. 无菜单模式移除 mkisofs.exe：已完成。
 3. 内置 FLAC metadata：已完成。
-4. 菜单 MPEG 视频、菜单音频和复用。
+4. 菜单 MPEG-2 视频编码、菜单音频和复用；图像到 YUV4MPEG2 已迁入。
 5. spumux 子图像按钮覆盖和 DVD-Video authoring。
 6. 将菜单 API 接入 dvda-author-dev。
 7. 扩展全盘内置验证。

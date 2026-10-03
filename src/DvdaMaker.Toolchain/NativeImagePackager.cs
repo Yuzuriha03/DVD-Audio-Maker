@@ -30,6 +30,10 @@ internal static class NativeImagePackager
         if (!File.Exists(manifest)) throw new InvalidDataException(
             "Missing rebuilt native author. Run build-image-author.py, or pass --image-author <its output directory>.");
         using var document = JsonDocument.Parse(File.ReadAllText(manifest));
+        if (!document.RootElement.TryGetProperty("ffmpeg_linkage", out var linkage) ||
+            !string.Equals(linkage.GetString(), "shared-source-built-mlp-profile", StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "Native author must use the shared FFmpeg MLP profile built from source; rebuild it with build-image-author.py.");
         ValidateBinary(Path.Combine(directory, "dvda-author-dev.exe"),
             document.RootElement.GetProperty("files").GetProperty("dvda-author-dev.exe"));
         if (!document.RootElement.TryGetProperty("runtime_files", out var runtime) ||
@@ -39,6 +43,9 @@ internal static class NativeImagePackager
 
         var names = runtime.EnumerateObject().Select(property => property.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in new[] { "avcodec-63.dll", "avformat-63.dll", "avutil-61.dll" })
+            if (!names.Contains(name))
+                throw new InvalidDataException("Native author is missing the shared FFmpeg MLP dependency: " + name);
         var actual = Directory.EnumerateFiles(directory, "*.dll")
             .Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!actual.SetEquals(names))

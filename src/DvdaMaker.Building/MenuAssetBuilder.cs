@@ -10,7 +10,7 @@ public sealed class MenuAssetBuilder(
 {
     private static readonly string[] RequiredMenuPrograms =
     [
-        "dvdauthor", "spumux", "jpeg2yuv", "mpeg2enc", "mplex",
+        "dvdauthor", "spumux", "mpeg2enc", "mplex",
         "mp2enc",
     ];
 

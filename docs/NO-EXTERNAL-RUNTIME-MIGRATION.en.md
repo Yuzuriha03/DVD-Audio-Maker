@@ -6,7 +6,9 @@ This document lists only the external runtime functions that still need to move 
 
 ## Boundary
 
-**Current status:** the ISO writer and FLAC metadata migrations are complete. Menu-off builds now create ISO9660 images inside `dvda-author-dev.exe` and no longer require or package `mkisofs.exe`. M4A/ALAC organization now reads and rewrites FLAC metadata in process and no longer starts `metaflac.exe`. Menu-on authoring tools remain listed below as migration work.
+**Current status:** the ISO writer and FLAC metadata migrations are complete. Menu-off builds now create ISO9660 images inside `dvda-author-dev.exe` and no longer require or package `mkisofs.exe`. M4A/ALAC organization now reads and rewrites FLAC metadata in process and no longer starts `metaflac.exe`. Menu images now convert to YUV4MPEG2 through the in-process ImageMagick bridge, so `jpeg2yuv.exe` is no longer required or packaged. Menu video encoding and DVD-Video authoring still use external tools.
+
+The author now dynamically links three shared FFmpeg libraries (avcodec, avformat and avutil) built from the signature-verified source profile. They contain only the MLP functions needed by the author and no MPEG-2 video encoder. The menu-image migration reuses the existing ImageMagick bridge without expanding that FFmpeg profile. The runtime DLLs are copied beside the author in `menu-bin`; the source build produces no FFmpeg command-line program and the release workflow does not start `ffmpeg.exe`.
 
 The target release keeps the application and its DLLs, Windows x64 system DLLs, and .NET 10 Desktop Runtime x64 (or a bundled runtime for a self-contained build). Menu-off builds no longer need the ISO executable; menu-on builds still carry the menu authoring tools until their migrations are complete. Historical regression programs, old FFmpeg branches, ImageMagick reference tools, CLI comparison paths and build tools are outside this list.
 
@@ -18,6 +20,10 @@ The target release keeps the application and its DLLs, Windows x64 system DLLs, 
 
 The previous implementation used `mkisofs.exe`; that dependency has been replaced by the C writer described above. The reader remains responsible for verification.
 
+### Menu image to YUV4MPEG2
+
+The Windows menu path decodes each still image inside the process through the existing `dvda-image.dll` and writes one YUV4MPEG2 frame for the remaining `mpeg2enc.exe` stage. It no longer starts or packages `jpeg2yuv.exe`.
+
 ### DVD-Video menu authoring
 
 \`dvdauthor.exe\` currently creates VMG/VTS menus, PGCs, buttons, navigation commands, VOB/IFO/BUP files and connections between menus and DVD-Audio entries. \`dvda-author-dev.exe\` already provides the project's DVD-Audio authoring, but it does not automatically provide these DVD-Video menu functions. They may be merged into its authoring core or exposed through an in-process project DLL.
@@ -28,7 +34,7 @@ The GUI workflow invokes only \`spumux.exe\` to encode button states, transparen
 
 ### MPEG-2 menu video
 
-\`jpeg2yuv.exe\` and \`mpeg2enc.exe\` provide image-to-YUV conversion and PAL/NTSC MPEG-2 menu video. The replacement must cover 720x576/720x480, frame rates, sequence headers, GOP/end markers, DVD menu bitrate and I-frame compatibility.
+Image decoding and YUV4MPEG2 generation now run through the in-process ImageMagick bridge. `mpeg2enc.exe` still encodes MPEG-2 menu video and is also used by imported-VOB menu handling. The remaining work is the MPEG-2 I-frame encoder, including PAL/NTSC, menu frame rates, sequence headers, GOP/end markers, DVD menu bitrate and output checks.
 
 ### Menu audio and multiplexing
 
@@ -64,7 +70,7 @@ Items 1 through 3 below are complete. The next remaining runtime migrations are 
 1. ISO writer. **Complete.**
 2. Remove `mkisofs.exe` in menu-off mode. **Complete.**
 3. FLAC metadata editing. **Complete.**
-4. Menu MPEG video, menu audio and multiplexing.
+4. Menu MPEG-2 video encoding, menu audio and multiplexing; image-to-YUV4MPEG2 is complete.
 5. \`spumux\` subpicture buttons and DVD-Video authoring.
 6. Connect the menu API to `dvda-author-dev`.
 7. Full in-process verification.

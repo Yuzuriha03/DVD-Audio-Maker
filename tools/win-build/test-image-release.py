@@ -1,8 +1,10 @@
 """Exercise an isolated GUI image release, including the full child process tree."""
 from pathlib import Path
-import argparse, ctypes, hashlib, importlib.util, json, os, shutil, subprocess, time, zipfile
+import argparse, ctypes, hashlib, importlib.util, json, os, shutil, subprocess, sys, time, zipfile
 
 repo=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(repo/'tools/win-build/native'))
+from pe_dependencies import Pe
 spec=importlib.util.spec_from_file_location('trace',Path(__file__).with_name('trace-child-processes.py'))
 trace=importlib.util.module_from_spec(spec);spec.loader.exec_module(trace)
 
@@ -38,6 +40,18 @@ def main():
         check('No external media or ImageMagick executables bundled',not any(p.name.lower() in ['ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe'] for p in after.rglob('*.exe')))
         check('No legacy mkisofs executable bundled', not (after/'menu-bin/mkisofs.exe').exists())
         check('Unused spuunmux reverse parser is omitted', not (after/'menu-bin/spuunmux.exe').exists())
+        check('In-process menu image conversion replaces jpeg2yuv', not (after/'menu-bin/jpeg2yuv.exe').exists())
+        image_runtime=ctypes.WinDLL(str(after/'image-native/dvda-image.dll'))
+        command=image_runtime.dvda_image_command;command.argtypes=[ctypes.c_char_p];command.restype=ctypes.c_int
+        source_image=work/'y4m-red.png';y4m=work/'y4m-red.y4m'
+        command_line=f'convert -size 4x4 xc:red "{source_image.as_posix()}"'.encode('utf-8')
+        check('Image fixture created through the bundled in-process runtime',command(command_line)==0 and source_image.is_file())
+        write_y4m=image_runtime.dvda_image_write_y4m
+        write_y4m.argtypes=[ctypes.c_char_p,ctypes.c_char_p,ctypes.c_char_p,ctypes.c_char_p]
+        write_y4m.restype=ctypes.c_int
+        check('ImageMagick bridge writes DVD menu YUV4MPEG2',write_y4m(str(source_image).encode('utf-8'),str(y4m).encode('utf-8'),b'25',b'4:3')==0)
+        header,frame=y4m.read_bytes().split(b'\nFRAME\n',1)
+        check('YUV4MPEG2 header, frame size and BT.601 conversion',header==b'YUV4MPEG2 W4 H4 F25:1 Ip A4:3 C420jpeg' and len(frame)==24 and frame[:16]==bytes([82])*16 and frame[16:20]==bytes([90])*4 and frame[20:]==bytes([240])*4)
         check('MLP core unchanged',sha(repo/'src/DvdaMaker.SurcodeTool/Native/win-x64/mlp_encoder.dll')=='ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8')
         check('Audio/media libraries unchanged',all((after/'media-native'/x.name).read_bytes()==x.read_bytes() for x in (before/'media-native').glob('*.dll')))
         check('Fonts remain shared and unchanged',(after/'menu-bin/fonts/DvdaNotoCJK-Regular.ttc').read_bytes()==(before/'menu-bin/fonts/DvdaNotoCJK-Regular.ttc').read_bytes())
@@ -45,6 +59,9 @@ def main():
         entries={line.split('  ',1)[1]:line.split('  ',1)[0] for line in (after/'MANIFEST.txt').read_text().splitlines() if line and not line.startswith('#')}
         check('Package hashes verified',all(sha(after/name)==value for name,value in entries.items()))
         check('Package manifest complete',set(entries)=={p.relative_to(after).as_posix() for p in after.rglob('*') if p.is_file() and p.name!='MANIFEST.txt'})
+        author_record=json.loads((after/'image-native/author-build.json').read_text(encoding='utf-8'))
+        author_imports=Pe(after/'menu-bin/dvda-author-dev.exe').imports()
+        check('Author dynamically links the source-built MLP profile',author_record.get('ffmpeg_linkage')=='shared-source-built-mlp-profile' and {'avcodec-63.dll','avformat-63.dll','avutil-61.dll'} <= set(author_imports))
         values=profile(fixtures/'after-menu.env');values.pop('DVDA_MKISOFS', None);values.update({'DVDA_BUILD_DIR':str(work/'disc-build'),'DVDA_FINAL_DIR':str(work/'isos'),
             'DVDA_AUTHOR':short(after/'menu-bin/dvda-author-dev.exe'),'DVDA_AUTHOR_SRC':short(after/'data'),
             'DVDA_MENU_FONT':'','DVDA_MENU_FONT_JP':'','DVDA_MENU_FONT_KR':'','DVDA_FFMPEG':str(work/'unavailable-ffmpeg.exe'),
@@ -62,7 +79,7 @@ def main():
         config=work/'project.env';save(config,values)
         gui('preview',config,'Preview');gui('build',config,'Build');gui('verify',config,'Verify')
         check('Complete ISO produced',len(list((work/'isos').glob('*.iso')))==1)
-        forbidden={'ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe','surcodemlp.exe'}
+        forbidden={'ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe','jpeg2yuv.exe','surcodemlp.exe'}
         check('Process trace contains no external image/media/MLP encoder',not any(Path(x['path']).resolve().name.lower() in forbidden for x in report['processes']))
         check('Native author actually ran',any(Path(x['path']).resolve().name.lower()=='dvda-author-dev.exe' for x in report['processes']))
         expected={x.relative_to(fixtures/'after-menu/mlp').as_posix():sha(x) for x in (fixtures/'after-menu/mlp').rglob('*.mlp')}
