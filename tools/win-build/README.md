@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-当前分发方案是 **GUI-only、Windows x64、不含 .NET 的精简包**。运行端安装 .NET 10 Desktop Runtime x64；开发和打包端使用 .NET 10 SDK。打包命令必须带 `--framework-dependent`；省略该参数仍生成自包含包。
+默认分发 **Windows x64、GUI-only 单 EXE，不含 .NET 运行时**。用户安装 .NET 10 Desktop Runtime x64；构建使用 .NET 10 SDK。默认 `--onefile --framework-dependent`，不再默认捆绑运行时。目录诊断包使用 `--directory`；只有显式 `--directory --self-contained` 才包含 .NET。
 
 普通 C# 构建与发布包组装复用已准备的 Windows 组件。只有维护原生库时才使用 Python、MSYS2/MinGW-w64、Make 和开发库；运行产品不需要这些构建工具。
 
@@ -10,9 +10,9 @@
 
 | 输入 | 默认位置或参数 | 内容 |
 |---|---|---|
-| GUI 媒体运行库 | `build/media-native` | DLL 和 media-build.json |
+| GUI 媒体运行库 | `build/media-native-shared` 或 `--media-runtime` | shared 配置的 DLL 和 media-build.json |
 | 图像运行库 | `build/image-native` | dvda-image.dll、image-build.json、XML 和 NOTICE.txt |
-| 已改为内置图像的制盘程序 | `build/image-author` 或 `--image-author` | dvda-author-dev.exe、author-build.json |
+| 已改为内置图像的制盘程序 | `build/image-author-shared` 或 `--image-author` | dvda-author-dev.exe、author-build.json |
 | 第三方工具与字体 | `--prebuilt` 或 DVDA_PREBUILT_DIR | menu-bin 的完整运行依赖 |
 | 制盘素材 | `--source` 或 DVDA_SRC_TREE | menu/silence.wav、menu/activeheader |
 
@@ -29,53 +29,39 @@ dvda-author-dev.exe
 
 基础制盘工具必须已经包含本项目的 MLP、时间轴、UTF-8 和菜单修复。最终打包会用 `--image-author` 中的版本替换暂存目录里的 author；旧菜单 EXE 不再是输入要求，打包时从暂存区移除。
 
-## 生成精简包
+## 生成精简单 EXE
 
-在仓库根目录运行，示例路径须替换为本机准备的目录：
+先按下文统一构建 FFmpeg、媒体接口和 author，再运行：
 
 ```bat
 tools\win-build\build-all.cmd ^
-  --framework-dependent ^
   --source "D:\dev\winbuild\src" ^
   --prebuilt "D:\dev\winbuild\menu-bin" ^
-  --image-author "build\image-author"
+  --media-runtime "build\media-native-shared" ^
+  --image-author "build\image-author-shared"
 ```
+
+默认输出目录为 `tools/win-build/release-onefile`：`DVD-Audio-Maker.exe` 只嵌入运行必需组件；README、运行说明、许可、`config.env.example` 和 `components/` 构建清单作为旁文件，合并生成 `DVD-Audio-Maker-win-x64-GUI-only.zip`。不附带 .NET，示例配置不会自动载入。运行资源自动释放到用户缓存；托管 Debug、CLI 和 F5 调试仍按原方式工作。
 
 | 参数 | 说明 |
 |---|---|
-| `--repo` | 仓库根目录，通常自动识别 |
-| `--source` | 完整运行期素材树；此打包步骤不编译该源码树 |
-| `--prebuilt` | Windows 工具与字体目录，默认 tools/win-build/prebuilt |
-| `--image-author` | 已重编译 author 的目录，默认 build/image-author |
-| `--output` | 发布输出根目录 |
-| `--framework-dependent` | 不打包 .NET；当前推荐分发模式 |
-| `--include-cli` | 可选开发诊断包，附加 CLI 及说明 |
-| --ffmpeg-libraries | 历史 MLP-only 对照选项；当前 author 运行库由 --image-author 提供 |
+| `--onefile` | 默认：GUI 单 EXE，要求 shared 原生构建 |
+| `--directory` | 目录和 ZIP，便于开发及检查原生组件 |
+| `--framework-dependent` | 默认：不捆绑 .NET |
+| `--self-contained` | 仅目录模式：附带 .NET |
+| `--include-cli` | 仅目录模式：增加开发 CLI |
+| `--media-runtime` / `--image-author` | 已验证的媒体与 author 构建目录 |
+| `--source` / `--prebuilt` | 制盘素材和字体来源 |
+| `--output` / `--repo` | 输出目录和仓库根目录 |
 
-默认精简输出为：
-
-```text
-tools/win-build/release-framework-dependent/
-├── DVD-Audio-Maker/
-│   ├── DVD-Audio-Maker.exe
-│   ├── 应用 DLL、JSON、语言资源
-│   ├── media-native/
-│   ├── image-native/
-│   ├── menu-bin/fonts/
-│   ├── data/menu/
-│   ├── config.env、MANIFEST.txt
-│   └── README、RUNTIME、THIRD-PARTY、LICENSE
-└── DVD-Audio-Maker.zip
-```
-
-不指定 `--framework-dependent` 时输出默认改为 tools/win-build/release，并附带 .NET。普通包没有 dvda.exe/dvda.cmd；开发工作区的 cli.cmd 和 VS Code 调试能力不受影响。产物放在忽略目录，ZIP 通过 GitHub Releases 分发，不提交到 Git。
+目录模式默认仍从 build/media-native、build/image-author 读取输入；也可显式传入 shared 构建，得到与单 EXE 相同的单套 DLL 布局。发布物都放在忽略目录，通过 GitHub Releases 分发，不提交到 Git。设计及缓存行为见 [单文件发布](../../docs/ONEFILE-PUBLISH.md)。
 
 ## 复用组件进行 C# 调试
 
 从与当前源码匹配的完整发布目录加载原生库，保留该目录自身的字体与配置结构。例如：
 
 ```bat
-set "DVDA_MEDIA_NATIVE_DIR=D:\DVD-Audio-Maker\media-native"
+set "DVDA_MEDIA_NATIVE_DIR=D:\DVD-Audio-Maker\menu-bin"
 set "DVDA_IMAGE_NATIVE_DIR=D:\DVD-Audio-Maker\image-native"
 gui-debug.cmd
 ```
@@ -87,6 +73,18 @@ gui-debug.cmd
 ## 按需重编译原生组件
 
 需要 Windows x64、Python 3.12+ 和 MSYS2/MinGW-w64。媒体构建还使用 Make/GPG、固定 NASM 归档以及 libsoxr/zlib；图像构建使用 JPEG/PNG/WebP/zlib 静态开发库。源码版本、下载哈希、配置和依赖哈希由脚本/产物清单记录。
+
+### 统一 FFmpeg 源码构建（单文件发布必需）
+
+```bat
+python tools\win-build\build-minimal-ffmpeg.py --profile shared --work-directory build\ffmpeg-shared --msys-root "D:\dev\msys64"
+python tools\win-build\build-media-bridge.py --prefix build\ffmpeg-shared\install --output build\media-native-shared --msys-root "D:\dev\msys64"
+python tools\win-build\build-image-author.py --source "D:\dev\winbuild\src" --ffmpeg-runtime build\ffmpeg-shared\install --work-directory build\image-author-shared --msys-root "D:\dev\msys64"
+```
+
+shared 配置合并媒体和菜单所需的 codec、parser、demuxer、muxer、swscale、swresample、SOXR 与 zlib，从同一份固定版本源码一次构建。媒体 C 接口和 author 都链接该前缀。打包检查两个清单及重名 DLL 哈希，统一放入 menu-bin；每个 DLL 只保留一份，GUI 与 author 共用。MSYS2 路径仅为示例，须包含匹配的 soxr/zlib 头文件与导入库；不修改或重装编译器。
+
+下列分离配置仍供历史对照；默认单文件发布拒绝混用未统一的构建。
 
 ### GUI 媒体库
 

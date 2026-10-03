@@ -273,6 +273,8 @@ if (args.Length > 0)
 
 var tests = new (string Name, Action Run)[]
 {
+    ("Onefile deduplication, concurrency and cache repair", RuntimeArchiveTests.RoundtripAndRepair),
+    ("Onefile rejects unsafe component paths", RuntimeArchiveTests.RejectUnsafePaths),
     ("FLAC metadata in-process read/write", FlacMetadataTests.InProcessEditor),
     ("English catalog template coverage", LocalizationTests.CatalogCoverage),
     ("Language preserves paths and numeric culture", LocalizationTests.OpaqueValuesAndCulture),

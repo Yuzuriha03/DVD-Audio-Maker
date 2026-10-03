@@ -4,6 +4,7 @@
     <AssemblyName>dvda-toolchain</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Shared\RuntimeArchive.cs" Link="Packaging\RuntimeArchive.cs" />
     <ProjectReference Include="..\DvdaMaker.FontTool\DvdaMaker.FontTool.csproj" />
     <EmbeddedResource Include="NativeOptimizationProfile.json" LogicalName="DvdaMaker.NativeOptimizationProfile" />
     <EmbeddedResource Include="MinimalFfmpegProfile.json" LogicalName="DvdaMaker.MinimalFfmpegProfile" />

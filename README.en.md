@@ -4,7 +4,7 @@
 
 A Windows x64 application that turns FLAC and ALAC/M4A sources into **DVD-Audio ISOs**, with a bilingual GUI, MLP encoding, disc planning, optional menus and output verification.
 
-The current distribution profile is **a compact GUI-only package without .NET**. Install [.NET 10 Desktop Runtime for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0), extract the entire package, then run `DVD-Audio-Maker.exe`. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework 4.x alone is insufficient. Historical releases may differ; follow their bundled instructions.
+The default release is **one Windows x64 GUI EXE without the .NET runtime**. Install [.NET 10 Desktop Runtime for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0), then run `DVD-Audio-Maker.exe`. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework 4.x alone is insufficient. Historical directory packages still require complete extraction.
 
 ## Quick start
 
@@ -13,7 +13,7 @@ The current distribution profile is **a compact GUI-only package without .NET**.
 3. Check the sources, then preview the build. Preview prepares sources and encodes MLP but does not create ISOs.
 4. Build the discs and verify every track, menu and output ISO.
 
-Keep the complete package, including `media-native`, `image-native`, `menu-bin/fonts` and `data/menu`. The main EXE alone cannot run the full workflow.
+The release ZIP contains the single-file EXE plus separate instructions, example configuration, licenses and component records. Only required runtime components and complete CJK fonts are embedded in the EXE, extracted into `%LOCALAPPDATA%/DVD-Audio-Maker/runtime` on first launch, then verified/reused. Media processing and authoring share one FFmpeg source build, with one copy of each DLL. Close all instances before clearing this cache; it is restored automatically. Retain the license notices. `config.env.example` is not loaded automatically; existing `config.env` files remain importable. See [single-file builds](docs/ONEFILE-PUBLISH.md).
 
 ## Configuration, language and logs
 

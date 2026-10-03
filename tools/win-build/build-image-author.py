@@ -60,8 +60,8 @@ def main():
     if not ffmpeg_manifest.is_file():
         raise FileNotFoundError('FFmpeg menu profile manifest is missing: '+str(ffmpeg_manifest))
     manifest_data=json.loads(ffmpeg_manifest.read_text(encoding='utf-8'))
-    if manifest_data.get('profile') != 'menu':
-        raise ValueError('The author requires the FFmpeg menu profile, got: '+repr(manifest_data.get('profile')))
+    if manifest_data.get('profile') not in ('menu', 'shared'):
+        raise ValueError('The author requires the FFmpeg menu or shared profile, got: '+repr(manifest_data.get('profile')))
     inputs['ffmpeg-runtime/build-manifest.json']=sha(ffmpeg_manifest)
     # Keep the configured snapshot aligned with the repository's native
     # migration sources. The configured tree supplies generated headers,
@@ -194,8 +194,9 @@ def main():
     inputs['project/menu-api.h']=sha(repo/'tools/menu-native/menu-api.h')
     runtime_files={p.name:{'sha256':sha(p),'bytes':p.stat().st_size,'imports':sorted(Pe(p).imports())}
                    for p in sorted(work.glob('*.dll'))}
-    record={'target':'Windows x64','menu_linkage':'in-process-source-built','ffmpeg_linkage':'shared-source-built-menu-profile',
-            'ffmpeg_profile':'build-minimal-ffmpeg.py:menu','files':{output.name:{'sha256':sha(output),'bytes':output.stat().st_size}},
+    profile=manifest_data['profile']
+    record={'target':'Windows x64','menu_linkage':'in-process-source-built','ffmpeg_linkage':'shared-source-built-'+profile+'-profile',
+            'ffmpeg_profile':'build-minimal-ffmpeg.py:'+profile,'files':{output.name:{'sha256':sha(output),'bytes':output.stat().st_size}},
             'runtime_files':runtime_files,'source_inputs':inputs,'patch_sha256':sha(work/'inprocess-images.patch'),
             'compiler':subprocess.check_output([compiler,'--version'],env=env).decode().splitlines()[0]}
     (work/'author-build.json').write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')

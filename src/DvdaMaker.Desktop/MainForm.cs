@@ -289,14 +289,14 @@ internal sealed class MainForm : Form
     {
         using var dialog = new OpenFileDialog { Title = L.T("导入旧配置文件"), Filter = L.T("环境配置|*.env|所有文件|*.*") };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        var settings = ProjectSettings.ImportEnv(dialog.FileName); settings.ApplyBundledToolDefaults(AppContext.BaseDirectory);
+        var settings = ProjectSettings.ImportEnv(dialog.FileName); settings.ApplyBundledToolDefaults(DvdaMaker.Processes.BundledRuntime.Root);
         Populate(settings, dialog.FileName); Post(TaskLogLevel.Success, L.T("已导入旧配置，原文件不会被修改。请确认目录后开始制作。"));
     }
     private void OpenProfile()
     {
         using var dialog = new OpenFileDialog { Title = L.T("打开配置方案"), Filter = L.T("配置方案|*.json") };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        var settings = ProjectSettings.Load(dialog.FileName); settings.ApplyBundledToolDefaults(AppContext.BaseDirectory);
+        var settings = ProjectSettings.Load(dialog.FileName); settings.ApplyBundledToolDefaults(DvdaMaker.Processes.BundledRuntime.Root);
         Populate(settings, dialog.FileName); Post(TaskLogLevel.Success, L.T("已打开方案：" + Path.GetFileName(dialog.FileName)));
     }
     private void SaveProfile()
@@ -530,6 +530,8 @@ internal sealed class MainForm : Form
             return;
         }
         var captured = CaptureSettings();
+        if (Environment.GetEnvironmentVariable("DVDA_GUI_SMOKE_SETTINGS") is { Length: > 0 } settingsReport)
+            captured.Save(settingsReport);
         if (captured.Values.Count < ConfigDefaults.Values.Count || _editors.Count != SettingDefinition.All.Count) throw new InvalidOperationException(L.T("GUI 设置控件未完整构建。"));
         foreach (var definition in SettingDefinition.All.Where(d => d.Kind is SettingKind.Choice or SettingKind.Capacity))
         {

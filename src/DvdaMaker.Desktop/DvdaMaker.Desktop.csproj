@@ -8,6 +8,10 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
+  <ItemGroup Condition="'$(OneFilePayloadDirectory)' != ''">
+    <EmbeddedResource Include="$(OneFilePayloadDirectory)\runtime.br" LogicalName="DvdaMaker.Runtime.Data" />
+    <EmbeddedResource Include="$(OneFilePayloadDirectory)\runtime.json" LogicalName="DvdaMaker.Runtime.Index" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DvdaMaker.Building\DvdaMaker.Building.csproj" />
     <ProjectReference Include="..\DvdaMaker.Configuration\DvdaMaker.Configuration.csproj" />

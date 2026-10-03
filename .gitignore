@@ -80,6 +80,7 @@ tools/win-build/publish/
 # Release packages are uploaded to GitHub Releases, not committed.
 tools/win-build/release/
 tools/win-build/release-framework-dependent/
+tools/win-build/release-onefile/
 DVD-Audio-Maker*.zip
 
 # ---- 敏感信息（防误提交）----

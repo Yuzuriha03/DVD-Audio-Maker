@@ -67,7 +67,7 @@ def main():
     parser.add_argument('--msys-root', type=Path, default=Path(os.environ.get('MSYS2_ROOT', 'C:/msys64')))
     parser.add_argument('--work-directory', type=Path, default=Path(__file__).resolve().parents[2] / 'build/ffmpeg-minimal')
     parser.add_argument('--jobs', type=int, default=min(8, os.cpu_count() or 1))
-    parser.add_argument('--profile', choices=['mlp', 'menu', 'media'], default='mlp')
+    parser.add_argument('--profile', choices=['mlp', 'menu', 'media', 'shared'], default='mlp')
     args = parser.parse_args()
     if os.name != 'nt' or args.jobs < 1:
         parser.error('Run on Windows with --jobs >= 1.')
@@ -132,7 +132,7 @@ def main():
         '--disable-pthreads', '--enable-w32threads', '--enable-small', '--enable-gpl', '--enable-version3',
         '--x86asmexe=' + short_path(nasm), '--extra-cflags=-ffunction-sections -fdata-sections',
         '--extra-ldflags=-Wl,--gc-sections -Wl,--no-insert-timestamp -static-libgcc']
-    if args.profile in ('menu', 'media'):
+    if args.profile in ('menu', 'media', 'shared'):
         configure = [item for item in configure if not item.startswith(('--enable-decoder=', '--enable-encoder=',
                      '--enable-parser=', '--enable-demuxer=', '--enable-muxer='))
                      and item not in ('--disable-swscale', '--disable-swresample')]
@@ -143,12 +143,17 @@ def main():
                       '--enable-parser=mlp,mpegvideo,mpegaudio',
                       '--enable-demuxer=mlp,wav',
                       '--enable-muxer=mlp,mpeg2dvd']
-    if args.profile == 'media':
+    if args.profile in ('media', 'shared'):
         configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr', '--enable-zlib',
             '--enable-decoder=mlp,flac,alac,aac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video,png,mjpeg',
             '--enable-encoder=mlp,flac,pcm_s16le,pcm_s24le,png',
             '--enable-parser=mlp,flac,aac,mpegvideo,png,mjpeg',
             '--enable-demuxer=mlp,flac,mov,wav,mpegps,mpegvideo', '--enable-muxer=mlp,flac,wav']
+    if args.profile == 'shared':
+        # Union of the validated GUI media and author menu profiles. Build once
+        # so both consumers share byte-identical libraries in the onefile payload.
+        configure += ['--enable-encoder=mpeg2video,mp2', '--enable-parser=mpegaudio',
+                      '--enable-muxer=mpeg2dvd']
     commands = ['set -eu', 'export PATH=/mingw64/bin:/usr/bin', 'export LC_ALL=C',
                 'export SOURCE_DATE_EPOCH=1789699562', 'cd ' + shlex.quote(short_path(build)),
                 shlex.join(configure), f'make -j{args.jobs}', 'make install']
@@ -159,7 +164,7 @@ def main():
         subprocess.run([str(msys / 'usr/bin/bash.exe'), '--noprofile', '--norc', posix(script)],
                        env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     actual = {p.name for p in (prefix / 'bin').glob('*.dll')}
-    expected_dlls = set(DLL_NAMES) | ({'swscale-10.dll', 'swresample-7.dll'} if args.profile == 'media' else set())
+    expected_dlls = set(DLL_NAMES) | ({'swscale-10.dll', 'swresample-7.dll'} if args.profile in ('media', 'shared') else set())
     if actual != expected_dlls:
         raise ValueError('Unexpected installed DLL set: ' + repr(actual))
     compiler = subprocess.check_output([str(msys / 'mingw64/bin/gcc.exe'), '--version'], env=env).decode().splitlines()[0]

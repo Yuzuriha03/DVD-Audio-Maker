@@ -112,10 +112,12 @@ public sealed class ProjectSettings
         };
         foreach (var pair in candidates)
             if (File.Exists(pair.Value) && (!Values.TryGetValue(pair.Key, out var value) ||
-                string.IsNullOrWhiteSpace(value) || value == ConfigDefaults.Values.GetValueOrDefault(pair.Key)))
+                string.IsNullOrWhiteSpace(value) || value == ConfigDefaults.Values.GetValueOrDefault(pair.Key) ||
+                (BundledRuntime.Root != AppContext.BaseDirectory && BundledRuntime.IsCachedPath(value))))
                 Values[pair.Key] = pair.Value;
         if (Directory.Exists(Path.Combine(root, "data", "menu")) &&
-            string.IsNullOrWhiteSpace(Values.GetValueOrDefault("DVDA_AUTHOR_SRC")))
+            (string.IsNullOrWhiteSpace(Values.GetValueOrDefault("DVDA_AUTHOR_SRC")) ||
+                (BundledRuntime.Root != AppContext.BaseDirectory && BundledRuntime.IsCachedPath(Values.GetValueOrDefault("DVDA_AUTHOR_SRC")))))
             Values["DVDA_AUTHOR_SRC"] = Path.Combine(root, "data");
     }
 }
