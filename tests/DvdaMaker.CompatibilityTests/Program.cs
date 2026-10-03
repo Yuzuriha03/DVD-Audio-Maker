@@ -2370,6 +2370,7 @@ static void DiscSignatureChanges()
             $"DVDA_SRC={root}/src",
             $"DVDA_FINAL_DIR={root}/final",
             $"DVDA_BUILD_DIR={root}/build",
+            $"DVDA_AUTHOR_SRC={root}/data",
             "DVDA_TITLE=Title One",
         ]));
         File.WriteAllText(configTwo, string.Join('\n',
@@ -2377,6 +2378,7 @@ static void DiscSignatureChanges()
             $"DVDA_SRC={root}/src",
             $"DVDA_FINAL_DIR={root}/final",
             $"DVDA_BUILD_DIR={root}/build",
+            $"DVDA_AUTHOR_SRC={root}/data",
             "DVDA_TITLE=Title Two",
         ]));
         var track = BuildTrack("Track", "1", "1", 100) with { MlpPath = mlp };
@@ -2402,6 +2404,19 @@ static void DiscSignatureChanges()
             .GetAwaiter().GetResult();
         True(!string.Equals(first, changed, StringComparison.Ordinal),
             "MLP 内容变化应改变签名");
+        var libraries = Path.Combine(root, "menu-bin");
+        Directory.CreateDirectory(libraries);
+        var library = Path.Combine(libraries, "dvda-menu-nav.dll");
+        File.WriteAllBytes(library, [1, 2, 3, 4]);
+        var nativeBefore = DiscSignature.ComputeAsync(Load(configOne), disc, runner)
+            .GetAwaiter().GetResult();
+        True(nativeBefore != changed, "新增原生模块必须使续跑签名失效");
+        var libraryTime = File.GetLastWriteTimeUtc(library);
+        File.WriteAllBytes(library, [1, 2, 3, 5]);
+        File.SetLastWriteTimeUtc(library, libraryTime);
+        var nativeAfter = DiscSignature.ComputeAsync(Load(configOne), disc, runner)
+            .GetAwaiter().GetResult();
+        True(nativeAfter != nativeBefore, "同长度同时间戳的模块内容变化必须使续跑签名失效");
     }
     finally
     {

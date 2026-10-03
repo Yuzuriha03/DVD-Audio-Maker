@@ -68,7 +68,7 @@ git apply "D:/work/DVD-Audio-Maker/docs/dvda-author-changes.patch"
 
 维护时应区分基础源码改动和这层构建时转换：脚本期待尚未应用图像增量补丁的基础树，不要先手动应用同一补丁再交给脚本重复转换。它不会覆盖传入的完整工作树。输出及输入哈希记录在 build/image-author/author-build.json。
 
-GUI 与原生制盘程序均使用 image-native/dvda-image.dll；菜单编码器、复用器和 ISO 工具仍保留各自入口。详细能力和验证边界见 [内置图像处理](../../docs/INPROCESS-IMAGES.md)。
+GUI 与原生制盘程序均使用 image-native/dvda-image.dll；菜单媒体、子图像、导航及 ISO 写入均已接入进程内 C 实现，见[迁移清单](../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)。详细能力和验证边界见 [内置图像处理](../../docs/INPROCESS-IMAGES.md)。
 
 ## 主要改动范围
 

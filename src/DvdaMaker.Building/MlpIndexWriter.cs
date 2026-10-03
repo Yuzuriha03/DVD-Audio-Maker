@@ -42,7 +42,7 @@ public static class MlpIndexWriter
                     : options.MlpExternalDirectory,
                 ["discs"] = plan.Discs.Count,
                 ["tracks"] = plan.Tracks.Count,
-                ["aob_layout"] = "第 N 组 -> AUDIO_TS/ATS_01_N.AOB",
+                ["aob_layout"] = "第 N 组 -> AUDIO_TS/ATS_NN_1.AOB（超过 1 GiB 后续分段）",
             },
             ["__discs__"] = new JsonArray(plan.Discs.Select(disc =>
                 (JsonNode)new JsonObject
@@ -56,7 +56,7 @@ public static class MlpIndexWriter
                             ["group"] = group.Number,
                             ["sr"] = group.SampleRate,
                             ["bits"] = group.Bits,
-                            ["aob"] = $"ATS_01_{group.Number}.AOB",
+                            ["aob"] = $"ATS_{group.Number:00}_1.AOB",
                             ["tracks"] = new JsonArray(group.Tracks.Select(TrackPlanNode).ToArray()),
                         }).ToArray()),
                 }).ToArray()),

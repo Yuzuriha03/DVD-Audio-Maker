@@ -29,6 +29,7 @@
 
 #ifdef _WIN32
 extern int dvda_image_write_y4m(const char *, const char *, const char *, const char *);
+#include "dvda-menu-media.h"
 #endif
 
 
@@ -351,114 +352,7 @@ void initialize_binary_paths(char level, globalData *globals)
 
 static char *pict;
 
-#ifdef _WIN32
-/* Start a menu encoder with an explicit command line and optional file stdin.
-   system() asks cmd.exe to parse the whole string, which breaks when the
-   configured bindir contains spaces. CreateProcess receives the executable
-   path separately and therefore preserves the path exactly. */
-static int run_windows_menu_process(const char *application, const char *options,
-                                    const char *input_file, const char *output_file,
-                                    globalData *globals)
-{
-  size_t app_len, command_len;
-  char *executable, *command_line;
-  HANDLE input = INVALID_HANDLE_VALUE;
-  HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
-  HANDLE error = GetStdHandle(STD_ERROR_HANDLE);
-  SECURITY_ATTRIBUTES security;
-  STARTUPINFOA startup;
-  PROCESS_INFORMATION process;
-  DWORD status = ERROR_SUCCESS;
-  BOOL created;
 
-  if (application == NULL || options == NULL) return ERROR_INVALID_PARAMETER;
-  app_len = strlen(application);
-  executable = malloc(app_len + 1);
-  if (executable == NULL) return ERROR_NOT_ENOUGH_MEMORY;
-  memcpy(executable, application, app_len + 1);
-  if (app_len >= 2 && executable[0] == '"' && executable[app_len - 1] == '"')
-    {
-      memmove(executable, executable + 1, app_len - 2);
-      executable[app_len - 2] = 0;
-    }
-
-  if (input_file != NULL)
-    {
-      security.nLength = sizeof security;
-      security.lpSecurityDescriptor = NULL;
-      security.bInheritHandle = TRUE;
-      input = CreateFileA(input_file, GENERIC_READ, FILE_SHARE_READ, &security,
-                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-      if (input == INVALID_HANDLE_VALUE)
-        {
-          foutput(ERR "Could not open menu encoder input %s\n", input_file);
-          free(executable);
-          return (int)GetLastError();
-        }
-    }
-  else
-    input = GetStdHandle(STD_INPUT_HANDLE);
-
-  if (output_file != NULL)
-    {
-      security.nLength = sizeof security;
-      security.lpSecurityDescriptor = NULL;
-      security.bInheritHandle = TRUE;
-      output = CreateFileA(output_file, GENERIC_WRITE, FILE_SHARE_READ, &security,
-                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-      if (output == INVALID_HANDLE_VALUE)
-        {
-          foutput(ERR "Could not open menu encoder output %s\n", output_file);
-          if (input_file != NULL) CloseHandle(input);
-          free(executable);
-          return (int)GetLastError();
-        }
-    }
-
-  command_len = strlen(executable) + strlen(options) + 4;
-  command_line = malloc(command_len);
-  if (command_line == NULL)
-    {
-      if (input_file != NULL) CloseHandle(input);
-      if (output_file != NULL) CloseHandle(output);
-      free(executable);
-      return ERROR_NOT_ENOUGH_MEMORY;
-    }
-  snprintf(command_line, command_len, "\"%s\" %s", executable, options);
-
-  memset(&startup, 0, sizeof startup);
-  memset(&process, 0, sizeof process);
-  startup.cb = sizeof startup;
-  startup.dwFlags = STARTF_USESTDHANDLES;
-  startup.hStdInput = input;
-  startup.hStdOutput = output;
-  startup.hStdError = error;
-  created = CreateProcessA(executable, command_line, NULL, NULL, TRUE,
-                           CREATE_NO_WINDOW, NULL, NULL, &startup, &process);
-  if (input_file != NULL) CloseHandle(input);
-  if (output_file != NULL) CloseHandle(output);
-  if (!created)
-    {
-      DWORD error_code = GetLastError();
-      foutput(ERR "Could not launch menu encoder %s (Win32 error %lu)\n",
-              executable, (unsigned long)error_code);
-      free(command_line);
-      free(executable);
-      return (int)error_code;
-    }
-  if (globals != NULL && globals->debugging)
-    foutput(INF "Running menu encoder: %s\n", command_line);
-  WaitForSingleObject(process.hProcess, INFINITE);
-  if (!GetExitCodeProcess(process.hProcess, &status)) status = ERROR_PROCESS_ABORTED;
-  CloseHandle(process.hThread);
-  CloseHandle(process.hProcess);
-  if (globals != NULL && globals->debugging)
-    foutput(INF "Menu encoder exited with status %lu\n", (unsigned long)status);
-  free(command_line);
-  free(executable);
-  return (int)status;
-}
-#endif
 
 /* 程序结束码独占扇区（对齐商业盘）：见 docs/DVDA-AUTHOR-CHANGES.md。
    mplex 把 00 00 01 B9 写在本段最后一个扇区的最后 4 字节；商业盘则是让
@@ -637,7 +531,9 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
         }
     }
 
+#ifndef _WIN32
   initialize_binary_paths(CREATE_MJPEGTOOLS, globals);
+#endif
 
   char norm[2];
   norm[0] = img->norm[0];
@@ -657,17 +553,21 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
 
   //////////////////////////
 
+  const char *wav_for_mpg = NULL;
+  char soundtrack[strlen(globals->settings.tempdir) + 16];
+  soundtrack[0] = 0;
+
   if (img->action == ANIMATEDVIDEO)
     {
-      if (globals->debugging) foutput("%s\n", INF "Running mp2enc...");
+      if (globals->debugging) foutput("%s\n", INF "Preparing menu audio...");
 
-      char soundtrack[strlen(globals->settings.tempdir) + 11];
       sprintf(soundtrack, "%s"SEPARATOR"%s", globals->settings.tempdir, "soundtrack");
       if (file_exists(soundtrack)) unlink(soundtrack);
       errno = 0;
       change_directory(globals->settings.datadir, globals);
       copy_file(img->soundtrack[0][0], soundtrack, globals);
       change_directory(globals->settings.workdir, globals);
+      wav_for_mpg = soundtrack;
 
       // using freopen to redirect is safer here
 #ifndef _WIN32
@@ -701,14 +601,7 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
           waitpid(pid1, NULL, 0);
         }
 #else
-      const char *s = get_command_line(argsmp2enc, globals);
-      int encode_result = run_windows_menu_process(mp2enc, s, soundtrack, NULL, globals);
-      free((char *) s);
-      if (encode_result != 0)
-        {
-          foutput(ERR "mp2enc failed while creating the menu soundtrack (status %d)\n", encode_result);
-          errno = EIO;
-        }
+      if (globals->debugging) foutput("%s\n", INF "Menu soundtrack will be encoded in process.");
 #endif
     }
 
@@ -854,25 +747,16 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
       return errno;
     }
 
-  char *mpeg2enccl = get_command_line(argsmpeg2enc, globals);
-  int encode_result = run_windows_menu_process(mpeg2enc, mpeg2enccl, y4mfile, NULL, globals);
-  free(mpeg2enccl);
+  int encode_result = dvda_menu_create_mpg(y4mfile, wav_for_mpg,
+                                            img->backgroundmpg[rank],
+                                            img->norm, img->aspect);
   unlink(y4mfile);
   if (encode_result != 0)
     {
-      foutput(ERR "mpeg2enc failed while encoding the menu frame (status %d)\n", encode_result);
-      errno = EIO;
-      return errno;
-    }
-
-  const char *mplexcl = get_command_line(argsmplex, globals);
-  int mplex_result = run_windows_menu_process(mplex, mplexcl, NULL, NULL, globals);
-  free((char *) mplexcl);
-  if (mplex_result != 0)
-    {
-      foutput(ERR "mplex failed while creating the menu MPEG file (status %d)\n", mplex_result);
+      foutput(ERR "In-process MPEG-2/DVD menu encoding failed (status %d)\n", encode_result);
       errno = EIO;
     }
+  else errno = 0;
 #endif
 
   return errno;
@@ -1096,7 +980,7 @@ int generate_background_mpg(pic *img, globalData *globals)
 
   if (img->backgroundmpg == NULL) foutput("%s", MSG_TAG "backgroundmpg will be allocated.\n");
 
-  if (globals->debugging) foutput(INF "Launching mjpegtools to create background mpg with nmenus=%d\n", img->nmenus);
+  if (globals->debugging) foutput(INF "Encoding menu background in process with nmenus=%d\n", img->nmenus);
 
   /* now authoring AUDIO_TS.VOB */
   rank = 0;
@@ -1108,7 +992,7 @@ int generate_background_mpg(pic *img, globalData *globals)
 
       while (rank < img->nmenus)
         {
-          create_mpg(img, rank, mp2track, tempfile, globals);
+          if(create_mpg(img, rank, mp2track, tempfile, globals)) { FREE(mp2track); FREE(pict); return EIO; }
           fflush(NULL);
           rank++;
         }
@@ -1124,7 +1008,7 @@ int generate_background_mpg(pic *img, globalData *globals)
       if (img->backgroundmpg)
         while (rank < img->count)
           {
-            create_mpg(img, rank, mp2track, tempfile, globals);
+            if(create_mpg(img, rank, mp2track, tempfile, globals)) { FREE(mp2track); FREE(pict); return EIO; }
             /* 结束码独占扇区（对齐商业盘）。必须在 stat_file_size 之前做，
                否则 stillpicvobsize 与 ASVS 表里的扇区指针会与实物不符。 */
             dvda_pad_program_end(img->backgroundmpg[rank]);
@@ -1154,130 +1038,22 @@ int generate_background_mpg(pic *img, globalData *globals)
 }
 
 
+/* Both migrated cores execute in this process and return status. */
+extern int dvda_menu_subpictures(const char *,const char *,const char *);
+extern int dvda_menu_navigation(const char *,const char *);
 int launch_spumux(pic *img, globalData *globals)
 {
-  // hush up spumux on stdout if non-verbose mode selected
-
-  //sprintf(spumuxcommand, "%s%s%s%s%s%s%s", "spumux -v 0 ", globals->spu_xml, " < ", img->backgroundmpg, (globals->debugging)? "" : " 2>null ", " 1> ", img->topmenu);
-
-  if (globals->debugging) foutput("%s\n", INF "Launching spumux to create buttons");
-  int menu = 0;
-
-
-  initialize_binary_paths(CREATE_SPUMUX, globals);
-
-
-  while (menu < img->nmenus)
-    {
-      if (globals->debugging) foutput(INF "Creating menu %d from Xml file %s\n", menu + 1, globals->spu_xml[menu]);
-      const char *argsspumux[] = {SPUMUX_BASENAME, "-v", "2", globals->spu_xml[menu], NULL};
-
-      // This is to hush up dvdauthor's stdout messages, which interfere out of sequential order with main application stdout messages
-      // and anyway could not be logged by  -l;
-      // with normal verbosity, stdout messages end up in a tube's dead end, otherwise they are retrieved at the other end on stdout.
-      errno = 0;
-#ifndef __WIN32__
-
-      int firsttubeerr[2];
-      if (pipe(firsttubeerr) == -1)
-        perror(ERR "Pipe issue with spumux (firsttubeerr[2])");
-      char c;
-
-
-      switch (fork())
-        {
-
-        case -1:
-          foutput("%s\n", ERR "Could not launch spumux");
-          break;
-
-        case 0:
-          close(firsttubeerr[0]);
-          dup2(firsttubeerr[1], STDERR_FILENO);
-
-          fprintf(stderr, INF "command line: %s %s %s %s %s", spumux, argsspumux[1], argsspumux[2], argsspumux[3], argsspumux[4]);
-          if (freopen(img->backgroundmpg[menu], "rb", stdin) == NULL)
-            {
-              fprintf(stderr, "%s", ERR "freopen (stdin)\n");
-              fprintf(stderr, "img->backgroundmpg[%d]=%s errno=%d: %s", menu, img->backgroundmpg[menu], errno, strerror(errno));
-              return errno;
-            }
-          if (freopen(img->topmenu[menu], "wb", stdout) == NULL)
-            {
-              fprintf(stderr, "%s\n", ERR "freopen (stdout)");
-              fprintf(stderr, "img->backgroundmpg[%d]=%s errno=%d: %s", menu, img->topmenu[menu], errno, strerror(errno));
-              return errno;
-            }
-
-          execv(spumux, (char *const *) argsspumux);
-          return errno;
-
-
-        default:
-
-          close(firsttubeerr[1]);
-          dup2(firsttubeerr[0], STDIN_FILENO);
-          wait(NULL);
-
-          while (read(firsttubeerr[0], &c, 1) == 1) foutput("%c", c);
-
-          if (errno)
-            {
-              foutput("%s\n", ERR "Runtime failure in spumux child process");
-              perror(ERR "spumux");
-              return errno;
-            }
-          close(firsttubeerr[0]);
-        }
-
-#else
-
-      char *s = get_command_line(argsspumux, globals);
-      int spumux_result = run_windows_menu_process(spumux, s,
-                                                   img->backgroundmpg[menu],
-                                                   img->topmenu[menu], globals);
-      free((char *) s);
-      if (spumux_result != 0)
-        {
-          foutput(ERR "spumux failed while creating menu %d (status %d)\n",
-                  menu + 1, spumux_result);
-          errno = EIO;
-        }
-
-#endif
-
-
-
-      menu++;
-    }
-
-
-  return errno;
+  for(int menu=0;menu<img->nmenus;menu++)
+    if(dvda_menu_subpictures(globals->spu_xml[menu],img->backgroundmpg[menu],img->topmenu[menu]))
+      { foutput(ERR "Menu button encoding failed on page %d\n",menu+1);return EIO; }
+  return 0;
 }
-
-
-
 int launch_dvdauthor(globalData *globals)
 {
-
-  initialize_binary_paths(2, globals);
-
-  errno = 0;
-
-  if (globals->debugging) foutput("%s\n", INF "Launching dvdauthor to add virtual machine commands to top menu");
-
-  const char *args[] = {dvdauthor, "-o", globals->settings.outdir, "-x", globals->xml, NULL};
-
-  run(dvdauthor, (const char **)args, WAIT, FORK, globals);
-
-#ifndef _WIN32
-  sync();
-#endif
-
-  return errno;
+  if(dvda_menu_navigation(globals->xml,globals->settings.outdir))
+    { foutput("%s\n",ERR "Menu navigation authoring failed");return EIO; }
+  return 0;
 }
-
-
 
 uint16_t x(uint8_t group, uint8_t ngroups)
 {
@@ -2790,7 +2566,6 @@ int create_stillpic_directory(char *string, int32_t count, globalData *globals)
 
 }
 #endif
-
 
 
 

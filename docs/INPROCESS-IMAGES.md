@@ -23,7 +23,7 @@
 
 修复了原生索引命令前导空格被识别为空命令的问题；单页索引不再错误要求翻页箭头。
 
-具体执行记录、文件哈希和体积见 [inprocess-images-validation.json](inprocess-images-validation.json)。制盘程序仍会调用必要的菜单编码/复用及 ISO 工具，本次仅内置图像处理。
+具体执行记录、文件哈希和体积见 [inprocess-images-validation.json](inprocess-images-validation.json)。该记录描述图像迁移阶段；当前菜单编码、复用、子图像、导航和 ISO 均已内置，见[后续迁移清单](NO-EXTERNAL-RUNTIME-MIGRATION.md)。
 
 ## 构建与开发
 

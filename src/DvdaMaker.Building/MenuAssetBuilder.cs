@@ -8,10 +8,9 @@ public sealed class MenuAssetBuilder(
     ProcessRunner runner,
     BuildLogWriter? log = null)
 {
-    private static readonly string[] RequiredMenuPrograms =
+    private static readonly string[] RequiredMenuLibraries =
     [
-        "dvdauthor", "spumux", "mpeg2enc", "mplex",
-        "mp2enc",
+        "dvda-menu-spu.dll", "dvda-menu-nav.dll",
     ];
 
     public async Task<MenuAssets> BuildAsync(
@@ -31,13 +30,13 @@ public sealed class MenuAssetBuilder(
                 $"找不到 dvda-author 菜单素材目录: {dataMenuDirectory}"));
         }
 
-        foreach (var program in RequiredMenuPrograms)
+        foreach (var library in RequiredMenuLibraries)
         {
-            if (FindExecutable(program, options.MenuBinaryDirectory) is null)
+            if (!File.Exists(Path.Combine(options.MenuBinaryDirectory, library)))
             {
                 diagnostics.Add(Error(
-                    "MENU_TOOL_MISSING",
-                    $"找不到菜单辅助程序 {program}；查找目录: {options.MenuBinaryDirectory}"));
+                    "MENU_LIBRARY_MISSING",
+                    $"内置菜单组件缺失：{library}。请完整解压发布包并保留 menu-bin 目录。"));
             }
         }
 
