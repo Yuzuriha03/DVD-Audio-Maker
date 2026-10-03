@@ -1,7 +1,7 @@
 {
   "date": "2026-10-02",
   "status": "PASS",
-  "scope": "GUI FFmpeg/FFprobe operations now run in process through bundled x64 libraries; MLP algorithm unchanged.",
+  "scope": "GUI FFmpeg/FFprobe operations now run in process through bundled x64 libraries; mlpencoder MLP algorithm unchanged.",
   "package": {
     "directory": "build/inprocess-media-x64-release/DVD-Audio-Maker",
     "zip_bytes": 35333326,
@@ -2915,7 +2915,7 @@
       "only two forwarding entrypoints and three rebuilt FFmpeg libraries changed",
       "rebuilt FFmpeg matches validated profile",
       "image core and other native libraries byte-identical",
-      "MLP native core remains pinned",
+      "mlpencoder MLP native core remains pinned",
       "both packages embed identical native MLP core",
       "no external FFmpeg or FFprobe executable bundled",
       "media runtime manifest matches every DLL",

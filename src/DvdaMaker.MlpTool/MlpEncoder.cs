@@ -16,7 +16,7 @@ public static class MlpEncoder
     public static string ExtractLibrary()
     {
         if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)
-            throw new PlatformNotSupportedException("MLP DLL 需要 Windows x64 主程序，请使用 win-x64 发布包。");
+            throw new PlatformNotSupportedException("MLP 编码器 DLL 需要 Windows x64 主程序，请使用 win-x64 发布包。");
         var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "DVD-Audio-Maker", "native", BinarySha256);
         Directory.CreateDirectory(folder);
@@ -26,7 +26,7 @@ public static class MlpEncoder
         try
         {
             using (var input = typeof(MlpEncoder).Assembly.GetManifestResourceStream("DvdaMaker.MlpEncoder.Library")
-                ?? throw new InvalidOperationException("发布包缺少MLP DLL。"))
+                ?? throw new InvalidOperationException("发布包缺少MLP 编码器 DLL。"))
             using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 input.CopyTo(output);
             Verify(temporary);
@@ -77,7 +77,7 @@ public static class MlpEncoder
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timed.Token);
         try { Encode(wave, destination, metadataContext, linked.Token); }
         catch (OperationCanceledException) when (timed.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        { throw new TimeoutException("MLP DLL 编码超时，已取消并清理临时输出。"); }
+        { throw new TimeoutException("MLP 编码器 DLL 编码超时，已取消并清理临时输出。"); }
     }, cancellationToken);
 
     private static void Encode(string wave, string destination, string context, CancellationToken token)
@@ -158,7 +158,7 @@ public static class MlpEncoder
                 failure?.Throw(); token.ThrowIfCancellationRequested();
                 if (status != 0 || result.Status != 0 || result.InputFrames != (ulong)frames ||
                     result.OutputBytes != (ulong)output.Length || output.Length == 0)
-                    throw new InvalidOperationException($"MLP DLL 编码失败（{status}）：{result.Error}");
+                    throw new InvalidOperationException($"MLP 编码器 DLL 编码失败（{status}）：{result.Error}");
                 Console.WriteLine($"[MLP DLL] {frames:N0} 帧 / {layout.SampleRate} Hz / {layout.ValidBits} bit / {layout.Channels} 声道，{output.Length:N0} 字节");
             }
             token.ThrowIfCancellationRequested();

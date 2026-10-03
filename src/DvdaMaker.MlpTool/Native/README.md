@@ -1,10 +1,10 @@
-# MLP core — Windows x64
+# MlpEncoder core — Windows x64
 
 Maintainer reference, updated 2026-10-03. For normal use, see the [project README](../../../README.en.md).
 
 The application embeds `win-x64/mlp_encoder.dll` and calls its streaming C ABI in process. There is no standalone MLP encoder EXE or x86 proxy in the product. The DLL exports are declared in `source/mlp_encoder.h`. GUI and CLI both target win-x64.
 
-The x64 port uses explicit x87 PC53/round-to-nearest and saves/restores x87 and SSE control state around host callbacks. Compile with MinGW-w64 GCC and `-mfpmath=387 -fexcess-precision=standard -ffp-contract=off`; do not silently change floating-point options. The normal encoding path retains the decisions and serialization. The x64 host FP bridge lives in [encode_file.c](source/encode_file.c) and [mlp_group_input.inc](source/mlp_group_input.inc). The oversized-AU fallback described below is an additional lossless fallback.
+The x64 port uses explicit x87 PC53/round-to-nearest and saves/restores x87 and SSE control state around host callbacks. Compile with MinGW-w64 GCC and `-mfpmath=387 -fexcess-precision=standard -ffp-contract=off`; do not silently change floating-point options. The normal encoding path retains the mlpencoder decisions and serialization. The x64 host FP bridge lives in [encode_file.c](source/encode_file.c) and [mlp_group_input.inc](source/mlp_group_input.inc). The oversized-AU fallback described below is an additional lossless fallback.
 
 Current DLL/source fingerprints, compiler flags, and original source fingerprints are recorded in `mlpencoder-validation.json`. The Windows build recipe is `build.cmd`; set MLP_CC to a Windows x86_64-w64-mingw32-gcc executable if necessary. Rebuilds produce a separate .rebuilt.dll and do not replace the pinned tested artifact. The delivered application needs no compiler or WSL.
 
@@ -16,7 +16,7 @@ Before emitting a restart interval, the encoder serializes its normal plan to ch
 
 The retry must pass the same size and FIFO checks before publication. The encoder does not raise limits or rewrite an encoded stream. Material that still cannot fit losslessly is rejected; this is not a guarantee that arbitrary sustained full-scale noise fits the delivery rate.
 
-The formerly failing 88.2 kHz / 24-bit / six-channel short noise fixture now passes FFmpeg and original/MLP verification with exact PCM; its oversized restart AU falls from 1582 to 1526 bytes. All 78 existing successful original profiles retain complete byte identity. See [the oversized-AU record](../../../docs/MLP-OVERSIZE-FIX.md) for the exact regression scope.
+The formerly failing 88.2 kHz / 24-bit / six-channel short noise fixture now passes FFmpeg and original/mlpencoder MLP verification with exact PCM; its oversized restart AU falls from 1582 to 1526 bytes. All 78 existing successful original profiles retain complete byte identity. See [the oversized-AU record](../../../docs/MLP-OVERSIZE-FIX.md) for the exact regression scope.
 
 ## Current application pipeline
 

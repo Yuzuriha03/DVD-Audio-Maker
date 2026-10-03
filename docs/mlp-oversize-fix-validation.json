@@ -85,7 +85,7 @@
     "passed": 198,
     "total": 198,
     "previous_successful_whole_files_unchanged": 197,
-    "newly_supported": 1,
+    "newly_mlpencoder": 1,
     "profiles_and_cases": [
       {
         "name": "run1_native_176400_16_1",

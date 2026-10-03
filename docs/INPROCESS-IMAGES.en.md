@@ -2,7 +2,7 @@
 
 Date: 2026-10-02.
 
-Covers, backgrounds, text, three button states, album indexes, stills, font detection and visual verification use `image-native/dvda-image.dll`. The C# GUI and native author share this Windows x64 library. They do not launch ImageMagick command-line executables. Audio continues to use the existing media libraries and MLP core.
+Covers, backgrounds, text, three button states, album indexes, stills, font detection and visual verification use `image-native/dvda-image.dll`. The C# GUI and native author share this Windows x64 library. They do not launch ImageMagick command-line executables. Audio continues to use the existing media libraries and mlpencoder MLP core.
 
 ## Retained capabilities
 

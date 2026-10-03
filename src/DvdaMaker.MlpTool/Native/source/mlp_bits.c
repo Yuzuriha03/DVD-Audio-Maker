@@ -53,7 +53,7 @@ int mlp_bits_finish(mlp_bits *ctx)
     return MLP_BITS_OK;
 }
 
-/* from 1000d320. Full DWORD inputs and arithmetic shifts matter. */
+/* Full DWORD inputs and arithmetic shifts matter. */
 uint32_t mlp_bits_checksum(const uint32_t *words, size_t count)
 {
     uint32_t x = 0xa9u, c = 0xa2u;

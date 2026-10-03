@@ -1289,9 +1289,9 @@ yybackup:
   else if (yychar == YYerror)
     {
       /* The scanner already issued an error message, process directly
-         to error fallback.  But do not keep the error token as
+         to error recovery.  But do not keep the error token as
          lookahead, it is too special and may lead us to an endless
-         loop in error fallback. */
+         loop in error recovery. */
       yychar = YYUNDEF;
       yytoken = YYSYMBOL_YYerror;
       goto yyerrlab1;

@@ -65,9 +65,9 @@ Run a build preview:
 
     dotnet run --project src/DvdaMaker.Cli -- build --dry-run
 
-According to configuration, this command encodes/reuses MLP with the MLP core or locates and probes external MLP, then plans discs and
+According to configuration, this command encodes/reuses MLP with the MLP encoder or locates and probes external MLP, then plans discs and
 writes a separate `mlp_index-dryrun.json`. It does not overwrite `mlp_index.json` used by completed output.
-The MLP core serializes complete headers, checksums and termination flags. Output is verified without post-encoding patches.
+The MLP encoder serializes complete headers, checksums and termination flags. Output is verified without post-encoding patches.
 
 Build actual discs without menus:
 
