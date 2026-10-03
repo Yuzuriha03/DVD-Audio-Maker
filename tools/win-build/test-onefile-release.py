@@ -14,8 +14,10 @@ def main():
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--startup-only',action='store_true')
     p.add_argument('--package',type=Path,help='Release directory containing sidecars; defaults to --exe parent')
+    p.add_argument('--provenance',type=Path,help='Local validated stage containing build records; never shipped')
     a=p.parse_args();work=a.output.resolve();work.mkdir(parents=True,exist_ok=False)
-    package=(a.package or a.exe.parent).resolve();provenance=package/'components'
+    package=(a.package or a.exe.parent).resolve()
+    provenance=(a.provenance or Path(__file__).resolve().parents[2]/'tools/win-build/publish/package-stage-win-x64').resolve()
     release=work/'独立 EXE';release.mkdir();executable=release/'DVD-Audio-Maker.exe'
     shutil.copy2(a.exe,executable)
     cache=work/'组件 缓存';config=work/'project.env'
@@ -38,10 +40,9 @@ def main():
     try:
         sidecars={'README.md','README.en.md','RUNTIME.md','RUNTIME.en.md','LICENSE',
             'THIRD-PARTY.md','THIRD-PARTY.en.md','config.env.example',
-            'components/image-native/NOTICE.txt','components/image-native/image-build.json',
-            'components/image-native/author-build.json','components/menu-bin/menu-NOTICE.txt',
-            'components/menu-bin/menu-build.json','components/menu-bin/media-build.json'}
-        check('Documentation licenses and provenance accompany the EXE',all((package/name).is_file() for name in sidecars))
+            'NOTICE-Image.txt','NOTICE-Menu.txt'}
+        check('User documentation and licenses accompany the EXE',all((package/name).is_file() for name in sidecars))
+        check('Developer build JSON files are absent from the release',not list(package.rglob('*.json')))
         check('Example configuration cannot override user defaults',not (package/'config.env').exists())
         package_entries={line.split('  ',1)[1]:line.split('  ',1)[0] for line in
             (package/'MANIFEST.txt').read_text('utf-8').splitlines() if line and not line.startswith('#')}
@@ -50,6 +51,7 @@ def main():
         archive=package/'DVD-Audio-Maker-win-x64-GUI-only.zip'
         with zipfile.ZipFile(archive) as zipped:
             check('Release ZIP contains only the intended files',set(zipped.namelist())==set(package_entries)|{'MANIFEST.txt'})
+            check('All release files are at the ZIP root',all('/' not in name and chr(92) not in name for name in zipped.namelist()))
             check('Release ZIP bytes match the tested package',all(zipped.read(name)==(package/name).read_bytes() for name in zipped.namelist()))
         settings=smoke('cold')
         roots=list(cache.iterdir());check('One version cache created',len(roots)==1)

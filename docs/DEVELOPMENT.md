@@ -35,7 +35,7 @@ preLaunchTask 自动构建对应项目，工作目录固定在仓库根目录。
 
 ## 发布配置
 
-默认生成 framework-dependent Windows x64 GUI 单 EXE；运行端需要 .NET 10 Desktop Runtime x64。EXE 只内嵌运行组件，说明、许可、配置示例及组件清单作为旁文件，一起打包进一个发布 ZIP。只在发布阶段嵌入压缩资源；Debug 的 bin/obj、PDB、CLI 和 F5 不变。
+默认生成 framework-dependent Windows x64 GUI 单 EXE；运行端需要 .NET 10 Desktop Runtime x64。EXE 只内嵌运行组件，说明、许可、配置示例及组件授权声明作为旁文件，一起打包进一个发布 ZIP。只在发布阶段嵌入压缩资源；Debug 的 bin/obj、PDB、CLI 和 F5 不变。
 
 ```bat
 tools\win-build\build-all.cmd ^
