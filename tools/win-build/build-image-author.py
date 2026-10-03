@@ -18,8 +18,9 @@ def main():
     p.add_argument('--source',type=Path,required=True)
     p.add_argument('--msys-root',type=Path,required=True)
     p.add_argument('--work-directory',type=Path,default=Path('build/image-author'))
+    p.add_argument('--menu-runtime',type=Path,default=Path('build/menu-native'))
     repo=Path(__file__).resolve().parents[2]
-    default_ffmpeg=Path(os.environ.get('DVDA_FFMPEG_RUNTIME_DIR', str(repo/'build/ffmpeg-minimal/install')))
+    default_ffmpeg=Path(os.environ.get('DVDA_FFMPEG_RUNTIME_DIR', str(repo/'build/ffmpeg-menu/install')))
     p.add_argument('--ffmpeg-runtime',type=Path,default=default_ffmpeg,
                    help='FFmpeg install prefix built by build-minimal-ffmpeg.py')
     a=p.parse_args(); source=a.source.resolve(); work=a.work_directory.resolve(); work.mkdir(parents=True,exist_ok=True)
@@ -34,10 +35,15 @@ def main():
     ffmpeg_dlls=['avformat-63.dll','avcodec-63.dll','avutil-61.dll']
     ffmpeg_headers=[ffmpeg_runtime/'include/libavcodec/avcodec.h',
                     ffmpeg_runtime/'include/libavformat/avformat.h',
-                    ffmpeg_runtime/'include/libavutil/avutil.h']
+                    ffmpeg_runtime/'include/libavutil/avutil.h',
+                    ffmpeg_runtime/'include/libavutil/audio_fifo.h',
+                    ffmpeg_runtime/'include/libavutil/channel_layout.h',
+                    ffmpeg_runtime/'include/libavutil/imgutils.h',
+                    ffmpeg_runtime/'include/libavutil/opt.h',
+                    ffmpeg_runtime/'include/libavutil/samplefmt.h']
     missing=[str(path) for path in [*ffmpeg_imports.values(), *(ffmpeg_bin/name for name in ffmpeg_dlls), *ffmpeg_headers] if not path.is_file()]
     if missing:
-        raise FileNotFoundError('FFmpeg MLP shared build is incomplete; run build-minimal-ffmpeg.py first: '+', '.join(missing))
+        raise FileNotFoundError('FFmpeg menu shared build is incomplete; run build-minimal-ffmpeg.py --profile menu first: '+', '.join(missing))
     snapshot=work/'source'; snapshot.mkdir(exist_ok=True)
     inputs={}
     for folder in ['src','libutils/src','libfixwav/src','local/include']:
@@ -51,13 +57,18 @@ def main():
     for name in ffmpeg_dlls:
         inputs[f'ffmpeg-runtime/bin/{name}']=sha(ffmpeg_bin/name)
     ffmpeg_manifest=ffmpeg_runtime/'build-manifest.json'
-    if ffmpeg_manifest.is_file(): inputs['ffmpeg-runtime/build-manifest.json']=sha(ffmpeg_manifest)
+    if not ffmpeg_manifest.is_file():
+        raise FileNotFoundError('FFmpeg menu profile manifest is missing: '+str(ffmpeg_manifest))
+    manifest_data=json.loads(ffmpeg_manifest.read_text(encoding='utf-8'))
+    if manifest_data.get('profile') != 'menu':
+        raise ValueError('The author requires the FFmpeg menu profile, got: '+repr(manifest_data.get('profile')))
+    inputs['ffmpeg-runtime/build-manifest.json']=sha(ffmpeg_manifest)
     # Keep the configured snapshot aligned with the repository's native
     # migration sources. The configured tree supplies generated headers,
     # libraries and menu data; these files carry the in-process ISO and menu
     # image paths.
     mirror_root=Path(__file__).resolve().parents[2] / 'tools/dvda-author-mlp8/src'
-    for name in ['launch_manager.c', 'iso_writer.c', 'iso_writer.h', 'menu.c', 'command_line_parsing.c', 'auxiliary.c']:
+    for name in ['launch_manager.c', 'iso_writer.c', 'iso_writer.h', 'menu.c', 'amg2.c', 'command_line_parsing.c', 'auxiliary.c']:
         source_file=mirror_root/name
         target=snapshot/'src'/name
         shutil.copy2(source_file, target)
@@ -79,16 +90,27 @@ def main():
         text=text.replace('rc == -1 || !WIFEXITED(rc) || WEXITSTATUS(rc) != 0','rc != 0')
         path.write_text(text,encoding='utf-8')
         patches.extend(difflib.unified_diff(original.splitlines(True),text.splitlines(True),fromfile='a/src/'+name,tofile='b/src/'+name))
+    # Keep utility sources aligned with the repository mirror. Menu encoding
+    # and navigation use the in-process APIs, not this legacy process helper.
+    mirror_utils=Path(__file__).resolve().parents[2] / 'tools/dvda-author-mlp8/libutils/src/libc_utils.c'
+    target_utils=snapshot/'libutils/src/libc_utils.c'
+    shutil.copy2(mirror_utils, target_utils)
+    inputs['project-mirror/libutils/src/libc_utils.c']=sha(mirror_utils)
     (work/'inprocess-images.patch').write_text(''.join(patches),encoding='utf-8')
     msys=a.msys_root.resolve(); compiler=str(msys/'mingw64/bin/gcc.exe')
     env=os.environ|{'PATH':str(msys/'mingw64/bin')+os.pathsep+os.environ['PATH']}
-    include=[snapshot/'libutils/src/include',snapshot/'libutils/src/private',snapshot/'src/include',snapshot/'libfixwav/src/include',snapshot,ffmpeg_runtime/'include',snapshot/'local/include']
+    include=[snapshot/'libutils/src/include',snapshot/'libutils/src/private',snapshot/'src/include',snapshot/'libfixwav/src/include',snapshot,ffmpeg_runtime/'include',snapshot/'local/include',Path(__file__).parent/'native']
     flags=['-O2','-std=gnu11','-D_GNU_SOURCE','-DHAVE_CONFIG_H','-DWITHOUT_sox','-DWITHOUT_FLAC','-DWITHOUT_libogg','-ffunction-sections','-fdata-sections','-Wno-error=incompatible-pointer-types','-Wno-error=implicit-function-declaration']+['-I'+str(x) for x in include]
     names='amg2 ats atsi2 audio auxiliary dvda-author file_input_parsing samg2 launch_manager command_line_parsing lexer ats2wav mlp menu asvs xml sound videoimport libsoxconvert iso_writer'.split()
     files=[snapshot/'src'/(name+'.c') for name in names]
     files+=list((snapshot/'libutils/src').glob('*.c'))+list((snapshot/'libfixwav/src').glob('*.c'))
     loader=Path(__file__).parent/'native/author-image-loader.c'; files.append(loader.resolve())
     inputs['project/author-image-loader.c']=sha(loader)
+    menu_media=Path(__file__).parent/'native/dvda-menu-media.c'
+    menu_header=Path(__file__).parent/'native/dvda-menu-media.h'
+    files.append(menu_media.resolve())
+    inputs['project/dvda-menu-media.c']=sha(menu_media)
+    inputs['project/dvda-menu-media.h']=sha(menu_header)
     objects=work/'objects'; objects.mkdir(exist_ok=True)
     def compile_one(file):
         target=objects/(file.stem+'.o')
@@ -159,10 +181,21 @@ def main():
                 shutil.copy2(candidate, destination)
             copied.add(name)
             pending.append(destination)
+    menu_runtime=a.menu_runtime.resolve()
+    menu_manifest=json.loads((menu_runtime/'menu-build.json').read_text(encoding='utf-8'))
+    for name in ['dvda-menu-spu.dll','dvda-menu-nav.dll','dvda-disc-verify.dll']:
+        path=menu_runtime/name
+        if sha(path)!=menu_manifest['files'][name]['sha256']:
+            raise ValueError('Menu library checksum mismatch: '+name)
+        shutil.copy2(path,work/name)
+    shutil.copy2(menu_runtime/'menu-build.json',work/'menu-build.json')
+    shutil.copy2(menu_runtime/'NOTICE.txt',work/'menu-NOTICE.txt')
+    inputs['menu-runtime/menu-build.json']=sha(menu_runtime/'menu-build.json')
+    inputs['project/menu-api.h']=sha(repo/'tools/menu-native/menu-api.h')
     runtime_files={p.name:{'sha256':sha(p),'bytes':p.stat().st_size,'imports':sorted(Pe(p).imports())}
                    for p in sorted(work.glob('*.dll'))}
-    record={'target':'Windows x64','ffmpeg_linkage':'shared-source-built-mlp-profile',
-            'ffmpeg_profile':'build-minimal-ffmpeg.py:mlp','files':{output.name:{'sha256':sha(output),'bytes':output.stat().st_size}},
+    record={'target':'Windows x64','menu_linkage':'in-process-source-built','ffmpeg_linkage':'shared-source-built-menu-profile',
+            'ffmpeg_profile':'build-minimal-ffmpeg.py:menu','files':{output.name:{'sha256':sha(output),'bytes':output.stat().st_size}},
             'runtime_files':runtime_files,'source_inputs':inputs,'patch_sha256':sha(work/'inprocess-images.patch'),
             'compiler':subprocess.check_output([compiler,'--version'],env=env).decode().splitlines()[0]}
     (work/'author-build.json').write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')

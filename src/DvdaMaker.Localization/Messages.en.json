@@ -5723,5 +5723,109 @@
     "Parameters": 0,
     "Nested": [],
     "English": "PTS requires at least 5 bytes."
+  },
+  {
+    "Source": "正在逐轨检查音频",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Checking every audio track"
+  },
+  {
+    "Source": "逐轨比较目标 PCM，并核对每张盘内的全部 MLP 字节。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Comparing target PCM for every track and all MLP bytes inside every disc."
+  },
+  {
+    "Source": "逐轨无损验证不可用。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Full-track lossless verification is unavailable."
+  },
+  {
+    "Source": "容量、索引、时间轴、菜单和全部轨道的无损检查完成。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Capacity, indexes, timelines, menus and lossless audio for every track have been checked."
+  },
+  {
+    "Source": "验证光盘结构、时间轴、菜单及全部轨道的 PCM 和 MLP 字节。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Verify disc structure, timelines, menus and PCM/MLP bytes for every track."
+  },
+  {
+    "Source": "[OK] 全盘逐轨校验通过：全部目标 PCM 一致，成品内全部 MLP 字节一致。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] Every track passed: target PCM matches, and all disc MLP bytes are identical."
+  },
+  {
+    "Source": "=================== MLP 无损验证（全部光盘 / 全部轨道）===================",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=================== MLP lossless verification (all discs / all tracks) ==================="
+  },
+  {
+    "Source": "[校验] 第 {0} 盘组 {1}：{2} 轨成品 MLP 全部字节一致。",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "[Verify] Disc {0}, group {1}: all MLP bytes match for {2} tracks."
+  },
+  {
+    "Source": "[校验] {0}：完整目标 PCM 一致。",
+    "Parameters": 1,
+    "Nested": [
+      0
+    ],
+    "English": "[Verify] {0}: complete target PCM matches."
+  },
+  {
+    "Source": "第 {0} 盘第 {1} 轨（{2}）",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "Disc {0}, track {1} ({2})"
+  },
+  {
+    "Source": "正式索引不包含可校验的音轨。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The formal index contains no tracks to verify."
+  },
+  {
+    "Source": "缺少源音频或编码 MLP，无法完成逐轨校验。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Source audio or encoded MLP is missing; full-track verification cannot finish."
+  },
+  {
+    "Source": "无法重建编码输入 PCM：",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Cannot regenerate encoder input PCM: "
+  },
+  {
+    "Source": "内置媒体组件无法解码目标 PCM 或 MLP。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The built-in media component cannot decode target PCM or MLP."
+  },
+  {
+    "Source": "旧外部 MLP 的转换策略未知；不能用采样数相近代替 PCM 一致性校验。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The conversion policy for this older external MLP is unknown; similar sample counts do not prove PCM identity."
+  },
+  {
+    "Source": "第 {0} 盘组 {1} 的 AOB 缺失或扇区不完整。",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "Disc {0}, group {1}: AOB files are missing or contain incomplete sectors."
+  },
+  {
+    "Source": "ISO MLP 字节校验失败：轨道 {0}，偏移 {1}，AOB 扇区 {2}，状态 {3}。",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "ISO MLP byte comparison failed: track {0}, offset {1}, AOB sector {2}, status {3}."
   }
 ]

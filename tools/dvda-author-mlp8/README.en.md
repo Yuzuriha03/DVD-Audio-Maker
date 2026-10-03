@@ -68,7 +68,7 @@ This directory and the base patch remain review copies of the underlying impleme
 
 Keep base changes separate from this build-time transformation. The script expects the base tree without the image delta already applied; do not manually apply the same delta before invoking it. It does not overwrite the supplied full tree. Input and output hashes are recorded in build/image-author/author-build.json.
 
-The GUI and native author use image-native/dvda-image.dll. Menu encoders, muxers and ISO tools retain their own executable entry points. See [in-process images](../../docs/INPROCESS-IMAGES.en.md) for capabilities and validation limits.
+The GUI and native author use image-native/dvda-image.dll. Menu media, subpictures, navigation and ISO writing now use in-process C implementations; see the [migration checklist](../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md). See [in-process images](../../docs/INPROCESS-IMAGES.en.md) for capabilities and validation limits.
 
 ## Main areas of change
 

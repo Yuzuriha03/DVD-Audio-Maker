@@ -122,7 +122,7 @@ internal sealed class MainForm : Form
             (L.T("检查音源"), WorkflowAction.Prepare, L.T("检查曲目信息和解码是否正常，不制作光盘。")),
             (L.T("预演制作"), WorkflowAction.Preview, L.T("准备编码文件并计算分盘，但不生成 ISO。")),
             (L.T("开始制作"), WorkflowAction.Build, L.T("自动检查音源、编码并生成 ISO 光盘镜像。")),
-            (L.T("验证成品"), WorkflowAction.Verify, L.T("验证已制作的光盘结构、时间轴和菜单；无损项为首轨抽样。")) })
+            (L.T("验证成品"), WorkflowAction.Verify, L.T("验证光盘结构、时间轴、菜单及全部轨道的 PCM 和 MLP 字节。")) })
         {
             var button = MakeCommandButton(text);
             if (action == WorkflowAction.Build) { button.BackColor = Color.FromArgb(22, 111, 116); button.ForeColor = Color.White; }
