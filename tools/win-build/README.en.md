@@ -22,7 +22,7 @@ The prebuilt directory needs these programs and their DLL dependencies:
 
 ```text
 dvda-author-dev.exe   dvdauthor.exe
-spumux.exe            spuunmux.exe     jpeg2yuv.exe
+spumux.exe                           jpeg2yuv.exe
 mpeg2enc.exe          mplex.exe        mp2enc.exe
 ```
 
