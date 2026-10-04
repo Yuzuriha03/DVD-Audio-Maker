@@ -75,10 +75,11 @@ def main():
         check('Package hashes verified',all(sha(after/name)==value for name,value in entries.items()))
         check('Package manifest complete',set(entries)=={p.relative_to(after).as_posix() for p in after.rglob('*') if p.is_file() and p.name!=manifest_name})
         author_record=json.loads((provenance/'image-native/author-build.json').read_text(encoding='utf-8'))
+        expected_native_dlls=({name.lower() for name in author_record['runtime_files']} |
+             ({name.lower() for name in media_record['files']} if media_dir==after/'menu-bin' else set()))
+        if (after/'menu-bin/dvda-formats.dll').exists(): expected_native_dlls.add('dvda-formats.dll')
         check('Native DLLs exactly match both validated runtime manifests',
-            {x.name.lower() for x in (after/'menu-bin').glob('*.dll')} ==
-            ({name.lower() for name in author_record['runtime_files']} |
-             ({name.lower() for name in media_record['files']} if media_dir==after/'menu-bin' else set())))
+            {x.name.lower() for x in (after/'menu-bin').glob('*.dll')} == expected_native_dlls)
         author_imports=Pe(after/'menu-bin/dvda-author-dev.exe').imports()
         check('Author dynamically links the source-built menu/shared profile',author_record.get('ffmpeg_linkage') in ['shared-source-built-menu-profile','shared-source-built-shared-profile'] and {'avcodec-63.dll','avformat-63.dll','avutil-61.dll'} <= set(author_imports))
         check('Menu media, subpicture and navigation tools are in process',not any((after/'menu-bin'/name).exists() for name in ['mpeg2enc.exe','mplex.exe','mp2enc.exe','spumux.exe','dvdauthor.exe']))

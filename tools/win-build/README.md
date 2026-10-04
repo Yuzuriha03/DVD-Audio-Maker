@@ -143,3 +143,13 @@ GUI 仅提供检查音源、开始制作、验证成品。开发 CLI 保留 cli.
 本目录 docs/README.md 与 docs/README.en.md 是发布包用户指南模板，只写安装、使用和排错，不放编译命令或开发验收报告。仓库根 README 另提供开发文档入口。打包前同步中英文模板，--version 必须与发布标签和文档中的附件名一致。
 
 GUI 与用户说明支持中文、英文和日语。发布模板为 docs/README.md、docs/README.en.md、docs/README.ja.md；三语 README/RUNTIME 随 EXE 平铺发布。MLP 与 LPCM 为独立编码选项，LPCM 使用规范化整数 WAVE 和原生 DVD-Audio 封装，不调用 MLP 编码核心。原生修改使用 test-lpcm-native.py 检查全部支持格式、跨曲和短音轨边界。
+
+## C17 格式运行库
+
+`tools/formats-native/dvda-formats.c` 提供 MLP 流式检查与对齐、PCM 逐字节比较以及 PTS/MLP 格式解析。它不包含 MLP 编码器，也不引入第三方格式库。用 MSYS2 MinGW GCC 构建：
+
+```bat
+python tools\win-build\build-formats-runtime.py --msys-root "C:\msys64" --output build\formats-native
+```
+
+打包时使用 `--formats-runtime build\formats-native`（默认路径即为此目录）。C# 开发构建没有 DLL 时继续使用托管回退；发布包会把 DLL 放进单文件运行缓存。115 项兼容性测试可在设置 `DVDA_FORMATS_NATIVE_DIR` 后通过原生实现运行，逐字节对照使用测试程序的 `--native-format-samples <MLP目录>`。

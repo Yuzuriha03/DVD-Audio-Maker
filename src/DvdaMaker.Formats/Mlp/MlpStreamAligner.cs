@@ -43,6 +43,10 @@ public static class MlpStreamAligner
 
     public static int? SampleRateOf(ReadOnlySpan<byte> majorSync)
     {
+        if (NativeFormatsInterop.TrySampleRate(majorSync, out var nativeRate))
+        {
+            return nativeRate;
+        }
         if (majorSync.Length <= 5)
         {
             return null;
@@ -62,6 +66,10 @@ public static class MlpStreamAligner
         {
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
+        if (NativeFormatsInterop.TryPeakBitrate(sampleRate, out var nativePeak))
+        {
+            return nativePeak;
+        }
         var numerator = (long)BasePeakBitrate * 16 - 8;
         return checked((int)((numerator + sampleRate - 1) / sampleRate));
     }
@@ -71,6 +79,10 @@ public static class MlpStreamAligner
         if (size < 2 || size > buffer.Length)
         {
             throw new ArgumentOutOfRangeException(nameof(size));
+        }
+        if (NativeFormatsInterop.TryChecksum16(buffer[..size], out var nativeChecksum))
+        {
+            return nativeChecksum;
         }
         var crc = AvCrc(Crc2D, 0, buffer, size - 2);
         crc ^= BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(size - 2, 2));
@@ -83,6 +95,10 @@ public static class MlpStreamAligner
         {
             throw new ArgumentOutOfRangeException(nameof(size));
         }
+        if (NativeFormatsInterop.TryChecksum8(buffer[..size], out var nativeChecksum))
+        {
+            return nativeChecksum;
+        }
         var crc = AvCrc(Crc63, 0x3C, buffer, size - 1);
         crc ^= buffer[size - 1];
         return (byte)crc;
@@ -90,6 +106,10 @@ public static class MlpStreamAligner
 
     public static byte CalculateParity(ReadOnlySpan<byte> buffer)
     {
+        if (NativeFormatsInterop.TryCalculateParity(buffer, out var nativeParity))
+        {
+            return nativeParity;
+        }
         var parity = 0;
         foreach (var value in buffer)
         {
@@ -102,6 +122,10 @@ public static class MlpStreamAligner
 
     public static MlpInspection Inspect(ReadOnlySpan<byte> data)
     {
+        if (NativeFormatsInterop.TryInspect(data, out var native) && native.IsValid)
+        {
+            return FromNative(native);
+        }
         var units = Walk(data);
         var state = new InspectionAccumulator();
         foreach (var unit in units)
@@ -199,6 +223,10 @@ public static class MlpStreamAligner
 
     public static MlpInspection InspectFile(string path)
     {
+        if (NativeFormatsInterop.TryInspectFile(path, out var native) && native.IsValid)
+        {
+            return FromNative(native);
+        }
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 128 * 1024, options: FileOptions.SequentialScan);
         return Inspect(stream);
@@ -208,12 +236,29 @@ public static class MlpStreamAligner
         string path,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (NativeFormatsInterop.TryInspectFile(path, out var native) && native.IsValid)
+        {
+            return FromNative(native);
+        }
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 128 * 1024, options: FileOptions.Asynchronous | FileOptions.SequentialScan);
         return await InspectAsync(stream, cancellationToken).ConfigureAwait(false);
     }
     public static MlpAlignmentResult Align(ReadOnlySpan<byte> data)
     {
+        if (NativeFormatsInterop.TryAlign(data, out var native))
+        {
+            return new MlpAlignmentResult(
+                native.Data,
+                new MlpAlignmentChanges(
+                    native.PeakChanges,
+                    native.ExtendedChanges,
+                    native.ChecksumChanges,
+                    native.InsertedEndOfStream,
+                    native.OldHeader,
+                    native.NewHeader));
+        }
         var buffer = data.ToArray();
         var units = Walk(data);
         if (units.Count == 0)
@@ -320,6 +365,19 @@ public static class MlpStreamAligner
                 oldHeader,
                 newHeader));
     }
+
+    private static MlpInspection FromNative(NativeFormatsInterop.NativeMlpInspection native) => new(
+        native.Size,
+        native.AccessUnitCount,
+        native.MajorSyncCount,
+        native.MajorSyncInterval,
+        [],
+        [],
+        [],
+        native.HasEndOfStream,
+        native.PeakBitrateRaw,
+        native.ExtendedSubstreamInfo,
+        native.SampleRate);
 
     private sealed class InspectionAccumulator
     {

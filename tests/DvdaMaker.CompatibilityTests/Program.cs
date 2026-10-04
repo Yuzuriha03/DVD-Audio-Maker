@@ -266,6 +266,20 @@ if (args.Length > 0)
         }
     }
 
+    if (args.Length == 2 && args[0] == "--native-format-samples")
+    {
+        try
+        {
+            NativeFormatSamples.Run(args[1]);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"[FAIL] native format samples: {exception.Message}");
+            return 1;
+        }
+    }
+
     Console.Error.WriteLine(
         "用法: DvdaMaker.CompatibilityTests [--real-fixtures <ISO目录> <MLP根目录> | --mlpencoder-integration | --oversized-au-integration | --mlpencoder-batch-integration <ffmpeg.exe> | --ffmpeg-pcm-integration <output目录> | --ffmpeg-original-corpus <原版矩阵.json> <output目录>]");
     return 2;
