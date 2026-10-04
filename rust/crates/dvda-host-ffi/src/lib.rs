@@ -1,12 +1,112 @@
 use serde_json::json;
 use std::{
-    ffi::{CStr, CString, c_char},
+    ffi::{CStr, CString, c_char, c_void},
     panic::{AssertUnwindSafe, catch_unwind},
 };
+
+type Emit = unsafe extern "C" fn(*mut c_void, i32, *const c_char);
+type Cancel = unsafe extern "C" fn(*mut c_void) -> i32;
+struct MediaCallbacks {
+    emit: Emit,
+    cancel: Cancel,
+    state: *mut c_void,
+}
+impl dvda_native::media::Callbacks for MediaCallbacks {
+    fn emit(&mut self, stream: i32, text: &str) {
+        let text = CString::new(text.replace('\0', "\\0")).expect("NUL escaped");
+        // SAFETY: caller guarantees callback and state remain live for this call.
+        unsafe {
+            (self.emit)(self.state, stream, text.as_ptr());
+        }
+    }
+    fn cancelled(&mut self) -> bool {
+        unsafe { (self.cancel)(self.state) != 0 }
+    }
+}
+
+/// Execute one typed media job, with synchronous borrowed callbacks.
+/// # Safety
+/// request is a live NUL-terminated UTF-8 JSON string. Callbacks and state must
+/// remain valid throughout this call and must not unwind across the C boundary.
+/// Release the returned string exactly once with dvda_rust_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dvda_rust_media_run(
+    request: *const c_char,
+    emit: Option<Emit>,
+    cancel: Option<Cancel>,
+    state: *mut c_void,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<serde_json::Value, String> {
+        if request.is_null() {
+            return Err("Null media job".into());
+        }
+        let (Some(emit), Some(cancel)) = (emit, cancel) else {
+            return Err("Null media callback".into());
+        };
+        let text = unsafe { CStr::from_ptr(request) }
+            .to_str()
+            .map_err(|e| e.to_string())?;
+        let job = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let mut callbacks = MediaCallbacks {
+            emit,
+            cancel,
+            state,
+        };
+        Ok(json!(dvda_core::media::execute(job, &mut callbacks)))
+    }));
+    let response = match result {
+        Ok(Ok(value)) => json!({"ok":true,"value":value}),
+        Ok(Err(error)) => json!({"ok":false,"error":error}),
+        Err(_) => json!({"ok":false,"error":"Rust panic caught at media ABI boundary"}),
+    };
+    CString::new(response.to_string())
+        .expect("JSON contains no raw NUL")
+        .into_raw()
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn dvda_rust_abi_version() -> u32 {
     1
+}
+
+/// Execute one in-process image job with synchronous borrowed callbacks.
+/// # Safety
+/// request must be live NUL-terminated UTF-8 JSON. Callback pointers and state
+/// remain valid during this call and callbacks must not unwind. Free the result
+/// exactly once using dvda_rust_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dvda_rust_image_run(
+    request: *const c_char,
+    emit: Option<Emit>,
+    cancel: Option<Cancel>,
+    state: *mut c_void,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<serde_json::Value, String> {
+        if request.is_null() {
+            return Err("Null image job".into());
+        }
+        let (Some(emit), Some(cancel)) = (emit, cancel) else {
+            return Err("Null image callback".into());
+        };
+        let text = unsafe { CStr::from_ptr(request) }
+            .to_str()
+            .map_err(|e| e.to_string())?;
+        let job = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let mut callbacks = MediaCallbacks {
+            emit,
+            cancel,
+            state,
+        };
+        Ok(json!(dvda_core::images::execute(job, &mut callbacks)))
+    }));
+    let response = match result {
+        Ok(Ok(value)) => json!({"ok":true,"value":value}),
+        Ok(Err(error)) => json!({"ok":false,"error":error}),
+        Err(_) => json!({"ok":false,"error":"Rust panic caught at image ABI boundary"}),
+    };
+    CString::new(response.to_string())
+        .expect("JSON contains no raw NUL")
+        .into_raw()
 }
 
 /// Scan fixed-size records without copying audio through the JSON bridge.

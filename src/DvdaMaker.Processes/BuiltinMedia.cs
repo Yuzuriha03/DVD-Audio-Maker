@@ -110,6 +110,37 @@ public static class BuiltinMedia
         }
         try
         {
+            if (RustBridge.Mode != "managed")
+            {
+                var metadata = new List<string[]>();
+                for (var i = 0; i + 1 < args.Count; ++i) if (args[i] == "-metadata")
+                {
+                    var pair = args[++i].Split('=', 2);
+                    if (pair.Length != 2) throw new ArgumentException("无效音频标签。");
+                    metadata.Add(pair);
+                }
+                // Temporary argument adapter. The final Rust workflow constructs typed jobs.
+                // Mutations execute once; isolated migration tests compare both implementations.
+                var statusCode = RustBridge.RunMedia(new
+                {
+                    Library = LibraryPath,
+                    Request = new
+                    {
+                        Operation = new[] { "", "Probe", "Packets", "Audio", "VideoFrame", "Cover" }[native.Operation],
+                        native.Rate, native.Bits,
+                        OutputFormat = new[] { "None", "Wave", "S24", "S16", "S32", "Md5", "Flac" }[native.OutputFormat],
+                        Soxr = native.Soxr != 0, native.Compression, Cover = native.Cover != 0,
+                        Input = FullPath(input), Output = output, Tags = metadata,
+                    },
+                    Replace = args.Contains("-y"), TimeoutMillis = (long?)null,
+                }, Write, token);
+                var rustOutput = stdout.ToString();
+                if (statusCode == 0 && probing && native.Operation == 1) rustOutput = FormatProbe(rustOutput, args);
+                var rustResult = new ProcessResult(request.FileName, args, statusCode,
+                    request.CaptureOutput ? rustOutput : "", stderr.ToString(), Stopwatch.GetElapsedTime(started));
+                if (request.ThrowOnNonZeroExitCode && !rustResult.Succeeded) throw new ProcessExecutionException(rustResult);
+                return rustResult;
+            }
             native.Input = Utf8(FullPath(input));
             if (output is not null)
             {

@@ -1,0 +1,266 @@
+//! Typed API for the project's in-process C media implementation.
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString, c_char, c_void},
+    io,
+    os::windows::ffi::OsStrExt,
+    panic::{AssertUnwindSafe, catch_unwind},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
+};
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[repr(u32)]
+pub enum Operation {
+    Probe = 1,
+    Packets = 2,
+    Audio = 3,
+    VideoFrame = 4,
+    Cover = 5,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[repr(u32)]
+pub enum OutputFormat {
+    None = 0,
+    Wave = 1,
+    S24 = 2,
+    S16 = 3,
+    S32 = 4,
+    Md5 = 5,
+    Flac = 6,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct Request {
+    pub operation: Operation,
+    pub rate: u32,
+    pub bits: u32,
+    pub output_format: OutputFormat,
+    pub soxr: bool,
+    pub compression: u32,
+    pub cover: bool,
+    pub input: String,
+    pub output: Option<String>,
+    pub tags: Vec<(String, String)>,
+}
+
+impl Request {
+    pub fn validate(&self) -> io::Result<()> {
+        let invalid = |message| io::Error::new(io::ErrorKind::InvalidInput, message);
+        if self.input.is_empty() || self.rate > i32::MAX as u32 {
+            return Err(invalid("Invalid media input path or sample rate"));
+        }
+        if matches!(self.operation, Operation::Audio) {
+            let bits_valid = match self.output_format {
+                OutputFormat::S24 | OutputFormat::S32 => matches!(self.bits, 20 | 24),
+                OutputFormat::S16 | OutputFormat::Md5 => self.bits == 16,
+                _ => matches!(self.bits, 0 | 16 | 20 | 24),
+            };
+            if !bits_valid {
+                return Err(invalid(
+                    "PCM precision does not match the native output layout",
+                ));
+            }
+        }
+        let requires_output = matches!(self.operation, Operation::VideoFrame | Operation::Cover)
+            || (matches!(self.operation, Operation::Audio)
+                && matches!(
+                    self.output_format,
+                    OutputFormat::Wave
+                        | OutputFormat::S24
+                        | OutputFormat::S16
+                        | OutputFormat::S32
+                        | OutputFormat::Flac
+                ));
+        if requires_output && self.output.as_ref().is_none_or(String::is_empty) {
+            return Err(invalid("Media output path is required"));
+        }
+        Ok(())
+    }
+}
+
+#[repr(C)]
+struct RawRequest {
+    size: u32,
+    abi: u32,
+    operation: u32,
+    rate: u32,
+    bits: u32,
+    output_format: u32,
+    soxr: u32,
+    compression: u32,
+    cover: u32,
+    tag_count: u32,
+    input: *const c_char,
+    output: *const c_char,
+    tags: *const *const c_char,
+}
+pub(crate) type Emit = unsafe extern "C" fn(*mut c_void, i32, *const c_char);
+pub(crate) type Cancel = unsafe extern "C" fn(*mut c_void) -> i32;
+type Run = unsafe extern "C" fn(*const RawRequest, Emit, Cancel, *mut c_void) -> i32;
+
+/// Callbacks are synchronous and run on the calling thread. No borrowed state is retained.
+pub trait Callbacks {
+    fn emit(&mut self, stream: i32, text: &str);
+    fn cancelled(&mut self) -> bool;
+}
+pub(crate) struct CallbackState<'a> {
+    pub(crate) callbacks: &'a mut dyn Callbacks,
+    pub(crate) panicked: bool,
+}
+pub(crate) unsafe extern "C" fn emit(state: *mut c_void, stream: i32, text: *const c_char) {
+    // SAFETY: only passed to dvdamedia_run during the live stack frame below.
+    let state = unsafe { &mut *state.cast::<CallbackState<'_>>() };
+    if state.panicked {
+        return;
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let text = if text.is_null() {
+            std::borrow::Cow::Borrowed("")
+        } else {
+            unsafe { CStr::from_ptr(text) }.to_string_lossy()
+        };
+        state.callbacks.emit(stream, &text);
+    }));
+    state.panicked |= result.is_err();
+}
+pub(crate) unsafe extern "C" fn cancel(state: *mut c_void) -> i32 {
+    // SAFETY: same stack lifetime as emit; the C implementation invokes callbacks serially.
+    let state = unsafe { &mut *state.cast::<CallbackState<'_>>() };
+    if state.panicked {
+        return 1;
+    }
+    match catch_unwind(AssertUnwindSafe(|| state.callbacks.cancelled())) {
+        Ok(value) => i32::from(value),
+        Err(_) => {
+            state.panicked = true;
+            1
+        }
+    }
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn LoadLibraryExW(path: *const u16, file: *mut c_void, flags: u32) -> *mut c_void;
+    fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
+    fn FreeLibrary(module: *mut c_void) -> i32;
+}
+
+pub struct Media {
+    module: *mut c_void,
+    run: Run,
+}
+// The C module uses a per-call/TLS state and thread-safe one-time initialization.
+unsafe impl Send for Media {}
+unsafe impl Sync for Media {}
+impl Drop for Media {
+    fn drop(&mut self) {
+        unsafe {
+            FreeLibrary(self.module);
+        }
+    }
+}
+impl Media {
+    pub fn load(path: &Path) -> io::Result<Arc<Self>> {
+        static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Media>>>> = OnceLock::new();
+        let path = std::path::absolute(path)?;
+        let mut cache = CACHE
+            .get_or_init(Default::default)
+            .lock()
+            .map_err(|_| io::Error::other("Media library cache lock poisoned"))?;
+        if let Some(media) = cache.get(&path) {
+            return Ok(Arc::clone(media));
+        }
+        let mut wide: Vec<_> = path.as_os_str().encode_wide().collect();
+        if wide.contains(&0) {
+            return Err(io::Error::from_raw_os_error(123));
+        }
+        wide.push(0);
+        // Only resolve dependent DLLs beside this library and in System32, never PATH/CWD.
+        let module = unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), 0x100 | 0x800) };
+        if module.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let entry = unsafe { GetProcAddress(module, c"dvdamedia_run".as_ptr()) };
+        if entry.is_null() {
+            let error = io::Error::last_os_error();
+            unsafe {
+                FreeLibrary(module);
+            }
+            return Err(error);
+        }
+        // SAFETY: dvdamedia_run is the fixed C ABI defined in native/dvda-media.c.
+        let media = Arc::new(Self {
+            module,
+            run: unsafe { std::mem::transmute::<*mut c_void, Run>(entry) },
+        });
+        cache.insert(path, Arc::clone(&media));
+        Ok(media)
+    }
+
+    pub fn run(&self, request: &Request, callbacks: &mut dyn Callbacks) -> io::Result<i32> {
+        request.validate()?;
+        fn string(text: &str) -> io::Result<CString> {
+            CString::new(text).map_err(|_| io::Error::from_raw_os_error(123))
+        }
+        let input = string(&request.input)?;
+        let output = request.output.as_deref().map(string).transpose()?;
+        let tags: Vec<CString> = request
+            .tags
+            .iter()
+            .flat_map(|(key, value)| [key.as_str(), value.as_str()])
+            .map(string)
+            .collect::<io::Result<_>>()?;
+        let pointers: Vec<_> = tags.iter().map(|tag| tag.as_ptr()).collect();
+        let raw = RawRequest {
+            size: std::mem::size_of::<RawRequest>() as u32,
+            abi: 1,
+            operation: request.operation as u32,
+            rate: request.rate,
+            bits: request.bits,
+            output_format: request.output_format as u32,
+            soxr: u32::from(request.soxr),
+            compression: request.compression,
+            cover: u32::from(request.cover),
+            tag_count: u32::try_from(request.tags.len())
+                .map_err(|_| io::Error::other("Too many media tags"))?,
+            input: input.as_ptr(),
+            output: output.as_ref().map_or(std::ptr::null(), |p| p.as_ptr()),
+            tags: if pointers.is_empty() {
+                std::ptr::null()
+            } else {
+                pointers.as_ptr()
+            },
+        };
+        let mut state = CallbackState {
+            callbacks,
+            panicked: false,
+        };
+        // SAFETY: every pointer remains live until this synchronous function returns.
+        let result = unsafe {
+            (self.run)(
+                &raw,
+                emit,
+                cancel,
+                (&mut state as *mut CallbackState<'_>).cast(),
+            )
+        };
+        if state.panicked {
+            return Err(io::Error::other("Panic caught in media callback"));
+        }
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn media_abi_matches_c_header() {
+        assert_eq!(std::mem::size_of::<RawRequest>(), 64);
+        assert_eq!(std::mem::offset_of!(RawRequest, input), 40);
+        assert_eq!(std::mem::offset_of!(RawRequest, tags), 56);
+    }
+}
