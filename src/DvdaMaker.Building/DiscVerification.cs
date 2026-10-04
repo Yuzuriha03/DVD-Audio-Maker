@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Text.RegularExpressions;
 using DvdaMaker.Formats.Iso9660;
-using DvdaMaker.Formats.Mpeg;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Building;
 
@@ -20,7 +20,6 @@ public sealed class DiscVerifier
 {
     private const int SectorSize = 2048;
     private static readonly byte[] PackHeader = [0, 0, 1, 0xBA];
-    private static readonly byte[] PesPackStart = [0, 0, 1, 0xBD];
     private static readonly Regex TrackRowPattern = new(
         "^\\s*(?<group>\\d+)\\s+(?<title>\\d+)/\\d+\\s+(?<track>\\d+)\\s+(?<first>\\d+)\\s+(?<last>\\d+)\\s+(?<pts>\\d+)\\s+(?<length>\\d+)\\s+\\d+\\s*$",
         RegexOptions.Compiled | RegexOptions.Multiline);
@@ -381,60 +380,68 @@ public sealed class DiscVerifier
 
     public sealed class AuditPtsObservation
     {
-        private long _previous = -1;
-        private bool _stopped;
+        private RustBridge.AobAuditState _state = RustBridge.AobAuditState.Initial;
         private readonly List<int> _drops = [];
-        private int? _missingSector;
-        private int _sectorCount;
+        internal int SectorCount => _state.SectorCount;
+        internal bool Stopped => _state.MissingSector >= 0;
+        internal IReadOnlyList<int> Drops => _drops;
 
         public void Observe(ReadOnlyMemory<byte> data)
         {
-            if (_stopped) return;
-            var sectorIndex = _sectorCount++;
-            var sector = data.Span;
-            if (sector.Length < 64) return;
-            var relativeMarker = sector[4..64].IndexOf(PesPackStart);
-            var marker = relativeMarker < 0 ? -1 : relativeMarker + 4;
-            if (marker < 0 || marker + 14 > sector.Length || (sector[marker + 7] & 0x80) == 0)
-            {
-                _stopped = true;
-                _missingSector = sectorIndex;
-                return;
-            }
-            var current = PesTimestampParser.ParsePts(sector.Slice(marker + 9, 5));
-            if (_previous >= 0 && current < _previous) _drops.Add(sectorIndex);
-            _previous = current;
+            if (Stopped) return;
+            var result = AobSectorScanner.Observe(data, _state);
+            _state = result.State;
+            if (result.Drop >= 0) _drops.Add(result.Drop);
         }
 
         internal void AddIssues(IReadOnlyList<TrackRow> rows, int group,
             ICollection<VerificationIssue> issues)
         {
+            foreach (var diagnostic in Diagnostics(rows)) issues.Add(FormatDiagnostic(diagnostic, group));
+        }
+
+        internal IReadOnlyList<AuditDiagnostic> Diagnostics(IReadOnlyList<TrackRow> rows) =>
+            RustBridge.Run<IReadOnlyList<AuditDiagnostic>>("aob.audit_diagnostics",
+                new { Drops = _drops, MissingSector = _state.MissingSector, SectorCount, Rows = rows },
+                () => DiagnosticsManaged(rows));
+
+        private IReadOnlyList<AuditDiagnostic> DiagnosticsManaged(IReadOnlyList<TrackRow> rows)
+        {
+            var issues = new List<AuditDiagnostic>();
             var boundaries = rows.Select(row => row.First).ToHashSet();
             foreach (var index in _drops)
             {
                 if (!boundaries.Contains(index))
                 {
-                    issues.Add(new VerificationIssue("PTS_DROP_OFF_BOUNDARY",
-                        $"组 {group} PTS 在非轨道边界扇区 {index} 下降"));
+                    issues.Add(new("PTS_DROP_OFF_BOUNDARY", index, null));
                 }
             }
-            if (_missingSector is not null)
+            if (_state.MissingSector >= 0)
             {
-                issues.Add(new VerificationIssue("PTS_MISSING", $"组 {group} 存在缺少 PTS 的扇区"));
+                issues.Add(new("PTS_MISSING", null, null));
             }
             var previousTitle = -1;
             foreach (var row in rows)
             {
                 if (row.Title == previousTitle) continue;
-                if (row.First != 0 && row.First < _sectorCount && !_drops.Contains(row.First))
+                if (row.First != 0 && row.First < SectorCount && !_drops.Contains(row.First))
                 {
-                    issues.Add(new VerificationIssue("PTS_RESET_MISSING",
-                        $"组 {group} title {row.Title} 起点扇区 {row.First} 应出现 PTS 下降但未下降"));
+                    issues.Add(new("PTS_RESET_MISSING", row.First, row.Title));
                 }
                 previousTitle = row.Title;
             }
+            return issues;
         }
     }
+
+    internal sealed record AuditDiagnostic(string Code, int? Sector, int? Title);
+    private static VerificationIssue FormatDiagnostic(AuditDiagnostic item, int group) => new(item.Code, item.Code switch
+    {
+        "PTS_DROP_OFF_BOUNDARY" => $"组 {group} PTS 在非轨道边界扇区 {item.Sector} 下降",
+        "PTS_MISSING" => $"组 {group} 存在缺少 PTS 的扇区",
+        "PTS_RESET_MISSING" => $"组 {group} title {item.Title} 起点扇区 {item.Sector} 应出现 PTS 下降但未下降",
+        _ => throw new InvalidDataException("Unknown AOB audit diagnostic: " + item.Code),
+    });
 
     /// <summary>
     /// 流式扫描 AOB 扇区，不把整组 AOB 载入内存。
@@ -446,28 +453,19 @@ public sealed class DiscVerifier
         int group,
         ICollection<VerificationIssue> issues)
     {
-        var previous = -1L;
-        var drops = new HashSet<int>();
-        var sectorIndex = -1;
+        var observation = new AuditPtsObservation();
         foreach (var sectorData in sectors)
         {
-            sectorIndex++;
-            var sector = sectorData.Span;
-            if (sector.Length < 64)
-            {
-                continue;
-            }
-            var relativeMarker = sector[4..64].IndexOf(PesPackStart);
-            var marker = relativeMarker < 0 ? -1 : relativeMarker + 4;
-            if (marker < 0 || marker + 14 > sector.Length || (sector[marker + 7] & 0x80) == 0)
+            var previousDrops = observation.Drops.Count;
+            observation.Observe(sectorData);
+            if (observation.Stopped)
             {
                 issues.Add(new VerificationIssue("PTS_MISSING", $"组 {group} 存在缺少 PTS 的扇区"));
                 break;
             }
-            var current = PesTimestampParser.ParsePts(sector.Slice(marker + 9, 5));
-            if (previous >= 0 && current < previous)
+            if (observation.Drops.Count > previousDrops)
             {
-                drops.Add(sectorIndex);
+                var sectorIndex = observation.Drops[^1];
                 var boundary = rows.Any(row => row.First == sectorIndex);
                 if (!boundary)
                 {
@@ -475,30 +473,10 @@ public sealed class DiscVerifier
                         "PTS_DROP_OFF_BOUNDARY", $"组 {group} PTS 在非轨道边界扇区 {sectorIndex} 下降"));
                 }
             }
-            previous = current;
         }
-
-        var result = new PtsScanResult(sectorIndex + 1, drops);
-
-        // 每个 title 起点都应出现 PTS 重置。
-        var previousTitle = -1;
-        foreach (var row in rows)
-        {
-            if (row.Title == previousTitle)
-            {
-                continue;
-            }
-            if (row.First != 0 && row.First < result.SectorCount &&
-                !result.Drops.Contains(row.First))
-            {
-                issues.Add(new VerificationIssue(
-                    "PTS_RESET_MISSING",
-                    $"组 {group} title {row.Title} 起点扇区 {row.First} 应出现 PTS 下降但未下降"));
-            }
-            previousTitle = row.Title;
-        }
-
-        return result;
+        foreach (var diagnostic in observation.Diagnostics(rows).Where(item => item.Code == "PTS_RESET_MISSING"))
+            issues.Add(FormatDiagnostic(diagnostic, group));
+        return new PtsScanResult(observation.SectorCount, observation.Drops.ToHashSet());
     }
 
     private static void ValidatePts(

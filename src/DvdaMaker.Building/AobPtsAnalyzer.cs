@@ -1,4 +1,3 @@
-using DvdaMaker.Formats.Mpeg;
 using DvdaMaker.Processes;
 
 namespace DvdaMaker.Building;
@@ -28,11 +27,51 @@ public sealed record AobPtsAnalysis(
 public static class AobPtsAnalyzer
 {
     private const int SectorSize = 2048;
-    private static ReadOnlySpan<byte> PackHeader => [0, 0, 1, 0xBA];
-    private static ReadOnlySpan<byte> PrivateStreamHeader => [0, 0, 1, 0xBD];
+    private sealed record FileScan(int SectorCount, IReadOnlyList<long> Values);
+    private sealed record FileScanOutcome(FileScan? Scan, int? ErrorCode);
 
-    public static AobPtsAnalysis Analyze(string path, int? maximumSectors = null) =>
-        Analyze(File.ReadAllBytes(path), path, maximumSectors);
+    public static AobPtsAnalysis Analyze(string path, int? maximumSectors = null)
+    {
+        var result = RustBridge.Run<FileScanOutcome>("aob.scan_file", new { Path = path, MaximumSectors = maximumSectors },
+            () => ScanFileManaged(path, maximumSectors));
+        if (result.Scan is { } scan) return BuildAnalysis(path, scan.SectorCount, scan.Values);
+        var code = result.ErrorCode ?? 87;
+        var message = new System.ComponentModel.Win32Exception(code).Message + ": " + path;
+        throw code switch
+        {
+            2 => new FileNotFoundException(message, path),
+            3 => new DirectoryNotFoundException(message),
+            5 => new UnauthorizedAccessException(message),
+            _ => new IOException(message, unchecked((int)0x80070000) | code),
+        };
+    }
+
+    private static FileScanOutcome ScanFileManaged(string path, int? maximumSectors)
+    {
+        try
+        {
+            using var input = File.OpenRead(path);
+            var buffer = new byte[128 * 1024];
+            var values = new List<long>();
+            var count = 0;
+            var limit = maximumSectors is > 0 ? maximumSectors.Value : int.MaxValue;
+            while (count < limit)
+            {
+                var requested = (int)Math.Min(buffer.Length, (long)(limit - count) * SectorSize);
+                var read = input.ReadAtLeast(buffer.AsSpan(0, requested), requested, throwOnEndOfStream: false);
+                var complete = read / SectorSize;
+                values.AddRange(AobSectorScanner.ScanManaged(buffer.AsSpan(0, complete * SectorSize), SectorSize, true)
+                    .Where(pts => pts >= 0));
+                count += complete;
+                if (read < requested) break;
+            }
+            return new(new FileScan(count, values), null);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return new(null, error.HResult & 0xffff);
+        }
+    }
 
     public static AobPtsAnalysis Analyze(
         ReadOnlySpan<byte> data,
@@ -56,25 +95,23 @@ public static class AobPtsAnalyzer
         var sectorCount = 0;
         foreach (var chunkMemory in chunks)
         {
-            var chunk = chunkMemory.Span;
-            var chunkSectors = chunk.Length / SectorSize;
+            var chunkSectors = chunkMemory.Length / SectorSize;
+            if (maximumSectors is > 0) chunkSectors = Math.Min(chunkSectors, maximumSectors.Value - sectorCount);
+            var timestamps = AobSectorScanner.Scan(chunkMemory[..(chunkSectors * SectorSize)], SectorSize, true);
             for (var index = 0; index < chunkSectors; index++)
             {
-                if (maximumSectors is > 0 && sectorCount >= maximumSectors.Value) break;
-                var sector = chunk.Slice(index * SectorSize, SectorSize);
                 sectorCount++;
                 observeSector?.Invoke(chunkMemory.Slice(index * SectorSize, SectorSize));
-                if (!sector[..4].SequenceEqual(PackHeader)) continue;
-                var relative = sector.Slice(4, Math.Min(60, sector.Length - 4))
-                    .IndexOf(PrivateStreamHeader);
-                if (relative < 0) continue;
-                var marker = relative + 4;
-                if (marker + 14 > sector.Length || (sector[marker + 7] & 0x80) == 0) continue;
-                values.Add(PesTimestampParser.ParsePts(sector.Slice(marker + 9, 5)));
+                if (timestamps[index] >= 0) values.Add(timestamps[index]);
             }
             if (maximumSectors is > 0 && sectorCount >= maximumSectors.Value) break;
         }
 
+        return BuildAnalysis(path, sectorCount, values);
+    }
+
+    private static AobPtsAnalysis BuildAnalysis(string path, int sectorCount, IReadOnlyList<long> values)
+    {
         var statistics = ComputeStatistics(values);
         var issues = BuildIssues(statistics, values.Count);
         return new AobPtsAnalysis(

@@ -55,6 +55,67 @@ public static class RustBridge
         }
     }
 
+    public static unsafe long[] ScanAob(ReadOnlyMemory<byte> data, int stride, bool requirePack, Func<long[]> managed)
+    {
+        if (Mode == "managed") return managed();
+        if (!Enabled) throw new InvalidOperationException($"Unknown DVDA_RUST_MODE: {Mode}");
+        if (stride <= 0 || data.Length % stride != 0) throw new ArgumentOutOfRangeException(nameof(stride));
+        var actual = new long[data.Length / stride];
+        var native = Native.Value;
+        fixed (byte* input = data.Span)
+        fixed (long* output = actual)
+        {
+            var error = native.ScanAob((IntPtr)input, (nuint)data.Length, (nuint)stride,
+                requirePack ? 1U : 0U, (IntPtr)output, (nuint)actual.Length);
+            if (error != IntPtr.Zero)
+            {
+                try { throw new InvalidDataException(Marshal.PtrToStringUTF8(error)); }
+                finally { native.Free(error); }
+            }
+        }
+        Calls.AddOrUpdate("aob.scan_sectors", 1, (_, count) => count + 1);
+        if (Mode == "compare")
+        {
+            var expected = managed();
+            if (!actual.AsSpan().SequenceEqual(expected))
+                throw new InvalidDataException("Rust compatibility mismatch in aob.scan_sectors.");
+        }
+        return actual;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AobAuditState
+    {
+        public long Previous;
+        public int SectorCount;
+        public int MissingSector;
+        public static AobAuditState Initial => new() { Previous = -1, MissingSector = -1 };
+    }
+    public readonly record struct AobAuditResult(AobAuditState State, int Drop);
+
+    public static unsafe AobAuditResult ObserveAob(ReadOnlyMemory<byte> data, AobAuditState state,
+        Func<AobAuditResult> managed)
+    {
+        if (Mode == "managed") return managed();
+        if (!Enabled) throw new InvalidOperationException($"Unknown DVDA_RUST_MODE: {Mode}");
+        var native = Native.Value;
+        int drop;
+        fixed (byte* input = data.Span)
+        {
+            var error = native.ObserveAob((IntPtr)input, (nuint)data.Length, ref state, out drop);
+            if (error != IntPtr.Zero)
+            {
+                try { throw new InvalidDataException(Marshal.PtrToStringUTF8(error)); }
+                finally { native.Free(error); }
+            }
+        }
+        Calls.AddOrUpdate("aob.audit_observe", 1, (_, count) => count + 1);
+        var actual = new AobAuditResult(state, drop);
+        if (Mode == "compare" && actual != managed())
+            throw new InvalidDataException("Rust compatibility mismatch in aob.audit_observe.");
+        return actual;
+    }
+
     private static Exports Load()
     {
         var library=NativeLibrary.Load(LibraryPath);
@@ -64,12 +125,18 @@ public static class RustBridge
             if(version()!=1) throw new InvalidDataException("Unsupported Rust ABI version.");
             return new Exports(
                 Marshal.GetDelegateForFunctionPointer<CallDelegate>(NativeLibrary.GetExport(library,"dvda_rust_call")),
-                Marshal.GetDelegateForFunctionPointer<FreeDelegate>(NativeLibrary.GetExport(library,"dvda_rust_free")));
+                Marshal.GetDelegateForFunctionPointer<FreeDelegate>(NativeLibrary.GetExport(library,"dvda_rust_free")),
+                Marshal.GetDelegateForFunctionPointer<AobScanDelegate>(NativeLibrary.GetExport(library,"dvda_rust_aob_scan")),
+                Marshal.GetDelegateForFunctionPointer<AobObserveDelegate>(NativeLibrary.GetExport(library,"dvda_rust_aob_observe")));
         }
         catch { NativeLibrary.Free(library); throw; }
     }
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate uint VersionDelegate();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr CallDelegate(IntPtr operation,IntPtr request);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void FreeDelegate(IntPtr pointer);
-    private sealed record Exports(CallDelegate Call,FreeDelegate Free);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr AobScanDelegate(
+        IntPtr data, nuint length, nuint stride, uint requirePack, IntPtr output, nuint capacity);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr AobObserveDelegate(
+        IntPtr data, nuint length, ref AobAuditState state, out int dropIndex);
+    private sealed record Exports(CallDelegate Call,FreeDelegate Free,AobScanDelegate ScanAob,AobObserveDelegate ObserveAob);
 }
