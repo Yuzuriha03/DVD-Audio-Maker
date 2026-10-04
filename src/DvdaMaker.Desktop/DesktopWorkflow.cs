@@ -16,11 +16,20 @@ internal static class DesktopWorkflow
         token.ThrowIfCancellationRequested();
         if (action is WorkflowAction.Prepare or WorkflowAction.Build)
         {
-            progress.Report(new("正在检查音源", "读取曲目信息并确认音频能够正常解码，请稍候。"));
-            var prepared = await new PreparationPipeline(options).RunAsync(cancellationToken: token).ConfigureAwait(false);
-            foreach (var issue in prepared.Issues) Console.WriteLine($"[{issue.Level}] {issue}");
-            if (prepared.FailureCount > 0) throw new InvalidOperationException($"音源检查失败 {prepared.FailureCount} 项，请查看日志。");
-            if (action == WorkflowAction.Prepare) return new("音源检查完成", "请点击“开始制作”生成光盘镜像。");
+            if (action == WorkflowAction.Build &&
+                PreparationSnapshotStore.TryReuse(options, out _, out var reuseReason))
+            {
+                progress.Report(new("复用音源检查结果", $"{reuseReason}，直接进入制作。"));
+                Console.WriteLine($"[准备] {reuseReason}：{options.PrepareSnapshotPath}");
+            }
+            else
+            {
+                progress.Report(new("正在检查音源", "读取曲目信息并确认音频能够正常解码，请稍候。"));
+                var prepared = await new PreparationPipeline(options).RunAsync(cancellationToken: token).ConfigureAwait(false);
+                foreach (var issue in prepared.Issues) Console.WriteLine($"[{issue.Level}] {issue}");
+                if (prepared.FailureCount > 0) throw new InvalidOperationException($"音源检查失败 {prepared.FailureCount} 项，请查看日志。" );
+            }
+            if (action == WorkflowAction.Prepare) return new("音源检查完成", "请点击“开始制作”生成光盘镜像。" );
             token.ThrowIfCancellationRequested();
             progress.Report(new("正在制作光盘", "准备无损编码、计算分盘并处理光盘内容；较长音轨需要一些时间。"));
             var built = await new BuildPipeline(options).RunAsync(dryRun: false, cancellationToken: token).ConfigureAwait(false);

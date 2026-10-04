@@ -59,6 +59,7 @@ public sealed partial class DvdaOptions
     public string MenuDirectory => UnderBuild("menu");
     public string BuildLogPath => UnderBuild("build.log");
     public string PrepareCachePath => UnderBuild("prepare-cache.json");
+    public string PrepareSnapshotPath => UnderBuild("prepare-snapshot.json");
     public bool PrepareCacheEnabled => Get("DVDA_PREPARE_CACHE", "on").Trim().ToLowerInvariant() is not
         ("off" or "0" or "false" or "no");
     public string DvdaAuthor => Get("DVDA_AUTHOR");

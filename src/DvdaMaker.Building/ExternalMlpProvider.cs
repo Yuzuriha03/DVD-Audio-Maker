@@ -77,8 +77,8 @@ public sealed class ExternalMlpProvider
             {
                 if (!alreadyVerified)
                 {
-                    var inspection = MlpStreamAligner.Inspect(await File.ReadAllBytesAsync(
-                        hit, cancellationToken).ConfigureAwait(false));
+                    var inspection = await MlpStreamAligner.InspectFileAsync(
+                        hit, cancellationToken).ConfigureAwait(false);
                     if (!inspection.IsValid || !inspection.HasEndOfStream)
                     {
                         diagnostics.Add(new BuildDiagnostic(

@@ -147,8 +147,8 @@ public sealed class SurcodeMlpProvider
                         }
                         try
                         {
-                            var inspection = MlpStreamAligner.Inspect(
-                                await File.ReadAllBytesAsync(staged, cancellationToken).ConfigureAwait(false));
+                            var inspection = await MlpStreamAligner.InspectFileAsync(
+                                staged, cancellationToken).ConfigureAwait(false);
                             if (!inspection.IsValid || !inspection.HasEndOfStream)
                             {
                                 diagnostics.Add(new BuildDiagnostic(

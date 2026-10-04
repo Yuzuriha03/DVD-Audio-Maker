@@ -103,144 +103,115 @@ public static class MlpStreamAligner
     public static MlpInspection Inspect(ReadOnlySpan<byte> data)
     {
         var units = Walk(data);
-        var majorSyncOffsets = units.Where(unit => unit.HasMajorSync)
-            .Select(unit => unit.Offset + 4)
-            .ToArray();
-        var majorSyncErrors = new List<MlpMajorSyncError>();
-        var parityErrors = new List<MlpAuParityError>();
-        var substreamErrors = new List<int>();
-        int? peakRaw = null;
-        int? extendedInfo = null;
-        int? sampleRate = null;
-        var hasEndOfStream = false;
-
-        foreach (var unit in units.Where(unit => unit.HasMajorSync))
-        {
-            var offset = unit.Offset + 4;
-            var unitEnd = unit.Offset + unit.Length;
-            if (offset + MajorSyncSize > unitEnd)
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(offset, "截断"));
-                continue;
-            }
-            var majorSync = data.Slice(offset, MajorSyncSize);
-            if (BinaryPrimitives.ReadUInt16BigEndian(majorSync[8..10]) != 0xB752)
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(
-                    offset,
-                    $"INFO_SIG=0x{BinaryPrimitives.ReadUInt16BigEndian(majorSync[8..10]):x4}"));
-            }
-            var storedChecksum = BinaryPrimitives.ReadUInt16LittleEndian(majorSync[26..28]);
-            if (Checksum16(majorSync, MajorSyncSize - 2) != storedChecksum)
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(offset, "checksum16 不符"));
-            }
-            var currentPeak = BinaryPrimitives.ReadUInt16BigEndian(majorSync[14..16]) & 0x7FFF;
-            var currentExtendedInfo = majorSync[16] & 3;
-            var currentSampleRate = SampleRateOf(majorSync);
-            if (currentSampleRate is null)
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(offset, "采样率未知"));
-            }
-            else if (currentPeak < (long)BasePeakBitrate * 16 / currentSampleRate.Value ||
-                     currentPeak > PeakBitrateRaw(currentSampleRate.Value))
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(
-                    offset,
-                    $"peak={currentPeak}，期望 {PeakBitrateRaw(currentSampleRate.Value)}"));
-            }
-            if (currentExtendedInfo != 1)
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(
-                    offset, $"extended_substream_info={currentExtendedInfo}，期望 1"));
-            }
-            if (sampleRate is not null && currentSampleRate != sampleRate)
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(offset, "major sync 采样率不一致"));
-            }
-            if (peakRaw is not null && currentPeak != peakRaw)
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(offset, "major sync peak 字段不一致"));
-            }
-            if (extendedInfo is not null && currentExtendedInfo != extendedInfo)
-            {
-                majorSyncErrors.Add(new MlpMajorSyncError(offset, "major sync ext 字段不一致"));
-            }
-            peakRaw ??= currentPeak;
-            extendedInfo ??= currentExtendedInfo;
-            sampleRate ??= currentSampleRate;
-        }
-
+        var state = new InspectionAccumulator();
         foreach (var unit in units)
         {
-            var headerOffset = unit.Offset + 4 + (unit.HasMajorSync ? MajorSyncSize : 0);
-            if (headerOffset + 2 > unit.Offset + unit.Length)
-            {
-                substreamErrors.Add(unit.Offset);
-                continue;
-            }
-
-            var substreamHeader = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(headerOffset, 2));
-            var end = (substreamHeader & 0x0FFF) * 2;
-            var dataOffset = headerOffset + 2;
-            var unitEnd = unit.Offset + unit.Length;
-            if (end < 2 || dataOffset + end > unitEnd)
-            {
-                substreamErrors.Add(unit.Offset);
-                continue;
-            }
-            var substreamData = data.Slice(dataOffset, end);
-
-            var timing = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(unit.Offset + 2, 2));
-            var parity = timing ^ (unit.Length / 2);
-            parity ^= (substreamHeader >> 8) & 0xFF;
-            parity ^= substreamHeader & 0xFF;
-            parity ^= parity >> 8;
-            parity ^= parity >> 4;
-            parity &= 0xF;
-            var expected = (data[unit.Offset] >> 4) & 0xF;
-            var actual = parity ^ 0xF;
-            if (actual != expected)
-            {
-                parityErrors.Add(new MlpAuParityError(unit.Offset, expected, actual));
-            }
-
-            if (((substreamHeader >> 13) & 1) != 0)
-            {
-                if (substreamData.Length < 2)
-                {
-                    substreamErrors.Add(unit.Offset);
-                    continue;
-                }
-                var body = substreamData[..^2];
-                if (substreamData[^2] != (CalculateParity(body) ^ 0xA9) ||
-                    substreamData[^1] != Checksum8(body, body.Length))
-                {
-                    substreamErrors.Add(unit.Offset);
-                }
-            }
-
-            if (unit == units[^1] && substreamData.Length >= 6 &&
-                substreamData[..^2].EndsWith(EndOfStreamBytes))
-            {
-                hasEndOfStream = true;
-            }
+            state.AddUnit(
+                data.Slice(unit.Offset, unit.Length),
+                unit.Offset,
+                unit.HasMajorSync);
         }
-
-        return new MlpInspection(
-            data.Length,
-            units.Count,
-            majorSyncOffsets.Length,
-            majorSyncOffsets.Length == 0 ? 0 : (double)units.Count / majorSyncOffsets.Length,
-            majorSyncErrors,
-            parityErrors,
-            substreamErrors,
-            hasEndOfStream,
-            peakRaw,
-            extendedInfo,
-            sampleRate);
+        return state.Complete(data.Length, units.Count);
     }
 
+    /// <summary>
+    /// Inspects an MLP stream without loading the complete file into memory. Each
+    /// access unit is bounded by the 12-bit length field, so validation remains
+    /// bounded even for very large imported MLP files.
+    /// </summary>
+    public static MlpInspection Inspect(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        var state = new InspectionAccumulator();
+        var header = new byte[4];
+        long size = 0;
+        var units = 0;
+        while (true)
+        {
+            var headerBytes = ReadAtMost(stream, header);
+            if (headerBytes == 0)
+            {
+                break;
+            }
+            if (headerBytes != header.Length)
+            {
+                throw new InvalidDataException("MLP access unit header is truncated.");
+            }
+            var length = (BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(0, 2)) & 0x0FFF) * 2;
+            if (length < 4)
+            {
+                throw new InvalidDataException($"MLP access unit at offset {size} has invalid length {length}.");
+            }
+            if (size > int.MaxValue - length)
+            {
+                throw new InvalidDataException("MLP stream is too large for the inspection model.");
+            }
+            var unit = new byte[length];
+            header.CopyTo(unit, 0);
+            ReadExactly(stream, unit.AsSpan(4));
+            var hasMajorSync = length >= 7 && unit.AsSpan(4, 3).SequenceEqual(MajorSyncSignature);
+            state.AddUnit(unit, (int)size, hasMajorSync);
+            size += length;
+            units++;
+        }
+        return state.Complete((int)size, units);
+    }
+
+    public static async Task<MlpInspection> InspectAsync(
+        Stream stream,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        var state = new InspectionAccumulator();
+        var header = new byte[4];
+        long size = 0;
+        var units = 0;
+        while (true)
+        {
+            var headerBytes = await ReadAtMostAsync(stream, header, cancellationToken).ConfigureAwait(false);
+            if (headerBytes == 0)
+            {
+                break;
+            }
+            if (headerBytes != header.Length)
+            {
+                throw new InvalidDataException("MLP access unit header is truncated.");
+            }
+            var length = (BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(0, 2)) & 0x0FFF) * 2;
+            if (length < 4)
+            {
+                throw new InvalidDataException($"MLP access unit at offset {size} has invalid length {length}.");
+            }
+            if (size > int.MaxValue - length)
+            {
+                throw new InvalidDataException("MLP stream is too large for the inspection model.");
+            }
+            var unit = new byte[length];
+            header.CopyTo(unit, 0);
+            await ReadExactlyAsync(stream, unit.AsMemory(4), cancellationToken).ConfigureAwait(false);
+            var hasMajorSync = length >= 7 && unit.AsSpan(4, 3).SequenceEqual(MajorSyncSignature);
+            state.AddUnit(unit, (int)size, hasMajorSync);
+            size += length;
+            units++;
+        }
+        return state.Complete((int)size, units);
+    }
+
+    public static MlpInspection InspectFile(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 128 * 1024, options: FileOptions.SequentialScan);
+        return Inspect(stream);
+    }
+
+    public static async Task<MlpInspection> InspectFileAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 128 * 1024, options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return await InspectAsync(stream, cancellationToken).ConfigureAwait(false);
+    }
     public static MlpAlignmentResult Align(ReadOnlySpan<byte> data)
     {
         var buffer = data.ToArray();
@@ -350,6 +321,207 @@ public static class MlpStreamAligner
                 newHeader));
     }
 
+    private sealed class InspectionAccumulator
+    {
+        private readonly List<MlpMajorSyncError> _majorSyncErrors = [];
+        private readonly List<MlpAuParityError> _parityErrors = [];
+        private readonly List<int> _substreamErrors = [];
+        private int _majorSyncCount;
+        private int? _peakRaw;
+        private int? _extendedInfo;
+        private int? _sampleRate;
+        private bool _lastHasEndOfStream;
+
+        public void AddUnit(ReadOnlySpan<byte> unit, int offset, bool hasMajorSync)
+        {
+            _lastHasEndOfStream = false;
+            if (hasMajorSync)
+            {
+                _majorSyncCount++;
+                var majorOffset = offset + 4;
+                if (4 + MajorSyncSize > unit.Length)
+                {
+                    _majorSyncErrors.Add(new MlpMajorSyncError(majorOffset, "截断"));
+                }
+                else
+                {
+                    var majorSync = unit.Slice(4, MajorSyncSize);
+                    if (BinaryPrimitives.ReadUInt16BigEndian(majorSync[8..10]) != 0xB752)
+                    {
+                        _majorSyncErrors.Add(new MlpMajorSyncError(
+                            majorOffset,
+                            $"INFO_SIG=0x{BinaryPrimitives.ReadUInt16BigEndian(majorSync[8..10]):x4}"));
+                    }
+                    var storedChecksum = BinaryPrimitives.ReadUInt16LittleEndian(majorSync[26..28]);
+                    if (Checksum16(majorSync, MajorSyncSize - 2) != storedChecksum)
+                    {
+                        _majorSyncErrors.Add(new MlpMajorSyncError(majorOffset, "checksum16 不符"));
+                    }
+                    var currentPeak = BinaryPrimitives.ReadUInt16BigEndian(majorSync[14..16]) & 0x7FFF;
+                    var currentExtendedInfo = majorSync[16] & 3;
+                    var currentSampleRate = SampleRateOf(majorSync);
+                    if (currentSampleRate is null)
+                    {
+                        _majorSyncErrors.Add(new MlpMajorSyncError(majorOffset, "采样率未知"));
+                    }
+                    else if (currentPeak < (long)BasePeakBitrate * 16 / currentSampleRate.Value ||
+                             currentPeak > PeakBitrateRaw(currentSampleRate.Value))
+                    {
+                        _majorSyncErrors.Add(new MlpMajorSyncError(
+                            majorOffset,
+                            $"peak={currentPeak}，期望 {PeakBitrateRaw(currentSampleRate.Value)}"));
+                    }
+                    if (currentExtendedInfo != 1)
+                    {
+                        _majorSyncErrors.Add(new MlpMajorSyncError(
+                            majorOffset,
+                            $"extended_substream_info={currentExtendedInfo}，期望 1"));
+                    }
+                    if (_sampleRate is not null && currentSampleRate != _sampleRate)
+                    {
+                        _majorSyncErrors.Add(new MlpMajorSyncError(majorOffset, "major sync 采样率不一致"));
+                    }
+                    if (_peakRaw is not null && currentPeak != _peakRaw)
+                    {
+                        _majorSyncErrors.Add(new MlpMajorSyncError(majorOffset, "major sync peak 字段不一致"));
+                    }
+                    if (_extendedInfo is not null && currentExtendedInfo != _extendedInfo)
+                    {
+                        _majorSyncErrors.Add(new MlpMajorSyncError(majorOffset, "major sync ext 字段不一致"));
+                    }
+                    _peakRaw ??= currentPeak;
+                    _extendedInfo ??= currentExtendedInfo;
+                    _sampleRate ??= currentSampleRate;
+                }
+            }
+
+            var headerOffset = 4 + (hasMajorSync ? MajorSyncSize : 0);
+            if (headerOffset + 2 > unit.Length)
+            {
+                _substreamErrors.Add(offset);
+                return;
+            }
+
+            var substreamHeader = BinaryPrimitives.ReadUInt16BigEndian(unit.Slice(headerOffset, 2));
+            var end = (substreamHeader & 0x0FFF) * 2;
+            var dataOffset = headerOffset + 2;
+            if (end < 2 || dataOffset + end > unit.Length)
+            {
+                _substreamErrors.Add(offset);
+                return;
+            }
+            var substreamData = unit.Slice(dataOffset, end);
+
+            var timing = BinaryPrimitives.ReadUInt16BigEndian(unit.Slice(2, 2));
+            var parity = timing ^ (unit.Length / 2);
+            parity ^= (substreamHeader >> 8) & 0xFF;
+            parity ^= substreamHeader & 0xFF;
+            parity ^= parity >> 8;
+            parity ^= parity >> 4;
+            parity &= 0xF;
+            var expected = (unit[0] >> 4) & 0xF;
+            var actual = parity ^ 0xF;
+            if (actual != expected)
+            {
+                _parityErrors.Add(new MlpAuParityError(offset, expected, actual));
+            }
+
+            if (((substreamHeader >> 13) & 1) != 0)
+            {
+                if (substreamData.Length < 2)
+                {
+                    _substreamErrors.Add(offset);
+                    return;
+                }
+                var body = substreamData[..^2];
+                if (substreamData[^2] != (CalculateParity(body) ^ 0xA9) ||
+                    substreamData[^1] != Checksum8(body, body.Length))
+                {
+                    _substreamErrors.Add(offset);
+                }
+            }
+
+            _lastHasEndOfStream = substreamData.Length >= 6 &&
+                substreamData[..^2].EndsWith(EndOfStreamBytes);
+        }
+
+        public MlpInspection Complete(int size, int unitCount) => new(
+            size,
+            unitCount,
+            _majorSyncCount,
+            _majorSyncCount == 0 ? 0 : (double)unitCount / _majorSyncCount,
+            _majorSyncErrors,
+            _parityErrors,
+            _substreamErrors,
+            _lastHasEndOfStream,
+            _peakRaw,
+            _extendedInfo,
+            _sampleRate);
+    }
+
+    private static int ReadAtMost(Stream stream, Span<byte> buffer)
+    {
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var read = stream.Read(buffer[total..]);
+            if (read == 0)
+            {
+                break;
+            }
+            total += read;
+        }
+        return total;
+    }
+
+    private static async Task<int> ReadAtMostAsync(
+        Stream stream,
+        Memory<byte> buffer,
+        CancellationToken cancellationToken)
+    {
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer[total..], cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+            total += read;
+        }
+        return total;
+    }
+
+    private static void ReadExactly(Stream stream, Span<byte> buffer)
+    {
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var read = stream.Read(buffer[total..]);
+            if (read == 0)
+            {
+                throw new InvalidDataException("MLP access unit is truncated.");
+            }
+            total += read;
+        }
+    }
+
+    private static async Task ReadExactlyAsync(
+        Stream stream,
+        Memory<byte> buffer,
+        CancellationToken cancellationToken)
+    {
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer[total..], cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new InvalidDataException("MLP access unit is truncated.");
+            }
+            total += read;
+        }
+    }
     private static uint[] CreateCrcTable(uint polynomial, int bits)
     {
         var table = new uint[256];

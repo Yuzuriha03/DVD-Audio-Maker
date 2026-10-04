@@ -313,6 +313,7 @@ var tests = new (string Name, Action Run)[]
     ("MLP access unit 遍历", WalkMlpAccessUnits),
     ("MLP CRC 与奇偶校验基线", MlpChecksumBaseline),
     ("MLP 损坏边界与对齐修复", ValidateMlpDamageFixtures),
+    ("MLP 内存与流式检查结果一致", MlpStreamingInspection),
     ("命令行日志格式化", FormatCommandLine),
     ("外部进程参数与输出捕获", RunExternalProcess),
     ("外部进程非零退出码", HandleNonZeroExitCode),
@@ -377,6 +378,7 @@ var tests = new (string Name, Action Run)[]
     ("准备缓存复用与源变化失效", PrepareCacheReuseAndInvalidation),
     ("准备缓存不记录未通过校验的轨道", PrepareCacheSkipsFailedTracks),
     ("准备缓存身份与存储规则", PrepareCacheIdentityAndStorage),
+    ("准备快照指纹复用与失效", PreparationSnapshotChecks),
     ("审计 PTS 流式扇区扫描", ScanPtsSectorsStreamingly),
     ("共享 AOB 扫描保持审计与时间轴语义", SharedAobScanPreservesDiagnostics),
     ("SurCode 新产物校验凭据失效回退", ReuseValidatedSurcodeOutput),
@@ -766,6 +768,30 @@ static void FormatCommandLine()
 {
     Equal("ffmpeg -i \"path with spaces.flac\"", CommandLineFormatter.Format(
         "ffmpeg", ["-i", "path with spaces.flac"]));
+}
+
+static void MlpStreamingInspection()
+{
+    var data = BuildValidMlpFixture();
+    var memory = MlpStreamAligner.Inspect(data);
+    using var stream = new MemoryStream(data, writable: false);
+    var streamed = MlpStreamAligner.Inspect(stream);
+    Equal(memory.Size, streamed.Size);
+    Equal(memory.AccessUnitCount, streamed.AccessUnitCount);
+    Equal(memory.MajorSyncCount, streamed.MajorSyncCount);
+    Equal(memory.HasEndOfStream, streamed.HasEndOfStream);
+    Equal(memory.SampleRate, streamed.SampleRate);
+    Equal(memory.PeakBitrateRaw, streamed.PeakBitrateRaw);
+    True(streamed.IsValid, "流式 MLP 检查必须通过有效样本");
+
+    using var asyncStream = new MemoryStream(data, writable: false);
+    var asynchronous = MlpStreamAligner.InspectAsync(asyncStream)
+        .GetAwaiter().GetResult();
+    Equal(memory.Size, asynchronous.Size);
+    Equal(memory.AccessUnitCount, asynchronous.AccessUnitCount);
+    Equal(memory.MajorSyncCount, asynchronous.MajorSyncCount);
+    Equal(memory.HasEndOfStream, asynchronous.HasEndOfStream);
+    True(asynchronous.IsValid, "异步流式 MLP 检查必须通过有效样本");
 }
 
 static void RunExternalProcess()
@@ -1986,6 +2012,38 @@ static void PrepareCacheIdentityAndStorage()
                 SampleRate = 48_000, Bits = 24, ExpectedSamples = 48_000, DecodedSamples = 0,
             },
         }, track, 48_000), "没有采样数证据时不得复用");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void PreparationSnapshotChecks()
+{
+    var root = Path.Combine(Path.GetTempPath(), "dvda-prepare-snapshot", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        var options = CreatePrepareOptions(root, "ffprobe", "ffmpeg");
+        var source = Path.Combine(options.SourceDirectory, "song.flac");
+        var original = Enumerable.Range(0, 4096).Select(index => (byte)(index & 0xFF)).ToArray();
+        File.WriteAllBytes(source, original);
+        Directory.CreateDirectory(Path.GetDirectoryName(options.ManifestPath)!);
+        File.WriteAllText(options.ManifestPath, "{}\n");
+
+        True(PreparationSnapshotStore.Save(options, [source]), "成功准备后应保存源指纹快照");
+        True(PreparationSnapshotStore.TryReuse(options, out var snapshot, out _),
+            "清单和源文件未变化时应复用准备快照");
+        Equal(1, snapshot!.Sources.Count);
+
+        File.WriteAllBytes(source, Enumerable.Repeat((byte)0xA5, original.Length).ToArray());
+        False(PreparationSnapshotStore.TryReuse(options, out _, out _),
+            "源文件内容变化后不得复用准备快照");
+        File.WriteAllBytes(source, original);
+        File.WriteAllBytes(Path.Combine(options.SourceDirectory, "new.flac"), [1, 2, 3]);
+        False(PreparationSnapshotStore.TryReuse(options, out _, out _),
+            "新增源文件后不得复用准备快照");
     }
     finally
     {
