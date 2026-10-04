@@ -12,7 +12,7 @@
     "truncated stream rejection"
   ],
   "full_disc_workflow_run": false,
-  "final_lpcm_japanese_release_status": "PENDING",
+  "final_lpcm_japanese_release_status": "PASS",
   "previous_gui_only_validation": {
     "date": "2026-10-04",
     "status": "PASS",
@@ -62,10 +62,91 @@
       "EXE smaller than the previous ZIP"
     ]
   },
-  "lpcm_gui_checks": 15,
+  "lpcm_gui_checks": 21,
   "mlp_regression": {
+    "status": "PASS",
     "tracks": 2,
-    "aob_equals_previous_author": true,
-    "all_mlp_bytes_compared": 980380
+    "all_mlp_bytes_compared": 980380,
+    "aob_bytes": 1003520,
+    "aob_sha256": "664d34f27f0514fa4a1632189beee8e5346b659113ff2ac818211fed624d89ba",
+    "aob_equals_previous_author": true
+  },
+  "status": "PASS",
+  "source_commit": "1e9b84619f871e9d15c238ea762bc268e733362e",
+  "release_checks": 34,
+  "zip": {
+    "name": "DVD-Audio-Maker-v1.0-win-x64.zip",
+    "bytes": 15399660,
+    "sha256": "9a0007a087e4582f50fadc32cab6e7643ede92ba0fff663678fc83a2cde3839d"
+  },
+  "exe": {
+    "name": "DVD-Audio-Maker.exe",
+    "bytes": 16248418,
+    "sha256": "09284b67c12d5a547e536472456984999650b7b65471e18002d3068025f43812"
+  },
+  "release_check_names": [
+    "User documentation and licenses accompany the EXE",
+    "Developer build JSON files are absent from the release",
+    "Example configuration cannot override user defaults",
+    "Release manifest contains exactly the EXE and sidecars",
+    "All release files match the manifest",
+    "Release ZIP contains only the intended files",
+    "All release files are at the ZIP root",
+    "Release ZIP bytes match the tested package",
+    "English GUI contains only current actions and encoding choices",
+    "Chinese GUI starts with current actions",
+    "Japanese GUI starts and retains the selected language",
+    "Japanese LPCM choice preserves its configuration value",
+    "Switching to Japanese preserves all project settings",
+    "Legacy env imports as generic MLP without rewriting input",
+    "Legacy JSON imports as generic MLP",
+    "Removed GUI Preview action fails instead of executing a dry run",
+    "One version cache created",
+    "EXE embeds only required runtime assets",
+    "Every component matches its embedded hash",
+    "Explicit env import preserves Unicode settings",
+    "Bundled author and assets automatically located",
+    "Warm launch reuses verified cache",
+    "Concurrent GUI launches succeed",
+    "Missing and corrupt files automatically repaired",
+    "Repair keeps healthy files unchanged",
+    "Exactly one physical file for every DLL name",
+    "Runtime DLLs exactly match validated dependency manifests",
+    "Both consumers built against the shared source profile",
+    "Shared FFmpeg identities match both build manifests",
+    "Saved profiles follow the current runtime version",
+    "Only the EXE is needed beside the application",
+    "No bundled CLR or developer CLI",
+    "No temporary extraction files remain",
+    "EXE smaller than the previous ZIP"
+  ],
+  "lpcm_gui_check_names": [
+    "48000-24-6 FLAC fixture 1",
+    "48000-24-6 FLAC fixture 2",
+    "48000-24-6 GUI Build",
+    "48000-24-6 GUI Verify",
+    "48000-24-6 GUI Build",
+    "48000-24-6 valid PCM cache reused",
+    "48000-24-6 ISO exists",
+    "192000-24-2 FLAC fixture 1",
+    "192000-24-2 FLAC fixture 2",
+    "192000-24-2 GUI Build",
+    "192000-24-2 GUI Verify",
+    "192000-24-2 GUI Build",
+    "192000-24-2 valid PCM cache reused",
+    "192000-24-2 ISO exists",
+    "44100-16-1 FLAC fixture 1",
+    "44100-16-1 FLAC fixture 2",
+    "44100-16-1 GUI Build",
+    "44100-16-1 GUI Verify",
+    "44100-16-1 GUI Build",
+    "44100-16-1 valid PCM cache reused",
+    "44100-16-1 ISO exists"
+  ],
+  "local_reports": {
+    "lpcm-ja-smoke-final": "build/onefile-validation/lpcm-ja-smoke-final/report.json",
+    "lpcm-gui-final": "build/onefile-validation/lpcm-gui-final/report.json",
+    "lpcm-native-final": "build/onefile-validation/lpcm-native-final/report.json",
+    "mlp-native-regression": "build/onefile-validation/mlp-native-regression/report.json"
   }
 }
