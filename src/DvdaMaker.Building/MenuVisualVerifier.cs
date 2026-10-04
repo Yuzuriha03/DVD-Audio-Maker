@@ -161,16 +161,43 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
     }
 
     internal static bool IsFrameNearSolid(double standardDeviation, double colors) =>
+        RustBridge.Run<bool>("menu.visual_near_solid", new
+        {
+            StandardDeviation = standardDeviation,
+            Colors = colors,
+        }, () => IsFrameNearSolidManaged(standardDeviation, colors));
+
+    private static bool IsFrameNearSolidManaged(double standardDeviation, double colors) =>
         colors <= 50 || standardDeviation <= 1;
 
-    internal static bool IsIndexBackgroundInvalid(double mean) => mean > 160;
+    internal static bool IsIndexBackgroundInvalid(double mean) =>
+        RustBridge.Run<bool>("menu.visual_background_invalid", mean,
+            () => IsIndexBackgroundInvalidManaged(mean));
 
-    internal static bool IsIndexThumbnailMissing(double mean) => mean <= 3;
+    private static bool IsIndexBackgroundInvalidManaged(double mean) => mean > 160;
+
+    internal static bool IsIndexThumbnailMissing(double mean) =>
+        RustBridge.Run<bool>("menu.visual_thumbnail_missing", mean,
+            () => IsIndexThumbnailMissingManaged(mean));
+
+    private static bool IsIndexThumbnailMissingManaged(double mean) => mean <= 3;
 
     internal static bool IsIndexLabelMissing(double maximum, double mean) =>
+        RustBridge.Run<bool>("menu.visual_label_missing", new { Maximum = maximum, Mean = mean },
+            () => IsIndexLabelMissingManaged(maximum, mean));
+
+    private static bool IsIndexLabelMissingManaged(double maximum, double mean) =>
         maximum <= 200 || mean > 200;
 
     internal static int ExpectedIndexCells(int albumCount, int pageIndex) =>
+        RustBridge.Run<int>("menu.visual_expected_index_cells", new
+        {
+            AlbumCount = albumCount,
+            PageIndex = pageIndex,
+            PerPage = IndexPerPage,
+        }, () => ExpectedIndexCellsManaged(albumCount, pageIndex));
+
+    private static int ExpectedIndexCellsManaged(int albumCount, int pageIndex) =>
         Math.Clamp(albumCount - pageIndex * IndexPerPage, 0, IndexPerPage);
 
     private async Task VerifyIndexPageAsync(

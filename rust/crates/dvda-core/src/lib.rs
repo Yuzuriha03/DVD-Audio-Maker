@@ -3,6 +3,7 @@ pub mod author;
 pub mod config;
 pub mod formats;
 pub mod hash;
+pub mod lpcm;
 pub mod menu;
 pub mod planner;
 pub mod probes;
@@ -44,6 +45,11 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         "menu.short_album" => menu::short_album(request),
         "menu.normalize_path" => menu::normalize_path(request),
         "menu.pages" => menu::pages(request),
+        "menu.visual_near_solid" => menu::visual_near_solid(request),
+        "menu.visual_background_invalid" => menu::visual_background_invalid(request),
+        "menu.visual_thumbnail_missing" => menu::visual_thumbnail_missing(request),
+        "menu.visual_label_missing" => menu::visual_label_missing(request),
+        "menu.visual_expected_index_cells" => menu::visual_expected_index_cells(request),
         "path.safe_basename" => config::safe_basename(request),
         "identity.equal"
         | "cache.mlp_match"
@@ -56,6 +62,7 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         "author.normalize_title_mode" | "author.title_ends" => author::dispatch(operation, request),
         "aob.pts_statistics" => aob::dispatch(operation, request),
         "hash.sha256_hex" => hash::dispatch(operation, request),
+        "lpcm.validate_format" | "lpcm.validate_layout" => lpcm::dispatch(operation, request),
         "mlp.major_sync_interval" => validation::dispatch(operation, request),
         "abi.version" => Ok(json!({"version":1,"backend":"rust"})),
         _ => Err(format!("Unsupported Rust operation: {operation}")),
