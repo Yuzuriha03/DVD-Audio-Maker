@@ -24,7 +24,7 @@ internal static class Program
             {
                 if (args[i] == "--config" && i + 1 < args.Length) config = args[++i];
                 else if (args[i] == "--smoke-test") smoke = true;
-                else throw new ArgumentException("Usage: DVD-Audio-Maker [--config settings.env|profile.json] [--language auto|en|zh-CN]");
+                else throw new ArgumentException("Usage: DVD-Audio-Maker [--config settings.env|profile.json] [--language auto|en|zh-CN|ja]");
             }
             var settings = ProjectSettings.Defaults();
             var origin = "新建配置";

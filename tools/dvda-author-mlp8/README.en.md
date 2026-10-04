@@ -66,7 +66,7 @@ The product targets Windows x64. Native maintenance uses MSYS2/MinGW-w64 on Wind
 
 This directory and the base patch remain review copies of the underlying implementation. The current author is built by [build-image-author.py](../win-build/build-image-author.py) from an isolated snapshot of the full tree. The script migrates seven external ImageMagick calls to the x64 image DLL. See [author-inprocess-images.patch](../win-build/native/author-inprocess-images.patch) and the [native loader](../win-build/native/author-image-loader.c).
 
-Keep base changes separate from this build-time transformation. The script expects the base tree without the image delta already applied; do not manually apply the same delta before invoking it. It does not overwrite the supplied full tree. Input and output hashes are recorded in build/image-author/author-build.json.
+Keep base changes separate from this build-time transformation. The script expects the base tree without the image delta already applied; do not manually apply the same delta before invoking it. It does not overwrite the supplied full tree. Input and output hashes are recorded in build/image-author-shared/author-build.json.
 
 The GUI and native author use image-native/dvda-image.dll. Menu media, subpictures, navigation and ISO writing now use in-process C implementations; see the [migration checklist](../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md). See [in-process images](../../docs/INPROCESS-IMAGES.en.md) for capabilities and validation limits.
 
@@ -104,3 +104,9 @@ These files originate from `dvda-author` and include project modifications. See 
 - [`../../docs/LICENSING.md`](../../docs/LICENSING.en.md)
 
 Use, modification and redistribution must comply with the upstream project's and dependencies' licenses.
+
+## Current release integration
+
+The standard Windows x64 release links the author and media bridge against the same shared FFmpeg build. Use build-image-author.py with --ffmpeg-runtime build/ffmpeg-shared/install and --work-directory build/image-author-shared. The packager keeps one DLL set for both consumers. Native build records stay in the local build directory.
+
+The user entry point is DVD-Audio-Maker.exe: Check sources, Build discs, Verify output. dry-run remains a source CLI diagnostic and is not a GUI action. This mirror is maintainer documentation and is not copied into the user release. The public archive is DVD-Audio-Maker-v1.0-win-x64.zip.

@@ -20,9 +20,9 @@ dvda.cmd config --language en
 
 GUI 和 CLI 共享应用依赖，CLI 位于根目录 `dvda.exe`。请完整解压并保留同目录的 DLL、JSON 和资源子目录，不要只复制 EXE。是否需要安装 .NET 见 RUNTIME.md。
 
-配置通过界面编辑并自动保存在用户目录；“导入 config.env”保留读取旧配置的能力，“打开方案 / 保存方案”处理 JSON 配置。首次没有 GUI 设置时读取旁边的旧 env。MLP 编码使用进程内原生 x64 DLL，不需要编码 EXE；FFmpeg 音源准备、解码与制盘工具仍保留；不再需要 eac3to。
+配置通过界面编辑并自动保存在用户目录；“导入 config.env”保留读取旧配置的能力，“打开方案 / 保存方案”处理 JSON 配置。首次没有 GUI 设置时读取旁边的旧 env。MLP 编码使用进程内原生 x64 DLL，不需要编码 EXE；音源准备和解码使用内置媒体库，随包的项目 author 负责制盘；不需要 eac3to。
 
-“预演制作”执行音源准备和 MLP 编码但不创建 ISO；“开始制作”完成出盘。“验证成品”逐轨比较目标 PCM，并核对每张盘内全部 MLP 字节。任务可取消，日志可保存。
+GUI 提供“检查音源”“开始制作”“验证成品”。开发预演使用 dvda.cmd build --dry-run，会写 MLP 缓存及独立索引，但不生成 ISO。“验证成品”逐轨比较目标 PCM，并核对每张盘内全部 MLP 字节。任务可取消，日志可保存。
 
 界面中的“更多设置”展开较少使用的参数。光盘容量可选 DVD5 / DVD9 / 自定义，采样率和编码方式显示为易读名称。
 
@@ -30,7 +30,7 @@ GUI 和 CLI 共享应用依赖，CLI 位于根目录 `dvda.exe`。请完整解�
 
 # DVD-Audio Maker for Windows
 
-此文档随 Windows x64 自包含发布包分发。
+本文仅随可选的开发诊断目录包提供。
 
 GUI 和 CLI 使用内嵌的原生 x64 MLP DLL，发布包同时包含 `dvda-author`、内置 ISO 写入器、菜单工具、ImageMagick 和中日韩字体，不再需要 `mkisofs.exe`。不需要 WSL、Bash、MSYS2、PowerShell 或 Python；.NET 要求见 RUNTIME.md。
 

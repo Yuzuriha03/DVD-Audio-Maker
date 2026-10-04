@@ -8,17 +8,20 @@ namespace DvdaMaker.Localization;
 /// <summary>Presentation-only localization. File names, configuration values and encoder inputs stay unchanged.</summary>
 public static class L
 {
-    private static readonly Lazy<Catalog> Messages = new(() => new Catalog());
+    private static readonly Lazy<Catalog> Messages = new(() => new Catalog("en"));
+    private static readonly Lazy<Catalog> JapaneseMessages = new(() => new Catalog("ja"));
     private static string _language = "zh-CN";
     public static string Language => _language;
     public static bool IsEnglish => _language == "en";
+    public static bool IsJapanese => _language == "ja";
 
     public static string Normalize(string? language) => language?.Trim().ToLowerInvariant() switch
     {
-        null or "" or "auto" => CultureInfo.InstalledUICulture.TwoLetterISOLanguageName == "zh" ? "zh-CN" : "en",
+        null or "" or "auto" => CultureInfo.InstalledUICulture.TwoLetterISOLanguageName switch { "zh" => "zh-CN", "ja" => "ja", _ => "en" },
         "zh" or "zh-cn" or "zh-hans" or "中文" => "zh-CN",
         "en" or "en-us" or "en-gb" or "english" => "en",
-        _ => throw new ArgumentException("Language must be auto, en, or zh-CN."),
+        "ja" or "ja-jp" or "日本語" or "japanese" => "ja",
+        _ => throw new ArgumentException("Language must be auto, en, zh-CN, or ja."),
     };
 
     public static void SetLanguage(string? language) => _language = Normalize(language);
@@ -30,14 +33,15 @@ public static class L
         {
             if (arguments[i] != "--language") { i++; continue; }
             if (result is not null || i + 1 == arguments.Count || arguments[i + 1].StartsWith("--", StringComparison.Ordinal))
-                throw new ArgumentException("Usage: --language auto|en|zh-CN (specify once).");
+                throw new ArgumentException("Usage: --language auto|en|zh-CN|ja (specify once).");
             result = Normalize(arguments[i + 1]);
             arguments.RemoveRange(i, 2);
         }
         return result;
     }
 
-    public static string T(string? text) => text is null ? "" : !IsEnglish ? text : Messages.Value.Translate(text, 0);
+    public static string T(string? text) => text is null ? "" : _language == "zh-CN" ? text :
+        (IsJapanese ? JapaneseMessages.Value : Messages.Value).Translate(text, 0);
     public static void LocalizeConsole()
     {
         Console.SetOut(TextWriter.Synchronized(new LocalizedWriter(Console.Out)));
@@ -47,16 +51,29 @@ public static class L
     public static IReadOnlyList<(string Source, string English, int Parameters)> Entries =>
         Messages.Value.All.Select(e => (e.Source, e.English, e.Parameters)).ToArray();
 
+    public static IReadOnlyList<(string Source, string Translation, int Parameters)> JapaneseEntries =>
+        JapaneseMessages.Value.All.Select(e => (e.Source, e.English, e.Parameters)).ToArray();
+
     private sealed class Catalog
     {
         public Entry[] All { get; }
         private readonly Dictionary<string, string> _exact;
         private readonly Entry[] _templates;
-        public Catalog()
+        public Catalog(string language)
         {
             using var input = typeof(L).Assembly.GetManifestResourceStream("DvdaMaker.Localization.Messages.en.json")
                 ?? throw new InvalidOperationException("The English language resource is missing.");
             All = JsonSerializer.Deserialize<Entry[]>(input) ?? [];
+            if (language == "ja")
+            {
+                using var japanese = typeof(L).Assembly.GetManifestResourceStream("DvdaMaker.Localization.Messages.ja.json")
+                    ?? throw new InvalidOperationException("The Japanese language resource is missing.");
+                var translations = JsonSerializer.Deserialize<Dictionary<string, string>>(japanese) ?? [];
+                All = All.Select(e => new Entry { Source = e.Source,
+                    English = translations.TryGetValue(e.Source, out var translated) ? translated
+                        : throw new InvalidOperationException("Missing Japanese translation: " + e.Source),
+                    Parameters = e.Parameters, Nested = e.Nested }).ToArray();
+            }
             _exact = All.Where(e => e.Parameters == 0).ToDictionary(e => Unescape(e.Source), e => Unescape(e.English), StringComparer.Ordinal);
             _templates = All.Where(e => e.Parameters > 0)
                 .OrderByDescending(e => Placeholder.Replace(e.Source, "").Length).ThenBy(e => e.Parameters).ToArray();

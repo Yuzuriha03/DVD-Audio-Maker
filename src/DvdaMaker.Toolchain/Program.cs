@@ -185,7 +185,7 @@ internal static class ToolchainProgram
 
         if (options.OneFile)
         {
-            await PublishOneFileAsync(repository, destination, outputBase, artifacts);
+            await PublishOneFileAsync(repository, destination, outputBase, artifacts, options.ReleaseVersion);
             return;
         }
 
@@ -197,7 +197,7 @@ internal static class ToolchainProgram
         Console.WriteLine($"[OK] ZIP archive: {archive}");
     }
 
-    private static async Task PublishOneFileAsync(string repository, string stage, string outputBase, string artifacts)
+    private static async Task PublishOneFileAsync(string repository, string stage, string outputBase, string artifacts, string releaseVersion)
     {
         var bundle = Path.Combine(repository, "tools", "win-build", "publish", "runtime-bundle-win-x64");
         var publish = Path.Combine(repository, "tools", "win-build", "publish", "onefile-win-x64");
@@ -243,7 +243,7 @@ internal static class ToolchainProgram
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
         var sidecars = new[]
         {
-            "README.md", "README.en.md", "RUNTIME.md", "RUNTIME.en.md",
+            "README.md", "README.en.md", "README.ja.md", "RUNTIME.md", "RUNTIME.en.md", "RUNTIME.ja.md",
             "LICENSE", "THIRD-PARTY.md", "THIRD-PARTY.en.md", "config.env.example",
         };
         foreach (var name in sidecars) File.Copy(Path.Combine(stage, name), Path.Combine(outputBase, name), true);
@@ -276,7 +276,7 @@ internal static class ToolchainProgram
             .Append("DVD-Audio-Maker.exe").Order(StringComparer.Ordinal).ToArray();
         File.WriteAllLines(Path.Combine(outputBase, "MANIFEST.txt"), packaged.Select(name =>
             RuntimeArchive.HashFile(Path.Combine(outputBase, name)) + "  " + name), new UTF8Encoding(false));
-        var archive = Path.Combine(outputBase, "DVD-Audio-Maker-win-x64-GUI-only.zip");
+        var archive = Path.Combine(outputBase, $"DVD-Audio-Maker-{releaseVersion}-win-x64.zip");
         var temporaryArchive = archive + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
@@ -338,10 +338,18 @@ internal static class ToolchainProgram
         var includeCli = false;
         var frameworkDependent = true;
         var oneFile = true;
+        var releaseVersion = "v1.0";
         for (var index = 0; index < args.Length; index++)
         {
             var value = args[index];
             if (value.Equals("package", StringComparison.OrdinalIgnoreCase)) continue;
+            if (value == "--version")
+            {
+                if (++index >= args.Length || !System.Text.RegularExpressions.Regex.IsMatch(args[index], @"\Av[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?\z"))
+                    throw new ArgumentException("--version requires a release version such as v1.0 or v1.1.0.");
+                releaseVersion = args[index];
+                continue;
+            }
             if (value == "--include-cli") { includeCli = true; continue; }
             if (value == "--framework-dependent") { frameworkDependent = true; continue; }
             if (value == "--self-contained") { frameworkDependent = false; continue; }
@@ -370,7 +378,7 @@ internal static class ToolchainProgram
         }
         if (oneFile && (includeCli || !frameworkDependent))
             throw new ArgumentException("The compact onefile release is GUI-only and framework-dependent. Use --directory for --include-cli or --self-contained.");
-        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent, magickShim, ffmpegLibraries, imageAuthor, oneFile, mediaRuntime);
+        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent, magickShim, ffmpegLibraries, imageAuthor, oneFile, mediaRuntime, releaseVersion);
     }
 
     private static void ValidatePrebuilt(string directory)
@@ -528,6 +536,7 @@ exit /b %ERRORLEVEL%
     {
         var candidates = new Dictionary<string, string[]>
         {
+            ["README.ja.md"] = [Path.Combine(repository, "tools", "win-build", "docs", "README.ja.md")],
             ["README.en.md"] =
             [
                 Path.Combine(repository, "tools", "win-build", "docs", "README.en.md"),
@@ -567,6 +576,13 @@ exit /b %ERRORLEVEL%
         var english = frameworkDependent
             ? "This compact package excludes the .NET runtime. **Before first use, install .NET 10 Desktop Runtime for Windows x64.** On the [official Microsoft download page](https://dotnet.microsoft.com/download/dotnet/10.0), choose the Windows x64 installer under .NET Desktop Runtime. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework 4.x alone is insufficient. An existing compatible Microsoft.WindowsDesktop.App 10.0.x installation can be reused."
             : "This package includes its Windows x64 .NET runtime; no separate .NET installation is needed.";
+        var japanese = frameworkDependent
+            ? "この配布パッケージに .NET は含まれません。**初回起動前に .NET 10 Desktop Runtime（Windows x64）をインストールしてください。** [Microsoft 公式ダウンロードページ](https://dotnet.microsoft.com/download/dotnet/10.0) の .NET Desktop Runtime から Windows x64 を選びます。通常の .NET Runtime、ASP.NET Core Runtime、.NET Framework 4.x では代用できません。対応する Microsoft.WindowsDesktop.App 10.0.x があれば再インストールは不要です。"
+            : "このパッケージには Windows x64 用 .NET ランタイムが含まれます。別途インストールは不要です。";
+        var layoutJa = oneFile ? "DVD-Audio-Maker.exe を実行してください。必要なコンポーネントを初回に %LOCALAPPDATA%/DVD-Audio-Maker/runtime に展開し、以後は検証して再利用します。説明書、設定例、ライセンスは EXE と同じ ZIP に含まれます。ライセンス表記は保管してください。"
+            : "すべてのフォルダーとコンポーネントを含めて展開してください。";
+        File.WriteAllText(Path.Combine(destination, "RUNTIME.ja.md"),
+            "# 実行環境\n\n" + japanese + "\n\n" + layoutJa + " FFmpeg、FFprobe、ImageMagick の別途インストールは不要です。\n", new UTF8Encoding(false));
         var layoutZh = oneFile ? "运行 DVD-Audio-Maker.exe。EXE 只内嵌必需运行组件，首次自动释放到 %LOCALAPPDATA%/DVD-Audio-Maker/runtime；以后复用并校验缓存。文档、配置示例和许可随 ZIP 单独提供，请保留随包授权声明。"
             : "请完整解压整个目录，保留所有组件子目录。";
         var layoutEn = oneFile ? "Run DVD-Audio-Maker.exe. Only required runtime components are embedded and automatically extracted into %LOCALAPPDATA%/DVD-Audio-Maker/runtime, then verified/reused. Documentation, example configuration and licenses accompany the EXE in the ZIP; retain the license notices."
@@ -579,6 +595,7 @@ exit /b %ERRORLEVEL%
         {
             ("README.md", "> **运行环境：** " + chinese),
             ("README.en.md", "> **Runtime requirement:** " + english),
+            ("README.ja.md", "> **実行環境：** " + japanese),
         })
         {
             var path = Path.Combine(destination, name);
@@ -666,7 +683,7 @@ exit /b %ERRORLEVEL%
     }
 
     private static void PrintUsage() => Console.Error.WriteLine(
-        "Usage: build-all.cmd [--onefile | --directory] [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent | --self-contained] [--ffmpeg-libraries <verified MLP DLL directory>] [--image-author <rebuilt native author directory>] [--media-runtime <verified shared media directory>]");
+        "Usage: build-all.cmd [--onefile | --directory] [--version <v1.0>] [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent | --self-contained] [--ffmpeg-libraries <verified MLP DLL directory>] [--image-author <rebuilt native author directory>] [--media-runtime <verified shared media directory>]");
 
     private sealed record ToolchainOptions(
         string? Repository,
@@ -679,5 +696,6 @@ exit /b %ERRORLEVEL%
         string? FfmpegLibraries,
         string? ImageAuthor,
         bool OneFile,
-        string? MediaRuntime);
+        string? MediaRuntime,
+        string ReleaseVersion);
 }

@@ -79,11 +79,12 @@ public sealed partial class DvdaOptions
         : ConfigDefaults.Dvd5Bytes;
     public string MlpSource => Get("DVDA_MLP_SOURCE").Trim().ToLowerInvariant() switch
     {
-        "external" => "external",
-        "MLP" => "MLP",
+        // Legacy configuration spelling is read as generic import, never a separate mode.
+        "external" or "MLP" => "external",
         "mlp-batch" or "batch-mlp" => "mlp-batch",
-        "ffmpeg" => throw new ArgumentException("FFmpeg MLP 编码分支已移除，请将 DVDA_MLP_SOURCE 改为 mlp-batch 或 external。"),
-        _ => throw new ArgumentException("DVDA_MLP_SOURCE 仅支持 mlp-batch、external 或 MLP（外部文件）。"),
+        "lpcm" => "lpcm",
+        "ffmpeg" => throw new ArgumentException("FFmpeg MLP 编码分支已移除，请将 DVDA_MLP_SOURCE 改为 mlp-batch、lpcm 或 external。"),
+        _ => throw new ArgumentException("DVDA_MLP_SOURCE 仅支持 mlp-batch、lpcm 或 external（外部文件）。"),
     };
     public string MlpExternalDirectory => TrimSlash(Get("DVDA_MLP_EXTERNAL_DIR").Trim()) is { Length: > 0 } directory
         ? directory : MlpSource == "mlp-batch" ? MlpDirectory : string.Empty;
