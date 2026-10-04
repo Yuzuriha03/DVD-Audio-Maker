@@ -9,6 +9,9 @@ public sealed class AudioMetadataReader(ProcessRunner processRunner, string ffpr
         string path,
         CancellationToken cancellationToken = default)
     {
+        if (RustBridge.Mode != "managed" && BuiltinMedia.IsBuiltin(ffprobe))
+            return await Task.Run(() => RustBridge.InspectAudio<AudioTrackMetadata>("Metadata",
+                BuiltinMedia.LibraryPath, path, null, cancellationToken), CancellationToken.None).ConfigureAwait(false);
         var result = await processRunner.RunAsync(new ProcessRequest
         {
             FileName = ffprobe,

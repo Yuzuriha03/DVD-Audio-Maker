@@ -22,6 +22,45 @@ impl dvda_native::media::Callbacks for ProcessCallbacks {
     }
 }
 
+/// Run typed audio inspection with caller-thread cancellation.
+/// # Safety
+/// request is live NUL-terminated UTF-8 JSON. Callbacks and state remain valid
+/// during this call and must not unwind. Release the result with dvda_rust_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dvda_rust_audio_run(
+    request: *const c_char,
+    emit: Option<Emit>,
+    cancel: Option<Cancel>,
+    state: *mut c_void,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<serde_json::Value, String> {
+        if request.is_null() {
+            return Err("Null audio job".into());
+        }
+        let (Some(emit), Some(cancel)) = (emit, cancel) else {
+            return Err("Null audio callback".into());
+        };
+        let text = unsafe { CStr::from_ptr(request) }
+            .to_str()
+            .map_err(|e| e.to_string())?;
+        let job = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let mut callbacks = MediaCallbacks {
+            emit,
+            cancel,
+            state,
+        };
+        Ok(json!(dvda_core::audio::execute(job, &mut callbacks)))
+    }));
+    let response = match result {
+        Ok(Ok(value)) => json!({"ok":true,"value":value}),
+        Ok(Err(error)) => json!({"ok":false,"error":error}),
+        Err(_) => json!({"ok":false,"error":"Rust panic caught at audio ABI boundary"}),
+    };
+    CString::new(response.to_string())
+        .expect("JSON contains no raw NUL")
+        .into_raw()
+}
+
 /// Run typed batch encoding; caller callbacks stay on the invoking thread.
 /// # Safety
 /// request is live NUL-terminated UTF-8 JSON. Callbacks and state remain valid

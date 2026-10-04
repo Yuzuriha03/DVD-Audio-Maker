@@ -133,7 +133,8 @@ public static class RustBridge
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_encoder_run")),
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_process_run")),
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_pcm_run")),
-                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_batch_run")));
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_batch_run")),
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_audio_run")));
         }
         catch { NativeLibrary.Free(library); throw; }
     }
@@ -149,11 +150,11 @@ public static class RustBridge
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr MediaRunDelegate(
         IntPtr request, MediaEmit emit, MediaCancel cancel, IntPtr state);
     private sealed record Exports(CallDelegate Call,FreeDelegate Free,AobScanDelegate ScanAob,AobObserveDelegate ObserveAob,
-        MediaRunDelegate RunMedia, MediaRunDelegate RunImage, MediaRunDelegate RunEncoder, MediaRunDelegate RunProcess, MediaRunDelegate RunPcm, MediaRunDelegate RunBatch);
+        MediaRunDelegate RunMedia, MediaRunDelegate RunImage, MediaRunDelegate RunEncoder, MediaRunDelegate RunProcess, MediaRunDelegate RunPcm, MediaRunDelegate RunBatch, MediaRunDelegate RunAudio);
 
     internal sealed record MediaFailure(string Kind, int? Code, string Message);
     internal sealed record MediaOutcome(int? ExitCode, MediaFailure? Failure,
-        string StandardOutput = "", string StandardError = "", double DurationSeconds = 0);
+        string StandardOutput = "", string StandardError = "", double DurationSeconds = 0, JsonElement? Data = null);
     internal static int RunMedia(object request, Action<int, string> onText, CancellationToken token)
         => RunNativeJob(request, onText, token, "media.execute").ExitCode!.Value;
     internal static int RunImage(object request, Action<int, string> onText, CancellationToken token)
@@ -164,6 +165,9 @@ public static class RustBridge
         => RunNativeJob(request, (_, _) => { }, token, "pcm.normalize");
     public static void RunBatch(object request, Action<int, string> onText, CancellationToken token)
         => RunNativeJob(request, onText, token, "batch.encode");
+    public static T InspectAudio<T>(string operation, string library, string input, int? resampleTo, CancellationToken token)
+        => RunNativeJob(new { Operation = operation, Library = library, Input = input, ResampleTo = resampleTo },
+            (_, _) => { }, token, "audio.inspect." + operation.ToLowerInvariant()).Data!.Value.Deserialize<T>()!;
     internal static ProcessResult RunProcess(ProcessRequest request, CancellationToken token)
     {
         MediaOutcome result;
@@ -206,7 +210,7 @@ public static class RustBridge
         {
             var run = operation switch { "image.execute" => native.RunImage, "encoder.execute" => native.RunEncoder,
                 "process.execute" => native.RunProcess, "pcm.normalize" => native.RunPcm,
-                "batch.encode" => native.RunBatch, _ => native.RunMedia };
+                "batch.encode" => native.RunBatch, "audio.inspect.metadata" or "audio.inspect.parameters" or "audio.inspect.decode" => native.RunAudio, _ => native.RunMedia };
             output = run(input, emit, cancel, IntPtr.Zero);
             GC.KeepAlive(emit); GC.KeepAlive(cancel);
             callbackFailure?.Throw();
@@ -233,6 +237,7 @@ public static class RustBridge
         if (failure.Kind == "Cancelled") throw new OperationCanceledException(token);
         if (failure.Kind == "Timeout") throw new TimeoutException(operation switch
         { "image.execute" => "内置图像处理超时。", "encoder.execute" => "MLP 编码器 DLL 编码超时，已取消并清理临时输出。", _ => "内置媒体处理超时。" });
+        if (failure.Kind == "NotSupported") throw new NotSupportedException(failure.Message);
         if (failure.Kind == "Argument") throw new ArgumentException(failure.Message);
         if (failure.Kind == "ArgumentOutOfRange") throw new ArgumentOutOfRangeException(null, failure.Message);
         if (failure.Kind == "InvalidData") throw new InvalidDataException(failure.Message);

@@ -10,6 +10,9 @@ public sealed class AudioParameterProbe(ProcessRunner runner, string ffprobe)
         string path,
         CancellationToken cancellationToken = default)
     {
+        if (RustBridge.Mode != "managed" && BuiltinMedia.IsBuiltin(ffprobe))
+            return await Task.Run(() => RustBridge.InspectAudio<AudioParameters>("Parameters",
+                BuiltinMedia.LibraryPath, path, null, cancellationToken), CancellationToken.None).ConfigureAwait(false);
         // Tiny valid streams may be shorter than FFprobe's MLP detection window.
         string[] inputFormat = Path.GetExtension(path).Equals(".mlp", StringComparison.OrdinalIgnoreCase)
             ? ["-f", "mlp"] : [];
