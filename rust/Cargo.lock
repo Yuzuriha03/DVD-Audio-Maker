@@ -15,6 +15,7 @@ dependencies = [
 name = "dvda-core"
 version = "0.1.0"
 dependencies = [
+ "dvda-native",
  "serde",
  "serde_json",
 ]

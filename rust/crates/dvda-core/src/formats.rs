@@ -148,11 +148,10 @@ fn iso_extract(request: Value) -> Result<Value, String> {
         iso_extract_directory(&bytes, &info, &entry, destination)?;
     } else {
         let parent = Path::new(destination).parent();
-        if let Some(parent) = parent {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)
-                    .map_err(|error| format!("{}: {error}", parent.display()))?;
-            }
+        if let Some(parent) = parent
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
         }
         let data = iso_file_data(&bytes, &info, &entry)?;
         fs::write(destination, data).map_err(|error| format!("{destination}: {error}"))?;
@@ -403,7 +402,7 @@ fn strip_version(request: Value) -> Result<Value, String> {
     if index + 1 >= value.len()
         || !value[index + 1..]
             .chars()
-            .all(|character| character.to_digit(10).is_some())
+            .all(|character| character.is_ascii_digit())
     {
         return Ok(Value::String(value.to_owned()));
     }
@@ -429,7 +428,7 @@ fn wav_layout(request: Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected WAVE path")?;
     let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
     let layout = parse_wav_layout(&bytes)?;
-    Ok(serde_json::to_value(layout).map_err(|error| error.to_string())?)
+    serde_json::to_value(layout).map_err(|error| error.to_string())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -562,16 +561,14 @@ fn wav_normalize(request: Value) -> Result<Value, String> {
         .create_new(true)
         .open(&request.destination)
         .map_err(|error| format!("{}: {error}", request.destination));
-    match file {
-        Ok(mut file) => {
-            use std::io::Write;
-            if let Err(error) = file.write_all(&output) {
-                drop(file);
-                let _ = fs::remove_file(&request.destination);
-                return Err(format!("{}: {error}", request.destination));
-            }
+    {
+        let mut file = file?;
+        use std::io::Write;
+        if let Err(error) = file.write_all(&output) {
+            drop(file);
+            let _ = fs::remove_file(&request.destination);
+            return Err(format!("{}: {error}", request.destination));
         }
-        Err(error) => return Err(error),
     }
     Ok(json!({"WrittenBytes": output.len()}))
 }
@@ -721,10 +718,10 @@ fn flac_comments(request: Value) -> Result<Value, String> {
         }
         let value = std::str::from_utf8(&data[offset..end])
             .map_err(|error| format!("Invalid FLAC comment UTF-8: {error}"))?;
-        if let Some((key, value)) = value.split_once('=') {
-            if !key.is_empty() {
-                comments.push(json!({"Key":key,"Value":value}));
-            }
+        if let Some((key, value)) = value.split_once('=')
+            && !key.is_empty()
+        {
+            comments.push(json!({"Key":key,"Value":value}));
         }
         offset = end;
     }
@@ -1087,10 +1084,10 @@ fn alac_apply_patches(request: Value) -> Result<Value, String> {
         }
     }
     let parent = Path::new(&request.destination).parent();
-    if let Some(parent) = parent {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
-        }
+    if let Some(parent) = parent
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
     }
     fs::write(&request.destination, &data)
         .map_err(|error| format!("{}: {error}", request.destination))?;
@@ -1115,7 +1112,9 @@ fn read_flac(path: &str) -> Result<Vec<(u8, Vec<u8>)>, String> {
     read_flac_document(&bytes).map(|(blocks, _)| blocks)
 }
 
-fn read_flac_document(bytes: &[u8]) -> Result<(Vec<(u8, Vec<u8>)>, usize), String> {
+type FlacBlocks = Vec<(u8, Vec<u8>)>;
+
+fn read_flac_document(bytes: &[u8]) -> Result<(FlacBlocks, usize), String> {
     if bytes.len() < 4 || &bytes[..4] != b"fLaC" {
         return Err("Not a FLAC stream.".into());
     }
@@ -1194,7 +1193,7 @@ fn hex_encode(data: &[u8]) -> String {
     result
 }
 fn hex_decode(value: &str) -> Result<Vec<u8>, String> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err("Hex input has an odd length".into());
     }
     let bytes = value.as_bytes();

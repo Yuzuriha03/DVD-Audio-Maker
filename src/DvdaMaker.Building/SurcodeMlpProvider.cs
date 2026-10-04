@@ -253,7 +253,7 @@ public sealed class SurcodeMlpProvider
 
     private string EncodingIdentity(string ffmpeg)
     {
-        static string Hash(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
+        static string Hash(string path) => FileHash.Sha256(path);
         var metadata = string.IsNullOrEmpty(_options.MlpMetadataContext)
             ? MlpEncoder.MetadataPolicy : Hash(_options.MlpMetadataContext);
         var converter = BuiltinMedia.IsBuiltin(ffmpeg) ? BuiltinMedia.Identity : Hash(ffmpeg);

@@ -30,9 +30,14 @@ public sealed class LpcmProvider(DvdaOptions options, ProcessRunner runner)
         if (code != 0) throw new InvalidDataException("LPCM format validation failed");
     }
 
-    public static string CachePath(string buildDirectory, string sourcePath) => Path.Combine(buildDirectory, "lpcm",
-        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(sourcePath).ToUpperInvariant()))) + ".wav");
+    public static string CachePath(string buildDirectory, string sourcePath)
+    {
+        var canonical = Path.GetFullPath(sourcePath).ToUpperInvariant();
+        var hash = RustBridge.Run<string>("hash.sha256_hex", canonical,
+            () => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(canonical))));
+        return Path.Combine(buildDirectory, "lpcm", hash + ".wav");
+    }
 
     public static void ValidateLayout(SurcodePcmWav.WavLayout layout)
     {

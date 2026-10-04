@@ -1034,6 +1034,7 @@ static void PreserveFormalMlpIndex()
 
 static void PublishDiscSetTransactionally()
 {
+    PublicationMigrationTests.CompareTransactions();
     var root = Path.Combine(Path.GetTempPath(), "dvda-publish-set", Guid.NewGuid().ToString("N"));
     var stage = Path.Combine(root, "stage");
     var final = Path.Combine(root, "final");
@@ -1341,6 +1342,7 @@ static void WriteCompatibleBuildLog()
 
 static void PublishIso()
 {
+    PublicationMigrationTests.CompareSingleFileOperations();
     var root = Path.Combine(Path.GetTempPath(), "dvda-publish-tests", Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(root);
     var source = Path.Combine(root, "source.iso");
@@ -1946,6 +1948,29 @@ static void PrepareCacheIdentityAndStorage()
     Directory.CreateDirectory(root);
     try
     {
+        var boundaryFile = Path.Combine(root, "中文-日本語-🎵.bin");
+        foreach (var length in new[] { 0, 1, 55, 56, 63, 64, 65, 65535, 65536, 65537, 131072, 262145 })
+        {
+            var bytes = Enumerable.Range(0, length).Select(index => (byte)(index * 37 + index / 251)).ToArray();
+            File.WriteAllBytes(boundaryFile, bytes);
+            File.SetLastWriteTimeUtc(boundaryFile, new DateTime(2020, 2, 29, 1, 2, 3, DateTimeKind.Utc).AddTicks(1234567));
+            var fingerprint = FileIdentityProbe.Compute(boundaryFile);
+            True(fingerprint is not null, "Identity must support Unicode paths and boundary lengths");
+            Equal((long)length, fingerprint!.Size);
+            Equal(File.GetLastWriteTimeUtc(boundaryFile).Ticks, fingerprint.LastWriteUtcTicks);
+            var sampleLength = Math.Min(65536, length);
+            Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes.AsSpan(0, sampleLength)))[..32], fingerprint.HeadHash);
+            Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes.AsSpan(length - sampleLength)))[..32], fingerprint.TailHash);
+            Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)), FileHash.Sha256(boundaryFile));
+        }
+        True(FileIdentityProbe.Compute(Path.Combine(root, "absent.bin")) is null, "Missing identity must stay null");
+        True(FileIdentityProbe.Compute(root) is null, "Directories have no audio identity");
+        using (var locked = new FileStream(boundaryFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            True(FileIdentityProbe.Compute(boundaryFile) is null, "Locked files must not produce usable identities");
+        try { FileHash.Sha256(Path.Combine(root, "absent.bin")); throw new Exception("Missing hash input accepted"); }
+        catch (FileNotFoundException) { }
+        try { FileHash.Sha256(root); throw new Exception("Directory hash input accepted"); }
+        catch (UnauthorizedAccessException) { }
         var file = Path.Combine(root, "sample.bin");
         File.WriteAllBytes(file, [1, 2, 3, 4, 5, 6, 7, 8]);
         var identity = FileIdentityProbe.Compute(file);
@@ -3500,6 +3525,27 @@ static void VerifyMenuVisualThresholds()
 
 static void ParseBatchedMenuStatistics()
 {
+    // Same inputs exercise the independent managed and Rust parsers in compare mode.
+    foreach (var number in new[] { "  +1.25e2 ", "-0", "1e309", "NaN", "Infinity",
+        "1,234", "1_000", "\u00a0125\u00a0", "125\0", ".5", "5.", "0e9999" })
+    {
+        var valid = double.TryParse(number, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var expected) && double.IsFinite(expected);
+        var numericFrame = MenuVisualVerifier.ParseBatchFrameStats($"F|{number}|1|2\r\n");
+        Equal(valid, numericFrame is not null);
+        if (valid) Equal(expected, numericFrame![0]);
+        var numericOverlay = MenuBuildVerifier.ParseOverlayBatchOutput($"N|{number}\nH|20\nA|1\n", true, true);
+        Equal(valid, numericOverlay.Normal is not null);
+        if (valid) Equal(expected, numericOverlay.Normal!.Value);
+        MenuVisualVerifier.ParseIndexBatchOutput($"B|1|{number}\nT|1|{number}\nL|1|{number}|80\n", 1, true);
+    }
+    True(MenuVisualVerifier.ParseBatchFrameStats("F|1|2|3\nF|1|2|3\n") is null,
+        "Duplicate frame records must be rejected");
+    foreach (var index in new[] { "01", "+1", " 1", "1\0", "2147483648", "١", "0", "-1" })
+        MenuVisualVerifier.ParseIndexBatchOutput($"B|{index}|75\nT|{index}|116\nL|{index}|240|80\n", 1, true);
+    var poisoned = MenuBuildVerifier.ParseOverlayBatchOutput("N|bad\nN|10\nH|20\nA|1\n", false, true);
+    True(poisoned.Normal is null && poisoned.Highlighted == 20 && poisoned.Arrow is null,
+        "Malformed overlay records stay invalid and unused arrow data stays absent");
     var output = "F|0.5|0.1|1234\n" +
         "B|1|75\nT|1|116\nL|1|240|80\n" +
         "B|2|238\nT|2|0\nL|2|150|80\n";

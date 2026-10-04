@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::io::{self, Read};
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -35,20 +36,67 @@ fn small_sigma_1(value: u32) -> u32 {
     value.rotate_right(17) ^ value.rotate_right(19) ^ (value >> 10)
 }
 
-pub fn sha256(data: &[u8]) -> [u8; 32] {
-    let mut message = data.to_vec();
-    let bit_length = (message.len() as u64).wrapping_mul(8);
-    message.push(0x80);
-    while message.len() % 64 != 56 {
-        message.push(0);
-    }
-    message.extend_from_slice(&bit_length.to_be_bytes());
+pub struct Sha256 {
+    state: [u32; 8],
+    buffer: [u8; 64],
+    buffered: usize,
+    length: u64,
+}
 
-    let mut state: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    for chunk in message.chunks_exact(64) {
+impl Default for Sha256 {
+    fn default() -> Self {
+        Self {
+            state: [
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+                0x5be0cd19,
+            ],
+            buffer: [0; 64],
+            buffered: 0,
+            length: 0,
+        }
+    }
+}
+
+impl Sha256 {
+    pub fn update(&mut self, mut data: &[u8]) {
+        self.length = self.length.wrapping_add(data.len() as u64);
+        if self.buffered != 0 {
+            let count = (64 - self.buffered).min(data.len());
+            self.buffer[self.buffered..self.buffered + count].copy_from_slice(&data[..count]);
+            self.buffered += count;
+            data = &data[count..];
+            if self.buffered != 64 {
+                return;
+            }
+            Self::compress(&mut self.state, &self.buffer);
+            self.buffered = 0;
+        }
+        let (chunks, remainder) = data.as_chunks::<64>();
+        for chunk in chunks {
+            Self::compress(&mut self.state, chunk);
+        }
+        self.buffer[..remainder.len()].copy_from_slice(remainder);
+        self.buffered = remainder.len();
+    }
+
+    pub fn finish(mut self) -> [u8; 32] {
+        let bit_length = self.length.wrapping_mul(8);
+        self.buffer[self.buffered] = 0x80;
+        self.buffer[self.buffered + 1..].fill(0);
+        if self.buffered >= 56 {
+            Self::compress(&mut self.state, &self.buffer);
+            self.buffer.fill(0);
+        }
+        self.buffer[56..].copy_from_slice(&bit_length.to_be_bytes());
+        Self::compress(&mut self.state, &self.buffer);
+        let mut digest = [0u8; 32];
+        for (index, word) in self.state.iter().enumerate() {
+            digest[index * 4..index * 4 + 4].copy_from_slice(&word.to_be_bytes());
+        }
+        digest
+    }
+
+    fn compress(state: &mut [u32; 8], chunk: &[u8]) {
         let mut words = [0u32; 64];
         for (index, word) in words[..16].iter_mut().enumerate() {
             let offset = index * 4;
@@ -66,7 +114,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
                 .wrapping_add(words[index - 16]);
         }
 
-        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *state;
         for index in 0..64 {
             let t1 = h
                 .wrapping_add(big_sigma_1(e))
@@ -92,17 +140,37 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
         state[6] = state[6].wrapping_add(g);
         state[7] = state[7].wrapping_add(h);
     }
+}
 
-    let mut digest = [0u8; 32];
-    for (index, word) in state.iter().enumerate() {
-        digest[index * 4..index * 4 + 4].copy_from_slice(&word.to_be_bytes());
-    }
-    digest
+pub fn sha256(data: &[u8]) -> [u8; 32] {
+    let mut hash = Sha256::default();
+    hash.update(data);
+    hash.finish()
 }
 
 pub fn hex_digest(data: &[u8]) -> String {
+    hex(&sha256(data))
+}
+
+pub fn reader_digest(mut reader: impl Read) -> io::Result<String> {
+    let mut hash = Sha256::default();
+    let mut buffer = vec![0; 128 * 1024];
+    loop {
+        let count = match reader.read(&mut buffer) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+    }
+    Ok(hex(&hash.finish()))
+}
+
+fn hex(digest: &[u8; 32]) -> String {
     let mut result = String::with_capacity(64);
-    for byte in sha256(data) {
+    for byte in digest {
         result.push(char::from(b"0123456789ABCDEF"[(byte >> 4) as usize]));
         result.push(char::from(b"0123456789ABCDEF"[(byte & 0x0f) as usize]));
     }
@@ -117,6 +185,16 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
                 .ok_or("Expected UTF-8 text to hash")?
                 .as_bytes(),
         ))),
+        "hash.sha256_file" => {
+            let path = request.as_str().ok_or("Expected file path")?;
+            let result = crate::identity::open_read(path).and_then(reader_digest);
+            Ok(match result {
+                Ok(hash) => serde_json::json!({"Hash": hash, "ErrorCode": null, "Error": null}),
+                Err(error) => {
+                    serde_json::json!({"Hash": null, "ErrorCode": error.raw_os_error(), "Error": error.to_string()})
+                }
+            })
+        }
         _ => Err(format!("Unsupported Rust hash operation: {operation}")),
     }
 }
@@ -135,5 +213,21 @@ mod tests {
             hex_digest(b"abc"),
             "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"
         );
+    }
+
+    #[test]
+    fn incremental_hash_matches_million_a_vector() {
+        let data = vec![b'a'; 1_000_000];
+        for chunk_size in [1, 55, 56, 63, 64, 65, 65537] {
+            let mut hash = Sha256::default();
+            for chunk in data.chunks(chunk_size) {
+                hash.update(chunk);
+                hash.update(&[]);
+            }
+            assert_eq!(
+                hex(&hash.finish()),
+                "CDC76E5C9914FB9281A1C7E284D73E67F1809A48A497200E046D39CCC7112CD0"
+            );
+        }
     }
 }

@@ -71,13 +71,13 @@ fn metadata_parse(request: Value) -> Result<Value, String> {
             time_base = Some(value(line).to_owned());
         } else if line.starts_with("duration=") {
             format_duration = value(line).parse::<f64>().ok();
-        } else if line.starts_with("TAG:") {
-            if let Some(separator) = line.find('=') {
-                tags.insert(
-                    line[4..separator].to_ascii_lowercase(),
-                    line[separator + 1..].to_owned(),
-                );
-            }
+        } else if line.starts_with("TAG:")
+            && let Some(separator) = line.find('=')
+        {
+            tags.insert(
+                line[4..separator].to_ascii_lowercase(),
+                line[separator + 1..].to_owned(),
+            );
         }
     }
     let duration = calculate_duration(duration_timestamp, time_base.as_deref())

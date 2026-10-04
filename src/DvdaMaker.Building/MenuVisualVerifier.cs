@@ -300,7 +300,11 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
         return frameStats is null ? null : new IndexPageBatch(frameStats, result.StandardOutput);
     }
 
-    internal static double[]? ParseBatchFrameStats(string output)
+    internal static double[]? ParseBatchFrameStats(string output) =>
+        RustBridge.Run<double[]?>("menu.parse_batch_frame_stats", output,
+            () => ParseBatchFrameStatsManaged(output));
+
+    private static double[]? ParseBatchFrameStatsManaged(string output)
     {
         var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.TrimEnd('\r'))
@@ -314,8 +318,21 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
             : null;
     }
 
+    private sealed record RustIndexBatchResult(
+        IReadOnlyList<int> Background,
+        IReadOnlyList<int> Thumbnail,
+        IReadOnlyList<int> Label);
+
     internal static (IReadOnlyList<int> Background, IReadOnlyList<int> Thumbnail,
         IReadOnlyList<int> Label) ParseIndexBatchOutput(string output, int expected, bool succeeded)
+    {
+        var result = RustBridge.Run<RustIndexBatchResult>("menu.parse_index_batch",
+            new { Output = output, Expected = expected, Succeeded = succeeded },
+            () => ParseIndexBatchOutputManaged(output, expected, succeeded));
+        return (result.Background, result.Thumbnail, result.Label);
+    }
+
+    private static RustIndexBatchResult ParseIndexBatchOutputManaged(string output, int expected, bool succeeded)
     {
         var records = new Dictionary<(string Kind, int Index), string[]>();
         var duplicates = new HashSet<(string Kind, int Index)>();
@@ -348,13 +365,13 @@ public sealed class MenuVisualVerifier(ProcessRunner runner)
         for (var index = 1; index <= expected; index++)
         {
             if (!Valid("B", index, 3, out var value, out _) ||
-                IsIndexBackgroundInvalid(value)) background.Add(index);
+                IsIndexBackgroundInvalidManaged(value)) background.Add(index);
             if (!Valid("T", index, 3, out value, out _) ||
-                IsIndexThumbnailMissing(value)) thumbnail.Add(index);
+                IsIndexThumbnailMissingManaged(value)) thumbnail.Add(index);
             if (!Valid("L", index, 4, out var maximum, out var mean) ||
-                IsIndexLabelMissing(maximum, mean)) label.Add(index);
+                IsIndexLabelMissingManaged(maximum, mean)) label.Add(index);
         }
-        return (background, thumbnail, label);
+        return new RustIndexBatchResult(background, thumbnail, label);
     }
 
     private static bool TryParse(string value, out double result) =>

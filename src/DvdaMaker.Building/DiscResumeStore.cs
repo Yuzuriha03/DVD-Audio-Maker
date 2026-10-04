@@ -166,9 +166,8 @@ public static class DiscSignature
                 .Order(StringComparer.Ordinal))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                using var stream = File.OpenRead(file);
                 builder.Append("author_library=").Append(Path.GetFileName(file)).Append('|')
-                    .Append(Convert.ToHexString(SHA256.HashData(stream))).Append('\n');
+                    .Append(FileHash.Sha256(file)).Append('\n');
             }
         }
         builder.Append("menu=").Append(options.MenuEnabled).Append('|')
@@ -185,9 +184,8 @@ public static class DiscSignature
             foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(BuiltinImages.LibraryPath)!)
                 .Where(path => Path.GetExtension(path) is ".dll" or ".xml").Order(StringComparer.Ordinal))
             {
-                using var stream = File.OpenRead(file);
                 builder.Append("image=").Append(Path.GetFileName(file)).Append('|')
-                    .Append(Convert.ToHexString(SHA256.HashData(stream))).Append('\n');
+                    .Append(FileHash.Sha256(file)).Append('\n');
             }
         }
 
@@ -217,7 +215,8 @@ public static class DiscSignature
             builder.Append('\n');
         }
 
-        return Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+        var canonical = builder.ToString();
+        return RustBridge.Run<string>("hash.sha256_hex", canonical,
+            () => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))));
     }
 }

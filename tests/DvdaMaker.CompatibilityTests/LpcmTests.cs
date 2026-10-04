@@ -1,10 +1,23 @@
 using DvdaMaker.Building;
 using DvdaMaker.Configuration;
+using DvdaMaker.SurcodeTool;
 
 internal static class LpcmTests
 {
     public static void FormatAndGrouping()
     {
+        foreach (var mask in new uint[] { 4, 3, 0x103, 0x33, 0xb, 0x10b, 0x3b, 7, 0x107, 0x37, 0xf, 0x10f, 0x3f, 0, 0x1234, uint.MaxValue })
+        {
+            var supported = mask is not (0 or 0x1234 or uint.MaxValue);
+            try { LpcmProvider.ValidateLayout(new SurcodePcmWav.WavLayout(24, 24, 2, 48000, 44, 6, 3, mask));
+                if (!supported) throw new Exception("Invalid LPCM channel mask accepted"); }
+            catch (InvalidDataException) { if (supported) throw; }
+        }
+        var source = Path.Combine(Path.GetTempPath(), "中文-日本語.flac");
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(source).ToUpperInvariant())));
+        if (LpcmProvider.CachePath("build", source) != Path.Combine("build", "lpcm", hash + ".wav"))
+            throw new Exception("LPCM cache naming changed");
         foreach (var rate in new[] { 44100, 48000, 88200, 96000, 176400, 192000 })
             foreach (var bits in new[] { 16, 20, 24 })
                 for (var channels = 1; channels <= 7; channels++)

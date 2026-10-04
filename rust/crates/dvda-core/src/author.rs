@@ -60,7 +60,7 @@ fn title_ends(request: Value) -> Result<Value, String> {
             let end = index + 1 == tracks.len()
                 || (mode != "one"
                     && if numeric > 0 {
-                        seen % numeric == 0
+                        seen.is_multiple_of(numeric)
                     } else {
                         let next = tracks[index + 1]
                             .as_object()
