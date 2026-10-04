@@ -1,9 +1,12 @@
+pub mod aob;
 pub mod author;
 pub mod config;
 pub mod formats;
+pub mod hash;
 pub mod menu;
 pub mod planner;
 pub mod probes;
+pub mod validation;
 pub mod workflow;
 
 use serde_json::{Value, json};
@@ -51,6 +54,9 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
             probes::dispatch(operation, request)
         }
         "author.normalize_title_mode" | "author.title_ends" => author::dispatch(operation, request),
+        "aob.pts_statistics" => aob::dispatch(operation, request),
+        "hash.sha256_hex" => hash::dispatch(operation, request),
+        "mlp.major_sync_interval" => validation::dispatch(operation, request),
         "abi.version" => Ok(json!({"version":1,"backend":"rust"})),
         _ => Err(format!("Unsupported Rust operation: {operation}")),
     }

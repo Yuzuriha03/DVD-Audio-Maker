@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using DvdaMaker.Formats.Mlp;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Building;
 
@@ -77,6 +78,13 @@ public static class MlpCacheValidator
     }
 
     public static int? MajorSyncInterval(ReadOnlySpan<byte> head)
+    {
+        var bytes = head.ToArray();
+        return RustBridge.Run<int?>("mlp.major_sync_interval", new { DataHex = Convert.ToHexString(bytes) },
+            () => MajorSyncIntervalManaged(bytes));
+    }
+
+    private static int? MajorSyncIntervalManaged(ReadOnlySpan<byte> head)
     {
         var position = 0;
         var accessUnit = 0;

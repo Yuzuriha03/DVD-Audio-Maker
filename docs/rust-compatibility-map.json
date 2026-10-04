@@ -622,14 +622,18 @@
       "id": 75,
       "name": "时间轴覆盖后续 AOB 分段",
       "managedEntry": "AnalyzeAllAobSegments",
-      "rustOperations": [],
+      "rustOperations": [
+        "aob.pts_statistics"
+      ],
       "status": "pass"
     },
     {
       "id": 76,
       "name": "AOB PTS 损坏边界检测",
       "managedEntry": "ValidateAobPtsDamageFixtures",
-      "rustOperations": [],
+      "rustOperations": [
+        "aob.pts_statistics"
+      ],
       "status": "pass"
     },
     {
@@ -868,6 +872,7 @@
       "rustOperations": [
         "config.parse",
         "decode.scan",
+        "hash.sha256_hex",
         "identity.equal",
         "metadata.parse",
         "path.safe_basename",
@@ -903,6 +908,7 @@
       "managedEntry": "PreparationSnapshotChecks",
       "rustOperations": [
         "config.parse",
+        "hash.sha256_hex",
         "identity.equal"
       ],
       "status": "pass"
@@ -918,7 +924,9 @@
       "id": 108,
       "name": "共享 AOB 扫描保持审计与时间轴语义",
       "managedEntry": "SharedAobScanPreservesDiagnostics",
-      "rustOperations": [],
+      "rustOperations": [
+        "aob.pts_statistics"
+      ],
       "status": "pass"
     },
     {
@@ -952,7 +960,8 @@
       "managedEntry": "MlpCacheIndexStorage",
       "rustOperations": [
         "cache.mlp_match",
-        "identity.equal"
+        "identity.equal",
+        "mlp.major_sync_interval"
       ],
       "status": "pass"
     },
@@ -1023,6 +1032,7 @@
     "metadata.parse": 5,
     "menu.font_width": 1,
     "author.normalize_title_mode": 14,
+    "aob.pts_statistics": 9,
     "menu.pages": 2,
     "menu.sanitize": 16,
     "math.estimate_aob": 107,
@@ -1030,6 +1040,7 @@
     "alac.find_bad_frames": 2,
     "flac.picture": 3,
     "decode.scan": 6,
+    "mlp.major_sync_interval": 2,
     "menu.font_size": 1,
     "track.number": 12,
     "identity.equal": 29,
@@ -1038,6 +1049,7 @@
     "config.parse": 51,
     "iso.strip_version": 3,
     "math.content_limit": 18,
+    "hash.sha256_hex": 8,
     "flac.comments": 2,
     "menu.short_album": 7,
     "cache.mlp_match": 11,
@@ -1046,5 +1058,5 @@
     "wav.layout": 47,
     "flac.replace_picture": 1
   },
-  "evidence": "build/rust-validation/p3-author-probes-compare-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p6-hash-compare-x64.json (ignored local report)"
 }
