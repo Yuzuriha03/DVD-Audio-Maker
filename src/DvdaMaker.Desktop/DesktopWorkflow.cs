@@ -4,7 +4,7 @@ using DvdaMaker.Preparation;
 
 namespace DvdaMaker.Desktop;
 
-internal enum WorkflowAction { Prepare, Preview, Build, Verify }
+internal enum WorkflowAction { Prepare, Build, Verify }
 internal sealed record WorkflowProgress(string Title, string Detail);
 internal sealed record WorkflowOutcome(string Title, string Detail);
 
@@ -14,24 +14,22 @@ internal static class DesktopWorkflow
         IProgress<WorkflowProgress> progress, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (action is WorkflowAction.Prepare or WorkflowAction.Preview or WorkflowAction.Build)
+        if (action is WorkflowAction.Prepare or WorkflowAction.Build)
         {
             progress.Report(new("正在检查音源", "读取曲目信息并确认音频能够正常解码，请稍候。"));
             var prepared = await new PreparationPipeline(options).RunAsync(cancellationToken: token).ConfigureAwait(false);
             foreach (var issue in prepared.Issues) Console.WriteLine($"[{issue.Level}] {issue}");
             if (prepared.FailureCount > 0) throw new InvalidOperationException($"音源检查失败 {prepared.FailureCount} 项，请查看日志。");
-            if (action == WorkflowAction.Prepare) return new("音源检查完成", "可以预演分盘，或直接点击“开始制作”。");
+            if (action == WorkflowAction.Prepare) return new("音源检查完成", "请点击“开始制作”生成光盘镜像。");
             token.ThrowIfCancellationRequested();
-            progress.Report(new(action == WorkflowAction.Preview ? "正在预演制作" : "正在制作光盘", "准备无损编码、计算分盘并处理光盘内容；较长音轨需要一些时间。"));
-            var built = await new BuildPipeline(options).RunAsync(action == WorkflowAction.Preview, cancellationToken: token).ConfigureAwait(false);
+            progress.Report(new("正在制作光盘", "准备无损编码、计算分盘并处理光盘内容；较长音轨需要一些时间。"));
+            var built = await new BuildPipeline(options).RunAsync(dryRun: false, cancellationToken: token).ConfigureAwait(false);
             BuildPlanService.Print(built.Plan, options, Console.Out);
             if (built.Plan.HasErrors || built.DiscResults.Any(result => !result.Succeeded))
                 throw new InvalidOperationException("构建未全部成功，请查看日志和构建目录。");
             Console.WriteLine($"索引：{built.IndexPath}");
             foreach (var disc in built.DiscResults) Console.WriteLine($"成品：{disc.PublishedIsoPath}");
-            return action == WorkflowAction.Preview
-                ? new("预演完成", $"共 {built.Plan.Tracks.Count} 首曲目，计划制作 {built.Plan.Discs.Count} 张光盘。尚未生成 ISO；点击“开始制作”继续。")
-                : new("制作完成", $"已制作 {built.Plan.Discs.Count} 张光盘。点击“查看成品”打开保存位置，建议再运行“验证成品”。");
+            return new("制作完成", $"已制作 {built.Plan.Discs.Count} 张光盘。点击“查看成品”打开保存位置，建议再运行“验证成品”。");
         }
         var pipeline = new VerificationPipeline(options);
         var errors = new List<string>();
@@ -64,7 +62,7 @@ internal static class DesktopWorkflow
                 if (menu.Unavailable) errors.Add("菜单验证不可用。");
             }
         }
-        progress.Report(new("正在逐轨检查音频", "逐轨比较目标 PCM，并核对每张盘内的全部 MLP 字节。"));
+        progress.Report(new("正在逐轨检查音频", "逐轨比较目标 PCM，并核对每张盘内的全部音频字节。"));
         var lossless = await pipeline.VerifyLosslessAsync(token).ConfigureAwait(false);
         foreach (var issue in lossless.Issues) errors.Add($"{issue.Code}: {issue.Message}");
         if (lossless.Unavailable) errors.Add("逐轨无损验证不可用。");

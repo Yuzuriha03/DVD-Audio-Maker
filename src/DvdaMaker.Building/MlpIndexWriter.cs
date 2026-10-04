@@ -27,6 +27,8 @@ public static class MlpIndexWriter
                 string.Join(", ", duplicateMlpPaths));
         }
 
+        var titleEnds = plan.Discs.SelectMany(disc => DvdaAuthorCommandBuilder.TitleEnds(disc, options.DiagnosticTitleMode))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         var root = new JsonObject
         {
             ["__meta__"] = new JsonObject
@@ -79,6 +81,7 @@ public static class MlpIndexWriter
                 ["ext_rebitded"] = track.ExternalRebitded,
                 ["param_changed"] = track.ParametersChanged,
                 ["title"] = track.Title,
+                ["lpcm_title_end"] = track.MlpSource == "lpcm" ? titleEnds[track.MlpPath] : null,
             };
         }
 

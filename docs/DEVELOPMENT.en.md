@@ -6,6 +6,8 @@ Standard user packages contain only the GUI entry point. CLI source, solution pr
 
 Media operations now use in-process DLLs. Copy media-native from a validated release to build/media-native before running from source, or follow the [Windows build instructions](../tools/win-build/README.en.md). Routine C# changes do not require native recompilation. NativeMediaDirectory selects the MSBuild input; DVDA_MEDIA_NATIVE_DIR can select a runtime directory. The GUI needs no FFmpeg/FFprobe installation; comparison integration tests still need reference tools.
 
+GUI only offers source checking, building and output verification. Use cli.cmd build --dry-run for developer previews; it writes caches and an independent index. GUI smoke actions are Prepare, Build and Verify; Preview is rejected.
+
 ## Source-checkout commands
 
 ```bat

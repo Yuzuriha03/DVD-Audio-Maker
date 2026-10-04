@@ -31,6 +31,7 @@ internal static class TaskLogPresentation
         match = Regex.Match(text, @"^\[MLP DLL\].* / (\d+) Hz / (\d+) bit / (\d+) 声道，([\d,]+) 字节");
         if (match.Success) return new(TaskLogLevel.Success,
             $"音轨编码完成 · {double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) / 1000:0.###} kHz · {match.Groups[2]} 位 · {match.Groups[3]} 声道");
+        if (text.StartsWith("[LPCM] ")) return new(TaskLogLevel.Success, text[7..]);
         if (text.StartsWith("[PCM] ")) return new(TaskLogLevel.Information, text[6..], true);
         if (text.StartsWith("[FFmpeg PCM] "))
         {

@@ -316,6 +316,7 @@ public sealed class PreparationPipeline
     private IEnumerable<ValidationIssue> ValidateChannels(
         IReadOnlyList<AudioTrackMetadata> tracks)
     {
+        if (_options.MlpSource == "lpcm") yield break; // The author planner separates LPCM channel counts.
         foreach (var group in tracks.GroupBy(track => (track.SampleRate, track.Bits)))
         {
             var channels = group.GroupBy(track => track.Channels).ToArray();
