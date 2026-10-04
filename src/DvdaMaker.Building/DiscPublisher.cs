@@ -1,3 +1,5 @@
+using DvdaMaker.Processes;
+
 namespace DvdaMaker.Building;
 
 public static class DiscPublisher
@@ -8,6 +10,21 @@ public static class DiscPublisher
         string pendingIndexPath,
         string formalIndexPath,
         bool moveStagedIsos = false)
+    {
+        if (RustBridge.Mode == "managed")
+            return PublishSetManaged(isoFiles, finalDirectory, pendingIndexPath, formalIndexPath, moveStagedIsos);
+        return Invoke<IReadOnlyList<string>>("publish.set", new
+        {
+            IsoFiles = isoFiles.Select(item => new { item.SourcePath, item.FileName }).ToArray(),
+            FinalDirectory = finalDirectory, PendingIndexPath = pendingIndexPath,
+            FormalIndexPath = formalIndexPath, MoveStagedIsos = moveStagedIsos,
+        });
+    }
+
+    // Mutations execute once. Compatibility fixtures compare isolated managed/Rust trees.
+    internal static IReadOnlyList<string> PublishSetManaged(
+        IReadOnlyList<(string SourcePath, string FileName)> isoFiles, string finalDirectory,
+        string pendingIndexPath, string formalIndexPath, bool moveStagedIsos = false)
     {
         var duplicateNames = isoFiles
             .GroupBy(item => item.FileName, StringComparer.OrdinalIgnoreCase)
@@ -122,11 +139,19 @@ public static class DiscPublisher
         string finalDirectory,
         string fileName)
     {
+        if (RustBridge.Mode == "managed") return PublishManaged(sourceIso, finalDirectory, fileName);
+        return PublishResult(Invoke<PublicationResult>("publish.single",
+            new { Source = sourceIso, Directory = finalDirectory, Name = fileName }), fileName);
+    }
+
+    internal static (string Path, BuildDiagnostic? Diagnostic) PublishManaged(
+        string sourceIso, string finalDirectory, string fileName)
+    {
         Directory.CreateDirectory(finalDirectory);
         var destination = Path.Combine(finalDirectory, fileName);
         try
         {
-            CopyVerified(sourceIso, destination);
+            CopyVerifiedManaged(sourceIso, destination);
             return (destination, null);
         }
         catch (IOException exception)
@@ -134,7 +159,7 @@ public static class DiscPublisher
             var alternative = Path.Combine(
                 finalDirectory,
                 Path.GetFileNameWithoutExtension(fileName) + "_new.iso");
-            CopyVerified(sourceIso, alternative);
+            CopyVerifiedManaged(sourceIso, alternative);
             return (alternative, new BuildDiagnostic(
                 BuildDiagnosticSeverity.Warning,
                 "FINAL_ISO_IN_USE",
@@ -145,7 +170,7 @@ public static class DiscPublisher
             var alternative = Path.Combine(
                 finalDirectory,
                 Path.GetFileNameWithoutExtension(fileName) + "_new.iso");
-            CopyVerified(sourceIso, alternative);
+            CopyVerifiedManaged(sourceIso, alternative);
             return (alternative, new BuildDiagnostic(
                 BuildDiagnosticSeverity.Warning,
                 "FINAL_ISO_IN_USE",
@@ -158,11 +183,19 @@ public static class DiscPublisher
         string stagingDirectory,
         string fileName)
     {
+        if (RustBridge.Mode == "managed") return StageIsoManaged(sourceIso, stagingDirectory, fileName);
+        return PublishResult(Invoke<PublicationResult>("publish.stage",
+            new { Source = sourceIso, Directory = stagingDirectory, Name = fileName }), fileName);
+    }
+
+    internal static (string Path, BuildDiagnostic? Diagnostic) StageIsoManaged(
+        string sourceIso, string stagingDirectory, string fileName)
+    {
         var sourceRoot = Path.GetPathRoot(Path.GetFullPath(sourceIso));
         var stagingRoot = Path.GetPathRoot(Path.GetFullPath(stagingDirectory));
         if (!string.Equals(sourceRoot, stagingRoot, StringComparison.OrdinalIgnoreCase))
         {
-            return Publish(sourceIso, stagingDirectory, fileName);
+            return PublishManaged(sourceIso, stagingDirectory, fileName);
         }
 
         Directory.CreateDirectory(stagingDirectory);
@@ -173,6 +206,12 @@ public static class DiscPublisher
     }
 
     public static void CopyVerified(string source, string destination)
+    {
+        if (RustBridge.Mode == "managed") { CopyVerifiedManaged(source, destination); return; }
+        Invoke<object?>("publish.copy", new { Source = source, Destination = destination });
+    }
+
+    internal static void CopyVerifiedManaged(string source, string destination)
     {
         var temporary = destination + ".copying";
         CopyToTemporaryVerified(source, temporary);
@@ -202,6 +241,30 @@ public static class DiscPublisher
         {
         }
     }
+
+    private sealed record PublicationResult(string Path, string? Warning);
+    private sealed record PublicationFailure(string Kind, int? Code, string Message);
+    private sealed record PublicationOutcome<T>(T Value, PublicationFailure? Failure);
+
+    private static T Invoke<T>(string operation, object request)
+    {
+        if (!RustBridge.Enabled) throw new InvalidOperationException($"Unknown DVDA_RUST_MODE: {RustBridge.Mode}");
+        var outcome = RustBridge.Invoke<PublicationOutcome<T>>(operation, request);
+        if (outcome.Failure is not { } error) return outcome.Value;
+        throw error.Kind switch
+        {
+            "InvalidData" => new InvalidDataException(error.Message),
+            "Access" => new UnauthorizedAccessException(error.Message),
+            _ when error.Code == 2 => new FileNotFoundException(error.Message),
+            _ when error.Code == 3 => new DirectoryNotFoundException(error.Message),
+            _ => new IOException(error.Message, unchecked((int)0x80070000) | (error.Code ?? 31)),
+        };
+    }
+
+    private static (string Path, BuildDiagnostic? Diagnostic) PublishResult(PublicationResult result, string fileName) =>
+        (result.Path, result.Warning is null ? null : new BuildDiagnostic(
+            BuildDiagnosticSeverity.Warning, "FINAL_ISO_IN_USE",
+            $"无法覆盖 {fileName}（{result.Warning}），已改写为 {System.IO.Path.GetFileName(result.Path)}。"));
 
     private sealed class PublicationItem(
         string source,

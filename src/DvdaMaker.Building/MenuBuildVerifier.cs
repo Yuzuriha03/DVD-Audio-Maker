@@ -223,7 +223,18 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
     internal static (double? Normal, double? Highlighted, double? Arrow) ParseOverlayBatchOutput(
         string output, bool needsArrow, bool succeeded)
     {
-        if (!succeeded) return (null, null, null);
+        var result = RustBridge.Run<OverlayStatistics>("menu.parse_overlay_batch",
+            new { Output = output, NeedsArrow = needsArrow, Succeeded = succeeded },
+            () => ParseOverlayBatchOutputManaged(output, needsArrow, succeeded));
+        return (result.Normal, result.Highlighted, result.Arrow);
+    }
+
+    private sealed record OverlayStatistics(double? Normal, double? Highlighted, double? Arrow);
+
+    private static OverlayStatistics ParseOverlayBatchOutputManaged(
+        string output, bool needsArrow, bool succeeded)
+    {
+        if (!succeeded) return new(null, null, null);
         var values = new Dictionary<string, double>(StringComparer.Ordinal);
         var duplicates = new HashSet<string>(StringComparer.Ordinal);
         foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
@@ -241,7 +252,7 @@ public sealed partial class MenuBuildVerifier(ProcessRunner runner, BuildLogWrit
         }
         double? Get(string kind) => duplicates.Contains(kind) || !values.TryGetValue(kind, out var value)
             ? null : value;
-        return (Get("N"), Get("H"), needsArrow ? Get("A") : null);
+        return new(Get("N"), Get("H"), needsArrow ? Get("A") : null);
     }
 
     private async Task<double?> ReadInkAsync(

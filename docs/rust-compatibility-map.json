@@ -47,7 +47,9 @@
       "managedEntry": "LpcmTests.FormatAndGrouping",
       "rustOperations": [
         "disc.plan",
+        "hash.sha256_hex",
         "lpcm.validate_format",
+        "lpcm.validate_layout",
         "math.content_limit",
         "math.estimate_aob"
       ],
@@ -524,28 +526,39 @@
       "id": 62,
       "name": "ISO 发布长度校验",
       "managedEntry": "PublishIso",
-      "rustOperations": [],
+      "rustOperations": [
+        "publish.copy",
+        "publish.single",
+        "publish.stage"
+      ],
       "status": "pass"
     },
     {
       "id": 63,
       "name": "同卷 ISO 暂存移动与冲突保护",
       "managedEntry": "StageIsoWithoutCopy",
-      "rustOperations": [],
+      "rustOperations": [
+        "publish.set",
+        "publish.stage"
+      ],
       "status": "pass"
     },
     {
       "id": 64,
       "name": "多盘与索引事务发布回滚",
       "managedEntry": "PublishDiscSetTransactionally",
-      "rustOperations": [],
+      "rustOperations": [
+        "publish.set"
+      ],
       "status": "pass"
     },
     {
       "id": 65,
       "name": "多盘同卷移动发布与失败回滚",
       "managedEntry": "PublishMovedDiscSetTransactionally",
-      "rustOperations": [],
+      "rustOperations": [
+        "publish.set"
+      ],
       "status": "pass"
     },
     {
@@ -693,7 +706,8 @@
         "config.parse",
         "disc.plan",
         "math.content_limit",
-        "math.estimate_aob"
+        "math.estimate_aob",
+        "publish.single"
       ],
       "status": "pass"
     },
@@ -706,7 +720,9 @@
         "config.parse",
         "disc.plan",
         "math.content_limit",
-        "math.estimate_aob"
+        "math.estimate_aob",
+        "publish.single",
+        "publish.stage"
       ],
       "status": "pass"
     },
@@ -807,9 +823,9 @@
       "name": "菜单批量统计解析与缺失回退",
       "managedEntry": "ParseBatchedMenuStatistics",
       "rustOperations": [
-        "menu.visual_background_invalid",
-        "menu.visual_label_missing",
-        "menu.visual_thumbnail_missing"
+        "menu.parse_batch_frame_stats",
+        "menu.parse_index_batch",
+        "menu.parse_overlay_batch"
       ],
       "status": "pass"
     },
@@ -818,9 +834,9 @@
       "name": "菜单批量统计单页单进程",
       "managedEntry": "BatchMenuProcessCalls",
       "rustOperations": [
-        "menu.visual_background_invalid",
-        "menu.visual_label_missing",
-        "menu.visual_thumbnail_missing"
+        "menu.parse_batch_frame_stats",
+        "menu.parse_index_batch",
+        "menu.parse_overlay_batch"
       ],
       "status": "pass"
     },
@@ -888,6 +904,7 @@
         "config.parse",
         "decode.scan",
         "hash.sha256_hex",
+        "identity.compute",
         "identity.equal",
         "metadata.parse",
         "path.safe_basename",
@@ -912,6 +929,8 @@
       "name": "准备缓存身份与存储规则",
       "managedEntry": "PrepareCacheIdentityAndStorage",
       "rustOperations": [
+        "hash.sha256_file",
+        "identity.compute",
         "identity.equal",
         "prepare.cache_reusable"
       ],
@@ -924,6 +943,7 @@
       "rustOperations": [
         "config.parse",
         "hash.sha256_hex",
+        "identity.compute",
         "identity.equal"
       ],
       "status": "pass"
@@ -951,6 +971,7 @@
       "rustOperations": [
         "audio.parameters",
         "config.parse",
+        "identity.compute",
         "identity.equal"
       ],
       "status": "pass"
@@ -963,6 +984,8 @@
         "audio.parameters",
         "cache.mlp_match",
         "config.parse",
+        "hash.sha256_file",
+        "identity.compute",
         "identity.equal",
         "wav.layout",
         "wav.normalize"
@@ -975,6 +998,7 @@
       "managedEntry": "MlpCacheIndexStorage",
       "rustOperations": [
         "cache.mlp_match",
+        "identity.compute",
         "identity.equal",
         "mlp.major_sync_interval"
       ],
@@ -985,6 +1009,7 @@
       "name": "逐盘续跑凭据规则",
       "managedEntry": "DiscResumeStoreRules",
       "rustOperations": [
+        "identity.compute",
         "identity.equal",
         "resume.signature_match"
       ],
@@ -997,6 +1022,9 @@
       "rustOperations": [
         "config.parse",
         "disc.plan",
+        "hash.sha256_file",
+        "hash.sha256_hex",
+        "identity.compute",
         "math.content_limit",
         "math.estimate_aob"
       ],
@@ -1013,9 +1041,13 @@
         "config.parse",
         "disc.plan",
         "disk.group_requirements",
+        "hash.sha256_hex",
+        "identity.compute",
         "identity.equal",
         "math.content_limit",
         "math.estimate_aob",
+        "publish.set",
+        "publish.stage",
         "resume.signature_match",
         "track.number",
         "tracks.sort"
@@ -1041,6 +1073,7 @@
     "menu.normalize_path": 3,
     "path.safe_basename": 7,
     "resume.signature_match": 5,
+    "menu.parse_batch_frame_stats": 16,
     "audio.parameters": 26,
     "prepare.cache_reusable": 6,
     "wav.normalize": 20,
@@ -1048,36 +1081,45 @@
     "menu.font_width": 1,
     "author.normalize_title_mode": 14,
     "aob.pts_statistics": 9,
-    "menu.pages": 2,
     "menu.sanitize": 16,
-    "menu.visual_label_missing": 18,
+    "menu.pages": 2,
+    "menu.visual_label_missing": 3,
     "math.estimate_aob": 107,
     "disk.group_requirements": 13,
+    "identity.compute": 93,
     "alac.find_bad_frames": 2,
+    "menu.parse_overlay_batch": 17,
     "flac.picture": 3,
     "decode.scan": 6,
+    "publish.set": 20,
     "menu.visual_expected_index_cells": 9,
-    "menu.visual_background_invalid": 16,
+    "menu.visual_background_invalid": 2,
     "mlp.major_sync_interval": 2,
     "menu.font_size": 1,
     "menu.visual_near_solid": 3,
+    "publish.stage": 8,
     "track.number": 12,
     "identity.equal": 29,
     "lpcm.validate_format": 126,
     "menu.truncate": 10,
     "alac.cookie": 3,
     "config.parse": 51,
+    "publish.copy": 2,
     "iso.strip_version": 3,
     "math.content_limit": 18,
-    "hash.sha256_hex": 8,
+    "hash.sha256_file": 23,
+    "hash.sha256_hex": 21,
     "flac.comments": 2,
     "menu.short_album": 7,
     "cache.mlp_match": 11,
+    "publish.single": 5,
     "tracks.sort": 3,
-    "menu.visual_thumbnail_missing": 16,
+    "menu.visual_thumbnail_missing": 2,
+    "menu.parse_index_batch": 24,
     "disc.plan": 18,
     "wav.layout": 47,
-    "flac.replace_picture": 1
+    "flac.replace_picture": 1,
+    "lpcm.validate_layout": 16
   },
-  "evidence": "build/rust-validation/p7-menu-lpcm-compare-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p10-publication-compare-x64.json (ignored local report)"
 }

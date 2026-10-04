@@ -38,11 +38,11 @@ fn hex_value(character: u8) -> Option<u8> {
 
 fn decode_hex(text: &str) -> Option<Vec<u8>> {
     let bytes = text.as_bytes();
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return None;
     }
     let mut result = Vec::with_capacity(bytes.len() / 2);
-    for pair in bytes.chunks_exact(2) {
+    for pair in bytes.as_chunks::<2>().0 {
         let high = hex_value(pair[0])?;
         let low = hex_value(pair[1])?;
         result.push((high << 4) | low);

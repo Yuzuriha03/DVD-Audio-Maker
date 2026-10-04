@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use serde_json::{Value, json};
 
 fn is_wide_unit(value: u16) -> bool {
@@ -194,4 +196,210 @@ pub fn visual_expected_index_cells(request: Value) -> Result<Value, String> {
     Ok(json!(
         (album_count - page_index * per_page).clamp(0, per_page)
     ))
+}
+
+fn finite_number(value: &str) -> Option<f64> {
+    // Invariant NumberStyles.Float accepts ASCII numeric whitespace and trailing NULs.
+    let parsed = value
+        .trim_end_matches('\0')
+        .trim_matches(|c: char| c == ' ' || ('\t'..='\r').contains(&c))
+        .parse::<f64>()
+        .ok()?;
+    parsed.is_finite().then_some(parsed)
+}
+
+pub fn parse_batch_frame_stats(request: Value) -> Result<Value, String> {
+    let output = request.as_str().ok_or("Expected ImageMagick output")?;
+    let lines: Vec<&str> = output
+        .split('\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| line.trim_end_matches('\r'))
+        .filter(|line| line.starts_with("F|"))
+        .collect();
+    if lines.len() != 1 {
+        return Ok(Value::Null);
+    }
+    let fields: Vec<&str> = lines[0].split('|').collect();
+    if fields.len() != 4 {
+        return Ok(Value::Null);
+    }
+    let Some(mean) = finite_number(fields[1]) else {
+        return Ok(Value::Null);
+    };
+    let Some(deviation) = finite_number(fields[2]) else {
+        return Ok(Value::Null);
+    };
+    let Some(colors) = finite_number(fields[3]) else {
+        return Ok(Value::Null);
+    };
+    Ok(json!([mean, deviation, colors]))
+}
+
+pub fn parse_index_batch(request: Value) -> Result<Value, String> {
+    let output = text(&request, "Output");
+    let expected = request["Expected"]
+        .as_i64()
+        .ok_or("Missing expected cell count")?;
+    let succeeded = request["Succeeded"]
+        .as_bool()
+        .ok_or("Missing success flag")?;
+    let mut records = HashMap::<(String, i64), Vec<String>>::new();
+    let mut duplicates = HashSet::<(String, i64)>::new();
+    for line in output
+        .split('\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| line.trim_end_matches('\r'))
+    {
+        let mut fields: Vec<String> = line.split('|').map(str::to_owned).collect();
+        if fields.len() > 1 {
+            fields[1] = fields[1].trim_end_matches('\0').to_owned();
+        }
+        if fields.len() < 3
+            || !matches!(fields[0].as_str(), "B" | "T" | "L")
+            || fields[1].is_empty()
+            || !fields[1]
+                .chars()
+                .all(|character| character.is_ascii_digit())
+        {
+            continue;
+        }
+        let Ok(index) = fields[1].parse::<i32>().map(i64::from) else {
+            continue;
+        };
+        if !(1..=expected).contains(&index) {
+            continue;
+        }
+        let key = (fields[0].clone(), index);
+        if records.insert(key.clone(), fields).is_some() {
+            duplicates.insert(key);
+        }
+    }
+
+    fn valid(
+        records: &HashMap<(String, i64), Vec<String>>,
+        duplicates: &HashSet<(String, i64)>,
+        succeeded: bool,
+        kind: &str,
+        index: i64,
+        count: usize,
+    ) -> Option<(f64, f64)> {
+        if !succeeded || duplicates.contains(&(kind.to_owned(), index)) {
+            return None;
+        }
+        let fields = records.get(&(kind.to_owned(), index))?;
+        if fields.len() != count {
+            return None;
+        }
+        let first = finite_number(&fields[2])?;
+        let second = if count == 3 {
+            0.0
+        } else {
+            finite_number(&fields[3])?
+        };
+        Some((first, second))
+    }
+
+    let mut background = Vec::new();
+    let mut thumbnail = Vec::new();
+    let mut label = Vec::new();
+    if expected > 0 {
+        for index in 1..=expected {
+            match valid(&records, &duplicates, succeeded, "B", index, 3) {
+                Some((value, _)) if value <= 160.0 => {}
+                _ => background.push(index),
+            }
+            match valid(&records, &duplicates, succeeded, "T", index, 3) {
+                Some((value, _)) if value > 3.0 => {}
+                _ => thumbnail.push(index),
+            }
+            match valid(&records, &duplicates, succeeded, "L", index, 4) {
+                Some((maximum, mean)) if maximum > 200.0 && mean <= 200.0 => {}
+                _ => label.push(index),
+            }
+        }
+    }
+    Ok(json!({
+        "Background": background,
+        "Thumbnail": thumbnail,
+        "Label": label,
+    }))
+}
+
+pub fn parse_overlay_batch(request: Value) -> Result<Value, String> {
+    let output = request["Output"].as_str().ok_or("Missing overlay output")?;
+    let succeeded = request["Succeeded"]
+        .as_bool()
+        .ok_or("Missing success flag")?;
+    let needs_arrow = request["NeedsArrow"]
+        .as_bool()
+        .ok_or("Missing arrow flag")?;
+    let mut values = HashMap::new();
+    let mut invalid = HashSet::new();
+    if succeeded {
+        for line in output.split('\n').filter(|line| !line.is_empty()) {
+            let parts: Vec<_> = line.trim_end_matches('\r').split('|').collect();
+            let kind = parts[0];
+            if !matches!(kind, "N" | "H" | "A") {
+                continue;
+            }
+            let value = (parts.len() == 2)
+                .then(|| finite_number(parts[1]))
+                .flatten();
+            match value {
+                Some(value) if !values.contains_key(kind) => {
+                    values.insert(kind, value);
+                }
+                _ => {
+                    invalid.insert(kind);
+                }
+            }
+        }
+    }
+    let get = |kind| {
+        if invalid.contains(kind) {
+            None
+        } else {
+            values.get(kind).copied()
+        }
+    };
+    Ok(json!({
+        "Normal": get("N"),
+        "Highlighted": get("H"),
+        "Arrow": if needs_arrow { get("A") } else { None },
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_single_frame_statistics_and_rejects_non_finite_values() {
+        assert_eq!(
+            parse_batch_frame_stats(Value::String("F|1.5|2.5|3\r\n".into())).unwrap(),
+            json!([1.5, 2.5, 3.0])
+        );
+        assert_eq!(
+            parse_batch_frame_stats(Value::String("F|0.5|NaN|1234\n".into())).unwrap(),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn classifies_index_batch_records_and_duplicates() {
+        let result = parse_index_batch(json!({
+            "Output": "B|1|120\nT|1|4\nL|1|240|80\nB|2|120\nT|2|3\nL|2|240|80\nB|2|120\n",
+            "Expected": 2,
+            "Succeeded": true,
+        }))
+        .unwrap();
+        assert_eq!(
+            result,
+            json!({
+                "Background": [2],
+                "Thumbnail": [2],
+                "Label": [],
+            })
+        );
+    }
 }

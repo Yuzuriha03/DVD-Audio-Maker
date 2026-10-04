@@ -1,4 +1,5 @@
 //! Safe, narrow Rust wrappers for the existing C17 format DLL.
+pub mod files;
 
 use std::{
     ffi::{CStr, CString, OsStr, c_char, c_void},
