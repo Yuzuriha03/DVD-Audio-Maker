@@ -334,7 +334,7 @@ var tests = new (string Name, Action Run)[]
     ("外部进程非零退出码", HandleNonZeroExitCode),
     ("专辑多数参数归一化", NormalizeAlbumParameters),
     ("曲序和安全文件名", PrepareNamingHelpers),
-    ("ffmpeg 解码错误扫描", ScanDecodeErrors),
+    ("ffmpeg 解码错误扫描", () => { ScanDecodeErrors(); AudioMigrationTests.Run(); }),
     ("构建曲目全局排序", SortBuildTracks),
     ("按专辑贪心分盘", SplitAlbumsAcrossDiscs),
     ("专辑不跨盘", KeepAlbumOnOneDisc),

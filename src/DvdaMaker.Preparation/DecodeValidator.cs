@@ -25,6 +25,9 @@ public sealed partial class DecodeValidator(ProcessRunner processRunner, string 
         int? resampleTo,
         CancellationToken cancellationToken = default)
     {
+        if (RustBridge.Mode != "managed" && BuiltinMedia.IsBuiltin(ffmpeg))
+            return await Task.Run(() => RustBridge.InspectAudio<DecodeCheckResult>("Decode",
+                BuiltinMedia.LibraryPath, path, resampleTo, cancellationToken), CancellationToken.None).ConfigureAwait(false);
         var filters = new List<string>();
         if (resampleTo is not null)
         {

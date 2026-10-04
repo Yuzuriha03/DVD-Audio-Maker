@@ -1,4 +1,5 @@
 pub mod aob;
+pub mod audio;
 pub mod author;
 pub mod batch;
 pub mod config;
