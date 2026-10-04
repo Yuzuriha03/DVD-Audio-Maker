@@ -130,7 +130,8 @@ public static class RustBridge
                 Marshal.GetDelegateForFunctionPointer<AobObserveDelegate>(NativeLibrary.GetExport(library,"dvda_rust_aob_observe")),
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_media_run")),
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_image_run")),
-                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_encoder_run")));
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_encoder_run")),
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_process_run")));
         }
         catch { NativeLibrary.Free(library); throw; }
     }
@@ -146,22 +147,43 @@ public static class RustBridge
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr MediaRunDelegate(
         IntPtr request, MediaEmit emit, MediaCancel cancel, IntPtr state);
     private sealed record Exports(CallDelegate Call,FreeDelegate Free,AobScanDelegate ScanAob,AobObserveDelegate ObserveAob,
-        MediaRunDelegate RunMedia, MediaRunDelegate RunImage, MediaRunDelegate RunEncoder);
+        MediaRunDelegate RunMedia, MediaRunDelegate RunImage, MediaRunDelegate RunEncoder, MediaRunDelegate RunProcess);
 
     internal sealed record MediaFailure(string Kind, int? Code, string Message);
-    internal sealed record MediaOutcome(int? ExitCode, MediaFailure? Failure);
+    internal sealed record MediaOutcome(int? ExitCode, MediaFailure? Failure,
+        string StandardOutput = "", string StandardError = "", double DurationSeconds = 0);
     internal static int RunMedia(object request, Action<int, string> onText, CancellationToken token)
-        => RunNativeJob(request, onText, token, "media.execute");
+        => RunNativeJob(request, onText, token, "media.execute").ExitCode!.Value;
     internal static int RunImage(object request, Action<int, string> onText, CancellationToken token)
-        => RunNativeJob(request, onText, token, "image.execute");
+        => RunNativeJob(request, onText, token, "image.execute").ExitCode!.Value;
     public static int RunEncoder(object request, Action<int, string> onText, CancellationToken token)
-        => RunNativeJob(request, onText, token, "encoder.execute");
+        => RunNativeJob(request, onText, token, "encoder.execute").ExitCode!.Value;
+    internal static ProcessResult RunProcess(ProcessRequest request, CancellationToken token)
+    {
+        MediaOutcome result;
+        try
+        {
+            result = RunNativeJob(new { request.FileName, request.Arguments, request.WorkingDirectory,
+                Environment = request.Environment.Select(p => new object?[] {p.Key, p.Value}).ToArray(),
+                OutputCodePage = request.OutputEncoding.CodePage, ErrorCodePage = request.ErrorEncoding.CodePage,
+                request.CaptureOutput, request.CaptureError,
+                TimeoutMillis = request.Timeout is { } time && time != Timeout.InfiniteTimeSpan ? (long?)Math.Max(0, time.TotalMilliseconds) : null },
+                (stream, json) => { var line = JsonSerializer.Deserialize<string>(json)!;
+                    if (stream == 1) request.OnOutputLine?.Invoke(line); else request.OnErrorLine?.Invoke(line); }, token, "process.execute");
+        }
+        catch (TimeoutException)
+        { throw new TimeoutException($"外部程序运行超时: {CommandLineFormatter.Format(request.FileName, request.Arguments)}"); }
+        var value = new ProcessResult(request.FileName, request.Arguments, result.ExitCode!.Value,
+            result.StandardOutput, result.StandardError, TimeSpan.FromSeconds(result.DurationSeconds));
+        if (request.ThrowOnNonZeroExitCode && !value.Succeeded) throw new ProcessExecutionException(value);
+        return value;
+    }
     public static void WriteEncoderMetadata(object request)
     {
         var result = Invoke<MediaOutcome>("encoder.write_metadata", request);
         ThrowJobFailure(result, "encoder.write_metadata", CancellationToken.None);
     }
-    private static int RunNativeJob(object request, Action<int, string> onText, CancellationToken token, string operation)
+    private static MediaOutcome RunNativeJob(object request, Action<int, string> onText, CancellationToken token, string operation)
     {
         if (!Enabled) throw new InvalidOperationException($"Unknown DVDA_RUST_MODE: {Mode}");
         var native = Native.Value;
@@ -176,7 +198,8 @@ public static class RustBridge
         MediaCancel cancel = _ => token.IsCancellationRequested || callbackFailure is not null ? 1 : 0;
         try
         {
-            var run = operation switch { "image.execute" => native.RunImage, "encoder.execute" => native.RunEncoder, _ => native.RunMedia };
+            var run = operation switch { "image.execute" => native.RunImage, "encoder.execute" => native.RunEncoder,
+                "process.execute" => native.RunProcess, _ => native.RunMedia };
             output = run(input, emit, cancel, IntPtr.Zero);
             GC.KeepAlive(emit); GC.KeepAlive(cancel);
             callbackFailure?.Throw();
@@ -187,7 +210,8 @@ public static class RustBridge
             var result = root.GetProperty("value").Deserialize<MediaOutcome>()!;
             Calls.AddOrUpdate(operation, 1, (_, count) => count + 1);
             ThrowJobFailure(result, operation, token);
-            return result.ExitCode ?? throw new InvalidDataException("Missing media exit status.");
+            if (result.ExitCode is null) throw new InvalidDataException("Missing native job exit status.");
+            return result;
         }
         finally
         {
