@@ -98,12 +98,13 @@ public sealed class DiscPlanner
         int groupTrackLimit,
         ICollection<BuildDiagnostic> diagnostics)
     {
-        var keyOrder = new List<(int SampleRate, int Bits, string Codec, int Channels)>();
-        var buckets = new Dictionary<(int SampleRate, int Bits, string Codec, int Channels), List<BuildTrack>>();
+        var keyOrder = new List<(int SampleRate, int Bits, string Codec, int Channels, uint ChannelMask)>();
+        var buckets = new Dictionary<(int SampleRate, int Bits, string Codec, int Channels, uint ChannelMask), List<BuildTrack>>();
         foreach (var track in albums.SelectMany(album => album.Tracks))
         {
             var key = (track.SampleRate, track.Bits, track.MlpSource == "lpcm" ? "lpcm" : "mlp",
-                track.MlpSource == "lpcm" ? track.Channels ?? 0 : 0);
+                track.MlpSource == "lpcm" ? track.Channels ?? 0 : 0,
+                track.MlpSource == "lpcm" ? track.ChannelMask ?? 0 : 0);
             if (!buckets.TryGetValue(key, out var bucket))
             {
                 bucket = [];

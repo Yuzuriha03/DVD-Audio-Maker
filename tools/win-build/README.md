@@ -141,3 +141,5 @@ tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.C
 GUI 仅提供检查音源、开始制作、验证成品。开发 CLI 保留 cli.cmd build --dry-run，会写编码缓存和独立索引，但不生成 ISO。旧 SurCode 导入选项已移除；旧配置值映射为通用外部 MLP 导入。
 
 本目录 docs/README.md 与 docs/README.en.md 是发布包用户指南模板，只写安装、使用和排错，不放编译命令或开发验收报告。仓库根 README 另提供开发文档入口。打包前同步中英文模板，--version 必须与发布标签和文档中的附件名一致。
+
+GUI 与用户说明支持中文、英文和日语。发布模板为 docs/README.md、docs/README.en.md、docs/README.ja.md；三语 README/RUNTIME 随 EXE 平铺发布。MLP 与 LPCM 为独立编码选项，LPCM 使用规范化整数 WAVE 和原生 DVD-Audio 封装，不调用 MLP 编码核心。原生修改使用 test-lpcm-native.py 检查全部支持格式、跨曲和短音轨边界。

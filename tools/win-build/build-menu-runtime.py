@@ -51,7 +51,7 @@ def main():
             'compiler':subprocess.check_output([str(compiler),'--version'],env=env).decode().splitlines()[0],
             'files':files,'source_inputs':{f.relative_to(root).as_posix():sha(f) for f in sorted(root.rglob('*')) if f.is_file()}}
     (out/'menu-build.json').write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')
-    (out/'NOTICE.txt').write_text('Menu algorithms derived from patched dvdauthor 0.7.1.\nSource: tools/menu-native/vendor; provenance: ORIGIN.json.\n\n'+(vendor/'COPYING').read_text(encoding='utf-8'),encoding='utf-8')
+    (out/'NOTICE.txt').write_text('Menu algorithms derived from patched dvdauthor 0.7.1.\nLPCM byte packing derived from GPL-3.0-or-later dvda-author: tools/dvda-author-mlp8/src/audio.c.\nSource: tools/menu-native/vendor; provenance: ORIGIN.json.\n\n'+(vendor/'COPYING').read_text(encoding='utf-8'),encoding='utf-8')
     print(json.dumps(files),flush=True)
 
 if __name__=='__main__':main()

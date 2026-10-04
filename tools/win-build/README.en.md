@@ -123,7 +123,7 @@ The old mlp profile remains for reference and independent maintenance. Standard 
 
 ## Validation and cache maintenance
 
-Packaging verifies hashes, x64 architecture and imports, produces MANIFEST.txt, and inserts runtime-specific notices into bilingual README/RUNTIME files. All font glyphs remain. ZIP format and compression settings are not changed as a size-reduction technique.
+Packaging verifies hashes, x64 architecture and imports, produces MANIFEST.txt, and inserts runtime-specific notices into Chinese, English and Japanese README/RUNTIME files. All font glyphs remain. ZIP format and compression settings are not changed as a size-reduction technique.
 
 ```bat
 dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
@@ -140,4 +140,6 @@ Local build/README.md describes retained components, references and the current 
 
 The GUI offers Check sources, Build discs and Verify output. Preview is available only through the developer CLI: cli.cmd build --dry-run. It writes audio caches and a separate index without creating ISOs. The old SurCode import choice is removed; legacy configuration values map to generic external MLP import.
 
-The release README templates are docs/README.md and docs/README.en.md in this directory. They contain installation and usage instructions, not compiler commands or validation reports. The root repository README links to developer documentation. Update both languages before packaging; --version must match the release tag and the documented asset name.
+The release README templates are docs/README.md, docs/README.en.md and docs/README.ja.md in this directory. They contain installation and usage instructions, not compiler commands or validation reports. The root repository README links to developer documentation. Update all three languages before packaging; --version must match the release tag and the documented asset name.
+
+MLP and LPCM are separate GUI encoding options. LPCM uses normalized integer WAVE and native DVD-Audio packing, with no MLP encoder call. Validate native changes with test-lpcm-native.py; use small synthetic fixtures for new format paths.

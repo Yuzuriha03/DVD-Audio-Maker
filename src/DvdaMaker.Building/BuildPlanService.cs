@@ -1,4 +1,5 @@
 using DvdaMaker.Configuration;
+using DvdaMaker.SurcodeTool;
 
 namespace DvdaMaker.Building;
 
@@ -13,6 +14,17 @@ public sealed class BuildPlanService(DvdaOptions options)
         var tracks = ApplyDiagnosticAlbumLimit(
             new ManifestBuildReader().Read(options.ManifestPath, options.MlpDirectory),
             options.DiagnosticAlbumLimit);
+        if (options.MlpSource == "lpcm")
+            tracks = tracks.Select(track =>
+            {
+                var path = LpcmProvider.CachePath(options.BuildDirectory, track.SourcePath);
+                var wave = File.Exists(path) ? SurcodePcmWav.ReadLayout(path) : null;
+                if (wave is not null) LpcmProvider.ValidateLayout(wave);
+                var matches = wave is not null && wave.SampleRate == options.MlpSurcodeSampleRate && wave.ValidBits == options.MlpSurcodeBits;
+                return track with { MlpSource = "lpcm", MlpPath = path, MlpSize = matches ? new FileInfo(path).Length : 0,
+                    SampleRate = options.MlpSurcodeSampleRate, Bits = options.MlpSurcodeBits,
+                    Channels = wave?.Channels, ChannelMask = wave?.ChannelMask };
+            }).ToArray();
         return new DiscPlanner().Plan(
             tracks,
             options.DiscBytes,
@@ -39,7 +51,7 @@ public sealed class BuildPlanService(DvdaOptions options)
         foreach (var disc in plan.Discs)
         {
             writer.WriteLine(
-                $"  第 {disc.Number} 盘: {disc.Tracks.Count} 首, MLP {disc.MlpBytes / 1024d / 1024 / 1024:F2} GiB " +
+                $"  第 {disc.Number} 盘: {disc.Tracks.Count} 首, 音频 {disc.MlpBytes / 1024d / 1024 / 1024:F2} GiB " +
                 $"-> 估AOB {disc.EstimatedAobBytes / 1024d / 1024 / 1024:F2} GiB  卷标 \"{options.VolumeId(disc.Number)}\"");
             foreach (var group in disc.Groups)
             {

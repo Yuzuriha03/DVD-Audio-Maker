@@ -20,6 +20,9 @@ internal static class LpcmTests
         var plan = new DiscPlanner().Plan([track, track with { Track = "2", Channels = 6, MlpPath = "two.wav" }],
             4_700_000_000, 0, 99);
         if (plan.HasErrors || plan.Discs.Single().Groups.Count != 2) throw new Exception("LPCM channels were mixed in a group");
+        var mixed = new DiscPlanner().Plan([track with { Channels = 3, ChannelMask = 7 },
+            track with { Track = "2", Channels = 3, ChannelMask = 0xb, MlpPath = "two.wav" }], 4_700_000_000, 0, 99);
+        if (mixed.Discs.Single().Groups.Count != 2) throw new Exception("Different LPCM speaker layouts were mixed");
         var settings = ProjectSettings.Defaults(); settings.Values["DVDA_MLP_SOURCE"] = "lpcm";
         settings.Values["DVDA_MLP_SURCODE_BITS"] = "20";
         if (!settings.Validate(requireSource: false, requireEncoding: false).Any(e => e.Contains("LPCM")))

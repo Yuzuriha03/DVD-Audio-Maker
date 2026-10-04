@@ -891,13 +891,19 @@ static void PrintConfiguration(DvdaOptions options)
     }
 
     Console.WriteLine();
-    Console.WriteLine("MLP 来源:");
+    Console.WriteLine("音频编码方式:");
     if (options.MlpSource == "external")
     {
         var directory = options.MlpExternalDirectory;
         var status = directory.Length > 0 && Directory.Exists(directory) ? "✔" : L.T("✗ 目录不存在");
         Console.WriteLine($"  external      = {(directory.Length > 0 ? directory : L.T("(未设 DVDA_MLP_EXTERNAL_DIR)"))}   {status}");
         Console.WriteLine("                  （跳过编码；按 <外部目录>/<专辑目录>/<曲名>.mlp 取文件）");
+    }
+    else if (options.MlpSource == "lpcm")
+    {
+        Console.WriteLine("  lpcm          = LPCM 编码");
+        Console.WriteLine($"  output/cache  = {Path.Combine(options.BuildDirectory, "lpcm")}");
+        Console.WriteLine($"  format        = {options.MlpSurcodeSampleRate} Hz / {options.MlpSurcodeBits} bit");
     }
     else if (options.MlpSource == "surcode-batch")
     {

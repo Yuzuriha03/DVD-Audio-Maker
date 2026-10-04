@@ -2,7 +2,7 @@
   "date": "2026-10-04",
   "source_checks_status": "PASS",
   "compatibility_checks": 113,
-  "lpcm_native_cases": 104,
+  "lpcm_native_cases": 144,
   "lpcm_native_status": "PASS",
   "lpcm_native_checks": [
     "deterministic multichannel PCM byte comparison",
@@ -61,5 +61,11 @@
       "No temporary extraction files remain",
       "EXE smaller than the previous ZIP"
     ]
+  },
+  "lpcm_gui_checks": 15,
+  "mlp_regression": {
+    "tracks": 2,
+    "aob_equals_previous_author": true,
+    "all_mlp_bytes_compared": 980380
   }
 }

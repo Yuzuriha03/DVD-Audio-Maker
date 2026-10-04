@@ -190,6 +190,9 @@ public static class DiscSignature
                 .Append(track.ManifestName).Append('|')
                 .Append(track.SampleRate).Append('|')
                 .Append(track.Bits).Append('|')
+                .Append(track.MlpSource).Append('|')
+                .Append(track.Channels).Append('|')
+                .Append(track.ChannelMask).Append('|')
                 .Append(track.MlpPath).Append('|')
                 .Append(track.MlpSize).Append('|');
             if (identity is null)

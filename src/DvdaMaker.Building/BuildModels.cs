@@ -16,6 +16,7 @@ public sealed record BuildTrack
     public required string MlpPath { get; init; }
     public required long MlpSize { get; init; }
     public int? Channels { get; init; }
+    public uint? ChannelMask { get; init; }
     public int? SourceSampleRate { get; init; }
     public int? SourceBits { get; init; }
     public string MlpSource { get; init; } = "surcode-batch";

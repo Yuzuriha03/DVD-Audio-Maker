@@ -73,6 +73,7 @@ public static class MlpIndexWriter
                 ["sr"] = track.SampleRate,
                 ["bits"] = track.Bits,
                 ["ch"] = track.Channels,
+                ["channel_mask"] = track.ChannelMask,
                 ["src_rate"] = track.SourceSampleRate,
                 ["src_bits"] = track.SourceBits,
                 ["resample_to"] = track.ResampleTo,
