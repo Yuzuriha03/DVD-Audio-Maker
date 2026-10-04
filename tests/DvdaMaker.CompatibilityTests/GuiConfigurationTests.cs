@@ -5,6 +5,7 @@ internal static class GuiConfigurationTests
     private static void Require(bool value, string message) { if (!value) throw new Exception(message); }
     public static void ProfileRoundtrip()
     {
+        ConfigurationFileMigrationTests.Profiles();
         var root = Path.Combine(Path.GetTempPath(), "dvda-profile-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try

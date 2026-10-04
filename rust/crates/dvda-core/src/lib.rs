@@ -1,6 +1,7 @@
 pub mod aob;
 pub mod author;
 pub mod config;
+pub mod config_files;
 pub mod formats;
 pub mod hash;
 pub mod identity;
@@ -36,6 +37,9 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         "config.parse" => Ok(json!(config::parse(
             request.as_str().ok_or("Expected config text")?
         ))),
+        "config.find" | "config.read_file" | "profile.load" | "profile.save" => {
+            config_files::dispatch(operation, request)
+        }
         "disc.plan" => planner::plan(request),
         "options.defaults" | "options.evaluate" | "shell.assignment" => {
             options::dispatch(operation, request)

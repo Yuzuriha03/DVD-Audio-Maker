@@ -34,13 +34,17 @@ public sealed class ProjectSettings
     }
 
     public static ProjectSettings Load(string path)
+        => ConfigurationFileInterop.Read("profile.load", new { Path = path, Defaults = ConfigDefaults.Values },
+            path, () => LoadManaged(path));
+
+    private static ProjectSettings LoadManaged(string path)
     {
         using var input = File.OpenRead(path);
         var settings = JsonSerializer.Deserialize<ProjectSettings>(input)
             ?? throw new InvalidDataException("配置方案为空。");
         if (settings.Version != 1 || settings.Values is null || settings.Values.Any(p => p.Value is null))
             throw new InvalidDataException("配置方案版本或内容无效。");
-        var result = Defaults();
+        var result = new ProjectSettings { Values = new(ConfigDefaults.ManagedValues, StringComparer.Ordinal) };
         result.Language = settings.Language;
         _ = DvdaMaker.Localization.L.Normalize(result.Language);
         foreach (var pair in settings.Values) result.Values[pair.Key] = pair.Value;
@@ -48,6 +52,15 @@ public sealed class ProjectSettings
     }
 
     public void Save(string path)
+    {
+        if (RustBridge.Mode == "managed") { SaveManaged(path); return; }
+        if (!RustBridge.Enabled) throw new InvalidOperationException($"Unknown DVDA_RUST_MODE: {RustBridge.Mode}");
+        // Mutations execute once; isolated tests compare the managed and Rust trees.
+        _ = ConfigurationFileInterop.Unwrap(RustBridge.Invoke<ConfigurationFileInterop.Outcome<object?>>(
+            "profile.save", new { Path = path, Profile = this }), path);
+    }
+
+    private void SaveManaged(string path)
     {
         path = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
