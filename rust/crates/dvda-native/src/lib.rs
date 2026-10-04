@@ -3,6 +3,7 @@ pub mod encoder;
 pub mod files;
 pub mod images;
 pub mod media;
+pub mod process;
 
 use std::{
     ffi::{CStr, CString, OsStr, c_char, c_void},

@@ -14,6 +14,8 @@ public sealed class ProcessRunner
             return await BuiltinImages.RunAsync(request, cancellationToken).ConfigureAwait(false);
         if (BuiltinMedia.IsBuiltin(request.FileName))
             return await BuiltinMedia.RunAsync(request, cancellationToken).ConfigureAwait(false);
+        if (RustBridge.Mode != "managed")
+            return await Task.Run(() => RustBridge.RunProcess(request, cancellationToken), cancellationToken).ConfigureAwait(false);
 
         var startInfo = new ProcessStartInfo
         {

@@ -11,6 +11,55 @@ struct MediaCallbacks {
     cancel: Cancel,
     state: *mut c_void,
 }
+struct ProcessCallbacks(MediaCallbacks);
+impl dvda_native::media::Callbacks for ProcessCallbacks {
+    fn emit(&mut self, stream: i32, text: &str) {
+        // Encode each line to retain embedded NUL across the temporary C# bridge.
+        self.0.emit(stream, &json!(text).to_string());
+    }
+    fn cancelled(&mut self) -> bool {
+        self.0.cancelled()
+    }
+}
+
+/// Execute an owned author process with synchronous line callbacks.
+/// # Safety
+/// request is live NUL-terminated UTF-8 JSON. Callbacks and state remain valid
+/// during this call and must not unwind. Release the result with dvda_rust_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dvda_rust_process_run(
+    request: *const c_char,
+    emit: Option<Emit>,
+    cancel: Option<Cancel>,
+    state: *mut c_void,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<serde_json::Value, String> {
+        if request.is_null() {
+            return Err("Null process job".into());
+        }
+        let (Some(emit), Some(cancel)) = (emit, cancel) else {
+            return Err("Null process callback".into());
+        };
+        let text = unsafe { CStr::from_ptr(request) }
+            .to_str()
+            .map_err(|e| e.to_string())?;
+        let job = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let mut callbacks = ProcessCallbacks(MediaCallbacks {
+            emit,
+            cancel,
+            state,
+        });
+        Ok(json!(dvda_core::process::execute(job, &mut callbacks)))
+    }));
+    let response = match result {
+        Ok(Ok(value)) => json!({"ok":true,"value":value}),
+        Ok(Err(error)) => json!({"ok":false,"error":error}),
+        Err(_) => json!({"ok":false,"error":"Rust panic caught at process ABI boundary"}),
+    };
+    CString::new(response.to_string())
+        .expect("JSON contains no raw NUL")
+        .into_raw()
+}
 impl dvda_native::media::Callbacks for MediaCallbacks {
     fn emit(&mut self, stream: i32, text: &str) {
         let text = CString::new(text.replace('\0', "\\0")).expect("NUL escaped");

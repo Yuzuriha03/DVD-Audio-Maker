@@ -6,18 +6,14 @@
       "id": 1,
       "name": "Onefile deduplication, concurrency and cache repair",
       "managedEntry": "RuntimeArchiveTests.RoundtripAndRepair",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 2,
       "name": "Onefile rejects unsafe component paths",
       "managedEntry": "RuntimeArchiveTests.RejectUnsafePaths",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -35,18 +31,14 @@
       "id": 4,
       "name": "English catalog template coverage",
       "managedEntry": "LocalizationTests.CatalogCoverage",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 5,
       "name": "Japanese catalog, paths and nested diagnostics",
       "managedEntry": "LocalizationTests.JapaneseCoverage",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -69,9 +61,7 @@
       "id": 7,
       "name": "Language preserves paths and numeric culture",
       "managedEntry": "LocalizationTests.OpaqueValuesAndCulture",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -204,27 +194,21 @@
       "id": 20,
       "name": "GUI 摘要保留工具错误与告警",
       "managedEntry": "GuiPresentationTests.ImportantDiagnosticsSurvive",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 21,
       "name": "GUI 完整行与并发日志捕获",
       "managedEntry": "GuiPresentationTests.CompleteLineCapture",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 22,
       "name": "GUI 友好选项保留配置原值",
       "managedEntry": "GuiPresentationTests.ChoiceValuesRemainStable",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -251,7 +235,7 @@
       "name": "FFmpeg 失败取消与 PATH 配置",
       "managedEntry": "FfmpegPcmTests.FailureAndCancellation",
       "rustOperations": [
-        null
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -368,63 +352,49 @@
       "id": 36,
       "name": "PTS 五字节解析",
       "managedEntry": "ParsePts",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 37,
       "name": "MLP 峰值码率取整",
       "managedEntry": "CalculatePeakBitrate",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 38,
       "name": "MLP access unit 遍历",
       "managedEntry": "WalkMlpAccessUnits",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 39,
       "name": "MLP CRC 与奇偶校验基线",
       "managedEntry": "MlpChecksumBaseline",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 40,
       "name": "MLP 损坏边界与对齐修复",
       "managedEntry": "ValidateMlpDamageFixtures",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 41,
       "name": "MLP 内存与流式检查结果一致",
       "managedEntry": "MlpStreamingInspection",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 42,
       "name": "命令行日志格式化",
       "managedEntry": "FormatCommandLine",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -432,7 +402,7 @@
       "name": "外部进程参数与输出捕获",
       "managedEntry": "RunExternalProcess",
       "rustOperations": [
-        null
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -441,7 +411,7 @@
       "name": "外部进程非零退出码",
       "managedEntry": "HandleNonZeroExitCode",
       "rustOperations": [
-        null
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -449,9 +419,7 @@
       "id": 45,
       "name": "专辑多数参数归一化",
       "managedEntry": "NormalizeAlbumParameters",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -541,9 +509,7 @@
       "id": 54,
       "name": "外部 MLP 镜像路径优先",
       "managedEntry": "ResolveExternalMlp",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -565,9 +531,7 @@
       "id": 56,
       "name": "构建索引预演与失败隔离",
       "managedEntry": "PreserveFormalMlpIndex",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -598,9 +562,7 @@
       "id": 59,
       "name": "诊断专辑数量限制",
       "managedEntry": "LimitDiagnosticAlbums",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -677,27 +639,21 @@
       "id": 67,
       "name": "ALAC END 标记修补",
       "managedEntry": "PatchAlacEndMarker",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 68,
       "name": "ALAC extra bits 行为与 Python 一致",
       "managedEntry": "PatchAlacWithExtraBits",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 69,
       "name": "M4A 标签保留原始值",
       "managedEntry": "PreserveM4aTagValues",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -705,6 +661,7 @@
       "name": "M4A dry-run 不写文件",
       "managedEntry": "M4aDryRunDoesNotWrite",
       "rustOperations": [
+        "process.execute",
         "alac.find_bad_frames",
         "alac.cookie"
       ],
@@ -715,7 +672,7 @@
       "name": "M4A 拒绝非 ALAC 音频",
       "managedEntry": "RejectNonAlacM4a",
       "rustOperations": [
-        null
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -724,6 +681,7 @@
       "name": "M4A 单文件异常不终止批次",
       "managedEntry": "IsolateM4aFileFailures",
       "rustOperations": [
+        "process.execute",
         "alac.find_bad_frames",
         "alac.cookie"
       ],
@@ -733,18 +691,14 @@
       "id": 73,
       "name": "M4A PICTURE 描述解析",
       "managedEntry": "ParseFlacPictureDescriptor",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 74,
       "name": "M4A 原文件删除失败不中断批次",
       "managedEntry": "PreserveConversionOnDeleteFailure",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -771,45 +725,35 @@
       "id": 77,
       "name": "审计解析多行 ANSI 轨道表",
       "managedEntry": "ParseAnsiAuditLog",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 78,
       "name": "审计只解析最后一次正式构建",
       "managedEntry": "ParseLatestFormalAuditLog",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 79,
       "name": "校验只选择当前编号 ISO",
       "managedEntry": "SelectCurrentIsoNames",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 80,
       "name": "审计按时间选择最新日志",
       "managedEntry": "SelectNewestAuditLog",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 81,
       "name": "外部 MLP 重名歧义",
       "managedEntry": "DetectExternalMlpAmbiguity",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -831,6 +775,7 @@
       "name": "正式出盘执行器端到端",
       "managedEntry": "BuildDiscEndToEnd",
       "rustOperations": [
+        "process.execute",
         "config.read_file",
         "config.find",
         "author.normalize_title_mode",
@@ -847,6 +792,7 @@
       "name": "事务暂存移动与保留中间 ISO",
       "managedEntry": "StageDiscAndKeepIntermediate",
       "rustOperations": [
+        "process.execute",
         "config.read_file",
         "config.find",
         "author.normalize_title_mode",
@@ -864,6 +810,7 @@
       "name": "出盘失败保留诊断现场",
       "managedEntry": "PreserveFailedDiscWorkspace",
       "rustOperations": [
+        "process.execute",
         "config.read_file",
         "config.find",
         "author.normalize_title_mode",
@@ -944,9 +891,7 @@
       "id": 92,
       "name": "原生依赖普通与延迟导入及保守清理",
       "managedEntry": "NativeOptimizerTests.Run",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -978,6 +923,7 @@
       "name": "菜单批量统计单页单进程",
       "managedEntry": "BatchMenuProcessCalls",
       "rustOperations": [
+        "process.execute",
         "menu.parse_batch_frame_stats",
         "menu.parse_overlay_batch",
         "menu.parse_index_batch"
@@ -998,18 +944,14 @@
       "id": 97,
       "name": "AMG 菜单 cell 链损坏检测",
       "managedEntry": "ValidateAmgCellChainFixtures",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
       "id": 98,
       "name": "ASVS 静图表损坏检测",
       "managedEntry": "ValidateAsvsFixtures",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -1017,7 +959,7 @@
       "name": "build.cmd 参数分支依次准备并出盘",
       "managedEntry": "BuildScriptBranching",
       "rustOperations": [
-        null
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -1026,7 +968,7 @@
       "name": "build.cmd prepare 失败不进入出盘",
       "managedEntry": "BuildScriptStopsAfterPrepareFailure",
       "rustOperations": [
-        null
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -1034,9 +976,7 @@
       "id": 101,
       "name": "PCM 严格比较与 SurCode 有界零尾",
       "managedEntry": "ComparePcmFixtures",
-      "rustOperations": [
-        null
-      ],
+      "rustOperations": [],
       "status": "pass"
     },
     {
@@ -1057,6 +997,7 @@
       "name": "准备缓存复用与源变化失效",
       "managedEntry": "PrepareCacheReuseAndInvalidation",
       "rustOperations": [
+        "process.execute",
         "config.read_file",
         "path.safe_basename",
         "prepare.cache_reusable",
@@ -1075,6 +1016,7 @@
       "name": "准备缓存不记录未通过校验的轨道",
       "managedEntry": "PrepareCacheSkipsFailedTracks",
       "rustOperations": [
+        "process.execute",
         "config.read_file",
         "path.safe_basename",
         "config.find",
@@ -1140,6 +1082,7 @@
       "name": "SurCode 新产物校验凭据失效回退",
       "managedEntry": "ReuseValidatedSurcodeOutput",
       "rustOperations": [
+        "process.execute",
         "config.read_file",
         "audio.parameters",
         "config.find",
@@ -1154,6 +1097,7 @@
       "name": "MLP 编码核心 MLP 缓存凭据复用",
       "managedEntry": "MlpEncoderTests.Cache",
       "rustOperations": [
+        "process.execute",
         "config.read_file",
         "encoder.execute",
         "audio.parameters",
@@ -1196,6 +1140,7 @@
       "name": "出盘签名随配置与 MLP 变化",
       "managedEntry": "DiscSignatureChanges",
       "rustOperations": [
+        "process.execute",
         "config.read_file",
         "config.find",
         "math.estimate_aob",
@@ -1213,6 +1158,7 @@
       "name": "构建流水线逐盘续跑",
       "managedEntry": "BuildPipelineResumesDiscs",
       "rustOperations": [
+        "process.execute",
         "author.title_ends",
         "config.read_file",
         "resume.signature_match",
@@ -1239,6 +1185,7 @@
       "name": "MLP 有界并发编码等效性",
       "managedEntry": "MlpEncoderTests.Parallel",
       "rustOperations": [
+        "process.execute",
         "encoder.execute",
         "wav.normalize",
         "wav.layout"
@@ -1250,6 +1197,7 @@
   "total": 115,
   "passed": 115,
   "rustCalls": {
+    "process.execute": 102,
     "author.title_ends": 7,
     "profile.load": 33,
     "config.read_file": 72,
@@ -1323,5 +1271,5 @@
     "options.defaults": 1,
     "lpcm.validate_layout": 16
   },
-  "evidence": "build/rust-validation/p17-encoder-compare-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p18-process-compare-x64.json (ignored local report)"
 }

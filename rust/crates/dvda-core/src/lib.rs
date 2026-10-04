@@ -13,6 +13,7 @@ pub mod menu;
 pub mod options;
 pub mod planner;
 pub mod probes;
+pub mod process;
 pub mod publication;
 pub mod validation;
 pub mod workflow;
