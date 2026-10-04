@@ -360,3 +360,169 @@ fn encoder_transactions_and_parallel_calls() {
         "Leaked partial output"
     );
 }
+
+fn batch_job(root: &Path, cases: &[Case], workers: i32) -> dvda_core::batch::Job {
+    dvda_core::batch::Job {
+        media_library: PathBuf::from(
+            std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
+        )
+        .join("dvda-media.dll"),
+        encoder_library: library(),
+        temporary_directory: root.join("temp"),
+        output_directory: root.join("output"),
+        sample_rate: cases[0].rate as i32,
+        bits: cases[0].bits as i32,
+        jobs: workers,
+        metadata_context: String::new(),
+        tracks: cases
+            .iter()
+            .enumerate()
+            .map(|(index, case)| {
+                let source = root.join(format!("input-{index}.wav"));
+                wave(&source, case);
+                dvda_core::batch::Track {
+                    source_path: source.to_str().unwrap().into(),
+                    work_name: format!("track{index}"),
+                    display_name: format!("音轨 日本語 🎵 {index}"),
+                    duration_seconds: case.frames as f64 / f64::from(case.rate),
+                }
+            })
+            .collect(),
+    }
+}
+struct BatchEvents {
+    caller: std::thread::ThreadId,
+    events: Vec<serde_json::Value>,
+    cancel: bool,
+    cancel_on_started: bool,
+    panic_on_started: bool,
+}
+impl BatchEvents {
+    fn new() -> Self {
+        Self {
+            caller: std::thread::current().id(),
+            events: vec![],
+            cancel: false,
+            cancel_on_started: false,
+            panic_on_started: false,
+        }
+    }
+}
+impl Callbacks for BatchEvents {
+    fn emit(&mut self, stream: i32, text: &str) {
+        assert_eq!(
+            std::thread::current().id(),
+            self.caller,
+            "UI callbacks escaped the invoking thread"
+        );
+        assert_eq!(stream, 5);
+        let event: serde_json::Value = serde_json::from_str(text).unwrap();
+        if event["Kind"] == "Started" {
+            assert!(!self.panic_on_started, "Intentional batch callback panic");
+            self.cancel |= self.cancel_on_started;
+        }
+        self.events.push(event);
+    }
+    fn cancelled(&mut self) -> bool {
+        assert_eq!(std::thread::current().id(), self.caller);
+        self.cancel
+    }
+}
+#[test]
+#[ignore = "requires the pinned C encoder and source-built media DLL"]
+fn batch_matrix_matches_frozen_encoder_bytes() {
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
+    let root = Scratch::new();
+    let mut outputs = 0;
+    for rate in [44100, 48000, 88200, 96000, 176400, 192000] {
+        for bits in [16, 20, 24] {
+            let cases: Vec<_> = fixtures.cases[..84]
+                .iter()
+                .filter(|c| c.rate == rate && c.bits == bits)
+                .cloned()
+                .collect();
+            for workers in [1, 4] {
+                let folder = root.0.join(format!("{rate}-{bits}-{workers}"));
+                fs::create_dir(&folder).unwrap();
+                let job = batch_job(&folder, &cases, workers);
+                let mut events = BatchEvents::new();
+                passed(dvda_core::batch::execute(job, &mut events));
+                assert_eq!(fs::read_dir(folder.join("temp")).unwrap().count(), 0);
+                for (index, case) in cases.iter().enumerate() {
+                    assert_eq!(
+                        digest(&fs::read(folder.join(format!("output/track{index}.mlp"))).unwrap()),
+                        case.mlp_sha256,
+                        "Batch {rate}/{bits}/{workers}/{index}"
+                    );
+                    let kinds: Vec<_> = events
+                        .events
+                        .iter()
+                        .filter(|e| e["Track"] == index)
+                        .filter_map(|e| e["Kind"].as_str())
+                        .filter(|k| *k != "PcmProgress")
+                        .collect();
+                    assert_eq!(kinds, ["Started", "PcmStarted", "PcmFinished", "Encoded"]);
+                    outputs += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(outputs, 168);
+}
+#[test]
+#[ignore = "requires the pinned C encoder and source-built media DLL"]
+fn batch_cancellation_panic_and_partial_failure() {
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
+    let mut case = fixtures.cases[17].clone();
+    case.frames = 192017;
+    let root = Scratch::new();
+    for scenario in ["cancel", "panic", "malformed", "existing", "duplicate"] {
+        let folder = root.0.join(scenario);
+        fs::create_dir(&folder).unwrap();
+        let mut job = batch_job(&folder, &[case.clone(), case.clone(), case.clone()], 1);
+        let mut events = BatchEvents::new();
+        events.cancel_on_started = scenario == "cancel";
+        events.panic_on_started = scenario == "panic";
+        match scenario {
+            "malformed" => {
+                fs::write(&job.tracks[1].source_path, b"invalid wave").unwrap();
+            }
+            "existing" => {
+                fs::create_dir_all(&job.output_directory).unwrap();
+                fs::write(job.output_directory.join("track0.mlp"), b"preserve").unwrap();
+            }
+            "duplicate" => job.tracks[1].work_name = "TRACK0".into(),
+            _ => (),
+        }
+        let result = dvda_core::batch::execute(job, &mut events);
+        assert_eq!(
+            result.failure.unwrap().kind,
+            match scenario {
+                "cancel" => "Cancelled",
+                "duplicate" => "InvalidData",
+                "existing" => "Io",
+                _ => "InvalidOperation",
+            }
+        );
+        if folder.join("temp").is_dir() {
+            assert_eq!(fs::read_dir(folder.join("temp")).unwrap().count(), 0);
+        }
+        match scenario {
+            "existing" => assert_eq!(
+                fs::read(folder.join("output/track0.mlp")).unwrap(),
+                b"preserve"
+            ),
+            "malformed" => {
+                assert!(folder.join("output/track0.mlp").is_file());
+                assert!(!folder.join("output/track1.mlp").exists());
+                assert!(!folder.join("output/track2.mlp").exists());
+            }
+            "cancel" | "panic" => {
+                assert_eq!(fs::read_dir(folder.join("output")).unwrap().count(), 0)
+            }
+            _ => assert!(!folder.join("output").exists()),
+        }
+    }
+}

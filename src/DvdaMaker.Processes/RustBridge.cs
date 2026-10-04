@@ -131,7 +131,9 @@ public static class RustBridge
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_media_run")),
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_image_run")),
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_encoder_run")),
-                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_process_run")));
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_process_run")),
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_pcm_run")),
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_batch_run")));
         }
         catch { NativeLibrary.Free(library); throw; }
     }
@@ -147,7 +149,7 @@ public static class RustBridge
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr MediaRunDelegate(
         IntPtr request, MediaEmit emit, MediaCancel cancel, IntPtr state);
     private sealed record Exports(CallDelegate Call,FreeDelegate Free,AobScanDelegate ScanAob,AobObserveDelegate ObserveAob,
-        MediaRunDelegate RunMedia, MediaRunDelegate RunImage, MediaRunDelegate RunEncoder, MediaRunDelegate RunProcess);
+        MediaRunDelegate RunMedia, MediaRunDelegate RunImage, MediaRunDelegate RunEncoder, MediaRunDelegate RunProcess, MediaRunDelegate RunPcm, MediaRunDelegate RunBatch);
 
     internal sealed record MediaFailure(string Kind, int? Code, string Message);
     internal sealed record MediaOutcome(int? ExitCode, MediaFailure? Failure,
@@ -158,6 +160,10 @@ public static class RustBridge
         => RunNativeJob(request, onText, token, "image.execute").ExitCode!.Value;
     public static int RunEncoder(object request, Action<int, string> onText, CancellationToken token)
         => RunNativeJob(request, onText, token, "encoder.execute").ExitCode!.Value;
+    public static void NormalizePcm(object request, CancellationToken token)
+        => RunNativeJob(request, (_, _) => { }, token, "pcm.normalize");
+    public static void RunBatch(object request, Action<int, string> onText, CancellationToken token)
+        => RunNativeJob(request, onText, token, "batch.encode");
     internal static ProcessResult RunProcess(ProcessRequest request, CancellationToken token)
     {
         MediaOutcome result;
@@ -199,7 +205,8 @@ public static class RustBridge
         try
         {
             var run = operation switch { "image.execute" => native.RunImage, "encoder.execute" => native.RunEncoder,
-                "process.execute" => native.RunProcess, _ => native.RunMedia };
+                "process.execute" => native.RunProcess, "pcm.normalize" => native.RunPcm,
+                "batch.encode" => native.RunBatch, _ => native.RunMedia };
             output = run(input, emit, cancel, IntPtr.Zero);
             GC.KeepAlive(emit); GC.KeepAlive(cancel);
             callbackFailure?.Throw();
@@ -227,6 +234,7 @@ public static class RustBridge
         if (failure.Kind == "Timeout") throw new TimeoutException(operation switch
         { "image.execute" => "内置图像处理超时。", "encoder.execute" => "MLP 编码器 DLL 编码超时，已取消并清理临时输出。", _ => "内置媒体处理超时。" });
         if (failure.Kind == "Argument") throw new ArgumentException(failure.Message);
+        if (failure.Kind == "ArgumentOutOfRange") throw new ArgumentOutOfRangeException(null, failure.Message);
         if (failure.Kind == "InvalidData") throw new InvalidDataException(failure.Message);
         if (failure.Kind == "EndOfStream") throw new EndOfStreamException(failure.Message);
         if (failure.Kind == "Overflow") throw new OverflowException(failure.Message);
