@@ -47,6 +47,7 @@
       "managedEntry": "LpcmTests.FormatAndGrouping",
       "rustOperations": [
         "disc.plan",
+        "lpcm.validate_format",
         "math.content_limit",
         "math.estimate_aob"
       ],
@@ -793,21 +794,34 @@
       "id": 93,
       "name": "菜单视觉阈值与 Python 一致",
       "managedEntry": "VerifyMenuVisualThresholds",
-      "rustOperations": [],
+      "rustOperations": [
+        "menu.visual_background_invalid",
+        "menu.visual_label_missing",
+        "menu.visual_near_solid",
+        "menu.visual_thumbnail_missing"
+      ],
       "status": "pass"
     },
     {
       "id": 94,
       "name": "菜单批量统计解析与缺失回退",
       "managedEntry": "ParseBatchedMenuStatistics",
-      "rustOperations": [],
+      "rustOperations": [
+        "menu.visual_background_invalid",
+        "menu.visual_label_missing",
+        "menu.visual_thumbnail_missing"
+      ],
       "status": "pass"
     },
     {
       "id": 95,
       "name": "菜单批量统计单页单进程",
       "managedEntry": "BatchMenuProcessCalls",
-      "rustOperations": [],
+      "rustOperations": [
+        "menu.visual_background_invalid",
+        "menu.visual_label_missing",
+        "menu.visual_thumbnail_missing"
+      ],
       "status": "pass"
     },
     {
@@ -815,7 +829,8 @@
       "name": "菜单多索引页格数与 cell 范围",
       "managedEntry": "VerifyMultiIndexPageLayout",
       "rustOperations": [
-        "menu.pages"
+        "menu.pages",
+        "menu.visual_expected_index_cells"
       ],
       "status": "pass"
     },
@@ -1035,15 +1050,20 @@
     "aob.pts_statistics": 9,
     "menu.pages": 2,
     "menu.sanitize": 16,
+    "menu.visual_label_missing": 18,
     "math.estimate_aob": 107,
     "disk.group_requirements": 13,
     "alac.find_bad_frames": 2,
     "flac.picture": 3,
     "decode.scan": 6,
+    "menu.visual_expected_index_cells": 9,
+    "menu.visual_background_invalid": 16,
     "mlp.major_sync_interval": 2,
     "menu.font_size": 1,
+    "menu.visual_near_solid": 3,
     "track.number": 12,
     "identity.equal": 29,
+    "lpcm.validate_format": 126,
     "menu.truncate": 10,
     "alac.cookie": 3,
     "config.parse": 51,
@@ -1054,9 +1074,10 @@
     "menu.short_album": 7,
     "cache.mlp_match": 11,
     "tracks.sort": 3,
+    "menu.visual_thumbnail_missing": 16,
     "disc.plan": 18,
     "wav.layout": 47,
     "flac.replace_picture": 1
   },
-  "evidence": "build/rust-validation/p6-hash-compare-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p7-menu-lpcm-compare-x64.json (ignored local report)"
 }

@@ -10,11 +10,24 @@ public sealed class LpcmProvider(DvdaOptions options, ProcessRunner runner)
 {
     public static void ValidateFormat(int rate, int bits, int channels)
     {
+        var code = RustBridge.Run<int>("lpcm.validate_format", new { Rate = rate, Bits = bits, Channels = channels },
+            () => ValidateFormatCodeManaged(rate, bits, channels));
+        ThrowFormatCode(code);
+    }
+
+    private static int ValidateFormatCodeManaged(int rate, int bits, int channels)
+    {
         if (rate is not (44100 or 48000 or 88200 or 96000 or 176400 or 192000) ||
             bits is not (16 or 24) || channels is < 1 or > 6 || (rate > 96000 && channels > 2))
-            throw new InvalidDataException("LPCM 支持 16/24 位、最多六声道；176.4/192 kHz 最多双声道。");
-        if ((long)rate * bits * channels > 9_600_000)
-            throw new InvalidDataException("LPCM 音频码率超过 9.6 Mb/s，请降低采样率或位深，或选择 MLP 编码。");
+            return 1;
+        return (long)rate * bits * channels > 9_600_000 ? 2 : 0;
+    }
+
+    private static void ThrowFormatCode(int code)
+    {
+        if (code == 1) throw new InvalidDataException("LPCM 支持 16/24 位、最多六声道；176.4/192 kHz 最多双声道。");
+        if (code == 2) throw new InvalidDataException("LPCM 音频码率超过 9.6 Mb/s，请降低采样率或位深，或选择 MLP 编码。");
+        if (code != 0) throw new InvalidDataException("LPCM format validation failed");
     }
 
     public static string CachePath(string buildDirectory, string sourcePath) => Path.Combine(buildDirectory, "lpcm",
@@ -23,9 +36,23 @@ public sealed class LpcmProvider(DvdaOptions options, ProcessRunner runner)
 
     public static void ValidateLayout(SurcodePcmWav.WavLayout layout)
     {
-        ValidateFormat(layout.SampleRate, layout.ValidBits, layout.Channels);
-        if (layout.ChannelMask is not (4 or 3 or 0x103 or 0x33 or 0xb or 0x10b or 0x3b or 7 or 0x107 or 0x37 or 0xf or 0x10f or 0x3f))
-            throw new InvalidDataException("LPCM 不支持此声道布局，请使用标准 DVD-Audio 声道布局。");
+        var code = RustBridge.Run<int>("lpcm.validate_layout", new
+        {
+            Rate = layout.SampleRate,
+            Bits = layout.ValidBits,
+            Channels = layout.Channels,
+            ChannelMask = layout.ChannelMask,
+        }, () => ValidateLayoutCodeManaged(layout));
+        if (code is 1 or 2) ThrowFormatCode(code);
+        if (code == 3) throw new InvalidDataException("LPCM 不支持此声道布局，请使用标准 DVD-Audio 声道布局。");
+        if (code != 0) throw new InvalidDataException("LPCM layout validation failed");
+    }
+
+    private static int ValidateLayoutCodeManaged(SurcodePcmWav.WavLayout layout)
+    {
+        var format = ValidateFormatCodeManaged(layout.SampleRate, layout.ValidBits, layout.Channels);
+        if (format != 0) return format;
+        return layout.ChannelMask is (4 or 3 or 0x103 or 0x33 or 0xb or 0x10b or 0x3b or 7 or 0x107 or 0x37 or 0xf or 0x10f or 0x3f) ? 0 : 3;
     }
 
     public async Task<MlpAcquisitionResult> AcquireAsync(IReadOnlyList<BuildTrack> tracks,
