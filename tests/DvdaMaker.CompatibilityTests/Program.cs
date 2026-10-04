@@ -648,6 +648,7 @@ static void EscapeShellAssignment() =>
 
 static void StripIsoVersion()
 {
+    IsoMigrationTests.CompareFileOperations();
     Equal("ATS_01_0.IFO", Iso9660Reader.StripVersion("ATS_01_0.IFO;1"));
     Equal("ATSI", Iso9660Reader.StripVersion("ATSI;12"));
     Equal("NAME;X", Iso9660Reader.StripVersion("NAME;X"));
