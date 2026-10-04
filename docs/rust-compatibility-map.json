@@ -437,7 +437,10 @@
       "name": "ffmpeg 解码错误扫描",
       "managedEntry": "ScanDecodeErrors",
       "rustOperations": [
-        "decode.scan"
+        "audio.inspect.metadata",
+        "decode.scan",
+        "audio.inspect.decode",
+        "audio.inspect.parameters"
       ],
       "status": "pass"
     },
@@ -1234,6 +1237,7 @@
     "media.execute": 48,
     "publish.set": 20,
     "menu.visual_expected_index_cells": 9,
+    "audio.inspect.parameters": 173,
     "menu.visual_background_invalid": 2,
     "mlp.major_sync_interval": 2,
     "menu.font_size": 1,
@@ -1264,12 +1268,14 @@
     "iso.info": 2,
     "menu.visual_thumbnail_missing": 2,
     "menu.parse_index_batch": 24,
+    "audio.inspect.decode": 1185,
     "iso.all_paths": 1,
     "disc.plan": 18,
     "wav.layout": 8,
     "flac.replace_picture": 1,
     "options.defaults": 1,
-    "lpcm.validate_layout": 16
+    "lpcm.validate_layout": 16,
+    "audio.inspect.metadata": 173
   },
-  "evidence": "build/rust-validation/p19-pcm-batch-compare-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p20-audio-compare-x64.json (ignored local report)"
 }
