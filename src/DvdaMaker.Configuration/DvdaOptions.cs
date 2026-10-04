@@ -1,174 +1,126 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 
 namespace DvdaMaker.Configuration;
 
-public sealed partial class DvdaOptions
+/// <summary>Rust evaluation with an independent managed reference during migration.</summary>
+public sealed class DvdaOptions
 {
+    private readonly string? _configPath;
     private readonly IReadOnlyDictionary<string, string> _fileValues;
     private readonly IReadOnlyDictionary<string, string?> _environment;
+    private readonly object _gate = new();
+    private Dictionary<string, string>? _previousFile;
+    private Dictionary<string, string?>? _previousEnvironment;
+    private OptionEvaluation? _evaluation;
+    private string? _positiveSign, _negativeSign, _mode;
 
-    internal DvdaOptions(
-        string? configPath,
-        IReadOnlyDictionary<string, string> fileValues,
+    internal DvdaOptions(string? configPath, IReadOnlyDictionary<string, string> fileValues,
         IReadOnlyDictionary<string, string?> environment)
     {
-        ConfigPath = configPath;
+        _configPath = configPath;
         _fileValues = fileValues;
         _environment = environment;
     }
 
-    /// <summary>Creates a snapshot from explicit application settings without ambient environment overrides.</summary>
     public static DvdaOptions FromValues(IReadOnlyDictionary<string, string> values) =>
-        new(null, new Dictionary<string, string>(values, StringComparer.Ordinal),
-            new Dictionary<string, string?>());
+        new(null, new Dictionary<string, string>(values, StringComparer.Ordinal), new Dictionary<string, string?>());
 
-    public string? ConfigPath { get; }
+    private OptionEvaluation Evaluation
+    {
+        get
+        {
+            lock (_gate)
+            {
+                var number = CultureInfo.CurrentCulture.NumberFormat;
+                var mode = DvdaMaker.Processes.RustBridge.Mode;
+                if (_evaluation is null || _mode != mode || _positiveSign != number.PositiveSign || _negativeSign != number.NegativeSign ||
+                    _previousFile is null || !_fileValues.SequenceEqual(_previousFile) ||
+                    _previousEnvironment is null || !_environment.SequenceEqual(_previousEnvironment))
+                {
+                    var file = new Dictionary<string, string>(_fileValues, StringComparer.Ordinal);
+                    var environment = new Dictionary<string, string?>(_environment, StringComparer.Ordinal);
+                    var result = OptionEvaluation.Evaluate(_configPath, file, environment);
+                    _previousFile = file;
+                    _previousEnvironment = environment;
+                    _evaluation = result;
+                    _positiveSign = number.PositiveSign; _negativeSign = number.NegativeSign; _mode = mode;
+                }
+                return _evaluation;
+            }
+        }
+    }
 
+    public string? ConfigPath => _configPath;
     public string Get(string key, string? fallback = null)
     {
-        if (_environment.TryGetValue(key, out var environmentValue) &&
-            !string.IsNullOrEmpty(environmentValue))
-        {
-            return environmentValue;
-        }
-        if (_fileValues.TryGetValue(key, out var fileValue) && fileValue.Length > 0)
-        {
-            return fileValue;
-        }
-        return ConfigDefaults.Values.TryGetValue(key, out var defaultValue)
-            ? defaultValue
-            : fallback ?? string.Empty;
+        var evaluation = Evaluation;
+        if (evaluation.Raw.TryGetValue(key, out var value) &&
+            (value.Length > 0 || ConfigDefaults.Values.ContainsKey(key))) return value;
+        return fallback ?? string.Empty;
     }
 
-    public string SourceDirectory => TrimSlash(Get("DVDA_SRC"));
-    public string FinalDirectory => TrimSlash(Get("DVDA_FINAL_DIR"));
-    public string BuildDirectory => TrimSlash(Get("DVDA_BUILD_DIR"));
-    public string Title => Get("DVDA_TITLE");
-    public string IsoPrefix => Get("DVDA_ISO_PREFIX") is { Length: > 0 } prefix
-        ? prefix
-        : DerivePrefix(Title);
-    public string ManifestPath => UnderBuild("manifest.json");
-    public string ReportPath => UnderBuild("decode_report.txt");
-    public string OutputRoot => UnderBuild("out");
-    public string TemporaryRoot => UnderBuild("tmp");
-    public string IsoDirectory => UnderBuild("iso");
-    public string MlpDirectory => UnderBuild("mlp");
-    public string MlpIndexPath => UnderBuild("mlp_index.json");
-    public string AlacFixDirectory => UnderBuild("alacfix");
-    public string MenuDirectory => UnderBuild("menu");
-    public string BuildLogPath => UnderBuild("build.log");
-    public string PrepareCachePath => UnderBuild("prepare-cache.json");
-    public string PrepareSnapshotPath => UnderBuild("prepare-snapshot.json");
-    public bool PrepareCacheEnabled => Get("DVDA_PREPARE_CACHE", "on").Trim().ToLowerInvariant() is not
-        ("off" or "0" or "false" or "no");
-    public string DvdaAuthor => Get("DVDA_AUTHOR");
-    public string Mkisofs => Get("DVDA_MKISOFS");
-    public string Ffmpeg => Get("DVDA_FFMPEG");
-    public string Ffprobe => Get("DVDA_FFPROBE");
-    public string AuthorSource => TrimSlash(Get("DVDA_AUTHOR_SRC"));
-    public string MenuBinaryDirectory => CombinePortable(
-        ParentDirectoryPortable(AuthorSource),
-        "menu-bin");
-    public int MaxDiscs => GetInt("DVDA_MAX_DISCS") ?? 0;
-    public int GroupTrackLimit => Math.Clamp(
-        GetInt("DVDA_GROUP_TRACK_LIMIT") ?? ConfigDefaults.GroupTrackHardLimit,
-        1,
-        ConfigDefaults.GroupTrackHardLimit);
-    public long DiscBytes => GetLong("DVDA_DISC_BYTES") is { } value && value != 0
-        ? value
-        : ConfigDefaults.Dvd5Bytes;
-    public string MlpSource => Get("DVDA_MLP_SOURCE").Trim().ToLowerInvariant() switch
-    {
-        // Legacy configuration spelling is read as generic import, never a separate mode.
-        "external" or "surcode" => "external",
-        "surcode-batch" or "batch-surcode" => "surcode-batch",
-        "lpcm" => "lpcm",
-        "ffmpeg" => throw new ArgumentException("FFmpeg MLP 编码分支已移除，请将 DVDA_MLP_SOURCE 改为 surcode-batch、lpcm 或 external。"),
-        _ => throw new ArgumentException("DVDA_MLP_SOURCE 仅支持 surcode-batch、lpcm 或 external（外部文件）。"),
-    };
-    public string MlpExternalDirectory => TrimSlash(Get("DVDA_MLP_EXTERNAL_DIR").Trim()) is { Length: > 0 } directory
-        ? directory : MlpSource == "surcode-batch" ? MlpDirectory : string.Empty;
-    public string MlpBatchTempDirectory => TrimSlash(Get("DVDA_MLP_BATCH_TEMP_DIR").Trim());
-    public string MlpBatchOutputDirectory => TrimSlash(Get("DVDA_MLP_BATCH_OUTPUT_DIR").Trim());
-    public string MlpMetadataContext => Get("DVDA_MLP_METADATA_CONTEXT").Trim();
-    public string MlpEac3toExecutable => Get("DVDA_MLP_EAC3TO_EXE").Trim();
-    public int MlpSurcodeSampleRate => GetInt("DVDA_MLP_SURCODE_SAMPLE_RATE") ?? 48_000;
-    public int MlpSurcodeBits => GetInt("DVDA_MLP_SURCODE_BITS") ?? 24;
-    public int MlpJobs => Math.Clamp(GetInt("DVDA_MLP_JOBS") ?? 1, 1, 16);
-    public bool MenuEnabled => GetBool("DVDA_MENU");
-    public int MenuTracksPerPage => Math.Clamp(
-        GetInt("DVDA_MENU_TRACKS_PER_PAGE") ?? 12,
-        1,
-        32);
-    public int MenuIndexMinimumAlbums => Math.Max(
-        0,
-        GetInt("DVDA_MENU_INDEX_MIN_ALBUMS") ?? 4);
-    public bool MenuStillPictures => GetBool("DVDA_MENU_STILLPICS");
-    public int MenuCoverDim => Math.Clamp(
-        GetInt("DVDA_MENU_COVER_DIM") ?? 35,
-        0,
-        100);
-    public string MenuFont => Get("DVDA_MENU_FONT").Trim();
-    public string MenuFontJapanese => Get("DVDA_MENU_FONT_JP").Trim();
-    public string MenuFontKorean => Get("DVDA_MENU_FONT_KR").Trim();
-    public bool KeepTemporary => GetBool("DVDA_KEEP_TMP");
-    public bool KeepIntermediate => GetBool("DVDA_KEEP_INTERMEDIATE");
-    public bool ResumeEnabled => Get("DVDA_RESUME", "on").Trim().ToLowerInvariant() is not
-        ("off" or "0" or "false" or "no");
-    public double LossErrorSeconds => GetDouble("DVDA_LOSS_ERROR_S") ?? 0.05;
-    public double LossWarningSeconds => GetDouble("DVDA_LOSS_WARN_S") ?? 0.005;
-    public int? DiagnosticAlbumLimit
-    {
-        get
-        {
-            var value = GetInt("DVDA_ALBUM_LIMIT");
-            return value is > 0 ? value : null;
-        }
-    }
-    public string DiagnosticTitleMode
-    {
-        get
-        {
-            var value = Get("DVDA_TITLE_MODE", "album").Trim().ToLowerInvariant();
-            if (value is "album" or "one") return value;
-            return int.TryParse(value, out var count) && count > 0
-                ? count.ToString(CultureInfo.InvariantCulture)
-                : "album";
-        }
-    }
+    public string SourceDirectory => Evaluation.Read<string>(nameof(SourceDirectory));
+    public string FinalDirectory => Evaluation.Read<string>(nameof(FinalDirectory));
+    public string BuildDirectory => Evaluation.Read<string>(nameof(BuildDirectory));
+    public string Title => Evaluation.Read<string>(nameof(Title));
+    public string IsoPrefix => Evaluation.Read<string>(nameof(IsoPrefix));
+    public string ManifestPath => Evaluation.Read<string>(nameof(ManifestPath));
+    public string ReportPath => Evaluation.Read<string>(nameof(ReportPath));
+    public string OutputRoot => Evaluation.Read<string>(nameof(OutputRoot));
+    public string TemporaryRoot => Evaluation.Read<string>(nameof(TemporaryRoot));
+    public string IsoDirectory => Evaluation.Read<string>(nameof(IsoDirectory));
+    public string MlpDirectory => Evaluation.Read<string>(nameof(MlpDirectory));
+    public string MlpIndexPath => Evaluation.Read<string>(nameof(MlpIndexPath));
+    public string AlacFixDirectory => Evaluation.Read<string>(nameof(AlacFixDirectory));
+    public string MenuDirectory => Evaluation.Read<string>(nameof(MenuDirectory));
+    public string BuildLogPath => Evaluation.Read<string>(nameof(BuildLogPath));
+    public string PrepareCachePath => Evaluation.Read<string>(nameof(PrepareCachePath));
+    public string PrepareSnapshotPath => Evaluation.Read<string>(nameof(PrepareSnapshotPath));
+    public bool PrepareCacheEnabled => Evaluation.Read<bool>(nameof(PrepareCacheEnabled));
+    public string DvdaAuthor => Evaluation.Read<string>(nameof(DvdaAuthor));
+    public string Mkisofs => Evaluation.Read<string>(nameof(Mkisofs));
+    public string Ffmpeg => Evaluation.Read<string>(nameof(Ffmpeg));
+    public string Ffprobe => Evaluation.Read<string>(nameof(Ffprobe));
+    public string AuthorSource => Evaluation.Read<string>(nameof(AuthorSource));
+    public string MenuBinaryDirectory => Evaluation.Read<string>(nameof(MenuBinaryDirectory));
+    public int MaxDiscs => Evaluation.Read<int>(nameof(MaxDiscs));
+    public int GroupTrackLimit => Evaluation.Read<int>(nameof(GroupTrackLimit));
+    public long DiscBytes => Evaluation.Read<long>(nameof(DiscBytes));
+    public string MlpSource => Evaluation.Read<string>(nameof(MlpSource));
+    public string MlpExternalDirectory => Evaluation.Read<string>(nameof(MlpExternalDirectory));
+    public string MlpBatchTempDirectory => Evaluation.Read<string>(nameof(MlpBatchTempDirectory));
+    public string MlpBatchOutputDirectory => Evaluation.Read<string>(nameof(MlpBatchOutputDirectory));
+    public string MlpMetadataContext => Evaluation.Read<string>(nameof(MlpMetadataContext));
+    public string MlpEac3toExecutable => Evaluation.Read<string>(nameof(MlpEac3toExecutable));
+    public int MlpSurcodeSampleRate => Evaluation.Read<int>(nameof(MlpSurcodeSampleRate));
+    public int MlpSurcodeBits => Evaluation.Read<int>(nameof(MlpSurcodeBits));
+    public int MlpJobs => Evaluation.Read<int>(nameof(MlpJobs));
+    public bool MenuEnabled => Evaluation.Read<bool>(nameof(MenuEnabled));
+    public int MenuTracksPerPage => Evaluation.Read<int>(nameof(MenuTracksPerPage));
+    public int MenuIndexMinimumAlbums => Evaluation.Read<int>(nameof(MenuIndexMinimumAlbums));
+    public bool MenuStillPictures => Evaluation.Read<bool>(nameof(MenuStillPictures));
+    public int MenuCoverDim => Evaluation.Read<int>(nameof(MenuCoverDim));
+    public string MenuFont => Evaluation.Read<string>(nameof(MenuFont));
+    public string MenuFontJapanese => Evaluation.Read<string>(nameof(MenuFontJapanese));
+    public string MenuFontKorean => Evaluation.Read<string>(nameof(MenuFontKorean));
+    public bool KeepTemporary => Evaluation.Read<bool>(nameof(KeepTemporary));
+    public bool KeepIntermediate => Evaluation.Read<bool>(nameof(KeepIntermediate));
+    public bool ResumeEnabled => Evaluation.Read<bool>(nameof(ResumeEnabled));
+    public double LossErrorSeconds => Evaluation.Read<double>(nameof(LossErrorSeconds));
+    public double LossWarningSeconds => Evaluation.Read<double>(nameof(LossWarningSeconds));
+    public int? DiagnosticAlbumLimit => Evaluation.Read<int?>(nameof(DiagnosticAlbumLimit));
+    public string DiagnosticTitleMode => Evaluation.Read<string>(nameof(DiagnosticTitleMode));
 
     public string VolumeId(int index) => $"{Title} {index}";
     public string IsoName(int index) => $"{IsoPrefix}_{index}.iso";
-
-    public IReadOnlyList<string> MissingRequiredValues() =>
-        new[] { "DVDA_SRC", "DVDA_FINAL_DIR" }
-            .Where(key => Get(key).Length == 0)
-            .ToArray();
-
-    public IReadOnlyList<string> EffectiveKeys() =>
-        ConfigDefaults.Values.Keys.Concat(_fileValues.Keys)
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-    public string ValueSource(string key)
+    public IReadOnlyList<string> MissingRequiredValues() => Evaluation.MissingRequired.ToArray();
+    public IReadOnlyList<string> EffectiveKeys() => Evaluation.EffectiveKeys.ToArray();
+    public string ValueSource(string key) => Evaluation.Sources.GetValueOrDefault(key, "默认值");
+    public bool HasEnvironmentOverrides(IEnumerable<string>? keys = null)
     {
-        if (_environment.TryGetValue(key, out var environmentValue) &&
-            !string.IsNullOrEmpty(environmentValue))
-        {
-            return "环境变量";
-        }
-        if (_fileValues.TryGetValue(key, out var fileValue) && fileValue.Length > 0)
-        {
-            return Path.GetFileName(ConfigPath ?? "config.env");
-        }
-        return "默认值";
+        var evaluation = Evaluation;
+        return (keys ?? evaluation.EffectiveKeys).Any(key => evaluation.Overrides.Contains(key, StringComparer.Ordinal));
     }
-
-    public bool HasEnvironmentOverrides(IEnumerable<string>? keys = null) =>
-        (keys ?? EffectiveKeys()).Any(key =>
-            _environment.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value));
 
     public IReadOnlyList<KeyValuePair<string, string>> ToShellPairs() =>
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -222,41 +174,4 @@ public sealed partial class DvdaOptions
             ["DVDA_MENU_FONT_KR"] = MenuFontKorean,
         }).ToArray();
 
-    private string UnderBuild(string name) => Path.Combine(BuildDirectory, name);
-    private int? GetInt(string key) => int.TryParse(Get(key).Trim(), out var value) ? value : null;
-    private long? GetLong(string key) => long.TryParse(Get(key).Trim(), out var value) ? value : null;
-    private double? GetDouble(string key) => double.TryParse(
-        Get(key).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ? value : null;
-    private bool GetBool(string key) => Get(key).Trim().ToLowerInvariant() is
-        "1" or "true" or "yes" or "on";
-    private static string TrimSlash(string value) => value.TrimEnd('/');
-
-    private static string ParentDirectoryPortable(string value)
-    {
-        var normalized = value.Replace('\\', '/').TrimEnd('/');
-        var slash = normalized.LastIndexOf('/');
-        if (slash < 0)
-        {
-            return ".";
-        }
-        return slash == 0 ? "/" : normalized[..slash];
-    }
-
-    private static string CombinePortable(string directory, string name)
-    {
-        if (directory.Contains('/'))
-        {
-            return directory == "/" ? "/" + name : directory.TrimEnd('/') + "/" + name;
-        }
-        return Path.Combine(directory, name);
-    }
-
-    private static string DerivePrefix(string title)
-    {
-        var value = InvalidPrefixChars().Replace(title ?? string.Empty, "_").Trim('_');
-        return value.Length > 0 ? value : "DVD_Audio";
-    }
-
-    [GeneratedRegex("[^0-9A-Za-z]+")]
-    private static partial Regex InvalidPrefixChars();
 }

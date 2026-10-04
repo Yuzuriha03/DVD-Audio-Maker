@@ -51,7 +51,9 @@
         "lpcm.validate_format",
         "lpcm.validate_layout",
         "math.content_limit",
-        "math.estimate_aob"
+        "math.estimate_aob",
+        "options.defaults",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -92,7 +94,8 @@
       "name": "环境变量优先于 config.env",
       "managedEntry": "EnvironmentWins",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -101,7 +104,8 @@
       "name": "空环境变量不覆盖配置",
       "managedEntry": "EmptyEnvironmentDoesNotOverride",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -110,7 +114,8 @@
       "name": "默认值与数值回退",
       "managedEntry": "DefaultsAndNumericFallbacks",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -119,7 +124,8 @@
       "name": "派生路径和 ISO 名称",
       "managedEntry": "DerivedPathsAndNames",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -128,7 +134,8 @@
       "name": "限制组轨数量",
       "managedEntry": "ClampGroupTrackLimit",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -137,7 +144,8 @@
       "name": "规范化 MLP 来源",
       "managedEntry": "NormalizeMlpSource",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -153,7 +161,8 @@
       "name": "GUI 导入旧 env 与未知键保留",
       "managedEntry": "GuiConfigurationTests.ImportEnv",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -161,7 +170,9 @@
       "id": 19,
       "name": "GUI 显式设置隔离环境变量",
       "managedEntry": "GuiConfigurationTests.ExplicitValuesWin",
-      "rustOperations": [],
+      "rustOperations": [
+        "options.evaluate"
+      ],
       "status": "pass"
     },
     {
@@ -213,7 +224,8 @@
       "name": "旧 eac3to 配置迁移与 FFmpeg 工具设置",
       "managedEntry": "FfmpegPcmTests.LegacySettings",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -241,7 +253,8 @@
       "name": "SurCode 内置任务与路径",
       "managedEntry": "BuildSurcodeBatchJob",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -266,7 +279,9 @@
       "id": 32,
       "name": "Shell 单引号转义",
       "managedEntry": "EscapeShellAssignment",
-      "rustOperations": [],
+      "rustOperations": [
+        "shell.assignment"
+      ],
       "status": "pass"
     },
     {
@@ -274,7 +289,8 @@
       "name": "Shell 默认键集兼容 Python",
       "managedEntry": "PreserveLegacyShellKeySet",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -283,7 +299,8 @@
       "name": "配置来源与有效键集合",
       "managedEntry": "DescribeConfigurationSources",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -449,7 +466,9 @@
       "id": 53,
       "name": "MLP 编码核心内嵌产物身份",
       "managedEntry": "MlpEncoderTests.EmbeddedCore",
-      "rustOperations": [],
+      "rustOperations": [
+        "options.evaluate"
+      ],
       "status": "pass"
     },
     {
@@ -468,7 +487,8 @@
         "config.parse",
         "disc.plan",
         "math.content_limit",
-        "math.estimate_aob"
+        "math.estimate_aob",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -525,7 +545,8 @@
       "name": "构建日志命令格式",
       "managedEntry": "WriteCompatibleBuildLog",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -702,7 +723,8 @@
         "config.parse",
         "disc.plan",
         "math.content_limit",
-        "math.estimate_aob"
+        "math.estimate_aob",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -716,6 +738,7 @@
         "disc.plan",
         "math.content_limit",
         "math.estimate_aob",
+        "options.evaluate",
         "publish.single"
       ],
       "status": "pass"
@@ -730,6 +753,7 @@
         "disc.plan",
         "math.content_limit",
         "math.estimate_aob",
+        "options.evaluate",
         "publish.single",
         "publish.stage"
       ],
@@ -744,7 +768,8 @@
         "config.parse",
         "disc.plan",
         "math.content_limit",
-        "math.estimate_aob"
+        "math.estimate_aob",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -753,7 +778,8 @@
       "name": "菜单配置派生值",
       "managedEntry": "LoadMenuConfiguration",
       "rustOperations": [
-        "config.parse"
+        "config.parse",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -768,7 +794,8 @@
         "menu.pages",
         "menu.sanitize",
         "menu.short_album",
-        "menu.truncate"
+        "menu.truncate",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -805,7 +832,9 @@
       "id": 91,
       "name": "纯 C# TTC face 提取与校验",
       "managedEntry": "ExtractOpenTypeCollectionFaces",
-      "rustOperations": [],
+      "rustOperations": [
+        "options.evaluate"
+      ],
       "status": "pass"
     },
     {
@@ -901,7 +930,8 @@
       "rustOperations": [
         "config.parse",
         "disk.group_requirements",
-        "math.estimate_aob"
+        "math.estimate_aob",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -916,6 +946,7 @@
         "identity.compute",
         "identity.equal",
         "metadata.parse",
+        "options.evaluate",
         "path.safe_basename",
         "prepare.cache_reusable"
       ],
@@ -929,6 +960,7 @@
         "config.parse",
         "decode.scan",
         "metadata.parse",
+        "options.evaluate",
         "path.safe_basename"
       ],
       "status": "pass"
@@ -953,7 +985,8 @@
         "config.parse",
         "hash.sha256_hex",
         "identity.compute",
-        "identity.equal"
+        "identity.equal",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -990,7 +1023,8 @@
         "audio.parameters",
         "config.parse",
         "identity.compute",
-        "identity.equal"
+        "identity.equal",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -1005,6 +1039,7 @@
         "hash.sha256_file",
         "identity.compute",
         "identity.equal",
+        "options.evaluate",
         "wav.layout",
         "wav.normalize"
       ],
@@ -1044,7 +1079,8 @@
         "hash.sha256_hex",
         "identity.compute",
         "math.content_limit",
-        "math.estimate_aob"
+        "math.estimate_aob",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -1064,6 +1100,7 @@
         "identity.equal",
         "math.content_limit",
         "math.estimate_aob",
+        "options.evaluate",
         "publish.set",
         "publish.stage",
         "resume.signature_match",
@@ -1114,6 +1151,7 @@
     "menu.parse_overlay_batch": 17,
     "flac.picture": 3,
     "decode.scan": 6,
+    "options.evaluate": 187,
     "publish.set": 20,
     "menu.visual_expected_index_cells": 9,
     "menu.visual_background_invalid": 2,
@@ -1133,6 +1171,7 @@
     "iso.strip_version": 9,
     "math.content_limit": 18,
     "hash.sha256_file": 23,
+    "shell.assignment": 1,
     "aob.audit_observe": 9018,
     "iso.entry": 1,
     "hash.sha256_hex": 21,
@@ -1148,7 +1187,8 @@
     "disc.plan": 18,
     "wav.layout": 47,
     "flac.replace_picture": 1,
+    "options.defaults": 1,
     "lpcm.validate_layout": 16
   },
-  "evidence": "build/rust-validation/p13-aob-audit-compare-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p14-options-final-x64.json (ignored local report)"
 }

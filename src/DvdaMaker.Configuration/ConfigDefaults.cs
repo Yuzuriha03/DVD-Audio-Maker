@@ -8,7 +8,7 @@ public static class ConfigDefaults
     public const double AobOverhead = 1.025;
     public const long IsoSafety = 8L * 1024 * 1024;
 
-    public static IReadOnlyDictionary<string, string> Values { get; } =
+    internal static IReadOnlyDictionary<string, string> ManagedValues { get; } =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["DVDA_SRC"] = "",
@@ -51,4 +51,9 @@ public static class ConfigDefaults
             ["DVDA_LOSS_ERROR_S"] = "0.05",
             ["DVDA_LOSS_WARN_S"] = "0.005",
         };
+
+    private static readonly Lazy<IReadOnlyDictionary<string, string>> Evaluated = new(() =>
+        DvdaMaker.Processes.RustBridge.Run<IReadOnlyDictionary<string, string>>("options.defaults",
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), () => ManagedValues));
+    public static IReadOnlyDictionary<string, string> Values => Evaluated.Value;
 }
