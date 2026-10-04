@@ -265,4 +265,6 @@ cargo run --manifest-path rust/Cargo.toml --release --locked --offline -- format
 - 成品发布整套事务、单文件发布、暂存移动与复制已由 Rust 执行。compare 模式对有副作用操作只执行一次；`PublicationMigrationTests` 在独立目录分别执行原 C# 与 Rust，比较完整目录状态、文件 SHA-256、返回路径、诊断代码和异常类型。覆盖 14 个整套事务场景及 6 个单文件场景。
 - 报告 `build/rust-validation/p10-publication-compare-x64.json` 为 115/115 通过；对应操作实际调用与逐项映射见 `rust-compatibility-map.json`。这些是局部迁移证据，不等于完整 Rust 制盘、GUI 或发布验收。
 - 本批次 Rust x64 Release 构建、Clippy `-D warnings`、19 项 core 测试与 1 项 C17 ABI 测试通过。最终报告实际调用文件身份 93 次、整文件哈希 23 次、整套发布 20 次、暂存移动 8 次、单文件发布 5 次、复制 2 次。
-- P2 新发现的缺口：早期 Rust ISO 实现每次读取整张镜像；须改成按偏移读取并增加大文件边界测试，小型 fixture 不能证明大镜像内存行为已经验收。
+- P2 ISO 大文件缺口已修复：改为按偏移读取描述符和目录，提取以固定缓冲流式复制。新增扩展属性扇区、空文件、缺失路径与截断载荷对照。`p11-iso-streaming-serial-x64.json` 为 115/115；首次与真实样本同时执行时出现两个原有本地化正则 100 ms 超时，串行复测通过，未修改或放宽超时保护。
+- `p11-real-iso-compare-x64.log` 为真实样本 3/3：E 盘两张超过 3 GB 的 ISO 比较目录、导航文件及 AOB 起始扇区；既有 MLP 比较完整文件哈希、格式字段和对齐幂等性。这不是整张 ISO/AOB 全字节比较，也没有重新编码或修改参考样本。
+- 最终范围包含全部 C# 应用与开发工具；与当前步骤相邻的次要目标一并迁移，不把 I/O、进程管理、本地化、CLI 或打包代码作为永久遗留部分。既有 C/C17 原生算法继续复用。

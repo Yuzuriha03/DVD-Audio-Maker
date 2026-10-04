@@ -1,5 +1,59 @@
 use serde_json::{Value, json};
+use std::{
+    cell::RefCell,
+    io::{Read, Seek, SeekFrom},
+};
 use std::{fs, path::Path};
+
+struct IsoSource {
+    file: RefCell<fs::File>,
+    length: u64,
+}
+impl IsoSource {
+    fn open(path: &str) -> Result<Self, String> {
+        let file = crate::identity::open_read(path).map_err(|e| format!("{path}: {e}"))?;
+        let length = file.metadata().map_err(|e| e.to_string())?.len();
+        Ok(Self {
+            file: RefCell::new(file),
+            length,
+        })
+    }
+
+    fn read_at(&self, offset: u64, count: usize) -> Result<Vec<u8>, String> {
+        if count > i32::MAX as usize {
+            return Err("Requested ISO range exceeds the managed size limit".into());
+        }
+        let available = self.length.saturating_sub(offset).min(count as u64) as usize;
+        let mut buffer = vec![0; available];
+        let mut file = self.file.borrow_mut();
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|e| e.to_string())?;
+        file.read_exact(&mut buffer).map_err(|e| e.to_string())?;
+        Ok(buffer)
+    }
+
+    fn extract(&self, offset: u64, size: u32, destination: &Path) -> Result<(), String> {
+        if size > i32::MAX as u32 {
+            return Err("Requested ISO file exceeds the managed size limit".into());
+        }
+        if let Some(parent) = destination.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut file = self.file.borrow_mut();
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|e| e.to_string())?;
+        let available = self.length.saturating_sub(offset).min(u64::from(size));
+        let mut limited = (&mut *file).take(available);
+        let mut output = fs::File::create(destination).map_err(|e| e.to_string())?;
+        let copied = std::io::copy(&mut limited, &mut output).map_err(|e| e.to_string())?;
+        if copied != available {
+            return Err("ISO changed during extraction".into());
+        }
+        Ok(())
+    }
+}
 
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
@@ -45,14 +99,14 @@ struct IsoInfo {
 
 fn iso_info(request: Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected ISO path")?;
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+    let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     serde_json::to_value(info).map_err(|error| error.to_string())
 }
 
 fn iso_list(request: Value) -> Result<Value, String> {
     let (path, inner_path) = iso_request(&request)?;
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+    let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let Ok(entry) = iso_lookup(&bytes, &info, inner_path) else {
         return Ok(json!([]));
@@ -65,7 +119,7 @@ fn iso_list(request: Value) -> Result<Value, String> {
 
 fn iso_entry(request: Value) -> Result<Value, String> {
     let (path, inner_path) = iso_request(&request)?;
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+    let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let entry = iso_lookup(&bytes, &info, inner_path).ok();
     serde_json::to_value(entry).map_err(|error| error.to_string())
@@ -73,7 +127,7 @@ fn iso_entry(request: Value) -> Result<Value, String> {
 
 fn iso_all_paths(request: Value) -> Result<Value, String> {
     let (path, inner_path) = iso_request(&request)?;
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+    let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let Ok(root) = iso_lookup(&bytes, &info, inner_path) else {
         return Ok(json!([]));
@@ -95,7 +149,7 @@ fn iso_all_paths(request: Value) -> Result<Value, String> {
 
 fn iso_data_lba(request: Value) -> Result<Value, String> {
     let (path, inner_path) = iso_request(&request)?;
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+    let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let entry = iso_lookup(&bytes, &info, inner_path)?;
     Ok(json!(
@@ -105,7 +159,7 @@ fn iso_data_lba(request: Value) -> Result<Value, String> {
 
 fn iso_read_file(request: Value) -> Result<Value, String> {
     let (path, inner_path) = iso_request(&request)?;
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+    let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let entry = iso_lookup(&bytes, &info, inner_path)?;
     if entry.is_directory {
@@ -115,13 +169,7 @@ fn iso_read_file(request: Value) -> Result<Value, String> {
         return Err(format!("{inner_path} is a multi-extent file"));
     }
     let offset = iso_data_offset(&info, &entry)?;
-    let end = offset
-        .checked_add(entry.size as usize)
-        .ok_or("ISO file range overflow")?;
-    if end > bytes.len() {
-        return Err("ISO file exceeds the image boundary.".into());
-    }
-    Ok(json!({"DataHex": hex_encode(&bytes[offset..end])}))
+    Ok(json!({"DataHex": hex_encode(&bytes.read_at(offset as u64, entry.size as usize)?)}))
 }
 
 fn iso_extract(request: Value) -> Result<Value, String> {
@@ -138,7 +186,7 @@ fn iso_extract(request: Value) -> Result<Value, String> {
         .get("Destination")
         .and_then(Value::as_str)
         .ok_or("Missing extraction destination")?;
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+    let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let Some(entry) = iso_lookup(&bytes, &info, inner_path).ok() else {
         return Ok(json!({"Extracted":false}));
@@ -153,14 +201,13 @@ fn iso_extract(request: Value) -> Result<Value, String> {
         {
             fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
         }
-        let data = iso_file_data(&bytes, &info, &entry)?;
-        fs::write(destination, data).map_err(|error| format!("{destination}: {error}"))?;
+        iso_extract_file(&bytes, &info, &entry, Path::new(destination))?;
     }
     Ok(json!({"Extracted":true}))
 }
 
 fn iso_extract_directory(
-    bytes: &[u8],
+    bytes: &IsoSource,
     info: &IsoInfo,
     directory: &IsoEntry,
     destination: &str,
@@ -172,29 +219,23 @@ fn iso_extract_directory(
                 .map_err(|error| format!("{}: {error}", output.display()))?;
             iso_extract_directory(bytes, info, &child, &output.to_string_lossy())?;
         } else {
-            let data = iso_file_data(bytes, info, &child)?;
-            fs::write(&output, data).map_err(|error| format!("{}: {error}", output.display()))?;
+            iso_extract_file(bytes, info, &child, &output)?;
         }
     }
     Ok(())
 }
 
-fn iso_file_data<'a>(
-    bytes: &'a [u8],
+fn iso_extract_file(
+    bytes: &IsoSource,
     info: &IsoInfo,
     entry: &IsoEntry,
-) -> Result<&'a [u8], String> {
+    destination: &Path,
+) -> Result<(), String> {
     if entry.is_multi_extent {
         return Err(format!("{} is a multi-extent file", entry.name));
     }
     let offset = iso_data_offset(info, entry)?;
-    let end = offset
-        .checked_add(entry.size as usize)
-        .ok_or("ISO file range overflow")?;
-    if end > bytes.len() {
-        return Err("ISO file exceeds the image boundary.".into());
-    }
-    Ok(&bytes[offset..end])
+    bytes.extract(offset as u64, entry.size, destination)
 }
 
 fn iso_request(request: &Value) -> Result<(&str, &str), String> {
@@ -210,20 +251,14 @@ fn iso_request(request: &Value) -> Result<(&str, &str), String> {
     Ok((path, inner_path))
 }
 
-fn parse_iso_info(path: &str, bytes: &[u8]) -> Result<IsoInfo, String> {
+fn parse_iso_info(path: &str, bytes: &IsoSource) -> Result<IsoInfo, String> {
     const DEFAULT_SECTOR: usize = 2048;
     for index in 0..32usize {
         let start = (16 + index)
             .checked_mul(DEFAULT_SECTOR)
             .ok_or("ISO descriptor offset overflow")?;
-        let end = start
-            .checked_add(DEFAULT_SECTOR)
-            .ok_or("ISO descriptor end overflow")?;
-        if end > bytes.len() {
-            break;
-        }
-        let sector = &bytes[start..end];
-        if &sector[1..6] != b"CD001" {
+        let sector = bytes.read_at(start as u64, DEFAULT_SECTOR)?;
+        if sector.len() < 7 || &sector[1..6] != b"CD001" {
             if index == 0 {
                 continue;
             }
@@ -236,19 +271,22 @@ fn parse_iso_info(path: &str, bytes: &[u8]) -> Result<IsoInfo, String> {
         if descriptor_type != 1 {
             continue;
         }
+        if sector.len() < 190 {
+            return Err("ISO primary volume root entry is truncated.".into());
+        }
         let mut sector_size = u16_le(&sector[128..130])? as i32;
         if sector_size == 0 {
             sector_size = DEFAULT_SECTOR as i32;
-        }
-        if sector[156] < 34 {
-            return Err("ISO primary volume root entry is truncated.".into());
         }
         let root = &sector[156..190];
         return Ok(IsoInfo {
             sector_size,
             root_logical_block_address: u32_le(&root[2..6])?,
             root_size: u32_le(&root[10..14])?,
-            volume_identifier: String::from_utf8_lossy(&sector[40..72])
+            volume_identifier: sector[40..72]
+                .iter()
+                .map(|&c| if c.is_ascii() { c as char } else { '?' })
+                .collect::<String>()
                 .trim_end_matches([' ', '\0'])
                 .to_owned(),
         });
@@ -259,19 +297,13 @@ fn parse_iso_info(path: &str, bytes: &[u8]) -> Result<IsoInfo, String> {
 }
 
 fn iso_parse_directory(
-    bytes: &[u8],
+    bytes: &IsoSource,
     info: &IsoInfo,
     entry: &IsoEntry,
 ) -> Result<Vec<IsoEntry>, String> {
     let offset = iso_data_offset(info, entry)?;
     let size = entry.size as usize;
-    let end = offset
-        .checked_add(size)
-        .ok_or("ISO directory size overflow")?;
-    if end > bytes.len() {
-        return Err("ISO directory exceeds the image boundary.".into());
-    }
-    let blob = &bytes[offset..end];
+    let blob = bytes.read_at(offset as u64, size)?;
     let mut result = Vec::new();
     let mut cursor = 0usize;
     while cursor < blob.len() {
@@ -325,7 +357,7 @@ fn iso_parse_directory(
     Ok(result)
 }
 
-fn iso_lookup(bytes: &[u8], info: &IsoInfo, inner_path: &str) -> Result<IsoEntry, String> {
+fn iso_lookup(bytes: &IsoSource, info: &IsoInfo, inner_path: &str) -> Result<IsoEntry, String> {
     let parts = iso_split_path(inner_path);
     let mut current = IsoEntry {
         name: String::new(),
@@ -351,7 +383,7 @@ fn iso_lookup(bytes: &[u8], info: &IsoInfo, inner_path: &str) -> Result<IsoEntry
 }
 
 fn iso_recurse_paths(
-    bytes: &[u8],
+    bytes: &IsoSource,
     info: &IsoInfo,
     parent: &IsoEntry,
     base: &str,
