@@ -70,13 +70,15 @@ public sealed class ProjectSettings
         try
         {
             _ = options.MlpSource;
-            if (requireEncoding && options.MlpSource == "surcode-batch" && ExecutablePath.Resolve(options.Ffmpeg) is null)
+            if (options.MlpSource == "lpcm" && options.MlpSurcodeBits == 20)
+                errors.Add("LPCM 编码请选择 16 或 24 位；20 位可使用 MLP 编码。");
+            if (requireEncoding && options.MlpSource is ("surcode-batch" or "lpcm") && ExecutablePath.Resolve(options.Ffmpeg) is null)
                 errors.Add("内置媒体组件缺失，请完整解压发布包；开发环境请准备 media-native 目录。");
-            if (requireEncoding && options.MlpSource is "external" or "surcode" && !Directory.Exists(options.MlpExternalDirectory))
+            if (requireEncoding && options.MlpSource == "external" && !Directory.Exists(options.MlpExternalDirectory))
                 errors.Add("导入外部 MLP 时必须选择存在的 MLP 目录。");
         }
         catch (ArgumentException exception) { errors.Add(exception.Message); }
-        if (!string.IsNullOrWhiteSpace(options.MlpMetadataContext) && !File.Exists(options.MlpMetadataContext))
+        if (options.Get("DVDA_MLP_SOURCE").Trim().ToLowerInvariant() is ("surcode-batch" or "batch-surcode") && !string.IsNullOrWhiteSpace(options.MlpMetadataContext) && !File.Exists(options.MlpMetadataContext))
             errors.Add("指定的 MLP 元数据上下文文件不存在。");
         if (options.MlpSurcodeSampleRate is not (44100 or 48000 or 88200 or 96000 or 176400 or 192000))
             errors.Add("MLP 目标采样率无效。");

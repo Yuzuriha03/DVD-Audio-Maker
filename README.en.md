@@ -1,253 +1,90 @@
 # DVD-Audio Maker
 
-[简体中文](README.md) | [English](README.en.md)
+[简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md)
 
-A Windows x64 application that turns FLAC and ALAC/M4A sources into **DVD-Audio ISOs**, with a bilingual GUI, MLP encoding, disc planning, optional menus and output verification.
+Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP and LPCM encoding, automatic disc splitting, track menus, album covers and output verification. The application runs on Windows x64 and supports Chinese, English and Japanese interfaces and logs.
 
-The default release is **one Windows x64 GUI EXE without the .NET runtime**. Install [.NET 10 Desktop Runtime for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0), then run `DVD-Audio-Maker.exe`. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework 4.x alone is insufficient. Historical directory packages still require complete extraction.
+**Before first use, install [.NET 10 Desktop Runtime for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0).** The release does not bundle .NET. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework cannot replace the desktop runtime.
 
-## Quick start
+## Install and open
 
-1. Select the source, working and ISO output directories; set the title and capacity.
-2. Choose the target sample rate, bit depth and optional menus. Keep each album in its own folder with album, title, track and date tags.
-3. Check the sources, then preview the build. Preview prepares sources and encodes MLP but does not create ISOs.
-4. Build the discs and verify every track, menu and output ISO.
+1. Download `DVD-Audio-Maker-v1.0-win-x64.zip` from [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/tag/v1.0).
+2. Extract the ZIP to a folder of your choice and double-click `DVD-Audio-Maker.exe`.
+3. Allow a moment for the first launch to prepare its components. No separate FFmpeg, ImageMagick, eac3to or SurCode installation is required.
 
-The release ZIP contains the single-file EXE plus separate instructions, example configuration, licenses and component notices. Only required runtime components and complete CJK fonts are embedded in the EXE, extracted into `%LOCALAPPDATA%/DVD-Audio-Maker/runtime` on first launch, then verified/reused. Media processing and authoring share one FFmpeg source build, with one copy of each DLL. Close all instances before clearing this cache; it is restored automatically. Retain the license notices. `config.env.example` is not loaded automatically; existing `config.env` files remain importable. See [single-file builds](docs/ONEFILE-PUBLISH.md).
+The application, instructions, example configuration and licenses are together in the extracted folder. Retain `LICENSE`, `THIRD-PARTY.md`, `THIRD-PARTY.en.md`, `NOTICE-Image.txt` and `NOTICE-Menu.txt`.
 
-## Configuration, language and logs
+## Make your first disc
 
-The GUI replaces manual env editing while retaining `config.env` import and JSON profile loading/saving. Daily settings live in `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`. The CLI and `--config` remain available.
+1. **Choose the sources.** Select your music folder; subfolders are included. Keep each album in its own folder and provide album, title, track number and date tags.
+2. **Choose the output folder.** Set the ISO destination, disc title and DVD5, DVD9 or custom capacity. Set the maximum disc count to 0 for no limit; discs are split according to capacity.
+3. **Choose the audio format.** Normally select “MLP encoding”. Choose a sample rate and bit depth suitable for the source and playback device. Reducing either can lose source precision; increasing them does not add detail.
+4. **Configure menus.** Optionally enable track menus, album indexes and playback covers. JPG, PNG and WebP covers are supported, and Chinese, Japanese and Korean menu fonts are included.
+5. Click **“Check sources”** and resolve any issues, then **“Build discs”**. Building also checks the sources automatically before encoding and creating ISOs.
+6. When finished, click **“Verify output”**. After verification passes, use “Open output” to find your ISOs.
 
-The upper-right language selector switches the UI and task logs between Chinese and English without changing paths, track tags, settings or encoded data. The initial language follows Windows; switching is disabled while a task runs. GUI and CLI accept `--language en`, `--language zh-CN`, `--language auto` and `DVDA_LANGUAGE`.
+Tasks can be canceled. Closing the window during a task stops it and waits for cleanup. Canceling does not delete completed output. Burning and playback require software or hardware that supports DVD-Audio; an ISO is not a guarantee of compatibility with ordinary DVD-Video players.
 
-Logs default to stage summaries, with detailed output, warning filters, paused display, copy and export options. Tasks can be canceled. Full logs and startup errors are stored in `%LOCALAPPDATA%/DVD-Audio-Maker/logs`.
+## Audio options
 
-## Encoding and tools
+| Mode | Storage | Size and limits | When to choose it |
+| --- | --- | --- | --- |
+| MLP encoding | Losslessly compressed PCM | Usually smaller; supports 16 / 20 / 24 bits | Save space or prepare high-resolution multichannel audio |
+| LPCM encoding | Uncompressed PCM | Larger; currently supports 16 / 24 bits, up to 9.6 Mb/s | Store audio without compression |
 
-| Task | Implementation |
-|---|---|
-| Source reading, conversion, decoding and media verification | In-process x64 media libraries; no FFmpeg/FFprobe EXE |
-| MLP encoding | Embedded mlpencoder DLL; no original SurCode or eac3to |
-| Covers, text, menu images, fonts and image verification | The GUI and native author each call the tailored image DLL in process |
-| Menu encoding/muxing, authoring and ISO creation | Project author with in-process C menu modules and ISO writer |
-| Optional M4A/ALAC-to-FLAC organization | In-process FLAC metadata editor handles artwork and tags |
+**Both preserve the same audio quality when given identical PCM at the same sample rate, bit depth and channel layout.** LPCM does not gain detail by using more space. Lowering the output rate or depth can lose precision; raising it does not create new source detail.
 
-No separate FFmpeg, FFprobe or ImageMagick installation is needed. The GUI replaces imported legacy media paths with built-in components; the developer CLI and reference tests can still use explicit external converters. Images support JPEG/PNG reading and writing plus WebP cover reading, with complete SC/JP/KR font faces. General video, PDF/SVG and other image delegate chains are excluded.
+LPCM must also meet the bitrate limit. For example, 96 kHz / 24-bit / 6-channel LPCM requires 13.824 Mb/s and is rejected; choose MLP or reduce the target format. 20-bit output currently requires MLP. LPCM also needs more cache and working space.
 
-The batch interface supports one to six channels at 44.1, 48, 88.2 and 96 kHz, and mono/stereo at 176.4 and 192 kHz, with 16-, 20- or 24-bit target samples. Input channel layouts are retained. Mixed-rate/depth channel groups are not exposed as GUI settings. Some high-noise material can still exceed available MLP stream limits; it is not made to fit through lossy processing.
+- 44.1, 48, 88.2 and 96 kHz support one to six channels; 176.4 and 192 kHz support mono and stereo.
+- Target bit depths are 16, 20 and 24 bits. The input channel layout is retained.
+- Extremely noisy material may exceed MLP stream limits. If encoding fails, review the track's log and retry with a suitable audio format.
+- **Import existing MLP files:** Use this option for MLP files encoded with the original SurCode MLP (surcodemlp.exe). Select their folder and keep album directories and filenames aligned with the corresponding sources. The application uses the existing encoded files directly; it does not re-encode them or launch SurCode MLP. Retain the original audio and encoding settings, including sample rate and bit depth, for source checks and lossless verification. A successful import alone does not verify files with unknown origins or conversion settings.
 
-Byte-identical MLP requires **identical target PCM, encoding parameters and auxiliary metadata context**. Encoded output is not patched. Identical audio with different historical metadata does not imply identical complete files. See [mlpencoder integration](docs/MLP-ENCODER.en.md) and [current media processing](docs/INPROCESS-MEDIA.en.md).
+The working folder stores check results, encoded audio and temporary disc files. Choose a drive with enough free space. Valid caches are reused and unfinished builds can resume. Keep the working folder until output verification is complete.
 
-## Source development
+## Save settings and import configurations
 
-The application uses .NET 10 / C#. The GUI, CLI and native encoding core target Windows x64. Development needs the .NET 10 SDK plus matching native libraries, authoring tools and assets; the Git repository does not contain the complete external tool bundle.
+Edit settings in the interface. Use “Save profile” to store a JSON profile and “Open profile” to reuse it later. Everyday settings are saved in `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
+
+Use “Import env…” to read an existing `config.env`. If there are no saved everyday settings, the application also looks for config.env beside the EXE or in the current working directory. Import does not rewrite the original file. A legacy SurCode import setting is mapped to generic MLP import; check the source and MLP folder paths afterward.
+
+The included `config.env.example` is optional and is not loaded automatically. There is no need to edit it to get started. Switch between Chinese, English and Japanese at the top right; the preference is saved with your profile.
+
+## Progress and troubleshooting
+
+The log area shows task summaries by default. For troubleshooting, switch to detailed logs or save the full log. You can filter issues, pause log display and copy text. Pausing the log display does not pause the task.
+
+- **The application will not open:** install the Windows x64 version of .NET 10 Desktop Runtime and try again.
+- **Source checking fails:** review the named track and reason; check that the file is readable and contains supported lossless audio.
+- **Not enough disk space:** both working and output folders need free space. Change the working folder under “More settings” if needed.
+- **Building or verification fails:** save the full log and retain the working folder, resolve the problem and retry. An ISO being present does not replace verification.
+- **A component is missing or damaged:** close all instances and reopen the application. If needed, extract the ZIP again. With the application closed, you can also remove `%LOCALAPPDATA%/DVD-Audio-Maker/runtime`; the component cache is rebuilt on the next launch.
+
+Full task logs and startup errors are stored in `%LOCALAPPDATA%/DVD-Audio-Maker/logs`. Output verification checks capacity, tracks, timing, menus and audio, including all MLP data inside the disc. It does not modify encoded files.
+
+## Licenses and requirements
+
+See [LICENSE](LICENSE) for the project license, [third-party notices](tools/win-build/docs/THIRD-PARTY.en.md) for components and fonts. The README and RUNTIME documents in the release are user guides and do not include development instructions.
+
+## Development and builds
+
+Development requires Windows x64, the .NET 10 SDK and matching native components. Routine C# edits reuse those components; native rebuilds use MSYS2/MinGW-w64 and Python. The dvda-author folder is a partial source mirror; prepare full dependencies as described in the build guide.
 
 ```bat
 gui-debug.cmd
 cli.cmd config
-dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
+cli.cmd build --dry-run --config "C:/work/test.env"
+dotnet build DVD-Audio-Maker.sln -c Release -p:SelfContained=false -m:1
 ```
 
-VS Code retains F5 profiles for the GUI, CLI and compatibility tests. Routine C# changes reuse verified native components; native maintenance additionally needs Python, MSYS2/MinGW-w64 and development libraries. See [development/debugging](docs/DEVELOPMENT.en.md) and [Windows builds](tools/win-build/README.en.md).
+`dry-run` is a developer debugging option in the source CLI. It prepares audio, encodes MLP and writes a separate index without creating an ISO; it is not a zero-write operation. The GUI offers checking, building and verification. `surcode-batch` remains a compatibility configuration key; legacy `surcode` import values map to `external`, with no separate encoding mode.
 
-| Directory | Purpose |
-|---|---|
-| `src/DvdaMaker.Desktop` / `Cli` | GUI and developer command-line entry points |
-| `src/DvdaMaker.Configuration` / `Localization` | Settings, profiles and bilingual resources |
-| `src/DvdaMaker.Preparation` / `Building` | Source preparation, MLP, disc planning, menus and verification |
-| `src/DvdaMaker.Processes` | In-process media/images and remaining external process management |
-| `src/DvdaMaker.SurcodeTool/Native` | Pinned mlpencoder sources and x64 DLL |
-| `src/DvdaMaker.Formats` / `FontTool` | Stream parsing and shared font utilities |
-| `src/DvdaMaker.Toolchain` / `tools/win-build` | Native builds, packaging and regression scripts |
-| `tests` / `docs` | Compatibility tests, designs and validation records |
-| `build` | Git-ignored local components, packages, fixtures and caches |
+- [Development, debugging and CLI](docs/DEVELOPMENT.en.md)
+- [Windows builds, native components and packaging](tools/win-build/README.en.md)
+- [Single-file packaging design and validation](docs/ONEFILE-PUBLISH.md)
+- [MLP integration and validation limits](docs/MLP-ENCODER.en.md)
+- [Native migration records](docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md)
+- [Troubleshooting and historical diagnostics](docs/TROUBLESHOOTING.en.md)
 
-## CLI and existing env configurations
-
-Edit GUI settings on screen and save them as JSON. The priority below applies only to the CLI. The repository includes an example `config.env` suitable for version control. Use "Import env…" or `--config` to select an existing configuration.
-
-Configuration value priority:
-
-```text
-Environment variables > selected configuration file > built-in defaults
-```
-
-Configuration files are selected in this order: `--config`, `DVDA_CONFIG`, then `config.env`. Built-in defaults are used when no configuration file is found.
-
-Minimal configuration example:
-
-```text
-DVDA_SRC="D:/Music/MyAlbums"
-DVDA_FINAL_DIR="D:/DVD_Output"
-DVDA_BUILD_DIR="D:/DVD_Output/_work"
-DVDA_TITLE="My DVD-Audio"
-DVDA_ISO_PREFIX="MyCollection"
-DVDA_MAX_DISCS="2"
-DVDA_MENU="off"
-```
-
-Configuration parsing accepts only `KEY=VALUE`; it does not execute commands or expand variables. Use absolute Windows paths. Both forward and backslashes are accepted.
-
-Check configuration:
-
-```bat
-dotnet run --project src\DvdaMaker.Cli -- config
-dotnet run --project src\DvdaMaker.Cli -- config --check
-```
-
-## Building and verification
-
-```bat
-build.cmd --dry-run
-build.cmd
-verify.cmd
-```
-
-Select another configuration:
-
-```bat
-build.cmd --dry-run --config "D:\Config\dvda.env"
-build.cmd --config "D:\Config\dvda.env"
-verify.cmd all --config "D:\Config\dvda.env"
-```
-
-You can also invoke the CLI directly:
-
-```bat
-dotnet run --project src\DvdaMaker.Cli -- prepare
-dotnet run --project src\DvdaMaker.Cli -- plan
-dotnet run --project src\DvdaMaker.Cli -- build --dry-run
-dotnet run --project src\DvdaMaker.Cli -- build
-dotnet run --project src\DvdaMaker.Cli -- verify all
-```
-
-`plan` reads the existing `manifest.json` and MLP sizes without acquiring or encoding MLP. Use it for a quick disc-layout preview.
-`build --dry-run` performs the full MLP acquisition workflow and writes a separate preview index. It is not a zero-write operation.
-`prepare --force` bypasses source verification caches and repeats probing and decoding checks.
-`build --no-resume` disables per-disc resumption and rebuilds every disc.
-
-verify lossless checks every disc, group and track: complete target PCM is compared, and a read-only C parser checks every MLP byte in all AOB segments inside the ISO. Batch-surcode regenerates target PCM using the same SWR, bit-depth conversion and WAV normalization as encoding. Equal length is required by default; SurCode only permits complete zero-valued tail frames shorter than 1 ms. Truncation, nonzero tails and differences fail. Unknown conversion policies for old external MLP cannot pass through similar sample counts. Verification never modifies encoded files.
-
-## Reruns and caches
-
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `DVDA_PREPARE_CACHE` | `on` | Source probing and decoding-check cache at `<DVDA_BUILD_DIR>/prepare-cache.json` |
-| `DVDA_RESUME` | `on` | Per-disc resumption, recorded at `<DVDA_BUILD_DIR>/publish-staging/resume.json` |
-| `DVDA_MLP_JOBS` | `1` | MlpEncoder encoder concurrency, from 1 to 16 jobs |
-| `DVDA_KEEP_TMP` | `off` | Keep `<DVDA_BUILD_DIR>/tmp` for diagnostics; disables automatic cleanup |
-| `DVDA_KEEP_INTERMEDIATE` | `off` | Keep authoring output and intermediate ISOs; **disables per-disc resumption while enabled** |
-
-- Source caches are reused only when file identity (length, modification time and hashes of the first and last 64 KiB) and normalization parameters match exactly. Tracks that fail verification are never cached.
-- Per-disc resumption skips a disc only when its signature matches (source/MLP identity, author/ISO-writer identity, output-affecting settings and menu configuration) and its staged ISO is unchanged. Final publication still commits the entire ISO set and index as one transaction. Failed builds retain `<DVDA_BUILD_DIR>/publish-staging` for the next attempt.
-- `DVDA_MLP_JOBS` above 1 runs multiple independent in-process DLL encoder states concurrently. Cache credentials still include source identity, encoder identity, encoding parameters and output identity. Performance depends on disk throughput and CPU capacity; the default remains one job.
-
-## MLP sources
-
-### External MLP
-
-```text
-DVDA_MLP_SOURCE="external"
-DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
-```
-
-The external directory must mirror the source directory layout:
-
-```text
-Source: D:/Music/MyAlbums/Album/01 Song.flac
-MLP ：D:/Music/MLP/Album/01 Song.mlp
-```
-
-### MlpEncoder-core batch encoding (default)
-
-```text
-DVDA_MLP_SOURCE="surcode-batch"
-DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
-DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
-DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
-DVDA_MLP_METADATA_CONTEXT=""
-DVDA_FFMPEG="builtin:media"
-DVDA_FFPROBE="builtin:probe"
-DVDA_MLP_SURCODE_SAMPLE_RATE="48000"
-DVDA_MLP_SURCODE_BITS="24"
-```
-
-The `surcode-batch` configuration name is retained for existing jobs. The execution chain is:
-
-`Source audio → in-process media DLLs → integer PCM → mlpencoder MLP core DLL → MLP cache`.
-
-The Windows x64 application embeds a pinned Windows x64 encoder DLL, extracts and verifies it at runtime, then calls it in-process.
-It does not start the original SurCode, load its DLLs, write SSF files or patch encoded output bytes.
-The old DVDA_MLP_EAC3TO_EXE setting remains readable but is unused. The GUI automatically uses the bundled media libraries, ignoring legacy FFmpeg / FFprobe paths. Resampling and bit-depth reduction retain the validated SWR and 20-bit quantization behavior; eac3to-identical PCM is not promised. Identical target PCM and metadata must still yield byte-identical MLP. See [in-process media](docs/INPROCESS-MEDIA.en.md) for the current design and validation, and [FFmpeg PCM migration](docs/FFMPEG-PCM-MIGRATION.en.md) for the earlier migration.
-
-An empty MLP cache directory defaults to `<DVDA_BUILD_DIR>/mlp`. The former `DVDA_MLP_SOURCE=ffmpeg` value reports an explicit error;
-change it to `surcode-batch`. `DVDA_MLP_SURCODE_EXE` has been removed.
-
-A fixed empty auxiliary TLV is used by default, making output reproducible for identical PCM and settings. For byte-for-byte comparison with a historical original file,
-supply the track's complete `DVDA_MLP_METADATA_CONTEXT`. Different timestamp metadata
-produces a different complete file; identical audio alone does not imply identical bytes. Reference audio payloads are never fed to the encoder.
-Old caches without provenance credentials are rebuilt. A failed re-encode does not overwrite an existing valid output.
-
-See [MlpEncoder-core integration](docs/MLP-ENCODER.en.md) for interfaces, precision, channels, caches and reproduction details.
-
-## Disc planning and menus
-
-- Albums remain intact by default, and discs fill in global track order.
-- `DVDA_MAX_DISCS` sets only a disc-count ceiling; it does not control splitting.
-- Default DVD-5 capacity is `4,707,319,808` bytes.
-- Set `DVDA_DISC_BYTES="8540123136"` for DVD-9.
-- Each DVD-Audio audio group supports up to 99 tracks.
-
-Example menu configuration:
-
-```text
-DVDA_MENU="on"
-DVDA_MENU_TRACKS_PER_PAGE="12"
-DVDA_MENU_INDEX_MIN_ALBUMS="4"
-DVDA_MENU_STILLPICS="on"
-DVDA_MENU_COVER_DIM="35"
-```
-
-The bundled TTC registers separate SC, JP and KR faces through type.xml. The GUI selects regional faces automatically. For custom fonts, specify registered regional names or the corresponding OTF files.
-
-`DVDA_FINAL_DIR` is the final output directory. After a successful build, ISOs are published directly there without an additional copy stage.
-
-## Build the compact package
-
-Prepare the media/image libraries, rebuilt native author and assets following [the build guide](tools/win-build/README.en.md), then run:
-
-```bat
-tools\win-build\build-all.cmd ^
-  --framework-dependent ^
-  --prebuilt "D:\dev\winbuild\menu-bin" ^
-  --source "D:\dev\winbuild\src"
-```
-
-Replace the example paths with your prepared Windows tools and full asset tree. Output defaults to `tools/win-build/release-framework-dependent/DVD-Audio-Maker` and its sibling ZIP; `--output` selects another location. The standard package contains only the GUI. `--include-cli` adds developer diagnostics. Omitting `--framework-dependent` still produces a self-contained package, with the size cost of bundling .NET.
-
-Packaging reuses existing Windows artifacts rather than invoking the native compiler chain. Generated releases, source audio, caches and ZIPs stay out of Git; distributable archives belong in GitHub Releases.
-
-## Validation and maintenance
-
-```bat
-dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
-tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
-```
-
-The migration passes 109/109 compatibility checks, 41 menu-media checks, 32 native-menu checks and 14 full-stream corruption checks. GUI tests cover regular/indexed menus, multiple discs/groups and 44.1 kHz / 20-bit conversion. Source-built menu modules replace the old menu executables. MLP core identity and whole-file byte equality remain; MPEG-2 menu bytes need not match the former encoder.
-
-The validated compact package is under build/release-menu-final; artifacts stay ignored. See the [migration checklist](docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md) and [validation record](docs/menu-migration-validation.json). Historical baselines remain development references.
-
-## Documentation
-
-- [Development/debugging](docs/DEVELOPMENT.en.md), [native builds/packaging](tools/win-build/README.en.md)
-- [MlpEncoder core and byte identity](docs/MLP-ENCODER.en.md), [native-core maintenance](src/DvdaMaker.SurcodeTool/Native/README.md)
-- [In-process media](docs/INPROCESS-MEDIA.en.md), [in-process images](docs/INPROCESS-IMAGES.en.md)
-- [Minimal media libraries](docs/MINIMAL-FFMPEG.en.md), [shared fonts](docs/SHARED-FONTS.en.md)
-- [Author changes](docs/DVDA-AUTHOR-CHANGES.en.md), [historical troubleshooting](docs/TROUBLESHOOTING.en.md)
-- [Image validation record](docs/inprocess-images-validation.json), [third-party licensing](docs/LICENSING.en.md)
-
-## License
-
-Repository code is distributed under [GPL-3.0](LICENSE). Third-party sources, tools, fonts and audio remain subject to their respective licenses. Original SurCode is not distributed with this project.
+Default packaging combines one EXE and sidecars into `DVD-Audio-Maker-v1.0-win-x64.zip`. Use `--version` for later versions. The standard user package excludes the developer CLI, PDBs, build-provenance JSON and the .NET runtime. Artifacts remain in ignored directories and are distributed only as GitHub Release assets.

@@ -8,7 +8,7 @@
 
 `音源 → FFmpeg → 整数 PCM WAVE → 进程内MLP 编码核心 DLL → 只读校验 → MLP 缓存 → 出盘`
 
-原版 `surcodemlp.exe`、GUI 自动化和 SSF 会话文件已经从运行链中移除。FFmpeg 的 MLP 编码提供器也已删除；FFmpeg/FFprobe 继续用于音源处理、解码、探测和成品校验。已有外部 MLP 的 `external` / `surcode` 导入模式仍可用。配置 `DVDA_MLP_SOURCE=ffmpeg` 会明确报错。
+原版 `surcodemlp.exe`、GUI 自动化和 SSF 会话文件已经从运行链中移除。FFmpeg 的 MLP 编码提供器也已删除；FFmpeg/FFprobe 继续用于音源处理、解码、探测和成品校验。已有外部 MLP 使用 external 导入；旧配置值 surcode 仅兼容映射到 external，不再是独立模式，外部文件统一严格校验。配置 `DVDA_MLP_SOURCE=ffmpeg` 会明确报错。
 
 ## 配置
 

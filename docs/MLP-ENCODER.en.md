@@ -8,7 +8,7 @@
 
 `Source → FFmpeg → integer PCM WAVE → in-process encoder DLL → read-only verification → MLP cache → disc authoring`
 
-The original `surcodemlp.exe`, GUI automation and SSF sessions have been removed from the execution chain. The FFmpeg MLP encoding provider is also removed. FFmpeg/FFprobe remain for source processing, decoding, probing and output verification. Existing external MLP import through `external` / `surcode` remains available. `DVDA_MLP_SOURCE=ffmpeg` now produces an explicit error.
+The original `surcodemlp.exe`, GUI automation and SSF sessions have been removed from the execution chain. The FFmpeg MLP encoding provider is also removed. FFmpeg/FFprobe remain for source processing, decoding, probing and output verification. External MLP files use external import. The legacy surcode value only maps to external; it is no longer a separate mode, and imported files use strict verification. `DVDA_MLP_SOURCE=ffmpeg` now produces an explicit error.
 
 ## Configuration
 

@@ -765,6 +765,56 @@ command_t *scan_audiofile_characteristics(command_t *command, globalData *global
   return (command);
 }
 
+/* Read well-formed integer WAVE without the legacy repair heuristic. RIFF
+ * word padding is not audio, including odd-length 24-bit mono data. */
+static uint32_t pcm_wave_le32(const unsigned char *p)
+{ return (uint32_t)p[0] | (uint32_t)p[1]<<8 | (uint32_t)p[2]<<16 | (uint32_t)p[3]<<24; }
+static unsigned pcm_wave_le16(const unsigned char *p)
+{ return p[0] | (unsigned)p[1]<<8; }
+static bool pcm_wave_info(fileinfo_t *info)
+{
+  FILE *fp = fopen(info->filename, "rb");
+  unsigned char h[40];
+  bool valid = false;
+  uint64_t data = 0, size = 0, end = 0;
+  unsigned channels = 0, bits = 0, rate = 0, mask = 0, align = 0;
+  if (!fp) return false;
+  if (fread(h,1,12,fp)!=12 || memcmp(h,"RIFF",4) || memcmp(h+8,"WAVE",4)) goto done;
+  end = (uint64_t)pcm_wave_le32(h+4)+8;
+  if (fseeko(fp,0,SEEK_END) || (uint64_t)ftello(fp)!=end || fseeko(fp,12,SEEK_SET)) goto done;
+  while ((uint64_t)ftello(fp)+8<=end)
+    {
+      if (fread(h,1,8,fp)!=8) goto done;
+      uint32_t n=pcm_wave_le32(h+4);
+      uint64_t pos=ftello(fp), next=pos+n+(n&1);
+      if (next>end) goto done;
+      if (!memcmp(h,"fmt ",4))
+        {
+          if (bits || n<16 || fread(h,1,n<40?n:40,fp)!=(n<40?n:40)) goto done;
+          unsigned tag=pcm_wave_le16(h);
+          channels=pcm_wave_le16(h+2);rate=pcm_wave_le32(h+4);
+          align=pcm_wave_le16(h+12);bits=pcm_wave_le16(h+14);
+          if (tag==0xfffe)
+            {
+              static const unsigned char guid[16]={1,0,0,0,0,0,16,0,128,0,0,170,0,56,155,113};
+              if (n<40 || pcm_wave_le16(h+16)<22 || pcm_wave_le16(h+18)!=bits || memcmp(h+24,guid,16)) goto done;
+              mask=pcm_wave_le32(h+20);
+            }
+          else if (tag!=1) goto done;
+        }
+      else if (!memcmp(h,"data",4))
+        { if (data) goto done; data=pos;size=n; }
+      if (fseeko(fp,next,SEEK_SET)) goto done;
+    }
+  if ((uint64_t)ftello(fp)!=end || !data || !size || channels<1 || channels>6 ||
+      (bits!=16 && bits!=24) || align!=channels*(bits/8) || size%align) goto done;
+  info->samplerate=rate;info->bitspersample=bits;info->channels=channels;
+  info->numbytes=size;info->file_size=end;info->header_size=data;info->dw_channel_mask=mask;
+  valid=true;
+done:
+  fclose(fp);return valid;
+}
+
 uint8_t extract_audio_info(fileinfo_t *info, globalData *globals)
 {
   info->type = AFMT_WAVE;
@@ -788,7 +838,7 @@ uint8_t extract_audio_info(fileinfo_t *info, globalData *globals)
       // this should be amended with audio groups 1 and 2 are implemented
     }
   else
-    info->type = fixwav_repair(info, globals);
+    info->type = pcm_wave_info(info) ? AFMT_WAVE_GOOD_HEADER : fixwav_repair(info, globals);
 
   //cut=((info->type == AFMT_WAVE_FIXED) || (info->type == AFMT_WAVE_GOOD_HEADER));
 
@@ -1901,6 +1951,9 @@ uint32_t audio_read(fileinfo_t *info, uint8_t *_buf, uint32_t *bytesinbuffer, gl
 
   uint8_t *buf = _buf + *bytesinbuffer;
 
+  /* Do not replay a carried half-unit when polling the exhausted track. */
+  if (info->type == AFMT_WAVE && info->bytesread >= info->numbytes) return 0;
+
   FLAC__bool result;
 
   //PATCH: provided for null audio characteristics, to ensure non-zero divider
@@ -1930,7 +1983,20 @@ uint32_t audio_read(fileinfo_t *info, uint8_t *_buf, uint32_t *bytesinbuffer, gl
         }
     }
 
-  if (info->type == AFMT_WAVE || info->type == AFMT_MLP)
+  if (info->type == AFMT_WAVE)
+    {
+      uint32_t capacity = AUDIO_BUFFER_SIZE - *bytesinbuffer;
+      capacity -= capacity % info->sampleunitsize;
+      uint32_t request = capacity - offset;
+      if (request > info->numbytes - info->bytesread)
+        request = info->numbytes - info->bytesread;
+      uint32_t got = fread(buf + offset, 1, request, info->fp);
+      if (got != request) EXIT_ON_RUNTIME_ERROR_VERBOSE("Truncated PCM input");
+      info->bytesread += got;
+      buffer_increment = offset + got;
+      offset = 0;
+    }
+  else if (info->type == AFMT_MLP)
     {
       uint32_t request = (*bytesinbuffer + offset + requested_bytes < AUDIO_BUFFER_SIZE) ? requested_bytes : AUDIO_BUFFER_SIZE - (*bytesinbuffer + offset);
 

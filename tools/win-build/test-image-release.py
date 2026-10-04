@@ -101,7 +101,7 @@ def main():
         if a.onefile:
             # Exercise bundled defaults instead of supplying paths into the cache.
             values.update(DVDA_AUTHOR='',DVDA_AUTHOR_SRC='');save(config,values)
-        gui('preview',config,'Preview');gui('build',config,'Build');gui('verify',config,'Verify')
+        gui('prepare',config,'Prepare');gui('build',config,'Build');gui('verify',config,'Verify')
         check('Complete ISO produced',len(list((work/'isos').glob('*.iso')))==1)
         forbidden={'ffmpeg.exe','ffprobe.exe','magick.exe','convert.exe','mogrify.exe','identify.exe','jpeg2yuv.exe','mpeg2enc.exe','mplex.exe','mp2enc.exe','surcodemlp.exe','spumux.exe','dvdauthor.exe','mkisofs.exe','metaflac.exe'}
         check('Process trace contains no external image/media/MLP encoder',not any(Path(x['path']).resolve().name.lower() in forbidden for x in report['processes']))

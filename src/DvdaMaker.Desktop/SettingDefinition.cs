@@ -12,7 +12,7 @@ internal sealed record SettingDefinition(string Key, string Label, string Group,
 {
     public string DisplayValue(string value) => Key switch
     {
-        "DVDA_MLP_SOURCE" => value switch { "surcode-batch" => "内置无损编码（推荐）", "external" => "导入已有 MLP 文件", "surcode" => "导入旧 SurCode 输出", _ => value },
+        "DVDA_MLP_SOURCE" => value switch { "surcode-batch" => "MLP 编码", "lpcm" => "LPCM 编码", "external" => "导入已有 MLP 文件", _ => value },
         "DVDA_MLP_SURCODE_SAMPLE_RATE" => value switch { "44100" => "44.1 kHz", "48000" => "48 kHz", "88200" => "88.2 kHz", "96000" => "96 kHz", "176400" => "176.4 kHz", "192000" => "192 kHz", _ => value },
         "DVDA_MLP_SURCODE_BITS" => value + " 位",
         _ => value,
@@ -29,7 +29,7 @@ internal sealed record SettingDefinition(string Key, string Label, string Group,
         new("DVDA_GROUP_TRACK_LIMIT", "每组最多曲目", "开始设置", SettingKind.Number, "通常保留默认值 99。", Minimum: 1, Maximum: 99, Advanced: true),
         new("DVDA_PREPARE_CACHE", "复用检查结果", "开始设置", SettingKind.Boolean, "未改变的音源无需重复检查，可以加快下一次制作。", Advanced: true),
         new("DVDA_RESUME", "继续未完成的制作", "开始设置", SettingKind.Boolean, "重试时复用已完成且校验一致的光盘。", Advanced: true),
-        new("DVDA_MLP_SOURCE", "音频编码方式", "音频编码", SettingKind.Choice, "通常使用内置编码；已有 MLP 文件时可以选择导入。", ["surcode-batch", "external", "surcode"]),
+        new("DVDA_MLP_SOURCE", "音频编码方式", "音频编码", SettingKind.Choice, "MLP 无损压缩、占用较小；LPCM 不压缩、占用较大。已有 MLP 可选择导入。", ["surcode-batch", "lpcm", "external"]),
         new("DVDA_MLP_SURCODE_SAMPLE_RATE", "采样率", "音频编码", SettingKind.Choice, "176.4 / 192 kHz 最多支持双声道，其余采样率最多六声道。", ["44100", "48000", "88200", "96000", "176400", "192000"]),
         new("DVDA_MLP_SURCODE_BITS", "音频位深", "音频编码", SettingKind.Choice, "通常选 24 位。降低位深可能丢失原音频精度。", ["16", "20", "24"]),
         new("DVDA_MLP_EXTERNAL_DIR", "MLP 文件夹", "音频编码", SettingKind.Folder, "内置编码可留空；导入已有 MLP 时请选择与音源结构对应的目录。"),

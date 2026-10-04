@@ -69,14 +69,14 @@ internal sealed class MainForm : Form
         var branding = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, Margin = Padding.Empty };
         branding.Controls.Add(new Label { Text = "DVD-Audio Maker", Font = new Font(Font.FontFamily, 18F, FontStyle.Bold), AutoSize = true, Margin = Padding.Empty });
         branding.Controls.Add(new Label { Text = L.T("把音乐制作成 DVD-Audio 光盘镜像"), ForeColor = Color.FromArgb(98, 113, 128), AutoSize = true, Margin = new Padding(1, 3, 0, 0) });
-        _language.Items.AddRange(["中文", "English"]);
-        _language.SelectedIndex = L.IsEnglish ? 1 : 0;
-        _language.AccessibleName = "Language / 语言";
-        _tips.SetToolTip(_language, "Language / 语言");
+        _language.Items.AddRange(["中文", "English", "日本語"]);
+        _language.SelectedIndex = L.Language switch { "en" => 1, "ja" => 2, _ => 0 };
+        _language.AccessibleName = "Language / 语言 / 言語";
+        _tips.SetToolTip(_language, "Language / 语言 / 言語");
         _language.SelectedIndexChanged += (_, _) =>
         {
             if (_active is not null) return;
-            RequestedLanguage = _language.SelectedIndex == 1 ? "en" : "zh-CN";
+            RequestedLanguage = _language.SelectedIndex switch { 1 => "en", 2 => "ja", _ => "zh-CN" };
             _settings.Language = RequestedLanguage;
             Close();
         };
@@ -120,9 +120,8 @@ internal sealed class MainForm : Form
         var commands = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(0, 10, 0, 0), WrapContents = true };
         foreach (var (text, action, help) in new[] {
             (L.T("检查音源"), WorkflowAction.Prepare, L.T("检查曲目信息和解码是否正常，不制作光盘。")),
-            (L.T("预演制作"), WorkflowAction.Preview, L.T("准备编码文件并计算分盘，但不生成 ISO。")),
             (L.T("开始制作"), WorkflowAction.Build, L.T("自动检查音源、编码并生成 ISO 光盘镜像。")),
-            (L.T("验证成品"), WorkflowAction.Verify, L.T("验证光盘结构、时间轴、菜单及全部轨道的 PCM 和 MLP 字节。")) })
+            (L.T("验证成品"), WorkflowAction.Verify, L.T("验证光盘结构、时间轴、菜单及全部轨道的 PCM 和光盘音频字节。")) })
         {
             var button = MakeCommandButton(text);
             if (action == WorkflowAction.Build) { button.BackColor = Color.FromArgb(22, 111, 116); button.ForeColor = Color.White; }
@@ -158,7 +157,6 @@ internal sealed class MainForm : Form
             if (split.Height > split.Panel1MinSize + split.Panel2MinSize + split.SplitterWidth)
                 split.SplitterDistance = Math.Clamp((int)(split.Height * .55), split.Panel1MinSize, split.Height - split.Panel2MinSize - split.SplitterWidth);
             Post(TaskLogLevel.Information, L.T("先选择音源文件夹和成品保存位置。其他选项可按需调整。"));
-            Post(TaskLogLevel.Information, L.T("“预演制作”会准备编码文件和分盘方案，但不会生成 ISO。"));
             DrainLog(true); if (_smoke) RunSmoke();
         };
     }
@@ -172,7 +170,7 @@ internal sealed class MainForm : Form
             content.ColumnStyles.Add(new(SizeType.Percent, 100));
             content.Controls.Add(new Label { Text = group.Key switch {
                 "开始设置" => L.T("选择音乐、保存位置和光盘容量，即可开始制作。"),
-                "音频编码" => L.T("通常使用内置无损编码；也可以导入已经准备好的 MLP 文件。"),
+                "音频编码" => L.T("选择 MLP 无损压缩或 LPCM 非压缩，也可以导入已有 MLP 文件。"),
                 "光盘菜单" => L.T("设置播放器中的选曲菜单与专辑封面。"),
                 _ => L.T("发布包通常已经配好工具，仅在更换工具或排查问题时调整。") },
                 AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 10) });
@@ -253,7 +251,7 @@ internal sealed class MainForm : Form
                     number.Value = decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var n)
                         ? Math.Clamp(n, number.Minimum, number.Maximum) : number.Minimum; break;
                 case ComboBox combo:
-                    if (definition.Key == "DVDA_MLP_SOURCE" && value.Equals("batch-surcode", StringComparison.OrdinalIgnoreCase)) value = "surcode-batch";
+                    if (definition.Key == "DVDA_MLP_SOURCE") value = value.Trim().ToLowerInvariant() switch { "batch-surcode" => "surcode-batch", "surcode" => "external", var source => source };
                     var choice = combo.Items.Cast<SettingChoice>().FirstOrDefault(item => item.Value == value);
                     if (choice is null) { choice = new(value, definition.DisplayValue(value)); combo.Items.Add(choice); }
                     combo.SelectedItem = choice; break;
@@ -311,7 +309,7 @@ internal sealed class MainForm : Form
     private async Task RunAsync(WorkflowAction action)
     {
         await Task.Yield();
-        var title = action switch { WorkflowAction.Prepare => L.T("检查音源"), WorkflowAction.Preview => L.T("预演制作"), WorkflowAction.Build => L.T("制作光盘"), _ => L.T("验证成品") };
+        var title = action switch { WorkflowAction.Prepare => L.T("检查音源"), WorkflowAction.Build => L.T("制作光盘"), _ => L.T("验证成品") };
         try
         {
             if (_closeWhenDone) return;
@@ -319,7 +317,7 @@ internal sealed class MainForm : Form
             _status.Text = L.T("正在" + title); _status.ForeColor = Color.FromArgb(22, 111, 116); _progress.Style = ProgressBarStyle.Marquee;
             Post(TaskLogLevel.Information, L.T("开始" + title + "。"));
             var snapshot = CaptureSettings();
-            var errors = snapshot.Validate(requireSource: action != WorkflowAction.Verify, requireEncoding: action is WorkflowAction.Preview or WorkflowAction.Build);
+            var errors = snapshot.Validate(requireSource: action != WorkflowAction.Verify, requireEncoding: action == WorkflowAction.Build);
             if (errors.Count > 0)
             {
                 foreach (var error in errors) Post(TaskLogLevel.Error, error);
@@ -526,7 +524,7 @@ internal sealed class MainForm : Form
         var switchLanguage = Environment.GetEnvironmentVariable("DVDA_GUI_SMOKE_SWITCH_LANGUAGE");
         if (switchLanguage is not null && L.Normalize(switchLanguage) != L.Language)
         {
-            BeginInvoke(new Action(() => _language.SelectedIndex = L.Normalize(switchLanguage) == "en" ? 1 : 0));
+            BeginInvoke(new Action(() => _language.SelectedIndex = L.Normalize(switchLanguage) switch { "en" => 1, "ja" => 2, _ => 0 }));
             return;
         }
         var captured = CaptureSettings();
@@ -536,7 +534,7 @@ internal sealed class MainForm : Form
         foreach (var definition in SettingDefinition.All.Where(d => d.Kind is SettingKind.Choice or SettingKind.Capacity))
         {
             var expected = _settings.Values.GetValueOrDefault(definition.Key, "");
-            if (expected == "batch-surcode") expected = "surcode-batch";
+            if (definition.Key == "DVDA_MLP_SOURCE") expected = expected.Trim().ToLowerInvariant() switch { "batch-surcode" => "surcode-batch", "surcode" => "external", var source => source };
             if (captured.Values[definition.Key] != expected) throw new InvalidOperationException(L.T("选项显示改变了配置值：" + definition.Key));
         }
         var page = Environment.GetEnvironmentVariable("DVDA_GUI_SMOKE_PAGE");
@@ -550,7 +548,13 @@ internal sealed class MainForm : Form
         }
         if (Environment.GetEnvironmentVariable("DVDA_GUI_SMOKE_LOG_SELFTEST") == "1") CheckLogControls();
         Snapshot(Environment.GetEnvironmentVariable("DVDA_GUI_SMOKE_IMAGE"));
+        if (_actions.Count != 3 || Enum.GetNames<WorkflowAction>().Length != 3 ||
+            _editors["DVDA_MLP_SOURCE"] is not ComboBox sources ||
+            !sources.Items.Cast<SettingChoice>().Select(choice => choice.Value).SequenceEqual(["surcode-batch", "lpcm", "external"]))
+            throw new InvalidOperationException("Unexpected desktop action or legacy encoding choice.");
         var action = Environment.GetEnvironmentVariable("DVDA_GUI_SMOKE_ACTION");
+        if (!string.IsNullOrWhiteSpace(action) && (!Enum.TryParse<WorkflowAction>(action, true, out var candidate) || !Enum.IsDefined(candidate)))
+            throw new ArgumentException("Unsupported desktop smoke action: " + action);
         if (!string.IsNullOrWhiteSpace(action) && Enum.TryParse<WorkflowAction>(action, true, out var parsed))
         {
             _active = RunAsync(parsed);

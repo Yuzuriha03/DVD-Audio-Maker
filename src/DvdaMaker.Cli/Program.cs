@@ -634,12 +634,12 @@ if (command == "verify")
         }
         if (mode is "all" or "lossless")
         {
-            Console.WriteLine("=================== MLP 无损验证（全部光盘 / 全部轨道）===================");
+            Console.WriteLine("=================== 音频无损验证（全部光盘 / 全部轨道）===================");
             var result = await pipeline.VerifyLosslessAsync();
             PrintIssues(result.Issues, result.Unavailable, ref failed, ref unavailable);
             if (result.Succeeded)
             {
-                Console.WriteLine("[OK] 全盘逐轨校验通过：全部目标 PCM 一致，成品内全部 MLP 字节一致。");
+                Console.WriteLine("[OK] 全盘逐轨校验通过：全部目标 PCM 一致，成品内全部音频字节一致。");
             }
         }
         if (mode == "all") return failed ? 1 : unavailable ? 2 : 0;
@@ -783,7 +783,7 @@ if (command == "prepare")
 
 if (command != "config")
 {
-    Console.Error.WriteLine(L.T("用法: dvda [config|prepare|plan|build|convert|verify|quick-check|audit|aob-pts|mlp|alac|iso] [--config PATH]") + " [--language auto|en|zh-CN]");
+    Console.Error.WriteLine(L.T("用法: dvda [config|prepare|plan|build|convert|verify|quick-check|audit|aob-pts|mlp|alac|iso] [--config PATH]") + " [--language auto|en|zh-CN|ja]");
     return 2;
 }
 
@@ -892,7 +892,7 @@ static void PrintConfiguration(DvdaOptions options)
 
     Console.WriteLine();
     Console.WriteLine("MLP 来源:");
-    if (options.MlpSource is "external" or "surcode")
+    if (options.MlpSource == "external")
     {
         var directory = options.MlpExternalDirectory;
         var status = directory.Length > 0 && Directory.Exists(directory) ? "✔" : L.T("✗ 目录不存在");

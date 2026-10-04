@@ -13,6 +13,7 @@ def main():
     p.add_argument('--fixtures',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--startup-only',action='store_true')
+    p.add_argument('--version',default='v1.0')
     p.add_argument('--package',type=Path,help='Release directory containing sidecars; defaults to --exe parent')
     p.add_argument('--provenance',type=Path,help='Local validated stage containing build records; never shipped')
     a=p.parse_args();work=a.output.resolve();work.mkdir(parents=True,exist_ok=False)
@@ -29,16 +30,16 @@ def main():
     def check(name,condition):
         if not condition:raise AssertionError(name)
         report['checks'].append(name);print('PASS '+name,flush=True)
-    def smoke(name,selected=config):
+    def smoke(name,selected=config,language="en"):
         started=time.monotonic()
-        result=subprocess.run([executable,'--smoke-test','--config',selected,'--language','en'],cwd=work,
+        result=subprocess.run([executable,'--smoke-test','--config',selected,'--language',language],cwd=work,
             env=env|{'DVDA_GUI_SMOKE_SETTINGS':str(work/(name+'.json'))},capture_output=True,timeout=120,creationflags=subprocess.CREATE_NO_WINDOW)
         report['times'][name]=round(time.monotonic()-started,3)
         (work/(name+'.stderr')).write_bytes(result.stderr)
         if result.returncode:raise AssertionError(name+': '+result.stderr.decode('utf-8','replace'))
         return json.loads((work/(name+'.json')).read_text('utf-8'))
     try:
-        sidecars={'README.md','README.en.md','RUNTIME.md','RUNTIME.en.md','LICENSE',
+        sidecars={'README.md','README.en.md','README.ja.md','RUNTIME.md','RUNTIME.en.md','RUNTIME.ja.md','LICENSE',
             'THIRD-PARTY.md','THIRD-PARTY.en.md','config.env.example',
             'NOTICE-Image.txt','NOTICE-Menu.txt'}
         check('User documentation and licenses accompany the EXE',all((package/name).is_file() for name in sidecars))
@@ -48,12 +49,36 @@ def main():
             (package/'MANIFEST.txt').read_text('utf-8').splitlines() if line and not line.startswith('#')}
         check('Release manifest contains exactly the EXE and sidecars',set(package_entries)==sidecars|{'DVD-Audio-Maker.exe'})
         check('All release files match the manifest',all(sha(package/name)==value for name,value in package_entries.items()))
-        archive=package/'DVD-Audio-Maker-win-x64-GUI-only.zip'
+        archive=package/f'DVD-Audio-Maker-{a.version}-win-x64.zip'
         with zipfile.ZipFile(archive) as zipped:
             check('Release ZIP contains only the intended files',set(zipped.namelist())==set(package_entries)|{'MANIFEST.txt'})
             check('All release files are at the ZIP root',all('/' not in name and chr(92) not in name for name in zipped.namelist()))
             check('Release ZIP bytes match the tested package',all(zipped.read(name)==(package/name).read_bytes() for name in zipped.namelist()))
         settings=smoke('cold')
+        check('English GUI contains only current actions and encoding choices',bool(settings['Values']))
+        check('Chinese GUI starts with current actions',bool(smoke('chinese',language='zh-CN')['Values']))
+        japanese=smoke('japanese',language='ja')
+        check('Japanese GUI starts and retains the selected language',japanese['Language']=='ja' and japanese['Values']==settings['Values'])
+        lpcm=work/'lpcm.env';lpcm.write_text('DVDA_MLP_SOURCE=lpcm\nDVDA_MLP_SURCODE_BITS=24\nDVDA_TITLE=日本語テスト\n',encoding='utf-8')
+        lpcm_settings=smoke('japanese-lpcm',lpcm,language='ja')
+        check('Japanese LPCM choice preserves its configuration value',lpcm_settings['Values']['DVDA_MLP_SOURCE']=='lpcm')
+        saved=work/'japanese-profile.json';saved.write_text(json.dumps(lpcm_settings),encoding='utf-8')
+        env['DVDA_GUI_SMOKE_SWITCH_LANGUAGE']='ja'
+        switched=smoke('switch-to-japanese',saved,language='en')
+        del env['DVDA_GUI_SMOKE_SWITCH_LANGUAGE']
+        check('Switching to Japanese preserves all project settings',switched==lpcm_settings)
+        legacy=work/'legacy-import.env'
+        legacy.write_text('DVDA_MLP_SOURCE=SURCODE\nDVDA_TITLE=Legacy import\n',encoding='utf-8')
+        migrated=smoke('legacy-env',legacy)
+        check('Legacy env imports as generic MLP without rewriting input',migrated['Values']['DVDA_MLP_SOURCE']=='external' and 'SURCODE' in legacy.read_text('utf-8'))
+        legacy_json=work/'legacy-profile.json'
+        migrated['Values']['DVDA_MLP_SOURCE']='surcode'
+        legacy_json.write_text(json.dumps(migrated),encoding='utf-8')
+        check('Legacy JSON imports as generic MLP',smoke('legacy-json',legacy_json)['Values']['DVDA_MLP_SOURCE']=='external')
+        removed=subprocess.run([executable,'--smoke-test','--config',config,'--language','en'],cwd=work,
+            env=env|{'DVDA_GUI_SMOKE_ACTION':'Preview'},capture_output=True,timeout=120,creationflags=subprocess.CREATE_NO_WINDOW)
+        check('Removed GUI Preview action fails instead of executing a dry run',removed.returncode!=0)
+
         roots=list(cache.iterdir());check('One version cache created',len(roots)==1)
         runtime=roots[0];report['runtime']=str(runtime)
         index=json.loads((runtime/'BUNDLE-MANIFEST.json').read_text('utf-8'))

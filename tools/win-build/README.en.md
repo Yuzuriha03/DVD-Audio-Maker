@@ -41,10 +41,11 @@ tools\win-build\build-all.cmd ^
   --image-author "build\image-author-shared"
 ```
 
-Default output directory: `tools/win-build/release-onefile`. `DVD-Audio-Maker.exe` embeds only required runtime components. README/runtime instructions, licenses, `config.env.example` and `NOTICE-Image.txt` and `NOTICE-Menu.txt` at the ZIP root accompany it in `DVD-Audio-Maker-win-x64-GUI-only.zip`. No .NET runtime is included, and the example configuration is not loaded automatically. Runtime assets are extracted to the user cache. Debug builds, the source CLI and F5 remain available.
+Default output directory: `tools/win-build/release-onefile`. `DVD-Audio-Maker.exe` embeds only required runtime components. README/runtime instructions, licenses, `config.env.example` and `NOTICE-Image.txt` and `NOTICE-Menu.txt` at the ZIP root accompany it in `DVD-Audio-Maker-v1.0-win-x64.zip`. No .NET runtime is included, and the example configuration is not loaded automatically. Runtime assets are extracted to the user cache. Debug builds, the source CLI and F5 remain available.
 
 | Option | Purpose |
 |---|---|
+| `--version` | Archive version, default v1.0; for example v1.1.0 |
 | `--onefile` | Default: GUI single EXE; requires shared native builds |
 | `--directory` | Folder plus ZIP for diagnostics |
 | `--framework-dependent` | Default: exclude .NET |
@@ -118,7 +119,7 @@ Release packaging retains only the DLLs in the validated author runtime manifest
 python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64"
 ```
 
-The old mlp profile remains for reference and independent maintenance. Current author builds require --profile menu; do not replace their libraries with MLP-only binaries. The GUI uses the separate media profile. Source versions and manifests remain pinned.
+The old mlp profile remains for reference and independent maintenance. Standard single-file releases require --profile shared for both the author and GUI media bridge. Separate menu/media profiles remain only for directory builds and historical comparisons; MLP-only libraries cannot substitute for them.
 
 ## Validation and cache maintenance
 
@@ -134,3 +135,9 @@ Migration passes compatibility, menu media, native comparisons and full-stream c
 `test-image-release.py` requires an independent old package, matching source/reference fixtures and a fresh output directory. Old ImageMagick runs only in the test's reference branch. See [the validation record](../../docs/inprocess-images-validation.json).
 
 Local build/README.md describes retained components, references and the current package. These are not supplied by a Git clone. Keep source and personal settings. bin/obj and publishing staging areas can be regenerated; deleting native components under build affects debugging/packaging unless reusable artifacts or a rebuild are available.
+
+## User interface and documentation
+
+The GUI offers Check sources, Build discs and Verify output. Preview is available only through the developer CLI: cli.cmd build --dry-run. It writes audio caches and a separate index without creating ISOs. The old SurCode import choice is removed; legacy configuration values map to generic external MLP import.
+
+The release README templates are docs/README.md and docs/README.en.md in this directory. They contain installation and usage instructions, not compiler commands or validation reports. The root repository README links to developer documentation. Update both languages before packaging; --version must match the release tag and the documented asset name.

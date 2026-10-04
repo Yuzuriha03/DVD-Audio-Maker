@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-04",
+  "source_checks_status": "PASS",
+  "compatibility_checks": 113,
+  "lpcm_native_cases": 104,
+  "lpcm_native_status": "PASS",
+  "lpcm_native_checks": [
+    "deterministic multichannel PCM byte comparison",
+    "gapless and separate titles",
+    "payload mutation rejection",
+    "incorrect format header rejection",
+    "truncated stream rejection"
+  ],
+  "full_disc_workflow_run": false,
+  "final_lpcm_japanese_release_status": "PENDING",
+  "previous_gui_only_validation": {
+    "date": "2026-10-04",
+    "status": "PASS",
+    "compatibility_checks": 111,
+    "release_checks": 31,
+    "full_disc_workflow_run": false,
+    "zip": {
+      "name": "DVD-Audio-Maker-v1.0-win-x64.zip",
+      "bytes": 15352026,
+      "sha256": "1ab14f89a9b5f3613b1bdae918dfc55338ca7af18388c2ae111ab3fb01baad51"
+    },
+    "exe": {
+      "bytes": 16117346,
+      "sha256": "8bedbbf93ce306809fdeb3bc6aa72c340e969523052c5f9e832becd138d46297"
+    },
+    "checks": [
+      "User documentation and licenses accompany the EXE",
+      "Developer build JSON files are absent from the release",
+      "Example configuration cannot override user defaults",
+      "Release manifest contains exactly the EXE and sidecars",
+      "All release files match the manifest",
+      "Release ZIP contains only the intended files",
+      "All release files are at the ZIP root",
+      "Release ZIP bytes match the tested package",
+      "English GUI contains only current actions and encoding choices",
+      "Chinese GUI starts with current actions",
+      "Legacy env imports as generic MLP without rewriting input",
+      "Legacy JSON imports as generic MLP",
+      "Removed GUI Preview action fails instead of executing a dry run",
+      "One version cache created",
+      "EXE embeds only required runtime assets",
+      "Every component matches its embedded hash",
+      "Explicit env import preserves Unicode settings",
+      "Bundled author and assets automatically located",
+      "Warm launch reuses verified cache",
+      "Concurrent GUI launches succeed",
+      "Missing and corrupt files automatically repaired",
+      "Repair keeps healthy files unchanged",
+      "Exactly one physical file for every DLL name",
+      "Runtime DLLs exactly match validated dependency manifests",
+      "Both consumers built against the shared source profile",
+      "Shared FFmpeg identities match both build manifests",
+      "Saved profiles follow the current runtime version",
+      "Only the EXE is needed beside the application",
+      "No bundled CLR or developer CLI",
+      "No temporary extraction files remain",
+      "EXE smaller than the previous ZIP"
+    ]
+  }
+}

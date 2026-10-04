@@ -31,7 +31,7 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
                 $"仅处理 {DiscPlanner.AggregateAlbums(initial).Count} 张专辑 / {initial.Count} 轨");
         }
         var acquisitionSpace = DiskSpacePlanner.Estimate(options, initial, discs: null);
-        log.WriteLine($"[空间] MLP 获取阶段: {DiskSpacePlanner.Describe(acquisitionSpace)}");
+        log.WriteLine($"[空间] 音频准备阶段: {DiskSpacePlanner.Describe(acquisitionSpace)}");
         foreach (var diagnostic in DiskSpacePlanner.Evaluate(acquisitionSpace))
         {
             log.WriteLine($"[警告] {diagnostic.Code}: {diagnostic.Message}");
@@ -40,13 +40,15 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
         var acquisitionStarted = Stopwatch.GetTimestamp();
         MlpAcquisitionResult acquisition = options.MlpSource switch
         {
-            "external" or "surcode" => await new ExternalMlpProvider(options, _runner)
+            "lpcm" => await new LpcmProvider(options, _runner)
+                .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
+            "external" => await new ExternalMlpProvider(options, _runner)
                 .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
             "surcode-batch" => await new SurcodeMlpProvider(options, _runner)
                 .AcquireAsync(initial, cancellationToken).ConfigureAwait(false),
-            _ => throw new InvalidOperationException("不支持的 MLP 来源。"),
+            _ => throw new InvalidOperationException("不支持的音频编码方式。"),
         };
-        log.WriteLine($"[耗时] MLP 获取: {Stopwatch.GetElapsedTime(acquisitionStarted)}");
+        log.WriteLine($"[耗时] 音频准备: {Stopwatch.GetElapsedTime(acquisitionStarted)}");
 
         var plan = new DiscPlanner().Plan(
             acquisition.Tracks,
@@ -75,7 +77,7 @@ public sealed class BuildPipeline(DvdaOptions options, ProcessRunner? processRun
         if (plan.HasErrors)
         {
             throw new InvalidOperationException(
-                "MLP 获取或构建规划包含错误；未写入索引，也未执行出盘。" + Environment.NewLine +
+                "音频准备或构建规划包含错误；未写入索引，也未执行出盘。" + Environment.NewLine +
                 string.Join(Environment.NewLine, plan.Diagnostics
                     .Where(diagnostic => diagnostic.Severity == BuildDiagnosticSeverity.Error)
                     .Select(diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));

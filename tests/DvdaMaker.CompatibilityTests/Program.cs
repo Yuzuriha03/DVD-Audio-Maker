@@ -277,6 +277,8 @@ var tests = new (string Name, Action Run)[]
     ("Onefile rejects unsafe component paths", RuntimeArchiveTests.RejectUnsafePaths),
     ("FLAC metadata in-process read/write", FlacMetadataTests.InProcessEditor),
     ("English catalog template coverage", LocalizationTests.CatalogCoverage),
+    ("Japanese catalog, paths and nested diagnostics", LocalizationTests.JapaneseCoverage),
+    ("LPCM format limits and channel grouping", LpcmTests.FormatAndGrouping),
     ("Language preserves paths and numeric culture", LocalizationTests.OpaqueValuesAndCulture),
     ("Language profile and argument compatibility", LocalizationTests.ProfileAndArguments),
     ("解析引号、注释和无效行", ParseAssignments),
@@ -492,9 +494,10 @@ static void NormalizeMlpSource()
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=EXTERNAL", path =>
         Equal("external", Load(path).MlpSource));
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=SURCODE", path =>
-        Equal("surcode", Load(path).MlpSource));
+        Equal("external", Load(path).MlpSource));
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=SURCODE-BATCH", path =>
         Equal("surcode-batch", Load(path).MlpSource));
+    WithConfig("DVDA_MLP_SOURCE=LPCM", path => Equal("lpcm", Load(path).MlpSource));
     WithConfig("DVDA_MLP_SOURCE=ffmpeg", RejectRemovedSource);
     WithConfig("DVDA_MLP_SOURCE=batch-surcode", path => Equal("surcode-batch", Load(path).MlpSource));
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_MLP_SOURCE=unknown", path =>

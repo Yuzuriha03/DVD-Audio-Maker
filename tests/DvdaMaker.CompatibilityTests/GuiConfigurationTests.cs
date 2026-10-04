@@ -39,6 +39,12 @@ internal static class GuiConfigurationTests
             Require(settings.ToOptions().MlpSource == "surcode-batch", "Legacy source alias failed");
             Require(settings.Values["CUSTOM_KEY"] == "keep # me", "Unknown imported key lost");
             Require(File.ReadAllText(path) == original, "Import modified legacy file");
+            File.WriteAllText(path, "DVDA_MLP_SOURCE=SURCODE");
+            var legacy = ProjectSettings.ImportEnv(path);
+            Require(legacy.ToOptions().MlpSource == "external", "Removed SurCode mode was not mapped to generic import");
+            var profile = path + ".json";
+            try { legacy.Save(profile); Require(ProjectSettings.Load(profile).ToOptions().MlpSource == "external", "Legacy JSON import changed source"); }
+            finally { File.Delete(profile); }
         }
         finally { File.Delete(path); }
     }

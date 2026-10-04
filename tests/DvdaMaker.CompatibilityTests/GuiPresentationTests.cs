@@ -43,7 +43,9 @@ internal static class GuiPresentationTests
                 Require(choice.Value == raw && choice.ToString().Length > 0, "Friendly display changed the underlying option");
             }
         var source = SettingDefinition.All.Single(d => d.Key == "DVDA_MLP_SOURCE");
-        Require(source.DisplayValue("surcode-batch").Contains("内置"), "Internal source key still shown as main label");
+        Require(source.DisplayValue("surcode-batch") == "MLP 编码", "MLP encoding label differs from the user-facing name");
+        Require(source.DisplayValue("lpcm") == "LPCM 编码", "LPCM encoding label differs from the user-facing name");
+        Require(source.Choices!.SequenceEqual(new[] { "surcode-batch", "lpcm", "external" }), "Unexpected encoding choices");
         Require(source.DisplayValue("future-custom") == "future-custom", "Unknown imported values were disguised");
         Require(SettingDefinition.All.Select(d => d.Key).Distinct().Count() == SettingDefinition.All.Count, "Duplicate editable option");
     }

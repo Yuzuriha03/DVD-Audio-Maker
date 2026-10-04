@@ -20,9 +20,9 @@ Double-click `DVD-Audio-Maker.exe` in the package root, or run `dvda.cmd` withou
 
 GUI and CLI share application dependencies; the CLI is `dvda.exe` in the package root. Extract the entire package and retain its DLLs, JSON files and resource directories alongside the executables. Do not copy an EXE alone. See RUNTIME.en.md for .NET installation requirements.
 
-Edit settings in the interface; they are saved automatically in your user directory. "Import env…" reads existing configurations, and "Open profile / Save profile" handles JSON profiles. Without saved GUI settings, first launch reads an adjacent config.env. MLP uses a native x64 in-process DLL, with no encoder EXE. FFmpeg conversion/decoding and disc-authoring tools remain external programs.
+Edit settings in the interface; they are saved automatically in your user directory. "Import env…" reads existing configurations, and "Open profile / Save profile" handles JSON profiles. Without saved GUI settings, first launch reads an adjacent config.env. MLP uses a native x64 in-process DLL, with no encoder EXE. Media conversion and decoding use built-in libraries; the bundled project author produces the discs.
 
-"Preview layout" prepares sources and encodes MLP without creating ISOs. "Build discs" completes authoring. "Verify output" compares target PCM for every track and all MLP bytes inside every disc. Tasks can be canceled and logs exported.
+The GUI offers "Check sources", "Build discs" and "Verify output". Developer previews use dvda.cmd build --dry-run, which writes MLP/cache data and a separate index without creating ISOs. "Verify output" compares target PCM for every track and all MLP bytes inside every disc. Tasks can be canceled and logs exported.
 
 Use "More settings" for less common options. Choose DVD5, DVD9 or custom capacity; sample rates and encoding methods have readable labels.
 
@@ -30,7 +30,7 @@ Logs show a task summary by default. Switch to detailed logs, filter issues, pau
 
 # DVD-Audio Maker for Windows
 
-This document ships with the self-contained Windows x64 release.
+This document is included only in optional developer directory packages.
 
 GUI and CLI use the embedded native x64 MLP DLL. The package includes `dvda-author`, the built-in ISO writer, menu tools, ImageMagick and Chinese/Japanese/Korean fonts. `mkisofs.exe` is not needed. WSL, Bash, MSYS2, PowerShell and Python are not needed; see RUNTIME.en.md for .NET requirements.
 

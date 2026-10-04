@@ -66,7 +66,7 @@ git apply "D:/work/DVD-Audio-Maker/docs/dvda-author-changes.patch"
 
 本目录与基础补丁保留原有实现的审阅副本。当前发布程序另由 [build-image-author.py](../win-build/build-image-author.py) 在完整工作树的独立快照中构建；脚本将七处 ImageMagick 外部调用迁移到 x64 图像 DLL。增量补丁见 [author-inprocess-images.patch](../win-build/native/author-inprocess-images.patch)，加载桥接见 [author-image-loader.c](../win-build/native/author-image-loader.c)。
 
-维护时应区分基础源码改动和这层构建时转换：脚本期待尚未应用图像增量补丁的基础树，不要先手动应用同一补丁再交给脚本重复转换。它不会覆盖传入的完整工作树。输出及输入哈希记录在 build/image-author/author-build.json。
+维护时应区分基础源码改动和这层构建时转换：脚本期待尚未应用图像增量补丁的基础树，不要先手动应用同一补丁再交给脚本重复转换。它不会覆盖传入的完整工作树。输出及输入哈希记录在 build/image-author-shared/author-build.json。
 
 GUI 与原生制盘程序均使用 image-native/dvda-image.dll；菜单媒体、子图像、导航及 ISO 写入均已接入进程内 C 实现，见[迁移清单](../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)。详细能力和验证边界见 [内置图像处理](../../docs/INPROCESS-IMAGES.md)。
 
@@ -104,3 +104,9 @@ GUI 与原生制盘程序均使用 image-native/dvda-image.dll；菜单媒体、
 - [`../../docs/LICENSING.md`](../../docs/LICENSING.md)
 
 使用、修改或重新分发时，需要同时遵守上游项目及其依赖的许可条款。
+
+## 当前发布集成
+
+Windows x64 标准发布中，author 与媒体接口链接同一套 shared FFmpeg 构建。调用 build-image-author.py 时传入 --ffmpeg-runtime build/ffmpeg-shared/install 和 --work-directory build/image-author-shared；打包只保留一套公共 DLL，构建记录保留在本地构建目录。
+
+用户入口为 DVD-Audio-Maker.exe，只提供检查音源、开始制作、验证成品；dry-run 留在源码 CLI 用于调试。本文面向维护者，不复制到用户发布包。正式压缩包为 DVD-Audio-Maker-v1.0-win-x64.zip。

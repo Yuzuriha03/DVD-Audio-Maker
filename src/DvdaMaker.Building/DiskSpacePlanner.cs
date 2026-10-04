@@ -43,6 +43,13 @@ public static class DiskSpacePlanner
             }
         }
 
+        if (options.MlpSource == "lpcm" && discs is null)
+        {
+            var pcmBytes = tracks.Sum(track => checked((long)Math.Ceiling(Math.Max(0, track.Duration) *
+                options.MlpSurcodeSampleRate * (options.MlpSurcodeBits / 8) * (track.Channels ?? 6)) + 128));
+            items.Add((Root(options.BuildDirectory), "LPCM 音频缓存与转换临时文件", checked(pcmBytes * 3)));
+        }
+
         if (discs is { Count: > 0 })
         {
             var isoBytes = discs.Sum(disc => disc.EstimatedAobBytes);

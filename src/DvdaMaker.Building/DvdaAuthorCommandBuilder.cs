@@ -68,6 +68,23 @@ public static class DvdaAuthorCommandBuilder
         return arguments;
     }
 
+    internal static IReadOnlyDictionary<string, bool> TitleEnds(DiscPlan disc, string titleMode)
+    {
+        var mode = NormalizeTitleMode(titleMode);
+        var numeric = int.TryParse(mode, out var n) ? n : 0;
+        var result = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var seen = 0;
+        foreach (var group in disc.Groups)
+            for (var i = 0; i < group.Tracks.Count; i++)
+            {
+                seen++;
+                result[group.Tracks[i].MlpPath] = i == group.Tracks.Count - 1 ||
+                    mode != "one" && (numeric > 0 ? seen % numeric == 0 :
+                        group.Tracks[i].Album != group.Tracks[i + 1].Album);
+            }
+        return result;
+    }
+
     internal static string NormalizeTitleMode(string? value)
     {
         var normalized = (value ?? "album").Trim().ToLowerInvariant();

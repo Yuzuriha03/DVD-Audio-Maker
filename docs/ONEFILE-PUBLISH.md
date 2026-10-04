@@ -25,7 +25,19 @@
 
 按用户要求，在源码构建层面合并 FFmpeg 功能：`build-minimal-ffmpeg.py --profile shared` 一次构建媒体与菜单功能的并集，媒体 C 接口和 author 均重新链接该安装前缀。打包核对两份构建清单及重名文件 SHA-256 后，将原生媒体组件统一放在 `menu-bin`；GUI 从这里加载 dvda-media.dll，author 从其自身目录解析相同 FFmpeg DLL。单文件资源和释放缓存都不再保留第二套 DLL。旧目录构建仍可用于对照。
 
-## 当前发布验收（2026-10-04）
+## 当前 GUI 发布验收（2026-10-04）
+
+- GUI 提供检查音源、开始制作、验证成品；移除预演，开发 CLI 继续保留 build --dry-run。
+- 音频方式只显示内置编码和通用 MLP 导入。旧 env/JSON 中的 surcode 映射为 external，不再有独立模式；外部文件使用严格 PCM 比较。
+- 10 份受版本控制的 README 均已更新，发布包中英文 README 面向最终用户；安装、制作、设置、日志和排错均以实际界面为准。
+- 标准附件为 DVD-Audio-Maker-v1.0-win-x64.zip，15,352,026 字节（14.64 MiB），SHA-256：1ab14f89a9b5f3613b1bdae918dfc55338ca7af18388c2ae111ab3fb01baad51。
+- EXE 为 16,117,346 字节，SHA-256：8bedbbf93ce306809fdeb3bc6aa72c340e969523052c5f9e832becd138d46297。ZIP 仍是单 EXE 与全部旁文件平铺，两个 NOTICE 不放子目录，不附带开发 JSON 或 .NET。
+- Release 构建无警告、无错误；111 项兼容性测试和 31 项发布轻量检查通过。包括中英文 GUI、已移除的 Preview 请求明确失败、旧 env/JSON 导入迁移、单 EXE 启动、并发启动、缓存完整性与修复、ZIP 与本地文件哈希一致。
+- 按用户要求未重跑完整制盘。此次未改 MLP 原生核心，也没有完成反编译来源替换；界面及命名调整不代表来源风险已经消除。
+- 本机产物：build/release-v1.0-gui-refresh；报告：build/onefile-validation/gui-refresh-smoke/report.json。可审阅摘要见 gui-release-refresh-validation.json。
+- 打包参数 --version 默认 v1.0；后续版本使用 DVD-Audio-Maker-<version>-win-x64.zip，不再增加 GUI-only 后缀。
+
+## 前一版平铺发布验收（2026-10-04）
 
 - 最终 ZIP 所有文件平铺在根目录：主 EXE、README、运行说明、LICENSE、THIRD-PARTY、config.env.example、NOTICE-Image.txt、NOTICE-Menu.txt 和 MANIFEST.txt；没有子目录或开发 JSON。
 - ZIP：15,351,318 字节（14.64 MiB），SHA-256 为 637240b384d31559183fae96e1b19f443bec5ca5feccdef8e5b1c454462c1c51。

@@ -68,7 +68,7 @@ def main():
     # libraries and menu data; these files carry the in-process ISO and menu
     # image paths.
     mirror_root=Path(__file__).resolve().parents[2] / 'tools/dvda-author-mlp8/src'
-    for name in ['launch_manager.c', 'iso_writer.c', 'iso_writer.h', 'menu.c', 'amg2.c', 'command_line_parsing.c', 'auxiliary.c']:
+    for name in ['ats.c', 'audio.c', 'launch_manager.c', 'iso_writer.c', 'iso_writer.h', 'menu.c', 'amg2.c', 'command_line_parsing.c', 'auxiliary.c']:
         source_file=mirror_root/name
         target=snapshot/'src'/name
         shutil.copy2(source_file, target)

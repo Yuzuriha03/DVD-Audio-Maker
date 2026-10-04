@@ -6,6 +6,8 @@
 
 媒体处理现在使用进程内 DLL。源码运行前，把已验证发布包的 media-native 目录复制到 build/media-native，或按 [Windows 构建说明](../tools/win-build/README.md) 构建。日常修改 C# 后无需重新编译原生库；MSBuild 的 NativeMediaDirectory 和运行时的 DVDA_MEDIA_NATIVE_DIR 可指定其他目录。GUI 不再要求安装 FFmpeg/FFprobe，对照集成测试仍需要参考程序。
 
+GUI 只提供检查音源、开始制作、验证成品；预演仅通过开发 CLI 的 cli.cmd build --dry-run 使用，会写缓存和独立索引。GUI smoke action 仅接受 Prepare、Build、Verify，旧 Preview 请求明确失败。
+
 ## 快捷入口
 
 在源码根目录执行：

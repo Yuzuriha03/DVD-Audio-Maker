@@ -2733,10 +2733,10 @@
     "English": "The FFmpeg MLP encoding branch has been removed. Set DVDA_MLP_SOURCE to surcode-batch or external."
   },
   {
-    "Source": "DVDA_MLP_SOURCE 仅支持 surcode-batch、external 或 surcode（外部文件）。",
+    "Source": "DVDA_MLP_SOURCE 仅支持 surcode-batch 或 external（外部文件）。",
     "Parameters": 0,
     "Nested": [],
-    "English": "DVDA_MLP_SOURCE supports only surcode-batch, external or surcode (external files)."
+    "English": "DVDA_MLP_SOURCE supports only surcode-batch or external (existing files)."
   },
   {
     "Source": "环境变量",
@@ -2859,18 +2859,6 @@
     "English": "Source checks complete"
   },
   {
-    "Source": "可以预演分盘，或直接点击“开始制作”。",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "Preview the disc layout, or click \"Build discs\" to continue."
-  },
-  {
-    "Source": "正在预演制作",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "Previewing disc layout"
-  },
-  {
     "Source": "正在制作光盘",
     "Parameters": 0,
     "Nested": [],
@@ -2899,12 +2887,6 @@
     "Parameters": 1,
     "Nested": [],
     "English": "Output: {0}"
-  },
-  {
-    "Source": "预演完成",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "Preview complete"
   },
   {
     "Source": "共 {0} 首曲目，计划制作 {1} 张光盘。尚未生成 ISO；点击“开始制作”继续。",
@@ -3173,18 +3155,6 @@
     "English": "Check track information and decoding without building discs."
   },
   {
-    "Source": "预演制作",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "Preview layout"
-  },
-  {
-    "Source": "准备编码文件并计算分盘，但不生成 ISO。",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "Prepare encoded audio and plan discs without creating ISO files."
-  },
-  {
     "Source": "开始制作",
     "Parameters": 0,
     "Nested": [],
@@ -3237,12 +3207,6 @@
     "Parameters": 0,
     "Nested": [],
     "English": "Choose your source and output folders first. Adjust the other settings as needed."
-  },
-  {
-    "Source": "“预演制作”会准备编码文件和分盘方案，但不会生成 ISO。",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "\"Preview layout\" prepares encoded audio and the disc plan without creating ISO files."
   },
   {
     "Source": "开始设置",
@@ -3737,12 +3701,6 @@
     "Parameters": 0,
     "Nested": [],
     "English": "Import existing MLP files"
-  },
-  {
-    "Source": "导入旧 SurCode 输出",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "Import legacy SurCode output"
   },
   {
     "Source": "{0} 位",
@@ -5827,5 +5785,195 @@
     "Parameters": 4,
     "Nested": [],
     "English": "ISO MLP byte comparison failed: track {0}, offset {1}, AOB sector {2}, status {3}."
+  },
+  {
+    "Source": "请点击“开始制作”生成光盘镜像。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Click “Build discs” to create the disc images."
+  },
+  {
+    "Source": "MLP 编码",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP encoding"
+  },
+  {
+    "Source": "LPCM 编码",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "LPCM encoding"
+  },
+  {
+    "Source": "MLP 无损压缩、占用较小；LPCM 不压缩、占用较大。已有 MLP 可选择导入。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP uses lossless compression and less space; LPCM is uncompressed and larger. Existing MLP files can also be imported."
+  },
+  {
+    "Source": "[空间] 音频准备阶段: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Space] MLP preparation: {0}"
+  },
+  {
+    "Source": "[耗时] 音频准备: {0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[Timing] MLP preparation: {0}"
+  },
+  {
+    "Source": "音频准备或构建规划包含错误；未写入索引，也未执行出盘。{0}{1}",
+    "Parameters": 2,
+    "Nested": [],
+    "English": "MLP preparation or build planning failed. No index was written and no discs were built.{0}{1}"
+  },
+  {
+    "Source": "音频准备或构建规划包含错误；未写入索引，也未执行出盘。{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "MLP preparation or build planning failed. No index was written and no discs were built.{0}"
+  },
+  {
+    "Source": "音频准备或构建规划包含错误；未写入索引，也未执行出盘。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "MLP preparation or build planning failed. No index was written and no discs were built."
+  },
+  {
+    "Source": "[DRY-RUN] 已完成 音频准备、分盘规划和独立预演索引生成；未执行出盘，也未覆盖正式索引。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[DRY-RUN] MLP preparation, disc planning and a separate preview index are complete. No discs were built and the final index was not overwritten."
+  },
+  {
+    "Source": "逐轨比较目标 PCM，并核对每张盘内的全部音频字节。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Comparing target PCM for every track and all audio bytes inside every disc."
+  },
+  {
+    "Source": "验证光盘结构、时间轴、菜单及全部轨道的 PCM 和光盘音频字节。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Verify disc structure, timelines, menus and PCM/MLP bytes for every track."
+  },
+  {
+    "Source": "[OK] 全盘逐轨校验通过：全部目标 PCM 一致，成品内全部音频字节一致。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "[OK] Every track passed: target PCM matches, and all disc MLP bytes are identical."
+  },
+  {
+    "Source": "=================== 音频无损验证（全部光盘 / 全部轨道）===================",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "=================== Audio lossless verification (all discs / all tracks) ==================="
+  },
+  {
+    "Source": "[校验] 第 {0} 盘组 {1}：{2} 轨成品音频全部字节一致。",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "[Verify] Disc {0}, group {1}: all audio bytes match for {2} tracks."
+  },
+  {
+    "Source": "ISO 音频字节校验失败：轨道 {0}，偏移 {1}，AOB 扇区 {2}，状态 {3}。",
+    "Parameters": 4,
+    "Nested": [],
+    "English": "ISO audio byte comparison failed: track {0}, offset {1}, AOB sector {2}, status {3}."
+  },
+  {
+    "Source": "LPCM 支持 16/24 位、最多六声道；176.4/192 kHz 最多双声道。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "LPCM supports 16/24 bits and up to six channels; 176.4/192 kHz supports up to two channels."
+  },
+  {
+    "Source": "LPCM 音频码率超过 9.6 Mb/s，请降低采样率或位深，或选择 MLP 编码。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "LPCM exceeds 9.6 Mb/s. Reduce the sample rate or bit depth, or choose MLP encoding."
+  },
+  {
+    "Source": "LPCM 转换改变了声道数。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "The LPCM conversion changed the channel count."
+  },
+  {
+    "Source": "[LPCM] 音源准备完成：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "[LPCM] Audio ready: {0}"
+  },
+  {
+    "Source": "音源准备完成：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Audio ready: {0}"
+  },
+  {
+    "Source": "正在准备音源：{0}",
+    "Parameters": 1,
+    "Nested": [],
+    "English": "Preparing audio: {0}"
+  },
+  {
+    "Source": "LPCM 音源准备失败：{0}（{1}）",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "LPCM preparation failed: {0} ({1})"
+  },
+  {
+    "Source": "LPCM 编码请选择 16 或 24 位；20 位可使用 MLP 编码。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose 16 or 24 bits for LPCM; use MLP for 20-bit output."
+  },
+  {
+    "Source": "内置媒体组件缺失，请完整解压发布包；开发环境请准备 media-native 目录。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Built-in media components are missing. Extract the complete release; for development, prepare the media-native directory."
+  },
+  {
+    "Source": "FFmpeg MLP 编码分支已移除，请将 DVDA_MLP_SOURCE 改为 surcode-batch、lpcm 或 external。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "FFmpeg MLP encoding was removed. Set DVDA_MLP_SOURCE to surcode-batch, lpcm or external."
+  },
+  {
+    "Source": "DVDA_MLP_SOURCE 仅支持 surcode-batch、lpcm 或 external（外部文件）。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "DVDA_MLP_SOURCE supports surcode-batch, lpcm or external (existing files)."
+  },
+  {
+    "Source": "不支持的音频编码方式。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Unsupported audio encoding mode."
+  },
+  {
+    "Source": "选择 MLP 无损压缩或 LPCM 非压缩，也可以导入已有 MLP 文件。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Choose losslessly compressed MLP, uncompressed LPCM, or import existing MLP files."
+  },
+  {
+    "Source": "LPCM 音频缓存与转换临时文件",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "LPCM audio cache and conversion temporary files"
+  },
+  {
+    "Source": "第 {0} 盘：{1}",
+    "Parameters": 2,
+    "Nested": [
+      1
+    ],
+    "English": "Disc {0}: {1}"
   }
 ]

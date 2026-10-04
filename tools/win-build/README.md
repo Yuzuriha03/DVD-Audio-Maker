@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-默认分发 **Windows x64、GUI-only 单 EXE，不含 .NET 运行时**。用户安装 .NET 10 Desktop Runtime x64；构建使用 .NET 10 SDK。默认 `--onefile --framework-dependent`，不再默认捆绑运行时。目录诊断包使用 `--directory`；只有显式 `--directory --self-contained` 才包含 .NET。
+默认分发 **Windows x64、GUI 单 EXE，不含 .NET 运行时**。用户安装 .NET 10 Desktop Runtime x64；构建使用 .NET 10 SDK。默认 `--onefile --framework-dependent`，不再默认捆绑运行时。目录诊断包使用 `--directory`；只有显式 `--directory --self-contained` 才包含 .NET。
 
 普通 C# 构建与发布包组装复用已准备的 Windows 组件。只有维护原生库时才使用 Python、MSYS2/MinGW-w64、Make 和开发库；运行产品不需要这些构建工具。
 
@@ -41,10 +41,11 @@ tools\win-build\build-all.cmd ^
   --image-author "build\image-author-shared"
 ```
 
-默认输出目录为 `tools/win-build/release-onefile`：`DVD-Audio-Maker.exe` 只嵌入运行必需组件；README、运行说明、许可、`config.env.example` 和 根目录的 `NOTICE-Image.txt`、`NOTICE-Menu.txt` 授权声明作为旁文件，合并生成 `DVD-Audio-Maker-win-x64-GUI-only.zip`。不附带 .NET，示例配置不会自动载入。运行资源自动释放到用户缓存；托管 Debug、CLI 和 F5 调试仍按原方式工作。
+默认输出目录为 `tools/win-build/release-onefile`：`DVD-Audio-Maker.exe` 只嵌入运行必需组件；README、运行说明、许可、`config.env.example` 和根目录的 `NOTICE-Image.txt`、`NOTICE-Menu.txt` 授权声明作为旁文件，合并生成 `DVD-Audio-Maker-v1.0-win-x64.zip`。不附带 .NET，示例配置不会自动载入。运行资源自动释放到用户缓存；托管 Debug、CLI 和 F5 调试仍按原方式工作。
 
 | 参数 | 说明 |
 |---|---|
+| `--version` | ZIP 版本，默认 v1.0；后续例如 v1.1.0 |
 | `--onefile` | 默认：GUI 单 EXE，要求 shared 原生构建 |
 | `--directory` | 目录和 ZIP，便于开发及检查原生组件 |
 | `--framework-dependent` | 默认：不捆绑 .NET |
@@ -118,7 +119,7 @@ build-image-author.py 对已配置完整源码树建立隔离快照，复制当�
 python tools\win-build\build-minimal-ffmpeg.py --msys-root "D:\dev\msys64"
 ```
 
-旧 mlp 配置保留作对照和独立库维护；当前 author 必须使用 --profile menu，不应替换为旧 MLP-only 库。GUI 使用独立 media 配置，来源和清单继续固定校验。
+旧 mlp 配置保留作对照和独立库维护；标准单文件发布的 author 和 GUI 媒体接口都必须使用 --profile shared；分离的 menu/media 仅供目录构建和历史对照，不可用 MLP-only 库替换。
 
 ## 验证与缓存维护
 
@@ -134,3 +135,9 @@ tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.C
 图像回归脚本 `test-image-release.py` 需要独立旧包、对应音源/基准输出及一个全新的输出目录。旧 ImageMagick 仅在测试的参考分支运行。输入要求与结果见 [验证记录](../../docs/inprocess-images-validation.json)。
 
 本机保留的组件、基准和最新包详见本地 build/README.md；该文件与产物不随 Git 克隆出现。源码及个人配置须保留，bin/obj 和发布暂存区可再生；删除 build 下的原生组件会影响调试/打包，应保留可复用产物或准备重编译。
+
+## GUI 与文档维护
+
+GUI 仅提供检查音源、开始制作、验证成品。开发 CLI 保留 cli.cmd build --dry-run，会写编码缓存和独立索引，但不生成 ISO。旧 SurCode 导入选项已移除；旧配置值映射为通用外部 MLP 导入。
+
+本目录 docs/README.md 与 docs/README.en.md 是发布包用户指南模板，只写安装、使用和排错，不放编译命令或开发验收报告。仓库根 README 另提供开发文档入口。打包前同步中英文模板，--version 必须与发布标签和文档中的附件名一致。

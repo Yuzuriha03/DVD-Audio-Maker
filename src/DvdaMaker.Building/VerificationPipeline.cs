@@ -365,14 +365,16 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                         if (segments.Length == 0 || segments.Any(entry => entry.Size % iso.SectorSize != 0))
                             throw new InvalidDataException($"第 {disc.Number} 盘组 {group.Number} 的 AOB 缺失或扇区不完整。");
                         NativeDiscVerifier.Verify(options.MenuBinaryDirectory,
-                            group.Tracks.Select(track => track.MlpPath).ToArray(), ReadAobChunks(iso, segments), cancellationToken);
-                        Console.WriteLine($"[校验] 第 {disc.Number} 盘组 {group.Number}：{group.Tracks.Count} 轨成品 MLP 全部字节一致。");
+                            group.Tracks.Select(track => track.MlpPath).ToArray(), ReadAobChunks(iso, segments), cancellationToken,
+                            group.Tracks.All(track => track.MlpSource == "lpcm")
+                                ? group.Tracks.Select(track => (byte)(track.LpcmTitleEnd ? 1 : 0)).ToArray() : null);
+                        Console.WriteLine($"[校验] 第 {disc.Number} 盘组 {group.Number}：{group.Tracks.Count} 轨成品音频全部字节一致。");
                     }
                 }
                 catch (Exception error) when (error is Iso9660Exception or IOException or InvalidDataException or
                     InvalidOperationException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
                 {
-                    issues.Add(new VerificationIssue("ISO_MLP_MISMATCH", $"第 {disc.Number} 盘：{error.Message}"));
+                    issues.Add(new VerificationIssue("ISO_AUDIO_MISMATCH", $"第 {disc.Number} 盘：{error.Message}"));
                 }
 
                 for (var number = 0; number < disc.Tracks.Count; number++)
@@ -389,7 +391,7 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                         var sourceRaw = Path.Combine(folder, "source.raw");
                         var decodedRaw = Path.Combine(folder, "decoded.raw");
                         var source = track.SourcePath;
-                        if (track.MlpSource == "surcode-batch")
+                        if (track.MlpSource is "surcode-batch" or "lpcm")
                         {
                             // Reuse the exact conversion policy used before encoding. This
                             // regenerates target PCM; no encoded stream is changed.
@@ -412,9 +414,8 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                             cancellationToken).ConfigureAwait(false);
                         if (!sourceDecode.Succeeded || !mlpDecode.Succeeded)
                             throw new InvalidDataException("内置媒体组件无法解码目标 PCM 或 MLP。");
-                        var surcode = track.MlpSource == "surcode-batch" ||
-                            options.MlpSource == "surcode" && track.MlpSource == "external";
-                        var comparison = surcode && track.Channels > 0 && track.SampleRate > 1000
+                        var encodedByBuiltin = track.MlpSource == "surcode-batch";
+                        var comparison = encodedByBuiltin && track.Channels > 0 && track.SampleRate > 1000
                             ? PcmComparer.Compare(sourceRaw, decodedRaw, checked(3 * track.Channels), (track.SampleRate - 1) / 1000)
                             : PcmComparer.Compare(sourceRaw, decodedRaw);
                         if (!comparison.Match) throw new InvalidDataException(comparison.Reason);
@@ -536,7 +537,9 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                                 ? channels.GetInt32()
                                 : 0,
                             detail.ValueKind == JsonValueKind.Object && detail.TryGetProperty("bits", out var bits)
-                                ? bits.GetInt32() : groupElement.GetProperty("bits").GetInt32()));
+                                ? bits.GetInt32() : groupElement.GetProperty("bits").GetInt32(),
+                            detail.ValueKind == JsonValueKind.Object && detail.TryGetProperty("lpcm_title_end", out var titleEnd)
+                                && titleEnd.ValueKind == JsonValueKind.True));
                     }
                     groups.Add(new VerificationGroup(
                         groupElement.GetProperty("group").GetInt32(), tracks));
@@ -658,5 +661,6 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
         double Duration,
         int SampleRate,
         int Channels,
-        int Bits);
+        int Bits,
+        bool LpcmTitleEnd);
 }

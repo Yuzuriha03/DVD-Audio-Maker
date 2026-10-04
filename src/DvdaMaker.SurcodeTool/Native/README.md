@@ -1,6 +1,6 @@
 # MlpEncoder core — Windows x64
 
-Maintainer reference, updated 2026-10-03. For normal use, see the [project README](../../../README.en.md).
+Maintainer reference, updated 2026-10-04. For normal use, see the [project README](../../../README.en.md).
 
 The application embeds `win-x64/mlp_encoder.dll` and calls its streaming C ABI in process. There is no standalone MLP encoder EXE or x86 proxy in the product. The DLL exports are declared in `source/mlp_encoder.h`. GUI and CLI both target win-x64.
 
@@ -22,8 +22,14 @@ The formerly failing 88.2 kHz / 24-bit / six-channel short noise fixture now pas
 
 Source audio is prepared by the in-process media libraries, then streamed to this encoder. Image generation is handled by a separate in-process image runtime. Neither migration changes this pinned MLP DLL. The GUI does not launch external FFmpeg/FFprobe, ImageMagick or original SurCode for those operations; developer reference tests can still use external tools.
 
-The current GUI-only x64 package is framework-dependent and requires .NET 10 Desktop Runtime x64. The core remains embedded in the application assembly, with runtime extraction and SHA-256 verification. There is no separate MLP encoder EXE to distribute.
+The current Windows x64 package is framework-dependent and requires .NET 10 Desktop Runtime x64. The core remains embedded in the application assembly, with runtime extraction and SHA-256 verification. There is no separate MLP encoder EXE to distribute.
 
 Complete byte identity requires matching target PCM, encoding settings and auxiliary metadata. The default metadata context is deterministic; a historical original file may require its explicit context. Do not replace the pin with a newly compiled DLL solely because decoding succeeds: independent PCM checks and full-file comparisons are separate acceptance criteria.
 
 For routine debugging, use the repository's GUI/CLI and compatibility-test entry points. The 2026-10-03 workspace check passed 109 compatibility checks and 23 image checks; these do not replace the dedicated original-MLP regression evidence in mlpencoder-validation.json. See [current media integration](../../../docs/INPROCESS-MEDIA.en.md), [current image integration](../../../docs/INPROCESS-IMAGES.en.md) and [development instructions](../../../docs/DEVELOPMENT.en.md).
+
+## Current release boundary
+
+The user package is DVD-Audio-Maker-v1.0-win-x64.zip. The GUI exposes source checking, authoring and verification, with no preview action. Developer dry-run remains in the source CLI. The separate legacy SurCode output-import choice has been removed; old configuration values map to generic external MLP import. None of these interface changes replace or alter the encoder core.
+
+Renaming the reconstructed encoder or its documentation does not change its source history. This core has not been replaced by an independently implemented encoder in the GUI/release update. Do not describe these interface or packaging changes as eliminating the earlier reverse-engineering provenance.

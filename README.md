@@ -1,253 +1,90 @@
 # DVD-Audio Maker
 
-[简体中文](README.md) | [English](README.en.md)
+[简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md)
 
-将 FLAC、ALAC/M4A 音源制作成 **DVD-Audio ISO** 的 Windows x64 工具，提供中英文图形界面、MLP 编码、自动分盘、可选菜单和成品校验。
+将 FLAC、ALAC/M4A 音乐制作成 DVD-Audio ISO，支持 MLP / LPCM 编码、自动分盘、选曲菜单、专辑封面和成品验证。适用于 Windows x64，界面与日志支持中文、英文和日语。
 
-当前默认发布 **Windows x64 GUI 单 EXE，不包含 .NET 运行时**。首次使用请安装 [.NET 10 Desktop Runtime（Windows x64）](https://dotnet.microsoft.com/download/dotnet/10.0)，然后直接运行 `DVD-Audio-Maker.exe`。普通 .NET Runtime、ASP.NET Core Runtime 或 .NET Framework 4.x 不能单独替代桌面运行时。历史目录包仍须完整解压。
+**首次使用前，请安装 [.NET 10 Desktop Runtime（Windows x64）](https://dotnet.microsoft.com/download/dotnet/10.0)。** 发布包不包含 .NET；普通 .NET Runtime、ASP.NET Core Runtime 或 .NET Framework 不能替代桌面运行时。
 
-## 快速开始
+## 安装与启动
 
-1. 选择音源目录、工作目录和 ISO 成品目录，填写标题与容量。
-2. 设置目标采样率、位深及菜单。建议每张专辑单独一个目录，保留 album、title、track、date 标签。
-3. 运行“检查音源”，再运行“预演制作”。预演会准备音源并编码 MLP，但不生成 ISO。
-4. 运行“开始制作”，完成后执行“验证成品”，检查全部轨道、菜单和 ISO。
+1. 从 [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/tag/v1.0) 下载 `DVD-Audio-Maker-v1.0-win-x64.zip`。
+2. 将 ZIP 解压到自己的文件夹，双击 `DVD-Audio-Maker.exe`。
+3. 首次启动会自动准备所需组件，稍等片刻即可打开界面。无需另装 FFmpeg、ImageMagick、eac3to 或 SurCode。
 
-发布 ZIP 包含单文件 EXE，以及独立的使用说明、配置示例、许可和组件授权声明。EXE 只内嵌运行必需组件与完整中日韩字体，首次启动释放到 `%LOCALAPPDATA%/DVD-Audio-Maker/runtime`，之后校验并复用缓存。媒体处理和制盘共用同一次源码构建的 FFmpeg 库，每个 DLL 只有一份。关闭所有实例后可以清理此缓存，下次会自动恢复。请保留随包授权声明；`config.env.example` 不会自动载入，仍可导入已有 `config.env`。详见 [单文件构建](docs/ONEFILE-PUBLISH.md)。
+主程序、使用说明、配置示例及许可证都在解压目录内。请保留 `LICENSE`、`THIRD-PARTY.md`、`THIRD-PARTY.en.md`、`NOTICE-Image.txt` 和 `NOTICE-Menu.txt`。
 
-## 配置、语言与日志
+## 制作第一张光盘
 
-GUI 替代手工编辑 env：可导入旧 `config.env`，也可打开和保存 JSON 方案。日常设置保存在 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`；CLI 与 `--config` 仍可使用。
+1. **选择音源。** 选择存放音乐的文件夹，程序会读取子文件夹中的音源。建议每张专辑单独一个文件夹，并填写专辑、标题、曲序和日期标签。
+2. **选择成品位置。** 指定 ISO 保存目录，填写光盘标题，选择 DVD5、DVD9 或自定义容量。“光盘数量上限”填 0 表示不限制，程序按容量自动分盘。
+3. **设置音频。** 通常使用“MLP 编码”。按音源和播放设备选择采样率、位深；降低采样率或位深会改变原始音频精度，提高它们不会增加原有细节。
+4. **设置菜单。** 按需启用选曲菜单、专辑索引和播放封面。支持 JPG、PNG、WebP 封面，已附带中日韩菜单字体。
+5. 点击 **“检查音源”**，处理提示的问题；再点击 **“开始制作”**。开始制作也会自动检查音源，然后编码并生成 ISO。
+6. 完成后点击 **“验证成品”**。验证通过后，可通过“查看成品”打开 ISO 所在文件夹。
 
-右上角可切换“中文 / English”；界面和任务日志同步切换，路径、曲目标签、配置值及编码数据不变。首次按 Windows 界面语言选择，任务执行时暂时禁用切换。GUI 和 CLI 支持 `--language en`、`--language zh-CN`、`--language auto`，也支持 `DVDA_LANGUAGE`。
+制作过程可取消。关闭正在工作的窗口时，程序会先停止任务并清理。已完成的成品不会因为取消而删除。烧录和播放需要支持 DVD-Audio 的软件或设备；生成 ISO 不代表普通 DVD-Video 播放器能够播放。
 
-日志默认显示阶段摘要，可切换详细输出、只看提醒、暂停显示、复制或导出。任务可取消。完整日志及启动错误保存在 `%LOCALAPPDATA%/DVD-Audio-Maker/logs`。
+## 音频设置
 
-## 编码与工具
+| 方式 | 存储方式 | 体积与限制 | 适用情况 |
+| --- | --- | --- | --- |
+| MLP 编码 | 对 PCM 进行无损压缩 | 通常较小；支持 16 / 20 / 24 位 | 希望节省空间，或制作高采样率多声道内容 |
+| LPCM 编码 | 非压缩 PCM | 较大；当前支持 16 / 24 位，音频码率不超过 9.6 Mb/s | 希望直接存储未压缩音频 |
 
-| 工作 | 当前实现 |
-|---|---|
-| 音源读取、转换、解码和媒体校验 | 进程内 x64 媒体库，不启动 FFmpeg/FFprobe EXE |
-| MLP 编码 | 内嵌MLP 编码核心 DLL，不启动原版 SurCode，也不调用 eac3to |
-| 封面、文字、菜单图像、字体及图像校验 | GUI 与原生制盘程序各自在进程内调用精简图像 DLL |
-| 菜单编码、复用、制盘及 ISO 生成 | 项目 author 内置 C 菜单模块和 ISO 写入器 |
-| 可选 M4A/ALAC 转 FLAC 整理 | 进程内 FLAC 元数据编辑器处理封面与标签 |
+**相同采样率、位深、声道和 PCM 输入下，两者音质相同。** LPCM 不会因为体积更大而增加音源细节。降低采样率或位深会改变精度，提高参数也不会补回音源中没有的信息。
 
-无需另装 FFmpeg、FFprobe 或 ImageMagick。GUI 导入的旧媒体工具路径会自动改用内置组件；开发 CLI 和参考测试仍允许显式外部转换器。图像库支持 JPG/PNG 读写和 WebP 封面读取，保留完整 SC/JP/KR 字体 face；未包含通用视频、PDF/SVG 等图像委托链。
+LPCM 还需满足码率限制。例如 96 kHz / 24 位 / 6 声道为 13.824 Mb/s，不能作为 LPCM 写入；请选择 MLP 或降低目标参数。20 位目前仅支持 MLP。LPCM 缓存和制作过程需要更多磁盘空间。
 
-批量接口支持 44.1、48、88.2、96 kHz 的 1～6 声道，以及 176.4、192 kHz 的单/双声道，目标位深为 16、20、24 bit。声道布局沿用输入；混合采样率/位深声道组尚未开放为 GUI 配置。特定高噪声素材仍可能超出可用 MLP 码流限制，不会通过有损处理强行通过。
+- 44.1、48、88.2、96 kHz 支持 1～6 声道；176.4、192 kHz 支持单声道和双声道。
+- MLP 目标位深可选 16、20、24 位，LPCM 可选 16、24 位；声道布局沿用输入。
+- 极高噪声等素材可能超过 MLP 码流限制。若编码失败，请查看对应曲目的日志，调整音频格式后重试。
+- **导入已有 MLP 文件：** 适用于导入由原版 SurCode MLP（surcodemlp.exe）编码生成的 MLP 文件。请选择 MLP 文件夹，并保持与对应音源一致的专辑目录和文件名。此方式直接使用已有编码结果，不重新编码，也不会启动原版 SurCode MLP。请保留原始音源及编码时的采样率、位深等设置，以便进行检查和无损验证；来源或转换参数不明的文件不能仅凭成功导入就视为已验证。
 
-MLP 逐字节一致要求 **目标 PCM、编码参数和辅助元数据上下文均一致**。编码后不打补丁；相同音频但元数据不同的历史文件不能直接宣称整文件相同。详见 [MLP 编码核心集成](docs/MLP-ENCODER.md) 和 [当前媒体处理](docs/INPROCESS-MEDIA.md)。
+工作文件夹保存检查记录、编码缓存和制作中间文件。请选择空间充足的磁盘；默认会复用有效缓存并继续尚未完成的制作。成品验证完成前，建议保留对应工作文件夹。
 
-## 源码开发
+## 保存设置与导入配置
 
-源码使用 .NET 10 / C#，GUI、CLI 与原生编码核心均为 Windows x64。开发需要 .NET 10 SDK，以及与当前源码匹配的内置库、制盘工具和素材；这些外部产物不完整包含在 Git 仓库中。
+设置可直接在界面中修改，通过“保存方案”存成 JSON 文件，之后用“打开方案”继续。日常设置自动保存在 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`。
+
+已有 `config.env` 可通过“导入旧配置…”读取。没有已保存的日常设置时，程序也会查找 EXE 旁或当前工作目录的 `config.env`。导入不会改写原文件；旧配置中的 SurCode 导入选项会转换为通用 MLP 导入，请检查音源及 MLP 路径。
+
+随包的 `config.env.example` 只是可选示例，不会自动加载。首次使用无需手工编辑它。右上角可切换“中文 / English / 日本語”，语言偏好随方案保存。
+
+## 查看进度和处理问题
+
+日志区默认显示任务摘要。需要排查问题时，切换到详细日志或点击“保存详细日志”；也可筛选提醒、暂停显示和复制内容。暂停日志显示不会暂停正在执行的任务。
+
+- **程序无法启动：** 确认安装了 .NET 10 Desktop Runtime 的 Windows x64 版本，然后重新打开程序。
+- **音源检查失败：** 查看提示的曲目和原因，检查文件是否可读、是否为受支持的无损音源。
+- **磁盘空间不足：** 工作目录和成品目录都需要足够空间，可在“更多设置”中更换工作文件夹。
+- **制作或验证失败：** 保存完整日志和对应工作目录，修正问题后重试。不要仅凭生成了 ISO 就跳过验证。
+- **组件缺失或损坏：** 关闭所有实例后重新启动。仍失败时，重新解压发布包；必要时关闭程序后清理 `%LOCALAPPDATA%/DVD-Audio-Maker/runtime`，下次启动会重建组件缓存。
+
+完整任务日志和启动错误保存在 `%LOCALAPPDATA%/DVD-Audio-Maker/logs`。成品验证检查容量、曲目、播放时间、菜单和音频内容，并核对光盘中的全部 MLP 或 LPCM 数据；不会修改已编码文件。
+
+## 许可与说明
+
+项目许可见 [LICENSE](LICENSE)，第三方组件和字体说明见 [第三方组件说明](tools/win-build/docs/THIRD-PARTY.md)。发布包中的 README 和 RUNTIME 面向最终用户，不包含开发操作。
+
+## 开发与构建
+
+开发需要 Windows x64、.NET 10 SDK 和与源码匹配的原生组件。普通 C# 修改可复用已有组件；重新编译原生代码使用 MSYS2/MinGW-w64 和 Python。仓库中的 dvda-author 目录是局部源码镜像，完整依赖需按构建说明准备。
 
 ```bat
 gui-debug.cmd
 cli.cmd config
-dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
+cli.cmd build --dry-run --config "C:/work/test.env"
+dotnet build DVD-Audio-Maker.sln -c Release -p:SelfContained=false -m:1
 ```
 
-VS Code 保留 GUI、CLI 和兼容性测试的 F5 配置。普通 C# 修改可复用已经验证的原生组件；维护原生依赖时才需要 Python、MSYS2/MinGW-w64 等工具。详见 [开发调试](docs/DEVELOPMENT.md) 与 [Windows 构建说明](tools/win-build/README.md)。
+`dry-run` 仅供开发调试，通过源码 CLI 使用；它会准备音源、编码 MLP 并生成独立索引，不生成 ISO，也不是零写入操作。GUI 只提供检查、制作、验证。配置名 `surcode-batch` 保留为兼容键；旧 `surcode` 导入值映射为 `external`，不再是单独的编码方式。
 
-| 目录 | 用途 |
-|---|---|
-| `src/DvdaMaker.Desktop` / `Cli` | 图形入口与开发命令行 |
-| `src/DvdaMaker.Configuration` / `Localization` | 配置、方案与中英文资源 |
-| `src/DvdaMaker.Preparation` / `Building` | 音源准备、MLP、分盘、菜单及成品验证 |
-| `src/DvdaMaker.Processes` | 内置媒体/图像接口与其余外部进程管理 |
-| `src/DvdaMaker.SurcodeTool/Native` | 固定版本的MLP 编码核心源码与 x64 DLL |
-| `src/DvdaMaker.Formats` / `FontTool` | 码流解析与共享字体工具 |
-| `src/DvdaMaker.Toolchain` / `tools/win-build` | 原生构建、打包和回归脚本 |
-| `tests` / `docs` | 兼容性测试、设计与验证记录 |
-| `build` | 被 Git 忽略的本地组件、发布包、回归材料和缓存 |
+- [开发调试与 CLI](docs/DEVELOPMENT.md)
+- [Windows 构建、原生组件与发布](tools/win-build/README.md)
+- [单文件打包设计与验收](docs/ONEFILE-PUBLISH.md)
+- [MLP 集成与测试边界](docs/MLP-ENCODER.md)
+- [原生依赖迁移记录](docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)
+- [常见问题与历史诊断](docs/TROUBLESHOOTING.md)
 
-## CLI 与旧 env 配置
-
-GUI 配置可在界面编辑并保存为 JSON；以下优先级仅适用于 CLI。仓库提供可提交的示例 `config.env`。可通过“导入旧配置”或 `--config` 选择已有配置。
-
-配置值优先级：
-
-```text
-环境变量 > 所选配置文件 > 内置默认值
-```
-
-配置文件按 `--config`、`DVDA_CONFIG`、`config.env` 的顺序选择；未找到配置文件时使用内置默认值。
-
-最小配置示例：
-
-```text
-DVDA_SRC="D:/Music/MyAlbums"
-DVDA_FINAL_DIR="D:/DVD_Output"
-DVDA_BUILD_DIR="D:/DVD_Output/_work"
-DVDA_TITLE="My DVD-Audio"
-DVDA_ISO_PREFIX="MyCollection"
-DVDA_MAX_DISCS="2"
-DVDA_MENU="off"
-```
-
-配置只解析 `KEY=VALUE`，不会执行命令或变量展开。路径应使用绝对 Windows 路径；正斜杠和反斜杠均可。
-
-检查配置：
-
-```bat
-dotnet run --project src\DvdaMaker.Cli -- config
-dotnet run --project src\DvdaMaker.Cli -- config --check
-```
-
-## 构建与校验
-
-```bat
-build.cmd --dry-run
-build.cmd
-verify.cmd
-```
-
-指定另一份配置：
-
-```bat
-build.cmd --dry-run --config "D:\Config\dvda.env"
-build.cmd --config "D:\Config\dvda.env"
-verify.cmd all --config "D:\Config\dvda.env"
-```
-
-也可直接调用 CLI：
-
-```bat
-dotnet run --project src\DvdaMaker.Cli -- prepare
-dotnet run --project src\DvdaMaker.Cli -- plan
-dotnet run --project src\DvdaMaker.Cli -- build --dry-run
-dotnet run --project src\DvdaMaker.Cli -- build
-dotnet run --project src\DvdaMaker.Cli -- verify all
-```
-
-`plan` 只读取现有 `manifest.json` 与 MLP 大小，不获取或编码 MLP，适合快速查看分盘结果。
-`build --dry-run` 会执行完整的 MLP 获取流程并写独立预演索引，不是零写入操作。
-`prepare --force` 忽略音源校验缓存，强制重新探测与解码校验。
-`build --no-resume` 关闭逐盘续跑，强制重新出盘全部盘。
-
-verify lossless 逐盘、逐组、逐轨比较全部目标 PCM，并由只读 C 解析器核对成品 ISO 所有 AOB 分段中的全部 MLP 字节。batch-surcode 按编码时相同的 SWR、位深转换和 WAV 规范化重建目标 PCM；默认等长，SurCode 仅容许不足 1 ms 的完整零采样帧尾部填充。截短、非零尾部和内容差异仍失败；转换策略未知的旧外部 MLP 不用采样数相近代替一致性证明。验证不修改编码文件。
-
-## 重跑与缓存
-
-| 配置 | 默认 | 作用 |
-| --- | --- | --- |
-| `DVDA_PREPARE_CACHE` | `on` | 音源探测与解码校验结论缓存，位于 `<DVDA_BUILD_DIR>/prepare-cache.json` |
-| `DVDA_RESUME` | `on` | 逐盘续跑，记录位于 `<DVDA_BUILD_DIR>/publish-staging/resume.json` |
-| `DVDA_MLP_JOBS` | `1` | MLP 编码核心的 MLP 编码并发路数（1～16） |
-| `DVDA_KEEP_TMP` | `off` | 保留 `<DVDA_BUILD_DIR>/tmp` 供排查（开启后不自动清理） |
-| `DVDA_KEEP_INTERMEDIATE` | `off` | 保留 author 输出与中间 ISO；**开启时逐盘续跑自动关闭** |
-
-- 音源缓存只在文件身份（长度、修改时间、首尾各 64 KiB 哈希）与归一化参数完全一致时复用；未通过校验的轨道永不写入缓存。
-- 逐盘续跑只在签名（源/MLP 身份、author/ISO 写入器身份、影响输出的配置、菜单设置）一致且暂存 ISO 未被改动时跳过该盘；最终仍由整套事务发布 ISO 与索引。构建失败会保留 `<DVDA_BUILD_DIR>/publish-staging`，下次运行从那里续跑。
-- `DVDA_MLP_JOBS` 大于 1 会让多个独立的进程内 DLL 编码状态并发工作，编码前的缓存凭据（源身份 + 编码器身份 + 编码参数 + 输出身份）依旧生效；是否提速取决于磁盘吞吐与 CPU，默认保持 1 路。
-
-## MLP 来源
-
-### 外部 MLP
-
-```text
-DVDA_MLP_SOURCE="external"
-DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
-```
-
-外部目录必须与音源目录同构：
-
-```text
-音源：D:/Music/MyAlbums/Album/01 Song.flac
-MLP ：D:/Music/MLP/Album/01 Song.mlp
-```
-
-### MLP 编码核心批量编码（默认）
-
-```text
-DVDA_MLP_SOURCE="surcode-batch"
-DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
-DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
-DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
-DVDA_MLP_METADATA_CONTEXT=""
-DVDA_FFMPEG="builtin:media"
-DVDA_FFPROBE="builtin:probe"
-DVDA_MLP_SURCODE_SAMPLE_RATE="48000"
-DVDA_MLP_SURCODE_BITS="24"
-```
-
-保留 `surcode-batch` 配置名兼容现有任务，执行链为：
-
-`源音频 → 内置媒体 DLL → 整数 PCM → MLP 核心 DLL → MLP 缓存`。
-
-Windows x64 应用内嵌固定哈希的 Windows x64 编码 DLL，运行时提取、校验并在进程内调用；
-不启动原版 SurCode，不加载它的 DLL，不写 SSF，也不进行编码后的字节修补。
-旧配置中的 DVDA_MLP_EAC3TO_EXE 仍可读取但不再使用。GUI 自动使用内置媒体库，旧 FFmpeg / FFprobe 路径不会继续启动外部程序。重采样/降位深沿用已验证的 SWR 与 20 位量化行为，不承诺复现 eac3to 的处理字节；相同目标 PCM 和元数据仍要求 MLP 逐字节相同。当前方案与验收见 [内置媒体处理](docs/INPROCESS-MEDIA.md)，早期迁移记录见 [FFmpeg PCM 迁移](docs/FFMPEG-PCM-MIGRATION.md)。
-
-MLP 缓存目录留空时使用 `<DVDA_BUILD_DIR>/mlp`。旧的 `DVDA_MLP_SOURCE=ffmpeg` 会明确报错，
-请改为 `surcode-batch`；`DVDA_MLP_SURCODE_EXE` 已删除。
-
-默认使用固定空辅助 TLV，使相同 PCM/设置的输出可重复。需要与历史原版文件
-逐字节比较时，可指定该音轨完整的 `DVDA_MLP_METADATA_CONTEXT`；时间元数据不同
-会导致整文件不同，不能只靠相同音频推断字节相同。不会将参考音频载荷传入编码器。
-旧的无来源凭据缓存会重新生成；失败的重新编码不覆盖已有的有效产物。
-
-接口、精度、声道、缓存及复现说明见 [MLP 编码核心集成](docs/MLP-ENCODER.md)。
-
-## 分盘与菜单
-
-- 默认不拆散专辑，按全局曲序逐盘填满。
-- `DVDA_MAX_DISCS` 只设置盘数上限，不参与切分。
-- DVD-5 默认容量为 `4,707,319,808` 字节。
-- DVD-9 可设置 `DVDA_DISC_BYTES="8540123136"`。
-- 每个 DVD-Audio 音频组最多 99 轨。
-
-菜单配置示例：
-
-```text
-DVDA_MENU="on"
-DVDA_MENU_TRACKS_PER_PAGE="12"
-DVDA_MENU_INDEX_MIN_ALBUMS="4"
-DVDA_MENU_STILLPICS="on"
-DVDA_MENU_COVER_DIM="35"
-```
-
-随包 TTC 通过 type.xml 分别注册 SC、JP、KR 三个 face，GUI 自动选择区域字体。自定义字体请填写已注册的区域字体名称，或分别提供对应 OTF 文件。
-
-`DVDA_FINAL_DIR` 就是最终输出目录。构建成功后 ISO 会直接发布到该目录，不再执行额外复制。
-
-## 生成精简发布包
-
-先按 [构建说明](tools/win-build/README.md) 准备内置媒体库、图像库、重编译的制盘程序及运行期素材，再执行：
-
-```bat
-tools\win-build\build-all.cmd ^
-  --framework-dependent ^
-  --prebuilt "D:\dev\winbuild\menu-bin" ^
-  --source "D:\dev\winbuild\src"
-```
-
-上述路径是示例，须替换为已准备的 Windows 工具和完整素材树。默认输出到 `tools/win-build/release-framework-dependent/DVD-Audio-Maker` 及同级 ZIP；`--output` 可指定其他位置。标准包只含 GUI，`--include-cli` 才增加开发诊断入口。省略 `--framework-dependent` 仍可生成自包含包，但会附带 .NET 并显著增大体积。
-
-打包本身复用现成 Windows 产物，不现场运行原生编译链。发布目录、音源、缓存和 ZIP 不提交到 Git；可分发的压缩包放入 GitHub Releases。
-
-## 验证与维护
-
-```bat
-dotnet build DVD-Audio-Maker.sln -c Debug -p:SelfContained=false
-tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
-```
-
-迁移回归通过 109/109 兼容性检查、41 项菜单媒体检查、32 项菜单模块检查和 14 项全流损坏检查。GUI 覆盖普通/索引菜单、多盘多组及 44.1 kHz／20 位转换。菜单模块由源码构建并取代旧菜单 EXE；MLP 核心及整文件字节一致性不变，MPEG-2 菜单不要求与旧编码器输出逐字节相同。
-
-本地验收精简包位于 build/release-menu-final，产物保持忽略。范围见[迁移清单](docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)，结果见[验证记录](docs/menu-migration-validation.json)。历史基准仅用于开发对照。
-
-## 文档
-
-- [开发调试](docs/DEVELOPMENT.md)、[原生构建与打包](tools/win-build/README.md)
-- [MLP 编码核心与字节一致性](docs/MLP-ENCODER.md)、[原生核心维护](src/DvdaMaker.SurcodeTool/Native/README.md)
-- [内置媒体处理](docs/INPROCESS-MEDIA.md)、[内置图像处理](docs/INPROCESS-IMAGES.md)
-- [精简媒体库](docs/MINIMAL-FFMPEG.md)、[共享字体](docs/SHARED-FONTS.md)
-- [制盘源码改动](docs/DVDA-AUTHOR-CHANGES.md)、[历史故障记录](docs/TROUBLESHOOTING.md)
-- [图像迁移验证记录](docs/inprocess-images-validation.json)、[第三方许可](docs/LICENSING.md)
-
-## 许可
-
-本仓库代码按 [GPL-3.0](LICENSE) 发布。第三方源码、工具、字体及音频内容分别适用其各自许可；原版 SurCode 不随项目提供。
+默认打包生成单个 EXE 与旁文件，统一压缩为 `DVD-Audio-Maker-v1.0-win-x64.zip`；使用 `--version` 指定后续版本。CLI、PDB、构建来源 JSON 和 .NET 运行时不进入标准用户包。发布物留在被 Git 忽略的目录，仅作为 GitHub Release 附件分发。

@@ -697,7 +697,7 @@ inline static void write_lpcm_header(FILE *fp,
   first_access_unit_pointer[0] = (uint8_t)((frame_offset & 0xff00) >> 8);
   first_access_unit_pointer[1] = (uint8_t)  frame_offset & 0xff;
 
-  if (info->type == AFMT_MLP) sub_stream_id[0] = 0xa1;
+  sub_stream_id[0] = info->type == AFMT_MLP ? 0xa1 : 0xa0;
 
 
   // MLP change: PCM 0xa0 -> 0xa1 (offset: 0x31 / 33)
@@ -1280,7 +1280,7 @@ inline static int write_pes_packet(FILE *fp,
        · 症状：不管哪首按「下一曲」都跳回曲目 1
      SCR 与 PTS 同源（27MHz / 90kHz = 300），按同比例平移以保持一致。 */
   PTS += info->pts_shift;
-  DTS += info->pts_shift;
+  if (info->type == AFMT_MLP) DTS += info->pts_shift;
   SCR += (uint64_t) info->pts_shift * 300;
 
   static bool wait_for_next_pack;
@@ -1360,7 +1360,9 @@ inline static int write_pes_packet(FILE *fp,
 
       // +14 for PCM or +19 for MLP
 
-      write_audio_pes_header(fp, info->lastpack_audiopesheaderquantity
+      write_audio_pes_header(fp, (info->type == AFMT_MLP
+                                ? info->lastpack_audiopesheaderquantity
+                                : 12 + info->lastpack_lpcm_headerquantity)
                              + audio_bytes, mlp_flag, 0, PTS, DTS, globals);
 
       write_lpcm_header(fp, info->lastpack_lpcm_headerquantity,
@@ -1932,6 +1934,11 @@ int create_ats(char *audiotsdir,
 
   fpout = fopen(outfile, "wb+");
 
+  /* Carry an odd PCM frame only within the same title. */
+  for (int j = 0; j < ntracks; ++j)
+    if (files[j].type != AFMT_MLP)
+      files[j].contin_track = j + 1 < ntracks && !files[j + 1].newtitle;
+
   if (audio_open(&files[i], globals) != 0)
     {
       foutput(ERR "Could not open %s\n", files[i].filename);
@@ -2093,6 +2100,7 @@ int create_ats(char *audiotsdir,
   // be done once the loop is completed.  Iterative deallocation yields stack
   // violation issues which are poorly understood.
 
-  for (int j = 0; j <= i; ++j) free_mlp_tracktable(&files[i]);
+  for (int j = 0; j < ntracks; ++j) free_mlp_tracktable(&files[j]);
+  fclose(fpout);
   return (fileno);
 }
