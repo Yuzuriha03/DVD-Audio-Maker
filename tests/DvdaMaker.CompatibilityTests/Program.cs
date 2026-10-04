@@ -2297,7 +2297,11 @@ static void MlpCacheIndexStorage()
         var source = Path.Combine(root, "song.flac");
         var output = Path.Combine(mlpDirectory, "song.mlp");
         File.WriteAllBytes(source, Enumerable.Repeat((byte)0x33, 4096).ToArray());
-        File.WriteAllBytes(output, BuildValidMlpFixture());
+        var validMlp = BuildValidMlpFixture();
+        File.WriteAllBytes(output, validMlp);
+        Equal<int?>(8, MlpCacheValidator.MajorSyncInterval(validMlp));
+        True(MlpCacheValidator.MajorSyncInterval(validMlp.AsSpan(0, 8)) is null,
+            "不完整 MLP access unit 不得返回 major sync 间隔");
 
         var sourceIdentity = FileIdentityProbe.Compute(source)!;
         var outputIdentity = FileIdentityProbe.Compute(output)!;
