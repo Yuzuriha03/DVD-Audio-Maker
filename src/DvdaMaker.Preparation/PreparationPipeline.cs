@@ -39,14 +39,10 @@ public sealed class PreparationPipeline
             Console.WriteLine($"[清理] 旧 manifest 已移除: {_options.ManifestPath}");
         }
 
-        var sources = Directory.EnumerateFiles(_options.SourceDirectory, "*", SearchOption.AllDirectories)
-            .Where(path => path.EndsWith(".flac", StringComparison.OrdinalIgnoreCase) ||
-                           path.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        Console.WriteLine($"发现 {sources.Length} 个音频文件 (FLAC/M4A)");
+        var sources = PreparationSnapshotStore.EnumerateSources(_options);
+        Console.WriteLine($"发现 {sources.Count} 个音频文件 (FLAC/M4A)");
 
-        var tracks = new List<AudioTrackMetadata>(sources.Length);
+        var tracks = new List<AudioTrackMetadata>(sources.Count);
         var metadataStarted = Stopwatch.GetTimestamp();
         var reusedMetadata = 0;
         foreach (var path in sources)
@@ -61,10 +57,10 @@ public sealed class PreparationPipeline
             }
             tracks.Add(await _metadataReader.ReadAsync(path, cancellationToken).ConfigureAwait(false));
         }
-        Console.WriteLine($"[耗时] 元数据探测 {sources.Length} 首: " +
+        Console.WriteLine($"[耗时] 元数据探测 {sources.Count} 首: " +
             $"{Stopwatch.GetElapsedTime(metadataStarted)}");
         Console.WriteLine(
-            $"[缓存] 复用元数据 {reusedMetadata} 首 / 重新探测 {sources.Length - reusedMetadata} 首");
+            $"[缓存] 复用元数据 {reusedMetadata} 首 / 重新探测 {sources.Count - reusedMetadata} 首");
 
         AlbumNormalizer.Apply(tracks);
         foreach (var track in tracks.Where(track => track.ResampleTo is not null))
@@ -213,6 +209,14 @@ public sealed class PreparationPipeline
         if (result.FailureCount == 0)
         {
             WriteManifest(manifest);
+            if (PreparationSnapshotStore.Save(_options, sources))
+            {
+                Console.WriteLine($"[快照] 已保存音源指纹 -> {_options.PrepareSnapshotPath}");
+            }
+        }
+        else
+        {
+            PreparationSnapshotStore.Invalidate(_options);
         }
         Console.WriteLine($"[耗时] prepare 总计: {Stopwatch.GetElapsedTime(startedAt)}");
         return result;

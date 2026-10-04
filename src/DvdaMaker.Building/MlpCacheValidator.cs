@@ -15,7 +15,7 @@ public static class MlpCacheValidator
     {
         try
         {
-            var inspection = MlpStreamAligner.Inspect(File.ReadAllBytes(path));
+            var inspection = MlpStreamAligner.InspectFile(path);
             return inspection.IsValid && inspection.HasEndOfStream;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
