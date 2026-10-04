@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NativeMediaDirectory Condition="'$(NativeMediaDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\build\media-native</NativeMediaDirectory>
     <NativeImageDirectory Condition="'$(NativeImageDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\build\image-native</NativeImageDirectory>
   </PropertyGroup>

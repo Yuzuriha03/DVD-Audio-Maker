@@ -65,7 +65,9 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
             probes::dispatch(operation, request)
         }
         "author.normalize_title_mode" | "author.title_ends" => author::dispatch(operation, request),
-        "aob.pts_statistics" => aob::dispatch(operation, request),
+        "aob.pts_statistics" | "aob.scan_file" | "aob.audit_diagnostics" => {
+            aob::dispatch(operation, request)
+        }
         "hash.sha256_hex" | "hash.sha256_file" => hash::dispatch(operation, request),
         "identity.compute" => identity::dispatch(request),
         "publish.set" | "publish.single" | "publish.stage" | "publish.copy" => {

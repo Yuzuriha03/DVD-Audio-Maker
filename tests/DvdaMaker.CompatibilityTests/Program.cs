@@ -2109,6 +2109,8 @@ static void PreparationSnapshotChecks()
 
 static void ScanPtsSectorsStreamingly()
 {
+    AobMigrationTests.ScanBoundaries();
+    AobMigrationTests.FileStreaming();
     static byte[] Sector(long? pts)
     {
         var sector = new byte[2048];
