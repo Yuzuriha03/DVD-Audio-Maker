@@ -3,6 +3,8 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.SurcodeTool;
 
@@ -56,6 +58,11 @@ public static class MlpEncoder
 
     public static void WriteMetadata(string path, long frames, int sampleRate)
     {
+        if (RustBridge.Mode != "managed")
+        {
+            RustBridge.WriteEncoderMetadata(new { Path = path, Frames = frames, Rate = sampleRate });
+            return;
+        }
         var units = AccessUnits(frames, sampleRate);
         using var writer = new BinaryWriter(new FileStream(path, FileMode.CreateNew, FileAccess.Write));
         writer.Write("MSCTX001"u8); writer.Write(units); writer.Write(1u);
@@ -81,6 +88,20 @@ public static class MlpEncoder
     }, cancellationToken);
 
     private static void Encode(string wave, string destination, string context, CancellationToken token)
+    {
+        if (RustBridge.Mode == "managed") { EncodeManaged(wave, destination, context, token); return; }
+        token.ThrowIfCancellationRequested();
+        RustBridge.RunEncoder(new { Library = ExtractLibrary(), Wave = wave, Destination = destination,
+            MetadataContext = context, TimeoutMillis = (long?)null }, (stream, text) =>
+        {
+            if (stream != 4) { Console.WriteLine(text); return; }
+            using var document = JsonDocument.Parse(text);
+            var value = document.RootElement;
+            Console.WriteLine($"[MLP DLL] {value.GetProperty("Frames").GetInt64():N0} 帧 / {value.GetProperty("Rate").GetInt32()} Hz / {value.GetProperty("Bits").GetInt32()} bit / {value.GetProperty("Channels").GetInt32()} 声道，{value.GetProperty("Bytes").GetInt64():N0} 字节");
+        }, token);
+    }
+
+    private static void EncodeManaged(string wave, string destination, string context, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         var layout = SurcodePcmWav.ReadLayout(wave);

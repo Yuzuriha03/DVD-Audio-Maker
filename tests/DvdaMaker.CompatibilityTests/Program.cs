@@ -316,7 +316,7 @@ var tests = new (string Name, Action Run)[]
     ("超大 AU 无损回退与大小上限", MlpEncoderTests.OversizedAccessUnit),
     ("eac3to 奇数 PCM 尾部封装", MlpEncoderTests.OddPcmTail),
     ("SurCode 内置任务与路径", BuildSurcodeBatchJob),
-    ("MLP 编码核心确定性元数据", MlpEncoderTests.Metadata),
+    ("MLP 编码核心确定性元数据", () => { MlpEncoderTests.Metadata(); EncoderMigrationTests.Run(); }),
     ("SurCode PCM 16 位升至 24 位", UpconvertSurcodePcmWav),
     ("Shell 单引号转义", EscapeShellAssignment),
     ("Shell 默认键集兼容 Python", PreserveLegacyShellKeySet),

@@ -443,24 +443,28 @@ fn strip_version(request: Value) -> Result<Value, String> {
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct WavLayout {
-    container_bits: i32,
-    valid_bits: i32,
-    channels: i32,
-    sample_rate: i32,
-    data_offset: i64,
-    data_size: i64,
-    bytes_per_sample: i32,
-    channel_mask: u32,
+pub struct WavLayout {
+    pub container_bits: i32,
+    pub valid_bits: i32,
+    pub channels: i32,
+    pub sample_rate: i32,
+    pub data_offset: i64,
+    pub data_size: i64,
+    pub bytes_per_sample: i32,
+    pub channel_mask: u32,
 }
 
 const PCM_GUID: [u8; 16] = [1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113];
 
 fn wav_layout(request: Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected WAVE path")?;
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
-    let layout = parse_wav_layout(&bytes)?;
+    let layout = read_wav_layout(path)?;
     serde_json::to_value(layout).map_err(|error| error.to_string())
+}
+
+pub fn read_wav_layout(path: &str) -> Result<WavLayout, String> {
+    let mut input = crate::identity::open_read(path).map_err(|e| format!("{path}: {e}"))?;
+    read_wav_layout_from(&mut input).map_err(|e| e.to_string())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -613,15 +617,56 @@ fn push_u32_le(output: &mut Vec<u8>, value: u32) {
 }
 
 fn parse_wav_layout(bytes: &[u8]) -> Result<WavLayout, String> {
-    if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+    read_wav_layout_from(&mut std::io::Cursor::new(bytes)).map_err(|e| e.to_string())
+}
+
+#[derive(Debug)]
+pub enum WavError {
+    Io(std::io::Error),
+    Invalid(String),
+    Overflow,
+}
+impl From<std::io::Error> for WavError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+impl From<String> for WavError {
+    fn from(e: String) -> Self {
+        Self::Invalid(e)
+    }
+}
+impl From<&str> for WavError {
+    fn from(e: &str) -> Self {
+        Self::Invalid(e.into())
+    }
+}
+impl std::fmt::Display for WavError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => e.fmt(f),
+            Self::Invalid(e) => e.fmt(f),
+            Self::Overflow => f.write_str("WAVE sample rate is too large"),
+        }
+    }
+}
+impl std::error::Error for WavError {}
+
+pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout, WavError> {
+    let length = input.seek(SeekFrom::End(0))?;
+    input.seek(SeekFrom::Start(0))?;
+    let mut head = [0u8; 12];
+    input.read_exact(&mut head)?;
+    if &head[..4] != b"RIFF" || &head[8..12] != b"WAVE" {
         return Err("WAVE input must be an integer RIFF/WAVE PCM stream.".into());
     }
-    let riff_size = u32_le(&bytes[4..8])? as usize;
+    let riff_size = u32_le(&head[4..8])? as u64;
     let end = riff_size.checked_add(8).ok_or("WAVE length overflow")?;
-    if end > bytes.len() || end < 12 {
+    if end > length || end < 12 {
         return Err("WAVE length field is invalid or the file is truncated.".into());
     }
-    let mut position = 12usize;
+    let file_length = length;
+    let mut position = 12u64;
     let mut bits = 0i32;
     let mut valid = 0i32;
     let mut channels = 0i32;
@@ -631,8 +676,11 @@ fn parse_wav_layout(bytes: &[u8]) -> Result<WavLayout, String> {
     let mut data_offset = None;
     let mut data_size = 0i64;
     while position + 8 <= end {
-        let id = &bytes[position..position + 4];
-        let length = u32_le(&bytes[position + 4..position + 8])? as usize;
+        input.seek(SeekFrom::Start(position))?;
+        let mut chunk = [0u8; 8];
+        input.read_exact(&mut chunk)?;
+        let id = &chunk[..4];
+        let length = u32_le(&chunk[4..])? as u64;
         let payload = position + 8;
         let payload_end = payload
             .checked_add(length)
@@ -640,7 +688,7 @@ fn parse_wav_layout(bytes: &[u8]) -> Result<WavLayout, String> {
         let mut next = payload_end
             .checked_add(length & 1)
             .ok_or("WAVE chunk alignment overflow")?;
-        if length & 1 != 0 && id == b"data" && payload_end == end && end == bytes.len() {
+        if length & 1 != 0 && id == b"data" && payload_end == end && end == file_length {
             // eac3to omits the RIFF alignment byte after an odd terminal data chunk.
             next = end;
         }
@@ -651,12 +699,13 @@ fn parse_wav_layout(bytes: &[u8]) -> Result<WavLayout, String> {
             if bits != 0 || !(16..=4096).contains(&length) {
                 return Err("WAVE fmt chunk is invalid.".into());
             }
-            let fmt = &bytes[payload..payload_end];
+            let mut fmt = vec![0u8; length as usize];
+            input.read_exact(&mut fmt)?;
             let tag = u16_le(&fmt[0..2])?;
             channels = u16_le(&fmt[2..4])? as i32;
             rate = u32_le(&fmt[4..8])?
                 .try_into()
-                .map_err(|_| "WAVE sample rate is too large")?;
+                .map_err(|_| WavError::Overflow)?;
             align = u16_le(&fmt[12..14])? as i32;
             bits = u16_le(&fmt[14..16])? as i32;
             valid = bits;

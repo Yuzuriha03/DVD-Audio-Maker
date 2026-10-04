@@ -1,4 +1,5 @@
 //! Safe, narrow Rust wrappers for the existing C17 format DLL.
+pub mod encoder;
 pub mod files;
 pub mod images;
 pub mod media;
