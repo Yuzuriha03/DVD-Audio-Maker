@@ -23,6 +23,8 @@ The application, instructions, example configuration and licenses are together i
 5. Click **“Check sources”** and resolve any issues, then **“Build discs”**. Building also checks the sources automatically before encoding and creating ISOs.
 6. When finished, click **“Verify output”**. After verification passes, use “Open output” to find your ISOs.
 
+If you just checked the sources and the files, settings and preparation manifest are unchanged, **Build discs** reuses that result instead of probing and decoding everything again. Any source-file change triggers a fresh check.
+
 Tasks can be canceled. Closing the window during a task stops it and waits for cleanup. Canceling does not delete completed output. Burning and playback require software or hardware that supports DVD-Audio; an ISO is not a guarantee of compatibility with ordinary DVD-Video players.
 
 ## Audio options

@@ -391,10 +391,16 @@ public sealed class VerificationPipeline(DvdaOptions options, ProcessRunner? run
                         var sourceRaw = Path.Combine(folder, "source.raw");
                         var decodedRaw = Path.Combine(folder, "decoded.raw");
                         var source = track.SourcePath;
-                        if (track.MlpSource is "mlp-batch" or "lpcm")
+                        if (track.MlpSource == "lpcm")
                         {
-                            // Reuse the exact conversion policy used before encoding. This
-                            // regenerates target PCM; no encoded stream is changed.
+                            // LpcmProvider already created and validated this exact
+                            // normalized WAV. Reusing it avoids a second source
+                            // conversion during verification.
+                            source = track.MlpPath;
+                        }
+                        else if (track.MlpSource == "mlp-batch")
+                        {
+                            // Reuse the exact conversion policy used before encoding.
                             var converted = Path.Combine(folder, "converted.wav");
                             var result = await RunAsync(options.Ffmpeg,
                                 FfmpegPcmConverter.Arguments(source, converted, track.SampleRate, track.Bits),
