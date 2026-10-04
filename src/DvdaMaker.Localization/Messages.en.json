@@ -5975,5 +5975,35 @@
       1
     ],
     "English": "Disc {0}: {1}"
+  },
+  {
+    "Source": "LPCM 不支持此声道布局，请使用标准 DVD-Audio 声道布局。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "This LPCM channel layout is unsupported. Use a standard DVD-Audio speaker layout."
+  },
+  {
+    "Source": "音频编码方式:",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Audio encoding:"
+  },
+  {
+    "Source": "  lpcm          = LPCM 编码",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "  lpcm          = LPCM encoding"
+  },
+  {
+    "Source": "  第 {0} 盘: {1} 首, 音频 {2} GiB -> 估AOB {3} GiB  卷标 \"{4}\"",
+    "Parameters": 5,
+    "Nested": [],
+    "English": "  Disc {0}: {1} tracks, audio {2} GiB -> estimated AOB {3} GiB  volume label \"{4}\""
+  },
+  {
+    "Source": "  第 {0} 盘: {1} 首, 音频 {2} GiB ",
+    "Parameters": 3,
+    "Nested": [],
+    "English": "  Disc {0}: {1} tracks, audio {2} GiB "
   }
 ]
