@@ -68,7 +68,10 @@
       "id": 8,
       "name": "Language profile and argument compatibility",
       "managedEntry": "LocalizationTests.ProfileAndArguments",
-      "rustOperations": [],
+      "rustOperations": [
+        "profile.load",
+        "profile.save"
+      ],
       "status": "pass"
     },
     {
@@ -76,7 +79,8 @@
       "name": "解析引号、注释和无效行",
       "managedEntry": "ParseAssignments",
       "rustOperations": [
-        "config.parse"
+        "config.find",
+        "config.read_file"
       ],
       "status": "pass"
     },
@@ -85,7 +89,7 @@
       "name": "Windows 路径规范化",
       "managedEntry": "NormalizeWindowsPaths",
       "rustOperations": [
-        "config.parse"
+        "config.read_file"
       ],
       "status": "pass"
     },
@@ -94,7 +98,8 @@
       "name": "环境变量优先于 config.env",
       "managedEntry": "EnvironmentWins",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -104,7 +109,8 @@
       "name": "空环境变量不覆盖配置",
       "managedEntry": "EmptyEnvironmentDoesNotOverride",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -114,7 +120,8 @@
       "name": "默认值与数值回退",
       "managedEntry": "DefaultsAndNumericFallbacks",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -124,7 +131,8 @@
       "name": "派生路径和 ISO 名称",
       "managedEntry": "DerivedPathsAndNames",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -134,7 +142,8 @@
       "name": "限制组轨数量",
       "managedEntry": "ClampGroupTrackLimit",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -144,7 +153,8 @@
       "name": "规范化 MLP 来源",
       "managedEntry": "NormalizeMlpSource",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -153,7 +163,10 @@
       "id": 17,
       "name": "GUI 配置方案保存与版本校验",
       "managedEntry": "GuiConfigurationTests.ProfileRoundtrip",
-      "rustOperations": [],
+      "rustOperations": [
+        "profile.load",
+        "profile.save"
+      ],
       "status": "pass"
     },
     {
@@ -161,8 +174,10 @@
       "name": "GUI 导入旧 env 与未知键保留",
       "managedEntry": "GuiConfigurationTests.ImportEnv",
       "rustOperations": [
-        "config.parse",
-        "options.evaluate"
+        "config.read_file",
+        "options.evaluate",
+        "profile.load",
+        "profile.save"
       ],
       "status": "pass"
     },
@@ -224,7 +239,7 @@
       "name": "旧 eac3to 配置迁移与 FFmpeg 工具设置",
       "managedEntry": "FfmpegPcmTests.LegacySettings",
       "rustOperations": [
-        "config.parse",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -253,7 +268,8 @@
       "name": "SurCode 内置任务与路径",
       "managedEntry": "BuildSurcodeBatchJob",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -289,7 +305,8 @@
       "name": "Shell 默认键集兼容 Python",
       "managedEntry": "PreserveLegacyShellKeySet",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -299,7 +316,8 @@
       "name": "配置来源与有效键集合",
       "managedEntry": "DescribeConfigurationSources",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -467,6 +485,8 @@
       "name": "MLP 编码核心内嵌产物身份",
       "managedEntry": "MlpEncoderTests.EmbeddedCore",
       "rustOperations": [
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -484,7 +504,8 @@
       "managedEntry": "WriteMlpIndex",
       "rustOperations": [
         "author.title_ends",
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "disc.plan",
         "math.content_limit",
         "math.estimate_aob",
@@ -536,7 +557,8 @@
       "managedEntry": "BuildInProcessIsoArguments",
       "rustOperations": [
         "author.normalize_title_mode",
-        "config.parse"
+        "config.find",
+        "config.read_file"
       ],
       "status": "pass"
     },
@@ -545,7 +567,8 @@
       "name": "构建日志命令格式",
       "managedEntry": "WriteCompatibleBuildLog",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -720,7 +743,8 @@
       "name": "MLP 索引拒绝重复路径",
       "managedEntry": "RejectDuplicateMlpIndexKeys",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "disc.plan",
         "math.content_limit",
         "math.estimate_aob",
@@ -734,7 +758,8 @@
       "managedEntry": "BuildDiscEndToEnd",
       "rustOperations": [
         "author.normalize_title_mode",
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "disc.plan",
         "math.content_limit",
         "math.estimate_aob",
@@ -749,7 +774,8 @@
       "managedEntry": "StageDiscAndKeepIntermediate",
       "rustOperations": [
         "author.normalize_title_mode",
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "disc.plan",
         "math.content_limit",
         "math.estimate_aob",
@@ -765,7 +791,8 @@
       "managedEntry": "PreserveFailedDiscWorkspace",
       "rustOperations": [
         "author.normalize_title_mode",
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "disc.plan",
         "math.content_limit",
         "math.estimate_aob",
@@ -778,7 +805,8 @@
       "name": "菜单配置派生值",
       "managedEntry": "LoadMenuConfiguration",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -788,7 +816,8 @@
       "name": "菜单按专辑分页与索引",
       "managedEntry": "PlanAlbumMenuPages",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "menu.font_size",
         "menu.font_width",
         "menu.pages",
@@ -928,7 +957,8 @@
       "name": "工作盘空间预检估算",
       "managedEntry": "EstimateDiskSpaceRequirements",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "disk.group_requirements",
         "math.estimate_aob",
         "options.evaluate"
@@ -940,7 +970,8 @@
       "name": "准备缓存复用与源变化失效",
       "managedEntry": "PrepareCacheReuseAndInvalidation",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "decode.scan",
         "hash.sha256_hex",
         "identity.compute",
@@ -957,7 +988,8 @@
       "name": "准备缓存不记录未通过校验的轨道",
       "managedEntry": "PrepareCacheSkipsFailedTracks",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "decode.scan",
         "metadata.parse",
         "options.evaluate",
@@ -982,7 +1014,8 @@
       "name": "准备快照指纹复用与失效",
       "managedEntry": "PreparationSnapshotChecks",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "hash.sha256_hex",
         "identity.compute",
         "identity.equal",
@@ -1021,7 +1054,8 @@
       "managedEntry": "ReuseValidatedSurcodeOutput",
       "rustOperations": [
         "audio.parameters",
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "identity.compute",
         "identity.equal",
         "options.evaluate"
@@ -1035,7 +1069,8 @@
       "rustOperations": [
         "audio.parameters",
         "cache.mlp_match",
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "hash.sha256_file",
         "identity.compute",
         "identity.equal",
@@ -1073,7 +1108,8 @@
       "name": "出盘签名随配置与 MLP 变化",
       "managedEntry": "DiscSignatureChanges",
       "rustOperations": [
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "disc.plan",
         "hash.sha256_file",
         "hash.sha256_hex",
@@ -1092,7 +1128,8 @@
         "audio.parameters",
         "author.normalize_title_mode",
         "author.title_ends",
-        "config.parse",
+        "config.find",
+        "config.read_file",
         "disc.plan",
         "disk.group_requirements",
         "hash.sha256_hex",
@@ -1125,6 +1162,8 @@
   "passed": 115,
   "rustCalls": {
     "author.title_ends": 7,
+    "profile.load": 33,
+    "config.read_file": 72,
     "menu.normalize_path": 3,
     "aob.scan_sectors": 78,
     "path.safe_basename": 7,
@@ -1133,6 +1172,7 @@
     "audio.parameters": 26,
     "prepare.cache_reusable": 6,
     "wav.normalize": 20,
+    "config.find": 51,
     "iso.list": 3,
     "aob.audit_diagnostics": 8,
     "metadata.parse": 5,
@@ -1161,12 +1201,12 @@
     "publish.stage": 8,
     "track.number": 12,
     "identity.equal": 29,
+    "profile.save": 11,
     "lpcm.validate_format": 126,
     "aob.scan_file": 12,
     "iso.data_lba": 1,
     "menu.truncate": 10,
     "alac.cookie": 3,
-    "config.parse": 51,
     "publish.copy": 2,
     "iso.strip_version": 9,
     "math.content_limit": 18,
@@ -1190,5 +1230,5 @@
     "options.defaults": 1,
     "lpcm.validate_layout": 16
   },
-  "evidence": "build/rust-validation/p14-options-final-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p15-config-files-compare-x64.json (ignored local report)"
 }
