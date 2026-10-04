@@ -110,3 +110,5 @@ Use, modification and redistribution must comply with the upstream project's and
 The standard Windows x64 release links the author and media bridge against the same shared FFmpeg build. Use build-image-author.py with --ffmpeg-runtime build/ffmpeg-shared/install and --work-directory build/image-author-shared. The packager keeps one DLL set for both consumers. Native build records stay in the local build directory.
 
 The user entry point is DVD-Audio-Maker.exe: Check sources, Build discs, Verify output. dry-run remains a source CLI diagnostic and is not a GUI action. This mirror is maintainer documentation and is not copied into the user release. The public archive is DVD-Audio-Maker-v1.0-win-x64.zip.
+
+The current build script also overlays src/audio.c and src/ats.c from this mirror into its isolated snapshot. These include LPCM RIFF parsing, odd-frame carry, short first packets and PES length fixes. The supplied full source tree is unchanged. Validate with tools/win-build/test-lpcm-native.py.

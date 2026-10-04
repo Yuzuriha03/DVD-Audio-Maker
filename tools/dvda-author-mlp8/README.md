@@ -110,3 +110,5 @@ GUI 与原生制盘程序均使用 image-native/dvda-image.dll；菜单媒体、
 Windows x64 标准发布中，author 与媒体接口链接同一套 shared FFmpeg 构建。调用 build-image-author.py 时传入 --ffmpeg-runtime build/ffmpeg-shared/install 和 --work-directory build/image-author-shared；打包只保留一套公共 DLL，构建记录保留在本地构建目录。
 
 用户入口为 DVD-Audio-Maker.exe，只提供检查音源、开始制作、验证成品；dry-run 留在源码 CLI 用于调试。本文面向维护者，不复制到用户发布包。正式压缩包为 DVD-Audio-Maker-v1.0-win-x64.zip。
+
+当前构建脚本还会将此镜像中的 src/audio.c、src/ats.c 复制到隔离构建目录，包含 LPCM 的 RIFF 读取、奇数帧衔接、短首包和 PES 长度修正；不会修改提供的完整源码树。LPCM 字节对比测试为 tools/win-build/test-lpcm-native.py。

@@ -1313,11 +1313,15 @@ inline static int write_pes_packet(FILE *fp,
 
       write_system_header(fp); //+18
 
-      //+17 for PCM, 22 for MLP
-      write_audio_pes_header(fp, info->firstpack_audiopesheaderquantity,
-                             mlp_flag, 1, PTS, DTS, globals);
-
       audio_bytes = info->lpcm_payload - info->firstpackdecrement;
+      if (info->type != AFMT_MLP && bytesinbuffer < (uint32_t) audio_bytes)
+        audio_bytes = bytesinbuffer;
+
+      // A short first packet declares only the PCM bytes actually present.
+      write_audio_pes_header(fp, info->type == AFMT_MLP
+                             ? info->firstpack_audiopesheaderquantity
+                             : 15 + info->firstpack_lpcm_headerquantity + audio_bytes,
+                             mlp_flag, 1, PTS, DTS, globals);
 
       write_lpcm_header(fp, info->firstpack_lpcm_headerquantity,
                         info, pack_in_title, cc, false);
@@ -1336,7 +1340,7 @@ inline static int write_pes_packet(FILE *fp,
       //+6+info->firstpack_pes_padding
 
       if (info->type != AFMT_MLP)
-        write_pes_padding(fp, info->firstpack_pes_padding, globals);
+        write_pes_padding(fp, (2048 - (ftello(fp) % 2048)) % 2048, globals);
     }
   else if (bytesinbuffer < info->lpcm_payload)
     {
@@ -1955,7 +1959,7 @@ int create_ats(char *audiotsdir,
 
   foutput(INF "Processing %s\n", files[i].filename);
 
-  while (bytesinbuf)
+  while (bytesinbuf || i < ntracks)
     {
       if (bytesinbuf >= lpcm_payload)
         {

@@ -1180,6 +1180,16 @@ static inline int process_audiofile_info(fileinfo_t *info, globalData *globals)
 
       if (globals->debugging) foutput(INF "Opening %s to get info\n", info->filename);
 
+      /* Valid PCM need not contain the legacy 255-byte probe window. */
+      if (pcm_wave_info(info))
+        {
+          fclose(info->fp);
+          info->fp = NULL;
+          info->type = AFMT_WAVE_GOOD_HEADER;
+          if (calc_info(info, globals) == NO_AFMT_FOUND) info->type = NO_AFMT_FOUND;
+          return info->type;
+        }
+
       info->header_size = MAX_HEADER_SIZE;
       uint8_t header[info->header_size];
       memset(header, 0, info->header_size);

@@ -58,6 +58,22 @@ def main():
                 if verify(dll,sources,[int(separate),1],bytes(changed))[0]!=-8:raise AssertionError(name+' wrong bits accepted')
                 if verify(dll,sources,[int(separate),1],payload[:-2048])[0]==0:raise AssertionError(name+' truncation accepted')
                 report['checks'].append({'case':name,**detail});print('PASS '+name,flush=True)
+        for bits, channels in [(16,1),(24,1),(24,2),(24,6)]:
+            for frames in [1,2,3,127,501]:
+                for separate in [False,True]:
+                    name=f'tiny-{bits}-{channels}-{frames}-'+('titles' if separate else 'gapless')
+                    work=root/name;work.mkdir();sources=[]
+                    for i in range(2):
+                        source=work/f'{i}.wav';wave(source,48000,bits,channels,frames,i+1);sources.append(source)
+                    out=work/'disc';tmp=work/'tmp';tmp.mkdir()
+                    with (work/'author.log').open('wb') as log:
+                        r=subprocess.run([str(author),'-g',str(sources[0]),*(['-z'] if separate else []),str(sources[1]),'-o',str(out),'-D',str(tmp),'-W','-P0','-n'],env=env,stdout=log,stderr=subprocess.STDOUT,timeout=90,creationflags=subprocess.CREATE_NO_WINDOW)
+                    payload=b''.join(p.read_bytes() for p in sorted((out/'AUDIO_TS').glob('ATS_01_*.AOB')))
+                    status,detail=verify(dll,sources,[int(separate),1],payload)
+                    if r.returncode or status:raise AssertionError(name+' '+json.dumps(detail))
+                    expected_frames=2*(frames+(frames%2)) if separate else 2*frames
+                    if detail['bytes']!=expected_frames*channels*(bits//8):raise AssertionError(name+' incorrect PCM length')
+                    report['checks'].append({'case':name,**detail});print('PASS '+name,flush=True)
         report['status']='PASS'
     except Exception as error:report.update(status='FAIL',error=str(error));raise
     finally:(root/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
