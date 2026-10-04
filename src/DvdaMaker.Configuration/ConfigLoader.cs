@@ -19,6 +19,13 @@ public sealed partial class ConfigLoader
     }
 
     public string? FindConfigPath(string? explicitPath = null, string? workingDirectory = null)
+        => DvdaMaker.Processes.RustBridge.Run<string?>("config.find", new
+        {
+            ExplicitPath = explicitPath, EnvironmentPath = _environment.GetValueOrDefault("DVDA_CONFIG"),
+            BaseDirectory = AppContext.BaseDirectory, WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
+        }, () => FindConfigPathManaged(explicitPath, workingDirectory));
+
+    private string? FindConfigPathManaged(string? explicitPath, string? workingDirectory)
     {
         if (!string.IsNullOrEmpty(explicitPath))
         {
@@ -40,11 +47,8 @@ public sealed partial class ConfigLoader
     }
 
     public static IReadOnlyDictionary<string, string> ParseFile(string? path)
-    {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return ParseFileManaged(path);
-        return DvdaMaker.Processes.RustBridge.Run<IReadOnlyDictionary<string,string>>(
-            "config.parse", File.ReadAllText(path), () => ParseFileManaged(path));
-    }
+        => ConfigurationFileInterop.Read<IReadOnlyDictionary<string, string>>("config.read_file", path, path,
+            () => ParseFileManaged(path));
 
     private static IReadOnlyDictionary<string, string> ParseFileManaged(string? path)
     {

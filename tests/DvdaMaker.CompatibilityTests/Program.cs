@@ -450,6 +450,7 @@ return failed == 0 ? 0 : 1;
 
 static void ParseAssignments()
 {
+    ConfigurationFileMigrationTests.EnvFiles();
     WithConfig(
         """
         # comment
