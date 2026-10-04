@@ -107,9 +107,10 @@ def main():
         check('Exactly one physical file for every DLL name',len(dlls)==len(set(dlls)) and not (runtime/'media-native').exists())
         media=json.loads((provenance/'menu-bin/media-build.json').read_text('utf-8'))
         author=json.loads((provenance/'image-native/author-build.json').read_text('utf-8'))
+        expected_runtime_dlls=set(media['files'])|set(author['runtime_files'])
+        if (runtime/'menu-bin/dvda-formats.dll').exists(): expected_runtime_dlls.add('dvda-formats.dll')
         check('Runtime DLLs exactly match validated dependency manifests',
-            {Path(name).name for name in entries if name.startswith('menu-bin/') and name.endswith('.dll')}==
-            set(media['files'])|set(author['runtime_files']))
+            {Path(name).name for name in entries if name.startswith('menu-bin/') and name.endswith('.dll')}==expected_runtime_dlls)
         check('Both consumers built against the shared source profile',media['profile']=='shared' and author['ffmpeg_profile']=='build-minimal-ffmpeg.py:shared')
         common=set(media['files'])&set(author['runtime_files'])
         check('Shared FFmpeg identities match both build manifests',{'avcodec-63.dll','avformat-63.dll','avutil-61.dll'}<=common and all(media['files'][name]['sha256']==author['runtime_files'][name]['sha256']==sha(runtime/'menu-bin'/name) for name in common))

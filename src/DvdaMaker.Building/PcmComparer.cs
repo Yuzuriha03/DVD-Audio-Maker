@@ -1,3 +1,5 @@
+using DvdaMaker.Formats;
+
 namespace DvdaMaker.Building;
 
 public sealed record PcmComparison(
@@ -23,6 +25,21 @@ public static class PcmComparer
             (maxTrailingZeroFrames > 0 && bytesPerSampleFrame == 0))
         {
             throw new ArgumentOutOfRangeException(nameof(maxTrailingZeroFrames));
+        }
+        if (NativeFormatsInterop.TryComparePcm(
+            sourcePath, decodedPath, bytesPerSampleFrame, maxTrailingZeroFrames, out var native))
+        {
+            var nativeReason = native.ReasonCode switch
+            {
+                1 => $"\u89e3\u7801 PCM {native.DecodedBytes:N0} \u5b57\u8282 != \u6e90 PCM {native.SourceBytes:N0} \u5b57\u8282" +
+                    $"\uff08\u76f8\u5dee {native.DecodedBytes - native.SourceBytes:N0} \u5b57\u8282\uff09",
+                2 => $"PCM \u5185\u5bb9\u4e0d\u4e00\u81f4\uff08\u9996\u4e2a\u4e0d\u540c\u5b57\u8282\u504f\u79fb {native.FirstMismatchOffset:N0}\uff09",
+                3 => "MLP \u89e3\u7801 PCM \u7684\u5c3e\u90e8\u586b\u5145\u5305\u542b\u975e\u96f6\u5b57\u8282\u6216\u8bfb\u53d6\u4e0d\u5b8c\u6574",
+                4 => $"\u8bfb\u53d6\u957f\u5ea6\u4e0d\u4e00\u81f4\uff08\u504f\u79fb {native.FirstMismatchOffset:N0} \u5b57\u8282\u5904\uff09",
+                _ => null,
+            };
+            return new PcmComparison(native.Match, native.SourceBytes, native.DecodedBytes,
+                nativeReason, native.TrailingZeroBytes);
         }
         var sourceBytes = new FileInfo(sourcePath).Length;
         var decodedBytes = new FileInfo(decodedPath).Length;

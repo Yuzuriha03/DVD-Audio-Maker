@@ -70,4 +70,4 @@ FLAC、ALAC/M4A の音楽から DVD-Audio ISO イメージを作成します。M
 
 ## 開発情報
 
-ビルド方法は [Development guide](docs/DEVELOPMENT.en.md)、Windows パッケージの作成は [Windows build guide](tools/win-build/README.en.md) を参照してください。
+ビルド方法は [Development guide](docs/DEVELOPMENT.en.md)、Windows パッケージの作成は [Windows build guide](tools/win-build/README.en.md)、C17 形式ランタイムと逐次バイト検証は [C17 format runtime](docs/C17-FORMATS.md) を参照してください。

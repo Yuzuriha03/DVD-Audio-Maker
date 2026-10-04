@@ -68,9 +68,12 @@ internal static class ToolchainProgram
         var selfContained = options.FrameworkDependent ? "false" : "true";
         var nativeMedia = ResolvePath(options.MediaRuntime ?? Path.Combine(repository, "build",
             options.OneFile ? "media-native-shared" : "media-native"));
+        var formatsRuntime = ResolvePath(options.FormatsRuntime ?? Path.Combine(repository, "build",
+            "formats-native"));
 
         ValidatePrebuilt(prebuilt);
         ValidateSourceTree(sourceTree);
+        ValidateFormatsRuntime(formatsRuntime);
         var imageAuthor = ResolvePath(options.ImageAuthor ?? Path.Combine(repository, "build",
             options.OneFile ? "image-author-shared" : "image-author"));
         NativeImagePackager.ValidateAuthor(imageAuthor);
@@ -176,6 +179,9 @@ internal static class ToolchainProgram
         PackMenuFonts(Path.Combine(destination, "menu-bin"));
         NativeImagePackager.Install(destination, imageAuthor);
         ConsolidateSharedMedia(destination, options.OneFile);
+        File.Copy(Path.Combine(formatsRuntime, "dvda-formats.dll"),
+            Path.Combine(destination, "menu-bin", "dvda-formats.dll"), true);
+        Console.WriteLine("  C17 format runtime: MLP/PCM/PTS helpers");
         CopyDirectory(Path.Combine(sourceTree, "menu"), Path.Combine(destination, "data", "menu"));
         CopyDocumentation(repository, destination);
         File.Copy(Path.Combine(repository, "config.env"),
@@ -335,6 +341,7 @@ internal static class ToolchainProgram
         string? ffmpegLibraries = null;
         string? imageAuthor = null;
         string? mediaRuntime = null;
+        string? formatsRuntime = null;
         var includeCli = false;
         var frameworkDependent = true;
         var oneFile = true;
@@ -355,7 +362,7 @@ internal static class ToolchainProgram
             if (value == "--self-contained") { frameworkDependent = false; continue; }
             if (value == "--onefile") { oneFile = true; continue; }
             if (value == "--directory") { oneFile = false; continue; }
-            if (value is "--repo" or "--source" or "--prebuilt" or "--output" or "--magick-shim" or "--ffmpeg-libraries" or "--image-author" or "--media-runtime")
+            if (value is "--repo" or "--source" or "--prebuilt" or "--output" or "--magick-shim" or "--ffmpeg-libraries" or "--image-author" or "--media-runtime" or "--formats-runtime")
             {
                 if (++index >= args.Length)
                 {
@@ -371,6 +378,7 @@ internal static class ToolchainProgram
                     case "--ffmpeg-libraries": ffmpegLibraries = args[index]; break;
                     case "--image-author": imageAuthor = args[index]; break;
                     case "--media-runtime": mediaRuntime = args[index]; break;
+                    case "--formats-runtime": formatsRuntime = args[index]; break;
                 }
                 continue;
             }
@@ -378,7 +386,7 @@ internal static class ToolchainProgram
         }
         if (oneFile && (includeCli || !frameworkDependent))
             throw new ArgumentException("The compact onefile release is GUI-only and framework-dependent. Use --directory for --include-cli or --self-contained.");
-        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent, magickShim, ffmpegLibraries, imageAuthor, oneFile, mediaRuntime, releaseVersion);
+        return new ToolchainOptions(repository, source, prebuilt, output, includeCli, frameworkDependent, magickShim, ffmpegLibraries, imageAuthor, oneFile, mediaRuntime, formatsRuntime, releaseVersion);
     }
 
     private static void ValidatePrebuilt(string directory)
@@ -437,6 +445,31 @@ internal static class ToolchainProgram
                     throw new InvalidDataException("Missing media library dependency: " + import);
         }
         Console.WriteLine($"  in-process media: {files.Count} verified x64 libraries");
+    }
+
+    private static void ValidateFormatsRuntime(string directory)
+    {
+        var library = Path.Combine(directory, "dvda-formats.dll");
+        var manifest = Path.Combine(directory, "formats-build.json");
+        if (!File.Exists(library) || !File.Exists(manifest))
+            throw new InvalidOperationException("Missing C17 format runtime. Build it with " +
+                "tools/win-build/build-formats-runtime.py, or supply --formats-runtime.");
+        using var record = JsonDocument.Parse(File.ReadAllText(manifest));
+        var metadata = record.RootElement.GetProperty("files").GetProperty("dvda-formats.dll");
+        using var stream = File.OpenRead(library);
+        if (stream.Length != metadata.GetProperty("bytes").GetInt64() ||
+            !Convert.ToHexString(SHA256.HashData(stream)).Equals(
+                metadata.GetProperty("sha256").GetString(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("C17 format runtime checksum mismatch.");
+        stream.Position = 0;
+        using var pe = new PEReader(stream);
+        if (pe.PEHeaders.CoffHeader.Machine != Machine.Amd64)
+            throw new InvalidDataException("C17 format runtime must be Windows x64.");
+        foreach (var import in NativeToolOptimizer.ReadImports(library))
+            if (import is not ("kernel32.dll" or "KERNEL32.dll" or "msvcrt.dll" or "MSVCRT.dll") &&
+                !File.Exists(Path.Combine(Environment.SystemDirectory, import)))
+                throw new InvalidDataException("Unexpected C17 format runtime dependency: " + import);
+        Console.WriteLine("  C17 format runtime: 1 verified x64 DLL");
     }
 
     private static void PackMenuFonts(string directory)
@@ -683,7 +716,7 @@ exit /b %ERRORLEVEL%
     }
 
     private static void PrintUsage() => Console.Error.WriteLine(
-        "Usage: build-all.cmd [--onefile | --directory] [--version <v1.0>] [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent | --self-contained] [--ffmpeg-libraries <verified MLP DLL directory>] [--image-author <rebuilt native author directory>] [--media-runtime <verified shared media directory>]");
+        "Usage: build-all.cmd [--onefile | --directory] [--version <v1.0>] [--source <dvda-author tree>] [--prebuilt <menu-bin>] [--output <directory>] [--include-cli] [--framework-dependent | --self-contained] [--ffmpeg-libraries <verified MLP DLL directory>] [--image-author <rebuilt native author directory>] [--media-runtime <verified shared media directory>] [--formats-runtime <C17 format runtime directory>]");
 
     private sealed record ToolchainOptions(
         string? Repository,
@@ -697,5 +730,6 @@ exit /b %ERRORLEVEL%
         string? ImageAuthor,
         bool OneFile,
         string? MediaRuntime,
+        string? FormatsRuntime,
         string ReleaseVersion);
 }
