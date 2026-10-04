@@ -52,6 +52,28 @@ public static class BuiltinImages
         ExceptionDispatchInfo? callbackError = null;
         try
         {
+            if (RustBridge.Mode != "managed")
+            {
+                object? transactionalOutput = null;
+                if (mode is "magick" or "convert" && arguments.Count > 0 && !arguments.Contains("-list") &&
+                    arguments[^1] is not ("info:" or "info:-" or "null:"))
+                {
+                    var path = arguments[^1]; var format = "";
+                    if (path.StartsWith("PNG32:", StringComparison.OrdinalIgnoreCase)) { format = path[..6]; path = path[6..]; }
+                    transactionalOutput = new { Path = Path.GetFullPath(path, request.WorkingDirectory ?? Environment.CurrentDirectory),
+                        ArgumentIndex = arguments.Count, FormatPrefix = format };
+                }
+                arguments.Insert(0, mode);
+                var statusCode = RustBridge.RunImage(new { Library = LibraryPath, Arguments = arguments,
+                    Output = transactionalOutput, TimeoutMillis = (long?)null }, (stream, text) =>
+                    { if (stream == 2) error.Append(text); else output.Append(text); }, token);
+                foreach (var line in output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)) request.OnOutputLine?.Invoke(line.TrimEnd('\r'));
+                foreach (var line in error.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)) request.OnErrorLine?.Invoke(line.TrimEnd('\r'));
+                var rustResult = new ProcessResult(request.FileName, request.Arguments, statusCode,
+                    request.CaptureOutput ? output.ToString() : "", request.CaptureError ? error.ToString() : "", Stopwatch.GetElapsedTime(started));
+                if (request.ThrowOnNonZeroExitCode && !rustResult.Succeeded) throw new ProcessExecutionException(rustResult);
+                return rustResult;
+            }
             // Application convert requests have one output. Keep an existing output
             // intact if decoding, cancellation or writing fails. Native authoring
             // uses its own isolated temporary menu directory for in-place mogrify.

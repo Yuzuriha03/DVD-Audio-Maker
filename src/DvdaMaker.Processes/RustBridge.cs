@@ -127,7 +127,9 @@ public static class RustBridge
                 Marshal.GetDelegateForFunctionPointer<CallDelegate>(NativeLibrary.GetExport(library,"dvda_rust_call")),
                 Marshal.GetDelegateForFunctionPointer<FreeDelegate>(NativeLibrary.GetExport(library,"dvda_rust_free")),
                 Marshal.GetDelegateForFunctionPointer<AobScanDelegate>(NativeLibrary.GetExport(library,"dvda_rust_aob_scan")),
-                Marshal.GetDelegateForFunctionPointer<AobObserveDelegate>(NativeLibrary.GetExport(library,"dvda_rust_aob_observe")));
+                Marshal.GetDelegateForFunctionPointer<AobObserveDelegate>(NativeLibrary.GetExport(library,"dvda_rust_aob_observe")),
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_media_run")),
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_image_run")));
         }
         catch { NativeLibrary.Free(library); throw; }
     }
@@ -138,5 +140,63 @@ public static class RustBridge
         IntPtr data, nuint length, nuint stride, uint requirePack, IntPtr output, nuint capacity);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr AobObserveDelegate(
         IntPtr data, nuint length, ref AobAuditState state, out int dropIndex);
-    private sealed record Exports(CallDelegate Call,FreeDelegate Free,AobScanDelegate ScanAob,AobObserveDelegate ObserveAob);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void MediaEmit(IntPtr state, int stream, IntPtr text);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int MediaCancel(IntPtr state);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr MediaRunDelegate(
+        IntPtr request, MediaEmit emit, MediaCancel cancel, IntPtr state);
+    private sealed record Exports(CallDelegate Call,FreeDelegate Free,AobScanDelegate ScanAob,AobObserveDelegate ObserveAob,
+        MediaRunDelegate RunMedia, MediaRunDelegate RunImage);
+
+    internal sealed record MediaFailure(string Kind, int? Code, string Message);
+    internal sealed record MediaOutcome(int? ExitCode, MediaFailure? Failure);
+    internal static int RunMedia(object request, Action<int, string> onText, CancellationToken token)
+        => RunNativeJob(request, onText, token, image: false);
+    internal static int RunImage(object request, Action<int, string> onText, CancellationToken token)
+        => RunNativeJob(request, onText, token, image: true);
+    private static int RunNativeJob(object request, Action<int, string> onText, CancellationToken token, bool image)
+    {
+        if (!Enabled) throw new InvalidOperationException($"Unknown DVDA_RUST_MODE: {Mode}");
+        var native = Native.Value;
+        var input = Marshal.StringToCoTaskMemUTF8(JsonSerializer.Serialize(request));
+        IntPtr output = IntPtr.Zero;
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? callbackFailure = null;
+        MediaEmit emit = (_, stream, text) =>
+        {
+            try { onText(stream, Marshal.PtrToStringUTF8(text) ?? ""); }
+            catch (Exception error) { callbackFailure ??= System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error); }
+        };
+        MediaCancel cancel = _ => token.IsCancellationRequested || callbackFailure is not null ? 1 : 0;
+        try
+        {
+            output = (image ? native.RunImage : native.RunMedia)(input, emit, cancel, IntPtr.Zero);
+            GC.KeepAlive(emit); GC.KeepAlive(cancel);
+            callbackFailure?.Throw();
+            if (output == IntPtr.Zero) throw new InvalidDataException("Rust returned an empty media response.");
+            using var response = JsonDocument.Parse(Marshal.PtrToStringUTF8(output)!);
+            var root = response.RootElement;
+            if (!root.GetProperty("ok").GetBoolean()) throw new InvalidDataException(root.GetProperty("error").GetString());
+            var result = root.GetProperty("value").Deserialize<MediaOutcome>()!;
+            Calls.AddOrUpdate(image ? "image.execute" : "media.execute", 1, (_, count) => count + 1);
+            if (result.Failure is { } failure)
+            {
+                if (failure.Kind == "Cancelled") throw new OperationCanceledException(token);
+                if (failure.Kind == "Timeout") throw new TimeoutException(image ? "内置图像处理超时。" : "内置媒体处理超时。");
+                if (failure.Kind == "Argument") throw new ArgumentException(failure.Message);
+                throw failure.Code switch
+                {
+                    2 => new FileNotFoundException(failure.Message),
+                    3 => new DirectoryNotFoundException(failure.Message),
+                    5 => new UnauthorizedAccessException(failure.Message),
+                    int code => new IOException(failure.Message, unchecked((int)0x80070000) | code),
+                    _ => new IOException(failure.Message),
+                };
+            }
+            return result.ExitCode ?? throw new InvalidDataException("Missing media exit status.");
+        }
+        finally
+        {
+            if (output != IntPtr.Zero) native.Free(output);
+            Marshal.FreeCoTaskMem(input);
+        }
+    }
 }
