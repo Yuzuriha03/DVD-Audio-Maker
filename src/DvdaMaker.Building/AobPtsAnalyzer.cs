@@ -1,4 +1,5 @@
 using DvdaMaker.Formats.Mpeg;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Building;
 
@@ -74,16 +75,49 @@ public static class AobPtsAnalyzer
             if (maximumSectors is > 0 && sectorCount >= maximumSectors.Value) break;
         }
 
-        var issues = new List<VerificationIssue>();
+        var statistics = ComputeStatistics(values);
+        var issues = BuildIssues(statistics, values.Count);
+        return new AobPtsAnalysis(
+            path,
+            sectorCount,
+            values.Count,
+            statistics.FirstPts,
+            statistics.LastPts,
+            statistics.MinimumStep,
+            statistics.MaximumStep,
+            statistics.NegativeSteps,
+            statistics.ZeroSteps,
+            statistics.MedianStep,
+            statistics.AbnormalSteps,
+            statistics.AbnormalRatio,
+            statistics.Steps,
+            issues);
+    }
+
+    private sealed record PtsStatistics(
+        long? FirstPts,
+        long? LastPts,
+        long MinimumStep,
+        long MaximumStep,
+        int NegativeSteps,
+        int ZeroSteps,
+        double MedianStep,
+        int AbnormalSteps,
+        double AbnormalRatio,
+        IReadOnlyList<long> Steps,
+        IReadOnlyList<string> IssueCodes);
+
+    private static PtsStatistics ComputeStatistics(IReadOnlyList<long> values) =>
+        RustBridge.Run<PtsStatistics>("aob.pts_statistics", new { Values = values },
+            () => ComputeStatisticsManaged(values));
+
+    private static PtsStatistics ComputeStatisticsManaged(IReadOnlyList<long> values)
+    {
+        var first = values.Count == 0 ? (long?)null : values[0];
+        var last = values.Count == 0 ? (long?)null : values[^1];
         if (values.Count < 3)
         {
-            issues.Add(new VerificationIssue(
-                "PTS_TOO_FEW", $"有效 PTS 只有 {values.Count} 个，时间轴缺失"));
-            return new AobPtsAnalysis(
-                path, sectorCount, values.Count,
-                values.Count == 0 ? null : values[0],
-                values.Count == 0 ? null : values[^1],
-                0, 0, 0, 0, 0, 0, 0, [], issues);
+            return new PtsStatistics(first, last, 0, 0, 0, 0, 0, 0, 0, [], ["PTS_TOO_FEW"]);
         }
 
         var steps = values.Zip(values.Skip(1), (left, right) => right - left).ToArray();
@@ -93,32 +127,27 @@ public static class AobPtsAnalyzer
             : (ordered[ordered.Length / 2 - 1] + ordered[ordered.Length / 2]) / 2d;
         var abnormal = steps.Count(step => step <= 0 || step > median * 20);
         var ratio = abnormal * 100d / steps.Length;
-        if (values[^1] == values[0])
-        {
-            issues.Add(new VerificationIssue(
-                "PTS_NOT_ADVANCING", "首末 PTS 相同，时间轴没有推进"));
-        }
-        if (ratio > 1d)
-        {
-            issues.Add(new VerificationIssue(
-                "PTS_ABNORMAL_RATIO",
-                $"异常步长 {abnormal}/{steps.Length}，占比 {ratio:F3}% > 1%"));
-        }
+        var codes = new List<string>();
+        if (last == first) codes.Add("PTS_NOT_ADVANCING");
+        if (ratio > 1d) codes.Add("PTS_ABNORMAL_RATIO");
+        return new PtsStatistics(
+            first, last, steps.Min(), steps.Max(), steps.Count(step => step < 0),
+            steps.Count(step => step == 0), median, abnormal, ratio, steps, codes);
+    }
 
-        return new AobPtsAnalysis(
-            path,
-            sectorCount,
-            values.Count,
-            values[0],
-            values[^1],
-            steps.Min(),
-            steps.Max(),
-            steps.Count(step => step < 0),
-            steps.Count(step => step == 0),
-            median,
-            abnormal,
-            ratio,
-            steps,
-            issues);
+    private static List<VerificationIssue> BuildIssues(PtsStatistics statistics, int valueCount)
+    {
+        var issues = new List<VerificationIssue>();
+        foreach (var code in statistics.IssueCodes)
+        {
+            issues.Add(code switch
+            {
+                "PTS_TOO_FEW" => new VerificationIssue(code, $"有效 PTS 只有 {valueCount} 个，时间轴缺失"),
+                "PTS_NOT_ADVANCING" => new VerificationIssue(code, "首末 PTS 相同，时间轴没有推进"),
+                "PTS_ABNORMAL_RATIO" => new VerificationIssue(code, $"异常步长 {statistics.AbnormalSteps}/{statistics.Steps.Count}，占比 {statistics.AbnormalRatio:F3}% > 1%"),
+                _ => new VerificationIssue(code, code),
+            });
+        }
+        return issues;
     }
 }

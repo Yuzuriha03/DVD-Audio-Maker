@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DvdaMaker.Configuration;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Preparation;
 
@@ -173,7 +174,9 @@ public static class PreparationSnapshotStore
             options.LossErrorSeconds.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
             options.LossWarningSeconds.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
         };
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", values))));
+        var canonical = string.Join("\n", values);
+        return RustBridge.Run<string>("hash.sha256_hex", canonical,
+            () => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))));
     }
 
     private static PreparationSnapshot? Load(string path)
