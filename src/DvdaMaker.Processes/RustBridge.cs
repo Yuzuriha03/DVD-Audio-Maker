@@ -129,7 +129,8 @@ public static class RustBridge
                 Marshal.GetDelegateForFunctionPointer<AobScanDelegate>(NativeLibrary.GetExport(library,"dvda_rust_aob_scan")),
                 Marshal.GetDelegateForFunctionPointer<AobObserveDelegate>(NativeLibrary.GetExport(library,"dvda_rust_aob_observe")),
                 Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_media_run")),
-                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_image_run")));
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_image_run")),
+                Marshal.GetDelegateForFunctionPointer<MediaRunDelegate>(NativeLibrary.GetExport(library,"dvda_rust_encoder_run")));
         }
         catch { NativeLibrary.Free(library); throw; }
     }
@@ -145,15 +146,22 @@ public static class RustBridge
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr MediaRunDelegate(
         IntPtr request, MediaEmit emit, MediaCancel cancel, IntPtr state);
     private sealed record Exports(CallDelegate Call,FreeDelegate Free,AobScanDelegate ScanAob,AobObserveDelegate ObserveAob,
-        MediaRunDelegate RunMedia, MediaRunDelegate RunImage);
+        MediaRunDelegate RunMedia, MediaRunDelegate RunImage, MediaRunDelegate RunEncoder);
 
     internal sealed record MediaFailure(string Kind, int? Code, string Message);
     internal sealed record MediaOutcome(int? ExitCode, MediaFailure? Failure);
     internal static int RunMedia(object request, Action<int, string> onText, CancellationToken token)
-        => RunNativeJob(request, onText, token, image: false);
+        => RunNativeJob(request, onText, token, "media.execute");
     internal static int RunImage(object request, Action<int, string> onText, CancellationToken token)
-        => RunNativeJob(request, onText, token, image: true);
-    private static int RunNativeJob(object request, Action<int, string> onText, CancellationToken token, bool image)
+        => RunNativeJob(request, onText, token, "image.execute");
+    public static int RunEncoder(object request, Action<int, string> onText, CancellationToken token)
+        => RunNativeJob(request, onText, token, "encoder.execute");
+    public static void WriteEncoderMetadata(object request)
+    {
+        var result = Invoke<MediaOutcome>("encoder.write_metadata", request);
+        ThrowJobFailure(result, "encoder.write_metadata", CancellationToken.None);
+    }
+    private static int RunNativeJob(object request, Action<int, string> onText, CancellationToken token, string operation)
     {
         if (!Enabled) throw new InvalidOperationException($"Unknown DVDA_RUST_MODE: {Mode}");
         var native = Native.Value;
@@ -168,7 +176,8 @@ public static class RustBridge
         MediaCancel cancel = _ => token.IsCancellationRequested || callbackFailure is not null ? 1 : 0;
         try
         {
-            output = (image ? native.RunImage : native.RunMedia)(input, emit, cancel, IntPtr.Zero);
+            var run = operation switch { "image.execute" => native.RunImage, "encoder.execute" => native.RunEncoder, _ => native.RunMedia };
+            output = run(input, emit, cancel, IntPtr.Zero);
             GC.KeepAlive(emit); GC.KeepAlive(cancel);
             callbackFailure?.Throw();
             if (output == IntPtr.Zero) throw new InvalidDataException("Rust returned an empty media response.");
@@ -176,21 +185,8 @@ public static class RustBridge
             var root = response.RootElement;
             if (!root.GetProperty("ok").GetBoolean()) throw new InvalidDataException(root.GetProperty("error").GetString());
             var result = root.GetProperty("value").Deserialize<MediaOutcome>()!;
-            Calls.AddOrUpdate(image ? "image.execute" : "media.execute", 1, (_, count) => count + 1);
-            if (result.Failure is { } failure)
-            {
-                if (failure.Kind == "Cancelled") throw new OperationCanceledException(token);
-                if (failure.Kind == "Timeout") throw new TimeoutException(image ? "内置图像处理超时。" : "内置媒体处理超时。");
-                if (failure.Kind == "Argument") throw new ArgumentException(failure.Message);
-                throw failure.Code switch
-                {
-                    2 => new FileNotFoundException(failure.Message),
-                    3 => new DirectoryNotFoundException(failure.Message),
-                    5 => new UnauthorizedAccessException(failure.Message),
-                    int code => new IOException(failure.Message, unchecked((int)0x80070000) | code),
-                    _ => new IOException(failure.Message),
-                };
-            }
+            Calls.AddOrUpdate(operation, 1, (_, count) => count + 1);
+            ThrowJobFailure(result, operation, token);
             return result.ExitCode ?? throw new InvalidDataException("Missing media exit status.");
         }
         finally
@@ -198,5 +194,26 @@ public static class RustBridge
             if (output != IntPtr.Zero) native.Free(output);
             Marshal.FreeCoTaskMem(input);
         }
+    }
+
+    private static void ThrowJobFailure(MediaOutcome result, string operation, CancellationToken token)
+    {
+        if (result.Failure is not { } failure) return;
+        if (failure.Kind == "Cancelled") throw new OperationCanceledException(token);
+        if (failure.Kind == "Timeout") throw new TimeoutException(operation switch
+        { "image.execute" => "内置图像处理超时。", "encoder.execute" => "MLP 编码器 DLL 编码超时，已取消并清理临时输出。", _ => "内置媒体处理超时。" });
+        if (failure.Kind == "Argument") throw new ArgumentException(failure.Message);
+        if (failure.Kind == "InvalidData") throw new InvalidDataException(failure.Message);
+        if (failure.Kind == "EndOfStream") throw new EndOfStreamException(failure.Message);
+        if (failure.Kind == "Overflow") throw new OverflowException(failure.Message);
+        if (failure.Kind == "InvalidOperation") throw new InvalidOperationException(failure.Message);
+        throw failure.Code switch
+        {
+            2 => new FileNotFoundException(failure.Message),
+            3 => new DirectoryNotFoundException(failure.Message),
+            5 => new UnauthorizedAccessException(failure.Message),
+            int code => new IOException(failure.Message, unchecked((int)0x80070000) | code),
+            _ => new IOException(failure.Message),
+        };
     }
 }

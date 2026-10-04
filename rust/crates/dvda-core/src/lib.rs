@@ -2,6 +2,7 @@ pub mod aob;
 pub mod author;
 pub mod config;
 pub mod config_files;
+pub mod encoder;
 pub mod formats;
 pub mod hash;
 pub mod identity;
@@ -85,6 +86,7 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         }
         "lpcm.validate_format" | "lpcm.validate_layout" => lpcm::dispatch(operation, request),
         "mlp.major_sync_interval" => validation::dispatch(operation, request),
+        "encoder.write_metadata" => encoder::dispatch(operation, request),
         "abi.version" => Ok(json!({"version":1,"backend":"rust"})),
         _ => Err(format!("Unsupported Rust operation: {operation}")),
     }

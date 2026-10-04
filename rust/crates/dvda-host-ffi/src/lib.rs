@@ -109,6 +109,46 @@ pub unsafe extern "C" fn dvda_rust_image_run(
         .into_raw()
 }
 
+/// Execute one encoder job. The C codec owns encoded bytes; no postprocessing.
+/// # Safety
+/// request must be live NUL-terminated UTF-8 JSON. Callback pointers and state
+/// remain valid during this call and callbacks must not unwind. Free the result
+/// exactly once using dvda_rust_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dvda_rust_encoder_run(
+    request: *const c_char,
+    emit: Option<Emit>,
+    cancel: Option<Cancel>,
+    state: *mut c_void,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<serde_json::Value, String> {
+        if request.is_null() {
+            return Err("Null encoder job".into());
+        }
+        let (Some(emit), Some(cancel)) = (emit, cancel) else {
+            return Err("Null encoder callback".into());
+        };
+        let text = unsafe { CStr::from_ptr(request) }
+            .to_str()
+            .map_err(|e| e.to_string())?;
+        let job = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let mut callbacks = MediaCallbacks {
+            emit,
+            cancel,
+            state,
+        };
+        Ok(json!(dvda_core::encoder::execute(job, &mut callbacks)))
+    }));
+    let response = match result {
+        Ok(Ok(value)) => json!({"ok":true,"value":value}),
+        Ok(Err(error)) => json!({"ok":false,"error":error}),
+        Err(_) => json!({"ok":false,"error":"Rust panic caught at encoder ABI boundary"}),
+    };
+    CString::new(response.to_string())
+        .expect("JSON contains no raw NUL")
+        .into_raw()
+}
+
 /// Scan fixed-size records without copying audio through the JSON bridge.
 /// Returns null on success or an owned UTF-8 error released with dvda_rust_free.
 /// # Safety
