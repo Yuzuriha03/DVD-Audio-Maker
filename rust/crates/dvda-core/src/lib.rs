@@ -6,6 +6,7 @@ pub mod hash;
 pub mod identity;
 pub mod lpcm;
 pub mod menu;
+pub mod options;
 pub mod planner;
 pub mod probes;
 pub mod publication;
@@ -36,6 +37,9 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
             request.as_str().ok_or("Expected config text")?
         ))),
         "disc.plan" => planner::plan(request),
+        "options.defaults" | "options.evaluate" | "shell.assignment" => {
+            options::dispatch(operation, request)
+        }
         "tracks.sort" => planner::sort(request),
         "track.number" => planner::track_number_value(request),
         "math.estimate_aob" => planner::estimate_value(request),

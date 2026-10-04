@@ -404,6 +404,16 @@ var tests = new (string Name, Action Run)[]
     ("MLP 有界并发编码等效性", MlpEncoderTests.Parallel),
 };
 
+if (Environment.GetEnvironmentVariable("DVDA_COMPAT_FILTER") is { Length: > 0 } filter)
+{
+    tests = tests.Where(test => test.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
+    if (tests.Length == 0)
+    {
+        Console.Error.WriteLine("No compatibility tests matched DVDA_COMPAT_FILTER.");
+        return 2;
+    }
+}
+
 var failed = 0;
 var backendReport = new List<object>();
 foreach (var test in tests)
@@ -488,6 +498,7 @@ static void EmptyEnvironmentDoesNotOverride()
 
 static void DefaultsAndNumericFallbacks()
 {
+    OptionMigrationTests.Run();
     WithConfig("DVDA_SRC=/src\nDVDA_FINAL_DIR=/out\nDVDA_DISC_BYTES=bad", path =>
     {
         var options = Load(path);
