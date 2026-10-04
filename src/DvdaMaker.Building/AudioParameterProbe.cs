@@ -34,12 +34,16 @@ public sealed class AudioParameterProbe(ProcessRunner runner, string ffprobe)
                 result.StandardError.Trim());
         }
 
-        var values = result.StandardOutput.Split('\n', StringSplitOptions.TrimEntries)
-            .Where(line => line.Length > 0)
-            .Select(line => int.TryParse(line, out var value) ? value : 0)
-            .Concat([0, 0, 0])
-            .Take(3)
-            .ToArray();
-        return new AudioParameters(values[0], values[1], values[2]);
+        return RustBridge.Run<AudioParameters>("audio.parameters", result.StandardOutput,
+            () =>
+            {
+                var values = result.StandardOutput.Split('\n', StringSplitOptions.TrimEntries)
+                    .Where(line => line.Length > 0)
+                    .Select(line => int.TryParse(line, out var value) ? value : 0)
+                    .Concat([0, 0, 0])
+                    .Take(3)
+                    .ToArray();
+                return new AudioParameters(values[0], values[1], values[2]);
+            });
     }
 }

@@ -243,16 +243,20 @@ public sealed class PreparationPipeline
         long? expected)
     {
         var validation = entry.Validation;
-        if (validation.DecodedSamples <= 0 ||
-            validation.SampleRate != track.SampleRate ||
-            validation.Bits != track.Bits ||
-            validation.ResampleTo != track.ResampleTo ||
-            validation.ExpectedSamples != expected)
-        {
-            return false;
-        }
-        return validation.RepairedFile is not { } repairedFile ||
+        var repairedFileValid = validation.RepairedFile is not { } repairedFile ||
             FileIdentityProbe.Matches(repairedFile.Path, repairedFile);
+        return DvdaMaker.Processes.RustBridge.Run<bool>("prepare.cache_reusable", new
+        {
+            Entry = entry,
+            Track = track,
+            Expected = expected,
+            RepairedFileValid = repairedFileValid,
+        }, () => validation.DecodedSamples > 0 &&
+            validation.SampleRate == track.SampleRate &&
+            validation.Bits == track.Bits &&
+            validation.ResampleTo == track.ResampleTo &&
+            validation.ExpectedSamples == expected &&
+            repairedFileValid);
     }
 
     private static void RecordCacheEntry(

@@ -7,6 +7,11 @@ public sealed class DiscPlanner
         long discBytes,
         int maxDiscs,
         int groupTrackLimit)
+        => DvdaMaker.Processes.RustBridge.Run("disc.plan",
+            new { Tracks=tracks, DiscBytes=discBytes, MaxDiscs=maxDiscs, GroupTrackLimit=groupTrackLimit },
+            () => PlanManaged(tracks,discBytes,maxDiscs,groupTrackLimit));
+
+    private BuildPlan PlanManaged(IReadOnlyList<BuildTrack> tracks, long discBytes, int maxDiscs, int groupTrackLimit)
     {
         var diagnostics = new List<BuildDiagnostic>();
         foreach (var track in tracks.Where(track => track.MlpSize <= 0))

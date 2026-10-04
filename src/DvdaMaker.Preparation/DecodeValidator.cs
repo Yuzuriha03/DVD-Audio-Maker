@@ -5,6 +5,8 @@ namespace DvdaMaker.Preparation;
 
 public sealed partial class DecodeValidator(ProcessRunner processRunner, string ffmpeg)
 {
+    private sealed record ErrorScan(int Count, IReadOnlyList<string> Lines);
+
     public static readonly string[] ErrorKeywords =
     [
         "error submitting packet to decoder",
@@ -42,7 +44,14 @@ public sealed partial class DecodeValidator(ProcessRunner processRunner, string 
             ],
         }, cancellationToken).ConfigureAwait(false);
 
-        var (errorCount, errorLines) = ScanErrors(result.StandardError);
+        var scan = RustBridge.Run<ErrorScan>("decode.scan", result.StandardError,
+            () =>
+            {
+                var managed = ScanErrorsManaged(result.StandardError);
+                return new ErrorScan(managed.Count, managed.Lines);
+            });
+        var errorCount = scan.Count;
+        var errorLines = scan.Lines;
         var match = SamplesRegex().Match(result.StandardError);
         long? samples = match.Success && long.TryParse(match.Groups[1].Value, out var value)
             ? value
@@ -56,6 +65,17 @@ public sealed partial class DecodeValidator(ProcessRunner processRunner, string 
     }
 
     public static (int Count, IReadOnlyList<string> Lines) ScanErrors(string stderr)
+    {
+        var scan = RustBridge.Run<ErrorScan>("decode.scan", stderr,
+            () =>
+            {
+                var managed = ScanErrorsManaged(stderr);
+                return new ErrorScan(managed.Count, managed.Lines);
+            });
+        return (scan.Count, scan.Lines);
+    }
+
+    private static (int Count, IReadOnlyList<string> Lines) ScanErrorsManaged(string stderr)
     {
         var count = 0;
         var examples = new List<string>(3);

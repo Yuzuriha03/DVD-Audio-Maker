@@ -60,7 +60,7 @@ public sealed class AlacEndRepairer(ProcessRunner runner, string ffprobe)
         var cookie = ReadMagicCookie(data) ??
             throw new InvalidDataException("无法读取 ALAC magic cookie，可能不是 ALAC 文件");
         var packets = await ListPacketsAsync(sourcePath, cancellationToken).ConfigureAwait(false);
-        return new AlacInspectionResult(cookie, FindBadFrames(data, cookie, packets));
+        return new AlacInspectionResult(cookie, FindBadFramesForPath(sourcePath, data, cookie, packets));
     }
 
     public async Task<AlacRepairResult?> TryRepairAsync(
@@ -81,16 +81,45 @@ public sealed class AlacEndRepairer(ProcessRunner runner, string ffprobe)
         }
 
         var packets = await ListPacketsAsync(sourcePath, cancellationToken).ConfigureAwait(false);
-        var patches = FindBadFrames(data, cookie, packets);
+        var patches = FindBadFramesForPath(sourcePath, data, cookie, packets);
         if (patches.Count == 0)
         {
             return null;
         }
 
-        ApplyPatches(data, patches);
         Directory.CreateDirectory(outputDirectory);
         var outputPath = Path.Combine(outputDirectory, Path.GetFileName(sourcePath));
-        await File.WriteAllBytesAsync(outputPath, data, cancellationToken).ConfigureAwait(false);
+        if (RustBridge.Mode == "rust")
+        {
+            _ = RustBridge.Invoke<RustWriteResult>("alac.apply_patches",
+                new { Source = Path.GetFullPath(sourcePath), Destination = Path.GetFullPath(outputPath), Patches = patches });
+        }
+        else if (RustBridge.Mode == "compare")
+        {
+            var rustPath = outputPath + ".rust-" + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                _ = RustBridge.Invoke<RustWriteResult>("alac.apply_patches",
+                    new { Source = Path.GetFullPath(sourcePath), Destination = Path.GetFullPath(rustPath), Patches = patches });
+                ApplyPatches(data, patches);
+                await File.WriteAllBytesAsync(outputPath, data, cancellationToken).ConfigureAwait(false);
+                var managed = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
+                var rust = await File.ReadAllBytesAsync(rustPath, cancellationToken).ConfigureAwait(false);
+                if (!managed.AsSpan().SequenceEqual(rust))
+                {
+                    throw new InvalidDataException($"Rust ALAC patch mismatch at byte {FirstMismatch(managed, rust)}.");
+                }
+            }
+            finally
+            {
+                if (File.Exists(rustPath)) File.Delete(rustPath);
+            }
+        }
+        else
+        {
+            ApplyPatches(data, patches);
+            await File.WriteAllBytesAsync(outputPath, data, cancellationToken).ConfigureAwait(false);
+        }
         return new AlacRepairResult(outputPath, cookie, patches);
     }
 
@@ -114,7 +143,7 @@ public sealed class AlacEndRepairer(ProcessRunner runner, string ffprobe)
                 {
                     continue;
                 }
-                var cookie = ParseCookie(data.Slice(offset, 24), offset);
+                var cookie = ParseCookieWithRust(data.Slice(offset, 24), offset);
                 if (cookie is not null)
                 {
                     return cookie;
@@ -176,6 +205,33 @@ public sealed class AlacEndRepairer(ProcessRunner runner, string ffprobe)
             }
         }
         return patches;
+    }
+
+    private static IReadOnlyList<AlacFramePatch> FindBadFramesForPath(
+        string path,
+        byte[] data,
+        AlacMagicCookie cookie,
+        IReadOnlyList<AlacPacket> packets)
+    {
+        if (RustBridge.Mode == "managed")
+        {
+            return FindBadFrames(data, cookie, packets);
+        }
+        return RustBridge.Run<List<AlacFramePatch>>("alac.find_bad_frames",
+            new { Path = Path.GetFullPath(path), Cookie = cookie, Packets = packets },
+            () => FindBadFrames(data, cookie, packets).ToList());
+    }
+
+    private sealed record RustWriteResult(long WrittenBytes);
+
+    private static int FirstMismatch(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
+    {
+        var common = Math.Min(left.Length, right.Length);
+        for (var index = 0; index < common; index++)
+        {
+            if (left[index] != right[index]) return index;
+        }
+        return common;
     }
 
     public static void ApplyPatches(Span<byte> data, IReadOnlyList<AlacFramePatch> patches)
@@ -253,6 +309,18 @@ public sealed class AlacEndRepairer(ProcessRunner runner, string ffprobe)
         }
         return new AlacMagicCookie(
             maxSamples, sampleSize, channels, sampleRate, maxCodedFrameSize, offset);
+    }
+
+    private static AlacMagicCookie? ParseCookieWithRust(ReadOnlySpan<byte> data, int offset)
+    {
+        if (RustBridge.Mode == "managed")
+        {
+            return ParseCookie(data, offset);
+        }
+        var copy = data.ToArray();
+        return RustBridge.Run<AlacMagicCookie?>("alac.cookie",
+            new { DataHex = Convert.ToHexString(copy).ToLowerInvariant(), Offset = offset },
+            () => ParseCookie(copy, offset));
     }
 
     private static ulong ReadBits(ReadOnlySpan<byte> data, long bitOffset, int count)

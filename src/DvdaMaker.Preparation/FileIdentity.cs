@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Preparation;
 
@@ -50,11 +51,15 @@ public static class FileIdentityProbe
     {
         var current = Compute(path);
         return current is not null &&
-            current.Size == expected.Size &&
-            current.LastWriteUtcTicks == expected.LastWriteUtcTicks &&
-            string.Equals(current.HeadHash, expected.HeadHash, StringComparison.Ordinal) &&
-            string.Equals(current.TailHash, expected.TailHash, StringComparison.Ordinal);
+            RustBridge.Run<bool>("identity.equal", new { Left = current, Right = expected },
+                () => SameIdentity(current, expected));
     }
+
+    private static bool SameIdentity(FileIdentity left, FileIdentity right) =>
+        left.Size == right.Size &&
+        left.LastWriteUtcTicks == right.LastWriteUtcTicks &&
+        string.Equals(left.HeadHash, right.HeadHash, StringComparison.Ordinal) &&
+        string.Equals(left.TailHash, right.TailHash, StringComparison.Ordinal);
 
     private static string Hash(ReadOnlySpan<byte> data) =>
         Convert.ToHexString(SHA256.HashData(data))[..32];
