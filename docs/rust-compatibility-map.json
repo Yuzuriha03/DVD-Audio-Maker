@@ -644,7 +644,8 @@
       "name": "时间轴覆盖后续 AOB 分段",
       "managedEntry": "AnalyzeAllAobSegments",
       "rustOperations": [
-        "aob.pts_statistics"
+        "aob.pts_statistics",
+        "aob.scan_sectors"
       ],
       "status": "pass"
     },
@@ -653,7 +654,8 @@
       "name": "AOB PTS 损坏边界检测",
       "managedEntry": "ValidateAobPtsDamageFixtures",
       "rustOperations": [
-        "aob.pts_statistics"
+        "aob.pts_statistics",
+        "aob.scan_sectors"
       ],
       "status": "pass"
     },
@@ -959,7 +961,13 @@
       "id": 107,
       "name": "审计 PTS 流式扇区扫描",
       "managedEntry": "ScanPtsSectorsStreamingly",
-      "rustOperations": [],
+      "rustOperations": [
+        "aob.audit_diagnostics",
+        "aob.audit_observe",
+        "aob.pts_statistics",
+        "aob.scan_file",
+        "aob.scan_sectors"
+      ],
       "status": "pass"
     },
     {
@@ -967,7 +975,10 @@
       "name": "共享 AOB 扫描保持审计与时间轴语义",
       "managedEntry": "SharedAobScanPreservesDiagnostics",
       "rustOperations": [
-        "aob.pts_statistics"
+        "aob.audit_diagnostics",
+        "aob.audit_observe",
+        "aob.pts_statistics",
+        "aob.scan_sectors"
       ],
       "status": "pass"
     },
@@ -1078,6 +1089,7 @@
   "rustCalls": {
     "author.title_ends": 7,
     "menu.normalize_path": 3,
+    "aob.scan_sectors": 78,
     "path.safe_basename": 7,
     "resume.signature_match": 5,
     "menu.parse_batch_frame_stats": 16,
@@ -1085,10 +1097,11 @@
     "prepare.cache_reusable": 6,
     "wav.normalize": 20,
     "iso.list": 3,
+    "aob.audit_diagnostics": 8,
     "metadata.parse": 5,
     "menu.font_width": 1,
     "author.normalize_title_mode": 14,
-    "aob.pts_statistics": 9,
+    "aob.pts_statistics": 30,
     "menu.sanitize": 16,
     "menu.pages": 2,
     "iso.extract": 3,
@@ -1111,6 +1124,7 @@
     "track.number": 12,
     "identity.equal": 29,
     "lpcm.validate_format": 126,
+    "aob.scan_file": 12,
     "iso.data_lba": 1,
     "menu.truncate": 10,
     "alac.cookie": 3,
@@ -1119,6 +1133,7 @@
     "iso.strip_version": 9,
     "math.content_limit": 18,
     "hash.sha256_file": 23,
+    "aob.audit_observe": 9018,
     "iso.entry": 1,
     "hash.sha256_hex": 21,
     "flac.comments": 2,
@@ -1135,5 +1150,5 @@
     "flac.replace_picture": 1,
     "lpcm.validate_layout": 16
   },
-  "evidence": "build/rust-validation/p11-iso-streaming-serial-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p13-aob-audit-compare-x64.json (ignored local report)"
 }
