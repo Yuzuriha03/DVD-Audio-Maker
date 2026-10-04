@@ -76,8 +76,16 @@ public sealed class DiscResumeStore
     public DiscResumeEntry? TryReuse(int discNumber, string signature, string isoName)
     {
         if (!_entries.TryGetValue(discNumber, out var entry) ||
-            entry.Iso is null ||
-            !string.Equals(entry.Signature, signature, StringComparison.Ordinal))
+            entry.Iso is null)
+        {
+            return null;
+        }
+        var signatureMatches = RustBridge.Run<bool>("resume.signature_match", new
+        {
+            Entry = entry,
+            Signature = signature,
+        }, () => string.Equals(entry.Signature, signature, StringComparison.Ordinal));
+        if (!signatureMatches)
         {
             return null;
         }

@@ -70,7 +70,15 @@ public static class DvdaAuthorCommandBuilder
 
     internal static IReadOnlyDictionary<string, bool> TitleEnds(DiscPlan disc, string titleMode)
     {
-        var mode = NormalizeTitleMode(titleMode);
+        return DvdaMaker.Processes.RustBridge.Run<IReadOnlyDictionary<string, bool>>(
+            "author.title_ends",
+            new { Disc = disc, TitleMode = titleMode },
+            () => TitleEndsManaged(disc, titleMode));
+    }
+
+    private static IReadOnlyDictionary<string, bool> TitleEndsManaged(DiscPlan disc, string titleMode)
+    {
+        var mode = NormalizeTitleModeManaged(titleMode);
         var numeric = int.TryParse(mode, out var n) ? n : 0;
         var result = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         var seen = 0;
@@ -86,6 +94,13 @@ public static class DvdaAuthorCommandBuilder
     }
 
     internal static string NormalizeTitleMode(string? value)
+    {
+        return DvdaMaker.Processes.RustBridge.Run<string>(
+            "author.normalize_title_mode", value ?? "album",
+            () => NormalizeTitleModeManaged(value));
+    }
+
+    private static string NormalizeTitleModeManaged(string? value)
     {
         var normalized = (value ?? "album").Trim().ToLowerInvariant();
         if (normalized is "album" or "one") return normalized;

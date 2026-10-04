@@ -48,6 +48,14 @@ public static partial class AlbumNormalizer
 
     public static int TrackNumber(string value)
     {
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
+            return DvdaMaker.Processes.RustBridge.Run<int>("track.number", value ?? string.Empty,
+                () => TrackNumberManaged(value));
+        return TrackNumberManaged(value);
+    }
+
+    private static int TrackNumberManaged(string? value)
+    {
         var match = TrackNumberRegex().Match(value ?? string.Empty);
         return match.Success && int.TryParse(match.Groups[1].Value, out var result)
             ? result
@@ -55,6 +63,12 @@ public static partial class AlbumNormalizer
     }
 
     public static string SafeBaseName(string path) =>
+        DvdaMaker.Processes.RustBridge.Mode != "managed"
+            ? DvdaMaker.Processes.RustBridge.Run<string>("path.safe_basename", path,
+                () => SafeBaseNameManaged(path))
+            : SafeBaseNameManaged(path);
+
+    private static string SafeBaseNameManaged(string path) =>
         InvalidFileNameRegex().Replace(System.IO.Path.GetFileNameWithoutExtension(path), "_");
 
     [GeneratedRegex(@"^\s*(\d+)")]
