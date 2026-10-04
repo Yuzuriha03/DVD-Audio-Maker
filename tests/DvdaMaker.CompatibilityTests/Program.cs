@@ -10,6 +10,7 @@ using DvdaMaker.Processes;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 Console.InputEncoding = System.Text.Encoding.UTF8;
+if (ProcessMigrationTests.Fixture(args) is int fixtureExit) return fixtureExit;
 
 var fixtureProcessName = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? string.Empty);
 if (fixtureProcessName.StartsWith("fake-dvda-author", StringComparison.OrdinalIgnoreCase))
@@ -329,7 +330,7 @@ var tests = new (string Name, Action Run)[]
     ("MLP 损坏边界与对齐修复", ValidateMlpDamageFixtures),
     ("MLP 内存与流式检查结果一致", MlpStreamingInspection),
     ("命令行日志格式化", FormatCommandLine),
-    ("外部进程参数与输出捕获", RunExternalProcess),
+    ("外部进程参数与输出捕获", () => { RunExternalProcess(); ProcessMigrationTests.Run(); }),
     ("外部进程非零退出码", HandleNonZeroExitCode),
     ("专辑多数参数归一化", NormalizeAlbumParameters),
     ("曲序和安全文件名", PrepareNamingHelpers),
