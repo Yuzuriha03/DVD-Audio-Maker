@@ -76,49 +76,13 @@ public static class SurcodePcmWav
 
     public static void Normalize(string source, string destination, int rate, int bits, CancellationToken token = default)
     {
-        if (DvdaMaker.Processes.RustBridge.Mode == "rust")
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
         {
-            token.ThrowIfCancellationRequested();
-            _ = DvdaMaker.Processes.RustBridge.Invoke<NormalizeResult>("wav.normalize",
-                new { Source = Path.GetFullPath(source), Destination = Path.GetFullPath(destination), Rate = rate, Bits = bits });
-            token.ThrowIfCancellationRequested();
+            DvdaMaker.Processes.RustBridge.NormalizePcm(
+                new { Source = source, Destination = destination, Rate = rate, Bits = bits }, token);
             return;
         }
-        if (DvdaMaker.Processes.RustBridge.Mode == "compare")
-        {
-            token.ThrowIfCancellationRequested();
-            var rustDestination = destination + ".rust-" + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                _ = DvdaMaker.Processes.RustBridge.Invoke<NormalizeResult>("wav.normalize",
-                    new { Source = Path.GetFullPath(source), Destination = Path.GetFullPath(rustDestination), Rate = rate, Bits = bits });
-                NormalizeManaged(source, destination, rate, bits, token);
-                var managed = File.ReadAllBytes(destination);
-                var rust = File.ReadAllBytes(rustDestination);
-                if (!managed.AsSpan().SequenceEqual(rust))
-                {
-                    throw new InvalidDataException($"Rust WAV normalize mismatch at byte {FirstMismatch(managed, rust)}.");
-                }
-                return;
-            }
-            finally
-            {
-                if (File.Exists(rustDestination)) File.Delete(rustDestination);
-            }
-        }
         NormalizeManaged(source, destination, rate, bits, token);
-    }
-
-    private sealed record NormalizeResult(long WrittenBytes);
-
-    private static int FirstMismatch(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
-    {
-        var common = Math.Min(left.Length, right.Length);
-        for (var index = 0; index < common; index++)
-        {
-            if (left[index] != right[index]) return index;
-        }
-        return common;
     }
 
     private static void NormalizeManaged(string source, string destination, int rate, int bits, CancellationToken token)

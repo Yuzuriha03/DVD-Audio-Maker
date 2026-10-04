@@ -265,7 +265,7 @@
       "name": "eac3to 奇数 PCM 尾部封装",
       "managedEntry": "MlpEncoderTests.OddPcmTail",
       "rustOperations": [
-        "wav.normalize",
+        "pcm.normalize",
         "wav.layout"
       ],
       "status": "pass"
@@ -296,7 +296,7 @@
       "name": "SurCode PCM 16 位升至 24 位",
       "managedEntry": "UpconvertSurcodePcmWav",
       "rustOperations": [
-        "wav.normalize",
+        "pcm.normalize",
         "wav.layout"
       ],
       "status": "pass"
@@ -661,9 +661,9 @@
       "name": "M4A dry-run 不写文件",
       "managedEntry": "M4aDryRunDoesNotWrite",
       "rustOperations": [
+        "alac.cookie",
         "process.execute",
-        "alac.find_bad_frames",
-        "alac.cookie"
+        "alac.find_bad_frames"
       ],
       "status": "pass"
     },
@@ -681,9 +681,9 @@
       "name": "M4A 单文件异常不终止批次",
       "managedEntry": "IsolateM4aFileFailures",
       "rustOperations": [
+        "alac.cookie",
         "process.execute",
-        "alac.find_bad_frames",
-        "alac.cookie"
+        "alac.find_bad_frames"
       ],
       "status": "pass"
     },
@@ -761,12 +761,12 @@
       "name": "MLP 索引拒绝重复路径",
       "managedEntry": "RejectDuplicateMlpIndexKeys",
       "rustOperations": [
-        "config.read_file",
         "config.find",
-        "math.estimate_aob",
-        "options.evaluate",
+        "disc.plan",
         "math.content_limit",
-        "disc.plan"
+        "config.read_file",
+        "math.estimate_aob",
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -775,15 +775,15 @@
       "name": "正式出盘执行器端到端",
       "managedEntry": "BuildDiscEndToEnd",
       "rustOperations": [
-        "process.execute",
-        "config.read_file",
         "config.find",
-        "author.normalize_title_mode",
+        "disc.plan",
+        "math.content_limit",
+        "config.read_file",
         "math.estimate_aob",
         "options.evaluate",
-        "math.content_limit",
-        "publish.single",
-        "disc.plan"
+        "process.execute",
+        "author.normalize_title_mode",
+        "publish.single"
       ],
       "status": "pass"
     },
@@ -792,16 +792,16 @@
       "name": "事务暂存移动与保留中间 ISO",
       "managedEntry": "StageDiscAndKeepIntermediate",
       "rustOperations": [
-        "process.execute",
-        "config.read_file",
         "config.find",
-        "author.normalize_title_mode",
+        "disc.plan",
+        "math.content_limit",
+        "config.read_file",
         "math.estimate_aob",
         "options.evaluate",
+        "process.execute",
+        "author.normalize_title_mode",
         "publish.stage",
-        "math.content_limit",
-        "publish.single",
-        "disc.plan"
+        "publish.single"
       ],
       "status": "pass"
     },
@@ -810,14 +810,14 @@
       "name": "出盘失败保留诊断现场",
       "managedEntry": "PreserveFailedDiscWorkspace",
       "rustOperations": [
-        "process.execute",
-        "config.read_file",
         "config.find",
-        "author.normalize_title_mode",
+        "disc.plan",
+        "math.content_limit",
+        "config.read_file",
         "math.estimate_aob",
         "options.evaluate",
-        "math.content_limit",
-        "disc.plan"
+        "process.execute",
+        "author.normalize_title_mode"
       ],
       "status": "pass"
     },
@@ -826,8 +826,8 @@
       "name": "菜单配置派生值",
       "managedEntry": "LoadMenuConfiguration",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -1101,14 +1101,13 @@
         "config.read_file",
         "encoder.execute",
         "audio.parameters",
-        "wav.normalize",
         "config.find",
+        "pcm.normalize",
         "identity.compute",
         "options.evaluate",
         "identity.equal",
         "hash.sha256_file",
-        "cache.mlp_match",
-        "wav.layout"
+        "cache.mlp_match"
       ],
       "status": "pass"
     },
@@ -1187,8 +1186,8 @@
       "rustOperations": [
         "process.execute",
         "encoder.execute",
-        "wav.normalize",
-        "wav.layout"
+        "pcm.normalize",
+        "batch.encode"
       ],
       "status": "pass"
     }
@@ -1209,7 +1208,6 @@
     "menu.parse_batch_frame_stats": 16,
     "audio.parameters": 26,
     "prepare.cache_reusable": 6,
-    "wav.normalize": 20,
     "config.find": 51,
     "iso.list": 3,
     "aob.audit_diagnostics": 8,
@@ -1225,8 +1223,10 @@
     "iso.read_file": 3,
     "math.estimate_aob": 107,
     "disk.group_requirements": 13,
+    "pcm.normalize": 296,
     "identity.compute": 93,
     "alac.find_bad_frames": 2,
+    "batch.encode": 49,
     "menu.parse_overlay_batch": 17,
     "flac.picture": 3,
     "decode.scan": 6,
@@ -1266,10 +1266,10 @@
     "menu.parse_index_batch": 24,
     "iso.all_paths": 1,
     "disc.plan": 18,
-    "wav.layout": 28,
+    "wav.layout": 8,
     "flac.replace_picture": 1,
     "options.defaults": 1,
     "lpcm.validate_layout": 16
   },
-  "evidence": "build/rust-validation/p18-process-compare-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p19-pcm-batch-compare-x64.json (ignored local report)"
 }

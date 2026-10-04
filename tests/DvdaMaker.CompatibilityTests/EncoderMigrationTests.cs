@@ -130,7 +130,7 @@ internal static class EncoderMigrationTests
         writer.Write((ulong)((frames + block - 1) / block)); writer.Write(1u); writer.Write(0UL); writer.Write(4u);
         if (version == 2) writer.Write(0u); writer.Write(new byte[] { 0, 0, 0x40, 0 });
     }
-    private static void Widen(string path)
+    internal static void Widen(string path)
     {
         var bytes = File.ReadAllBytes(path); var channels = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(22));
         var size = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(64)); var width = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(34)) / 8;

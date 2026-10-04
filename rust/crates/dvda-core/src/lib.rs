@@ -1,5 +1,6 @@
 pub mod aob;
 pub mod author;
+pub mod batch;
 pub mod config;
 pub mod config_files;
 pub mod encoder;
@@ -11,6 +12,7 @@ pub mod lpcm;
 pub mod media;
 pub mod menu;
 pub mod options;
+pub mod pcm;
 pub mod planner;
 pub mod probes;
 pub mod process;

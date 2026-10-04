@@ -1,4 +1,5 @@
 using DvdaMaker.Processes;
+using System.Text.Json;
 
 namespace DvdaMaker.SurcodeTool;
 
@@ -7,6 +8,34 @@ public sealed class SurcodeBatchEncoder(ProcessRunner runner)
 {
     public async Task RunAsync(SurcodeEncodingJob job, CancellationToken cancellationToken)
     {
+        // The production native-media path is fully scheduled by Rust. Explicit
+        // developer reference converters remain on the old test path until P7.
+        if (RustBridge.Mode != "managed" && BuiltinMedia.IsBuiltin(job.FfmpegExecutable))
+        {
+            var library = MlpEncoder.ExtractLibrary();
+            await Task.Run(() => RustBridge.RunBatch(new
+            {
+                MediaLibrary = BuiltinMedia.LibraryPath, EncoderLibrary = library,
+                job.TemporaryDirectory, job.OutputDirectory, job.SampleRate, job.Bits,
+                job.Jobs, job.MetadataContext, job.Tracks,
+            }, (_, text) =>
+            {
+                using var document = JsonDocument.Parse(text); var root = document.RootElement;
+                var name = root.GetProperty("Name").GetString(); var value = root.GetProperty("Value");
+                switch (root.GetProperty("Kind").GetString())
+                {
+                    case "Started": Console.WriteLine($"[MLP] {name}"); break;
+                    case "PcmStarted": Console.WriteLine($"[PCM] 正在准备音源：{name}"); break;
+                    case "PcmProgress": Console.WriteLine($"[PCM] {name}：{value.GetInt32()}%"); break;
+                    case "PcmFinished": Console.WriteLine($"[PCM] 音源准备完成：{name}"); break;
+                    case "PcmError": Console.Error.WriteLine($"[FFmpeg PCM] {value.GetString()}"); break;
+                    case "Encoded":
+                        Console.WriteLine($"[MLP DLL] {value.GetProperty("Frames").GetInt64():N0} 帧 / {value.GetProperty("Rate").GetInt32()} Hz / {value.GetProperty("Bits").GetInt32()} bit / {value.GetProperty("Channels").GetInt32()} 声道，{value.GetProperty("Bytes").GetInt64():N0} 字节"); break;
+                    default: Console.WriteLine(value.GetString()); break;
+                }
+            }, cancellationToken), CancellationToken.None).ConfigureAwait(false);
+            return;
+        }
         var ffmpeg = ExecutablePath.Resolve(job.FfmpegExecutable)
             ?? throw new FileNotFoundException(BuiltinMedia.IsBuiltin(job.FfmpegExecutable)
                 ? "内置媒体组件缺失，请完整解压发布包。"

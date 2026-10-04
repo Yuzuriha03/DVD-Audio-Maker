@@ -318,7 +318,7 @@ var tests = new (string Name, Action Run)[]
     ("eac3to 奇数 PCM 尾部封装", MlpEncoderTests.OddPcmTail),
     ("SurCode 内置任务与路径", BuildSurcodeBatchJob),
     ("MLP 编码核心确定性元数据", () => { MlpEncoderTests.Metadata(); EncoderMigrationTests.Run(); }),
-    ("SurCode PCM 16 位升至 24 位", UpconvertSurcodePcmWav),
+    ("SurCode PCM 16 位升至 24 位", () => { UpconvertSurcodePcmWav(); PcmMigrationTests.Run(); }),
     ("Shell 单引号转义", EscapeShellAssignment),
     ("Shell 默认键集兼容 Python", PreserveLegacyShellKeySet),
     ("配置来源与有效键集合", DescribeConfigurationSources),
@@ -402,7 +402,7 @@ var tests = new (string Name, Action Run)[]
     ("逐盘续跑凭据规则", DiscResumeStoreRules),
     ("出盘签名随配置与 MLP 变化", DiscSignatureChanges),
     ("构建流水线逐盘续跑", BuildPipelineResumesDiscs),
-    ("MLP 有界并发编码等效性", MlpEncoderTests.Parallel),
+    ("MLP 有界并发编码等效性", () => { MlpEncoderTests.Parallel(); BatchMigrationTests.Run(); }),
 };
 
 if (Environment.GetEnvironmentVariable("DVDA_COMPAT_FILTER") is { Length: > 0 } filter)
