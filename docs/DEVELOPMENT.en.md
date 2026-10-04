@@ -48,7 +48,7 @@ tools\win-build\build-all.cmd ^
   --image-author "build\image-author-shared" --directory --include-cli --output "D:\release-diagnostics"
 ```
 
-Media and menus use one shared FFmpeg build and one DLL set in menu-bin. DVDA_MEDIA_NATIVE_DIR may point there; DVDA_IMAGE_NATIVE_DIR points to sibling image-native. The cache defaults to %LOCALAPPDATA%/DVD-Audio-Maker/runtime; tests may isolate it with DVDA_BUNDLE_CACHE_ROOT. See [Windows builds](../tools/win-build/README.en.md) and [onefile design](ONEFILE-PUBLISH.md).
+Media and menus use one shared FFmpeg build and one DLL set in menu-bin. DVDA_MEDIA_NATIVE_DIR may point there; DVDA_IMAGE_NATIVE_DIR points to sibling image-native. The C17 MLP/PCM/PTS helper is built separately and validated with the managed fallback; see [C17 format runtime](C17-FORMATS.md). The cache defaults to %LOCALAPPDATA%/DVD-Audio-Maker/runtime; tests may isolate it with DVDA_BUNDLE_CACHE_ROOT. See [Windows builds](../tools/win-build/README.en.md) and [onefile design](ONEFILE-PUBLISH.md).
 
 The historical validation below does not describe current package sizes or runtime defaults.
 

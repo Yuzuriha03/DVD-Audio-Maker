@@ -14,11 +14,24 @@ public static class BundledRuntime
     public static void Initialize(Assembly application)
     {
         using var index = application.GetManifestResourceStream(RuntimeArchive.IndexResource);
-        if (index is null) return; // Normal Debug and directory publishing.
+        if (index is null)
+        {
+            SetNativeFormatsDirectory();
+            return; // Normal Debug and directory publishing.
+        }
         using var bytes = new MemoryStream();
         index.CopyTo(bytes);
         Root = RuntimeArchive.Extract(bytes.ToArray(), () => application.GetManifestResourceStream(RuntimeArchive.DataResource)
             ?? throw new InvalidDataException("Missing bundled application components."), CacheDirectory);
+        SetNativeFormatsDirectory();
+    }
+
+    private static void SetNativeFormatsDirectory()
+    {
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DVDA_FORMATS_NATIVE_DIR"))) return;
+        var directory = Path.Combine(Root, "menu-bin");
+        if (File.Exists(Path.Combine(directory, "dvda-formats.dll")))
+            Environment.SetEnvironmentVariable("DVDA_FORMATS_NATIVE_DIR", directory);
     }
 
     public static bool IsCachedPath(string? path) => !string.IsNullOrWhiteSpace(path) &&

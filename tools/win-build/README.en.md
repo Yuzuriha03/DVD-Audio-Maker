@@ -11,6 +11,7 @@ Routine C# builds and packaging reuse prepared Windows artifacts. Python, MSYS2/
 | Input | Default location or option | Contents |
 |---|---|---|
 | GUI media runtime | `build/media-native-shared` or `--media-runtime` | Shared-profile DLLs and media-build.json |
+| C17 format runtime | `build/formats-native` or `--formats-runtime` | `dvda-formats.dll` and formats-build.json |
 | Image runtime | `build/image-native` | dvda-image.dll, image-build.json, XML and NOTICE.txt |
 | Author with in-process images | `build/image-author-shared` or `--image-author` | dvda-author-dev.exe and author-build.json |
 | Tools and fonts | `--prebuilt` or DVDA_PREBUILT_DIR | Complete menu-bin runtime dependencies |
@@ -38,6 +39,7 @@ tools\win-build\build-all.cmd ^
   --source "D:\dev\winbuild\src" ^
   --prebuilt "D:\dev\winbuild\menu-bin" ^
   --media-runtime "build\media-native-shared" ^
+  --formats-runtime "build\formats-native" ^
   --image-author "build\image-author-shared"
 ```
 
@@ -52,6 +54,7 @@ Default output directory: `tools/win-build/release-onefile`. `DVD-Audio-Maker.ex
 | `--self-contained` | Directory mode only: include .NET |
 | `--include-cli` | Directory mode only: add developer CLI |
 | `--media-runtime` / `--image-author` | Verified media and author builds |
+| `--formats-runtime` | Verified C17 MLP/PCM/PTS runtime (defaults to `build/formats-native`) |
 | `--source` / `--prebuilt` | Menu assets and fonts |
 | `--output` / `--repo` | Output directory and repository root |
 
@@ -95,6 +98,21 @@ python tools\win-build\build-media-bridge.py --msys-root "D:\dev\msys64"
 ```
 
 This supplies the required audio decoders, SWR/SOXR, menu-video reading and C interface, without FFmpeg/FFprobe executables. MLP encoding remains a separate MLP encoder. See [in-process media](../../docs/INPROCESS-MEDIA.en.md).
+
+### C17 format runtime
+
+The format helper DLL is built from the repository's C17 source and has no bundled third-party library. It contains streaming MLP inspection/alignment, PCM byte comparison and PTS/MLP format parsing. Build and validate it before packaging:
+
+```bat
+python tools\win-build\build-formats-runtime.py --msys-root "C:\msys64" --output build\formats-native
+```
+
+The GUI uses the DLL when it is present and falls back to the managed implementation in development builds. The compatibility runner can compare both implementations against a local SurCode sample corpus:
+
+```bat
+set "DVDA_FORMATS_NATIVE_DIR=%CD%\build\formats-native"
+tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe --native-format-samples "D:\samples\mlp"
+```
 
 ### Image runtime and native author
 
