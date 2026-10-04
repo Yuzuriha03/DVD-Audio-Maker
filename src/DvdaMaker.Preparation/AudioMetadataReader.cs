@@ -31,6 +31,15 @@ public sealed class AudioMetadataReader(ProcessRunner processRunner, string ffpr
                 result.StandardError);
         }
 
+        return RustBridge.Run<AudioTrackMetadata>("metadata.parse", new
+        {
+            Path = path,
+            Output = result.StandardOutput,
+        }, () => ParseManaged(path, result.StandardOutput));
+    }
+
+    private static AudioTrackMetadata ParseManaged(string path, string standardOutput)
+    {
         var sampleRate = 0;
         var bits = 0;
         var channels = 0;
@@ -39,7 +48,7 @@ public sealed class AudioMetadataReader(ProcessRunner processRunner, string ffpr
         double? formatDuration = null;
         var tags = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var rawLine in result.StandardOutput.Split('\n'))
+        foreach (var rawLine in standardOutput.Split('\n'))
         {
             var line = rawLine.Trim();
             if (line.StartsWith("sample_rate=", StringComparison.Ordinal))

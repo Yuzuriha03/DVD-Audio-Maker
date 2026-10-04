@@ -6,6 +6,7 @@ namespace DvdaMaker.Building;
 
 public static partial class MenuPlanner
 {
+    private sealed record RustSanitizeResult(string Value, bool Changed);
     public const int FrameWidth = 720;
     public const int FrameHeight = 576;
     public const int IndexColumns = 4;
@@ -88,6 +89,18 @@ public static partial class MenuPlanner
         IReadOnlyList<string> albums,
         int rowCap)
     {
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
+            return DvdaMaker.Processes.RustBridge.Run<IReadOnlyList<MenuPagePlan>>("menu.pages",
+                new { Tracks = tracks, Albums = albums, RowCap = rowCap },
+                () => CreateAlbumPagesManaged(tracks, albums, rowCap));
+        return CreateAlbumPagesManaged(tracks, albums, rowCap);
+    }
+
+    private static IReadOnlyList<MenuPagePlan> CreateAlbumPagesManaged(
+        IReadOnlyList<BuildTrack> tracks,
+        IReadOnlyList<string> albums,
+        int rowCap)
+    {
         if (tracks.Count != albums.Count)
         {
             throw new ArgumentException("曲目与专辑列表长度必须一致。");
@@ -129,6 +142,13 @@ public static partial class MenuPlanner
 
     public static int ComputeFontSize(int rows)
     {
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
+            return DvdaMaker.Processes.RustBridge.Run<int>("menu.font_size", rows, () => ComputeFontSizeManaged(rows));
+        return ComputeFontSizeManaged(rows);
+    }
+
+    private static int ComputeFontSizeManaged(int rows)
+    {
         var span = rows + 4;
         var labelHeight = (FrameHeight - 56 - 40 - span * 12) / span;
         var spacing = labelHeight + 12;
@@ -136,6 +156,14 @@ public static partial class MenuPlanner
     }
 
     public static int ComputeFontWidth(IEnumerable<string> texts)
+    {
+        var values = texts.ToArray();
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
+            return DvdaMaker.Processes.RustBridge.Run<int>("menu.font_width", values, () => ComputeFontWidthManaged(values));
+        return ComputeFontWidthManaged(values);
+    }
+
+    private static int ComputeFontWidthManaged(IEnumerable<string> texts)
     {
         var wide = 0;
         var narrow = 0;
@@ -159,6 +187,21 @@ public static partial class MenuPlanner
 
     public static (string Value, bool Changed) Sanitize(string value)
     {
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
+        {
+            var result = DvdaMaker.Processes.RustBridge.Run<RustSanitizeResult>(
+                "menu.sanitize", value, () =>
+                {
+                    var managed = SanitizeManaged(value);
+                    return new RustSanitizeResult(managed.Value, managed.Changed);
+                });
+            return (result.Value, result.Changed);
+        }
+        return SanitizeManaged(value);
+    }
+
+    private static (string Value, bool Changed) SanitizeManaged(string value)
+    {
         if (value.IndexOfAny([',', ':', '=']) < 0)
         {
             return (value, false);
@@ -180,6 +223,15 @@ public static partial class MenuPlanner
 
     public static string Truncate(string value, int fontSize, int budget = TextBudgetPixels)
     {
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
+            return DvdaMaker.Processes.RustBridge.Run<string>("menu.truncate",
+                new { Value = value, FontSize = fontSize, Budget = budget },
+                () => TruncateManaged(value, fontSize, budget));
+        return TruncateManaged(value, fontSize, budget);
+    }
+
+    private static string TruncateManaged(string value, int fontSize, int budget)
+    {
         if (TextPixels(value, fontSize) <= budget) return value;
         var output = value;
         while (output.Length > 0 && TextPixels(output + "~", fontSize) > budget)
@@ -191,13 +243,25 @@ public static partial class MenuPlanner
 
     public static string ShortAlbum(string value, int maximumCharacters = 24)
     {
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
+            return DvdaMaker.Processes.RustBridge.Run<string>("menu.short_album",
+                new { Value = value, MaximumCharacters = maximumCharacters },
+                () => ShortAlbumManaged(value, maximumCharacters));
+        return ShortAlbumManaged(value, maximumCharacters);
+    }
+
+    private static string ShortAlbumManaged(string value, int maximumCharacters)
+    {
         var output = AlbumSuffixPattern().Split(value, 2)[0].Trim().TrimEnd('-', '–', '—').Trim();
         if (output.Length == 0) output = value;
         return output.Length > maximumCharacters ? output[..maximumCharacters] : output;
     }
 
     public static string NormalizeFontPath(string value) =>
-        OperatingSystem.IsWindows() ? value.Replace('\\', '/') : value;
+        DvdaMaker.Processes.RustBridge.Mode != "managed"
+            ? DvdaMaker.Processes.RustBridge.Run<string>("menu.normalize_path", value,
+                () => OperatingSystem.IsWindows() ? value.Replace('\\', '/') : value)
+            : OperatingSystem.IsWindows() ? value.Replace('\\', '/') : value;
 
     public static string AlbumOf(BuildTrack track)
     {

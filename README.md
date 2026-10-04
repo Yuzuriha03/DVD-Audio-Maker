@@ -83,6 +83,7 @@ dotnet build DVD-Audio-Maker.sln -c Release -p:SelfContained=false -m:1
 `dry-run` 仅供开发调试，通过源码 CLI 使用；它会准备音源、编码 MLP 并生成独立索引，不生成 ISO，也不是零写入操作。GUI 只提供检查、制作、验证。配置名 `surcode-batch` 保留为兼容键；旧 `surcode` 导入值映射为 `external`，不再是单独的编码方式。
 
 - [开发调试与 CLI](docs/DEVELOPMENT.md)
+- [C# 应用层迁移至 Rust：阶段与验收计划](docs/RUST-MIGRATION.md)
 - [C17 格式运行库与逐字节验证](docs/C17-FORMATS.md)
 - [Windows 构建、原生组件与发布](tools/win-build/README.md)
 - [单文件打包设计与验收](docs/ONEFILE-PUBLISH.md)

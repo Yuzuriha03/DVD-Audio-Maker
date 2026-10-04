@@ -124,7 +124,7 @@ if (fixtureProcessName.StartsWith("fake-ffprobe", StringComparison.OrdinalIgnore
     }
     if (args.Contains("-show_streams"))
     {
-        var codec = source.Contains("aac", StringComparison.OrdinalIgnoreCase) ? "aac" : "alac";
+        var codec = Path.GetFileName(source).Contains("aac", StringComparison.OrdinalIgnoreCase) ? "aac" : "alac";
         Console.WriteLine($"{{\"streams\":[{{\"codec_type\":\"audio\",\"codec_name\":\"{codec}\"}}]}}");
         return 0;
     }
@@ -405,8 +405,11 @@ var tests = new (string Name, Action Run)[]
 };
 
 var failed = 0;
+var backendReport = new List<object>();
 foreach (var test in tests)
 {
+    var before = RustBridge.Snapshot();
+    string? failure = null;
     try
     {
         test.Run();
@@ -414,12 +417,25 @@ foreach (var test in tests)
     }
     catch (Exception exception)
     {
+        failure = exception.ToString();
         failed++;
         Console.Error.WriteLine($"[FAIL] {test.Name}: {exception.Message}");
     }
+    var calls = RustBridge.Snapshot().Where(pair => pair.Value > before.GetValueOrDefault(pair.Key))
+        .ToDictionary(pair => pair.Key, pair => pair.Value - before.GetValueOrDefault(pair.Key));
+    backendReport.Add(new { test.Name, Passed=failure is null, Error=failure, RustCalls=calls });
 }
 
 Console.WriteLine($"兼容性测试: {tests.Length - failed}/{tests.Length} 通过");
+if (Environment.GetEnvironmentVariable("DVDA_RUST_REPORT") is { Length: > 0 } reportPath)
+{
+    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(reportPath))!);
+    File.WriteAllText(reportPath, System.Text.Json.JsonSerializer.Serialize(new
+    {
+        Mode=RustBridge.Mode, Library=RustBridge.Enabled ? RustBridge.LibraryPath : null,
+        Total=tests.Length, Passed=tests.Length-failed, Tests=backendReport, RustCalls=RustBridge.Snapshot(),
+    }, new System.Text.Json.JsonSerializerOptions { WriteIndented=true }));
+}
 return failed == 0 ? 0 : 1;
 
 static void ParseAssignments()
@@ -3746,6 +3762,10 @@ static string CreateFixtureExecutable(string root, string fileName)
             companionSource,
             Path.Combine(root, applicationName + extension),
             overwrite: true);
+    }
+    foreach (var dependency in Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll"))
+    {
+        File.Copy(dependency, Path.Combine(root, Path.GetFileName(dependency)), overwrite: true);
     }
     var destination = Path.Combine(root, fileName);
     File.Copy(source, destination, overwrite: true);

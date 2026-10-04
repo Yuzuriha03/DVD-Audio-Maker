@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Preparation;
 
@@ -19,7 +20,29 @@ public static class FlacMetadataEditor
         int Colors,
         byte[] ImageData);
 
+    private sealed record FlacComment(string Key, string Value);
+
+    private sealed record RustPicture(
+        FlacPictureDescriptor Descriptor,
+        string Description,
+        int Colors,
+        string ImageHex);
+
+    private sealed record RustWriteResult(long WrittenBytes);
+
     public static IReadOnlyList<(string Key, string Value)> ReadVorbisComments(string path)
+    {
+        if (RustBridge.Mode != "managed")
+        {
+            var comments = RustBridge.Run<List<FlacComment>>("flac.comments", path,
+                () => ReadVorbisCommentsManaged(path)
+                    .Select(item => new FlacComment(item.Key, item.Value)).ToList());
+            return comments.Select(item => (item.Key, item.Value)).ToArray();
+        }
+        return ReadVorbisCommentsManaged(path);
+    }
+
+    private static IReadOnlyList<(string Key, string Value)> ReadVorbisCommentsManaged(string path)
     {
         var document = ReadDocument(path);
         var block = document.Blocks.FirstOrDefault(item => item.Type == VorbisCommentType);
@@ -50,10 +73,49 @@ public static class FlacMetadataEditor
 
     public static PictureBlock? ReadPicture(string path)
     {
+        if (RustBridge.Mode != "managed")
+        {
+            var picture = RustBridge.Run<RustPicture?>("flac.picture", path,
+                () => ToRustPicture(ReadPictureManaged(path)));
+            return picture is null ? null : new PictureBlock(
+                picture.Descriptor, picture.Description, picture.Colors, HexDecode(picture.ImageHex));
+        }
+        return ReadPictureManaged(path);
+    }
+
+    private static PictureBlock? ReadPictureManaged(string path)
+    {
         var document = ReadDocument(path);
         var block = document.Blocks.FirstOrDefault(item => item.Type == PictureType);
         return block is null ? null : ParsePicture(block.Data);
     }
+
+    private static RustPicture? ToRustPicture(PictureBlock? picture) => picture is null
+        ? null
+        : new RustPicture(picture.Descriptor, picture.Description, picture.Colors,
+            Convert.ToHexString(picture.ImageData).ToLowerInvariant());
+
+    private static byte[] HexDecode(string value)
+    {
+        if (value.Length % 2 != 0) throw new InvalidDataException("FLAC picture hex is invalid.");
+        var result = new byte[value.Length / 2];
+        for (var index = 0; index < result.Length; index++)
+        {
+            var high = HexDigit(value[index * 2]);
+            var low = HexDigit(value[index * 2 + 1]);
+            if (high < 0 || low < 0) throw new InvalidDataException("FLAC picture hex is invalid.");
+            result[index] = (byte)((high << 4) | low);
+        }
+        return result;
+    }
+
+    private static int HexDigit(char value) => value switch
+    {
+        >= '0' and <= '9' => value - '0',
+        >= 'a' and <= 'f' => value - 'a' + 10,
+        >= 'A' and <= 'F' => value - 'A' + 10,
+        _ => -1,
+    };
 
     public static void ExportPicture(string path, string destination)
     {
@@ -70,6 +132,68 @@ public static class FlacMetadataEditor
     /// metaflac remove/import used by the preparation pipeline.
     /// </summary>
     public static void ReplacePicture(string path, string imagePath, PictureBlock template)
+    {
+        if (RustBridge.Mode == "rust")
+        {
+            _ = RustBridge.Invoke<RustWriteResult>("flac.replace_picture",
+                ReplaceRequest(path, imagePath, template));
+            return;
+        }
+        if (RustBridge.Mode == "compare")
+        {
+            var rustPath = path + ".rust-" + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.Copy(path, rustPath, overwrite: false);
+                _ = RustBridge.Invoke<RustWriteResult>("flac.replace_picture",
+                    ReplaceRequest(rustPath, imagePath, template));
+                ReplacePictureManaged(path, imagePath, template);
+                var managed = File.ReadAllBytes(path);
+                var rust = File.ReadAllBytes(rustPath);
+                if (!managed.AsSpan().SequenceEqual(rust))
+                {
+                    throw new InvalidDataException($"Rust FLAC picture replacement mismatch at byte {FirstMismatch(managed, rust)}.");
+                }
+                return;
+            }
+            finally
+            {
+                if (File.Exists(rustPath)) File.Delete(rustPath);
+            }
+        }
+        ReplacePictureManaged(path, imagePath, template);
+    }
+
+    private static object ReplaceRequest(string path, string imagePath, PictureBlock template) => new
+    {
+        Path = Path.GetFullPath(path),
+        ImagePath = Path.GetFullPath(imagePath),
+        Template = new
+        {
+            Descriptor = new
+            {
+                Type = template.Descriptor.Type,
+                MimeType = template.Descriptor.MimeType,
+                Width = template.Descriptor.Width,
+                Height = template.Descriptor.Height,
+                Depth = template.Descriptor.Depth,
+            },
+            template.Description,
+            template.Colors,
+        },
+    };
+
+    private static int FirstMismatch(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
+    {
+        var common = Math.Min(left.Length, right.Length);
+        for (var index = 0; index < common; index++)
+        {
+            if (left[index] != right[index]) return index;
+        }
+        return common;
+    }
+
+    private static void ReplacePictureManaged(string path, string imagePath, PictureBlock template)
     {
         var document = ReadDocument(path);
         if (!document.Blocks.Any(item => item.Type == PictureType))

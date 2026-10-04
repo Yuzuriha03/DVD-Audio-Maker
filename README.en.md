@@ -83,6 +83,7 @@ dotnet build DVD-Audio-Maker.sln -c Release -p:SelfContained=false -m:1
 `dry-run` is a developer debugging option in the source CLI. It prepares audio, encodes MLP and writes a separate index without creating an ISO; it is not a zero-write operation. The GUI offers checking, building and verification. `surcode-batch` remains a compatibility configuration key; legacy `surcode` import values map to `external`, with no separate encoding mode.
 
 - [Development, debugging and CLI](docs/DEVELOPMENT.en.md)
+- [C# to Rust migration plan and acceptance criteria (Chinese)](docs/RUST-MIGRATION.md)
 - [C17 format runtime and byte-level validation](docs/C17-FORMATS.md)
 - [Windows builds, native components and packaging](tools/win-build/README.en.md)
 - [Single-file packaging design and validation](docs/ONEFILE-PUBLISH.md)

@@ -81,14 +81,21 @@ public sealed class MlpCacheIndex
         {
             return null;
         }
-        if (!string.Equals(entry.Encoder, encoder, StringComparison.Ordinal) ||
-            entry.Bits != bits ||
-            entry.ResampleTo != resampleTo ||
-            entry.MaxInterval != maxInterval)
+        var criteriaMatch = RustBridge.Run<bool>("cache.mlp_match", new
         {
-            return null;
-        }
-        if (!SameIdentity(entry.Source, sourceIdentity))
+            Entry = entry,
+            Source = sourceIdentity,
+            Encoder = encoder,
+            Bits = bits,
+            ResampleTo = resampleTo,
+            MaxInterval = maxInterval,
+        }, () =>
+            string.Equals(entry.Encoder, encoder, StringComparison.Ordinal) &&
+            entry.Bits == bits &&
+            entry.ResampleTo == resampleTo &&
+            entry.MaxInterval == maxInterval &&
+            SameIdentity(entry.Source, sourceIdentity));
+        if (!criteriaMatch)
         {
             return null;
         }

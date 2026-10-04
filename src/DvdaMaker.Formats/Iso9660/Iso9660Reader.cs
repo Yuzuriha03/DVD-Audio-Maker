@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Formats.Iso9660;
 
@@ -11,6 +12,15 @@ public sealed class Iso9660Reader : IDisposable
     private readonly Stream _stream;
     private readonly bool _ownsStream;
     private readonly Dictionary<(uint Lba, uint Size), IReadOnlyList<IsoDirectoryEntry>> _directoryCache = [];
+
+    private sealed record RustIsoInfo(
+        int SectorSize,
+        uint RootLogicalBlockAddress,
+        uint RootSize,
+        string VolumeIdentifier);
+
+    private sealed record RustIsoFile(string DataHex);
+    private sealed record RustIsoExtract(bool Extracted);
 
     public Iso9660Reader(string path)
     {
@@ -28,7 +38,7 @@ public sealed class Iso9660Reader : IDisposable
         try
         {
             (SectorSize, RootLogicalBlockAddress, RootSize, VolumeIdentifier) =
-                ReadPrimaryVolumeDescriptor();
+                ReadPrimaryVolumeDescriptorWithRust();
         }
         catch
         {
@@ -48,7 +58,7 @@ public sealed class Iso9660Reader : IDisposable
         _stream = stream;
         _ownsStream = !leaveOpen;
         (SectorSize, RootLogicalBlockAddress, RootSize, VolumeIdentifier) =
-            ReadPrimaryVolumeDescriptor();
+            ReadPrimaryVolumeDescriptorWithRust();
     }
 
     public string Path { get; }
@@ -83,15 +93,43 @@ public sealed class Iso9660Reader : IDisposable
 
     public IReadOnlyList<IsoDirectoryEntry> ListDirectory(string innerPath = "")
     {
+        if (RustBridge.Mode != "managed")
+        {
+            return RustBridge.Run<IReadOnlyList<IsoDirectoryEntry>>("iso.list",
+                new { Path, InnerPath = innerPath }, () => ListDirectoryManaged(innerPath));
+        }
+        return ListDirectoryManaged(innerPath);
+    }
+
+    private IReadOnlyList<IsoDirectoryEntry> ListDirectoryManaged(string innerPath)
+    {
         var entry = Lookup(innerPath);
         return entry is { IsDirectory: true }
             ? ParseDirectory(DataLba(entry), entry.Size)
             : [];
     }
 
-    public IsoDirectoryEntry? GetEntry(string innerPath) => Lookup(innerPath);
+    public IsoDirectoryEntry? GetEntry(string innerPath)
+    {
+        if (RustBridge.Mode != "managed")
+        {
+            return RustBridge.Run<IsoDirectoryEntry?>("iso.entry",
+                new { Path, InnerPath = innerPath }, () => Lookup(innerPath));
+        }
+        return Lookup(innerPath);
+    }
 
     public uint GetDataLogicalBlockAddress(string innerPath)
+    {
+        if (RustBridge.Mode != "managed")
+        {
+            return RustBridge.Run<uint>("iso.data_lba", new { Path, InnerPath = innerPath },
+                () => GetDataLogicalBlockAddressManaged(innerPath));
+        }
+        return GetDataLogicalBlockAddressManaged(innerPath);
+    }
+
+    private uint GetDataLogicalBlockAddressManaged(string innerPath)
     {
         var entry = Lookup(innerPath) ??
             throw new Iso9660Exception($"ISO 里没有 {innerPath}");
@@ -99,6 +137,16 @@ public sealed class Iso9660Reader : IDisposable
     }
 
     public IReadOnlyList<string> AllPaths(string innerPath = "")
+    {
+        if (RustBridge.Mode != "managed")
+        {
+            return RustBridge.Run<IReadOnlyList<string>>("iso.all_paths",
+                new { Path, InnerPath = innerPath }, () => AllPathsManaged(innerPath));
+        }
+        return AllPathsManaged(innerPath);
+    }
+
+    private IReadOnlyList<string> AllPathsManaged(string innerPath)
     {
         var output = new List<string>();
         var parts = SplitPath(innerPath);
@@ -133,6 +181,27 @@ public sealed class Iso9660Reader : IDisposable
 
     public byte[] ReadFile(string innerPath)
     {
+        if (RustBridge.Mode != "managed")
+        {
+            var rust = RustBridge.Run<RustIsoFile>("iso.read_file",
+                new { Path, InnerPath = innerPath }, () => new RustIsoFile(
+                    Convert.ToHexString(ReadFileManaged(innerPath)).ToLowerInvariant()));
+            var data = HexDecode(rust.DataHex);
+            if (RustBridge.Mode == "compare")
+            {
+                var managed = ReadFileManaged(innerPath);
+                if (!managed.AsSpan().SequenceEqual(data))
+                {
+                    throw new InvalidDataException($"Rust ISO ReadFile mismatch at byte {FirstMismatch(managed, data)}.");
+                }
+            }
+            return data;
+        }
+        return ReadFileManaged(innerPath);
+    }
+
+    private byte[] ReadFileManaged(string innerPath)
+    {
         var entry = Lookup(innerPath) ??
             throw new Iso9660Exception($"ISO 里没有 {innerPath}");
         if (entry.IsDirectory)
@@ -148,6 +217,36 @@ public sealed class Iso9660Reader : IDisposable
     }
 
     public bool Extract(string innerPath, string destination)
+    {
+        if (RustBridge.Mode == "rust")
+        {
+            return RustBridge.Invoke<RustIsoExtract>("iso.extract",
+                new { Path, InnerPath = innerPath, Destination = System.IO.Path.GetFullPath(destination) }).Extracted;
+        }
+        if (RustBridge.Mode == "compare")
+        {
+            var rustDestination = destination + ".rust-" + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                var rust = RustBridge.Invoke<RustIsoExtract>("iso.extract",
+                    new { Path, InnerPath = innerPath, Destination = System.IO.Path.GetFullPath(rustDestination) });
+                var managed = ExtractManaged(innerPath, destination);
+                if (rust.Extracted != managed || (managed && !FileTreesEqual(destination, rustDestination)))
+                {
+                    throw new InvalidDataException("Rust ISO extraction differs from the managed result.");
+                }
+                return managed;
+            }
+            finally
+            {
+                if (File.Exists(rustDestination)) File.Delete(rustDestination);
+                if (Directory.Exists(rustDestination)) Directory.Delete(rustDestination, recursive: true);
+            }
+        }
+        return ExtractManaged(innerPath, destination);
+    }
+
+    private bool ExtractManaged(string innerPath, string destination)
     {
         var entry = Lookup(innerPath);
         if (entry is null)
@@ -171,6 +270,47 @@ public sealed class Iso9660Reader : IDisposable
         return true;
     }
 
+    private static bool FileTreesEqual(string left, string right)
+    {
+        if (File.Exists(left) || File.Exists(right))
+        {
+            return File.Exists(left) && File.Exists(right) &&
+                   File.ReadAllBytes(left).AsSpan().SequenceEqual(File.ReadAllBytes(right));
+        }
+        if (!Directory.Exists(left) || !Directory.Exists(right)) return false;
+        var leftFiles = Directory.GetFiles(left, "*", SearchOption.AllDirectories)
+            .Select(path => System.IO.Path.GetRelativePath(left, path))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+        var rightFiles = Directory.GetFiles(right, "*", SearchOption.AllDirectories)
+            .Select(path => System.IO.Path.GetRelativePath(right, path))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (!leftFiles.SequenceEqual(rightFiles, StringComparer.OrdinalIgnoreCase)) return false;
+        return leftFiles.All(relative =>
+            File.ReadAllBytes(System.IO.Path.Combine(left, relative)).AsSpan().SequenceEqual(
+                File.ReadAllBytes(System.IO.Path.Combine(right, relative))));
+    }
+
+    private static int FirstMismatch(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
+    {
+        var common = Math.Min(left.Length, right.Length);
+        for (var index = 0; index < common; index++)
+        {
+            if (left[index] != right[index]) return index;
+        }
+        return common;
+    }
+
+    private static byte[] HexDecode(string value)
+    {
+        if (value.Length % 2 != 0) throw new InvalidDataException("Rust ISO file payload is invalid.");
+        var bytes = new byte[value.Length / 2];
+        for (var index = 0; index < bytes.Length; index++)
+        {
+            bytes[index] = Convert.ToByte(value.Substring(index * 2, 2), 16);
+        }
+        return bytes;
+    }
+
     public string? Find(string basename, string innerPath = "") =>
         AllPaths(innerPath).FirstOrDefault(path =>
             string.Equals(System.IO.Path.GetFileName(path), basename, StringComparison.OrdinalIgnoreCase));
@@ -184,6 +324,15 @@ public sealed class Iso9660Reader : IDisposable
     }
 
     public static string StripVersion(string name)
+    {
+        if (RustBridge.Mode != "managed")
+        {
+            return RustBridge.Run("iso.strip_version", name, () => StripVersionManaged(name));
+        }
+        return StripVersionManaged(name);
+    }
+
+    private static string StripVersionManaged(string name)
     {
         var separator = name.LastIndexOf(';');
         if (separator < 0 || separator == name.Length - 1)
@@ -240,6 +389,23 @@ public sealed class Iso9660Reader : IDisposable
 
         throw new Iso9660Exception(
             $"在 {Path} 里找不到 ISO9660 Primary Volume Descriptor（扇区 16..{16 + VolumeDescriptorSearchCount - 1}）");
+    }
+
+    private (int SectorSize, uint RootLba, uint RootSize, string VolumeIdentifier)
+        ReadPrimaryVolumeDescriptorWithRust()
+    {
+        if (RustBridge.Mode == "managed")
+        {
+            return ReadPrimaryVolumeDescriptor();
+        }
+        var info = RustBridge.Run<RustIsoInfo>("iso.info", Path,
+            () =>
+            {
+                var managed = ReadPrimaryVolumeDescriptor();
+                return new RustIsoInfo(managed.SectorSize, managed.RootLba, managed.RootSize,
+                    managed.VolumeIdentifier);
+            });
+        return (info.SectorSize, info.RootLogicalBlockAddress, info.RootSize, info.VolumeIdentifier);
     }
 
     private IReadOnlyList<IsoDirectoryEntry> ParseDirectory(uint logicalBlockAddress, uint size)

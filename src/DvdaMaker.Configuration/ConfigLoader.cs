@@ -41,6 +41,13 @@ public sealed partial class ConfigLoader
 
     public static IReadOnlyDictionary<string, string> ParseFile(string? path)
     {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return ParseFileManaged(path);
+        return DvdaMaker.Processes.RustBridge.Run<IReadOnlyDictionary<string,string>>(
+            "config.parse", File.ReadAllText(path), () => ParseFileManaged(path));
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseFileManaged(string? path)
+    {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
         {

@@ -1,4 +1,5 @@
 using DvdaMaker.Configuration;
+using DvdaMaker.Processes;
 
 namespace DvdaMaker.Building;
 
@@ -59,14 +60,22 @@ public static class DiskSpacePlanner
             items.Add((Root(options.FinalDirectory), "成品 ISO 集合", isoBytes));
         }
 
-        return items
-            .GroupBy(item => item.Root, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+        var rustItems = items.Select(item => new RustSpaceItem(item.Root, item.Purpose, item.Bytes)).ToArray();
+        var grouped = RustBridge.Run<IReadOnlyList<RustSpaceGroup>>("disk.group_requirements", rustItems,
+            () => items
+                .GroupBy(item => item.Root, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new RustSpaceGroup(
+                    group.Key,
+                    string.Join(" + ", group.Select(item => item.Purpose).Distinct(StringComparer.Ordinal)),
+                    group.Sum(item => item.Bytes)))
+                .ToArray());
+        return grouped
             .Select(group => new VolumeSpaceRequirement(
-                group.Key,
-                string.Join(" + ", group.Select(item => item.Purpose).Distinct(StringComparer.Ordinal)),
-                group.Sum(item => item.Bytes),
-                TryAvailable(available, group.Key)))
+                group.Root,
+                group.Purpose,
+                group.RequiredBytes,
+                TryAvailable(available, group.Root)))
             .ToArray();
     }
 
@@ -150,4 +159,7 @@ public static class DiskSpacePlanner
             return "?";
         }
     }
+
+    private sealed record RustSpaceItem(string Root, string Purpose, long Bytes);
+    private sealed record RustSpaceGroup(string Root, string Purpose, long RequiredBytes);
 }

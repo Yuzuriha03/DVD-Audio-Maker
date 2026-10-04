@@ -1,0 +1,1050 @@
+{
+  "baselineCommit": "53cef39cce643e411b6afa71e07438b215f34f36",
+  "date": "2026-10-04",
+  "tests": [
+    {
+      "id": 1,
+      "name": "Onefile deduplication, concurrency and cache repair",
+      "managedEntry": "RuntimeArchiveTests.RoundtripAndRepair",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 2,
+      "name": "Onefile rejects unsafe component paths",
+      "managedEntry": "RuntimeArchiveTests.RejectUnsafePaths",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 3,
+      "name": "FLAC metadata in-process read/write",
+      "managedEntry": "FlacMetadataTests.InProcessEditor",
+      "rustOperations": [
+        "flac.comments",
+        "flac.picture",
+        "flac.replace_picture"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 4,
+      "name": "English catalog template coverage",
+      "managedEntry": "LocalizationTests.CatalogCoverage",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 5,
+      "name": "Japanese catalog, paths and nested diagnostics",
+      "managedEntry": "LocalizationTests.JapaneseCoverage",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 6,
+      "name": "LPCM format limits and channel grouping",
+      "managedEntry": "LpcmTests.FormatAndGrouping",
+      "rustOperations": [
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 7,
+      "name": "Language preserves paths and numeric culture",
+      "managedEntry": "LocalizationTests.OpaqueValuesAndCulture",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 8,
+      "name": "Language profile and argument compatibility",
+      "managedEntry": "LocalizationTests.ProfileAndArguments",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 9,
+      "name": "解析引号、注释和无效行",
+      "managedEntry": "ParseAssignments",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 10,
+      "name": "Windows 路径规范化",
+      "managedEntry": "NormalizeWindowsPaths",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 11,
+      "name": "环境变量优先于 config.env",
+      "managedEntry": "EnvironmentWins",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 12,
+      "name": "空环境变量不覆盖配置",
+      "managedEntry": "EmptyEnvironmentDoesNotOverride",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 13,
+      "name": "默认值与数值回退",
+      "managedEntry": "DefaultsAndNumericFallbacks",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 14,
+      "name": "派生路径和 ISO 名称",
+      "managedEntry": "DerivedPathsAndNames",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 15,
+      "name": "限制组轨数量",
+      "managedEntry": "ClampGroupTrackLimit",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 16,
+      "name": "规范化 MLP 来源",
+      "managedEntry": "NormalizeMlpSource",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 17,
+      "name": "GUI 配置方案保存与版本校验",
+      "managedEntry": "GuiConfigurationTests.ProfileRoundtrip",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 18,
+      "name": "GUI 导入旧 env 与未知键保留",
+      "managedEntry": "GuiConfigurationTests.ImportEnv",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 19,
+      "name": "GUI 显式设置隔离环境变量",
+      "managedEntry": "GuiConfigurationTests.ExplicitValuesWin",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 20,
+      "name": "GUI 摘要保留工具错误与告警",
+      "managedEntry": "GuiPresentationTests.ImportantDiagnosticsSurvive",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 21,
+      "name": "GUI 完整行与并发日志捕获",
+      "managedEntry": "GuiPresentationTests.CompleteLineCapture",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 22,
+      "name": "GUI 友好选项保留配置原值",
+      "managedEntry": "GuiPresentationTests.ChoiceValuesRemainStable",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 23,
+      "name": "进程内 DLL 取消与失败保护",
+      "managedEntry": "MlpEncoderTests.DllCancellation",
+      "rustOperations": [
+        "wav.layout"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 24,
+      "name": "FFmpeg 参数保留声道与显式目标精度",
+      "managedEntry": "FfmpegPcmTests.ConversionContract",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 25,
+      "name": "FFmpeg 失败取消与 PATH 配置",
+      "managedEntry": "FfmpegPcmTests.FailureAndCancellation",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 26,
+      "name": "旧 eac3to 配置迁移与 FFmpeg 工具设置",
+      "managedEntry": "FfmpegPcmTests.LegacySettings",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 27,
+      "name": "超大 AU 无损回退与大小上限",
+      "managedEntry": "MlpEncoderTests.OversizedAccessUnit",
+      "rustOperations": [
+        "wav.layout"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 28,
+      "name": "eac3to 奇数 PCM 尾部封装",
+      "managedEntry": "MlpEncoderTests.OddPcmTail",
+      "rustOperations": [
+        "wav.layout",
+        "wav.normalize"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 29,
+      "name": "SurCode 内置任务与路径",
+      "managedEntry": "BuildSurcodeBatchJob",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 30,
+      "name": "MLP 编码核心确定性元数据",
+      "managedEntry": "MlpEncoderTests.Metadata",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 31,
+      "name": "SurCode PCM 16 位升至 24 位",
+      "managedEntry": "UpconvertSurcodePcmWav",
+      "rustOperations": [
+        "wav.layout",
+        "wav.normalize"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 32,
+      "name": "Shell 单引号转义",
+      "managedEntry": "EscapeShellAssignment",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 33,
+      "name": "Shell 默认键集兼容 Python",
+      "managedEntry": "PreserveLegacyShellKeySet",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 34,
+      "name": "配置来源与有效键集合",
+      "managedEntry": "DescribeConfigurationSources",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 35,
+      "name": "ISO9660 版本后缀处理",
+      "managedEntry": "StripIsoVersion",
+      "rustOperations": [
+        "iso.strip_version"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 36,
+      "name": "PTS 五字节解析",
+      "managedEntry": "ParsePts",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 37,
+      "name": "MLP 峰值码率取整",
+      "managedEntry": "CalculatePeakBitrate",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 38,
+      "name": "MLP access unit 遍历",
+      "managedEntry": "WalkMlpAccessUnits",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 39,
+      "name": "MLP CRC 与奇偶校验基线",
+      "managedEntry": "MlpChecksumBaseline",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 40,
+      "name": "MLP 损坏边界与对齐修复",
+      "managedEntry": "ValidateMlpDamageFixtures",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 41,
+      "name": "MLP 内存与流式检查结果一致",
+      "managedEntry": "MlpStreamingInspection",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 42,
+      "name": "命令行日志格式化",
+      "managedEntry": "FormatCommandLine",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 43,
+      "name": "外部进程参数与输出捕获",
+      "managedEntry": "RunExternalProcess",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 44,
+      "name": "外部进程非零退出码",
+      "managedEntry": "HandleNonZeroExitCode",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 45,
+      "name": "专辑多数参数归一化",
+      "managedEntry": "NormalizeAlbumParameters",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 46,
+      "name": "曲序和安全文件名",
+      "managedEntry": "PrepareNamingHelpers",
+      "rustOperations": [
+        "path.safe_basename",
+        "track.number"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 47,
+      "name": "ffmpeg 解码错误扫描",
+      "managedEntry": "ScanDecodeErrors",
+      "rustOperations": [
+        "decode.scan"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 48,
+      "name": "构建曲目全局排序",
+      "managedEntry": "SortBuildTracks",
+      "rustOperations": [
+        "track.number"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 49,
+      "name": "按专辑贪心分盘",
+      "managedEntry": "SplitAlbumsAcrossDiscs",
+      "rustOperations": [
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 50,
+      "name": "专辑不跨盘",
+      "managedEntry": "KeepAlbumOnOneDisc",
+      "rustOperations": [
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 51,
+      "name": "按参数与专辑边界分组",
+      "managedEntry": "GroupAtAlbumBoundaries",
+      "rustOperations": [
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 52,
+      "name": "组轨超限诊断",
+      "managedEntry": "DiagnoseOversizedAlbumGroup",
+      "rustOperations": [
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 53,
+      "name": "MLP 编码核心内嵌产物身份",
+      "managedEntry": "MlpEncoderTests.EmbeddedCore",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 54,
+      "name": "外部 MLP 镜像路径优先",
+      "managedEntry": "ResolveExternalMlp",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 55,
+      "name": "MLP 索引结构",
+      "managedEntry": "WriteMlpIndex",
+      "rustOperations": [
+        "author.title_ends",
+        "config.parse",
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 56,
+      "name": "构建索引预演与失败隔离",
+      "managedEntry": "PreserveFormalMlpIndex",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 57,
+      "name": "dvda-author 参数与 title 边界",
+      "managedEntry": "BuildDvdaAuthorArguments",
+      "rustOperations": [
+        "author.normalize_title_mode",
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 58,
+      "name": "诊断 title 划分模式",
+      "managedEntry": "BuildDiagnosticTitleModes",
+      "rustOperations": [
+        "author.normalize_title_mode",
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 59,
+      "name": "诊断专辑数量限制",
+      "managedEntry": "LimitDiagnosticAlbums",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 60,
+      "name": "内置 ISO 写入参数构造",
+      "managedEntry": "BuildInProcessIsoArguments",
+      "rustOperations": [
+        "author.normalize_title_mode",
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 61,
+      "name": "构建日志命令格式",
+      "managedEntry": "WriteCompatibleBuildLog",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 62,
+      "name": "ISO 发布长度校验",
+      "managedEntry": "PublishIso",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 63,
+      "name": "同卷 ISO 暂存移动与冲突保护",
+      "managedEntry": "StageIsoWithoutCopy",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 64,
+      "name": "多盘与索引事务发布回滚",
+      "managedEntry": "PublishDiscSetTransactionally",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 65,
+      "name": "多盘同卷移动发布与失败回滚",
+      "managedEntry": "PublishMovedDiscSetTransactionally",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 66,
+      "name": "ALAC magic cookie 解析",
+      "managedEntry": "ParseAlacMagicCookie",
+      "rustOperations": [
+        "alac.cookie"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 67,
+      "name": "ALAC END 标记修补",
+      "managedEntry": "PatchAlacEndMarker",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 68,
+      "name": "ALAC extra bits 行为与 Python 一致",
+      "managedEntry": "PatchAlacWithExtraBits",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 69,
+      "name": "M4A 标签保留原始值",
+      "managedEntry": "PreserveM4aTagValues",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 70,
+      "name": "M4A dry-run 不写文件",
+      "managedEntry": "M4aDryRunDoesNotWrite",
+      "rustOperations": [
+        "alac.cookie",
+        "alac.find_bad_frames"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 71,
+      "name": "M4A 拒绝非 ALAC 音频",
+      "managedEntry": "RejectNonAlacM4a",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 72,
+      "name": "M4A 单文件异常不终止批次",
+      "managedEntry": "IsolateM4aFileFailures",
+      "rustOperations": [
+        "alac.cookie",
+        "alac.find_bad_frames"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 73,
+      "name": "M4A PICTURE 描述解析",
+      "managedEntry": "ParseFlacPictureDescriptor",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 74,
+      "name": "M4A 原文件删除失败不中断批次",
+      "managedEntry": "PreserveConversionOnDeleteFailure",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 75,
+      "name": "时间轴覆盖后续 AOB 分段",
+      "managedEntry": "AnalyzeAllAobSegments",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 76,
+      "name": "AOB PTS 损坏边界检测",
+      "managedEntry": "ValidateAobPtsDamageFixtures",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 77,
+      "name": "审计解析多行 ANSI 轨道表",
+      "managedEntry": "ParseAnsiAuditLog",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 78,
+      "name": "审计只解析最后一次正式构建",
+      "managedEntry": "ParseLatestFormalAuditLog",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 79,
+      "name": "校验只选择当前编号 ISO",
+      "managedEntry": "SelectCurrentIsoNames",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 80,
+      "name": "审计按时间选择最新日志",
+      "managedEntry": "SelectNewestAuditLog",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 81,
+      "name": "外部 MLP 重名歧义",
+      "managedEntry": "DetectExternalMlpAmbiguity",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 82,
+      "name": "MLP 索引拒绝重复路径",
+      "managedEntry": "RejectDuplicateMlpIndexKeys",
+      "rustOperations": [
+        "config.parse",
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 83,
+      "name": "正式出盘执行器端到端",
+      "managedEntry": "BuildDiscEndToEnd",
+      "rustOperations": [
+        "author.normalize_title_mode",
+        "config.parse",
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 84,
+      "name": "事务暂存移动与保留中间 ISO",
+      "managedEntry": "StageDiscAndKeepIntermediate",
+      "rustOperations": [
+        "author.normalize_title_mode",
+        "config.parse",
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 85,
+      "name": "出盘失败保留诊断现场",
+      "managedEntry": "PreserveFailedDiscWorkspace",
+      "rustOperations": [
+        "author.normalize_title_mode",
+        "config.parse",
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 86,
+      "name": "菜单配置派生值",
+      "managedEntry": "LoadMenuConfiguration",
+      "rustOperations": [
+        "config.parse"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 87,
+      "name": "菜单按专辑分页与索引",
+      "managedEntry": "PlanAlbumMenuPages",
+      "rustOperations": [
+        "config.parse",
+        "menu.font_size",
+        "menu.font_width",
+        "menu.pages",
+        "menu.sanitize",
+        "menu.short_album",
+        "menu.truncate"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 88,
+      "name": "菜单文字净化与截断",
+      "managedEntry": "SanitizeMenuText",
+      "rustOperations": [
+        "menu.sanitize",
+        "menu.short_album",
+        "menu.truncate"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 89,
+      "name": "菜单 author 参数结构",
+      "managedEntry": "BuildMenuAuthorArguments",
+      "rustOperations": [
+        "menu.normalize_path"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 90,
+      "name": "菜单字体脚本识别与区域 face",
+      "managedEntry": "ResolveMenuFontRules",
+      "rustOperations": [
+        "menu.normalize_path"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 91,
+      "name": "纯 C# TTC face 提取与校验",
+      "managedEntry": "ExtractOpenTypeCollectionFaces",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 92,
+      "name": "原生依赖普通与延迟导入及保守清理",
+      "managedEntry": "NativeOptimizerTests.Run",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 93,
+      "name": "菜单视觉阈值与 Python 一致",
+      "managedEntry": "VerifyMenuVisualThresholds",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 94,
+      "name": "菜单批量统计解析与缺失回退",
+      "managedEntry": "ParseBatchedMenuStatistics",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 95,
+      "name": "菜单批量统计单页单进程",
+      "managedEntry": "BatchMenuProcessCalls",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 96,
+      "name": "菜单多索引页格数与 cell 范围",
+      "managedEntry": "VerifyMultiIndexPageLayout",
+      "rustOperations": [
+        "menu.pages"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 97,
+      "name": "AMG 菜单 cell 链损坏检测",
+      "managedEntry": "ValidateAmgCellChainFixtures",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 98,
+      "name": "ASVS 静图表损坏检测",
+      "managedEntry": "ValidateAsvsFixtures",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 99,
+      "name": "build.cmd 参数分支依次准备并出盘",
+      "managedEntry": "BuildScriptBranching",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 100,
+      "name": "build.cmd prepare 失败不进入出盘",
+      "managedEntry": "BuildScriptStopsAfterPrepareFailure",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 101,
+      "name": "PCM 严格比较与 SurCode 有界零尾",
+      "managedEntry": "ComparePcmFixtures",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 102,
+      "name": "工作盘空间预检估算",
+      "managedEntry": "EstimateDiskSpaceRequirements",
+      "rustOperations": [
+        "config.parse",
+        "disk.group_requirements",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 103,
+      "name": "准备缓存复用与源变化失效",
+      "managedEntry": "PrepareCacheReuseAndInvalidation",
+      "rustOperations": [
+        "config.parse",
+        "decode.scan",
+        "identity.equal",
+        "metadata.parse",
+        "path.safe_basename",
+        "prepare.cache_reusable"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 104,
+      "name": "准备缓存不记录未通过校验的轨道",
+      "managedEntry": "PrepareCacheSkipsFailedTracks",
+      "rustOperations": [
+        "config.parse",
+        "decode.scan",
+        "metadata.parse",
+        "path.safe_basename"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 105,
+      "name": "准备缓存身份与存储规则",
+      "managedEntry": "PrepareCacheIdentityAndStorage",
+      "rustOperations": [
+        "identity.equal",
+        "prepare.cache_reusable"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 106,
+      "name": "准备快照指纹复用与失效",
+      "managedEntry": "PreparationSnapshotChecks",
+      "rustOperations": [
+        "config.parse",
+        "identity.equal"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 107,
+      "name": "审计 PTS 流式扇区扫描",
+      "managedEntry": "ScanPtsSectorsStreamingly",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 108,
+      "name": "共享 AOB 扫描保持审计与时间轴语义",
+      "managedEntry": "SharedAobScanPreservesDiagnostics",
+      "rustOperations": [],
+      "status": "pass"
+    },
+    {
+      "id": 109,
+      "name": "SurCode 新产物校验凭据失效回退",
+      "managedEntry": "ReuseValidatedSurcodeOutput",
+      "rustOperations": [
+        "audio.parameters",
+        "config.parse",
+        "identity.equal"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 110,
+      "name": "MLP 编码核心 MLP 缓存凭据复用",
+      "managedEntry": "MlpEncoderTests.Cache",
+      "rustOperations": [
+        "audio.parameters",
+        "cache.mlp_match",
+        "config.parse",
+        "identity.equal",
+        "wav.layout",
+        "wav.normalize"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 111,
+      "name": "MLP 缓存索引存储与淘汰",
+      "managedEntry": "MlpCacheIndexStorage",
+      "rustOperations": [
+        "cache.mlp_match",
+        "identity.equal"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 112,
+      "name": "逐盘续跑凭据规则",
+      "managedEntry": "DiscResumeStoreRules",
+      "rustOperations": [
+        "identity.equal",
+        "resume.signature_match"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 113,
+      "name": "出盘签名随配置与 MLP 变化",
+      "managedEntry": "DiscSignatureChanges",
+      "rustOperations": [
+        "config.parse",
+        "disc.plan",
+        "math.content_limit",
+        "math.estimate_aob"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 114,
+      "name": "构建流水线逐盘续跑",
+      "managedEntry": "BuildPipelineResumesDiscs",
+      "rustOperations": [
+        "audio.parameters",
+        "author.normalize_title_mode",
+        "author.title_ends",
+        "config.parse",
+        "disc.plan",
+        "disk.group_requirements",
+        "identity.equal",
+        "math.content_limit",
+        "math.estimate_aob",
+        "resume.signature_match",
+        "track.number",
+        "tracks.sort"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 115,
+      "name": "MLP 有界并发编码等效性",
+      "managedEntry": "MlpEncoderTests.Parallel",
+      "rustOperations": [
+        "wav.layout",
+        "wav.normalize"
+      ],
+      "status": "pass"
+    }
+  ],
+  "mode": "compare",
+  "total": 115,
+  "passed": 115,
+  "rustCalls": {
+    "author.title_ends": 7,
+    "menu.normalize_path": 3,
+    "path.safe_basename": 7,
+    "resume.signature_match": 5,
+    "audio.parameters": 26,
+    "prepare.cache_reusable": 6,
+    "wav.normalize": 20,
+    "metadata.parse": 5,
+    "menu.font_width": 1,
+    "author.normalize_title_mode": 14,
+    "menu.pages": 2,
+    "menu.sanitize": 16,
+    "math.estimate_aob": 107,
+    "disk.group_requirements": 13,
+    "alac.find_bad_frames": 2,
+    "flac.picture": 3,
+    "decode.scan": 6,
+    "menu.font_size": 1,
+    "track.number": 12,
+    "identity.equal": 29,
+    "menu.truncate": 10,
+    "alac.cookie": 3,
+    "config.parse": 51,
+    "iso.strip_version": 3,
+    "math.content_limit": 18,
+    "flac.comments": 2,
+    "menu.short_album": 7,
+    "cache.mlp_match": 11,
+    "tracks.sort": 3,
+    "disc.plan": 18,
+    "wav.layout": 47,
+    "flac.replace_picture": 1
+  },
+  "evidence": "build/rust-validation/p3-author-probes-compare-x64.json (ignored local report)"
+}

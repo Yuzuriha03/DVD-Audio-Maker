@@ -43,14 +43,22 @@ public sealed partial class ManifestBuildReader
             }
         }
 
-        return tracks
+        return DvdaMaker.Processes.RustBridge.Run<IReadOnlyList<BuildTrack>>("tracks.sort", tracks, () => tracks
             .OrderBy(track => track.Date, StringComparer.Ordinal)
             .ThenBy(track => TrackNumber(track.Track))
             .ThenBy(track => track.Title, StringComparer.Ordinal)
-            .ToArray();
+            .ToArray());
     }
 
     public static int TrackNumber(string? value)
+    {
+        if (DvdaMaker.Processes.RustBridge.Mode != "managed")
+            return DvdaMaker.Processes.RustBridge.Run<int>("track.number", value ?? string.Empty,
+                () => TrackNumberManaged(value));
+        return TrackNumberManaged(value);
+    }
+
+    private static int TrackNumberManaged(string? value)
     {
         var match = TrackNumberRegex().Match(value ?? string.Empty);
         return match.Success && int.TryParse(match.Groups[1].Value, out var number)
