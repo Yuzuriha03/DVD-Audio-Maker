@@ -19,6 +19,9 @@ public static class FileIdentityProbe
     public const int SampleBytes = 64 * 1024;
 
     public static FileIdentity? Compute(string path)
+        => RustBridge.Run<FileIdentity?>("identity.compute", path, () => ComputeManaged(path));
+
+    private static FileIdentity? ComputeManaged(string path)
     {
         try
         {

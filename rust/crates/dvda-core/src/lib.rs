@@ -3,10 +3,12 @@ pub mod author;
 pub mod config;
 pub mod formats;
 pub mod hash;
+pub mod identity;
 pub mod lpcm;
 pub mod menu;
 pub mod planner;
 pub mod probes;
+pub mod publication;
 pub mod validation;
 pub mod workflow;
 
@@ -50,6 +52,9 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         "menu.visual_thumbnail_missing" => menu::visual_thumbnail_missing(request),
         "menu.visual_label_missing" => menu::visual_label_missing(request),
         "menu.visual_expected_index_cells" => menu::visual_expected_index_cells(request),
+        "menu.parse_batch_frame_stats" => menu::parse_batch_frame_stats(request),
+        "menu.parse_index_batch" => menu::parse_index_batch(request),
+        "menu.parse_overlay_batch" => menu::parse_overlay_batch(request),
         "path.safe_basename" => config::safe_basename(request),
         "identity.equal"
         | "cache.mlp_match"
@@ -61,7 +66,11 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         }
         "author.normalize_title_mode" | "author.title_ends" => author::dispatch(operation, request),
         "aob.pts_statistics" => aob::dispatch(operation, request),
-        "hash.sha256_hex" => hash::dispatch(operation, request),
+        "hash.sha256_hex" | "hash.sha256_file" => hash::dispatch(operation, request),
+        "identity.compute" => identity::dispatch(request),
+        "publish.set" | "publish.single" | "publish.stage" | "publish.copy" => {
+            publication::dispatch(operation, request)
+        }
         "lpcm.validate_format" | "lpcm.validate_layout" => lpcm::dispatch(operation, request),
         "mlp.major_sync_interval" => validation::dispatch(operation, request),
         "abi.version" => Ok(json!({"version":1,"backend":"rust"})),
