@@ -4,15 +4,17 @@
 
 Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP and LPCM encoding, automatic disc splitting, track menus, album covers and output verification. The application runs on Windows x64 and supports Chinese, English and Japanese interfaces and logs.
 
-**Before first use, install [.NET 10 Desktop Runtime for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0).** The release does not bundle .NET. The plain .NET Runtime, ASP.NET Core Runtime or .NET Framework cannot replace the desktop runtime.
+The release is a native Windows x64 Rust GUI. It does not include or require a .NET runtime.
+
+> The workflows, multilingual interactions and single-EXE packaging identified in the migration audit are now connected. See the [migration audit](docs/RUST-MIGRATION-AUDIT-2026-10-05.md) for test evidence and limits. These results apply to the local source and candidate package; the existing GitHub release has not been updated.
 
 ## Install and open
 
 1. Download `DVD-Audio-Maker-v1.0-win-x64.zip` from [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/tag/v1.0).
 2. Extract the ZIP to a folder of your choice and double-click `DVD-Audio-Maker.exe`.
-3. Allow a moment for the first launch to prepare its components. No separate FFmpeg, ImageMagick, eac3to or SurCode installation is required.
+3. Required components are embedded in the EXE and extracted automatically to a local cache. Startup checks and repairs damaged cache files. No separate FFmpeg, ImageMagick, eac3to or SurCode installation is required.
 
-The application, instructions, example configuration and licenses are together in the extracted folder. Retain `LICENSE`, `THIRD-PARTY.md`, `THIRD-PARTY.en.md`, `NOTICE-Image.txt` and `NOTICE-Menu.txt`.
+The application, instructions in three languages and licenses are together in the extracted folder. Retain `LICENSE`, `THIRD-PARTY.md`, `THIRD-PARTY.en.md`, `NOTICE-Image.txt` and `NOTICE-Menu.txt`.
 
 ## Make your first disc
 
@@ -20,10 +22,10 @@ The application, instructions, example configuration and licenses are together i
 2. **Choose the output folder.** Set the ISO destination, disc title and DVD5, DVD9 or custom capacity. Set the maximum disc count to 0 for no limit; discs are split according to capacity.
 3. **Choose the audio format.** Normally select “MLP encoding”. Choose a sample rate and bit depth suitable for the source and playback device. Reducing either can lose source precision; increasing them does not add detail.
 4. **Configure menus.** Optionally enable track menus, album indexes and playback covers. JPG, PNG and WebP covers are supported, and Chinese, Japanese and Korean menu fonts are included.
-5. Click **“Check sources”** and resolve any issues, then **“Build discs”**. Building also checks the sources automatically before encoding and creating ISOs.
+5. Click **“Check sources”** and resolve any issues. After the check succeeds, click **“Build discs”** to encode audio and create ISOs.
 6. When finished, click **“Verify output”**. After verification passes, use “Open output” to find your ISOs.
 
-If you just checked the sources and the files, settings and preparation manifest are unchanged, **Build discs** reuses that result instead of probing and decoding everything again. Any source-file change triggers a fresh check.
+**Build discs** checks sources automatically and reuses valid preparation snapshots when sources and settings are unchanged. Failed checks block the build.
 
 Tasks can be canceled. Closing the window during a task stops it and waits for cleanup. Canceling does not delete completed output. Burning and playback require software or hardware that supports DVD-Audio; an ISO is not a guarantee of compatibility with ordinary DVD-Video players.
 
@@ -43,41 +45,39 @@ LPCM must also meet the bitrate limit. For example, 96 kHz / 24-bit / 6-channel 
 - Extremely noisy material may exceed MLP stream limits. If encoding fails, review the track's log and retry with a suitable audio format.
 - **Import existing MLP files:** Use this option for MLP files encoded with the original SurCode MLP (surcodemlp.exe). Select their folder and keep album directories and filenames aligned with the corresponding sources. The application uses the existing encoded files directly; it does not re-encode them or launch SurCode MLP. Retain the original audio and encoding settings, including sample rate and bit depth, for source checks and lossless verification. A successful import alone does not verify files with unknown origins or conversion settings.
 
-The working folder stores check results, encoded audio and temporary disc files. Choose a drive with enough free space. Valid caches are reused and unfinished builds can resume. Keep the working folder until output verification is complete.
+The working folder stores check results, encoded audio and temporary disc files. Choose a drive with enough free space and keep the folder until verification is complete. Retries compare sources, settings and component identities before reusing encoded audio or completed staged discs. Changes invalidate the corresponding results.
 
 ## Save settings and import configurations
 
-Edit settings in the interface. Use “Save profile” to store a JSON profile and “Open profile” to reuse it later. Everyday settings are saved in `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
+Settings and language are saved automatically to `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`. Save profile writes to the selected JSON profile; Save as creates another profile; Open profile loads it. An imported profile changes only when explicitly saved. Advanced settings can be folded, small windows scroll, and invalid numbers prevent saving or starting a task.
 
-Use “Import env…” to read an existing `config.env`. If there are no saved everyday settings, the application also looks for config.env beside the EXE or in the current working directory. Import does not rewrite the original file. A legacy SurCode import setting is mapped to generic MLP import; check the source and MLP folder paths afterward.
-
-The included `config.env.example` is optional and is not loaded automatically. There is no need to edit it to get started. Switch between Chinese, English and Japanese at the top right; the preference is saved with your profile.
+The application reads JSON profiles only. Use “Open profile” to select `settings.example.json` or another JSON profile. Existing `config.env` files are not read.
 
 ## Progress and troubleshooting
 
 The log area shows task summaries by default. For troubleshooting, switch to detailed logs or save the full log. You can filter issues, pause log display and copy text. Pausing the log display does not pause the task.
 
-- **The application will not open:** install the Windows x64 version of .NET 10 Desktop Runtime and try again.
+- **The application will not open:** extract the release again and ensure that `DVD-Audio-Maker.exe` is intact and the user cache folder is writable.
 - **Source checking fails:** review the named track and reason; check that the file is readable and contains supported lossless audio.
 - **Not enough disk space:** both working and output folders need free space. Change the working folder under “More settings” if needed.
 - **Building or verification fails:** save the full log and retain the working folder, resolve the problem and retry. An ISO being present does not replace verification.
-- **A component is missing or damaged:** close all instances and reopen the application. If needed, extract the ZIP again. With the application closed, you can also remove `%LOCALAPPDATA%/DVD-Audio-Maker/runtime`; the component cache is rebuilt on the next launch.
+- **A component is missing or damaged:** restart the application to check and repair embedded components. Extract the release again if the EXE itself is damaged.
 
-Full task logs and startup errors are stored in `%LOCALAPPDATA%/DVD-Audio-Maker/logs`. Output verification checks capacity, tracks, timing, menus and audio, including all MLP data inside the disc. It does not modify encoded files.
+Session logs are written automatically to `%LOCALAPPDATA%/DVD-Audio-Maker/logs`, with `build.log` in the work folder. Output verification checks capacity, IFO tracks and timing, menu navigation and images, encoded files against disc audio, and target PCM reconstructed from sources. Verification never modifies encoded files. Preparation reports use the selected language; unknown native diagnostics keep their original text.
 
 ## Licenses and requirements
 
-See [LICENSE](LICENSE) for the project license, [third-party notices](tools/win-build/docs/THIRD-PARTY.en.md) for components and fonts. The README and RUNTIME documents in the release are user guides and do not include development instructions.
+See [LICENSE](LICENSE) for the project license and [third-party notices](tools/win-build/docs/THIRD-PARTY.en.md) for components and fonts. Releases use dedicated user documentation in Chinese, English and Japanese, without this development section.
 
 ## Development and builds
 
-Development requires Windows x64, the .NET 10 SDK and matching native components. Routine C# edits reuse those components; native rebuilds use MSYS2/MinGW-w64 and Python. The dvda-author folder is a partial source mirror; prepare full dependencies as described in the build guide.
+Development requires Windows x64, the Rust toolchain and matching native components. Native rebuilds use MSYS2/MinGW-w64 and Python. The dvda-author folder is a partial source mirror; prepare full dependencies as described in the build guide.
 
 ```bat
 gui-debug.cmd
-cli.cmd config
-cli.cmd build --dry-run --config "C:/work/test.env"
-dotnet build DVD-Audio-Maker.sln -c Release -p:SelfContained=false -m:1
+cli.cmd abi.version
+cli.cmd build --dry-run --profile "C:/work/settings.json"
+cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace
 ```
 
 `dry-run` is a developer debugging option in the source CLI. It prepares audio, encodes MLP and writes a separate index without creating an ISO; it is not a zero-write operation. The GUI offers checking, building and verification. `surcode-batch` remains a compatibility configuration key; legacy `surcode` import values map to `external`, with no separate encoding mode.
@@ -91,4 +91,4 @@ dotnet build DVD-Audio-Maker.sln -c Release -p:SelfContained=false -m:1
 - [Native migration records](docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md)
 - [Troubleshooting and historical diagnostics](docs/TROUBLESHOOTING.en.md)
 
-Default packaging combines one EXE and sidecars into `DVD-Audio-Maker-v1.0-win-x64.zip`. Use `--version` for later versions. The standard user package excludes the developer CLI, PDBs, build-provenance JSON and the .NET runtime. Artifacts remain in ignored directories and are distributed only as GitHub Release assets.
+Default packaging combines one EXE with embedded components and companion user documentation into `DVD-Audio-Maker-v1.0-win-x64.zip`. Use `--version` for later versions. The standard user package excludes the developer CLI, PDBs, build-provenance JSON and the .NET runtime. Artifacts remain in ignored directories and are distributed only as GitHub Release assets.

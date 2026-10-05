@@ -1,11 +1,18 @@
 use std::{io::Read, path::Path};
+mod developer;
 mod process_fixture;
+
 fn main() {
-    let op = std::env::args()
-        .nth(1)
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if developer::accepts(&arguments) {
+        std::process::exit(developer::run(&arguments));
+    }
+    let op = arguments
+        .first()
+        .cloned()
         .unwrap_or_else(|| "abi.version".into());
     if op == "process-fixture" {
-        let args: Vec<_> = std::env::args().skip(2).collect();
+        let args: Vec<_> = arguments.into_iter().skip(1).collect();
         let code = process_fixture::run(&args).unwrap_or_else(|e| {
             eprintln!("{e}");
             1
@@ -13,7 +20,7 @@ fn main() {
         std::process::exit(code);
     }
     if op == "formats-sample" {
-        let root = std::env::args().nth(2).unwrap_or_else(|| {
+        let root = arguments.get(1).cloned().unwrap_or_else(|| {
             eprintln!("Usage: dvda-cli formats-sample <MLP root>");
             std::process::exit(2);
         });

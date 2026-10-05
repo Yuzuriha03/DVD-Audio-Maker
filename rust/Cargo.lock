@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "dvda-core",
  "dvda-native",
+ "serde",
  "serde_json",
 ]
 
@@ -21,7 +22,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dvda-host-ffi"
+name = "dvda-desktop"
 version = "0.1.0"
 dependencies = [
  "dvda-core",
@@ -34,6 +35,14 @@ name = "dvda-native"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "dvda-toolchain"
+version = "0.1.0"
+dependencies = [
+ "dvda-core",
+ "serde_json",
 ]
 
 [[package]]

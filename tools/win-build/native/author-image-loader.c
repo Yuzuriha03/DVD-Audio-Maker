@@ -18,10 +18,15 @@ static int load_image_runtime(void)
     if (!image_module) {
         wchar_t path[32768];
         if (!GetModuleFileNameW(NULL, path, 32768)) return -1;
-        wchar_t *last = wcsrchr(path,L'\\'); if (!last) return -1; *last=0;
-        last = wcsrchr(path,L'\\'); if (!last) return -1; *last=0;
+        wchar_t *last = wcsrchr(path,L'\\'); if (!last) return -1; last[1]=0;
         if (wcslen(path)+32 >= 32768) return -1;
-        wcscat(path,L"\\image-native\\dvda-image.dll");
+        wcscat(path,L"dvda-image.dll");
+        if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) {
+            /* Separate native build folders are also used during development. */
+            *last=0;
+            last=wcsrchr(path,L'\\'); if(!last)return -1; *last=0;
+            wcscat(path,L"\\image-native\\dvda-image.dll");
+        }
         image_module = LoadLibraryExW(path,NULL,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (image_module) {
             command_entry=(ImageCommand)(uintptr_t)GetProcAddress(image_module,"dvda_image_command");

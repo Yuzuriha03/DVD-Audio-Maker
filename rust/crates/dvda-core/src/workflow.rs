@@ -49,6 +49,7 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         "resume.signature_match" => resume_signature_match(request),
         "prepare.cache_reusable" => prepare_cache_reusable(request),
         "disk.group_requirements" => disk_group_requirements(request),
+        "disk.estimate_requirements" => disk_estimate_requirements(request),
         _ => Err(format!("Unsupported Rust workflow operation: {operation}")),
     }
 }
@@ -132,6 +133,10 @@ struct SpaceGroup {
 fn disk_group_requirements(request: Value) -> Result<Value, String> {
     let items: Vec<SpaceItem> = serde_json::from_value(request)
         .map_err(|error| format!("Invalid disk space items: {error}"))?;
+    serde_json::to_value(group_space_items(items, false)?).map_err(|error| error.to_string())
+}
+
+fn group_space_items(items: Vec<SpaceItem>, sort: bool) -> Result<Vec<SpaceGroup>, String> {
     let mut groups: Vec<SpaceGroup> = Vec::new();
     for item in items {
         let Some(group) = groups
@@ -158,7 +163,134 @@ fn disk_group_requirements(request: Value) -> Result<Value, String> {
             group.purpose.push_str(&item.purpose);
         }
     }
-    serde_json::to_value(groups).map_err(|error| error.to_string())
+    if sort {
+        groups.sort_by_key(|group| group.root.to_uppercase());
+    }
+    Ok(groups)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct SpaceEstimateTrack {
+    mlp_size: i64,
+    source_size: i64,
+    duration: f64,
+    channels: Option<i32>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct SpaceEstimateDisc {
+    estimated_aob_bytes: i64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct SpaceEstimateRequest {
+    mlp_source: String,
+    mlp_root: String,
+    build_root: String,
+    output_root: String,
+    final_root: String,
+    keep_intermediate: bool,
+    menu_enabled: bool,
+    sample_rate: i32,
+    bits: i32,
+    tracks: Vec<SpaceEstimateTrack>,
+    discs: Option<Vec<SpaceEstimateDisc>>,
+}
+
+fn sum_checked(values: impl IntoIterator<Item = i64>, context: &str) -> Result<i64, String> {
+    values.into_iter().try_fold(0_i64, |total, value| {
+        total
+            .checked_add(value)
+            .ok_or_else(|| format!("{context} overflow"))
+    })
+}
+
+fn estimate_lpcm_track_bytes(
+    track: &SpaceEstimateTrack,
+    sample_rate: i32,
+    bits: i32,
+) -> Result<i64, String> {
+    let duration = track.duration.max(0.0);
+    let bytes = duration
+        * f64::from(sample_rate)
+        * f64::from(bits / 8)
+        * f64::from(track.channels.unwrap_or(6));
+    if !bytes.is_finite() || bytes.ceil() > i64::MAX as f64 {
+        return Err("LPCM disk space estimate overflow".into());
+    }
+    (bytes.ceil() as i64)
+        .checked_add(128)
+        .ok_or_else(|| "LPCM disk space estimate overflow".into())
+}
+
+fn disk_estimate_requirements(request: Value) -> Result<Value, String> {
+    let request: SpaceEstimateRequest = serde_json::from_value(request)
+        .map_err(|error| format!("Invalid disk space estimate request: {error}"))?;
+    let mut items = Vec::new();
+    if request.mlp_source == "surcode-batch" {
+        let missing = sum_checked(
+            request
+                .tracks
+                .iter()
+                .filter(|track| track.mlp_size <= 0)
+                .map(|track| track.source_size.max(0)),
+            "MLP disk space estimate",
+        )?;
+        if missing > 0 {
+            items.push(SpaceItem {
+                root: request.mlp_root,
+                purpose: "MLP 编码输出".into(),
+                bytes: missing,
+            });
+        }
+    }
+    if request.mlp_source == "lpcm" && request.discs.is_none() {
+        let pcm = sum_checked(
+            request
+                .tracks
+                .iter()
+                .map(|track| estimate_lpcm_track_bytes(track, request.sample_rate, request.bits))
+                .collect::<Result<Vec<_>, _>>()?,
+            "LPCM disk space estimate",
+        )?;
+        let temporary = pcm
+            .checked_mul(3)
+            .ok_or("LPCM disk space estimate overflow")?;
+        items.push(SpaceItem {
+            root: request.build_root,
+            purpose: "LPCM 音频缓存与转换临时文件".into(),
+            bytes: temporary,
+        });
+    }
+    if let Some(discs) = request.discs.filter(|discs| !discs.is_empty()) {
+        let iso = sum_checked(
+            discs.into_iter().map(|disc| disc.estimated_aob_bytes),
+            "ISO disk space estimate",
+        )?;
+        let copies = if request.keep_intermediate { 2 } else { 1 };
+        let mut intermediate = iso
+            .checked_mul(copies)
+            .ok_or("ISO disk space estimate overflow")?;
+        if request.menu_enabled {
+            intermediate = intermediate
+                .checked_add(32 * 1024 * 1024)
+                .ok_or("ISO disk space estimate overflow")?;
+        }
+        items.push(SpaceItem {
+            root: request.output_root,
+            purpose: "author 中间产物与暂存 ISO".into(),
+            bytes: intermediate,
+        });
+        items.push(SpaceItem {
+            root: request.final_root,
+            purpose: "成品 ISO 集合".into(),
+            bytes: iso,
+        });
+    }
+    serde_json::to_value(group_space_items(items, true)?).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -215,5 +347,53 @@ mod tests {
         assert_eq!(result[0]["RequiredBytes"], 6);
         assert_eq!(result[0]["Purpose"], "final + build");
         assert_eq!(result[1]["Root"], "c:/");
+    }
+
+    #[test]
+    fn disk_estimate_combines_source_space_and_disc_outputs() {
+        let request = json!({
+            "MlpSource":"surcode-batch",
+            "MlpRoot":"C:\\",
+            "BuildRoot":"C:\\",
+            "OutputRoot":"C:\\",
+            "FinalRoot":"c:\\",
+            "KeepIntermediate":true,
+            "MenuEnabled":true,
+            "SampleRate":48000,
+            "Bits":24,
+            "Tracks":[
+                {"MlpSize":0,"SourceSize":5000,"Duration":1.0,"Channels":2},
+                {"MlpSize":4096,"SourceSize":1000,"Duration":1.0,"Channels":2}
+            ],
+            "Discs":[{"EstimatedAobBytes":1000000},{"EstimatedAobBytes":2000000}]
+        });
+        let groups = crate::dispatch("disk.estimate_requirements", request).unwrap();
+        assert_eq!(groups.as_array().unwrap().len(), 1);
+        assert_eq!(groups[0]["Root"], "C:\\");
+        assert_eq!(
+            groups[0]["Purpose"],
+            "MLP 编码输出 + author 中间产物与暂存 ISO + 成品 ISO 集合"
+        );
+        assert_eq!(groups[0]["RequiredBytes"], 42_559_432);
+    }
+
+    #[test]
+    fn disk_estimate_reserves_lpcm_cache_when_disc_plan_is_absent() {
+        let request = json!({
+            "MlpSource":"lpcm",
+            "MlpRoot":"?",
+            "BuildRoot":"D:\\",
+            "OutputRoot":"?",
+            "FinalRoot":"?",
+            "KeepIntermediate":false,
+            "MenuEnabled":false,
+            "SampleRate":48000,
+            "Bits":24,
+            "Tracks":[{"MlpSize":0,"SourceSize":0,"Duration":1.0,"Channels":2}],
+            "Discs":null
+        });
+        let groups = disk_estimate_requirements(request).unwrap();
+        assert_eq!(groups[0]["RequiredBytes"], 864_384);
+        assert_eq!(groups[0]["Purpose"], "LPCM 音频缓存与转换临时文件");
     }
 }

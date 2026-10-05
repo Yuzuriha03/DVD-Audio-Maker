@@ -88,7 +88,7 @@ def main():
         return json.loads(result.stdout)
 
     report['capabilities'] = run(candidate, ['--capabilities'])
-    encoder_path = repo / 'src/DvdaMaker.SurcodeTool/Native/win-x64/mlp_encoder.dll'
+    encoder_path = repo / 'native/mlp-encoder/win-x64/mlp_encoder.dll'
     assert sha(encoder_path) == ENCODER_SHA256
     encoder = c.CDLL(str(encoder_path))
     encode = encoder.mlp_encode_stream_layout

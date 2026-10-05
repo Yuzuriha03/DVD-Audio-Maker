@@ -7,4 +7,5 @@ license.workspace = true
 [dependencies]
 dvda-core = { path = "../dvda-core" }
 serde_json.workspace = true
+serde.workspace = true
 dvda-native = { path = "../dvda-native" }

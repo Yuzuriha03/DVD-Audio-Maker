@@ -1,55 +1,31 @@
-# GUI 与进程内 MLP 编码实施方案
+# GUI 与原生 DLL
 
-[简体中文](GUI-AND-DLL-PLAN.md) | [English](GUI-AND-DLL-PLAN.en.md)
+当前用户入口是 Windows x64 原生 Rust GUI。GUI、CLI 和工作流库共用同一个 JSON profile 读取器；`config.env`、临时 env 文件和隐藏的旧配置导入均已删除。
 
-日期：2026-10-01。状态：完成；按最新要求交付原生 x64。
+## 当前结构
 
-## 目标和边界
+- `rust/crates/dvda-desktop` 提供 Win32 GUI、JSON profile 打开/保存、后台任务和用户友好的日志。
+- `rust/crates/dvda-cli` 提供开发调试、样本检查和自动化入口；GUI 不显示 dry-run。
+- `rust/crates/dvda-core` 提供准备、MLP/LPCM 编码调度、缓存、菜单、制盘和成品校验。
+- `rust/crates/dvda-native` 负责加载并调用已经验证的媒体、图像、格式、校验和 MLP C ABI。
+- `native/mlp-encoder` 保存 MLP C17 核心和固定 x64 DLL。编码结果由算法直接生成，绝不在输出后打补丁。
 
-以 Windows 图形界面作为常用入口，用户通过目录选择、选项控件和任务按钮完成准备、预演、出盘、验证；不再要求手工编辑 config.env。保留 CLI 和 config.env 的读取能力。已有构建、菜单、验证与缓存逻辑继续复用。
+## 运行边界
 
-MLP 编码从启动 mlp_encode.exe 改为直接调用mlp_encoder.dll，不运行任何 MLP 编码子进程。eac3to、FFmpeg 解码与制盘工具仍是外部工具。应用自身仍是正常 Windows GUI EXE。
+GUI 不启动 FFmpeg、FFprobe、ImageMagick、Metaflac、eac3to、原版 SurCode 或独立 MLP 编码器。所需库由源码构建后随发布包提供。组件缺失会立即报错，不会静默回退到 PATH 中的程序。
 
-## 技术选择
+MLP 编码通过流式 C ABI 完成，保留 x87 PC53 运算和回调前后的浮点控制状态。相同 PCM、参数和辅助元数据上下文必须得到相同完整 MLP；比较程序只读验证，不修改文件。
 
-- .NET 10 WinForms，中文界面，目录/工具选择、分组设置、实时日志、阶段进度、取消与运行状态。耗时工作在后台执行，禁止任务重叠。
-- GUI 直接调用 PreparationPipeline、BuildPipeline、VerificationPipeline；不通过临时 env 文件或 CLI 子进程传递界面配置。
-- 独立 JSON 设置保存在用户目录，可保存/打开配置方案；显式导入旧 env 时读取原有格式，保留未知配置键。首次运行可以发现旧 env，且明确显示来源；已有 GUI 设置优先，避免静默覆盖。
-- 设置按路径/光盘、编码、菜单和高级工具分组，提供输入验证。配置编辑值在 GUI 任务中优先，不让不可见环境变量覆盖控件。原 CLI 的环境变量优先级保持不变。
-- 使用固定的 Windows x64 编码器 DLL 与同步流回调 API。GUI/CLI 使用 win-x64；外部 x64 工具仍可调用。用户要求原生 x64。保持原算法与显式浮点精度语义；必须重跑原版整文件对照后验收。
-- DLL 内嵌、按 SHA256 提取和加载；PCM/输出通过托管流回调传递，支持中文路径、有界缓冲、取消、超时、异常传回和失败清理。每个任务独立状态，支持并发。
-- 辅助元数据在编码前输入；不读对照文件参与编码，不对 MLP 成品补丁。空元数据默认策略和显式历史上下文能力保持。
+## JSON profile
 
-## 实施步骤
+默认配置保存到 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`。开发脚本可在仓库根目录发现被 Git 忽略的 `settings.local.json`，也可以显式传入 `--profile PATH`。示例 settings.example.json 仅保留在源码中，发布包不包含任何 JSON 配置。
 
-1. [完成] 接入流式 DLL 编码器，移除内嵌 MLP EXE，调整进程架构并验证 ABI、取消及精确输出。
-2. [完成] 建立可直接构造 DvdaOptions 的配置模型、JSON 保存/加载、env 导入与配置校验。
-3. [完成] 实现 GUI 主窗口、分组编辑器、任务后台执行、日志、进度和取消；复用现有业务流水线。
-4. [完成] 更新解决方案、启动脚本、自包含发布与用户文档，GUI 成为发布包默认入口，保留 CLI。
-5. [完成] 运行回归与界面冒烟，使用生成 PCM 覆盖 84 组默认格式并对 78 组已有原版样本做完整字节比较，记录最终结果。
+## 验收
 
-## 完成标准
+```powershell
+cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1
+```
 
-- 双击 GUI 可启动，无需 config.env 即可配置和运行；旧 env 能导入，独立配置可持久化并重新打开。
-- 准备、构建预演、正式构建、验证有清楚的成功/失败/取消状态，界面运行期间保持响应，关闭活动任务时先取消并等待资源释放。
-- MLP 编码路径无 Process.Start/编码 EXE，没有原版 SurCode 依赖；DLL 和 C 源码指纹可追溯。
-- 相同 PCM、编码参数、辅助元数据得到相同完整 MLP 字节；所有现有对照通过后才宣称替换完成。
-- 配置兼容、并发隔离、缓存失效、异常/取消不发布半成品均有验证。
-- WinForms 界面和 win-x64 自包含发布可运行；eac3to、FFmpeg 和制盘工具缺失时显示可处理的错误。
-
-## 明确限制
-
-本次编码回调流式读写，避免在桥接层加载整轨 PCM。既有检查器仍可能整文件读取较大 MLP，属于后续大文件优化边界。批量界面仍沿用统一目标采样率/位深；混合声道组接口另行扩展，不在界面中宣称已支持。
-
-## 2026-10-01 架构调整
-
-用户要求 x64，撤销 x86 主进程方案。GUI、CLI 和 MLP DLL 统一 win-x64，不使用隐藏的 x86 EXE 代理。x64 构建、ABI 对齐、浮点控制和逐字节回归均为验收项。
-
-## 最终验收记录
-
-- GUI、CLI、编码 DLL 的 PE Machine 均为 AMD64。
-- 97/97 回归通过；84/84 默认格式 PCM 精确回读通过。
-- x64 DLL 经实际批量入口与 78 个原版文件完全相同，共 95,138,694 字节。
-- 实际 GUI 执行检查/预演、制作测试 ISO、验证成品均成功。
-- 自包含包见 build/gui-x64-release/DVD-Audio-Maker；根目录 DVD-Audio-Maker.exe 是图形入口。
-- 详细数据见 gui-dll-validation.json。
+发布包审计确认只有一个内嵌必要 DLL、菜单资源及字体的 GUI EXE，以及三语用户 README、许可证和 NOTICE；不包含 .NET runtime、CLI、PDB、构建 JSON 或 `config.env`。

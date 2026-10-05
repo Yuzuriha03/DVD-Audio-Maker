@@ -1,0 +1,26 @@
+{
+  "Version": 1,
+  "Language": "auto",
+  "Values": {
+    "DVDA_SRC": "C:/Music/MyAlbums",
+    "DVDA_FINAL_DIR": "C:/DVD-Audio/Output",
+    "DVDA_BUILD_DIR": "C:/DVD-Audio/Work",
+    "DVDA_TITLE": "DVD-Audio",
+    "DVDA_ISO_PREFIX": "",
+    "DVDA_MAX_DISCS": "2",
+    "DVDA_GROUP_TRACK_LIMIT": "99",
+    "DVDA_MLP_SOURCE": "surcode-batch",
+    "DVDA_MLP_SURCODE_SAMPLE_RATE": "48000",
+    "DVDA_MLP_SURCODE_BITS": "24",
+    "DVDA_MLP_JOBS": "1",
+    "DVDA_MENU": "off",
+    "DVDA_MENU_STILLPICS": "on",
+    "DVDA_MENU_TRACKS_PER_PAGE": "12",
+    "DVDA_MENU_INDEX_MIN_ALBUMS": "4",
+    "DVDA_MENU_COVER_DIM": "35",
+    "DVDA_PREPARE_CACHE": "on",
+    "DVDA_RESUME": "on",
+    "DVDA_LOSS_ERROR_S": "0.05",
+    "DVDA_LOSS_WARN_S": "0.005"
+  }
+}

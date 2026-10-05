@@ -1,55 +1,48 @@
-# GUI and in-process MLP encoding implementation plan
+# GUI and native DLL boundary
 
-[简体中文](GUI-AND-DLL-PLAN.md) | [English](GUI-AND-DLL-PLAN.en.md)
+The supported user entry point is a native Windows x64 Rust GUI. The GUI, CLI
+and workflow libraries share one JSON profile reader. `config.env`, temporary
+environment files and hidden legacy profile imports have been removed.
 
-Date: October 1, 2026. Status: complete; delivered as native x64 as requested.
+## Current structure
 
-## Goals and boundaries
+- `rust/crates/dvda-desktop` provides the Win32 GUI, JSON profile open/save,
+  background tasks and user-facing logs.
+- `rust/crates/dvda-cli` provides development diagnostics, sample inspection and
+  automation. The GUI does not expose dry-run.
+- `rust/crates/dvda-core` provides preparation, MLP/LPCM encoding dispatch,
+  caching, menus, authoring and final verification.
+- `rust/crates/dvda-native` loads and calls the validated media, image, format,
+  verifier and MLP C ABIs.
+- `native/mlp-encoder` contains the MLP C17 core and pinned x64 DLL. Encoded
+  output is produced by the algorithm and is never patched afterward.
 
-Use a Windows GUI as the everyday entry point. Folder pickers, option controls and task buttons cover preparation, preview, authoring and verification without requiring manual config.env editing. Keep the CLI and config.env reader, reusing existing build, menu, verification and cache logic.
+## Runtime boundary
 
-Replace launching mlp_encode.exe with direct calls to the mlpencoder mlp_encoder.dll. No MLP encoding subprocess runs. At this checkpoint, eac3to, FFmpeg decoding and authoring tools remained external tools. The application itself is a normal Windows GUI EXE.
+The GUI does not start FFmpeg, FFprobe, ImageMagick, Metaflac, eac3to, original
+SurCode or a separate MLP encoder. Required libraries are built from source and
+shipped with the release package. Missing components fail explicitly instead of
+falling back to PATH programs.
 
-## Technical choices
+MLP encoding uses the streaming C ABI and preserves x87 PC53 arithmetic and the
+floating-point control state around callbacks. The same PCM, parameters and
+auxiliary metadata context must produce the same complete MLP. Verification is
+read-only and never edits the file.
 
-- .NET 10 WinForms, initially with a Chinese interface: folder/tool selection, grouped settings, live logs, stage progress, cancellation and run state. Slow work runs in the background; tasks cannot overlap.
-- The GUI calls PreparationPipeline, BuildPipeline and VerificationPipeline directly, without temporary env files or CLI subprocesses for passing settings.
-- Store independent JSON settings in the user directory and support opening/saving profiles. Explicit env imports preserve the existing format and unknown keys. First launch can discover an existing env file and shows its source; saved GUI settings take priority to avoid silent replacement.
-- Group settings into paths/discs, encoding, menus and advanced tools, with validation. Visible GUI values take priority for GUI tasks, so hidden environment variables cannot override controls. CLI environment precedence stays unchanged.
-- Use the pinned Windows x64 encoder DLL and synchronous streaming callback API. GUI/CLI target win-x64 and can invoke external x64 tools. Native x64 is required. Preserve the algorithm and explicit floating-point precision semantics, and rerun full-file original comparisons for acceptance.
-- Embed the DLL and extract/load it by SHA256. Managed streaming callbacks carry PCM and output, supporting Chinese paths, bounded buffers, cancellation, timeouts, exception propagation and failure cleanup. Independent per-job state supports concurrency.
-- Supply auxiliary metadata before encoding. Do not read a reference file as encoding input or patch finished MLP. Preserve the default empty-metadata policy and explicit historical-context support.
+## JSON profiles
 
-## Implementation steps
+The default profile is `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`. Developer
+wrappers may discover the Git-ignored `settings.local.json` at the repository
+root, or callers can pass `--profile PATH`. The example settings.example.json remains in source only. The release bundles no JSON profiles.
 
-1. [Complete] Integrate the streaming DLL encoder, remove the embedded MLP EXE, adjust process architecture and verify ABI, cancellation and exact output.
-2. [Complete] Add a configuration model that constructs DvdaOptions directly, JSON save/load, env import and configuration checks.
-3. [Complete] Implement the main GUI, grouped editors, background tasks, logs, progress and cancellation using existing pipelines.
-4. [Complete] Update the solution, launch scripts, self-contained package and user documentation. Make the GUI the default release entry point while retaining the CLI.
-5. [Complete] Run regression and GUI smoke tests. Cover 84 default formats with generated PCM, compare 78 available original samples byte for byte, and record results.
+## Acceptance
 
-## Acceptance criteria
+```powershell
+cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1
+```
 
-- Double-click launches the GUI; configuration and execution require no config.env. Existing env files can be imported, and independent profiles persist and reopen.
-- Preparation, preview, real builds and verification clearly report success, failure or cancellation. The GUI remains responsive. Closing during a task cancels it and waits for resources to be released.
-- The MLP encoding path uses no Process.Start or encoder EXE and has no original SurCode dependency. DLL and C-source fingerprints are traceable.
-- Identical PCM, encoding parameters and auxiliary metadata yield identical complete MLP bytes. Replacement is complete only when every existing comparison passes.
-- Verify configuration compatibility, concurrent isolation, cache invalidation and prevention of partial publication after failure or cancellation.
-- WinForms and the self-contained win-x64 release run successfully. Missing conversion or authoring tools produce actionable errors.
-
-## Explicit limitations
-
-Encoding callbacks stream data and avoid loading an entire PCM track in the bridge. Existing validators may still read large MLP files in full; that remains a future large-file optimization. The batch GUI still uses one target sample rate and bit depth. Mixed channel-group interfaces require separate work and are not advertised as supported by the GUI.
-
-## Architecture update, October 1, 2026
-
-The user required x64, replacing the x86 host proposal. GUI, CLI and MLP DLL all use win-x64, with no hidden x86 EXE proxy. Acceptance includes x64 builds, ABI layout, floating-point control and byte-for-byte regressions.
-
-## Final acceptance record
-
-- GUI, CLI and encoder DLL all have PE Machine AMD64.
-- 97/97 regression checks passed; 84/84 default-format cases decoded to exact PCM.
-- Through the actual batch entry point, the x64 DLL matched all 78 original files, totaling 95,138,694 bytes.
-- The actual GUI successfully checked/previewed sources, built a test ISO and verified output.
-- Self-contained package: build/gui-x64-release/DVD-Audio-Maker. DVD-Audio-Maker.exe in its root is the GUI entry point.
-- Detailed results: gui-dll-validation.json.
+The release audit must find one GUI EXE with required DLLs, menu resources and fonts embedded, plus the three user README files, licenses and notices only. It must not find
+.NET runtime files, the developer CLI, PDBs, build-provenance JSON or
+`config.env`.

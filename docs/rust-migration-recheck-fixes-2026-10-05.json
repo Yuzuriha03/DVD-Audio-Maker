@@ -1,0 +1,574 @@
+{
+  "date": "2026-10-05",
+  "target": "x86_64-pc-windows-gnu",
+  "baseline": "fb3cbb84788a807758fa6a8f472a9ffdad3115e8",
+  "status": "completed-recheck-items-locally",
+  "scope": "R01-R17 and their reopened checklist items",
+  "closed_findings": [
+    {
+      "id": "R01",
+      "status": "closed",
+      "behavior": "正式 timeline/all 在同一次 AOB 扫描中收集并检查 PTS 数量、是否推进、异常步长比例，保留合法标题重置规则。",
+      "validation": "`developer_recheck::formal_timeline_and_all_check_pts_statistics_and_legal_title_resets`：真实双标题 LPCM ISO；正常输入、常量 PTS、有效 PTS 过少、异常步长。"
+    },
+    {
+      "id": "R02",
+      "status": "closed",
+      "behavior": "空盘/空组/空音轨索引不能零轨成功；显式 ISO 未匹配到可用音轨时也返回材料不足。",
+      "validation": "`developer_recheck::index_material_failures_do_not_skip_all_independent_checks`。"
+    },
+    {
+      "id": "R03",
+      "status": "closed",
+      "behavior": "缺失、损坏及 dry-run 索引有明确诊断与 Unavailable；单独材料不足返回 2，真实损坏返回 1；All 继续执行不依赖该索引的检查。",
+      "validation": "同上；同时构造异常 PTS、manifest 不匹配和坏 ISO，核对各诊断实际出现及退出码优先级。"
+    },
+    {
+      "id": "R04",
+      "status": "closed",
+      "behavior": "显式指定不存在的 ISO 目录、manifest、日志时，CLI 在检查前拒绝并返回 2。",
+      "validation": "`developer_recheck::explicit_verification_material_paths_must_exist`。"
+    },
+    {
+      "id": "R05",
+      "status": "closed",
+      "behavior": "--iso-dir 只覆盖目录，保留配置前缀和默认 manifest/log。",
+      "validation": "`developer_recheck::iso_directory_override_preserves_prefix_and_configured_evidence`：加入无关坏 ISO、错误总轨数及日志补齐错误。"
+    },
+    {
+      "id": "R06",
+      "status": "closed",
+      "behavior": "GUI 保留前缀/MLP 导入目录的原始空值，让它们随名称和工作目录重新计算；非空显式环境覆盖仍有效。",
+      "validation": "`test-rust-gui-recheck.py`：打开、编辑、保存、关闭后重启，以及显式值/环境覆盖。"
+    },
+    {
+      "id": "R07",
+      "status": "closed",
+      "behavior": "下拉框保留未知采样率和位深；保存、另存及自动保存不静默修改它们，开始任务时按旧规则拒绝非法值。",
+      "validation": "桌面单测与真实 GUI：12345/17 保存后不变，任务被拒绝，用户选择合法值后才改变。"
+    },
+    {
+      "id": "R08",
+      "status": "closed",
+      "behavior": "恢复 JSON --config、--language 和 DVDA_LANGUAGE；命令行语言优先，未知/缺值参数拒绝。",
+      "validation": "桌面参数单测与真实 GUI 启动/错误对话框测试；不恢复 config.env。"
+    },
+    {
+      "id": "R09",
+      "status": "closed",
+      "behavior": "准备任务逐条输出结构化问题，摘要、详细、只看提醒及完整归档均可见；复合声道统计逐项完整翻译。",
+      "validation": "真实 GUI：同组单/双声道 FLAC，核对中英日标题、完整原因和 Unicode 路径；窄格式匹配单测避免拆分用户路径。"
+    },
+    {
+      "id": "R10",
+      "status": "closed",
+      "behavior": "按路径组件比较根目录，不按 UTF-8 字节截断；源文件位于根外时安全回退到文件名。",
+      "validation": "`acquisition_parity`：实际 CLI、中文根外路径、空根、Unicode 镜像目录及输出规则。"
+    },
+    {
+      "id": "R11",
+      "status": "closed",
+      "behavior": "使用冻结的 .NET 序数大小写映射实现匹配、歧义排除及排序，补齐 Windows API 不支持的希腊变体和补充平面字母。199 个区间存入 Rust，不增加运行依赖。",
+      "validation": "`acquisition_parity`：重复变体、非 ASCII 名称回退、补充平面镜像/歧义、希腊变体及排序；`Straße` 与 `STRASSE` 不误合并。原生库测试遍历 1,112,064 个有效 Unicode 字符，核对冻结映射摘要。"
+    },
+    {
+      "id": "R12",
+      "status": "closed",
+      "behavior": "关闭续跑或保留中间产物时不加载、计算或写入续跑凭据，使用独占暂存目录。",
+      "validation": "`application_native::disabled_resume_and_intermediate_mode_ignore_locked_old_record`：锁住旧记录仍可制作并通过完整验证，旧记录字节不变。"
+    },
+    {
+      "id": "R13",
+      "status": "closed",
+      "behavior": "续跑记录写失败保留警告与正式日志，继续发布已验证 ISO；pending 清理守卫覆盖失败/取消早退。",
+      "validation": "`application_native::resume_write_failure_warns_and_publishes_verified_iso`：author 开始后真实锁记录，检查成功发布、警告、build.log、无损验证和 pending 清理。"
+    },
+    {
+      "id": "R14",
+      "status": "closed",
+      "behavior": "结束清理失败返回目录/ISO 警告；开始前重置失败停止，不能使用未清理目录。",
+      "validation": "`application_native::cleanup_failure_warns_and_next_build_rejects_dirty_workspace` 与 `build::tests::locked_iso_cleanup_warns_and_preserves_file_until_unlocked`：真实文件锁、旧成品保护、解锁恢复及三语言消息。"
+    },
+    {
+      "id": "R15",
+      "status": "closed",
+      "behavior": "发布前把备份放入独立且唯一的恢复目录；回滚失败保留该目录并报告路径，不再依赖失败后搬迁，也不受候选目录析构影响。",
+      "validation": "`publication::tests`：真实 EXE/ZIP 文件锁、已有恢复目录冲突、候选清理后备份仍存在且能够恢复。此项是新增事务逻辑修复，不声称旧 C# 有整组回滚。"
+    },
+    {
+      "id": "R16",
+      "status": "closed",
+      "behavior": "续跑记录校验已知字段和盘号键类型；损坏时警告且不复用，null 保持空记录语义，未知字段保留。",
+      "validation": "`resume::tests::typed_resume_record_failures_warn_and_null_remains_empty`：公开读取入口覆盖多种嵌套字段错误、null、未知字段。"
+    },
+    {
+      "id": "R17",
+      "status": "closed",
+      "behavior": "日志和完成事件共用容量 4096 的有界队列；每 100 毫秒限时批量处理，全部归档后结束；保留暂停/恢复、导出已有排队日志、取消/关闭和最终刷新。关联 G13.03/A04。",
+      "validation": "`real_controls_busy_cancel_bounded_archive_and_paused_completion`：12050 条记录逐条有序归档、暂停/恢复、尾部多行警告、完成及有界显示；`log_queue_applies_backpressure_and_keeps_completion_after_diagnostics`；最终 EXE 同一音源 MLP 完整验证 1.522 秒，LPCM 0.654 秒。"
+    }
+  ],
+  "open_findings": [],
+  "workspace_tests": {
+    "passed": 160,
+    "failed": 0,
+    "ignored": 0
+  },
+  "checks": {
+    "fmt": true,
+    "clippy_workspace_all_targets_deny_warnings": true,
+    "release_build": true
+  },
+  "mlp": {
+    "whole_file_length_sha256_cases": 116,
+    "decoded_pcm_verified": true,
+    "frozen_baseline_changed": false,
+    "post_encoding_patching": false
+  },
+  "gui": {
+    "passed": true,
+    "executable": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-recheck-fixes-package\\DVD-Audio-Maker\\DVD-Audio-Maker.exe",
+    "executable_sha256": "33fa0db7e502bf2f06092bbb87d41cabda570c34b331aedf9def802310e759c0",
+    "user_profile_isolated": true,
+    "all_test_processes_closed": true,
+    "cases": [
+      {
+        "case": "derived_values_remain_automatic",
+        "saved": {
+          "DVDA_SRC": "",
+          "DVDA_FINAL_DIR": "",
+          "DVDA_TITLE": "New title",
+          "DVDA_ISO_PREFIX": "",
+          "DVDA_MAX_DISCS": "2",
+          "DVDA_GROUP_TRACK_LIMIT": "99",
+          "DVDA_DISC_BYTES": "4707319808",
+          "DVDA_MLP_SOURCE": "surcode-batch",
+          "DVDA_MLP_EXTERNAL_DIR": "",
+          "DVDA_MLP_METADATA_CONTEXT": "",
+          "DVDA_MLP_SURCODE_SAMPLE_RATE": "48000",
+          "DVDA_MLP_SURCODE_BITS": "24",
+          "DVDA_MLP_JOBS": "1",
+          "DVDA_MENU": "off",
+          "DVDA_MENU_TRACKS_PER_PAGE": "12",
+          "DVDA_MENU_INDEX_MIN_ALBUMS": "4",
+          "DVDA_MENU_STILLPICS": "on",
+          "DVDA_MENU_COVER_DIM": "35",
+          "DVDA_MENU_FONT": "Noto-Sans-CJK-SC",
+          "DVDA_MENU_FONT_JP": "",
+          "DVDA_MENU_FONT_KR": "",
+          "DVDA_AUTHOR": "dvda-author-dev.exe",
+          "DVDA_AUTHOR_SRC": "",
+          "DVDA_PREPARE_CACHE": "on",
+          "DVDA_RESUME": "on",
+          "DVDA_LOSS_ERROR_S": "0.05",
+          "DVDA_LOSS_WARN_S": "0.005",
+          "DVDA_BUILD_DIR": "C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\derived\\changed-work",
+          "DVDA_TITLE_MODE": "album",
+          "DVDA_ALBUM_LIMIT": "0",
+          "DVDA_MLP_BATCH_TEMP_DIR": "",
+          "DVDA_MLP_BATCH_OUTPUT_DIR": "",
+          "DVDA_KEEP_TMP": "off",
+          "DVDA_KEEP_INTERMEDIATE": "off"
+        }
+      },
+      {
+        "case": "explicit_derived_overrides_survive_reload",
+        "passed": true
+      },
+      {
+        "case": "explicit_environment_overrides_preserved",
+        "saved": {
+          "DVDA_ISO_PREFIX": "environment-prefix",
+          "DVDA_MLP_EXTERNAL_DIR": "C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\derived\\environment-mlp"
+        }
+      },
+      {
+        "case": "config_alias",
+        "title": "Chosen marker",
+        "language_index": 2
+      },
+      {
+        "case": "profile_alias",
+        "title": "Chosen marker",
+        "language_index": 2
+      },
+      {
+        "case": "language_cli",
+        "title": "Chosen marker",
+        "language_index": 1
+      },
+      {
+        "case": "language_cli_first",
+        "title": "Chosen marker",
+        "language_index": 0
+      },
+      {
+        "case": "language_environment",
+        "title": "Chosen marker",
+        "language_index": 1
+      },
+      {
+        "case": "language_cli_wins",
+        "title": "Chosen marker",
+        "language_index": 1
+      },
+      {
+        "case": "invalid_startup_arguments",
+        "arguments": [
+          "--unknown"
+        ],
+        "error": "Unknown argument: --unknown\nUsage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|ja]"
+      },
+      {
+        "case": "invalid_startup_arguments",
+        "arguments": [
+          "--config"
+        ],
+        "error": "Usage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|ja]"
+      },
+      {
+        "case": "invalid_startup_arguments",
+        "arguments": [
+          "--profile"
+        ],
+        "error": "Usage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|ja]"
+      },
+      {
+        "case": "invalid_startup_arguments",
+        "arguments": [
+          "--language"
+        ],
+        "error": "Usage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|ja]"
+      },
+      {
+        "case": "invalid_startup_arguments",
+        "arguments": [
+          "--language",
+          "bad"
+        ],
+        "error": "语言设置必须为 auto、en、zh-CN 或 ja。"
+      },
+      {
+        "case": "invalid_startup_arguments",
+        "arguments": [
+          "--language",
+          "en",
+          "--language",
+          "ja"
+        ],
+        "error": "Usage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|ja]"
+      },
+      {
+        "case": "invalid_audio_preserved_and_actions_rejected",
+        "rate": "12345",
+        "bits": "17",
+        "profile_sha256": "41758cd61a276fd95429710792bd59bd6c303826491b23330cebf99b4eff91eb",
+        "daily_preserves_unknown_values_after_close": true
+      },
+      {
+        "case": "audio_settings_require_explicit_correction",
+        "rate": "48000",
+        "bits": "24"
+      },
+      {
+        "case": "prepare_channel_issue_visible_and_archived",
+        "summary": "18:13:43  Found 2 audio files. Reading track information.\r\n18:13:43  Source-check cache: reused 0; inspected again 2.\r\n18:13:43  Source sample rates match the selected settings; no resampling is needed.\r\n18:13:43  group_48000_16: 2 tracks\r\n18:13:43  Decode-check cache: reused 0; checked again 2.\r\n18:13:43  Updated 2 source-check records: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\work\\prepare-cache.json\r\n18:13:43  Source-check report saved: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\work\\decode_report.txt\r\n18:13:43  Source checks took 0.060 seconds.\r\n18:13:43  [FAIL] Audio group 48000 Hz/16-bit has inconsistent channel counts\r\n18:13:43  1 channels × 1 tracks; 2 channels × 1 tracks\r\n18:13:43  C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\audio 日本語\r\n18:13:43  Track 1\r\n18:13:43  Track 2\r\n18:13:43  Task failed.\r\n18:13:43  Review the problems below and retry after adjusting settings. Export the full log if needed.\r\n",
+        "detailed": "18:13:43  Found 2 audio files (FLAC/M4A)\r\n18:13:43  Source cache: reused 0; inspected again 2\r\n18:13:43  0 tracks require resampling\r\n18:13:43  group_48000_16: 2 tracks\r\n18:13:43  Decode cache: reused 0; checked again 2\r\n18:13:43  Updated 2 source-check records: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\work\\prepare-cache.json\r\n18:13:43  Report written: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\work\\decode_report.txt\r\n18:13:43  Source checks took 0.060 seconds.\r\n18:13:43  [FAIL] Audio group 48000 Hz/16-bit has inconsistent channel counts\r\n18:13:43  1 channels × 1 tracks; 2 channels × 1 tracks\r\n18:13:43  C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\audio 日本語\r\n18:13:43  Track 1\r\n18:13:43  Track 2\r\n18:13:43  Task failed.\r\n18:13:43  Review the problems below and retry after adjusting settings. Export the full log if needed.\r\n",
+        "problems": "18:13:43  [FAIL] Audio group 48000 Hz/16-bit has inconsistent channel counts\r\n18:13:43  1 channels × 1 tracks; 2 channels × 1 tracks\r\n18:13:43  C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\audio 日本語\r\n18:13:43  Track 1\r\n18:13:43  Track 2\r\n18:13:43  Task failed.\r\n",
+        "languages": {
+          "zh-CN": "18:13:43  [FAIL] 音频组 48000Hz/16bit 声道数不一致\r\n18:13:43  1 声道 × 1 首; 2 声道 × 1 首\r\n18:13:43  C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\audio 日本語\r\n18:13:43  Track 1\r\n18:13:43  Track 2\r\n18:13:43  任务失败。\r\n",
+          "en": "18:13:43  [FAIL] Audio group 48000 Hz/16-bit has inconsistent channel counts\r\n18:13:43  1 channels × 1 tracks; 2 channels × 1 tracks\r\n18:13:43  C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\audio 日本語\r\n18:13:43  Track 1\r\n18:13:43  Track 2\r\n18:13:43  Task failed.\r\n",
+          "ja": "18:13:43  [FAIL] 音声グループ 48000Hz/16bit のチャンネル数が一致しません\r\n18:13:43  1 チャンネル × 1 曲; 2 チャンネル × 1 曲\r\n18:13:43  C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\audio 日本語\r\n18:13:43  Track 1\r\n18:13:43  Track 2\r\n18:13:43  タスクに失敗しました。\r\n"
+        },
+        "report": "Source audio verification report\n====================================================================\nChecked 2 tracks; 1 failed, 0 with warnings\n\n[FAIL] 音频组 48000Hz/16bit 声道数不一致\n    原因: 1 channels × 1 首; 2 声道 × 1 tracks\n    Source file: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-recheck-5z5fazbk\\prepare\\audio 日本語\n         Track 1\n         Track 2\n\n",
+        "archive_contains_issue": true
+      }
+    ]
+  },
+  "standalone_onefile": {
+    "passed": true,
+    "build_and_verify": [
+      "surcode-batch",
+      "lpcm"
+    ],
+    "menu_and_stills": true,
+    "runtime_repair": true,
+    "standalone_exe": true,
+    "runtime_files": 32,
+    "executable_sha256": "33fa0db7e502bf2f06092bbb87d41cabda570c34b331aedf9def802310e759c0",
+    "source_frames": [
+      192013,
+      192020
+    ],
+    "sample_rate": 48000,
+    "timings": [
+      {
+        "mode": "surcode-batch",
+        "action": 106,
+        "seconds": 2.629
+      },
+      {
+        "mode": "surcode-batch",
+        "action": 107,
+        "seconds": 1.522
+      },
+      {
+        "mode": "lpcm",
+        "action": 106,
+        "seconds": 1.917
+      },
+      {
+        "mode": "lpcm",
+        "action": 107,
+        "seconds": 0.654
+      }
+    ]
+  },
+  "package": {
+    "passed": true,
+    "cases": [
+      {
+        "directory": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-recheck-fixes-package",
+        "zip": "DVD-Audio-Maker-v1.0-win-x64.zip",
+        "zip_sha256": "4e8c5496a6dfd7df3859140125d149aeed385e97a95750f2c90edc50bec1a595",
+        "exe_sha256": "33fa0db7e502bf2f06092bbb87d41cabda570c34b331aedf9def802310e759c0",
+        "zip_root_files": [
+          "DVD-Audio-Maker.exe",
+          "LICENSE",
+          "NOTICE-Image.txt",
+          "NOTICE-Menu.txt",
+          "README.en.md",
+          "README.ja.md",
+          "README.md",
+          "THIRD-PARTY.en.md",
+          "THIRD-PARTY.md"
+        ],
+        "manifest_records": 10,
+        "embedded_files": 27,
+        "runtime_hashes": {
+          "avcodec-63.dll": "a5e3e33c58ebff37c801ecaa6ad1e2dcbfcd47f30caf11edaa5db841da99a73e",
+          "avformat-63.dll": "25acd5941bd9d002a820f0aba44a4e38ad54e9a7dbada306367324133f243a55",
+          "avutil-61.dll": "19172234c811035cc870cf5299055b3a88240fc5ee59f7141f521e68fcf6e3ab",
+          "colors.xml": "a71184afd1bda9b65a0ba1e42a02c05f32033758c167c19cfbe28d0418df5d9c",
+          "data/menu/activeheader": "7cb2fee9f3c93ac450edc20b26815123004134b5b9f0738e62da6de05765a3b4",
+          "data/menu/black_NTSC_720x480.jpg": "f07639230a4ee97713c2a4cdc6780102169e2953195fa8a6d278d3e26b354cf0",
+          "data/menu/black_NTSC_720x480.png": "892c678393205b05ceb9dcda40a5e78c7ef1a6fd3f3bd49800b4bccc46fe4447",
+          "data/menu/black_PAL_720x576.jpg": "991fd25741b5ec7ead149148eae8933fdef46e5439286f5876ab9b8f0d3bd590",
+          "data/menu/black_PAL_720x576.png": "3205157bbb577dde623d843509e6064ee5b18f93c3cfaab54d32ba2e9af709f6",
+          "data/menu/silence.wav": "25eadeedec105d07dc4e6e2bdbb84ad33a8e982648a2d231886154c61ce5dd42",
+          "dvda-author-dev.exe": "3cc2a3afedb21d4ad7cf375bbc01e5afbf4e5cdecd5557a1c610e2e0d1f83d00",
+          "dvda-disc-verify.dll": "70feafc9e27db5cabe4960b1729c8cb6d4ec436ff2bad7960a276e36a37df587",
+          "dvda-formats.dll": "6e62aeeeea20713e2bbbd5ecf02555f20af4e681dc56274c0f04ab78616fa277",
+          "dvda-image.dll": "5256f2e725fe04bb28a42fce4e63f98f17c48a8c0a9444e0b5bf36a32f96fffe",
+          "dvda-media.dll": "0f13179dc4b9750eed27e3a8ddcfd17f5fe21e49ee4ac0584f9017d7b13d5deb",
+          "dvda-menu-nav.dll": "f85e98afdccd36227e5fe682a9a06c33531469bc53cc2a722c460e0b1ebd0c67",
+          "dvda-menu-spu.dll": "281ffa87096e2f8ec51c79363b8a721ff9bbde8eb60544b91857e095c8da4a57",
+          "fonts/DvdaNotoCJK-Regular.ttc": "fded57abee84dc3ea9bb72a0fd4e81b82ed3b9ba7c1e15175f3ad46b2ec0a15e",
+          "libgomp-1.dll": "2b5d851adc50f14a824a6de902d61ab67fbaee70dfe131850af842049a5612ee",
+          "libsoxr.dll": "5bb8f922b12995b0322b73bd94e2e6dadfeac58abc8beb4d0f69ca5f4747917d",
+          "libwinpthread-1.dll": "72bf8802de3a99d28f0bc2db9a11f281a9f9f3fa83dab2bc67e69fac3bd3d9c0",
+          "mlp_encoder.dll": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8",
+          "policy.xml": "1c875a4fe1bcce926766008535af833eca7a0c7672bc87120957db2397540771",
+          "swresample-7.dll": "24b3aafe401f2ae9a833980f91ca433694fed9ebf1928bbf80ee12b3a08df28e",
+          "swscale-10.dll": "c7929841f5ada6db1f6ae5791f73817071181060b7f8fc93097cdb663cb6ce92",
+          "type.xml": "1004453e3752867750f86b0a83b4645f0346eb0abbe10a755162f80565cd1353",
+          "zlib1.dll": "93e9243a44c29200eeacaf9658efe2558581770e4b11ca4b500e18e424a6e3b5"
+        },
+        "temporary_candidates_remaining": 0
+      }
+    ]
+  },
+  "unicode_comparison": {
+    "regeneration_without_dotnet_matches_exactly": true,
+    "rust_crosscheck_uses_current_source_with_only_module_path_adjusted": true,
+    "compared_valid_unicode_scalars": 1112064,
+    "public_equality_and_order_checks": 6672384,
+    "mismatches": 0,
+    "native_helper_sha256": "3a7f1a6dd909a51b3bd9c8cbf2f7387a365cf91a4aaaa762c48f8972e18b09ab",
+    "ordinal_table_sha256": "8b51f768c58fb089d5c54ee9ea0a6d3450b53ba33d7c5d7b675937dec21cf471",
+    "frozen_canonical_mapping_sha256": "985D1B540474D50B01401A5D5277F8CC225041A0C8019B24C5A2A5C0877DB6FE",
+    "runtime_oracle": ".NET 10.0.12 (ICU mode)",
+    "scope": "All valid Unicode scalar mappings plus five scalar ordering boundaries per input; representative multi-character CLI fallback and ambiguity cases; no lone UTF-16 surrogate inputs (Rust APIs accept UTF-8)."
+  },
+  "evidence_files": [
+    {
+      "path": "build/rust-recheck-fixes-final-workspace.log",
+      "bytes": 37930,
+      "sha256": "ece5b6b8b7766835af6b07edd6242ba5b0bec25a2370d400269cdb1a20689f4f"
+    },
+    {
+      "path": "build/rust-recheck-fixes-final-clippy.log",
+      "bytes": 1278,
+      "sha256": "45835fd9983158ecf939aa25151ef82c9cf623df74e1f8b528c94d330f75a67f"
+    },
+    {
+      "path": "build/rust-recheck-fixes-release.log",
+      "bytes": 1994,
+      "sha256": "e28f06195f534dd23ea4f106819c00f77a7508e6afb596532e90af0fc4f39fae"
+    },
+    {
+      "path": "build/rust-recheck-fixes-package.log",
+      "bytes": 2100,
+      "sha256": "f6dee4d5a1cac54ef6c7f745eb1c76a5db7fefa719440ac20bb09e7d82011386"
+    },
+    {
+      "path": "build/gui-recheck-onefile-validation.json",
+      "bytes": 8688,
+      "sha256": "0e180969c2dbd979ea72b5ec3393dce06bc589967a6e359f110f697b1165bf37"
+    },
+    {
+      "path": "build/rust-recheck-fixes-onefile-validation.json",
+      "bytes": 740,
+      "sha256": "71b7d370e21d97aa624d053c2972f23ddad1e5255ca6293d009d81c2b7f502c0"
+    },
+    {
+      "path": "build/rust-recheck-fixes-package-validation.json",
+      "bytes": 3491,
+      "sha256": "dcb9d4fd3b088db4a7e7e0977fb081702b80e79868233794d8562d48b22ea6c2"
+    },
+    {
+      "path": "build/ordinal-crosscheck-20261005/final-proof.json",
+      "bytes": 816,
+      "sha256": "643fc625a72f1401ae2d99e77e72268cbcd9e16ce3f1ad8c555ea063850da822"
+    },
+    {
+      "path": "build/ordinal-crosscheck-20261005/rust-reference-check.log",
+      "bytes": 238,
+      "sha256": "a373eee43553ee01fd36643b918ccdea00ec59f90ef07dab39d9fbaab2f759d6"
+    },
+    {
+      "path": "build/verify-timeout-cli-28380/record.json",
+      "bytes": 1210,
+      "sha256": "df7a7c8f0e91bf64dab7d0b0a3fe438480ef99265a2ab735a14d3109f4b26519"
+    },
+    {
+      "path": "build/verify-timeout-cli-28380/pts.json",
+      "bytes": 10710,
+      "sha256": "5a87910c5e39dc569d5dcee1590c2a77ec2022ed877de264ccdaafd069be23d3"
+    },
+    {
+      "path": "build/verify-timeout-cli-28380/captured-gui-record.json",
+      "bytes": 834,
+      "sha256": "c313ba0fd8a45f8193c23a439b14f8bdc7310077af3933ffc5b785c14ff9c9e3"
+    },
+    {
+      "path": "build/rust-recheck-fixes-r17-desktop.log",
+      "bytes": 4334,
+      "sha256": "8276e9ec70b17cb0cdbf2a676899f2f5546b2c05d1f9a2b01abbe65499ba498e"
+    },
+    {
+      "path": "build/rust-recheck-fixes-onefile-final.log",
+      "bytes": 1670,
+      "sha256": "758c23235d9a54a809cc8a26303ccaf99d4ee8bf7ceb4db17c4a0e0a97712310"
+    }
+  ],
+  "implementation_and_tests": [
+    {
+      "path": "rust/crates/dvda-core/src/verify.rs",
+      "bytes": 42773,
+      "sha256": "c65ca3b1adb3ee6a1dd80e7e99b3c9d9ef6a61f8bece6596dec971a6a3c738b5"
+    },
+    {
+      "path": "rust/crates/dvda-cli/src/developer.rs",
+      "bytes": 26984,
+      "sha256": "fcf0e1df1c757e6b384564a760bd4ff4d4125403f2cd35be1fc509f47e148e5e"
+    },
+    {
+      "path": "rust/crates/dvda-desktop/src/main.rs",
+      "bytes": 156923,
+      "sha256": "d2632dabb49c7dcdc02f48c79f0a5790cd997c1799e7db82b7ce86696a535f6a"
+    },
+    {
+      "path": "rust/crates/dvda-core/src/acquisition.rs",
+      "bytes": 7047,
+      "sha256": "497b258276fa0fd36e0ddffcd781e58c4235f5e94023c75017092f9a3e71bc1f"
+    },
+    {
+      "path": "rust/crates/dvda-native/src/files.rs",
+      "bytes": 3807,
+      "sha256": "3a7f1a6dd909a51b3bd9c8cbf2f7387a365cf91a4aaaa762c48f8972e18b09ab"
+    },
+    {
+      "path": "rust/crates/dvda-core/src/build.rs",
+      "bytes": 29864,
+      "sha256": "82b7c7286c73fa585893c38bc88fce4573043a76ced0cfc5054062828ecfd1f6"
+    },
+    {
+      "path": "rust/crates/dvda-native/src/files/ordinal_case.rs",
+      "bytes": 8195,
+      "sha256": "8b51f768c58fb089d5c54ee9ea0a6d3450b53ba33d7c5d7b675937dec21cf471"
+    },
+    {
+      "path": "tools/win-build/generate-ordinal-case.py",
+      "bytes": 5012,
+      "sha256": "8f0c241df8378314b9c1c722296b33a381e516e69c9fe3392726d593e45c4f50"
+    },
+    {
+      "path": "tools/win-build/devdata/ordinal-case/reference.json",
+      "bytes": 214,
+      "sha256": "88d4edfce014e58b543953fb8ade7b6eeb6fc67c33f51490e48cb4ae970a7969"
+    },
+    {
+      "path": "tools/win-build/devdata/ordinal-case/mappings.tsv",
+      "bytes": 15641,
+      "sha256": "b1fd6bcae99bb9c8c62367f708a5ed1dfb6a98f99ae5d25d739f92b1a7afb2dd"
+    },
+    {
+      "path": "rust/crates/dvda-core/src/resume.rs",
+      "bytes": 9832,
+      "sha256": "c4817b14afceea4b48c20816525381d47a31d85f48b27cda666bb1d011a46334"
+    },
+    {
+      "path": "rust/crates/dvda-core/src/localization.rs",
+      "bytes": 11796,
+      "sha256": "ace8edc7eed9a7a8629a68f2ecf5881ac6017e56d761e826e04bbda81ffbbbcc"
+    },
+    {
+      "path": "rust/crates/dvda-toolchain/src/publication.rs",
+      "bytes": 12754,
+      "sha256": "6457cc964ced463d99b2ef537ad26f914a9ec3e151c9d71ddbe47f4b71d828c2"
+    },
+    {
+      "path": "rust/crates/dvda-cli/tests/developer_recheck.rs",
+      "bytes": 16005,
+      "sha256": "14c297e524d2e7a0331a3bd5471cec7cd29afb78f7725fd48612a789975143e8"
+    },
+    {
+      "path": "rust/crates/dvda-cli/tests/acquisition_parity.rs",
+      "bytes": 7702,
+      "sha256": "fe529b988c9e1fefa388f713eccf063d59211442ec9cbe79f46f45a0a96951da"
+    },
+    {
+      "path": "rust/crates/dvda-cli/tests/developer_commands.rs",
+      "bytes": 10271,
+      "sha256": "cedc91832ce9fb275a5df3a9536997cc8aeef1d2908d31241b538ef39f2bb060"
+    },
+    {
+      "path": "rust/crates/dvda-core/tests/application_native.rs",
+      "bytes": 52177,
+      "sha256": "c49ef61ac76876128db7698e4f28aaf4d04e4f50d70461700a0c3584075425ab"
+    },
+    {
+      "path": "tools/win-build/test-rust-gui-recheck.py",
+      "bytes": 17096,
+      "sha256": "2c70e2a8e952d483631523babf8bf07eec5a386421c9021ea0f4ac89b0606900"
+    },
+    {
+      "path": "rust/crates/dvda-core/tests/conversion_native.rs",
+      "bytes": 7694,
+      "sha256": "3f79b80e4c1f53bf8fbcd21344e62ca50eb154d1c6f29dc665329557a77ef4bd"
+    },
+    {
+      "path": "tools/win-build/test-rust-onefile.py",
+      "bytes": 7417,
+      "sha256": "133f71c15d33d3fcfaa204b801adcd4b7af6cc0fb9aef3ccb05e3b1acff0e37d"
+    }
+  ],
+  "limits": [
+    "Completion is for the 16 independently reproduced findings, one additional GUI logging gap and their associated checklist scope, not proof over arbitrary inputs.",
+    "Fixed C# application and compatibility tests were not rerun. An isolated development .NET comparer harness was used only to freeze Unicode comparison data; it is not part of the product or its build/runtime dependencies.",
+    "All GUI profiles, generated audio/discs and file locks were isolated. User music was not rebuilt and user daily settings were not changed.",
+    "Historical audit counterexamples and passing records remain preserved with follow-up links.",
+    "No GitHub commit, push, tag, or release update was performed in this task."
+  ]
+}

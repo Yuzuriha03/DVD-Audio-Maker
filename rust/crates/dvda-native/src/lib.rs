@@ -1,9 +1,14 @@
 //! Safe, narrow Rust wrappers for the existing C17 format DLL.
+pub mod compression;
+pub mod disc_verify;
 pub mod encoder;
 pub mod files;
 pub mod images;
 pub mod media;
 pub mod process;
+
+#[cfg(test)]
+mod format_parity;
 
 use std::{
     ffi::{CStr, CString, OsStr, c_char, c_void},

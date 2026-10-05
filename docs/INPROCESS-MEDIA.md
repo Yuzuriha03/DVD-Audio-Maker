@@ -1,58 +1,24 @@
-# 内置媒体处理
+# 进程内媒体处理
 
-[简体中文](INPROCESS-MEDIA.md) | [English](INPROCESS-MEDIA.en.md)
+Rust GUI 通过项目构建的 x64 `dvda-media.dll` 完成音源探测、解码、PCM/FLAC 输出、ALAC 检查、封面处理和成品校验。运行时不会启动 `ffmpeg.exe` 或 `ffprobe.exe`，用户也不需要另行安装 FFmpeg。
 
-2026-10-02。正常 GUI 的音源转换、信息读取、解码与成品校验现在直接调用随包 Windows x64 DLL，不启动 ffmpeg.exe 或 ffprobe.exe。仍使用 FFmpeg 的库实现，不需要用户另外安装 FFmpeg。
+媒体 DLL 由所需的 FFmpeg 库源码构建，随发布包放在 GUI 旁边并由打包工具校验。缺少 DLL 时直接报告错误，不搜索 PATH，也不静默回退到外部程序。ImageMagick、Metaflac、eac3to 和原版 SurCode 采用相同规则。
 
-## 使用和配置
+## 配置和运行时
 
-- 发布包保留完整 media-native 目录。标准包为 x64 GUI-only，不含 .NET；运行需要 .NET 10 Desktop Runtime x64。
-- GUI 继续读取旧 config.env 和 JSON 方案，自动改用内置媒体组件，界面不再提供 FFmpeg / FFprobe 路径设置。
-- 默认配置为 DVDA_FFMPEG=builtin:media、DVDA_FFPROBE=builtin:probe。开发 CLI 仍接受显式外部路径，用于参考对照；GUI 不使用旧路径，也不在组件缺失时自动回退到外部程序。
-- 可选 ALAC 转 FLAC 的封面/标签整理使用进程内 `FlacMetadataEditor`，不再需要 Metaflac。ImageMagick 已改为进程内组件，ISO 由 dvda-author 内置写入器完成；菜单编码、复用、子图像和导航也已接入进程内 C 模块。
+程序只使用版本化 JSON 配置方案。默认文件为 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`，可用 `--profile` 指定其他 JSON 文件。`config.env` 和旧的可执行文件路径配置不再读取。开发测试可以通过明确的环境变量选择已经验证的原生组件目录；发布包始终使用旁边的 DLL。
 
-## 实现范围
+媒体运行时只包含本流程需要的 `avcodec`、`avformat`、`avutil`、`swresample`、`swscale`、`libsoxr`、zlib 及必要的 x64 运行库。MLP 编码器和 DVD 菜单组件独立放置。媒体库身份参与缓存键，替换原生构建后旧准备缓存会自动失效。
 
-BuiltinMedia 把项目已有的媒体请求映射到小型 C ABI，通过 P/Invoke 调用 dvda-media.dll。它仅支持本项目使用的请求，不是通用 FFmpeg 命令行实现。
+ALAC 转 FLAC 的元数据整理使用进程内编辑器。临时输出先写在目标旁边，验证成功后才原子发布；失败或取消会删除临时文件。MLP 编码结果不会在序列化后打补丁。
 
-原生代码负责探测、首音频流解码、ALAC 包枚举、PCM/FLAC 输出、MD5、封面复制及 DVD 菜单首帧提取。保留进度回调、超时和取消；文件先写入同目录临时文件，成功才替换目标，失败/取消清理临时产物。DLL 从 media-native 及 Windows 系统目录加载，不借用 PATH 中的库。
+## 构建和验证
 
-media 配置使用 FFmpeg 9.0.2 的 avcodec、avformat、avutil、swresample、swscale，并包含 libsoxr、zlib 及必要运行库。与 menu-bin 中供原生制盘工具使用的 MLP/菜单专用库分开。打包器检查 DLL 清单、SHA-256、AMD64 架构与普通/延迟导入依赖。
+原生构建输入见 [Windows 构建说明](../tools/win-build/README.md)。设置已经验证的原生目录后运行 Rust 测试：
 
-MLP 准备沿用 SWR、禁用抖动、既有 20 位舍入和限幅，以及 WAVE 规范化。MLP 编码核心 SHA-256：ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8。媒体转换器的 DLL 哈希进入缓存身份，升级后重建旧身份缓存。编码输出不进行字节修补。
-
-## 验收
-
-- 109/109 兼容性测试通过。
-- 202/202 PCM/MLP 对照通过：84 个原生格式各测试普通/噪声信号，另测重采样、16/20/24 位转换、侧环绕布局和六声道 ALAC。目标 PCM 与参考流程精确一致；完整 MLP 与直接编码参考逐字节相同。
-- 35 项媒体集成断言通过，覆盖 Unicode 标签/路径、ALAC 包检查、FLAC 封面逐字节保留、音频 MD5、SOXR 解码计数、菜单帧像素、无效输入、取消及并行解码。
-- 94 项发布回归断言通过。在 PATH 仅包含 Windows 与 .NET、旧 GUI 配置的 FFmpeg/FFprobe 路径故意指向不存在文件的条件下，完成中英文 GUI 启动、3 组编码、完整多语言菜单 ISO 制作及成品校验。3 组编码加 6 条制盘轨道的完整 MLP 均与旧包相同；42 个菜单/静图的解码像素一致。
-- 新增进程内 FLAC metadata 编辑器：解析 Vorbis Comment 和 PICTURE block，封面导出/导入后原子重写 metadata 前缀，并逐字节保留音频帧。
-- 最终复制的发布目录及 ZIP 与测试包逐文件、逐哈希一致；发布包共 89 个文件，除清单自身外均通过清单哈希校验。所有媒体 DLL 为 x64，不含 FFmpeg/FFprobe EXE、CLI 或 .NET 运行时。
-
-范围说明：SOXR 仅用于诊断重采样后的采样数，不进入 MLP 编码准备。该计数完全相同；额外探测的两份 24 位 SOXR 原始 PCM 与外部 libsoxr 构建存在最多 1 LSB 的舍入差异，因此不宣称不同构建的任意 SOXR 输出逐字节相同。实际编码链的 SWR/量化/MLP 对照全部要求并实现逐字节相同。
-
-本节保留早期媒体迁移基准。后续已扩展全盘逐轨 PCM/MLP 检查并验证单页/多页索引，见[当前完成状态](NO-EXTERNAL-RUNTIME-MIGRATION.md)。
-
-## 发布包与体积
-
-本机产物：build/inprocess-media-x64-release/DVD-Audio-Maker；同级 DVD-Audio-Maker.zip。
-
-| 项目 | 上一版 MLP 专用库包 | 本版内置媒体包 |
-|---|---:|---:|
-| ZIP 字节 | 33,669,495 | 35,333,326 |
-| 解压字节 | 54,524,247 | 59,780,290 |
-
-ZIP 约 33.70 MiB，增加约 1.59 MiB；解压增加约 5.01 MiB。新增的是原先依赖用户安装的媒体处理能力，ZIP 格式和压缩参数不变。ZIP SHA-256：cc5ce39ebbe684469b19dcb4a428908e6ed3fbae6b05b0cb27c028b34d03ef16。
-
-## 开发与复现
-
-原生构建/预编译运行库复用见 [Windows 构建说明](../tools/win-build/README.md)。日常 C# 调试只需已有 DLL，不需要每次重编译原生库。
-
-```text
-dotnet run --project tests/DvdaMaker.CompatibilityTests
-dotnet run --project tests/DvdaMaker.CompatibilityTests -- --builtin-pcm-integration <空目录>
-dotnet run --project tests/DvdaMaker.CompatibilityTests -- --builtin-media-integration <空目录>
+```powershell
+$env:DVDA_MEDIA_NATIVE_DIR = (Resolve-Path build/media-native).Path
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
 ```
 
-集成对照需要参考 FFmpeg/FFprobe 生成和检查测试材料；这不属于 GUI 运行要求。媒体操作测试不再需要 Metaflac。完整测试记录、构建参数、DLL 指纹与限制见 [inprocess-media-validation.json](inprocess-media-validation.json)。
+集成样本覆盖 Unicode 路径和标签、ALAC、FLAC 封面逐字节保留、PCM 哈希、无效输入、取消、并行解码和菜单帧提取。开发阶段可以使用参考 FFmpeg 工具生成样本，但发布包不依赖这些外部程序。

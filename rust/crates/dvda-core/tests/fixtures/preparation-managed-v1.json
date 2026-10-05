@@ -1,0 +1,822 @@
+{
+  "Cold": {
+    "Result": {
+      "Manifest": {
+        "group_48000_24": {
+          "sr": 48000,
+          "bits": 24,
+          "count": 3,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\c.flac",
+              "name": "group_48000_24/0001__c",
+              "title": "\u66F2\u76EE \u4E2D\u6587",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album A",
+              "dur": 0.018526,
+              "resample_to": 48000,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 2,
+              "src": "\u003CROOT\u003E\\src\\b.flac",
+              "name": "group_48000_24/0002__b",
+              "title": "\u66F2\u76EE \u65E5\u672C\u8A9E",
+              "date": "2026-01-02",
+              "track": "2",
+              "album": "Album A",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 3,
+              "src": "\u003CROOT\u003E\\src\\a.flac",
+              "name": "group_48000_24/0003__a",
+              "title": "\u66F2\u76EE \uD83D\uDE00",
+              "date": "2026-01-02",
+              "track": "12",
+              "album": "Album A",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        },
+        "group_96000_24": {
+          "sr": 96000,
+          "bits": 24,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\d.flac",
+              "name": "group_96000_24/0001__d",
+              "title": "Surround",
+              "date": "2026-01-02",
+              "track": "3/12",
+              "album": "Album B",
+              "dur": 0.100177,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        },
+        "group_192000_24": {
+          "sr": 192000,
+          "bits": 24,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\e.flac",
+              "name": "group_192000_24/0001__e",
+              "title": "High rate",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album C",
+              "dur": 0.004255,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        }
+      },
+      "Issues": [],
+      "CheckedTracks": 5,
+      "Repairs": [],
+      "FailureCount": 0,
+      "WarningCount": 0
+    },
+    "Manifest": {
+      "group_48000_24": {
+        "sr": 48000,
+        "bits": 24,
+        "count": 3,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\c.flac",
+            "name": "group_48000_24/0001__c",
+            "title": "\u66F2\u76EE \u4E2D\u6587",
+            "date": "2026-01-02",
+            "track": "1",
+            "album": "Album A",
+            "dur": 0.018526,
+            "resample_to": 48000,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          },
+          {
+            "n": 2,
+            "src": "\u003CROOT\u003E\\src\\b.flac",
+            "name": "group_48000_24/0002__b",
+            "title": "\u66F2\u76EE \u65E5\u672C\u8A9E",
+            "date": "2026-01-02",
+            "track": "2",
+            "album": "Album A",
+            "dur": 0.017021,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          },
+          {
+            "n": 3,
+            "src": "\u003CROOT\u003E\\src\\a.flac",
+            "name": "group_48000_24/0003__a",
+            "title": "\u66F2\u76EE \uD83D\uDE00",
+            "date": "2026-01-02",
+            "track": "12",
+            "album": "Album A",
+            "dur": 0.017021,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      },
+      "group_96000_24": {
+        "sr": 96000,
+        "bits": 24,
+        "count": 1,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\d.flac",
+            "name": "group_96000_24/0001__d",
+            "title": "Surround",
+            "date": "2026-01-02",
+            "track": "3/12",
+            "album": "Album B",
+            "dur": 0.100177,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      },
+      "group_192000_24": {
+        "sr": 192000,
+        "bits": 24,
+        "count": 1,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\e.flac",
+            "name": "group_192000_24/0001__e",
+            "title": "High rate",
+            "date": "2026-01-02",
+            "track": "1",
+            "album": "Album C",
+            "dur": 0.004255,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      }
+    },
+    "Report": "\u97F3\u6E90\u6821\u9A8C\u62A5\u544A\r\n====================================================================\r\n\u5DF2\u6821\u9A8C 5 \u9996\uFF1B\u5931\u8D25 0 \u9996\uFF0C\u8B66\u544A 0 \u9996\r\n\r\n\u5168\u90E8\u901A\u8FC7\uFF1A\u65E0\u89E3\u7801\u9519\u8BEF\uFF0C\u89E3\u7801\u91C7\u6837\u6570\u4E0E\u6E90\u58F0\u660E\u4E00\u81F4\uFF0C\u7EC4\u5185\u53C2\u6570\u4E00\u81F4\u3002\r\n"
+  },
+  "MixedChannels": {
+    "Result": {
+      "Manifest": {
+        "group_48000_24": {
+          "sr": 48000,
+          "bits": 24,
+          "count": 4,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\mixed.flac",
+              "name": "group_48000_24/0001__mixed",
+              "title": "Mono",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album X",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 2,
+              "src": "\u003CROOT\u003E\\src\\c.flac",
+              "name": "group_48000_24/0002__c",
+              "title": "\u66F2\u76EE \u4E2D\u6587",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album A",
+              "dur": 0.018526,
+              "resample_to": 48000,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 3,
+              "src": "\u003CROOT\u003E\\src\\b.flac",
+              "name": "group_48000_24/0003__b",
+              "title": "\u66F2\u76EE \u65E5\u672C\u8A9E",
+              "date": "2026-01-02",
+              "track": "2",
+              "album": "Album A",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 4,
+              "src": "\u003CROOT\u003E\\src\\a.flac",
+              "name": "group_48000_24/0004__a",
+              "title": "\u66F2\u76EE \uD83D\uDE00",
+              "date": "2026-01-02",
+              "track": "12",
+              "album": "Album A",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        },
+        "group_96000_24": {
+          "sr": 96000,
+          "bits": 24,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\d.flac",
+              "name": "group_96000_24/0001__d",
+              "title": "Surround",
+              "date": "2026-01-02",
+              "track": "3/12",
+              "album": "Album B",
+              "dur": 0.100177,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        },
+        "group_192000_24": {
+          "sr": 192000,
+          "bits": 24,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\e.flac",
+              "name": "group_192000_24/0001__e",
+              "title": "High rate",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album C",
+              "dur": 0.004255,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        }
+      },
+      "Issues": [
+        {
+          "Level": "FAIL",
+          "Title": "\u97F3\u9891\u7EC4 48000Hz/24bit \u58F0\u9053\u6570\u4E0D\u4E00\u81F4",
+          "Path": "\u003CROOT\u003E\\src",
+          "Reason": "1 \u58F0\u9053 \u00D7 1 \u9996; 2 \u58F0\u9053 \u00D7 3 \u9996",
+          "Detail": [
+            "     \u66F2\u76EE \uD83D\uDE00",
+            "     \u66F2\u76EE \u65E5\u672C\u8A9E",
+            "     \u66F2\u76EE \u4E2D\u6587",
+            "     Mono"
+          ]
+        }
+      ],
+      "CheckedTracks": 6,
+      "Repairs": [],
+      "FailureCount": 1,
+      "WarningCount": 0
+    },
+    "Manifest": null,
+    "Report": "\u97F3\u6E90\u6821\u9A8C\u62A5\u544A\r\n====================================================================\r\n\u5DF2\u6821\u9A8C 6 \u9996\uFF1B\u5931\u8D25 1 \u9996\uFF0C\u8B66\u544A 0 \u9996\r\n\r\n[FAIL] \u97F3\u9891\u7EC4 48000Hz/24bit \u58F0\u9053\u6570\u4E0D\u4E00\u81F4\r\n    \u539F\u56E0: 1 \u58F0\u9053 \u00D7 1 \u9996; 2 \u58F0\u9053 \u00D7 3 \u9996\r\n    \u6E90\u6587\u4EF6: \u003CROOT\u003E\\src\r\n         \u66F2\u76EE \uD83D\uDE00\r\n         \u66F2\u76EE \u65E5\u672C\u8A9E\r\n         \u66F2\u76EE \u4E2D\u6587\r\n         Mono\r\n\r\n"
+  },
+  "Lpcm": {
+    "Result": {
+      "Manifest": {
+        "group_48000_24": {
+          "sr": 48000,
+          "bits": 24,
+          "count": 4,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\mixed.flac",
+              "name": "group_48000_24/0001__mixed",
+              "title": "Mono",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album X",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 2,
+              "src": "\u003CROOT\u003E\\src\\c.flac",
+              "name": "group_48000_24/0002__c",
+              "title": "\u66F2\u76EE \u4E2D\u6587",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album A",
+              "dur": 0.018526,
+              "resample_to": 48000,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 3,
+              "src": "\u003CROOT\u003E\\src\\b.flac",
+              "name": "group_48000_24/0003__b",
+              "title": "\u66F2\u76EE \u65E5\u672C\u8A9E",
+              "date": "2026-01-02",
+              "track": "2",
+              "album": "Album A",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 4,
+              "src": "\u003CROOT\u003E\\src\\a.flac",
+              "name": "group_48000_24/0004__a",
+              "title": "\u66F2\u76EE \uD83D\uDE00",
+              "date": "2026-01-02",
+              "track": "12",
+              "album": "Album A",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        },
+        "group_96000_24": {
+          "sr": 96000,
+          "bits": 24,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\d.flac",
+              "name": "group_96000_24/0001__d",
+              "title": "Surround",
+              "date": "2026-01-02",
+              "track": "3/12",
+              "album": "Album B",
+              "dur": 0.100177,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        },
+        "group_192000_24": {
+          "sr": 192000,
+          "bits": 24,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\e.flac",
+              "name": "group_192000_24/0001__e",
+              "title": "High rate",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album C",
+              "dur": 0.004255,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        }
+      },
+      "Issues": [],
+      "CheckedTracks": 6,
+      "Repairs": [],
+      "FailureCount": 0,
+      "WarningCount": 0
+    },
+    "Manifest": {
+      "group_48000_24": {
+        "sr": 48000,
+        "bits": 24,
+        "count": 4,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\mixed.flac",
+            "name": "group_48000_24/0001__mixed",
+            "title": "Mono",
+            "date": "2026-01-02",
+            "track": "1",
+            "album": "Album X",
+            "dur": 0.017021,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          },
+          {
+            "n": 2,
+            "src": "\u003CROOT\u003E\\src\\c.flac",
+            "name": "group_48000_24/0002__c",
+            "title": "\u66F2\u76EE \u4E2D\u6587",
+            "date": "2026-01-02",
+            "track": "1",
+            "album": "Album A",
+            "dur": 0.018526,
+            "resample_to": 48000,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          },
+          {
+            "n": 3,
+            "src": "\u003CROOT\u003E\\src\\b.flac",
+            "name": "group_48000_24/0003__b",
+            "title": "\u66F2\u76EE \u65E5\u672C\u8A9E",
+            "date": "2026-01-02",
+            "track": "2",
+            "album": "Album A",
+            "dur": 0.017021,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          },
+          {
+            "n": 4,
+            "src": "\u003CROOT\u003E\\src\\a.flac",
+            "name": "group_48000_24/0004__a",
+            "title": "\u66F2\u76EE \uD83D\uDE00",
+            "date": "2026-01-02",
+            "track": "12",
+            "album": "Album A",
+            "dur": 0.017021,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      },
+      "group_96000_24": {
+        "sr": 96000,
+        "bits": 24,
+        "count": 1,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\d.flac",
+            "name": "group_96000_24/0001__d",
+            "title": "Surround",
+            "date": "2026-01-02",
+            "track": "3/12",
+            "album": "Album B",
+            "dur": 0.100177,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      },
+      "group_192000_24": {
+        "sr": 192000,
+        "bits": 24,
+        "count": 1,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\e.flac",
+            "name": "group_192000_24/0001__e",
+            "title": "High rate",
+            "date": "2026-01-02",
+            "track": "1",
+            "album": "Album C",
+            "dur": 0.004255,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      }
+    },
+    "Report": "\u97F3\u6E90\u6821\u9A8C\u62A5\u544A\r\n====================================================================\r\n\u5DF2\u6821\u9A8C 6 \u9996\uFF1B\u5931\u8D25 0 \u9996\uFF0C\u8B66\u544A 0 \u9996\r\n\r\n\u5168\u90E8\u901A\u8FC7\uFF1A\u65E0\u89E3\u7801\u9519\u8BEF\uFF0C\u89E3\u7801\u91C7\u6837\u6570\u4E0E\u6E90\u58F0\u660E\u4E00\u81F4\uFF0C\u7EC4\u5185\u53C2\u6570\u4E00\u81F4\u3002\r\n"
+  },
+  "Alac": {
+    "Result": {
+      "Manifest": {
+        "group_48000_16": {
+          "sr": 48000,
+          "bits": 16,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\build\\alacfix\\broken.m4a",
+              "name": "group_48000_16/0001__broken",
+              "title": "broken",
+              "date": "",
+              "track": "",
+              "album": "",
+              "dur": 0.021333,
+              "resample_to": null,
+              "repaired": 2,
+              "repair_detail": [
+                "     0.000s (0\u520600.00\u79D2)  \u6807\u8BB0 000 -\u003E 111  (512 \u91C7\u6837)",
+                "     0.011s (0\u520600.01\u79D2)  \u6807\u8BB0 000 -\u003E 111  (512 \u91C7\u6837)"
+              ],
+              "orig_src": "\u003CROOT\u003E\\src\\broken.m4a"
+            }
+          ]
+        },
+        "group_48000_24": {
+          "sr": 48000,
+          "bits": 24,
+          "count": 3,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\c.flac",
+              "name": "group_48000_24/0001__c",
+              "title": "\u66F2\u76EE \u4E2D\u6587",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album A",
+              "dur": 0.018526,
+              "resample_to": 48000,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 2,
+              "src": "\u003CROOT\u003E\\src\\b.flac",
+              "name": "group_48000_24/0002__b",
+              "title": "\u66F2\u76EE \u65E5\u672C\u8A9E",
+              "date": "2026-01-02",
+              "track": "2",
+              "album": "Album A",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            },
+            {
+              "n": 3,
+              "src": "\u003CROOT\u003E\\src\\a.flac",
+              "name": "group_48000_24/0003__a",
+              "title": "\u66F2\u76EE \uD83D\uDE00",
+              "date": "2026-01-02",
+              "track": "12",
+              "album": "Album A",
+              "dur": 0.017021,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        },
+        "group_96000_24": {
+          "sr": 96000,
+          "bits": 24,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\d.flac",
+              "name": "group_96000_24/0001__d",
+              "title": "Surround",
+              "date": "2026-01-02",
+              "track": "3/12",
+              "album": "Album B",
+              "dur": 0.100177,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        },
+        "group_192000_24": {
+          "sr": 192000,
+          "bits": 24,
+          "count": 1,
+          "files": [
+            {
+              "n": 1,
+              "src": "\u003CROOT\u003E\\src\\e.flac",
+              "name": "group_192000_24/0001__e",
+              "title": "High rate",
+              "date": "2026-01-02",
+              "track": "1",
+              "album": "Album C",
+              "dur": 0.004255,
+              "resample_to": null,
+              "repaired": 0,
+              "repair_detail": null,
+              "orig_src": null
+            }
+          ]
+        }
+      },
+      "Issues": [],
+      "CheckedTracks": 6,
+      "Repairs": [
+        {
+          "OriginalPath": "\u003CROOT\u003E\\src\\broken.m4a",
+          "RepairedPath": "\u003CROOT\u003E\\build\\alacfix\\broken.m4a",
+          "Patches": [
+            {
+              "PacketIndex": 0,
+              "PresentationTime": 0,
+              "Position": 32,
+              "Size": 2052,
+              "SampleCount": 512,
+              "EndBit": 16407,
+              "PreviousBits": 0
+            },
+            {
+              "PacketIndex": 1,
+              "PresentationTime": 0.010666667,
+              "Position": 2084,
+              "Size": 2052,
+              "SampleCount": 512,
+              "EndBit": 16407,
+              "PreviousBits": 0
+            }
+          ]
+        }
+      ],
+      "FailureCount": 0,
+      "WarningCount": 0
+    },
+    "Manifest": {
+      "group_48000_16": {
+        "sr": 48000,
+        "bits": 16,
+        "count": 1,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\build\\alacfix\\broken.m4a",
+            "name": "group_48000_16/0001__broken",
+            "title": "broken",
+            "date": "",
+            "track": "",
+            "album": "",
+            "dur": 0.021333,
+            "resample_to": null,
+            "repaired": 2,
+            "repair_detail": [
+              "     0.000s (0\u520600.00\u79D2)  \u6807\u8BB0 000 -\u003E 111  (512 \u91C7\u6837)",
+              "     0.011s (0\u520600.01\u79D2)  \u6807\u8BB0 000 -\u003E 111  (512 \u91C7\u6837)"
+            ],
+            "orig_src": "\u003CROOT\u003E\\src\\broken.m4a"
+          }
+        ]
+      },
+      "group_48000_24": {
+        "sr": 48000,
+        "bits": 24,
+        "count": 3,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\c.flac",
+            "name": "group_48000_24/0001__c",
+            "title": "\u66F2\u76EE \u4E2D\u6587",
+            "date": "2026-01-02",
+            "track": "1",
+            "album": "Album A",
+            "dur": 0.018526,
+            "resample_to": 48000,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          },
+          {
+            "n": 2,
+            "src": "\u003CROOT\u003E\\src\\b.flac",
+            "name": "group_48000_24/0002__b",
+            "title": "\u66F2\u76EE \u65E5\u672C\u8A9E",
+            "date": "2026-01-02",
+            "track": "2",
+            "album": "Album A",
+            "dur": 0.017021,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          },
+          {
+            "n": 3,
+            "src": "\u003CROOT\u003E\\src\\a.flac",
+            "name": "group_48000_24/0003__a",
+            "title": "\u66F2\u76EE \uD83D\uDE00",
+            "date": "2026-01-02",
+            "track": "12",
+            "album": "Album A",
+            "dur": 0.017021,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      },
+      "group_96000_24": {
+        "sr": 96000,
+        "bits": 24,
+        "count": 1,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\d.flac",
+            "name": "group_96000_24/0001__d",
+            "title": "Surround",
+            "date": "2026-01-02",
+            "track": "3/12",
+            "album": "Album B",
+            "dur": 0.100177,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      },
+      "group_192000_24": {
+        "sr": 192000,
+        "bits": 24,
+        "count": 1,
+        "files": [
+          {
+            "n": 1,
+            "src": "\u003CROOT\u003E\\src\\e.flac",
+            "name": "group_192000_24/0001__e",
+            "title": "High rate",
+            "date": "2026-01-02",
+            "track": "1",
+            "album": "Album C",
+            "dur": 0.004255,
+            "resample_to": null,
+            "repaired": 0,
+            "repair_detail": null,
+            "orig_src": null
+          }
+        ]
+      }
+    },
+    "Report": "\u97F3\u6E90\u6821\u9A8C\u62A5\u544A\r\n====================================================================\r\n\u5DF2\u6821\u9A8C 6 \u9996\uFF1B\u5931\u8D25 0 \u9996\uFF0C\u8B66\u544A 0 \u9996\r\n\r\n\u5168\u90E8\u901A\u8FC7\uFF1A\u65E0\u89E3\u7801\u9519\u8BEF\uFF0C\u89E3\u7801\u91C7\u6837\u6570\u4E0E\u6E90\u58F0\u660E\u4E00\u81F4\uFF0C\u7EC4\u5185\u53C2\u6570\u4E00\u81F4\u3002\r\n\r\n--------------------------------------------------------------------\r\nALAC END \u6807\u8BB0\u4FEE\u590D\u8BB0\u5F55\r\n--------------------------------------------------------------------\r\n\u8BF4\u660E\uFF1A\u4EC5\u8865\u5199 Apple ALAC \u672A\u538B\u7F29\u5E27\u5C3E\u7F3A\u5931\u7684 3 \u4F4D END \u6807\u8BB0\uFF0C\u539F\u6587\u4EF6\u4E0D\u4FEE\u6539\u3002\r\n\r\n[\u5DF2\u4FEE\u590D 2 \u5E27] broken.m4a\r\n    \u539F\u6587\u4EF6: \u003CROOT\u003E\\src\\broken.m4a\r\n    \u4FEE\u590D\u540E: \u003CROOT\u003E\\build\\alacfix\\broken.m4a\r\n         0.000s (0\u520600.00\u79D2)  \u6807\u8BB0 000 -\u003E 111  (512 \u91C7\u6837)\r\n         0.011s (0\u520600.01\u79D2)  \u6807\u8BB0 000 -\u003E 111  (512 \u91C7\u6837)\r\n\r\n"
+  }
+}

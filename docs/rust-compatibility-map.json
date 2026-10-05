@@ -1,6 +1,23 @@
 {
   "baselineCommit": "53cef39cce643e411b6afa71e07438b215f34f36",
   "date": "2026-10-05",
+  "currentApplicationAudit": {
+    "date": "2026-10-05",
+    "status": "completed-reviewed-recheck-items",
+    "report": "docs/RUST-MIGRATION-RECHECK-FIXES-2026-10-05.md",
+    "evidence": "docs/rust-migration-recheck-fixes-2026-10-05.json",
+    "workspaceTests": {
+      "passed": 160,
+      "failed": 0,
+      "ignored": 0
+    },
+    "frozenMlpCases": 116,
+    "scope": "R01-R16 and additional GUI logging gap R17 are repaired and verified through actual entrypoints. Historical results below remain historical; this is not proof over arbitrary inputs.",
+    "remainingChecklist": "docs/RUST-MIGRATION-REMAINING.md",
+    "openGaps": [],
+    "pendingAuditTasks": [],
+    "historicalResultsPreserved": true
+  },
   "tests": [
     {
       "id": 1,
@@ -21,8 +38,8 @@
       "name": "FLAC metadata in-process read/write",
       "managedEntry": "FlacMetadataTests.InProcessEditor",
       "rustOperations": [
-        "flac.picture",
         "flac.comments",
+        "flac.picture",
         "flac.replace_picture"
       ],
       "status": "pass"
@@ -46,13 +63,13 @@
       "name": "LPCM format limits and channel grouping",
       "managedEntry": "LpcmTests.FormatAndGrouping",
       "rustOperations": [
+        "build.disc_plan",
+        "hash.sha256_hex",
+        "lpcm.validate_format",
         "lpcm.validate_layout",
+        "math.content_limit",
         "math.estimate_aob",
         "options.defaults",
-        "lpcm.validate_format",
-        "disc.plan",
-        "hash.sha256_hex",
-        "math.content_limit",
         "options.evaluate"
       ],
       "status": "pass"
@@ -69,8 +86,8 @@
       "name": "Language profile and argument compatibility",
       "managedEntry": "LocalizationTests.ProfileAndArguments",
       "rustOperations": [
-        "profile.save",
-        "profile.load"
+        "profile.load",
+        "profile.save"
       ],
       "status": "pass"
     },
@@ -79,8 +96,8 @@
       "name": "解析引号、注释和无效行",
       "managedEntry": "ParseAssignments",
       "rustOperations": [
-        "config.read_file",
-        "config.find"
+        "config.find",
+        "config.read_file"
       ],
       "status": "pass"
     },
@@ -98,8 +115,8 @@
       "name": "环境变量优先于 config.env",
       "managedEntry": "EnvironmentWins",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -109,8 +126,8 @@
       "name": "空环境变量不覆盖配置",
       "managedEntry": "EmptyEnvironmentDoesNotOverride",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -120,8 +137,8 @@
       "name": "默认值与数值回退",
       "managedEntry": "DefaultsAndNumericFallbacks",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -131,8 +148,8 @@
       "name": "派生路径和 ISO 名称",
       "managedEntry": "DerivedPathsAndNames",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -142,8 +159,8 @@
       "name": "限制组轨数量",
       "managedEntry": "ClampGroupTrackLimit",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -153,8 +170,8 @@
       "name": "规范化 MLP 来源",
       "managedEntry": "NormalizeMlpSource",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -164,8 +181,8 @@
       "name": "GUI 配置方案保存与版本校验",
       "managedEntry": "GuiConfigurationTests.ProfileRoundtrip",
       "rustOperations": [
-        "profile.save",
-        "profile.load"
+        "profile.load",
+        "profile.save"
       ],
       "status": "pass"
     },
@@ -174,10 +191,10 @@
       "name": "GUI 导入旧 env 与未知键保留",
       "managedEntry": "GuiConfigurationTests.ImportEnv",
       "rustOperations": [
-        "profile.save",
         "config.read_file",
+        "options.evaluate",
         "profile.load",
-        "options.evaluate"
+        "profile.save"
       ],
       "status": "pass"
     },
@@ -254,9 +271,9 @@
       "name": "超大 AU 无损回退与大小上限",
       "managedEntry": "MlpEncoderTests.OversizedAccessUnit",
       "rustOperations": [
-        "wav.layout",
         "encoder.execute",
-        "encoder.write_metadata"
+        "encoder.write_metadata",
+        "wav.layout"
       ],
       "status": "pass"
     },
@@ -275,8 +292,8 @@
       "name": "SurCode 内置任务与路径",
       "managedEntry": "BuildSurcodeBatchJob",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
         "options.evaluate"
       ],
       "status": "pass"
@@ -337,14 +354,14 @@
       "name": "ISO9660 版本后缀处理",
       "managedEntry": "StripIsoVersion",
       "rustOperations": [
-        "iso.extract",
-        "iso.read_file",
-        "iso.entry",
-        "iso.list",
-        "iso.strip_version",
         "iso.all_paths",
         "iso.data_lba",
-        "iso.info"
+        "iso.entry",
+        "iso.extract",
+        "iso.info",
+        "iso.list",
+        "iso.read_file",
+        "iso.strip_version"
       ],
       "status": "pass"
     },
@@ -419,7 +436,9 @@
       "id": 45,
       "name": "专辑多数参数归一化",
       "managedEntry": "NormalizeAlbumParameters",
-      "rustOperations": [],
+      "rustOperations": [
+        "prepare.normalize_albums"
+      ],
       "status": "pass"
     },
     {
@@ -437,10 +456,10 @@
       "name": "ffmpeg 解码错误扫描",
       "managedEntry": "ScanDecodeErrors",
       "rustOperations": [
-        "audio.inspect.metadata",
-        "decode.scan",
         "audio.inspect.decode",
-        "audio.inspect.parameters"
+        "audio.inspect.metadata",
+        "audio.inspect.parameters",
+        "decode.scan"
       ],
       "status": "pass"
     },
@@ -458,7 +477,7 @@
       "name": "按专辑贪心分盘",
       "managedEntry": "SplitAlbumsAcrossDiscs",
       "rustOperations": [
-        "disc.plan",
+        "build.disc_plan",
         "math.content_limit",
         "math.estimate_aob"
       ],
@@ -469,7 +488,7 @@
       "name": "专辑不跨盘",
       "managedEntry": "KeepAlbumOnOneDisc",
       "rustOperations": [
-        "disc.plan",
+        "build.disc_plan",
         "math.content_limit",
         "math.estimate_aob"
       ],
@@ -480,7 +499,7 @@
       "name": "按参数与专辑边界分组",
       "managedEntry": "GroupAtAlbumBoundaries",
       "rustOperations": [
-        "disc.plan",
+        "build.disc_plan",
         "math.content_limit",
         "math.estimate_aob"
       ],
@@ -491,7 +510,7 @@
       "name": "组轨超限诊断",
       "managedEntry": "DiagnoseOversizedAlbumGroup",
       "rustOperations": [
-        "disc.plan",
+        "build.disc_plan",
         "math.content_limit",
         "math.estimate_aob"
       ],
@@ -520,11 +539,12 @@
       "name": "MLP 索引结构",
       "managedEntry": "WriteMlpIndex",
       "rustOperations": [
-        "config.find",
-        "disc.plan",
         "author.title_ends",
-        "math.content_limit",
+        "build.disc_plan",
+        "build.write_index",
+        "config.find",
         "config.read_file",
+        "math.content_limit",
         "math.estimate_aob",
         "options.evaluate"
       ],
@@ -542,10 +562,11 @@
       "name": "dvda-author 参数与 title 边界",
       "managedEntry": "BuildDvdaAuthorArguments",
       "rustOperations": [
-        "disc.plan",
+        "author.build_args",
+        "author.normalize_title_mode",
+        "build.disc_plan",
         "math.content_limit",
-        "math.estimate_aob",
-        "author.normalize_title_mode"
+        "math.estimate_aob"
       ],
       "status": "pass"
     },
@@ -554,10 +575,11 @@
       "name": "诊断 title 划分模式",
       "managedEntry": "BuildDiagnosticTitleModes",
       "rustOperations": [
-        "disc.plan",
+        "author.build_args",
+        "author.normalize_title_mode",
+        "build.disc_plan",
         "math.content_limit",
-        "math.estimate_aob",
-        "author.normalize_title_mode"
+        "math.estimate_aob"
       ],
       "status": "pass"
     },
@@ -573,9 +595,11 @@
       "name": "内置 ISO 写入参数构造",
       "managedEntry": "BuildInProcessIsoArguments",
       "rustOperations": [
+        "author.build_args",
+        "author.normalize_title_mode",
         "config.find",
         "config.read_file",
-        "author.normalize_title_mode"
+        "math.estimate_aob"
       ],
       "status": "pass"
     },
@@ -596,8 +620,8 @@
       "managedEntry": "PublishIso",
       "rustOperations": [
         "publish.copy",
-        "publish.stage",
-        "publish.single"
+        "publish.single",
+        "publish.stage"
       ],
       "status": "pass"
     },
@@ -665,8 +689,8 @@
       "managedEntry": "M4aDryRunDoesNotWrite",
       "rustOperations": [
         "alac.cookie",
-        "process.execute",
-        "alac.find_bad_frames"
+        "alac.find_bad_frames",
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -685,8 +709,8 @@
       "managedEntry": "IsolateM4aFileFailures",
       "rustOperations": [
         "alac.cookie",
-        "process.execute",
-        "alac.find_bad_frames"
+        "alac.find_bad_frames",
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -709,8 +733,8 @@
       "name": "时间轴覆盖后续 AOB 分段",
       "managedEntry": "AnalyzeAllAobSegments",
       "rustOperations": [
-        "aob.scan_sectors",
-        "aob.pts_statistics"
+        "aob.pts_statistics",
+        "aob.scan_sectors"
       ],
       "status": "pass"
     },
@@ -719,8 +743,8 @@
       "name": "AOB PTS 损坏边界检测",
       "managedEntry": "ValidateAobPtsDamageFixtures",
       "rustOperations": [
-        "aob.scan_sectors",
-        "aob.pts_statistics"
+        "aob.pts_statistics",
+        "aob.scan_sectors"
       ],
       "status": "pass"
     },
@@ -764,10 +788,10 @@
       "name": "MLP 索引拒绝重复路径",
       "managedEntry": "RejectDuplicateMlpIndexKeys",
       "rustOperations": [
+        "build.disc_plan",
         "config.find",
-        "disc.plan",
-        "math.content_limit",
         "config.read_file",
+        "math.content_limit",
         "math.estimate_aob",
         "options.evaluate"
       ],
@@ -778,14 +802,15 @@
       "name": "正式出盘执行器端到端",
       "managedEntry": "BuildDiscEndToEnd",
       "rustOperations": [
+        "author.build_args",
+        "author.normalize_title_mode",
+        "build.disc_plan",
         "config.find",
-        "disc.plan",
-        "math.content_limit",
         "config.read_file",
+        "math.content_limit",
         "math.estimate_aob",
         "options.evaluate",
         "process.execute",
-        "author.normalize_title_mode",
         "publish.single"
       ],
       "status": "pass"
@@ -795,16 +820,17 @@
       "name": "事务暂存移动与保留中间 ISO",
       "managedEntry": "StageDiscAndKeepIntermediate",
       "rustOperations": [
+        "author.build_args",
+        "author.normalize_title_mode",
+        "build.disc_plan",
         "config.find",
-        "disc.plan",
-        "math.content_limit",
         "config.read_file",
+        "math.content_limit",
         "math.estimate_aob",
         "options.evaluate",
         "process.execute",
-        "author.normalize_title_mode",
-        "publish.stage",
-        "publish.single"
+        "publish.single",
+        "publish.stage"
       ],
       "status": "pass"
     },
@@ -813,14 +839,15 @@
       "name": "出盘失败保留诊断现场",
       "managedEntry": "PreserveFailedDiscWorkspace",
       "rustOperations": [
+        "author.build_args",
+        "author.normalize_title_mode",
+        "build.disc_plan",
         "config.find",
-        "disc.plan",
-        "math.content_limit",
         "config.read_file",
+        "math.content_limit",
         "math.estimate_aob",
         "options.evaluate",
-        "process.execute",
-        "author.normalize_title_mode"
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -840,15 +867,15 @@
       "name": "菜单按专辑分页与索引",
       "managedEntry": "PlanAlbumMenuPages",
       "rustOperations": [
-        "config.read_file",
         "config.find",
-        "menu.font_width",
-        "menu.sanitize",
-        "menu.pages",
-        "options.evaluate",
+        "config.read_file",
         "menu.font_size",
+        "menu.font_width",
+        "menu.pages",
+        "menu.sanitize",
+        "menu.short_album",
         "menu.truncate",
-        "menu.short_album"
+        "options.evaluate"
       ],
       "status": "pass"
     },
@@ -858,8 +885,8 @@
       "managedEntry": "SanitizeMenuText",
       "rustOperations": [
         "menu.sanitize",
-        "menu.truncate",
-        "menu.short_album"
+        "menu.short_album",
+        "menu.truncate"
       ],
       "status": "pass"
     },
@@ -903,8 +930,8 @@
       "managedEntry": "VerifyMenuVisualThresholds",
       "rustOperations": [
         "image.execute",
-        "menu.visual_label_missing",
         "menu.visual_background_invalid",
+        "menu.visual_label_missing",
         "menu.visual_near_solid",
         "menu.visual_thumbnail_missing"
       ],
@@ -916,8 +943,8 @@
       "managedEntry": "ParseBatchedMenuStatistics",
       "rustOperations": [
         "menu.parse_batch_frame_stats",
-        "menu.parse_overlay_batch",
-        "menu.parse_index_batch"
+        "menu.parse_index_batch",
+        "menu.parse_overlay_batch"
       ],
       "status": "pass"
     },
@@ -926,10 +953,10 @@
       "name": "菜单批量统计单页单进程",
       "managedEntry": "BatchMenuProcessCalls",
       "rustOperations": [
-        "process.execute",
         "menu.parse_batch_frame_stats",
+        "menu.parse_index_batch",
         "menu.parse_overlay_batch",
-        "menu.parse_index_batch"
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -987,10 +1014,10 @@
       "name": "工作盘空间预检估算",
       "managedEntry": "EstimateDiskSpaceRequirements",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
+        "disk.estimate_requirements",
         "math.estimate_aob",
-        "disk.group_requirements",
         "options.evaluate"
       ],
       "status": "pass"
@@ -1000,17 +1027,23 @@
       "name": "准备缓存复用与源变化失效",
       "managedEntry": "PrepareCacheReuseAndInvalidation",
       "rustOperations": [
-        "process.execute",
+        "alac.execute",
+        "config.find",
         "config.read_file",
+        "decode.scan",
+        "hash.sha256_hex",
+        "identity.compute",
+        "identity.equal",
+        "metadata.parse",
+        "options.evaluate",
         "path.safe_basename",
         "prepare.cache_reusable",
-        "config.find",
-        "metadata.parse",
-        "identity.compute",
-        "decode.scan",
-        "options.evaluate",
-        "identity.equal",
-        "hash.sha256_hex"
+        "prepare.enumerate",
+        "prepare.execute",
+        "prepare.normalize_albums",
+        "prepare.snapshot_reuse",
+        "prepare.snapshot_save",
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -1019,13 +1052,15 @@
       "name": "准备缓存不记录未通过校验的轨道",
       "managedEntry": "PrepareCacheSkipsFailedTracks",
       "rustOperations": [
-        "process.execute",
-        "config.read_file",
-        "path.safe_basename",
         "config.find",
-        "metadata.parse",
+        "config.read_file",
         "decode.scan",
-        "options.evaluate"
+        "metadata.parse",
+        "options.evaluate",
+        "path.safe_basename",
+        "prepare.enumerate",
+        "prepare.normalize_albums",
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -1034,10 +1069,10 @@
       "name": "准备缓存身份与存储规则",
       "managedEntry": "PrepareCacheIdentityAndStorage",
       "rustOperations": [
-        "prepare.cache_reusable",
+        "hash.sha256_file",
         "identity.compute",
         "identity.equal",
-        "hash.sha256_file"
+        "prepare.cache_reusable"
       ],
       "status": "pass"
     },
@@ -1046,12 +1081,16 @@
       "name": "准备快照指纹复用与失效",
       "managedEntry": "PreparationSnapshotChecks",
       "rustOperations": [
-        "config.read_file",
         "config.find",
+        "config.read_file",
+        "hash.sha256_hex",
         "identity.compute",
-        "options.evaluate",
         "identity.equal",
-        "hash.sha256_hex"
+        "options.evaluate",
+        "prepare.enumerate",
+        "prepare.roundtrip",
+        "prepare.snapshot_reuse",
+        "prepare.snapshot_save"
       ],
       "status": "pass"
     },
@@ -1060,11 +1099,11 @@
       "name": "审计 PTS 流式扇区扫描",
       "managedEntry": "ScanPtsSectorsStreamingly",
       "rustOperations": [
-        "aob.scan_sectors",
         "aob.audit_diagnostics",
+        "aob.audit_observe",
         "aob.pts_statistics",
         "aob.scan_file",
-        "aob.audit_observe"
+        "aob.scan_sectors"
       ],
       "status": "pass"
     },
@@ -1073,10 +1112,10 @@
       "name": "共享 AOB 扫描保持审计与时间轴语义",
       "managedEntry": "SharedAobScanPreservesDiagnostics",
       "rustOperations": [
-        "aob.scan_sectors",
         "aob.audit_diagnostics",
+        "aob.audit_observe",
         "aob.pts_statistics",
-        "aob.audit_observe"
+        "aob.scan_sectors"
       ],
       "status": "pass"
     },
@@ -1085,13 +1124,13 @@
       "name": "SurCode 新产物校验凭据失效回退",
       "managedEntry": "ReuseValidatedSurcodeOutput",
       "rustOperations": [
-        "process.execute",
-        "config.read_file",
         "audio.parameters",
         "config.find",
+        "config.read_file",
         "identity.compute",
+        "identity.equal",
         "options.evaluate",
-        "identity.equal"
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -1100,17 +1139,17 @@
       "name": "MLP 编码核心 MLP 缓存凭据复用",
       "managedEntry": "MlpEncoderTests.Cache",
       "rustOperations": [
-        "process.execute",
+        "audio.parameters",
+        "cache.mlp_match",
+        "config.find",
         "config.read_file",
         "encoder.execute",
-        "audio.parameters",
-        "config.find",
-        "pcm.normalize",
-        "identity.compute",
-        "options.evaluate",
-        "identity.equal",
         "hash.sha256_file",
-        "cache.mlp_match"
+        "identity.compute",
+        "identity.equal",
+        "options.evaluate",
+        "pcm.normalize",
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -1119,10 +1158,10 @@
       "name": "MLP 缓存索引存储与淘汰",
       "managedEntry": "MlpCacheIndexStorage",
       "rustOperations": [
+        "cache.mlp_match",
         "identity.compute",
-        "mlp.major_sync_interval",
         "identity.equal",
-        "cache.mlp_match"
+        "mlp.major_sync_interval"
       ],
       "status": "pass"
     },
@@ -1131,9 +1170,9 @@
       "name": "逐盘续跑凭据规则",
       "managedEntry": "DiscResumeStoreRules",
       "rustOperations": [
-        "resume.signature_match",
         "identity.compute",
-        "identity.equal"
+        "identity.equal",
+        "resume.signature_match"
       ],
       "status": "pass"
     },
@@ -1142,16 +1181,16 @@
       "name": "出盘签名随配置与 MLP 变化",
       "managedEntry": "DiscSignatureChanges",
       "rustOperations": [
-        "process.execute",
-        "config.read_file",
+        "build.disc_plan",
         "config.find",
-        "math.estimate_aob",
-        "identity.compute",
-        "options.evaluate",
-        "math.content_limit",
+        "config.read_file",
         "hash.sha256_file",
         "hash.sha256_hex",
-        "disc.plan"
+        "identity.compute",
+        "math.content_limit",
+        "math.estimate_aob",
+        "options.evaluate",
+        "process.execute"
       ],
       "status": "pass"
     },
@@ -1160,25 +1199,28 @@
       "name": "构建流水线逐盘续跑",
       "managedEntry": "BuildPipelineResumesDiscs",
       "rustOperations": [
-        "process.execute",
-        "author.title_ends",
-        "config.read_file",
-        "resume.signature_match",
         "audio.parameters",
-        "config.find",
+        "author.build_args",
         "author.normalize_title_mode",
-        "math.estimate_aob",
-        "disk.group_requirements",
+        "author.title_ends",
+        "build.disc_plan",
+        "build.read_manifest",
+        "build.write_index",
+        "config.find",
+        "config.read_file",
+        "disk.estimate_requirements",
+        "hash.sha256_hex",
         "identity.compute",
-        "options.evaluate",
-        "publish.set",
-        "publish.stage",
-        "track.number",
         "identity.equal",
         "math.content_limit",
-        "hash.sha256_hex",
-        "tracks.sort",
-        "disc.plan"
+        "math.estimate_aob",
+        "options.evaluate",
+        "process.execute",
+        "publish.set",
+        "publish.stage",
+        "resume.signature_match",
+        "track.number",
+        "tracks.sort"
       ],
       "status": "pass"
     },
@@ -1187,21 +1229,33 @@
       "name": "MLP 有界并发编码等效性",
       "managedEntry": "MlpEncoderTests.Parallel",
       "rustOperations": [
-        "process.execute",
+        "batch.encode",
         "encoder.execute",
         "pcm.normalize",
-        "batch.encode"
+        "process.execute"
+      ],
+      "status": "pass"
+    },
+    {
+      "id": 116,
+      "name": "Rust manifest 读取与文件尺寸",
+      "managedEntry": "ManifestBuildReader.Read",
+      "rustOperations": [
+        "build.read_manifest",
+        "track.number",
+        "tracks.sort"
       ],
       "status": "pass"
     }
   ],
   "mode": "compare",
-  "total": 115,
-  "passed": 115,
+  "total": 116,
+  "passed": 116,
   "rustCalls": {
     "process.execute": 102,
     "author.title_ends": 7,
     "profile.load": 33,
+    "prepare.enumerate": 7,
     "config.read_file": 72,
     "menu.normalize_path": 3,
     "aob.scan_sectors": 78,
@@ -1220,62 +1274,71 @@
     "aob.pts_statistics": 30,
     "menu.sanitize": 16,
     "menu.pages": 2,
+    "build.disc_plan": 18,
     "image.execute": 23,
     "iso.extract": 3,
     "menu.visual_label_missing": 3,
+    "prepare.execute": 18,
     "iso.read_file": 3,
-    "math.estimate_aob": 107,
-    "disk.group_requirements": 13,
+    "math.estimate_aob": 146,
     "pcm.normalize": 296,
-    "identity.compute": 93,
+    "identity.compute": 114,
     "alac.find_bad_frames": 2,
     "batch.encode": 49,
     "menu.parse_overlay_batch": 17,
     "flac.picture": 3,
+    "prepare.snapshot_reuse": 28,
     "decode.scan": 6,
-    "options.evaluate": 187,
+    "options.evaluate": 206,
     "media.execute": 48,
     "publish.set": 20,
     "menu.visual_expected_index_cells": 9,
     "audio.inspect.parameters": 173,
     "menu.visual_background_invalid": 2,
     "mlp.major_sync_interval": 2,
+    "prepare.roundtrip": 1,
     "menu.font_size": 1,
     "menu.visual_near_solid": 3,
     "publish.stage": 8,
-    "track.number": 12,
-    "identity.equal": 29,
+    "track.number": 14,
+    "identity.equal": 60,
     "profile.save": 11,
     "lpcm.validate_format": 126,
     "aob.scan_file": 12,
     "iso.data_lba": 1,
     "menu.truncate": 10,
+    "disk.estimate_requirements": 13,
     "alac.cookie": 3,
     "publish.copy": 2,
     "iso.strip_version": 9,
     "math.content_limit": 18,
     "hash.sha256_file": 23,
     "shell.assignment": 1,
+    "prepare.normalize_albums": 7,
     "aob.audit_observe": 9018,
     "iso.entry": 1,
-    "hash.sha256_hex": 21,
+    "hash.sha256_hex": 64,
     "encoder.write_metadata": 27,
+    "build.read_manifest": 4,
     "flac.comments": 2,
     "menu.short_album": 7,
     "cache.mlp_match": 11,
+    "build.write_index": 4,
     "publish.single": 5,
-    "tracks.sort": 3,
+    "alac.execute": 2,
+    "prepare.snapshot_save": 7,
     "iso.info": 2,
+    "tracks.sort": 4,
     "menu.visual_thumbnail_missing": 2,
+    "author.build_args": 13,
     "menu.parse_index_batch": 24,
     "audio.inspect.decode": 1185,
     "iso.all_paths": 1,
-    "disc.plan": 18,
     "wav.layout": 8,
     "flac.replace_picture": 1,
     "options.defaults": 1,
     "lpcm.validate_layout": 16,
     "audio.inspect.metadata": 173
   },
-  "evidence": "build/rust-validation/p20-audio-compare-x64.json (ignored local report)"
+  "evidence": "build/rust-validation/p22-build-compare-x64.json (local ignored report; 116/116); Rust workspace --include-ignored passed; C# x64 build passed."
 }

@@ -69,8 +69,8 @@ static uint16_t checksum16_value(const uint8_t *data, size_t size)
 {
     uint32_t crc = crc_av(0x002dU, 16, 0U, data, size - 2);
     crc ^= (uint16_t)(data[size - 2] | ((uint16_t)data[size - 1] << 8));
-    /* The wire stores this field little endian, while the C# helper reads it
-       as a little-endian value and returns the numeric CRC. */
+    /* The wire stores this field little endian; return the numeric CRC value
+       used by the Rust ABI. */
     return (uint16_t)crc;
 }
 

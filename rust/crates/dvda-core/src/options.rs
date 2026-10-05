@@ -33,10 +33,7 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_DISC_BYTES", ""),
         ("DVDA_MLP_SOURCE", "surcode-batch"),
         ("DVDA_MLP_EXTERNAL_DIR", ""),
-        ("DVDA_MLP_BATCH_TEMP_DIR", ""),
-        ("DVDA_MLP_BATCH_OUTPUT_DIR", ""),
         ("DVDA_MLP_METADATA_CONTEXT", ""),
-        ("DVDA_MLP_EAC3TO_EXE", ""),
         ("DVDA_MLP_SURCODE_SAMPLE_RATE", "48000"),
         ("DVDA_MLP_SURCODE_BITS", "24"),
         ("DVDA_MLP_JOBS", "1"),
@@ -49,10 +46,6 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_MENU_FONT_JP", ""),
         ("DVDA_MENU_FONT_KR", ""),
         ("DVDA_AUTHOR", "dvda-author-dev.exe"),
-        ("DVDA_MKISOFS", "mkisofs.exe"),
-        ("DVDA_FFMPEG", "builtin:media"),
-        ("DVDA_FFPROBE", "builtin:probe"),
-        ("DVDA_METAFLAC", "metaflac"),
         ("DVDA_AUTHOR_SRC", ""),
         ("DVDA_PREPARE_CACHE", "on"),
         ("DVDA_RESUME", "on"),
@@ -153,7 +146,7 @@ impl Request {
         {
             self.config_path
                 .as_deref()
-                .unwrap_or("config.env")
+                .unwrap_or("settings.json")
                 .rsplit(['/', '\\'])
                 .next()
                 .unwrap_or("")
@@ -242,13 +235,7 @@ pub fn evaluate(request: Request) -> Value {
     ] {
         put(name, OptionValue::new(r.get(key).trim_end_matches('/')));
     }
-    for (name, key) in [
-        ("Title", "DVDA_TITLE"),
-        ("DvdaAuthor", "DVDA_AUTHOR"),
-        ("Mkisofs", "DVDA_MKISOFS"),
-        ("Ffmpeg", "DVDA_FFMPEG"),
-        ("Ffprobe", "DVDA_FFPROBE"),
-    ] {
+    for (name, key) in [("Title", "DVDA_TITLE"), ("DvdaAuthor", "DVDA_AUTHOR")] {
         put(name, OptionValue::new(r.get(key)));
     }
     let iso_prefix = r.get("DVDA_ISO_PREFIX");
@@ -370,7 +357,6 @@ pub fn evaluate(request: Request) -> Value {
         ("MlpBatchTempDirectory", "DVDA_MLP_BATCH_TEMP_DIR", true),
         ("MlpBatchOutputDirectory", "DVDA_MLP_BATCH_OUTPUT_DIR", true),
         ("MlpMetadataContext", "DVDA_MLP_METADATA_CONTEXT", false),
-        ("MlpEac3toExecutable", "DVDA_MLP_EAC3TO_EXE", false),
         ("MenuFont", "DVDA_MENU_FONT", false),
         ("MenuFontJapanese", "DVDA_MENU_FONT_JP", false),
         ("MenuFontKorean", "DVDA_MENU_FONT_KR", false),

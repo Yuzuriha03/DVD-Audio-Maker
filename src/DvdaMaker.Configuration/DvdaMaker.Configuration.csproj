@@ -1,6 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="..\DvdaMaker.Localization\DvdaMaker.Localization.csproj" />
-    <ProjectReference Include="..\DvdaMaker.Processes\DvdaMaker.Processes.csproj" />
-  </ItemGroup>
-</Project>

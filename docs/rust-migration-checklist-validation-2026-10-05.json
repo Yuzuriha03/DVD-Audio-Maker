@@ -1,0 +1,609 @@
+{
+  "date": "2026-10-05",
+  "target": "x86_64-pc-windows-gnu",
+  "scope": "Local checklist implementation and fixed-baseline behavior audit; no GitHub commit/push/tag/release in this task.",
+  "migration_complete_for_reviewed_scope": false,
+  "open_checklist_items": [
+    "G08.01",
+    "G08.02",
+    "G09.03",
+    "G09.04",
+    "G13.01",
+    "G13.02",
+    "G14.01",
+    "A03",
+    "A04",
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R10",
+    "R11",
+    "R12",
+    "R13",
+    "R14",
+    "R15",
+    "R16"
+  ],
+  "completed_checklist_items": [
+    "G01.01",
+    "G01.02",
+    "G01.03",
+    "G01.04",
+    "G01.05",
+    "G01.06",
+    "G01.07",
+    "G02.01",
+    "G02.02",
+    "G02.03",
+    "G02.04",
+    "G02.05",
+    "G02.06",
+    "G03.01",
+    "G04.01",
+    "G04.02",
+    "G04.03",
+    "G04.04",
+    "G04.05",
+    "G04.06",
+    "G04.07",
+    "G04.08",
+    "G05.01",
+    "G05.02",
+    "G06.01",
+    "G06.02",
+    "G06.03",
+    "G07.01",
+    "G07.02",
+    "G07.03",
+    "G07.04",
+    "G08.03",
+    "G09.01",
+    "G09.02",
+    "G10.01",
+    "G10.02",
+    "G10.03",
+    "G11.01",
+    "G11.02",
+    "G12.01",
+    "G12.02",
+    "G12.03",
+    "G13.03",
+    "G13.04",
+    "G14.02",
+    "G14.03",
+    "A01",
+    "A02"
+  ],
+  "workspace": {
+    "passed": 141,
+    "failed": 0,
+    "ignored": 0,
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1 -OtherVolume D:\\",
+    "log": {
+      "path": "build/rust-migration-checklist-tests.log",
+      "sha256": "179f4e84704d1dac20dab61fb781ff9a9045729ee8b4c74f53b2d1c7d2e6a05c"
+    }
+  },
+  "checks": {
+    "fmt": true,
+    "clippy_workspace_all_targets_deny_warnings": true,
+    "release_workspace_build": true,
+    "no_csharp_sources_projects_solutions": true,
+    "git_diff_check": true
+  },
+  "audit": {
+    "historical_baseline": "fb3cbb84788a807758fa6a8f472a9ffdad3115e8",
+    "historical_source_files": 90,
+    "historical_compatibility_entries": 115,
+    "excluded_full_entries": [
+      9,
+      26
+    ],
+    "all_entries_mapped": true,
+    "csharp_tests_rerun": false,
+    "map": {
+      "path": "docs/rust-migration-entrypoints-2026-10-05.json",
+      "sha256": "71a899e995a6e92c82fb6da4f9ea865ec0fb5689e7491579ae883e8841fe9423"
+    }
+  },
+  "mlp": {
+    "frozen_whole_file_sha256_and_length_cases": 116,
+    "decoded_pcm_checked": true,
+    "baseline_modified": false,
+    "post_encoding_patching": false,
+    "new_surcode_reference_run": false,
+    "native_sources_unchanged": 41,
+    "encoder_sha256": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8"
+  },
+  "fonts": {
+    "new_ttc_bytes": 17371156,
+    "new_ttc_sha256": "5ef6fafd0535d57290aca3b8bdc20436d4030e547d66e27bb5227e06bd3230fb",
+    "old_collection_reconstructed_faces_equal": true,
+    "extracted_original_otfs_equal": true,
+    "rendered_regions": [
+      {
+        "region": "sc",
+        "bytes": 40320,
+        "rgba_sha256": "6cf21efca2f4a62acdcc76c06449caa0f60438bb7d2009ca7dfb32d21ae870bb",
+        "equals_original": true
+      },
+      {
+        "region": "jp",
+        "bytes": 40320,
+        "rgba_sha256": "b70ac59457db7c56d5ed15caebf74005bd0de0efa38e517375215f07d33dc7f8",
+        "equals_original": true
+      },
+      {
+        "region": "kr",
+        "bytes": 40320,
+        "rgba_sha256": "b70ac59457db7c56d5ed15caebf74005bd0de0efa38e517375215f07d33dc7f8",
+        "equals_original": true
+      }
+    ],
+    "container_note": "Previous cached TTC differs in standalone checkSumAdjustment fields only; reconstructed regional faces are byte-identical."
+  },
+  "font_cli_cases": 15,
+  "gui": {
+    "languages": [
+      "zh-CN",
+      "en",
+      "ja"
+    ],
+    "desktop_tests": 12,
+    "control_capture": {
+      "path": "build/rust-migration-checklist-gui/controls.json",
+      "sha256": "86c66fb2827edddc438c32b3ed93d2d5d3bb7ac20d9b186b1462407ea37b2229"
+    },
+    "audit": "docs/RUST-GUI-BEHAVIOR-AUDIT-2026-10-05.md"
+  },
+  "standalone_onefile": {
+    "passed": true,
+    "build_and_verify": [
+      "surcode-batch",
+      "lpcm"
+    ],
+    "menu_and_stills": true,
+    "runtime_repair": true,
+    "standalone_exe": true,
+    "runtime_files": 32
+  },
+  "package": {
+    "directory": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-migration-checklist-package",
+    "zip": "DVD-Audio-Maker-v1.0-win-x64.zip",
+    "zip_sha256": "8f0c04dddc88c480d1aa4fd2143c55a00d864b208274ce44c4bdcad12eb74d70",
+    "exe_sha256": "e2446c4ddeb570f48455e8262d6e3e6d6e78862013b24d961ed921bcf5f6ef6c",
+    "zip_root_files": [
+      "DVD-Audio-Maker.exe",
+      "LICENSE",
+      "NOTICE-Image.txt",
+      "NOTICE-Menu.txt",
+      "README.en.md",
+      "README.ja.md",
+      "README.md",
+      "THIRD-PARTY.en.md",
+      "THIRD-PARTY.md"
+    ],
+    "manifest_records": 10,
+    "embedded_files": 27,
+    "runtime_hashes": {
+      "avcodec-63.dll": "a5e3e33c58ebff37c801ecaa6ad1e2dcbfcd47f30caf11edaa5db841da99a73e",
+      "avformat-63.dll": "25acd5941bd9d002a820f0aba44a4e38ad54e9a7dbada306367324133f243a55",
+      "avutil-61.dll": "19172234c811035cc870cf5299055b3a88240fc5ee59f7141f521e68fcf6e3ab",
+      "colors.xml": "a71184afd1bda9b65a0ba1e42a02c05f32033758c167c19cfbe28d0418df5d9c",
+      "data/menu/activeheader": "7cb2fee9f3c93ac450edc20b26815123004134b5b9f0738e62da6de05765a3b4",
+      "data/menu/black_NTSC_720x480.jpg": "f07639230a4ee97713c2a4cdc6780102169e2953195fa8a6d278d3e26b354cf0",
+      "data/menu/black_NTSC_720x480.png": "892c678393205b05ceb9dcda40a5e78c7ef1a6fd3f3bd49800b4bccc46fe4447",
+      "data/menu/black_PAL_720x576.jpg": "991fd25741b5ec7ead149148eae8933fdef46e5439286f5876ab9b8f0d3bd590",
+      "data/menu/black_PAL_720x576.png": "3205157bbb577dde623d843509e6064ee5b18f93c3cfaab54d32ba2e9af709f6",
+      "data/menu/silence.wav": "25eadeedec105d07dc4e6e2bdbb84ad33a8e982648a2d231886154c61ce5dd42",
+      "dvda-author-dev.exe": "3cc2a3afedb21d4ad7cf375bbc01e5afbf4e5cdecd5557a1c610e2e0d1f83d00",
+      "dvda-disc-verify.dll": "70feafc9e27db5cabe4960b1729c8cb6d4ec436ff2bad7960a276e36a37df587",
+      "dvda-formats.dll": "6e62aeeeea20713e2bbbd5ecf02555f20af4e681dc56274c0f04ab78616fa277",
+      "dvda-image.dll": "5256f2e725fe04bb28a42fce4e63f98f17c48a8c0a9444e0b5bf36a32f96fffe",
+      "dvda-media.dll": "0f13179dc4b9750eed27e3a8ddcfd17f5fe21e49ee4ac0584f9017d7b13d5deb",
+      "dvda-menu-nav.dll": "f85e98afdccd36227e5fe682a9a06c33531469bc53cc2a722c460e0b1ebd0c67",
+      "dvda-menu-spu.dll": "281ffa87096e2f8ec51c79363b8a721ff9bbde8eb60544b91857e095c8da4a57",
+      "fonts/DvdaNotoCJK-Regular.ttc": "fded57abee84dc3ea9bb72a0fd4e81b82ed3b9ba7c1e15175f3ad46b2ec0a15e",
+      "libgomp-1.dll": "2b5d851adc50f14a824a6de902d61ab67fbaee70dfe131850af842049a5612ee",
+      "libsoxr.dll": "5bb8f922b12995b0322b73bd94e2e6dadfeac58abc8beb4d0f69ca5f4747917d",
+      "libwinpthread-1.dll": "72bf8802de3a99d28f0bc2db9a11f281a9f9f3fa83dab2bc67e69fac3bd3d9c0",
+      "mlp_encoder.dll": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8",
+      "policy.xml": "1c875a4fe1bcce926766008535af833eca7a0c7672bc87120957db2397540771",
+      "swresample-7.dll": "24b3aafe401f2ae9a833980f91ca433694fed9ebf1928bbf80ee12b3a08df28e",
+      "swscale-10.dll": "c7929841f5ada6db1f6ae5791f73817071181060b7f8fc93097cdb663cb6ce92",
+      "type.xml": "1004453e3752867750f86b0a83b4645f0346eb0abbe10a755162f80565cd1353",
+      "zlib1.dll": "93e9243a44c29200eeacaf9658efe2558581770e4b11ca4b500e18e424a6e3b5"
+    },
+    "temporary_candidates_remaining": 0,
+    "exe_bytes": 23045130,
+    "zip_bytes": 21082048,
+    "provenance_records_outside_zip": true
+  },
+  "script_entrypoints": {
+    "passed": 9,
+    "evidence": {
+      "path": "build/rust-build-entrypoints-validation.json",
+      "sha256": "3807c00bb6bf1d76ba24f37690454a9c5d62dd43e612843e0a7b4afc19945d18"
+    }
+  },
+  "verification_branch_evidence": {
+    "G03.01": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions"
+      ],
+      "cases": [
+        "manifest 1/3 expected versus index/IFO both2",
+        "corrupt existing manifest fails",
+        "absent optional manifest succeeds",
+        "two ISO total4"
+      ]
+    },
+    "G04.01": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions"
+      ],
+      "cases": [
+        "explicit requested file",
+        "rebuild-final.log and finalrebuild.log fallback",
+        "filesystem modified-time ordering",
+        "fallback disabled",
+        "all candidates absent"
+      ]
+    },
+    "G04.02": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions",
+        "rust/crates/dvda-core/src/verification.rs::historical_headers_strict_rows_and_padding_are_preserved"
+      ],
+      "cases": [
+        "real author build.log",
+        "quoted Chinese and spaced output paths",
+        "mixed old C# and current Rust formal sections",
+        "dry-run headers",
+        "multiple discs sorted by number"
+      ]
+    },
+    "G04.03": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions"
+      ],
+      "cases": [
+        "BUILD_LOG_MISSING carries Unavailable true and Succeeded false; other checks continue"
+      ]
+    },
+    "G04.04": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions"
+      ],
+      "cases": [
+        "only author command, no valid rows",
+        "orphan rows, no author command",
+        "TRACK_TABLE_MISSING"
+      ]
+    },
+    "G04.05": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/src/verification.rs::audit_material_order_mapping_and_sector_relations"
+      ],
+      "cases": [
+        "preserves TRACK_TABLE_MISSING-before-DVDA_COMMAND_MISSING order",
+        "real parser cannot produce rows without commands",
+        "defensive DVDA_COMMAND_MISSING tested with direct parsed-data boundary only"
+      ]
+    },
+    "G04.06": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions",
+        "rust/crates/dvda-core/src/verification.rs::audit_material_order_mapping_and_sector_relations"
+      ],
+      "cases": [
+        "reverse log disc order",
+        "output trailing-number selection",
+        "legacy positional fallback",
+        "twoISO onecommand => DISC_LOG_MAPPING_MISSING"
+      ]
+    },
+    "G04.07": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions"
+      ],
+      "cases": [
+        "log has one/three rows while ISO/index both2",
+        "Unavailable true and non-success",
+        "physical log/IFO position disagreement separately fails"
+      ]
+    },
+    "G04.08": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions"
+      ],
+      "cases": [
+        "raw, mixed case, ANSI padding error",
+        "success-exit complete ISO still fails",
+        "normal log succeeds"
+      ]
+    },
+    "G05.01": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions",
+        "rust/crates/dvda-core/src/verification.rs::audit_material_order_mapping_and_sector_relations"
+      ],
+      "cases": [
+        "IFO one-sector gap/overlap across two titles",
+        "log one-sector gap/overlap",
+        "normal adjacency"
+      ]
+    },
+    "G05.02": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions"
+      ],
+      "cases": [
+        "IFO/log max-last one sector short/long",
+        "same physical audio split into two AOB entries passes",
+        "single AOB normal total"
+      ]
+    },
+    "G06.01": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_menu_and_title_boundaries"
+      ],
+      "cases": [
+        "pre-publication menu_check::verify actual output with valid/zero/absent AUDIO_SV.VOB",
+        "warning Severity1 preserved"
+      ]
+    },
+    "G06.02": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_menu_and_title_boundaries",
+        "rust/crates/dvda-core/src/menu_verify.rs::still_header_rejects_every_short_self_consistent_zero_record"
+      ],
+      "cases": [
+        "24 and95 byte self-consistent zero-record IFOs via actual mutated ISO",
+        "every24..95 byte input rejects ASVS_TOO_SHORT",
+        "96byte zero-record header structurally passes"
+      ]
+    },
+    "G06.03": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_menu_and_title_boundaries"
+      ],
+      "cases": [
+        "no menu expectation missing IFO/VOB/both",
+        "positive expected pictures requires both files",
+        "explicit0 permits absent files",
+        "valid native menu fully verifies"
+      ]
+    },
+    "G12.fonts": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_menu_and_title_boundaries",
+        "rust/crates/dvda-core/src/menu_fonts.rs::scripts_regions_fallback_and_failure_severity_match_old_resolver"
+      ],
+      "cases": [
+        "six script probes",
+        "actual preferred font unavailable fallback succeeds",
+        "Japanese regional fallback",
+        "synthetic incomplete/all-missing font selection and severity",
+        "SC/JP/KR file/family derivation",
+        "temporary probe cleanup"
+      ]
+    },
+    "G12.assets": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_menu_and_title_boundaries",
+        "rust/crates/dvda-core/tests/application_native.rs::application_failed_author_keeps_workspace_and_previous_release"
+      ],
+      "cases": [
+        "missing image/menu data/menu libraries diagnostics",
+        "missing overlay checking image component warning",
+        "missing album cover uses black background warning",
+        "index missing cover/count diagnostics",
+        "block still.jpg output after background generation => MENU_STILL_FAILED warning",
+        "effective still count persisted to index and resume"
+      ]
+    },
+    "G14.resume": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_failed_author_keeps_workspace_and_previous_release",
+        "rust/crates/dvda-core/tests/application_native.rs::application_preparation_cache_resume_and_lossless_verification"
+      ],
+      "cases": [
+        "malformed resume.json emits warning and rebuilds",
+        "staged cancellation resumes with original audit evidence and full verification"
+      ]
+    },
+    "A03.build_failures": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_failed_author_keeps_workspace_and_previous_release"
+      ],
+      "cases": [
+        "keep intermediate/tmp preserves authored ISO and perdisc outputs",
+        "author nonzero exit retains diagnostic dirs and previous release/index",
+        "Windows locked final ISO replacement fails without changing old release/index",
+        "unlock then rebuild succeeds"
+      ]
+    },
+    "A04.translations": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/src/verification.rs::restored_user_audit_messages_have_all_three_languages",
+        "rust/crates/dvda-core/src/menu_fonts.rs::font_and_asset_warnings_are_translated_in_every_language",
+        "rust/crates/dvda-core/src/localization.rs::all_catalog_entries_preserve_parameters_in_both_languages"
+      ],
+      "cases": [
+        "Chinese/English/Japanese restored diagnostics and unmodified paths",
+        "all diagnostic codes delivered through actual app core outcomes"
+      ]
+    },
+    "G09.verify_modes": {
+      "status": "passed",
+      "evidence": [
+        "rust/crates/dvda-core/tests/application_native.rs::application_manifest_log_and_sector_audit_regressions"
+      ],
+      "cases": [
+        "standalone quick/audit without index/media",
+        "timeline succeeds without build log",
+        "menu-disabled skip without explicit ISO",
+        "PVD volume-label mutation => VOLUME_ID_MISMATCH",
+        "All still requires index and audit evidence"
+      ]
+    }
+  },
+  "evidence_files": [
+    {
+      "path": "build/rust-font-migration/font-validation.json",
+      "sha256": "961736ec18fd4b42a50fc57ea2bd49278ab946221c44240b8f6820c6b9b20dd3"
+    },
+    {
+      "path": "build/rust-packaging-migration-validation.json",
+      "sha256": "da41c7dfc47ed69d09091fb9ca464e0ed0b956a184b819a592e7b8270deb28e0"
+    },
+    {
+      "path": "build/rust-packaging-inputs/negative-cli-validation.json",
+      "sha256": "4451abf7b59a87725cf9068aa557c80ecabf6d0f330bb096e60e12d13701085c"
+    },
+    {
+      "path": "build/rust-migration-checklist-package-validation.json",
+      "sha256": "831f3ad472a14b4e019a32bb6beec3f4cbe2b0be4234cb1ff059b2cae4dfe857"
+    },
+    {
+      "path": "build/rust-migration-checklist-clippy.log",
+      "sha256": "6fb51d2678fca055da609bd802a095de06abf7c31d9c2229e11514024aa1678d"
+    },
+    {
+      "path": "build/rust-migration-checklist-release.log",
+      "sha256": "ed40e01f0f48fee91b797f44aa5e7e9194b8904daa26e0ec4b5a694989fafa28"
+    },
+    {
+      "path": "build/rust-migration-checklist-onefile-validation.json",
+      "sha256": "92e23086b8b01baffc182af34a5bab04cec088141028408d1fd48569fb18d5bf"
+    }
+  ],
+  "limits": [
+    "Tests use generated small audio/ISO fixtures, not the user music collection or full-disc rebuild.",
+    "Frozen MLP fixtures cover the recorded matrix, not every possible future PCM input.",
+    "Historical C# tests are mapped, not executed or restored.",
+    "Fonts reconstruct and render identically; the TTC container checksum-adjustment bytes can differ.",
+    "Onefile archive has 27 embedded files; runtime_files counts generated/cache files after a workflow as well.",
+    "Source identity retains the historical size/timestamp/head-tail hash strategy; full binary and frozen-output checks are separate."
+  ],
+  "historical_completion_claim": true,
+  "historical_completed_checklist_items": [
+    "G01.01",
+    "G01.02",
+    "G01.03",
+    "G01.04",
+    "G01.05",
+    "G01.06",
+    "G01.07",
+    "G02.01",
+    "G02.02",
+    "G02.03",
+    "G02.04",
+    "G02.05",
+    "G02.06",
+    "G03.01",
+    "G04.01",
+    "G04.02",
+    "G04.03",
+    "G04.04",
+    "G04.05",
+    "G04.06",
+    "G04.07",
+    "G04.08",
+    "G05.01",
+    "G05.02",
+    "G06.01",
+    "G06.02",
+    "G06.03",
+    "G07.01",
+    "G07.02",
+    "G07.03",
+    "G07.04",
+    "G08.01",
+    "G08.02",
+    "G08.03",
+    "G09.01",
+    "G09.02",
+    "G09.03",
+    "G09.04",
+    "G10.01",
+    "G10.02",
+    "G10.03",
+    "G11.01",
+    "G11.02",
+    "G12.01",
+    "G12.02",
+    "G12.03",
+    "G13.01",
+    "G13.02",
+    "G13.03",
+    "G13.04",
+    "G14.01",
+    "G14.02",
+    "G14.03",
+    "A01",
+    "A02",
+    "A03",
+    "A04"
+  ],
+  "completion_claim_superseded_by": "docs/rust-migration-recheck-2026-10-05.json",
+  "completion_claim_correction": "Passing results below remain valid historical observations; independent actual-entry counterexamples reopened behavior parity. R and G/A identifiers overlap, not distinct bug counts.",
+  "record_role": "historical-snapshot-preserved",
+  "followup": {
+    "date": "2026-10-05",
+    "status": "completed-recheck-items-locally",
+    "report": "docs/RUST-MIGRATION-RECHECK-FIXES-2026-10-05.md",
+    "evidence": "docs/rust-migration-recheck-fixes-2026-10-05.json",
+    "closed_findings": [
+      "R01",
+      "R02",
+      "R03",
+      "R04",
+      "R05",
+      "R06",
+      "R07",
+      "R08",
+      "R09",
+      "R10",
+      "R11",
+      "R12",
+      "R13",
+      "R14",
+      "R15",
+      "R16",
+      "R17"
+    ],
+    "open_findings": [],
+    "workspace_tests": {
+      "passed": 160,
+      "failed": 0,
+      "ignored": 0
+    }
+  }
+}

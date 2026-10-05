@@ -1,304 +1,69 @@
-# C# 应用层迁移至 Rust 的实施方案
+# C# 应用层迁移至 Rust
 
-制定日期：2026-10-04（Asia/Hong_Kong）。源码基准：`53cef39`。
+本文件记录最终采用的迁移方案和当前验收边界。目标是形成 **Rust 应用层 + 已验证的 C/C17 原生组件** 的 Windows x64 程序，并保持音频、MLP、LPCM、菜单、制盘和成品校验行为。
 
-**状态：P0 已完成；P1、P2 的第一批逻辑及格式边界已接管，P3 已接管配置、AOB 审计、发布事务、媒体/图像/MLP 调用、子进程管理、流式 PCM 规范化和内置批量编码调度。整体迁移仍在进行，尚未达到无需 .NET 的用户端验收。** 后续仍需补齐准备/制盘/验证工作流、GUI、单文件发布与开发工具，最终按清理门槛删除旧兼容层。
+## 当前验收状态（2026-10-05）
 
-## 1. 目标与完成边界
+**报告与清单已确认的迁移范围完成本地验收。** 补迁 G01–G14 后的独立复核 R01–R16 和最终验证补查的 R17 均已修复，涵盖正式 PTS/无损验证、GUI 设置/诊断/日志队列、MLP 导入路径及续跑/发布失败处理。见 [修复验收报告](RUST-MIGRATION-RECHECK-FIXES-2026-10-05.md)、[完整清单](RUST-MIGRATION-REMAINING.md) 和 [机器可读验收记录](rust-migration-recheck-fixes-2026-10-05.json)。90 份旧源文件/115 个旧测试入口仍只是审计索引；不把本次通过结论扩展为任意未知输入保证。当前为独立 Rust 应用层与 C/C17 组件，没有恢复 C# 或 config.env；本次未提交或更新远端 tag/release。
 
-将现有 C# 应用层分阶段迁入 Rust，最终形成 **Rust 应用层 + 现有 C/C17 原生组件** 的 Windows x64 程序。
+Windows x64 workspace 最终 **160 项通过，0 失败、0 忽略**；116 个冻结 MLP 样本的整文件长度/SHA-256 和解码 PCM 均通过，基准及编码核心未改写。最终单 EXE 的 18 个 GUI 案例、MLP/LPCM 带菜单静图制作/完整成品验证、缓存 DLL 修复及发布布局/哈希核验均通过。验证使用自建小样本，未重跑用户全盘。
 
-主要目标：
+- GUI/CLI 制作入口自动检查音源，恢复有效准备快照，核对编码身份、磁盘空间与光盘断点，再事务式发布。
+- 成品验证包含源到目标 PCM、编码结果到盘内音频、IFO 曲目和时间线，以及菜单导航、按钮、高亮和画面。
+- `MlpStreamAligner`、`PcmComparer` 与格式边界继续由 C17 DLL 提供。MLP 固定样本按输入、参数和上下文核对完整输出，不对编码结果打补丁。
+- 三语言 GUI 及准备报告共享翻译资源，路径、音轨标题和元数据保持原样，未知原生诊断保留原文。
+- JSON 配置自动保存，支持打开、保存和另存；旧 config.env、C# 兼容层、GUI dry-run 和外部编码进程已按用户要求移除。
+- 发布包是必要组件内嵌的 x64 GUI EXE，用户说明和许可旁置，同放进一个标准命名 ZIP。
 
-1. 正式 GUI 及完整制作、验证流程不再需要 .NET Desktop Runtime。
-2. 保留已有功能和输入输出行为，包括 `config.env`、GUI 方案、MLP/LPCM、已有 MLP 导入、菜单、缓存、续跑和成品验证。
-3. 同一目标 PCM、参数和编码上下文产生与基准整文件逐字节相同的 MLP；一致性来自编码行为一致，禁止编码后修补输出以制造一致。
-4. 保留 Windows x64 单 EXE 入口，运行组件按需释放到缓存；用户说明、配置示例和许可放在 EXE 旁，统一打包为标准发布 ZIP。
-5. 保留方便的开发 CLI、F5 调试、日志和回归测试。GUI 继续只提供检查、制作、验证，`dry-run` 仅供开发调试。
+## 目录边界
 
-完成边界分为两层，不能混为一谈：
+| 目录 | 用途 |
+|---|---|
+| `rust/crates/dvda-core` | Rust 工作流、配置、缓存、媒体准备、制盘、校验和业务规则 |
+| `rust/crates/dvda-desktop` | 原生 Win32 GUI |
+| `rust/crates/dvda-cli` | 开发 CLI、样本和验证入口 |
+| `rust/crates/dvda-native` | 原生 DLL 的 Rust ABI 加载与调用 |
+| `rust/crates/dvda-toolchain` | Rust 发布打包与包内容审计 |
+| `native/mlp-encoder` | MLP C17 编码核心、源码、构建脚本和固定 x64 DLL |
+| `tools/formats-native` | 格式解析、对齐和 PCM 比较的 C17 DLL 源码 |
+| `tools/win-build` | 原生组件构建、author 组装和发布包辅助脚本 |
 
-- **用户端完成：** Rust GUI、共享业务逻辑和运行资源管理全部接管，正式包不加载托管程序集，也不依赖 .NET；现有 C# 测试和打包工具可暂作开发用途。
-- **最终迁移完成：** 迁移日常开发 CLI、打包、字体工具和全部兼容性测试，常规构建、调试、测试、发布均不再要求 .NET。Rust 全部接管并验证通过后，删除仓库中的全部 C# 源码、项目及兼容桥，以及已由原生 C 实现功能的外部依赖兼容层。旧实现仅保留在 Git 历史，当前源码树不归档副本。
+## 配置规则
 
-实施已启动。最终目标是全部应用层迁移，CLI、打包、字体工具等次要目标遇到相邻可复用边界时同步迁移，不作为永久排除项。文件读写、进程生命周期和原生组件调用封装也必须迁入 Rust；保留的是已有 C/C17 组件本身。未完成最终验收前不变更发布包、tag 或 Release。
+JSON profile 的 `Values` 保存用户设置。GUI 可以编辑并保存 profile，CLI 和 GUI 使用同一读取器。环境变量仅作为开发自动化的显式覆盖，不能触发 `config.env` 搜索或导入；发布包使用经过完整性检查的内嵌组件缓存。
 
-## 2. 当前基线与已有证据
+MLP 编码设置使用 `DVDA_MLP_SOURCE=surcode-batch`，LPCM 使用 `lpcm`，已有原版 SurCode MLP 文件通过 `DVDA_MLP_EXTERNAL_DIR` 只读导入。旧的 FFmpeg MLP 编码分支、原版 SurCode 启动、eac3to 调用和事后输出修补均不存在。
 
-### 2.1 源码和包体
-
-基准提交下，排除 `bin/obj` 的 `src` C# 源码约 15,931 行，包含开发 CLI、打包工具、字体工具及托管回退。去掉这三个开发工具项目后的约 13,190 行是用户端迁移范围的规模参考，不等同于最终机器码体积。
-
-本机最近一次 C17 发布产物：
-
-| 项目 | 字节数 | 本地位置 |
-| --- | ---: | --- |
-| 单 EXE | 16,289,378 | `build/release-c17-final/DVD-Audio-Maker.exe` |
-| 内嵌压缩运行资源 | 14,750,763 | `tools/win-build/publish/runtime-bundle-win-x64/runtime.br` |
-| EXE 扣除上述资源后的部分 | 1,538,615 | 由前两项相减 |
-| 发布 ZIP | 15,418,403 | `build/release-c17-final/DVD-Audio-Maker-v1.0-win-x64.zip` |
-
-内嵌资源约占 EXE 的 90.6%。仅替换 C# 不会自动缩小这部分；其余部分还要用 Rust 程序替代，不能当作全部可省空间。迁移不承诺未经测量的压缩比例或速度提升，不以换压缩格式或参数作为语言迁移收益。
-
-### 2.2 已有验证的适用范围
-
-以下是 C17 拆分阶段已经完成的记录，不是 Rust 迁移验收结果：
-
-- 现有兼容性测试 115/115 通过。
-- C# 与 C17 格式实现对照 147 个原版 MLP 文件，共 7,611,727,940 字节：检查所列解析字段、对齐后的完整字节、对齐变更记录以及 PTS 向量。入口为 `NativeFormatSamples`。
-- 已发布 C17 版本的启动及包内容检查 34/34 通过。
-- Rust x64 Release CLI 已通过 `dvda-native` 直接加载 `dvda-formats.dll`，对 147 个 MLP 逐文件执行检查和对齐，并解析 PTS；结果为 147/147、7,611,727,940 字节、147/147 有效和 147/147 对齐完成。
-- P2 文件与格式边界在 C#↔Rust compare 模式中实际调用：WAV 布局 47 次、WAV 规范化 20 次、FLAC comments/picture/写入 6 次、ALAC cookie/帧扫描 5 次；ISO 目录、读文件和提取路径已通过 CLI fixture 验证。
-- P3 第一批工作流边界、MLP 成品验证纯算法、AOB PTS 统计、准备快照指纹、菜单视觉判定和 LPCM 参数判定在 C#↔Rust compare 模式中实际调用：文件身份 29 次、MLP 缓存 11 次、续跑签名 5 次、准备缓存 6 次、空间分组 13 次、FFprobe/FFmpeg 输出解析 37 次、author 标题规则 21 次、MLP major-sync 间隔 2 次、AOB PTS 统计 9 次、SHA-256 指纹 8 次、菜单视觉判定 62 次、LPCM 格式判定 126 次；完整 115/115 通过。证据为 `build/rust-validation/p7-menu-lpcm-compare-x64.json`（本地忽略报告）。
-**147 个样本的格式对照并不是重新编码验证。** Rust 接管音源准备或编码调用后，仍必须单独验证送入编码器的 PCM 与新生成的 MLP。115 项测试也不能代替 GUI、发布环境和真实样本验收。
-
-基准应固定到提交号、源码与组件哈希；`v1.0` 曾被更新，不作为不可变的唯一参考。样本、日志和构建产物留在 Git 忽略目录，不把数 GB 音频推入仓库。
-
-## 3. 迁移范围与保留部分
-
-| 现有模块 | Rust 迁移内容 | 安排 |
-| --- | --- | --- |
-| `DvdaMaker.Configuration` | env/方案读取、默认值、选项校验、配置来源优先级 | 第一批核心逻辑 |
-| `DvdaMaker.Building` | 曲目排序、分盘、菜单规划、缓存、续跑、构建事务、验证调度 | 先纯逻辑，再文件与任务流程 |
-| `DvdaMaker.Preparation` | 扫描、探测、准备快照、FLAC 元数据、ALAC 检查修复、转换调度 | 按模块对照迁移 |
-| `DvdaMaker.Formats` | 剩余 ISO9660 读取及格式封装、C17 调用层 | 复用 C17，不重写已迁出的算法 |
-| `DvdaMaker.Processes` | 进程生命周期、媒体/图像 DLL 接口、取消和日志 | 同核心 FFI 层建设 |
-| `DvdaMaker.SurcodeTool` | WAV/PCM 规范化、MLP DLL 调用、批处理、元数据上下文 | 原生编码核心保持不变 |
-| `DvdaMaker.Localization` | 中英日文本、错误呈现、路径与数值区域性规则 | 核心先固定消息契约，GUI 再接入 |
-| `DvdaMaker.Desktop` | 原生 Windows GUI、设置保存、进度、摘要/详细日志、关闭取消 | 业务稳定后替换 WinForms |
-| `DvdaMaker.Cli` | 开发命令及 `dry-run` 入口 | 先做最小验证入口，后补齐日常命令 |
-| `DvdaMaker.Toolchain`、`DvdaMaker.FontTool` | 构建编排、资源归档、发布校验、字体生成 | 用户端切换后迁移 |
-| 现有 C# 测试 | 过渡期保留比较基准，将覆盖迁入 Rust 并固定独立样本和预期结果 | 验证通过后删除全部旧测试源码 |
-
-明确继续复用：
-
-- `dvda-formats.dll` 及其 C17 源码、ABI；`MlpStreamAligner`、`PcmComparer` 已迁出的实现不再用 Rust 重写一次。
-- `mlp_encoder.dll` 与现有编码核心源码、行为和构建参数；本计划不处理其反编译来源替换问题。
-- `dvda-media.dll`、`dvda-image.dll`、已有共享 FFmpeg DLL、菜单模块、`dvda-disc-verify.dll` 及相应源码构建链。
-- 项目构建的 `dvda-author-dev.exe`；单 EXE 用户入口不等于制盘流程禁止使用项目自身构建的 author 子进程。
-- 原生依赖、字体和素材的许可文件及来源记录。
-
-不增加 Linux、其他架构、通用 DVD-Video 制作或新格式支持。MLP 与 LPCM 的位深、采样率和声道范围分别遵守当前实现，不趁语言迁移更改兼容限制；当前 LPCM 的 20 位缺口不在本计划中扩展。
-
-与旧文档的关系：[脱离外部运行时依赖迁移清单](NO-EXTERNAL-RUNTIME-MIGRATION.md) 当时排除了 C# 应用层，该清单仍描述已完成的原生组件迁移。本计划单独接管 C# 应用层；既有 C/C17 组件继续用原有构建链，新迁入的应用逻辑使用 Rust，不因旧计划“新增原生代码优先 C”而把整个应用改成 C。
-
-## 4. 技术路线与目录建议
-
-### 4.1 工具链
-
-- 平台固定 Windows x64，Rust target 为 `x86_64-pc-windows-gnu`。
-- 本机已安装 Rust/Cargo 1.99.0，现有 GCC 为 `C:/msys64/mingw64/bin/gcc.exe`，target 为 `x86_64-w64-mingw32`。Rust 源码由 `rustc` 编译；GCC 用于链接及构建 C/C++ 依赖。
-- 用户级 `~/.cargo/config.toml` 已显式设置该 GCC 链接器及目标对应的 CC/CXX/AR。项目实施时通过脚本参数或环境发现 MSYS2 路径，不把个人用户名或机器路径写入可移植构建配置。
-- 建立 Rust workspace 时固定 `rust-toolchain.toml`、Rust 2024 edition 和 `Cargo.lock`，保留 rustfmt、Clippy、rust-analyzer。工具链升级另作变更，不与行为迁移混做。
-- 不安装第二套 MinGW，也不为了迁移切换现有 C 编码器的编译选项。
-
-工程目录如下；workspace 与 core/native/host-ffi/cli 已创建，desktop/toolchain 随后续阶段补齐：
-
-```text
-rust/
-  Cargo.toml              # workspace
-  Cargo.lock
-  rust-toolchain.toml
-  crates/
-    dvda-core/            # 配置、规划、准备与工作流
-    dvda-native/          # Windows / C ABI 的受控封装
-    dvda-host-ffi/        # 过渡期给 C# 调用的 C ABI DLL
-    dvda-desktop/         # 最终 Windows GUI
-    dvda-cli/             # 开发和诊断入口
-    dvda-toolchain/       # 后期打包、字体和发布工具
-  tests/fixtures/         # 小型可提交的确定性样本
-build/rust-validation/   # 大样本、临时输出、测试报告（忽略目录）
-```
-
-先做“Rust 核心库 + 现有 C# GUI”的过渡结构。最终 GUI 直接链接 Rust 库；`dvda-host-ffi` 仅为迁移对照桥，最终验证完成后连同 C# 调用层删除。Rust 调用现有 C/C17 组件所需的真实 ABI 封装继续保留。
-
-### 4.2 GUI 与依赖策略
-
-默认方向是通过 `windows-rs` 调用 Win32 原生控件；先验证所需 API 对 Windows GNU target 的编译与实际行为，再固定依赖版本。GUI 首批原型必须覆盖窗口、文件夹选择、DPI、中文/日文、后台任务、进度和取消，而不是只展示静态窗口。
-
-保持现有三语言和面向用户的日志体验，支持键盘导航、焦点、长路径和日志复制。后台线程不得直接操作控件；通过结构化事件回到 UI 线程。关闭窗口须触发取消并等待有界清理，禁止把正常关闭变成杀进程。
-
-默认不用 WebView/Electron，不引入新的用户端托管运行时。第三方 crate 按所需功能启用、锁版本、记录许可；不预先为本地文件工作流引入完整异步运行时或插件框架。仅在实测需要时调整。
-
-## 5. 必须保持的行为契约
-
-### 5.1 配置与数据
-
-- 保留 `config.env`、JSON 方案版本、未知键、旧兼容值映射和当前默认值。普通 CLI 与 GUI 显式设置的优先级分别按现有测试保持，不能用一个新优先级替代所有入口。
-- env 文件仍只是数据，不执行命令、变量展开或 shell 替换。
-- 曲目排序、大小写与 Unicode 比较、日期/曲序解析、专辑边界、分盘容量和声道分组保持一致。
-- manifest、索引、缓存的字段语义与版本保持兼容；必要的格式升级必须能识别旧记录，不能把版本不同的缓存误认为有效。
-- 整数除法、溢出、四舍五入、浮点到整数转换和字符串数值格式逐项对照，不默认两种语言行为相同。
-
-### 5.2 编码与字节一致
-
-- 编码核心和媒体原生 DLL 固定版本与哈希，先只迁调用和输入准备。
-- 重采样、位深转换、20 位 PCM 表示、声道顺序、PCM 帧数、WAV 头、尾部处理及编码上下文全部纳入基准。
-- 输出 MLP 按长度与全部字节比较，发现差异报告首个偏移、邻域和对应参数，定位输入阶段或编码调用原因。仅比较 PCM 音质或解码成功不算通过。
-- 输出完成即只读验证，禁止调用 align/repair 改写编码结果来消除差异；C17 对齐函数保留用于既有工具/参考测试的明确用途。
-- PCM 默认等长、逐字节一致。只有已有兼容规则明确允许的 SurCode 有界零尾可接受；必须保留完整采样帧、长度边界和零值检查。
-- 对原版 SurCode 能编码的相同输入，保持其整文件字节基准。192 kHz 等原版不支持的组合，使用冻结的项目编码器结果与独立解码 PCM 验证，报告“无原版基准”，不能宣称与原版比对通过。
-
-### 5.3 调度、失败与发布
-
-- 并发上限、任务取消、超时、外部 author 子进程回收、日志顺序语义和错误传播与现有流程一致。
-- 暂存、原子替换、整套 ISO 与索引提交、失败回滚保持一致；取消或部分失败不得破坏已有正式成品。
-- 缓存命中必须验证音源、参数、原生组件和版本签名。续跑不得静默复用旧行为生成的中间结果。
-- 媒体/图像处理继续走内置 DLL，不重新启动外部 FFmpeg、FFprobe、ImageMagick、eac3to 或原版 SurCode。
-- `dry-run` 沿用现有语义：可能准备音源、编码和写入独立缓存/索引，但不生成正式 ISO，不承诺零写入。
-
-## 6. FFI 与资源所有权
-
-所有 Windows 和 C ABI 调用集中在 `dvda-native`，上层使用受控 Rust API。新接口遵循：
-
-- C# 过渡 DLL 暴露 `extern "C"` ABI，使用固定宽度整数、明确的指针/长度和不透明句柄；不导出 Rust `String`、`Vec` 或 trait 布局。
-- 现有 C 结构体严格匹配头文件。对 `#pragma pack(1)` 的结构体单独验证大小、偏移和非对齐读写，避免直接建立非对齐字段引用。
-- 谁分配谁释放；原生返回缓冲由对应 `free` 接口释放，Rust 不接管外部 malloc 内存。句柄和释放接口必须配对。
-- C ABI 中的 UTF-8 路径按现有约定传递，Win32 路径转换为 UTF-16；检查嵌入 NUL、长度与无效数据。不得静默损坏中文、日文、空格或非 BMP 字符。
-- 每次调用状态独立，明确 DLL 生命周期、线程安全、回调存活期和取消标志。调用以任务或数据块为粒度，避免逐采样跨 FFI。
-- 过渡 DLL 在 ABI 边界捕获可展开的 Rust panic 并转成失败，异常不穿过 C/C# 栈；回调同样不跨边界抛异常。不能用 `panic=abort` 代替错误处理。
-- 常规失败使用结构化错误、稳定代码和上下文；本地化在呈现层完成，原始路径及原生错误保留。
-- Release 验收必须证明实际调用 Rust/C17 路径；缺失 DLL 或 ABI 不兼容应明确失败，不能托管回退后仍宣称 Rust 测试通过。开发对照可显式选择旧实现，并写入测试报告。
-
-## 7. 分阶段实施与退出条件
-
-每阶段单独提交，前一阶段通过再切换默认路径；旧实现作为对照保留到对应行为验收完成。
-
-| 阶段 | 实施内容 | 退出条件 | 当前状态 |
-| --- | --- | --- | --- |
-| P0 基线与工程 | 固定源码、组件和样本清单；建立 workspace、编译/调试入口、报告目录 | Rust GNU x64 编译、Clippy/格式检查、C17 ABI 测试可复现；115 项和样本清单可重跑 | 已完成 |
-| P1 纯业务核心 | 配置解析、曲目排序、分盘规划、菜单纯函数；建立 C#↔Rust compare 桥 | 115/115 通过；Rust 实际调用 `config.parse`、`tracks.sort`、`disc.plan`、菜单纯函数和数学辅助操作 | 第一批已完成；选项求值、索引数据模型仍待迁移 |
-| P2 文件与格式 | ISO reader、FLAC 元数据、ALAC 检查/修复、WAV 规范化、C17 封装 | 文件、元数据与错误边界对照通过；147 个 MLP 经 Rust 封装复测；零尾、截断、损坏测试通过 | 已完成 Rust 读写/检查/修复边界；ISO 目录、读文件和提取有 fixture 证据；C17 样本保持 147/147 |
-| P3 完整工作流 | 探测、转换、编码、缓存、续跑、author 调用、成品验证、发布事务 | 115 项全部有 Rust 实际覆盖或明确的保留组件覆盖；PCM/MLP 矩阵一致；失败、取消、回滚验证通过 | 第一批缓存、续跑、空间、探测解析、author 规则、MLP major-sync 纯算法、AOB PTS 统计、准备快照 SHA-256、菜单视觉判定和 LPCM 参数判定已完成；转换/编码调度、AOB 扇区解析、成品发布事务仍待迁移 |
-| P4 Rust GUI | Win32 控件、设置、三语言、后台进度与日志、关闭取消；接入 Rust 核心 | 中英日 GUI 功能、DPI、键盘和路径场景通过；GUI 不依赖 C# 主进程 | 待实施 |
-| P5 单文件发布 | 资源内嵌与缓存、哈希验证、并发释放、损坏修复、许可和 README | 干净 Windows x64 环境无需 .NET 可完成检查/制作/验证；包内无托管运行依赖；符合原有发布布局 | 待实施 |
-| P6 用户端切换 | 固定新旧版本进行最终端到端对照，记录性能和体积，保留回退构建 | 用户端完成边界达成，差异清零或有明确接受依据，不以测试数量代替行为覆盖 | 待实施 |
-| P7 开发工具与最终清理 | CLI、打包、字体工具及测试迁至 Rust；删除全部 C#、过渡桥及已由 C 接管功能的外部兼容层，更新构建/F5/文档 | 无 .NET 完成构建、测试和发布；旧 115 项覆盖可追溯；删除后复验无失效入口和静默回退 | 待实施 |
-
-P3 用隔离的小型完整制盘 fixture 验证实际工作流；P6 执行有代表性的端到端验证。不默认对个人全部音乐库重新制盘，也不把轻量包内容变化升级成全盘长时间测试。若最终需要全库验证，另列输入、耗时和覆盖收益。
-
-## 8. 验证体系
-
-### 8.1 115 项兼容性测试如何保留
-
-建立用例映射表，逐项记录旧入口、新入口、期望结果、执行后端和验证证据。测试数量不减少；新增迁移问题可增加用例，但原有 115 项的身份与覆盖可追溯。
-
-第一步继续运行现有 C# runner。纯逻辑通过 C ABI 适配实际调用 Rust，并用同一输入比较两个实现；工作流通过隔离工作目录和确定性 fixture 比较文件、事件及失败后的现场。必要时增加 Rust 测试，但只跑新测试不能代替既有回归。
-
-只调用旧 C#、Rust 不可用时静默回退、仅验证 GUI 能启动，都不能算对应模块迁移通过。C# runner 仅在迁移验证期保留；其全部覆盖迁入 Rust 后删除 runner 与旧测试源码，最终开发验证也不依赖 .NET。
-
-### 8.2 样本与格式矩阵
-
-| 验证层 | 必须核对的内容 |
-| --- | --- |
-| 147 个 MLP 格式样本 | 文件长度、已定义解析字段、对齐输出每个字节、变更记录、PTS 向量；不覆盖写入原样本 |
-| PCM 生成与转换 | 固定种子与整数定义生成静音、脉冲、单声道标记、正负边界、斜坡及伪随机数据；核对声道顺序和转换结果 |
-| MLP 编码矩阵 | 项目支持的 44.1/48/88.2/96 kHz、1～6 声道，176.4/192 kHz、1～2 声道，16/20/24 位组合；记录具体布局和合法性 |
-| LPCM 矩阵 | 当前支持的 16/24 位及合法声道/采样率组合，覆盖码率上限与拒绝路径 |
-| 原版对照 | 有原版基准的组合比较整个 MLP；原版拒绝或无法生成基准的组合单列，不伪造全覆盖结论 |
-| 边界和损坏 | AU 边界前后帧数、极短音频、非整块尾部、截断、坏校验、非零尾、错误参数、超码率内容 |
-| ISO 与菜单 | 全部轨道 MLP/LPCM 载荷、轨序、PTS、IFO/导航、菜单图像；PAL/NTSC、菜单开关、索引、多盘/多组 |
-| 工作流恢复 | 缓存命中/失效、断点续跑、并发、取消、超时、磁盘不足、目标占用、发布失败回滚 |
-
-有效格式也可能因内容超出编码限制而失败；需核对失败类别与临时文件清理，不能把原版程序失败一概当作目标规范不支持。所有生成 PCM 的算法、种子、参数和哈希都进入报告。
-
-编码 MLP 必须全文件字节比较。ISO 在固定输入、组件、时间与序列化条件可复现时也比较整文件；若基准存在时间戳等非确定字段，先记录并隔离非确定性，再逐轨完整比较载荷和结构。不得事后修改 MLP 或用“音质相同”掩盖编码差异。
-
-### 8.3 可执行的现有基准命令
-
-以下命令在仓库根目录运行。C# runner 是兼容性基准；`DVDA_RUST_MODE=compare` 会强制调用 Rust DLL 并与托管结果比较，缺少 DLL 时不会静默回退。
+## 验收命令
 
 ```powershell
-dotnet build DVD-Audio-Maker.sln -c Debug
-$env:DVDA_FORMATS_NATIVE_DIR = (Resolve-Path 'build/formats-native').Path
-$env:DVDA_RUST_MODE = 'compare'
-$env:DVDA_RUST_LIBRARY = (Resolve-Path 'rust/target/x86_64-pc-windows-gnu/release/dvda_host_ffi.dll').Path
-dotnet run --project tests/DvdaMaker.CompatibilityTests -c Debug --no-build
-
-# 设置为已有参考 MLP 的根目录，测试只读原文件。
-$env:DVDA_RUST_MODE = 'compare'
-$env:DVDA_RUST_LIBRARY = (Resolve-Path 'rust/target/x86_64-pc-windows-gnu/release/dvda_host_ffi.dll').Path
-dotnet run --project tests/DvdaMaker.CompatibilityTests -c Debug --no-build -- --native-format-samples $sampleRoot
-
-# Rust→C17 直测：逐文件 inspect/align，并检查 PTS 向量。
-$env:DVDA_FORMATS_NATIVE_DIR = (Resolve-Path 'build/formats-native').Path
-cargo run --manifest-path rust/Cargo.toml --release --locked --offline -- formats-sample $sampleRoot
+cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1 -OtherVolume D:\
+cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release --workspace --offline
 ```
 
-需要重建 C17 DLL 时，使用 `python tools/win-build/build-formats-runtime.py --msys-root C:/msys64 --output build/formats-native`。其余原生组件按 [Windows 构建说明](../tools/win-build/README.md) 准备，不能通过缺失组件跳过核心验收。
+需要使用本机已验证的原生 DLL 目录设置 `DVDA_ENCODER_LIBRARY`、`DVDA_MEDIA_NATIVE_DIR`、`DVDA_IMAGE_NATIVE_DIR`、`DVDA_DISC_VERIFY_LIBRARY` 和 `DVDA_FORMATS_NATIVE_DIR`，然后运行 workspace 测试。菜单 fixture 会在进程内生成菜单、索引页、静图、AUDIO_TS 和 ISO，并调用项目构建的 author 验证。
 
-### 8.4 报告与性能测量
+发布包由以下命令生成：
 
-每个阶段保存提交号、工具链版本、原生组件/输入哈希、执行命令、后端、通过/失败/跳过数量和差异位置。缺少参考样本必须显示为“未验证”，不计入通过。
+```powershell
+dvda-toolchain.exe package --repo . --output build/rust-migration-checklist-package --media-runtime build/media-native-shared --image-runtime build/image-native --image-author build/rust-author-current --source build/source-release-20261004 --prebuilt build/prebuilt-release-20261004 --formats-runtime build/formats-native --version v1.0
+```
 
-同一机器、输入、组件、设置与缓存状态下比较冷启动、热启动、准备、编码、菜单、验证耗时，峰值内存、EXE/ZIP 和释放后体积；多次运行区分波动。代码翻译不等于性能优化，异常退化需定位后再切换默认路径。
+标准包名为 `DVD-Audio-Maker-v1.0-win-x64.zip`。必要组件内嵌，首次运行释放到用户缓存并验证完整性；三个用户 README 与许可放在 EXE 旁边。详细布局和独立 EXE 验证脚本见 [单文件发布](ONEFILE-PUBLISH.md)。
 
-## 9. 发布与维护要求
+## 完成判定
 
-- 最终 EXE 不包含 .NET，也不需要系统安装 .NET；这与当前 framework-dependent 版本不同，发布说明必须在实际验收通过后同步更新。
-- 单文件含义沿用现有方案：一个用户启动 EXE 内嵌必要组件，运行时释放到可校验的缓存，允许调用内置 author。不是所有功能都静态链接，也不是运行时没有文件。
-- README、RUNTIME、LICENSE、THIRD-PARTY、两个 NOTICE 和 `config.env.example` 仍作旁文件，与 EXE 放进 `DVD-Audio-Maker-<版本>-win-x64.zip`；不使用 GUIonly 等后缀。
-- 用户包不包含开发 CLI、PDB、构建来源 JSON、测试样本或开发文档；这些留在开发产物或仓库。
-- Rust 打包实现必须验证缓存路径、哈希、并发首次启动、组件损坏修复、Windows DLL 搜索位置和错误诊断，不能只把 DLL 拼进 EXE。
-- 没有原生发布回归与无需 .NET 的实际验证，不更新用户文档宣称迁移完成。提交、推送、tag 和 Release 更新按后续明确的实施/发布任务执行。
+迁移只有同时满足以下条件才算完成：
 
-## 10. 执行清单
+1. Rust workspace 可以在 x64 目标完成格式检查、Clippy、测试和 release 构建。
+2. 原生 ABI 测试、PCM/格式样本对照、MLP 固定样本和菜单 ISO fixture 全部通过。
+3. 发布包在没有 .NET、外部 FFmpeg、ImageMagick、eac3to 或 SurCode 的环境中只依靠包内组件运行。
+4. `rg --files -g '*.cs' -g '*.csproj' -g '*.sln'` 无结果，源码和发布流程不存在 C# 回退入口。
+5. JSON profile 能完成 GUI/CLI 的加载、编辑和保存，非 JSON profile 明确拒绝。
+6. MLP 结果来自编码行为本身；验证只比较输入、参数、上下文和完整输出，不修改输出字节。
+7. [行为清单](RUST-MIGRATION-REMAINING.md) 的 G01–G14 子项及 A01–A04 审计逐项闭环，并通过 GUI/CLI/打包入口验证；底层函数单独通过不能替代入口验证。后续发现新问题继续入表。
+8. 恢复必要组件内嵌的 onefile 发布、运行时完整性检查和修复；用户说明及许可放在 EXE 旁边，同装入标准命名 ZIP。
 
-- [x] 安装 Rust GNU x64 工具链，复用现有 MSYS2 GCC。
-- [x] 临时工程验证 Rust→GCC C17 静态库和 Rust→项目 C17 DLL。
-- [x] 记录阶段、范围、既有基准和完成标准。
-- [x] P0：创建仓库 Rust workspace，固化基准与测试后端报告。
-- [x] P1：迁移配置解析、曲目排序、分盘规划和菜单纯函数第一批。
-- [x] P2：完成 ISO、FLAC、ALAC、WAV 文件格式迁移；Rust 已接管读写、检查和修复边界，并通过 115 项 compare、147 个 MLP C17 样本及 ISO fixture 验证。
-- [ ] P3：迁移完整工作流并完成编码对照；缓存、续跑、空间估算、探测解析、author 标题规则、MLP major-sync 纯算法、AOB PTS 统计、准备快照 SHA-256、菜单视觉判定和 LPCM 参数判定第一批已完成。
-- [ ] P4：替换 GUI，保留中英日体验和调试能力。
-- [ ] P5：打包并验证无需 .NET 的单 EXE 用户入口。
-- [ ] P6：通过用户端切换验收。
-- [ ] P7：迁移全部开发工具和测试，删除全部 C#、过渡桥及已被 C 替代的外部兼容层，并完成删除后的验证。
-
-媒体、图像、MLP 编码器、子进程生命周期和内置批量编码调度已接入 Rust。下一项具体工作是音源探测、解码检查及准备/制盘/验证工作流，随后进入 Rust GUI 与无需 .NET 的发布入口；dvda-author/MLP/C17 原生组件保持复用。
-
-### 最终清理门槛（2026-10-04 用户明确要求）
-
-清理是最终验收的必做步骤，不能以正式包不引用旧代码代替删除。独立对照实现保留到 Rust 行为验证完成：
-
-1. 先完成全部 Rust 迁移和行为验证，包括原 115 项测试的独立 Rust 覆盖、真实样本、编码 PCM/MLP 逐字节比较、GUI 和发布验证。保留非 C# 的样本、固定期望结果及覆盖映射。
-2. 删除已由项目原生 C/C17 实现接管功能的外部程序查找、参数适配、探测、回退及配置兼容路径。缺失组件明确报错，不回退到 FFmpeg/FFprobe、ImageMagick、eac3to 或原版 SurCode EXE。项目源码构建的 author 子进程、必要共享库及许可保留。
-3. 删除所有 C# 源码（含测试、开发工具、托管参考）、C# 项目及专用构建配置、NuGet/.NET 入口、Rust↔C# 过渡桥和对应调试/打包脚本。历史对照通过固定 Git 提交追溯，不在当前树保留改名或压缩的 C# 副本。
-4. 清除文档、配置模板、GUI 和开发命令中失效的兼容选项。审计整个仓库，而非只检查发布目录；原生 C/C17 源码及 Rust→C 的必要 ABI 封装保留。
-5. 删除后从清洁产物目录构建，重跑 Rust 回归、必要真实样本和发布检查，证明无 C#、无托管回退、无已废弃外部程序依赖，且输入输出行为保持一致。通过这些步骤才可标记最终迁移完成。
-
-### 10.1 后续批次实测记录
-
-- PCM 规范化改为固定 8192 帧缓冲读写，取消、错误精度及 I/O 失败会删除本次创建的输出；已有输出保持不变。275 组隔离 C# / Rust 对照通过，独立 Rust 测试覆盖 504 组普通/32 位存储矩阵、声道布局、奇数 RIFF 尾部及中途取消/panic 清理。
-- 内置批量编码已由 Rust 负责参数验证、1～16 个工作线程、64 条有界事件队列、媒体转换、PCM 规范化、编码和工作目录清理。调用者回调始终留在入口线程；取消时持续排空事件，等待全部工作线程退出。开发用显式外部参考转换器暂留旧测试路径，最终 P7 删除。
-- 18 组批量采样率/位深配置分别执行旧流程、Rust 串行与 Rust 并发，全部轨道完整 MLP 哈希一致；失败、目录冲突、重复名称和取消现场对照通过。独立 Rust 批量测试比较 168 个完整 MLP 的固定基准，并验证部分失败、回调 panic 和事件线程归属。
-- p19-pcm-batch-compare-x64.json 为 115/115，p19-rust-tests.log 的全部 Rust 单元/ABI/原生集成测试通过；Clippy all-targets、Rust x64 Release 与 C# x64 过渡构建通过。以上仍为阶段验收，尚未满足删除全部 C# 的最终门槛。
-
-- author 等项目子进程的启动、参数、环境、工作目录、日志、超时与取消已由 Rust 接管。Windows 子进程暂停启动，加入关闭时回收的 Job Object 后再继续，避免启动竞争遗漏子孙进程；仅显式标准句柄继承，不调用 shell。
-- p18-process-compare-x64.json 为 115/115。隔离对照覆盖空参数、引号/反斜杠、中文日文韩文及非 BMP 字符、UTF-8/16/32 日志、分块 CR/LF、NUL、高流量双管道、非零退出、缺失程序、超时和取消。另有完全不依赖 C# 的 Rust 子进程夹具及回归，验证并发、回调 panic 和整棵进程树回收。原 runner 的回调异常可能逃逸事件线程，Rust 明确回收并向调用者传播。
-
-- MLP 输入读取、元数据上下文、PCM 回调及临时文件提交已迁入 Rust；WAV 布局改为按块读取，避免为读取头部装载整条音轨。编码数据由现有 C 核心直接写出，没有调用对齐或补丁函数。
-- 编码迁移比较 116 组完整 MLP：84 组采样率/位深/默认声道组合、16 个 AU/缓冲边界、13 种声道掩码和 3 种 32 位容器。独立旧托管调用与 Rust 调用逐字节一致；元数据、占用、取消、错误输入及失败现场同时对照。测试发现并修复短 WAV 的异常类型差异，未放宽断言。
-- 固定基准保存在 rust/crates/dvda-core/tests/fixtures/encoder-managed-v1.json。独立 Rust 测试重建 PCM、核对输入哈希和完整 MLP 哈希，并通过独立解码核对全部 PCM 字节及 AU 零尾；另测超时、取消、并发和损坏组件。这是冻结项目编码器的迁移基准，不宣称 116 组均有原版 SurCode 基准。
-- p17-encoder-compare-x64.json 为 115/115，Rust 原生集成和 ABI 测试全部通过，x64 Release 与 Clippy all-targets 无警告。尚待完成调度、GUI、发布和全部开发工具；旧 C# 仍用于最终删除前的独立对照。
-
-- 媒体和图像 DLL 的调用、回调异常隔离、取消/超时与临时文件提交已接入 Rust。媒体使用类型化请求，现有 FFmpeg 风格参数解析仅留在临时 C# 适配器；图像仍通过项目 C 组件的进程内接口执行，不启动外部程序。最终清理仍需移除应用层历史工具参数及回退路径。
-- `p16-media-image-compare-x64.json` 为 115/115。媒体在隔离路径比较完整 WAV/裸 PCM/FLAC 文件、探测文本及失败现场；图像比较解码 RGBA 像素、统计文本、中日韩文字及并发状态，不将 PNG 时间等非像素元数据视为像素差异。取消、超时、回调错误、文件占用及目录冲突均验证旧输出保护。
-- 无 C# runner 的 Rust 原生测试通过：84 组采样率/位深/声道 PCM 逐字节比较，图像固定像素、并发与失败保护；21 项 core、2 项 ABI 测试及两项原生集成入口全部通过，Clippy all-targets 无警告。独立 PCM 测试发现并修正请求层位深/存储宽度组合缺少约束，Rust 在进入 C 前明确拒绝不安全组合。这些验证不等于 MLP 重新编码矩阵验收。
-
-- 配置路径选择、env 文件读取以及 GUI 方案加载/事务保存已迁入 Rust。保留 UTF-8/16/32 BOM、无效字节替换、重复 JSON 字段、默认值合并、版本/深度/类型拒绝及文件共享锁语义；保存以隔离目录对照新建、替换、占用、只读、目录冲突和父路径为文件的情况，失败不破坏旧文件、不遗留临时文件。
-- `p15-config-files-compare-x64.json` 为 115/115；实际调用配置查找 51 次、env 读取 72 次、方案读取 33 次、保存 11 次。Rust x64 Release、格式检查、Clippy、21 项 core 测试及 1 项 C17 ABI 测试通过，C# x64 构建无警告。上述结果只证明当前迁移边界，仍不是完整 Rust 应用验收。
-
-- 菜单整帧、索引格、文字/高亮层批量统计已由 Rust 解析；重复、缺失、非有限数字、指数/空白/尾部 NUL 等输入与独立托管参考逐项对照。
-- 文件身份的首尾 64 KiB 读取、Windows 时间戳与哈希已由 Rust 执行；包含空文件、块边界、中文日文/非 BMP 路径、文件占用、缺失输入。SHA-256 改为固定缓冲流式实现，复用于出盘签名、编码组件身份和 LPCM 缓存键。
-- 成品发布整套事务、单文件发布、暂存移动与复制已由 Rust 执行。compare 模式对有副作用操作只执行一次；`PublicationMigrationTests` 在独立目录分别执行原 C# 与 Rust，比较完整目录状态、文件 SHA-256、返回路径、诊断代码和异常类型。覆盖 14 个整套事务场景及 6 个单文件场景。
-- 报告 `build/rust-validation/p10-publication-compare-x64.json` 为 115/115 通过；对应操作实际调用与逐项映射见 `rust-compatibility-map.json`。这些是局部迁移证据，不等于完整 Rust 制盘、GUI 或发布验收。
-- 本批次 Rust x64 Release 构建、Clippy `-D warnings`、19 项 core 测试与 1 项 C17 ABI 测试通过。最终报告实际调用文件身份 93 次、整文件哈希 23 次、整套发布 20 次、暂存移动 8 次、单文件发布 5 次、复制 2 次。
-- P2 ISO 大文件缺口已修复：改为按偏移读取描述符和目录，提取以固定缓冲流式复制。新增扩展属性扇区、空文件、缺失路径与截断载荷对照。`p11-iso-streaming-serial-x64.json` 为 115/115；首次与真实样本同时执行时出现两个原有本地化正则 100 ms 超时，串行复测通过，未修改或放宽超时保护。
-- `p11-real-iso-compare-x64.log` 为真实样本 3/3：E 盘两张超过 3 GB 的 ISO 比较目录、导航文件及 AOB 起始扇区；既有 MLP 比较完整文件哈希、格式字段和对齐幂等性。这不是整张 ISO/AOB 全字节比较，也没有重新编码或修改参考样本。
-- 最终范围包含全部 C# 应用与开发工具；与当前步骤相邻的次要目标一并迁移，不把 I/O、进程管理、本地化、CLI 或打包代码作为永久遗留部分。既有 C/C17 原生算法继续复用。
-- AOB 的按块扇区解析、单文件流式读取、审计状态与诊断判定已迁入 Rust。二进制 ABI 传递固定大小记录，避免把音频通过 JSON 十六进制复制；文件读取缓冲为 128 KiB，PTS 向量仍随有效扇区数增长。审计遇缺少 PTS 立即停止并冻结状态，时间轴继续扫描；独立 C# 参考比较每次状态和诊断顺序。
-- 配置默认值、优先级、全部 51 个派生选项、来源/有效键/缺失键和 Shell 单引号转义已接入 Rust。`ManagedDvdaOptions` 保留独立参考，不再调用 Rust；双精度结果以位模式跨 JSON 对照，保留负零、非有限值和原有回退。无效编码方式仍在访问相关属性时才抛出异常，显式环境字典与数字区域设置变化会使求值缓存失效。
-- `p14-options-final-x64.json` 为 115/115，实际执行 `options.evaluate` 187 次、默认值与 Shell 转义各 1 次。新增边界覆盖整数溢出、尾部 NUL、NaN/Infinity、路径、空环境变量、UTF-16 键排序、七种区域设置和自定义正负号。测试发现并修正 `NaN` 后接 NUL 的回退差异；没有放宽参考实现或测试断言。开发测试增加 `DVDA_COMPAT_FILTER`，筛选运行明确报告实际数量，不能代替完整 115 项验收。
-- `p13-aob-audit-compare-x64.json` 为 115/115；新增范围包括 33 位 PTS 边界、标记搜索窗、短记录、内存切片偏移、每块残尾、限制读取、中文/日文/非 BMP 路径、空文件、缺失文件、共享锁，以及已有 9000 扇区与共享单次枚举场景。Rust 21 项 core 测试和 C17 ABI 测试通过，Clippy 无警告，x64 两端构建通过。
+本文件不把历史 C# 测试命令当作当前构建步骤；历史覆盖通过 Rust 测试、固定样本和 Git 历史追溯。

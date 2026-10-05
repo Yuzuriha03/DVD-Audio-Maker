@@ -2,66 +2,77 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Debug: build GUI x64",
+      "label": "Rust: build workspace x64",
       "type": "process",
-      "command": "dotnet",
-      "args": ["build", "${workspaceFolder}/src/DvdaMaker.Desktop/DvdaMaker.Desktop.csproj", "-c", "Debug", "-r", "win-x64", "-p:SelfContained=false"],
-      "problemMatcher": "$msCompile"
+      "command": "cargo",
+      "args": [
+        "build",
+        "--manifest-path",
+        "${workspaceFolder}/rust/Cargo.toml",
+        "--target",
+        "x86_64-pc-windows-gnu",
+        "--workspace",
+        "--offline"
+      ],
+      "problemMatcher": "$rustc"
     },
     {
-      "label": "Debug: build CLI x64",
+      "label": "Rust: test workspace x64",
       "type": "process",
-      "command": "dotnet",
-      "args": ["build", "${workspaceFolder}/src/DvdaMaker.Cli/DvdaMaker.Cli.csproj", "-c", "Debug", "-r", "win-x64", "-p:SelfContained=false"],
-      "problemMatcher": "$msCompile"
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/win-build/test-rust-workflow.ps1"
+      ],
+      "problemMatcher": "$rustc",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
     },
     {
-      "label": "Debug: build compatibility tests x64",
+      "label": "Rust: build release x64",
       "type": "process",
-      "command": "dotnet",
-      "args": ["build", "${workspaceFolder}/tests/DvdaMaker.CompatibilityTests/DvdaMaker.CompatibilityTests.csproj", "-c", "Debug", "-r", "win-x64", "-p:SelfContained=false"],
-      "problemMatcher": "$msCompile"
+      "command": "cargo",
+      "args": [
+        "build",
+        "--manifest-path",
+        "${workspaceFolder}/rust/Cargo.toml",
+        "--target",
+        "x86_64-pc-windows-gnu",
+        "--release",
+        "--workspace",
+        "--offline"
+      ],
+      "problemMatcher": "$rustc"
     },
     {
-      "label": "Debug: run compatibility tests",
-      "type": "process",
-      "command": "dotnet",
-      "args": ["run", "--project", "${workspaceFolder}/tests/DvdaMaker.CompatibilityTests/DvdaMaker.CompatibilityTests.csproj", "-c", "Debug"],
-      "problemMatcher": "$msCompile"
-    },
-    {
-      "label": "Windows: 预演分盘",
-      "detail": "只预览分盘结果，不产出 ISO",
+      "label": "Windows: dry-run build",
       "type": "process",
       "command": "${workspaceFolder}\\build.cmd",
-      "args": ["--dry-run"],
+      "args": [
+        "--dry-run"
+      ],
       "problemMatcher": []
     },
     {
-      "label": "Windows: 完整出盘",
-      "detail": "完整流水线：转码 → MLP 编码 → 分盘 → 生成 ISO",
+      "label": "Windows: full build",
       "type": "process",
       "command": "${workspaceFolder}\\build.cmd",
       "args": [],
       "problemMatcher": []
     },
     {
-      "label": "Windows: 校验成品",
+      "label": "Windows: verify output",
       "type": "process",
       "command": "${workspaceFolder}\\verify.cmd",
       "args": [],
       "problemMatcher": []
     },
     {
-      "label": "Windows: 打印当前配置",
-      "type": "process",
-      "command": "dotnet",
-      "args": ["run", "--project", "${workspaceFolder}\\src\\DvdaMaker.Cli\\DvdaMaker.Cli.csproj", "--", "config"],
-      "problemMatcher": []
-    },
-    {
-      "label": "Windows: 构建工具链",
-      "detail": "使用原生 Windows CMD 工具链入口",
+      "label": "Rust: package v1.0",
       "type": "process",
       "command": "${workspaceFolder}\\tools\\win-build\\build-all.cmd",
       "args": [],

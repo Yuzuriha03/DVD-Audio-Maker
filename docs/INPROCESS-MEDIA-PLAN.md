@@ -1,13 +1,9 @@
-# 内置媒体处理方案
+# 进程内媒体处理方案
 
-2026-10-02。目标：正常 GUI 工作流不再启动外部 ffmpeg.exe / ffprobe.exe，也不要求用户安装它们。
+方案已经落地：Rust GUI 通过 `dvda-media.dll` 处理探测、解码、PCM/FLAC 输出、ALAC 检查和成品校验；不启动外部 FFmpeg/FFprobe。必要 FFmpeg 库由源码构建并随包提供，发布包不需要用户安装 FFmpeg。
 
-1. 基于已验证的 FFmpeg 9.0.2 编译 Windows x64 媒体库，补齐 FLAC、ALAC、AAC、PCM、MLP、DVD 菜单 MPEG-2/PNG，以及原有 SWR/SOXR 重采样能力。
-2. 增加小型、可取消的原生 C 接口，由 C# 在进程内调用。迁移探测、PCM 准备、解码计数、PCM/MD5 校验、封面和菜单帧提取。
-3. GUI 使用内置处理器，旧 config.env 仍可导入；移除用户必须填写 FFmpeg / FFprobe 路径的设置。开发测试保留显式外部参考路径以便做对照。
-4. 保持MLP 编码器 编码核心不变。原始 PCM、重采样/位深转换、MLP、错误/取消、多声道、标签封面和完整制盘均与原流程对照验证。
-5. 重新打包 x64 GUI-only / framework-dependent 包，检查依赖、清单和实际体积；不提交、推送或更新公开 Release。
+配置只使用 JSON profile。`config.env`、旧 FFmpeg/FFprobe 路径设置和外部程序回退已经删除。开发阶段如需对照，只能通过显式测试环境变量选择已验证的原生目录。
 
-边界：这里移除外部 FFmpeg 进程依赖，仍使用随包 FFmpeg 原生库。ImageMagick、dvda-author 等其他原生制盘工具不属于本次替换范围。
+媒体 DLL 与 MLP、图像和菜单组件分开构建，缓存键包含库身份。失败或取消的输出不会发布，MLP 文件不会在编码后修补。
 
-以上五项均已完成。结果、实际体积及测试边界见 [内置媒体处理](INPROCESS-MEDIA.md) 与 [验收记录](inprocess-media-validation.json)。
+验收命令和组件目录见 [Windows 构建说明](../tools/win-build/README.md) 以及 [进程内媒体处理](INPROCESS-MEDIA.md)。

@@ -1,148 +1,39 @@
-# Developer CLI diagnostics
+# Rust developer CLI
 
-This document applies only to a developer diagnostic package built with `--include-cli`. Standard user releases do not include `dvda.exe` or `dvda.cmd`. Use `cli.cmd` in the source checkout. See RUNTIME.en.md: framework-dependent packages require .NET 10 Desktop Runtime x64.
+The standard release ZIP contains the GUI only. The source checkout also provides `cli.cmd`, a Rust diagnostic entry point for repeatable development runs.
 
-[简体中文](README.md) | [English](README.en.md)
+## JSON profiles
 
-
-## Interface and log language
-
-Use the language selector at the top right to switch between Chinese and English. The interface and task logs follow the selected language, which is saved with JSON profiles and everyday settings. On first launch, the Windows UI language determines the default. Switching language preserves paths, track tags, configuration values and encoded data. The selector is disabled while a task is running.
-
-Both GUI and CLI accept `--language en`, `--language zh-CN` or `--language auto`. You can also set `DVDA_LANGUAGE`. The command-line option takes precedence over that environment variable; the GUI then falls back to its saved preference and finally the system language. CLI `--shell` / `--shell-all` output stays machine-readable and does not translate configuration values.
+The CLI accepts JSON profiles with `--profile`. Without an explicit profile, `cli.cmd` uses the ignored `settings.local.json` when it exists; the application default is `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
 
 ```bat
-DVD-Audio-Maker.exe --language en
-dvda.cmd config --language en
+cli.cmd abi.version
+cli.cmd prepare --profile "C:\work\settings.json"
+cli.cmd build --dry-run --profile "C:\work\settings.json"
+cli.cmd verify --profile "C:\work\settings.json"
 ```
 
-Double-click `DVD-Audio-Maker.exe` in the package root, or run `dvda.cmd` without arguments, to open the GUI. Command arguments continue to invoke the CLI.
+`config.env` and `DVDA_CONFIG` are not supported. `--config` is a developer CLI alias for a JSON `--profile`, never for an env file. The CLI does not read or execute tool paths from old profiles. Media, image, format and encoder DLLs must be the validated project-built x64 components selected by the profile or package layout.
 
-GUI and CLI share application dependencies; the CLI is `dvda.exe` in the package root. Extract the entire package and retain its DLLs, JSON files and resource directories alongside the executables. Do not copy an EXE alone. See RUNTIME.en.md for .NET installation requirements.
+## Developer operations
 
-Edit settings in the interface; they are saved automatically in your user directory. "Import env…" reads existing configurations, and "Open profile / Save profile" handles JSON profiles. Without saved GUI settings, first launch reads an adjacent config.env. MLP uses a native x64 in-process DLL, with no encoder EXE. Media conversion and decoding use built-in libraries; the bundled project author produces the discs.
+The CLI restores `config --check/--shell/--shell-all`, `plan`, `prepare --force`, and `build --dry-run/--no-resume`. Configuration exports contain evaluated paths and values; removed executable override keys stay excluded.
 
-The GUI offers "Check sources", "Build discs" and "Verify output". Developer previews use dvda.cmd build --dry-run, which writes MLP/cache data and a separate index without creating ISOs. "Verify output" compares target PCM for every track and all MLP bytes inside every disc. Tasks can be canceled and logs exported.
+`verify` supports `all/quick/capacity/audit/menu/timeline/lossless/config`; standalone `quick-check` and `audit` accept `--iso-dir`, `--manifest`, and `--log`. Successful checks return 0, damaged results return 1, and unavailable evidence or invalid usage returns 2. `--language` selects Chinese, English, or Japanese.
 
-Use "More settings" for less common options. Choose DVD5, DVD9 or custom capacity; sample rates and encoding methods have readable labels.
+`convert` / `m4a2flac PATH... [--dry-run] [--jobs N] [--level 0..8]` converts ALAC to FLAC through the native media library, preserves tags and cover bytes, and compares full-precision PCM before publishing. Explicit `--in-place` deletes sources only after every conversion succeeds. `alac check INPUT` and `alac repair INPUT [OUTPUT]` inspect or repair copies.
 
-Logs show a task summary by default. Switch to detailed logs, filter issues, pause live updates, copy content or export the complete task log. Drag the divider to resize the log area. Full logs are saved under `%LOCALAPPDATA%/DVD-Audio-Maker/logs` and retain external-tool diagnostics. The window keeps only recent entries.
+`iso list ISO [INNER]`, `iso extract ISO INNER OUTPUT`, `aob-pts FILE...`, and `mlp --check FILE...` provide format diagnostics. `mlp --align` remains an explicitly invoked developer repair operation; normal MLP encoding never patches its output through this command.
 
-# DVD-Audio Maker for Windows
+Font operations are available as `dvda-toolchain fonts extract/verify/pack/verify-collection`, for example `fonts extract INPUT.ttc OUTPUT_DIR` and `fonts verify FONT.otf "Noto Sans CJK SC"`. Developer tools are not included in the user ZIP.
 
-This document is included only in optional developer directory packages.
-
-GUI and CLI use the embedded native x64 MLP DLL. The package includes `dvda-author`, the built-in ISO writer, menu tools, ImageMagick and Chinese/Japanese/Korean fonts. `mkisofs.exe` is not needed. WSL, Bash, MSYS2, PowerShell and Python are not needed; see RUNTIME.en.md for .NET requirements.
-
-## External dependencies
-
-FFmpeg and FFprobe must be on `PATH` or configured with full paths in `config.env`. FLAC tags and artwork use the in-process editor and do not need Metaflac.
-
-FFmpeg performs conversion, decoding and verification. Batch encoding uses the embedded MLP DLL and requires neither eac3to nor original SurCode.
-
-## Existing configurations and CLI
-
-Use "Import env…" for existing configurations, or edit everyday settings directly in the GUI. For CLI use, you can edit `config.env` in the package root:
-
-```text
-DVDA_SRC="D:/Music/MyAlbums"
-DVDA_FINAL_DIR="D:/DVD_Output"
-DVDA_BUILD_DIR="D:/DVD_Output/_work"
-DVDA_TITLE="My DVD-Audio Collection"
-DVDA_ISO_PREFIX="MyCollection"
-DVDA_MAX_DISCS="2"
-DVDA_MLP_SOURCE="surcode-batch"
-DVDA_MLP_EXTERNAL_DIR=""
-DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
-DVDA_MENU="on"
-```
-
-CLI configuration priority:
-
-```text
-Environment variables > selected configuration file > built-in defaults
-```
-
-Select a file with `--config` or `DVDA_CONFIG`; the default is `config.env`. Parsing accepts only `KEY=VALUE`, with no command execution or variable expansion. Use absolute Windows paths.
-
-GUI or `dvda.cmd` sets tool and menu-font paths according to package layout; manual configuration is normally unnecessary.
-
-## Build ISO images
+## Build and test
 
 ```bat
-dvda.cmd config --check
-dvda.cmd prepare
-dvda.cmd build --dry-run
-dvda.cmd build
-dvda.cmd verify all
+cargo build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline
+cargo fmt --manifest-path rust\Cargo.toml --all -- --check
+cargo clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\test-rust-workflow.ps1 -OtherVolume D:\
 ```
 
-## Source audio
-
-FLAC, M4A/ALAC and JPG, PNG or WebP artwork are supported. Use one subdirectory per album and supply `date`, `track`, `album` and `title` tags.
-
-## MLP source
-
-Default MLP encoder:
-
-```text
-DVDA_MLP_SOURCE="surcode-batch"
-DVDA_MLP_EXTERNAL_DIR=""
-DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
-```
-
-External MLP:
-
-```text
-DVDA_MLP_SOURCE="external"
-DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
-```
-
-MlpEncoder-core batch encoding (retaining existing setting names):
-
-```text
-DVDA_MLP_SOURCE="surcode-batch"
-DVDA_MLP_EXTERNAL_DIR="D:/Music/MLP"
-DVDA_MLP_BATCH_TEMP_DIR="D:/dvda-surcode/temp"
-DVDA_MLP_BATCH_OUTPUT_DIR="D:/dvda-surcode/output"
-DVDA_MLP_METADATA_CONTEXT=""
-DVDA_FFMPEG="C:/Tools/ffmpeg/bin/ffmpeg.exe"
-```
-
-## Verification modes
-
-```bat
-dvda.cmd verify quick
-dvda.cmd verify capacity
-dvda.cmd verify audit
-dvda.cmd verify menu
-dvda.cmd verify timeline
-dvda.cmd verify lossless
-dvda.cmd verify all
-```
-
-## Troubleshooting
-
-### External program not found
-
-Set full paths in `config.env`:
-
-```text
-DVDA_FFMPEG="D:/Tools/ffmpeg/bin/ffmpeg.exe"
-DVDA_FFPROBE="D:/Tools/ffmpeg/bin/ffprobe.exe"
-```
-
-### Missing menu text or wrong glyphs
-
-Do not move or delete `menu-bin\fonts`. The launcher automatically configures separate SC, JP and KR font paths.
-
-### `verify audit` reports missing logs
-
-`audit` requires the `build.log` from an actual build. A preview log cannot replace it.
-
-## License
-
-Project code is distributed under the included `LICENSE`. Third-party components retain their own licenses; see `THIRD-PARTY.md`.
-
-The MLP core is embedded and SHA-256-verified. Encoded output is not patched. Auxiliary metadata is fixed to empty by default.
-Historical original byte comparisons require matching PCM, settings and explicit metadata context. Empty context does not impersonate historical timestamps.
+`build.cmd`, `verify.cmd`, `gui.cmd` and `gui-debug.cmd` are thin Rust wrappers. `build --dry-run` is a developer diagnostic mode; it can prepare and encode caches but does not create an ISO.

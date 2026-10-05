@@ -1,69 +1,57 @@
-# External runtime migration checklist
+# Native runtime migration
 
-[简体中文](NO-EXTERNAL-RUNTIME-MIGRATION.md)
+The Windows x64 workflow is now implemented by the Rust application and the
+project-built native components. The runtime boundary is deliberate: the GUI
+does not invoke command-line copies of FFmpeg, FFprobe, ImageMagick, Metaflac,
+eac3to, SurCode, dvdauthor or mkisofs.
 
-Scope is the complete Windows x64 GUI DVD-Audio workflow. All seven steps are implemented, retaining the existing components and development uses explicitly excluded below. New media interfaces, menu modules, XML adaptation, resource management and the AOB byte comparator use C.
+## Completed boundaries
 
-## Completion status
+| Area | Native implementation |
+|---|---|
+| Source media | `dvda-media.dll` for probing, decoding, PCM/FLAC output and ALAC checks |
+| Images | `dvda-image.dll` for the required image conversions |
+| MLP | `mlp_encoder.dll` through the streaming C ABI |
+| DVD menus | `dvda-menu-spu.dll`, `dvda-menu-nav.dll` and the project-built author |
+| ISO writing | the author's in-process ISO writer |
+| Disc verification | `dvda-disc-verify.dll`, Rust ISO reading and PCM comparison |
+| Configuration | versioned JSON profiles only |
 
-| Work | Current implementation | Status |
-|---|---|---|
-| ISO9660 writing and removal of mkisofs | Streaming 2048-byte writer dvda_iso_write inside the author | Complete |
-| FLAC metadata and covers | Atomic FlacMetadataEditor, preserving audio frames | Complete |
-| Image to YUV4MPEG2 | In-process dvda-image.dll | Complete |
-| MPEG-2, MP2 and DVD MPEG-PS | C dvda_menu_create_mpg, dynamically linked source-built FFmpeg | Complete |
-| Subpictures and button overlays | dvda-menu-spu.dll | Complete |
-| AMGM menus/navigation integration | dvda-menu-nav.dll inside the author | Complete |
-| Full-disc, every-track verification | C dvda-disc-verify.dll, existing ISO reader, media decoder and PCM comparison | Complete |
+The release ZIP is a native Windows x64 GUI package. It does not require a .NET
+runtime or separately installed media tools. It contains the required DLLs,
+menu resources, fonts, licenses and user documentation. Missing components are
+reported as errors rather than replaced with external programs.
 
-## Runtime boundary
+## MLP identity rule
 
-The GUI retains the project-built dvda-author-dev.exe authoring process. Images, menu encoding/muxing, subpictures, navigation and ISO writing run inside it. It no longer launches jpeg2yuv, mpeg2enc, mp2enc, mplex, spumux, dvdauthor or mkisofs executables. GUI media/image operations also do not start FFmpeg, FFprobe, ImageMagick, Metaflac, eac3to or original SurCode.
+The MLP path receives the target PCM, format parameters and auxiliary metadata
+before serialization. It never edits encoded bytes after serialization. A
+reference file can therefore match byte-for-byte only when those inputs and the
+encoder behavior match. Existing MLP files can be imported read-only; the import
+path is intended for files produced by the original SurCode MLP encoder.
 
-Their open-source algorithms are still used where needed. Necessary FFmpeg/ImageMagick components are built from source and bundled. Windows system libraries and .NET 10 Desktop Runtime x64 remain prerequisites. Releases are GUI-only and framework-dependent; the developer CLI remains in source.
+## Explicitly out of scope
 
-### Menu media
+The repository still contains build recipes and source provenance for the
+third-party libraries used to produce the native DLLs. Python, MSYS2/MinGW-w64
+GCC and other build tools are development prerequisites, not application
+runtime dependencies. General DVD-Video features, subtitle authoring and unused
+command-line utilities are not part of this workflow.
 
-tools/win-build/native/dvda-menu-media.c encodes one YUV420 frame as an MPEG-2 I-frame, optionally encodes 48 kHz, 16-bit stereo WAV to MP2, and muxes DVD MPEG-PS with 2048-byte packs. It supports PAL 720×576 / 25 fps, NTSC 720×480 / 30000÷1001 fps, and 4:3/16:9. Stills do not require audio. Invalid dimensions, truncated YUV/WAV, wrong rates and empty audio fail; opened partial outputs are removed.
+The old C# projects, Rust-to-C# bridge and `config.env` parser have been removed.
+The application does not execute legacy `DVDA_MKISOFS`, `DVDA_METAFLAC`, eac3to
+or media executable path settings.
 
-The FFmpeg menu profile includes only required MLP/PCM, MPEG-2, MP2, parsing and muxing. It dynamically links avcodec, avformat and avutil, disabling programs, networking, filters and SWS/SWR. The GUI media profile is separate. The MLP encoder still performs MLP encoding.
+## Acceptance
 
-### Subpictures, buttons and navigation
+From the repository root:
 
-tools/menu-native/vendor contains the required dvdauthor 0.7.1 C subset with existing AMGM/jump changes. ORIGIN.json records provenance and pre-import hashes; copyright and COPYING are retained. Only the project ABI is exposed. PNG pixels come from the existing image library; Windows XmlLite parses XML with DTD/external entities disabled.
+```powershell
+cargo fmt --all -- --check
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+```
 
-Each call loads independent module state and tracks a private heap, files, directories and COM objects. Legacy exits and assertions return errors instead of terminating the host. Resources are released and the DLL unloaded after each call. Author DLL contents participate in resume signatures, so a library upgrade invalidates staged discs. Authoring propagates failures instead of accepting empty menus.
-
-Scope is the AMGM menus, subpictures and navigation generated by the GUI. General DVD-Video titles, text subtitles, SVCD and reverse extraction through spuunmux are unused and do not gain extra tools or APIs.
-
-### Full-disc verification
-
-verify lossless and GUI verification visit every disc, group and track in the formal index:
-
-1. Read every ATS_NN_n.AOB segment in order through the ISO reader.
-2. Parse PES in read-only C and compare every MLP byte in track order, including headers and end markers; skip only container padding.
-3. For batch-surcode, regenerate target PCM using the same SWR, bit-depth conversion and WAV normalization, then compare against decoded MLP PCM.
-4. Require equal PCM lengths by default. The established SurCode policy only permits complete zero tail frames shorter than 1 ms. Truncation, nonzero tails and differences fail. Unknown conversion policies for old external MLP cannot pass through similar sample counts.
-
-Verification never modifies MLP/AOB. Regression covers missing later tracks, final-track corruption, truncated sectors, invalid PES lengths and cancellation. The MLP encoder and whole-file requirement are unchanged: identical target PCM, settings and metadata context must produce identical MLP through encoder behavior, without post-encoding patches.
-
-## Explicit exclusions
-
-These existing components and development uses need no further migration or deletion:
-
-- C# GUI, CLI, business libraries and tests;
-- mlp_encoder.dll and Native/source;
-- dvda-media.dll, dvda-image.dll and source build recipes;
-- dvda-author-dev.exe and project patches; the partial mirror still needs a configured complete author source tree;
-- MLP parsing, caches, disc/menu planning and logs;
-- Historical FFmpeg/FFprobe, ImageMagick and magick-shim comparisons;
-- eac3to, original SurCode, old surcode.exe and independent baselines;
-- Python, MSYS2 GCC, Make, GPG, NASM and other development tools.
-
-These are not unfinished migration items. Old DVDA_MKISOFS, DVDA_METAFLAC, eac3to and media-path keys remain importable for config.env compatibility without restoring GUI process calls.
-
-## Build and acceptance
-
-See [Windows build instructions](../tools/win-build/README.en.md) and [validation records](menu-migration-validation.json). Build libraries with build-minimal-ffmpeg.py --profile menu, the three C modules with build-menu-runtime.py, and integrate through build-image-author.py. Run compatibility checks with dotnet run --project tests/DvdaMaker.CompatibilityTests.
-
-Tests: test-menu-media.py covers PAL/NTSC and invalid inputs; test-menu-native.py compares whole outputs with legacy algorithms; test-disc-verify.py injects late-track/container corruption; test-image-release.py and test-menu-workflows.py trace GUI processes and check regular/index menus, multiple discs/groups and rate/bit-depth conversion. Artifacts stay ignored. Automated checks do not substitute for physical-player playback.
+The menu fixture and the native ABI tests cover authoring, menu resources, ISO
+writing, PCM comparison and failure handling. Physical-player playback remains
+an operational check outside automated tests.

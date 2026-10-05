@@ -1,0 +1,925 @@
+{
+  "date": "2026-10-05",
+  "target": "x86_64-pc-windows-gnu",
+  "baseline": "fb3cbb84788a807758fa6a8f472a9ffdad3115e8",
+  "status": "incomplete-confirmed-behavior-gaps",
+  "migration_complete_for_reviewed_scope": false,
+  "production_code_changed_in_this_recheck": false,
+  "report": "docs/RUST-MIGRATION-RECHECK-2026-10-05.md",
+  "open_finding_count": 16,
+  "open_findings": [
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R10",
+    "R11",
+    "R12",
+    "R13",
+    "R14",
+    "R15",
+    "R16"
+  ],
+  "reopened_prior_checklist_items": [
+    "G08.01",
+    "G08.02",
+    "G09.03",
+    "G09.04",
+    "G13.01",
+    "G13.02",
+    "G14.01",
+    "A03",
+    "A04"
+  ],
+  "workspace_tests": {
+    "passed": 141,
+    "failed": 0,
+    "ignored": 0,
+    "exit_code": 0,
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1 -OtherVolume D:\\"
+  },
+  "format_and_clippy": {
+    "passed": true,
+    "clippy_workspace_all_targets": true,
+    "warnings_denied": true
+  },
+  "frozen_mlp": {
+    "cases": 116,
+    "full_file_length_sha256_and_decoded_pcm": "passed",
+    "fixtures_changed": false
+  },
+  "package_check": {
+    "passed": true,
+    "cases": [
+      {
+        "directory": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-migration-checklist-package",
+        "zip": "DVD-Audio-Maker-v1.0-win-x64.zip",
+        "zip_sha256": "8f0c04dddc88c480d1aa4fd2143c55a00d864b208274ce44c4bdcad12eb74d70",
+        "exe_sha256": "e2446c4ddeb570f48455e8262d6e3e6d6e78862013b24d961ed921bcf5f6ef6c",
+        "zip_root_files": [
+          "DVD-Audio-Maker.exe",
+          "LICENSE",
+          "NOTICE-Image.txt",
+          "NOTICE-Menu.txt",
+          "README.en.md",
+          "README.ja.md",
+          "README.md",
+          "THIRD-PARTY.en.md",
+          "THIRD-PARTY.md"
+        ],
+        "manifest_records": 10,
+        "embedded_files": 27,
+        "runtime_hashes": {
+          "avcodec-63.dll": "a5e3e33c58ebff37c801ecaa6ad1e2dcbfcd47f30caf11edaa5db841da99a73e",
+          "avformat-63.dll": "25acd5941bd9d002a820f0aba44a4e38ad54e9a7dbada306367324133f243a55",
+          "avutil-61.dll": "19172234c811035cc870cf5299055b3a88240fc5ee59f7141f521e68fcf6e3ab",
+          "colors.xml": "a71184afd1bda9b65a0ba1e42a02c05f32033758c167c19cfbe28d0418df5d9c",
+          "data/menu/activeheader": "7cb2fee9f3c93ac450edc20b26815123004134b5b9f0738e62da6de05765a3b4",
+          "data/menu/black_NTSC_720x480.jpg": "f07639230a4ee97713c2a4cdc6780102169e2953195fa8a6d278d3e26b354cf0",
+          "data/menu/black_NTSC_720x480.png": "892c678393205b05ceb9dcda40a5e78c7ef1a6fd3f3bd49800b4bccc46fe4447",
+          "data/menu/black_PAL_720x576.jpg": "991fd25741b5ec7ead149148eae8933fdef46e5439286f5876ab9b8f0d3bd590",
+          "data/menu/black_PAL_720x576.png": "3205157bbb577dde623d843509e6064ee5b18f93c3cfaab54d32ba2e9af709f6",
+          "data/menu/silence.wav": "25eadeedec105d07dc4e6e2bdbb84ad33a8e982648a2d231886154c61ce5dd42",
+          "dvda-author-dev.exe": "3cc2a3afedb21d4ad7cf375bbc01e5afbf4e5cdecd5557a1c610e2e0d1f83d00",
+          "dvda-disc-verify.dll": "70feafc9e27db5cabe4960b1729c8cb6d4ec436ff2bad7960a276e36a37df587",
+          "dvda-formats.dll": "6e62aeeeea20713e2bbbd5ecf02555f20af4e681dc56274c0f04ab78616fa277",
+          "dvda-image.dll": "5256f2e725fe04bb28a42fce4e63f98f17c48a8c0a9444e0b5bf36a32f96fffe",
+          "dvda-media.dll": "0f13179dc4b9750eed27e3a8ddcfd17f5fe21e49ee4ac0584f9017d7b13d5deb",
+          "dvda-menu-nav.dll": "f85e98afdccd36227e5fe682a9a06c33531469bc53cc2a722c460e0b1ebd0c67",
+          "dvda-menu-spu.dll": "281ffa87096e2f8ec51c79363b8a721ff9bbde8eb60544b91857e095c8da4a57",
+          "fonts/DvdaNotoCJK-Regular.ttc": "fded57abee84dc3ea9bb72a0fd4e81b82ed3b9ba7c1e15175f3ad46b2ec0a15e",
+          "libgomp-1.dll": "2b5d851adc50f14a824a6de902d61ab67fbaee70dfe131850af842049a5612ee",
+          "libsoxr.dll": "5bb8f922b12995b0322b73bd94e2e6dadfeac58abc8beb4d0f69ca5f4747917d",
+          "libwinpthread-1.dll": "72bf8802de3a99d28f0bc2db9a11f281a9f9f3fa83dab2bc67e69fac3bd3d9c0",
+          "mlp_encoder.dll": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8",
+          "policy.xml": "1c875a4fe1bcce926766008535af833eca7a0c7672bc87120957db2397540771",
+          "swresample-7.dll": "24b3aafe401f2ae9a833980f91ca433694fed9ebf1928bbf80ee12b3a08df28e",
+          "swscale-10.dll": "c7929841f5ada6db1f6ae5791f73817071181060b7f8fc93097cdb663cb6ce92",
+          "type.xml": "1004453e3752867750f86b0a83b4645f0346eb0abbe10a755162f80565cd1353",
+          "zlib1.dll": "93e9243a44c29200eeacaf9658efe2558581770e4b11ca4b500e18e424a6e3b5"
+        },
+        "temporary_candidates_remaining": 0
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "R01",
+      "priority": "P1",
+      "status": "open",
+      "observed": "**正式时间线和完整验证漏掉 PTS 统计。** 把测试盘的全部时间戳改成 0，`verify timeline` 仍成功；另一个真实 LPCM 小盘的 19 个时间戳改为 0 后，`verify all` 同样成功，PCM 对照仍一致。已有独立 `aob-pts` 能发现异常，但正式入口未调用对应统计。",
+      "current_and_baseline": "[verify.rs](../rust/crates/dvda-core/src/verify.rs) `timeline` / 行 683、707、745；旧 `VerificationPipeline.cs:288`、`AobPtsAnalyzer.cs:155` 检查 `PTS_TOO_FEW`、`PTS_NOT_ADVANCING`、`PTS_ABNORMAL_RATIO`。",
+      "evidence_files": [
+        "build/independent-verification-audit-20261005/timeline-repro.json",
+        "build/independent-verification-audit-20261005/resume-disabled/all-constant-pts-repro.json"
+      ]
+    },
+    {
+      "id": "R02",
+      "priority": "P1",
+      "status": "open",
+      "observed": "**空编码索引使无损验证零轨成功。** ISO 存在、索引为 `{\"__discs__\":[]}` 时，`verify lossless` 返回 0、`Succeeded:true`、`TrackCount:0`，实际没有比较音频。",
+      "current_and_baseline": "[verify.rs](../rust/crates/dvda-core/src/verify.rs) 行 237、795、802；旧 `VerificationPipeline.cs:342` 明确拒绝空盘列表，报告材料不足。",
+      "evidence_files": [
+        "build/independent-verification-audit-20261005/lossless-index-repro.json"
+      ]
+    },
+    {
+      "id": "R03",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**缺索引的结果类型和独立检查丢失。** 当前返回笼统 `VERIFY_FAILED` / 退出码 1；旧实现返回 `MLP_INDEX_MISSING`、不可完成状态 / 退出码 2。当前 All 在运行其余独立检查前便退出。",
+      "current_and_baseline": "[verify.rs](../rust/crates/dvda-core/src/verify.rs) 行 100、224；旧 `VerificationPipeline.cs:574`、CLI `Program.cs:639、645、982`。缺索引退出码已实测，其余检查被提前跳过由调用顺序确认。",
+      "evidence_files": [
+        "build/independent-verification-audit-20261005/lossless-index-repro.json"
+      ]
+    },
+    {
+      "id": "R04",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**CLI 显式指定不存在的清单或日志仍成功。** `quick-check --manifest missing.json`、`--log missing.log` 均返回 0，没有提示指定材料未检查。默认可选材料缺失与用户明确指定缺失被混为一谈。",
+      "current_and_baseline": "[developer.rs](../rust/crates/dvda-cli/src/developer.rs) 行 443；[verification.rs](../rust/crates/dvda-core/src/verification.rs) 行 284；旧 CLI `Program.cs:692–705` 预检后返回 2。",
+      "evidence_files": [
+        "build/independent-cli-audit-20261005/reproductions.json"
+      ]
+    },
+    {
+      "id": "R05",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**指定 ISO 目录时改变了检查范围。** `--iso-dir` 清空配置前缀，并丢弃默认 manifest/log。正常方式能发现“IFO 2 轨、manifest 1 轨”；仅追加同目录 `--iso-dir` 后变成成功。目录里不属于配置前缀的坏 ISO 也被额外纳入。",
+      "current_and_baseline": "[developer.rs](../rust/crates/dvda-cli/src/developer.rs) 行 447–466；旧 CLI `Program.cs:656–660、710–718` 保留前缀及配置材料。两种差异均经真实 CLI 复现。",
+      "evidence_files": [
+        "build/independent-cli-audit-20261005/reproductions.json"
+      ]
+    },
+    {
+      "id": "R06",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**GUI 把自动派生设置固化。** 原来留空的 ISO 前缀、导入 MLP 目录被计算值填满；修改光盘名称或工作目录后，仍保存旧前缀、旧目录。",
+      "current_and_baseline": "[desktop/main.rs](../rust/crates/dvda-desktop/src/main.rs) 行 2769、2777、3273；旧 `MainForm.cs:245、266` 保留原始空值。",
+      "evidence_files": [
+        "build/gui-independent-audit-20261005.json"
+      ]
+    },
+    {
+      "id": "R07",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**GUI 静默改写非法采样率/位深。** 加载 12345 Hz / 17 bit 后，保存即变成 48000 Hz / 24 bit，仅提示成功。",
+      "current_and_baseline": "[desktop/main.rs](../rust/crates/dvda-desktop/src/main.rs) 行 2787、2792、2920；旧 `MainForm.cs:256、320` 保留未知选项，`ProjectSettings.cs:96、98` 在执行前拒绝非法值。",
+      "evidence_files": [
+        "build/gui-independent-audit-20261005.json"
+      ]
+    },
+    {
+      "id": "R08",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**GUI 启动参数和语言覆盖遗漏。** JSON `--config` 被忽略，转而读取默认方案；`--language en` 和 `DVDA_LANGUAGE=en` 无法覆盖日语方案。这里不涉及已删除的 config.env。",
+      "current_and_baseline": "[desktop/main.rs](../rust/crates/dvda-desktop/src/main.rs) 行 948、1300；旧桌面 `Program.cs:15、25、27、40`、`L.cs:29`。",
+      "evidence_files": [
+        "build/gui-independent-audit-20261005.json"
+      ]
+    },
+    {
+      "id": "R09",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**“检查音源”漏显示失败原因。** 同组混入单声道和双声道 FLAC，报告文件有声道错误，但 GUI 摘要和详细日志都只有任务失败，没有原因。",
+      "current_and_baseline": "[desktop/main.rs](../rust/crates/dvda-desktop/src/main.rs) 行 3446；[pipeline.rs](../rust/crates/dvda-core/src/preparation/pipeline.rs) 行 235；旧 `DesktopWorkflow.cs:29` 逐条输出准备问题。",
+      "evidence_files": [
+        "build/gui-independent-audit-20261005.json"
+      ]
+    },
+    {
+      "id": "R10",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**导入 MLP 的部分 Unicode 路径触发 panic。** 根为 `C:\\abcd`、音源为 `C:\\中中\\song.flac` 时，按字节截断 UTF-8 导致 CLI 退出 101。修复后的音源可以位于原根目录外，此路径回退是正式流程需要的能力。",
+      "current_and_baseline": "[acquisition.rs](../rust/crates/dvda-core/src/acquisition.rs) 行 102，经 `build.rs:542 → mlp_import.rs:66` 调用；旧 `ExternalMlpProvider.cs:154–157` 安全回退到文件名。",
+      "evidence_files": [
+        "build/migration-independent-audit-fonts/acquisition-reproductions.json"
+      ]
+    },
+    {
+      "id": "R11",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**导入 MLP 的 Unicode 大小写匹配不等价。** `a/Été.mlp` 与 `b/été.mlp` 未报告歧义；`Été.flac` 查找小写索引失败。",
+      "current_and_baseline": "[acquisition.rs](../rust/crates/dvda-core/src/acquisition.rs) 行 30、78 仅处理 ASCII；旧 `ExternalMlpProvider.cs:172–180` 使用 `OrdinalIgnoreCase`。",
+      "evidence_files": [
+        "build/migration-independent-audit-fonts/acquisition-reproductions.json"
+      ]
+    },
+    {
+      "id": "R12",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**关闭续跑仍依赖续跑文件。** 配置关闭续跑且传入 `--no-resume`，锁住旧 `resume.json` 仍导致 `BUILD_FAILED`；解锁后同输入成功。",
+      "current_and_baseline": "[build.rs](../rust/crates/dvda-core/src/build.rs) 行 203、237 无条件加载/写入；旧 `BuildPipeline.cs:102` 在禁用时不访问续跑记录。",
+      "evidence_files": [
+        "build/independent-verification-audit-20261005/resume-disabled/repro.json"
+      ]
+    },
+    {
+      "id": "R13",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**续跑记账失败阻断已完成的制作。** author 启动后锁住记录，ISO 已生成并暂存，仍因记录写失败中止发布，留下 `.pending`。旧行为是报告警告，继续发布有效成品。",
+      "current_and_baseline": "[build.rs](../rust/crates/dvda-core/src/build.rs) 行 396、[resume.rs](../rust/crates/dvda-core/src/resume.rs) 行 65、69；旧 `BuildPipeline.cs:149–155、224`。",
+      "evidence_files": [
+        "build/independent-verification-audit-20261005/resume-disabled/record-write-repro.json"
+      ]
+    },
+    {
+      "id": "R14",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**清理失败被静默吞掉。** 锁住测试临时文件后构建成功、文件残留，却没有旧 `TEMP_CLEANUP_FAILED` 等警告。开始前的目录重置也复用忽略删除错误的函数；这部分由静态调用确认，未宣称已复现错盘。",
+      "current_and_baseline": "[build.rs](../rust/crates/dvda-core/src/build.rs) 行 650、654、656、661；旧 `DiscBuildExecutor.cs:159、177、201、220` 区分开始前失败和结束后警告。",
+      "evidence_files": [
+        "build/independent-verification-audit-20261005/resume-disabled/cleanup-warning-repro.json"
+      ]
+    },
+    {
+      "id": "R15",
+      "priority": "P2",
+      "status": "open",
+      "observed": "**发布回滚再次失败会删除唯一恢复备份。** 第一文件替换后被锁、第二文件提交失败、恢复目录又已存在时，备份搬迁失败，随后候选目录析构仍把备份删除。实测新 EXE/旧 ZIP 混合且备份消失。",
+      "current_and_baseline": "[publication.rs](../rust/crates/dvda-toolchain/src/publication.rs) 行 31、101–107。独立 harness 使用与当前模块相同的生产逻辑。这是迁移中新事务逻辑的缺陷；旧 C# 只有单文件原子替换，不能说旧版已提供整组回滚。",
+      "evidence_files": [
+        "build/migration-independent-audit-fonts/publication-reproduction.log",
+        "build/migration-independent-audit-fonts/publication-source-proof.json",
+        "build/migration-independent-audit-fonts/publication_harness.rs"
+      ]
+    },
+    {
+      "id": "R16",
+      "priority": "P3",
+      "status": "open",
+      "observed": "**续跑记录字段类型损坏时缺警告。** 数字 signature、错误类型的身份字段、非整数盘号键均被安静忽略；顶层 null 则额外警告。实际均未错误复用缓存，影响是诊断不等价。",
+      "current_and_baseline": "[resume.rs](../rust/crates/dvda-core/src/resume.rs) 行 16–35；旧 `DiscResumeStore.cs:59–68` 类型化读取并报告反序列化失败，允许 null 作为空记录。已实际调用当前公开 `Store::load`。",
+      "evidence_files": [
+        "build/migration-independent-audit-fonts/resume-reproduction.log",
+        "build/migration-independent-audit-fonts/resume_harness.rs"
+      ]
+    }
+  ],
+  "evidence_files": [
+    {
+      "path": "build/gui-independent-audit-20261005.json",
+      "bytes": 5862,
+      "sha256": "e7e3d0da7042edca5461f4ecff606ca00a84b2973d26c5b730eaebf649dbe91d"
+    },
+    {
+      "path": "build/independent-cli-audit-20261005/reproductions.json",
+      "bytes": 4976,
+      "sha256": "610d73e97e379f06e1ce7d1159b859d875a732bf0ddf16ab989dc0f719b2e69e"
+    },
+    {
+      "path": "build/independent-verification-audit-20261005/findings.json",
+      "bytes": 7359,
+      "sha256": "56cdb0c77a4e5a89a56d30c5a13a98fdcd8a07bdefc3123e1b274a074a43aed7"
+    },
+    {
+      "path": "build/independent-verification-audit-20261005/lossless-index-repro.json",
+      "bytes": 503,
+      "sha256": "e96a0ddb0a67d3a521ea2ed9be68a0fe9aa8389f96323609f41f1e287adcd109"
+    },
+    {
+      "path": "build/independent-verification-audit-20261005/resume-disabled/all-constant-pts-repro.json",
+      "bytes": 1011,
+      "sha256": "220145eb4e87b7a0da8f67c3c3b121b03e85cf3f2c3f580c53a446461bcf868f"
+    },
+    {
+      "path": "build/independent-verification-audit-20261005/resume-disabled/cleanup-warning-repro.json",
+      "bytes": 12809,
+      "sha256": "806c9d6aed770b576cf5f4c1810429b76ae22393a5f028502b6dad78d4c017e4"
+    },
+    {
+      "path": "build/independent-verification-audit-20261005/resume-disabled/record-write-repro.json",
+      "bytes": 6144,
+      "sha256": "79d8009c2c651f4d0c21e065f0ab2cd8985b6cba98bc99adc1526e6a3e3d3ad3"
+    },
+    {
+      "path": "build/independent-verification-audit-20261005/resume-disabled/repro.json",
+      "bytes": 15495,
+      "sha256": "582e99c2467a5f53ca53e07ff1628461ff752ca8d3cd713fd5ecbd2ff9407e94"
+    },
+    {
+      "path": "build/independent-verification-audit-20261005/timeline-repro.json",
+      "bytes": 10868,
+      "sha256": "a1d6d6400cd82e35a39943cfe9be25abe9ee0ce3961d3b683ee523711e149f8e"
+    },
+    {
+      "path": "build/migration-independent-audit-fonts/acquisition-reproductions.json",
+      "bytes": 1875,
+      "sha256": "07f76bb704b42ccefd92823a1a3512c45fd3b108d2e52c8728ada7e22ab5de5b"
+    },
+    {
+      "path": "build/migration-independent-audit-fonts/publication-reproduction.log",
+      "bytes": 878,
+      "sha256": "709bc25bfbeddbbfd9c20d2a894e519954e8fdd9eb563585f20b8ff7b2d9f461"
+    },
+    {
+      "path": "build/migration-independent-audit-fonts/publication-source-proof.json",
+      "bytes": 529,
+      "sha256": "c1097d2d9a102a94b792d25a95ea1eb37e76439688bde18850eb4384681929a8"
+    },
+    {
+      "path": "build/migration-independent-audit-fonts/publication_harness.rs",
+      "bytes": 6709,
+      "sha256": "568038b2379fa511cb133c1aa826dda998ff3205abd6399ba8ef1345fb0b0e1e"
+    },
+    {
+      "path": "build/migration-independent-audit-fonts/resume-reproduction.log",
+      "bytes": 794,
+      "sha256": "d8f4008dac741da7adf80c4dfa1edd5fbe48befa1f9e1dfaeb0366ef2e48cf00"
+    },
+    {
+      "path": "build/migration-independent-audit-fonts/resume_harness.rs",
+      "bytes": 1018,
+      "sha256": "56dd564933f465fbb5e49880915863c748e689e57df3b3dac87b384794e20a87"
+    },
+    {
+      "path": "build/rust-migration-recheck-clippy.log",
+      "bytes": 836,
+      "sha256": "767631a4d204ae0b98007c78751b9c1296532d8f8ea1dabdf1751ea24fa234d0"
+    },
+    {
+      "path": "build/rust-migration-recheck-package.json",
+      "bytes": 3497,
+      "sha256": "831f3ad472a14b4e019a32bb6beec3f4cbe2b0be4234cb1ff059b2cae4dfe857"
+    },
+    {
+      "path": "build/rust-migration-recheck-tests.log",
+      "bytes": 33432,
+      "sha256": "c986a23f653b2d197073949f5516c28e2ff7310d85b733e98c122ad1b8d2a855"
+    }
+  ],
+  "reproduction_snapshots": {
+    "build/gui-independent-audit-20261005.json": [
+      {
+        "case": "old_config",
+        "title": "daily default",
+        "language_index": 1,
+        "rate_index": 1,
+        "bits_index": 2
+      },
+      {
+        "case": "language_cli",
+        "title": "chosen marker",
+        "language_index": 2,
+        "rate_index": 1,
+        "bits_index": 2
+      },
+      {
+        "case": "language_env",
+        "title": "chosen marker",
+        "language_index": 2,
+        "rate_index": 1,
+        "bits_index": 2
+      },
+      {
+        "case": "invalid_numeric_profile",
+        "title": "chosen marker",
+        "language_index": 2,
+        "rate_index": 1,
+        "bits_index": 2,
+        "saved_values": {
+          "DVDA_SRC": "",
+          "DVDA_FINAL_DIR": "",
+          "DVDA_TITLE": "chosen marker",
+          "DVDA_ISO_PREFIX": "chosen_marker",
+          "DVDA_MAX_DISCS": "2",
+          "DVDA_GROUP_TRACK_LIMIT": "99",
+          "DVDA_DISC_BYTES": "4707319808",
+          "DVDA_MLP_SOURCE": "surcode-batch",
+          "DVDA_MLP_EXTERNAL_DIR": "C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-independent-gw2iq4or\\DVD-Audio-Maker\\build\\mlp",
+          "DVDA_MLP_METADATA_CONTEXT": "",
+          "DVDA_MLP_SURCODE_SAMPLE_RATE": "48000",
+          "DVDA_MLP_SURCODE_BITS": "24",
+          "DVDA_MLP_JOBS": "1",
+          "DVDA_MENU": "off",
+          "DVDA_MENU_TRACKS_PER_PAGE": "12",
+          "DVDA_MENU_INDEX_MIN_ALBUMS": "4",
+          "DVDA_MENU_STILLPICS": "on",
+          "DVDA_MENU_COVER_DIM": "35",
+          "DVDA_MENU_FONT": "Noto-Sans-CJK-SC",
+          "DVDA_MENU_FONT_JP": "",
+          "DVDA_MENU_FONT_KR": "",
+          "DVDA_AUTHOR": "dvda-author-dev.exe",
+          "DVDA_AUTHOR_SRC": "",
+          "DVDA_PREPARE_CACHE": "on",
+          "DVDA_RESUME": "on",
+          "DVDA_LOSS_ERROR_S": "0.05",
+          "DVDA_LOSS_WARN_S": "0.005",
+          "DVDA_BUILD_DIR": "C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-independent-gw2iq4or\\DVD-Audio-Maker\\build",
+          "DVDA_TITLE_MODE": "album",
+          "DVDA_ALBUM_LIMIT": "0",
+          "DVDA_MLP_BATCH_TEMP_DIR": "",
+          "DVDA_MLP_BATCH_OUTPUT_DIR": "",
+          "DVDA_KEEP_TMP": "off",
+          "DVDA_KEEP_INTERMEDIATE": "off"
+        },
+        "visible_log": "16:47:27  プロファイルを保存しました: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-gui-independent-gw2iq4or\\chosen.json\r\n"
+      },
+      {
+        "case": "derived_settings_frozen",
+        "prefix_before": "Original_title",
+        "import_before": "C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-audit-prepare-htc3782a\\work\\mlp",
+        "new_title": "New title",
+        "new_build": "C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-audit-prepare-htc3782a\\changed-work",
+        "saved_prefix": "Original_title",
+        "saved_import_dir": "C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-audit-prepare-htc3782a\\work\\mlp"
+      },
+      {
+        "case": "check_sources_missing_channel_issue",
+        "summary": "16:48:52  Found 2 audio files. Reading track information.\r\n16:48:52  Source-check cache: reused 0; inspected again 2.\r\n16:48:52  Source sample rates match the selected settings; no resampling is needed.\r\n16:48:52  group_48000_16: 2 tracks\r\n16:48:52  Decode-check cache: reused 0; checked again 2.\r\n16:48:52  Updated 2 source-check records: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-audit-prepare-htc3782a\\changed-work\\prepare-cache.json\r\n16:48:52  Source-check report saved: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-audit-prepare-htc3782a\\changed-work\\decode_report.txt\r\n16:48:52  Source checks took 0.192 seconds.\r\n16:48:52  Task failed.\r\n16:48:52  Review the problems below and retry after adjusting settings. Export the full log if needed.\r\n",
+        "detailed": "16:48:52  Found 2 audio files (FLAC/M4A)\r\n16:48:52  Source cache: reused 0; inspected again 2\r\n16:48:52  0 tracks require resampling\r\n16:48:52  group_48000_16: 2 tracks\r\n16:48:52  Decode cache: reused 0; checked again 2\r\n16:48:52  Updated 2 source-check records: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-audit-prepare-htc3782a\\changed-work\\prepare-cache.json\r\n16:48:52  Report written: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-audit-prepare-htc3782a\\changed-work\\decode_report.txt\r\n16:48:52  Source checks took 0.192 seconds.\r\n16:48:52  Task failed.\r\n16:48:52  Review the problems below and retry after adjusting settings. Export the full log if needed.\r\n",
+        "reports": [
+          [
+            "changed-work\\decode_report.txt",
+            "Source audio verification report\n====================================================================\nChecked 2 tracks; 1 failed, 0 with warnings\n\n[FAIL] 音频组 48000Hz/16bit 声道数不一致\n    原因: 1 channels × 1 首; 2 声道 × 1 tracks\n    Source file: C:\\Users\\yyz57\\AppData\\Local\\Temp\\dvda-audit-prepare-htc3782a\\audio\n         1\n         2\n\n"
+          ]
+        ]
+      },
+      {
+        "case": "audit_environment",
+        "baseline": "fb3cbb8",
+        "executable": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-migration-checklist-package\\DVD-Audio-Maker\\DVD-Audio-Maker.exe",
+        "executable_bytes": 23045130,
+        "executable_sha256": "e2446c4ddeb570f48455e8262d6e3e6d6e78862013b24d961ed921bcf5f6ef6c",
+        "profile_isolation": "Each process used a temporary LOCALAPPDATA and temporary JSON profiles; inherited DVDA_* values were removed except the deliberate DVDA_LANGUAGE test. User daily configuration was not used or modified.",
+        "cleanup": "All test-owned GUI processes were closed in finally blocks. Win32_Process query after tests found no DVD-Audio* or dvda-desktop.exe processes.",
+        "audit_scope": "Four confirmed finding groups. Separate whitespace hypothesis timed out before a valid reproduction and is excluded. No production source or documentation edits made by this audit.",
+        "cases": [
+          "old_config",
+          "language_cli",
+          "language_env",
+          "invalid_numeric_profile",
+          "derived_settings_frozen",
+          "check_sources_missing_channel_issue"
+        ]
+      }
+    ],
+    "build/independent-cli-audit-20261005/reproductions.json": {
+      "profile": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\settings.json",
+      "cases": [
+        {
+          "case": "baseline",
+          "arguments": [
+            "--profile",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\settings.json",
+            "quick-check"
+          ],
+          "exit_code": 0,
+          "stdout": "{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 2\n}\n",
+          "stderr": ""
+        },
+        {
+          "case": "explicit_missing_manifest",
+          "arguments": [
+            "--profile",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\settings.json",
+            "quick-check",
+            "--manifest",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\missing-manifest.json"
+          ],
+          "exit_code": 0,
+          "stdout": "{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 2\n}\n",
+          "stderr": ""
+        },
+        {
+          "case": "explicit_missing_log",
+          "arguments": [
+            "--profile",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\settings.json",
+            "quick-check",
+            "--log",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\missing-build.log"
+          ],
+          "exit_code": 0,
+          "stdout": "{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 2\n}\n",
+          "stderr": ""
+        },
+        {
+          "case": "explicit_missing_manifest_and_log",
+          "arguments": [
+            "--profile",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\settings.json",
+            "quick-check",
+            "--manifest",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\missing-manifest.json",
+            "--log",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\missing-build.log"
+          ],
+          "exit_code": 0,
+          "stdout": "{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 2\n}\n",
+          "stderr": ""
+        },
+        {
+          "case": "filtered_directory",
+          "arguments": [
+            "--profile",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\settings.json",
+            "quick-check"
+          ],
+          "exit_code": 0,
+          "stdout": "{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 2\n}\n",
+          "stderr": ""
+        },
+        {
+          "case": "explicit_directory",
+          "arguments": [
+            "--profile",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\settings.json",
+            "quick-check",
+            "--iso-dir",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\isos"
+          ],
+          "exit_code": 1,
+          "stdout": "{\n  \"Succeeded\": false,\n  \"Diagnostics\": [\n    {\n      \"Severity\": 2,\n      \"Code\": \"ISO_READ_FAILED\",\n      \"Message\": \"No ISO9660 Primary Volume Descriptor found in C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-cli-audit-20261005\\\\isos\\\\unrelated.iso (sectors 16..47).\"\n    }\n  ],\n  \"IsoCount\": 2,\n  \"TrackCount\": 2\n}\n",
+          "stderr": ""
+        },
+        {
+          "case": "default_manifest_mismatch",
+          "arguments": [
+            "--profile",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\manifest-settings.json",
+            "quick-check"
+          ],
+          "exit_code": 1,
+          "stdout": "{\n  \"Succeeded\": false,\n  \"Diagnostics\": [\n    {\n      \"Severity\": 2,\n      \"Code\": \"TRACK_COUNT_MISMATCH\",\n      \"Message\": \"全部 ISO 的 IFO 声明轨数 2 != manifest 曲目数 1\"\n    }\n  ],\n  \"IsoCount\": 1,\n  \"TrackCount\": 2\n}\n",
+          "stderr": ""
+        },
+        {
+          "case": "explicit_directory_skips_default_manifest",
+          "arguments": [
+            "--profile",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\manifest-settings.json",
+            "quick-check",
+            "--iso-dir",
+            "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-cli-audit-20261005\\clean-isos"
+          ],
+          "exit_code": 0,
+          "stdout": "{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 2\n}\n",
+          "stderr": ""
+        }
+      ]
+    },
+    "build/independent-verification-audit-20261005/findings.json": {
+      "date": "2026-10-05",
+      "baseline": "fb3cbb8",
+      "read_only_production_audit": true,
+      "findings": [
+        {
+          "id": "V01",
+          "priority": "P1",
+          "title": "正式时间轴未调用已迁移的PTS统计，全部验证也会错误通过",
+          "old": [
+            "fb3cbb8:src/DvdaMaker.Building/VerificationPipeline.cs:238",
+            "fb3cbb8:src/DvdaMaker.Building/VerificationPipeline.cs:288",
+            "fb3cbb8:src/DvdaMaker.Building/AobPtsAnalyzer.cs:155",
+            "fb3cbb8:src/DvdaMaker.Building/AobPtsAnalyzer.cs:168"
+          ],
+          "current": [
+            "rust/crates/dvda-core/src/verify.rs:149",
+            "rust/crates/dvda-core/src/verify.rs:683",
+            "rust/crates/dvda-core/src/verify.rs:707",
+            "rust/crates/dvda-core/src/verify.rs:745"
+          ],
+          "expected": "AobPtsAnalyzer计算PTS_TOO_FEW、PTS_NOT_ADVANCING和异常步长比例>1%的PTS_ABNORMAL_RATIO；VerifyTimeline/All返回诊断",
+          "actual": "正式timeline只记录下降/缺PTS/标题重置；aob.pts_statistics函数与aob-pts独立命令虽存在，未接入正式ISO验证",
+          "reproduction": [
+            "timeline-repro.json",
+            "resume-disabled/all-constant-pts-repro.json"
+          ],
+          "observed": "490扇区常量0的ISO timeline返回0成功；相同AOB独立aob-pts返回1。另真实LPCM1轨19扇区改PTS0后verify all返回0成功且PCM一致。原ISO均仅测试副本或测试后恢复。",
+          "existing_coverage": "aob.rs统计纯单测与独立CLI覆盖；application_native的IFO/PES缺失/音频破坏反例没有PTS不推进/异常比例反例。"
+        },
+        {
+          "id": "V02",
+          "priority": "P1",
+          "title": "空正式索引导致无损校验零轨成功",
+          "old": [
+            "fb3cbb8:src/DvdaMaker.Building/VerificationPipeline.cs:342",
+            "fb3cbb8:src/DvdaMaker.Cli/Program.cs:638",
+            "fb3cbb8:src/DvdaMaker.Cli/Program.cs:972"
+          ],
+          "current": [
+            "rust/crates/dvda-core/src/verify.rs:231",
+            "rust/crates/dvda-core/src/verify.rs:237",
+            "rust/crates/dvda-core/src/verify.rs:795",
+            "rust/crates/dvda-core/src/verify.rs:802"
+          ],
+          "expected": "index.Discs.Count==0明确返回LOSSLESS_SOURCE_MISSING与Unavailable:true，PrintIssues sectionUnavailable单一问题令CLI返回2",
+          "actual": "__discs__:[]可过resolve_index，lossless循环所有ISO时找不到对应disc便continue，最终Succeeded:true TrackCount0",
+          "reproduction": [
+            "lossless-index-repro.json"
+          ],
+          "observed": "目录有真实ISO，索引仅{\"__discs__\":[]}，verify lossless exit0,Diagnostics[]",
+          "existing_coverage": "verify::rejects_empty_groups_duplicate_discs_and_ambiguous_groups只拒绝空组/重复盘/组，未覆盖空__discs__。"
+        },
+        {
+          "id": "V03",
+          "priority": "P2",
+          "title": "缺索引的材料不足语义及All独立检查被提前失败替代",
+          "old": [
+            "fb3cbb8:src/DvdaMaker.Building/VerificationPipeline.cs:342",
+            "fb3cbb8:src/DvdaMaker.Building/VerificationPipeline.cs:574",
+            "fb3cbb8:src/DvdaMaker.Cli/Program.cs:639",
+            "fb3cbb8:src/DvdaMaker.Cli/Program.cs:645",
+            "fb3cbb8:src/DvdaMaker.Cli/Program.cs:982"
+          ],
+          "current": [
+            "rust/crates/dvda-core/src/verify.rs:100",
+            "rust/crates/dvda-core/src/verify.rs:224",
+            "rust/crates/dvda-cli/src/developer.rs:508"
+          ],
+          "expected": "缺索引MLP_INDEX_MISSING,Unavailable:true，旧CLI显式按材料不足退出2；All容量/quick/audit/timeline仍独立运行",
+          "actual": "read_index?提前退出封装为VERIFY_FAILED，CLI1；All尚未执行capacity/timeline/log时即返回",
+          "reproduction": [
+            "lossless-index-repro.json"
+          ],
+          "observed": "无mlp_index.json的verify lossless exit1,Code VERIFY_FAILED,无Unavailable标志",
+          "existing_coverage": "新增测试覆盖缺构建日志Unavailable，但未覆盖缺索引/损坏索引/预演索引CLI2。"
+        },
+        {
+          "id": "V04",
+          "priority": "P2",
+          "title": "禁用续跑仍依赖续跑文件；记续跑失败由警告升级为构建失败并残留pending",
+          "old": [
+            "fb3cbb8:src/DvdaMaker.Building/BuildPipeline.cs:102",
+            "fb3cbb8:src/DvdaMaker.Building/BuildPipeline.cs:149",
+            "fb3cbb8:src/DvdaMaker.Building/BuildPipeline.cs:155",
+            "fb3cbb8:src/DvdaMaker.Building/BuildPipeline.cs:224"
+          ],
+          "current": [
+            "rust/crates/dvda-core/src/build.rs:201",
+            "rust/crates/dvda-core/src/build.rs:203",
+            "rust/crates/dvda-core/src/build.rs:237",
+            "rust/crates/dvda-core/src/build.rs:396",
+            "rust/crates/dvda-core/src/resume.rs:65",
+            "rust/crates/dvda-core/src/resume.rs:69"
+          ],
+          "expected": "canResume为false时不用DiscResumeStore；记录写入IO失败仅warning继续正式发布；失败finally删除pending索引",
+          "actual": "总是load/discard/record固定resume.json，两个写入均?传播；无统一finally清pending",
+          "reproduction": [
+            "resume-disabled/repro.json",
+            "resume-disabled/record-write-repro.json"
+          ],
+          "observed": "DVDA_RESUME=off加build --no-resume时锁旧resume.json便BUILD_FAILED1；解锁同输入成功。作者启动后才锁记录，成功生成并暂存ISO后仍BUILD_FAILED1，mlp_index.json.pending与stagedISO遗留",
+          "existing_coverage": "application_failed_author_keeps_workspace_and_previous_release覆盖损坏JSON重建、author非零、最终ISO替换锁，未覆盖resume写锁与no-resume不访问旧凭据。"
+        },
+        {
+          "id": "V05",
+          "priority": "P2",
+          "title": "中间文件清理失败警告被吞掉，重置目录失败也不再阻止后续步骤",
+          "old": [
+            "fb3cbb8:src/DvdaMaker.Building/DiscBuildExecutor.cs:159",
+            "fb3cbb8:src/DvdaMaker.Building/DiscBuildExecutor.cs:177",
+            "fb3cbb8:src/DvdaMaker.Building/DiscBuildExecutor.cs:201",
+            "fb3cbb8:src/DvdaMaker.Building/DiscBuildExecutor.cs:220"
+          ],
+          "current": [
+            "rust/crates/dvda-core/src/build.rs:650",
+            "rust/crates/dvda-core/src/build.rs:654",
+            "rust/crates/dvda-core/src/build.rs:656",
+            "rust/crates/dvda-core/src/build.rs:661"
+          ],
+          "expected": "后处理目录/文件删除失败分别警告TEMP_CLEANUP_FAILED/OUTPUT_CLEANUP_FAILED/ISO_CLEANUP_FAILED；开始前ResetDirectory删除失败抛错",
+          "actual": "共用remove_directory/remove_if_file let _直接吞IO错误；reset_directory接着create_dir_all可对残留目录成功",
+          "reproduction": [
+            "resume-disabled/cleanup-warning-repro.json"
+          ],
+          "observed": "当原生作者报告Image was created后在tmp/disc1创建并锁测试文件，build最终成功但文件残留，Diagnostics[]无清理warning。reset前残留复用为静态确认，未独立证明生成错盘。",
+          "existing_coverage": "keep flags/取消/作者失败原生用例有覆盖；没有post-author清理失败warning或开始前reset拒绝反例。"
+        }
+      ],
+      "scope": "只读生产代码/文档；所有写入和破坏仅在build/independent-verification-audit-20261005隔离音频/ISO/配置证据；未修生产代码。"
+    },
+    "build/independent-verification-audit-20261005/lossless-index-repro.json": {
+      "empty_index": {
+        "exit": 0,
+        "stdout": "{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 0\n}\n",
+        "stderr": ""
+      },
+      "missing_index": {
+        "exit": 1,
+        "stdout": "{\n  \"Succeeded\": false,\n  \"Diagnostics\": [\n    {\n      \"Severity\": 2,\n      \"Code\": \"VERIFY_FAILED\",\n      \"Message\": \"系统找不到指定的文件。 (os error 2)\"\n    }\n  ],\n  \"IsoCount\": 0,\n  \"TrackCount\": 0\n}\n",
+        "stderr": ""
+      }
+    },
+    "build/independent-verification-audit-20261005/resume-disabled/all-constant-pts-repro.json": {
+      "baseline_exit": 0,
+      "mutated_pts_sectors": 19,
+      "corrupt_all": {
+        "exit": 0,
+        "stdout": "Checking the timeline: C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\final\\resume_1.iso, group 1\nComparing lossless audio: C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\final\\resume_1.iso, group 1\nout_time_us=85333\nout_time_us=125354\nout_time_us=85333\nout_time_us=125354\nout_time_us=85333\nout_time_us=125354\n[Verify] C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\source\\one.flac: full target PCM matches.\n{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 1\n}\n",
+        "stderr": "Number of samples: 6017\nNumber of samples: 6017\nNumber of samples: 6017\n"
+      },
+      "original_iso_restored": true
+    },
+    "build/independent-verification-audit-20261005/resume-disabled/cleanup-warning-repro.json": {
+      "lock_acquired": true,
+      "exit": 0,
+      "leftover_temporary_file": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\tmp\\disc1\\locked-diagnostic.txt",
+      "temporary_file_remains": true,
+      "has_cleanup_warning": false,
+      "stdout": "[Rust build] 1791190421\nReusing verified source checks for 1 files.\nLoaded 1 tracks. Planning discs.\n[space] C:\\: LPCM 音频缓存与转换临时文件, required 325302 B, available 6030942208 B\n[space] C:\\: author 中间产物与暂存 ISO + 成品 ISO 集合, required 74150 B, available 6030942208 B\nBuilding disc 1.\n+ \"C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-author-current\\dvda-author-dev.exe\" -g \"C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\res\n[Long output omitted here; full hashed evidence retained in build.]\nindependent-verification-audit-20261005\\\\resume-disabled\\\\source\\\\one.flac\",\n                \"ManifestName\": \"group_48000_16/0001__one\",\n                \"Duration\": 0.125354,\n                \"ResampleTo\": null,\n                \"SourceSize\": 12958,\n                \"MlpPath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\work\\\\lpcm\\\\EC05A58B88F6DC8DED902230C9416FF8616F68CE17F164DED8E969D2CD0943F4.wav\",\n                \"MlpSize\": 36170,\n                \"Channels\": 2,\n                \"ChannelMask\": 3,\n                \"SourceSampleRate\": 48000,\n                \"SourceBits\": 16,\n                \"MlpSource\": \"lpcm\",\n                \"ExternalResampled\": false,\n                \"ExternalRebitded\": false,\n                \"ParametersChanged\": true\n              }\n            ]\n          }\n        ],\n        \"Tracks\": [\n          {\n            \"Date\": \"\",\n            \"Track\": \"\",\n            \"Title\": \"one\",\n            \"Album\": \"one\",\n            \"SampleRate\": 48000,\n            \"Bits\": 24,\n            \"SourcePath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\source\\\\one.flac\",\n            \"ManifestName\": \"group_48000_16/0001__one\",\n            \"Duration\": 0.125354,\n            \"ResampleTo\": null,\n            \"SourceSize\": 12958,\n            \"MlpPath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\work\\\\lpcm\\\\EC05A58B88F6DC8DED902230C9416FF8616F68CE17F164DED8E969D2CD0943F4.wav\",\n            \"MlpSize\": 36170,\n            \"Channels\": 2,\n            \"ChannelMask\": 3,\n            \"SourceSampleRate\": 48000,\n            \"SourceBits\": 16,\n            \"MlpSource\": \"lpcm\",\n            \"ExternalResampled\": false,\n            \"ExternalRebitded\": false,\n            \"ParametersChanged\": true\n          }\n        ],\n        \"MlpBytes\": 36170,\n        \"EstimatedAobBytes\": 37075\n      }\n    ],\n    \"Diagnostics\": [],\n    \"DiscContentLimitBytes\": 4698931200,\n    \"HasErrors\": false\n  },\n  \"Tracks\": [\n    {\n      \"Date\": \"\",\n      \"Track\": \"\",\n      \"Title\": \"one\",\n      \"Album\": \"one\",\n      \"SampleRate\": 48000,\n      \"Bits\": 24,\n      \"SourcePath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\source\\\\one.flac\",\n      \"ManifestName\": \"group_48000_16/0001__one\",\n      \"Duration\": 0.125354,\n      \"ResampleTo\": null,\n      \"SourceSize\": 12958,\n      \"MlpPath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\work\\\\lpcm\\\\EC05A58B88F6DC8DED902230C9416FF8616F68CE17F164DED8E969D2CD0943F4.wav\",\n      \"MlpSize\": 36170,\n      \"Channels\": 2,\n      \"ChannelMask\": 3,\n      \"SourceSampleRate\": 48000,\n      \"SourceBits\": 16,\n      \"MlpSource\": \"lpcm\",\n      \"ExternalResampled\": false,\n      \"ExternalRebitded\": false,\n      \"ParametersChanged\": true\n    }\n  ],\n  \"CacheHits\": 1,\n  \"CacheRebuilt\": 0,\n  \"Published\": [\n    \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\final\\\\resume_1.iso\"\n  ],\n  \"Diagnostics\": [],\n  \"IndexPath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\work\\\\mlp_index.json\"\n}\n"
+    },
+    "build/independent-verification-audit-20261005/resume-disabled/record-write-repro.json": {
+      "locked_after_author_start": true,
+      "exit": 1,
+      "stdout": "[Rust build] 1791190298\nReusing verified source checks for 1 files.\nLoaded 1 tracks. Planning discs.\n[space] C:\\: LPCM 音频缓存与转换临时文件, required 325302 B, available 6031310848 B\n[space] C:\\: author 中间产物与暂存 ISO + 成品 ISO 集合, required 74150 B, available 6031372288 B\nBuilding disc 1.\n+ \"C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-author-current\\dvda-author-dev.exe\" -g \"C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\res\n[Long output omitted here; full hashed evidence retained in build.]\nLITY or FITNESS FOR A PARTICULAR PURPOSE.  See the \nGNU General Public License for more details.\nYou should have received a copy of the GNU General Public License \nalong with dvda-author.  If not, see http://www.gnu.org/licenses/.\n\n\n\n------------------------------------------------------------\n[PAR]  Output directory is: C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\n[PAR]  Lexer was deactivated\n[PAR]  End pause will be suppressed.\n[PAR]  No video zone\n[PAR]  Write ISO image with the in-process C writer.\n[PAR]  ISO file path is: C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\iso\\disc1.iso\n[PAR]  ISO volume identifier: Resume check 1\n\n------------------------------------------------------------\n\nDVD Layout\nGroup  Track    Rate Bits  Ch  CGA    N_Samples  Filename\n\n\nDVD MLP Layout\nGroup  Track    Rate Bits  Ch  CGA        N_Samples  Status  Filename\n\n    1     01   48000   24   2 L-R         6017          C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\lpcm\\EC05A58B88F6DC8DED902230C9416FF8616F68CE17F164DED8E969D2CD0943F4.wav\n\n\n[MSG]  Size of raw PCM data: 36102 bytes (0.03  MB)\n[WAR]  Padding track with 6 bytes (ultimate packet).\n[INF]  Processing C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\lpcm\\EC05A58B88F6DC8DED902230C9416FF8616F68CE17F164DED8E969D2CD0943F4.wav\n[INF]  Writing first packet - pack=0, bytesinbuffer=36108\n[INF]  Writing last packet - pack=18, bytesinbuffer=60\n[MSG]  C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\ATS_01_0.IFO was created.\n[MSG]  C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\ATS_01_0.BUP was created.\n[MSG]  SAMG pointers\n       Last audio group=0\n       Last audio track=0\n       Absolute sector pointer to last AOB sector=368\n[MSG]  C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\AUDIO_PP.IFO was created.\n[MSG]  Total size of AUDIO_TS: 93 sectors\n[MSG]  Start offset of  VIDEO_TS in ISO file: 371 sectors,  offset 759808\n\n[MSG]  C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\AUDIO_TS.IFO was created.\n[MSG]  C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\AUDIO_TS.BUP was created.\n[WAR]  Coherence test for ISO start sector failed: start sector assessed as: 278 but should be: 280\n\n\nGroup   Title  Track  First_Sect   Last_Sect  First_PTS  PTS_length cga\n\n    1   01/01     1           0          18           0       11282   1\n\nTotal number of tracks: 1.\n\n[INF]  Creating ISO with the in-process C ISO writer.\n[MSG]  Image was created with size 230 KB.\n{\n  \"Succeeded\": false,\n  \"Plan\": null,\n  \"Tracks\": [],\n  \"CacheHits\": 0,\n  \"CacheRebuilt\": 0,\n  \"Published\": [],\n  \"Diagnostics\": [\n    {\n      \"Severity\": 2,\n      \"Code\": \"BUILD_FAILED\",\n      \"Message\": \"拒绝访问。 (os error 5)\"\n    }\n  ],\n  \"IndexPath\": null\n}\n",
+      "pending": [
+        "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\mlp_index.json.pending"
+      ],
+      "staged": [
+        "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\publish-staging\\resume_1.iso"
+      ]
+    },
+    "build/independent-verification-audit-20261005/resume-disabled/repro.json": {
+      "locked": {
+        "exit": 1,
+        "stdout": "[Rust build] 1791190130\nFound 1 audio files (FLAC/M4A)\nSource cache: reused 0; inspected again 1\n0 tracks require resampling\ngroup_48000_16: 1 tracks\nDecode cache: reused 0; checked again 1\nUpdated 1 source-check records: C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\prepare-cache.json\nReport written: C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\decode_report.txt\nmanifest.json created -> C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\manifest.json\nTotal: 1 tracks\nSaved the source-check snapshot: C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\prepare-snapshot.json\nSource checks took 0.377 seconds.\nLoaded 1 tracks. Planning discs.\n[space] C:\\: LPCM 音频缓存与转换临时文件, required 325302 B, available 6043557888 B\nout_time_us=85333\nout_time_us=125354\n[space] C:\\: author 中间产物与暂存 ISO + 成品 ISO 集合, required 74150 B, available 6033252352 B\n{\n  \"Succeeded\": false,\n  \"Plan\": null,\n  \"Tracks\": [],\n  \"CacheHits\": 0,\n  \"CacheRebuilt\": 0,\n  \"Published\": [],\n  \"Diagnostics\": [\n    {\n      \"Severity\": 2,\n      \"Code\": \"BUILD_FAILED\",\n      \"Message\": \"拒绝访问。 (os error 5)\"\n    }\n  ],\n  \"IndexPath\": null\n}\n",
+        "stderr": "Number of samples: 6017\n"
+      },
+      "unlocked": {
+        "exit": 0,
+        "stdout": "[Rust build] 1791190132\nReusing verified source checks for 1 files.\nLoaded 1 tracks. Planning discs.\n[space] C:\\: LPCM 音频缓存与转换临时文件, required 325302 B, available 6042664960 B\n[space] C:\\: author 中间产物与暂存 ISO + 成品 ISO 集合, required 74150 B, available 6042660864 B\nBuilding disc 1.\n+ \"C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-author-current\\dvda-author-dev.exe\" -g \"C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\res\n[Long output omitted here; full hashed evidence retained in build.]\nindependent-verification-audit-20261005\\\\resume-disabled\\\\source\\\\one.flac\",\n                \"ManifestName\": \"group_48000_16/0001__one\",\n                \"Duration\": 0.125354,\n                \"ResampleTo\": null,\n                \"SourceSize\": 12958,\n                \"MlpPath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\work\\\\lpcm\\\\EC05A58B88F6DC8DED902230C9416FF8616F68CE17F164DED8E969D2CD0943F4.wav\",\n                \"MlpSize\": 36170,\n                \"Channels\": 2,\n                \"ChannelMask\": 3,\n                \"SourceSampleRate\": 48000,\n                \"SourceBits\": 16,\n                \"MlpSource\": \"lpcm\",\n                \"ExternalResampled\": false,\n                \"ExternalRebitded\": false,\n                \"ParametersChanged\": true\n              }\n            ]\n          }\n        ],\n        \"Tracks\": [\n          {\n            \"Date\": \"\",\n            \"Track\": \"\",\n            \"Title\": \"one\",\n            \"Album\": \"one\",\n            \"SampleRate\": 48000,\n            \"Bits\": 24,\n            \"SourcePath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\source\\\\one.flac\",\n            \"ManifestName\": \"group_48000_16/0001__one\",\n            \"Duration\": 0.125354,\n            \"ResampleTo\": null,\n            \"SourceSize\": 12958,\n            \"MlpPath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\work\\\\lpcm\\\\EC05A58B88F6DC8DED902230C9416FF8616F68CE17F164DED8E969D2CD0943F4.wav\",\n            \"MlpSize\": 36170,\n            \"Channels\": 2,\n            \"ChannelMask\": 3,\n            \"SourceSampleRate\": 48000,\n            \"SourceBits\": 16,\n            \"MlpSource\": \"lpcm\",\n            \"ExternalResampled\": false,\n            \"ExternalRebitded\": false,\n            \"ParametersChanged\": true\n          }\n        ],\n        \"MlpBytes\": 36170,\n        \"EstimatedAobBytes\": 37075\n      }\n    ],\n    \"Diagnostics\": [],\n    \"DiscContentLimitBytes\": 4698931200,\n    \"HasErrors\": false\n  },\n  \"Tracks\": [\n    {\n      \"Date\": \"\",\n      \"Track\": \"\",\n      \"Title\": \"one\",\n      \"Album\": \"one\",\n      \"SampleRate\": 48000,\n      \"Bits\": 24,\n      \"SourcePath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\source\\\\one.flac\",\n      \"ManifestName\": \"group_48000_16/0001__one\",\n      \"Duration\": 0.125354,\n      \"ResampleTo\": null,\n      \"SourceSize\": 12958,\n      \"MlpPath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\work\\\\lpcm\\\\EC05A58B88F6DC8DED902230C9416FF8616F68CE17F164DED8E969D2CD0943F4.wav\",\n      \"MlpSize\": 36170,\n      \"Channels\": 2,\n      \"ChannelMask\": 3,\n      \"SourceSampleRate\": 48000,\n      \"SourceBits\": 16,\n      \"MlpSource\": \"lpcm\",\n      \"ExternalResampled\": false,\n      \"ExternalRebitded\": false,\n      \"ParametersChanged\": true\n    }\n  ],\n  \"CacheHits\": 1,\n  \"CacheRebuilt\": 0,\n  \"Published\": [\n    \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\final\\\\resume_1.iso\"\n  ],\n  \"Diagnostics\": [],\n  \"IndexPath\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\resume-disabled\\\\work\\\\mlp_index.json\"\n}\n",
+        "stderr": "\nCurrent time is: 05 Oct 2026, 16h 48m 53s\n[INF]  Creating C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\ATS_01_0.IFO\n[INF]  Creating C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\ATS_01_0.BUP\n[INF]  Creating C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\AUDIO_PP.IFO\n[INF]  Creating C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\AUDIO_TS.IFO\n[INF]  Creating C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\AUDIO_TS\\AUDIO_TS.BUP\n\n[MSG]  Directory has 6 files.\n\n[ERR]  Directory 'C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\resume-disabled\\work\\out\\disc1\\VIDEO_TS'\n\n[ERR]  Directory not recognized.\n: No such file or directory\n"
+      }
+    },
+    "build/migration-independent-audit-fonts/acquisition-reproductions.json": [
+      {
+        "name": "unicode_outside_root",
+        "operation": "build.mlp_resolve",
+        "request": {
+          "SourcePath": "C:\\中中\\song.flac",
+          "SourceRoot": "C:\\abcd",
+          "ExternalRoot": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\migration-independent-audit-fonts\\mlp-lookup",
+          "BasenameIndex": {
+            "song": "expected-song.mlp"
+          }
+        },
+        "returncode": 101,
+        "stdout": "",
+        "stderr": "\nthread 'main' (27916) panicked at crates\\dvda-core\\src\\acquisition.rs:102:55:\nend byte index 8 is not a char boundary; it is inside '中' (bytes 6..9 of string)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+      },
+      {
+        "name": "unicode_duplicate",
+        "operation": "build.mlp_lookup",
+        "request": {
+          "Root": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\migration-independent-audit-fonts\\mlp-lookup"
+        },
+        "returncode": 0,
+        "stdout": "{\"Index\":{\"Été\":\"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\migration-independent-audit-fonts\\\\mlp-lookup\\\\a\\\\Été.mlp\",\"été\":\"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\migration-independent-audit-fonts\\\\mlp-lookup\\\\b\\\\été.mlp\"},\"AmbiguousNames\":[]}\n",
+        "stderr": ""
+      },
+      {
+        "name": "unicode_basename_fallback",
+        "operation": "build.mlp_resolve",
+        "request": {
+          "SourcePath": "C:\\source\\Été.flac",
+          "SourceRoot": "C:\\source",
+          "ExternalRoot": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\migration-independent-audit-fonts\\missing",
+          "BasenameIndex": {
+            "été": "expected-song.mlp"
+          }
+        },
+        "returncode": 0,
+        "stdout": "null\n",
+        "stderr": ""
+      }
+    ],
+    "build/migration-independent-audit-fonts/publication-reproduction.log": "error=Publication failed: injected second-file commit failure; rollback errors: build/migration-independent-audit-fonts/publication-output\\app.exe: 拒绝访问。 (os error 5); recovery build/migration-independent-audit-fonts/publication-output\\release-recovery-15340: Err(\"目录不是空的。 (os error 145)\")\r\nbackup_exists_before_drop=true\r\nbackup_exists_after_drop=false\r\npublished_app=new release\r\npublished_zip=old release\r\nrecovery_contains_app=false\r\n",
+    "build/migration-independent-audit-fonts/publication-source-proof.json": {
+      "source": "rust\\crates\\dvda-toolchain\\src\\publication.rs",
+      "module_extraction": "Drop initial module doc comment and cfg(test) test module; normalize trailing whitespace only",
+      "current_whole_file_sha256": "68498a9ff6d499811d779a504e818fe545c08e0919eec0e86c92791dd7a088d9",
+      "current_production_module_sha256": "bde3c0c3d28c413a2082655571b99f33ecd5f8e38a6b6f70b05c5942b6918fe8",
+      "harness_module_sha256": "bde3c0c3d28c413a2082655571b99f33ecd5f8e38a6b6f70b05c5942b6918fe8",
+      "equal_production_module": true
+    },
+    "build/migration-independent-audit-fonts/resume-reproduction.log": "case=malformed_json warnings=1 reused=false events=[\"[警告] 续跑记录无法读取，将重新出盘: EOF while parsing an object at line 1 column 1\"]\r\ncase=wrong_signature_type warnings=0 reused=false events=[]\r\ncase=wrong_identity_type warnings=0 reused=false events=[]\r\ncase=wrong_disc_key warnings=0 reused=false events=[]\r\ncase=legacy_null warnings=1 reused=false events=[\"[警告] 续跑记录无法读取，将重新出盘: Invalid resume record\"]\r\n",
+    "build/rust-migration-recheck-package.json": {
+      "passed": true,
+      "cases": [
+        {
+          "directory": "C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\rust-migration-checklist-package",
+          "zip": "DVD-Audio-Maker-v1.0-win-x64.zip",
+          "zip_sha256": "8f0c04dddc88c480d1aa4fd2143c55a00d864b208274ce44c4bdcad12eb74d70",
+          "exe_sha256": "e2446c4ddeb570f48455e8262d6e3e6d6e78862013b24d961ed921bcf5f6ef6c",
+          "zip_root_files": [
+            "DVD-Audio-Maker.exe",
+            "LICENSE",
+            "NOTICE-Image.txt",
+            "NOTICE-Menu.txt",
+            "README.en.md",
+            "README.ja.md",
+            "README.md",
+            "THIRD-PARTY.en.md",
+            "THIRD-PARTY.md"
+          ],
+          "manifest_records": 10,
+          "embedded_files": 27,
+          "runtime_hashes": {
+            "avcodec-63.dll": "a5e3e33c58ebff37c801ecaa6ad1e2dcbfcd47f30caf11edaa5db841da99a73e",
+            "avformat-63.dll": "25acd5941bd9d002a820f0aba44a4e38ad54e9a7dbada306367324133f243a55",
+            "avutil-61.dll": "19172234c811035cc870cf5299055b3a88240fc5ee59f7141f521e68fcf6e3ab",
+            "colors.xml": "a71184afd1bda9b65a0ba1e42a02c05f32033758c167c19cfbe28d0418df5d9c",
+            "data/menu/activeheader": "7cb2fee9f3c93ac450edc20b26815123004134b5b9f0738e62da6de05765a3b4",
+            "data/menu/black_NTSC_720x480.jpg": "f07639230a4ee97713c2a4cdc6780102169e2953195fa8a6d278d3e26b354cf0",
+            "data/menu/black_NTSC_720x480.png": "892c678393205b05ceb9dcda40a5e78c7ef1a6fd3f3bd49800b4bccc46fe4447",
+            "data/menu/black_PAL_720x576.jpg": "991fd25741b5ec7ead149148eae8933fdef46e5439286f5876ab9b8f0d3bd590",
+            "data/menu/black_PAL_720x576.png": "3205157bbb577dde623d843509e6064ee5b18f93c3cfaab54d32ba2e9af709f6",
+            "data/menu/silence.wav": "25eadeedec105d07dc4e6e2bdbb84ad33a8e982648a2d231886154c61ce5dd42",
+            "dvda-author-dev.exe": "3cc2a3afedb21d4ad7cf375bbc01e5afbf4e5cdecd5557a1c610e2e0d1f83d00",
+            "dvda-disc-verify.dll": "70feafc9e27db5cabe4960b1729c8cb6d4ec436ff2bad7960a276e36a37df587",
+            "dvda-formats.dll": "6e62aeeeea20713e2bbbd5ecf02555f20af4e681dc56274c0f04ab78616fa277",
+            "dvda-image.dll": "5256f2e725fe04bb28a42fce4e63f98f17c48a8c0a9444e0b5bf36a32f96fffe",
+            "dvda-media.dll": "0f13179dc4b9750eed27e3a8ddcfd17f5fe21e49ee4ac0584f9017d7b13d5deb",
+            "dvda-menu-nav.dll": "f85e98afdccd36227e5fe682a9a06c33531469bc53cc2a722c460e0b1ebd0c67",
+            "dvda-menu-spu.dll": "281ffa87096e2f8ec51c79363b8a721ff9bbde8eb60544b91857e095c8da4a57",
+            "fonts/DvdaNotoCJK-Regular.ttc": "fded57abee84dc3ea9bb72a0fd4e81b82ed3b9ba7c1e15175f3ad46b2ec0a15e",
+            "libgomp-1.dll": "2b5d851adc50f14a824a6de902d61ab67fbaee70dfe131850af842049a5612ee",
+            "libsoxr.dll": "5bb8f922b12995b0322b73bd94e2e6dadfeac58abc8beb4d0f69ca5f4747917d",
+            "libwinpthread-1.dll": "72bf8802de3a99d28f0bc2db9a11f281a9f9f3fa83dab2bc67e69fac3bd3d9c0",
+            "mlp_encoder.dll": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8",
+            "policy.xml": "1c875a4fe1bcce926766008535af833eca7a0c7672bc87120957db2397540771",
+            "swresample-7.dll": "24b3aafe401f2ae9a833980f91ca433694fed9ebf1928bbf80ee12b3a08df28e",
+            "swscale-10.dll": "c7929841f5ada6db1f6ae5791f73817071181060b7f8fc93097cdb663cb6ce92",
+            "type.xml": "1004453e3752867750f86b0a83b4645f0346eb0abbe10a755162f80565cd1353",
+            "zlib1.dll": "93e9243a44c29200eeacaf9658efe2558581770e4b11ca4b500e18e424a6e3b5"
+          },
+          "temporary_candidates_remaining": 0
+        }
+      ]
+    },
+    "build/independent-verification-audit-20261005/timeline-repro.json": {
+      "mutated_constant_pts_sectors": 490,
+      "formal_timeline": {
+        "exit": 0,
+        "stdout": "Checking the timeline: C:\\Users\\yyz57\\Documents\\Visual Studio Code\\DVD-Audio-Maker\\build\\independent-verification-audit-20261005\\isos\\flat_1.iso, group 1\n{\n  \"Succeeded\": true,\n  \"Diagnostics\": [],\n  \"IsoCount\": 1,\n  \"TrackCount\": 2\n}\n",
+        "stderr": ""
+      },
+      "same_aob_analyzer": {
+        "exit": 1,
+        "stdout": "{\n  \"Path\": \"C:\\\\Users\\\\yyz57\\\\Documents\\\\Visual Studio Code\\\\DVD-Audio-Maker\\\\build\\\\independent-verification-audit-20261005\\\\flat.aob\",\n  \"Scan\": {\n    \"SectorCount\": 490,\n    \"Values\": [\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n    \n[Long output omitted here; full hashed evidence retained in build.]\n   0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0,\n      0\n    ],\n    \"IssueCodes\": [\n      \"PTS_NOT_ADVANCING\",\n      \"PTS_ABNORMAL_RATIO\"\n    ]\n  }\n}\n",
+        "stderr": ""
+      }
+    }
+  },
+  "limits": [
+    "The 16 findings are not covered by the 141 passing tests; no complete-parity claim is made.",
+    "Old behavior was checked in fixed-baseline source, not by rerunning C# binaries.",
+    "All destructive inputs, locks and generated discs were isolated test artifacts, not user music or user daily profiles.",
+    "The existing package was verified and its GUI tested; no new full package or full user-disc rebuild was performed.",
+    "R15 is a defect in added publication rollback logic, not an old C# multi-file rollback capability.",
+    "R14 pre-build reset behavior is statically confirmed; only the post-build cleanup-warning case was dynamically reproduced.",
+    "R16 did not incorrectly reuse damaged cache entries; it changes warning behavior.",
+    "Long raw command outputs are abbreviated in snapshots; full files and SHA-256 hashes are recorded."
+  ],
+  "record_role": "historical-snapshot-preserved",
+  "followup": {
+    "date": "2026-10-05",
+    "status": "completed-recheck-items-locally",
+    "report": "docs/RUST-MIGRATION-RECHECK-FIXES-2026-10-05.md",
+    "evidence": "docs/rust-migration-recheck-fixes-2026-10-05.json",
+    "closed_findings": [
+      "R01",
+      "R02",
+      "R03",
+      "R04",
+      "R05",
+      "R06",
+      "R07",
+      "R08",
+      "R09",
+      "R10",
+      "R11",
+      "R12",
+      "R13",
+      "R14",
+      "R15",
+      "R16",
+      "R17"
+    ],
+    "open_findings": [],
+    "workspace_tests": {
+      "passed": 160,
+      "failed": 0,
+      "ignored": 0
+    }
+  }
+}
