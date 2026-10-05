@@ -44,6 +44,10 @@ static int consume(Compare *c,const unsigned char *data,unsigned length) {
     return 0;
 }
 static unsigned u16(const unsigned char *p) {return ((unsigned)p[0]<<8)|p[1];}
+static int zero_tail(const unsigned char *s,unsigned at) {
+    while(at<2048) if(s[at++]) return 0;
+    return 1;
+}
 static int sector(Compare *c,const unsigned char *s) {
     if(memcmp(s,"\0\0\1\272",4) || (s[4]&0xc0)!=0x40)return -1;
     unsigned at=14+(s[13]&7);
@@ -53,6 +57,9 @@ static int sector(Compare *c,const unsigned char *s) {
             while(at<2048)if(s[at++]!=0xff)return -2;
             break;
         }
+        /* The author emits zero fill when fewer than six bytes remain for
+         * a PES padding packet. It is sector padding, not another packet. */
+        if(zero_tail(s,at)) break;
         if(at+6>2048 || memcmp(s+at,"\0\0\1",3))return -2;
         unsigned end=at+6+u16(s+at+4),id=s[at+3];
         if(end>2048 || (end==at+6 && id!=0xbe))return -2;
@@ -172,6 +179,7 @@ static int pcm_sector(PcmCompare *p,const unsigned char *s) {
         if(at+4<=2048 && !memcmp(s+at,"\0\0\1\271",4)) {
             at+=4;while(at<2048)if(s[at++]!=0xff)return -2;break;
         }
+        if(zero_tail(s,at)) break;
         if(at+6>2048 || memcmp(s+at,"\0\0\1",3))return -2;
         unsigned end=at+6+u16(s+at+4),id=s[at+3];
         if(end>2048 || (end==at+6 && id!=0xbe))return -2;
