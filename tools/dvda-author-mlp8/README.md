@@ -1,114 +1,31 @@
 # dvda-author 修改源码镜像
 
-[简体中文](README.md) | [English](README.en.md)
+本目录保存 DVD-Audio Maker 对 `dvda-author` 的受控 C/C++ 修改，用于审阅补丁、记录来源和构建隔离快照。它不是完整的、可单独构建的上游源码树。
 
-本目录保存 DVD-Audio Maker 对 `dvda-author` 修改过的核心 C/C++ 源文件，主要用于：
-
-- 在仓库中审阅和搜索修改后的实现。
-- 记录 MLP、时间轴、菜单、字体和 Windows 兼容性改动。
-- 与完整工作树或补丁文件进行差异核对。
-- 避免把完整上游源码、第三方依赖和编译产物提交到主仓库。
-
-## 重要说明
-
-**这里不是完整、可独立构建的 dvda-author 源码树。**
-
-本目录通常只包含：
+## 目录用途
 
 ```text
-src/          修改过的 dvda-author 核心源码
-libutils/     修改过的公共工具源码
+src/          已修改的 author 核心源码
+libutils/     已修改的公共工具源码
 MIRROR-NOTES.md
 README.md
 ```
 
-它不包含完整构建所需的内容，例如：
+完整构建必须使用上游完整工作树并应用 `docs/dvda-author-changes.patch`。该镜像不应覆盖未经验证的工作树，也不包含对象文件、可执行文件、第三方库或大型资源。
 
-```text
-configure
-configure.ac
-Makefile.in
-libfixwav/
-menu/
-m4.extra.dvdauthor/
-dvdauthor-0.7.1/
-local.w10/
-```
+## 当前集成
 
-因此不要在本目录运行 `configure`、`make` 或 Windows 工具链脚本。
+Windows x64 发布使用项目构建的 author、媒体和图像 DLL。菜单媒体、子图像、导航和 ISO 写入均通过进程内 C 模块完成；GUI 入口是 `DVD-Audio-Maker.exe`，依次执行检查音源、制作光盘和验证成品。dry-run 只保留在开发 CLI。
 
-## 权威来源
-
-构建时应使用完整的 `dvda-author` 工作树，并应用本项目改动。推荐固定到上游提交 `8fca43a`：
-
-```bat
-git clone https://github.com/fabnicol/dvda-author "D:/work/dvda-author"
-cd /d "D:/work/dvda-author"
-git checkout 8fca43a
-git apply "D:/work/DVD-Audio-Maker/docs/dvda-author-changes.patch"
-```
-
-完整改动集：
-
-- [`../../docs/dvda-author-changes.patch`](../../docs/dvda-author-changes.patch)
-
-改动说明及依据：
-
-- [`../../docs/DVDA-AUTHOR-CHANGES.md`](../../docs/DVDA-AUTHOR-CHANGES.md)
-
-试验过但未启用的改动：
-
-- [`../../docs/DVDA-AUTHOR-DISABLED.md`](../../docs/DVDA-AUTHOR-DISABLED.md)
-
-当前产品仅面向 Windows x64。原生依赖维护使用 Windows 上的 MSYS2/MinGW-w64，普通 C# 开发和发布包组装复用已验证产物。构建入口见 [Windows 构建说明](../win-build/README.md)。
-
-## 当前菜单图像调用
-
-本目录与基础补丁保留原有实现的审阅副本。当前发布程序另由 [build-image-author.py](../win-build/build-image-author.py) 在完整工作树的独立快照中构建；脚本将七处 ImageMagick 外部调用迁移到 x64 图像 DLL。增量补丁见 [author-inprocess-images.patch](../win-build/native/author-inprocess-images.patch)，加载桥接见 [author-image-loader.c](../win-build/native/author-image-loader.c)。
-
-维护时应区分基础源码改动和这层构建时转换：脚本期待尚未应用图像增量补丁的基础树，不要先手动应用同一补丁再交给脚本重复转换。它不会覆盖传入的完整工作树。输出及输入哈希记录在 build/image-author-shared/author-build.json。
-
-GUI 与原生制盘程序均使用 image-native/dvda-image.dll；菜单媒体、子图像、导航及 ISO 写入均已接入进程内 C 实现，见[迁移清单](../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)。详细能力和验证边界见 [内置图像处理](../../docs/INPROCESS-IMAGES.md)。
-
-## 主要改动范围
-
-镜像中的代码可能包括以下类别的修改：
-
-- 24-bit MLP 输入和 FFmpeg 新版 API 适配。
-- MLP 帧、轨道边界和字节对齐处理。
-- ATSI、AOB、PTS 和标题时间轴修复。
-- 菜单生成、AMG/ASVS 关联和播放静图处理。
-- SC、JP、KR 字体按文本语言分派。
-- Windows/MinGW 路径、进程、管道和 UTF-8 兼容性。
-- 上游崩溃、缓冲区限制和资源清理问题的修复。
-
-具体内容以补丁和完整工作树为准，不应仅根据此目录推断全部变更。
+发布包为 `DVD-Audio-Maker-v1.0-win-x64.zip`，本维护镜像不会复制进用户包。构建输入、许可证和来源记录见 [Windows 构建说明](../win-build/README.md)、[第三方组件](../win-build/docs/THIRD-PARTY.md) 和 [原生运行时迁移](../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)。
 
 ## 同步规则
 
-当完整工作树中的修改发生变化时：
-
-1. 更新完整工作树并确认能编译、测试。
+1. 在完整上游工作树中构建并测试。
 2. 重新生成 `docs/dvda-author-changes.patch`。
-3. 将修改过的 `src/`、`libutils/` 文件同步到本镜像。
-4. 比较镜像、补丁应用结果与完整工作树，确保对应文件逐字节一致。
-5. 不要同步对象文件、可执行文件、生成的 Makefile、第三方库或大型素材。
+3. 只同步修改过的 `src/` 和 `libutils/` 文件，并逐字节比较镜像、补丁和完整工作树。
+4. 不同步对象、可执行文件、生成 Makefile、第三方库和大型资源。
 
-镜像是审阅副本，不应反向覆盖未经核对的完整工作树。
+## 许可证
 
-## 许可
-
-本目录中的文件来源于 `dvda-author`，并包含本项目的修改。其许可和第三方说明见：
-
-- [`../../LICENSE`](../../LICENSE)
-- [`../../docs/LICENSING.md`](../../docs/LICENSING.md)
-
-使用、修改或重新分发时，需要同时遵守上游项目及其依赖的许可条款。
-
-## 当前发布集成
-
-Windows x64 标准发布中，author 与媒体接口链接同一套 shared FFmpeg 构建。调用 build-image-author.py 时传入 --ffmpeg-runtime build/ffmpeg-shared/install 和 --work-directory build/image-author-shared；打包只保留一套公共 DLL，构建记录保留在本地构建目录。
-
-用户入口为 DVD-Audio-Maker.exe，只提供检查音源、开始制作、验证成品；dry-run 留在源码 CLI 用于调试。本文面向维护者，不复制到用户发布包。正式压缩包为 DVD-Audio-Maker-v1.0-win-x64.zip。
-
-当前构建脚本还会将此镜像中的 src/audio.c、src/ats.c 复制到隔离构建目录，包含 LPCM 的 RIFF 读取、奇数帧衔接、短首包和 PES 长度修正；不会修改提供的完整源码树。LPCM 字节对比测试为 tools/win-build/test-lpcm-native.py。
+文件来源于 `dvda-author`，并包含本项目修改。使用、修改和再发布必须同时遵守上游项目及其依赖的许可证，保留仓库根目录的 `LICENSE` 和发布包 NOTICE 文件。

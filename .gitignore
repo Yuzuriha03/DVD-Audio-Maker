@@ -3,6 +3,8 @@
 # 音频
 *.flac
 *.m4a
+!rust/crates/dvda-core/tests/fixtures/alac-valid.m4a
+!rust/crates/dvda-core/tests/fixtures/alac-broken.m4a
 *.wav
 *.mlp
 *.aob
@@ -94,3 +96,5 @@ DVD-Audio-Maker*.zip
 *.key
 .env
 .env.*
+settings.json
+settings.local.json

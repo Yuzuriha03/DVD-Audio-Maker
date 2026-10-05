@@ -52,7 +52,7 @@ tested and excluded (see the complete list of `patch_still_ntsc.py`).
 This patch changes it to a value that matches the actual format of the static image.
 
 **The format of the menu screen is not affected** —— Then declared by AMG's `amgm_video_attr` (`0x100`),
-is still the standard set by `config.env` (`0x53` for PAL).
+is still the standard set by the JSON profile (`0x53` for PAL).
 
 
 ---
@@ -294,7 +294,7 @@ Before this, all other variables had been tested and excluded one by one:
     Frame rate : img->framerate  →  '30000/1001'
     Standard   : img->norm      →  'n'
 
-Menu screen (ANIMATEDVIDEO) is not affected, it still uses the standard set in `config.env`.
+Menu screen (ANIMATEDVIDEO) is not affected, it still uses the standard set in the JSON profile.
 
 Supporting changes (see also `menu_assets.py`'s `STILL_W/STILL_H`): still image material should be generated
 **720x480**, consistent with this patch's NTSC encoding.

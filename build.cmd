@@ -1,14 +1,9 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 set "ROOT=%~dp0"
-set "PROJECT=%ROOT%src\DvdaMaker.Cli\DvdaMaker.Cli.csproj"
-
-if not exist "%PROJECT%" (
-  echo [ERROR] Project not found: %PROJECT%
-  exit /b 2
-)
-
-set "CONFIG_PATH="
+call "%ROOT%tools\win-build\rust-dev-env.cmd"
+set "MANIFEST=%ROOT%rust\Cargo.toml"
+set "PROFILE="
 set "DRY_RUN="
 
 :parse
@@ -18,12 +13,12 @@ if /i "%~1"=="--dry-run" (
   shift
   goto parse
 )
-if /i "%~1"=="--config" (
+if /i "%~1"=="--profile" (
   if "%~2"=="" (
-    echo [ERROR] --config requires a file path.
+    echo [ERROR] --profile requires a JSON profile path.
     exit /b 2
   )
-  set "CONFIG_PATH=%~2"
+  set "PROFILE=%~2"
   shift
   shift
   goto parse
@@ -32,27 +27,17 @@ echo [ERROR] Unknown argument: %~1
 exit /b 2
 
 :run
-if defined CONFIG_PATH goto run_with_config
-goto run_without_config
-
-:run_with_config
-call dotnet run --project "%PROJECT%" -- prepare --config "%CONFIG_PATH%"
+if not defined PROFILE if exist "%ROOT%settings.local.json" set "PROFILE=%ROOT%settings.local.json"
+set "PROFILE_ARG="
+if defined PROFILE set "PROFILE_ARG=--profile "%PROFILE%""
+echo [INFO] Preparing source audio...
+cargo run --target x86_64-pc-windows-gnu --manifest-path "%MANIFEST%" --release --offline -p dvda-cli -- prepare %PROFILE_ARG%
 if errorlevel 1 exit /b 1
-if defined DRY_RUN goto dry_with_config
-call dotnet run --project "%PROJECT%" -- build --config "%CONFIG_PATH%"
-exit /b %ERRORLEVEL%
-
-:dry_with_config
-call dotnet run --project "%PROJECT%" -- build --dry-run --config "%CONFIG_PATH%"
-exit /b %ERRORLEVEL%
-
-:run_without_config
-call dotnet run --project "%PROJECT%" -- prepare
-if errorlevel 1 exit /b 1
-if defined DRY_RUN goto dry_without_config
-call dotnet run --project "%PROJECT%" -- build
-exit /b %ERRORLEVEL%
-
-:dry_without_config
-call dotnet run --project "%PROJECT%" -- build --dry-run
+if defined DRY_RUN (
+  echo [INFO] Writing a dry-run plan...
+  cargo run --target x86_64-pc-windows-gnu --manifest-path "%MANIFEST%" --release --offline -p dvda-cli -- build --dry-run %PROFILE_ARG%
+) else (
+  echo [INFO] Building DVD-Audio output...
+  cargo run --target x86_64-pc-windows-gnu --manifest-path "%MANIFEST%" --release --offline -p dvda-cli -- build %PROFILE_ARG%
+)
 exit /b %ERRORLEVEL%

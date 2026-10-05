@@ -1,0 +1,1350 @@
+[
+  [
+    "Cannot get application instance",
+    "无法初始化应用程序。",
+    "Cannot initialize the application.",
+    "アプリケーションを初期化できません。"
+  ],
+  [
+    "Cannot register desktop window",
+    "无法初始化主窗口。",
+    "Cannot initialize the main window.",
+    "メインウィンドウを初期化できません。"
+  ],
+  [
+    "Cannot register desktop page class",
+    "无法初始化设置页面。",
+    "Cannot initialize the settings pages.",
+    "設定ページを初期化できません。"
+  ],
+  [
+    "Cannot create desktop window",
+    "无法创建主窗口。",
+    "Cannot create the main window.",
+    "メインウィンドウを作成できません。"
+  ],
+  [
+    "Profile does not exist: {0}",
+    "方案文件不存在：{0}",
+    "Profile does not exist: {0}",
+    "プロファイルがありません：{0}"
+  ],
+  [
+    "Only JSON profiles are supported",
+    "仅支持 JSON 设置方案。",
+    "Only JSON settings profiles are supported.",
+    "JSON 設定プロファイルのみ対応しています。"
+  ],
+  [
+    "Profiles must use a .json extension",
+    "方案文件必须使用 .json 扩展名。",
+    "Profile files must use the .json extension.",
+    "プロファイルの拡張子は .json にしてください。"
+  ],
+  [
+    "{0} is not a valid Rust profile",
+    "无法读取 JSON 设置方案：{0}",
+    "Cannot read the JSON settings profile: {0}",
+    "JSON 設定プロファイルを読み込めません：{0}"
+  ],
+  [
+    "MLP encoder DLL not found: {0}",
+    "找不到 MLP 编码组件：{0}",
+    "MLP encoding component not found: {0}",
+    "MLP エンコード用コンポーネントがありません：{0}"
+  ],
+  [
+    "内置组件缺失: {0}",
+    "内置组件缺失：{0}",
+    "A bundled component is missing: {0}",
+    "同梱コンポーネントがありません：{0}"
+  ],
+  [
+    "内置媒体组件缺失，请完整解压发布包。",
+    "内置媒体组件缺失，请完整解压发布包。",
+    "The bundled media component is missing. Extract the complete release archive.",
+    "同梱のメディアコンポーネントがありません。配布 ZIP をすべて展開してください。"
+  ],
+  [
+    "请先选择音源目录",
+    "请先选择音源目录。",
+    "Select a source folder first.",
+    "音源フォルダーを選択してください。"
+  ],
+  [
+    "MLP 编码器组件缺失。",
+    "MLP 编码器组件缺失。",
+    "The MLP encoder component is missing.",
+    "MLP エンコーダーのコンポーネントがありません。"
+  ],
+  [
+    "MLP encoder library is missing",
+    "MLP 编码组件缺失。",
+    "The MLP encoder component is missing.",
+    "MLP エンコーダーのコンポーネントがありません。"
+  ],
+  [
+    "Media library is missing: {0}",
+    "媒体组件缺失：{0}",
+    "The media component is missing: {0}",
+    "メディアコンポーネントがありません：{0}"
+  ],
+  [
+    "dvda-author path is empty",
+    "未设置光盘制作工具的位置。",
+    "The disc authoring tool location is empty.",
+    "ディスク作成ツールの場所が設定されていません。"
+  ],
+  [
+    "MLP 编码已被取消。",
+    "MLP 编码已被取消。",
+    "MLP encoding was cancelled.",
+    "MLP エンコードをキャンセルしました。"
+  ],
+  [
+    "MLP 导入已被取消。",
+    "MLP 导入已被取消。",
+    "MLP import was cancelled.",
+    "MLP の読み込みをキャンセルしました。"
+  ],
+  [
+    "Batch encoding cancelled",
+    "批量编码已取消。",
+    "Batch encoding was cancelled.",
+    "一括エンコードをキャンセルしました。"
+  ],
+  [
+    "编码任务不包含任何音轨。",
+    "编码任务不包含任何音轨。",
+    "The encoding task contains no tracks.",
+    "エンコード対象の曲がありません。"
+  ],
+  [
+    "不支持的目标采样率: {0}",
+    "不支持的目标采样率：{0}",
+    "Unsupported target sample rate: {0}",
+    "対応していないサンプリング周波数です：{0}"
+  ],
+  [
+    "不支持的目标位深: {0}",
+    "不支持的目标位深：{0}",
+    "Unsupported target bit depth: {0}",
+    "対応していないビット深度です：{0}"
+  ],
+  [
+    "源文件不存在: {0}",
+    "源文件不存在：{0}",
+    "Source file does not exist: {0}",
+    "音源ファイルがありません：{0}"
+  ],
+  [
+    "MLP 编码结果无效: {0}",
+    "MLP 编码结果无效：{0}",
+    "The encoded MLP file is invalid: {0}",
+    "エンコードされた MLP ファイルが無効です：{0}"
+  ],
+  [
+    "编码过程中源文件发生变化: {0}",
+    "编码过程中源文件发生变化：{0}",
+    "The source file changed during encoding: {0}",
+    "エンコード中に音源ファイルが変更されました：{0}"
+  ],
+  [
+    "外部 MLP 目录无效: {0}",
+    "MLP 导入目录无效：{0}",
+    "Invalid MLP import folder: {0}",
+    "MLP 読み込みフォルダーが無効です：{0}"
+  ],
+  [
+    "外部 MLP 文件名重复，无法安全回退匹配: {0}",
+    "MLP 文件名重复，无法可靠匹配：{0}",
+    "Duplicate MLP filenames prevent reliable matching: {0}",
+    "MLP のファイル名が重複しているため対応を特定できません：{0}"
+  ],
+  [
+    "找不到外部 MLP: {0}",
+    "找不到要导入的 MLP：{0}",
+    "The MLP file to import was not found: {0}",
+    "読み込む MLP ファイルがありません：{0}"
+  ],
+  [
+    "外部 MLP 是空文件: {0}",
+    "要导入的 MLP 文件为空：{0}",
+    "The MLP file to import is empty: {0}",
+    "読み込む MLP ファイルが空です：{0}"
+  ],
+  [
+    "外部 MLP 结构校验失败: {0}",
+    "MLP 导入文件结构校验失败：{0}",
+    "The imported MLP file failed structural validation: {0}",
+    "読み込む MLP ファイルの構造検証に失敗しました：{0}"
+  ],
+  [
+    "无法探测外部 MLP 参数: {0}",
+    "无法读取 MLP 导入文件的参数：{0}",
+    "Cannot read the imported MLP audio parameters: {0}",
+    "読み込む MLP の音声パラメーターを取得できません：{0}"
+  ],
+  [
+    "外部 MLP 声道数不一致: {0}",
+    "MLP 导入文件的声道数不一致：{0}",
+    "Imported MLP files have different channel counts: {0}",
+    "読み込む MLP のチャンネル数が一致しません：{0}",
+    [
+      0
+    ]
+  ],
+  [
+    "{0} 声道 × {1}",
+    "{0} 声道 × {1}",
+    "{0} channels × {1}",
+    "{0} チャンネル × {1}"
+  ],
+  [
+    "manifest.json contains no tracks",
+    "音源清单中没有曲目，请先检查音源。",
+    "The source manifest contains no tracks. Check your sources first.",
+    "音源リストに曲がありません。先に音源を検査してください。"
+  ],
+  [
+    "Unsupported MLP source: {0}",
+    "不支持的音频编码方式：{0}",
+    "Unsupported audio encoding mode: {0}",
+    "対応していない音声エンコード方式です：{0}"
+  ],
+  [
+    "Invalid acquired tracks: {0}",
+    "无法读取编码后的曲目信息：{0}",
+    "Cannot read the encoded track information: {0}",
+    "エンコード後の曲情報を読み込めません：{0}"
+  ],
+  [
+    "[build] {0} tracks loaded",
+    "已读取 {0} 首曲目，开始规划光盘。",
+    "Loaded {0} tracks. Planning discs.",
+    "{0} 曲を読み込みました。ディスクを計画しています。"
+  ],
+  [
+    "[author] disc {0}",
+    "正在制作第 {0} 张光盘。",
+    "Building disc {0}.",
+    "ディスク {0} を作成しています。"
+  ],
+  [
+    "[author] disc {0} failed ({1}){2}",
+    "第 {0} 张光盘制作失败（{1}）{2}",
+    "Disc {0} failed ({1}){2}",
+    "ディスク {0} の作成に失敗しました（{1}）{2}",
+    [
+      1,
+      2
+    ]
+  ],
+  [
+    "author failed for disc {0} ({1})",
+    "第 {0} 张光盘制作失败（{1}）",
+    "Disc {0} authoring failed ({1})",
+    "ディスク {0} の作成に失敗しました（{1}）",
+    [
+      1
+    ]
+  ],
+  [
+    "author did not create AUDIO_TS for disc {0}",
+    "第 {0} 张光盘未生成 AUDIO_TS。",
+    "AUDIO_TS was not created for disc {0}.",
+    "ディスク {0} の AUDIO_TS が作成されませんでした。"
+  ],
+  [
+    "author did not create ISO for disc {0}",
+    "第 {0} 张光盘未生成 ISO。",
+    "The ISO image was not created for disc {0}.",
+    "ディスク {0} の ISO が作成されませんでした。"
+  ],
+  [
+    "exit code {0}",
+    "退出码 {0}",
+    "exit code {0}",
+    "終了コード {0}"
+  ],
+  [
+    "unknown process failure",
+    "进程异常，原因未知",
+    "unknown process failure",
+    "原因不明のプロセスエラー"
+  ],
+  [
+    "[verify] timeline {0} group {1}",
+    "正在检查时间轴：{0}，第 {1} 组",
+    "Checking the timeline: {0}, group {1}",
+    "タイムラインを検査中：{0}、グループ {1}"
+  ],
+  [
+    "[verify] lossless {0} group {1}",
+    "正在比对无损音频：{0}，第 {1} 组",
+    "Comparing lossless audio: {0}, group {1}",
+    "ロスレス音声を照合中：{0}、グループ {1}"
+  ],
+  [
+    "No published ISO images were found",
+    "没有找到已制作的 ISO 镜像。",
+    "No completed ISO images were found.",
+    "作成済みの ISO イメージが見つかりません。"
+  ],
+  [
+    "{0} ISO images exceed the configured limit {1}",
+    "共有 {0} 个 ISO 镜像，超过设定上限 {1}。",
+    "{0} ISO images exceed the configured limit of {1}.",
+    "ISO は {0} 個あり、設定上限の {1} 個を超えています。"
+  ],
+  [
+    "{0} is {1} bytes, above the configured disc capacity",
+    "{0} 大小为 {1} 字节，超过设定的光盘容量。",
+    "{0} is {1} bytes, above the configured disc capacity.",
+    "{0} は {1} バイトで、設定したディスク容量を超えています。"
+  ],
+  [
+    "{0} has no AOB files",
+    "{0} 中没有 AOB 音频文件。",
+    "{0} has no AOB audio files.",
+    "{0} に AOB 音声ファイルがありません。"
+  ],
+  [
+    "{0} has no group IFO files",
+    "{0} 中没有分组 IFO 文件。",
+    "{0} has no group IFO files.",
+    "{0} にグループの IFO ファイルがありません。"
+  ],
+  [
+    "The formal index contains no tracks",
+    "成品索引中没有曲目。",
+    "The output index contains no tracks.",
+    "出力インデックスに曲がありません。"
+  ],
+  [
+    "No index entry for {0}",
+    "索引中没有该镜像的记录：{0}",
+    "No index entry exists for {0}",
+    "このイメージのインデックス情報がありません：{0}"
+  ],
+  [
+    "{0} group {1} has no AOB",
+    "{0} 的第 {1} 组没有 AOB 音频文件。",
+    "{0}, group {1}, has no AOB audio files.",
+    "{0} のグループ {1} に AOB 音声ファイルがありません。"
+  ],
+  [
+    "{0} group {1} contains a sector without PTS",
+    "{0} 的第 {1} 组存在缺少 PTS 时间戳的扇区。",
+    "{0}, group {1}, contains a sector without a PTS timestamp.",
+    "{0} のグループ {1} に PTS タイムスタンプのないセクターがあります。"
+  ],
+  [
+    "{0} group {1} has an invalid PTS timeline",
+    "{0} 的第 {1} 组 PTS 时间轴无效。",
+    "{0}, group {1}, has an invalid PTS timeline.",
+    "{0} のグループ {1} の PTS タイムラインが無効です。"
+  ],
+  [
+    "{0} group {1} has a missing source track",
+    "{0} 的第 {1} 组有音源文件缺失。",
+    "{0}, group {1}, has a missing source track.",
+    "{0} のグループ {1} に音源ファイルが見つからない曲があります。"
+  ],
+  [
+    "Missing LPCM title boundary for {0}",
+    "缺少 LPCM 标题边界：{0}",
+    "Missing LPCM title boundary for {0}",
+    "LPCM タイトルの境界情報がありません：{0}"
+  ],
+  [
+    "A group mixes LPCM and MLP tracks",
+    "同一组中混用了 LPCM 和 MLP 音轨。",
+    "A group mixes LPCM and MLP tracks.",
+    "同じグループに LPCM と MLP が混在しています。"
+  ],
+  [
+    "{0} group {1}: {2}",
+    "{0}，第 {1} 组：{2}",
+    "{0}, group {1}: {2}",
+    "{0}、グループ {1}：{2}",
+    [
+      2
+    ]
+  ],
+  [
+    "[清理] 旧 manifest 已移除: {0}",
+    "已移除旧音源清单：{0}",
+    "Removed the previous source manifest: {0}",
+    "以前の音源リストを削除しました：{0}"
+  ],
+  [
+    "发现 {0} 个音频文件 (FLAC/M4A)",
+    "发现 {0} 个音频文件 (FLAC/M4A)",
+    "Found {0} audio files (FLAC/M4A)",
+    "音声ファイルが {0} 件見つかりました (FLAC/M4A)"
+  ],
+  [
+    "[缓存] 复用元数据 {0} 首 / 重新探测 {1} 首",
+    "[缓存] 复用元数据 {0} 首 / 重新探测 {1} 首",
+    "Source cache: reused {0}; inspected again {1}",
+    "音源キャッシュ：{0} 曲を再利用、{1} 曲を再検査"
+  ],
+  [
+    "[缓存] 复用已校验结果 {0} 首 / 重新校验 {1} 首",
+    "[缓存] 复用已校验结果 {0} 首 / 重新校验 {1} 首",
+    "Decode cache: reused {0}; checked again {1}",
+    "デコードキャッシュ：{0} 曲を再利用、{1} 曲を再検査"
+  ],
+  [
+    "[缓存] 已更新 {0} 条音源校验记录 -> {1}",
+    "[缓存] 已更新 {0} 条音源校验记录 -> {1}",
+    "Updated {0} source-check records: {1}",
+    "音源検査記録を {0} 件更新しました：{1}"
+  ],
+  [
+    "[快照] 已保存音源指纹 -> {0}",
+    "已保存音源检查快照：{0}",
+    "Saved the source-check snapshot: {0}",
+    "音源検査のスナップショットを保存しました：{0}"
+  ],
+  [
+    "[耗时] prepare 总计: {0} 秒",
+    "音源检查耗时 {0} 秒。",
+    "Source checks took {0} seconds.",
+    "音源検査の所要時間：{0} 秒。"
+  ],
+  [
+    "[重采样] {0}: {1}/{2} -> {3}/{4}",
+    "[重采样] {0}: {1}/{2} -> {3}/{4}",
+    "[Resample] {0}: {1}/{2} -> {3}/{4}",
+    "[リサンプリング] {0}: {1}/{2} -> {3}/{4}"
+  ],
+  [
+    "{0}: {1} 首",
+    "{0}: {1} 首",
+    "{0}: {1} tracks",
+    "{0}: {1} 曲"
+  ],
+  [
+    "++ [缓存复用] {0}: 已校验的 ALAC 修复结果（{1} 处）",
+    "++ [缓存复用] {0}: 已校验的 ALAC 修复结果（{1} 处）",
+    "Reused verified ALAC repair: {0} ({1} fixes)",
+    "検証済み ALAC 修復を再利用：{0}（{1} か所）"
+  ],
+  [
+    "++ [已修复] {0}: ALAC END 标记 {1} 处，解码采样数已达标",
+    "++ [已修复] {0}: ALAC END 标记 {1} 处，解码采样数已达标",
+    "Repaired {0}: {1} ALAC END markers; decoded sample count verified",
+    "{0} を修復：ALAC END マーカー {1} か所、デコードサンプル数を検証済み"
+  ],
+  [
+    "Timeout exceeds the supported timer range",
+    "任务超时时间超出支持范围。",
+    "The task timeout exceeds the supported range.",
+    "タスクのタイムアウトが対応範囲を超えています。"
+  ],
+  [
+    "Panic caught in encoding worker",
+    "编码线程发生内部错误。",
+    "An internal error occurred in the encoding worker.",
+    "エンコード処理で内部エラーが発生しました。"
+  ],
+  [
+    "LPCM 目标格式不符合 DVD-Audio 限制。",
+    "LPCM 目标格式不符合 DVD-Audio 限制。",
+    "The target LPCM format is outside DVD-Audio limits.",
+    "指定した LPCM 形式は DVD-Audio の制限を超えています。"
+  ],
+  [
+    "LPCM 准备已取消。",
+    "LPCM 准备已取消。",
+    "LPCM preparation was cancelled.",
+    "LPCM の準備をキャンセルしました。"
+  ],
+  [
+    "缺少音源路径",
+    "缺少音源路径。",
+    "The source audio path is missing.",
+    "音源ファイルのパスがありません。"
+  ],
+  [
+    "LPCM 音频码率超过 9.6 Mb/s，请降低目标参数或选择 MLP 编码。",
+    "LPCM 音频码率超过 9.6 Mb/s，请降低目标参数或选择 MLP 编码。",
+    "The LPCM audio bitrate exceeds 9.6 Mb/s. Lower the audio settings or choose MLP encoding.",
+    "LPCM 音声のビットレートが 9.6 Mb/s を超えています。音声設定を下げるか、MLP エンコードを選択してください。"
+  ],
+  [
+    "音源转换失败。",
+    "音源转换失败。",
+    "Audio conversion failed.",
+    "音源の変換に失敗しました。"
+  ],
+  [
+    "音频输入输出不能是同一文件。",
+    "音频输入输出不能是同一文件。",
+    "The audio input and output must be different files.",
+    "音声の入力と出力には異なるファイルを指定してください。"
+  ],
+  [
+    "输出文件已存在：{0}",
+    "输出文件已存在：{0}",
+    "The output file already exists: {0}",
+    "出力ファイルは既に存在します：{0}"
+  ],
+  [
+    "ffprobe 无法读取 {0}（退出码 {1}）\r\n{2}",
+    "无法读取音频信息：{0}（返回码 {1}）\r\n{2}",
+    "Cannot read audio information: {0} (status {1})\r\n{2}",
+    "音声情報を読み込めません：{0}（コード {1}）\r\n{2}",
+    [
+      2
+    ]
+  ],
+  [
+    "Cannot save profile {0}: {1}",
+    "无法保存方案 {0}：{1}",
+    "Cannot save profile {0}: {1}",
+    "プロファイル {0} を保存できません：{1}",
+    [
+      1
+    ]
+  ],
+  [
+    "Cannot write profile",
+    "无法写入设置方案。",
+    "Cannot write the settings profile.",
+    "設定プロファイルを書き込めません。"
+  ],
+  [
+    "Language must be auto, en, zh-CN, or ja.",
+    "语言设置必须为 auto、en、zh-CN 或 ja。",
+    "Language must be auto, en, zh-CN, or ja.",
+    "言語には auto、en、zh-CN、ja のいずれかを指定してください。"
+  ],
+  [
+    "Final directory is missing: {0}",
+    "成品文件夹不存在：{0}",
+    "The output folder does not exist: {0}",
+    "出力フォルダーがありません：{0}"
+  ],
+  [
+    "mlp_index.json is missing __discs__",
+    "曲目索引缺少光盘信息（__discs__）。",
+    "The track index is missing disc information (__discs__).",
+    "曲目インデックスにディスク情報（__discs__）がありません。"
+  ],
+  [
+    "{0} is not valid JSON: {1}",
+    "JSON 文件无效：{0}；{1}",
+    "Invalid JSON file: {0}; {1}",
+    "JSON ファイルが無効です：{0}；{1}",
+    [
+      1
+    ]
+  ],
+  [
+    "Menu image library is not configured",
+    "未设置菜单图像组件。",
+    "The menu image component is not configured.",
+    "メニュー画像コンポーネントが設定されていません。"
+  ],
+  [
+    "Menu image library is missing: {0}",
+    "菜单图像组件缺失：{0}",
+    "The menu image component is missing: {0}",
+    "メニュー画像コンポーネントがありません：{0}"
+  ],
+  [
+    "Menu data directory is missing: {0}",
+    "菜单素材文件夹缺失：{0}",
+    "The menu resource folder is missing: {0}",
+    "メニュー素材フォルダーがありません：{0}"
+  ],
+  [
+    "Menu runtime component is missing: {0}",
+    "菜单运行组件缺失：{0}",
+    "A menu runtime component is missing: {0}",
+    "メニュー用コンポーネントがありません：{0}"
+  ],
+  [
+    "Could not load menu image library: {0}",
+    "无法加载菜单图像组件：{0}",
+    "Cannot load the menu image component: {0}",
+    "メニュー画像コンポーネントを読み込めません：{0}",
+    [
+      0
+    ]
+  ],
+  [
+    "Menu plan did not contain album pages",
+    "菜单计划中没有专辑页面。",
+    "The menu plan contains no album pages.",
+    "メニューの構成にアルバムページがありません。"
+  ],
+  [
+    "Menu plan did not contain index albums",
+    "菜单计划中没有专辑索引。",
+    "The menu plan contains no album index.",
+    "メニューの構成にアルバム索引がありません。"
+  ],
+  [
+    "Menu index cover is missing for album: {0}",
+    "专辑索引缺少封面：{0}",
+    "An album index cover is missing: {0}",
+    "アルバム索引の画像がありません：{0}"
+  ],
+  [
+    "Menu image operation failed with status {0}",
+    "菜单图像处理失败，返回码 {0}。",
+    "Menu image processing failed with status {0}.",
+    "メニュー画像の処理に失敗しました。コード：{0}。"
+  ],
+  [
+    "Menu image has invalid dimensions: {0}",
+    "菜单图像尺寸无效：{0}",
+    "The menu image dimensions are invalid: {0}",
+    "メニュー画像のサイズが無効です：{0}"
+  ],
+  [
+    "LoadLibraryW failed for {0}",
+    "无法加载原生组件：{0}",
+    "Cannot load the native component: {0}",
+    "ネイティブコンポーネントを読み込めません：{0}"
+  ],
+  [
+    "Missing native export: {0}",
+    "原生组件缺少必要接口：{0}",
+    "The native component is missing a required function: {0}",
+    "ネイティブコンポーネントに必要な関数がありません：{0}"
+  ],
+  [
+    "dvda-formats.dll was not found; set DVDA_FORMATS_NATIVE_DIR or DVDA_FORMATS_NATIVE_LIBRARY",
+    "找不到格式处理组件 dvda-formats.dll，请完整解压发布包。",
+    "The format component dvda-formats.dll was not found. Extract the complete release archive.",
+    "形式処理用の dvda-formats.dll がありません。配布 ZIP をすべて展開してください。"
+  ],
+  [
+    "LPCM title boundary count does not match source count",
+    "LPCM 标题边界数量与音轨数量不一致。",
+    "The number of LPCM title boundaries does not match the track count.",
+    "LPCM タイトル境界の数が曲数と一致しません。"
+  ],
+  [
+    "At least one source track is required",
+    "至少需要一首音轨。",
+    "At least one source track is required.",
+    "少なくとも 1 曲の音源が必要です。"
+  ],
+  [
+    "未找到可复用的准备快照",
+    "未找到可复用的音源检查快照。",
+    "No reusable source-check snapshot was found.",
+    "再利用できる音源検査のスナップショットがありません。"
+  ],
+  [
+    "准备快照内容不完整",
+    "音源检查快照内容不完整。",
+    "The source-check snapshot is incomplete.",
+    "音源検査のスナップショットが不完全です。"
+  ],
+  [
+    "准备快照版本已变化",
+    "音源检查快照版本已变化。",
+    "The source-check snapshot version has changed.",
+    "音源検査のスナップショットのバージョンが変わっています。"
+  ],
+  [
+    "音源目录已变化",
+    "音源目录已变化。",
+    "The source folder has changed.",
+    "音源フォルダーが変更されています。"
+  ],
+  [
+    "音源检查设置已变化",
+    "音源检查设置已变化。",
+    "The source-check settings have changed.",
+    "音源検査の設定が変更されています。"
+  ],
+  [
+    "准备清单已变化或不存在",
+    "音源清单已变化或不存在。",
+    "The source manifest has changed or is missing.",
+    "音源リストが変更されたか、見つかりません。"
+  ],
+  [
+    "音源文件数量已变化",
+    "音源文件数量已变化。",
+    "The number of source files has changed.",
+    "音源ファイルの数が変わっています。"
+  ],
+  [
+    "准备快照包含重复的音源路径",
+    "音源检查快照包含重复路径。",
+    "The source-check snapshot contains duplicate paths.",
+    "音源検査のスナップショットに重複するパスがあります。"
+  ],
+  [
+    "音源文件已变化: {0}",
+    "音源文件已变化：{0}",
+    "A source file has changed: {0}",
+    "音源ファイルが変更されています：{0}"
+  ],
+  [
+    "复用已确认的 {0} 个音源检查结果",
+    "复用已确认的 {0} 个音源检查结果。",
+    "Reusing verified source checks for {0} files.",
+    "検証済みの音源検査結果を {0} 件再利用します。"
+  ],
+  [
+    "Cannot load profile {0}: {1}",
+    "无法加载方案 {0}：{1}",
+    "Cannot load profile {0}: {1}",
+    "プロファイル {0} を読み込めません：{1}",
+    [
+      1
+    ]
+  ],
+  [
+    "Invalid JSON profile",
+    "JSON 设置方案格式无效。",
+    "The JSON settings profile is invalid.",
+    "JSON 設定プロファイルの形式が無効です。"
+  ],
+  [
+    "dvda-disc-verify.dll was not found; set DVDA_DISC_VERIFY_LIBRARY or DVDA_MENU_NATIVE_DIR",
+    "找不到成品验证组件 dvda-disc-verify.dll，请完整解压发布包。",
+    "The output verification component dvda-disc-verify.dll was not found. Extract the complete release archive.",
+    "出力検証用の dvda-disc-verify.dll がありません。配布 ZIP をすべて展開してください。"
+  ],
+  [
+    "未执行",
+    "未执行",
+    "Not run",
+    "未実行"
+  ],
+  [
+    "Build cancelled",
+    "制作已取消。",
+    "Build cancelled.",
+    "作成をキャンセルしました。"
+  ],
+  [
+    "DVD audio payload verification failed: status {0}, track {1}, offset {2}, sectors {3}",
+    "光盘音频数据验证失败：返回码 {0}，音轨 {1}，偏移 {2}，扇区数 {3}。",
+    "DVD audio data verification failed: status {0}, track {1}, offset {2}, sectors {3}.",
+    "ディスク音声データの検証に失敗しました：コード {0}、トラック {1}、オフセット {2}、セクター数 {3}。"
+  ],
+  [
+    "Missing source path",
+    "缺少音源路径。",
+    "The source audio path is missing.",
+    "音源ファイルのパスがありません。"
+  ],
+  [
+    "Track must be an object",
+    "音轨数据格式无效。",
+    "The track data has an invalid format.",
+    "曲データの形式が無効です。"
+  ],
+  [
+    "Audio inspection cancelled",
+    "音频检查已取消。",
+    "Audio inspection was cancelled.",
+    "音声検査をキャンセルしました。"
+  ],
+  [
+    "Media job cancelled",
+    "媒体任务已取消。",
+    "The media task was cancelled.",
+    "メディア処理をキャンセルしました。"
+  ],
+  [
+    "Media job timed out",
+    "媒体任务超时。",
+    "The media task timed out.",
+    "メディア処理がタイムアウトしました。"
+  ],
+  [
+    "Process executable is empty",
+    "未设置要运行的程序。",
+    "The process executable is empty.",
+    "実行するプログラムが設定されていません。"
+  ],
+  [
+    "Invalid media input path or sample rate",
+    "媒体输入路径或采样率无效。",
+    "The media input path or sample rate is invalid.",
+    "メディア入力パスまたはサンプリング周波数が無効です。"
+  ],
+  [
+    "Media output path is required",
+    "媒体输出路径不能为空。",
+    "A media output path is required.",
+    "メディア出力パスを指定してください。"
+  ],
+  [
+    "MLP inspection failed: {0}",
+    "MLP 检查失败：{0}",
+    "MLP inspection failed: {0}",
+    "MLP の検査に失敗しました：{0}"
+  ],
+  [
+    "PCM comparison failed: {0}",
+    "PCM 比对失败：{0}",
+    "PCM comparison failed: {0}",
+    "PCM の比較に失敗しました：{0}"
+  ],
+  [
+    "PTS parsing failed: {0}",
+    "PTS 解析失败：{0}",
+    "PTS parsing failed: {0}",
+    "PTS の解析に失敗しました：{0}"
+  ],
+  [
+    "MLP alignment failed: {0}",
+    "MLP 对齐失败：{0}",
+    "MLP alignment failed: {0}",
+    "MLP のアラインメントに失敗しました：{0}"
+  ],
+  [
+    "Native alignment returned a null buffer",
+    "原生对齐组件返回了空缓冲区。",
+    "The native alignment component returned a null buffer.",
+    "ネイティブのアラインメント処理が空のバッファーを返しました。"
+  ],
+  [
+    "Unsupported MLP encoder ABI",
+    "不支持的 MLP 编码器 ABI。",
+    "The MLP encoder ABI is not supported.",
+    "MLP エンコーダー ABI に対応していません。"
+  ],
+  [
+    "Invalid channel count",
+    "声道数无效。",
+    "The channel count is invalid.",
+    "チャンネル数が無効です。"
+  ],
+  [
+    "Invalid MLP read count pointer",
+    "MLP 读取计数指针无效。",
+    "The MLP read-count pointer is invalid.",
+    "MLP の読み取り数ポインターが無効です。"
+  ],
+  [
+    "Invalid MLP PCM buffer",
+    "MLP PCM 缓冲区无效。",
+    "The MLP PCM buffer is invalid.",
+    "MLP PCM バッファーが無効です。"
+  ],
+  [
+    "Too many PCM frames returned",
+    "返回的 PCM 帧数过多。",
+    "Too many PCM frames were returned.",
+    "返された PCM フレーム数が多すぎます。"
+  ],
+  [
+    "MLP output block exceeds ABI limit",
+    "MLP 输出块超过 ABI 限制。",
+    "The MLP output block exceeds the ABI limit.",
+    "MLP 出力ブロックが ABI の上限を超えています。"
+  ],
+  [
+    "LPCM 转换改变了声道数。",
+    "LPCM 转换改变了声道数。",
+    "LPCM conversion changed the channel count.",
+    "LPCM 変換でチャンネル数が変わりました。"
+  ],
+  [
+    "LPCM 不支持此声道布局，请使用标准 DVD-Audio 声道布局。",
+    "LPCM 不支持此声道布局，请使用标准 DVD-Audio 声道布局。",
+    "LPCM does not support this channel layout. Use a standard DVD-Audio layout.",
+    "LPCM はこのチャンネル構成に対応していません。標準の DVD-Audio 構成を使用してください。"
+  ],
+  [
+    "第 N 组 -> AUDIO_TS/ATS_NN_1.AOB（超过 1 GiB 后续分段）",
+    "第 N 组 -> AUDIO_TS/ATS_NN_1.AOB（超过 1 GiB 后续分段）",
+    "Group N -> AUDIO_TS/ATS_NN_1.AOB (additional segments above 1 GiB)",
+    "グループ N -> AUDIO_TS/ATS_NN_1.AOB（1 GiB を超えると分割）"
+  ],
+  [
+    "用时 {0}:{1}:{2} · 提醒 {3}",
+    "用时 {0}:{1}:{2} · 提醒 {3}",
+    "Time {0}:{1}:{2} · Alerts {3}",
+    "経過 {0}:{1}:{2} · 注意 {3}"
+  ],
+  [
+    "{0}：请输入 {1} 至 {2} 的整数。",
+    "{0}：请输入 {1} 至 {2} 的整数。",
+    "{0}: Enter a whole number from {1} to {2}.",
+    "{0}：{1} から {2} までの整数を入力してください。",
+    [
+      0
+    ]
+  ],
+  [
+    "{0}：请输入正整数字节数。",
+    "{0}：请输入正整数字节数。",
+    "{0}: Enter a positive whole number of bytes.",
+    "{0}：正の整数でバイト数を入力してください。",
+    [
+      0
+    ]
+  ],
+  [
+    "{0}：请输入非负有限数值。",
+    "{0}：请输入非负有限数值。",
+    "{0}: Enter a finite number of zero or greater.",
+    "{0}：0 以上の有限の数値を入力してください。",
+    [
+      0
+    ]
+  ],
+  [
+    "{0}：请输入非负整数，或留空。",
+    "{0}：请输入非负整数，或留空。",
+    "{0}: Enter a whole number of zero or greater, or leave blank.",
+    "{0}：0 以上の整数を入力するか、空欄にしてください。",
+    [
+      0
+    ]
+  ],
+  [
+    "标题分组规则须为 album、one 或正整数。",
+    "标题分组规则须为 album、one 或正整数。",
+    "Title grouping must be album, one, or a positive whole number.",
+    "タイトル分割は album、one、または正の整数を指定してください。"
+  ],
+  [
+    "任务异常终止，请查看详细日志。",
+    "任务异常终止，请查看详细日志。",
+    "The task ended unexpectedly. See the detailed log.",
+    "タスクが異常終了しました。詳細ログを確認してください。"
+  ],
+  [
+    "音源检查失败，请修复问题后再制作。",
+    "音源检查失败，请修复问题后再制作。",
+    "Source checks failed. Resolve the problems before building.",
+    "音源検査に失敗しました。問題を修正してから作成してください。"
+  ],
+  [
+    "[verify] menu {0} page {1}",
+    "[校验] 菜单 {0}，第 {1} 页",
+    "[Verify] Menu {0}, page {1}",
+    "[検証] メニュー {0}、{1} ページ"
+  ],
+  [
+    "[build] staged disc {0}",
+    "[制作] 第 {0} 盘已暂存",
+    "[Build] Disc {0} staged",
+    "[作成] ディスク {0} を一時保存しました"
+  ],
+  [
+    "成品验证已取消。",
+    "成品验证已取消。",
+    "Output verification cancelled.",
+    "出力の検証を中止しました。"
+  ],
+  [
+    "[快照] 修复音源已改变，将重新检查。",
+    "[快照] 修复音源已改变，将重新检查。",
+    "[Snapshot] Repaired audio changed; checking sources again.",
+    "[スナップショット] 修復済み音源が変更されました。再検査します。"
+  ],
+  [
+    "缺少源音频或编码文件，无法完成逐轨校验。",
+    "缺少源音频或编码文件，无法完成逐轨校验。",
+    "Source audio or encoded file is missing; track verification cannot continue.",
+    "元の音源またはエンコード済みファイルがありません。曲目の検証を続行できません。"
+  ],
+  [
+    "旧外部 MLP 的转换策略未知，不能代替 PCM 一致性校验。",
+    "旧外部 MLP 的转换策略未知，不能代替 PCM 一致性校验。",
+    "The imported MLP conversion settings are unknown; PCM consistency cannot be established.",
+    "読み込んだ MLP の変換設定が不明なため、PCM の一致を確認できません。"
+  ],
+  [
+    "PCM 不一致：原因 {0}，偏移 {1}，源 {2} 字节，解码 {3} 字节。",
+    "PCM 不一致：原因 {0}，偏移 {1}，源 {2} 字节，解码 {3} 字节。",
+    "PCM mismatch: reason {0}, offset {1}, source {2} bytes, decoded {3} bytes.",
+    "PCM が不一致です：理由 {0}、位置 {1}、音源 {2} バイト、復号 {3} バイト。"
+  ],
+  [
+    "无法解码音频进行 PCM 校验：{0}",
+    "无法解码音频进行 PCM 校验：{0}",
+    "Cannot decode audio for PCM comparison: {0}",
+    "PCM 比較用の音声を復号できません：{0}"
+  ],
+  [
+    "找不到成品 ISO：{0}",
+    "找不到成品 ISO：{0}",
+    "Output ISO is missing: {0}",
+    "出力 ISO がありません：{0}"
+  ],
+  [
+    "预演索引不能用于验证正式成品。",
+    "预演索引不能用于验证正式成品。",
+    "A dry-run index cannot verify published discs.",
+    "試行用の索引では完成ディスクを検証できません。"
+  ],
+  [
+    "曲目索引缺少编码参数：{0}",
+    "曲目索引缺少编码参数：{0}",
+    "Track index is missing encoding parameters: {0}",
+    "曲目索引にエンコード設定がありません：{0}"
+  ],
+  [
+    "曲目索引的音源路径不一致：{0}",
+    "曲目索引的音源路径不一致：{0}",
+    "Track index has inconsistent source paths: {0}",
+    "曲目索引の音源パスが一致しません：{0}"
+  ],
+  [
+    "曲目索引的编码方式无效：{0}",
+    "曲目索引的编码方式无效：{0}",
+    "Track index has an invalid encoding mode: {0}",
+    "曲目索引のエンコード方式が無効です：{0}"
+  ],
+  [
+    "[校验] {0}：完整目标 PCM 一致。",
+    "[校验] {0}：完整目标 PCM 一致。",
+    "[Verify] {0}: full target PCM matches.",
+    "[検証] {0}：対象 PCM の全体が一致しました。"
+  ],
+  [
+    "菜单跳转 XML 有 {0} 页，规划为 {1} 页。",
+    "菜单跳转 XML 有 {0} 页，规划为 {1} 页。",
+    "Menu navigation XML contains {0} pages; the plan requires {1}.",
+    "メニュー移動 XML は {0} ページですが、計画は {1} ページです。"
+  ],
+  [
+    "第 {0} 页缺少按钮位置 XML。",
+    "第 {0} 页缺少按钮位置 XML。",
+    "Menu page {0} is missing button-position XML.",
+    "メニュー {0} ページのボタン位置 XML がありません。"
+  ],
+  [
+    "第 {0} 页按钮编号不一致：跳转 {1}，位置 {2}。",
+    "第 {0} 页按钮编号不一致：跳转 {1}，位置 {2}。",
+    "Page {0} button IDs differ: navigation {1}, positions {2}.",
+    "{0} ページのボタン番号が不一致です：移動 {1}、位置 {2}。"
+  ],
+  [
+    "第 {0} 个菜单页缺少末尾的 jump menu 1 返回索引按钮。",
+    "第 {0} 个菜单页缺少末尾的 jump menu 1 返回索引按钮。",
+    "Menu page {0} is missing its final jump menu 1 index-return button.",
+    "メニュー {0} ページに索引へ戻る最後の jump menu 1 ボタンがありません。"
+  ],
+  [
+    "未生成菜单文件 {0}。",
+    "未生成菜单文件 {0}。",
+    "Menu file was not created: {0}.",
+    "メニューファイルが生成されませんでした：{0}。"
+  ],
+  [
+    "第 {0} 页缺少可读取的文字层或高亮层。",
+    "第 {0} 页缺少可读取的文字层或高亮层。",
+    "Menu page {0} is missing a readable text or highlight layer.",
+    "メニュー {0} ページの文字または強調表示画像を読み取れません。"
+  ],
+  [
+    "第 {0} 页高亮层没有比文字层增加墨迹。",
+    "第 {0} 页高亮层没有比文字层增加墨迹。",
+    "Menu page {0} has no additional highlight pixels over its text layer.",
+    "メニュー {0} ページの強調表示が文字画像と区別できません。"
+  ],
+  [
+    "第 {0} 个索引页的翻页箭头区域没有墨迹。",
+    "第 {0} 个索引页的翻页箭头区域没有墨迹。",
+    "Index page {0} has no visible page arrows.",
+    "索引 {0} ページの移動矢印がありません。"
+  ],
+  [
+    "[续跑] 复用第 {0} 张已完成的光盘。",
+    "[续跑] 复用第 {0} 张已完成的光盘。",
+    "[Resume] Reusing completed disc {0}.",
+    "[再開] 完成済みディスク {0} を再利用します。"
+  ],
+  [
+    "ISO 缺少必要的 AUDIO_TS 文件：{0}",
+    "ISO 缺少必要的 AUDIO_TS 文件：{0}",
+    "ISO is missing required AUDIO_TS files: {0}",
+    "ISO に必要な AUDIO_TS ファイルがありません：{0}"
+  ],
+  [
+    "{0} 上“{1}”预计需要 {2} 字节，但仅剩 {3} 字节。估算为保守值，仅供参考。",
+    "{0} 上“{1}”预计需要 {2} 字节，但仅剩 {3} 字节。估算为保守值，仅供参考。",
+    "{1} on {0} may need {2} bytes, with only {3} available. This is a conservative estimate.",
+    "{0} の {1} は推定 {2} バイト必要ですが、空きは {3} バイトです。余裕を見込んだ概算です。"
+  ],
+  [
+    "AMG declares no menu pages",
+    "菜单导航中没有菜单页",
+    "AMG declares no menu pages",
+    "メニューのナビゲーションにページがありません"
+  ],
+  [
+    "AMG page count differs from the disc plan",
+    "菜单页数与光盘规划不一致",
+    "AMG page count differs from the disc plan",
+    "メニューのページ数がディスク計画と一致しません"
+  ],
+  [
+    "Still-picture count differs from the disc plan",
+    "静态封面数量与光盘规划不一致",
+    "Still-picture count differs from the disc plan",
+    "静止画像の数がディスク計画と一致しません"
+  ],
+  [
+    "Menu image component is missing",
+    "缺少菜单图像组件",
+    "Menu image component is missing",
+    "メニュー画像コンポーネントがありません"
+  ],
+  [
+    "Cannot decode menu page",
+    "无法解码菜单画面",
+    "Cannot decode menu page",
+    "メニュー画像を復号できません"
+  ],
+  [
+    "Cannot read menu image statistics",
+    "无法读取菜单画面统计信息",
+    "Cannot read menu image statistics",
+    "メニュー画像の統計情報を取得できません"
+  ],
+  [
+    "Invalid menu image statistics",
+    "菜单画面统计信息无效",
+    "Invalid menu image statistics",
+    "メニュー画像の統計情報が無効です"
+  ],
+  [
+    "Invalid menu frame statistics",
+    "菜单帧统计信息无效",
+    "Invalid menu frame statistics",
+    "メニューフレームの統計情報が無効です"
+  ],
+  [
+    "Menu page {0} is nearly solid",
+    "第 {0} 页菜单画面近乎纯色",
+    "Menu page {0} is nearly solid",
+    "メニュー {0} ページの画像がほぼ単色です"
+  ],
+  [
+    "Menu page {0}, cell {1}",
+    "菜单第 {0} 页，第 {1} 格",
+    "Menu page {0}, cell {1}",
+    "メニュー {0} ページ、{1} セル"
+  ],
+  [
+    "Invalid verification sample rate",
+    "校验索引的采样率无效",
+    "Invalid verification sample rate",
+    "検証索引のサンプリング周波数が無効です"
+  ],
+  [
+    "Invalid verification bit depth",
+    "校验索引的位深无效",
+    "Invalid verification bit depth",
+    "検証索引のビット深度が無効です"
+  ],
+  [
+    "Invalid verification channel count",
+    "校验索引的声道数无效",
+    "Invalid verification channel count",
+    "検証索引のチャンネル数が無効です"
+  ],
+  [
+    "Invalid or duplicate ISO name in index",
+    "索引中的 ISO 名称无效或重复",
+    "Invalid or duplicate ISO name in index",
+    "索引の ISO 名が無効または重複しています"
+  ],
+  [
+    "Invalid group number in index",
+    "索引的组号无效",
+    "Invalid group number in index",
+    "索引のグループ番号が無効です"
+  ],
+  [
+    "Duplicate group number in index",
+    "索引的组号重复",
+    "Duplicate group number in index",
+    "索引のグループ番号が重複しています"
+  ],
+  [
+    "Empty track group in index",
+    "索引中存在空的曲目组",
+    "Empty track group in index",
+    "索引に空の曲目グループがあります"
+  ],
+  [
+    "Missing group index",
+    "缺少曲目组索引",
+    "Missing group index",
+    "曲目グループの索引がありません"
+  ],
+  [
+    "Missing track index",
+    "缺少曲目索引",
+    "Missing track index",
+    "曲目索引がありません"
+  ],
+  [
+    "Invalid track index",
+    "曲目索引无效",
+    "Invalid track index",
+    "曲目索引が無効です"
+  ],
+  [
+    "Missing disc index",
+    "缺少光盘索引",
+    "Missing disc index",
+    "ディスク索引がありません"
+  ],
+  [
+    "{0}: ISO groups differ from index",
+    "{0}：ISO 曲目组与索引不一致",
+    "{0}: ISO groups differ from index",
+    "{0}：ISO の曲目グループが索引と一致しません"
+  ],
+  [
+    "IFO exceeds size limit",
+    "IFO 文件超过大小限制",
+    "IFO exceeds size limit",
+    "IFO ファイルのサイズが上限を超えています"
+  ],
+  [
+    "AOB data is not sector aligned",
+    "AOB 数据未按扇区对齐",
+    "AOB data is not sector aligned",
+    "AOB データがセクター境界に整列していません"
+  ],
+  [
+    "准备清单无法读取：{0}：{1}",
+    "准备清单无法读取：{0}：{1}",
+    "Cannot read preparation manifest: {0}: {1}",
+    "準備一覧を読み取れません：{0}：{1}",
+    [
+      1
+    ]
+  ],
+  [
+    "构建日志无法读取：{0}：{1}",
+    "构建日志无法读取：{0}：{1}",
+    "Cannot read build log: {0}: {1}",
+    "作成ログを読み取れません：{0}：{1}",
+    [
+      1
+    ]
+  ],
+  [
+    "{0}：轨道表存在扇区断点或重叠。",
+    "{0}：轨道表存在扇区断点或重叠。",
+    "{0}: track sectors have a gap or overlap.",
+    "{0}：曲のセクター範囲に空白または重複があります。"
+  ],
+  [
+    "{0}：AOB 扇区 {1} != 轨道表 {2}",
+    "{0}：音频数据有 {1} 个扇区，轨道表声明 {2} 个。",
+    "{0}: audio has {1} sectors; the track table declares {2}.",
+    "{0}：音声データは {1} セクターですが、曲の表では {2} セクターです。"
+  ],
+  [
+    "{0}：日志与 IFO 的轨道位置不一致。",
+    "{0}：日志与成品的轨道位置不一致。",
+    "{0}: logged track positions differ from the disc IFO.",
+    "{0}：ログとディスク IFO の曲の位置が一致しません。"
+  ],
+  [
+    "{0}：PTS 时间轴无效。",
+    "{0}：音频播放时间轴无效。",
+    "{0}: the audio timestamp timeline is invalid.",
+    "{0}：音声の再生時刻が不正です。"
+  ],
+  [
+    "配置了播放封面，但未生成有效的静图文件：{0}",
+    "配置了播放封面，但未生成有效的静图文件：{0}",
+    "Playback artwork is configured, but its still-picture file is missing or empty: {0}",
+    "再生時のカバー画像が設定されていますが、静止画ファイルが存在しないか空です：{0}"
+  ],
+  [
+    "ASVS_TOO_SHORT",
+    "静图索引文件过短，固定头部不完整。",
+    "The still-picture index is too short to contain its fixed header.",
+    "静止画索引が短すぎるため、固定ヘッダーが完全ではありません。"
+  ],
+  [
+    "MENU_FILE_MISSING: {0}",
+    "成品缺少必要的菜单或静图文件：{0}",
+    "The disc is missing a required menu or still-picture file: {0}",
+    "ディスクに必要なメニューまたは静止画ファイルがありません：{0}"
+  ],
+  [
+    "Invalid manifest object",
+    "准备清单必须是 JSON 对象。",
+    "The preparation manifest must be a JSON object.",
+    "準備一覧は JSON オブジェクトである必要があります。"
+  ],
+  [
+    "Invalid manifest album",
+    "准备清单中的专辑记录无效。",
+    "An album entry in the preparation manifest is invalid.",
+    "準備一覧のアルバム項目が不正です。"
+  ],
+  [
+    "Invalid manifest files",
+    "准备清单中的曲目列表无效。",
+    "A track list in the preparation manifest is invalid.",
+    "準備一覧の曲一覧が不正です。"
+  ],
+  [
+    "Manifest track count overflow",
+    "准备清单的曲目数量超出允许范围。",
+    "The preparation manifest track count exceeds the supported range.",
+    "準備一覧の曲数が対応範囲を超えています。"
+  ],
+  [
+    "找不到能渲染菜单文字的字体；请提供可用的 CJK 字体。",
+    "找不到能渲染菜单文字的字体；请提供可用的 CJK 字体。",
+    "No font can render the menu text. Please provide an available CJK font.",
+    "メニュー文字を描画できるフォントがありません。利用可能な CJK フォントを指定してください。"
+  ],
+  [
+    "内置图像组件缺失，请重新解压或修复发布包。",
+    "内置图像组件缺失，请重新解压或修复发布包。",
+    "The image component is missing. Extract or repair the release package again.",
+    "画像コンポーネントがありません。配布パッケージを展開し直すか修復してください。"
+  ],
+  [
+    "内置图像组件缺失，无法验证菜单图片尺寸。",
+    "内置图像组件缺失，无法验证菜单图片尺寸。",
+    "The image component is missing, so menu image dimensions cannot be checked.",
+    "画像コンポーネントがないため、メニュー画像の寸法を確認できません。"
+  ],
+  [
+    "内置菜单组件缺失：{0}。请重新解压或修复发布包。",
+    "内置菜单组件缺失：{0}。请重新解压或修复发布包。",
+    "Menu component {0} is missing. Extract or repair the release package again.",
+    "メニューコンポーネント {0} がありません。配布パッケージを展開し直すか修復してください。"
+  ],
+  [
+    "Invalid resume record",
+    "续跑记录格式无效。",
+    "The resume record format is invalid.",
+    "再開記録の形式が不正です。"
+  ],
+  [
+    "内置图像组件缺失，无法完成菜单文字与高亮检查。",
+    "内置图像组件缺失，无法完成菜单文字与高亮检查。",
+    "The image component is missing, so menu text and highlight checks cannot be completed.",
+    "画像コンポーネントがないため、メニュー文字とハイライトの確認を完了できません。"
+  ],
+  [
+    "[跳过] 菜单已关闭，成品按预期没有菜单。",
+    "[跳过] 菜单已关闭，成品按预期没有菜单。",
+    "[Skipped] Menus are disabled; the disc is expected to have no menu.",
+    "[スキップ] メニューが無効のため、ディスクにメニューがないことを想定しています。"
+  ]
+]

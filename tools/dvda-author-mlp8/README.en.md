@@ -1,114 +1,47 @@
-# Modified dvda-author source mirror
+# dvda-author source mirror
 
-[简体中文](README.md) | [English](README.en.md)
+This directory records the controlled C/C++ changes applied to `dvda-author`
+for DVD-Audio Maker. It is a review mirror for patches, provenance and isolated
+build snapshots, not a complete standalone upstream source tree.
 
-This directory contains core C/C++ files modified by DVD-Audio Maker, primarily for:
-
-- Reviewing and searching the modified implementation in this repository.
-- Recording MLP, timeline, menu, font and Windows compatibility changes.
-- Comparing against the full working tree or patch file.
-- Keeping the complete upstream source, third-party dependencies and build outputs out of the main repository.
-
-## Important
-
-**This is not a complete, independently buildable dvda-author source tree.**
-
-It normally contains only:
+## Contents
 
 ```text
-src/          Modified dvda-author core source
-libutils/     Modified shared utility source
+src/          modified author core sources
+libutils/     modified common utility sources
 MIRROR-NOTES.md
-README.md
+README.en.md
 ```
 
-It omits content required for a complete build, including:
+A complete build must use the full upstream working tree and apply
+`docs/dvda-author-changes.patch`. Do not use this mirror to overwrite an
+unverified working tree. Object files, executables, third-party libraries and
+large assets are intentionally absent.
 
-```text
-configure
-configure.ac
-Makefile.in
-libfixwav/
-menu/
-m4.extra.dvdauthor/
-dvdauthor-0.7.1/
-local.w10/
-```
+## Current integration
 
-Do not run `configure`, `make` or Windows toolchain scripts in this directory.
+The Windows x64 release uses project-built author, media and image DLLs. Menu
+media, subpictures, navigation and ISO writing use in-process C modules. The
+user entry point is `DVD-Audio-Maker.exe`, with Check sources, Build discs and
+Verify output. dry-run remains a developer CLI diagnostic.
 
-## Authoritative source
-
-Build from a complete `dvda-author` working tree with this project's changes applied. The recommended upstream pin is `8fca43a`:
-
-```bat
-git clone https://github.com/fabnicol/dvda-author "D:/work/dvda-author"
-cd /d "D:/work/dvda-author"
-git checkout 8fca43a
-git apply "D:/work/DVD-Audio-Maker/docs/dvda-author-changes.patch"
-```
-
-Complete patch set:
-
-- [`../../docs/dvda-author-changes.patch`](../../docs/dvda-author-changes.patch)
-
-Change descriptions and rationale:
-
-- [`../../docs/DVDA-AUTHOR-CHANGES.md`](../../docs/DVDA-AUTHOR-CHANGES.en.md)
-
-Experiments that are not enabled:
-
-- [`../../docs/DVDA-AUTHOR-DISABLED.md`](../../docs/DVDA-AUTHOR-DISABLED.en.md)
-
-The product targets Windows x64. Native maintenance uses MSYS2/MinGW-w64 on Windows; routine C# development and release assembly reuse verified artifacts. See [Windows build instructions](../win-build/README.en.md).
-
-## Current menu image calls
-
-This directory and the base patch remain review copies of the underlying implementation. The current author is built by [build-image-author.py](../win-build/build-image-author.py) from an isolated snapshot of the full tree. The script migrates seven external ImageMagick calls to the x64 image DLL. See [author-inprocess-images.patch](../win-build/native/author-inprocess-images.patch) and the [native loader](../win-build/native/author-image-loader.c).
-
-Keep base changes separate from this build-time transformation. The script expects the base tree without the image delta already applied; do not manually apply the same delta before invoking it. It does not overwrite the supplied full tree. Input and output hashes are recorded in build/image-author-shared/author-build.json.
-
-The GUI and native author use image-native/dvda-image.dll. Menu media, subpictures, navigation and ISO writing now use in-process C implementations; see the [migration checklist](../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md). See [in-process images](../../docs/INPROCESS-IMAGES.en.md) for capabilities and validation limits.
-
-## Main areas of change
-
-The mirrored files may include changes in these categories:
-
-- 24-bit MLP input and newer FFmpeg API support.
-- MLP frames, track boundaries and byte alignment.
-- ATSI, AOB, PTS and title timeline fixes.
-- Menu generation, AMG/ASVS links and playback still pictures.
-- SC, JP and KR font selection by text language.
-- Windows/MinGW paths, processes, pipes and UTF-8 compatibility.
-- Upstream crash fixes, buffer limits and resource cleanup.
-
-The patch and full working tree define the actual changes. Do not infer complete coverage from this directory alone.
+The user package is `DVD-Audio-Maker-v1.0-win-x64.zip`; this maintenance mirror
+is not copied into it. See the [Windows build instructions](../win-build/README.en.md),
+[third-party components](../win-build/docs/THIRD-PARTY.en.md) and [native runtime
+migration](../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md) for build inputs,
+licenses and provenance.
 
 ## Synchronization rules
 
-When changes in the full working tree are updated:
-
-1. Update that working tree and confirm it builds and passes tests.
+1. Build and test in the complete upstream working tree.
 2. Regenerate `docs/dvda-author-changes.patch`.
-3. Synchronize modified `src/` and `libutils/` files into this mirror.
-4. Compare the mirror, applied patch and full working tree, requiring byte-identical corresponding files.
-5. Do not copy object files, executables, generated Makefiles, third-party libraries or large assets.
-
-This mirror is a review copy. Do not use it to overwrite an unverified full working tree.
+3. Synchronize only changed `src/` and `libutils/` files, then compare the
+   mirror, patch and full working tree byte-for-byte.
+4. Do not copy objects, executables, generated Makefiles, third-party libraries
+   or large assets.
 
 ## License
 
-These files originate from `dvda-author` and include project modifications. See the licensing and third-party notes:
-
-- [`../../LICENSE`](../../LICENSE)
-- [`../../docs/LICENSING.md`](../../docs/LICENSING.en.md)
-
-Use, modification and redistribution must comply with the upstream project's and dependencies' licenses.
-
-## Current release integration
-
-The standard Windows x64 release links the author and media bridge against the same shared FFmpeg build. Use build-image-author.py with --ffmpeg-runtime build/ffmpeg-shared/install and --work-directory build/image-author-shared. The packager keeps one DLL set for both consumers. Native build records stay in the local build directory.
-
-The user entry point is DVD-Audio-Maker.exe: Check sources, Build discs, Verify output. dry-run remains a source CLI diagnostic and is not a GUI action. This mirror is maintainer documentation and is not copied into the user release. The public archive is DVD-Audio-Maker-v1.0-win-x64.zip.
-
-The current build script also overlays src/audio.c and src/ats.c from this mirror into its isolated snapshot. These include LPCM RIFF parsing, odd-frame carry, short first packets and PES length fixes. The supplied full source tree is unchanged. Validate with tools/win-build/test-lpcm-native.py.
+These files originate from `dvda-author` and include project changes. Use,
+modification and redistribution must comply with the upstream and dependency
+licenses. Keep the repository `LICENSE` and release NOTICE files.
