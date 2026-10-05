@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use std::{
     cell::RefCell,
-    io::{Read, Seek, SeekFrom},
+    io::{Read, Seek, SeekFrom, Write},
 };
 use std::{fs, path::Path};
 
@@ -86,6 +86,101 @@ struct IsoEntry {
     size: u32,
     extended_attribute_blocks: u8,
     is_multi_extent: bool,
+}
+
+/// Directory entry exposed to the Rust verification and desktop layers.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct IsoEntryInfo {
+    pub name: String,
+    pub is_directory: bool,
+    pub logical_block_address: u32,
+    pub size: u32,
+    pub extended_attribute_blocks: u8,
+    pub is_multi_extent: bool,
+}
+
+/// A bounded, sector-aligned reader for one ISO9660 file.
+pub struct IsoFileChunks {
+    source: IsoSource,
+    offset: u64,
+    remaining: u64,
+    chunk_size: usize,
+}
+
+impl IsoFileChunks {
+    pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+        if self.remaining == 0 {
+            return Ok(None);
+        }
+        let count = self
+            .remaining
+            .min(self.chunk_size as u64)
+            .try_into()
+            .map_err(|_| "ISO chunk size overflow")?;
+        let bytes = self.source.read_at(self.offset, count)?;
+        if bytes.len() != count {
+            return Err("ISO file ended before its directory-declared size".into());
+        }
+        self.offset = self
+            .offset
+            .checked_add(count as u64)
+            .ok_or("ISO file offset overflow")?;
+        self.remaining -= count as u64;
+        Ok(Some(bytes))
+    }
+}
+
+pub fn iso_list_directory(path: &Path, inner_path: &str) -> Result<Vec<IsoEntryInfo>, String> {
+    let source = IsoSource::open(&path.to_string_lossy())?;
+    let info = parse_iso_info(&path.to_string_lossy(), &source)?;
+    let entry = iso_lookup(&source, &info, inner_path)?;
+    if !entry.is_directory {
+        return Err(format!("ISO entry is not a directory: {inner_path}"));
+    }
+    Ok(iso_parse_directory(&source, &info, &entry)?
+        .into_iter()
+        .map(IsoEntryInfo::from)
+        .collect())
+}
+
+pub fn iso_file_chunks(
+    path: &Path,
+    inner_path: &str,
+    chunk_size: usize,
+) -> Result<IsoFileChunks, String> {
+    if chunk_size == 0 || !chunk_size.is_multiple_of(2048) {
+        return Err("ISO chunk size must be a non-zero multiple of 2048".into());
+    }
+    let source = IsoSource::open(&path.to_string_lossy())?;
+    let info = parse_iso_info(&path.to_string_lossy(), &source)?;
+    let entry = iso_lookup(&source, &info, inner_path)?;
+    if entry.is_directory {
+        return Err(format!("ISO entry is a directory: {inner_path}"));
+    }
+    if entry.is_multi_extent {
+        return Err(format!("ISO entry is multi-extent: {inner_path}"));
+    }
+    let offset = iso_data_offset(&info, &entry)? as u64;
+    Ok(IsoFileChunks {
+        source,
+        offset,
+        remaining: entry.size as u64,
+        chunk_size,
+    })
+}
+
+impl From<IsoEntry> for IsoEntryInfo {
+    fn from(value: IsoEntry) -> Self {
+        Self {
+            name: value.name,
+            is_directory: value.is_directory,
+            logical_block_address: value.logical_block_address,
+            size: value.size,
+            extended_attribute_blocks: value.extended_attribute_blocks,
+            is_multi_extent: value.is_multi_extent,
+        }
+    }
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -633,35 +728,24 @@ fn flac_comments(request: Value) -> Result<Value, String> {
     let Some(data) = block else {
         return Ok(json!([]));
     };
-    let mut offset = 0usize;
-    let vendor_length = u32_le(&data[offset..offset + 4])? as usize;
-    offset = offset
-        .checked_add(4 + vendor_length)
-        .ok_or("FLAC vendor length overflow")?;
-    let count = u32_le(&data[offset..offset + 4])? as usize;
-    offset += 4;
+    let mut reader = FlacReader::new(data);
+    let vendor_length = reader.u32_le()?;
+    reader.bytes(vendor_length)?;
+    let count = reader.u32_le()? as usize;
+    if count > i32::MAX as usize {
+        return Err("FLAC Vorbis comment count is too large.".into());
+    }
     let mut comments = Vec::with_capacity(count.min(1024));
     for _ in 0..count {
-        let length = u32_le(&data[offset..offset + 4])? as usize;
-        offset += 4;
-        let end = offset
-            .checked_add(length)
-            .ok_or("FLAC comment length overflow")?;
-        if end > data.len() {
-            return Err("FLAC Vorbis comment block is truncated.".into());
-        }
-        let value = std::str::from_utf8(&data[offset..end])
-            .map_err(|error| format!("Invalid FLAC comment UTF-8: {error}"))?;
+        let length = reader.u32_le()?;
+        let value = reader.text(length)?;
         if let Some((key, value)) = value.split_once('=')
             && !key.is_empty()
         {
             comments.push(json!({"Key":key,"Value":value}));
         }
-        offset = end;
     }
-    if offset != data.len() {
-        return Err("FLAC metadata block has trailing bytes.".into());
-    }
+    reader.require_end()?;
     Ok(Value::Array(comments))
 }
 
@@ -671,23 +755,19 @@ fn flac_picture(request: Value) -> Result<Value, String> {
     let Some((_, data)) = document.iter().find(|(kind, _)| *kind == 6) else {
         return Ok(Value::Null);
     };
-    let mut offset = 0usize;
-    let picture_type = u32_be(&data[offset..offset + 4])?;
-    offset += 4;
-    let mime = read_flac_text(data, &mut offset)?;
-    let description = read_flac_text(data, &mut offset)?;
-    let width = u32_be(&data[offset..offset + 4])?;
-    let height = u32_be(&data[offset + 4..offset + 8])?;
-    let depth = u32_be(&data[offset + 8..offset + 12])?;
-    let colors = u32_be(&data[offset + 12..offset + 16])?;
-    let image_length = u32_be(&data[offset + 16..offset + 20])? as usize;
-    offset += 20;
-    let image_end = offset
-        .checked_add(image_length)
-        .ok_or("FLAC picture length overflow")?;
-    if image_end != data.len() {
-        return Err("FLAC PICTURE block is truncated or has trailing bytes.".into());
-    }
+    let mut reader = FlacReader::new(data);
+    let picture_type = reader.u32_be()?;
+    let mime_length = reader.u32_be()?;
+    let mime = reader.text(mime_length)?;
+    let description_length = reader.u32_be()?;
+    let description = reader.text(description_length)?;
+    let width = reader.u32_be()?;
+    let height = reader.u32_be()?;
+    let depth = reader.u32_be()?;
+    let colors = reader.u32_be()?;
+    let image_length = reader.u32_be()?;
+    let image = reader.bytes(image_length)?;
+    reader.require_end()?;
     if picture_type > i32::MAX as u32
         || width > i32::MAX as u32
         || height > i32::MAX as u32
@@ -706,7 +786,7 @@ fn flac_picture(request: Value) -> Result<Value, String> {
         },
         "Description": description,
         "Colors": colors,
-        "ImageHex": hex_encode(&data[offset..image_end]),
+        "ImageHex": hex_encode(image),
     }))
 }
 
@@ -785,8 +865,20 @@ fn flac_replace_picture(request: Value) -> Result<Value, String> {
     }
     output.extend_from_slice(&source[audio_offset..]);
     let temporary = format!("{}.{}.tmp", request.path, unique_suffix());
-    fs::write(&temporary, &output).map_err(|error| format!("{temporary}: {error}"))?;
-    if let Err(error) = fs::rename(&temporary, &request.path) {
+    // Own the temporary before arranging cleanup, and never truncate a stale
+    // file from another attempt. A write/flush/rename failure preserves input.
+    let mut file = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|error| format!("{temporary}: {error}"))?;
+    let result = (|| {
+        file.write_all(&output)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, &request.path)
+    })();
+    if let Err(error) = result {
         let _ = fs::remove_file(&temporary);
         return Err(format!("{}: {error}", request.path));
     }
@@ -857,124 +949,29 @@ fn alac_cookie(request: Value) -> Result<Value, String> {
         .get("DataHex")
         .and_then(Value::as_str)
         .ok_or("Missing ALAC cookie bytes")?;
-    let offset = object.get("Offset").and_then(Value::as_i64).unwrap_or(0);
-    let data = hex_decode(hex)?;
-    if data.len() < 24 {
-        return Ok(Value::Null);
-    }
-    let max_samples = i32_be(&data[0..4])?;
-    let sample_size = data[5];
-    let channels = data[9];
-    let max_coded_frame_size = i32_be(&data[12..16])?;
-    let sample_rate = i32_be(&data[20..24])?;
-    let rates = [
-        8_000, 11_025, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000, 64_000, 88_200, 96_000,
-        176_400, 192_000, 352_800, 384_000,
-    ];
-    if !(512..=16_384).contains(&max_samples)
-        || !matches!(sample_size, 16 | 20 | 24 | 32)
-        || !(1..=8).contains(&channels)
-        || !rates.contains(&sample_rate)
-    {
-        return Ok(Value::Null);
-    }
-    Ok(json!({
-        "MaxSamplesPerFrame": max_samples,
-        "SampleSize": sample_size,
-        "Channels": channels,
-        "SampleRate": sample_rate,
-        "MaxCodedFrameSize": max_coded_frame_size,
-        "Offset": offset,
-    }))
+    let offset = i32::try_from(object.get("Offset").and_then(Value::as_i64).unwrap_or(0))
+        .map_err(|_| "ALAC cookie offset overflow")?;
+    Ok(json!(crate::preparation::alac::parse_cookie(
+        &hex_decode(hex)?,
+        offset
+    )))
 }
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct AlacFindRequest {
     path: String,
-    cookie: AlacCookie,
-    packets: Vec<AlacPacket>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct AlacCookie {
-    max_samples_per_frame: i32,
-    sample_size: i32,
-    channels: i32,
-    #[serde(rename = "SampleRate")]
-    _sample_rate: i32,
-    #[serde(rename = "MaxCodedFrameSize")]
-    _max_coded_frame_size: i32,
-    #[serde(rename = "Offset")]
-    _offset: i32,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct AlacPacket {
-    presentation_time: f64,
-    size: i32,
-    position: i64,
+    cookie: crate::preparation::alac::Cookie,
+    packets: Vec<crate::preparation::alac::Packet>,
 }
 
 fn alac_find_bad_frames(request: Value) -> Result<Value, String> {
     let request: AlacFindRequest =
         serde_json::from_value(request).map_err(|error| error.to_string())?;
     let data = fs::read(&request.path).map_err(|error| format!("{}: {error}", request.path))?;
-    let mut patches = Vec::new();
-    for (packet_index, packet) in request.packets.iter().enumerate() {
-        if packet.size < 4
-            || packet.position < 0
-            || packet.position as u64 > data.len() as u64
-            || packet.size as u64 > data.len() as u64 - packet.position as u64
-        {
-            continue;
-        }
-        let start = packet.position as usize;
-        let end = start + packet.size as usize;
-        let packet_data = &data[start..end];
-        let header_byte = packet_data[2];
-        if header_byte & 0x02 == 0 {
-            continue;
-        }
-        let has_size = header_byte & 0x10 != 0;
-        let sample_count = if has_size && packet_data.len() >= 7 {
-            read_bits(packet_data, 22, 32).unwrap_or(request.cookie.max_samples_per_frame as u64)
-        } else {
-            request.cookie.max_samples_per_frame as u64
-        };
-        let sample_count = if sample_count == 0 {
-            request.cookie.max_samples_per_frame as u64
-        } else {
-            sample_count
-        };
-        let end_bit = 23i64
-            .checked_add(
-                (sample_count as i64)
-                    .checked_mul(request.cookie.channels as i64)
-                    .and_then(|value| value.checked_mul(request.cookie.sample_size as i64))
-                    .ok_or("ALAC frame bit count overflow")?,
-            )
-            .ok_or("ALAC frame bit count overflow")?;
-        if end_bit < 0 || end_bit + 3 > packet.size as i64 * 8 {
-            continue;
-        }
-        let current =
-            read_bits(packet_data, end_bit as usize, 3).ok_or("ALAC frame bit range is invalid")?;
-        if current != 7 {
-            patches.push(json!({
-                "PacketIndex": packet_index,
-                "PresentationTime": packet.presentation_time,
-                "Position": packet.position,
-                "Size": packet.size,
-                "SampleCount": sample_count,
-                "EndBit": end_bit,
-                "PreviousBits": current,
-            }));
-        }
-    }
-    Ok(Value::Array(patches))
+    crate::preparation::alac::find_patches(&data, &request.cookie, &request.packets)
+        .map(|patches| json!(patches))
+        .map_err(|error| error.message)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -997,26 +994,11 @@ fn alac_apply_patches(request: Value) -> Result<Value, String> {
         serde_json::from_value(request).map_err(|error| error.to_string())?;
     let mut data =
         fs::read(&request.source).map_err(|error| format!("{}: {error}", request.source))?;
-    for patch in &request.patches {
-        if patch.position < 0 || patch.end_bit < 0 {
-            return Err("ALAC patch bit position is negative.".into());
-        }
-        for bit in 0..3i64 {
-            let absolute_bit = patch
-                .position
-                .checked_mul(8)
-                .and_then(|value| value.checked_add(patch.end_bit))
-                .and_then(|value| value.checked_add(bit))
-                .ok_or("ALAC patch bit position overflow")?;
-            let byte_index =
-                usize::try_from(absolute_bit / 8).map_err(|_| "ALAC patch byte index overflow")?;
-            if byte_index >= data.len() {
-                return Err("ALAC patch exceeds the file boundary.".into());
-            }
-            let bit_in_byte = (absolute_bit % 8) as u8;
-            data[byte_index] |= 1 << (7 - bit_in_byte);
-        }
-    }
+    crate::preparation::alac::apply_bits(
+        &mut data,
+        request.patches.iter().map(|p| (p.position, p.end_bit)),
+    )
+    .map_err(|error| error.message)?;
     let parent = Path::new(&request.destination).parent();
     if let Some(parent) = parent
         && !parent.as_os_str().is_empty()
@@ -1026,19 +1008,6 @@ fn alac_apply_patches(request: Value) -> Result<Value, String> {
     fs::write(&request.destination, &data)
         .map_err(|error| format!("{}: {error}", request.destination))?;
     Ok(json!({"WrittenBytes": data.len()}))
-}
-
-fn read_bits(data: &[u8], bit_offset: usize, count: usize) -> Option<u64> {
-    if count == 0 || count > 64 || bit_offset.checked_add(count)? > data.len().checked_mul(8)? {
-        return None;
-    }
-    let mut value = 0u64;
-    for index in 0..count {
-        let bit = bit_offset + index;
-        let byte = data[bit / 8];
-        value = (value << 1) | u64::from((byte >> (7 - bit % 8)) & 1);
-    }
-    Some(value)
 }
 
 fn read_flac(path: &str) -> Result<Vec<(u8, Vec<u8>)>, String> {
@@ -1084,20 +1053,46 @@ fn read_flac_document(bytes: &[u8]) -> Result<(FlacBlocks, usize), String> {
     Ok((blocks, offset))
 }
 
-fn read_flac_text(data: &[u8], offset: &mut usize) -> Result<String, String> {
-    let length = u32_be(&data[*offset..*offset + 4])? as usize;
-    *offset += 4;
-    let end = offset
-        .checked_add(length)
-        .ok_or("FLAC text length overflow")?;
-    if end > data.len() {
-        return Err("FLAC text field is truncated.".into());
+struct FlacReader<'a> {
+    data: &'a [u8],
+    offset: usize,
+}
+impl<'a> FlacReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, offset: 0 }
     }
-    let text = std::str::from_utf8(&data[*offset..end])
-        .map_err(|error| format!("Invalid FLAC UTF-8: {error}"))?
-        .to_owned();
-    *offset = end;
-    Ok(text)
+    fn bytes(&mut self, length: u32) -> Result<&'a [u8], String> {
+        if length > i32::MAX as u32 {
+            return Err("FLAC metadata length is too large.".into());
+        }
+        let end = self
+            .offset
+            .checked_add(length as usize)
+            .ok_or("FLAC metadata length overflow")?;
+        let bytes = self
+            .data
+            .get(self.offset..end)
+            .ok_or("FLAC metadata block is truncated.")?;
+        self.offset = end;
+        Ok(bytes)
+    }
+    fn u32_le(&mut self) -> Result<u32, String> {
+        u32_le(self.bytes(4)?)
+    }
+    fn u32_be(&mut self) -> Result<u32, String> {
+        u32_be(self.bytes(4)?)
+    }
+    fn text(&mut self, length: u32) -> Result<&'a str, String> {
+        std::str::from_utf8(self.bytes(length)?)
+            .map_err(|error| format!("Invalid FLAC UTF-8: {error}"))
+    }
+    fn require_end(&self) -> Result<(), String> {
+        if self.offset == self.data.len() {
+            Ok(())
+        } else {
+            Err("FLAC metadata block has trailing bytes.".into())
+        }
+    }
 }
 
 fn u16_le(data: &[u8]) -> Result<u16, String> {
@@ -1111,11 +1106,6 @@ fn u32_le(data: &[u8]) -> Result<u32, String> {
 fn u32_be(data: &[u8]) -> Result<u32, String> {
     let bytes: [u8; 4] = data.try_into().map_err(|_| "Truncated 32-bit value")?;
     Ok(u32::from_be_bytes(bytes))
-}
-fn i32_be(data: &[u8]) -> Result<i32, String> {
-    Ok(i32::from_be_bytes(
-        data.try_into().map_err(|_| "Truncated 32-bit value")?,
-    ))
 }
 fn hex_encode(data: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";

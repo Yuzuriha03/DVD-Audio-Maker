@@ -1,10 +1,10 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 set "ROOT=%~dp0..\..\"
-set "PROJECT=%ROOT%src\DvdaMaker.Toolchain\DvdaMaker.Toolchain.csproj"
-if not exist "%PROJECT%" (
-  echo [ERROR] Project not found: %PROJECT%
+set "MANIFEST=%ROOT%rust\Cargo.toml"
+if not exist "%MANIFEST%" (
+  echo [ERROR] Rust workspace not found: %MANIFEST%
   exit /b 2
 )
-dotnet run --project "%PROJECT%" -- package %*
+cargo run --target x86_64-pc-windows-gnu --manifest-path "%MANIFEST%" --release --offline -p dvda-toolchain -- package --repo "%ROOT%" %*
 exit /b %ERRORLEVEL%

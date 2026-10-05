@@ -2,37 +2,46 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "GUI (Debug x64)",
-      "type": "coreclr",
+      "name": "Rust GUI (debug x64)",
+      "type": "lldb",
       "request": "launch",
-      "preLaunchTask": "Debug: build GUI x64",
-      "program": "${workspaceFolder}/src/DvdaMaker.Desktop/bin/Debug/net10.0-windows/win-x64/DVD-Audio-Maker.dll",
+      "preLaunchTask": "Rust: build workspace x64",
+      "program": "${workspaceFolder}/rust/target/x86_64-pc-windows-gnu/debug/dvda-desktop.exe",
       "cwd": "${workspaceFolder}",
-      "args": [],
-      "console": "internalConsole",
-      "justMyCode": true
+      "args": [
+        "--profile",
+        "${workspaceFolder}/settings.local.json"
+      ],
+      "terminal": "integrated",
+      "env": {
+        "DVDA_MEDIA_NATIVE_DIR": "${workspaceFolder}/build/media-native-shared",
+        "DVDA_IMAGE_NATIVE_DIR": "${workspaceFolder}/build/image-native",
+        "DVDA_FORMATS_NATIVE_DIR": "${workspaceFolder}/build/formats-native",
+        "DVDA_DISC_VERIFY_LIBRARY": "${workspaceFolder}/build/menu-native/dvda-disc-verify.dll",
+        "DVDA_ENCODER_LIBRARY": "${workspaceFolder}/native/mlp-encoder/win-x64/mlp_encoder.dll"
+      }
     },
     {
-      "name": "CLI (Debug x64)",
-      "type": "coreclr",
+      "name": "Rust CLI (debug x64)",
+      "type": "lldb",
       "request": "launch",
-      "preLaunchTask": "Debug: build CLI x64",
-      "program": "${workspaceFolder}/src/DvdaMaker.Cli/bin/Debug/net10.0-windows/win-x64/dvda.dll",
+      "preLaunchTask": "Rust: build workspace x64",
+      "program": "${workspaceFolder}/rust/target/x86_64-pc-windows-gnu/debug/dvda-cli.exe",
       "cwd": "${workspaceFolder}",
-      "args": ["config"],
-      "console": "integratedTerminal",
-      "justMyCode": true
-    },
-    {
-      "name": "Compatibility tests (Debug x64)",
-      "type": "coreclr",
-      "request": "launch",
-      "preLaunchTask": "Debug: build compatibility tests x64",
-      "program": "${workspaceFolder}/tests/DvdaMaker.CompatibilityTests/bin/Debug/net10.0-windows/win-x64/DvdaMaker.CompatibilityTests.dll",
-      "cwd": "${workspaceFolder}",
-      "args": [],
-      "console": "integratedTerminal",
-      "justMyCode": true
+      "args": [
+        "build",
+        "--profile",
+        "${workspaceFolder}/settings.local.json",
+        "--dry-run"
+      ],
+      "terminal": "integrated",
+      "env": {
+        "DVDA_MEDIA_NATIVE_DIR": "${workspaceFolder}/build/media-native-shared",
+        "DVDA_IMAGE_NATIVE_DIR": "${workspaceFolder}/build/image-native",
+        "DVDA_FORMATS_NATIVE_DIR": "${workspaceFolder}/build/formats-native",
+        "DVDA_DISC_VERIFY_LIBRARY": "${workspaceFolder}/build/menu-native/dvda-disc-verify.dll",
+        "DVDA_ENCODER_LIBRARY": "${workspaceFolder}/native/mlp-encoder/win-x64/mlp_encoder.dll"
+      }
     }
   ]
 }

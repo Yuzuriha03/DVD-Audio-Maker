@@ -1,4 +1,4 @@
-//! File boundaries for legacy env configuration and portable GUI profiles.
+//! File boundaries for portable GUI profiles.
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -6,7 +6,6 @@ use std::fmt;
 use std::{
     fs,
     io::{self, Read, Write},
-    path::Path,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -51,7 +50,7 @@ pub fn outcome(result: Result<Value, Failure>) -> Value {
 }
 
 /// Match StreamReader BOM detection. Invalid sequences use replacement text.
-fn decode_text(bytes: &[u8]) -> String {
+pub fn decode_text(bytes: &[u8]) -> String {
     if bytes.starts_with(&[0xff, 0xfe, 0, 0]) || bytes.starts_with(&[0, 0, 0xfe, 0xff]) {
         let little = bytes[0] == 0xff;
         let mut text: String = bytes[4..]
@@ -91,32 +90,6 @@ fn decode_text(bytes: &[u8]) -> String {
         String::from_utf8_lossy(bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes))
             .into_owned()
     }
-}
-
-fn read_env(path: Option<&str>) -> Result<Value, Failure> {
-    let Some(path) = path.filter(|p| !p.is_empty() && Path::new(p).is_file()) else {
-        return Ok(json!({}));
-    };
-    let mut bytes = Vec::new();
-    crate::identity::open_read(path)?.read_to_end(&mut bytes)?;
-    Ok(json!(crate::config::parse(&decode_text(&bytes))))
-}
-
-fn find_config(request: &Value) -> Value {
-    for key in ["ExplicitPath", "EnvironmentPath"] {
-        if let Some(path) = request[key].as_str().filter(|p| !p.is_empty()) {
-            return json!(path);
-        }
-    }
-    for key in ["BaseDirectory", "WorkingDirectory"] {
-        if let Some(directory) = request[key].as_str() {
-            let path = crate::options::combine(directory, "config.env");
-            if Path::new(&path).is_file() {
-                return json!(path);
-            }
-        }
-    }
-    Value::Null
 }
 
 #[derive(Debug, Serialize)]
@@ -301,8 +274,6 @@ fn save_profile(path: &str, profile: &Value) -> Result<Value, Failure> {
 
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
-        "config.find" => Ok(find_config(&request)),
-        "config.read_file" => Ok(outcome(read_env(request.as_str()))),
         "profile.load" => {
             let path = request["Path"].as_str().ok_or("Missing profile path")?;
             Ok(outcome(read_profile(path, &request["Defaults"])))

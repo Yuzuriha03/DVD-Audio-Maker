@@ -1,35 +1,41 @@
 # C17 format runtime
 
-`tools/formats-native/dvda-formats.c` is the narrow native boundary for deterministic format work. It contains:
+The format boundary is implemented in C17 and exposed through the bundled
+`dvda-formats.dll`. The Rust application uses it for the narrow operations that
+must remain deterministic across the GUI, CLI and verification paths:
 
-- streaming MLP access-unit inspection, CRC/parity checks and alignment repair;
-- byte-for-byte PCM comparison with an explicit zero-tail allowance;
+- MLP access-unit inspection, CRC/parity checks and alignment;
+- byte-for-byte PCM comparison with the documented zero-tail rule;
 - PTS, sample-rate, peak-rate and MLP checksum parsing.
 
-The DLL does not contain the MLP encoder. Encoding remains in the existing encoder core. The C# classes keep their managed implementations as a development fallback, while Windows x64 release builds load `dvda-formats.dll` from the bundled `menu-bin` runtime.
+The DLL does not encode MLP. Encoding is provided by `native/mlp-encoder`.
+There is no C# fallback and there is no external format utility fallback.
 
 ## Build
 
-```bat
-python tools\win-build\build-formats-runtime.py --msys-root "C:\msys64" --output build\formats-native
+```powershell
+python tools/win-build/build-formats-runtime.py --msys-root C:/msys64 --output build/formats-native
 ```
 
-The build requires the x64 MSYS2 MinGW GCC toolchain. The resulting DLL imports only Windows system libraries (`kernel32.dll` and the system C runtime); no third-party format library is copied into the package. `formats-build.json` records the source and output hashes for packaging validation.
+The command uses the repository's x64 MSYS2 MinGW-w64 GCC toolchain. The
+resulting DLL imports only Windows system libraries and the system C runtime.
+`dvda-toolchain package` copies the validated DLL into the release menu runtime.
 
 ## Validation
 
-The normal compatibility runner remains 115 tests. Set `DVDA_FORMATS_NATIVE_DIR` to run those tests through the DLL wherever a file-based helper is used:
+The Rust workspace tests exercise the native ABI and the Rust callers:
 
-```bat
-set "DVDA_FORMATS_NATIVE_DIR=%CD%\build\formats-native"
-tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe
+```powershell
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
 ```
 
-For a byte-level managed/native comparison, use the additional sample command. It temporarily selects the managed fallback, computes the alignment result, then selects the C17 DLL and compares every output byte and every reported change:
+For a sample directory containing MLP files, the development CLI can inspect
+and align every file through the native runtime:
 
-```bat
-tests\DvdaMaker.CompatibilityTests\bin\Debug\net10.0-windows\win-x64\DvdaMaker.CompatibilityTests.exe ^
-  --native-format-samples "D:\samples\mlp"
+```powershell
+cargo run --manifest-path rust/Cargo.toml --offline -p dvda-cli -- formats-sample C:/samples/mlp
 ```
 
-The sample command also compares inspection fields for every file and checks the PTS vectors. It is separate from the numbered 115-test count so the established compatibility baseline remains comparable.
+The command reports file count, bytes, valid headers, alignment results and PTS
+round trips. The normal release package contains the DLL beside the menu
+authoring components; no C# project or .NET runtime is required.

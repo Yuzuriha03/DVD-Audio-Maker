@@ -52,7 +52,7 @@ ASVS 的 `video_attr`（`AUDIO_SV.IFO` 偏移 `0x18`）改成 **NTSC**。
 本补丁把它改成与静图实际制式匹配的值。
 
 **菜单画面的制式不受影响** —— 那由 AMG 的 `amgm_video_attr`（`0x100`）声明，
-仍是 `config.env` 设定的制式（PAL 时为 `0x53`）。
+仍是 JSON profile 设定的制式（PAL 时为 `0x53`）。
 
 
 ---
@@ -294,7 +294,7 @@ MPEG-2 体积**几乎没影响**（mpeg2enc 的输出由码率控制决定）：
     帧率   : img->framerate  →  "30000/1001"
     制式   : img->norm       →  "n"
 
-菜单画面（ANIMATEDVIDEO）不受影响，仍是 `config.env` 里设定的制式。
+菜单画面（ANIMATEDVIDEO）不受影响，仍是 JSON profile 里设定的制式。
 
 配套改动（另见 `menu_assets.py` 的 `STILL_W/STILL_H`）：静图素材要生成
 **720x480**，与本补丁的 NTSC 编码一致。

@@ -1,0 +1,7 @@
+{
+  "Runtime": "10.0.12",
+  "Scalars": 1112064,
+  "NonIdentityMappings": 1470,
+  "PublicComparerChecks": 6672384,
+  "CanonicalU32LeSha256": "985D1B540474D50B01401A5D5277F8CC225041A0C8019B24C5A2A5C0877DB6FE"
+}
