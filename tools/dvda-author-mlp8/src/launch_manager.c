@@ -605,18 +605,25 @@ int launch_manager(command_t *command, globalData *globals)
       uint64_t size;
       errno = 0;
       foutput("%s\n", INF "Creating ISO with the in-process C ISO writer.");
-      if (dvda_iso_write(globals->settings.outdir, dvdisopath,
-                         dvda_iso_volume_identifier && dvda_iso_volume_identifier[0]
-                           ? dvda_iso_volume_identifier : "DVD-AUDIO") != 0)
-        foutput("%s\n", ERR "Could not create ISO image with the in-process writer.");
-
-
-      size = stat_file_size(dvdisopath) / 1024;
-      if ((!errno) && (size > 4 * SIZE_AMG + 2 * SIZE_SAMG + 1))  foutput(MSG_TAG "Image was created with size %" PRIu64 " KB.\n", size);
+      int iso_result = dvda_iso_write(
+          globals->settings.outdir, dvdisopath,
+          dvda_iso_volume_identifier && dvda_iso_volume_identifier[0]
+            ? dvda_iso_volume_identifier : "DVD-AUDIO");
+      if (iso_result != 0)
+        {
+          foutput("%s\n", ERR "Could not create ISO image with the in-process writer.");
+          perror("in-process ISO writer");
+        }
       else
         {
-          foutput("%s\n", ERR "ISO file creation failed -- fix issue.");
-          perror("in-process ISO writer");
+          size = stat_file_size(dvdisopath) / 1024;
+          if ((!errno) && (size > 4 * SIZE_AMG + 2 * SIZE_SAMG + 1))
+            foutput(MSG_TAG "Image was created with size %" PRIu64 " KB.\n", size);
+          else
+            {
+              foutput("%s\n", ERR "ISO file creation failed -- fix issue.");
+              perror("in-process ISO writer");
+            }
         }
     }
 
