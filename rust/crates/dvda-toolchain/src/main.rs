@@ -289,7 +289,7 @@ fn package(options: Args) -> Result<(), String> {
         &inputs,
         &options.version,
         || {
-            build_gui(&repository, &embedded)?;
+            build_gui(&repository, &embedded, &options.version)?;
             copy_file(
                 &target.join("dvda-desktop.exe"),
                 &stage.join("DVD-Audio-Maker.exe"),
@@ -370,7 +370,7 @@ fn write_records(
     fs::write(candidate.join("release-build.json"),serde_json::to_vec_pretty(&serde_json::json!({"version":version,"target":"Windows x64","files":records,"component_manifests":sources})).map_err(io_error)?).map_err(io_error)
 }
 
-fn build_gui(repository: &Path, archive: &Path) -> Result<(), String> {
+fn build_gui(repository: &Path, archive: &Path, version: &str) -> Result<(), String> {
     let status = Command::new("cargo")
         .args([
             "build",
@@ -385,6 +385,7 @@ fn build_gui(repository: &Path, archive: &Path) -> Result<(), String> {
         ])
         .current_dir(repository)
         .env("DVDA_RUNTIME_ARCHIVE", archive)
+        .env("DVDA_PRODUCT_VERSION", version)
         .status()
         .map_err(io_error)?;
     if status.success() {

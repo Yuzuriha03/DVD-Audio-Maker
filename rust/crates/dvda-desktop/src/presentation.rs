@@ -84,6 +84,9 @@ pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String>
     if explicit_problem || problem(text) {
         return Some(localized_log(lang, text));
     }
+    if text.starts_with("[MLP-FINALIZE] ") {
+        return Some(localized_log(lang, text));
+    }
     if let Some(value) = text.strip_prefix("[MLP] 提交 ")
         && let Some(count) = value
             .split_whitespace()
