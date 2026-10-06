@@ -3907,16 +3907,16 @@
     "English": "Default: 1. More jobs process tracks concurrently and use more memory."
   },
   {
-    "Source": "历史文件复现信息",
+    "Source": "旧版 MLP 文件匹配参数",
     "Parameters": 0,
     "Nested": [],
-    "English": "Historical file reproduction context"
+    "English": "Legacy MLP file matching context"
   },
   {
-    "Source": "通常留空。仅在复现历史原版文件字节时选择对应的 stampctx 文件。",
+    "Source": "通常留空。只有需要让内置 MLP 编码结果匹配旧版 SurCode 文件时，才选择对应的 stampctx 文件。",
     "Parameters": 0,
     "Nested": [],
-    "English": "Normally leave empty. Select the matching stampctx file only when reproducing the exact bytes of a historical original file."
+    "English": "Normally leave empty. Select a stampctx file only when matching the output of an older SurCode MLP file."
   },
   {
     "Source": "音源转换临时位置",
@@ -3961,16 +3961,16 @@
     "English": "The number of tracks shown on each menu page."
   },
   {
-    "Source": "显示专辑封面",
+    "Source": "在菜单中显示专辑封面",
     "Parameters": 0,
     "Nested": [],
-    "English": "Show album artwork"
+    "English": "Show album covers in menus"
   },
   {
-    "Source": "将专辑图片作为静态封面加入光盘。",
+    "Source": "在菜单中加入每张专辑的静态封面。",
     "Parameters": 0,
     "Nested": [],
-    "English": "Include album artwork as still pictures on the disc."
+    "English": "Add a still cover for each album to the menus."
   },
   {
     "Source": "封面暗化程度（%）",
