@@ -39,7 +39,7 @@ fn diagnostic(list: &mut Vec<Value>, severity: i32, code: &str, message: String)
 pub fn plan(request: Value) -> Result<Value, String> {
     let tracks = request["Tracks"].as_array().ok_or("Missing Tracks")?;
     let disc_bytes = number(&request, "DiscBytes")?;
-    let maximum = number(&request, "MaxDiscs")?;
+    let planned_discs = number(&request, "PlannedDiscs")?;
     let group_limit = number(&request, "GroupTrackLimit")?;
     let limit = disc_bytes.wrapping_sub(8 * 1024 * 1024).max(0);
     let mut diagnostics = Vec::new();
@@ -57,10 +57,13 @@ pub fn plan(request: Value) -> Result<Value, String> {
             );
         }
     }
+    let desired_discs = planned_discs.max(0) as usize;
+    let total_albums = albums(tracks).len();
+    let target_discs = desired_discs.min(total_albums);
     let mut disc_albums: Vec<Vec<(String, Vec<Value>)>> = Vec::new();
     let mut current = Vec::new();
     let mut bytes = 0i64;
-    for album in albums(tracks) {
+    for (album_index, album) in albums(tracks).into_iter().enumerate() {
         let album_bytes = size(&album.1)?;
         if !current.is_empty() && estimate(bytes.wrapping_add(album_bytes))? > limit {
             disc_albums.push(std::mem::take(&mut current));
@@ -68,6 +71,12 @@ pub fn plan(request: Value) -> Result<Value, String> {
         }
         bytes = bytes.wrapping_add(album_bytes);
         current.push(album);
+        let remaining_albums = total_albums - album_index - 1;
+        let remaining_discs = target_discs.saturating_sub(disc_albums.len() + 1);
+        if remaining_discs > 0 && current.len() >= remaining_albums.div_ceil(remaining_discs) {
+            disc_albums.push(std::mem::take(&mut current));
+            bytes = 0;
+        }
     }
     if !current.is_empty() {
         disc_albums.push(current);
@@ -158,12 +167,15 @@ pub fn plan(request: Value) -> Result<Value, String> {
             .collect();
         discs.push(json!({"Number":disc_index+1,"Albums":albums,"Groups":groups}));
     }
-    if maximum > 0 && discs.len() as i64 > maximum {
+    if planned_discs > 0 && discs.len() < planned_discs as usize {
         diagnostic(
             &mut diagnostics,
-            1,
-            "DISC_COUNT_EXCEEDED",
-            format!("按容量需 {} 张盘，超出期望的 {} 张。", discs.len(), maximum),
+            2,
+            "DISC_COUNT_BELOW_EXPECTED",
+            format!(
+                "期望制作 {} 张盘，但只有 {} 张完整专辑；不跨盘拆分专辑，无法生成更多非空光盘。",
+                planned_discs, total_albums
+            ),
         );
     }
     Ok(

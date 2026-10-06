@@ -40,6 +40,7 @@ const WM_DESTROY: u32 = 0x0002;
 const WM_SIZE: u32 = 0x0005;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const WM_CLOSE: u32 = 0x0010;
+const WM_DRAWITEM: u32 = 0x002b;
 const WM_TIMER: u32 = 0x0113;
 const ID_ADVANCED: usize = 117;
 const WM_COMMAND: u32 = 0x0111;
@@ -76,6 +77,17 @@ const ES_WANTRETURN: u32 = 0x1000;
 const CBS_DROPDOWNLIST: u32 = 0x0003;
 const BS_AUTOCHECKBOX: u32 = 0x0003;
 const BS_PUSHBUTTON: u32 = 0x0000;
+const BS_DEFPUSHBUTTON: u32 = 0x0001;
+const BS_OWNERDRAW: u32 = 0x0000000b;
+const ODS_SELECTED: u32 = 0x0001;
+const ODS_DISABLED: u32 = 0x0004;
+const DT_CENTER: u32 = 0x00000001;
+const DT_VCENTER: u32 = 0x00000004;
+const DT_SINGLELINE: u32 = 0x00000020;
+const RDW_INVALIDATE: u32 = 0x0001;
+const RDW_ERASE: u32 = 0x0004;
+const RDW_UPDATENOW: u32 = 0x0100;
+const RDW_ALLCHILDREN: u32 = 0x0080;
 const SW_SHOW: i32 = 5;
 const SW_HIDE: i32 = 0;
 const GWLP_USERDATA: i32 = -21;
@@ -103,7 +115,7 @@ const ID_SOURCE: usize = 200;
 const ID_FINAL: usize = 201;
 const ID_TITLE: usize = 202;
 const ID_CAPACITY: usize = 203;
-const ID_MAX_DISCS: usize = 204;
+const ID_PLANNED_DISCS: usize = 204;
 const ID_WORK_DIR: usize = 205;
 const ID_ISO_PREFIX: usize = 206;
 const ID_GROUP_LIMIT: usize = 207;
@@ -167,12 +179,26 @@ struct Message {
     point_y: i32,
 }
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 struct Rect {
     left: i32,
     top: i32,
     right: i32,
     bottom: i32,
+}
+
+#[repr(C)]
+struct DrawItemStruct {
+    control_type: u32,
+    control_id: u32,
+    item_id: u32,
+    action: u32,
+    state: u32,
+    item: Hwnd,
+    dc: Handle,
+    rect: Rect,
+    data: usize,
 }
 
 #[repr(C)]
@@ -286,10 +312,12 @@ unsafe extern "system" {
     ) -> Hwnd;
     fn DefWindowProcW(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
     fn GetDlgCtrlID(hwnd: Hwnd) -> i32;
+    fn GetDlgItem(parent: Hwnd, id: i32) -> Hwnd;
     fn GetParent(hwnd: Hwnd) -> Hwnd;
     fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
     fn UpdateWindow(hwnd: Hwnd) -> i32;
     fn MoveWindow(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32, repaint: i32) -> i32;
+    fn RedrawWindow(hwnd: Hwnd, update: *const Rect, region: Handle, flags: u32) -> i32;
     fn SetWindowPos(
         hwnd: Hwnd,
         after: Hwnd,
@@ -323,6 +351,8 @@ unsafe extern "system" {
     fn SetWindowTextW(hwnd: Hwnd, text: *const u16) -> i32;
     fn GetWindowTextLengthW(hwnd: Hwnd) -> i32;
     fn GetWindowTextW(hwnd: Hwnd, text: *mut u16, length: i32) -> i32;
+    fn DrawTextW(dc: Handle, text: *const u16, length: i32, rect: *mut Rect, format: u32) -> i32;
+    fn FillRect(dc: Handle, rect: *const Rect, brush: Hbrush) -> i32;
     fn SendMessageW(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
     fn SetTimer(hwnd: Hwnd, id: usize, millis: u32, callback: *const c_void) -> usize;
     fn KillTimer(hwnd: Hwnd, id: usize) -> i32;
@@ -371,6 +401,8 @@ unsafe extern "system" {
         pitch: u32,
         face: *const u16,
     ) -> Handle;
+    fn CreateSolidBrush(color: u32) -> Hbrush;
+    fn DeleteObject(object: Handle) -> i32;
 }
 
 #[link(name = "comctl32")]
@@ -467,7 +499,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "成品保存位置",
             "title" => "光盘名称",
             "capacity" => "光盘容量",
-            "max_discs" => "最多制作几张",
+            "planned_discs" => "计划光盘数",
             "work_dir" => "工作文件夹",
             "iso_prefix" => "镜像文件名前缀",
             "group_limit" => "每组最多曲目",
@@ -487,7 +519,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_sc" => "中文菜单字体",
             "font_jp" => "日文菜单字体",
             "font_kr" => "韩文菜单字体",
-            "tools" => "工具与高级",
+            "tools" => "其他设置",
             "author" => "光盘制作工具",
             "author_src" => "菜单素材文件夹",
             "keep_tmp" => "保留临时文件",
@@ -510,6 +542,9 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "export" => "导出详细日志...",
             "ready" => "准备就绪",
             "ready_hint" => "选择音源和成品位置，然后点击“开始制作”。",
+            "operation_section" => "任务状态",
+            "log_section" => "活动日志",
+            "statistics" => "用时 {0}:{1}:{2} · 提醒 {3}",
             "running_confirm" => "任务仍在运行。要停止任务并退出吗？",
             "log_found_audio" => "发现 {0} 个音频文件，正在读取曲目信息。",
             "log_resample_none" => "音源采样率符合设置，无需重采样。",
@@ -561,6 +596,16 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "import_note" => {
                 "MLP 无损压缩、占用较小；LPCM 不压缩。导入已有 MLP 时，选择与音源目录结构对应的文件夹。"
             }
+            "mlp_note" => {
+                "MLP 编码会进行无损压缩，适合大多数 DVD-Audio 制作。采样率和位深按右侧设置处理。"
+            }
+            "lpcm_note" => "LPCM 不压缩音频，速度较快但占用空间更大。请确认光盘容量足够。",
+            "invalid_sample_rate" => "MLP 目标采样率无效。",
+            "invalid_bits" => "MLP 目标位深必须为 16、20 或 24。",
+            "invalid_integer" => "请输入 {0} 至 {1} 的整数。",
+            "invalid_nonnegative" => "请输入非负有限数值。",
+            "invalid_title_mode" => "标题分组规则须为 album、one 或正整数。",
+            "invalid_album_limit" => "请输入非负整数，或留空。",
             "select_profile" => "选择 JSON 方案",
             "select_log" => "保存日志",
             "copy_ok" => "日志已复制到剪贴板。",
@@ -586,7 +631,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "Output folder",
             "title" => "Disc title",
             "capacity" => "Disc capacity",
-            "max_discs" => "Maximum discs",
+            "planned_discs" => "Planned discs to create",
             "work_dir" => "Work folder",
             "iso_prefix" => "ISO filename prefix",
             "group_limit" => "Tracks per group",
@@ -606,7 +651,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_sc" => "Chinese menu font",
             "font_jp" => "Japanese menu font",
             "font_kr" => "Korean menu font",
-            "tools" => "Tools and advanced",
+            "tools" => "Other settings",
             "author" => "Disc author",
             "author_src" => "Menu resource folder",
             "keep_tmp" => "Keep temporary files",
@@ -629,6 +674,9 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "export" => "Export full log...",
             "ready" => "Ready",
             "ready_hint" => "Choose a source and output folder, then select Build discs.",
+            "operation_section" => "Task status",
+            "log_section" => "Activity log",
+            "statistics" => "Elapsed {0}:{1}:{2} · Notices {3}",
             "running_confirm" => "A task is still running. Stop it and exit?",
             "log_found_audio" => "Found {0} audio files. Reading track information.",
             "log_resample_none" => {
@@ -684,6 +732,18 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "import_note" => {
                 "MLP uses lossless compression; LPCM is uncompressed. To import MLP files, select a folder matching your source folder structure."
             }
+            "mlp_note" => {
+                "MLP uses lossless compression and is suitable for most DVD-Audio projects. The sample rate and bit depth follow the settings above."
+            }
+            "lpcm_note" => {
+                "LPCM stores uncompressed audio. It is quick, but uses more disc space; make sure the selected capacity is sufficient."
+            }
+            "invalid_sample_rate" => "The MLP target sample rate is invalid.",
+            "invalid_bits" => "MLP bit depth must be 16, 20, or 24.",
+            "invalid_integer" => "Enter an integer from {0} to {1}.",
+            "invalid_nonnegative" => "Enter a finite non-negative number.",
+            "invalid_title_mode" => "Title grouping must be album, one, or a positive integer.",
+            "invalid_album_limit" => "Enter a non-negative integer, or leave this blank.",
             "select_profile" => "Select JSON profile",
             "select_log" => "Save log",
             "copy_ok" => "Log copied to the clipboard.",
@@ -709,7 +769,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "出力フォルダー",
             "title" => "ディスク名",
             "capacity" => "ディスク容量",
-            "max_discs" => "最大ディスク数",
+            "planned_discs" => "作成予定枚数",
             "work_dir" => "作業フォルダー",
             "iso_prefix" => "ISO ファイル名の接頭辞",
             "group_limit" => "グループの曲数",
@@ -729,7 +789,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_sc" => "中国語メニュー字体",
             "font_jp" => "日本語メニュー字体",
             "font_kr" => "韓国語メニュー字体",
-            "tools" => "ツールと詳細設定",
+            "tools" => "その他の設定",
             "author" => "ディスク作成ツール",
             "author_src" => "メニュー素材フォルダー",
             "keep_tmp" => "一時ファイルを保持",
@@ -752,6 +812,9 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "export" => "ログを保存...",
             "ready" => "準備完了",
             "ready_hint" => "音源と出力フォルダーを選び、「ディスクを作成」を押してください。",
+            "operation_section" => "タスクの状態",
+            "log_section" => "アクティビティログ",
+            "statistics" => "経過時間 {0}:{1}:{2} · 注意 {3}",
             "running_confirm" => "タスクが実行中です。停止して終了しますか？",
             "log_found_audio" => "音声ファイルが {0} 件見つかりました。曲情報を確認しています。",
             "log_resample_none" => {
@@ -807,6 +870,18 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "import_note" => {
                 "MLP はロスレス圧縮、LPCM は非圧縮です。MLP を読み込む場合は、音源と同じフォルダー構成の場所を選択してください。"
             }
+            "mlp_note" => {
+                "MLP はロスレス圧縮で、多くの DVD-Audio 制作に適しています。サンプルレートとビット深度は上の設定を使用します。"
+            }
+            "lpcm_note" => {
+                "LPCM は非圧縮音声です。処理は速いですが容量を多く使うため、ディスク容量を確認してください。"
+            }
+            "invalid_sample_rate" => "MLP の目標サンプルレートが無効です。",
+            "invalid_bits" => "MLP のビット深度は 16、20、24 のいずれかです。",
+            "invalid_integer" => "{0} から {1} までの整数を入力してください。",
+            "invalid_nonnegative" => "0 以上の有限な数値を入力してください。",
+            "invalid_title_mode" => "タイトルの区切りは album、one、または正の整数です。",
+            "invalid_album_limit" => "0 以上の整数を入力するか、空欄にしてください。",
             "select_profile" => "JSON プロファイルを選択",
             "select_log" => "ログを保存",
             "copy_ok" => "ログをクリップボードにコピーしました。",
@@ -856,7 +931,7 @@ struct Controls {
     title: Hwnd,
     capacity: Hwnd,
     custom_bytes: Hwnd,
-    max_discs: Hwnd,
+    planned_discs: Hwnd,
     work_dir: Hwnd,
     iso_prefix: Hwnd,
     group_limit: Hwnd,
@@ -884,6 +959,7 @@ struct Controls {
     loss_error: Hwnd,
     status: Hwnd,
     activity: Hwnd,
+    audio_note: Hwnd,
     progress: Hwnd,
     log_view: Hwnd,
     only_issues: Hwnd,
@@ -924,6 +1000,7 @@ struct UiState {
     started: Option<Instant>,
     elapsed_seconds: u64,
     problem_count: usize,
+    statistics_text: String,
     splitter_height: Option<i32>,
     splitter_position: i32,
     dragging_splitter: bool,
@@ -1228,6 +1305,16 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        WM_DRAWITEM => {
+            if lparam != 0 {
+                let item = unsafe { &*(lparam as *const DrawItemStruct) };
+                if item.control_id as usize == ID_CANCEL {
+                    unsafe { draw_stop_button(item) };
+                    return 1;
+                }
+            }
+            0
+        }
         WM_NOTIFY => {
             if lparam != 0 {
                 let header = unsafe { &*(lparam as *const NotifyHeader) };
@@ -1289,6 +1376,15 @@ unsafe extern "system" fn page_proc(
     match message {
         WM_SIZE => {
             scroll_page(hwnd, 0, false);
+            resize_page_fields(hwnd);
+            unsafe {
+                RedrawWindow(
+                    hwnd,
+                    ptr::null(),
+                    ptr::null_mut(),
+                    RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW | RDW_ALLCHILDREN,
+                );
+            }
             0
         }
         0x0115 => {
@@ -1368,6 +1464,41 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     }
 }
 
+fn resize_page_fields(page: Hwnd) {
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(page, &mut rect);
+    }
+    let width = rect.right.max(1);
+    // Browse rows share the same geometry. Keeping the edit and its button
+    // inside the page client area prevents a clipped right border after a
+    // window resize or a DPI/layout change.
+    let edit_width = (width - 14 - 100).max(120);
+    for (edit_id, browse_id, y) in [
+        (ID_SOURCE, ID_BROWSE_SOURCE, 38),
+        (ID_FINAL, ID_BROWSE_FINAL, 82),
+        (ID_WORK_DIR, ID_BROWSE_WORK, 170),
+        (ID_METADATA, ID_BROWSE_METADATA, 100),
+        (ID_IMPORT_FOLDER, ID_BROWSE_IMPORT, 156),
+        (ID_AUTHOR, ID_BROWSE_AUTHOR, 38),
+        (ID_AUTHOR_SRC, ID_BROWSE_AUTHOR_SRC, 82),
+    ] {
+        let edit = unsafe { GetDlgItem(page, edit_id as i32) };
+        let browse = unsafe { GetDlgItem(page, browse_id as i32) };
+        if !edit.is_null() {
+            unsafe { MoveWindow(edit, 14, y, edit_width, 25, 1) };
+        }
+        if !browse.is_null() {
+            unsafe { MoveWindow(browse, 14 + edit_width + 10, y - 2, 90, 29, 1) };
+        }
+    }
+}
+
 unsafe fn state<'a>(hwnd: Hwnd) -> Option<&'a mut UiState> {
     let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut UiState;
     (!pointer.is_null()).then(|| unsafe { &mut *pointer })
@@ -1397,7 +1528,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         parent,
         "EDIT",
         "",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
         120,
         11,
         620,
@@ -1480,7 +1611,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         title: ptr::null_mut(),
         capacity: ptr::null_mut(),
         custom_bytes: ptr::null_mut(),
-        max_discs: ptr::null_mut(),
+        planned_discs: ptr::null_mut(),
         work_dir: ptr::null_mut(),
         iso_prefix: ptr::null_mut(),
         group_limit: ptr::null_mut(),
@@ -1508,6 +1639,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         loss_error: ptr::null_mut(),
         status: ptr::null_mut(),
         activity: ptr::null_mut(),
+        audio_note: ptr::null_mut(),
         progress: ptr::null_mut(),
         log_view: ptr::null_mut(),
         only_issues: ptr::null_mut(),
@@ -1572,11 +1704,11 @@ fn create_controls(parent: Hwnd) -> UiState {
     combo_add(c.capacity, tr(lang, "dvd9"));
     combo_add(c.capacity, tr(lang, "custom"));
     combo_select(c.capacity, 0);
-    c.max_discs = text_field(
+    c.planned_discs = text_field(
         page_start,
-        tr(lang, "max_discs"),
-        "max_discs",
-        ID_MAX_DISCS,
+        tr(lang, "planned_discs"),
+        "planned_discs",
+        ID_PLANNED_DISCS,
         760,
         106,
         170,
@@ -1721,10 +1853,10 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    label(
+    c.audio_note = label(
         page_audio,
-        tr(lang, "import_note"),
-        "import_note",
+        tr(lang, "mlp_note"),
+        "audio_note",
         14,
         194,
         900,
@@ -1926,12 +2058,22 @@ fn create_controls(parent: Hwnd) -> UiState {
         460,
         &mut labels,
     );
+    let _operation_section = label(
+        parent,
+        tr(lang, "operation_section"),
+        "operation_section",
+        18,
+        426,
+        220,
+        18,
+        &mut labels,
+    );
     let status = label(
         parent,
         tr(lang, "ready"),
         "ready",
         18,
-        432,
+        448,
         220,
         24,
         &mut labels,
@@ -1941,7 +2083,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         tr(lang, "ready_hint"),
         "ready_hint",
         250,
-        432,
+        448,
         650,
         24,
         &mut labels,
@@ -1952,12 +2094,22 @@ fn create_controls(parent: Hwnd) -> UiState {
         "",
         WS_CHILD | WS_VISIBLE,
         18,
-        460,
+        476,
         1140,
         8,
         0,
     );
-    let log_view = combo(parent, ID_LOG_VIEW, 18, 480, 140, 120);
+    let _log_section = label(
+        parent,
+        tr(lang, "log_section"),
+        "log_section",
+        18,
+        488,
+        220,
+        18,
+        &mut labels,
+    );
+    let log_view = combo(parent, ID_LOG_VIEW, 18, 508, 140, 120);
     combo_add(log_view, tr(lang, "summary"));
     combo_add(log_view, tr(lang, "detail"));
     combo_select(log_view, 0);
@@ -1966,11 +2118,11 @@ fn create_controls(parent: Hwnd) -> UiState {
         tr(lang, "issues"),
         ID_ONLY_ISSUES,
         170,
-        480,
+        508,
         150,
         24,
     );
-    let live = checkbox(parent, tr(lang, "live"), ID_LIVE, 330, 480, 150, 24);
+    let live = checkbox(parent, tr(lang, "live"), ID_LIVE, 330, 508, 150, 24);
     check(live, true);
     let copy = button(parent, tr(lang, "copy"), ID_COPY, 720, 478, 125, 28);
     let export = button(parent, tr(lang, "export"), ID_EXPORT, 855, 478, 130, 28);
@@ -1980,14 +2132,13 @@ fn create_controls(parent: Hwnd) -> UiState {
         "",
         WS_CHILD
             | WS_VISIBLE
-            | WS_BORDER
             | WS_VSCROLL
             | ES_MULTILINE
             | ES_AUTOVSCROLL
             | ES_READONLY
             | ES_WANTRETURN,
         18,
-        512,
+        540,
         1140,
         215,
         ID_LOG,
@@ -1996,9 +2147,9 @@ fn create_controls(parent: Hwnd) -> UiState {
         SendMessageW(log, EM_SETLIMITTEXT, 1_000_000, 0);
     }
     let prepare = button(parent, tr(lang, "check"), ID_PREPARE, 18, 740, 145, 34);
-    let build = button(parent, tr(lang, "build"), ID_BUILD, 175, 740, 145, 34);
+    let build = primary_button(parent, tr(lang, "build"), ID_BUILD, 175, 740, 145, 34);
     let verify = button(parent, tr(lang, "verify"), ID_VERIFY, 332, 740, 145, 34);
-    let cancel = button(parent, tr(lang, "cancel"), ID_CANCEL, 490, 740, 145, 34);
+    let cancel = danger_button(parent, tr(lang, "cancel"), ID_CANCEL, 490, 740, 145, 34);
     let open_output = button(
         parent,
         tr(lang, "open_output"),
@@ -2131,6 +2282,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         started: None,
         elapsed_seconds: 0,
         problem_count: 0,
+        statistics_text: String::new(),
         splitter_height: None,
         splitter_position: 420,
         dragging_splitter: false,
@@ -2218,7 +2370,7 @@ fn text_field(
         parent,
         "EDIT",
         "",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
         x,
         y + 20,
         width,
@@ -2246,7 +2398,7 @@ fn browse_edit(
         parent,
         "EDIT",
         "",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
         x,
         y + 20,
         820,
@@ -2338,6 +2490,34 @@ fn button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -
         "BUTTON",
         text,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        x,
+        y,
+        w,
+        h,
+        id,
+    )
+}
+
+fn primary_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
+    create(
+        parent,
+        "BUTTON",
+        text,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+        x,
+        y,
+        w,
+        h,
+        id,
+    )
+}
+
+fn danger_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
+    create(
+        parent,
+        "BUTTON",
+        text,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         x,
         y,
         w,
@@ -2571,10 +2751,10 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                     MoveWindow(*handle, width - 285, 10, 150, 28, 1);
                 }
                 "copy" => {
-                    MoveWindow(*handle, width - 350, 478 + delta, 150, 28, 1);
+                    MoveWindow(*handle, width - 350, 508 + delta, 150, 28, 1);
                 }
                 "export" => {
-                    MoveWindow(*handle, width - 190, 478 + delta, 170, 28, 1);
+                    MoveWindow(*handle, width - 190, 508 + delta, 170, 28, 1);
                 }
                 _ => {}
             }
@@ -2589,6 +2769,12 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                 }
                 "app_subtitle" => {
                     MoveWindow(*handle, 18, 42, 410, 20, 1);
+                }
+                "operation_section" => {
+                    MoveWindow(*handle, margin, 426 + delta, 220, 18, 1);
+                }
+                "log_section" => {
+                    MoveWindow(*handle, margin, 488 + delta, 220, 18, 1);
                 }
                 _ => {}
             }
@@ -2621,32 +2807,32 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                 1,
             );
         }
-        MoveWindow(state.controls.status, margin, 430 + delta, 300, 26, 1);
+        MoveWindow(state.controls.status, margin, 448 + delta, 300, 24, 1);
         MoveWindow(
             state.controls.activity,
             330,
-            430 + delta,
+            448 + delta,
             width - 350,
-            30,
+            24,
             1,
         );
         MoveWindow(
             state.controls.progress,
             margin,
-            460 + delta,
+            476 + delta,
             width - margin * 2,
             8,
             1,
         );
-        MoveWindow(state.controls.log_view, margin, 480 + delta, 140, 120, 1);
-        MoveWindow(state.controls.only_issues, 170, 480 + delta, 150, 24, 1);
-        MoveWindow(state.controls.live, 330, 480 + delta, 150, 24, 1);
+        MoveWindow(state.controls.log_view, margin, 508 + delta, 140, 120, 1);
+        MoveWindow(state.controls.only_issues, 170, 508 + delta, 150, 24, 1);
+        MoveWindow(state.controls.live, 330, 508 + delta, 150, 24, 1);
         MoveWindow(
             state.controls.log,
             margin,
-            512 + delta,
+            540 + delta,
             width - margin * 2,
-            (height - 590 - delta).max(80),
+            (height - 618 - delta).max(80),
             1,
         );
         MoveWindow(state.controls.prepare, margin, bottom - 34, 145, 34, 1);
@@ -2660,6 +2846,52 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             145,
             34,
             1,
+        );
+        RedrawWindow(
+            hwnd,
+            ptr::null(),
+            ptr::null_mut(),
+            RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW | RDW_ALLCHILDREN,
+        );
+    }
+}
+
+unsafe fn draw_stop_button(item: &DrawItemStruct) {
+    // Owner-drawing keeps the stop action visually distinct even when the
+    // Windows theme ignores WM_CTLCOLORBTN for regular buttons.
+    let color = if item.state & ODS_DISABLED != 0 {
+        0x00808080
+    } else if item.state & ODS_SELECTED != 0 {
+        0x001818a8
+    } else {
+        0x002828c6
+    };
+    let brush = unsafe { CreateSolidBrush(color) };
+    if brush.is_null() {
+        return;
+    }
+    unsafe {
+        FillRect(item.dc, &item.rect, brush);
+        DeleteObject(brush as Handle);
+        SetBkMode(item.dc, 1);
+        SetTextColor(
+            item.dc,
+            if item.state & ODS_DISABLED != 0 {
+                0x00d0d0d0
+            } else {
+                0x00ffffff
+            },
+        );
+        let length = GetWindowTextLengthW(item.item).max(0) as usize;
+        let mut text = vec![0u16; length + 1];
+        let count = GetWindowTextW(item.item, text.as_mut_ptr(), text.len() as i32);
+        let mut rect = item.rect;
+        DrawTextW(
+            item.dc,
+            text.as_ptr(),
+            count,
+            &mut rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
         );
     }
 }
@@ -2743,6 +2975,7 @@ fn handle_command(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
 
 fn set_language(state: &mut UiState, lang: Lang) {
     state.lang = lang;
+    state.statistics_text.clear();
     combo_select(
         state.controls.language,
         match lang {
@@ -2798,6 +3031,7 @@ fn set_language(state: &mut UiState, lang: Lang) {
         state.controls.activity,
         &localized_log(lang, &state.activity_raw),
     );
+    update_choices(state);
     render_log(state);
     update_statistics(state);
 }
@@ -2824,21 +3058,36 @@ fn mode_value(index: i32) -> &'static str {
     }
 }
 fn update_choices(state: &UiState) {
+    let mode = combo_index(state.controls.mode);
+    let imported = mode == 2;
+    set_text(
+        state.controls.audio_note,
+        tr(state.lang, audio_note_key(mode)),
+    );
     unsafe {
         EnableWindow(
             state.controls.custom_bytes,
             i32::from(combo_index(state.controls.capacity) == 2),
         );
-        let imported = combo_index(state.controls.mode) == 2;
         EnableWindow(state.controls.import_folder, i32::from(imported));
         for hwnd in [
             state.controls.rate,
             state.controls.bits,
             state.controls.jobs,
             state.controls.metadata,
+            state.controls.pcm_temp,
+            state.controls.mlp_stage,
         ] {
             EnableWindow(hwnd, i32::from(!imported));
         }
+    }
+}
+
+fn audio_note_key(mode: i32) -> &'static str {
+    match mode {
+        1 => "lpcm_note",
+        2 => "import_note",
+        _ => "mlp_note",
     }
 }
 
@@ -2869,8 +3118,8 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         &options.integer("DiscBytes").to_string(),
     );
     set_text(
-        state.controls.max_discs,
-        &options.integer("MaxDiscs").to_string(),
+        state.controls.planned_discs,
+        &options.integer("PlannedDiscs").to_string(),
     );
     set_text(state.controls.work_dir, &options.text("BuildDirectory"));
     set_text(
@@ -2988,8 +3237,8 @@ fn overrides(state: &UiState) -> Map<String, Value> {
     );
     put(
         &mut values,
-        "MaxDiscs",
-        json!(parse_i64(state.controls.max_discs, 2)),
+        "PlannedDiscs",
+        json!(parse_i64(state.controls.planned_discs, 2)),
     );
     put(
         &mut values,
@@ -3132,17 +3381,16 @@ fn update_statistics(state: &mut UiState) {
         .started
         .map_or(state.elapsed_seconds, |s| s.elapsed().as_secs());
     let problems = state.problem_count;
-    let text = format!(
-        "用时 {}:{:02}:{:02} · 提醒 {}",
-        elapsed / 3600,
-        elapsed / 60 % 60,
-        elapsed % 60,
-        problems
-    );
-    set_text(
-        state.controls.statistics,
-        &localized_detail(state.lang, &text),
-    );
+    let text = tr(state.lang, "statistics")
+        .replace("{0}", &(elapsed / 3600).to_string())
+        .replace("{1}", &format!("{:02}", elapsed / 60 % 60))
+        .replace("{2}", &format!("{:02}", elapsed % 60))
+        .replace("{3}", &problems.to_string());
+    let display = localized_detail(state.lang, &text);
+    if state.statistics_text != display {
+        set_text(state.controls.statistics, &display);
+        state.statistics_text = display;
+    }
 }
 fn valid_integer(value: &str, min: i64, max: i64) -> bool {
     value
@@ -3154,12 +3402,12 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
     let c = &state.controls;
     let mut error = None;
     if for_task && !SAMPLE_RATES.contains(&numeric_choice(c.rate, SAMPLE_RATES)) {
-        error = Some((c.rate, "MLP 目标采样率无效。".into()));
+        error = Some((c.rate, tr(state.lang, "invalid_sample_rate").into()));
     } else if for_task && !SAMPLE_BITS.contains(&numeric_choice(c.bits, SAMPLE_BITS)) {
-        error = Some((c.bits, "MLP 目标位深必须为 16、20 或 24。".into()));
+        error = Some((c.bits, tr(state.lang, "invalid_bits").into()));
     }
     for (control, key, min, max) in [
-        (c.max_discs, "max_discs", 0, 999),
+        (c.planned_discs, "planned_discs", 0, 999),
         (c.group_limit, "group_limit", 1, 99),
         (c.jobs, "jobs", 1, 16),
         (c.tracks, "tracks", 1, 32),
@@ -3169,7 +3417,13 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
         if error.is_none() && !valid_integer(&get_text(control), min, max) {
             error = Some((
                 control,
-                format!("{}：请输入 {} 至 {} 的整数。", tr(Lang::Zh, key), min, max),
+                format!(
+                    "{}：{}",
+                    tr(state.lang, key),
+                    tr(state.lang, "invalid_integer")
+                        .replace("{0}", &min.to_string())
+                        .replace("{1}", &max.to_string())
+                ),
             ));
             break;
         }
@@ -3181,8 +3435,11 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
         error = Some((
             c.custom_bytes,
             format!(
-                "{}：请输入 0 至 10000000000 的整数。",
-                tr(Lang::Zh, "custom_bytes")
+                "{}：{}",
+                tr(state.lang, "custom_bytes"),
+                tr(state.lang, "invalid_integer")
+                    .replace("{0}", "0")
+                    .replace("{1}", "10000000000")
             ),
         ));
     }
@@ -3195,7 +3452,11 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
         {
             error = Some((
                 control,
-                format!("{}：请输入非负有限数值。", tr(Lang::Zh, key)),
+                format!(
+                    "{}：{}",
+                    tr(state.lang, key),
+                    tr(state.lang, "invalid_nonnegative")
+                ),
             ));
         }
     }
@@ -3204,10 +3465,7 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
         && !matches!(title.trim().to_ascii_lowercase().as_str(), "album" | "one")
         && !valid_integer(&title, 1, i32::MAX as i64)
     {
-        error = Some((
-            c.title_mode,
-            "标题分组规则须为 album、one 或正整数。".into(),
-        ));
+        error = Some((c.title_mode, tr(state.lang, "invalid_title_mode").into()));
     }
     if error.is_none()
         && !get_text(c.album_limit).trim().is_empty()
@@ -3215,7 +3473,11 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
     {
         error = Some((
             c.album_limit,
-            format!("{}：请输入非负整数，或留空。", tr(Lang::Zh, "album_limit")),
+            format!(
+                "{}：{}",
+                tr(state.lang, "album_limit"),
+                tr(state.lang, "invalid_album_limit")
+            ),
         ));
     }
     if let Some((control, message)) = error {
@@ -3396,7 +3658,7 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "FinalDirectory" => "DVDA_FINAL_DIR",
             "Title" => "DVDA_TITLE",
             "DiscBytes" => "DVDA_DISC_BYTES",
-            "MaxDiscs" => "DVDA_MAX_DISCS",
+            "PlannedDiscs" => "DVDA_PLANNED_DISCS",
             "BuildDirectory" => "DVDA_BUILD_DIR",
             "IsoPrefix" => "DVDA_ISO_PREFIX",
             "GroupTrackLimit" => "DVDA_GROUP_TRACK_LIMIT",
@@ -3935,7 +4197,7 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.title, "DVDA_TITLE"),
         (c.capacity, "DVDA_DISC_BYTES"),
         (c.custom_bytes, "DVDA_DISC_BYTES"),
-        (c.max_discs, "DVDA_MAX_DISCS"),
+        (c.planned_discs, "DVDA_PLANNED_DISCS"),
         (c.work_dir, "DVDA_BUILD_DIR"),
         (c.iso_prefix, "DVDA_ISO_PREFIX"),
         (c.group_limit, "DVDA_GROUP_TRACK_LIMIT"),
@@ -4661,6 +4923,19 @@ mod presentation_tests {
         assert_eq!(capacity_index(8_543_666_176), 2);
         assert!(valid_integer("0", 0, 10_000_000_000));
         assert!(!valid_integer("10000000001", 0, 10_000_000_000));
+    }
+
+    #[test]
+    fn audio_mode_note_matches_the_selected_workflow() {
+        assert_eq!(audio_note_key(0), "mlp_note");
+        assert_eq!(audio_note_key(1), "lpcm_note");
+        assert_eq!(audio_note_key(2), "import_note");
+        assert_eq!(audio_note_key(99), "mlp_note");
+        for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+            for mode in [0, 1, 2] {
+                assert!(!tr(lang, audio_note_key(mode)).is_empty());
+            }
+        }
     }
 
     #[test]

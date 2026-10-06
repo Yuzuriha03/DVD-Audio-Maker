@@ -3763,10 +3763,10 @@
     "English": "Choose DVD5 for a standard single-layer disc, or DVD9 for a dual-layer disc."
   },
   {
-    "Source": "最多制作几张",
+    "Source": "计划光盘数",
     "Parameters": 0,
     "Nested": [],
-    "English": "Maximum disc count"
+    "English": "Planned discs to create"
   },
   {
     "Source": "填 0 表示不限张数，曲目会自动分盘。",

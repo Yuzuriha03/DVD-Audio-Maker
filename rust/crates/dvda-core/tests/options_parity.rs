@@ -29,7 +29,7 @@ fn option_precedence_sources_numeric_fallbacks_and_derived_paths() {
         assert_eq!(p[key]["Value"], value);
     }
     assert_eq!(p["DiscBytes"]["Value"], 4_707_319_808_i64);
-    assert_eq!(p["MaxDiscs"]["Value"], 2);
+    assert_eq!(p["PlannedDiscs"]["Value"], 2);
     assert_eq!(result["Sources"]["DVDA_SRC"], "环境变量");
     assert_eq!(result["Sources"]["DVDA_TITLE"], "settings.json");
     assert_eq!(result["Sources"]["CUSTOM_VALUE"], "settings.json");

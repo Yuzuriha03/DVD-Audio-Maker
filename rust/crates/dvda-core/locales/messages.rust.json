@@ -1,5 +1,11 @@
 [
   [
+    "期望制作 {0} 张盘，但只有 {1} 张完整专辑；不跨盘拆分专辑，无法生成更多非空光盘。",
+    "期望制作 {0} 张盘，但只有 {1} 张完整专辑；不跨盘拆分专辑，无法生成更多非空光盘。",
+    "The expected disc count is {0}, but there are only {1} complete albums; albums are not split across discs, so more non-empty discs cannot be created.",
+    "{0} 枚のディスクを想定していますが、完全なアルバムは {1} 枚しかありません。アルバムをディスク間で分割しないため、これ以上の空でないディスクは作成できません。"
+  ],
+  [
     "Cannot get application instance",
     "无法初始化应用程序。",
     "Cannot initialize the application.",
