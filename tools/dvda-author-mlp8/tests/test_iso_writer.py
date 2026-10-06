@@ -128,6 +128,10 @@ def main():
                         str(WRITER), str(HARNESS), "-o", str(harness)], check=True)
         output = work / "sample.iso"
         subprocess.run([str(harness), str(source), str(output), "DVD-AUDIO-TEST"], check=True)
+        long_volume_output = work / "long-volume.iso"
+        subprocess.run([str(harness), str(source), str(long_volume_output),
+                        "Wuthering Waves Singles & EPs 1"], check=True)
+        assert long_volume_output.is_file()
         if args.keep_image:
             args.keep_image.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(output, args.keep_image)

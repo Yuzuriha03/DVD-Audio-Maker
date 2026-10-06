@@ -49,7 +49,6 @@
     fd = open(filename, O_RDONLY);
     if (fd == -1)
     {
-        close(fd);
         fprintf(stderr, "[ERR]" "   Impossible to open file %s for checking size.\n", filename);
         perror("       ");
         return 0;
@@ -59,7 +58,9 @@
 
     if (fp == NULL)
     {
+        int saved_errno = errno;
         close(fd);
+        errno = saved_errno;
         fprintf(stderr, "[ERR]" "   Impossible to fdopen file %s for checking size.\n", filename);
         perror("       ");
         return 0;
@@ -69,7 +70,9 @@
 
     if ((fstat(fd, &st) != 0) || (!S_ISREG(st.st_mode)))
     {
-        close(fd);
+        int saved_errno = errno;
+        fclose(fp);
+        errno = saved_errno;
         fprintf(stderr, "[ERR]" "   Impossible to fstat file %s for checking size.\n", filename);
         perror("       ");
         return 0;
@@ -78,21 +81,25 @@
 
     if (fseeko(fp, 0 , SEEK_END) != 0)
     {
-        close(fd);
+        int saved_errno = errno;
+        fclose(fp);
+        errno = saved_errno;
         fprintf(stderr, "[ERR]" "   Impossible to fseeko file %s for checking size.\n", filename);
         perror("       ");
         return 0;
     }
 
     file_size = ftello(fp);
-
-    fclose(fp);
-
     if (file_size == -1)
     {
+      int saved_errno = errno;
+      fclose(fp);
+      errno = saved_errno;
       perror(ANSI_COLOR_RED "[ERR]");
       return 0;
     }
+
+    fclose(fp);
 
     return (uint64_t) file_size;
 }

@@ -2,6 +2,7 @@ use std::{env, path::PathBuf, process::Command};
 
 fn main() {
     println!("cargo:rerun-if-env-changed=DVDA_RUNTIME_ARCHIVE");
+    println!("cargo:rerun-if-env-changed=DVDA_PRODUCT_VERSION");
     let generated = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let archive = env::var_os("DVDA_RUNTIME_ARCHIVE")
         .map(PathBuf::from)
@@ -39,8 +40,9 @@ fn main() {
         std::fs::write(
             &script,
             format!(
-                "1 24 \"{}\"\n",
-                manifest.display().to_string().replace('\\', "/")
+                "1 24 \"{}\"\n{}",
+                manifest.display().to_string().replace('\\', "/"),
+                version_resource()
             ),
         )
         .unwrap();
@@ -52,10 +54,68 @@ fn main() {
             .args(["-O", "coff"])
             .status()
             .expect("run GNU windres from the MSYS2 toolchain");
-        assert!(status.success(), "compile Windows desktop manifest");
+        assert!(status.success(), "compile Windows desktop resources");
         println!("cargo:rustc-link-arg={}", object.display());
     } else {
         println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
         println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
     }
+}
+
+/// `VS_VERSION_INFO` block so the executable carries company, product and version
+/// metadata instead of shipping as an anonymous binary.
+///
+/// The packaging toolchain forwards the release version (`v1.0`) through
+/// `DVDA_PRODUCT_VERSION`; a plain source build falls back to the crate version.
+fn version_resource() -> String {
+    let configured = env::var("DVDA_PRODUCT_VERSION").unwrap_or_default();
+    let configured = configured.trim();
+    let raw = if configured.is_empty() {
+        env::var("CARGO_PKG_VERSION").unwrap()
+    } else {
+        configured.to_owned()
+    };
+    let [major, minor, patch, build] = version_quad(&raw);
+    let dotted = format!("{major}.{minor}.{patch}.{build}");
+    format!(
+        "1 VERSIONINFO\n\
+FILEVERSION {major},{minor},{patch},{build}\n\
+PRODUCTVERSION {major},{minor},{patch},{build}\n\
+FILEFLAGSMASK 0x3fL\n\
+FILEFLAGS 0x0L\n\
+FILEOS 0x40004L\n\
+FILETYPE 0x1L\n\
+FILESUBTYPE 0x0L\n\
+BEGIN\n\
+    BLOCK \"StringFileInfo\"\n\
+    BEGIN\n\
+        BLOCK \"040904b0\"\n\
+        BEGIN\n\
+            VALUE \"CompanyName\", \"Yuzuriha03\"\n\
+            VALUE \"FileDescription\", \"DVD-Audio Maker\"\n\
+            VALUE \"FileVersion\", \"{dotted}\"\n\
+            VALUE \"InternalName\", \"DVD-Audio-Maker\"\n\
+            VALUE \"LegalCopyright\", \"Copyright (C) Yuzuriha03 and DVD-Audio Maker contributors\"\n\
+            VALUE \"OriginalFilename\", \"DVD-Audio-Maker.exe\"\n\
+            VALUE \"ProductName\", \"DVD-Audio Maker\"\n\
+            VALUE \"ProductVersion\", \"{dotted}\"\n\
+        END\n\
+    END\n\
+    BLOCK \"VarFileInfo\"\n\
+    BEGIN\n\
+        VALUE \"Translation\", 0x409, 0x4b0\n\
+    END\n\
+END\n"
+    )
+}
+
+/// `v1.1.0-rc.1` becomes `[1, 1, 0, 0]`, matching the packaging version validator.
+fn version_quad(value: &str) -> [u16; 4] {
+    let mut numbers = [0u16; 4];
+    let core = value.trim().trim_start_matches(['v', 'V']);
+    let core = core.split('-').next().unwrap_or_default();
+    for (index, piece) in core.split('.').take(numbers.len()).enumerate() {
+        numbers[index] = piece.parse().unwrap_or(0);
+    }
+    numbers
 }

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #define ISO_SECTOR 2048U
 #define UDF_PARTITION_START 257U
@@ -623,7 +624,41 @@ static int udf_set_dstring(unsigned char *descriptor, size_t field_size,
   if (field_size < 2U) return -1;
   memset(descriptor, 0, field_size);
   int length = encode_osta_name(text, descriptor, field_size - 1U);
-  if (length < 0) return -1;
+  if (length < 0) {
+    /* UDF d-strings reserve one byte for the compression id and one for
+       the encoded length.  Keep the longest valid UTF-8 prefix when a UI
+       volume label is longer than the destination field. */
+    char prefix[1025];
+    size_t used = 0;
+    const unsigned char *p = (const unsigned char *)text;
+    prefix[0] = 0;
+    while (*p && used + 1U < sizeof(prefix)) {
+      size_t character_length;
+      if (*p < 0x80U) {
+        character_length = 1U;
+      } else if ((*p & 0xe0U) == 0xc0U) {
+        character_length = 2U;
+      } else if ((*p & 0xf0U) == 0xe0U) {
+        character_length = 3U;
+      } else if ((*p & 0xf8U) == 0xf0U) {
+        character_length = 4U;
+      } else {
+        return -1;
+      }
+      if (used + character_length >= sizeof(prefix)) break;
+      memcpy(prefix + used, p, character_length);
+      prefix[used + character_length] = 0;
+      int candidate = encode_osta_name(prefix, descriptor, field_size - 1U);
+      if (candidate < 0) {
+        if (used == 0) return -1;
+        break;
+      }
+      used += character_length;
+      p += character_length;
+      length = candidate;
+    }
+    if (used == 0 && *text) return -1;
+  }
   descriptor[field_size - 1U] = (unsigned char)length;
   return 0;
 }
@@ -1074,39 +1109,53 @@ int dvda_iso_write(const char *source_directory, const char *destination,
     return -1;
   }
   int success = 0;
-  if (write_zeroes(output, 16U * ISO_SECTOR) != 0 ||
-      write_volume_descriptors(output, root, volume_space, path_size, path_lba,
-                               path_m_lba, volume_identifier) != 0 ||
-      write_udf_recognition(output) != 0 ||
-      write_zeroes(output, 11U * ISO_SECTOR) != 0 ||
-      write_udf_descriptor_sequences(output, volume_space, end_anchor_lba,
-                                     udf_file_count, udf_directory_count,
-                                     udf_volume_identifier) != 0 ||
-      write_zeroes(output, (UDF_ANCHOR_LBA - UDF_INTEGRITY_LBA - 2U) *
-                               ISO_SECTOR) != 0 ||
-      write_udf_anchor(output, UDF_ANCHOR_LBA) != 0 ||
-      write_udf_file_set(output, udf_volume_identifier,
-                         root->udf_file_entry_lba) != 0 ||
-      write_udf_directories(output, root) != 0 ||
-      write_udf_file_entries(output, root) != 0) {
-    goto done;
-  }
+  int failure_errno = 0;
+#define ISO_TRY(stage, expression)                                             \
+  do {                                                                          \
+    if ((expression) != 0) {                                                    \
+      failure_errno = errno;                                                   \
+      fprintf(stderr, "[ISO] %s failed: %s\n", (stage),                      \
+              failure_errno ? strerror(failure_errno) : "unknown error");     \
+      goto done;                                                                \
+    }                                                                           \
+  } while (0)
+  ISO_TRY("initial zero sectors", write_zeroes(output, 16U * ISO_SECTOR));
+  ISO_TRY("volume descriptors", write_volume_descriptors(
+      output, root, volume_space, path_size, path_lba, path_m_lba,
+      volume_identifier));
+  ISO_TRY("UDF recognition", write_udf_recognition(output));
+  ISO_TRY("descriptor padding", write_zeroes(output, 11U * ISO_SECTOR));
+  ISO_TRY("UDF descriptor sequences", write_udf_descriptor_sequences(
+      output, volume_space, end_anchor_lba, udf_file_count,
+      udf_directory_count, udf_volume_identifier));
+  ISO_TRY("UDF integrity padding", write_zeroes(
+      output, (UDF_ANCHOR_LBA - UDF_INTEGRITY_LBA - 2U) * ISO_SECTOR));
+  ISO_TRY("initial UDF anchor", write_udf_anchor(output, UDF_ANCHOR_LBA));
+  ISO_TRY("UDF file set", write_udf_file_set(output, udf_volume_identifier,
+                                               root->udf_file_entry_lba));
+  ISO_TRY("UDF directories", write_udf_directories(output, root));
+  ISO_TRY("UDF file entries", write_udf_file_entries(output, root));
   uint32_t written = 0;
-  if (write_path_table(output, root, 0, path_sectors, &written) != 0 ||
-      finish_path_table(output, written, path_sectors) != 0) {
-    goto done;
-  }
+  ISO_TRY("little-endian path table", write_path_table(
+      output, root, 0, path_sectors, &written));
+  ISO_TRY("little-endian path table padding", finish_path_table(
+      output, written, path_sectors));
   written = 0;
-  if (write_path_table(output, root, 1, path_sectors, &written) != 0 ||
-      finish_path_table(output, written, path_sectors) != 0 ||
-      write_directories(output, root) != 0 || write_files(output, root) != 0) {
-    goto done;
-  }
-  if (write_udf_anchor(output, end_anchor_lba) != 0) goto done;
+  ISO_TRY("big-endian path table", write_path_table(
+      output, root, 1, path_sectors, &written));
+  ISO_TRY("big-endian path table padding", finish_path_table(
+      output, written, path_sectors));
+  ISO_TRY("ISO directories", write_directories(output, root));
+  ISO_TRY("ISO files", write_files(output, root));
+  ISO_TRY("final UDF anchor", write_udf_anchor(output, end_anchor_lba));
   success = 1;
 done:
-  fclose(output);
-  if (!success) remove(destination);
+#undef ISO_TRY
+  if (fclose(output) != 0 && !failure_errno) failure_errno = errno;
+  if (!success) {
+    remove(destination);
+    if (failure_errno) errno = failure_errno;
+  }
   free_tree(root);
   return success ? 0 : -1;
 }

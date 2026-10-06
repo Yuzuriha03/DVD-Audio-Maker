@@ -149,10 +149,21 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
             if let Some(failure) = outcome.failure {
                 return Err(failure.message);
             }
+            caller.emit(1, &format!("[MLP-FINALIZE] start {}", pending.len()));
             for (work_index, item) in pending.iter().enumerate() {
                 if caller.cancelled() {
                     return Err("MLP 编码已被取消。".into());
                 }
+                let display_name = text(&job.tracks[item.index], "Title").unwrap_or("Track");
+                caller.emit(
+                    1,
+                    &format!(
+                        "[MLP-FINALIZE] progress {}/{} {}",
+                        work_index + 1,
+                        pending.len(),
+                        display_name
+                    ),
+                );
                 let staged = stage.join(format!("__surcode_{:04}.mlp", work_index + 1));
                 if !valid_mlp(&native, &staged) {
                     diagnostics.push(error(
@@ -193,6 +204,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                 )?;
                 rebuilt += 1;
             }
+            caller.emit(1, &format!("[MLP-FINALIZE] complete {}", pending.len()));
             Ok(())
         })();
         let _ = fs::remove_dir_all(&temp);

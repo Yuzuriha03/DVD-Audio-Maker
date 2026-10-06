@@ -4386,6 +4386,38 @@ fn localized_log(lang: Lang, raw: &str) -> String {
         return tr(lang, "log_encoding")
             .replace("{0}", &localization::translate(lang.code(), value));
     }
+    if let Some(value) = text.strip_prefix("[MLP-FINALIZE] start ")
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return match lang {
+            Lang::Zh => format!("开始整理 MLP 编码结果，共 {value} 首。"),
+            Lang::En => format!("Finalizing {value} MLP encoding results."),
+            Lang::Ja => format!("MLP エンコード結果を整理中（{value} 曲）。"),
+        };
+    }
+    if let Some(value) = text.strip_prefix("[MLP-FINALIZE] progress ") {
+        let mut fields = value.splitn(2, ' ');
+        if let (Some(position), Some(title)) = (fields.next(), fields.next()) {
+            if let Some((current, total)) = position.split_once('/') {
+                return match lang {
+                    Lang::Zh => format!("正在整理 MLP 编码结果：{current}/{total}，{title}"),
+                    Lang::En => {
+                        format!("Finalizing MLP encoding result {current}/{total}: {title}")
+                    }
+                    Lang::Ja => format!("MLP エンコード結果を整理中：{current}/{total}、{title}"),
+                };
+            }
+        }
+    }
+    if let Some(value) = text.strip_prefix("[MLP-FINALIZE] complete ")
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return match lang {
+            Lang::Zh => format!("MLP 编码结果整理完成，共 {value} 首。"),
+            Lang::En => format!("MLP encoding results finalized: {value} tracks."),
+            Lang::Ja => format!("MLP エンコード結果の整理が完了しました（{value} 曲）。"),
+        };
+    }
     if let Some(value) = text.strip_prefix("[LPCM] ") {
         return tr(lang, "log_lpcm").replace("{0}", &localization::translate(lang.code(), value));
     }
