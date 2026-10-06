@@ -239,7 +239,7 @@ impl AppOptions {
             iso_prefix: self.text("IsoPrefix"),
             diagnostic_title_mode: self.text("DiagnosticTitleMode"),
             disc_bytes: self.integer("DiscBytes"),
-            max_discs: self.integer("MaxDiscs") as i32,
+            planned_discs: self.integer("PlannedDiscs") as i32,
             group_track_limit: self.integer("GroupTrackLimit") as i32,
             mlp_sample_rate: self.integer("MlpSurcodeSampleRate") as i32,
             mlp_bits: self.integer("MlpSurcodeBits") as i32,
@@ -303,7 +303,7 @@ impl AppOptions {
             build_log_path: Some(self.path("BuildLogPath")),
             allow_log_fallback: true,
             disc_bytes: self.integer("DiscBytes"),
-            max_discs: self.integer("MaxDiscs") as i32,
+            planned_discs: self.integer("PlannedDiscs") as i32,
         })
     }
 }

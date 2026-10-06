@@ -39,7 +39,7 @@ pub struct Job {
     pub iso_prefix: String,
     pub diagnostic_title_mode: String,
     pub disc_bytes: i64,
-    pub max_discs: i32,
+    pub planned_discs: i32,
     pub group_track_limit: i32,
     pub mlp_sample_rate: i32,
     pub mlp_bits: i32,
@@ -156,7 +156,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     let plan = disc::plan(
         tracks.clone(),
         job.disc_bytes,
-        job.max_discs,
+        job.planned_discs,
         job.group_track_limit,
     )?;
     diagnostics.extend(serde_json::to_value(&plan.diagnostics).unwrap_or_default_array());

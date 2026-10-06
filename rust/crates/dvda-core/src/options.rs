@@ -28,7 +28,7 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_FINAL_DIR", ""),
         ("DVDA_TITLE", "DVD-Audio"),
         ("DVDA_ISO_PREFIX", ""),
-        ("DVDA_MAX_DISCS", "2"),
+        ("DVDA_PLANNED_DISCS", "2"),
         ("DVDA_GROUP_TRACK_LIMIT", "99"),
         ("DVDA_DISC_BYTES", ""),
         ("DVDA_MLP_SOURCE", "surcode-batch"),
@@ -290,7 +290,7 @@ pub fn evaluate(request: Request) -> Value {
         put(name, OptionValue::new(r.flag(key, default_on)));
     }
     for (name, key, fallback, low, high) in [
-        ("MaxDiscs", "DVDA_MAX_DISCS", 0, i32::MIN, i32::MAX),
+        ("PlannedDiscs", "DVDA_PLANNED_DISCS", 0, i32::MIN, i32::MAX),
         ("GroupTrackLimit", "DVDA_GROUP_TRACK_LIMIT", 99, 1, 99),
         (
             "MlpSurcodeSampleRate",

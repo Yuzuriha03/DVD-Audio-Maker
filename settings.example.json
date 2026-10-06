@@ -7,7 +7,7 @@
     "DVDA_BUILD_DIR": "C:/DVD-Audio/Work",
     "DVDA_TITLE": "DVD-Audio",
     "DVDA_ISO_PREFIX": "",
-    "DVDA_MAX_DISCS": "2",
+    "DVDA_PLANNED_DISCS": "2",
     "DVDA_GROUP_TRACK_LIMIT": "99",
     "DVDA_MLP_SOURCE": "surcode-batch",
     "DVDA_MLP_SURCODE_SAMPLE_RATE": "48000",

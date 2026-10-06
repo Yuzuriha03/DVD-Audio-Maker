@@ -646,10 +646,15 @@ fn application_menu_and_title_boundaries() {
     let job = options.build_job(false).unwrap();
     let tracks: Vec<dvda_core::disc::Track> =
         serde_json::from_value(built.plan.as_ref().unwrap()["Tracks"].clone()).unwrap();
-    let disc = dvda_core::disc::plan(tracks, job.disc_bytes, job.max_discs, job.group_track_limit)
-        .unwrap()
-        .discs
-        .remove(0);
+    let disc = dvda_core::disc::plan(
+        tracks,
+        job.disc_bytes,
+        job.planned_discs,
+        job.group_track_limit,
+    )
+    .unwrap()
+    .discs
+    .remove(0);
     let check_still = || {
         dvda_core::menu_check::verify(
             &job,
