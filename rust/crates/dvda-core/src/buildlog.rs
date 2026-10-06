@@ -39,6 +39,10 @@ impl Callbacks for Writer<'_> {
     fn cancelled(&mut self) -> bool {
         self.failed || self.caller.cancelled()
     }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        self.caller.progress(completed, total);
+    }
 }
 
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {

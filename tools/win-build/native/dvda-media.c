@@ -139,8 +139,17 @@ typedef struct Audio {
     Call *call; AVFormatContext *input, *output; AVCodecContext *decoder, *encoder;
     SwrContext *swr; AVAudioFifo *fifo; AVFrame *frame; AVPacket *packet;
     FILE *raw; struct AVMD5 *md5; int rate, channels, bits, stream, output_kind, cover_stream;
-    enum AVSampleFormat format; int64_t samples; int initialized;
+    enum AVSampleFormat format; int64_t samples, progress_samples; int initialized;
 } Audio;
+static void report_audio_progress(Audio *audio, int force)
+{
+    int64_t interval = audio->rate > 0 ? audio->rate / 4 : 1;
+    if (force || audio->samples - audio->progress_samples >= interval) {
+        audio->progress_samples = audio->samples;
+        /* Per-frame callbacks can overwhelm the GUI and its log file. */
+        message(audio->call, 3, "out_time_us=%lld", (long long)av_rescale(audio->samples, AV_TIME_BASE, audio->rate));
+    }
+}
 static int encode_frame(Audio *audio, AVFrame *frame)
 {
     int result = avcodec_send_frame(audio->encoder, frame);
@@ -272,7 +281,7 @@ static int output_samples(Audio *audio, uint8_t **data, int count)
             if (fwrite(data[0], bytes, values, audio->raw) != values) result = AVERROR(EIO);
         }
     }
-    message(audio->call, 3, "out_time_us=%lld", (long long)av_rescale(audio->samples, AV_TIME_BASE, audio->rate));
+    report_audio_progress(audio, 0);
     av_free(converted); return result;
 }
 static int resample(Audio *audio, AVFrame *frame)
@@ -327,6 +336,7 @@ static int audio(Call *call, AVFormatContext *format)
     if ((result = avcodec_send_packet(a.decoder, NULL)) < 0 || (result = receive_audio(&a)) < 0 || (result = resample(&a, NULL)) < 0) goto done;
     if (!a.initialized) { result = AVERROR_INVALIDDATA; goto done; }
     if (a.encoder && ((result = encode_fifo(&a, 1)) < 0 || (result = encode_frame(&a, NULL)) < 0 || (result = av_write_trailer(a.output)) < 0)) goto done;
+    report_audio_progress(&a, 1);
     if (a.md5) {
         uint8_t digest[16]; char hex[33]; av_md5_final(a.md5, digest);
         for (int i = 0; i < 16; ++i) sprintf(hex + 2 * i, "%02x", digest[i]);

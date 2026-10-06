@@ -147,7 +147,11 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         job.source_root.clone()
     };
     let tracks_value = serde_json::to_value(&initial).map_err(|error| error.to_string())?;
-    let acquisition = acquire(&job, &source_root, tracks_value, caller)?;
+    caller.progress(0, 100);
+    let acquisition = {
+        let mut progress = dvda_native::media::ProgressScope::new(caller, 0, 65);
+        acquire(&job, &source_root, tracks_value, &mut progress)?
+    };
     let tracks: Vec<disc::Track> = serde_json::from_value(Value::Array(acquisition.tracks.clone()))
         .map_err(|error| format!("Invalid acquired tracks: {error}"))?;
     diagnostics.extend(acquisition.diagnostics);
@@ -205,7 +209,8 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     };
     let mut resume = can_resume.then(|| crate::resume::Store::load(&staging, caller));
     let mut staged = Vec::new();
-    for disc in &plan.discs {
+    caller.progress(65, 100);
+    for (disc_index, disc) in plan.discs.iter().enumerate() {
         if caller.cancelled() {
             remove_if_file(&pending_index);
             return Err("Build cancelled".into());
@@ -241,6 +246,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                 caller.emit(1, line);
             }
             staged.push((staged_iso, job.iso_name(disc.number)));
+            caller.progress(65 + ((disc_index + 1) * 35 / plan.discs.len()) as u64, 100);
             continue;
         }
         if let Some(store) = resume.as_mut() {
@@ -417,6 +423,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             diagnostics.push(warning("RESUME_WRITE_FAILED", message));
         }
         staged.push((staged_iso, job.iso_name(disc.number)));
+        caller.progress(65 + ((disc_index + 1) * 35 / plan.discs.len()) as u64, 100);
         caller.emit(1, &format!("[build] staged disc {}", disc.number));
         if !job.keep_temporary {
             cleanup_directory(&temporary, &mut diagnostics, "TEMP_CLEANUP_FAILED");
