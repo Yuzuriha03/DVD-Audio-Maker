@@ -186,7 +186,31 @@ impl AppOptions {
             return flat;
         }
         let bundled = self.executable_directory.join("menu-bin").join(&configured);
-        if bundled.is_file() { bundled } else { path }
+        if bundled.is_file() {
+            return bundled;
+        }
+
+        // Profiles can retain an absolute path from an older development
+        // checkout. A release package has the same author binary in its
+        // extracted runtime, so resolve that stale setting by its filename.
+        // This keeps resume/signature checks portable without rewriting the
+        // user's profile.
+        if let Some(name) = Path::new(&configured).file_name() {
+            for candidate in [
+                crate::runtime::directory().map(|directory| directory.join(name)),
+                Some(self.executable_directory.join(name)),
+                crate::runtime::directory().map(|directory| directory.join("menu-bin").join(name)),
+                Some(self.executable_directory.join("menu-bin").join(name)),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if candidate.is_file() {
+                    return candidate;
+                }
+            }
+        }
+        path
     }
     pub fn build_job(&self, dry_run: bool) -> Result<build::Job, String> {
         let source = self.source_directory();
@@ -612,5 +636,33 @@ mod tests {
         let error = AppOptions::load(Some(&path)).expect_err("env profile must be rejected");
         assert!(error.contains("Only JSON profiles"));
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn stale_absolute_author_path_falls_back_to_portable_binary() {
+        let root = env::temp_dir().join(format!(
+            "dvda-author-fallback-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let bundled = root.join("dvda-author-dev.exe");
+        std::fs::write(&bundled, b"test").unwrap();
+        let mut values = Map::new();
+        values.insert(
+            "DvdaAuthor".into(),
+            Value::String("C:/old-checkout/build/rust-author-current/dvda-author-dev.exe".into()),
+        );
+        let options = AppOptions {
+            language: "en".into(),
+            values,
+            stored_profile_values: Map::new(),
+            config_path: None,
+            executable_directory: root.clone(),
+        };
+        assert_eq!(options.author_path(), bundled);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

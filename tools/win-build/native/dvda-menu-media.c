@@ -465,6 +465,13 @@ int dvda_menu_create_mpg(const char *y4m_path, const char *wav_path,
     if (avformat_alloc_output_context2(&output, NULL, "dvd", output_path) < 0 || !output)
         goto done;
     output->packet_size = 2048;
+    /* Keep the DVD menu timeline compatible with the mplex stream that the
+       authoring/navigation code was written for.  FFmpeg's MPEG program
+       stream muxer defaults to a 500 ms initial demux delay; that moves the
+       first subtitle/button packet far beyond the first VOBU on short,
+       single-frame menus. */
+    if (av_opt_set_int(output->priv_data, "preload", 120000, 0) < 0)
+        goto done;
     video_stream = avformat_new_stream(output, NULL);
     if (!video_stream || avcodec_parameters_from_context(video_stream->codecpar, video) < 0)
         goto done;

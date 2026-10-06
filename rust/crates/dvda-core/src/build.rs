@@ -628,6 +628,12 @@ fn validate(job: &Job) -> Result<(), String> {
     if job.dvda_author.trim().is_empty() {
         return Err("dvda-author path is empty".into());
     }
+    if !Path::new(&job.dvda_author).is_file() {
+        return Err(format!(
+            "dvda-author executable is missing: {}",
+            job.dvda_author
+        ));
+    }
     Ok(())
 }
 
