@@ -669,6 +669,10 @@ fn require_frame(
         fn cancelled(&mut self) -> bool {
             self.parent.cancelled()
         }
+
+        fn progress(&mut self, completed: u64, total: u64) {
+            self.parent.progress(completed, total);
+        }
     }
     let mut capture = Capture {
         target: &mut output,

@@ -144,6 +144,7 @@ pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String>
         "共需重采样 ",
         "[缓存]",
         "[MLP]",
+        "[MLP-PROGRESS] ",
         "[MLP DLL]",
         "[LPCM]",
         "[prepare]",
@@ -270,6 +271,30 @@ mod tests {
                 error_advice(lang, "timeout"),
                 error_advice(lang, "missing source")
             );
+        }
+    }
+
+    #[test]
+    fn mlp_and_verification_progress_are_visible_in_summary() {
+        let mlp = "[MLP-PROGRESS] 37/147";
+        let verify = "[verify] pcm 4/12 ok: D:/music/track.flac";
+        let mismatch = "[verify] pcm 5/12 failed: D:/music/bad.flac";
+        let complete = "[verify] complete 2 discs 24 tracks ok";
+        assert!(problem(mismatch));
+        for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+            let mlp_text = summary(lang, mlp, false).unwrap();
+            let verify_text = summary(lang, verify, false).unwrap();
+            let complete_text = summary(lang, complete, false).unwrap();
+            assert!(mlp_text.contains("37/147"), "{mlp_text}");
+            assert!(verify_text.contains("4/12"), "{verify_text}");
+            assert!(verify_text.contains("D:/music/track.flac"), "{verify_text}");
+            let mismatch_text = summary(lang, mismatch, false).unwrap();
+            assert!(mismatch_text.contains("5/12"), "{mismatch_text}");
+            assert!(
+                mismatch_text.contains("D:/music/bad.flac"),
+                "{mismatch_text}"
+            );
+            assert!(complete_text.contains("2") && complete_text.contains("24"));
         }
     }
 }

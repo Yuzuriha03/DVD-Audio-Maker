@@ -10,9 +10,16 @@ use dvda_native::{disc_verify::NativeDiscVerifier, media::Callbacks};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    collections::VecDeque,
     fs,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    time::Duration,
 };
 
 const SECTOR_SIZE: usize = 2048;
@@ -86,6 +93,7 @@ fn run(
     caller: &mut dyn Callbacks,
 ) -> Result<Outcome, String> {
     check_cancel(caller)?;
+    caller.progress(0, 100);
     if mode == Mode::Menu && !job.menu_enabled && explicit_iso.is_none() {
         caller.emit(1, "[跳过] 菜单已关闭，成品按预期没有菜单。");
         return Ok(Outcome {
@@ -165,7 +173,18 @@ fn run(
     }
     let mut actual_tracks = tracks;
     if matches!(mode, Mode::All | Mode::Timeline) {
-        let evidence = timeline(&isos, index.as_ref(), &mut diagnostics, caller, true, true)?;
+        let evidence = {
+            let mut progress = dvda_native::media::ProgressScope::new(caller, 0, 35);
+            timeline(
+                &isos,
+                index.as_ref(),
+                &mut diagnostics,
+                &mut progress,
+                true,
+                true,
+            )?
+        };
+        caller.progress(35, 100);
         // The preparation manifest describes the entire selected release. An
         // explicit single-ISO developer request has no complete-release total.
         if mode == Mode::All && !selected {
@@ -184,8 +203,9 @@ fn run(
         actual_tracks = evidence.iter().map(|disc| disc.track_count() as i32).sum();
     }
     if mode == Mode::All || (mode == Mode::Menu && (index.is_some() || selected)) {
-        for iso in &isos {
-            check_cancel(caller)?;
+        let mut progress = dvda_native::media::ProgressScope::new(caller, 35, 40);
+        for (iso_index, iso) in isos.iter().enumerate() {
+            check_cancel(&mut progress)?;
             let expected = index
                 .as_ref()
                 .and_then(|index| index["__discs__"].as_array())
@@ -209,7 +229,7 @@ fn run(
                 }
             };
             if expected.is_some() || has_menu || mode == Mode::Menu {
-                match crate::menu_verify::verify(iso, expected, &job, caller) {
+                match crate::menu_verify::verify(iso, expected, &job, &mut progress) {
                     Ok(issues) => diagnostics.extend(issues),
                     Err(reason) => {
                         let code = reason.split(':').next().unwrap_or_default();
@@ -227,6 +247,7 @@ fn run(
                     }
                 }
             }
+            progress.progress((iso_index + 1) as u64, isos.len() as u64);
         }
     }
     if matches!(mode, Mode::All | Mode::Lossless)
@@ -235,8 +256,21 @@ fn run(
     {
         diagnostics.push(error("LOSSLESS_FAILED", reason));
     }
+    let succeeded = !diagnostics.iter().any(is_error);
+    caller.emit(
+        1,
+        &format!(
+            "[verify] complete {} discs {} tracks {}",
+            isos.len(),
+            actual_tracks.max(0),
+            if succeeded { "ok" } else { "issues" }
+        ),
+    );
+    if succeeded {
+        caller.progress(100, 100);
+    }
     Ok(Outcome {
-        succeeded: !diagnostics.iter().any(is_error),
+        succeeded,
         diagnostics,
         iso_count: isos.len() as i32,
         track_count: actual_tracks,
@@ -550,6 +584,8 @@ fn timeline(
     audit: bool,
     statistics: bool,
 ) -> Result<Vec<DiscEvidence>, String> {
+    let total_chunks = aob_chunk_total(isos);
+    let mut completed_chunks = 0u64;
     let discs = index.and_then(|value| value["__discs__"].as_array());
     let mut observations = Vec::new();
     for iso in isos {
@@ -738,6 +774,8 @@ fn timeline(
             let mut failed = false;
             for chunk in chunks(iso, &names) {
                 check_cancel(caller)?;
+                completed_chunks = completed_chunks.saturating_add(1);
+                caller.progress(completed_chunks, total_chunks);
                 match chunk {
                     Ok(data) => {
                         if !data.len().is_multiple_of(SECTOR_SIZE) {
@@ -845,6 +883,7 @@ fn timeline(
         }
         observations.push(evidence);
     }
+    caller.progress(total_chunks, total_chunks);
     Ok(observations)
 }
 
@@ -868,13 +907,23 @@ fn lossless(
     caller: &mut dyn Callbacks,
 ) -> Result<(), String> {
     let verifier = NativeDiscVerifier::load()?;
+    let mut pcm_tracks = Vec::new();
+    let total_chunks = aob_chunk_total(isos);
+    let mut completed_chunks = 0u64;
     let discs = index
         .get("__discs__")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let group_total = discs
+        .iter()
+        .map(|disc| disc["groups"].as_array().map_or(0, Vec::len))
+        .sum::<usize>()
+        .max(1);
+    let mut group_completed = 0;
+    let mut group_progress = dvda_native::media::ProgressScope::new(caller, 40, 55);
     for iso in isos {
-        check_cancel(caller)?;
+        check_cancel(&mut group_progress)?;
         let Some(disc) = discs.iter().find(|value| {
             text(value, "iso").eq_ignore_ascii_case(
                 iso.file_name()
@@ -918,12 +967,14 @@ fn lossless(
                 ));
                 continue;
             }
-            caller.emit(
+            group_progress.emit(
                 1,
                 &format!("[verify] lossless {} group {}", iso.display(), number),
             );
             let reader = chunks(iso, &names).map(|chunk| {
-                check_cancel(caller)?;
+                check_cancel(&mut group_progress)?;
+                completed_chunks = completed_chunks.saturating_add(1);
+                group_progress.progress(completed_chunks, total_chunks);
                 chunk
             });
             let result = if all_lpcm {
@@ -944,35 +995,190 @@ fn lossless(
             } else {
                 Err("A group mixes LPCM and MLP tracks".into())
             };
-            check_cancel(caller)?;
+            check_cancel(&mut group_progress)?;
             if let Err(error_text) = result {
                 diagnostics.push(error(
                     "ISO_AUDIO_MISMATCH",
                     format!("{} group {}: {error_text}", iso.display(), number),
                 ));
             }
-            for track in &tracks {
-                check_cancel(caller)?;
-                match crate::verify_audio::track(
-                    &job.media_library,
-                    &job.work_directory,
-                    track,
-                    caller,
-                ) {
-                    Ok(()) => caller.emit(
-                        1,
-                        &format!("[校验] {}：完整目标 PCM 一致。", text(track, "src")),
-                    ),
-                    Err(reason) => {
-                        check_cancel(caller)?;
-                        diagnostics.push(error(
-                            "TRACK_PCM_MISMATCH",
-                            format!("{}：{reason}", text(track, "src")),
-                        ));
-                    }
+            pcm_tracks.extend(tracks);
+            group_completed += 1;
+            group_progress.progress(group_completed as u64, group_total as u64);
+        }
+    }
+    group_progress.progress(total_chunks, total_chunks);
+    group_progress.progress(group_total as u64, group_total as u64);
+    drop(group_progress);
+    let mut track_progress = dvda_native::media::ProgressScope::new(caller, 55, 100);
+    verify_tracks_parallel(job, pcm_tracks, diagnostics, &mut track_progress)
+}
+
+fn aob_chunk_total(isos: &[PathBuf]) -> u64 {
+    let mut total = 0u64;
+    for iso in isos {
+        let Ok(entries) = formats::iso_list_directory(iso, "AUDIO_TS") else {
+            continue;
+        };
+        total = total.saturating_add(
+            entries
+                .iter()
+                .filter(|entry| parse_aob(&entry.name).is_some())
+                .map(|entry| u64::from(entry.size).div_ceil(CHUNK_SIZE as u64))
+                .sum::<u64>(),
+        );
+    }
+    total.max(1)
+}
+
+struct VerifyWorkerCallbacks<'a> {
+    cancelled: &'a AtomicBool,
+    messages: Vec<(i32, String)>,
+}
+
+impl Callbacks for VerifyWorkerCallbacks<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        if stream == 3 && text.starts_with("out_time_us=") {
+            return;
+        }
+        self.messages.push((stream, text.to_owned()));
+    }
+
+    fn cancelled(&mut self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+}
+
+fn verify_tracks_parallel(
+    job: &Job,
+    tracks: Vec<Value>,
+    diagnostics: &mut Vec<Value>,
+    caller: &mut dyn Callbacks,
+) -> Result<(), String> {
+    if tracks.is_empty() {
+        return Ok(());
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(tracks.len())
+        .min(16);
+    caller.emit(
+        1,
+        &format!(
+            "正在并行比对 {} 首音轨的完整 PCM（{worker_count} 路）。",
+            tracks.len()
+        ),
+    );
+
+    let total = tracks.len();
+    let queue = Arc::new(Mutex::new(tracks.into_iter().collect::<VecDeque<_>>()));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let (sender, receiver) = mpsc::channel();
+    let mut workers = Vec::with_capacity(worker_count);
+    for _ in 0..worker_count {
+        let queue = Arc::clone(&queue);
+        let cancelled = Arc::clone(&cancelled);
+        let sender = sender.clone();
+        let library = job.media_library.clone();
+        let root = job.work_directory.clone();
+        workers.push(std::thread::spawn(move || {
+            loop {
+                let task = queue
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .pop_front();
+                let Some(track) = task else {
+                    break;
+                };
+                let mut callbacks = VerifyWorkerCallbacks {
+                    cancelled: &cancelled,
+                    messages: Vec::new(),
+                };
+                let result = crate::verify_audio::track(&library, &root, &track, &mut callbacks);
+                if sender
+                    .send((track, result, std::mem::take(&mut callbacks.messages)))
+                    .is_err()
+                {
+                    break;
                 }
             }
+        }));
+    }
+    drop(sender);
+
+    let mut completed = 0;
+    let mut worker_failure = None;
+    while completed < total {
+        if caller.cancelled() {
+            cancelled.store(true, Ordering::Release);
         }
+        match receiver.recv_timeout(Duration::from_millis(100)) {
+            Ok((track, Ok(()), messages)) => {
+                completed += 1;
+                for (stream, message) in messages {
+                    caller.emit(stream, &message);
+                }
+                caller.emit(
+                    1,
+                    &format!(
+                        "[verify] pcm {completed}/{total} ok: {}",
+                        text(&track, "src")
+                    ),
+                );
+                caller.progress(completed as u64, total as u64);
+                caller.emit(
+                    1,
+                    &format!(
+                        "[校验] {completed}/{total} 首完成：{} 的完整目标 PCM 一致。",
+                        text(&track, "src")
+                    ),
+                );
+            }
+            Ok((track, Err(reason), messages)) => {
+                completed += 1;
+                for (stream, message) in messages {
+                    caller.emit(stream, &message);
+                }
+                if !cancelled.load(Ordering::Acquire) {
+                    caller.emit(
+                        2,
+                        &format!(
+                            "[verify] pcm {completed}/{total} failed: {}",
+                            text(&track, "src")
+                        ),
+                    );
+                    caller.progress(completed as u64, total as u64);
+                    caller.emit(
+                        1,
+                        &format!(
+                            "[校验] {completed}/{total} 首完成：{} 的 PCM 对照失败。",
+                            text(&track, "src")
+                        ),
+                    );
+                    diagnostics.push(error(
+                        "TRACK_PCM_MISMATCH",
+                        format!("{}：{reason}", text(&track, "src")),
+                    ));
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                worker_failure = Some("PCM verification workers stopped unexpectedly".to_owned());
+                cancelled.store(true, Ordering::Release);
+                break;
+            }
+        }
+    }
+    for worker in workers {
+        if worker.join().is_err() {
+            worker_failure = Some("PCM verification worker panicked".to_owned());
+        }
+    }
+    if let Some(reason) = worker_failure {
+        return Err(reason);
+    }
+    if cancelled.load(Ordering::Acquire) || caller.cancelled() {
+        return Err("成品验证已取消".into());
     }
     Ok(())
 }

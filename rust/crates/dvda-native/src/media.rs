@@ -105,6 +105,48 @@ type Run = unsafe extern "C" fn(*const RawRequest, Emit, Cancel, *mut c_void) ->
 pub trait Callbacks {
     fn emit(&mut self, stream: i32, text: &str);
     fn cancelled(&mut self) -> bool;
+    fn progress(&mut self, _completed: u64, _total: u64) {}
+}
+
+pub struct ProgressScope<'a> {
+    callbacks: &'a mut dyn Callbacks,
+    start: u64,
+    end: u64,
+    last: u64,
+}
+
+impl<'a> ProgressScope<'a> {
+    pub fn new(callbacks: &'a mut dyn Callbacks, start: u64, end: u64) -> Self {
+        Self {
+            callbacks,
+            start: start.min(100),
+            end: end.min(100).max(start.min(100)),
+            last: start.min(100),
+        }
+    }
+}
+
+impl Callbacks for ProgressScope<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        self.callbacks.emit(stream, text);
+    }
+
+    fn cancelled(&mut self) -> bool {
+        self.callbacks.cancelled()
+    }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        let portion = if total == 0 {
+            100
+        } else {
+            completed.min(total).saturating_mul(100) / total
+        };
+        let span = self.end - self.start;
+        self.last = self
+            .last
+            .max(self.start + span.saturating_mul(portion) / 100);
+        self.callbacks.progress(self.last, 100);
+    }
 }
 pub(crate) struct CallbackState<'a> {
     pub(crate) callbacks: &'a mut dyn Callbacks,
@@ -257,10 +299,38 @@ impl Media {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct Events(Vec<(u64, u64)>);
+
+    impl Callbacks for Events {
+        fn emit(&mut self, _: i32, _: &str) {}
+
+        fn cancelled(&mut self) -> bool {
+            false
+        }
+
+        fn progress(&mut self, completed: u64, total: u64) {
+            self.0.push((completed, total));
+        }
+    }
+
     #[test]
     fn media_abi_matches_c_header() {
         assert_eq!(std::mem::size_of::<RawRequest>(), 64);
         assert_eq!(std::mem::offset_of!(RawRequest, input), 40);
         assert_eq!(std::mem::offset_of!(RawRequest, tags), 56);
+    }
+
+    #[test]
+    fn progress_scopes_map_ranges_and_never_move_backwards() {
+        let mut events = Events::default();
+        {
+            let mut scope = ProgressScope::new(&mut events, 20, 80);
+            scope.progress(1, 4);
+            scope.progress(0, 4);
+            scope.progress(4, 4);
+        }
+        assert_eq!(events.0, [(35, 100), (35, 100), (80, 100)]);
     }
 }

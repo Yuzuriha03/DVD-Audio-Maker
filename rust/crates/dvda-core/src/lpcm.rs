@@ -104,7 +104,8 @@ pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<Prepar
     let mut diagnostics = Vec::new();
     let mut hits = 0;
     let mut rebuilt = 0;
-    for track in &job.tracks {
+    caller.progress(0, job.tracks.len() as u64);
+    for (index, track) in job.tracks.iter().enumerate() {
         if caller.cancelled() {
             return Err("LPCM 准备已取消。".into());
         }
@@ -127,6 +128,7 @@ pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<Prepar
                 output.push(track.clone());
             }
         }
+        caller.progress((index + 1) as u64, job.tracks.len() as u64);
     }
     save_cache(&job.cache_path, &cache)?;
     Ok(PrepareResult {

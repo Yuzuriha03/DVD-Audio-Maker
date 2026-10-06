@@ -69,6 +69,10 @@ impl Callbacks for Timed<'_> {
             .is_some_and(|timeout| self.start.elapsed() >= timeout);
         self.external || self.expired
     }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        self.caller.progress(completed, total);
+    }
 }
 impl Timed<'_> {
     pub(crate) fn new(caller: &mut dyn Callbacks, timeout_millis: Option<u64>) -> Timed<'_> {
