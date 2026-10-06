@@ -6,9 +6,9 @@ The release package includes `win-x64/mlp_encoder.dll` and the Rust application 
 
 The x64 port uses explicit x87 PC53/round-to-nearest and saves/restores x87 and SSE control state around host callbacks. Compile with MinGW-w64 GCC and `-mfpmath=387 -fexcess-precision=standard -ffp-contract=off`; do not silently change floating-point options. The normal encoding path retains the mlpencoder decisions and serialization. The x64 host FP bridge lives in [encode_file.c](source/encode_file.c) and [mlp_group_input.inc](source/mlp_group_input.inc). The oversized-AU fallback described below is an additional lossless fallback.
 
-Current DLL/source fingerprints, compiler flags, and original source fingerprints are recorded in `mlpencoder-validation.json`. The Windows build recipe is `build.cmd`; set MLP_CC to a Windows x86_64-w64-mingw32-gcc executable if necessary. Rebuilds produce a separate .rebuilt.dll and do not replace the pinned tested artifact. The delivered application needs no compiler or WSL.
+Current DLL/source fingerprints, compiler flags, and original source fingerprints are recorded in `mlpencoder-validation.json`. The Windows build recipe is `build.cmd`; set MLP_CC to a Windows x86_64-w64-mingw32-gcc executable if necessary. Rebuilds produce a separate .rebuilt.dll and do not replace the pinned tested artifact.
 
-Rust input/output uses bounded streaming buffers, validates explicit metadata, propagates cancellation and publishes only complete output. No encoded-output byte patching is performed. See [application integration](../../docs/MLP-ENCODER.md) and [GUI plan](../../docs/GUI-AND-DLL-PLAN.md).
+Rust input/output uses bounded streaming buffers, validates explicit metadata, propagates cancellation and publishes only complete output. No encoded-output byte patching is performed. See [application integration](../../docs/MLP-ENCODER.md).
 
 ## Oversized access-unit fallback (2026-10-02)
 
@@ -22,7 +22,7 @@ The formerly failing 88.2 kHz / 24-bit / six-channel short noise fixture now pas
 
 Source audio is prepared by the in-process media libraries, then streamed to this encoder. Image generation is handled by a separate in-process image runtime. Neither migration changes this pinned MLP DLL. The GUI does not launch external FFmpeg/FFprobe, ImageMagick or original SurCode for those operations; developer reference tests can still use external tools.
 
-The current Windows x64 package is a native Rust GUI package and does not require a .NET runtime. The MLP core is loaded from the adjacent native component set, with SHA-256 verification. There is no separate MLP encoder EXE to distribute.
+The current Windows x64 package is a native Rust GUI package. The MLP core is loaded from the adjacent native component set, with SHA-256 verification. There is no separate MLP encoder EXE to distribute.
 
 Complete byte identity requires matching target PCM, encoding settings and auxiliary metadata. The default metadata context is deterministic; a historical original file may require its explicit context. Do not replace the pin with a newly compiled DLL solely because decoding succeeds: independent PCM checks and full-file comparisons are separate acceptance criteria.
 

@@ -17,8 +17,7 @@ eac3to, SurCode, dvdauthor or mkisofs.
 | Disc verification | `dvda-disc-verify.dll`, Rust ISO reading and PCM comparison |
 | Configuration | versioned JSON profiles only |
 
-The release ZIP is a native Windows x64 GUI package. It does not require a .NET
-runtime or separately installed media tools. It contains the required DLLs,
+The release ZIP is a native Windows x64 GUI package. It contains the required DLLs,
 menu resources, fonts, licenses and user documentation. Missing components are
 reported as errors rather than replaced with external programs.
 

@@ -1,6 +1,6 @@
 # 进程内媒体处理
 
-Rust GUI 通过项目构建的 x64 `dvda-media.dll` 完成音源探测、解码、PCM/FLAC 输出、ALAC 检查、封面处理和成品校验。运行时不会启动 `ffmpeg.exe` 或 `ffprobe.exe`，用户也不需要另行安装 FFmpeg。
+Rust GUI 通过项目构建的 x64 `dvda-media.dll` 完成音源探测、解码、PCM/FLAC 输出、ALAC 检查、封面处理和成品校验。
 
 媒体 DLL 由所需的 FFmpeg 库源码构建，随发布包放在 GUI 旁边并由打包工具校验。缺少 DLL 时直接报告错误，不搜索 PATH，也不静默回退到外部程序。ImageMagick、Metaflac、eac3to 和原版 SurCode 采用相同规则。
 

@@ -52,8 +52,7 @@ verified read-only and are not re-encoded.
 
 ## Runtime and cache
 
-The release ZIP is native Windows x64 and does not require .NET, FFmpeg,
-ImageMagick, eac3to or SurCode to be installed. Media and image functionality
+The release ZIP is native Windows x64. Media and image functionality
 is provided by project-built DLLs shipped beside the GUI. The MLP DLL is loaded
 from the package and checked by SHA-256. Development overrides may select
 validated native component directories, but missing components are reported as

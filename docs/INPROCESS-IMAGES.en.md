@@ -32,5 +32,5 @@ release NOTICE files.
 cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
 ```
 
-The release runtime is a native Rust GUI and does not require .NET. Profiles are
+The release runtime is a native Rust GUI. Profiles are
 JSON only, and release folders and ZIPs stay under the ignored `build` tree.

@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [日本語](README.ja.md)
 
-适用于 Windows 10/11 x64。解压发布 ZIP，运行 **DVD-Audio-Maker.exe**。不需要安装 .NET、FFmpeg、ImageMagick、eac3to 或 SurCode。
+适用于 Windows 10/11 x64。解压发布 ZIP，运行 **DVD-Audio-Maker.exe**。
 
 必要组件已内置，首次启动会自动准备，可能比以后稍慢。说明和许可证放在 EXE 旁边。
 
