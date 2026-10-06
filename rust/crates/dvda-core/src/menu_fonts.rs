@@ -136,6 +136,10 @@ impl Callbacks for Capture<'_> {
     fn cancelled(&mut self) -> bool {
         self.caller.cancelled()
     }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        self.caller.progress(completed, total);
+    }
 }
 impl NativeProbe<'_> {
     fn run(&mut self, args: &[String]) -> Result<Option<String>, String> {

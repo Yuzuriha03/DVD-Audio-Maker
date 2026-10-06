@@ -52,15 +52,72 @@ struct Pending {
 
 struct Forward<'a> {
     caller: &'a mut dyn Callbacks,
+    base_completed: usize,
+    completed_tracks: usize,
+    track_progress: Vec<u8>,
+    total: usize,
+}
+
+impl Forward<'_> {
+    fn track_progress(&mut self, text: &str) {
+        let Ok(event) = serde_json::from_str::<Value>(text) else {
+            return;
+        };
+        let kind = event["Kind"].as_str().unwrap_or_default();
+        let track = event["Track"]
+            .as_u64()
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < self.track_progress.len())
+            .or_else(|| {
+                (kind == "Encoded")
+                    .then(|| {
+                        self.track_progress
+                            .iter()
+                            .position(|&percent| percent < 100)
+                    })
+                    .flatten()
+            });
+        if let Some(track) = track {
+            let percent = if kind == "Encoded" {
+                100
+            } else if kind == "PcmProgress" {
+                event["Value"].as_u64().unwrap_or(0).min(100) as u8
+            } else {
+                return;
+            };
+            let previous = self.track_progress[track];
+            self.track_progress[track] = previous.max(percent);
+            if kind == "Encoded" && previous < 100 {
+                self.completed_tracks += 1;
+                self.caller.emit(
+                    1,
+                    &format!("[MLP-PROGRESS] {}/{}", self.completed_tracks, self.total),
+                );
+            }
+        }
+        let done_hundredths = self.base_completed as u64 * 100
+            + self
+                .track_progress
+                .iter()
+                .map(|&percent| u64::from(percent))
+                .sum::<u64>();
+        self.caller
+            .progress(done_hundredths, self.total.max(1) as u64 * 100);
+    }
 }
 
 impl Callbacks for Forward<'_> {
     fn emit(&mut self, stream: i32, text: &str) {
+        self.track_progress(text);
         self.caller.emit(stream, text);
     }
 
     fn cancelled(&mut self) -> bool {
         self.caller.cancelled()
+    }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        self.caller.progress(completed, total);
     }
 }
 
@@ -81,6 +138,8 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
     let mut pending = Vec::new();
     let mut hits = 0;
     let mut diagnostics = Vec::new();
+    caller.progress(0, 100);
+    caller.emit(1, &format!("[MLP-PROGRESS] 0/{}", job.tracks.len()));
     for (index, track) in job.tracks.iter().enumerate() {
         if caller.cancelled() {
             return Err("MLP 编码已被取消。".into());
@@ -105,6 +164,9 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
             destination,
             source_identity,
         });
+    }
+    if hits > 0 {
+        caller.emit(1, &format!("[MLP-PROGRESS] {hits}/{}", job.tracks.len()));
     }
 
     let mut rebuilt = 0;
@@ -144,23 +206,33 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                     })
                     .collect(),
             };
-            let mut forward = Forward { caller };
+            let mut encode_progress = dvda_native::media::ProgressScope::new(caller, 10, 85);
+            let mut forward = Forward {
+                caller: &mut encode_progress,
+                base_completed: hits as usize,
+                completed_tracks: hits as usize,
+                track_progress: vec![0; pending.len()],
+                total: job.tracks.len(),
+            };
             let outcome = batch::execute(batch_job, &mut forward);
+            drop(forward);
+            drop(encode_progress);
             if let Some(failure) = outcome.failure {
                 return Err(failure.message);
             }
-            caller.emit(1, &format!("[MLP-FINALIZE] start {}", pending.len()));
+            let mut finalize_progress = dvda_native::media::ProgressScope::new(caller, 85, 100);
+            finalize_progress.emit(1, &format!("[MLP-FINALIZE] start {}", pending.len()));
             for (work_index, item) in pending.iter().enumerate() {
-                if caller.cancelled() {
+                if finalize_progress.cancelled() {
                     return Err("MLP 编码已被取消。".into());
                 }
                 let display_name = text(&job.tracks[item.index], "Title").unwrap_or("Track");
-                caller.emit(
+                finalize_progress.emit(
                     1,
                     &format!(
                         "[MLP-FINALIZE] progress {}/{} {}",
-                        work_index + 1,
-                        pending.len(),
+                        hits as usize + work_index + 1,
+                        job.tracks.len(),
                         display_name
                     ),
                 );
@@ -200,17 +272,25 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                     &job.tracks[item.index],
                     &item.destination,
                     &job.media_library,
-                    caller,
+                    &mut finalize_progress,
                 )?;
                 rebuilt += 1;
+                finalize_progress.progress((work_index + 1) as u64, pending.len() as u64);
             }
-            caller.emit(1, &format!("[MLP-FINALIZE] complete {}", pending.len()));
+            finalize_progress.emit(1, &format!("[MLP-FINALIZE] complete {}", pending.len()));
             Ok(())
         })();
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::remove_dir_all(&stage);
         result?;
+    } else {
+        caller.progress(100, 100);
+        caller.emit(
+            1,
+            &format!("[MLP-PROGRESS] {}/{}", job.tracks.len(), job.tracks.len()),
+        );
     }
+    caller.progress(100, 100);
     cache::dispatch(
         "cache.save",
         json!({"Path":job.cache_path,"Entries":cache_entries}),

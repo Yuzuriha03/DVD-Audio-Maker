@@ -65,6 +65,7 @@ const CB_GETCURSEL: u32 = 0x0147;
 const CB_RESETCONTENT: u32 = 0x014b;
 const CB_SETCURSEL: u32 = 0x014e;
 const PBM_SETPOS: u32 = 0x0402;
+const PBM_SETRANGE32: u32 = 0x0406;
 const TCM_GETCURSEL: u32 = 0x130b;
 const TCM_SETITEMW: u32 = 0x133d;
 const TCM_INSERTITEMW: u32 = 0x133e;
@@ -912,6 +913,7 @@ struct UiEvent {
 
 enum WorkerEvent {
     Log(String),
+    Progress(u16),
     Finished(UiEvent),
 }
 
@@ -1014,6 +1016,16 @@ struct UiState {
 struct WorkerCallbacks {
     logs: SyncSender<WorkerEvent>,
     cancel: Arc<AtomicBool>,
+    range: (u16, u16),
+    last_progress: u16,
+}
+
+impl WorkerCallbacks {
+    fn set_progress_range(&mut self, start: u16, end: u16) {
+        let start = start.min(100);
+        self.range = (start, end.min(100).max(start));
+        self.progress(0, 100);
+    }
 }
 
 impl Callbacks for WorkerCallbacks {
@@ -1024,6 +1036,19 @@ impl Callbacks for WorkerCallbacks {
     }
     fn cancelled(&mut self) -> bool {
         self.cancel.load(Ordering::Relaxed)
+    }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        let portion = if total == 0 {
+            100
+        } else {
+            (completed.min(total).saturating_mul(100) / total) as u16
+        };
+        let value = self.range.0 + (self.range.1 - self.range.0).saturating_mul(portion) / 100;
+        if value != self.last_progress {
+            self.last_progress = value;
+            let _ = self.logs.send(WorkerEvent::Progress(value));
+        }
     }
 }
 
@@ -3797,8 +3822,8 @@ fn start_operation(state: &mut UiState, command: usize) {
     }
     unsafe {
         let progress = state.controls.progress;
-        SetWindowLongPtrW(progress, -16, GetWindowLongPtrW(progress, -16) | 8);
-        SendMessageW(progress, 0x040a, 1, 40);
+        SendMessageW(progress, PBM_SETRANGE32, 0, 100);
+        SendMessageW(progress, PBM_SETPOS, 0, 0);
     }
     let lang = state.lang;
     let logs = state.log_sender.clone();
@@ -3806,9 +3831,12 @@ fn start_operation(state: &mut UiState, command: usize) {
         let mut callbacks = WorkerCallbacks {
             logs,
             cancel: Arc::clone(&cancel),
+            range: (0, 100),
+            last_progress: 0,
         };
         let (ok, text) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match command {
             ID_PREPARE => {
+                callbacks.set_progress_range(0, 100);
                 let outcome = dvda_core::app::run_prepare(&options, false, &mut callbacks);
                 if let Some(data) = &outcome.data {
                     emit_preparation_issues(&mut callbacks, &data.issues);
@@ -3833,6 +3861,7 @@ fn start_operation(state: &mut UiState, command: usize) {
                 )
             }
             ID_BUILD => {
+                callbacks.set_progress_range(0, 15);
                 let prepared = dvda_core::app::run_prepare(&options, false, &mut callbacks);
                 if let Some(data) = &prepared.data {
                     emit_preparation_issues(&mut callbacks, &data.issues);
@@ -3846,12 +3875,14 @@ fn start_operation(state: &mut UiState, command: usize) {
                             .unwrap_or_else(|| tr(lang, "failed").into()),
                     )
                 } else {
+                    callbacks.set_progress_range(15, 65);
                     match dvda_core::app::run_build(&options, false, &mut callbacks) {
                         Ok(result) => {
                             emit_diagnostics(&mut callbacks, &result.diagnostics);
                             if !result.succeeded {
                                 (false, tr(lang, "failed").into())
                             } else {
+                                callbacks.set_progress_range(65, 100);
                                 match dvda_core::app::run_verify(&options, &mut callbacks) {
                                     Ok(verification) => {
                                         emit_diagnostics(&mut callbacks, &verification.diagnostics);
@@ -3876,16 +3907,19 @@ fn start_operation(state: &mut UiState, command: usize) {
                     }
                 }
             }
-            _ => match dvda_core::app::run_verify(&options, &mut callbacks) {
-                Ok(result) => {
-                    emit_diagnostics(&mut callbacks, &result.diagnostics);
-                    (
-                        result.succeeded,
-                        tr(lang, if result.succeeded { "done" } else { "failed" }).into(),
-                    )
+            _ => {
+                callbacks.set_progress_range(0, 100);
+                match dvda_core::app::run_verify(&options, &mut callbacks) {
+                    Ok(result) => {
+                        emit_diagnostics(&mut callbacks, &result.diagnostics);
+                        (
+                            result.succeeded,
+                            tr(lang, if result.succeeded { "done" } else { "failed" }).into(),
+                        )
+                    }
+                    Err(error) => (false, error),
                 }
-                Err(error) => (false, error),
-            },
+            }
         }))
         .unwrap_or_else(|_| (false, "任务异常终止，请查看详细日志。".into()));
         let kind = if cancel.load(Ordering::Relaxed) {
@@ -3923,11 +3957,6 @@ fn emit_diagnostics(callbacks: &mut dyn Callbacks, diagnostics: &[Value]) {
 }
 
 fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
-    unsafe {
-        let progress = state.controls.progress;
-        SendMessageW(progress, 0x040a, 0, 0);
-        SetWindowLongPtrW(progress, -16, GetWindowLongPtrW(progress, -16) & !8);
-    }
     state.cancel = None;
     state.elapsed_seconds = state.started.map_or(0, |s| s.elapsed().as_secs());
     state.started = None;
@@ -3966,13 +3995,10 @@ fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
         set_text(state.controls.activity, &advice);
     }
     render_log(state);
-    unsafe {
-        SendMessageW(
-            state.controls.progress,
-            PBM_SETPOS,
-            if kind == 1 { 100 } else { 0 },
-            0,
-        );
+    if kind == 1 {
+        unsafe {
+            SendMessageW(state.controls.progress, PBM_SETPOS, 100, 0);
+        }
     }
     // Publish idle only after the final diagnostics, progress and status are
     // complete. A new task must not be accepted inside an unfinished callback.
@@ -4078,6 +4104,9 @@ fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
         for event in batch {
             match event {
                 WorkerEvent::Log(text) => add_log(state, &text, false),
+                WorkerEvent::Progress(value) => unsafe {
+                    SendMessageW(state.controls.progress, PBM_SETPOS, value as usize, 0);
+                },
                 WorkerEvent::Finished(event) => state.pending_finish = Some(event),
             }
         }
@@ -4350,6 +4379,69 @@ fn localized_log(lang: Lang, raw: &str) -> String {
     }
     if let Some(message) = batch_message(lang, text) {
         return message;
+    }
+    if let Some(value) = text.strip_prefix("[MLP-PROGRESS] ")
+        && let Some((current, total)) = value.split_once('/')
+        && current.bytes().all(|byte| byte.is_ascii_digit())
+        && total.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return match lang {
+            Lang::Zh => format!("MLP 编码进度：{current}/{total} 首"),
+            Lang::En => format!("MLP encoding progress: {current}/{total} tracks"),
+            Lang::Ja => format!("MLP エンコード進捗：{current}/{total} 曲"),
+        };
+    }
+    if let Some(value) = text.strip_prefix("[verify] pcm ") {
+        let mut fields = value.splitn(3, ' ');
+        if let (Some(position), Some(result), Some(path)) =
+            (fields.next(), fields.next(), fields.next())
+            && let Some((current, total)) = position.split_once('/')
+        {
+            return match (lang, result) {
+                (Lang::Zh, "ok") => format!("成品音频校验：{current}/{total} 首一致：{path}"),
+                (Lang::En, "ok") => {
+                    format!("Output audio check: {current}/{total} tracks match: {path}")
+                }
+                (Lang::Ja, "ok") => format!("出力音声検証：{current}/{total} 曲一致：{path}"),
+                (Lang::Zh, _) => format!("成品音频校验：{current}/{total} 首不一致：{path}"),
+                (Lang::En, _) => {
+                    format!("Output audio check: {current}/{total} tracks differ: {path}")
+                }
+                (Lang::Ja, _) => format!("出力音声検証：{current}/{total} 曲不一致：{path}"),
+            };
+        }
+    }
+    if let Some(value) = text.strip_prefix("[verify] complete ") {
+        let mut fields = value.split_whitespace();
+        if let (Some(discs), Some("discs"), Some(tracks), Some("tracks"), Some(status)) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) {
+            let succeeded = status == "ok";
+            return match (lang, succeeded) {
+                (Lang::Zh, true) => {
+                    format!("成品校验完成：检查 {discs} 张光盘、{tracks} 首音轨，结果通过。")
+                }
+                (Lang::En, true) => format!(
+                    "Output verification completed: {discs} discs and {tracks} tracks checked successfully."
+                ),
+                (Lang::Ja, true) => format!(
+                    "出力検証完了：ディスク {discs} 枚、{tracks} 曲を確認し、問題ありません。"
+                ),
+                (Lang::Zh, false) => {
+                    format!("成品校验结束：检查 {discs} 张光盘、{tracks} 首音轨，发现问题。")
+                }
+                (Lang::En, false) => format!(
+                    "Output verification finished: {discs} discs and {tracks} tracks checked; problems were found."
+                ),
+                (Lang::Ja, false) => format!(
+                    "出力検証終了：ディスク {discs} 枚、{tracks} 曲を確認し、問題が見つかりました。"
+                ),
+            };
+        }
     }
     if let Some(value) = text.strip_prefix("发现 ")
         && let Some(count) = numbers(value).first()
@@ -4633,6 +4725,9 @@ fn export_log_to(state: &mut UiState, destination: &Path) -> Result<(), String> 
     for event in queued {
         match event {
             WorkerEvent::Log(text) => add_log(state, &text, false),
+            WorkerEvent::Progress(value) => unsafe {
+                SendMessageW(state.controls.progress, PBM_SETPOS, value as usize, 0);
+            },
             WorkerEvent::Finished(event) => state.pending_finish = Some(event),
         }
     }
@@ -5254,6 +5349,8 @@ mod presentation_tests {
             let mut callbacks = WorkerCallbacks {
                 logs: producer_logs,
                 cancel: Arc::new(AtomicBool::new(false)),
+                range: (0, 100),
+                last_progress: 0,
             };
             for index in 0..12050 {
                 callbacks.emit(1, &format!("out_time_us={index}"));
@@ -5332,6 +5429,7 @@ mod presentation_tests {
         for index in 0..LOG_QUEUE_CAPACITY {
             match receiver.recv().unwrap() {
                 WorkerEvent::Log(text) => assert_eq!(text, index.to_string()),
+                WorkerEvent::Progress(_) => panic!("progress overtook a diagnostic"),
                 WorkerEvent::Finished(_) => panic!("completion overtook a diagnostic"),
             }
         }

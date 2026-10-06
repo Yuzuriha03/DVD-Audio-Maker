@@ -68,6 +68,10 @@ impl Callbacks for Quiet<'_> {
     fn cancelled(&mut self) -> bool {
         self.0.cancelled()
     }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        self.0.progress(completed, total);
+    }
 }
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -190,8 +194,10 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     state::invalidate(&job.prepare_snapshot_path);
     let sources = state::enumerate_sources(Path::new(&job.source_directory))?;
     events.emit(1, &format!("发现 {} 个音频文件 (FLAC/M4A)", sources.len()));
+    let progress_total = (sources.len() as u64).saturating_mul(2).max(1);
+    events.progress(0, progress_total);
     let mut tracks = Vec::with_capacity(sources.len());
-    for path in &sources {
+    for (index, path) in sources.iter().enumerate() {
         alac::check_cancel(events)?;
         if let Some(entry) = cache.as_ref().filter(|_| reuse).and_then(|c| c.find(path)) {
             tracks.push(entry.probe.metadata(path));
@@ -202,6 +208,7 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
                 &mut Quiet(events),
             )?);
         }
+        events.progress(index as u64 + 1, progress_total);
     }
     events.emit(
         1,
@@ -362,6 +369,7 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
                 repair_detail: detail,
                 orig_src: original,
             });
+            events.progress(sources.len() as u64 + checked as u64, progress_total);
         }
         events.emit(1, &format!("{name}: {} 首", files.len()));
         manifest.insert(
