@@ -2,7 +2,7 @@
 
 [中文](README.md) · [日本語](README.ja.md)
 
-For Windows 10/11 x64. Extract the ZIP and run **DVD-Audio-Maker.exe**. No .NET, FFmpeg, ImageMagick, eac3to or SurCode installation is required.
+For Windows 10/11 x64. Extract the ZIP and run **DVD-Audio-Maker.exe**.
 
 Required components are embedded and prepared automatically on first launch, which may take longer. Documentation and licenses are beside the EXE.
 
