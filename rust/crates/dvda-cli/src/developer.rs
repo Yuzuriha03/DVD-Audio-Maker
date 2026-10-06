@@ -291,7 +291,6 @@ fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
             ("DVDA_BUILD_LOG", "BuildLogPath"),
             ("DVDA_AUTHOR", "DvdaAuthor"),
             ("DVDA_AUTHOR_SRC", "AuthorSource"),
-            ("DVDA_PLANNED_DISCS", "PlannedDiscs"),
             ("DVDA_GROUP_TRACK_LIMIT", "GroupTrackLimit"),
             ("DVDA_DISC_BYTES", "DiscBytes"),
             ("DVDA_MLP_SOURCE", "MlpSource"),
@@ -305,7 +304,6 @@ fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
             ("DVDA_MLP_METADATA_CONTEXT", "MlpMetadataContext"),
             ("DVDA_MLP_SURCODE_SAMPLE_RATE", "MlpSurcodeSampleRate"),
             ("DVDA_MLP_SURCODE_BITS", "MlpSurcodeBits"),
-            ("DVDA_MLP_JOBS", "MlpJobs"),
             ("DVDA_MENU_DIR", "MenuDirectory"),
             ("DVDA_MENU_BINDIR", "MenuBinaryDirectory"),
             ("DVDA_MENU", "MenuEnabled"),
@@ -414,7 +412,6 @@ fn plan(options: &AppOptions) -> Result<i32> {
     let result = dvda_core::disc::plan(
         tracks,
         options.integer("DiscBytes"),
-        options.integer("PlannedDiscs") as i32,
         options.integer("GroupTrackLimit") as i32,
     )
     .map_err(failure)?;
@@ -503,7 +500,6 @@ fn verification(
             build_log_path: Some(options.path("BuildLogPath")),
             allow_log_fallback: true,
             disc_bytes: options.integer("DiscBytes"),
-            planned_discs: options.integer("PlannedDiscs") as i32,
         }
     };
     print_outcome(dvda_core::verify::execute_mode(job, mode, iso, events))

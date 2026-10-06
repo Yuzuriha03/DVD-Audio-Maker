@@ -19,6 +19,6 @@ Required components are embedded and prepared automatically on first launch, whi
 
 Settings and language are saved automatically to %LOCALAPPDATA%/DVD-Audio-Maker/settings.json. Use Save profile, Save as and Open profile to manage JSON profiles. Legacy config.env is no longer supported. Chinese, English and Japanese interfaces are available.
 
-Planned disc count and MLP encoding workers can both be set to `auto`; the app chooses them based on the sources and available processors.
+Albums stay intact and discs are filled in track order up to the selected capacity before the next disc starts. MLP encoding concurrency is allocated automatically from available processors.
 
 After cancellation, keep the work folder. Resume checks inputs, settings and completed discs before reuse. Session logs are in %LOCALAPPDATA%/DVD-Audio-Maker/logs; build.log is also written in the work folder. Save a detailed log when reporting a problem.

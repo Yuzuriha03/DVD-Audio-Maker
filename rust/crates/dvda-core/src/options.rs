@@ -36,7 +36,6 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_FINAL_DIR", ""),
         ("DVDA_TITLE", "DVD-Audio"),
         ("DVDA_ISO_PREFIX", ""),
-        ("DVDA_PLANNED_DISCS", "auto"),
         ("DVDA_GROUP_TRACK_LIMIT", "99"),
         ("DVDA_DISC_BYTES", ""),
         ("DVDA_MLP_SOURCE", "surcode-batch"),
@@ -44,7 +43,6 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_MLP_METADATA_CONTEXT", ""),
         ("DVDA_MLP_SURCODE_SAMPLE_RATE", "48000"),
         ("DVDA_MLP_SURCODE_BITS", "24"),
-        ("DVDA_MLP_JOBS", "auto"),
         ("DVDA_MENU", "off"),
         ("DVDA_MENU_TRACKS_PER_PAGE", "12"),
         ("DVDA_MENU_INDEX_MIN_ALBUMS", "4"),
@@ -301,7 +299,6 @@ pub fn evaluate(request: Request) -> Value {
         put(name, OptionValue::new(r.flag(key, default_on)));
     }
     for (name, key, fallback, low, high) in [
-        ("PlannedDiscs", "DVDA_PLANNED_DISCS", 0, i32::MIN, i32::MAX),
         ("GroupTrackLimit", "DVDA_GROUP_TRACK_LIMIT", 99, 1, 99),
         (
             "MlpSurcodeSampleRate",
@@ -317,7 +314,6 @@ pub fn evaluate(request: Request) -> Value {
             i32::MIN,
             i32::MAX,
         ),
-        ("MlpJobs", "DVDA_MLP_JOBS", 0, 0, 16),
         ("MenuTracksPerPage", "DVDA_MENU_TRACKS_PER_PAGE", 12, 1, 32),
         (
             "MenuIndexMinimumAlbums",
@@ -333,6 +329,8 @@ pub fn evaluate(request: Request) -> Value {
             OptionValue::new(r.int(key, fallback).clamp(low, high)),
         );
     }
+    put("PlannedDiscs", OptionValue::new(0));
+    put("MlpJobs", OptionValue::new(0));
     put(
         "DiscBytes",
         OptionValue::new(

@@ -30,6 +30,10 @@ impl Scratch {
 }
 impl Drop for Scratch {
     fn drop(&mut self) {
+        if std::env::var_os("DVDA_TEST_KEEP_SCRATCH").is_some() {
+            eprintln!("preserved native integration fixture: {}", self.0.display());
+            return;
+        }
         fs::remove_dir_all(&self.0).unwrap();
     }
 }
@@ -60,7 +64,11 @@ fn sources(root: &Path) {
 fn sources_aligned(root: &Path, align: bool) {
     fs::create_dir_all(root.join("src")).unwrap();
     for n in 1..=2u32 {
-        let frames = 24003 + n * 23;
+        let frames = std::env::var("DVDA_TEST_AUDIO_FRAMES")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|frames| (48000..=1_440_000).contains(frames))
+            .unwrap_or(24003 + n * 23);
         let frames = if align {
             frames.div_ceil(40) * 40
         } else {
@@ -483,7 +491,9 @@ fn application_menu_and_title_boundaries() {
     );
     let data =
         PathBuf::from(std::env::var_os("DVDA_TEST_MENU_DATA").expect("Set DVDA_TEST_MENU_DATA"));
-    let options = options(&root.0, "lpcm")
+    let mode = std::env::var("DVDA_TEST_MLP_MODE").unwrap_or_else(|_| "lpcm".into());
+    assert!(matches!(mode.as_str(), "lpcm" | "surcode-batch"));
+    let options = options(&root.0, &mode)
         .with_profile_values(
             json!({
             "DVDA_MENU":true, "DVDA_MENU_STILLPICS":true,"DVDA_MENU_INDEX_MIN_ALBUMS":1,
@@ -620,19 +630,30 @@ fn application_menu_and_title_boundaries() {
         }
         fs::write(&iso, &bad).unwrap();
         // Both explicit positive expectations and no expectations require files.
-        assert_diagnostic(menu_only(), "MENU_FILE_MISSING");
+        assert_menu_file_missing(menu_only());
         let mut no_expectation = original_value.clone();
         no_expectation["__discs__"][0]
             .as_object_mut()
             .unwrap()
             .remove("menu");
         fs::write(&index_path, serde_json::to_vec(&no_expectation).unwrap()).unwrap();
-        assert_diagnostic(menu_only(), "MENU_FILE_MISSING");
+        assert_menu_file_missing(menu_only());
         fs::write(&index_path, &original_index).unwrap();
     }
     let mut zero = original_value.clone();
     zero["__discs__"][0]["menu"]["stills"] = json!(0);
     fs::write(&index_path, serde_json::to_vec(&zero).unwrap()).unwrap();
+    let mut no_stills = original_iso.clone();
+    let amg_offset = entries
+        .iter()
+        .find(|entry| entry.name == "AUDIO_TS.IFO")
+        .unwrap()
+        .logical_block_address as usize
+        * 2048;
+    no_stills[amg_offset + 0x30..amg_offset + 0x34].fill(0);
+    no_stills[still_ifo_record + 33] = b'X';
+    no_stills[still_vob_record + 33] = b'X';
+    fs::write(&iso, &no_stills).unwrap();
     let zero_result = menu_only();
     assert!(zero_result.succeeded, "{:?}", zero_result.diagnostics);
     fs::write(&index_path, &original_index).unwrap();
@@ -646,15 +667,10 @@ fn application_menu_and_title_boundaries() {
     let job = options.build_job(false).unwrap();
     let tracks: Vec<dvda_core::disc::Track> =
         serde_json::from_value(built.plan.as_ref().unwrap()["Tracks"].clone()).unwrap();
-    let disc = dvda_core::disc::plan(
-        tracks,
-        job.disc_bytes,
-        job.planned_discs,
-        job.group_track_limit,
-    )
-    .unwrap()
-    .discs
-    .remove(0);
+    let disc = dvda_core::disc::plan(tracks, job.disc_bytes, job.group_track_limit)
+        .unwrap()
+        .discs
+        .remove(0);
     let check_still = || {
         dvda_core::menu_check::verify(
             &job,
@@ -862,6 +878,19 @@ fn assert_diagnostic(outcome: dvda_core::verify::Outcome, code: &str) {
     assert!(
         outcome.diagnostics.iter().any(|d| d["Code"] == code),
         "{code}: {:?}",
+        outcome.diagnostics
+    );
+}
+fn assert_menu_file_missing(outcome: dvda_core::verify::Outcome) {
+    assert!(!outcome.succeeded, "missing menu files unexpectedly passed");
+    assert!(
+        outcome.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic["Code"].as_str(),
+                Some("MENU_FILE_MISSING" | "AMG_ASVS_TARGET_MISSING")
+            )
+        }),
+        "missing menu file was not diagnosed: {:?}",
         outcome.diagnostics
     );
 }

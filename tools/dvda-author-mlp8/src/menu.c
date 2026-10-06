@@ -749,7 +749,8 @@ int create_mpg(pic *img, uint16_t rank, char *mp2track, char *tempfile, globalDa
 
   int encode_result = dvda_menu_create_mpg(y4mfile, wav_for_mpg,
                                             img->backgroundmpg[rank],
-                                            img->norm, img->aspect);
+                                            img->norm, img->aspect,
+                                            img->action == STILLPICS);
   unlink(y4mfile);
   if (encode_result != 0)
     {
@@ -2566,7 +2567,6 @@ int create_stillpic_directory(char *string, int32_t count, globalData *globals)
 
 }
 #endif
-
 
 
 

@@ -40,6 +40,7 @@ const WM_DESTROY: u32 = 0x0002;
 const WM_SIZE: u32 = 0x0005;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const WM_CLOSE: u32 = 0x0010;
+const WM_SETREDRAW: u32 = 0x000b;
 const WM_DRAWITEM: u32 = 0x002b;
 const WM_TIMER: u32 = 0x0113;
 const ID_ADVANCED: usize = 117;
@@ -53,6 +54,10 @@ const WM_SETFONT: u32 = 0x0030;
 const EM_SETLIMITTEXT: u32 = 0x00c5;
 const EM_GETFIRSTVISIBLELINE: u32 = 0x00ce;
 const EM_LINESCROLL: u32 = 0x00b6;
+const EM_GETSEL: u32 = 0x00b0;
+const EM_SETSEL: u32 = 0x00b1;
+const EM_REPLACESEL: u32 = 0x00c2;
+const EM_SETREADONLY: u32 = 0x00cf;
 const BM_GETCHECK: u32 = 0x00f0;
 const BM_SETCHECK: u32 = 0x00f1;
 const CB_ADDSTRING: u32 = 0x0143;
@@ -117,7 +122,6 @@ const ID_SOURCE: usize = 200;
 const ID_FINAL: usize = 201;
 const ID_TITLE: usize = 202;
 const ID_CAPACITY: usize = 203;
-const ID_PLANNED_DISCS: usize = 204;
 const ID_WORK_DIR: usize = 205;
 const ID_ISO_PREFIX: usize = 206;
 const ID_GROUP_LIMIT: usize = 207;
@@ -131,7 +135,6 @@ const ID_MLP_STAGE: usize = 307;
 const ID_MODE: usize = 300;
 const ID_RATE: usize = 301;
 const ID_BITS: usize = 302;
-const ID_JOBS: usize = 303;
 const ID_METADATA: usize = 304;
 const ID_IMPORT_FOLDER: usize = 305;
 const ID_MENU: usize = 400;
@@ -501,7 +504,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "成品保存位置",
             "title" => "光盘名称",
             "capacity" => "光盘容量",
-            "planned_discs" => "计划光盘数",
             "work_dir" => "工作文件夹",
             "iso_prefix" => "镜像文件名前缀",
             "group_limit" => "每组最多曲目",
@@ -510,7 +512,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "音频编码方式",
             "sample_rate" => "采样率",
             "bits" => "音频位深",
-            "jobs" => "同时编码音轨数",
             "metadata" => "旧版 MLP 文件匹配参数",
             "menu" => "光盘菜单",
             "menu_enable" => "制作选曲菜单",
@@ -633,7 +634,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "Output folder",
             "title" => "Disc title",
             "capacity" => "Disc capacity",
-            "planned_discs" => "Planned discs to create",
             "work_dir" => "Work folder",
             "iso_prefix" => "ISO filename prefix",
             "group_limit" => "Tracks per group",
@@ -642,7 +642,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "Audio encoding",
             "sample_rate" => "Sample rate",
             "bits" => "Bit depth",
-            "jobs" => "Concurrent tracks (auto)",
             "metadata" => "Legacy MLP file matching context",
             "menu" => "Disc menu",
             "menu_enable" => "Create track menus",
@@ -771,7 +770,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "出力フォルダー",
             "title" => "ディスク名",
             "capacity" => "ディスク容量",
-            "planned_discs" => "作成予定枚数",
             "work_dir" => "作業フォルダー",
             "iso_prefix" => "ISO ファイル名の接頭辞",
             "group_limit" => "グループの曲数",
@@ -780,7 +778,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "音声エンコード",
             "sample_rate" => "サンプルレート",
             "bits" => "ビット深度",
-            "jobs" => "同時処理数（自動）",
             "metadata" => "過去ファイルのメタデータ",
             "menu" => "ディスクメニュー",
             "menu_enable" => "曲目メニューを作成",
@@ -933,7 +930,6 @@ struct Controls {
     title: Hwnd,
     capacity: Hwnd,
     custom_bytes: Hwnd,
-    planned_discs: Hwnd,
     work_dir: Hwnd,
     iso_prefix: Hwnd,
     group_limit: Hwnd,
@@ -942,7 +938,6 @@ struct Controls {
     mode: Hwnd,
     rate: Hwnd,
     bits: Hwnd,
-    jobs: Hwnd,
     metadata: Hwnd,
     import_folder: Hwnd,
     menu: Hwnd,
@@ -992,6 +987,10 @@ struct UiState {
     log_sender: SyncSender<WorkerEvent>,
     log_receiver: Receiver<WorkerEvent>,
     log_dirty: bool,
+    log_rendered_count: usize,
+    log_render_language: Option<Lang>,
+    log_render_detail: bool,
+    log_render_issues_only: bool,
     log_first_visible_line: i32,
     log_hold_line: Option<i32>,
     log_hold_until: Option<Instant>,
@@ -1616,7 +1615,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         title: ptr::null_mut(),
         capacity: ptr::null_mut(),
         custom_bytes: ptr::null_mut(),
-        planned_discs: ptr::null_mut(),
         work_dir: ptr::null_mut(),
         iso_prefix: ptr::null_mut(),
         group_limit: ptr::null_mut(),
@@ -1625,7 +1623,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         mode: ptr::null_mut(),
         rate: ptr::null_mut(),
         bits: ptr::null_mut(),
-        jobs: ptr::null_mut(),
         metadata: ptr::null_mut(),
         import_folder: ptr::null_mut(),
         menu: ptr::null_mut(),
@@ -1709,16 +1706,6 @@ fn create_controls(parent: Hwnd) -> UiState {
     combo_add(c.capacity, tr(lang, "dvd9"));
     combo_add(c.capacity, tr(lang, "custom"));
     combo_select(c.capacity, 0);
-    c.planned_discs = text_field(
-        page_start,
-        tr(lang, "planned_discs"),
-        "planned_discs",
-        ID_PLANNED_DISCS,
-        760,
-        106,
-        170,
-        &mut labels,
-    );
     c.work_dir = browse_edit(
         page_start,
         tr(lang, "work_dir"),
@@ -1822,16 +1809,6 @@ fn create_controls(parent: Hwnd) -> UiState {
     for item in ["16", "20", "24"] {
         combo_add(c.bits, item);
     }
-    c.jobs = text_field(
-        page_audio,
-        tr(lang, "jobs"),
-        "jobs",
-        ID_JOBS,
-        760,
-        18,
-        170,
-        &mut labels,
-    );
     c.metadata = browse_edit(
         page_audio,
         tr(lang, "metadata"),
@@ -2200,7 +2177,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         c.group_limit,
         c.cache,
         c.resume,
-        c.jobs,
         c.metadata,
         c.pcm_temp,
         c.mlp_stage,
@@ -2221,7 +2197,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         "group_limit",
         "cache",
         "resume",
-        "jobs",
         "metadata",
         "pcm_temp",
         "mlp_stage",
@@ -2279,6 +2254,10 @@ fn create_controls(parent: Hwnd) -> UiState {
         log_sender,
         log_receiver,
         log_dirty: false,
+        log_rendered_count: 0,
+        log_render_language: None,
+        log_render_detail: false,
+        log_render_issues_only: false,
         log_first_visible_line: 0,
         log_hold_line: None,
         log_hold_until: None,
@@ -3084,7 +3063,6 @@ fn update_choices(state: &UiState) {
         for hwnd in [
             state.controls.rate,
             state.controls.bits,
-            state.controls.jobs,
             state.controls.metadata,
             state.controls.pcm_temp,
             state.controls.mlp_stage,
@@ -3128,13 +3106,6 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         state.controls.custom_bytes,
         &options.integer("DiscBytes").to_string(),
     );
-    let planned_discs = options.integer("PlannedDiscs");
-    let planned_discs_text = if planned_discs <= 0 {
-        "auto".to_owned()
-    } else {
-        planned_discs.to_string()
-    };
-    set_text(state.controls.planned_discs, &planned_discs_text);
     set_text(state.controls.work_dir, &options.text("BuildDirectory"));
     set_text(
         state.controls.iso_prefix,
@@ -3163,13 +3134,6 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         &["16", "20", "24"],
         options.integer("MlpSurcodeBits"),
     );
-    let jobs = options.integer("MlpJobs");
-    let jobs_text = if jobs <= 0 {
-        "auto".to_owned()
-    } else {
-        jobs.to_string()
-    };
-    set_text(state.controls.jobs, &jobs_text);
     set_text(state.controls.metadata, &options.text("MlpMetadataContext"));
     check(state.controls.menu, options.boolean("MenuEnabled"));
     check(state.controls.stills, options.boolean("MenuStillPictures"));
@@ -3255,13 +3219,6 @@ fn overrides(state: &UiState) -> Map<String, Value> {
             _ => 4_707_319_808i64,
         }),
     );
-    let planned_discs = get_text(state.controls.planned_discs);
-    let planned_discs = if planned_discs.trim().is_empty() || planned_discs.trim() == "0" {
-        "auto".to_owned()
-    } else {
-        planned_discs
-    };
-    put(&mut values, "PlannedDiscs", json!(planned_discs));
     put(
         &mut values,
         "BuildDirectory",
@@ -3307,13 +3264,6 @@ fn overrides(state: &UiState) -> Map<String, Value> {
         "MlpSurcodeBits",
         json!(numeric_choice(state.controls.bits, SAMPLE_BITS)),
     );
-    let jobs = get_text(state.controls.jobs);
-    let jobs = if jobs.trim().is_empty() || jobs.trim() == "0" {
-        "auto".to_owned()
-    } else {
-        jobs
-    };
-    put(&mut values, "MlpJobs", json!(jobs));
     put(
         &mut values,
         "MlpMetadataContext",
@@ -3422,12 +3372,6 @@ fn valid_integer(value: &str, min: i64, max: i64) -> bool {
         .parse::<i64>()
         .is_ok_and(|n| (min..=max).contains(&n))
 }
-fn valid_jobs(value: &str) -> bool {
-    value.trim().eq_ignore_ascii_case("auto") || valid_integer(value, 1, 16)
-}
-fn valid_planned_discs(value: &str) -> bool {
-    value.trim().eq_ignore_ascii_case("auto") || valid_integer(value, 0, 999)
-}
 fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
     let c = &state.controls;
     let mut error = None;
@@ -3455,15 +3399,6 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
             ));
             break;
         }
-    }
-    if error.is_none() && !valid_planned_discs(&get_text(c.planned_discs)) {
-        error = Some((
-            c.planned_discs,
-            format!("{}：auto 或 1–999", tr(state.lang, "planned_discs")),
-        ));
-    }
-    if error.is_none() && !valid_jobs(&get_text(c.jobs)) {
-        error = Some((c.jobs, format!("{}：auto 或 1–16", tr(state.lang, "jobs"))));
     }
     if error.is_none()
         && combo_index(c.capacity) == 2
@@ -3653,6 +3588,8 @@ fn log_timestamp() -> String {
 fn reset_task_log(state: &mut UiState) {
     state.logs.clear();
     state.log_dirty = false;
+    state.log_rendered_count = 0;
+    state.log_render_language = None;
     state.log_first_visible_line = 0;
     state.log_hold_line = None;
     state.log_hold_until = None;
@@ -3698,7 +3635,6 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "FinalDirectory" => "DVDA_FINAL_DIR",
             "Title" => "DVDA_TITLE",
             "DiscBytes" => "DVDA_DISC_BYTES",
-            "PlannedDiscs" => "DVDA_PLANNED_DISCS",
             "BuildDirectory" => "DVDA_BUILD_DIR",
             "IsoPrefix" => "DVDA_ISO_PREFIX",
             "GroupTrackLimit" => "DVDA_GROUP_TRACK_LIMIT",
@@ -3706,7 +3642,6 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "MlpExternalDirectory" => "DVDA_MLP_EXTERNAL_DIR",
             "MlpSurcodeSampleRate" => "DVDA_MLP_SURCODE_SAMPLE_RATE",
             "MlpSurcodeBits" => "DVDA_MLP_SURCODE_BITS",
-            "MlpJobs" => "DVDA_MLP_JOBS",
             "MlpMetadataContext" => "DVDA_MLP_METADATA_CONTEXT",
             "MenuEnabled" => "DVDA_MENU",
             "MenuStillPictures" => "DVDA_MENU_STILLPICS",
@@ -3854,6 +3789,12 @@ fn start_operation(state: &mut UiState, command: usize) {
     state.activity_raw = tr(Lang::Zh, start_key).into();
     set_text(state.controls.status, tr(state.lang, start_key));
     set_text(state.controls.activity, tr(state.lang, start_key));
+    // Verification can spend time in detailed-only checks, so keep a useful
+    // summary row visible even when its low-level progress is filtered out.
+    add_log(state, tr(Lang::Zh, start_key), false);
+    if checked(state.controls.live) {
+        render_log(state);
+    }
     unsafe {
         let progress = state.controls.progress;
         SetWindowLongPtrW(progress, -16, GetWindowLongPtrW(progress, -16) | 8);
@@ -4190,30 +4131,43 @@ fn display_log(lang: Lang, lines: &[LogLine], detail: bool, only: bool) -> Strin
 }
 fn render_log(state: &mut UiState) {
     let detail = combo_index(state.controls.log_view) == 1;
+    let issues_only = checked(state.controls.only_issues);
     unsafe {
         EnableWindow(state.controls.only_issues, i32::from(!detail));
     }
-    set_text(
-        state.controls.log,
-        &display_log(
+    let can_append = state.log_render_language == Some(state.lang)
+        && state.log_render_detail == detail
+        && state.log_render_issues_only == issues_only
+        && state.log_rendered_count <= state.logs.len();
+    if can_append {
+        let added = display_log(
             state.lang,
-            &state.logs,
+            &state.logs[state.log_rendered_count..],
             detail,
-            checked(state.controls.only_issues),
-        ),
-    );
+            issues_only,
+        );
+        append_log_text(state.controls.log, &added);
+    } else {
+        replace_log_text(
+            state.controls.log,
+            &display_log(state.lang, &state.logs, detail, issues_only),
+        );
+    }
     let hold_line = state
         .log_hold_until
         .filter(|deadline| Instant::now() < *deadline)
         .and(state.log_hold_line);
     unsafe {
-        // WM_SETTEXT resets the edit control's viewport. Keep the user's
-        // recorded first line while the ten-second hold is active; otherwise
-        // explicitly request the newest line.
         if let Some(line) = hold_line {
-            SendMessageW(state.controls.log, EM_LINESCROLL, 0, line as isize);
+            let current = first_visible_log_line(state.controls.log);
+            SendMessageW(
+                state.controls.log,
+                EM_LINESCROLL,
+                0,
+                (line - current) as isize,
+            );
         } else {
-            SendMessageW(state.controls.log, 0x00b1, usize::MAX, -1);
+            SendMessageW(state.controls.log, EM_SETSEL, usize::MAX, -1);
             SendMessageW(state.controls.log, 0x00b7, 0, 0);
             SendMessageW(state.controls.log, 0x0115, 7, 0);
         }
@@ -4222,8 +4176,52 @@ fn render_log(state: &mut UiState) {
         state.log_hold_line = None;
         state.log_hold_until = None;
     }
+    state.log_rendered_count = state.logs.len();
+    state.log_render_language = Some(state.lang);
+    state.log_render_detail = detail;
+    state.log_render_issues_only = issues_only;
     state.log_first_visible_line = first_visible_log_line(state.controls.log);
     state.log_dirty = false;
+}
+
+fn replace_log_text(log: Hwnd, text: &str) {
+    unsafe {
+        SendMessageW(log, WM_SETREDRAW, 0, 0);
+        set_text(log, text);
+        SendMessageW(log, WM_SETREDRAW, 1, 0);
+        RedrawWindow(log, ptr::null(), ptr::null_mut(), RDW_INVALIDATE);
+    }
+}
+
+fn append_log_text(log: Hwnd, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    let text = wide(text);
+    unsafe {
+        let mut selection_start = 0u32;
+        let mut selection_end = 0u32;
+        SendMessageW(
+            log,
+            EM_GETSEL,
+            &mut selection_start as *mut u32 as usize,
+            &mut selection_end as *mut u32 as isize,
+        );
+        let end = SendMessageW(log, 0x000e, 0, 0);
+        SendMessageW(log, WM_SETREDRAW, 0, 0);
+        SendMessageW(log, EM_SETREADONLY, 0, 0);
+        SendMessageW(log, EM_SETSEL, end as usize, end);
+        SendMessageW(log, EM_REPLACESEL, 0, text.as_ptr() as isize);
+        SendMessageW(log, EM_SETREADONLY, 1, 0);
+        SendMessageW(
+            log,
+            EM_SETSEL,
+            selection_start as usize,
+            selection_end as isize,
+        );
+        SendMessageW(log, WM_SETREDRAW, 1, 0);
+        RedrawWindow(log, ptr::null(), ptr::null_mut(), RDW_INVALIDATE);
+    }
 }
 
 fn first_visible_log_line(log: Hwnd) -> i32 {
@@ -4302,7 +4300,6 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.title, "DVDA_TITLE"),
         (c.capacity, "DVDA_DISC_BYTES"),
         (c.custom_bytes, "DVDA_DISC_BYTES"),
-        (c.planned_discs, "DVDA_PLANNED_DISCS"),
         (c.work_dir, "DVDA_BUILD_DIR"),
         (c.iso_prefix, "DVDA_ISO_PREFIX"),
         (c.group_limit, "DVDA_GROUP_TRACK_LIMIT"),
@@ -4311,7 +4308,6 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.mode, "DVDA_MLP_SOURCE"),
         (c.rate, "DVDA_MLP_SURCODE_SAMPLE_RATE"),
         (c.bits, "DVDA_MLP_SURCODE_BITS"),
-        (c.jobs, "DVDA_MLP_JOBS"),
         (c.metadata, "DVDA_MLP_METADATA_CONTEXT"),
         (c.import_folder, "DVDA_MLP_EXTERNAL_DIR"),
         (c.menu, "DVDA_MENU"),
@@ -5064,6 +5060,25 @@ mod presentation_tests {
     }
 
     #[test]
+    fn task_start_is_visible_in_summary_before_progress_events() {
+        for (lang, key) in [
+            (Lang::Zh, "started_check"),
+            (Lang::En, "started_build"),
+            (Lang::Ja, "started_verify"),
+        ] {
+            let lines = [LogLine {
+                raw: tr(Lang::Zh, key).into(),
+                problem: false,
+                timestamp: "12:34:56".into(),
+            }];
+            assert!(
+                !display_log(lang, &lines, false, false).trim().is_empty(),
+                "{key} should remain visible in the summary"
+            );
+        }
+    }
+
+    #[test]
     fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
         #[link(name = "user32")]
         unsafe extern "system" {
@@ -5296,7 +5311,7 @@ mod presentation_tests {
     fn settings_help_and_new_runtime_messages_cover_all_languages() {
         let help: HashMap<String, String> =
             serde_json::from_str(include_str!("../locales/help.json")).unwrap();
-        assert_eq!(help.len(), 30);
+        assert_eq!(help.len(), 28);
         for (key, original) in help {
             assert_eq!(setting_help(Lang::Zh, &key), original);
             for lang in [Lang::En, Lang::Ja] {

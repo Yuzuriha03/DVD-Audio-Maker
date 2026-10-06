@@ -81,11 +81,12 @@ fn option_ranges_sources_and_removed_branches() {
         assert!(evaluate(json!({"DVDA_MLP_SOURCE":value}),json!({}))["Properties"]["MlpSource"]["Error"].is_string());
     }
     let result = evaluate(
-        json!({"DVDA_MLP_JOBS":"999","DVDA_MENU_TRACKS_PER_PAGE":"0","DVDA_MENU_COVER_DIM":"-1","DVDA_DISC_BYTES":"0","DVDA_RESUME":"off","DVDA_MENU":"YES","DVDA_LOSS_ERROR_S":"not a number"}),
+        json!({"DVDA_MLP_JOBS":"999","DVDA_PLANNED_DISCS":"8","DVDA_MENU_TRACKS_PER_PAGE":"0","DVDA_MENU_COVER_DIM":"-1","DVDA_DISC_BYTES":"0","DVDA_RESUME":"off","DVDA_MENU":"YES","DVDA_LOSS_ERROR_S":"not a number"}),
         json!({}),
     );
     let p = &result["Properties"];
-    assert_eq!(p["MlpJobs"]["Value"], 16);
+    assert_eq!(p["MlpJobs"]["Value"], 0);
+    assert_eq!(p["PlannedDiscs"]["Value"], 0);
     assert_eq!(p["MenuTracksPerPage"]["Value"], 1);
     assert_eq!(p["MenuCoverDim"]["Value"], 0);
     assert_eq!(p["DiscBytes"]["Value"], 4_707_319_808_i64);
@@ -101,10 +102,7 @@ fn option_ranges_sources_and_removed_branches() {
 fn default_mlp_jobs_tracks_available_parallelism() {
     let jobs = options::default_mlp_jobs();
     assert!((1..=16).contains(&jobs));
-    assert_eq!(
-        options::defaults("C:/Local")["DVDA_MLP_JOBS"].as_str(),
-        Some("auto")
-    );
+    assert!(options::defaults("C:/Local").get("DVDA_MLP_JOBS").is_none());
     assert_eq!(
         evaluate(json!({"DVDA_MLP_JOBS":"auto"}), json!({}))["Properties"]["MlpJobs"]["Value"],
         0

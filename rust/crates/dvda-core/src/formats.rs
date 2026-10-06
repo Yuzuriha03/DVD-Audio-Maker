@@ -9,6 +9,211 @@ struct IsoSource {
     file: RefCell<fs::File>,
     length: u64,
 }
+
+const ISO_SECTOR_SIZE: u64 = 2048;
+
+fn read_sector(input: &mut (impl Read + Seek), lba: u64) -> Result<[u8; 2048], String> {
+    let offset = lba
+        .checked_mul(ISO_SECTOR_SIZE)
+        .ok_or("ISO_SECTOR_OUT_OF_RANGE")?;
+    input
+        .seek(SeekFrom::Start(offset))
+        .map_err(|error| error.to_string())?;
+    let mut sector = [0; ISO_SECTOR_SIZE as usize];
+    input
+        .read_exact(&mut sector)
+        .map_err(|error| format!("ISO_SECTOR_OUT_OF_RANGE: {error}"))?;
+    Ok(sector)
+}
+
+fn little_u32(data: &[u8]) -> u32 {
+    u32::from_le_bytes(data[..4].try_into().unwrap())
+}
+
+fn udf_crc16(data: &[u8]) -> u16 {
+    data.iter().fold(0u16, |mut crc, byte| {
+        crc ^= u16::from(*byte) << 8;
+        for _ in 0..8 {
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
+        }
+        crc
+    })
+}
+
+fn udf_tag_valid(descriptor: &[u8], expected_id: u16, expected_location: u32) -> bool {
+    if descriptor.len() < 16
+        || u16::from_le_bytes(descriptor[..2].try_into().unwrap()) != expected_id
+        || little_u32(&descriptor[12..16]) != expected_location
+    {
+        return false;
+    }
+    let checksum = descriptor[..4]
+        .iter()
+        .chain(&descriptor[5..16])
+        .fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    let crc_length = u16::from_le_bytes(descriptor[10..12].try_into().unwrap()) as usize;
+    crc_length <= descriptor.len() - 16
+        && checksum == descriptor[4]
+        && udf_crc16(&descriptor[16..16 + crc_length])
+            == u16::from_le_bytes(descriptor[8..10].try_into().unwrap())
+}
+
+fn require_udf_tag(
+    input: &mut (impl Read + Seek),
+    lba: u64,
+    expected_id: u16,
+    expected_location: u32,
+) -> Result<[u8; 2048], String> {
+    let descriptor = read_sector(input, lba)?;
+    if !udf_tag_valid(&descriptor, expected_id, expected_location) {
+        return Err(format!("UDF_DESCRIPTOR_INVALID: LBA {lba}"));
+    }
+    Ok(descriptor)
+}
+
+fn verify_dvd_audio_filesystem_reader(
+    input: &mut (impl Read + Seek),
+    byte_length: u64,
+) -> Result<(), String> {
+    if !byte_length.is_multiple_of(ISO_SECTOR_SIZE) || byte_length / ISO_SECTOR_SIZE <= 256 {
+        return Err("ISO_SECTOR_ALIGNMENT: image is not a complete 2048-byte-sector volume".into());
+    }
+    let sectors = byte_length / ISO_SECTOR_SIZE;
+    let pvd = read_sector(input, 16)?;
+    if pvd[0] != 1 || &pvd[1..6] != b"CD001" || pvd[6] != 1 {
+        return Err("ISO_PVD_INVALID: primary volume descriptor is missing or malformed".into());
+    }
+    if u32::from_le_bytes(pvd[80..84].try_into().unwrap()) as u64 != sectors
+        || u32::from_be_bytes(pvd[84..88].try_into().unwrap()) as u64 != sectors
+    {
+        return Err("ISO_VOLUME_SPACE_MISMATCH: PVD size does not match the image".into());
+    }
+    if u16::from_le_bytes(pvd[128..130].try_into().unwrap()) != ISO_SECTOR_SIZE as u16
+        || u16::from_be_bytes(pvd[130..132].try_into().unwrap()) != ISO_SECTOR_SIZE as u16
+    {
+        return Err("ISO_BLOCK_SIZE_INVALID: PVD logical block size is not 2048".into());
+    }
+    let root = &pvd[156..190];
+    if root[0] != 34
+        || root[25] != 2
+        || u16::from_le_bytes(root[28..30].try_into().unwrap()) != 1
+        || u16::from_be_bytes(root[30..32].try_into().unwrap()) != 1
+        || pvd[881] != 1
+    {
+        return Err("ISO_ROOT_RECORD_INVALID: PVD root directory fields are malformed".into());
+    }
+    let terminator = read_sector(input, 17)?;
+    if terminator[0] != 255 || &terminator[1..6] != b"CD001" || terminator[6] != 1 {
+        return Err("ISO_DESCRIPTOR_TERMINATOR_MISSING".into());
+    }
+    for (lba, identifier) in [(18, b"BEA01".as_slice()), (19, b"NSR02"), (20, b"TEA01")] {
+        let descriptor = read_sector(input, lba)?;
+        if descriptor[0] != 0 || &descriptor[1..6] != identifier {
+            return Err(format!("UDF_RECOGNITION_INVALID: sector {lba}"));
+        }
+    }
+    let anchor = match require_udf_tag(input, 256, 2, 256) {
+        Ok(anchor) => anchor,
+        Err(_) => {
+            return Err("UDF_ANCHOR_MISSING: invalid anchor descriptor at sector 256".into());
+        }
+    };
+    let mut descriptor_sequences = Vec::new();
+    for (length_at, location_at) in [(16, 20), (24, 28)] {
+        let bytes = u64::from(little_u32(&anchor[length_at..length_at + 4]));
+        let location = u64::from(little_u32(&anchor[location_at..location_at + 4]));
+        let extent_sectors = bytes.div_ceil(ISO_SECTOR_SIZE);
+        if bytes < 6 * ISO_SECTOR_SIZE
+            || !bytes.is_multiple_of(ISO_SECTOR_SIZE)
+            || location < 16
+            || location
+                .checked_add(extent_sectors)
+                .is_none_or(|end| end > sectors)
+        {
+            return Err(
+                "UDF_VDS_EXTENT_INVALID: anchor descriptor sequence is outside the image".into(),
+            );
+        }
+        descriptor_sequences.push((location, extent_sectors));
+    }
+    let main_vds = descriptor_sequences[0].0;
+    let main_vds_end = main_vds + descriptor_sequences[0].1;
+    let reserve_vds = descriptor_sequences[1].0;
+    let reserve_vds_end = reserve_vds + descriptor_sequences[1].1;
+    if (main_vds < reserve_vds_end && reserve_vds < main_vds_end)
+        || main_vds_end > sectors
+        || reserve_vds_end > sectors
+    {
+        return Err("UDF_VDS_EXTENT_INVALID: primary and reserve sequences overlap".into());
+    }
+    let expected_ids = [1u16, 4, 5, 6, 7, 8];
+    let mut main_descriptors = Vec::with_capacity(expected_ids.len());
+    for (index, expected_id) in expected_ids.into_iter().enumerate() {
+        main_descriptors.push(require_udf_tag(
+            input,
+            main_vds + index as u64,
+            expected_id,
+            (main_vds + index as u64) as u32,
+        )?);
+    }
+    for (index, expected_id) in [1u16, 4, 5, 6, 7, 8].into_iter().enumerate() {
+        require_udf_tag(
+            input,
+            reserve_vds + index as u64,
+            expected_id,
+            (reserve_vds + index as u64) as u32,
+        )?;
+    }
+    let partition = &main_descriptors[2];
+    let partition_start = u64::from(little_u32(&partition[188..192]));
+    let partition_length = u64::from(little_u32(&partition[192..196]));
+    if partition_start < 257
+        || partition_length == 0
+        || partition_start
+            .checked_add(partition_length)
+            .is_none_or(|end| end >= sectors)
+    {
+        return Err("UDF_PARTITION_INVALID: partition lies outside the image".into());
+    }
+    let integrity_bytes = u64::from(little_u32(&main_descriptors[3][432..436]));
+    let integrity_lba = u64::from(little_u32(&main_descriptors[3][436..440]));
+    let Some(integrity_end) = integrity_lba.checked_add(integrity_bytes.div_ceil(ISO_SECTOR_SIZE))
+    else {
+        return Err("UDF_INTEGRITY_SEQUENCE_INVALID: extent overflows".into());
+    };
+    if integrity_bytes < 2 * ISO_SECTOR_SIZE
+        || !integrity_bytes.is_multiple_of(ISO_SECTOR_SIZE)
+        || integrity_lba < 16
+        || integrity_end > partition_start
+        || (integrity_lba < main_vds_end && main_vds < integrity_end)
+        || (integrity_lba < reserve_vds_end && reserve_vds < integrity_end)
+    {
+        return Err("UDF_INTEGRITY_SEQUENCE_INVALID: location is outside the image".into());
+    }
+    require_udf_tag(input, integrity_lba, 9, integrity_lba as u32)?;
+    require_udf_tag(input, integrity_lba + 1, 8, (integrity_lba + 1) as u32)?;
+    require_udf_tag(input, partition_start, 256, 0)?;
+    require_udf_tag(input, partition_start + 1, 8, 1)?;
+    let end_anchor_lba = sectors - 1;
+    let end_anchor = require_udf_tag(input, end_anchor_lba, 2, end_anchor_lba as u32)?;
+    if u64::from(little_u32(&end_anchor[20..24])) != main_vds
+        || u64::from(little_u32(&end_anchor[28..32])) != reserve_vds
+    {
+        return Err("UDF_END_ANCHOR_INVALID: backup extents do not match".into());
+    }
+    Ok(())
+}
+
+pub fn verify_dvd_audio_filesystem(path: &Path) -> Result<(), String> {
+    let path = path.to_string_lossy();
+    let mut input = crate::identity::open_read(&path).map_err(|error| error.to_string())?;
+    let length = input.metadata().map_err(|error| error.to_string())?.len();
+    verify_dvd_audio_filesystem_reader(&mut input, length)
+}
 impl IsoSource {
     fn open(path: &str) -> Result<Self, String> {
         let file = crate::identity::open_read(path).map_err(|e| format!("{path}: {e}"))?;
@@ -1141,4 +1346,146 @@ fn hex_digit(value: u8) -> Option<u8> {
 #[allow(dead_code)]
 fn _path_is_file(path: &str) -> bool {
     Path::new(path).is_file()
+}
+
+#[cfg(test)]
+mod dvd_audio_filesystem_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    const SECTORS: usize = 300;
+
+    fn set_udf_tag(image: &mut [u8], lba: usize, id: u16, location: u32) {
+        let start = lba * ISO_SECTOR_SIZE as usize;
+        let descriptor = &mut image[start..start + ISO_SECTOR_SIZE as usize];
+        descriptor[..2].copy_from_slice(&id.to_le_bytes());
+        descriptor[2..4].copy_from_slice(&2u16.to_le_bytes());
+        descriptor[6..8].copy_from_slice(&1u16.to_le_bytes());
+        descriptor[10..12].copy_from_slice(&496u16.to_le_bytes());
+        descriptor[12..16].copy_from_slice(&location.to_le_bytes());
+        let crc = udf_crc16(&descriptor[16..512]);
+        descriptor[8..10].copy_from_slice(&crc.to_le_bytes());
+        descriptor[4] = descriptor[..4]
+            .iter()
+            .chain(&descriptor[5..16])
+            .fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    }
+
+    fn fixture() -> Vec<u8> {
+        let mut image = vec![0; SECTORS * ISO_SECTOR_SIZE as usize];
+        let pvd = &mut image[16 * ISO_SECTOR_SIZE as usize..17 * ISO_SECTOR_SIZE as usize];
+        pvd[0] = 1;
+        pvd[1..6].copy_from_slice(b"CD001");
+        pvd[6] = 1;
+        pvd[80..84].copy_from_slice(&(SECTORS as u32).to_le_bytes());
+        pvd[84..88].copy_from_slice(&(SECTORS as u32).to_be_bytes());
+        pvd[128..130].copy_from_slice(&(ISO_SECTOR_SIZE as u16).to_le_bytes());
+        pvd[130..132].copy_from_slice(&(ISO_SECTOR_SIZE as u16).to_be_bytes());
+        pvd[156] = 34;
+        pvd[181] = 2;
+        pvd[184..186].copy_from_slice(&1u16.to_le_bytes());
+        pvd[186..188].copy_from_slice(&1u16.to_be_bytes());
+        pvd[881] = 1;
+
+        let terminator = &mut image[17 * ISO_SECTOR_SIZE as usize..18 * ISO_SECTOR_SIZE as usize];
+        terminator[0] = 255;
+        terminator[1..6].copy_from_slice(b"CD001");
+        terminator[6] = 1;
+        for (lba, id) in [(18, b"BEA01".as_slice()), (19, b"NSR02"), (20, b"TEA01")] {
+            let start = lba * ISO_SECTOR_SIZE as usize;
+            image[start] = 0;
+            image[start + 1..start + 6].copy_from_slice(id);
+        }
+        let anchor = &mut image[256 * ISO_SECTOR_SIZE as usize..257 * ISO_SECTOR_SIZE as usize];
+        anchor[..2].copy_from_slice(&2u16.to_le_bytes());
+        for (length_at, location_at, location) in [(16, 20, 32u32), (24, 28, 48u32)] {
+            anchor[length_at..length_at + 4].copy_from_slice(&(6 * 2048u32).to_le_bytes());
+            anchor[location_at..location_at + 4].copy_from_slice(&location.to_le_bytes());
+        }
+        set_udf_tag(&mut image, 256, 2, 256);
+        let end_anchor = 299 * ISO_SECTOR_SIZE as usize;
+        for (length_at, location_at, location) in [(16, 20, 32u32), (24, 28, 48u32)] {
+            image[end_anchor + length_at..end_anchor + length_at + 4]
+                .copy_from_slice(&(6 * 2048u32).to_le_bytes());
+            image[end_anchor + location_at..end_anchor + location_at + 4]
+                .copy_from_slice(&location.to_le_bytes());
+        }
+        set_udf_tag(&mut image, 299, 2, 299);
+        let partition = 34 * ISO_SECTOR_SIZE as usize;
+        image[partition + 188..partition + 192].copy_from_slice(&257u32.to_le_bytes());
+        image[partition + 192..partition + 196].copy_from_slice(&42u32.to_le_bytes());
+        let logical = 35 * ISO_SECTOR_SIZE as usize;
+        image[logical + 432..logical + 436].copy_from_slice(&(2 * 2048u32).to_le_bytes());
+        image[logical + 436..logical + 440].copy_from_slice(&64u32.to_le_bytes());
+        for (vds, ids) in [(32, [1u16, 4, 5, 6, 7, 8]), (48, [1, 4, 5, 6, 7, 8])] {
+            for (index, id) in ids.into_iter().enumerate() {
+                set_udf_tag(&mut image, vds + index, id, (vds + index) as u32);
+            }
+        }
+        set_udf_tag(&mut image, 64, 9, 64);
+        set_udf_tag(&mut image, 65, 8, 65);
+        set_udf_tag(&mut image, 257, 256, 0);
+        set_udf_tag(&mut image, 258, 8, 1);
+        image
+    }
+
+    fn verify(image: &[u8]) -> Result<(), String> {
+        verify_dvd_audio_filesystem_reader(&mut Cursor::new(image), image.len() as u64)
+    }
+
+    #[test]
+    fn accepts_iso9660_and_udf_hybrid_volume_descriptors() {
+        verify(&fixture()).unwrap();
+    }
+
+    #[test]
+    fn rejects_incorrect_pvd_root_record_and_volume_size() {
+        let mut image = fixture();
+        image[16 * ISO_SECTOR_SIZE as usize + 181] = 1;
+        assert!(
+            verify(&image)
+                .unwrap_err()
+                .starts_with("ISO_ROOT_RECORD_INVALID")
+        );
+
+        let mut image = fixture();
+        image[16 * ISO_SECTOR_SIZE as usize + 80..16 * ISO_SECTOR_SIZE as usize + 84]
+            .copy_from_slice(&256u32.to_le_bytes());
+        assert!(
+            verify(&image)
+                .unwrap_err()
+                .starts_with("ISO_VOLUME_SPACE_MISMATCH")
+        );
+    }
+
+    #[test]
+    fn rejects_missing_udf_markers_anchor_and_out_of_range_descriptor_extents() {
+        let mut image = fixture();
+        image[19 * ISO_SECTOR_SIZE as usize + 1..19 * ISO_SECTOR_SIZE as usize + 6]
+            .copy_from_slice(b"NSR01");
+        assert!(
+            verify(&image)
+                .unwrap_err()
+                .starts_with("UDF_RECOGNITION_INVALID")
+        );
+
+        let mut image = fixture();
+        image[256 * ISO_SECTOR_SIZE as usize..256 * ISO_SECTOR_SIZE as usize + 2]
+            .copy_from_slice(&0u16.to_le_bytes());
+        assert!(
+            verify(&image)
+                .unwrap_err()
+                .starts_with("UDF_ANCHOR_MISSING")
+        );
+
+        let mut image = fixture();
+        let location = 256 * ISO_SECTOR_SIZE as usize + 20;
+        image[location..location + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        set_udf_tag(&mut image, 256, 2, 256);
+        assert!(
+            verify(&image)
+                .unwrap_err()
+                .starts_with("UDF_VDS_EXTENT_INVALID")
+        );
+    }
 }

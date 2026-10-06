@@ -19,21 +19,27 @@ def main():
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
     prefix=a.ffmpeg_runtime.resolve();source=Path(__file__).parent/'native/dvda-menu-media.c'
+    parser_source=Path(__file__).parent/'native/test-menu-media-parser.c'
     compiler=a.msys_root.resolve()/'mingw64/bin/gcc.exe';env=os.environ|{'PATH':str(compiler.parent)+os.pathsep+os.environ['PATH']}
     dll=out/'menu-test.dll'
     subprocess.run([str(compiler),'-O2','-shared','-static-libgcc','-Wall','-Wextra','-Werror',
                     '-I'+str(prefix/'include'),str(source),'-L'+str(prefix/'lib'),
                     '-lavformat','-lavcodec','-lavutil','-o',str(dll)],env=env,check=True)
+    parser=out/'menu-parser-test.exe'
+    subprocess.run([str(compiler),'-O2','-Wall','-Wextra','-Werror',
+                    '-I'+str(prefix/'include'),str(parser_source),'-L'+str(prefix/'lib'),
+                    '-lavformat','-lavcodec','-lavutil','-o',str(parser)],env=env,check=True)
     search=os.add_dll_directory(str(prefix/'bin'))
     gcc_runtime=os.add_dll_directory(str(compiler.parent))
     library=ctypes.CDLL(str(dll));entry=library.dvda_menu_create_mpg
-    entry.argtypes=[ctypes.c_char_p]*5;entry.restype=ctypes.c_int
+    entry.argtypes=[ctypes.c_char_p]*5+[ctypes.c_int];entry.restype=ctypes.c_int
     checks=[];report={'status':'RUNNING','checks':checks}
     def check(name,ok):
         if not ok:raise AssertionError(name)
         checks.append(name);print('PASS '+name,flush=True)
-    def invoke(y4m,wav,target,norm='pal',aspect='4:3'):
-        return entry(*(str(s).encode('utf-8') if s is not None else None for s in [y4m,wav,target,norm,aspect]))
+    def invoke(y4m,wav,target,norm='pal',aspect='4:3',still=True):
+        args=[str(s).encode('utf-8') if s is not None else None for s in [y4m,wav,target,norm,aspect]]
+        return entry(*args,int(still))
     def audio(path,rate=48000,channels=2,samples=12000):
         with wave.open(str(path),'wb') as f:
             f.setnchannels(channels);f.setsampwidth(2);f.setframerate(rate)
@@ -46,14 +52,22 @@ def main():
             for aspect in ['4:3','16:9']:
                 for sound in [False,True]:
                     label=f'{norm}-{aspect.replace(":","x")}-{sound}';target=out/(label+'.mpg')
-                    check(label+' encodes',invoke(y4m,wav if sound else None,target,norm,aspect)==0)
+                    still=not sound
+                    check(label+' encodes',invoke(y4m,wav if sound else None,target,norm,aspect,still)==0)
                     data=target.read_bytes()
-                    check(label+' uses complete DVD pack sectors',len(data)>0 and len(data)%2048==0 and all(data[i:i+4]==b'\0\0\1\xba' for i in range(0,len(data),2048)))
+                    terminal=data[-2048:] if len(data)>=2048 and data[-2048:-2044]==b'\0\0\1\xb9' else b''
+                    packs=data[:-2048] if terminal else data
+                    b9_sectors=sum(data[i:i+4]==b'\0\0\1\xb9' for i in range(0,len(data),2048))
+                    check(label+' uses complete DVD pack sectors',len(data)>0 and len(data)%2048==0 and all(packs[i:i+4]==b'\0\0\1\xba' for i in range(0,len(packs),2048)))
+                    check(label+' has exactly one terminal B9 sector for stills',
+                          (still and b9_sectors==1 and terminal==b'\0\0\1\xb9'+b'\xff'*2044) or (not still and b9_sectors==0))
+                    parsed=subprocess.run([str(parser),str(target)],env=env,capture_output=True,text=True)
+                    check(label+' parser emits a full video frame before EOF',parsed.returncode==0)
                     check(label+' starts video at the legacy 120-130 ms boundary',10800<=first_video_pts(data)<=12150)
                     pos=data.index(b'\0\0\1\xb3')+4
                     check(label+' sequence dimensions/frame rate/aspect',data[pos]<<4|data[pos+1]>>4==720 and (data[pos+1]&15)<<8|data[pos+2]==height and data[pos+3]&15==ratecode and data[pos+3]>>4==(['4:3','16:9'].index(aspect)+2))
                     repeat=out/'repeat.mpg'
-                    check(label+' is deterministic',invoke(y4m,wav if sound else None,repeat,norm,aspect)==0 and repeat.read_bytes()==data)
+                    check(label+' is deterministic',invoke(y4m,wav if sound else None,repeat,norm,aspect,still)==0 and repeat.read_bytes()==data)
         pal=out/'pal 菜单.y4m';failed=out/'failed.mpg'
         bad=out/'bad.y4m'
         for name,blob in [('truncated',pal.read_bytes()[:-1]),('huge',pal.read_bytes().replace(b'W720',b'W2147483647',1)),('invalid-token',pal.read_bytes().replace(b'W720',b'W720junk',1))]:

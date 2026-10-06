@@ -99,7 +99,6 @@ pub struct Plan {
 struct Request {
     tracks: Vec<Track>,
     disc_bytes: i64,
-    planned_discs: i32,
     group_track_limit: i32,
 }
 fn estimate(bytes: i64) -> Result<i64, String> {
@@ -117,12 +116,7 @@ fn diagnostic(list: &mut Vec<Diagnostic>, severity: i32, code: &str, message: St
     });
 }
 
-pub fn plan(
-    tracks: Vec<Track>,
-    disc_bytes: i64,
-    planned_discs: i32,
-    group_limit: i32,
-) -> Result<Plan, String> {
+pub fn plan(tracks: Vec<Track>, disc_bytes: i64, group_limit: i32) -> Result<Plan, String> {
     let mut diagnostics = Vec::new();
     for track in &tracks {
         if track.mlp_size <= 0 {
@@ -151,13 +145,10 @@ pub fn plan(
             albums.push((track.album.clone(), vec![track.clone()], track.mlp_size));
         }
     }
-    let desired_discs = planned_discs.max(0) as usize;
-    let total_albums = albums.len();
-    let target_discs = desired_discs.min(total_albums);
     let mut disc_albums: Vec<Vec<(String, Vec<Track>, i64)>> = Vec::new();
     let mut current = Vec::new();
     let mut current_size = 0i64;
-    for (album_index, album) in albums.into_iter().enumerate() {
+    for album in albums {
         let combined = current_size
             .checked_add(album.2)
             .ok_or("MLP size overflow")?;
@@ -169,12 +160,6 @@ pub fn plan(
             .checked_add(album.2)
             .ok_or("MLP size overflow")?;
         current.push(album);
-        let remaining_albums = total_albums - album_index - 1;
-        let remaining_discs = target_discs.saturating_sub(disc_albums.len() + 1);
-        if remaining_discs > 0 && current.len() >= remaining_albums.div_ceil(remaining_discs) {
-            disc_albums.push(std::mem::take(&mut current));
-            current_size = 0;
-        }
     }
     if !current.is_empty() {
         disc_albums.push(current);
@@ -284,17 +269,6 @@ pub fn plan(
             estimated_aob_bytes: estimated,
         });
     }
-    if planned_discs > 0 && discs.len() < planned_discs as usize {
-        diagnostic(
-            &mut diagnostics,
-            2,
-            "DISC_COUNT_BELOW_EXPECTED",
-            format!(
-                "期望制作 {} 张盘，但只有 {} 张完整专辑；不跨盘拆分专辑，无法生成更多非空光盘。",
-                planned_discs, total_albums
-            ),
-        );
-    }
     let has_errors = diagnostics.iter().any(|item| item.severity == 2);
     Ok(Plan {
         tracks,
@@ -309,7 +283,6 @@ pub fn dispatch(request: Value) -> Result<Value, String> {
     serde_json::to_value(plan(
         request.tracks,
         request.disc_bytes,
-        request.planned_discs,
         request.group_track_limit,
     )?)
     .map_err(|e| e.to_string())
@@ -371,7 +344,6 @@ mod tests {
                 track("B", "b1", 1024 * 1024 * 1024),
             ],
             4_707_319_808,
-            0,
             70,
         )
         .unwrap();
@@ -389,7 +361,6 @@ mod tests {
                 track("B", "b2", 10),
             ],
             i64::MAX / 2,
-            0,
             2,
         )
         .unwrap();
@@ -401,7 +372,6 @@ mod tests {
                 track("A", "a3", 10),
             ],
             i64::MAX / 2,
-            0,
             2,
         )
         .unwrap();
@@ -420,7 +390,7 @@ mod tests {
         lpcm.mlp_source = "lpcm".into();
         lpcm.channels = Some(2);
         lpcm.channel_mask = Some(3);
-        let result = plan(vec![missing, lpcm], i64::MAX / 2, 1, 70).unwrap();
+        let result = plan(vec![missing, lpcm], i64::MAX / 2, 70).unwrap();
         assert!(result.has_errors);
         assert_eq!(result.discs[0].groups.len(), 2);
     }
@@ -448,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn desired_disc_count_is_minimum_when_albums_fit() {
+    fn albums_are_packed_in_input_order_without_balancing() {
         let result = plan(
             vec![
                 track("A", "a", 10),
@@ -456,23 +426,22 @@ mod tests {
                 track("C", "c", 10),
             ],
             i64::MAX / 2,
-            2,
             70,
         )
         .unwrap();
-        assert_eq!(result.discs.len(), 2);
-        assert_eq!(result.discs[0].albums.len(), 2);
-        assert_eq!(result.discs[1].albums.len(), 1);
-        assert!(
-            !result
-                .diagnostics
+        assert_eq!(result.discs.len(), 1);
+        assert_eq!(
+            result.discs[0]
+                .albums
                 .iter()
-                .any(|item| item.code == "DISC_COUNT_BELOW_EXPECTED")
+                .map(|album| album.name.as_str())
+                .collect::<Vec<_>>(),
+            ["A", "B", "C"]
         );
     }
 
     #[test]
-    fn capacity_can_increase_disc_count_beyond_desired() {
+    fn capacity_starts_a_new_disc_when_next_album_will_not_fit() {
         let result = plan(
             vec![
                 track("A", "a", 3 * 1024 * 1024 * 1024),
@@ -480,24 +449,10 @@ mod tests {
                 track("C", "c", 3 * 1024 * 1024 * 1024),
             ],
             4_707_319_808,
-            2,
             70,
         )
         .unwrap();
         assert_eq!(result.discs.len(), 3);
         assert!(!result.has_errors);
-    }
-
-    #[test]
-    fn impossible_desired_disc_count_is_an_error_without_empty_discs() {
-        let result = plan(vec![track("A", "a", 10)], i64::MAX / 2, 2, 70).unwrap();
-        assert_eq!(result.discs.len(), 1);
-        assert!(result.has_errors);
-        assert!(
-            result
-                .diagnostics
-                .iter()
-                .any(|item| item.code == "DISC_COUNT_BELOW_EXPECTED")
-        );
     }
 }

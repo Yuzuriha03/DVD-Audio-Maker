@@ -263,11 +263,9 @@ impl AppOptions {
             iso_prefix: self.text("IsoPrefix"),
             diagnostic_title_mode: self.text("DiagnosticTitleMode"),
             disc_bytes: self.integer("DiscBytes"),
-            planned_discs: self.integer("PlannedDiscs") as i32,
             group_track_limit: self.integer("GroupTrackLimit") as i32,
             mlp_sample_rate: self.integer("MlpSurcodeSampleRate") as i32,
             mlp_bits: self.integer("MlpSurcodeBits") as i32,
-            mlp_jobs: self.integer("MlpJobs") as i32,
             mlp_metadata_context: self.text("MlpMetadataContext"),
             mlp_batch_temp_directory: self.path("MlpBatchTempDirectory"),
             mlp_batch_output_directory: self.path("MlpBatchOutputDirectory"),
@@ -327,7 +325,6 @@ impl AppOptions {
             build_log_path: Some(self.path("BuildLogPath")),
             allow_log_fallback: true,
             disc_bytes: self.integer("DiscBytes"),
-            planned_discs: self.integer("PlannedDiscs") as i32,
         })
     }
 }
@@ -428,6 +425,14 @@ fn read_values(path: &Path, local_app_data: &str) -> Result<Map<String, Value>, 
 
 fn normalize_profile_values(values: &Map<String, Value>) -> Map<String, Value> {
     let mut result = values.clone();
+    for key in [
+        "DVDA_PLANNED_DISCS",
+        "PlannedDiscs",
+        "DVDA_MLP_JOBS",
+        "MlpJobs",
+    ] {
+        result.remove(key);
+    }
     for (key, value) in &mut result {
         if key.starts_with("DVDA_") {
             match value {

@@ -55,10 +55,6 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     let output = text(object, "FinalDirectory");
     let iso_prefix = text(object, "IsoPrefix");
     let title = text(object, "Title");
-    let planned_discs = object
-        .get("PlannedDiscs")
-        .and_then(Value::as_i64)
-        .unwrap_or_default();
     let mut lines = vec![
         String::new(),
         "=".repeat(60),
@@ -71,14 +67,6 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         format!("  output      : {output}"),
         format!("  iso prefix  : {iso_prefix}"),
         format!("  title       : {title}"),
-        format!(
-            "  desired discs: {}",
-            if planned_discs == 0 {
-                "unlimited".to_owned()
-            } else {
-                planned_discs.to_string()
-            }
-        ),
     ];
     if dry_run {
         lines.push("  注: dry-run 未执行 dvda-author，本文件不含轨道表；".into());
@@ -105,13 +93,13 @@ mod tests {
         let request = json!({
             "DryRun":true,"Generated":"2026-10-05 12:34:56",
             "DvdaAuthor":"author.exe","FinalDirectory":"out",
-            "IsoPrefix":"disc","Title":"Title","PlannedDiscs":0
+            "IsoPrefix":"disc","Title":"Title"
         });
         let lines = dispatch("build.log_header", request).unwrap();
         assert_eq!(lines[0], "");
         assert_eq!(lines[2], "[Rust build] [DRY-RUN] 2026-10-05 12:34:56");
-        assert_eq!(lines[8], "  desired discs: unlimited");
-        assert!(lines[9].as_str().unwrap().contains("未执行"));
-        assert_eq!(lines[11], "=".repeat(60));
+        assert!(lines[8].as_str().unwrap().contains("dry-run"));
+        assert!(lines[9].as_str().unwrap().contains("build.log"));
+        assert_eq!(lines[10], "=".repeat(60));
     }
 }
