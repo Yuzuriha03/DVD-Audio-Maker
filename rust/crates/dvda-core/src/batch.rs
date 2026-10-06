@@ -273,6 +273,17 @@ fn track(
         .map_err(Failure::from)
         .and(result)
 }
+
+fn worker_count(requested: i32, tracks: usize) -> usize {
+    let detected = crate::options::default_mlp_jobs() as usize;
+    let requested = if requested <= 0 {
+        detected
+    } else {
+        requested as usize
+    };
+    requested.clamp(1, 16).min(tracks)
+}
+
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     let result = (|| -> Result<(), Failure> {
         validate(&job)?;
@@ -281,7 +292,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
         if caller.cancelled() {
             return Err(Failure::new("Cancelled", "Batch encoding cancelled"));
         }
-        let count = (job.jobs.clamp(1, 16) as usize).min(job.tracks.len());
+        let count = worker_count(job.jobs, job.tracks.len());
         let next = AtomicUsize::new(0);
         let stop = AtomicBool::new(false);
         let external = AtomicBool::new(false);
@@ -362,5 +373,22 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
             exit_code: None,
             failure: Some(error),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::worker_count;
+
+    #[test]
+    fn automatic_workers_follow_detected_parallelism_and_caps() {
+        let detected = std::thread::available_parallelism()
+            .map(|count| count.get())
+            .unwrap_or(1)
+            .clamp(1, 16);
+        assert_eq!(worker_count(0, usize::MAX), detected);
+        assert_eq!(worker_count(-1, 2), detected.min(2));
+        assert_eq!(worker_count(1, 2), 1);
+        assert_eq!(worker_count(99, 99), 16);
     }
 }
