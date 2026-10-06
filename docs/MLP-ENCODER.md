@@ -22,11 +22,13 @@
   "DVDA_MLP_SOURCE": "surcode-batch",
   "DVDA_MLP_SURCODE_SAMPLE_RATE": "48000",
   "DVDA_MLP_SURCODE_BITS": "24",
-  "DVDA_MLP_JOBS": "1",
+  "DVDA_MLP_JOBS": "auto",
   "DVDA_MLP_METADATA_CONTEXT": "",
   "DVDA_MLP_EXTERNAL_DIR": ""
 }
 ```
+
+`DVDA_MLP_JOBS` 默认为 `auto`，按当前检测到的逻辑处理器数量分配并行音轨，最多同时处理 16 首。填写正整数可以手动限制并发数；并行只发生在独立音轨之间，单首音轨的编码顺序和输出字节不变。
 
 DVD-Audio 采样率支持 44.1、48、88.2、96、176.4 和 192 kHz，整数位深支持 16、20、24 bit。声道上限遵循 DVD-Audio 布局：较低采样率最多六声道，176.4/192 kHz 最多两声道。将 `DVDA_MLP_SOURCE` 设为 `lpcm` 可选择 LPCM 编码。
 

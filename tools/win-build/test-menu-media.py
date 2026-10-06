@@ -2,6 +2,16 @@
 from pathlib import Path
 import argparse, ctypes, json, math, os, struct, subprocess, wave
 
+def first_video_pts(data):
+    marker = b'\x00\x00\x01\xe0'
+    offset = data.find(marker)
+    if offset < 0 or offset + 14 > len(data):
+        raise AssertionError('MPEG video PES not found')
+    if data[offset + 7] & 0xc0 != 0x80 or data[offset + 8] != 9:
+        raise AssertionError('Unexpected MPEG video PES timestamp header')
+    pts = data[offset + 9:offset + 14]
+    return (((pts[0] >> 1) & 7) << 30) | (pts[1] << 22) | ((pts[2] >> 1) << 15) | (pts[3] << 7) | (pts[4] >> 1)
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--msys-root',type=Path,default=Path('C:/msys64'))
@@ -39,6 +49,7 @@ def main():
                     check(label+' encodes',invoke(y4m,wav if sound else None,target,norm,aspect)==0)
                     data=target.read_bytes()
                     check(label+' uses complete DVD pack sectors',len(data)>0 and len(data)%2048==0 and all(data[i:i+4]==b'\0\0\1\xba' for i in range(0,len(data),2048)))
+                    check(label+' starts video at the legacy 120-130 ms boundary',10800<=first_video_pts(data)<=12150)
                     pos=data.index(b'\0\0\1\xb3')+4
                     check(label+' sequence dimensions/frame rate/aspect',data[pos]<<4|data[pos+1]>>4==720 and (data[pos+1]&15)<<8|data[pos+2]==height and data[pos+3]&15==ratecode and data[pos+3]>>4==(['4:3','16:9'].index(aspect)+2))
                     repeat=out/'repeat.mpg'

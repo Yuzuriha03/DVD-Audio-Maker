@@ -29,7 +29,7 @@ fn option_precedence_sources_numeric_fallbacks_and_derived_paths() {
         assert_eq!(p[key]["Value"], value);
     }
     assert_eq!(p["DiscBytes"]["Value"], 4_707_319_808_i64);
-    assert_eq!(p["PlannedDiscs"]["Value"], 2);
+    assert_eq!(p["PlannedDiscs"]["Value"], 0);
     assert_eq!(result["Sources"]["DVDA_SRC"], "环境变量");
     assert_eq!(result["Sources"]["DVDA_TITLE"], "settings.json");
     assert_eq!(result["Sources"]["CUSTOM_VALUE"], "settings.json");
@@ -94,5 +94,19 @@ fn option_ranges_sources_and_removed_branches() {
     assert_eq!(
         p["LossErrorSeconds"]["Value"].as_i64().unwrap() as u64,
         0.05_f64.to_bits()
+    );
+}
+
+#[test]
+fn default_mlp_jobs_tracks_available_parallelism() {
+    let jobs = options::default_mlp_jobs();
+    assert!((1..=16).contains(&jobs));
+    assert_eq!(
+        options::defaults("C:/Local")["DVDA_MLP_JOBS"].as_str(),
+        Some("auto")
+    );
+    assert_eq!(
+        evaluate(json!({"DVDA_MLP_JOBS":"auto"}), json!({}))["Properties"]["MlpJobs"]["Value"],
+        0
     );
 }

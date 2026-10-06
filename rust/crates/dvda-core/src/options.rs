@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
+/// Number of concurrent MLP tracks used for automatic allocation.
+pub fn default_mlp_jobs() -> i32 {
+    std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1)
+        .clamp(1, 16) as i32
+}
+
 pub fn combine(left: &str, right: &str) -> String {
     if left.is_empty()
         || right.starts_with(['/', '\\'])
@@ -28,7 +36,7 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_FINAL_DIR", ""),
         ("DVDA_TITLE", "DVD-Audio"),
         ("DVDA_ISO_PREFIX", ""),
-        ("DVDA_PLANNED_DISCS", "2"),
+        ("DVDA_PLANNED_DISCS", "auto"),
         ("DVDA_GROUP_TRACK_LIMIT", "99"),
         ("DVDA_DISC_BYTES", ""),
         ("DVDA_MLP_SOURCE", "surcode-batch"),
@@ -36,7 +44,7 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_MLP_METADATA_CONTEXT", ""),
         ("DVDA_MLP_SURCODE_SAMPLE_RATE", "48000"),
         ("DVDA_MLP_SURCODE_BITS", "24"),
-        ("DVDA_MLP_JOBS", "1"),
+        ("DVDA_MLP_JOBS", "auto"),
         ("DVDA_MENU", "off"),
         ("DVDA_MENU_TRACKS_PER_PAGE", "12"),
         ("DVDA_MENU_INDEX_MIN_ALBUMS", "4"),
@@ -118,6 +126,9 @@ impl Request {
         integer(self.get(key), &self.positive_sign, &self.negative_sign)
     }
     fn int(&self, key: &str, fallback: i32) -> i32 {
+        if self.get(key).eq_ignore_ascii_case("auto") {
+            return fallback;
+        }
         self.integer(key)
             .and_then(|v| i32::try_from(v).ok())
             .unwrap_or(fallback)
@@ -306,7 +317,7 @@ pub fn evaluate(request: Request) -> Value {
             i32::MIN,
             i32::MAX,
         ),
-        ("MlpJobs", "DVDA_MLP_JOBS", 1, 1, 16),
+        ("MlpJobs", "DVDA_MLP_JOBS", 0, 0, 16),
         ("MenuTracksPerPage", "DVDA_MENU_TRACKS_PER_PAGE", 12, 1, 32),
         (
             "MenuIndexMinimumAlbums",

@@ -17,7 +17,7 @@ The application, instructions in three languages and licenses are together in th
 ## Make your first disc
 
 1. **Choose the sources.** Select your music folder; subfolders are included. Keep each album in its own folder and provide album, title, track number and date tags.
-2. **Choose the output folder.** Set the ISO destination, disc title and DVD5, DVD9 or custom capacity. Set **Planned discs to create** to 0 for no limit; capacity may increase the actual disc count when necessary.
+2. **Choose the output folder.** Set the ISO destination, disc title and DVD5, DVD9 or custom capacity. Leave **Planned discs to create** at `auto` for no limit; capacity may increase the actual disc count when necessary.
 3. **Choose the audio format.** Normally select “MLP encoding”. Choose a sample rate and bit depth suitable for the source and playback device. Reducing either can lose source precision; increasing them does not add detail.
 4. **Configure menus.** Optionally enable track menus, album indexes and playback covers. JPG, PNG and WebP covers are supported, and Chinese, Japanese and Korean menu fonts are included.
 5. Click **“Check sources”** and resolve any issues. After the check succeeds, click **“Build discs”** to encode audio and create ISOs.

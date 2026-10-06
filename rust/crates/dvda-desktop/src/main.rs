@@ -51,6 +51,8 @@ const LOG_BATCH_LIMIT: usize = 4096;
 const LOG_BATCH_BUDGET: Duration = Duration::from_millis(12);
 const WM_SETFONT: u32 = 0x0030;
 const EM_SETLIMITTEXT: u32 = 0x00c5;
+const EM_GETFIRSTVISIBLELINE: u32 = 0x00ce;
+const EM_LINESCROLL: u32 = 0x00b6;
 const BM_GETCHECK: u32 = 0x00f0;
 const BM_SETCHECK: u32 = 0x00f1;
 const CB_ADDSTRING: u32 = 0x0143;
@@ -508,7 +510,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "音频编码方式",
             "sample_rate" => "采样率",
             "bits" => "音频位深",
-            "jobs" => "同时编码几首",
+            "jobs" => "同时编码音轨数",
             "metadata" => "旧版 MLP 文件匹配参数",
             "menu" => "光盘菜单",
             "menu_enable" => "制作选曲菜单",
@@ -565,7 +567,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "profile_missing" => "方案文件不存在：",
             "profile_error" => "方案无法加载：",
             "started_check" => "正在检查音源...",
-            "started_build" => "正在制作光盘...",
+            "started_build" => "正在检查音源、制作光盘并验证成品...",
             "started_verify" => "正在验证成品...",
             "done" => "任务完成。",
             "failed" => "任务失败。",
@@ -640,7 +642,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "Audio encoding",
             "sample_rate" => "Sample rate",
             "bits" => "Bit depth",
-            "jobs" => "Concurrent tracks",
+            "jobs" => "Concurrent tracks (auto)",
             "metadata" => "Legacy MLP file matching context",
             "menu" => "Disc menu",
             "menu_enable" => "Create track menus",
@@ -699,7 +701,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "profile_missing" => "Profile does not exist: ",
             "profile_error" => "Profile could not be loaded: ",
             "started_check" => "Checking sources...",
-            "started_build" => "Building discs...",
+            "started_build" => "Checking the source, building discs, and verifying the output...",
             "started_verify" => "Verifying output...",
             "done" => "Task completed.",
             "failed" => "Task failed.",
@@ -778,7 +780,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "音声エンコード",
             "sample_rate" => "サンプルレート",
             "bits" => "ビット深度",
-            "jobs" => "同時処理数",
+            "jobs" => "同時処理数（自動）",
             "metadata" => "過去ファイルのメタデータ",
             "menu" => "ディスクメニュー",
             "menu_enable" => "曲目メニューを作成",
@@ -837,7 +839,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "profile_missing" => "プロファイルがありません: ",
             "profile_error" => "プロファイルを読み込めません: ",
             "started_check" => "音源を検査しています...",
-            "started_build" => "ディスクを作成しています...",
+            "started_build" => "音源を確認し、ディスクを作成して完成品を検証しています...",
             "started_verify" => "出力を検証しています...",
             "done" => "タスクが完了しました。",
             "failed" => "タスクに失敗しました。",
@@ -990,6 +992,9 @@ struct UiState {
     log_sender: SyncSender<WorkerEvent>,
     log_receiver: Receiver<WorkerEvent>,
     log_dirty: bool,
+    log_first_visible_line: i32,
+    log_hold_line: Option<i32>,
+    log_hold_until: Option<Instant>,
     activity_dirty: bool,
     pending_finish: Option<UiEvent>,
     status_key: &'static str,
@@ -2146,9 +2151,11 @@ fn create_controls(parent: Hwnd) -> UiState {
     unsafe {
         SendMessageW(log, EM_SETLIMITTEXT, 1_000_000, 0);
     }
-    let prepare = button(parent, tr(lang, "check"), ID_PREPARE, 18, 740, 145, 34);
+    // Keep the legacy command IDs for automation/tests, but expose the
+    // complete prepare-build-verify workflow through the single build action.
+    let prepare = create(parent, "BUTTON", "", WS_CHILD, 18, 740, 145, 34, ID_PREPARE);
     let build = primary_button(parent, tr(lang, "build"), ID_BUILD, 175, 740, 145, 34);
-    let verify = button(parent, tr(lang, "verify"), ID_VERIFY, 332, 740, 145, 34);
+    let verify = create(parent, "BUTTON", "", WS_CHILD, 332, 740, 145, 34, ID_VERIFY);
     let cancel = danger_button(parent, tr(lang, "cancel"), ID_CANCEL, 490, 740, 145, 34);
     let open_output = button(
         parent,
@@ -2272,6 +2279,9 @@ fn create_controls(parent: Hwnd) -> UiState {
         log_sender,
         log_receiver,
         log_dirty: false,
+        log_first_visible_line: 0,
+        log_hold_line: None,
+        log_hold_until: None,
         activity_dirty: false,
         pending_finish: None,
         status_key: "ready",
@@ -2836,13 +2846,13 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             (height - 618 - delta).max(80),
             1,
         );
-        MoveWindow(state.controls.prepare, margin, bottom - 34, 145, 34, 1);
-        MoveWindow(state.controls.build, margin + 157, bottom - 34, 145, 34, 1);
-        MoveWindow(state.controls.verify, margin + 314, bottom - 34, 145, 34, 1);
-        MoveWindow(state.controls.cancel, margin + 471, bottom - 34, 145, 34, 1);
+        MoveWindow(state.controls.prepare, margin, bottom - 34, 1, 1, 0);
+        MoveWindow(state.controls.build, margin, bottom - 34, 145, 34, 1);
+        MoveWindow(state.controls.verify, margin + 157, bottom - 34, 1, 1, 0);
+        MoveWindow(state.controls.cancel, margin + 157, bottom - 34, 145, 34, 1);
         MoveWindow(
             state.controls.open_output,
-            margin + 628,
+            margin + 314,
             bottom - 34,
             145,
             34,
@@ -3118,10 +3128,13 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         state.controls.custom_bytes,
         &options.integer("DiscBytes").to_string(),
     );
-    set_text(
-        state.controls.planned_discs,
-        &options.integer("PlannedDiscs").to_string(),
-    );
+    let planned_discs = options.integer("PlannedDiscs");
+    let planned_discs_text = if planned_discs <= 0 {
+        "auto".to_owned()
+    } else {
+        planned_discs.to_string()
+    };
+    set_text(state.controls.planned_discs, &planned_discs_text);
     set_text(state.controls.work_dir, &options.text("BuildDirectory"));
     set_text(
         state.controls.iso_prefix,
@@ -3150,7 +3163,13 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         &["16", "20", "24"],
         options.integer("MlpSurcodeBits"),
     );
-    set_text(state.controls.jobs, &options.integer("MlpJobs").to_string());
+    let jobs = options.integer("MlpJobs");
+    let jobs_text = if jobs <= 0 {
+        "auto".to_owned()
+    } else {
+        jobs.to_string()
+    };
+    set_text(state.controls.jobs, &jobs_text);
     set_text(state.controls.metadata, &options.text("MlpMetadataContext"));
     check(state.controls.menu, options.boolean("MenuEnabled"));
     check(state.controls.stills, options.boolean("MenuStillPictures"));
@@ -3236,11 +3255,13 @@ fn overrides(state: &UiState) -> Map<String, Value> {
             _ => 4_707_319_808i64,
         }),
     );
-    put(
-        &mut values,
-        "PlannedDiscs",
-        json!(parse_i64(state.controls.planned_discs, 2)),
-    );
+    let planned_discs = get_text(state.controls.planned_discs);
+    let planned_discs = if planned_discs.trim().is_empty() || planned_discs.trim() == "0" {
+        "auto".to_owned()
+    } else {
+        planned_discs
+    };
+    put(&mut values, "PlannedDiscs", json!(planned_discs));
     put(
         &mut values,
         "BuildDirectory",
@@ -3286,11 +3307,13 @@ fn overrides(state: &UiState) -> Map<String, Value> {
         "MlpSurcodeBits",
         json!(numeric_choice(state.controls.bits, SAMPLE_BITS)),
     );
-    put(
-        &mut values,
-        "MlpJobs",
-        json!(parse_i64(state.controls.jobs, 1)),
-    );
+    let jobs = get_text(state.controls.jobs);
+    let jobs = if jobs.trim().is_empty() || jobs.trim() == "0" {
+        "auto".to_owned()
+    } else {
+        jobs
+    };
+    put(&mut values, "MlpJobs", json!(jobs));
     put(
         &mut values,
         "MlpMetadataContext",
@@ -3399,6 +3422,12 @@ fn valid_integer(value: &str, min: i64, max: i64) -> bool {
         .parse::<i64>()
         .is_ok_and(|n| (min..=max).contains(&n))
 }
+fn valid_jobs(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("auto") || valid_integer(value, 1, 16)
+}
+fn valid_planned_discs(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("auto") || valid_integer(value, 0, 999)
+}
 fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
     let c = &state.controls;
     let mut error = None;
@@ -3408,9 +3437,7 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
         error = Some((c.bits, tr(state.lang, "invalid_bits").into()));
     }
     for (control, key, min, max) in [
-        (c.planned_discs, "planned_discs", 0, 999),
         (c.group_limit, "group_limit", 1, 99),
-        (c.jobs, "jobs", 1, 16),
         (c.tracks, "tracks", 1, 32),
         (c.cover, "cover", 0, 100),
         (c.index, "index", 0, 1000),
@@ -3428,6 +3455,15 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
             ));
             break;
         }
+    }
+    if error.is_none() && !valid_planned_discs(&get_text(c.planned_discs)) {
+        error = Some((
+            c.planned_discs,
+            format!("{}：auto 或 1–999", tr(state.lang, "planned_discs")),
+        ));
+    }
+    if error.is_none() && !valid_jobs(&get_text(c.jobs)) {
+        error = Some((c.jobs, format!("{}：auto 或 1–16", tr(state.lang, "jobs"))));
     }
     if error.is_none()
         && combo_index(c.capacity) == 2
@@ -3617,6 +3653,9 @@ fn log_timestamp() -> String {
 fn reset_task_log(state: &mut UiState) {
     state.logs.clear();
     state.log_dirty = false;
+    state.log_first_visible_line = 0;
+    state.log_hold_line = None;
+    state.log_hold_until = None;
     state.activity_dirty = false;
     state.problem_count = 0;
     state.log_file = None;
@@ -3852,16 +3891,50 @@ fn start_operation(state: &mut UiState, command: usize) {
                     }),
                 )
             }
-            ID_BUILD => match dvda_core::app::run_build(&options, false, &mut callbacks) {
-                Ok(result) => {
-                    emit_diagnostics(&mut callbacks, &result.diagnostics);
-                    (
-                        result.succeeded,
-                        tr(lang, if result.succeeded { "done" } else { "failed" }).into(),
-                    )
+            ID_BUILD => {
+                let prepared = dvda_core::app::run_prepare(&options, false, &mut callbacks);
+                if let Some(data) = &prepared.data {
+                    emit_preparation_issues(&mut callbacks, &data.issues);
                 }
-                Err(error) => (false, error),
-            },
+                if !prepared.succeeded() {
+                    (
+                        false,
+                        prepared
+                            .failure
+                            .map(|failure| failure.message)
+                            .unwrap_or_else(|| tr(lang, "failed").into()),
+                    )
+                } else {
+                    match dvda_core::app::run_build(&options, false, &mut callbacks) {
+                        Ok(result) => {
+                            emit_diagnostics(&mut callbacks, &result.diagnostics);
+                            if !result.succeeded {
+                                (false, tr(lang, "failed").into())
+                            } else {
+                                match dvda_core::app::run_verify(&options, &mut callbacks) {
+                                    Ok(verification) => {
+                                        emit_diagnostics(&mut callbacks, &verification.diagnostics);
+                                        (
+                                            verification.succeeded,
+                                            tr(
+                                                lang,
+                                                if verification.succeeded {
+                                                    "done"
+                                                } else {
+                                                    "failed"
+                                                },
+                                            )
+                                            .into(),
+                                        )
+                                    }
+                                    Err(error) => (false, error),
+                                }
+                            }
+                        }
+                        Err(error) => (false, error),
+                    }
+                }
+            }
             _ => match dvda_core::app::run_verify(&options, &mut callbacks) {
                 Ok(result) => {
                     emit_diagnostics(&mut callbacks, &result.diagnostics);
@@ -4050,6 +4123,7 @@ fn add_log(state: &mut UiState, text: &str, problem: bool) {
 }
 
 fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
+    observe_log_scroll(state);
     let started = Instant::now();
     let mut processed = 0;
     let mut drained = false;
@@ -4128,11 +4202,41 @@ fn render_log(state: &mut UiState) {
             checked(state.controls.only_issues),
         ),
     );
+    let hold_line = state
+        .log_hold_until
+        .filter(|deadline| Instant::now() < *deadline)
+        .and(state.log_hold_line);
     unsafe {
-        SendMessageW(state.controls.log, 0x00b1, usize::MAX, -1);
-        SendMessageW(state.controls.log, 0x00b7, 0, 0);
+        // WM_SETTEXT resets the edit control's viewport. Keep the user's
+        // recorded first line while the ten-second hold is active; otherwise
+        // explicitly request the newest line.
+        if let Some(line) = hold_line {
+            SendMessageW(state.controls.log, EM_LINESCROLL, 0, line as isize);
+        } else {
+            SendMessageW(state.controls.log, 0x00b1, usize::MAX, -1);
+            SendMessageW(state.controls.log, 0x00b7, 0, 0);
+            SendMessageW(state.controls.log, 0x0115, 7, 0);
+        }
     }
+    if hold_line.is_none() {
+        state.log_hold_line = None;
+        state.log_hold_until = None;
+    }
+    state.log_first_visible_line = first_visible_log_line(state.controls.log);
     state.log_dirty = false;
+}
+
+fn first_visible_log_line(log: Hwnd) -> i32 {
+    unsafe { SendMessageW(log, EM_GETFIRSTVISIBLELINE, 0, 0) as i32 }.max(0)
+}
+
+fn observe_log_scroll(state: &mut UiState) {
+    let current = first_visible_log_line(state.controls.log);
+    if current != state.log_first_visible_line {
+        state.log_first_visible_line = current;
+        state.log_hold_line = Some(current);
+        state.log_hold_until = Some(Instant::now() + Duration::from_secs(10));
+    }
 }
 fn log_is_problem(text: &str) -> bool {
     presentation::problem(text)
@@ -4216,8 +4320,8 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.cover, "DVDA_MENU_COVER_DIM"),
         (c.index, "DVDA_MENU_INDEX_MIN_ALBUMS"),
         (c.font_sc, "DVDA_MENU_FONT"),
-        (c.font_jp, "DVDA_MENU_FONT"),
-        (c.font_kr, "DVDA_MENU_FONT"),
+        (c.font_jp, "DVDA_MENU_FONT_JP"),
+        (c.font_kr, "DVDA_MENU_FONT_KR"),
         (c.author, "DVDA_AUTHOR"),
         (c.author_src, "DVDA_AUTHOR_SRC"),
         (c.keep_tmp, "DVDA_KEEP_TMP"),

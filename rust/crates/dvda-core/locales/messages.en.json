@@ -3769,10 +3769,10 @@
     "English": "Planned discs to create"
   },
   {
-    "Source": "填 0 表示不限张数，曲目会自动分盘。",
+    "Source": "默认 auto 表示不限制张数，曲目会自动分盘；填写正整数可设定计划张数。",
     "Parameters": 0,
     "Nested": [],
-    "English": "Set to 0 for no limit. Tracks are assigned to discs automatically."
+    "English": "The default auto value means no disc-count limit; tracks are assigned to discs automatically. Set a positive integer to plan a disc count."
   },
   {
     "Source": "工作文件夹",
@@ -3901,10 +3901,10 @@
     "English": "Concurrent encoding jobs"
   },
   {
-    "Source": "默认 1。增加数量可同时处理更多音轨，也会占用更多内存。",
+    "Source": "默认 auto，按检测到的逻辑核心数自动处理音轨（最多 16 首）；填写正整数可手动限制并发数。",
     "Parameters": 0,
     "Nested": [],
-    "English": "Default: 1. More jobs process tracks concurrently and use more memory."
+    "English": "Default: auto uses the detected logical processor count, capped at 16 tracks. Set a positive integer to limit concurrency."
   },
   {
     "Source": "旧版 MLP 文件匹配参数",
