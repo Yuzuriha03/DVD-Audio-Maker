@@ -19,4 +19,4 @@
 cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
 ```
 
-发布运行时为 Rust 原生 GUI，不需要 .NET；配置只使用 JSON profile，发布目录和 ZIP 保留在被忽略的 `build` 目录。
+发布运行时为 Rust 原生 GUI；配置只使用 JSON profile，发布目录和 ZIP 保留在被忽略的 `build` 目录。
