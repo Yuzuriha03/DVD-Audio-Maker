@@ -105,6 +105,8 @@ def main():
                 if 200 not in controls:
                     print(json.dumps([{"id": u.GetDlgCtrlID(h), "class": classname(h), "text": text(h)} for h in children], ensure_ascii=False))
                     raise AssertionError("Source field was not created")
+                assert 204 not in controls, "Planned-disc input should remain removed"
+                assert 303 not in controls, "MLP worker-count input should remain removed"
                 assert text(controls[200]) == source
                 assert u.SendMessageW(controls[300], 0x0147, 0, 0) == 2, "MLP import lost on load"
                 assert u.SendMessageW(controls[203], 0x0147, 0, 0) == 2, "Custom capacity lost on load"
@@ -140,10 +142,10 @@ def main():
                 u.SendMessageW(hwnd, 0x0111, 111, controls[111])
                 u.ShowWindow(hwnd, 9)
                 wait_for(lambda:u.IsWindowVisible(controls[200]))
-                assert not u.IsWindowVisible(controls[205]), "Advanced settings should initially fold"
+                assert not u.IsWindowVisible(controls[207]), "Advanced settings should initially fold"
                 u.SendMessageW(controls[117], 0x00F1, 1, 0)
                 u.SendMessageW(hwnd, 0x0111, 117, controls[117])
-                assert u.IsWindowVisible(controls[205])
+                assert u.IsWindowVisible(controls[207])
                 u.ShowWindow(hwnd, 9)
                 u.SetWindowPos(hwnd, None, 80, 50, 1180, 820, 0x0014)
                 # Synthetic mouse coordinates use the target window's logical
@@ -179,11 +181,6 @@ def main():
                     assert automatic["Values"]["DVDA_SRC"] == source
                     u.SendMessageW(hwnd, 0x0111, 102, controls[102])
                     wait_for(lambda: saved in text(controls[115]))
-                    before = profile.read_bytes()
-                    set_text(controls[204], "invalid")
-                    u.SendMessageW(hwnd, 0x0111, 102, controls[102])
-                    assert profile.read_bytes() == before, "Invalid numbers silently saved"
-                    set_text(controls[204], "2")
                     stored = json.loads(profile.read_text(encoding="utf-8-sig"))
                     assert stored["Language"] == language
                     assert stored["Values"]["DVDA_MLP_SOURCE"] == "external"

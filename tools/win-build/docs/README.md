@@ -19,6 +19,6 @@
 
 设置和语言自动保存到 %LOCALAPPDATA%/DVD-Audio-Maker/settings.json。可用“保存方案”“另存方案”“打开方案”管理 JSON 方案。旧 config.env 不再支持。界面支持中文、English、日本語。
 
-计划光盘数和 MLP 编码线程数均可设为 `auto`，由程序按音源与可用处理器自动安排。
+光盘按曲目顺序依容量装满后再开始下一张，专辑不会跨盘拆分。MLP 编码并发由程序按可用处理器自动分配。
 
 取消后保留工作文件夹，再次制作时可检查并复用已完成光盘。操作日志保存于 %LOCALAPPDATA%/DVD-Audio-Maker/logs，制作日志同时写入工作文件夹的 build.log。遇到问题可“保存详细日志”。

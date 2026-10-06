@@ -1,4 +1,5 @@
 //! Validate the menu actually stored in an ISO, including decoded page images.
+use crate::formats::IsoEntryInfo;
 use crate::{
     formats, media,
     verify::{Job, read_iso_file},
@@ -127,6 +128,184 @@ fn stills(data: &[u8], vob_bytes: u64) -> Result<u32, String> {
     }
     Ok(pictures)
 }
+
+fn extent_lba(entry: &IsoEntryInfo, iso_sectors: u64) -> Result<u64, String> {
+    if entry.is_directory || entry.is_multi_extent {
+        return Err(format!("AMG_ISO_EXTENT_INVALID: {}", entry.name));
+    }
+    let lba = u64::from(entry.logical_block_address)
+        .checked_add(u64::from(entry.extended_attribute_blocks))
+        .ok_or("AMG_ISO_EXTENT_OUT_OF_RANGE")?;
+    let sectors = u64::from(entry.size).div_ceil(2048);
+    if lba >= iso_sectors || lba.checked_add(sectors).is_none_or(|end| end > iso_sectors) {
+        return Err(format!("AMG_ISO_EXTENT_OUT_OF_RANGE: {}", entry.name));
+    }
+    Ok(lba)
+}
+
+fn entry<'a>(files: &'a [IsoEntryInfo], name: &str) -> Option<&'a IsoEntryInfo> {
+    files
+        .iter()
+        .find(|file| file.name.eq_ignore_ascii_case(name))
+}
+
+fn verify_navigation_pointers(
+    amg: &[u8],
+    audio_files: &[IsoEntryInfo],
+    video_files: &[IsoEntryInfo],
+    iso_sectors: u64,
+) -> Result<(), String> {
+    let amg_file = entry(audio_files, "AUDIO_TS.IFO").ok_or("MENU_FILE_MISSING: AUDIO_TS.IFO")?;
+    let amg_lba = extent_lba(amg_file, iso_sectors)?;
+
+    let amgm_declared = amg_lba
+        .checked_add(u64::from(read32(amg, 0xc0)?))
+        .ok_or("AMG_AMGM_POINTER_OUT_OF_RANGE")?;
+    if amgm_declared >= iso_sectors {
+        return Err(format!(
+            "AMG_AMGM_POINTER_OUT_OF_RANGE: declared LBA {amgm_declared}, ISO has {iso_sectors} sectors"
+        ));
+    }
+    let amgm = entry(audio_files, "AUDIO_TS.VOB").ok_or("AMG_AMGM_TARGET_MISSING")?;
+    let amgm_lba = extent_lba(amgm, iso_sectors)?;
+    if amgm_declared != amgm_lba {
+        return Err(format!(
+            "AMG_AMGM_POINTER_MISMATCH: AUDIO_TS.VOB is at LBA {amgm_lba}, pointer resolves to {amgm_declared}"
+        ));
+    }
+
+    if !amg.len().is_multiple_of(2048) {
+        return Err("AMG_BACKUP_POINTER_INVALID: AUDIO_TS.IFO is not sector aligned".into());
+    }
+    let backup_end = u64::from(read32(amg, 12)?).saturating_add(1);
+    let amg_sectors = u64::try_from(amg.len() / 2048).map_err(|_| "AMG_BACKUP_POINTER_INVALID")?;
+    let backup_pointer = backup_end
+        .checked_sub(amg_sectors)
+        .ok_or("AMG_BACKUP_POINTER_INVALID: backup address precedes AUDIO_TS.IFO")?;
+    let backup_declared = amg_lba
+        .checked_add(backup_pointer)
+        .ok_or("AMG_BACKUP_POINTER_OUT_OF_RANGE")?;
+    if backup_declared >= iso_sectors {
+        return Err(format!(
+            "AMG_BACKUP_POINTER_OUT_OF_RANGE: declared LBA {backup_declared}, ISO has {iso_sectors} sectors"
+        ));
+    }
+    let backup = entry(audio_files, "AUDIO_TS.BUP").ok_or("AMG_BACKUP_TARGET_MISSING")?;
+    let backup_lba = extent_lba(backup, iso_sectors)?;
+    if backup_declared != backup_lba {
+        return Err(format!(
+            "AMG_BACKUP_POINTER_MISMATCH: AUDIO_TS.BUP is at LBA {backup_lba}, pointer resolves to {backup_declared}"
+        ));
+    }
+
+    let asvs_pointer = u64::from(read32(amg, 0x30)?);
+    match entry(audio_files, "AUDIO_SV.IFO") {
+        Some(asvs) => {
+            let expected = extent_lba(asvs, iso_sectors)?;
+            let declared = amg_lba
+                .checked_add(asvs_pointer)
+                .ok_or("AMG_ASVS_POINTER_OUT_OF_RANGE")?;
+            if declared >= iso_sectors {
+                return Err(format!(
+                    "AMG_ASVS_POINTER_OUT_OF_RANGE: declared LBA {declared}, ISO has {iso_sectors} sectors"
+                ));
+            }
+            if declared != expected {
+                return Err(format!(
+                    "AMG_ASVS_POINTER_MISMATCH: AUDIO_SV.IFO is at LBA {expected}, pointer resolves to {declared}"
+                ));
+            }
+        }
+        None if asvs_pointer != 0 => {
+            let declared = amg_lba
+                .checked_add(asvs_pointer)
+                .ok_or("AMG_ASVS_POINTER_OUT_OF_RANGE")?;
+            if declared >= iso_sectors {
+                return Err(format!(
+                    "AMG_ASVS_POINTER_OUT_OF_RANGE: declared LBA {declared}, ISO has {iso_sectors} sectors"
+                ));
+            }
+            return Err(format!(
+                "AMG_ASVS_TARGET_MISSING: pointer resolves to LBA {declared}, AUDIO_SV.IFO is absent"
+            ));
+        }
+        None => {}
+    }
+
+    // The two title tables are copies in separate sectors. Validate every
+    // declared record in both so neither stale copy can hide a bad pointer.
+    let mut declared_count = None;
+    for table_start in [0x800usize, 0x1000] {
+        let count = read16(amg, table_start)? as usize;
+        let last_byte = read16(amg, table_start + 2)? as usize;
+        let table_bytes = 4usize
+            .checked_add(
+                count
+                    .checked_mul(14)
+                    .ok_or("AMG_TITLE_TABLE_OUT_OF_RANGE")?,
+            )
+            .ok_or("AMG_TITLE_TABLE_OUT_OF_RANGE")?;
+        if table_bytes > 2048 || last_byte.checked_add(1) != Some(table_bytes) {
+            return Err("AMG_TITLE_TABLE_OUT_OF_RANGE".into());
+        }
+        if declared_count
+            .replace(count)
+            .is_some_and(|previous| previous != count)
+        {
+            return Err("AMG_TITLE_TABLE_COUNT_MISMATCH".into());
+        }
+        if table_start
+            .checked_add(table_bytes)
+            .is_none_or(|end| end > amg.len())
+        {
+            return Err("AMG_TITLE_TABLE_OUT_OF_RANGE".into());
+        }
+        for index in 0..count {
+            let record = table_start + 4 + index * 14;
+            let flags = amg[record];
+            let titleset = amg[record + 8];
+            let pointer = u64::from(read32(amg, record + 10)?);
+            let declared = amg_lba
+                .checked_add(pointer)
+                .ok_or("AMG_ATSI_POINTER_OUT_OF_RANGE")?;
+            if declared >= iso_sectors {
+                return Err(format!(
+                    "AMG_ATSI_POINTER_OUT_OF_RANGE: title {} resolves to LBA {declared}, ISO has {iso_sectors} sectors",
+                    index + 1
+                ));
+            }
+
+            if !(1..=99).contains(&titleset) {
+                return Err(format!(
+                    "AMG_ATSI_TITLESET_INVALID: title {} has titleset {titleset}",
+                    index + 1
+                ));
+            }
+            let video_link = flags & 0xc0 == 0x40;
+            let name = if video_link {
+                format!("VTS_{titleset:02}_0.IFO")
+            } else {
+                format!("ATS_{titleset:02}_0.IFO")
+            };
+            let directory = if video_link { video_files } else { audio_files };
+            let prefix = if video_link { "AMG_VTSI" } else { "AMG_ATSI" };
+            let atsi = entry(directory, &name).ok_or_else(|| {
+                format!(
+                    "{prefix}_TARGET_MISSING: title {} expects {name}",
+                    index + 1
+                )
+            })?;
+            let expected = extent_lba(atsi, iso_sectors)?;
+            if declared != expected {
+                return Err(format!(
+                    "{prefix}_POINTER_MISMATCH: title {} expects {name} at LBA {expected}, pointer resolves to {declared}",
+                    index + 1
+                ));
+            }
+        }
+    }
+    Ok(())
+}
 struct Workspace(PathBuf);
 impl Drop for Workspace {
     fn drop(&mut self) {
@@ -184,6 +363,15 @@ fn stats(
     }
     Ok(values)
 }
+
+pub fn verify_iso_navigation(iso: &Path) -> Result<(), String> {
+    let audio_files = formats::iso_list_directory(iso, "AUDIO_TS")?;
+    let video_files = formats::iso_list_directory(iso, "VIDEO_TS").unwrap_or_default();
+    let iso_sectors = fs::metadata(iso).map_err(|error| error.to_string())?.len() / 2048;
+    let amg = read_iso_file(iso, "AUDIO_TS/AUDIO_TS.IFO")?;
+    verify_navigation_pointers(&amg, &audio_files, &video_files, iso_sectors)
+}
+
 pub fn verify(
     iso: &Path,
     expected: Option<&Value>,
@@ -191,6 +379,8 @@ pub fn verify(
     caller: &mut dyn Callbacks,
 ) -> Result<Vec<Value>, String> {
     cancel(caller)?;
+    formats::verify_dvd_audio_filesystem(iso)?;
+    verify_iso_navigation(iso)?;
     let files = formats::iso_list_directory(iso, "AUDIO_TS")?;
     let vob = files
         .iter()
@@ -372,6 +562,121 @@ pub fn verify(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn file(name: &str, lba: u32, size: u32, extended_attribute_blocks: u8) -> IsoEntryInfo {
+        IsoEntryInfo {
+            name: name.into(),
+            is_directory: false,
+            logical_block_address: lba,
+            size,
+            extended_attribute_blocks,
+            is_multi_extent: false,
+        }
+    }
+
+    fn navigation_fixture() -> (Vec<u8>, Vec<IsoEntryInfo>) {
+        let mut amg = vec![0u8; 3 * 2048];
+        amg[12..16].copy_from_slice(&37u32.to_be_bytes());
+        amg[0x30..0x34].copy_from_slice(&42u32.to_be_bytes());
+        amg[0xc0..0xc4].copy_from_slice(&30u32.to_be_bytes());
+        let records = [(1u8, 80u32), (1, 80), (2, 140)];
+        for table_start in [0x800usize, 0x1000] {
+            amg[table_start..table_start + 2]
+                .copy_from_slice(&(records.len() as u16).to_be_bytes());
+            let last_byte = 4 + 14 * records.len() - 1;
+            amg[table_start + 2..table_start + 4]
+                .copy_from_slice(&(last_byte as u16).to_be_bytes());
+            for (index, (titleset, pointer)) in records.iter().copied().enumerate() {
+                let record = table_start + 4 + index * 14;
+                amg[record] = 0x81;
+                amg[record + 8] = titleset;
+                amg[record + 10..record + 14].copy_from_slice(&pointer.to_be_bytes());
+            }
+        }
+        let files = vec![
+            file("AUDIO_TS.IFO", 19, 3 * 2048, 1),
+            file("AUDIO_TS.VOB", 50, 2 * 2048, 0),
+            file("AUDIO_TS.BUP", 55, 3 * 2048, 0),
+            file("AUDIO_SV.IFO", 61, 2 * 2048, 1),
+            file("ATS_01_0.IFO", 99, 2 * 2048, 1),
+            file("ATS_02_0.IFO", 159, 2 * 2048, 1),
+        ];
+        (amg, files)
+    }
+
+    #[test]
+    fn navigation_pointers_resolve_through_iso_extents_for_both_title_tables() {
+        let (amg, files) = navigation_fixture();
+        verify_navigation_pointers(&amg, &files, &[], 300).unwrap();
+    }
+
+    #[test]
+    fn video_link_titles_resolve_vtsi_extents_relative_to_the_amg() {
+        let (mut amg, audio_files) = navigation_fixture();
+        let title_count = 4u16;
+        let last_byte = 4 + 14 * usize::from(title_count) - 1;
+        for table_start in [0x800usize, 0x1000] {
+            amg[table_start..table_start + 2].copy_from_slice(&title_count.to_be_bytes());
+            amg[table_start + 2..table_start + 4]
+                .copy_from_slice(&(last_byte as u16).to_be_bytes());
+            let record = table_start + 4 + 3 * 14;
+            amg[record] = 0x41;
+            amg[record + 8] = 1;
+            amg[record + 10..record + 14].copy_from_slice(&200u32.to_be_bytes());
+        }
+        let video_files = [file("VTS_01_0.IFO", 219, 2 * 2048, 1)];
+        verify_navigation_pointers(&amg, &audio_files, &video_files, 300).unwrap();
+    }
+
+    #[test]
+    fn navigation_rejects_a_bad_pointer_in_either_declared_title_table() {
+        let (mut amg, files) = navigation_fixture();
+        let record = 0x1000 + 4 + 2 * 14;
+        amg[record + 10..record + 14].copy_from_slice(&141u32.to_be_bytes());
+        assert!(
+            verify_navigation_pointers(&amg, &files, &[], 300)
+                .unwrap_err()
+                .starts_with("AMG_ATSI_POINTER_MISMATCH")
+        );
+    }
+
+    #[test]
+    fn navigation_rejects_wrong_menu_video_and_backup_extents() {
+        let (mut amg, files) = navigation_fixture();
+        amg[0xc0..0xc4].copy_from_slice(&31u32.to_be_bytes());
+        assert!(
+            verify_navigation_pointers(&amg, &files, &[], 300)
+                .unwrap_err()
+                .starts_with("AMG_AMGM_POINTER_MISMATCH")
+        );
+
+        let (mut amg, files) = navigation_fixture();
+        amg[12..16].copy_from_slice(&38u32.to_be_bytes());
+        assert!(
+            verify_navigation_pointers(&amg, &files, &[], 300)
+                .unwrap_err()
+                .starts_with("AMG_BACKUP_POINTER_MISMATCH")
+        );
+    }
+
+    #[test]
+    fn navigation_rejects_out_of_range_pointers_and_table_lengths() {
+        let (mut amg, files) = navigation_fixture();
+        amg[0x30..0x34].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(
+            verify_navigation_pointers(&amg, &files, &[], 300)
+                .unwrap_err()
+                .starts_with("AMG_ASVS_POINTER_OUT_OF_RANGE")
+        );
+
+        let (mut amg, files) = navigation_fixture();
+        amg[0x800..0x802].copy_from_slice(&200u16.to_be_bytes());
+        assert_eq!(
+            verify_navigation_pointers(&amg, &files, &[], 300).unwrap_err(),
+            "AMG_TITLE_TABLE_OUT_OF_RANGE"
+        );
+    }
+
     #[test]
     fn still_header_rejects_every_short_self_consistent_zero_record() {
         for length in 24..0x60 {

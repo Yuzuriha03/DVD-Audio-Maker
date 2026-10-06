@@ -3763,18 +3763,6 @@
     "English": "Choose DVD5 for a standard single-layer disc, or DVD9 for a dual-layer disc."
   },
   {
-    "Source": "计划光盘数",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "Planned discs to create"
-  },
-  {
-    "Source": "默认 auto 表示不限制张数，曲目会自动分盘；填写正整数可设定计划张数。",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "The default auto value means no disc-count limit; tracks are assigned to discs automatically. Set a positive integer to plan a disc count."
-  },
-  {
     "Source": "工作文件夹",
     "Parameters": 0,
     "Nested": [],
