@@ -39,11 +39,9 @@ pub struct Job {
     pub iso_prefix: String,
     pub diagnostic_title_mode: String,
     pub disc_bytes: i64,
-    pub planned_discs: i32,
     pub group_track_limit: i32,
     pub mlp_sample_rate: i32,
     pub mlp_bits: i32,
-    pub mlp_jobs: i32,
     pub mlp_metadata_context: String,
     #[serde(default)]
     pub mlp_batch_temp_directory: PathBuf,
@@ -153,12 +151,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     let tracks: Vec<disc::Track> = serde_json::from_value(Value::Array(acquisition.tracks.clone()))
         .map_err(|error| format!("Invalid acquired tracks: {error}"))?;
     diagnostics.extend(acquisition.diagnostics);
-    let plan = disc::plan(
-        tracks.clone(),
-        job.disc_bytes,
-        job.planned_discs,
-        job.group_track_limit,
-    )?;
+    let plan = disc::plan(tracks.clone(), job.disc_bytes, job.group_track_limit)?;
     diagnostics.extend(serde_json::to_value(&plan.diagnostics).unwrap_or_default_array());
     let plan_value = serde_json::to_value(&plan).map_err(|error| error.to_string())?;
     diagnostics.extend(crate::disk_space::check(
@@ -376,6 +369,10 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             break;
         }
         if job.menu_enabled {
+            if let Err(message) = crate::menu_verify::verify_iso_navigation(&iso) {
+                diagnostics.push(error("ISO_NAVIGATION_INVALID", message));
+                break;
+            }
             diagnostics.extend(crate::menu_check::verify(
                 &job,
                 disc,
@@ -503,6 +500,7 @@ fn validate_iso(iso: &Path, disc_bytes: i64) -> Result<(), String> {
             iso.display()
         ));
     }
+    crate::formats::verify_dvd_audio_filesystem(iso)?;
     let files = crate::formats::iso_list_directory(iso, "AUDIO_TS")?;
     if !files
         .iter()
@@ -554,7 +552,7 @@ fn acquire(
                     },
                     sample_rate: job.mlp_sample_rate,
                     bits: job.mlp_bits,
-                    jobs: job.mlp_jobs,
+                    jobs: 0,
                     metadata_context: job.mlp_metadata_context.clone(),
                     encoder_identity: job.encoder_identity.clone(),
                     tracks: tracks.as_array().cloned().unwrap_or_default(),

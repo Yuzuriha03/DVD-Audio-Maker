@@ -39,7 +39,6 @@ pub struct Job {
     #[serde(default = "default_true")]
     pub allow_log_fallback: bool,
     pub disc_bytes: i64,
-    pub planned_discs: i32,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,6 +215,8 @@ fn run(
                         let code = reason.split(':').next().unwrap_or_default();
                         let code = if code.starts_with("ASVS_")
                             || code.starts_with("AMG_")
+                            || code.starts_with("ISO_")
+                            || code.starts_with("UDF_")
                             || code == "MENU_FILE_MISSING"
                         {
                             code
@@ -412,16 +413,6 @@ fn capacity(job: &Job, isos: &[PathBuf], expected_tracks: i32, diagnostics: &mut
     if isos.is_empty() {
         diagnostics.push(error("NO_ISO", "No published ISO images were found"));
         return;
-    }
-    if job.planned_discs > 0 && (isos.len() as i32) < job.planned_discs {
-        diagnostics.push(error(
-            "DISC_COUNT_BELOW_EXPECTED",
-            format!(
-                "{} ISO images were published, below the expected disc count {}",
-                isos.len(),
-                job.planned_discs
-            ),
-        ));
     }
     for iso in isos {
         match fs::metadata(iso) {

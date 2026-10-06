@@ -209,15 +209,23 @@ static AVRational menu_sample_aspect(const char *norm, const char *aspect)
 }
 
 static int receive_video(AVCodecContext *codec, AVFormatContext *output,
-                        AVStream *stream, AVPacket *packet)
+                        AVStream *stream, AVPacket *packet,
+                        AVPacket *pending, int *has_pending)
 {
     int result;
     while ((result = avcodec_receive_packet(codec, packet)) >= 0) {
         packet->stream_index = stream->index;
         av_packet_rescale_ts(packet, codec->time_base, stream->time_base);
-        result = av_interleaved_write_frame(output, packet);
-        av_packet_unref(packet);
-        if (result < 0) return result;
+        if (*has_pending) {
+            result = av_interleaved_write_frame(output, pending);
+            av_packet_unref(pending);
+            if (result < 0) {
+                av_packet_unref(packet);
+                return result;
+            }
+        }
+        av_packet_move_ref(pending, packet);
+        *has_pending = 1;
     }
     return result == AVERROR(EAGAIN) || result == AVERROR_EOF ? 0 : result;
 }
@@ -226,16 +234,56 @@ static int encode_video(MenuVideoInput *input, AVCodecContext *codec,
                         AVFormatContext *output, AVStream *stream)
 {
     AVPacket *packet = av_packet_alloc();
+    AVPacket *pending = av_packet_alloc();
+    static const uint8_t sequence_end_code[4] = {0x00, 0x00, 0x01, 0xB7};
+    int has_pending = 0;
     int result;
-    if (!packet) return AVERROR(ENOMEM);
+    if (!packet || !pending) {
+        av_packet_free(&pending);
+        av_packet_free(&packet);
+        return AVERROR(ENOMEM);
+    }
     result = avcodec_send_frame(codec, input->frame);
-    if (result >= 0) result = receive_video(codec, output, stream, packet);
+    if (result >= 0)
+        result = receive_video(codec, output, stream, packet, pending, &has_pending);
     if (result >= 0) {
         result = avcodec_send_frame(codec, NULL);
-        if (result >= 0) result = receive_video(codec, output, stream, packet);
+        if (result >= 0)
+            result = receive_video(codec, output, stream, packet, pending, &has_pending);
     }
+    if (result >= 0 && !has_pending) result = AVERROR_INVALIDDATA;
+    if (result >= 0) {
+        int already_ended = pending->size >= (int)sizeof(sequence_end_code) &&
+            memcmp(pending->data + pending->size - sizeof(sequence_end_code),
+                   sequence_end_code, sizeof(sequence_end_code)) == 0;
+        if (!already_ended) {
+            result = av_grow_packet(pending, (int)sizeof(sequence_end_code));
+            if (result >= 0)
+                memcpy(pending->data + pending->size - sizeof(sequence_end_code),
+                       sequence_end_code, sizeof(sequence_end_code));
+        }
+        if (result >= 0) result = av_interleaved_write_frame(output, pending);
+    }
+    av_packet_free(&pending);
     av_packet_free(&packet);
     return result;
+}
+
+static int write_still_program_end(AVIOContext *io)
+{
+    uint8_t sector[2048];
+    if (!io) return AVERROR(EINVAL);
+    avio_flush(io);
+    if (io->error < 0) return io->error;
+    if ((avio_tell(io) % (int64_t)sizeof(sector)) != 0) return AVERROR_INVALIDDATA;
+    memset(sector, 0xFF, sizeof(sector));
+    sector[0] = 0x00;
+    sector[1] = 0x00;
+    sector[2] = 0x01;
+    sector[3] = 0xB9;
+    avio_write(io, sector, sizeof(sector));
+    avio_flush(io);
+    return io->error < 0 ? io->error : 0;
 }
 
 static int encode_audio_frame(AVCodecContext *codec, AVAudioFifo *fifo,
@@ -398,7 +446,7 @@ done:
 
 int dvda_menu_create_mpg(const char *y4m_path, const char *wav_path,
                          const char *output_path, const char *norm,
-                         const char *aspect)
+                         const char *aspect, int still_picture)
 {
     MenuVideoInput input;
     AVCodecContext *video = NULL, *audio = NULL;
@@ -490,6 +538,7 @@ int dvda_menu_create_mpg(const char *y4m_path, const char *wav_path,
     if (result < 0) goto done;
     if (audio && (result = encode_audio(wav_path, audio, output, audio_stream)) < 0) goto done;
     if ((result = av_write_trailer(output)) < 0) goto done;
+    if (still_picture && (result = write_still_program_end(output->pb)) < 0) goto done;
     succeeded = 1;
 done:
     av_dict_free(&options);
