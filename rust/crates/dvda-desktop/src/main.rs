@@ -41,7 +41,6 @@ const WM_SIZE: u32 = 0x0005;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const WM_CLOSE: u32 = 0x0010;
 const WM_DRAWITEM: u32 = 0x002b;
-const WM_MEASUREITEM: u32 = 0x002c;
 const WM_TIMER: u32 = 0x0113;
 const ID_ADVANCED: usize = 117;
 const WM_COMMAND: u32 = 0x0111;
@@ -56,7 +55,6 @@ const BM_GETCHECK: u32 = 0x00f0;
 const BM_SETCHECK: u32 = 0x00f1;
 const CB_ADDSTRING: u32 = 0x0143;
 const CB_GETCURSEL: u32 = 0x0147;
-const CB_GETLBTEXT: u32 = 0x0148;
 const CB_RESETCONTENT: u32 = 0x014b;
 const CB_SETCURSEL: u32 = 0x014e;
 const PBM_SETPOS: u32 = 0x0402;
@@ -77,8 +75,6 @@ const ES_AUTOVSCROLL: u32 = 0x0040;
 const ES_READONLY: u32 = 0x0800;
 const ES_WANTRETURN: u32 = 0x1000;
 const CBS_DROPDOWNLIST: u32 = 0x0003;
-const CBS_OWNERDRAWFIXED: u32 = 0x0010;
-const CBS_HASSTRINGS: u32 = 0x0200;
 const BS_AUTOCHECKBOX: u32 = 0x0003;
 const BS_PUSHBUTTON: u32 = 0x0000;
 const BS_DEFPUSHBUTTON: u32 = 0x0001;
@@ -203,15 +199,6 @@ struct DrawItemStruct {
     dc: Handle,
     rect: Rect,
     data: usize,
-}
-
-#[repr(C)]
-struct MeasureItemStruct {
-    control_type: u32,
-    control_id: u32,
-    item_width: u32,
-    item_height: u32,
-    item_data: usize,
 }
 
 #[repr(C)]
@@ -1325,20 +1312,6 @@ unsafe extern "system" fn window_proc(
                     unsafe { draw_stop_button(item) };
                     return 1;
                 }
-                if item.control_id as usize == ID_LANGUAGE {
-                    unsafe { draw_language_combo(item) };
-                    return 1;
-                }
-            }
-            0
-        }
-        WM_MEASUREITEM => {
-            if lparam != 0 {
-                let item = unsafe { &mut *(lparam as *mut MeasureItemStruct) };
-                if item.control_id as usize == ID_LANGUAGE {
-                    item.item_height = 26;
-                    return 1;
-                }
             }
             0
         }
@@ -1575,7 +1548,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         22,
         &mut labels,
     );
-    let language = centered_combo(parent, ID_LANGUAGE, 1055, 10, 100, 120);
+    let language = combo(parent, ID_LANGUAGE, 1055, 10, 100, 120);
     combo_add(language, tr(lang, "language_zh"));
     combo_add(language, tr(lang, "language_en"));
     combo_add(language, tr(lang, "language_ja"));
@@ -2512,25 +2485,6 @@ fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
     )
 }
 
-fn centered_combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create(
-        parent,
-        "COMBOBOX",
-        "",
-        WS_CHILD
-            | WS_VISIBLE
-            | WS_BORDER
-            | WS_TABSTOP
-            | CBS_DROPDOWNLIST
-            | CBS_OWNERDRAWFIXED
-            | CBS_HASSTRINGS,
-        x,
-        y,
-        w,
-        h,
-        id,
-    )
-}
 fn button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
     create(
         parent,
@@ -2937,55 +2891,6 @@ unsafe fn draw_stop_button(item: &DrawItemStruct) {
             item.dc,
             text.as_ptr(),
             count,
-            &mut rect,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
-        );
-    }
-}
-
-unsafe fn draw_language_combo(item: &DrawItemStruct) {
-    let selected = item.state & ODS_SELECTED != 0;
-    let background = unsafe { GetSysColor(if selected { 13 } else { 5 }) };
-    let foreground = unsafe { GetSysColor(if selected { 14 } else { 8 }) };
-    let brush = unsafe { CreateSolidBrush(background) };
-    if brush.is_null() {
-        return;
-    }
-    unsafe {
-        FillRect(item.dc, &item.rect, brush);
-        DeleteObject(brush as Handle);
-    }
-
-    let index = item.item_id as i32;
-    let mut text = vec![0u16; 64];
-    let count = if index >= 0 {
-        unsafe {
-            SendMessageW(
-                item.item,
-                CB_GETLBTEXT,
-                index as usize,
-                text.as_mut_ptr() as isize,
-            )
-        }
-    } else {
-        let length = unsafe { GetWindowTextLengthW(item.item) }.max(0) as usize;
-        text.resize(length + 1, 0);
-        unsafe { GetWindowTextW(item.item, text.as_mut_ptr(), text.len() as i32) as isize }
-    };
-    if count < 0 {
-        return;
-    }
-    unsafe {
-        SetBkMode(item.dc, 1);
-        SetTextColor(item.dc, foreground);
-    }
-    let mut rect = item.rect;
-    rect.right = (rect.right - 18).max(rect.left);
-    unsafe {
-        DrawTextW(
-            item.dc,
-            text.as_ptr(),
-            count as i32,
             &mut rect,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE,
         );
