@@ -55,8 +55,8 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     let output = text(object, "FinalDirectory");
     let iso_prefix = text(object, "IsoPrefix");
     let title = text(object, "Title");
-    let max_discs = object
-        .get("MaxDiscs")
+    let planned_discs = object
+        .get("PlannedDiscs")
         .and_then(Value::as_i64)
         .unwrap_or_default();
     let mut lines = vec![
@@ -72,11 +72,11 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         format!("  iso prefix  : {iso_prefix}"),
         format!("  title       : {title}"),
         format!(
-            "  max discs   : {}",
-            if max_discs == 0 {
+            "  desired discs: {}",
+            if planned_discs == 0 {
                 "unlimited".to_owned()
             } else {
-                max_discs.to_string()
+                planned_discs.to_string()
             }
         ),
     ];
@@ -105,12 +105,12 @@ mod tests {
         let request = json!({
             "DryRun":true,"Generated":"2026-10-05 12:34:56",
             "DvdaAuthor":"author.exe","FinalDirectory":"out",
-            "IsoPrefix":"disc","Title":"Title","MaxDiscs":0
+            "IsoPrefix":"disc","Title":"Title","PlannedDiscs":0
         });
         let lines = dispatch("build.log_header", request).unwrap();
         assert_eq!(lines[0], "");
         assert_eq!(lines[2], "[Rust build] [DRY-RUN] 2026-10-05 12:34:56");
-        assert_eq!(lines[8], "  max discs   : unlimited");
+        assert_eq!(lines[8], "  desired discs: unlimited");
         assert!(lines[9].as_str().unwrap().contains("未执行"));
         assert_eq!(lines[11], "=".repeat(60));
     }

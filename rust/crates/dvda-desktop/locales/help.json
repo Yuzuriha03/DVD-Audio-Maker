@@ -3,7 +3,7 @@
   "DVDA_FINAL_DIR": "制作完成的 ISO 光盘镜像保存在这里。",
   "DVDA_TITLE": "显示在光盘卷标中，例如：My Music。为兼容制盘工具，建议使用英文和数字。",
   "DVDA_DISC_BYTES": "普通单层光盘选 DVD5；双层光盘选 DVD9。",
-  "DVDA_MAX_DISCS": "填 0 表示不限张数，曲目会自动分盘。",
+  "DVDA_PLANNED_DISCS": "填 0 表示不限张数，曲目会自动分盘。",
   "DVDA_BUILD_DIR": "存放编码缓存和制作中的文件，建议选择空间充足的磁盘。",
   "DVDA_ISO_PREFIX": "留空时根据光盘名称生成。",
   "DVDA_GROUP_TRACK_LIMIT": "通常保留默认值 99。",

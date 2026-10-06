@@ -39,7 +39,7 @@ pub struct Job {
     #[serde(default = "default_true")]
     pub allow_log_fallback: bool,
     pub disc_bytes: i64,
-    pub max_discs: i32,
+    pub planned_discs: i32,
 }
 
 #[derive(Debug, Serialize)]
@@ -413,13 +413,13 @@ fn capacity(job: &Job, isos: &[PathBuf], expected_tracks: i32, diagnostics: &mut
         diagnostics.push(error("NO_ISO", "No published ISO images were found"));
         return;
     }
-    if job.max_discs > 0 && isos.len() as i32 > job.max_discs {
+    if job.planned_discs > 0 && (isos.len() as i32) < job.planned_discs {
         diagnostics.push(error(
-            "DISC_COUNT_EXCEEDED",
+            "DISC_COUNT_BELOW_EXPECTED",
             format!(
-                "{} ISO images exceed the configured limit {}",
+                "{} ISO images were published, below the expected disc count {}",
                 isos.len(),
-                job.max_discs
+                job.planned_discs
             ),
         ));
     }
