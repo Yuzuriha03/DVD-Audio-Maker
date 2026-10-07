@@ -197,8 +197,17 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     let progress_total = (sources.len() as u64).saturating_mul(2).max(1);
     events.progress(0, progress_total);
     let mut tracks = Vec::with_capacity(sources.len());
+    crate::task_log::emit(events, "source_metadata", 0, sources.len() as u64, "", "");
     for (index, path) in sources.iter().enumerate() {
         alac::check_cancel(events)?;
+        crate::task_log::emit(
+            events,
+            "source_metadata",
+            index as u64,
+            sources.len() as u64,
+            path.rsplit(['/', '\\']).next().unwrap_or(path),
+            path,
+        );
         if let Some(entry) = cache.as_ref().filter(|_| reuse).and_then(|c| c.find(path)) {
             tracks.push(entry.probe.metadata(path));
             cached.insert(path.clone(), entry.clone());
@@ -210,6 +219,14 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
         }
         events.progress(index as u64 + 1, progress_total);
     }
+    crate::task_log::emit(
+        events,
+        "source_metadata",
+        sources.len() as u64,
+        sources.len() as u64,
+        "",
+        "",
+    );
     events.emit(
         1,
         &format!(
@@ -245,11 +262,20 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     let mut repairs = Vec::new();
     let mut checked = 0;
     let mut reused = 0;
+    crate::task_log::emit(events, "source_decode", 0, sources.len() as u64, "", "");
     for ((rate, bits), group) in rules::ordered_groups(&tracks) {
         let name = format!("group_{rate}_{bits}");
         let mut files = Vec::with_capacity(group.len());
         for (index, track) in group.into_iter().enumerate() {
             alac::check_cancel(events)?;
+            crate::task_log::emit(
+                events,
+                "source_decode",
+                checked as u64,
+                sources.len() as u64,
+                &track.title,
+                &track.path,
+            );
             checked += 1;
             let mut source = track.path.clone();
             let mut original = None;
@@ -382,6 +408,14 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
             }),
         );
     }
+    crate::task_log::emit(
+        events,
+        "source_checked",
+        checked as u64,
+        sources.len() as u64,
+        "",
+        "",
+    );
     let failure_count = issues.iter().filter(|i| i.level == "FAIL").count();
     let warning_count = issues.iter().filter(|i| i.level == "WARN").count();
     let result = models::Result {
