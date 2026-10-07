@@ -1039,11 +1039,11 @@ impl Callbacks for WorkerCallbacks {
     }
 
     fn progress(&mut self, completed: u64, total: u64) {
-        let portion = if total == 0 {
-            100
-        } else {
-            (completed.min(total).saturating_mul(100) / total) as u16
-        };
+        let portion = completed
+            .min(total)
+            .saturating_mul(100)
+            .checked_div(total)
+            .unwrap_or(100) as u16;
         let value = self.range.0 + (self.range.1 - self.range.0).saturating_mul(portion) / 100;
         if value != self.last_progress {
             self.last_progress = value;
@@ -1533,6 +1533,117 @@ unsafe fn state<'a>(hwnd: Hwnd) -> Option<&'a mut UiState> {
     (!pointer.is_null()).then(|| unsafe { &mut *pointer })
 }
 
+macro_rules! create {
+    ($parent:expr, $class:expr, $title:expr, $style:expr, $x:expr, $y:expr, $width:expr, $height:expr, $id:expr $(,)?) => {
+        create_from_spec(CreateSpec {
+            parent: $parent,
+            class: $class,
+            title: $title,
+            style: $style,
+            x: $x,
+            y: $y,
+            width: $width,
+            height: $height,
+            id: $id,
+        })
+    };
+}
+
+struct CreateSpec<'a> {
+    parent: Hwnd,
+    class: &'a str,
+    title: &'a str,
+    style: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    id: usize,
+}
+
+macro_rules! label {
+    ($parent:expr, $text:expr, $key:expr, $x:expr, $y:expr, $w:expr, $h:expr, $labels:expr $(,)?) => {{
+        let hwnd = create!(
+            $parent,
+            "STATIC",
+            $text,
+            WS_CHILD | WS_VISIBLE,
+            $x,
+            $y,
+            $w,
+            $h,
+            0
+        );
+        if !$key.is_empty() {
+            $labels.push((hwnd, $key));
+        }
+        hwnd
+    }};
+}
+
+macro_rules! text_field {
+    ($parent:expr, $caption:expr, $key:expr, $id:expr, $x:expr, $y:expr, $width:expr, $labels:expr $(,)?) => {{
+        label!($parent, $caption, $key, $x, $y, $width, 20, $labels);
+        create!(
+            $parent,
+            "EDIT",
+            "",
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+            $x,
+            $y + 20,
+            $width,
+            25,
+            $id
+        )
+    }};
+}
+
+macro_rules! browse_edit {
+    ($parent:expr, $caption:expr, $key:expr, $id:expr, $browse_id:expr, $x:expr, $y:expr, $labels:expr, $browse:expr, $browse_buttons:expr, $lang:expr $(,)?) => {{
+        label!($parent, $caption, $key, $x, $y, 520, 20, $labels);
+        let edit = create!(
+            $parent,
+            "EDIT",
+            "",
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+            $x,
+            $y + 20,
+            820,
+            25,
+            $id
+        );
+        let browse_button = button(
+            $parent,
+            tr($lang, "browse"),
+            $browse_id,
+            $x + 830,
+            $y + 18,
+            90,
+            29,
+        );
+        $browse_buttons.push(browse_button);
+        $browse.insert(
+            $browse_id,
+            (
+                edit,
+                if matches!($browse_id, ID_BROWSE_AUTHOR | ID_BROWSE_METADATA) {
+                    BrowseKind::File
+                } else {
+                    BrowseKind::Folder
+                },
+            ),
+        );
+        edit
+    }};
+}
+
+macro_rules! combo_field {
+    ($parent:expr, $caption:expr, $key:expr, $id:expr, $x:expr, $y:expr, $width:expr, $labels:expr $(,)?) => {{
+        label!($parent, $caption, $key, $x, $y, $width, 20, $labels);
+        combo($parent, $id, $x, $y + 20, $width, 160)
+    }};
+}
+
 fn create_controls(parent: Hwnd) -> UiState {
     let profile_path = PROFILE_OVERRIDE
         .get()
@@ -1543,7 +1654,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     let mut buttons = Vec::new();
     let mut browse = HashMap::new();
     let mut browse_buttons = Vec::new();
-    let profile_label = label(
+    let profile_label = label!(
         parent,
         tr(lang, "profile"),
         "profile",
@@ -1553,7 +1664,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         22,
         &mut labels,
     );
-    let profile = create(
+    let profile = create!(
         parent,
         "EDIT",
         "",
@@ -1567,7 +1678,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     let open_profile = button(parent, tr(lang, "open"), ID_OPEN_PROFILE, 750, 10, 110, 28);
     let save_profile_button = button(parent, tr(lang, "save"), ID_SAVE_PROFILE, 870, 10, 110, 28);
     let save_as_button = button(parent, tr(lang, "save_as"), ID_SAVE_AS, 870, 10, 110, 28);
-    let language_label = label(
+    let language_label = label!(
         parent,
         tr(lang, "language"),
         "language",
@@ -1589,7 +1700,7 @@ fn create_controls(parent: Hwnd) -> UiState {
             Lang::Ja => 2,
         },
     );
-    label(
+    label!(
         parent,
         tr(lang, "app_subtitle"),
         "app_subtitle",
@@ -1599,7 +1710,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         20,
         &mut labels,
     );
-    let origin = label(
+    let origin = label!(
         parent,
         &profile_path.to_string_lossy(),
         "",
@@ -1609,7 +1720,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         20,
         &mut Vec::new(),
     );
-    let tabs = create(
+    let tabs = create!(
         parent,
         "SysTabControl32",
         "",
@@ -1681,7 +1792,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     };
     let page_start = create_page(parent);
     pages.push(page_start);
-    c.source = browse_edit(
+    c.source = browse_edit!(
         page_start,
         tr(lang, "source"),
         "source",
@@ -1694,7 +1805,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    c.final_dir = browse_edit(
+    c.final_dir = browse_edit!(
         page_start,
         tr(lang, "final"),
         "final",
@@ -1707,7 +1818,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    c.title = text_field(
+    c.title = text_field!(
         page_start,
         tr(lang, "title"),
         "title",
@@ -1717,7 +1828,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         470,
         &mut labels,
     );
-    c.capacity = combo_field(
+    c.capacity = combo_field!(
         page_start,
         tr(lang, "capacity"),
         "capacity",
@@ -1731,7 +1842,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     combo_add(c.capacity, tr(lang, "dvd9"));
     combo_add(c.capacity, tr(lang, "custom"));
     combo_select(c.capacity, 0);
-    c.work_dir = browse_edit(
+    c.work_dir = browse_edit!(
         page_start,
         tr(lang, "work_dir"),
         "work_dir",
@@ -1744,7 +1855,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    c.iso_prefix = text_field(
+    c.iso_prefix = text_field!(
         page_start,
         tr(lang, "iso_prefix"),
         "iso_prefix",
@@ -1754,7 +1865,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         460,
         &mut labels,
     );
-    c.group_limit = text_field(
+    c.group_limit = text_field!(
         page_start,
         tr(lang, "group_limit"),
         "group_limit",
@@ -1782,7 +1893,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         241,
         &mut labels,
     );
-    c.custom_bytes = text_field(
+    c.custom_bytes = text_field!(
         page_start,
         tr(lang, "custom_bytes"),
         "custom_bytes",
@@ -1794,7 +1905,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     );
     pages.push(create_page(parent));
     let page_audio = *pages.last().unwrap();
-    c.mode = combo_field(
+    c.mode = combo_field!(
         page_audio,
         tr(lang, "audio_mode"),
         "audio_mode",
@@ -1808,7 +1919,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     combo_add(c.mode, tr(lang, "lpcm"));
     combo_add(c.mode, tr(lang, "import"));
     combo_select(c.mode, 0);
-    c.rate = combo_field(
+    c.rate = combo_field!(
         page_audio,
         tr(lang, "sample_rate"),
         "sample_rate",
@@ -1821,7 +1932,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     for item in SAMPLE_RATE_LABELS {
         combo_add(c.rate, item);
     }
-    c.bits = combo_field(
+    c.bits = combo_field!(
         page_audio,
         tr(lang, "bits"),
         "bits",
@@ -1834,7 +1945,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     for item in ["16", "20", "24"] {
         combo_add(c.bits, item);
     }
-    c.metadata = browse_edit(
+    c.metadata = browse_edit!(
         page_audio,
         tr(lang, "metadata"),
         "metadata",
@@ -1847,7 +1958,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    c.import_folder = browse_edit(
+    c.import_folder = browse_edit!(
         page_audio,
         tr(lang, "import_folder"),
         "import_folder",
@@ -1860,7 +1971,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    c.audio_note = label(
+    c.audio_note = label!(
         page_audio,
         tr(lang, "mlp_note"),
         "audio_note",
@@ -1870,7 +1981,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         48,
         &mut labels,
     );
-    c.pcm_temp = text_field(
+    c.pcm_temp = text_field!(
         page_audio,
         tr(lang, "pcm_temp"),
         "pcm_temp",
@@ -1880,7 +1991,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         460,
         &mut labels,
     );
-    c.mlp_stage = text_field(
+    c.mlp_stage = text_field!(
         page_audio,
         tr(lang, "mlp_stage"),
         "mlp_stage",
@@ -1910,7 +2021,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         18,
         &mut labels,
     );
-    c.tracks = text_field(
+    c.tracks = text_field!(
         page_menu,
         tr(lang, "tracks"),
         "tracks",
@@ -1920,7 +2031,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         220,
         &mut labels,
     );
-    c.cover = text_field(
+    c.cover = text_field!(
         page_menu,
         tr(lang, "cover"),
         "cover",
@@ -1930,7 +2041,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         220,
         &mut labels,
     );
-    c.index = text_field(
+    c.index = text_field!(
         page_menu,
         tr(lang, "index"),
         "index",
@@ -1940,7 +2051,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         220,
         &mut labels,
     );
-    c.font_sc = text_field(
+    c.font_sc = text_field!(
         page_menu,
         tr(lang, "font_sc"),
         "font_sc",
@@ -1950,7 +2061,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         300,
         &mut labels,
     );
-    c.font_jp = text_field(
+    c.font_jp = text_field!(
         page_menu,
         tr(lang, "font_jp"),
         "font_jp",
@@ -1960,7 +2071,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         300,
         &mut labels,
     );
-    c.font_kr = text_field(
+    c.font_kr = text_field!(
         page_menu,
         tr(lang, "font_kr"),
         "font_kr",
@@ -1981,7 +2092,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     }
     pages.push(create_page(parent));
     let page_tools = *pages.last().unwrap();
-    c.author = browse_edit(
+    c.author = browse_edit!(
         page_tools,
         tr(lang, "author"),
         "author",
@@ -1994,7 +2105,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    c.author_src = browse_edit(
+    c.author_src = browse_edit!(
         page_tools,
         tr(lang, "author_src"),
         "author_src",
@@ -2025,7 +2136,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         116,
         &mut labels,
     );
-    c.loss_warn = text_field(
+    c.loss_warn = text_field!(
         page_tools,
         tr(lang, "loss_warn"),
         "loss_warn",
@@ -2035,7 +2146,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         220,
         &mut labels,
     );
-    c.loss_error = text_field(
+    c.loss_error = text_field!(
         page_tools,
         tr(lang, "loss_error"),
         "loss_error",
@@ -2045,7 +2156,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         220,
         &mut labels,
     );
-    c.title_mode = text_field(
+    c.title_mode = text_field!(
         page_tools,
         tr(lang, "title_mode"),
         "title_mode",
@@ -2055,7 +2166,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         460,
         &mut labels,
     );
-    c.album_limit = text_field(
+    c.album_limit = text_field!(
         page_tools,
         tr(lang, "album_limit"),
         "album_limit",
@@ -2065,7 +2176,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         460,
         &mut labels,
     );
-    let _operation_section = label(
+    let _operation_section = label!(
         parent,
         tr(lang, "operation_section"),
         "operation_section",
@@ -2075,7 +2186,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         18,
         &mut labels,
     );
-    let status = label(
+    let status = label!(
         parent,
         tr(lang, "ready"),
         "ready",
@@ -2085,7 +2196,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         24,
         &mut labels,
     );
-    let activity = label(
+    let activity = label!(
         parent,
         tr(lang, "ready_hint"),
         "ready_hint",
@@ -2095,7 +2206,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         24,
         &mut labels,
     );
-    let progress = create(
+    let progress = create!(
         parent,
         "msctls_progress32",
         "",
@@ -2106,7 +2217,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         8,
         0,
     );
-    let _log_section = label(
+    let _log_section = label!(
         parent,
         tr(lang, "log_section"),
         "log_section",
@@ -2133,7 +2244,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     check(live, true);
     let copy = button(parent, tr(lang, "copy"), ID_COPY, 720, 478, 125, 28);
     let export = button(parent, tr(lang, "export"), ID_EXPORT, 855, 478, 130, 28);
-    let log = create(
+    let log = create!(
         parent,
         "EDIT",
         "",
@@ -2155,9 +2266,9 @@ fn create_controls(parent: Hwnd) -> UiState {
     }
     // Keep the legacy command IDs for automation/tests, but expose the
     // complete prepare-build-verify workflow through the single build action.
-    let prepare = create(parent, "BUTTON", "", WS_CHILD, 18, 740, 145, 34, ID_PREPARE);
+    let prepare = create!(parent, "BUTTON", "", WS_CHILD, 18, 740, 145, 34, ID_PREPARE);
     let build = primary_button(parent, tr(lang, "build"), ID_BUILD, 175, 740, 145, 34);
-    let verify = create(parent, "BUTTON", "", WS_CHILD, 332, 740, 145, 34, ID_VERIFY);
+    let verify = create!(parent, "BUTTON", "", WS_CHILD, 332, 740, 145, 34, ID_VERIFY);
     let cancel = danger_button(parent, tr(lang, "cancel"), ID_CANCEL, 490, 740, 145, 34);
     let open_output = button(
         parent,
@@ -2251,7 +2362,7 @@ fn create_controls(parent: Hwnd) -> UiState {
             advanced_controls.push(*button);
         }
     }
-    c.statistics = label(parent, "", "", 810, 700, 330, 26, &mut Vec::new());
+    c.statistics = label!(parent, "", "", 810, 700, 330, 26, &mut Vec::new());
     let loaded = if profile_path.exists() || PROFILE_OVERRIDE.get().is_some_and(Option::is_some) {
         AppOptions::load(Some(profile_path.as_path()))
     } else {
@@ -2337,7 +2448,7 @@ fn create_controls(parent: Hwnd) -> UiState {
 }
 
 fn create_page(parent: Hwnd) -> Hwnd {
-    create(
+    create!(
         parent,
         "DVD_AUDIO_PAGE_RUST",
         "",
@@ -2348,114 +2459,6 @@ fn create_page(parent: Hwnd) -> Hwnd {
         310,
         0,
     )
-}
-
-#[allow(clippy::too_many_arguments)] // Explicit Win32 control geometry and ownership.
-fn label(
-    parent: Hwnd,
-    text: &str,
-    key: &'static str,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    labels: &mut Vec<(Hwnd, &'static str)>,
-) -> Hwnd {
-    let hwnd = create(parent, "STATIC", text, WS_CHILD | WS_VISIBLE, x, y, w, h, 0);
-    if !key.is_empty() {
-        labels.push((hwnd, key));
-    }
-    hwnd
-}
-
-#[allow(clippy::too_many_arguments)] // Explicit Win32 control geometry and ownership.
-fn text_field(
-    parent: Hwnd,
-    caption: &str,
-    key: &'static str,
-    id: usize,
-    x: i32,
-    y: i32,
-    width: i32,
-    labels: &mut Vec<(Hwnd, &'static str)>,
-) -> Hwnd {
-    label(parent, caption, key, x, y, width, 20, labels);
-    create(
-        parent,
-        "EDIT",
-        "",
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
-        x,
-        y + 20,
-        width,
-        25,
-        id,
-    )
-}
-
-#[allow(clippy::too_many_arguments)] // Explicit Win32 control geometry and ownership.
-fn browse_edit(
-    parent: Hwnd,
-    caption: &str,
-    key: &'static str,
-    id: usize,
-    browse_id: usize,
-    x: i32,
-    y: i32,
-    labels: &mut Vec<(Hwnd, &'static str)>,
-    browse: &mut HashMap<usize, (Hwnd, BrowseKind)>,
-    browse_buttons: &mut Vec<Hwnd>,
-    lang: Lang,
-) -> Hwnd {
-    label(parent, caption, key, x, y, 520, 20, labels);
-    let edit = create(
-        parent,
-        "EDIT",
-        "",
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
-        x,
-        y + 20,
-        820,
-        25,
-        id,
-    );
-    let browse_button = button(
-        parent,
-        tr(lang, "browse"),
-        browse_id,
-        x + 830,
-        y + 18,
-        90,
-        29,
-    );
-    browse_buttons.push(browse_button);
-    browse.insert(
-        browse_id,
-        (
-            edit,
-            if matches!(browse_id, ID_BROWSE_AUTHOR | ID_BROWSE_METADATA) {
-                BrowseKind::File
-            } else {
-                BrowseKind::Folder
-            },
-        ),
-    );
-    edit
-}
-
-#[allow(clippy::too_many_arguments)] // Explicit Win32 control geometry and ownership.
-fn combo_field(
-    parent: Hwnd,
-    caption: &str,
-    key: &'static str,
-    id: usize,
-    x: i32,
-    y: i32,
-    width: i32,
-    labels: &mut Vec<(Hwnd, &'static str)>,
-) -> Hwnd {
-    label(parent, caption, key, x, y, width, 20, labels);
-    combo(parent, id, x, y + 20, width, 160)
 }
 
 fn check_field(
@@ -2473,7 +2476,7 @@ fn check_field(
 }
 
 fn checkbox(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create(
+    create!(
         parent,
         "BUTTON",
         text,
@@ -2486,7 +2489,7 @@ fn checkbox(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32)
     )
 }
 fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create(
+    create!(
         parent,
         "COMBOBOX",
         "",
@@ -2500,7 +2503,7 @@ fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
 }
 
 fn button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create(
+    create!(
         parent,
         "BUTTON",
         text,
@@ -2514,7 +2517,7 @@ fn button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -
 }
 
 fn primary_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create(
+    create!(
         parent,
         "BUTTON",
         text,
@@ -2528,7 +2531,7 @@ fn primary_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h
 }
 
 fn danger_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create(
+    create!(
         parent,
         "BUTTON",
         text,
@@ -2541,18 +2544,18 @@ fn danger_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h:
     )
 }
 
-#[allow(clippy::too_many_arguments)] // Mirrors CreateWindowExW, omitting fixed parameters.
-fn create(
-    parent: Hwnd,
-    class: &str,
-    title: &str,
-    style: u32,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    id: usize,
-) -> Hwnd {
+fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
+    let CreateSpec {
+        parent,
+        class,
+        title,
+        style,
+        x,
+        y,
+        width,
+        height,
+        id,
+    } = spec;
     let class = wide(class);
     let title = wide(title);
     let hwnd = unsafe {
@@ -4573,16 +4576,16 @@ fn localized_log(lang: Lang, raw: &str) -> String {
     }
     if let Some(value) = text.strip_prefix("[MLP-FINALIZE] progress ") {
         let mut fields = value.splitn(2, ' ');
-        if let (Some(position), Some(title)) = (fields.next(), fields.next()) {
-            if let Some((current, total)) = position.split_once('/') {
-                return match lang {
-                    Lang::Zh => format!("正在整理 MLP 编码结果：{current}/{total}，{title}"),
-                    Lang::En => {
-                        format!("Finalizing MLP encoding result {current}/{total}: {title}")
-                    }
-                    Lang::Ja => format!("MLP エンコード結果を整理中：{current}/{total}、{title}"),
-                };
-            }
+        if let (Some(position), Some(title)) = (fields.next(), fields.next())
+            && let Some((current, total)) = position.split_once('/')
+        {
+            return match lang {
+                Lang::Zh => format!("正在整理 MLP 编码结果：{current}/{total}，{title}"),
+                Lang::En => {
+                    format!("Finalizing MLP encoding result {current}/{total}: {title}")
+                }
+                Lang::Ja => format!("MLP エンコード結果を整理中：{current}/{total}、{title}"),
+            };
         }
     }
     if let Some(value) = text.strip_prefix("[MLP-FINALIZE] complete ")
@@ -5371,7 +5374,7 @@ mod presentation_tests {
                 classes: 0xffff,
             });
         }
-        let parent = create(ptr::null_mut(), "STATIC", "", 0, 0, 0, 1180, 820, 0);
+        let parent = create!(ptr::null_mut(), "STATIC", "", 0, 0, 0, 1180, 820, 0);
         assert!(!parent.is_null());
         let mut ui = create_controls(parent);
         // Exercise the actual controls rather than passing handcrafted blank

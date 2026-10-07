@@ -201,7 +201,6 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
             };
             let outcome = batch::execute(batch_job, &mut forward);
             drop(forward);
-            drop(encode_progress);
             if let Some(failure) = outcome.failure {
                 return Err(failure.message);
             }
