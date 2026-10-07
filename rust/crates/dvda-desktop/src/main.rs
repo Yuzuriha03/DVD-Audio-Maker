@@ -4074,7 +4074,14 @@ fn add_log(state: &mut UiState, text: &str, problem: bool) {
             state.problem_count += 1;
         }
         let problem = problem || log_is_problem(text);
-        state.problem_count += usize::from(problem);
+        // Repetitive category warnings are represented by their explicit
+        // stage summary, not hundreds of identical entries in the counter.
+        state.problem_count += usize::from(
+            problem
+                && !text
+                    .trim()
+                    .starts_with("WARN: Button y coordinates are odd for button "),
+        );
         state.logs.push(LogLine {
             raw: text.to_owned(),
             problem,
@@ -4084,9 +4091,11 @@ fn add_log(state: &mut UiState, text: &str, problem: bool) {
     if state.logs.len() > 2500 {
         state.logs.drain(..state.logs.len() - 2000);
     }
-    state.activity_raw = text.to_owned();
+    if presentation::activity(state.lang, text).is_some() {
+        state.activity_raw = text.to_owned();
+        state.activity_dirty = true;
+    }
     state.log_dirty = true;
-    state.activity_dirty = true;
 }
 
 fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
@@ -4377,8 +4386,50 @@ fn localized_log(lang: Lang, raw: &str) -> String {
     if text.is_empty() {
         return String::new();
     }
+    if let Some(message) = presentation::task_message(lang, text) {
+        return message;
+    }
     if let Some(message) = batch_message(lang, text) {
         return message;
+    }
+    if let Some(value) = text.strip_prefix("[MLP-CHECK] start ")
+        && !value.is_empty()
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return match lang {
+            Lang::Zh => format!("正在检查已有 MLP：0/{value} 首"),
+            Lang::En => format!("Checking existing MLP files: 0/{value} tracks"),
+            Lang::Ja => format!("既存 MLP を確認中：0/{value} 曲"),
+        };
+    }
+    if let Some(value) = text.strip_prefix("[MLP-CHECK] progress ")
+        && let Some((position, title)) = value.split_once(' ')
+        && let Some((current, total)) = position.split_once('/')
+        && !current.is_empty()
+        && !total.is_empty()
+        && current.bytes().all(|byte| byte.is_ascii_digit())
+        && total.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return match lang {
+            Lang::Zh => format!("正在检查已有 MLP：{current}/{total} 首；{title}"),
+            Lang::En => format!("Checking existing MLP files: {current}/{total} tracks; {title}"),
+            Lang::Ja => format!("既存 MLP を確認中：{current}/{total} 曲；{title}"),
+        };
+    }
+    if let Some(value) = text.strip_prefix("[MLP-CHECK] complete ")
+        && let Some((reused, pending)) = value.split_once(' ')
+        && !reused.is_empty()
+        && !pending.is_empty()
+        && reused.bytes().all(|byte| byte.is_ascii_digit())
+        && pending.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return match lang {
+            Lang::Zh => format!("MLP 检查完成：可复用 {reused} 首，需编码 {pending} 首。"),
+            Lang::En => format!("MLP checks complete: {reused} reusable, {pending} to encode."),
+            Lang::Ja => {
+                format!("MLP の確認完了：{reused} 曲を再利用、{pending} 曲をエンコードします。")
+            }
+        };
     }
     if let Some(value) = text.strip_prefix("[MLP-PROGRESS] ")
         && let Some((current, total)) = value.split_once('/')
@@ -4428,17 +4479,19 @@ fn localized_log(lang: Lang, raw: &str) -> String {
             (fields.next(), fields.next(), fields.next())
             && let Some((current, total)) = position.split_once('/')
         {
+            let result = result.strip_suffix(':').unwrap_or(result);
             return match (lang, result) {
                 (Lang::Zh, "ok") => format!("成品音频校验：{current}/{total} 首一致：{path}"),
                 (Lang::En, "ok") => {
                     format!("Output audio check: {current}/{total} tracks match: {path}")
                 }
                 (Lang::Ja, "ok") => format!("出力音声検証：{current}/{total} 曲一致：{path}"),
-                (Lang::Zh, _) => format!("成品音频校验：{current}/{total} 首不一致：{path}"),
-                (Lang::En, _) => {
+                (Lang::Zh, "failed") => format!("成品音频校验：{current}/{total} 首不一致：{path}"),
+                (Lang::En, "failed") => {
                     format!("Output audio check: {current}/{total} tracks differ: {path}")
                 }
-                (Lang::Ja, _) => format!("出力音声検証：{current}/{total} 曲不一致：{path}"),
+                (Lang::Ja, "failed") => format!("出力音声検証：{current}/{total} 曲不一致：{path}"),
+                _ => text.to_owned(),
             };
         }
     }
@@ -4572,6 +4625,15 @@ fn localized_log(lang: Lang, raw: &str) -> String {
 
 fn localized_detail(lang: Lang, text: &str) -> String {
     let text = text.trim();
+    if let Some(event) = dvda_core::task_log::parse(text)
+        && let Some(message) = presentation::task_message(lang, text)
+    {
+        return if event.detail.is_empty() {
+            message
+        } else {
+            format!("{message} · {}", event.detail)
+        };
+    }
     if let Some(message) = batch_message(lang, text) {
         return message;
     }

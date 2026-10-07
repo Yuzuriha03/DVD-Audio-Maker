@@ -472,6 +472,80 @@ fn batch_matrix_matches_frozen_encoder_bytes() {
     }
     assert_eq!(outputs, 168);
 }
+
+#[test]
+#[ignore = "requires the pinned C encoder and source-built media/formats DLLs"]
+fn mlp_acquisition_upgrades_legacy_parameter_cache_without_reencoding_or_track_changes() {
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
+    let root = Scratch::new();
+    let mut tracks = Vec::new();
+    for (index, rate) in [44100, 48000].iter().enumerate() {
+        let case = fixtures
+            .cases
+            .iter()
+            .find(|case| case.rate == *rate && case.bits == 16 && case.channels == 2)
+            .unwrap();
+        let input = root.0.join(format!("input-{index}.wav"));
+        wave(&input, case);
+        tracks.push(serde_json::json!({"SourcePath":input,"Title":format!("曲目 {index}"),"Duration":case.frames as f64 / f64::from(case.rate)}));
+    }
+    let cache = root.0.join("cache.json");
+    let output = root.0.join("output");
+    let job = || dvda_core::mlp_workflow::Job {
+        media_library: PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").unwrap())
+            .join("dvda-media.dll"),
+        encoder_library: library(),
+        source_root: root.0.to_string_lossy().into_owned(),
+        output_root: output.clone(),
+        cache_path: cache.clone(),
+        temporary_directory: root.0.join("temporary"),
+        stage_directory: root.0.join("stage"),
+        sample_rate: 48000,
+        bits: 24,
+        jobs: 0,
+        metadata_context: String::new(),
+        encoder_identity: "acquisition-regression".into(),
+        tracks: tracks.clone(),
+    };
+    let first = dvda_core::mlp_workflow::execute(job(), &mut Events::default()).unwrap();
+    assert_eq!((first.cache_hits, first.cache_rebuilt), (0, 2));
+    assert!(first.diagnostics.is_empty());
+    let bytes: Vec<_> = first
+        .tracks
+        .iter()
+        .map(|track| fs::read(track["MlpPath"].as_str().unwrap()).unwrap())
+        .collect();
+    let mut evidence: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&fs::read(&cache).unwrap()).unwrap();
+    for entry in evidence.values_mut() {
+        assert_eq!(entry["parameters_version"], 1);
+        for key in [
+            "parameters_version",
+            "source_parameters",
+            "output_parameters",
+        ] {
+            entry.as_object_mut().unwrap().remove(key);
+        }
+    }
+    fs::write(&cache, serde_json::to_vec(&evidence).unwrap()).unwrap();
+    for _ in 0..2 {
+        let reused = dvda_core::mlp_workflow::execute(job(), &mut Events::default()).unwrap();
+        assert_eq!((reused.cache_hits, reused.cache_rebuilt), (2, 0));
+        assert_eq!(reused.tracks, first.tracks);
+        for (index, track) in reused.tracks.iter().enumerate() {
+            assert_eq!(
+                fs::read(track["MlpPath"].as_str().unwrap()).unwrap(),
+                bytes[index]
+            );
+        }
+        let evidence: serde_json::Value =
+            serde_json::from_slice(&fs::read(&cache).unwrap()).unwrap();
+        for entry in evidence.as_object().unwrap().values() {
+            assert_eq!(entry["parameters_version"], 1);
+        }
+    }
+}
 #[test]
 #[ignore = "requires the pinned C encoder and source-built media DLL"]
 fn batch_cancellation_panic_and_partial_failure() {
