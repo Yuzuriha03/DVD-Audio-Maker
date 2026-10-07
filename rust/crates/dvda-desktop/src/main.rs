@@ -4391,6 +4391,37 @@ fn localized_log(lang: Lang, raw: &str) -> String {
             Lang::Ja => format!("MLP エンコード進捗：{current}/{total} 曲"),
         };
     }
+    if let Some(value) = text.strip_prefix("[menu-cover] ")
+        && let Some((kind, details)) = value.split_once(' ')
+        && let Some((position, album)) = details.split_once(' ')
+        && let Some((current, total)) = position.split_once('/')
+        && current.bytes().all(|byte| byte.is_ascii_digit())
+        && total.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        let (zh, en, ja) = match kind {
+            "background" => ("菜单封面背景", "Menu cover background", "メニュー背景"),
+            "still" => ("播放封面静图", "Playback cover image", "再生用カバー画像"),
+            _ => return text.to_owned(),
+        };
+        return match lang {
+            Lang::Zh => format!("{zh} {current}/{total}：{album}"),
+            Lang::En => format!("{en} {current}/{total}: {album}"),
+            Lang::Ja => format!("{ja} {current}/{total}：{album}"),
+        };
+    }
+    if let Some(number) = text.strip_prefix("[menu-cover] oversized ")
+        && number.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return match lang {
+            Lang::Zh => format!("播放封面图片 {number} 超过 2 MB，继续制作。"),
+            Lang::En => {
+                format!("Playback cover image {number} exceeds 2 MB; disc creation will continue.")
+            }
+            Lang::Ja => {
+                format!("再生用カバー画像 {number} は 2 MB を超えています。作成を続行します。")
+            }
+        };
+    }
     if let Some(value) = text.strip_prefix("[verify] pcm ") {
         let mut fields = value.splitn(3, ' ');
         if let (Some(position), Some(result), Some(path)) =
@@ -5103,6 +5134,38 @@ mod presentation_tests {
                     assert!(output.contains("47%"));
                 }
             }
+        }
+    }
+
+    #[test]
+    fn menu_cover_progress_is_localized_with_album_and_position() {
+        let raw = "[menu-cover] background 2/17 Album 名称";
+        for (lang, label) in [
+            (Lang::Zh, "菜单封面背景"),
+            (Lang::En, "Menu cover background"),
+            (Lang::Ja, "メニュー背景"),
+        ] {
+            let output = localized_log(lang, raw);
+            assert!(output.contains(label), "{output}");
+            assert!(
+                output.contains("2/17") && output.contains("Album 名称"),
+                "{output}"
+            );
+            assert!(!output.contains("720 576"), "{output}");
+        }
+    }
+
+    #[test]
+    fn oversized_playback_cover_warning_is_localized_as_nonfatal() {
+        let raw = "[menu-cover] oversized 17";
+        for (lang, expected) in [
+            (Lang::Zh, "超过 2 MB，继续制作"),
+            (Lang::En, "disc creation will continue"),
+            (Lang::Ja, "作成を続行します"),
+        ] {
+            let output = localized_log(lang, raw);
+            assert!(output.contains(expected), "{output}");
+            assert!(output.contains("17"), "{output}");
         }
     }
 

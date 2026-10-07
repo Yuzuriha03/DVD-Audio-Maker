@@ -105,9 +105,6 @@ fn stills(data: &[u8], vob_bytes: u64) -> Result<u32, String> {
     }
     let records = read16(data, 12)? as usize;
     let sectors = vob_bytes.div_ceil(2048);
-    if sectors > 4096 {
-        return Err("ASVS_TOO_LARGE".into());
-    }
     if u64::from(read32(data, 20)?) + 1 != sectors {
         return Err("ASVS_SECTOR_COUNT_MISMATCH".into());
     }
@@ -691,6 +688,13 @@ mod tests {
             );
         }
         assert_eq!(stills(&[0; 0x60], 2048).unwrap(), 0);
+    }
+
+    #[test]
+    fn still_header_accepts_large_vobs_with_valid_sector_metadata() {
+        let mut ifo = vec![0u8; 0x60];
+        ifo[20..24].copy_from_slice(&4096u32.to_be_bytes());
+        assert_eq!(stills(&ifo, 4097 * 2048), Ok(0));
     }
     #[test]
     fn navigation_rejects_wrong_links_and_truncated_tables() {

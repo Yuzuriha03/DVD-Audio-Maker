@@ -461,6 +461,14 @@ pub fn build_assets(
         ]);
         run_image(&images, arguments, callbacks)?;
         require_frame(&images, &output, callbacks)?;
+        callbacks.emit(
+            1,
+            &format!(
+                "[menu-cover] background {}/{} {album}",
+                index + 1,
+                pages.len()
+            ),
+        );
         backgrounds.push(output);
     }
 
@@ -501,6 +509,7 @@ pub fn build_assets(
 
     let mut still_pictures = Vec::new();
     if job.menu_still_pictures {
+        let still_total = covers.values().filter(|cover| cover.is_some()).count();
         let mut still_by_album = HashMap::<String, String>::new();
         for (index, page) in pages.iter().enumerate() {
             let album = page
@@ -549,6 +558,14 @@ pub fn build_assets(
                 continue;
             }
             still_by_album.insert(album.to_owned(), output.to_string_lossy().into_owned());
+            let still_completed = still_by_album
+                .values()
+                .filter(|path| !path.is_empty())
+                .count();
+            callbacks.emit(
+                1,
+                &format!("[menu-cover] still {still_completed}/{still_total} {album}"),
+            );
         }
         for page in pages {
             let album = page
@@ -663,8 +680,9 @@ fn require_frame(
         fn emit(&mut self, stream: i32, text: &str) {
             if stream == 1 {
                 self.target.push_str(text);
+            } else {
+                self.parent.emit(stream, text);
             }
-            self.parent.emit(stream, text);
         }
         fn cancelled(&mut self) -> bool {
             self.parent.cancelled()
