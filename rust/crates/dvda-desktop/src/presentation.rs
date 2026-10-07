@@ -146,6 +146,7 @@ pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String>
         "[MLP]",
         "[MLP-PROGRESS] ",
         "[MLP DLL]",
+        "[menu-cover]",
         "[LPCM]",
         "[prepare]",
         "[build]",
