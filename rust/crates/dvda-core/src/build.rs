@@ -84,6 +84,36 @@ pub struct Job {
     pub keep_intermediate: bool,
 }
 
+struct AuthorCallbacks<'a> {
+    parent: &'a mut dyn Callbacks,
+}
+
+impl Callbacks for AuthorCallbacks<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        if let Some(number) = oversized_still_picture_number(text) {
+            self.parent
+                .emit(1, &format!("[menu-cover] oversized {number}"));
+        } else {
+            self.parent.emit(stream, text);
+        }
+    }
+
+    fn cancelled(&mut self) -> bool {
+        self.parent.cancelled()
+    }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        self.parent.progress(completed, total);
+    }
+}
+
+fn oversized_still_picture_number(line: &str) -> Option<u32> {
+    let trimmed = line.trim();
+    let line = trimmed.strip_prefix("[ERR]").unwrap_or(trimmed).trim();
+    let number = line.strip_prefix("Exceeding stillpic buffer limit (2 MB) at pict #")?;
+    number.strip_suffix('.').unwrap_or(number).parse().ok()
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Outcome {
@@ -309,23 +339,26 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         }
         caller.emit(1, &author_command);
         let arguments_for_menu = arguments.clone();
-        let result = process::execute(
-            process::Job {
-                file_name: job.dvda_author.clone(),
-                arguments,
-                working_directory: job
-                    .author_working_directory
-                    .as_ref()
-                    .map(|path| path.to_string_lossy().into_owned()),
-                environment: Vec::new(),
-                output_code_page: 65001,
-                error_code_page: 65001,
-                capture_output: true,
-                capture_error: true,
-                timeout_millis: None,
-            },
-            caller,
-        );
+        let result = {
+            let mut author_callbacks = AuthorCallbacks { parent: caller };
+            process::execute(
+                process::Job {
+                    file_name: job.dvda_author.clone(),
+                    arguments,
+                    working_directory: job
+                        .author_working_directory
+                        .as_ref()
+                        .map(|path| path.to_string_lossy().into_owned()),
+                    environment: Vec::new(),
+                    output_code_page: 65001,
+                    error_code_page: 65001,
+                    capture_output: true,
+                    capture_error: true,
+                    timeout_millis: None,
+                },
+                &mut author_callbacks,
+            )
+        };
         if result.failure.is_some() || result.exit_code != Some(0) {
             let detail = result
                 .failure
@@ -795,7 +828,44 @@ fn update_still_expectation(index: &Path, disc: usize, count: usize) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
     use std::os::windows::fs::OpenOptionsExt;
+
+    struct RecordedCallbacks(RefCell<Vec<(i32, String)>>);
+
+    impl Callbacks for RecordedCallbacks {
+        fn emit(&mut self, stream: i32, text: &str) {
+            self.0.borrow_mut().push((stream, text.to_owned()));
+        }
+
+        fn cancelled(&mut self) -> bool {
+            false
+        }
+
+        fn progress(&mut self, _: u64, _: u64) {}
+    }
+
+    #[test]
+    fn only_the_known_oversized_still_warning_becomes_informational() {
+        let mut recorded = RecordedCallbacks(RefCell::new(Vec::new()));
+        {
+            let mut callbacks = AuthorCallbacks {
+                parent: &mut recorded,
+            };
+            callbacks.emit(
+                2,
+                "[ERR]  Exceeding stillpic buffer limit (2 MB) at pict #17.",
+            );
+            callbacks.emit(2, "[ERR]  Image encoder failed");
+        }
+        assert_eq!(
+            *recorded.0.borrow(),
+            [
+                (1, "[menu-cover] oversized 17".into()),
+                (2, "[ERR]  Image encoder failed".into())
+            ]
+        );
+    }
 
     #[test]
     fn locked_iso_cleanup_warns_and_preserves_file_until_unlocked() {
