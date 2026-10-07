@@ -1343,7 +1343,7 @@ fn hex_digit(value: u8) -> Option<u8> {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn _path_is_file(path: &str) -> bool {
     Path::new(path).is_file()
 }

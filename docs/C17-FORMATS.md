@@ -42,5 +42,5 @@ authoring components; no C# project or .NET runtime is required.
 
 MLP cache checks retain full-stream CRC/parity validation. CRC tables and frame
 buffers are reused; the Rust coordinator reports per-track progress with bounded
-parallelism. See [MLP cache performance](MLP-CACHE-PERFORMANCE.md) for the
-before/after measurements and regression commands.
+parallelism. See [development regression checks](DEVELOPMENT.en.md#mlp-cache-regression-checks)
+for validation commands.

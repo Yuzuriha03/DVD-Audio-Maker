@@ -46,3 +46,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-wo
 ```
 
 菜单 fixture 会生成菜单、索引页、静图、AUDIO_TS 和 ISO，并调用项目构建的 author。MLP 的逐字节样本对照、PCM 比较和 C17 ABI 验证记录在各组件文档中。
+
+
+## SHA-256 后端回归与基准
+
+生产 SHA-256 固定使用 `sha2 = 0.11.0`，x86/x64 在运行时检测到 `sha`、`sse2`、`ssse3`、`sse4.1` 时使用 SHA-NI，否则回退可移植实现；构建不强制 `target-cpu=native`。不再保留手写 SHA-256 实现。回归测试保留标准向量，并将封装层的一次性、分块和 reader 摘要与上游 `sha2` API 比较。
+
+```powershell
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --release --offline -p dvda-core --lib hash:: -- --skip release_files_benchmark
+```
+
+只读 Release 文件基准通过 `DVDA_HASH_BENCH_INPUTS` 接收 JSON 文件数组，并将新 JSON 写入 `DVDA_HASH_BENCH_REPORT`。它对真实 DLL、MLP 缓存样本和发布 ZIP 测量 sha2 内存及 warm-file 摘要，采用七轮中位数；新报告仅包含 sha2 耗时，已有前后对比报告作为历史记录保留；结果只表示摘要路径，不代表冷盘或完整制盘耗时。报告保存在被 Git 忽略的 `build` 目录。`sha2` 及其传递依赖沿用上游 MIT 或 Apache-2.0 许可证。
+
+
+缓存复用仍须通过源/输出指纹、编码组件身份、目标参数与完整 MLP CRC/奇偶校验；
+参数缓存未知或缺失时重新读取，不跳过完整扫描。自动检查线程数为
+`min(可用核心数, 16, 曲目数)`，取消或异常时不保存本轮参数缓存。
+
+```powershell
+python tools\win-build\build-formats-runtime.py --msys-root C:\msys64 --output build\formats-native
+python tools\win-build\test-formats-optimization.py --before C:\previous\dvda-formats.dll --after build\formats-native\dvda-formats.dll --samples C:\samples\mlp --report build\formats-report.json
+$env:DVDA_FORMATS_NATIVE_DIR = (Resolve-Path build\formats-native).Path
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native -- --include-ignored
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-core --lib mlp_workflow -- --include-ignored --skip real_cached --skip another_volume
+```
+
+对照脚本需要旧 DLL 与真实 MLP 样本，比较完整扫描 ABI 结果、CRC 边界与对齐输出。
+只读真实缓存计时测试 `real_cached_mlp_preflight_benchmark_is_read_only` 需要设置
+`DVDA_MLP_PREFLIGHT_MANIFEST`、`ROOT`、`OUTPUT`、`MEDIA`、`ENCODER` 和 `REPORT`
+（后五项均带相同的 `DVDA_MLP_PREFLIGHT_` 前缀）。媒体/编码 DLL 必须与缓存身份一致；
+任一未命中都会失败，不会编码或覆盖样本。测试计时不能替代完整制盘与播放验证。

@@ -54,7 +54,6 @@ pub fn load_mlp(path: &Path, events: &mut dyn Callbacks) -> Map<String, Value> {
 
 #[derive(Default, serde::Deserialize)]
 #[serde(default)]
-#[allow(dead_code)]
 struct MlpEntryShape {
     source: Option<IdentityShape>,
     output: Option<IdentityShape>,
@@ -65,7 +64,6 @@ struct MlpEntryShape {
 }
 #[derive(Default, serde::Deserialize)]
 #[serde(default, rename_all = "PascalCase")]
-#[allow(dead_code)]
 struct IdentityShape {
     path: Option<String>,
     size: i64,
