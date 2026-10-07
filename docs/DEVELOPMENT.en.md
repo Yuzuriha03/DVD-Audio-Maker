@@ -64,3 +64,50 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-wo
 The menu fixture generates menus, index pages, stills, AUDIO_TS and an ISO with
 the project-built author. MLP byte comparisons, PCM comparisons and C17 ABI
 checks are recorded in the component documentation.
+
+
+## SHA-256 backend regression and benchmark
+
+Production SHA-256 is pinned to `sha2 = 0.11.0`. On x86/x64 it uses SHA-NI
+when runtime `sha`, `sse2`, `ssse3` and `sse4.1` features are available, and
+otherwise falls back to the portable implementation; the build does not force
+`target-cpu=native`. No hand-written SHA-256 implementation is retained.
+Regression tests cover standard vectors and compare the wrapper's one-shot,
+streaming and reader paths against the upstream `sha2` API.
+
+```powershell
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --release --offline -p dvda-core --lib hash:: -- --skip release_files_benchmark
+```
+
+The read-only Release file benchmark accepts a JSON array through
+`DVDA_HASH_BENCH_INPUTS` and writes a new JSON report to
+`DVDA_HASH_BENCH_REPORT`. It measures sha2 memory and warm-file hashing for real
+DLLs, an MLP cache sample and the release ZIP using seven-round medians.
+New reports contain sha2 timings only; existing before/after reports are historical.
+Results cover the digest path only, not cold-disk or
+end-to-end authoring time. Reports stay under the Git-ignored `build` folder.
+`sha2` and its transitive dependencies retain their upstream MIT or
+Apache-2.0 licensing.
+
+
+Cache reuse still requires source/output fingerprints, encoder identity, target
+parameters and a complete MLP CRC/parity scan. Unknown or missing parameter
+cache evidence is probed again, never used to skip the scan. Automatic checking
+uses `min(available cores, 16, track count)` workers; cancellation or errors do
+not save this run's parameter cache.
+
+```powershell
+python tools\win-build\build-formats-runtime.py --msys-root C:\msys64 --output build\formats-native
+python tools\win-build\test-formats-optimization.py --before C:\previous\dvda-formats.dll --after build\formats-native\dvda-formats.dll --samples C:\samples\mlp --report build\formats-report.json
+$env:DVDA_FORMATS_NATIVE_DIR = (Resolve-Path build\formats-native).Path
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native -- --include-ignored
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-core --lib mlp_workflow -- --include-ignored --skip real_cached --skip another_volume
+```
+
+The comparison script requires a previous DLL and actual MLP samples. It checks
+full-scan ABI results, CRC boundaries and alignment output. The read-only
+`real_cached_mlp_preflight_benchmark_is_read_only` test needs
+`DVDA_MLP_PREFLIGHT_MANIFEST`, `ROOT`, `OUTPUT`, `MEDIA`, `ENCODER` and `REPORT`
+(all six use the `DVDA_MLP_PREFLIGHT_` prefix). Media/encoder DLL identities
+must match the cache. Any cache miss fails without encoding or overwriting
+samples. Benchmark timings do not replace full disc and playback validation.

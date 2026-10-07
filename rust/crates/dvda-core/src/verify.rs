@@ -1048,7 +1048,6 @@ fn lossless(
     }
     group_progress.progress(total_chunks, total_chunks);
     group_progress.progress(group_total as u64, group_total as u64);
-    drop(group_progress);
     let mut track_progress = dvda_native::media::ProgressScope::new(caller, 55, 100);
     verify_tracks_parallel(job, pcm_tracks, diagnostics, &mut track_progress)
 }

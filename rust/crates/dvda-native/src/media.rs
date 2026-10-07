@@ -136,11 +136,11 @@ impl Callbacks for ProgressScope<'_> {
     }
 
     fn progress(&mut self, completed: u64, total: u64) {
-        let portion = if total == 0 {
-            100
-        } else {
-            completed.min(total).saturating_mul(100) / total
-        };
+        let portion = completed
+            .min(total)
+            .saturating_mul(100)
+            .checked_div(total)
+            .unwrap_or(100);
         let span = self.end - self.start;
         self.last = self
             .last
