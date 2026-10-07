@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-set "ROOT=%~dp0..\..\"
-set "MANIFEST=%ROOT%rust\Cargo.toml"
+set "ROOT=%~dp0..\.."
+set "MANIFEST=%ROOT%\rust\Cargo.toml"
 if not exist "%MANIFEST%" (
   echo [ERROR] Rust workspace not found: %MANIFEST%
   exit /b 2

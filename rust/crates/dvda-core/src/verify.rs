@@ -173,6 +173,7 @@ fn run(
     }
     let mut actual_tracks = tracks;
     if matches!(mode, Mode::All | Mode::Timeline) {
+        crate::task_log::emit(caller, "verify_timeline", 0, isos.len() as u64, "", "");
         let evidence = {
             let mut progress = dvda_native::media::ProgressScope::new(caller, 0, 35);
             timeline(
@@ -206,6 +207,17 @@ fn run(
         let mut progress = dvda_native::media::ProgressScope::new(caller, 35, 40);
         for (iso_index, iso) in isos.iter().enumerate() {
             check_cancel(&mut progress)?;
+            crate::task_log::emit(
+                &mut progress,
+                "verify_menu_disc",
+                (iso_index + 1) as u64,
+                isos.len() as u64,
+                iso.file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default(),
+                &iso.to_string_lossy(),
+            );
             let expected = index
                 .as_ref()
                 .and_then(|index| index["__discs__"].as_array())
@@ -229,7 +241,12 @@ fn run(
                 }
             };
             if expected.is_some() || has_menu || mode == Mode::Menu {
-                match crate::menu_verify::verify(iso, expected, &job, &mut progress) {
+                let mut pages = dvda_native::media::ProgressScope::new(
+                    &mut progress,
+                    (iso_index * 100 / isos.len()) as u64,
+                    ((iso_index + 1) * 100 / isos.len()) as u64,
+                );
+                match crate::menu_verify::verify(iso, expected, &job, &mut pages) {
                     Ok(issues) => diagnostics.extend(issues),
                     Err(reason) => {
                         let code = reason.split(':').next().unwrap_or_default();
@@ -761,9 +778,16 @@ fn timeline(
                 evidence.groups.insert(number as i32, observation);
                 continue;
             }
-            caller.emit(
-                1,
-                &format!("[verify] timeline {} group {}", iso.display(), number),
+            crate::task_log::emit(
+                caller,
+                "verify_timeline_group",
+                number as u64,
+                0,
+                iso.file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default(),
+                &iso.to_string_lossy(),
             );
             let names: Vec<_> = aobs.iter().map(|entry| entry.name.clone()).collect();
             let mut state = aob::AuditState::default();
@@ -922,6 +946,14 @@ fn lossless(
         .max(1);
     let mut group_completed = 0;
     let mut group_progress = dvda_native::media::ProgressScope::new(caller, 40, 55);
+    crate::task_log::emit(
+        &mut group_progress,
+        "verify_audio_files",
+        0,
+        group_total as u64,
+        "",
+        "",
+    );
     for iso in isos {
         check_cancel(&mut group_progress)?;
         let Some(disc) = discs.iter().find(|value| {
@@ -967,9 +999,16 @@ fn lossless(
                 ));
                 continue;
             }
-            group_progress.emit(
-                1,
-                &format!("[verify] lossless {} group {}", iso.display(), number),
+            crate::task_log::emit(
+                &mut group_progress,
+                "verify_audio_group",
+                (group_completed + 1) as u64,
+                group_total as u64,
+                iso.file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default(),
+                &format!("group {number}; {}", iso.display()),
             );
             let reader = chunks(iso, &names).map(|chunk| {
                 check_cancel(&mut group_progress)?;
@@ -1062,12 +1101,13 @@ fn verify_tracks_parallel(
         .map_or(1, std::num::NonZeroUsize::get)
         .min(tracks.len())
         .min(16);
-    caller.emit(
-        1,
-        &format!(
-            "正在并行比对 {} 首音轨的完整 PCM（{worker_count} 路）。",
-            tracks.len()
-        ),
+    crate::task_log::emit(
+        caller,
+        "verify_pcm_start",
+        worker_count as u64,
+        tracks.len() as u64,
+        "",
+        "",
     );
 
     let total = tracks.len();
@@ -1118,20 +1158,14 @@ fn verify_tracks_parallel(
                 for (stream, message) in messages {
                     caller.emit(stream, &message);
                 }
-                caller.emit(
-                    1,
-                    &format!(
-                        "[verify] pcm {completed}/{total} ok: {}",
-                        text(&track, "src")
-                    ),
-                );
                 caller.progress(completed as u64, total as u64);
-                caller.emit(
-                    1,
-                    &format!(
-                        "[校验] {completed}/{total} 首完成：{} 的完整目标 PCM 一致。",
-                        text(&track, "src")
-                    ),
+                crate::task_log::emit(
+                    caller,
+                    "pcm_ok",
+                    completed as u64,
+                    total as u64,
+                    &track_display_name(&track),
+                    &text(&track, "src"),
                 );
             }
             Ok((track, Err(reason), messages)) => {
@@ -1140,20 +1174,14 @@ fn verify_tracks_parallel(
                     caller.emit(stream, &message);
                 }
                 if !cancelled.load(Ordering::Acquire) {
-                    caller.emit(
-                        2,
-                        &format!(
-                            "[verify] pcm {completed}/{total} failed: {}",
-                            text(&track, "src")
-                        ),
-                    );
                     caller.progress(completed as u64, total as u64);
-                    caller.emit(
-                        1,
-                        &format!(
-                            "[校验] {completed}/{total} 首完成：{} 的 PCM 对照失败。",
-                            text(&track, "src")
-                        ),
+                    crate::task_log::emit(
+                        caller,
+                        "pcm_failed",
+                        completed as u64,
+                        total as u64,
+                        &track_display_name(&track),
+                        &format!("{}: {reason}", text(&track, "src")),
                     );
                     diagnostics.push(error(
                         "TRACK_PCM_MISMATCH",
@@ -1181,6 +1209,25 @@ fn verify_tracks_parallel(
         return Err("成品验证已取消".into());
     }
     Ok(())
+}
+
+fn track_display_name(track: &Value) -> String {
+    let source = text(track, "src");
+    let mut components = source.rsplit(['/', '\\']);
+    let file = components.next().unwrap_or_default();
+    let album = text(track, "album");
+    let album = if album.is_empty() {
+        components.next().unwrap_or_default()
+    } else {
+        &album
+    };
+    let title = text(track, "title");
+    let title = if title.is_empty() { file } else { &title };
+    if album.is_empty() {
+        title.into()
+    } else {
+        format!("{album} / {title}")
+    }
 }
 
 fn aob_names(iso: &Path, group: i64) -> Result<Vec<String>, String> {

@@ -86,15 +86,43 @@ pub struct Job {
 
 struct AuthorCallbacks<'a> {
     parent: &'a mut dyn Callbacks,
+    disc: u64,
+    total: u64,
+    oversized: u64,
+    coordinate_warnings: u64,
+    phase: &'static str,
 }
 
 impl Callbacks for AuthorCallbacks<'_> {
     fn emit(&mut self, stream: i32, text: &str) {
         if let Some(number) = oversized_still_picture_number(text) {
+            self.oversized += 1;
             self.parent
                 .emit(1, &format!("[menu-cover] oversized {number}"));
         } else {
             self.parent.emit(stream, text);
+            if text
+                .trim()
+                .starts_with("WARN: Button y coordinates are odd for button ")
+            {
+                self.coordinate_warnings += 1;
+                if self.coordinate_warnings == 1 {
+                    crate::task_log::warning(
+                        self.parent,
+                        "button_coordinates_seen",
+                        1,
+                        &self.disc.to_string(),
+                    );
+                }
+            }
+            if let Some((phase, name)) = author_phase(text) {
+                // Raw author evidence remains unchanged in the detailed log.
+                // Stage events are additional UI information, never fake progress.
+                if phase != self.phase || !name.is_empty() {
+                    self.phase = phase;
+                    crate::task_log::emit(self.parent, phase, self.disc, self.total, name, text);
+                }
+            }
         }
     }
 
@@ -104,6 +132,50 @@ impl Callbacks for AuthorCallbacks<'_> {
 
     fn progress(&mut self, completed: u64, total: u64) {
         self.parent.progress(completed, total);
+    }
+}
+
+impl AuthorCallbacks<'_> {
+    fn finish(&mut self) {
+        let disc = format!("{}", self.disc);
+        if self.oversized > 0 {
+            crate::task_log::emit(
+                self.parent,
+                "oversized_summary",
+                self.oversized,
+                self.total,
+                &disc,
+                "",
+            );
+        }
+        if self.coordinate_warnings > 0 {
+            crate::task_log::warning(
+                self.parent,
+                "button_coordinates",
+                self.coordinate_warnings,
+                &disc,
+            );
+        }
+    }
+}
+
+fn author_phase(line: &str) -> Option<(&'static str, &str)> {
+    let line = line.trim().strip_prefix("[INF]")?.trim();
+    if let Some(path) = line.strip_prefix("Auditing MLP file ") {
+        Some((
+            "author_audio",
+            path.rsplit(['/', '\\']).next().unwrap_or(path),
+        ))
+    } else if line.starts_with("Searching MLP layout for file ") {
+        Some(("author_layout", ""))
+    } else if line.starts_with("Creating ISO with the in-process C ISO writer") {
+        Some(("author_iso", ""))
+    } else if line.starts_with("Creating ASVS") {
+        Some(("author_stills", ""))
+    } else if line.starts_with("Creating ") {
+        Some(("author_navigation", ""))
+    } else {
+        None
     }
 }
 
@@ -188,6 +260,14 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     let plan = disc::plan(tracks.clone(), job.disc_bytes, job.group_track_limit)?;
     diagnostics.extend(serde_json::to_value(&plan.diagnostics).unwrap_or_default_array());
     let plan_value = serde_json::to_value(&plan).map_err(|error| error.to_string())?;
+    crate::task_log::emit(
+        caller,
+        "disc_plan",
+        plan.discs.len() as u64,
+        tracks.len() as u64,
+        "",
+        "",
+    );
     diagnostics.extend(crate::disk_space::check(
         &job,
         &tracks,
@@ -272,9 +352,18 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                     crate::verification::still_picture_count(audit_log),
                 )?;
             }
+            let mut callbacks = AuthorCallbacks {
+                parent: caller,
+                disc: disc.number as u64,
+                total: plan.discs.len() as u64,
+                oversized: 0,
+                coordinate_warnings: 0,
+                phase: "",
+            };
             for line in audit_log.lines() {
-                caller.emit(1, line);
+                callbacks.emit(1, line);
             }
+            callbacks.finish();
             staged.push((staged_iso, job.iso_name(disc.number)));
             caller.progress(65 + ((disc_index + 1) * 35 / plan.discs.len()) as u64, 100);
             continue;
@@ -317,6 +406,14 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         let arguments: Vec<String> =
             serde_json::from_value(args).map_err(|error| error.to_string())?;
         caller.emit(1, &format!("[author] disc {}", disc.number));
+        crate::task_log::emit(
+            caller,
+            "author_disc",
+            disc.number as u64,
+            plan.discs.len() as u64,
+            "",
+            "",
+        );
         let author_command = format!(
             "+ \"{}\" {}",
             job.dvda_author,
@@ -340,8 +437,15 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         caller.emit(1, &author_command);
         let arguments_for_menu = arguments.clone();
         let result = {
-            let mut author_callbacks = AuthorCallbacks { parent: caller };
-            process::execute(
+            let mut author_callbacks = AuthorCallbacks {
+                parent: caller,
+                disc: disc.number as u64,
+                total: plan.discs.len() as u64,
+                oversized: 0,
+                coordinate_warnings: 0,
+                phase: "",
+            };
+            let result = process::execute(
                 process::Job {
                     file_name: job.dvda_author.clone(),
                     arguments,
@@ -357,7 +461,9 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                     timeout_millis: None,
                 },
                 &mut author_callbacks,
-            )
+            );
+            author_callbacks.finish();
+            result
         };
         if result.failure.is_some() || result.exit_code != Some(0) {
             let detail = result
@@ -408,6 +514,14 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             break;
         }
         if job.menu_enabled {
+            crate::task_log::emit(
+                caller,
+                "author_check_menu",
+                disc.number as u64,
+                plan.discs.len() as u64,
+                "",
+                "",
+            );
             if let Err(message) = crate::menu_verify::verify_iso_navigation(&iso) {
                 diagnostics.push(error("ISO_NAVIGATION_INVALID", message));
                 break;
@@ -486,6 +600,14 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     if caller.cancelled() {
         return Err("Build cancelled".into());
     }
+    crate::task_log::emit(
+        caller,
+        "publish_start",
+        0,
+        files.len() as u64,
+        "",
+        &job.final_directory.to_string_lossy(),
+    );
     let publication = publication::dispatch(
         "publish.set",
         json!({
@@ -512,6 +634,30 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         .filter_map(|value| value.as_str().map(str::to_owned))
         .collect();
     let succeeded = !diagnostics.iter().any(is_error) && published.len() == staged.len();
+    if succeeded {
+        for (index, path) in published.iter().enumerate() {
+            crate::task_log::emit(
+                caller,
+                "published_iso",
+                (index + 1) as u64,
+                published.len() as u64,
+                Path::new(path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default(),
+                path,
+            );
+        }
+        crate::task_log::emit(
+            caller,
+            "published_directory",
+            published.len() as u64,
+            published.len() as u64,
+            "",
+            &job.final_directory.to_string_lossy(),
+        );
+    }
     if succeeded && !job.keep_intermediate {
         for (path, _) in &staged {
             cleanup_file(path, &mut diagnostics, "ISO_CLEANUP_FAILED");
@@ -851,6 +997,11 @@ mod tests {
         {
             let mut callbacks = AuthorCallbacks {
                 parent: &mut recorded,
+                disc: 1,
+                total: 1,
+                oversized: 0,
+                coordinate_warnings: 0,
+                phase: "",
             };
             callbacks.emit(
                 2,

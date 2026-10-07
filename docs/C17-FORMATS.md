@@ -39,3 +39,8 @@ cargo run --manifest-path rust/Cargo.toml --offline -p dvda-cli -- formats-sampl
 The command reports file count, bytes, valid headers, alignment results and PTS
 round trips. The normal release package contains the DLL beside the menu
 authoring components; no C# project or .NET runtime is required.
+
+MLP cache checks retain full-stream CRC/parity validation. CRC tables and frame
+buffers are reused; the Rust coordinator reports per-track progress with bounded
+parallelism. See [MLP cache performance](MLP-CACHE-PERFORMANCE.md) for the
+before/after measurements and regression commands.

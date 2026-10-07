@@ -453,11 +453,20 @@ pub fn verify(
         .and_then(|v| v["index_pages"].as_u64())
         .unwrap_or(0) as usize;
     let albums = expected.and_then(|v| v["albums"].as_u64()).unwrap_or(0) as usize;
+    let page_total = ranges.len();
     for (page, (start, end)) in ranges.into_iter().enumerate() {
         cancel(caller)?;
-        caller.emit(
-            1,
-            &format!("[verify] menu {} page {}", iso.display(), page + 1),
+        caller.progress(page as u64, page_total as u64);
+        crate::task_log::emit(
+            caller,
+            "verify_menu_page",
+            (page + 1) as u64,
+            page_total as u64,
+            iso.file_name()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or_default(),
+            &iso.to_string_lossy(),
         );
         let input = work.0.join("page.vob");
         let output = work.0.join("frame.png");
@@ -557,6 +566,7 @@ pub fn verify(
             }
         }
     }
+    caller.progress(page_total as u64, page_total as u64);
     Ok(issues)
 }
 

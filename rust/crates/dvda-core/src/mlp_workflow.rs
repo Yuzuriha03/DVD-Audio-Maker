@@ -4,13 +4,18 @@
 //! owns the surrounding state machine: cache evidence, staging, validation,
 //! source-change detection and track metadata updates.
 use crate::{audio, batch, cache, identity};
-use dvda_native::{NativeFormats, media::Callbacks};
+use dvda_native::{MlpInspection, NativeFormats, media::Callbacks};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::{
     fs,
+    panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc::{self, SyncSender},
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const REQUIRED_MAJOR_SYNC_INTERVAL: i64 = 8;
@@ -135,42 +140,22 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
     fs::create_dir_all(&job.stage_directory).map_err(|error| error.to_string())?;
     let mut cache_entries = cache::load_mlp(&job.cache_path, caller);
     let mut tracks = job.tracks.clone();
-    let mut pending = Vec::new();
-    let mut hits = 0;
     let mut diagnostics = Vec::new();
     caller.progress(0, 100);
-    caller.emit(1, &format!("[MLP-PROGRESS] 0/{}", job.tracks.len()));
-    for (index, track) in job.tracks.iter().enumerate() {
-        if caller.cancelled() {
-            return Err("MLP 编码已被取消。".into());
-        }
-        let source = text(track, "SourcePath").ok_or("Missing source path")?;
-        if !Path::new(source).is_file() {
-            diagnostics.push(error("SOURCE_MISSING", format!("源文件不存在: {source}")));
-            continue;
-        }
-        let source_identity = identity::compute(source).map_err(|error| error.to_string())?;
-        let destination = destination(source, &job.source_root, &job.output_root);
-        if cache_matches(&cache_entries, &destination, &source_identity, &job)
-            && valid_mlp(&native, &destination)
-        {
-            hits += 1;
-            tracks[index] = update_track(track, &destination, &job.media_library, caller)?;
-            continue;
-        }
-        pending.push(Pending {
-            index,
-            source: source.into(),
-            destination,
-            source_identity,
-        });
-    }
-    if hits > 0 {
-        caller.emit(1, &format!("[MLP-PROGRESS] {hits}/{}", job.tracks.len()));
-    }
+    let (pending, hits) = {
+        let mut progress = dvda_native::media::ProgressScope::new(caller, 0, 10);
+        check_tracks(
+            &job,
+            &mut cache_entries,
+            &mut tracks,
+            &mut diagnostics,
+            &mut progress,
+        )?
+    };
 
     let mut rebuilt = 0;
     if !pending.is_empty() {
+        caller.emit(1, &format!("[MLP-PROGRESS] {hits}/{}", job.tracks.len()));
         let token = format!(
             "{}-{}",
             std::process::id(),
@@ -237,13 +222,14 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                     ),
                 );
                 let staged = stage.join(format!("__surcode_{:04}.mlp", work_index + 1));
-                if !valid_mlp(&native, &staged) {
+                let inspection = native.inspect_file(&staged).ok().filter(valid_inspection);
+                let Some(inspection) = inspection else {
                     diagnostics.push(error(
                         "MLP_OUTPUT_INVALID",
                         format!("MLP 编码结果无效: {}", item.source),
                     ));
                     continue;
-                }
+                };
                 if !same_identity(
                     &item.source_identity,
                     &identity::compute(&item.source).map_err(|e| e.to_string())?,
@@ -256,6 +242,14 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                 publish_encoded(&staged, &item.destination)?;
                 let output_identity = identity::compute(&item.destination.to_string_lossy())
                     .map_err(|error| error.to_string())?;
+                let updated = update_track(
+                    &job.tracks[item.index],
+                    &item.destination,
+                    &inspection,
+                    None,
+                    &job.media_library,
+                    &mut finalize_progress,
+                )?;
                 cache::record_mlp(
                     &mut cache_entries,
                     &item.destination,
@@ -265,15 +259,13 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                         "encoder": job.encoder_identity,
                         "bits": job.bits,
                         "resample_to": job.sample_rate,
-                        "max_interval": REQUIRED_MAJOR_SYNC_INTERVAL
+                        "max_interval": REQUIRED_MAJOR_SYNC_INTERVAL,
+                        "parameters_version": 1,
+                        "source_parameters": updated.source_parameters,
+                        "output_parameters": updated.output_parameters
                     }),
                 );
-                tracks[item.index] = update_track(
-                    &job.tracks[item.index],
-                    &item.destination,
-                    &job.media_library,
-                    &mut finalize_progress,
-                )?;
+                tracks[item.index] = updated.track;
                 rebuilt += 1;
                 finalize_progress.progress((work_index + 1) as u64, pending.len() as u64);
             }
@@ -285,10 +277,6 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
         result?;
     } else {
         caller.progress(100, 100);
-        caller.emit(
-            1,
-            &format!("[MLP-PROGRESS] {}/{}", job.tracks.len(), job.tracks.len()),
-        );
     }
     caller.progress(100, 100);
     cache::dispatch(
@@ -301,6 +289,237 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
         cache_rebuilt: rebuilt,
         diagnostics,
     })
+}
+
+enum CheckedTrack {
+    Cached {
+        index: usize,
+        destination: PathBuf,
+        track: Value,
+        entry: Value,
+    },
+    Pending(Pending),
+    Missing(Value),
+}
+
+enum CheckEvent {
+    Log(i32, String),
+    Track(usize, Result<CheckedTrack, String>),
+    Failed(String),
+}
+
+struct CheckCallbacks<'a> {
+    send: SyncSender<CheckEvent>,
+    stop: &'a AtomicBool,
+}
+
+impl Callbacks for CheckCallbacks<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        if self
+            .send
+            .send(CheckEvent::Log(stream, text.into()))
+            .is_err()
+        {
+            self.stop.store(true, Ordering::Release);
+        }
+    }
+
+    fn cancelled(&mut self) -> bool {
+        self.stop.load(Ordering::Acquire)
+    }
+}
+
+fn check_worker_count(requested: i32, tracks: usize) -> usize {
+    let requested = if requested <= 0 {
+        crate::options::default_mlp_jobs() as usize
+    } else {
+        requested as usize
+    };
+    // Use the same automatic core allocation and hard cap as MLP encoding.
+    requested.clamp(1, 16).min(tracks)
+}
+
+fn check_tracks(
+    job: &Job,
+    entries: &mut Map<String, Value>,
+    tracks: &mut [Value],
+    diagnostics: &mut Vec<Value>,
+    caller: &mut dyn Callbacks,
+) -> Result<(Vec<Pending>, i32), String> {
+    caller.emit(1, &format!("[MLP-CHECK] start {}", job.tracks.len()));
+    if caller.cancelled() {
+        return Err("MLP 编码已被取消。".into());
+    }
+    let count = check_worker_count(job.jobs, job.tracks.len());
+    let next = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
+    let (send, receive) = mpsc::sync_channel(count * 2);
+    // Workers only read evidence; update it on the coordinator after all
+    // readers finish so completion order cannot change cache or track order.
+    let mut updates = Vec::new();
+    let mut issues = Vec::new();
+    let mut pending = Vec::new();
+    let mut hits = 0;
+    let mut cancelled = false;
+    let mut failure = None;
+    std::thread::scope(|scope| {
+        for _ in 0..count {
+            let entries = &*entries;
+            let next = &next;
+            let stop = &stop;
+            let send = send.clone();
+            scope.spawn(move || {
+                let mut callbacks = CheckCallbacks { send, stop };
+                let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+                    let native = NativeFormats::load()?;
+                    while !callbacks.cancelled() {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        if index >= job.tracks.len() {
+                            break;
+                        }
+                        let result = check_track(job, entries, index, &native, &mut callbacks);
+                        let failed = result.is_err();
+                        if callbacks
+                            .send
+                            .send(CheckEvent::Track(index, result))
+                            .is_err()
+                            || failed
+                        {
+                            stop.store(true, Ordering::Release);
+                            break;
+                        }
+                    }
+                    Ok(())
+                }))
+                .unwrap_or_else(|_| Err("Panic caught in MLP check worker".into()));
+                if let Err(error) = result {
+                    stop.store(true, Ordering::Release);
+                    let _ = callbacks.send.send(CheckEvent::Failed(error));
+                }
+            });
+        }
+        drop(send);
+        let callbacks = catch_unwind(AssertUnwindSafe(|| {
+            let mut completed = 0;
+            loop {
+                if caller.cancelled() {
+                    cancelled = true;
+                    stop.store(true, Ordering::Release);
+                }
+                match receive.recv_timeout(Duration::from_millis(20)) {
+                    Ok(CheckEvent::Log(stream, text)) => caller.emit(stream, &text),
+                    Ok(CheckEvent::Track(index, result)) => {
+                        match result {
+                            Ok(CheckedTrack::Cached {
+                                index,
+                                destination,
+                                track,
+                                entry,
+                            }) => {
+                                tracks[index] = track;
+                                updates.push((destination, entry));
+                                hits += 1;
+                            }
+                            Ok(CheckedTrack::Pending(track)) => pending.push(track),
+                            Ok(CheckedTrack::Missing(issue)) => issues.push((index, issue)),
+                            Err(error) => {
+                                failure.get_or_insert(error);
+                                stop.store(true, Ordering::Release);
+                                continue;
+                            }
+                        }
+                        completed += 1;
+                        caller.progress(completed as u64, job.tracks.len() as u64);
+                        caller.emit(
+                            1,
+                            &format!(
+                                "[MLP-CHECK] progress {completed}/{} {}",
+                                job.tracks.len(),
+                                text(&job.tracks[index], "Title").unwrap_or("Track")
+                            ),
+                        );
+                    }
+                    Ok(CheckEvent::Failed(error)) => {
+                        failure.get_or_insert(error);
+                        stop.store(true, Ordering::Release);
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => (),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        }));
+        if callbacks.is_err() {
+            stop.store(true, Ordering::Release);
+            // Drain before joining: workers may be waiting on a bounded send.
+            while receive.recv().is_ok() {}
+            failure = Some("Panic caught in MLP check callback".into());
+        }
+    });
+    if cancelled || caller.cancelled() {
+        return Err("MLP 编码已被取消。".into());
+    }
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    for (destination, entry) in updates {
+        cache::record_mlp(entries, &destination, entry);
+    }
+    pending.sort_by_key(|track| track.index);
+    issues.sort_by_key(|(index, _)| *index);
+    diagnostics.extend(issues.into_iter().map(|(_, issue)| issue));
+    caller.emit(1, &format!("[MLP-CHECK] complete {hits} {}", pending.len()));
+    Ok((pending, hits))
+}
+
+fn check_track(
+    job: &Job,
+    entries: &Map<String, Value>,
+    index: usize,
+    native: &NativeFormats,
+    caller: &mut dyn Callbacks,
+) -> Result<CheckedTrack, String> {
+    let track = &job.tracks[index];
+    let source = text(track, "SourcePath").ok_or("Missing source path")?;
+    if !Path::new(source).is_file() {
+        return Ok(CheckedTrack::Missing(error(
+            "SOURCE_MISSING",
+            format!("源文件不存在: {source}"),
+        )));
+    }
+    let source_identity = identity::compute(source).map_err(|error| error.to_string())?;
+    let destination = destination(source, &job.source_root, &job.output_root);
+    if cache_matches(entries, &destination, &source_identity, job)
+        && let Ok(inspection) = native.inspect_file(&destination)
+        && valid_inspection(&inspection)
+    {
+        if caller.cancelled() {
+            return Err("MLP 编码已被取消。".into());
+        }
+        let mut entry = cache::find_mlp(entries, &destination).unwrap().clone();
+        let updated = update_track(
+            track,
+            &destination,
+            &inspection,
+            Some(&entry),
+            &job.media_library,
+            caller,
+        )?;
+        entry["parameters_version"] = json!(1);
+        entry["source_parameters"] = json!(updated.source_parameters);
+        entry["output_parameters"] = json!(updated.output_parameters);
+        return Ok(CheckedTrack::Cached {
+            index,
+            destination,
+            track: updated.track,
+            entry,
+        });
+    }
+    Ok(CheckedTrack::Pending(Pending {
+        index,
+        source: source.into(),
+        destination,
+        source_identity,
+    }))
 }
 
 fn validate(job: &Job) -> Result<(), String> {
@@ -356,49 +575,73 @@ fn publish_encoded(staged: &Path, destination: &Path) -> Result<(), String> {
     dvda_native::files::move_file(staged, destination, true).map_err(|error| error.to_string())
 }
 
-fn valid_mlp(native: &NativeFormats, path: &Path) -> bool {
-    native
-        .inspect_file(path)
-        .map(|inspection| inspection.is_valid && inspection.has_end_of_stream)
-        .unwrap_or(false)
+fn valid_inspection(inspection: &MlpInspection) -> bool {
+    inspection.is_valid && inspection.has_end_of_stream
+}
+
+struct UpdatedTrack {
+    track: Value,
+    source_parameters: audio::Parameters,
+    output_parameters: audio::Parameters,
+}
+
+fn cached_parameters(entry: Option<&Value>, key: &str) -> Option<audio::Parameters> {
+    let entry = entry?;
+    if entry["parameters_version"] != 1 {
+        return None;
+    }
+    let parameters: audio::Parameters = serde_json::from_value(entry.get(key)?.clone()).ok()?;
+    (parameters.sample_rate > 0
+        && (1..=64).contains(&parameters.bits)
+        && (1..=8).contains(&parameters.channels))
+    .then_some(parameters)
 }
 
 fn update_track(
     track: &Value,
     destination: &Path,
+    inspection: &MlpInspection,
+    entry: Option<&Value>,
     media_library: &Path,
     caller: &mut dyn Callbacks,
-) -> Result<Value, String> {
+) -> Result<UpdatedTrack, String> {
     let source = text(track, "SourcePath").ok_or("Missing source path")?;
-    let source_parameters = audio::read_parameters(
-        &audio::Job {
-            library: media_library.to_owned(),
-            input: source.into(),
-            operation: audio::Operation::Parameters,
-            resample_to: None,
-        },
-        caller,
-    )
-    .map_err(|error| error.message)?;
-    let mlp_parameters = audio::read_parameters(
-        &audio::Job {
-            library: media_library.to_owned(),
-            input: destination.to_string_lossy().into_owned(),
-            operation: audio::Operation::Parameters,
-            resample_to: None,
-        },
-        caller,
-    )
-    .map_err(|error| error.message)?;
+    // Parameter evidence is only supplied after source/output identities and
+    // the full MLP stream have passed validation. Old caches probe once.
+    let source_parameters = match cached_parameters(entry, "source_parameters") {
+        Some(parameters) => parameters,
+        None => audio::read_parameters(
+            &audio::Job {
+                library: media_library.to_owned(),
+                input: source.into(),
+                operation: audio::Operation::Parameters,
+                resample_to: None,
+            },
+            caller,
+        )
+        .map_err(|error| error.message)?,
+    };
+    let mlp_parameters = match cached_parameters(entry, "output_parameters").filter(|parameters| {
+        parameters.sample_rate == inspection.sample_rate && matches!(parameters.bits, 16 | 20 | 24)
+    }) {
+        Some(parameters) => parameters,
+        None => audio::read_parameters(
+            &audio::Job {
+                library: media_library.to_owned(),
+                input: destination.to_string_lossy().into_owned(),
+                operation: audio::Operation::Parameters,
+                resample_to: None,
+            },
+            caller,
+        )
+        .map_err(|error| error.message)?,
+    };
     let mut result = track
         .as_object()
         .cloned()
         .ok_or("Track must be an object")?;
     result.insert("MlpPath".into(), json!(destination.to_string_lossy()));
-    result.insert(
-        "MlpSize".into(),
-        json!(fs::metadata(destination).map_err(|e| e.to_string())?.len()),
-    );
+    result.insert("MlpSize".into(), json!(inspection.size));
     result.insert("SampleRate".into(), json!(mlp_parameters.sample_rate));
     result.insert("Bits".into(), json!(mlp_parameters.bits));
     result.insert("Channels".into(), json!(mlp_parameters.channels));
@@ -425,7 +668,11 @@ fn update_track(
         "ParametersChanged".into(),
         json!(changed_rate || changed_bits),
     );
-    Ok(Value::Object(result))
+    Ok(UpdatedTrack {
+        track: Value::Object(result),
+        source_parameters,
+        output_parameters: mlp_parameters,
+    })
 }
 
 fn destination(source: &str, source_root: &str, output_root: &Path) -> PathBuf {
@@ -482,6 +729,300 @@ fn error(code: &str, message: String) -> Value {
 mod tests {
     use super::*;
     use std::os::windows::fs::OpenOptionsExt;
+
+    #[derive(Default)]
+    struct CheckEvents {
+        logs: Vec<String>,
+        progress: Vec<(u64, u64)>,
+        cancel_after: Option<usize>,
+        panic_on_progress: bool,
+    }
+
+    impl Callbacks for CheckEvents {
+        fn emit(&mut self, _: i32, text: &str) {
+            if text.starts_with("[MLP-CHECK] progress ") {
+                assert!(
+                    !self.panic_on_progress,
+                    "intentional check callback failure"
+                );
+            }
+            self.logs.push(text.into());
+        }
+        fn cancelled(&mut self) -> bool {
+            self.cancel_after
+                .is_some_and(|count| self.progress.len() >= count)
+        }
+        fn progress(&mut self, completed: u64, total: u64) {
+            self.progress.push((completed, total));
+        }
+    }
+
+    fn check_job(root: &Path, tracks: Vec<Value>) -> Job {
+        Job {
+            media_library: root.join("unusable-media.dll"),
+            encoder_library: root.join("unusable-encoder.dll"),
+            source_root: root.to_string_lossy().into_owned(),
+            output_root: root.join("output"),
+            cache_path: root.join("cache.json"),
+            temporary_directory: root.join("temporary"),
+            stage_directory: root.join("stage"),
+            sample_rate: 48000,
+            bits: 24,
+            jobs: 0,
+            metadata_context: String::new(),
+            encoder_identity: "encoder-v1".into(),
+            tracks,
+        }
+    }
+
+    #[test]
+    fn incomplete_or_unknown_parameter_evidence_requires_a_fresh_probe() {
+        let valid = json!({"SampleRate":44100,"Bits":16,"Channels":2});
+        let mut entry = json!({"source_parameters":valid});
+        assert!(cached_parameters(Some(&entry), "source_parameters").is_none());
+        entry["parameters_version"] = json!(1);
+        assert_eq!(
+            cached_parameters(Some(&entry), "source_parameters")
+                .unwrap()
+                .sample_rate,
+            44100
+        );
+        for (key, invalid) in [("Bits", 0), ("Channels", 0), ("SampleRate", 0)] {
+            entry["source_parameters"] = valid.clone();
+            entry["source_parameters"][key] = json!(invalid);
+            assert!(cached_parameters(Some(&entry), "source_parameters").is_none());
+        }
+        entry["source_parameters"] = valid;
+        entry["parameters_version"] = json!(2);
+        assert!(cached_parameters(Some(&entry), "source_parameters").is_none());
+    }
+
+    #[test]
+    fn automatic_check_workers_follow_cores_with_the_encoding_cap() {
+        let detected = std::thread::available_parallelism()
+            .map(|count| count.get())
+            .unwrap_or(1);
+        assert_eq!(check_worker_count(0, 147), detected.min(16));
+        assert_eq!(check_worker_count(-1, 2), detected.min(16).min(2));
+        assert_eq!(check_worker_count(1, 147), 1);
+        assert_eq!(check_worker_count(16, 147), 16);
+        assert_eq!(check_worker_count(99, 147), 16);
+        assert_eq!(check_worker_count(16, 1), 1);
+        assert_eq!(check_worker_count(0, 0), 0);
+    }
+
+    #[test]
+    #[ignore = "requires source-built x64 dvda-formats.dll"]
+    fn parallel_checks_reuse_parameters_preserve_order_detect_middle_damage_and_cancel() {
+        let root = std::env::temp_dir().join(format!("dvda-mlp-check-{}", std::process::id()));
+        fs::create_dir_all(root.join("output")).unwrap();
+        let native = NativeFormats::load().unwrap();
+        let mut unit = vec![0; 40];
+        unit[..2].copy_from_slice(&0x9014u16.to_be_bytes());
+        unit[4..7].copy_from_slice(&[0xf8, 0x72, 0x6f]);
+        unit[12..14].copy_from_slice(&0xb752u16.to_be_bytes());
+        unit[18..20].copy_from_slice(&3200u16.to_be_bytes());
+        unit[20] = 1;
+        unit[32..34].copy_from_slice(&3u16.to_be_bytes());
+        unit[34..38].copy_from_slice(&[0xd2, 0x34, 0xd2, 0x34]);
+        let stream = native.align(&unit).unwrap().data.repeat(8000);
+        let mut entries = Map::new();
+        let mut tracks = Vec::new();
+        for index in 0..6 {
+            let source = root.join(format!("音源-{index}.flac"));
+            let destination = root.join("output").join(format!("音源-{index}.mlp"));
+            // These intentionally cannot be probed. Reuse must rely on
+            // identity-validated parameter evidence, while still scanning MLP.
+            fs::write(&source, b"not an audio file").unwrap();
+            fs::write(&destination, &stream).unwrap();
+            assert!(native.inspect_file(&destination).unwrap().is_valid);
+            tracks.push(json!({"SourcePath":source,"Title":format!("曲目 {index}")}));
+            cache::record_mlp(
+                &mut entries,
+                &destination,
+                json!({
+                    "source":identity::compute(&source.to_string_lossy()).unwrap(),
+                    "output":identity::compute(&destination.to_string_lossy()).unwrap(),
+                    "encoder":"encoder-v1", "bits":24, "resample_to":48000, "max_interval":8,
+                    "parameters_version":1,
+                    "source_parameters":{"SampleRate":44100,"Bits":16,"Channels":2},
+                    "output_parameters":{"SampleRate":48000,"Bits":24,"Channels":2}
+                }),
+            );
+        }
+        let mut job = check_job(&root, tracks);
+        let mut updated = job.tracks.clone();
+        let mut events = CheckEvents::default();
+        let mut diagnostics = Vec::new();
+        let (pending, hits) = check_tracks(
+            &job,
+            &mut entries,
+            &mut updated,
+            &mut diagnostics,
+            &mut events,
+        )
+        .unwrap();
+        assert!(pending.is_empty());
+        assert_eq!(hits, 6);
+        assert!(diagnostics.is_empty());
+        assert_eq!(
+            events.progress,
+            (1..=6).map(|done| (done, 6)).collect::<Vec<_>>()
+        );
+        for (index, track) in updated.iter().enumerate() {
+            assert_eq!(track["Title"], format!("曲目 {index}"));
+            assert_eq!(track["SourceSampleRate"], 44100);
+            assert_eq!(track["SourceBits"], 16);
+            assert_eq!(track["ResampleTo"], 48000);
+            assert_eq!(track["MlpSize"], stream.len());
+            assert_eq!(track["ExternalResampled"], true);
+            assert_eq!(track["ExternalRebitded"], true);
+        }
+        for index in [1, 4] {
+            let destination = root.join("output").join(format!("音源-{index}.mlp"));
+            let previous = identity::compute(&destination.to_string_lossy()).unwrap();
+            let time = fs::metadata(&destination).unwrap().modified().unwrap();
+            let mut damaged = stream.clone();
+            damaged[4000 * 40 + 30] ^= 1;
+            fs::write(&destination, &damaged).unwrap();
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&destination)
+                .unwrap()
+                .set_modified(time)
+                .unwrap();
+            assert!(same_identity(
+                &previous,
+                &identity::compute(&destination.to_string_lossy()).unwrap()
+            ));
+        }
+        let (pending, hits) = check_tracks(
+            &job,
+            &mut entries,
+            &mut updated,
+            &mut diagnostics,
+            &mut CheckEvents::default(),
+        )
+        .unwrap();
+        assert_eq!(hits, 4);
+        assert_eq!(
+            pending.iter().map(|track| track.index).collect::<Vec<_>>(),
+            [1, 4]
+        );
+        let before = entries.clone();
+        for mut events in [
+            CheckEvents {
+                cancel_after: Some(0),
+                ..Default::default()
+            },
+            CheckEvents {
+                cancel_after: Some(2),
+                ..Default::default()
+            },
+            CheckEvents {
+                panic_on_progress: true,
+                ..Default::default()
+            },
+        ] {
+            assert!(
+                check_tracks(
+                    &job,
+                    &mut entries,
+                    &mut updated,
+                    &mut diagnostics,
+                    &mut events
+                )
+                .is_err()
+            );
+            assert_eq!(entries, before);
+        }
+        job.tracks[0] = json!({"Title":"Missing source property"});
+        let failure = check_tracks(
+            &job,
+            &mut entries,
+            &mut updated,
+            &mut diagnostics,
+            &mut CheckEvents::default(),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(failure, "Missing source path");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires DVDA_MLP_PREFLIGHT_* paths to a prepared, fully cached real sample set"]
+    fn real_cached_mlp_preflight_benchmark_is_read_only() {
+        let path = |name: &str| {
+            PathBuf::from(std::env::var_os(name).unwrap_or_else(|| panic!("Set {name}")))
+        };
+        let manifest = path("DVDA_MLP_PREFLIGHT_MANIFEST");
+        let source_root = path("DVDA_MLP_PREFLIGHT_ROOT");
+        let output_root = path("DVDA_MLP_PREFLIGHT_OUTPUT");
+        let tracks =
+            crate::manifest::read(&manifest.to_string_lossy(), &output_root.to_string_lossy())
+                .unwrap();
+        let mut job = check_job(
+            &source_root,
+            serde_json::to_value(tracks)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .clone(),
+        );
+        job.media_library = path("DVDA_MLP_PREFLIGHT_MEDIA");
+        job.encoder_library = path("DVDA_MLP_PREFLIGHT_ENCODER");
+        job.output_root = output_root.clone();
+        job.encoder_identity = crate::signature::encoding_identity(
+            "mlp-swr-normalized-v1|rust-mlp-encoder",
+            &job.media_library,
+            Some(&job.encoder_library),
+            "",
+        )
+        .unwrap();
+        let mut events = CheckEvents::default();
+        let mut entries = cache::load_mlp(&output_root.join("mlp-cache.json"), &mut events);
+        let mut records = Vec::new();
+        let mut previous = None;
+        for (label, workers) in [
+            ("parallel_first", 0),
+            ("parallel_cached_parameters", 0),
+            ("serial_cached_parameters", 1),
+        ] {
+            job.jobs = workers;
+            let mut updated = job.tracks.clone();
+            let mut events = CheckEvents::default();
+            let mut diagnostics = Vec::new();
+            let start = std::time::Instant::now();
+            let (pending, hits) = check_tracks(
+                &job,
+                &mut entries,
+                &mut updated,
+                &mut diagnostics,
+                &mut events,
+            )
+            .unwrap();
+            let seconds = start.elapsed().as_secs_f64();
+            assert!(
+                pending.is_empty(),
+                "Refusing to encode: {} samples missed cache",
+                pending.len()
+            );
+            assert_eq!(hits as usize, job.tracks.len());
+            assert!(diagnostics.is_empty());
+            if let Some(previous) = &previous {
+                assert_eq!(&updated, previous);
+            }
+            previous = Some(updated);
+            let record = json!({"phase":label,"workers":check_worker_count(workers, job.tracks.len()),"tracks":hits,"seconds":seconds,"progress_events":events.progress.len()});
+            println!("{record}");
+            records.push(record);
+        }
+        let report = path("DVDA_MLP_PREFLIGHT_REPORT");
+        fs::write(report, serde_json::to_vec_pretty(&records).unwrap()).unwrap();
+        // Only the requested benchmark report is written. The real source,
+        // output files and cache are read without saving or launching a codec.
+    }
 
     #[test]
     fn encoded_publication_preserves_old_output_when_source_missing_or_destination_locked() {
