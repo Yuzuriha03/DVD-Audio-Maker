@@ -1096,10 +1096,7 @@ fn verify_tracks_parallel(
     if tracks.is_empty() {
         return Ok(());
     }
-    let worker_count = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(tracks.len())
-        .min(16);
+    let worker_count = crate::options::worker_count(tracks.len());
     crate::task_log::emit(
         caller,
         "verify_pcm_start",

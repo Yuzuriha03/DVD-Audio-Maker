@@ -1,7 +1,7 @@
 //! Batch MLP encoding through typed native APIs, with bounded worker/event queues.
 use crate::{
-    encoder,
-    media::{self, Failure, Outcome, temporary_path},
+    encoder, formats,
+    media::{self, Failure, Outcome, Timed, temporary_path},
     pcm,
 };
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
@@ -10,6 +10,7 @@ use serde_json::json;
 use std::{
     collections::HashSet,
     fs,
+    io::{Read, Seek, SeekFrom},
     panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
     sync::{
@@ -37,7 +38,8 @@ pub struct Job {
     pub output_directory: PathBuf,
     pub sample_rate: i32,
     pub bits: i32,
-    pub jobs: i32,
+    #[serde(default, skip_deserializing)]
+    pub jobs: i32, // Deprecated compatibility field; production always uses automatic saturation.
     pub metadata_context: String,
     pub tracks: Vec<Track>,
 }
@@ -181,6 +183,97 @@ fn timeout(seconds: f64, factor: f64) -> Result<u64, Failure> {
     }
     Ok(millis.trunc() as u64)
 }
+// The encoder consumes parsed PCM, not a canonical 68-byte WAV header. Keep
+// normalization for storage/precision changes and side-to-back mask remapping.
+fn reusable_wave(
+    input: &mut (impl Read + Seek),
+    rate: i32,
+    bits: i32,
+    caller: &mut dyn Callbacks,
+) -> Result<bool, Failure> {
+    let mut callbacks = Timed::new(caller, None);
+    callbacks.check()?;
+    if !matches!(bits, 16 | 20 | 24) {
+        return Err(Failure::new("InvalidData", "目标位深必须是 16/20/24。"));
+    }
+    let layout = formats::read_wav_layout_from(input)?;
+    if layout.sample_rate != rate {
+        return Err(Failure::new("InvalidData", "PCM 输出采样率与任务不符。"));
+    }
+    let width = if bits == 16 { 2 } else { 3 };
+    let frames = layout.data_size as u64 / (layout.channels * layout.bytes_per_sample) as u64;
+    let size = frames * layout.channels as u64 * width as u64;
+    if 60 + size + (size & 1) > u64::from(u32::MAX) {
+        return Err(Failure::new(
+            "InvalidData",
+            "PCM 超出 RIFF 4 GiB 限制；请拆分过长音轨。",
+        ));
+    }
+    if layout.container_bits != width * 8
+        || layout.valid_bits != bits
+        || layout.channel_mask & 0x600 != 0
+    {
+        return Ok(false);
+    }
+    // Even a matching valid-bits header does not prove sample precision. Full
+    // 16/24-bit storage cannot exceed its target; 20-bit storage must be scanned.
+    if bits == 20 {
+        input.seek(SeekFrom::Start(layout.data_offset as u64))?;
+        let mut raw = vec![0; 8192 * layout.channels as usize * width as usize];
+        let mut remaining = layout.data_size as u64;
+        while remaining != 0 {
+            callbacks.check()?;
+            let count = remaining.min(raw.len() as u64) as usize;
+            input
+                .read_exact(&mut raw[..count])
+                .map_err(formats::WavError::Io)?;
+            if raw[..count]
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .any(|sample| sample[0] & 15 != 0)
+            {
+                return Err(Failure::new(
+                    "InvalidData",
+                    "PCM 有效精度高于目标位深；拒绝静默截断，请检查音源转换设置。",
+                ));
+            }
+            remaining -= count as u64;
+        }
+    }
+    callbacks.check()?;
+    Ok(true)
+}
+
+fn prepare_wave(
+    decoded: &Path,
+    prepared: &Path,
+    rate: i32,
+    bits: i32,
+    callbacks: &mut dyn Callbacks,
+) -> Result<PathBuf, Failure> {
+    let reuse = {
+        let mut input = crate::identity::open_read(&decoded.to_string_lossy())?;
+        reusable_wave(&mut input, rate, bits, callbacks)?
+    };
+    if reuse {
+        // Both paths belong to the track's private Folder, which cleans up on
+        // success, failure and cancellation. Leave decoded.wav in place.
+        return Ok(decoded.to_path_buf());
+    }
+    pcm::normalize(
+        pcm::Job {
+            source: decoded.to_string_lossy().into_owned(),
+            destination: prepared.to_path_buf(),
+            rate,
+            bits,
+        },
+        callbacks,
+    )?;
+    fs::remove_file(decoded)?;
+    Ok(prepared.to_path_buf())
+}
+
 fn track(
     job: &Job,
     index: usize,
@@ -241,16 +334,7 @@ fn track(
             ));
         }
         events.event("PcmFinished", json!(null));
-        pcm::normalize(
-            pcm::Job {
-                source: decoded.to_string_lossy().into_owned(),
-                destination: prepared.clone(),
-                rate: job.sample_rate,
-                bits: job.bits,
-            },
-            &mut events,
-        )?;
-        fs::remove_file(&decoded)?;
+        let prepared = prepare_wave(&decoded, &prepared, job.sample_rate, job.bits, &mut events)?;
         events.media_phase = false;
         let result = encoder::execute(
             encoder::Job {
@@ -274,14 +358,8 @@ fn track(
         .and(result)
 }
 
-fn worker_count(requested: i32, tracks: usize) -> usize {
-    let detected = crate::options::default_mlp_jobs() as usize;
-    let requested = if requested <= 0 {
-        detected
-    } else {
-        requested as usize
-    };
-    requested.clamp(1, 16).min(tracks)
+fn worker_count(tracks: usize) -> usize {
+    crate::options::worker_count(tracks)
 }
 
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
@@ -292,7 +370,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
         if caller.cancelled() {
             return Err(Failure::new("Cancelled", "Batch encoding cancelled"));
         }
-        let count = worker_count(job.jobs, job.tracks.len());
+        let count = worker_count(job.tracks.len());
         let next = AtomicUsize::new(0);
         let stop = AtomicBool::new(false);
         let external = AtomicBool::new(false);
@@ -378,17 +456,172 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
 
 #[cfg(test)]
 mod tests {
-    use super::worker_count;
+    use super::{Folder, prepare_wave, reusable_wave, worker_count};
+    use crate::{formats, media::temporary_path, pcm};
+    use dvda_native::media::Callbacks;
+    use std::{fs, io::Cursor};
+
+    fn wave(bits: u16, valid: u16, channels: u16, mask: u32, sample: i32) -> Vec<u8> {
+        let width = bits / 8;
+        let size = u32::from(width * channels);
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(60 + size + (size & 1)).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&40u32.to_le_bytes());
+        bytes.extend_from_slice(&0xfffeu16.to_le_bytes());
+        bytes.extend_from_slice(&channels.to_le_bytes());
+        bytes.extend_from_slice(&48000u32.to_le_bytes());
+        bytes.extend_from_slice(&(48000 * size).to_le_bytes());
+        bytes.extend_from_slice(&(width * channels).to_le_bytes());
+        bytes.extend_from_slice(&bits.to_le_bytes());
+        bytes.extend_from_slice(&22u16.to_le_bytes());
+        bytes.extend_from_slice(&valid.to_le_bytes());
+        bytes.extend_from_slice(&mask.to_le_bytes());
+        bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&size.to_le_bytes());
+        for _ in 0..channels {
+            bytes.extend_from_slice(&sample.to_le_bytes()[..width as usize]);
+        }
+        if size & 1 != 0 {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    #[test]
+    fn reuse_requires_matching_storage_precision_and_unmapped_layout() {
+        for (stored, valid, target, channels, mask, expected) in [
+            (16, 16, 16, 2, 3, true),
+            (24, 24, 24, 1, 4, true),
+            (24, 20, 20, 6, 0x3f, true),
+            (16, 16, 16, 2, 0, true),
+            (24, 24, 20, 2, 3, false), // Native media currently labels 20-bit WAV as 24-bit.
+            (32, 24, 24, 2, 3, false),
+            (16, 16, 24, 2, 3, false),
+            (24, 20, 24, 2, 3, false),
+            (24, 24, 24, 6, 0x60f, false),
+            (24, 24, 24, 6, 0x633, false), // Conflicting surround mask: normalizer rejects it.
+        ] {
+            assert_eq!(
+                reusable_wave(
+                    &mut Cursor::new(wave(stored, valid, channels, mask, -16)),
+                    48000,
+                    target,
+                    &mut pcm::NoEvents,
+                )
+                .unwrap(),
+                expected,
+                "stored={stored}, valid={valid}, target={target}, mask={mask:X}",
+            );
+        }
+    }
+
+    #[test]
+    fn reuse_checks_precision_rate_structure_and_cancellation() {
+        for sample in [1, -1, 15, -15] {
+            let error = reusable_wave(
+                &mut Cursor::new(wave(24, 20, 1, 4, sample)),
+                48000,
+                20,
+                &mut pcm::NoEvents,
+            )
+            .unwrap_err();
+            assert_eq!(error.kind, "InvalidData");
+            assert!(error.message.contains("精度"));
+        }
+        for sample in [0, 16, -16, 0x7ffff0, -0x800000] {
+            assert!(
+                reusable_wave(
+                    &mut Cursor::new(wave(24, 20, 1, 4, sample)),
+                    48000,
+                    20,
+                    &mut pcm::NoEvents,
+                )
+                .unwrap()
+            );
+        }
+        let good = wave(16, 16, 2, 3, 0);
+        assert!(reusable_wave(&mut Cursor::new(&good), 44100, 16, &mut pcm::NoEvents).is_err());
+        assert!(reusable_wave(&mut Cursor::new(&good), 48000, 18, &mut pcm::NoEvents).is_err());
+        assert!(
+            reusable_wave(
+                &mut Cursor::new(&good[..good.len() - 1]),
+                48000,
+                16,
+                &mut pcm::NoEvents
+            )
+            .is_err()
+        );
+        assert!(
+            reusable_wave(
+                &mut Cursor::new(wave(16, 16, 2, 4, 0)),
+                48000,
+                16,
+                &mut pcm::NoEvents
+            )
+            .is_err()
+        );
+
+        struct Cancel {
+            polls: usize,
+            at: usize,
+        }
+        impl Callbacks for Cancel {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                self.polls += 1;
+                self.polls >= self.at
+            }
+        }
+        for (bits, stored, at) in [(16, 16, 1), (16, 16, 2), (20, 24, 2), (20, 24, 3)] {
+            let error = reusable_wave(
+                &mut Cursor::new(wave(stored, bits, 1, 4, 0)),
+                48000,
+                bits as i32,
+                &mut Cancel { polls: 0, at },
+            )
+            .unwrap_err();
+            assert_eq!(error.kind, "Cancelled");
+        }
+    }
+
+    #[test]
+    fn preparation_reuses_owned_file_or_falls_back_to_normalization() {
+        let folder = Folder(temporary_path(
+            &std::env::current_dir().unwrap().join("batch-test"),
+        ));
+        fs::create_dir(&folder.0).unwrap();
+        let decoded = folder.0.join("decoded.wav");
+        let prepared = folder.0.join("input.wav");
+        let bytes = wave(24, 24, 1, 4, -16);
+        fs::write(&decoded, &bytes).unwrap();
+        assert_eq!(
+            prepare_wave(&decoded, &prepared, 48000, 24, &mut pcm::NoEvents).unwrap(),
+            decoded
+        );
+        assert_eq!(fs::read(&decoded).unwrap(), bytes);
+        assert!(!prepared.exists());
+        assert_eq!(
+            prepare_wave(&decoded, &prepared, 48000, 20, &mut pcm::NoEvents).unwrap(),
+            prepared
+        );
+        assert!(!decoded.exists());
+        let layout = formats::read_wav_layout(prepared.to_str().unwrap()).unwrap();
+        assert_eq!(layout.valid_bits, 20);
+        assert_eq!(&fs::read(&prepared).unwrap()[68..71], &bytes[68..71]);
+    }
 
     #[test]
     fn automatic_workers_follow_detected_parallelism_and_caps() {
         let detected = std::thread::available_parallelism()
             .map(|count| count.get())
             .unwrap_or(1)
-            .clamp(1, 16);
-        assert_eq!(worker_count(0, usize::MAX), detected);
-        assert_eq!(worker_count(-1, 2), detected.min(2));
-        assert_eq!(worker_count(1, 2), 1);
-        assert_eq!(worker_count(99, 99), 16);
+            .saturating_mul(2);
+        assert_eq!(worker_count(usize::MAX), detected);
+        assert_eq!(worker_count(2), detected.min(2));
+        assert_eq!(worker_count(0), 1);
+        assert_eq!(worker_count(99), detected);
     }
 }

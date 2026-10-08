@@ -32,7 +32,8 @@ pub struct Job {
     pub stage_directory: PathBuf,
     pub sample_rate: i32,
     pub bits: i32,
-    pub jobs: i32,
+    #[serde(default, skip_deserializing)]
+    pub jobs: i32, // Deprecated compatibility field; production ignores explicit worker counts.
     pub metadata_context: String,
     pub encoder_identity: String,
     pub tracks: Vec<Value>,
@@ -176,7 +177,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                 output_directory: stage.clone(),
                 sample_rate: job.sample_rate,
                 bits: job.bits,
-                jobs: job.jobs,
+                jobs: 0,
                 metadata_context: job.metadata_context.clone(),
                 tracks: pending
                     .iter()
@@ -328,14 +329,8 @@ impl Callbacks for CheckCallbacks<'_> {
     }
 }
 
-fn check_worker_count(requested: i32, tracks: usize) -> usize {
-    let requested = if requested <= 0 {
-        crate::options::default_mlp_jobs() as usize
-    } else {
-        requested as usize
-    };
-    // Use the same automatic core allocation and hard cap as MLP encoding.
-    requested.clamp(1, 16).min(tracks)
+fn check_worker_count(tracks: usize) -> usize {
+    crate::options::worker_count(tracks)
 }
 
 fn check_tracks(
@@ -349,7 +344,7 @@ fn check_tracks(
     if caller.cancelled() {
         return Err("MLP 编码已被取消。".into());
     }
-    let count = check_worker_count(job.jobs, job.tracks.len());
+    let count = check_worker_count(job.tracks.len());
     let next = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
     let (send, receive) = mpsc::sync_channel(count * 2);
@@ -800,14 +795,12 @@ mod tests {
     fn automatic_check_workers_follow_cores_with_the_encoding_cap() {
         let detected = std::thread::available_parallelism()
             .map(|count| count.get())
-            .unwrap_or(1);
-        assert_eq!(check_worker_count(0, 147), detected.min(16));
-        assert_eq!(check_worker_count(-1, 2), detected.min(16).min(2));
-        assert_eq!(check_worker_count(1, 147), 1);
-        assert_eq!(check_worker_count(16, 147), 16);
-        assert_eq!(check_worker_count(99, 147), 16);
-        assert_eq!(check_worker_count(16, 1), 1);
-        assert_eq!(check_worker_count(0, 0), 0);
+            .unwrap_or(1)
+            .saturating_mul(2);
+        assert_eq!(check_worker_count(147), detected.min(147));
+        assert_eq!(check_worker_count(2), detected.min(2));
+        assert_eq!(check_worker_count(1), 1);
+        assert_eq!(check_worker_count(0), 1);
     }
 
     #[test]
@@ -987,6 +980,10 @@ mod tests {
             ("parallel_first", 0),
             ("parallel_cached_parameters", 0),
             ("serial_cached_parameters", 1),
+            ("workers_2_cached_parameters", 2),
+            ("workers_4_cached_parameters", 4),
+            ("workers_8_cached_parameters", 8),
+            ("workers_16_cached_parameters", 16),
         ] {
             job.jobs = workers;
             let mut updated = job.tracks.clone();
@@ -1013,7 +1010,7 @@ mod tests {
                 assert_eq!(&updated, previous);
             }
             previous = Some(updated);
-            let record = json!({"phase":label,"workers":check_worker_count(workers, job.tracks.len()),"tracks":hits,"seconds":seconds,"progress_events":events.progress.len()});
+            let record = json!({"phase":label,"requested_workers":workers,"workers":check_worker_count(job.tracks.len()),"tracks":hits,"seconds":seconds,"progress_events":events.progress.len()});
             println!("{record}");
             records.push(record);
         }

@@ -94,6 +94,10 @@ pub fn normalize(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
         let mut raw = vec![0u8; 8192 * channels * input_width];
         let mut converted = Vec::with_capacity(8192 * channels * width);
         let precision_mask = (1i64 << (24 - job.bits)) - 1;
+        let direct_copy =
+            (input_width == 2 && width == 2) || (input_width == 3 && width == 3 && job.bits == 24);
+        let validate_and_copy_24 = input_width == 3 && width == 3 && job.bits == 20;
+        let pack_32_to_24 = input_width == 4 && width == 3 && job.bits == 24;
         let mut remaining = layout.data_size as u64;
         while remaining != 0 {
             callbacks.check()?;
@@ -101,35 +105,65 @@ pub fn normalize(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
             input
                 .read_exact(&mut raw[..count])
                 .map_err(|error| Failure::from(WavError::Io(error)))?;
-            converted.clear();
-            for bytes in raw[..count].chunks_exact(input_width) {
-                let sample = match input_width {
-                    2 => i64::from(i16::from_le_bytes(bytes.try_into().unwrap())) << 8,
-                    3 => i64::from(
+            if direct_copy {
+                output.write_all(&raw[..count])?;
+            } else if validate_and_copy_24 {
+                for bytes in raw[..count].as_chunks::<3>().0 {
+                    let sample = i64::from(
                         ((i32::from(bytes[0])
                             | i32::from(bytes[1]) << 8
                             | i32::from(bytes[2]) << 16)
                             << 8)
                             >> 8,
-                    ),
-                    4 => {
-                        let value = i32::from_le_bytes(bytes.try_into().unwrap());
-                        if value & 255 != 0 {
-                            return Err(invalid("32 位存储包含超过 24 位的有效 PCM。"));
-                        }
-                        i64::from(value >> 8)
+                    );
+                    if sample & precision_mask != 0 {
+                        return Err(invalid(
+                            "PCM 有效精度高于目标位深；拒绝静默截断，请检查音源转换设置。",
+                        ));
                     }
-                    _ => unreachable!("Layout validated storage width"),
-                };
-                if sample & precision_mask != 0 {
-                    return Err(invalid(
-                        "PCM 有效精度高于目标位深；拒绝静默截断，请检查音源转换设置。",
-                    ));
                 }
-                let stored = if width == 2 { sample >> 8 } else { sample };
-                converted.extend_from_slice(&stored.to_le_bytes()[..width]);
+                output.write_all(&raw[..count])?;
+            } else if pack_32_to_24 {
+                converted.clear();
+                converted.reserve(count / 4 * 3);
+                for bytes in raw[..count].as_chunks::<4>().0 {
+                    if bytes[0] != 0 {
+                        return Err(invalid("32 位存储包含超过 24 位的有效 PCM。"));
+                    }
+                    converted.extend_from_slice(&bytes[1..]);
+                }
+                output.write_all(&converted)?;
+            } else {
+                converted.clear();
+                for bytes in raw[..count].chunks_exact(input_width) {
+                    let sample = match input_width {
+                        2 => i64::from(i16::from_le_bytes(bytes.try_into().unwrap())) << 8,
+                        3 => i64::from(
+                            ((i32::from(bytes[0])
+                                | i32::from(bytes[1]) << 8
+                                | i32::from(bytes[2]) << 16)
+                                << 8)
+                                >> 8,
+                        ),
+                        4 => {
+                            let value = i32::from_le_bytes(bytes.try_into().unwrap());
+                            if value & 255 != 0 {
+                                return Err(invalid("32 位存储包含超过 24 位的有效 PCM。"));
+                            }
+                            i64::from(value >> 8)
+                        }
+                        _ => unreachable!("Layout validated storage width"),
+                    };
+                    if sample & precision_mask != 0 {
+                        return Err(invalid(
+                            "PCM 有效精度高于目标位深；拒绝静默截断，请检查音源转换设置。",
+                        ));
+                    }
+                    let stored = if width == 2 { sample >> 8 } else { sample };
+                    converted.extend_from_slice(&stored.to_le_bytes()[..width]);
+                }
+                output.write_all(&converted)?;
             }
-            output.write_all(&converted)?;
             remaining -= count as u64;
         }
         if size & 1 != 0 {

@@ -21,7 +21,7 @@ pub struct Job {
     pub library: PathBuf,
     pub paths: Vec<PathBuf>,
     pub compression: u32,
-    pub jobs: usize,
+    pub jobs: usize, // Deprecated compatibility field; production ignores explicit worker counts.
     pub dry_run: bool,
     pub delete_sources: bool,
 }
@@ -390,16 +390,20 @@ impl Callbacks for Worker<'_> {
     }
 }
 pub fn execute(job: &Job, caller: &mut dyn Callbacks) -> Result<Vec<ResultRow>, String> {
-    if job.compression > 8 || job.jobs == 0 {
-        return Err("FLAC level must be 0–8 and jobs must be positive".into());
+    if job.compression > 8 {
+        return Err("FLAC level must be 0–8".into());
     }
     let paths = collect(&job.paths, caller)?;
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
     let next = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
-    let (send, receive) = mpsc::sync_channel(job.jobs.min(paths.len()).max(1));
+    let count = crate::options::worker_count(paths.len());
+    let (send, receive) = mpsc::sync_channel(count);
     let mut rows = Vec::with_capacity(paths.len());
     let observed = std::thread::scope(|scope| {
-        for _ in 0..job.jobs.min(paths.len()) {
+        for _ in 0..count {
             let (paths, next, stop, send) = (&paths, &next, &stop, send.clone());
             scope.spawn(move || {
                 while !stop.load(Ordering::Acquire) {

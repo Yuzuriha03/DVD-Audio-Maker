@@ -31,13 +31,12 @@ Relevant values are:
   "DVDA_MLP_SOURCE": "surcode-batch",
   "DVDA_MLP_SURCODE_SAMPLE_RATE": "48000",
   "DVDA_MLP_SURCODE_BITS": "24",
-  "DVDA_MLP_JOBS": "auto",
   "DVDA_MLP_METADATA_CONTEXT": "",
   "DVDA_MLP_EXTERNAL_DIR": ""
 }
 ```
 
-`DVDA_MLP_JOBS` defaults to `auto`, which uses the detected logical processor count for independent tracks, capped at 16 concurrent tracks. Set a positive integer to impose a manual limit. Parallelism is between tracks, so the encoding order and bytes of each individual track remain unchanged.
+`DVDA_MLP_JOBS` is ignored for compatibility. Production encoding uses `min(2 × logical processors, work items)` automatically; parallelism is between tracks, so the encoding order and bytes of each individual track remain unchanged.
 
 DVD-Audio sample rates are 44.1, 48, 88.2, 96, 176.4 and 192 kHz. The
 supported integer depths are 16, 20 and 24 bits. The channel limit follows the

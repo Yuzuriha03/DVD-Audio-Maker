@@ -4,6 +4,9 @@ Optional maintenance tool; normal GUI builds do not need MSYS2 or Python.
 Source and NASM archives are pinned. Nothing is installed in the MSYS2 tree.
 """
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
+from worker_policy import worker_count
 import argparse
 import ctypes
 import hashlib
@@ -66,11 +69,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--msys-root', type=Path, default=Path(os.environ.get('MSYS2_ROOT', 'C:/msys64')))
     parser.add_argument('--work-directory', type=Path, default=Path(__file__).resolve().parents[2] / 'build/ffmpeg-minimal')
-    parser.add_argument('--jobs', type=int, default=min(8, os.cpu_count() or 1))
     parser.add_argument('--profile', choices=['mlp', 'menu', 'media', 'shared'], default='mlp')
     args = parser.parse_args()
-    if os.name != 'nt' or args.jobs < 1:
-        parser.error('Run on Windows with --jobs >= 1.')
+    if os.name != 'nt':
+        parser.error('Run on Windows.')
     msys = args.msys_root.resolve()
     for name in ['usr/bin/bash.exe', 'usr/bin/make.exe', 'usr/bin/gpg.exe', 'mingw64/bin/gcc.exe', 'mingw64/bin/strip.exe']:
         if not (msys / name).is_file():
@@ -156,7 +158,7 @@ def main():
                       '--enable-muxer=mpeg2dvd']
     commands = ['set -eu', 'export PATH=/mingw64/bin:/usr/bin', 'export LC_ALL=C',
                 'export SOURCE_DATE_EPOCH=1789699562', 'cd ' + shlex.quote(short_path(build)),
-                shlex.join(configure), f'make -j{args.jobs}', 'make install']
+                shlex.join(configure), f'make -j{worker_count()}', 'make install']
     script = work / 'build.sh'
     script.write_text('\n'.join(commands) + '\n', encoding='utf-8', newline='\n')
     print('Building native Windows x64 DLLs; log: ' + str(work / 'build.log'), flush=True)
