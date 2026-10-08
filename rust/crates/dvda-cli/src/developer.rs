@@ -131,7 +131,7 @@ fn execute(arguments: &[String]) -> Result<i32> {
     };
     if command == "help" || args.iter().any(|a| matches!(a.as_str(), "--help" | "-h")) {
         println!(
-            "Usage: dvda-cli [config|prepare|plan|build|verify|quick-check|audit|convert|aob-pts|mlp|alac|iso] [--profile settings.json] [--language zh-CN|en|ja]\n  build [--dry-run] [--no-resume]\n  convert PATH... [--in-place] [--dry-run] [--level 0..8] [--jobs N]\n  mlp (--check|--align) [-o DIR] [-q] FILE...\n  alac check INPUT | alac repair INPUT [OUTPUT]\n  iso list ISO [INNER] | iso extract ISO INNER OUTPUT\n  quick-check|audit [--iso-dir DIR] [--manifest FILE] [--log FILE]"
+            "Usage: dvda-cli [config|prepare|plan|build|verify|quick-check|audit|convert|aob-pts|mlp|alac|iso] [--profile settings.json] [--language zh-CN|en|ja]\n  build [--dry-run] [--no-resume]\n  convert PATH... [--in-place] [--dry-run] [--level 0..8]\n  mlp (--check|--align) [-o DIR] [-q] FILE...\n  alac check INPUT | alac repair INPUT [OUTPUT]\n  iso list ISO [INNER] | iso extract ISO INNER OUTPUT\n  quick-check|audit [--iso-dir DIR] [--manifest FILE] [--log FILE]"
         );
         return Ok(0);
     }
@@ -182,29 +182,15 @@ fn execute(arguments: &[String]) -> Result<i32> {
                 .map(|v| v.parse::<u32>().map_err(usage))
                 .transpose()?
                 .unwrap_or(8);
-            let jobs = take(&mut args, "--jobs")?
-                .map(|v| v.parse::<usize>().map_err(usage))
-                .transpose()?
-                .unwrap_or_else(|| {
-                    std::thread::available_parallelism()
-                        .map_or(1, usize::from)
-                        .min(4)
-                });
-            if args.is_empty()
-                || args.iter().any(|a| a.starts_with('-'))
-                || compression > 8
-                || jobs == 0
-            {
-                return Err(usage(
-                    "convert requires input paths, level 0–8 and positive jobs",
-                ));
+            if args.is_empty() || args.iter().any(|a| a.starts_with('-')) || compression > 8 {
+                return Err(usage("convert requires input paths and level 0–8"));
             }
             let result = conversion::execute(
                 &conversion::Job {
                     library: options.media_library().map_err(failure)?,
                     paths: args.into_iter().map(PathBuf::from).collect(),
                     compression,
-                    jobs,
+                    jobs: 0,
                     dry_run,
                     delete_sources,
                 },

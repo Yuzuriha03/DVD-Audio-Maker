@@ -145,8 +145,8 @@ fn json_profiles_help_shell_and_argument_validation() {
     for args in [
         vec!["--profile", path, "--profile", path],
         vec!["config", "--check", "--shell"],
-        vec!["convert", "--jobs", "0", "x.m4a"],
         vec!["mlp", "--check", "--align", "x.mlp"],
+        vec!["convert", "x.m4a", "--jobs", "1"],
         vec!["build", "--unknown"],
         vec!["--language", "xx", "config"],
         vec!["config", "--profile", "missing.json"],
@@ -175,7 +175,7 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
     let input_text = input.to_str().unwrap();
     assert!(ok(run(&root.0, &["convert", input_text, "--dry-run"])).contains("DRY"));
     assert!(!input.with_extension("flac").exists());
-    assert!(ok(run(&root.0, &["m4a2flac", input_text, "--jobs", "2"])).contains("PcmMd5"));
+    assert!(ok(run(&root.0, &["m4a2flac", input_text])).contains("PcmMd5"));
     ok(run(&root.0, &["alac", "check", input_text]));
     let bad = root.0.join("bad.m4a");
     fs::write(

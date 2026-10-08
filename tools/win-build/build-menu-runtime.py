@@ -1,6 +1,8 @@
 """Build only the C subpicture/AMGM modules used by the Windows x64 GUI."""
 from pathlib import Path
 import argparse, concurrent.futures, hashlib, json, os, subprocess, sys
+sys.path.insert(0, str(Path(__file__).parent))
+from worker_policy import worker_count
 sys.path.insert(0,str(Path(__file__).parent/'native'))
 from pe_dependencies import Pe
 
@@ -31,7 +33,7 @@ def main():
             log=objects/(source.stem+'.log');log.write_bytes(r.stdout+r.stderr)
             if r.returncode:raise RuntimeError('Compilation failed: '+str(log))
             return str(target)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count(len(sources))) as pool:
             built=list(pool.map(compile_one,sources))
         dll=out/('dvda-menu-'+group+'.dll')
         cmd=[str(compiler),'-shared','-static-libgcc','-s','-Wl,--gc-sections','-Wl,--no-insert-timestamp',

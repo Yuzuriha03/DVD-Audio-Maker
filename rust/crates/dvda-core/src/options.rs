@@ -4,12 +4,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
-/// Number of concurrent MLP tracks used for automatic allocation.
-pub fn default_mlp_jobs() -> i32 {
-    std::thread::available_parallelism()
-        .map(|count| count.get())
-        .unwrap_or(1)
-        .clamp(1, 16) as i32
+/// Return the production worker count: two workers per detected logical
+/// processor, with a minimum of one and an optional work-item cap.
+pub fn worker_count(work_items: usize) -> usize {
+    let processors = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    processors.saturating_mul(2).max(1).min(work_items.max(1))
 }
 
 pub fn combine(left: &str, right: &str) -> String {
@@ -330,7 +329,6 @@ pub fn evaluate(request: Request) -> Value {
         );
     }
     put("PlannedDiscs", OptionValue::new(0));
-    put("MlpJobs", OptionValue::new(0));
     put(
         "DiscBytes",
         OptionValue::new(

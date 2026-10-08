@@ -96,7 +96,7 @@ def main():
         "export LDFLAGS='-Wl,--gc-sections -Wl,--no-insert-timestamp'",
         'cd '+shlex.quote(common.short_path(build))]
     if not args.skip_configure: commands.append(shlex.join(configure))
-    commands.append('make -j8 MagickCore/libMagickCore-7.Q16HDRI.la MagickWand/libMagickWand-7.Q16HDRI.la')
+    commands.append(f'make -j{common.worker_count()} MagickCore/libMagickCore-7.Q16HDRI.la MagickWand/libMagickWand-7.Q16HDRI.la')
     script=work/'build.sh'; script.write_text('\n'.join(commands)+'\n',encoding='utf-8',newline='\n')
     msys=args.msys_root.resolve()
     env=os.environ|{'PATH':str(msys/'mingw64/bin')+os.pathsep+str(msys/'usr/bin')+os.pathsep+os.environ['PATH']}

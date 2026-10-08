@@ -2161,12 +2161,6 @@
     "English": "[ERROR] --level must be an integer from 0 to 8"
   },
   {
-    "Source": "[错误] --jobs 必须是正整数",
-    "Parameters": 0,
-    "Nested": [],
-    "English": "[ERROR] --jobs must be a positive integer"
-  },
-  {
     "Source": "[错误] 未知参数: {0}",
     "Parameters": 1,
     "Nested": [],
@@ -2179,10 +2173,10 @@
     "English": "[ERROR] --level must be between 0 and 8"
   },
   {
-    "Source": "用法: dvda convert <目录或 .m4a 文件>... [--in-place] [--dry-run] [--level N] [--jobs N]",
+    "Source": "用法: dvda convert <目录或 .m4a 文件>... [--in-place] [--dry-run] [--level N]",
     "Parameters": 0,
     "Nested": [],
-    "English": "Usage: dvda convert <directory or .m4a file>... [--in-place] [--dry-run] [--level N] [--jobs N]"
+    "English": "Usage: dvda convert <directory or .m4a file>... [--in-place] [--dry-run] [--level N]"
   },
   {
     "Source": "需修补 {0} 帧",

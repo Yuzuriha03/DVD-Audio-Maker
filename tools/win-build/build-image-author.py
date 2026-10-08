@@ -4,8 +4,10 @@ The source tree must be the already configured project fork. It is read only.
 All consumed source files, headers, config and import libraries are hashed.
 """
 from pathlib import Path
-import argparse, concurrent.futures, difflib, hashlib, json, os, re, shutil, subprocess
 import sys
+sys.path.insert(0, str(Path(__file__).parent))
+from worker_policy import worker_count
+import argparse, concurrent.futures, difflib, hashlib, json, os, re, shutil, subprocess
 
 sys.path.insert(0, str(Path(__file__).parent / 'native'))
 from pe_dependencies import Pe
@@ -118,7 +120,7 @@ def main():
         (objects/(file.stem+'.log')).write_bytes(result.stdout+result.stderr)
         if result.returncode: raise RuntimeError('Compilation failed; see '+str(objects/(file.stem+'.log')))
         return str(target)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool: built=list(pool.map(compile_one,files))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count(len(files))) as pool: built=list(pool.map(compile_one,files))
     subprocess.run([str(msys/'mingw64/bin/windres.exe'),'-i','da-utf8.rc','-o',str(objects/'manifest.o')],cwd=snapshot/'src',env=env,check=True)
     # Override this link's default manifest through a private GCC specs file.
     # Never modify the compiler installation's default-manifest.o.

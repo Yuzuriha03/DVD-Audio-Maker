@@ -161,6 +161,40 @@ fn complete_wav_matrix_including_wide_storage() {
 }
 
 #[test]
+fn fast_paths_copy_and_validate_storage() {
+    let root = Scratch::new();
+    let input = root.0.join("input.wav");
+    let output = root.0.join("output.wav");
+
+    fs::write(&input, fixture(48000, 20, 20, 2, 257, 3, false)).unwrap();
+    normalize(job(&input, &output, 48000, 20), &mut Events::default()).unwrap();
+    assert_eq!(
+        fs::read(&output).unwrap(),
+        fixture(48000, 20, 20, 2, 257, 3, false)
+    );
+    fs::remove_file(&output).unwrap();
+
+    fs::write(&input, fixture(48000, 24, 24, 2, 257, 3, true)).unwrap();
+    normalize(job(&input, &output, 48000, 24), &mut Events::default()).unwrap();
+    assert_eq!(
+        fs::read(&output).unwrap(),
+        fixture(48000, 24, 24, 2, 257, 3, false)
+    );
+    fs::remove_file(&output).unwrap();
+
+    let mut invalid_24 = fixture(48000, 24, 24, 1, 1, 1, false);
+    invalid_24[68] |= 1;
+    fs::write(&input, invalid_24).unwrap();
+    assert_eq!(
+        normalize(job(&input, &output, 48000, 20), &mut Events::default())
+            .unwrap_err()
+            .kind,
+        "InvalidData"
+    );
+    assert!(!output.exists());
+}
+
+#[test]
 fn layout_failures_cancellation_and_owned_cleanup() {
     let root = Scratch::new();
     let input = root.0.join("input.wav");

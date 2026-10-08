@@ -1,6 +1,7 @@
 /* In-process Windows x64 media bridge. No command line executable is spawned. */
 #include <windows.h>
 #include <stdint.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <math.h>
@@ -23,6 +24,13 @@ typedef struct Request {
 typedef struct Call { const Request *request; Emit emit; Cancel cancel; void *state; } Call;
 static _Thread_local Call *active;
 static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+
+static int worker_count(void)
+{
+    DWORD processors = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    if (!processors) processors = 1;
+    return processors > INT_MAX / 2 ? INT_MAX : (int)processors * 2;
+}
 
 static int cancelled(void *opaque) { Call *call = opaque; return call->cancel && call->cancel(call->state); }
 static void message(Call *call, int stream, const char *format, ...)
@@ -202,7 +210,7 @@ static int initialize_audio(Audio *audio, AVFrame *frame)
         audio->encoder = avcodec_alloc_context3(codec); if (!audio->encoder) return AVERROR(ENOMEM);
         audio->encoder->sample_fmt = audio->format; audio->encoder->sample_rate = audio->rate;
         audio->encoder->bits_per_raw_sample = audio->output_kind == 6 ? audio->bits : audio->bits == 16 ? 16 : 24;
-        audio->encoder->time_base = (AVRational){1, audio->rate}; audio->encoder->thread_count = 1;
+        audio->encoder->time_base = (AVRational){1, audio->rate}; audio->encoder->thread_count = worker_count();
         if ((result = av_channel_layout_copy(&audio->encoder->ch_layout, &frame->ch_layout)) < 0) return result;
         if ((result = avformat_alloc_output_context2(&audio->output, NULL, audio->output_kind == 6 ? "flac" : "wav", request->output)) < 0) return result;
         audio->output->interrupt_callback = (AVIOInterruptCB){cancelled, audio->call};
@@ -322,7 +330,7 @@ static int audio(Call *call, AVFormatContext *format)
     a.decoder = avcodec_alloc_context3(codec); a.frame = av_frame_alloc(); a.packet = av_packet_alloc();
     if (!a.decoder || !a.frame || !a.packet) { result = AVERROR(ENOMEM); goto done; }
     if ((result = avcodec_parameters_to_context(a.decoder, format->streams[a.stream]->codecpar)) < 0) goto done;
-    a.decoder->thread_count = 1; a.decoder->err_recognition = AV_EF_CRCCHECK | AV_EF_EXPLODE;
+    a.decoder->thread_count = worker_count(); a.decoder->err_recognition = AV_EF_CRCCHECK | AV_EF_EXPLODE;
     if ((result = avcodec_open2(a.decoder, codec, NULL)) < 0) goto done;
     while (!cancelled(call) && (result = av_read_frame(format, a.packet)) >= 0) {
         if (a.packet->stream_index == a.stream) {
@@ -360,7 +368,7 @@ static int video(Call *call, AVFormatContext *format)
     struct SwsContext *scale = NULL; FILE *file = NULL; int result = AVERROR(ENOMEM), received = 0;
     if (!decoder || !frame || !rgb || !packet) goto done;
     if ((result = avcodec_parameters_to_context(decoder, format->streams[stream]->codecpar)) < 0) goto done;
-    decoder->thread_count = 1;
+    decoder->thread_count = worker_count();
     if ((result = avcodec_open2(decoder, codec, NULL)) < 0) goto done;
     while (!received && !cancelled(call)) {
         result = av_read_frame(format, packet);
@@ -381,7 +389,7 @@ static int video(Call *call, AVFormatContext *format)
     if (sws_scale(scale, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height, rgb->data, rgb->linesize) != frame->height) { result = AVERROR(EIO); goto done; }
     codec = avcodec_find_encoder(AV_CODEC_ID_PNG); encoder = avcodec_alloc_context3(codec);
     if (!encoder) { result = AVERROR(ENOMEM); goto done; }
-    encoder->width = rgb->width; encoder->height = rgb->height; encoder->pix_fmt = AV_PIX_FMT_RGB24; encoder->time_base = (AVRational){1, 25}; encoder->thread_count = 1;
+    encoder->width = rgb->width; encoder->height = rgb->height; encoder->pix_fmt = AV_PIX_FMT_RGB24; encoder->time_base = (AVRational){1, 25}; encoder->thread_count = worker_count();
     if ((result = avcodec_open2(encoder, codec, NULL)) < 0 || (result = avcodec_send_frame(encoder, rgb)) < 0 || (result = avcodec_receive_packet(encoder, packet)) < 0) goto done;
     file = utf8_write(call->request->output); if (!file) { result = AVERROR(errno); goto done; }
     result = fwrite(packet->data, 1, packet->size, file) == (size_t)packet->size ? 0 : AVERROR(EIO);

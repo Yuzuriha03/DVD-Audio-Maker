@@ -1,5 +1,8 @@
 """Link the tailored static image libraries into one Windows x64 runtime DLL."""
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
+from worker_policy import worker_count
 import argparse, concurrent.futures, importlib.util, json, os, re, subprocess, tarfile
 
 spec=importlib.util.spec_from_file_location('common',Path(__file__).with_name('build-minimal-ffmpeg.py'))
@@ -53,7 +56,7 @@ static FT_FILE *dvda_utf8_fopen(const char *path)
         (obj/(Path(name).name+'.log')).write_bytes(p.stdout+p.stderr)
         if p.returncode:raise RuntimeError('FreeType compilation: '+name)
         return str(target)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:objects=list(pool.map(compile_one,names))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count(len(names))) as pool:objects=list(pool.map(compile_one,names))
     lib=work/'libfreetype-minimal.a'
     if lib.exists():lib.unlink()
     subprocess.run([ar,'rcs',str(lib),*objects],env=env,check=True)
