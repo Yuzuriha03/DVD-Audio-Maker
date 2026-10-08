@@ -61,7 +61,7 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --rele
 
 缓存复用仍须通过源/输出指纹、编码组件身份、目标参数与完整 MLP CRC/奇偶校验；
 参数缓存未知或缺失时重新读取，不跳过完整扫描。自动检查线程数为
-`min(可用核心数, 16, 曲目数)`，取消或异常时不保存本轮参数缓存。
+`min(2 × 可用逻辑处理器, 曲目数)` workers；取消或异常时不保存本轮参数缓存。
 
 ```powershell
 python tools\win-build\build-formats-runtime.py --msys-root C:\msys64 --output build\formats-native
@@ -76,3 +76,13 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offl
 `DVDA_MLP_PREFLIGHT_MANIFEST`、`ROOT`、`OUTPUT`、`MEDIA`、`ENCODER` 和 `REPORT`
 （后五项均带相同的 `DVDA_MLP_PREFLIGHT_` 前缀）。媒体/编码 DLL 必须与缓存身份一致；
 任一未命中都会失败，不会编码或覆盖样本。测试计时不能替代完整制盘与播放验证。
+
+## PCM 准备优化与并行度评估
+
+所有生产 worker 池使用检测到的逻辑处理器数量的两倍（饱和计算、至少一个），只受工作项数量限制。旧 job 字段被忽略；CLI `--jobs` 与求值选项 `MlpJobs` 已移除。Windows 媒体编解码上下文也请求同一自动策略，实际线程由编解码器支持情况决定。构建脚本共用 `worker_policy.py`，移除固定构建上限和 FFmpeg 构建 `--jobs` 选项。GUI 编排与子进程跟踪监听是单任务协调，不属于并行工作池。
+
+批量编码在解码 WAV 的采样率、存储/有效位深、声道掩码、RIFF 结构与 PCM 精度均满足目标时直接复用该临时文件；否则仍执行规范化。20 位数据复用前检查低四位，保留取消检查和临时文件清理。规范化对 16→16、24→24 使用批量复制，24→20 校验后复制，32 位存储→24 位使用专用打包路径，不放宽精度校验。
+
+真实缓存预检基准保留 1/2/4/8/16 标签作为旧配置兼容性探针：请求值被忽略，报告同时记录 `requested_workers` 和自动策略的实际 worker 数。它仅测量缓存校验，不代表完整解码/编码吞吐；应使用真实缓存、匹配的媒体/编码 DLL，多轮运行比较中位数，并另外监测内存与 CPU。缺少真实数据时不根据策略单元测试调整生产调度，也不声称已获得性能收益。
+
+合成端到端基准可显式运行 `encoder_native.rs` 中默认忽略的 `synthetic_batch_worker_benchmark`。设置 `DVDA_BATCH_BENCH=1`、`DVDA_BATCH_BENCH_ROOT`（build 下不存在的短绝对目录）、`DVDA_BATCH_BENCH_EXE`（发布单文件 EXE）和 `DVDA_ENCODER_LIBRARY`，使用 Release GNU target 执行该测试。基准从 EXE 提取并校验媒体组件，为 16/20/24 位分别生成 16 条约半秒的立体声/六声道音轨，交替使用旧请求值标签 1/2/4/8/16，对自动策略各测三轮。720 个输出均与首次自动策略运行的 MLP 摘要及独立生成的 PCM 对照（包含末尾 AU 零填充）；已验证的输出删除，报告写入自有目录中的 worker-benchmark.json。计时不包含样本生成和输出验证，也不代表优化前后收益或长专辑性能；不据此提高默认并发数。

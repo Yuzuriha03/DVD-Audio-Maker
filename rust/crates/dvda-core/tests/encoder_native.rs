@@ -602,3 +602,186 @@ fn batch_cancellation_panic_and_partial_failure() {
         }
     }
 }
+
+#[test]
+#[ignore = "opt-in synthetic native batch worker benchmark"]
+fn synthetic_batch_worker_benchmark() {
+    assert_eq!(std::env::var("DVDA_BATCH_BENCH").as_deref(), Ok("1"));
+    let root = PathBuf::from(std::env::var_os("DVDA_BATCH_BENCH_ROOT").unwrap());
+    fs::create_dir(&root).expect("benchmark root must be new; never overwrite user files");
+    let report = root.join("worker-benchmark.json");
+    let executable = fs::read(std::env::var_os("DVDA_BATCH_BENCH_EXE").unwrap()).unwrap();
+    let archive = executable
+        .windows(8)
+        .enumerate()
+        .find_map(|(offset, bytes)| {
+            if bytes != b"DVDRUN01" {
+                return None;
+            }
+            let length =
+                u32::from_le_bytes(executable.get(offset + 8..offset + 12)?.try_into().ok()?)
+                    as usize;
+            let metadata: serde_json::Value =
+                serde_json::from_slice(executable.get(offset + 12..offset + 12 + length)?).ok()?;
+            let end =
+                metadata.as_array()?.iter().try_fold(0usize, |end, entry| {
+                    Some(end.max(
+                        entry["offset"].as_u64()? as usize + entry["length"].as_u64()? as usize,
+                    ))
+                })?;
+            executable.get(offset..offset + 12 + length + end)
+        })
+        .expect("embedded verified runtime archive");
+    let runtime = dvda_core::runtime::extract(archive, &root.join("runtime")).unwrap();
+    let media_library = runtime.join("dvda-media.dll");
+    assert!(media_library.is_file());
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
+    let mut measurements = Vec::new();
+    let mut verified = 0;
+    for bits in [16, 20, 24] {
+        let cases: Vec<_> = (0..16)
+            .map(|index| {
+                let mut case = fixtures
+                    .cases
+                    .iter()
+                    .find(|case| {
+                        case.rate == 48000
+                            && case.bits == bits
+                            && case.channels == if index % 2 == 0 { 2 } else { 6 }
+                    })
+                    .unwrap()
+                    .clone();
+                case.frames = 24013 + index * 7;
+                case.wide = false;
+                case.mask = Some(if case.channels == 2 { 3 } else { 0x3f });
+                case.metadata_version = 0;
+                case
+            })
+            .collect();
+        let input = root.join(format!("input-{bits}"));
+        fs::create_dir(&input).unwrap();
+        let tracks: Vec<_> = cases
+            .iter()
+            .enumerate()
+            .map(|(index, case)| {
+                let source = input.join(format!("track{index}.wav"));
+                wave(&source, case);
+                dvda_core::batch::Track {
+                    source_path: source.to_str().unwrap().into(),
+                    work_name: format!("track{index}"),
+                    display_name: format!("synthetic {bits}-bit {}ch {index}", case.channels),
+                    duration_seconds: case.frames as f64 / f64::from(case.rate),
+                }
+            })
+            .collect();
+        let mut reference = Vec::new();
+        for repeat in 0..3 {
+            let workers: Vec<_> = if repeat == 1 {
+                vec![16, 8, 4, 2, 1]
+            } else {
+                vec![1, 2, 4, 8, 16]
+            };
+            for workers in workers {
+                let run = root.join(format!("run-{bits}-{repeat}-{workers}"));
+                fs::create_dir(&run).unwrap();
+                let job = dvda_core::batch::Job {
+                    media_library: media_library.clone(),
+                    encoder_library: library(),
+                    temporary_directory: run.join("temp"),
+                    output_directory: run.join("output"),
+                    sample_rate: 48000,
+                    bits: bits as i32,
+                    jobs: workers,
+                    metadata_context: String::new(),
+                    tracks: tracks
+                        .iter()
+                        .map(|track| dvda_core::batch::Track {
+                            source_path: track.source_path.clone(),
+                            work_name: track.work_name.clone(),
+                            display_name: track.display_name.clone(),
+                            duration_seconds: track.duration_seconds,
+                        })
+                        .collect(),
+                };
+                let mut events = BatchEvents::new();
+                let started = std::time::Instant::now();
+                passed(dvda_core::batch::execute(job, &mut events));
+                let seconds = started.elapsed().as_secs_f64();
+                assert_eq!(
+                    events
+                        .events
+                        .iter()
+                        .filter(|event| event["Kind"] == "Encoded")
+                        .count(),
+                    16
+                );
+                assert_eq!(fs::read_dir(run.join("temp")).unwrap().count(), 0);
+                let mut output_bytes = 0;
+                for (index, case) in cases.iter().enumerate() {
+                    let mlp = run.join("output").join(format!("track{index}.mlp"));
+                    let bytes = fs::read(&mlp).unwrap();
+                    output_bytes += bytes.len();
+                    let checksum = digest(&bytes);
+                    if repeat == 0 && workers == 1 {
+                        reference.push(checksum);
+                    } else {
+                        assert_eq!(
+                            checksum, reference[index],
+                            "non-deterministic worker output"
+                        );
+                    }
+                    let expected = wave(&run.join(format!("expected-{index}.wav")), case);
+                    let raw = run.join(format!("decoded-{index}.raw"));
+                    passed(media::execute(
+                        media::Job {
+                            library: media_library.clone(),
+                            request: Request {
+                                operation: Operation::Audio,
+                                rate: 0,
+                                bits: 24,
+                                output_format: OutputFormat::S24,
+                                soxr: false,
+                                compression: 8,
+                                cover: false,
+                                input: mlp.to_str().unwrap().into(),
+                                output: Some(raw.to_str().unwrap().into()),
+                                tags: vec![],
+                            },
+                            replace: false,
+                            timeout_millis: Some(30000),
+                        },
+                        &mut Events::default(),
+                    ));
+                    let decoded = fs::read(&raw).unwrap();
+                    assert_eq!(
+                        decoded.len(),
+                        case.frames.div_ceil(40) * 40 * usize::from(case.channels) * 3
+                    );
+                    assert_eq!(
+                        digest(&decoded[..expected.len()]),
+                        digest(&expected),
+                        "lossless decode {bits}/{workers}/{index}"
+                    );
+                    assert!(decoded[expected.len()..].iter().all(|byte| *byte == 0));
+                    verified += 1;
+                }
+                measurements.push(serde_json::json!({"bits":bits,"requested_workers":workers,"workers":dvda_core::options::worker_count(tracks.len()),"repeat":repeat,"seconds":seconds,"output_bytes":output_bytes,"tracks":16}));
+                println!(
+                    "BENCH bits={bits} repeat={repeat} requested_workers={workers} workers={} seconds={seconds:.6} verified=16",
+                    dvda_core::options::worker_count(tracks.len())
+                );
+                fs::write(&report, serde_json::to_vec_pretty(&serde_json::json!({
+                    "profile":"release x86_64-pc-windows-gnu", "logical_processors":std::thread::available_parallelism().unwrap().get(),
+                    "media_library":media_library,"encoder_library":library(),"media_sha256":digest(&fs::read(&media_library).unwrap()),
+                    "encoder_sha256":digest(&fs::read(library()).unwrap()),"frames":"24013 + track_index * 7", "sample_rate":48000,
+                    "channels":[2,6],"tracks_per_batch":16,"repeats":3,"verified_lossless_outputs":verified,
+                    "verification":"Every output decoded to S24 and compared against independent fixture PCM; MLP SHA256 matches first automatic-policy baseline",
+                    "measurements":measurements
+                })).unwrap()).unwrap();
+                fs::remove_dir_all(&run).unwrap();
+            }
+        }
+    }
+    println!("REPORT {} verified={verified}", report.display());
+}

@@ -93,7 +93,7 @@ Apache-2.0 licensing.
 Cache reuse still requires source/output fingerprints, encoder identity, target
 parameters and a complete MLP CRC/parity scan. Unknown or missing parameter
 cache evidence is probed again, never used to skip the scan. Automatic checking
-uses `min(available cores, 16, track count)` workers; cancellation or errors do
+uses `min(2 × available logical processors, track count)` workers; cancellation or errors do
 not save this run's parameter cache.
 
 ```powershell
@@ -111,3 +111,13 @@ full-scan ABI results, CRC boundaries and alignment output. The read-only
 (all six use the `DVDA_MLP_PREFLIGHT_` prefix). Media/encoder DLL identities
 must match the cache. Any cache miss fails without encoding or overwriting
 samples. Benchmark timings do not replace full disc and playback validation.
+
+## PCM preparation and worker evaluation
+
+All production worker pools use twice the detected logical processor count (saturating, minimum one), capped only by work items. Legacy job fields are ignored; CLI `--jobs` and evaluated `MlpJobs` are removed. Windows media codec contexts request the same automatic policy, subject to codec threading support. Build scripts share `worker_policy.py`; fixed build caps and the FFmpeg build `--jobs` selector are removed. GUI orchestration and the child-process tracing listener are single-task coordination, not parallel work pools.
+
+Batch encoding reuses the decoded temporary WAV only when its rate, storage/valid bits, channel mask, RIFF structure, and PCM precision satisfy the target. Otherwise normalization remains in place. Reusing 20-bit PCM checks the low four bits; cancellation and temporary-file cleanup are preserved. Normalization bulk-copies 16-to-16 and 24-to-24 PCM, validates then copies 24-to-20 PCM, and uses a dedicated 32-bit-storage-to-24-bit packing path without relaxing precision checks.
+
+The real cached preflight benchmark retains legacy 1/2/4/8/16 labels as compatibility probes: requested counts are ignored, and reports record both `requested_workers` and the actual automatic count. This measures cache checking, not full decoding/encoding throughput. Use real cached inputs and matching media/encoder DLLs, compare repeated-run medians, and monitor memory and CPU separately. Worker-policy unit tests alone do not justify production scheduling changes or performance claims.
+
+For a bounded synthetic end-to-end benchmark, opt into the ignored `synthetic_batch_worker_benchmark` test in `encoder_native.rs`. Set `DVDA_BATCH_BENCH=1`, `DVDA_BATCH_BENCH_ROOT` to a **new short absolute directory** under ignored `build`, `DVDA_BATCH_BENCH_EXE` to an extracted shipped onefile EXE, and `DVDA_ENCODER_LIBRARY` to the pinned encoder DLL. Run `cargo test --manifest-path rust\Cargo.toml -p dvda-core --test encoder_native --release --target x86_64-pc-windows-gnu synthetic_batch_worker_benchmark -- --ignored --exact --nocapture`. The test extracts checksum-verified embedded media dependencies, generates 16 half-second stereo/6-channel tracks per 16/20/24-bit batch, measures the automatic policy over three repeats with alternating legacy requested-count labels (1/2/4/8/16), and verifies all 720 outputs by deterministic MLP digest and lossless decoded PCM (including zero final-AU padding). It deletes each verified run's outputs and writes `worker-benchmark.json` inside the owned root. Short roots avoid legacy Win32 path limits during runtime extraction; timings exclude sample generation and verification, and are not a before/after optimization comparison or representative long-album benchmark.

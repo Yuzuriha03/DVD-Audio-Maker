@@ -21,7 +21,7 @@ The CLI restores `config --check/--shell/--shell-all`, `plan`, `prepare --force`
 
 `verify` supports `all/quick/capacity/audit/menu/timeline/lossless/config`; standalone `quick-check` and `audit` accept `--iso-dir`, `--manifest`, and `--log`. Successful checks return 0, damaged results return 1, and unavailable evidence or invalid usage returns 2. `--language` selects Chinese, English, or Japanese.
 
-`convert` / `m4a2flac PATH... [--dry-run] [--jobs N] [--level 0..8]` converts ALAC to FLAC through the native media library, preserves tags and cover bytes, and compares full-precision PCM before publishing. Explicit `--in-place` deletes sources only after every conversion succeeds. `alac check INPUT` and `alac repair INPUT [OUTPUT]` inspect or repair copies.
+`dvda-cli convert PATH... [--in-place] [--dry-run] [--level 0..8]` converts ALAC to FLAC; worker count is automatic: two workers per detected logical processor, capped only by the number of files. It preserves tags and cover bytes and compares full-precision PCM before publishing. Explicit `--in-place` deletes sources only after every conversion succeeds. `alac check INPUT` and `alac repair INPUT [OUTPUT]` inspect or repair copies.
 
 `iso list ISO [INNER]`, `iso extract ISO INNER OUTPUT`, `aob-pts FILE...`, and `mlp --check FILE...` provide format diagnostics. `mlp --align` remains an explicitly invoked developer repair operation; normal MLP encoding never patches its output through this command.
 
