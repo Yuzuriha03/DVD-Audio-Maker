@@ -106,6 +106,7 @@
     - 37.11 [独立脚本的隐蔽依赖：`identify`、`menu-bin` 不在 PATH、写死的 `/tmp`](#3711-独立脚本的隐蔽依赖identifymenu-bin-不在-path写死的-tmp)
     - 37.12 [实测数据（2026-09-27，Windows 全流程）](#3712-实测数据2026-09-27windows-全流程)
     - 37.13 [教训汇总](#3713-教训汇总)
+38. [菜单静图验证失败：单帧 PNG 编码被帧线程返回 EAGAIN](#38-菜单静图验证失败单帧-png-编码被帧线程返回-eagain)
 
 ---
 
@@ -5449,3 +5450,49 @@ disc2: 组1 56 轨 / 17 title + 组2  2 轨 / 1 title = 58 轨
   第三方工具识别、扇区边界、体积比）（37.8）。
 - **看「长度不等」先别判失败**：解码器会在尾部补帧，
   要比共同前缀并证明多出来的部分是纯填充。
+
+
+---
+
+## 38. 菜单静图验证失败：单帧 PNG 编码被帧线程返回 EAGAIN
+
+### 症状
+
+完整制盘 + 验证（两张盘、147 首）在**菜单验证**阶段失败，日志尾部是：
+
+```text
+[TASK] {"Action":"verify_menu_page","Current":1,"Total":31,...}
+Error while decoding or processing media: Resource temporarily unavailable
+[错误] Cannot decode menu page [MENU_VERIFICATION_FAILED]
+```
+
+两张盘都在**第一页**失败，音频 PCM 校验 147 首全部通过，说明制盘没问题，是校验侧的静图解码调用返回了错误。
+
+### 根因
+
+`tools/win-build/native/dvda-media.c` 的 `video()` 把静图的 `thread_count` 从 1 改成"逻辑处理器 ×2"（本机 16）。PNG 编码器 `pngenc` 带 `AV_CODEC_CAP_FRAME_THREADS`，于是 `ff_frame_thread_encoder_init()` 在 `thread_count > 1` 时启用了帧线程编码包装（`frame_thread_encoder.c` 第 172-173 行：`thread_count <= 1` 才直接返回）。
+
+帧线程编码器是异步的：`avcodec_send_frame()` 在 `buffer_frame` 仍被占用时返回 `AVERROR(EAGAIN)`（`encode.c:556`），`avcodec_receive_packet()` 在输出尚未回传时同样返回 `EAGAIN`。`video()` 每次调用只编码**一帧**，没有 flush，于是这两个 `EAGAIN` 被当成硬错误返回，`av_strerror()` 打印出来就是 “Resource temporarily unavailable”。
+
+解码侧不是原因：静图解码改成 ×2 后，`send_packet` 仍会在每次 `receive_frame` 后释放内部 `buffer_pkt`，实测 31/31 页正常。
+
+### 定位方法（单变量对照）
+
+同一个 ISO、同一个 `cli.cmd verify menu --iso` 入口，每次只改一个线程数：
+
+| 解码线程 | PNG 编码线程 | 菜单验证结果 |
+|---|---|---|
+| ×2 | **1** | 31/31 页通过（两张盘 31 + 19 页全部通过） |
+| 1 | **×2** | 第一页即 `MENU_VERIFICATION_FAILED` |
+
+结论：失败由 PNG 编码器的帧线程导致。
+
+### 修复
+
+一次性单帧 PNG 编码固定 `thread_count = 1`（帧线程对单帧没有收益，只会引入需要 flush 的缓冲语义）。批量音频解码/编码、编码 worker 池仍使用自动的“逻辑处理器 ×2”策略。
+
+### 教训
+
+- **全局“线程数 ×2”策略要看调用形态**：一次只处理一帧的路径加线程不会更快，还可能改变上游 API 的缓冲语义。
+- `AVERROR(EAGAIN)` 是“状态未就绪”，通常不是失败；把它当硬错误会在启用线程后才突然暴露。
+- 线程数这类改动必须用**单变量对照 + 真实样本**验证，单元测试覆盖不到 FFmpeg 内部线程包装的启用条件。

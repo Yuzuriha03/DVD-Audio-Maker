@@ -389,7 +389,9 @@ static int video(Call *call, AVFormatContext *format)
     if (sws_scale(scale, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height, rgb->data, rgb->linesize) != frame->height) { result = AVERROR(EIO); goto done; }
     codec = avcodec_find_encoder(AV_CODEC_ID_PNG); encoder = avcodec_alloc_context3(codec);
     if (!encoder) { result = AVERROR(ENOMEM); goto done; }
-    encoder->width = rgb->width; encoder->height = rgb->height; encoder->pix_fmt = AV_PIX_FMT_RGB24; encoder->time_base = (AVRational){1, 25}; encoder->thread_count = worker_count();
+    /* One still frame per call: the frame-thread encoder only hands output back
+       after a flush, so this single-frame encode must stay single-threaded. */
+    encoder->width = rgb->width; encoder->height = rgb->height; encoder->pix_fmt = AV_PIX_FMT_RGB24; encoder->time_base = (AVRational){1, 25}; encoder->thread_count = 1;
     if ((result = avcodec_open2(encoder, codec, NULL)) < 0 || (result = avcodec_send_frame(encoder, rgb)) < 0 || (result = avcodec_receive_packet(encoder, packet)) < 0) goto done;
     file = utf8_write(call->request->output); if (!file) { result = AVERROR(errno); goto done; }
     result = fwrite(packet->data, 1, packet->size, file) == (size_t)packet->size ? 0 : AVERROR(EIO);
