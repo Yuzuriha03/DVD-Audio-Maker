@@ -185,16 +185,11 @@ pub unsafe fn initialize(archive: &[u8]) -> Result<(), String> {
         for key in [
             "DVDA_MEDIA_NATIVE_DIR",
             "DVDA_IMAGE_NATIVE_DIR",
-            "DVDA_FORMATS_NATIVE_DIR",
             "DVDA_MENU_NATIVE_DIR",
         ] {
             std::env::set_var(key, &root);
         }
         std::env::set_var("DVDA_ENCODER_LIBRARY", root.join("mlp_encoder.dll"));
-        std::env::set_var(
-            "DVDA_DISC_VERIFY_LIBRARY",
-            root.join("dvda-disc-verify.dll"),
-        );
     }
     DIRECTORY
         .set(root)

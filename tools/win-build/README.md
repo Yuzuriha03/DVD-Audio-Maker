@@ -17,6 +17,8 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --work
 
 打包器需要已验证的 x64 目录：`build/media-native-shared`、`build/image-native`、`build/rust-author-current`、菜单资源目录，以及 `native/mlp-encoder/win-x64/mlp_encoder.dll`。FFmpeg 和 ImageMagick 命令行程序不是运行时输入；所需库通过项目 C ABI 加载。MLP 编码源码和构建脚本位于 `native/mlp-encoder`。
 
+格式解析、MLP CRC/奇偶校验、PCM 比较及只读 AOB 成品校验已经内置为 Rust 实现，不需要格式或校验 DLL。打包不再接受 `--formats-runtime` 输入。
+
 ## 发布 ZIP
 
 ```bat

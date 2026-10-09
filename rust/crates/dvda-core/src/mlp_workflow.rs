@@ -804,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires source-built x64 dvda-formats.dll"]
+    #[ignore = "requires source-built x64 media and author runtime"]
     fn parallel_checks_reuse_parameters_preserve_order_detect_middle_damage_and_cancel() {
         let root = std::env::temp_dir().join(format!("dvda-mlp-check-{}", std::process::id()));
         fs::create_dir_all(root.join("output")).unwrap();
@@ -1176,7 +1176,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires source-built x64 dvda-formats.dll"]
+    #[ignore = "requires source-built x64 media and author runtime"]
     fn acquisition_entrypoint_reports_corrupt_cache_and_revalidates_missing_source() {
         #[derive(Default)]
         struct Events(Vec<String>);

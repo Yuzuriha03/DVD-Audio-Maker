@@ -13,12 +13,7 @@ pub struct Inputs {
     pub records: Vec<PathBuf>,
 }
 
-pub fn validate(
-    media: &Path,
-    image: &Path,
-    author: &Path,
-    formats: &Path,
-) -> Result<Inputs, String> {
+pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, String> {
     let mut inputs = Inputs {
         files: BTreeMap::new(),
         records: Vec::new(),
@@ -50,18 +45,7 @@ pub fn validate(
         false,
     )?;
     let _ = image_record;
-    let (formats_record, formats_files) = component(
-        formats,
-        "formats-build.json",
-        "files",
-        &["dvda-formats.dll"],
-        true,
-        false,
-    )?;
-    if formats_record["profile"] != "c17-formats-runtime" {
-        return Err("Invalid C17 formats build profile".into());
-    }
-    let (author_record, mut author_files) = component(
+    let (author_record, author_files) = component(
         author,
         "author-build.json",
         "runtime_files",
@@ -71,7 +55,6 @@ pub fn validate(
             "avutil-61.dll",
             "dvda-menu-spu.dll",
             "dvda-menu-nav.dll",
-            "dvda-disc-verify.dll",
         ],
         false,
         true,
@@ -82,6 +65,15 @@ pub fn validate(
     {
         return Err("Author must use the shared source-built FFmpeg profile and in-process source-built menu libraries".into());
     }
+    let mut author_files = author_files;
+    // Legacy manifests may record the old verifier. Authenticate it in its original
+    // directory, but check the executable against the DLLs actually shipped.
+    author_files.remove("dvda-disc-verify.dll");
+    for (name, path) in &author_files {
+        let imports = pe::imports(&fs::read(path).map_err(err)?, true)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        closure(name, &imports, &author_files, true)?;
+    }
     let author_exe = author.join("dvda-author-dev.exe");
     let imports = validate_binary(
         &author_exe,
@@ -90,7 +82,7 @@ pub fn validate(
     )?;
     closure("dvda-author-dev.exe", &imports, &author_files, true)?;
     author_files.insert("dvda-author-dev.exe".into(), author_exe);
-    for files in [media_files, image_files, formats_files, author_files] {
+    for files in [media_files, image_files, author_files] {
         for (name, path) in files {
             if let Some(existing) = inputs.files.get(&name) {
                 if fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)? {
@@ -107,7 +99,6 @@ pub fn validate(
         (media, "media-build.json"),
         (image, "image-build.json"),
         (author, "author-build.json"),
-        (formats, "formats-build.json"),
     ] {
         inputs.records.push(dir.join(name));
     }
@@ -314,7 +305,6 @@ pub(crate) mod tests {
                     ],
                 ),
                 ("image", "image-build.json", vec!["dvda-image.dll"]),
-                ("formats", "formats-build.json", vec!["dvda-formats.dll"]),
                 (
                     "author",
                     "author-build.json",
@@ -324,7 +314,6 @@ pub(crate) mod tests {
                         "avutil-61.dll",
                         "dvda-menu-spu.dll",
                         "dvda-menu-nav.dll",
-                        "dvda-disc-verify.dll",
                     ],
                 ),
             ] {
@@ -339,7 +328,7 @@ pub(crate) mod tests {
                         serde_json::json!({"bytes":b.len(),"sha256":hash(&b)}),
                     );
                 }
-                let mut record = serde_json::json!({"profile":if dir=="formats" {"c17-formats-runtime"}else{"shared"},"files":files});
+                let mut record = serde_json::json!({"profile":"shared","files":files});
                 if dir == "author" {
                     record["runtime_files"] = record["files"].take();
                     let b = pe::fixture(false, &["avcodec-63.dll"], &["dvda-menu-spu.dll"]);
@@ -358,7 +347,6 @@ pub(crate) mod tests {
                 &self.root.join("media"),
                 &self.root.join("image"),
                 &self.root.join("author"),
-                &self.root.join("formats"),
             )
         }
         pub fn edit(&self, dir: &str, change: impl FnOnce(&mut Value)) {
@@ -385,9 +373,51 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn legacy_verifier_is_authenticated_but_never_shipped_or_used_as_import_closure() {
+        let f = Fixture::new();
+        let verifier = pe::fixture(true, &["kernel32.dll"], &[]);
+        fs::write(f.root.join("author/dvda-disc-verify.dll"), &verifier).unwrap();
+        f.edit("author", |record| {
+            record["runtime_files"]["dvda-disc-verify.dll"] =
+                serde_json::json!({"bytes":verifier.len(), "sha256":hash(&verifier)});
+        });
+        let files = f.validate().unwrap().files;
+        assert!(!files.contains_key("dvda-disc-verify.dll"));
+        f.replace(
+            "author",
+            "dvda-menu-nav.dll",
+            pe::fixture(true, &["dvda-disc-verify.dll"], &[]),
+        );
+        assert!(
+            f.validate()
+                .unwrap_err()
+                .contains("Missing native dependency")
+        );
+        f.replace("author", "dvda-menu-nav.dll", pe::fixture(true, &[], &[]));
+        fs::write(f.root.join("author/dvda-disc-verify.dll"), b"tampered").unwrap();
+        assert!(f.validate().unwrap_err().contains("checksum"));
+    }
+
+    #[test]
+    fn author_executable_must_not_import_unshipped_legacy_verifier() {
+        let f = Fixture::new();
+        let executable = pe::fixture(false, &["dvda-disc-verify.dll"], &[]);
+        fs::write(f.root.join("author/dvda-author-dev.exe"), &executable).unwrap();
+        f.edit("author", |record| {
+            record["files"]["dvda-author-dev.exe"] =
+                serde_json::json!({"bytes":executable.len(),"sha256":hash(&executable)});
+        });
+        assert!(
+            f.validate()
+                .unwrap_err()
+                .contains("Missing native dependency")
+        );
+    }
+
+    #[test]
     fn manifest_integrity_and_exact_inventory() {
         let f = Fixture::new();
-        assert_eq!(f.validate().unwrap().files.len(), 12);
+        assert_eq!(f.validate().unwrap().files.len(), 10);
         f.edit("media", |d| {
             d["files"].as_object_mut().unwrap().remove("dvda-media.dll");
         });
@@ -420,12 +450,11 @@ pub(crate) mod tests {
     }
     #[test]
     fn component_architecture_dependencies_and_shared_profile() {
-        for dir in ["media", "image", "formats", "author"] {
+        for dir in ["media", "image", "author"] {
             let name = match dir {
                 "media" => "dvda-media.dll",
                 "image" => "dvda-image.dll",
-                "formats" => "dvda-formats.dll",
-                _ => "dvda-disc-verify.dll",
+                _ => "dvda-menu-nav.dll",
             };
             for delayed in [false, true] {
                 let f = Fixture::new();
@@ -466,11 +495,7 @@ pub(crate) mod tests {
             f.edit("author", |d| d[field] = "wrong".into());
             assert!(f.validate().is_err());
         }
-        for name in [
-            "dvda-menu-spu.dll",
-            "dvda-menu-nav.dll",
-            "dvda-disc-verify.dll",
-        ] {
+        for name in ["dvda-menu-spu.dll", "dvda-menu-nav.dll"] {
             let f = Fixture::new();
             f.edit("author", |d| {
                 d["runtime_files"].as_object_mut().unwrap().remove(name);
