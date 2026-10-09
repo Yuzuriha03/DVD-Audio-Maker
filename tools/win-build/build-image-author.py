@@ -185,7 +185,7 @@ def main():
             pending.append(destination)
     menu_runtime=a.menu_runtime.resolve()
     menu_manifest=json.loads((menu_runtime/'menu-build.json').read_text(encoding='utf-8'))
-    for name in ['dvda-menu-spu.dll','dvda-menu-nav.dll','dvda-disc-verify.dll']:
+    for name in ['dvda-menu-spu.dll','dvda-menu-nav.dll']:
         path=menu_runtime/name
         if sha(path)!=menu_manifest['files'][name]['sha256']:
             raise ValueError('Menu library checksum mismatch: '+name)

@@ -625,12 +625,6 @@
     "ネイティブコンポーネントに必要な関数がありません：{0}"
   ],
   [
-    "dvda-formats.dll was not found; set DVDA_FORMATS_NATIVE_DIR or DVDA_FORMATS_NATIVE_LIBRARY",
-    "找不到格式处理组件 dvda-formats.dll，请完整解压发布包。",
-    "The format component dvda-formats.dll was not found. Extract the complete release archive.",
-    "形式処理用の dvda-formats.dll がありません。配布 ZIP をすべて展開してください。"
-  ],
-  [
     "LPCM title boundary count does not match source count",
     "LPCM 标题边界数量与音轨数量不一致。",
     "The number of LPCM title boundaries does not match the track count.",
@@ -716,12 +710,6 @@
     "JSON 设置方案格式无效。",
     "The JSON settings profile is invalid.",
     "JSON 設定プロファイルの形式が無効です。"
-  ],
-  [
-    "dvda-disc-verify.dll was not found; set DVDA_DISC_VERIFY_LIBRARY or DVDA_MENU_NATIVE_DIR",
-    "找不到成品验证组件 dvda-disc-verify.dll，请完整解压发布包。",
-    "The output verification component dvda-disc-verify.dll was not found. Extract the complete release archive.",
-    "出力検証用の dvda-disc-verify.dll がありません。配布 ZIP をすべて展開してください。"
   ],
   [
     "未执行",

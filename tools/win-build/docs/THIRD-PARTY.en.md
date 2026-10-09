@@ -10,6 +10,7 @@ the ZIP root as `LICENSE`, `NOTICE-Image.txt` and `NOTICE-Menu.txt`.
 | `dvda-menu-nav.dll`, `dvda-menu-spu.dll` | Menu navigation and subpictures | GPL v2 or later, from `tools/menu-native/vendor` |
 | `dvda-media.dll` | In-process media operations | Project GPL v3 C ABI linked to required FFmpeg libraries |
 | `dvda-image.dll` | In-process image operations | Project bridge code and the upstream ImageMagick/FreeType licenses |
+| Rust formats and disc verification | Built-in format parsing, PCM comparison and AOB MLP/LPCM verification | Project GPL v3; LPCM packing rules translated from `dvda-author`, retaining upstream attribution |
 | `mlp_encoder.dll` | MLP encoding | Project C17 core, GPL v3 |
 | `DvdaNotoCJK-Regular.ttc` | Chinese, Japanese and Korean menu fonts | SIL Open Font License 1.1 |
 
