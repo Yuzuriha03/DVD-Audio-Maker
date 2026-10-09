@@ -82,7 +82,7 @@ cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --wor
 
 - [Development, debugging and CLI](docs/DEVELOPMENT.en.md)
 - [C# to Rust migration plan and acceptance criteria (Chinese)](docs/RUST-MIGRATION.md)
-- [C17 format runtime and byte-level validation](docs/C17-FORMATS.md)
+- [Rust format processing and byte-level validation](docs/C17-FORMATS.md)
 - [Windows builds, native components and packaging](tools/win-build/README.en.md)
 - [Single-file packaging design and validation](docs/ONEFILE-PUBLISH.md)
 - [MLP integration and validation limits](docs/MLP-ENCODER.en.md)

@@ -27,6 +27,8 @@ The package assembler expects validated x64 directories:
 
 FFmpeg and ImageMagick command-line programs are not runtime inputs. Their required libraries are built from source and loaded through the project C ABI. The MLP encoder source and build recipe are under `native/mlp-encoder`.
 
+Format parsing, MLP CRC/parity, PCM comparison and read-only AOB disc verification are implemented in Rust. No format or verifier DLL is required; packaging no longer accepts `--formats-runtime`.
+
 ## Release ZIP
 
 After native inputs are available:

@@ -10,7 +10,7 @@ Windows x64 workspace 最终 **160 项通过，0 失败、0 忽略**；116 个�
 
 - GUI/CLI 制作入口自动检查音源，恢复有效准备快照，核对编码身份、磁盘空间与光盘断点，再事务式发布。
 - 成品验证包含源到目标 PCM、编码结果到盘内音频、IFO 曲目和时间线，以及菜单导航、按钮、高亮和画面。
-- `MlpStreamAligner`、`PcmComparer` 与格式边界继续由 C17 DLL 提供。MLP 固定样本按输入、参数和上下文核对完整输出，不对编码结果打补丁。
+- `MlpStreamAligner`、`PcmComparer`、格式边界和只读 AOB MLP/LPCM 成品校验现由 Rust 提供。MLP 编码器仍保留 C17 核心；固定样本按输入、参数和上下文核对完整输出，不对编码结果打补丁。
 - 三语言 GUI 及准备报告共享翻译资源，路径、音轨标题和元数据保持原样，未知原生诊断保留原文。
 - JSON 配置自动保存，支持打开、保存和另存；旧 config.env、C# 兼容层、GUI dry-run 和外部编码进程已按用户要求移除。
 - 发布包是必要组件内嵌的 x64 GUI EXE，用户说明和许可旁置，同放进一个标准命名 ZIP。
@@ -22,10 +22,9 @@ Windows x64 workspace 最终 **160 项通过，0 失败、0 忽略**；116 个�
 | `rust/crates/dvda-core` | Rust 工作流、配置、缓存、媒体准备、制盘、校验和业务规则 |
 | `rust/crates/dvda-desktop` | 原生 Win32 GUI |
 | `rust/crates/dvda-cli` | 开发 CLI、样本和验证入口 |
-| `rust/crates/dvda-native` | 原生 DLL 的 Rust ABI 加载与调用 |
+| `rust/crates/dvda-native` | Rust 格式处理、只读成品校验及其余原生 DLL 的 ABI 加载与调用 |
 | `rust/crates/dvda-toolchain` | Rust 发布打包与包内容审计 |
 | `native/mlp-encoder` | MLP C17 编码核心、源码、构建脚本和固定 x64 DLL |
-| `tools/formats-native` | 格式解析、对齐和 PCM 比较的 C17 DLL 源码 |
 | `tools/win-build` | 原生组件构建、author 组装和发布包辅助脚本 |
 
 ## 配置规则
@@ -43,12 +42,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-wo
 cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release --workspace --offline
 ```
 
-需要使用本机已验证的原生 DLL 目录设置 `DVDA_ENCODER_LIBRARY`、`DVDA_MEDIA_NATIVE_DIR`、`DVDA_IMAGE_NATIVE_DIR`、`DVDA_DISC_VERIFY_LIBRARY` 和 `DVDA_FORMATS_NATIVE_DIR`，然后运行 workspace 测试。菜单 fixture 会在进程内生成菜单、索引页、静图、AUDIO_TS 和 ISO，并调用项目构建的 author 验证。
+需要使用本机已验证的原生 DLL 目录设置 `DVDA_ENCODER_LIBRARY`、`DVDA_MEDIA_NATIVE_DIR` 和 `DVDA_IMAGE_NATIVE_DIR`，然后运行 workspace 测试。格式与只读成品校验不需要 DLL。菜单 fixture 会在进程内生成菜单、索引页、静图、AUDIO_TS 和 ISO，并调用项目构建的 author 验证。
 
 发布包由以下命令生成：
 
 ```powershell
-dvda-toolchain.exe package --repo . --output build/rust-migration-checklist-package --media-runtime build/media-native-shared --image-runtime build/image-native --image-author build/rust-author-current --source build/source-release-20261004 --prebuilt build/prebuilt-release-20261004 --formats-runtime build/formats-native --version v1.0
+dvda-toolchain.exe package --repo . --output build/rust-migration-checklist-package --media-runtime build/media-native-shared --image-runtime build/image-native --image-author build/rust-author-current --source build/source-release-20261004 --prebuilt build/prebuilt-release-20261004 --version v1.0
 ```
 
 标准包名为 `DVD-Audio-Maker-v1.0-win-x64.zip`。必要组件内嵌，首次运行释放到用户缓存并验证完整性；三个用户 README 与许可放在 EXE 旁边。详细布局和独立 EXE 验证脚本见 [单文件发布](ONEFILE-PUBLISH.md)。

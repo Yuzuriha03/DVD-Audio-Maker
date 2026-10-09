@@ -82,7 +82,7 @@ cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --wor
 
 - [开发调试与 CLI](docs/DEVELOPMENT.md)
 - [C# 应用层迁移至 Rust：阶段与验收计划](docs/RUST-MIGRATION.md)
-- [C17 格式运行库与逐字节验证](docs/C17-FORMATS.md)
+- [Rust 格式处理与逐字节验证](docs/C17-FORMATS.md)
 - [Windows 构建、原生组件与发布](tools/win-build/README.md)
 - [单文件打包设计与验收](docs/ONEFILE-PUBLISH.md)
 - [MLP 集成与测试边界](docs/MLP-ENCODER.md)

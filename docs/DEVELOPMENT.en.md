@@ -1,8 +1,9 @@
 # Development and debugging
 
 The application is a Windows x64 Rust workspace. User packages contain only
-the GUI; the developer CLI remains in source. Media, image, format, verifier
-and MLP components are called through project-built native DLLs.
+the GUI; the developer CLI remains in source. Format processing and read-only
+disc verification use Rust directly. Media, image and MLP encoding components
+still use project-built native DLLs.
 
 ## Source entry points
 
@@ -28,13 +29,13 @@ is a developer CLI diagnostic and is not exposed in the GUI.
 
 Build native components using the [Windows build instructions](../tools/win-build/README.en.md). Source launchers use rust-dev-env.cmd to select the build directories; explicit environment overrides take precedence. The user EXE embeds its own runtime.
 Development tests may explicitly select validated components with
-`DVDA_MEDIA_NATIVE_DIR`, `DVDA_IMAGE_NATIVE_DIR`, `DVDA_FORMATS_NATIVE_DIR` and
+`DVDA_MEDIA_NATIVE_DIR`, `DVDA_IMAGE_NATIVE_DIR` and
 `DVDA_ENCODER_LIBRARY`; missing components fail explicitly.
 
-The MLP C17 core is under `native/mlp-encoder`, and the format C17 DLL sources
-are under `tools/formats-native`. Use matching MinGW symbols and a native
-debugger; do not change the production encoder's floating-point options for
-debugging.
+The MLP C17 core is under `native/mlp-encoder`; its production floating-point
+options remain unchanged. Format parsing, MLP CRC/parity, PCM comparison and
+AOB disc verification are implemented in Rust in `dvda-native`, without a
+format or disc-verification DLL dependency.
 
 ## VS Code
 
@@ -97,15 +98,13 @@ uses `min(2 × available logical processors, track count)` workers; cancellation
 not save this run's parameter cache.
 
 ```powershell
-python tools\win-build\build-formats-runtime.py --msys-root C:\msys64 --output build\formats-native
-python tools\win-build\test-formats-optimization.py --before C:\previous\dvda-formats.dll --after build\formats-native\dvda-formats.dll --samples C:\samples\mlp --report build\formats-report.json
-$env:DVDA_FORMATS_NATIVE_DIR = (Resolve-Path build\formats-native).Path
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native -- --include-ignored
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native
 cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-core --lib mlp_workflow -- --include-ignored --skip real_cached --skip another_volume
 ```
 
-The comparison script requires a previous DLL and actual MLP samples. It checks
-full-scan ABI results, CRC boundaries and alignment output. The read-only
+Rust tests cover full scans, CRC boundaries, alignment output and PCM comparison.
+Optional legacy-DLL differential tests are described in [format processing](C17-FORMATS.md).
+The read-only
 `real_cached_mlp_preflight_benchmark_is_read_only` test needs
 `DVDA_MLP_PREFLIGHT_MANIFEST`, `ROOT`, `OUTPUT`, `MEDIA`, `ENCODER` and `REPORT`
 (all six use the `DVDA_MLP_PREFLIGHT_` prefix). Media/encoder DLL identities

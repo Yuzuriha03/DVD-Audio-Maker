@@ -7,6 +7,7 @@ mod fonts;
 mod pe;
 mod publication;
 mod validation;
+mod verifier;
 
 use std::{
     env, fs,
@@ -19,7 +20,6 @@ struct Args {
     repository: Option<PathBuf>,
     output: Option<PathBuf>,
     media_runtime: Option<PathBuf>,
-    formats_runtime: Option<PathBuf>,
     image_runtime: Option<PathBuf>,
     image_author: Option<PathBuf>,
     source: Option<PathBuf>,
@@ -48,6 +48,9 @@ fn run_args(arguments: Vec<String>) -> Result<(), String> {
     if command == "font" {
         return fonts::run(&args.collect::<Vec<_>>());
     }
+    if command == "verify-aob" {
+        return verifier::run(&args.collect::<Vec<_>>());
+    }
     if command != "package" {
         return Err(format!("Unknown command: {command}"));
     }
@@ -65,7 +68,6 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--repo" => options.repository = Some(value.into()),
             "--output" => options.output = Some(value.into()),
             "--media-runtime" => options.media_runtime = Some(value.into()),
-            "--formats-runtime" => options.formats_runtime = Some(value.into()),
             "--image-runtime" => options.image_runtime = Some(value.into()),
             "--image-author" => options.image_author = Some(value.into()),
             "--source" => options.source = Some(value.into()),
@@ -159,15 +161,6 @@ fn package(options: Args) -> Result<(), String> {
         ),
         "author runtime",
     )?;
-    let formats = required_dir(
-        input_path(
-            &repository,
-            options.formats_runtime,
-            None,
-            "build/formats-native",
-        ),
-        "C17 formats runtime",
-    )?;
     let source = input_path(
         &repository,
         options.source,
@@ -181,7 +174,7 @@ fn package(options: Args) -> Result<(), String> {
         "tools/win-build/prebuilt",
     );
     // All provenance and dependency checks precede any changes to release files.
-    let inputs = validation::validate(&media, &image, &author, &formats)?;
+    let inputs = validation::validate(&media, &image, &author)?;
     let candidate = publication::Candidate::new(&output)?;
     let stage = candidate.root.join("DVD-Audio-Maker");
     let runtime = candidate.root.join("runtime-input");
@@ -486,7 +479,7 @@ fn io_error(error: impl std::fmt::Display) -> String {
 
 fn print_usage() {
     println!(
-        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--media-runtime PATH] [--formats-runtime PATH] [--image-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--version v1.0]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
+        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--media-runtime PATH] [--image-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
     );
 }
 
@@ -513,7 +506,7 @@ mod tests {
         ] {
             assert!(validate_version(version).is_err());
         }
-        for option in ["--formats-runtime", "--source", "--prebuilt", "--version"] {
+        for option in ["--source", "--prebuilt", "--version"] {
             assert!(parse_args(vec![option.into()].into_iter()).is_err());
             assert!(parse_args(vec![option.into(), String::new()].into_iter()).is_err());
             assert!(parse_args(vec![option.into(), "--repo".into()].into_iter()).is_err());
@@ -536,11 +529,7 @@ mod tests {
             ),
             repo.join("chosen space")
         );
-        for chosen in ["formats A", "formats 中文 B"] {
-            let args =
-                parse_args(vec!["--formats-runtime".into(), chosen.into()].into_iter()).unwrap();
-            assert_eq!(args.formats_runtime, Some(PathBuf::from(chosen)));
-        }
+        assert!(parse_args(vec!["--formats-runtime".into(), "unused".into()].into_iter()).is_err());
     }
 
     fn entry(f: &Fixture) -> Result<(), String> {
@@ -554,8 +543,6 @@ mod tests {
             "image".into(),
             "--image-author".into(),
             "author".into(),
-            "--formats-runtime".into(),
-            "formats".into(),
             "--output".into(),
             "output".into(),
         ])

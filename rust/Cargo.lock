@@ -86,6 +86,7 @@ name = "dvda-toolchain"
 version = "0.1.0"
 dependencies = [
  "dvda-core",
+ "dvda-native",
  "serde_json",
 ]
 

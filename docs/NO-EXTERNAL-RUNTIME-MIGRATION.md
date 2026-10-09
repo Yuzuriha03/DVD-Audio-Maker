@@ -11,7 +11,7 @@ Windows x64 工作流现在由 Rust 应用和项目构建的原生组件完成�
 | MLP | 通过流式 C ABI 调用 `mlp_encoder.dll` |
 | DVD 菜单 | `dvda-menu-spu.dll`、`dvda-menu-nav.dll` 和项目构建的 author |
 | ISO 写入 | author 内置 ISO 写入器 |
-| 成品校验 | `dvda-disc-verify.dll`、Rust ISO 读取和 PCM 比较 |
+| 成品校验 | Rust ISO 读取、AOB 流式 MLP/LPCM 比较和 PCM 校验 |
 | 配置 | 仅使用版本化 JSON 方案 |
 
 发布 ZIP 是 Windows x64 原生 GUI 包。必要 DLL、菜单资源、字体、许可证和用户文档随包提供。组件缺失时报告错误，不替换为外部程序。

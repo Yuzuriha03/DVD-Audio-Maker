@@ -1,7 +1,7 @@
 //! Rust-owned verification of published DVD-Audio images.
 //!
 //! Verification uses the repository's ISO reader, AOB timestamp parser and
-//! C17 `dvda-disc-verify.dll`. It deliberately has no media-process fallback.
+//! Native Rust disc verification. It deliberately has no media-process fallback.
 use crate::{
     aob, formats,
     verification::{self, DiscEvidence, GroupEvidence},

@@ -7,8 +7,6 @@ param(
 $ErrorActionPreference = "Stop"
 $env:DVDA_MEDIA_NATIVE_DIR = (Resolve-Path -LiteralPath $MediaRuntime).Path
 $env:DVDA_ENCODER_LIBRARY = (Resolve-Path native/mlp-encoder/win-x64/mlp_encoder.dll).Path
-$env:DVDA_FORMATS_NATIVE_DIR = (Resolve-Path build/formats-native).Path
-$env:DVDA_DISC_VERIFY_LIBRARY = (Resolve-Path build/menu-native/dvda-disc-verify.dll).Path
 $env:DVDA_IMAGE_NATIVE_DIR = (Resolve-Path build/image-native).Path
 $env:DVDA_TEST_AUTHOR = (Resolve-Path -LiteralPath (Join-Path $AuthorRuntime "dvda-author-dev.exe")).Path
 $env:DVDA_TEST_MENU_DATA = (Resolve-Path -LiteralPath $MenuData).Path

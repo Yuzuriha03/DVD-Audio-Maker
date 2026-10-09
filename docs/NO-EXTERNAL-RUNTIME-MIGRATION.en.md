@@ -14,7 +14,7 @@ eac3to, SurCode, dvdauthor or mkisofs.
 | MLP | `mlp_encoder.dll` through the streaming C ABI |
 | DVD menus | `dvda-menu-spu.dll`, `dvda-menu-nav.dll` and the project-built author |
 | ISO writing | the author's in-process ISO writer |
-| Disc verification | `dvda-disc-verify.dll`, Rust ISO reading and PCM comparison |
+| Disc verification | Rust ISO reading, streaming AOB MLP/LPCM comparison and PCM checks |
 | Configuration | versioned JSON profiles only |
 
 The release ZIP is a native Windows x64 GUI package. It contains the required DLLs,

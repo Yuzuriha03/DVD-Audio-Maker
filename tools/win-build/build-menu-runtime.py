@@ -44,12 +44,7 @@ def main():
         if any(not (Path(os.environ['SystemRoot'])/'System32'/n).exists() for n in imports):
             raise ValueError('Unexpected menu runtime import: '+str(imports))
         files[dll.name]={'bytes':dll.stat().st_size,'sha256':sha(dll),'imports':imports}
-    verifier=out/'dvda-disc-verify.dll'
-    subprocess.run([str(compiler),'-O2','-std=gnu11','-Wall','-Wextra','-Werror','-shared','-static-libgcc','-s',
-                    '-Wl,--no-insert-timestamp','-Wl,--exclude-all-symbols',str(root/'disc-verify.c'),
-                    '-o',str(verifier)],env=env,check=True)
-    files[verifier.name]={'bytes':verifier.stat().st_size,'sha256':sha(verifier),'imports':sorted(Pe(verifier).imports())}
-    record={'target':'Windows x64','scope':'DVD menu subpictures, DVD-Audio AMGM navigation and read-only MLP verification',
+    record={'target':'Windows x64','scope':'DVD menu subpictures and DVD-Audio AMGM navigation',
             'compiler':subprocess.check_output([str(compiler),'--version'],env=env).decode().splitlines()[0],
             'files':files,'source_inputs':{f.relative_to(root).as_posix():sha(f) for f in sorted(root.rglob('*')) if f.is_file()}}
     (out/'menu-build.json').write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')

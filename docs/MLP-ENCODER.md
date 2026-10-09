@@ -49,6 +49,6 @@ cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --work
 cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
 ```
 
-原生 ABI 测试覆盖编码器、PCM 比较、格式解析和失败路径。原版文件逐字节对照记录在 `native/mlp-encoder/mlpencoder-validation.json`，它用于固定编码器产物验收，不是通过事后修补输出获得的一致性。
+原生 ABI 测试覆盖编码器及其失败路径；Rust 测试覆盖 PCM 比较、格式解析和只读成品校验。原版文件逐字节对照记录在 `native/mlp-encoder/mlpencoder-validation.json`，它用于固定编码器产物验收，不是通过事后修补输出获得的一致性。
 
 编码器会拒绝不支持的布局、浮点 PCM、有效位丢失、损坏输入以及超过当前 RIFF/WAVE 32 位长度边界的音轨。超大 AU 的无损回退见 `docs/MLP-OVERSIZE-FIX.md`。

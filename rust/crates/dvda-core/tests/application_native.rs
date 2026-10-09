@@ -751,7 +751,10 @@ fn application_menu_and_title_boundaries() {
     }
     impl Callbacks for BlockStill {
         fn emit(&mut self, _: i32, text: &str) {
-            if !self.blocked && text.contains("720 576") && self.root.join("bg0.jpg").is_file() {
+            if !self.blocked
+                && text.starts_with("[menu-cover] background ")
+                && self.root.join("bg0.jpg").is_file()
+            {
                 fs::create_dir(self.root.join("still0.jpg")).unwrap();
                 self.blocked = true;
             }

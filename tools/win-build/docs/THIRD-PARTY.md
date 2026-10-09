@@ -8,6 +8,7 @@
 | `dvda-menu-nav.dll`、`dvda-menu-spu.dll` | 菜单导航和子图像 | GPL v2 或更高版本，来自 `tools/menu-native/vendor` |
 | `dvda-media.dll` | 进程内媒体处理 | 项目 GPL v3 C ABI，链接所需 FFmpeg 库 |
 | `dvda-image.dll` | 进程内图像处理 | 项目桥接代码及 ImageMagick/FreeType 等上游许可证 |
+| Rust 格式与成品校验 | 内置格式解析、PCM 比较和 AOB MLP/LPCM 校验 | 项目 GPL v3；LPCM 打包规则移植自 `dvda-author`，保留上游归属 |
 | `mlp_encoder.dll` | MLP 编码 | 项目 C17 核心，GPL v3 |
 | `DvdaNotoCJK-Regular.ttc` | 中日韩菜单字体 | SIL Open Font License 1.1 |
 
