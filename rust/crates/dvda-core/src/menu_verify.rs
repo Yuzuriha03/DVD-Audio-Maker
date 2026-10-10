@@ -41,17 +41,21 @@ fn cancel(caller: &mut dyn Callbacks) -> Result<(), String> {
     }
 }
 pub fn ranges(amg: &[u8], vob_bytes: u64) -> Result<Vec<(u32, u32)>, String> {
-    let pages = read16(amg, 0x1810)? as usize;
+    let pointer = read32(amg, 0xcc)? as usize;
+    let directory = if pointer == 0 { 0x1800 } else { pointer * 2048 };
+    let pages = read16(amg, directory + 0x10)? as usize;
     if pages == 0 {
         return Err("AMG declares no menu pages".into());
     }
-    let required = 0x1820 + 8 * (pages - 1) + pages * 0x13a;
+    // Each page contributes an eight-byte directory entry and a 306-byte PGC.
+    // The 314-byte stride already includes the directory entry.
+    let required = directory + 24 + pages * 314;
     if amg.len() < required {
         return Err("AMG_TABLE_OUT_OF_RANGE".into());
     }
-    let mut bases = vec![0x1810 + read32(amg, 0x181c)? as usize];
+    let mut bases = vec![directory + 0x10 + read32(amg, directory + 0x1c)? as usize];
     for i in 0..pages - 1 {
-        bases.push(0x1810 + read32(amg, 0x1824 + i * 8)? as usize);
+        bases.push(directory + 0x10 + read32(amg, directory + 0x24 + i * 8)? as usize);
     }
     if bases
         .windows(2)
@@ -232,7 +236,17 @@ fn verify_navigation_pointers(
     // The two title tables are copies in separate sectors. Validate every
     // declared record in both so neither stale copy can hide a bad pointer.
     let mut declared_count = None;
-    for table_start in [0x800usize, 0x1000] {
+    let pointers = [read32(amg, 0xc4)? as usize, read32(amg, 0xc8)? as usize];
+    let legacy = pointers == [0, 0];
+    let starts = if legacy {
+        [0x800, 0x1000]
+    } else {
+        [pointers[0] * 2048, pointers[1] * 2048]
+    };
+    if !legacy && (starts[0] < 2048 || starts[1] <= starts[0]) {
+        return Err("AMG_TITLE_TABLE_OUT_OF_RANGE".into());
+    }
+    for table_start in starts {
         let count = read16(amg, table_start)? as usize;
         let last_byte = read16(amg, table_start + 2)? as usize;
         let table_bytes = 4usize
@@ -242,7 +256,8 @@ fn verify_navigation_pointers(
                     .ok_or("AMG_TITLE_TABLE_OUT_OF_RANGE")?,
             )
             .ok_or("AMG_TITLE_TABLE_OUT_OF_RANGE")?;
-        if table_bytes > 2048 || last_byte.checked_add(1) != Some(table_bytes) {
+        let available = if legacy { 2048 } else { starts[1] - starts[0] };
+        if table_bytes > available || last_byte.checked_add(1) != Some(table_bytes) {
             return Err("AMG_TITLE_TABLE_OUT_OF_RANGE".into());
         }
         if declared_count
@@ -510,10 +525,10 @@ pub fn verify(
             &images,
             &output,
             None,
-            "%[fx:standard_deviation*255] %k",
+            "%[fx:standard_deviation*255] %k %h",
             caller,
         )?;
-        if frame.len() != 2 {
+        if frame.len() != 3 || !matches!(frame[2] as usize, 480 | 576) {
             return Err("Invalid menu frame statistics".into());
         }
         if frame[0] <= 1.0 || frame[1] <= 50.0 {
@@ -523,9 +538,12 @@ pub fn verify(
             ));
         }
         if page < index_pages {
+            let height = frame[2] as usize;
+            let scaled = |value: usize| (value * height / 576) & !1;
+            let thumb = scaled(100).max(50);
             for cell in 0..albums.saturating_sub(page * 12).min(12) {
                 let x = (cell % 4) * 180;
-                let y = 60 + (cell / 4) * 140;
+                let y = scaled(60) + (cell / 4) * scaled(140);
                 for (code, crop, format, kind) in [
                     (
                         "MENU_INDEX_BACKGROUND_INVALID",
@@ -535,13 +553,13 @@ pub fn verify(
                     ),
                     (
                         "MENU_INDEX_THUMBNAIL_MISSING",
-                        format!("100x100+{}+{}", x + 40, y + 5),
+                        format!("{thumb}x{thumb}+{}+{}", x + (180 - thumb) / 2, y + 5),
                         "%[fx:mean*255]",
                         1,
                     ),
                     (
                         "MENU_INDEX_LABEL_MISSING",
-                        format!("170x28+{}+{}", x + 5, y + 107),
+                        format!("170x{}+{}+{}", scaled(28).max(20), x + 5, y + 5 + thumb + 2),
                         "%[fx:maxima*255] %[fx:mean*255]",
                         2,
                     ),
@@ -615,6 +633,99 @@ mod tests {
     fn navigation_pointers_resolve_through_iso_extents_for_both_title_tables() {
         let (amg, files) = navigation_fixture();
         verify_navigation_pointers(&amg, &files, &[], 300).unwrap();
+    }
+
+    fn authored_manager(title_counts: &[usize], pages: usize) -> Vec<u8> {
+        use dvda_author::{amg, atsi, samg};
+        let groups = title_counts
+            .iter()
+            .map(|&count| amg::Group {
+                titles: (0..count)
+                    .map(|track| atsi::Title {
+                        tracks: vec![
+                            samg::Track {
+                                mlp: false,
+                                channels: 2,
+                                bits: 16,
+                                rate: 48000,
+                                channel_assignment: 1,
+                                first_pts: 0,
+                                pts_length: 9000,
+                                first_sector: track as u32,
+                                last_sector: track as u32,
+                            }
+                            .into(),
+                        ],
+                    })
+                    .collect(),
+                atsi_sectors: 2,
+            })
+            .collect::<Vec<_>>();
+        amg::encode(
+            &groups,
+            &amg::Layout {
+                top_vob_sectors: pages as u32 * 2,
+                ..Default::default()
+            },
+            &amg::Options {
+                menu: Some(amg::Menu {
+                    page_sectors: vec![3; pages],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .bytes
+    }
+
+    #[test]
+    fn authored_pgci_accepts_sector_boundary_and_maximum_page_tables() {
+        for pages in [1, 26, 255] {
+            let amg = authored_manager(&[1], pages);
+            let actual = ranges(&amg, pages as u64 * 2 * 2048).unwrap();
+            assert_eq!(
+                actual,
+                (0..pages)
+                    .map(|page| (page as u32 * 2, page as u32 * 2 + 1))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn authored_multi_sector_title_tables_resolve_every_title() {
+        for counts in [vec![99, 48], vec![99; 9]] {
+            let amg = authored_manager(&counts, 26);
+            let amg_lba = 20;
+            let mut files = vec![
+                file("AUDIO_TS.IFO", amg_lba, amg.len() as u32, 0),
+                file(
+                    "AUDIO_TS.VOB",
+                    amg_lba + read32(&amg, 0xc0).unwrap(),
+                    52 * 2048,
+                    0,
+                ),
+                file(
+                    "AUDIO_TS.BUP",
+                    amg_lba + read32(&amg, 12).unwrap() + 1 - amg.len() as u32 / 2048,
+                    amg.len() as u32,
+                    0,
+                ),
+            ];
+            let first_table = read32(&amg, 0xc4).unwrap() as usize * 2048;
+            let mut title = 0;
+            for (group, count) in counts.iter().enumerate() {
+                files.push(file(
+                    &format!("ATS_{:02}_0.IFO", group + 1),
+                    amg_lba + read32(&amg, first_table + 4 + 14 * title + 10).unwrap(),
+                    2 * 2048,
+                    0,
+                ));
+                title += count;
+            }
+            verify_navigation_pointers(&amg, &files, &[], 10000).unwrap();
+        }
     }
 
     #[test]

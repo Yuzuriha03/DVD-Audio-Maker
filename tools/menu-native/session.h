@@ -18,6 +18,14 @@
 #include <dirent.h>
 #include <assert.h>
 #include "menu-api.h"
+/* Rust readdir uses this MinGW ABI. These checks emit no production code. */
+_Static_assert(sizeof(struct dirent)==268,"Rust dirent size mismatch");
+_Static_assert(_Alignof(struct dirent)==4,"Rust dirent alignment mismatch");
+_Static_assert(offsetof(struct dirent,d_ino)==0,"Rust dirent inode mismatch");
+_Static_assert(offsetof(struct dirent,d_reclen)==4,"Rust dirent record length mismatch");
+_Static_assert(offsetof(struct dirent,d_namlen)==6,"Rust dirent name length mismatch");
+_Static_assert(offsetof(struct dirent,d_name)==8,"Rust dirent name mismatch");
+_Static_assert(sizeof(((struct dirent *)0)->d_name)==260,"Rust dirent name capacity mismatch");
 void *menu_malloc(size_t);
 void *menu_calloc(size_t,size_t);
 void *menu_realloc(void *,size_t);
@@ -29,6 +37,7 @@ int menu_fclose(FILE *);
 int menu_open(const char *,int,...);
 int menu_close(int);
 DIR *menu_opendir(const char *);
+struct dirent *menu_readdir(DIR *);
 int menu_closedir(DIR *);
 void menu_own_com(IUnknown *);
 void menu_release_com(IUnknown *);
@@ -47,6 +56,7 @@ _Noreturn void menu_abort(void);
 #define open menu_open
 #define close menu_close
 #define opendir menu_opendir
+#define readdir menu_readdir
 #define closedir menu_closedir
 #define exit menu_exit
 #define abort menu_abort

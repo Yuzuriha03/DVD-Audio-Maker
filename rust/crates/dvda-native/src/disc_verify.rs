@@ -272,7 +272,8 @@ fn packets(
 }
 
 // PCM two-frame interleave order follows the GPL DVD-Audio author implementation
-// in tools/dvda-author-mlp8/src/audio.c (interleave_*_sample_extended).
+// in historical dvda-author audio.c (interleave_*_sample_extended).
+// Source hashes and Git revision: dvda-author/tests/fixtures/legacy-source-provenance.json.
 const ORDER: [[&[usize]; 6]; 2] = [
     [
         &[1, 0, 3, 2],
@@ -833,14 +834,9 @@ mod dll_parity {
         result
     }
     fn find_dll() -> Option<PathBuf> {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..\\..\\..");
         std::env::var_os("DVDA_DISC_VERIFY_LIBRARY")
             .map(PathBuf::from)
             .filter(|path| path.is_file())
-            .or_else(|| {
-                let path = root.join("build\\c-rust-migration-oracle\\dvda-disc-verify.dll");
-                path.is_file().then_some(path)
-            })
     }
     fn compare(dll: &Path, source: &super::tests::Fixture, ends: Option<&[u8]>, sectors: Vec<u8>) {
         let result = legacy(dll, &source.0, ends, &sectors);

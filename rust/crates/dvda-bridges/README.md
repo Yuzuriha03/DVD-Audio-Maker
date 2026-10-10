@@ -65,6 +65,22 @@ extraction and image processing remains a release gate. Operation 4 extracts
 the first video frame as PNG; general video transcoding is not a bridge API
 operation. Do not represent these passes as complete feature certification.
 
+## Embedded font configuration
+
+The image bridge uses `DVDA_IMAGE_NATIVE_DIR` for ImageMagick configuration when
+set by embedded-runtime initialization. Direct linking places the bridge in the
+EXE, not alongside the extracted `type.xml` and `fonts` directory. Without a
+runtime override, standalone DLL builds retain module-local configuration.
+
+Validate the actual bundled CJK fonts from a directory outside the executable:
+
+```powershell
+cargo run --offline --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu -p dvda-bridges --features image --example font-acceptance -- <extracted-runtime-directory>
+```
+
+This checks 18 rendered script/face combinations, nonzero ink and no native font
+warnings; it is a representative rendering check, not exhaustive glyph coverage.
+
 ## Decoder validation
 
 ```powershell

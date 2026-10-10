@@ -85,9 +85,10 @@ fn authored(author: &Path, work: &Path, sources: &[PathBuf], separate: bool) -> 
         .expect("launch DVD-Audio author");
     assert!(
         log.status.success(),
-        "author failed for {}: {}",
+        "author failed for {}: {}\n{}",
         work.display(),
-        String::from_utf8_lossy(&log.stdout)
+        String::from_utf8_lossy(&log.stdout),
+        String::from_utf8_lossy(&log.stderr)
     );
     let mut segments: Vec<_> = fs::read_dir(output.join("AUDIO_TS"))
         .unwrap()

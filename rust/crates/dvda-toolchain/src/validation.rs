@@ -23,7 +23,9 @@ fn read_json(path: &Path) -> Result<Value, String> {
 
 pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, String> {
     let author_record = read_json(&author.join("author-build.json"))?;
-    if author_record["menu_linkage"] == "direct-static-vendor" {
+    if author_record["implementation"] == "rust"
+        || author_record["menu_linkage"] == "direct-static-vendor"
+    {
         let (media_record, mut media_files) = component(
             media,
             "media-build.json",
@@ -53,7 +55,11 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         if image_record["implementation"] != "project-owned-rust" {
             return Err("Image provenance must identify the Rust implementation".into());
         }
-        let mut linked = validate_linked(author, &author_record)?;
+        let mut linked = if author_record["implementation"] == "rust" {
+            validate_rust_author(author, &author_record)?
+        } else {
+            validate_linked(author, &author_record)?
+        };
         for (name, path) in media_files {
             if let Some(existing) = linked.files.get(&name) {
                 if fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)? {
@@ -186,6 +192,157 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         inputs.records.push(dir.join(name));
     }
     Ok(inputs)
+}
+
+fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String> {
+    if record["schema_version"] != 1
+        || record["target"] != "x86_64-pc-windows-gnu"
+        || record["project_c_author_compiled"] != false
+        || record["menu_linkage"] != "direct-static-vendor"
+        || record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
+        || record["ffmpeg_profile"] != "build-minimal-ffmpeg.py:shared"
+        || record["author_library"]["implementation"] != "rust"
+        || record["author_library"]["available"] != true
+        || record["author_library"]["entry"] != "dvda_core::author_runtime::execute"
+        || record["author_library"]["serialization"] != "request-owned"
+        || record["iso_writer"]["implementation"] != "project-owned-rust"
+        || record["iso_writer"]["linkage"] != "embedded-rust-author"
+    {
+        return Err("Rust author requires its complete Rust library and retained shared FFmpeg/static menu dependencies".into());
+    }
+    let inputs = record["source_inputs"]
+        .as_object()
+        .ok_or("Rust author is missing source provenance")?;
+    for path in [
+        "rust/crates/dvda-author/src/command.rs",
+        "rust/crates/dvda-author/src/aob.rs",
+        "rust/crates/dvda-author/src/amg.rs",
+        "rust/crates/dvda-author/src/asvs.rs",
+        "rust/crates/dvda-author/src/atsi.rs",
+        "rust/crates/dvda-author/src/iso.rs",
+        "rust/crates/dvda-author/src/samg.rs",
+        "rust/crates/dvda-author/src/menu.rs",
+        "rust/crates/dvda-core/src/author_runtime.rs",
+        "rust/crates/dvda-cli/src/author_main.rs",
+        "rust/crates/dvda-menu/src/session.rs",
+        "rust/crates/dvda-menu/src/resources.rs",
+        "rust/crates/dvda-menu/src/direct.rs",
+        "rust/crates/dvda-menu/src/lib.rs",
+    ] {
+        let digest = inputs
+            .get(path)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("Rust author source is missing: {path}"))?;
+        if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(format!("Invalid Rust author source checksum: {path}"));
+        }
+    }
+    let menu_path = author.join("menu-build.json");
+    let menu_bytes = fs::read(&menu_path).map_err(err)?;
+    if inputs
+        .get("menu-runtime/menu-build.json")
+        .and_then(Value::as_str)
+        != Some(hash(&menu_bytes).as_str())
+    {
+        return Err("Rust author menu provenance checksum mismatch".into());
+    }
+    let menu = read_json(&menu_path)?;
+    if menu["adapter"] != "rust" || menu["linkage"] != "static-vendor" {
+        return Err("Rust author must embed the source-built Rust menu adapter".into());
+    }
+    if menu["session"]["implementation"] != "rust"
+        || menu["session"]["boundary"] != "c-setjmp-varargs"
+        || menu["state_reset"]["implementation"] != "rust"
+    {
+        return Err("Rust author must use the migrated Rust menu session and state reset".into());
+    }
+    for path in [
+        "rust/crates/dvda-menu/src/session.rs",
+        "rust/crates/dvda-menu/src/resources.rs",
+        "rust/crates/dvda-menu/src/direct.rs",
+        "rust/crates/dvda-menu/src/lib.rs",
+    ] {
+        if menu["rust_inputs"][path].as_str() != inputs.get(path).and_then(Value::as_str) {
+            return Err(format!("Rust author/menu source checksum mismatch: {path}"));
+        }
+    }
+    for name in ["libdvda_menu_spu_vendor.a", "libdvda_menu_nav_vendor.a"] {
+        if inputs
+            .get(&format!("menu-runtime/{name}"))
+            .and_then(Value::as_str)
+            != menu["files"][name]["sha256"].as_str()
+            || menu["files"][name]["sha256"].as_str().is_none()
+        {
+            return Err(format!(
+                "Rust author embedded menu archive checksum mismatch: {name}"
+            ));
+        }
+    }
+    let (_, mut files) = component(
+        author,
+        "author-build.json",
+        "runtime_files",
+        &[
+            "avcodec-63.dll",
+            "avformat-63.dll",
+            "avutil-61.dll",
+            "swresample-7.dll",
+            "swscale-10.dll",
+        ],
+        false,
+        true,
+    )?;
+    if files
+        .keys()
+        .any(|name| name.starts_with("dvda-") || name == "mlp_encoder.dll")
+    {
+        return Err("Rust author runtime contains a migrated project-owned DLL".into());
+    }
+    let exe = author.join("dvda-author-dev.exe");
+    let imports = validate_binary(&exe, &record["files"]["dvda-author-dev.exe"], false)?;
+    closure("dvda-author-dev.exe", &imports, &files, true)?;
+    // Authenticate the standalone acceptance executable without packaging it:
+    // the GUI invokes the Rust author library inside its own process.
+    let assets = record["runtime_assets"]
+        .as_object()
+        .ok_or("Rust author is missing runtime asset inventory")?;
+    for required in [
+        "policy.xml",
+        "colors.xml",
+        "type.xml",
+        "fonts/DvdaNotoCJK-Regular.ttc",
+        "data/menu/activeheader",
+        "data/menu/black_NTSC_720x480.jpg",
+        "data/menu/black_NTSC_720x480.png",
+        "data/menu/black_PAL_720x576.jpg",
+        "data/menu/black_PAL_720x576.png",
+        "data/menu/silence.wav",
+    ] {
+        if !assets.contains_key(required) {
+            return Err(format!("Rust author runtime asset is missing: {required}"));
+        }
+    }
+    for (name, metadata) in assets {
+        if name.contains('\\')
+            || name
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == ".." || part.contains(':'))
+        {
+            return Err(format!("Invalid Rust author asset path: {name}"));
+        }
+        let path = author.join(name);
+        let bytes = fs::read(&path).map_err(err)?;
+        if metadata["bytes"].as_u64() != Some(bytes.len() as u64)
+            || metadata["sha256"].as_str() != Some(hash(&bytes).as_str())
+        {
+            return Err(format!("Rust author asset checksum mismatch: {name}"));
+        }
+        files.insert(name.clone(), path);
+    }
+    Ok(Inputs {
+        files,
+        records: vec![author.join("author-build.json"), menu_path],
+    })
 }
 
 fn validate_linked(author: &Path, record: &Value) -> Result<Inputs, String> {
@@ -492,6 +649,207 @@ fn err(error: impl std::fmt::Display) -> String {
 pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn rust_author_fixture() -> Fixture {
+        let fixture = Fixture::new();
+        fixture.edit("image", |record| {
+            record["implementation"] = "project-owned-rust".into()
+        });
+        let author = fixture.root.join("author");
+        let mut libraries = serde_json::Map::new();
+        for name in [
+            "avcodec-63.dll",
+            "avformat-63.dll",
+            "avutil-61.dll",
+            "swresample-7.dll",
+            "swscale-10.dll",
+        ] {
+            let bytes = pe::fixture(true, &["kernel32.dll"], &[]);
+            fs::write(author.join(name), &bytes).unwrap();
+            libraries.insert(
+                name.into(),
+                serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)}),
+            );
+        }
+        for name in ["dvda-menu-spu.dll", "dvda-menu-nav.dll"] {
+            fs::remove_file(author.join(name)).unwrap();
+        }
+        let bytes = pe::fixture(false, &["avcodec-63.dll"], &["avformat-63.dll"]);
+        fs::write(author.join("dvda-author-dev.exe"), &bytes).unwrap();
+        let digest = hash(b"retained static menu archive");
+        let rust_inputs: serde_json::Map<String, Value> = [
+            "rust/crates/dvda-menu/src/session.rs",
+            "rust/crates/dvda-menu/src/resources.rs",
+            "rust/crates/dvda-menu/src/direct.rs",
+            "rust/crates/dvda-menu/src/lib.rs",
+        ]
+        .into_iter()
+        .map(|path| (path.into(), hash(b"Rust source").into()))
+        .collect();
+        let menu = serde_json::json!({"adapter":"rust","linkage":"static-vendor",
+            "session":{"implementation":"rust","boundary":"c-setjmp-varargs"},
+            "state_reset":{"implementation":"rust"},"rust_inputs":rust_inputs,"files":{
+            "libdvda_menu_spu_vendor.a":{"sha256":digest},"libdvda_menu_nav_vendor.a":{"sha256":digest}
+        }});
+        let menu_bytes = serde_json::to_vec(&menu).unwrap();
+        fs::write(author.join("menu-build.json"), &menu_bytes).unwrap();
+        let mut sources = serde_json::Map::new();
+        for path in [
+            "rust/crates/dvda-author/src/command.rs",
+            "rust/crates/dvda-author/src/aob.rs",
+            "rust/crates/dvda-author/src/amg.rs",
+            "rust/crates/dvda-author/src/asvs.rs",
+            "rust/crates/dvda-author/src/atsi.rs",
+            "rust/crates/dvda-author/src/iso.rs",
+            "rust/crates/dvda-author/src/samg.rs",
+            "rust/crates/dvda-author/src/menu.rs",
+            "rust/crates/dvda-core/src/author_runtime.rs",
+            "rust/crates/dvda-cli/src/author_main.rs",
+            "rust/crates/dvda-menu/src/session.rs",
+            "rust/crates/dvda-menu/src/resources.rs",
+            "rust/crates/dvda-menu/src/direct.rs",
+            "rust/crates/dvda-menu/src/lib.rs",
+        ] {
+            sources.insert(path.into(), hash(b"Rust source").into());
+        }
+        sources.insert(
+            "menu-runtime/menu-build.json".into(),
+            hash(&menu_bytes).into(),
+        );
+        for name in ["libdvda_menu_spu_vendor.a", "libdvda_menu_nav_vendor.a"] {
+            sources.insert(format!("menu-runtime/{name}"), digest.clone().into());
+        }
+        let mut assets = serde_json::Map::new();
+        for name in [
+            "policy.xml",
+            "colors.xml",
+            "type.xml",
+            "fonts/DvdaNotoCJK-Regular.ttc",
+            "data/menu/activeheader",
+            "data/menu/black_NTSC_720x480.jpg",
+            "data/menu/black_NTSC_720x480.png",
+            "data/menu/black_PAL_720x576.jpg",
+            "data/menu/black_PAL_720x576.png",
+            "data/menu/silence.wav",
+        ] {
+            let path = author.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"asset").unwrap();
+            assets.insert(
+                name.into(),
+                serde_json::json!({"bytes":5,"sha256":hash(b"asset")}),
+            );
+        }
+        fixture.edit("author", |record| {
+            record["schema_version"]=1.into();record["implementation"]="rust".into();record["target"]="x86_64-pc-windows-gnu".into();
+            record["project_c_author_compiled"]=false.into();record["menu_linkage"]="direct-static-vendor".into();
+            record["author_library"]=serde_json::json!({"implementation":"rust","available":true,"entry":"dvda_core::author_runtime::execute","serialization":"request-owned"});
+            record["iso_writer"]=serde_json::json!({"implementation":"project-owned-rust","linkage":"embedded-rust-author"});
+            record["source_inputs"]=sources.into();record["runtime_assets"]=assets.into();record["runtime_files"]=libraries.into();
+            record["files"]=serde_json::json!({"dvda-author-dev.exe":{"bytes":bytes.len(),"sha256":hash(&bytes)}});
+        });
+        fixture
+    }
+
+    #[test]
+    fn complete_rust_author_authenticates_sources_assets_and_delay_import_closure() {
+        let fixture = rust_author_fixture();
+        let inputs = fixture.validate().unwrap();
+        assert!(inputs.files.contains_key("fonts/DvdaNotoCJK-Regular.ttc"));
+        assert!(inputs.files.contains_key("data/menu/silence.wav"));
+        assert!(!inputs.files.contains_key("dvda-author-dev.exe"));
+        assert!(
+            !inputs
+                .files
+                .keys()
+                .any(|name| name.starts_with("dvda-menu-"))
+        );
+        fs::write(fixture.root.join("author/policy.xml"), b"tampered").unwrap();
+        assert!(fixture.validate().unwrap_err().contains("asset checksum"));
+    }
+
+    #[test]
+    fn rust_author_rejects_incomplete_migration_or_unauthenticated_menu() {
+        let fixture = rust_author_fixture();
+        fixture.edit("author", |record| {
+            record["iso_writer"]["linkage"] = "compiled-c".into()
+        });
+        assert!(
+            fixture
+                .validate()
+                .unwrap_err()
+                .contains("complete Rust library")
+        );
+        let fixture = rust_author_fixture();
+        fixture.edit("author", |record| {
+            record["project_c_author_compiled"] = true.into()
+        });
+        assert!(
+            fixture
+                .validate()
+                .unwrap_err()
+                .contains("complete Rust library")
+        );
+        let fixture = rust_author_fixture();
+        fixture.edit("author", |record| {
+            record["source_inputs"]
+                .as_object_mut()
+                .unwrap()
+                .remove("rust/crates/dvda-author/src/command.rs");
+        });
+        assert!(
+            fixture
+                .validate()
+                .unwrap_err()
+                .contains("source is missing")
+        );
+        let fixture = rust_author_fixture();
+        fixture.edit("author", |record| {
+            record["source_inputs"]["menu-runtime/libdvda_menu_spu_vendor.a"] =
+                "0".repeat(64).into()
+        });
+        assert!(
+            fixture
+                .validate()
+                .unwrap_err()
+                .contains("embedded menu archive")
+        );
+    }
+    #[test]
+    fn rust_author_rejects_legacy_session_reset_and_stale_menu_rust_sources() {
+        for component in ["session", "state_reset"] {
+            let fixture = rust_author_fixture();
+            fixture.edit_menu(|menu| menu[component]["implementation"] = "c".into());
+            assert!(
+                fixture
+                    .validate()
+                    .unwrap_err()
+                    .contains("migrated Rust menu"),
+                "{component}"
+            );
+        }
+        let fixture = rust_author_fixture();
+        fixture.edit_menu(|menu| {
+            menu["session"]["boundary"] = "c-session".into();
+        });
+        assert!(
+            fixture
+                .validate()
+                .unwrap_err()
+                .contains("migrated Rust menu")
+        );
+        let fixture = rust_author_fixture();
+        fixture.edit_menu(|menu| {
+            menu["rust_inputs"]["rust/crates/dvda-menu/src/session.rs"] = "0".repeat(64).into();
+        });
+        assert!(
+            fixture
+                .validate()
+                .unwrap_err()
+                .contains("source checksum mismatch")
+        );
+    }
+
     pub struct Fixture {
         pub root: PathBuf,
     }

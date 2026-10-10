@@ -1,9 +1,10 @@
 //! Complete Rust-owned preparation, encoding, authoring and publication flow.
 //!
-//! The only process this module launches is the project-built author. Media,
-//! image and MLP work stays in the in-process native libraries.
+//! Authoring runs through the Rust library in process, including audio
+//! packetization, management tables, menus and ISO generation.
 use crate::{
-    author, disc, index, lpcm, manifest, menu, mlp_import, mlp_workflow, process, publication,
+    author, author_runtime, disc, index, lpcm, manifest, menu, mlp_import, mlp_workflow,
+    publication,
 };
 use dvda_native::media::Callbacks;
 use serde::{Deserialize, Serialize};
@@ -416,7 +417,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         );
         let author_command = format!(
             "+ \"{}\" {}",
-            job.dvda_author,
+            "Rust author",
             arguments
                 .iter()
                 .map(|arg| if arg.contains(char::is_whitespace) {
@@ -445,23 +446,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                 coordinate_warnings: 0,
                 phase: "",
             };
-            let result = process::execute(
-                process::Job {
-                    file_name: job.dvda_author.clone(),
-                    arguments,
-                    working_directory: job
-                        .author_working_directory
-                        .as_ref()
-                        .map(|path| path.to_string_lossy().into_owned()),
-                    environment: Vec::new(),
-                    output_code_page: 65001,
-                    error_code_page: 65001,
-                    capture_output: true,
-                    capture_error: true,
-                    timeout_millis: None,
-                },
-                &mut author_callbacks,
-            );
+            let result = author_runtime::execute(&arguments, &mut author_callbacks);
             author_callbacks.finish();
             result
         };
@@ -808,15 +793,6 @@ fn validate(job: &Job) -> Result<(), String> {
             .is_some_and(|path| path.is_file())
     {
         return Err("MLP encoder library is missing".into());
-    }
-    if job.dvda_author.trim().is_empty() {
-        return Err("dvda-author path is empty".into());
-    }
-    if !Path::new(&job.dvda_author).is_file() {
-        return Err(format!(
-            "dvda-author executable is missing: {}",
-            job.dvda_author
-        ));
     }
     Ok(())
 }

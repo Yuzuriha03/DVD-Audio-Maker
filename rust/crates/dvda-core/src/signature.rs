@@ -126,7 +126,6 @@ struct Request {
     title: String,
     title_mode: String,
     group_limit: i32,
-    author_path: String,
     author_library_directory: Option<String>,
     menu_enabled: bool,
     menu_tracks_per_page: i32,
@@ -171,13 +170,17 @@ fn build(request: Request) -> Result<String, String> {
     line(&mut canonical, "title", request.title);
     line(&mut canonical, "title_mode", request.title_mode);
     line(&mut canonical, "group_limit", request.group_limit);
-    let author_identity = tool_identity(Path::new(&request.author_path));
+    let author_identity = hash::reader_digest(
+        fs::File::open(std::env::current_exe().map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     line(
         &mut canonical,
         "author",
-        format!("{}|{}", request.author_path, author_identity),
+        format!("rust-author|{author_identity}"),
     );
-    canonical.push_str("iso_writer=in-process-c-v2\n");
+    canonical.push_str("iso_writer=rust-iso9660-udf102-v1\n");
     append_library_hashes(
         &mut canonical,
         "author_library",
@@ -280,23 +283,6 @@ fn append_identity(output: &mut String, value: &Value) -> Result<(), String> {
     output.push('|');
     output.push_str(tail);
     Ok(())
-}
-
-fn tool_identity(path: &Path) -> String {
-    let name = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default();
-    let Ok(value) = fs::metadata(path) else {
-        return name.to_owned();
-    };
-    let ticks = std::os::windows::fs::MetadataExt::last_write_time(&value)
-        .checked_add(504_911_232_000_000_000)
-        .filter(|value| *value <= i64::MAX as u64);
-    match ticks {
-        Some(ticks) => format!("{name}|{}|{ticks}", value.len()),
-        None => format!("{name}|{}", value.len()),
-    }
 }
 
 fn append_library_hashes(

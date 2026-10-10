@@ -3,18 +3,6 @@ use core::arch::asm;
 #[derive(Clone, Copy)]
 pub(crate) struct Extended([u8; 10]);
 impl Extended {
-    #[cfg(test)]
-    pub(crate) fn precision_scope(bits: u16) -> PrecisionScope {
-        let mut original = 0u16;
-        unsafe {
-            asm!("fnstcw word ptr [{p}]", p=in(reg) &mut original, options(nostack));
-        }
-        let control = (original & !0x0300) | bits;
-        unsafe {
-            asm!("fldcw word ptr [{p}]", p=in(reg) &control, options(nostack));
-        }
-        PrecisionScope(original)
-    }
     // C compares the extended decimal constant, not its binary64 rounding.
     pub(crate) fn tenth() -> Self {
         Self([0xcd, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xfb, 0x3f])
@@ -71,10 +59,6 @@ impl Extended {
     pub(crate) fn finite(self) -> bool {
         (u16::from_le_bytes([self.0[8], self.0[9]]) & 0x7fff) != 0x7fff
     }
-    #[cfg(test)]
-    pub(crate) fn bytes(self) -> [u8; 10] {
-        self.0
-    }
     pub(crate) fn less(self, other: Self) -> bool {
         let status: u16;
         unsafe {
@@ -111,17 +95,6 @@ impl Drop for HostFpScope {
     fn drop(&mut self) {
         unsafe {
             asm!("fldcw word ptr [{cw}]", "ldmxcsr dword ptr [{mxcsr}]", cw=in(reg) &self.0, mxcsr=in(reg) &self.1, options(nostack));
-        }
-    }
-}
-
-#[cfg(test)]
-pub(crate) struct PrecisionScope(u16);
-#[cfg(test)]
-impl Drop for PrecisionScope {
-    fn drop(&mut self) {
-        unsafe {
-            asm!("fldcw word ptr [{p}]", p=in(reg) &self.0, options(nostack));
         }
     }
 }

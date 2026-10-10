@@ -25,21 +25,20 @@ DVD-Audio-Maker/
 
 启动时以归档 SHA-256 在 `%LOCALAPPDATA%/DVD-Audio-Maker/runtime/` 下选择缓存目录。逐个核对文件大小和完整 SHA-256，原子替换缺失或损坏文件；Windows 文件锁协调并发启动。归档路径拒绝越界，释放目录拒绝重解析点。压缩和解压使用 Windows 自带的 XPRESS Huffman API。
 
-缓存里的制盘 EXE 由本项目源码构建，并由应用内部使用；用户只需运行顶层 GUI。媒体解码、转换、MLP 编码和图像处理通过进程内 C ABI 调用，不启动 FFmpeg、ImageMagick、eac3to 或原版 SurCode。这里的单 EXE 是交付形式，运行时仍会释放所需原生组件。
+制盘和 ISO writer 静态编入 GUI，通过 Rust 进程内接口调用；独立开发 author EXE 不进入内嵌运行时。媒体解码、转换、MLP 编码和图像处理通过 Rust 接口与第三方库完成。单 EXE 是交付形式，运行时释放所需第三方库、字体和菜单素材。
 
 ## 构建
 
-使用现有 MSYS2 GCC 和 x64 GNU Rust 工具链。菜单 DLL 与 author 必须来自经过验证的源码构建；格式处理和只读 MLP/LPCM 成品校验已经内置为 Rust，不打包旧格式或校验 DLL。
+使用现有 MSYS2 GCC 和 x64 GNU Rust 工具链。静态菜单 vendor 与 Rust author 必须来自经过验证的源码构建；格式处理和只读 MLP/LPCM 成品校验已经内置为 Rust，不打包旧格式或校验 DLL。
 
 ```powershell
-python -X utf8 tools/win-build/build-menu-runtime.py
-python -X utf8 tools/win-build/build-image-author.py --source build/image-author-lpcm/source --msys-root C:/msys64 --work-directory build/rust-author-current --ffmpeg-runtime build/ffmpeg-shared/install --menu-runtime build/menu-native
-cargo run --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release -p dvda-toolchain --offline -- package --repo . --source build/source-release-20261004 --prebuilt build/prebuilt-release-20261004 --output build/rust-migration-checklist-package --image-author build/rust-author-current --version v1.0
+python -X utf8 tools/win-build/build-rust-author.py --ffmpeg-runtime build/ffmpeg-shared/install --magick-work build/imagemagick-minimal --menu-runtime build/menu-direct-vendor-rust-session --assets-runtime build/prebuilt-release-20261004 --dependency-runtime build/media-native-shared
+cargo run --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release -p dvda-toolchain --offline -- package --repo . --source build/source-release-20261004 --prebuilt build/prebuilt-release-20261004 --output build/rust-author-package --image-runtime build/rust-image-runtime --image-author build/rust-author-production --version v1.0
 ```
 
-`--source` 指向已准备的完整 author 源码。源码来源、下载和其他原生组件的重建说明见 [Windows 构建](../tools/win-build/README.md)。以上本机路径用于复现此次候选包，不要求用户具备开发环境。
+Rust author builder 的可选 `--source` 只用于寻找菜单素材，不编译旧 C author。第三方库、静态菜单 vendor 和其他组件的重建说明见 [Windows 构建](../tools/win-build/README.md)；完整制盘验收见 [Rust author 迁移记录](RUST-AUTHOR-MIGRATION.md)。以上路径按本机已准备的构建目录替换，不要求用户具备开发环境。
 
-未显式指定时，源码/预构建目录分别取 `DVDA_SRC_TREE` / `DVDA_PREBUILT_DIR`，最后取仓库的 `tools/dvda-author-mlp8` / `tools/win-build/prebuilt`；不回退到旧 release 缓存。缺字体或菜单素材会明确失败，需要按源码构建说明准备输入。格式与成品校验无独立运行库输入。
+未显式指定时，素材源/预构建目录分别取 `DVDA_SRC_TREE` / `DVDA_PREBUILT_DIR`，最后取仓库的 `tools/win-build/prebuilt`；不回退到已删除的 C author 源码树或旧 release 缓存。缺字体或菜单素材会明确失败，需要按源码构建说明准备输入。格式与成品校验无独立运行库输入。
 
 ## 验证
 

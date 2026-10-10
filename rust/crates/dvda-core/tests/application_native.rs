@@ -130,7 +130,9 @@ fn sources_aligned(root: &Path, align: bool) {
     }
 }
 fn options(root: &Path, mode: &str) -> app::AppOptions {
-    let author = std::env::var_os("DVDA_TEST_AUTHOR").expect("Set DVDA_TEST_AUTHOR");
+    // A nonexistent compatibility path also proves that no author subprocess
+    // or external author executable is required by the application.
+    let author = root.join("unused-external-author.exe");
     let profile = root.join("settings.json");
     app::save_profile(&profile, &serde_json::Map::new(), "zh").unwrap();
     app::AppOptions::load(Some(&profile))
@@ -139,7 +141,7 @@ fn options(root: &Path, mode: &str) -> app::AppOptions {
             json!({
                 "DVDA_SRC":root.join("src"), "DVDA_BUILD_DIR":root.join("build"),
                 "DVDA_FINAL_DIR":root.join("final"), "DVDA_MLP_EXTERNAL_DIR":"",
-                "DVDA_MLP_SOURCE":mode, "DVDA_AUTHOR":PathBuf::from(author),
+                "DVDA_MLP_SOURCE":mode, "DVDA_AUTHOR":author,
                 "DVDA_MENU":false, "DVDA_RESUME":true,
                 "DVDA_MLP_SURCODE_SAMPLE_RATE":48000, "DVDA_MLP_SURCODE_BITS":24,
                 "DVDA_TITLE":"Application regression", "DVDA_ISO_PREFIX":"regression",
@@ -1252,17 +1254,8 @@ fn application_failed_author_keeps_workspace_and_previous_release() {
     assert!(options.path("TemporaryRoot").join("disc1").is_dir());
     assert!(options.path("IsoDirectory").join("disc1.iso").is_file());
     let mut bad = options.build_job(false).unwrap();
-    // An executable with a deterministic non-zero response to author arguments
-    // is sufficient: the workflow must retain evidence for any author failure.
-    let failed_author_directory = root.0.join("failing-author");
-    fs::create_dir(&failed_author_directory).unwrap();
-    let failed_author = failed_author_directory.join("author.exe");
-    fs::copy(
-        PathBuf::from(std::env::var_os("WINDIR").unwrap()).join("System32/where.exe"),
-        &failed_author,
-    )
-    .unwrap();
-    bad.dvda_author = failed_author.to_string_lossy().into_owned();
+    // Reject an invalid author request before committing a new disc.
+    bad.menu_arguments = vec!["--invalid-author-option=reject".into()];
     let failed = dvda_core::build::execute(bad, &mut Events::default());
     assert_diagnostic(
         dvda_core::verify::Outcome {

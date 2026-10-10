@@ -9,6 +9,7 @@ use std::{
 #[cfg(feature = "direct-link")]
 mod direct;
 mod resources;
+mod session;
 #[cfg(feature = "direct-link")]
 pub use direct::{
     MenuError, MenuRequest, ReadRgba, dvda_menu_run_navigation, dvda_menu_run_spu, run_navigation,

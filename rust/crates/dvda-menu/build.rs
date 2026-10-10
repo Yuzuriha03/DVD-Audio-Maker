@@ -34,6 +34,25 @@ fn main() {
         "cargo:rerun-if-changed={}",
         repo.join("tools/win-build/build-menu-runtime.py").display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        repo.join("rust/crates/dvda-menu/src").display()
+    );
+    // The vendor builder emits its Rust reset object into these archives. Track
+    // replacements even when DVDA_MENU_NATIVE_DIR keeps the same directory.
+    for name in [
+        "menu-build.json",
+        "libdvda_menu_spu_vendor.a",
+        "libdvda_menu_nav_vendor.a",
+    ] {
+        let path = output.join(name);
+        assert!(
+            path.is_file(),
+            "menu vendor input is missing: {}",
+            path.display()
+        );
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
     println!("cargo:rustc-link-search=native={}", output.display());
     println!("cargo:rustc-link-lib=static=dvda_menu_spu_vendor");
     println!("cargo:rustc-link-lib=static=dvda_menu_nav_vendor");

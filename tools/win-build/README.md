@@ -13,9 +13,11 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --work
 
 `gui.cmd`、`gui-debug.cmd`、`cli.cmd`、`build.cmd` 和 `verify.cmd` 都调用 Rust workspace。配置只使用 JSON 方案和 `--profile`；不支持 `config.env`、`DVDA_CONFIG` 和 `--config`。
 
+完整 author 由 Rust 实现：应用进程内调用，独立 Rust CLI 复用同一流程。`build-image-author.py` 是 `build-rust-author.py` 的兼容入口，旧 C producer、源码和冻结二进制已清理。AOB、管理表、菜单/静图和 ISO 的验收见 [author 迁移记录](../../docs/RUST-AUTHOR-MIGRATION.md)，黄金数据的历史来源摘要仍保留。
+
 ## 原生输入
 
-打包器需要已验证的 x64 目录：`build/media-native-shared`、`build/image-native`、`build/rust-author-current`、菜单资源目录，以及 `build/mlp-encoder`（可用 `--encoder-runtime` 指定）。编码器目录必须包含验收后源码构建产生的 Rust ABI v1 `encoder-build.json` 和唯一的 `mlp_encoder.dll`；打包器验证摘要、大小、PE 架构及依赖闭包，不回退到旧 C DLL。当前编码器迁移尚未验收，发布流程因此暂不可完成。FFmpeg 和 ImageMagick 命令行程序不是运行时输入；所需库通过项目 C ABI 加载。旧 MLP C 源码和冻结 DLL 仅在迁移验收前保留。
+打包器需要已验证的 x64 媒体/图像构建记录与 `build/rust-author-production`，并验证摘要、大小、PE 架构、DLL 闭包及字体/菜单素材。图像记录必须标识 Rust 实现；本机验收使用 `build/rust-image-runtime`。MLP 编码器直接编入 Rust 应用，`--encoder-runtime` 仅用于认证可选对照产物，不分发编码器 DLL。FFmpeg 和 ImageMagick 命令行程序不是运行时输入，第三方库由 Rust bridge 调用；媒体/图像开发 adapter DLL 不进入静态链接发布包。
 
 格式解析、MLP CRC/奇偶校验、PCM 比较及只读 AOB 成品校验已经内置为 Rust 实现，不需要格式或校验 DLL。打包不再接受 `--formats-runtime` 输入。
 
@@ -24,9 +26,8 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --work
 ```bat
 tools\win-build\build-all.cmd ^
   --media-runtime build\media-native-shared ^
-  --image-runtime build\image-native ^
-  --image-author build\rust-author-current ^
-  --encoder-runtime build\mlp-encoder ^
+  --image-runtime build\rust-image-runtime ^
+  --image-author build\rust-author-production ^
   --prebuilt build\release-menu-final ^
   --version v1.0
 ```

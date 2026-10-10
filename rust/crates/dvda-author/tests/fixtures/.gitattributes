@@ -1,0 +1,3 @@
+# Preserve exact oracle output bytes and provenance hashes across checkouts.
+*.ifo -text
+*.csv -text whitespace=cr-at-eol

@@ -7,6 +7,8 @@ pub mod direct;
 pub mod ffmpeg;
 #[cfg(feature = "image")]
 pub mod image;
+#[cfg(feature = "author-iso")]
+pub mod iso;
 #[cfg(feature = "media")]
 pub mod media;
 #[cfg(feature = "media")]

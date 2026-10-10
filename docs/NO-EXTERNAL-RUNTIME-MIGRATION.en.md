@@ -9,17 +9,18 @@ eac3to, SurCode, dvdauthor or mkisofs.
 
 | Area | Native implementation |
 |---|---|
-| Source media | `dvda-media.dll` for probing, decoding, PCM/FLAC output and ALAC checks |
-| Images | `dvda-image.dll` for the required image conversions |
-| MLP | `mlp_encoder.dll` through the streaming C ABI |
-| DVD menus | `dvda-menu-spu.dll`, `dvda-menu-nav.dll` and the project-built author |
-| ISO writing | the author's in-process ISO writer |
+| Source media | Linked Rust media bridge calling third-party FFmpeg for probing, decoding, PCM/FLAC output and ALAC checks |
+| Images | Linked Rust image bridge calling third-party ImageMagick for required conversions |
+| MLP | Linked `dvda-mlp` Rust encoder |
+| DVD authoring / menus | `dvda-author` Rust AOB/IFO and menu orchestration; Rust menu bridge with static third-party SPU/navigation vendor |
+| ISO writing | `dvda-author` in-process Rust ISO9660/UDF 1.02 writer |
 | Disc verification | Rust ISO reading, streaming AOB MLP/LPCM comparison and PCM checks |
 | Configuration | versioned JSON profiles only |
 
-The release ZIP is a native Windows x64 GUI package. It contains the required DLLs,
-menu resources, fonts, licenses and user documentation. Missing components are
-reported as errors rather than replaced with external programs.
+The release ZIP is a native Windows x64 GUI package. Required third-party DLLs,
+menu resources and fonts are embedded in the GUI; licenses and user documentation
+are shipped beside it. See [the Rust author migration record](RUST-AUTHOR-MIGRATION.md)
+for complete authoring and ISO acceptance.
 
 ## MLP identity rule
 

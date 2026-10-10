@@ -169,7 +169,7 @@ impl AppOptions {
             if env::var_os("DVDA_ENCODER_LIBRARY").is_some() {
                 return Err(error);
             }
-            let development = PathBuf::from("native/mlp-encoder/win-x64/mlp_encoder.dll");
+            let development = PathBuf::from("build/mlp-encoder/mlp_encoder.dll");
             development
                 .canonicalize()
                 .map_err(|error| format!("MLP encoder DLL not found: {error}"))

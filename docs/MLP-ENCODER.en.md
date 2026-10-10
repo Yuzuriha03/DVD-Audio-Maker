@@ -1,21 +1,23 @@
 # MLP encoding
 
-The normal `surcode-batch` workflow calls the bundled MLP encoder through its
-streaming x64 C ABI. It does not start `surcodemlp.exe`, eac3to, an MLP encoder
-subprocess, or an external FFmpeg executable.
+Cleanup on 2026-10-10 removed the C source and frozen DLLs from this checkout.
+The default `build-runtime.ps1` runs 17 Rust tests, Clippy and a release build.
+Historical DLL comparisons require an explicit external `-FrozenEncoder` and
+the `external-oracle` feature. C parity matrices below are historical evidence.
 
-The current path is:
+The normal `surcode-batch` workflow calls the Rust MLP encoder linked directly
+into the main executable. It does not load an encoder DLL or start an encoder
+subprocess or external FFmpeg executable.
 
 ```text
-source audio -> bundled media DLL -> integer PCM WAVE -> mlp_encoder.dll
+source audio -> built-in media bridge -> integer PCM WAVE -> built-in Rust MLP
              -> read-only verification -> MLP cache -> DVD authoring
 ```
 
-The encoder source and the pinned Windows x64 DLL are under
-`native/mlp-encoder`. Build the DLL with the repository's MinGW-w64 recipe in
-`native/mlp-encoder/build.cmd`; the delivered package already contains the
-validated DLL. The GUI and CLI use the same Rust pipeline. There is no separate
-MLP encoder EXE.
+Rust sources are under `rust/crates/dvda-mlp`. Only the immutable Windows x64
+C DLL remains under `native/mlp-encoder` as a test oracle; the translated C
+sources, headers, source-level test adapters and C build recipe were removed.
+GUI-ONLY releases ship neither an encoder DLL nor a CLI.
 
 ## Settings
 
@@ -53,11 +55,10 @@ verified read-only and are not re-encoded.
 
 ## Runtime and cache
 
-The release ZIP is native Windows x64. Media and image functionality
-is provided by project-built DLLs shipped beside the GUI. The MLP DLL is loaded
-from the package and checked by SHA-256. Development overrides may select
-validated native component directories, but missing components are reported as
-errors rather than silently falling back to external programs.
+The release ZIP is GUI-ONLY native Windows x64. Project-owned media, image,
+menu and MLP implementations are linked into the GUI. The frozen MLP DLL is
+used only for acceptance and is not packaged. Missing required third-party
+components are errors, never a silent fallback to external programs.
 
 Cache identity includes source content, encoder identity, PCM conversion policy,
 format parameters, metadata context and output content. Old entries without
@@ -69,10 +70,16 @@ MLP files.
 Run the Rust workspace checks from the repository root:
 
 ```powershell
-cargo fmt --all -- --check
-cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+powershell -ExecutionPolicy Bypass -File rust\crates\dvda-mlp\build-runtime.ps1
 ```
+
+This recipe needs only the frozen DLL, not C sources or a C compiler. It checks
+its SHA256 before and after tests, runs 21 Rust tests including 27,360 grouped
+raw-byte/SHA256 cases, strict all-targets Clippy, and 142 standard plus 228 grouped
+stress profiles. Identical PCM, parameters and metadata must produce identical
+raw MLP bytes and SHA256. Source-only C state/interpolation tests have been
+removed rather than skipped; grouped diagnostic decode compares the frozen and
+Rust outputs and does not certify native mixed-rate player compatibility.
 
 The native ABI tests cover the encoder, PCM comparison, format parsing and
 failure paths. The original-file byte comparison corpus remains recorded in

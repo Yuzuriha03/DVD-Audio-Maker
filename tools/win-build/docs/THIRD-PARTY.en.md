@@ -1,27 +1,32 @@
 # Third-party components and licenses
 
-The release contains the required runtime pieces of several open-source
-projects and project changes. User-facing license and provenance notices are at
-the ZIP root as `LICENSE`, `NOTICE-Image.txt` and `NOTICE-Menu.txt`.
+The release contains the project's Rust implementation and required open-source
+libraries. License and provenance notices are at the ZIP root as `LICENSE`,
+`NOTICE-Image.txt` and `NOTICE-Menu.txt`.
 
 | Component | Use | License/source |
 |---|---|---|
-| `dvda-author-dev.exe` | DVD-Audio menus, navigation and ISO writing | GPL v3, upstream `dvda-author` plus project patches |
-| `dvda-menu-nav.dll`, `dvda-menu-spu.dll` | Menu navigation and subpictures | GPL v2 or later, from `tools/menu-native/vendor` |
-| `dvda-media.dll` | In-process media operations | Project GPL v3 C ABI linked to required FFmpeg libraries |
-| `dvda-image.dll` | In-process image operations | Project bridge code and the upstream ImageMagick/FreeType licenses |
-| Rust formats and disc verification | Built-in format parsing, PCM comparison and AOB MLP/LPCM verification | Project GPL v3; LPCM packing rules translated from `dvda-author`, retaining upstream attribution |
-| `mlp_encoder.dll` | MLP encoding | Project C17 core, GPL v3 |
+| Built-in Rust author and ISO writer | DVD-Audio IFO/AOB, menu orchestration and ISO9660/UDF images | Project GPL v3; rules translated from `dvda-author` retain upstream attribution |
+| Built-in Rust menu session and resource management | Menu lifecycle, failure recovery and state reset | Project GPL v3 |
+| Statically linked dvdauthor/spumux menu libraries | DVD-Video navigation and subpictures | GPL v2 or later, from `tools/menu-native/vendor`; a small C error-handling and varargs boundary is retained |
+| Built-in Rust media adapter and FFmpeg libraries | Decoding, resampling, PCM checks and menu MPEG generation | Project GPL v3; FFmpeg and dependencies retain their upstream licenses |
+| Built-in Rust image adapter and ImageMagick/FreeType | Image operations, menu drawing and font rendering | Project GPL v3 and upstream ImageMagick, FreeType and dependency licenses |
+| Built-in Rust formats and disc verification | IFO/AOB, MLP/LPCM and image verification | Project GPL v3; LPCM rules retain `dvda-author` attribution |
+| Built-in Rust MLP encoder | MLP encoding | Project GPL v3 |
 | `DvdaNotoCJK-Regular.ttc` | Chinese, Japanese and Korean menu fonts | SIL Open Font License 1.1 |
 
-FFmpeg, ImageMagick and the other libraries are built by the project with only
-the workflow features enabled. The release does not contain `ffmpeg.exe`,
-`ffprobe.exe`, ImageMagick command-line programs, eac3to or SurCode. Build
-scripts, source hashes and full provenance stay in the repository and local
-`build` tree; they are not copied into the user package.
+Users run a single Rust GUI executable. The author, project adapters and MLP
+encoder are statically integrated; required third-party DLLs, fonts and menu data
+are embedded. The old project C author, adapter DLLs and C17 encoder have been
+removed. FFmpeg, ImageMagick and other libraries enable only workflow features.
+The release does not contain `ffmpeg.exe`, `ffprobe.exe`, ImageMagick command-line
+programs, eac3to or SurCode.
 
-When redistributing or modifying the software, retain all license and NOTICE
-files and provide source or patches as required by each upstream license. See
-the [Windows build instructions](../README.en.md) and the [native runtime
-migration](../../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md) for the current
-build boundary.
+Build scripts, source hashes and full provenance stay in the repository and local
+`build` tree. Retired author source notices and hashes are recorded in
+`rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json`; original
+sources can be recovered from Git history. When redistributing or modifying the
+software, retain license and NOTICE files and provide source or patches as
+required by each upstream license. See the [Windows build instructions](../README.en.md)
+and [native runtime migration](../../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md)
+for the current build boundary.

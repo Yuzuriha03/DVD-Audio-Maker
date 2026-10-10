@@ -1,19 +1,12 @@
 //! Direct static vendor boundary. The lock covers reset, callbacks, and cleanup.
+pub use crate::{resources::ReadRgba, session::MenuRequest};
+#[cfg(not(test))]
+use std::ffi::c_char;
 use std::{
     cell::Cell,
-    ffi::{CStr, c_char, c_int},
+    ffi::{CStr, c_int},
     sync::Mutex,
 };
-pub type ReadRgba =
-    unsafe extern "C" fn(*const c_char, *mut u8, usize, *mut u32, *mut u32) -> c_int;
-#[repr(C)]
-pub struct MenuRequest {
-    pub size: u32,
-    pub xml: *const c_char,
-    pub input: *const c_char,
-    pub output: *const c_char,
-    pub read_rgba: Option<ReadRgba>,
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuError(pub c_int);
 static SESSION: Mutex<()> = Mutex::new(());

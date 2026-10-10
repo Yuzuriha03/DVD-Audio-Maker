@@ -1,4 +1,4 @@
-"""Link the tailored static image libraries into one Windows x64 runtime DLL."""
+"""Prepare tailored FreeType/UCRT libraries and build the Rust image adapter."""
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
@@ -71,29 +71,16 @@ def main():
     a=p.parse_args();msys=a.msys_root.resolve();work=a.work_directory.resolve();output=a.output.resolve();output.mkdir(parents=True,exist_ok=True)
     compiler=str(msys/'mingw64/bin/gcc.exe');env=os.environ|{'PATH':str(msys/'mingw64/bin')+os.pathsep+os.environ['PATH']}
     ft,ftmeta=build_freetype(work,compiler,str(msys/'mingw64/bin/ar.exe'),env)
-    if a.freetype_only:print('Minimal FreeType ready.');return
-    source=work/'ImageMagick-7.0.8-47';build=work/'compile'
-    bridge=Path(__file__).parent/'native/dvda-image.c'
-    deps=[msys/'mingw64/lib'/name for name in ['libjpeg.a','libpng16.a','libwebpdecoder.a','libwebpmux.a','libz.a']]
-    libraries=[build/'MagickWand/.libs/libMagickWand-7.Q16HDRI.a',build/'MagickCore/.libs/libMagickCore-7.Q16HDRI.a',ft,*deps]
+    source=work/'ImageMagick-7.0.8-47'
     jump_def=work/'ucrt-jump.def';jump_lib=work/'libucrt-jump.a'
     jump_def.write_text('LIBRARY ucrtbase.dll\nEXPORTS\n__intrinsic_setjmp\nlongjmp\n')
     subprocess.run([str(msys/'mingw64/bin/dlltool.exe'),'-d',str(jump_def),'-l',str(jump_lib),'-m','i386:x86-64'],env=env,check=True)
-    libraries.append(jump_lib)
-    dll=output/'dvda-image.dll'
-    command=[compiler,'-shared','-O2','-std=gnu11','-D_LIB','-D_MT','-DMAGICKCORE_HDRI_ENABLE=1','-DMAGICKCORE_QUANTUM_DEPTH=16',
-        '-I'+str(build),'-I'+str(source),'-ffunction-sections','-fdata-sections','-static','-static-libgcc','-s',
-        '-Wl,--gc-sections','-Wl,--no-insert-timestamp','-Wl,--exclude-all-symbols',str(bridge.resolve()),
-        '-Wl,--start-group',*[str(x) for x in libraries],'-Wl,--end-group','-lshell32','-lgdi32','-lws2_32','-lm','-o',str(dll)]
-    with (work/'bridge.log').open('wb') as log:subprocess.run(command,env=env,stdout=log,stderr=subprocess.STDOUT,check=True)
-    imports=subprocess.check_output([str(msys/'mingw64/bin/objdump.exe'),'-p',str(dll)],env=env).decode()
-    imports=re.findall(r'DLL Name:\s*(\S+)',imports)
-    if any(not (Path(os.environ['SystemRoot'])/'System32'/name).exists() for name in imports):raise ValueError('Unexpected non-system import: '+str(imports))
     manifest=json.loads((work/'image-build.json').read_text())
-    manifest.update(freetype=ftmeta,bridge_sha256=common.sha(bridge),static_dependencies={p.name:common.sha(p) for p in deps},
-        source_patches={name:common.sha(source/name) for name in ['coders/coders-list.h','MagickCore/delegate.c','coders/jpeg.c','coders/png.c','coders/webp.c','MagickCore/magick-config.h','MagickCore/nt-base.c']},
-        files={dll.name:{'sha256':common.sha(dll),'bytes':dll.stat().st_size,'imports':imports}})
-    (output/'image-build.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
+    manifest['freetype']=ftmeta
+    manifest['freetype_archive_sha256']=common.sha(ft)
+    manifest['ucrt_jump_archive_sha256']=common.sha(jump_lib)
+    (work/'image-build.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
+    if a.freetype_only:print('Minimal FreeType and UCRT archives ready.');return
     (output/'policy.xml').write_text('<policymap>\n  <policy domain="delegate" rights="none" pattern="*"/>\n</policymap>\n',encoding='utf-8')
     (output/'colors.xml').write_text('<colormap/>\n',encoding='utf-8')
     notices=[('ImageMagick',source/'LICENSE'),('FreeType',work/'freetype-VER-2-10-0/docs/FTL.TXT')]
@@ -101,6 +88,9 @@ def main():
         notices += [(component,path) for path in sorted((msys/'mingw64/share/licenses'/component).glob('*')) if path.is_file()]
     (output/'NOTICE.txt').write_text('\n\n'.join('=== '+name+' / '+path.name+' ===\n'+path.read_text('utf-8',errors='replace')
         for name,path in notices),encoding='utf-8')
-    print(json.dumps(manifest['files']),flush=True)
+    subprocess.run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',
+        str(Path(__file__).with_name('build-rust-bridges.ps1')),'-Component','image',
+        '-MsysRoot',str(msys),'-MagickWork',str(work),'-Output',str(output)],check=True)
+    print('Rust image runtime ready.',flush=True)
 
 if __name__=='__main__':main()

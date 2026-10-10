@@ -1,0 +1,949 @@
+{
+  "status": "retired-source-provenance",
+  "source_repository": "https://github.com/fabnicol/dvda-author",
+  "source_git_commit": "6c5086127590001c544373783653fe991f0ebaeb",
+  "former_source_tree": "tools/dvda-author-mlp8",
+  "recovery": "git show <source_git_commit>:<file path>; git archive <source_git_commit> tools/dvda-author-mlp8",
+  "license": "Historical source notices are preserved below. Rust translations retain upstream attribution and applicable GPL obligations; see repository LICENSE and third-party records.",
+  "files": {
+    "tools/dvda-author-mlp8/libutils/src/include/c_utils.h": {
+      "bytes": 15755,
+      "sha256": "64306f095c854f84b0d243085f056379a719a7e923a523cc309b93f0b072f7ea",
+      "git_blob": "b6addd75d5e4e772ffe72256334c229f108fcdf7",
+      "copyright_notices": [
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net>, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/libutils/src/include/decode.h": {
+      "bytes": 1358,
+      "sha256": "3677dbd23cbed9ed88370daa26be8004e69c9de8959e8d125e4cf5e90065b3db",
+      "git_blob": "cc79eb06817c3405ac10fd96e04de88c09da1bbe"
+    },
+    "tools/dvda-author-mlp8/libutils/src/include/export.h": {
+      "bytes": 2930,
+      "sha256": "f347f4f1da07fb4bfc4fa41dd02978d4810f44aa4a22dee0518f60e3bd42a06a",
+      "git_blob": "3969ced6bb1a9cbdb5749f5891c31c38fd4efab9",
+      "copyright_notices": [
+        "Copyright (C) 2000,2001,2002,2003,2004,2005,2006,2007  Josh Coalson",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright",
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS"
+      ],
+      "license_header_notices": [
+        "Redistribution and use in source and binary forms, with or without",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright"
+      ]
+    },
+    "tools/dvda-author-mlp8/libutils/src/include/format.h": {
+      "bytes": 43749,
+      "sha256": "6960657cc0efc1addd1b42319c3ed46ea209a777271840c48affca038e87179f",
+      "git_blob": "bff2d7fc40219abcd282da79ac67ffedefbbae39",
+      "copyright_notices": [
+        "Copyright (C) 2000,2001,2002,2003,2004,2005,2006,2007  Josh Coalson",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright",
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS"
+      ],
+      "license_header_notices": [
+        "Redistribution and use in source and binary forms, with or without",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright"
+      ]
+    },
+    "tools/dvda-author-mlp8/libutils/src/include/ordinals.h": {
+      "bytes": 2698,
+      "sha256": "0d101c91cd266316dab7826ca19491a7ac8e6939f07244a0b340fa89aaf346dd",
+      "git_blob": "a7a5cd96135929ad078755f16d8f4d16a9d3f386",
+      "copyright_notices": [
+        "Copyright (C) 2000,2001,2002,2003,2004,2005,2006,2007  Josh Coalson",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright",
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS"
+      ],
+      "license_header_notices": [
+        "Redistribution and use in source and binary forms, with or without",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright"
+      ]
+    },
+    "tools/dvda-author-mlp8/libutils/src/include/stream_decoder.h": {
+      "bytes": 67130,
+      "sha256": "a6cebd9e7c90db0c4cf5a5d4f656477731d51139d5471892cfcf51b655085e11",
+      "git_blob": "029036510d1fc3a45864ab48e4a8aa875306f100",
+      "copyright_notices": [
+        "Copyright (C) 2000,2001,2002,2003,2004,2005,2006,2007  Josh Coalson",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright",
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS"
+      ],
+      "license_header_notices": [
+        "Redistribution and use in source and binary forms, with or without",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright"
+      ]
+    },
+    "tools/dvda-author-mlp8/libutils/src/include/stream_encoder.h": {
+      "bytes": 87198,
+      "sha256": "89f3cbd98591788a402c7be46e4b5d43f1e0c0845843a9992e2a72ee220410ce",
+      "git_blob": "a96d2c019af4f641f863d869e69309d5e194963a",
+      "copyright_notices": [
+        "Copyright (C) 2000,2001,2002,2003,2004,2005,2006,2007  Josh Coalson",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright",
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS"
+      ],
+      "license_header_notices": [
+        "Redistribution and use in source and binary forms, with or without",
+        "- Redistributions of source code must retain the above copyright",
+        "- Redistributions in binary form must reproduce the above copyright"
+      ]
+    },
+    "tools/dvda-author-mlp8/libutils/src/include/winport.h": {
+      "bytes": 4788,
+      "sha256": "2feec99c0d827a61a3cb7229a1b3086a04adb095cea61ecf90aaaf5400eb4dc6",
+      "git_blob": "6554fe25498e060d3c2b691a13e831413bb60290"
+    },
+    "tools/dvda-author-mlp8/libutils/src/libc_utils.c": {
+      "bytes": 66739,
+      "sha256": "1f229b8d1f2132fbfabef40d4e52cd98e366e71b0061c73d2a527b60748cf61c",
+      "git_blob": "3d66cd2ef6bbc0a88b8e2cb55babad73c7360c9f",
+      "copyright_notices": [
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net>, 2008-2016"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 3 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/libutils/src/private/private_c_utils.h": {
+      "bytes": 525,
+      "sha256": "c1e7db75fecbc7680f64d11de05d372621fc843b09b289b18c55745c1af0101c",
+      "git_blob": "a5735cb05cf9717b70fb37a6a58cab822bf72dd8"
+    },
+    "tools/dvda-author-mlp8/libutils/src/winport.c": {
+      "bytes": 11010,
+      "sha256": "5934f2cc1601bcc463a8b70a9a09c95390b07a65e833f7e7c32f8dbb926c01b4",
+      "git_blob": "89b84bbb97b7b2b0b51bed870cdc9a37f11d1f25",
+      "copyright_notices": [
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net>, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/MIRROR-NOTES.en.md": {
+      "bytes": 73,
+      "sha256": "20cbc82d289f79db65d3b41c0570506c0e12b3e29a36f54e19262fa79335625c",
+      "git_blob": "657fc7cdfa1035a52239e54b1ba90247a518f8a8"
+    },
+    "tools/dvda-author-mlp8/MIRROR-NOTES.md": {
+      "bytes": 74,
+      "sha256": "531c0687d9c5102d55abad3d4f82d7976e58c01cf2dcee9912f37640fc6ad77b",
+      "git_blob": "499a04d9be0e0bb22c31bce109780d62c475d452"
+    },
+    "tools/dvda-author-mlp8/README.en.md": {
+      "bytes": 1916,
+      "sha256": "f2507a64a6c65999e21004b72f620bd863ae930f43d6bfd3656320094da1f484",
+      "git_blob": "9002b9e1d216b312496144c7ba953b8d507b7955",
+      "license_header_notices": [
+        "modification and redistribution must comply with the upstream and dependency"
+      ]
+    },
+    "tools/dvda-author-mlp8/README.md": {
+      "bytes": 1743,
+      "sha256": "b388d812ce45fd98ad3b89ce22d47b7db28ad96bda460462c690faee9199c39c",
+      "git_blob": "45991d8de5ac94b6252bbf93212958fa30f236ab"
+    },
+    "tools/dvda-author-mlp8/src/amg2.c": {
+      "bytes": 59592,
+      "sha256": "e2d7249de405bc80f6a329b270216c5d2298307f0ea39869087d871e7b3bf043",
+      "git_blob": "299c0e8b8efbc8b6d6ea5f7476e9d0e8dfeb6e7b",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005",
+        "(C) Revised version with zone-to-zone linking Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008,2013"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/asvs.c": {
+      "bytes": 7541,
+      "sha256": "be8efe63bf719b9999fc0007ca96483bf2cd62112f45c25009394d96fe642e4e",
+      "git_blob": "3271260b615cc15a7b0123feae1be59db2832477",
+      "copyright_notices": [
+        "Copyright (C) 2007-2022 Fabrice Nicol fabnicol@users.sourceforge.net"
+      ],
+      "license_header_notices": [
+        "This program is free software: you can redistribute it and/or modify it under",
+        "the terms of the GNU General Public License as published by the Free Software",
+        "Foundation, either version 3 of the License, or (at your option) any later",
+        "FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more",
+        "You should have received a copy of the GNU General Public License along with"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/ats.c": {
+      "bytes": 61920,
+      "sha256": "ae27d194813f212fd937e0e827e168343652ded6c8df804a8a2e9b15461eb582",
+      "git_blob": "1a6ba5cf777646b039e2de270650013546860027",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005",
+        "(C) Fabrice Nicol <fabnicol@users.sourceforge.net> 20015-2019 for multichannel"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/ats2wav.c": {
+      "bytes": 56539,
+      "sha256": "532169ff3805eedf359f3ff577fdb802e3f2f370819e473456a86d45e822093d",
+      "git_blob": "b57b02dc508554c66c88fcef52ccad9391e0fe9d",
+      "copyright_notices": [
+        "Copyright Dave Chapman <dave@dchapman.com> 2005,"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/atsi2.c": {
+      "bytes": 23177,
+      "sha256": "47291c9d04210973cafd114641898e6e9e67da77a5cb87684d9ce6b70c397d74",
+      "git_blob": "1e60c9bd242c710fb2d623e2cfb8926db915add3",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/audio.c": {
+      "bytes": 80619,
+      "sha256": "62636f7ec4d989985e9561969838cd35523a38e6551441ea4acf02454500456e",
+      "git_blob": "6e11c93242665d493b88283e514f476f3a8bb678",
+      "copyright_notices": [
+        "Copyright Dave Chapman <dave@dchapman.com> 2005 ;",
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net> 2008 (SoX and FLAC 1.2.1 integration, code refactoring);",
+        "Lee and Tim Feldkamp 2008 (multichannel features);"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/author_library.c": {
+      "bytes": 1253,
+      "sha256": "b2984e7b41218ac18195f771452b304ba809370471da64ebd92a3504bc21e808",
+      "git_blob": "4fdf9b0962213efa1e1b0f9e88286cffffb10b5f"
+    },
+    "tools/dvda-author-mlp8/src/auxiliary.c": {
+      "bytes": 45586,
+      "sha256": "d7c121fee49c3960540ed5d15a1245eca8ee9caada9f4941082646f38062cb3c",
+      "git_blob": "4f84bbab442040731d5659d5e0a3a0ad11cc29ec",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005",
+        "(C) Revised version with zone-to-zone linking Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008",
+        "foutput(\"%s%s%s\", \"dvda-author version \", VERSION, \"\\nFirst 2005 version: Copyright  2005 Dave Chapman.\\nFirst multichannel implementation: Copyright 2008-2009 Lee and Tim Feldkamp.\\nMenu creation, video linking and\\nrevised multichannel capability: Copyright 2007-2021 Fabrice Nicol.\\nAudio extraction and MLP capability: Copyright 2020 Fabrice Nicol.\\n\");",
+        "foutput(\"%s\", \"This is free software; see the source for copying conditions.\\nWritten by Dave Chapman, Fabrice Nicol, Lee and Tim Feldkamp.\\n\\n\");"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software",
+        "foutput(\"%s\", \"This is free software; see the source for copying conditions.\\nWritten by Dave Chapman, Fabrice Nicol, Lee and Tim Feldkamp.\\n\\n\");"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/command_line_parsing.c": {
+      "bytes": 158132,
+      "sha256": "b7b54431179585b8bbfedf5bddf7f4969097156c7d7a1deb652734f5b428814d",
+      "git_blob": "0869d8e42b3b7a19d5c23043aa7d4fca3d08a7cf",
+      "copyright_notices": [
+        "Copyright (C) 2007-2022 Fabrice Nicol fabnicol@users.sourceforge.net"
+      ],
+      "license_header_notices": [
+        "This program is free software: you can redistribute it and/or modify it under",
+        "the terms of the GNU General Public License as published by the Free Software",
+        "Foundation, either version 3 of the License, or (at your option) any later",
+        "FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more",
+        "You should have received a copy of the GNU General Public License along with"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/dvda-author.c": {
+      "bytes": 15067,
+      "sha256": "91bba08a9ecc73fc8d1e5e994179e46a8ede9613d0ea197817e4e7c55dff82d5",
+      "git_blob": "ebde680b9e30df98ddb58c8ee41ed3a5028c1260",
+      "copyright_notices": [
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net> July 2008-2013"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/file_input_parsing.c": {
+      "bytes": 11351,
+      "sha256": "9ad8ec2fde4d0ebc7c606e2bea1029c01e4e4dbbddf68a51dc2b05346adf86b1",
+      "git_blob": "c8544770a2f700399d5788ef85ff4ef9cd52d8bd",
+      "copyright_notices": [
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/amg.h": {
+      "bytes": 1781,
+      "sha256": "1c4c72eebb45f73c10fae19037858d19e6fdc433cae68cfdf12666fc68cb5173",
+      "git_blob": "22a348a9e075d7dce53ae41b93e9df7828931737",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/asvs.h": {
+      "bytes": 188,
+      "sha256": "7594fc17d37351331ccc44032c9cea53a47818964c9f2bbc2bdc463c49115c22",
+      "git_blob": "7c45196d58c16028a392ffa287620dae7709c294"
+    },
+    "tools/dvda-author-mlp8/src/include/ats.h": {
+      "bytes": 1683,
+      "sha256": "089143818577b1196649d459c6c7e3e383b9371bd3095383623a7cbbb08cca9f",
+      "git_blob": "886239fb6e726a083f8766c4d9e59b9fdfafbcfa",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/ats2wav.h": {
+      "bytes": 562,
+      "sha256": "aae9de4ccdb05bf06ffe551d49c413c5f5d2508de2bf3f629c386610e0517b3c",
+      "git_blob": "dc28612b623ae9ea284f5205f68aa2ce4febf25f"
+    },
+    "tools/dvda-author-mlp8/src/include/atsi.h": {
+      "bytes": 1232,
+      "sha256": "67d6f6360e5b3708fcc05ca5b582c9e1f39164dd5149b3cad23e7ffe0227808e",
+      "git_blob": "81dbb92b004492f6de764db741f1e3534353db2f",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/audio2.h": {
+      "bytes": 2847,
+      "sha256": "b60ba0d679fe5f632718f25413bf0123eb7df7960bc0b589ebedf285f46ef1ce",
+      "git_blob": "9c50485674f570d5f31c667b9366985e86f49393",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005, revised by Fabrice Nicol, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/author_library.h": {
+      "bytes": 1038,
+      "sha256": "0c1bb71ce3f51a257ef66c31b5974ebc29ef2fce4581447d7afad5c369e31673",
+      "git_blob": "c2274373afcbaa73b0b1d2f1361f755e8b13a5bb"
+    },
+    "tools/dvda-author-mlp8/src/include/auxiliary.h": {
+      "bytes": 4399,
+      "sha256": "017bd97cdf84ce56f9acdd785c996aae52dbb187fa40fdb026016551c569d572",
+      "git_blob": "f3c250b17f3ad5edccf7a50e80f26c9fa1f7de3b",
+      "copyright_notices": [
+        "(C) Revised version with zone-to-zone linking Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/command_line_parsing.h": {
+      "bytes": 1824,
+      "sha256": "db92cc7e41ae1b0f25e90b9a61b0bc30eb868694baf4beb0b135cab115fbf1ba",
+      "git_blob": "6a3ffd35d877f12cc0317731ef800f93869ca7b9"
+    },
+    "tools/dvda-author-mlp8/src/include/commonvars.h": {
+      "bytes": 17060,
+      "sha256": "de7f06489c8ef07d51ad5c50a187fdd1847e367e2a7380362b2c5eb254c8bcdc",
+      "git_blob": "e0414316316107a54404411631f37075b0d5cf54",
+      "copyright_notices": [
+        "(C) Revised version with zone-to-zone linking Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/dvda-author.h": {
+      "bytes": 1567,
+      "sha256": "6707b0dce8df438a0deb9157ff2f39f7fec7ab0ca27c006d81b944378461fdd1",
+      "git_blob": "29e2b52b2cd5f070004daca8f65e08ca9b5cb1b5",
+      "copyright_notices": [
+        "(C) Revised version with zone-to-zone linking Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/file_input_parsing.h": {
+      "bytes": 1513,
+      "sha256": "d9d99c70ce297174624bbfcf8fc0c32a7758505ade7c9ef77b70dbd6a616bda6",
+      "git_blob": "56f783a94d30fc994d97e60f5e5d05244f408f12",
+      "copyright_notices": [
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/launch_manager.h": {
+      "bytes": 162,
+      "sha256": "e8ea1fc7466adc9163301c59f8028b3ad0bda0cc6a172df7c3e4eb74fa6311a3",
+      "git_blob": "c15130b8a6a33f74e987dde5b7b46e5955961e57"
+    },
+    "tools/dvda-author-mlp8/src/include/lexer.h": {
+      "bytes": 158,
+      "sha256": "2d2a6e0bc7396cd779a14314dac2f06249b4f8e1021f2bfe2742f34f73cb906e",
+      "git_blob": "2345109959b5f7e4f0faedd8ffbfeb1ee19cac39"
+    },
+    "tools/dvda-author-mlp8/src/include/libsoxconvert.h": {
+      "bytes": 237,
+      "sha256": "5b309fd9b2d17a1165f61f0173487c0c99d8090066439bc77b1e189919829b98",
+      "git_blob": "479f9e9d4acb83def333cedc0758cdf9f118db3e"
+    },
+    "tools/dvda-author-mlp8/src/include/menu.h": {
+      "bytes": 12350,
+      "sha256": "3975c37d4b215d5e2a6039e2f3a8e25eaa8e22b1ed9e81ce59c6f615c90b56fb",
+      "git_blob": "28117eef199c07ef4721e3fa3f9e41c2ba27ce45"
+    },
+    "tools/dvda-author-mlp8/src/include/mlp.h": {
+      "bytes": 610,
+      "sha256": "229747bc0f9366190f6a96e8e835f26dc0fd3f3592025acf6c50d8f80fda5100",
+      "git_blob": "4163d0926832ad86eb526fd00e5a2d119b4a851b"
+    },
+    "tools/dvda-author-mlp8/src/include/mlplayout.h": {
+      "bytes": 326,
+      "sha256": "ecda5773b64f2c6a37bc0085cb68348bc7c82c94db073c526f0c87c63a4199f8",
+      "git_blob": "a5a70e4c07f0333feae1e665c43db840159f0e82"
+    },
+    "tools/dvda-author-mlp8/src/include/multichannel.h": {
+      "bytes": 9496,
+      "sha256": "20767fdcc1927164258464f657622fd22a843741cb34d71ea0b3fe8bfbddda25",
+      "git_blob": "877961ab77bbc1ce1a4b2ece863343d58a5fe90c",
+      "copyright_notices": [
+        "Copyright Lee and Tim Feldkamp, 2008;"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify it",
+        "under the terms of the GNU General Public License as published by the",
+        "Free Software Foundation; either version 2 of the License, or (at your",
+        "option) any later version.",
+        "WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General",
+        "You should have received a copy of the GNU General Public License along",
+        "with this program; if not, write to the Free Software Foundation, Inc.,"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/ports.h": {
+      "bytes": 1967,
+      "sha256": "9db5daed3f7a23804e69189a5fc211392ac6d16aa7a3edb433f7077e38507a34",
+      "git_blob": "c80c210f335296b1c5adeb37fbb05ca47933ecf0",
+      "copyright_notices": [
+        "(C) Revised version with zone-to-zone linking Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/samg.h": {
+      "bytes": 1082,
+      "sha256": "7339064bc0d1a5830bbc9445713890e3f2d831e491d2917fac8be3634bb57579",
+      "git_blob": "a772cf94e5b7a71bf7f4f89d2d908c0ea95230f7",
+      "copyright_notices": [
+        "(C) Dave Chapman <dave@dchapman.com> 2005"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/sound.h": {
+      "bytes": 878,
+      "sha256": "30ca3f7096dbcc49931c57fd060e2fd293335d9729797884e2d67208c2f1d5f1",
+      "git_blob": "a3b20387f8dffc1a8424471f79a5ba96cb6a8879"
+    },
+    "tools/dvda-author-mlp8/src/include/structures.h": {
+      "bytes": 8287,
+      "sha256": "90239a0c6b686e1ece327ea383e721df8b9cee356c24a4362bb50754c8e199f1",
+      "git_blob": "8dcd180c28c0c6b8ece867d6068489179bbf3196"
+    },
+    "tools/dvda-author-mlp8/src/include/version.h": {
+      "bytes": 181,
+      "sha256": "ac1865a80ed4e8134cd931942bb599dcccf403c20b9e4ef2fc0612ca493d3f7b",
+      "git_blob": "f4cb37b465ccb9cf2110653e7d4665994bfdb165"
+    },
+    "tools/dvda-author-mlp8/src/include/videoimport.h": {
+      "bytes": 1530,
+      "sha256": "862798c57195a3340d43a6b218e430970d9b649dc88e5c65c964f6775dd214cc",
+      "git_blob": "0010a562e3476e7383f90a9cfc3095d8f61d2ff2",
+      "copyright_notices": [
+        "(C) Revised version with zone-to-zone linking Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/include/xml.h": {
+      "bytes": 250,
+      "sha256": "f4ff8d5b6d701c07caa8276d97fb7f1bd36cb5bb77b872d64766c523f97151d8",
+      "git_blob": "441b773cb69a86f3f5c31bc1f7ad5139cb47d20b"
+    },
+    "tools/dvda-author-mlp8/src/iso_writer.c": {
+      "bytes": 41869,
+      "sha256": "f8b2866b0c724fe9d9fe4b838a53cac105359858003c6205bf3b1f8f3509c41b",
+      "git_blob": "6e984d5f8f5dccb197c848a7c6852150c4c8d49c"
+    },
+    "tools/dvda-author-mlp8/src/iso_writer.h": {
+      "bytes": 186,
+      "sha256": "96e047665d2f362236a6dad3ab0ed3f41f4870873791ebe2cb8df64649bf3023",
+      "git_blob": "65994a234b1c71f0ef3ec57766266c35faf9dfe6"
+    },
+    "tools/dvda-author-mlp8/src/launch_manager.c": {
+      "bytes": 25476,
+      "sha256": "65b0c0c51071f091876707f5b0671dc2629dabcb42325abf115b5021535744d9",
+      "git_blob": "e8c2a990ad629770f5f585fb836c7fa9324ba308"
+    },
+    "tools/dvda-author-mlp8/src/lexer.c": {
+      "bytes": 8476,
+      "sha256": "3ca0bef646840817f5fad6898cd5d9c9a84b7e25c65ea1d8c6713d020d775e20",
+      "git_blob": "fdb48444ffe539d808f79e893d41fbb5ab5aa43a",
+      "copyright_notices": [
+        "Copyright (c) 2008 fabnicol@users.sourceforge.net"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify it",
+        "under the terms of the GNU General Public License as published by the",
+        "Free Software Foundation; either version 3 of the License, or (at your",
+        "option) any later version.",
+        "WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General",
+        "You should have received a copy of the GNU General Public License along",
+        "with this program. If not, write to the Free Software Foundation, Fifth"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/libsoxconvert.c": {
+      "bytes": 6181,
+      "sha256": "e3ebf33ad4f02b93daa741a738aa521271304fc79e4e680668583811074f9fee",
+      "git_blob": "39305c08f9d2fc8884d5a64e478010172c465f14",
+      "copyright_notices": [
+        "Copyright (c) 2007-8 robs@users.sourceforge.net",
+        "Modified bay Fabrice Nicol, Copyright 20008 <fabrnicol@users.sourceforge.net>"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify it",
+        "under the terms of the GNU General Public License as published by the",
+        "Free Software Foundation; either version 2 of the License, or (at your",
+        "option) any later version.",
+        "WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General",
+        "You should have received a copy of the GNU General Public License along",
+        "with this program; if not, write to the Free Software Foundation, Inc.,"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/menu.c": {
+      "bytes": 94566,
+      "sha256": "1d74f59ebbe2ea2db0725934a24a4773053cc0f78c097f8bc985687c152b2fb4",
+      "git_blob": "755be1bcd155ddacee08826bc4c89a9b65a168c1"
+    },
+    "tools/dvda-author-mlp8/src/mlp.c": {
+      "bytes": 32274,
+      "sha256": "1f73972e25631af83b3ef941cd44826afcd3ccac2e48f4b7aa888ab10748e262",
+      "git_blob": "1a98bb270b74461b4a86e7a9d032178e02386b37"
+    },
+    "tools/dvda-author-mlp8/src/samg2.c": {
+      "bytes": 8940,
+      "sha256": "ecba6c898163f4894e3a5078126ca724fa867569e2f85b66bb52742fb053bd03",
+      "git_blob": "bdce9c609775591737290b63e32ed11dc346764a",
+      "copyright_notices": [
+        "Copyright Dave Chapman <dave@dchapman.com> 2005",
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net> 2007, 2008 (revisions)"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/sound.c": {
+      "bytes": 12999,
+      "sha256": "d4049a09b1d25009d5c3e8c69252fe7463aff08f931bd379564030bd61c018af",
+      "git_blob": "92874530d31be21e4062a8c009589f8a0e5fe989"
+    },
+    "tools/dvda-author-mlp8/src/videoimport.c": {
+      "bytes": 7910,
+      "sha256": "757087b82bc1b7bd676bc7db5b2fd5347bca25a4a26a9408e466cbb315a64536",
+      "git_blob": "117d2312cb2a97c289783faa2a5adce704074d36",
+      "copyright_notices": [
+        "Copyright Fabrice Nicol <fabnicol@users.sourceforge.net>, 2008-2012"
+      ],
+      "license_header_notices": [
+        "This program is free software; you can redistribute it and/or modify",
+        "it under the terms of the GNU General Public License as published by",
+        "the Free Software Foundation; either version 2 of the License, or",
+        "(at your option) any later version.",
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+        "GNU General Public License for more details.",
+        "You should have received a copy of the GNU General Public License",
+        "along with this program; if not, write to the Free Software"
+      ]
+    },
+    "tools/dvda-author-mlp8/src/xml.c": {
+      "bytes": 24012,
+      "sha256": "ff8075665c6843ffcf9651ecd19cd9d23da6c1036c8219e102f65b6ab2fe80f8",
+      "git_blob": "e007550cfc1f8fa785bf1b409cd20a78b487b01b"
+    },
+    "tools/dvda-author-mlp8/tests/author_library_test.c": {
+      "bytes": 1354,
+      "sha256": "4bf6abc83417b1b8e851a226c126bccc797a9e6abe02ad5dd7298bdb65d9e7bb",
+      "git_blob": "b7fc3761258c954c371bd05d4125f1106096e75e"
+    },
+    "tools/dvda-author-mlp8/tests/iso_writer_harness.c": {
+      "bytes": 160,
+      "sha256": "132389fb02b3f33389774a0417921ff0524f9372b518a4d7d9766a2ee217494e",
+      "git_blob": "46225fec7fbfbc08aee67c6e38bddeeb3e7c57d8"
+    },
+    "tools/dvda-author-mlp8/tests/test_iso_writer.py": {
+      "bytes": 10040,
+      "sha256": "76f6ff034d683aab74552dc4b310a7131cf533cff1635471132a09e8e0bb5664",
+      "git_blob": "c822c14010059b4e199afe589267676f641b71eb"
+    }
+  },
+  "removed_generated_artifacts": {
+    "tools/dvda-author-mlp8/tests/__pycache__/test_iso_writer.cpython-314.pyc": {
+      "bytes": 15734,
+      "sha256": "d657032679c201bc5e9809b38bf98e3f5abdbb5565a47435985dd1d726ae6973"
+    }
+  },
+  "removed_untracked_fixture_harnesses": {
+    "rust/crates/dvda-author/tests/fixtures/atsi/oracle-harness.c": {
+      "bytes": 2655,
+      "sha256": "2433b33901435ca1300fde9156eaa78628626964a4c86a8906e41c78165646aa",
+      "tracked_before_cleanup": false,
+      "replacement_inputs": "rust/crates/dvda-author/tests/atsi_parity.rs"
+    },
+    "rust/crates/dvda-author/tests/fixtures/manager/oracle-harness.c": {
+      "bytes": 3261,
+      "sha256": "6ab6d3f9f87fa5ec709066cdc139c78d2e2274890ac84a18eb446a503f5ff6b6",
+      "tracked_before_cleanup": false,
+      "replacement_inputs": "rust/crates/dvda-author/tests/manager_parity.rs"
+    }
+  },
+  "notes": [
+    "Old author mirror and executable C oracle entry points were removed after production Rust author migration.",
+    "SHA256 values describe bytes immediately before cleanup; Git blob IDs identify historical committed source bytes.",
+    "Fixture harnesses were newly generated, untracked migration aids; hashes are retained and inputs are specified in Rust parity tests.",
+    "Golden IFO/CSV bytes and original generation provenance remain unchanged."
+  ],
+  "retained_golden_files": {
+    "atsi/custom-downmix.ifo": {
+      "bytes": 4096,
+      "sha256": "f6a19023fc1787d50fc118b747dcb8849b1fbb99f0f09e5d384e40c1efc79694"
+    },
+    "atsi/manual-empty.ifo": {
+      "bytes": 4096,
+      "sha256": "c3a026c14c663ea24fad8f7978d173265d8f7f36c5c4975643e7481429d83af7"
+    },
+    "atsi/mixed-99-titles.csv": {
+      "bytes": 3891,
+      "sha256": "301e416a4f487cf736bc6846dc3da622dea51a5544b5789aedd4ee6c385d6511"
+    },
+    "atsi/mixed-99-titles.ifo": {
+      "bytes": 8192,
+      "sha256": "49b85de17792d42d717694607719e33843dc2e4cb0ce9c76f8ffa1ccceaf7b02"
+    },
+    "atsi/mixed-three-titles.csv": {
+      "bytes": 144,
+      "sha256": "33756dfe89f5329b23075128c816f5cfdfe5572ed8b46d37061dff9de75bf546"
+    },
+    "atsi/mixed-three-titles.ifo": {
+      "bytes": 4096,
+      "sha256": "21ed32eb2a5aedd59eba574cbd68027208ac31d4760994f4a9519c82a4e96df4"
+    },
+    "atsi/original-stereo-mlp.csv": {
+      "bytes": 34,
+      "sha256": "568f817424ac28550add0bf0c4d175d95408a01201a7422c37b450b450d28363"
+    },
+    "atsi/original-stereo-mlp.ifo": {
+      "bytes": 4096,
+      "sha256": "b9c4b505c2fac8d416351c17e4a09b2979995c15beadcf7fdf59cace8d9fbdc0"
+    },
+    "atsi/stereo-lpcm-two.csv": {
+      "bytes": 71,
+      "sha256": "f04e51d4e793b7d29f62abd233d36056416ee275315deb3f18129d5fba1d9c22"
+    },
+    "atsi/stereo-lpcm-two.ifo": {
+      "bytes": 4096,
+      "sha256": "32cc96dc81ecb078262ab3fcd04215b985086fff5f0367da972e293d55a6a151"
+    },
+    "atsi/stereo-mlp-99.csv": {
+      "bytes": 4126,
+      "sha256": "704e5a4a096d9fcaeb5c142131190343f093a5ded3157268f90f172ff7115875"
+    },
+    "atsi/stereo-mlp-99.ifo": {
+      "bytes": 6144,
+      "sha256": "b9a17a47db2ffa300a8354803ff2262f2ed8e2958ce8fe244e3441570478764a"
+    },
+    "atsi/stereo-mlp-two.csv": {
+      "bytes": 72,
+      "sha256": "5e59487a6feff66f2016f4af386521e6a4513011c3a2ec4812da2506fb1d5fdd"
+    },
+    "atsi/stereo-mlp-two.ifo": {
+      "bytes": 4096,
+      "sha256": "bbf4c98d25d6f00bef6c757e250cdbdc683e51e22f149801710fd26ff4e2ea85"
+    },
+    "atsi/stills-leading-empty.ifo": {
+      "bytes": 4096,
+      "sha256": "2f6055f0a6e8869516404f496050d8a85cd85f270153e693930c67e04e1280d4"
+    },
+    "atsi/stills-two-tracks.ifo": {
+      "bytes": 4096,
+      "sha256": "839e18dae22bbd247422d5c3e060c796998b152a864f05a7e77bfa21361a5008"
+    },
+    "atsi/surround-lpcm.csv": {
+      "bytes": 34,
+      "sha256": "0906626e0cfe7c667fc6275abefe5382528d512926d0f817e66d82dfe70125b6"
+    },
+    "atsi/surround-lpcm.ifo": {
+      "bytes": 4096,
+      "sha256": "630e2927104d8b4f6e54c97993da0eb19a4436b7a183868ef9c4b8cc2db56d5a"
+    },
+    "atsi/surround-mlp.csv": {
+      "bytes": 35,
+      "sha256": "4b58e521f7fdbbd0b64a3cf3d97e110496a5561c1f9a2fcec5f7028ef8baf5b3"
+    },
+    "atsi/surround-mlp.ifo": {
+      "bytes": 4096,
+      "sha256": "ea517ae22344046ff6c721974fb3335ea7b6b287eb429ef1bcc3b14d22f6b211"
+    },
+    "manager/asvs-ntsc.ifo": {
+      "bytes": 4096,
+      "sha256": "fc0f6ab51778814d6b3d248e05d0b74fa1ada4a5cd3113d4289f828e1374dd96"
+    },
+    "manager/asvs-pal.ifo": {
+      "bytes": 4096,
+      "sha256": "1f9761dbe49f99794de00f321842ef1f50d49596dcf8ae0a4464ec12cc281c86"
+    },
+    "manager/menu-ntsc-nine.ifo": {
+      "bytes": 10240,
+      "sha256": "4e47277e8b759f89a214425a4e35373783f7b99a685dd1a647d7e1b86d51ac5b"
+    },
+    "manager/menu-pal-two.ifo": {
+      "bytes": 8192,
+      "sha256": "6124ae9550bba047ba96bcd73df27b04f3246efd41b66967a357246b4056cd7e"
+    },
+    "manager/multigroup.ifo": {
+      "bytes": 6144,
+      "sha256": "ba34d16d59c67593d788875cbfa2c2f2808e4d5c588c6bb8f618d0c85315bd7c"
+    },
+    "manager/playlist-video.ifo": {
+      "bytes": 6144,
+      "sha256": "a250d3b1cc6eb959fc8030b393c07a4eeb7aaff0242e284aaa49004bb86f843c"
+    },
+    "manager/single.ifo": {
+      "bytes": 6144,
+      "sha256": "8803a913d44ecba325918cf20ad1844028d3dd2d5189c1a83dccf8bd0c96b64d"
+    },
+    "manager/text.ifo": {
+      "bytes": 22528,
+      "sha256": "1fa2a6ee0474a7485f6893b881c4bf548e778d3f1abef91942bebfebb99007f8"
+    }
+  },
+  "removed_retired_test_entries": {
+    "rust/crates/dvda-author/tests/aob_acceptance.py": {
+      "bytes": 12104,
+      "sha256": "119f0addcdcf5ce82ddae98d8617207ba7bac9a1cc70f16d511f94e5a3e0eb06"
+    }
+  }
+}

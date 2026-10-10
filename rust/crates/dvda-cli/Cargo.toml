@@ -1,5 +1,6 @@
 [package]
 name = "dvda-cli"
+default-run = "dvda-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,3 +15,8 @@ dvda-core = { path = "../dvda-core" }
 serde_json.workspace = true
 serde.workspace = true
 dvda-native = { path = "../dvda-native" }
+
+[[bin]]
+name = "dvda-author-dev"
+path = "src/author_main.rs"
+required-features = ["direct-bridges"]

@@ -20,21 +20,6 @@ pub(crate) struct MlpOutputQueue {
 }
 
 impl MlpOutputQueue {
-    #[cfg(test)]
-    pub(crate) fn state(&self) -> [u32; 9] {
-        [
-            self.read as u32,
-            self.write as u32,
-            self.count as u32,
-            self.primed as u32,
-            self.rate,
-            self.substreams,
-            self.decode,
-            u32::from(self.failed),
-            u32::from(self.finished),
-        ]
-    }
-
     pub(crate) fn mlp_output_queue_init() -> Self {
         Self {
             timing: Timing::new(),

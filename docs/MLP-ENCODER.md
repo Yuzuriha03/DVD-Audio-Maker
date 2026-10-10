@@ -1,5 +1,7 @@
 # MLP 编码
 
+2026-10-10 清理：旧 C 源码与冻结 DLL 已从当前工作区删除。默认 `build-runtime.ps1` 只运行 17 项 Rust 单测、Clippy 和 release 构建；历史 DLL 对照必须显式提供外部 `-FrozenEncoder`，并通过 `external-oracle` feature 启用。下文中的 C 差分矩阵是已完成的历史验收记录。
+
 正常的 `surcode-batch` 流程调用直接链接到主程序的 Rust MLP 编码器。它不会加载编码器 DLL，也不会启动 `surcodemlp.exe`、eac3to、MLP 编码子进程或外部 FFmpeg 可执行文件。
 
 当前链路：
@@ -9,7 +11,7 @@
      -> 只读校验 -> MLP 缓存 -> DVD 制作
 ```
 
-Rust 编码器源码位于 `rust/crates/dvda-mlp`，以 rlib 链接到 GUI/CLI。原 C 源码和冻结 Windows x64 DLL 位于 `native/mlp-encoder`，仅用于差分验收。发布包为 GUI-ONLY，不包含 CLI 或编码器 DLL。
+Rust 编码器源码位于 `rust/crates/dvda-mlp`，以 rlib 链接到 GUI/CLI。`native/mlp-encoder` 仅保留冻结 Windows x64 DLL 作为差分基准；已翻译的原 C 源码、头文件、源码级测试适配器及 C 构建已删除。发布包为 GUI-ONLY，不包含 CLI 或编码器 DLL。
 
 ## 配置
 
@@ -57,11 +59,11 @@ x64 Rust 编码器已通过 `dvda-mlp` 的 rlib 直接编入 GUI/CLI 主程序�
 
 首轮 Release 小输入批次计时（编码调用本身，不含输入构造与哈希）为：标准格式 C 882 ms / Rust 606 ms，Rust/C 0.686；layout/depths C 1085 ms / Rust 756 ms，Rust/C 0.697。这只是初步结果，不是多轮预热、长音轨及峰值内存的最终性能结论。错误/reentry/并发、显式及碎片 metadata 和组压力测试已通过下述严格验收；更广泛长轨与峰值内存性能仍未作最终结论。最终验收后继续公平比较耗时、吞吐量、实时倍速及峰值内存；不得以改变行为换取速度。
 
-整 DLL groups 压力测试已升级为完整原始字节与 SHA256 比较。曾出现的 96000 Hz、assignment 18、group2 16 bit、半采样率、9602 帧用例第 37406 字节差异已解决：相同重建 PCM 的逐区间 prepare 对照确认，最后一个短区间的矩阵去相关 gain 门限在 C 中使用 x87 扩展精度常量，而 Rust 原先先将 `0.1` 舍入为 binary64，边界比较改变了矩阵枢轴顺序。Rust 现保留 C 的扩展精度常量；新增可复现的 16 区间 prepare/analysis/scale/matrix/predictor/pool 状态回归，不依赖临时 PCM 文件。全部 228 个长分组压力用例通过原始 MLP 逐字节和 SHA256 比较，并保留插值 PCM、header/parity、并发和错误路径校验。
+整 DLL groups 压力测试已升级为完整原始字节与 SHA256 比较。曾出现的 96000 Hz、assignment 18、group2 16 bit、半采样率、9602 帧用例第 37406 字节差异已解决：相同重建 PCM 的逐区间 prepare 对照确认，最后一个短区间的矩阵去相关 gain 门限在 C 中使用 x87 扩展精度常量，而 Rust 原先先将 `0.1` 舍入为 binary64，边界比较改变了矩阵枢轴顺序。Rust 现保留 C 的扩展精度常量；迁移时曾用可复现的 16 区间 prepare/analysis/scale/matrix/predictor/pool 状态回归定位；该源码级 C 对照现随源码删除，保留整文件冻结 DLL 回归。全部 228 个长分组压力用例通过原始 MLP 逐字节和 SHA256 比较，并保留冻结/Rust 解码 PCM 对比、header/parity、并发和错误路径校验；不再运行独立 C 插值适配器。
 
 多轮 Release 性能测试：48 kHz、24 bit、双声道、48000 帧，预热一轮、交替顺序测量五轮，C 中位 43.889 ms（22.78 倍实时），Rust 30.105 ms（33.22 倍实时），Rust/C 0.686；每轮原始字节及 SHA256 一致。该单一输入结果不能替代长音轨、组输入与峰值内存结论。
 
-C 模块差分测试必须显式设置对应的 reference 环境变量；普通测试显示通过不能证明这些 DLL 已被执行。`build-runtime.ps1` 构建并设置 planning、entropy、timing、group、queue 和 prepare reference；新增 queue/prepare/flush 差分缺少环境变量时会直接失败。完整脚本当前通过 35 项测试、142 个标准压力用例和 228 个分组压力用例，严格比较原始字节和 SHA256；不能将局部差分或解码一致单独当作发布许可。
+`build-runtime.ps1` 现在只使用冻结 DLL，不再编译 planning、entropy、timing、group、queue 或 prepare C reference。依赖这些源码的 14 项测试及其 Rust 专用辅助代码已删除，未添加 ignore 或跳过逻辑。当前验收入口保留 21 项测试（含 27360 个双组原始字节/SHA256 用例）、142 个标准和 228 个分组压力用例、严格 Clippy，以及冻结 DLL 前后 SHA256 守卫。删除源码后不能再声称当前执行了源码级状态或独立 C 插值验收。
 
 ## 验证
 

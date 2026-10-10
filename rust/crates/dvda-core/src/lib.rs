@@ -3,6 +3,7 @@ pub mod aob;
 pub mod app;
 pub mod audio;
 pub mod author;
+pub mod author_runtime;
 pub mod batch;
 pub mod build;
 pub mod buildlog;

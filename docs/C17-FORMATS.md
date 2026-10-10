@@ -7,17 +7,17 @@ verification paths share the same deterministic implementation:
 - byte-for-byte PCM comparison with the documented zero-tail rule;
 - PTS, sample-rate, peak-rate and MLP checksum parsing.
 
-Format processing does not encode MLP. Encoding remains in
-`native/mlp-encoder`, with its existing C17 core and fixed floating-point options.
+Format processing does not encode MLP. Encoding is implemented in
+`rust/crates/dvda-mlp` and linked directly into the GUI and CLI.
 No format DLL, external utility or fallback implementation is required.
 
 ## Rust migration regression checks
 
-The formats and read-only MLP/LPCM disc verifiers no longer require a C implementation or production DLL. With `DVDA_FORMATS_ORACLE=1`, the frozen DLL differential tests also encode nine real MLP profiles (44.1–192 kHz, 16/20/24 bits, mono/stereo/six channels) using the pinned encoder, then compare inspection and alignment results. The oracle remains test-only.
+The formats and read-only MLP/LPCM disc verifiers require no C implementation or production DLL. The old C sources and frozen DLLs have been removed from the checkout. Historical format differential tests covered nine real MLP profiles (44.1–192 kHz, 16/20/24 bits, mono/stereo/six channels); optional external comparisons remain test-only.
 
 Set `DVDA_TEST_AUTHOR` to the project-built author executable and run `cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native --test authored_lpcm` for the full authored LPCM matrix; leave `DVDA_TEST_AUTHOR_QUICK` unset. This covers gapless/separate titles, short and odd-length PCM, corrupted audio/headers, and truncation rejection.
 
-For native application integration, `DVDA_TEST_MENU_DATA` must point to the source directory containing `menu`, with `menu-bin` beside that source directory. Supplying only extracted `data` without its adjacent menu DLL directory is insufficient. Application (8), conversion (1), and encoder (5, excluding the opt-in benchmark) integration tests passed with the migrated Rust implementation. Strict all-target Clippy, workspace tests, and local onefile packaging passed; the actual EXE archive index contains neither `dvda-formats.dll` nor `dvda-disc-verify.dll`. These checks do not certify hardware playback.
+For application integration, `DVDA_TEST_MENU_DATA` points to the prepared directory containing `menu`, normally `build/rust-author-production/data`. Compilation uses the static menu vendor directory; execution uses the assembled Rust runtime and its image/font configuration. See `tools/win-build/test-rust-workflow.ps1`. Historical application, conversion, encoder, Clippy, workspace and onefile checks passed; the EXE archive contains neither `dvda-formats.dll` nor `dvda-disc-verify.dll`. These checks do not certify hardware playback.
 
 ## Validation
 
@@ -37,9 +37,11 @@ cargo run --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offli
 The command reports file count, bytes, valid headers, alignment results and PTS
 round trips. Optional migration differential tests use a previously built C DLL
 as a read-only oracle, never as a production fallback or release component.
-Enable `DVDA_FORMATS_ORACLE=1` and put the old DLL at
-`build\c-rust-migration-oracle\dvda-formats.dll` for the synthetic MLP/checksum
-and PCM/PTS differential tests. Set `DVDA_FORMATS_REAL_MLP` to an existing MLP
+Enable `DVDA_FORMATS_ORACLE=1` and set `DVDA_FORMATS_ORACLE_DLL` to an external
+frozen format DLL for the synthetic MLP/checksum and PCM/PTS differential tests.
+Set `DVDA_ENCODER_LIBRARY` explicitly for encoded-profile comparisons. The
+optional disc-verifier oracle uses `DVDA_DISC_VERIFY_LIBRARY` without a bundled
+fallback. Set `DVDA_FORMATS_REAL_MLP` to an existing MLP
 file to also run `frozen_dll_real_mlp_file_differential`; without that variable,
 the optional real-file check does not perform a comparison.
 

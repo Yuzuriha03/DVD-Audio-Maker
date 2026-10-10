@@ -6,15 +6,15 @@ Windows x64 工作流现在由 Rust 应用和项目构建的原生组件完成�
 
 | 区域 | 原生实现 |
 |---|---|
-| 音源媒体 | `dvda-media.dll`，负责探测、解码、PCM/FLAC 输出和 ALAC 检查 |
-| 图像 | `dvda-image.dll`，负责所需图像转换 |
-| MLP | 通过流式 C ABI 调用 `mlp_encoder.dll` |
-| DVD 菜单 | `dvda-menu-spu.dll`、`dvda-menu-nav.dll` 和项目构建的 author |
-| ISO 写入 | author 内置 ISO 写入器 |
+| 音源媒体 | 静态链接的 Rust media bridge，调用第三方 FFmpeg 完成探测、解码、PCM/FLAC 输出和 ALAC 检查 |
+| 图像 | 静态链接的 Rust image bridge，调用第三方 ImageMagick 完成所需转换 |
+| MLP | 静态链接的 `dvda-mlp` Rust 编码器 |
+| DVD 制盘 / 菜单 | `dvda-author` Rust AOB/IFO 和菜单编排；Rust menu bridge 调用静态第三方 SPU/导航 vendor |
+| ISO 写入 | `dvda-author` 内置 Rust ISO9660/UDF 1.02 writer |
 | 成品校验 | Rust ISO 读取、AOB 流式 MLP/LPCM 比较和 PCM 校验 |
 | 配置 | 仅使用版本化 JSON 方案 |
 
-发布 ZIP 是 Windows x64 原生 GUI 包。必要 DLL、菜单资源、字体、许可证和用户文档随包提供。组件缺失时报告错误，不替换为外部程序。
+发布 ZIP 是 Windows x64 原生 GUI 包。必要第三方 DLL、菜单资源和字体内嵌在 GUI，许可证和用户文档随包提供。完整制盘与 ISO 迁移记录见 [Rust author](RUST-AUTHOR-MIGRATION.md)。
 
 ## MLP 逐字节规则
 
