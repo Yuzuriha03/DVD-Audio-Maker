@@ -14,16 +14,20 @@ This document records the repository's licensing, attribution of third-party com
 
 ### Why GPL-3.0 is used
 
-This project makes **substantial changes** to the [dvda-author](https://github.com/fabnicol/dvda-author) source.
-As a derivative work, it must remain consistent with the upstream license. The repository includes:
+The project's author and LPCM packing rules were translated from modified
+[dvda-author](https://github.com/fabnicol/dvda-author) code into Rust. Upstream
+attribution and GPL licensing are retained. The current repository includes:
 
-- `docs/dvda-author-changes.patch`: the complete changes to 20 source files, ready to apply
-- `docs/DVDA-AUTHOR-CHANGES.md` / `DVDA-AUTHOR-DISABLED.md`: rationale
-  and code excerpts
-- `scripts/build_dvda_author_mlp.sh`: building the toolchain with this project's changes
+- `rust/crates/dvda-author`: the Rust author, IFO/AOB generation and ISO writer
+- `docs/RUST-AUTHOR-MIGRATION.md`: implementation scope and acceptance records
+- `rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json`: retired
+  source revisions, hashes, copyright notices and golden fixture provenance
+- `docs/DVDA-AUTHOR-CHANGES.md` / `DVDA-AUTHOR-DISABLED.md`: historical change notes
 
-> At the time of this licensing review, the changes were committed on the `dvda-maker` branch of a full `tools/dvda-author-mlp8` checkout.
-> That 1.7 GB upstream clone was not included in the repository; the patch was included instead.
+The old C mirror and `docs/dvda-author-changes.patch` have been removed. Both can
+be recovered from this repository at commit
+`6c5086127590001c544373783653fe991f0ebaeb`. Source cleanup does not change licensing
+or attribution requirements.
 
 The upstream dvda-author licensing record is:
 
@@ -38,10 +42,10 @@ The project also distributes GPL-3.0 in `COPYING`, so this repository uses **GPL
 
 ### This repository's own programs
 
-The C# CLI and compatibility wrappers invoke `dvda-author` as a subprocess rather than linking to it. Under the usual interpretation of the GPL,
-that arrangement need not make the caller a derivative work, so a separate license could have been chosen. For clarity across the repository and to avoid
-mixing licenses, the project uniformly adopts **GPL-3.0**. Removed root-level Python files remain only as historical migration references;
-they are neither included in production packages nor invoked by production entry points.
+The current GUI, CLI, author, media and image adapters, and MLP encoder are
+implemented in Rust. The repository uniformly adopts GPL-3.0. The old C# and
+Python entry points remain in Git history. Current packages use in-process Rust
+implementations and required third-party libraries; see the third-party notices.
 
 ---
 
@@ -56,7 +60,8 @@ Copyright Lee and Tim Feldkamp 2008-2009
 License: GPL-3.0
 ```
 
-Copyright in the upstream code belongs to its original authors. This repository supplies modifications as a patch and accompanying documentation.
+Copyright in the upstream code belongs to its original authors. The Rust port
+retains corresponding attribution, golden fixtures and source provenance records.
 
 ### FFmpeg
 

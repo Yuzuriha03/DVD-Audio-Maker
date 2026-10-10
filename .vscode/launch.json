@@ -14,11 +14,11 @@
       ],
       "terminal": "integrated",
       "env": {
-        "DVDA_MEDIA_NATIVE_DIR": "${workspaceFolder}/build/media-native-shared",
-        "DVDA_IMAGE_NATIVE_DIR": "${workspaceFolder}/build/image-native",
-        "DVDA_FORMATS_NATIVE_DIR": "${workspaceFolder}/build/formats-native",
-        "DVDA_DISC_VERIFY_LIBRARY": "${workspaceFolder}/build/menu-native/dvda-disc-verify.dll",
-        "DVDA_ENCODER_LIBRARY": "${workspaceFolder}/native/mlp-encoder/win-x64/mlp_encoder.dll"
+        "DVDA_MEDIA_NATIVE_DIR": "${workspaceFolder}/build/rust-author-production",
+        "DVDA_IMAGE_NATIVE_DIR": "${workspaceFolder}/build/rust-author-production",
+        "MAGICK_CONFIGURE_PATH": "${workspaceFolder}/build/rust-author-production",
+        "MAGICK_FONT_PATH": "${workspaceFolder}/build/rust-author-production",
+        "PATH": "${workspaceFolder}/build/rust-author-production;${env:PATH}"
       }
     },
     {
@@ -36,11 +36,11 @@
       ],
       "terminal": "integrated",
       "env": {
-        "DVDA_MEDIA_NATIVE_DIR": "${workspaceFolder}/build/media-native-shared",
-        "DVDA_IMAGE_NATIVE_DIR": "${workspaceFolder}/build/image-native",
-        "DVDA_FORMATS_NATIVE_DIR": "${workspaceFolder}/build/formats-native",
-        "DVDA_DISC_VERIFY_LIBRARY": "${workspaceFolder}/build/menu-native/dvda-disc-verify.dll",
-        "DVDA_ENCODER_LIBRARY": "${workspaceFolder}/native/mlp-encoder/win-x64/mlp_encoder.dll"
+        "DVDA_MEDIA_NATIVE_DIR": "${workspaceFolder}/build/rust-author-production",
+        "DVDA_IMAGE_NATIVE_DIR": "${workspaceFolder}/build/rust-author-production",
+        "MAGICK_CONFIGURE_PATH": "${workspaceFolder}/build/rust-author-production",
+        "MAGICK_FONT_PATH": "${workspaceFolder}/build/rust-author-production",
+        "PATH": "${workspaceFolder}/build/rust-author-production;${env:PATH}"
       }
     }
   ]

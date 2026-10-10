@@ -1,0 +1,100 @@
+{
+  "oracle_executable_sha256": "b6ba0fe810439b2b000cbe20be0c636f894524f99013c6e6b8569ae499f8df68",
+  "oracle_atsi_c_sha256": "47291c9d04210973cafd114641898e6e9e67da77a5cb87684d9ce6b70c397d74",
+  "files": {
+    "custom-downmix.ifo": {
+      "bytes": 4096,
+      "sha256": "f6a19023fc1787d50fc118b747dcb8849b1fbb99f0f09e5d384e40c1efc79694"
+    },
+    "manual-empty.ifo": {
+      "bytes": 4096,
+      "sha256": "c3a026c14c663ea24fad8f7978d173265d8f7f36c5c4975643e7481429d83af7"
+    },
+    "mixed-99-titles.ifo": {
+      "bytes": 8192,
+      "sha256": "49b85de17792d42d717694607719e33843dc2e4cb0ce9c76f8ffa1ccceaf7b02"
+    },
+    "mixed-three-titles.ifo": {
+      "bytes": 4096,
+      "sha256": "21ed32eb2a5aedd59eba574cbd68027208ac31d4760994f4a9519c82a4e96df4"
+    },
+    "original-stereo-mlp.ifo": {
+      "bytes": 4096,
+      "sha256": "b9c4b505c2fac8d416351c17e4a09b2979995c15beadcf7fdf59cace8d9fbdc0"
+    },
+    "stereo-lpcm-two.ifo": {
+      "bytes": 4096,
+      "sha256": "32cc96dc81ecb078262ab3fcd04215b985086fff5f0367da972e293d55a6a151"
+    },
+    "stereo-mlp-99.ifo": {
+      "bytes": 6144,
+      "sha256": "b9a17a47db2ffa300a8354803ff2262f2ed8e2958ce8fe244e3441570478764a"
+    },
+    "stereo-mlp-two.ifo": {
+      "bytes": 4096,
+      "sha256": "bbf4c98d25d6f00bef6c757e250cdbdc683e51e22f149801710fd26ff4e2ea85"
+    },
+    "stills-leading-empty.ifo": {
+      "bytes": 4096,
+      "sha256": "2f6055f0a6e8869516404f496050d8a85cd85f270153e693930c67e04e1280d4"
+    },
+    "stills-two-tracks.ifo": {
+      "bytes": 4096,
+      "sha256": "839e18dae22bbd247422d5c3e060c796998b152a864f05a7e77bfa21361a5008"
+    },
+    "surround-lpcm.ifo": {
+      "bytes": 4096,
+      "sha256": "630e2927104d8b4f6e54c97993da0eb19a4436b7a183868ef9c4b8cc2db56d5a"
+    },
+    "surround-mlp.ifo": {
+      "bytes": 4096,
+      "sha256": "ea517ae22344046ff6c721974fb3335ea7b6b287eb429ef1bcc3b14d22f6b211"
+    }
+  },
+  "notes": [
+    "Metadata CSV rows are captured from the frozen author track summary, not inferred by decoding the expected IFO.",
+    "LPCM fixtures use zero-filled 6000-frame 48000 Hz WAV files (stereo 16-bit or six-channel 24-bit).",
+    "custom-downmix, manual-empty and stills-leading-empty call unchanged atsi2.c through oracle-harness.c. The full frozen executable CLI drops custom downmix values (its command.db references an expired stack array); direct C call isolates the encoder from that unrelated defect.",
+    "stills-two-tracks uses stereo-mlp-two with one black PAL JPEG per track. ATSI generation succeeds before the frozen author fails downstream image/ASVS conversion. This fixture proves ATSI table parity only."
+  ],
+  "harness_sha256": "2433b33901435ca1300fde9156eaa78628626964a4c86a8906e41c78165646aa",
+  "harness_compile": {
+    "compiler": "C:/msys64/mingw64/bin/gcc.exe",
+    "flags": [
+      "-O2",
+      "-std=gnu11",
+      "-D_GNU_SOURCE",
+      "-DHAVE_CONFIG_H",
+      "-DWITHOUT_sox",
+      "-DWITHOUT_FLAC",
+      "-DWITHOUT_libogg",
+      "-ffunction-sections",
+      "-fdata-sections",
+      "-Wl,--gc-sections"
+    ],
+    "source": "tools/dvda-author-mlp8/src/atsi2.c",
+    "configured_headers": "build/rust-image-author/source",
+    "include_subdirectories": [
+      "libutils/src/include",
+      "libutils/src/private",
+      "src/include",
+      "libfixwav/src/include",
+      ".",
+      "local/include"
+    ],
+    "cases": [
+      "custom",
+      "manual-empty",
+      "stills-two",
+      "stills-leading-empty"
+    ]
+  },
+  "retired_oracle": {
+    "status": "historical-generation-only",
+    "source_git_commit": "6c5086127590001c544373783653fe991f0ebaeb",
+    "source_manifest": "../legacy-source-provenance.json",
+    "runnable_c_harness_retained": false,
+    "fixture_inputs": "../../atsi_parity.rs",
+    "note": "Original compiler, flags, source paths and harness hashes describe historical golden generation, not current build instructions."
+  }
+}

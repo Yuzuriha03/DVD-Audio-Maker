@@ -6,10 +6,12 @@ license.workspace = true
 
 [features]
 default = ["rust-mlp"]
-direct-bridges = ["dvda-native/direct-bridges"]
+direct-bridges = ["dvda-native/direct-bridges", "dep:dvda-bridges"]
 rust-mlp = ["dep:dvda-mlp"]
 
 [dependencies]
+dvda-author = { path = "../dvda-author" }
+dvda-bridges = { path = "../dvda-bridges", optional = true, features = ["media", "image", "menu"] }
 dvda-mlp = { path = "../dvda-mlp", optional = true }
 dvda-native = { path = "../dvda-native" }
 serde.workspace = true

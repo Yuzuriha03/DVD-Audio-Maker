@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / 'native'))
 from pe_dependencies import Pe
 
 LIBRARIES = ['avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll']
-ENCODER_SHA256 = 'ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8'
 
 
 def sha(path):
@@ -47,16 +46,18 @@ def main():
     parser.add_argument('--prefix', required=True, type=Path, help='Rebuilt FFmpeg install prefix')
     parser.add_argument('--msys-root', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--encoder', type=Path, default=Path('build/mlp-encoder/mlp_encoder.dll'),
+                        help='Rust encoder acceptance DLL built by dvda-mlp/build-runtime.ps1')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     baseline, candidate, prefix, work = (p.resolve() for p in [args.baseline, args.candidate, args.prefix, args.output])
     work.mkdir(parents=True, exist_ok=False)
     compiler_dir = args.msys_root.resolve() / 'mingw64/bin'
-    probe = work / 'mlp-decode-probe.exe'
-    subprocess.run([str(compiler_dir / 'gcc.exe'), '-O2', '-Wall', '-Wextra', '-Werror', '-static-libgcc',
-                    str(Path(__file__).parent / 'native/mlp-decode-probe.c'), '-I' + str(prefix / 'include'),
-                    '-L' + str(prefix / 'lib'), '-lavformat', '-lavcodec', '-lavutil', '-o', str(probe)],
-                   env=os.environ | {'PATH': str(compiler_dir) + os.pathsep + os.environ['PATH']}, check=True)
+    subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                    str(Path(__file__).with_name('build-rust-bridges.ps1')), '-Component', 'media',
+                    '-MsysRoot', str(args.msys_root.resolve()), '-FfmpegPrefix', str(prefix),
+                    '-Output', str(work / 'rust-probe')], check=True)
+    probe = work / 'rust-probe' / 'mlp-decode-probe.exe'
     report = {'status': 'RUNNING', 'cases': [], 'libraries': {}, 'exports_checked': 0}
     for name in LIBRARIES:
         parsed = Pe(candidate / name)
@@ -88,8 +89,11 @@ def main():
         return json.loads(result.stdout)
 
     report['capabilities'] = run(candidate, ['--capabilities'])
-    encoder_path = repo / 'native/mlp-encoder/win-x64/mlp_encoder.dll'
-    assert sha(encoder_path) == ENCODER_SHA256
+    encoder_path = args.encoder.resolve()
+    encoder_manifest = json.loads((encoder_path.parent/'encoder-build.json').read_text(encoding='utf-8-sig'))
+    assert encoder_manifest['implementation'] == 'rust'
+    assert sha(encoder_path) == encoder_manifest['files'][encoder_path.name]['sha256']
+    report['encoder'] = {'implementation': 'rust', 'sha256': sha(encoder_path)}
     encoder = c.CDLL(str(encoder_path))
     encode = encoder.mlp_encode_stream_layout
     encode.argtypes = [c.POINTER(Config), c.c_uint32, Read, c.c_void_p, Write, c.c_void_p, c.POINTER(Result)]

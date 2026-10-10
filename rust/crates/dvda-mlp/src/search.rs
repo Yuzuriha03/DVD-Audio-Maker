@@ -840,21 +840,6 @@ pub(crate) fn mlp_search_correlation_extended(
     0
 }
 
-#[cfg(test)]
-pub(crate) fn mlp_search_correlation(
-    pcm: &[i32],
-    lengths: &[usize],
-    order: usize,
-    result: &mut [f64; 9],
-) -> i32 {
-    let mut r = [0.0; 50];
-    if order > 8 || mlp_search_correlation_extended(pcm, lengths, order, &mut r) != 0 {
-        return -1;
-    }
-    result.copy_from_slice(&r[..9]);
-    0
-}
-
 fn reflect(r: &mut [f64; 9], order: usize, out: &mut [f64; 8]) -> i32 {
     let mut s = [0.0; 17];
     for j in 0..9 {
@@ -959,22 +944,5 @@ pub(crate) fn mlp_search_iir_evaluate(
     }
     *reflection = k;
     *score = value;
-    0
-}
-
-#[cfg(test)]
-pub(crate) fn mlp_search_reflection(
-    correlation: &[f64; 9],
-    order: usize,
-    reflection: &mut [f64; 8],
-    error: &mut f64,
-) -> i32 {
-    let mut r = *correlation;
-    let mut k = [0.0; 8];
-    if !valid_correlation(correlation, order) || reflect(&mut r, order, &mut k) != 0 {
-        return -1;
-    }
-    *reflection = k;
-    *error = r[0];
     0
 }

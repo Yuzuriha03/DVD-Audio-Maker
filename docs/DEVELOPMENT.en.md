@@ -32,25 +32,36 @@ is a developer CLI diagnostic and is not exposed in the GUI.
 
 ## Native components
 
-Build third-party libraries and dvd-author using the [Windows build instructions](../tools/win-build/README.en.md). Linked builds require `DVDA_FFMPEG_PREFIX`, `DVDA_MAGICK_WORK` and `DVDA_MSYS_ROOT`. FFmpeg imports are delay-loaded: packaged startup extracts the runtime and registers its DLL search directory before invoking media APIs. EXE-only startup with fresh `LOCALAPPDATA` and a system-only PATH creates the desktop window and extracts only nine third-party DLLs. Direct developer tests still need an explicit third-party DLL search path.
+Build third-party libraries and the Rust author using the [Windows build instructions](../tools/win-build/README.en.md). Linked builds require `DVDA_FFMPEG_PREFIX`, `DVDA_MAGICK_WORK`, `DVDA_MSYS_ROOT` and `DVDA_MENU_NATIVE_DIR` pointing to the static menu vendor. FFmpeg imports are delay-loaded: packaged startup extracts the runtime and registers its DLL search directory before invoking media APIs. EXE-only startup with fresh `LOCALAPPDATA` and a system-only PATH creates the desktop window and extracts only nine third-party DLLs. Direct developer tests still need an explicit third-party DLL search path.
 
 Only `--no-default-features` compatibility builds and frozen differential tests use
 `DVDA_MEDIA_NATIVE_DIR`, `DVDA_IMAGE_NATIVE_DIR` and `DVDA_ENCODER_LIBRARY` to
 select migrated backends. Default linked builds do not select them via those variables.
 
-The MLP C17 core is under `native/mlp-encoder` and is retained as a frozen
-differential oracle; production encoding uses the statically linked `dvda-mlp`. Format parsing, MLP CRC/parity, PCM comparison and
+Production encoding uses the statically linked `dvda-mlp`; frozen legacy encoder
+artifacts are differential oracles only. Format parsing, MLP CRC/parity, PCM comparison and
 AOB disc verification are implemented in Rust in `dvda-native`, without a
 format or disc-verification DLL dependency.
 
-The remaining project-owned components are being migrated into `dvda-mlp`,
-`dvda-menu` and `dvda-bridges`. Registration or compilation does not constitute
-acceptance: real differential checks must cover ABI, formats, metadata/timing,
-cancellation/errors and production packaging. Old owned C implementations stay
-until acceptance; frozen DLLs are differential oracles only. dvd-author and
-third-party libraries are outside this migration.
+The complete author now lives in `dvda-author`: AOB, ATSI/SAMG/AMG/ASVS,
+menu/still orchestration and ISO9660/UDF writing use Rust. GUI and CLI call
+`dvda-core::author_runtime` in-process. The retired C author sources, build
+entry and binaries have been removed; retained third-party image, video and menu libraries are
+called through Rust bridges. See [the Rust author migration record](RUST-AUTHOR-MIGRATION.md)
+for interfaces, build inputs and independent disc acceptance.
+
+Owned menu sessions, private heap management, UTF-8 files/directories and resource
+cleanup now use `dvda-menu`; vendor state reset is a generated `no_std` Rust object.
+Production uses `build/menu-direct-vendor-rust-session`, and build/package gates
+reject legacy C session/reset manifests. The small C jump boundary, third-party
+code and build-only ABI probes are listed in the
+[menu session migration record](RUST-MENU-SESSION-MIGRATION.md).
 
 ## VS Code
+
+Default encoder tests/builds require no C DLL. The Rust developer ABI adapter is
+generated in `build/mlp-encoder`; optional historical comparisons require an
+explicit external oracle and the `external-oracle` test feature.
 
 Use Rust Analyzer and CodeLLDB (or WinDbg) for `dvda-desktop` and `dvda-cli`.
 `.vscode/tasks.json` contains workspace build, test, release and packaging
@@ -60,21 +71,19 @@ tasks; `.vscode/launch.json` contains x64 GUI and CLI debug entries.
 
 ```powershell
 cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release --workspace --offline
-dvda-toolchain.exe package --repo . --output build/release --media-runtime build/media-native-shared --image-runtime build/image-native --image-author build/rust-author-current --encoder-runtime build/mlp-encoder --prebuilt build/release-menu-final --version v1.0
+dvda-toolchain.exe package --repo . --output build/release --media-runtime build/media-native-shared --image-runtime build/rust-image-runtime --image-author build/rust-author-production --prebuilt build/release-menu-final --version v1.0
 ```
 
-The encoder directory must contain build-produced `encoder-build.json` for a
-Rust ABI v1 implementation, with exactly `mlp_encoder.dll`. Packaging verifies
-hashes, sizes, x64 PE architecture and dependency closure. It rejects missing
-provenance and legacy C encoders without searching fallback directories. Until
-migration acceptance, this is a target workflow, not an available accepted
-release encoder.
+The default GUI links the Rust MLP encoder into the application and ships no
+encoder DLL. An explicit `--encoder-runtime` additionally requires build-produced
+`encoder-build.json` identifying Rust ABI v1; packaging verifies hashes, sizes,
+x64 PE architecture and dependency closure.
 
-The author output must also contain `menu-build.json`, authenticated by the
-source-input digest in `author-build.json`. Its adapter must be Rust, and both
-manifests must match the SPU/navigation DLL hashes and sizes. Missing, legacy,
-tampered or mismatched inputs are rejected before release staging, preserving
-existing publication files.
+The Rust author output contains `author-build.json` and `menu-build.json`.
+Packaging authenticates sources, static SPU/navigation vendor archives, the
+executable, third-party DLLs and resources. The standalone developer author is
+validated but excluded from the GUI's embedded runtime. Missing, tampered or
+mismatched inputs are rejected before release staging, preserving existing files.
 
 `DVD-Audio-Maker-v1.0-win-x64.zip` excludes the .NET runtime, developer CLI,
 PDBs, build-provenance JSON, `config.env` and personal profiles. Build outputs
@@ -91,10 +100,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-wo
 The menu fixture generates menus, index pages, stills, AUDIO_TS and an ISO with
 the project-built author. MLP byte comparisons, PCM comparisons and C17 ABI
 checks are recorded in the component documentation.
-Set `DVDA_TEST_MENU_DATA` to a directory containing the `menu` assets and
-`DVDA_MENU_NATIVE_DIR` to the accepted menu DLL directory (`-MenuRuntime` in
-the workflow script). Assets need not have a sibling legacy `menu-bin`.
-Without an explicit override, the embedded runtime or sibling `menu-bin` is used.
+Set `DVDA_TEST_MENU_DATA` to a directory containing the `menu` assets.
+For direct builds, `DVDA_MENU_NATIVE_DIR` points to the static vendor archives.
+Run the compiled test EXE with media/image directories and font configuration
+pointing to the assembled production runtime. Menu DLL paths apply only to
+dynamic compatibility tests. Assets need not have a sibling legacy `menu-bin`.
 
 
 ## SHA-256 backend regression and benchmark
