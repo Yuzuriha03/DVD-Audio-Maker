@@ -202,6 +202,41 @@ fn decode(input: &Path, output: &Path) {
 }
 
 #[test]
+#[cfg(feature = "rust-mlp")]
+fn linked_mlp_matrix_without_encoder_dll() {
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
+    assert_eq!(fixtures.encoder, encoder::BINARY_SHA256);
+    assert_eq!(fixtures.cases.len(), 116);
+    let root = Scratch::new();
+    let input = root.0.join("input.wav");
+    let output = root.0.join("output.mlp");
+    let stamp = root.0.join("context.bin");
+    let missing_library = root.0.join("missing-encoder.dll");
+    for (index, case) in fixtures.cases.iter().enumerate() {
+        wave(&input, case);
+        assert_eq!(digest(&fs::read(&input).unwrap()), case.wave_sha256);
+        let mut events = Events::default();
+        passed(encoder::execute(
+            encoder::Job {
+                library: missing_library.clone(),
+                wave: input.to_string_lossy().into_owned(),
+                destination: output.clone(),
+                metadata_context: context(&stamp, case),
+                timeout_millis: None,
+            },
+            &mut events,
+        ));
+        assert_eq!(events.completed, 1);
+        let actual = fs::read(&output).unwrap();
+        assert_eq!(actual.len(), case.bytes, "case {index}: {case:?}");
+        assert_eq!(digest(&actual), case.mlp_sha256, "case {index}: {case:?}");
+        assert!(!missing_library.exists());
+        fs::remove_file(&output).unwrap();
+    }
+}
+
+#[test]
 #[ignore = "requires the pinned C encoder and source-built media DLL"]
 fn frozen_mlp_matrix_and_lossless_decode() {
     let fixtures: Fixtures =

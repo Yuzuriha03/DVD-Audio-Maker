@@ -442,12 +442,8 @@ pub fn verify(
         writer.write_all(&data).map_err(|e| e.to_string())?;
     }
     drop(writer);
-    let images = Images::load(
-        job.image_library
-            .as_deref()
-            .ok_or("Menu image component is missing")?,
-    )
-    .map_err(|e| e.to_string())?;
+    let images = crate::native_components::images(job.image_library.as_deref())
+        .map_err(|e| e.to_string())?;
     let mut source = fs::File::open(vob_path).map_err(|e| e.to_string())?;
     let index_pages = expected
         .and_then(|v| v["index_pages"].as_u64())

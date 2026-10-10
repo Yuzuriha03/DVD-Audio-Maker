@@ -41,7 +41,16 @@ pub fn imports(bytes: &[u8], dll: bool) -> Result<BTreeSet<String>, String> {
             result.insert(name.to_ascii_lowercase());
         }
         if !terminated {
-            return Err("Unterminated PE import directory".into());
+            // GNU delay-import tables exclude the trailing null descriptor from Size.
+            let trailing_null = index == 13
+                && size % width == 0
+                && pe
+                    .rva(rva.checked_add(size).ok_or("PE address overflow")?, width)?
+                    .iter()
+                    .all(|byte| *byte == 0);
+            if !trailing_null {
+                return Err("Unterminated PE import directory".into());
+            }
         }
     }
     Ok(result)
@@ -265,6 +274,14 @@ mod tests {
         let mut unterminated = bytes.clone();
         unterminated[264 + 8 + 4..264 + 8 + 8].copy_from_slice(&20u32.to_le_bytes());
         assert!(imports(&unterminated, true).is_err());
+        let mut gnu_delay = bytes.clone();
+        gnu_delay[268 + 13 * 8..272 + 13 * 8].copy_from_slice(&32u32.to_le_bytes());
+        assert_eq!(
+            imports(&gnu_delay, true).unwrap(),
+            imports(&bytes, true).unwrap()
+        );
+        gnu_delay[2080] = 1;
+        assert!(imports(&gnu_delay, true).is_err());
         let mut bad_delay = bytes.clone();
         bad_delay[2048..2052].copy_from_slice(&2u32.to_le_bytes());
         assert!(imports(&bad_delay, true).is_err());

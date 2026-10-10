@@ -795,7 +795,7 @@ fn acquire(
 }
 
 fn validate(job: &Job) -> Result<(), String> {
-    if !job.media_library.is_file() {
+    if !crate::native_components::media_available(&job.media_library) {
         return Err(format!(
             "Media library is missing: {}",
             job.media_library.display()

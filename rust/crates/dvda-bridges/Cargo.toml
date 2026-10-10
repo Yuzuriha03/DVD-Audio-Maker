@@ -1,0 +1,48 @@
+[package]
+name = "dvda-bridges"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+build = "build.rs"
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[features]
+default = []
+image = []
+media = []
+author-loader = []
+menu = ["dep:dvda-menu", "dvda-menu/direct-link"]
+
+[dependencies]
+dvda-menu = { path = "../dvda-menu", optional = true }
+
+[[bin]]
+name = "magick-shim"
+path = "src/bin/magick-shim.rs"
+
+[[bin]]
+name = "mlp-decode-probe"
+path = "src/bin/mlp-decode-probe.rs"
+required-features = ["media"]
+
+[[example]]
+name = "author-loader-acceptance"
+required-features = ["author-loader"]
+
+[[example]]
+name = "direct-acceptance"
+required-features = ["media", "image"]
+
+[[example]]
+name = "media-differential"
+required-features = ["media"]
+
+[[example]]
+name = "image-differential"
+required-features = ["image"]
+
+[[example]]
+name = "menu-media-differential"
+required-features = ["media"]

@@ -143,6 +143,9 @@ impl AppOptions {
         self.path("SourceDirectory")
     }
     pub fn media_library(&self) -> Result<PathBuf, String> {
+        #[cfg(feature = "direct-bridges")]
+        return env::current_exe().map_err(|error| error.to_string());
+        #[cfg(not(feature = "direct-bridges"))]
         locate_file(
             "DVDA_MEDIA_NATIVE_LIBRARY",
             "DVDA_MEDIA_NATIVE_DIR",
@@ -152,6 +155,9 @@ impl AppOptions {
         )
     }
     pub fn encoder_library(&self) -> Result<PathBuf, String> {
+        #[cfg(feature = "rust-mlp")]
+        return env::current_exe().map_err(|error| error.to_string());
+        #[cfg(not(feature = "rust-mlp"))]
         locate_file(
             "DVDA_ENCODER_LIBRARY",
             "",
@@ -159,7 +165,10 @@ impl AppOptions {
             &["mlp_encoder.dll"],
             &[],
         )
-        .or_else(|_| {
+        .or_else(|error| {
+            if env::var_os("DVDA_ENCODER_LIBRARY").is_some() {
+                return Err(error);
+            }
             let development = PathBuf::from("native/mlp-encoder/win-x64/mlp_encoder.dll");
             development
                 .canonicalize()
@@ -167,6 +176,9 @@ impl AppOptions {
         })
     }
     pub fn image_library(&self) -> Result<PathBuf, String> {
+        #[cfg(feature = "direct-bridges")]
+        return env::current_exe().map_err(|error| error.to_string());
+        #[cfg(not(feature = "direct-bridges"))]
         locate_file(
             "DVDA_IMAGE_NATIVE_LIBRARY",
             "DVDA_IMAGE_NATIVE_DIR",
@@ -231,15 +243,14 @@ impl AppOptions {
         } else {
             self.executable_directory.join("data")
         };
-        let menu_binary_directory = crate::runtime::directory()
-            .map(Path::to_owned)
-            .unwrap_or_else(|| {
-                author_source
-                    .parent()
-                    .map(Path::to_owned)
-                    .unwrap_or_else(|| self.executable_directory.clone())
-                    .join("menu-bin")
-            });
+        let menu_binary_directory = menu_runtime_directory(
+            menu_enabled
+                .then(|| env::var_os("DVDA_MENU_NATIVE_DIR").map(PathBuf::from))
+                .flatten(),
+            crate::runtime::directory(),
+            &author_source,
+            &self.executable_directory,
+        )?;
         Ok(build::Job {
             resume_enabled: self.boolean("ResumeEnabled"),
             diagnostic_album_limit: self
@@ -487,6 +498,30 @@ fn resolve_path(base: &Path, value: &str) -> PathBuf {
             .join(path)
     }
 }
+fn menu_runtime_directory(
+    explicit: Option<PathBuf>,
+    embedded: Option<&Path>,
+    author_source: &Path,
+    executable_directory: &Path,
+) -> Result<PathBuf, String> {
+    if let Some(path) = explicit {
+        if path.as_os_str().is_empty() || !path.is_dir() {
+            return Err(format!(
+                "DVDA_MENU_NATIVE_DIR: directory not found: {}",
+                path.display()
+            ));
+        }
+        return Ok(path);
+    }
+    Ok(embedded.map(Path::to_owned).unwrap_or_else(|| {
+        author_source
+            .parent()
+            .unwrap_or(executable_directory)
+            .join("menu-bin")
+    }))
+}
+
+#[cfg(any(not(feature = "direct-bridges"), not(feature = "rust-mlp")))]
 fn locate_file(
     primary_env: &str,
     directory_env: &str,
@@ -494,23 +529,53 @@ fn locate_file(
     names: &[&str],
     directories: &[&str],
 ) -> Result<PathBuf, String> {
-    if !primary_env.is_empty()
-        && let Some(path) = env::var_os(primary_env).map(PathBuf::from)
-        && path.is_file()
-    {
-        return Ok(path);
-    }
-    if !directory_env.is_empty()
-        && let Some(value) = env::var_os(directory_env)
-    {
-        let path = PathBuf::from(value);
-        let candidate = if path.extension().is_some() {
-            path
-        } else {
-            path.join(names[0])
-        };
-        if candidate.is_file() {
-            return Ok(candidate);
+    locate_file_from_overrides(
+        [
+            (
+                primary_env,
+                (!primary_env.is_empty())
+                    .then(|| env::var_os(primary_env))
+                    .flatten()
+                    .map(PathBuf::from),
+            ),
+            (
+                directory_env,
+                (!directory_env.is_empty())
+                    .then(|| env::var_os(directory_env))
+                    .flatten()
+                    .map(PathBuf::from),
+            ),
+        ],
+        base,
+        names,
+        directories,
+    )
+}
+
+#[cfg(any(test, not(feature = "direct-bridges"), not(feature = "rust-mlp")))]
+fn locate_file_from_overrides(
+    overrides: [(&str, Option<PathBuf>); 2],
+    base: &Path,
+    names: &[&str],
+    directories: &[&str],
+) -> Result<PathBuf, String> {
+    for (index, (name, value)) in overrides.into_iter().enumerate() {
+        if let Some(path) = value {
+            if path.as_os_str().is_empty() {
+                return Err(format!("{name} must not be empty"));
+            }
+            let candidate = if index == 1 && (path.is_dir() || path.extension().is_none()) {
+                path.join(names[0])
+            } else {
+                path
+            };
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+            return Err(format!(
+                "{name}: component not found: {}",
+                candidate.display()
+            ));
         }
     }
     for directory in directories {
@@ -561,6 +626,80 @@ pub fn save_profile(
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn menu_runtime_selection_prefers_explicit_then_embedded_then_sibling() {
+        let root = env::temp_dir().join(format!(
+            "dvda-menu-selection-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("source");
+        let embedded = root.join("embedded");
+        let select = |explicit, bundled| menu_runtime_directory(explicit, bundled, &source, &root);
+        assert_eq!(select(Some(root.clone()), Some(&embedded)).unwrap(), root);
+        assert_eq!(select(None, Some(&embedded)).unwrap(), embedded);
+        assert_eq!(select(None, None).unwrap(), root.join("menu-bin"));
+        assert!(
+            select(Some(root.join("missing")), Some(&embedded))
+                .unwrap_err()
+                .contains("DVDA_MENU_NATIVE_DIR")
+        );
+        assert!(select(Some(PathBuf::new()), Some(&embedded)).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn component_overrides_are_explicit_and_fail_closed() {
+        let root = env::temp_dir().join(format!(
+            "dvda-component-selection-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let directory = root.join("runtime.v1");
+        std::fs::create_dir_all(&directory).unwrap();
+        let library = directory.join("component.dll");
+        std::fs::write(&library, b"test").unwrap();
+        let select = |primary, secondary| {
+            locate_file_from_overrides(
+                [("PRIMARY", primary), ("DIRECTORY", secondary)],
+                &root,
+                &["component.dll"],
+                &["runtime.v1"],
+            )
+        };
+        assert_eq!(select(None, None).unwrap(), library);
+        assert_eq!(select(Some(library.clone()), None).unwrap(), library);
+        assert_eq!(select(None, Some(directory.clone())).unwrap(), library);
+        assert_eq!(select(None, Some(library.clone())).unwrap(), library);
+        let missing = root.join("missing.dll");
+        assert!(
+            select(Some(missing.clone()), Some(directory))
+                .unwrap_err()
+                .contains("PRIMARY")
+        );
+        assert!(
+            select(None, Some(missing))
+                .unwrap_err()
+                .contains("DIRECTORY")
+        );
+        assert!(
+            select(Some(PathBuf::new()), None)
+                .unwrap_err()
+                .contains("must not be empty")
+        );
+        assert!(
+            select(None, Some(PathBuf::new()))
+                .unwrap_err()
+                .contains("must not be empty")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn edited_work_folder_recomputes_every_dependent_path() {

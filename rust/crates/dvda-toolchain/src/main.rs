@@ -21,6 +21,8 @@ struct Args {
     output: Option<PathBuf>,
     media_runtime: Option<PathBuf>,
     image_runtime: Option<PathBuf>,
+    /// Explicit legacy encoder oracle; it is never embedded in linked releases.
+    encoder_runtime: Option<PathBuf>,
     image_author: Option<PathBuf>,
     source: Option<PathBuf>,
     prebuilt: Option<PathBuf>,
@@ -69,6 +71,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--output" => options.output = Some(value.into()),
             "--media-runtime" => options.media_runtime = Some(value.into()),
             "--image-runtime" => options.image_runtime = Some(value.into()),
+            "--encoder-runtime" => options.encoder_runtime = Some(value.into()),
             "--image-author" => options.image_author = Some(value.into()),
             "--source" => options.source = Some(value.into()),
             "--prebuilt" => options.prebuilt = Some(value.into()),
@@ -174,7 +177,24 @@ fn package(options: Args) -> Result<(), String> {
         "tools/win-build/prebuilt",
     );
     // All provenance and dependency checks precede any changes to release files.
-    let inputs = validation::validate(&media, &image, &author)?;
+    let mut inputs = validation::validate(&media, &image, &author)?;
+    // Optional encoder artifacts are authenticated as oracles, never shipped.
+    if let Some(encoder) = options.encoder_runtime {
+        let encoder = required_dir(absolutize(&repository, encoder), "encoder oracle")?;
+        inputs
+            .records
+            .extend(validation::validate_encoder(&encoder)?.records);
+    }
+    for name in [
+        "Cargo.lock",
+        "crates/dvda-desktop/Cargo.toml",
+        "crates/dvda-core/Cargo.toml",
+        "crates/dvda-mlp/Cargo.toml",
+    ] {
+        let path = repository.join("rust").join(name);
+        validation::file_hash(&path)?;
+        inputs.records.push(path);
+    }
     let candidate = publication::Candidate::new(&output)?;
     let stage = candidate.root.join("DVD-Audio-Maker");
     let runtime = candidate.root.join("runtime-input");
@@ -230,14 +250,6 @@ fn package(options: Args) -> Result<(), String> {
         source.join("menu/fonts"),
     ];
     fonts::stage_menu_fonts(&font_sources, &runtime.join("fonts"))?;
-    copy_first_file(
-        &[
-            repository.join("build/mlp-encoder/mlp_encoder.dll"),
-            repository.join("build/mlp_encoder.dll"),
-            repository.join("native/mlp-encoder/win-x64/mlp_encoder.dll"),
-        ],
-        &runtime.join("mlp_encoder.dll"),
-    )?;
     let data_menu = [source.join("menu"), prebuilt.join("menu")]
         .into_iter()
         .find(|path| path.is_dir());
@@ -316,7 +328,12 @@ fn finish_release(
 ) -> Result<(), String> {
     build()?;
     let stage = candidate.join("DVD-Audio-Maker");
-    validation::validate_staged(&stage)?;
+    let runtime = candidate.join("runtime-input");
+    if runtime.is_dir() {
+        validation::validate_combined(&[&stage, &runtime])?;
+    } else {
+        validation::validate_staged(&stage)?;
+    }
     let archive_name = format!("DVD-Audio-Maker-{version}-win-x64.zip");
     let archive = candidate.join(&archive_name);
     compress(&stage, &archive)?;
@@ -375,6 +392,8 @@ fn build_gui(repository: &Path, archive: &Path, version: &str) -> Result<(), Str
             "--offline",
             "-p",
             "dvda-desktop",
+            "--features",
+            "direct-bridges,rust-mlp",
         ])
         .current_dir(repository)
         .env("DVDA_RUNTIME_ARCHIVE", archive)
@@ -479,7 +498,7 @@ fn io_error(error: impl std::fmt::Display) -> String {
 
 fn print_usage() {
     println!(
-        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--media-runtime PATH] [--image-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
+        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--media-runtime PATH] [--image-runtime PATH] [--encoder-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
     );
 }
 
@@ -506,7 +525,7 @@ mod tests {
         ] {
             assert!(validate_version(version).is_err());
         }
-        for option in ["--source", "--prebuilt", "--version"] {
+        for option in ["--source", "--prebuilt", "--version", "--encoder-runtime"] {
             assert!(parse_args(vec![option.into()].into_iter()).is_err());
             assert!(parse_args(vec![option.into(), String::new()].into_iter()).is_err());
             assert!(parse_args(vec![option.into(), "--repo".into()].into_iter()).is_err());
@@ -543,6 +562,8 @@ mod tests {
             "image".into(),
             "--image-author".into(),
             "author".into(),
+            "--encoder-runtime".into(),
+            "encoder".into(),
             "--output".into(),
             "output".into(),
         ])
@@ -574,6 +595,87 @@ mod tests {
         let f = Fixture::new();
         f.edit("media", |d| d["profile"] = "wrong".into());
         assert!(entry(&f).unwrap_err().contains("profile=shared"));
+    }
+
+    #[test]
+    fn package_entry_rejects_encoder_before_touching_release() {
+        for failure in ["legacy", "manifest", "tamper", "import", "delay_import"] {
+            let f = Fixture::new();
+            let output = f.root.join("output");
+            fs::create_dir_all(output.join("DVD-Audio-Maker")).unwrap();
+            let old_names = [
+                "DVD-Audio-Maker/DVD-Audio-Maker.exe",
+                "DVD-Audio-Maker-v1.0-win-x64.zip",
+                "MANIFEST.txt",
+            ];
+            for name in old_names {
+                fs::write(output.join(name), b"known good").unwrap();
+            }
+            match failure {
+                "legacy" => f.edit("encoder", |record| record["implementation"] = "c".into()),
+                "manifest" => {
+                    fs::remove_file(f.root.join("encoder/encoder-build.json")).unwrap();
+                }
+                "tamper" => {
+                    fs::write(f.root.join("encoder/mlp_encoder.dll"), b"tampered").unwrap();
+                }
+                _ => f.replace(
+                    "encoder",
+                    "mlp_encoder.dll",
+                    pe::fixture(
+                        true,
+                        if failure == "import" {
+                            &["missing.dll"]
+                        } else {
+                            &[]
+                        },
+                        if failure == "delay_import" {
+                            &["missing.dll"]
+                        } else {
+                            &[]
+                        },
+                    ),
+                ),
+            }
+            assert!(entry(&f).is_err(), "{failure}");
+            for name in old_names {
+                assert_eq!(fs::read(output.join(name)).unwrap(), b"known good");
+            }
+            assert_eq!(fs::read_dir(&output).unwrap().count(), 3);
+        }
+    }
+
+    #[test]
+    fn package_entry_rejects_menu_before_touching_release() {
+        for failure in ["legacy", "missing", "unauthenticated", "tamper", "mismatch"] {
+            let f = Fixture::new();
+            let output = f.root.join("output");
+            fs::create_dir_all(output.join("DVD-Audio-Maker")).unwrap();
+            let old_names = [
+                "DVD-Audio-Maker/DVD-Audio-Maker.exe",
+                "DVD-Audio-Maker-v1.0-win-x64.zip",
+                "MANIFEST.txt",
+            ];
+            for name in old_names {
+                fs::write(output.join(name), b"known good").unwrap();
+            }
+            match failure {
+                "legacy" => f.edit_menu(|record| record["adapter"] = "c".into()),
+                "missing" => fs::remove_file(f.root.join("author/menu-build.json")).unwrap(),
+                "unauthenticated" => f.edit("author", |record| {
+                    record["source_inputs"] = serde_json::Value::Null
+                }),
+                "tamper" => fs::write(f.root.join("author/menu-build.json"), b"tampered").unwrap(),
+                _ => f.edit_menu(|record| {
+                    record["files"]["dvda-menu-spu.dll"]["sha256"] = "0".repeat(64).into()
+                }),
+            }
+            assert!(entry(&f).is_err(), "{failure}");
+            for name in old_names {
+                assert_eq!(fs::read(output.join(name)).unwrap(), b"known good");
+            }
+            assert_eq!(fs::read_dir(&output).unwrap().count(), 3);
+        }
     }
 
     #[test]
