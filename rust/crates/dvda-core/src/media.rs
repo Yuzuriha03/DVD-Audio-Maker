@@ -1,7 +1,7 @@
 //! In-process media jobs. The final Rust application uses this typed API directly.
 use dvda_native::{
     files,
-    media::{Callbacks, Media, Request},
+    media::{Callbacks, Request},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -155,7 +155,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> Outcome {
             job.request.output = Some(path.to_string_lossy().into_owned());
             temporary.0 = Some(path);
         }
-        let media = Media::load(&job.library)?;
+        let media = crate::native_components::media(&job.library)?;
         let status = media.run(&job.request, &mut callbacks)?;
         callbacks.check()?;
         if status >= 0

@@ -1,13 +1,18 @@
 //! Typed API for the project's in-process C media implementation.
 use serde::{Deserialize, Serialize};
+#[cfg(not(feature = "direct-bridges"))]
 use std::{
     collections::HashMap,
+    os::windows::ffi::OsStrExt,
+    path::PathBuf,
+    sync::{Mutex, OnceLock},
+};
+use std::{
     ffi::{CStr, CString, c_char, c_void},
     io,
-    os::windows::ffi::OsStrExt,
     panic::{AssertUnwindSafe, catch_unwind},
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    path::Path,
+    sync::Arc,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -81,6 +86,7 @@ impl Request {
     }
 }
 
+#[cfg(any(test, not(feature = "direct-bridges")))]
 #[repr(C)]
 struct RawRequest {
     size: u32,
@@ -97,8 +103,11 @@ struct RawRequest {
     output: *const c_char,
     tags: *const *const c_char,
 }
+#[cfg(not(feature = "direct-bridges"))]
 pub(crate) type Emit = unsafe extern "C" fn(*mut c_void, i32, *const c_char);
+#[cfg(not(feature = "direct-bridges"))]
 pub(crate) type Cancel = unsafe extern "C" fn(*mut c_void) -> i32;
+#[cfg(not(feature = "direct-bridges"))]
 type Run = unsafe extern "C" fn(*const RawRequest, Emit, Cancel, *mut c_void) -> i32;
 
 /// Callbacks are synchronous and run on the calling thread. No borrowed state is retained.
@@ -183,6 +192,7 @@ pub(crate) unsafe extern "C" fn cancel(state: *mut c_void) -> i32 {
     }
 }
 
+#[cfg(not(feature = "direct-bridges"))]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn LoadLibraryExW(path: *const u16, file: *mut c_void, flags: u32) -> *mut c_void;
@@ -190,8 +200,79 @@ unsafe extern "system" {
     fn FreeLibrary(module: *mut c_void) -> i32;
 }
 
+#[cfg(feature = "direct-bridges")]
+pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
+    use std::os::windows::ffi::OsStringExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+        fn K32EnumProcessModules(
+            process: *mut c_void,
+            modules: *mut *mut c_void,
+            bytes: u32,
+            needed: *mut u32,
+        ) -> i32;
+        fn GetModuleFileNameW(module: *mut c_void, path: *mut u16, size: u32) -> u32;
+    }
+    let mut modules = vec![std::ptr::null_mut(); 128];
+    loop {
+        let bytes = u32::try_from(modules.len() * std::mem::size_of::<*mut c_void>())
+            .map_err(|_| io::Error::other("Too many loaded modules"))?;
+        let mut needed = 0;
+        if unsafe {
+            K32EnumProcessModules(
+                GetCurrentProcess(),
+                modules.as_mut_ptr(),
+                bytes,
+                &mut needed,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if needed > bytes {
+            modules.resize(
+                (needed as usize / std::mem::size_of::<*mut c_void>()) + 32,
+                std::ptr::null_mut(),
+            );
+            continue;
+        }
+        modules.truncate(needed as usize / std::mem::size_of::<*mut c_void>());
+        break;
+    }
+    let mut paths = Vec::new();
+    for module in modules {
+        let mut path = vec![0u16; 32768];
+        let length =
+            unsafe { GetModuleFileNameW(module, path.as_mut_ptr(), path.len() as u32) } as usize;
+        if length == 0 {
+            let error = io::Error::last_os_error();
+            // An oracle DLL can unload after the module snapshot was captured.
+            if error.raw_os_error() == Some(126) {
+                continue;
+            }
+            return Err(error);
+        }
+        if length >= path.len() {
+            return Err(io::Error::other("Loaded module path was truncated"));
+        }
+        let path = std::path::PathBuf::from(std::ffi::OsString::from_wide(&path[..length]));
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("dll"))
+        {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
 pub struct Media {
+    #[cfg(not(feature = "direct-bridges"))]
     module: *mut c_void,
+    #[cfg(not(feature = "direct-bridges"))]
     run: Run,
 }
 // The C module uses a per-call/TLS state and thread-safe one-time initialization.
@@ -199,12 +280,25 @@ unsafe impl Send for Media {}
 unsafe impl Sync for Media {}
 impl Drop for Media {
     fn drop(&mut self) {
+        #[cfg(not(feature = "direct-bridges"))]
         unsafe {
             FreeLibrary(self.module);
         }
     }
 }
 impl Media {
+    #[cfg(feature = "direct-bridges")]
+    pub fn linked() -> Arc<Self> {
+        Arc::new(Self {})
+    }
+
+    /// Compatibility entry point; direct builds use the linked implementation, not this path.
+    #[cfg(feature = "direct-bridges")]
+    pub fn load(_path: &Path) -> io::Result<Arc<Self>> {
+        Ok(Self::linked())
+    }
+
+    #[cfg(not(feature = "direct-bridges"))]
     pub fn load(path: &Path) -> io::Result<Arc<Self>> {
         static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Media>>>> = OnceLock::new();
         let path = std::path::absolute(path)?;
@@ -242,6 +336,49 @@ impl Media {
         Ok(media)
     }
 
+    #[cfg(feature = "direct-bridges")]
+    pub fn run(&self, request: &Request, callbacks: &mut dyn Callbacks) -> io::Result<i32> {
+        request.validate()?;
+        fn string(text: &str) -> io::Result<CString> {
+            CString::new(text).map_err(|_| io::Error::from_raw_os_error(123))
+        }
+        let mut direct = dvda_bridges::direct::MediaRequest::new(
+            request.operation as u32,
+            &request.input,
+            request.output.as_deref().unwrap_or(""),
+        )
+        .map_err(|_| io::Error::from_raw_os_error(123))?;
+        direct.output = request.output.as_deref().map(string).transpose()?;
+        direct.rate = request.rate;
+        direct.bits = request.bits;
+        direct.output_format = request.output_format as u32;
+        direct.soxr = request.soxr;
+        direct.compression = request.compression;
+        direct.cover = request.cover;
+        direct.tags = request
+            .tags
+            .iter()
+            .flat_map(|(key, value)| [key.as_str(), value.as_str()])
+            .map(string)
+            .collect::<io::Result<_>>()?;
+        let mut state = CallbackState {
+            callbacks,
+            panicked: false,
+        };
+        let result = unsafe {
+            direct.run_with_callbacks(dvda_bridges::Call {
+                emit: Some(emit),
+                cancel: Some(cancel),
+                state: (&mut state as *mut CallbackState<'_>).cast(),
+            })
+        };
+        if state.panicked {
+            return Err(io::Error::other("Panic caught in media callback"));
+        }
+        Ok(result)
+    }
+
+    #[cfg(not(feature = "direct-bridges"))]
     pub fn run(&self, request: &Request, callbacks: &mut dyn Callbacks) -> io::Result<i32> {
         request.validate()?;
         fn string(text: &str) -> io::Result<CString> {
@@ -320,6 +457,24 @@ mod tests {
         assert_eq!(std::mem::size_of::<RawRequest>(), 64);
         assert_eq!(std::mem::offset_of!(RawRequest, input), 40);
         assert_eq!(std::mem::offset_of!(RawRequest, tags), 56);
+    }
+
+    #[cfg(feature = "direct-bridges")]
+    #[test]
+    fn dependency_identity_contains_actual_loaded_ffmpeg() {
+        assert_ne!(unsafe { dvda_bridges::ffmpeg::avcodec_version() }, 0);
+        let paths = loaded_dependencies().unwrap();
+        assert!(
+            paths
+                .iter()
+                .all(|path| path.is_absolute() && path.is_file())
+        );
+        assert!(paths.iter().any(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("avcodec-")
+        }));
     }
 
     #[test]

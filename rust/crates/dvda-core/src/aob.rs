@@ -239,6 +239,10 @@ pub struct PtsStatistics {
 }
 
 pub fn pts_statistics(values: &[i64]) -> PtsStatistics {
+    pts_statistics_with_resets(values, &[])
+}
+
+pub fn pts_statistics_with_resets(values: &[i64], resets: &[usize]) -> PtsStatistics {
     let first_pts = values.first().copied();
     let last_pts = values.last().copied();
     if values.len() < 3 {
@@ -257,7 +261,15 @@ pub fn pts_statistics(values: &[i64]) -> PtsStatistics {
         };
     }
 
-    let steps: Vec<i64> = values.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    let steps: Vec<i64> = values
+        .windows(2)
+        .enumerate()
+        .filter(|(index, _)| !resets.contains(&(index + 1)))
+        .map(|(_, pair)| pair[1] - pair[0])
+        .collect();
+    if steps.is_empty() {
+        return pts_statistics(&[]);
+    }
     let mut ordered = steps.clone();
     ordered.sort_unstable();
     let middle = ordered.len() / 2;
@@ -332,6 +344,17 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn statistics_exclude_only_declared_title_resets() {
+        let values = [98, 4448, 8948, 98, 4448, 8948];
+        assert_eq!(pts_statistics(&values).abnormal_steps, 1);
+        let stats = pts_statistics_with_resets(&values, &[3]);
+        assert_eq!(stats.abnormal_steps, 0);
+        assert_eq!(stats.steps.len(), 4);
+        assert!(stats.issue_codes.is_empty());
+        assert_eq!(pts_statistics_with_resets(&values, &[2]).abnormal_steps, 1);
+    }
     use serde_json::json;
 
     #[test]

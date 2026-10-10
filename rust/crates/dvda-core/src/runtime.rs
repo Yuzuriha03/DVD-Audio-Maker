@@ -167,6 +167,36 @@ pub fn extract(archive: &[u8], cache: &Path) -> Result<PathBuf, String> {
     Ok(root)
 }
 
+fn configure_library_search(root: &Path) -> Result<(), String> {
+    use std::{ffi::c_void, os::windows::ffi::OsStrExt};
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn SetDefaultDllDirectories(flags: u32) -> i32;
+        fn AddDllDirectory(path: *const u16) -> *mut c_void;
+    }
+    let path: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
+    if path[..path.len() - 1].contains(&0) {
+        return Err("Runtime directory contains a null character".to_owned());
+    }
+    // Keep the verified runtime directory registered for the process lifetime.
+    // Search only this directory and System32, not the current directory or PATH.
+    unsafe {
+        if SetDefaultDllDirectories(0x400 | 0x800) == 0 {
+            return Err(format!(
+                "Cannot restrict DLL search: {}",
+                io::Error::last_os_error()
+            ));
+        }
+        if AddDllDirectory(path.as_ptr()).is_null() {
+            return Err(format!(
+                "Cannot register runtime DLL directory: {}",
+                io::Error::last_os_error()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Initialize embedded components.
 ///
 /// # Safety
@@ -180,6 +210,7 @@ pub unsafe fn initialize(archive: &[u8]) -> Result<(), String> {
         .ok_or("Missing settings directory")?
         .join("runtime");
     let root = extract(archive, &cache)?;
+    configure_library_search(&root)?;
     // SAFETY: this startup-only call precedes all threads and native library loading.
     unsafe {
         for key in [

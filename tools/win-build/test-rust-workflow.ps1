@@ -1,15 +1,19 @@
 param(
-    [string]$MediaRuntime = "build/media-native",
-    [string]$AuthorRuntime = "build/rust-author-current",
-    [string]$MenuData = "build/release-menu-final/DVD-Audio-Maker/data",
+    [string]$MediaRuntime = "build\media-native-shared",
+    [string]$ImageRuntime = "build\image-native",
+    [string]$EncoderLibrary = "native\mlp-encoder\win-x64\mlp_encoder.dll",
+    [string]$AuthorRuntime = "build\rust-author-current",
+    [string]$MenuData = "build\release-menu-final\DVD-Audio-Maker\data",
+    [string]$MenuRuntime = "build\menu-rust-production",
     [string]$OtherVolume = ""
 )
 $ErrorActionPreference = "Stop"
 $env:DVDA_MEDIA_NATIVE_DIR = (Resolve-Path -LiteralPath $MediaRuntime).Path
-$env:DVDA_ENCODER_LIBRARY = (Resolve-Path native/mlp-encoder/win-x64/mlp_encoder.dll).Path
-$env:DVDA_IMAGE_NATIVE_DIR = (Resolve-Path build/image-native).Path
+$env:DVDA_ENCODER_LIBRARY = (Resolve-Path -LiteralPath $EncoderLibrary).Path
+$env:DVDA_IMAGE_NATIVE_DIR = (Resolve-Path -LiteralPath $ImageRuntime).Path
 $env:DVDA_TEST_AUTHOR = (Resolve-Path -LiteralPath (Join-Path $AuthorRuntime "dvda-author-dev.exe")).Path
 $env:DVDA_TEST_MENU_DATA = (Resolve-Path -LiteralPath $MenuData).Path
+$env:DVDA_MENU_NATIVE_DIR = (Resolve-Path -LiteralPath $MenuRuntime).Path
 if ($OtherVolume) {
     $env:DVDA_TEST_OTHER_VOLUME = (Resolve-Path -LiteralPath $OtherVolume).Path
 }

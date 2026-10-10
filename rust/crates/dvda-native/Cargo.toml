@@ -4,5 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+direct-bridges = ["dep:dvda-bridges"]
+
 [dependencies]
 serde = { workspace = true }
+dvda-bridges = { path = "../dvda-bridges", optional = true, features = ["media", "image", "menu"] }

@@ -517,10 +517,10 @@ fn check_track(
 }
 
 fn validate(job: &Job) -> Result<(), String> {
-    if !job.media_library.is_file() {
+    if !crate::native_components::media_available(&job.media_library) {
         return Err("内置媒体组件缺失，请完整解压发布包。".into());
     }
-    if !job.encoder_library.is_file() {
+    if !cfg!(feature = "rust-mlp") && !job.encoder_library.is_file() {
         return Err("MLP 编码器组件缺失。".into());
     }
     if !matches!(

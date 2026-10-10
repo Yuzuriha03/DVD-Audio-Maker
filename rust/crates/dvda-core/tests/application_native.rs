@@ -714,10 +714,13 @@ fn application_menu_and_title_boundaries() {
         &mut Events::default(),
     )
     .unwrap();
-    assert!(
-        skipped
-            .iter()
-            .any(|d| d["Code"] == "MENU_OVERLAY_CHECK_SKIPPED" && d["Severity"] == 1)
+    let overlay_skipped = skipped
+        .iter()
+        .any(|d| d["Code"] == "MENU_OVERLAY_CHECK_SKIPPED" && d["Severity"] == 1);
+    assert_eq!(
+        overlay_skipped,
+        !cfg!(feature = "direct-bridges"),
+        "{skipped:?}"
     );
     let mut missing_diagnostics = Vec::new();
     missing_images.author_source = root.0.join("missing-menu-data");
@@ -730,16 +733,20 @@ fn application_menu_and_title_boundaries() {
     )
     .unwrap();
     assert!(missing_assets.is_empty());
-    for code in [
-        "IMAGEMAGICK_MISSING",
-        "IMAGEMAGICK_IDENTIFY_MISSING",
-        "MENU_DATA_MISSING",
-        "MENU_LIBRARY_MISSING",
-    ] {
+    let mut missing_codes = vec!["MENU_DATA_MISSING"];
+    if !cfg!(feature = "direct-bridges") {
+        missing_codes.extend([
+            "IMAGEMAGICK_MISSING",
+            "IMAGEMAGICK_IDENTIFY_MISSING",
+            "MENU_LIBRARY_MISSING",
+        ]);
+    }
+    for code in missing_codes {
         assert!(
             missing_diagnostics
                 .iter()
-                .any(|d| d["Code"] == code && d["Severity"] == 2)
+                .any(|d| d["Code"] == code && d["Severity"] == 2),
+            "{code}: {missing_diagnostics:?}"
         );
     }
     // A playback JPEG failure is advisory: retaining the valid page background

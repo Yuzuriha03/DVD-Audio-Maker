@@ -23,7 +23,25 @@ pub fn encoding_identity(
     };
     let mut components = std::collections::BTreeMap::new();
     components.insert("media".to_owned(), file_hash(media)?);
-    if let Some(directory) = media.parent() {
+    #[cfg(feature = "direct-bridges")]
+    components.insert(
+        "linked-media-executable".to_owned(),
+        file_hash(&std::env::current_exe().map_err(|error| error.to_string())?)?,
+    );
+    let dependency_directories: Vec<PathBuf> =
+        media.parent().map(Path::to_owned).into_iter().collect();
+    #[cfg(feature = "direct-bridges")]
+    let dependency_directories = {
+        let mut directories = dependency_directories;
+        if let Some(directory) = crate::runtime::directory()
+            && !directories.iter().any(|path| path == directory)
+        {
+            directories.push(directory.to_owned());
+        }
+        directories
+    };
+    let mut dependencies = Vec::new();
+    for directory in &dependency_directories {
         for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
             let path = entry.map_err(|error| error.to_string())?.path();
             if path.is_file()
@@ -31,19 +49,29 @@ pub fn encoding_identity(
                     .extension()
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
             {
-                components.insert(
-                    format!(
-                        "media-dependency:{}",
-                        path.file_name().unwrap().to_string_lossy().to_lowercase()
-                    ),
-                    file_hash(&path)?,
-                );
+                dependencies.push(path);
             }
         }
     }
+    #[cfg(feature = "direct-bridges")]
+    {
+        dependencies.extend(media_loaded_dependencies(
+            &dependencies,
+            dvda_native::media::loaded_dependencies().map_err(|error| error.to_string())?,
+        ));
+    }
+    add_dependency_hashes(&mut components, dependencies, &file_hash)?;
+    #[cfg(feature = "rust-mlp")]
+    components.insert(
+        "linked-encoder-executable".to_owned(),
+        file_hash(&std::env::current_exe().map_err(|error| error.to_string())?)?,
+    );
+    #[cfg(not(feature = "rust-mlp"))]
     if let Some(encoder) = encoder {
         components.insert("encoder".into(), file_hash(encoder)?);
     }
+    #[cfg(feature = "rust-mlp")]
+    let _ = encoder;
     let context = if metadata_context.is_empty() {
         "generated-from-pcm-v1".into()
     } else {
@@ -52,6 +80,41 @@ pub fn encoding_identity(
     let canonical = serde_json::to_vec(&("rust-pcm-policy-v1", policy, components, context))
         .map_err(|error| error.to_string())?;
     Ok(hash::hex_digest(&canonical))
+}
+
+#[cfg(any(feature = "direct-bridges", test))]
+fn media_loaded_dependencies(known: &[PathBuf], loaded: Vec<PathBuf>) -> Vec<PathBuf> {
+    let names: std::collections::BTreeSet<_> = known
+        .iter()
+        .filter_map(|path| path.file_name())
+        .map(|name| name.to_string_lossy().to_ascii_lowercase())
+        .collect();
+    loaded
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| names.contains(&name.to_string_lossy().to_ascii_lowercase()))
+        })
+        .collect()
+}
+
+fn add_dependency_hashes(
+    components: &mut std::collections::BTreeMap<String, String>,
+    mut paths: Vec<PathBuf>,
+    file_hash: &impl Fn(&Path) -> Result<String, String>,
+) -> Result<(), String> {
+    paths.sort();
+    paths.dedup();
+    for (index, path) in paths.iter().enumerate() {
+        components.insert(
+            format!(
+                "media-dependency:{index}:{}",
+                path.file_name().unwrap().to_string_lossy().to_lowercase()
+            ),
+            file_hash(path)?,
+        );
+    }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -300,6 +363,47 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn loaded_dependencies_are_limited_to_known_media_files() {
+        let known = vec![PathBuf::from(r"C:\media\avcodec.dll")];
+        let loaded = vec![
+            PathBuf::from(r"C:\media\avcodec.dll"),
+            PathBuf::from(r"C:\Windows\System32\user32.dll"),
+        ];
+        assert_eq!(
+            media_loaded_dependencies(&known, loaded),
+            vec![PathBuf::from(r"C:\media\avcodec.dll")]
+        );
+    }
+
+    #[test]
+    fn same_named_dependencies_are_not_overwritten() {
+        let first = PathBuf::from(r"C:\runtime-one\codec.dll");
+        let second = PathBuf::from(r"C:\runtime-two\codec.dll");
+        let digest = |path: &Path| Ok(path.to_string_lossy().into_owned());
+        let mut components = std::collections::BTreeMap::new();
+        add_dependency_hashes(
+            &mut components,
+            vec![second.clone(), first.clone(), first.clone()],
+            &digest,
+        )
+        .unwrap();
+        assert_eq!(components.len(), 2);
+        assert!(
+            components
+                .values()
+                .any(|value| value == &first.to_string_lossy())
+        );
+        assert!(
+            components
+                .values()
+                .any(|value| value == &second.to_string_lossy())
+        );
+        let mut reordered = std::collections::BTreeMap::new();
+        add_dependency_hashes(&mut reordered, vec![first, second], &digest).unwrap();
+        assert_eq!(components, reordered);
+    }
+
+    #[test]
     fn encoding_cache_identity_detects_equal_size_equal_timestamp_replacements() {
         let root = std::env::temp_dir().join(format!(
             "dvda-codec-{}",
@@ -320,7 +424,11 @@ mod tests {
             encoding_identity("policy", &media, Some(&encoder), context.to_str().unwrap()).unwrap()
         };
         let mut before = compute();
-        for path in [&media, &encoder, &context, &dependency] {
+        #[cfg(feature = "rust-mlp")]
+        let paths = [&media, &context, &dependency];
+        #[cfg(not(feature = "rust-mlp"))]
+        let paths = [&media, &encoder, &context, &dependency];
+        for path in paths {
             let modified = fs::metadata(path).unwrap().modified().unwrap();
             fs::write(path, b"ABCE").unwrap();
             fs::OpenOptions::new()

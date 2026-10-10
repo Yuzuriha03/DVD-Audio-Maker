@@ -94,7 +94,7 @@ pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<Prepar
     if format_code(job.rate.into(), job.bits.into(), 1) != 0 {
         return Err("LPCM 目标格式不符合 DVD-Audio 限制。".into());
     }
-    if !job.media_library.is_file() {
+    if !crate::native_components::media_available(&job.media_library) {
         return Err("内置媒体组件缺失，请完整解压发布包。".into());
     }
     let root = job.build_directory.join("lpcm");

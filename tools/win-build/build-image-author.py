@@ -20,6 +20,7 @@ def main():
     p.add_argument('--source',type=Path,required=True)
     p.add_argument('--msys-root',type=Path,required=True)
     p.add_argument('--work-directory',type=Path,default=Path('build/image-author'))
+    p.add_argument('--rust-bridges',type=Path,help='Verified Rust author bridge directory; C oracle remains the default')
     p.add_argument('--menu-runtime',type=Path,default=Path('build/menu-native'))
     repo=Path(__file__).resolve().parents[2]
     default_ffmpeg=Path(os.environ.get('DVDA_FFMPEG_RUNTIME_DIR', str(repo/'build/ffmpeg-menu/install')))
@@ -105,14 +106,34 @@ def main():
     flags=['-O2','-std=gnu11','-D_GNU_SOURCE','-DHAVE_CONFIG_H','-DWITHOUT_sox','-DWITHOUT_FLAC','-DWITHOUT_libogg','-ffunction-sections','-fdata-sections','-Wno-error=incompatible-pointer-types','-Wno-error=implicit-function-declaration']+['-I'+str(x) for x in include]
     names='amg2 ats atsi2 audio auxiliary dvda-author file_input_parsing samg2 launch_manager command_line_parsing lexer ats2wav mlp menu asvs xml sound videoimport libsoxconvert iso_writer'.split()
     files=[snapshot/'src'/(name+'.c') for name in names]
+    files.append(mirror_root/'author_library.c')
+    inputs['project-mirror/src/author_library.c']=sha(mirror_root/'author_library.c')
+    inputs['project-mirror/src/include/author_library.h']=sha(mirror_root/'include/author_library.h')
     files+=list((snapshot/'libutils/src').glob('*.c'))+list((snapshot/'libfixwav/src').glob('*.c'))
-    loader=Path(__file__).parent/'native/author-image-loader.c'; files.append(loader.resolve())
-    inputs['project/author-image-loader.c']=sha(loader)
-    menu_media=Path(__file__).parent/'native/dvda-menu-media.c'
-    menu_header=Path(__file__).parent/'native/dvda-menu-media.h'
-    files.append(menu_media.resolve())
-    inputs['project/dvda-menu-media.c']=sha(menu_media)
-    inputs['project/dvda-menu-media.h']=sha(menu_header)
+    rust_bridge = None
+    if a.rust_bridges:
+        bridge_directory=a.rust_bridges.resolve()
+        bridge_manifest=bridge_directory/'author-bridge-build.json'
+        bridge_record=json.loads(bridge_manifest.read_text(encoding='utf-8-sig'))
+        rust_bridge=bridge_directory/'libdvda_bridges.a'
+        if (bridge_record.get('schema_version') != 1
+                or bridge_record.get('implementation') != 'project-owned-rust'
+                or bridge_record.get('component') != 'author'
+                or bridge_record.get('target') != 'x86_64-pc-windows-gnu'
+                or set(bridge_record.get('features', [])) not in ({'media', 'author-loader'}, {'media', 'author-loader', 'menu'}, {'media', 'image', 'menu'})
+                or sha(rust_bridge) != bridge_record['files'][rust_bridge.name]['sha256']):
+            raise ValueError('Rust author bridge provenance mismatch')
+        inputs['rust/author-bridge-build.json']=sha(bridge_manifest)
+        shutil.copy2(bridge_manifest,work/'author-bridge-build.json')
+        inputs['rust/libdvda_bridges.a']=sha(rust_bridge)
+    else:
+        loader=Path(__file__).parent/'native/author-image-loader.c'; files.append(loader.resolve())
+        inputs['project/author-image-loader.c']=sha(loader)
+        menu_media=Path(__file__).parent/'native/dvda-menu-media.c'
+        menu_header=Path(__file__).parent/'native/dvda-menu-media.h'
+        files.append(menu_media.resolve())
+        inputs['project/dvda-menu-media.c']=sha(menu_media)
+        inputs['project/dvda-menu-media.h']=sha(menu_header)
     objects=work/'objects'; objects.mkdir(exist_ok=True)
     def compile_one(file):
         target=objects/(file.stem+'.o')
@@ -121,6 +142,12 @@ def main():
         if result.returncode: raise RuntimeError('Compilation failed; see '+str(objects/(file.stem+'.log')))
         return str(target)
     with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count(len(files))) as pool: built=list(pool.map(compile_one,files))
+    static_output=work/'libdvda_author.a'
+    author_object=objects/'author_library.o'
+    subprocess.run([str(msys/'mingw64/bin/ar.exe'),'rcs',str(static_output),str(author_object)],env=env,check=True)
+    public_header=work/'include'/'author_library.h'
+    public_header.parent.mkdir(exist_ok=True)
+    shutil.copy2(mirror_root/'include'/'author_library.h',public_header)
     subprocess.run([str(msys/'mingw64/bin/windres.exe'),'-i','da-utf8.rc','-o',str(objects/'manifest.o')],cwd=snapshot/'src',env=env,check=True)
     # Override this link's default manifest through a private GCC specs file.
     # Never modify the compiler installation's default-manifest.o.
@@ -132,12 +159,18 @@ def main():
     # signed, source-built minimal FFmpeg profile.  The configured snapshot
     # still supplies generated/configuration headers. Its old static FFmpeg
     # archives are neither copied into the snapshot nor used by this link.
+    if rust_bridge:
+        built.append(str(rust_bridge))
     libraries=[ffmpeg_imports['avformat'], ffmpeg_imports['avcodec'], ffmpeg_imports['avutil']]
+    if rust_bridge:
+        libraries += [ffmpeg_lib/'libswresample.dll.a',ffmpeg_lib/'libswscale.dll.a']
     command=[compiler,'-specs='+str(specs_path),'-s','-static-libgcc','-Wl,--gc-sections','-Wl,--no-insert-timestamp',*built,str(objects/'manifest.o'),*[str(x) for x in libraries],'-lwinmm','-lbcrypt','-lm','-o',str(output)]
+    if rust_bridge:
+        command[command.index('-lwinmm'):command.index('-lwinmm')]=['-ldelayimp','-lshell32','-lgdi32','-luserenv','-lntdll','-lws2_32','-ladvapi32','-lole32','-loleaut32','-luuid','-lgcc_eh']
     with (work/'link.log').open('wb') as log: subprocess.run(command,env=env,stdout=log,stderr=subprocess.STDOUT,check=True)
     if b'<activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>' not in output.read_bytes():
         raise ValueError('Missing UTF-8 process manifest')
-    runtime_roots=[ffmpeg_bin, snapshot/'local/lib', repo/'build/media-native', repo/'build/ffmpeg-media/compile', msys/'mingw64/bin']
+    runtime_roots=[ffmpeg_bin, snapshot/'local/lib', repo/'build/media-native', repo/'build/media-native-fixed', repo/'build/ffmpeg-media/compile', msys/'mingw64/bin']
     system_root=Path(os.environ.get('SystemRoot', r'C:\Windows')).resolve()
     system_roots={system_root/'System32', system_root, msys/'bin', msys/'usr/bin'}
     system_names={'kernel32.dll','user32.dll','advapi32.dll','bcrypt.dll','combase.dll','gdi32.dll',
@@ -183,13 +216,29 @@ def main():
                 shutil.copy2(candidate, destination)
             copied.add(name)
             pending.append(destination)
+    direct_menu=bool(a.rust_bridges and 'menu' in bridge_record.get('features', []))
     menu_runtime=a.menu_runtime.resolve()
     menu_manifest=json.loads((menu_runtime/'menu-build.json').read_text(encoding='utf-8'))
-    for name in ['dvda-menu-spu.dll','dvda-menu-nav.dll']:
-        path=menu_runtime/name
-        if sha(path)!=menu_manifest['files'][name]['sha256']:
-            raise ValueError('Menu library checksum mismatch: '+name)
-        shutil.copy2(path,work/name)
+    if direct_menu:
+        if menu_manifest.get('linkage') != 'static-vendor':
+            raise ValueError('Direct menu requires a static-vendor menu manifest')
+        for name in ['libdvda_menu_spu_vendor.a','libdvda_menu_nav_vendor.a']:
+            digest=sha(menu_runtime/name)
+            if digest!=menu_manifest['files'][name]['sha256']:
+                raise ValueError('Menu archive checksum mismatch: '+name)
+            embedded=[value for path,value in bridge_record.get('source_inputs', {}).items()
+                      if path.replace('\\', '/').rsplit('/', 1)[-1]==name]
+            if embedded != [digest]:
+                raise ValueError('Menu archive does not match embedded bridge provenance: '+name)
+        for name in ['dvda-menu-spu.dll','dvda-menu-nav.dll']:
+            if (work/name).exists():
+                raise ValueError('Direct menu output contains a stale menu DLL: '+name)
+    else:
+        for name in ['dvda-menu-spu.dll','dvda-menu-nav.dll']:
+            path=menu_runtime/name
+            if sha(path)!=menu_manifest['files'][name]['sha256']:
+                raise ValueError('Menu library checksum mismatch: '+name)
+            shutil.copy2(path,work/name)
     shutil.copy2(menu_runtime/'menu-build.json',work/'menu-build.json')
     shutil.copy2(menu_runtime/'NOTICE.txt',work/'menu-NOTICE.txt')
     inputs['menu-runtime/menu-build.json']=sha(menu_runtime/'menu-build.json')
@@ -197,8 +246,13 @@ def main():
     runtime_files={p.name:{'sha256':sha(p),'bytes':p.stat().st_size,'imports':sorted(Pe(p).imports())}
                    for p in sorted(work.glob('*.dll'))}
     profile=manifest_data['profile']
-    record={'target':'Windows x64','menu_linkage':'in-process-source-built','ffmpeg_linkage':'shared-source-built-'+profile+'-profile',
-            'ffmpeg_profile':'build-minimal-ffmpeg.py:'+profile,'files':{output.name:{'sha256':sha(output),'bytes':output.stat().st_size}},
+    record={'target':'Windows x64','menu_linkage':'direct-static-vendor' if direct_menu else 'in-process-source-built','ffmpeg_linkage':'shared-source-built-'+profile+'-profile',
+            'author_library':{'abi_version':1,'available':False,'serialization':'process-wide-fail-fast',
+                              'reason':'legacy fatal unwinding and request ownership are not audited safe'},
+            'ffmpeg_profile':'build-minimal-ffmpeg.py:'+profile,
+            'files':{output.name:{'sha256':sha(output),'bytes':output.stat().st_size},
+                     static_output.name:{'sha256':sha(static_output),'bytes':static_output.stat().st_size},
+                     'include/author_library.h':{'sha256':sha(public_header),'bytes':public_header.stat().st_size}},
             'runtime_files':runtime_files,'source_inputs':inputs,'patch_sha256':sha(work/'inprocess-images.patch'),
             'compiler':subprocess.check_output([compiler,'--version'],env=env).decode().splitlines()[0]}
     (work/'author-build.json').write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')

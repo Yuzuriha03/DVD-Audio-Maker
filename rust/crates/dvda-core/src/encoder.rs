@@ -1,4 +1,4 @@
-//! Streaming PCM/metadata host for the pinned C MLP encoder. No output patching.
+//! Streaming PCM/metadata host for the linked Rust encoder or legacy C oracle. No output patching.
 use crate::{
     formats::{self, WavLayout},
     media::{Failure, Outcome, Temporary, Timed, temporary_path},
@@ -210,7 +210,97 @@ impl Stream for PcmStream<'_, '_> {
     }
 }
 
+#[cfg(not(feature = "rust-mlp"))]
+fn encode_rust(_: &Request, _: &mut dyn Stream) -> io::Result<dvda_native::encoder::ResultInfo> {
+    Err(io::Error::other("Rust MLP backend feature is disabled"))
+}
+
+#[cfg(feature = "rust-mlp")]
+fn encode_rust(
+    request: &Request,
+    stream: &mut dyn Stream,
+) -> io::Result<dvda_native::encoder::ResultInfo> {
+    struct Adapter<'a> {
+        stream: &'a mut dyn Stream,
+        failure: Option<io::Error>,
+    }
+    impl dvda_mlp::direct::StreamIo for Adapter<'_> {
+        fn read(&mut self, _: usize, pcm: &mut [i32]) -> Result<usize, i32> {
+            self.stream.read(pcm).map_err(|error| {
+                self.failure = Some(error);
+                -3
+            })
+        }
+        fn write(&mut self, bytes: &[u8]) -> Result<(), i32> {
+            self.stream.write(bytes).map_err(|error| {
+                self.failure = Some(error);
+                -4
+            })
+        }
+    }
+    let config = dvda_mlp::Config {
+        sample_rate: request.sample_rate,
+        bits: u8::try_from(request.bits).unwrap_or(0),
+        channels: u8::try_from(request.channels).unwrap_or(0),
+        restart_interval: 8,
+        metadata: Vec::new(),
+    };
+    let profile = dvda_mlp::format::Profile {
+        assignment: request.assignment as usize,
+        group2_bits: config.bits,
+        group2_rate: config.sample_rate,
+    };
+    let metadata = request
+        .metadata
+        .iter()
+        .map(|stamp| dvda_mlp::metadata::Metadata {
+            start: stamp.start,
+            packet: stamp.packet.clone(),
+            valid_bits: stamp.valid_bits,
+        })
+        .collect::<Vec<_>>();
+    let mut adapter = Adapter {
+        stream,
+        failure: None,
+    };
+    let result = dvda_mlp::direct::encode_stream(
+        &config,
+        &profile,
+        request.frames,
+        None,
+        &metadata,
+        &mut adapter,
+    );
+    if let Some(error) = adapter.failure {
+        return Err(error);
+    }
+    let error = result
+        .error
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect::<Vec<_>>();
+    Ok(dvda_native::encoder::ResultInfo {
+        status: result.status,
+        access_units: result.access_units,
+        input_frames: result.input_frames,
+        encoded_frames: result.encoded_frames,
+        output_bytes: result.output_bytes,
+        error: String::from_utf8_lossy(&error).into_owned(),
+    })
+}
+
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
+    execute_with(job, caller, cfg!(feature = "rust-mlp"))
+}
+
+/// Explicit linked backend entrypoint for parity and host integration tests.
+#[cfg(feature = "rust-mlp")]
+pub fn execute_rust(job: Job, caller: &mut dyn Callbacks) -> Outcome {
+    execute_with(job, caller, true)
+}
+
+fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Outcome {
     let mut callbacks = Timed::new(caller, job.timeout_millis);
     let mut temporary = Temporary(None);
     let result = (|| -> Result<i32, Failure> {
@@ -225,13 +315,17 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
         })?;
         let frames = layout.data_size / i64::from(layout.bytes_per_sample * layout.channels);
         let assignment = assignment(layout.channel_mask)?;
-        let hash = crate::hash::reader_digest(File::open(&job.library)?)?;
-        if !hash.eq_ignore_ascii_case(BINARY_SHA256) {
-            return Err(invalid(
-                "MLP DLL 哈希不符，请清理损坏的原生核心缓存后重试。",
-            ));
-        }
-        let encoder = Encoder::load(&job.library)?;
+        let encoder = if rust_backend {
+            None
+        } else {
+            let hash = crate::hash::reader_digest(File::open(&job.library)?)?;
+            if !hash.eq_ignore_ascii_case(BINARY_SHA256) {
+                return Err(invalid(
+                    "MLP DLL 哈希不符，请清理损坏的原生核心缓存后重试。",
+                ));
+            }
+            Some(Encoder::load(&job.library)?)
+        };
         let metadata = metadata(
             &job.metadata_context,
             access_units(frames, layout.sample_rate as u32)?,
@@ -263,7 +357,10 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
             raw: vec![0; 8192 * layout.channels as usize * layout.bytes_per_sample as usize],
             callbacks: &mut callbacks,
         };
-        let encoded = encoder.encode(&request, &mut stream);
+        let encoded = match encoder {
+            Some(encoder) => encoder.encode(&request, &mut stream),
+            None => encode_rust(&request, &mut stream),
+        };
         stream.callbacks.check()?;
         let encoded = encoded.map_err(io_failure)?;
         let length = stream.output.metadata()?.len();
@@ -275,7 +372,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
             return Err(Failure::new(
                 "InvalidOperation",
                 &format!(
-                    "MLP 编码器 DLL 编码失败（{}）：{}",
+                    "MLP 编码器编码失败（{}）：{}",
                     encoded.status, encoded.error
                 ),
             ));
@@ -303,6 +400,138 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
             exit_code: None,
             failure: Some(error),
         },
+    }
+}
+
+#[cfg(all(test, feature = "rust-mlp"))]
+mod rust_tests {
+    use super::*;
+    struct Host {
+        output: Vec<u8>,
+        failure: Option<io::ErrorKind>,
+        output_failure: bool,
+        panic: bool,
+    }
+    impl Stream for Host {
+        fn read(&mut self, samples: &mut [i32]) -> io::Result<usize> {
+            assert!(!self.panic, "callback panic");
+            if let Some(kind) = self.failure {
+                return Err(io::Error::new(kind, "original input failure"));
+            }
+            samples.fill(0);
+            Ok(samples.len() / 2)
+        }
+        fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
+            if self.output_failure {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "original output failure",
+                ));
+            }
+            self.output.extend_from_slice(bytes);
+            Ok(())
+        }
+    }
+    #[test]
+    fn production_entrypoint_encodes_without_encoder_dll() {
+        struct Caller;
+        impl Callbacks for Caller {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+        }
+        let root = std::env::temp_dir().join(format!(
+            "dvda-linked-encoder-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let wave = root.join("input.wav");
+        let destination = root.join("output.mlp");
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&200u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&48000u32.to_le_bytes());
+        bytes.extend_from_slice(&192000u32.to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&164u32.to_le_bytes());
+        bytes.resize(208, 0);
+        std::fs::write(&wave, bytes).unwrap();
+        let job = || Job {
+            library: root.join("missing-encoder.dll"),
+            wave: wave.to_string_lossy().into_owned(),
+            destination: destination.clone(),
+            metadata_context: String::new(),
+            timeout_millis: None,
+        };
+        let outcome = execute(job(), &mut Caller);
+        assert_eq!(outcome.exit_code, Some(0), "{:?}", outcome.failure);
+        let output = std::fs::read(&destination).unwrap();
+        assert!(!output.is_empty());
+        assert!(execute(job(), &mut Caller).failure.is_some());
+        assert_eq!(std::fs::read(&destination).unwrap(), output);
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rust_adapter_preserves_results_and_input_errors() {
+        let mut request = Request {
+            sample_rate: 48000,
+            bits: 16,
+            channels: 2,
+            frames: 41,
+            assignment: 1,
+            metadata: vec![Stamp {
+                start: 0,
+                packet: vec![0, 0, 0x40, 0],
+                valid_bits: 0,
+            }],
+        };
+        let mut host = Host {
+            output: Vec::new(),
+            failure: None,
+            output_failure: false,
+            panic: false,
+        };
+        let result = encode_rust(&request, &mut host).unwrap();
+        assert_eq!(result.status, 0);
+        assert_eq!(
+            (
+                result.input_frames,
+                result.encoded_frames,
+                result.access_units
+            ),
+            (41, 80, 2)
+        );
+        assert_eq!(result.output_bytes, host.output.len() as u64);
+        for kind in [io::ErrorKind::UnexpectedEof, io::ErrorKind::Interrupted] {
+            host.failure = Some(kind);
+            let error = encode_rust(&request, &mut host).unwrap_err();
+            assert_eq!(error.kind(), kind);
+            assert_eq!(error.to_string(), "original input failure");
+        }
+        host.failure = None;
+        host.output_failure = true;
+        let error = encode_rust(&request, &mut host).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WriteZero);
+        assert_eq!(error.to_string(), "original output failure");
+        host.output_failure = false;
+        host.panic = true;
+        assert_eq!(encode_rust(&request, &mut host).unwrap().status, -5);
+        host.panic = false;
+        request.assignment = 21;
+        assert_eq!(encode_rust(&request, &mut host).unwrap().status, -1);
     }
 }
 

@@ -46,6 +46,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dvda-bridges"
+version = "0.1.0"
+dependencies = [
+ "dvda-menu",
+]
+
+[[package]]
 name = "dvda-cli"
 version = "0.1.0"
 dependencies = [
@@ -59,6 +66,7 @@ dependencies = [
 name = "dvda-core"
 version = "0.1.0"
 dependencies = [
+ "dvda-mlp",
  "dvda-native",
  "serde",
  "serde_json",
@@ -75,9 +83,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dvda-menu"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+]
+
+[[package]]
+name = "dvda-mlp"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "dvda-native"
 version = "0.1.0"
 dependencies = [
+ "dvda-bridges",
  "serde",
 ]
 
@@ -146,6 +169,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.38.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

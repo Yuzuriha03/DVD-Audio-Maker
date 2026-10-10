@@ -15,7 +15,7 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --work
 
 ## 原生输入
 
-打包器需要已验证的 x64 目录：`build/media-native-shared`、`build/image-native`、`build/rust-author-current`、菜单资源目录，以及 `native/mlp-encoder/win-x64/mlp_encoder.dll`。FFmpeg 和 ImageMagick 命令行程序不是运行时输入；所需库通过项目 C ABI 加载。MLP 编码源码和构建脚本位于 `native/mlp-encoder`。
+打包器需要已验证的 x64 目录：`build/media-native-shared`、`build/image-native`、`build/rust-author-current`、菜单资源目录，以及 `build/mlp-encoder`（可用 `--encoder-runtime` 指定）。编码器目录必须包含验收后源码构建产生的 Rust ABI v1 `encoder-build.json` 和唯一的 `mlp_encoder.dll`；打包器验证摘要、大小、PE 架构及依赖闭包，不回退到旧 C DLL。当前编码器迁移尚未验收，发布流程因此暂不可完成。FFmpeg 和 ImageMagick 命令行程序不是运行时输入；所需库通过项目 C ABI 加载。旧 MLP C 源码和冻结 DLL 仅在迁移验收前保留。
 
 格式解析、MLP CRC/奇偶校验、PCM 比较及只读 AOB 成品校验已经内置为 Rust 实现，不需要格式或校验 DLL。打包不再接受 `--formats-runtime` 输入。
 
@@ -26,6 +26,7 @@ tools\win-build\build-all.cmd ^
   --media-runtime build\media-native-shared ^
   --image-runtime build\image-native ^
   --image-author build\rust-author-current ^
+  --encoder-runtime build\mlp-encoder ^
   --prebuilt build\release-menu-final ^
   --version v1.0
 ```

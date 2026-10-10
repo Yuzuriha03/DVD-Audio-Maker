@@ -336,7 +336,7 @@ pub fn build_assets(
     diagnostics: &mut Vec<Value>,
 ) -> Result<Vec<String>, String> {
     let library = job.image_library.as_deref();
-    if library.is_none_or(|path| !path.is_file()) {
+    if !crate::native_components::images_available(library) {
         diagnostics.push(json!({"Severity":2,"Code":"IMAGEMAGICK_MISSING","Message":"内置图像组件缺失，请重新解压或修复发布包。"}));
         diagnostics.push(json!({"Severity":2,"Code":"IMAGEMAGICK_IDENTIFY_MISSING","Message":"内置图像组件缺失，无法验证菜单图片尺寸。"}));
     }
@@ -344,6 +344,7 @@ pub fn build_assets(
     if !data_menu.is_dir() {
         diagnostics.push(json!({"Severity":2,"Code":"MENU_DATA_MISSING","Message":format!("找不到 dvda-author 菜单素材目录: {}",data_menu.display())}));
     }
+    #[cfg(not(feature = "direct-bridges"))]
     for name in ["dvda-menu-spu.dll", "dvda-menu-nav.dll"] {
         if !job.menu_binary_directory.join(name).is_file() {
             diagnostics.push(json!({"Severity":2,"Code":"MENU_LIBRARY_MISSING","Message":format!("内置菜单组件缺失：{name}。请重新解压或修复发布包。" )}));
@@ -352,7 +353,6 @@ pub fn build_assets(
     if diagnostics.iter().any(|d| d["Severity"] == 2) {
         return Ok(Vec::new());
     }
-    let library = library.unwrap();
     let request = json!({
         "Disc": disc,
         "Title": job.title,
@@ -365,7 +365,7 @@ pub fn build_assets(
         fs::remove_dir_all(&directory).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-    let images = Images::load(library)
+    let images = crate::native_components::images(library)
         .map_err(|error| format!("Could not load menu image library: {error}"))?;
     let configured = [
         resolve_font(&job.menu_font, &job.menu_binary_directory),

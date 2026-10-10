@@ -13,7 +13,62 @@ pub struct Inputs {
     pub records: Vec<PathBuf>,
 }
 
+fn read_json(path: &Path) -> Result<Value, String> {
+    let mut bytes = fs::read(path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        bytes.drain(..3);
+    }
+    serde_json::from_slice(&bytes).map_err(|e| format!("Invalid {}: {e}", path.display()))
+}
+
 pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, String> {
+    let author_record = read_json(&author.join("author-build.json"))?;
+    if author_record["menu_linkage"] == "direct-static-vendor" {
+        let (media_record, mut media_files) = component(
+            media,
+            "media-build.json",
+            "files",
+            &[
+                "avcodec-63.dll",
+                "avformat-63.dll",
+                "avutil-61.dll",
+                "swresample-7.dll",
+                "swscale-10.dll",
+            ],
+            false,
+            false,
+        )?;
+        if media_record["profile"] != "shared" {
+            return Err("Onefile media runtime must use profile=shared".into());
+        }
+        media_files.remove("dvda-media.dll");
+        let (image_record, _) = component(
+            image,
+            "image-build.json",
+            "files",
+            &["dvda-image.dll"],
+            true,
+            true,
+        )?;
+        if image_record["implementation"] != "project-owned-rust" {
+            return Err("Image provenance must identify the Rust implementation".into());
+        }
+        let mut linked = validate_linked(author, &author_record)?;
+        for (name, path) in media_files {
+            if let Some(existing) = linked.files.get(&name) {
+                if fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)? {
+                    return Err(format!(
+                        "Shared native component differs between consumers: {name}"
+                    ));
+                }
+            } else {
+                linked.files.insert(name, path);
+            }
+        }
+        linked.records.push(media.join("media-build.json"));
+        linked.records.push(image.join("image-build.json"));
+        return Ok(linked);
+    }
     let mut inputs = Inputs {
         files: BTreeMap::new(),
         records: Vec::new(),
@@ -65,6 +120,33 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
     {
         return Err("Author must use the shared source-built FFmpeg profile and in-process source-built menu libraries".into());
     }
+    let menu_path = author.join("menu-build.json");
+    let menu_bytes =
+        fs::read(&menu_path).map_err(|e| format!("Cannot read {}: {e}", menu_path.display()))?;
+    let expected = author_record["source_inputs"]["menu-runtime/menu-build.json"]
+        .as_str()
+        .ok_or("Author is missing authenticated menu provenance")?;
+    if !hash(&menu_bytes).eq_ignore_ascii_case(expected) {
+        return Err("Author menu manifest checksum mismatch".into());
+    }
+    let menu_record: Value = serde_json::from_slice(&menu_bytes)
+        .map_err(|e| format!("Invalid {}: {e}", menu_path.display()))?;
+    if menu_record["adapter"] != "rust" {
+        return Err("Menu libraries must use the source-built Rust adapter".into());
+    }
+    let menu_files = menu_record["files"]
+        .as_object()
+        .ok_or("Menu manifest is missing its DLL inventory")?;
+    if menu_files.len() != 2
+        || !["dvda-menu-spu.dll", "dvda-menu-nav.dll"]
+            .iter()
+            .all(|name| menu_files.contains_key(*name))
+    {
+        return Err("Menu manifest must contain exactly the SPU and navigation DLLs".into());
+    }
+    for name in ["dvda-menu-spu.dll", "dvda-menu-nav.dll"] {
+        validate_binary(&author.join(name), &menu_record["files"][name], true)?;
+    }
     let mut author_files = author_files;
     // Legacy manifests may record the old verifier. Authenticate it in its original
     // directory, but check the executable against the DLLs actually shipped.
@@ -99,10 +181,111 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         (media, "media-build.json"),
         (image, "image-build.json"),
         (author, "author-build.json"),
+        (author, "menu-build.json"),
     ] {
         inputs.records.push(dir.join(name));
     }
     Ok(inputs)
+}
+
+fn validate_linked(author: &Path, record: &Value) -> Result<Inputs, String> {
+    if record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
+        || record["ffmpeg_profile"] != "build-minimal-ffmpeg.py:shared"
+    {
+        return Err("Linked author requires the authenticated shared FFmpeg profile".into());
+    }
+    let mut records = vec![author.join("author-build.json")];
+    let mut authenticated = Vec::new();
+    for (name, key) in [
+        ("author-bridge-build.json", "rust/author-bridge-build.json"),
+        ("menu-build.json", "menu-runtime/menu-build.json"),
+    ] {
+        let path = author.join(name);
+        let bytes = fs::read(&path).map_err(err)?;
+        if record["source_inputs"][key].as_str() != Some(hash(&bytes).as_str()) {
+            return Err(format!("Linked author provenance mismatch: {name}"));
+        }
+        authenticated.push(read_json(&path)?);
+        records.push(path);
+    }
+    let bridge = &authenticated[0];
+    let menu = &authenticated[1];
+    let features: BTreeSet<_> = bridge["features"]
+        .as_array()
+        .ok_or("Missing bridge features")?
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    if bridge["schema_version"] != 1
+        || bridge["implementation"] != "project-owned-rust"
+        || bridge["component"] != "author"
+        || bridge["target"] != "x86_64-pc-windows-gnu"
+        || features != BTreeSet::from(["media", "image", "menu"])
+        || menu["adapter"] != "rust"
+        || menu["linkage"] != "static-vendor"
+    {
+        return Err("Author must statically link Rust media, image and menu".into());
+    }
+    for name in ["libdvda_menu_spu_vendor.a", "libdvda_menu_nav_vendor.a"] {
+        let digest = menu["files"][name]["sha256"]
+            .as_str()
+            .ok_or("Missing menu archive hash")?;
+        let matches: Vec<_> = bridge["source_inputs"]
+            .as_object()
+            .ok_or("Missing bridge inputs")?
+            .iter()
+            .filter(|(path, _)| path.replace('\\', "/").rsplit('/').next() == Some(name))
+            .map(|(_, value)| value.as_str())
+            .collect();
+        if matches != vec![Some(digest)] {
+            return Err(format!("Embedded menu archive provenance mismatch: {name}"));
+        }
+    }
+    let (_, mut files) = component(
+        author,
+        "author-build.json",
+        "runtime_files",
+        &[
+            "avcodec-63.dll",
+            "avformat-63.dll",
+            "avutil-61.dll",
+            "swresample-7.dll",
+            "swscale-10.dll",
+        ],
+        false,
+        true,
+    )?;
+    if files
+        .keys()
+        .any(|name| name.starts_with("dvda-") || name == "mlp_encoder.dll")
+    {
+        return Err("Linked runtime contains a migrated project-owned DLL".into());
+    }
+    let exe = author.join("dvda-author-dev.exe");
+    let imports = validate_binary(&exe, &record["files"]["dvda-author-dev.exe"], false)?;
+    closure("dvda-author-dev.exe", &imports, &files, true)?;
+    files.insert("dvda-author-dev.exe".into(), exe);
+    Ok(Inputs { files, records })
+}
+
+pub fn validate_encoder(directory: &Path) -> Result<Inputs, String> {
+    let (record, files) = component(
+        directory,
+        "encoder-build.json",
+        "files",
+        &["mlp_encoder.dll"],
+        true,
+        true,
+    )?;
+    if record["implementation"] != "rust" || record["abi_version"].as_u64() != Some(1) {
+        return Err(
+            "Encoder must use the source-built Rust implementation with ABI version 1".into(),
+        );
+    }
+    Ok(Inputs {
+        files,
+        records: vec![directory.join("encoder-build.json")],
+    })
 }
 
 fn component(
@@ -114,13 +297,33 @@ fn component(
     api_sets: bool,
 ) -> Result<(Value, BTreeMap<String, PathBuf>), String> {
     let path = directory.join(manifest);
-    let record: Value = serde_json::from_slice(
-        &fs::read(&path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?,
-    )
-    .map_err(|e| format!("Invalid {}: {e}", path.display()))?;
+    let record = read_json(&path)?;
     let metadata = record[field]
         .as_object()
         .ok_or_else(|| format!("{manifest}: missing {field}"))?;
+    let mut libraries = serde_json::Map::new();
+    for (name, entry) in metadata {
+        if record["implementation"] == "project-owned-rust" && !name.ends_with(".dll") {
+            if name.contains(['/', '\\']) || name == "." || name == ".." {
+                return Err(format!("{manifest}: invalid artifact name {name}"));
+            }
+            let path = directory.join(name);
+            let bytes = fs::read(&path).map_err(err)?;
+            if entry["bytes"].as_u64() != Some(bytes.len() as u64)
+                || entry["sha256"]
+                    .as_str()
+                    .is_none_or(|digest| !hash(&bytes).eq_ignore_ascii_case(digest))
+            {
+                return Err(format!("Artifact checksum mismatch: {name}"));
+            }
+            if name.ends_with(".exe") {
+                validate_binary(&path, entry, false)?;
+            }
+        } else {
+            libraries.insert(name.clone(), entry.clone());
+        }
+    }
+    let metadata = &libraries;
     let mut files = BTreeMap::new();
     for name in metadata.keys() {
         if !pe::valid_name(name, "dll") {
@@ -204,16 +407,26 @@ fn closure(
 }
 
 pub fn validate_staged(directory: &Path) -> Result<(), String> {
+    validate_combined(&[directory])
+}
+
+pub fn validate_combined(directories: &[&Path]) -> Result<(), String> {
     let mut files = BTreeMap::new();
-    for entry in fs::read_dir(directory).map_err(err)? {
-        let path = entry.map_err(err)?.path();
-        let name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_ascii_lowercase();
-        if path.is_file() && (name.ends_with(".dll") || name.ends_with(".exe")) {
-            files.insert(name, path);
+    for directory in directories {
+        for entry in fs::read_dir(directory).map_err(err)? {
+            let path = entry.map_err(err)?.path();
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_ascii_lowercase();
+            if path.is_file()
+                && (name.ends_with(".dll") || name.ends_with(".exe"))
+                && let Some(existing) = files.insert(name, path.clone())
+                && fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)?
+            {
+                return Err("Conflicting combined runtime binaries".into());
+            }
         }
     }
     for (name, path) in &files {
@@ -305,6 +518,7 @@ pub(crate) mod tests {
                     ],
                 ),
                 ("image", "image-build.json", vec!["dvda-image.dll"]),
+                ("encoder", "encoder-build.json", vec!["mlp_encoder.dll"]),
                 (
                     "author",
                     "author-build.json",
@@ -329,6 +543,10 @@ pub(crate) mod tests {
                     );
                 }
                 let mut record = serde_json::json!({"profile":"shared","files":files});
+                if dir == "encoder" {
+                    record["implementation"] = "rust".into();
+                    record["abi_version"] = 1.into();
+                }
                 if dir == "author" {
                     record["runtime_files"] = record["files"].take();
                     let b = pe::fixture(false, &["avcodec-63.dll"], &["dvda-menu-spu.dll"]);
@@ -337,6 +555,18 @@ pub(crate) mod tests {
                     record["ffmpeg_linkage"] = "shared-source-built-shared-profile".into();
                     record["ffmpeg_profile"] = "build-minimal-ffmpeg.py:shared".into();
                     record["menu_linkage"] = "in-process-source-built".into();
+                    let menu_record = serde_json::json!({
+                        "adapter": "rust",
+                        "files": {
+                            "dvda-menu-spu.dll": record["runtime_files"]["dvda-menu-spu.dll"],
+                            "dvda-menu-nav.dll": record["runtime_files"]["dvda-menu-nav.dll"],
+                        }
+                    });
+                    let menu_bytes = serde_json::to_vec(&menu_record).unwrap();
+                    record["source_inputs"] = serde_json::json!({
+                        "menu-runtime/menu-build.json": hash(&menu_bytes)
+                    });
+                    fs::write(folder.join("menu-build.json"), menu_bytes).unwrap();
                 }
                 fs::write(folder.join(manifest), serde_json::to_vec(&record).unwrap()).unwrap();
             }
@@ -355,6 +585,16 @@ pub(crate) mod tests {
             change(&mut d);
             fs::write(path, serde_json::to_vec(&d).unwrap()).unwrap();
         }
+        pub fn edit_menu(&self, change: impl FnOnce(&mut Value)) {
+            let path = self.root.join("author/menu-build.json");
+            let mut record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            change(&mut record);
+            let bytes = serde_json::to_vec(&record).unwrap();
+            fs::write(path, &bytes).unwrap();
+            self.edit("author", |d| {
+                d["source_inputs"]["menu-runtime/menu-build.json"] = hash(&bytes).into();
+            });
+        }
         pub fn replace(&self, dir: &str, name: &str, bytes: Vec<u8>) {
             fs::write(self.root.join(dir).join(name), &bytes).unwrap();
             self.edit(dir, |d| {
@@ -364,12 +604,162 @@ pub(crate) mod tests {
                     "files"
                 }][name] = serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)})
             });
+            if dir == "author" && name.starts_with("dvda-menu-") {
+                self.edit_menu(|record| {
+                    record["files"][name] =
+                        serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)});
+                });
+            }
         }
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn encoder_requires_rust_abi_integrity_and_closed_inventory() {
+        let f = Fixture::new();
+        let directory = f.root.join("encoder");
+        assert_eq!(validate_encoder(&directory).unwrap().files.len(), 1);
+        for (field, value) in [
+            ("implementation", serde_json::json!("c")),
+            ("abi_version", serde_json::json!(2)),
+        ] {
+            f.edit("encoder", |d| d[field] = value);
+            assert!(
+                validate_encoder(&directory)
+                    .unwrap_err()
+                    .contains("ABI version 1")
+            );
+            f.edit("encoder", |d| {
+                d["implementation"] = "rust".into();
+                d["abi_version"] = 1.into();
+            });
+        }
+        fs::write(directory.join("mlp_encoder.dll"), b"tampered").unwrap();
+        assert!(
+            validate_encoder(&directory)
+                .unwrap_err()
+                .contains("checksum")
+        );
+        f.replace(
+            "encoder",
+            "mlp_encoder.dll",
+            pe::fixture(true, &["missing.dll"], &[]),
+        );
+        assert!(
+            validate_encoder(&directory)
+                .unwrap_err()
+                .contains("Missing native dependency")
+        );
+        f.replace(
+            "encoder",
+            "mlp_encoder.dll",
+            pe::fixture(true, &[], &["missing.dll"]),
+        );
+        assert!(
+            validate_encoder(&directory)
+                .unwrap_err()
+                .contains("Missing native dependency")
+        );
+        f.replace("encoder", "mlp_encoder.dll", pe::fixture(true, &[], &[]));
+        fs::write(directory.join("extra.dll"), pe::fixture(true, &[], &[])).unwrap();
+        assert!(
+            validate_encoder(&directory)
+                .unwrap_err()
+                .contains("actual DLL files")
+        );
+        fs::remove_file(directory.join("extra.dll")).unwrap();
+        fs::remove_file(directory.join("encoder-build.json")).unwrap();
+        assert!(
+            validate_encoder(&directory)
+                .unwrap_err()
+                .contains("Cannot read")
+        );
+    }
+
+    #[test]
+    fn encoder_rejects_missing_malformed_and_non_x64_dlls() {
+        let f = Fixture::new();
+        let directory = f.root.join("encoder");
+        fs::remove_file(directory.join("mlp_encoder.dll")).unwrap();
+        assert!(validate_encoder(&directory).is_err());
+
+        let mut x86 = pe::fixture(true, &[], &[]);
+        x86[132..134].copy_from_slice(&0x14cu16.to_le_bytes());
+        for bytes in [b"not a PE".to_vec(), x86] {
+            let f = Fixture::new();
+            f.replace("encoder", "mlp_encoder.dll", bytes);
+            assert!(validate_encoder(&f.root.join("encoder")).is_err());
+        }
+
+        let f = Fixture::new();
+        f.edit("encoder", |record| {
+            record["files"]["extra.dll"] = record["files"]["mlp_encoder.dll"].clone();
+        });
+        assert!(validate_encoder(&f.root.join("encoder")).is_err());
+    }
+
+    #[test]
+    fn menu_requires_authenticated_rust_provenance_and_matching_inventory() {
+        let f = Fixture::new();
+        assert!(
+            f.validate()
+                .unwrap()
+                .records
+                .contains(&f.root.join("author/menu-build.json"))
+        );
+        f.edit("author", |record| {
+            record["source_inputs"]
+                .as_object_mut()
+                .unwrap()
+                .remove("menu-runtime/menu-build.json");
+        });
+        assert!(
+            f.validate()
+                .unwrap_err()
+                .contains("authenticated menu provenance")
+        );
+
+        let f = Fixture::new();
+        fs::write(f.root.join("author/menu-build.json"), b"tampered").unwrap();
+        assert!(f.validate().unwrap_err().contains("manifest checksum"));
+
+        let f = Fixture::new();
+        fs::remove_file(f.root.join("author/menu-build.json")).unwrap();
+        assert!(f.validate().unwrap_err().contains("Cannot read"));
+
+        let f = Fixture::new();
+        f.edit_menu(|record| record["adapter"] = "c".into());
+        assert!(f.validate().unwrap_err().contains("Rust adapter"));
+
+        for name in ["dvda-menu-spu.dll", "dvda-menu-nav.dll"] {
+            let f = Fixture::new();
+            f.edit_menu(|record| record["files"][name]["sha256"] = "0".repeat(64).into());
+            assert!(f.validate().unwrap_err().contains("checksum"));
+            let f = Fixture::new();
+            f.edit_menu(|record| {
+                record["files"].as_object_mut().unwrap().remove(name);
+            });
+            assert!(f.validate().unwrap_err().contains("exactly"));
+        }
+        let f = Fixture::new();
+        f.edit_menu(|record| {
+            record["files"]["extra.dll"] = record["files"]["dvda-menu-spu.dll"].clone()
+        });
+        assert!(f.validate().unwrap_err().contains("exactly"));
+        let f = Fixture::new();
+        f.edit_menu(|record| record["files"] = Value::Null);
+        assert!(f.validate().unwrap_err().contains("DLL inventory"));
+
+        let f = Fixture::new();
+        fs::write(f.root.join("author/menu-build.json"), b"not JSON").unwrap();
+        f.edit("author", |record| {
+            record["source_inputs"]["menu-runtime/menu-build.json"] = hash(b"not JSON").into();
+        });
+        assert!(f.validate().unwrap_err().contains("Invalid"));
     }
 
     #[test]

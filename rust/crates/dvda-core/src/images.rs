@@ -1,6 +1,6 @@
 //! Image job transactions over the existing C component's in-process ABI.
 use crate::media::{Failure, Outcome, Temporary, Timed, temporary_path};
-use dvda_native::{files, images::Images, media::Callbacks};
+use dvda_native::{files, media::Callbacks};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -37,7 +37,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> Outcome {
                 format!("{}{}", output.format_prefix, path.display());
             temporary.0 = Some(path);
         }
-        let images = Images::load(&job.library)?;
+        let images = crate::native_components::images(Some(&job.library))?;
         let status = images.run(&job.arguments, &mut callbacks)?;
         callbacks.check()?;
         if status == 0

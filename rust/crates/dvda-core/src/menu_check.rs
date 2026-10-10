@@ -1,6 +1,6 @@
 //! Check authored button/navigation and overlay output before publishing.
 use crate::{build::Job, disc::Disc, menu};
-use dvda_native::{images::Images, media::Callbacks};
+use dvda_native::media::Callbacks;
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 
@@ -93,13 +93,8 @@ pub fn verify(
     if issues.iter().any(|d| d["Severity"] == 2) {
         return Ok(issues);
     }
-    let images = match job
-        .image_library
-        .as_deref()
-        .filter(|path| path.is_file())
-        .map(Images::load)
-    {
-        Some(Ok(images)) => images,
+    let images = match crate::native_components::images(job.image_library.as_deref()) {
+        Ok(images) => images,
         _ => {
             issues.push(json!({"Severity":1,"Code":"MENU_OVERLAY_CHECK_SKIPPED","Message":"内置图像组件缺失，无法完成菜单文字与高亮检查。"}));
             return Ok(issues);
