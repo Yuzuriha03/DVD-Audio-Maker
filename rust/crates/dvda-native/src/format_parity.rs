@@ -281,8 +281,10 @@ impl Oracle {
     }
 
     fn load() -> Self {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..\\..\\..\\build\\c-rust-migration-oracle\\dvda-formats.dll");
+        let path = PathBuf::from(
+            std::env::var_os("DVDA_FORMATS_ORACLE_DLL")
+                .expect("set DVDA_FORMATS_ORACLE_DLL to an external frozen format DLL"),
+        );
         assert!(
             path.is_file(),
             "frozen format oracle missing: {}",
@@ -666,7 +668,10 @@ fn frozen_dll_encoded_mlp_profiles_differential() {
     }
 
     let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..\\..\\..");
-    let encoder_path = repository.join("native\\mlp-encoder\\win-x64\\mlp_encoder.dll");
+    let encoder_path = PathBuf::from(
+        std::env::var_os("DVDA_ENCODER_LIBRARY")
+            .expect("set DVDA_ENCODER_LIBRARY for the optional format oracle comparison"),
+    );
     assert!(
         encoder_path.is_file(),
         "pinned MLP encoder absent: {}",

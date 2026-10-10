@@ -160,7 +160,7 @@ fn package(options: Args) -> Result<(), String> {
             &repository,
             options.image_author,
             None,
-            "build/rust-author-current",
+            "build/rust-author-production",
         ),
         "author runtime",
     )?;
@@ -168,7 +168,7 @@ fn package(options: Args) -> Result<(), String> {
         &repository,
         options.source,
         env::var_os("DVDA_SRC_TREE"),
-        "tools/dvda-author-mlp8",
+        "tools/win-build/prebuilt",
     );
     let prebuilt = input_path(
         &repository,
@@ -532,8 +532,8 @@ mod tests {
         }
         let repo = Path::new("C:/repo");
         assert_eq!(
-            input_path(repo, None, None, "tools/dvda-author-mlp8"),
-            repo.join("tools/dvda-author-mlp8")
+            input_path(repo, None, None, "tools/win-build/prebuilt"),
+            repo.join("tools/win-build/prebuilt")
         );
         assert_eq!(
             input_path(repo, None, Some("source 中文".into()), "unused"),

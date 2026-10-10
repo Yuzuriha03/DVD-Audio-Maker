@@ -1,12 +1,10 @@
 //! Pure Rust MLP encoder with adaptive entropy, prediction and decorrelation.
-//! This deliberately conservative backend is not yet the production replacement.
+//! Production links this crate directly; its DLL is a development ABI adapter.
 
 #[cfg(target_arch = "x86_64")]
 mod c_analysis;
 #[cfg(target_arch = "x86_64")]
 mod c_channels;
-#[cfg(all(test, target_arch = "x86_64"))]
-mod c_downmix;
 #[cfg(target_arch = "x86_64")]
 mod c_encode;
 #[cfg(target_arch = "x86_64")]
@@ -34,7 +32,7 @@ mod entropy;
 mod extended;
 pub mod ffi;
 pub mod format;
-#[cfg(all(test, windows, target_arch = "x86_64"))]
+#[cfg(all(test, windows, target_arch = "x86_64", feature = "external-oracle"))]
 mod frozen_reference;
 #[cfg(target_arch = "x86_64")]
 mod interval;
@@ -43,8 +41,6 @@ mod matrix;
 pub mod metadata;
 #[cfg(target_arch = "x86_64")]
 mod parameters;
-#[cfg(all(test, windows))]
-mod planning_reference;
 mod predict;
 #[cfg(target_arch = "x86_64")]
 mod scale;

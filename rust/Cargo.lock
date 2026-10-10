@@ -46,9 +46,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dvda-author"
+version = "0.1.0"
+
+[[package]]
 name = "dvda-bridges"
 version = "0.1.0"
 dependencies = [
+ "dvda-author",
  "dvda-menu",
 ]
 
@@ -66,6 +71,8 @@ dependencies = [
 name = "dvda-core"
 version = "0.1.0"
 dependencies = [
+ "dvda-author",
+ "dvda-bridges",
  "dvda-mlp",
  "dvda-native",
  "serde",

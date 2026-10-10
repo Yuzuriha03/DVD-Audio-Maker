@@ -14,16 +14,18 @@
 
 ### 为什么必须是 GPL-3.0
 
-本工程对 [dvda-author](https://github.com/fabnicol/dvda-author) 源码做了**大量修改**，
-属于衍生作品，需与原项目许可保持一致。仓库里包含：
+本工程的 author 与 LPCM 打包规则由修改过的
+[dvda-author](https://github.com/fabnicol/dvda-author) 实现迁移到 Rust，
+继续保留上游归属和 GPL 许可。当前仓库包含：
 
-- `docs/dvda-author-changes.patch` —— 对 20 个源文件的完整改动（可直接 apply）
-- `docs/DVDA-AUTHOR-CHANGES.md` / `DVDA-AUTHOR-DISABLED.md` —— 改动的依据
-  与代码片段
-- `scripts/build_dvda_author_mlp.sh` —— 用本工程的改动集构建工具链
+- `rust/crates/dvda-author`：Rust author、IFO/AOB 与 ISO writer
+- `docs/RUST-AUTHOR-MIGRATION.md`：实现范围与验收记录
+- `rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json`：退役源码的
+  Git 版本、文件哈希、版权声明和黄金数据来源
+- `docs/DVDA-AUTHOR-CHANGES.md` / `DVDA-AUTHOR-DISABLED.md`：历史改动说明
 
-> 改动本身提交在 `tools/dvda-author-mlp8` 的 `dvda-maker` 分支上，
-> 该目录不在仓库里（它是一份 1.7 GB 的上游 clone），但 patch 文件在。
+旧 C 镜像和 `docs/dvda-author-changes.patch` 已移除，可以从本仓库提交
+`6c5086127590001c544373783653fe991f0ebaeb` 恢复。源码清理不改变许可和归属要求。
 
 而 dvda-author 的许可状况：
 
@@ -38,10 +40,9 @@
 
 ### 本仓库自身程序的说明
 
-C# CLI 与兼容入口脚本通过**子进程方式调用** `dvda-author`，不与其链接，按 GPL
-的通常理解不构成衍生作品，本可单独采用其他许可。但为保持仓库整体清晰、避免
-混用许可带来的困扰，**统一采用 GPL-3.0**。已删除的根目录 Python 文件仅作为迁移对拍的
-旧参考实现，不进入正式发布包，也不再由正式业务入口调用。
+当前 GUI、CLI、author、媒体和图像适配层、MLP 编码器均由 Rust 实现，
+仓库统一采用 GPL-3.0。旧 C# 和 Python 入口保留在 Git 历史中；当前发布包
+使用进程内 Rust 实现及所需第三方库，组成见第三方声明。
 
 ---
 
@@ -56,11 +57,12 @@ Copyright Lee and Tim Feldkamp 2008-2009
 License: GPL-3.0
 ```
 
-上述代码的版权归原作者所有。本仓库提供的是基于它的改动集（patch）与说明文档。
+上游代码的版权归原作者所有。本仓库的 Rust 移植保留对应归属、黄金数据和源码来源记录。
 
 ### FFmpeg
 
-本工具链通过系统 FFmpeg（实测 8.0.1）完成解码与 MLP 编码：
+本节早期流程使用系统 FFmpeg（实测 8.0.1）完成解码与 MLP 编码。
+当前流程使用 FFmpeg 库解码，由项目 Rust 编码器生成 MLP：
 
 | 情况 | 许可 |
 |------|------|
@@ -97,8 +99,8 @@ dvda-author 自身的帮助文本也明确写有：
 > This option is based on the ffmpeg encoder and **subject to the same legal
 > restrictions as those applying to the MLP ffmpeg encoder**.
 
-本工具链虽然**不走 dvda-author 的 `--encode`**（改为先用 ffmpeg CLI 预编码 MLP 文件，
-再交给 dvda-author 打包），但**用的是同一个 MLP 编码器**，因此上述限制同样适用。
+上述说明针对历史 FFmpeg CLI 预编码流程；当前项目使用 Rust MLP 编码器。
+实现语言的变化不替代使用者对适用规则的判断。
 
 **实务提示：**
 

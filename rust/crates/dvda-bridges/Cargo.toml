@@ -13,10 +13,12 @@ default = []
 image = []
 media = []
 author-loader = []
+author-iso = ["dep:dvda-author"]
 menu = ["dep:dvda-menu", "dvda-menu/direct-link"]
 
 [dependencies]
 dvda-menu = { path = "../dvda-menu", optional = true }
+dvda-author = { path = "../dvda-author", optional = true }
 
 [[bin]]
 name = "magick-shim"
@@ -38,6 +40,10 @@ required-features = ["media", "image"]
 [[example]]
 name = "media-differential"
 required-features = ["media"]
+
+[[example]]
+name = "font-acceptance"
+required-features = ["image"]
 
 [[example]]
 name = "image-differential"

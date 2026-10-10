@@ -203,7 +203,7 @@ impl Encoder {
             }
             return Err(error);
         }
-        // SAFETY: fixed API declarations in native/mlp-encoder/source/mlp_encoder.h.
+        // SAFETY: fixed frozen encoder API layouts declared in dvda-mlp/src/ffi.rs.
         let version = unsafe { std::mem::transmute::<*mut c_void, Version>(version) };
         if unsafe { version() } != 1 {
             unsafe {

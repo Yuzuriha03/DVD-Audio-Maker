@@ -1,0 +1,65 @@
+{
+  "source_hashes": {
+    "tools/dvda-author-mlp8/src/amg2.c": "e2d7249de405bc80f6a329b270216c5d2298307f0ea39869087d871e7b3bf043",
+    "tools/dvda-author-mlp8/src/asvs.c": "be8efe63bf719b9999fc0007ca96483bf2cd62112f45c25009394d96fe642e4e"
+  },
+  "reference_extraction": "Compile the unchanged prefix of amg2.c through create_tracktables, then append the unchanged create_amg function and footer; only unrelated create_topmenu/decode functions are excluded to isolate linker dependencies. asvs.c is compiled whole.",
+  "configured_headers": "build/rust-image-author/source",
+  "flags": [
+    "-O2",
+    "-std=gnu11",
+    "-D_GNU_SOURCE",
+    "-DHAVE_CONFIG_H",
+    "-DWITHOUT_sox",
+    "-DWITHOUT_FLAC",
+    "-DWITHOUT_libogg",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wl,--gc-sections"
+  ],
+  "compiler": "C:/msys64/mingw64/bin/gcc.exe",
+  "inputs": "oracle-harness.c specifies all metadata directly; no IFO content is decoded to construct inputs. Menu page sizes 17/17 correspond to existing menu-production-pal-2/legacy.mpg (34816 bytes) passed to its two PGCI menu pages; nine-page sizes additionally exercise unequal cell lengths.",
+  "oracle_harness_sha256": "6ab6d3f9f87fa5ec709066cdc139c78d2e2274890ac84a18eb446a503f5ff6b6",
+  "fixtures": {
+    "asvs-ntsc.ifo": {
+      "bytes": 4096,
+      "sha256": "fc0f6ab51778814d6b3d248e05d0b74fa1ada4a5cd3113d4289f828e1374dd96"
+    },
+    "asvs-pal.ifo": {
+      "bytes": 4096,
+      "sha256": "1f9761dbe49f99794de00f321842ef1f50d49596dcf8ae0a4464ec12cc281c86"
+    },
+    "menu-ntsc-nine.ifo": {
+      "bytes": 10240,
+      "sha256": "4e47277e8b759f89a214425a4e35373783f7b99a685dd1a647d7e1b86d51ac5b"
+    },
+    "menu-pal-two.ifo": {
+      "bytes": 8192,
+      "sha256": "6124ae9550bba047ba96bcd73df27b04f3246efd41b66967a357246b4056cd7e"
+    },
+    "multigroup.ifo": {
+      "bytes": 6144,
+      "sha256": "ba34d16d59c67593d788875cbfa2c2f2808e4d5c588c6bb8f618d0c85315bd7c"
+    },
+    "playlist-video.ifo": {
+      "bytes": 6144,
+      "sha256": "a250d3b1cc6eb959fc8030b393c07a4eeb7aaff0242e284aaa49004bb86f843c"
+    },
+    "single.ifo": {
+      "bytes": 6144,
+      "sha256": "8803a913d44ecba325918cf20ad1844028d3dd2d5189c1a83dccf8bd0c96b64d"
+    },
+    "text.ifo": {
+      "bytes": 22528,
+      "sha256": "1fa2a6ee0474a7485f6893b881c4bf548e778d3f1abef91942bebfebb99007f8"
+    }
+  },
+  "retired_oracle": {
+    "status": "historical-generation-only",
+    "source_git_commit": "6c5086127590001c544373783653fe991f0ebaeb",
+    "source_manifest": "../legacy-source-provenance.json",
+    "runnable_c_harness_retained": false,
+    "fixture_inputs": "../../manager_parity.rs",
+    "note": "Original compiler, flags, source paths and harness hashes describe historical golden generation, not current build instructions."
+  }
+}

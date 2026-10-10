@@ -134,7 +134,8 @@ pub fn verify(
                 .enumerate()
                 .any(|(i, pixel)| {
                     let y = i / width as usize;
-                    (488..560).contains(&y) && pixel[3] > 0
+                    (488 * height as usize / 576..560 * height as usize / 576).contains(&y)
+                        && pixel[3] > 0
                 });
             if !arrow {
                 issues.push(issue(

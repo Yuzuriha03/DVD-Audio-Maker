@@ -4,7 +4,10 @@
 
 > Historical engineering record: this document preserves experiments, hypotheses and results from their original development stages. Later experiments supersede some earlier conclusions. Disabled approaches are not current configuration recommendations; see the [project README](../README.en.md) for the supported workflow. Literal filenames and glyph samples are preserved where needed to explain the original tests.
 
-The changes in this project are **fixed in the source tree** `tools/dvda-author-mlp8` and saved by git commits.
+The old `tools/dvda-author-mlp8` source tree was removed after the Rust migration.
+Paths and commands below describe historical work. Recover the old source from
+Git revision `6c5086127590001c544373783653fe991f0ebaeb`; the current implementation
+is documented in the [Rust author record](RUST-AUTHOR-MIGRATION.md).
 
 This document summarizes the **basis** for each change (why it was changed, counterexamples, test data). The content is taken from the docstrings of the original 25 patch scripts — the patch scripts have been deleted, and this is their equivalent.
 

@@ -13,6 +13,8 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --work
 
 `gui.cmd`, `gui-debug.cmd`, `cli.cmd`, `build.cmd` and `verify.cmd` invoke the Rust workspace. Profiles are JSON files selected with `--profile`; `config.env`, `DVDA_CONFIG` and `--config` are unsupported.
 
+The complete author runs in Rust through a shared application/CLI entry. `build-image-author.py` delegates to `build-rust-author.py`; the retired C producer, sources and frozen binaries have been removed. Historical golden-fixture source hashes are retained. AOB, tables, menus/stills and ISO acceptance are recorded in the [author migration record](../../docs/RUST-AUTHOR-MIGRATION.md).
+
 ## Native inputs
 
 The package assembler expects validated x64 directories:
@@ -21,13 +23,13 @@ The package assembler expects validated x64 directories:
 | --- | --- | --- |
 | Media | `build/media-native-shared` | `dvda-media.dll` and its FFmpeg-derived DLLs |
 | Image | `build/image-native` | `dvda-image.dll`, XML policy/type/color files and notice |
-| Author | `build/rust-author-current` | `dvda-author-dev.exe` and menu DLLs |
-| Fonts/assets | `build/release-menu-final` or `--prebuilt` | menu assets and CJK fonts |
-| MLP | `build/mlp-encoder` or `--encoder-runtime` | Rust ABI v1 `encoder-build.json` and only `mlp_encoder.dll` |
+| Author | `build/rust-author-production` | complete Rust author, third-party DLL closure and provenance |
+| Fonts/assets | `tools/win-build/prebuilt` or explicit `--prebuilt` | prepared menu assets and CJK fonts; missing inputs fail explicitly |
+| MLP oracle (optional) | `--encoder-runtime` | authenticated encoder oracle; never shipped |
 
-The encoder manifest must be produced by an accepted source build. The packager verifies hashes, sizes, PE architecture and the import closure, with no fallback to the legacy C DLL. Encoder migration is not yet accepted, so this release workflow cannot currently complete. The old C sources and frozen DLL remain only pending migration acceptance.
+The packager verifies hashes, sizes, x64 architecture, the full import closure and assets. The MLP encoder is compiled directly into Rust. Image provenance must identify the Rust implementation; the local acceptance uses `build/rust-image-runtime`. Media/image adapter DLLs are development provenance inputs and are excluded from linked releases.
 
-FFmpeg and ImageMagick command-line programs are not runtime inputs. Their required libraries are built from source and loaded through the project C ABI.
+FFmpeg and ImageMagick command-line programs are not runtime inputs. Rust bridges call their retained source-built libraries.
 
 Format parsing, MLP CRC/parity, PCM comparison and read-only AOB disc verification are implemented in Rust. No format or verifier DLL is required; packaging no longer accepts `--formats-runtime`.
 
@@ -38,9 +40,8 @@ After native inputs are available:
 ```bat
 tools\win-build\build-all.cmd ^
   --media-runtime build\media-native-shared ^
-  --image-runtime build\image-native ^
-  --image-author build\rust-author-current ^
-  --encoder-runtime build\mlp-encoder ^
+  --image-runtime build\rust-image-runtime ^
+  --image-author build\rust-author-production ^
   --prebuilt build\release-menu-final ^
   --version v1.0
 ```

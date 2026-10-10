@@ -51,7 +51,9 @@ fn init() {
             };
             path.truncate(len as usize);
             let filename = String::from_utf16_lossy(&path);
-            if let Some(directory) = Path::new(&filename).parent() {
+            let configuration =
+                configuration_directory(&filename, std::env::var_os("DVDA_IMAGE_NATIVE_DIR"));
+            if let Some(directory) = configuration.as_deref() {
                 let directory = directory.to_string_lossy();
                 crate::win::SetEnvironmentVariableW(
                     crate::win::wide("MAGICK_CONFIGURE_PATH").as_ptr(),
@@ -75,6 +77,43 @@ fn init() {
         Mutex::new(())
     });
 }
+fn configuration_directory(
+    module_filename: &str,
+    runtime: Option<std::ffi::OsString>,
+) -> Option<std::path::PathBuf> {
+    // A directly linked bridge lives in the EXE, but its font configuration lives in the runtime cache.
+    runtime
+        .filter(|path| !path.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| Path::new(module_filename).parent().map(Path::to_path_buf))
+}
+
+#[cfg(test)]
+mod configuration_tests {
+    use super::*;
+
+    #[test]
+    fn linked_images_use_runtime_configuration_not_executable_directory() {
+        assert_eq!(
+            configuration_directory(
+                r"C:\Program Files\DVD-Audio-Maker\DVD-Audio-Maker.exe",
+                Some(r"C:\缓存 目录\runtime\verified".into()),
+            ),
+            Some(r"C:\缓存 目录\runtime\verified".into())
+        );
+    }
+
+    #[test]
+    fn standalone_bridge_keeps_module_local_configuration() {
+        for runtime in [None, Some("".into())] {
+            assert_eq!(
+                configuration_directory(r"C:\images\dvda-image.dll", runtime),
+                Some(r"C:\images".into())
+            );
+        }
+    }
+}
+
 fn c(text: &str) -> Result<CString, ()> {
     CString::new(text).map_err(|_| ())
 }

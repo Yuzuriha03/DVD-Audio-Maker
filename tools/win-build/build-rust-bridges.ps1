@@ -26,7 +26,7 @@ switch($Component){
  direct {$args+=@('--features','media,image,menu','--lib')}
  media {$args+=@('--features','media','--lib','--bin','mlp-decode-probe')}
  image {$args+=@('--features','image','--lib')}
- author {if($LegacyImageLoader){$args+=@('--features','media,author-loader','--lib')}else{$args+=@('--features','media,image,menu','--lib')}}
+ author {if($LegacyImageLoader){$args+=@('--features','media,author-loader,author-iso','--lib')}else{$args+=@('--features','media,image,menu,author-iso','--lib')}}
  shim {$args+=@('--bin','magick-shim')}
 }
 if($Component -eq 'author' -and $DirectMenu -and $LegacyImageLoader){$args+=@('--features','menu')}
@@ -69,6 +69,9 @@ while($pending.Count){
 }
 $inputs=[ordered]@{}
 foreach($file in Get-ChildItem "$repo\rust\crates\dvda-bridges" -Recurse -File){$inputs[$file.FullName.Substring($repo.Length+1)]=Hash $file.FullName}
+if($Component -eq 'author'){
+ foreach($file in Get-ChildItem "$repo\rust\crates\dvda-author" -Recurse -File){$inputs[$file.FullName.Substring($repo.Length+1)]=Hash $file.FullName}
+}
 if($Component -eq 'direct' -or ($Component -eq 'author' -and ($DirectMenu -or !$LegacyImageLoader))){
  foreach($file in Get-ChildItem "$repo\rust\crates\dvda-menu","$repo\tools\menu-native" -Recurse -File){$inputs[$file.FullName.Substring($repo.Length+1)]=Hash $file.FullName}
  $inputs['tools\win-build\build-menu-runtime.py']=Hash "$repo\tools\win-build\build-menu-runtime.py"
@@ -84,8 +87,16 @@ if($MagickWork){foreach($pattern in @('compile\MagickWand\.libs\*.a','compile\Ma
 $files=[ordered]@{}
 foreach($file in Get-ChildItem $Output -File){if($file.Name -notlike '*build.json'){$entry=@{sha256=Hash $file.FullName;bytes=$file.Length};if($file.Extension -in @('.dll','.exe')){$entry.imports=@(Imports $file.FullName)};$files[$file.Name]=$entry}}
 $name=switch($Component){direct{'direct-bridge-build.json'}media{'media-build.json'}image{'image-build.json'}author{'author-bridge-build.json'}shim{'shim-build.json'}}
-$features=switch($Component){direct{@('media','image','menu')}media{@('media')}image{@('image')}author{if($LegacyImageLoader){@('media','author-loader');if($DirectMenu){'menu'}}else{@('media','image','menu')}}shim{@()}}
+$features=switch($Component){direct{@('media','image','menu')}media{@('media')}image{@('image')}author{if($LegacyImageLoader){@('media','author-loader','author-iso');if($DirectMenu){'menu'}}else{@('media','image','menu','author-iso')}}shim{@()}}
 $evidence=$null
 if($AcceptanceReport){$evidence=@{path=[IO.Path]::GetFullPath($AcceptanceReport);sha256=Hash $AcceptanceReport}}
-@{schema_version=1;implementation='project-owned-rust';component=$Component;features=@($features);target='x86_64-pc-windows-gnu';compiler=(& rustc --version);cargo_arguments=@($args);source_inputs=$inputs;third_party_inputs=$dependencies;runtime_dependency_inputs=$runtimeSources;files=$files;acceptance_evidence=$evidence;production_accepted=$false} | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $Output $name)
+$record=@{schema_version=1;implementation='project-owned-rust';component=$Component;features=@($features);target='x86_64-pc-windows-gnu';compiler=(& rustc --version);cargo_arguments=@($args);source_inputs=$inputs;third_party_inputs=$dependencies;runtime_dependency_inputs=$runtimeSources;files=$files;acceptance_evidence=$evidence;production_accepted=$false}
+if($Component -eq 'media'){
+ $vendorManifest=Join-Path $FfmpegPrefix 'build-manifest.json'
+ $vendor=Get-Content $vendorManifest -Raw | ConvertFrom-Json
+ if($vendor.profile -ne 'shared'){throw 'Media requires the authenticated shared FFmpeg profile'}
+ $record.profile=$vendor.profile
+ $record.third_party_inputs[$vendorManifest]=Hash $vendorManifest
+}
+$record | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $Output $name)
 Write-Output "Rust $Component bridge runtime: $Output; manifest: $name (acceptance remains gated)"

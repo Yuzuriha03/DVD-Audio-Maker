@@ -22,13 +22,15 @@ GUI 只提供检查音源、制作光盘和验证成品。dry-run 仅属于开�
 
 ## 原生组件
 
-按 [Windows 构建说明](../tools/win-build/README.md) 准备第三方库与 dvd-author。直链构建需要设置 `DVDA_FFMPEG_PREFIX`、`DVDA_MAGICK_WORK` 和 `DVDA_MSYS_ROOT`。FFmpeg 使用延迟导入；正式包先解压内嵌 runtime 并注册 DLL 搜索目录，再调用媒体接口。隔离启动使用全新 `LOCALAPPDATA` 和仅系统目录的 PATH，已确认窗口创建以及仅 9 个第三方 DLL 的解压清单。开发测试直接调用接口时仍需显式提供这些第三方 DLL 的搜索路径。
+按 [Windows 构建说明](../tools/win-build/README.md) 准备第三方库与 Rust author。直链构建需要设置 `DVDA_FFMPEG_PREFIX`、`DVDA_MAGICK_WORK`、`DVDA_MSYS_ROOT` 和指向静态菜单 vendor 的 `DVDA_MENU_NATIVE_DIR`。FFmpeg 使用延迟导入；正式包先解压内嵌 runtime 并注册 DLL 搜索目录，再调用媒体接口。隔离启动使用全新 `LOCALAPPDATA` 和仅系统目录的 PATH，已确认窗口创建以及仅 9 个第三方 DLL 的解压清单。开发测试直接调用接口时仍需显式提供这些第三方 DLL 的搜索路径。
 
 `--no-default-features` 兼容构建和冻结差分测试才使用 `DVDA_MEDIA_NATIVE_DIR`、`DVDA_IMAGE_NATIVE_DIR` 与 `DVDA_ENCODER_LIBRARY`；默认直链构建不通过这些变量选择已迁移的后端。
 
-MLP C17 核心位于 `native/mlp-encoder`，保留为冻结差分参考；默认生产编码入口使用静态链接的 `dvda-mlp`。格式解析、MLP CRC/奇偶校验、PCM 比较和 AOB 成品校验由 `dvda-native` 中的 Rust 实现完成，不依赖格式或成品校验 DLL。
+默认生产 MLP 编码入口使用静态链接的 `dvda-mlp`，旧 C 编码器及冻结 DLL 已清理。独立开发 ABI 适配器可由 Rust 构建到 `build/mlp-encoder`；历史 C 对照仅接受显式外部输入。格式解析、MLP CRC/奇偶校验、PCM 比较和 AOB 成品校验由 `dvda-native` 中的 Rust 实现完成，不依赖格式或成品校验 DLL。
 
-剩余自有原生组件正在迁移到 workspace 中的 `dvda-mlp`、`dvda-menu` 和 `dvda-bridges`。crate 注册或默认 feature 编译通过不代表生产替换完成；媒体/图像 feature 的真实 DLL、菜单集成及编码器全部布局、元数据、错误与取消行为必须分别验证。旧 C 与冻结 DLL 在迁移验收前保留，冻结 DLL 仅用作差分 oracle；不要将尚未通过完整验收的 Rust 编码器加入发布包。dvd-author 及第三方库不属于本轮迁移范围。
+完整制盘现由 `dvda-author` 提供：AOB、ATSI/SAMG/AMG/ASVS、菜单/静图编排及 ISO9660/UDF writer 都是 Rust 实现，GUI/CLI 经 `dvda-core::author_runtime` 进程内调用。项目旧 C author 源码、构建入口和产物已清理；保留的第三方图像、视频和菜单 vendor 经 Rust bridge 调用。接口、构建与独立制盘验收见 [Rust author 迁移记录](RUST-AUTHOR-MIGRATION.md)。
+
+自有菜单会话、私有 heap、UTF-8 文件/目录和资源回收已迁入 `dvda-menu`；vendor 状态重置由生成的 `no_std` Rust object 完成。生产静态 vendor 目录为 `build/menu-direct-vendor-rust-session`，构建和打包拒绝旧 C session/reset 清单。剩余的小型 C 跳转隔离桥、第三方代码与构建期 ABI probes 见 [菜单会话迁移记录](RUST-MENU-SESSION-MIGRATION.md)。
 
 ## VS Code
 
@@ -38,12 +40,12 @@ MLP C17 核心位于 `native/mlp-encoder`，保留为冻结差分参考；默认
 
 ```powershell
 cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release --workspace --offline
-dvda-toolchain.exe package --repo . --output build/release --media-runtime build/media-native-shared --image-runtime build/image-native --encoder-runtime build/mlp-encoder --image-author build/rust-author-current --prebuilt build/release-menu-final --version v1.0
+dvda-toolchain.exe package --repo . --output build/release --media-runtime build/media-native-shared --image-runtime build/rust-image-runtime --image-author build/rust-author-production --prebuilt build/release-menu-final --version v1.0
 ```
 
-打包器强制验证编码器目录中的 `encoder-build.json`：Rust 实现、ABI v1、唯一的 `mlp_encoder.dll`、文件摘要与大小、x64 PE 及完整依赖闭包。此清单必须由验收通过的源码构建产生；没有清单或仍使用旧 C 编码器时拒绝打包，不再从其他路径静默回退。当前迁移完成前，上述发布命令仅作为目标流程，不代表已有可发布的编码器。
+默认 GUI 将 Rust MLP 编码器静态链接到主程序，不装配编码器 DLL。只有显式提供 `--encoder-runtime` 时，打包器才验证该目录的 `encoder-build.json`、Rust ABI v1、文件摘要与大小、x64 PE 及完整依赖闭包。
 
-打包器还要求 author 输出附带 `menu-build.json`，其摘要必须与 `author-build.json` 的源码输入记录一致；菜单适配器必须为 Rust，SPU/导航 DLL 的大小与摘要必须同时匹配两个清单。缺失、旧 C、清单篡改或 DLL 不一致都在创建发布候选目录前拒绝，保留已有发行文件。
+打包器要求 Rust author 的 `author-build.json` 和 `menu-build.json`，核对源码、静态 SPU/导航 vendor、可执行文件、第三方 DLL 与资源摘要。独立开发 author EXE 经过验收，但不进入 GUI 的内嵌运行时。缺失、清单篡改或文件不一致都在创建发布候选目录前拒绝，保留已有发行文件。
 
 发布包 `DVD-Audio-Maker-v1.0-win-x64.zip` 不包含 .NET runtime、开发 CLI、PDB、构建来源 JSON、`config.env` 或个人 profile。构建产物留在被 Git 忽略的 `build` 目录。
 
@@ -82,7 +84,7 @@ Rust 测试覆盖完整扫描、CRC 边界、对齐输出和 PCM 比较；可选
 
 迁移回归已包含固定编码器生成的九种真实 MLP profile（44.1–192 kHz、16/20/24 位、单声道/立体声/六声道），检查与对齐结果均与旧 DLL 对照。设置 `DVDA_FORMATS_ORACLE=1` 启用；旧 DLL 仅用于测试，不作为生产回退。
 设置 `DVDA_TEST_AUTHOR` 为项目构建的 author EXE，执行 `cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native --test authored_lpcm` 可运行完整 LPCM 制盘矩阵；不要设置 `DVDA_TEST_AUTHOR_QUICK`，以覆盖 gapless/分 title、短音轨、奇数采样、音频/头部损坏与截断拒绝。
-菜单集成测试的 `DVDA_TEST_MENU_DATA` 应指向包含 `menu` 的素材目录；通过 `DVDA_MENU_NATIVE_DIR` 显式指定已验收的菜单 DLL 目录（验收脚本的 `-MenuRuntime` 参数），不再要求素材同级放置旧 `menu-bin`。未显式指定时仍使用内嵌运行时或同级 `menu-bin`。迁移后应用 8 项、转换 1 项、编码 5 项集成测试通过（不含显式性能基准）。本地单文件打包通过，实际 EXE 内嵌索引不含旧 formats/verifier DLL；这些验证不代表硬件播放认证。
+菜单集成测试的 `DVDA_TEST_MENU_DATA` 应指向包含 `menu` 的素材目录。直链编译时 `DVDA_MENU_NATIVE_DIR` 指向静态 vendor archive；直接运行已编译的测试 EXE 时，媒体/图像目录与字体配置指向已装配的生产 runtime。动态兼容测试才使用菜单 DLL 目录。不再要求素材同级放置旧 `menu-bin`。迁移后应用 8 项、转换 1 项、编码 5 项集成测试通过（不含显式性能基准）。本地单文件打包通过，实际 EXE 内嵌索引不含旧 formats/verifier DLL；这些验证不代表硬件播放认证。
 只读真实缓存计时测试 `real_cached_mlp_preflight_benchmark_is_read_only` 需要设置
 `DVDA_MLP_PREFLIGHT_MANIFEST`、`ROOT`、`OUTPUT`、`MEDIA`、`ENCODER` 和 `REPORT`
 （后五项均带相同的 `DVDA_MLP_PREFLIGHT_` 前缀）。媒体/编码 DLL 必须与缓存身份一致；

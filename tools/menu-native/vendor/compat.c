@@ -19,7 +19,10 @@
 int da_mkdir(const char * path, int mode)
 {
   (void) mode;   /* Windows 下新目录继承父目录的 ACL，没有权限位可指定 */
-  return mkdir(path);
+  /* The caller and XML use UTF-8; the Rust boundary also maps errors to errno
+     so the vendor can continue accepting an existing output directory. */
+  extern int menu_rust_mkdir(const char *);
+  return menu_rust_mkdir(path);
 }
 
 int da_fsync(int fd)

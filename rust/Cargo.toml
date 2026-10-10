@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/dvda-core", "crates/dvda-cli", "crates/dvda-native", "crates/dvda-desktop", "crates/dvda-toolchain", "crates/dvda-menu", "crates/dvda-mlp", "crates/dvda-bridges"]
+members = ["crates/dvda-core", "crates/dvda-cli", "crates/dvda-native", "crates/dvda-desktop", "crates/dvda-toolchain", "crates/dvda-menu", "crates/dvda-mlp", "crates/dvda-bridges", "crates/dvda-author"]
 
 [workspace.package]
 version = "0.1.0"
