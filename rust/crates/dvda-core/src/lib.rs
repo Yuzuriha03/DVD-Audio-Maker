@@ -28,6 +28,7 @@ pub mod menu_fonts;
 pub mod menu_verify;
 pub mod mlp_import;
 pub mod mlp_workflow;
+mod native_components;
 pub mod options;
 pub mod pcm;
 pub mod planner;

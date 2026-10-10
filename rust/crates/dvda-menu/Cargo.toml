@@ -1,0 +1,15 @@
+[package]
+name = "dvda-menu"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[features]
+default = []
+direct-link = []
+
+[dependencies]
+quick-xml = "0.38"

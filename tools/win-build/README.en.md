@@ -23,9 +23,11 @@ The package assembler expects validated x64 directories:
 | Image | `build/image-native` | `dvda-image.dll`, XML policy/type/color files and notice |
 | Author | `build/rust-author-current` | `dvda-author-dev.exe` and menu DLLs |
 | Fonts/assets | `build/release-menu-final` or `--prebuilt` | menu assets and CJK fonts |
-| MLP | `native/mlp-encoder/win-x64` | pinned `mlp_encoder.dll` |
+| MLP | `build/mlp-encoder` or `--encoder-runtime` | Rust ABI v1 `encoder-build.json` and only `mlp_encoder.dll` |
 
-FFmpeg and ImageMagick command-line programs are not runtime inputs. Their required libraries are built from source and loaded through the project C ABI. The MLP encoder source and build recipe are under `native/mlp-encoder`.
+The encoder manifest must be produced by an accepted source build. The packager verifies hashes, sizes, PE architecture and the import closure, with no fallback to the legacy C DLL. Encoder migration is not yet accepted, so this release workflow cannot currently complete. The old C sources and frozen DLL remain only pending migration acceptance.
+
+FFmpeg and ImageMagick command-line programs are not runtime inputs. Their required libraries are built from source and loaded through the project C ABI.
 
 Format parsing, MLP CRC/parity, PCM comparison and read-only AOB disc verification are implemented in Rust. No format or verifier DLL is required; packaging no longer accepts `--formats-runtime`.
 
@@ -38,6 +40,7 @@ tools\win-build\build-all.cmd ^
   --media-runtime build\media-native-shared ^
   --image-runtime build\image-native ^
   --image-author build\rust-author-current ^
+  --encoder-runtime build\mlp-encoder ^
   --prebuilt build\release-menu-final ^
   --version v1.0
 ```

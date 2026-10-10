@@ -51,7 +51,7 @@ fn missing(message: &str) -> Failure {
     }
 }
 fn validate(job: &Job) -> Result<(), Failure> {
-    if !job.media_library.is_file() {
+    if !crate::native_components::media_available(&job.media_library) {
         return Err(missing("内置媒体组件缺失，请完整解压发布包。"));
     }
     if !job.metadata_context.is_empty() && !Path::new(&job.metadata_context).is_file() {

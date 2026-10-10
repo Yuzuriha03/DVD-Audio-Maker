@@ -792,6 +792,15 @@ fn timeline(
             let names: Vec<_> = aobs.iter().map(|entry| entry.name.clone()).collect();
             let mut state = aob::AuditState::default();
             let mut timestamps = Vec::new();
+            let mut timestamp_resets = Vec::new();
+            let mut title_starts = std::collections::HashSet::new();
+            let mut previous_title = None;
+            for row in &observation.rows {
+                if previous_title != Some(row.title) {
+                    title_starts.insert(row.first);
+                    previous_title = Some(row.title);
+                }
+            }
             let mut scanned_sectors = 0i32;
             let starts: std::collections::HashSet<_> =
                 observation.rows.iter().map(|row| row.first).collect();
@@ -819,6 +828,11 @@ fn timeline(
                             if statistics {
                                 let timestamp = aob::sector_pts(sector, true)?;
                                 if timestamp >= 0 {
+                                    if title_starts.contains(&scanned_sectors)
+                                        && !timestamps.is_empty()
+                                    {
+                                        timestamp_resets.push(timestamps.len());
+                                    }
                                     timestamps.push(timestamp);
                                 }
                             }
@@ -855,7 +869,9 @@ fn timeline(
                 }
             }
             if statistics && !failed {
-                let stats = aob::pts_statistics(&timestamps);
+                // Title boundaries reset PTS legitimately; the boundary audit below
+                // still rejects missing resets and drops outside those boundaries.
+                let stats = aob::pts_statistics_with_resets(&timestamps, &timestamp_resets);
                 for code in &stats.issue_codes {
                     let message = match code.as_str() {
                         "PTS_TOO_FEW" => {
