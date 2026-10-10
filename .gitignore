@@ -75,6 +75,8 @@ desktop.ini
 rust/target/
 
 bin/
+!rust/crates/dvda-bridges/src/bin/
+!rust/crates/dvda-bridges/src/bin/*.rs
 obj/
 TestResults/
 *.user
