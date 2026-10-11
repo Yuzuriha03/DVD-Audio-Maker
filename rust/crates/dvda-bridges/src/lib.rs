@@ -1,4 +1,15 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+
+#[cfg(feature = "media")]
+mod ffi_optimized;
+#[cfg(feature = "media")]
+mod ffmpeg_pool;
+
+#[cfg(feature = "media")]
+pub use ffi_optimized::*;
+#[cfg(feature = "media")]
+pub use ffmpeg_pool::{FRAME_POOL, PACKET_POOL, PooledFrame, PooledPacket};
+
 #[cfg(all(feature = "author-loader", not(feature = "image")))]
 pub mod author_loader;
 #[cfg(any(feature = "media", feature = "image"))]
