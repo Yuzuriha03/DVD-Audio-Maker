@@ -33,7 +33,7 @@ DVD-Audio-Maker/
 
 ```powershell
 python -X utf8 tools/win-build/build-rust-author.py --ffmpeg-runtime build/ffmpeg-shared/install --magick-work build/imagemagick-minimal --menu-runtime build/menu-direct-vendor-rust-session --assets-runtime build/prebuilt-release-20261004 --dependency-runtime build/media-native-shared
-cargo run --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release -p dvda-toolchain --offline -- package --repo . --source build/source-release-20261004 --prebuilt build/prebuilt-release-20261004 --output build/rust-author-package --image-runtime build/rust-image-runtime --image-author build/rust-author-production --version v1.0
+cargo run --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --release -p dvda-toolchain --offline -- package --repo . --source build/source-release-20261004 --prebuilt build/prebuilt-release-20261004 --output build/rust-author-package --image-runtime build/rust-image-runtime --image-author build/rust-author-production --version v1.0
 ```
 
 Rust author builder 的可选 `--source` 只用于寻找菜单素材，不编译旧 C author。第三方库、静态菜单 vendor 和其他组件的重建说明见 [Windows 构建](../tools/win-build/README.md)；完整制盘验收见 [Rust author 迁移记录](RUST-AUTHOR-MIGRATION.md)。以上路径按本机已准备的构建目录替换，不要求用户具备开发环境。

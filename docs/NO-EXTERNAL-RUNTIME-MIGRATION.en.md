@@ -48,8 +48,8 @@ From the repository root:
 
 ```powershell
 cargo fmt --all -- --check
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
-cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
 
 The menu fixture and the native ABI tests cover authoring, menu resources, ISO

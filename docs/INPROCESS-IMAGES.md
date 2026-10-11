@@ -16,7 +16,7 @@
 原生源码、固定哈希和构建入口见 [Windows 构建说明](../tools/win-build/README.md)。菜单 fixture 会覆盖普通菜单、索引页、静图、字体和 ISO 成品校验。图像 DLL 的构建来源和许可随发布包的 NOTICE 文件提供。
 
 ```powershell
-cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
 
 发布运行时为 Rust 原生 GUI；配置只使用 JSON profile，发布目录和 ZIP 保留在被忽略的 `build` 目录。

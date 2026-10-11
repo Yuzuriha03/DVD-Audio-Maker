@@ -8,22 +8,12 @@ mod ffmpeg_pool;
 
 #[cfg(feature = "media")]
 pub use ffi_optimized::{
+    check_result, check_result_unchecked, convert_audio_i16_to_f32_simd, should_batch_process,
     text_borrowed,
-    check_result,
-    check_result_unchecked,
-    should_batch_process,
-    convert_audio_i16_to_f32_simd,
 };
 
 #[cfg(feature = "media")]
-pub use ffmpeg_pool::{
-    FRAME_POOL,
-    PACKET_POOL,
-    PooledFrame,
-    PooledPacket,
-    FramePool,
-    PacketPool,
-};
+pub use ffmpeg_pool::{FRAME_POOL, FramePool, PACKET_POOL, PacketPool, PooledFrame, PooledPacket};
 
 #[cfg(all(feature = "author-loader", not(feature = "image")))]
 pub mod author_loader;

@@ -18,7 +18,7 @@ ALAC 转 FLAC 的元数据整理使用进程内编辑器。临时输出先写在
 
 ```powershell
 $env:DVDA_MEDIA_NATIVE_DIR = (Resolve-Path build/media-native).Path
-cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
 
 集成样本覆盖 Unicode 路径和标签、ALAC、FLAC 封面逐字节保留、PCM 哈希、无效输入、取消、并行解码和菜单帧提取。开发阶段可以使用参考 FFmpeg 工具生成样本，但发布包不依赖这些外部程序。

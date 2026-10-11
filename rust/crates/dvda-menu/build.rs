@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -7,35 +8,22 @@ fn main() {
     if env::var_os("CARGO_FEATURE_DIRECT_LINK").is_none() {
         return;
     }
-    // Accept both MSVC and GNU toolchains for Windows x64
-    let target = env::var("TARGET").unwrap();
-    assert!(
-        target == "x86_64-pc-windows-gnu" || target == "x86_64-pc-windows-msvc",
-        "direct menu requires Windows x64 (MSVC or GNU), got {target}"
+    assert_eq!(
+        env::var("TARGET").unwrap(),
+        "x86_64-pc-windows-msvc",
+        "MSVC-only direct menu requires x86_64-pc-windows-msvc"
     );
-
-    // If DVDA_MENU_NATIVE_DIR is not set and we can't find the Python builder,
-    // emit a warning and skip native linking
     if env::var_os("DVDA_MENU_NATIVE_DIR").is_none() {
         let repo = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("../../..");
+        let output = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("menu-vendor");
         let python = repo.join(".venv/Scripts/python.exe");
-        let build_script = repo.join("tools/win-build/build-menu-runtime.py");
-
-        if !python.exists() || !build_script.exists() {
-            println!("cargo:warning=Menu native builder not available; skipping direct-link build");
-            return;
-        }
-
         let status = Command::new(&python)
-            .arg(&build_script)
+            .arg(repo.join("tools/win-build/build-menu-runtime.py"))
             .args(["--direct-link", "--output"])
-            .arg("output")
-            .status();
-
-        if status.is_err() || !status.as_ref().unwrap().success() {
-            println!("cargo:warning=Menu vendor build failed or not available; skipping direct-link");
-            return;
-        }
+            .arg(&output)
+            .status()
+            .expect("run menu vendor builder");
+        assert!(status.success(), "menu vendor build failed");
     }
 
     let repo = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("../../..");
@@ -58,16 +46,36 @@ fn main() {
 
     // The vendor builder emits its Rust reset object into these archives. Track
     // replacements even when DVDA_MENU_NATIVE_DIR keeps the same directory.
+    let manifest = output.join("menu-build.json");
+    let metadata = fs::read_to_string(&manifest).unwrap_or_else(|error| {
+        panic!(
+            "MSVC-only menu vendor manifest is missing or unreadable: {} ({error})",
+            manifest.display()
+        )
+    });
+    let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap_or_else(|error| {
+        panic!(
+            "MSVC-only menu vendor manifest is invalid JSON: {} ({error})",
+            manifest.display()
+        )
+    });
+    if metadata["target"] != "x86_64-pc-windows-msvc" || metadata["toolchain"] != "msvc" {
+        panic!(
+            "MSVC-only menu vendor requires menu-build.json target=x86_64-pc-windows-msvc and toolchain=msvc; GNU/MinGW archives are not link-compatible: {}",
+            manifest.display()
+        );
+    }
     for name in [
         "menu-build.json",
-        "libdvda_menu_spu_vendor.a",
-        "libdvda_menu_nav_vendor.a",
+        "dvda_menu_spu_vendor.lib",
+        "dvda_menu_nav_vendor.lib",
     ] {
         let path = output.join(name);
-        if !path.is_file() {
-            println!("cargo:warning=menu vendor input is missing: {} (continuing without linking)", path.display());
-            return;
-        }
+        assert!(
+            path.is_file(),
+            "MSVC-only menu vendor input is missing (expected .lib, not GNU .a): {}",
+            path.display()
+        );
         println!("cargo:rerun-if-changed={}", path.display());
     }
     println!("cargo:rustc-link-search=native={}", output.display());

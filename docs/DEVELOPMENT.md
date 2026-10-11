@@ -13,7 +13,7 @@ gui-debug.cmd
 cli.cmd abi.version
 cli.cmd prepare --profile "C:\work\settings.json"
 cli.cmd build --dry-run --profile "C:\work\settings.json"
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 ```
 
 `settings.json` 是唯一的文件配置格式。`settings.local.json` 适合保存本机路径，已被 Git 忽略；也可以通过 `--profile` 使用隔离方案。`config.env`、`DVDA_CONFIG` 和 `--config` 不受支持。
@@ -39,7 +39,7 @@ GUI 只提供检查音源、制作光盘和验证成品。dry-run 仅属于开�
 ## 发布
 
 ```powershell
-cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release --workspace --offline
+cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --release --workspace --offline
 dvda-toolchain.exe package --repo . --output build/release --media-runtime build/media-native-shared --image-runtime build/rust-image-runtime --image-author build/rust-author-production --prebuilt build/release-menu-final --version v1.0
 ```
 
@@ -53,7 +53,7 @@ dvda-toolchain.exe package --repo . --output build/release --media-runtime build
 
 ```powershell
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1
 ```
 
@@ -65,7 +65,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-wo
 生产 SHA-256 固定使用 `sha2 = 0.11.0`，x86/x64 在运行时检测到 `sha`、`sse2`、`ssse3`、`sse4.1` 时使用 SHA-NI，否则回退可移植实现；构建不强制 `target-cpu=native`。不再保留手写 SHA-256 实现。回归测试保留标准向量，并将封装层的一次性、分块和 reader 摘要与上游 `sha2` API 比较。
 
 ```powershell
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --release --offline -p dvda-core --lib hash:: -- --skip release_files_benchmark
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --release --offline -p dvda-core --lib hash:: -- --skip release_files_benchmark
 ```
 
 只读 Release 文件基准通过 `DVDA_HASH_BENCH_INPUTS` 接收 JSON 文件数组，并将新 JSON 写入 `DVDA_HASH_BENCH_REPORT`。它对真实 DLL、MLP 缓存样本和发布 ZIP 测量 sha2 内存及 warm-file 摘要，采用七轮中位数；新报告仅包含 sha2 耗时，已有前后对比报告作为历史记录保留；结果只表示摘要路径，不代表冷盘或完整制盘耗时。报告保存在被 Git 忽略的 `build` 目录。`sha2` 及其传递依赖沿用上游 MIT 或 Apache-2.0 许可证。
@@ -76,14 +76,14 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --rele
 `min(2 × 可用逻辑处理器, 曲目数)` workers；取消或异常时不保存本轮参数缓存。
 
 ```powershell
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-core --lib mlp_workflow -- --include-ignored --skip real_cached --skip another_volume
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --offline -p dvda-native
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --offline -p dvda-core --lib mlp_workflow -- --include-ignored --skip real_cached --skip another_volume
 ```
 
 Rust 测试覆盖完整扫描、CRC 边界、对齐输出和 PCM 比较；可选旧 DLL 差分测试见[格式处理说明](C17-FORMATS.md)。
 
 迁移回归已包含固定编码器生成的九种真实 MLP profile（44.1–192 kHz、16/20/24 位、单声道/立体声/六声道），检查与对齐结果均与旧 DLL 对照。设置 `DVDA_FORMATS_ORACLE=1` 启用；旧 DLL 仅用于测试，不作为生产回退。
-设置 `DVDA_TEST_AUTHOR` 为项目构建的 author EXE，执行 `cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native --test authored_lpcm` 可运行完整 LPCM 制盘矩阵；不要设置 `DVDA_TEST_AUTHOR_QUICK`，以覆盖 gapless/分 title、短音轨、奇数采样、音频/头部损坏与截断拒绝。
+设置 `DVDA_TEST_AUTHOR` 为项目构建的 author EXE，执行 `cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --offline -p dvda-native --test authored_lpcm` 可运行完整 LPCM 制盘矩阵；不要设置 `DVDA_TEST_AUTHOR_QUICK`，以覆盖 gapless/分 title、短音轨、奇数采样、音频/头部损坏与截断拒绝。
 菜单集成测试的 `DVDA_TEST_MENU_DATA` 应指向包含 `menu` 的素材目录。直链编译时 `DVDA_MENU_NATIVE_DIR` 指向静态 vendor archive；直接运行已编译的测试 EXE 时，媒体/图像目录与字体配置指向已装配的生产 runtime。动态兼容测试才使用菜单 DLL 目录。不再要求素材同级放置旧 `menu-bin`。迁移后应用 8 项、转换 1 项、编码 5 项集成测试通过（不含显式性能基准）。本地单文件打包通过，实际 EXE 内嵌索引不含旧 formats/verifier DLL；这些验证不代表硬件播放认证。
 只读真实缓存计时测试 `real_cached_mlp_preflight_benchmark_is_read_only` 需要设置
 `DVDA_MLP_PREFLIGHT_MANIFEST`、`ROOT`、`OUTPUT`、`MEDIA`、`ENCODER` 和 `REPORT`

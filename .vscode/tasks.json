@@ -10,7 +10,7 @@
         "--manifest-path",
         "${workspaceFolder}/rust/Cargo.toml",
         "--target",
-        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
         "--workspace",
         "--offline"
       ],
@@ -41,7 +41,7 @@
         "--manifest-path",
         "${workspaceFolder}/rust/Cargo.toml",
         "--target",
-        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
         "--release",
         "--workspace",
         "--offline"

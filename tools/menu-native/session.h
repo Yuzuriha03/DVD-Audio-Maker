@@ -18,7 +18,7 @@
 #include <dirent.h>
 #include <assert.h>
 #include "menu-api.h"
-/* Rust readdir uses this MinGW ABI. These checks emit no production code. */
+/* Project-owned Rust readdir ABI. These checks emit no production code. */
 _Static_assert(sizeof(struct dirent)==268,"Rust dirent size mismatch");
 _Static_assert(_Alignof(struct dirent)==4,"Rust dirent alignment mismatch");
 _Static_assert(offsetof(struct dirent,d_ino)==0,"Rust dirent inode mismatch");

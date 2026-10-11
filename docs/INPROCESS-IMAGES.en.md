@@ -29,7 +29,7 @@ Source provenance and licenses for the image DLL are shipped through the
 release NOTICE files.
 
 ```powershell
-cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
 
 The release runtime is a native Rust GUI. Profiles are

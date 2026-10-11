@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from msvc_env import msvc_environment
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -28,7 +29,8 @@ int main(int argc, char **argv) {
     return prepare ? atoi(getenv("DVDA_SCRIPT_PREPARE_STATUS")) : 0;
 }
 ''', encoding="ascii")
-        subprocess.run(["gcc", "-std=c17", "-O2", "-static", str(source), "-o", str(root / "cargo.exe")], check=True, capture_output=True)
+        native_env = msvc_environment()
+        subprocess.run([native_env["CC"], "/nologo", "/TC", "/std:c17", "/O2", "/MT", str(source), "/Fe:"+str(root / "cargo.exe"), "/Fo:"+str(root / "fixture.obj")], env=native_env, check=True, capture_output=True)
         profile = root / "profile with spaces.json"
         profile.write_text('{"Version":1,"Values":{}}', encoding="utf-8")
         scenarios = [([], 0), (["--dry-run"], 0), (["--profile", str(profile)], 0),
@@ -49,7 +51,7 @@ int main(int argc, char **argv) {
             assert result.returncode == (1 if status else 0), (arguments, result.returncode, result.stdout, result.stderr)
             assert len(calls) == (1 if status else 2), calls
             assert "|prepare" in calls[0], calls
-            assert all("|--target|x86_64-pc-windows-gnu|" in call for call in calls)
+            assert all("|--target|x86_64-pc-windows-msvc|" in call for call in calls)
             if not status:
                 assert "|build" in calls[1], calls
                 assert ("|--dry-run" in calls[1]) == ("--dry-run" in arguments)
@@ -69,10 +71,23 @@ int main(int argc, char **argv) {
             result = subprocess.run(command_line, cwd=root, env=env, capture_output=True)
             calls = log.read_text().splitlines() if log.exists() else []
             assert result.returncode == 0 and len(calls) == 1, (script, result, calls)
-            assert expected in calls[0] and "|--target|x86_64-pc-windows-gnu|" in calls[0], calls
+            assert expected in calls[0] and "|--target|x86_64-pc-windows-msvc|" in calls[0], calls
             if "--config" in arguments:
                 assert "|--profile|" not in calls[0], calls
             results.append({"script":script, "arguments":arguments, "exit_code":result.returncode,"calls":calls})
+        for script in ("build.cmd", "cli.cmd", "gui.cmd", "gui-debug.cmd", "verify.cmd",
+                       "tools/win-build/build-all.cmd"):
+            log.unlink(missing_ok=True)
+            unavailable = dict(env, DVDA_VSDEVCMD=str(root / "missing-VsDevCmd.bat"),
+                               VSCMD_ARG_TGT_ARCH="")
+            command = subprocess.list2cmdline([str(REPO / script)])
+            command_line = subprocess.list2cmdline([os.environ.get("COMSPEC", "cmd.exe")]) + ' /d /s /c "' + command + '"'
+            result = subprocess.run(command_line, cwd=root, env=unavailable, capture_output=True)
+            calls = log.read_text().splitlines() if log.exists() else []
+            assert result.returncode == 1 and not calls, (script, result.returncode, calls)
+            assert b"Visual Studio" in result.stderr, (script, result.stderr)
+            results.append({"script": script, "unavailable_msvc": True,
+                            "exit_code": result.returncode, "calls": calls})
         output = REPO / "build/rust-build-entrypoints-validation.json"
         output.write_text(json.dumps({"passed": len(results), "cases": results}, indent=2), encoding="utf-8")
         print(f"PASS: {len(results)} real build.cmd branch/failure cases; {output}")

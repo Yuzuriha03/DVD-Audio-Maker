@@ -15,6 +15,7 @@ import sys
 import uuid
 
 import pycdlib
+from msvc_env import msvc_environment
 
 sys.path.insert(0, str(Path(__file__).parent / 'native'))
 from pe_dependencies import Pe
@@ -50,7 +51,6 @@ def read_payloads(image, source):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--msys-root', type=Path, default=Path(r'C:\msys64'))
     parser.add_argument('--work-directory', type=Path)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
@@ -58,9 +58,8 @@ def main():
     if work.exists() and any(work.iterdir()):
         raise ValueError('Acceptance needs a new or empty work directory: '+str(work))
     work.mkdir(parents=True, exist_ok=True)
-    msys_bin = args.msys_root.resolve()/'mingw64/bin'
-    env = os.environ | {'PATH': str(msys_bin)+os.pathsep+os.environ['PATH']}
-    target = 'x86_64-pc-windows-gnu'
+    env = msvc_environment()
+    target = 'x86_64-pc-windows-msvc'
     commands = []
 
     def run(command, name):
@@ -74,7 +73,7 @@ def main():
          '-p', 'dvda-bridges', '--no-default-features', '--features', 'author-iso', '--lib',
          '--target', target, '--target-dir', str(work/'cargo-target')], 'cargo-build')
     release = work/'cargo-target'/target/'release'
-    archive = release/'libdvda_bridges.a'
+    archive = release/'dvda_bridges.lib'
     library = release/'dvda_bridges.dll'
     source = work/'disc'
     (source/'AUDIO_TS').mkdir(parents=True)
@@ -121,7 +120,7 @@ def main():
     system = Path(os.environ.get('SystemRoot', r'C:\Windows'))/'System32'
     require(all((system/name).is_file() or name.lower().startswith(('api-ms-win-', 'ext-ms-win-'))
                 for name in imports), 'ISO-only Rust library imports a non-system DLL: '+repr(imports))
-    record = {'schema_version': 1, 'passed': True, 'target': target, 'features': ['author-iso'],
+    record = {'schema_version': 1, 'passed': True, 'target': target, 'toolchain': 'msvc', 'features': ['author-iso'],
               'consumer': 'python-ctypes', 'project_c_compiled': False,
               'commands': commands, 'library_imports': imports, 'abi_cases': results,
               'reader_checks': ['ISO9660/UDF whole-file payload extraction', 'Unicode destination'],

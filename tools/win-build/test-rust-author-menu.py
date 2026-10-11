@@ -269,7 +269,7 @@ def run_case(runtime, output, norm, albums, verifier):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--author", type=Path, default=ROOT / "rust/target/x86_64-pc-windows-gnu/debug/dvda-author-dev.exe")
+    parser.add_argument("--author", type=Path, default=ROOT / "rust/target/x86_64-pc-windows-msvc/debug/dvda-author-dev.exe")
     parser.add_argument("--dll-directory", type=Path, default=ROOT / "build/rust-author-iso-fullbridge")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--verifier", type=Path)

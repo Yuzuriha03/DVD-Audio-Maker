@@ -8,10 +8,12 @@ Only the fixture is C; the production reset is generated and compiled by rustc.
 import argparse
 import importlib.util
 import json
-import os
 from pathlib import Path
+import shutil
 import subprocess
 import uuid
+from coff_menu import Coff
+from msvc_env import msvc_environment
 
 
 def run(command, env, **arguments):
@@ -20,7 +22,6 @@ def run(command, env, **arguments):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--msys-root',type=Path,default=Path('C:/msys64'))
     parser.add_argument('--work-directory',type=Path)
     args=parser.parse_args()
     repo=Path(__file__).resolve().parents[2]
@@ -30,17 +31,20 @@ def main():
     work.mkdir(parents=True,exist_ok=True)
     spec=importlib.util.spec_from_file_location('menu_builder',Path(__file__).with_name('build-menu-runtime.py'))
     builder=importlib.util.module_from_spec(spec);spec.loader.exec_module(builder)
-    compiler=args.msys_root.resolve()/'mingw64/bin/gcc.exe'
+    env=msvc_environment()
+    compiler=Path(env['CC'])
+    dumpbin=Path(shutil.which('dumpbin.exe',path=env['PATH']))
     rustc=Path.home()/'.cargo/bin/rustc.exe'
-    env=os.environ|{'PATH':str(compiler.parent)+os.pathsep+os.environ['PATH']}
     groups={}; objects=[]
     for group,value in [('spu',41),('nav',83)]:
         folder=work/group;folder.mkdir()
-        source=folder/'fixture.c';obj=folder/'fixture.o'
+        source=folder/'fixture.c';obj=folder/'fixture.obj'
         source.write_text(f'''
 /* Test-only private vendor state, including deliberately separate BSS. */
 static unsigned char initialized[19] = {{9, 8, 7, 6}};
-static unsigned char zero[35] __attribute__((section(".bss$fixture.zero")));
+#pragma bss_seg(".bss$z")
+static unsigned char zero[35];
+#pragma bss_seg()
 static int target={value}, alternate={value+1};
 static int *relocated=&target;
 int fixture_{group}_initial(void) {{
@@ -52,17 +56,11 @@ void fixture_{group}_touch(void) {{
     initialized[0]++;zero[0]++;target++;alternate++;relocated=&alternate;
 }}
 ''',encoding='ascii')
-        run([compiler,'-O2','-std=gnu11','-ffunction-sections','-fdata-sections','-c',source,'-o',obj],env)
-        sections=run([compiler.with_name('objdump.exe'),'-h',obj],env,capture_output=True,text=True).stdout
-        states=[];aliases=[]
-        for rank,(section,size) in enumerate(builder.writable_sections(sections)):
-            symbol=f'dvda_{group}_state_0_{rank}'
-            states.append({'symbol':symbol,'bytes':size,'object':obj.name,'section':section})
-            aliases.extend(['--add-symbol',f'{symbol}={section}:0,global'])
+        run([compiler,'/nologo','/O2','/std:c11','/MT','/Gy-','/Gw-','/c',source,'/Fo'+str(obj)],env)
+        states=Coff(obj).rewrite({},f'dvda_{group}_state_0')
         if not any(state['section'].startswith('.bss') for state in states):
             raise AssertionError('Fixture must include an actual BSS section')
-        run([compiler.with_name('objcopy.exe'),*aliases,obj],env)
-        reset,metadata=builder.compile_rust_reset(group,states,folder,rustc,compiler.with_name('nm.exe'),env)
+        reset,metadata=builder.compile_rust_reset(group,states,folder,rustc,dumpbin,env)
         groups[group]=metadata
         objects.extend([obj,reset])
     harness=['unsafe extern "C" {\n']
@@ -107,7 +105,8 @@ fn main() {
 ''')
     harness_source=work/'harness.rs';harness_source.write_text(''.join(harness),encoding='ascii')
     executable=work/'reset-acceptance.exe'
-    command=[rustc,'--edition=2024','--target','x86_64-pc-windows-gnu','-C','panic=abort','-O',harness_source,'-o',executable]
+    command=[rustc,'--edition=2024','--target','x86_64-pc-windows-msvc','-C','panic=abort',
+             '-C','target-feature=+crt-static','-O',harness_source,'-o',executable]
     for obj in objects: command.extend(['-C','link-arg='+str(obj)])
     run(command,env)
     result=run([executable],env,capture_output=True,text=True)

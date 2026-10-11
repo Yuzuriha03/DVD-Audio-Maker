@@ -71,8 +71,8 @@ x64 Rust 编码器已通过 `dvda-mlp` 的 rlib 直接编入 GUI/CLI 主程序�
 
 ```powershell
 cargo fmt --all -- --check
-cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
 ```
 
 原生 ABI 测试覆盖编码器及其失败路径；Rust 测试覆盖 PCM 比较、格式解析和只读成品校验。原版文件逐字节对照记录在 `native/mlp-encoder/mlpencoder-validation.json`，它用于固定编码器产物验收，不是通过事后修补输出获得的一致性。

@@ -37,7 +37,7 @@ native build inputs. Run the Rust tests with the validated native directories:
 
 ```powershell
 $env:DVDA_MEDIA_NATIVE_DIR = (Resolve-Path build/media-native).Path
-cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
 
 The integration corpus covers Unicode paths and tags, ALAC, FLAC artwork

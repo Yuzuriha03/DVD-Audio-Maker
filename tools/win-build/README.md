@@ -1,14 +1,14 @@
 # Windows x64 构建与发布
 
-当前产品是 Windows x64 Rust 原生 GUI，运行时不需要 .NET。重建原生组件需要 Rust、现有 MSYS2/MinGW-w64 GCC 和 Python。
+当前产品是 Windows x64 Rust 原生 GUI，运行时不需要 .NET。重建原生组件需要 Rust、Visual Studio C++ x64 工具、Windows SDK、Python 和原生 Windows CMake。FFmpeg 的 configure/make 使用 MSYS2 shell，但 C/C++ 编译和链接全部使用 MSVC。
 
 ## Rust 构建
 
 ```bat
-cargo build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline
+cargo build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 cargo fmt --manifest-path rust\Cargo.toml --all -- --check
-cargo clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+cargo clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
 
 `gui.cmd`、`gui-debug.cmd`、`cli.cmd`、`build.cmd` 和 `verify.cmd` 都调用 Rust workspace。配置只使用 JSON 方案和 `--profile`；不支持 `config.env`、`DVDA_CONFIG` 和 `--config`。

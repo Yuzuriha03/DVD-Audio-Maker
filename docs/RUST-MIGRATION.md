@@ -39,9 +39,9 @@ MLP 编码设置使用 `DVDA_MLP_SOURCE=mlp-batch`，LPCM 使用 `lpcm`，已有
 
 ```powershell
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1 -OtherVolume D:\
-cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release --workspace --offline
+cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --release --workspace --offline
 ```
 
 需要使用本机已验证的原生 DLL 目录设置 `DVDA_ENCODER_LIBRARY`、`DVDA_MEDIA_NATIVE_DIR` 和 `DVDA_IMAGE_NATIVE_DIR`，然后运行 workspace 测试。格式与只读成品校验不需要 DLL。菜单 fixture 会在进程内生成菜单、索引页、静图、AUDIO_TS 和 ISO，并调用项目构建的 author 验证。

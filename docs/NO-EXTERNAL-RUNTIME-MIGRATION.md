@@ -32,8 +32,8 @@ MLP 编码器在序列化前接收目标 PCM、格式参数和辅助元数据，
 
 ```powershell
 cargo fmt --all -- --check
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
-cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
+cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
 
 菜单样本和原生 ABI 测试覆盖 author、菜单资源、ISO 写入、PCM 比较及失败处理。实体播放器播放仍需人工确认，不由自动化测试代替。

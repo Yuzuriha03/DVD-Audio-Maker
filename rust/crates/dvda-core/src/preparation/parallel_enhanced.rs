@@ -1,22 +1,20 @@
-// Enhanced parallel processing utilities with advanced features
-// Supports audio decoding, MLP encoding, and pipeline optimization
+//! Ordered independent batch jobs with bounded, explicitly configured workers.
 
 use rayon::prelude::*;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-/// Configuration for parallel processing
-#[derive(Clone)]
+pub use super::parallel::estimate_speedup;
+
+pub const MAX_BATCH_THREADS: usize = 16;
+
+/// Configuration for independent jobs. Workflow callbacks remain on the caller.
+#[derive(Clone, Debug)]
 pub struct ParallelConfig {
-    /// Minimum number of items to enable parallel processing
     pub min_items_for_parallel: usize,
-
-    /// Maximum number of threads (None = auto detect)
+    /// Further limit the host's available workers. Zero requests one worker.
     pub max_threads: Option<usize>,
-
-    /// Whether to enable parallel processing
     pub enabled: bool,
-
-    /// Chunk size for batch processing
+    /// Jobs per scheduling chunk. Zero requests one job per chunk.
     pub chunk_size: Option<usize>,
 }
 
@@ -31,38 +29,55 @@ impl Default for ParallelConfig {
     }
 }
 
-/// Estimate performance improvement from parallelization using Amdahl's Law
-pub fn estimate_speedup(num_files: usize, num_cores: usize) -> f64 {
-    let parallelizable = 0.85;
-    let overhead = 0.05;
-    let theoretical_speedup = 1.0 / ((1.0 - parallelizable) + parallelizable / num_cores as f64);
-    let practical_speedup = theoretical_speedup * (1.0 - overhead);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BatchPlan {
+    pub threads: usize,
+    pub chunk_size: usize,
+}
 
-    if num_files < num_cores * 2 {
-        practical_speedup * (num_files as f64 / (num_cores * 2) as f64)
-    } else {
-        practical_speedup
+impl ParallelConfig {
+    /// Build a deterministic plan from the supplied available-worker count.
+    /// The process never requests more than 16 workers or useful input chunks.
+    pub fn plan(&self, items: usize, available_threads: usize) -> BatchPlan {
+        let limit = self.max_threads.unwrap_or(MAX_BATCH_THREADS).max(1);
+        let workers = available_threads
+            .max(1)
+            .min(limit)
+            .min(MAX_BATCH_THREADS)
+            .min(items.max(1));
+        let chunk_size = self
+            .chunk_size
+            .unwrap_or_else(|| optimal_chunk_size(items, workers))
+            .clamp(1, items.max(1));
+        let threads = if self.enabled && items >= self.min_items_for_parallel {
+            workers.min(items.div_ceil(chunk_size).max(1))
+        } else {
+            1
+        };
+        BatchPlan {
+            threads,
+            chunk_size,
+        }
     }
 }
 
-/// Check if parallel processing should be used
-pub fn should_use_parallel(num_files: usize, config: &ParallelConfig) -> bool {
-    config.enabled
-        && num_files >= config.min_items_for_parallel
-        && rayon::current_num_threads() > 1
+fn available_threads() -> usize {
+    std::thread::available_parallelism().map_or(1, usize::from)
 }
 
-/// Get optimal chunk size for parallel processing
-pub fn optimal_chunk_size(total_items: usize, num_threads: usize) -> usize {
-    let base_chunk = (total_items + num_threads - 1) / num_threads;
-    base_chunk.max(1).min(16) // Cap at 16 for better load balancing
+pub fn should_use_parallel(items: usize, config: &ParallelConfig) -> bool {
+    config.plan(items, available_threads()).threads > 1
 }
 
-/// Thread-safe progress tracker
+pub fn optimal_chunk_size(items: usize, threads: usize) -> usize {
+    super::parallel::optimal_chunk_size(items, threads).min(16)
+}
+
+/// Shared job progress; cancellation does not invoke workflow callbacks.
 pub struct ProgressTracker {
     completed: AtomicU64,
     total: u64,
-    cancelled: Arc<AtomicBool>,
+    cancelled: AtomicBool,
 }
 
 impl ProgressTracker {
@@ -70,86 +85,81 @@ impl ProgressTracker {
         Self {
             completed: AtomicU64::new(0),
             total,
-            cancelled: Arc::new(AtomicBool::new(false)),
+            cancelled: AtomicBool::new(false),
         }
     }
-
     pub fn increment(&self) -> u64 {
         self.completed.fetch_add(1, Ordering::Relaxed) + 1
     }
-
     pub fn current(&self) -> u64 {
         self.completed.load(Ordering::Relaxed)
     }
-
     pub fn total(&self) -> u64 {
         self.total
     }
-
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
     }
-
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
-
     pub fn progress_percent(&self) -> f64 {
         if self.total == 0 {
             0.0
         } else {
-            (self.current() as f64 / self.total as f64) * 100.0
+            (self.current().min(self.total) as f64 / self.total as f64) * 100.0
         }
     }
 }
 
-/// Parallel batch processor with configurable chunking
 pub struct BatchProcessor<T> {
     items: Vec<T>,
     config: ParallelConfig,
 }
 
-impl<T: Send> BatchProcessor<T> {
+impl<T: Send + Sync> BatchProcessor<T> {
     pub fn new(items: Vec<T>, config: ParallelConfig) -> Self {
         Self { items, config }
     }
 
-    /// Process items in parallel with a given function
-    pub fn process<F, R>(self, f: F) -> Vec<R>
-    where
-        F: Fn(&T) -> R + Send + Sync,
-        R: Send,
-        T: Sync,
-    {
-        if should_use_parallel(self.items.len(), &self.config) {
-            self.items.par_iter().map(f).collect()
-        } else {
-            self.items.iter().map(f).collect()
+    fn map_with_plan<R: Send, F: Fn(&T) -> R + Send + Sync>(
+        &self,
+        plan: BatchPlan,
+        f: F,
+    ) -> Vec<R> {
+        if plan.threads > 1
+            && let Ok(pool) = rayon::ThreadPoolBuilder::new()
+                .num_threads(plan.threads)
+                .build()
+        {
+            return pool.install(|| {
+                self.items
+                    .par_chunks(plan.chunk_size)
+                    .flat_map_iter(|chunk| chunk.iter().map(&f))
+                    .collect()
+            });
         }
+        // A worker creation failure still permits correct sequential execution.
+        self.items.iter().map(f).collect()
     }
 
-    /// Process items with error handling
-    pub fn process_with_result<F, R, E>(self, f: F) -> Result<Vec<R>, E>
+    /// Run jobs in an independent pool and preserve their input order.
+    pub fn process<R: Send, F: Fn(&T) -> R + Send + Sync>(self, f: F) -> Vec<R> {
+        self.map_with_plan(self.config.plan(self.items.len(), available_threads()), f)
+    }
+
+    /// Return the earliest input error, regardless of parallel completion order.
+    /// Other already scheduled independent jobs can finish after an error occurs.
+    pub fn process_with_result<R, E, F>(self, f: F) -> Result<Vec<R>, E>
     where
-        F: Fn(&T) -> Result<R, E> + Send + Sync,
         R: Send,
         E: Send,
-        T: Sync,
+        F: Fn(&T) -> Result<R, E> + Send + Sync,
     {
-        if should_use_parallel(self.items.len(), &self.config) {
-            self.items.par_iter().map(f).collect()
-        } else {
-            self.items.iter().map(f).collect()
-        }
+        self.map_with_plan(self.config.plan(self.items.len(), available_threads()), f)
+            .into_iter()
+            .collect()
     }
-}
-
-/// Pipeline stage for streaming processing
-pub enum PipelineStage<T> {
-    Input(Vec<T>),
-    Processing,
-    Complete(Vec<T>),
-    Failed(String),
 }
 
 #[cfg(test)]
@@ -157,32 +167,114 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_speedup_estimation() {
-        let speedup = estimate_speedup(100, 8);
-        assert!(speedup >= 3.0 && speedup <= 4.0);
+    fn plans_honor_thread_chunk_and_threshold_settings() {
+        let mut config = ParallelConfig {
+            min_items_for_parallel: 1,
+            chunk_size: Some(1),
+            ..Default::default()
+        };
+        assert_eq!(config.plan(100, 128).threads, 16);
+        assert_eq!(config.plan(3, 128).threads, 3);
+        assert_eq!(config.plan(100, 1).threads, 1);
+        config.max_threads = Some(2);
+        assert_eq!(config.plan(100, 8).threads, 2);
+        config.chunk_size = Some(4);
+        assert_eq!(
+            config.plan(5, 8),
+            BatchPlan {
+                threads: 2,
+                chunk_size: 4
+            }
+        );
+        config.chunk_size = Some(100);
+        assert_eq!(
+            config.plan(5, 8),
+            BatchPlan {
+                threads: 1,
+                chunk_size: 5
+            }
+        );
+        config.enabled = false;
+        assert_eq!(config.plan(100, 8).threads, 1);
+        config.enabled = true;
+        config.min_items_for_parallel = 101;
+        assert_eq!(config.plan(100, 8).threads, 1);
+        config.max_threads = Some(0);
+        config.chunk_size = Some(0);
+        assert_eq!(
+            config.plan(0, 0),
+            BatchPlan {
+                threads: 1,
+                chunk_size: 1
+            }
+        );
     }
 
     #[test]
-    fn test_parallel_config() {
-        let config = ParallelConfig::default();
-        assert!(should_use_parallel(10, &config));
-        assert!(!should_use_parallel(2, &config));
+    fn independent_pool_preserves_order_and_uses_its_worker_limit() {
+        let processor = BatchProcessor::new((0..64).collect::<Vec<_>>(), ParallelConfig::default());
+        let result = processor.map_with_plan(
+            BatchPlan {
+                threads: 2,
+                chunk_size: 3,
+            },
+            |value| {
+                assert_eq!(rayon::current_num_threads(), 2);
+                (value * 2, rayon::current_thread_index().unwrap())
+            },
+        );
+        assert_eq!(
+            result.iter().map(|value| value.0).collect::<Vec<_>>(),
+            (0..64).map(|value| value * 2).collect::<Vec<_>>()
+        );
+        assert!(result.iter().all(|value| value.1 < 2));
     }
 
     #[test]
-    fn test_progress_tracker() {
-        let tracker = ProgressTracker::new(100);
+    fn independent_pool_reports_first_input_error_and_handles_empty_input() {
+        let processor = BatchProcessor::new((0..32).collect::<Vec<_>>(), ParallelConfig::default());
+        let result: Result<Vec<_>, _> = processor
+            .map_with_plan(
+                BatchPlan {
+                    threads: 2,
+                    chunk_size: 1,
+                },
+                |value| {
+                    if *value == 3 || *value == 17 {
+                        Err(*value)
+                    } else {
+                        Ok(*value)
+                    }
+                },
+            )
+            .into_iter()
+            .collect();
+        assert_eq!(result, Err(3));
+        let empty = BatchProcessor::new(Vec::<u32>::new(), ParallelConfig::default());
+        assert_eq!(empty.process(|value| value * 2), Vec::<u32>::new());
+        let serial = BatchProcessor::new(
+            vec![1, 2, 3],
+            ParallelConfig {
+                enabled: false,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            serial.process_with_result(|value| if *value == 2 { Err(2) } else { Ok(*value) }),
+            Err(2)
+        );
+    }
+
+    #[test]
+    fn progress_and_cancellation_are_bounded() {
+        let tracker = ProgressTracker::new(1);
         assert_eq!(tracker.increment(), 1);
         assert_eq!(tracker.current(), 1);
-        assert_eq!(tracker.progress_percent(), 1.0);
-    }
-
-    #[test]
-    fn test_batch_processor() {
-        let items = vec![1, 2, 3, 4, 5];
-        let config = ParallelConfig::default();
-        let processor = BatchProcessor::new(items, config);
-        let results = processor.process(|&x| x * 2);
-        assert_eq!(results, vec![2, 4, 6, 8, 10]);
+        tracker.increment();
+        assert_eq!(tracker.progress_percent(), 100.0);
+        assert_eq!(tracker.total(), 1);
+        tracker.cancel();
+        assert!(tracker.is_cancelled());
+        assert_eq!(ProgressTracker::new(0).progress_percent(), 0.0);
     }
 }

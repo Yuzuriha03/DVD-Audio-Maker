@@ -1,8 +1,7 @@
 // MLP encoding batch parallel implementation
 // Enables parallel encoding of multiple MLP groups
 
-use super::parallel_enhanced::{ParallelConfig, BatchProcessor};
-use rayon::prelude::*;
+use super::parallel_enhanced::{BatchProcessor, ParallelConfig};
 
 /// Enable parallel MLP encoding
 pub const ENABLE_PARALLEL_MLP_ENCODING: bool = true;
@@ -20,45 +19,32 @@ pub fn mlp_parallel_config() -> ParallelConfig {
     }
 }
 
-/// Batch encode MLP groups in parallel
+/// Encode independent MLP groups in parallel while preserving input order.
 ///
-/// Example integration in mlp_workflow.rs:
-///
-/// ```rust
-/// use rayon::prelude::*;
-///
-/// // Instead of sequential:
-/// // for group in groups { encode_group(group)?; }
-///
-/// // Use parallel:
-/// let results: Result<Vec<_>, _> = groups
-///     .par_iter()
-///     .map(|group| {
-///         // Check cancel
-///         if cancelled() { return Err(...); }
-///
-///         // Encode group
-///         encode_mlp_group(group)
-///     })
-///     .collect();
-/// ```
+/// The workflow still owns staging, cache publication and progress reporting;
+/// this helper only parallelizes a pure per-group operation and therefore does
+/// not race those shared resources.
+pub fn encode_mlp_groups<T, R, E, F>(
+    groups: Vec<T>,
+    config: ParallelConfig,
+    encode: F,
+) -> Result<Vec<R>, E>
+where
+    T: Send + Sync,
+    R: Send,
+    E: Send,
+    F: Fn(&T) -> Result<R, E> + Send + Sync,
+{
+    BatchProcessor::new(groups, config).process_with_result(encode)
+}
 
-/// Estimate MLP encoding speedup
+/// Estimate the speedup of independent groups. This is a scheduling heuristic,
+/// not a benchmark result.
 pub fn estimate_mlp_speedup(num_groups: usize) -> f64 {
-    let num_cores = rayon::current_num_threads();
-
-    // MLP encoding is highly parallelizable (90%)
-    let parallelizable = 0.90;
-    let overhead = 0.03; // Lower overhead for CPU-bound work
-
-    let theoretical = 1.0 / ((1.0 - parallelizable) + parallelizable / num_cores as f64);
-    let practical = theoretical * (1.0 - overhead);
-
-    if num_groups < num_cores {
-        practical * (num_groups as f64 / num_cores as f64)
-    } else {
-        practical
-    }
+    super::parallel::estimate_speedup(
+        num_groups,
+        std::thread::available_parallelism().map_or(1, usize::from),
+    )
 }
 
 #[cfg(test)]
@@ -75,6 +61,15 @@ mod tests {
     #[test]
     fn test_mlp_speedup() {
         let speedup = estimate_mlp_speedup(8);
-        assert!(speedup >= 4.0);
+        assert!(speedup >= 1.0);
+    }
+
+    #[test]
+    fn encodes_groups_in_input_order() {
+        let result = encode_mlp_groups(vec![1_u32, 2, 3], mlp_parallel_config(), |value| {
+            Ok::<_, ()>(value + 10)
+        })
+        .unwrap();
+        assert_eq!(result, vec![11, 12, 13]);
     }
 }

@@ -1,6 +1,26 @@
-use std::{env, path::PathBuf, process::Command};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 fn main() {
+    assert_eq!(
+        env::var("TARGET").unwrap(),
+        "x86_64-pc-windows-msvc",
+        "DVD-Audio Maker supports only Windows x64 MSVC"
+    );
+    if env::var_os("CARGO_FEATURE_DIRECT_BRIDGES").is_some() {
+        for library in [
+            "avformat-63.dll",
+            "avcodec-63.dll",
+            "avutil-61.dll",
+            "swresample-7.dll",
+            "swscale-10.dll",
+        ] {
+            println!("cargo:rustc-link-arg=/DELAYLOAD:{library}");
+        }
+    }
     println!("cargo:rerun-if-env-changed=DVDA_RUNTIME_ARCHIVE");
     println!("cargo:rerun-if-env-changed=DVDA_PRODUCT_VERSION");
     let generated = PathBuf::from(env::var_os("OUT_DIR").unwrap());
@@ -21,45 +41,113 @@ fn main() {
     )
     .unwrap();
     println!("cargo:rerun-if-changed=app.manifest");
-    println!("cargo:rerun-if-env-changed=WINDRES");
+    for name in [
+        "RC",
+        "PATH",
+        "WindowsSdkDir",
+        "WindowsSDKVersion",
+        "WindowsSdkVerBinPath",
+        "ProgramFiles(x86)",
+    ] {
+        println!("cargo:rerun-if-env-changed={name}");
+    }
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("app.manifest");
     let output = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu") {
-        let compiler = env::var_os("WINDRES")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                let msys = PathBuf::from("C:/msys64/mingw64/bin/windres.exe");
-                if msys.is_file() {
-                    msys
-                } else {
-                    PathBuf::from("windres")
-                }
-            });
-        let script = output.join("desktop.rc");
-        let object = output.join("desktop-resource.o");
-        std::fs::write(
-            &script,
-            format!(
-                "1 24 \"{}\"\n{}",
-                manifest.display().to_string().replace('\\', "/"),
-                version_resource()
-            ),
-        )
-        .unwrap();
-        let status = Command::new(compiler)
-            .args(["-i"])
-            .arg(&script)
-            .args(["-o"])
-            .arg(&object)
-            .args(["-O", "coff"])
-            .status()
-            .expect("run GNU windres from the MSYS2 toolchain");
-        assert!(status.success(), "compile Windows desktop resources");
-        println!("cargo:rustc-link-arg={}", object.display());
-    } else {
-        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
-        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+    let script = output.join("desktop.rc");
+    let resource = output.join("desktop-resource.res");
+    std::fs::write(
+        &script,
+        format!(
+            "1 24 \"{}\"\n{}",
+            manifest.display().to_string().replace('\\', "/"),
+            version_resource()
+        ),
+    )
+    .unwrap();
+    let compiler = resource_compiler();
+    let result = Command::new(&compiler)
+        .arg("/nologo")
+        .arg("/fo")
+        .arg(&resource)
+        .arg(&script)
+        .output()
+        .unwrap_or_else(|error| {
+            panic!(
+                "Run Windows SDK resource compiler {}: {error}",
+                compiler.display()
+            )
+        });
+    assert!(
+        result.status.success(),
+        "Compile Windows desktop resources with {}: {}{}",
+        compiler.display(),
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    // The .res already contains the application manifest as resource 1.
+    println!("cargo:rustc-link-arg=/MANIFEST:NO");
+    println!("cargo:rustc-link-arg={}", resource.display());
+}
+
+fn compiler_in_path(name: &Path) -> Option<PathBuf> {
+    env::var_os("PATH")
+        .into_iter()
+        .flat_map(|value| env::split_paths(&value).collect::<Vec<_>>())
+        .map(|directory| directory.join(name))
+        .find(|path| path.is_file())
+}
+
+fn resource_compiler() -> PathBuf {
+    if let Some(configured) = env::var_os("RC") {
+        let path = PathBuf::from(configured);
+        if path.is_file() {
+            return path;
+        }
+        return compiler_in_path(&path).unwrap_or_else(|| {
+            panic!(
+                "RC does not name an installed Windows SDK resource compiler: {}",
+                path.display()
+            )
+        });
     }
+    if let Some(path) = compiler_in_path(Path::new("rc.exe")) {
+        return path;
+    }
+    if let Some(directory) = env::var_os("WindowsSdkVerBinPath") {
+        let path = PathBuf::from(directory).join("x64/rc.exe");
+        if path.is_file() {
+            return path;
+        }
+    }
+    let mut roots = Vec::new();
+    if let Some(directory) = env::var_os("WindowsSdkDir") {
+        roots.push(PathBuf::from(directory).join("bin"));
+    }
+    let program_files =
+        env::var_os("ProgramFiles(x86)").unwrap_or_else(|| "C:/Program Files (x86)".into());
+    roots.push(PathBuf::from(program_files).join("Windows Kits/10/bin"));
+    let mut candidates = Vec::new();
+    for root in roots {
+        if let Ok(entries) = std::fs::read_dir(root) {
+            for entry in entries.flatten() {
+                let version = entry
+                    .file_name()
+                    .to_string_lossy()
+                    .split('.')
+                    .map(str::parse::<u32>)
+                    .collect::<Result<Vec<_>, _>>();
+                let path = entry.path().join("x64/rc.exe");
+                match version {
+                    Ok(version) if path.is_file() => candidates.push((version, path)),
+                    _ => {}
+                }
+            }
+        }
+    }
+    candidates.sort_by(|a, b| a.0.cmp(&b.0));
+    candidates.pop().map(|(_, path)| path).expect(
+        "Windows SDK rc.exe was not found. Install Windows SDK with Visual Studio C++ tools, or set RC to its full path."
+    )
 }
 
 /// `VS_VERSION_INFO` block so the executable carries company, product and version

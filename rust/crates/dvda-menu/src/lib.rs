@@ -7,12 +7,6 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
 };
 
-// Session bridge - only compile if feature is enabled
-#[cfg(feature = "session-bridge")]
-mod session_bridge;
-#[cfg(feature = "session-bridge")]
-pub use session_bridge::*;
-
 #[cfg(feature = "direct-link")]
 mod direct;
 mod resources;

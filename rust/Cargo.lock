@@ -81,6 +81,7 @@ dependencies = [
  "dvda-author",
  "dvda-menu",
  "once_cell",
+ "serde_json",
 ]
 
 [[package]]
@@ -121,6 +122,7 @@ name = "dvda-menu"
 version = "0.1.0"
 dependencies = [
  "quick-xml",
+ "serde_json",
 ]
 
 [[package]]

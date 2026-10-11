@@ -198,26 +198,36 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     events.progress(0, progress_total);
     let mut tracks = Vec::with_capacity(sources.len());
     crate::task_log::emit(events, "source_metadata", 0, sources.len() as u64, "", "");
-    for (index, path) in sources.iter().enumerate() {
+    let mut metadata_jobs = Vec::new();
+    for path in &sources {
         alac::check_cancel(events)?;
-        crate::task_log::emit(
-            events,
-            "source_metadata",
-            index as u64,
-            sources.len() as u64,
-            path.rsplit(['/', '\\']).next().unwrap_or(path),
-            path,
-        );
         if let Some(entry) = cache.as_ref().filter(|_| reuse).and_then(|c| c.find(path)) {
-            tracks.push(entry.probe.metadata(path));
             cached.insert(path.clone(), entry.clone());
         } else {
-            tracks.push(audio::read_metadata(
-                &job.audio(path, None),
-                &mut Quiet(events),
-            )?);
+            metadata_jobs.push(job.audio(path, None));
         }
-        events.progress(index as u64 + 1, progress_total);
+    }
+    events.progress(cached.len() as u64, progress_total);
+    let probed = super::audio_decode_parallel::inspect_jobs(
+        &metadata_jobs,
+        events,
+        "source_metadata",
+        cached.len() as u64,
+        progress_total,
+        audio::read_metadata,
+    )?;
+    let mut probed: HashMap<_, _> = probed
+        .into_iter()
+        .map(|track| (track.path.clone(), track))
+        .collect();
+    for path in &sources {
+        tracks.push(if let Some(entry) = cached.get(path) {
+            entry.probe.metadata(path)
+        } else {
+            probed
+                .remove(path)
+                .ok_or_else(|| Failure::new("InvalidOperation", "Missing audio metadata result"))?
+        });
     }
     crate::task_log::emit(
         events,
@@ -263,6 +273,29 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     let mut checked = 0;
     let mut reused = 0;
     crate::task_log::emit(events, "source_decode", 0, sources.len() as u64, "", "");
+    let decode_jobs: Vec<_> = tracks
+        .iter()
+        .filter(|track| {
+            !cached
+                .get(&track.path)
+                .is_some_and(|entry| state::reusable(entry, track, rules::expected_samples(track)))
+        })
+        .map(|track| job.audio(&track.path, track.resample_to))
+        .collect();
+    let decoded = super::audio_decode_parallel::inspect_jobs(
+        &decode_jobs,
+        events,
+        "source_decode",
+        sources.len() as u64,
+        progress_total,
+        audio::check_decode,
+    )?;
+    let decode_count = decoded.len();
+    let mut decoded: HashMap<_, _> = decode_jobs
+        .iter()
+        .zip(decoded)
+        .map(|(job, result)| (job.input.clone(), result))
+        .collect();
     for ((rate, bits), group) in rules::ordered_groups(&tracks) {
         let name = format!("group_{rate}_{bits}");
         let mut files = Vec::with_capacity(group.len());
@@ -307,10 +340,9 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
                     );
                 }
             } else {
-                let mut check = audio::check_decode(
-                    &job.audio(&source, track.resample_to),
-                    &mut Quiet(events),
-                )?;
+                let mut check = decoded.remove(&source).ok_or_else(|| {
+                    Failure::new("InvalidOperation", "Missing audio decode result")
+                })?;
                 if (check.error_count > 0
                     || (check.samples.is_some() && expected.is_some() && check.samples != expected))
                     && let Some(repair) = alac::try_repair(
@@ -395,7 +427,10 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
                 repair_detail: detail,
                 orig_src: original,
             });
-            events.progress(sources.len() as u64 + checked as u64, progress_total);
+            events.progress(
+                sources.len() as u64 + checked.max(decode_count) as u64,
+                progress_total,
+            );
         }
         events.emit(1, &format!("{name}: {} 首", files.len()));
         manifest.insert(

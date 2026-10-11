@@ -7,8 +7,8 @@ pub mod snapshot;
 pub mod state;
 
 // Parallel processing modules
-mod parallel;
-mod parallel_enhanced;
-mod audio_decode_parallel;
-mod mlp_parallel;
-mod pipeline_optimization;
+pub mod audio_decode_parallel;
+pub mod mlp_parallel;
+pub mod parallel;
+pub mod parallel_enhanced;
+pub mod pipeline_optimization;

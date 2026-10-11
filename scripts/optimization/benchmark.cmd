@@ -40,8 +40,8 @@ if errorlevel 1 (
 
 echo.
 echo [3/4] Checking binary size...
-if exist "rust\target\x86_64-pc-windows-gnu\release\dvda_mlp.dll" (
-    dir rust\target\x86_64-pc-windows-gnu\release\dvda_mlp.dll | find "dvda_mlp"
+if exist "rust\target\x86_64-pc-windows-msvc\release\dvda_mlp.dll" (
+    dir rust\target\x86_64-pc-windows-msvc\release\dvda_mlp.dll | find "dvda_mlp"
     echo [OK] MLP library built successfully
 ) else (
     echo [SKIP] MLP DLL not found (check build)

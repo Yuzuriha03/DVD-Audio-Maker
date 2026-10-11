@@ -4,9 +4,9 @@ The `direct-link` feature embeds the namespaced menu vendor archives in the Rust
 
 ## Build
 
-The supported target is `x86_64-pc-windows-gnu`. With the repository `.venv` configured, Cargo automatically invokes `tools/win-build/build-menu-runtime.py --direct-link`. Set `DVDA_MENU_NATIVE_DIR` to a directory containing prebuilt `libdvda_menu_spu_vendor.a` and `libdvda_menu_nav_vendor.a` archives to skip regeneration.
+The supported target is `x86_64-pc-windows-msvc`. Cargo invokes `tools/win-build/build-menu-runtime.py --direct-link` when the MSVC vendor directory is absent. Set `DVDA_MENU_NATIVE_DIR` to a directory containing prebuilt `dvda_menu_spu_vendor.lib` and `dvda_menu_nav_vendor.lib` archives to skip regeneration.
 
-The vendor builder requires MSYS2 MinGW64 GCC/binutils at `C:\msys64\mingw64\bin`, Cargo/rustc under `%USERPROFILE%\.cargo\bin`, and the repository `.venv\Scripts\python.exe`. The acceptance harness uses an image DLL only as a test callback provider; production callers supply the directly linked bridge callback instead.
+The vendor builder requires Visual Studio C++ x64 tools, the Windows SDK, Cargo/rustc and Python. It uses `cl.exe` and `lib.exe` with static CRT. The acceptance harness uses an image DLL only as a test callback provider; production callers supply the directly linked bridge callback instead.
 
 The vendor archives remain a static third-party boundary. Vendor `exit`/`longjmp` paths are contained by C callback islands and never cross Rust frames. Calls are serialized and per-call state is reset; re-entry and poisoned-session calls fail closed.
 

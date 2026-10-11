@@ -1,7 +1,7 @@
 // Pipeline optimization with overlapping stages
 // Implements producer-consumer pattern for overlapping I/O and computation
 
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::sync::mpsc::{Receiver, Sender, sync_channel};
 use std::thread;
 
 /// Pipeline stage result
@@ -11,31 +11,16 @@ pub enum StageResult<T> {
     Error(String),
 }
 
-/// Create a 2-stage pipeline
+/// Create a channel for communicating explicit pipeline stage events.
 ///
-/// Example usage:
-/// ```rust
-/// // Stage 1: Read files
-/// // Stage 2: Process files
-///
-/// let (producer, consumer) = create_pipeline();
-///
-/// // Producer thread
-/// thread::spawn(move || {
-///     for file in files {
-///         let data = read_file(file);
-///         producer.send(data);
-///     }
-/// });
-///
-/// // Consumer thread (current thread)
-/// while let Some(data) = consumer.recv() {
-///     process(data);
-/// }
 /// ```
-
+/// use dvda_core::preparation::pipeline_optimization::{create_pipeline, StageResult};
+/// let (producer, consumer) = create_pipeline();
+/// producer.send(StageResult::Data(42)).unwrap();
+/// assert!(matches!(consumer.recv().unwrap(), StageResult::Data(42)));
+/// ```
 pub fn create_pipeline<T>() -> (Sender<StageResult<T>>, Receiver<StageResult<T>>) {
-    channel()
+    std::sync::mpsc::channel()
 }
 
 /// Pipeline configuration
@@ -45,9 +30,6 @@ pub struct PipelineConfig {
 
     /// Enable pipeline optimization
     pub enabled: bool,
-
-    /// Number of parallel workers per stage
-    pub workers_per_stage: usize,
 }
 
 impl Default for PipelineConfig {
@@ -55,7 +37,6 @@ impl Default for PipelineConfig {
         Self {
             buffer_size: 8,
             enabled: true,
-            workers_per_stage: 2,
         }
     }
 }
@@ -89,13 +70,75 @@ impl<T: Send + 'static> Pipeline<T> {
         self
     }
 
-    /// Execute the pipeline (simplified version)
-    /// Full implementation would use crossbeam channels for better performance
-    pub fn execute(self, _inputs: Vec<T>) -> Vec<T> {
-        // Simplified placeholder
-        // Real implementation would create channels between stages
-        // and spawn threads for each stage
-        Vec::new()
+    /// Execute the pipeline.
+    ///
+    /// An enabled pipeline owns one worker thread per stage. Each adjacent
+    /// pair of workers is connected by a bounded channel, so a fast producer
+    /// cannot grow an unbounded queue while a later stage is busy. Every stage
+    /// has one receiver and one sender, which keeps the input order; the
+    /// explicit sequence number also makes that guarantee visible at the
+    /// final collection point.
+    ///
+    /// With no stages, inputs pass through unchanged. A disabled pipeline
+    /// applies all stages on the calling thread, preserving the same stage
+    /// order without spawning workers.
+    pub fn execute(self, inputs: Vec<T>) -> Vec<T> {
+        if self.stages.is_empty() || inputs.is_empty() {
+            return inputs;
+        }
+
+        if !self.config.enabled {
+            return self.stages.into_iter().fold(inputs, |items, mut stage| {
+                items.into_iter().map(&mut stage).collect()
+            });
+        }
+
+        let input_count = inputs.len();
+        let capacity = self.config.buffer_size.max(1);
+        let (first_tx, first_rx) = sync_channel(capacity);
+        let mut current_rx = first_rx;
+        let mut workers = Vec::with_capacity(self.stages.len());
+
+        for mut stage in self.stages {
+            let upstream = current_rx;
+            let (next_tx, next_rx) = sync_channel(capacity);
+            workers.push(thread::spawn(move || {
+                for (sequence, item) in upstream {
+                    let item = stage(item);
+                    if next_tx.send((sequence, item)).is_err() {
+                        break;
+                    }
+                }
+            }));
+            current_rx = next_rx;
+        }
+
+        // Feeding must overlap draining as well: otherwise a batch larger than
+        // all bounded queues can fill the final queue and deadlock its producer.
+        let producer = thread::spawn(move || {
+            for (sequence, item) in inputs.into_iter().enumerate() {
+                if first_tx.send((sequence, item)).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut ordered = (0..input_count).map(|_| None).collect::<Vec<Option<T>>>();
+        for (sequence, item) in current_rx {
+            ordered[sequence] = Some(item);
+        }
+
+        for worker in workers {
+            worker
+                .join()
+                .expect("pipeline stage panicked while processing input");
+        }
+        producer.join().expect("pipeline input producer panicked");
+
+        ordered
+            .into_iter()
+            .map(|item| item.expect("pipeline stage dropped an input item"))
+            .collect()
     }
 }
 
@@ -130,5 +173,80 @@ mod tests {
             StageResult::Data(n) => assert_eq!(n, 42),
             _ => panic!("Expected data"),
         }
+    }
+
+    #[test]
+    fn enabled_pipeline_overlaps_stages_and_preserves_input_order() {
+        let (later_stage_started, wait_for_later_stage) = std::sync::mpsc::channel();
+        let config = PipelineConfig {
+            buffer_size: 1,
+            enabled: true,
+        };
+        let pipeline = Pipeline::new(config)
+            .add_stage(move |value| {
+                if value == 1 {
+                    wait_for_later_stage
+                        .recv_timeout(std::time::Duration::from_secs(2))
+                        .expect(
+                            "the next stage must run before the first stage finishes all inputs",
+                        );
+                }
+                value + 1
+            })
+            .add_stage(move |value| {
+                if value == 1 {
+                    later_stage_started.send(()).unwrap();
+                }
+                value * 2
+            })
+            .add_stage(|value| value - 3);
+
+        assert_eq!(pipeline.execute(vec![0, 1, 2, 3, 4]), vec![-1, 1, 3, 5, 7]);
+    }
+
+    #[test]
+    fn bounded_pipeline_drains_batches_larger_than_its_queues() {
+        let config = PipelineConfig {
+            buffer_size: 0,
+            enabled: true,
+        };
+        let mut sequence = 0;
+        let pipeline = Pipeline::new(config)
+            .add_stage(move |value| {
+                assert_eq!(value, sequence);
+                sequence += 1;
+                value + 1
+            })
+            .add_stage(|value| value * 2);
+        assert_eq!(
+            pipeline.execute((0..10_000).collect()),
+            (0..10_000).map(|value| (value + 1) * 2).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn disabled_pipeline_applies_stages_serially() {
+        let calling_thread = std::thread::current().id();
+        let config = PipelineConfig {
+            buffer_size: 0,
+            enabled: false,
+        };
+        let pipeline = Pipeline::new(config)
+            .add_stage(move |value| {
+                assert_eq!(std::thread::current().id(), calling_thread);
+                value + 10
+            })
+            .add_stage(|value| value / 2);
+
+        assert_eq!(pipeline.execute(vec![2, 4, 6]), vec![6, 7, 8]);
+    }
+
+    #[test]
+    fn pipeline_without_stages_is_a_passthrough() {
+        let pipeline = Pipeline::<String>::new(PipelineConfig::default());
+        assert_eq!(
+            pipeline.execute(vec!["a".into(), "b".into()]),
+            vec!["a", "b"]
+        );
     }
 }

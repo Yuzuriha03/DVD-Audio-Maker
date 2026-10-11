@@ -13,8 +13,11 @@ from pathlib import Path
 import subprocess
 import uuid
 from xml.sax.saxutils import escape
+from msvc_env import msvc_environment
 
 ROOT = Path(__file__).resolve().parents[2]
+TARGET = 'x86_64-pc-windows-msvc'
+VENDOR_ARCHIVES = ('dvda_menu_spu_vendor.lib', 'dvda_menu_nav_vendor.lib')
 
 
 def sha(path):
@@ -49,7 +52,7 @@ def authenticate(inputs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--vendor', type=Path, default=ROOT/'build/menu-direct-vendor-rust-session')
+    parser.add_argument('--vendor', type=Path, default=ROOT/'build/menu-msvc-vendor')
     parser.add_argument('--runtime', type=Path, default=ROOT/'build/rust-author-production')
     parser.add_argument('--source-mpeg', type=Path, default=ROOT/'build/menu-production-pal-1/背景.mpg')
     parser.add_argument('--sessions-only', action='store_true', help='Validate the new vendor before production rebuilding; record production_checked=false')
@@ -64,16 +67,19 @@ def main():
     require(source.stat().st_size > 0 and source.stat().st_size % 2048 == 0, 'MPEG fixture must be sector aligned')
     record = json.loads((vendor/'menu-build.json').read_text(encoding='utf-8-sig'))
     require(record['adapter'] == 'rust' and record['linkage'] == 'static-vendor', 'Unexpected migrated menu vendor provenance')
-    for name in ('libdvda_menu_spu_vendor.a', 'libdvda_menu_nav_vendor.a'):
+    require(record.get('target') == TARGET and record.get('toolchain') == 'msvc', 'Session acceptance requires MSVC vendor libraries')
+    for name in VENDOR_ARCHIVES:
         require(sha(vendor/name) == record['files'][name]['sha256'], 'Vendor archive checksum mismatch: '+name)
     inputs = current_menu_inputs(record)
     stale = authenticate(inputs)
     require(not stale, 'New vendor sources changed since build: '+', '.join(stale))
-    env = os.environ | {'DVDA_MENU_NATIVE_DIR': str(vendor)}
+    env = msvc_environment() | {'DVDA_MENU_NATIVE_DIR': str(vendor)}
+    env['RUSTFLAGS'] = env.get('RUSTFLAGS', '')+' -C target-feature=+crt-static'
     target = output/'harness-target'
     run(['cargo', 'build', '--offline', '--manifest-path', ROOT/'rust/Cargo.toml', '-p', 'dvda-menu',
-         '--features', 'direct-link', '--example', 'session-acceptance', '--target-dir', target], ROOT, output/'cargo.log', env)
-    current = target/'debug/examples/session-acceptance.exe'
+         '--features', 'direct-link', '--example', 'session-acceptance', '--target', TARGET,
+         '--target-dir', target], ROOT, output/'cargo.log', env)
+    current = target/TARGET/'debug/examples/session_acceptance.exe'
     sessions = {}
     for name in ('rust', 'repeat'):
         case = output/name/'中文-日本語 한글'
@@ -107,7 +113,7 @@ def main():
     require(production_record['implementation'] == 'rust' and not production_record['project_c_author_compiled'], 'Production still uses the C author')
     for name, item in production_record['runtime_files'].items():
         require(sha(runtime/name) == item['sha256'], 'Production dependency checksum mismatch: '+name)
-    for name in ('menu-build.json', 'libdvda_menu_spu_vendor.a', 'libdvda_menu_nav_vendor.a'):
+    for name in ('menu-build.json', *VENDOR_ARCHIVES):
         require(production_record['source_inputs']['menu-runtime/'+name] == sha(vendor/name), 'Production links a different menu vendor: '+name)
     spec = importlib.util.spec_from_file_location('menu_acceptance', ROOT/'tools/win-build/test-rust-author-menu.py')
     menu_acceptance = importlib.util.module_from_spec(spec)
@@ -149,7 +155,8 @@ def main():
     # rollback, existing-image protection and retry. This does not claim a
     # cancellation hook inside a synchronous third-party menu core.
     run(['cargo', 'test', '--offline', '--manifest-path', ROOT/'rust/Cargo.toml', '-p', 'dvda-author',
-         '--test', 'full_author_large', '--target-dir', output/'author-cancel-target'], ROOT, output/'author-cancellation.log')
+         '--test', 'full_author_large', '--target', TARGET,
+         '--target-dir', output/'author-cancel-target'], ROOT, output/'author-cancellation.log', env)
     stale = authenticate(inputs)
     production_inputs = {name: digest for name, digest in production_record['source_inputs'].items()
                          if name.startswith('rust/') or name.startswith('tools/win-build/')}
