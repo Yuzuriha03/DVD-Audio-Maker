@@ -19,7 +19,7 @@ gui-debug.cmd
 cli.cmd abi.version
 cli.cmd prepare --profile "C:\work\settings.json"
 cli.cmd build --dry-run --profile "C:\work\settings.json"
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 ```
 
 `settings.json` is the only file-based configuration format. The Git-ignored
@@ -70,7 +70,7 @@ tasks; `.vscode/launch.json` contains x64 GUI and CLI debug entries.
 ## Release
 
 ```powershell
-cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --release --workspace --offline
+cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --release --workspace --offline
 dvda-toolchain.exe package --repo . --output build/release --media-runtime build/media-native-shared --image-runtime build/rust-image-runtime --image-author build/rust-author-production --prebuilt build/release-menu-final --version v1.0
 ```
 
@@ -93,7 +93,7 @@ remain under the Git-ignored `build` directory.
 
 ```powershell
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1
 ```
 
@@ -117,7 +117,7 @@ Regression tests cover standard vectors and compare the wrapper's one-shot,
 streaming and reader paths against the upstream `sha2` API.
 
 ```powershell
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --release --offline -p dvda-core --lib hash:: -- --skip release_files_benchmark
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --release --offline -p dvda-core --lib hash:: -- --skip release_files_benchmark
 ```
 
 The read-only Release file benchmark accepts a JSON array through
@@ -138,8 +138,8 @@ uses `min(2 × available logical processors, track count)` workers; cancellation
 not save this run's parameter cache.
 
 ```powershell
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-native
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --offline -p dvda-core --lib mlp_workflow -- --include-ignored --skip real_cached --skip another_volume
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --offline -p dvda-native
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --offline -p dvda-core --lib mlp_workflow -- --include-ignored --skip real_cached --skip another_volume
 ```
 
 Rust tests cover full scans, CRC boundaries, alignment output and PCM comparison.
@@ -159,4 +159,4 @@ Batch encoding reuses the decoded temporary WAV only when its rate, storage/vali
 
 The real cached preflight benchmark retains legacy 1/2/4/8/16 labels as compatibility probes: requested counts are ignored, and reports record both `requested_workers` and the actual automatic count. This measures cache checking, not full decoding/encoding throughput. Use real cached inputs and matching media/encoder DLLs, compare repeated-run medians, and monitor memory and CPU separately. Worker-policy unit tests alone do not justify production scheduling changes or performance claims.
 
-For a bounded synthetic end-to-end benchmark, opt into the ignored `synthetic_batch_worker_benchmark` test in `encoder_native.rs`. Set `DVDA_BATCH_BENCH=1`, `DVDA_BATCH_BENCH_ROOT` to a **new short absolute directory** under ignored `build`, `DVDA_BATCH_BENCH_EXE` to an extracted shipped onefile EXE, and `DVDA_ENCODER_LIBRARY` to the pinned encoder DLL. Run `cargo test --manifest-path rust\Cargo.toml -p dvda-core --test encoder_native --release --target x86_64-pc-windows-gnu synthetic_batch_worker_benchmark -- --ignored --exact --nocapture`. The test extracts checksum-verified embedded media dependencies, generates 16 half-second stereo/6-channel tracks per 16/20/24-bit batch, measures the automatic policy over three repeats with alternating legacy requested-count labels (1/2/4/8/16), and verifies all 720 outputs by deterministic MLP digest and lossless decoded PCM (including zero final-AU padding). It deletes each verified run's outputs and writes `worker-benchmark.json` inside the owned root. Short roots avoid legacy Win32 path limits during runtime extraction; timings exclude sample generation and verification, and are not a before/after optimization comparison or representative long-album benchmark.
+For a bounded synthetic end-to-end benchmark, opt into the ignored `synthetic_batch_worker_benchmark` test in `encoder_native.rs`. Set `DVDA_BATCH_BENCH=1`, `DVDA_BATCH_BENCH_ROOT` to a **new short absolute directory** under ignored `build`, `DVDA_BATCH_BENCH_EXE` to an extracted shipped onefile EXE, and `DVDA_ENCODER_LIBRARY` to the pinned encoder DLL. Run `cargo test --manifest-path rust\Cargo.toml -p dvda-core --test encoder_native --release --target x86_64-pc-windows-msvc synthetic_batch_worker_benchmark -- --ignored --exact --nocapture`. The test extracts checksum-verified embedded media dependencies, generates 16 half-second stereo/6-channel tracks per 16/20/24-bit batch, measures the automatic policy over three repeats with alternating legacy requested-count labels (1/2/4/8/16), and verifies all 720 outputs by deterministic MLP digest and lossless decoded PCM (including zero final-AU padding). It deletes each verified run's outputs and writes `worker-benchmark.json` inside the owned root. Short roots avoid legacy Win32 path limits during runtime extraction; timings exclude sample generation and verification, and are not a before/after optimization comparison or representative long-album benchmark.

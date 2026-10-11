@@ -30,9 +30,9 @@ Font operations are available as `dvda-toolchain fonts extract/verify/pack/verif
 ## Build and test
 
 ```bat
-cargo build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline
+cargo build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 cargo fmt --manifest-path rust\Cargo.toml --all -- --check
-cargo clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
+cargo clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\test-rust-workflow.ps1 -OtherVolume D:\
 ```
 

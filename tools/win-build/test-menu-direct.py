@@ -1,12 +1,14 @@
 """Targeted static menu executable parity and repeat/error recovery (no menu DLL)."""
 from pathlib import Path
-import argparse, json, os, subprocess
+import argparse, json, subprocess
+from msvc_env import msvc_environment
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--fixtures',type=Path,default=Path('build/menu-production-pal-1'))
     p.add_argument('--image-runtime',type=Path,default=Path('build/rust-image-runtime/dvda-image.dll'))
     p.add_argument('--bridge-archive',type=Path,help='Test author ABI with directly linked image/menu bridge archive')
+    p.add_argument('--menu-archive',type=Path,help='Prebuilt MSVC dvda_menu.lib; defaults to the workspace release archive')
     p.add_argument('--output',type=Path,default=Path('build/menu-direct-acceptance'))
     a=p.parse_args(); repo=Path(__file__).resolve().parents[2]; out=a.output.resolve(); out.mkdir(parents=True,exist_ok=True)
     fixture=a.fixtures.resolve(); image=a.image_runtime.resolve()
@@ -69,12 +71,23 @@ int wmain(int argc,wchar_t **wide_args) {
     return 0;
 }
 ''',encoding='ascii')
-    gcc=Path('C:/msys64/mingw64/bin/gcc.exe'); env=os.environ|{'PATH':str(gcc.parent)+os.pathsep+os.environ['PATH']}
-    exe=out/'menu-direct-test.exe'; archive=repo/'rust/target/x86_64-pc-windows-gnu/release/libdvda_menu.a'
+    env=msvc_environment()
+    exe=out/'menu-direct-test.exe'; archive=repo/'rust/target/x86_64-pc-windows-msvc/release/dvda_menu.lib'
+    if a.menu_archive:
+        archive=a.menu_archive.resolve()
     if a.bridge_archive:
         archive=a.bridge_archive.resolve()
-    bridge_flags=['-DAUTHOR_BRIDGE','-lgdi32'] if a.bridge_archive else []
-    subprocess.run([str(gcc),str(source),'-I'+str(repo/'tools/menu-native'),str(archive),'-municode','-static-libgcc','-lws2_32','-luserenv','-lbcrypt','-lntdll','-ladvapi32','-lshell32',*bridge_flags,'-o',str(exe)],env=env,check=True)
+    if archive.suffix.lower()!='.lib' or not archive.is_file():
+        raise ValueError('Direct acceptance requires a prebuilt MSVC .lib archive: '+str(archive))
+    bridge_flags=['/DAUTHOR_BRIDGE'] if a.bridge_archive else []
+    libraries=['ws2_32.lib','userenv.lib','bcrypt.lib','ntdll.lib','advapi32.lib','shell32.lib','user32.lib','gdi32.lib']
+    command=[env['CC'],'/nologo','/TC','/std:c17','/O2','/MT','/I'+str(repo/'tools/menu-native'),
+             *bridge_flags,str(source),str(archive),'/Fe:'+str(exe),'/Fo:'+str(out/'menu-direct-test.obj'),
+             '/link',*libraries]
+    compiled=subprocess.run(command,cwd=out,env=env,capture_output=True)
+    (out/'compile.log').write_bytes(compiled.stdout+compiled.stderr)
+    if compiled.returncode:
+        raise RuntimeError('MSVC direct menu harness compilation failed: '+str(out/'compile.log'))
     target=out/'menu.mpg'; nav=out/'nav'; (nav/'AUDIO_TS').mkdir(parents=True,exist_ok=True);(nav/'VIDEO_TS').mkdir(exist_ok=True)
     bad_spu=out/'bad-spu.xml'; bad_spu.write_text((fixture/'\u83dc\u5355.xml').read_text(encoding='utf-8').replace('force="yes"','force="invalid"'),encoding='utf-8')
     bad_boolean=out/'bad-boolean-nav.xml'; bad_boolean.write_text('<dvdauthor jumppad="invalid"/>',encoding='utf-8')
@@ -83,6 +96,7 @@ int wmain(int argc,wchar_t **wide_args) {
     expected={str(f.relative_to(fixture/'legacy-nav')):f.read_bytes() for f in (fixture/'legacy-nav').rglob('*') if f.is_file()}
     actual={str(f.relative_to(nav)):f.read_bytes() for f in nav.rglob('*') if f.is_file()}
     if not expected or expected!=actual:raise AssertionError('navigation parity')
-    report={'status':'PASS','checks':['static executable SPU byte parity','same-process SPU recovery x8','same-process navigation recovery x4','navigation byte parity','vendor C error containment'],'author_abi':bool(a.bridge_archive),'executable':str(exe),'fixtures':str(fixture)}
+    report={'status':'PASS','target':'x86_64-pc-windows-msvc','toolchain':'msvc','compiler':env['CC'],'compile_arguments':command,
+            'checks':['static executable SPU byte parity','same-process SPU recovery x8','same-process navigation recovery x4','navigation byte parity','vendor C error containment'],'author_abi':bool(a.bridge_archive),'executable':str(exe),'fixtures':str(fixture)}
     (out/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8'); print(json.dumps(report))
 if __name__=='__main__':main()

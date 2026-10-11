@@ -2,6 +2,7 @@
 
 No project C author translation unit or legacy author archive is compiled/linked.
 The configured --source directory is used only to locate optional menu assets.
+MSVC-native vendor archives are required; GNU/MinGW archives are rejected.
 """
 from pathlib import Path
 import argparse
@@ -14,6 +15,9 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent / 'native'))
 from pe_dependencies import Pe
+from msvc_env import is_vc_runtime, msvc_environment, vc_runtime_roots
+
+TARGET = 'x86_64-pc-windows-msvc'
 
 
 def sha(path):
@@ -31,7 +35,9 @@ def rust_sources(repo):
         for path in sorted(root.rglob('*')):
             if path.is_file() and (path.suffix in ('.rs', '.toml') or path.name.endswith('-probe.c')) and not any(part in ('tests','examples') for part in path.relative_to(root).parts):
                 result[path.relative_to(repo).as_posix()] = sha(path)
-    for path in [repo/'rust/Cargo.toml', repo/'rust/Cargo.lock', Path(__file__), Path(__file__).with_name('build-image-author.py')]:
+    for path in [repo/'rust/Cargo.toml', repo/'rust/Cargo.lock', repo/'rust/.cargo/config.toml',
+                 repo/'.cargo/config.toml', repo/'rust/rust-toolchain.toml', Path(__file__),
+                 Path(__file__).with_name('build-image-author.py'), Path(__file__).with_name('msvc_env.py')]:
         result[path.relative_to(repo).as_posix()] = sha(path)
     return result
 
@@ -40,11 +46,13 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, help='Legacy configured source, used only for menu assets')
-    parser.add_argument('--msys-root', type=Path, default=Path(r'C:\msys64'))
+    parser.add_argument('--msys-root', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--work-directory', type=Path, default=Path('build/rust-author-production'))
     parser.add_argument('--ffmpeg-runtime', type=Path, default=os.environ.get('DVDA_FFMPEG_PREFIX'))
     parser.add_argument('--magick-work', type=Path, default=os.environ.get('DVDA_MAGICK_WORK'))
-    parser.add_argument('--menu-runtime', type=Path, default=Path('build/menu-direct-vendor-rust-session'))
+    parser.add_argument('--image-dependencies', type=Path, default=os.environ.get('DVDA_IMAGE_DEPS_DIR'),
+                        help='Directory containing MSVC-native jpeg/png/webp/zlib .lib dependencies')
+    parser.add_argument('--menu-runtime', type=Path, default=Path('build/menu-msvc-vendor'))
     parser.add_argument('--menu-assets', type=Path, help='Directory containing activeheader and black/silent menu assets')
     parser.add_argument('--font', type=Path, help='Prepared DvdaNotoCJK-Regular.ttc collection')
     parser.add_argument('--assets-runtime', type=Path, help='Existing portable runtime supplying data/menu and fonts')
@@ -58,13 +66,21 @@ def main():
         parser.error('--ffmpeg-runtime and --magick-work (or corresponding DVDA env vars) are required')
     work = args.work_directory.resolve()
     work.mkdir(parents=True, exist_ok=True)
-    ffmpeg, magick, menu, msys = [p.resolve() for p in (args.ffmpeg_runtime, args.magick_work, args.menu_runtime, args.msys_root)]
+    ffmpeg, magick, menu = [p.resolve() for p in (args.ffmpeg_runtime, args.magick_work, args.menu_runtime)]
+    image_dependencies = args.image_dependencies.resolve() if args.image_dependencies else magick/'lib'
     ffmpeg_record = read_json(ffmpeg/'build-manifest.json')
     if ffmpeg_record.get('profile') != 'shared':
         raise ValueError('Production Rust author requires retained FFmpeg profile=shared')
+    if ffmpeg_record.get('target') != TARGET or ffmpeg_record.get('toolchain') != 'msvc':
+        raise ValueError('Production Rust author requires FFmpeg built with Windows x64 MSVC')
     menu_record = read_json(menu/'menu-build.json')
     if menu_record.get('adapter') != 'rust' or menu_record.get('linkage') != 'static-vendor':
         raise ValueError('Production Rust author requires the static-vendor Rust menu adapter')
+    if menu_record.get('target') != TARGET or menu_record.get('toolchain') != 'msvc':
+        raise ValueError(
+            'Production Rust author requires an MSVC-native menu vendor archive; '
+            'the retained GNU/MinGW vendor archive cannot be linked into an MSVC binary'
+        )
     if menu_record.get('session', {}).get('implementation') != 'rust' or menu_record.get('session', {}).get('boundary') != 'c-setjmp-varargs':
         raise ValueError('Production menu must use the Rust session and C error/varargs boundary')
     if menu_record.get('state_reset', {}).get('implementation') != 'rust':
@@ -75,24 +91,30 @@ def main():
                      'rust/crates/dvda-menu/src/lib.rs'):
         if menu_record.get('rust_inputs', {}).get(relative) != sha(repo/relative):
             raise ValueError('Menu Rust source checksum mismatch: '+relative)
-    for name in ('libdvda_menu_spu_vendor.a', 'libdvda_menu_nav_vendor.a'):
+    for name in ('dvda_menu_spu_vendor.lib', 'dvda_menu_nav_vendor.lib'):
         if sha(menu/name) != menu_record['files'][name]['sha256']:
             raise ValueError('Menu archive checksum mismatch: '+name)
-    required = [magick/'compile/MagickWand/.libs/libMagickWand-7.Q16HDRI.a',
-                magick/'compile/MagickCore/.libs/libMagickCore-7.Q16HDRI.a',
-                magick/'libfreetype-minimal.a', magick/'libucrt-jump.a']
+    required = [magick/'compile/MagickWand/.libs/MagickWand-7.Q16HDRI.lib',
+                magick/'compile/MagickCore/.libs/MagickCore-7.Q16HDRI.lib',
+                magick/'freetype-minimal.lib']
     for path in required:
         if not path.is_file():
-            raise FileNotFoundError('Retained image dependency is missing: '+str(path))
-    env = os.environ | {
-        'PATH': str(Path.home()/'.cargo/bin')+os.pathsep+str(msys/'mingw64/bin')+os.pathsep+os.environ['PATH'],
+            raise FileNotFoundError('MSVC-native image .lib dependency is missing: '+str(path))
+    for name in ('jpeg.lib', 'png16.lib', 'webpdecoder.lib', 'webpmux.lib', 'z.lib'):
+        path = image_dependencies/name
+        if not path.is_file():
+            raise FileNotFoundError('MSVC-native image codec .lib dependency is missing: '+str(path))
+        required.append(path)
+    env = msvc_environment()
+    env.update({
+        'PATH': str(Path.home()/'.cargo/bin')+os.pathsep+env['PATH'],
         'DVDA_FFMPEG_PREFIX': str(ffmpeg), 'DVDA_MAGICK_WORK': str(magick),
-        'DVDA_MENU_NATIVE_DIR': str(menu), 'DVDA_MSYS_ROOT': str(msys),
-        'CC': str(msys/'mingw64/bin/gcc.exe'), 'DLLTOOL': str(msys/'mingw64/bin/dlltool.exe'),
-    }
+        'DVDA_MENU_NATIVE_DIR': str(menu), 'DVDA_IMAGE_DEPS_DIR': str(image_dependencies),
+    })
+    env['RUSTFLAGS'] = env.get('RUSTFLAGS', '') + ' -C target-feature=+crt-static'
     target = args.target_directory.resolve()
     command = ['cargo', 'build', '--offline', '--release', '--manifest-path', str(repo/'rust/Cargo.toml'),
-               '--target-dir', str(target), '-p', 'dvda-cli', '--bin', 'dvda-author-dev',
+               '--target', TARGET, '--target-dir', str(target), '-p', 'dvda-cli', '--bin', 'dvda-author-dev',
                '--no-default-features', '--features', 'direct-bridges,rust-mlp']
     inputs = rust_sources(repo)
     with (work/'rust-author-build.log').open('wb') as log:
@@ -102,19 +124,19 @@ def main():
     if rust_sources(repo) != inputs:
         raise RuntimeError('Rust sources changed during this build; rerun to authenticate a stable binary')
     executable = work/'dvda-author-dev.exe'
-    shutil.copy2(target/'release/dvda-author-dev.exe', executable)
+    shutil.copy2(target/TARGET/'release/dvda-author-dev.exe', executable)
     if Pe(executable).machine != 0x8664:
         raise ValueError('Rust author is not Windows x64')
     system = Path(os.environ.get('SystemRoot', r'C:\Windows'))/'System32'
     roots = [ffmpeg/'bin']
     if args.dependency_runtime:
         roots.append(args.dependency_runtime.resolve())
-    roots += [repo/'build/media-native-fixed', repo/'build/media-native', msys/'mingw64/bin']
+    roots += [repo/'build/msvc-native/media-runtime', *vc_runtime_roots(env)]
     pending, seen, runtime_sources = [executable], set(), {}
     while pending:
         path = pending.pop()
         for name in Pe(path).imports():
-            if name.startswith(('api-ms-win-', 'ext-ms-win-')) or (system/name).is_file():
+            if name.startswith(('api-ms-win-', 'ext-ms-win-')) or ((system/name).is_file() and not is_vc_runtime(name)):
                 continue
             if name.startswith('dvda-') or name == 'mlp_encoder.dll':
                 raise ValueError('Rust author imports a migrated project adapter: '+name)
@@ -131,11 +153,24 @@ def main():
             runtime_sources[name] = {'path': str(source), 'sha256': sha(source)}
             seen.add(name)
             pending.append(destination)
+    # Keep the complete authenticated FFmpeg shared profile beside the author
+    # record. Some libraries are delay-loaded only by the GUI, so PE traversal
+    # of the standalone author cannot discover them.
+    for name in ('avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll',
+                 'swresample-7.dll', 'swscale-10.dll'):
+        source = ffmpeg/'bin'/name
+        if not source.is_file():
+            raise FileNotFoundError('Authenticated FFmpeg DLL is missing: '+str(source))
+        destination = work/name
+        if not destination.is_file() or sha(destination) != sha(source):
+            shutil.copy2(source, destination)
+        seen.add(name)
+        runtime_sources[name] = {'path': str(source), 'sha256': sha(source)}
     # Reconcile only obsolete runtime DLLs in this dedicated output directory.
     for path in work.glob('*.dll'):
         if path.name.lower() not in seen:
             path.unlink()
-    for name in ('menu-build.json', 'libdvda_menu_spu_vendor.a', 'libdvda_menu_nav_vendor.a'):
+    for name in ('menu-build.json', 'dvda_menu_spu_vendor.lib', 'dvda_menu_nav_vendor.lib'):
         inputs['menu-runtime/'+name] = sha(menu/name)
     shutil.copy2(menu/'menu-build.json', work/'menu-build.json')
     if (menu/'NOTICE.txt').is_file():
@@ -146,10 +181,7 @@ def main():
             if path.is_file():
                 dependencies[str(path)] = sha(path)
     for path in [ffmpeg/'build-manifest.json', magick/'image-build.json', *required,
-                 menu/'menu-build.json', menu/'libdvda_menu_spu_vendor.a', menu/'libdvda_menu_nav_vendor.a']:
-        dependencies[str(path)] = sha(path)
-    for name in ('libjpeg.a','libpng16.a','libwebpdecoder.a','libwebpmux.a','libz.a'):
-        path = msys/'mingw64/lib'/name
+                 menu/'menu-build.json', menu/'dvda_menu_spu_vendor.lib', menu/'dvda_menu_nav_vendor.lib']:
         dependencies[str(path)] = sha(path)
     for pattern in ('compile/config/*.h','ImageMagick-7.0.8-47/MagickCore/*.h'):
         for path in sorted(magick.glob(pattern)):
@@ -190,9 +222,9 @@ def main():
     (work/'type.xml').write_text(typemap+'</typemap>',encoding='utf-8')
     runtime_files={p.name:{'sha256':sha(p),'bytes':p.stat().st_size,'imports':sorted(Pe(p).imports())} for p in sorted(work.glob('*.dll'))}
     assets={p.relative_to(work).as_posix():{'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted([*work.glob('*.xml'),*work.glob('fonts/*'),*work.glob('data/menu/*')]) if p.is_file()}
-    record={'schema_version':1,'implementation':'rust','target':'x86_64-pc-windows-gnu',
+    record={'schema_version':1,'implementation':'rust','target':TARGET,'toolchain':'msvc',
         'project_c_author_compiled':False,'menu_linkage':'direct-static-vendor',
-        'ffmpeg_linkage':'shared-source-built-shared-profile','ffmpeg_profile':'build-minimal-ffmpeg.py:shared',
+        'ffmpeg_linkage':'shared-source-built-shared-profile','ffmpeg_profile':'build-msvc-ffmpeg.py:shared',
         'author_library':{'implementation':'rust','available':True,'entry':'dvda_core::author_runtime::execute','serialization':'request-owned'},
         'iso_writer':{'implementation':'project-owned-rust','linkage':'embedded-rust-author','source_inputs':{k:v for k,v in inputs.items() if k.startswith('rust/crates/dvda-author/')}},
         'compiler':subprocess.check_output(['rustc','--version'],env=env).decode().strip(),

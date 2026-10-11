@@ -5,7 +5,7 @@ param(
     [string]$AuthorRuntime = "build\rust-author-production",
     [string]$MenuData = "build\rust-author-production\data",
     [string]$MenuRuntime = "build\rust-author-production",
-    [string]$MenuVendor = "build\menu-direct-vendor-rust-session",
+    [string]$MenuVendor = "build\menu-msvc-vendor",
     [string]$OtherVolume = ""
 )
 $ErrorActionPreference = "Stop"
@@ -33,7 +33,7 @@ if (-not $env:DVDA_TEST_OTHER_VOLUME) {
 # Compile with static archives, then run the resulting binaries with runtime
 # paths. Cargo must not interpret a runtime DLL directory as a vendor archive.
 $env:DVDA_MENU_NATIVE_DIR = $menuVendorPath
-$compiled = @(& cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace --features dvda-core/direct-bridges,dvda-native/direct-bridges --offline --no-run --message-format=json)
+$compiled = @(& cargo test --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --features dvda-core/direct-bridges,dvda-native/direct-bridges --offline --no-run --message-format=json)
 if ($LASTEXITCODE -ne 0) { throw 'Workspace test compilation failed' }
 $executables = @($compiled | ForEach-Object { $_ | ConvertFrom-Json } |
     Where-Object { $_.reason -eq 'compiler-artifact' -and $_.profile.test -and $_.executable } |

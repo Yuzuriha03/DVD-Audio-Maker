@@ -1,4 +1,4 @@
-"""Compare rebuilt MLP decoding with the original libraries and generated PCM."""
+"""Compare MSVC shared-profile MLP decoding with a retained external oracle."""
 from pathlib import Path
 import argparse
 import array
@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 
@@ -42,9 +43,8 @@ Write = c.CFUNCTYPE(c.c_int, c.c_void_p, c.c_void_p, c.c_size_t)
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', required=True, type=Path, help='Original menu-bin directory')
-    parser.add_argument('--candidate', required=True, type=Path, help='Rebuilt DLL directory')
+    parser.add_argument('--candidate', required=True, type=Path, help='MSVC shared-profile DLL directory')
     parser.add_argument('--prefix', required=True, type=Path, help='Rebuilt FFmpeg install prefix')
-    parser.add_argument('--msys-root', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--encoder', type=Path, default=Path('build/mlp-encoder/mlp_encoder.dll'),
                         help='Rust encoder acceptance DLL built by dvda-mlp/build-runtime.ps1')
@@ -52,13 +52,25 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     baseline, candidate, prefix, work = (p.resolve() for p in [args.baseline, args.candidate, args.prefix, args.output])
     work.mkdir(parents=True, exist_ok=False)
-    compiler_dir = args.msys_root.resolve() / 'mingw64/bin'
+    manifest = json.loads((prefix/'build-manifest.json').read_text(encoding='utf-8-sig'))
+    assert manifest.get('target') == 'x86_64-pc-windows-msvc' and manifest.get('toolchain') == 'msvc', \
+        'Candidate FFmpeg must be compiled from source with MSVC'
+    assert manifest.get('profile') == 'shared', 'Candidate must preserve the production shared FFmpeg profile'
+    for name, info in manifest['files'].items():
+        assert sha(candidate/name) == info['sha256'], 'Candidate DLL differs from the MSVC build manifest: '+name
+        imports = Pe(candidate/name).imports()
+        assert not any(n.startswith(('libgcc', 'libstdc++', 'libwinpthread', 'msys-')) for n in imports), imports
     subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                     str(Path(__file__).with_name('build-rust-bridges.ps1')), '-Component', 'media',
-                    '-MsysRoot', str(args.msys_root.resolve()), '-FfmpegPrefix', str(prefix),
+                    '-FfmpegPrefix', str(prefix),
                     '-Output', str(work / 'rust-probe')], check=True)
-    probe = work / 'rust-probe' / 'mlp-decode-probe.exe'
-    report = {'status': 'RUNNING', 'cases': [], 'libraries': {}, 'exports_checked': 0}
+    # Keep the executable away from its staged candidate DLLs. Windows searches
+    # the executable directory before PATH; otherwise the baseline run would
+    # silently load the candidate instead of the retained external oracle.
+    probe = work/'mlp-decode-probe.exe'
+    shutil.copyfile(work/'rust-probe/mlp-decode-probe.exe', probe)
+    report = {'status': 'RUNNING', 'target': manifest['target'], 'toolchain': 'msvc',
+              'profile': 'shared', 'cases': [], 'libraries': {}, 'exports_checked': 0}
     for name in LIBRARIES:
         parsed = Pe(candidate / name)
         assert parsed.machine == 0x8664
@@ -88,7 +100,7 @@ def main():
         assert loaded == {name: (directory / name).resolve() for name in LIBRARIES}, loaded
         return json.loads(result.stdout)
 
-    report['capabilities'] = run(candidate, ['--capabilities'])
+    report['capabilities'] = run(candidate, ['--capabilities-shared'])
     encoder_path = args.encoder.resolve()
     encoder_manifest = json.loads((encoder_path.parent/'encoder-build.json').read_text(encoding='utf-8-sig'))
     assert encoder_manifest['implementation'] == 'rust'

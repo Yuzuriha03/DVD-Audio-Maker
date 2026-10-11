@@ -25,8 +25,8 @@ thread-local. Put `policy.xml` and `colors.xml` beside the final executable.
 
 `DVDA_FFMPEG_PREFIX` names the retained FFmpeg shared install;
 `DVDA_MAGICK_WORK` names the existing ImageMagick work root including static
-Wand/Core, `libfreetype-minimal.a` and `libucrt-jump.a`. `DVDA_MSYS_ROOT` defaults
-to `C:\msys64`. Third-party FFmpeg runtime dependencies are still required;
+Wand/Core, `freetype-minimal.lib` and MSVC delegate archives. `DVDA_IMAGE_DEPS_DIR`
+selects the delegate library directory. Third-party FFmpeg runtime dependencies are still required;
 ImageMagick static libraries and their existing delegates remain third-party.
 
 `tools\win-build\build-rust-bridges.ps1` defaults to `-Component direct`, emitting
@@ -75,7 +75,7 @@ runtime override, standalone DLL builds retain module-local configuration.
 Validate the actual bundled CJK fonts from a directory outside the executable:
 
 ```powershell
-cargo run --offline --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu -p dvda-bridges --features image --example font-acceptance -- <extracted-runtime-directory>
+cargo run --offline --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc -p dvda-bridges --features image --example font-acceptance -- <extracted-runtime-directory>
 ```
 
 This checks 18 rendered script/face combinations, nonzero ink and no native font

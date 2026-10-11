@@ -1,26 +1,16 @@
 // FFmpeg Object Pool - Reduces allocation overhead
 // Reuses Frame and Packet objects instead of allocating new ones
 
-use std::sync::Mutex;
-use std::ffi::c_void;
+use crate::ffmpeg::{
+    Frame, Packet, av_frame_alloc, av_frame_free, av_frame_unref, av_packet_alloc, av_packet_free,
+    av_packet_unref,
+};
 use once_cell::sync::Lazy;
-
-// FFmpeg types from ffmpeg.rs
-type Frame = c_void;
-type Packet = c_void;
-
-extern "C" {
-    fn av_frame_alloc() -> *mut Frame;
-    fn av_frame_free(f: *mut *mut Frame);
-    fn av_frame_unref(f: *mut Frame);
-    fn av_packet_alloc() -> *mut Packet;
-    fn av_packet_free(p: *mut *mut Packet);
-    fn av_packet_unref(p: *mut Packet);
-}
+use std::sync::Mutex;
 
 /// Frame pool for reusing FFmpeg frame objects
 pub struct FramePool {
-    available: Mutex<Vec<*mut Frame>>,
+    available: Mutex<Vec<usize>>,
     capacity: usize,
     allocated: Mutex<usize>,
 }
@@ -39,7 +29,7 @@ impl FramePool {
         let mut available = self.available.lock().unwrap();
 
         if let Some(frame) = available.pop() {
-            frame
+            frame as *mut Frame
         } else {
             // Allocate new if pool is empty and under capacity
             let mut allocated = self.allocated.lock().unwrap();
@@ -53,8 +43,12 @@ impl FramePool {
         }
     }
 
-    /// Return a frame to the pool
-    pub fn release(&self, frame: *mut Frame) {
+    /// Return a frame to the pool.
+    ///
+    /// # Safety
+    /// `frame` must be null or a live frame acquired from this pool and must not
+    /// be accessed again until reacquired.
+    pub unsafe fn release(&self, frame: *mut Frame) {
         if frame.is_null() {
             return;
         }
@@ -64,10 +58,11 @@ impl FramePool {
 
         let mut available = self.available.lock().unwrap();
         if available.len() < self.capacity {
-            available.push(frame);
+            available.push(frame as usize);
         } else {
             // Pool full, free the frame
-            unsafe { av_frame_free(&mut (frame as *mut _)) };
+            let mut frame = frame;
+            unsafe { av_frame_free(&mut frame) };
         }
     }
 
@@ -83,14 +78,15 @@ impl Drop for FramePool {
     fn drop(&mut self) {
         let mut available = self.available.lock().unwrap();
         for frame in available.drain(..) {
-            unsafe { av_frame_free(&mut (frame as *mut _)) };
+            let mut frame = frame as *mut Frame;
+            unsafe { av_frame_free(&mut frame) };
         }
     }
 }
 
 /// Packet pool for reusing FFmpeg packet objects
 pub struct PacketPool {
-    available: Mutex<Vec<*mut Packet>>,
+    available: Mutex<Vec<usize>>,
     capacity: usize,
     allocated: Mutex<usize>,
 }
@@ -109,7 +105,7 @@ impl PacketPool {
         let mut available = self.available.lock().unwrap();
 
         if let Some(packet) = available.pop() {
-            packet
+            packet as *mut Packet
         } else {
             let mut allocated = self.allocated.lock().unwrap();
             if *allocated < self.capacity {
@@ -121,8 +117,12 @@ impl PacketPool {
         }
     }
 
-    /// Return a packet to the pool
-    pub fn release(&self, packet: *mut Packet) {
+    /// Return a packet to the pool.
+    ///
+    /// # Safety
+    /// `packet` must be null or a live packet acquired from this pool and must
+    /// not be accessed again until reacquired.
+    pub unsafe fn release(&self, packet: *mut Packet) {
         if packet.is_null() {
             return;
         }
@@ -131,9 +131,10 @@ impl PacketPool {
 
         let mut available = self.available.lock().unwrap();
         if available.len() < self.capacity {
-            available.push(packet);
+            available.push(packet as usize);
         } else {
-            unsafe { av_packet_free(&mut (packet as *mut _)) };
+            let mut packet = packet;
+            unsafe { av_packet_free(&mut packet) };
         }
     }
 
@@ -148,7 +149,8 @@ impl Drop for PacketPool {
     fn drop(&mut self) {
         let mut available = self.available.lock().unwrap();
         for packet in available.drain(..) {
-            unsafe { av_packet_free(&mut (packet as *mut _)) };
+            let mut packet = packet as *mut Packet;
+            unsafe { av_packet_free(&mut packet) };
         }
     }
 }
@@ -172,9 +174,15 @@ impl PooledFrame {
     }
 }
 
+impl Default for PooledFrame {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Drop for PooledFrame {
     fn drop(&mut self) {
-        FRAME_POOL.release(self.0);
+        unsafe { FRAME_POOL.release(self.0) };
     }
 }
 
@@ -191,9 +199,15 @@ impl PooledPacket {
     }
 }
 
+impl Default for PooledPacket {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Drop for PooledPacket {
     fn drop(&mut self) {
-        PACKET_POOL.release(self.0);
+        unsafe { PACKET_POOL.release(self.0) };
     }
 }
 
@@ -211,8 +225,10 @@ mod tests {
         assert!(!f1.is_null());
         assert!(!f2.is_null());
 
-        pool.release(f1);
-        pool.release(f2);
+        unsafe {
+            pool.release(f1);
+            pool.release(f2);
+        }
 
         let (available, allocated) = pool.stats();
         assert_eq!(available, 2);

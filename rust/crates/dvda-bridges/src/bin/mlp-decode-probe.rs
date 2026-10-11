@@ -128,13 +128,13 @@ fn dll_paths() -> Result<(), i32> {
     }
     Ok(())
 }
-fn capabilities() -> i32 {
+fn capabilities(minimal: bool) -> i32 {
     unsafe {
         let mut iterator = ptr::null_mut();
         let mut codecs = 0;
         while let Some(codec) = av_codec_iterate(&mut iterator).as_ref() {
             codecs += 1;
-            if codec.id() != AV_CODEC_ID_MLP {
+            if minimal && codec.id() != AV_CODEC_ID_MLP {
                 return 11;
             }
         }
@@ -163,7 +163,14 @@ fn capabilities() -> i32 {
             muxers,
             protocols
         );
-        if codecs == 2 && demuxers == 1 && muxers == 1 && protocols == 2 {
+        if (minimal && codecs == 2 && demuxers == 1 && muxers == 1 && protocols == 2)
+            || (!minimal
+                && !avcodec_find_decoder(AV_CODEC_ID_MLP).is_null()
+                && !avcodec_find_encoder(AV_CODEC_ID_MLP).is_null()
+                && demuxers >= 1
+                && muxers >= 1
+                && protocols == 2)
+        {
             0
         } else {
             12
@@ -176,7 +183,10 @@ fn main() {
         std::process::exit(status);
     }
     if args.len() == 2 && args[1] == "--capabilities" {
-        std::process::exit(capabilities());
+        std::process::exit(capabilities(true));
+    }
+    if args.len() == 2 && args[1] == "--capabilities-shared" {
+        std::process::exit(capabilities(false));
     }
     if args.len() != 3 {
         eprintln!("usage: mlp-decode-probe input output");

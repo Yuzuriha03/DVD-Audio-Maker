@@ -1,14 +1,14 @@
 # Windows x64 build and package
 
-The supported product is a native Rust GUI for Windows x64. It does not require a .NET runtime at run time. Native rebuilds require Rust, the existing MSYS2/MinGW-w64 GCC toolchain and Python.
+The supported product is a native Rust GUI for Windows x64. It does not require a .NET runtime at run time. Native rebuilds require Rust, Visual Studio C++ x64 tools, the Windows SDK, Python and native Windows CMake. FFmpeg configure/make uses an MSYS2 shell, while every C/C++ compile and link uses MSVC.
 
 ## Rust build
 
 ```bat
-cargo build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline
+cargo build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 cargo fmt --manifest-path rust\Cargo.toml --all -- --check
-cargo clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- -D warnings
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-gnu --workspace --offline -- --include-ignored
+cargo clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
+cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
 
 `gui.cmd`, `gui-debug.cmd`, `cli.cmd`, `build.cmd` and `verify.cmd` invoke the Rust workspace. Profiles are JSON files selected with `--profile`; `config.env`, `DVDA_CONFIG` and `--config` are unsupported.

@@ -25,17 +25,8 @@ pub struct Request {
 thread_local! {
     static ACTIVE: std::cell::Cell<*const Call> = const { std::cell::Cell::new(ptr::null()) };
 }
-#[link(name = "msvcrt")]
-unsafe extern "C" {
-    fn _vsnprintf(
-        output: *mut c_char,
-        capacity: usize,
-        format: *const c_char,
-        arguments: *mut c_char,
-    ) -> i32;
-}
 unsafe extern "C" fn logger(
-    _context: *mut c_void,
+    context: *mut c_void,
     level: i32,
     format: *const c_char,
     arguments: *mut c_char,
@@ -49,7 +40,16 @@ unsafe extern "C" fn logger(
             return;
         }
         let mut buffer = [0i8; 2048];
-        _vsnprintf(buffer.as_mut_ptr(), buffer.len(), format, arguments);
+        let mut print_prefix = 0;
+        av_log_format_line2(
+            context,
+            level,
+            format,
+            arguments,
+            buffer.as_mut_ptr(),
+            buffer.len() as i32,
+            &mut print_prefix,
+        );
         buffer[2047] = 0;
         if let Some(emit) = (*call).emit {
             emit((*call).state, 2, buffer.as_ptr());

@@ -233,10 +233,17 @@ int da_fsync(int fd);
    ⚠️ 必须放在本头文件（而不是 subgen.c）里：subgen.c 与 spuunmux.c 都用到
    它，而两者都先 include 本文件、再 include <netinet/in.h>，顺序刚好。 */
 #ifdef _WIN32
+# ifdef _MSC_VER
+#  define htonl(x) _byteswap_ulong((uint32_t)(x))
+#  define ntohl(x) _byteswap_ulong((uint32_t)(x))
+#  define htons(x) _byteswap_ushort((uint16_t)(x))
+#  define ntohs(x) _byteswap_ushort((uint16_t)(x))
+# else
 #  define htonl(x) __builtin_bswap32((uint32_t)(x))
 #  define ntohl(x) __builtin_bswap32((uint32_t)(x))
 #  define htons(x) __builtin_bswap16((uint16_t)(x))
 #  define ntohs(x) __builtin_bswap16((uint16_t)(x))
+# endif
 #endif
 
 #define PACKAGE_HEADER(x) PACKAGE_NAME "::" x ", version " PACKAGE_VERSION ".\nBuild options:" BUILDSPEC "\nSend bug reports to <" PACKAGE_BUGREPORT ">\n\n"

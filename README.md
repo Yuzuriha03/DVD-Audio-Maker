@@ -75,7 +75,7 @@ LPCM 还需满足码率限制。例如 96 kHz / 24 位 / 6 声道为 13.824 Mb/s
 gui-debug.cmd
 cli.cmd abi.version
 cli.cmd build --dry-run --profile "C:/work/settings.json"
-cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace
+cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace
 ```
 
 `dry-run` 仅供开发调试，通过源码 CLI 使用；它会准备音源、编码 MLP 并生成独立索引，不生成 ISO，也不是零写入操作。GUI 只提供检查、制作、验证。配置名 `mlp-batch` 保留为兼容键；旧 `MLP` 导入值映射为 `external`，不再是单独的编码方式。

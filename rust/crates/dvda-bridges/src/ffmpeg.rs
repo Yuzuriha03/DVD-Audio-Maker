@@ -109,6 +109,15 @@ unsafe extern "C" {
     );
     pub fn av_log_set_level(level: i32);
     pub fn av_log_get_level() -> i32;
+    pub fn av_log_format_line2(
+        context: *mut c_void,
+        level: i32,
+        format: *const c_char,
+        arguments: *mut c_char,
+        output: *mut c_char,
+        capacity: i32,
+        print_prefix: *mut i32,
+    ) -> i32;
     pub fn swr_alloc_set_opts2(
         s: *mut *mut c_void,
         out: *const Layout,

@@ -38,7 +38,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
                 "swscale-10.dll",
             ],
             false,
-            false,
+            true,
         )?;
         if media_record["profile"] != "shared" {
             return Err("Onefile media runtime must use profile=shared".into());
@@ -92,7 +92,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
             "swscale-10.dll",
         ],
         false,
-        false,
+        true,
     )?;
     if media_record["profile"] != "shared" {
         return Err("Onefile media runtime must use profile=shared".into());
@@ -103,7 +103,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         "files",
         &["dvda-image.dll"],
         true,
-        false,
+        true,
     )?;
     let _ = image_record;
     let (author_record, author_files) = component(
@@ -121,7 +121,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         true,
     )?;
     if author_record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
-        || author_record["ffmpeg_profile"] != "build-minimal-ffmpeg.py:shared"
+        || author_record["ffmpeg_profile"] != "build-msvc-ffmpeg.py:shared"
         || author_record["menu_linkage"] != "in-process-source-built"
     {
         return Err("Author must use the shared source-built FFmpeg profile and in-process source-built menu libraries".into());
@@ -196,11 +196,12 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
 
 fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String> {
     if record["schema_version"] != 1
-        || record["target"] != "x86_64-pc-windows-gnu"
+        || record["target"] != "x86_64-pc-windows-msvc"
+        || record["toolchain"] != "msvc"
         || record["project_c_author_compiled"] != false
         || record["menu_linkage"] != "direct-static-vendor"
         || record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
-        || record["ffmpeg_profile"] != "build-minimal-ffmpeg.py:shared"
+        || record["ffmpeg_profile"] != "build-msvc-ffmpeg.py:shared"
         || record["author_library"]["implementation"] != "rust"
         || record["author_library"]["available"] != true
         || record["author_library"]["entry"] != "dvda_core::author_runtime::execute"
@@ -247,7 +248,12 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
         return Err("Rust author menu provenance checksum mismatch".into());
     }
     let menu = read_json(&menu_path)?;
-    if menu["adapter"] != "rust" || menu["linkage"] != "static-vendor" {
+    if menu["adapter"] != "rust"
+        || menu["linkage"] != "static-vendor"
+        || menu["target"] != "x86_64-pc-windows-msvc"
+        || menu["toolchain"] != "msvc"
+        || menu["crt"] != "static"
+    {
         return Err("Rust author must embed the source-built Rust menu adapter".into());
     }
     if menu["session"]["implementation"] != "rust"
@@ -266,7 +272,7 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
             return Err(format!("Rust author/menu source checksum mismatch: {path}"));
         }
     }
-    for name in ["libdvda_menu_spu_vendor.a", "libdvda_menu_nav_vendor.a"] {
+    for name in ["dvda_menu_spu_vendor.lib", "dvda_menu_nav_vendor.lib"] {
         if inputs
             .get(&format!("menu-runtime/{name}"))
             .and_then(Value::as_str)
@@ -347,7 +353,7 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
 
 fn validate_linked(author: &Path, record: &Value) -> Result<Inputs, String> {
     if record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
-        || record["ffmpeg_profile"] != "build-minimal-ffmpeg.py:shared"
+        || record["ffmpeg_profile"] != "build-msvc-ffmpeg.py:shared"
     {
         return Err("Linked author requires the authenticated shared FFmpeg profile".into());
     }
@@ -376,14 +382,14 @@ fn validate_linked(author: &Path, record: &Value) -> Result<Inputs, String> {
     if bridge["schema_version"] != 1
         || bridge["implementation"] != "project-owned-rust"
         || bridge["component"] != "author"
-        || bridge["target"] != "x86_64-pc-windows-gnu"
+        || bridge["target"] != "x86_64-pc-windows-msvc"
         || features != BTreeSet::from(["media", "image", "menu"])
         || menu["adapter"] != "rust"
         || menu["linkage"] != "static-vendor"
     {
         return Err("Author must statically link Rust media, image and menu".into());
     }
-    for name in ["libdvda_menu_spu_vendor.a", "libdvda_menu_nav_vendor.a"] {
+    for name in ["dvda_menu_spu_vendor.lib", "dvda_menu_nav_vendor.lib"] {
         let digest = menu["files"][name]["sha256"]
             .as_str()
             .ok_or("Missing menu archive hash")?;
@@ -598,6 +604,15 @@ fn system_dependency(name: &str, api_sets: bool) -> bool {
     if api_sets && (name.starts_with("api-ms-win-") || name.starts_with("ext-ms-win-")) {
         return true;
     }
+    // FFmpeg is built as a shared MSVC DLL. Its Microsoft CRT must be copied
+    // into the embedded runtime even when this machine has the same DLL in
+    // System32; otherwise a clean Windows installation cannot start it.
+    if name.starts_with("vcruntime140")
+        || name.starts_with("msvcp140")
+        || name.starts_with("concrt140")
+    {
+        return false;
+    }
     if matches!(
         name,
         "kernel32.dll"
@@ -686,10 +701,10 @@ pub(crate) mod tests {
         .into_iter()
         .map(|path| (path.into(), hash(b"Rust source").into()))
         .collect();
-        let menu = serde_json::json!({"adapter":"rust","linkage":"static-vendor",
+        let menu = serde_json::json!({"adapter":"rust","linkage":"static-vendor","target":"x86_64-pc-windows-msvc","toolchain":"msvc","crt":"static",
             "session":{"implementation":"rust","boundary":"c-setjmp-varargs"},
             "state_reset":{"implementation":"rust"},"rust_inputs":rust_inputs,"files":{
-            "libdvda_menu_spu_vendor.a":{"sha256":digest},"libdvda_menu_nav_vendor.a":{"sha256":digest}
+            "dvda_menu_spu_vendor.lib":{"sha256":digest},"dvda_menu_nav_vendor.lib":{"sha256":digest}
         }});
         let menu_bytes = serde_json::to_vec(&menu).unwrap();
         fs::write(author.join("menu-build.json"), &menu_bytes).unwrap();
@@ -716,7 +731,7 @@ pub(crate) mod tests {
             "menu-runtime/menu-build.json".into(),
             hash(&menu_bytes).into(),
         );
-        for name in ["libdvda_menu_spu_vendor.a", "libdvda_menu_nav_vendor.a"] {
+        for name in ["dvda_menu_spu_vendor.lib", "dvda_menu_nav_vendor.lib"] {
             sources.insert(format!("menu-runtime/{name}"), digest.clone().into());
         }
         let mut assets = serde_json::Map::new();
@@ -741,7 +756,7 @@ pub(crate) mod tests {
             );
         }
         fixture.edit("author", |record| {
-            record["schema_version"]=1.into();record["implementation"]="rust".into();record["target"]="x86_64-pc-windows-gnu".into();
+            record["schema_version"]=1.into();record["implementation"]="rust".into();record["target"]="x86_64-pc-windows-msvc".into();record["toolchain"]="msvc".into();
             record["project_c_author_compiled"]=false.into();record["menu_linkage"]="direct-static-vendor".into();
             record["author_library"]=serde_json::json!({"implementation":"rust","available":true,"entry":"dvda_core::author_runtime::execute","serialization":"request-owned"});
             record["iso_writer"]=serde_json::json!({"implementation":"project-owned-rust","linkage":"embedded-rust-author"});
@@ -805,8 +820,7 @@ pub(crate) mod tests {
         );
         let fixture = rust_author_fixture();
         fixture.edit("author", |record| {
-            record["source_inputs"]["menu-runtime/libdvda_menu_spu_vendor.a"] =
-                "0".repeat(64).into()
+            record["source_inputs"]["menu-runtime/dvda_menu_spu_vendor.lib"] = "0".repeat(64).into()
         });
         assert!(
             fixture
@@ -911,7 +925,7 @@ pub(crate) mod tests {
                     fs::write(folder.join("dvda-author-dev.exe"), &b).unwrap();
                     record["files"] = serde_json::json!({"dvda-author-dev.exe":{"bytes":b.len(),"sha256":hash(&b)}});
                     record["ffmpeg_linkage"] = "shared-source-built-shared-profile".into();
-                    record["ffmpeg_profile"] = "build-minimal-ffmpeg.py:shared".into();
+                    record["ffmpeg_profile"] = "build-msvc-ffmpeg.py:shared".into();
                     record["menu_linkage"] = "in-process-source-built".into();
                     let menu_record = serde_json::json!({
                         "adapter": "rust",

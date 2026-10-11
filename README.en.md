@@ -75,7 +75,7 @@ Development requires Windows x64, the Rust toolchain and matching native compone
 gui-debug.cmd
 cli.cmd abi.version
 cli.cmd build --dry-run --profile "C:/work/settings.json"
-cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-gnu --workspace
+cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace
 ```
 
 `dry-run` is a developer debugging option in the source CLI. It prepares audio, encodes MLP and writes a separate index without creating an ISO; it is not a zero-write operation. The GUI offers checking, building and verification. `mlp-batch` remains a compatibility configuration key; legacy `MLP` import values map to `external`, with no separate encoding mode.

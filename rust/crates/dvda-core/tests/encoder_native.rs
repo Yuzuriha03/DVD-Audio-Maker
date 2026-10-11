@@ -811,7 +811,7 @@ fn synthetic_batch_worker_benchmark() {
                     dvda_core::options::worker_count(tracks.len())
                 );
                 fs::write(&report, serde_json::to_vec_pretty(&serde_json::json!({
-                    "profile":"release x86_64-pc-windows-gnu", "logical_processors":std::thread::available_parallelism().unwrap().get(),
+                    "profile":"release x86_64-pc-windows-msvc", "logical_processors":std::thread::available_parallelism().unwrap().get(),
                     "media_library":media_library,"encoder_library":library(),"media_sha256":digest(&fs::read(&media_library).unwrap()),
                     "encoder_sha256":digest(&fs::read(library()).unwrap()),"frames":"24013 + track_index * 7", "sample_rate":48000,
                     "channels":[2,6],"tracks_per_batch":16,"repeats":3,"verified_lossless_outputs":verified,

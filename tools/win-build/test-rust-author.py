@@ -268,6 +268,8 @@ def main():
     executable = runtime/'dvda-author-dev.exe'
     manifest = json.loads((runtime/'author-build.json').read_text(encoding='utf-8-sig'))
     require(manifest['implementation'] == 'rust' and manifest['project_c_author_compiled'] is False, 'Production manifest still uses C author')
+    require(manifest.get('target') == 'x86_64-pc-windows-msvc' and
+            manifest.get('toolchain') == 'msvc', 'Production author is not Windows x64 MSVC')
     require(manifest['files'][executable.name]['sha256'] == sha(executable), 'Production executable checksum mismatch')
     require(manifest['author_library']['entry'] == 'dvda_core::author_runtime::execute', 'Unexpected production entry')
     vendor_inputs = {name: value for name, value in manifest['source_inputs'].items()
@@ -277,7 +279,9 @@ def main():
     menu_manifest = json.loads((runtime/'menu-build.json').read_text(encoding='utf-8-sig'))
     require(menu_manifest['adapter'] == 'rust' and menu_manifest['linkage'] == 'static-vendor',
             'Production menu adapter is not the static Rust adapter')
-    for name in ('libdvda_menu_spu_vendor.a', 'libdvda_menu_nav_vendor.a'):
+    require(menu_manifest.get('target') == 'x86_64-pc-windows-msvc' and
+            menu_manifest.get('toolchain') == 'msvc', 'Production menu vendor is not Windows x64 MSVC')
+    for name in ('dvda_menu_spu_vendor.lib', 'dvda_menu_nav_vendor.lib'):
         require(menu_manifest['files'][name]['sha256'] == vendor_inputs['menu-runtime/'+name],
                 'Production menu archive provenance mismatch: '+name)
     for name, item in manifest['runtime_files'].items():

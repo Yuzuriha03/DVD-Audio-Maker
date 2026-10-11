@@ -132,7 +132,7 @@ fn package(options: Args) -> Result<(), String> {
         .or_else(|| env::current_dir().ok())
         .ok_or("Cannot determine repository directory")?;
     let repository = normal_path(canonical(&repository)?);
-    let target = repository.join("rust/target/x86_64-pc-windows-gnu/release");
+    let target = repository.join("rust/target/x86_64-pc-windows-msvc/release");
     let output = options
         .output
         .map(|path| absolutize(&repository, path))
@@ -241,7 +241,10 @@ fn package(options: Args) -> Result<(), String> {
         copy_file(path, &runtime.join(name))?;
     }
     for name in ["colors.xml", "policy.xml"] {
-        copy_file(&image.join(name), &runtime.join(name))?;
+        let destination = runtime.join(name);
+        if !destination.is_file() {
+            copy_file(&image.join(name), &destination)?;
+        }
     }
     let font_sources = [
         prebuilt.join("fonts"),
@@ -381,13 +384,14 @@ fn write_records(
 }
 
 fn build_gui(repository: &Path, archive: &Path, version: &str) -> Result<(), String> {
+    let environment = msvc_environment(repository)?;
     let status = Command::new("cargo")
         .args([
             "build",
             "--manifest-path",
             "rust/Cargo.toml",
             "--target",
-            "x86_64-pc-windows-gnu",
+            "x86_64-pc-windows-msvc",
             "--release",
             "--offline",
             "-p",
@@ -396,6 +400,7 @@ fn build_gui(repository: &Path, archive: &Path, version: &str) -> Result<(), Str
             "direct-bridges,rust-mlp",
         ])
         .current_dir(repository)
+        .envs(environment)
         .env("DVDA_RUNTIME_ARCHIVE", archive)
         .env("DVDA_PRODUCT_VERSION", version)
         .status()
@@ -405,6 +410,26 @@ fn build_gui(repository: &Path, archive: &Path, version: &str) -> Result<(), Str
     } else {
         Err("Rust GUI release build failed".into())
     }
+}
+
+fn msvc_environment(
+    repository: &Path,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let output = Command::new("python")
+        .args(["-X", "utf8"])
+        .arg(repository.join("tools/win-build/msvc_env.py"))
+        .arg("--json")
+        .current_dir(repository)
+        .output()
+        .map_err(|error| format!("Initialize Visual Studio x64 build environment: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Visual Studio x64 build environment initialization failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("Invalid Visual Studio environment response: {error}"))
 }
 
 fn compress_zip(stage: &Path, archive: &Path) -> Result<(), String> {
