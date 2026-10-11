@@ -1,14 +1,29 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
+// FFI optimizations - only for media feature
 #[cfg(feature = "media")]
 mod ffi_optimized;
 #[cfg(feature = "media")]
 mod ffmpeg_pool;
 
 #[cfg(feature = "media")]
-pub use ffi_optimized::*;
+pub use ffi_optimized::{
+    text_borrowed,
+    check_result,
+    check_result_unchecked,
+    should_batch_process,
+    convert_audio_i16_to_f32_simd,
+};
+
 #[cfg(feature = "media")]
-pub use ffmpeg_pool::{FRAME_POOL, PACKET_POOL, PooledFrame, PooledPacket};
+pub use ffmpeg_pool::{
+    FRAME_POOL,
+    PACKET_POOL,
+    PooledFrame,
+    PooledPacket,
+    FramePool,
+    PacketPool,
+};
 
 #[cfg(all(feature = "author-loader", not(feature = "image")))]
 pub mod author_loader;

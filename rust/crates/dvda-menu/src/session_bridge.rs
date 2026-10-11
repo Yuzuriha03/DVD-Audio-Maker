@@ -53,7 +53,7 @@ type MenuCore = unsafe extern "C" fn(*const c_char, *const c_char, c_int, c_int)
 type MenuReset = unsafe extern "C" fn();
 
 /// Memory allocation - Direct Rust allocation (no C wrapper needed)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_malloc(size: usize, out: *mut *mut c_void) -> c_int {
     if out.is_null() {
         return 1;
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn menu_rust_malloc(size: usize, out: *mut *mut c_void) ->
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_calloc(n: usize, size: usize, out: *mut *mut c_void) -> c_int {
     if out.is_null() {
         return 1;
@@ -100,7 +100,7 @@ pub unsafe extern "C" fn menu_rust_calloc(n: usize, size: usize, out: *mut *mut 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_realloc(
     ptr: *mut c_void,
     new_size: usize,
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn menu_rust_realloc(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_free(ptr: *mut c_void) -> c_int {
     if !ptr.is_null() {
         // Note: This is unsafe without knowing the original layout
@@ -143,7 +143,7 @@ pub unsafe extern "C" fn menu_rust_free(ptr: *mut c_void) -> c_int {
 }
 
 /// String duplication
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_strndup(
     s: *const c_char,
     n: usize,
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn menu_rust_strndup(
 }
 
 /// File operations
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_fopen(
     path: *const c_char,
     mode: *const c_char,
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn menu_rust_fopen(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_fclose(f: *mut c_void) -> c_int {
     if f.is_null() {
         return 1;
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn menu_rust_fclose(f: *mut c_void) -> c_int {
 }
 
 /// Boolean parsing
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_boolean(value: *const c_char) -> c_int {
     if value.is_null() {
         return -1;

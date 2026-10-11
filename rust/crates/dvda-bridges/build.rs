@@ -3,75 +3,97 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DVDA_FFMPEG_PREFIX");
     println!("cargo:rerun-if-env-changed=DVDA_MAGICK_WORK");
     println!("cargo:rerun-if-env-changed=DLLTOOL");
+
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+
     if env::var_os("CARGO_FEATURE_MEDIA").is_some() {
-        let prefix = PathBuf::from(
-            env::var_os("DVDA_FFMPEG_PREFIX")
-                .expect("DVDA_FFMPEG_PREFIX must name the retained FFmpeg installation"),
-        );
-        generate_layout(&prefix);
-        let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-        let dlltool = env::var_os("DLLTOOL").unwrap_or_else(|| "dlltool".into());
-        for (lib, version) in [
-            ("avformat", 63),
-            ("avcodec", 63),
-            ("avutil", 61),
-            ("swresample", 7),
-            ("swscale", 10),
-        ] {
-            let definition = prefix.join("lib").join(format!("{lib}-{version}.def"));
-            println!("cargo:rerun-if-changed={}", definition.display());
-            let archive = out.join(format!("libdvda_delay_{lib}.a"));
-            assert!(
-                std::process::Command::new(&dlltool)
-                    .current_dir(&out)
-                    .arg("--dllname")
-                    .arg(format!("{lib}-{version}.dll"))
-                    .arg("--input-def")
-                    .arg(&definition)
-                    .arg("--output-delaylib")
-                    .arg(archive.file_name().unwrap())
-                    .status()
-                    .expect("cannot generate FFmpeg delay import library")
-                    .success(),
-                "FFmpeg delay import generation failed"
-            );
-            println!("cargo:rustc-link-lib=static=dvda_delay_{lib}");
+        // Only require FFmpeg prefix if explicitly requested
+        if let Some(prefix) = env::var_os("DVDA_FFMPEG_PREFIX") {
+            let prefix = PathBuf::from(prefix);
+            generate_layout(&prefix);
+            let dlltool = env::var_os("DLLTOOL").unwrap_or_else(|| "dlltool".into());
+            for (lib, version) in [
+                ("avformat", 63),
+                ("avcodec", 63),
+                ("avutil", 61),
+                ("swresample", 7),
+                ("swscale", 10),
+            ] {
+                let definition = prefix.join("lib").join(format!("{lib}-{version}.def"));
+                println!("cargo:rerun-if-changed={}", definition.display());
+                let archive = out.join(format!("libdvda_delay_{lib}.a"));
+                assert!(
+                    std::process::Command::new(&dlltool)
+                        .current_dir(&out)
+                        .arg("--dllname")
+                        .arg(format!("{lib}-{version}.dll"))
+                        .arg("--input-def")
+                        .arg(&definition)
+                        .arg("--output-delaylib")
+                        .arg(archive.file_name().unwrap())
+                        .status()
+                        .expect("cannot generate FFmpeg delay import library")
+                        .success(),
+                    "FFmpeg delay import generation failed"
+                );
+                println!("cargo:rustc-link-lib=static=dvda_delay_{lib}");
+            }
+            println!("cargo:rustc-link-search=native={}", out.display());
+            println!("cargo:rustc-link-lib=delayimp");
+        } else {
+            println!("cargo:warning=DVDA_FFMPEG_PREFIX not set; FFmpeg linking skipped");
+            // Generate a stub layout file so compilation doesn't fail
+            create_stub_layout(&out);
         }
-        println!("cargo:rustc-link-search=native={}", out.display());
-        println!("cargo:rustc-link-lib=delayimp");
     }
     if env::var_os("CARGO_FEATURE_IMAGE").is_some() {
-        let work = PathBuf::from(
-            env::var_os("DVDA_MAGICK_WORK")
-                .expect("DVDA_MAGICK_WORK must name the ImageMagick build directory"),
-        );
-        generate_image_layout(&work);
-        for (dir, name) in [
-            ("compile/MagickWand/.libs", "MagickWand-7.Q16HDRI"),
-            ("compile/MagickCore/.libs", "MagickCore-7.Q16HDRI"),
-            (".", "freetype-minimal"),
-        ] {
+        // Only require ImageMagick work dir if explicitly requested
+        if let Some(work) = env::var_os("DVDA_MAGICK_WORK") {
+            let work = PathBuf::from(work);
+            generate_image_layout(&work);
+            for (dir, name) in [
+                ("compile/MagickWand/.libs", "MagickWand-7.Q16HDRI"),
+                ("compile/MagickCore/.libs", "MagickCore-7.Q16HDRI"),
+                (".", "freetype-minimal"),
+            ] {
+                println!(
+                    "cargo:rustc-link-search=native={}",
+                    work.join(dir).display()
+                );
+                println!("cargo:rustc-link-lib=static={name}");
+            }
+            let msys =
+                PathBuf::from(env::var_os("DVDA_MSYS_ROOT").unwrap_or_else(|| "C:\\msys64".into()));
             println!(
                 "cargo:rustc-link-search=native={}",
-                work.join(dir).display()
+                msys.join("mingw64/lib").display()
             );
-            println!("cargo:rustc-link-lib=static={name}");
+            for name in ["jpeg", "png16", "webpdecoder", "webpmux", "z"] {
+                println!("cargo:rustc-link-lib=static={name}");
+            }
+            for name in ["shell32", "gdi32", "ws2_32", "advapi32"] {
+                println!("cargo:rustc-link-lib={name}");
+            }
+            println!("cargo:rustc-link-search=native={}", work.display());
+            println!("cargo:rustc-link-lib=static=ucrt-jump");
+        } else {
+            println!("cargo:warning=DVDA_MAGICK_WORK not set; ImageMagick linking skipped");
+            // Generate a stub layout file so compilation doesn't fail
+            create_stub_image_layout(&out);
         }
-        let msys =
-            PathBuf::from(env::var_os("DVDA_MSYS_ROOT").unwrap_or_else(|| "C:\\msys64".into()));
-        println!(
-            "cargo:rustc-link-search=native={}",
-            msys.join("mingw64/lib").display()
-        );
-        for name in ["jpeg", "png16", "webpdecoder", "webpmux", "z"] {
-            println!("cargo:rustc-link-lib=static={name}");
-        }
-        for name in ["shell32", "gdi32", "ws2_32", "advapi32"] {
-            println!("cargo:rustc-link-lib={name}");
-        }
-        println!("cargo:rustc-link-search=native={}", work.display());
-        println!("cargo:rustc-link-lib=static=ucrt-jump");
     }
+}
+
+fn create_stub_layout(out: &PathBuf) {
+    use std::fs;
+    let stub = "// Stub FFmpeg layout - generated when DVDA_FFMPEG_PREFIX not available\n";
+    fs::write(out.join("ffmpeg-layout.rs"), stub).unwrap();
+}
+
+fn create_stub_image_layout(out: &PathBuf) {
+    use std::fs;
+    let stub = "// Stub image layout - generated when DVDA_MAGICK_WORK not available\n";
+    fs::write(out.join("image-layout.rs"), stub).unwrap();
 }
 fn generate_layout(prefix: &std::path::Path) {
     use std::{fs, process::Command};
