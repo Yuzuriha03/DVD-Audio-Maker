@@ -6,6 +6,11 @@ use std::{
     io::Write,
     panic::{AssertUnwindSafe, catch_unwind},
 };
+
+// New pure Rust session bridge
+mod session_bridge;
+pub use session_bridge::*;
+
 #[cfg(feature = "direct-link")]
 mod direct;
 mod resources;
