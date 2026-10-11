@@ -17,6 +17,7 @@ dvda-native = { path = "../dvda-native" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = { version = "=0.11.0", default-features = false }
+rayon.workspace = true
 
 [[example]]
 name = "embedded_runtime"
