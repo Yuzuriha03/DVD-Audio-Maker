@@ -11,9 +11,24 @@ license = "GPL-3.0-or-later"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+rayon = "1.10"
 
 [profile.release]
-lto = "thin"
+opt-level = 3
+lto = "fat"
 codegen-units = 1
 strip = "debuginfo"
-panic = "unwind"
+panic = "abort"
+overflow-checks = false
+
+[profile.release.package."*"]
+opt-level = 3
+
+# Fast development builds with some optimization
+[profile.dev]
+opt-level = 1
+
+# Benchmarking profile
+[profile.bench]
+inherits = "release"
+lto = "fat"

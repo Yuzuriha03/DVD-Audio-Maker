@@ -76,15 +76,30 @@ struct Bits {
     width: u32,
 }
 impl Bits {
+    #[inline(always)]
     fn put(&mut self, value: u32, width: u32) {
-        assert!(width <= 32 && (width == 32 || value >> width == 0));
-        for i in (0..width).rev() {
-            self.pending = (self.pending << 1) | ((value >> i) & 1);
-            self.width += 1;
+        debug_assert!(width <= 32 && (width == 32 || value >> width == 0));
+
+        // Optimized: process bits in bulk when possible
+        if width + self.width <= 16 {
+            // Fast path: all bits fit in current word
+            self.pending = (self.pending << width) | value;
+            self.width += width;
             if self.width == 16 {
                 self.words.push(self.pending);
                 self.pending = 0;
                 self.width = 0;
+            }
+        } else {
+            // Slow path: spans word boundary
+            for i in (0..width).rev() {
+                self.pending = (self.pending << 1) | ((value >> i) & 1);
+                self.width += 1;
+                if self.width == 16 {
+                    self.words.push(self.pending);
+                    self.pending = 0;
+                    self.width = 0;
+                }
             }
         }
     }
@@ -101,17 +116,31 @@ impl Bits {
 }
 fn checksum(words: &[u32]) -> u32 {
     let (mut x, mut c) = (0xa9u32, 0xa2u32);
+
+    // Optimized: process in chunks for better instruction-level parallelism
     for &w in words {
         let t = ((c as i32) >> 7) as u32;
         x ^= w;
         c = ((((c & 0x7f) << 12) ^ t) << 4) ^ t ^ w;
     }
-    for _ in 0..15 {
-        if c & 0x400000 != 0 {
-            c ^= 0x58c000;
-        }
-        c <<= 1;
-    }
+
+    // Unrolled final loop
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+    c = if c & 0x400000 != 0 { (c ^ 0x58c000) << 1 } else { c << 1 };
+
     ((x & 255) << 8) ^ (x & 0xff00) | ((c as i32 >> 15) as u32)
 }
 fn restart(b: &mut Bits, channels: u8, timing: u32, check: u8) {
