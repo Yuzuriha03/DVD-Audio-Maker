@@ -131,12 +131,34 @@ fn records(iso: &[u8], lba: u32, size: u32) -> Vec<(String, u32, u32)> {
     }
     result
 }
+#[derive(Default)]
+struct Progress(Vec<u64>);
+impl Callbacks for Progress {
+    fn emit(&mut self, _: i32, _: &str) {}
+    fn cancelled(&mut self) -> bool {
+        false
+    }
+    fn progress(&mut self, done: u64, total: u64) {
+        let value = done * 1000 / total;
+        assert!(
+            self.0.last().is_none_or(|&previous| value >= previous),
+            "progress regressed between author stages"
+        );
+        self.0.push(value);
+    }
+}
+
 #[test]
 fn cli_assembles_multiple_groups_and_samg_addresses_match_real_iso() {
     let directory = Directory::new();
     wav(&directory.0.join("a.wav"), 2, 4800);
     wav(&directory.0.join("b.wav"), 2, 4800);
-    command::run(&args(&directory.0), &mut NoMenu, &mut Silent).unwrap();
+    let mut progress = Progress::default();
+    command::run(&args(&directory.0), &mut NoMenu, &mut progress).unwrap();
+    assert_eq!(progress.0.first(), Some(&0));
+    assert_eq!(progress.0.last(), Some(&1000));
+    assert!(progress.0.iter().any(|&value| value > 0 && value < 600));
+    assert!(progress.0.iter().any(|&value| (800..1000).contains(&value)));
     let image = fs::read(directory.0.join("disc.iso")).unwrap();
     assert_eq!(&image[16 * 2048 + 1..16 * 2048 + 6], b"CD001");
     let root = 16 * 2048 + 156;

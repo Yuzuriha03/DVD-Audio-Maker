@@ -82,7 +82,8 @@ pub struct Options {
     pub aspect: u8,
     pub duration: [u8; 3],
     pub looped: bool,
-    /// Text, highlight, select, background, in AMG order (Y/Cr/Cb).
+    /// SPU color indices in AMG order (Y/Cr/Cb). Generated masks allocate
+    /// white text, black shadow, then red cursor; transparency is in SPU alpha.
     pub palette: [u32; 4],
     pub still_pics: Option<String>,
     pub top_menus: Vec<PathBuf>,
@@ -129,7 +130,7 @@ impl Default for Options {
             aspect: 2,
             duration: [0; 3],
             looped: false,
-            palette: [0xeb8080, 0x51f05a, 0x808080, 0x108080],
+            palette: [0xeb8080, 0x108080, 0x52f05a, 0x108080],
             still_pics: None,
             top_menus: Vec::new(),
             top_vob: None,
@@ -960,7 +961,7 @@ fn make_index_background(
             "-stroke".into(),
             "none".into(),
             "-fill".into(),
-            "white".into(),
+            "black".into(),
             "-font".into(),
             font_for(&button.label, options).replace('\\', "/"),
             "-pointsize".into(),
@@ -971,7 +972,16 @@ fn make_index_background(
             "center".into(),
             format!("caption:{}", literal_text(&button.label)),
             "-repage".into(),
+            format!("+{}+{}", x0 + 2, y0 + thumb + 4),
+            "(".into(),
+            "+clone".into(),
+            "-fill".into(),
+            "white".into(),
+            "-colorize".into(),
+            "100".into(),
+            "-repage".into(),
             format!("+{x0}+{}", y0 + thumb + 2),
+            ")".into(),
             ")".into(),
         ]);
         write!(
@@ -1088,10 +1098,9 @@ fn make_masks(
                 "red".into(),
                 "-draw".into(),
                 format!(
-                    "polygon {ax},{ay} {},{} {},{}",
+                    "polygon {},{ay} {ax},{} {ax},{}",
                     ax + 7,
                     ay.saturating_sub(6),
-                    ax + 7,
                     ay + 6
                 ),
             ]);
@@ -1387,6 +1396,8 @@ pub fn author(
 ) -> Result<Output, String> {
     check(callbacks)?;
     let pictures = picture_paths(groups, options)?;
+    let picture_count = pictures.iter().flatten().map(Vec::len).sum::<usize>();
+    let mut menu_count = 0usize;
     let mut result = Output {
         track_pictures: pictures
             .iter()
@@ -1473,6 +1484,7 @@ pub fn author(
         } else {
             Vec::new()
         };
+        menu_count = pages.len();
         let mut menus = Vec::new();
         let mut page_sectors = Vec::new();
         for (rank, page) in pages.iter().enumerate() {
@@ -1559,7 +1571,7 @@ pub fn author(
             };
             page_sectors.push(sector_count(&menu)?);
             menus.push(menu);
-            callbacks.progress((rank + 1) as u64, pages.len() as u64);
+            callbacks.progress((rank + 1) as u64, (menu_count + picture_count) as u64);
         }
         let output = audio_ts.join("AUDIO_TS.VOB");
         if let Some(input) = &options.top_vob {
@@ -1569,8 +1581,22 @@ pub fn author(
                 path.clone()
             } else {
                 let path = temporary.join("xmltemp");
-                fs::write(&path, navigation_xml(&pages, &menus, options)?)
-                    .map_err(|error| error.to_string())?;
+                // Navigation rewrites SPU indices in order of first use (the
+                // highlight can allocate red before white). Pin its palette
+                // to the indices written into the final AMG, for every page.
+                let palette = temporary.join("menu-palette.yuv");
+                let colors = [0xeb8080, 0x108080, 0x52f05a];
+                let palette_text: String = (0..16)
+                    .map(|index| {
+                        format!("{:06x}\n", colors.get(index).copied().unwrap_or(0x108080))
+                    })
+                    .collect();
+                fs::write(&palette, palette_text).map_err(|error| error.to_string())?;
+                let document = navigation_xml(&pages, &menus, options)?.replace(
+                    "<pgc>",
+                    &format!("<pgc palette=\"{}\">", xml(&path_text(&palette)?)?),
+                );
+                fs::write(&path, document).map_err(|error| error.to_string())?;
                 path
             };
             backend.navigation(
@@ -1650,7 +1676,10 @@ pub fn author(
                 }
                 sizes.push(size);
                 streams.push(stream);
-                callbacks.progress((rank + 1) as u64, flat.len() as u64);
+                callbacks.progress(
+                    (menu_count + rank + 1) as u64,
+                    (menu_count + picture_count) as u64,
+                );
             }
             concatenate(&streams, &output, callbacks)?;
         }

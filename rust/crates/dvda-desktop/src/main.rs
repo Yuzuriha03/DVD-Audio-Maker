@@ -53,6 +53,8 @@ const LOG_BATCH_BUDGET: Duration = Duration::from_millis(12);
 const WM_SETFONT: u32 = 0x0030;
 const EM_SETLIMITTEXT: u32 = 0x00c5;
 const EM_GETFIRSTVISIBLELINE: u32 = 0x00ce;
+const WM_VSCROLL: u32 = 0x0115;
+const SB_BOTTOM: usize = 7;
 const EM_LINESCROLL: u32 = 0x00b6;
 const EM_GETSEL: u32 = 0x00b0;
 const EM_SETSEL: u32 = 0x00b1;
@@ -900,6 +902,7 @@ enum BrowseKind {
     Font,
 }
 
+#[derive(Clone)]
 struct LogLine {
     raw: String,
     problem: bool,
@@ -985,6 +988,7 @@ struct UiState {
     tooltip_window: Hwnd,
     tooltips: Vec<Tooltip>,
     logs: Vec<LogLine>,
+    summary_logs: Vec<LogLine>,
     log_file: Option<(fs::File, PathBuf)>,
     log_sender: SyncSender<WorkerEvent>,
     log_receiver: Receiver<WorkerEvent>,
@@ -1005,6 +1009,7 @@ struct UiState {
     cancel: Option<Arc<AtomicBool>>,
     started: Option<Instant>,
     elapsed_seconds: u64,
+    progress_value: u16,
     problem_count: usize,
     statistics_text: String,
     splitter_height: Option<i32>,
@@ -1039,12 +1044,17 @@ impl Callbacks for WorkerCallbacks {
     }
 
     fn progress(&mut self, completed: u64, total: u64) {
+        if total == 0 {
+            return;
+        }
         let portion = completed
             .min(total)
             .saturating_mul(100)
             .checked_div(total)
             .unwrap_or(100) as u16;
-        let value = self.range.0 + (self.range.1 - self.range.0).saturating_mul(portion) / 100;
+        let value = (self.range.0 + (self.range.1 - self.range.0).saturating_mul(portion) / 100)
+            .min(99)
+            .max(self.last_progress);
         if value != self.last_progress {
             self.last_progress = value;
             let _ = self.logs.send(WorkerEvent::Progress(value));
@@ -2386,6 +2396,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         tooltip_window: ptr::null_mut(),
         tooltips: Vec::new(),
         logs: Vec::new(),
+        summary_logs: Vec::new(),
         log_file: session_log.ok(),
         log_sender,
         log_receiver,
@@ -2406,6 +2417,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         cancel: None,
         started: None,
         elapsed_seconds: 0,
+        progress_value: 0,
         problem_count: 0,
         statistics_text: String::new(),
         splitter_height: None,
@@ -3615,6 +3627,7 @@ fn log_timestamp() -> String {
 
 fn reset_task_log(state: &mut UiState) {
     state.logs.clear();
+    state.summary_logs.clear();
     state.log_dirty = false;
     state.log_rendered_count = 0;
     state.log_render_language = None;
@@ -3793,6 +3806,7 @@ fn start_operation(state: &mut UiState, command: usize) {
     state.busy = true;
     state.started = Some(Instant::now());
     state.elapsed_seconds = 0;
+    state.progress_value = 0;
     reset_task_log(state);
     set_busy_controls(state, true);
     update_statistics(state);
@@ -3959,6 +3973,28 @@ fn emit_diagnostics(callbacks: &mut dyn Callbacks, diagnostics: &[Value]) {
     }
 }
 
+fn update_progress(state: &mut UiState, value: u16) {
+    state.progress_value = state.progress_value.max(value.min(99));
+    unsafe {
+        SendMessageW(
+            state.controls.progress,
+            PBM_SETPOS,
+            state.progress_value as usize,
+            0,
+        );
+    }
+    if state.busy {
+        set_text(
+            state.controls.status,
+            &format!(
+                "{} \u{00b7} {}%",
+                tr(state.lang, state.status_key),
+                state.progress_value
+            ),
+        );
+    }
+}
+
 fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
     state.cancel = None;
     state.elapsed_seconds = state.started.map_or(0, |s| s.elapsed().as_secs());
@@ -3999,6 +4035,7 @@ fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
     }
     render_log(state);
     if kind == 1 {
+        state.progress_value = 100;
         unsafe {
             SendMessageW(state.controls.progress, PBM_SETPOS, 100, 0);
         }
@@ -4069,11 +4106,14 @@ fn add_log(state: &mut UiState, text: &str, problem: bool) {
                 "Cannot continue saving the full log. Only recent records remain; check disk space and folder permissions.",
                 "完全なログを保存できません。最近の記録のみ表示されます。空き容量とフォルダー権限を確認してください。",
             );
-            state.logs.push(LogLine {
-                raw: format!("[警告] {message} {error}"),
-                problem: true,
-                timestamp: timestamp.clone(),
-            });
+            push_log_line(
+                state,
+                LogLine {
+                    raw: format!("[警告] {message} {error}"),
+                    problem: true,
+                    timestamp: timestamp.clone(),
+                },
+            );
             state.problem_count += 1;
         }
         let problem = problem || log_is_problem(text);
@@ -4085,20 +4125,41 @@ fn add_log(state: &mut UiState, text: &str, problem: bool) {
                     .trim()
                     .starts_with("WARN: Button y coordinates are odd for button "),
         );
-        state.logs.push(LogLine {
-            raw: text.to_owned(),
-            problem,
-            timestamp: timestamp.clone(),
-        });
-    }
-    if state.logs.len() > 2500 {
-        state.logs.drain(..state.logs.len() - 2000);
+        push_log_line(
+            state,
+            LogLine {
+                raw: text.to_owned(),
+                problem,
+                timestamp: timestamp.clone(),
+            },
+        );
     }
     if presentation::activity(state.lang, text).is_some() {
         state.activity_raw = text.to_owned();
         state.activity_dirty = true;
     }
     state.log_dirty = true;
+}
+
+fn push_log_line(state: &mut UiState, line: LogLine) {
+    // Decoder progress can fill the detail buffer before the next track ends.
+    // Keep task history separately so that chatter cannot evict summary rows.
+    if presentation::summary(state.lang, &line.raw, line.problem).is_some() {
+        state.summary_logs.push(line.clone());
+        if state.summary_logs.len() > 2500 {
+            state.summary_logs.drain(..state.summary_logs.len() - 2000);
+            if !state.log_render_detail {
+                state.log_render_language = None;
+            }
+        }
+    }
+    state.logs.push(line);
+    if state.logs.len() > 2500 {
+        state.logs.drain(..state.logs.len() - 2000);
+        if state.log_render_detail {
+            state.log_render_language = None;
+        }
+    }
 }
 
 fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
@@ -4116,9 +4177,7 @@ fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
         for event in batch {
             match event {
                 WorkerEvent::Log(text) => add_log(state, &text, false),
-                WorkerEvent::Progress(value) => unsafe {
-                    SendMessageW(state.controls.progress, PBM_SETPOS, value as usize, 0);
-                },
+                WorkerEvent::Progress(value) => update_progress(state, value),
                 WorkerEvent::Finished(event) => state.pending_finish = Some(event),
             }
         }
@@ -4176,48 +4235,35 @@ fn render_log(state: &mut UiState) {
     unsafe {
         EnableWindow(state.controls.only_issues, i32::from(!detail));
     }
+    let lines = if detail {
+        &state.logs
+    } else {
+        &state.summary_logs
+    };
     let can_append = state.log_render_language == Some(state.lang)
         && state.log_render_detail == detail
         && state.log_render_issues_only == issues_only
-        && state.log_rendered_count <= state.logs.len();
-    if can_append {
-        let added = display_log(
-            state.lang,
-            &state.logs[state.log_rendered_count..],
-            detail,
-            issues_only,
-        );
-        append_log_text(state.controls.log, &added);
-    } else {
-        replace_log_text(
-            state.controls.log,
-            &display_log(state.lang, &state.logs, detail, issues_only),
-        );
-    }
+        && state.log_rendered_count <= lines.len();
+    let text = display_log(
+        state.lang,
+        if can_append {
+            &lines[state.log_rendered_count..]
+        } else {
+            lines
+        },
+        detail,
+        issues_only,
+    );
     let hold_line = state
         .log_hold_until
         .filter(|deadline| Instant::now() < *deadline)
         .and(state.log_hold_line);
-    unsafe {
-        if let Some(line) = hold_line {
-            let current = first_visible_log_line(state.controls.log);
-            SendMessageW(
-                state.controls.log,
-                EM_LINESCROLL,
-                0,
-                (line - current) as isize,
-            );
-        } else {
-            SendMessageW(state.controls.log, EM_SETSEL, usize::MAX, -1);
-            SendMessageW(state.controls.log, 0x00b7, 0, 0);
-            SendMessageW(state.controls.log, 0x0115, 7, 0);
-        }
-    }
+    update_log_text(state.controls.log, &text, can_append, hold_line);
     if hold_line.is_none() {
         state.log_hold_line = None;
         state.log_hold_until = None;
     }
-    state.log_rendered_count = state.logs.len();
+    state.log_rendered_count = lines.len();
     state.log_render_language = Some(state.lang);
     state.log_render_detail = detail;
     state.log_render_issues_only = issues_only;
@@ -4225,17 +4271,8 @@ fn render_log(state: &mut UiState) {
     state.log_dirty = false;
 }
 
-fn replace_log_text(log: Hwnd, text: &str) {
-    unsafe {
-        SendMessageW(log, WM_SETREDRAW, 0, 0);
-        set_text(log, text);
-        SendMessageW(log, WM_SETREDRAW, 1, 0);
-        RedrawWindow(log, ptr::null(), ptr::null_mut(), RDW_INVALIDATE);
-    }
-}
-
-fn append_log_text(log: Hwnd, text: &str) {
-    if text.is_empty() {
+fn update_log_text(log: Hwnd, text: &str, append: bool, hold_line: Option<i32>) {
+    if append && text.is_empty() {
         return;
     }
     let text = wide(text);
@@ -4248,18 +4285,32 @@ fn append_log_text(log: Hwnd, text: &str) {
             &mut selection_start as *mut u32 as usize,
             &mut selection_end as *mut u32 as isize,
         );
-        let end = SendMessageW(log, 0x000e, 0, 0);
+        // Keep text changes, selection and viewport positioning in one redraw.
+        // Following the tail must not restore an old caret at the first line.
         SendMessageW(log, WM_SETREDRAW, 0, 0);
-        SendMessageW(log, EM_SETREADONLY, 0, 0);
-        SendMessageW(log, EM_SETSEL, end as usize, end);
-        SendMessageW(log, EM_REPLACESEL, 0, text.as_ptr() as isize);
-        SendMessageW(log, EM_SETREADONLY, 1, 0);
-        SendMessageW(
-            log,
-            EM_SETSEL,
-            selection_start as usize,
-            selection_end as isize,
-        );
+        if append {
+            let end = GetWindowTextLengthW(log).max(0);
+            SendMessageW(log, EM_SETREADONLY, 0, 0);
+            SendMessageW(log, EM_SETSEL, end as usize, end as isize);
+            SendMessageW(log, EM_REPLACESEL, 0, text.as_ptr() as isize);
+            SendMessageW(log, EM_SETREADONLY, 1, 0);
+        } else {
+            SetWindowTextW(log, text.as_ptr());
+        }
+        if let Some(line) = hold_line {
+            SendMessageW(
+                log,
+                EM_SETSEL,
+                selection_start as usize,
+                selection_end as isize,
+            );
+            let current = first_visible_log_line(log);
+            SendMessageW(log, EM_LINESCROLL, 0, (line - current) as isize);
+        } else {
+            let end = GetWindowTextLengthW(log).max(0);
+            SendMessageW(log, EM_SETSEL, end as usize, end as isize);
+            SendMessageW(log, WM_VSCROLL, SB_BOTTOM, 0);
+        }
         SendMessageW(log, WM_SETREDRAW, 1, 0);
         RedrawWindow(log, ptr::null(), ptr::null_mut(), RDW_INVALIDATE);
     }
@@ -4821,9 +4872,7 @@ fn export_log_to(state: &mut UiState, destination: &Path) -> Result<(), String> 
     for event in queued {
         match event {
             WorkerEvent::Log(text) => add_log(state, &text, false),
-            WorkerEvent::Progress(value) => unsafe {
-                SendMessageW(state.controls.progress, PBM_SETPOS, value as usize, 0);
-            },
+            WorkerEvent::Progress(value) => update_progress(state, value),
             WorkerEvent::Finished(event) => state.pending_finish = Some(event),
         }
     }
@@ -5315,6 +5364,34 @@ mod presentation_tests {
     }
 
     #[test]
+    fn overall_progress_stays_monotonic_and_reserves_completion_for_success() {
+        let (logs, events) = sync_channel(32);
+        let mut callbacks = WorkerCallbacks {
+            logs,
+            cancel: Arc::new(AtomicBool::new(false)),
+            range: (0, 100),
+            last_progress: 0,
+        };
+        callbacks.set_progress_range(0, 15);
+        callbacks.progress(50, 100);
+        callbacks.progress(20, 100);
+        callbacks.progress(0, 0);
+        callbacks.progress(100, 100);
+        callbacks.set_progress_range(15, 65);
+        callbacks.progress(40, 100);
+        callbacks.set_progress_range(65, 100);
+        callbacks.progress(100, 100);
+        let values: Vec<_> = events
+            .try_iter()
+            .map(|event| match event {
+                WorkerEvent::Progress(value) => value,
+                _ => panic!("unexpected log event"),
+            })
+            .collect();
+        assert_eq!(values, [7, 15, 35, 65, 99]);
+    }
+
+    #[test]
     fn task_start_is_visible_in_summary_before_progress_events() {
         for (lang, key) in [
             (Lang::Zh, "started_check"),
@@ -5504,6 +5581,7 @@ mod presentation_tests {
             thread::yield_now();
         }
         assert!(!ui.busy, "completion was lost after a progress burst");
+        assert_eq!(ui.progress_value, 100);
         producer.join().unwrap();
         assert!(ui.logs.len() <= 2500);
         assert!(get_text(ui.controls.status).contains("Review the warnings"));
@@ -5523,6 +5601,92 @@ mod presentation_tests {
             .collect::<Vec<_>>();
         assert_eq!(progress, (0..12050).collect::<Vec<_>>());
         assert!(archived.ends_with("Completed\n"));
+        // Decode chatter must not evict task history from the summary view.
+        ui.log_file = None;
+        ui.logs.clear();
+        ui.summary_logs.clear();
+        ui.log_render_language = None;
+        ui.log_hold_line = None;
+        ui.log_hold_until = None;
+        combo_select(ui.controls.log_view, 0);
+        check(ui.controls.only_issues, false);
+        unsafe {
+            MoveWindow(ui.controls.log, 0, 0, 600, 80, 0);
+        }
+        for track in 0..40 {
+            add_log(
+                &mut ui,
+                &format!(
+                    "[TASK] {}",
+                    json!({
+                        "Action": "source_decode", "Current": track, "Total": 40,
+                        "Name": format!("track-{track:02}"), "Detail": ""
+                    })
+                ),
+                false,
+            );
+            for index in 0..100 {
+                add_log(&mut ui, &format!("out_time_us={track}{index:02}"), false);
+            }
+            render_log(&mut ui);
+        }
+        assert!(ui.logs.len() <= 2500);
+        assert_eq!(ui.summary_logs.len(), 40);
+        let summary = get_text(ui.controls.log);
+        assert!(summary.contains("track-00") && summary.contains("track-39"));
+        assert_eq!(summary.lines().count(), 40);
+        assert!(
+            first_visible_log_line(ui.controls.log) > 30,
+            "tail-following did not reveal the newest summary row: first={}",
+            first_visible_log_line(ui.controls.log)
+        );
+        // Preserve exactly the existing hold interval and the user's selection
+        // when new rows arrive during upward review.
+        unsafe {
+            SendMessageW(ui.controls.log, EM_SETSEL, 5, 12);
+            SendMessageW(ui.controls.log, EM_LINESCROLL, 0, -1000);
+            SendMessageW(ui.controls.log, EM_LINESCROLL, 0, 8);
+        }
+        observe_log_scroll(&mut ui);
+        let held_line = first_visible_log_line(ui.controls.log);
+        let held_until = ui.log_hold_until.unwrap();
+        assert!(held_line > 0 && held_line < 15);
+        add_log(&mut ui, "[build] summary-after-review", false);
+        render_log(&mut ui);
+        assert_eq!(first_visible_log_line(ui.controls.log), held_line);
+        assert_eq!(ui.log_hold_until, Some(held_until));
+        let mut start = 0u32;
+        let mut end = 0u32;
+        unsafe {
+            SendMessageW(
+                ui.controls.log,
+                EM_GETSEL,
+                &mut start as *mut u32 as usize,
+                &mut end as *mut u32 as isize,
+            );
+        }
+        assert_eq!((start, end), (5, 12));
+        ui.log_hold_until = Some(Instant::now() - Duration::from_secs(1));
+        add_log(&mut ui, "[build] summary-after-hold", false);
+        render_log(&mut ui);
+        assert!(first_visible_log_line(ui.controls.log) > 30);
+        assert!(ui.log_hold_until.is_none());
+        // Detail-buffer rotation invalidates its render cursor even if its
+        // length has grown past the old count again before the next frame.
+        combo_select(ui.controls.log_view, 1);
+        render_log(&mut ui);
+        for index in 0..3000 {
+            add_log(&mut ui, &format!("detail-rotation-{index}"), false);
+        }
+        render_log(&mut ui);
+        assert_eq!(
+            get_text(ui.controls.log),
+            display_log(ui.lang, &ui.logs, true, false)
+        );
+        combo_select(ui.controls.log_view, 0);
+        render_log(&mut ui);
+        assert!(get_text(ui.controls.log).contains("track-00"));
+        assert!(get_text(ui.controls.log).contains("summary-after-hold"));
         // Close the per-test archive before deleting its own temporary folder.
         ui.log_file = None;
         unsafe {

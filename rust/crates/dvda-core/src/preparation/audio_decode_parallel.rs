@@ -59,20 +59,24 @@ pub(crate) fn inspect_jobs<R: Send>(
     phase: &str,
     progress_start: u64,
     progress_total: u64,
+    durations: Option<&[f64]>,
     inspect: fn(&audio::Job, &mut dyn Callbacks) -> Result<R, Failure>,
 ) -> Result<Vec<R>, Failure> {
     enum Event<R> {
         Started(usize),
-        Message(i32, String),
+        Message(usize, i32, String),
         Finished(usize, Result<R, Failure>),
     }
     struct WorkerCallbacks<'a, R> {
         stop: &'a AtomicBool,
+        index: usize,
         send: &'a mpsc::SyncSender<Event<R>>,
     }
     impl<R> Callbacks for WorkerCallbacks<'_, R> {
         fn emit(&mut self, level: i32, text: &str) {
-            let _ = self.send.send(Event::Message(level, text.into()));
+            let _ = self
+                .send
+                .send(Event::Message(self.index, level, text.into()));
         }
         fn cancelled(&mut self) -> bool {
             self.stop.load(Ordering::Acquire)
@@ -94,7 +98,11 @@ pub(crate) fn inspect_jobs<R: Send>(
             let stop = &stop;
             let next = &next;
             scope.spawn(move || {
-                let mut callbacks = WorkerCallbacks { stop, send: &send };
+                let mut callbacks = WorkerCallbacks {
+                    stop,
+                    index: 0,
+                    send: &send,
+                };
                 while !stop.load(Ordering::Acquire) {
                     let index = next.fetch_add(1, Ordering::Relaxed);
                     let Some(job) = jobs.get(index) else {
@@ -103,6 +111,7 @@ pub(crate) fn inspect_jobs<R: Send>(
                     if send.send(Event::Started(index)).is_err() {
                         break;
                     }
+                    callbacks.index = index;
                     let result = inspect(job, &mut callbacks);
                     if send.send(Event::Finished(index, result)).is_err() {
                         break;
@@ -113,6 +122,8 @@ pub(crate) fn inspect_jobs<R: Send>(
         drop(send);
         let mut results: Vec<_> = (0..jobs.len()).map(|_| None).collect();
         let mut completed = 0;
+        let mut portions = vec![0u64; jobs.len()];
+        let mut completed_units = 0u64;
         loop {
             if callbacks.cancelled() {
                 stop.store(true, Ordering::Release);
@@ -132,9 +143,35 @@ pub(crate) fn inspect_jobs<R: Send>(
                 Ok(Event::Finished(index, result)) => {
                     results[index] = Some(result);
                     completed += 1;
-                    callbacks.progress(progress_start + completed, progress_total);
+                    completed_units += 1000 - portions[index];
+                    portions[index] = 1000;
+                    callbacks.progress(
+                        progress_start * 1000 + completed_units,
+                        progress_total * 1000,
+                    );
                 }
-                Ok(Event::Message(level, text)) => callbacks.emit(level, &text),
+                Ok(Event::Message(index, level, text)) => {
+                    if let Some(duration) = durations.and_then(|values| values.get(index)).copied()
+                        && duration.is_finite()
+                        && duration > 0.0
+                        && let Some(micros) = text
+                            .trim()
+                            .strip_prefix("out_time_us=")
+                            .and_then(|value| value.parse::<u64>().ok())
+                    {
+                        let portion = (micros as f64 / (duration * 1_000_000.0) * 1000.0)
+                            .clamp(0.0, 999.0) as u64;
+                        if portion > portions[index] {
+                            completed_units += portion - portions[index];
+                            portions[index] = portion;
+                            callbacks.progress(
+                                progress_start * 1000 + completed_units,
+                                progress_total * 1000,
+                            );
+                        }
+                    }
+                    callbacks.emit(level, &text);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -211,11 +248,44 @@ mod tests {
             "source_metadata",
             0,
             8,
+            None,
             |job, _| Ok(job.input.parse::<u32>().unwrap()),
         )
         .unwrap();
         assert_eq!(result, (0..8).collect::<Vec<_>>());
-        assert_eq!(events.1, 8);
+        assert_eq!(events.1, 8000);
+    }
+
+    #[test]
+    fn decode_progress_advances_inside_a_track_and_waits_for_completion() {
+        #[derive(Default)]
+        struct Events(Vec<(u64, u64)>);
+        impl Callbacks for Events {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+            fn progress(&mut self, done: u64, total: u64) {
+                self.0.push((done, total));
+            }
+        }
+        let mut events = Events::default();
+        inspect_jobs(
+            &fixture_jobs()[..1],
+            &mut events,
+            "source_decode",
+            2,
+            3,
+            Some(&[10.0]),
+            |_, callbacks| {
+                callbacks.emit(3, "out_time_us=5000000");
+                callbacks.emit(3, "out_time_us=1000000");
+                callbacks.emit(3, "out_time_us=10000000");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(events.0, [(2500, 3000), (2999, 3000), (3000, 3000)]);
     }
 
     #[test]
@@ -233,6 +303,7 @@ mod tests {
             "source_decode",
             0,
             8,
+            None,
             |_, callbacks| {
                 while !callbacks.cancelled() {
                     std::thread::yield_now();

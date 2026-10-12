@@ -7,6 +7,41 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+struct StageProgress<'a> {
+    parent: &'a mut dyn Callbacks,
+    start: u64,
+    end: u64,
+    last: u64,
+}
+impl<'a> StageProgress<'a> {
+    fn new(parent: &'a mut dyn Callbacks, start: u64, end: u64) -> Self {
+        Self {
+            parent,
+            start,
+            end,
+            last: start,
+        }
+    }
+}
+impl Callbacks for StageProgress<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        self.parent.emit(stream, text);
+    }
+    fn cancelled(&mut self) -> bool {
+        self.parent.cancelled()
+    }
+    fn progress(&mut self, completed: u64, total: u64) {
+        if total == 0 {
+            return;
+        }
+        let value = self.start
+            + ((self.end - self.start) as u128 * completed.min(total) as u128 / total as u128)
+                as u64;
+        self.last = self.last.max(value);
+        self.parent.progress(self.last, 1000);
+    }
+}
+
 #[derive(Debug)]
 pub struct Request {
     pub groups: Vec<Vec<aob::TrackInput>>,
@@ -357,10 +392,28 @@ pub fn author(
     io(fs::create_dir_all(&request.temporary))?;
     let mut audio_groups = Vec::new();
     let mut title_starts = Vec::new();
+    let group_bytes: Vec<u64> = request
+        .groups
+        .iter()
+        .map(|group| {
+            group
+                .iter()
+                .map(|track| fs::metadata(&track.path).map_or(1, |meta| meta.len()))
+                .sum()
+        })
+        .collect();
+    let total_bytes = group_bytes.iter().sum::<u64>().max(1);
+    let mut completed_bytes = 0u64;
+    callbacks.progress(0, 1000);
     for (index, group) in request.groups.iter().enumerate() {
         check(callbacks)?;
         callbacks.emit(1, &format!("[INF] Creating ATS_{:02} audio", index + 1));
-        let output = aob::author_group(&audio_ts, (index + 1) as u8, group, callbacks)?;
+        let start = (600u128 * completed_bytes as u128 / total_bytes as u128) as u64;
+        completed_bytes += group_bytes[index];
+        let end = (600u128 * completed_bytes as u128 / total_bytes as u128) as u64;
+        let mut progress = StageProgress::new(callbacks, start, end);
+        let output = aob::author_group(&audio_ts, (index + 1) as u8, group, &mut progress)?;
+        progress.progress(1, 1);
         audio_groups.push(output.tracks);
         title_starts.push(output.title_starts);
     }
@@ -380,14 +433,19 @@ pub fn author(
                 .collect()
         })
         .collect();
-    let menu_output = menu::author(
-        &audio_ts,
-        &request.temporary,
-        &menu_groups,
-        &request.menu,
-        backend,
-        callbacks,
-    )?;
+    let menu_output = {
+        let mut progress = StageProgress::new(callbacks, 600, 750);
+        let result = menu::author(
+            &audio_ts,
+            &request.temporary,
+            &menu_groups,
+            &request.menu,
+            backend,
+            &mut progress,
+        )?;
+        progress.progress(1, 1);
+        result
+    };
     if menu_output
         .track_pictures
         .iter()
@@ -572,11 +630,13 @@ pub fn author(
             }
         };
         callbacks.emit(1, "[INF] Writing ISO image (Rust writer)");
+        callbacks.progress(800, 1000);
+        let mut progress = StageProgress::new(callbacks, 800, 990);
         io(iso::write_with_callbacks(
             &stage.0,
             &path.0,
             request.volume.as_deref(),
-            callbacks,
+            &mut progress,
         ))?;
         Some(path)
     } else {
@@ -611,6 +671,7 @@ pub fn author(
         return Err(error.to_string());
     }
     stage.1 = false;
+    callbacks.progress(1000, 1000);
     callbacks.emit(1, "[INF] Rust DVD-Audio author complete");
     Ok(())
 }

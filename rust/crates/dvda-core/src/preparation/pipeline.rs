@@ -214,6 +214,7 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
         "source_metadata",
         cached.len() as u64,
         progress_total,
+        None,
         audio::read_metadata,
     )?;
     let mut probed: HashMap<_, _> = probed
@@ -282,12 +283,21 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
         })
         .map(|track| job.audio(&track.path, track.resample_to))
         .collect();
+    let duration_by_path: HashMap<_, _> = tracks
+        .iter()
+        .map(|track| (track.path.as_str(), track.duration))
+        .collect();
+    let decode_durations: Vec<_> = decode_jobs
+        .iter()
+        .map(|job| duration_by_path[job.input.as_str()])
+        .collect();
     let decoded = super::audio_decode_parallel::inspect_jobs(
         &decode_jobs,
         events,
         "source_decode",
-        sources.len() as u64,
+        (sources.len() + sources.len() - decode_jobs.len()) as u64,
         progress_total,
+        Some(&decode_durations),
         audio::check_decode,
     )?;
     let decode_count = decoded.len();
@@ -443,6 +453,7 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
             }),
         );
     }
+    events.progress(progress_total, progress_total);
     crate::task_log::emit(
         events,
         "source_checked",

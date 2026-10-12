@@ -188,6 +188,68 @@ def manager(disc, lbas, menus, still_counts, norm, expected_pcm):
     return {"pages": pages, "pgci_ranges": ranges, "stills": total, "tracks": track}
 
 
+
+
+def subpicture_colors(stream):
+    payload = bytearray()
+    for offset in range(0, len(stream), SECTOR):
+        sector = stream[offset:offset+SECTOR]
+        pes = sector.find(b"\0\0\1\xbd")
+        if pes < 0:
+            continue
+        end = pes + 6 + be16(sector, pes + 4)
+        start = pes + 9 + sector[pes + 8]
+        if start < end and 0x20 <= sector[start] <= 0x3f:
+            payload.extend(sector[start+1:end])
+            if len(payload) >= 4 and len(payload) >= be16(payload, 0):
+                break
+    require(len(payload) >= 4, "Final menu has no complete subpicture")
+    control = be16(payload, 2) + 4
+    colors = alpha = None
+    sizes = {0: 1, 1: 1, 2: 1, 3: 3, 4: 3, 5: 7, 6: 5}
+    while control < len(payload) and payload[control] != 255:
+        opcode = payload[control]
+        require(opcode in sizes, "Unexpected subpicture control command")
+        if opcode == 3:
+            colors = be16(payload, control + 1)
+        if opcode == 4:
+            alpha = be16(payload, control + 1)
+        control += sizes[opcode]
+    require(colors is not None and alpha is not None, "Final SPU colors/alpha are missing")
+    return [(colors >> (4*i) & 15, alpha >> (4*i) & 15) for i in range(4)]
+
+
+def menu_palette(disc, temporary, pages):
+    # spumux records the actual color indices alongside each encoded page.
+    # The final AMG must preserve those indices or black shadows turn red.
+    amg = (disc / "AUDIO_TS/AUDIO_TS.IFO").read_bytes()
+    base = be32(amg, 0xcc) * SECTOR
+    signature = b"dvdauthor-data\0\x02\x01"
+    final_stream = (disc / "AUDIO_TS/AUDIO_TS.VOB").read_bytes()
+    for page in range(pages):
+        stream = (temporary / f"menu-top-{page}.vob").read_bytes()
+        start = stream.find(signature)
+        require(start >= 0, "Encoded menu has no SPU palette metadata")
+        start += len(signature) + 9  # substream number and start/end PTS
+        require(stream[start] == 1, "SPU palette metadata type")
+        count = stream[start + 1]
+        require(0 < count <= 16, "SPU palette size")
+        colors = [int.from_bytes(stream[start+2+3*i:start+5+3*i], "big")
+                  for i in range(count)]
+        require(colors[:3] == [0xeb8080, 0x108080, 0x52f05a],
+                "SPU must contain white text, black shadow and red cursor")
+        pgc = base + 16 + be32(amg, base + 28 + page * 8)
+        require([be32(amg, pgc + 164 + 4*i) for i in range(count)] == colors,
+                f"AMG page {page} remaps the encoded text/shadow/cursor colors")
+        first = be32(amg, pgc + 286) * SECTOR
+        end = (be32(amg, pgc + 298) + 1) * SECTOR
+        opaque = {be32(amg, pgc + 164 + 4*index)
+                  for index, alpha in subpicture_colors(final_stream[first:end]) if alpha}
+        require(opaque == {0xeb8080, 0x108080},
+                f"Final navigated page {page} displays text in colors {opaque}; expected white and black")
+    return True
+
+
 def run_case(runtime, output, norm, albums, verifier):
     case = output / f"{norm}-{albums}albums"
     case.mkdir()
@@ -235,8 +297,9 @@ def run_case(runtime, output, norm, albums, verifier):
     lbas = filesystem(image, disc)
     counts = [len(entry.split(",")) if entry else 0 for entry in stills]
     checks = manager(disc, lbas, albums + index_pages, counts, norm, expected_pcm)
+    checks["spu_palette_matches_amg"] = menu_palette(disc, temporary, checks["pages"])
     project = (temporary / "xmltemp").read_text(encoding="utf-8")
-    require(project.count("<pgc>") == checks["pages"], "Actual navigation XML pages")
+    require(project.count("<pgc ") == checks["pages"], "Actual navigation XML pages")
     for page in range(checks["pages"]):
         document = (temporary / f"spu_xmltemp_{page}.xml").read_text(encoding="utf-8")
         require('format="' + norm.upper() + '"' in document, "SPU actual norm")

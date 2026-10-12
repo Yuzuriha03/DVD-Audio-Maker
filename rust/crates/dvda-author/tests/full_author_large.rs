@@ -178,8 +178,8 @@ impl Callbacks for Cancel {
     fn cancelled(&mut self) -> bool {
         self.cancel
     }
-    fn progress(&mut self, completed: u64, _: u64) {
-        if self.iso && self.after_progress && completed >= 32768 {
+    fn progress(&mut self, completed: u64, total: u64) {
+        if self.iso && self.after_progress && completed * 100 > total * 80 {
             self.cancel = true;
         }
     }
@@ -239,7 +239,7 @@ impl Callbacks for CommitFailure {
         false
     }
     fn progress(&mut self, completed: u64, total: u64) {
-        if !self.injected && completed == total {
+        if !self.injected && completed * 100 == total * 99 {
             fs::create_dir(&self.destination).unwrap();
             fs::write(
                 self.destination.join("keep"),
@@ -347,7 +347,7 @@ fn locked_previous_iso_is_preserved_and_final_commit_rolls_back() {
             false
         }
         fn progress(&mut self, completed: u64, total: u64) {
-            if self.file.is_none() && completed == total {
+            if self.file.is_none() && completed * 100 == total * 99 {
                 // Allow readers while withholding FILE_SHARE_DELETE: final
                 // atomic replacement must fail without modifying the old ISO.
                 self.file = Some(
