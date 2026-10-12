@@ -64,6 +64,7 @@ pub struct Entry {
 }
 #[derive(Default)]
 pub struct Cache {
+    // Sorted with the same ordinal comparer used for Windows path equality.
     entries: Vec<(String, Entry)>,
 }
 
@@ -117,12 +118,16 @@ impl Cache {
             let object = value.as_object().ok_or_else(|| {
                 Failure::new("InvalidData", "Preparation cache must be an object")
             })?;
+            let mut records: Vec<_> = object.iter().collect();
+            records.sort_unstable_by(|(left, _), (right, _)| {
+                files::ordinal_ignore_case_cmp(left, right)
+            });
             let mut cache = Self::default();
-            for (path, value) in object {
+            for (path, value) in records {
                 if cache
                     .entries
-                    .iter()
-                    .any(|(key, _)| files::ordinal_ignore_case(path, key))
+                    .last()
+                    .is_some_and(|(key, _)| files::ordinal_ignore_case(path, key))
                 {
                     return Err(Failure::new(
                         "InvalidData",
@@ -153,23 +158,19 @@ impl Cache {
         self.entries.is_empty()
     }
     pub fn find(&self, path: &str) -> Option<&Entry> {
-        self.entries
-            .iter()
-            .find(|(key, entry)| {
-                files::ordinal_ignore_case(path, key) && matches(path, &entry.identity)
-            })
-            .map(|(_, v)| v)
+        let index = self.index(path).ok()?;
+        let entry = &self.entries[index].1;
+        matches(path, &entry.identity).then_some(entry)
     }
     pub fn record(&mut self, path: String, entry: Entry) {
-        if let Some((_, existing)) = self
-            .entries
-            .iter_mut()
-            .find(|(key, _)| files::ordinal_ignore_case(key, &path))
-        {
-            *existing = entry;
-        } else {
-            self.entries.push((path, entry));
+        match self.index(&path) {
+            Ok(index) => self.entries[index].1 = entry,
+            Err(index) => self.entries.insert(index, (path, entry)),
         }
+    }
+    fn index(&self, path: &str) -> Result<usize, usize> {
+        self.entries
+            .binary_search_by(|(key, _)| files::ordinal_ignore_case_cmp(key, path))
     }
     pub fn save(&self, path: &Path) -> Result<(), Failure> {
         let entries: Map<_, _> = self
@@ -328,6 +329,163 @@ pub fn save_snapshot(
     });
     write_json(path,&json!({"Version":1,"SourceDirectory":normalize(root),"ConfigurationFingerprint":fingerprint,"Sources":records,"Manifest":manifest})).is_ok()
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    struct Scratch(PathBuf);
+    impl Scratch {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "dvda-cache-{}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    #[derive(Default)]
+    struct Events(Vec<String>);
+    impl Callbacks for Events {
+        fn emit(&mut self, _: i32, text: &str) {
+            self.0.push(text.into());
+        }
+        fn cancelled(&mut self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn cache_reuses_case_aliases_and_rejects_same_size_same_time_changes() {
+        let root = Scratch::new();
+        let mut cache = Cache::default();
+        let mut paths = Vec::new();
+        for name in ["z.flac", "a.flac", "\u{4e2d}\u{6587}.flac"] {
+            let path = root.0.join(name);
+            fs::write(&path, b"original").unwrap();
+            let path = path.to_str().unwrap().to_owned();
+            cache.record(
+                path.clone(),
+                Entry {
+                    identity: identity::compute(&path).unwrap(),
+                    ..Default::default()
+                },
+            );
+            paths.push(path);
+        }
+        let cache_path = root.0.join("cache.json");
+        cache.save(&cache_path).unwrap();
+        let mut loaded = Cache::load(&cache_path, &mut Events::default());
+        for path in &paths {
+            assert!(loaded.find(&path.to_ascii_uppercase()).is_some());
+        }
+        let path = &paths[0];
+        let mut entry = loaded.find(path).unwrap().clone();
+        entry.validation.decoded = 48000;
+        loaded.record(path.to_ascii_uppercase(), entry);
+        assert_eq!(loaded.len(), 3);
+        assert_eq!(loaded.find(path).unwrap().validation.decoded, 48000);
+        let modified = fs::metadata(path).unwrap().modified().unwrap();
+        fs::write(path, b"modified").unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        assert!(loaded.find(path).is_none());
+    }
+
+    #[test]
+    fn cache_rejects_duplicate_ascii_and_supplementary_case_keys() {
+        let root = Scratch::new();
+        let path = root.0.join("cache.json");
+        for (left, right) in [("A.flac", "a.flac"), ("\u{10400}.flac", "\u{10428}.flac")] {
+            let mut values = Map::new();
+            values.insert(left.into(), json!(Entry::default()));
+            values.insert("unrelated.flac".into(), json!(Entry::default()));
+            values.insert(right.into(), json!(Entry::default()));
+            write_json(&path, &values).unwrap();
+            let mut events = Events::default();
+            assert!(Cache::load(&path, &mut events).is_empty());
+            assert!(events.0[0].contains("Duplicate preparation cache path"));
+        }
+        let mut cache = Cache::default();
+        cache.record("\u{10400}.flac".into(), Entry::default());
+        cache.record("\u{10428}.flac".into(), Entry::default());
+        assert_eq!(cache.len(), 1);
+        cache.record("Stra\u{df}e.flac".into(), Entry::default());
+        cache.record("STRASSE.flac".into(), Entry::default());
+        assert_eq!(cache.len(), 3);
+    }
+
+    #[test]
+    fn snapshot_reuse_accepts_unsorted_records_but_rejects_duplicates_and_replacements() {
+        let root = Scratch::new();
+        let source = root.0.join("sources");
+        fs::create_dir(&source).unwrap();
+        for name in ["a.flac", "z.flac", "\u{4e2d}\u{6587}.flac"] {
+            fs::write(source.join(name), b"source").unwrap();
+        }
+        let manifest = root.0.join("manifest.json");
+        fs::write(&manifest, b"{}").unwrap();
+        let snapshot = root.0.join("snapshot.json");
+        let sources = enumerate_sources(&source).unwrap();
+        assert!(save_snapshot(
+            &snapshot,
+            source.to_str().unwrap(),
+            "fingerprint",
+            manifest.to_str().unwrap(),
+            &sources
+        ));
+        let mut value = read_json(&snapshot).unwrap();
+        value["Sources"].as_array_mut().unwrap().reverse();
+        let records = value["Sources"].as_array_mut().unwrap();
+        for record in records.iter_mut() {
+            if record["RelativePath"] == "a.flac" {
+                record["RelativePath"] = json!("A.FLAC");
+            }
+        }
+        write_json(&snapshot, &value).unwrap();
+        let reuse = || {
+            reuse_snapshot(
+                &snapshot,
+                source.to_str().unwrap(),
+                "fingerprint",
+                manifest.to_str().unwrap(),
+            )
+            .unwrap()
+            .0
+            .is_some()
+        };
+        assert!(reuse());
+        let mut duplicate = value.clone();
+        duplicate["Sources"][0]["RelativePath"] = duplicate["Sources"][2]["RelativePath"].clone();
+        write_json(&snapshot, &duplicate).unwrap();
+        assert!(!reuse());
+        let mut corrupt = value.clone();
+        corrupt["Sources"][0]["Identity"] = Value::Null;
+        write_json(&snapshot, &corrupt).unwrap();
+        assert!(!reuse());
+        write_json(&snapshot, &value).unwrap();
+        fs::remove_file(source.join("a.flac")).unwrap();
+        fs::write(source.join("replacement.flac"), b"source").unwrap();
+        assert!(!reuse());
+    }
+}
+
 pub fn invalidate(path: &Path) {
     if path.is_file() {
         let _ = fs::remove_file(path);
@@ -375,23 +533,29 @@ pub fn reuse_snapshot(
     if sources.len() != expected.len() {
         return Ok((None, "音源文件数量已变化".into()));
     }
-    for (index, item) in expected.iter().enumerate() {
-        if expected[..index].iter().any(|other| {
-            files::ordinal_ignore_case(
-                other["RelativePath"].as_str().unwrap_or(""),
-                item["RelativePath"].as_str().unwrap_or(""),
-            )
-        }) {
+    let mut expected: Vec<_> = expected.iter().collect();
+    expected.sort_unstable_by(|left, right| {
+        files::ordinal_ignore_case_cmp(
+            left["RelativePath"].as_str().unwrap(),
+            right["RelativePath"].as_str().unwrap(),
+        )
+    });
+    for pair in expected.windows(2) {
+        if files::ordinal_ignore_case(
+            pair[0]["RelativePath"].as_str().unwrap(),
+            pair[1]["RelativePath"].as_str().unwrap(),
+        ) {
             return Ok((None, "准备快照包含重复的音源路径".into()));
         }
     }
     for source in &sources {
-        let found = expected.iter().find(|item| {
-            files::ordinal_ignore_case(
-                item["RelativePath"].as_str().unwrap_or(""),
-                &relative(root, source),
-            )
-        });
+        let relative = relative(root, source);
+        let found = expected
+            .binary_search_by(|item| {
+                files::ordinal_ignore_case_cmp(item["RelativePath"].as_str().unwrap(), &relative)
+            })
+            .ok()
+            .map(|index| expected[index]);
         if found.is_none_or(|item| !matches(source, &item["Identity"])) {
             return Ok((
                 None,

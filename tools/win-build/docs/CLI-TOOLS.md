@@ -21,7 +21,7 @@ cli.cmd verify --profile "C:\work\settings.json"
 
 `verify` 支持 `all/quick/capacity/audit/menu/timeline/lossless/config`。独立 `quick-check`、`audit` 支持 `--iso-dir`、`--manifest`、`--log`。成功返回 0，发现损坏返回 1，仅材料不足或用法错误返回 2。`--language` 支持中英日。
 
-`dvda-cli convert PATH... [--in-place] [--dry-run] [--level 0..8]` converts ALAC to FLAC; worker count is automatic and uses two workers per detected logical processor, capped only by the number of files.
+`dvda-cli convert PATH... [--in-place] [--dry-run] [--level 0..8]` converts ALAC to FLAC; worker count is automatic and uses one worker per detected logical processor, capped only by the number of files.
 
 格式诊断入口包括 `iso list ISO [INNER]`、`iso extract ISO INNER OUTPUT`、`aob-pts FILE...` 和 `mlp --check FILE...`。`mlp --align` 仅为显式开发修复命令，正式 MLP 编码不调用它改写输出。
 

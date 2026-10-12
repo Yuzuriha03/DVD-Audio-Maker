@@ -17,6 +17,12 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --wor
 
 ## 原生输入
 
+生产构建默认使用 `build/msvc-native/ffmpeg-static/install`。使用
+`build-msvc-ffmpeg.py --profile static --work-directory build/msvc-native/ffmpeg-static`
+生成 MSVC 静态库，并通过 `--msys-root`、`--cmake` 指定本机工具路径。
+五个 FFmpeg 库、soxr、zlib 和 C 运行库静态链接到 EXE；内嵌资源只需解压字体、XML 和菜单素材。
+开发对照仍可显式设置 `DVDA_FFMPEG_PREFIX` 使用 shared 构建。静态链接不代表已经测得编码提速。
+
 打包器需要已验证的 x64 媒体/图像构建记录与 `build/rust-author-production`，并验证摘要、大小、PE 架构、DLL 闭包及字体/菜单素材。图像记录必须标识 Rust 实现；本机验收使用 `build/rust-image-runtime`。MLP 编码器直接编入 Rust 应用，`--encoder-runtime` 仅用于认证可选对照产物，不分发编码器 DLL。FFmpeg 和 ImageMagick 命令行程序不是运行时输入，第三方库由 Rust bridge 调用；媒体/图像开发 adapter DLL 不进入静态链接发布包。
 
 格式解析、MLP CRC/奇偶校验、PCM 比较及只读 AOB 成品校验已经内置为 Rust 实现，不需要格式或校验 DLL。打包不再接受 `--formats-runtime` 输入。
@@ -25,11 +31,11 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --wor
 
 ```bat
 tools\win-build\build-all.cmd ^
-  --media-runtime build\media-native-shared ^
-  --image-runtime build\rust-image-runtime ^
-  --image-author build\rust-author-production ^
-  --prebuilt build\release-menu-final ^
+  --media-runtime build\msvc-native\ffmpeg-static\install ^
+  --image-runtime build\msvc-native\image-runtime ^
+  --image-author build\static-ffmpeg-20261013\author ^
+  --prebuilt build\msvc-native\package-assets ^
   --version v1.0
 ```
 
-命令通过 `dvda-toolchain package` 生成 `DVD-Audio-Maker-v1.0-win-x64.zip`。发布包只包含内嵌必要 DLL、菜单资源和字体的 GUI EXE，以及旁置用户文档，不包含 .NET、开发 CLI、PDB、构建 JSON 或本机配置。三语用户 README、许可证与两个 NOTICE 均在 EXE 旁边；运行组件不作为旁文件分发。
+命令通过 `dvda-toolchain package` 生成 `DVD-Audio-Maker-v1.0-win-x64.zip`。静态发布包只包含内嵌菜单资源和字体的 GUI EXE，以及旁置用户文档，不包含 .NET、开发 CLI、PDB、构建 JSON 或本机配置。三语用户 README、许可证与两个 NOTICE 均在 EXE 旁边。

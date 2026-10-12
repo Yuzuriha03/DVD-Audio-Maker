@@ -142,7 +142,7 @@ fn package(options: Args) -> Result<(), String> {
             &repository,
             options.media_runtime,
             None,
-            "build/media-native-shared",
+            "build/msvc-native/ffmpeg-static/install",
         ),
         "media runtime",
     )?;
@@ -297,7 +297,7 @@ fn package(options: Args) -> Result<(), String> {
         &inputs,
         &options.version,
         || {
-            build_gui(&repository, &embedded, &options.version)?;
+            build_gui(&repository, &embedded, &options.version, &media)?;
             copy_file(
                 &target.join("dvda-desktop.exe"),
                 &stage.join("DVD-Audio-Maker.exe"),
@@ -383,8 +383,14 @@ fn write_records(
     fs::write(candidate.join("release-build.json"),serde_json::to_vec_pretty(&serde_json::json!({"version":version,"target":"Windows x64","files":records,"component_manifests":sources})).map_err(io_error)?).map_err(io_error)
 }
 
-fn build_gui(repository: &Path, archive: &Path, version: &str) -> Result<(), String> {
-    let environment = msvc_environment(repository)?;
+fn build_gui(repository: &Path, archive: &Path, version: &str, media: &Path) -> Result<(), String> {
+    let mut environment = msvc_environment(repository)?;
+    if media.join("build-manifest.json").is_file() {
+        environment.insert(
+            "DVDA_FFMPEG_PREFIX".into(),
+            media.to_string_lossy().into_owned(),
+        );
+    }
     let status = Command::new("cargo")
         .args([
             "build",

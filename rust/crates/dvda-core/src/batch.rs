@@ -617,11 +617,10 @@ mod tests {
     fn automatic_workers_follow_detected_parallelism_and_caps() {
         let detected = std::thread::available_parallelism()
             .map(|count| count.get())
-            .unwrap_or(1)
-            .saturating_mul(2);
+            .unwrap_or(1);
         assert_eq!(worker_count(usize::MAX), detected);
         assert_eq!(worker_count(2), detected.min(2));
         assert_eq!(worker_count(0), 1);
-        assert_eq!(worker_count(99), detected);
+        assert_eq!(worker_count(99), detected.min(99));
     }
 }

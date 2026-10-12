@@ -69,8 +69,13 @@ def main():
     ffmpeg, magick, menu = [p.resolve() for p in (args.ffmpeg_runtime, args.magick_work, args.menu_runtime)]
     image_dependencies = args.image_dependencies.resolve() if args.image_dependencies else magick/'lib'
     ffmpeg_record = read_json(ffmpeg/'build-manifest.json')
-    if ffmpeg_record.get('profile') != 'shared':
-        raise ValueError('Production Rust author requires retained FFmpeg profile=shared')
+    static_ffmpeg = ffmpeg_record.get('linkage') == 'static'
+    if ffmpeg_record.get('profile') != ('static' if static_ffmpeg else 'shared'):
+        raise ValueError('Production Rust author requires a complete FFmpeg profile')
+    for name, entry in ffmpeg_record['files'].items():
+        path = ffmpeg/('lib' if static_ffmpeg else 'bin')/name
+        if sha(path) != entry['sha256'] or path.stat().st_size != entry['bytes']:
+            raise ValueError('FFmpeg input checksum mismatch: '+name)
     if ffmpeg_record.get('target') != TARGET or ffmpeg_record.get('toolchain') != 'msvc':
         raise ValueError('Production Rust author requires FFmpeg built with Windows x64 MSVC')
     menu_record = read_json(menu/'menu-build.json')
@@ -156,8 +161,8 @@ def main():
     # Keep the complete authenticated FFmpeg shared profile beside the author
     # record. Some libraries are delay-loaded only by the GUI, so PE traversal
     # of the standalone author cannot discover them.
-    for name in ('avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll',
-                 'swresample-7.dll', 'swscale-10.dll'):
+    for name in (() if static_ffmpeg else ('avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll',
+                 'swresample-7.dll', 'swscale-10.dll')):
         source = ffmpeg/'bin'/name
         if not source.is_file():
             raise FileNotFoundError('Authenticated FFmpeg DLL is missing: '+str(source))
@@ -224,7 +229,9 @@ def main():
     assets={p.relative_to(work).as_posix():{'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted([*work.glob('*.xml'),*work.glob('fonts/*'),*work.glob('data/menu/*')]) if p.is_file()}
     record={'schema_version':1,'implementation':'rust','target':TARGET,'toolchain':'msvc',
         'project_c_author_compiled':False,'menu_linkage':'direct-static-vendor',
-        'ffmpeg_linkage':'shared-source-built-shared-profile','ffmpeg_profile':'build-msvc-ffmpeg.py:shared',
+        'ffmpeg_linkage':'static-source-built' if static_ffmpeg else 'shared-source-built-shared-profile',
+        'ffmpeg_profile':'build-msvc-ffmpeg.py:'+ffmpeg_record['profile'],
+        'ffmpeg_manifest':{'path':str(ffmpeg/'build-manifest.json'),'sha256':sha(ffmpeg/'build-manifest.json')},
         'author_library':{'implementation':'rust','available':True,'entry':'dvda_core::author_runtime::execute','serialization':'request-owned'},
         'iso_writer':{'implementation':'project-owned-rust','linkage':'embedded-rust-author','source_inputs':{k:v for k,v in inputs.items() if k.startswith('rust/crates/dvda-author/')}},
         'compiler':subprocess.check_output(['rustc','--version'],env=env).decode().strip(),

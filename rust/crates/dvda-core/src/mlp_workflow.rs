@@ -795,8 +795,7 @@ mod tests {
     fn automatic_check_workers_follow_cores_with_the_encoding_cap() {
         let detected = std::thread::available_parallelism()
             .map(|count| count.get())
-            .unwrap_or(1)
-            .saturating_mul(2);
+            .unwrap_or(1);
         assert_eq!(check_worker_count(147), detected.min(147));
         assert_eq!(check_worker_count(2), detected.min(2));
         assert_eq!(check_worker_count(1), 1);

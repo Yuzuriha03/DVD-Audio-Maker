@@ -24,6 +24,63 @@ fn read_json(path: &Path) -> Result<Value, String> {
 pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, String> {
     let author_record = read_json(&author.join("author-build.json"))?;
     if author_record["implementation"] == "rust"
+        && author_record["ffmpeg_linkage"] == "static-source-built"
+    {
+        let manifest = media.join("build-manifest.json");
+        let native = read_json(&manifest)?;
+        if native["target"] != "x86_64-pc-windows-msvc"
+            || native["toolchain"] != "msvc"
+            || native["profile"] != "static"
+            || native["linkage"] != "static"
+            || native["crt"] != "static"
+        {
+            return Err("Static FFmpeg requires the authenticated MSVC static profile".into());
+        }
+        if author_record["ffmpeg_manifest"]["sha256"].as_str()
+            != Some(file_hash(&manifest)?.as_str())
+        {
+            return Err("Author and package FFmpeg manifests differ".into());
+        }
+        for name in [
+            "avcodec",
+            "avformat",
+            "avutil",
+            "swscale",
+            "swresample",
+            "soxr",
+            "zlib",
+        ] {
+            let filename = format!("{name}.lib");
+            let path = media.join("lib").join(&filename);
+            let bytes = fs::read(&path).map_err(err)?;
+            let entry = &native["files"][&filename];
+            if !bytes.starts_with(b"!<arch>\n")
+                || entry["sha256"].as_str() != Some(hash(&bytes).as_str())
+                || entry["bytes"].as_u64() != Some(bytes.len() as u64)
+            {
+                return Err(format!(
+                    "Static FFmpeg archive checksum mismatch: {filename}"
+                ));
+            }
+        }
+        let (image_record, _) = component(
+            image,
+            "image-build.json",
+            "files",
+            &["dvda-image.dll"],
+            true,
+            true,
+        )?;
+        if image_record["implementation"] != "project-owned-rust" {
+            return Err("Image provenance must identify the Rust implementation".into());
+        }
+        let mut inputs = validate_rust_author(author, &author_record)?;
+        inputs
+            .records
+            .extend([manifest, image.join("image-build.json")]);
+        return Ok(inputs);
+    }
+    if author_record["implementation"] == "rust"
         || author_record["menu_linkage"] == "direct-static-vendor"
     {
         let (media_record, mut media_files) = component(
@@ -195,13 +252,16 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
 }
 
 fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String> {
+    let static_ffmpeg = record["ffmpeg_linkage"] == "static-source-built"
+        && record["ffmpeg_profile"] == "build-msvc-ffmpeg.py:static";
     if record["schema_version"] != 1
         || record["target"] != "x86_64-pc-windows-msvc"
         || record["toolchain"] != "msvc"
         || record["project_c_author_compiled"] != false
         || record["menu_linkage"] != "direct-static-vendor"
-        || record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
-        || record["ffmpeg_profile"] != "build-msvc-ffmpeg.py:shared"
+        || (!static_ffmpeg
+            && (record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
+                || record["ffmpeg_profile"] != "build-msvc-ffmpeg.py:shared"))
         || record["author_library"]["implementation"] != "rust"
         || record["author_library"]["available"] != true
         || record["author_library"]["entry"] != "dvda_core::author_runtime::execute"
@@ -284,17 +344,22 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
             ));
         }
     }
-    let (_, mut files) = component(
-        author,
-        "author-build.json",
-        "runtime_files",
+    let required: &[&str] = if static_ffmpeg {
+        &[]
+    } else {
         &[
             "avcodec-63.dll",
             "avformat-63.dll",
             "avutil-61.dll",
             "swresample-7.dll",
             "swscale-10.dll",
-        ],
+        ]
+    };
+    let (_, mut files) = component(
+        author,
+        "author-build.json",
+        "runtime_files",
+        required,
         false,
         true,
     )?;
@@ -306,6 +371,11 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
     }
     let exe = author.join("dvda-author-dev.exe");
     let imports = validate_binary(&exe, &record["files"]["dvda-author-dev.exe"], false)?;
+    if static_ffmpeg
+        && (!files.is_empty() || imports.iter().any(|name| !system_dependency(name, true)))
+    {
+        return Err("Static author must not depend on bundled DLLs".into());
+    }
     closure("dvda-author-dev.exe", &imports, &files, true)?;
     // Authenticate the standalone acceptance executable without packaging it:
     // the GUI invokes the Rust author library inside its own process.
@@ -764,6 +834,68 @@ pub(crate) mod tests {
             record["files"]=serde_json::json!({"dvda-author-dev.exe":{"bytes":bytes.len(),"sha256":hash(&bytes)}});
         });
         fixture
+    }
+
+    #[test]
+    fn static_package_checks_archives_and_rejects_dll_imports() {
+        let fixture = rust_author_fixture();
+        let media = fixture.root.join("media");
+        fs::create_dir(media.join("lib")).unwrap();
+        let mut archives = serde_json::Map::new();
+        for name in [
+            "avcodec",
+            "avformat",
+            "avutil",
+            "swresample",
+            "swscale",
+            "soxr",
+            "zlib",
+        ] {
+            let name = format!("{name}.lib");
+            let bytes = b"!<arch>\nfixture";
+            fs::write(media.join("lib").join(&name), bytes).unwrap();
+            archives.insert(
+                name,
+                serde_json::json!({"bytes":bytes.len(),"sha256":hash(bytes)}),
+            );
+        }
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "target":"x86_64-pc-windows-msvc","toolchain":"msvc","profile":"static", "linkage":"static","crt":"static","files":archives
+        })).unwrap();
+        fs::write(media.join("build-manifest.json"), &manifest).unwrap();
+        for path in fs::read_dir(fixture.root.join("author")).unwrap() {
+            let path = path.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "dll") {
+                fs::remove_file(path).unwrap();
+            }
+        }
+        let bytes = pe::fixture(false, &["kernel32.dll"], &[]);
+        fs::write(fixture.root.join("author/dvda-author-dev.exe"), &bytes).unwrap();
+        fixture.edit("author", |record| {
+            record["ffmpeg_linkage"] = "static-source-built".into();
+            record["ffmpeg_profile"] = "build-msvc-ffmpeg.py:static".into();
+            record["ffmpeg_manifest"] = serde_json::json!({"sha256":hash(&manifest)});
+            record["runtime_files"] = serde_json::json!({});
+            record["files"]["dvda-author-dev.exe"] =
+                serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)});
+        });
+        assert!(
+            fixture
+                .validate()
+                .unwrap()
+                .files
+                .keys()
+                .all(|name| !name.ends_with(".dll"))
+        );
+        let dll_exe = pe::fixture(false, &[], &["avcodec-63.dll"]);
+        fs::write(fixture.root.join("author/dvda-author-dev.exe"), &dll_exe).unwrap();
+        fixture.edit("author", |record| {
+            record["files"]["dvda-author-dev.exe"] =
+                serde_json::json!({"bytes":dll_exe.len(),"sha256":hash(&dll_exe)})
+        });
+        assert!(fixture.validate().unwrap_err().contains("must not depend"));
+        fs::write(media.join("lib/avcodec.lib"), b"tampered").unwrap();
+        assert!(fixture.validate().unwrap_err().contains("archive checksum"));
     }
 
     #[test]

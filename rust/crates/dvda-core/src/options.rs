@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
-/// Return the production worker count: two workers per detected logical
+/// Return the production worker count: one worker per detected logical
 /// processor, with a minimum of one and an optional work-item cap.
 pub fn worker_count(work_items: usize) -> usize {
     let processors = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
-    processors.saturating_mul(2).max(1).min(work_items.max(1))
+    processors.max(1).min(work_items.max(1))
 }
 
 pub fn combine(left: &str, right: &str) -> String {

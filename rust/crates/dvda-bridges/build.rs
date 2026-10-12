@@ -25,36 +25,73 @@ fn main() {
         .expect("invalid FFmpeg build-manifest.json");
         assert!(
             record["target"] == "x86_64-pc-windows-msvc" && record["toolchain"] == "msvc",
-            "MSVC-only media bridge requires FFmpeg DLLs compiled with MSVC; rebuild with tools/win-build/build-msvc-ffmpeg.py"
+            "MSVC-only media bridge requires FFmpeg libraries compiled with MSVC; rebuild with tools/win-build/build-msvc-ffmpeg.py"
         );
         generate_layout(&prefix);
-        let libtool = msvc_lib_tool();
-        for (lib, version) in [
-            ("avformat", 63),
-            ("avcodec", 63),
-            ("avutil", 61),
-            ("swresample", 7),
-            ("swscale", 10),
-        ] {
-            let definition = prefix.join("lib").join(format!("{lib}-{version}.def"));
-            println!("cargo:rerun-if-changed={}", definition.display());
-            let archive = out.join(format!("dvda_delay_{lib}.lib"));
+        std::fs::write(
+            out.join("ffmpeg-linkage.rs"),
+            format!(
+                "pub const STATIC_LINKED: bool = {};\n",
+                record["linkage"] == "static"
+            ),
+        )
+        .unwrap();
+        let libraries = ["avformat", "avcodec", "avutil", "swresample", "swscale"];
+        if record["linkage"] == "static" {
             assert!(
-                std::process::Command::new(&libtool)
-                    .arg("/nologo")
-                    .arg(format!("/def:{}", definition.display()))
-                    .arg(format!("/name:{lib}-{version}.dll"))
-                    .arg("/machine:x64")
-                    .arg(format!("/out:{}", archive.display()))
-                    .status()
-                    .expect("cannot generate MSVC FFmpeg import library with LIB")
-                    .success(),
-                "MSVC FFmpeg import library generation failed"
+                record["profile"] == "static" && record["crt"] == "static",
+                "Static FFmpeg requires the complete profile and static CRT"
             );
-            println!("cargo:rustc-link-lib=static=dvda_delay_{lib}");
+            let lib_directory = prefix.join("lib");
+            println!("cargo:rustc-link-search=native={}", lib_directory.display());
+            for name in libraries {
+                require_msvc_library(&lib_directory, name);
+                println!(
+                    "cargo:rerun-if-changed={}",
+                    lib_directory.join(format!("{name}.lib")).display()
+                );
+                println!("cargo:rustc-link-lib=static={name}");
+            }
+            for name in ["soxr", "zlib"] {
+                require_msvc_library(&lib_directory, name);
+                println!(
+                    "cargo:rerun-if-changed={}",
+                    lib_directory.join(format!("{name}.lib")).display()
+                );
+                println!("cargo:rustc-link-lib=static={name}");
+            }
+            for name in ["ole32", "user32", "bcrypt", "advapi32", "shell32", "ws2_32"] {
+                println!("cargo:rustc-link-lib={name}");
+            }
+        } else {
+            let libtool = msvc_lib_tool();
+            for (lib, version) in [
+                ("avformat", 63),
+                ("avcodec", 63),
+                ("avutil", 61),
+                ("swresample", 7),
+                ("swscale", 10),
+            ] {
+                let definition = prefix.join("lib").join(format!("{lib}-{version}.def"));
+                println!("cargo:rerun-if-changed={}", definition.display());
+                let archive = out.join(format!("dvda_delay_{lib}.lib"));
+                assert!(
+                    std::process::Command::new(&libtool)
+                        .arg("/nologo")
+                        .arg(format!("/def:{}", definition.display()))
+                        .arg(format!("/name:{lib}-{version}.dll"))
+                        .arg("/machine:x64")
+                        .arg(format!("/out:{}", archive.display()))
+                        .status()
+                        .expect("cannot generate MSVC FFmpeg import library with LIB")
+                        .success(),
+                    "MSVC FFmpeg import library generation failed"
+                );
+                println!("cargo:rustc-link-lib=static=dvda_delay_{lib}");
+            }
+            println!("cargo:rustc-link-search=native={}", out.display());
+            println!("cargo:rustc-link-lib=delayimp");
         }
-        println!("cargo:rustc-link-search=native={}", out.display());
-        println!("cargo:rustc-link-lib=delayimp");
     }
     if env::var_os("CARGO_FEATURE_IMAGE").is_some() {
         let work = PathBuf::from(env::var_os("DVDA_MAGICK_WORK").expect(

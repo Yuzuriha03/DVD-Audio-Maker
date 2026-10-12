@@ -5489,7 +5489,7 @@ Error while decoding or processing media: Resource temporarily unavailable
 
 ### 修复
 
-一次性单帧 PNG 编码固定 `thread_count = 1`（帧线程对单帧没有收益，只会引入需要 flush 的缓冲语义）。批量音频解码/编码、编码 worker 池仍使用自动的“逻辑处理器 ×2”策略。
+一次性单帧 PNG 编码固定 `thread_count = 1`（帧线程对单帧没有收益，只会引入需要 flush 的缓冲语义）。当前批量音频解码/编码、编码 worker 池使用自动的“逻辑处理器数量”策略，不再乘以二。
 
 ### 教训
 

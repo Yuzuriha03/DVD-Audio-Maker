@@ -1,8 +1,9 @@
 """Build the retained FFmpeg profiles and their dependencies with MSVC x64.
 
 MSYS2 supplies only the POSIX configure/make shell. C compilation, archive
-creation, and DLL linking use Visual Studio. zlib and libsoxr are linked
-statically into the five FFmpeg DLLs; no MinGW runtime is included.
+creation, and linking use Visual Studio. The static profile embeds all five
+FFmpeg libraries, zlib and libsoxr with the static CRT; shared profiles remain
+available for development comparisons. No MinGW runtime is included.
 """
 from pathlib import Path
 import argparse
@@ -110,7 +111,7 @@ def run_logged(command, log, env, cwd=None):
                    stdout=log, stderr=subprocess.STDOUT, check=True)
 
 
-def build_dependencies(work, downloads, cache, cmake, env, log):
+def build_dependencies(work, downloads, cache, cmake, env, log, static_crt=False):
     sources = work/'sources'
     sources.mkdir(exist_ok=True)
     prefix = work/'dependencies'
@@ -137,7 +138,7 @@ def build_dependencies(work, downloads, cache, cmake, env, log):
                 '-DBUILD_TESTS=ON', '-DBUILD_EXAMPLES=OFF', '-DWITH_OPENMP=OFF',
                 '-DWITH_LSR_BINDINGS=OFF', '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW',
                 '-DCMAKE_POLICY_DEFAULT_CMP0127=NEW',
-                '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL',
+                '-DCMAKE_MSVC_RUNTIME_LIBRARY='+('MultiThreaded' if static_crt else 'MultiThreadedDLL'),
                 '-DCMAKE_INSTALL_PREFIX='+native_short_path(prefix)], log, env)
     run_logged([cmake, '--build', soxr_build], log, env)
     # Native libsoxr sanity tests exercise the compiled filter engines.
@@ -152,7 +153,7 @@ def build_dependencies(work, downloads, cache, cmake, env, log):
     zlib_sources = ('adler32', 'compress', 'crc32', 'deflate', 'gzclose', 'gzlib',
                     'gzread', 'gzwrite', 'inflate', 'infback', 'inftrees',
                     'inffast', 'trees', 'uncompr', 'zutil')
-    run_logged([env['CC'], '/nologo', '/c', '/O2', '/MD', '/std:c17',
+    run_logged([env['CC'], '/nologo', '/c', '/O2', '/MT' if static_crt else '/MD', '/std:c17',
                 '/D_CRT_SECURE_NO_WARNINGS', '/I'+str(zlib)] +
                [zlib/(name+'.c') for name in zlib_sources], log, env, zlib_build)
     run_logged([env['DVDA_LIB_TOOL'], '/nologo', '/machine:x64',
@@ -160,7 +161,7 @@ def build_dependencies(work, downloads, cache, cmake, env, log):
                [zlib_build/(name+'.obj') for name in zlib_sources], log, env)
     for name in ('zlib.h', 'zconf.h'):
         shutil.copyfile(zlib/name, prefix/'include'/name)
-    run_logged([env['CC'], '/nologo', '/O2', '/MD', '/I'+str(zlib),
+    run_logged([env['CC'], '/nologo', '/O2', '/MT' if static_crt else '/MD', '/I'+str(zlib),
                 zlib/'test/example.c', prefix/'lib/zlib.lib',
                 '/Fe:'+str(zlib_build/'zlib-test.exe'), '/Fo:'+str(zlib_build/'zlib-test.obj')], log, env)
     run_logged([zlib_build/'zlib-test.exe'], log, env, zlib_build)
@@ -174,7 +175,7 @@ def main():
     parser.add_argument('--work-directory', type=Path, default=repo/'build/msvc-native/ffmpeg')
     parser.add_argument('--source-cache', type=Path, help='Optional directory holding pinned FFmpeg/NASM/source archives')
     parser.add_argument('--cmake', type=Path, help='Native Windows CMake executable for MSVC libsoxr')
-    parser.add_argument('--profile', choices=['mlp', 'menu', 'media', 'shared'], default='shared')
+    parser.add_argument('--profile', choices=['mlp', 'menu', 'media', 'shared', 'static'], default='shared')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('Run on Windows with the Visual Studio C++ x64 build tools.')
@@ -205,7 +206,7 @@ def main():
     gnupg = work/'gnupg'
     gnupg.mkdir(exist_ok=True)
     env['PATH'] += os.pathsep+str(msys/'usr/bin')
-    gpg = [str(msys/'usr/bin/gpg.exe'), '--no-options', '--batch', '--no-autostart', '--homedir', posix(gnupg)]
+    gpg = [str(msys/'usr/bin/gpg.exe'), '--no-options', '--batch', '--no-autostart', '--homedir', short_path(gnupg)]
     subprocess.run(gpg+['--import', posix(key)], env=env, check=True, timeout=45)
     verified = subprocess.run(gpg+['--status-fd', '1', '--verify', posix(signature), posix(archive)],
                               env=env, check=True, timeout=45, capture_output=True)
@@ -229,10 +230,14 @@ def main():
     prefix.mkdir(exist_ok=True)
     print('MSVC source build log: '+str(work/'build.log'), flush=True)
     with (work/'build.log').open('wb') as log:
-        deps = build_dependencies(work, downloads, cache, Path(cmake).resolve(), env, log)
+        deps = build_dependencies(work, downloads, cache, Path(cmake).resolve(), env, log,
+                                  static_crt=args.profile == 'static')
+        for name in ('soxr.lib', 'zlib.lib'):
+            if not (deps/'lib'/name).is_file():
+                raise FileNotFoundError('MSVC static FFmpeg dependency is missing: '+str(deps/'lib'/name))
         configure = [short_path(source)+'/configure', '--prefix='+short_path(prefix),
                      '--toolchain=msvc', '--target-os=win32', '--arch=x86_64', '--cpu=x86-64',
-                     '--enable-shared', '--disable-static', '--disable-programs', '--disable-doc', '--disable-debug',
+                     '--disable-programs', '--disable-doc', '--disable-debug',
                      '--disable-autodetect', '--disable-everything', '--disable-network',
                      '--disable-avdevice', '--disable-avfilter', '--disable-swscale', '--disable-swresample',
                      '--enable-avcodec', '--enable-avformat', '--enable-avutil',
@@ -240,9 +245,13 @@ def main():
                      '--enable-demuxer=mlp', '--enable-muxer=mlp', '--enable-protocol=file,pipe',
                      '--disable-pthreads', '--enable-w32threads', '--enable-small', '--enable-gpl', '--enable-version3',
                      '--x86asmexe='+short_path(nasm),
-                     '--extra-cflags=-MD -I'+native_short_path(deps/'include'),
+                     '--extra-cflags='+('-MT' if args.profile == 'static' else '-MD')+' -I'+native_short_path(deps/'include'),
                      '--extra-ldflags=-libpath:'+native_short_path(deps/'lib')]
-        if args.profile in ('menu', 'media', 'shared'):
+        if args.profile == 'static':
+            configure += ['--disable-shared', '--enable-static']
+        else:
+            configure += ['--enable-shared', '--disable-static']
+        if args.profile in ('menu', 'media', 'shared', 'static'):
             configure = [item for item in configure if not item.startswith(('--enable-decoder=', '--enable-encoder=',
                          '--enable-parser=', '--enable-demuxer=', '--enable-muxer='))
                          and item not in ('--disable-swscale', '--disable-swresample')]
@@ -250,12 +259,12 @@ def main():
             configure += ['--disable-swscale', '--disable-swresample',
                           '--enable-decoder=mlp,pcm_s16le,pcm_s24le,pcm_s32le', '--enable-encoder=mlp,mpeg2video,mp2',
                           '--enable-parser=mlp,mpegvideo,mpegaudio', '--enable-demuxer=mlp,wav', '--enable-muxer=mlp,mpeg2dvd']
-        if args.profile in ('media', 'shared'):
+        if args.profile in ('media', 'shared', 'static'):
             configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr', '--enable-zlib',
                 '--enable-decoder=mlp,flac,alac,aac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video,png,mjpeg',
                 '--enable-encoder=mlp,flac,pcm_s16le,pcm_s24le,png', '--enable-parser=mlp,flac,aac,mpegvideo,png,mjpeg',
                 '--enable-demuxer=mlp,flac,mov,wav,mpegps,mpegvideo', '--enable-muxer=mlp,flac,wav']
-        if args.profile == 'shared':
+        if args.profile in ('shared', 'static'):
             configure += ['--enable-encoder=mpeg2video,mp2', '--enable-parser=mpegaudio', '--enable-muxer=mpeg2dvd']
         commands = ['set -eu', 'export LC_ALL=C', 'export SOURCE_DATE_EPOCH=1789699562',
                     'cd '+shlex.quote(short_path(build)), shlex.join(configure),
@@ -263,23 +272,54 @@ def main():
         script = work/'build.sh'
         script.write_text('\n'.join(commands)+'\n', encoding='utf-8', newline='\n')
         run_logged([msys/'usr/bin/bash.exe', '--noprofile', '--norc', posix(script)], log, env)
-    expected = {'avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll'}
-    if args.profile in ('media', 'shared'):
-        expected |= {'swscale-10.dll', 'swresample-7.dll'}
-    actual = {path.name for path in (prefix/'bin').glob('*.dll')}
-    if actual != expected:
-        raise ValueError('Unexpected FFmpeg DLL set: '+repr(actual))
-    imports = {}
-    for name in sorted(expected):
-        pe = Pe(prefix/'bin'/name)
-        if pe.machine != 0x8664:
-            raise ValueError('FFmpeg DLL is not x64: '+name)
-        imports[name] = sorted(pe.imports())
-        if any(item.startswith(('libgcc', 'libstdc++', 'libwinpthread', 'msys-')) for item in imports[name]):
-            raise ValueError('GNU runtime dependency in MSVC FFmpeg DLL: '+name)
-    # Save .def files consumed by the Rust layout/link build script.
-    for path in build.glob('lib*/*.def'):
-        shutil.copyfile(path, prefix/'lib'/path.name)
+    libraries = {'avcodec': 'avcodec', 'avformat': 'avformat', 'avutil': 'avutil'}
+    if args.profile in ('media', 'shared', 'static'):
+        libraries.update({'swscale': 'swscale', 'swresample': 'swresample'})
+    if args.profile == 'static':
+        files = {}
+        if list((prefix/'bin').glob('*.dll')):
+            raise ValueError('Static profile requires a fresh installation without DLLs')
+        for name in libraries.values():
+            candidates = [prefix/'lib'/f'{name}.lib', prefix/'lib'/f'{name}-static.lib',
+                          build/f'lib{name}'/f'{name}.lib']
+            source_lib = next((path for path in candidates if path.is_file()), None)
+            if source_lib is None:
+                raise ValueError('Static FFmpeg archive is missing: '+name)
+            members = subprocess.check_output([env['DVDA_LIB_TOOL'], '/nologo', '/list', source_lib], env=env)
+            if not members.strip() or b'.dll' in members.lower():
+                raise ValueError('FFmpeg archive contains DLL imports: '+name)
+            destination = prefix/'lib'/f'{name}.lib'
+            if source_lib.resolve() != destination.resolve():
+                shutil.copyfile(source_lib, destination)
+            files[destination.name] = {'sha256': sha(destination), 'bytes': destination.stat().st_size}
+        for name in ('soxr.lib', 'zlib.lib'):
+            destination = prefix/'lib'/name
+            shutil.copyfile(deps/'lib'/name, destination)
+            files[name] = {'sha256': sha(destination), 'bytes': destination.stat().st_size}
+        actual = {path.name for path in (prefix/'lib').glob('*.lib') if path.name in files}
+        if actual != set(files):
+            raise ValueError('Unexpected static FFmpeg archive set: '+repr(actual))
+        imports = {}
+    else:
+        expected = {f'{name}-{version}.dll' for name, version in [('avcodec', 63), ('avformat', 63), ('avutil', 61)]}
+        if args.profile in ('media', 'shared'):
+            expected |= {'swscale-10.dll', 'swresample-7.dll'}
+        actual = {path.name for path in (prefix/'bin').glob('*.dll')}
+        if actual != expected:
+            raise ValueError('Unexpected FFmpeg DLL set: '+repr(actual))
+        imports = {}
+        for name in sorted(expected):
+            pe = Pe(prefix/'bin'/name)
+            if pe.machine != 0x8664:
+                raise ValueError('FFmpeg DLL is not x64: '+name)
+            imports[name] = sorted(pe.imports())
+            if any(item.startswith(('libgcc', 'libstdc++', 'libwinpthread', 'msys-')) for item in imports[name]):
+                raise ValueError('GNU runtime dependency in MSVC FFmpeg DLL: '+name)
+        # Save .def files consumed by the Rust layout/link build script.
+        for path in build.glob('lib*/*.def'):
+            shutil.copyfile(path, prefix/'lib'/path.name)
+        files = {name: {'sha256': sha(prefix/'bin'/name), 'bytes': (prefix/'bin'/name).stat().st_size}
+                 for name in sorted(expected)}
     record = {'version': VERSION, 'profile': args.profile, 'target': TARGET, 'toolchain': 'msvc',
               'source_url': source_url, 'source_sha256': SOURCE_SHA256, 'signer': SIGNER,
               'nasm_url': nasm_url, 'nasm_sha256': NASM_SHA256,
@@ -292,8 +332,9 @@ def main():
                                'zlib': {'version': '1.3.2', 'source_url': ZLIB_URL, 'source_sha256': ZLIB_SHA256,
                                         'linkage': 'static', 'toolchain': 'msvc',
                                         'validation': 'Native upstream compression/decompression/gzip/dictionary example'}},
-              'files': {name: {'sha256': sha(prefix/'bin'/name), 'bytes': (prefix/'bin'/name).stat().st_size}
-                        for name in sorted(expected)}}
+              'linkage': 'static' if args.profile == 'static' else 'shared',
+              'crt': 'static' if args.profile == 'static' else 'shared',
+              'files': files}
     (prefix/'build-manifest.json').write_text(json.dumps(record, indent=2)+'\n', encoding='utf-8')
     print(json.dumps(record, indent=2), flush=True)
 

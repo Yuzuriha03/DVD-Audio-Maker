@@ -15,7 +15,7 @@
 | `DvdaNotoCJK-Regular.ttc` | 中日韩菜单字体 | SIL Open Font License 1.1 |
 
 用户使用单文件 Rust GUI。author、项目适配层和 MLP 编码器静态集成在程序中，
-所需第三方 DLL、字体和菜单数据随程序内嵌。旧项目 C author、适配 DLL 和 C17
+FFmpeg、ImageMagick 及其依赖静态链接；字体和菜单数据随程序内嵌。旧项目 C author、适配 DLL 和 C17
 编码器已移除。FFmpeg、ImageMagick 及其他库只启用工作流所需功能；发布包不含
 `ffmpeg.exe`、`ffprobe.exe`、ImageMagick 命令行程序、eac3to 或 MLP。
 

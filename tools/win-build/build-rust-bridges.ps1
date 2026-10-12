@@ -37,6 +37,11 @@ $env:PATH="$env:USERPROFILE\.cargo\bin;$env:PATH"
 $env:DVDA_FFMPEG_PREFIX=$FfmpegPrefix
 $env:DVDA_MAGICK_WORK=$MagickWork
 $env:DVDA_IMAGE_DEPS_DIR=$ImageDependencies
+$staticFfmpeg=$false
+if($FfmpegPrefix){
+ $vendor=Get-Content -Raw -LiteralPath (Join-Path $FfmpegPrefix 'build-manifest.json') | ConvertFrom-Json
+ $staticFfmpeg=$vendor.linkage -eq 'static'
+}
 $cargoTarget=Join-Path $Output 'cargo-target'
 $args=@('build','--offline','--release','--manifest-path',"$repo\rust\Cargo.toml",'--target',$BuildTriple,'-p','dvda-bridges','--target-dir',$cargoTarget)
 switch($Component){
@@ -52,13 +57,13 @@ if($LASTEXITCODE -ne 0){throw 'Rust bridge build failed'}
 $release=Join-Path $cargoTarget "$BuildTriple\release"
 switch($Component){
  direct {Copy-Item "$release\libdvda_bridges.rlib" $Output;if($ImageOracle){foreach($name in @('policy.xml','colors.xml','NOTICE.txt')){Copy-Item (Join-Path $ImageOracle $name) $Output}}}
- media {Copy-Item "$release\dvda_bridges.dll" "$Output\dvda-media.dll";Copy-Item "$release\mlp-decode-probe.exe" $Output;Copy-Item "$FfmpegPrefix\bin\*.dll" $Output}
+ media {Copy-Item "$release\dvda_bridges.dll" "$Output\dvda-media.dll";Copy-Item "$release\mlp-decode-probe.exe" $Output;if(!$staticFfmpeg){Copy-Item "$FfmpegPrefix\bin\*.dll" $Output}}
  image {Copy-Item "$release\dvda_bridges.dll" "$Output\dvda-image.dll";if($ImageOracle){foreach($name in @('policy.xml','colors.xml','NOTICE.txt')){Copy-Item (Join-Path $ImageOracle $name) $Output}}}
  author {
   $static=Join-Path $release 'dvda_bridges.lib'
   if(!(Test-Path -LiteralPath $static)){throw 'MSVC author bridge build did not produce dvda_bridges.lib.'}
   Copy-Item $static $Output
-  Copy-Item "$FfmpegPrefix\bin\*.dll" $Output
+  if(!$staticFfmpeg){Copy-Item "$FfmpegPrefix\bin\*.dll" $Output}
  }
  shim {Copy-Item "$release\magick-shim.exe" $Output}
 }
@@ -119,7 +124,7 @@ $inputs['rust\.cargo\config.toml']=Hash "$repo\rust\.cargo\config.toml"
 $inputs['builder']=Hash $PSCommandPath
 $inputs['tools\win-build\msvc_env.py']=Hash (Join-Path $PSScriptRoot 'msvc_env.py')
 $dependencies=[ordered]@{}
-if($FfmpegPrefix){foreach($file in Get-ChildItem "$FfmpegPrefix\include","$FfmpegPrefix\lib","$FfmpegPrefix\bin" -Recurse -File){$dependencies[$file.FullName]=Hash $file.FullName}}
+if($FfmpegPrefix){foreach($root in @('include','lib','bin')){$path=Join-Path $FfmpegPrefix $root;if(Test-Path -LiteralPath $path){foreach($file in Get-ChildItem -LiteralPath $path -Recurse -File){$dependencies[$file.FullName]=Hash $file.FullName}}}}
 if($MagickWork){foreach($pattern in @('compile\MagickWand\.libs\*.lib','compile\MagickCore\.libs\*.lib','freetype-minimal.lib','image-build.json','compile\config\*.h','ImageMagick-7.0.8-47\MagickCore\*.h')){foreach($file in Get-ChildItem (Join-Path $MagickWork $pattern) -ErrorAction SilentlyContinue){$dependencies[$file.FullName]=Hash $file.FullName}};foreach($name in @('jpeg.lib','png16.lib','webpdecoder.lib','webpmux.lib','z.lib')){$path=Join-Path $ImageDependencies $name;if(!(Test-Path -LiteralPath $path)){throw "MSVC-native image codec dependency is missing: $path"};$dependencies[$path]=Hash $path}}
 $files=[ordered]@{}
 foreach($file in Get-ChildItem $Output -File){if($file.Name -notlike '*build.json'){$entry=@{sha256=Hash $file.FullName;bytes=$file.Length};if($file.Extension -in @('.dll','.exe')){$entry.imports=@(Imports $file.FullName)};$files[$file.Name]=$entry}}
@@ -131,9 +136,10 @@ $record=@{schema_version=1;implementation='project-owned-rust';component=$Compon
 if($Component -eq 'media'){
  $vendorManifest=Join-Path $FfmpegPrefix 'build-manifest.json'
  $vendor=Get-Content $vendorManifest -Raw | ConvertFrom-Json
- if($vendor.profile -ne 'shared'){throw 'Media requires the authenticated shared FFmpeg profile'}
+ if($vendor.profile -notin @('shared','static')){throw 'Media requires the authenticated complete FFmpeg profile'}
  if($vendor.target -ne $BuildTriple -or $vendor.toolchain -ne 'msvc'){throw 'Media requires FFmpeg built with Windows x64 MSVC'}
  $record.profile=$vendor.profile
+ $record.ffmpeg_linkage=if($staticFfmpeg){'static'}else{'shared'}
  $record.third_party_inputs[$vendorManifest]=Hash $vendorManifest
 }
 $record | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $Output $name)

@@ -5,8 +5,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub use super::parallel::estimate_speedup;
 
-pub const MAX_BATCH_THREADS: usize = 16;
-
 /// Configuration for independent jobs. Workflow callbacks remain on the caller.
 #[derive(Clone, Debug)]
 pub struct ParallelConfig {
@@ -37,14 +35,10 @@ pub struct BatchPlan {
 
 impl ParallelConfig {
     /// Build a deterministic plan from the supplied available-worker count.
-    /// The process never requests more than 16 workers or useful input chunks.
+    /// The process never requests more workers than available cores or useful chunks.
     pub fn plan(&self, items: usize, available_threads: usize) -> BatchPlan {
-        let limit = self.max_threads.unwrap_or(MAX_BATCH_THREADS).max(1);
-        let workers = available_threads
-            .max(1)
-            .min(limit)
-            .min(MAX_BATCH_THREADS)
-            .min(items.max(1));
+        let limit = self.max_threads.unwrap_or(available_threads).max(1);
+        let workers = available_threads.max(1).min(limit).min(items.max(1));
         let chunk_size = self
             .chunk_size
             .unwrap_or_else(|| optimal_chunk_size(items, workers))
@@ -62,7 +56,7 @@ impl ParallelConfig {
 }
 
 fn available_threads() -> usize {
-    std::thread::available_parallelism().map_or(1, usize::from)
+    crate::options::worker_count(usize::MAX)
 }
 
 pub fn should_use_parallel(items: usize, config: &ParallelConfig) -> bool {
@@ -173,7 +167,8 @@ mod tests {
             chunk_size: Some(1),
             ..Default::default()
         };
-        assert_eq!(config.plan(100, 128).threads, 16);
+        assert_eq!(config.plan(100, 128).threads, 100);
+        assert_eq!(config.plan(100, 32).threads, 32);
         assert_eq!(config.plan(3, 128).threads, 3);
         assert_eq!(config.plan(100, 1).threads, 1);
         config.max_threads = Some(2);

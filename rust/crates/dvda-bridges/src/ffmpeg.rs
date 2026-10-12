@@ -13,6 +13,7 @@ pub struct Interrupt {
     pub opaque: *mut c_void,
 }
 include!(concat!(env!("OUT_DIR"), "/ffmpeg-layout.rs"));
+include!(concat!(env!("OUT_DIR"), "/ffmpeg-linkage.rs"));
 pub const EOF: i32 = -541478725;
 pub const EXIT: i32 = -1414092869;
 pub const INVALID: i32 = -1094995529;
