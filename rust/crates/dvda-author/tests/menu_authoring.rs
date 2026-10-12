@@ -125,7 +125,7 @@ impl Backend for FixtureBackend {
     ) -> Result<(), String> {
         self.navigation_count += 1;
         let document = fs::read_to_string(xml).unwrap();
-        assert_eq!(document.matches("<pgc>").count(), self.pages.len());
+        assert_eq!(document.matches("<pgc ").count(), self.pages.len());
         let mut joined = Vec::new();
         for page in &self.pages {
             let data = fs::read(page).unwrap();

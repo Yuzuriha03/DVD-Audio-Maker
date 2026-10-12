@@ -132,7 +132,13 @@ impl Callbacks for AuthorCallbacks<'_> {
     }
 
     fn progress(&mut self, completed: u64, total: u64) {
-        self.parent.progress(completed, total);
+        if total == 0 {
+            return;
+        }
+        let start = 65_000 + self.disc.saturating_sub(1) * 30_000 / self.total.max(1);
+        let span = 30_000 / self.total.max(1);
+        self.parent
+            .progress(start + span * completed.min(total) / total, 100_000);
     }
 }
 
@@ -169,7 +175,9 @@ fn author_phase(line: &str) -> Option<(&'static str, &str)> {
         ))
     } else if line.starts_with("Searching MLP layout for file ") {
         Some(("author_layout", ""))
-    } else if line.starts_with("Creating ISO with the in-process C ISO writer") {
+    } else if line.starts_with("Writing ISO image")
+        || line.starts_with("Creating ISO with the in-process C ISO writer")
+    {
         Some(("author_iso", ""))
     } else if line.starts_with("Creating ASVS") {
         Some(("author_stills", ""))
@@ -366,7 +374,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             }
             callbacks.finish();
             staged.push((staged_iso, job.iso_name(disc.number)));
-            caller.progress(65 + ((disc_index + 1) * 35 / plan.discs.len()) as u64, 100);
+            caller.progress(65 + ((disc_index + 1) * 30 / plan.discs.len()) as u64, 100);
             continue;
         }
         if let Some(store) = resume.as_mut() {
@@ -555,7 +563,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             diagnostics.push(warning("RESUME_WRITE_FAILED", message));
         }
         staged.push((staged_iso, job.iso_name(disc.number)));
-        caller.progress(65 + ((disc_index + 1) * 35 / plan.discs.len()) as u64, 100);
+        caller.progress(65 + ((disc_index + 1) * 30 / plan.discs.len()) as u64, 100);
         caller.emit(1, &format!("[build] staged disc {}", disc.number));
         if !job.keep_temporary {
             cleanup_directory(&temporary, &mut diagnostics, "TEMP_CLEANUP_FAILED");
@@ -650,6 +658,9 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     }
     if succeeded && !can_resume {
         cleanup_directory(&staging, &mut diagnostics, "TEMP_CLEANUP_FAILED");
+    }
+    if succeeded {
+        caller.progress(100, 100);
     }
     Ok(Outcome {
         succeeded,

@@ -18,13 +18,30 @@ fn numbers(text: &str, prefix: &str, suffix: &str) -> Vec<u32> {
         })
         .collect()
 }
+fn pgc_pages(project: &str) -> Vec<&str> {
+    // Generated PGC elements may carry attributes, including the palette that
+    // keeps white text and black shadows aligned after navigation is merged.
+    project
+        .split("<pgc")
+        .skip(1)
+        .filter_map(|tail| {
+            if !tail.starts_with('>') && !tail.starts_with(char::is_whitespace) {
+                return None;
+            }
+            let (_, content) = tail.split_once('>')?;
+            let (content, _) = content.split_once("</pgc>")?;
+            Some(content)
+        })
+        .collect()
+}
+
 pub fn buttons(directory: &Path, total: usize, index: usize) -> Vec<Value> {
     let mut issues = Vec::new();
     let project = match fs::read_to_string(directory.join("xmltemp")) {
         Ok(text) => text,
         Err(error) => return vec![issue("MENU_BUTTON_XML_MISSING", error.to_string())],
     };
-    let pages: Vec<_> = project.split("<pgc>").skip(1).collect();
+    let pages = pgc_pages(&project);
     if pages.len() != total {
         issues.push(issue(
             "MENU_BUTTON_PAGE_MISMATCH",
@@ -161,5 +178,104 @@ pub fn still_warnings(output: &Path, author_arguments: &[String]) -> Vec<Value> 
         ]
     } else {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new(open: &str) -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let directory = std::env::temp_dir().join(format!(
+                "dvda-menu-buttons-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&directory).unwrap();
+            let mut document = String::from("<dvdauthor><amgm><menus>");
+            for page in 0..31 {
+                let target = if page < 3 { page + 4 } else { 1 };
+                document.push_str(&format!(
+                    "{open}<button name=\"button01\">jump menu {target};</button></pgc>"
+                ));
+                fs::write(
+                    directory.join(format!("spu_xmltemp_{page}.xml")),
+                    "<button name=\"button01\"/>",
+                )
+                .unwrap();
+            }
+            document.push_str("</menus></amgm></dvdauthor>");
+            fs::write(directory.join("xmltemp"), document).unwrap();
+            Self(directory)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn accepts_all_pages_with_plain_palette_and_multiline_pgc_attributes() {
+        for open in [
+            "<pgc>",
+            "<pgc palette=\"menu-palette.yuv\">",
+            "<pgc\n palette=\"menu-palette.yuv\" pause=\"inf\">",
+        ] {
+            let fixture = Fixture::new(open);
+            assert!(buttons(&fixture.0, 31, 3).is_empty(), "failed for {open}");
+            assert!(
+                buttons(&fixture.0, 30, 3)
+                    .iter()
+                    .any(|issue| issue["Code"] == "MENU_BUTTON_PAGE_MISMATCH")
+            );
+        }
+    }
+
+    #[test]
+    fn attributed_pages_still_reject_wrong_overlay_and_missing_return_button() {
+        let fixture = Fixture::new("<pgc palette=\"menu-palette.yuv\">");
+        fs::write(
+            fixture.0.join("spu_xmltemp_0.xml"),
+            "<button name=\"button999\"/>",
+        )
+        .unwrap();
+        assert!(
+            buttons(&fixture.0, 31, 3)
+                .iter()
+                .any(|issue| issue["Code"] == "MENU_BUTTON_MISMATCH")
+        );
+        fs::write(
+            fixture.0.join("spu_xmltemp_0.xml"),
+            "<button name=\"button01\"/>",
+        )
+        .unwrap();
+        let path = fixture.0.join("xmltemp");
+        let text = fs::read_to_string(&path)
+            .unwrap()
+            .replace(">jump menu 1;", ">jump menu 2;");
+        fs::write(&path, text).unwrap();
+        let issues = buttons(&fixture.0, 31, 3);
+        assert_eq!(issues.len(), 28);
+        assert!(
+            issues
+                .iter()
+                .all(|issue| issue["Code"] == "MENU_RETURN_BUTTON_MISSING")
+        );
+    }
+
+    #[test]
+    fn program_chain_boundaries_exclude_similar_names_and_outside_buttons() {
+        let text = "<pgcx><button name=\"button99\"/></pgcx><pgc palette=\"x\"><button name=\"button01\"/></pgc><button name=\"button88\"/>";
+        let pages = pgc_pages(text);
+        assert_eq!(pages.len(), 1);
+        assert_eq!(numbers(pages[0], "name=\"button", "\""), [1]);
     }
 }
