@@ -29,6 +29,7 @@ def generate(fixture_ffmpeg, root):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe",type=Path)
+    parser.add_argument("--require-static", action="store_true")
     parser.add_argument("--generate",nargs=2,type=Path)
     parser.add_argument("--fixture-ffmpeg",type=Path,default=shutil.which("ffmpeg"),
         help="Independent FFmpeg executable used only to generate FLAC test inputs")
@@ -98,9 +99,15 @@ def main():
             profile.write_text(json.dumps({"Version":1,"Language":"en","Values":values}),encoding="utf-8")
         config("mlp-batch")
         proc,hwnd,controls=launch()
-        runtime=next((root/"local/DVD-Audio-Maker/runtime").glob("*/avutil-61.dll")).parent
+        runtime=next((root/"local/DVD-Audio-Maker/runtime").glob("*/type.xml")).parent
         runtime_paths=[p for p in runtime.rglob("*") if p.is_file()]
         runtime_dlls=[p for p in runtime_paths if p.suffix.casefold()==".dll"]
+        if args.require_static:
+            assert not runtime_dlls, runtime_dlls
+            sys.path.insert(0, str(Path(__file__).parent / "native"))
+            from pe_dependencies import Pe
+            imports = Pe(exe).imports()
+            assert not any(name.startswith(("avcodec-", "avformat-", "avutil-", "swscale-", "swresample-")) for name in imports), imports
         assert not any(p.name.casefold().startswith("dvda-") or p.name.casefold()=="mlp_encoder.dll"
             for p in runtime_dlls),runtime_dlls
         assert not any(p.suffix.casefold()==".exe" for p in runtime_paths),runtime_paths
@@ -151,7 +158,7 @@ def main():
                 raise
             finally:
                 close(proc,hwnd)
-        encoded=runtime/"avutil-61.dll"
+        encoded=runtime/"data/menu/black_PAL_720x576.png"
         expected=hashlib.sha256(encoded.read_bytes()).hexdigest()
         encoded.write_bytes(b"damaged runtime")
         proc,hwnd,_=launch()
@@ -162,7 +169,7 @@ def main():
         record={"passed":True,"build_and_verify":completed,"menu_and_stills":True,
             "runtime_repair":True,"standalone_exe":True,"runtime_files":len(runtime_paths),
             "mode_checks":mode_checks,
-            "project_owned_runtime_dlls":[],"author_subprocess_shipped":False,
+            "project_owned_runtime_dlls":[],"runtime_dlls":[p.name for p in runtime_dlls],"author_subprocess_shipped":False,
             "system_only_path":True,"fixture_generator":str(fixture_ffmpeg),
             "executable_sha256":hashlib.sha256(exe.read_bytes()).hexdigest(),
             "source_frames":[192013,192020],"sample_rate":48000,"timings":timings}

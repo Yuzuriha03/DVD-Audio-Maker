@@ -100,10 +100,7 @@ fn option_ranges_sources_and_removed_branches() {
 #[test]
 fn automatic_workers_track_available_parallelism() {
     let detected = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
-    assert_eq!(
-        options::worker_count(usize::MAX),
-        detected.saturating_mul(2)
-    );
+    assert_eq!(options::worker_count(usize::MAX), detected);
     assert_eq!(options::worker_count(1), 1);
     assert_eq!(options::worker_count(0), 1);
     assert!(options::defaults("C:/Local").get("DVDA_MLP_JOBS").is_none());

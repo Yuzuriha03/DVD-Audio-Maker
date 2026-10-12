@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// Enable parallel audio decoding for a group of tracks
@@ -71,9 +71,41 @@ pub(crate) fn inspect_jobs<R: Send>(
         stop: &'a AtomicBool,
         index: usize,
         send: &'a mpsc::SyncSender<Event<R>>,
+        pending_progress: Option<u64>,
+        last_progress: Option<Instant>,
+    }
+    impl<R> WorkerCallbacks<'_, R> {
+        fn flush_progress(&mut self) {
+            if let Some(micros) = self.pending_progress.take() {
+                let _ = self.send.send(Event::Message(
+                    self.index,
+                    3,
+                    format!("out_time_us={micros}"),
+                ));
+                self.last_progress = Some(Instant::now());
+            }
+        }
     }
     impl<R> Callbacks for WorkerCallbacks<'_, R> {
         fn emit(&mut self, level: i32, text: &str) {
+            if level == 3
+                && let Some(micros) = text
+                    .trim()
+                    .strip_prefix("out_time_us=")
+                    .and_then(|value| value.parse::<u64>().ok())
+            {
+                self.pending_progress =
+                    Some(self.pending_progress.map_or(micros, |old| old.max(micros)));
+                if self
+                    .last_progress
+                    .is_none_or(|last| last.elapsed() >= Duration::from_millis(100))
+                {
+                    self.flush_progress();
+                }
+                return;
+            }
+            // Keep diagnostics in order and retain the final position before each one.
+            self.flush_progress();
             let _ = self
                 .send
                 .send(Event::Message(self.index, level, text.into()));
@@ -87,10 +119,7 @@ pub(crate) fn inspect_jobs<R: Send>(
     }
     let stop = AtomicBool::new(false);
     let next = AtomicUsize::new(0);
-    let workers = std::thread::available_parallelism()
-        .map_or(1, usize::from)
-        .min(super::parallel_enhanced::MAX_BATCH_THREADS)
-        .min(jobs.len());
+    let workers = crate::options::worker_count(jobs.len());
     std::thread::scope(|scope| {
         let (send, receive) = mpsc::sync_channel(workers * 2);
         for _ in 0..workers {
@@ -102,6 +131,8 @@ pub(crate) fn inspect_jobs<R: Send>(
                     stop,
                     index: 0,
                     send: &send,
+                    pending_progress: None,
+                    last_progress: None,
                 };
                 while !stop.load(Ordering::Acquire) {
                     let index = next.fetch_add(1, Ordering::Relaxed);
@@ -112,7 +143,9 @@ pub(crate) fn inspect_jobs<R: Send>(
                         break;
                     }
                     callbacks.index = index;
+                    callbacks.last_progress = None;
                     let result = inspect(job, &mut callbacks);
+                    callbacks.flush_progress();
                     if send.send(Event::Finished(index, result)).is_err() {
                         break;
                     }
@@ -312,5 +345,136 @@ mod tests {
             },
         );
         assert_eq!(result.unwrap_err().kind, "Cancelled");
+    }
+
+    #[test]
+    fn inspection_coalesces_progress_and_preserves_diagnostics_and_final_position() {
+        #[derive(Default)]
+        struct Events(Vec<(i32, String)>);
+        impl Callbacks for Events {
+            fn emit(&mut self, level: i32, text: &str) {
+                self.0.push((level, text.into()));
+            }
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+        }
+        let mut events = Events::default();
+        let result = inspect_jobs(
+            &fixture_jobs()[..1],
+            &mut events,
+            "source_decode",
+            0,
+            1,
+            Some(&[1.0]),
+            |_, callbacks| {
+                for micros in 1..=5000 {
+                    callbacks.emit(3, &format!("out_time_us={micros}"));
+                }
+                callbacks.emit(2, "crc mismatch");
+                callbacks.emit(3, "out_time_us=invalid");
+                callbacks.emit(2, "Number of samples: 48000");
+                callbacks.emit(3, "out_time_us=1000000");
+                Err::<(), _>(Failure::new("InvalidData", "diagnostic fixture"))
+            },
+        );
+        assert_eq!(result.unwrap_err().kind, "InvalidData");
+        let progress: Vec<_> = events
+            .0
+            .iter()
+            .filter(|(_, text)| text.starts_with("out_time_us="))
+            .collect();
+        assert!(progress.len() < 5000);
+        assert_eq!(progress[0].1, "out_time_us=1");
+        assert_eq!(progress.last().unwrap().1, "out_time_us=1000000");
+        let error = events
+            .0
+            .iter()
+            .position(|(_, text)| text == "crc mismatch")
+            .unwrap();
+        assert_eq!(events.0[error - 1].1, "out_time_us=5000");
+        assert_eq!(events.0[error + 1].1, "out_time_us=invalid");
+        assert_eq!(events.0[error + 2].1, "Number of samples: 48000");
+    }
+
+    #[test]
+    fn inspection_keeps_live_updates_during_long_jobs() {
+        struct Events(Vec<String>);
+        impl Callbacks for Events {
+            fn emit(&mut self, _: i32, text: &str) {
+                if text.starts_with("out_time_us=") {
+                    self.0.push(text.into());
+                }
+            }
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+        }
+        let mut events = Events(Vec::new());
+        inspect_jobs(
+            &fixture_jobs()[..1],
+            &mut events,
+            "source_decode",
+            0,
+            1,
+            None,
+            |_, callbacks| {
+                callbacks.emit(3, "out_time_us=1");
+                std::thread::sleep(Duration::from_millis(110));
+                callbacks.emit(3, "out_time_us=2");
+                std::thread::sleep(Duration::from_millis(110));
+                callbacks.emit(3, "out_time_us=3");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            events.0,
+            ["out_time_us=1", "out_time_us=2", "out_time_us=3"]
+        );
+    }
+
+    #[test]
+    #[ignore = "opt-in progress callback throughput benchmark"]
+    fn inspection_progress_callback_benchmark() {
+        #[derive(Default)]
+        struct Events {
+            messages: usize,
+            finals: usize,
+        }
+        impl Callbacks for Events {
+            fn emit(&mut self, _: i32, text: &str) {
+                if text.starts_with("out_time_us=") {
+                    self.messages += 1;
+                    self.finals += usize::from(text == "out_time_us=5000000");
+                }
+            }
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+        }
+        let mut events = Events::default();
+        let start = std::time::Instant::now();
+        inspect_jobs(
+            &fixture_jobs(),
+            &mut events,
+            "source_decode",
+            0,
+            8,
+            Some(&[5.0; 8]),
+            |_, callbacks| {
+                for value in 1..=5000 {
+                    callbacks.emit(3, &format!("out_time_us={}", value * 1000));
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(events.finals, 8);
+        println!(
+            "PROGRESS_BENCH seconds={:.6} messages={} jobs=8 generated=40000",
+            start.elapsed().as_secs_f64(),
+            events.messages,
+        );
     }
 }

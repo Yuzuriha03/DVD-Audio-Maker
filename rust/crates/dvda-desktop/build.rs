@@ -10,7 +10,7 @@ fn main() {
         "x86_64-pc-windows-msvc",
         "DVD-Audio Maker supports only Windows x64 MSVC"
     );
-    if env::var_os("CARGO_FEATURE_DIRECT_BRIDGES").is_some() {
+    if env::var_os("CARGO_FEATURE_DIRECT_BRIDGES").is_some() && !static_ffmpeg() {
         for library in [
             "avformat-63.dll",
             "avcodec-63.dll",
@@ -87,6 +87,19 @@ fn main() {
     // The .res already contains the application manifest as resource 1.
     println!("cargo:rustc-link-arg=/MANIFEST:NO");
     println!("cargo:rustc-link-arg={}", resource.display());
+}
+
+fn static_ffmpeg() -> bool {
+    println!("cargo:rerun-if-env-changed=DVDA_FFMPEG_PREFIX");
+    let Some(prefix) = env::var_os("DVDA_FFMPEG_PREFIX") else {
+        return false;
+    };
+    let manifest = PathBuf::from(prefix).join("build-manifest.json");
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    let bytes = std::fs::read(manifest).expect("FFmpeg build manifest required");
+    let record: serde_json::Value =
+        serde_json::from_slice(&bytes).expect("Invalid FFmpeg manifest");
+    record["linkage"] == "static"
 }
 
 fn compiler_in_path(name: &Path) -> Option<PathBuf> {

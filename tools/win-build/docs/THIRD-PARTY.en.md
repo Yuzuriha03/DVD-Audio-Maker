@@ -16,7 +16,7 @@ libraries. License and provenance notices are at the ZIP root as `LICENSE`,
 | `DvdaNotoCJK-Regular.ttc` | Chinese, Japanese and Korean menu fonts | SIL Open Font License 1.1 |
 
 Users run a single Rust GUI executable. The author, project adapters and MLP
-encoder are statically integrated; required third-party DLLs, fonts and menu data
+encoder and third-party FFmpeg/ImageMagick libraries are statically integrated; fonts and menu data
 are embedded. The old project C author, adapter DLLs and C17 encoder have been
 removed. FFmpeg, ImageMagick and other libraries enable only workflow features.
 The release does not contain `ffmpeg.exe`, `ffprobe.exe`, ImageMagick command-line

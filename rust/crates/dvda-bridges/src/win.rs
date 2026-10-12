@@ -112,10 +112,5 @@ pub unsafe fn wtext(p: *const u16) -> Vec<u16> {
     std::slice::from_raw_parts(p, n).to_vec()
 }
 pub fn workers() -> i32 {
-    unsafe {
-        GetActiveProcessorCount(0xffff)
-            .max(1)
-            .saturating_mul(2)
-            .min(i32::MAX as u32) as i32
-    }
+    unsafe { GetActiveProcessorCount(0xffff).max(1).min(i32::MAX as u32) as i32 }
 }

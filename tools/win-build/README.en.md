@@ -21,15 +21,26 @@ The package assembler expects validated x64 directories:
 
 | Input | Default | Required content |
 | --- | --- | --- |
-| Media | `build/media-native-shared` | `dvda-media.dll` and its FFmpeg-derived DLLs |
+| Media | `build/msvc-native/ffmpeg-static/install` | authenticated static FFmpeg, soxr and zlib archives |
 | Image | `build/image-native` | `dvda-image.dll`, XML policy/type/color files and notice |
-| Author | `build/rust-author-production` | complete Rust author, third-party DLL closure and provenance |
+| Author | explicit `--image-author` | complete Rust author built with the same static FFmpeg manifest |
 | Fonts/assets | `tools/win-build/prebuilt` or explicit `--prebuilt` | prepared menu assets and CJK fonts; missing inputs fail explicitly |
 | MLP oracle (optional) | `--encoder-runtime` | authenticated encoder oracle; never shipped |
 
 The packager verifies hashes, sizes, x64 architecture, the full import closure and assets. The MLP encoder is compiled directly into Rust. Image provenance must identify the Rust implementation; the local acceptance uses `build/rust-image-runtime`. Media/image adapter DLLs are development provenance inputs and are excluded from linked releases.
 
 FFmpeg and ImageMagick command-line programs are not runtime inputs. Rust bridges call their retained source-built libraries.
+
+Build static FFmpeg in a separate directory to preserve shared comparison builds:
+
+```bat
+python tools\win-build\build-msvc-ffmpeg.py --profile static --work-directory build\msvc-native\ffmpeg-static --msys-root D:\dev\msys64 --cmake PATH\TO\cmake.exe --source-cache build\msvc-native\ffmpeg\downloads
+```
+
+The launch scripts default to this static prefix. Override `DVDA_FFMPEG_PREFIX`
+explicitly for shared comparison builds. Static releases extract fonts and menu
+assets only; all five FFmpeg libraries and their static CRT/dependencies are linked
+into the EXE. Static linkage alone is not a measured encoding speed improvement.
 
 Format parsing, MLP CRC/parity, PCM comparison and read-only AOB disc verification are implemented in Rust. No format or verifier DLL is required; packaging no longer accepts `--formats-runtime`.
 
@@ -39,10 +50,10 @@ After native inputs are available:
 
 ```bat
 tools\win-build\build-all.cmd ^
-  --media-runtime build\media-native-shared ^
-  --image-runtime build\rust-image-runtime ^
-  --image-author build\rust-author-production ^
-  --prebuilt build\release-menu-final ^
+  --media-runtime build\msvc-native\ffmpeg-static\install ^
+  --image-runtime build\msvc-native\image-runtime ^
+  --image-author build\static-ffmpeg-20261013\author ^
+  --prebuilt build\msvc-native\package-assets ^
   --version v1.0
 ```
 

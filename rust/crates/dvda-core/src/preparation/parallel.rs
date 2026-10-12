@@ -5,7 +5,7 @@
 /// Empty batches and single-worker execution use the sequential baseline. Small
 /// batches reduce the estimate, which never claims a slowdown below that baseline.
 pub fn estimate_speedup(num_files: usize, num_cores: usize) -> f64 {
-    let workers = num_cores.clamp(1, 16).min(num_files.max(1));
+    let workers = num_cores.max(1).min(num_files.max(1));
     if workers == 1 {
         return 1.0;
     }
@@ -35,7 +35,7 @@ mod tests {
         for (items, cores) in [(0, 0), (1, 4), (100, 1), (4, 0)] {
             assert_eq!(estimate_speedup(items, cores), 1.0);
         }
-        assert_eq!(estimate_speedup(100, 128), estimate_speedup(100, 16));
+        assert_eq!(estimate_speedup(100, 128), estimate_speedup(100, 100));
     }
 
     #[test]

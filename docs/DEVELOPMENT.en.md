@@ -32,7 +32,7 @@ is a developer CLI diagnostic and is not exposed in the GUI.
 
 ## Native components
 
-Build third-party libraries and the Rust author using the [Windows build instructions](../tools/win-build/README.en.md). Linked builds require `DVDA_FFMPEG_PREFIX`, `DVDA_MAGICK_WORK`, `DVDA_MSYS_ROOT` and `DVDA_MENU_NATIVE_DIR` pointing to the static menu vendor. FFmpeg imports are delay-loaded: packaged startup extracts the runtime and registers its DLL search directory before invoking media APIs. EXE-only startup with fresh `LOCALAPPDATA` and a system-only PATH creates the desktop window and extracts only nine third-party DLLs. Direct developer tests still need an explicit third-party DLL search path.
+Build third-party libraries and the Rust author using the [Windows build instructions](../tools/win-build/README.en.md). Linked builds require `DVDA_FFMPEG_PREFIX`, `DVDA_MAGICK_WORK`, `DVDA_MSYS_ROOT` and `DVDA_MENU_NATIVE_DIR` pointing to the static menu vendor. The production FFmpeg static profile links all five libraries and their dependencies into the executable; only fonts, XML configuration and menu assets are extracted. The shared profile remains available for differential testing.
 
 Only `--no-default-features` compatibility builds and frozen differential tests use
 `DVDA_MEDIA_NATIVE_DIR`, `DVDA_IMAGE_NATIVE_DIR` and `DVDA_ENCODER_LIBRARY` to
@@ -153,7 +153,7 @@ samples. Benchmark timings do not replace full disc and playback validation.
 
 ## PCM preparation and worker evaluation
 
-All production worker pools use twice the detected logical processor count (saturating, minimum one), capped only by work items. Legacy job fields are ignored; CLI `--jobs` and evaluated `MlpJobs` are removed. Windows media codec contexts request the same automatic policy, subject to codec threading support: menu stills decode under that policy, but the one-shot PNG encode stays single-threaded because a frame-thread encoder only returns output after a flush and otherwise fails with EAGAIN. Build scripts share `worker_policy.py`; fixed build caps and the FFmpeg build `--jobs` selector are removed. GUI orchestration and the child-process tracing listener are single-task coordination, not parallel work pools.
+All production worker pools use the detected logical processor count (minimum one), capped by work items, without a multiplier or a fixed 16-worker limit. Legacy job fields are ignored; CLI `--jobs` and evaluated `MlpJobs` are removed. Windows media codec contexts request the same automatic policy, subject to codec threading support: menu stills decode under that policy, but the one-shot PNG encode stays single-threaded because a frame-thread encoder only returns output after a flush and otherwise fails with EAGAIN. Build scripts share `worker_policy.py`; fixed build caps and the FFmpeg build `--jobs` selector are removed. GUI orchestration and the child-process tracing listener are single-task coordination, not parallel work pools.
 
 Batch encoding reuses the decoded temporary WAV only when its rate, storage/valid bits, channel mask, RIFF structure, and PCM precision satisfy the target. Otherwise normalization remains in place. Reusing 20-bit PCM checks the low four bits; cancellation and temporary-file cleanup are preserved. Normalization bulk-copies 16-to-16 and 24-to-24 PCM, validates then copies 24-to-20 PCM, and uses a dedicated 32-bit-storage-to-24-bit packing path without relaxing precision checks.
 

@@ -469,12 +469,13 @@ mod tests {
                 .iter()
                 .all(|path| path.is_absolute() && path.is_file())
         );
-        assert!(paths.iter().any(|path| {
+        let loaded = paths.iter().any(|path| {
             path.file_name()
                 .unwrap()
                 .to_string_lossy()
                 .starts_with("avcodec-")
-        }));
+        });
+        assert_eq!(loaded, !dvda_bridges::ffmpeg::STATIC_LINKED);
     }
 
     #[test]

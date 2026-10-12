@@ -22,7 +22,7 @@ GUI 只提供检查音源、制作光盘和验证成品。dry-run 仅属于开�
 
 ## 原生组件
 
-按 [Windows 构建说明](../tools/win-build/README.md) 准备第三方库与 Rust author。直链构建需要设置 `DVDA_FFMPEG_PREFIX`、`DVDA_MAGICK_WORK`、`DVDA_MSYS_ROOT` 和指向静态菜单 vendor 的 `DVDA_MENU_NATIVE_DIR`。FFmpeg 使用延迟导入；正式包先解压内嵌 runtime 并注册 DLL 搜索目录，再调用媒体接口。隔离启动使用全新 `LOCALAPPDATA` 和仅系统目录的 PATH，已确认窗口创建以及仅 9 个第三方 DLL 的解压清单。开发测试直接调用接口时仍需显式提供这些第三方 DLL 的搜索路径。
+按 [Windows 构建说明](../tools/win-build/README.md) 准备第三方库与 Rust author。直链构建需要设置 `DVDA_FFMPEG_PREFIX`、`DVDA_MAGICK_WORK` 和指向静态菜单 vendor 的 `DVDA_MENU_NATIVE_DIR`。生产默认使用 MSVC static profile，将五个 FFmpeg 库及 soxr/zlib 静态链接到 EXE；内嵌运行资源只解压字体、XML 配置和菜单素材。shared profile 仍可用于开发对照测试，其 GUI 使用延迟导入。
 
 `--no-default-features` 兼容构建和冻结差分测试才使用 `DVDA_MEDIA_NATIVE_DIR`、`DVDA_IMAGE_NATIVE_DIR` 与 `DVDA_ENCODER_LIBRARY`；默认直链构建不通过这些变量选择已迁移的后端。
 
@@ -92,7 +92,7 @@ Rust 测试覆盖完整扫描、CRC 边界、对齐输出和 PCM 比较；可选
 
 ## PCM 准备优化与并行度评估
 
-所有生产 worker 池使用检测到的逻辑处理器数量的两倍（饱和计算、至少一个），只受工作项数量限制。旧 job 字段被忽略；CLI `--jobs` 与求值选项 `MlpJobs` 已移除。Windows 媒体编解码上下文也请求同一自动策略，实际线程由编解码器支持情况决定；菜单静图解码同样使用该策略，但单帧 PNG 编码必须保持单线程（帧线程编码器只在 flush 后才交回输出，一次性编码会返回 EAGAIN）。构建脚本共用 `worker_policy.py`，移除固定构建上限和 FFmpeg 构建 `--jobs` 选项。GUI 编排与子进程跟踪监听是单任务协调，不属于并行工作池。
+所有生产 worker 池使用检测到的逻辑处理器数量（至少一个），并按工作项数量限制，不再乘以二或设置固定的 16 线程上限。旧 job 字段被忽略；CLI `--jobs` 与求值选项 `MlpJobs` 已移除。Windows 媒体编解码上下文也请求同一自动策略，实际线程由编解码器支持情况决定；菜单静图解码同样使用该策略，但单帧 PNG 编码必须保持单线程（帧线程编码器只在 flush 后才交回输出，一次性编码会返回 EAGAIN）。构建脚本共用 `worker_policy.py`，移除固定构建上限和 FFmpeg 构建 `--jobs` 选项。GUI 编排与子进程跟踪监听是单任务协调，不属于并行工作池。
 
 批量编码在解码 WAV 的采样率、存储/有效位深、声道掩码、RIFF 结构与 PCM 精度均满足目标时直接复用该临时文件；否则仍执行规范化。20 位数据复用前检查低四位，保留取消检查和临时文件清理。规范化对 16→16、24→24 使用批量复制，24→20 校验后复制，32 位存储→24 位使用专用打包路径，不放宽精度校验。
 
