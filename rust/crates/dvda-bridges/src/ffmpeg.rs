@@ -210,8 +210,6 @@ pub unsafe fn text(p: *const c_char) -> String {
         unsafe { std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned() }
     }
 }
-/// # Safety
-/// Pointer arguments must be valid for their documented ABI and remain live throughout the call.
-pub unsafe fn done(v: i32) -> Result<(), i32> {
+pub fn done(v: i32) -> Result<(), i32> {
     if v < 0 { Err(v) } else { Ok(()) }
 }

@@ -43,12 +43,8 @@ impl FramePool {
         }
     }
 
-    /// Return a frame to the pool.
-    ///
-    /// # Safety
-    /// `frame` must be null or a live frame acquired from this pool and must not
-    /// be accessed again until reacquired.
-    pub unsafe fn release(&self, frame: *mut Frame) {
+    /// Return a frame acquired from this pool.
+    fn release(&self, frame: *mut Frame) {
         if frame.is_null() {
             return;
         }
@@ -119,10 +115,8 @@ impl PacketPool {
 
     /// Return a packet to the pool.
     ///
-    /// # Safety
-    /// `packet` must be null or a live packet acquired from this pool and must
-    /// not be accessed again until reacquired.
-    pub unsafe fn release(&self, packet: *mut Packet) {
+    /// Return a packet acquired from this pool.
+    fn release(&self, packet: *mut Packet) {
         if packet.is_null() {
             return;
         }
@@ -182,7 +176,7 @@ impl Default for PooledFrame {
 
 impl Drop for PooledFrame {
     fn drop(&mut self) {
-        unsafe { FRAME_POOL.release(self.0) };
+        FRAME_POOL.release(self.0);
     }
 }
 
@@ -207,7 +201,7 @@ impl Default for PooledPacket {
 
 impl Drop for PooledPacket {
     fn drop(&mut self) {
-        unsafe { PACKET_POOL.release(self.0) };
+        PACKET_POOL.release(self.0);
     }
 }
 
@@ -225,10 +219,8 @@ mod tests {
         assert!(!f1.is_null());
         assert!(!f2.is_null());
 
-        unsafe {
-            pool.release(f1);
-            pool.release(f2);
-        }
+        pool.release(f1);
+        pool.release(f2);
 
         let (available, allocated) = pool.stats();
         assert_eq!(available, 2);
