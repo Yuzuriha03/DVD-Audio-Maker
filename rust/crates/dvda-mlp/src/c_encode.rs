@@ -121,23 +121,30 @@ pub(crate) fn flush_interval(
     true
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the original C encode call boundary"
-)]
+pub(crate) struct EncodeOptions<'a> {
+    pub format: &'a OutputFormat,
+    pub restart_interval: u32,
+    pub cycle: u32,
+    pub predict: bool,
+    pub allow_bypass: bool,
+}
+
 pub(crate) fn encode(
     input: &mut impl crate::c_prepare::PcmInput,
-    format: &OutputFormat,
-    restart_interval: u32,
-    cycle: u32,
-    predict: bool,
+    options: EncodeOptions<'_>,
     mut matrix: Option<&mut crate::c_prepare::MatrixInterval>,
-    allow_bypass: bool,
     pending: &mut IntervalOutput,
     queue: &mut crate::c_output_queue::MlpOutputQueue,
     mut stamp: Option<&mut crate::c_stamp::MlpStampState<'_>>,
     emit: &mut impl FnMut(&[u32]) -> bool,
 ) -> Result<(), ()> {
+    let EncodeOptions {
+        format,
+        restart_interval,
+        cycle,
+        predict,
+        allow_bypass,
+    } = options;
     use crate::c_prepare::{lossless, prepare_matrix};
     let channels = input.channels();
     if channels != format.channels

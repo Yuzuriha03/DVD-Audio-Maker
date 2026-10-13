@@ -103,11 +103,14 @@ pub fn module_path(name: &str) -> Option<String> {
 /// # Safety
 /// Pointer arguments must be valid for their documented ABI and remain live throughout the call.
 pub unsafe fn wtext(p: *const u16) -> Vec<u16> {
-    let mut n = 0;
-    while *p.add(n) != 0 {
-        n += 1;
+    // SAFETY: the caller guarantees a readable, NUL-terminated UTF-16 string.
+    unsafe {
+        let mut n = 0;
+        while *p.add(n) != 0 {
+            n += 1;
+        }
+        std::slice::from_raw_parts(p, n).to_vec()
     }
-    std::slice::from_raw_parts(p, n).to_vec()
 }
 pub fn workers() -> i32 {
     unsafe { GetActiveProcessorCount(0xffff).max(1).min(i32::MAX as u32) as i32 }

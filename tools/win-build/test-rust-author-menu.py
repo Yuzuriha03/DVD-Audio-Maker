@@ -347,7 +347,7 @@ def main():
     for source in args.dll_directory.glob("*.dll"):
         shutil.copy2(source, runtime / source.name)
     for name in ("policy.xml", "colors.xml"):
-        shutil.copy2(ROOT / "build/rust-image-runtime" / name, runtime / name)
+        shutil.copy2(args.dll_directory / name, runtime / name)
     verifier = None
     if args.verifier:
         verifier = runtime / "dvda-cli.exe"

@@ -148,14 +148,17 @@ impl dvda_author::menu::Backend for Backend {
     }
     fn create_mpg(
         &mut self,
-        y4m: &Path,
-        wav: &Path,
-        output: &Path,
-        norm: &str,
-        aspect: &str,
-        still: bool,
+        request: dvda_author::menu::MpegRequest<'_>,
         callbacks: &mut dyn dvda_author::Callbacks,
     ) -> Result<(), String> {
+        let dvda_author::menu::MpegRequest {
+            y4m,
+            wav,
+            output,
+            norm,
+            aspect,
+            still,
+        } = request;
         #[cfg(feature = "direct-bridges")]
         {
             status(

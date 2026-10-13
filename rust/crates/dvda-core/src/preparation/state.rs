@@ -329,6 +329,95 @@ pub fn save_snapshot(
     });
     write_json(path,&json!({"Version":1,"SourceDirectory":normalize(root),"ConfigurationFingerprint":fingerprint,"Sources":records,"Manifest":manifest})).is_ok()
 }
+
+pub fn invalidate(path: &Path) {
+    if path.is_file() {
+        let _ = fs::remove_file(path);
+    }
+}
+pub fn reuse_snapshot(
+    path: &Path,
+    root: &str,
+    fingerprint: &str,
+    manifest: &str,
+) -> Result<(Option<Value>, String), Failure> {
+    let Some(value) = super::snapshot::load(path) else {
+        return Ok((None, "未找到可复用的准备快照".into()));
+    };
+    let reason = if value["Sources"].is_null() || value["Manifest"].is_null() {
+        Some("准备快照内容不完整")
+    } else if value["Version"] != 1 {
+        Some("准备快照版本已变化")
+    } else if !files::ordinal_ignore_case(
+        value["SourceDirectory"].as_str().unwrap_or(""),
+        &normalize(root),
+    ) {
+        Some("音源目录已变化")
+    } else if value["ConfigurationFingerprint"] != fingerprint {
+        Some("音源检查设置已变化")
+    } else if !matches(manifest, &value["Manifest"]) {
+        Some("准备清单已变化或不存在")
+    } else {
+        None
+    };
+    if let Some(reason) = reason {
+        return Ok((None, reason.into()));
+    }
+    let Some(expected) = value["Sources"].as_array() else {
+        return Ok((None, "准备快照内容不完整".into()));
+    };
+    // Corrupt null records cannot serve as cache evidence.
+    if expected
+        .iter()
+        .any(|item| item["RelativePath"].as_str().is_none() || item["Identity"].is_null())
+    {
+        return Ok((None, "准备快照内容不完整".into()));
+    }
+    let sources = enumerate_sources(Path::new(root))?;
+    if sources.len() != expected.len() {
+        return Ok((None, "音源文件数量已变化".into()));
+    }
+    let mut expected: Vec<_> = expected.iter().collect();
+    expected.sort_unstable_by(|left, right| {
+        files::ordinal_ignore_case_cmp(
+            left["RelativePath"].as_str().unwrap(),
+            right["RelativePath"].as_str().unwrap(),
+        )
+    });
+    for pair in expected.windows(2) {
+        if files::ordinal_ignore_case(
+            pair[0]["RelativePath"].as_str().unwrap(),
+            pair[1]["RelativePath"].as_str().unwrap(),
+        ) {
+            return Ok((None, "准备快照包含重复的音源路径".into()));
+        }
+    }
+    for source in &sources {
+        let relative = relative(root, source);
+        let found = expected
+            .binary_search_by(|item| {
+                files::ordinal_ignore_case_cmp(item["RelativePath"].as_str().unwrap(), &relative)
+            })
+            .ok()
+            .map(|index| expected[index]);
+        if found.is_none_or(|item| !matches(source, &item["Identity"])) {
+            return Ok((
+                None,
+                format!(
+                    "音源文件已变化: {}",
+                    Path::new(source)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                ),
+            ));
+        }
+    }
+    Ok((
+        Some(value),
+        format!("复用已确认的 {} 个音源检查结果", sources.len()),
+    ))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,93 +573,4 @@ mod tests {
         fs::write(source.join("replacement.flac"), b"source").unwrap();
         assert!(!reuse());
     }
-}
-
-pub fn invalidate(path: &Path) {
-    if path.is_file() {
-        let _ = fs::remove_file(path);
-    }
-}
-pub fn reuse_snapshot(
-    path: &Path,
-    root: &str,
-    fingerprint: &str,
-    manifest: &str,
-) -> Result<(Option<Value>, String), Failure> {
-    let Some(value) = super::snapshot::load(path) else {
-        return Ok((None, "未找到可复用的准备快照".into()));
-    };
-    let reason = if value["Sources"].is_null() || value["Manifest"].is_null() {
-        Some("准备快照内容不完整")
-    } else if value["Version"] != 1 {
-        Some("准备快照版本已变化")
-    } else if !files::ordinal_ignore_case(
-        value["SourceDirectory"].as_str().unwrap_or(""),
-        &normalize(root),
-    ) {
-        Some("音源目录已变化")
-    } else if value["ConfigurationFingerprint"] != fingerprint {
-        Some("音源检查设置已变化")
-    } else if !matches(manifest, &value["Manifest"]) {
-        Some("准备清单已变化或不存在")
-    } else {
-        None
-    };
-    if let Some(reason) = reason {
-        return Ok((None, reason.into()));
-    }
-    let Some(expected) = value["Sources"].as_array() else {
-        return Ok((None, "准备快照内容不完整".into()));
-    };
-    // Corrupt null records cannot serve as cache evidence.
-    if expected
-        .iter()
-        .any(|item| item["RelativePath"].as_str().is_none() || item["Identity"].is_null())
-    {
-        return Ok((None, "准备快照内容不完整".into()));
-    }
-    let sources = enumerate_sources(Path::new(root))?;
-    if sources.len() != expected.len() {
-        return Ok((None, "音源文件数量已变化".into()));
-    }
-    let mut expected: Vec<_> = expected.iter().collect();
-    expected.sort_unstable_by(|left, right| {
-        files::ordinal_ignore_case_cmp(
-            left["RelativePath"].as_str().unwrap(),
-            right["RelativePath"].as_str().unwrap(),
-        )
-    });
-    for pair in expected.windows(2) {
-        if files::ordinal_ignore_case(
-            pair[0]["RelativePath"].as_str().unwrap(),
-            pair[1]["RelativePath"].as_str().unwrap(),
-        ) {
-            return Ok((None, "准备快照包含重复的音源路径".into()));
-        }
-    }
-    for source in &sources {
-        let relative = relative(root, source);
-        let found = expected
-            .binary_search_by(|item| {
-                files::ordinal_ignore_case_cmp(item["RelativePath"].as_str().unwrap(), &relative)
-            })
-            .ok()
-            .map(|index| expected[index]);
-        if found.is_none_or(|item| !matches(source, &item["Identity"])) {
-            return Ok((
-                None,
-                format!(
-                    "音源文件已变化: {}",
-                    Path::new(source)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                ),
-            ));
-        }
-    }
-    Ok((
-        Some(value),
-        format!("复用已确认的 {} 个音源检查结果", sources.len()),
-    ))
 }

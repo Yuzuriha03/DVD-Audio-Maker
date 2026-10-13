@@ -1,5 +1,3 @@
-#![allow(unsafe_op_in_unsafe_fn)]
-
 // FFI optimizations - only for media feature
 #[cfg(feature = "media")]
 mod ffi_optimized;

@@ -29,22 +29,32 @@ pub(crate) fn mlp_matrix_noise(
     0
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C matrix function boundary"
-)]
-pub(crate) fn mlp_matrix_apply(
-    matrix: &[MlpMatrixPrimitive],
-    channels: usize,
-    qss: &[u32],
-    samples: &mut [i32],
-    count: usize,
-    extra0: Option<&[i32]>,
-    extra1: Option<&[i32]>,
-    mut bypass: Option<&mut [u8]>,
-    inverse: bool,
-    clip: bool,
-) -> i32 {
+pub(crate) struct MatrixApplyArgs<'a> {
+    pub matrix: &'a [MlpMatrixPrimitive],
+    pub channels: usize,
+    pub qss: &'a [u32],
+    pub samples: &'a mut [i32],
+    pub count: usize,
+    pub extra0: Option<&'a [i32]>,
+    pub extra1: Option<&'a [i32]>,
+    pub bypass: Option<&'a mut [u8]>,
+    pub inverse: bool,
+    pub clip: bool,
+}
+
+pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
+    let MatrixApplyArgs {
+        matrix,
+        channels,
+        qss,
+        samples,
+        count,
+        extra0,
+        extra1,
+        mut bypass,
+        inverse,
+        clip,
+    } = args;
     if channels == 0
         || channels > 6
         || count == 0
@@ -153,23 +163,34 @@ pub(crate) fn mlp_matrix_apply(
     overflow
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C interval matrix function boundary"
-)]
-fn apply_interval(
-    matrix: &[MlpMatrixPrimitive],
-    primitives: &mut usize,
-    channels: usize,
-    qss: &[[u32; 6]],
-    samples: &mut [i32],
-    count: usize,
-    bypass: &mut [u8],
-    bypass_bits: &mut u32,
-    lengths: Option<&[usize]>,
-    blocks: usize,
-    prefix: usize,
-) -> i32 {
+pub(crate) struct MatrixIntervalArgs<'a> {
+    pub(crate) matrix: &'a [MlpMatrixPrimitive],
+    pub(crate) primitives: &'a mut usize,
+    pub(crate) channels: usize,
+    pub(crate) qss: &'a [[u32; 6]],
+    pub(crate) samples: &'a mut [i32],
+    pub(crate) count: usize,
+    pub(crate) bypass: &'a mut [u8],
+    pub(crate) bypass_bits: &'a mut u32,
+    pub(crate) lengths: Option<&'a [usize]>,
+    pub(crate) blocks: usize,
+    pub(crate) prefix: usize,
+}
+
+fn apply_interval(args: MatrixIntervalArgs<'_>) -> i32 {
+    let MatrixIntervalArgs {
+        matrix,
+        primitives,
+        channels,
+        qss,
+        samples,
+        count,
+        bypass,
+        bypass_bits,
+        lengths,
+        blocks,
+        prefix,
+    } = args;
     if channels == 0
         || channels > 6
         || *primitives > 6
@@ -235,18 +256,18 @@ fn apply_interval(
                 return -1;
             }
             let current_qss = &qss[if lengths.is_some() { b } else { 0 }];
-            let result = mlp_matrix_apply(
-                &matrix[i..i + 1],
+            let result = mlp_matrix_apply(MatrixApplyArgs {
+                matrix: &matrix[i..i + 1],
                 channels,
-                current_qss,
-                &mut work[first * channels..],
-                block,
-                None,
-                None,
-                Some(&mut one),
-                false,
-                false,
-            );
+                qss: current_qss,
+                samples: &mut work[first * channels..],
+                count: block,
+                extra0: None,
+                extra1: None,
+                bypass: Some(&mut one),
+                inverse: false,
+                clip: false,
+            });
             if result < 0 {
                 return -1;
             }
@@ -279,92 +300,23 @@ fn apply_interval(
     rc
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C matrix function boundary"
-)]
-pub(crate) fn mlp_matrix_apply_interval(
-    matrix: &[MlpMatrixPrimitive],
-    primitives: &mut usize,
-    channels: usize,
-    qss: &[u32; 6],
-    samples: &mut [i32],
-    count: usize,
-    bypass: &mut [u8],
-    bypass_bits: &mut u32,
-) -> i32 {
-    apply_interval(
-        matrix,
-        primitives,
-        channels,
-        std::slice::from_ref(qss),
-        samples,
-        count,
-        bypass,
-        bypass_bits,
-        None,
-        count.div_ceil(160),
-        0,
-    )
+pub(crate) fn mlp_matrix_apply_interval(mut args: MatrixIntervalArgs<'_>) -> i32 {
+    args.lengths = None;
+    args.blocks = args.count.div_ceil(160);
+    apply_interval(args)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C matrix function boundary"
-)]
-pub(crate) fn mlp_matrix_apply_blocks(
-    matrix: &[MlpMatrixPrimitive],
-    primitives: &mut usize,
-    channels: usize,
-    qss: &[[u32; 6]],
-    lengths: &[usize],
-    samples: &mut [i32],
-    bypass: &mut [u8],
-    bypass_bits: &mut u32,
-) -> i32 {
-    mlp_matrix_apply_suffix_blocks(
-        matrix,
-        0,
-        primitives,
-        channels,
-        qss,
-        lengths,
-        samples,
-        bypass,
-        bypass_bits,
-    )
+pub(crate) fn mlp_matrix_apply_blocks(args: MatrixIntervalArgs<'_>) -> i32 {
+    mlp_matrix_apply_suffix_blocks(MatrixIntervalArgs { prefix: 0, ..args })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C matrix function boundary"
-)]
-pub(crate) fn mlp_matrix_apply_suffix_blocks(
-    matrix: &[MlpMatrixPrimitive],
-    prefix: usize,
-    primitives: &mut usize,
-    channels: usize,
-    qss: &[[u32; 6]],
-    lengths: &[usize],
-    samples: &mut [i32],
-    bypass: &mut [u8],
-    bypass_bits: &mut u32,
-) -> i32 {
+pub(crate) fn mlp_matrix_apply_suffix_blocks(mut args: MatrixIntervalArgs<'_>) -> i32 {
+    let lengths = args.lengths.unwrap_or(&[]);
     if lengths.is_empty() || lengths.len() > 128 || lengths.iter().any(|&v| v == 0 || v > 160) {
         return -1;
     }
-    let count = lengths.iter().sum();
-    apply_interval(
-        matrix,
-        primitives,
-        channels,
-        qss,
-        samples,
-        count,
-        bypass,
-        bypass_bits,
-        Some(lengths),
-        lengths.len(),
-        prefix,
-    )
+    args.count = lengths.iter().sum();
+    args.lengths = Some(lengths);
+    args.blocks = lengths.len();
+    apply_interval(args)
 }

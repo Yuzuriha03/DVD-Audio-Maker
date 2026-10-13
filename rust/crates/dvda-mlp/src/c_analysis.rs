@@ -45,10 +45,10 @@ pub(crate) fn mlp_matrix_analysis_reset(state: &mut MlpMatrixAnalysis) -> Result
     state.energy[..state.channels as usize].fill(1.0);
     Ok(())
 }
-#[allow(
-    clippy::assign_op_pattern,
-    reason = "Preserve C floating-point operand order"
-)]
+#[inline]
+fn add_in_original_order(left: f64, right: f64) -> f64 {
+    left + right
+}
 pub(crate) fn mlp_matrix_analysis_add(
     state: &mut MlpMatrixAnalysis,
     samples: &[i32],
@@ -89,7 +89,7 @@ pub(crate) fn mlp_matrix_analysis_add(
         }
         work.last[ch] = last;
         work.difference[ch] = delta;
-        work.energy[ch] = energy + work.energy[ch];
+        work.energy[ch] = add_in_original_order(energy, work.energy[ch]);
     }
     for ch in 0..work.channels as usize {
         for j in ch..work.channels as usize {
@@ -210,23 +210,34 @@ pub(crate) fn mlp_matrix_decorrelate(
     Ok((sequence, t, c))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C function boundary"
-)]
-pub(crate) fn mlp_matrix_select_append(
-    covariance: &[f64; 36],
-    ratio: &[f64; 6],
-    channels: usize,
-    fixed: usize,
-    samples: usize,
-    qss: &[u32; 6],
-    scale_count: &[u32; 6],
-    allow_bypass: bool,
-    matrix: &mut [crate::matrix::MlpMatrixPrimitive; 6],
-    primitives: &mut usize,
-    bypass_bits: &mut u32,
-) -> Result<(), ()> {
+pub(crate) struct MatrixSelection<'a> {
+    pub covariance: &'a [f64; 36],
+    pub ratio: &'a [f64; 6],
+    pub channels: usize,
+    pub fixed: usize,
+    pub samples: usize,
+    pub qss: &'a [u32; 6],
+    pub scale_count: &'a [u32; 6],
+    pub allow_bypass: bool,
+    pub matrix: &'a mut [crate::matrix::MlpMatrixPrimitive; 6],
+    pub primitives: &'a mut usize,
+    pub bypass_bits: &'a mut u32,
+}
+
+pub(crate) fn mlp_matrix_select_append(args: MatrixSelection<'_>) -> Result<(), ()> {
+    let MatrixSelection {
+        covariance,
+        ratio,
+        channels,
+        fixed,
+        samples,
+        qss,
+        scale_count,
+        allow_bypass,
+        matrix,
+        primitives,
+        bypass_bits,
+    } = args;
     use crate::matrix::MlpMatrixPrimitive;
     if samples == 0
         || samples > i32::MAX as usize
@@ -322,27 +333,8 @@ pub(crate) fn mlp_matrix_select_append(
     Ok(())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C function boundary"
-)]
-pub(crate) fn mlp_matrix_select(
-    covariance: &[f64; 36],
-    ratio: &[f64; 6],
-    channels: usize,
-    fixed: usize,
-    samples: usize,
-    qss: &[u32; 6],
-    scale_count: &[u32; 6],
-    allow_bypass: bool,
-    matrix: &mut [crate::matrix::MlpMatrixPrimitive; 6],
-    primitives: &mut usize,
-    bypass_bits: &mut u32,
-) -> Result<(), ()> {
-    let mut work = [crate::matrix::MlpMatrixPrimitive::default(); 6];
-    let mut count = 0;
-    let mut bits = 0;
-    mlp_matrix_select_append(
+pub(crate) fn mlp_matrix_select(args: MatrixSelection<'_>) -> Result<(), ()> {
+    let MatrixSelection {
         covariance,
         ratio,
         channels,
@@ -351,10 +343,26 @@ pub(crate) fn mlp_matrix_select(
         qss,
         scale_count,
         allow_bypass,
-        &mut work,
-        &mut count,
-        &mut bits,
-    )?;
+        matrix,
+        primitives,
+        bypass_bits,
+    } = args;
+    let mut work = [crate::matrix::MlpMatrixPrimitive::default(); 6];
+    let mut count = 0;
+    let mut bits = 0;
+    mlp_matrix_select_append(MatrixSelection {
+        covariance,
+        ratio,
+        channels,
+        fixed,
+        samples,
+        qss,
+        scale_count,
+        allow_bypass,
+        matrix: &mut work,
+        primitives: &mut count,
+        bypass_bits: &mut bits,
+    })?;
     *matrix = work;
     *primitives = count;
     *bypass_bits = bits;

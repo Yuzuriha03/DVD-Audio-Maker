@@ -245,6 +245,7 @@ def main():
          '/I'+str(configure/'src'), *[configure/'src'/(name+'.cpp') for name in GENERATOR_SOURCES],
          configure/'src/headless.cpp', '/Fe'+str(configure/'headless.exe'), '/Fo'+str(configure)+os.sep,
          '/link', 'shlwapi.lib', 'version.lib'], configure, 'configure-build.log')
+    (source/'Artifacts/bin').mkdir(parents=True, exist_ok=True)
     run([configure/'headless.exe', source], source, 'configure-generate.log')
     generated_patches = {}
     for project in (source/'ProjectFiles').rglob('*.vcxproj'):

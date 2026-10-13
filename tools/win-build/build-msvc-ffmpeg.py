@@ -138,6 +138,7 @@ def build_dependencies(work, downloads, cache, cmake, env, log, static_crt=False
                 '-DBUILD_TESTS=ON', '-DBUILD_EXAMPLES=OFF', '-DWITH_OPENMP=OFF',
                 '-DWITH_LSR_BINDINGS=OFF', '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW',
                 '-DCMAKE_POLICY_DEFAULT_CMP0127=NEW',
+                '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
                 '-DCMAKE_MSVC_RUNTIME_LIBRARY='+('MultiThreaded' if static_crt else 'MultiThreadedDLL'),
                 '-DCMAKE_INSTALL_PREFIX='+native_short_path(prefix)], log, env)
     run_logged([cmake, '--build', soxr_build], log, env)
