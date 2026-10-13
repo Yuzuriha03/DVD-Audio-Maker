@@ -1,7 +1,15 @@
+#[cfg(not(feature = "image"))]
 use dvda_bridges::author_loader::{
     dvda_image_command, dvda_image_write_y4m, dvda_menu_navigation, dvda_menu_subpictures,
 };
+#[cfg(not(feature = "image"))]
 use std::{ffi::CString, path::PathBuf};
+#[cfg(feature = "image")]
+fn main() {
+    eprintln!("Run this loader example with --no-default-features --features author-loader");
+    std::process::exit(2);
+}
+#[cfg(not(feature = "image"))]
 fn main() {
     let arguments: Vec<_> = std::env::args().collect();
     assert_eq!(

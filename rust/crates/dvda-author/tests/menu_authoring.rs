@@ -86,14 +86,15 @@ impl Backend for FixtureBackend {
     }
     fn create_mpg(
         &mut self,
-        _: &Path,
-        _: &Path,
-        output: &Path,
-        norm: &str,
-        _: &str,
-        still: bool,
+        request: dvda_author::menu::MpegRequest<'_>,
         _: &mut dyn Callbacks,
     ) -> Result<(), String> {
+        let dvda_author::menu::MpegRequest {
+            output,
+            norm,
+            still,
+            ..
+        } = request;
         if still {
             self.still_count += 1;
         }

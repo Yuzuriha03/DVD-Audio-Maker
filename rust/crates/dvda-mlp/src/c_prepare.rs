@@ -259,42 +259,48 @@ pub(crate) fn prepare_matrix(
         ratio[ch] = m.analysis.covariance[ch * 7] / m.analysis.energy[ch];
     }
     if m.enable_matrix {
-        mlp_matrix_select(
-            &m.analysis.covariance,
-            &ratio,
+        mlp_matrix_select(crate::c_analysis::MatrixSelection {
+            covariance: &m.analysis.covariance,
+            ratio: &ratio,
             channels,
-            0,
-            total,
-            &qss,
-            &scale,
-            (allow_bypass || m.original_scale) && input.au_samples() != 160,
-            &mut m.matrix,
-            &mut m.count,
-            &mut m.bits,
-        )?;
+            fixed: 0,
+            samples: total,
+            qss: &qss,
+            scale_count: &scale,
+            allow_bypass: (allow_bypass || m.original_scale) && input.au_samples() != 160,
+            matrix: &mut m.matrix,
+            primitives: &mut m.count,
+            bypass_bits: &mut m.bits,
+        })?;
         m.selected_matrix = m.count != 0;
         let rc = if m.original_scale {
-            mlp_matrix_apply_blocks(
-                &m.matrix,
-                &mut m.count,
+            mlp_matrix_apply_blocks(crate::matrix::MatrixIntervalArgs {
+                matrix: &m.matrix,
+                primitives: &mut m.count,
                 channels,
-                &m.scale.qss,
-                &m.lengths,
-                &mut m.pcm,
-                &mut m.bypass,
-                &mut m.bits,
-            )
+                qss: &m.scale.qss,
+                samples: &mut m.pcm,
+                count: 0,
+                bypass: &mut m.bypass,
+                bypass_bits: &mut m.bits,
+                lengths: Some(&m.lengths),
+                blocks: 0,
+                prefix: 0,
+            })
         } else {
-            mlp_matrix_apply_interval(
-                &m.matrix,
-                &mut m.count,
+            mlp_matrix_apply_interval(crate::matrix::MatrixIntervalArgs {
+                matrix: &m.matrix,
+                primitives: &mut m.count,
                 channels,
-                &qss,
-                &mut m.pcm,
-                total,
-                &mut m.bypass,
-                &mut m.bits,
-            )
+                qss: std::slice::from_ref(&qss),
+                samples: &mut m.pcm,
+                count: total,
+                bypass: &mut m.bypass,
+                bypass_bits: &mut m.bits,
+                lengths: None,
+                blocks: 0,
+                prefix: 0,
+            })
         };
         if rc < 0 {
             return Err(());
@@ -320,9 +326,12 @@ pub(crate) fn prepare_matrix(
                 Some(&mut m.pool[ch]),
                 &mono,
                 &m.lengths,
-                if limited { 4 } else { 8 },
-                if !limited && total >= 40 { 4 } else { 0 },
-                32,
+                crate::search::SearchOptions {
+                    maximum_a: if limited { 4 } else { 8 },
+                    maximum_b: if !limited && total >= 40 { 4 } else { 0 },
+                    lag: 32,
+                    perturbations: 16,
+                },
                 if limited { 2 } else { 0 },
                 &mut m.prediction[ch],
             );
@@ -332,9 +341,12 @@ pub(crate) fn prepare_matrix(
                     None,
                     &mono,
                     &m.lengths,
-                    if limited { 4 } else { 8 },
-                    0,
-                    8,
+                    crate::search::SearchOptions {
+                        maximum_a: if limited { 4 } else { 8 },
+                        maximum_b: 0,
+                        lag: 8,
+                        perturbations: 16,
+                    },
                     if limited { 2 } else { 0 },
                     &mut m.prediction[ch],
                 );

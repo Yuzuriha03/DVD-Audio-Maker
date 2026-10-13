@@ -149,21 +149,28 @@ pub(crate) fn mlp_search_pool_replacement(pool: &MlpSearchPool, order: u32) -> u
     replacement
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C mlp_search_pool_select function boundary"
-)]
+#[derive(Clone, Copy)]
+pub(crate) struct SearchOptions {
+    pub lag: usize,
+    pub maximum_b: u32,
+    pub maximum_a: usize,
+    pub perturbations: u32,
+}
+
 pub(crate) fn mlp_search_pool_select(
     pool: &mut MlpSearchPool,
     correlation: &[f64],
-    lag: usize,
-    maximum_b: u32,
-    maximum_a: usize,
-    perturbations: u32,
+    options: SearchOptions,
     b: &mut MlpWireFilter,
     reflection: &mut [f64; 8],
     relative_error: &mut f64,
 ) -> i32 {
+    let SearchOptions {
+        lag,
+        maximum_b,
+        maximum_a,
+        perturbations,
+    } = options;
     let mut best_k = [0.0; 8];
     let mut trial_k = [0.0; 8];
     let mut best = 0.0;
@@ -303,21 +310,15 @@ pub(crate) fn mlp_search_pool_select(
     0
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C mlp_search_joint function boundary"
-)]
 pub(crate) fn mlp_search_joint(
     pool: &mut MlpSearchPool,
     correlation: &[f64],
-    lag: usize,
-    maximum_b: u32,
-    maximum_a: usize,
-    perturbations: u32,
+    options: SearchOptions,
     probability: f64,
     a_result: &mut MlpWireFilter,
     b_result: &mut MlpWireFilter,
 ) -> i32 {
+    let lag = options.lag;
     if lag > 49
         || correlation.len() <= lag
         || !probability.is_finite()
@@ -340,18 +341,7 @@ pub(crate) fn mlp_search_joint(
     let mut threshold = 15i32;
     r[..=lag].copy_from_slice(&correlation[..=lag]);
     r[0] += 10.0;
-    if mlp_search_pool_select(
-        &mut work,
-        &r,
-        lag,
-        maximum_b,
-        maximum_a,
-        perturbations,
-        &mut b,
-        &mut k,
-        &mut relative,
-    ) != 0
-    {
+    if mlp_search_pool_select(&mut work, &r, options, &mut b, &mut k, &mut relative) != 0 {
         return -1;
     }
     let limit = 8 - b.order as usize;
@@ -506,10 +496,6 @@ pub(crate) fn mlp_search_fir(
     0
 }
 
-#[allow(
-    clippy::needless_range_loop,
-    reason = "Preserve C matrix elimination indexing and accumulation order"
-)]
 pub(crate) fn mlp_search_feedback_state(
     pcm: &[i32; 40],
     a: &MlpWireFilter,
@@ -560,8 +546,8 @@ pub(crate) fn mlp_search_feedback_state(
         let mut matrix = [[0.0; 37]; 5];
         let mut maximum = 0.0;
         let mut invalid = false;
-        for k in 0..p {
-            matrix[k][0] = b.coefficient[p - 1 - k];
+        for (k, row) in matrix.iter_mut().enumerate().take(p) {
+            row[0] = b.coefficient[p - 1 - k];
         }
         matrix[p][0] = f64::from(e[8]);
         for t in 1..32 {
@@ -578,8 +564,8 @@ pub(crate) fn mlp_search_feedback_state(
         for k in 0..=p {
             for j in k..=p {
                 scratch[j] = 0.0;
-                for t in 0..32 + p {
-                    scratch[j] += matrix[j][t] * matrix[k][t];
+                for (left, right) in matrix[j].iter().zip(matrix[k].iter()).take(32 + p) {
+                    scratch[j] += left * right;
                 }
             }
             if (!scratch[k].is_finite() || scratch[k] <= 0.0) && (k != p || scratch[k] != 0.0) {
@@ -588,8 +574,13 @@ pub(crate) fn mlp_search_feedback_state(
             for j in k + 1..=p {
                 let ratio = scratch[j] / scratch[k];
                 scratch[j] = ratio;
-                for t in 0..32 + p {
-                    matrix[j][t] -= ratio * matrix[k][t];
+                let (source_rows, target_rows) = matrix.split_at_mut(j);
+                for (left, right) in target_rows[0]
+                    .iter_mut()
+                    .zip(source_rows[k].iter())
+                    .take(32 + p)
+                {
+                    *left -= ratio * right;
                 }
             }
             matrix[k][k..=p].copy_from_slice(&scratch[k..=p]);
@@ -651,20 +642,20 @@ pub(crate) struct MlpSearchPlan {
     pub state: MlpWireState,
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Preserve the C mlp_search_interval function boundary"
-)]
 pub(crate) fn mlp_search_interval(
     mut pool: Option<&mut MlpSearchPool>,
     pcm: &[i32],
     lengths: &[usize],
-    maximum_a: usize,
-    maximum_b: u32,
-    lag: usize,
+    options: SearchOptions,
     mode_flags: u32,
     plan: &mut MlpSearchPlan,
 ) -> i32 {
+    let SearchOptions {
+        maximum_a,
+        maximum_b,
+        lag,
+        ..
+    } = options;
     let mut work = MlpSearchPlan::default();
     let mut correlation = [0.0; 50];
     let mut total = 0usize;
@@ -693,10 +684,7 @@ pub(crate) fn mlp_search_interval(
             || mlp_search_joint(
                 &mut candidates,
                 &correlation,
-                lag,
-                maximum_b,
-                maximum_a,
-                16,
+                options,
                 0.001,
                 &mut work.a,
                 &mut work.b,

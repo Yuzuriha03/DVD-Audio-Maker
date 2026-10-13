@@ -152,7 +152,6 @@ impl<T: Send + 'static> Pipeline<T> {
 ///
 /// let results = pipeline.execute(file_paths);
 /// ```
-
 #[cfg(test)]
 mod tests {
     use super::*;

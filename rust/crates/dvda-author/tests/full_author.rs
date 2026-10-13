@@ -23,12 +23,7 @@ impl menu::Backend for NoMenu {
     }
     fn create_mpg(
         &mut self,
-        _: &Path,
-        _: &Path,
-        _: &Path,
-        _: &str,
-        _: &str,
-        _: bool,
+        _: menu::MpegRequest<'_>,
         _: &mut dyn Callbacks,
     ) -> Result<(), String> {
         panic!("Unexpected menu operation")

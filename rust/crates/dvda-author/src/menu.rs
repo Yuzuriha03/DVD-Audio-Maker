@@ -17,10 +17,20 @@ const WIDTH: u16 = 720;
 const INDEX_CELLS: usize = 12;
 const MAX_ROWS: usize = 30;
 
+/// Inputs for one MPEG menu or still stream; still encoding ignores `wav`.
+pub struct MpegRequest<'a> {
+    pub y4m: &'a Path,
+    pub wav: &'a Path,
+    pub output: &'a Path,
+    pub norm: &'a str,
+    pub aspect: &'a str,
+    pub still: bool,
+}
+
 /// All calls are synchronous and operate on owned argument vectors or paths.
 /// `write_y4m` receives `pal`/`secam`/`ntsc` and a display aspect string; the
 /// image bridge maps the norm to its `25`/`30` frame-rate argument. `create_mpg`
-/// receives the MPEG aspect code (`1`..`4`). Still encoding ignores `wav`.
+/// receives the MPEG aspect code (`1`..`4`).
 pub trait Backend {
     fn image_run(&mut self, args: Vec<String>, callbacks: &mut dyn Callbacks)
     -> Result<(), String>;
@@ -32,15 +42,9 @@ pub trait Backend {
         aspect: &str,
         callbacks: &mut dyn Callbacks,
     ) -> Result<(), String>;
-    #[allow(clippy::too_many_arguments)]
     fn create_mpg(
         &mut self,
-        y4m: &Path,
-        wav: &Path,
-        output: &Path,
-        norm: &str,
-        aspect: &str,
-        still: bool,
+        request: MpegRequest<'_>,
         callbacks: &mut dyn Callbacks,
     ) -> Result<(), String>;
     fn subpictures(
@@ -1013,17 +1017,15 @@ fn make_index_background(
     run_image(backend, args, callbacks)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn make_masks(
     page: &Page,
     blank: &Path,
-    image: &Path,
-    highlight: &Path,
-    select: &Path,
+    layers: [&Path; 3],
     options: &Options,
     backend: &mut dyn Backend,
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
+    let [image, highlight, select] = layers;
     let mut image_args = vec!["magick".into(), path_text(blank)?, "+antialias".into()];
     let mut highlight_args = image_args.clone();
     for args in [&mut image_args, &mut highlight_args] {
@@ -1130,27 +1132,38 @@ fn choose(paths: &[PathBuf], rank: usize) -> Option<&Path> {
         .or_else(|| paths.last())
         .map(PathBuf::as_path)
 }
-#[allow(clippy::too_many_arguments)]
+struct PicturePaths<'a> {
+    input: &'a Path,
+    y4m: &'a Path,
+    output: &'a Path,
+    wav: &'a Path,
+}
+
 fn encode_picture(
-    input: &Path,
-    y4m: &Path,
-    output: &Path,
-    wav: &Path,
+    paths: PicturePaths<'_>,
     still: bool,
     options: &Options,
     backend: &mut dyn Backend,
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
+    let PicturePaths {
+        input,
+        y4m,
+        output,
+        wav,
+    } = paths;
     check(callbacks)?;
     backend.write_y4m(input, y4m, &options.norm, options.aspect_name(), callbacks)?;
     check(callbacks)?;
     let result = backend.create_mpg(
-        y4m,
-        wav,
-        output,
-        &options.norm,
-        &options.aspect.to_string(),
-        still,
+        MpegRequest {
+            y4m,
+            wav,
+            output,
+            norm: &options.norm,
+            aspect: &options.aspect.to_string(),
+            still,
+        },
         callbacks,
     );
     let _ = fs::remove_file(y4m);
@@ -1530,10 +1543,12 @@ pub fn author(
                     }
                     let path = temporary.join(format!("menu-background-{rank}.mpg"));
                     encode_picture(
-                        &picture,
-                        &temporary.join(format!("menu-{rank}.y4m")),
-                        &path,
-                        &wav,
+                        PicturePaths {
+                            input: &picture,
+                            y4m: &temporary.join(format!("menu-{rank}.y4m")),
+                            output: &path,
+                            wav: &wav,
+                        },
                         false,
                         options,
                         backend,
@@ -1545,7 +1560,12 @@ pub fn author(
                 let highlight = temporary.join(format!("hlpic{rank}.png"));
                 let select = temporary.join(format!("selpic{rank}.png"));
                 make_masks(
-                    page, &blank, &image, &highlight, &select, options, backend, callbacks,
+                    page,
+                    &blank,
+                    [&image, &highlight, &select],
+                    options,
+                    backend,
+                    callbacks,
                 )?;
                 for (paths, target) in [
                     (&options.images, &image),
@@ -1660,10 +1680,12 @@ pub fn author(
                 )?;
                 let stream = temporary.join(format!("still-picture-{rank}.mpg"));
                 encode_picture(
-                    &picture,
-                    &temporary.join(format!("still-{rank}.y4m")),
-                    &stream,
-                    &wav,
+                    PicturePaths {
+                        input: &picture,
+                        y4m: &temporary.join(format!("still-{rank}.y4m")),
+                        output: &stream,
+                        wav: &wav,
+                    },
                     true,
                     options,
                     backend,

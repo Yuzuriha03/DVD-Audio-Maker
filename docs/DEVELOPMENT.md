@@ -51,9 +51,11 @@ dvda-toolchain.exe package --repo . --output build/release --media-runtime build
 
 ## 验收
 
+`build/msvc-native` 和 `build/menu-msvc-vendor` 中的清单记录原生库的构建来源和哈希，应与库文件一起保留。删除这些目录后，需重新构建 FFmpeg、ImageMagick 和菜单 vendor 库，再执行完整检查和打包；只复制旧清单不能恢复依赖。
+
 ```powershell
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo clippy --manifest-path rust/Cargo.toml --offline --workspace --all-targets --all-features -- -D warnings"
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1
 ```
 

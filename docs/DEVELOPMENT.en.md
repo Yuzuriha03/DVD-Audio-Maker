@@ -89,11 +89,17 @@ mismatched inputs are rejected before release staging, preserving existing files
 PDBs, build-provenance JSON, `config.env` and personal profiles. Build outputs
 remain under the Git-ignored `build` directory.
 
+Native manifests under `build/msvc-native` and `build/menu-msvc-vendor` describe
+the compiled libraries and their hashes. Keep them with those libraries. After
+deleting these directories, rebuild FFmpeg, ImageMagick and the menu vendor
+archives before running the full workspace checks or packaging; copying old
+manifests alone does not restore the dependencies.
+
 ## Acceptance
 
 ```powershell
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
-cargo clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo clippy --manifest-path rust/Cargo.toml --offline --workspace --all-targets --all-features -- -D warnings"
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1
 ```
 

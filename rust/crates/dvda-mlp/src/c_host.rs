@@ -93,12 +93,14 @@ pub(crate) fn encode_stream(
     };
     let ok = encode(
         &mut pcm,
-        &format,
-        c.restart_interval as u32,
-        c.sample_rate / samples as u32,
-        true,
+        crate::c_encode::EncodeOptions {
+            format: &format,
+            restart_interval: c.restart_interval as u32,
+            cycle: c.sample_rate / samples as u32,
+            predict: true,
+            allow_bypass: false,
+        },
         Some(&mut matrix),
-        false,
         &mut pending,
         &mut queue,
         Some(&mut stamp),
