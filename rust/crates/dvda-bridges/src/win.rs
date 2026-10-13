@@ -86,16 +86,14 @@ pub struct Job {
 pub fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain([0]).collect()
 }
-/// # Safety
-/// Pointer arguments must be valid for their documented ABI and remain live throughout the call.
-pub unsafe fn module_path(name: &str) -> Option<String> {
+pub fn module_path(name: &str) -> Option<String> {
     let wide_name = wide(name);
-    let module = GetModuleHandleW(wide_name.as_ptr());
+    let module = unsafe { GetModuleHandleW(wide_name.as_ptr()) };
     if module.is_null() {
         return None;
     }
     let mut buf = vec![0u16; 32768];
-    let len = GetModuleFileNameW(module, buf.as_mut_ptr(), buf.len() as u32);
+    let len = unsafe { GetModuleFileNameW(module, buf.as_mut_ptr(), buf.len() as u32) };
     if len == 0 || len as usize >= buf.len() {
         return None;
     }
