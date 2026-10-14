@@ -70,11 +70,7 @@ fn read_number<const N: usize>(input: &mut File) -> Result<[u8; N], Failure> {
 }
 pub fn metadata(path: &str, units: u64) -> Result<Vec<Stamp>, Failure> {
     if crate::config::trim(path).is_empty() {
-        return Ok(vec![Stamp {
-            start: 0,
-            packet: vec![0, 0, 0x40, 0],
-            valid_bits: 0,
-        }]);
+        return Ok(vec![crate::encoder_stamp::current()?]);
     }
     let mut input = crate::identity::open_read(path)?;
     let mut magic = Vec::new();
@@ -123,6 +119,7 @@ pub fn metadata(path: &str, units: u64) -> Result<Vec<Stamp>, Failure> {
 }
 pub fn write_metadata(path: &Path, frames: i64, rate: u32) -> Result<(), Failure> {
     let units = access_units(frames, rate)?;
+    let stamp = crate::encoder_stamp::current()?;
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -133,8 +130,8 @@ pub fn write_metadata(path: &Path, frames: i64, rate: u32) -> Result<(), Failure
         &units.to_le_bytes(),
         &1u32.to_le_bytes(),
         &0u64.to_le_bytes(),
-        &4u32.to_le_bytes(),
-        &[0, 0, 0x40, 0],
+        &(stamp.packet.len() as u32).to_le_bytes(),
+        &stamp.packet,
     ] {
         file.write_all(bytes)?;
     }
@@ -406,6 +403,34 @@ fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Out
 #[cfg(all(test, feature = "rust-mlp"))]
 mod rust_tests {
     use super::*;
+    #[test]
+    fn generated_metadata_context_roundtrips_and_never_overwrites() {
+        let path = std::env::temp_dir().join(format!(
+            "dvda-stamp-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        write_metadata(&path, 48000, 48000).unwrap();
+        let saved = std::fs::read(&path).unwrap();
+        let units = access_units(48000, 48000).unwrap();
+        let records = metadata(path.to_str().unwrap(), units).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].start, 0);
+        assert_eq!(&records[0].packet[2..4], &[0x40, 0]);
+        assert!(records[0].packet.windows(9).any(|v| v == b"unix-utc:"));
+        assert_eq!(
+            metadata(path.to_str().unwrap(), units).unwrap()[0].packet,
+            records[0].packet
+        );
+        assert!(metadata(path.to_str().unwrap(), units + 1).is_err());
+        assert!(write_metadata(&path, 48000, 48000).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+        std::fs::remove_file(path).unwrap();
+    }
+
     struct Host {
         output: Vec<u8>,
         failure: Option<io::ErrorKind>,

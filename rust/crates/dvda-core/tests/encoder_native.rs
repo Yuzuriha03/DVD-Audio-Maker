@@ -151,11 +151,10 @@ fn wave(path: &Path, case: &Case) -> Vec<u8> {
     expected
 }
 fn context(path: &Path, case: &Case) -> String {
-    if case.metadata_version == 0 {
-        return String::new();
-    }
+    // Frozen files used an empty stamp; supply it explicitly now that the
+    // production default records the machine identity and encoding time.
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(if case.metadata_version == 1 {
+    bytes.extend_from_slice(if case.metadata_version != 2 {
         b"MSCTX001"
     } else {
         b"MSCTX002"
