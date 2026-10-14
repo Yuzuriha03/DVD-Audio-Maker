@@ -288,8 +288,8 @@ fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
             ("DVDA_MLP_BATCH_TEMP_DIR", "MlpBatchTempDirectory"),
             ("DVDA_MLP_BATCH_OUTPUT_DIR", "MlpBatchOutputDirectory"),
             ("DVDA_MLP_METADATA_CONTEXT", "MlpMetadataContext"),
-            ("DVDA_MlpSampleRate", "MlpMLPSampleRate"),
-            ("DVDA_MlpBits", "MlpMLPBits"),
+            ("DVDA_MLP_SAMPLE_RATE", "MlpSampleRate"),
+            ("DVDA_MLP_BITS", "MlpBits"),
             ("DVDA_MENU_DIR", "MenuDirectory"),
             ("DVDA_MENU_BINDIR", "MenuBinaryDirectory"),
             ("DVDA_MENU", "MenuEnabled"),
@@ -367,8 +367,8 @@ fn plan(options: &AppOptions) -> Result<i32> {
                 .then(|| formats::read_wav_layout(&cache))
                 .transpose()
                 .map_err(failure)?;
-            let rate = options.integer("MlpMLPSampleRate") as i32;
-            let bits = options.integer("MlpMLPBits") as i32;
+            let rate = options.integer("MlpSampleRate") as i32;
+            let bits = options.integer("MlpBits") as i32;
             if let Some(wave) = &layout
                 && dvda_core::lpcm::layout_code(
                     wave.sample_rate as i64,

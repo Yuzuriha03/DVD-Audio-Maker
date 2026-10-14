@@ -246,16 +246,16 @@ def main():
         case = root / "invalid-audio"
         profile = case / "profile.json"
         daily = case / "local/DVD-Audio-Maker/settings.json"
-        write_profile(profile, {"DVDA_TITLE": "Invalid audio", "DVDA_MlpSampleRate": "12345",
-            "DVDA_MlpBits": "17"})
+        write_profile(profile, {"DVDA_TITLE": "Invalid audio", "DVDA_MLP_SAMPLE_RATE": "12345",
+            "DVDA_MLP_BITS": "17"})
         write_profile(daily, {"DVDA_TITLE": "Untouched daily"})
         with launch(exe, ["--profile", profile], case, runtime) as proc:
             hwnd, controls = ready(proc, "Invalid audio")
             assert text(controls[301]) == "12345" and text(controls[302]) == "17"
             command(hwnd, controls, 102)
             saved = read_profile(profile)["Values"]
-            assert saved["DVDA_MlpSampleRate"] == "12345"
-            assert saved["DVDA_MlpBits"] == "17"
+            assert saved["DVDA_MLP_SAMPLE_RATE"] == "12345"
+            assert saved["DVDA_MLP_BITS"] == "17"
             before, daily_before = profile.read_bytes(), daily.read_bytes()
             for action in [105, 106, 107]:
                 command(hwnd, controls, action)
@@ -267,8 +267,8 @@ def main():
             assert text(controls[301]) == "12345" and text(controls[302]) == "17"
         assert profile.read_bytes() == before
         saved_daily = read_profile(daily)["Values"]
-        assert saved_daily["DVDA_MlpSampleRate"] == "12345"
-        assert saved_daily["DVDA_MlpBits"] == "17"
+        assert saved_daily["DVDA_MLP_SAMPLE_RATE"] == "12345"
+        assert saved_daily["DVDA_MLP_BITS"] == "17"
         records.append({"case": "invalid_audio_preserved_and_actions_rejected", "rate": "12345", "bits": "17",
             "profile_sha256": hashlib.sha256(before).hexdigest(), "daily_preserves_unknown_values_after_close": True})
         with launch(exe, ["--profile", profile], case, runtime) as proc:
@@ -280,8 +280,8 @@ def main():
             select(hwnd, controls, 302, 2)
             command(hwnd, controls, 102)
             saved = read_profile(profile)["Values"]
-            assert saved["DVDA_MlpSampleRate"] == "48000"
-            assert saved["DVDA_MlpBits"] == "24"
+            assert saved["DVDA_MLP_SAMPLE_RATE"] == "48000"
+            assert saved["DVDA_MLP_BITS"] == "24"
             records.append({"case": "audio_settings_require_explicit_correction", "rate": "48000", "bits": "24"})
 
         case = root / "prepare"

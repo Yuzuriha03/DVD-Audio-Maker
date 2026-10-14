@@ -2620,13 +2620,13 @@
     "Source": "  mlp-batch = Windows MLP 编码核心   ✔",
     "Parameters": 0,
     "Nested": [],
-    "English": "  mlp-batch = mlpencoder Windows MLP encoder   ✔"
+    "English": "  mlp-batch = built-in Rust MLP encoder   ✔"
   },
   {
-    "Source": "  encoder       = 随程序内嵌，无需原版 MLP",
+    "Source": "  encoder       = 内置 Rust MLP 编码器，无需外部程序",
     "Parameters": 0,
     "Nested": [],
-    "English": "  encoder       = embedded with the application; original MLP is not required"
+    "English": "  encoder       = built-in Rust MLP encoder; no external program required"
   },
   {
     "Source": "固定空辅助 TLV",
@@ -3895,10 +3895,10 @@
     "English": "Legacy MLP file matching context"
   },
   {
-    "Source": "通常留空。只有需要让内置 MLP 编码结果匹配旧版 MLP 文件时，才选择对应的 stampctx 文件。",
+    "Source": "通常留空。仅在开发测试中需要复现指定辅助元数据时，才选择对应的 stampctx 文件。",
     "Parameters": 0,
     "Nested": [],
-    "English": "Normally leave empty. Select a stampctx file only when matching the output of an older external MLP encoder file."
+    "English": "Normally leave empty. Select a stampctx file only when matching the output of an older reference MLP encoder file."
   },
   {
     "Source": "音源转换临时位置",

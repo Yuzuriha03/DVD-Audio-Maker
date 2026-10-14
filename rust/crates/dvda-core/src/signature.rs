@@ -73,7 +73,7 @@ pub fn encoding_identity(
     #[cfg(feature = "rust-mlp")]
     let _ = encoder;
     let context = if metadata_context.is_empty() {
-        "generated-machine-timestamp-v2".into()
+        "generated-project-live-local-stamp-v5".into()
     } else {
         file_hash(Path::new(metadata_context))?
     };

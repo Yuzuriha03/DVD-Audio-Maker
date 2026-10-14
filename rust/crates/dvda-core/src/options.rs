@@ -40,8 +40,8 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_MLP_SOURCE", "mlp-batch"),
         ("DVDA_MLP_EXTERNAL_DIR", ""),
         ("DVDA_MLP_METADATA_CONTEXT", ""),
-        ("DVDA_MlpSampleRate", "48000"),
-        ("DVDA_MlpBits", "24"),
+        ("DVDA_MLP_SAMPLE_RATE", "48000"),
+        ("DVDA_MLP_BITS", "24"),
         ("DVDA_MENU", "off"),
         ("DVDA_MENU_TRACKS_PER_PAGE", "12"),
         ("DVDA_MENU_INDEX_MIN_ALBUMS", "4"),
@@ -300,19 +300,13 @@ pub fn evaluate(request: Request) -> Value {
     for (name, key, fallback, low, high) in [
         ("GroupTrackLimit", "DVDA_GROUP_TRACK_LIMIT", 99, 1, 99),
         (
-            "MlpMLPSampleRate",
-            "DVDA_MlpSampleRate",
+            "MlpSampleRate",
+            "DVDA_MLP_SAMPLE_RATE",
             48000,
             i32::MIN,
             i32::MAX,
         ),
-        (
-            "MlpMLPBits",
-            "DVDA_MlpBits",
-            24,
-            i32::MIN,
-            i32::MAX,
-        ),
+        ("MlpBits", "DVDA_MLP_BITS", 24, i32::MIN, i32::MAX),
         ("MenuTracksPerPage", "DVDA_MENU_TRACKS_PER_PAGE", 12, 1, 32),
         (
             "MenuIndexMinimumAlbums",
@@ -380,7 +374,7 @@ pub fn evaluate(request: Request) -> Value {
     }
     let source = trim(r.get("DVDA_MLP_SOURCE")).to_ascii_lowercase();
     let source = match source.as_str() {
-        "external" | "MLP" => Ok("external"),
+        "external" => Ok("external"),
         "mlp-batch" | "batch-mlp" => Ok("mlp-batch"),
         "lpcm" => Ok("lpcm"),
         "ffmpeg" => Err(

@@ -45,9 +45,12 @@ pub(crate) trait PcmInput {
     fn frames(&self) -> usize;
     fn position(&self) -> usize;
     fn read(&mut self, capacity: usize) -> Result<Vec<i32>, ()>;
+    fn refresh_stamp(&mut self) -> Result<Option<crate::metadata::Metadata>, i32> {
+        Ok(None)
+    }
 }
 
-pub(crate) struct CallbackInput<F> {
+pub(crate) struct CallbackInput<F, S> {
     pub channels: usize,
     pub bits: u32,
     pub depths: [u32; 6],
@@ -58,8 +61,13 @@ pub(crate) struct CallbackInput<F> {
     pub position: usize,
     pub failed: bool,
     pub callback: F,
+    pub stamp_refresh: S,
 }
-impl<F: FnMut(&mut [i32], usize) -> Result<usize, ()>> PcmInput for CallbackInput<F> {
+impl<F, S> PcmInput for CallbackInput<F, S>
+where
+    F: FnMut(&mut [i32], usize) -> Result<usize, ()>,
+    S: FnMut() -> Result<Option<crate::metadata::Metadata>, i32>,
+{
     fn channels(&self) -> usize {
         self.channels
     }
@@ -114,6 +122,9 @@ impl<F: FnMut(&mut [i32], usize) -> Result<usize, ()>> PcmInput for CallbackInpu
         self.position += count;
         self.failed = false;
         Ok(pcm)
+    }
+    fn refresh_stamp(&mut self) -> Result<Option<crate::metadata::Metadata>, i32> {
+        (self.stamp_refresh)()
     }
 }
 

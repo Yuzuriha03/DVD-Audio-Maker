@@ -1,7 +1,8 @@
 use crate::metadata::Metadata;
+use std::borrow::Cow;
 
 pub(crate) struct MlpStampState<'a> {
-    records: &'a [Metadata],
+    records: Cow<'a, [Metadata]>,
     index: usize,
     position: u64,
     limit: u64,
@@ -60,7 +61,7 @@ pub(crate) fn mlp_stamp_init(records: &[Metadata], aus: u64) -> Option<MlpStampS
         }
     }
     Some(MlpStampState {
-        records,
+        records: Cow::Borrowed(records),
         index: 0,
         position: 0,
         limit: aus,
@@ -71,6 +72,35 @@ pub(crate) fn mlp_stamp_init(records: &[Metadata], aus: u64) -> Option<MlpStampS
         start: true,
         failed: false,
     })
+}
+
+pub(crate) fn mlp_stamp_refresh(s: &mut MlpStampState<'_>, record: Metadata) -> bool {
+    if s.failed || !s.start || s.records.len() != 1 || record.start != 0 || record.valid_bits != 0 {
+        s.failed = true;
+        return false;
+    }
+    let current = &s.records[0].packet;
+    if record.packet.len() != current.len()
+        || record.packet.get(..4) != current.get(..4)
+        || record.packet.get(2..4) != Some(&[0x40, 0])
+    {
+        s.failed = true;
+        return false;
+    }
+    if record.packet != *current {
+        s.records.to_mut()[0] = record;
+        s.byte = 0;
+        s.bit = 7;
+        s.prefix = 9;
+        s.ones = 0;
+    }
+    true
+}
+
+impl MlpStampState<'_> {
+    pub(crate) fn start_boundary(&self) -> bool {
+        self.start
+    }
 }
 
 pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>, result: &mut u32) -> bool {
@@ -120,4 +150,56 @@ pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>, result: &mut u32) -> boo
 
 pub(crate) fn mlp_stamp_complete(s: &MlpStampState<'_>) -> bool {
     !s.failed && s.position == s.limit && s.index + 1 == s.records.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refresh_replaces_only_at_a_valid_stamp_boundary() {
+        let original = Metadata {
+            start: 0,
+            packet: vec![0, 1, 0x40, 0, 0],
+            valid_bits: 0,
+        };
+        let updated = Metadata {
+            start: 0,
+            packet: vec![0, 1, 0x40, 0, 1],
+            valid_bits: 0,
+        };
+        let mut state = mlp_stamp_init(std::slice::from_ref(&original), 204).unwrap();
+        let mut bit = 0;
+        assert!(mlp_stamp_next(&mut state, &mut bit));
+        assert!(!mlp_stamp_refresh(&mut state, updated.clone()));
+        let mut state = mlp_stamp_init(std::slice::from_ref(&original), 204).unwrap();
+        let mut before = Vec::new();
+        for _ in 0..50 {
+            let mut bit = 0;
+            assert!(mlp_stamp_next(&mut state, &mut bit));
+            before.push(bit);
+        }
+        assert!(state.start_boundary());
+        assert!(mlp_stamp_refresh(&mut state, updated.clone()));
+        let mut after = Vec::new();
+        for _ in 0..50 {
+            let mut bit = 0;
+            assert!(mlp_stamp_next(&mut state, &mut bit));
+            after.push(bit);
+        }
+        let expected = crate::metadata::timeline(
+            &[
+                original,
+                Metadata {
+                    start: 50,
+                    packet: updated.packet,
+                    valid_bits: 0,
+                },
+            ],
+            100,
+        )
+        .unwrap();
+        assert_eq!(before, expected[..50]);
+        assert_eq!(after, expected[50..]);
+    }
 }

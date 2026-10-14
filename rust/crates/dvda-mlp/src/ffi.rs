@@ -10,6 +10,16 @@ pub use layout::*;
 pub type Read = unsafe extern "C" fn(*mut c_void, *mut i32, usize, *mut usize) -> i32;
 pub type Write = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> i32;
 
+pub(crate) struct StreamCall<'a> {
+    pub config: *const EncoderConfig,
+    pub read: Option<Read>,
+    pub input: *mut c_void,
+    pub write: Option<Write>,
+    pub output: *mut c_void,
+    pub profile: Option<Profile>,
+    pub stamp_refresh: Option<&'a mut dyn FnMut() -> Result<Option<Metadata>, i32>>,
+}
+
 #[repr(C)]
 pub struct StampRecord {
     pub start: u64,
@@ -85,7 +95,18 @@ pub unsafe extern "C" fn mlp_encode_stream(
     }
     let result = unsafe { &mut *result };
     let outcome = catch_unwind(AssertUnwindSafe(|| unsafe {
-        stream(config, read, input, write, output, result, None)
+        stream(
+            StreamCall {
+                config,
+                read,
+                input,
+                write,
+                output,
+                profile: None,
+                stamp_refresh: None,
+            },
+            result,
+        )
     }));
     match outcome {
         Ok(status) => status,
@@ -127,15 +148,16 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
         .map_err(|_| "Invalid metadata timeline")?;
     Ok(records)
 }
-unsafe fn stream(
-    config: *const EncoderConfig,
-    read: Option<Read>,
-    input: *mut c_void,
-    write: Option<Write>,
-    output: *mut c_void,
-    result: &mut EncoderResult,
-    profile: Option<Profile>,
-) -> i32 {
+unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
+    let StreamCall {
+        config,
+        read,
+        input,
+        write,
+        output,
+        profile,
+        stamp_refresh,
+    } = call;
     if config.is_null() {
         return fail(result, -1, "Missing configuration");
     }
@@ -186,6 +208,7 @@ unsafe fn stream(
                 input,
                 write,
                 output,
+                stamp_refresh,
             },
             result,
         );
@@ -197,6 +220,13 @@ unsafe fn stream(
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
+        if stamp_refresh.is_some() {
+            return fail(
+                result,
+                -1,
+                "Live metadata refresh requires the x86_64 encoder",
+            );
+        }
         let channels = config.channels as usize;
         let samples = if config.sample_rate > 96000 {
             160
@@ -281,6 +311,37 @@ unsafe fn stream(
         result.encoded_frames = count as u64 * samples as u64;
         0
     }
+}
+
+// Callbacks, opaque state and configuration obey the same contracts as stream().
+pub(crate) unsafe fn encode_stream_with_stamp_refresh(
+    config: &EncoderConfig,
+    profile: Profile,
+    read: Read,
+    input: *mut c_void,
+    write: Write,
+    output: *mut c_void,
+    stamp_refresh: &mut dyn FnMut() -> Result<Option<Metadata>, i32>,
+) -> EncoderResult {
+    let mut result = EncoderResult::default();
+    let outcome = catch_unwind(AssertUnwindSafe(|| unsafe {
+        stream(
+            StreamCall {
+                config,
+                read: Some(read),
+                input,
+                write: Some(write),
+                output,
+                profile: Some(profile),
+                stamp_refresh: Some(stamp_refresh),
+            },
+            &mut result,
+        )
+    }));
+    if outcome.is_err() {
+        fail(&mut result, -5, "Rust encoder panic");
+    }
+    result
 }
 
 #[cfg(test)]

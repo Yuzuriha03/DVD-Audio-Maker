@@ -456,10 +456,18 @@ pub(crate) fn encode(
         if pending.au.len() >= 128 {
             return Err(());
         }
-        if let Some(s) = stamp.as_deref_mut()
-            && !crate::c_stamp::mlp_stamp_next(s, &mut planned.stamp)
-        {
-            return Err(());
+        if let Some(s) = stamp.as_deref_mut() {
+            if !crate::c_stamp::mlp_stamp_next(s, &mut planned.stamp) {
+                return Err(());
+            }
+            // The original refreshes after emitting the packet separator. The
+            // replacement therefore starts at the next AU, never mid-packet.
+            if s.start_boundary()
+                && let Some(metadata) = input.refresh_stamp().map_err(|_| ())?
+                && !crate::c_stamp::mlp_stamp_refresh(s, metadata)
+            {
+                return Err(());
+            }
         }
         if is_restart {
             pending.restart = restart;

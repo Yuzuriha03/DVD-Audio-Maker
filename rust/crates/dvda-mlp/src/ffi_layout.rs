@@ -26,7 +26,18 @@ unsafe fn entry(
     }
     let r = unsafe { &mut *result };
     match catch_unwind(AssertUnwindSafe(|| unsafe {
-        stream(config, read, input, write, output, r, Some(profile))
+        stream(
+            StreamCall {
+                config,
+                read,
+                input,
+                write,
+                output,
+                profile: Some(profile),
+                stamp_refresh: None,
+            },
+            r,
+        )
     })) {
         Ok(status) => status,
         Err(_) => fail(r, -5, "Rust encoder panic"),
@@ -396,13 +407,16 @@ unsafe fn groups(
     };
     let status = unsafe {
         stream(
-            c,
-            Some(group_read),
-            (&mut source as *mut GroupSource).cast(),
-            write,
-            output,
+            StreamCall {
+                config: c,
+                read: Some(group_read),
+                input: (&mut source as *mut GroupSource).cast(),
+                write,
+                output,
+                profile: Some(profile),
+                stamp_refresh: None,
+            },
             r,
-            Some(profile),
         )
     };
     if source.panicked {

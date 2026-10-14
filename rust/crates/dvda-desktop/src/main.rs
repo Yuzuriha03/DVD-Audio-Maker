@@ -616,7 +616,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "select_log" => "保存日志",
             "copy_ok" => "日志已复制到剪贴板。",
             "external_tools" => {
-                "发布包已内置必要组件，不需要安装 FFmpeg、ImageMagick、eac3to 或 MLP。"
+                "发布包已内置必要组件，不需要安装 FFmpeg、ImageMagick、eac3to 或外部 MLP 编码器。"
             }
             _ => "",
         },
@@ -752,7 +752,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "select_log" => "Save log",
             "copy_ok" => "Log copied to the clipboard.",
             "external_tools" => {
-                "The release includes required components; FFmpeg, ImageMagick, eac3to and MLP are not required."
+                "The release includes required components; FFmpeg, ImageMagick, eac3to and external MLP encoders are not required."
             }
             _ => "",
         },
@@ -888,7 +888,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "select_log" => "ログを保存",
             "copy_ok" => "ログをクリップボードにコピーしました。",
             "external_tools" => {
-                "必要なコンポーネントは同梱されています。FFmpeg、ImageMagick、eac3to、MLP は不要です。"
+                "必要なコンポーネントは同梱されています。FFmpeg、ImageMagick、eac3to、外部 MLP エンコーダーは不要です。"
             }
             _ => "",
         },
@@ -3166,13 +3166,13 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         state.controls.rate,
         SAMPLE_RATES,
         SAMPLE_RATE_LABELS,
-        options.integer("MlpMLPSampleRate"),
+        options.integer("MlpSampleRate"),
     );
     populate_numeric_choice(
         state.controls.bits,
         SAMPLE_BITS,
         &["16", "20", "24"],
-        options.integer("MlpMLPBits"),
+        options.integer("MlpBits"),
     );
     set_text(state.controls.metadata, &options.text("MlpMetadataContext"));
     check(state.controls.menu, options.boolean("MenuEnabled"));
@@ -3296,12 +3296,12 @@ fn overrides(state: &UiState) -> Map<String, Value> {
     );
     put(
         &mut values,
-        "MlpMLPSampleRate",
+        "MlpSampleRate",
         json!(numeric_choice(state.controls.rate, SAMPLE_RATES)),
     );
     put(
         &mut values,
-        "MlpMLPBits",
+        "MlpBits",
         json!(numeric_choice(state.controls.bits, SAMPLE_BITS)),
     );
     put(
@@ -3681,8 +3681,8 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "GroupTrackLimit" => "DVDA_GROUP_TRACK_LIMIT",
             "MlpSource" => "DVDA_MLP_SOURCE",
             "MlpExternalDirectory" => "DVDA_MLP_EXTERNAL_DIR",
-            "MlpMLPSampleRate" => "DVDA_MlpSampleRate",
-            "MlpMLPBits" => "DVDA_MlpBits",
+            "MlpSampleRate" => "DVDA_MLP_SAMPLE_RATE",
+            "MlpBits" => "DVDA_MLP_BITS",
             "MlpMetadataContext" => "DVDA_MLP_METADATA_CONTEXT",
             "MenuEnabled" => "DVDA_MENU",
             "MenuStillPictures" => "DVDA_MENU_STILLPICS",
@@ -4398,8 +4398,8 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.cache, "DVDA_PREPARE_CACHE"),
         (c.resume, "DVDA_RESUME"),
         (c.mode, "DVDA_MLP_SOURCE"),
-        (c.rate, "DVDA_MlpSampleRate"),
-        (c.bits, "DVDA_MlpBits"),
+        (c.rate, "DVDA_MLP_SAMPLE_RATE"),
+        (c.bits, "DVDA_MLP_BITS"),
         (c.metadata, "DVDA_MLP_METADATA_CONTEXT"),
         (c.import_folder, "DVDA_MLP_EXTERNAL_DIR"),
         (c.menu, "DVDA_MENU"),
@@ -5479,10 +5479,7 @@ mod presentation_tests {
         populate_numeric_choice(ui.controls.bits, SAMPLE_BITS, &["16", "20", "24"], 17);
         assert_eq!(get_text(ui.controls.rate), "12345");
         assert_eq!(get_text(ui.controls.bits), "17");
-        assert_eq!(
-            edited_profile_values(&ui)["DVDA_MlpSampleRate"],
-            "12345"
-        );
+        assert_eq!(edited_profile_values(&ui)["DVDA_MLP_SAMPLE_RATE"], "12345");
         assert!(validate_controls(&mut ui, false));
         assert!(!validate_controls(&mut ui, true));
         combo_select(ui.controls.rate, 1);

@@ -3,11 +3,12 @@ use crate::{Config, format::Profile, metadata::Metadata};
 use std::cell::Cell;
 use std::ffi::c_void;
 
-pub(crate) struct HostIo {
+pub(crate) struct HostIo<'a> {
     pub read: Read,
     pub input: *mut c_void,
     pub write: Write,
     pub output: *mut c_void,
+    pub stamp_refresh: Option<&'a mut dyn FnMut() -> Result<Option<Metadata>, i32>>,
 }
 
 pub(crate) fn encode_stream(
@@ -15,7 +16,7 @@ pub(crate) fn encode_stream(
     c: &Config,
     profile: &Profile,
     records: &[Metadata],
-    io: HostIo,
+    io: HostIo<'_>,
     result: &mut EncoderResult,
 ) -> i32 {
     use crate::c_encode::{IntervalOutput, OutputFormat, encode};
@@ -52,6 +53,9 @@ pub(crate) fn encode_stream(
     let fp = crate::extended::HostFpScope::codec();
     let status = Cell::new(0);
     let input_frames = Cell::new(0u64);
+    let read = io.read;
+    let input = io.input;
+    let mut refresh = io.stamp_refresh;
     let mut pcm = CallbackInput {
         channels,
         bits: c.bits as u32,
@@ -65,7 +69,7 @@ pub(crate) fn encode_stream(
         callback: |buffer: &mut [i32], capacity: usize| {
             let mut received = 0;
             let rc = fp.with_caller(|| unsafe {
-                (io.read)(io.input, buffer.as_mut_ptr(), capacity, &mut received)
+                (read)(input, buffer.as_mut_ptr(), capacity, &mut received)
             });
             if rc != 0 || received == 0 || received > capacity {
                 status.set(-3);
@@ -73,6 +77,12 @@ pub(crate) fn encode_stream(
             }
             input_frames.set(input_frames.get() + received as u64);
             Ok(received)
+        },
+        stamp_refresh: || {
+            fp.with_caller(|| match refresh.as_mut() {
+                Some(source) => source(),
+                None => Ok(None),
+            })
         },
     };
     let mut matrix = MatrixInterval {

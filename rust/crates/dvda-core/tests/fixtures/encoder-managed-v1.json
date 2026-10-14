@@ -1,7 +1,7 @@
 {
   "Generator": "MlpEncoderTests.WriteWave integer-ramp-v1",
   "Encoder": "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8",
-  "Reference": "Independent pre-migration managed host with pinned C encoder; not original MLP",
+  "Reference": "Independent pre-migration managed host with pinned C encoder; not the external reference application",
   "Cases": [
     {
       "Rate": 44100,

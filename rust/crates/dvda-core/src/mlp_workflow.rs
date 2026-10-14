@@ -184,7 +184,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                     .enumerate()
                     .map(|(work_index, item)| batch::Track {
                         source_path: item.source.clone(),
-                        work_name: format!("__MLP_{:04}", work_index + 1),
+                        work_name: format!("__mlp_{:04}", work_index + 1),
                         display_name: text(&job.tracks[item.index], "Title")
                             .unwrap_or("Track")
                             .into(),
@@ -221,7 +221,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                         display_name
                     ),
                 );
-                let staged = stage.join(format!("__MLP_{:04}.mlp", work_index + 1));
+                let staged = stage.join(format!("__mlp_{:04}.mlp", work_index + 1));
                 let inspection = native.inspect_file(&staged).ok().filter(valid_inspection);
                 let Some(inspection) = inspection else {
                     diagnostics.push(error(

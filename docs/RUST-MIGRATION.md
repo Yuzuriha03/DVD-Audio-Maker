@@ -33,7 +33,7 @@ Windows x64 workspace 最终 **160 项通过，0 失败、0 忽略**；116 个�
 
 JSON profile 的 `Values` 保存用户设置。GUI 可以编辑并保存 profile，CLI 和 GUI 使用同一读取器。环境变量仅作为开发自动化的显式覆盖，不能触发 `config.env` 搜索或导入；发布包使用经过完整性检查的内嵌组件缓存。
 
-MLP 编码设置使用 `DVDA_MLP_SOURCE=mlp-batch`，LPCM 使用 `lpcm`，已有原版 external MLP encoder 文件通过 `DVDA_MLP_EXTERNAL_DIR` 只读导入。旧的 FFmpeg MLP 编码分支、原版 MLP 启动、eac3to 调用和事后输出修补均不存在。
+MLP 编码设置使用 `DVDA_MLP_SOURCE=mlp-batch`，LPCM 使用 `lpcm`，已有外部 MLP 编码器 文件通过 `DVDA_MLP_EXTERNAL_DIR` 只读导入。旧的 FFmpeg MLP 编码分支、外部参考编码器 启动、eac3to 调用和事后输出修补均不存在。
 
 ## 验收命令
 
@@ -60,7 +60,7 @@ dvda-toolchain.exe package --repo . --output build/rust-migration-checklist-pack
 
 1. Rust workspace 可以在 x64 目标完成格式检查、Clippy、测试和 release 构建。
 2. 原生 ABI 测试、PCM/格式样本对照、MLP 固定样本和菜单 ISO fixture 全部通过。
-3. 发布包在没有 .NET、外部 FFmpeg、ImageMagick、eac3to 或 MLP 的环境中只依靠包内组件运行。
+3. 发布包在没有 .NET、外部 FFmpeg、ImageMagick、eac3to 或 参考编码器 的环境中只依靠包内组件运行。
 4. `rg --files -g '*.cs' -g '*.csproj' -g '*.sln'` 无结果，源码和发布流程不存在 C# 回退入口。
 5. JSON profile 能完成 GUI/CLI 的加载、编辑和保存，非 JSON profile 明确拒绝。
 6. MLP 结果来自编码行为本身；验证只比较输入、参数、上下文和完整输出，不修改输出字节。
