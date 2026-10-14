@@ -14,6 +14,7 @@ pub mod conversion;
 pub mod disc;
 pub mod disk_space;
 pub mod encoder;
+mod encoder_stamp;
 pub mod formats;
 pub mod hash;
 pub mod identity;
