@@ -10,6 +10,12 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 pub trait StreamIo {
     fn read(&mut self, group: usize, pcm: &mut [i32]) -> Result<usize, i32>;
     fn write(&mut self, access_unit: &[u8]) -> Result<(), i32>;
+    /// Called only by `encode_stream_with_stamp_refresh`, after a complete
+    /// packet separator. Return None to repeat it, or a replacement with the
+    /// same outer header/length, start = 0 and valid_bits = 0. Errors abort.
+    fn refresh_stamp(&mut self) -> Result<Option<Metadata>, i32> {
+        Ok(None)
+    }
     fn cancelled(&mut self) -> bool {
         false
     }
@@ -103,11 +109,49 @@ pub fn encode_stream<I: StreamIo>(
     metadata: &[Metadata],
     io: &mut I,
 ) -> StreamResult {
+    encode_stream_inner(
+        config,
+        profile,
+        frames,
+        secondary_frames,
+        metadata,
+        io,
+        false,
+    )
+}
+
+/// Like `encode_stream` for interleaved input, with per-call metadata refresh
+/// at complete packet boundaries. A clock/provider error aborts encoding.
+/// Requires exactly one complete initial packet. Explicit timelines should use
+/// `encode_stream`; refresh callbacks are never called on that path.
+pub fn encode_stream_with_stamp_refresh<I: StreamIo>(
+    config: &Config,
+    profile: &Profile,
+    frames: u64,
+    metadata: &[Metadata],
+    io: &mut I,
+) -> StreamResult {
+    encode_stream_inner(config, profile, frames, None, metadata, io, true)
+}
+
+fn encode_stream_inner<I: StreamIo>(
+    config: &Config,
+    profile: &Profile,
+    frames: u64,
+    secondary_frames: Option<u64>,
+    metadata: &[Metadata],
+    io: &mut I,
+    refresh_stamps: bool,
+) -> StreamResult {
     let mut result = StreamResult::default();
     if !(1..=6).contains(&config.channels)
         || !profile.valid(config)
         || config.restart_interval > 32
         || metadata.len() > 4096
+        || (refresh_stamps
+            && (profile.group2_rate != config.sample_rate
+                || metadata.len() != 1
+                || metadata[0].valid_bits != 0))
     {
         result.status = -1;
         return result;
@@ -150,9 +194,22 @@ pub fn encode_stream<I: StreamIo>(
         },
         panicked: false,
     };
-    let p = (&mut context as *mut Context<'_, I>).cast();
+    let p = (&mut context as *mut Context<'_, I>).cast::<c_void>();
     unsafe {
-        if let Some(group2_frames) = secondary_frames {
+        if refresh_stamps {
+            // The native call is synchronous. Read, write and refresh execute
+            // sequentially and each releases its context borrow before return.
+            let mut refresh = || (&mut *p.cast::<Context<'_, I>>()).io.refresh_stamp();
+            result = ffi::encode_stream_with_stamp_refresh(
+                &primary,
+                profile.clone(),
+                read::<I>,
+                p,
+                write::<I>,
+                p,
+                &mut refresh,
+            );
+        } else if let Some(group2_frames) = secondary_frames {
             let groups = ffi::GroupsConfig {
                 struct_size: size_of::<ffi::GroupsConfig>() as u32,
                 primary,
@@ -209,6 +266,97 @@ pub fn encode_stream<I: StreamIo>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn live_stamp_matches_explicit_timeline_and_contains_callback_failures() {
+        struct LiveIo {
+            io: Io,
+            calls: usize,
+            mode: u8,
+        }
+        impl StreamIo for LiveIo {
+            fn read(&mut self, group: usize, pcm: &mut [i32]) -> Result<usize, i32> {
+                self.io.read(group, pcm)
+            }
+            fn write(&mut self, bytes: &[u8]) -> Result<(), i32> {
+                self.io.write(bytes)
+            }
+            fn refresh_stamp(&mut self) -> Result<Option<Metadata>, i32> {
+                self.calls += 1;
+                match self.mode {
+                    1 => Err(-5),
+                    2 => panic!("stamp source panic"),
+                    3 => Ok(Some(Metadata {
+                        start: 0,
+                        packet: vec![0, 0, 64, 0],
+                        valid_bits: 0,
+                    })),
+                    _ if self.calls == 1 => Ok(Some(Metadata {
+                        start: 0,
+                        packet: vec![0, 1, 64, 0, 255],
+                        valid_bits: 0,
+                    })),
+                    _ => Ok(None),
+                }
+            }
+        }
+        let config = Config {
+            sample_rate: 48000,
+            bits: 24,
+            channels: 2,
+            restart_interval: 8,
+            metadata: Vec::new(),
+        };
+        let profile = Profile::standard(&config);
+        let original = Metadata {
+            start: 0,
+            packet: vec![0, 1, 64, 0, 0],
+            valid_bits: 0,
+        };
+        let timeline = [
+            original.clone(),
+            Metadata {
+                start: 50,
+                packet: vec![0, 1, 64, 0, 255],
+                valid_bits: 0,
+            },
+        ];
+        let mut expected = LiveIo {
+            io: Io {
+                mode: 0,
+                output: Vec::new(),
+            },
+            calls: 0,
+            mode: 2,
+        };
+        assert_eq!(
+            encode_stream(&config, &profile, 6200, None, &timeline, &mut expected).status,
+            0
+        );
+        assert_eq!(expected.calls, 0);
+        for mode in 0..4 {
+            let mut actual = LiveIo {
+                io: Io {
+                    mode: 0,
+                    output: Vec::new(),
+                },
+                calls: 0,
+                mode,
+            };
+            let result = encode_stream_with_stamp_refresh(
+                &config,
+                &profile,
+                6200,
+                std::slice::from_ref(&original),
+                &mut actual,
+            );
+            assert_eq!(result.status, if mode == 0 { 0 } else { -5 });
+            if mode == 0 {
+                assert_eq!(actual.calls, 3);
+                assert_eq!(actual.io.output, expected.io.output);
+            }
+        }
+    }
+
     struct Io {
         mode: u8,
         output: Vec<u8>,

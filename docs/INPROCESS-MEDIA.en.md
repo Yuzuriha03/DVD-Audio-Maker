@@ -9,7 +9,7 @@ The media DLL is built from the required FFmpeg library sources and is shipped
 in the release package beside the GUI. It is loaded from the package layout and
 validated by the toolchain; a missing DLL is an error. The application does not
 search PATH or silently fall back to external programs. The same rule applies to
-ImageMagick, Metaflac, eac3to and original MLP.
+ImageMagick, Metaflac, eac3to and original reference encoder.
 
 ## Profiles and runtime
 

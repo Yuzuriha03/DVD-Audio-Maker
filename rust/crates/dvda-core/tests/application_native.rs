@@ -143,7 +143,7 @@ fn options(root: &Path, mode: &str) -> app::AppOptions {
                 "DVDA_FINAL_DIR":root.join("final"), "DVDA_MLP_EXTERNAL_DIR":"",
                 "DVDA_MLP_SOURCE":mode, "DVDA_AUTHOR":author,
                 "DVDA_MENU":false, "DVDA_RESUME":true,
-                "DVDA_MlpSampleRate":48000, "DVDA_MlpBits":24,
+                "DVDA_MLP_SAMPLE_RATE":48000, "DVDA_MLP_BITS":24,
                 "DVDA_TITLE":"Application regression", "DVDA_ISO_PREFIX":"regression",
                 "DVDA_KEEP_TMP":false, "DVDA_KEEP_INTERMEDIATE":false
             })

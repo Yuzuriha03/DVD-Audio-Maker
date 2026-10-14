@@ -10,7 +10,7 @@ The release is a native Windows x64 Rust GUI.
 
 1. Download `DVD-Audio-Maker-v1.0-win-x64.zip` from [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/tag/v1.0).
 2. Extract the ZIP to a folder of your choice and double-click `DVD-Audio-Maker.exe`.
-3. Required components are embedded in the EXE and extracted automatically to a local cache. Startup checks and repairs damaged cache files. No separate FFmpeg, ImageMagick, eac3to or MLP installation is required.
+3. Required components are embedded in the EXE and extracted automatically to a local cache. Startup checks and repairs damaged cache files. No separate FFmpeg, ImageMagick, eac3to or external MLP encoder installation is required.
 
 The application, instructions in three languages and licenses are together in the extracted folder. Retain `LICENSE`, `THIRD-PARTY.md`, `THIRD-PARTY.en.md`, `NOTICE-Image.txt` and `NOTICE-Menu.txt`.
 
@@ -41,7 +41,7 @@ LPCM must also meet the bitrate limit. For example, 96 kHz / 24-bit / 6-channel 
 - 44.1, 48, 88.2 and 96 kHz support one to six channels; 176.4 and 192 kHz support mono and stereo.
 - Target bit depths are 16, 20 and 24 bits. The input channel layout is retained.
 - Extremely noisy material may exceed MLP stream limits. If encoding fails, review the track's log and retry with a suitable audio format.
-- **Import existing MLP files:** Use this option for MLP files encoded with the original external MLP encoder (external-mlp-encoder.exe). Select their folder and keep album directories and filenames aligned with the corresponding sources. The application uses the existing encoded files directly; it does not re-encode them or launch external MLP encoder. Retain the original audio and encoding settings, including sample rate and bit depth, for source checks and lossless verification. A successful import alone does not verify files with unknown origins or conversion settings.
+- **Import existing MLP files:** Use this option for MLP files encoded with another MLP encoder. Select their folder and keep album directories and filenames aligned with the corresponding sources. The application uses the existing encoded files directly; it does not re-encode them or launch an external MLP encoder. Retain the original audio and encoding settings, including sample rate and bit depth, for source checks and lossless verification. A successful import alone does not verify files with unknown origins or conversion settings.
 
 The working folder stores check results, encoded audio and temporary disc files. Choose a drive with enough free space and keep the folder until verification is complete. Retries compare sources, settings and component identities before reusing encoded audio or completed staged discs. Changes invalidate the corresponding results.
 
@@ -78,7 +78,7 @@ cli.cmd build --dry-run --profile "C:/work/settings.json"
 cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace
 ```
 
-`dry-run` is a developer debugging option in the source CLI. It prepares audio, encodes MLP and writes a separate index without creating an ISO; it is not a zero-write operation. The GUI offers checking, building and verification. `mlp-batch` remains a compatibility configuration key; legacy `MLP` import values map to `external`, with no separate encoding mode.
+`dry-run` is a developer debugging option in the source CLI. It prepares audio, encodes MLP and writes a separate index without creating an ISO; it is not a zero-write operation. The GUI offers checking, building and verification. Use `mlp-batch` for built-in encoding and `external` for importing existing files. The setting keys are `DVDA_MLP_SAMPLE_RATE` and `DVDA_MLP_BITS`; update older profiles to these names.
 
 - [Development, debugging and CLI](docs/DEVELOPMENT.en.md)
 - [C# to Rust migration plan and acceptance criteria (Chinese)](docs/RUST-MIGRATION.md)

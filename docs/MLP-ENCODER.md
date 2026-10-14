@@ -2,7 +2,7 @@
 
 2026-10-10 清理：旧 C 源码与冻结 DLL 已从当前工作区删除。默认 `build-runtime.ps1` 只运行 17 项 Rust 单测、Clippy 和 release 构建；历史 DLL 对照必须显式提供外部 `-FrozenEncoder`，并通过 `external-oracle` feature 启用。下文中的 C 差分矩阵是已完成的历史验收记录。
 
-正常的 `mlp-batch` 流程调用直接链接到主程序的 Rust MLP 编码器。它不会加载编码器 DLL，也不会启动 `external-mlp-encoder.exe`、eac3to、MLP 编码子进程或外部 FFmpeg 可执行文件。
+正常的 `mlp-batch` 流程调用直接链接到主程序的 Rust MLP 编码器。它不会加载编码器 DLL，也不会启动 外部 MLP 编码器、eac3to、MLP 编码子进程或外部 FFmpeg 可执行文件。
 
 当前链路：
 
@@ -22,8 +22,8 @@ Rust 编码器源码位于 `rust/crates/dvda-mlp`，以 rlib 链接到 GUI/CLI�
 ```json
 {
   "DVDA_MLP_SOURCE": "mlp-batch",
-  "DVDA_MlpSampleRate": "48000",
-  "DVDA_MlpBits": "24",
+  "DVDA_MLP_SAMPLE_RATE": "48000",
+  "DVDA_MLP_BITS": "24",
   "DVDA_MLP_METADATA_CONTEXT": "",
   "DVDA_MLP_EXTERNAL_DIR": ""
 }

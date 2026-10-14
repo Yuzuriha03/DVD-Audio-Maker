@@ -302,7 +302,7 @@ In `create_atsi()` of `atsi2.c`, the ATSI table is a **fixed-size stack array**:
 
 Writing more than 6144 bytes is a **stack overflow** (Section 3 of `docs/TROUBLESHOOTING.md`).
 So `GROUP_TRACK_LIMIT` can only be reduced to 64, and the tracks on a single disc are split into multiple 'audio groups'—
-For this version of the disc produced by MLP, disc 1 is split into two groups of 66 and 25, and **the audio parameters of the two groups are exactly the same**
+For this version of the disc produced by reference encoder, disc 1 is split into two groups of 66 and 25, and **the audio parameters of the two groups are exactly the same**
 (Both are 48000/24), which means that grouping **is not a format requirement**, it's purely a result of this limit.
 
 ## Actual measured occupancy per track

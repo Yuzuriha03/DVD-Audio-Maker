@@ -31,8 +31,8 @@ Relevant values are:
 ```json
 {
   "DVDA_MLP_SOURCE": "mlp-batch",
-  "DVDA_MlpSampleRate": "48000",
-  "DVDA_MlpBits": "24",
+  "DVDA_MLP_SAMPLE_RATE": "48000",
+  "DVDA_MLP_BITS": "24",
   "DVDA_MLP_METADATA_CONTEXT": "",
   "DVDA_MLP_EXTERNAL_DIR": ""
 }

@@ -18,7 +18,7 @@ The saved unpredicted PCM uses a bounded per-call interval buffer. Fallback stat
 
 ## Completed validation
 
-- Original MLP was tested with exactly the same 11,042-frame PCM. It also reported Access unit too large and produced no output; the updated encoder completes losslessly.
+- Original reference encoder was tested with exactly the same 11,042-frame PCM. It also reported Access unit too large and produced no output; the updated encoder completes losslessly.
 
 - The failing fixture mlpencoder successfully. The formerly oversized AU is 1,526 bytes; the largest AU in the file is 1,530 bytes.
 - FFmpeg, original MLP_VFY.dll, the mlpencoder verifier EXE and DLL all passed. PCM is exact, with only the existing final-AU zero padding.

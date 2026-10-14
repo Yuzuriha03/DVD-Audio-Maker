@@ -15,7 +15,7 @@ Required components are embedded and prepared automatically on first launch, whi
 
 **MLP encoding** compresses PCM losslessly, usually fitting more music on a disc. **LPCM encoding** stores uncompressed PCM and usually needs more space. Neither uses lossy compression. Changing sample rate or bit depth changes target PCM; choose settings that suit your sources and equipment.
 
-**Import existing MLP** is intended for files previously encoded by external MLP encoder or another compatible tool. Keep the matching original audio and select the MLP folder. Importing does not re-encode audio. Unknown resampling or bit-depth conversions may prevent verification against the originals.
+**Import existing MLP** is intended for files previously encoded by a compatible MLP encoder. Keep the matching original audio and select the MLP folder. Importing does not re-encode audio. Unknown resampling or bit-depth conversions may prevent verification against the originals.
 
 Settings and language are saved automatically to %LOCALAPPDATA%/DVD-Audio-Maker/settings.json. Use Save profile, Save as and Open profile to manage JSON profiles. Legacy config.env is no longer supported. Chinese, English and Japanese interfaces are available.
 

@@ -20,11 +20,9 @@ def generate(fixture_ffmpeg, root):
             "-metadata",f"TRACK={n+1}","-metadata","DATE=2026",str(root/f"{n}.flac")],
             check=True,creationflags=subprocess.CREATE_NO_WINDOW)
         input.unlink()
-    from PIL import Image
-    cover=Image.new("RGB",(320,320))
-    cover.putdata([(20+x*200//320,30+y*190//320,40+(x+y)*170//640)
-        for y in range(320) for x in range(320)])
-    cover.save(root/"cover.png")
+    subprocess.run([str(fixture_ffmpeg),"-hide_banner","-nostdin","-v","error",
+        "-f","lavfi","-i","testsrc2=size=320x320:rate=1","-frames:v","1",
+        "-y",str(root/"cover.png")],check=True,creationflags=subprocess.CREATE_NO_WINDOW)
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)

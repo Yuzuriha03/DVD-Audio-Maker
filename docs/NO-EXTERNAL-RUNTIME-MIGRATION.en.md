@@ -3,7 +3,7 @@
 The Windows x64 workflow is now implemented by the Rust application and the
 project-built native components. The runtime boundary is deliberate: the GUI
 does not invoke command-line copies of FFmpeg, FFprobe, ImageMagick, Metaflac,
-eac3to, MLP, dvdauthor or mkisofs.
+eac3to, reference encoder, dvdauthor or mkisofs.
 
 ## Completed boundaries
 
@@ -28,7 +28,7 @@ The MLP path receives the target PCM, format parameters and auxiliary metadata
 before serialization. It never edits encoded bytes after serialization. A
 reference file can therefore match byte-for-byte only when those inputs and the
 encoder behavior match. Existing MLP files can be imported read-only; the import
-path is intended for files produced by the original external MLP encoder encoder.
+path is intended for files produced by the original reference MLP encoder encoder.
 
 ## Explicitly out of scope
 

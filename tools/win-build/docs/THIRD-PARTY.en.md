@@ -20,7 +20,7 @@ encoder and third-party FFmpeg/ImageMagick libraries are statically integrated; 
 are embedded. The old project C author, adapter DLLs and C17 encoder have been
 removed. FFmpeg, ImageMagick and other libraries enable only workflow features.
 The release does not contain `ffmpeg.exe`, `ffprobe.exe`, ImageMagick command-line
-programs, eac3to or MLP.
+programs, eac3to or external MLP encoders.
 
 Build scripts, source hashes and full provenance stay in the repository and local
 `build` tree. Retired author source notices and hashes are recorded in

@@ -1,6 +1,6 @@
 # 原生运行时迁移
 
-Windows x64 工作流现在由 Rust 应用和项目构建的原生组件完成。GUI 不会调用 FFmpeg、FFprobe、ImageMagick、Metaflac、eac3to、MLP、dvdauthor 或 mkisofs 的命令行程序。
+Windows x64 工作流现在由 Rust 应用和项目构建的原生组件完成。GUI 不会调用 FFmpeg、FFprobe、ImageMagick、Metaflac、eac3to、参考编码器、dvdauthor 或 mkisofs 的命令行程序。
 
 ## 已完成的边界
 
@@ -18,7 +18,7 @@ Windows x64 工作流现在由 Rust 应用和项目构建的原生组件完成�
 
 ## MLP 逐字节规则
 
-MLP 编码器在序列化前接收目标 PCM、格式参数和辅助元数据，序列化后不修改编码字节。因此，只有 PCM、参数、上下文和编码行为都相同，参考文件才可能逐字节一致。已有 MLP 可以只读导入；该入口用于导入原版 external MLP encoder 编码生成的文件。
+MLP 编码器在序列化前接收目标 PCM、格式参数和辅助元数据，序列化后不修改编码字节。因此，只有 PCM、参数、上下文和编码行为都相同，参考文件才可能逐字节一致。已有 MLP 可以只读导入；该入口用于导入外部 MLP 编码器 编码生成的文件。
 
 ## 明确排除
 

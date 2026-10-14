@@ -208,7 +208,11 @@ impl Stream for PcmStream<'_, '_> {
 }
 
 #[cfg(not(feature = "rust-mlp"))]
-fn encode_rust(_: &Request, _: &mut dyn Stream) -> io::Result<dvda_native::encoder::ResultInfo> {
+fn encode_rust(
+    _: &Request,
+    _: &mut dyn Stream,
+    _: bool,
+) -> io::Result<dvda_native::encoder::ResultInfo> {
     Err(io::Error::other("Rust MLP backend feature is disabled"))
 }
 
@@ -216,10 +220,12 @@ fn encode_rust(_: &Request, _: &mut dyn Stream) -> io::Result<dvda_native::encod
 fn encode_rust(
     request: &Request,
     stream: &mut dyn Stream,
+    live_metadata: bool,
 ) -> io::Result<dvda_native::encoder::ResultInfo> {
     struct Adapter<'a> {
         stream: &'a mut dyn Stream,
         failure: Option<io::Error>,
+        stamp_refresh: Option<crate::encoder_stamp::LiveStamp>,
     }
     impl dvda_mlp::direct::StreamIo for Adapter<'_> {
         fn read(&mut self, _: usize, pcm: &mut [i32]) -> Result<usize, i32> {
@@ -233,6 +239,22 @@ fn encode_rust(
                 self.failure = Some(error);
                 -4
             })
+        }
+        fn refresh_stamp(&mut self) -> Result<Option<dvda_mlp::metadata::Metadata>, i32> {
+            let Some(stamp) = self.stamp_refresh.as_mut() else {
+                return Ok(None);
+            };
+            match stamp.refresh() {
+                Ok(next) => Ok(next.map(|stamp| dvda_mlp::metadata::Metadata {
+                    start: stamp.start,
+                    packet: stamp.packet,
+                    valid_bits: stamp.valid_bits,
+                })),
+                Err(error) => {
+                    self.failure = Some(io::Error::other(error.message));
+                    Err(-5)
+                }
+            }
         }
     }
     let config = dvda_mlp::Config {
@@ -259,15 +281,37 @@ fn encode_rust(
     let mut adapter = Adapter {
         stream,
         failure: None,
+        stamp_refresh: if live_metadata {
+            let stamp = request
+                .metadata
+                .first()
+                .ok_or_else(|| io::Error::other("Missing live stamp"))?;
+            Some(
+                crate::encoder_stamp::LiveStamp::new(stamp)
+                    .map_err(|error| io::Error::other(error.message))?,
+            )
+        } else {
+            None
+        },
     };
-    let result = dvda_mlp::direct::encode_stream(
-        &config,
-        &profile,
-        request.frames,
-        None,
-        &metadata,
-        &mut adapter,
-    );
+    let result = if adapter.stamp_refresh.is_some() {
+        dvda_mlp::direct::encode_stream_with_stamp_refresh(
+            &config,
+            &profile,
+            request.frames,
+            &metadata,
+            &mut adapter,
+        )
+    } else {
+        dvda_mlp::direct::encode_stream(
+            &config,
+            &profile,
+            request.frames,
+            None,
+            &metadata,
+            &mut adapter,
+        )
+    };
     if let Some(error) = adapter.failure {
         return Err(error);
     }
@@ -356,7 +400,11 @@ fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Out
         };
         let encoded = match encoder {
             Some(encoder) => encoder.encode(&request, &mut stream),
-            None => encode_rust(&request, &mut stream),
+            None => encode_rust(
+                &request,
+                &mut stream,
+                crate::config::trim(&job.metadata_context).is_empty(),
+            ),
         };
         stream.callbacks.check()?;
         let encoded = encoded.map_err(io_failure)?;
@@ -420,7 +468,7 @@ mod rust_tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].start, 0);
         assert_eq!(&records[0].packet[2..4], &[0x40, 0]);
-        assert!(records[0].packet.windows(9).any(|v| v == b"unix-utc:"));
+        assert!(records[0].packet.windows(4).any(|v| v == [0, 20, 0x14, 0]));
         assert_eq!(
             metadata(path.to_str().unwrap(), units).unwrap()[0].packet,
             records[0].packet
@@ -510,6 +558,71 @@ mod rust_tests {
     }
 
     #[test]
+    fn project_identity_reaches_auxiliary_bits_without_changing_coded_payload() {
+        let identity = crate::encoder_stamp::current().unwrap();
+        let expected = dvda_mlp::metadata::timeline(
+            &[dvda_mlp::metadata::Metadata {
+                start: 0,
+                packet: identity.packet.clone(),
+                valid_bits: 0,
+            }],
+            9 + 8 * identity.packet.len(),
+        )
+        .unwrap();
+        let mut request = Request {
+            sample_rate: 48000,
+            bits: 24,
+            channels: 2,
+            frames: 160000,
+            assignment: 1,
+            metadata: vec![identity],
+        };
+        let run = |request: &Request, live| {
+            let mut host = Host {
+                output: Vec::new(),
+                failure: None,
+                output_failure: false,
+                panic: false,
+            };
+            assert_eq!(encode_rust(request, &mut host, live).unwrap().status, 0);
+            host.output
+        };
+        let generated = run(&request, true);
+        request.metadata = vec![Stamp {
+            start: 0,
+            packet: vec![0, 0, 0x40, 0],
+            valid_bits: 0,
+        }];
+        let reference = run(&request, false);
+        let normalized = |mut bytes: Vec<u8>| {
+            let mut at = 0;
+            let mut bits = Vec::new();
+            while at < bytes.len() {
+                let length =
+                    usize::from(u16::from_be_bytes([bytes[at], bytes[at + 1]]) & 0xfff) * 2;
+                assert!(length >= 8 && at + length <= bytes.len());
+                let directory = at
+                    + if bytes[at + 4..at + 8] == [0xf8, 0x72, 0x6f, 0xbb] {
+                        32
+                    } else {
+                        4
+                    };
+                let bit = (bytes[directory] >> 4) & 1;
+                bits.push(u32::from(bit));
+                bytes[directory] &= 0xef;
+                bytes[at] ^= bit << 4;
+                at += length;
+            }
+            (crate::hash::hex_digest(&bytes), bits)
+        };
+        let (generated_hash, bits) = normalized(generated);
+        let (reference_hash, _) = normalized(reference);
+        assert_eq!(bits.len(), 4000);
+        assert_eq!(&bits[..expected.len()], &expected);
+        assert_eq!(generated_hash, reference_hash);
+    }
+
+    #[test]
     fn rust_adapter_preserves_results_and_input_errors() {
         let mut request = Request {
             sample_rate: 48000,
@@ -529,7 +642,7 @@ mod rust_tests {
             output_failure: false,
             panic: false,
         };
-        let result = encode_rust(&request, &mut host).unwrap();
+        let result = encode_rust(&request, &mut host, false).unwrap();
         assert_eq!(result.status, 0);
         assert_eq!(
             (
@@ -542,21 +655,21 @@ mod rust_tests {
         assert_eq!(result.output_bytes, host.output.len() as u64);
         for kind in [io::ErrorKind::UnexpectedEof, io::ErrorKind::Interrupted] {
             host.failure = Some(kind);
-            let error = encode_rust(&request, &mut host).unwrap_err();
+            let error = encode_rust(&request, &mut host, false).unwrap_err();
             assert_eq!(error.kind(), kind);
             assert_eq!(error.to_string(), "original input failure");
         }
         host.failure = None;
         host.output_failure = true;
-        let error = encode_rust(&request, &mut host).unwrap_err();
+        let error = encode_rust(&request, &mut host, false).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::WriteZero);
         assert_eq!(error.to_string(), "original output failure");
         host.output_failure = false;
         host.panic = true;
-        assert_eq!(encode_rust(&request, &mut host).unwrap().status, -5);
+        assert_eq!(encode_rust(&request, &mut host, false).unwrap().status, -5);
         host.panic = false;
         request.assignment = 21;
-        assert_eq!(encode_rust(&request, &mut host).unwrap().status, -1);
+        assert_eq!(encode_rust(&request, &mut host, false).unwrap().status, -1);
     }
 }
 

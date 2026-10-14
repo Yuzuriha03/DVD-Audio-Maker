@@ -1,4 +1,4 @@
-> 2026-10-01 Update: FFmpeg MLP encoding and the original MLP automation have been replaced by the MLP encoder;
+> 2026-10-01 Update: FFmpeg MLP encoding and the original reference encoder automation have been replaced by the MLP encoder;
 
 [简体中文](TROUBLESHOOTING.md) | [English](TROUBLESHOOTING.en.md)
 
@@ -386,7 +386,7 @@ Set `GROUP_TRACK_LIMIT = 64` in `02_build.py` (a maximum of 64 tracks per group,
 If it exceeds, split into another group according to the **album boundary** (the album itself is still not split). In actual tests, splitting 93 tracks into 3 groups caused zero stack corruption.
 
 This solved the crash, but **the cost was grouping**: the tracks of one disc were split into multiple "audio groups".
-For this version of the disc produced by MLP, disc 1 is split into two groups of 66 and 25, and **the audio parameters of the two groups are exactly the same**
+For this version of the disc produced by reference encoder, disc 1 is split into two groups of 66 and 25, and **the audio parameters of the two groups are exactly the same**
 (both 48000/24) — in other words, the grouping **was not a format requirement**, purely a product of this upper limit.
 
 #### Second phase: change the ATSI table to allocate dynamically according to the number of tracks (`patch_atsi_dynamic.py`)
@@ -1239,7 +1239,7 @@ Rerun step 1 after fixing: the sample count restores from 9 to 10, and extra gro
 ### Symptoms
 
 Using MLP encoded by ffmpeg for disc burning, **ffmpeg itself can decode normally**, but cannot confirm in
-Works properly on hardware DVD-Audio players — compared byte by byte with the reference implementation external MLP encoder output
+Works properly on hardware DVD-Audio players — compared byte by byte with the reference implementation reference MLP encoder output
 After comparison, it was found that the end of the stream is missing a marker.
 
 ### Root cause
@@ -1303,7 +1303,7 @@ checksum16 = av_crc(crc_2D, 0, buf[:n-2]) ^ AV_RL16(buf[n-2:])
 checksum8  = av_crc(crc_63, 0x3c, buf[:n-1]) ^ buf[n-1]
 ```
 
-Criterion: **Whether the existing checksum in the file can be recalculated**. Based on actual outputs from ffmpeg and MLP
+Criterion: **Whether the existing checksum in the file can be recalculated**. Based on actual outputs from ffmpeg and reference encoder
 All verification passed (147 files, over 210,000 access units' parity/checksum all matched).
 
 After repair, it should meet:
@@ -1312,14 +1312,14 @@ After repair, it should meet:
 [1] Alignment self-check passed (checksum/parity/substream/end marker)
 [2] 'End of stream indicated.' occurs during ffmpeg decoding.
 [3] Decoded PCM is byte-for-byte identical to before repair (audio not altered).
-[4] Byte-for-byte identical to MLP's major sync.
+[4] Byte-for-byte identical to reference encoder's major sync.
 ```
 
 ### Additional findings
 
 With the same track and same parameters, the two encoders' major syncs (28 bytes) differ in only 3 places:
 
-| Offset | Field | MLP | ffmpeg |
+| Offset | Field | reference encoder | ffmpeg |
 |------|------|---------|--------|
 | `[14:16]` | `peak_bitrate` | 3200 | 3199 |
 | `[16]` | `extended_substream_info` | 1 | 0 |
@@ -1332,7 +1332,7 @@ Changing to ceiling rounding makes the round-trip precise.
 > Lesson from ****: "software decoder can play" and "compliant with specification" are two different things.
 > The project's software side almost entirely uses libavcodec's `mlp` decoders, same source as encoders,
 > making self-consistency easy to satisfy; to judge specification compliance, you must find an independent **implementation** as a reference
-> (here it is MLP) and compare field by field.
+> (here it is reference encoder) and compare field by field.
 
 ---
 
@@ -1716,8 +1716,8 @@ Initially, to "keep albums complete on a page," I preemptively broke pages at al
 `sum_g ceil(n_g / R)`, it must **exactly equal** N:
 
 ```
-MLP Disk 1 [66,25] → 9 pages x 11 (6+3 = 9) ✔
-MLP disc 2 [56]     → 5 pages x 12   (5 = 5) ✔
+reference-encoder Disk 1 [66,25] → 9 pages x 11 (6+3 = 9) ✔
+reference-encoder disc 2 [56]     → 5 pages x 12   (5 = 5) ✔
 ffmpeg  Disk 1  [65,10,14]  → 14 pages x 7   (10+2+2 = 14) ✔
 ffmpeg  Disk 2  [56,2]      → 8 pages x 8    (7+1 = 8)  ✔
 ```

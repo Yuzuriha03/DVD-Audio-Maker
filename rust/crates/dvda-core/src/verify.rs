@@ -395,7 +395,7 @@ fn resolve_index(mut value: Value) -> Result<Value, String> {
                     .get("mlp_source")
                     .and_then(Value::as_str)
                     .unwrap_or_default();
-                if !matches!(mode, "mlp-batch" | "lpcm" | "external" | "MLP") {
+                if !matches!(mode, "mlp-batch" | "lpcm" | "external") {
                     return Err(format!("曲目索引的编码方式无效：{path}"));
                 }
                 let target = track.as_object_mut().ok_or("Invalid track index")?;

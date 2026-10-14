@@ -68,9 +68,8 @@ fn option_ranges_sources_and_removed_branches() {
     }
     for (value, expected) in [
         (" EXTERNAL ", "external"),
-        ("MLP", "external"),
         ("batch-mlp", "mlp-batch"),
-        ("mlp-batch", "mlp-batch"),
+        ("MLP-BATCH", "mlp-batch"),
         ("LPCM", "lpcm"),
     ] {
         let r = evaluate(json!({"DVDA_MLP_SOURCE":value}), json!({}));
