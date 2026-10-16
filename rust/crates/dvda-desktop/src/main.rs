@@ -304,6 +304,7 @@ struct OpenFileName {
 #[link(name = "user32")]
 unsafe extern "system" {
     fn RegisterClassW(class: *const WndClass) -> u16;
+    fn LoadIconW(instance: Hinstance, name: *const u16) -> Handle;
     fn CreateWindowExW(
         ex_style: u32,
         class: *const u16,
@@ -1192,6 +1193,10 @@ fn run() -> Result<(), String> {
     if instance.is_null() {
         return Err("Cannot get application instance".into());
     }
+    let icon = unsafe { LoadIconW(instance, 1usize as *const u16) };
+    if icon.is_null() {
+        return Err("Cannot load application icon".into());
+    }
     let class_name = wide("DVD_AUDIO_MAKER_RUST");
     let registration = WndClass {
         style: 0x0002,
@@ -1199,7 +1204,7 @@ fn run() -> Result<(), String> {
         extra_class: 0,
         extra_window: 0,
         instance,
-        icon: ptr::null_mut(),
+        icon,
         cursor: unsafe { LoadCursorW(ptr::null_mut(), 32512usize as *const u16) },
         background: unsafe { GetSysColorBrush(15) },
         menu: ptr::null(),

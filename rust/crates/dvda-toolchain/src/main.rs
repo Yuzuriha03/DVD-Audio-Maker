@@ -195,6 +195,15 @@ fn package(options: Args) -> Result<(), String> {
         validation::file_hash(&path)?;
         inputs.records.push(path);
     }
+    for name in [
+        "assets/dvd-audio-maker.svg",
+        "assets/dvd-audio-maker.png",
+        "assets/dvd-audio-maker.ico",
+    ] {
+        let path = repository.join(name);
+        validation::file_hash(&path)?;
+        inputs.records.push(path);
+    }
     let candidate = publication::Candidate::new(&output)?;
     let stage = candidate.root.join("DVD-Audio-Maker");
     let runtime = candidate.root.join("runtime-input");

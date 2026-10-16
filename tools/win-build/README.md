@@ -27,6 +27,18 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --wor
 
 格式解析、MLP CRC/奇偶校验、PCM 比较及只读 AOB 成品校验已经内置为 Rust 实现，不需要格式或校验 DLL。打包不再接受 `--formats-runtime` 输入。
 
+生成的 ImageMagick/委托库工程使用项目名前缀命名对象文件，避免合并 MagickCore、JPEG 8/12/16 位静态库时出现同名对象和 MSVC LNK4255 调试信息丢失警告。
+
+## 应用图标
+
+图标源文件为 [SVG](../../assets/dvd-audio-maker.svg)，[PNG](../../assets/dvd-audio-maker.png) 为透明背景栅格母版，[ICO](../../assets/dvd-audio-maker.ico) 包含 16、20、24、32、40、48、64、96、128、256 像素版本。更新 SVG 后，先在浏览器导出透明背景正方形 PNG，再运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\generate-app-icon.ps1
+```
+
+桌面构建将 ICO 嵌入 EXE 的 Windows 资源，主窗口也加载同一资源，因此资源管理器、任务栏和发布 ZIP 内的程序使用同一图标，无需旁置图标文件。打包记录包含三种图标素材的摘要。标识使用普通项目名称文字，不是官方格式或认证 Logo，也不代表取得商标授权。
+
 ## 发布 ZIP
 
 ```bat

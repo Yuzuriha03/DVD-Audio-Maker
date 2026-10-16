@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import re
 import shutil
 import subprocess
 import urllib.request
@@ -253,6 +254,15 @@ def main():
         text = text.replace('<Command>$(SolutionDir)Configure\\Tools\\nasm.exe',
                             '<Command>"$(SolutionDir)Configure\\Tools\\nasm.exe"')
         text = text.replace('>MultiThreadedDLL</RuntimeLibrary>', '>MultiThreaded</RuntimeLibrary>')
+        # lib.exe preserves member basenames when combining delegate archives.
+        # Prefix them per project so JPEG bit-depth variants and Magick coders
+        # retain distinct object identities and their debugging information.
+        object_name = f'$(IntDir){project.stem}_%(Filename).obj'
+        if '<ObjectFileName>' in text:
+            text = re.sub(r'<ObjectFileName>[^<]*</ObjectFileName>',
+                          f'<ObjectFileName>{object_name}</ObjectFileName>', text)
+        else:
+            text = text.replace('<ClCompile>', f'<ClCompile><ObjectFileName>{object_name}</ObjectFileName>')
         # Building the library dependency graph alone avoids unused tools/fuzzers.
         write_changed(project, text)
         generated_patches[project.relative_to(source).as_posix()] = sha(project)
@@ -269,6 +279,8 @@ def main():
     libs = source/'Artifacts/lib'
     core = work/'compile/MagickCore/.libs/MagickCore-7.Q16HDRI.lib'
     core.parent.mkdir(parents=True, exist_ok=True)
+    # lib.exe updates existing archives; remove them to avoid retaining old members.
+    core.unlink(missing_ok=True)
     # BZip2 is an internal FreeType delegate, carried by the combined core.
     run([env['DVDA_LIB_TOOL'], '/nologo', '/OUT:'+str(core),
          libs/'CORE_RL_MagickCore_.lib', libs/'CORE_RL_coders_.lib',
@@ -285,6 +297,7 @@ def main():
         destination = work/relative; destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(libs/name, destination); staged.append(destination)
     jpeg = work/'lib/jpeg.lib'
+    jpeg.unlink(missing_ok=True)
     run([env['DVDA_LIB_TOOL'], '/nologo', '/OUT:'+str(jpeg),
          libs/'CORE_RL_jpeg-turbo_.lib', libs/'CORE_RL_jpeg-turbo-12_.lib',
          libs/'CORE_RL_jpeg-turbo-16_.lib'], work, 'jpeg-merge.log')

@@ -105,6 +105,10 @@ fn main() {
         ] {
             require_msvc_library(&work.join(dir), name);
             println!(
+                "cargo:rerun-if-changed={}",
+                work.join(dir).join(format!("{name}.lib")).display()
+            );
+            println!(
                 "cargo:rustc-link-search=native={}",
                 work.join(dir).display()
             );
@@ -116,6 +120,10 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", image_deps.display());
         for name in ["jpeg", "png16", "webpdecoder", "webpmux", "z"] {
             require_msvc_library(&image_deps, name);
+            println!(
+                "cargo:rerun-if-changed={}",
+                image_deps.join(format!("{name}.lib")).display()
+            );
             println!("cargo:rustc-link-lib=static={name}");
         }
         for name in ["shell32", "gdi32", "user32", "ws2_32", "advapi32"] {
