@@ -17,6 +17,7 @@
 *.jpg
 *.jpeg
 *.png
+!assets/dvd-audio-maker.png
 *.webp
 
 # 光盘镜像与目录
