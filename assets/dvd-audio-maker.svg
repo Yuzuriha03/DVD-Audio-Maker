@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">DVD-Audio Maker</title>
+  <desc id="description">A silver optical disc and cyan audio waveform above plain DVD-Audio Maker text on a midnight-blue rounded square. This is an original project icon, not an official format or certification logo.</desc>
+  <defs>
+    <linearGradient id="background" x1="48" y1="24" x2="456" y2="498" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#183653"/>
+      <stop offset="0.55" stop-color="#0C2037"/>
+      <stop offset="1" stop-color="#071321"/>
+    </linearGradient>
+    <linearGradient id="disc" x1="137" y1="79" x2="370" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4FAFF"/>
+      <stop offset="0.28" stop-color="#B9D3E5"/>
+      <stop offset="0.48" stop-color="#F5FCFF"/>
+      <stop offset="0.65" stop-color="#8EADCA"/>
+      <stop offset="0.82" stop-color="#D4EDF2"/>
+      <stop offset="1" stop-color="#A6BCD4"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="130" y1="260" x2="382" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#40BFFF"/>
+      <stop offset="1" stop-color="#70F3DA"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(256 134) rotate(90) scale(240)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5DB6EA" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#5DB6EA" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="496" height="496" rx="108" fill="url(#background)"/>
+  <rect x="8" y="8" width="496" height="496" rx="108" fill="url(#light)"/>
+  <rect x="9" y="9" width="494" height="494" rx="107" stroke="#B2DFFF" stroke-opacity="0.14" stroke-width="2"/>
+  <circle cx="256" cy="207" r="149" fill="#030D1B" fill-opacity="0.3" transform="translate(0 9)"/>
+  <path d="M256 60a147 147 0 1 0 0 294 147 147 0 0 0 0-294Zm0 119a28 28 0 1 1 0 56 28 28 0 0 1 0-56Z" fill="url(#disc)" fill-rule="evenodd"/>
+  <circle cx="256" cy="207" r="136" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="2"/>
+  <circle cx="256" cy="207" r="48" stroke="#456580" stroke-opacity="0.35" stroke-width="2"/>
+  <circle cx="256" cy="207" r="33" stroke="#FFFFFF" stroke-opacity="0.65" stroke-width="2"/>
+  <path d="M147 167a117 117 0 0 1 77-73" stroke="#FFFFFF" stroke-opacity="0.8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M288 319a117 117 0 0 0 77-73" stroke="#E5FFFF" stroke-opacity="0.55" stroke-width="4" stroke-linecap="round"/>
+  <rect x="111" y="247" width="290" height="76" rx="38" fill="#08192C"/>
+  <rect x="112" y="248" width="288" height="74" rx="37" stroke="#B9E7FF" stroke-opacity="0.15" stroke-width="2"/>
+  <path d="M137 285h33l13-17 18 34 23-49 26 63 25-70 23 55 16-32 13 16h48" stroke="url(#signal)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <g font-family="Segoe UI, Arial, sans-serif" text-anchor="middle">
+    <text x="256" y="409" fill="#F0F7FF" font-size="53" font-weight="700">DVD-Audio</text>
+    <text x="256" y="451" fill="#70E7EF" font-size="26" font-weight="600" letter-spacing="7">MAKER</text>
+  </g>
+</svg>

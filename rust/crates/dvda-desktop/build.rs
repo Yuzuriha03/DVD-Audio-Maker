@@ -51,15 +51,19 @@ fn main() {
     ] {
         println!("cargo:rerun-if-env-changed={name}");
     }
-    let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("app.manifest");
+    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let manifest = manifest_dir.join("app.manifest");
+    let icon = manifest_dir.join("../../../assets/dvd-audio-maker.ico");
+    println!("cargo:rerun-if-changed={}", icon.display());
     let output = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let script = output.join("desktop.rc");
     let resource = output.join("desktop-resource.res");
     std::fs::write(
         &script,
         format!(
-            "1 24 \"{}\"\n{}",
+            "1 24 \"{}\"\n1 ICON \"{}\"\n{}",
             manifest.display().to_string().replace('\\', "/"),
+            icon.display().to_string().replace('\\', "/"),
             version_resource()
         ),
     )
