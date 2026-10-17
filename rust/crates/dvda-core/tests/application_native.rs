@@ -130,6 +130,9 @@ fn sources_aligned(root: &Path, align: bool) {
     }
 }
 fn options(root: &Path, mode: &str) -> app::AppOptions {
+    unscoped_options(root, mode).task_options().unwrap()
+}
+fn unscoped_options(root: &Path, mode: &str) -> app::AppOptions {
     // A nonexistent compatibility path also proves that no author subprocess
     // or external author executable is required by the application.
     let author = root.join("unused-external-author.exe");
@@ -152,6 +155,83 @@ fn options(root: &Path, mode: &str) -> app::AppOptions {
             .clone(),
         )
         .unwrap()
+}
+
+#[test]
+#[ignore = "requires source-built media runtime"]
+fn task_lifecycle_cleans_success_failure_and_cancel_and_retains_only_unfinished() {
+    let root = Scratch::new();
+    sources(&root.0);
+    for mode in ["lpcm", "mlp-batch"] {
+        let base = unscoped_options(&root.0, mode)
+            .with_profile_values(json!({"DVDA_RESUME":false}).as_object().unwrap().clone())
+            .unwrap();
+        let task = base.task_options().unwrap();
+        let work = task.path("BuildDirectory");
+        let mut events = Events::default();
+        let result = app::run_build(&task, false, &mut events).unwrap();
+        assert!(
+            result.succeeded,
+            "{:?} {:?}",
+            result.diagnostics, events.lines
+        );
+        let verified = app::run_verify(&task, &mut events).unwrap();
+        assert!(verified.succeeded, "{:?}", verified.diagnostics);
+        task.finish_task();
+        drop(task);
+        assert!(!work.exists());
+        assert!(root.0.join("src/1.flac").exists());
+        assert!(result.published.iter().all(|p| Path::new(p).is_file()));
+        let verified = app::run_verify(&base, &mut events).unwrap();
+        assert!(verified.succeeded, "{:?}", verified.diagnostics);
+        assert!(
+            verified
+                .diagnostics
+                .iter()
+                .any(|d| d["Code"] == "SOURCE_REFERENCE_RECHECK")
+        );
+        for resume in [false, true] {
+            let broken = base
+                .with_profile_values(
+                    json!({"DVDA_RESUME":resume,"DVDA_SRC":root.0.join("missing")})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                )
+                .unwrap();
+            let failed = broken.task_options().unwrap();
+            let failed_work = failed.path("BuildDirectory");
+            let result = app::run_build(&failed, false, &mut Events::default());
+            assert!(result.is_err() || !result.unwrap().succeeded);
+            drop(failed);
+            assert_eq!(failed_work.exists(), resume);
+            if resume {
+                let task = broken.task_options().unwrap();
+                task.finish_task();
+                drop(task);
+                assert!(!failed_work.exists());
+            }
+            let base = base
+                .with_profile_values(json!({"DVDA_RESUME":resume}).as_object().unwrap().clone())
+                .unwrap();
+            let task = base.task_options().unwrap();
+            let work = task.path("BuildDirectory");
+            let mut events = Events {
+                cancelled: true,
+                ..Default::default()
+            };
+            let result = app::run_build(&task, false, &mut events);
+            assert!(result.is_err() || !result.unwrap().succeeded);
+            drop(task);
+            assert_eq!(work.exists(), resume);
+            if resume {
+                let task = base.task_options().unwrap();
+                task.finish_task();
+                drop(task);
+                assert!(!work.exists());
+            }
+        }
+    }
 }
 
 #[test]

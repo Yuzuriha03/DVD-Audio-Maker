@@ -6,7 +6,6 @@
   "DVDA_BUILD_DIR": "存放编码缓存和制作中的文件，建议选择空间充足的磁盘。",
   "DVDA_ISO_PREFIX": "留空时根据光盘名称生成。",
   "DVDA_GROUP_TRACK_LIMIT": "通常保留默认值 99。",
-  "DVDA_PREPARE_CACHE": "未改变的音源无需重复检查，可以加快下一次制作。",
   "DVDA_RESUME": "重试时复用已完成且校验一致的光盘。",
   "DVDA_MLP_SOURCE": "MLP 无损压缩、占用较小；LPCM 不压缩、占用较大。已有 MLP 可选择导入。",
   "DVDA_MLP_SAMPLE_RATE": "176.4 / 192 kHz 最多支持双声道，其余采样率最多六声道。",

@@ -26,7 +26,14 @@ impl NativeDiscVerifier {
     where
         I: Iterator<Item = Result<Vec<u8>, String>>,
     {
-        self.verify(sources, None, chunks)
+        self.verify(sources, None, chunks, false)
+    }
+
+    pub fn verify_mlp_coded<I>(&self, sources: &[PathBuf], chunks: I) -> Result<ResultInfo, String>
+    where
+        I: Iterator<Item = Result<Vec<u8>, String>>,
+    {
+        self.verify(sources, None, chunks, true)
     }
 
     pub fn verify_lpcm<I>(
@@ -41,7 +48,7 @@ impl NativeDiscVerifier {
         if title_ends.len() != sources.len() {
             return Err("LPCM title boundary count does not match source count".into());
         }
-        self.verify(sources, Some(title_ends), chunks)
+        self.verify(sources, Some(title_ends), chunks, false)
     }
 
     fn verify<I>(
@@ -49,6 +56,7 @@ impl NativeDiscVerifier {
         sources: &[PathBuf],
         ends: Option<&[u8]>,
         mut chunks: I,
+        coded: bool,
     ) -> Result<ResultInfo, String>
     where
         I: Iterator<Item = Result<Vec<u8>, String>>,
@@ -62,6 +70,7 @@ impl NativeDiscVerifier {
             }
         }
         let mut compare = Compare::new(sources);
+        compare.coded = coded;
         let mut pcm = ends.map(Pcm::new);
         let mut status = if let Some(p) = &mut pcm {
             if !p.ends.last().is_some_and(|end| *end != 0) {
@@ -117,6 +126,9 @@ impl NativeDiscVerifier {
                 compare.result.offset = compare.offset;
             }
         }
+        if status == 0 && compare.coded && compare.coded_buffers.iter().any(|b| !b.is_empty()) {
+            status = -8;
+        }
         compare.result.code = status;
         if status != 0 {
             return Err(format!(
@@ -138,6 +150,9 @@ struct Compare<'a> {
     left: u64,
     offset: u64,
     result: ResultInfo,
+    coded: bool,
+    coded_buffers: [Vec<u8>; 2],
+    substreams: [Option<usize>; 2],
 }
 impl<'a> Compare<'a> {
     fn new(sources: &'a [PathBuf]) -> Self {
@@ -148,6 +163,9 @@ impl<'a> Compare<'a> {
             left: 0,
             offset: 0,
             result: ResultInfo::default(),
+            coded: false,
+            coded_buffers: [Vec::new(), Vec::new()],
+            substreams: [None, None],
         }
     }
     fn consume(&mut self, mut data: &[u8]) -> Result<(), i32> {
@@ -174,7 +192,9 @@ impl<'a> Compare<'a> {
                 .unwrap()
                 .read_exact(&mut expected)
                 .map_err(|_| -4)?;
-            if let Some(i) = data[..n].iter().zip(&expected).position(|(a, b)| a != b) {
+            if self.coded {
+                self.consume_coded(&data[..n], &expected)?;
+            } else if let Some(i) = data[..n].iter().zip(&expected).position(|(a, b)| a != b) {
                 self.result.offset = self.offset + i as u64;
                 return Err(-5);
             }
@@ -183,12 +203,43 @@ impl<'a> Compare<'a> {
             self.result.bytes += n as u64;
             data = &data[n..];
             if self.left == 0 {
+                if self.coded {
+                    if self.coded_buffers.iter().any(|buffer| !buffer.is_empty()) {
+                        return Err(-8);
+                    }
+                    self.substreams = [None, None];
+                }
                 self.file = None;
                 self.index += 1;
                 self.offset = 0;
             }
         }
         Ok(())
+    }
+    fn consume_coded(&mut self, actual: &[u8], expected: &[u8]) -> Result<(), i32> {
+        self.coded_buffers[0].extend_from_slice(actual);
+        self.coded_buffers[1].extend_from_slice(expected);
+        loop {
+            if self.coded_buffers.iter().any(|b| b.len() < 4) {
+                return Ok(());
+            }
+            let lengths = self.coded_buffers.each_ref().map(|b| (be16(b) & 0xfff) * 2);
+            if lengths[0] != lengths[1] || lengths[0] < 8 {
+                return Err(-5);
+            }
+            let length = lengths[0];
+            if self.coded_buffers.iter().any(|b| b.len() < length) {
+                return Ok(());
+            }
+            let mut units = [Vec::new(), Vec::new()];
+            for (i, unit) in units.iter_mut().enumerate() {
+                *unit = self.coded_buffers[i].drain(..length).collect();
+                normalize_mlp_unit(unit, &mut self.substreams[i])?;
+            }
+            if units[0] != units[1] {
+                return Err(-5);
+            }
+        }
     }
     fn sector(&mut self, s: &[u8]) -> Result<(), i32> {
         packets(s, |id, _, end, audio| {
@@ -215,6 +266,45 @@ impl<'a> Compare<'a> {
         self.result.sectors += 1;
         Ok(())
     }
+}
+
+// mlp-coded-v1-no-auxiliary-stamp: validate original parity before normalizing
+// only the first directory stamp and its dependent header parity bit in memory.
+fn normalize_mlp_unit(unit: &mut [u8], substreams: &mut Option<usize>) -> Result<(), i32> {
+    let directory = if unit[4..8] == [0xf8, 0x72, 0x6f, 0xbb] {
+        if unit.len() < 34 {
+            return Err(-8);
+        }
+        *substreams = Some((unit[20] >> 4) as usize);
+        32
+    } else {
+        4
+    };
+    let count = substreams.filter(|n| matches!(n, 1 | 2)).ok_or(-8)?;
+    if directory + count * 2 > unit.len() {
+        return Err(-8);
+    }
+    let word = be16(unit);
+    let mut value = (word & 0xfff) ^ be16(&unit[2..]);
+    for i in 0..count {
+        let entry = be16(&unit[directory + i * 2..]);
+        if entry & 0x8000 != 0 {
+            return Err(-8);
+        }
+        value ^= entry;
+    }
+    let mut parity = 15;
+    while value != 0 {
+        parity ^= value & 15;
+        value >>= 4;
+    }
+    if word >> 12 != parity {
+        return Err(-8);
+    }
+    let stamp = unit[directory] & 0x10;
+    unit[directory] &= 0xef;
+    unit[0] ^= stamp;
+    Ok(())
 }
 
 fn be16(s: &[u8]) -> usize {
@@ -576,6 +666,29 @@ mod tests {
         s[35..35 + payload.len()].copy_from_slice(payload);
         s
     }
+    #[test]
+    fn coded_comparison_excludes_only_validated_stamp() {
+        let mut original = vec![0; 36];
+        original[..2].copy_from_slice(&18u16.to_be_bytes());
+        original[4..8].copy_from_slice(&[0xf8, 0x72, 0x6f, 0xbb]);
+        original[20] = 0x10;
+        original[0] |= 0xc0; // parity: 15 ^ 1 ^ 2 = 12
+        let source = Fixture::new(&original);
+        let sources = [source.0.clone()];
+        let verifier = NativeDiscVerifier;
+        let mut stamp = original.clone();
+        stamp[32] ^= 0x10;
+        stamp[0] ^= 0x10;
+        assert!(verifier.verify_mlp(&sources, [Ok(mlp(&stamp))].into_iter()).is_err());
+        assert!(verifier.verify_mlp_coded(&sources, [Ok(mlp(&stamp[..9])), Ok(mlp(&stamp[9..]))].into_iter()).is_ok());
+        let mut broken = stamp.clone();
+        broken[0] ^= 0x10;
+        assert!(verifier.verify_mlp_coded(&sources, [Ok(mlp(&broken))].into_iter()).is_err());
+        stamp[35] ^= 1;
+        assert!(verifier.verify_mlp_coded(&sources, [Ok(mlp(&stamp))].into_iter()).is_err());
+        assert!(verifier.verify_mlp_coded(&sources, [Ok(mlp(&original[..35]))].into_iter()).is_err());
+    }
+
     #[test]
     fn layout_and_mlp_streaming() {
         assert_eq!(std::mem::size_of::<ResultInfo>(), 32);

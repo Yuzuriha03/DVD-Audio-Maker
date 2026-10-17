@@ -4,7 +4,7 @@ The standard release ZIP contains the GUI only. The source checkout also provide
 
 ## JSON profiles
 
-The CLI accepts JSON profiles with `--profile`. Without an explicit profile, `cli.cmd` uses the ignored `settings.local.json` when it exists; the application default is `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`.
+The CLI accepts JSON profiles with `--profile`. Without an explicit profile, `cli.cmd` uses the ignored `settings.local.json` when it exists; the application default is `settings.json (EXE directory)`.
 
 ```bat
 cli.cmd abi.version

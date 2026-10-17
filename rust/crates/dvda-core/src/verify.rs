@@ -75,7 +75,28 @@ pub fn execute_mode(
     explicit_iso: Option<PathBuf>,
     caller: &mut dyn Callbacks,
 ) -> Outcome {
-    match run(job, mode, explicit_iso, caller) {
+    execute_with_reference(job, mode, explicit_iso, None, caller)
+}
+
+/// Recheck ISO content against current sources, without claiming historical build-log audit.
+pub fn execute_source_reference(
+    job: Job,
+    mode: Mode,
+    explicit_iso: Option<PathBuf>,
+    reference: Value,
+    caller: &mut dyn Callbacks,
+) -> Outcome {
+    execute_with_reference(job, mode, explicit_iso, Some(reference), caller)
+}
+
+fn execute_with_reference(
+    job: Job,
+    mode: Mode,
+    explicit_iso: Option<PathBuf>,
+    reference: Option<Value>,
+    caller: &mut dyn Callbacks,
+) -> Outcome {
+    match run(job, mode, explicit_iso, reference, caller) {
         Ok(value) => value,
         Err(message) => Outcome {
             succeeded: false,
@@ -90,6 +111,7 @@ fn run(
     job: Job,
     mode: Mode,
     explicit_iso: Option<PathBuf>,
+    reference: Option<Value>,
     caller: &mut dyn Callbacks,
 ) -> Result<Outcome, String> {
     check_cancel(caller)?;
@@ -103,10 +125,20 @@ fn run(
             track_count: 0,
         });
     }
+    let source_reference = reference.is_some();
     let mut diagnostics = Vec::new();
+    if source_reference {
+        diagnostics.push(json!({"Code":"SOURCE_REFERENCE_RECHECK", "Severity":"Warning",
+            "Message":"Verification uses current sources and settings; historical build-log audit is unavailable after task cleanup."}));
+    }
     let needs_index = matches!(mode, Mode::All | Mode::Lossless)
         || (mode == Mode::Menu && explicit_iso.is_none());
-    let mut index = if needs_index {
+    let mut index = if let Some(reference) = reference {
+        Some(
+            resolve_source_index(reference)
+                .map_err(|e| format!("Invalid source reference: {e}"))?,
+        )
+    } else if needs_index {
         match read_index(&job.index_path) {
             Ok(index) => Some(index),
             Err(issue) => {
@@ -194,7 +226,7 @@ fn run(
                 &evidence,
             ));
         }
-        if mode == Mode::All {
+        if mode == Mode::All && !source_reference {
             diagnostics.extend(verification::log_issues(
                 job.build_log_path.as_deref(),
                 job.allow_log_fallback,
@@ -269,7 +301,7 @@ fn run(
     }
     if matches!(mode, Mode::All | Mode::Lossless)
         && let Some(index) = index.as_ref()
-        && let Err(reason) = lossless(&job, &isos, index, &mut diagnostics, caller)
+        && let Err(reason) = lossless(&job, &isos, index, source_reference, &mut diagnostics, caller)
     {
         diagnostics.push(error("LOSSLESS_FAILED", reason));
     }
@@ -338,10 +370,14 @@ fn read_index(path: &Path) -> Result<Value, Value> {
     resolve_index(value).map_err(invalid)
 }
 
-fn resolve_index(mut value: Value) -> Result<Value, String> {
+fn resolve_index(value: Value) -> Result<Value, String> {
     if value["__meta__"]["dry_run"].as_bool() == Some(true) {
         return Err("预演索引不能用于验证正式成品。".into());
     }
+    resolve_source_index(value)
+}
+
+fn resolve_source_index(mut value: Value) -> Result<Value, String> {
     let entries = value.as_object().ok_or("Invalid track index")?.clone();
     let mut names = std::collections::HashSet::new();
     for disc in value["__discs__"]
@@ -943,6 +979,7 @@ fn lossless(
     job: &Job,
     isos: &[PathBuf],
     index: &Value,
+    source_reference: bool,
     diagnostics: &mut Vec<Value>,
     caller: &mut dyn Callbacks,
 ) -> Result<(), String> {
@@ -1026,6 +1063,11 @@ fn lossless(
                     .unwrap_or_default(),
                 &format!("group {number}; {}", iso.display()),
             );
+            let coded_reference = source_reference
+                && tracks.iter().all(|track| text(track, "mlp_source") == "mlp-batch");
+            if all_mlp && coded_reference {
+                group_progress.emit(1, "MLP comparison: mlp-coded-v1-no-auxiliary-stamp (coded-stream equality, not raw-file equality)");
+            }
             let reader = chunks(iso, &names).map(|chunk| {
                 check_cancel(&mut group_progress)?;
                 completed_chunks = completed_chunks.saturating_add(1);
@@ -1046,7 +1088,11 @@ fn lossless(
                     .collect::<Result<Vec<_>, _>>()?;
                 verifier.verify_lpcm(&sources, &ends, reader).map(|_| ())
             } else if all_mlp {
-                verifier.verify_mlp(&sources, reader).map(|_| ())
+                if coded_reference {
+                    verifier.verify_mlp_coded(&sources, reader).map(|_| ())
+                } else {
+                    verifier.verify_mlp(&sources, reader).map(|_| ())
+                }
             } else {
                 Err("A group mixes LPCM and MLP tracks".into())
             };

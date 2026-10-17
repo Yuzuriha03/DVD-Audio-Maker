@@ -150,6 +150,7 @@ fn execute(arguments: &[String]) -> Result<i32> {
         "prepare" => {
             let force = flag(&mut args, "--force")?;
             empty(&args)?;
+            let options = options.scratch_options().map_err(failure)?;
             let result = dvda_core::app::run_prepare(&options, force, &mut events);
             let code = i32::from(!result.succeeded());
             print(result)?;
@@ -162,8 +163,61 @@ fn execute(arguments: &[String]) -> Result<i32> {
                     .with_profile_values(json!({"DVDA_RESUME":"off"}).as_object().unwrap().clone())
                     .map_err(failure)?;
             }
+            let continue_task = flag(&mut args, "--continue")?;
+            let restart_task = flag(&mut args, "--restart")?;
+            if continue_task && restart_task { return Err(usage("Choose --continue or --restart, not both")); }
             empty(&args)?;
-            let result = dvda_core::app::run_build(&options, dry, &mut events).map_err(failure)?;
+            let recovery = options.has_unfinished_task();
+            if recovery || continue_task || restart_task {
+                let restart = if restart_task { true } else if continue_task { false } else {
+                    use std::io::{IsTerminal, Write};
+                    if !std::io::stdin().is_terminal() {
+                        return Err(usage("Unfinished task found: choose build --continue or build --restart"));
+                    }
+                    loop {
+                        eprint!("Unfinished task: 1) Continue production  2) Restart production: ");
+                        std::io::stderr().flush().map_err(failure)?;
+                        let mut line = String::new();
+                        if std::io::stdin().read_line(&mut line).map_err(failure)? == 0 { return Err(failure("No recovery choice received; files preserved")); }
+                        match line.trim() { "1" => break false, "2" => break true, _ => {} }
+                    }
+                };
+                options = options.recover_task(restart).map_err(failure)?;
+            }
+            if dry {
+                options = options.scratch_options().map_err(failure)?;
+            } else if !recovery && !continue_task && !restart_task {
+                options = options.task_options().map_err(failure)?;
+            }
+            let outcome = (|| {
+                let mut result = dvda_core::app::run_build(&options, dry, &mut events)?;
+                if result.succeeded && !dry {
+                    let verified = dvda_core::app::run_verify(&options, &mut events)?;
+                    result.succeeded = verified.succeeded;
+                    result.diagnostics.extend(verified.diagnostics);
+                    if result.succeeded { options.finish_task(); }
+                }
+                Ok::<_, String>(result)
+            })();
+            if !dry && !outcome.as_ref().is_ok_and(|result| result.succeeded) {
+                use std::io::{IsTerminal, Write};
+                if std::io::stdin().is_terminal() {
+                    loop {
+                        eprint!("Production unfinished: 1) Keep progress  2) Delete progress: ");
+                        std::io::stderr().flush().map_err(failure)?;
+                        let mut line = String::new();
+                        if std::io::stdin().read_line(&mut line).map_err(failure)? == 0 { break; }
+                        match line.trim() {
+                            "1" => break,
+                            "2" => { options.discard_task(); break; }
+                            _ => {}
+                        }
+                    }
+                } else {
+                    eprintln!("Production unfinished; progress preserved. Choose build --continue or build --restart next time.");
+                }
+            }
+            let result = outcome.map_err(failure)?;
             let code = i32::from(!result.succeeded);
             print(result)?;
             Ok(code)
@@ -348,6 +402,12 @@ fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
     Ok(0)
 }
 fn plan(options: &AppOptions) -> Result<i32> {
+    let options = options.scratch_options().map_err(failure)?;
+    let mut callbacks = Events(options.language.clone());
+    let prepared = dvda_core::app::run_prepare(&options, false, &mut callbacks);
+    if let Some(error) = prepared.failure {
+        return Err(failure(error.message));
+    }
     let initial = dvda_core::manifest::read(
         &options.path("ManifestPath").to_string_lossy(),
         &options.text("MlpDirectory"),
@@ -459,7 +519,7 @@ fn verification(
     }
     let iso = take(args, "--iso")?.map(PathBuf::from);
     empty(args)?;
-    use dvda_core::verify::{Job, Mode};
+    use dvda_core::verify::Mode;
     let mode = match mode.as_str() {
         "all" => Mode::All,
         "capacity" => Mode::Capacity,
@@ -468,27 +528,8 @@ fn verification(
         "lossless" => Mode::Lossless,
         _ => return Err(usage(format!("Unsupported verification mode: {mode}"))),
     };
-    let job = if matches!(mode, Mode::All | Mode::Lossless)
-        || (mode == Mode::Menu && (options.boolean("MenuEnabled") || iso.is_some()))
-    {
-        options.verify_job().map_err(failure)?
-    } else {
-        Job {
-            image_library: None,
-            media_library: PathBuf::new(),
-            work_directory: options.path("BuildDirectory"),
-            final_directory: options.path("FinalDirectory"),
-            iso_prefix: options.text("IsoPrefix"),
-            title: Some(options.text("Title")),
-            menu_enabled: options.boolean("MenuEnabled"),
-            index_path: options.path("MlpIndexPath"),
-            manifest_path: Some(options.path("ManifestPath")),
-            build_log_path: Some(options.path("BuildLogPath")),
-            allow_log_fallback: true,
-            disc_bytes: options.integer("DiscBytes"),
-        }
-    };
-    print_outcome(dvda_core::verify::execute_mode(job, mode, iso, events))
+    let result = dvda_core::app::run_verify_mode(options, mode, iso, events).map_err(failure)?;
+    print_outcome(result)
 }
 fn print_outcome(result: dvda_core::verify::Outcome) -> Result<i32> {
     let missing_material = |d: &Value| {
