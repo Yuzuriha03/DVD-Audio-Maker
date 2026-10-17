@@ -240,6 +240,5 @@ cargo bloat --release --manifest-path rust/Cargo.toml
 ---
 
 **优化完成时间:** 2024
-**优化工具:** Claude Opus 5.5
 **项目版本:** v1.0+
 **预期整体提升:** 30-40% 性能提升
