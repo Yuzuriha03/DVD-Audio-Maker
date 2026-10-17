@@ -80,13 +80,8 @@ cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --wo
 
 `dry-run` is a developer debugging option in the source CLI. It prepares audio, encodes MLP and writes a separate index without creating an ISO; it is not a zero-write operation. The GUI offers checking, building and verification. Use `mlp-batch` for built-in encoding and `external` for importing existing files. The setting keys are `DVDA_MLP_SAMPLE_RATE` and `DVDA_MLP_BITS`; update older profiles to these names.
 
-- [Development, debugging and CLI](docs/DEVELOPMENT.en.md)
-- [C# to Rust migration plan and acceptance criteria (Chinese)](docs/RUST-MIGRATION.md)
-- [Rust format processing and byte-level validation](docs/C17-FORMATS.md)
 - [Windows builds, native components and packaging](tools/win-build/README.en.md)
-- [Single-file packaging design and validation](docs/ONEFILE-PUBLISH.md)
-- [MLP integration and validation limits](docs/MLP-ENCODER.en.md)
-- [Native migration records](docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md)
-- [Troubleshooting and historical diagnostics](docs/TROUBLESHOOTING.en.md)
+
+Development, migration and diagnostics documents are kept only in the local source working copy and are not published with the repository.
 
 Default packaging combines one EXE with embedded components and companion user documentation into `DVD-Audio-Maker-v1.0-win-x64.zip`. Use `--version` for later versions. The standard user package excludes the developer CLI, PDBs, build-provenance JSON and the .NET runtime. Artifacts remain in ignored directories and are distributed only as GitHub Release assets.

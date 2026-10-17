@@ -19,10 +19,10 @@
 继续保留上游归属和 GPL 许可。当前仓库包含：
 
 - `rust/crates/dvda-author`：Rust author、IFO/AOB 与 ISO writer
-- `docs/RUST-AUTHOR-MIGRATION.md`：实现范围与验收记录
 - `rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json`：退役源码的
   Git 版本、文件哈希、版权声明和黄金数据来源
-- `docs/DVDA-AUTHOR-CHANGES.md` / `DVDA-AUTHOR-DISABLED.md`：历史改动说明
+
+实现范围、验收记录与历史改动说明（`RUST-AUTHOR-MIGRATION.md`、`DVDA-AUTHOR-CHANGES.md`、`DVDA-AUTHOR-DISABLED.md`）只保存在本地源码工作副本，不随仓库发布。
 
 旧 C 镜像和 `docs/dvda-author-changes.patch` 已移除，可以从本仓库提交
 `6c5086127590001c544373783653fe991f0ebaeb` 恢复。源码清理不改变许可和归属要求。

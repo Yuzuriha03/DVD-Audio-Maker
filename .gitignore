@@ -101,3 +101,9 @@ DVD-Audio-Maker*.zip
 settings.json
 settings.local.json
 DVD-Audio-Maker.log.txt
+
+# Development, migration and diagnostics documentation stays in the local source
+# working copy; only the licensing notes are published.
+docs/*
+!docs/LICENSING.md
+!docs/LICENSING.en.md

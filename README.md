@@ -80,13 +80,8 @@ cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --wo
 
 `dry-run` 仅供开发调试，通过源码 CLI 使用；它会准备音源、编码 MLP 并生成独立索引，不生成 ISO，也不是零写入操作。GUI 只提供检查、制作、验证。内置编码配置使用 `mlp-batch`，已有文件导入使用 `external`。采样率与位深配置键为 `DVDA_MLP_SAMPLE_RATE`、`DVDA_MLP_BITS`；旧配置请使用这些名称重新保存。
 
-- [开发调试与 CLI](docs/DEVELOPMENT.md)
-- [C# 应用层迁移至 Rust：阶段与验收计划](docs/RUST-MIGRATION.md)
-- [Rust 格式处理与逐字节验证](docs/C17-FORMATS.md)
 - [Windows 构建、原生组件与发布](tools/win-build/README.md)
-- [单文件打包设计与验收](docs/ONEFILE-PUBLISH.md)
-- [MLP 集成与测试边界](docs/MLP-ENCODER.md)
-- [原生依赖迁移记录](docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)
-- [常见问题与历史诊断](docs/TROUBLESHOOTING.md)
+
+开发调试、迁移记录与历史诊断文档只保存在本地源码工作副本，不随仓库发布。
 
 默认打包生成必要组件内嵌的单个 EXE 与旁置用户文档，统一压缩为 `DVD-Audio-Maker-v1.0-win-x64.zip`；使用 `--version` 指定后续版本。CLI、PDB、构建来源 JSON 和 .NET 运行时不进入标准用户包。发布物留在被 Git 忽略的目录，仅作为 GitHub Release 附件分发。
