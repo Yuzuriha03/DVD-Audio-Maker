@@ -406,6 +406,7 @@ struct CliResources {
     exception: *mut c_void,
     metadata: *mut c_char,
     files: Vec<std::path::PathBuf>,
+    scratch: Option<std::path::PathBuf>,
 }
 impl Drop for CliResources {
     fn drop(&mut self) {
@@ -422,6 +423,9 @@ impl Drop for CliResources {
         }
         for path in &self.files {
             let _ = std::fs::remove_file(path);
+        }
+        if let Some(directory) = &self.scratch {
+            let _ = std::fs::remove_dir(directory);
         }
         ACTIVE.with(|active| active.set(ptr::null()));
     }
@@ -464,6 +468,7 @@ pub unsafe extern "C" fn dvda_image_run(
             exception: AcquireExceptionInfo(),
             metadata: ptr::null_mut(),
             files: vec![],
+            scratch: None,
         };
         if resources.info.is_null() || resources.exception.is_null() {
             return 1;
@@ -490,8 +495,12 @@ pub unsafe extern "C" fn dvda_image_run(
                     Ok(path) => path.join("build"),
                     Err(_) => return 1,
                 };
+                let created = !folder.is_dir();
                 if std::fs::create_dir_all(&folder).is_err() {
                     return 1;
+                }
+                if created {
+                    resources.scratch = Some(folder.clone());
                 }
                 static SEQUENCE: std::sync::atomic::AtomicU64 =
                     std::sync::atomic::AtomicU64::new(0);
