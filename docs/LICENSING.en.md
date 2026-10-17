@@ -1,6 +1,6 @@
 # Licensing and legal notes
 
-[简体中文](LICENSING.md) | [English](LICENSING.en.md)
+[简体中文](LICENSING.md) | [English](LICENSING.en.md) | [日本語](LICENSING.ja.md)
 
 > This document includes architecture and distribution notes from earlier project stages. For the current repository and release contents, see the [project README](../README.en.md) and [third-party notices](../tools/win-build/docs/THIRD-PARTY.en.md). Historical workflow descriptions do not describe current runtime dependencies.
 
