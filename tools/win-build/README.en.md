@@ -13,7 +13,7 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --wor
 
 `gui.cmd`, `gui-debug.cmd`, `cli.cmd`, `build.cmd` and `verify.cmd` invoke the Rust workspace. Profiles are JSON files selected with `--profile`; `config.env`, `DVDA_CONFIG` and `--config` are unsupported.
 
-The complete author runs in Rust through a shared application/CLI entry. `build-image-author.py` delegates to `build-rust-author.py`; the retired C producer, sources and frozen binaries have been removed. Historical golden-fixture source hashes are retained. AOB, tables, menus/stills and ISO acceptance are recorded in the [author migration record](../../docs/RUST-AUTHOR-MIGRATION.md).
+The complete author runs in Rust through a shared application/CLI entry. `build-image-author.py` delegates to `build-rust-author.py`; the retired C producer, sources and frozen binaries have been removed. Historical golden-fixture source hashes are retained. AOB, table, menu/still and ISO acceptance records are kept in the local source working copy.
 
 ## Native inputs
 

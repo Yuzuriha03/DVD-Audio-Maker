@@ -13,7 +13,7 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --wor
 
 `gui.cmd`、`gui-debug.cmd`、`cli.cmd`、`build.cmd` 和 `verify.cmd` 都调用 Rust workspace。配置只使用 JSON 方案和 `--profile`；不支持 `config.env`、`DVDA_CONFIG` 和 `--config`。
 
-完整 author 由 Rust 实现：应用进程内调用，独立 Rust CLI 复用同一流程。`build-image-author.py` 是 `build-rust-author.py` 的兼容入口，旧 C producer、源码和冻结二进制已清理。AOB、管理表、菜单/静图和 ISO 的验收见 [author 迁移记录](../../docs/RUST-AUTHOR-MIGRATION.md)，黄金数据的历史来源摘要仍保留。
+完整 author 由 Rust 实现：应用进程内调用，独立 Rust CLI 复用同一流程。`build-image-author.py` 是 `build-rust-author.py` 的兼容入口，旧 C producer、源码和冻结二进制已清理。AOB、管理表、菜单/静图和 ISO 的验收记录保存在本地源码工作副本中，黄金数据的历史来源摘要仍保留。
 
 ## 原生输入
 

@@ -23,5 +23,4 @@ FFmpeg、ImageMagick 及其依赖静态链接；字体和菜单数据随程序�
 源码的版权与哈希记录位于
 `rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json`，原源码可从 Git
 历史恢复。发布或修改软件时，请保留许可证及 NOTICE 文件，并按对应上游许可证
-提供源码或补丁。构建边界见 [Windows 构建说明](../README.md) 和
-[原生运行时迁移](../../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.md)。
+提供源码或补丁。构建边界见 [Windows 构建说明](../README.md)；原生运行时迁移记录只保存在本地源码工作副本中。

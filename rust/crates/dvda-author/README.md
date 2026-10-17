@@ -24,5 +24,5 @@ C producer and its sources have been removed; frozen test data retains source
 hashes and the historical Git revision. Python and pycdlib are development
 acceptance tools only.
 
-See [the migration record](../../../docs/RUST-AUTHOR-MIGRATION.md) for interfaces,
+The migration record kept in the local source working copy documents interfaces,
 build inputs, verification and implementation limits.

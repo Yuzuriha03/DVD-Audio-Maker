@@ -28,5 +28,5 @@ Build scripts, source hashes and full provenance stay in the repository and loca
 sources can be recovered from Git history. When redistributing or modifying the
 software, retain license and NOTICE files and provide source or patches as
 required by each upstream license. See the [Windows build instructions](../README.en.md)
-and [native runtime migration](../../../docs/NO-EXTERNAL-RUNTIME-MIGRATION.en.md)
-for the current build boundary.
+for the current build boundary; the native runtime migration record is kept only in the
+local source working copy.

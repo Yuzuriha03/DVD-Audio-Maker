@@ -19,10 +19,13 @@ The project's author and LPCM packing rules were translated from modified
 attribution and GPL licensing are retained. The current repository includes:
 
 - `rust/crates/dvda-author`: the Rust author, IFO/AOB generation and ISO writer
-- `docs/RUST-AUTHOR-MIGRATION.md`: implementation scope and acceptance records
 - `rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json`: retired
   source revisions, hashes, copyright notices and golden fixture provenance
-- `docs/DVDA-AUTHOR-CHANGES.md` / `DVDA-AUTHOR-DISABLED.md`: historical change notes
+
+The implementation scope, acceptance records and historical change notes
+(`RUST-AUTHOR-MIGRATION.md`, `DVDA-AUTHOR-CHANGES.md`, `DVDA-AUTHOR-DISABLED.md`)
+are kept only in the local source working copy and are not published with the
+repository.
 
 The old C mirror and `docs/dvda-author-changes.patch` have been removed. Both can
 be recovered from this repository at commit
