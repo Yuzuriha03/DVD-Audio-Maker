@@ -52,8 +52,7 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_MENU_FONT_KR", ""),
         ("DVDA_AUTHOR", "dvda-author-dev.exe"),
         ("DVDA_AUTHOR_SRC", ""),
-        ("DVDA_PREPARE_CACHE", "on"),
-        ("DVDA_RESUME", "on"),
+        ("DVDA_RESUME", "off"),
         ("DVDA_LOSS_ERROR_S", "0.05"),
         ("DVDA_LOSS_WARN_S", "0.005"),
     ] {
@@ -288,8 +287,8 @@ pub fn evaluate(request: Request) -> Value {
         }),
     );
     for (name, key, default_on) in [
-        ("PrepareCacheEnabled", "DVDA_PREPARE_CACHE", true),
-        ("ResumeEnabled", "DVDA_RESUME", true),
+        ("PrepareCacheEnabled", "DVDA_RESUME", false),
+        ("ResumeEnabled", "DVDA_RESUME", false),
         ("MenuEnabled", "DVDA_MENU", false),
         ("MenuStillPictures", "DVDA_MENU_STILLPICS", false),
         ("KeepTemporary", "DVDA_KEEP_TMP", false),

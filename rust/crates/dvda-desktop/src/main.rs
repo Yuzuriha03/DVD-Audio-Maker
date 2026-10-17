@@ -128,8 +128,6 @@ const ID_CAPACITY: usize = 203;
 const ID_WORK_DIR: usize = 205;
 const ID_ISO_PREFIX: usize = 206;
 const ID_GROUP_LIMIT: usize = 207;
-const ID_CACHE: usize = 208;
-const ID_RESUME: usize = 209;
 const ID_CUSTOM_BYTES: usize = 210;
 const ID_TITLE_MODE: usize = 211;
 const ID_ALBUM_LIMIT: usize = 212;
@@ -512,7 +510,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "iso_prefix" => "镜像文件名前缀",
             "group_limit" => "每组最多曲目",
             "cache" => "复用检查结果",
-            "resume" => "继续未完成的制作",
             "audio_mode" => "音频编码方式",
             "sample_rate" => "采样率",
             "bits" => "音频位深",
@@ -642,7 +639,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "iso_prefix" => "ISO filename prefix",
             "group_limit" => "Tracks per group",
             "cache" => "Reuse source checks",
-            "resume" => "Resume unfinished work",
             "audio_mode" => "Audio encoding",
             "sample_rate" => "Sample rate",
             "bits" => "Bit depth",
@@ -778,7 +774,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "iso_prefix" => "ISO ファイル名の接頭辞",
             "group_limit" => "グループの曲数",
             "cache" => "検査結果を再利用",
-            "resume" => "未完了の作業を再開",
             "audio_mode" => "音声エンコード",
             "sample_rate" => "サンプルレート",
             "bits" => "ビット深度",
@@ -919,6 +914,7 @@ enum WorkerEvent {
     Log(String),
     Progress(u16),
     Finished(UiEvent),
+    Retention(AppOptions),
 }
 
 struct Controls {
@@ -939,8 +935,6 @@ struct Controls {
     work_dir: Hwnd,
     iso_prefix: Hwnd,
     group_limit: Hwnd,
-    cache: Hwnd,
-    resume: Hwnd,
     mode: Hwnd,
     rate: Hwnd,
     bits: Hwnd,
@@ -1769,8 +1763,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         work_dir: ptr::null_mut(),
         iso_prefix: ptr::null_mut(),
         group_limit: ptr::null_mut(),
-        cache: ptr::null_mut(),
-        resume: ptr::null_mut(),
         mode: ptr::null_mut(),
         rate: ptr::null_mut(),
         bits: ptr::null_mut(),
@@ -1888,24 +1880,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         520,
         194,
         220,
-        &mut labels,
-    );
-    c.cache = check_field(
-        page_start,
-        tr(lang, "cache"),
-        "cache",
-        ID_CACHE,
-        760,
-        204,
-        &mut labels,
-    );
-    c.resume = check_field(
-        page_start,
-        tr(lang, "resume"),
-        "resume",
-        ID_RESUME,
-        760,
-        241,
         &mut labels,
     );
     c.custom_bytes = text_field!(
@@ -2326,8 +2300,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         c.work_dir,
         c.iso_prefix,
         c.group_limit,
-        c.cache,
-        c.resume,
         c.metadata,
         c.pcm_temp,
         c.mlp_stage,
@@ -2346,8 +2318,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         "work_dir",
         "iso_prefix",
         "group_limit",
-        "cache",
-        "resume",
         "metadata",
         "pcm_temp",
         "mlp_stage",
@@ -3160,8 +3130,6 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         state.controls.group_limit,
         &options.integer("GroupTrackLimit").to_string(),
     );
-    check(state.controls.cache, options.boolean("PrepareCacheEnabled"));
-    check(state.controls.resume, options.boolean("ResumeEnabled"));
     combo_select(state.controls.mode, mode_index(&options.text("MlpSource")));
     set_text(
         state.controls.import_folder,
@@ -3282,12 +3250,12 @@ fn overrides(state: &UiState) -> Map<String, Value> {
     put(
         &mut values,
         "PrepareCacheEnabled",
-        json!(checked(state.controls.cache)),
+        json!(true),
     );
     put(
         &mut values,
         "ResumeEnabled",
-        json!(checked(state.controls.resume)),
+        json!(true),
     );
     put(
         &mut values,
@@ -3563,19 +3531,10 @@ fn save_profile(state: &mut UiState) {
 }
 
 fn autosave(state: &mut UiState) {
-    // Invalid startup profiles must not overwrite the user's last good settings.
-    if state.base.is_none() || !validate_controls(state, false) {
-        return;
-    }
     let path = dvda_core::app::default_profile_path();
-    if let Err(error) =
-        dvda_core::app::save_profile(&path, &edited_profile_values(state), state.lang.code())
-    {
-        add_log(
-            state,
-            &format!("{}{}", tr(state.lang, "profile_error"), error),
-            true,
-        );
+    let values = edited_profile_values(state);
+    if let Err(error) = dvda_core::app::save_profile(&path, &values, state.lang.code()) {
+        add_log(state, &format!("{}{}", tr(state.lang, "profile_error"), error), true);
     }
 }
 fn save_profile_as(hwnd: Hwnd, state: &mut UiState) {
@@ -3598,9 +3557,8 @@ fn save_profile_as(hwnd: Hwnd, state: &mut UiState) {
 fn open_session_log() -> std::io::Result<(fs::File, PathBuf)> {
     let root = dvda_core::app::default_profile_path()
         .parent()
-        .unwrap()
-        .join("logs");
-    fs::create_dir_all(&root)?;
+        .ok_or_else(|| std::io::Error::other("Missing application directory"))?
+        .to_owned();
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -3613,9 +3571,35 @@ fn open_session_log() -> std::io::Result<(fs::File, PathBuf)> {
     ));
     let file = fs::OpenOptions::new()
         .write(true)
+        .read(true)
         .create_new(true)
         .open(&path)?;
+    prune_session_logs(&root, &path)?;
     Ok((file, path))
+}
+
+fn prune_session_logs(root: &std::path::Path, current: &std::path::Path) -> std::io::Result<()> {
+    let mut previous = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let Some(identifier) = name.strip_prefix("gui-").and_then(|s| s.strip_suffix(".log")) else {
+            continue;
+        };
+        let parts: Vec<_> = identifier.split('-').collect();
+        if parts.len() != 3 || parts.iter().any(|part| part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit())) {
+            continue;
+        }
+        if entry.path() != current && entry.file_type()?.is_file() {
+            previous.push((entry.metadata()?.modified()?, entry.path()));
+        }
+    }
+    previous.sort_by(|a, b| b.cmp(a));
+    for (_, path) in previous.into_iter().skip(2) {
+        fs::remove_file(path)?;
+    }
+    Ok(())
 }
 
 fn log_timestamp() -> String {
@@ -3641,22 +3625,11 @@ fn reset_task_log(state: &mut UiState) {
     state.log_hold_until = None;
     state.activity_dirty = false;
     state.problem_count = 0;
-    state.log_file = None;
-    match open_session_log() {
-        Ok(file) => state.log_file = Some(file),
-        Err(error) => add_log(
-            state,
-            &format!(
-                "[警告] {} {error}",
-                presentation::phrase(
-                    state.lang,
-                    "无法保存完整日志，请检查磁盘空间或目录权限。",
-                    "Cannot save the full log; check disk space and folder permissions.",
-                    "完全なログを保存できません。空き容量とフォルダー権限を確認してください。"
-                )
-            ),
-            true,
-        ),
+    if state.log_file.is_none() {
+        match open_session_log() {
+            Ok(file) => state.log_file = Some(file),
+            Err(error) => add_log(state, &format!("Cannot save the full log: {error}"), true),
+        }
     }
     set_text(state.controls.log, "");
 }
@@ -3699,7 +3672,6 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "MenuFontKorean" => "DVDA_MENU_FONT_KR",
             "DvdaAuthor" => "DVDA_AUTHOR",
             "AuthorSource" => "DVDA_AUTHOR_SRC",
-            "PrepareCacheEnabled" => "DVDA_PREPARE_CACHE",
             "ResumeEnabled" => "DVDA_RESUME",
             "KeepTemporary" => "DVDA_KEEP_TMP",
             "KeepIntermediate" => "DVDA_KEEP_INTERMEDIATE",
@@ -3782,6 +3754,59 @@ fn emit_preparation_issues(
     }
 }
 
+fn recovery_choice(lang: Lang) -> Result<bool, String> {
+    task_choice(lang, false)
+}
+
+fn retention_choice(lang: Lang) -> Result<bool, String> {
+    task_choice(lang, true)
+}
+
+fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
+    #[repr(C, packed)]
+    struct Button { id: i32, text: *const u16 }
+    #[repr(C, packed)]
+    struct Config {
+        size: u32, parent: Hwnd, instance: *mut std::ffi::c_void, flags: u32,
+        common: u32, title: *const u16, icon: *const u16, instruction: *const u16,
+        content: *const u16, count: u32, buttons: *const Button, default_button: i32,
+        radio_count: u32, radios: *const Button, default_radio: i32,
+        verification: *const u16, expanded: *const u16, expanded_control: *const u16,
+        collapsed_control: *const u16, footer_icon: *const u16, footer: *const u16,
+        callback: usize, callback_data: isize, width: u32,
+    }
+    #[link(name = "comctl32")]
+    unsafe extern "system" {
+        fn TaskDialogIndirect(config: *const Config, button: *mut i32, radio: *mut i32, verified: *mut i32) -> i32;
+    }
+    let (title, content, continue_text, restart_text) = if retention {
+        match lang {
+            Lang::Zh => ("制作未完成", "是否保留本次进度，以便下次继续制作？删除进度只会删除此任务的中间文件，不会删除音源或已输出的 ISO。", "保留进度", "删除进度"),
+            Lang::Ja => ("作成が完了していません", "次回再開するため進捗を保存しますか？削除するのはタスクの一時ファイルのみです。", "進捗を保存", "進捗を削除"),
+            _ => ("Production unfinished", "Keep progress to continue next time? Deletion removes only this task's intermediate files, not sources or published ISOs.", "Keep progress", "Delete progress"),
+        }
+    } else { match lang {
+        Lang::Zh => ("发现未完成的制作", "继续制作会校验并使用已保存的进度；重新制作会删除该任务的中间文件，从头开始。音源和已输出的 ISO 不会删除。", "继续制作", "重新制作"),
+        Lang::Ja => ("未完了の作業があります", "保存済みの進捗を確認して再開するか、このタスクの一時ファイルを削除して最初から作成します。音源と出力済み ISO は削除しません。", "作成を続ける", "最初から作成"),
+        _ => ("Unfinished production found", "Continue validates saved progress. Restart deletes this task's intermediate files and starts over. Sources and published ISOs are preserved.", "Continue production", "Restart production"),
+    } };
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    let title = wide(title); let content = wide(content);
+    let continue_text = wide(continue_text); let restart_text = wide(restart_text);
+    let buttons = [Button { id: 1001, text: continue_text.as_ptr() }, Button { id: 1002, text: restart_text.as_ptr() }];
+    let mut config: Config = unsafe { std::mem::zeroed() };
+    config.size = std::mem::size_of::<Config>() as u32;
+    config.title = title.as_ptr(); config.instruction = title.as_ptr();
+    config.content = content.as_ptr(); config.count = 2;
+    config.buttons = buttons.as_ptr(); config.default_button = 1001;
+    let mut button = 0;
+    let result = unsafe { TaskDialogIndirect(&config, &mut button, std::ptr::null_mut(), std::ptr::null_mut()) };
+    if result < 0 || !matches!(button, 1001 | 1002) {
+        return Err("Cannot display unfinished-task recovery choice; task files have been preserved.".into());
+    }
+    Ok(button == 1002)
+}
+
 fn start_operation(state: &mut UiState, command: usize) {
     if !validate_controls(state, true) {
         return;
@@ -3805,6 +3830,21 @@ fn start_operation(state: &mut UiState, command: usize) {
             }
         };
     options.language = state.lang.code().into();
+    let options = match if command == ID_VERIFY {
+        Ok(options)
+    } else if command == ID_PREPARE {
+        options.scratch_options()
+    } else if options.has_unfinished_task() {
+        recovery_choice(state.lang).and_then(|restart| options.recover_task(restart))
+    } else {
+        options.task_options()
+    } {
+        Ok(options) => options,
+        Err(error) => {
+            add_log(state, &error, true);
+            return;
+        }
+    };
     let cancel = Arc::new(AtomicBool::new(false));
     autosave(state);
     state.cancel = Some(Arc::clone(&cancel));
@@ -3944,6 +3984,14 @@ fn start_operation(state: &mut UiState, command: usize) {
             }
         }))
         .unwrap_or_else(|_| (false, "任务异常终止，请查看详细日志。".into()));
+        if ok && command == ID_BUILD {
+            options.finish_task();
+        }
+        if !ok && command == ID_BUILD {
+            let _ = callbacks.logs.send(WorkerEvent::Retention(options));
+        } else {
+            drop(options);
+        }
         let kind = if cancel.load(Ordering::Relaxed) {
             2
         } else if ok {
@@ -4184,6 +4232,11 @@ fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
                 WorkerEvent::Log(text) => add_log(state, &text, false),
                 WorkerEvent::Progress(value) => update_progress(state, value),
                 WorkerEvent::Finished(event) => state.pending_finish = Some(event),
+                WorkerEvent::Retention(options) => {
+                    if retention_choice(state.lang).unwrap_or(false) {
+                        options.discard_task();
+                    }
+                }
             }
         }
         // Return to the message pump regularly so cancel, close, resizing and
@@ -4400,8 +4453,6 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.work_dir, "DVDA_BUILD_DIR"),
         (c.iso_prefix, "DVDA_ISO_PREFIX"),
         (c.group_limit, "DVDA_GROUP_TRACK_LIMIT"),
-        (c.cache, "DVDA_PREPARE_CACHE"),
-        (c.resume, "DVDA_RESUME"),
         (c.mode, "DVDA_MLP_SOURCE"),
         (c.rate, "DVDA_MLP_SAMPLE_RATE"),
         (c.bits, "DVDA_MLP_BITS"),
@@ -4879,6 +4930,11 @@ fn export_log_to(state: &mut UiState, destination: &Path) -> Result<(), String> 
             WorkerEvent::Log(text) => add_log(state, &text, false),
             WorkerEvent::Progress(value) => update_progress(state, value),
             WorkerEvent::Finished(event) => state.pending_finish = Some(event),
+                WorkerEvent::Retention(options) => {
+                    if retention_choice(state.lang).unwrap_or(false) {
+                        options.discard_task();
+                    }
+                }
         }
     }
     if let Some((_, source)) = &state.log_file {
@@ -5094,6 +5150,23 @@ fn message_box(hwnd: Hwnd, text: &str, caption: &str, flags: u32) -> i32 {
 }
 #[cfg(test)]
 mod presentation_tests {
+    #[test]
+    fn session_log_retention_keeps_three_and_preserves_unrelated_files() {
+        let root = std::env::temp_dir().join(format!("dvda-log-retention-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        for name in ["gui-1-1-0.log", "gui-2-1-0.log", "gui-3-1-0.log", "gui-4-1-0.log", "gui-not-ours.log", "notes.log"] {
+            std::fs::write(root.join(name), name).unwrap();
+        }
+        let current = root.join("gui-4-1-0.log");
+        super::prune_session_logs(&root, &current).unwrap();
+        let count = std::fs::read_dir(&root).unwrap().count();
+        assert_eq!(count, 5);
+        assert!(current.exists());
+        assert!(root.join("gui-not-ours.log").exists());
+        assert!(root.join("notes.log").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     use super::*;
 
     #[test]
@@ -5724,6 +5797,7 @@ mod presentation_tests {
             match receiver.recv().unwrap() {
                 WorkerEvent::Log(text) => assert_eq!(text, index.to_string()),
                 WorkerEvent::Progress(_) => panic!("progress overtook a diagnostic"),
+                WorkerEvent::Retention(_) => panic!("unexpected retention request"),
                 WorkerEvent::Finished(_) => panic!("completion overtook a diagnostic"),
             }
         }

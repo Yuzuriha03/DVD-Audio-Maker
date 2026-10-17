@@ -205,11 +205,29 @@ pub unsafe fn initialize(archive: &[u8]) -> Result<(), String> {
     if archive.is_empty() {
         return Ok(());
     }
-    let cache = crate::app::default_profile_path()
-        .parent()
-        .ok_or("Missing settings directory")?
-        .join("runtime");
+    let workspace = crate::workspace::Workspace::create(Path::new(""), false)?;
+    let cache = workspace.path().join("runtime");
     let root = extract(archive, &cache)?;
+    // Loaded Windows DLLs cannot be removed before the owning process exits.
+    // The helper owns only this uniquely allocated directory, never a shared cache.
+    use std::os::windows::process::CommandExt;
+    let script = format!(
+        "Wait-Process -Id {} -ErrorAction SilentlyContinue; for ($i=0; $i -lt 30; $i++) {{ Remove-Item -LiteralPath '{}' -Recurse -Force -ErrorAction SilentlyContinue; if (-not (Test-Path -LiteralPath '{}')) {{ break }}; Start-Sleep -Milliseconds 200 }}",
+        std::process::id(),
+        workspace.path().to_string_lossy().replace('\'', "''"),
+        workspace.path().to_string_lossy().replace('\'', "''")
+    );
+    let powershell = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .ok_or("SystemRoot is unavailable; cannot locate Windows PowerShell")?
+        .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+    std::process::Command::new(powershell)
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(0x08000000)
+        .spawn()
+        .map_err(|e| format!("Cannot start runtime cleanup: {e}"))?;
+    // Keep the exclusive lease until process teardown; the helper then removes it.
+    std::mem::forget(workspace);
     configure_library_search(&root)?;
     // SAFETY: this startup-only call precedes all threads and native library loading.
     unsafe {

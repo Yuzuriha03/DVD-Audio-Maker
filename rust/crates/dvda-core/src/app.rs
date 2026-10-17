@@ -17,6 +17,7 @@ pub struct AppOptions {
     pub stored_profile_values: Map<String, Value>,
     pub config_path: Option<PathBuf>,
     pub executable_directory: PathBuf,
+    workspace: Option<std::sync::Arc<crate::workspace::Workspace>>,
 }
 
 impl AppOptions {
@@ -83,6 +84,7 @@ impl AppOptions {
             stored_profile_values,
             config_path: selected,
             executable_directory,
+            workspace: None,
         })
     }
 
@@ -117,11 +119,114 @@ impl AppOptions {
                 item.get("Value").cloned().unwrap_or(Value::Null),
             );
         }
+        if let Some(workspace) = copy.workspace.take() {
+            return Ok(copy.bind_workspace(workspace));
+        }
         Ok(copy)
     }
 
+    pub fn has_unfinished_task(&self) -> bool {
+        crate::workspace::Workspace::unfinished(&self.path("BuildDirectory"))
+    }
+
+    pub fn recover_task(&self, restart: bool) -> Result<Self, String> {
+        let workspace = std::sync::Arc::new(crate::workspace::Workspace::create_task(
+            &self.path("BuildDirectory"), true, Some(restart),
+        )?);
+        let saved = workspace.path().join("task-options.json");
+        let original = if !restart && saved.is_file() {
+            let value: Value = serde_json::from_slice(&std::fs::read(&saved).map_err(|e| e.to_string())?)
+                .map_err(|e| format!("Cannot read original task parameters: {e}"))?;
+            let mut original = self.clone();
+            original.values = value["values"].as_object().cloned().ok_or("Invalid task parameters")?;
+            original.stored_profile_values = value["profile"].as_object().cloned().ok_or("Invalid task profile")?;
+            original
+        } else {
+            self.save_task_parameters(&saved)?;
+            self.clone()
+        };
+        let mut copy = original.bind_workspace(workspace);
+        // Reuse saved progress only within this unfinished task, including crash recovery.
+        copy.values.insert("ResumeEnabled".into(), json!(true));
+        copy.values.insert("PrepareCacheEnabled".into(), json!(true));
+        Ok(copy)
+    }
+
+    /// Share one owned workspace across preparation, production and verification.
+    pub fn task_options(&self) -> Result<Self, String> {
+        if self.workspace.is_some() {
+            return Ok(self.clone());
+        }
+        let workspace = std::sync::Arc::new(crate::workspace::Workspace::create_task(
+            &self.path("BuildDirectory"),
+            true,
+            None,
+        )?);
+        self.save_task_parameters(&workspace.path().join("task-options.json"))?;
+        Ok(self.clone().bind_workspace(workspace))
+    }
+
+    fn save_task_parameters(&self, path: &Path) -> Result<(), String> {
+        let data = serde_json::to_vec(&json!({"values": self.values, "profile": self.stored_profile_values}))
+            .map_err(|e| e.to_string())?;
+        std::fs::write(path, data).map_err(|e| e.to_string())
+    }
+
+    fn bind_workspace(mut self, workspace: std::sync::Arc<crate::workspace::Workspace>) -> Self {
+        let copy = &mut self;
+        let root = workspace.path();
+        for (name, file) in [
+            ("BuildDirectory", ""),
+            ("ManifestPath", "manifest.json"),
+            ("ReportPath", "decode_report.txt"),
+            ("OutputRoot", "out"),
+            ("TemporaryRoot", "tmp"),
+            ("IsoDirectory", "iso"),
+            ("MlpDirectory", "mlp"),
+            ("MlpIndexPath", "mlp_index.json"),
+            ("AlacFixDirectory", "alacfix"),
+            ("MenuDirectory", "menu"),
+            ("BuildLogPath", "build.log"),
+            ("PrepareCachePath", "prepare-cache.json"),
+            ("PrepareSnapshotPath", "prepare-snapshot.json"),
+            ("MlpBatchTempDirectory", "mlp-batch-temp"),
+            ("MlpBatchOutputDirectory", "mlp-batch-output"),
+        ] {
+            copy.values.insert(name.into(), json!(root.join(file)));
+        }
+        if copy.text("MlpSource") == "mlp-batch" {
+            copy.values
+                .insert("MlpExternalDirectory".into(), json!(root.join("mlp")));
+        }
+        copy.values.insert("ResumeEnabled".into(), json!(true));
+        copy.values.insert("PrepareCacheEnabled".into(), json!(true));
+        copy.values.insert("KeepTemporary".into(), json!(false));
+        copy.values.insert("KeepIntermediate".into(), json!(false));
+        copy.workspace = Some(workspace);
+        self
+    }
+
+    pub fn scratch_options(&self) -> Result<Self, String> {
+        let workspace = std::sync::Arc::new(crate::workspace::Workspace::create(Path::new(""), false)?);
+        Ok(self.clone().bind_workspace(workspace))
+    }
+
+    pub fn discard_task(&self) {
+        if let Some(workspace) = &self.workspace {
+            workspace.discard();
+        }
+    }
+
+    pub fn finish_task(&self) {
+        if let Some(workspace) = &self.workspace {
+            workspace.finish();
+        }
+    }
+
     pub fn profile_values(&self) -> Map<String, Value> {
-        self.stored_profile_values.clone()
+        let mut values = self.stored_profile_values.clone();
+        values.remove("DVDA_PREPARE_CACHE");
+        values
     }
 
     pub fn value(&self, name: &str) -> &Value {
@@ -345,6 +450,16 @@ pub fn run_prepare(
     force_revalidation: bool,
     callbacks: &mut dyn Callbacks,
 ) -> preparation::pipeline::Outcome {
+    let options = match options.task_options() {
+        Ok(options) => options,
+        Err(error) => {
+            return preparation::pipeline::Outcome {
+                exit_code: None,
+                failure: Some(crate::media::Failure::new("InvalidData", &error)),
+                data: None,
+            };
+        }
+    };
     match options.prepare_job(force_revalidation) {
         Ok(job) => preparation::pipeline::execute(job, callbacks),
         Err(error) => preparation::pipeline::Outcome {
@@ -360,6 +475,8 @@ pub fn run_build(
     dry_run: bool,
     callbacks: &mut dyn Callbacks,
 ) -> Result<build::Outcome, String> {
+    let standalone = options.workspace.is_none();
+    let options = options.task_options()?;
     let log = if dry_run {
         options.path("BuildDirectory").join("build-dryrun.log")
     } else {
@@ -379,27 +496,76 @@ pub fn run_build(
     );
     preparation::pipeline::ensure_ready(&options.prepare_job(false)?, &mut callbacks)
         .map_err(|failure| failure.message)?;
-    Ok(build::execute(options.build_job(dry_run)?, &mut callbacks))
+    let mut result = build::execute(options.build_job(dry_run)?, &mut callbacks);
+    if standalone && result.succeeded && !dry_run {
+        let verification = verify::execute(options.verify_job()?, &mut callbacks);
+        result.succeeded = verification.succeeded;
+        result.diagnostics.extend(verification.diagnostics);
+        if result.succeeded {
+            options.finish_task();
+        }
+    }
+    Ok(result)
 }
 
 pub fn run_verify(
     options: &AppOptions,
     callbacks: &mut dyn Callbacks,
 ) -> Result<verify::Outcome, String> {
-    Ok(verify::execute(options.verify_job()?, callbacks))
+    run_verify_mode(options, verify::Mode::All, None, callbacks)
+}
+
+pub fn run_verify_mode(
+    options: &AppOptions,
+    mode: verify::Mode,
+    iso: Option<PathBuf>,
+    callbacks: &mut dyn Callbacks,
+) -> Result<verify::Outcome, String> {
+    if options.workspace.is_some() {
+        return Ok(verify::execute_mode(
+            options.verify_job()?,
+            mode,
+            iso,
+            callbacks,
+        ));
+    }
+    let workspace = std::sync::Arc::new(crate::workspace::Workspace::create(Path::new(""), false)?);
+    let options = options.clone().bind_workspace(workspace);
+    if matches!(mode, verify::Mode::Capacity | verify::Mode::Timeline)
+        || (mode == verify::Mode::Menu && iso.is_some())
+    {
+        return Ok(verify::execute_mode(
+            options.verify_job()?,
+            mode,
+            iso,
+            callbacks,
+        ));
+    }
+    preparation::pipeline::ensure_ready(&options.prepare_job(false)?, callbacks)
+        .map_err(|failure| failure.message)?;
+    let planned = build::execute(options.build_job(true)?, callbacks);
+    if !planned.succeeded {
+        return Err("Cannot reconstruct verification references from the selected sources".into());
+    }
+    let path = planned
+        .index_path
+        .ok_or("Missing reconstructed verification index")?;
+    let index = preparation::state::read_json(Path::new(&path)).map_err(|e| e.message)?;
+    Ok(verify::execute_source_reference(
+        options.verify_job()?,
+        mode,
+        iso,
+        index,
+        callbacks,
+    ))
 }
 
 pub fn default_profile_path() -> PathBuf {
-    let base = env::var_os("LOCALAPPDATA")
-        .or_else(|| env::var_os("HOME"))
-        .map(PathBuf::from)
-        .or_else(|| {
-            env::current_exe()
-                .ok()
-                .and_then(|path| path.parent().map(Path::to_owned))
-        })
+    let base = env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_owned))
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("DVD-Audio-Maker").join("settings.json")
+    base.join("settings.json")
 }
 
 fn read_values(path: &Path, local_app_data: &str) -> Result<Map<String, Value>, String> {
@@ -783,6 +949,25 @@ mod tests {
     }
 
     #[test]
+    fn exported_profile_omits_retired_prepare_cache_setting() {
+        let options = AppOptions {
+            language: "en".into(),
+            values: Map::new(),
+            stored_profile_values: serde_json::from_value(json!({
+                "DVDA_PREPARE_CACHE": "on",
+                "DVDA_TITLE": "My Disc"
+            })).unwrap(),
+            config_path: None,
+            executable_directory: PathBuf::new(),
+            workspace: None,
+        };
+        assert_eq!(options.profile_values(), serde_json::from_value::<Map<String, Value>>(
+            json!({"DVDA_TITLE": "My Disc"})
+        ).unwrap());
+        assert!(!options::defaults("").contains_key("DVDA_PREPARE_CACHE"));
+    }
+
+    #[test]
     fn stale_absolute_author_path_falls_back_to_portable_binary() {
         let root = env::temp_dir().join(format!(
             "dvda-author-fallback-{}",
@@ -805,6 +990,7 @@ mod tests {
             stored_profile_values: Map::new(),
             config_path: None,
             executable_directory: root.clone(),
+            workspace: None,
         };
         assert_eq!(options.author_path(), bundled);
         std::fs::remove_dir_all(root).unwrap();

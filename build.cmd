@@ -32,9 +32,7 @@ exit /b 2
 if not defined PROFILE if exist "%ROOT%settings.local.json" set "PROFILE=%ROOT%settings.local.json"
 set "PROFILE_ARG="
 if defined PROFILE set "PROFILE_ARG=--profile "%PROFILE%""
-echo [INFO] Preparing source audio...
-cargo run --target %TARGET% --manifest-path "%MANIFEST%" --release --offline -p dvda-cli -- prepare %PROFILE_ARG%
-if errorlevel 1 exit /b 1
+echo [INFO] Preparing sources and building in one task...
 if defined DRY_RUN (
   echo [INFO] Writing a dry-run plan...
   cargo run --target %TARGET% --manifest-path "%MANIFEST%" --release --offline -p dvda-cli -- build --dry-run %PROFILE_ARG%

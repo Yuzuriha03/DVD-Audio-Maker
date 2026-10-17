@@ -47,6 +47,7 @@ pub mod verification;
 pub mod verify;
 pub mod verify_audio;
 pub mod workflow;
+pub mod workspace;
 
 use serde_json::{Value, json};
 

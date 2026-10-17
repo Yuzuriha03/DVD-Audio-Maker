@@ -4,7 +4,7 @@
 
 ## JSON 方案
 
-CLI 通过 `--profile` 读取 JSON 方案。不指定时，`cli.cmd` 会优先使用被 Git 忽略的 `settings.local.json`；程序默认方案位置为 `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`。
+CLI 通过 `--profile` 读取 JSON 方案。不指定时，`cli.cmd` 会优先使用被 Git 忽略的 `settings.local.json`；程序默认方案位置为 `settings.json (EXE directory)`。
 
 ```bat
 cli.cmd abi.version

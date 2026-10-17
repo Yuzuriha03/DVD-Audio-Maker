@@ -1,5 +1,7 @@
 # DVD-Audio Maker
 
+Task recovery: only Start production asks Continue production / Restart production. Failure or cancellation asks Keep progress / Delete progress. Continuing uses the original task parameters; source checks use a separate temporary workspace. Successful production and verification remove intermediate files. Independent rechecks of re-encoded built-in MLP use mlp-coded-v1-no-auxiliary-stamp, validating original header parity before excluding the entire auxiliary identification stream and its dependent parity bit. This is coded-stream equality, not raw-file equality. Post-build verification and external MLP comparisons remain byte-for-byte.
+
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md)
 
 Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP and LPCM encoding, automatic disc splitting, track menus, album covers and output verification. The application runs on Windows x64 and supports Chinese, English and Japanese interfaces and logs.
@@ -10,7 +12,7 @@ The release is a native Windows x64 Rust GUI.
 
 1. Download `DVD-Audio-Maker-v1.0-win-x64.zip` from [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/tag/v1.0).
 2. Extract the ZIP to a folder of your choice and double-click `DVD-Audio-Maker.exe`.
-3. Required components are embedded in the EXE and extracted automatically to a local cache. Startup checks and repairs damaged cache files. No separate FFmpeg, ImageMagick, eac3to or external MLP encoder installation is required.
+3. Required components are embedded in the EXE and extracted to a unique temporary directory on each launch, removed after exit. No separate FFmpeg, ImageMagick, eac3to or external MLP encoder installation is required.
 
 The application, instructions in three languages and licenses are together in the extracted folder. Retain `LICENSE`, `THIRD-PARTY.md`, `THIRD-PARTY.en.md`, `NOTICE-Image.txt` and `NOTICE-Menu.txt`.
 
@@ -23,7 +25,7 @@ The application, instructions in three languages and licenses are together in th
 5. Click **“Check sources”** and resolve any issues. After the check succeeds, click **“Build discs”** to encode audio and create ISOs.
 6. When finished, click **“Verify output”**. After verification passes, use “Open output” to find your ISOs.
 
-**Build discs** checks sources automatically and reuses valid preparation snapshots when sources and settings are unchanged. Failed checks block the build.
+**Build discs** checks sources automatically. Failed checks block the build. Separate source checks do not retain cross-task caches.
 
 Tasks can be canceled. Closing the window during a task stops it and waits for cleanup. Canceling does not delete completed output. Burning and playback require software or hardware that supports DVD-Audio; an ISO is not a guarantee of compatibility with ordinary DVD-Video players.
 
@@ -36,18 +38,18 @@ Tasks can be canceled. Closing the window during a task stops it and waits for c
 
 **Both preserve the same audio quality when given identical PCM at the same sample rate, bit depth and channel layout.** LPCM does not gain detail by using more space. Lowering the output rate or depth can lose precision; raising it does not create new source detail.
 
-LPCM must also meet the bitrate limit. For example, 96 kHz / 24-bit / 6-channel LPCM requires 13.824 Mb/s and is rejected; choose MLP or reduce the target format. 20-bit output currently requires MLP. LPCM also needs more cache and working space.
+LPCM must also meet the bitrate limit. For example, 96 kHz / 24-bit / 6-channel LPCM requires 13.824 Mb/s and is rejected; choose MLP or reduce the target format. 20-bit output currently requires MLP. LPCM also needs more temporary working space.
 
 - 44.1, 48, 88.2 and 96 kHz support one to six channels; 176.4 and 192 kHz support mono and stereo.
 - Target bit depths are 16, 20 and 24 bits. The input channel layout is retained.
 - Extremely noisy material may exceed MLP stream limits. If encoding fails, review the track's log and retry with a suitable audio format.
 - **Import existing MLP files:** Use this option for MLP files encoded with another MLP encoder. Select their folder and keep album directories and filenames aligned with the corresponding sources. The application uses the existing encoded files directly; it does not re-encode them or launch an external MLP encoder. Retain the original audio and encoding settings, including sample rate and bit depth, for source checks and lossless verification. A successful import alone does not verify files with unknown origins or conversion settings.
 
-The working folder stores check results, encoded audio and temporary disc files. Choose a drive with enough free space and keep the folder until verification is complete. Retries compare sources, settings and component identities before reusing encoded audio or completed staged discs. Changes invalidate the corresponding results.
+Task files use the system temporary directory by default and are deleted after success, failure or normal cancellation; published ISOs are retained. Only “Resume unfinished work” retains an unfinished task under unfinished-task in the selected working folder. Successful production and verification still delete it; completed-task caches are not retained. Resume uses saved progress only. Forced termination or power loss may leave temporary files until the next launch. Existing legacy folders and user inputs are not deleted.
 
 ## Save settings and import configurations
 
-Settings and language are saved automatically to `%LOCALAPPDATA%/DVD-Audio-Maker/settings.json`. Save profile writes to the selected JSON profile; Save as creates another profile; Open profile loads it. An imported profile changes only when explicitly saved. Advanced settings can be folded, small windows scroll, and invalid numbers prevent saving or starting a task.
+Settings and language are saved automatically to `settings.json` beside the EXE and loaded on startup, not stored in `%LOCALAPPDATA%`. The EXE directory must be writable; save failures are reported. Save profile writes to the selected JSON profile; Save as creates another profile; Open profile loads it. An imported profile changes only when explicitly saved. Advanced settings can be folded, small windows scroll, and invalid numbers prevent saving or starting a task.
 
 The application reads JSON profiles only. Use “Open profile” to select `settings.example.json` or another JSON profile. Existing `config.env` files are not read.
 
@@ -55,13 +57,13 @@ The application reads JSON profiles only. Use “Open profile” to select `sett
 
 The log area shows task summaries by default. For troubleshooting, switch to detailed logs or save the full log. You can filter issues, pause log display and copy text. Pausing the log display does not pause the task.
 
-- **The application will not open:** extract the release again and ensure that `DVD-Audio-Maker.exe` is intact and the user cache folder is writable.
+- **The application will not open:** extract the release again and ensure that `DVD-Audio-Maker.exe` is intact and the system temporary folder is writable.
 - **Source checking fails:** review the named track and reason; check that the file is readable and contains supported lossless audio.
 - **Not enough disk space:** both working and output folders need free space. Change the working folder under “More settings” if needed.
 - **Building or verification fails:** save the full log and retain the working folder, resolve the problem and retry. An ISO being present does not replace verification.
 - **A component is missing or damaged:** restart the application to check and repair embedded components. Extract the release again if the EXE itself is damaged.
 
-Session logs are written automatically to `%LOCALAPPDATA%/DVD-Audio-Maker/logs`, with `build.log` in the work folder. Output verification checks capacity, IFO tracks and timing, menu navigation and images, encoded files against disc audio, and target PCM reconstructed from sources. Verification never modifies encoded files. Preparation reports use the selected language; unknown native diagnostics keep their original text.
+Session logs are saved beside the EXE as `gui-timestamp-pid-sequence.log`; only the latest three runs are retained. Task logs are deleted with the workspace; explicit export is also available. Rechecking after cleanup reconstructs temporary references from current sources and settings and may re-encode audio; it explicitly excludes historical build-log audit. Output verification checks capacity, IFO tracks and timing, menu navigation and images, encoded files against disc audio, and target PCM reconstructed from sources. Verification never modifies encoded files. Preparation reports use the selected language; unknown native diagnostics keep their original text.
 
 ## Licenses and requirements
 
