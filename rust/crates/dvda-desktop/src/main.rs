@@ -128,8 +128,6 @@ const DT_TOP: u32 = 0x00000000;
 const DT_NOPREFIX: u32 = 0x00000800;
 const DT_END_ELLIPSIS: u32 = 0x00008000;
 const RDW_INVALIDATE: u32 = 0x0001;
-const RDW_ERASE: u32 = 0x0004;
-const RDW_UPDATENOW: u32 = 0x0100;
 const RDW_ALLCHILDREN: u32 = 0x0080;
 const SW_SHOW: i32 = 5;
 const SW_HIDE: i32 = 0;
@@ -431,6 +429,8 @@ struct ComboArrowVisual {
     hover: bool,
     combo: Hwnd,
     original: WndProc,
+    last_index: i32,
+    last_enabled: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -452,6 +452,9 @@ struct ScrollbarVisual {
     dragging: bool,
     drag_start_cursor: i32,
     drag_start_value: i32,
+    last_value: i32,
+    last_max: i32,
+    last_page: i32,
 }
 
 #[repr(C)]
@@ -736,6 +739,10 @@ unsafe extern "system" {
     fn Ellipse(dc: Handle, left: i32, top: i32, right: i32, bottom: i32) -> i32;
     fn DeleteObject(object: Handle) -> i32;
     fn SelectObject(dc: Handle, object: Handle) -> Handle;
+    fn CreateCompatibleDC(dc: Handle) -> Handle;
+    fn CreateCompatibleBitmap(dc: Handle, width: i32, height: i32) -> Handle;
+    fn BitBlt(dest: Handle, x: i32, y: i32, width: i32, height: i32, source: Handle, source_x: i32, source_y: i32, rop: u32) -> i32;
+    fn DeleteDC(dc: Handle) -> i32;
     fn SetBkColor(dc: Handle, color: u32) -> u32;
     fn RoundRect(
         dc: Handle,
@@ -1932,17 +1939,7 @@ unsafe extern "system" fn window_proc(
                 drain_worker_logs(hwnd, state);
                 update_statistics(state);
                 unsafe {
-                    InvalidateRect(state.page_scrollbar, ptr::null(), 0);
-                    InvalidateRect(state.log_scrollbar, ptr::null(), 0);
-                }
-                if let Some(overlays) = COMBO_OVERLAYS.get() {
-                    if let Ok(overlays) = overlays.lock() {
-                        for (_, overlay) in overlays.iter() {
-                            unsafe {
-                                InvalidateRect(*overlay as Hwnd, ptr::null(), 0);
-                            }
-                        }
-                    }
+                    refresh_dynamic_indicators(state);
                 }
             }
             0
@@ -2148,7 +2145,7 @@ unsafe extern "system" fn window_proc(
                             hwnd,
                             ptr::null(),
                             ptr::null_mut(),
-                            RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW | RDW_ALLCHILDREN,
+                            RDW_INVALIDATE | RDW_ALLCHILDREN,
                         );
                     }
                 } else if message == 0x0200 && state.dragging_splitter && wparam & 1 != 0 {
@@ -2305,10 +2302,7 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
-        WM_ERASEBKGND => {
-            unsafe { erase_window_background(hwnd, wparam as Handle) };
-            1
-        }
+        WM_ERASEBKGND => 1,
         WM_PAINT => {
             unsafe { paint_window(hwnd) };
             0
@@ -2370,7 +2364,7 @@ unsafe extern "system" fn page_proc(
                     hwnd,
                     ptr::null(),
                     ptr::null_mut(),
-                    RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW | RDW_ALLCHILDREN,
+                    RDW_INVALIDATE | RDW_ALLCHILDREN,
                 );
             }
             0
@@ -2407,19 +2401,7 @@ unsafe extern "system" fn page_proc(
                 unsafe { SendMessageW(parent, message, wparam, lparam) }
             }
         }
-        WM_ERASEBKGND => {
-            let mut rect = Rect {
-                left: 0,
-                top: 0,
-                right: 0,
-                bottom: 0,
-            };
-            unsafe {
-                GetClientRect(hwnd, &mut rect);
-                FillRect(wparam as Handle, &rect, panel_brush());
-            }
-            1
-        }
+        WM_ERASEBKGND => 1,
         WM_PAINT => {
             unsafe { paint_page(hwnd) };
             0
@@ -2526,7 +2508,6 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
             ] {
                 InvalidateRect(hwnd, &edge, 0);
             }
-            UpdateWindow(hwnd);
         }
     }
     let main = unsafe { GetParent(hwnd) };
@@ -2574,7 +2555,7 @@ fn resize_page_fields(page: Hwnd) {
                     scale(y),
                     scale(edit_width),
                     scale(25),
-                    1,
+                    0,
                 )
             };
         }
@@ -2586,7 +2567,7 @@ fn resize_page_fields(page: Hwnd) {
                     scale(y - 2),
                     scale(90),
                     scale(29),
-                    1,
+                    0,
                 )
             };
         }
@@ -4008,6 +3989,8 @@ fn install_combo_arrow(hwnd: Hwnd, combo: Hwnd) {
             hover: false,
             combo,
             original,
+            last_index: -2,
+            last_enabled: false,
         });
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(visual) as isize);
         SetWindowLongPtrW(hwnd, GWLP_WNDPROC, combo_arrow_proc as *const () as isize);
@@ -4333,6 +4316,9 @@ unsafe fn install_scrollbar(hwnd: Hwnd, main: Hwnd) {
         dragging: false,
         drag_start_cursor: 0,
         drag_start_value: 0,
+        last_value: -1,
+        last_max: -1,
+        last_page: -1,
     });
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(visual) as isize);
@@ -4540,6 +4526,67 @@ unsafe extern "system" fn scrollbar_proc(
     }
 }
 
+unsafe fn refresh_dynamic_indicators(state: &UiState) {
+    for (hwnd, is_page) in [
+        (state.page_scrollbar, true),
+        (state.log_scrollbar, false),
+    ] {
+        if hwnd.is_null() {
+            continue;
+        }
+        let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ScrollbarVisual;
+        if pointer.is_null() {
+            continue;
+        }
+        let metrics = if is_page {
+            unsafe { page_bar_metrics(state) }
+        } else {
+            unsafe { log_bar_metrics(state.controls.log) }
+        };
+        let visual = unsafe { &mut *pointer };
+        if visual.last_value != metrics.value
+            || visual.last_max != metrics.max
+            || visual.last_page != metrics.page
+        {
+            visual.last_value = metrics.value;
+            visual.last_max = metrics.max;
+            visual.last_page = metrics.page;
+            unsafe {
+                InvalidateRect(hwnd, ptr::null(), 0);
+            }
+        }
+    }
+    let Some(overlays) = COMBO_OVERLAYS.get() else {
+        return;
+    };
+    let Ok(overlays) = overlays.lock() else {
+        return;
+    };
+    for (combo, overlay) in overlays.iter() {
+        let combo = *combo as Hwnd;
+        let overlay = *overlay as Hwnd;
+        if combo.is_null() || overlay.is_null() {
+            continue;
+        }
+        let pointer = unsafe { GetWindowLongPtrW(overlay, GWLP_USERDATA) } as *mut ComboArrowVisual;
+        if pointer.is_null() {
+            continue;
+        }
+        let mut index = unsafe { SendMessageW(combo, CB_GETCURSEL, 0, 0) } as i32;
+        if index < 0 {
+            index = -1;
+        }
+        let enabled = unsafe { IsWindowEnabled(combo) } != 0;
+        let visual = unsafe { &mut *pointer };
+        if visual.last_index != index || visual.last_enabled != enabled {
+            visual.last_index = index;
+            visual.last_enabled = enabled;
+            unsafe {
+                InvalidateRect(overlay, ptr::null(), 0);
+            }
+        }
+    }
+}
 fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
         parent,
         class,
@@ -4850,7 +4897,7 @@ unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
             scale(y),
             scale(width),
             scale(height),
-            1,
+            0,
         );
     }
 }
@@ -4967,7 +5014,7 @@ fn apply_theme(hwnd: Hwnd, state: &mut UiState, dark: bool) {
             hwnd,
             ptr::null(),
             ptr::null_mut(),
-            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+            RDW_INVALIDATE | RDW_ALLCHILDREN,
         );
     }
 }
@@ -5206,7 +5253,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             hwnd,
             ptr::null(),
             ptr::null_mut(),
-            RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW | RDW_ALLCHILDREN,
+            RDW_INVALIDATE | RDW_ALLCHILDREN,
         );
     }
 }
@@ -5677,7 +5724,20 @@ unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     true
 }
 
-unsafe fn erase_window_background(hwnd: Hwnd, dc: Handle) {
+struct BufferedPaint {
+    target: Handle,
+    memory: Handle,
+    bitmap: Handle,
+    previous: Handle,
+    rect: Rect,
+}
+
+unsafe fn begin_buffered_paint(
+    hwnd: Hwnd,
+    paint: &mut PaintStruct,
+    background: u32,
+) -> BufferedPaint {
+    let target = unsafe { BeginPaint(hwnd, paint) };
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -5686,26 +5746,64 @@ unsafe fn erase_window_background(hwnd: Hwnd, dc: Handle) {
     };
     unsafe {
         GetClientRect(hwnd, &mut rect);
-        let header = Rect {
-            left: 0,
-            top: 0,
-            right: rect.right,
-            bottom: header_height(),
+    }
+    let width = rect.right.max(1);
+    let height = rect.bottom.max(1);
+    let memory = unsafe { CreateCompatibleDC(target) };
+    let bitmap = unsafe { CreateCompatibleBitmap(target, width, height) };
+    if memory.is_null() || bitmap.is_null() {
+        if !bitmap.is_null() {
+            unsafe { DeleteObject(bitmap) };
+        }
+        if !memory.is_null() {
+            unsafe { DeleteDC(memory) };
+        }
+        return BufferedPaint {
+            target,
+            memory: target,
+            bitmap: ptr::null_mut(),
+            previous: ptr::null_mut(),
+            rect,
         };
-        FillRect(dc, &header, brush(c_header_top()));
-        let body = Rect {
-            left: 0,
-            top: header_height(),
-            right: rect.right,
-            bottom: rect.bottom,
-        };
-        FillRect(dc, &body, body_brush());
+    }
+    let previous = unsafe { SelectObject(memory, bitmap) };
+    unsafe {
+        FillRect(memory, &rect, brush(background));
+    }
+    BufferedPaint {
+        target,
+        memory,
+        bitmap,
+        previous,
+        rect,
     }
 }
 
+unsafe fn finish_buffered_paint(hwnd: Hwnd, paint: &PaintStruct, buffer: &BufferedPaint) {
+    unsafe {
+        if !buffer.bitmap.is_null() {
+            BitBlt(
+                buffer.target,
+                0,
+                0,
+                buffer.rect.right,
+                buffer.rect.bottom,
+                buffer.memory,
+                0,
+                0,
+                0x00cc0020,
+            );
+            SelectObject(buffer.memory, buffer.previous);
+            DeleteObject(buffer.bitmap);
+            DeleteDC(buffer.memory);
+        }
+        EndPaint(hwnd, paint);
+    }
+}
 unsafe fn paint_window(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
-    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_body()) };
+    let dc = buffer.memory;
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -5818,13 +5916,14 @@ unsafe fn paint_window(hwnd: Hwnd) {
             };
             FillRect(dc, &grip, border_brush());
         }
-        EndPaint(hwnd, &paint);
+        finish_buffered_paint(hwnd, &paint, &buffer);
     }
 }
 
 unsafe fn paint_page(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
-    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_panel()) };
+    let dc = buffer.memory;
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -5863,7 +5962,7 @@ unsafe fn paint_page(hwnd: Hwnd) {
         for edge in &edges {
             FillRect(dc, edge, border_brush());
         }
-        EndPaint(hwnd, &paint);
+        finish_buffered_paint(hwnd, &paint, &buffer);
     }
 }
 
