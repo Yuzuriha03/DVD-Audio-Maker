@@ -5439,16 +5439,34 @@ unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
             }
             _ => {
                 if dark_theme() {
-                    let symbol = "\u{263e}";
-                    let mut text_rect = item.rect;
-                    draw_text_run(
-                        symbol,
+                    // Drawn crescent: the cut-out opens towards the upper left.
+                    let moon_radius = unit;
+                    let old_brush = SelectObject(item.dc, brush(glyph));
+                    Ellipse(
                         item.dc,
-                        &mut text_rect,
-                        title_font(),
-                        glyph,
-                        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                        center_x - moon_radius,
+                        center_y - moon_radius,
+                        center_x + moon_radius,
+                        center_y + moon_radius,
                     );
+                    let carve = moon_radius - scale(1);
+                    let carve_pen = CreatePen(0, scale(1).max(1), fill);
+                    if !carve_pen.is_null() {
+                        let previous_pen = SelectObject(item.dc, carve_pen);
+                        SelectObject(item.dc, brush(fill));
+                        let carve_x = center_x - scale(4);
+                        let carve_y = center_y - scale(4);
+                        Ellipse(
+                            item.dc,
+                            carve_x - carve,
+                            carve_y - carve,
+                            carve_x + carve,
+                            carve_y + carve,
+                        );
+                        SelectObject(item.dc, previous_pen);
+                        DeleteObject(carve_pen);
+                    }
+                    SelectObject(item.dc, old_brush);
                 } else {
                     // Drawn sun: filled disc with eight separate rays.
                     let radius = unit - scale(1);
