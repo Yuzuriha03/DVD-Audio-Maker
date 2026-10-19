@@ -17,8 +17,8 @@ use std::{
     path::{Path, PathBuf},
     ptr,
     sync::{
-        Arc, OnceLock,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc::{Receiver, SyncSender, sync_channel},
     },
     thread,
@@ -34,6 +34,7 @@ type Lparam = isize;
 type Wparam = usize;
 type Lresult = isize;
 type WndProc = unsafe extern "system" fn(Hwnd, u32, Wparam, Lparam) -> Lresult;
+type EnumChildProc = unsafe extern "system" fn(Hwnd, Lparam) -> i32;
 
 const WM_CREATE: u32 = 0x0001;
 const WM_DESTROY: u32 = 0x0002;
@@ -42,17 +43,40 @@ const WM_GETMINMAXINFO: u32 = 0x0024;
 const WM_CLOSE: u32 = 0x0010;
 const WM_SETREDRAW: u32 = 0x000b;
 const WM_DRAWITEM: u32 = 0x002b;
+const WM_MEASUREITEM: u32 = 0x002c;
+const WM_SETFOCUS: u32 = 0x0007;
+const WM_KILLFOCUS: u32 = 0x0008;
 const WM_TIMER: u32 = 0x0113;
+const WM_DPICHANGED: u32 = 0x02e0;
+const WM_SETTINGCHANGE: u32 = 0x001a;
+const WM_KEYDOWN: u32 = 0x0100;
+const WM_PAINT: u32 = 0x000f;
+const WM_ERASEBKGND: u32 = 0x0014;
 const ID_ADVANCED: usize = 117;
 const WM_COMMAND: u32 = 0x0111;
 const WM_NOTIFY: u32 = 0x004e;
 const WM_CTLCOLORSTATIC: u32 = 0x0138;
+const WM_CTLCOLOREDIT: u32 = 0x0133;
+const WM_CTLCOLORLISTBOX: u32 = 0x0134;
+const WM_CTLCOLORBTN: u32 = 0x0135;
+const WM_LBUTTONDOWN: u32 = 0x0201;
+const WM_LBUTTONUP: u32 = 0x0202;
+const WM_MOUSELEAVE: u32 = 0x02a3;
+const WM_NCDESTROY: u32 = 0x0082;
+const WM_MOUSEMOVE: u32 = 0x0200;
+const VK_RETURN: usize = 0x0d;
+const PBM_SETBARCOLOR: u32 = 0x0409;
+const PBM_SETBKCOLOR: u32 = 0x2001;
+const CB_GETDROPPEDSTATE: u32 = 0x0157;
+const TME_LEAVE: u32 = 0x0002;
 const LOG_QUEUE_CAPACITY: usize = 4096;
 const LOG_BATCH_LIMIT: usize = 4096;
 const LOG_BATCH_BUDGET: Duration = Duration::from_millis(12);
 const WM_SETFONT: u32 = 0x0030;
 const EM_SETLIMITTEXT: u32 = 0x00c5;
+const EM_SETMARGINS: u32 = 0x00d3;
 const EM_GETFIRSTVISIBLELINE: u32 = 0x00ce;
+const EM_GETLINECOUNT: u32 = 0x00ba;
 const WM_VSCROLL: u32 = 0x0115;
 const SB_BOTTOM: usize = 7;
 const EM_LINESCROLL: u32 = 0x00b6;
@@ -66,49 +90,73 @@ const CB_ADDSTRING: u32 = 0x0143;
 const CB_GETCURSEL: u32 = 0x0147;
 const CB_RESETCONTENT: u32 = 0x014b;
 const CB_SETCURSEL: u32 = 0x014e;
+const CB_GETLBTEXT: u32 = 0x0148;
+const CB_GETLBTEXTLEN: u32 = 0x0149;
+const CB_SHOWDROPDOWN: u32 = 0x014f;
 const PBM_SETPOS: u32 = 0x0402;
 const PBM_SETRANGE32: u32 = 0x0406;
-const TCM_GETCURSEL: u32 = 0x130b;
-const TCM_SETITEMW: u32 = 0x133d;
-const TCM_INSERTITEMW: u32 = 0x133e;
-const WS_OVERLAPPEDWINDOW: u32 = 0x00cf0000;
+const WS_POPUP: u32 = 0x80000000;
+const WS_THICKFRAME: u32 = 0x00040000;
+const WS_MINIMIZEBOX: u32 = 0x00020000;
+const WS_MAXIMIZEBOX: u32 = 0x00010000;
+const WS_SYSMENU: u32 = 0x00080000;
 const WS_CHILD: u32 = 0x40000000;
 const WS_VISIBLE: u32 = 0x10000000;
-const WS_BORDER: u32 = 0x00800000;
-const WS_VSCROLL: u32 = 0x00200000;
 const WS_TABSTOP: u32 = 0x00010000;
+const WS_CLIPCHILDREN: u32 = 0x02000000;
 const WS_EX_APPWINDOW: u32 = 0x00040000;
-const WS_EX_CLIENTEDGE: u32 = 0x00000200;
 const ES_AUTOHSCROLL: u32 = 0x0080;
 const ES_MULTILINE: u32 = 0x0004;
 const ES_AUTOVSCROLL: u32 = 0x0040;
 const ES_READONLY: u32 = 0x0800;
 const ES_WANTRETURN: u32 = 0x1000;
 const CBS_DROPDOWNLIST: u32 = 0x0003;
+const CBS_OWNERDRAWFIXED: u32 = 0x0010;
+const CBS_HASSTRINGS: u32 = 0x0200;
 const BS_AUTOCHECKBOX: u32 = 0x0003;
-const BS_PUSHBUTTON: u32 = 0x0000;
-const BS_DEFPUSHBUTTON: u32 = 0x0001;
 const BS_OWNERDRAW: u32 = 0x0000000b;
 const ODS_SELECTED: u32 = 0x0001;
 const ODS_DISABLED: u32 = 0x0004;
+const ODS_FOCUS: u32 = 0x0010;
 const DT_CENTER: u32 = 0x00000001;
 const DT_VCENTER: u32 = 0x00000004;
 const DT_SINGLELINE: u32 = 0x00000020;
+const DT_CALCRECT: u32 = 0x00000400;
+const DT_LEFT: u32 = 0x00000000;
+const DT_TOP: u32 = 0x00000000;
+const DT_NOPREFIX: u32 = 0x00000800;
+const DT_END_ELLIPSIS: u32 = 0x00008000;
 const RDW_INVALIDATE: u32 = 0x0001;
 const RDW_ERASE: u32 = 0x0004;
 const RDW_UPDATENOW: u32 = 0x0100;
 const RDW_ALLCHILDREN: u32 = 0x0080;
 const SW_SHOW: i32 = 5;
 const SW_HIDE: i32 = 0;
+const SW_MAXIMIZE: i32 = 3;
+const SW_MINIMIZE: i32 = 6;
+const SW_RESTORE: i32 = 9;
+const WM_NCHITTEST: u32 = 0x0084;
+const WM_NCLBUTTONDOWN: u32 = 0x00a1;
+const WM_NCLBUTTONDBLCLK: u32 = 0x00a3;
+const HTCLIENT: i32 = 1;
+const HTCAPTION: i32 = 2;
+const HTLEFT: i32 = 10;
+const HTRIGHT: i32 = 11;
+const HTTOP: i32 = 12;
+const HTTOPLEFT: i32 = 13;
+const HTTOPRIGHT: i32 = 14;
+const HTBOTTOM: i32 = 15;
+const HTBOTTOMLEFT: i32 = 16;
+const HTBOTTOMRIGHT: i32 = 17;
 const GWLP_USERDATA: i32 = -21;
+const GWLP_WNDPROC: i32 = -4;
 const BN_CLICKED: u16 = 0;
 const CBN_SELCHANGE: u16 = 1;
-const TCN_SELCHANGE: i32 = -551;
 const ID_PROFILE: usize = 100;
 const ID_OPEN_PROFILE: usize = 101;
 const ID_SAVE_PROFILE: usize = 102;
 const ID_LANGUAGE: usize = 103;
-const ID_TAB: usize = 104;
+const ID_TAB: usize = 2000;
 const ID_PREPARE: usize = 105;
 const ID_BUILD: usize = 106;
 const ID_VERIFY: usize = 107;
@@ -121,6 +169,10 @@ const ID_COPY: usize = 113;
 const ID_EXPORT: usize = 114;
 const ID_LOG: usize = 115;
 const ID_SAVE_AS: usize = 116;
+const ID_MINIMIZE: usize = 6000;
+const ID_MAXIMIZE: usize = 6001;
+const ID_CLOSE: usize = 6002;
+const ID_THEME: usize = 6003;
 const ID_SOURCE: usize = 200;
 const ID_FINAL: usize = 201;
 const ID_TITLE: usize = 202;
@@ -159,6 +211,258 @@ const ID_BROWSE_METADATA: usize = 1003;
 const ID_BROWSE_AUTHOR: usize = 1004;
 const ID_BROWSE_AUTHOR_SRC: usize = 1005;
 const ID_BROWSE_IMPORT: usize = 1006;
+const COMBO_IDS: &[usize] = &[
+    ID_LANGUAGE,
+    ID_LOG_VIEW,
+    ID_CAPACITY,
+    ID_MODE,
+    ID_RATE,
+    ID_BITS,
+];
+
+// Visual language follows the application icon: deep navy, cool silver and a
+// cyan waveform accent. COLORREF is 0x00BBGGRR, so rgb() converts from the
+// familiar 0xRRGGBB order.
+const fn rgb(r: u32, g: u32, b: u32) -> u32 {
+    (b << 16) | (g << 8) | r
+}
+fn c_header_top() -> u32 {
+    if dark_theme() {
+        rgb(7, 11, 18)
+    } else {
+        rgb(10, 23, 39)
+    }
+}
+fn c_header_bottom() -> u32 {
+    if dark_theme() {
+        rgb(17, 32, 49)
+    } else {
+        rgb(21, 51, 82)
+    }
+}
+fn c_accent() -> u32 {
+    rgb(88, 205, 224)
+}
+fn c_accent_hover() -> u32 {
+    rgb(120, 219, 235)
+}
+fn c_accent_soft() -> u32 {
+    if dark_theme() {
+        rgb(30, 58, 68)
+    } else {
+        rgb(224, 245, 249)
+    }
+}
+fn c_accent_pressed() -> u32 {
+    rgb(56, 172, 192)
+}
+fn c_body() -> u32 {
+    if dark_theme() {
+        rgb(13, 19, 27)
+    } else {
+        rgb(243, 246, 250)
+    }
+}
+fn c_panel() -> u32 {
+    if dark_theme() {
+        rgb(19, 27, 38)
+    } else {
+        rgb(240, 245, 251)
+    }
+}
+fn c_card() -> u32 {
+    if dark_theme() {
+        rgb(26, 35, 47)
+    } else {
+        rgb(255, 255, 255)
+    }
+}
+fn c_secondary_hover() -> u32 {
+    if dark_theme() {
+        rgb(32, 43, 57)
+    } else {
+        rgb(244, 248, 252)
+    }
+}
+fn c_secondary_pressed() -> u32 {
+    if dark_theme() {
+        rgb(39, 52, 68)
+    } else {
+        rgb(233, 240, 248)
+    }
+}
+fn c_border() -> u32 {
+    if dark_theme() {
+        rgb(45, 58, 74)
+    } else {
+        rgb(214, 223, 233)
+    }
+}
+fn c_border_soft() -> u32 {
+    if dark_theme() {
+        rgb(33, 44, 57)
+    } else {
+        rgb(228, 235, 242)
+    }
+}
+fn c_ink() -> u32 {
+    if dark_theme() {
+        rgb(230, 238, 247)
+    } else {
+        rgb(24, 40, 58)
+    }
+}
+fn c_muted() -> u32 {
+    if dark_theme() {
+        rgb(139, 156, 176)
+    } else {
+        rgb(99, 116, 138)
+    }
+}
+fn c_header_title() -> u32 {
+    rgb(240, 247, 252)
+}
+fn c_header_subtitle() -> u32 {
+    if dark_theme() {
+        rgb(143, 166, 191)
+    } else {
+        rgb(160, 184, 208)
+    }
+}
+fn c_danger() -> u32 {
+    if dark_theme() {
+        rgb(255, 138, 133)
+    } else {
+        rgb(180, 35, 24)
+    }
+}
+fn c_danger_hover() -> u32 {
+    if dark_theme() {
+        rgb(58, 29, 30)
+    } else {
+        rgb(253, 232, 232)
+    }
+}
+fn c_danger_pressed() -> u32 {
+    if dark_theme() {
+        rgb(74, 38, 39)
+    } else {
+        rgb(248, 214, 214)
+    }
+}
+fn c_danger_border() -> u32 {
+    if dark_theme() {
+        rgb(107, 52, 52)
+    } else {
+        rgb(228, 184, 184)
+    }
+}
+fn c_disabled_fill() -> u32 {
+    if dark_theme() {
+        rgb(35, 44, 57)
+    } else {
+        rgb(226, 233, 240)
+    }
+}
+fn c_disabled_text() -> u32 {
+    if dark_theme() {
+        rgb(110, 124, 142)
+    } else {
+        rgb(146, 160, 175)
+    }
+}
+fn c_bar_track() -> u32 {
+    if dark_theme() {
+        rgb(29, 39, 51)
+    } else {
+        rgb(228, 235, 243)
+    }
+}
+const HEADER_HEIGHT: i32 = 70;
+const UI_FONT_HEIGHT: i32 = -16;
+
+#[repr(C)]
+struct PaintStruct {
+    dc: Handle,
+    erase: i32,
+    paint: Rect,
+    restore: i32,
+    inc_update: i32,
+    reserved: [u8; 32],
+}
+
+#[repr(C)]
+struct TriVertex {
+    x: i32,
+    y: i32,
+    red: u16,
+    green: u16,
+    blue: u16,
+    alpha: u16,
+}
+
+#[repr(C)]
+struct GradientRect {
+    upper_left: u32,
+    lower_right: u32,
+}
+
+#[repr(C)]
+struct TrackMouseEventData {
+    size: u32,
+    flags: u32,
+    track: Hwnd,
+    hover_time: u32,
+}
+
+struct ButtonVisual {
+    hover: bool,
+    original: WndProc,
+}
+
+struct CheckVisual {
+    hover: bool,
+    panel: bool,
+    original: WndProc,
+}
+
+struct ComboArrowVisual {
+    hover: bool,
+    combo: Hwnd,
+    original: WndProc,
+}
+
+#[derive(Clone, Copy)]
+enum WindowDragKind {
+    Move,
+    Resize(i32),
+}
+
+#[derive(Clone, Copy)]
+struct WindowDrag {
+    kind: WindowDragKind,
+    start_cursor: Point,
+    start_rect: Rect,
+}
+
+struct ScrollbarVisual {
+    main: Hwnd,
+    hover: bool,
+    dragging: bool,
+    drag_start_cursor: i32,
+    drag_start_value: i32,
+}
+
+#[repr(C)]
+struct MeasureItemStruct {
+    control_type: u32,
+    control_id: u32,
+    item_id: u32,
+    item_width: u32,
+    item_height: u32,
+    item_data: usize,
+}
+
 
 #[repr(C)]
 struct WndClass {
@@ -194,6 +498,13 @@ struct Rect {
     bottom: i32,
 }
 
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
 #[repr(C)]
 struct DrawItemStruct {
     control_type: u32,
@@ -207,16 +518,7 @@ struct DrawItemStruct {
     data: usize,
 }
 
-#[repr(C)]
-struct ScrollInfo {
-    size: u32,
-    mask: u32,
-    min: i32,
-    max: i32,
-    page: u32,
-    pos: i32,
-    track: i32,
-}
+
 #[repr(C)]
 struct ToolInfo {
     size: u32,
@@ -234,24 +536,6 @@ struct Tooltip {
     control: Hwnd,
     key: &'static str,
     text: Vec<u16>,
-}
-
-#[repr(C)]
-struct NotifyHeader {
-    hwnd_from: Hwnd,
-    id_from: usize,
-    code: i32,
-}
-
-#[repr(C)]
-struct TabItem {
-    mask: u32,
-    state: u32,
-    state_mask: u32,
-    text: *mut u16,
-    text_max: i32,
-    image: i32,
-    param: isize,
 }
 
 #[repr(C)]
@@ -321,6 +605,7 @@ unsafe extern "system" {
     fn GetDlgCtrlID(hwnd: Hwnd) -> i32;
     fn GetDlgItem(parent: Hwnd, id: i32) -> Hwnd;
     fn GetParent(hwnd: Hwnd) -> Hwnd;
+    fn GetClassNameW(hwnd: Hwnd, text: *mut u16, length: i32) -> i32;
     fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
     fn UpdateWindow(hwnd: Hwnd) -> i32;
     fn MoveWindow(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32, repaint: i32) -> i32;
@@ -334,7 +619,6 @@ unsafe extern "system" {
         height: i32,
         flags: u32,
     ) -> i32;
-    fn SetScrollInfo(hwnd: Hwnd, bar: i32, info: *const ScrollInfo, redraw: i32) -> i32;
     fn ScrollWindowEx(
         hwnd: Hwnd,
         dx: i32,
@@ -346,6 +630,7 @@ unsafe extern "system" {
         flags: u32,
     ) -> i32;
     fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+    fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     fn GetMessageW(message: *mut Message, hwnd: Hwnd, minimum: u32, maximum: u32) -> i32;
     fn TranslateMessage(message: *const Message) -> i32;
     fn DispatchMessageW(message: *const Message) -> Lresult;
@@ -359,6 +644,7 @@ unsafe extern "system" {
     fn GetWindowTextLengthW(hwnd: Hwnd) -> i32;
     fn GetWindowTextW(hwnd: Hwnd, text: *mut u16, length: i32) -> i32;
     fn DrawTextW(dc: Handle, text: *const u16, length: i32, rect: *mut Rect, format: u32) -> i32;
+    fn DrawFocusRect(dc: Handle, rect: *const Rect) -> i32;
     fn FillRect(dc: Handle, rect: *const Rect, brush: Hbrush) -> i32;
     fn SendMessageW(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
     fn SetTimer(hwnd: Hwnd, id: usize, millis: u32, callback: *const c_void) -> usize;
@@ -371,7 +657,39 @@ unsafe extern "system" {
     fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, flags: u32) -> i32;
     fn LoadCursorW(instance: Hinstance, name: *const u16) -> Handle;
     fn GetSysColorBrush(index: i32) -> Hbrush;
-    fn GetSysColor(index: i32) -> u32;
+    fn InvalidateRect(hwnd: Hwnd, rect: *const Rect, erase: i32) -> i32;
+    fn BeginPaint(hwnd: Hwnd, paint: *mut PaintStruct) -> Handle;
+    fn EndPaint(hwnd: Hwnd, paint: *const PaintStruct) -> i32;
+    fn GetDC(hwnd: Hwnd) -> Handle;
+    fn ReleaseDC(hwnd: Hwnd, dc: Handle) -> i32;
+    fn GetFocus() -> Hwnd;
+    fn IsWindowEnabled(hwnd: Hwnd) -> i32;
+    fn IsZoomed(hwnd: Hwnd) -> i32;
+    fn DrawIconEx(
+        dc: Handle,
+        x: i32,
+        y: i32,
+        icon: Handle,
+        width: i32,
+        height: i32,
+        step: u32,
+        brush: Hbrush,
+        flags: u32,
+    ) -> i32;
+    fn LoadImageW(
+        instance: Hinstance,
+        name: *const u16,
+        kind: u32,
+        width: i32,
+        height: i32,
+        flags: u32,
+    ) -> Handle;
+    fn TrackMouseEvent(event: *mut TrackMouseEventData) -> i32;
+    fn GetDpiForSystem() -> u32;
+    fn EnumChildWindows(hwnd: Hwnd, callback: EnumChildProc, parameter: Lparam) -> i32;
+    fn SystemParametersInfoW(action: u32, param: u32, data: *mut c_void, update: u32) -> i32;
+    fn ScreenToClient(hwnd: Hwnd, point: *mut Point) -> i32;
+    fn GetCursorPos(point: *mut Point) -> i32;
     fn OpenClipboard(owner: Hwnd) -> i32;
     fn EmptyClipboard() -> i32;
     fn SetClipboardData(format: u32, data: Handle) -> Handle;
@@ -381,6 +699,8 @@ unsafe extern "system" {
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn GetModuleHandleW(name: *const u16) -> Hinstance;
+    fn LoadLibraryW(name: *const u16) -> Hinstance;
+    fn GetProcAddress(module: Hinstance, name: *const u8) -> *const c_void;
     fn GetUserDefaultUILanguage() -> u16;
     fn GlobalAlloc(flags: u32, bytes: usize) -> Handle;
     fn GlobalLock(handle: Handle) -> *mut c_void;
@@ -409,7 +729,57 @@ unsafe extern "system" {
         face: *const u16,
     ) -> Handle;
     fn CreateSolidBrush(color: u32) -> Hbrush;
+    fn CreatePen(style: i32, width: i32, color: u32) -> Handle;
+    fn MoveToEx(dc: Handle, x: i32, y: i32, previous: *mut Point) -> i32;
+    fn LineTo(dc: Handle, x: i32, y: i32) -> i32;
+    fn Ellipse(dc: Handle, left: i32, top: i32, right: i32, bottom: i32) -> i32;
     fn DeleteObject(object: Handle) -> i32;
+    fn SelectObject(dc: Handle, object: Handle) -> Handle;
+    fn SetBkColor(dc: Handle, color: u32) -> u32;
+    fn RoundRect(
+        dc: Handle,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+        width: i32,
+        height: i32,
+    ) -> i32;
+}
+
+#[link(name = "msimg32")]
+unsafe extern "system" {
+    fn GradientFill(
+        dc: Handle,
+        vertices: *mut TriVertex,
+        vertex_count: u32,
+        mesh: *const GradientRect,
+        mesh_count: u32,
+        mode: u32,
+    ) -> i32;
+}
+
+#[link(name = "uxtheme")]
+unsafe extern "system" {
+    fn SetWindowTheme(hwnd: Hwnd, sub_id: *const u16, sub_id2: *const u16) -> i32;
+}
+
+#[link(name = "advapi32")]
+unsafe extern "system" {
+    fn RegGetValueW(
+        key: Handle,
+        sub_key: *const u16,
+        value: *const u16,
+        flags: u32,
+        kind: *mut u32,
+        data: *mut c_void,
+        size: *mut u32,
+    ) -> i32;
+}
+
+#[link(name = "dwmapi")]
+unsafe extern "system" {
+    fn DwmSetWindowAttribute(hwnd: Hwnd, attribute: u32, value: *const c_void, size: u32) -> i32;
 }
 
 #[link(name = "comctl32")]
@@ -446,7 +816,105 @@ unsafe extern "system" {
 
 static PROFILE_OVERRIDE: OnceLock<Option<PathBuf>> = OnceLock::new();
 static LANGUAGE_OVERRIDE: OnceLock<Option<String>> = OnceLock::new();
-static UI_FONT: OnceLock<usize> = OnceLock::new();
+static UI_DPI: AtomicU32 = AtomicU32::new(96);
+static FONT_CACHE: OnceLock<Mutex<HashMap<(i32, i32, u8), usize>>> = OnceLock::new();
+static BRUSH_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
+static CONTROL_RECTS: OnceLock<Mutex<Vec<(isize, i32, i32, i32, i32)>>> = OnceLock::new();
+static COMBO_OVERLAYS: OnceLock<Mutex<Vec<(isize, isize)>>> = OnceLock::new();
+static ICON_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
+static DARK_THEME: AtomicBool = AtomicBool::new(false);
+
+fn dpi() -> i32 {
+    UI_DPI.load(Ordering::Relaxed).max(48) as i32
+}
+fn scale(value: i32) -> i32 {
+    ((value as i64 * dpi() as i64 + 48) / 96) as i32
+}
+fn unscale(value: i32) -> i32 {
+    if value <= 0 {
+        value
+    } else {
+        ((value as i64 * 96 + dpi() as i64 / 2) / dpi() as i64) as i32
+    }
+}
+fn header_height() -> i32 {
+    scale(HEADER_HEIGHT)
+}
+fn dark_theme() -> bool {
+    DARK_THEME.load(Ordering::Relaxed)
+}
+fn system_prefers_dark() -> bool {
+    let mut value: u32 = 1;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    let mut kind = 0u32;
+    let result = unsafe {
+        RegGetValueW(
+            0x8000_0001usize as Handle,
+            wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize").as_ptr(),
+            wide("AppsUseLightTheme").as_ptr(),
+            0x0000_0010,
+            &mut kind,
+            &mut value as *mut u32 as *mut c_void,
+            &mut size,
+        )
+    };
+    result == 0 && value == 0
+}
+static UXTHEME_ALLOW_DARK: OnceLock<Option<isize>> = OnceLock::new();
+fn uxtheme_allow_dark(hwnd: Hwnd, allow: bool) {
+    let pointer = *UXTHEME_ALLOW_DARK.get_or_init(|| {
+        let module = unsafe { LoadLibraryW(wide("uxtheme.dll").as_ptr()) };
+        if module.is_null() {
+            return None;
+        }
+        let address = unsafe { GetProcAddress(module, 133usize as *const u8) };
+        (!address.is_null()).then_some(address as isize)
+    });
+    if let Some(pointer) = pointer {
+        let allow_dark: unsafe extern "system" fn(Hwnd, i32) -> i32 =
+            unsafe { std::mem::transmute(pointer as *const c_void) };
+        unsafe {
+            allow_dark(hwnd, i32::from(allow));
+        }
+    }
+}
+static UXTHEME_SET_PREFERRED: OnceLock<Option<isize>> = OnceLock::new();
+fn uxtheme_preferred_app_mode(dark: bool) {
+    let pointer = *UXTHEME_SET_PREFERRED.get_or_init(|| {
+        let module = unsafe { LoadLibraryW(wide("uxtheme.dll").as_ptr()) };
+        if module.is_null() {
+            return None;
+        }
+        let address = unsafe { GetProcAddress(module, 135usize as *const u8) };
+        (!address.is_null()).then_some(address as isize)
+    });
+    if let Some(pointer) = pointer {
+        let set_preferred: unsafe extern "system" fn(i32) -> i32 =
+            unsafe { std::mem::transmute(pointer as *const c_void) };
+        unsafe {
+            set_preferred(if dark { 2 } else { 0 });
+        }
+    }
+}
+fn clamp_window_size(width: i32, height: i32) -> (i32, i32) {
+    let mut work = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    if unsafe { SystemParametersInfoW(0x0030, 0, &mut work as *mut Rect as *mut c_void, 0) } != 0 {
+        let available_w = unscale(work.right - work.left) - 24;
+        let available_h = unscale(work.bottom - work.top) - 24;
+        (
+            width.min(available_w.max(800)),
+            height.min(available_h.max(500)),
+        )
+    } else {
+        (width, height)
+    }
+}
+
 const SAMPLE_RATES: &[i64] = &[44100, 48000, 88200, 96000, 176400, 192000];
 const SAMPLE_BITS: &[i64] = &[16, 20, 24];
 const SAMPLE_RATE_LABELS: &[&str] = &[
@@ -491,6 +959,9 @@ fn tr(lang: Lang, key: &str) -> &'static str {
     match lang {
         Lang::Zh => match key {
             "app_subtitle" => "把音乐制作成 DVD-Audio 光盘镜像",
+            "advanced_hint" => {
+                "这些设置已经足够制作第一张光盘。需要工作文件夹、字体或标题分组规则时，请开启上方的“显示高级设置”。"
+            }
             "profile" => "设置方案",
             "open" => "打开方案",
             "save" => "保存方案",
@@ -620,6 +1091,9 @@ fn tr(lang: Lang, key: &str) -> &'static str {
         },
         Lang::En => match key {
             "app_subtitle" => "Create DVD-Audio disc images from your music",
+            "advanced_hint" => {
+                "These settings are enough for a first disc. Turn on Advanced settings above for work folders, menu fonts or title grouping."
+            }
             "profile" => "Settings profile",
             "open" => "Open profile",
             "save" => "Save profile",
@@ -755,6 +1229,9 @@ fn tr(lang: Lang, key: &str) -> &'static str {
         },
         Lang::Ja => match key {
             "app_subtitle" => "音楽から DVD-Audio ディスクイメージを作成",
+            "advanced_hint" => {
+                "最初のディスク作成にはこの設定で十分です。作業フォルダー、メニューフォント、タイトル分割は上の「詳細設定を表示」で変更できます。"
+            }
             "profile" => "設定プロファイル",
             "open" => "プロファイルを開く",
             "save" => "プロファイルを保存",
@@ -926,7 +1403,6 @@ struct Controls {
     mlp_stage: Hwnd,
     profile: Hwnd,
     language: Hwnd,
-    tabs: Hwnd,
     source: Hwnd,
     final_dir: Hwnd,
     title: Hwnd,
@@ -972,9 +1448,13 @@ struct Controls {
 
 struct UiState {
     lang: Lang,
+    main_window: Hwnd,
     controls: Controls,
     pages: Vec<Hwnd>,
+    tabs: Vec<Hwnd>,
+    tab_index: usize,
     labels: Vec<(Hwnd, &'static str)>,
+    muted: Vec<Hwnd>,
     buttons: Vec<(Hwnd, &'static str)>,
     base: Option<AppOptions>,
     profile_path: PathBuf,
@@ -1010,7 +1490,16 @@ struct UiState {
     splitter_height: Option<i32>,
     splitter_position: i32,
     dragging_splitter: bool,
+    window_drag: Option<WindowDrag>,
     advanced_controls: Vec<Hwnd>,
+    advanced_hint: Hwnd,
+    caption_minimize: Hwnd,
+    caption_maximize: Hwnd,
+    caption_close: Hwnd,
+    theme_button: Hwnd,
+    theme_override: Option<bool>,
+    page_scrollbar: Hwnd,
+    log_scrollbar: Hwnd,
 }
 
 struct WorkerCallbacks {
@@ -1187,6 +1676,19 @@ fn run() -> Result<(), String> {
     if instance.is_null() {
         return Err("Cannot get application instance".into());
     }
+    let system_dpi = unsafe { GetDpiForSystem() };
+    UI_DPI.store(system_dpi.max(96), Ordering::Relaxed);
+    DARK_THEME.store(system_prefers_dark(), Ordering::Relaxed);
+    uxtheme_preferred_app_mode(dark_theme());
+    if cfg!(debug_assertions) {
+        if let Ok(value) = std::env::var("DVDA_UI_DPI") {
+            if let Ok(value) = value.parse::<u32>() {
+                if value >= 48 {
+                    UI_DPI.store(value, Ordering::Relaxed);
+                }
+            }
+        }
+    }
     let icon = unsafe { LoadIconW(instance, 1usize as *const u16) };
     if icon.is_null() {
         return Err("Cannot load application icon".into());
@@ -1200,7 +1702,7 @@ fn run() -> Result<(), String> {
         instance,
         icon,
         cursor: unsafe { LoadCursorW(ptr::null_mut(), 32512usize as *const u16) },
-        background: unsafe { GetSysColorBrush(15) },
+        background: body_brush(),
         menu: ptr::null(),
         class_name: class_name.as_ptr(),
     };
@@ -1216,24 +1718,65 @@ fn run() -> Result<(), String> {
         instance,
         icon: ptr::null_mut(),
         cursor: unsafe { LoadCursorW(ptr::null_mut(), 32512usize as *const u16) },
-        background: unsafe { GetSysColorBrush(15) },
+        background: panel_brush(),
         menu: ptr::null(),
         class_name: page_class_name.as_ptr(),
     };
     if unsafe { RegisterClassW(&page_registration) } == 0 {
         return Err("Cannot register desktop page class".into());
     }
+    let scroll_class_name = wide("DVD_AUDIO_SCROLLBAR_RUST");
+    let scroll_registration = WndClass {
+        style: 0,
+        procedure: scrollbar_proc,
+        extra_class: 0,
+        extra_window: 0,
+        instance,
+        icon: ptr::null_mut(),
+        cursor: unsafe { LoadCursorW(ptr::null_mut(), 32512usize as *const u16) },
+        background: ptr::null_mut(),
+        menu: ptr::null(),
+        class_name: scroll_class_name.as_ptr(),
+    };
+    if unsafe { RegisterClassW(&scroll_registration) } == 0 {
+        return Err("Cannot register desktop scrollbar class".into());
+    }
     let title = wide("DVD-Audio Maker");
+    let (window_width, window_height) = clamp_window_size(1180, 880);
+    let mut window_rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let mut window_x = scale(100);
+    let mut window_y = scale(70);
+    if unsafe { SystemParametersInfoW(0x0030, 0, &mut window_rect as *mut Rect as *mut c_void, 0) }
+        != 0
+    {
+        window_x = window_x
+            .min(window_rect.right - scale(window_width) - scale(16))
+            .max(window_rect.left + scale(8));
+        window_y = window_y
+            .min(window_rect.bottom - scale(window_height) - scale(16))
+            .max(window_rect.top + scale(8));
+    }
     let window = unsafe {
         CreateWindowExW(
             WS_EX_APPWINDOW,
             class_name.as_ptr(),
             title.as_ptr(),
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE | 0x02000000,
-            100,
-            70,
-            1180,
-            820,
+            WS_POPUP
+                | WS_THICKFRAME
+                | WS_MINIMIZEBOX
+                | WS_MAXIMIZEBOX
+                | WS_SYSMENU
+                | WS_VISIBLE
+                | WS_CLIPCHILDREN,
+            window_x,
+            window_y,
+            scale(window_width),
+            scale(window_height),
             ptr::null_mut(),
             ptr::null_mut(),
             instance,
@@ -1246,6 +1789,40 @@ fn run() -> Result<(), String> {
     unsafe {
         ShowWindow(window, SW_SHOW);
         UpdateWindow(window);
+        sync_combo_overlays();
+        let dark: u32 = 1;
+        let mut dark_applied = DwmSetWindowAttribute(
+            window,
+            20,
+            &dark as *const u32 as *const c_void,
+            std::mem::size_of::<u32>() as u32,
+        ) == 0;
+        if !dark_applied {
+            dark_applied = DwmSetWindowAttribute(
+                window,
+                19,
+                &dark as *const u32 as *const c_void,
+                std::mem::size_of::<u32>() as u32,
+            ) == 0;
+        }
+        if dark_applied {
+            // Windows 11 lets the caption follow the branded header instead of
+            // remaining a light strip above it.
+            let caption: u32 = c_header_top();
+            DwmSetWindowAttribute(
+                window,
+                35,
+                &caption as *const u32 as *const c_void,
+                std::mem::size_of::<u32>() as u32,
+            );
+            let caption_text: u32 = c_header_title();
+            DwmSetWindowAttribute(
+                window,
+                36,
+                &caption_text as *const u32 as *const c_void,
+                std::mem::size_of::<u32>() as u32,
+            );
+        }
     }
     let mut message = Message {
         hwnd: ptr::null_mut(),
@@ -1262,6 +1839,34 @@ fn run() -> Result<(), String> {
             break;
         }
         unsafe {
+            // The primary action owns Enter, but focused text fields, drop-down
+            // lists and buttons keep their own keyboard behaviour.
+            if message.message == WM_KEYDOWN && message.wparam == VK_RETURN {
+                let focus = GetFocus();
+                if focus.is_null() {
+                    SendMessageW(window, WM_COMMAND, ID_BUILD, 0);
+                    continue;
+                }
+                let class = window_class(focus);
+                if class == "Edit" {
+                    // Let the edit field consume Enter (and never start a build
+                    // while the user is editing a path or title).
+                } else if class == "ComboBox" {
+                    if SendMessageW(focus, CB_GETDROPPEDSTATE, 0, 0) == 0 {
+                        SendMessageW(window, WM_COMMAND, ID_BUILD, 0);
+                        continue;
+                    }
+                } else if class == "Button" {
+                    let id = GetDlgCtrlID(focus);
+                    if id > 0 {
+                        SendMessageW(window, WM_COMMAND, id as usize, 0);
+                    }
+                    continue;
+                } else {
+                    SendMessageW(window, WM_COMMAND, ID_BUILD, 0);
+                    continue;
+                }
+            }
             if IsDialogMessageW(window, &mut message) == 0 {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
@@ -1277,12 +1882,47 @@ unsafe extern "system" fn window_proc(
     wparam: Wparam,
     lparam: Lparam,
 ) -> Lresult {
+    if message == WM_CLOSE {
+        if let Some(state) = unsafe { state(hwnd) }
+            && state.busy
+        {
+            state.close_when_done = true;
+            cancel_operation(state);
+            return 0;
+        }
+        if let Some(state) = unsafe { state(hwnd) } {
+            autosave(state);
+        }
+        unsafe {
+            DestroyWindow(hwnd);
+        }
+        return 0;
+    }
+    if message == WM_DESTROY {
+        unsafe {
+            KillTimer(hwnd, 1);
+        }
+        let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut UiState;
+        if !pointer.is_null() {
+            unsafe {
+                drop(Box::from_raw(pointer));
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            }
+        }
+        unsafe {
+            PostQuitMessage(0);
+        }
+        return 0;
+    }
     match message {
         WM_CREATE => {
-            let state = Box::new(create_controls(hwnd));
+            let ui = Box::new(create_controls(hwnd));
             unsafe {
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(ui) as isize);
                 SetTimer(hwnd, 1, 100, ptr::null());
+            }
+            if let Some(state) = unsafe { state(hwnd) } {
+                apply_theme(hwnd, state, dark_theme());
             }
             0
         }
@@ -1290,13 +1930,210 @@ unsafe extern "system" fn window_proc(
             if let Some(state) = unsafe { state(hwnd) } {
                 drain_worker_logs(hwnd, state);
                 update_statistics(state);
+                unsafe {
+                    InvalidateRect(state.page_scrollbar, ptr::null(), 0);
+                    InvalidateRect(state.log_scrollbar, ptr::null(), 0);
+                }
+                if let Some(overlays) = COMBO_OVERLAYS.get() {
+                    if let Ok(overlays) = overlays.lock() {
+                        for (_, overlay) in overlays.iter() {
+                            unsafe {
+                                InvalidateRect(*overlay as Hwnd, ptr::null(), 0);
+                            }
+                        }
+                    }
+                }
             }
             0
         }
+        WM_SETTINGCHANGE => {
+            if let Some(state) = unsafe { state(hwnd) }
+                && state.theme_override.is_none()
+            {
+                let system = system_prefers_dark();
+                if system != dark_theme() {
+                    apply_theme(hwnd, state, system);
+                }
+            }
+            0
+        }
+        WM_NCLBUTTONDOWN => {
+            if let Some(state) = unsafe { state(hwnd) } {
+                let hit = wparam as i32;
+                let kind = if hit == HTCAPTION {
+                    Some(WindowDragKind::Move)
+                } else if (HTLEFT..=HTBOTTOMRIGHT).contains(&hit) {
+                    Some(WindowDragKind::Resize(hit))
+                } else {
+                    None
+                };
+                if let Some(kind) = kind {
+                    let mut cursor = Point { x: 0, y: 0 };
+                    let mut rect = Rect {
+                        left: 0,
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                    };
+                    unsafe {
+                        GetCursorPos(&mut cursor);
+                        GetWindowRect(hwnd, &mut rect);
+                        SetCapture(hwnd);
+                    }
+                    state.window_drag = Some(WindowDrag {
+                        kind,
+                        start_cursor: cursor,
+                        start_rect: rect,
+                    });
+                    return 0;
+                }
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        WM_NCLBUTTONDBLCLK => {
+            if wparam as i32 == HTCAPTION {
+                unsafe {
+                    if IsZoomed(hwnd) != 0 {
+                        ShowWindow(hwnd, SW_RESTORE);
+                    } else {
+                        ShowWindow(hwnd, SW_MAXIMIZE);
+                    }
+                }
+                return 0;
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
         0x0200..=0x0202 => {
             if let Some(state) = unsafe { state(hwnd) } {
+                if let Some(drag) = state.window_drag {
+                    if message == 0x0202 {
+                        state.window_drag = None;
+                        unsafe {
+                            ReleaseCapture();
+                        }
+                        return 0;
+                    }
+                    if message == 0x0200 {
+                        let mut cursor = Point { x: 0, y: 0 };
+                        unsafe {
+                            GetCursorPos(&mut cursor);
+                        }
+                        let dx = cursor.x - drag.start_cursor.x;
+                        let dy = cursor.y - drag.start_cursor.y;
+                        let mut rect = drag.start_rect;
+                        match drag.kind {
+                            WindowDragKind::Move => {
+                                if unsafe { IsZoomed(hwnd) } != 0 && (dx != 0 || dy != 0) {
+                                    // Dragging a maximized window restores it first,
+                                    // keeping the cursor at the same relative position.
+                                    unsafe {
+                                        ShowWindow(hwnd, SW_RESTORE);
+                                        let mut restored = Rect {
+                                            left: 0,
+                                            top: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                        };
+                                        GetWindowRect(hwnd, &mut restored);
+                                        let mut cursor = Point { x: 0, y: 0 };
+                                        GetCursorPos(&mut cursor);
+                                        let max_width =
+                                            (drag.start_rect.right - drag.start_rect.left).max(1);
+                                        let fraction = ((drag.start_cursor.x
+                                            - drag.start_rect.left)
+                                            as f64
+                                            / max_width as f64)
+                                            .clamp(0.0, 1.0);
+                                        let width = restored.right - restored.left;
+                                        let height = restored.bottom - restored.top;
+                                        let mut left =
+                                            cursor.x - (fraction * width as f64) as i32;
+                                        let mut top = cursor.y - scale(14);
+                                        let mut work = Rect {
+                                            left: 0,
+                                            top: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                        };
+                                        if SystemParametersInfoW(
+                                            0x0030,
+                                            0,
+                                            &mut work as *mut Rect as *mut c_void,
+                                            0,
+                                        ) != 0
+                                        {
+                                            let max_left = (work.right - width).max(work.left);
+                                            let max_top = (work.bottom - height).max(work.top);
+                                            left = left.clamp(work.left, max_left);
+                                            top = top.clamp(work.top, max_top);
+                                        }
+                                        restored.left = left;
+                                        restored.right = left + width;
+                                        restored.top = top;
+                                        restored.bottom = top + height;
+                                        state.window_drag = Some(WindowDrag {
+                                            kind: drag.kind,
+                                            start_cursor: cursor,
+                                            start_rect: restored,
+                                        });
+                                        rect = restored;
+                                    }
+                                } else {
+                                    rect.left += dx;
+                                    rect.right += dx;
+                                    rect.top += dy;
+                                    rect.bottom += dy;
+                                }
+                            }
+                            WindowDragKind::Resize(code) => {
+                                let min_width = scale(940).max(640);
+                                let min_height = scale(500).max(420);
+                                if matches!(code, HTLEFT | HTTOPLEFT | HTBOTTOMLEFT) {
+                                    rect.left += dx;
+                                }
+                                if matches!(code, HTRIGHT | HTTOPRIGHT | HTBOTTOMRIGHT) {
+                                    rect.right += dx;
+                                }
+                                if matches!(code, HTTOP | HTTOPLEFT | HTTOPRIGHT) {
+                                    rect.top += dy;
+                                }
+                                if matches!(code, HTBOTTOM | HTBOTTOMLEFT | HTBOTTOMRIGHT) {
+                                    rect.bottom += dy;
+                                }
+                                if rect.right - rect.left < min_width {
+                                    if rect.left != drag.start_rect.left {
+                                        rect.left = rect.right - min_width;
+                                    } else {
+                                        rect.right = rect.left + min_width;
+                                    }
+                                }
+                                if rect.bottom - rect.top < min_height {
+                                    if rect.top != drag.start_rect.top {
+                                        rect.top = rect.bottom - min_height;
+                                    } else {
+                                        rect.bottom = rect.top + min_height;
+                                    }
+                                }
+                            }
+                        }
+                        unsafe {
+                            SetWindowPos(
+                                hwnd,
+                                ptr::null_mut(),
+                                rect.left,
+                                rect.top,
+                                rect.right - rect.left,
+                                rect.bottom - rect.top,
+                                0x0004 | 0x0010,
+                            );
+                        }
+                        return 0;
+                    }
+                }
                 let y = (lparam >> 16) as i16 as i32;
-                let over = (state.splitter_position..state.splitter_position + 10).contains(&y);
+                let over = (state.splitter_position - scale(5)
+                    ..state.splitter_position + scale(10))
+                    .contains(&y);
                 if message == 0x0201 && over {
                     state.dragging_splitter = true;
                     unsafe {
@@ -1308,7 +2145,7 @@ unsafe extern "system" fn window_proc(
                         ReleaseCapture();
                     }
                 } else if message == 0x0200 && state.dragging_splitter && wparam & 1 != 0 {
-                    state.splitter_height = Some(y - 70);
+                    state.splitter_height = Some(unscale(y) - (HEADER_HEIGHT + 56));
                     layout(hwnd, state);
                 }
                 if over || state.dragging_splitter {
@@ -1326,12 +2163,114 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
-        WM_GETMINMAXINFO => {
-            if lparam != 0 {
+        WM_NCHITTEST => {
+            let result = unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+            let x = (lparam & 0xffff) as u16 as i16 as i32;
+            let y = ((lparam >> 16) & 0xffff) as u16 as i16 as i32;
+            let mut point = Point { x, y };
+            let mut rect = Rect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            unsafe {
+                ScreenToClient(hwnd, &mut point);
+                GetClientRect(hwnd, &mut rect);
+            }
+            // Borderless windows still need a usable sizing frame.
+            if unsafe { IsZoomed(hwnd) } == 0 {
+                let edge = scale(6).max(4);
+                let left = point.x < edge;
+                let right = point.x >= rect.right - edge;
+                let top = point.y < edge;
+                let bottom = point.y >= rect.bottom - edge;
+                if left || right || top || bottom {
+                    let code = if top && left {
+                        HTTOPLEFT
+                    } else if top && right {
+                        HTTOPRIGHT
+                    } else if bottom && left {
+                        HTBOTTOMLEFT
+                    } else if bottom && right {
+                        HTBOTTOMRIGHT
+                    } else if left {
+                        HTLEFT
+                    } else if right {
+                        HTRIGHT
+                    } else if top {
+                        HTTOP
+                    } else {
+                        HTBOTTOM
+                    };
+                    return code as Lresult;
+                }
+            }
+            if result == HTCLIENT as Lresult
+                && point.x >= 0
+                && point.x < rect.right
+                && point.y >= 0
+                && point.y < header_height()
+            {
+                return HTCAPTION as Lresult;
+            }
+            result
+        }
+        WM_GETMINMAXINFO => {            if lparam != 0 {
                 // MINMAXINFO consists of five POINTs; minimum tracking size is fourth.
                 let dimensions = unsafe { &mut *(lparam as *mut [i32; 10]) };
-                dimensions[6] = 1040;
-                dimensions[7] = 560;
+                let mut min_width = scale(940);
+                let mut min_height = scale(500);
+                let mut work = Rect {
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                };
+                if unsafe {
+                    SystemParametersInfoW(0x0030, 0, &mut work as *mut Rect as *mut c_void, 0)
+                } != 0
+                {
+                    // A very small or heavily scaled screen must still be usable.
+                    let work_width = work.right - work.left;
+                    let work_height = work.bottom - work.top;
+                    min_width = min_width.min(work_width);
+                    min_height = min_height.min(work_height);
+                    // The borderless window must not cover the taskbar when
+                    // maximized.
+                    dimensions[2] = work_width;
+                    dimensions[3] = work_height;
+                    dimensions[4] = work.left;
+                    dimensions[5] = work.top;
+                    dimensions[8] = work_width;
+                    dimensions[9] = work_height;
+                }
+                dimensions[6] = min_width;
+                dimensions[7] = min_height;
+            }
+            0
+        }
+        WM_DPICHANGED => {
+            let new_dpi = (wparam & 0xffff) as u32;
+            if new_dpi >= 48 {
+                UI_DPI.store(new_dpi, Ordering::Relaxed);
+            }
+            if lparam != 0 {
+                let suggested = unsafe { &*(lparam as *const Rect) };
+                unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        ptr::null_mut(),
+                        suggested.left,
+                        suggested.top,
+                        suggested.right - suggested.left,
+                        suggested.bottom - suggested.top,
+                        0x0004 | 0x0010,
+                    );
+                }
+            }
+            if let Some(state) = unsafe { state(hwnd) } {
+                rescale_ui(hwnd, state);
             }
             0
         }
@@ -1346,61 +2285,65 @@ unsafe extern "system" fn window_proc(
         WM_DRAWITEM => {
             if lparam != 0 {
                 let item = unsafe { &*(lparam as *const DrawItemStruct) };
-                if item.control_id as usize == ID_CANCEL {
-                    unsafe { draw_stop_button(item) };
+                if unsafe { draw_owner_item(hwnd, item) } {
                     return 1;
                 }
             }
             0
         }
-        WM_NOTIFY => {
+        WM_MEASUREITEM => {
             if lparam != 0 {
-                let header = unsafe { &*(lparam as *const NotifyHeader) };
-                if header.code == TCN_SELCHANGE
-                    && let Some(state) = unsafe { state(hwnd) }
-                {
-                    show_page(state, tab_index(state.controls.tabs));
-                }
+                let item = unsafe { &mut *(lparam as *mut MeasureItemStruct) };
+                item.item_height = scale(26).max(scale(20)) as u32;
             }
             0
         }
+        WM_ERASEBKGND => {
+            unsafe { erase_window_background(hwnd, wparam as Handle) };
+            1
+        }
+        WM_PAINT => {
+            unsafe { paint_window(hwnd) };
+            0
+        }
+        WM_NOTIFY => 0,
         WM_CTLCOLORSTATIC => unsafe {
-            SetBkMode(wparam as Handle, 1);
-            SetTextColor(wparam as Handle, GetSysColor(18));
-            GetSysColorBrush(15) as Lresult
+            let dc = wparam as Handle;
+            let control = lparam as Hwnd;
+            SetBkMode(dc, 1);
+            if IsWindowEnabled(control) == 0 {
+                SetBkColor(dc, c_disabled_fill());
+                SetTextColor(dc, c_disabled_text());
+                brush(c_disabled_fill()) as Lresult
+            } else if state(hwnd).is_some_and(|state| state.controls.log == control) {
+                SetBkColor(dc, c_card());
+                SetTextColor(dc, c_ink());
+                card_brush() as Lresult
+            } else {
+                SetBkColor(dc, c_body());
+                let muted = state(hwnd).is_some_and(|state| state.muted.contains(&control));
+                SetTextColor(dc, if muted { c_muted() } else { c_ink() });
+                body_brush() as Lresult
+            }
         },
-        WM_CLOSE => {
-            if let Some(state) = unsafe { state(hwnd) }
-                && state.busy
-            {
-                state.close_when_done = true;
-                cancel_operation(state);
-                return 0;
-            }
-            if let Some(state) = unsafe { state(hwnd) } {
-                autosave(state);
-            }
-            unsafe {
-                DestroyWindow(hwnd);
-            }
-            0
-        }
-        WM_DESTROY => {
-            unsafe {
-                KillTimer(hwnd, 1);
-            }
-            let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut UiState;
-            if !pointer.is_null() {
-                unsafe {
-                    drop(Box::from_raw(pointer));
-                    SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-                }
-            }
-            unsafe {
-                PostQuitMessage(0);
-            }
-            0
-        }
+        WM_CTLCOLOREDIT => unsafe {
+            let dc = wparam as Handle;
+            SetBkMode(dc, 1);
+            SetBkColor(dc, c_card());
+            SetTextColor(dc, c_ink());
+            card_brush() as Lresult
+        },
+        WM_CTLCOLORLISTBOX => unsafe {
+            SetBkMode(wparam as Handle, 1);
+            SetBkColor(wparam as Handle, c_card());
+            SetTextColor(wparam as Handle, c_ink());
+            card_brush() as Lresult
+        },
+        WM_CTLCOLORBTN => unsafe {
+            SetBkMode(wparam as Handle, 1);
+            SetBkColor(wparam as Handle, c_body());
+            body_brush() as Lresult
+        },
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }
 }
@@ -1428,13 +2371,13 @@ unsafe extern "system" fn page_proc(
         0x0115 => {
             let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
             let next = match wparam & 0xffff {
-                0 => old - 24,
-                1 => old + 24,
-                2 => old - 120,
-                3 => old + 120,
+                0 => old - scale(24),
+                1 => old + scale(24),
+                2 => old - scale(120),
+                3 => old + scale(120),
                 4 | 5 => (wparam >> 16) as i32,
                 6 => 0,
-                7 => 310,
+                7 => scale(300),
                 _ => old,
             };
             scroll_page(hwnd, next, true);
@@ -1442,10 +2385,14 @@ unsafe extern "system" fn page_proc(
         }
         0x020a => {
             let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
-            scroll_page(hwnd, old - ((wparam >> 16) as i16 as i32 / 120) * 40, true);
+            scroll_page(
+                hwnd,
+                old - ((wparam >> 16) as i16 as i32 / 120) * scale(40),
+                true,
+            );
             0
         }
-        WM_COMMAND | WM_NOTIFY => {
+        WM_COMMAND | WM_NOTIFY | WM_DRAWITEM | WM_MEASUREITEM => {
             let parent = unsafe { GetParent(hwnd) };
             if parent.is_null() {
                 0
@@ -1453,10 +2400,50 @@ unsafe extern "system" fn page_proc(
                 unsafe { SendMessageW(parent, message, wparam, lparam) }
             }
         }
+        WM_ERASEBKGND => 1,
+        WM_PAINT => {
+            unsafe { paint_page(hwnd) };
+            0
+        }
         WM_CTLCOLORSTATIC => unsafe {
+            let dc = wparam as Handle;
+            let control = lparam as Hwnd;
+            let parent = GetParent(hwnd);
+            let muted = state(parent).is_some_and(|state| state.muted.contains(&control));
+            SetBkMode(dc, 1);
+            if IsWindowEnabled(hwnd) == 0 || IsWindowEnabled(control) == 0 {
+                SetBkColor(dc, c_disabled_fill());
+                SetTextColor(dc, c_disabled_text());
+                brush(c_disabled_fill()) as Lresult
+            } else {
+                SetBkColor(dc, c_panel());
+                SetTextColor(dc, if muted { c_muted() } else { c_ink() });
+                panel_brush() as Lresult
+            }
+        },
+        WM_CTLCOLOREDIT => unsafe {
+            let dc = wparam as Handle;
+            SetBkMode(dc, 1);
+            if IsWindowEnabled(hwnd) == 0 {
+                SetBkColor(dc, c_disabled_fill());
+                SetTextColor(dc, c_disabled_text());
+                brush(c_disabled_fill()) as Lresult
+            } else {
+                SetBkColor(dc, c_card());
+                SetTextColor(dc, c_ink());
+                card_brush() as Lresult
+            }
+        },
+        WM_CTLCOLORLISTBOX => unsafe {
             SetBkMode(wparam as Handle, 1);
-            SetTextColor(wparam as Handle, GetSysColor(18));
-            GetSysColorBrush(15) as Lresult
+            SetBkColor(wparam as Handle, c_card());
+            SetTextColor(wparam as Handle, c_ink());
+            card_brush() as Lresult
+        },
+        WM_CTLCOLORBTN => unsafe {
+            SetBkMode(wparam as Handle, 1);
+            SetBkColor(wparam as Handle, c_panel());
+            panel_brush() as Lresult
         },
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }
@@ -1474,16 +2461,8 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     }
     let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
     let height = (rect.bottom - rect.top).max(1);
-    let pos = if explicit { requested } else { old }.clamp(0, (310 - height).max(0));
-    let info = ScrollInfo {
-        size: std::mem::size_of::<ScrollInfo>() as u32,
-        mask: 7,
-        min: 0,
-        max: 309,
-        page: height as u32,
-        pos,
-        track: 0,
-    };
+    let content = scale(300);
+    let pos = if explicit { requested } else { old }.clamp(0, (content - height).max(0));
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, pos as isize);
         if pos != old {
@@ -1498,8 +2477,16 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
                 7,
             );
         }
-        SetScrollInfo(hwnd, 1, &info, 1);
     }
+    let main = unsafe { GetParent(hwnd) };
+    if !main.is_null() {
+        if let Some(state) = unsafe { state(main) } {
+            unsafe {
+                InvalidateRect(state.page_scrollbar, ptr::null(), 0);
+            }
+        }
+    }
+    sync_combo_overlays();
 }
 
 fn resize_page_fields(page: Hwnd) {
@@ -1512,7 +2499,7 @@ fn resize_page_fields(page: Hwnd) {
     unsafe {
         GetClientRect(page, &mut rect);
     }
-    let width = rect.right.max(1);
+    let width = unscale(rect.right).max(1);
     // Browse rows share the same geometry. Keeping the edit and its button
     // inside the page client area prevents a clipped right border after a
     // window resize or a DPI/layout change.
@@ -1529,10 +2516,28 @@ fn resize_page_fields(page: Hwnd) {
         let edit = unsafe { GetDlgItem(page, edit_id as i32) };
         let browse = unsafe { GetDlgItem(page, browse_id as i32) };
         if !edit.is_null() {
-            unsafe { MoveWindow(edit, 14, y, edit_width, 25, 1) };
+            unsafe {
+                MoveWindow(
+                    edit,
+                    scale(14),
+                    scale(y),
+                    scale(edit_width),
+                    scale(25),
+                    1,
+                )
+            };
         }
         if !browse.is_null() {
-            unsafe { MoveWindow(browse, 14 + edit_width + 10, y - 2, 90, 29, 1) };
+            unsafe {
+                MoveWindow(
+                    browse,
+                    scale(14 + edit_width + 10),
+                    scale(y - 2),
+                    scale(90),
+                    scale(29),
+                    1,
+                )
+            };
         }
     }
 }
@@ -1654,6 +2659,17 @@ macro_rules! combo_field {
 }
 
 fn create_controls(parent: Hwnd) -> UiState {
+    if let Some(registry) = CONTROL_RECTS.get() {
+        if let Ok(mut registry) = registry.lock() {
+            registry.clear();
+        }
+    }
+    if let Some(overlays) = COMBO_OVERLAYS.get() {
+        if let Ok(mut overlays) = overlays.lock() {
+            overlays.clear();
+        }
+    }
+
     let profile_path = PROFILE_OVERRIDE
         .get()
         .and_then(Clone::clone)
@@ -1709,16 +2725,6 @@ fn create_controls(parent: Hwnd) -> UiState {
             Lang::Ja => 2,
         },
     );
-    label!(
-        parent,
-        tr(lang, "app_subtitle"),
-        "app_subtitle",
-        18,
-        42,
-        360,
-        20,
-        &mut labels,
-    );
     let origin = label!(
         parent,
         &profile_path.to_string_lossy(),
@@ -1729,20 +2735,17 @@ fn create_controls(parent: Hwnd) -> UiState {
         20,
         &mut Vec::new(),
     );
-    let tabs = create!(
-        parent,
-        "SysTabControl32",
-        "",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-        18,
-        70,
-        1140,
-        350,
-        ID_TAB,
-    );
-    let tab_keys = ["start", "audio", "menu", "tools"];
-    for (index, key) in tab_keys.iter().enumerate() {
-        insert_tab(tabs, index, tr(lang, key));
+    let mut tabs = Vec::new();
+    for (index, key) in ["start", "audio", "menu", "tools"].iter().enumerate() {
+        tabs.push(tab_button(
+            parent,
+            tr(lang, key),
+            ID_TAB + index,
+            18 + index as i32 * 138,
+            126,
+            132,
+            34,
+        ));
     }
     let mut pages = Vec::new();
     let mut c = Controls {
@@ -1754,7 +2757,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         mlp_stage: ptr::null_mut(),
         profile,
         language,
-        tabs,
         source: ptr::null_mut(),
         final_dir: ptr::null_mut(),
         title: ptr::null_mut(),
@@ -1892,6 +2894,19 @@ fn create_controls(parent: Hwnd) -> UiState {
         460,
         &mut labels,
     );
+    let advanced_hint = label!(
+        page_start,
+        tr(lang, "advanced_hint"),
+        "advanced_hint",
+        14,
+        166,
+        780,
+        48,
+        &mut labels,
+    );
+    unsafe {
+        SendMessageW(advanced_hint, WM_SETFONT, small_font() as usize, 1);
+    }
     pages.push(create_page(parent));
     let page_audio = *pages.last().unwrap();
     c.mode = combo_field!(
@@ -2228,8 +3243,9 @@ fn create_controls(parent: Hwnd) -> UiState {
         508,
         150,
         24,
+        false,
     );
-    let live = checkbox(parent, tr(lang, "live"), ID_LIVE, 330, 508, 150, 24);
+    let live = checkbox(parent, tr(lang, "live"), ID_LIVE, 330, 508, 150, 24, false);
     check(live, true);
     let copy = button(parent, tr(lang, "copy"), ID_COPY, 720, 478, 125, 28);
     let export = button(parent, tr(lang, "export"), ID_EXPORT, 855, 478, 130, 28);
@@ -2239,7 +3255,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         "",
         WS_CHILD
             | WS_VISIBLE
-            | WS_VSCROLL
             | ES_MULTILINE
             | ES_AUTOVSCROLL
             | ES_READONLY
@@ -2250,6 +3265,32 @@ fn create_controls(parent: Hwnd) -> UiState {
         215,
         ID_LOG,
     );
+    let page_scrollbar = create!(
+        parent,
+        "DVD_AUDIO_SCROLLBAR_RUST",
+        "",
+        WS_CHILD | WS_VISIBLE,
+        0,
+        0,
+        12,
+        200,
+        0,
+    );
+    let log_scrollbar = create!(
+        parent,
+        "DVD_AUDIO_SCROLLBAR_RUST",
+        "",
+        WS_CHILD | WS_VISIBLE,
+        0,
+        0,
+        12,
+        200,
+        0,
+    );
+    unsafe {
+        install_scrollbar(page_scrollbar, parent);
+        install_scrollbar(log_scrollbar, parent);
+    }
     unsafe {
         SendMessageW(log, EM_SETLIMITTEXT, 1_000_000, 0);
     }
@@ -2293,8 +3334,12 @@ fn create_controls(parent: Hwnd) -> UiState {
         (copy, "copy"),
         (export, "export"),
     ]);
-    c.advanced = checkbox(parent, tr(lang, "advanced"), ID_ADVANCED, 440, 42, 215, 22);
+    c.advanced = checkbox(parent, tr(lang, "advanced"), ID_ADVANCED, 440, 42, 215, 22, false);
     labels.push((c.advanced, "advanced"));
+    let caption_minimize = caption_button(parent, ID_MINIMIZE);
+    let caption_maximize = caption_button(parent, ID_MAXIMIZE);
+    let caption_close = caption_button(parent, ID_CLOSE);
+    let theme_button = caption_button(parent, ID_THEME);
     // Preserve the old distinction between everyday and advanced settings.
     let mut advanced_controls = vec![
         c.work_dir,
@@ -2358,11 +3403,24 @@ fn create_controls(parent: Hwnd) -> UiState {
     let session_log = open_session_log();
     let session_log_error = session_log.as_ref().err().map(ToString::to_string);
     let (log_sender, log_receiver) = sync_channel(LOG_QUEUE_CAPACITY);
+    let muted = vec![
+        profile_label,
+        origin,
+        _operation_section,
+        _log_section,
+        activity,
+        c.statistics,
+        advanced_hint,
+    ];
     let mut state = UiState {
         lang,
+        main_window: parent,
         controls: c,
         pages,
+        tabs,
+        tab_index: 0,
         labels,
+        muted,
         buttons,
         base,
         profile_path,
@@ -2398,10 +3456,49 @@ fn create_controls(parent: Hwnd) -> UiState {
         splitter_height: None,
         splitter_position: 420,
         dragging_splitter: false,
+        window_drag: None,
         advanced_controls,
+        advanced_hint,
+        caption_minimize,
+        caption_maximize,
+        caption_close,
+        theme_button,
+        theme_override: None,
+        page_scrollbar,
+        log_scrollbar,
     };
     unsafe {
         EnableWindow(state.controls.cancel, 0);
+        SetWindowTheme(
+            state.controls.progress,
+            wide("").as_ptr(),
+            wide("").as_ptr(),
+        );
+        SendMessageW(
+            state.controls.progress,
+            PBM_SETBKCOLOR,
+            0,
+            c_bar_track() as isize,
+        );
+        SendMessageW(
+            state.controls.progress,
+            PBM_SETBARCOLOR,
+            0,
+            c_accent() as isize,
+        );
+        SendMessageW(
+            state.controls.status,
+            WM_SETFONT,
+            semibold_font() as usize,
+            1,
+        );
+        SendMessageW(
+            state.controls.statistics,
+            WM_SETFONT,
+            small_font() as usize,
+            1,
+        );
+        SendMessageW(state.controls.activity, WM_SETFONT, ui_font() as usize, 1);
     }
     set_text(
         state.controls.profile,
@@ -2439,9 +3536,9 @@ fn create_page(parent: Hwnd) -> Hwnd {
         parent,
         "DVD_AUDIO_PAGE_RUST",
         "",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | 0x02000000,
+        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
         22,
-        104,
+        170,
         1130,
         310,
         0,
@@ -2457,13 +3554,22 @@ fn check_field(
     y: i32,
     labels: &mut Vec<(Hwnd, &'static str)>,
 ) -> Hwnd {
-    let hwnd = checkbox(parent, caption, id, x, y, 230, 28);
+    let hwnd = checkbox(parent, caption, id, x, y, 230, 28, true);
     labels.push((hwnd, key));
     hwnd
 }
 
-fn checkbox(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create!(
+fn checkbox(
+    parent: Hwnd,
+    text: &str,
+    id: usize,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    panel: bool,
+) -> Hwnd {
+    let hwnd = create!(
         parent,
         "BUTTON",
         text,
@@ -2473,66 +3579,917 @@ fn checkbox(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32)
         w,
         h,
         id,
-    )
+    );
+    if !hwnd.is_null() {
+        install_check_visual(hwnd, panel);
+    }
+    hwnd
 }
 fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create!(
+
+    let hwnd = create!(
         parent,
         "COMBOBOX",
         "",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | CBS_DROPDOWNLIST,
+        WS_CHILD
+            | WS_VISIBLE
+            | WS_TABSTOP
+            | CBS_DROPDOWNLIST
+            | CBS_OWNERDRAWFIXED
+            | CBS_HASSTRINGS,
         x,
         y,
         w,
         h,
         id,
-    )
+    );
+    if hwnd.is_null() {
+        return hwnd;
+    }
+
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetWindowRect(hwnd, &mut rect);
+    }
+    let closed_height = unscale((rect.bottom - rect.top).max(scale(20)));
+    // The overlay owns the whole closed combo so the themed border and text
+    // replace the system-drawn field completely.
+    let overlay = create_from_spec(CreateSpec {
+        parent,
+        class: "BUTTON",
+        title: "",
+        style: WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        x,
+        y,
+        width: w,
+        height: closed_height,
+        id: 0,
+    });
+    if !overlay.is_null() {
+        install_combo_arrow(overlay, hwnd);
+        let registry = COMBO_OVERLAYS.get_or_init(|| Mutex::new(Vec::new()));
+        if let Ok(mut registry) = registry.lock() {
+            registry.push((hwnd as isize, overlay as isize));
+        }
+    }
+    hwnd
 }
 
 fn button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create!(
+    owner_draw_button(
         parent,
-        "BUTTON",
         text,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        id,
         x,
         y,
         w,
         h,
-        id,
     )
 }
 
 fn primary_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create!(
+    owner_draw_button(
         parent,
-        "BUTTON",
         text,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        id,
         x,
         y,
         w,
         h,
-        id,
     )
 }
 
 fn danger_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    create!(
+    owner_draw_button(
         parent,
-        "BUTTON",
         text,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        id,
         x,
         y,
         w,
         h,
-        id,
     )
 }
 
-fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
-    let CreateSpec {
+fn tab_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
+    owner_draw_button(
+        parent,
+        text,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        id,
+        x,
+        y,
+        w,
+        h,
+    )
+}
+
+fn caption_button(parent: Hwnd, id: usize) -> Hwnd {
+    owner_draw_button(
+        parent,
+        "",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        id,
+        0,
+        0,
+        40,
+        30,
+    )
+}
+
+fn owner_draw_button(
+    parent: Hwnd,
+    text: &str,
+    style: u32,
+    id: usize,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Hwnd {
+    let hwnd = create!(parent, "BUTTON", text, style, x, y, w, h, id);
+    if !hwnd.is_null() {
+        install_button_visual(hwnd);
+    }
+    hwnd
+}
+
+fn install_button_visual(hwnd: Hwnd) {
+    unsafe {
+        let original: WndProc = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
+        let visual = Box::new(ButtonVisual {
+            hover: false,
+            original,
+        });
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(visual) as isize);
+        SetWindowLongPtrW(hwnd, GWLP_WNDPROC, button_proc as *const () as isize);
+    }
+}
+
+unsafe extern "system" fn button_proc(
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
+    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ButtonVisual;
+    if pointer.is_null() {
+        return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+    }
+    match message {
+        WM_MOUSEMOVE => {
+            if !unsafe { (*pointer).hover } {
+                unsafe {
+                    (*pointer).hover = true;
+                    let mut track = TrackMouseEventData {
+                        size: std::mem::size_of::<TrackMouseEventData>() as u32,
+                        flags: TME_LEAVE,
+                        track: hwnd,
+                        hover_time: 0,
+                    };
+                    TrackMouseEvent(&mut track);
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+        }
+        WM_MOUSELEAVE => {
+            if unsafe { (*pointer).hover } {
+                unsafe {
+                    (*pointer).hover = false;
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+        }
+        WM_NCDESTROY => {
+            let original = unsafe { Box::from_raw(pointer) }.original;
+            unsafe {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                SetWindowLongPtrW(hwnd, GWLP_WNDPROC, original as *const () as isize);
+            }
+            return unsafe { original(hwnd, message, wparam, lparam) };
+        }
+        _ => {}
+    }
+    let original = unsafe { (*pointer).original };
+    unsafe { original(hwnd, message, wparam, lparam) }
+}
+
+fn button_hovered(hwnd: Hwnd) -> bool {
+    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const ButtonVisual;
+    !pointer.is_null() && unsafe { (*pointer).hover }
+}
+
+fn install_check_visual(hwnd: Hwnd, panel: bool) {
+    unsafe {
+        let original: WndProc = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
+        let visual = Box::new(CheckVisual {
+            hover: false,
+            panel,
+            original,
+        });
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(visual) as isize);
+        SetWindowLongPtrW(hwnd, GWLP_WNDPROC, checkbox_proc as *const () as isize);
+    }
+}
+
+unsafe extern "system" fn checkbox_proc(
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
+    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut CheckVisual;
+    if pointer.is_null() {
+        return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+    }
+    match message {
+        WM_PAINT => {
+            unsafe { draw_checkbox(hwnd) };
+            return 0;
+        }
+        WM_ERASEBKGND => return 1,
+        WM_MOUSEMOVE => {
+            if !unsafe { (*pointer).hover } {
+                unsafe {
+                    (*pointer).hover = true;
+                    let mut track = TrackMouseEventData {
+                        size: std::mem::size_of::<TrackMouseEventData>() as u32,
+                        flags: TME_LEAVE,
+                        track: hwnd,
+                        hover_time: 0,
+                    };
+                    TrackMouseEvent(&mut track);
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+        }
+        WM_MOUSELEAVE => {
+            if unsafe { (*pointer).hover } {
+                unsafe {
+                    (*pointer).hover = false;
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+        }
+        WM_SETFOCUS | WM_KILLFOCUS => {
+            let original = unsafe { (*pointer).original };
+            let result = unsafe { original(hwnd, message, wparam, lparam) };
+            unsafe { InvalidateRect(hwnd, ptr::null(), 0) };
+            return result;
+        }
+        WM_NCDESTROY => {
+            let original = unsafe { Box::from_raw(pointer) }.original;
+            unsafe {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                SetWindowLongPtrW(hwnd, GWLP_WNDPROC, original as *const () as isize);
+            }
+            return unsafe { original(hwnd, message, wparam, lparam) };
+        }
+        _ => {}
+    }
+    let original = unsafe { (*pointer).original };
+    unsafe { original(hwnd, message, wparam, lparam) }
+}
+
+unsafe fn draw_checkbox(hwnd: Hwnd) {
+    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(hwnd, &mut rect);
+        let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CheckVisual;
+        let panel = !pointer.is_null() && (*pointer).panel;
+        let hover = !pointer.is_null() && (*pointer).hover;
+        FillRect(dc, &rect, if panel { panel_brush() } else { body_brush() });
+        let checked = SendMessageW(hwnd, BM_GETCHECK, 0, 0) == 1;
+        let enabled = IsWindowEnabled(hwnd) != 0;
+        let box_size = scale(16);
+        let top = (rect.bottom - box_size) / 2;
+        let left = scale(2);
+        let fill = if !enabled {
+            c_disabled_fill()
+        } else if checked {
+            if hover {
+                c_accent_hover()
+            } else {
+                c_accent()
+            }
+        } else {
+            c_card()
+        };
+        let border = if !enabled {
+            c_disabled_text()
+        } else if checked || hover {
+            c_accent()
+        } else {
+            c_border()
+        };
+        fill_round_rect(
+            dc,
+            &Rect {
+                left,
+                top,
+                right: left + box_size,
+                bottom: top + box_size,
+            },
+            scale(3),
+            fill,
+            border,
+        );
+        if checked {
+            let pen = CreatePen(0, scale(2).max(1), c_header_top());
+            if !pen.is_null() {
+                let old = SelectObject(dc, pen);
+                let cx = left + box_size / 2;
+                let cy = top + box_size / 2;
+                MoveToEx(dc, left + scale(4), cy, ptr::null_mut());
+                LineTo(dc, cx - scale(1), top + box_size - scale(4));
+                LineTo(dc, left + box_size - scale(3), top + scale(4));
+                SelectObject(dc, old);
+                DeleteObject(pen);
+            }
+        }
+        let label = get_text(hwnd);
+        let mut text_rect = Rect {
+            left: left + box_size + scale(7),
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+        };
+        draw_text_run(
+            &label,
+            dc,
+            &mut text_rect,
+            ui_font(),
+            if enabled { c_ink() } else { c_disabled_text() },
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        if enabled && GetFocus() == hwnd {
+            let focus = Rect {
+                left: scale(1),
+                top: scale(1),
+                right: rect.right - scale(1),
+                bottom: rect.bottom - scale(1),
+            };
+            DrawFocusRect(dc, &focus);
+        }
+        EndPaint(hwnd, &paint);
+    }
+}
+
+fn install_combo_arrow(hwnd: Hwnd, combo: Hwnd) {
+    unsafe {
+        let original: WndProc = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
+        let visual = Box::new(ComboArrowVisual {
+            hover: false,
+            combo,
+            original,
+        });
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(visual) as isize);
+        SetWindowLongPtrW(hwnd, GWLP_WNDPROC, combo_arrow_proc as *const () as isize);
+    }
+}
+
+unsafe extern "system" fn combo_arrow_proc(
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
+    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ComboArrowVisual;
+    if pointer.is_null() {
+        return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+    }
+    match message {
+        WM_PAINT => {
+            unsafe { draw_combo_arrow(hwnd) };
+            return 0;
+        }
+        WM_ERASEBKGND => return 1,
+        WM_MOUSEMOVE => {
+            if !unsafe { (*pointer).hover } {
+                unsafe {
+                    (*pointer).hover = true;
+                    let mut track = TrackMouseEventData {
+                        size: std::mem::size_of::<TrackMouseEventData>() as u32,
+                        flags: TME_LEAVE,
+                        track: hwnd,
+                        hover_time: 0,
+                    };
+                    TrackMouseEvent(&mut track);
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+        }
+        WM_MOUSELEAVE => {
+            if unsafe { (*pointer).hover } {
+                unsafe {
+                    (*pointer).hover = false;
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+        }
+        WM_LBUTTONDOWN => return 0,
+        WM_LBUTTONUP => {
+            let combo = unsafe { (*pointer).combo };
+            unsafe {
+                if IsWindowEnabled(combo) != 0 {
+                    SetFocus(combo);
+                    SendMessageW(combo, CB_SHOWDROPDOWN, 1, 0);
+                }
+            }
+            return 0;
+        }
+        WM_NCDESTROY => {
+            let original = unsafe { Box::from_raw(pointer) }.original;
+            unsafe {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                SetWindowLongPtrW(hwnd, GWLP_WNDPROC, original as *const () as isize);
+            }
+            return unsafe { original(hwnd, message, wparam, lparam) };
+        }
+        _ => {}
+    }
+    let original = unsafe { (*pointer).original };
+    unsafe { original(hwnd, message, wparam, lparam) }
+}
+
+unsafe fn draw_combo_arrow(hwnd: Hwnd) {
+    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(hwnd, &mut rect);
+        let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const ComboArrowVisual;
+        let combo = if pointer.is_null() {
+            ptr::null_mut()
+        } else {
+            (*pointer).combo
+        };
+        let hover = !pointer.is_null() && (*pointer).hover;
+        let enabled = !combo.is_null() && IsWindowEnabled(combo) != 0;
+        let fill = if !enabled {
+            c_disabled_fill()
+        } else if hover {
+            c_secondary_hover()
+        } else {
+            c_card()
+        };
+        FillRect(dc, &rect, brush(fill));
+        let border = if enabled && GetFocus() == combo {
+            c_accent()
+        } else {
+            c_border()
+        };
+        let border_width = scale(1).max(1);
+        for edge in [
+            Rect {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.top + border_width,
+            },
+            Rect {
+                left: rect.left,
+                top: rect.bottom - border_width,
+                right: rect.right,
+                bottom: rect.bottom,
+            },
+            Rect {
+                left: rect.left,
+                top: rect.top,
+                right: rect.left + border_width,
+                bottom: rect.bottom,
+            },
+            Rect {
+                left: rect.right - border_width,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+            },
+        ] {
+            FillRect(dc, &edge, brush(border));
+        }
+        if !combo.is_null() {
+            let index = SendMessageW(combo, CB_GETCURSEL, 0, 0) as i32;
+            let text = combo_item_text(combo, index);
+            let mut text_rect = Rect {
+                left: rect.left + scale(8),
+                top: rect.top,
+                right: rect.right - scale(28),
+                bottom: rect.bottom,
+            };
+            draw_text_run(
+                &text,
+                dc,
+                &mut text_rect,
+                ui_font(),
+                if enabled { c_ink() } else { c_disabled_text() },
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS,
+            );
+            let color = if !enabled {
+                c_disabled_text()
+            } else if hover || GetFocus() == combo {
+                c_accent()
+            } else {
+                c_ink()
+            };
+            let pen = CreatePen(0, scale(1).max(1), color);
+            if !pen.is_null() {
+                let old = SelectObject(dc, pen);
+                let center_x = rect.right - scale(13);
+                let center_y = (rect.top + rect.bottom) / 2;
+                let half = scale(4);
+                let drop = scale(2);
+                MoveToEx(dc, center_x - half, center_y - drop, ptr::null_mut());
+                LineTo(dc, center_x, center_y + drop);
+                LineTo(dc, center_x + half, center_y - drop);
+                SelectObject(dc, old);
+                DeleteObject(pen);
+            }
+        }
+        EndPaint(hwnd, &paint);
+    }
+}
+fn sync_combo_overlays() {
+    let Some(overlays) = COMBO_OVERLAYS.get() else {
+        return;
+    };
+    let Ok(overlays) = overlays.lock() else {
+        return;
+    };
+    for (combo, overlay) in overlays.iter() {
+        let combo = *combo as Hwnd;
+        let overlay = *overlay as Hwnd;
+        if combo.is_null() || overlay.is_null() {
+            continue;
+        }
+        let parent = unsafe { GetParent(combo) };
+        if parent.is_null() {
+            continue;
+        }
+        let mut combo_rect = Rect {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        unsafe {
+            GetWindowRect(combo, &mut combo_rect);
+        }
+        let mut top_left = Point {
+            x: combo_rect.left,
+            y: combo_rect.top,
+        };
+        let mut bottom_right = Point {
+            x: combo_rect.right,
+            y: combo_rect.bottom,
+        };
+        unsafe {
+            ScreenToClient(parent, &mut top_left);
+            ScreenToClient(parent, &mut bottom_right);
+        }
+        unsafe {
+            MoveWindow(
+                overlay,
+                top_left.x,
+                top_left.y,
+                (bottom_right.x - top_left.x).max(scale(20)),
+                (bottom_right.y - top_left.y).max(scale(20)),
+                1,
+            );
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BarMetrics {
+    value: i32,
+    max: i32,
+    page: i32,
+}
+
+#[derive(Clone, Copy)]
+struct BarGeometry {
+    track_height: i32,
+    thumb_top: i32,
+    thumb_height: i32,
+}
+
+fn bar_geometry(client_height: i32, metrics: &BarMetrics) -> BarGeometry {
+    let pad = scale(2).max(1);
+    let track_top = pad;
+    let track_height = (client_height - pad * 2).max(1);
+    if metrics.max <= 0 || metrics.page <= 0 {
+        return BarGeometry {
+            track_height,
+            thumb_top: track_top,
+            thumb_height: track_height,
+        };
+    }
+    let total = (metrics.page + metrics.max) as f64;
+    let mut thumb_height =
+        (track_height as f64 * metrics.page as f64 / total) as i32;
+    thumb_height = thumb_height.clamp(scale(18).max(8).min(track_height), track_height);
+    let travel = (track_height - thumb_height).max(0);
+    let ratio = (metrics.value as f64 / metrics.max as f64).clamp(0.0, 1.0);
+    BarGeometry {
+        track_height,
+        thumb_top: track_top + (travel as f64 * ratio) as i32,
+        thumb_height,
+    }
+}
+
+unsafe fn page_bar_metrics(state: &UiState) -> BarMetrics {
+    let page = match state.pages.get(state.tab_index) {
+        Some(page) => *page,
+        None => {
+            return BarMetrics {
+                value: 0,
+                max: 0,
+                page: 1,
+            }
+        }
+    };
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(page, &mut rect);
+    }
+    let page_height = (rect.bottom - rect.top).max(1);
+    let content = scale(300);
+    let max = (content - page_height).max(0);
+    let value = (unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32).clamp(0, max);
+    BarMetrics {
+        value,
+        max,
+        page: page_height,
+    }
+}
+
+unsafe fn log_bar_metrics(log: Hwnd) -> BarMetrics {
+    let total = (unsafe { SendMessageW(log, EM_GETLINECOUNT, 0, 0) } as i32).max(1);
+    let first =
+        (unsafe { SendMessageW(log, EM_GETFIRSTVISIBLELINE, 0, 0) } as i32).max(0);
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(log, &mut rect);
+    }
+    let height = (rect.bottom - rect.top).max(1);
+    let line_height = scale(19).max(1);
+    let visible = (height / line_height).max(1);
+    BarMetrics {
+        value: first,
+        max: (total - visible).max(0),
+        page: visible,
+    }
+}
+
+unsafe fn install_scrollbar(hwnd: Hwnd, main: Hwnd) {
+    if hwnd.is_null() {
+        return;
+    }
+    let visual = Box::new(ScrollbarVisual {
+        main,
+        hover: false,
+        dragging: false,
+        drag_start_cursor: 0,
+        drag_start_value: 0,
+    });
+    unsafe {
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(visual) as isize);
+    }
+}
+
+unsafe fn scrollbar_metrics(hwnd: Hwnd, state: &UiState) -> BarMetrics {
+    if hwnd == state.page_scrollbar {
+        unsafe { page_bar_metrics(state) }
+    } else {
+        unsafe { log_bar_metrics(state.controls.log) }
+    }
+}
+
+unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
+    let Some(state) = (unsafe { state(main) }) else {
+        return;
+    };
+    if hwnd == state.page_scrollbar {
+        if let Some(page) = state.pages.get(state.tab_index).copied() {
+            let metrics = unsafe { page_bar_metrics(state) };
+            scroll_page(page, value.clamp(0, metrics.max), true);
+        }
+    } else if hwnd == state.log_scrollbar {
+        let log = state.controls.log;
+        if log.is_null() {
+            return;
+        }
+        let metrics = unsafe { log_bar_metrics(log) };
+        let target = value.clamp(0, metrics.max);
+        if target != metrics.value {
+            unsafe {
+                SendMessageW(log, EM_LINESCROLL, 0, (target - metrics.value) as isize);
+            }
+        }
+    }
+    unsafe {
+        InvalidateRect(hwnd, ptr::null(), 0);
+    }
+}
+
+unsafe fn draw_scrollbar(hwnd: Hwnd) {
+    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(hwnd, &mut rect);
+    }
+    unsafe {
+        FillRect(dc, &rect, brush(c_body()));
+    }
+    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ScrollbarVisual;
+    if !pointer.is_null() && rect.right > 0 && rect.bottom > 0 {
+        let main = unsafe { (*pointer).main };
+        if let Some(state) = unsafe { state(main) } {
+            let metrics = unsafe { scrollbar_metrics(hwnd, state) };
+            let geometry = bar_geometry(rect.bottom, &metrics);
+            if metrics.max > 0 {
+                let inset = scale(2).max(1);
+                let thumb = Rect {
+                    left: inset,
+                    top: geometry.thumb_top,
+                    right: rect.right - inset,
+                    bottom: geometry.thumb_top + geometry.thumb_height,
+                };
+                let hovered = unsafe { (*pointer).hover || (*pointer).dragging };
+                let color = if hovered { c_muted() } else { c_border() };
+                unsafe {
+                    FillRect(dc, &thumb, brush(color));
+                }
+            }
+        }
+    }
+    unsafe {
+        EndPaint(hwnd, &paint);
+    }
+}
+
+unsafe extern "system" fn scrollbar_proc(
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
+    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ScrollbarVisual;
+    if pointer.is_null() {
+        return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+    }
+    match message {
+        WM_PAINT => {
+            unsafe { draw_scrollbar(hwnd) };
+            0
+        }
+        WM_ERASEBKGND => 1,
+        WM_MOUSEMOVE => {
+            let mut rect = Rect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            unsafe {
+                GetClientRect(hwnd, &mut rect);
+            }
+            let y = (lparam >> 16) as i16 as i32;
+            let main = unsafe { (*pointer).main };
+            let mut geometry = None;
+            if let Some(state) = unsafe { state(main) } {
+                let metrics = unsafe { scrollbar_metrics(hwnd, state) };
+                geometry = Some((metrics, bar_geometry(rect.bottom, &metrics)));
+            }
+            unsafe {
+                if (*pointer).dragging {
+                    if let Some((metrics, geometry)) = geometry {
+                        let travel = (geometry.track_height - geometry.thumb_height).max(0);
+                        if travel > 0 && metrics.max > 0 {
+                            let delta = y - (*pointer).drag_start_cursor;
+                            let value = (*pointer).drag_start_value
+                                + (delta as f64 * metrics.max as f64 / travel as f64) as i32;
+                            apply_scrollbar_value(main, hwnd, value);
+                        }
+                    }
+                    return 0;
+                }
+                if !(*pointer).hover {
+                    (*pointer).hover = true;
+                    let mut track = TrackMouseEventData {
+                        size: std::mem::size_of::<TrackMouseEventData>() as u32,
+                        flags: TME_LEAVE,
+                        track: hwnd,
+                        hover_time: 0,
+                    };
+                    TrackMouseEvent(&mut track);
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+            0
+        }
+        WM_MOUSELEAVE => {
+            unsafe {
+                if (*pointer).hover {
+                    (*pointer).hover = false;
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+            0
+        }
+        WM_LBUTTONDOWN => {
+            let mut rect = Rect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            unsafe {
+                GetClientRect(hwnd, &mut rect);
+            }
+            let y = (lparam >> 16) as i16 as i32;
+            let main = unsafe { (*pointer).main };
+            if let Some(state) = unsafe { state(main) } {
+                let metrics = unsafe { scrollbar_metrics(hwnd, state) };
+                let geometry = bar_geometry(rect.bottom, &metrics);
+                if y >= geometry.thumb_top && y < geometry.thumb_top + geometry.thumb_height {
+                    unsafe {
+                        (*pointer).dragging = true;
+                        (*pointer).drag_start_cursor = y;
+                        (*pointer).drag_start_value = metrics.value;
+                        SetCapture(hwnd);
+                    }
+                } else {
+                    let step = metrics.page.max(1);
+                    let value = if y < geometry.thumb_top {
+                        metrics.value - step
+                    } else {
+                        metrics.value + step
+                    };
+                    unsafe { apply_scrollbar_value(main, hwnd, value) };
+                }
+            }
+            0
+        }
+        WM_LBUTTONUP => {
+            unsafe {
+                if (*pointer).dragging {
+                    (*pointer).dragging = false;
+                    ReleaseCapture();
+                    InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+            0
+        }
+        WM_NCDESTROY => {
+            unsafe {
+                drop(Box::from_raw(pointer));
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            }
+            0
+        }
+        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    }
+}
+
+fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
         parent,
         class,
         title,
@@ -2543,12 +4500,16 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
         height,
         id,
     } = spec;
+    let design = (x, y, width, height);
     let class = wide(class);
     let title = wide(title);
+    let is_edit = class.as_slice() == wide("EDIT").as_slice();
     let hwnd = unsafe {
         CreateWindowExW(
-            if class.as_slice() == wide("EDIT").as_slice() {
-                WS_EX_CLIENTEDGE
+            if is_edit {
+                // Filled field style: the white edit surface sits on the tinted
+                // panel, so no 3D client edge is needed.
+                0
             } else if class.as_slice() == wide("DVD_AUDIO_PAGE_RUST").as_slice() {
                 0x00010000 // WS_EX_CONTROLPARENT: keyboard navigation into pages.
             } else {
@@ -2557,10 +4518,10 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
             class.as_ptr(),
             title.as_ptr(),
             style,
-            x,
-            y,
-            width,
-            height,
+            scale(x),
+            scale(y),
+            scale(width),
+            scale(height),
             parent,
             id as Hmenu,
             GetModuleHandleW(ptr::null()),
@@ -2568,21 +4529,30 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
         )
     };
     if !hwnd.is_null() {
+        let registry = CONTROL_RECTS.get_or_init(|| Mutex::new(Vec::new()));
+        if let Ok(mut registry) = registry.lock() {
+            registry.push((hwnd as isize, design.0, design.1, design.2, design.3));
+        }
         unsafe {
             SendMessageW(hwnd, WM_SETFONT, ui_font() as usize, 1);
+            if is_edit {
+                // Breathing room inside the borderless field.
+                let margin = scale(6);
+                SendMessageW(hwnd, EM_SETMARGINS, 3, (margin | (margin << 16)) as isize);
+            }
         }
     }
     hwnd
 }
 
-fn ui_font() -> Handle {
-    *UI_FONT.get_or_init(|| unsafe {
+fn load_font(height: i32, weight: i32, face: &str) -> Handle {
+    unsafe {
         let font = CreateFontW(
-            -16,
+            height,
             0,
             0,
             0,
-            400,
+            weight,
             0,
             0,
             0,
@@ -2591,14 +4561,102 @@ fn ui_font() -> Handle {
             0,
             5,
             0,
-            wide("Segoe UI").as_ptr(),
+            wide(face).as_ptr(),
         );
         if font.is_null() {
-            GetStockObject(17) as usize
+            GetStockObject(17)
         } else {
-            font as usize
+            font
         }
-    }) as Handle
+    }
+}
+
+fn font(height: i32, weight: i32, face: u8) -> Handle {
+    let height = scale(height);
+    let key = (height, weight, face);
+    let cache = FONT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(value) = cache.get(&key) {
+        return *value as Handle;
+    }
+    let name = match face {
+        1 => "Segoe UI Semibold",
+        _ => "Segoe UI",
+    };
+    let handle = load_font(height, weight, name);
+    cache.insert(key, handle as usize);
+    handle
+}
+
+fn ui_font() -> Handle {
+    font(UI_FONT_HEIGHT, 400, 0)
+}
+fn semibold_font() -> Handle {
+    font(UI_FONT_HEIGHT, 600, 1)
+}
+fn title_font() -> Handle {
+    font(-25, 600, 1)
+}
+fn subtitle_font() -> Handle {
+    font(-14, 400, 0)
+}
+fn small_font() -> Handle {
+    font(-14, 400, 0)
+}
+fn brush(color: u32) -> Hbrush {
+    let cache = BRUSH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(value) = cache.get(&color) {
+        return *value as Hbrush;
+    }
+    let handle = unsafe {
+        let brush = CreateSolidBrush(color);
+        if brush.is_null() {
+            GetSysColorBrush(15)
+        } else {
+            brush
+        }
+    };
+    cache.insert(color, handle as usize);
+    handle
+}
+fn body_brush() -> Hbrush {
+    brush(c_body())
+}
+fn card_brush() -> Hbrush {
+    brush(c_card())
+}
+fn panel_brush() -> Hbrush {
+    brush(c_panel())
+}
+fn border_brush() -> Hbrush {
+    brush(c_border())
+}
+fn header_icon() -> Handle {
+    let current = dpi() as u32;
+    let cache = ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(value) = cache.get(&current) {
+        return *value as Handle;
+    }
+    let size = scale(40);
+    let icon = unsafe {
+        let icon = LoadImageW(
+            GetModuleHandleW(ptr::null()),
+            1usize as *const u16,
+            1,
+            size,
+            size,
+            0,
+        );
+        if icon.is_null() {
+            LoadIconW(GetModuleHandleW(ptr::null()), 1usize as *const u16)
+        } else {
+            icon
+        }
+    };
+    cache.insert(current, icon as usize);
+    icon
 }
 fn wide(text: &str) -> Vec<u16> {
     OsStr::new(text)
@@ -2618,6 +4676,15 @@ fn get_text(hwnd: Hwnd) -> String {
     let count =
         unsafe { GetWindowTextW(hwnd, value.as_mut_ptr(), value.len() as i32) }.max(0) as usize;
     String::from_utf16_lossy(&value[..count])
+}
+fn window_class(hwnd: Hwnd) -> String {
+    let mut buffer = [0u16; 64];
+    let len = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    if len > 0 {
+        String::from_utf16_lossy(&buffer[..len as usize])
+    } else {
+        String::new()
+    }
 }
 fn check(hwnd: Hwnd, value: bool) {
     unsafe {
@@ -2665,8 +4732,15 @@ fn numeric_choice(hwnd: Hwnd, values: &[i64]) -> i64 {
         .and_then(|index| values.get(index).copied())
         .unwrap_or_else(|| parse_i64(hwnd, 0))
 }
-fn tab_index(hwnd: Hwnd) -> i32 {
-    unsafe { SendMessageW(hwnd, TCM_GETCURSEL, 0, 0) as i32 }
+fn select_tab(state: &mut UiState, index: usize) {
+    let index = index.min(state.pages.len().saturating_sub(1));
+    state.tab_index = index;
+    show_page(state, index as i32);
+    for tab in &state.tabs {
+        unsafe {
+            InvalidateRect(*tab, ptr::null(), 0);
+        }
+    }
 }
 fn show_page(state: &UiState, index: i32) {
     for (i, page) in state.pages.iter().enumerate() {
@@ -2684,41 +4758,174 @@ fn show_page(state: &UiState, index: i32) {
             }
         }
     }
+    unsafe {
+        InvalidateRect(state.page_scrollbar, ptr::null(), 0);
+    }
+    sync_combo_overlays();
 }
-fn insert_tab(hwnd: Hwnd, index: usize, text: &str) {
-    let mut text = wide(text);
-    let item = TabItem {
-        mask: 1,
-        state: 0,
-        state_mask: 0,
-        text: text.as_mut_ptr(),
-        text_max: text.len() as i32,
-        image: 0,
-        param: 0,
+
+fn measured_text_width(hwnd: Hwnd, text: &str, font: Handle) -> i32 {
+    let dc = unsafe { GetDC(hwnd) };
+    if dc.is_null() {
+        return 0;
+    }
+    let text = wide(text);
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
     };
     unsafe {
-        SendMessageW(
+        let old = SelectObject(dc, font);
+        DrawTextW(
+            dc,
+            text.as_ptr(),
+            (text.len() - 1) as i32,
+            &mut rect,
+            DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX,
+        );
+        SelectObject(dc, old);
+        ReleaseDC(hwnd, dc);
+    }
+    rect.right
+}
+
+unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
+    unsafe {
+        MoveWindow(
             hwnd,
-            TCM_INSERTITEMW,
-            index,
-            &item as *const TabItem as isize,
+            scale(x),
+            scale(y),
+            scale(width),
+            scale(height),
+            1,
         );
     }
 }
-fn set_tab(hwnd: Hwnd, index: usize, text: &str) {
-    let mut text = wide(text);
-    let item = TabItem {
-        mask: 1,
-        state: 0,
-        state_mask: 0,
-        text: text.as_mut_ptr(),
-        text_max: text.len() as i32,
-        image: 0,
-        param: 0,
-    };
+
+unsafe extern "system" fn font_child_proc(hwnd: Hwnd, parameter: Lparam) -> i32 {
     unsafe {
-        SendMessageW(hwnd, TCM_SETITEMW, index, &item as *const TabItem as isize);
+        SendMessageW(hwnd, WM_SETFONT, parameter as usize, 1);
     }
+    1
+}
+
+fn refresh_fonts(hwnd: Hwnd, state: &UiState) {
+    unsafe {
+        EnumChildWindows(hwnd, font_child_proc, ui_font() as usize as Lparam);
+        SendMessageW(
+            state.controls.status,
+            WM_SETFONT,
+            semibold_font() as usize,
+            1,
+        );
+        SendMessageW(
+            state.controls.statistics,
+            WM_SETFONT,
+            small_font() as usize,
+            1,
+        );
+        SendMessageW(state.controls.activity, WM_SETFONT, ui_font() as usize, 1);
+        SendMessageW(state.advanced_hint, WM_SETFONT, small_font() as usize, 1);
+    }
+}
+
+fn rescale_ui(hwnd: Hwnd, state: &mut UiState) {
+    if let Some(registry) = CONTROL_RECTS.get() {
+        if let Ok(registry) = registry.lock() {
+            for (handle, x, y, width, height) in registry.iter() {
+                unsafe {
+                    MoveWindow(
+                        *handle as Hwnd,
+                        scale(*x),
+                        scale(*y),
+                        scale(*width),
+                        scale(*height),
+                        1,
+                    );
+                }
+            }
+        }
+    }
+    refresh_fonts(hwnd, state);
+    layout(hwnd, state);
+}
+
+unsafe extern "system" fn theme_child_proc(hwnd: Hwnd, _parameter: Lparam) -> i32 {
+    uxtheme_allow_dark(hwnd, dark_theme());
+    let class = window_class(hwnd);
+    if class == "Edit" || class == "ComboBox" || class == "DVD_AUDIO_PAGE_RUST" {
+        let dark_name = wide("DarkMode_Explorer");
+        unsafe {
+            SetWindowTheme(
+                hwnd,
+                if dark_theme() {
+                    dark_name.as_ptr()
+                } else {
+                    ptr::null()
+                },
+                ptr::null(),
+            );
+        }
+    }
+    1
+}
+
+fn apply_theme(hwnd: Hwnd, state: &mut UiState, dark: bool) {
+    DARK_THEME.store(dark, Ordering::Relaxed);
+    uxtheme_preferred_app_mode(dark);
+    unsafe {
+        let dark_flag: u32 = if dark { 1 } else { 0 };
+        DwmSetWindowAttribute(
+            hwnd,
+            20,
+            &dark_flag as *const u32 as *const c_void,
+            std::mem::size_of::<u32>() as u32,
+        );
+        DwmSetWindowAttribute(
+            hwnd,
+            19,
+            &dark_flag as *const u32 as *const c_void,
+            std::mem::size_of::<u32>() as u32,
+        );
+        EnumChildWindows(hwnd, theme_child_proc, 0);
+        let empty = wide("");
+        SetWindowTheme(state.controls.progress, empty.as_ptr(), empty.as_ptr());
+        SendMessageW(
+            state.controls.progress,
+            PBM_SETBKCOLOR,
+            0,
+            c_bar_track() as isize,
+        );
+        SendMessageW(
+            state.controls.progress,
+            PBM_SETBARCOLOR,
+            0,
+            c_accent() as isize,
+        );
+        if !state.tooltip_window.is_null() {
+            let dark_name = wide("DarkMode_Explorer");
+            SetWindowTheme(
+                state.tooltip_window,
+                if dark { dark_name.as_ptr() } else { ptr::null() },
+                ptr::null(),
+            );
+        }
+        RedrawWindow(
+            hwnd,
+            ptr::null(),
+            ptr::null_mut(),
+            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+        );
+    }
+}
+
+fn toggle_theme(hwnd: Hwnd, state: &mut UiState) {
+    let next = !dark_theme();
+    // A manual choice overrides the system only for this session.
+    state.theme_override = Some(next);
+    apply_theme(hwnd, state, next);
 }
 
 fn layout(hwnd: Hwnd, state: &mut UiState) {
@@ -2731,35 +4938,95 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     unsafe {
         GetClientRect(hwnd, &mut rect);
     }
-    let width = (rect.right - rect.left).max(1000);
-    let height = (rect.bottom - rect.top).max(510);
-    let tab_height = state
-        .splitter_height
-        .unwrap_or((height - 380).clamp(160, 350))
-        .clamp(160, (height - 330).max(160));
-    state.splitter_position = 70 + tab_height;
-    let delta = tab_height - 350;
+    let width = unscale(rect.right - rect.left).max(900);
+    let height = unscale(rect.bottom - rect.top).max(500);
     let margin = 18;
     let bottom = height - 14;
+    let toolbar_y = HEADER_HEIGHT + 14;
+    let tabs_y = toolbar_y + 42;
+    let tab_height = state
+        .splitter_height
+        .unwrap_or((height - 440).clamp(190, 350))
+        .clamp(190, (height - 380).max(190));
+    let splitter = tabs_y + tab_height;
+    let page_y = tabs_y + 44;
+    let log_top = splitter + 104;
+    let actions_top = bottom - 34;
+    let language_width = 104;
+    // Profile actions follow their translated label so Japanese and English
+    // never clip the text.
+    let mut header_widths = [92i32; 3];
+    for (handle, key) in &state.buttons {
+        let index = match *key {
+            "open" => 0,
+            "save" => 1,
+            "save_as" => 2,
+            _ => continue,
+        };
+        let text = get_text(*handle);
+        header_widths[index] =
+            (unscale(measured_text_width(hwnd, &text, ui_font())) + 30).clamp(92, 240);
+    }
+    let mut header_x = [0i32; 3];
+    let mut right = width - margin;
+    for index in (0..3).rev() {
+        header_x[index] = right - header_widths[index];
+        right = header_x[index] - 8;
+    }
+    state.splitter_position = scale(splitter);
+    let caption_width = 40;
+    let caption_gap = 2;
+    let close_x = width - margin - caption_width;
+    let maximize_x = close_x - caption_gap - caption_width;
+    let minimize_x = maximize_x - caption_gap - caption_width;
+    let theme_x = minimize_x - caption_gap - caption_width;
+    let language_x = theme_x - 8 - language_width;
     unsafe {
-        MoveWindow(state.controls.profile, 162, 11, width - 770, 26, 1);
-        MoveWindow(state.controls.language, width - 125, 10, 105, 120, 1);
+        place(
+            state.controls.profile,
+            112,
+            toolbar_y,
+            (header_x[0] - 12 - 112).max(120),
+            26,
+        );
+        place(
+            state.controls.language,
+            language_x,
+            (HEADER_HEIGHT - 28) / 2,
+            language_width,
+            120,
+        );
+        for (index, button) in [
+            (minimize_x, state.caption_minimize),
+            (maximize_x, state.caption_maximize),
+            (close_x, state.caption_close),
+            (theme_x, state.theme_button),
+        ] {
+            place(button, index, (HEADER_HEIGHT - 30) / 2, caption_width, 30);
+            InvalidateRect(button, ptr::null(), 0);
+        }
         for (handle, key) in &state.buttons {
             match *key {
                 "open" => {
-                    MoveWindow(*handle, width - 595, 10, 150, 28, 1);
+                    place(*handle, header_x[0], toolbar_y, header_widths[0], 28);
                 }
                 "save" => {
-                    MoveWindow(*handle, width - 440, 10, 150, 28, 1);
+                    place(*handle, header_x[1], toolbar_y, header_widths[1], 28);
                 }
                 "save_as" => {
-                    MoveWindow(*handle, width - 285, 10, 150, 28, 1);
+                    place(*handle, header_x[2], toolbar_y, header_widths[2], 28);
                 }
                 "copy" => {
-                    MoveWindow(*handle, width - 350, 508 + delta, 150, 28, 1);
+                    place(
+                        *handle,
+                        width - margin - 148 - 8 - 130,
+                        splitter + 68,
+                        130,
+                        28,
+                    );
                 }
                 "export" => {
-                    MoveWindow(*handle, width - 190, 508 + delta, 170, 28, 1);
+                    place(*handle, width - margin - 148, splitter + 68, 148, 28);
                 }
                 _ => {}
             }
@@ -2767,91 +5034,123 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         for (handle, key) in &state.labels {
             match *key {
                 "profile" => {
-                    MoveWindow(*handle, 18, 14, 140, 22, 1);
+                    place(*handle, margin, toolbar_y + 4, 88, 20);
                 }
                 "language" => {
                     ShowWindow(*handle, SW_HIDE);
                 }
-                "app_subtitle" => {
-                    MoveWindow(*handle, 18, 42, 410, 20, 1);
-                }
                 "operation_section" => {
-                    MoveWindow(*handle, margin, 426 + delta, 220, 18, 1);
+                    place(*handle, margin, splitter + 12, 120, 18);
                 }
                 "log_section" => {
-                    MoveWindow(*handle, margin, 488 + delta, 220, 18, 1);
+                    place(*handle, margin, splitter + 72, 124, 18);
                 }
                 _ => {}
             }
         }
-        MoveWindow(state.controls.advanced, 438, 42, 210, 22, 1);
-        MoveWindow(state.controls.profile_origin, 660, 42, width - 680, 20, 1);
-        MoveWindow(
-            state.controls.statistics,
-            820,
-            bottom - 29,
-            width - 840,
-            27,
-            1,
+        place(
+            state.controls.advanced,
+            width - margin - 156,
+            tabs_y + 8,
+            156,
+            22,
         );
-        MoveWindow(
-            state.controls.tabs,
-            margin,
-            70,
-            width - margin * 2,
-            tab_height,
-            1,
-        );
-        for page in &state.pages {
-            MoveWindow(
-                *page,
-                margin + 4,
-                101,
-                width - margin * 2 - 8,
-                tab_height - 35,
-                1,
+        ShowWindow(state.controls.profile_origin, SW_HIDE);
+        for (index, tab) in state.tabs.iter().enumerate() {
+            place(
+                *tab,
+                margin + index as i32 * 138,
+                tabs_y,
+                132,
+                34,
             );
         }
-        MoveWindow(state.controls.status, margin, 448 + delta, 300, 24, 1);
-        MoveWindow(
-            state.controls.activity,
-            330,
-            448 + delta,
-            width - 350,
-            24,
-            1,
+        for page in &state.pages {
+            place(
+                *page,
+                margin,
+                page_y,
+                width - margin * 2 - 18,
+                tab_height - 44,
+            );
+        }
+        place(
+            state.page_scrollbar,
+            width - margin - 12,
+            page_y + 2,
+            10,
+            (tab_height - 44 - 4).max(20),
         );
-        MoveWindow(
+        place(state.controls.status, margin, splitter + 30, 320, 24);
+        place(
+            state.controls.activity,
+            344,
+            splitter + 30,
+            width - 362,
+            24,
+        );
+        place(
             state.controls.progress,
             margin,
-            476 + delta,
+            splitter + 62,
             width - margin * 2,
-            8,
-            1,
+            7,
         );
-        MoveWindow(state.controls.log_view, margin, 508 + delta, 140, 120, 1);
-        MoveWindow(state.controls.only_issues, 170, 508 + delta, 150, 24, 1);
-        MoveWindow(state.controls.live, 330, 508 + delta, 150, 24, 1);
-        MoveWindow(
+        place(
+            state.controls.log_view,
+            margin + 128,
+            splitter + 70,
+            132,
+            120,
+        );
+        place(
+            state.controls.only_issues,
+            margin + 276,
+            splitter + 72,
+            130,
+            22,
+        );
+        place(
+            state.controls.live,
+            margin + 414,
+            splitter + 72,
+            130,
+            22,
+        );
+        let log_height = (actions_top - 12 - log_top).max(60);
+        place(
             state.controls.log,
             margin,
-            540 + delta,
-            width - margin * 2,
-            (height - 618 - delta).max(80),
-            1,
+            log_top,
+            width - margin * 2 - 18,
+            log_height,
         );
-        MoveWindow(state.controls.prepare, margin, bottom - 34, 1, 1, 0);
-        MoveWindow(state.controls.build, margin, bottom - 34, 145, 34, 1);
-        MoveWindow(state.controls.verify, margin + 157, bottom - 34, 1, 1, 0);
-        MoveWindow(state.controls.cancel, margin + 157, bottom - 34, 145, 34, 1);
-        MoveWindow(
+        place(
+            state.log_scrollbar,
+            width - margin - 12,
+            log_top + 2,
+            10,
+            (log_height - 4).max(20),
+        );
+        place(state.controls.prepare, margin, actions_top, 1, 1);
+        place(state.controls.build, margin, actions_top, 140, 34);
+        place(state.controls.verify, margin + 148, actions_top, 1, 1);
+        place(state.controls.cancel, margin + 148, actions_top, 120, 34);
+        place(
             state.controls.open_output,
-            margin + 314,
-            bottom - 34,
-            145,
+            margin + 276,
+            actions_top,
+            120,
             34,
-            1,
         );
+        place(
+            state.controls.statistics,
+            width - margin - 360,
+            actions_top + 6,
+            360,
+            24,
+        );
+        sync_combo_overlays();
         RedrawWindow(
             hwnd,
             ptr::null(),
@@ -2861,47 +5160,682 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     }
 }
 
-unsafe fn draw_stop_button(item: &DrawItemStruct) {
-    // Owner-drawing keeps the stop action visually distinct even when the
-    // Windows theme ignores WM_CTLCOLORBTN for regular buttons.
-    let color = if item.state & ODS_DISABLED != 0 {
-        0x00808080
-    } else if item.state & ODS_SELECTED != 0 {
-        0x001818a8
-    } else {
-        0x002828c6
-    };
-    let brush = unsafe { CreateSolidBrush(color) };
-    if brush.is_null() {
+fn color16(value: u32) -> u16 {
+    (value.min(255) * 257) as u16
+}
+fn rgb_components(color: u32) -> (u32, u32, u32) {
+    (color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff)
+}
+
+unsafe fn draw_text_run(
+    text: &str,
+    dc: Handle,
+    rect: &mut Rect,
+    font: Handle,
+    color: u32,
+    format: u32,
+) {
+    let text = wide(text);
+    unsafe {
+        let old = SelectObject(dc, font);
+        SetBkMode(dc, 1);
+        SetTextColor(dc, color);
+        DrawTextW(
+            dc,
+            text.as_ptr(),
+            (text.len() - 1) as i32,
+            rect,
+            format,
+        );
+        SelectObject(dc, old);
+    }
+}
+
+unsafe fn fill_round_rect(dc: Handle, rect: &Rect, radius: i32, fill: u32, border: u32) {
+    let outer = unsafe { CreateSolidBrush(border) };
+    if outer.is_null() {
+        return;
+    }
+    let inner = unsafe { CreateSolidBrush(fill) };
+    if inner.is_null() {
+        unsafe { DeleteObject(outer) };
         return;
     }
     unsafe {
-        FillRect(item.dc, &item.rect, brush);
-        DeleteObject(brush as Handle);
-        SetBkMode(item.dc, 1);
-        SetTextColor(
-            item.dc,
-            if item.state & ODS_DISABLED != 0 {
-                0x00d0d0d0
-            } else {
-                0x00ffffff
-            },
+        let old_pen = SelectObject(dc, GetStockObject(8));
+        let old_brush = SelectObject(dc, outer);
+        RoundRect(
+            dc,
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom,
+            radius * 2,
+            radius * 2,
         );
-        let length = GetWindowTextLengthW(item.item).max(0) as usize;
-        let mut text = vec![0u16; length + 1];
-        let count = GetWindowTextW(item.item, text.as_mut_ptr(), text.len() as i32);
-        let mut rect = item.rect;
-        DrawTextW(
+        SelectObject(dc, inner);
+        let inset = radius.saturating_sub(1) * 2;
+        RoundRect(
+            dc,
+            rect.left + 1,
+            rect.top + 1,
+            rect.right - 1,
+            rect.bottom - 1,
+            inset,
+            inset,
+        );
+        SelectObject(dc, old_brush);
+        SelectObject(dc, old_pen);
+        DeleteObject(outer);
+        DeleteObject(inner);
+    }
+}
+
+unsafe fn draw_secondary_button(item: &DrawItemStruct) {
+    let disabled = item.state & ODS_DISABLED != 0;
+    let pressed = item.state & ODS_SELECTED != 0;
+    let hover = !disabled && button_hovered(item.item);
+    let (fill, border, text) = if disabled {
+        (c_disabled_fill(), c_border_soft(), c_disabled_text())
+    } else if pressed {
+        (c_secondary_pressed(), c_border(), c_ink())
+    } else if hover {
+        (c_secondary_hover(), c_border(), c_ink())
+    } else {
+        (c_card(), c_border(), c_ink())
+    };
+    unsafe {
+        fill_round_rect(item.dc, &item.rect, scale(6), fill, border);
+        let label = get_text(item.item);
+        let mut text_rect = item.rect;
+        draw_text_run(
+            &label,
             item.dc,
-            text.as_ptr(),
-            count,
+            &mut text_rect,
+            ui_font(),
+            text,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        if item.state & ODS_FOCUS != 0 {
+            let inset = scale(4);
+            let focus = Rect {
+                left: item.rect.left + inset,
+                top: item.rect.top + inset,
+                right: item.rect.right - inset,
+                bottom: item.rect.bottom - inset,
+            };
+            DrawFocusRect(item.dc, &focus);
+        }
+    }
+}
+
+unsafe fn draw_action_button(item: &DrawItemStruct, primary: bool) {
+    let disabled = item.state & ODS_DISABLED != 0;
+    let pressed = item.state & ODS_SELECTED != 0;
+    let hover = button_hovered(item.item);
+    let (fill, border, text) = if primary {
+        if disabled {
+            (c_disabled_fill(), c_disabled_fill(), c_disabled_text())
+        } else if pressed {
+            (c_accent_pressed(), c_accent_pressed(), c_header_top())
+        } else if hover {
+            (c_accent_hover(), c_accent_hover(), c_header_top())
+        } else {
+            (c_accent(), c_accent(), c_header_top())
+        }
+    } else if disabled {
+        (c_disabled_fill(), c_border_soft(), c_disabled_text())
+    } else if pressed {
+        (c_danger_pressed(), c_danger_border(), c_danger())
+    } else if hover {
+        (c_danger_hover(), c_danger_border(), c_danger())
+    } else {
+        (c_card(), c_danger_border(), c_danger())
+    };
+    unsafe {
+        fill_round_rect(item.dc, &item.rect, scale(8), fill, border);
+        let label = get_text(item.item);
+        let mut text_rect = item.rect;
+        draw_text_run(
+            &label,
+            item.dc,
+            &mut text_rect,
+            if primary {
+                semibold_font()
+            } else {
+                ui_font()
+            },
+            text,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        if item.state & ODS_FOCUS != 0 {
+            let inset = scale(4);
+            let focus = Rect {
+                left: item.rect.left + inset,
+                top: item.rect.top + inset,
+                right: item.rect.right - inset,
+                bottom: item.rect.bottom - inset,
+            };
+            DrawFocusRect(item.dc, &focus);
+        }
+    }
+}
+
+unsafe fn draw_tab_button(item: &DrawItemStruct, active: bool) {
+    let disabled = item.state & ODS_DISABLED != 0;
+    let hover = !disabled && button_hovered(item.item);
+    unsafe {
+        FillRect(item.dc, &item.rect, body_brush());
+        if active && !disabled {
+            let underline = Rect {
+                left: item.rect.left + scale(10),
+                top: item.rect.bottom - scale(3),
+                right: item.rect.right - scale(10),
+                bottom: item.rect.bottom,
+            };
+            FillRect(item.dc, &underline, brush(c_accent()));
+        } else if hover {
+            let underline = Rect {
+                left: item.rect.left + scale(24),
+                top: item.rect.bottom - scale(2),
+                right: item.rect.right - scale(24),
+                bottom: item.rect.bottom - scale(1),
+            };
+            FillRect(item.dc, &underline, border_brush());
+        }
+        let label = get_text(item.item);
+        let mut text_rect = Rect {
+            left: item.rect.left,
+            top: item.rect.top - scale(2),
+            right: item.rect.right,
+            bottom: item.rect.bottom - scale(6),
+        };
+        draw_text_run(
+            &label,
+            item.dc,
+            &mut text_rect,
+            if active {
+                semibold_font()
+            } else {
+                ui_font()
+            },
+            if disabled {
+                c_disabled_text()
+            } else if active || hover {
+                c_ink()
+            } else {
+                c_muted()
+            },
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        if item.state & ODS_FOCUS != 0 && !disabled {
+            let focus = Rect {
+                left: item.rect.left + scale(4),
+                top: item.rect.top + scale(4),
+                right: item.rect.right - scale(4),
+                bottom: item.rect.bottom - scale(6),
+            };
+            DrawFocusRect(item.dc, &focus);
+        }
+    }
+}
+
+fn header_gradient_at(y: i32) -> u32 {
+    let height = header_height().max(1);
+    let ratio = y.clamp(0, height) as f64 / height as f64;
+    let (top_r, top_g, top_b) = rgb_components(c_header_top());
+    let (bottom_r, bottom_g, bottom_b) = rgb_components(c_header_bottom());
+    let mix = |top: u32, bottom: u32| -> u32 {
+        (top as f64 + (bottom as f64 - top as f64) * ratio) as u32
+    };
+    rgb(mix(top_r, bottom_r), mix(top_g, bottom_g), mix(top_b, bottom_b))
+}
+
+fn lighten(color: u32, amount: i32) -> u32 {
+    let (red, green, blue) = rgb_components(color);
+    let adjust = |value: u32| (value as i32 + amount).clamp(0, 255) as u32;
+    rgb(adjust(red), adjust(green), adjust(blue))
+}
+
+unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
+    let hover = button_hovered(item.item);
+    let center_y = (item.rect.top + item.rect.bottom) / 2;
+    let base = header_gradient_at(center_y);
+    let fill = if hover {
+        if kind == 2 {
+            rgb(196, 43, 28)
+        } else {
+            lighten(base, 18)
+        }
+    } else {
+        base
+    };
+    let glyph = if kind == 2 && hover {
+        rgb(255, 255, 255)
+    } else {
+        c_header_title()
+    };
+    unsafe {
+        FillRect(item.dc, &item.rect, brush(fill));
+        let pen = CreatePen(0, scale(1).max(1), glyph);
+        if pen.is_null() {
+            return;
+        }
+        let old_pen = SelectObject(item.dc, pen);
+        let center_x = (item.rect.left + item.rect.right) / 2;
+        let unit = scale(6);
+        match kind {
+            0 => {
+                MoveToEx(item.dc, center_x - unit, center_y, ptr::null_mut());
+                LineTo(item.dc, center_x + unit, center_y);
+            }
+            1 => {
+                let rect = if IsZoomed(GetParent(item.item)) != 0 {
+                    Rect {
+                        left: center_x - unit + scale(2),
+                        top: center_y - unit,
+                        right: center_x + unit - scale(1),
+                        bottom: center_y + unit - scale(3),
+                    }
+                } else {
+                    Rect {
+                        left: center_x - unit,
+                        top: center_y - unit,
+                        right: center_x + unit,
+                        bottom: center_y + unit,
+                    }
+                };
+                stroke_rect(item.dc, &rect);
+                if IsZoomed(GetParent(item.item)) != 0 {
+                    let back = Rect {
+                        left: center_x - unit,
+                        top: center_y - unit + scale(3),
+                        right: center_x + unit - scale(3),
+                        bottom: center_y + unit,
+                    };
+                    stroke_rect(item.dc, &back);
+                }
+            }
+            2 => {
+                MoveToEx(
+                    item.dc,
+                    center_x - unit,
+                    center_y - unit,
+                    ptr::null_mut(),
+                );
+                LineTo(item.dc, center_x + unit, center_y + unit);
+                MoveToEx(
+                    item.dc,
+                    center_x + unit,
+                    center_y - unit,
+                    ptr::null_mut(),
+                );
+                LineTo(item.dc, center_x - unit, center_y + unit);
+            }
+            _ => {
+                let radius = unit - scale(1);
+                if dark_theme() {
+                    // Sun: filled circle plus rays (switch back to light).
+                    let old_brush = SelectObject(item.dc, brush(glyph));
+                    Ellipse(
+                        item.dc,
+                        center_x - radius,
+                        center_y - radius,
+                        center_x + radius,
+                        center_y + radius,
+                    );
+                    SelectObject(item.dc, old_brush);
+                    for index in 0..8 {
+                        let angle = index as f64 * std::f64::consts::PI / 4.0;
+                        let inner = radius as f64 + scale(3) as f64;
+                        let outer = radius as f64 + scale(5) as f64;
+                        MoveToEx(
+                            item.dc,
+                            center_x + (angle.cos() * inner) as i32,
+                            center_y + (angle.sin() * inner) as i32,
+                            ptr::null_mut(),
+                        );
+                        LineTo(
+                            item.dc,
+                            center_x + (angle.cos() * outer) as i32,
+                            center_y + (angle.sin() * outer) as i32,
+                        );
+                    }
+                } else {
+                    // Moon: filled circle carved by an offset background circle.
+                    let old_brush = SelectObject(item.dc, brush(glyph));
+                    Ellipse(
+                        item.dc,
+                        center_x - radius,
+                        center_y - radius,
+                        center_x + radius,
+                        center_y + radius,
+                    );
+                    SelectObject(item.dc, brush(fill));
+                    Ellipse(
+                        item.dc,
+                        center_x - radius + scale(4),
+                        center_y - radius - scale(2),
+                        center_x + radius + scale(4),
+                        center_y + radius - scale(2),
+                    );
+                    SelectObject(item.dc, old_brush);
+                }
+            }
+        }
+        SelectObject(item.dc, old_pen);
+        DeleteObject(pen);
+    }
+}
+
+unsafe fn stroke_rect(dc: Handle, rect: &Rect) {
+    unsafe {
+        MoveToEx(dc, rect.left, rect.top, ptr::null_mut());
+        LineTo(dc, rect.right, rect.top);
+        LineTo(dc, rect.right, rect.bottom);
+        LineTo(dc, rect.left, rect.bottom);
+        LineTo(dc, rect.left, rect.top);
+    }
+}
+
+unsafe fn combo_item_text(hwnd: Hwnd, index: i32) -> String {
+    if index < 0 {
+        return String::new();
+    }
+    let length = unsafe { SendMessageW(hwnd, CB_GETLBTEXTLEN, index as usize, 0) };
+    if length < 0 {
+        return String::new();
+    }
+    let mut buffer = vec![0u16; length as usize + 1];
+    let count = unsafe {
+        SendMessageW(
+            hwnd,
+            CB_GETLBTEXT,
+            index as usize,
+            buffer.as_mut_ptr() as isize,
+        )
+    };
+    if count < 0 {
+        String::new()
+    } else {
+        String::from_utf16_lossy(&buffer[..count as usize])
+    }
+}
+
+unsafe fn draw_combo_item(item: &DrawItemStruct) {
+    let selected = item.item_id == u32::MAX;
+    let highlighted = item.state & ODS_SELECTED != 0;
+    let disabled = item.state & ODS_DISABLED != 0;
+    let index = if selected {
+        unsafe { SendMessageW(item.item, CB_GETCURSEL, 0, 0) as i32 }
+    } else {
+        item.item_id as i32
+    };
+    let text = unsafe { combo_item_text(item.item, index) };
+    let background = if highlighted && !selected {
+        c_accent_soft()
+    } else {
+        c_card()
+    };
+    unsafe {
+        FillRect(item.dc, &item.rect, brush(background));
+        let mut rect = item.rect;
+        rect.left += scale(8);
+        rect.right -= scale(4);
+        draw_text_run(
+            &text,
+            item.dc,
             &mut rect,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            ui_font(),
+            if disabled {
+                c_disabled_text()
+            } else {
+                c_ink()
+            },
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS,
         );
     }
 }
 
+unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
+    let id = item.control_id as usize;
+    if COMBO_IDS.contains(&id) {
+        unsafe { draw_combo_item(item) };
+        return true;
+    }
+    if (ID_MINIMIZE..=ID_THEME).contains(&id) {
+        unsafe { draw_caption_button(item, (id - ID_MINIMIZE) as u8) };
+        return true;
+    }
+    if id == ID_BUILD {
+        unsafe { draw_action_button(item, true) };
+        return true;
+    }
+    if id == ID_CANCEL {
+        unsafe { draw_action_button(item, false) };
+        return true;
+    }
+    if (ID_TAB..ID_TAB + 4).contains(&id) {
+        let active = unsafe { state(hwnd) }
+            .map(|state| state.tab_index == id - ID_TAB)
+            .unwrap_or(false);
+        unsafe { draw_tab_button(item, active) };
+        return true;
+    }
+    unsafe { draw_secondary_button(item) };
+    true
+}
+
+unsafe fn erase_window_background(hwnd: Hwnd, dc: Handle) {
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(hwnd, &mut rect);
+        let header = Rect {
+            left: 0,
+            top: 0,
+            right: rect.right,
+            bottom: header_height(),
+        };
+        FillRect(dc, &header, brush(c_header_top()));
+        let body = Rect {
+            left: 0,
+            top: header_height(),
+            right: rect.right,
+            bottom: rect.bottom,
+        };
+        FillRect(dc, &body, body_brush());
+    }
+}
+
+unsafe fn paint_window(hwnd: Hwnd) {
+    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(hwnd, &mut rect);
+        let width = rect.right;
+        let header = header_height();
+        let (top_r, top_g, top_b) = rgb_components(c_header_top());
+        let (bottom_r, bottom_g, bottom_b) = rgb_components(c_header_bottom());
+        let mut vertices = [
+            TriVertex {
+                x: 0,
+                y: 0,
+                red: color16(top_r),
+                green: color16(top_g),
+                blue: color16(top_b),
+                alpha: 0xff00,
+            },
+            TriVertex {
+                x: width,
+                y: header,
+                red: color16(bottom_r),
+                green: color16(bottom_g),
+                blue: color16(bottom_b),
+                alpha: 0xff00,
+            },
+        ];
+        let mesh = [GradientRect {
+            upper_left: 0,
+            lower_right: 1,
+        }];
+        let gradient = GradientFill(dc, vertices.as_mut_ptr(), 2, mesh.as_ptr(), 1, 1);
+        if gradient == 0 {
+            let header_rect = Rect {
+                left: 0,
+                top: 0,
+                right: width,
+                bottom: header,
+            };
+            FillRect(dc, &header_rect, brush(c_header_top()));
+        }
+        let accent = Rect {
+            left: 0,
+            top: header - scale(2),
+            right: width,
+            bottom: header,
+        };
+        FillRect(dc, &accent, brush(c_accent()));
+        let icon_size = scale(40);
+        DrawIconEx(
+            dc,
+            scale(20),
+            (header - icon_size) / 2,
+            header_icon(),
+            icon_size,
+            icon_size,
+            0,
+            ptr::null_mut(),
+            3,
+        );
+        let mut title = Rect {
+            left: scale(72),
+            top: scale(10),
+            right: (width - scale(320)).max(scale(240)),
+            bottom: scale(40),
+        };
+        draw_text_run(
+            "DVD-Audio Maker",
+            dc,
+            &mut title,
+            title_font(),
+            c_header_title(),
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+        let lang = state(hwnd).map(|state| state.lang).unwrap_or(Lang::Zh);
+        let mut subtitle = Rect {
+            left: scale(73),
+            top: scale(38),
+            right: (width - scale(320)).max(scale(240)),
+            bottom: scale(60),
+        };
+        draw_text_run(
+            tr(lang, "app_subtitle"),
+            dc,
+            &mut subtitle,
+            subtitle_font(),
+            c_header_subtitle(),
+            DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS,
+        );
+        let splitter = state(hwnd)
+            .map(|state| state.splitter_position)
+            .unwrap_or(0);
+        if splitter > header && splitter < rect.bottom - scale(60) {
+            let divider = Rect {
+                left: scale(18),
+                top: splitter - 1,
+                right: width - scale(18),
+                bottom: splitter,
+            };
+            FillRect(dc, &divider, border_brush());
+            let center = width / 2;
+            let grip = Rect {
+                left: center - scale(22),
+                top: splitter + scale(2),
+                right: center + scale(22),
+                bottom: splitter + scale(5),
+            };
+            FillRect(dc, &grip, border_brush());
+        }
+        EndPaint(hwnd, &paint);
+    }
+}
+
+unsafe fn paint_page(hwnd: Hwnd) {
+    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetClientRect(hwnd, &mut rect);
+        FillRect(dc, &rect, panel_brush());
+        let edges = [
+            Rect {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.top + 1,
+            },
+            Rect {
+                left: rect.left,
+                top: rect.bottom - 1,
+                right: rect.right,
+                bottom: rect.bottom,
+            },
+            Rect {
+                left: rect.left,
+                top: rect.top,
+                right: rect.left + 1,
+                bottom: rect.bottom,
+            },
+            Rect {
+                left: rect.right - 1,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+            },
+        ];
+        for edge in &edges {
+            FillRect(dc, edge, border_brush());
+        }
+        EndPaint(hwnd, &paint);
+    }
+}
+
 fn handle_command(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
+    if (ID_MINIMIZE..=ID_THEME).contains(&id) && notify == BN_CLICKED {
+        match id {
+            ID_MINIMIZE => unsafe {
+                ShowWindow(hwnd, SW_MINIMIZE);
+            },
+            ID_MAXIMIZE => unsafe {
+                if IsZoomed(hwnd) != 0 {
+                    ShowWindow(hwnd, SW_RESTORE);
+                } else {
+                    ShowWindow(hwnd, SW_MAXIMIZE);
+                }
+            },
+            ID_CLOSE => unsafe {
+                SendMessageW(hwnd, WM_CLOSE, 0, 0);
+            },
+            _ => toggle_theme(hwnd, state),
+        }
+        return;
+    }
     if state.busy
         && !matches!(
             id,
@@ -2917,6 +5851,12 @@ fn handle_command(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
         return;
     }
 
+    if (ID_TAB..ID_TAB + 4).contains(&id) {
+        if notify == BN_CLICKED {
+            select_tab(state, id - ID_TAB);
+        }
+        return;
+    }
     if id == ID_LANGUAGE && notify == CBN_SELCHANGE {
         set_language(
             state,
@@ -3029,7 +5969,9 @@ fn set_language(state: &mut UiState, lang: Lang) {
         log_view,
     );
     for (index, key) in ["start", "audio", "menu", "tools"].iter().enumerate() {
-        set_tab(state.controls.tabs, index, tr(lang, key));
+        if let Some(tab) = state.tabs.get(index) {
+            set_text(*tab, tr(lang, key));
+        }
     }
     set_text(state.controls.status, tr(lang, state.status_key));
     set_text(
@@ -3039,6 +5981,8 @@ fn set_language(state: &mut UiState, lang: Lang) {
     update_choices(state);
     render_log(state);
     update_statistics(state);
+    let main_window = state.main_window;
+    layout(main_window, state);
 }
 
 fn capacity_index(bytes: i64) -> i32 {
@@ -3362,6 +6306,9 @@ fn update_advanced(state: &UiState) {
             ShowWindow(*control, if show { SW_SHOW } else { SW_HIDE });
         }
     }
+    unsafe {
+        ShowWindow(state.advanced_hint, if show { SW_HIDE } else { SW_SHOW });
+    }
 }
 fn update_statistics(state: &mut UiState) {
     let elapsed = state
@@ -3473,10 +6420,7 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
             .iter()
             .position(|p| *p == unsafe { GetParent(control) })
         {
-            unsafe {
-                SendMessageW(state.controls.tabs, 0x130c, index, 0);
-            }
-            show_page(state, index as i32);
+            select_tab(state, index);
         }
         unsafe {
             SetFocus(control);
@@ -4125,11 +7069,13 @@ fn cancel_operation(state: &mut UiState) {
 
 fn set_busy_controls(state: &UiState, busy: bool) {
     let enabled = i32::from(!busy);
-    for hwnd in state.pages.iter().copied().chain([
-        state.controls.tabs,
-        state.controls.profile,
-        state.controls.language,
-    ]) {
+    for hwnd in state
+        .pages
+        .iter()
+        .copied()
+        .chain(state.tabs.iter().copied())
+        .chain([state.controls.profile, state.controls.language])
+    {
         unsafe {
             EnableWindow(hwnd, enabled);
         }
