@@ -8781,7 +8781,9 @@ mod presentation_tests {
     fn settings_help_and_new_runtime_messages_cover_all_languages() {
         let help: HashMap<String, String> =
             serde_json::from_str(include_str!("../locales/help.json")).unwrap();
-        assert_eq!(help.len(), 28);
+        // DVDA_PREPARE_CACHE was retired together with its setting, so the
+        // help catalogue now has one entry fewer than the original baseline.
+        assert_eq!(help.len(), 27);
         for (key, original) in help {
             assert_eq!(setting_help(Lang::Zh, &key), original);
             for lang in [Lang::En, Lang::Ja] {
