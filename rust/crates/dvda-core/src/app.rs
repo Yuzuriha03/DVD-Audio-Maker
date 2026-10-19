@@ -363,6 +363,30 @@ impl AppOptions {
             &author_source,
             &self.executable_directory,
         )?;
+        let menu_font = {
+            let configured = self.text("MenuFont");
+            if configured.trim().is_empty() {
+                "Noto-Sans-CJK-SC".to_owned()
+            } else {
+                configured
+            }
+        };
+        let menu_font_japanese = {
+            let configured = self.text("MenuFontJapanese");
+            if configured.trim().is_empty() {
+                menu_font.clone()
+            } else {
+                configured
+            }
+        };
+        let menu_font_korean = {
+            let configured = self.text("MenuFontKorean");
+            if configured.trim().is_empty() {
+                menu_font.clone()
+            } else {
+                configured
+            }
+        };
         Ok(build::Job {
             resume_enabled: self.boolean("ResumeEnabled"),
             diagnostic_album_limit: self
@@ -400,9 +424,9 @@ impl AppOptions {
             menu_tracks_per_page: self.integer("MenuTracksPerPage") as i32,
             menu_index_minimum_albums: self.integer("MenuIndexMinimumAlbums") as i32,
             menu_cover_dim: self.integer("MenuCoverDim") as i32,
-            menu_font: self.text("MenuFont"),
-            menu_font_japanese: self.text("MenuFontJapanese"),
-            menu_font_korean: self.text("MenuFontKorean"),
+            menu_font,
+            menu_font_japanese,
+            menu_font_korean,
             menu_directory: self.path("MenuDirectory"),
             author_source,
             menu_binary_directory,
