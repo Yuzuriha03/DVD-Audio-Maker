@@ -199,7 +199,6 @@ const ID_FONT_SC: usize = 405;
 const ID_FONT_JP: usize = 406;
 const ID_FONT_KR: usize = 407;
 const ID_AUTHOR: usize = 500;
-const ID_AUTHOR_SRC: usize = 501;
 const ID_KEEP_TMP: usize = 502;
 const ID_KEEP_INTERMEDIATE: usize = 503;
 const ID_LOSS_WARN: usize = 504;
@@ -209,7 +208,6 @@ const ID_BROWSE_FINAL: usize = 1001;
 const ID_BROWSE_WORK: usize = 1002;
 const ID_BROWSE_METADATA: usize = 1003;
 const ID_BROWSE_AUTHOR: usize = 1004;
-const ID_BROWSE_AUTHOR_SRC: usize = 1005;
 const ID_BROWSE_IMPORT: usize = 1006;
 const COMBO_IDS: &[usize] = &[
     ID_LANGUAGE,
@@ -992,7 +990,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_kr" => "韩文菜单字体",
             "tools" => "其他设置",
             "author" => "光盘制作工具",
-            "author_src" => "菜单素材文件夹",
             "keep_tmp" => "保留临时文件",
             "keep_intermediate" => "保留制作中间文件",
             "loss_warn" => "时长差异提醒 (秒)",
@@ -1124,7 +1121,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_kr" => "Korean menu font",
             "tools" => "Other settings",
             "author" => "Disc author",
-            "author_src" => "Menu resource folder",
             "keep_tmp" => "Keep temporary files",
             "keep_intermediate" => "Keep intermediate files",
             "loss_warn" => "Duration warning (seconds)",
@@ -1262,7 +1258,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_kr" => "韓国語メニュー字体",
             "tools" => "その他の設定",
             "author" => "ディスク作成ツール",
-            "author_src" => "メニュー素材フォルダー",
             "keep_tmp" => "一時ファイルを保持",
             "keep_intermediate" => "中間ファイルを保持",
             "loss_warn" => "時間差の警告 (秒)",
@@ -1421,7 +1416,6 @@ struct Controls {
     font_jp: Hwnd,
     font_kr: Hwnd,
     author: Hwnd,
-    author_src: Hwnd,
     keep_tmp: Hwnd,
     keep_intermediate: Hwnd,
     loss_warn: Hwnd,
@@ -2389,7 +2383,6 @@ fn resize_page_fields(page: Hwnd) {
         (ID_METADATA, ID_BROWSE_METADATA, 100),
         (ID_IMPORT_FOLDER, ID_BROWSE_IMPORT, 156),
         (ID_AUTHOR, ID_BROWSE_AUTHOR, 38),
-        (ID_AUTHOR_SRC, ID_BROWSE_AUTHOR_SRC, 82),
     ] {
         let edit = unsafe { GetDlgItem(page, edit_id as i32) };
         let browse = unsafe { GetDlgItem(page, browse_id as i32) };
@@ -2657,7 +2650,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         font_jp: ptr::null_mut(),
         font_kr: ptr::null_mut(),
         author: ptr::null_mut(),
-        author_src: ptr::null_mut(),
         keep_tmp: ptr::null_mut(),
         keep_intermediate: ptr::null_mut(),
         loss_warn: ptr::null_mut(),
@@ -2987,26 +2979,13 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    c.author_src = browse_edit!(
-        page_tools,
-        tr(lang, "author_src"),
-        "author_src",
-        ID_AUTHOR_SRC,
-        ID_BROWSE_AUTHOR_SRC,
-        14,
-        62,
-        &mut labels,
-        &mut browse,
-        &mut browse_buttons,
-        lang,
-    );
     c.keep_tmp = check_field(
         page_tools,
         tr(lang, "keep_tmp"),
         "keep_tmp",
         ID_KEEP_TMP,
         14,
-        116,
+        62,
         &mut labels,
     );
     c.keep_intermediate = check_field(
@@ -3015,7 +2994,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         "keep_intermediate",
         ID_KEEP_INTERMEDIATE,
         300,
-        116,
+        62,
         &mut labels,
     );
     c.loss_warn = text_field!(
@@ -3024,7 +3003,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         "loss_warn",
         ID_LOSS_WARN,
         14,
-        164,
+        110,
         220,
         &mut labels,
     );
@@ -3034,7 +3013,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         "loss_error",
         ID_LOSS_ERROR,
         260,
-        164,
+        110,
         220,
         &mut labels,
     );
@@ -3044,7 +3023,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         "title_mode",
         ID_TITLE_MODE,
         14,
-        228,
+        174,
         460,
         &mut labels,
     );
@@ -3054,7 +3033,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         "album_limit",
         ID_ALBUM_LIMIT,
         506,
-        228,
+        174,
         460,
         &mut labels,
     );
@@ -6156,7 +6135,6 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         state.controls.mlp_stage,
         &options.text("MlpBatchOutputDirectory"),
     );
-    set_text(state.controls.author_src, &options.text("AuthorSource"));
     check(state.controls.keep_tmp, options.boolean("KeepTemporary"));
     check(
         state.controls.keep_intermediate,
@@ -6297,11 +6275,7 @@ fn overrides(state: &UiState) -> Map<String, Value> {
         "DvdaAuthor",
         json!(get_text(state.controls.author)),
     );
-    put(
-        &mut values,
-        "AuthorSource",
-        json!(get_text(state.controls.author_src)),
-    );
+
     put(
         &mut values,
         "KeepTemporary",
@@ -7439,7 +7413,6 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.font_jp, "DVDA_MENU_FONT_JP"),
         (c.font_kr, "DVDA_MENU_FONT_KR"),
         (c.author, "DVDA_AUTHOR"),
-        (c.author_src, "DVDA_AUTHOR_SRC"),
         (c.keep_tmp, "DVDA_KEEP_TMP"),
         (c.keep_intermediate, "DVDA_KEEP_INTERMEDIATE"),
     ] {
