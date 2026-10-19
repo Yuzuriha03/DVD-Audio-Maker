@@ -181,8 +181,6 @@ const ID_WORK_DIR: usize = 205;
 const ID_ISO_PREFIX: usize = 206;
 const ID_GROUP_LIMIT: usize = 207;
 const ID_CUSTOM_BYTES: usize = 210;
-const ID_TITLE_MODE: usize = 211;
-const ID_ALBUM_LIMIT: usize = 212;
 const ID_MODE: usize = 300;
 const ID_RATE: usize = 301;
 const ID_BITS: usize = 302;
@@ -191,19 +189,13 @@ const ID_MENU: usize = 400;
 const ID_STILLS: usize = 401;
 const ID_TRACKS: usize = 402;
 const ID_COVER: usize = 403;
-const ID_INDEX: usize = 404;
 const ID_FONT_SC: usize = 405;
 const ID_FONT_JP: usize = 406;
 const ID_FONT_KR: usize = 407;
-const ID_AUTHOR: usize = 500;
-const ID_KEEP_TMP: usize = 502;
-const ID_KEEP_INTERMEDIATE: usize = 503;
-const ID_LOSS_WARN: usize = 504;
-const ID_LOSS_ERROR: usize = 505;
+const ID_KEEP_FILES: usize = 506;
 const ID_BROWSE_SOURCE: usize = 1000;
 const ID_BROWSE_FINAL: usize = 1001;
 const ID_BROWSE_WORK: usize = 1002;
-const ID_BROWSE_AUTHOR: usize = 1004;
 const ID_BROWSE_IMPORT: usize = 1006;
 const COMBO_IDS: &[usize] = &[
     ID_LANGUAGE,
@@ -950,7 +942,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
         Lang::Zh => match key {
             "app_subtitle" => "把音乐制作成 DVD-Audio 光盘镜像",
             "advanced_hint" => {
-                "这些设置已经足够制作第一张光盘。需要工作文件夹、字体或标题分组规则时，请开启上方的“显示高级设置”。"
+                "这些设置已经足够制作第一张光盘。需要临时文件夹、菜单字体等高级选项时，请开启上方的“显示高级设置”。"
             }
             "profile" => "设置方案",
             "open" => "打开方案",
@@ -965,7 +957,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "成品保存位置",
             "title" => "光盘名称",
             "capacity" => "光盘容量",
-            "work_dir" => "工作文件夹",
+            "work_dir" => "临时文件夹",
             "iso_prefix" => "镜像文件名前缀",
             "group_limit" => "每组最多曲目",
             "cache" => "复用检查结果",
@@ -985,6 +977,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "author" => "光盘制作工具",
             "keep_tmp" => "保留临时文件",
             "keep_intermediate" => "保留制作中间文件",
+            "keep_files" => "保留临时/中间文件",
             "loss_warn" => "时长差异提醒 (秒)",
             "loss_error" => "时长差异上限 (秒)",
             "browse" => "浏览...",
@@ -1078,7 +1071,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
         Lang::En => match key {
             "app_subtitle" => "Create DVD-Audio disc images from your music",
             "advanced_hint" => {
-                "These settings are enough for a first disc. Turn on Advanced settings above for work folders, menu fonts or title grouping."
+                "These settings are enough for a first disc. Turn on Advanced settings above for the temporary folder, menu fonts and other options."
             }
             "profile" => "Settings profile",
             "open" => "Open profile",
@@ -1093,7 +1086,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "Output folder",
             "title" => "Disc title",
             "capacity" => "Disc capacity",
-            "work_dir" => "Work folder",
+            "work_dir" => "Temporary folder",
             "iso_prefix" => "ISO filename prefix",
             "group_limit" => "Tracks per group",
             "cache" => "Reuse source checks",
@@ -1113,6 +1106,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "author" => "Disc author",
             "keep_tmp" => "Keep temporary files",
             "keep_intermediate" => "Keep intermediate files",
+            "keep_files" => "Keep temp/intermediate files",
             "loss_warn" => "Duration warning (seconds)",
             "loss_error" => "Duration limit (seconds)",
             "browse" => "Browse...",
@@ -1212,7 +1206,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
         Lang::Ja => match key {
             "app_subtitle" => "音楽から DVD-Audio ディスクイメージを作成",
             "advanced_hint" => {
-                "最初のディスク作成にはこの設定で十分です。作業フォルダー、メニューフォント、タイトル分割は上の「詳細設定を表示」で変更できます。"
+                "最初のディスク作成にはこの設定で十分です。一時フォルダーやメニューフォントなどの詳細設定は、上の「詳細設定を表示」で変更できます。"
             }
             "profile" => "設定プロファイル",
             "open" => "プロファイルを開く",
@@ -1227,7 +1221,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "final" => "出力フォルダー",
             "title" => "ディスク名",
             "capacity" => "ディスク容量",
-            "work_dir" => "作業フォルダー",
+            "work_dir" => "一時フォルダー",
             "iso_prefix" => "ISO ファイル名の接頭辞",
             "group_limit" => "グループの曲数",
             "cache" => "検査結果を再利用",
@@ -1247,6 +1241,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "author" => "ディスク作成ツール",
             "keep_tmp" => "一時ファイルを保持",
             "keep_intermediate" => "中間ファイルを保持",
+            "keep_files" => "一時/中間ファイルを保持",
             "loss_warn" => "時間差の警告 (秒)",
             "loss_error" => "時間差の上限 (秒)",
             "browse" => "参照...",
@@ -1349,7 +1344,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
 #[derive(Clone, Copy)]
 enum BrowseKind {
     Folder,
-    File,
     Font,
 }
 
@@ -1375,8 +1369,6 @@ enum WorkerEvent {
 struct Controls {
     statistics: Hwnd,
     advanced: Hwnd,
-    title_mode: Hwnd,
-    album_limit: Hwnd,
     profile: Hwnd,
     language: Hwnd,
     source: Hwnd,
@@ -1387,6 +1379,7 @@ struct Controls {
     work_dir: Hwnd,
     iso_prefix: Hwnd,
     group_limit: Hwnd,
+    keep_files: Hwnd,
     mode: Hwnd,
     rate: Hwnd,
     bits: Hwnd,
@@ -1395,15 +1388,9 @@ struct Controls {
     stills: Hwnd,
     tracks: Hwnd,
     cover: Hwnd,
-    index: Hwnd,
     font_sc: Hwnd,
     font_jp: Hwnd,
     font_kr: Hwnd,
-    author: Hwnd,
-    keep_tmp: Hwnd,
-    keep_intermediate: Hwnd,
-    loss_warn: Hwnd,
-    loss_error: Hwnd,
     status: Hwnd,
     activity: Hwnd,
     audio_note: Hwnd,
@@ -2366,7 +2353,6 @@ fn resize_page_fields(page: Hwnd) {
         (ID_FINAL, ID_BROWSE_FINAL, 82),
         (ID_WORK_DIR, ID_BROWSE_WORK, 170),
         (ID_IMPORT_FOLDER, ID_BROWSE_IMPORT, 100),
-        (ID_AUTHOR, ID_BROWSE_AUTHOR, 38),
     ] {
         let edit = unsafe { GetDlgItem(page, edit_id as i32) };
         let browse = unsafe { GetDlgItem(page, browse_id as i32) };
@@ -2493,14 +2479,7 @@ macro_rules! browse_edit {
         $browse_buttons.push(browse_button);
         $browse.insert(
             $browse_id,
-            (
-                edit,
-                if $browse_id == ID_BROWSE_AUTHOR {
-                    BrowseKind::File
-                } else {
-                    BrowseKind::Folder
-                },
-            ),
+            (edit, BrowseKind::Folder),
         );
         edit
     }};
@@ -2591,7 +2570,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut Vec::new(),
     );
     let mut tabs = Vec::new();
-    for (index, key) in ["start", "audio", "menu", "tools"].iter().enumerate() {
+    for (index, key) in ["start", "audio", "menu"].iter().enumerate() {
         tabs.push(tab_button(
             parent,
             tr(lang, key),
@@ -2606,8 +2585,6 @@ fn create_controls(parent: Hwnd) -> UiState {
     let mut c = Controls {
         statistics: ptr::null_mut(),
         advanced: ptr::null_mut(),
-        title_mode: ptr::null_mut(),
-        album_limit: ptr::null_mut(),
         profile,
         language,
         source: ptr::null_mut(),
@@ -2618,6 +2595,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         work_dir: ptr::null_mut(),
         iso_prefix: ptr::null_mut(),
         group_limit: ptr::null_mut(),
+        keep_files: ptr::null_mut(),
         mode: ptr::null_mut(),
         rate: ptr::null_mut(),
         bits: ptr::null_mut(),
@@ -2626,15 +2604,9 @@ fn create_controls(parent: Hwnd) -> UiState {
         stills: ptr::null_mut(),
         tracks: ptr::null_mut(),
         cover: ptr::null_mut(),
-        index: ptr::null_mut(),
         font_sc: ptr::null_mut(),
         font_jp: ptr::null_mut(),
         font_kr: ptr::null_mut(),
-        author: ptr::null_mut(),
-        keep_tmp: ptr::null_mut(),
-        keep_intermediate: ptr::null_mut(),
-        loss_warn: ptr::null_mut(),
-        loss_error: ptr::null_mut(),
         status: ptr::null_mut(),
         activity: ptr::null_mut(),
         audio_note: ptr::null_mut(),
@@ -2735,7 +2707,15 @@ fn create_controls(parent: Hwnd) -> UiState {
         220,
         &mut labels,
     );
-    c.custom_bytes = text_field!(
+    c.keep_files = check_field(
+        page_start,
+        tr(lang, "keep_files"),
+        "keep_files",
+        ID_KEEP_FILES,
+        760,
+        194,
+        &mut labels,
+    );    c.custom_bytes = text_field!(
         page_start,
         tr(lang, "custom_bytes"),
         "custom_bytes",
@@ -2871,16 +2851,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         220,
         &mut labels,
     );
-    c.index = text_field!(
-        page_menu,
-        tr(lang, "index"),
-        "index",
-        ID_INDEX,
-        506,
-        66,
-        220,
-        &mut labels,
-    );
     c.font_sc = text_field!(
         page_menu,
         tr(lang, "font_sc"),
@@ -2920,79 +2890,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         browse.insert(id, (field, BrowseKind::Font));
         browse_buttons.push(handle);
     }
-    pages.push(create_page(parent));
-    let page_tools = *pages.last().unwrap();
-    c.author = browse_edit!(
-        page_tools,
-        tr(lang, "author"),
-        "author",
-        ID_AUTHOR,
-        ID_BROWSE_AUTHOR,
-        14,
-        18,
-        &mut labels,
-        &mut browse,
-        &mut browse_buttons,
-        lang,
-    );
-    c.keep_tmp = check_field(
-        page_tools,
-        tr(lang, "keep_tmp"),
-        "keep_tmp",
-        ID_KEEP_TMP,
-        14,
-        62,
-        &mut labels,
-    );
-    c.keep_intermediate = check_field(
-        page_tools,
-        tr(lang, "keep_intermediate"),
-        "keep_intermediate",
-        ID_KEEP_INTERMEDIATE,
-        300,
-        62,
-        &mut labels,
-    );
-    c.loss_warn = text_field!(
-        page_tools,
-        tr(lang, "loss_warn"),
-        "loss_warn",
-        ID_LOSS_WARN,
-        14,
-        110,
-        220,
-        &mut labels,
-    );
-    c.loss_error = text_field!(
-        page_tools,
-        tr(lang, "loss_error"),
-        "loss_error",
-        ID_LOSS_ERROR,
-        260,
-        110,
-        220,
-        &mut labels,
-    );
-    c.title_mode = text_field!(
-        page_tools,
-        tr(lang, "title_mode"),
-        "title_mode",
-        ID_TITLE_MODE,
-        14,
-        174,
-        460,
-        &mut labels,
-    );
-    c.album_limit = text_field!(
-        page_tools,
-        tr(lang, "album_limit"),
-        "album_limit",
-        ID_ALBUM_LIMIT,
-        506,
-        174,
-        460,
-        &mut labels,
-    );
     let _operation_section = label!(
         parent,
         tr(lang, "operation_section"),
@@ -3158,31 +3055,19 @@ fn create_controls(parent: Hwnd) -> UiState {
         c.work_dir,
         c.iso_prefix,
         c.group_limit,
-        c.index,
+        c.keep_files,
         c.font_sc,
         c.font_jp,
         c.font_kr,
-        c.keep_tmp,
-        c.keep_intermediate,
-        c.loss_warn,
-        c.loss_error,
-        c.title_mode,
-        c.album_limit,
     ];
     let advanced_keys = [
         "work_dir",
         "iso_prefix",
         "group_limit",
-        "index",
+        "keep_files",
         "font_sc",
         "font_jp",
         "font_kr",
-        "keep_tmp",
-        "keep_intermediate",
-        "loss_warn",
-        "loss_error",
-        "title_mode",
-        "album_limit",
     ];
     advanced_controls.extend(
         labels
@@ -5519,7 +5404,7 @@ unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
         unsafe { draw_action_button(item, false) };
         return true;
     }
-    if (ID_TAB..ID_TAB + 4).contains(&id) {
+    if (ID_TAB..ID_TAB + 3).contains(&id) {
         let active = unsafe { state(hwnd) }
             .map(|state| state.tab_index == id - ID_TAB)
             .unwrap_or(false);
@@ -5807,7 +5692,7 @@ fn handle_command(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
         return;
     }
 
-    if (ID_TAB..ID_TAB + 4).contains(&id) {
+    if (ID_TAB..ID_TAB + 3).contains(&id) {
         if notify == BN_CLICKED {
             select_tab(state, id - ID_TAB);
         }
@@ -5924,7 +5809,7 @@ fn set_language(state: &mut UiState, lang: Lang) {
         &[tr(lang, "summary"), tr(lang, "detail")],
         log_view,
     );
-    for (index, key) in ["start", "audio", "menu", "tools"].iter().enumerate() {
+    for (index, key) in ["start", "audio", "menu"].iter().enumerate() {
         if let Some(tab) = state.tabs.get(index) {
             set_text(*tab, tr(lang, key));
         }
@@ -6060,40 +5945,17 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         state.controls.cover,
         &options.integer("MenuCoverDim").to_string(),
     );
-    set_text(
-        state.controls.index,
-        &options.integer("MenuIndexMinimumAlbums").to_string(),
-    );
+
     set_text(state.controls.font_sc, &options.text("MenuFont"));
     set_text(state.controls.font_jp, &options.text("MenuFontJapanese"));
     set_text(state.controls.font_kr, &options.text("MenuFontKorean"));
-    set_text(state.controls.author, &options.text("DvdaAuthor"));
-    set_text(
-        state.controls.title_mode,
-        &options.text("DiagnosticTitleMode"),
-    );
-    set_text(
-        state.controls.album_limit,
-        &options
-            .value("DiagnosticAlbumLimit")
-            .as_i64()
-            .unwrap_or(0)
-            .to_string(),
+
+
+    check(
+        state.controls.keep_files,
+        options.boolean("KeepTemporary") || options.boolean("KeepIntermediate"),
     );
 
-    check(state.controls.keep_tmp, options.boolean("KeepTemporary"));
-    check(
-        state.controls.keep_intermediate,
-        options.boolean("KeepIntermediate"),
-    );
-    set_text(
-        state.controls.loss_warn,
-        &f64::from_bits(options.integer("LossWarningSeconds") as u64).to_string(),
-    );
-    set_text(
-        state.controls.loss_error,
-        &f64::from_bits(options.integer("LossErrorSeconds") as u64).to_string(),
-    );
     update_choices(state);
 }
 
@@ -6192,11 +6054,7 @@ fn overrides(state: &UiState) -> Map<String, Value> {
         "MenuCoverDim",
         json!(parse_i64(state.controls.cover, 35)),
     );
-    put(
-        &mut values,
-        "MenuIndexMinimumAlbums",
-        json!(parse_i64(state.controls.index, 4)),
-    );
+
     put(
         &mut values,
         "MenuFont",
@@ -6212,32 +6070,10 @@ fn overrides(state: &UiState) -> Map<String, Value> {
         "MenuFontKorean",
         json!(get_text(state.controls.font_kr)),
     );
-    put(
-        &mut values,
-        "DvdaAuthor",
-        json!(get_text(state.controls.author)),
-    );
 
-    put(
-        &mut values,
-        "KeepTemporary",
-        json!(checked(state.controls.keep_tmp)),
-    );
-    put(
-        &mut values,
-        "KeepIntermediate",
-        json!(checked(state.controls.keep_intermediate)),
-    );
-    put(
-        &mut values,
-        "LossWarningSeconds",
-        json!(f64::to_bits(parse_f64(state.controls.loss_warn, 0.005)) as i64),
-    );
-    put(
-        &mut values,
-        "LossErrorSeconds",
-        json!(f64::to_bits(parse_f64(state.controls.loss_error, 0.05)) as i64),
-    );
+    let keep_files = checked(state.controls.keep_files);
+    put(&mut values, "KeepTemporary", json!(keep_files));
+    put(&mut values, "KeepIntermediate", json!(keep_files));
     values
 }
 
@@ -6286,7 +6122,6 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
         (c.group_limit, "group_limit", 1, 99),
         (c.tracks, "tracks", 1, 32),
         (c.cover, "cover", 0, 100),
-        (c.index, "index", 0, 1000),
     ] {
         if error.is_none() && !valid_integer(&get_text(control), min, max) {
             error = Some((
@@ -6317,43 +6152,6 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
             ),
         ));
     }
-    for (control, key) in [(c.loss_warn, "loss_warn"), (c.loss_error, "loss_error")] {
-        if error.is_none()
-            && !get_text(control)
-                .trim()
-                .parse::<f64>()
-                .is_ok_and(|n| n.is_finite() && n >= 0.0)
-        {
-            error = Some((
-                control,
-                format!(
-                    "{}：{}",
-                    tr(state.lang, key),
-                    tr(state.lang, "invalid_nonnegative")
-                ),
-            ));
-        }
-    }
-    let title = get_text(c.title_mode);
-    if error.is_none()
-        && !matches!(title.trim().to_ascii_lowercase().as_str(), "album" | "one")
-        && !valid_integer(&title, 1, i32::MAX as i64)
-    {
-        error = Some((c.title_mode, tr(state.lang, "invalid_title_mode").into()));
-    }
-    if error.is_none()
-        && !get_text(c.album_limit).trim().is_empty()
-        && !valid_integer(&get_text(c.album_limit), 0, i32::MAX as i64)
-    {
-        error = Some((
-            c.album_limit,
-            format!(
-                "{}：{}",
-                tr(state.lang, "album_limit"),
-                tr(state.lang, "invalid_album_limit")
-            ),
-        ));
-    }
     if let Some((control, message)) = error {
         check(state.controls.advanced, true);
         update_advanced(state);
@@ -6376,9 +6174,6 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
 }
 
 fn parse_i64(hwnd: Hwnd, fallback: i64) -> i64 {
-    get_text(hwnd).trim().parse().unwrap_or(fallback)
-}
-fn parse_f64(hwnd: Hwnd, fallback: f64) -> f64 {
     get_text(hwnd).trim().parse().unwrap_or(fallback)
 }
 
@@ -6526,12 +6321,7 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
         .as_ref()
         .map(AppOptions::profile_values)
         .unwrap_or_default();
-    for (key, handle) in [
-        ("DVDA_TITLE_MODE", state.controls.title_mode),
-        ("DVDA_ALBUM_LIMIT", state.controls.album_limit),
-    ] {
-        values.insert(key.into(), json!(get_text(handle)));
-    }
+
     for (key, value) in overrides(state) {
         let raw = match key.as_str() {
             "SourceDirectory" => "DVDA_SRC",
@@ -6549,28 +6339,22 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "MenuStillPictures" => "DVDA_MENU_STILLPICS",
             "MenuTracksPerPage" => "DVDA_MENU_TRACKS_PER_PAGE",
             "MenuCoverDim" => "DVDA_MENU_COVER_DIM",
-            "MenuIndexMinimumAlbums" => "DVDA_MENU_INDEX_MIN_ALBUMS",
             "MenuFont" => "DVDA_MENU_FONT",
             "MenuFontJapanese" => "DVDA_MENU_FONT_JP",
             "MenuFontKorean" => "DVDA_MENU_FONT_KR",
-            "DvdaAuthor" => "DVDA_AUTHOR",
-            "AuthorSource" => "DVDA_AUTHOR_SRC",
             "ResumeEnabled" => "DVDA_RESUME",
-            "KeepTemporary" => "DVDA_KEEP_TMP",
-            "KeepIntermediate" => "DVDA_KEEP_INTERMEDIATE",
-            "LossWarningSeconds" => "DVDA_LOSS_WARN_S",
-            "LossErrorSeconds" => "DVDA_LOSS_ERROR_S",
             _ => continue,
         };
-        let stored = match key.as_str() {
-            "LossWarningSeconds" | "LossErrorSeconds" => value
-                .as_i64()
-                .map(|bits| Value::String(f64::from_bits(bits as u64).to_string()))
-                .unwrap_or_else(|| Value::String(value_to_profile_string(value))),
-            _ => Value::String(value_to_profile_string(value)),
-        };
+        let stored = Value::String(value_to_profile_string(value));
+
         values.insert(raw.into(), stored);
     }
+    // The album index threshold is no longer user-configurable; keep the
+    // historical default of four albums when profiles are written.
+    values.insert(
+        "DVDA_MENU_INDEX_MIN_ALBUMS".into(),
+        Value::String("4".into()),
+    );
     values
 }
 
@@ -7346,13 +7130,10 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.tracks, "DVDA_MENU_TRACKS_PER_PAGE"),
         (c.stills, "DVDA_MENU_STILLPICS"),
         (c.cover, "DVDA_MENU_COVER_DIM"),
-        (c.index, "DVDA_MENU_INDEX_MIN_ALBUMS"),
         (c.font_sc, "DVDA_MENU_FONT"),
         (c.font_jp, "DVDA_MENU_FONT_JP"),
         (c.font_kr, "DVDA_MENU_FONT_KR"),
-        (c.author, "DVDA_AUTHOR"),
-        (c.keep_tmp, "DVDA_KEEP_TMP"),
-        (c.keep_intermediate, "DVDA_KEEP_INTERMEDIATE"),
+        (c.keep_files, "DVDA_KEEP_TMP"),
     ] {
         let tooltip = Tooltip {
             control,
@@ -7887,14 +7668,7 @@ fn browse_target(hwnd: Hwnd, state: &mut UiState, id: usize) {
             state.lang,
             FileKind::Font,
         ),
-        BrowseKind::File => file_dialog(
-            hwnd,
-            false,
-            &current,
-            tr(state.lang, "browse"),
-            state.lang,
-            FileKind::Any,
-        ),
+
     };
     if let Some(path) = result {
         set_text(target, &path);
@@ -7939,7 +7713,6 @@ fn folder_dialog(owner: Hwnd, current: &str, title: &str) -> Option<String> {
 enum FileKind {
     Profile,
     Log,
-    Any,
     Font,
 }
 
@@ -7954,7 +7727,6 @@ fn dialog_filter(lang: Lang, kind: FileKind) -> (String, &'static str) {
             format!("{}\0*.txt;*.log\0{all}", tr(lang, "text_filter")),
             "txt",
         ),
-        FileKind::Any => (all, ""),
         FileKind::Font => (
             format!("{}\0*.ttf;*.otf;*.ttc\0{all}", tr(lang, "font_filter")),
             "",
@@ -8269,8 +8041,7 @@ mod presentation_tests {
             for (kind, extension) in [
                 (FileKind::Profile, "json"),
                 (FileKind::Log, "txt"),
-                (FileKind::Any, ""),
-            ] {
+                ] {
                 let (filter, actual) = dialog_filter(lang, kind);
                 assert_eq!(actual, extension);
                 assert!(filter.ends_with("\0\0"));
