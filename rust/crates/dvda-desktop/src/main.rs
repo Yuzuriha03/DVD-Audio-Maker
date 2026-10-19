@@ -433,19 +433,6 @@ struct ComboArrowVisual {
     last_enabled: bool,
 }
 
-#[derive(Clone, Copy)]
-enum WindowDragKind {
-    Move,
-    Resize(i32),
-}
-
-#[derive(Clone, Copy)]
-struct WindowDrag {
-    kind: WindowDragKind,
-    start_cursor: Point,
-    start_rect: Rect,
-}
-
 struct ScrollbarVisual {
     main: Hwnd,
     hover: bool,
@@ -693,7 +680,6 @@ unsafe extern "system" {
     fn EnumChildWindows(hwnd: Hwnd, callback: EnumChildProc, parameter: Lparam) -> i32;
     fn SystemParametersInfoW(action: u32, param: u32, data: *mut c_void, update: u32) -> i32;
     fn ScreenToClient(hwnd: Hwnd, point: *mut Point) -> i32;
-    fn GetCursorPos(point: *mut Point) -> i32;
     fn OpenClipboard(owner: Hwnd) -> i32;
     fn EmptyClipboard() -> i32;
     fn SetClipboardData(format: u32, data: Handle) -> Handle;
@@ -1498,7 +1484,6 @@ struct UiState {
     splitter_height: Option<i32>,
     splitter_position: i32,
     dragging_splitter: bool,
-    window_drag: Option<WindowDrag>,
     advanced_controls: Vec<Hwnd>,
     advanced_hint: Hwnd,
     caption_minimize: Hwnd,
@@ -1955,39 +1940,7 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
-        WM_NCLBUTTONDOWN => {
-            if let Some(state) = unsafe { state(hwnd) } {
-                let hit = wparam as i32;
-                let kind = if hit == HTCAPTION {
-                    Some(WindowDragKind::Move)
-                } else if (HTLEFT..=HTBOTTOMRIGHT).contains(&hit) {
-                    Some(WindowDragKind::Resize(hit))
-                } else {
-                    None
-                };
-                if let Some(kind) = kind {
-                    let mut cursor = Point { x: 0, y: 0 };
-                    let mut rect = Rect {
-                        left: 0,
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                    };
-                    unsafe {
-                        GetCursorPos(&mut cursor);
-                        GetWindowRect(hwnd, &mut rect);
-                        SetCapture(hwnd);
-                    }
-                    state.window_drag = Some(WindowDrag {
-                        kind,
-                        start_cursor: cursor,
-                        start_rect: rect,
-                    });
-                    return 0;
-                }
-            }
-            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
-        }
+        WM_NCLBUTTONDOWN => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
         WM_NCLBUTTONDBLCLK => {
             if wparam as i32 == HTCAPTION {
                 unsafe {
@@ -2003,131 +1956,6 @@ unsafe extern "system" fn window_proc(
         }
         0x0200..=0x0202 => {
             if let Some(state) = unsafe { state(hwnd) } {
-                if let Some(drag) = state.window_drag {
-                    if message == 0x0202 {
-                        state.window_drag = None;
-                        unsafe {
-                            ReleaseCapture();
-                        }
-                        return 0;
-                    }
-                    if message == 0x0200 {
-                        let mut cursor = Point { x: 0, y: 0 };
-                        unsafe {
-                            GetCursorPos(&mut cursor);
-                        }
-                        let dx = cursor.x - drag.start_cursor.x;
-                        let dy = cursor.y - drag.start_cursor.y;
-                        let mut rect = drag.start_rect;
-                        match drag.kind {
-                            WindowDragKind::Move => {
-                                if unsafe { IsZoomed(hwnd) } != 0 && (dx != 0 || dy != 0) {
-                                    // Dragging a maximized window restores it first,
-                                    // keeping the cursor at the same relative position.
-                                    unsafe {
-                                        ShowWindow(hwnd, SW_RESTORE);
-                                        let mut restored = Rect {
-                                            left: 0,
-                                            top: 0,
-                                            right: 0,
-                                            bottom: 0,
-                                        };
-                                        GetWindowRect(hwnd, &mut restored);
-                                        let mut cursor = Point { x: 0, y: 0 };
-                                        GetCursorPos(&mut cursor);
-                                        let max_width =
-                                            (drag.start_rect.right - drag.start_rect.left).max(1);
-                                        let fraction = ((drag.start_cursor.x
-                                            - drag.start_rect.left)
-                                            as f64
-                                            / max_width as f64)
-                                            .clamp(0.0, 1.0);
-                                        let width = restored.right - restored.left;
-                                        let height = restored.bottom - restored.top;
-                                        let mut left =
-                                            cursor.x - (fraction * width as f64) as i32;
-                                        let mut top = cursor.y - scale(14);
-                                        let mut work = Rect {
-                                            left: 0,
-                                            top: 0,
-                                            right: 0,
-                                            bottom: 0,
-                                        };
-                                        if SystemParametersInfoW(
-                                            0x0030,
-                                            0,
-                                            &mut work as *mut Rect as *mut c_void,
-                                            0,
-                                        ) != 0
-                                        {
-                                            let max_left = (work.right - width).max(work.left);
-                                            let max_top = (work.bottom - height).max(work.top);
-                                            left = left.clamp(work.left, max_left);
-                                            top = top.clamp(work.top, max_top);
-                                        }
-                                        restored.left = left;
-                                        restored.right = left + width;
-                                        restored.top = top;
-                                        restored.bottom = top + height;
-                                        state.window_drag = Some(WindowDrag {
-                                            kind: drag.kind,
-                                            start_cursor: cursor,
-                                            start_rect: restored,
-                                        });
-                                        rect = restored;
-                                    }
-                                } else {
-                                    rect.left += dx;
-                                    rect.right += dx;
-                                    rect.top += dy;
-                                    rect.bottom += dy;
-                                }
-                            }
-                            WindowDragKind::Resize(code) => {
-                                let min_width = scale(940).max(640);
-                                let min_height = scale(500).max(420);
-                                if matches!(code, HTLEFT | HTTOPLEFT | HTBOTTOMLEFT) {
-                                    rect.left += dx;
-                                }
-                                if matches!(code, HTRIGHT | HTTOPRIGHT | HTBOTTOMRIGHT) {
-                                    rect.right += dx;
-                                }
-                                if matches!(code, HTTOP | HTTOPLEFT | HTTOPRIGHT) {
-                                    rect.top += dy;
-                                }
-                                if matches!(code, HTBOTTOM | HTBOTTOMLEFT | HTBOTTOMRIGHT) {
-                                    rect.bottom += dy;
-                                }
-                                if rect.right - rect.left < min_width {
-                                    if rect.left != drag.start_rect.left {
-                                        rect.left = rect.right - min_width;
-                                    } else {
-                                        rect.right = rect.left + min_width;
-                                    }
-                                }
-                                if rect.bottom - rect.top < min_height {
-                                    if rect.top != drag.start_rect.top {
-                                        rect.top = rect.bottom - min_height;
-                                    } else {
-                                        rect.bottom = rect.top + min_height;
-                                    }
-                                }
-                            }
-                        }
-                        unsafe {
-                            SetWindowPos(
-                                hwnd,
-                                ptr::null_mut(),
-                                rect.left,
-                                rect.top,
-                                rect.right - rect.left,
-                                rect.bottom - rect.top,
-                                0x0004 | 0x0010,
-                            );
-                        }
-                        return 0;
-                    }
-                }
                 let y = (lparam >> 16) as i16 as i32;
                 let over = (state.splitter_position - scale(5)
                     ..state.splitter_position + scale(10))
@@ -3488,7 +3316,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         splitter_height: None,
         splitter_position: 420,
         dragging_splitter: false,
-        window_drag: None,
         advanced_controls,
         advanced_hint,
         caption_minimize,
