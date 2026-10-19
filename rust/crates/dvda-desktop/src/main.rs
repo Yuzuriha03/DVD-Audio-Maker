@@ -105,6 +105,7 @@ const WS_VISIBLE: u32 = 0x10000000;
 const WS_TABSTOP: u32 = 0x00010000;
 const WS_CLIPCHILDREN: u32 = 0x02000000;
 const WS_EX_APPWINDOW: u32 = 0x00040000;
+const WS_EX_COMPOSITED: u32 = 0x02000000;
 const ES_AUTOHSCROLL: u32 = 0x0080;
 const ES_MULTILINE: u32 = 0x0004;
 const ES_AUTOVSCROLL: u32 = 0x0040;
@@ -1763,7 +1764,7 @@ fn run() -> Result<(), String> {
     }
     let window = unsafe {
         CreateWindowExW(
-            WS_EX_APPWINDOW,
+            WS_EX_APPWINDOW | WS_EX_COMPOSITED,
             class_name.as_ptr(),
             title.as_ptr(),
             WS_POPUP
@@ -2143,6 +2144,12 @@ unsafe extern "system" fn window_proc(
                     state.dragging_splitter = false;
                     unsafe {
                         ReleaseCapture();
+                        RedrawWindow(
+                            hwnd,
+                            ptr::null(),
+                            ptr::null_mut(),
+                            RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW | RDW_ALLCHILDREN,
+                        );
                     }
                 } else if message == 0x0200 && state.dragging_splitter && wparam & 1 != 0 {
                     state.splitter_height = Some(unscale(y) - (HEADER_HEIGHT + 56));
@@ -2400,7 +2407,19 @@ unsafe extern "system" fn page_proc(
                 unsafe { SendMessageW(parent, message, wparam, lparam) }
             }
         }
-        WM_ERASEBKGND => 1,
+        WM_ERASEBKGND => {
+            let mut rect = Rect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            unsafe {
+                GetClientRect(hwnd, &mut rect);
+                FillRect(wparam as Handle, &rect, panel_brush());
+            }
+            1
+        }
         WM_PAINT => {
             unsafe { paint_page(hwnd) };
             0
@@ -2476,6 +2495,38 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
                 ptr::null_mut(),
                 7,
             );
+            // The card frame is part of the scrolled client pixels; repaint
+            // its fixed edges so old border lines cannot appear twice.
+            let thickness = scale(2).max(1);
+            for edge in [
+                Rect {
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.top + thickness,
+                },
+                Rect {
+                    left: rect.left,
+                    top: rect.bottom - thickness,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                },
+                Rect {
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.left + thickness,
+                    bottom: rect.bottom,
+                },
+                Rect {
+                    left: rect.right - thickness,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                },
+            ] {
+                InvalidateRect(hwnd, &edge, 0);
+            }
+            UpdateWindow(hwnd);
         }
     }
     let main = unsafe { GetParent(hwnd) };
@@ -4511,7 +4562,7 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
                 // panel, so no 3D client edge is needed.
                 0
             } else if class.as_slice() == wide("DVD_AUDIO_PAGE_RUST").as_slice() {
-                0x00010000 // WS_EX_CONTROLPARENT: keyboard navigation into pages.
+                0x00010000 | WS_EX_COMPOSITED // WS_EX_CONTROLPARENT | WS_EX_COMPOSITED.
             } else {
                 0
             },
