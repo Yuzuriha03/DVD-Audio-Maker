@@ -2377,6 +2377,7 @@ fn resize_page_fields(page: Hwnd) {
         GetClientRect(page, &mut rect);
     }
     let width = unscale(rect.right).max(1);
+    let scroll = unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32;
     // Browse rows share the same geometry. Keeping the edit and its button
     // inside the page client area prevents a clipped right border after a
     // window resize or a DPI/layout change.
@@ -2397,7 +2398,7 @@ fn resize_page_fields(page: Hwnd) {
                 MoveWindow(
                     edit,
                     scale(14),
-                    scale(y),
+                    scale(y) - scroll,
                     scale(edit_width),
                     scale(25),
                     0,
@@ -2409,7 +2410,7 @@ fn resize_page_fields(page: Hwnd) {
                 MoveWindow(
                     browse,
                     scale(14 + edit_width + 10),
-                    scale(y - 2),
+                    scale(y - 2) - scroll,
                     scale(90),
                     scale(29),
                     0,
