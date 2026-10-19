@@ -1424,6 +1424,7 @@ struct UiState {
     lang: Lang,
     main_window: Hwnd,
     controls: Controls,
+    custom_bytes_label: Hwnd,
     pages: Vec<Hwnd>,
     tabs: Vec<Hwnd>,
     tab_index: usize,
@@ -2739,11 +2740,19 @@ fn create_controls(parent: Hwnd) -> UiState {
         tr(lang, "custom_bytes"),
         "custom_bytes",
         ID_CUSTOM_BYTES,
-        14,
-        245,
-        460,
+        760,
+        106,
+        360,
         &mut labels,
     );
+    let custom_bytes_label = labels
+        .last()
+        .map(|(handle, _)| *handle)
+        .unwrap_or(ptr::null_mut());
+    unsafe {
+        ShowWindow(custom_bytes_label, SW_HIDE);
+        ShowWindow(c.custom_bytes, SW_HIDE);
+    }
     let advanced_hint = label!(
         page_start,
         tr(lang, "advanced_hint"),
@@ -3214,6 +3223,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         lang,
         main_window: parent,
         controls: c,
+        custom_bytes_label,
         pages,
         tabs,
         tab_index: 0,
@@ -5959,11 +5969,17 @@ fn update_choices(state: &UiState) {
         state.controls.audio_note,
         tr(state.lang, audio_note_key(mode)),
     );
+    let custom_capacity = combo_index(state.controls.capacity) == 2;
     unsafe {
-        EnableWindow(
-            state.controls.custom_bytes,
-            i32::from(combo_index(state.controls.capacity) == 2),
+        ShowWindow(
+            state.custom_bytes_label,
+            if custom_capacity { SW_SHOW } else { SW_HIDE },
         );
+        ShowWindow(
+            state.controls.custom_bytes,
+            if custom_capacity { SW_SHOW } else { SW_HIDE },
+        );
+        EnableWindow(state.controls.custom_bytes, i32::from(custom_capacity));
         EnableWindow(state.controls.import_folder, i32::from(imported));
         for hwnd in [
             state.controls.rate,
