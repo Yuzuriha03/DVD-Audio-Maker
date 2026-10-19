@@ -817,6 +817,7 @@ static CONTROL_RECTS: OnceLock<Mutex<Vec<(isize, i32, i32, i32, i32)>>> = OnceLo
 static COMBO_OVERLAYS: OnceLock<Mutex<Vec<(isize, isize)>>> = OnceLock::new();
 static ICON_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
 static DARK_THEME: AtomicBool = AtomicBool::new(false);
+static DEFER_CONTROL_PAINT: AtomicBool = AtomicBool::new(false);
 
 fn dpi() -> i32 {
     UI_DPI.load(Ordering::Relaxed).max(48) as i32
@@ -1978,7 +1979,9 @@ unsafe extern "system" fn window_proc(
                     }
                 } else if message == 0x0200 && state.dragging_splitter && wparam & 1 != 0 {
                     state.splitter_height = Some(unscale(y) - (HEADER_HEIGHT + 56));
+                    DEFER_CONTROL_PAINT.store(true, Ordering::Relaxed);
                     layout(hwnd, state);
+                    DEFER_CONTROL_PAINT.store(false, Ordering::Relaxed);
                 }
                 if over || state.dragging_splitter {
                     unsafe {
@@ -2192,7 +2195,11 @@ unsafe extern "system" fn page_proc(
                     hwnd,
                     ptr::null(),
                     ptr::null_mut(),
-                    RDW_INVALIDATE | RDW_ALLCHILDREN,
+                    if DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
+                        RDW_INVALIDATE
+                    } else {
+                        RDW_INVALIDATE | RDW_ALLCHILDREN
+                    },
                 );
             }
             0
@@ -4718,6 +4725,13 @@ fn measured_text_width(hwnd: Hwnd, text: &str, font: Handle) -> i32 {
 
 unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
     unsafe {
+        let mut before = Rect {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        GetWindowRect(hwnd, &mut before);
         MoveWindow(
             hwnd,
             scale(x),
@@ -4726,6 +4740,21 @@ unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
             scale(height),
             0,
         );
+        let mut after = Rect {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        GetWindowRect(hwnd, &mut after);
+        if !DEFER_CONTROL_PAINT.load(Ordering::Relaxed)
+            && (before.left != after.left
+                || before.top != after.top
+                || before.right != after.right
+                || before.bottom != after.bottom)
+        {
+            InvalidateRect(hwnd, ptr::null(), 0);
+        }
     }
 }
 
@@ -5080,7 +5109,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             hwnd,
             ptr::null(),
             ptr::null_mut(),
-            RDW_INVALIDATE | RDW_ALLCHILDREN,
+            RDW_INVALIDATE,
         );
     }
 }
