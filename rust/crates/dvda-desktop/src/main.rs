@@ -183,12 +183,9 @@ const ID_GROUP_LIMIT: usize = 207;
 const ID_CUSTOM_BYTES: usize = 210;
 const ID_TITLE_MODE: usize = 211;
 const ID_ALBUM_LIMIT: usize = 212;
-const ID_PCM_TEMP: usize = 306;
-const ID_MLP_STAGE: usize = 307;
 const ID_MODE: usize = 300;
 const ID_RATE: usize = 301;
 const ID_BITS: usize = 302;
-const ID_METADATA: usize = 304;
 const ID_IMPORT_FOLDER: usize = 305;
 const ID_MENU: usize = 400;
 const ID_STILLS: usize = 401;
@@ -206,7 +203,6 @@ const ID_LOSS_ERROR: usize = 505;
 const ID_BROWSE_SOURCE: usize = 1000;
 const ID_BROWSE_FINAL: usize = 1001;
 const ID_BROWSE_WORK: usize = 1002;
-const ID_BROWSE_METADATA: usize = 1003;
 const ID_BROWSE_AUTHOR: usize = 1004;
 const ID_BROWSE_IMPORT: usize = 1006;
 const COMBO_IDS: &[usize] = &[
@@ -964,8 +960,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_filter" => "字体文件",
             "title_mode" => "标题分组（album / one / 每组曲数）",
             "album_limit" => "限制专辑数量（0 表示不限）",
-            "pcm_temp" => "PCM 临时目录（留空使用工作目录）",
-            "mlp_stage" => "MLP 暂存目录（留空使用工作目录）",
             "language" => "语言",
             "source" => "音源文件夹",
             "final" => "成品保存位置",
@@ -978,7 +972,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "音频编码方式",
             "sample_rate" => "采样率",
             "bits" => "音频位深",
-            "metadata" => "旧版 MLP 文件匹配参数",
             "menu" => "光盘菜单",
             "menu_enable" => "制作选曲菜单",
             "stills" => "在菜单中显示专辑封面",
@@ -995,7 +988,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "loss_warn" => "时长差异提醒 (秒)",
             "loss_error" => "时长差异上限 (秒)",
             "browse" => "浏览...",
-            "start" => "开始设置",
+            "start" => "基本设置",
             "audio" => "音频编码",
             "check" => "检查音源",
             "build" => "开始制作",
@@ -1095,8 +1088,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_filter" => "Font files",
             "title_mode" => "Title grouping (album / one / tracks per title)",
             "album_limit" => "Album limit (0 = unlimited)",
-            "pcm_temp" => "PCM temporary folder (blank = work folder)",
-            "mlp_stage" => "MLP staging folder (blank = work folder)",
             "language" => "Language",
             "source" => "Source folder",
             "final" => "Output folder",
@@ -1109,7 +1100,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "Audio encoding",
             "sample_rate" => "Sample rate",
             "bits" => "Bit depth",
-            "metadata" => "Legacy MLP file matching context",
             "menu" => "Disc menu",
             "menu_enable" => "Create track menus",
             "stills" => "Show album covers in menus",
@@ -1126,7 +1116,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "loss_warn" => "Duration warning (seconds)",
             "loss_error" => "Duration limit (seconds)",
             "browse" => "Browse...",
-            "start" => "Getting started",
+            "start" => "Basic settings",
             "audio" => "Audio",
             "check" => "Check sources",
             "build" => "Build discs",
@@ -1232,8 +1222,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "font_filter" => "フォントファイル",
             "title_mode" => "タイトルの区切り（album / one / 曲数）",
             "album_limit" => "アルバム数の上限（0 = 無制限）",
-            "pcm_temp" => "PCM 一時フォルダー（空欄 = 作業先）",
-            "mlp_stage" => "MLP 一時保存先（空欄 = 作業先）",
             "language" => "言語",
             "source" => "音源フォルダー",
             "final" => "出力フォルダー",
@@ -1246,7 +1234,6 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "audio_mode" => "音声エンコード",
             "sample_rate" => "サンプルレート",
             "bits" => "ビット深度",
-            "metadata" => "過去ファイルのメタデータ",
             "menu" => "ディスクメニュー",
             "menu_enable" => "曲目メニューを作成",
             "stills" => "メニューにアルバム画像を表示",
@@ -1263,7 +1250,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "loss_warn" => "時間差の警告 (秒)",
             "loss_error" => "時間差の上限 (秒)",
             "browse" => "参照...",
-            "start" => "開始設定",
+            "start" => "基本設定",
             "audio" => "音声",
             "check" => "音源を検査",
             "build" => "ディスクを作成",
@@ -1390,8 +1377,6 @@ struct Controls {
     advanced: Hwnd,
     title_mode: Hwnd,
     album_limit: Hwnd,
-    pcm_temp: Hwnd,
-    mlp_stage: Hwnd,
     profile: Hwnd,
     language: Hwnd,
     source: Hwnd,
@@ -1405,7 +1390,6 @@ struct Controls {
     mode: Hwnd,
     rate: Hwnd,
     bits: Hwnd,
-    metadata: Hwnd,
     import_folder: Hwnd,
     menu: Hwnd,
     stills: Hwnd,
@@ -2380,8 +2364,7 @@ fn resize_page_fields(page: Hwnd) {
         (ID_SOURCE, ID_BROWSE_SOURCE, 38),
         (ID_FINAL, ID_BROWSE_FINAL, 82),
         (ID_WORK_DIR, ID_BROWSE_WORK, 170),
-        (ID_METADATA, ID_BROWSE_METADATA, 100),
-        (ID_IMPORT_FOLDER, ID_BROWSE_IMPORT, 156),
+        (ID_IMPORT_FOLDER, ID_BROWSE_IMPORT, 100),
         (ID_AUTHOR, ID_BROWSE_AUTHOR, 38),
     ] {
         let edit = unsafe { GetDlgItem(page, edit_id as i32) };
@@ -2511,7 +2494,7 @@ macro_rules! browse_edit {
             $browse_id,
             (
                 edit,
-                if matches!($browse_id, ID_BROWSE_AUTHOR | ID_BROWSE_METADATA) {
+                if $browse_id == ID_BROWSE_AUTHOR {
                     BrowseKind::File
                 } else {
                     BrowseKind::Folder
@@ -2624,8 +2607,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         advanced: ptr::null_mut(),
         title_mode: ptr::null_mut(),
         album_limit: ptr::null_mut(),
-        pcm_temp: ptr::null_mut(),
-        mlp_stage: ptr::null_mut(),
         profile,
         language,
         source: ptr::null_mut(),
@@ -2639,7 +2620,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         mode: ptr::null_mut(),
         rate: ptr::null_mut(),
         bits: ptr::null_mut(),
-        metadata: ptr::null_mut(),
         import_folder: ptr::null_mut(),
         menu: ptr::null_mut(),
         stills: ptr::null_mut(),
@@ -2819,19 +2799,6 @@ fn create_controls(parent: Hwnd) -> UiState {
     for item in ["16", "20", "24"] {
         combo_add(c.bits, item);
     }
-    c.metadata = browse_edit!(
-        page_audio,
-        tr(lang, "metadata"),
-        "metadata",
-        ID_METADATA,
-        ID_BROWSE_METADATA,
-        14,
-        80,
-        &mut labels,
-        &mut browse,
-        &mut browse_buttons,
-        lang,
-    );
     c.import_folder = browse_edit!(
         page_audio,
         tr(lang, "import_folder"),
@@ -2839,7 +2806,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         ID_IMPORT_FOLDER,
         ID_BROWSE_IMPORT,
         14,
-        136,
+        80,
         &mut labels,
         &mut browse,
         &mut browse_buttons,
@@ -2850,29 +2817,9 @@ fn create_controls(parent: Hwnd) -> UiState {
         tr(lang, "mlp_note"),
         "audio_note",
         14,
-        194,
+        136,
         900,
         48,
-        &mut labels,
-    );
-    c.pcm_temp = text_field!(
-        page_audio,
-        tr(lang, "pcm_temp"),
-        "pcm_temp",
-        ID_PCM_TEMP,
-        14,
-        245,
-        460,
-        &mut labels,
-    );
-    c.mlp_stage = text_field!(
-        page_audio,
-        tr(lang, "mlp_stage"),
-        "mlp_stage",
-        ID_MLP_STAGE,
-        506,
-        245,
-        460,
         &mut labels,
     );
     pages.push(create_page(parent));
@@ -3202,9 +3149,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         c.work_dir,
         c.iso_prefix,
         c.group_limit,
-        c.metadata,
-        c.pcm_temp,
-        c.mlp_stage,
         c.index,
         c.font_sc,
         c.font_jp,
@@ -3220,9 +3164,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         "work_dir",
         "iso_prefix",
         "group_limit",
-        "metadata",
-        "pcm_temp",
-        "mlp_stage",
         "index",
         "font_sc",
         "font_jp",
@@ -6027,9 +5968,6 @@ fn update_choices(state: &UiState) {
         for hwnd in [
             state.controls.rate,
             state.controls.bits,
-            state.controls.metadata,
-            state.controls.pcm_temp,
-            state.controls.mlp_stage,
         ] {
             EnableWindow(hwnd, i32::from(!imported));
         }
@@ -6096,7 +6034,6 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         &["16", "20", "24"],
         options.integer("MlpBits"),
     );
-    set_text(state.controls.metadata, &options.text("MlpMetadataContext"));
     check(state.controls.menu, options.boolean("MenuEnabled"));
     check(state.controls.stills, options.boolean("MenuStillPictures"));
     set_text(
@@ -6127,14 +6064,7 @@ fn populate(state: &mut UiState, options: &AppOptions) {
             .unwrap_or(0)
             .to_string(),
     );
-    set_text(
-        state.controls.pcm_temp,
-        &options.text("MlpBatchTempDirectory"),
-    );
-    set_text(
-        state.controls.mlp_stage,
-        &options.text("MlpBatchOutputDirectory"),
-    );
+
     check(state.controls.keep_tmp, options.boolean("KeepTemporary"));
     check(
         state.controls.keep_intermediate,
@@ -6225,11 +6155,7 @@ fn overrides(state: &UiState) -> Map<String, Value> {
         "MlpBits",
         json!(numeric_choice(state.controls.bits, SAMPLE_BITS)),
     );
-    put(
-        &mut values,
-        "MlpMetadataContext",
-        json!(get_text(state.controls.metadata)),
-    );
+
     put(
         &mut values,
         "MenuEnabled",
@@ -6587,8 +6513,6 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
     for (key, handle) in [
         ("DVDA_TITLE_MODE", state.controls.title_mode),
         ("DVDA_ALBUM_LIMIT", state.controls.album_limit),
-        ("DVDA_MLP_BATCH_TEMP_DIR", state.controls.pcm_temp),
-        ("DVDA_MLP_BATCH_OUTPUT_DIR", state.controls.mlp_stage),
     ] {
         values.insert(key.into(), json!(get_text(handle)));
     }
@@ -6605,7 +6529,6 @@ fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "MlpExternalDirectory" => "DVDA_MLP_EXTERNAL_DIR",
             "MlpSampleRate" => "DVDA_MLP_SAMPLE_RATE",
             "MlpBits" => "DVDA_MLP_BITS",
-            "MlpMetadataContext" => "DVDA_MLP_METADATA_CONTEXT",
             "MenuEnabled" => "DVDA_MENU",
             "MenuStillPictures" => "DVDA_MENU_STILLPICS",
             "MenuTracksPerPage" => "DVDA_MENU_TRACKS_PER_PAGE",
@@ -7402,7 +7325,6 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.mode, "DVDA_MLP_SOURCE"),
         (c.rate, "DVDA_MLP_SAMPLE_RATE"),
         (c.bits, "DVDA_MLP_BITS"),
-        (c.metadata, "DVDA_MLP_METADATA_CONTEXT"),
         (c.import_folder, "DVDA_MLP_EXTERNAL_DIR"),
         (c.menu, "DVDA_MENU"),
         (c.tracks, "DVDA_MENU_TRACKS_PER_PAGE"),
