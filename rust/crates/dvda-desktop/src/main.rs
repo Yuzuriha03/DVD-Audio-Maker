@@ -134,6 +134,7 @@ const SW_HIDE: i32 = 0;
 const SW_MAXIMIZE: i32 = 3;
 const SW_MINIMIZE: i32 = 6;
 const SW_RESTORE: i32 = 9;
+const WM_NCCALCSIZE: u32 = 0x0083;
 const WM_NCHITTEST: u32 = 0x0084;
 const WM_NCLBUTTONDOWN: u32 = 0x00a1;
 const WM_NCLBUTTONDBLCLK: u32 = 0x00a3;
@@ -1997,6 +1998,15 @@ unsafe extern "system" fn window_proc(
                 layout(hwnd, state);
             }
             0
+        }
+        WM_NCCALCSIZE => {
+            if wparam != 0 {
+                // Borderless frame: leave the proposed window rectangle in
+                // place so the client area covers the whole window.
+                0
+            } else {
+                unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+            }
         }
         WM_NCHITTEST => {
             let result = unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
