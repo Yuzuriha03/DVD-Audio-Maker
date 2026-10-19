@@ -723,7 +723,6 @@ unsafe extern "system" {
     fn CreatePen(style: i32, width: i32, color: u32) -> Handle;
     fn MoveToEx(dc: Handle, x: i32, y: i32, previous: *mut Point) -> i32;
     fn LineTo(dc: Handle, x: i32, y: i32) -> i32;
-    fn Ellipse(dc: Handle, left: i32, top: i32, right: i32, bottom: i32) -> i32;
     fn DeleteObject(object: Handle) -> i32;
     fn SelectObject(dc: Handle, object: Handle) -> Handle;
     fn CreateCompatibleDC(dc: Handle) -> Handle;
@@ -5438,56 +5437,17 @@ unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
                 LineTo(item.dc, center_x - unit, center_y + unit);
             }
             _ => {
-                let radius = unit - scale(1);
-                if dark_theme() {
-                    // Sun: filled circle plus rays (switch back to light).
-                    let old_brush = SelectObject(item.dc, brush(glyph));
-                    Ellipse(
-                        item.dc,
-                        center_x - radius,
-                        center_y - radius,
-                        center_x + radius,
-                        center_y + radius,
-                    );
-                    SelectObject(item.dc, old_brush);
-                    for index in 0..8 {
-                        let angle = index as f64 * std::f64::consts::PI / 4.0;
-                        let inner = radius as f64 + scale(3) as f64;
-                        let outer = radius as f64 + scale(5) as f64;
-                        MoveToEx(
-                            item.dc,
-                            center_x + (angle.cos() * inner) as i32,
-                            center_y + (angle.sin() * inner) as i32,
-                            ptr::null_mut(),
-                        );
-                        LineTo(
-                            item.dc,
-                            center_x + (angle.cos() * outer) as i32,
-                            center_y + (angle.sin() * outer) as i32,
-                        );
-                    }
-                } else {
-                    // Moon: filled circle carved by an offset background circle.
-                    let old_brush = SelectObject(item.dc, brush(glyph));
-                    Ellipse(
-                        item.dc,
-                        center_x - radius,
-                        center_y - radius,
-                        center_x + radius,
-                        center_y + radius,
-                    );
-                    SelectObject(item.dc, brush(fill));
-                    Ellipse(
-                        item.dc,
-                        center_x - radius + scale(4),
-                        center_y - radius - scale(2),
-                        center_x + radius + scale(4),
-                        center_y + radius - scale(2),
-                    );
-                    SelectObject(item.dc, old_brush);
-                }
-            }
-        }
+                let symbol = if dark_theme() { "\u{263e}" } else { "\u{2600}" };
+                let mut text_rect = item.rect;
+                draw_text_run(
+                    symbol,
+                    item.dc,
+                    &mut text_rect,
+                    title_font(),
+                    glyph,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                );
+            }        }
         SelectObject(item.dc, old_pen);
         DeleteObject(pen);
     }
