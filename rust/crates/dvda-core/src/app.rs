@@ -345,6 +345,13 @@ impl AppOptions {
         let configured_author_source = self.path("AuthorSource");
         let author_source = if configured_author_source.is_dir() {
             configured_author_source
+        } else if let Some(runtime_data) = crate::runtime::directory()
+            .map(|directory| directory.join("data"))
+            .filter(|directory| directory.is_dir())
+        {
+            // Release packages keep the menu assets in the extracted runtime;
+            // no user-visible configuration should be required for them.
+            runtime_data
         } else {
             self.executable_directory.join("data")
         };
