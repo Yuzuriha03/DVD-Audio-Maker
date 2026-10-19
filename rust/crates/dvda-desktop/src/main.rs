@@ -5946,9 +5946,26 @@ fn populate(state: &mut UiState, options: &AppOptions) {
         &options.integer("MenuCoverDim").to_string(),
     );
 
-    set_text(state.controls.font_sc, &options.text("MenuFont"));
-    set_text(state.controls.font_jp, &options.text("MenuFontJapanese"));
-    set_text(state.controls.font_kr, &options.text("MenuFontKorean"));
+    let menu_font = options.text("MenuFont");
+    let menu_font_japanese = {
+        let configured = options.text("MenuFontJapanese");
+        if configured.trim().is_empty() {
+            menu_font.clone()
+        } else {
+            configured
+        }
+    };
+    let menu_font_korean = {
+        let configured = options.text("MenuFontKorean");
+        if configured.trim().is_empty() {
+            menu_font.clone()
+        } else {
+            configured
+        }
+    };
+    set_text(state.controls.font_sc, &menu_font);
+    set_text(state.controls.font_jp, &menu_font_japanese);
+    set_text(state.controls.font_kr, &menu_font_korean);
 
 
     check(
