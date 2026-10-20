@@ -95,8 +95,8 @@ const CB_GETLBTEXTLEN: u32 = 0x0149;
 const CB_SHOWDROPDOWN: u32 = 0x014f;
 const PBM_SETPOS: u32 = 0x0402;
 const PBM_SETRANGE32: u32 = 0x0406;
-const WS_POPUP: u32 = 0x80000000;
 const WS_THICKFRAME: u32 = 0x00040000;
+const WS_CAPTION: u32 = 0x00c00000;
 const WS_MINIMIZEBOX: u32 = 0x00020000;
 const WS_MAXIMIZEBOX: u32 = 0x00010000;
 const WS_SYSMENU: u32 = 0x00080000;
@@ -942,7 +942,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
         Lang::Zh => match key {
             "app_subtitle" => "把音乐制作成 DVD-Audio 光盘镜像",
             "advanced_hint" => {
-                "这些设置已经足够制作第一张光盘。需要临时文件夹、菜单字体等高级选项时，请开启上方的“显示高级设置”。"
+                "这些设置已经足够制作第一张光盘。需要临时工作路径、菜单字体等高级选项时，请开启上方的“显示高级设置”。"
             }
             "profile" => "设置方案",
             "open" => "打开方案",
@@ -953,11 +953,11 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "title_mode" => "标题分组（album / one / 每组曲数）",
             "album_limit" => "限制专辑数量（0 表示不限）",
             "language" => "语言",
-            "source" => "音源文件夹",
-            "final" => "成品保存位置",
+            "source" => "音源路径",
+            "final" => "成品保存路径",
             "title" => "光盘名称",
             "capacity" => "光盘容量",
-            "work_dir" => "临时文件夹",
+            "work_dir" => "临时工作路径",
             "iso_prefix" => "镜像文件名前缀",
             "group_limit" => "每组最多曲目",
             "cache" => "复用检查结果",
@@ -1035,11 +1035,11 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "log_pcm_finished" => "音频准备完成，开始 MLP 编码：{0}",
             "log_encoded" => "MLP 编码完成：{0}；{1} Hz / {2} 位 / {3} 声道，{4} 字节",
             "log_pcm_error" => "音频转换提示：{0}；{1}",
-            "import" => "导入已有 MLP 文件",
-            "import_folder" => "MLP 文件夹",
+            "import" => "导入现有 MLP 文件",
+            "import_folder" => "MLP 文件路径",
             "custom" => "自定义容量",
             "custom_bytes" => "自定义容量 (字节)",
-            "no_output" => "尚未找到成品文件夹，请先完成制作。",
+            "no_output" => "尚未找到成品路径，请先完成制作。",
             "language_zh" => "中文",
             "language_en" => "English",
             "language_ja" => "日本語",
@@ -1048,7 +1048,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "dvd5" => "DVD5 (4.7 GB)",
             "dvd9" => "DVD9 (8.5 GB)",
             "import_note" => {
-                "MLP 无损压缩、占用较小；LPCM 不压缩。导入已有 MLP 时，选择与音源目录结构对应的文件夹。"
+                "MLP 无损压缩、占用较小；LPCM 不压缩。导入现有 MLP 时，选择与音源目录结构对应的路径。"
             }
             "mlp_note" => {
                 "MLP 编码会进行无损压缩，适合大多数 DVD-Audio 制作。采样率和位深按右侧设置处理。"
@@ -1082,11 +1082,11 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "title_mode" => "Title grouping (album / one / tracks per title)",
             "album_limit" => "Album limit (0 = unlimited)",
             "language" => "Language",
-            "source" => "Source folder",
-            "final" => "Output folder",
+            "source" => "Source path",
+            "final" => "Output path",
             "title" => "Disc title",
             "capacity" => "Disc capacity",
-            "work_dir" => "Temporary folder",
+            "work_dir" => "Temporary work path",
             "iso_prefix" => "ISO filename prefix",
             "group_limit" => "Tracks per group",
             "cache" => "Reuse source checks",
@@ -1169,7 +1169,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             }
             "log_pcm_error" => "Audio conversion message: {0}; {1}",
             "import" => "Import existing MLP files",
-            "import_folder" => "MLP folder",
+            "import_folder" => "MLP file path",
             "custom" => "Custom capacity",
             "custom_bytes" => "Custom capacity (bytes)",
             "no_output" => "The output folder does not exist yet.",
@@ -1217,11 +1217,11 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             "title_mode" => "タイトルの区切り（album / one / 曲数）",
             "album_limit" => "アルバム数の上限（0 = 無制限）",
             "language" => "言語",
-            "source" => "音源フォルダー",
-            "final" => "出力フォルダー",
+            "source" => "音源パス",
+            "final" => "出力パス",
             "title" => "ディスク名",
             "capacity" => "ディスク容量",
-            "work_dir" => "一時フォルダー",
+            "work_dir" => "一時作業パス",
             "iso_prefix" => "ISO ファイル名の接頭辞",
             "group_limit" => "グループの曲数",
             "cache" => "検査結果を再利用",
@@ -1304,7 +1304,7 @@ fn tr(lang: Lang, key: &str) -> &'static str {
             }
             "log_pcm_error" => "音声変換メッセージ：{0}；{1}",
             "import" => "既存の MLP ファイルを読み込む",
-            "import_folder" => "MLP フォルダー",
+            "import_folder" => "MLP ファイルパス",
             "custom" => "容量を指定",
             "custom_bytes" => "指定容量 (バイト)",
             "no_output" => "出力フォルダーがまだありません。",
@@ -1412,6 +1412,8 @@ struct UiState {
     main_window: Hwnd,
     controls: Controls,
     custom_bytes_label: Hwnd,
+    import_folder_label: Hwnd,
+    import_browse: Hwnd,
     pages: Vec<Hwnd>,
     tabs: Vec<Hwnd>,
     tab_index: usize,
@@ -1727,7 +1729,7 @@ fn run() -> Result<(), String> {
             WS_EX_APPWINDOW | WS_EX_COMPOSITED,
             class_name.as_ptr(),
             title.as_ptr(),
-            WS_POPUP
+            WS_CAPTION
                 | WS_THICKFRAME
                 | WS_MINIMIZEBOX
                 | WS_MAXIMIZEBOX
@@ -2030,7 +2032,7 @@ unsafe extern "system" fn window_proc(
         WM_GETMINMAXINFO => {            if lparam != 0 {
                 // MINMAXINFO consists of five POINTs; minimum tracking size is fourth.
                 let dimensions = unsafe { &mut *(lparam as *mut [i32; 10]) };
-                let mut min_width = scale(940);
+                let mut min_width = scale(640);
                 let mut min_height = scale(500);
                 let mut work = Rect {
                     left: 0,
@@ -2189,7 +2191,7 @@ unsafe extern "system" fn page_proc(
                 3 => old + scale(120),
                 4 | 5 => (wparam >> 16) as i32,
                 6 => 0,
-                7 => scale(300),
+                7 => i32::MAX,
                 _ => old,
             };
             scroll_page(hwnd, next, true);
@@ -2273,7 +2275,11 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     }
     let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
     let height = (rect.bottom - rect.top).max(1);
-    let content = scale(300);
+    let content = if unscale(rect.right) < 800 {
+        scale(420)
+    } else {
+        scale(300)
+    };
     let pos = if explicit { requested } else { old }.clamp(0, (content - height).max(0));
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, pos as isize);
@@ -2801,7 +2807,16 @@ fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    c.audio_note = label!(
+    let import_folder_label = labels
+        .last()
+        .map(|(handle, _)| *handle)
+        .unwrap_or(ptr::null_mut());
+    let import_browse = browse_buttons.last().copied().unwrap_or(ptr::null_mut());
+    unsafe {
+        ShowWindow(import_folder_label, SW_HIDE);
+        ShowWindow(c.import_folder, SW_HIDE);
+        ShowWindow(import_browse, SW_HIDE);
+    }    c.audio_note = label!(
         page_audio,
         tr(lang, "mlp_note"),
         "audio_note",
@@ -3109,6 +3124,8 @@ fn create_controls(parent: Hwnd) -> UiState {
         main_window: parent,
         controls: c,
         custom_bytes_label,
+        import_folder_label,
+        import_browse,
         pages,
         tabs,
         tab_index: 0,
@@ -3933,7 +3950,11 @@ unsafe fn page_bar_metrics(state: &UiState) -> BarMetrics {
         GetClientRect(page, &mut rect);
     }
     let page_height = (rect.bottom - rect.top).max(1);
-    let content = scale(300);
+    let content = if unscale(rect.right) < 800 {
+        scale(420)
+    } else {
+        scale(300)
+    };
     let max = (content - page_height).max(0);
     let value = (unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32).clamp(0, max);
     BarMetrics {
@@ -4718,7 +4739,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     unsafe {
         GetClientRect(hwnd, &mut rect);
     }
-    let width = unscale(rect.right - rect.left).max(900);
+    let width = unscale(rect.right - rect.left).max(640);
     let height = unscale(rect.bottom - rect.top).max(500);
     let margin = 18;
     let bottom = height - 14;
@@ -4797,16 +4818,26 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                     place(*handle, header_x[2], toolbar_y, header_widths[2], 28);
                 }
                 "copy" => {
-                    place(
-                        *handle,
-                        width - margin - 148 - 8 - 130,
-                        splitter + 68,
-                        130,
-                        28,
-                    );
+                    if width >= 900 {
+                        place(
+                            *handle,
+                            width - margin - 148 - 8 - 130,
+                            splitter + 68,
+                            130,
+                            28,
+                        );
+                        ShowWindow(*handle, SW_SHOW);
+                    } else {
+                        ShowWindow(*handle, SW_HIDE);
+                    }
                 }
                 "export" => {
-                    place(*handle, width - margin - 148, splitter + 68, 148, 28);
+                    if width >= 900 {
+                        place(*handle, width - margin - 148, splitter + 68, 148, 28);
+                        ShowWindow(*handle, SW_SHOW);
+                    } else {
+                        ShowWindow(*handle, SW_HIDE);
+                    }
                 }
                 _ => {}
             }
@@ -4862,13 +4893,18 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             (tab_height - 44 - 4).max(20),
         );
         place(state.controls.status, margin, splitter + 30, 320, 24);
-        place(
-            state.controls.activity,
-            344,
-            splitter + 30,
-            width - 362,
-            24,
-        );
+        if width >= 900 {
+            place(
+                state.controls.activity,
+                344,
+                splitter + 30,
+                width - 362,
+                24,
+            );
+            ShowWindow(state.controls.activity, SW_SHOW);
+        } else {
+            ShowWindow(state.controls.activity, SW_HIDE);
+        }
         place(
             state.controls.progress,
             margin,
@@ -4923,13 +4959,24 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             120,
             34,
         );
-        place(
-            state.controls.statistics,
-            width - margin - 360,
-            actions_top + 6,
-            360,
-            24,
-        );
+        if width >= 900 {
+            place(
+                state.controls.statistics,
+                width - margin - 360,
+                actions_top + 6,
+                360,
+                24,
+            );
+        } else {
+            place(
+                state.controls.statistics,
+                margin + 404,
+                actions_top + 6,
+                (width - margin * 2 - 404).max(120),
+                24,
+            );
+        }
+        layout_page_contents(state);
         sync_combo_overlays();
         RedrawWindow(
             hwnd,
@@ -4937,6 +4984,213 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             ptr::null_mut(),
             RDW_INVALIDATE,
         );
+    }
+}
+
+fn label_handle(state: &UiState, key: &str) -> Hwnd {
+    state
+        .labels
+        .iter()
+        .find(|(_, label_key)| *label_key == key)
+        .map(|(handle, _)| *handle)
+        .unwrap_or(ptr::null_mut())
+}
+
+unsafe fn move_child(page: Hwnd, id: usize, x: i32, y: i32, width: i32, height: i32) {
+    let control = unsafe { GetDlgItem(page, id as i32) };
+    if !control.is_null() {
+        unsafe { place(control, x, y, width, height) };
+    }
+}
+
+unsafe fn move_label(state: &UiState, key: &str, x: i32, y: i32, width: i32, height: i32) {
+    let handle = label_handle(state, key);
+    if !handle.is_null() {
+        unsafe { place(handle, x, y, width, height) };
+    }
+}
+
+unsafe fn layout_page_contents(state: &UiState) {
+    for (index, page) in state.pages.iter().enumerate() {
+        let mut rect = Rect {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        unsafe { GetClientRect(*page, &mut rect) };
+        let page_width = unscale(rect.right).max(1);
+        let scroll = unsafe { GetWindowLongPtrW(*page, GWLP_USERDATA) } as i32;
+        let sy = unscale(scroll);
+        let narrow = page_width < 800;
+        match index {
+            0 => {
+                if narrow {
+                    let field_width = page_width - 28;
+                    unsafe {
+                        move_label(state, "title", 14, 106 - sy, field_width, 20);
+                        move_child(*page, ID_TITLE, 14, 126 - sy, field_width, 25);
+                        move_label(state, "capacity", 14, 150 - sy, 220, 20);
+                        move_child(*page, ID_CAPACITY, 14, 170 - sy, 220, 120);
+                        let custom_x = 250;
+                        let custom_width = (page_width - custom_x - 14).max(160);
+                        place(
+                            state.custom_bytes_label,
+                            custom_x,
+                            150 - sy,
+                            custom_width,
+                            20,
+                        );
+                        move_child(
+                            *page,
+                            ID_CUSTOM_BYTES,
+                            custom_x,
+                            170 - sy,
+                            custom_width,
+                            25,
+                        );
+                        move_label(state, "advanced_hint", 14, 204 - sy, field_width, 48);
+                        move_label(state, "work_dir", 14, 214 - sy, field_width, 20);
+                        move_child(
+                            *page,
+                            ID_WORK_DIR,
+                            14,
+                            234 - sy,
+                            (field_width - 100).max(120),
+                            25,
+                        );
+                        move_child(
+                            *page,
+                            ID_BROWSE_WORK,
+                            page_width - 18 - 90,
+                            232 - sy,
+                            90,
+                            29,
+                        );
+                        move_label(state, "iso_prefix", 14, 268 - sy, field_width, 20);
+                        move_child(*page, ID_ISO_PREFIX, 14, 288 - sy, field_width, 25);
+                        move_label(state, "group_limit", 14, 322 - sy, field_width, 20);
+                        move_child(*page, ID_GROUP_LIMIT, 14, 342 - sy, field_width, 25);
+                        place(state.controls.keep_files, 14, 376 - sy, 230, 28);
+                    }
+                } else {
+                    unsafe {
+                        move_label(state, "title", 14, 106 - sy, 470, 20);
+                        move_child(*page, ID_TITLE, 14, 126 - sy, 470, 25);
+                        move_label(state, "capacity", 520, 106 - sy, 220, 20);
+                        move_child(*page, ID_CAPACITY, 520, 126 - sy, 220, 120);
+                        place(state.custom_bytes_label, 760, 106 - sy, 360, 20);
+                        move_child(*page, ID_CUSTOM_BYTES, 760, 126 - sy, 360, 25);
+                        move_label(state, "advanced_hint", 14, 166 - sy, 780, 48);
+                        move_label(state, "work_dir", 14, 150 - sy, 520, 20);
+                        move_label(state, "iso_prefix", 14, 194 - sy, 460, 20);
+                        move_child(*page, ID_ISO_PREFIX, 14, 214 - sy, 460, 25);
+                        move_label(state, "group_limit", 520, 194 - sy, 220, 20);
+                        move_child(*page, ID_GROUP_LIMIT, 520, 214 - sy, 220, 25);
+                        place(state.controls.keep_files, 760, 194 - sy, 230, 28);
+                    }
+                }
+            }
+            1 => {
+                if narrow {
+                    let field_width = page_width - 28;
+                    unsafe {
+                        move_label(state, "audio_mode", 14, 18 - sy, 200, 20);
+                        move_child(*page, ID_MODE, 14, 38 - sy, 200, 120);
+                        move_label(state, "sample_rate", 220, 18 - sy, 160, 20);
+                        move_child(*page, ID_RATE, 220, 38 - sy, 160, 120);
+                        move_label(state, "bits", 396, 18 - sy, 160, 20);
+                        move_child(*page, ID_BITS, 396, 38 - sy, 160, 120);
+                        move_label(state, "import_folder", 14, 80 - sy, field_width, 20);
+                        move_child(
+                            *page,
+                            ID_IMPORT_FOLDER,
+                            14,
+                            100 - sy,
+                            (field_width - 100).max(120),
+                            25,
+                        );
+                        move_child(
+                            *page,
+                            ID_BROWSE_IMPORT,
+                            page_width - 18 - 90,
+                            98 - sy,
+                            90,
+                            29,
+                        );
+                        move_label(state, "audio_note", 14, 136 - sy, field_width, 48);
+                    }
+                } else {
+                    unsafe {
+                        move_label(state, "audio_mode", 14, 18 - sy, 300, 20);
+                        move_child(*page, ID_MODE, 14, 38 - sy, 300, 120);
+                        move_label(state, "sample_rate", 340, 18 - sy, 210, 20);
+                        move_child(*page, ID_RATE, 340, 38 - sy, 210, 120);
+                        move_label(state, "bits", 575, 18 - sy, 160, 20);
+                        move_child(*page, ID_BITS, 575, 38 - sy, 160, 120);
+                        move_label(state, "import_folder", 14, 80 - sy, 520, 20);
+                        move_label(state, "audio_note", 14, 136 - sy, 900, 48);
+                    }
+                }
+            }
+            2 => {
+                if narrow {
+                    let column = (page_width - 28 - 16) / 2;
+                    unsafe {
+                        move_label(state, "tracks", 14, 66 - sy, column, 20);
+                        move_child(*page, ID_TRACKS, 14, 86 - sy, column, 25);
+                        move_label(state, "cover", 14 + column + 16, 66 - sy, column, 20);
+                        move_child(
+                            *page,
+                            ID_COVER,
+                            14 + column + 16,
+                            86 - sy,
+                            column,
+                            25,
+                        );
+                    }
+                    let font_column = (page_width - 28 - 32) / 3;
+                    for (index, (label_key, field_id, browse_id)) in [
+                        ("font_sc", ID_FONT_SC, 1007usize),
+                        ("font_jp", ID_FONT_JP, 1008usize),
+                        ("font_kr", ID_FONT_KR, 1009usize),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let x = 14 + index as i32 * (font_column + 16);
+                        unsafe {
+                            move_label(state, label_key, x, 120 - sy, font_column, 20);
+                            move_child(*page, field_id, x, 140 - sy, font_column, 25);
+                            move_child(*page, browse_id, x, 174 - sy, font_column, 28);
+                        }
+                    }
+                } else {
+                    unsafe {
+                        move_label(state, "tracks", 14, 66 - sy, 220, 20);
+                        move_child(*page, ID_TRACKS, 14, 86 - sy, 220, 25);
+                        move_label(state, "cover", 260, 66 - sy, 220, 20);
+                        move_child(*page, ID_COVER, 260, 86 - sy, 220, 25);
+                    }
+                    for (index, (label_key, field_id, browse_id)) in [
+                        ("font_sc", ID_FONT_SC, 1007usize),
+                        ("font_jp", ID_FONT_JP, 1008usize),
+                        ("font_kr", ID_FONT_KR, 1009usize),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let x = 14 + index as i32 * 326;
+                        unsafe {
+                            move_label(state, label_key, x, 120 - sy, 300, 20);
+                            move_child(*page, field_id, x, 140 - sy, 300, 25);
+                            move_child(*page, browse_id, x, 174 - sy, 150, 28);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -5863,6 +6117,18 @@ fn update_choices(state: &UiState) {
         ShowWindow(
             state.controls.custom_bytes,
             if custom_capacity { SW_SHOW } else { SW_HIDE },
+        );
+        ShowWindow(
+            state.import_folder_label,
+            if imported { SW_SHOW } else { SW_HIDE },
+        );
+        ShowWindow(
+            state.controls.import_folder,
+            if imported { SW_SHOW } else { SW_HIDE },
+        );
+        ShowWindow(
+            state.import_browse,
+            if imported { SW_SHOW } else { SW_HIDE },
         );
         EnableWindow(state.controls.custom_bytes, i32::from(custom_capacity));
         EnableWindow(state.controls.import_folder, i32::from(imported));
