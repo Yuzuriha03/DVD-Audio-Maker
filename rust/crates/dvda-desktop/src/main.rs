@@ -2338,6 +2338,25 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     sync_combo_overlays();
 }
 
+fn browse_edit_width(page_width: i32) -> i32 {
+    // Reserve both page margins as well as the button and its gap.
+    (page_width - 14 - 14 - 90 - 10).max(120)
+}
+
+#[cfg(test)]
+mod browse_layout_tests {
+    use super::browse_edit_width;
+
+    #[test]
+    fn browse_rows_preserve_right_margin_at_half_and_full_width() {
+        for page_width in [420, 640, 780, 800, 1120, 1600] {
+            let edit_right = 14 + browse_edit_width(page_width);
+            let button_left = edit_right + 10;
+            assert_eq!(page_width - (button_left + 90), 14);
+        }
+    }
+}
+
 fn resize_page_fields(page: Hwnd) {
     let mut rect = Rect {
         left: 0,
@@ -2353,7 +2372,7 @@ fn resize_page_fields(page: Hwnd) {
     // Browse rows share the same geometry. Keeping the edit and its button
     // inside the page client area prevents a clipped right border after a
     // window resize or a DPI/layout change.
-    let edit_width = (width - 14 - 100).max(120);
+    let edit_width = browse_edit_width(width);
     for (edit_id, browse_id, y) in [
         (ID_SOURCE, ID_BROWSE_SOURCE, 38),
         (ID_FINAL, ID_BROWSE_FINAL, 82),
@@ -2379,9 +2398,9 @@ fn resize_page_fields(page: Hwnd) {
                 MoveWindow(
                     browse,
                     scale(14 + edit_width + 10),
-                    scale(y - 2) - scroll,
+                    scale(y) - scroll,
                     scale(90),
-                    scale(29),
+                    scale(24),
                     0,
                 )
             };
@@ -2461,7 +2480,7 @@ macro_rules! text_field {
 
 macro_rules! browse_edit {
     ($parent:expr, $caption:expr, $key:expr, $id:expr, $browse_id:expr, $x:expr, $y:expr, $labels:expr, $browse:expr, $browse_buttons:expr, $lang:expr $(,)?) => {{
-        label!($parent, $caption, $key, $x, $y, 520, 20, $labels);
+        label!($parent, $caption, $key, $x, $y, 520, 18, $labels);
         let edit = create!(
             $parent,
             "EDIT",
@@ -2473,14 +2492,15 @@ macro_rules! browse_edit {
             25,
             $id
         );
+        // End before the next row's label (24 logical pixels below the edit).
         let browse_button = button(
             $parent,
             tr($lang, "browse"),
             $browse_id,
             $x + 830,
-            $y + 18,
+            $y + 20,
             90,
-            29,
+            24,
         );
         $browse_buttons.push(browse_button);
         $browse.insert(
@@ -5050,7 +5070,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                             25,
                         );
                         move_label(state, "advanced_hint", 14, 204 - sy, field_width, 48);
-                        move_label(state, "work_dir", 14, 214 - sy, field_width, 20);
+                        move_label(state, "work_dir", 14, 214 - sy, field_width, 18);
                         move_child(
                             *page,
                             ID_WORK_DIR,
@@ -5062,10 +5082,10 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(
                             *page,
                             ID_BROWSE_WORK,
-                            page_width - 18 - 90,
-                            232 - sy,
+                            page_width - 14 - 90,
+                            234 - sy,
                             90,
-                            29,
+                            24,
                         );
                         move_label(state, "iso_prefix", 14, 268 - sy, field_width, 20);
                         move_child(*page, ID_ISO_PREFIX, 14, 288 - sy, field_width, 25);
@@ -5082,7 +5102,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                         place(state.custom_bytes_label, 760, 106 - sy, 360, 20);
                         move_child(*page, ID_CUSTOM_BYTES, 760, 126 - sy, 360, 25);
                         move_label(state, "advanced_hint", 14, 166 - sy, 780, 48);
-                        move_label(state, "work_dir", 14, 150 - sy, 520, 20);
+                        move_label(state, "work_dir", 14, 150 - sy, 520, 18);
                         move_label(state, "iso_prefix", 14, 194 - sy, 460, 20);
                         move_child(*page, ID_ISO_PREFIX, 14, 214 - sy, 460, 25);
                         move_label(state, "group_limit", 520, 194 - sy, 220, 20);
@@ -5101,7 +5121,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_RATE, 220, 38 - sy, 160, 120);
                         move_label(state, "bits", 396, 18 - sy, 160, 20);
                         move_child(*page, ID_BITS, 396, 38 - sy, 160, 120);
-                        move_label(state, "import_folder", 14, 80 - sy, field_width, 20);
+                        move_label(state, "import_folder", 14, 80 - sy, field_width, 18);
                         move_child(
                             *page,
                             ID_IMPORT_FOLDER,
@@ -5113,10 +5133,10 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(
                             *page,
                             ID_BROWSE_IMPORT,
-                            page_width - 18 - 90,
-                            98 - sy,
+                            page_width - 14 - 90,
+                            100 - sy,
                             90,
-                            29,
+                            24,
                         );
                         move_label(state, "audio_note", 14, 136 - sy, field_width, 48);
                     }
@@ -5128,7 +5148,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_RATE, 340, 38 - sy, 210, 120);
                         move_label(state, "bits", 575, 18 - sy, 160, 20);
                         move_child(*page, ID_BITS, 575, 38 - sy, 160, 120);
-                        move_label(state, "import_folder", 14, 80 - sy, 520, 20);
+                        move_label(state, "import_folder", 14, 80 - sy, 520, 18);
                         move_label(state, "audio_note", 14, 136 - sy, 900, 48);
                     }
                 }
