@@ -197,7 +197,6 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     let progress_total = (sources.len() as u64).saturating_mul(2).max(1);
     events.progress(0, progress_total);
     let mut tracks = Vec::with_capacity(sources.len());
-    crate::task_log::emit(events, "source_metadata", 0, sources.len() as u64, "", "");
     let mut metadata_jobs = Vec::new();
     for path in &sources {
         alac::check_cancel(events)?;
@@ -207,6 +206,14 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
             metadata_jobs.push(job.audio(path, None));
         }
     }
+    crate::task_log::emit(
+        events,
+        "source_metadata",
+        0,
+        metadata_jobs.len() as u64,
+        "",
+        "",
+    );
     events.progress(cached.len() as u64, progress_total);
     let probed = super::audio_decode_parallel::inspect_jobs(
         &metadata_jobs,
@@ -233,8 +240,8 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     crate::task_log::emit(
         events,
         "source_metadata",
-        sources.len() as u64,
-        sources.len() as u64,
+        metadata_jobs.len() as u64,
+        metadata_jobs.len() as u64,
         "",
         "",
     );
@@ -273,7 +280,6 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     let mut repairs = Vec::new();
     let mut checked = 0;
     let mut reused = 0;
-    crate::task_log::emit(events, "source_decode", 0, sources.len() as u64, "", "");
     let decode_jobs: Vec<_> = tracks
         .iter()
         .filter(|track| {
@@ -291,6 +297,7 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
         .iter()
         .map(|job| duration_by_path[job.input.as_str()])
         .collect();
+    crate::task_log::emit(events, "source_decode", 0, decode_jobs.len() as u64, "", "");
     let decoded = super::audio_decode_parallel::inspect_jobs(
         &decode_jobs,
         events,
@@ -311,15 +318,15 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
         let mut files = Vec::with_capacity(group.len());
         for (index, track) in group.into_iter().enumerate() {
             alac::check_cancel(events)?;
+            checked += 1;
             crate::task_log::emit(
                 events,
-                "source_decode",
+                "source_result",
                 checked as u64,
                 sources.len() as u64,
                 &track.title,
                 &track.path,
             );
-            checked += 1;
             let mut source = track.path.clone();
             let mut original = None;
             let mut detail = None;

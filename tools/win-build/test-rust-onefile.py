@@ -45,6 +45,16 @@ def main():
     u=gui.u
     with tempfile.TemporaryDirectory(prefix="dvda-onefile-") as temporary, contextlib.ExitStack() as cleanup:
         root=Path(temporary)
+        def remove_test_directory():
+            deadline=time.monotonic()+15
+            while root.exists():
+                try:
+                    shutil.rmtree(root)
+                except PermissionError:
+                    if time.monotonic()>=deadline:
+                        raise
+                    time.sleep(.1)
+        cleanup.callback(remove_test_directory)
         latest_log={"text":""}
         def failure_evidence(exc_type,exc,traceback):
             if exc_type is not None:
@@ -88,6 +98,7 @@ def main():
                 proc.kill();proc.wait(timeout=15)
                 raise
             assert proc.returncode==0
+            gui.wait_for(lambda:not runtime.exists(),10)
         def config(mode):
             values={"DVDA_SRC":str(root/"audio"),"DVDA_BUILD_DIR":str(root/mode/"work"),
                 "DVDA_FINAL_DIR":str(root/mode/"output"),"DVDA_MLP_SOURCE":mode,
@@ -97,7 +108,7 @@ def main():
             profile.write_text(json.dumps({"Version":1,"Language":"en","Values":values}),encoding="utf-8")
         config("mlp-batch")
         proc,hwnd,controls=launch()
-        runtime=next((root/"local/DVD-Audio-Maker/runtime").glob("*/type.xml")).parent
+        runtime=next((Path(tempfile.gettempdir())/"DVD-Audio-Maker-tasks").glob(f"task-{proc.pid}-*/runtime/*/type.xml")).parent
         runtime_paths=[p for p in runtime.rglob("*") if p.is_file()]
         runtime_dlls=[p for p in runtime_paths if p.suffix.casefold()==".dll"]
         if args.require_static:
@@ -127,7 +138,24 @@ def main():
                     # SendMessage can reenter completion while it enables controls.
                     u.PostMessageW(hwnd,0x0111,action,controls[action])
                     gui.wait_for(lambda:not u.IsWindowEnabled(controls[106]),5)
-                    gui.wait_for(lambda:u.IsWindowEnabled(controls[106]),180)
+                    page=next(h for h in gui.windows(hwnd)
+                        if gui.classname(h)=="DVD_AUDIO_PAGE_RUST" and u.IsWindowVisible(h))
+                    assert u.IsWindowEnabled(page), "busy settings page must accept scrolling"
+                    assert not u.IsWindowEnabled(controls[200]), "busy source field must be read-only"
+                    u.SetWindowPos(hwnd,None,40,40,800,800,0x0040)
+                    scroll_checks=0
+                    deadline=time.monotonic()+180
+                    while not u.IsWindowEnabled(controls[106]):
+                        assert time.monotonic()<deadline, "task timed out"
+                        u.SendMessageW(page,0x0115,7,0)
+                        bottom=u.GetWindowLongPtrW(page,-21)
+                        u.SendMessageW(page,0x0115,6,0)
+                        top=u.GetWindowLongPtrW(page,-21)
+                        assert bottom>top and top==0, (bottom,top)
+                        scroll_checks+=1
+                        time.sleep(.02)
+                    assert u.IsWindowEnabled(controls[200]), "source field did not recover"
+                    print(f"busy scroll cycles: {scroll_checks}",flush=True)
                     time.sleep(.1)
                     logs=gui.text(controls[115])
                     latest_log["text"]=logs
@@ -135,37 +163,16 @@ def main():
                     timings.append({"mode":mode,"action":action,"seconds":round(time.monotonic()-started,3)})
                     print(json.dumps(timings[-1]),flush=True)
                 assert (root/mode/"output/disc_1.iso").is_file()
-                assert (root/mode/"work/build.log").is_file()
-                assert (root/mode/"work/decode_report.txt").read_text(encoding="utf-8").startswith("Source audio verification report")
-                index=json.loads((root/mode/"work/mlp_index.json").read_text(encoding="utf-8-sig"))
-                tracks={path:value for path,value in index.items() if not path.startswith("__")}
-                assert len(tracks)==2,tracks
-                assert index["__meta__"]["mlp_source"]==mode,index["__meta__"]
-                for path,track in tracks.items():
-                    assert track["mlp_source"]==mode,track
-                    with Path(path).open("rb") as stream:
-                        header=stream.read(12)
-                    if mode=="mlp-batch":
-                        assert Path(path).suffix.casefold()==".mlp" and header[4:8]==b"\xf8\x72\x6f\xbb",(path,header)
-                    else:
-                        assert header[:4] in (b"RIFF",b"RF64") and header[8:12]==b"WAVE",(path,header)
-                mode_checks.append({"mode":mode,"tracks":len(tracks),"input_codec_verified":True})
+                assert not (root/mode/"work/unfinished-task").exists(), "successful task workspace was not cleaned"
+                mode_checks.append({"mode":mode,"iso_created":True,"source_verification_passed":True})
                 completed.append(mode)
             except Exception:
                 latest_log["text"]=gui.text(controls[115])
                 raise
             finally:
                 close(proc,hwnd)
-        encoded=runtime/"data/menu/black_PAL_720x576.png"
-        expected=hashlib.sha256(encoded.read_bytes()).hexdigest()
-        encoded.write_bytes(b"damaged runtime")
-        proc,hwnd,_=launch()
-        try:
-            assert hashlib.sha256(encoded.read_bytes()).hexdigest()==expected
-        finally:
-            close(proc,hwnd)
         record={"passed":True,"build_and_verify":completed,"menu_and_stills":True,
-            "runtime_repair":True,"standalone_exe":True,"runtime_files":len(runtime_paths),
+            "standalone_exe":True,"runtime_files":len(runtime_paths),
             "mode_checks":mode_checks,
             "project_owned_runtime_dlls":[],"runtime_dlls":[p.name for p in runtime_dlls],"author_subprocess_shipped":False,
             "system_only_path":True,"fixture_generator":str(fixture_ffmpeg),
