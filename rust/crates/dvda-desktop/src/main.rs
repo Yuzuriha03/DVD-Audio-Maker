@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod presentation;
+mod touch;
 
 use dvda_core::localization;
 include!(concat!(env!("OUT_DIR"), "/runtime.rs"));
@@ -104,6 +105,13 @@ const WS_CHILD: u32 = 0x40000000;
 const WS_VISIBLE: u32 = 0x10000000;
 const WS_TABSTOP: u32 = 0x00010000;
 const WS_CLIPCHILDREN: u32 = 0x02000000;
+const WS_POPUP: u32 = 0x80000000;
+const WS_EX_TOPMOST: u32 = 0x00000008;
+const WS_EX_TRANSPARENT: u32 = 0x00000020;
+const WS_EX_TOOLWINDOW: u32 = 0x00000080;
+const WS_EX_NOACTIVATE: u32 = 0x08000000;
+const SWP_NOACTIVATE: u32 = 0x0010;
+const SWP_SHOWWINDOW: u32 = 0x0040;
 const WS_EX_APPWINDOW: u32 = 0x00040000;
 const WS_EX_COMPOSITED: u32 = 0x02000000;
 const ES_AUTOHSCROLL: u32 = 0x0080;
@@ -597,16 +605,6 @@ unsafe extern "system" {
         height: i32,
         flags: u32,
     ) -> i32;
-    fn ScrollWindowEx(
-        hwnd: Hwnd,
-        dx: i32,
-        dy: i32,
-        scroll: *const Rect,
-        clip: *const Rect,
-        region: Handle,
-        update: *mut Rect,
-        flags: u32,
-    ) -> i32;
     fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     fn GetMessageW(message: *mut Message, hwnd: Hwnd, minimum: u32, maximum: u32) -> i32;
@@ -667,6 +665,7 @@ unsafe extern "system" {
     fn EnumChildWindows(hwnd: Hwnd, callback: EnumChildProc, parameter: Lparam) -> i32;
     fn SystemParametersInfoW(action: u32, param: u32, data: *mut c_void, update: u32) -> i32;
     fn ScreenToClient(hwnd: Hwnd, point: *mut Point) -> i32;
+    fn ClientToScreen(hwnd: Hwnd, point: *mut Point) -> i32;
     fn OpenClipboard(owner: Hwnd) -> i32;
     fn EmptyClipboard() -> i32;
     fn SetClipboardData(format: u32, data: Handle) -> Handle;
@@ -1444,6 +1443,7 @@ struct UiState {
     status_key: &'static str,
     activity_raw: String,
     busy: bool,
+    busy_disabled_controls: Vec<Hwnd>,
     close_when_done: bool,
     cancel: Option<Arc<AtomicBool>>,
     started: Option<Instant>,
@@ -1454,6 +1454,8 @@ struct UiState {
     splitter_height: Option<i32>,
     splitter_position: i32,
     dragging_splitter: bool,
+    splitter_preview: Option<i32>,
+    splitter_preview_window: Hwnd,
     advanced_controls: Vec<Hwnd>,
     advanced_hint: Hwnd,
     caption_minimize: Hwnd,
@@ -1934,23 +1936,34 @@ unsafe extern "system" fn window_proc(
                     state.dragging_splitter = true;
                     unsafe {
                         SetCapture(hwnd);
+                        update_splitter_preview(state, hwnd, y);
                     }
                 } else if message == 0x0202 && state.dragging_splitter {
                     state.dragging_splitter = false;
                     unsafe {
                         ReleaseCapture();
-                        RedrawWindow(
-                            hwnd,
-                            ptr::null(),
-                            ptr::null_mut(),
-                            RDW_INVALIDATE | RDW_ALLCHILDREN,
-                        );
+                    }
+                    let preview = state.splitter_preview;
+                    unsafe { hide_splitter_preview(state) };
+                    if let Some(preview_y) = preview {
+                        state.splitter_height =
+                            Some(unscale(preview_y) - (HEADER_HEIGHT + 56));
+                        unsafe {
+                            SendMessageW(hwnd, WM_SETREDRAW, 0, 0);
+                        }
+                        layout(hwnd, state);
+                        unsafe {
+                            SendMessageW(hwnd, WM_SETREDRAW, 1, 0);
+                            RedrawWindow(
+                                hwnd,
+                                ptr::null(),
+                                ptr::null_mut(),
+                                RDW_INVALIDATE | RDW_ALLCHILDREN,
+                            );
+                        }
                     }
                 } else if message == 0x0200 && state.dragging_splitter && wparam & 1 != 0 {
-                    state.splitter_height = Some(unscale(y) - (HEADER_HEIGHT + 56));
-                    DEFER_CONTROL_PAINT.store(true, Ordering::Relaxed);
-                    layout(hwnd, state);
-                    DEFER_CONTROL_PAINT.store(false, Ordering::Relaxed);
+                    unsafe { update_splitter_preview(state, hwnd, y) };
                 }
                 if over || state.dragging_splitter {
                     unsafe {
@@ -2033,7 +2046,7 @@ unsafe extern "system" fn window_proc(
                 // MINMAXINFO consists of five POINTs; minimum tracking size is fourth.
                 let dimensions = unsafe { &mut *(lparam as *mut [i32; 10]) };
                 let mut min_width = scale(640);
-                let mut min_height = scale(500);
+                let mut min_height = scale(360);
                 let mut work = Rect {
                     left: 0,
                     top: 0,
@@ -2121,7 +2134,7 @@ unsafe extern "system" fn window_proc(
             let dc = wparam as Handle;
             let control = lparam as Hwnd;
             SetBkMode(dc, 1);
-            if IsWindowEnabled(control) == 0 {
+            if IsWindowEnabled(control) == 0 && window_class(control) == "Edit" {
                 SetBkColor(dc, c_disabled_fill());
                 SetTextColor(dc, c_disabled_text());
                 brush(c_disabled_fill()) as Lresult
@@ -2158,6 +2171,116 @@ unsafe extern "system" fn window_proc(
     }
 }
 
+static SPLITTER_PREVIEW_CLASS_READY: OnceLock<()> = OnceLock::new();
+
+unsafe extern "system" fn splitter_preview_proc(
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
+    match message {
+        WM_PAINT => {
+            let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+            let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+            let mut rect = Rect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            unsafe {
+                GetClientRect(hwnd, &mut rect);
+                FillRect(dc, &rect, brush(c_accent()));
+                EndPaint(hwnd, &paint);
+            }
+            0
+        }
+        WM_ERASEBKGND => 1,
+        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    }
+}
+
+unsafe fn ensure_splitter_preview(owner: Hwnd) -> Hwnd {
+    SPLITTER_PREVIEW_CLASS_READY.get_or_init(|| unsafe {
+        let class_name = wide("DVD_AUDIO_SPLITTER_PREVIEW_RUST");
+        let registration = WndClass {
+            style: 0,
+            procedure: splitter_preview_proc,
+            extra_class: 0,
+            extra_window: 0,
+            instance: GetModuleHandleW(ptr::null()),
+            icon: ptr::null_mut(),
+            cursor: LoadCursorW(ptr::null_mut(), 32512usize as *const u16),
+            background: ptr::null_mut(),
+            menu: ptr::null(),
+            class_name: class_name.as_ptr(),
+        };
+        let _ = RegisterClassW(&registration);
+    });
+    let class_name = wide("DVD_AUDIO_SPLITTER_PREVIEW_RUST");
+    unsafe {
+        CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+            class_name.as_ptr(),
+            ptr::null(),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            owner,
+            ptr::null_mut(),
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        )
+    }
+}
+
+unsafe fn update_splitter_preview(state: &mut UiState, main: Hwnd, client_y: i32) {
+    let mut preview = state.splitter_preview_window;
+    if preview.is_null() {
+        preview = unsafe { ensure_splitter_preview(main) };
+        state.splitter_preview_window = preview;
+    }
+    if preview.is_null() {
+        return;
+    }
+    state.splitter_preview = Some(client_y);
+    let mut point = Point {
+        x: 0,
+        y: client_y,
+    };
+    let mut window_rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        ClientToScreen(main, &mut point);
+        GetWindowRect(main, &mut window_rect);
+        let height = scale(3).max(2);
+        SetWindowPos(
+            preview,
+            -1isize as Hwnd,
+            window_rect.left,
+            point.y - height / 2,
+            window_rect.right - window_rect.left,
+            height,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
+    }
+}
+
+unsafe fn hide_splitter_preview(state: &mut UiState) {
+    if !state.splitter_preview_window.is_null() {
+        unsafe {
+            ShowWindow(state.splitter_preview_window, SW_HIDE);
+        }
+    }
+    state.splitter_preview = None;
+}
 unsafe extern "system" fn page_proc(
     hwnd: Hwnd,
     message: u32,
@@ -2166,6 +2289,9 @@ unsafe extern "system" fn page_proc(
 ) -> Lresult {
     match message {
         WM_SIZE => {
+            if DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
+                return 0;
+            }
             scroll_page(hwnd, 0, false);
             resize_page_fields(hwnd);
             unsafe {
@@ -2225,7 +2351,9 @@ unsafe extern "system" fn page_proc(
             let parent = GetParent(hwnd);
             let muted = state(parent).is_some_and(|state| state.muted.contains(&control));
             SetBkMode(dc, 1);
-            if IsWindowEnabled(hwnd) == 0 || IsWindowEnabled(control) == 0 {
+            if (IsWindowEnabled(hwnd) == 0 || IsWindowEnabled(control) == 0)
+                && window_class(control) == "Edit"
+            {
                 SetBkColor(dc, c_disabled_fill());
                 SetTextColor(dc, c_disabled_text());
                 brush(c_disabled_fill()) as Lresult
@@ -2263,6 +2391,20 @@ unsafe extern "system" fn page_proc(
     }
 }
 
+unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lparam) -> i32 {
+    let (page, delta) = unsafe { &*(parameter as *const (Hwnd, i32)) };
+    if unsafe { GetParent(hwnd) } != *page {
+        return 1;
+    }
+    let mut rect: Rect = unsafe { std::mem::zeroed() };
+    unsafe { GetWindowRect(hwnd, &mut rect); }
+    let mut point = Point { x: rect.left, y: rect.top };
+    unsafe {
+        ScreenToClient(*page, &mut point);
+        SetWindowPos(hwnd, ptr::null_mut(), point.x, point.y + delta, 0, 0, 0x011D);
+    }
+    1
+}
 fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     let mut rect = Rect {
         left: 0,
@@ -2284,46 +2426,17 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, pos as isize);
         if pos != old {
-            ScrollWindowEx(
-                hwnd,
-                0,
-                old - pos,
-                ptr::null(),
-                ptr::null(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                7,
-            );
-            // The card frame is part of the scrolled client pixels; repaint
-            // its fixed edges so old border lines cannot appear twice.
-            let thickness = scale(2).max(1);
-            for edge in [
-                Rect {
-                    left: rect.left,
-                    top: rect.top,
-                    right: rect.right,
-                    bottom: rect.top + thickness,
-                },
-                Rect {
-                    left: rect.left,
-                    top: rect.bottom - thickness,
-                    right: rect.right,
-                    bottom: rect.bottom,
-                },
-                Rect {
-                    left: rect.left,
-                    top: rect.top,
-                    right: rect.left + thickness,
-                    bottom: rect.bottom,
-                },
-                Rect {
-                    left: rect.right - thickness,
-                    top: rect.top,
-                    right: rect.right,
-                    bottom: rect.bottom,
-                },
-            ] {
-                InvalidateRect(hwnd, &edge, 0);
+            let movement = (hwnd, old - pos);
+            // Move children without copying the fixed frame or exposing intermediate paints.
+            EnumChildWindows(hwnd, scroll_page_child, &movement as *const _ as Lparam);
+            if !DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
+                sync_combo_overlays();
+                RedrawWindow(
+                    hwnd,
+                    ptr::null(),
+                    ptr::null_mut(),
+                    RDW_INVALIDATE | RDW_ALLCHILDREN,
+                );
             }
         }
     }
@@ -2388,7 +2501,7 @@ fn resize_page_fields(page: Hwnd) {
                     scale(14),
                     scale(y) - scroll,
                     scale(edit_width),
-                    scale(25),
+                    scale(24),
                     0,
                 )
             };
@@ -2489,7 +2602,7 @@ macro_rules! browse_edit {
             $x,
             $y + 20,
             820,
-            25,
+            24,
             $id
         );
         // End before the next row's label (24 logical pixels below the edit).
@@ -3035,6 +3148,7 @@ fn create_controls(parent: Hwnd) -> UiState {
     unsafe {
         install_scrollbar(page_scrollbar, parent);
         install_scrollbar(log_scrollbar, parent);
+        touch::install(log, true);
     }
     unsafe {
         SendMessageW(log, EM_SETLIMITTEXT, 1_000_000, 0);
@@ -3176,6 +3290,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         status_key: "ready",
         activity_raw: tr(Lang::Zh, "ready_hint").into(),
         busy: false,
+        busy_disabled_controls: Vec::new(),
         close_when_done: false,
         cancel: None,
         started: None,
@@ -3186,6 +3301,8 @@ fn create_controls(parent: Hwnd) -> UiState {
         splitter_height: None,
         splitter_position: 420,
         dragging_splitter: false,
+        splitter_preview: None,
+        splitter_preview_window: ptr::null_mut(),
         advanced_controls,
         advanced_hint,
         caption_minimize,
@@ -3261,7 +3378,7 @@ fn create_controls(parent: Hwnd) -> UiState {
 }
 
 fn create_page(parent: Hwnd) -> Hwnd {
-    create!(
+    let hwnd = create!(
         parent,
         "DVD_AUDIO_PAGE_RUST",
         "",
@@ -3271,7 +3388,9 @@ fn create_page(parent: Hwnd) -> Hwnd {
         1130,
         310,
         0,
-    )
+    );
+    touch::install(hwnd, false);
+    hwnd
 }
 
 fn check_field(
@@ -3322,6 +3441,7 @@ fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
         "",
         WS_CHILD
             | WS_VISIBLE
+            | 0x04000000 // WS_CLIPSIBLINGS: the closed-field overlay owns these pixels.
             | WS_TABSTOP
             | CBS_DROPDOWNLIST
             | CBS_OWNERDRAWFIXED
@@ -3345,6 +3465,7 @@ fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
     unsafe {
         GetWindowRect(hwnd, &mut rect);
     }
+    touch::install_combo(hwnd);
     let closed_height = unscale((rect.bottom - rect.top).max(scale(20)));
     // The overlay owns the whole closed combo so the themed border and text
     // replace the system-drawn field completely.
@@ -3361,6 +3482,7 @@ fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
     });
     if !overlay.is_null() {
         install_combo_arrow(overlay, hwnd);
+        unsafe { SetWindowPos(overlay, ptr::null_mut(), 0, 0, 0, 0, 0x0013); }
         let registry = COMBO_OVERLAYS.get_or_init(|| Mutex::new(Vec::new()));
         if let Ok(mut registry) = registry.lock() {
             registry.push((hwnd as isize, overlay as isize));
@@ -3760,7 +3882,8 @@ unsafe extern "system" fn combo_arrow_proc(
 
 unsafe fn draw_combo_arrow(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
-    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_card()) };
+    let dc = buffer.memory;
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -3857,7 +3980,7 @@ unsafe fn draw_combo_arrow(hwnd: Hwnd) {
                 DeleteObject(pen);
             }
         }
-        EndPaint(hwnd, &paint);
+        finish_buffered_paint(hwnd, &paint, &buffer);
     }
 }
 fn sync_combo_overlays() {
@@ -3886,6 +4009,15 @@ fn sync_combo_overlays() {
         unsafe {
             GetWindowRect(combo, &mut combo_rect);
         }
+        let mut overlay_rect: Rect = unsafe { std::mem::zeroed() };
+        unsafe { GetWindowRect(overlay, &mut overlay_rect); }
+        if overlay_rect.left == combo_rect.left
+            && overlay_rect.top == combo_rect.top
+            && overlay_rect.right == combo_rect.right
+            && overlay_rect.bottom == combo_rect.bottom
+        {
+            continue;
+        }
         let mut top_left = Point {
             x: combo_rect.left,
             y: combo_rect.top,
@@ -3899,14 +4031,16 @@ fn sync_combo_overlays() {
             ScreenToClient(parent, &mut bottom_right);
         }
         unsafe {
-            MoveWindow(
+            SetWindowPos(
                 overlay,
+                ptr::null_mut(),
                 top_left.x,
                 top_left.y,
                 (bottom_right.x - top_left.x).max(scale(20)),
                 (bottom_right.y - top_left.y).max(scale(20)),
-                1,
+                0x011C, // NOZORDER | NOREDRAW | NOACTIVATE | NOCOPYBITS
             );
+            InvalidateRect(overlay, ptr::null(), 0);
         }
     }
 }
@@ -4310,13 +4444,17 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
                 // panel, so no 3D client edge is needed.
                 0
             } else if class.as_slice() == wide("DVD_AUDIO_PAGE_RUST").as_slice() {
-                0x00010000 | WS_EX_COMPOSITED // WS_EX_CONTROLPARENT | WS_EX_COMPOSITED.
+                0x00010000 // WS_EX_CONTROLPARENT; the main window composites the whole tree.
             } else {
                 0
             },
             class.as_ptr(),
             title.as_ptr(),
-            style,
+            if class.as_slice() == wide("DVD_AUDIO_PAGE_RUST").as_slice() {
+                style | WS_CLIPCHILDREN
+            } else {
+                style
+            },
             scale(x),
             scale(y),
             scale(width),
@@ -4328,6 +4466,16 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
         )
     };
     if !hwnd.is_null() {
+        if window_class(hwnd) == "Static" {
+            #[link(name = "comctl32")]
+            unsafe extern "system" {
+                fn SetWindowSubclass(hwnd: Hwnd, proc: unsafe extern "system" fn(Hwnd, u32, Wparam, Lparam, usize, usize) -> Lresult, id: usize, data: usize) -> i32;
+            }
+            unsafe { SetWindowSubclass(hwnd, buffered_label_proc, 2, 0); }
+        }
+        if window_class(parent) == "DVD_AUDIO_PAGE_RUST" {
+            touch::install(hwnd, false);
+        }
         let registry = CONTROL_RECTS.get_or_init(|| Mutex::new(Vec::new()));
         if let Ok(mut registry) = registry.lock() {
             registry.push((hwnd as isize, design.0, design.1, design.2, design.3));
@@ -4599,13 +4747,23 @@ unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
             bottom: 0,
         };
         GetWindowRect(hwnd, &mut before);
-        MoveWindow(
+        let mut origin = Point { x: before.left, y: before.top };
+        ScreenToClient(GetParent(hwnd), &mut origin);
+        let fixed_combo_height = COMBO_IDS.contains(&(GetDlgCtrlID(hwnd) as usize));
+        if origin.x == scale(x) && origin.y == scale(y)
+            && before.right - before.left == scale(width)
+            && (fixed_combo_height || before.bottom - before.top == scale(height))
+        {
+            return;
+        }
+        SetWindowPos(
             hwnd,
+            ptr::null_mut(),
             scale(x),
             scale(y),
             scale(width),
             scale(height),
-            0,
+            0x011C, // NOZORDER | NOREDRAW | NOACTIVATE | NOCOPYBITS
         );
         let mut after = Rect {
             left: 0,
@@ -4614,11 +4772,10 @@ unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
             bottom: 0,
         };
         GetWindowRect(hwnd, &mut after);
-        if !DEFER_CONTROL_PAINT.load(Ordering::Relaxed)
-            && (before.left != after.left
-                || before.top != after.top
-                || before.right != after.right
-                || before.bottom != after.bottom)
+        if before.left != after.left
+            || before.top != after.top
+            || before.right != after.right
+            || before.bottom != after.bottom
         {
             InvalidateRect(hwnd, ptr::null(), 0);
         }
@@ -4750,6 +4907,7 @@ fn toggle_theme(hwnd: Hwnd, state: &mut UiState) {
 }
 
 fn layout(hwnd: Hwnd, state: &mut UiState) {
+    DEFER_CONTROL_PAINT.store(true, Ordering::Relaxed);
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -4760,7 +4918,8 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         GetClientRect(hwnd, &mut rect);
     }
     let width = unscale(rect.right - rect.left).max(640);
-    let height = unscale(rect.bottom - rect.top).max(500);
+    let height = unscale(rect.bottom - rect.top).max(1);
+    let compact = height < 500;
     let margin = 18;
     let bottom = height - 14;
     let toolbar_y = HEADER_HEIGHT + 14;
@@ -4768,10 +4927,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     let tab_height = state
         .splitter_height
         .unwrap_or((height - 440).clamp(190, 350))
-        .clamp(190, (height - 380).max(190));
-    let splitter = tabs_y + tab_height;
-    let page_y = tabs_y + 44;
-    let log_top = splitter + 104;
+        .clamp(if compact { 64 } else { 104 }, (height - 380).max(if compact { 64 } else { 104 }));
     let actions_top = bottom - 34;
     let language_width = 104;
     // Profile actions follow their translated label so Japanese and English
@@ -4794,6 +4950,15 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         header_x[index] = right - header_widths[index];
         right = header_x[index] - 8;
     }
+    let profile_label_width = unscale(measured_text_width(hwnd, tr(state.lang, "profile"), ui_font())) + 8;
+    let profile_x = margin + profile_label_width + 6;
+    let stacked_profile = header_x[0] - 12 - profile_x < 120;
+    let action_toolbar_y = toolbar_y + if stacked_profile { 34 } else { 0 };
+    let tabs_y = tabs_y + if stacked_profile { 34 } else { 0 };
+    let tab_height = if compact { 64 } else { tab_height };
+    let splitter = tabs_y + tab_height;
+    let page_y = tabs_y + 44;
+    let log_top = splitter + 104;
     state.splitter_position = scale(splitter);
     let caption_width = 40;
     let caption_gap = 2;
@@ -4805,9 +4970,9 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     unsafe {
         place(
             state.controls.profile,
-            112,
+            profile_x,
             toolbar_y,
-            (header_x[0] - 12 - 112).max(120),
+            if stacked_profile { width - margin - profile_x } else { header_x[0] - 12 - profile_x },
             26,
         );
         place(
@@ -4824,18 +4989,20 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             (theme_x, state.theme_button),
         ] {
             place(button, index, (HEADER_HEIGHT - 30) / 2, caption_width, 30);
-            InvalidateRect(button, ptr::null(), 0);
+            if !state.dragging_splitter {
+                InvalidateRect(button, ptr::null(), 0);
+            }
         }
         for (handle, key) in &state.buttons {
             match *key {
                 "open" => {
-                    place(*handle, header_x[0], toolbar_y, header_widths[0], 28);
+                    place(*handle, header_x[0], action_toolbar_y, header_widths[0], 28);
                 }
                 "save" => {
-                    place(*handle, header_x[1], toolbar_y, header_widths[1], 28);
+                    place(*handle, header_x[1], action_toolbar_y, header_widths[1], 28);
                 }
                 "save_as" => {
-                    place(*handle, header_x[2], toolbar_y, header_widths[2], 28);
+                    place(*handle, header_x[2], action_toolbar_y, header_widths[2], 28);
                 }
                 "copy" => {
                     if width >= 900 {
@@ -4865,7 +5032,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         for (handle, key) in &state.labels {
             match *key {
                 "profile" => {
-                    place(*handle, margin, toolbar_y + 4, 88, 20);
+                    place(*handle, margin, toolbar_y + 4, profile_label_width, 20);
                 }
                 "language" => {
                     ShowWindow(*handle, SW_HIDE);
@@ -4953,7 +5120,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             130,
             22,
         );
-        let log_height = (actions_top - 12 - log_top).max(60);
+        let log_height = (actions_top - 12 - log_top).max(1);
         place(
             state.controls.log,
             margin,
@@ -4966,8 +5133,11 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             width - margin - 12,
             log_top + 2,
             10,
-            (log_height - 4).max(20),
+            (log_height - 4).max(1),
         );
+        let log_visible = if actions_top - 12 > log_top { SW_SHOW } else { SW_HIDE };
+        ShowWindow(state.controls.log, log_visible);
+        ShowWindow(state.log_scrollbar, log_visible);
         place(state.controls.prepare, margin, actions_top, 1, 1);
         place(state.controls.build, margin, actions_top, 140, 34);
         place(state.controls.verify, margin + 148, actions_top, 1, 1);
@@ -4996,13 +5166,30 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                 24,
             );
         }
+        for page in &state.pages {
+            scroll_page(*page, 0, false);
+            resize_page_fields(*page);
+        }
         layout_page_contents(state);
         sync_combo_overlays();
+        DEFER_CONTROL_PAINT.store(false, Ordering::Relaxed);
+        // Splitter motion does not change the header or profile toolbar.
+        // Keep their native controls out of the repeated paint cycle.
+        let splitter_dirty = Rect {
+            left: 0,
+            top: scale(page_y),
+            right: rect.right,
+            bottom: rect.bottom,
+        };
         RedrawWindow(
             hwnd,
-            ptr::null(),
+            if state.dragging_splitter { &splitter_dirty } else { ptr::null() },
             ptr::null_mut(),
-            RDW_INVALIDATE,
+            if state.dragging_splitter {
+                RDW_INVALIDATE
+            } else {
+                RDW_INVALIDATE | RDW_ALLCHILDREN
+            },
         );
     }
 }
@@ -5049,7 +5236,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                     let field_width = page_width - 28;
                     unsafe {
                         move_label(state, "title", 14, 106 - sy, field_width, 20);
-                        move_child(*page, ID_TITLE, 14, 126 - sy, field_width, 25);
+                        move_child(*page, ID_TITLE, 14, 126 - sy, field_width, 24);
                         move_label(state, "capacity", 14, 150 - sy, 220, 20);
                         move_child(*page, ID_CAPACITY, 14, 170 - sy, 220, 120);
                         let custom_x = 250;
@@ -5096,7 +5283,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                 } else {
                     unsafe {
                         move_label(state, "title", 14, 106 - sy, 470, 20);
-                        move_child(*page, ID_TITLE, 14, 126 - sy, 470, 25);
+                        move_child(*page, ID_TITLE, 14, 126 - sy, 470, 24);
                         move_label(state, "capacity", 520, 106 - sy, 220, 20);
                         move_child(*page, ID_CAPACITY, 520, 126 - sy, 220, 120);
                         place(state.custom_bytes_label, 760, 106 - sy, 360, 20);
@@ -5170,6 +5357,18 @@ unsafe fn layout_page_contents(state: &UiState) {
                         );
                     }
                     let font_column = (page_width - 28 - 32) / 3;
+                    let font_label_height = ["font_sc", "font_jp", "font_kr"]
+                        .iter()
+                        .map(|key| {
+                            let text = get_text(label_handle(state, key));
+                            if unscale(measured_text_width(*page, &text, ui_font())) > font_column {
+                                40
+                            } else {
+                                20
+                            }
+                        })
+                        .max()
+                        .unwrap_or(20);
                     for (index, (label_key, field_id, browse_id)) in [
                         ("font_sc", ID_FONT_SC, 1007usize),
                         ("font_jp", ID_FONT_JP, 1008usize),
@@ -5180,9 +5379,9 @@ unsafe fn layout_page_contents(state: &UiState) {
                     {
                         let x = 14 + index as i32 * (font_column + 16);
                         unsafe {
-                            move_label(state, label_key, x, 120 - sy, font_column, 20);
-                            move_child(*page, field_id, x, 140 - sy, font_column, 25);
-                            move_child(*page, browse_id, x, 174 - sy, font_column, 28);
+                            move_label(state, label_key, x, 120 - sy, font_column, font_label_height);
+                            move_child(*page, field_id, x, 120 + font_label_height - sy, font_column, 25);
+                            move_child(*page, browse_id, x, 154 + font_label_height - sy, font_column, 28);
                         }
                     }
                 } else {
@@ -5661,6 +5860,37 @@ unsafe fn draw_combo_item(item: &DrawItemStruct) {
 }
 
 unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
+    unsafe {
+        let memory = CreateCompatibleDC(item.dc);
+        let bitmap = CreateCompatibleBitmap(item.dc, item.rect.right.max(1), item.rect.bottom.max(1));
+        if memory.is_null() || bitmap.is_null() {
+            if !memory.is_null() { DeleteDC(memory); }
+            if !bitmap.is_null() { DeleteObject(bitmap); }
+            return draw_owner_item_contents(hwnd, item);
+        }
+        let previous = SelectObject(memory, bitmap);
+        BitBlt(memory, item.rect.left, item.rect.top,
+            item.rect.right - item.rect.left, item.rect.bottom - item.rect.top,
+            item.dc, item.rect.left, item.rect.top, 0x00cc0020);
+        let buffered = DrawItemStruct {
+            control_type: item.control_type, control_id: item.control_id,
+            item_id: item.item_id, action: item.action, state: item.state,
+            item: item.item, dc: memory,
+            rect: Rect { left: item.rect.left, top: item.rect.top, right: item.rect.right, bottom: item.rect.bottom },
+            data: item.data,
+        };
+        let handled = draw_owner_item_contents(hwnd, &buffered);
+        BitBlt(item.dc, item.rect.left, item.rect.top,
+            item.rect.right - item.rect.left, item.rect.bottom - item.rect.top,
+            memory, item.rect.left, item.rect.top, 0x00cc0020);
+        SelectObject(memory, previous);
+        DeleteObject(bitmap);
+        DeleteDC(memory);
+        handled
+    }
+}
+
+unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     let id = item.control_id as usize;
     if COMBO_IDS.contains(&id) {
         unsafe { draw_combo_item(item) };
@@ -5882,6 +6112,39 @@ unsafe fn paint_window(hwnd: Hwnd) {
             FillRect(dc, &grip, border_brush());
         }
         finish_buffered_paint(hwnd, &paint, &buffer);
+    }
+}
+
+unsafe extern "system" fn buffered_label_proc(
+    hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam, id: usize, _data: usize,
+) -> Lresult {
+    #[link(name = "comctl32")]
+    unsafe extern "system" {
+        fn DefSubclassProc(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
+        fn RemoveWindowSubclass(hwnd: Hwnd, proc: unsafe extern "system" fn(Hwnd, u32, Wparam, Lparam, usize, usize) -> Lresult, id: usize) -> i32;
+    }
+    unsafe {
+        match message {
+            WM_ERASEBKGND => 1,
+            WM_PAINT => {
+                let mut paint = std::mem::zeroed();
+                let background = if window_class(GetParent(hwnd)) == "DVD_AUDIO_PAGE_RUST" {
+                    c_panel()
+                } else {
+                    c_body()
+                };
+                let buffer = begin_buffered_paint(hwnd, &mut paint, background);
+                // Keep native STATIC text/layout semantics, but publish background and text together.
+                DefSubclassProc(hwnd, 0x0318, buffer.memory as Wparam, 0x0004);
+                finish_buffered_paint(hwnd, &paint, &buffer);
+                0
+            }
+            WM_NCDESTROY => {
+                RemoveWindowSubclass(hwnd, buffered_label_proc, id);
+                DefSubclassProc(hwnd, message, wparam, lparam)
+            }
+            _ => DefSubclassProc(hwnd, message, wparam, lparam),
+        }
     }
 }
 
@@ -7093,17 +7356,51 @@ fn cancel_operation(state: &mut UiState) {
     }
 }
 
-fn set_busy_controls(state: &UiState, busy: bool) {
+unsafe extern "system" fn disable_busy_child(hwnd: Hwnd, parameter: Lparam) -> i32 {
+    let disabled = unsafe { &mut *(parameter as *mut Vec<Hwnd>) };
+    if window_class(hwnd) != "Static" && unsafe { IsWindowEnabled(hwnd) } != 0 {
+        disabled.push(hwnd);
+        unsafe { EnableWindow(hwnd, 0) };
+    }
+    1
+}
+
+fn set_busy_controls(state: &mut UiState, busy: bool) {
     let enabled = i32::from(!busy);
+    if busy {
+        for page in &state.pages {
+            unsafe {
+                EnumChildWindows(
+                    *page,
+                    disable_busy_child,
+                    &mut state.busy_disabled_controls as *mut Vec<Hwnd> as Lparam,
+                );
+            }
+        }
+    } else {
+        for hwnd in state.busy_disabled_controls.drain(..) {
+            unsafe { EnableWindow(hwnd, 1) };
+        }
+    }
+    for page in &state.pages {
+        unsafe {
+            RedrawWindow(*page, ptr::null(), ptr::null_mut(), RDW_INVALIDATE | RDW_ALLCHILDREN);
+        }
+    }
     for hwnd in state
-        .pages
+        .tabs
         .iter()
         .copied()
-        .chain(state.tabs.iter().copied())
         .chain([state.controls.profile, state.controls.language])
     {
         unsafe {
             EnableWindow(hwnd, enabled);
+            RedrawWindow(
+                hwnd,
+                ptr::null(),
+                ptr::null_mut(),
+                RDW_INVALIDATE | RDW_ALLCHILDREN,
+            );
         }
     }
     for (hwnd, key) in &state.buttons {
@@ -8446,6 +8743,20 @@ mod presentation_tests {
     }
 
     #[test]
+    fn combo_measurement_preserves_original_item_height() {
+        let mut item: MeasureItemStruct = unsafe { std::mem::zeroed() };
+        unsafe {
+            window_proc(
+                ptr::null_mut(),
+                WM_MEASUREITEM,
+                0,
+                &mut item as *mut MeasureItemStruct as Lparam,
+            );
+        }
+        assert_eq!(item.item_height, scale(26).max(scale(20)) as u32);
+    }
+
+    #[test]
     fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
         #[link(name = "user32")]
         unsafe extern "system" {
@@ -8489,6 +8800,39 @@ mod presentation_tests {
         let parent = create!(ptr::null_mut(), "STATIC", "", 0, 0, 0, 1180, 820, 0);
         assert!(!parent.is_null());
         let mut ui = create_controls(parent);
+        layout(parent, &mut ui);
+        for (combo, width) in [
+            (ui.controls.capacity, 220),
+            (ui.controls.mode, 300),
+            (ui.controls.rate, 210),
+            (ui.controls.bits, 160),
+            (ui.controls.language, 104),
+            (ui.controls.log_view, 132),
+        ] {
+            let mut rect: Rect = unsafe { std::mem::zeroed() };
+            unsafe { GetWindowRect(combo, &mut rect); }
+            assert_eq!(rect.right - rect.left, scale(width));
+        }
+        let mut target_rect: Rect = unsafe { std::mem::zeroed() };
+        unsafe { GetWindowRect(ui.controls.source, &mut target_rect); }
+        assert_eq!(target_rect.bottom - target_rect.top, scale(24));
+        let page = ui.pages[0];
+        let max_scroll = unsafe { page_bar_metrics(&ui) }.max;
+        scroll_page(page, scale(100), true);
+        assert_eq!(unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) }, scale(100).min(max_scroll) as isize);
+        unsafe { layout_page_contents(&mut ui); }
+        scroll_page(page, 0, true);
+        for height in [500, 600, 820] {
+            unsafe { MoveWindow(parent, 0, 0, scale(800), scale(height), 0); }
+            layout(parent, &mut ui);
+            let mut log_rect: Rect = unsafe { std::mem::zeroed() };
+            let mut action_rect: Rect = unsafe { std::mem::zeroed() };
+            unsafe {
+                GetWindowRect(ui.controls.log, &mut log_rect);
+                GetWindowRect(ui.controls.build, &mut action_rect);
+            }
+            assert!(log_rect.bottom <= action_rect.top, "log overlaps actions at height {height}");
+        }
         // Exercise the actual controls rather than passing handcrafted blank
         // overrides to the option evaluator: population must retain auto values.
         assert_eq!(get_text(ui.controls.iso_prefix), "");
@@ -8544,12 +8888,58 @@ mod presentation_tests {
         assert!(archived.contains("queued-before-export\n"));
         assert!(export_log_to(&mut ui, &source).is_err());
         assert_eq!(fs::read_to_string(&source).unwrap(), archived);
+        let page = ui.pages[0];
+        let initially_disabled = create!(page, "EDIT", "Locked", WS_CHILD, 0, 0, 100, 30, 0);
+        let initially_enabled = create!(page, "EDIT", "Editable", WS_CHILD, 0, 40, 100, 30, 0);
+        unsafe { EnableWindow(initially_disabled, 0) };
         ui.busy = true;
-        set_busy_controls(&ui, true);
+        set_busy_controls(&mut ui, true);
+        assert_eq!(unsafe { IsWindowEnabled(initially_enabled) }, 0);
+        assert_eq!(unsafe { IsWindowEnabled(initially_disabled) }, 0);
+        for _ in 0..20 {
+            scroll_page(page, i32::MAX, true);
+            assert!(unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } > 0);
+            scroll_page(page, 0, true);
+            assert_eq!(unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) }, 0);
+        }
         assert_eq!(unsafe { IsWindowEnabled(ui.controls.language) }, 0);
         assert_eq!(unsafe { IsWindowEnabled(ui.controls.profile) }, 0);
         for page in &ui.pages {
-            assert_eq!(unsafe { IsWindowEnabled(*page) }, 0);
+            assert_ne!(unsafe { IsWindowEnabled(*page) }, 0);
+        }
+        let page = ui.pages[0];
+        let label = create!(page, "STATIC", "Busy label", WS_CHILD, 0, 0, 100, 30, 0);
+        let edit = create!(page, "EDIT", "Busy input", WS_CHILD, 0, 40, 100, 30, 0);
+        unsafe {
+            EnableWindow(page, 0);
+            let dc = GetDC(page);
+            assert!(!dc.is_null());
+            assert_eq!(
+                page_proc(page, WM_CTLCOLORSTATIC, dc as usize, label as isize),
+                panel_brush() as Lresult,
+            );
+            assert_eq!(
+                page_proc(page, WM_CTLCOLOREDIT, dc as usize, edit as isize),
+                brush(c_disabled_fill()) as Lresult,
+            );
+            EnableWindow(edit, 0);
+            assert_eq!(
+                page_proc(page, WM_CTLCOLORSTATIC, dc as usize, edit as isize),
+                brush(c_disabled_fill()) as Lresult,
+            );
+            EnableWindow(page, 1);
+            assert_eq!(
+                page_proc(page, WM_CTLCOLORSTATIC, dc as usize, label as isize),
+                panel_brush() as Lresult,
+            );
+            EnableWindow(edit, 1);
+            assert_eq!(
+                page_proc(page, WM_CTLCOLOREDIT, dc as usize, edit as isize),
+                card_brush() as Lresult,
+            );
+            ReleaseDC(page, dc);
+            DestroyWindow(label);
+            DestroyWindow(edit);
         }
         let previous_lang = ui.lang.code();
         combo_select(ui.controls.language, 2);
@@ -8569,6 +8959,12 @@ mod presentation_tests {
         assert!(get_text(ui.controls.log).contains(tr(ui.lang, "cancelled")));
         assert!(!get_text(ui.controls.log).contains("operation returned interrupted"));
         assert_ne!(unsafe { IsWindowEnabled(ui.controls.language) }, 0);
+        assert_ne!(unsafe { IsWindowEnabled(initially_enabled) }, 0);
+        assert_eq!(unsafe { IsWindowEnabled(initially_disabled) }, 0);
+        unsafe {
+            DestroyWindow(initially_enabled);
+            DestroyWindow(initially_disabled);
+        }
         assert!(!ui.busy);
         // More records than a Win32 message queue can hold must all reach the
         // archive before completion. Exercise the actual controls while live
@@ -8578,7 +8974,7 @@ mod presentation_tests {
         ui.problem_count = 0;
         ui.busy = true;
         ui.started = Some(Instant::now() - Duration::from_secs(2));
-        set_busy_controls(&ui, true);
+        set_busy_controls(&mut ui, true);
         let stress_path = root.join("stress.log");
         ui.log_file = Some((fs::File::create(&stress_path).unwrap(), stress_path.clone()));
         let producer_logs = ui.log_sender.clone();

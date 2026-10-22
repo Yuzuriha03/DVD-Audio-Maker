@@ -154,7 +154,7 @@ pub(crate) fn inspect_jobs<R: Send>(
         }
         drop(send);
         let mut results: Vec<_> = (0..jobs.len()).map(|_| None).collect();
-        let mut completed = 0;
+        let mut started = 0;
         let mut portions = vec![0u64; jobs.len()];
         let mut completed_units = 0u64;
         loop {
@@ -163,11 +163,13 @@ pub(crate) fn inspect_jobs<R: Send>(
             }
             match receive.recv_timeout(Duration::from_millis(50)) {
                 Ok(Event::Started(index)) => {
+                    started += 1;
                     let path = &jobs[index].input;
+                    // This identifies the started file, not the number of finished workers.
                     crate::task_log::emit(
                         callbacks,
                         phase,
-                        completed,
+                        started,
                         jobs.len() as u64,
                         path.rsplit(['/', '\\']).next().unwrap_or(path),
                         path,
@@ -175,7 +177,6 @@ pub(crate) fn inspect_jobs<R: Send>(
                 }
                 Ok(Event::Finished(index, result)) => {
                     results[index] = Some(result);
-                    completed += 1;
                     completed_units += 1000 - portions[index];
                     portions[index] = 1000;
                     callbacks.progress(
@@ -287,6 +288,37 @@ mod tests {
         .unwrap();
         assert_eq!(result, (0..8).collect::<Vec<_>>());
         assert_eq!(events.1, 8000);
+    }
+
+    #[test]
+    fn inspection_file_numbers_are_one_based_and_sequential() {
+        #[derive(Default)]
+        struct Events(Vec<crate::task_log::Event>);
+        impl Callbacks for Events {
+            fn emit(&mut self, _: i32, text: &str) {
+                if let Some(event) = crate::task_log::parse(text) {
+                    self.0.push(event);
+                }
+            }
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+        }
+        for phase in ["source_metadata", "source_decode"] {
+            let mut events = Events::default();
+            let jobs = fixture_jobs();
+            inspect_jobs(&jobs, &mut events, phase, 2, 10, None, |_, _| Ok(()))
+                .unwrap();
+            assert_eq!(events.0.len(), jobs.len());
+            let mut names = std::collections::HashSet::new();
+            for (index, event) in events.0.iter().enumerate() {
+                assert_eq!(event.action, phase);
+                assert_eq!(event.current, index as u64 + 1);
+                assert_eq!(event.total, jobs.len() as u64);
+                assert_eq!(event.name, event.detail);
+                assert!(names.insert(event.name.clone()));
+            }
+        }
     }
 
     #[test]

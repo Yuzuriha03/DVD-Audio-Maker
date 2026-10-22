@@ -55,8 +55,15 @@ impl Callbacks for Events {
     }
 }
 fn library() -> PathBuf {
-    PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"))
-        .join("dvda-media.dll")
+    #[cfg(feature = "direct-bridges")]
+    {
+        std::env::current_exe().unwrap()
+    }
+    #[cfg(not(feature = "direct-bridges"))]
+    {
+        PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"))
+            .join("dvda-media.dll")
+    }
 }
 fn job(root: &Path) -> pipeline::Job {
     let build = root.join("build");
@@ -233,7 +240,24 @@ fn canonical(value: &mut Value, root: &Path) {
     }
 }
 fn run(job: &pipeline::Job, root: &Path, events: &mut Events) -> Value {
+    let first_line = events.lines.len();
     let result = pipeline::run(job, events).unwrap();
+    let tasks: Vec<_> = events.lines[first_line..]
+        .iter()
+        .filter_map(|line| dvda_core::task_log::parse(line))
+        .collect();
+    for action in ["source_metadata", "source_decode", "source_result"] {
+        let phase: Vec<_> = tasks.iter().filter(|event| event.action == action).collect();
+        let files: Vec<_> = phase.iter().filter(|event| !event.name.is_empty()).collect();
+        for (index, event) in files.iter().enumerate() {
+            assert_eq!(event.current, index as u64 + 1, "{action}");
+            assert_eq!(event.total, files.len() as u64, "{action}");
+        }
+        for event in &phase {
+            assert_eq!(event.total, files.len() as u64, "{action}");
+            assert!(event.current <= event.total, "{action}");
+        }
+    }
     let manifest = job
         .manifest_path
         .is_file()

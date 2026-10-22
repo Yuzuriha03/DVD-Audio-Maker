@@ -291,6 +291,14 @@ pub fn task_message(lang: Lang, raw: &str) -> Option<String> {
                 "音源のデコードを確認中："
             )
         ),
+        "source_result" => format!(
+            "{} {position}",
+            label(
+                "整理音源检查结果：",
+                "Processing source check results:",
+                "音源の確認結果を整理中："
+            )
+        ),
         "source_checked" => {
             return Some(format!(
                 "{} {c}",
@@ -755,6 +763,7 @@ mod tests {
             for action in [
                 "source_metadata",
                 "source_decode",
+                "source_result",
                 "author_disc",
                 "author_audio",
                 "author_layout",
