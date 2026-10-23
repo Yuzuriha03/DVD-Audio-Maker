@@ -5,6 +5,7 @@ from ctypes import wintypes as w
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import time
@@ -92,8 +93,14 @@ def main():
             "DVDA_MLP_SOURCE": "external", "DVDA_MLP_EXTERNAL_DIR": str(Path(temporary) / "mlp"),
             "DVDA_DISC_BYTES": "4000000000", "CUSTOM_PLUGIN_SETTING": "keep-me"}}
         profile.write_text(json.dumps(baseline, ensure_ascii=False), encoding="utf-8-sig")
+        # Automatic settings and session logs live beside the executable.
+        app = Path(temporary) / "app"
+        app.mkdir()
+        exe = app / args.exe.name
+        shutil.copy2(args.exe, exe)
+        daily = app / "settings.json"
         for launch in range(2):
-            proc = subprocess.Popen([str(args.exe.resolve())] + ([] if launch else ["--profile", str(profile)]),
+            proc = subprocess.Popen([str(exe)] + ([] if launch else ["--profile", str(profile)]),
                 env=os.environ | {"LOCALAPPDATA":temporary}, creationflags=subprocess.CREATE_NO_WINDOW)
             hwnd = None
             try:
@@ -113,7 +120,10 @@ def main():
                 assert text(controls[210]) == "4000000000"
                 assert u.IsWindowEnabled(controls[210])
                 assert not u.IsWindowEnabled(controls[301]), "Import must not resample"
-                assert u.SendMessageW(controls[104], 0x1304, 0, 0) == 4
+                assert all(2000 + tab in controls for tab in range(3)), "Settings tab buttons missing"
+                assert 2003 not in controls, "Other-settings tab should remain removed"
+                pages = [h for h in children if classname(h) == "DVD_AUDIO_PAGE_RUST"]
+                assert len(pages) == 3
                 assert u.SendMessageW(controls[103], 0x0147, 0, 0) == (0 if launch == 0 else 2), "Language was not restored"
                 if launch:
                     break
@@ -155,8 +165,9 @@ def main():
                 u.SetThreadDpiAwarenessContext.argtypes = [c.c_void_p]
                 u.SetThreadDpiAwarenessContext.restype = c.c_void_p
                 old_dpi = u.SetThreadDpiAwarenessContext(u.GetWindowDpiAwarenessContext(hwnd))
+                # The settings pages end exactly at the splitter line.
                 initial = w.RECT()
-                u.GetWindowRect(controls[104], c.byref(initial))
+                u.GetWindowRect(pages[0], c.byref(initial))
                 point = w.POINT(initial.left + 20, initial.bottom + 4)
                 u.ScreenToClient(hwnd, c.byref(point))
                 packed = (point.y << 16) | point.x
@@ -164,17 +175,14 @@ def main():
                 u.SendMessageW(hwnd, 0x0200, 1, ((point.y - 50) << 16) | point.x)
                 u.SendMessageW(hwnd, 0x0202, 0, ((point.y - 50) << 16) | point.x)
                 resized = w.RECT()
-                u.GetWindowRect(controls[104], c.byref(resized))
+                u.GetWindowRect(pages[0], c.byref(resized))
                 u.SetThreadDpiAwarenessContext(old_dpi)
                 assert resized.bottom < initial.bottom - 20, ("Settings/log splitter cannot be dragged", initial.bottom, resized.bottom, point.y)
-                pages = [h for h in children if classname(h) == "DVD_AUDIO_PAGE_RUST"]
-                assert len(pages) == 4
                 for language, (index, check, build, stop, issues, live, saved) in expected.items():
                     u.SendMessageW(controls[103], 0x014E, index, 0)
                     u.SendMessageW(hwnd, 0x0111, 103 | (1 << 16), controls[103])
                     assert [text(controls[i]) for i in (105, 106, 108, 111, 112)] == [check, build, stop, issues, live]
                     assert text(controls[200]) == source, "Language switch modified source data"
-                    daily = Path(temporary) / "DVD-Audio-Maker/settings.json"
                     wait_for(lambda: daily.is_file())
                     automatic = json.loads(daily.read_text(encoding="utf-8-sig"))
                     assert automatic["Language"] == language
@@ -195,14 +203,14 @@ def main():
                     time.sleep(0.2)
                     records[-1]["window_bounds"] = [rect.left, rect.top, rect.right, rect.bottom]
                     ImageGrab.grab(bbox=(rect.left, rect.top, rect.right, rect.bottom)).save(args.output / f"gui-{language}.png")
-                    for page_index, field in enumerate((200, 300, 400, 500)):
-                        u.SendMessageW(controls[104], 0x1330, page_index, 0)
+                    for page_index, field in enumerate((200, 300, 400)):
+                        u.SendMessageW(hwnd, 0x0111, 2000 + page_index, controls[2000 + page_index])
                         wait_for(lambda: u.IsWindowVisible(controls[field]))
                         assert sum(bool(u.IsWindowVisible(page)) for page in pages) == 1
                         u.UpdateWindow(hwnd)
                         time.sleep(0.1)
                         ImageGrab.grab(bbox=(rect.left, rect.top, rect.right, rect.bottom)).save(args.output / f"gui-{language}-tab{page_index}.png")
-                    u.SendMessageW(controls[104], 0x1330, 0, 0)
+                    u.SendMessageW(hwnd, 0x0111, 2000, controls[2000])
                 u.SetWindowPos(hwnd, None, 80, 50, 1060, 560, 0x0014)
                 u.SendMessageW(pages[0], 0x0115, 7, 0)
                 field_rect=w.RECT();page_rect=w.RECT()
@@ -249,9 +257,8 @@ def main():
                 except subprocess.TimeoutExpired:
                     proc.terminate()
                     proc.wait(timeout=5)
-                daily = Path(temporary) / "DVD-Audio-Maker/settings.json"
                 assert json.loads(daily.read_text(encoding="utf-8-sig"))["Language"] == "ja"
-                assert list((Path(temporary) / "DVD-Audio-Maker/logs").glob("gui-*.log"))
+                assert list(app.glob("gui-*.log"))
     (args.output / "controls.json").write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"passed": True, "languages": list(expected), "profile_reload": True, "mlp_import": True, "custom_capacity": True, "screenshots": str(args.output)}))
 
