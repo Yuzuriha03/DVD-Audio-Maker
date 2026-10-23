@@ -119,6 +119,8 @@ def main():
     parser.add_argument("--exe", type=Path, required=True)
     parser.add_argument("--large-settings", action="store_true",
                         help="Drag the splitter down and test a taller, still-scrollable settings pane")
+    parser.add_argument("--resize-edges", action="store_true",
+                        help="Physically drag right/bottom window edges and sample stationary tab text/buttons")
     args = parser.parse_args()
     checked = 0
     with tempfile.TemporaryDirectory(prefix="dvda-scroll-") as directory:
@@ -132,6 +134,62 @@ def main():
                 hwnd = gui.wait_for(lambda: gui.find_app(proc.pid))
                 gui.wait_for(lambda: any(u.GetDlgCtrlID(h) == 2000 for h in gui.windows(hwnd)))
                 gui.wait_for(lambda: any(u.GetDlgCtrlID(h) == 1000 for h in gui.windows(hwnd)))
+                if args.resize_edges:
+                    u.SetThreadDpiAwarenessContext.argtypes = [c.c_void_p]
+                    u.SetThreadDpiAwarenessContext.restype = c.c_void_p
+                    u.GetWindowDpiAwarenessContext.argtypes = [w.HWND]
+                    u.GetWindowDpiAwarenessContext.restype = c.c_void_p
+                    old_dpi = u.SetThreadDpiAwarenessContext(u.GetWindowDpiAwarenessContext(hwnd))
+                    try:
+                        time.sleep(.8)
+                        u.SendMessageW(hwnd, 0x0112, 0xF120, 0)
+                        time.sleep(.2)
+                        assert not u.IsZoomed(hwnd), "window did not restore before drag"
+                        assert u.SetWindowPos(hwnd, w.HWND(-1), 40, 40, 1400, 700, 0x0040)
+                        u.SetForegroundWindow(hwnd)
+                        time.sleep(.5)
+                        tab = next(h for h in gui.windows(hwnd) if u.GetDlgCtrlID(h) == 2000)
+                        for edge in ("right", "bottom"):
+                            before = w.RECT()
+                            u.GetWindowRect(hwnd, c.byref(before))
+                            client = w.RECT()
+                            u.GetClientRect(hwnd, c.byref(client))
+                            origin = w.POINT(0, 0)
+                            u.ClientToScreen(hwnd, c.byref(origin))
+                            x = origin.x + client.right - 2 if edge == "right" else origin.x + 400
+                            y = origin.y + 350 if edge == "right" else origin.y + client.bottom - 2
+                            u.SetCursorPos(x, y)
+                            time.sleep(.3)
+                            stop = threading.Event()
+                            samples = []
+                            watcher = threading.Thread(target=watch_language, args=(tab, stop, samples))
+                            watcher.start()
+                            try:
+                                u.SetCursorPos(x, y)
+                                time.sleep(.15)
+                                print("edge input", edge, x, y, "zoomed", u.IsZoomed(hwnd), "client", client.right, client.bottom, "hit", u.SendMessageW(hwnd, 0x84, 0, (y << 16) | (x & 65535)), flush=True)
+                                u.mouse_event(2, 0, 0, 0, 0)
+                                time.sleep(.15)
+                                for delta in list(range(0, 121, 3)) + list(range(120, -1, -3)):
+                                    u.SetCursorPos(x + (delta if edge == "right" else 0),
+                                                   y + (delta if edge == "bottom" else 0))
+                                    time.sleep(.016)
+                                    if delta == 120:
+                                        peak = w.RECT()
+                                        u.GetWindowRect(hwnd, c.byref(peak))
+                                        assert (peak.right > before.right + 60 if edge == "right"
+                                                else peak.bottom > before.bottom + 60), "native drag did not resize"
+                            finally:
+                                u.mouse_event(4, 0, 0, 0, 0)
+                                time.sleep(.1)
+                                stop.set()
+                                watcher.join()
+                            check_samples(samples, (language, edge, "tab button/text during native drag"))
+                            checked += len(samples)
+                            print("PASS native edge drag", language, edge, len(samples), flush=True)
+                    finally:
+                        u.SetThreadDpiAwarenessContext(old_dpi)
+                    continue
                 sizes = ((960, 1050), (1180, 1050), (1400, 1050)) if args.large_settings else (
                     (800, 800), (960, 564), (960, 800), (1400, 800))
                 for width, height in sizes:

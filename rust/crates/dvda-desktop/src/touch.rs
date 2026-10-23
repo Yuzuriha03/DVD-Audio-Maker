@@ -110,11 +110,14 @@ unsafe extern "system" fn pan_proc(hwnd: Hwnd, message: u32, wparam: Wparam, lpa
                         SendMessageW(hwnd, 0x0197, next as usize, 0); // LB_SETTOPINDEX
                     }
                 } else {
-                    let page = if window_class(hwnd) == "DVD_AUDIO_PAGE_RUST" {
-                        hwnd
-                    } else {
-                        unsafe { GetParent(hwnd) }
-                    };
+                    // Page controls, and combo overlays one level deeper.
+                    let mut page = hwnd;
+                    for _ in 0..2 {
+                        if window_class(page) == "DVD_AUDIO_PAGE_RUST" {
+                            break;
+                        }
+                        page = unsafe { GetParent(page) };
+                    }
                     if window_class(page) == "DVD_AUDIO_PAGE_RUST" {
                         let old = unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32;
                         scroll_page(page, old.saturating_add(delta), true);

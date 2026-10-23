@@ -113,7 +113,6 @@ const WS_EX_NOACTIVATE: u32 = 0x08000000;
 const SWP_NOACTIVATE: u32 = 0x0010;
 const SWP_SHOWWINDOW: u32 = 0x0040;
 const WS_EX_APPWINDOW: u32 = 0x00040000;
-const WS_EX_COMPOSITED: u32 = 0x02000000;
 const ES_AUTOHSCROLL: u32 = 0x0080;
 const ES_MULTILINE: u32 = 0x0004;
 const ES_AUTOVSCROLL: u32 = 0x0040;
@@ -636,7 +635,9 @@ unsafe extern "system" {
     fn InvalidateRect(hwnd: Hwnd, rect: *const Rect, erase: i32) -> i32;
     fn BeginPaint(hwnd: Hwnd, paint: *mut PaintStruct) -> Handle;
     fn EndPaint(hwnd: Hwnd, paint: *const PaintStruct) -> i32;
+    #[cfg(test)]
     fn GetDC(hwnd: Hwnd) -> Handle;
+    #[cfg(test)]
     fn ReleaseDC(hwnd: Hwnd, dc: Handle) -> i32;
     fn GetFocus() -> Hwnd;
     fn IsWindowEnabled(hwnd: Hwnd) -> i32;
@@ -1414,6 +1415,7 @@ struct UiState {
     import_folder_label: Hwnd,
     import_browse: Hwnd,
     pages: Vec<Hwnd>,
+    wheel_remainders: HashMap<usize, i32>,
     tabs: Vec<Hwnd>,
     tab_index: usize,
     labels: Vec<(Hwnd, &'static str)>,
@@ -1660,14 +1662,14 @@ fn run() -> Result<(), String> {
     }
     let class_name = wide("DVD_AUDIO_MAKER_RUST");
     let registration = WndClass {
-        style: 0x0002,
+        style: 0,
         procedure: window_proc,
         extra_class: 0,
         extra_window: 0,
         instance,
         icon,
         cursor: unsafe { LoadCursorW(ptr::null_mut(), 32512usize as *const u16) },
-        background: body_brush(),
+        background: ptr::null_mut(),
         menu: ptr::null(),
         class_name: class_name.as_ptr(),
     };
@@ -1728,7 +1730,7 @@ fn run() -> Result<(), String> {
     }
     let window = unsafe {
         CreateWindowExW(
-            WS_EX_APPWINDOW | WS_EX_COMPOSITED,
+            WS_EX_APPWINDOW,
             class_name.as_ptr(),
             title.as_ptr(),
             WS_CAPTION
@@ -1948,19 +1950,9 @@ unsafe extern "system" fn window_proc(
                     if let Some(preview_y) = preview {
                         state.splitter_height =
                             Some(unscale(preview_y) - (HEADER_HEIGHT + 56));
-                        unsafe {
-                            SendMessageW(hwnd, WM_SETREDRAW, 0, 0);
-                        }
+                        // layout() moves children with SWP_NOREDRAW and then
+                        // repaints the whole tree synchronously.
                         layout(hwnd, state);
-                        unsafe {
-                            SendMessageW(hwnd, WM_SETREDRAW, 1, 0);
-                            RedrawWindow(
-                                hwnd,
-                                ptr::null(),
-                                ptr::null_mut(),
-                                RDW_INVALIDATE | RDW_ALLCHILDREN,
-                            );
-                        }
                     }
                 } else if message == 0x0200 && state.dragging_splitter && wparam & 1 != 0 {
                     unsafe { update_splitter_preview(state, hwnd, y) };
@@ -1975,8 +1967,10 @@ unsafe extern "system" fn window_proc(
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_SIZE => {
-            if let Some(state) = unsafe { state(hwnd) } {
-                layout(hwnd, state);
+            if wparam != 1 {
+                if let Some(state) = unsafe { state(hwnd) } {
+                    layout(hwnd, state);
+                }
             }
             0
         }
@@ -2325,11 +2319,17 @@ unsafe extern "system" fn page_proc(
         }
         0x020a => {
             let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
-            scroll_page(
-                hwnd,
-                old - ((wparam >> 16) as i16 as i32 / 120) * scale(40),
-                true,
-            );
+            let delta = (wparam >> 16) as i16 as i32;
+            let pixels = if let Some(state) = unsafe { state(GetParent(hwnd)) } {
+                wheel_pixels(
+                    delta,
+                    scale(40),
+                    state.wheel_remainders.entry(hwnd as usize).or_default(),
+                )
+            } else {
+                wheel_pixels(delta, scale(40), &mut 0)
+            };
+            scroll_page(hwnd, old - pixels, true);
             0
         }
         WM_COMMAND | WM_NOTIFY | WM_DRAWITEM | WM_MEASUREITEM => {
@@ -2391,6 +2391,48 @@ unsafe extern "system" fn page_proc(
     }
 }
 
+fn wheel_pixels(delta: i32, step: i32, remainder: &mut i32) -> i32 {
+    // Preserve sub-pixel input from high-resolution wheels across messages.
+    let total = delta * step + *remainder;
+    *remainder = total % 120;
+    total / 120
+}
+
+#[cfg(test)]
+mod wheel_tests {
+    use super::wheel_pixels;
+
+    #[test]
+    fn partial_notches_move_immediately() {
+        let mut remainder = 0;
+        assert_eq!(wheel_pixels(30, 40, &mut remainder), 10);
+        assert_eq!(wheel_pixels(-30, 40, &mut remainder), -10);
+    }
+
+    #[test]
+    fn small_deltas_preserve_full_notch_distance_at_each_scale() {
+        for step in [40, 50, 60, 80] {
+            for direction in [-1, 1] {
+                let mut remainder = 0;
+                let distance: i32 = (0..120)
+                    .map(|_| wheel_pixels(direction, step, &mut remainder))
+                    .sum();
+                assert_eq!(distance, direction * step);
+                assert_eq!(remainder, 0);
+                assert_eq!(wheel_pixels(direction * 240, step, &mut remainder), direction * step * 2);
+            }
+        }
+    }
+
+    #[test]
+    fn fractional_input_cancels_on_direction_reversal() {
+        let mut remainder = 0;
+        assert_eq!(wheel_pixels(1, 40, &mut remainder), 0);
+        assert_eq!(wheel_pixels(-1, 40, &mut remainder), 0);
+        assert_eq!(remainder, 0);
+    }
+}
+
 unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lparam) -> i32 {
     let (page, delta) = unsafe { &*(parameter as *const (Hwnd, i32)) };
     if unsafe { GetParent(hwnd) } != *page {
@@ -2405,6 +2447,10 @@ unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lparam) -> i3
     }
     1
 }
+fn page_is_narrow(width: i32) -> bool {
+    width < 1000
+}
+
 fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     let mut rect = Rect {
         left: 0,
@@ -2417,7 +2463,7 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     }
     let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
     let height = (rect.bottom - rect.top).max(1);
-    let content = if unscale(rect.right) < 800 {
+    let content = if page_is_narrow(unscale(rect.right)) {
         scale(420)
     } else {
         scale(300)
@@ -2448,7 +2494,9 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
             }
         }
     }
-    sync_combo_overlays();
+    if !DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
+        sync_combo_overlays();
+    }
 }
 
 fn browse_edit_width(page_width: i32) -> i32 {
@@ -3261,6 +3309,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         import_folder_label,
         import_browse,
         pages,
+        wheel_remainders: HashMap::new(),
         tabs,
         tab_index: 0,
         labels,
@@ -3441,7 +3490,7 @@ fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
         "",
         WS_CHILD
             | WS_VISIBLE
-            | 0x04000000 // WS_CLIPSIBLINGS: the closed-field overlay owns these pixels.
+            | WS_CLIPCHILDREN // The closed-field overlay child owns these pixels.
             | WS_TABSTOP
             | CBS_DROPDOWNLIST
             | CBS_OWNERDRAWFIXED
@@ -3463,26 +3512,29 @@ fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
         bottom: 0,
     };
     unsafe {
-        GetWindowRect(hwnd, &mut rect);
+        GetClientRect(hwnd, &mut rect);
     }
     touch::install_combo(hwnd);
-    let closed_height = unscale((rect.bottom - rect.top).max(scale(20)));
     // The overlay owns the whole closed combo so the themed border and text
-    // replace the system-drawn field completely.
+    // replace the system-drawn field completely. As a child of the combo it
+    // moves, hides and clips together with it; a sibling overlay lagged one
+    // step behind during live resizing and exposed the white native field.
     let overlay = create_from_spec(CreateSpec {
-        parent,
+        parent: hwnd,
         class: "BUTTON",
         title: "",
         style: WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        x,
-        y,
-        width: w,
-        height: closed_height,
+        x: 0,
+        y: 0,
+        width: unscale(rect.right).max(20),
+        height: unscale(rect.bottom).max(20),
         id: 0,
     });
     if !overlay.is_null() {
         install_combo_arrow(overlay, hwnd);
-        unsafe { SetWindowPos(overlay, ptr::null_mut(), 0, 0, 0, 0, 0x0013); }
+        if window_class(parent) == "DVD_AUDIO_PAGE_RUST" {
+            touch::install(overlay, false);
+        }
         let registry = COMBO_OVERLAYS.get_or_init(|| Mutex::new(Vec::new()));
         if let Ok(mut registry) = registry.lock() {
             registry.push((hwnd as isize, overlay as isize));
@@ -3596,6 +3648,9 @@ unsafe extern "system" fn button_proc(
         return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
     }
     match message {
+        // WM_DRAWITEM paints the whole button off-screen; the native erase
+        // would flash the bare WM_CTLCOLORBTN brush between the two passes.
+        WM_ERASEBKGND => return 1,
         WM_MOUSEMOVE => {
             if !unsafe { (*pointer).hover } {
                 unsafe {
@@ -3996,49 +4051,26 @@ fn sync_combo_overlays() {
         if combo.is_null() || overlay.is_null() {
             continue;
         }
-        let parent = unsafe { GetParent(combo) };
-        if parent.is_null() {
-            continue;
-        }
-        let mut combo_rect = Rect {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        unsafe {
-            GetWindowRect(combo, &mut combo_rect);
-        }
+        // The overlay is a child of its combo, so only the closed-field size
+        // can drift (width changes or a DPI/font change of the item height).
+        let mut combo_rect: Rect = unsafe { std::mem::zeroed() };
         let mut overlay_rect: Rect = unsafe { std::mem::zeroed() };
-        unsafe { GetWindowRect(overlay, &mut overlay_rect); }
-        if overlay_rect.left == combo_rect.left
-            && overlay_rect.top == combo_rect.top
-            && overlay_rect.right == combo_rect.right
-            && overlay_rect.bottom == combo_rect.bottom
-        {
-            continue;
-        }
-        let mut top_left = Point {
-            x: combo_rect.left,
-            y: combo_rect.top,
-        };
-        let mut bottom_right = Point {
-            x: combo_rect.right,
-            y: combo_rect.bottom,
-        };
         unsafe {
-            ScreenToClient(parent, &mut top_left);
-            ScreenToClient(parent, &mut bottom_right);
+            GetClientRect(combo, &mut combo_rect);
+            GetClientRect(overlay, &mut overlay_rect);
+        }
+        if overlay_rect.right == combo_rect.right && overlay_rect.bottom == combo_rect.bottom {
+            continue;
         }
         unsafe {
             SetWindowPos(
                 overlay,
                 ptr::null_mut(),
-                top_left.x,
-                top_left.y,
-                (bottom_right.x - top_left.x).max(scale(20)),
-                (bottom_right.y - top_left.y).max(scale(20)),
-                0x011C, // NOZORDER | NOREDRAW | NOACTIVATE | NOCOPYBITS
+                0,
+                0,
+                combo_rect.right.max(1),
+                combo_rect.bottom.max(1),
+                0x0114, // NOZORDER | NOACTIVATE | NOCOPYBITS
             );
             InvalidateRect(overlay, ptr::null(), 0);
         }
@@ -4104,7 +4136,7 @@ unsafe fn page_bar_metrics(state: &UiState) -> BarMetrics {
         GetClientRect(page, &mut rect);
     }
     let page_height = (rect.bottom - rect.top).max(1);
-    let content = if unscale(rect.right) < 800 {
+    let content = if page_is_narrow(unscale(rect.right)) {
         scale(420)
     } else {
         scale(300)
@@ -4444,7 +4476,7 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
                 // panel, so no 3D client edge is needed.
                 0
             } else if class.as_slice() == wide("DVD_AUDIO_PAGE_RUST").as_slice() {
-                0x00010000 // WS_EX_CONTROLPARENT; the main window composites the whole tree.
+                0x00010000 // WS_EX_CONTROLPARENT
             } else {
                 0
             },
@@ -4711,8 +4743,9 @@ fn show_page(state: &UiState, index: i32) {
     sync_combo_overlays();
 }
 
-fn measured_text_width(hwnd: Hwnd, text: &str, font: Handle) -> i32 {
-    let dc = unsafe { GetDC(hwnd) };
+fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 {
+    // Measure on a memory DC so layout never touches a window DC mid-resize.
+    let dc = unsafe { CreateCompatibleDC(ptr::null_mut()) };
     if dc.is_null() {
         return 0;
     }
@@ -4733,7 +4766,7 @@ fn measured_text_width(hwnd: Hwnd, text: &str, font: Handle) -> i32 {
             DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX,
         );
         SelectObject(dc, old);
-        ReleaseDC(hwnd, dc);
+        DeleteDC(dc);
     }
     rect.right
 }
@@ -5188,7 +5221,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             if state.dragging_splitter {
                 RDW_INVALIDATE
             } else {
-                RDW_INVALIDATE | RDW_ALLCHILDREN
+                RDW_INVALIDATE | RDW_ALLCHILDREN | 0x0100 // RDW_UPDATENOW: finish the composite before the next sizing event.
             },
         );
     }
@@ -5229,7 +5262,7 @@ unsafe fn layout_page_contents(state: &UiState) {
         let page_width = unscale(rect.right).max(1);
         let scroll = unsafe { GetWindowLongPtrW(*page, GWLP_USERDATA) } as i32;
         let sy = unscale(scroll);
-        let narrow = page_width < 800;
+        let narrow = page_is_narrow(page_width);
         match index {
             0 => {
                 if narrow {
@@ -5286,8 +5319,8 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_TITLE, 14, 126 - sy, 470, 24);
                         move_label(state, "capacity", 520, 106 - sy, 220, 20);
                         move_child(*page, ID_CAPACITY, 520, 126 - sy, 220, 120);
-                        place(state.custom_bytes_label, 760, 106 - sy, 360, 20);
-                        move_child(*page, ID_CUSTOM_BYTES, 760, 126 - sy, 360, 25);
+                        place(state.custom_bytes_label, 760, 106 - sy, page_width - 774, 20);
+                        move_child(*page, ID_CUSTOM_BYTES, 760, 126 - sy, page_width - 774, 25);
                         move_label(state, "advanced_hint", 14, 166 - sy, 780, 48);
                         move_label(state, "work_dir", 14, 150 - sy, 520, 18);
                         move_label(state, "iso_prefix", 14, 194 - sy, 460, 20);
@@ -8832,6 +8865,31 @@ mod presentation_tests {
                 GetWindowRect(ui.controls.build, &mut action_rect);
             }
             assert!(log_rect.bottom <= action_rect.top, "log overlaps actions at height {height}");
+        }
+        for width in [640, 800, 854, 960, 1053, 1054, 1180, 1400, 960, 640] {
+            for height in [360, 500, 820] {
+                unsafe { MoveWindow(parent, 0, 0, scale(width), scale(height), 0); }
+                layout(parent, &mut ui);
+                for (page_index, ids) in [
+                    (0, &[ID_SOURCE, ID_FINAL, ID_TITLE, ID_CAPACITY, ID_CUSTOM_BYTES,
+                        ID_WORK_DIR, ID_BROWSE_WORK, ID_ISO_PREFIX, ID_GROUP_LIMIT][..]),
+                    (1, &[ID_MODE, ID_RATE, ID_BITS, ID_IMPORT_FOLDER, ID_BROWSE_IMPORT][..]),
+                    (2, &[ID_TRACKS, ID_COVER, ID_FONT_SC, ID_FONT_JP, ID_FONT_KR,
+                        1007, 1008, 1009][..]),
+                ] {
+                    let page = ui.pages[page_index];
+                    let mut bounds: Rect = unsafe { std::mem::zeroed() };
+                    unsafe { GetWindowRect(page, &mut bounds); }
+                    for id in ids {
+                        let child = unsafe { GetDlgItem(page, *id as i32) };
+                        assert!(!child.is_null());
+                        let mut child_rect: Rect = unsafe { std::mem::zeroed() };
+                        unsafe { GetWindowRect(child, &mut child_rect); }
+                        assert!(child_rect.left >= bounds.left && child_rect.right <= bounds.right,
+                            "control {id} overflows page {page_index} at {width}x{height}");
+                    }
+                }
+            }
         }
         // Exercise the actual controls rather than passing handcrafted blank
         // overrides to the option evaluator: population must retain auto values.
