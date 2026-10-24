@@ -474,6 +474,26 @@ struct Message {
     point_y: i32,
 }
 
+/// WINDOWPLACEMENT
+#[repr(C)]
+struct WindowPlacement {
+    length: u32,
+    flags: u32,
+    show: u32,
+    minimized: Point,
+    maximized: Point,
+    normal: Rect,
+}
+
+/// MONITORINFO
+#[repr(C)]
+struct MonitorInfo {
+    size: u32,
+    monitor: Rect,
+    work: Rect,
+    flags: u32,
+}
+
 /// TEXTMETRICW
 #[repr(C)]
 struct TextMetric {
@@ -675,6 +695,15 @@ unsafe extern "system" {
     fn SetFocus(hwnd: Hwnd) -> Hwnd;
     fn SetCapture(hwnd: Hwnd) -> Hwnd;
     fn ReleaseCapture() -> i32;
+    fn GetCapture() -> Hwnd;
+    fn GetCursorPos(point: *mut Point) -> i32;
+    fn SetLayeredWindowAttributes(hwnd: Hwnd, key: u32, alpha: u8, flags: u32) -> i32;
+    fn GetSystemMetrics(index: i32) -> i32;
+    fn MonitorFromPoint(point: Point, flags: u32) -> Handle;
+    fn GetMonitorInfoW(monitor: Handle, info: *mut MonitorInfo) -> i32;
+    fn GetDpiForWindow(hwnd: Hwnd) -> u32;
+    fn GetWindowPlacement(hwnd: Hwnd, placement: *mut WindowPlacement) -> i32;
+    fn SetWindowPlacement(hwnd: Hwnd, placement: *const WindowPlacement) -> i32;
     fn SetCursor(cursor: Handle) -> Handle;
     fn EnableWindow(hwnd: Hwnd, enable: i32) -> i32;
     fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, flags: u32) -> i32;
@@ -1983,7 +2012,19 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
-        WM_NCLBUTTONDOWN => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+        WM_NCLBUTTONDOWN => {
+            // HTLEFT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTBOTTOMLEFT
+            if matches!(wparam, 10 | 12 | 13 | 14 | 16) && unsafe { IsZoomed(hwnd) } == 0 {
+                let origin = Point {
+                    x: (lparam & 0xffff) as u16 as i16 as i32,
+                    y: ((lparam >> 16) & 0xffff) as u16 as i16 as i32,
+                };
+                unsafe { outline_resize(hwnd, wparam, origin) };
+                0
+            } else {
+                unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+            }
+        }
         WM_NCLBUTTONDBLCLK => {
             if wparam as i32 == HTCAPTION {
                 unsafe {
@@ -2334,6 +2375,184 @@ unsafe fn ensure_splitter_preview(owner: Hwnd) -> Hwnd {
     }
 }
 
+/// Moving the left or top edge moves the window origin, and DWM then shows
+/// the old content at the new position for a frame before the repaint, so
+/// right/bottom-anchored controls jumped back and forth. Such drags show a
+/// translucent outline of the new bounds instead and resize once on release
+/// (Esc or a lost capture cancels). Right/bottom drags stay live.
+/// Whether Windows Snap arranged the window (IsWindowArranged, Windows 10+).
+fn window_arranged(hwnd: Hwnd) -> bool {
+    type IsWindowArranged = unsafe extern "system" fn(Hwnd) -> i32;
+    static FUNCTION: OnceLock<usize> = OnceLock::new();
+    let address = *FUNCTION.get_or_init(|| unsafe {
+        let module = GetModuleHandleW(wide("user32.dll").as_ptr());
+        if module.is_null() {
+            0
+        } else {
+            GetProcAddress(module, b"IsWindowArranged\0".as_ptr()) as usize
+        }
+    });
+    address != 0 && unsafe { std::mem::transmute::<usize, IsWindowArranged>(address)(hwnd) } != 0
+}
+
+unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
+    unsafe {
+        let mut start: Rect = std::mem::zeroed();
+        GetWindowRect(hwnd, &mut start);
+        // Same limits as the window manager would apply.
+        let mut limits = [0i32; 10];
+        limits[8] = i32::MAX / 4;
+        limits[9] = i32::MAX / 4;
+        SendMessageW(hwnd, WM_GETMINMAXINFO, 0, limits.as_mut_ptr() as Lparam);
+        let (min_w, min_h) = (limits[6].max(1), limits[7].max(1));
+        let (max_w, max_h) = (limits[8].max(min_w), limits[9].max(min_h));
+        let left = matches!(hit, 10 | 13 | 16);
+        let top = matches!(hit, 12 | 13 | 14);
+        let right = hit == 14;
+        let bottom = hit == 16;
+        let target = |cursor: Point| {
+            let (dx, dy) = (cursor.x - origin.x, cursor.y - origin.y);
+            let mut rect = start;
+            if left {
+                rect.left = (start.left + dx).clamp(start.right - max_w, start.right - min_w);
+            }
+            if right {
+                rect.right = (start.right + dx).clamp(start.left + min_w, start.left + max_w);
+            }
+            if top {
+                rect.top = (start.top + dy).clamp(start.bottom - max_h, start.bottom - min_h);
+                // Like Snap: a top edge taken to the top of the screen makes the
+                // window as tall as the work area.
+                let mut info = MonitorInfo { size: std::mem::size_of::<MonitorInfo>() as u32, ..std::mem::zeroed() };
+                if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0 && cursor.y <= info.monitor.top {
+                    rect.top = info.work.top;
+                    rect.bottom = info.work.bottom;
+                }
+            }
+            if bottom {
+                rect.bottom = (start.bottom + dy).clamp(start.top + min_h, start.top + max_h);
+            }
+            rect
+        };
+        let mut outline: Hwnd = ptr::null_mut();
+        let show = |outline: Hwnd, rect: Rect| {
+            SetWindowPos(
+                outline,
+                -1isize as Hwnd,
+                rect.left,
+                rect.top,
+                rect.right - rect.left,
+                rect.bottom - rect.top,
+                0x0050, // SWP_NOACTIVATE | SWP_SHOWWINDOW
+            );
+        };
+        // The outline appears only once the pointer really drags, so a click
+        // or a double-click on the edge does not flash it.
+        let (drag_x, drag_y) = (GetSystemMetrics(68).max(1), GetSystemMetrics(69).max(1)); // SM_CXDRAG, SM_CYDRAG
+        let mut dragging = false;
+        let mut current = start;
+        SetCapture(hwnd);
+        let mut apply = false;
+        let mut message: Message = std::mem::zeroed();
+        while GetCapture() == hwnd && GetMessageW(&mut message, ptr::null_mut(), 0, 0) > 0 {
+            match message.message {
+                0x0200 => {
+                    // WM_MOUSEMOVE
+                    let mut cursor = Point { x: 0, y: 0 };
+                    GetCursorPos(&mut cursor);
+                    if !dragging && (cursor.x - origin.x).abs() < drag_x && (cursor.y - origin.y).abs() < drag_y {
+                        continue;
+                    }
+                    if !dragging {
+                        dragging = true;
+                        outline = ensure_splitter_preview(hwnd);
+                        if !outline.is_null() {
+                            // Translucent accent fill (LWA_ALPHA) over the new bounds.
+                            let style = GetWindowLongPtrW(outline, -20) as u32;
+                            SetWindowLongPtrW(outline, -20, (style | 0x0008_0000) as isize); // WS_EX_LAYERED
+                            SetLayeredWindowAttributes(outline, 0, 70, 0x2);
+                        }
+                    }
+                    current = target(cursor);
+                    if !outline.is_null() {
+                        show(outline, current);
+                    }
+                }
+                0x0202 => {
+                    // WM_LBUTTONUP
+                    apply = true;
+                    break;
+                }
+                0x0100 if message.wparam == 0x1b => break, // Esc cancels
+                // Like the system sizing loop, other keys do nothing meanwhile.
+                0x0100..=0x0109 => {}
+                _ => {
+                    TranslateMessage(&message);
+                    DispatchMessageW(&message);
+                }
+            }
+        }
+        if GetCapture() == hwnd {
+            ReleaseCapture();
+        }
+        if !outline.is_null() {
+            ShowWindow(outline, SW_HIDE);
+            DestroyWindow(outline);
+        }
+        if apply
+            && dragging
+            && (current.left != start.left
+                || current.top != start.top
+                || current.right != start.right
+                || current.bottom != start.bottom)
+        {
+            let dpi = GetDpiForWindow(hwnd);
+            if window_arranged(hwnd) {
+                // A snapped window leaves the snap layout with the new bounds
+                // as its normal (restore) position, so a later caption drag
+                // does not jump back to the size from before the snap.
+                // rcNormalPosition uses workspace coordinates.
+                let mut info = MonitorInfo { size: std::mem::size_of::<MonitorInfo>() as u32, ..std::mem::zeroed() };
+                let center = Point { x: (current.left + current.right) / 2, y: (current.top + current.bottom) / 2 };
+                let (dx, dy) = if GetMonitorInfoW(MonitorFromPoint(center, 2), &mut info) != 0 {
+                    (info.work.left - info.monitor.left, info.work.top - info.monitor.top)
+                } else {
+                    (0, 0)
+                };
+                let mut placement: WindowPlacement = std::mem::zeroed();
+                placement.length = std::mem::size_of::<WindowPlacement>() as u32;
+                GetWindowPlacement(hwnd, &mut placement);
+                placement.flags = 0;
+                placement.show = 1; // SW_SHOWNORMAL
+                placement.normal = Rect {
+                    left: current.left - dx,
+                    top: current.top - dy,
+                    right: current.right - dx,
+                    bottom: current.bottom - dy,
+                };
+                SetWindowPlacement(hwnd, &placement);
+            }
+            let apply_rect = || {
+                SetWindowPos(
+                    hwnd,
+                    ptr::null_mut(),
+                    current.left,
+                    current.top,
+                    current.right - current.left,
+                    current.bottom - current.top,
+                    0x0014, // SWP_NOZORDER | SWP_NOACTIVATE
+                )
+            };
+            apply_rect();
+            // Landing on a monitor with another DPI makes WM_DPICHANGED apply
+            // its scaled suggestion; keep the bounds the outline showed.
+            if GetDpiForWindow(hwnd) != dpi {
+                apply_rect();
+            }
+        }
+    }
+}
+
 unsafe fn update_splitter_preview(state: &mut UiState, main: Hwnd, client_y: i32) {
     let mut preview = state.splitter_preview_window;
     if preview.is_null() {
@@ -2553,6 +2772,26 @@ unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lparam) -> i3
     }
     1
 }
+/// Height of a page's content in pixels: the lowest visible control (at
+/// scroll position 0) plus a bottom margin.
+fn page_content_height(page: Hwnd) -> i32 {
+    unsafe extern "system" fn lowest(hwnd: Hwnd, parameter: Lparam) -> i32 {
+        let (page, bottom) = unsafe { &mut *(parameter as *mut (Hwnd, i32)) };
+        if unsafe { GetParent(hwnd) } == *page && (unsafe { GetWindowLongPtrW(hwnd, -16) } as u32) & WS_VISIBLE != 0 {
+            let mut rect: Rect = unsafe { std::mem::zeroed() };
+            unsafe { GetWindowRect(hwnd, &mut rect) };
+            let mut corner = Point { x: rect.left, y: rect.bottom };
+            unsafe { ScreenToClient(*page, &mut corner) };
+            *bottom = (*bottom).max(corner.y);
+        }
+        1
+    }
+    let mut found = (page, 0);
+    unsafe { EnumChildWindows(page, lowest, &mut found as *mut _ as Lparam) };
+    let scroll = unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32;
+    if found.1 <= 0 { scale(100) } else { found.1 + scroll + scale(14) }
+}
+
 fn page_is_narrow(width: i32) -> bool {
     width < 1000
 }
@@ -2569,11 +2808,7 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     }
     let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
     let height = (rect.bottom - rect.top).max(1);
-    let content = if page_is_narrow(unscale(rect.right)) {
-        scale(420)
-    } else {
-        scale(300)
-    };
+    let content = page_content_height(hwnd);
     let pos = if explicit { requested } else { old }.clamp(0, (content - height).max(0));
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, pos as isize);
@@ -2796,7 +3031,6 @@ fn resize_page_fields(page: Hwnd) {
         (ID_SOURCE, ID_BROWSE_SOURCE, 38),
         (ID_FINAL, ID_BROWSE_FINAL, 82),
         (ID_WORK_DIR, ID_BROWSE_WORK, 170),
-        (ID_IMPORT_FOLDER, ID_BROWSE_IMPORT, 100),
     ] {
         let edit = unsafe { GetDlgItem(page, edit_id as i32) };
         let browse = unsafe { GetDlgItem(page, browse_id as i32) };
@@ -4401,11 +4635,7 @@ unsafe fn page_bar_metrics(state: &UiState) -> BarMetrics {
         GetClientRect(page, &mut rect);
     }
     let page_height = (rect.bottom - rect.top).max(1);
-    let content = if page_is_narrow(unscale(rect.right)) {
-        scale(420)
-    } else {
-        scale(300)
-    };
+    let content = page_content_height(page);
     let max = (content - page_height).max(0);
     let value = (unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32).clamp(0, max);
     BarMetrics {
@@ -5014,6 +5244,23 @@ fn show_page(state: &UiState, index: i32) {
     sync_combo_overlays();
 }
 
+/// Height in DIPs of `text` wrapped at `width` DIPs (at least one line).
+fn wrapped_text_height(text: &str, font: Handle, width: i32) -> i32 {
+    let dc = unsafe { CreateCompatibleDC(ptr::null_mut()) };
+    if dc.is_null() {
+        return 20;
+    }
+    let wide_text = wide(text);
+    let mut rect = Rect { left: 0, top: 0, right: scale(width).max(1), bottom: 0 };
+    unsafe {
+        let old = SelectObject(dc, font);
+        DrawTextW(dc, wide_text.as_ptr(), -1, &mut rect, 0x0010 | DT_CALCRECT | DT_NOPREFIX); // DT_WORDBREAK
+        SelectObject(dc, old);
+        DeleteDC(dc);
+    }
+    unscale(rect.bottom).max(20)
+}
+
 fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 {
     // Measure on a memory DC so layout never touches a window DC mid-resize.
     let dc = unsafe { CreateCompatibleDC(ptr::null_mut()) };
@@ -5451,16 +5698,15 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     // down to one line, so a dragged bottom edge moves only the log's lower
     // edge and the actions row. Moving the whole task area with the edge
     // made it visibly shake, as DWM shows it a frame early or late.
-    let task_rows = if log_bar.wrap { 138 } else { 104 };
+    let task_rows = if log_bar.wrap { 144 } else { 110 };
     // A dragged splitter may leave the log one line; the default split keeps
     // a few lines for a running task.
     let settings_room = |log_floor: i32| (actions_top - 12 - log_floor - task_rows - tabs_y).max(104);
-    // The default keeps the earlier proportional look for the size the window
-    // first shows at, then stays fixed. A live drag out of the short layout
-    // must not latch the size it happens to pass through.
-    if state.default_tab_height.is_none() && !compact && !state.sizing {
-        state.default_tab_height = Some((height - 440).clamp(190, 350).min(height - 380).max(104));
-    }
+    // By default the settings are exactly as tall as the current page's
+    // content (it depends on the width, the tab and the shown fields, never
+    // on the window height), so no empty band is left below it.
+    let page = state.pages[state.tab_index.min(state.pages.len() - 1)];
+    state.default_tab_height = Some(unscale(page_content_height(page)) + 44);
     let tab_height = match state.splitter_height {
         Some(dragged) => dragged.clamp(104, settings_room(MIN_LOG_HEIGHT)),
         None => state
@@ -5479,13 +5725,13 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     let page_height = if settings_only { actions_top - 12 - page_y } else { tab_height - 44 };
     let splitter = if task_only { tabs_y - 12 } else { tabs_y + tab_height };
     let section_width = text_width("operation_section") + 8;
-    let log_buttons_y = splitter + if log_bar.wrap { 104 } else { 70 };
+    let log_buttons_y = splitter + if log_bar.wrap { 110 } else { 76 };
     let log_top = log_buttons_y + 34;
     // Short task views hide the log first, then any toolbar row that would
     // reach the action buttons.
     let task_shown = !settings_only;
     let log_shown = task_shown && actions_top - 12 - log_top >= MIN_LOG_HEIGHT;
-    let log_filters_shown = task_shown && splitter + 98 <= actions_top - 6;
+    let log_filters_shown = task_shown && splitter + 104 <= actions_top - 6;
     let log_buttons_shown = task_shown && log_buttons_y + 28 <= actions_top - 6;
     state.splitter_position = if compact { i32::MIN / 4 } else { scale(splitter) };
     let caption_width = 40;
@@ -5556,7 +5802,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                     ShowWindow(*handle, if task_shown { SW_SHOW } else { SW_HIDE });
                 }
                 "log_section" => {
-                    place(*handle, margin, splitter + 72, log_bar.label_width, 22);
+                    place(*handle, margin, splitter + 78, log_bar.label_width, 22);
                     ShowWindow(*handle, if log_filters_shown { SW_SHOW } else { SW_HIDE });
                 }
                 _ => {}
@@ -5638,12 +5884,12 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         place(
             state.controls.log_view,
             margin + log_bar.combo_x,
-            splitter + 70,
+            splitter + 76,
             LOG_COMBO_WIDTH,
             120,
         );
         for (index, check) in [state.controls.only_issues, state.controls.live].into_iter().enumerate() {
-            place(check, margin + log_bar.check_x[index], splitter + 72, log_bar.check_width[index], 22);
+            place(check, margin + log_bar.check_x[index], splitter + 78, log_bar.check_width[index], 22);
         }
         for control in [state.controls.log_view, state.controls.only_issues, state.controls.live] {
             ShowWindow(control, if log_filters_shown { SW_SHOW } else { SW_HIDE });
@@ -5699,6 +5945,22 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         }
         layout_page_contents(state);
         end_placement_batch();
+        // The scroll range follows the content just laid out.
+        for page in &state.pages {
+            scroll_page(*page, 0, false);
+        }
+        // Laying out the pages can change the current page's content height
+        // (narrow layout, shown fields); fit the settings to it once more.
+        static REFITTING: AtomicBool = AtomicBool::new(false);
+        let fitted = unscale(page_content_height(state.pages[state.tab_index.min(state.pages.len() - 1)])) + 44;
+        if state.splitter_height.is_none()
+            && Some(fitted) != state.default_tab_height
+            && !REFITTING.swap(true, Ordering::Relaxed)
+        {
+            layout(hwnd, state);
+            REFITTING.store(false, Ordering::Relaxed);
+            return;
+        }
         sync_combo_overlays();
         DEFER_CONTROL_PAINT.store(false, Ordering::Relaxed);
         // Splitter motion does not change the header or profile toolbar.
@@ -5784,7 +6046,8 @@ unsafe fn layout_page_contents(state: &UiState) {
                             custom_width,
                             25,
                         );
-                        move_label(state, "advanced_hint", 14, 204 - sy, field_width, 48);
+                        let hint = get_text(label_handle(state, "advanced_hint"));
+                        move_label(state, "advanced_hint", 14, 204 - sy, field_width, wrapped_text_height(&hint, ui_font(), field_width));
                         move_label(state, "work_dir", 14, 214 - sy, field_width, 20);
                         move_child(
                             *page,
@@ -5816,7 +6079,8 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_CAPACITY, 520, 126 - sy, 220, 120);
                         place(state.custom_bytes_label, 760, 106 - sy, page_width - 774, 20);
                         move_child(*page, ID_CUSTOM_BYTES, 760, 126 - sy, page_width - 774, 25);
-                        move_label(state, "advanced_hint", 14, 166 - sy, 780, 48);
+                        let hint = get_text(label_handle(state, "advanced_hint"));
+                        move_label(state, "advanced_hint", 14, 166 - sy, 780, wrapped_text_height(&hint, ui_font(), 780));
                         move_label(state, "work_dir", 14, 150 - sy, 520, 20);
                         move_label(state, "iso_prefix", 14, 194 - sy, 460, 20);
                         move_child(*page, ID_ISO_PREFIX, 14, 214 - sy, 460, 25);
@@ -5841,12 +6105,17 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_RATE, rate_x, 38 - sy, 130, 120);
                         move_label(state, "bits", bits_x, 18 - sy, 130, 20);
                         move_child(*page, ID_BITS, bits_x, 38 - sy, 130, 120);
-                        move_label(state, "import_folder", 14, 80 - sy, field_width, 20);
+                        // The note follows the lists; the MLP path follows the note.
+                        let note = get_text(label_handle(state, "audio_note"));
+                        let note_height = wrapped_text_height(&note, ui_font(), field_width);
+                        move_label(state, "audio_note", 14, 80 - sy, field_width, note_height);
+                        let import_y = 80 + note_height + 12;
+                        move_label(state, "import_folder", 14, import_y - sy, field_width, 20);
                         move_child(
                             *page,
                             ID_IMPORT_FOLDER,
                             14,
-                            100 - sy,
+                            import_y + 20 - sy,
                             (field_width - 100).max(120),
                             25,
                         );
@@ -5854,11 +6123,11 @@ unsafe fn layout_page_contents(state: &UiState) {
                             *page,
                             ID_BROWSE_IMPORT,
                             page_width - 14 - 90,
-                            100 - sy,
+                            import_y + 20 - sy,
                             90,
                             24,
                         );
-                        move_label(state, "audio_note", 14, 136 - sy, field_width, 48);
+
                     }
                 } else {
                     unsafe {
@@ -5868,8 +6137,15 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_RATE, 340, 38 - sy, 210, 120);
                         move_label(state, "bits", 575, 18 - sy, 160, 20);
                         move_child(*page, ID_BITS, 575, 38 - sy, 160, 120);
-                        move_label(state, "import_folder", 14, 80 - sy, 520, 20);
-                        move_label(state, "audio_note", 14, 136 - sy, 900, 48);
+                        let note_width = 900.min(page_width - 28);
+                        let note = get_text(label_handle(state, "audio_note"));
+                        let note_height = wrapped_text_height(&note, ui_font(), note_width);
+                        move_label(state, "audio_note", 14, 80 - sy, note_width, note_height);
+                        let import_y = 80 + note_height + 12;
+                        move_label(state, "import_folder", 14, import_y - sy, 520, 20);
+                        let edit_width = browse_edit_width(page_width);
+                        move_child(*page, ID_IMPORT_FOLDER, 14, import_y + 20 - sy, edit_width, 24);
+                        move_child(*page, ID_BROWSE_IMPORT, 14 + edit_width + 10, import_y + 20 - sy, 90, 24);
                     }
                 }
             }
@@ -6813,6 +7089,27 @@ unsafe fn paint_page(hwnd: Hwnd) {
 }
 
 fn handle_command(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
+    handle_command_inner(hwnd, state, id, notify);
+    // Tabs, the advanced switch and the audio mode change which fields the
+    // current page shows.
+    refit_settings(state);
+}
+
+/// Fits the settings to the current page's content again if it changed.
+fn refit_settings(state: &mut UiState) {
+    if state.splitter_height.is_some() || state.main_window.is_null() {
+        return;
+    }
+    let page = state.pages[state.tab_index.min(state.pages.len() - 1)];
+    let fitted = unscale(page_content_height(page)) + 44;
+    let mut client: Rect = unsafe { std::mem::zeroed() };
+    unsafe { GetClientRect(state.main_window, &mut client) };
+    if Some(fitted) != state.default_tab_height && client.bottom > 0 {
+        layout(state.main_window, state);
+    }
+}
+
+fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
     if (ID_MINIMIZE..=ID_THEME).contains(&id) && notify == BN_CLICKED {
         match id {
             ID_MINIMIZE => unsafe {
@@ -9917,8 +10214,8 @@ mod presentation_tests {
                     }
                     if low == 504 {
                         // Once the default split leaves the log its floor (tabs at
-                        // 126, task rows 104, actions 60), only the log grows.
-                        let fixed_from = ui.default_tab_height.unwrap() + 126 + 104 + 60 + DEFAULT_LOG_FLOOR;
+                        // 126, task rows 110, actions 60), only the log grows.
+                        let fixed_from = ui.default_tab_height.unwrap() + 126 + 110 + 60 + DEFAULT_LOG_FLOOR;
                         // The test window cannot exceed the screen; judge the
                         // heights it really reached.
                         let reached = *client_heights.iter().max().unwrap();

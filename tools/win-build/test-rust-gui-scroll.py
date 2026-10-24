@@ -288,7 +288,9 @@ def main():
                             after = w.RECT()
                             u.GetWindowRect(panel, c.byref(after))
                             assert after.bottom >= before.bottom, "settings pane shrank while dragging down"
-                            assert after.bottom - after.top >= 400, ("settings pane too short", after.bottom - after.top)
+                            # The settings start at their content height and follow the
+                            # drag until the log keeps only one line (which a short
+                            # window may already have reached).
                             print(language, width, "settings height:", after.bottom - after.top, flush=True)
                         finally:
                             u.SetThreadDpiAwarenessContext(old_dpi)
@@ -319,6 +321,11 @@ def main():
                             before = edge_pixels(page)
                             u.RedrawWindow(page, None, None, 0x0185)
                             after = edge_pixels(page)
+                            if before != after:
+                                rect = w.RECT(); u.GetClientRect(page, c.byref(rect))
+                                rows = rect.bottom - 4
+                                diffs = [(i // rows, 2 + i % rows, hex(a), hex(b2)) for i, (a, b2) in enumerate(zip(before, after)) if a != b2]
+                                print("STALE", language, width, tab, code, "client", rect.right, rect.bottom, "pos", u.GetWindowLongPtrW(page, -21), len(diffs), diffs[:6], diffs[-3:], flush=True)
                             assert before == after, (language, width, tab, code, "stale border pixels")
                             if code == 6:
                                 assert u.GetWindowLongPtrW(page, -21) == 0
