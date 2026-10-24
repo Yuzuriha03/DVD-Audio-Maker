@@ -1506,8 +1506,25 @@ struct UiState {
     problem_count: usize,
     statistics_text: String,
     splitter_height: Option<i32>,
+    /// Settings height chosen from the first full-size layout; it then stays
+    /// fixed so height changes go to the log instead of moving the task area.
+    default_tab_height: Option<i32>,
+    /// Splitter range of the last layout: tabs top and the largest settings
+    /// height that still leaves the log one line.
+    splitter_tabs_y: i32,
+    splitter_max: i32,
+    /// Whether the last layout was the short-window one (with hysteresis).
+    compact_layout: Option<bool>,
     splitter_position: i32,
     dragging_splitter: bool,
+    /// Inside the modal sizing loop (WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE).
+    sizing: bool,
+    /// Log area of the last layout, in client pixels.
+    log_box: Option<Rect>,
+    /// Clipping frame that hosts the log EDIT.
+    log_frame: Hwnd,
+    /// The log EDIT kept its size during live sizing and differs from its frame.
+    log_frozen: bool,
     splitter_preview: Option<i32>,
     splitter_preview_window: Hwnd,
     advanced_controls: Vec<Hwnd>,
@@ -2000,8 +2017,9 @@ unsafe extern "system" fn window_proc(
                     let preview = state.splitter_preview;
                     unsafe { hide_splitter_preview(state) };
                     if let Some(preview_y) = preview {
-                        state.splitter_height =
-                            Some(unscale(preview_y) - (HEADER_HEIGHT + 56));
+                        state.splitter_height = Some(
+                            (unscale(preview_y) - state.splitter_tabs_y).clamp(104, state.splitter_max.max(104)),
+                        );
                         // layout() moves children with SWP_NOREDRAW and then
                         // repaints the whole tree synchronously.
                         layout(hwnd, state);
@@ -2025,6 +2043,20 @@ unsafe extern "system" fn window_proc(
                 }
             }
             0
+        }
+        0x0231 | 0x0232 => {
+            // WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE: the log keeps its size while
+            // the user drags an edge and gets the final size once at the end.
+            if let Some(state) = unsafe { state(hwnd) } {
+                state.sizing = message == 0x0231;
+                if !state.sizing && state.log_frozen {
+                    layout(hwnd, state);
+                    if state.log_dirty && checked(state.controls.live) {
+                        render_log(state);
+                    }
+                }
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_NCCALCSIZE => {
             if wparam != 0 {
@@ -2311,6 +2343,9 @@ unsafe fn update_splitter_preview(state: &mut UiState, main: Hwnd, client_y: i32
     if preview.is_null() {
         return;
     }
+    // Same range as layout() allows, measured from the real tabs top.
+    let low = scale(state.splitter_tabs_y + 104);
+    let client_y = client_y.clamp(low, scale(state.splitter_tabs_y + state.splitter_max.max(104)).max(low));
     state.splitter_preview = Some(client_y);
     let mut point = Point {
         x: 0,
@@ -3361,8 +3396,9 @@ fn create_controls(parent: Hwnd) -> UiState {
     check(live, true);
     let copy = button(parent, tr(lang, "copy"), ID_COPY, 720, 478, 125, 28);
     let export = button(parent, tr(lang, "export"), ID_EXPORT, 855, 478, 130, 28);
+    let log_frame = create_log_frame(parent);
     let log = create!(
-        parent,
+        log_frame,
         "EDIT",
         "",
         WS_CHILD
@@ -3371,8 +3407,8 @@ fn create_controls(parent: Hwnd) -> UiState {
             | ES_AUTOVSCROLL
             | ES_READONLY
             | ES_WANTRETURN,
-        18,
-        540,
+        0,
+        0,
         1140,
         215,
         ID_LOG,
@@ -3558,8 +3594,16 @@ fn create_controls(parent: Hwnd) -> UiState {
         problem_count: 0,
         statistics_text: String::new(),
         splitter_height: None,
+        default_tab_height: None,
+        splitter_tabs_y: HEADER_HEIGHT + 56,
+        splitter_max: 350,
+        compact_layout: None,
         splitter_position: 420,
         dragging_splitter: false,
+        sizing: false,
+        log_box: None,
+        log_frame,
+        log_frozen: false,
         splitter_preview: None,
         splitter_preview_window: ptr::null_mut(),
         advanced_controls,
@@ -4381,10 +4425,14 @@ unsafe fn log_bar_metrics(log: Hwnd) -> BarMetrics {
         right: 0,
         bottom: 0,
     };
+    let mut frame: Rect = unsafe { std::mem::zeroed() };
     unsafe {
         GetClientRect(log, &mut rect);
+        GetClientRect(GetParent(log), &mut frame);
     }
-    let height = (rect.bottom - rect.top).max(1);
+    // While live sizing freezes the EDIT, only the frame's part is visible.
+    let visible_height = if frame.bottom > 0 { rect.bottom.min(frame.bottom) } else { rect.bottom };
+    let height = (visible_height - rect.top).max(1);
     let line_height = scale(19).max(1);
     let visible = (height / line_height).max(1);
     BarMetrics {
@@ -4696,7 +4744,9 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
                 // Filled field style: the white edit surface sits on the tinted
                 // panel, so no 3D client edge is needed.
                 0
-            } else if class.as_slice() == wide("DVD_AUDIO_PAGE_RUST").as_slice() {
+            } else if class.as_slice() == wide("DVD_AUDIO_PAGE_RUST").as_slice()
+                || class.as_slice() == wide("DVD_AUDIO_LOG_FRAME_RUST").as_slice()
+            {
                 0x00010000 // WS_EX_CONTROLPARENT
             } else {
                 0
@@ -4992,15 +5042,17 @@ fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 {
     rect.right
 }
 
-/// Control moves queued while a layout batch is open, one
-/// BeginDeferWindowPos handle per parent window. Applying all moves at once
-/// recomputes visible regions once instead of after every control.
+/// Control moves recorded while a layout batch is open. Only the last
+/// target of each control counts: layout code may position a control more
+/// than once, and a DeferWindowPos batch must not contain the same window
+/// twice (Windows then keeps the first entry, so consecutive layouts would
+/// alternate between both positions). The batch end applies every move with
+/// one BeginDeferWindowPos per parent, recomputing visible regions once
+/// instead of after every control.
 #[derive(Default)]
 struct PlacementBatch {
-    parents: Vec<(Hwnd, Handle)>,
-    /// Parent and target client rectangle of queued controls, so repeated
-    /// moves of the same control compare against the pending position.
-    pending: HashMap<usize, (Hwnd, Rect)>,
+    /// (control, parent, target client rectangle) in first-recorded order.
+    pending: Vec<(Hwnd, Hwnd, Rect)>,
 }
 
 thread_local! {
@@ -5019,16 +5071,67 @@ fn begin_placement_batch() {
     });
 }
 
-/// Applies every queued move at once.
+/// Whether the control already occupies `target` in its parent's client
+/// coordinates. Closed combo boxes keep their own height; only the
+/// drop-down height is requested, so it is not compared.
+fn placement_matches(hwnd: Hwnd, parent: Hwnd, target: &Rect) -> bool {
+    let mut rect: Rect = unsafe { std::mem::zeroed() };
+    unsafe { GetWindowRect(hwnd, &mut rect) };
+    let mut origin = Point { x: rect.left, y: rect.top };
+    unsafe { ScreenToClient(parent, &mut origin) };
+    let fixed_combo_height = COMBO_IDS.contains(&(unsafe { GetDlgCtrlID(hwnd) } as usize));
+    origin.x == target.left
+        && origin.y == target.top
+        && rect.right - rect.left == target.right - target.left
+        && (fixed_combo_height || rect.bottom - rect.top == target.bottom - target.top)
+}
+
+/// Applies every recorded move at once.
 fn end_placement_batch() {
-    if let Some(batch) = PLACEMENT_BATCH.with(|batch| batch.borrow_mut().take()) {
-        for (_, handle) in &batch.parents {
-            if !handle.is_null() {
-                unsafe { EndDeferWindowPos(*handle) };
-            }
+    let Some(batch) = PLACEMENT_BATCH.with(|batch| batch.borrow_mut().take()) else {
+        return;
+    };
+    let moves: Vec<(Hwnd, Hwnd, Rect)> = batch
+        .pending
+        .into_iter()
+        .filter(|(hwnd, parent, target)| !placement_matches(*hwnd, *parent, target))
+        .collect();
+    let mut parents: Vec<Hwnd> = Vec::new();
+    for (_, parent, _) in &moves {
+        if !parents.contains(parent) {
+            parents.push(*parent);
         }
-        for hwnd in batch.pending.keys() {
-            unsafe { InvalidateRect(*hwnd as Hwnd, ptr::null(), 0) };
+    }
+    for parent in parents {
+        let group: Vec<&(Hwnd, Hwnd, Rect)> = moves.iter().filter(|(_, owner, _)| *owner == parent).collect();
+        let mut handle = unsafe { BeginDeferWindowPos(group.len() as i32) };
+        for (hwnd, _, target) in &group {
+            if handle.is_null() {
+                break;
+            }
+            handle = unsafe {
+                DeferWindowPos(
+                    handle,
+                    *hwnd,
+                    ptr::null_mut(),
+                    target.left,
+                    target.top,
+                    target.right - target.left,
+                    target.bottom - target.top,
+                    PLACE_FLAGS,
+                )
+            };
+        }
+        if handle.is_null() {
+            // A failed DeferWindowPos frees the whole batch; move directly.
+            for (hwnd, _, target) in &group {
+                apply_placement(*hwnd, *target);
+            }
+        } else {
+            unsafe { EndDeferWindowPos(handle) };
+            for (hwnd, _, _) in &group {
+                unsafe { InvalidateRect(*hwnd, ptr::null(), 0) };
+            }
         }
     }
 }
@@ -5048,90 +5151,97 @@ fn apply_placement(hwnd: Hwnd, target: Rect) {
     }
 }
 
+/// The multi-line log EDIT re-wraps all of its text whenever its size
+/// changes (about 120 ms with 2500 lines). It lives in a frame window that
+/// follows the layout on every step; during live sizing the EDIT keeps its
+/// size inside the frame (clipped by it, or with the frame's log background
+/// beyond it) and gets the final size once when the drag ends.
+/// `revealed` marks a log that becomes visible in this layout: it gets its
+/// real size right away instead of staying at its hidden size until the end.
+fn place_log(state: &mut UiState, target: Rect, revealed: bool) {
+    place_px(state.log_frame, target);
+    let log = state.controls.log;
+    let mut current: Rect = unsafe { std::mem::zeroed() };
+    unsafe { GetWindowRect(log, &mut current) };
+    let size = (target.right - target.left, target.bottom - target.top);
+    let current_size = (current.right - current.left, current.bottom - current.top);
+    if state.sizing && !revealed && current_size.0 > 0 && current_size.1 > 0 {
+        state.log_frozen = current_size != size;
+    } else {
+        place_px(log, Rect { left: 0, top: 0, right: size.0, bottom: size.1 });
+        state.log_frozen = false;
+    }
+}
+
+/// Frame around the log EDIT: paints the log background and passes the
+/// EDIT's notifications and colour requests on to the main window.
+unsafe extern "system" fn log_frame_proc(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult {
+    match message {
+        WM_ERASEBKGND => 1,
+        WM_PAINT => {
+            let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+            let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_card()) };
+            unsafe { finish_buffered_paint(hwnd, &paint, &buffer) };
+            0
+        }
+        WM_COMMAND | WM_NOTIFY | WM_CTLCOLORSTATIC | WM_CTLCOLOREDIT => unsafe {
+            SendMessageW(GetParent(hwnd), message, wparam, lparam)
+        },
+        // A multi-line EDIT in dialog navigation answers Esc with WM_CLOSE to
+        // its parent; letting DefWindowProc destroy the frame would take the
+        // log with it. Esc in the log does nothing.
+        WM_CLOSE => 0,
+        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    }
+}
+
+static LOG_FRAME_CLASS_READY: OnceLock<()> = OnceLock::new();
+
+fn create_log_frame(parent: Hwnd) -> Hwnd {
+    LOG_FRAME_CLASS_READY.get_or_init(|| unsafe {
+        let class_name = wide("DVD_AUDIO_LOG_FRAME_RUST");
+        let registration = WndClass {
+            style: 0,
+            procedure: log_frame_proc,
+            extra_class: 0,
+            extra_window: 0,
+            instance: GetModuleHandleW(ptr::null()),
+            icon: ptr::null_mut(),
+            cursor: LoadCursorW(ptr::null_mut(), 32512usize as *const u16),
+            background: ptr::null_mut(),
+            menu: ptr::null(),
+            class_name: class_name.as_ptr(),
+        };
+        let _ = RegisterClassW(&registration);
+    });
+    create!(parent, "DVD_AUDIO_LOG_FRAME_RUST", "", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 18, 540, 1140, 215, 0)
+}
+
 unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
-    let target = Rect {
+    place_px(hwnd, Rect {
         left: scale(x),
         top: scale(y),
         right: scale(x) + scale(width),
         bottom: scale(y) + scale(height),
-    };
+    });
+}
+
+/// Like place(), with a target rectangle in pixels.
+fn place_px(hwnd: Hwnd, target: Rect) {
     let parent = unsafe { GetParent(hwnd) };
-    let pending = PLACEMENT_BATCH.with(|batch| {
-        batch.borrow().as_ref().and_then(|batch| batch.pending.get(&(hwnd as usize)).map(|(_, rect)| *rect))
-    });
-    let current = pending.unwrap_or_else(|| {
-        let mut rect: Rect = unsafe { std::mem::zeroed() };
-        unsafe { GetWindowRect(hwnd, &mut rect) };
-        let mut origin = Point { x: rect.left, y: rect.top };
-        unsafe { ScreenToClient(parent, &mut origin) };
-        Rect {
-            left: origin.x,
-            top: origin.y,
-            right: origin.x + rect.right - rect.left,
-            bottom: origin.y + rect.bottom - rect.top,
-        }
-    });
-    // Closed combo boxes keep their own height; only the drop-down height
-    // is requested here.
-    let fixed_combo_height = COMBO_IDS.contains(&(unsafe { GetDlgCtrlID(hwnd) } as usize));
-    if current.left == target.left
-        && current.top == target.top
-        && current.right - current.left == target.right - target.left
-        && (fixed_combo_height || current.bottom - current.top == target.bottom - target.top)
-    {
-        return;
-    }
-    // Moves that must happen directly: this one when no batch is open, plus
-    // everything queued for this parent if its batch could not grow.
-    let direct: Vec<(Hwnd, Rect)> = PLACEMENT_BATCH.with(|batch| {
+    let recorded = PLACEMENT_BATCH.with(|batch| {
         let mut batch = batch.borrow_mut();
         let Some(batch) = batch.as_mut() else {
-            return vec![(hwnd, target)];
+            return false;
         };
-        let index = match batch.parents.iter().position(|(owner, _)| *owner == parent) {
-            Some(index) => index,
-            None => {
-                batch.parents.push((parent, unsafe { BeginDeferWindowPos(16) }));
-                batch.parents.len() - 1
-            }
-        };
-        let handle = batch.parents[index].1;
-        let next = if handle.is_null() {
-            ptr::null_mut()
-        } else {
-            unsafe {
-                DeferWindowPos(
-                    handle,
-                    hwnd,
-                    ptr::null_mut(),
-                    target.left,
-                    target.top,
-                    target.right - target.left,
-                    target.bottom - target.top,
-                    PLACE_FLAGS,
-                )
-            }
-        };
-        batch.parents[index].1 = next;
-        if !next.is_null() {
-            batch.pending.insert(hwnd as usize, (parent, target));
-            return Vec::new();
+        match batch.pending.iter_mut().find(|(control, _, _)| *control == hwnd) {
+            Some(entry) => entry.2 = target,
+            None => batch.pending.push((hwnd, parent, target)),
         }
-        // A failed DeferWindowPos frees the whole batch for this parent.
-        let mut lost: Vec<(Hwnd, Rect)> = Vec::new();
-        batch.pending.retain(|control, (owner, rect)| {
-            if *owner == parent {
-                lost.push((*control as Hwnd, *rect));
-                false
-            } else {
-                true
-            }
-        });
-        lost.push((hwnd, target));
-        lost
+        true
     });
-    for (control, rect) in direct {
-        apply_placement(control, rect);
+    if !recorded && !placement_matches(hwnd, parent, &target) {
+        apply_placement(hwnd, target);
     }
 }
 
@@ -5166,6 +5276,11 @@ fn rescale_ui(hwnd: Hwnd, state: &mut UiState) {
     if let Some(registry) = CONTROL_RECTS.get() {
         if let Ok(registry) = registry.lock() {
             for (handle, x, y, width, height) in registry.iter() {
+                // layout() places the log and its frame; moving the EDIT here
+                // would look like a user scroll and pause live follow.
+                if *handle as Hwnd == state.controls.log || *handle as Hwnd == state.log_frame {
+                    continue;
+                }
                 unsafe {
                     MoveWindow(
                         *handle as Hwnd,
@@ -5259,7 +5374,18 @@ fn toggle_theme(hwnd: Hwnd, state: &mut UiState) {
     apply_theme(hwnd, state, next);
 }
 
+/// Settings height before the first full-size layout, in DIPs.
+const DEFAULT_SETTINGS_HEIGHT: i32 = 300;
+/// The log shows at least one line.
+const MIN_LOG_HEIGHT: i32 = 28;
+/// The default split shrinks the settings before the log drops below this.
+const DEFAULT_LOG_FLOOR: i32 = 60;
+
 fn layout(hwnd: Hwnd, state: &mut UiState) {
+    // Record a real user scroll before resizing the log changes its first
+    // visible line; the change caused by the resize itself is taken over
+    // below, so it does not pause live follow.
+    observe_log_scroll(state);
     DEFER_CONTROL_PAINT.store(true, Ordering::Relaxed);
     let mut rect = Rect {
         left: 0,
@@ -5272,15 +5398,18 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     }
     let width = unscale(rect.right - rect.left).max(640);
     let height = unscale(rect.bottom - rect.top).max(1);
-    let compact = height < 500;
+    // Short-window switch at 500 DIPs with a small dead zone, so a dragged
+    // edge hovering around the threshold does not flip the whole layout.
+    let compact = match state.compact_layout {
+        Some(true) => height < 504,
+        Some(false) => height < 496,
+        None => height < 500,
+    };
+    state.compact_layout = Some(compact);
     let margin = 18;
     let bottom = height - 14;
     let toolbar_y = HEADER_HEIGHT + 14;
     let tabs_y = toolbar_y + 42;
-    let tab_height = state
-        .splitter_height
-        .unwrap_or((height - 440).clamp(190, 350))
-        .clamp(if compact { 64 } else { 104 }, (height - 380).max(if compact { 64 } else { 104 }));
     let actions_top = bottom - 34;
     let language_width = 104;
     // Profile actions follow their translated label so Japanese and English
@@ -5308,14 +5437,6 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     let stacked_profile = header_x[0] - 12 - profile_x < 120;
     let action_toolbar_y = toolbar_y + if stacked_profile { 34 } else { 0 };
     let tabs_y = tabs_y + if stacked_profile { 34 } else { 0 };
-    // Windows too short for both areas show one of them: the settings while
-    // idle, the task status and log while a task runs. Neither has a splitter.
-    let settings_only = compact && !state.busy;
-    let task_only = compact && state.busy;
-    state.settings_hidden = task_only;
-    let page_y = tabs_y + 44;
-    let page_height = if settings_only { actions_top - 12 - page_y } else { tab_height - 44 };
-    let splitter = if task_only { tabs_y - 12 } else { tabs_y + tab_height };
     // The log toolbar is sized from its translated texts; narrow windows
     // tighten its spacing first and wrap copy/export only when necessary.
     let text_width = |key| unscale(measured_text_width(hwnd, tr(state.lang, key), ui_font()));
@@ -5325,13 +5446,45 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         [text_width("issues"), text_width("live")],
         [text_width("copy"), text_width("export")],
     );
+    // The settings keep their height (the default or the user's splitter
+    // position) while the window height changes: the log absorbs the change
+    // down to one line, so a dragged bottom edge moves only the log's lower
+    // edge and the actions row. Moving the whole task area with the edge
+    // made it visibly shake, as DWM shows it a frame early or late.
+    let task_rows = if log_bar.wrap { 138 } else { 104 };
+    // A dragged splitter may leave the log one line; the default split keeps
+    // a few lines for a running task.
+    let settings_room = |log_floor: i32| (actions_top - 12 - log_floor - task_rows - tabs_y).max(104);
+    // The default keeps the earlier proportional look for the size the window
+    // first shows at, then stays fixed. A live drag out of the short layout
+    // must not latch the size it happens to pass through.
+    if state.default_tab_height.is_none() && !compact && !state.sizing {
+        state.default_tab_height = Some((height - 440).clamp(190, 350).min(height - 380).max(104));
+    }
+    let tab_height = match state.splitter_height {
+        Some(dragged) => dragged.clamp(104, settings_room(MIN_LOG_HEIGHT)),
+        None => state
+            .default_tab_height
+            .unwrap_or(DEFAULT_SETTINGS_HEIGHT)
+            .clamp(104, settings_room(DEFAULT_LOG_FLOOR)),
+    };
+    state.splitter_tabs_y = tabs_y;
+    state.splitter_max = settings_room(MIN_LOG_HEIGHT);
+    // Windows too short for both areas show one of them: the settings while
+    // idle, the task status and log while a task runs. Neither has a splitter.
+    let settings_only = compact && !state.busy;
+    let task_only = compact && state.busy;
+    state.settings_hidden = task_only;
+    let page_y = tabs_y + 44;
+    let page_height = if settings_only { actions_top - 12 - page_y } else { tab_height - 44 };
+    let splitter = if task_only { tabs_y - 12 } else { tabs_y + tab_height };
     let section_width = text_width("operation_section") + 8;
     let log_buttons_y = splitter + if log_bar.wrap { 104 } else { 70 };
     let log_top = log_buttons_y + 34;
     // Short task views hide the log first, then any toolbar row that would
     // reach the action buttons.
     let task_shown = !settings_only;
-    let log_shown = task_shown && actions_top - 12 - log_top >= 28; // At least one line.
+    let log_shown = task_shown && actions_top - 12 - log_top >= MIN_LOG_HEIGHT;
     let log_filters_shown = task_shown && splitter + 98 <= actions_top - 6;
     let log_buttons_shown = task_shown && log_buttons_y + 28 <= actions_top - 6;
     state.splitter_position = if compact { i32::MIN / 4 } else { scale(splitter) };
@@ -5431,23 +5584,36 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             tab_x += tab_width + 6;
         }
         for (index, page) in state.pages.iter().enumerate() {
-            place(
-                *page,
-                margin,
-                page_y,
-                width - margin * 2 - 18,
-                page_height,
-            );
+            if settings_only {
+                place_px(*page, Rect {
+                    left: scale(margin),
+                    top: scale(page_y),
+                    right: scale(width - margin - 18),
+                    bottom: (rect.bottom - scale(60)).max(scale(page_y) + 1),
+                });
+            } else {
+                place(
+                    *page,
+                    margin,
+                    page_y,
+                    width - margin * 2 - 18,
+                    page_height,
+                );
+            }
             let shown = !task_only && index == state.tab_index;
             ShowWindow(*page, if shown { SW_SHOW } else { SW_HIDE });
         }
-        place(
-            state.page_scrollbar,
-            width - margin - 12,
-            page_y + 2,
-            10,
-            (page_height - 4).max(20),
-        );
+        place_px(state.page_scrollbar, Rect {
+            left: scale(width - margin - 12),
+            top: scale(page_y + 2),
+            right: scale(width - margin - 2),
+            bottom: if settings_only {
+                rect.bottom - scale(62)
+            } else {
+                scale(page_y + 2) + scale((page_height - 4).max(20))
+            }
+            .max(scale(page_y + 2) + 1),
+        });
         ShowWindow(state.page_scrollbar, settings_visible);
         // Status sentences get the whole row; the activity hint follows the
         // section title. Both end in "..." when a message is still longer.
@@ -5482,53 +5648,48 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         for control in [state.controls.log_view, state.controls.only_issues, state.controls.live] {
             ShowWindow(control, if log_filters_shown { SW_SHOW } else { SW_HIDE });
         }
-        let log_height = (actions_top - 12 - log_top).max(1);
-        place(
-            state.controls.log,
-            margin,
-            log_top,
-            width - margin * 2 - 18,
-            log_height,
-        );
-        place(
+        // Rows tied to the bottom edge are placed from the client's pixel
+        // bottom: rounding them in DIPs made their gap to a dragged edge
+        // wobble by a pixel at 125%/150%.
+        let from_bottom = |offset: i32| rect.bottom - scale(offset);
+        let log_bottom = from_bottom(60).max(scale(log_top) + 1);
+        let log_target = Rect { left: scale(margin), top: scale(log_top), right: scale(width - margin - 18), bottom: log_bottom };
+        let log_was_shown = state.log_box.is_some();
+        state.log_box = log_shown.then_some(log_target);
+        place_log(state, log_target, log_shown && !log_was_shown);
+        place_px(
             state.log_scrollbar,
-            width - margin - 12,
-            log_top + 2,
-            10,
-            (log_height - 4).max(1),
+            Rect {
+                left: scale(width - margin - 12),
+                top: scale(log_top + 2),
+                right: scale(width - margin - 2),
+                bottom: (log_bottom - scale(2)).max(scale(log_top + 2) + 1),
+            },
         );
         let log_visible = if log_shown { SW_SHOW } else { SW_HIDE };
+        ShowWindow(state.log_frame, log_visible);
         ShowWindow(state.controls.log, log_visible);
         ShowWindow(state.log_scrollbar, log_visible);
-        place(state.controls.prepare, margin, actions_top, 1, 1);
-        place(state.controls.build, margin, actions_top, 140, 34);
-        place(state.controls.verify, margin + 148, actions_top, 1, 1);
-        place(state.controls.cancel, margin + 148, actions_top, 120, 34);
-        place(
-            state.controls.open_output,
-            margin + 276,
-            actions_top,
-            120,
-            34,
-        );
-        if width >= 900 {
-            place(
-                state.controls.statistics,
-                width - margin - 360,
-                actions_top + 6,
-                360,
-                24,
-            );
+        let actions_px = from_bottom(48);
+        let action = |x: i32, width: i32, height: i32, top: i32| Rect {
+            left: scale(x),
+            top,
+            right: scale(x) + scale(width),
+            bottom: top + scale(height),
+        };
+        place_px(state.controls.prepare, action(margin, 1, 1, actions_px));
+        place_px(state.controls.build, action(margin, 140, 34, actions_px));
+        place_px(state.controls.verify, action(margin + 148, 1, 1, actions_px));
+        place_px(state.controls.cancel, action(margin + 148, 120, 34, actions_px));
+        place_px(state.controls.open_output, action(margin + 276, 120, 34, actions_px));
+        let (statistics_x, statistics_width) = if width >= 900 {
+            (width - margin - 360, 360)
         } else {
-            place(
-                state.controls.statistics,
-                margin + 404,
-                actions_top + 6,
-                (width - margin * 2 - 404).max(120),
-                24,
-            );
-        }
+            (margin + 404, (width - margin * 2 - 404).max(120))
+        };
+        place_px(state.controls.statistics, action(statistics_x, statistics_width, 24, from_bottom(42)));
         end_placement_batch();
+        state.log_first_visible_line = first_visible_log_line(state.controls.log);
         for page in &state.pages {
             scroll_page(*page, 0, false);
         }
@@ -8006,7 +8167,8 @@ fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
                 PostMessageW(hwnd, WM_CLOSE, 0, 0);
             }
         }
-    } else if state.log_dirty && checked(state.controls.live) {
+    } else if state.log_dirty && checked(state.controls.live) && !state.log_frozen {
+        // A frozen log (live sizing) is rendered once the drag ends.
         render_log(state);
     }
 }
@@ -9680,6 +9842,174 @@ mod presentation_tests {
                 }
             }
             UI_DPI.store(saved_dpi, Ordering::Relaxed);
+            unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
+            layout(parent, &mut ui);
+        }
+        // Growing the window pixel by pixel must move every control edge in
+        // one direction, changing course at most once on each side of the
+        // short-window switch. Above the default layout's height the task
+        // area must stay put: only the log's lower edge and the actions row
+        // may follow a dragged bottom edge.
+        {
+            unsafe extern "system" fn collect(hwnd: Hwnd, list: Lparam) -> i32 {
+                unsafe { (*(list as *mut Vec<Hwnd>)).push(hwnd) };
+                1
+            }
+            let saved_dpi = UI_DPI.load(Ordering::Relaxed);
+            for dpi_value in [96u32, 144] {
+                UI_DPI.store(dpi_value, Ordering::Relaxed);
+                let mut children: Vec<Hwnd> = Vec::new();
+                unsafe { EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam); }
+                let position = |hwnd: Hwnd| {
+                    let mut rect: Rect = unsafe { std::mem::zeroed() };
+                    unsafe { GetWindowRect(hwnd, &mut rect); }
+                    let mut origin = Point { x: 0, y: 0 };
+                    unsafe { ClientToScreen(parent, &mut origin); }
+                    (rect.top - origin.y, rect.bottom - origin.y)
+                };
+                let mut frame: Rect = unsafe { std::mem::zeroed() };
+                unsafe { MoveWindow(parent, 0, 0, scale(1000), scale(820), 0); GetWindowRect(parent, &mut frame); }
+                let mut client: Rect = unsafe { std::mem::zeroed() };
+                unsafe { GetClientRect(parent, &mut client); }
+                let border = (frame.bottom - frame.top) - client.bottom;
+                // Growing switches out of the short layout at 504 DIPs.
+                for (low, high) in [(360, 503), (504, 1200)] {
+                    let heights: Vec<i32> = (scale(low)..=scale(high)).collect();
+                    let mut history: Vec<Vec<(i32, i32)>> = vec![Vec::new(); children.len()];
+                    let mut client_heights: Vec<i32> = Vec::new();
+                    for px in &heights {
+                        unsafe { MoveWindow(parent, 0, 0, scale(1000), px + border, 0); }
+                        layout(parent, &mut ui);
+                        let mut inner: Rect = unsafe { std::mem::zeroed() };
+                        unsafe { GetClientRect(parent, &mut inner); }
+                        client_heights.push(inner.bottom);
+                        for (index, child) in children.iter().enumerate() {
+                            history[index].push(position(*child));
+                        }
+                    }
+                    for (index, child) in children.iter().enumerate() {
+                        for (side, pick) in [("top", 0usize), ("bottom", 1)] {
+                            let values: Vec<i32> = history[index].iter().map(|p| if pick == 0 { p.0 } else { p.1 }).collect();
+                            let mut reversals = Vec::new();
+                            let mut direction = 0;
+                            for step in 1..values.len() {
+                                let delta = values[step] - values[step - 1];
+                                if delta == 0 { continue; }
+                                let sign = delta.signum();
+                                if direction != 0 && sign != direction {
+                                    reversals.push((unscale(heights[step]), values[step - 1], values[step]));
+                                }
+                                direction = sign;
+                            }
+                            assert!(reversals.len() <= 1,
+                                "{} {:?} {side} edge jitters at {dpi_value} DPI: {:?}",
+                                window_class(*child), get_text(*child), &reversals[..reversals.len().min(4)]);
+                        }
+                    }
+                    // Rows tied to the bottom edge keep an exact pixel gap to it.
+                    for control in [ui.controls.build, ui.controls.statistics] {
+                        let index = children.iter().position(|child| *child == control).unwrap();
+                        let gaps: std::collections::BTreeSet<i32> = client_heights.iter().zip(&history[index])
+                            .map(|(client_height, p)| client_height - p.0)
+                            .collect();
+                        assert_eq!(gaps.len(), 1, "{} gap to the bottom edge wobbles at {dpi_value} DPI: {gaps:?}",
+                            get_text(control));
+                    }
+                    if low == 504 {
+                        // Once the default split leaves the log its floor (tabs at
+                        // 126, task rows 104, actions 60), only the log grows.
+                        let fixed_from = ui.default_tab_height.unwrap() + 126 + 104 + 60 + DEFAULT_LOG_FLOOR;
+                        // The test window cannot exceed the screen; judge the
+                        // heights it really reached.
+                        let reached = *client_heights.iter().max().unwrap();
+                        assert!(reached >= scale(fixed_from + 20), "sweep reached only {} DIPs at {dpi_value} DPI", unscale(reached));
+                        let status = children.iter().position(|child| *child == ui.controls.status).unwrap();
+                        let log = children.iter().position(|child| *child == ui.controls.log).unwrap();
+                        for control in [ui.controls.status, ui.controls.progress, ui.controls.log_view, ui.controls.log] {
+                            let index = children.iter().position(|child| *child == control).unwrap();
+                            let tops: std::collections::BTreeSet<i32> = client_heights.iter().zip(&history[index])
+                                .filter(|(client_height, _)| **client_height >= scale(fixed_from))
+                                .map(|(_, p)| p.0)
+                                .collect();
+                            assert_eq!(tops.len(), 1, "{} moves with the height at {dpi_value} DPI", window_class(control));
+                        }
+                        // Below that the task area may only follow the edge while
+                        // the log is at its floor.
+                        for step in 1..history[status].len() {
+                            if history[status][step].0 != history[status][step - 1].0 {
+                                let (top, bottom) = history[log][step];
+                                assert!((bottom - top - scale(DEFAULT_LOG_FLOOR)).abs() <= 1,
+                                    "task area moves while the log has room at {dpi_value} DPI: log {} px", bottom - top);
+                            }
+                        }
+                    }
+                }
+            }
+            UI_DPI.store(saved_dpi, Ordering::Relaxed);
+            unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
+            layout(parent, &mut ui);
+        }
+        // Live resizing must not resize, and so re-wrap, a long log: the box
+        // keeps its size (clipped to the new log area) until the drag ends.
+        {
+            let line = "2026-10-24 12:00:00  Encoding track 07 of 12 (MLP, 96 kHz / 24 bit, 5.1)";
+            let text: String = (0..2500).map(|i| format!("{i:04} {line}{}{}", 13 as char, 10 as char)).collect();
+            set_text(ui.controls.log, &text);
+            unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
+            layout(parent, &mut ui);
+            let log_size = |hwnd: Hwnd| {
+                let mut rect: Rect = unsafe { std::mem::zeroed() };
+                unsafe { GetClientRect(hwnd, &mut rect) };
+                (rect.right, rect.bottom)
+            };
+            let before = log_size(ui.controls.log);
+            ui.sizing = true;
+            for step in 1..=20 {
+                unsafe { MoveWindow(parent, 0, 0, scale(1180 - step * 3), scale(820 - step * 3), 0); }
+                layout(parent, &mut ui);
+                assert_eq!(log_size(ui.controls.log), before, "log resized during live sizing");
+            }
+            assert!(ui.log_frozen);
+            // The frame follows the layout while the EDIT keeps its size.
+            let mut frame: Rect = unsafe { std::mem::zeroed() };
+            unsafe { GetClientRect(ui.log_frame, &mut frame) };
+            let target = ui.log_box.unwrap();
+            assert_eq!((frame.right, frame.bottom), (target.right - target.left, target.bottom - target.top));
+            ui.sizing = false;
+            layout(parent, &mut ui);
+            assert!(!ui.log_frozen);
+            let target = ui.log_box.unwrap();
+            assert_eq!(log_size(ui.controls.log), (target.right - target.left, target.bottom - target.top));
+            // The real sizing messages: a resize is not a user scroll, so live
+            // follow is not paused, and the log gets its size at the end.
+            unsafe { SendMessageW(ui.controls.log, EM_LINESCROLL, 0, 2500) };
+            observe_log_scroll(&mut ui);
+            ui.log_hold_line = None;
+            ui.log_hold_until = None;
+            unsafe { SetWindowLongPtrW(parent, GWLP_USERDATA, &mut ui as *mut UiState as isize) };
+            unsafe { window_proc(parent, 0x0231, 0, 0) };
+            // Growing a log scrolled to its end reveals earlier lines, which
+            // changes its first visible line.
+            for step in 1..=10 {
+                unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820 + step * 4), 0); }
+                layout(parent, &mut ui);
+            }
+            unsafe { window_proc(parent, 0x0232, 0, 0) };
+            unsafe { SetWindowLongPtrW(parent, GWLP_USERDATA, 0) };
+            assert!(!ui.sizing && !ui.log_frozen);
+            // The log timer observes the scroll position next.
+            observe_log_scroll(&mut ui);
+            assert!(ui.log_hold_until.is_none(), "resizing paused live follow");
+            let target = ui.log_box.unwrap();
+            assert_eq!(log_size(ui.controls.log), (target.right - target.left, target.bottom - target.top));
+            // Esc in the log posts WM_CLOSE to its parent frame; the log survives.
+            {
+                #[link(name = "user32")]
+                unsafe extern "system" { fn IsWindow(hwnd: Hwnd) -> i32; }
+                unsafe { SendMessageW(ui.log_frame, WM_CLOSE, 0, 0) };
+                assert!(unsafe { IsWindow(ui.log_frame) } != 0 && unsafe { IsWindow(ui.controls.log) } != 0);
+            }
+            set_text(ui.controls.log, "");
             unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
             layout(parent, &mut ui);
         }
