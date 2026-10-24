@@ -474,6 +474,31 @@ struct Message {
     point_y: i32,
 }
 
+/// TEXTMETRICW
+#[repr(C)]
+struct TextMetric {
+    height: i32,
+    ascent: i32,
+    descent: i32,
+    internal_leading: i32,
+    external_leading: i32,
+    average_width: i32,
+    maximum_width: i32,
+    weight: i32,
+    overhang: i32,
+    aspect_x: i32,
+    aspect_y: i32,
+    first_char: u16,
+    last_char: u16,
+    default_char: u16,
+    break_char: u16,
+    italic: u8,
+    underlined: u8,
+    struck_out: u8,
+    pitch_and_family: u8,
+    char_set: u8,
+}
+
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct Rect {
@@ -593,6 +618,17 @@ unsafe extern "system" {
     fn GetClassNameW(hwnd: Hwnd, text: *mut u16, length: i32) -> i32;
     fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
     fn UpdateWindow(hwnd: Hwnd) -> i32;
+    fn IsWindowVisible(hwnd: Hwnd) -> i32;
+    fn ScrollWindowEx(
+        hwnd: Hwnd,
+        dx: i32,
+        dy: i32,
+        scroll: *const Rect,
+        clip: *const Rect,
+        update_region: Handle,
+        update: *mut Rect,
+        flags: u32,
+    ) -> i32;
     fn MoveWindow(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32, repaint: i32) -> i32;
     fn RedrawWindow(hwnd: Hwnd, update: *const Rect, region: Handle, flags: u32) -> i32;
     fn SetWindowPos(
@@ -604,6 +640,18 @@ unsafe extern "system" {
         height: i32,
         flags: u32,
     ) -> i32;
+    fn BeginDeferWindowPos(count: i32) -> Handle;
+    fn DeferWindowPos(
+        batch: Handle,
+        hwnd: Hwnd,
+        after: Hwnd,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        flags: u32,
+    ) -> Handle;
+    fn EndDeferWindowPos(batch: Handle) -> i32;
     fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     fn GetMessageW(message: *mut Message, hwnd: Hwnd, minimum: u32, maximum: u32) -> i32;
@@ -713,6 +761,7 @@ unsafe extern "system" {
     fn DeleteObject(object: Handle) -> i32;
     fn SelectObject(dc: Handle, object: Handle) -> Handle;
     fn CreateCompatibleDC(dc: Handle) -> Handle;
+    fn GetTextMetricsW(dc: Handle, metrics: *mut TextMetric) -> i32;
     fn CreateCompatibleBitmap(dc: Handle, width: i32, height: i32) -> Handle;
     fn BitBlt(dest: Handle, x: i32, y: i32, width: i32, height: i32, source: Handle, source_x: i32, source_y: i32, rop: u32) -> i32;
     fn DeleteDC(dc: Handle) -> i32;
@@ -1445,6 +1494,9 @@ struct UiState {
     status_key: &'static str,
     activity_raw: String,
     busy: bool,
+    /// Short windows show either the settings or the task area; set while
+    /// the settings (tabs and pages) give way to a running task.
+    settings_hidden: bool,
     busy_disabled_controls: Vec<Hwnd>,
     close_when_done: bool,
     cancel: Option<Arc<AtomicBool>>,
@@ -2491,17 +2543,36 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, pos as isize);
         if pos != old {
-            let movement = (hwnd, old - pos);
-            // Move children without copying the fixed frame or exposing intermediate paints.
-            EnumChildWindows(hwnd, scroll_page_child, &movement as *const _ as Lparam);
-            if !DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
-                sync_combo_overlays();
-                RedrawWindow(
+            let delta = old - pos;
+            if DEFER_CONTROL_PAINT.load(Ordering::Relaxed) || IsWindowVisible(hwnd) == 0 {
+                // Layout repaints everything afterwards; just move the children.
+                let movement = (hwnd, delta);
+                EnumChildWindows(hwnd, scroll_page_child, &movement as *const _ as Lparam);
+            } else {
+                // Shift the shown pixels and every child in one operation, then
+                // paint only the uncovered strip. Moving and repainting each
+                // control separately showed mixed old/new frames (ghosting).
+                const SW_SCROLLCHILDREN: u32 = 0x0001;
+                const SW_INVALIDATE: u32 = 0x0002;
+                ScrollWindowEx(
                     hwnd,
+                    0,
+                    delta,
+                    ptr::null(),
                     ptr::null(),
                     ptr::null_mut(),
-                    RDW_INVALIDATE | RDW_ALLCHILDREN,
+                    ptr::null_mut(),
+                    SW_SCROLLCHILDREN | SW_INVALIDATE,
                 );
+                // The 1-pixel page border was shifted with the content.
+                let band = delta.abs() + 2;
+                for strip in [
+                    Rect { left: 0, top: 0, right: rect.right, bottom: band },
+                    Rect { left: 0, top: rect.bottom - band, right: rect.right, bottom: rect.bottom },
+                ] {
+                    RedrawWindow(hwnd, &strip, ptr::null_mut(), RDW_INVALIDATE | RDW_ALLCHILDREN);
+                }
+                RedrawWindow(hwnd, ptr::null(), ptr::null_mut(), RDW_ALLCHILDREN | 0x0100); // RDW_UPDATENOW
             }
         }
     }
@@ -2564,7 +2635,7 @@ fn log_toolbar_layout(available: i32, label_text: i32, check_text: [i32; 2], but
     const GAP: u8 = 1;
     const SLACK: u8 = 2;
     let check = |text: i32| (text + 27, (text + 27).max(130), SLACK);
-    let button = |text: i32, width: i32| ((text + 24).min(width), width, BUTTON);
+    let button = |text: i32, width: i32| (text + 24, (text + 24).max(width), BUTTON);
     let left = [
         (label_text + 4, (label_text + 8).max(120), SLACK),
         (6, 8, GAP),
@@ -2694,29 +2765,12 @@ fn resize_page_fields(page: Hwnd) {
     ] {
         let edit = unsafe { GetDlgItem(page, edit_id as i32) };
         let browse = unsafe { GetDlgItem(page, browse_id as i32) };
+        let top = y - unscale(scroll);
         if !edit.is_null() {
-            unsafe {
-                MoveWindow(
-                    edit,
-                    scale(14),
-                    scale(y) - scroll,
-                    scale(edit_width),
-                    scale(24),
-                    0,
-                )
-            };
+            unsafe { place(edit, 14, top, edit_width, 24) };
         }
         if !browse.is_null() {
-            unsafe {
-                MoveWindow(
-                    browse,
-                    scale(14 + edit_width + 10),
-                    scale(y) - scroll,
-                    scale(90),
-                    scale(24),
-                    0,
-                )
-            };
+            unsafe { place(browse, 14 + edit_width + 10, top, 90, 24) };
         }
     }
 }
@@ -3444,6 +3498,9 @@ fn create_controls(parent: Hwnd) -> UiState {
     let session_log = open_session_log();
     let session_log_error = session_log.as_ref().err().map(ToString::to_string);
     let (log_sender, log_receiver) = sync_channel(LOG_QUEUE_CAPACITY);
+    for line in [status, activity, c.statistics] {
+        single_line_label(line);
+    }
     let muted = vec![
         profile_label,
         origin,
@@ -3491,6 +3548,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         status_key: "ready",
         activity_raw: tr(Lang::Zh, "ready_hint").into(),
         busy: false,
+        settings_hidden: false,
         busy_disabled_controls: Vec::new(),
         close_when_done: false,
         cancel: None,
@@ -4059,6 +4117,17 @@ unsafe extern "system" fn combo_arrow_proc(
                 unsafe {
                     (*pointer).hover = false;
                     InvalidateRect(hwnd, ptr::null(), 0);
+                }
+            }
+        }
+        0x020a => {
+            // WM_MOUSEWHEEL over a closed drop-down scrolls its page instead of
+            // stopping there; an open list still scrolls itself.
+            let combo = unsafe { (*pointer).combo };
+            if unsafe { SendMessageW(combo, CB_GETDROPPEDSTATE, 0, 0) } == 0 {
+                let page = unsafe { GetParent(combo) };
+                if window_class(page) == "DVD_AUDIO_PAGE_RUST" {
+                    return unsafe { SendMessageW(page, message, wparam, lparam) };
                 }
             }
         }
@@ -4878,7 +4947,7 @@ fn show_page(state: &UiState, index: i32) {
         unsafe {
             ShowWindow(
                 *page,
-                if i == index.max(0) as usize {
+                if i == index.max(0) as usize && !state.settings_hidden {
                     SW_SHOW
                 } else {
                     SW_HIDE
@@ -4923,47 +4992,146 @@ fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 {
     rect.right
 }
 
-unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
-    unsafe {
-        let mut before = Rect {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        GetWindowRect(hwnd, &mut before);
-        let mut origin = Point { x: before.left, y: before.top };
-        ScreenToClient(GetParent(hwnd), &mut origin);
-        let fixed_combo_height = COMBO_IDS.contains(&(GetDlgCtrlID(hwnd) as usize));
-        if origin.x == scale(x) && origin.y == scale(y)
-            && before.right - before.left == scale(width)
-            && (fixed_combo_height || before.bottom - before.top == scale(height))
-        {
-            return;
+/// Control moves queued while a layout batch is open, one
+/// BeginDeferWindowPos handle per parent window. Applying all moves at once
+/// recomputes visible regions once instead of after every control.
+#[derive(Default)]
+struct PlacementBatch {
+    parents: Vec<(Hwnd, Handle)>,
+    /// Parent and target client rectangle of queued controls, so repeated
+    /// moves of the same control compare against the pending position.
+    pending: HashMap<usize, (Hwnd, Rect)>,
+}
+
+thread_local! {
+    static PLACEMENT_BATCH: std::cell::RefCell<Option<PlacementBatch>> = const { std::cell::RefCell::new(None) };
+}
+
+const PLACE_FLAGS: u32 = 0x011C; // NOZORDER | NOREDRAW | NOACTIVATE | NOCOPYBITS
+
+/// Starts batching control moves until `end_placement_batch`. Code in
+/// between must not read back the geometry of controls it moved.
+fn begin_placement_batch() {
+    PLACEMENT_BATCH.with(|batch| {
+        let mut batch = batch.borrow_mut();
+        debug_assert!(batch.is_none(), "placement batches do not nest");
+        *batch = Some(PlacementBatch::default());
+    });
+}
+
+/// Applies every queued move at once.
+fn end_placement_batch() {
+    if let Some(batch) = PLACEMENT_BATCH.with(|batch| batch.borrow_mut().take()) {
+        for (_, handle) in &batch.parents {
+            if !handle.is_null() {
+                unsafe { EndDeferWindowPos(*handle) };
+            }
         }
+        for hwnd in batch.pending.keys() {
+            unsafe { InvalidateRect(*hwnd as Hwnd, ptr::null(), 0) };
+        }
+    }
+}
+
+fn apply_placement(hwnd: Hwnd, target: Rect) {
+    unsafe {
         SetWindowPos(
             hwnd,
             ptr::null_mut(),
-            scale(x),
-            scale(y),
-            scale(width),
-            scale(height),
-            0x011C, // NOZORDER | NOREDRAW | NOACTIVATE | NOCOPYBITS
+            target.left,
+            target.top,
+            target.right - target.left,
+            target.bottom - target.top,
+            PLACE_FLAGS,
         );
-        let mut after = Rect {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        GetWindowRect(hwnd, &mut after);
-        if before.left != after.left
-            || before.top != after.top
-            || before.right != after.right
-            || before.bottom != after.bottom
-        {
-            InvalidateRect(hwnd, ptr::null(), 0);
+        InvalidateRect(hwnd, ptr::null(), 0);
+    }
+}
+
+unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
+    let target = Rect {
+        left: scale(x),
+        top: scale(y),
+        right: scale(x) + scale(width),
+        bottom: scale(y) + scale(height),
+    };
+    let parent = unsafe { GetParent(hwnd) };
+    let pending = PLACEMENT_BATCH.with(|batch| {
+        batch.borrow().as_ref().and_then(|batch| batch.pending.get(&(hwnd as usize)).map(|(_, rect)| *rect))
+    });
+    let current = pending.unwrap_or_else(|| {
+        let mut rect: Rect = unsafe { std::mem::zeroed() };
+        unsafe { GetWindowRect(hwnd, &mut rect) };
+        let mut origin = Point { x: rect.left, y: rect.top };
+        unsafe { ScreenToClient(parent, &mut origin) };
+        Rect {
+            left: origin.x,
+            top: origin.y,
+            right: origin.x + rect.right - rect.left,
+            bottom: origin.y + rect.bottom - rect.top,
         }
+    });
+    // Closed combo boxes keep their own height; only the drop-down height
+    // is requested here.
+    let fixed_combo_height = COMBO_IDS.contains(&(unsafe { GetDlgCtrlID(hwnd) } as usize));
+    if current.left == target.left
+        && current.top == target.top
+        && current.right - current.left == target.right - target.left
+        && (fixed_combo_height || current.bottom - current.top == target.bottom - target.top)
+    {
+        return;
+    }
+    // Moves that must happen directly: this one when no batch is open, plus
+    // everything queued for this parent if its batch could not grow.
+    let direct: Vec<(Hwnd, Rect)> = PLACEMENT_BATCH.with(|batch| {
+        let mut batch = batch.borrow_mut();
+        let Some(batch) = batch.as_mut() else {
+            return vec![(hwnd, target)];
+        };
+        let index = match batch.parents.iter().position(|(owner, _)| *owner == parent) {
+            Some(index) => index,
+            None => {
+                batch.parents.push((parent, unsafe { BeginDeferWindowPos(16) }));
+                batch.parents.len() - 1
+            }
+        };
+        let handle = batch.parents[index].1;
+        let next = if handle.is_null() {
+            ptr::null_mut()
+        } else {
+            unsafe {
+                DeferWindowPos(
+                    handle,
+                    hwnd,
+                    ptr::null_mut(),
+                    target.left,
+                    target.top,
+                    target.right - target.left,
+                    target.bottom - target.top,
+                    PLACE_FLAGS,
+                )
+            }
+        };
+        batch.parents[index].1 = next;
+        if !next.is_null() {
+            batch.pending.insert(hwnd as usize, (parent, target));
+            return Vec::new();
+        }
+        // A failed DeferWindowPos frees the whole batch for this parent.
+        let mut lost: Vec<(Hwnd, Rect)> = Vec::new();
+        batch.pending.retain(|control, (owner, rect)| {
+            if *owner == parent {
+                lost.push((*control as Hwnd, *rect));
+                false
+            } else {
+                true
+            }
+        });
+        lost.push((hwnd, target));
+        lost
+    });
+    for (control, rect) in direct {
+        apply_placement(control, rect);
     }
 }
 
@@ -5140,9 +5308,14 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     let stacked_profile = header_x[0] - 12 - profile_x < 120;
     let action_toolbar_y = toolbar_y + if stacked_profile { 34 } else { 0 };
     let tabs_y = tabs_y + if stacked_profile { 34 } else { 0 };
-    let tab_height = if compact { 64 } else { tab_height };
-    let splitter = tabs_y + tab_height;
+    // Windows too short for both areas show one of them: the settings while
+    // idle, the task status and log while a task runs. Neither has a splitter.
+    let settings_only = compact && !state.busy;
+    let task_only = compact && state.busy;
+    state.settings_hidden = task_only;
     let page_y = tabs_y + 44;
+    let page_height = if settings_only { actions_top - 12 - page_y } else { tab_height - 44 };
+    let splitter = if task_only { tabs_y - 12 } else { tabs_y + tab_height };
     // The log toolbar is sized from its translated texts; narrow windows
     // tighten its spacing first and wrap copy/export only when necessary.
     let text_width = |key| unscale(measured_text_width(hwnd, tr(state.lang, key), ui_font()));
@@ -5152,14 +5325,16 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         [text_width("issues"), text_width("live")],
         [text_width("copy"), text_width("export")],
     );
+    let section_width = text_width("operation_section") + 8;
     let log_buttons_y = splitter + if log_bar.wrap { 104 } else { 70 };
     let log_top = log_buttons_y + 34;
-    // Short windows hide the log first, then any toolbar row that would
+    // Short task views hide the log first, then any toolbar row that would
     // reach the action buttons.
-    let log_shown = actions_top - 12 - log_top >= 28; // At least one line.
-    let log_filters_shown = splitter + 98 <= actions_top - 6;
-    let log_buttons_shown = log_buttons_y + 28 <= actions_top - 6;
-    state.splitter_position = scale(splitter);
+    let task_shown = !settings_only;
+    let log_shown = task_shown && actions_top - 12 - log_top >= 28; // At least one line.
+    let log_filters_shown = task_shown && splitter + 98 <= actions_top - 6;
+    let log_buttons_shown = task_shown && log_buttons_y + 28 <= actions_top - 6;
+    state.splitter_position = if compact { i32::MIN / 4 } else { scale(splitter) };
     let caption_width = 40;
     let caption_gap = 2;
     let close_x = width - margin - caption_width;
@@ -5167,6 +5342,9 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     let minimize_x = maximize_x - caption_gap - caption_width;
     let theme_x = minimize_x - caption_gap - caption_width;
     let language_x = theme_x - 8 - language_width;
+    // Main-window controls (including the pages) move in one batch; the page
+    // contents follow in a second batch once the page sizes are applied.
+    begin_placement_batch();
     unsafe {
         place(
             state.controls.profile,
@@ -5221,7 +5399,8 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                     ShowWindow(*handle, SW_HIDE);
                 }
                 "operation_section" => {
-                    place(*handle, margin, splitter + 12, 120, 18);
+                    place(*handle, margin, splitter + 12, section_width, 18);
+                    ShowWindow(*handle, if task_shown { SW_SHOW } else { SW_HIDE });
                 }
                 "log_section" => {
                     place(*handle, margin, splitter + 72, log_bar.label_width, 22);
@@ -5230,48 +5409,54 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                 _ => {}
             }
         }
+        let advanced_width =
+            (unscale(measured_text_width(hwnd, &get_text(state.controls.advanced), ui_font())) + 33).max(120);
         place(
             state.controls.advanced,
-            width - margin - 156,
+            width - margin - advanced_width,
             tabs_y + 8,
-            156,
+            advanced_width,
             22,
         );
+        let settings_visible = if task_only { SW_HIDE } else { SW_SHOW };
+        ShowWindow(state.controls.advanced, settings_visible);
         ShowWindow(state.controls.profile_origin, SW_HIDE);
-        for (index, tab) in state.tabs.iter().enumerate() {
-            place(
-                *tab,
-                margin + index as i32 * 138,
-                tabs_y,
-                132,
-                34,
-            );
+        // The active tab uses the semibold font; size every tab for it.
+        let mut tab_x = margin;
+        for tab in &state.tabs {
+            let tab_width =
+                (unscale(measured_text_width(hwnd, &get_text(*tab), semibold_font())) + 28).max(132);
+            place(*tab, tab_x, tabs_y, tab_width, 34);
+            ShowWindow(*tab, settings_visible);
+            tab_x += tab_width + 6;
         }
-        for page in &state.pages {
+        for (index, page) in state.pages.iter().enumerate() {
             place(
                 *page,
                 margin,
                 page_y,
                 width - margin * 2 - 18,
-                tab_height - 44,
+                page_height,
             );
+            let shown = !task_only && index == state.tab_index;
+            ShowWindow(*page, if shown { SW_SHOW } else { SW_HIDE });
         }
         place(
             state.page_scrollbar,
             width - margin - 12,
             page_y + 2,
             10,
-            (tab_height - 44 - 4).max(20),
+            (page_height - 4).max(20),
         );
-        place(state.controls.status, margin, splitter + 30, 320, 24);
-        if width >= 900 {
-            place(
-                state.controls.activity,
-                344,
-                splitter + 30,
-                width - 362,
-                24,
-            );
+        ShowWindow(state.page_scrollbar, settings_visible);
+        // Status sentences get the whole row; the activity hint follows the
+        // section title. Both end in "..." when a message is still longer.
+        place(state.controls.status, margin, splitter + 30, width - margin * 2, 24);
+        ShowWindow(state.controls.status, if task_shown { SW_SHOW } else { SW_HIDE });
+        let activity_x = margin + section_width + 12;
+        let activity_width = width - margin - activity_x;
+        if task_shown && activity_width >= 120 {
+            place(state.controls.activity, activity_x, splitter + 12, activity_width, 18);
             ShowWindow(state.controls.activity, SW_SHOW);
         } else {
             ShowWindow(state.controls.activity, SW_HIDE);
@@ -5283,6 +5468,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             width - margin * 2,
             7,
         );
+        ShowWindow(state.controls.progress, if task_shown { SW_SHOW } else { SW_HIDE });
         place(
             state.controls.log_view,
             margin + log_bar.combo_x,
@@ -5342,11 +5528,16 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                 24,
             );
         }
+        end_placement_batch();
         for page in &state.pages {
             scroll_page(*page, 0, false);
+        }
+        begin_placement_batch();
+        for page in &state.pages {
             resize_page_fields(*page);
         }
         layout_page_contents(state);
+        end_placement_batch();
         sync_combo_overlays();
         DEFER_CONTROL_PAINT.store(false, Ordering::Relaxed);
         // Splitter motion does not change the header or profile toolbar.
@@ -5478,12 +5669,17 @@ unsafe fn layout_page_contents(state: &UiState) {
                 if narrow {
                     let field_width = page_width - 28;
                     unsafe {
-                        move_label(state, "audio_mode", 14, 18 - sy, 200, 20);
-                        move_child(*page, ID_MODE, 14, 38 - sy, 200, 120);
-                        move_label(state, "sample_rate", 220, 18 - sy, 160, 20);
-                        move_child(*page, ID_RATE, 220, 38 - sy, 160, 120);
-                        move_label(state, "bits", 396, 18 - sy, 160, 20);
-                        move_child(*page, ID_BITS, 396, 38 - sy, 160, 120);
+                        // Rates and depths are short; the mode list holds the
+                        // longest texts and takes the remaining width.
+                        let mode_width = (page_width - 28 - 32 - 260).clamp(200, 300);
+                        let rate_x = 14 + mode_width + 16;
+                        let bits_x = rate_x + 130 + 16;
+                        move_label(state, "audio_mode", 14, 18 - sy, mode_width, 20);
+                        move_child(*page, ID_MODE, 14, 38 - sy, mode_width, 120);
+                        move_label(state, "sample_rate", rate_x, 18 - sy, 130, 20);
+                        move_child(*page, ID_RATE, rate_x, 38 - sy, 130, 120);
+                        move_label(state, "bits", bits_x, 18 - sy, 130, 20);
+                        move_child(*page, ID_BITS, bits_x, 38 - sy, 130, 120);
                         move_label(state, "import_folder", 14, 80 - sy, field_width, 20);
                         move_child(
                             *page,
@@ -5517,6 +5713,16 @@ unsafe fn layout_page_contents(state: &UiState) {
                 }
             }
             2 => {
+                let switch_width = |hwnd: Hwnd| {
+                    (unscale(measured_text_width(*page, &get_text(hwnd), ui_font())) + 33).max(120)
+                };
+                let menu_width = switch_width(state.controls.menu);
+                let stills_x = (14 + menu_width + 24).max(300);
+                let stills_width = switch_width(state.controls.stills).min(page_width - 14 - stills_x);
+                unsafe {
+                    place(state.controls.menu, 14, 18 - sy, menu_width, 28);
+                    place(state.controls.stills, stills_x, 18 - sy, stills_width, 28);
+                }
                 if narrow {
                     let column = (page_width - 28 - 16) / 2;
                     unsafe {
@@ -6240,11 +6446,13 @@ unsafe fn paint_window(hwnd: Hwnd) {
             ptr::null_mut(),
             3,
         );
+        // Text may run up to the language picker (296 DIPs from the right).
+        let text_right = (width - scale(308)).max(scale(240));
         let mut title = Rect {
             left: scale(72),
-            top: scale(10),
-            right: (width - scale(320)).max(scale(240)),
-            bottom: scale(40),
+            top: scale(8),
+            right: text_right,
+            bottom: scale(42),
         };
         draw_text_run(
             "DVD-Audio Maker",
@@ -6258,7 +6466,7 @@ unsafe fn paint_window(hwnd: Hwnd) {
         let mut subtitle = Rect {
             left: scale(73),
             top: scale(38),
-            right: (width - scale(320)).max(scale(240)),
+            right: text_right,
             bottom: scale(60),
         };
         draw_text_run(
@@ -6312,8 +6520,7 @@ unsafe extern "system" fn buffered_label_proc(
                     c_body()
                 };
                 let buffer = begin_buffered_paint(hwnd, &mut paint, background);
-                // Keep native STATIC text/layout semantics, but publish background and text together.
-                DefSubclassProc(hwnd, 0x0318, buffer.memory as Wparam, 0x0004);
+                draw_label(hwnd, buffer.memory);
                 finish_buffered_paint(hwnd, &paint, &buffer);
                 0
             }
@@ -6323,6 +6530,78 @@ unsafe extern "system" fn buffered_label_proc(
             }
             _ => DefSubclassProc(hwnd, message, wparam, lparam),
         }
+    }
+}
+
+/// Vertical offset for text drawn into a box shorter than its line(s): lift
+/// it by up to the font's internal leading so the descenders stay visible and
+/// only the empty space above the glyphs is cut.
+unsafe fn text_lift(dc: Handle, needed: i32, available: i32) -> i32 {
+    let overflow = needed - available;
+    if overflow <= 0 {
+        return 0;
+    }
+    let mut metrics: TextMetric = unsafe { std::mem::zeroed() };
+    unsafe { GetTextMetricsW(dc, &mut metrics) };
+    overflow.min(metrics.internal_leading.max(0))
+}
+
+/// Paints a STATIC label with the native text semantics (alignment, word
+/// wrap, prefixes, ellipsis styles) into the label's paint buffer.
+unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
+    const DT_WORDBREAK: u32 = 0x0010;
+    const DT_EXPANDTABS: u32 = 0x0040;
+    const DT_END_ELLIPSIS: u32 = 0x8000;
+    unsafe {
+        let mut rect: Rect = std::mem::zeroed();
+        GetClientRect(hwnd, &mut rect);
+        // The parent picks the brush and text colour (muted, log, disabled).
+        let brush = SendMessageW(GetParent(hwnd), WM_CTLCOLORSTATIC, dc as Wparam, hwnd as Lparam) as Hbrush;
+        if !brush.is_null() {
+            FillRect(dc, &rect, brush);
+        }
+        let text = get_text(hwnd);
+        if text.is_empty() {
+            return;
+        }
+        let style = GetWindowLongPtrW(hwnd, -16) as u32;
+        let kind = style & 0x1f;
+        let ellipsis = style & 0x4000 != 0; // SS_ENDELLIPSIS
+        let mut flags = DT_EXPANDTABS
+            | match kind {
+                1 => DT_CENTER,
+                2 => 0x0002, // DT_RIGHT
+                _ => DT_LEFT,
+            };
+        if style & 0x0080 != 0 {
+            flags |= DT_NOPREFIX; // SS_NOPREFIX
+        }
+        if kind == 0x0c || ellipsis {
+            flags |= DT_SINGLELINE; // SS_LEFTNOWORDWRAP
+        } else {
+            flags |= DT_WORDBREAK;
+        }
+        if ellipsis {
+            flags |= DT_END_ELLIPSIS;
+        }
+        let font = SendMessageW(hwnd, WM_SETFONT + 1, 0, 0) as Handle; // WM_GETFONT
+        let old = SelectObject(dc, if font.is_null() { ui_font() } else { font });
+        let wide_text = wide(&text);
+        let mut needed = Rect { left: 0, top: 0, right: rect.right, bottom: 0 };
+        DrawTextW(dc, wide_text.as_ptr(), -1, &mut needed, flags | DT_CALCRECT);
+        rect.top -= text_lift(dc, needed.bottom, rect.bottom);
+        DrawTextW(dc, wide_text.as_ptr(), -1, &mut rect, flags);
+        SelectObject(dc, old);
+    }
+}
+
+/// Status lines show one line and end in "..." instead of wrapping into
+/// an invisible second line.
+fn single_line_label(hwnd: Hwnd) {
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, -16) as u32;
+        // SS_LEFTNOWORDWRAP | SS_NOPREFIX | SS_ENDELLIPSIS
+        SetWindowLongPtrW(hwnd, -16, ((style & !0x1f) | 0x0c | 0x0080 | 0x4000) as isize);
     }
 }
 
@@ -7266,6 +7545,7 @@ fn start_operation(state: &mut UiState, command: usize) {
     reset_task_log(state);
     set_busy_controls(state, true);
     update_statistics(state);
+    relayout_for_task(state);
     for hwnd in [
         state.controls.prepare,
         state.controls.build,
@@ -7521,6 +7801,18 @@ fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
     }
     state.busy = false;
     update_statistics(state);
+    relayout_for_task(state);
+}
+
+/// Short windows switch between the settings and the task area when a task
+/// starts or ends.
+fn relayout_for_task(state: &mut UiState) {
+    let mut rect: Rect = unsafe { std::mem::zeroed() };
+    unsafe { GetClientRect(state.main_window, &mut rect) };
+    // Minimized windows lay out again when restored.
+    if rect.bottom > 0 {
+        layout(state.main_window, state);
+    }
 }
 fn cancel_operation(state: &mut UiState) {
     if let Some(cancel) = &state.cancel {
@@ -8934,6 +9226,192 @@ mod presentation_tests {
             assert_eq!(item.item_height, scale(26).max(scale(20)) as u32);
         }
 
+
+    /// Every text the UI shows must fit the rectangle it is drawn into, in
+    /// every language, at every supported scale and width. Returns one line
+    /// per (kind, text) with the first failing condition.
+    fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
+        const DT_WORDBREAK: u32 = 0x10;
+        const CB_GETCOUNT: u32 = 0x0146;
+        const CB_GETDROPPEDWIDTH: u32 = 0x015f;
+        const WM_GETFONT: u32 = 0x0031;
+        let measure = |text: &str, font: Handle, width: i32, flags: u32| -> (i32, i32) {
+            unsafe {
+                let dc = CreateCompatibleDC(ptr::null_mut());
+                let old = SelectObject(dc, font);
+                let wide_text = wide(text);
+                let mut rect = Rect { left: 0, top: 0, right: width.max(1), bottom: 0 };
+                DrawTextW(dc, wide_text.as_ptr(), -1, &mut rect, flags | DT_CALCRECT | DT_NOPREFIX);
+                SelectObject(dc, old);
+                DeleteDC(dc);
+                (rect.right, rect.bottom)
+            }
+        };
+        let lift = |font: Handle, needed: i32, available: i32| unsafe {
+            let dc = CreateCompatibleDC(ptr::null_mut());
+            let old = SelectObject(dc, font);
+            let lift = text_lift(dc, needed, available);
+            SelectObject(dc, old);
+            DeleteDC(dc);
+            lift
+        };
+        let style = |hwnd: Hwnd| unsafe { GetWindowLongPtrW(hwnd, -16) } as u32;
+        let shown = |hwnd: Hwnd| {
+            let mut current = hwnd;
+            while !current.is_null() && current != parent {
+                if style(current) & WS_VISIBLE == 0 {
+                    return false;
+                }
+                current = unsafe { GetParent(current) };
+            }
+            true
+        };
+        let client = |hwnd: Hwnd| {
+            let mut rect: Rect = unsafe { std::mem::zeroed() };
+            unsafe { GetClientRect(hwnd, &mut rect) };
+            (rect.right, rect.bottom)
+        };
+        unsafe extern "system" fn collect(hwnd: Hwnd, list: Lparam) -> i32 {
+            unsafe { (*(list as *mut Vec<Hwnd>)).push(hwnd) };
+            1
+        }
+        let mut findings: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let mut note = |key: String, detail: String| {
+            findings.entry(key).or_insert(detail);
+        };
+        let saved_dpi = UI_DPI.load(Ordering::Relaxed);
+        let saved_lang = ui.lang;
+        for dpi in [96u32, 120, 144, 168] {
+            UI_DPI.store(dpi, Ordering::Relaxed);
+            rescale_ui(parent, ui);
+            for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+                set_language(ui, lang);
+                for advanced in [false, true] {
+                    check(ui.controls.advanced, advanced);
+                    update_advanced(ui);
+                    for width in [640, 800, 1000, 1400] {
+                        unsafe { MoveWindow(parent, 0, 0, scale(width), scale(820), 0) };
+                        layout(parent, ui);
+                        for tab in 0..ui.pages.len() {
+                            select_tab(ui, tab);
+                            let at = format!("{} {dpi}dpi {width}w adv={advanced} tab{tab}", lang.code());
+                            let mut children: Vec<Hwnd> = Vec::new();
+                            unsafe { EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam) };
+                            for hwnd in children.into_iter().filter(|hwnd| shown(*hwnd)) {
+                                let class = window_class(hwnd);
+                                let text = get_text(hwnd);
+                                let (cw, ch) = client(hwnd);
+                                let id = unsafe { GetDlgCtrlID(hwnd) } as usize;
+                                let font = unsafe { SendMessageW(hwnd, WM_GETFONT, 0, 0) } as Handle;
+                                let font = if font.is_null() { ui_font() } else { font };
+                                match class.as_str() {
+                                    // Status lines end in "..." by design; their texts
+                                    // are checked below.
+                                    "Static" if !text.is_empty() && style(hwnd) & 0x4000 == 0 => {
+                                        // Labels wrap at word boundaries; draw_label lifts
+                                        // text into the internal leading when needed.
+                                        let (w, h) = measure(&text, font, cw, DT_WORDBREAK);
+                                        if w > cw || h - lift(font, h, ch) > ch {
+                                            note(format!("label {text:?}"), format!("needs {}x{} has {cw}x{ch} at {at}", unscale(w), unscale(h)));
+                                        }
+                                    }
+                                    "Button" if style(hwnd) & 0xf == BS_OWNERDRAW && !text.is_empty() => {
+                                        let (font, top, bottom, pad) = if (ID_TAB..ID_TAB + 3).contains(&id) {
+                                            (semibold_font(), -2, 6, 8)
+                                        } else if id == ID_BUILD {
+                                            (semibold_font(), 0, 0, 8)
+                                        } else {
+                                            (ui_font(), 0, 0, 8)
+                                        };
+                                        let (w, h) = measure(&text, font, cw, DT_SINGLELINE);
+                                        if w > cw - scale(pad) * 2 || h > ch - scale(top) - scale(bottom) {
+                                            note(format!("button {text:?}"), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(cw) - pad * 2, unscale(ch) - top - bottom));
+                                        }
+                                    }
+                                    "Button" if matches!(style(hwnd) & 0xf, 2 | 3) && !text.is_empty() => {
+                                        let available = cw - scale(25);
+                                        let (w, h) = measure(&text, ui_font(), cw, DT_SINGLELINE);
+                                        if w > available || h > ch {
+                                            note(format!("checkbox {text:?}"), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(available), unscale(ch)));
+                                        }
+                                    }
+                                    "ComboBox" => {
+                                        let count = unsafe { SendMessageW(hwnd, CB_GETCOUNT, 0, 0) } as i32;
+                                        let closed = cw - scale(36);
+                                        let dropped = (unsafe { SendMessageW(hwnd, CB_GETDROPPEDWIDTH, 0, 0) } as i32).max(cw) - scale(12);
+                                        for index in 0..count {
+                                            let item = unsafe { combo_item_text(hwnd, index) };
+                                            let (w, _) = measure(&item, ui_font(), cw, DT_SINGLELINE);
+                                            if w > closed {
+                                                note(format!("combo {id} closed {item:?}"), format!("needs {} has {} at {at}", unscale(w), unscale(closed)));
+                                            }
+                                            if w > dropped {
+                                                note(format!("combo {id} list {item:?}"), format!("needs {} has {} at {at}", unscale(w), unscale(dropped)));
+                                            }
+                                        }
+                                    }
+                                    "Edit" => {
+                                        let (_, h) = measure("Agy国", font, cw, DT_SINGLELINE);
+                                        if h > ch {
+                                            note(format!("edit {id} height"), format!("needs {} has {} at {at}", unscale(h), unscale(ch)));
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            let advanced_rect = {
+                                let mut rect: Rect = unsafe { std::mem::zeroed() };
+                                unsafe { GetWindowRect(ui.controls.advanced, &mut rect) };
+                                rect
+                            };
+                            let mut last_tab: Rect = unsafe { std::mem::zeroed() };
+                            unsafe { GetWindowRect(*ui.tabs.last().unwrap(), &mut last_tab) };
+                            if last_tab.right > advanced_rect.left {
+                                note("tabs overlap the advanced switch".into(), format!("at {at}"));
+                            }
+                            // Status texts the task area cycles through.
+                            if tab == 0 && !advanced {
+                                let (cw, ch) = client(ui.controls.status);
+                                let status_font = unsafe { SendMessageW(ui.controls.status, WM_GETFONT, 0, 0) } as Handle;
+                                for key in ["ready", "started_check", "started_build", "started_verify", "done", "cancelled", "failed", "stopping"] {
+                                    let (w, h) = measure(tr(lang, key), status_font, cw, DT_SINGLELINE);
+                                    if w > cw || h > ch {
+                                        note(format!("status {:?}", tr(lang, key)), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(cw), unscale(ch)));
+                                    }
+                                }
+                                let stats = tr(lang, "statistics").replace("{0}", "99").replace("{1}", "59").replace("{2}", "59").replace("{3}", "9999");
+                                let (cw, ch) = client(ui.controls.statistics);
+                                let stats_font = unsafe { SendMessageW(ui.controls.statistics, WM_GETFONT, 0, 0) } as Handle;
+                                let (w, h) = measure(&stats, stats_font, cw, DT_SINGLELINE);
+                                if w > cw || h > ch {
+                                    note(format!("statistics {stats:?}"), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(cw), unscale(ch)));
+                                }
+                                // Header title and subtitle, as paint_window draws them.
+                                let right = (scale(width) - scale(308)).max(scale(240));
+                                let (w, h) = measure("DVD-Audio Maker", title_font(), right, DT_SINGLELINE);
+                                if w > right - scale(72) || h > scale(34) {
+                                    note("header title".into(), format!("needs {}x{} at {at}", unscale(w), unscale(h)));
+                                }
+                                // Narrow windows shorten the subtitle with "..." by design.
+                                let (w, h) = measure(tr(lang, "app_subtitle"), subtitle_font(), right, DT_SINGLELINE);
+                                if (width >= 1000 && w > right - scale(73)) || h > scale(22) {
+                                    note(format!("header subtitle {:?}", tr(lang, "app_subtitle")), format!("needs {}x{} has {} at {at}", unscale(w), unscale(h), unscale(right) - 73));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        UI_DPI.store(saved_dpi, Ordering::Relaxed);
+        rescale_ui(parent, ui);
+        set_language(ui, saved_lang);
+        check(ui.controls.advanced, false);
+        update_advanced(ui);
+        select_tab(ui, 0);
+        findings.into_iter().map(|(key, detail)| format!("{key}: {detail}")).collect()
+    }
+
         #[test]
         fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
             #[link(name = "user32")]
@@ -9057,7 +9535,7 @@ mod presentation_tests {
                     }
                     let row: Vec<(Hwnd, Rect)> = [ui.controls.log_view, ui.controls.only_issues, ui.controls.live]
                         .into_iter()
-                        .chain(log_buttons)
+                        .chain(log_buttons.iter().copied())
                         .filter(|hwnd| shown(*hwnd))
                         .map(|hwnd| (hwnd, rect_of(hwnd)))
                         .collect();
@@ -9074,6 +9552,53 @@ mod presentation_tests {
                                 || rect.bottom <= other_rect.top || other_rect.bottom <= rect.top,
                                 "{text} overlaps {} at {width}x{height}", get_text(*other));
                         }
+                    }
+                    // Short windows show only the settings while idle and only
+                    // the task status and log while a task runs.
+                    let page = ui.pages[ui.tab_index];
+                    let task_area = [ui.controls.status, ui.controls.progress,
+                        label_handle(&ui, "operation_section")];
+                    if compact {
+                        // The fixture does not register the scrollbar class.
+                        let bar_shown = ui.page_scrollbar.is_null() || shown(ui.page_scrollbar);
+                        assert!(shown(page) && bar_shown && ui.tabs.iter().all(|tab| shown(*tab)),
+                            "settings hidden while idle at {width}x{height}");
+                        assert!(task_area.iter().chain([&ui.controls.log]).all(|control| !shown(*control)),
+                            "task area shown while idle at {width}x{height}");
+                        let page_rect = rect_of(page);
+                        assert!(page_rect.bottom <= actions.top
+                            && page_rect.bottom >= actions.top - scale(12) - 1,
+                            "settings do not fill the short window at {width}x{height}");
+                        ui.busy = true;
+                        layout(parent, &mut ui);
+                        assert!(ui.pages.iter().chain(&ui.tabs).chain([&ui.page_scrollbar, &ui.controls.advanced])
+                            .all(|control| !shown(*control)),
+                            "settings shown during a task at {width}x{height}");
+                        assert!(task_area.iter().all(|control| shown(*control)),
+                            "task area hidden during a task at {width}x{height}");
+                        let status = rect_of(label_handle(&ui, "operation_section"));
+                        let tab = rect_of(ui.tabs[0]);
+                        assert!(status.top <= tab.top + scale(2),
+                            "task area does not move up during a task at {width}x{height}");
+                        for control in [ui.controls.log, ui.controls.log_view, ui.controls.progress]
+                            .into_iter()
+                            .chain(log_buttons.iter().copied())
+                            .filter(|control| shown(*control))
+                        {
+                            assert!(rect_of(control).bottom <= actions.top,
+                                "{} reaches the actions during a task at {width}x{height}", get_text(control));
+                        }
+                        // Selecting a tab must not reveal a page while hidden.
+                        let next = (ui.tab_index + 1) % ui.pages.len();
+                        select_tab(&mut ui, next);
+                        assert!(ui.pages.iter().all(|page| !shown(*page)));
+                        select_tab(&mut ui, 0);
+                        ui.busy = false;
+                        layout(parent, &mut ui);
+                        assert!(shown(ui.pages[0]) && !shown(ui.controls.status));
+                    } else {
+                        assert!(shown(page) && task_area.iter().all(|control| shown(*control)),
+                            "tall windows hide an area at {width}x{height}");
                     }
                     for (page_index, ids) in [
                         (0, &[ID_SOURCE, ID_FINAL, ID_TITLE, ID_CAPACITY, ID_CUSTOM_BYTES,
@@ -9098,6 +9623,8 @@ mod presentation_tests {
             }
         }
         ui.lang = original_lang;
+        let clipped = text_clipping_findings(parent, &mut ui);
+        assert!(clipped.is_empty(), "clipped texts:\n{}", clipped.join("\n"));
         // Widening pixel by pixel must move every control edge in one
         // direction, changing course at most once at a layout breakpoint;
         // back-and-forth steps read as jitter while dragging the window edge.
