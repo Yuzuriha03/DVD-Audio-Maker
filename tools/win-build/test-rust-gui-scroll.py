@@ -78,8 +78,10 @@ def watch_language(hwnd, stop, samples):
         assert bitmap and pixels.value, "cannot create language capture bitmap"
         while not stop.is_set():
             u.GetWindowRect(hwnd, c.byref(bounds))
-            covering = u.WindowFromPoint(w.POINT(bounds.left + width // 2, bounds.top + height // 2))
-            if u.GetAncestor(covering, 2) != root:
+            # Overlays from other programs can cover part of a control.
+            points = [w.POINT(bounds.left + dx, bounds.top + height // 2) for dx in (1, width // 2, width - 2)]
+            covering = next((h for h in map(u.WindowFromPoint, points) if u.GetAncestor(h, 2) != root), root)
+            if covering != root:
                 samples.append(("occluded", bounds.left, bounds.top, gui.classname(covering), gui.text(covering),
                                 "target", hwnd, "root", root, "visible", u.IsWindowVisible(root),
                                 "topmost", bool(u.GetWindowLongPtrW(root, -20) & 8)))
@@ -120,7 +122,7 @@ def main():
     parser.add_argument("--large-settings", action="store_true",
                         help="Drag the splitter down and test a taller, still-scrollable settings pane")
     parser.add_argument("--resize-edges", action="store_true",
-                        help="Physically drag right/bottom window edges and sample stationary tab text/buttons")
+                        help="Physically drag right/bottom window edges and sample controls that stay put")
     args = parser.parse_args()
     checked = 0
     with tempfile.TemporaryDirectory(prefix="dvda-scroll-") as directory:
@@ -160,9 +162,9 @@ def main():
                         # fields that stretch are compared by their unchanged left part.
                         stationary = {"right": (2000, 110, 111, 106, 100, 200, 115),
                                       "bottom": (2000, 200, 1000, 100, 101, 117)}
-                        # Left/top drags move every control on screen, and screen
-                        # captures lag window positions by a frame, so only edges
-                        # that keep these controls in place can be compared.
+                        # Left/top drags are not compared: DWM can present the moved
+                        # window a frame before its repaint, so a few shifted frames
+                        # remain even when the app paints correctly.
                         for edge in ("right", "bottom"):
                             before = w.RECT()
                             u.GetWindowRect(hwnd, c.byref(before))
