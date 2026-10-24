@@ -5042,7 +5042,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                         place(
                             *handle,
                             width - margin - 148 - 8 - 130,
-                            splitter + 68,
+                            splitter + 70,
                             130,
                             28,
                         );
@@ -5053,7 +5053,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                 }
                 "export" => {
                     if width >= 900 {
-                        place(*handle, width - margin - 148, splitter + 68, 148, 28);
+                        place(*handle, width - margin - 148, splitter + 70, 148, 28);
                         ShowWindow(*handle, SW_SHOW);
                     } else {
                         ShowWindow(*handle, SW_HIDE);
@@ -5902,9 +5902,11 @@ unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
             return draw_owner_item_contents(hwnd, item);
         }
         let previous = SelectObject(memory, bitmap);
-        BitBlt(memory, item.rect.left, item.rect.top,
-            item.rect.right - item.rect.left, item.rect.bottom - item.rect.top,
-            item.dc, item.rect.left, item.rect.top, 0x00cc0020);
+        // Rounded corners must show the parent's background. Copying the
+        // screen instead would preserve stale pixels from earlier layouts,
+        // because the clipped parent never repaints under its children.
+        let background = SendMessageW(GetParent(item.item), WM_CTLCOLORBTN, memory as Wparam, item.item as Lparam) as Hbrush;
+        FillRect(memory, &item.rect, if background.is_null() { body_brush() } else { background });
         let buffered = DrawItemStruct {
             control_type: item.control_type, control_id: item.control_id,
             item_id: item.item_id, action: item.action, state: item.state,
@@ -8870,6 +8872,39 @@ mod presentation_tests {
             for height in [360, 500, 820] {
                 unsafe { MoveWindow(parent, 0, 0, scale(width), scale(height), 0); }
                 layout(parent, &mut ui);
+                // The log toolbar sits below the progress bar, in one
+                // non-overlapping row inside the window.
+                let rect_of = |hwnd: Hwnd| {
+                    let mut rect: Rect = unsafe { std::mem::zeroed() };
+                    unsafe { GetWindowRect(hwnd, &mut rect); }
+                    rect
+                };
+                let shown = |hwnd: Hwnd| {
+                    (unsafe { GetWindowLongPtrW(hwnd, -16) } as u32) & WS_VISIBLE != 0
+                };
+                let mut client: Rect = unsafe { std::mem::zeroed() };
+                unsafe { GetWindowRect(parent, &mut client); }
+                let progress = rect_of(ui.controls.progress);
+                let log_buttons = ui.buttons.iter()
+                    .filter(|(_, key)| matches!(*key, "copy" | "export"))
+                    .map(|(handle, _)| *handle);
+                let row: Vec<(Hwnd, Rect)> = [ui.controls.log_view, ui.controls.only_issues, ui.controls.live]
+                    .into_iter()
+                    .chain(log_buttons)
+                    .filter(|hwnd| shown(*hwnd))
+                    .map(|hwnd| (hwnd, rect_of(hwnd)))
+                    .collect();
+                for (index, (hwnd, rect)) in row.iter().enumerate() {
+                    let text = get_text(*hwnd);
+                    assert!(rect.top >= progress.bottom,
+                        "{text} overlaps the progress bar at {width}x{height}");
+                    assert!(rect.right <= client.right && rect.bottom <= client.bottom,
+                        "{text} leaves the window at {width}x{height}");
+                    for (other, other_rect) in &row[index + 1..] {
+                        assert!(rect.right <= other_rect.left || other_rect.right <= rect.left,
+                            "{text} overlaps {} at {width}x{height}", get_text(*other));
+                    }
+                }
                 for (page_index, ids) in [
                     (0, &[ID_SOURCE, ID_FINAL, ID_TITLE, ID_CAPACITY, ID_CUSTOM_BYTES,
                         ID_WORK_DIR, ID_BROWSE_WORK, ID_ISO_PREFIX, ID_GROUP_LIMIT][..]),
