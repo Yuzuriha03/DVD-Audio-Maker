@@ -4991,7 +4991,13 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     let tab_height = if compact { 64 } else { tab_height };
     let splitter = tabs_y + tab_height;
     let page_y = tabs_y + 44;
-    let log_top = splitter + 104;
+    // The log filters follow the translated section title; narrow windows
+    // wrap the copy/export buttons below them.
+    let log_label_width = unscale(measured_text_width(hwnd, tr(state.lang, "log_section"), ui_font())) + 8;
+    let log_tools_x = margin + log_label_width.max(120) + 8;
+    let log_tools_wrap = log_tools_x + 416 + 12 + 286 > width - margin;
+    let log_tools_y = splitter + if log_tools_wrap { 104 } else { 70 };
+    let log_top = splitter + if log_tools_wrap { 138 } else { 104 };
     state.splitter_position = scale(splitter);
     let caption_width = 40;
     let caption_gap = 2;
@@ -5038,26 +5044,10 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                     place(*handle, header_x[2], action_toolbar_y, header_widths[2], 28);
                 }
                 "copy" => {
-                    if width >= 900 {
-                        place(
-                            *handle,
-                            width - margin - 148 - 8 - 130,
-                            splitter + 70,
-                            130,
-                            28,
-                        );
-                        ShowWindow(*handle, SW_SHOW);
-                    } else {
-                        ShowWindow(*handle, SW_HIDE);
-                    }
+                    place(*handle, width - margin - 148 - 8 - 130, log_tools_y, 130, 28);
                 }
                 "export" => {
-                    if width >= 900 {
-                        place(*handle, width - margin - 148, splitter + 70, 148, 28);
-                        ShowWindow(*handle, SW_SHOW);
-                    } else {
-                        ShowWindow(*handle, SW_HIDE);
-                    }
+                    place(*handle, width - margin - 148, log_tools_y, 148, 28);
                 }
                 _ => {}
             }
@@ -5074,7 +5064,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                     place(*handle, margin, splitter + 12, 120, 18);
                 }
                 "log_section" => {
-                    place(*handle, margin, splitter + 72, 124, 18);
+                    place(*handle, margin, splitter + 72, log_tools_x - 8 - margin, 22);
                 }
                 _ => {}
             }
@@ -5134,21 +5124,21 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         );
         place(
             state.controls.log_view,
-            margin + 128,
+            log_tools_x,
             splitter + 70,
             132,
             120,
         );
         place(
             state.controls.only_issues,
-            margin + 276,
+            log_tools_x + 148,
             splitter + 72,
             130,
             22,
         );
         place(
             state.controls.live,
-            margin + 414,
+            log_tools_x + 286,
             splitter + 72,
             130,
             22,
@@ -5171,6 +5161,24 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         let log_visible = if actions_top - 12 > log_top { SW_SHOW } else { SW_HIDE };
         ShowWindow(state.controls.log, log_visible);
         ShowWindow(state.log_scrollbar, log_visible);
+        // The log toolbar only acts on the log; in windows too short for the
+        // log it would otherwise run into the action buttons.
+        let log_buttons = state
+            .buttons
+            .iter()
+            .filter(|(_, key)| matches!(*key, "copy" | "export"))
+            .map(|(handle, _)| *handle);
+        for control in [
+            label_handle(state, "log_section"),
+            state.controls.log_view,
+            state.controls.only_issues,
+            state.controls.live,
+        ]
+        .into_iter()
+        .chain(log_buttons)
+        {
+            ShowWindow(control, log_visible);
+        }
         place(state.controls.prepare, margin, actions_top, 1, 1);
         place(state.controls.build, margin, actions_top, 140, 34);
         place(state.controls.verify, margin + 148, actions_top, 1, 1);
@@ -5290,7 +5298,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                             25,
                         );
                         move_label(state, "advanced_hint", 14, 204 - sy, field_width, 48);
-                        move_label(state, "work_dir", 14, 214 - sy, field_width, 18);
+                        move_label(state, "work_dir", 14, 214 - sy, field_width, 20);
                         move_child(
                             *page,
                             ID_WORK_DIR,
@@ -5322,7 +5330,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                         place(state.custom_bytes_label, 760, 106 - sy, page_width - 774, 20);
                         move_child(*page, ID_CUSTOM_BYTES, 760, 126 - sy, page_width - 774, 25);
                         move_label(state, "advanced_hint", 14, 166 - sy, 780, 48);
-                        move_label(state, "work_dir", 14, 150 - sy, 520, 18);
+                        move_label(state, "work_dir", 14, 150 - sy, 520, 20);
                         move_label(state, "iso_prefix", 14, 194 - sy, 460, 20);
                         move_child(*page, ID_ISO_PREFIX, 14, 214 - sy, 460, 25);
                         move_label(state, "group_limit", 520, 194 - sy, 220, 20);
@@ -5341,7 +5349,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_RATE, 220, 38 - sy, 160, 120);
                         move_label(state, "bits", 396, 18 - sy, 160, 20);
                         move_child(*page, ID_BITS, 396, 38 - sy, 160, 120);
-                        move_label(state, "import_folder", 14, 80 - sy, field_width, 18);
+                        move_label(state, "import_folder", 14, 80 - sy, field_width, 20);
                         move_child(
                             *page,
                             ID_IMPORT_FOLDER,
@@ -5368,7 +5376,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_RATE, 340, 38 - sy, 210, 120);
                         move_label(state, "bits", 575, 18 - sy, 160, 20);
                         move_child(*page, ID_BITS, 575, 38 - sy, 160, 120);
-                        move_label(state, "import_folder", 14, 80 - sy, 520, 18);
+                        move_label(state, "import_folder", 14, 80 - sy, 520, 20);
                         move_label(state, "audio_note", 14, 136 - sy, 900, 48);
                     }
                 }
@@ -8673,259 +8681,274 @@ mod presentation_tests {
     #[test]
     fn file_filters_keep_correct_extensions_and_localized_labels() {
         for lang in [Lang::Zh, Lang::En, Lang::Ja] {
-            for (kind, extension) in [
-                (FileKind::Profile, "json"),
-                (FileKind::Log, "txt"),
-                ] {
-                let (filter, actual) = dialog_filter(lang, kind);
-                assert_eq!(actual, extension);
-                assert!(filter.ends_with("\0\0"));
-                assert!(filter.contains(tr(lang, "all_filter")));
+                for (kind, extension) in [
+                    (FileKind::Profile, "json"),
+                    (FileKind::Log, "txt"),
+                    ] {
+                    let (filter, actual) = dialog_filter(lang, kind);
+                    assert_eq!(actual, extension);
+                    assert!(filter.ends_with("\0\0"));
+                    assert!(filter.contains(tr(lang, "all_filter")));
+                }
             }
         }
-    }
 
-    #[test]
-    fn import_and_custom_capacity_are_not_replaced_with_defaults() {
-        assert_eq!(mode_value(mode_index("external")), "external");
-        assert_eq!(mode_value(mode_index("lpcm")), "lpcm");
-        assert_eq!(capacity_index(4_000_000_000), 2);
-        assert_eq!(capacity_index(4_707_319_808), 0);
-        assert_eq!(capacity_index(8_540_123_136), 1);
-        assert_eq!(capacity_index(8_543_666_176), 2);
-        assert!(valid_integer("0", 0, 10_000_000_000));
-        assert!(!valid_integer("10000000001", 0, 10_000_000_000));
-    }
+        #[test]
+        fn import_and_custom_capacity_are_not_replaced_with_defaults() {
+            assert_eq!(mode_value(mode_index("external")), "external");
+            assert_eq!(mode_value(mode_index("lpcm")), "lpcm");
+            assert_eq!(capacity_index(4_000_000_000), 2);
+            assert_eq!(capacity_index(4_707_319_808), 0);
+            assert_eq!(capacity_index(8_540_123_136), 1);
+            assert_eq!(capacity_index(8_543_666_176), 2);
+            assert!(valid_integer("0", 0, 10_000_000_000));
+            assert!(!valid_integer("10000000001", 0, 10_000_000_000));
+        }
 
-    #[test]
-    fn audio_mode_note_matches_the_selected_workflow() {
-        assert_eq!(audio_note_key(0), "mlp_note");
-        assert_eq!(audio_note_key(1), "lpcm_note");
-        assert_eq!(audio_note_key(2), "import_note");
-        assert_eq!(audio_note_key(99), "mlp_note");
-        for lang in [Lang::Zh, Lang::En, Lang::Ja] {
-            for mode in [0, 1, 2] {
-                assert!(!tr(lang, audio_note_key(mode)).is_empty());
+        #[test]
+        fn audio_mode_note_matches_the_selected_workflow() {
+            assert_eq!(audio_note_key(0), "mlp_note");
+            assert_eq!(audio_note_key(1), "lpcm_note");
+            assert_eq!(audio_note_key(2), "import_note");
+            assert_eq!(audio_note_key(99), "mlp_note");
+            for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+                for mode in [0, 1, 2] {
+                    assert!(!tr(lang, audio_note_key(mode)).is_empty());
+                }
             }
         }
-    }
 
-    #[test]
-    fn detailed_view_ignores_summary_filter_and_preserves_chatter() {
-        let lines = vec![
-            LogLine {
-                raw: "frame=42".into(),
-                problem: false,
-                timestamp: "12:34:56".into(),
-            },
-            LogLine {
-                raw: "[WAR] warning".into(),
-                problem: true,
-                timestamp: "12:34:57".into(),
-            },
-        ];
-        let detail = display_log(Lang::En, &lines, true, true);
-        assert!(detail.contains("12:34:56  frame=42") && detail.contains("[WAR] warning"));
-        let summary = display_log(Lang::En, &lines, false, false);
-        assert!(!summary.contains("frame=42") && summary.contains("[WAR] warning"));
-    }
+        #[test]
+        fn detailed_view_ignores_summary_filter_and_preserves_chatter() {
+            let lines = vec![
+                LogLine {
+                    raw: "frame=42".into(),
+                    problem: false,
+                    timestamp: "12:34:56".into(),
+                },
+                LogLine {
+                    raw: "[WAR] warning".into(),
+                    problem: true,
+                    timestamp: "12:34:57".into(),
+                },
+            ];
+            let detail = display_log(Lang::En, &lines, true, true);
+            assert!(detail.contains("12:34:56  frame=42") && detail.contains("[WAR] warning"));
+            let summary = display_log(Lang::En, &lines, false, false);
+            assert!(!summary.contains("frame=42") && summary.contains("[WAR] warning"));
+        }
 
-    #[test]
-    fn overall_progress_stays_monotonic_and_reserves_completion_for_success() {
-        let (logs, events) = sync_channel(32);
-        let mut callbacks = WorkerCallbacks {
-            logs,
-            cancel: Arc::new(AtomicBool::new(false)),
-            range: (0, 100),
-            last_progress: 0,
-        };
-        callbacks.set_progress_range(0, 15);
-        callbacks.progress(50, 100);
-        callbacks.progress(20, 100);
-        callbacks.progress(0, 0);
-        callbacks.progress(100, 100);
-        callbacks.set_progress_range(15, 65);
-        callbacks.progress(40, 100);
-        callbacks.set_progress_range(65, 100);
-        callbacks.progress(100, 100);
-        let values: Vec<_> = events
-            .try_iter()
-            .map(|event| match event {
-                WorkerEvent::Progress(value) => value,
-                _ => panic!("unexpected log event"),
-            })
-            .collect();
-        assert_eq!(values, [7, 15, 35, 65, 99]);
-    }
+        #[test]
+        fn overall_progress_stays_monotonic_and_reserves_completion_for_success() {
+            let (logs, events) = sync_channel(32);
+            let mut callbacks = WorkerCallbacks {
+                logs,
+                cancel: Arc::new(AtomicBool::new(false)),
+                range: (0, 100),
+                last_progress: 0,
+            };
+            callbacks.set_progress_range(0, 15);
+            callbacks.progress(50, 100);
+            callbacks.progress(20, 100);
+            callbacks.progress(0, 0);
+            callbacks.progress(100, 100);
+            callbacks.set_progress_range(15, 65);
+            callbacks.progress(40, 100);
+            callbacks.set_progress_range(65, 100);
+            callbacks.progress(100, 100);
+            let values: Vec<_> = events
+                .try_iter()
+                .map(|event| match event {
+                    WorkerEvent::Progress(value) => value,
+                    _ => panic!("unexpected log event"),
+                })
+                .collect();
+            assert_eq!(values, [7, 15, 35, 65, 99]);
+        }
 
-    #[test]
-    fn task_start_is_visible_in_summary_before_progress_events() {
-        for (lang, key) in [
-            (Lang::Zh, "started_check"),
-            (Lang::En, "started_build"),
-            (Lang::Ja, "started_verify"),
-        ] {
-            let lines = [LogLine {
-                raw: tr(Lang::Zh, key).into(),
-                problem: false,
-                timestamp: "12:34:56".into(),
-            }];
-            assert!(
-                !display_log(lang, &lines, false, false).trim().is_empty(),
-                "{key} should remain visible in the summary"
-            );
+        #[test]
+        fn task_start_is_visible_in_summary_before_progress_events() {
+            for (lang, key) in [
+                (Lang::Zh, "started_check"),
+                (Lang::En, "started_build"),
+                (Lang::Ja, "started_verify"),
+            ] {
+                let lines = [LogLine {
+                    raw: tr(Lang::Zh, key).into(),
+                    problem: false,
+                    timestamp: "12:34:56".into(),
+                }];
+                assert!(
+                    !display_log(lang, &lines, false, false).trim().is_empty(),
+                    "{key} should remain visible in the summary"
+                );
+            }
         }
-    }
 
-    #[test]
-    fn combo_measurement_preserves_original_item_height() {
-        let mut item: MeasureItemStruct = unsafe { std::mem::zeroed() };
-        unsafe {
-            window_proc(
-                ptr::null_mut(),
-                WM_MEASUREITEM,
-                0,
-                &mut item as *mut MeasureItemStruct as Lparam,
-            );
-        }
-        assert_eq!(item.item_height, scale(26).max(scale(20)) as u32);
-    }
-
-    #[test]
-    fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
-        #[link(name = "user32")]
-        unsafe extern "system" {
-            fn IsWindowEnabled(hwnd: Hwnd) -> i32;
-        }
-        use std::sync::atomic::AtomicU64;
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "dvda-gui-controls-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let profile = root.join("settings.json");
-        fs::write(
-            &profile,
-            b"{\"Version\":1,\"Language\":\"en\",\"Values\":{}}",
-        )
-        .unwrap();
-        PROFILE_OVERRIDE.set(Some(profile)).unwrap();
-        let page_class = wide("DVD_AUDIO_PAGE_RUST");
-        let registration = WndClass {
-            style: 0,
-            procedure: page_proc,
-            extra_class: 0,
-            extra_window: 0,
-            instance: unsafe { GetModuleHandleW(ptr::null()) },
-            icon: ptr::null_mut(),
-            cursor: ptr::null_mut(),
-            background: ptr::null_mut(),
-            menu: ptr::null(),
-            class_name: page_class.as_ptr(),
-        };
-        unsafe {
-            RegisterClassW(&registration);
-            InitCommonControlsEx(&InitCommonControlsEx {
-                size: std::mem::size_of::<InitCommonControlsEx>() as u32,
-                classes: 0xffff,
-            });
-        }
-        let parent = create!(ptr::null_mut(), "STATIC", "", 0, 0, 0, 1180, 820, 0);
-        assert!(!parent.is_null());
-        let mut ui = create_controls(parent);
-        layout(parent, &mut ui);
-        for (combo, width) in [
-            (ui.controls.capacity, 220),
-            (ui.controls.mode, 300),
-            (ui.controls.rate, 210),
-            (ui.controls.bits, 160),
-            (ui.controls.language, 104),
-            (ui.controls.log_view, 132),
-        ] {
-            let mut rect: Rect = unsafe { std::mem::zeroed() };
-            unsafe { GetWindowRect(combo, &mut rect); }
-            assert_eq!(rect.right - rect.left, scale(width));
-        }
-        let mut target_rect: Rect = unsafe { std::mem::zeroed() };
-        unsafe { GetWindowRect(ui.controls.source, &mut target_rect); }
-        assert_eq!(target_rect.bottom - target_rect.top, scale(24));
-        let page = ui.pages[0];
-        let max_scroll = unsafe { page_bar_metrics(&ui) }.max;
-        scroll_page(page, scale(100), true);
-        assert_eq!(unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) }, scale(100).min(max_scroll) as isize);
-        unsafe { layout_page_contents(&mut ui); }
-        scroll_page(page, 0, true);
-        for height in [500, 600, 820] {
-            unsafe { MoveWindow(parent, 0, 0, scale(800), scale(height), 0); }
-            layout(parent, &mut ui);
-            let mut log_rect: Rect = unsafe { std::mem::zeroed() };
-            let mut action_rect: Rect = unsafe { std::mem::zeroed() };
+        #[test]
+        fn combo_measurement_preserves_original_item_height() {
+            let mut item: MeasureItemStruct = unsafe { std::mem::zeroed() };
             unsafe {
-                GetWindowRect(ui.controls.log, &mut log_rect);
-                GetWindowRect(ui.controls.build, &mut action_rect);
+                window_proc(
+                    ptr::null_mut(),
+                    WM_MEASUREITEM,
+                    0,
+                    &mut item as *mut MeasureItemStruct as Lparam,
+                );
             }
-            assert!(log_rect.bottom <= action_rect.top, "log overlaps actions at height {height}");
+            assert_eq!(item.item_height, scale(26).max(scale(20)) as u32);
         }
-        for width in [640, 800, 854, 960, 1053, 1054, 1180, 1400, 960, 640] {
-            for height in [360, 500, 820] {
-                unsafe { MoveWindow(parent, 0, 0, scale(width), scale(height), 0); }
+
+        #[test]
+        fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
+            #[link(name = "user32")]
+            unsafe extern "system" {
+                fn IsWindowEnabled(hwnd: Hwnd) -> i32;
+            }
+            use std::sync::atomic::AtomicU64;
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let root = std::env::temp_dir().join(format!(
+                "dvda-gui-controls-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&root).unwrap();
+            let profile = root.join("settings.json");
+            fs::write(
+                &profile,
+                b"{\"Version\":1,\"Language\":\"en\",\"Values\":{}}",
+            )
+            .unwrap();
+            PROFILE_OVERRIDE.set(Some(profile)).unwrap();
+            let page_class = wide("DVD_AUDIO_PAGE_RUST");
+            let registration = WndClass {
+                style: 0,
+                procedure: page_proc,
+                extra_class: 0,
+                extra_window: 0,
+                instance: unsafe { GetModuleHandleW(ptr::null()) },
+                icon: ptr::null_mut(),
+                cursor: ptr::null_mut(),
+                background: ptr::null_mut(),
+                menu: ptr::null(),
+                class_name: page_class.as_ptr(),
+            };
+            unsafe {
+                RegisterClassW(&registration);
+                InitCommonControlsEx(&InitCommonControlsEx {
+                    size: std::mem::size_of::<InitCommonControlsEx>() as u32,
+                    classes: 0xffff,
+                });
+            }
+            let parent = create!(ptr::null_mut(), "STATIC", "", 0, 0, 0, 1180, 820, 0);
+            assert!(!parent.is_null());
+            let mut ui = create_controls(parent);
+            layout(parent, &mut ui);
+            for (combo, width) in [
+                (ui.controls.capacity, 220),
+                (ui.controls.mode, 300),
+                (ui.controls.rate, 210),
+                (ui.controls.bits, 160),
+                (ui.controls.language, 104),
+                (ui.controls.log_view, 132),
+            ] {
+                let mut rect: Rect = unsafe { std::mem::zeroed() };
+                unsafe { GetWindowRect(combo, &mut rect); }
+                assert_eq!(rect.right - rect.left, scale(width));
+            }
+            let mut target_rect: Rect = unsafe { std::mem::zeroed() };
+            unsafe { GetWindowRect(ui.controls.source, &mut target_rect); }
+            assert_eq!(target_rect.bottom - target_rect.top, scale(24));
+            let page = ui.pages[0];
+            let max_scroll = unsafe { page_bar_metrics(&ui) }.max;
+            scroll_page(page, scale(100), true);
+            assert_eq!(unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) }, scale(100).min(max_scroll) as isize);
+            unsafe { layout_page_contents(&mut ui); }
+            scroll_page(page, 0, true);
+            for height in [500, 600, 820] {
+                unsafe { MoveWindow(parent, 0, 0, scale(800), scale(height), 0); }
                 layout(parent, &mut ui);
-                // The log toolbar sits below the progress bar, in one
-                // non-overlapping row inside the window.
-                let rect_of = |hwnd: Hwnd| {
-                    let mut rect: Rect = unsafe { std::mem::zeroed() };
-                    unsafe { GetWindowRect(hwnd, &mut rect); }
-                    rect
-                };
-                let shown = |hwnd: Hwnd| {
-                    (unsafe { GetWindowLongPtrW(hwnd, -16) } as u32) & WS_VISIBLE != 0
-                };
-                let mut client: Rect = unsafe { std::mem::zeroed() };
-                unsafe { GetWindowRect(parent, &mut client); }
-                let progress = rect_of(ui.controls.progress);
-                let log_buttons = ui.buttons.iter()
-                    .filter(|(_, key)| matches!(*key, "copy" | "export"))
-                    .map(|(handle, _)| *handle);
-                let row: Vec<(Hwnd, Rect)> = [ui.controls.log_view, ui.controls.only_issues, ui.controls.live]
-                    .into_iter()
-                    .chain(log_buttons)
-                    .filter(|hwnd| shown(*hwnd))
-                    .map(|hwnd| (hwnd, rect_of(hwnd)))
-                    .collect();
-                for (index, (hwnd, rect)) in row.iter().enumerate() {
-                    let text = get_text(*hwnd);
-                    assert!(rect.top >= progress.bottom,
-                        "{text} overlaps the progress bar at {width}x{height}");
-                    assert!(rect.right <= client.right && rect.bottom <= client.bottom,
-                        "{text} leaves the window at {width}x{height}");
-                    for (other, other_rect) in &row[index + 1..] {
-                        assert!(rect.right <= other_rect.left || other_rect.right <= rect.left,
-                            "{text} overlaps {} at {width}x{height}", get_text(*other));
-                    }
+                let mut log_rect: Rect = unsafe { std::mem::zeroed() };
+                let mut action_rect: Rect = unsafe { std::mem::zeroed() };
+                unsafe {
+                    GetWindowRect(ui.controls.log, &mut log_rect);
+                    GetWindowRect(ui.controls.build, &mut action_rect);
                 }
-                for (page_index, ids) in [
-                    (0, &[ID_SOURCE, ID_FINAL, ID_TITLE, ID_CAPACITY, ID_CUSTOM_BYTES,
-                        ID_WORK_DIR, ID_BROWSE_WORK, ID_ISO_PREFIX, ID_GROUP_LIMIT][..]),
-                    (1, &[ID_MODE, ID_RATE, ID_BITS, ID_IMPORT_FOLDER, ID_BROWSE_IMPORT][..]),
-                    (2, &[ID_TRACKS, ID_COVER, ID_FONT_SC, ID_FONT_JP, ID_FONT_KR,
-                        1007, 1008, 1009][..]),
-                ] {
-                    let page = ui.pages[page_index];
-                    let mut bounds: Rect = unsafe { std::mem::zeroed() };
-                    unsafe { GetWindowRect(page, &mut bounds); }
-                    for id in ids {
-                        let child = unsafe { GetDlgItem(page, *id as i32) };
-                        assert!(!child.is_null());
-                        let mut child_rect: Rect = unsafe { std::mem::zeroed() };
-                        unsafe { GetWindowRect(child, &mut child_rect); }
-                        assert!(child_rect.left >= bounds.left && child_rect.right <= bounds.right,
-                            "control {id} overflows page {page_index} at {width}x{height}");
+                assert!(log_rect.bottom <= action_rect.top, "log overlaps actions at height {height}");
+            }
+            // Layout measures translated labels, so sweep every language.
+            let original_lang = ui.lang;
+            for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+            ui.lang = lang;
+            for width in [640, 800, 854, 960, 1053, 1054, 1180, 1400, 960, 640] {
+                for height in [360, 500, 820] {
+                    unsafe { MoveWindow(parent, 0, 0, scale(width), scale(height), 0); }
+                    layout(parent, &mut ui);
+                    // The log toolbar sits between the progress bar and the log,
+                    // wrapping rather than hiding controls in narrow windows.
+                    let rect_of = |hwnd: Hwnd| {
+                        let mut rect: Rect = unsafe { std::mem::zeroed() };
+                        unsafe { GetWindowRect(hwnd, &mut rect); }
+                        rect
+                    };
+                    let shown = |hwnd: Hwnd| {
+                        (unsafe { GetWindowLongPtrW(hwnd, -16) } as u32) & WS_VISIBLE != 0
+                    };
+                    let mut client: Rect = unsafe { std::mem::zeroed() };
+                    unsafe { GetWindowRect(parent, &mut client); }
+                    let progress = rect_of(ui.controls.progress);
+                    let log_buttons: Vec<Hwnd> = ui.buttons.iter()
+                        .filter(|(_, key)| matches!(*key, "copy" | "export"))
+                        .map(|(handle, _)| *handle)
+                        .collect();
+                    assert_eq!(log_buttons.len(), 2);
+                    let log = rect_of(ui.controls.log);
+                    let actions = rect_of(ui.controls.build);
+                    assert!(log_buttons.iter().all(|hwnd| shown(*hwnd) == shown(ui.controls.log)),
+                        "log buttons not shown with the log at {width}x{height}");
+                    let row: Vec<(Hwnd, Rect)> = [ui.controls.log_view, ui.controls.only_issues, ui.controls.live]
+                        .into_iter()
+                        .chain(log_buttons)
+                        .filter(|hwnd| shown(*hwnd))
+                        .map(|hwnd| (hwnd, rect_of(hwnd)))
+                        .collect();
+                    for (index, (hwnd, rect)) in row.iter().enumerate() {
+                        let text = get_text(*hwnd);
+                        assert!(rect.top >= progress.bottom,
+                            "{text} overlaps the progress bar at {width}x{height}");
+                        assert!(rect.right <= client.right && rect.bottom <= client.bottom,
+                            "{text} leaves the window at {width}x{height}");
+                        assert!(rect.bottom <= log.top && rect.bottom <= actions.top,
+                            "{text} overlaps the log or actions at {width}x{height}");
+                        for (other, other_rect) in &row[index + 1..] {
+                            assert!(rect.right <= other_rect.left || other_rect.right <= rect.left
+                                || rect.bottom <= other_rect.top || other_rect.bottom <= rect.top,
+                                "{text} overlaps {} at {width}x{height}", get_text(*other));
+                        }
+                    }
+                    for (page_index, ids) in [
+                        (0, &[ID_SOURCE, ID_FINAL, ID_TITLE, ID_CAPACITY, ID_CUSTOM_BYTES,
+                            ID_WORK_DIR, ID_BROWSE_WORK, ID_ISO_PREFIX, ID_GROUP_LIMIT][..]),
+                        (1, &[ID_MODE, ID_RATE, ID_BITS, ID_IMPORT_FOLDER, ID_BROWSE_IMPORT][..]),
+                        (2, &[ID_TRACKS, ID_COVER, ID_FONT_SC, ID_FONT_JP, ID_FONT_KR,
+                            1007, 1008, 1009][..]),
+                    ] {
+                        let page = ui.pages[page_index];
+                        let mut bounds: Rect = unsafe { std::mem::zeroed() };
+                        unsafe { GetWindowRect(page, &mut bounds); }
+                        for id in ids {
+                            let child = unsafe { GetDlgItem(page, *id as i32) };
+                            assert!(!child.is_null());
+                            let mut child_rect: Rect = unsafe { std::mem::zeroed() };
+                            unsafe { GetWindowRect(child, &mut child_rect); }
+                            assert!(child_rect.left >= bounds.left && child_rect.right <= bounds.right,
+                                "control {id} overflows page {page_index} at {width}x{height}");
+                        }
                     }
                 }
             }
         }
+        ui.lang = original_lang;
         // Exercise the actual controls rather than passing handcrafted blank
         // overrides to the option evaluator: population must retain auto values.
         assert_eq!(get_text(ui.controls.iso_prefix), "");
