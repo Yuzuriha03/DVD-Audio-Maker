@@ -145,10 +145,24 @@ def main():
                         u.SendMessageW(hwnd, 0x0112, 0xF120, 0)
                         time.sleep(.2)
                         assert not u.IsZoomed(hwnd), "window did not restore before drag"
-                        assert u.SetWindowPos(hwnd, w.HWND(-1), 40, 40, 1400, 700, 0x0040)
+                        # Size in DIPs so high-DPI screens do not start in the
+                        # compact layout, where page content is scrolled away, and
+                        # leave room for growing 120 px right and down.
+                        u.GetDpiForWindow.argtypes = [w.HWND]
+                        dpi = u.GetDpiForWindow(hwnd)
+                        assert u.SetWindowPos(hwnd, w.HWND(-1), 160, 140, 1000 * dpi // 96, 560 * dpi // 96, 0x0040)
                         u.SetForegroundWindow(hwnd)
                         time.sleep(.5)
-                        tab = next(h for h in gui.windows(hwnd) if u.GetDlgCtrlID(h) == 2000)
+                        controls = {u.GetDlgCtrlID(h): h for h in gui.windows(hwnd)}
+                        # Visible controls that stay put while dragging each edge:
+                        # tab, log combo and filters, profile/source fields, log and
+                        # toolbar/action buttons. Captures keep the initial size, so
+                        # fields that stretch are compared by their unchanged left part.
+                        stationary = {"right": (2000, 110, 111, 106, 100, 200, 115),
+                                      "bottom": (2000, 200, 1000, 100, 101, 117)}
+                        # Left/top drags move every control on screen, and screen
+                        # captures lag window positions by a frame, so only edges
+                        # that keep these controls in place can be compared.
                         for edge in ("right", "bottom"):
                             before = w.RECT()
                             u.GetWindowRect(hwnd, c.byref(before))
@@ -161,9 +175,11 @@ def main():
                             u.SetCursorPos(x, y)
                             time.sleep(.3)
                             stop = threading.Event()
-                            samples = []
-                            watcher = threading.Thread(target=watch_language, args=(tab, stop, samples))
-                            watcher.start()
+                            targets = {cid: [] for cid in stationary[edge]}
+                            watchers = [threading.Thread(target=watch_language, args=(controls[cid], stop, frames))
+                                        for cid, frames in targets.items()]
+                            for watcher in watchers:
+                                watcher.start()
                             try:
                                 u.SetCursorPos(x, y)
                                 time.sleep(.15)
@@ -183,10 +199,12 @@ def main():
                                 u.mouse_event(4, 0, 0, 0, 0)
                                 time.sleep(.1)
                                 stop.set()
-                                watcher.join()
-                            check_samples(samples, (language, edge, "tab button/text during native drag"))
-                            checked += len(samples)
-                            print("PASS native edge drag", language, edge, len(samples), flush=True)
+                                for watcher in watchers:
+                                    watcher.join()
+                            for cid, frames in targets.items():
+                                check_samples(frames, (language, edge, cid, "stationary control during native drag"))
+                                checked += len(frames)
+                            print("PASS native edge drag", language, edge, sum(map(len, targets.values())), flush=True)
                     finally:
                         u.SetThreadDpiAwarenessContext(old_dpi)
                     continue
