@@ -48,6 +48,10 @@ with tempfile.TemporaryDirectory(prefix="dvda-text-") as directory:
                         continue
                     parent_bounds = w.RECT()
                     u.GetWindowRect(parent, c.byref(parent_bounds))
+                    # The log EDIT sits in a clipping frame: compare it with the
+                    # main window's controls, clipped to the frame.
+                    if gui.classname(parent) == "DVD_AUDIO_LOG_FRAME_RUST":
+                        parent = u.GetParent(parent)
                     bounds.left = max(bounds.left, parent_bounds.left)
                     bounds.top = max(bounds.top, parent_bounds.top)
                     bounds.right = min(bounds.right, parent_bounds.right)

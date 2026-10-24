@@ -153,7 +153,28 @@ def main():
                         u.GetDpiForWindow.argtypes = [w.HWND]
                         dpi = u.GetDpiForWindow(hwnd)
                         assert u.SetWindowPos(hwnd, w.HWND(-1), 160, 140, 1000 * dpi // 96, 560 * dpi // 96, 0x0040)
-                        u.SetForegroundWindow(hwnd)
+                        # The foreground lock keeps a new window behind the active
+                        # application, so the drag would go there; an Alt press lets
+                        # SetForegroundWindow succeed.
+                        u.WindowFromPoint.argtypes = [w.POINT]
+                        u.WindowFromPoint.restype = w.HWND
+                        u.GetAncestor.argtypes = [w.HWND, w.UINT]
+                        u.GetAncestor.restype = w.HWND
+                        for _ in range(10):
+                            u.keybd_event(0x12, 0, 0, 0)
+                            u.keybd_event(0x12, 0, 2, 0)
+                            u.SetForegroundWindow(hwnd)
+                            time.sleep(.3)
+                            probe = w.RECT()
+                            u.GetWindowRect(hwnd, c.byref(probe))
+                            if u.GetAncestor(u.WindowFromPoint(w.POINT(probe.left + 100, probe.top + 300)), 2) == hwnd:
+                                break
+                        else:
+                            raise AssertionError("app window stays behind another window")
+                        # The Alt press reveals keyboard focus cues; repaint now so the
+                        # reference frames already show them.
+                        u.RedrawWindow.argtypes = [w.HWND, c.c_void_p, c.c_void_p, w.UINT]
+                        u.RedrawWindow(hwnd, None, None, 0x0001 | 0x0080 | 0x0100)
                         time.sleep(.5)
                         controls = {u.GetDlgCtrlID(h): h for h in gui.windows(hwnd)}
                         # Visible controls that stay put while dragging each edge:
