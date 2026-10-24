@@ -1978,7 +1978,26 @@ unsafe extern "system" fn window_proc(
             if wparam != 0 {
                 // Borderless frame: leave the proposed window rectangle in
                 // place so the client area covers the whole window.
-                0
+                // By default Windows then copies the old client pixels to the
+                // new client's top-left corner. Dragging the left or top edge
+                // thus showed right/bottom-anchored controls one step off
+                // before the repaint, so they jittered back and forth. Mark a
+                // single identical pixel as valid instead so nothing is
+                // copied; layout() repaints the client synchronously. (DWM
+                // can still present an occasional frame early.)
+                let rects = lparam as *mut [Rect; 3];
+                unsafe {
+                    let client = (*rects)[0];
+                    let pixel = Rect {
+                        left: client.left,
+                        top: client.top,
+                        right: client.left + 1,
+                        bottom: client.top + 1,
+                    };
+                    (*rects)[1] = pixel;
+                    (*rects)[2] = pixel;
+                }
+                0x0400 // WVR_VALIDRECTS
             } else {
                 unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
             }
@@ -2496,6 +2515,139 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     }
     if !DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
         sync_combo_overlays();
+    }
+}
+
+/// Horizontal layout of the log toolbar, in DIPs relative to the left margin.
+#[derive(Debug, PartialEq)]
+struct LogToolbar {
+    label_width: i32,
+    combo_x: i32,
+    check_x: [i32; 2],
+    check_width: [i32; 2],
+    button_x: [i32; 2],
+    button_width: [i32; 2],
+    /// The copy/export buttons moved to a second row.
+    wrap: bool,
+}
+
+const LOG_COMBO_WIDTH: i32 = 132;
+const LOG_BUTTON_WIDTHS: [i32; 2] = [130, 148];
+
+/// Fits `(minimum, preferred, priority)` slots into `available`, returning
+/// `None` when even the minimums do not fit. Free space restores slots one at
+/// a time, lowest priority value first, so every slot and position changes
+/// monotonically with the width and nothing jitters while resizing.
+fn fit_row(slots: &[(i32, i32, u8)], available: i32) -> Option<Vec<i32>> {
+    let mut sizes: Vec<i32> = slots.iter().map(|(min, _, _)| *min).collect();
+    let mut free = available - sizes.iter().sum::<i32>();
+    if free < 0 {
+        return None;
+    }
+    for priority in 0..=2 {
+        for (size, (min, pref, slot_priority)) in sizes.iter_mut().zip(slots) {
+            if *slot_priority == priority {
+                let grow = (pref - min).min(free);
+                *size += grow;
+                free -= grow;
+            }
+        }
+    }
+    Some(sizes)
+}
+
+/// Text widths are measured DIPs. Spacing shrinks first (the empty space
+/// after the title and checkbox texts, then the gaps between controls), then
+/// the button padding; the buttons wrap only when even that cannot fit.
+fn log_toolbar_layout(available: i32, label_text: i32, check_text: [i32; 2], button_text: [i32; 2]) -> LogToolbar {
+    const BUTTON: u8 = 0;
+    const GAP: u8 = 1;
+    const SLACK: u8 = 2;
+    let check = |text: i32| (text + 27, (text + 27).max(130), SLACK);
+    let button = |text: i32, width: i32| ((text + 24).min(width), width, BUTTON);
+    let left = [
+        (label_text + 4, (label_text + 8).max(120), SLACK),
+        (6, 8, GAP),
+        (LOG_COMBO_WIDTH, LOG_COMBO_WIDTH, BUTTON),
+        (8, 16, GAP),
+        check(check_text[0]),
+        (6, 8, GAP),
+        check(check_text[1]),
+    ];
+    let right = [
+        button(button_text[0], LOG_BUTTON_WIDTHS[0]),
+        (6, 8, GAP),
+        button(button_text[1], LOG_BUTTON_WIDTHS[1]),
+    ];
+    let single: Vec<_> = left.iter().chain(&[(12, 12, GAP)]).chain(&right).copied().collect();
+    let (left_sizes, right_sizes, wrap) = match fit_row(&single, available) {
+        Some(sizes) => (sizes[..7].to_vec(), sizes[8..].to_vec(), false),
+        None => (
+            fit_row(&left, available).unwrap_or_else(|| left.iter().map(|(min, _, _)| *min).collect()),
+            fit_row(&right, available).unwrap_or_else(|| right.iter().map(|(min, _, _)| *min).collect()),
+            true,
+        ),
+    };
+    let mut x = [0; 7];
+    for index in 1..7 {
+        x[index] = x[index - 1] + left_sizes[index - 1];
+    }
+    // Buttons stay right-aligned; leftover space opens up before them.
+    let export_x = available - right_sizes[2];
+    let copy_x = export_x - right_sizes[1] - right_sizes[0];
+    LogToolbar {
+        label_width: left_sizes[0],
+        combo_x: x[2],
+        check_x: [x[4], x[6]],
+        check_width: [left_sizes[4], left_sizes[6]],
+        button_x: [copy_x, export_x],
+        button_width: [right_sizes[0], right_sizes[2]],
+        wrap,
+    }
+}
+
+#[cfg(test)]
+mod log_toolbar_tests {
+    use super::*;
+
+    #[test]
+    fn wide_rows_keep_preferred_spacing() {
+        let bar = log_toolbar_layout(1200, 60, [80, 70], [90, 100]);
+        assert!(!bar.wrap);
+        assert_eq!((bar.label_width, bar.combo_x, bar.check_x, bar.check_width), (120, 128, [276, 414], [130, 130]));
+        assert_eq!((bar.button_x, bar.button_width), ([1200 - 148 - 8 - 130, 1200 - 148], [130, 148]));
+    }
+
+    #[test]
+    fn spacing_shrinks_before_wrapping() {
+        let (label, checks, buttons) = (60, [80, 70], [90, 100]);
+        // Minimum single row: 64+6+132+8+107+6+97 + 12 + 114+6+124.
+        let minimum = 676;
+        let tight = log_toolbar_layout(minimum, label, checks, buttons);
+        assert!(!tight.wrap);
+        assert_eq!(tight.check_width, [107, 97]);
+        assert_eq!(tight.button_width, [114, 124]);
+        assert_eq!(tight.button_x[0], tight.check_x[1] + tight.check_width[1] + 12);
+        assert!(log_toolbar_layout(minimum - 1, label, checks, buttons).wrap);
+        let mut previous = tight;
+        for available in minimum + 1..900 {
+            let bar = log_toolbar_layout(available, label, checks, buttons);
+            assert!(!bar.wrap);
+            assert!(bar.combo_x >= previous.combo_x && bar.check_x[1] >= previous.check_x[1]);
+            assert!(bar.button_x[0] >= previous.button_x[0], "copy moved left at {available}");
+            assert!(bar.button_x[0] >= bar.check_x[1] + bar.check_width[1] + 12);
+            assert_eq!(bar.button_x[1] + bar.button_width[1], available);
+            previous = bar;
+        }
+    }
+
+    #[test]
+    fn wrapped_rows_fit_independently() {
+        let bar = log_toolbar_layout(604, 130, [80, 70], [90, 100]);
+        assert!(bar.wrap);
+        assert!(bar.check_x[1] + bar.check_width[1] <= 604);
+        assert_eq!(bar.button_x[1] + bar.button_width[1], 604);
+        assert!(bar.button_x[0] >= 0);
     }
 }
 
@@ -4991,13 +5143,22 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     let tab_height = if compact { 64 } else { tab_height };
     let splitter = tabs_y + tab_height;
     let page_y = tabs_y + 44;
-    // The log filters follow the translated section title; narrow windows
-    // wrap the copy/export buttons below them.
-    let log_label_width = unscale(measured_text_width(hwnd, tr(state.lang, "log_section"), ui_font())) + 8;
-    let log_tools_x = margin + log_label_width.max(120) + 8;
-    let log_tools_wrap = log_tools_x + 416 + 12 + 286 > width - margin;
-    let log_tools_y = splitter + if log_tools_wrap { 104 } else { 70 };
-    let log_top = splitter + if log_tools_wrap { 138 } else { 104 };
+    // The log toolbar is sized from its translated texts; narrow windows
+    // tighten its spacing first and wrap copy/export only when necessary.
+    let text_width = |key| unscale(measured_text_width(hwnd, tr(state.lang, key), ui_font()));
+    let log_bar = log_toolbar_layout(
+        width - margin * 2,
+        text_width("log_section"),
+        [text_width("issues"), text_width("live")],
+        [text_width("copy"), text_width("export")],
+    );
+    let log_buttons_y = splitter + if log_bar.wrap { 104 } else { 70 };
+    let log_top = log_buttons_y + 34;
+    // Short windows hide the log first, then any toolbar row that would
+    // reach the action buttons.
+    let log_shown = actions_top - 12 - log_top >= 28; // At least one line.
+    let log_filters_shown = splitter + 98 <= actions_top - 6;
+    let log_buttons_shown = log_buttons_y + 28 <= actions_top - 6;
     state.splitter_position = scale(splitter);
     let caption_width = 40;
     let caption_gap = 2;
@@ -5043,11 +5204,10 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                 "save_as" => {
                     place(*handle, header_x[2], action_toolbar_y, header_widths[2], 28);
                 }
-                "copy" => {
-                    place(*handle, width - margin - 148 - 8 - 130, log_tools_y, 130, 28);
-                }
-                "export" => {
-                    place(*handle, width - margin - 148, log_tools_y, 148, 28);
+                "copy" | "export" => {
+                    let index = usize::from(*key == "export");
+                    place(*handle, margin + log_bar.button_x[index], log_buttons_y, log_bar.button_width[index], 28);
+                    ShowWindow(*handle, if log_buttons_shown { SW_SHOW } else { SW_HIDE });
                 }
                 _ => {}
             }
@@ -5064,7 +5224,8 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                     place(*handle, margin, splitter + 12, 120, 18);
                 }
                 "log_section" => {
-                    place(*handle, margin, splitter + 72, log_tools_x - 8 - margin, 22);
+                    place(*handle, margin, splitter + 72, log_bar.label_width, 22);
+                    ShowWindow(*handle, if log_filters_shown { SW_SHOW } else { SW_HIDE });
                 }
                 _ => {}
             }
@@ -5124,25 +5285,17 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         );
         place(
             state.controls.log_view,
-            log_tools_x,
+            margin + log_bar.combo_x,
             splitter + 70,
-            132,
+            LOG_COMBO_WIDTH,
             120,
         );
-        place(
-            state.controls.only_issues,
-            log_tools_x + 148,
-            splitter + 72,
-            130,
-            22,
-        );
-        place(
-            state.controls.live,
-            log_tools_x + 286,
-            splitter + 72,
-            130,
-            22,
-        );
+        for (index, check) in [state.controls.only_issues, state.controls.live].into_iter().enumerate() {
+            place(check, margin + log_bar.check_x[index], splitter + 72, log_bar.check_width[index], 22);
+        }
+        for control in [state.controls.log_view, state.controls.only_issues, state.controls.live] {
+            ShowWindow(control, if log_filters_shown { SW_SHOW } else { SW_HIDE });
+        }
         let log_height = (actions_top - 12 - log_top).max(1);
         place(
             state.controls.log,
@@ -5158,27 +5311,9 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
             10,
             (log_height - 4).max(1),
         );
-        let log_visible = if actions_top - 12 > log_top { SW_SHOW } else { SW_HIDE };
+        let log_visible = if log_shown { SW_SHOW } else { SW_HIDE };
         ShowWindow(state.controls.log, log_visible);
         ShowWindow(state.log_scrollbar, log_visible);
-        // The log toolbar only acts on the log; in windows too short for the
-        // log it would otherwise run into the action buttons.
-        let log_buttons = state
-            .buttons
-            .iter()
-            .filter(|(_, key)| matches!(*key, "copy" | "export"))
-            .map(|(handle, _)| *handle);
-        for control in [
-            label_handle(state, "log_section"),
-            state.controls.log_view,
-            state.controls.only_issues,
-            state.controls.live,
-        ]
-        .into_iter()
-        .chain(log_buttons)
-        {
-            ShowWindow(control, log_visible);
-        }
         place(state.controls.prepare, margin, actions_top, 1, 1);
         place(state.controls.build, margin, actions_top, 140, 34);
         place(state.controls.verify, margin + 148, actions_top, 1, 1);
@@ -8886,6 +9021,8 @@ mod presentation_tests {
                     layout(parent, &mut ui);
                     // The log toolbar sits between the progress bar and the log,
                     // wrapping rather than hiding controls in narrow windows.
+                    // Short windows hide the log first and toolbar controls
+                    // only where they would reach the action buttons.
                     let rect_of = |hwnd: Hwnd| {
                         let mut rect: Rect = unsafe { std::mem::zeroed() };
                         unsafe { GetWindowRect(hwnd, &mut rect); }
@@ -8904,8 +9041,20 @@ mod presentation_tests {
                     assert_eq!(log_buttons.len(), 2);
                     let log = rect_of(ui.controls.log);
                     let actions = rect_of(ui.controls.build);
-                    assert!(log_buttons.iter().all(|hwnd| shown(*hwnd) == shown(ui.controls.log)),
-                        "log buttons not shown with the log at {width}x{height}");
+                    let toolbar = [ui.controls.log_view, ui.controls.only_issues, ui.controls.live]
+                        .into_iter()
+                        .chain(log_buttons.iter().copied())
+                        .chain([label_handle(&ui, "log_section")]);
+                    // The test window has a frame; the app's compact layout
+                    // depends on its client height.
+                    let mut inner: Rect = unsafe { std::mem::zeroed() };
+                    unsafe { GetClientRect(parent, &mut inner); }
+                    let compact = unscale(inner.bottom) < 500;
+                    assert!(compact || shown(ui.controls.log), "log hidden at {width}x{height}");
+                    for control in toolbar {
+                        assert!(shown(control) || (!shown(ui.controls.log) && compact),
+                            "{} hidden at {width}x{height}", get_text(control));
+                    }
                     let row: Vec<(Hwnd, Rect)> = [ui.controls.log_view, ui.controls.only_issues, ui.controls.live]
                         .into_iter()
                         .chain(log_buttons)
@@ -8918,7 +9067,7 @@ mod presentation_tests {
                             "{text} overlaps the progress bar at {width}x{height}");
                         assert!(rect.right <= client.right && rect.bottom <= client.bottom,
                             "{text} leaves the window at {width}x{height}");
-                        assert!(rect.bottom <= log.top && rect.bottom <= actions.top,
+                        assert!((!shown(ui.controls.log) || rect.bottom <= log.top) && rect.bottom <= actions.top,
                             "{text} overlaps the log or actions at {width}x{height}");
                         for (other, other_rect) in &row[index + 1..] {
                             assert!(rect.right <= other_rect.left || other_rect.right <= rect.left
@@ -8949,6 +9098,64 @@ mod presentation_tests {
             }
         }
         ui.lang = original_lang;
+        // Widening pixel by pixel must move every control edge in one
+        // direction, changing course at most once at a layout breakpoint;
+        // back-and-forth steps read as jitter while dragging the window edge.
+        {
+            unsafe extern "system" fn collect(hwnd: Hwnd, list: Lparam) -> i32 {
+                unsafe { (*(list as *mut Vec<Hwnd>)).push(hwnd) };
+                1
+            }
+            let saved_dpi = UI_DPI.load(Ordering::Relaxed);
+            for dpi_value in [96u32, 144] {
+                UI_DPI.store(dpi_value, Ordering::Relaxed);
+                let mut children: Vec<Hwnd> = Vec::new();
+                unsafe { EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam); }
+                let position = |hwnd: Hwnd| {
+                    let mut rect: Rect = unsafe { std::mem::zeroed() };
+                    unsafe { GetWindowRect(hwnd, &mut rect); }
+                    let mut origin = Point { x: 0, y: 0 };
+                    unsafe { ClientToScreen(parent, &mut origin); }
+                    (rect.left - origin.x, rect.right - origin.x)
+                };
+                let mut history: Vec<Vec<(i32, i32)>> = vec![Vec::new(); children.len()];
+                let mut frame: Rect = unsafe { std::mem::zeroed() };
+                unsafe { MoveWindow(parent, 0, 0, scale(700), scale(820), 0); GetWindowRect(parent, &mut frame); }
+                let mut client: Rect = unsafe { std::mem::zeroed() };
+                unsafe { GetClientRect(parent, &mut client); }
+                let border = (frame.right - frame.left) - client.right;
+                let widths: Vec<i32> = (scale(640)..scale(1400)).collect();
+                for px in &widths {
+                    unsafe { MoveWindow(parent, 0, 0, px + border, scale(820), 0); }
+                    layout(parent, &mut ui);
+                    for (index, child) in children.iter().enumerate() {
+                        history[index].push(position(*child));
+                    }
+                }
+                for (index, child) in children.iter().enumerate() {
+                    for (side, pick) in [("left", 0usize), ("right", 1)] {
+                        let values: Vec<i32> = history[index].iter().map(|p| if pick == 0 { p.0 } else { p.1 }).collect();
+                        let mut reversals = Vec::new();
+                        let mut direction = 0;
+                        for step in 1..values.len() {
+                            let delta = values[step] - values[step - 1];
+                            if delta == 0 { continue; }
+                            let sign = delta.signum();
+                            if direction != 0 && sign != direction {
+                                reversals.push((unscale(widths[step]), values[step - 1], values[step]));
+                            }
+                            direction = sign;
+                        }
+                        assert!(reversals.len() <= 1,
+                            "{} {:?} {side} edge jitters at {dpi_value} DPI: {:?}",
+                            window_class(*child), get_text(*child), &reversals[..reversals.len().min(4)]);
+                    }
+                }
+            }
+            UI_DPI.store(saved_dpi, Ordering::Relaxed);
+            unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
+            layout(parent, &mut ui);
+        }
         // Exercise the actual controls rather than passing handcrafted blank
         // overrides to the option evaluator: population must retain auto values.
         assert_eq!(get_text(ui.controls.iso_prefix), "");
