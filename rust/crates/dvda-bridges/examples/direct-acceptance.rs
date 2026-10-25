@@ -5,7 +5,7 @@ unsafe extern "C" fn emit(state: *mut c_void, _: i32, text: *const i8) {
         (*(state as *mut Vec<String>)).push(CStr::from_ptr(text).to_string_lossy().into_owned());
     }
 }
-unsafe extern "C" fn cancel(_: *mut c_void) -> i32 {
+extern "C" fn cancel(_: *mut c_void) -> i32 {
     1
 }
 fn main() {

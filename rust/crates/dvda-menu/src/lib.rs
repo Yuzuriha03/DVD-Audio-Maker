@@ -44,6 +44,8 @@ unsafe extern "C" {
     fn menu_accepts_body() -> c_int;
 }
 
+/// # Safety
+/// Test stub with the same obligations as the vendor `menu_callback`.
 #[cfg(test)]
 unsafe fn menu_callback(callback: Option<unsafe extern "C" fn()>) -> c_int {
     if let Some(callback) = callback {
@@ -51,6 +53,8 @@ unsafe fn menu_callback(callback: Option<unsafe extern "C" fn()>) -> c_int {
     }
     0
 }
+/// # Safety
+/// Test stub with the same obligations as the vendor `menu_attribute`.
 #[cfg(test)]
 unsafe fn menu_attribute(
     callback: Option<unsafe extern "C" fn(*const c_char)>,
@@ -61,10 +65,14 @@ unsafe fn menu_attribute(
     }
     0
 }
+/// # Safety
+/// Test stub with the same obligations as the vendor `menu_body`.
 #[cfg(test)]
 unsafe fn menu_body(_value: *const c_char) -> c_int {
     0
 }
+/// # Safety
+/// Test stub with the same obligations as the vendor `menu_accepts_body`.
 #[cfg(test)]
 unsafe fn menu_accepts_body() -> c_int {
     0
@@ -221,6 +229,8 @@ fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
+/// # Safety
+/// `p` must be null or a NUL-terminated string that stays valid and unmodified for `'a`.
 unsafe fn text<'a>(p: *const c_char) -> Result<&'a str, String> {
     if p.is_null() {
         return Err("null string".into());
@@ -230,6 +240,9 @@ unsafe fn text<'a>(p: *const c_char) -> Result<&'a str, String> {
         .map_err(|e| e.to_string())
 }
 
+/// # Safety
+/// `elements` and `attributes` must be readable up to the terminating entry (a null
+/// `name` or `element`) that the table walks in this function stop at.
 unsafe fn dispatch(
     tokens: Vec<Token>,
     elements: *const Element,

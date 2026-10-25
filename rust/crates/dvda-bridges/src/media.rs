@@ -79,6 +79,9 @@ fn quoted(value: &str) -> String {
     out.push('"');
     out
 }
+/// # Safety
+/// `metadata` must be NULL or a valid `AVDictionary` that stays alive and unmodified for the
+/// call. Entries are copied into the returned string.
 unsafe fn dictionary(metadata: *const c_void) -> String {
     unsafe {
         let mut entries = Vec::new();
@@ -97,6 +100,9 @@ unsafe fn dictionary(metadata: *const c_void) -> String {
         format!("{{{}}}", entries.join(","))
     }
 }
+/// # Safety
+/// `format` must be an open `AVFormatContext` whose stream information has been read, owned
+/// by the caller and alive for the call. `call` must be the active request.
 unsafe fn probe(call: &Call, format: *mut Format) -> Result<(), i32> {
     unsafe {
         let mut records = Vec::new();
@@ -132,6 +138,9 @@ unsafe fn probe(call: &Call, format: *mut Format) -> Result<(), i32> {
         Ok(())
     }
 }
+/// # Safety
+/// `format` must be an open `AVFormatContext` whose stream information has been read, owned
+/// by the caller and alive for the call. The packet allocated here is freed before return.
 unsafe fn packets(call: &Call, format: *mut Format) -> Result<(), i32> {
     unsafe {
         let streams = streams(format);
@@ -178,6 +187,10 @@ unsafe fn packets(call: &Call, format: *mut Format) -> Result<(), i32> {
         result
     }
 }
+/// # Safety
+/// `format` must be an open `AVFormatContext` whose stream information has been read, owned
+/// by the caller and alive for the call. `request.output` must be a valid NUL-terminated path.
+/// The attached picture bytes are only read during the call.
 unsafe fn cover(request: &Request, format: *mut Format) -> Result<(), i32> {
     unsafe {
         if request.output.is_null() {
@@ -204,6 +217,10 @@ unsafe fn cover(request: &Request, format: *mut Format) -> Result<(), i32> {
         Err(-1381258232)
     }
 }
+/// # Safety
+/// `request.input` must not be NULL and must be a valid NUL-terminated string for the call.
+/// `request` must be readable for the call. `call` is registered as the interrupt callback's
+/// opaque state, so it must stay alive and must not move until `run` returns.
 unsafe fn run(request: &Request, call: &mut Call) -> Result<(), i32> {
     unsafe {
         if call.cancelled() {

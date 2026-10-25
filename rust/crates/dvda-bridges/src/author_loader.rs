@@ -19,6 +19,9 @@ unsafe extern "system" {
     fn LoadLibraryExW(path: *const u16, file: Handle, flags: u32) -> Handle;
     fn FreeLibrary(module: Handle) -> i32;
 }
+/// # Safety
+/// Calls the Win32 module-file query with a null module handle and a buffer it owns.
+/// There are no pointer obligations; the function is unsafe only because it calls Win32.
 unsafe fn directory() -> Option<PathBuf> {
     unsafe {
         let mut path = vec![0u16; 32768];
@@ -31,6 +34,10 @@ unsafe fn directory() -> Option<PathBuf> {
         p.parent().map(PathBuf::from)
     }
 }
+/// # Safety
+/// `path` is converted to a NUL-terminated wide string that lives for the call.
+/// The returned module is not freed here. The caller must pair a non-NULL result with
+/// `FreeLibrary` and must not use any procedure address taken from it afterwards.
 unsafe fn load(path: &std::path::Path) -> Handle {
     unsafe {
         LoadLibraryExW(
@@ -40,6 +47,11 @@ unsafe fn load(path: &std::path::Path) -> Handle {
         )
     }
 }
+/// # Safety
+/// The runtime `dvda-image.dll` must export `dvda_image_command`, `dvda_image_write_y4m`
+/// and `dvda_image_read_rgba` with the signatures of `Command`, `Y4m` and `Rgba`.
+/// A successful load is kept for the life of the process, so the returned reference is
+/// `'static`. A failed load caches nothing and may be retried.
 unsafe fn image() -> Result<&'static Image, ()> {
     unsafe {
         if let Some(image) = IMAGE.get() {
@@ -112,7 +124,7 @@ struct Request {
     rgba: Rgba,
 }
 #[cfg(feature = "menu")]
-pub(crate) unsafe fn menu_read_rgba(
+pub(crate) fn menu_read_rgba(
     path: *const c_char,
     pixels: *mut u8,
     capacity: usize,
@@ -123,6 +135,10 @@ pub(crate) unsafe fn menu_read_rgba(
 }
 
 #[cfg(not(feature = "menu"))]
+/// # Safety
+/// `xml` and `output` must be valid NUL-terminated strings that stay live for the call.
+/// `input` may be NULL. The module `name` must export `dvda_menu_run` with the signature
+/// `unsafe extern "C" fn(*const Request)`. It is freed before this function returns.
 unsafe fn menu(name: &str, xml: *const c_char, input: *const c_char, output: *const c_char) -> i32 {
     unsafe {
         let Ok(image) = image() else { return -1 };

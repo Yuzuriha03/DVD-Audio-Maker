@@ -55,6 +55,8 @@ fn io_errno(error: &std::io::Error) -> c_int {
         _ => 5,
     }
 }
+/// # Safety
+/// `value` must be null or a NUL-terminated string that stays valid and unmodified for `'a`.
 unsafe fn text<'a>(value: *const c_char) -> Result<&'a str, ()> {
     if value.is_null() {
         errno(22);
@@ -64,12 +66,17 @@ unsafe fn text<'a>(value: *const c_char) -> Result<&'a str, ()> {
         .to_str()
         .map_err(|_| errno(22))
 }
+/// # Safety
+/// `value` must be null or a NUL-terminated string valid for the call.
 unsafe fn wide(value: *const c_char) -> Result<Vec<u16>, ()> {
     Ok(unsafe { text(value)? }
         .encode_utf16()
         .chain(Some(0))
         .collect())
 }
+/// # Safety
+/// Returns heap memory owned by the caller. It must be released with `free`, or
+/// handed to `own` with a matching kind, and must not be used after that.
 unsafe fn allocate(bytes: usize, zero: bool) -> Result<*mut c_void, ()> {
     let heap = HEAP.get();
     if heap.is_null() {
@@ -82,6 +89,9 @@ unsafe fn allocate(bytes: usize, zero: bool) -> Result<*mut c_void, ()> {
         Ok(object)
     }
 }
+/// # Safety
+/// `object` must be null, or a pointer from `allocate` that has not been freed and
+/// is not owned by a live handle elsewhere.
 unsafe fn free(object: *mut c_void) -> Result<(), ()> {
     if object.is_null() {
         return Ok(());
@@ -104,6 +114,9 @@ fn disown(object: *mut c_void, kind: c_int) {
         }
     });
 }
+/// # Safety
+/// `object` must be null, or a live COM object whose vtable has a valid `Release`
+/// in slot 2. The caller gives up one reference.
 unsafe fn release_com(object: *mut c_void) {
     if !object.is_null() {
         // IUnknown's first three slots are QueryInterface, AddRef, Release.
@@ -113,6 +126,10 @@ unsafe fn release_com(object: *mut c_void) {
         unsafe { release(object) };
     }
 }
+/// # Safety
+/// `object` must be a live resource of `kind`: a `FILE*`, a CRT descriptor, a
+/// `Directory` from `allocate`, or an `IUnknown`. It is closed, released, or freed
+/// here and must not be used or closed again.
 unsafe fn close_resource(object: *mut c_void, kind: c_int) -> Result<(), ()> {
     match kind {
         FILE => {
@@ -140,6 +157,9 @@ unsafe fn close_resource(object: *mut c_void, kind: c_int) -> Result<(), ()> {
         _ => Err(()),
     }
 }
+/// # Safety
+/// `object` must be a live resource of `kind` (see `close_resource`). Ownership moves
+/// to the registry on success. On failure the object is closed here and must not be used.
 unsafe fn own(object: *mut c_void, kind: c_int) -> Result<(), ()> {
     let result = RESOURCES.with(|resources| {
         let mut resources = resources.borrow_mut();
@@ -380,6 +400,8 @@ pub unsafe extern "C" fn menu_rust_close(file: c_int) -> c_int {
         result
     })
 }
+/// # Safety
+/// `file` must be an open CRT file descriptor that stays open for the call.
 pub(crate) unsafe fn file_length(file: c_int) -> Result<u64, ()> {
     u64::try_from(unsafe { _filelengthi64(file) }).map_err(|_| ())
 }

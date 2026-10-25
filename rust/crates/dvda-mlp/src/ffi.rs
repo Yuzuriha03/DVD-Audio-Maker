@@ -113,6 +113,10 @@ pub unsafe extern "C" fn mlp_encode_stream(
         Err(_) => fail(result, -5, "Rust encoder panic"),
     }
 }
+/// # Safety
+/// When `metadata_count` is non-zero and `metadata` is non-null, `metadata` must be valid for
+/// `metadata_count` reads, and each record's `packet` must be valid for `size` reads. Null pointers
+/// and out-of-range counts and sizes are rejected here; the extent of `packet` is not checked.
 unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'static str> {
     if config.metadata_count == 0 || config.metadata.is_null() || config.metadata_count > 4096 {
         return Err("Missing metadata timeline");
@@ -148,6 +152,11 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
         .map_err(|_| "Invalid metadata timeline")?;
     Ok(records)
 }
+/// # Safety
+/// `call.config` must be null or point to a readable `EncoderConfig`. `call.read`, `call.write`,
+/// `call.input` and `call.output` must follow the `Read`/`Write` callback contracts for the whole call.
+/// `result` must be valid for writes and not aliased. A `stamp_refresh` callback is only supported on
+/// x86_64; other targets reject it with -1.
 unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
     let StreamCall {
         config,
@@ -314,6 +323,10 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
 }
 
 // Callbacks, opaque state and configuration obey the same contracts as stream().
+/// # Safety
+/// `config` must point to a readable `EncoderConfig`; `read`, `input`, `write` and `output` must follow
+/// the `Read`/`Write` callback contracts for the whole call. `stamp_refresh` is only called during this
+/// call, and only on x86_64.
 pub(crate) unsafe fn encode_stream_with_stamp_refresh(
     config: &EncoderConfig,
     profile: Profile,

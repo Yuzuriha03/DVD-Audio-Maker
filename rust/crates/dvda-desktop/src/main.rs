@@ -1,6 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod presentation;
+mod win;
+
+#[cfg(test)]
+/// Tests share the process-wide UI DPI and control registries; they run one at a time.
+static UI_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+fn ui_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    UI_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner())
+}
+
 mod touch;
 
 use dvda_core::localization;
@@ -475,6 +486,7 @@ struct Message {
 }
 
 /// WINDOWPLACEMENT
+#[derive(Default)]
 #[repr(C)]
 struct WindowPlacement {
     length: u32,
@@ -486,6 +498,7 @@ struct WindowPlacement {
 }
 
 /// MONITORINFO
+#[derive(Default)]
 #[repr(C)]
 struct MonitorInfo {
     size: u32,
@@ -494,7 +507,22 @@ struct MonitorInfo {
     flags: u32,
 }
 
+/// Window bounds in screen coordinates.
+fn window_rect(hwnd: Hwnd) -> Rect {
+    let mut rect: Rect = Rect::default();
+    GetWindowRect(hwnd, &mut rect);
+    rect
+}
+
+/// Client bounds: left and top are 0 for a client rectangle.
+fn client_rect(hwnd: Hwnd) -> Rect {
+    let mut rect: Rect = Rect::default();
+    GetClientRect(hwnd, &mut rect);
+    rect
+}
+
 /// TEXTMETRICW
+#[derive(Default)]
 #[repr(C)]
 struct TextMetric {
     height: i32,
@@ -519,7 +547,7 @@ struct TextMetric {
     char_set: u8,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 #[repr(C)]
 struct Rect {
     left: i32,
@@ -528,7 +556,7 @@ struct Rect {
     bottom: i32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 #[repr(C)]
 struct Point {
     x: i32,
@@ -632,13 +660,15 @@ unsafe extern "system" {
         parameter: *mut c_void,
     ) -> Hwnd;
     fn DefWindowProcW(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
-    fn GetDlgCtrlID(hwnd: Hwnd) -> i32;
-    fn GetDlgItem(parent: Hwnd, id: i32) -> Hwnd;
-    fn GetParent(hwnd: Hwnd) -> Hwnd;
+    safe fn GetDlgCtrlID(hwnd: Hwnd) -> i32;
+    safe fn GetDlgItem(parent: Hwnd, id: i32) -> Hwnd;
+    safe fn GetParent(hwnd: Hwnd) -> Hwnd;
+    safe fn GetAncestor(hwnd: Hwnd, flags: u32) -> Hwnd;
+    safe fn IsWindow(hwnd: Hwnd) -> i32;
     fn GetClassNameW(hwnd: Hwnd, text: *mut u16, length: i32) -> i32;
-    fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
-    fn UpdateWindow(hwnd: Hwnd) -> i32;
-    fn IsWindowVisible(hwnd: Hwnd) -> i32;
+    safe fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
+    safe fn UpdateWindow(hwnd: Hwnd) -> i32;
+    safe fn IsWindowVisible(hwnd: Hwnd) -> i32;
     fn ScrollWindowEx(
         hwnd: Hwnd,
         dx: i32,
@@ -649,7 +679,7 @@ unsafe extern "system" {
         update: *mut Rect,
         flags: u32,
     ) -> i32;
-    fn MoveWindow(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32, repaint: i32) -> i32;
+    safe fn MoveWindow(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32, repaint: i32) -> i32;
     fn RedrawWindow(hwnd: Hwnd, update: *const Rect, region: Handle, flags: u32) -> i32;
     fn SetWindowPos(
         hwnd: Hwnd,
@@ -672,53 +702,53 @@ unsafe extern "system" {
         flags: u32,
     ) -> Handle;
     fn EndDeferWindowPos(batch: Handle) -> i32;
-    fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
-    fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
-    fn GetMessageW(message: *mut Message, hwnd: Hwnd, minimum: u32, maximum: u32) -> i32;
-    fn TranslateMessage(message: *const Message) -> i32;
+    safe fn GetClientRect(hwnd: Hwnd, rect: &mut Rect) -> i32;
+    safe fn GetWindowRect(hwnd: Hwnd, rect: &mut Rect) -> i32;
+    safe fn GetMessageW(message: &mut Message, hwnd: Hwnd, minimum: u32, maximum: u32) -> i32;
+    safe fn TranslateMessage(message: &Message) -> i32;
     fn DispatchMessageW(message: *const Message) -> Lresult;
     fn IsDialogMessageW(hwnd: Hwnd, message: *mut Message) -> i32;
-    fn PostQuitMessage(code: i32);
+    safe fn PostQuitMessage(code: i32);
     fn PostMessageW(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> i32;
     fn SetWindowLongPtrW(hwnd: Hwnd, index: i32, value: Lresult) -> Lresult;
-    fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> Lresult;
-    fn DestroyWindow(hwnd: Hwnd) -> i32;
+    safe fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> Lresult;
+    safe fn DestroyWindow(hwnd: Hwnd) -> i32;
     fn SetWindowTextW(hwnd: Hwnd, text: *const u16) -> i32;
     fn GetWindowTextLengthW(hwnd: Hwnd) -> i32;
     fn GetWindowTextW(hwnd: Hwnd, text: *mut u16, length: i32) -> i32;
     fn DrawTextW(dc: Handle, text: *const u16, length: i32, rect: *mut Rect, format: u32) -> i32;
     fn DrawFocusRect(dc: Handle, rect: *const Rect) -> i32;
-    fn FillRect(dc: Handle, rect: *const Rect, brush: Hbrush) -> i32;
+    safe fn FillRect(dc: Handle, rect: &Rect, brush: Hbrush) -> i32;
     fn SendMessageW(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
     fn SetTimer(hwnd: Hwnd, id: usize, millis: u32, callback: *const c_void) -> usize;
-    fn KillTimer(hwnd: Hwnd, id: usize) -> i32;
-    fn SetFocus(hwnd: Hwnd) -> Hwnd;
-    fn SetCapture(hwnd: Hwnd) -> Hwnd;
-    fn ReleaseCapture() -> i32;
-    fn GetCapture() -> Hwnd;
-    fn GetCursorPos(point: *mut Point) -> i32;
-    fn SetLayeredWindowAttributes(hwnd: Hwnd, key: u32, alpha: u8, flags: u32) -> i32;
-    fn GetSystemMetrics(index: i32) -> i32;
-    fn MonitorFromPoint(point: Point, flags: u32) -> Handle;
-    fn GetMonitorInfoW(monitor: Handle, info: *mut MonitorInfo) -> i32;
-    fn GetDpiForWindow(hwnd: Hwnd) -> u32;
-    fn GetWindowPlacement(hwnd: Hwnd, placement: *mut WindowPlacement) -> i32;
-    fn SetWindowPlacement(hwnd: Hwnd, placement: *const WindowPlacement) -> i32;
-    fn SetCursor(cursor: Handle) -> Handle;
-    fn EnableWindow(hwnd: Hwnd, enable: i32) -> i32;
+    safe fn KillTimer(hwnd: Hwnd, id: usize) -> i32;
+    safe fn SetFocus(hwnd: Hwnd) -> Hwnd;
+    safe fn SetCapture(hwnd: Hwnd) -> Hwnd;
+    safe fn ReleaseCapture() -> i32;
+    safe fn GetCapture() -> Hwnd;
+    safe fn GetCursorPos(point: &mut Point) -> i32;
+    safe fn SetLayeredWindowAttributes(hwnd: Hwnd, key: u32, alpha: u8, flags: u32) -> i32;
+    safe fn GetSystemMetrics(index: i32) -> i32;
+    safe fn MonitorFromPoint(point: Point, flags: u32) -> Handle;
+    safe fn GetMonitorInfoW(monitor: Handle, info: &mut MonitorInfo) -> i32;
+    safe fn GetDpiForWindow(hwnd: Hwnd) -> u32;
+    safe fn GetWindowPlacement(hwnd: Hwnd, placement: &mut WindowPlacement) -> i32;
+    safe fn SetWindowPlacement(hwnd: Hwnd, placement: &WindowPlacement) -> i32;
+    safe fn SetCursor(cursor: Handle) -> Handle;
+    safe fn EnableWindow(hwnd: Hwnd, enable: i32) -> i32;
     fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, flags: u32) -> i32;
     fn LoadCursorW(instance: Hinstance, name: *const u16) -> Handle;
-    fn GetSysColorBrush(index: i32) -> Hbrush;
+    safe fn GetSysColorBrush(index: i32) -> Hbrush;
     fn InvalidateRect(hwnd: Hwnd, rect: *const Rect, erase: i32) -> i32;
     fn BeginPaint(hwnd: Hwnd, paint: *mut PaintStruct) -> Handle;
     fn EndPaint(hwnd: Hwnd, paint: *const PaintStruct) -> i32;
     #[cfg(test)]
-    fn GetDC(hwnd: Hwnd) -> Handle;
+    safe fn GetDC(hwnd: Hwnd) -> Handle;
     #[cfg(test)]
-    fn ReleaseDC(hwnd: Hwnd, dc: Handle) -> i32;
-    fn GetFocus() -> Hwnd;
-    fn IsWindowEnabled(hwnd: Hwnd) -> i32;
-    fn IsZoomed(hwnd: Hwnd) -> i32;
+    safe fn ReleaseDC(hwnd: Hwnd, dc: Handle) -> i32;
+    safe fn GetFocus() -> Hwnd;
+    safe fn IsWindowEnabled(hwnd: Hwnd) -> i32;
+    safe fn IsZoomed(hwnd: Hwnd) -> i32;
     fn DrawIconEx(
         dc: Handle,
         x: i32,
@@ -739,15 +769,15 @@ unsafe extern "system" {
         flags: u32,
     ) -> Handle;
     fn TrackMouseEvent(event: *mut TrackMouseEventData) -> i32;
-    fn GetDpiForSystem() -> u32;
+    safe fn GetDpiForSystem() -> u32;
     fn EnumChildWindows(hwnd: Hwnd, callback: EnumChildProc, parameter: Lparam) -> i32;
     fn SystemParametersInfoW(action: u32, param: u32, data: *mut c_void, update: u32) -> i32;
-    fn ScreenToClient(hwnd: Hwnd, point: *mut Point) -> i32;
-    fn ClientToScreen(hwnd: Hwnd, point: *mut Point) -> i32;
-    fn OpenClipboard(owner: Hwnd) -> i32;
-    fn EmptyClipboard() -> i32;
+    safe fn ScreenToClient(hwnd: Hwnd, point: &mut Point) -> i32;
+    safe fn ClientToScreen(hwnd: Hwnd, point: &mut Point) -> i32;
+    safe fn OpenClipboard(owner: Hwnd) -> i32;
+    safe fn EmptyClipboard() -> i32;
     fn SetClipboardData(format: u32, data: Handle) -> Handle;
-    fn CloseClipboard() -> i32;
+    safe fn CloseClipboard() -> i32;
 }
 
 #[link(name = "kernel32")]
@@ -755,17 +785,17 @@ unsafe extern "system" {
     fn GetModuleHandleW(name: *const u16) -> Hinstance;
     fn LoadLibraryW(name: *const u16) -> Hinstance;
     fn GetProcAddress(module: Hinstance, name: *const u8) -> *const c_void;
-    fn GetUserDefaultUILanguage() -> u16;
+    safe fn GetUserDefaultUILanguage() -> u16;
     fn GlobalAlloc(flags: u32, bytes: usize) -> Handle;
     fn GlobalLock(handle: Handle) -> *mut c_void;
-    fn GlobalUnlock(handle: Handle) -> i32;
+    safe fn GlobalUnlock(handle: Handle) -> i32;
 }
 
 #[link(name = "gdi32")]
 unsafe extern "system" {
-    fn GetStockObject(index: i32) -> Handle;
-    fn SetBkMode(dc: Handle, mode: i32) -> i32;
-    fn SetTextColor(dc: Handle, color: u32) -> u32;
+    safe fn GetStockObject(index: i32) -> Handle;
+    safe fn SetBkMode(dc: Handle, mode: i32) -> i32;
+    safe fn SetTextColor(dc: Handle, color: u32) -> u32;
     fn CreateFontW(
         height: i32,
         width: i32,
@@ -782,19 +812,19 @@ unsafe extern "system" {
         pitch: u32,
         face: *const u16,
     ) -> Handle;
-    fn CreateSolidBrush(color: u32) -> Hbrush;
-    fn CreatePen(style: i32, width: i32, color: u32) -> Handle;
+    safe fn CreateSolidBrush(color: u32) -> Hbrush;
+    safe fn CreatePen(style: i32, width: i32, color: u32) -> Handle;
     fn MoveToEx(dc: Handle, x: i32, y: i32, previous: *mut Point) -> i32;
-    fn LineTo(dc: Handle, x: i32, y: i32) -> i32;
-    fn Ellipse(dc: Handle, left: i32, top: i32, right: i32, bottom: i32) -> i32;
-    fn DeleteObject(object: Handle) -> i32;
-    fn SelectObject(dc: Handle, object: Handle) -> Handle;
-    fn CreateCompatibleDC(dc: Handle) -> Handle;
-    fn GetTextMetricsW(dc: Handle, metrics: *mut TextMetric) -> i32;
-    fn CreateCompatibleBitmap(dc: Handle, width: i32, height: i32) -> Handle;
-    fn BitBlt(dest: Handle, x: i32, y: i32, width: i32, height: i32, source: Handle, source_x: i32, source_y: i32, rop: u32) -> i32;
-    fn DeleteDC(dc: Handle) -> i32;
-    fn SetBkColor(dc: Handle, color: u32) -> u32;
+    safe fn LineTo(dc: Handle, x: i32, y: i32) -> i32;
+    safe fn Ellipse(dc: Handle, left: i32, top: i32, right: i32, bottom: i32) -> i32;
+    safe fn DeleteObject(object: Handle) -> i32;
+    safe fn SelectObject(dc: Handle, object: Handle) -> Handle;
+    safe fn CreateCompatibleDC(dc: Handle) -> Handle;
+    safe fn GetTextMetricsW(dc: Handle, metrics: &mut TextMetric) -> i32;
+    safe fn CreateCompatibleBitmap(dc: Handle, width: i32, height: i32) -> Handle;
+    safe fn BitBlt(dest: Handle, x: i32, y: i32, width: i32, height: i32, source: Handle, source_x: i32, source_y: i32, rop: u32) -> i32;
+    safe fn DeleteDC(dc: Handle) -> i32;
+    safe fn SetBkColor(dc: Handle, color: u32) -> u32;
     fn RoundRect(
         dc: Handle,
         left: i32,
@@ -876,9 +906,12 @@ unsafe extern "system" {
 static PROFILE_OVERRIDE: OnceLock<Option<PathBuf>> = OnceLock::new();
 static LANGUAGE_OVERRIDE: OnceLock<Option<String>> = OnceLock::new();
 static UI_DPI: AtomicU32 = AtomicU32::new(96);
-static FONT_CACHE: OnceLock<Mutex<HashMap<(i32, i32, u8), usize>>> = OnceLock::new();
+type FontKey = (i32, i32, u8);
+static FONT_CACHE: OnceLock<Mutex<HashMap<FontKey, usize>>> = OnceLock::new();
 static BRUSH_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
-static CONTROL_RECTS: OnceLock<Mutex<Vec<(isize, i32, i32, i32, i32)>>> = OnceLock::new();
+/// Design rectangle (x, y, width, height in DIPs) of each control, rescaled on DPI change.
+type ControlRect = (isize, i32, i32, i32, i32);
+static CONTROL_RECTS: OnceLock<Mutex<Vec<ControlRect>>> = OnceLock::new();
 static COMBO_OVERLAYS: OnceLock<Mutex<Vec<(isize, isize)>>> = OnceLock::new();
 static ICON_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
 static DARK_THEME: AtomicBool = AtomicBool::new(false);
@@ -999,7 +1032,7 @@ impl Lang {
             "zh" | "zh-cn" | "zh-hans" | "中文" => Self::Zh,
             "en" | "en-us" | "en-gb" | "english" => Self::En,
             "ja" | "ja-jp" | "japanese" | "日本語" => Self::Ja,
-            _ => match unsafe { GetUserDefaultUILanguage() } & 0x3ff {
+            _ => match GetUserDefaultUILanguage() & 0x3ff {
                 4 => Self::Zh,
                 17 => Self::Ja,
                 _ => Self::En,
@@ -1441,7 +1474,7 @@ enum WorkerEvent {
     Log(String),
     Progress(u16),
     Finished(UiEvent),
-    Retention(AppOptions),
+    Retention(Box<AppOptions>),
 }
 
 struct Controls {
@@ -1741,20 +1774,18 @@ fn run() -> Result<(), String> {
     if instance.is_null() {
         return Err("Cannot get application instance".into());
     }
-    let system_dpi = unsafe { GetDpiForSystem() };
+    let system_dpi = GetDpiForSystem();
     UI_DPI.store(system_dpi.max(96), Ordering::Relaxed);
     DARK_THEME.store(system_prefers_dark(), Ordering::Relaxed);
     uxtheme_preferred_app_mode(dark_theme());
-    if cfg!(debug_assertions) {
-        if let Ok(value) = std::env::var("DVDA_UI_DPI") {
-            if let Ok(value) = value.parse::<u32>() {
-                if value >= 48 {
-                    UI_DPI.store(value, Ordering::Relaxed);
-                }
-            }
-        }
+    if cfg!(debug_assertions)
+        && let Ok(value) = std::env::var("DVDA_UI_DPI")
+        && let Ok(value) = value.parse::<u32>()
+        && value >= 48
+    {
+        UI_DPI.store(value, Ordering::Relaxed);
     }
-    let icon = unsafe { LoadIconW(instance, 1usize as *const u16) };
+    let icon = unsafe { LoadIconW(instance, ptr::without_provenance::<u16>(1)) };
     if icon.is_null() {
         return Err("Cannot load application icon".into());
     }
@@ -1899,7 +1930,7 @@ fn run() -> Result<(), String> {
         point_y: 0,
     };
     loop {
-        let status = unsafe { GetMessageW(&mut message, ptr::null_mut(), 0, 0) };
+        let status = GetMessageW(&mut message, ptr::null_mut(), 0, 0);
         if status <= 0 {
             break;
         }
@@ -1909,7 +1940,7 @@ fn run() -> Result<(), String> {
             if message.message == WM_KEYDOWN && message.wparam == VK_RETURN {
                 let focus = GetFocus();
                 if focus.is_null() {
-                    SendMessageW(window, WM_COMMAND, ID_BUILD, 0);
+                    win::send_int(window, WM_COMMAND, ID_BUILD, 0);
                     continue;
                 }
                 let class = window_class(focus);
@@ -1917,18 +1948,18 @@ fn run() -> Result<(), String> {
                     // Let the edit field consume Enter (and never start a build
                     // while the user is editing a path or title).
                 } else if class == "ComboBox" {
-                    if SendMessageW(focus, CB_GETDROPPEDSTATE, 0, 0) == 0 {
-                        SendMessageW(window, WM_COMMAND, ID_BUILD, 0);
+                    if win::send_int(focus, CB_GETDROPPEDSTATE, 0, 0) == 0 {
+                        win::send_int(window, WM_COMMAND, ID_BUILD, 0);
                         continue;
                     }
                 } else if class == "Button" {
                     let id = GetDlgCtrlID(focus);
                     if id > 0 {
-                        SendMessageW(window, WM_COMMAND, id as usize, 0);
+                        win::send_int(window, WM_COMMAND, id as usize, 0);
                     }
                     continue;
                 } else {
-                    SendMessageW(window, WM_COMMAND, ID_BUILD, 0);
+                    win::send_int(window, WM_COMMAND, ID_BUILD, 0);
                     continue;
                 }
             }
@@ -1941,6 +1972,10 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn window_proc(
     hwnd: Hwnd,
     message: u32,
@@ -1958,23 +1993,23 @@ unsafe extern "system" fn window_proc(
         if let Some(state) = unsafe { state(hwnd) } {
             autosave(state);
         }
-        unsafe {
+         {
             DestroyWindow(hwnd);
         }
         return 0;
     }
     if message == WM_DESTROY {
-        unsafe {
+         {
             KillTimer(hwnd, 1);
         }
-        let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut UiState;
+        let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut UiState;
         if !pointer.is_null() {
             unsafe {
                 drop(Box::from_raw(pointer));
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
         }
-        unsafe {
+         {
             PostQuitMessage(0);
         }
         return 0;
@@ -2014,7 +2049,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_NCLBUTTONDOWN => {
             // HTLEFT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTBOTTOMLEFT
-            if matches!(wparam, 10 | 12 | 13 | 14 | 16) && unsafe { IsZoomed(hwnd) } == 0 {
+            if matches!(wparam, 10 | 12 | 13 | 14 | 16) && IsZoomed(hwnd) == 0 {
                 let origin = Point {
                     x: (lparam & 0xffff) as u16 as i16 as i32,
                     y: ((lparam >> 16) & 0xffff) as u16 as i16 as i32,
@@ -2027,7 +2062,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_NCLBUTTONDBLCLK => {
             if wparam as i32 == HTCAPTION {
-                unsafe {
+                 {
                     if IsZoomed(hwnd) != 0 {
                         ShowWindow(hwnd, SW_RESTORE);
                     } else {
@@ -2052,11 +2087,11 @@ unsafe extern "system" fn window_proc(
                     }
                 } else if message == 0x0202 && state.dragging_splitter {
                     state.dragging_splitter = false;
-                    unsafe {
+                     {
                         ReleaseCapture();
                     }
                     let preview = state.splitter_preview;
-                    unsafe { hide_splitter_preview(state) };
+                    hide_splitter_preview(state);
                     if let Some(preview_y) = preview {
                         state.splitter_height = Some(
                             (unscale(preview_y) - state.splitter_tabs_y).clamp(104, state.splitter_max.max(104)),
@@ -2078,10 +2113,10 @@ unsafe extern "system" fn window_proc(
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_SIZE => {
-            if wparam != 1 {
-                if let Some(state) = unsafe { state(hwnd) } {
-                    layout(hwnd, state);
-                }
+            if wparam != 1
+                && let Some(state) = unsafe { state(hwnd) }
+            {
+                layout(hwnd, state);
             }
             0
         }
@@ -2138,12 +2173,12 @@ unsafe extern "system" fn window_proc(
                 right: 0,
                 bottom: 0,
             };
-            unsafe {
+             {
                 ScreenToClient(hwnd, &mut point);
                 GetClientRect(hwnd, &mut rect);
             }
             // Borderless windows still need a usable sizing frame.
-            if unsafe { IsZoomed(hwnd) } == 0 {
+            if IsZoomed(hwnd) == 0 {
                 let edge = scale(6).max(4);
                 let left = point.x < edge;
                 let right = point.x >= rect.right - edge;
@@ -2287,20 +2322,20 @@ unsafe extern "system" fn window_proc(
                 body_brush() as Lresult
             }
         },
-        WM_CTLCOLOREDIT => unsafe {
+        WM_CTLCOLOREDIT =>  {
             let dc = wparam as Handle;
             SetBkMode(dc, 1);
             SetBkColor(dc, c_card());
             SetTextColor(dc, c_ink());
             card_brush() as Lresult
         },
-        WM_CTLCOLORLISTBOX => unsafe {
+        WM_CTLCOLORLISTBOX =>  {
             SetBkMode(wparam as Handle, 1);
             SetBkColor(wparam as Handle, c_card());
             SetTextColor(wparam as Handle, c_ink());
             card_brush() as Lresult
         },
-        WM_CTLCOLORBTN => unsafe {
+        WM_CTLCOLORBTN =>  {
             SetBkMode(wparam as Handle, 1);
             SetBkColor(wparam as Handle, c_body());
             body_brush() as Lresult
@@ -2311,6 +2346,10 @@ unsafe extern "system" fn window_proc(
 
 static SPLITTER_PREVIEW_CLASS_READY: OnceLock<()> = OnceLock::new();
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn splitter_preview_proc(
     hwnd: Hwnd,
     message: u32,
@@ -2339,6 +2378,8 @@ unsafe extern "system" fn splitter_preview_proc(
     }
 }
 
+/// # Safety
+/// `owner` must be a live window created on the UI thread. The returned popup is owned by it.
 unsafe fn ensure_splitter_preview(owner: Hwnd) -> Hwnd {
     SPLITTER_PREVIEW_CLASS_READY.get_or_init(|| unsafe {
         let class_name = wide("DVD_AUDIO_SPLITTER_PREVIEW_RUST");
@@ -2389,16 +2430,19 @@ fn window_arranged(hwnd: Hwnd) -> bool {
         if module.is_null() {
             0
         } else {
-            GetProcAddress(module, b"IsWindowArranged\0".as_ptr()) as usize
+            GetProcAddress(module, c"IsWindowArranged".as_ptr().cast()) as usize
         }
     });
     address != 0 && unsafe { std::mem::transmute::<usize, IsWindowArranged>(address)(hwnd) } != 0
 }
 
+/// # Safety
+/// `hwnd` must be the main window and this must run on its UI thread, from its
+/// WM_NCLBUTTONDOWN handler. It runs a nested message loop that dispatches messages
+/// to windows of this process.
 unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
     unsafe {
-        let mut start: Rect = std::mem::zeroed();
-        GetWindowRect(hwnd, &mut start);
+        let start = window_rect(hwnd);
         // Same limits as the window manager would apply.
         let mut limits = [0i32; 10];
         limits[8] = i32::MAX / 4;
@@ -2407,7 +2451,7 @@ unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
         let (min_w, min_h) = (limits[6].max(1), limits[7].max(1));
         let (max_w, max_h) = (limits[8].max(min_w), limits[9].max(min_h));
         let left = matches!(hit, 10 | 13 | 16);
-        let top = matches!(hit, 12 | 13 | 14);
+        let top = matches!(hit, 12..=14);
         let right = hit == 14;
         let bottom = hit == 16;
         let target = |cursor: Point| {
@@ -2519,8 +2563,10 @@ unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 } else {
                     (0, 0)
                 };
-                let mut placement: WindowPlacement = std::mem::zeroed();
-                placement.length = std::mem::size_of::<WindowPlacement>() as u32;
+                let mut placement = WindowPlacement {
+                    length: std::mem::size_of::<WindowPlacement>() as u32,
+                    ..WindowPlacement::default()
+                };
                 GetWindowPlacement(hwnd, &mut placement);
                 placement.flags = 0;
                 placement.show = 1; // SW_SHOWNORMAL
@@ -2553,6 +2599,8 @@ unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
     }
 }
 
+/// # Safety
+/// `main` must be the window that owns `state`, and this must run on its UI thread.
 unsafe fn update_splitter_preview(state: &mut UiState, main: Hwnd, client_y: i32) {
     let mut preview = state.splitter_preview_window;
     if preview.is_null() {
@@ -2592,14 +2640,18 @@ unsafe fn update_splitter_preview(state: &mut UiState, main: Hwnd, client_y: i32
     }
 }
 
-unsafe fn hide_splitter_preview(state: &mut UiState) {
+fn hide_splitter_preview(state: &mut UiState) {
     if !state.splitter_preview_window.is_null() {
-        unsafe {
+         {
             ShowWindow(state.splitter_preview_window, SW_HIDE);
         }
     }
     state.splitter_preview = None;
 }
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn page_proc(
     hwnd: Hwnd,
     message: u32,
@@ -2628,7 +2680,7 @@ unsafe extern "system" fn page_proc(
             0
         }
         0x0115 => {
-            let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
+            let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
             let next = match wparam & 0xffff {
                 0 => old - scale(24),
                 1 => old + scale(24),
@@ -2643,7 +2695,7 @@ unsafe extern "system" fn page_proc(
             0
         }
         0x020a => {
-            let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
+            let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
             let delta = (wparam >> 16) as i16 as i32;
             let pixels = if let Some(state) = unsafe { state(GetParent(hwnd)) } {
                 wheel_pixels(
@@ -2658,7 +2710,7 @@ unsafe extern "system" fn page_proc(
             0
         }
         WM_COMMAND | WM_NOTIFY | WM_DRAWITEM | WM_MEASUREITEM => {
-            let parent = unsafe { GetParent(hwnd) };
+            let parent = GetParent(hwnd);
             if parent.is_null() {
                 0
             } else {
@@ -2688,7 +2740,7 @@ unsafe extern "system" fn page_proc(
                 panel_brush() as Lresult
             }
         },
-        WM_CTLCOLOREDIT => unsafe {
+        WM_CTLCOLOREDIT =>  {
             let dc = wparam as Handle;
             SetBkMode(dc, 1);
             if IsWindowEnabled(hwnd) == 0 {
@@ -2701,13 +2753,13 @@ unsafe extern "system" fn page_proc(
                 card_brush() as Lresult
             }
         },
-        WM_CTLCOLORLISTBOX => unsafe {
+        WM_CTLCOLORLISTBOX =>  {
             SetBkMode(wparam as Handle, 1);
             SetBkColor(wparam as Handle, c_card());
             SetTextColor(wparam as Handle, c_ink());
             card_brush() as Lresult
         },
-        WM_CTLCOLORBTN => unsafe {
+        WM_CTLCOLORBTN =>  {
             SetBkMode(wparam as Handle, 1);
             SetBkColor(wparam as Handle, c_panel());
             panel_brush() as Lresult
@@ -2725,10 +2777,11 @@ fn wheel_pixels(delta: i32, step: i32, remainder: &mut i32) -> i32 {
 
 #[cfg(test)]
 mod wheel_tests {
-    use super::wheel_pixels;
+    use super::{ui_test_guard, wheel_pixels};
 
     #[test]
     fn partial_notches_move_immediately() {
+        let _ui_test_lock = ui_test_guard();
         let mut remainder = 0;
         assert_eq!(wheel_pixels(30, 40, &mut remainder), 10);
         assert_eq!(wheel_pixels(-30, 40, &mut remainder), -10);
@@ -2736,6 +2789,7 @@ mod wheel_tests {
 
     #[test]
     fn small_deltas_preserve_full_notch_distance_at_each_scale() {
+        let _ui_test_lock = ui_test_guard();
         for step in [40, 50, 60, 80] {
             for direction in [-1, 1] {
                 let mut remainder = 0;
@@ -2751,6 +2805,7 @@ mod wheel_tests {
 
     #[test]
     fn fractional_input_cancels_on_direction_reversal() {
+        let _ui_test_lock = ui_test_guard();
         let mut remainder = 0;
         assert_eq!(wheel_pixels(1, 40, &mut remainder), 0);
         assert_eq!(wheel_pixels(-1, 40, &mut remainder), 0);
@@ -2758,13 +2813,16 @@ mod wheel_tests {
     }
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lparam) -> i32 {
     let (page, delta) = unsafe { &*(parameter as *const (Hwnd, i32)) };
-    if unsafe { GetParent(hwnd) } != *page {
+    if GetParent(hwnd) != *page {
         return 1;
     }
-    let mut rect: Rect = unsafe { std::mem::zeroed() };
-    unsafe { GetWindowRect(hwnd, &mut rect); }
+    let rect = window_rect(hwnd);
     let mut point = Point { x: rect.left, y: rect.top };
     unsafe {
         ScreenToClient(*page, &mut point);
@@ -2777,18 +2835,18 @@ unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lparam) -> i3
 fn page_content_height(page: Hwnd) -> i32 {
     unsafe extern "system" fn lowest(hwnd: Hwnd, parameter: Lparam) -> i32 {
         let (page, bottom) = unsafe { &mut *(parameter as *mut (Hwnd, i32)) };
-        if unsafe { GetParent(hwnd) } == *page && (unsafe { GetWindowLongPtrW(hwnd, -16) } as u32) & WS_VISIBLE != 0 {
-            let mut rect: Rect = unsafe { std::mem::zeroed() };
-            unsafe { GetWindowRect(hwnd, &mut rect) };
+        if GetParent(hwnd) == *page && (GetWindowLongPtrW(hwnd, -16) as u32) & WS_VISIBLE != 0 {
+            let mut rect: Rect = Rect::default();
+            GetWindowRect(hwnd, &mut rect);
             let mut corner = Point { x: rect.left, y: rect.bottom };
-            unsafe { ScreenToClient(*page, &mut corner) };
+            ScreenToClient(*page, &mut corner);
             *bottom = (*bottom).max(corner.y);
         }
         1
     }
     let mut found = (page, 0);
     unsafe { EnumChildWindows(page, lowest, &mut found as *mut _ as Lparam) };
-    let scroll = unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32;
+    let scroll = GetWindowLongPtrW(page, GWLP_USERDATA) as i32;
     if found.1 <= 0 { scale(100) } else { found.1 + scroll + scale(14) }
 }
 
@@ -2796,17 +2854,32 @@ fn page_is_narrow(width: i32) -> bool {
     width < 1000
 }
 
+/// Scrolls a settings page; refreshes the main window's page scrollbar.
 fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
+    let main = GetParent(hwnd);
+    let bar = if main.is_null() {
+        ptr::null_mut()
+    } else {
+        // SAFETY: `main` is the window that owns the settings pages; the borrow ends
+        // with this statement.
+        unsafe { state(main) }.map_or(ptr::null_mut(), |state| state.page_scrollbar)
+    };
+    scroll_page_with_bar(hwnd, requested, explicit, bar);
+}
+
+/// `scroll_page` for callers that already hold the UiState: `bar` is its page
+/// scrollbar, invalidated after the scroll (null if there is none).
+fn scroll_page_with_bar(hwnd: Hwnd, requested: i32, explicit: bool, bar: Hwnd) {
     let mut rect = Rect {
         left: 0,
         top: 0,
         right: 0,
         bottom: 0,
     };
-    unsafe {
+     {
         GetClientRect(hwnd, &mut rect);
     }
-    let old = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as i32;
+    let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
     let height = (rect.bottom - rect.top).max(1);
     let content = page_content_height(hwnd);
     let pos = if explicit { requested } else { old }.clamp(0, (content - height).max(0));
@@ -2846,12 +2919,9 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
             }
         }
     }
-    let main = unsafe { GetParent(hwnd) };
-    if !main.is_null() {
-        if let Some(state) = unsafe { state(main) } {
-            unsafe {
-                InvalidateRect(state.page_scrollbar, ptr::null(), 0);
-            }
+    if !bar.is_null() {
+        unsafe {
+            InvalidateRect(bar, ptr::null(), 0);
         }
     }
     if !DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
@@ -2953,6 +3023,7 @@ mod log_toolbar_tests {
 
     #[test]
     fn wide_rows_keep_preferred_spacing() {
+        let _ui_test_lock = ui_test_guard();
         let bar = log_toolbar_layout(1200, 60, [80, 70], [90, 100]);
         assert!(!bar.wrap);
         assert_eq!((bar.label_width, bar.combo_x, bar.check_x, bar.check_width), (120, 128, [276, 414], [130, 130]));
@@ -2961,6 +3032,7 @@ mod log_toolbar_tests {
 
     #[test]
     fn spacing_shrinks_before_wrapping() {
+        let _ui_test_lock = ui_test_guard();
         let (label, checks, buttons) = (60, [80, 70], [90, 100]);
         // Minimum single row: 64+6+132+8+107+6+97 + 12 + 114+6+124.
         let minimum = 676;
@@ -2984,6 +3056,7 @@ mod log_toolbar_tests {
 
     #[test]
     fn wrapped_rows_fit_independently() {
+        let _ui_test_lock = ui_test_guard();
         let bar = log_toolbar_layout(604, 130, [80, 70], [90, 100]);
         assert!(bar.wrap);
         assert!(bar.check_x[1] + bar.check_width[1] <= 604);
@@ -2999,10 +3072,11 @@ fn browse_edit_width(page_width: i32) -> i32 {
 
 #[cfg(test)]
 mod browse_layout_tests {
-    use super::browse_edit_width;
+    use super::{browse_edit_width, ui_test_guard};
 
     #[test]
     fn browse_rows_preserve_right_margin_at_half_and_full_width() {
+        let _ui_test_lock = ui_test_guard();
         for page_width in [420, 640, 780, 800, 1120, 1600] {
             let edit_right = 14 + browse_edit_width(page_width);
             let button_left = edit_right + 10;
@@ -3018,34 +3092,45 @@ fn resize_page_fields(page: Hwnd) {
         right: 0,
         bottom: 0,
     };
-    unsafe {
+     {
         GetClientRect(page, &mut rect);
     }
     let width = unscale(rect.right).max(1);
-    let scroll = unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32;
+    let scroll = GetWindowLongPtrW(page, GWLP_USERDATA) as i32;
     // Browse rows share the same geometry. Keeping the edit and its button
     // inside the page client area prevents a clipped right border after a
     // window resize or a DPI/layout change.
     let edit_width = browse_edit_width(width);
     for (edit_id, browse_id, y) in [
         (ID_SOURCE, ID_BROWSE_SOURCE, 38),
-        (ID_FINAL, ID_BROWSE_FINAL, 82),
-        (ID_WORK_DIR, ID_BROWSE_WORK, 170),
+        (ID_FINAL, ID_BROWSE_FINAL, 86),
+        (ID_WORK_DIR, ID_BROWSE_WORK, 174),
     ] {
-        let edit = unsafe { GetDlgItem(page, edit_id as i32) };
-        let browse = unsafe { GetDlgItem(page, browse_id as i32) };
+        let edit = GetDlgItem(page, edit_id as i32);
+        let browse = GetDlgItem(page, browse_id as i32);
         let top = y - unscale(scroll);
         if !edit.is_null() {
-            unsafe { place(edit, 14, top, edit_width, 24) };
+            place(edit, 14, top, edit_width, 24);
         }
         if !browse.is_null() {
-            unsafe { place(browse, 14 + edit_width + 10, top, 90, 24) };
+            place(browse, 14 + edit_width + 10, top, 90, 24);
         }
     }
 }
 
+/// # Safety
+/// The main window's `UiState`, if `hwnd` is the main window and it is set up.
+///
+/// # Safety
+/// The returned reference is unbounded in lifetime. The caller must not use any
+/// other reference to that `UiState` while it is alive. Nested calls from Win32
+/// (for example a notification sent while a layout is in progress) still
+/// violate this; removing that needs interior mutability in `UiState`.
 unsafe fn state<'a>(hwnd: Hwnd) -> Option<&'a mut UiState> {
-    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut UiState;
+    if window_class(hwnd) != "DVD_AUDIO_MAKER_RUST" {
+        return None;
+    }
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut UiState;
     (!pointer.is_null()).then(|| unsafe { &mut *pointer })
 }
 
@@ -3116,7 +3201,8 @@ macro_rules! text_field {
 
 macro_rules! browse_edit {
     ($parent:expr, $caption:expr, $key:expr, $id:expr, $browse_id:expr, $x:expr, $y:expr, $labels:expr, $browse:expr, $browse_buttons:expr, $lang:expr $(,)?) => {{
-        label!($parent, $caption, $key, $x, $y, 520, 18, $labels);
+        // Room for the caption's line above a field 20 DIPs lower.
+        label!($parent, $caption, $key, $x, $y - 4, 520, 22, $labels);
         let edit = create!(
             $parent,
             "EDIT",
@@ -3155,15 +3241,16 @@ macro_rules! combo_field {
 }
 
 fn create_controls(parent: Hwnd) -> UiState {
-    if let Some(registry) = CONTROL_RECTS.get() {
-        if let Ok(mut registry) = registry.lock() {
-            registry.clear();
-        }
+    // Only entries of destroyed windows are dropped; other windows' controls stay.
+    if let Some(registry) = CONTROL_RECTS.get()
+        && let Ok(mut registry) = registry.lock()
+    {
+        registry.retain(|(handle, _, _, _, _)| IsWindow(*handle as Hwnd) != 0);
     }
-    if let Some(overlays) = COMBO_OVERLAYS.get() {
-        if let Ok(mut overlays) = overlays.lock() {
-            overlays.clear();
-        }
+    if let Some(overlays) = COMBO_OVERLAYS.get()
+        && let Ok(mut overlays) = overlays.lock()
+    {
+        overlays.retain(|(combo, _)| IsWindow(*combo as Hwnd) != 0);
     }
 
     let profile_path = PROFILE_OVERRIDE
@@ -3306,7 +3393,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         ID_FINAL,
         ID_BROWSE_FINAL,
         14,
-        62,
+        66,
         &mut labels,
         &mut browse,
         &mut browse_buttons,
@@ -3391,7 +3478,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         .last()
         .map(|(handle, _)| *handle)
         .unwrap_or(ptr::null_mut());
-    unsafe {
+     {
         ShowWindow(custom_bytes_label, SW_HIDE);
         ShowWindow(c.custom_bytes, SW_HIDE);
     }
@@ -3405,8 +3492,8 @@ fn create_controls(parent: Hwnd) -> UiState {
         48,
         &mut labels,
     );
-    unsafe {
-        SendMessageW(advanced_hint, WM_SETFONT, small_font() as usize, 1);
+     {
+        win::send_int(advanced_hint, WM_SETFONT, small_font() as usize, 1);
     }
     pages.push(create_page(parent));
     let page_audio = *pages.last().unwrap();
@@ -3468,7 +3555,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         .map(|(handle, _)| *handle)
         .unwrap_or(ptr::null_mut());
     let import_browse = browse_buttons.last().copied().unwrap_or(ptr::null_mut());
-    unsafe {
+     {
         ShowWindow(import_folder_label, SW_HIDE);
         ShowWindow(c.import_folder, SW_HIDE);
         ShowWindow(import_browse, SW_HIDE);
@@ -3616,17 +3703,8 @@ fn create_controls(parent: Hwnd) -> UiState {
     combo_add(log_view, tr(lang, "summary"));
     combo_add(log_view, tr(lang, "detail"));
     combo_select(log_view, 0);
-    let only_issues = checkbox(
-        parent,
-        tr(lang, "issues"),
-        ID_ONLY_ISSUES,
-        170,
-        508,
-        150,
-        24,
-        false,
-    );
-    let live = checkbox(parent, tr(lang, "live"), ID_LIVE, 330, 508, 150, 24, false);
+    let only_issues = checkbox(parent, tr(lang, "issues"), ID_ONLY_ISSUES, (170, 508, 150, 24), false);
+    let live = checkbox(parent, tr(lang, "live"), ID_LIVE, (330, 508, 150, 24), false);
     check(live, true);
     let copy = button(parent, tr(lang, "copy"), ID_COPY, 720, 478, 125, 28);
     let export = button(parent, tr(lang, "export"), ID_EXPORT, 855, 478, 130, 28);
@@ -3674,8 +3752,8 @@ fn create_controls(parent: Hwnd) -> UiState {
         install_scrollbar(log_scrollbar, parent);
         touch::install(log, true);
     }
-    unsafe {
-        SendMessageW(log, EM_SETLIMITTEXT, 1_000_000, 0);
+     {
+        win::send_int(log, EM_SETLIMITTEXT, 1_000_000, 0);
     }
     // Keep the legacy command IDs for automation/tests, but expose the
     // complete prepare-build-verify workflow through the single build action.
@@ -3717,7 +3795,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         (copy, "copy"),
         (export, "export"),
     ]);
-    c.advanced = checkbox(parent, tr(lang, "advanced"), ID_ADVANCED, 440, 42, 215, 22, false);
+    c.advanced = checkbox(parent, tr(lang, "advanced"), ID_ADVANCED, (440, 42, 215, 22), false);
     labels.push((c.advanced, "advanced"));
     let caption_minimize = caption_button(parent, ID_MINIMIZE);
     let caption_maximize = caption_button(parent, ID_MAXIMIZE);
@@ -3752,7 +3830,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         if advanced_controls.contains(field)
             && let Some(button) = browse_buttons
                 .iter()
-                .find(|h| unsafe { GetDlgCtrlID(**h) } as usize == *id)
+                .find(|h| GetDlgCtrlID(**h) as usize == *id)
         {
             advanced_controls.push(*button);
         }
@@ -3869,19 +3947,19 @@ fn create_controls(parent: Hwnd) -> UiState {
             0,
             c_accent() as isize,
         );
-        SendMessageW(
+        win::send_int(
             state.controls.status,
             WM_SETFONT,
             semibold_font() as usize,
             1,
         );
-        SendMessageW(
+        win::send_int(
             state.controls.statistics,
             WM_SETFONT,
             small_font() as usize,
             1,
         );
-        SendMessageW(state.controls.activity, WM_SETFONT, ui_font() as usize, 1);
+        win::send_int(state.controls.activity, WM_SETFONT, ui_font() as usize, 1);
     }
     set_text(
         state.controls.profile,
@@ -3939,21 +4017,12 @@ fn check_field(
     y: i32,
     labels: &mut Vec<(Hwnd, &'static str)>,
 ) -> Hwnd {
-    let hwnd = checkbox(parent, caption, id, x, y, 230, 28, true);
+    let hwnd = checkbox(parent, caption, id, (x, y, 230, 28), true);
     labels.push((hwnd, key));
     hwnd
 }
 
-fn checkbox(
-    parent: Hwnd,
-    text: &str,
-    id: usize,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    panel: bool,
-) -> Hwnd {
+fn checkbox(parent: Hwnd, text: &str, id: usize, (x, y, w, h): (i32, i32, i32, i32), panel: bool) -> Hwnd {
     let hwnd = create!(
         parent,
         "BUTTON",
@@ -3999,7 +4068,7 @@ fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
         right: 0,
         bottom: 0,
     };
-    unsafe {
+     {
         GetClientRect(hwnd, &mut rect);
     }
     touch::install_combo(hwnd);
@@ -4037,10 +4106,7 @@ fn button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -
         text,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         id,
-        x,
-        y,
-        w,
-        h,
+        (x, y, w, h),
     )
 }
 
@@ -4050,10 +4116,7 @@ fn primary_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h
         text,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         id,
-        x,
-        y,
-        w,
-        h,
+        (x, y, w, h),
     )
 }
 
@@ -4063,10 +4126,7 @@ fn danger_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h:
         text,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         id,
-        x,
-        y,
-        w,
-        h,
+        (x, y, w, h),
     )
 }
 
@@ -4076,10 +4136,7 @@ fn tab_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i3
         text,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         id,
-        x,
-        y,
-        w,
-        h,
+        (x, y, w, h),
     )
 }
 
@@ -4089,10 +4146,7 @@ fn caption_button(parent: Hwnd, id: usize) -> Hwnd {
         "",
         WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         id,
-        0,
-        0,
-        40,
-        30,
+        (0, 0, 40, 30),
     )
 }
 
@@ -4101,10 +4155,7 @@ fn owner_draw_button(
     text: &str,
     style: u32,
     id: usize,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
+    (x, y, w, h): (i32, i32, i32, i32),
 ) -> Hwnd {
     let hwnd = create!(parent, "BUTTON", text, style, x, y, w, h, id);
     if !hwnd.is_null() {
@@ -4125,13 +4176,17 @@ fn install_button_visual(hwnd: Hwnd) {
     }
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn button_proc(
     hwnd: Hwnd,
     message: u32,
     wparam: Wparam,
     lparam: Lparam,
 ) -> Lresult {
-    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ButtonVisual;
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ButtonVisual;
     if pointer.is_null() {
         return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
     }
@@ -4176,9 +4231,23 @@ unsafe extern "system" fn button_proc(
     unsafe { original(hwnd, message, wparam, lparam) }
 }
 
+/// The visual state stored in a control's user data, if the control runs
+/// `owner`. Each `install_*` function sets the procedure and the user data
+/// together, so a window running one of these procedures stores that visual
+/// type. Any other window yields `None`.
+fn owned_visual<T>(hwnd: Hwnd, owner: WndProc) -> Option<*mut T> {
+    if GetWindowLongPtrW(hwnd, GWLP_WNDPROC) != owner as *const () as isize {
+        return None;
+    }
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut T;
+    (!pointer.is_null()).then_some(pointer)
+}
+
 fn button_hovered(hwnd: Hwnd) -> bool {
-    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const ButtonVisual;
-    !pointer.is_null() && unsafe { (*pointer).hover }
+    owned_visual::<ButtonVisual>(hwnd, button_proc)
+        // SAFETY: `owned_visual` returned the visual installed with `button_proc`,
+        // which stays alive until WM_NCDESTROY.
+        .is_some_and(|visual| unsafe { (*visual).hover })
 }
 
 fn install_check_visual(hwnd: Hwnd, panel: bool) {
@@ -4194,13 +4263,17 @@ fn install_check_visual(hwnd: Hwnd, panel: bool) {
     }
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn checkbox_proc(
     hwnd: Hwnd,
     message: u32,
     wparam: Wparam,
     lparam: Lparam,
 ) -> Lresult {
-    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut CheckVisual;
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut CheckVisual;
     if pointer.is_null() {
         return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
     }
@@ -4253,6 +4326,9 @@ unsafe extern "system" fn checkbox_proc(
     unsafe { original(hwnd, message, wparam, lparam) }
 }
 
+/// # Safety
+/// `hwnd` must be a checkbox created by `checkbox`, and this must run inside its
+/// WM_PAINT (it calls BeginPaint and EndPaint).
 unsafe fn draw_checkbox(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let dc = unsafe { BeginPaint(hwnd, &mut paint) };
@@ -4268,7 +4344,7 @@ unsafe fn draw_checkbox(hwnd: Hwnd) {
         let panel = !pointer.is_null() && (*pointer).panel;
         let hover = !pointer.is_null() && (*pointer).hover;
         FillRect(dc, &rect, if panel { panel_brush() } else { body_brush() });
-        let checked = SendMessageW(hwnd, BM_GETCHECK, 0, 0) == 1;
+        let checked = win::send_int(hwnd, BM_GETCHECK, 0, 0) == 1;
         let enabled = IsWindowEnabled(hwnd) != 0;
         let box_size = scale(16);
         let top = (rect.bottom - box_size) / 2;
@@ -4359,13 +4435,17 @@ fn install_combo_arrow(hwnd: Hwnd, combo: Hwnd) {
     }
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn combo_arrow_proc(
     hwnd: Hwnd,
     message: u32,
     wparam: Wparam,
     lparam: Lparam,
 ) -> Lresult {
-    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ComboArrowVisual;
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ComboArrowVisual;
     if pointer.is_null() {
         return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
     }
@@ -4402,8 +4482,8 @@ unsafe extern "system" fn combo_arrow_proc(
             // WM_MOUSEWHEEL over a closed drop-down scrolls its page instead of
             // stopping there; an open list still scrolls itself.
             let combo = unsafe { (*pointer).combo };
-            if unsafe { SendMessageW(combo, CB_GETDROPPEDSTATE, 0, 0) } == 0 {
-                let page = unsafe { GetParent(combo) };
+            if win::send_int(combo, CB_GETDROPPEDSTATE, 0, 0) == 0 {
+                let page = GetParent(combo);
                 if window_class(page) == "DVD_AUDIO_PAGE_RUST" {
                     return unsafe { SendMessageW(page, message, wparam, lparam) };
                 }
@@ -4412,10 +4492,10 @@ unsafe extern "system" fn combo_arrow_proc(
         WM_LBUTTONDOWN => return 0,
         WM_LBUTTONUP => {
             let combo = unsafe { (*pointer).combo };
-            unsafe {
+             {
                 if IsWindowEnabled(combo) != 0 {
                     SetFocus(combo);
-                    SendMessageW(combo, CB_SHOWDROPDOWN, 1, 0);
+                    win::send_int(combo, CB_SHOWDROPDOWN, 1, 0);
                 }
             }
             return 0;
@@ -4434,6 +4514,9 @@ unsafe extern "system" fn combo_arrow_proc(
     unsafe { original(hwnd, message, wparam, lparam) }
 }
 
+/// # Safety
+/// `hwnd` must be a combo arrow overlay installed by `install_combo_arrow`, and this
+/// must run inside its WM_PAINT.
 unsafe fn draw_combo_arrow(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_card()) };
@@ -4497,7 +4580,7 @@ unsafe fn draw_combo_arrow(hwnd: Hwnd) {
             FillRect(dc, &edge, brush(border));
         }
         if !combo.is_null() {
-            let index = SendMessageW(combo, CB_GETCURSEL, 0, 0) as i32;
+            let index = win::send_int(combo, CB_GETCURSEL, 0, 0) as i32;
             let text = combo_item_text(combo, index);
             let mut text_rect = Rect {
                 left: rect.left + scale(8),
@@ -4552,9 +4635,9 @@ fn sync_combo_overlays() {
         }
         // The overlay is a child of its combo, so only the closed-field size
         // can drift (width changes or a DPI/font change of the item height).
-        let mut combo_rect: Rect = unsafe { std::mem::zeroed() };
-        let mut overlay_rect: Rect = unsafe { std::mem::zeroed() };
-        unsafe {
+        let mut combo_rect: Rect = Rect::default();
+        let mut overlay_rect: Rect = Rect::default();
+         {
             GetClientRect(combo, &mut combo_rect);
             GetClientRect(overlay, &mut overlay_rect);
         }
@@ -4614,7 +4697,7 @@ fn bar_geometry(client_height: i32, metrics: &BarMetrics) -> BarGeometry {
     }
 }
 
-unsafe fn page_bar_metrics(state: &UiState) -> BarMetrics {
+fn page_bar_metrics(state: &UiState) -> BarMetrics {
     let page = match state.pages.get(state.tab_index) {
         Some(page) => *page,
         None => {
@@ -4631,13 +4714,13 @@ unsafe fn page_bar_metrics(state: &UiState) -> BarMetrics {
         right: 0,
         bottom: 0,
     };
-    unsafe {
+     {
         GetClientRect(page, &mut rect);
     }
     let page_height = (rect.bottom - rect.top).max(1);
     let content = page_content_height(page);
     let max = (content - page_height).max(0);
-    let value = (unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32).clamp(0, max);
+    let value = (GetWindowLongPtrW(page, GWLP_USERDATA) as i32).clamp(0, max);
     BarMetrics {
         value,
         max,
@@ -4645,18 +4728,18 @@ unsafe fn page_bar_metrics(state: &UiState) -> BarMetrics {
     }
 }
 
-unsafe fn log_bar_metrics(log: Hwnd) -> BarMetrics {
-    let total = (unsafe { SendMessageW(log, EM_GETLINECOUNT, 0, 0) } as i32).max(1);
+fn log_bar_metrics(log: Hwnd) -> BarMetrics {
+    let total = (win::send_int(log, EM_GETLINECOUNT, 0, 0) as i32).max(1);
     let first =
-        (unsafe { SendMessageW(log, EM_GETFIRSTVISIBLELINE, 0, 0) } as i32).max(0);
+        (win::send_int(log, EM_GETFIRSTVISIBLELINE, 0, 0) as i32).max(0);
     let mut rect = Rect {
         left: 0,
         top: 0,
         right: 0,
         bottom: 0,
     };
-    let mut frame: Rect = unsafe { std::mem::zeroed() };
-    unsafe {
+    let mut frame: Rect = Rect::default();
+     {
         GetClientRect(log, &mut rect);
         GetClientRect(GetParent(log), &mut frame);
     }
@@ -4672,6 +4755,10 @@ unsafe fn log_bar_metrics(log: Hwnd) -> BarMetrics {
     }
 }
 
+/// # Safety
+/// `hwnd` must be a scrollbar created by this application and not yet installed, and
+/// `main` must be the main window. The visual state it allocates is owned by `hwnd`
+/// and freed when it is destroyed.
 unsafe fn install_scrollbar(hwnd: Hwnd, main: Hwnd) {
     if hwnd.is_null() {
         return;
@@ -4691,33 +4778,36 @@ unsafe fn install_scrollbar(hwnd: Hwnd, main: Hwnd) {
     }
 }
 
-unsafe fn scrollbar_metrics(hwnd: Hwnd, state: &UiState) -> BarMetrics {
+fn scrollbar_metrics(hwnd: Hwnd, state: &UiState) -> BarMetrics {
     if hwnd == state.page_scrollbar {
-        unsafe { page_bar_metrics(state) }
+        page_bar_metrics(state)
     } else {
-        unsafe { log_bar_metrics(state.controls.log) }
+        log_bar_metrics(state.controls.log)
     }
 }
 
+/// # Safety
+/// `main` must be the main window with a live `UiState`, and `hwnd` must be one of its
+/// scrollbars.
 unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
     let Some(state) = (unsafe { state(main) }) else {
         return;
     };
     if hwnd == state.page_scrollbar {
         if let Some(page) = state.pages.get(state.tab_index).copied() {
-            let metrics = unsafe { page_bar_metrics(state) };
-            scroll_page(page, value.clamp(0, metrics.max), true);
+            let metrics = page_bar_metrics(state);
+            scroll_page_with_bar(page, value.clamp(0, metrics.max), true, state.page_scrollbar);
         }
     } else if hwnd == state.log_scrollbar {
         let log = state.controls.log;
         if log.is_null() {
             return;
         }
-        let metrics = unsafe { log_bar_metrics(log) };
+        let metrics = log_bar_metrics(log);
         let target = value.clamp(0, metrics.max);
         if target != metrics.value {
-            unsafe {
-                SendMessageW(log, EM_LINESCROLL, 0, (target - metrics.value) as isize);
+             {
+                win::send_int(log, EM_LINESCROLL, 0, (target - metrics.value) as isize);
             }
         }
     }
@@ -4726,6 +4816,9 @@ unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
     }
 }
 
+/// # Safety
+/// `hwnd` must be a scrollbar installed by `install_scrollbar`, and this must run inside
+/// its WM_PAINT.
 unsafe fn draw_scrollbar(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let dc = unsafe { BeginPaint(hwnd, &mut paint) };
@@ -4735,17 +4828,17 @@ unsafe fn draw_scrollbar(hwnd: Hwnd) {
         right: 0,
         bottom: 0,
     };
-    unsafe {
+     {
         GetClientRect(hwnd, &mut rect);
     }
-    unsafe {
+     {
         FillRect(dc, &rect, brush(c_body()));
     }
-    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ScrollbarVisual;
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ScrollbarVisual;
     if !pointer.is_null() && rect.right > 0 && rect.bottom > 0 {
         let main = unsafe { (*pointer).main };
         if let Some(state) = unsafe { state(main) } {
-            let metrics = unsafe { scrollbar_metrics(hwnd, state) };
+            let metrics = scrollbar_metrics(hwnd, state);
             let geometry = bar_geometry(rect.bottom, &metrics);
             if metrics.max > 0 {
                 let inset = scale(2).max(1);
@@ -4757,7 +4850,7 @@ unsafe fn draw_scrollbar(hwnd: Hwnd) {
                 };
                 let hovered = unsafe { (*pointer).hover || (*pointer).dragging };
                 let color = if hovered { c_muted() } else { c_border() };
-                unsafe {
+                 {
                     FillRect(dc, &thumb, brush(color));
                 }
             }
@@ -4768,13 +4861,17 @@ unsafe fn draw_scrollbar(hwnd: Hwnd) {
     }
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn scrollbar_proc(
     hwnd: Hwnd,
     message: u32,
     wparam: Wparam,
     lparam: Lparam,
 ) -> Lresult {
-    let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ScrollbarVisual;
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ScrollbarVisual;
     if pointer.is_null() {
         return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
     }
@@ -4791,14 +4888,14 @@ unsafe extern "system" fn scrollbar_proc(
                 right: 0,
                 bottom: 0,
             };
-            unsafe {
+             {
                 GetClientRect(hwnd, &mut rect);
             }
             let y = (lparam >> 16) as i16 as i32;
             let main = unsafe { (*pointer).main };
             let mut geometry = None;
             if let Some(state) = unsafe { state(main) } {
-                let metrics = unsafe { scrollbar_metrics(hwnd, state) };
+                let metrics = scrollbar_metrics(hwnd, state);
                 geometry = Some((metrics, bar_geometry(rect.bottom, &metrics)));
             }
             unsafe {
@@ -4844,13 +4941,13 @@ unsafe extern "system" fn scrollbar_proc(
                 right: 0,
                 bottom: 0,
             };
-            unsafe {
+             {
                 GetClientRect(hwnd, &mut rect);
             }
             let y = (lparam >> 16) as i16 as i32;
             let main = unsafe { (*pointer).main };
             if let Some(state) = unsafe { state(main) } {
-                let metrics = unsafe { scrollbar_metrics(hwnd, state) };
+                let metrics = scrollbar_metrics(hwnd, state);
                 let geometry = bar_geometry(rect.bottom, &metrics);
                 if y >= geometry.thumb_top && y < geometry.thumb_top + geometry.thumb_height {
                     unsafe {
@@ -4892,6 +4989,9 @@ unsafe extern "system" fn scrollbar_proc(
     }
 }
 
+/// # Safety
+/// `state` must be the live `UiState` of the main window, whose scrollbars and combo
+/// overlays were installed by this application. Runs on the UI thread.
 unsafe fn refresh_dynamic_indicators(state: &UiState) {
     for (hwnd, is_page) in [
         (state.page_scrollbar, true),
@@ -4900,14 +5000,14 @@ unsafe fn refresh_dynamic_indicators(state: &UiState) {
         if hwnd.is_null() {
             continue;
         }
-        let pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ScrollbarVisual;
+        let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ScrollbarVisual;
         if pointer.is_null() {
             continue;
         }
         let metrics = if is_page {
-            unsafe { page_bar_metrics(state) }
+            page_bar_metrics(state)
         } else {
-            unsafe { log_bar_metrics(state.controls.log) }
+            log_bar_metrics(state.controls.log)
         };
         let visual = unsafe { &mut *pointer };
         if visual.last_value != metrics.value
@@ -4934,15 +5034,15 @@ unsafe fn refresh_dynamic_indicators(state: &UiState) {
         if combo.is_null() || overlay.is_null() {
             continue;
         }
-        let pointer = unsafe { GetWindowLongPtrW(overlay, GWLP_USERDATA) } as *mut ComboArrowVisual;
+        let pointer = GetWindowLongPtrW(overlay, GWLP_USERDATA) as *mut ComboArrowVisual;
         if pointer.is_null() {
             continue;
         }
-        let mut index = unsafe { SendMessageW(combo, CB_GETCURSEL, 0, 0) } as i32;
+        let mut index = win::send_int(combo, CB_GETCURSEL, 0, 0) as i32;
         if index < 0 {
             index = -1;
         }
-        let enabled = unsafe { IsWindowEnabled(combo) } != 0;
+        let enabled = IsWindowEnabled(combo) != 0;
         let visual = unsafe { &mut *pointer };
         if visual.last_index != index || visual.last_enabled != enabled {
             visual.last_index = index;
@@ -5013,12 +5113,12 @@ fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
         if let Ok(mut registry) = registry.lock() {
             registry.push((hwnd as isize, design.0, design.1, design.2, design.3));
         }
-        unsafe {
-            SendMessageW(hwnd, WM_SETFONT, ui_font() as usize, 1);
+         {
+            win::send_int(hwnd, WM_SETFONT, ui_font() as usize, 1);
             if is_edit {
                 // Breathing room inside the borderless field.
                 let margin = scale(6);
-                SendMessageW(hwnd, EM_SETMARGINS, 3, (margin | (margin << 16)) as isize);
+                win::send_int(hwnd, EM_SETMARGINS, 3, (margin | (margin << 16)) as isize);
             }
         }
     }
@@ -5089,7 +5189,7 @@ fn brush(color: u32) -> Hbrush {
     if let Some(value) = cache.get(&color) {
         return *value as Hbrush;
     }
-    let handle = unsafe {
+    let handle =  {
         let brush = CreateSolidBrush(color);
         if brush.is_null() {
             GetSysColorBrush(15)
@@ -5123,14 +5223,14 @@ fn header_icon() -> Handle {
     let icon = unsafe {
         let icon = LoadImageW(
             GetModuleHandleW(ptr::null()),
-            1usize as *const u16,
+            ptr::without_provenance::<u16>(1),
             1,
             size,
             size,
             0,
         );
         if icon.is_null() {
-            LoadIconW(GetModuleHandleW(ptr::null()), 1usize as *const u16)
+            LoadIconW(GetModuleHandleW(ptr::null()), ptr::without_provenance::<u16>(1))
         } else {
             icon
         }
@@ -5167,12 +5267,12 @@ fn window_class(hwnd: Hwnd) -> String {
     }
 }
 fn check(hwnd: Hwnd, value: bool) {
-    unsafe {
-        SendMessageW(hwnd, BM_SETCHECK, usize::from(value), 0);
+     {
+        win::send_int(hwnd, BM_SETCHECK, usize::from(value), 0);
     }
 }
 fn checked(hwnd: Hwnd) -> bool {
-    unsafe { SendMessageW(hwnd, BM_GETCHECK, 0, 0) == 1 }
+    win::send_int(hwnd, BM_GETCHECK, 0, 0) == 1
 }
 fn combo_add(hwnd: Hwnd, text: &str) {
     let text = wide(text);
@@ -5181,13 +5281,13 @@ fn combo_add(hwnd: Hwnd, text: &str) {
     }
 }
 fn combo_select(hwnd: Hwnd, index: i32) {
-    unsafe {
-        SendMessageW(hwnd, CB_SETCURSEL, index.max(0) as usize, 0);
+     {
+        win::send_int(hwnd, CB_SETCURSEL, index.max(0) as usize, 0);
     }
 }
 fn combo_items(hwnd: Hwnd, items: &[&str], selected: i32) {
-    unsafe {
-        SendMessageW(hwnd, CB_RESETCONTENT, 0, 0);
+     {
+        win::send_int(hwnd, CB_RESETCONTENT, 0, 0);
     }
     for item in items {
         combo_add(hwnd, item);
@@ -5195,7 +5295,7 @@ fn combo_items(hwnd: Hwnd, items: &[&str], selected: i32) {
     combo_select(hwnd, selected.min(items.len().saturating_sub(1) as i32));
 }
 fn combo_index(hwnd: Hwnd) -> i32 {
-    unsafe { SendMessageW(hwnd, CB_GETCURSEL, 0, 0) as i32 }
+    win::send_int(hwnd, CB_GETCURSEL, 0, 0) as i32
 }
 fn populate_numeric_choice(hwnd: Hwnd, values: &[i64], labels: &[&str], value: i64) {
     combo_items(hwnd, labels, 0);
@@ -5246,7 +5346,7 @@ fn show_page(state: &UiState, index: i32) {
 
 /// Height in DIPs of `text` wrapped at `width` DIPs (at least one line).
 fn wrapped_text_height(text: &str, font: Handle, width: i32) -> i32 {
-    let dc = unsafe { CreateCompatibleDC(ptr::null_mut()) };
+    let dc = CreateCompatibleDC(ptr::null_mut());
     if dc.is_null() {
         return 20;
     }
@@ -5263,7 +5363,7 @@ fn wrapped_text_height(text: &str, font: Handle, width: i32) -> i32 {
 
 fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 {
     // Measure on a memory DC so layout never touches a window DC mid-resize.
-    let dc = unsafe { CreateCompatibleDC(ptr::null_mut()) };
+    let dc = CreateCompatibleDC(ptr::null_mut());
     if dc.is_null() {
         return 0;
     }
@@ -5322,11 +5422,11 @@ fn begin_placement_batch() {
 /// coordinates. Closed combo boxes keep their own height; only the
 /// drop-down height is requested, so it is not compared.
 fn placement_matches(hwnd: Hwnd, parent: Hwnd, target: &Rect) -> bool {
-    let mut rect: Rect = unsafe { std::mem::zeroed() };
-    unsafe { GetWindowRect(hwnd, &mut rect) };
+    let mut rect: Rect = Rect::default();
+    GetWindowRect(hwnd, &mut rect);
     let mut origin = Point { x: rect.left, y: rect.top };
-    unsafe { ScreenToClient(parent, &mut origin) };
-    let fixed_combo_height = COMBO_IDS.contains(&(unsafe { GetDlgCtrlID(hwnd) } as usize));
+    ScreenToClient(parent, &mut origin);
+    let fixed_combo_height = COMBO_IDS.contains(&(GetDlgCtrlID(hwnd) as usize));
     origin.x == target.left
         && origin.y == target.top
         && rect.right - rect.left == target.right - target.left
@@ -5408,8 +5508,8 @@ fn apply_placement(hwnd: Hwnd, target: Rect) {
 fn place_log(state: &mut UiState, target: Rect, revealed: bool) {
     place_px(state.log_frame, target);
     let log = state.controls.log;
-    let mut current: Rect = unsafe { std::mem::zeroed() };
-    unsafe { GetWindowRect(log, &mut current) };
+    let mut current: Rect = Rect::default();
+    GetWindowRect(log, &mut current);
     let size = (target.right - target.left, target.bottom - target.top);
     let current_size = (current.right - current.left, current.bottom - current.top);
     if state.sizing && !revealed && current_size.0 > 0 && current_size.1 > 0 {
@@ -5422,6 +5522,10 @@ fn place_log(state: &mut UiState, target: Rect, revealed: bool) {
 
 /// Frame around the log EDIT: paints the log background and passes the
 /// EDIT's notifications and colour requests on to the main window.
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn log_frame_proc(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult {
     match message {
         WM_ERASEBKGND => 1,
@@ -5464,7 +5568,7 @@ fn create_log_frame(parent: Hwnd) -> Hwnd {
     create!(parent, "DVD_AUDIO_LOG_FRAME_RUST", "", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 18, 540, 1140, 215, 0)
 }
 
-unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
+fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
     place_px(hwnd, Rect {
         left: scale(x),
         top: scale(y),
@@ -5475,7 +5579,7 @@ unsafe fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
 
 /// Like place(), with a target rectangle in pixels.
 fn place_px(hwnd: Hwnd, target: Rect) {
-    let parent = unsafe { GetParent(hwnd) };
+    let parent = GetParent(hwnd);
     let recorded = PLACEMENT_BATCH.with(|batch| {
         let mut batch = batch.borrow_mut();
         let Some(batch) = batch.as_mut() else {
@@ -5492,9 +5596,13 @@ fn place_px(hwnd: Hwnd, target: Rect) {
     }
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn font_child_proc(hwnd: Hwnd, parameter: Lparam) -> i32 {
-    unsafe {
-        SendMessageW(hwnd, WM_SETFONT, parameter as usize, 1);
+     {
+        win::send_int(hwnd, WM_SETFONT, parameter as usize, 1);
     }
     1
 }
@@ -5502,42 +5610,46 @@ unsafe extern "system" fn font_child_proc(hwnd: Hwnd, parameter: Lparam) -> i32 
 fn refresh_fonts(hwnd: Hwnd, state: &UiState) {
     unsafe {
         EnumChildWindows(hwnd, font_child_proc, ui_font() as usize as Lparam);
-        SendMessageW(
+        win::send_int(
             state.controls.status,
             WM_SETFONT,
             semibold_font() as usize,
             1,
         );
-        SendMessageW(
+        win::send_int(
             state.controls.statistics,
             WM_SETFONT,
             small_font() as usize,
             1,
         );
-        SendMessageW(state.controls.activity, WM_SETFONT, ui_font() as usize, 1);
-        SendMessageW(state.advanced_hint, WM_SETFONT, small_font() as usize, 1);
+        win::send_int(state.controls.activity, WM_SETFONT, ui_font() as usize, 1);
+        win::send_int(state.advanced_hint, WM_SETFONT, small_font() as usize, 1);
     }
 }
 
 fn rescale_ui(hwnd: Hwnd, state: &mut UiState) {
-    if let Some(registry) = CONTROL_RECTS.get() {
-        if let Ok(registry) = registry.lock() {
-            for (handle, x, y, width, height) in registry.iter() {
-                // layout() places the log and its frame; moving the EDIT here
-                // would look like a user scroll and pause live follow.
-                if *handle as Hwnd == state.controls.log || *handle as Hwnd == state.log_frame {
-                    continue;
-                }
-                unsafe {
-                    MoveWindow(
-                        *handle as Hwnd,
-                        scale(*x),
-                        scale(*y),
-                        scale(*width),
-                        scale(*height),
-                        1,
-                    );
-                }
+    if let Some(registry) = CONTROL_RECTS.get()
+        && let Ok(registry) = registry.lock()
+    {
+        for (handle, x, y, width, height) in registry.iter() {
+            // Only this window's controls (their root is the main window).
+            if GetAncestor(*handle as Hwnd, 2) != hwnd {
+                continue;
+            }
+            // layout() places the log and its frame; moving the EDIT here
+            // would look like a user scroll and pause live follow.
+            if *handle as Hwnd == state.controls.log || *handle as Hwnd == state.log_frame {
+                continue;
+            }
+             {
+                MoveWindow(
+                    *handle as Hwnd,
+                    scale(*x),
+                    scale(*y),
+                    scale(*width),
+                    scale(*height),
+                    1,
+                );
             }
         }
     }
@@ -5545,6 +5657,10 @@ fn rescale_ui(hwnd: Hwnd, state: &mut UiState) {
     layout(hwnd, state);
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn theme_child_proc(hwnd: Hwnd, _parameter: Lparam) -> i32 {
     uxtheme_allow_dark(hwnd, dark_theme());
     let class = window_class(hwnd);
@@ -5640,7 +5756,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         right: 0,
         bottom: 0,
     };
-    unsafe {
+     {
         GetClientRect(hwnd, &mut rect);
     }
     let width = unscale(rect.right - rect.left).max(640);
@@ -5937,7 +6053,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         end_placement_batch();
         state.log_first_visible_line = first_visible_log_line(state.controls.log);
         for page in &state.pages {
-            scroll_page(*page, 0, false);
+            scroll_page_with_bar(*page, 0, false, state.page_scrollbar);
         }
         begin_placement_batch();
         for page in &state.pages {
@@ -5947,7 +6063,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         end_placement_batch();
         // The scroll range follows the content just laid out.
         for page in &state.pages {
-            scroll_page(*page, 0, false);
+            scroll_page_with_bar(*page, 0, false, state.page_scrollbar);
         }
         // Laying out the pages can change the current page's content height
         // (narrow layout, shown fields); fit the settings to it once more.
@@ -5993,21 +6109,21 @@ fn label_handle(state: &UiState, key: &str) -> Hwnd {
         .unwrap_or(ptr::null_mut())
 }
 
-unsafe fn move_child(page: Hwnd, id: usize, x: i32, y: i32, width: i32, height: i32) {
-    let control = unsafe { GetDlgItem(page, id as i32) };
+fn move_child(page: Hwnd, id: usize, x: i32, y: i32, width: i32, height: i32) {
+    let control = GetDlgItem(page, id as i32);
     if !control.is_null() {
-        unsafe { place(control, x, y, width, height) };
+        place(control, x, y, width, height);
     }
 }
 
-unsafe fn move_label(state: &UiState, key: &str, x: i32, y: i32, width: i32, height: i32) {
+fn move_label(state: &UiState, key: &str, x: i32, y: i32, width: i32, height: i32) {
     let handle = label_handle(state, key);
     if !handle.is_null() {
-        unsafe { place(handle, x, y, width, height) };
+        place(handle, x, y, width, height);
     }
 }
 
-unsafe fn layout_page_contents(state: &UiState) {
+fn layout_page_contents(state: &UiState) {
     for (index, page) in state.pages.iter().enumerate() {
         let mut rect = Rect {
             left: 0,
@@ -6015,26 +6131,26 @@ unsafe fn layout_page_contents(state: &UiState) {
             right: 0,
             bottom: 0,
         };
-        unsafe { GetClientRect(*page, &mut rect) };
+        GetClientRect(*page, &mut rect);
         let page_width = unscale(rect.right).max(1);
-        let scroll = unsafe { GetWindowLongPtrW(*page, GWLP_USERDATA) } as i32;
+        let scroll = GetWindowLongPtrW(*page, GWLP_USERDATA) as i32;
         let sy = unscale(scroll);
         let narrow = page_is_narrow(page_width);
         match index {
             0 => {
                 if narrow {
                     let field_width = page_width - 28;
-                    unsafe {
-                        move_label(state, "title", 14, 106 - sy, field_width, 20);
-                        move_child(*page, ID_TITLE, 14, 126 - sy, field_width, 24);
-                        move_label(state, "capacity", 14, 150 - sy, 220, 20);
-                        move_child(*page, ID_CAPACITY, 14, 170 - sy, 220, 120);
+                     {
+                        move_label(state, "title", 14, 110 - sy, field_width, 20);
+                        move_child(*page, ID_TITLE, 14, 130 - sy, field_width, 24);
+                        move_label(state, "capacity", 14, 154 - sy, 220, 20);
+                        move_child(*page, ID_CAPACITY, 14, 174 - sy, 220, 120);
                         let custom_x = 250;
                         let custom_width = (page_width - custom_x - 14).max(160);
                         place(
                             state.custom_bytes_label,
                             custom_x,
-                            150 - sy,
+                            154 - sy,
                             custom_width,
                             20,
                         );
@@ -6042,18 +6158,18 @@ unsafe fn layout_page_contents(state: &UiState) {
                             *page,
                             ID_CUSTOM_BYTES,
                             custom_x,
-                            170 - sy,
+                            174 - sy,
                             custom_width,
                             25,
                         );
                         let hint = get_text(label_handle(state, "advanced_hint"));
-                        move_label(state, "advanced_hint", 14, 204 - sy, field_width, wrapped_text_height(&hint, ui_font(), field_width));
-                        move_label(state, "work_dir", 14, 214 - sy, field_width, 20);
+                        move_label(state, "advanced_hint", 14, 208 - sy, field_width, wrapped_text_height(&hint, ui_font(), field_width));
+                        move_label(state, "work_dir", 14, 214 - sy, field_width, 22);
                         move_child(
                             *page,
                             ID_WORK_DIR,
                             14,
-                            234 - sy,
+                            238 - sy,
                             (field_width - 100).max(120),
                             25,
                         );
@@ -6061,39 +6177,39 @@ unsafe fn layout_page_contents(state: &UiState) {
                             *page,
                             ID_BROWSE_WORK,
                             page_width - 14 - 90,
-                            234 - sy,
+                            238 - sy,
                             90,
                             24,
                         );
-                        move_label(state, "iso_prefix", 14, 268 - sy, field_width, 20);
-                        move_child(*page, ID_ISO_PREFIX, 14, 288 - sy, field_width, 25);
-                        move_label(state, "group_limit", 14, 322 - sy, field_width, 20);
-                        move_child(*page, ID_GROUP_LIMIT, 14, 342 - sy, field_width, 25);
-                        place(state.controls.keep_files, 14, 376 - sy, 230, 28);
+                        move_label(state, "iso_prefix", 14, 272 - sy, field_width, 20);
+                        move_child(*page, ID_ISO_PREFIX, 14, 292 - sy, field_width, 25);
+                        move_label(state, "group_limit", 14, 326 - sy, field_width, 20);
+                        move_child(*page, ID_GROUP_LIMIT, 14, 346 - sy, field_width, 25);
+                        place(state.controls.keep_files, 14, 380 - sy, 230, 28);
                     }
                 } else {
-                    unsafe {
-                        move_label(state, "title", 14, 106 - sy, 470, 20);
-                        move_child(*page, ID_TITLE, 14, 126 - sy, 470, 24);
-                        move_label(state, "capacity", 520, 106 - sy, 220, 20);
-                        move_child(*page, ID_CAPACITY, 520, 126 - sy, 220, 120);
-                        place(state.custom_bytes_label, 760, 106 - sy, page_width - 774, 20);
-                        move_child(*page, ID_CUSTOM_BYTES, 760, 126 - sy, page_width - 774, 25);
+                     {
+                        move_label(state, "title", 14, 110 - sy, 470, 20);
+                        move_child(*page, ID_TITLE, 14, 130 - sy, 470, 24);
+                        move_label(state, "capacity", 520, 110 - sy, 220, 20);
+                        move_child(*page, ID_CAPACITY, 520, 130 - sy, 220, 120);
+                        place(state.custom_bytes_label, 760, 110 - sy, page_width - 774, 20);
+                        move_child(*page, ID_CUSTOM_BYTES, 760, 130 - sy, page_width - 774, 25);
                         let hint = get_text(label_handle(state, "advanced_hint"));
-                        move_label(state, "advanced_hint", 14, 166 - sy, 780, wrapped_text_height(&hint, ui_font(), 780));
-                        move_label(state, "work_dir", 14, 150 - sy, 520, 20);
-                        move_label(state, "iso_prefix", 14, 194 - sy, 460, 20);
-                        move_child(*page, ID_ISO_PREFIX, 14, 214 - sy, 460, 25);
-                        move_label(state, "group_limit", 520, 194 - sy, 220, 20);
-                        move_child(*page, ID_GROUP_LIMIT, 520, 214 - sy, 220, 25);
-                        place(state.controls.keep_files, 760, 194 - sy, 230, 28);
+                        move_label(state, "advanced_hint", 14, 170 - sy, 780, wrapped_text_height(&hint, ui_font(), 780));
+                        move_label(state, "work_dir", 14, 150 - sy, 520, 22);
+                        move_label(state, "iso_prefix", 14, 198 - sy, 460, 20);
+                        move_child(*page, ID_ISO_PREFIX, 14, 218 - sy, 460, 25);
+                        move_label(state, "group_limit", 520, 198 - sy, 220, 20);
+                        move_child(*page, ID_GROUP_LIMIT, 520, 218 - sy, 220, 25);
+                        place(state.controls.keep_files, 760, 198 - sy, 230, 28);
                     }
                 }
             }
             1 => {
                 if narrow {
                     let field_width = page_width - 28;
-                    unsafe {
+                     {
                         // Rates and depths are short; the mode list holds the
                         // longest texts and takes the remaining width.
                         let mode_width = (page_width - 28 - 32 - 260).clamp(200, 300);
@@ -6130,7 +6246,7 @@ unsafe fn layout_page_contents(state: &UiState) {
 
                     }
                 } else {
-                    unsafe {
+                     {
                         move_label(state, "audio_mode", 14, 18 - sy, 300, 20);
                         move_child(*page, ID_MODE, 14, 38 - sy, 300, 120);
                         move_label(state, "sample_rate", 340, 18 - sy, 210, 20);
@@ -6156,13 +6272,11 @@ unsafe fn layout_page_contents(state: &UiState) {
                 let menu_width = switch_width(state.controls.menu);
                 let stills_x = (14 + menu_width + 24).max(300);
                 let stills_width = switch_width(state.controls.stills).min(page_width - 14 - stills_x);
-                unsafe {
-                    place(state.controls.menu, 14, 18 - sy, menu_width, 28);
-                    place(state.controls.stills, stills_x, 18 - sy, stills_width, 28);
-                }
+                place(state.controls.menu, 14, 18 - sy, menu_width, 28);
+                place(state.controls.stills, stills_x, 18 - sy, stills_width, 28);
                 if narrow {
                     let column = (page_width - 28 - 16) / 2;
-                    unsafe {
+                     {
                         move_label(state, "tracks", 14, 66 - sy, column, 20);
                         move_child(*page, ID_TRACKS, 14, 86 - sy, column, 25);
                         move_label(state, "cover", 14 + column + 16, 66 - sy, column, 20);
@@ -6197,14 +6311,14 @@ unsafe fn layout_page_contents(state: &UiState) {
                     .enumerate()
                     {
                         let x = 14 + index as i32 * (font_column + 16);
-                        unsafe {
+                         {
                             move_label(state, label_key, x, 120 - sy, font_column, font_label_height);
                             move_child(*page, field_id, x, 120 + font_label_height - sy, font_column, 25);
                             move_child(*page, browse_id, x, 154 + font_label_height - sy, font_column, 28);
                         }
                     }
                 } else {
-                    unsafe {
+                     {
                         move_label(state, "tracks", 14, 66 - sy, 220, 20);
                         move_child(*page, ID_TRACKS, 14, 86 - sy, 220, 25);
                         move_label(state, "cover", 260, 66 - sy, 220, 20);
@@ -6219,7 +6333,7 @@ unsafe fn layout_page_contents(state: &UiState) {
                     .enumerate()
                     {
                         let x = 14 + index as i32 * 326;
-                        unsafe {
+                         {
                             move_label(state, label_key, x, 120 - sy, 300, 20);
                             move_child(*page, field_id, x, 140 - sy, 300, 25);
                             move_child(*page, browse_id, x, 174 - sy, 150, 28);
@@ -6239,7 +6353,7 @@ fn rgb_components(color: u32) -> (u32, u32, u32) {
     (color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff)
 }
 
-unsafe fn draw_text_run(
+fn draw_text_run(
     text: &str,
     dc: Handle,
     rect: &mut Rect,
@@ -6263,14 +6377,14 @@ unsafe fn draw_text_run(
     }
 }
 
-unsafe fn fill_round_rect(dc: Handle, rect: &Rect, radius: i32, fill: u32, border: u32) {
-    let outer = unsafe { CreateSolidBrush(border) };
+fn fill_round_rect(dc: Handle, rect: &Rect, radius: i32, fill: u32, border: u32) {
+    let outer = CreateSolidBrush(border);
     if outer.is_null() {
         return;
     }
-    let inner = unsafe { CreateSolidBrush(fill) };
+    let inner = CreateSolidBrush(fill);
     if inner.is_null() {
-        unsafe { DeleteObject(outer) };
+        DeleteObject(outer);
         return;
     }
     unsafe {
@@ -6303,6 +6417,9 @@ unsafe fn fill_round_rect(dc: Handle, rect: &Rect, radius: i32, fill: u32, borde
     }
 }
 
+/// # Safety
+/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for one of this
+/// application's owner-draw buttons, and it is only valid during that message.
 unsafe fn draw_secondary_button(item: &DrawItemStruct) {
     let disabled = item.state & ODS_DISABLED != 0;
     let pressed = item.state & ODS_SELECTED != 0;
@@ -6341,6 +6458,9 @@ unsafe fn draw_secondary_button(item: &DrawItemStruct) {
     }
 }
 
+/// # Safety
+/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for one of this
+/// application's owner-draw buttons, and it is only valid during that message.
 unsafe fn draw_action_button(item: &DrawItemStruct, primary: bool) {
     let disabled = item.state & ODS_DISABLED != 0;
     let pressed = item.state & ODS_SELECTED != 0;
@@ -6393,6 +6513,9 @@ unsafe fn draw_action_button(item: &DrawItemStruct, primary: bool) {
     }
 }
 
+/// # Safety
+/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for one of this
+/// application's owner-draw buttons, and it is only valid during that message.
 unsafe fn draw_tab_button(item: &DrawItemStruct, active: bool) {
     let disabled = item.state & ODS_DISABLED != 0;
     let hover = !disabled && button_hovered(item.item);
@@ -6469,6 +6592,9 @@ fn lighten(color: u32, amount: i32) -> u32 {
     rgb(adjust(red), adjust(green), adjust(blue))
 }
 
+/// # Safety
+/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for one of this
+/// application's caption buttons, and it is only valid during that message.
 unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
     let hover = button_hovered(item.item);
     let center_y = (item.rect.top + item.rect.bottom) / 2;
@@ -6609,7 +6735,7 @@ unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
     }
 }
 
-unsafe fn stroke_rect(dc: Handle, rect: &Rect) {
+fn stroke_rect(dc: Handle, rect: &Rect) {
     unsafe {
         MoveToEx(dc, rect.left, rect.top, ptr::null_mut());
         LineTo(dc, rect.right, rect.top);
@@ -6619,11 +6745,15 @@ unsafe fn stroke_rect(dc: Handle, rect: &Rect) {
     }
 }
 
+/// # Safety
+/// `hwnd` must be a combo box of this process: the message writes into a buffer that
+/// this function allocates in this process, so the window must not belong to another
+/// process. `index` may be any value; invalid indices return an empty string.
 unsafe fn combo_item_text(hwnd: Hwnd, index: i32) -> String {
     if index < 0 {
         return String::new();
     }
-    let length = unsafe { SendMessageW(hwnd, CB_GETLBTEXTLEN, index as usize, 0) };
+    let length = win::send_int(hwnd, CB_GETLBTEXTLEN, index as usize, 0);
     if length < 0 {
         return String::new();
     }
@@ -6643,12 +6773,15 @@ unsafe fn combo_item_text(hwnd: Hwnd, index: i32) -> String {
     }
 }
 
+/// # Safety
+/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for a combo box of this
+/// application, and it is only valid during that message.
 unsafe fn draw_combo_item(item: &DrawItemStruct) {
     let selected = item.item_id == u32::MAX;
     let highlighted = item.state & ODS_SELECTED != 0;
     let disabled = item.state & ODS_DISABLED != 0;
     let index = if selected {
-        unsafe { SendMessageW(item.item, CB_GETCURSEL, 0, 0) as i32 }
+        win::send_int(item.item, CB_GETCURSEL, 0, 0) as i32
     } else {
         item.item_id as i32
     };
@@ -6658,7 +6791,7 @@ unsafe fn draw_combo_item(item: &DrawItemStruct) {
     } else {
         c_card()
     };
-    unsafe {
+     {
         FillRect(item.dc, &item.rect, brush(background));
         let mut rect = item.rect;
         rect.left += scale(8);
@@ -6678,6 +6811,9 @@ unsafe fn draw_combo_item(item: &DrawItemStruct) {
     }
 }
 
+/// # Safety
+/// `hwnd` must be the window that received this WM_DRAWITEM, and `item` must be that
+/// message's `DrawItemStruct`, valid only during the message.
 unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     unsafe {
         let memory = CreateCompatibleDC(item.dc);
@@ -6711,6 +6847,9 @@ unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     }
 }
 
+/// # Safety
+/// `hwnd` must be the window that received this WM_DRAWITEM, and `item` must be that
+/// message's `DrawItemStruct`, valid only during the message.
 unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     let id = item.control_id as usize;
     if COMBO_IDS.contains(&id) {
@@ -6748,6 +6887,10 @@ struct BufferedPaint {
     rect: Rect,
 }
 
+/// # Safety
+/// `hwnd` must be inside its WM_PAINT, and `paint` must be the storage the same
+/// BeginPaint call fills. Each call must be followed by `finish_buffered_paint` with
+/// the same arguments, before the paint cycle ends.
 unsafe fn begin_buffered_paint(
     hwnd: Hwnd,
     paint: &mut PaintStruct,
@@ -6760,19 +6903,19 @@ unsafe fn begin_buffered_paint(
         right: 0,
         bottom: 0,
     };
-    unsafe {
+     {
         GetClientRect(hwnd, &mut rect);
     }
     let width = rect.right.max(1);
     let height = rect.bottom.max(1);
-    let memory = unsafe { CreateCompatibleDC(target) };
-    let bitmap = unsafe { CreateCompatibleBitmap(target, width, height) };
+    let memory = CreateCompatibleDC(target);
+    let bitmap = CreateCompatibleBitmap(target, width, height);
     if memory.is_null() || bitmap.is_null() {
         if !bitmap.is_null() {
-            unsafe { DeleteObject(bitmap) };
+            DeleteObject(bitmap);
         }
         if !memory.is_null() {
-            unsafe { DeleteDC(memory) };
+            DeleteDC(memory);
         }
         return BufferedPaint {
             target,
@@ -6782,8 +6925,8 @@ unsafe fn begin_buffered_paint(
             rect,
         };
     }
-    let previous = unsafe { SelectObject(memory, bitmap) };
-    unsafe {
+    let previous = SelectObject(memory, bitmap);
+     {
         FillRect(memory, &rect, brush(background));
     }
     BufferedPaint {
@@ -6795,6 +6938,9 @@ unsafe fn begin_buffered_paint(
     }
 }
 
+/// # Safety
+/// Must be called exactly once, with the `hwnd`, `paint` and `buffer` returned by the
+/// matching `begin_buffered_paint` call in the same WM_PAINT.
 unsafe fn finish_buffered_paint(hwnd: Hwnd, paint: &PaintStruct, buffer: &BufferedPaint) {
     unsafe {
         if !buffer.bitmap.is_null() {
@@ -6816,6 +6962,8 @@ unsafe fn finish_buffered_paint(hwnd: Hwnd, paint: &PaintStruct, buffer: &Buffer
         EndPaint(hwnd, paint);
     }
 }
+/// # Safety
+/// `hwnd` must be the main window, inside its WM_PAINT.
 unsafe fn paint_window(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_body()) };
@@ -6938,6 +7086,10 @@ unsafe fn paint_window(hwnd: Hwnd) {
     }
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn buffered_label_proc(
     hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam, id: usize, _data: usize,
 ) -> Lresult {
@@ -6973,25 +7125,27 @@ unsafe extern "system" fn buffered_label_proc(
 /// Vertical offset for text drawn into a box shorter than its line(s): lift
 /// it by up to the font's internal leading so the descenders stay visible and
 /// only the empty space above the glyphs is cut.
-unsafe fn text_lift(dc: Handle, needed: i32, available: i32) -> i32 {
+fn text_lift(dc: Handle, needed: i32, available: i32) -> i32 {
     let overflow = needed - available;
     if overflow <= 0 {
         return 0;
     }
-    let mut metrics: TextMetric = unsafe { std::mem::zeroed() };
-    unsafe { GetTextMetricsW(dc, &mut metrics) };
+    let mut metrics: TextMetric = TextMetric::default();
+    GetTextMetricsW(dc, &mut metrics);
     overflow.min(metrics.internal_leading.max(0))
 }
 
 /// Paints a STATIC label with the native text semantics (alignment, word
 /// wrap, prefixes, ellipsis styles) into the label's paint buffer.
+/// # Safety
+/// `hwnd` must be a STATIC label of this application, and `dc` the device context being
+/// painted for it during WM_PAINT or WM_CTLCOLORSTATIC.
 unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
     const DT_WORDBREAK: u32 = 0x0010;
     const DT_EXPANDTABS: u32 = 0x0040;
     const DT_END_ELLIPSIS: u32 = 0x8000;
     unsafe {
-        let mut rect: Rect = std::mem::zeroed();
-        GetClientRect(hwnd, &mut rect);
+        let mut rect = client_rect(hwnd);
         // The parent picks the brush and text colour (muted, log, disabled).
         let brush = SendMessageW(GetParent(hwnd), WM_CTLCOLORSTATIC, dc as Wparam, hwnd as Lparam) as Hbrush;
         if !brush.is_null() {
@@ -7042,6 +7196,8 @@ fn single_line_label(hwnd: Hwnd) {
     }
 }
 
+/// # Safety
+/// `hwnd` must be a settings page of this application, inside its WM_PAINT.
 unsafe fn paint_page(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_panel()) };
@@ -7102,8 +7258,8 @@ fn refit_settings(state: &mut UiState) {
     }
     let page = state.pages[state.tab_index.min(state.pages.len() - 1)];
     let fitted = unscale(page_content_height(page)) + 44;
-    let mut client: Rect = unsafe { std::mem::zeroed() };
-    unsafe { GetClientRect(state.main_window, &mut client) };
+    let mut client: Rect = Rect::default();
+    GetClientRect(state.main_window, &mut client);
     if Some(fitted) != state.default_tab_height && client.bottom > 0 {
         layout(state.main_window, state);
     }
@@ -7112,18 +7268,18 @@ fn refit_settings(state: &mut UiState) {
 fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
     if (ID_MINIMIZE..=ID_THEME).contains(&id) && notify == BN_CLICKED {
         match id {
-            ID_MINIMIZE => unsafe {
+            ID_MINIMIZE =>  {
                 ShowWindow(hwnd, SW_MINIMIZE);
             },
-            ID_MAXIMIZE => unsafe {
+            ID_MAXIMIZE =>  {
                 if IsZoomed(hwnd) != 0 {
                     ShowWindow(hwnd, SW_RESTORE);
                 } else {
                     ShowWindow(hwnd, SW_MAXIMIZE);
                 }
             },
-            ID_CLOSE => unsafe {
-                SendMessageW(hwnd, WM_CLOSE, 0, 0);
+            ID_CLOSE =>  {
+                win::send_int(hwnd, WM_CLOSE, 0, 0);
             },
             _ => toggle_theme(hwnd, state),
         }
@@ -7307,7 +7463,7 @@ fn update_choices(state: &UiState) {
         tr(state.lang, audio_note_key(mode)),
     );
     let custom_capacity = combo_index(state.controls.capacity) == 2;
-    unsafe {
+     {
         ShowWindow(
             state.custom_bytes_label,
             if custom_capacity { SW_SHOW } else { SW_HIDE },
@@ -7561,11 +7717,11 @@ fn overrides(state: &UiState) -> Map<String, Value> {
 fn update_advanced(state: &UiState) {
     let show = checked(state.controls.advanced);
     for control in &state.advanced_controls {
-        unsafe {
+         {
             ShowWindow(*control, if show { SW_SHOW } else { SW_HIDE });
         }
     }
-    unsafe {
+     {
         ShowWindow(state.advanced_hint, if show { SW_HIDE } else { SW_SHOW });
     }
 }
@@ -7639,13 +7795,13 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
         if let Some(index) = state
             .pages
             .iter()
-            .position(|p| *p == unsafe { GetParent(control) })
+            .position(|p| *p == GetParent(control))
         {
             select_tab(state, index);
         }
-        unsafe {
+         {
             SetFocus(control);
-            SendMessageW(control, 0x00b1, 0, -1);
+            win::send_int(control, 0x00b1, 0, -1);
         }
         add_log(state, &message, true);
         false
@@ -8009,11 +8165,11 @@ fn start_operation(state: &mut UiState, command: usize) {
         state.controls.build,
         state.controls.verify,
     ] {
-        unsafe {
+         {
             EnableWindow(hwnd, 0);
         }
     }
-    unsafe {
+     {
         EnableWindow(state.controls.cancel, 1);
     }
     let start_key = match command {
@@ -8031,10 +8187,10 @@ fn start_operation(state: &mut UiState, command: usize) {
     if checked(state.controls.live) {
         render_log(state);
     }
-    unsafe {
+     {
         let progress = state.controls.progress;
-        SendMessageW(progress, PBM_SETRANGE32, 0, 100);
-        SendMessageW(progress, PBM_SETPOS, 0, 0);
+        win::send_int(progress, PBM_SETRANGE32, 0, 100);
+        win::send_int(progress, PBM_SETPOS, 0, 0);
     }
     let lang = state.lang;
     let logs = state.log_sender.clone();
@@ -8137,7 +8293,7 @@ fn start_operation(state: &mut UiState, command: usize) {
             options.finish_task();
         }
         if !ok && command == ID_BUILD {
-            let _ = callbacks.logs.send(WorkerEvent::Retention(options));
+            let _ = callbacks.logs.send(WorkerEvent::Retention(Box::new(options)));
         } else {
             drop(options);
         }
@@ -8177,8 +8333,8 @@ fn emit_diagnostics(callbacks: &mut dyn Callbacks, diagnostics: &[Value]) {
 
 fn update_progress(state: &mut UiState, value: u16) {
     state.progress_value = state.progress_value.max(value.min(99));
-    unsafe {
-        SendMessageW(
+     {
+        win::send_int(
             state.controls.progress,
             PBM_SETPOS,
             state.progress_value as usize,
@@ -8238,13 +8394,13 @@ fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
     render_log(state);
     if kind == 1 {
         state.progress_value = 100;
-        unsafe {
-            SendMessageW(state.controls.progress, PBM_SETPOS, 100, 0);
+         {
+            win::send_int(state.controls.progress, PBM_SETPOS, 100, 0);
         }
     }
     // Publish idle only after the final diagnostics, progress and status are
     // complete. A new task must not be accepted inside an unfinished callback.
-    unsafe {
+     {
         EnableWindow(state.controls.cancel, 0);
     }
     set_busy_controls(state, false);
@@ -8253,7 +8409,7 @@ fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
         state.controls.build,
         state.controls.verify,
     ] {
-        unsafe {
+         {
             EnableWindow(hwnd, 1);
         }
     }
@@ -8265,8 +8421,8 @@ fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
 /// Short windows switch between the settings and the task area when a task
 /// starts or ends.
 fn relayout_for_task(state: &mut UiState) {
-    let mut rect: Rect = unsafe { std::mem::zeroed() };
-    unsafe { GetClientRect(state.main_window, &mut rect) };
+    let mut rect: Rect = Rect::default();
+    GetClientRect(state.main_window, &mut rect);
     // Minimized windows lay out again when restored.
     if rect.bottom > 0 {
         layout(state.main_window, state);
@@ -8275,7 +8431,7 @@ fn relayout_for_task(state: &mut UiState) {
 fn cancel_operation(state: &mut UiState) {
     if let Some(cancel) = &state.cancel {
         cancel.store(true, Ordering::Relaxed);
-        unsafe {
+         {
             EnableWindow(state.controls.cancel, 0);
         }
         state.status_key = "stopping";
@@ -8284,11 +8440,15 @@ fn cancel_operation(state: &mut UiState) {
     }
 }
 
+/// # Safety
+/// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
+/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// structure the system defines for that message, valid for the duration of the call.
 unsafe extern "system" fn disable_busy_child(hwnd: Hwnd, parameter: Lparam) -> i32 {
     let disabled = unsafe { &mut *(parameter as *mut Vec<Hwnd>) };
-    if window_class(hwnd) != "Static" && unsafe { IsWindowEnabled(hwnd) } != 0 {
+    if window_class(hwnd) != "Static" && IsWindowEnabled(hwnd) != 0 {
         disabled.push(hwnd);
-        unsafe { EnableWindow(hwnd, 0) };
+        EnableWindow(hwnd, 0);
     }
     1
 }
@@ -8307,7 +8467,7 @@ fn set_busy_controls(state: &mut UiState, busy: bool) {
         }
     } else {
         for hwnd in state.busy_disabled_controls.drain(..) {
-            unsafe { EnableWindow(hwnd, 1) };
+            EnableWindow(hwnd, 1);
         }
     }
     for page in &state.pages {
@@ -8333,7 +8493,7 @@ fn set_busy_controls(state: &mut UiState, busy: bool) {
     }
     for (hwnd, key) in &state.buttons {
         if matches!(*key, "open" | "save" | "save_as") {
-            unsafe {
+             {
                 EnableWindow(*hwnd, enabled);
             }
         }
@@ -8488,7 +8648,7 @@ fn display_log(lang: Lang, lines: &[LogLine], detail: bool, only: bool) -> Strin
 fn render_log(state: &mut UiState) {
     let detail = combo_index(state.controls.log_view) == 1;
     let issues_only = checked(state.controls.only_issues);
-    unsafe {
+     {
         EnableWindow(state.controls.only_issues, i32::from(!detail));
     }
     let lines = if detail {
@@ -8543,37 +8703,37 @@ fn update_log_text(log: Hwnd, text: &str, append: bool, hold_line: Option<i32>) 
         );
         // Keep text changes, selection and viewport positioning in one redraw.
         // Following the tail must not restore an old caret at the first line.
-        SendMessageW(log, WM_SETREDRAW, 0, 0);
+        win::send_int(log, WM_SETREDRAW, 0, 0);
         if append {
             let end = GetWindowTextLengthW(log).max(0);
-            SendMessageW(log, EM_SETREADONLY, 0, 0);
-            SendMessageW(log, EM_SETSEL, end as usize, end as isize);
+            win::send_int(log, EM_SETREADONLY, 0, 0);
+            win::send_int(log, EM_SETSEL, end as usize, end as isize);
             SendMessageW(log, EM_REPLACESEL, 0, text.as_ptr() as isize);
-            SendMessageW(log, EM_SETREADONLY, 1, 0);
+            win::send_int(log, EM_SETREADONLY, 1, 0);
         } else {
             SetWindowTextW(log, text.as_ptr());
         }
         if let Some(line) = hold_line {
-            SendMessageW(
+            win::send_int(
                 log,
                 EM_SETSEL,
                 selection_start as usize,
                 selection_end as isize,
             );
             let current = first_visible_log_line(log);
-            SendMessageW(log, EM_LINESCROLL, 0, (line - current) as isize);
+            win::send_int(log, EM_LINESCROLL, 0, (line - current) as isize);
         } else {
             let end = GetWindowTextLengthW(log).max(0);
-            SendMessageW(log, EM_SETSEL, end as usize, end as isize);
-            SendMessageW(log, WM_VSCROLL, SB_BOTTOM, 0);
+            win::send_int(log, EM_SETSEL, end as usize, end as isize);
+            win::send_int(log, WM_VSCROLL, SB_BOTTOM, 0);
         }
-        SendMessageW(log, WM_SETREDRAW, 1, 0);
+        win::send_int(log, WM_SETREDRAW, 1, 0);
         RedrawWindow(log, ptr::null(), ptr::null_mut(), RDW_INVALIDATE);
     }
 }
 
 fn first_visible_log_line(log: Hwnd) -> i32 {
-    unsafe { SendMessageW(log, EM_GETFIRSTVISIBLELINE, 0, 0) as i32 }.max(0)
+    (win::send_int(log, EM_GETFIRSTVISIBLELINE, 0, 0) as i32).max(0)
 }
 
 fn observe_log_scroll(state: &mut UiState) {
@@ -8602,7 +8762,7 @@ fn tooltip_info(tooltip: &Tooltip) -> ToolInfo {
     ToolInfo {
         size: std::mem::size_of::<ToolInfo>() as u32,
         flags: 0x11,
-        owner: unsafe { GetParent(tooltip.control) },
+        owner: GetParent(tooltip.control),
         id: tooltip.control as usize,
         rect: Rect {
             left: 0,
@@ -8638,8 +8798,8 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         return;
     }
     state.tooltip_window = tooltip_window;
-    unsafe {
-        SendMessageW(tooltip_window, 0x0418, 0, 460);
+     {
+        win::send_int(tooltip_window, 0x0418, 0, 460);
     }
     let c = &state.controls;
     for (control, key) in [
@@ -9334,8 +9494,11 @@ fn message_box(hwnd: Hwnd, text: &str, caption: &str, flags: u32) -> i32 {
 }
 #[cfg(test)]
 mod presentation_tests {
+    use super::ui_test_guard;
+
     #[test]
     fn session_log_retention_keeps_three_and_preserves_unrelated_files() {
+        let _ui_test_lock = ui_test_guard();
         let root = std::env::temp_dir().join(format!("dvda-log-retention-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         for name in ["gui-1-1-0.log", "gui-2-1-0.log", "gui-3-1-0.log", "gui-4-1-0.log", "gui-not-ours.log", "notes.log"] {
@@ -9355,6 +9518,7 @@ mod presentation_tests {
 
     #[test]
     fn startup_arguments_keep_json_alias_and_language_precedence() {
+        let _ui_test_lock = ui_test_guard();
         let parse = |args: &[&str], environment| {
             parse_startup_args(args.iter().map(|arg| (*arg).to_owned()), environment)
         };
@@ -9392,6 +9556,7 @@ mod presentation_tests {
 
     #[test]
     fn source_issue_diagnostics_include_severity_reason_source_and_details() {
+        let _ui_test_lock = ui_test_guard();
         #[derive(Default)]
         struct Capture(Vec<(i32, String)>);
         impl Callbacks for Capture {
@@ -9429,6 +9594,7 @@ mod presentation_tests {
 
     #[test]
     fn every_ui_translation_key_exists_in_all_three_languages() {
+        let _ui_test_lock = ui_test_guard();
         let source = include_str!("main.rs");
         let section = source
             .split("fn tr(")
@@ -9457,6 +9623,7 @@ mod presentation_tests {
 
     #[test]
     fn failures_never_become_successful_progress_messages() {
+        let _ui_test_lock = ui_test_guard();
         let message = "[author] disc 2 failed (exit code 17)\ndecoder 0x4321: failure";
         for (lang, token) in [(Lang::Zh, "失败"), (Lang::En, "failed"), (Lang::Ja, "失敗")] {
             let output = localized_log(lang, message);
@@ -9479,6 +9646,7 @@ mod presentation_tests {
 
     #[test]
     fn batch_progress_preserves_track_names_and_audio_parameters() {
+        let _ui_test_lock = ui_test_guard();
         let name = "音源_日本語_{0}_{1}.flac";
         for kind in [
             "Started",
@@ -9515,6 +9683,7 @@ mod presentation_tests {
 
     #[test]
     fn menu_cover_progress_is_localized_with_album_and_position() {
+        let _ui_test_lock = ui_test_guard();
         let raw = "[menu-cover] background 2/17 Album 名称";
         for (lang, label) in [
             (Lang::Zh, "菜单封面背景"),
@@ -9533,6 +9702,7 @@ mod presentation_tests {
 
     #[test]
     fn oversized_playback_cover_warning_is_localized_as_nonfatal() {
+        let _ui_test_lock = ui_test_guard();
         let raw = "[menu-cover] oversized 17";
         for (lang, expected) in [
             (Lang::Zh, "超过 2 MB，继续制作"),
@@ -9547,6 +9717,7 @@ mod presentation_tests {
 
     #[test]
     fn full_log_includes_records_beyond_display_limit_and_raw_diagnostics() {
+        let _ui_test_lock = ui_test_guard();
         let mut lines = (0..4500)
             .map(|n| LogLine {
                 raw: format!("record {n}"),
@@ -9566,6 +9737,7 @@ mod presentation_tests {
 
     #[test]
     fn file_filters_keep_correct_extensions_and_localized_labels() {
+        let _ui_test_lock = ui_test_guard();
         for lang in [Lang::Zh, Lang::En, Lang::Ja] {
                 for (kind, extension) in [
                     (FileKind::Profile, "json"),
@@ -9581,6 +9753,7 @@ mod presentation_tests {
 
         #[test]
         fn import_and_custom_capacity_are_not_replaced_with_defaults() {
+            let _ui_test_lock = ui_test_guard();
             assert_eq!(mode_value(mode_index("external")), "external");
             assert_eq!(mode_value(mode_index("lpcm")), "lpcm");
             assert_eq!(capacity_index(4_000_000_000), 2);
@@ -9593,6 +9766,7 @@ mod presentation_tests {
 
         #[test]
         fn audio_mode_note_matches_the_selected_workflow() {
+            let _ui_test_lock = ui_test_guard();
             assert_eq!(audio_note_key(0), "mlp_note");
             assert_eq!(audio_note_key(1), "lpcm_note");
             assert_eq!(audio_note_key(2), "import_note");
@@ -9606,6 +9780,7 @@ mod presentation_tests {
 
         #[test]
         fn detailed_view_ignores_summary_filter_and_preserves_chatter() {
+            let _ui_test_lock = ui_test_guard();
             let lines = vec![
                 LogLine {
                     raw: "frame=42".into(),
@@ -9626,6 +9801,7 @@ mod presentation_tests {
 
         #[test]
         fn overall_progress_stays_monotonic_and_reserves_completion_for_success() {
+            let _ui_test_lock = ui_test_guard();
             let (logs, events) = sync_channel(32);
             let mut callbacks = WorkerCallbacks {
                 logs,
@@ -9654,6 +9830,7 @@ mod presentation_tests {
 
         #[test]
         fn task_start_is_visible_in_summary_before_progress_events() {
+            let _ui_test_lock = ui_test_guard();
             for (lang, key) in [
                 (Lang::Zh, "started_check"),
                 (Lang::En, "started_build"),
@@ -9673,6 +9850,7 @@ mod presentation_tests {
 
         #[test]
         fn combo_measurement_preserves_original_item_height() {
+            let _ui_test_lock = ui_test_guard();
             let mut item: MeasureItemStruct = unsafe { std::mem::zeroed() };
             unsafe {
                 window_proc(
@@ -9706,7 +9884,7 @@ mod presentation_tests {
                 (rect.right, rect.bottom)
             }
         };
-        let lift = |font: Handle, needed: i32, available: i32| unsafe {
+        let lift = |font: Handle, needed: i32, available: i32|  {
             let dc = CreateCompatibleDC(ptr::null_mut());
             let old = SelectObject(dc, font);
             let lift = text_lift(dc, needed, available);
@@ -9714,20 +9892,20 @@ mod presentation_tests {
             DeleteDC(dc);
             lift
         };
-        let style = |hwnd: Hwnd| unsafe { GetWindowLongPtrW(hwnd, -16) } as u32;
+        let style = |hwnd: Hwnd| GetWindowLongPtrW(hwnd, -16) as u32;
         let shown = |hwnd: Hwnd| {
             let mut current = hwnd;
             while !current.is_null() && current != parent {
                 if style(current) & WS_VISIBLE == 0 {
                     return false;
                 }
-                current = unsafe { GetParent(current) };
+                current = GetParent(current);
             }
             true
         };
         let client = |hwnd: Hwnd| {
-            let mut rect: Rect = unsafe { std::mem::zeroed() };
-            unsafe { GetClientRect(hwnd, &mut rect) };
+            let mut rect: Rect = Rect::default();
+            GetClientRect(hwnd, &mut rect);
             (rect.right, rect.bottom)
         };
         unsafe extern "system" fn collect(hwnd: Hwnd, list: Lparam) -> i32 {
@@ -9749,7 +9927,7 @@ mod presentation_tests {
                     check(ui.controls.advanced, advanced);
                     update_advanced(ui);
                     for width in [640, 800, 1000, 1400] {
-                        unsafe { MoveWindow(parent, 0, 0, scale(width), scale(820), 0) };
+                        MoveWindow(parent, 0, 0, scale(width), scale(820), 0);
                         layout(parent, ui);
                         for tab in 0..ui.pages.len() {
                             select_tab(ui, tab);
@@ -9760,8 +9938,8 @@ mod presentation_tests {
                                 let class = window_class(hwnd);
                                 let text = get_text(hwnd);
                                 let (cw, ch) = client(hwnd);
-                                let id = unsafe { GetDlgCtrlID(hwnd) } as usize;
-                                let font = unsafe { SendMessageW(hwnd, WM_GETFONT, 0, 0) } as Handle;
+                                let id = GetDlgCtrlID(hwnd) as usize;
+                                let font = win::send_int(hwnd, WM_GETFONT, 0, 0) as Handle;
                                 let font = if font.is_null() { ui_font() } else { font };
                                 match class.as_str() {
                                     // Status lines end in "..." by design; their texts
@@ -9795,9 +9973,9 @@ mod presentation_tests {
                                         }
                                     }
                                     "ComboBox" => {
-                                        let count = unsafe { SendMessageW(hwnd, CB_GETCOUNT, 0, 0) } as i32;
+                                        let count = win::send_int(hwnd, CB_GETCOUNT, 0, 0) as i32;
                                         let closed = cw - scale(36);
-                                        let dropped = (unsafe { SendMessageW(hwnd, CB_GETDROPPEDWIDTH, 0, 0) } as i32).max(cw) - scale(12);
+                                        let dropped = (win::send_int(hwnd, CB_GETDROPPEDWIDTH, 0, 0) as i32).max(cw) - scale(12);
                                         for index in 0..count {
                                             let item = unsafe { combo_item_text(hwnd, index) };
                                             let (w, _) = measure(&item, ui_font(), cw, DT_SINGLELINE);
@@ -9819,19 +9997,19 @@ mod presentation_tests {
                                 }
                             }
                             let advanced_rect = {
-                                let mut rect: Rect = unsafe { std::mem::zeroed() };
-                                unsafe { GetWindowRect(ui.controls.advanced, &mut rect) };
+                                let mut rect: Rect = Rect::default();
+                                GetWindowRect(ui.controls.advanced, &mut rect);
                                 rect
                             };
-                            let mut last_tab: Rect = unsafe { std::mem::zeroed() };
-                            unsafe { GetWindowRect(*ui.tabs.last().unwrap(), &mut last_tab) };
+                            let mut last_tab: Rect = Rect::default();
+                            GetWindowRect(*ui.tabs.last().unwrap(), &mut last_tab);
                             if last_tab.right > advanced_rect.left {
                                 note("tabs overlap the advanced switch".into(), format!("at {at}"));
                             }
                             // Status texts the task area cycles through.
                             if tab == 0 && !advanced {
                                 let (cw, ch) = client(ui.controls.status);
-                                let status_font = unsafe { SendMessageW(ui.controls.status, WM_GETFONT, 0, 0) } as Handle;
+                                let status_font = win::send_int(ui.controls.status, WM_GETFONT, 0, 0) as Handle;
                                 for key in ["ready", "started_check", "started_build", "started_verify", "done", "cancelled", "failed", "stopping"] {
                                     let (w, h) = measure(tr(lang, key), status_font, cw, DT_SINGLELINE);
                                     if w > cw || h > ch {
@@ -9840,7 +10018,7 @@ mod presentation_tests {
                                 }
                                 let stats = tr(lang, "statistics").replace("{0}", "99").replace("{1}", "59").replace("{2}", "59").replace("{3}", "9999");
                                 let (cw, ch) = client(ui.controls.statistics);
-                                let stats_font = unsafe { SendMessageW(ui.controls.statistics, WM_GETFONT, 0, 0) } as Handle;
+                                let stats_font = win::send_int(ui.controls.statistics, WM_GETFONT, 0, 0) as Handle;
                                 let (w, h) = measure(&stats, stats_font, cw, DT_SINGLELINE);
                                 if w > cw || h > ch {
                                     note(format!("statistics {stats:?}"), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(cw), unscale(ch)));
@@ -9873,9 +10051,10 @@ mod presentation_tests {
 
         #[test]
         fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
+            let _ui_test_lock = ui_test_guard();
             #[link(name = "user32")]
             unsafe extern "system" {
-                fn IsWindowEnabled(hwnd: Hwnd) -> i32;
+                safe fn IsWindowEnabled(hwnd: Hwnd) -> i32;
             }
             use std::sync::atomic::AtomicU64;
             static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -9912,7 +10091,23 @@ mod presentation_tests {
                     classes: 0xffff,
                 });
             }
-            let parent = create!(ptr::null_mut(), "STATIC", "", 0, 0, 0, 1180, 820, 0);
+            // The main window class and procedure, as in run(): state() only
+            // reads user data from windows of this class.
+            let main_class = wide("DVD_AUDIO_MAKER_RUST");
+            let main_registration = WndClass {
+                style: 0,
+                procedure: window_proc,
+                extra_class: 0,
+                extra_window: 0,
+                instance: unsafe { GetModuleHandleW(ptr::null()) },
+                icon: ptr::null_mut(),
+                cursor: ptr::null_mut(),
+                background: ptr::null_mut(),
+                menu: ptr::null(),
+                class_name: main_class.as_ptr(),
+            };
+            unsafe { RegisterClassW(&main_registration) };
+            let parent = create!(ptr::null_mut(), "DVD_AUDIO_MAKER_RUST", "", 0, 0, 0, 1180, 820, 0);
             assert!(!parent.is_null());
             let mut ui = create_controls(parent);
             layout(parent, &mut ui);
@@ -9924,25 +10119,23 @@ mod presentation_tests {
                 (ui.controls.language, 104),
                 (ui.controls.log_view, 132),
             ] {
-                let mut rect: Rect = unsafe { std::mem::zeroed() };
-                unsafe { GetWindowRect(combo, &mut rect); }
+                let rect = window_rect(combo);
                 assert_eq!(rect.right - rect.left, scale(width));
             }
-            let mut target_rect: Rect = unsafe { std::mem::zeroed() };
-            unsafe { GetWindowRect(ui.controls.source, &mut target_rect); }
+            let target_rect = window_rect(ui.controls.source);
             assert_eq!(target_rect.bottom - target_rect.top, scale(24));
             let page = ui.pages[0];
-            let max_scroll = unsafe { page_bar_metrics(&ui) }.max;
+            let max_scroll = page_bar_metrics(&ui).max;
             scroll_page(page, scale(100), true);
-            assert_eq!(unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) }, scale(100).min(max_scroll) as isize);
-            unsafe { layout_page_contents(&mut ui); }
+            assert_eq!(GetWindowLongPtrW(page, GWLP_USERDATA), scale(100).min(max_scroll) as isize);
+            layout_page_contents(&ui);
             scroll_page(page, 0, true);
             for height in [500, 600, 820] {
-                unsafe { MoveWindow(parent, 0, 0, scale(800), scale(height), 0); }
+                MoveWindow(parent, 0, 0, scale(800), scale(height), 0);
                 layout(parent, &mut ui);
-                let mut log_rect: Rect = unsafe { std::mem::zeroed() };
-                let mut action_rect: Rect = unsafe { std::mem::zeroed() };
-                unsafe {
+                let mut log_rect: Rect = Rect::default();
+                let mut action_rect: Rect = Rect::default();
+                 {
                     GetWindowRect(ui.controls.log, &mut log_rect);
                     GetWindowRect(ui.controls.build, &mut action_rect);
                 }
@@ -9954,22 +10147,19 @@ mod presentation_tests {
             ui.lang = lang;
             for width in [640, 800, 854, 960, 1053, 1054, 1180, 1400, 960, 640] {
                 for height in [360, 500, 820] {
-                    unsafe { MoveWindow(parent, 0, 0, scale(width), scale(height), 0); }
+                    MoveWindow(parent, 0, 0, scale(width), scale(height), 0);
                     layout(parent, &mut ui);
                     // The log toolbar sits between the progress bar and the log,
                     // wrapping rather than hiding controls in narrow windows.
                     // Short windows hide the log first and toolbar controls
                     // only where they would reach the action buttons.
                     let rect_of = |hwnd: Hwnd| {
-                        let mut rect: Rect = unsafe { std::mem::zeroed() };
-                        unsafe { GetWindowRect(hwnd, &mut rect); }
-                        rect
+                        window_rect(hwnd)
                     };
                     let shown = |hwnd: Hwnd| {
-                        (unsafe { GetWindowLongPtrW(hwnd, -16) } as u32) & WS_VISIBLE != 0
+                        (GetWindowLongPtrW(hwnd, -16) as u32) & WS_VISIBLE != 0
                     };
-                    let mut client: Rect = unsafe { std::mem::zeroed() };
-                    unsafe { GetWindowRect(parent, &mut client); }
+                    let client = window_rect(parent);
                     let progress = rect_of(ui.controls.progress);
                     let log_buttons: Vec<Hwnd> = ui.buttons.iter()
                         .filter(|(_, key)| matches!(*key, "copy" | "export"))
@@ -9982,11 +10172,8 @@ mod presentation_tests {
                         .into_iter()
                         .chain(log_buttons.iter().copied())
                         .chain([label_handle(&ui, "log_section")]);
-                    // The test window has a frame; the app's compact layout
-                    // depends on its client height.
-                    let mut inner: Rect = unsafe { std::mem::zeroed() };
-                    unsafe { GetClientRect(parent, &mut inner); }
-                    let compact = unscale(inner.bottom) < 500;
+                    // The layout decides with hysteresis around 500 DIPs; check what it decided.
+                    let compact = ui.compact_layout == Some(true);
                     assert!(compact || shown(ui.controls.log), "log hidden at {width}x{height}");
                     for control in toolbar {
                         assert!(shown(control) || (!shown(ui.controls.log) && compact),
@@ -10067,13 +10254,11 @@ mod presentation_tests {
                             1007, 1008, 1009][..]),
                     ] {
                         let page = ui.pages[page_index];
-                        let mut bounds: Rect = unsafe { std::mem::zeroed() };
-                        unsafe { GetWindowRect(page, &mut bounds); }
+                        let bounds = window_rect(page);
                         for id in ids {
-                            let child = unsafe { GetDlgItem(page, *id as i32) };
+                            let child = GetDlgItem(page, *id as i32);
                             assert!(!child.is_null());
-                            let mut child_rect: Rect = unsafe { std::mem::zeroed() };
-                            unsafe { GetWindowRect(child, &mut child_rect); }
+                            let child_rect = window_rect(child);
                             assert!(child_rect.left >= bounds.left && child_rect.right <= bounds.right,
                                 "control {id} overflows page {page_index} at {width}x{height}");
                         }
@@ -10098,21 +10283,19 @@ mod presentation_tests {
                 let mut children: Vec<Hwnd> = Vec::new();
                 unsafe { EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam); }
                 let position = |hwnd: Hwnd| {
-                    let mut rect: Rect = unsafe { std::mem::zeroed() };
-                    unsafe { GetWindowRect(hwnd, &mut rect); }
+                    let rect = window_rect(hwnd);
                     let mut origin = Point { x: 0, y: 0 };
-                    unsafe { ClientToScreen(parent, &mut origin); }
+                    ClientToScreen(parent, &mut origin);
                     (rect.left - origin.x, rect.right - origin.x)
                 };
                 let mut history: Vec<Vec<(i32, i32)>> = vec![Vec::new(); children.len()];
-                let mut frame: Rect = unsafe { std::mem::zeroed() };
-                unsafe { MoveWindow(parent, 0, 0, scale(700), scale(820), 0); GetWindowRect(parent, &mut frame); }
-                let mut client: Rect = unsafe { std::mem::zeroed() };
-                unsafe { GetClientRect(parent, &mut client); }
+                let mut frame: Rect = Rect::default();
+                MoveWindow(parent, 0, 0, scale(700), scale(820), 0); GetWindowRect(parent, &mut frame);
+                let client = client_rect(parent);
                 let border = (frame.right - frame.left) - client.right;
                 let widths: Vec<i32> = (scale(640)..scale(1400)).collect();
                 for px in &widths {
-                    unsafe { MoveWindow(parent, 0, 0, px + border, scale(820), 0); }
+                    MoveWindow(parent, 0, 0, px + border, scale(820), 0);
                     layout(parent, &mut ui);
                     for (index, child) in children.iter().enumerate() {
                         history[index].push(position(*child));
@@ -10139,7 +10322,7 @@ mod presentation_tests {
                 }
             }
             UI_DPI.store(saved_dpi, Ordering::Relaxed);
-            unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
+            MoveWindow(parent, 0, 0, scale(1180), scale(820), 0);
             layout(parent, &mut ui);
         }
         // Growing the window pixel by pixel must move every control edge in
@@ -10158,16 +10341,14 @@ mod presentation_tests {
                 let mut children: Vec<Hwnd> = Vec::new();
                 unsafe { EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam); }
                 let position = |hwnd: Hwnd| {
-                    let mut rect: Rect = unsafe { std::mem::zeroed() };
-                    unsafe { GetWindowRect(hwnd, &mut rect); }
+                    let rect = window_rect(hwnd);
                     let mut origin = Point { x: 0, y: 0 };
-                    unsafe { ClientToScreen(parent, &mut origin); }
+                    ClientToScreen(parent, &mut origin);
                     (rect.top - origin.y, rect.bottom - origin.y)
                 };
-                let mut frame: Rect = unsafe { std::mem::zeroed() };
-                unsafe { MoveWindow(parent, 0, 0, scale(1000), scale(820), 0); GetWindowRect(parent, &mut frame); }
-                let mut client: Rect = unsafe { std::mem::zeroed() };
-                unsafe { GetClientRect(parent, &mut client); }
+                let mut frame: Rect = Rect::default();
+                MoveWindow(parent, 0, 0, scale(1000), scale(820), 0); GetWindowRect(parent, &mut frame);
+                let client = client_rect(parent);
                 let border = (frame.bottom - frame.top) - client.bottom;
                 // Growing switches out of the short layout at 504 DIPs.
                 for (low, high) in [(360, 503), (504, 1200)] {
@@ -10175,10 +10356,9 @@ mod presentation_tests {
                     let mut history: Vec<Vec<(i32, i32)>> = vec![Vec::new(); children.len()];
                     let mut client_heights: Vec<i32> = Vec::new();
                     for px in &heights {
-                        unsafe { MoveWindow(parent, 0, 0, scale(1000), px + border, 0); }
+                        MoveWindow(parent, 0, 0, scale(1000), px + border, 0);
                         layout(parent, &mut ui);
-                        let mut inner: Rect = unsafe { std::mem::zeroed() };
-                        unsafe { GetClientRect(parent, &mut inner); }
+                        let inner = client_rect(parent);
                         client_heights.push(inner.bottom);
                         for (index, child) in children.iter().enumerate() {
                             history[index].push(position(*child));
@@ -10243,7 +10423,7 @@ mod presentation_tests {
                 }
             }
             UI_DPI.store(saved_dpi, Ordering::Relaxed);
-            unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
+            MoveWindow(parent, 0, 0, scale(1180), scale(820), 0);
             layout(parent, &mut ui);
         }
         // Live resizing must not resize, and so re-wrap, a long log: the box
@@ -10252,24 +10432,24 @@ mod presentation_tests {
             let line = "2026-10-24 12:00:00  Encoding track 07 of 12 (MLP, 96 kHz / 24 bit, 5.1)";
             let text: String = (0..2500).map(|i| format!("{i:04} {line}{}{}", 13 as char, 10 as char)).collect();
             set_text(ui.controls.log, &text);
-            unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
+            MoveWindow(parent, 0, 0, scale(1180), scale(820), 0);
             layout(parent, &mut ui);
             let log_size = |hwnd: Hwnd| {
-                let mut rect: Rect = unsafe { std::mem::zeroed() };
-                unsafe { GetClientRect(hwnd, &mut rect) };
+                let mut rect: Rect = Rect::default();
+                GetClientRect(hwnd, &mut rect);
                 (rect.right, rect.bottom)
             };
             let before = log_size(ui.controls.log);
             ui.sizing = true;
             for step in 1..=20 {
-                unsafe { MoveWindow(parent, 0, 0, scale(1180 - step * 3), scale(820 - step * 3), 0); }
+                MoveWindow(parent, 0, 0, scale(1180 - step * 3), scale(820 - step * 3), 0);
                 layout(parent, &mut ui);
                 assert_eq!(log_size(ui.controls.log), before, "log resized during live sizing");
             }
             assert!(ui.log_frozen);
             // The frame follows the layout while the EDIT keeps its size.
-            let mut frame: Rect = unsafe { std::mem::zeroed() };
-            unsafe { GetClientRect(ui.log_frame, &mut frame) };
+            let mut frame: Rect = Rect::default();
+            GetClientRect(ui.log_frame, &mut frame);
             let target = ui.log_box.unwrap();
             assert_eq!((frame.right, frame.bottom), (target.right - target.left, target.bottom - target.top));
             ui.sizing = false;
@@ -10279,7 +10459,7 @@ mod presentation_tests {
             assert_eq!(log_size(ui.controls.log), (target.right - target.left, target.bottom - target.top));
             // The real sizing messages: a resize is not a user scroll, so live
             // follow is not paused, and the log gets its size at the end.
-            unsafe { SendMessageW(ui.controls.log, EM_LINESCROLL, 0, 2500) };
+            win::send_int(ui.controls.log, EM_LINESCROLL, 0, 2500);
             observe_log_scroll(&mut ui);
             ui.log_hold_line = None;
             ui.log_hold_until = None;
@@ -10288,7 +10468,7 @@ mod presentation_tests {
             // Growing a log scrolled to its end reveals earlier lines, which
             // changes its first visible line.
             for step in 1..=10 {
-                unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820 + step * 4), 0); }
+                MoveWindow(parent, 0, 0, scale(1180), scale(820 + step * 4), 0);
                 layout(parent, &mut ui);
             }
             unsafe { window_proc(parent, 0x0232, 0, 0) };
@@ -10301,13 +10481,11 @@ mod presentation_tests {
             assert_eq!(log_size(ui.controls.log), (target.right - target.left, target.bottom - target.top));
             // Esc in the log posts WM_CLOSE to its parent frame; the log survives.
             {
-                #[link(name = "user32")]
-                unsafe extern "system" { fn IsWindow(hwnd: Hwnd) -> i32; }
-                unsafe { SendMessageW(ui.log_frame, WM_CLOSE, 0, 0) };
-                assert!(unsafe { IsWindow(ui.log_frame) } != 0 && unsafe { IsWindow(ui.controls.log) } != 0);
+                win::send_int(ui.log_frame, WM_CLOSE, 0, 0);
+                assert!(IsWindow(ui.log_frame) != 0 && IsWindow(ui.controls.log) != 0);
             }
             set_text(ui.controls.log, "");
-            unsafe { MoveWindow(parent, 0, 0, scale(1180), scale(820), 0); }
+            MoveWindow(parent, 0, 0, scale(1180), scale(820), 0);
             layout(parent, &mut ui);
         }
         // Exercise the actual controls rather than passing handcrafted blank
@@ -10368,21 +10546,21 @@ mod presentation_tests {
         let page = ui.pages[0];
         let initially_disabled = create!(page, "EDIT", "Locked", WS_CHILD, 0, 0, 100, 30, 0);
         let initially_enabled = create!(page, "EDIT", "Editable", WS_CHILD, 0, 40, 100, 30, 0);
-        unsafe { EnableWindow(initially_disabled, 0) };
+        EnableWindow(initially_disabled, 0);
         ui.busy = true;
         set_busy_controls(&mut ui, true);
-        assert_eq!(unsafe { IsWindowEnabled(initially_enabled) }, 0);
-        assert_eq!(unsafe { IsWindowEnabled(initially_disabled) }, 0);
+        assert_eq!(IsWindowEnabled(initially_enabled), 0);
+        assert_eq!(IsWindowEnabled(initially_disabled), 0);
         for _ in 0..20 {
             scroll_page(page, i32::MAX, true);
-            assert!(unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } > 0);
+            assert!(GetWindowLongPtrW(page, GWLP_USERDATA) > 0);
             scroll_page(page, 0, true);
-            assert_eq!(unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) }, 0);
+            assert_eq!(GetWindowLongPtrW(page, GWLP_USERDATA), 0);
         }
-        assert_eq!(unsafe { IsWindowEnabled(ui.controls.language) }, 0);
-        assert_eq!(unsafe { IsWindowEnabled(ui.controls.profile) }, 0);
+        assert_eq!(IsWindowEnabled(ui.controls.language), 0);
+        assert_eq!(IsWindowEnabled(ui.controls.profile), 0);
         for page in &ui.pages {
-            assert_ne!(unsafe { IsWindowEnabled(*page) }, 0);
+            assert_ne!(IsWindowEnabled(*page), 0);
         }
         let page = ui.pages[0];
         let label = create!(page, "STATIC", "Busy label", WS_CHILD, 0, 0, 100, 30, 0);
@@ -10431,14 +10609,14 @@ mod presentation_tests {
         }
         assert!(ui.close_when_done);
         assert!(cancel.load(Ordering::Relaxed));
-        assert_eq!(unsafe { IsWindowEnabled(ui.controls.cancel) }, 0);
+        assert_eq!(IsWindowEnabled(ui.controls.cancel), 0);
         finish_operation(&mut ui, 2, "operation returned interrupted");
         assert!(get_text(ui.controls.log).contains(tr(ui.lang, "cancelled")));
         assert!(!get_text(ui.controls.log).contains("operation returned interrupted"));
-        assert_ne!(unsafe { IsWindowEnabled(ui.controls.language) }, 0);
-        assert_ne!(unsafe { IsWindowEnabled(initially_enabled) }, 0);
-        assert_eq!(unsafe { IsWindowEnabled(initially_disabled) }, 0);
-        unsafe {
+        assert_ne!(IsWindowEnabled(ui.controls.language), 0);
+        assert_ne!(IsWindowEnabled(initially_enabled), 0);
+        assert_eq!(IsWindowEnabled(initially_disabled), 0);
+         {
             DestroyWindow(initially_enabled);
             DestroyWindow(initially_disabled);
         }
@@ -10515,7 +10693,7 @@ mod presentation_tests {
         ui.log_hold_until = None;
         combo_select(ui.controls.log_view, 0);
         check(ui.controls.only_issues, false);
-        unsafe {
+         {
             MoveWindow(ui.controls.log, 0, 0, 600, 80, 0);
         }
         for track in 0..40 {
@@ -10547,10 +10725,10 @@ mod presentation_tests {
         );
         // Preserve exactly the existing hold interval and the user's selection
         // when new rows arrive during upward review.
-        unsafe {
-            SendMessageW(ui.controls.log, EM_SETSEL, 5, 12);
-            SendMessageW(ui.controls.log, EM_LINESCROLL, 0, -1000);
-            SendMessageW(ui.controls.log, EM_LINESCROLL, 0, 8);
+         {
+            win::send_int(ui.controls.log, EM_SETSEL, 5, 12);
+            win::send_int(ui.controls.log, EM_LINESCROLL, 0, -1000);
+            win::send_int(ui.controls.log, EM_LINESCROLL, 0, 8);
         }
         observe_log_scroll(&mut ui);
         let held_line = first_visible_log_line(ui.controls.log);
@@ -10594,7 +10772,7 @@ mod presentation_tests {
         assert!(get_text(ui.controls.log).contains("summary-after-hold"));
         // Close the per-test archive before deleting its own temporary folder.
         ui.log_file = None;
-        unsafe {
+         {
             DestroyWindow(ui.tooltip_window);
             DestroyWindow(parent);
         }
@@ -10604,6 +10782,7 @@ mod presentation_tests {
 
     #[test]
     fn log_queue_applies_backpressure_and_keeps_completion_after_diagnostics() {
+        let _ui_test_lock = ui_test_guard();
         use std::sync::mpsc::TrySendError;
         let (sender, receiver) = sync_channel(LOG_QUEUE_CAPACITY);
         for index in 0..LOG_QUEUE_CAPACITY {
@@ -10637,6 +10816,7 @@ mod presentation_tests {
 
     #[test]
     fn settings_help_and_new_runtime_messages_cover_all_languages() {
+        let _ui_test_lock = ui_test_guard();
         let help: HashMap<String, String> =
             serde_json::from_str(include_str!("../locales/help.json")).unwrap();
         // DVDA_PREPARE_CACHE was retired together with its setting, so the
@@ -10666,6 +10846,7 @@ mod presentation_tests {
 
     #[test]
     fn unicode_paths_are_opaque_in_errors_and_problem_classification() {
+        let _ui_test_lock = ui_test_guard();
         let path = "D:/失败/[NO_ISO]/{0}/日本語.flac";
         let error = format!("[错误] 源文件不存在: {path} [SOURCE_MISSING]");
         for lang in [Lang::Zh, Lang::En, Lang::Ja] {

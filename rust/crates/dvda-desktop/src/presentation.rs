@@ -601,8 +601,10 @@ pub fn same_path(first: &std::path::Path, second: &std::path::Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui_test_guard;
     #[test]
     fn all_old_failure_markers_survive_summary_and_problem_filter() {
+        let _ui_test_lock = ui_test_guard();
         for raw in [
             "[WAR] warning",
             "[ERR] issue",
@@ -635,6 +637,7 @@ mod tests {
     }
     #[test]
     fn chatter_is_detail_only_and_explanations_are_localized() {
+        let _ui_test_lock = ui_test_guard();
         for raw in [
             "[PCM] 50%",
             "[MLP] 临时目录: C:/work",
@@ -656,6 +659,7 @@ mod tests {
 
     #[test]
     fn mlp_and_verification_progress_are_visible_in_summary() {
+        let _ui_test_lock = ui_test_guard();
         let mlp = "[MLP-PROGRESS] 37/147";
         let verify = "[verify] pcm 4/12 ok: D:/music/track.flac";
         let mismatch = "[verify] pcm 5/12 failed: D:/music/bad.flac";
@@ -691,6 +695,7 @@ mod tests {
 
     #[test]
     fn pcm_log_status_preserves_legacy_results_and_unknown_messages() {
+        let _ui_test_lock = ui_test_guard();
         let path = r"D:\Music\三叩首 (伴奏版).flac";
         for lang in [Lang::Zh, Lang::En, Lang::Ja] {
             for result in ["ok", "failed"] {
@@ -706,6 +711,7 @@ mod tests {
 
     #[test]
     fn wrapped_details_cannot_replace_activity_with_chatter() {
+        let _ui_test_lock = ui_test_guard();
         for lang in [Lang::Zh, Lang::En, Lang::Ja] {
             for raw in [
                 "Number of samples: 123456",
@@ -729,6 +735,7 @@ mod tests {
 
     #[test]
     fn space_checks_localize_known_and_unknown_capacity() {
+        let _ui_test_lock = ui_test_guard();
         for lang in [Lang::Zh, Lang::En, Lang::Ja] {
             for available in ["2147483648 B", "unknown"] {
                 let raw = format!(
@@ -759,6 +766,7 @@ mod tests {
 
     #[test]
     fn structured_workflow_progress_is_localized_without_detail_paths() {
+        let _ui_test_lock = ui_test_guard();
         for lang in [Lang::Zh, Lang::En, Lang::Ja] {
             for action in [
                 "source_metadata",
@@ -830,6 +838,7 @@ mod tests {
 
     #[test]
     fn mlp_cache_checks_are_distinct_from_encoding_in_all_languages() {
+        let _ui_test_lock = ui_test_guard();
         for lang in [Lang::Zh, Lang::En, Lang::Ja] {
             for (raw, expected) in [
                 ("[MLP-CHECK] start 147", "0/147"),

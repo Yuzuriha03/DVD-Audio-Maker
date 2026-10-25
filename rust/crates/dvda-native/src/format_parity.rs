@@ -300,6 +300,10 @@ impl Oracle {
         );
         Self(module)
     }
+    /// # Safety
+    /// `T` must be a function pointer type with the exact header ABI of the export `name`, since the
+    /// `GetProcAddress` result is reinterpreted as `T`. The returned value must not be used after `self`
+    /// is dropped, because it is only valid while the module stays loaded.
     unsafe fn symbol<T>(&self, name: &'static std::ffi::CStr) -> T {
         // SAFETY: all requested exports have their exact header ABI and the module is live.
         let pointer = unsafe { GetProcAddress(self.0, name.as_ptr()) };

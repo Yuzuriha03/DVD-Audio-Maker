@@ -23,6 +23,11 @@ impl Drop for State {
         }
     }
 }
+/// # Safety
+/// `codec` must be an open encoder and `output` an open output format context, both owned by
+/// the caller and alive for the call. `index` must be a stream of `output`. `frame` is sent to
+/// `codec`: NULL flushes it, otherwise it must be a valid frame for that encoder. When `end` is
+/// set, the packet gets an MPEG sequence-end code if it does not already end with one.
 unsafe fn packets(
     codec: *mut Context,
     output: *mut Format,
@@ -69,6 +74,10 @@ unsafe fn packets(
         result
     }
 }
+/// # Safety
+/// `path` must be a valid NUL-terminated string that stays live for the call, and must not be
+/// NULL: it is opened as the input. `codec` and `output` must be an open audio encoder and an
+/// open output format context, owned by the caller and alive for the call.
 unsafe fn audio(path: *const c_char, codec: *mut Context, output: *mut Format) -> Result<(), i32> {
     unsafe {
         struct Decode {
@@ -193,12 +202,18 @@ unsafe fn audio(path: *const c_char, codec: *mut Context, output: *mut Format) -
         packets(codec, output, 1, ptr::null_mut(), false)
     }
 }
+/// # Safety
+/// `codec` must be a valid encoder context.
 unsafe fn audio_frame_size(codec: *mut Context) -> i32 {
     unsafe {
         let n = (*codec).frame_size();
         if n > 0 { n } else { 1152 }
     }
 }
+/// # Safety
+/// `fifo` must be a live audio FIFO with at least `audio_frame_size(codec)` samples queued,
+/// or the call fails with EIO. `codec` and `output` are as in `packets`. `samples` is the
+/// running sample count used as the frame timestamp.
 unsafe fn encode_audio(
     fifo: *mut c_void,
     codec: *mut Context,
@@ -231,6 +246,10 @@ unsafe fn encode_audio(
         result
     }
 }
+/// # Safety
+/// `y4m`, `path` and `norm` must be non-NULL, valid NUL-terminated strings that stay live for
+/// the call. `wav` may be NULL or empty when there is no audio, and `aspect` may be NULL to use
+/// the default.
 unsafe fn create(
     y4m: *const c_char,
     wav: *const c_char,

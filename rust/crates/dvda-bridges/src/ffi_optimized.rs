@@ -56,6 +56,10 @@ pub fn convert_audio_i16_to_f32_simd(input: &[i16], output: &mut [f32]) {
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+/// # Safety
+/// The CPU must support AVX2. The caller checks this with `is_x86_feature_detected!`.
+/// `input` and `output` must have the same length, as `convert_audio_i16_to_f32_simd`
+/// asserts. The eight-lane loop reads and writes only within both slices.
 unsafe fn convert_avx2(input: &[i16], output: &mut [f32]) {
     use std::arch::x86_64::*;
     let scale = _mm256_set1_ps(1.0 / 32768.0);

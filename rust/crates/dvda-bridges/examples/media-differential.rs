@@ -43,7 +43,7 @@ unsafe extern "C" fn cancel_after_progress(state: *mut c_void) -> i32 {
             .any(|(stream, text)| *stream == 1 && text.contains(',')),
     )
 }
-unsafe extern "C" fn cancelled(_: *mut c_void) -> i32 {
+extern "C" fn cancelled(_: *mut c_void) -> i32 {
     1
 }
 type Run = unsafe extern "C" fn(*const Request, Emit, Cancel, *mut c_void) -> i32;

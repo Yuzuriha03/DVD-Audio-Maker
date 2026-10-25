@@ -20,7 +20,7 @@ unsafe extern "system" {
         add: i32,
     ) -> i32;
 }
-unsafe extern "system" fn control(event: u32) -> i32 {
+extern "system" fn control(event: u32) -> i32 {
     if event <= 1 {
         CANCELLED.store(true, Ordering::Release);
         1

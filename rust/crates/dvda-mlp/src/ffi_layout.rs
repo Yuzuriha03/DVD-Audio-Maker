@@ -9,6 +9,10 @@ pub struct GroupsConfig {
     pub group2_bits: u32,
     pub group2_frames: u64,
 }
+/// # Safety
+/// `config` must be null or point to a readable `EncoderConfig`. `result` must be null or valid for
+/// writes; if non-null it is overwritten with a default value before use. Callbacks and opaque pointers
+/// follow the same contracts as `stream()`.
 unsafe fn entry(
     config: *const EncoderConfig,
     profile: Profile,
@@ -147,6 +151,9 @@ struct GroupSource {
     panicked: bool,
 }
 impl GroupSource {
+    /// # Safety
+    /// `self.secondary` must be a read callback with its opaque pointer that is valid for this call. Each
+    /// call may write at most `capacity` frames of `second` samples into the `160 * second` element buffer.
     unsafe fn load(&mut self, need: usize) -> Result<(), ()> {
         let end = need.min(self.frames / self.ratio);
         let mut buffer = vec![0; 160 * self.second];
@@ -240,6 +247,10 @@ unsafe extern "C" fn group_read(
         }
     }
 }
+/// # Safety
+/// `p` must point to a live `GroupSource`, and no other reference to it may be in use. `pcm` must be
+/// valid for `capacity * (first + second)` writes and `frames` for a write. `capacity` is range-checked
+/// here (1..=160), so larger values are rejected rather than used.
 unsafe fn group_read_inner(
     p: *mut c_void,
     pcm: *mut i32,
@@ -332,6 +343,10 @@ pub unsafe extern "C" fn mlp_encode_stream_groups(
         Err(_) => fail(r, -5, "Rust encoder panic"),
     }
 }
+/// # Safety
+/// `config` must be null or point to a readable `GroupsConfig`. Both group read callbacks and the
+/// optional write callback must follow their contracts with their opaque inputs and `output` for the
+/// whole call. `r` must be exclusive and valid for writes.
 unsafe fn groups(
     config: *const GroupsConfig,
     first_input: (Option<Read>, *mut c_void),

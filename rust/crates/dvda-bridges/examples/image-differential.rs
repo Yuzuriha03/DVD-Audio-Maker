@@ -12,7 +12,7 @@ unsafe extern "C" fn collect(state: *mut c_void, stream: i32, text: *const i8) {
         ));
     }
 }
-unsafe extern "C" fn cancelled(_: *mut c_void) -> i32 {
+extern "C" fn cancelled(_: *mut c_void) -> i32 {
     1
 }
 type Run = unsafe extern "C" fn(i32, *const *const i8, Emit, Cancel, *mut c_void) -> i32;

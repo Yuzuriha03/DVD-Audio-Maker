@@ -48,6 +48,10 @@ unsafe extern "C" fn read_second<I: StreamIo>(
 ) -> i32 {
     unsafe { read_group::<I>(p, pcm, capacity, frames, 1) }
 }
+/// # Safety
+/// `p` must point to a live `Context<I>` for this `I`, and no other reference to it may be in use.
+/// `pcm` must be valid for `capacity * channels[group]` writes, `frames` must be valid for a write,
+/// and `group` must be 0 or 1.
 unsafe fn read_group<I: StreamIo>(
     p: *mut c_void,
     pcm: *mut i32,

@@ -99,7 +99,7 @@ unsafe extern "system" fn pan_proc(hwnd: Hwnd, message: u32, wparam: Wparam, lpa
                 let delta = i32::from(last) - i32::from(info.y);
                 if pan.log {
                     let lines = line_delta(&mut pan.remainder, delta, scale(19).max(1));
-                    unsafe { SendMessageW(hwnd, EM_LINESCROLL, 0, lines as isize); }
+                    win::send_int(hwnd, EM_LINESCROLL, 0, lines as isize);
                     // The log EDIT sits in a frame inside the main window.
                     if let Some(ui) = unsafe { state(GetParent(GetParent(hwnd))) } { observe_log_scroll(ui); }
                 } else if window_class(hwnd) == "ComboLBox" {
@@ -117,10 +117,10 @@ unsafe extern "system" fn pan_proc(hwnd: Hwnd, message: u32, wparam: Wparam, lpa
                         if window_class(page) == "DVD_AUDIO_PAGE_RUST" {
                             break;
                         }
-                        page = unsafe { GetParent(page) };
+                        page = GetParent(page);
                     }
                     if window_class(page) == "DVD_AUDIO_PAGE_RUST" {
-                        let old = unsafe { GetWindowLongPtrW(page, GWLP_USERDATA) } as i32;
+                        let old = GetWindowLongPtrW(page, GWLP_USERDATA) as i32;
                         scroll_page(page, old.saturating_add(delta), true);
                     }
                 }
@@ -138,6 +138,7 @@ mod tests {
     use super::*;
     #[test]
     fn native_window_enables_pan_and_vertical_single_finger_input() {
+        let _ui_test_lock = ui_test_guard();
         #[link(name = "user32")]
         unsafe extern "system" {
             fn GetGestureConfig(hwnd: Hwnd, reserved: u32, flags: u32, count: *mut u32, config: *mut GestureConfig, size: u32) -> i32;
@@ -155,7 +156,7 @@ mod tests {
             GetGestureConfig(hwnd, 0, 0, &mut count, &mut config,
                 std::mem::size_of::<GestureConfig>() as u32)
         };
-        unsafe { DestroyWindow(hwnd); }
+        DestroyWindow(hwnd);
         assert_ne!(result, 0);
         assert_eq!(config.want, PAN_WANT);
         assert_eq!(config.block, PAN_BLOCK);
@@ -164,6 +165,7 @@ mod tests {
 
     #[test]
     fn pan_accumulates_subline_motion_in_both_directions() {
+        let _ui_test_lock = ui_test_guard();
         let mut remainder = 0;
         assert_eq!(line_delta(&mut remainder, 12, 19), 0);
         assert_eq!(line_delta(&mut remainder, 12, 19), 1);

@@ -48,7 +48,7 @@ impl MediaRequest {
     /// # Safety
     /// Callback state must remain valid for the call. Callbacks must not unwind.
     pub unsafe fn run_with_callbacks(&self, callbacks: crate::Call) -> i32 {
-        unsafe extern "C" fn discard(_: *mut std::ffi::c_void, _: i32, _: *const std::ffi::c_char) {
+        extern "C" fn discard(_: *mut std::ffi::c_void, _: i32, _: *const std::ffi::c_char) {
         }
         self.with_raw_request(|request| unsafe {
             crate::media::dvdamedia_run(

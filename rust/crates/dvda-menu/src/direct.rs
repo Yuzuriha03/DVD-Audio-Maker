@@ -32,6 +32,9 @@ unsafe extern "C" {
     fn dvda_spu_menu_accepts_body() -> c_int;
     fn dvda_nav_menu_accepts_body() -> c_int;
 }
+/// # Safety
+/// `callback`, when present, must not unwind, longjmp, or retain pointers, as for
+/// the vendor menu API.
 #[cfg(not(test))]
 pub(super) unsafe fn menu_callback(callback: Option<unsafe extern "C" fn()>) -> c_int {
     unsafe {
@@ -42,6 +45,9 @@ pub(super) unsafe fn menu_callback(callback: Option<unsafe extern "C" fn()>) -> 
         }
     }
 }
+/// # Safety
+/// `value` must be null or a NUL-terminated string valid for the call. `callback`,
+/// when present, has the same obligations as in `menu_callback`.
 #[cfg(not(test))]
 pub(super) unsafe fn menu_attribute(
     callback: Option<unsafe extern "C" fn(*const c_char)>,
@@ -55,6 +61,8 @@ pub(super) unsafe fn menu_attribute(
         }
     }
 }
+/// # Safety
+/// `value` must be null or a NUL-terminated string valid for the call.
 #[cfg(not(test))]
 pub(super) unsafe fn menu_body(value: *const c_char) -> c_int {
     unsafe {
@@ -65,6 +73,9 @@ pub(super) unsafe fn menu_body(value: *const c_char) -> c_int {
         }
     }
 }
+/// # Safety
+/// Takes no pointers. It queries the vendor library, so it is only meaningful inside
+/// a menu run that dispatches to that library (the same session as `run`).
 #[cfg(not(test))]
 pub(super) unsafe fn menu_accepts_body() -> c_int {
     unsafe {
@@ -82,6 +93,9 @@ impl Drop for Active {
         ACTIVE.set(false);
     }
 }
+/// # Safety
+/// `request` must satisfy the contract of `dvda_menu_run_spu` when `navigation` is
+/// false, and of `dvda_menu_run_navigation` when it is true.
 unsafe fn run(request: *const MenuRequest, navigation: bool) -> c_int {
     std::panic::catch_unwind(|| {
         if ACTIVE.get() {

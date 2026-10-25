@@ -12,6 +12,10 @@ fn report(message: impl std::fmt::Display) {
     let _ = writeln!(io::stderr().lock(), "[ERR] ISO writer: {message}");
 }
 
+/// # Safety
+/// `value` must be NULL or point to a NUL-terminated string that is readable and unmodified
+/// for `'a`. The caller chooses `'a` and must not use the returned `&str` after the string
+/// is freed or changed.
 unsafe fn argument<'a>(value: *const c_char, name: &str) -> io::Result<&'a str> {
     if value.is_null() {
         return Err(io::Error::new(

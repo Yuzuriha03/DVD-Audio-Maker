@@ -1,5 +1,9 @@
 use dvda_bridges::ffmpeg::*;
 use std::{ffi::CString, fs::File, io::Write, ptr};
+/// # Safety
+/// FFmpeg's libraries must be linked and usable on this thread.
+/// `input` is copied into a C string here. Every format, context, frame and packet
+/// allocated in this function is released before it returns.
 unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32> {
     unsafe {
         let path = CString::new(input).map_err(|_| EINVAL)?;

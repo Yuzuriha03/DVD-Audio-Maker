@@ -46,6 +46,10 @@ impl Drop for Audio {
     }
 }
 impl Audio {
+    /// # Safety
+    /// `self.encoder` must be an open encoder owned by `self`. `frame` is sent to it as-is: it
+    /// must be a valid frame for that encoder, or NULL to flush. The caller keeps ownership of
+    /// `frame`.
     unsafe fn encode(&mut self, frame: *mut Frame) -> Result<(), i32> {
         unsafe {
             done(avcodec_send_frame(self.encoder, frame))?;
@@ -74,6 +78,9 @@ impl Audio {
             result
         }
     }
+    /// # Safety
+    /// `self.encoder` and `self.fifo` must be the live objects set up by this converter's
+    /// initialization. Frames created here are freed before return.
     unsafe fn encode_fifo(&mut self, call: &Call, flush: bool) -> Result<(), i32> {
         unsafe {
             let size = if (*self.encoder).frame_size() == 0 {
@@ -124,6 +131,11 @@ impl Audio {
             }
         }
     }
+    /// # Safety
+    /// `input` must be an open `AVFormatContext` whose stream information has been read. `frame`
+    /// must be a valid frame for `self`'s encoder. Both are owned by the caller and live for the call.
+    /// `request.output` must not be NULL. `request.tags` must point to readable entries for
+    /// `request.tag_count` items when that count is non-zero.
     unsafe fn container(
         &mut self,
         request: &Request,
@@ -278,6 +290,9 @@ impl Audio {
             Ok(())
         }
     }
+    /// # Safety
+    /// `frame` must be a frame produced by `self.decoder`. It may be NULL only while the converter
+    /// is still uninitialized, before the first frame arrives. The caller keeps ownership of `frame`.
     unsafe fn convert(
         &mut self,
         request: &Request,
@@ -465,6 +480,9 @@ impl Audio {
             result
         }
     }
+    /// # Safety
+    /// `self.decoder` and `self.frame` must be the live objects of this converter. `request` and
+    /// `call` must be valid for the call.
     unsafe fn receive(&mut self, request: &Request, call: &Call) -> Result<(), i32> {
         unsafe {
             loop {
@@ -483,6 +501,9 @@ impl Audio {
         }
     }
 }
+/// # Safety
+/// `input` must be an open `AVFormatContext` whose stream information has been read, owned by
+/// the caller and alive for the call. `request` and `call` must be valid for the call.
 pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Result<(), i32> {
     unsafe {
         if request.output_format > 6 {
@@ -581,6 +602,9 @@ pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Resul
         Ok(())
     }
 }
+/// # Safety
+/// `input` must be an open `AVFormatContext` whose stream information has been read, owned by
+/// the caller and alive for the call. `request` and `call` must be valid for the call.
 pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Result<(), i32> {
     unsafe {
         if request.output.is_null() {
