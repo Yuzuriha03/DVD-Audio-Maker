@@ -2326,6 +2326,24 @@ unsafe extern "system" fn window_proc(
         WM_COMMAND => {
             let id = wparam & 0xffff;
             let notify = ((wparam >> 16) & 0xffff) as u16;
+            // Window commands run before the UiState is borrowed: ShowWindow and
+            // WM_CLOSE send messages back to this procedure synchronously, and a
+            // borrowed state would skip their layout and close checks.
+            match id {
+                ID_MAXIMIZE => {
+                    if IsZoomed(hwnd) != 0 {
+                        ShowWindow(hwnd, SW_RESTORE);
+                    } else {
+                        ShowWindow(hwnd, SW_MAXIMIZE);
+                    }
+                    return 0;
+                }
+                ID_CLOSE => {
+                    win::send_int(hwnd, WM_CLOSE, 0, 0);
+                    return 0;
+                }
+                _ => {}
+            }
             if let Some(mut state) = unsafe { state(hwnd) } {
                 handle_command(hwnd, &mut state, id, notify);
             }
@@ -7346,16 +7364,6 @@ fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16)
         match id {
             ID_MINIMIZE =>  {
                 ShowWindow(hwnd, SW_MINIMIZE);
-            },
-            ID_MAXIMIZE =>  {
-                if IsZoomed(hwnd) != 0 {
-                    ShowWindow(hwnd, SW_RESTORE);
-                } else {
-                    ShowWindow(hwnd, SW_MAXIMIZE);
-                }
-            },
-            ID_CLOSE =>  {
-                win::send_int(hwnd, WM_CLOSE, 0, 0);
             },
             _ => toggle_theme(hwnd, state),
         }
