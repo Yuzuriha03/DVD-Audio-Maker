@@ -101,7 +101,7 @@ unsafe extern "system" fn pan_proc(hwnd: Hwnd, message: u32, wparam: Wparam, lpa
                     let lines = line_delta(&mut pan.remainder, delta, scale(19).max(1));
                     win::send_int(hwnd, EM_LINESCROLL, 0, lines as isize);
                     // The log EDIT sits in a frame inside the main window.
-                    if let Some(ui) = unsafe { state(GetParent(GetParent(hwnd))) } { observe_log_scroll(ui); }
+                    if let Some(mut ui) = unsafe { state(GetParent(GetParent(hwnd))) } { observe_log_scroll(&mut ui); }
                 } else if window_class(hwnd) == "ComboLBox" {
                     let lines = line_delta(&mut pan.remainder, delta, scale(44).max(1));
                     unsafe {

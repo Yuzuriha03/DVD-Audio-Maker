@@ -21,6 +21,7 @@ use dvda_core::app::AppOptions;
 use dvda_native::media::Callbacks;
 use serde_json::{Map, Value, json};
 use std::{
+    cell::{Cell, RefCell, RefMut},
     collections::HashMap,
     ffi::{OsStr, c_void},
     fs,
@@ -28,6 +29,7 @@ use std::{
     os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
     ptr,
+    rc::Rc,
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -1518,8 +1520,31 @@ struct Controls {
     profile_origin: Hwnd,
 }
 
+/// What the paint and scrollbar code reads from the main window. It lives apart from
+/// `UiState`, so paint that runs inside a layout (which holds the state's borrow)
+/// still reads it. The changing fields are `Cell`s, written by `UiState`'s setters.
+struct PaintFields {
+    lang: Cell<Lang>,
+    tab_index: Cell<usize>,
+    splitter_position: Cell<i32>,
+    pages: Vec<Hwnd>,
+    page_scrollbar: Hwnd,
+    log: Hwnd,
+    log_scrollbar: Hwnd,
+    muted: Vec<Hwnd>,
+}
+
+thread_local! {
+    static PAINT_FIELDS: RefCell<HashMap<usize, Rc<PaintFields>>> = RefCell::new(HashMap::new());
+}
+
+/// The paint fields of the main window `main`, or `None` if it is not set up.
+fn paint_fields(main: Hwnd) -> Option<Rc<PaintFields>> {
+    PAINT_FIELDS.with(|fields| fields.borrow().get(&(main as usize)).cloned())
+}
+
 struct UiState {
-    lang: Lang,
+    paint: Rc<PaintFields>,
     main_window: Hwnd,
     controls: Controls,
     custom_bytes_label: Hwnd,
@@ -1528,9 +1553,7 @@ struct UiState {
     pages: Vec<Hwnd>,
     wheel_remainders: HashMap<usize, i32>,
     tabs: Vec<Hwnd>,
-    tab_index: usize,
     labels: Vec<(Hwnd, &'static str)>,
-    muted: Vec<Hwnd>,
     buttons: Vec<(Hwnd, &'static str)>,
     base: Option<AppOptions>,
     profile_path: PathBuf,
@@ -1577,7 +1600,6 @@ struct UiState {
     splitter_max: i32,
     /// Whether the last layout was the short-window one (with hysteresis).
     compact_layout: Option<bool>,
-    splitter_position: i32,
     dragging_splitter: bool,
     /// Inside the modal sizing loop (WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE).
     sizing: bool,
@@ -1598,6 +1620,32 @@ struct UiState {
     theme_override: Option<bool>,
     page_scrollbar: Hwnd,
     log_scrollbar: Hwnd,
+}
+
+impl UiState {
+    fn lang(&self) -> Lang {
+        self.paint.lang.get()
+    }
+
+    fn set_lang(&mut self, lang: Lang) {
+        self.paint.lang.set(lang);
+    }
+
+    fn tab_index(&self) -> usize {
+        self.paint.tab_index.get()
+    }
+
+    fn set_tab_index(&mut self, index: usize) {
+        self.paint.tab_index.set(index);
+    }
+
+    fn splitter_position(&self) -> i32 {
+        self.paint.splitter_position.get()
+    }
+
+    fn set_splitter_position(&mut self, position: i32) {
+        self.paint.splitter_position.set(position);
+    }
 }
 
 struct WorkerCallbacks {
@@ -1983,15 +2031,15 @@ unsafe extern "system" fn window_proc(
     lparam: Lparam,
 ) -> Lresult {
     if message == WM_CLOSE {
-        if let Some(state) = unsafe { state(hwnd) }
+        if let Some(mut state) = unsafe { state(hwnd) }
             && state.busy
         {
             state.close_when_done = true;
-            cancel_operation(state);
+            cancel_operation(&mut state);
             return 0;
         }
-        if let Some(state) = unsafe { state(hwnd) } {
-            autosave(state);
+        if let Some(mut state) = unsafe { state(hwnd) } {
+            autosave(&mut state);
         }
          {
             DestroyWindow(hwnd);
@@ -2002,7 +2050,8 @@ unsafe extern "system" fn window_proc(
          {
             KillTimer(hwnd, 1);
         }
-        let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut UiState;
+        PAINT_FIELDS.with(|fields| fields.borrow_mut().remove(&(hwnd as usize)));
+        let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<UiState>;
         if !pointer.is_null() {
             unsafe {
                 drop(Box::from_raw(pointer));
@@ -2016,40 +2065,40 @@ unsafe extern "system" fn window_proc(
     }
     match message {
         WM_CREATE => {
-            let ui = Box::new(create_controls(hwnd));
+            let ui = Box::new(RefCell::new(create_controls(hwnd)));
             unsafe {
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(ui) as isize);
                 SetTimer(hwnd, 1, 100, ptr::null());
             }
-            if let Some(state) = unsafe { state(hwnd) } {
-                apply_theme(hwnd, state, dark_theme());
+            if let Some(mut state) = unsafe { state(hwnd) } {
+                apply_theme(hwnd, &mut state, dark_theme());
             }
             0
         }
         WM_TIMER => {
-            if let Some(state) = unsafe { state(hwnd) } {
-                drain_worker_logs(hwnd, state);
-                update_statistics(state);
+            if let Some(mut state) = unsafe { state(hwnd) } {
+                drain_worker_logs(hwnd, &mut state);
+                update_statistics(&mut state);
                 unsafe {
-                    refresh_dynamic_indicators(state);
+                    refresh_dynamic_indicators(&state);
                 }
             }
             0
         }
         WM_SETTINGCHANGE => {
-            if let Some(state) = unsafe { state(hwnd) }
+            if let Some(mut state) = unsafe { state(hwnd) }
                 && state.theme_override.is_none()
             {
                 let system = system_prefers_dark();
                 if system != dark_theme() {
-                    apply_theme(hwnd, state, system);
+                    apply_theme(hwnd, &mut state, system);
                 }
             }
             0
         }
         WM_NCLBUTTONDOWN => {
-            // HTLEFT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTBOTTOMLEFT
-            if matches!(wparam, 10 | 12 | 13 | 14 | 16) && IsZoomed(hwnd) == 0 {
+            // Every sizing edge and corner (HTLEFT..=HTBOTTOMRIGHT) uses the outline.
+            if matches!(wparam as i32, HTLEFT..=HTBOTTOMRIGHT) && IsZoomed(hwnd) == 0 {
                 let origin = Point {
                     x: (lparam & 0xffff) as u16 as i16 as i32,
                     y: ((lparam >> 16) & 0xffff) as u16 as i16 as i32,
@@ -2074,16 +2123,16 @@ unsafe extern "system" fn window_proc(
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         0x0200..=0x0202 => {
-            if let Some(state) = unsafe { state(hwnd) } {
+            if let Some(mut state) = unsafe { state(hwnd) } {
                 let y = (lparam >> 16) as i16 as i32;
-                let over = (state.splitter_position - scale(5)
-                    ..state.splitter_position + scale(10))
+                let over = (state.splitter_position() - scale(5)
+                    ..state.splitter_position() + scale(10))
                     .contains(&y);
                 if message == 0x0201 && over {
                     state.dragging_splitter = true;
                     unsafe {
                         SetCapture(hwnd);
-                        update_splitter_preview(state, hwnd, y);
+                        update_splitter_preview(&mut state, hwnd, y);
                     }
                 } else if message == 0x0202 && state.dragging_splitter {
                     state.dragging_splitter = false;
@@ -2091,17 +2140,17 @@ unsafe extern "system" fn window_proc(
                         ReleaseCapture();
                     }
                     let preview = state.splitter_preview;
-                    hide_splitter_preview(state);
+                    hide_splitter_preview(&mut state);
                     if let Some(preview_y) = preview {
                         state.splitter_height = Some(
                             (unscale(preview_y) - state.splitter_tabs_y).clamp(104, state.splitter_max.max(104)),
                         );
                         // layout() moves children with SWP_NOREDRAW and then
                         // repaints the whole tree synchronously.
-                        layout(hwnd, state);
+                        layout(hwnd, &mut state);
                     }
                 } else if message == 0x0200 && state.dragging_splitter && wparam & 1 != 0 {
-                    unsafe { update_splitter_preview(state, hwnd, y) };
+                    unsafe { update_splitter_preview(&mut state, hwnd, y) };
                 }
                 if over || state.dragging_splitter {
                     unsafe {
@@ -2114,21 +2163,21 @@ unsafe extern "system" fn window_proc(
         }
         WM_SIZE => {
             if wparam != 1
-                && let Some(state) = unsafe { state(hwnd) }
+                && let Some(mut state) = unsafe { state(hwnd) }
             {
-                layout(hwnd, state);
+                layout(hwnd, &mut state);
             }
             0
         }
         0x0231 | 0x0232 => {
             // WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE: the log keeps its size while
             // the user drags an edge and gets the final size once at the end.
-            if let Some(state) = unsafe { state(hwnd) } {
+            if let Some(mut state) = unsafe { state(hwnd) } {
                 state.sizing = message == 0x0231;
                 if !state.sizing && state.log_frozen {
-                    layout(hwnd, state);
+                    layout(hwnd, &mut state);
                     if state.log_dirty && checked(state.controls.live) {
-                        render_log(state);
+                        render_log(&mut state);
                     }
                 }
             }
@@ -2215,7 +2264,8 @@ unsafe extern "system" fn window_proc(
             }
             result
         }
-        WM_GETMINMAXINFO => {            if lparam != 0 {
+        WM_GETMINMAXINFO => {
+            if lparam != 0 {
                 // MINMAXINFO consists of five POINTs; minimum tracking size is fourth.
                 let dimensions = unsafe { &mut *(lparam as *mut [i32; 10]) };
                 let mut min_width = scale(640);
@@ -2268,16 +2318,16 @@ unsafe extern "system" fn window_proc(
                     );
                 }
             }
-            if let Some(state) = unsafe { state(hwnd) } {
-                rescale_ui(hwnd, state);
+            if let Some(mut state) = unsafe { state(hwnd) } {
+                rescale_ui(hwnd, &mut state);
             }
             0
         }
         WM_COMMAND => {
             let id = wparam & 0xffff;
             let notify = ((wparam >> 16) & 0xffff) as u16;
-            if let Some(state) = unsafe { state(hwnd) } {
-                handle_command(hwnd, state, id, notify);
+            if let Some(mut state) = unsafe { state(hwnd) } {
+                handle_command(hwnd, &mut state, id, notify);
             }
             0
         }
@@ -2303,7 +2353,7 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_NOTIFY => 0,
-        WM_CTLCOLORSTATIC => unsafe {
+        WM_CTLCOLORSTATIC => {
             let dc = wparam as Handle;
             let control = lparam as Hwnd;
             SetBkMode(dc, 1);
@@ -2311,13 +2361,15 @@ unsafe extern "system" fn window_proc(
                 SetBkColor(dc, c_disabled_fill());
                 SetTextColor(dc, c_disabled_text());
                 brush(c_disabled_fill()) as Lresult
-            } else if state(hwnd).is_some_and(|state| state.controls.log == control) {
+            } else if GetDlgCtrlID(control) as usize == ID_LOG {
+                // The log is a read-only EDIT, so it asks for its colour here. Its id
+                // identifies it without the UiState, which a layout may hold.
                 SetBkColor(dc, c_card());
                 SetTextColor(dc, c_ink());
                 card_brush() as Lresult
             } else {
                 SetBkColor(dc, c_body());
-                let muted = state(hwnd).is_some_and(|state| state.muted.contains(&control));
+                let muted = paint_fields(hwnd).is_some_and(|paint| paint.muted.contains(&control));
                 SetTextColor(dc, if muted { c_muted() } else { c_ink() });
                 body_brush() as Lresult
             }
@@ -2450,10 +2502,10 @@ unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
         SendMessageW(hwnd, WM_GETMINMAXINFO, 0, limits.as_mut_ptr() as Lparam);
         let (min_w, min_h) = (limits[6].max(1), limits[7].max(1));
         let (max_w, max_h) = (limits[8].max(min_w), limits[9].max(min_h));
-        let left = matches!(hit, 10 | 13 | 16);
-        let top = matches!(hit, 12..=14);
-        let right = hit == 14;
-        let bottom = hit == 16;
+        let left = matches!(hit as i32, HTLEFT | HTTOPLEFT | HTBOTTOMLEFT);
+        let top = matches!(hit as i32, HTTOP | HTTOPLEFT | HTTOPRIGHT);
+        let right = matches!(hit as i32, HTRIGHT | HTTOPRIGHT | HTBOTTOMRIGHT);
+        let bottom = matches!(hit as i32, HTBOTTOM | HTBOTTOMLEFT | HTBOTTOMRIGHT);
         let target = |cursor: Point| {
             let (dx, dy) = (cursor.x - origin.x, cursor.y - origin.y);
             let mut rect = start;
@@ -2475,6 +2527,13 @@ unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
             }
             if bottom {
                 rect.bottom = (start.bottom + dy).clamp(start.top + min_h, start.top + max_h);
+                // Mirror of the top edge: a bottom edge taken to the bottom of the
+                // screen makes the window as tall as the work area.
+                let mut info = MonitorInfo { size: std::mem::size_of::<MonitorInfo>() as u32, ..std::mem::zeroed() };
+                if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0 && cursor.y >= info.monitor.bottom - 1 {
+                    rect.top = info.work.top;
+                    rect.bottom = info.work.bottom;
+                }
             }
             rect
         };
@@ -2697,7 +2756,7 @@ unsafe extern "system" fn page_proc(
         0x020a => {
             let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
             let delta = (wparam >> 16) as i16 as i32;
-            let pixels = if let Some(state) = unsafe { state(GetParent(hwnd)) } {
+            let pixels = if let Some(mut state) = unsafe { state(GetParent(hwnd)) } {
                 wheel_pixels(
                     delta,
                     scale(40),
@@ -2722,11 +2781,11 @@ unsafe extern "system" fn page_proc(
             unsafe { paint_page(hwnd) };
             0
         }
-        WM_CTLCOLORSTATIC => unsafe {
+        WM_CTLCOLORSTATIC => {
             let dc = wparam as Handle;
             let control = lparam as Hwnd;
             let parent = GetParent(hwnd);
-            let muted = state(parent).is_some_and(|state| state.muted.contains(&control));
+            let muted = paint_fields(parent).is_some_and(|paint| paint.muted.contains(&control));
             SetBkMode(dc, 1);
             if (IsWindowEnabled(hwnd) == 0 || IsWindowEnabled(control) == 0)
                 && window_class(control) == "Edit"
@@ -2862,7 +2921,7 @@ fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     } else {
         // SAFETY: `main` is the window that owns the settings pages; the borrow ends
         // with this statement.
-        unsafe { state(main) }.map_or(ptr::null_mut(), |state| state.page_scrollbar)
+        paint_fields(main).map_or(ptr::null_mut(), |paint| paint.page_scrollbar)
     };
     scroll_page_with_bar(hwnd, requested, explicit, bar);
 }
@@ -3118,20 +3177,25 @@ fn resize_page_fields(page: Hwnd) {
     }
 }
 
-/// # Safety
-/// The main window's `UiState`, if `hwnd` is the main window and it is set up.
+/// The main window's `UiState`, or `None` if `hwnd` is not the main window, is not
+/// set up, or is already borrowed.
+///
+/// Win32 can call back into the window procedure synchronously (for example while
+/// a layout moves or shows controls). A nested call that finds the state already
+/// borrowed gets `None` and takes the same path as a window without state, so no
+/// two mutable references to the `UiState` ever exist at once.
 ///
 /// # Safety
-/// The returned reference is unbounded in lifetime. The caller must not use any
-/// other reference to that `UiState` while it is alive. Nested calls from Win32
-/// (for example a notification sent while a layout is in progress) still
-/// violate this; removing that needs interior mutability in `UiState`.
-unsafe fn state<'a>(hwnd: Hwnd) -> Option<&'a mut UiState> {
+/// The user data of a main window must be a live `RefCell<UiState>` (set up in
+/// `WM_CREATE`, freed in `WM_DESTROY`). The returned guard must not outlive that
+/// window's `WM_DESTROY`.
+unsafe fn state<'a>(hwnd: Hwnd) -> Option<RefMut<'a, UiState>> {
     if window_class(hwnd) != "DVD_AUDIO_MAKER_RUST" {
         return None;
     }
-    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut UiState;
-    (!pointer.is_null()).then(|| unsafe { &mut *pointer })
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const RefCell<UiState>;
+    // SAFETY: per this function's contract, the pointer is the live cell of this window.
+    unsafe { pointer.as_ref() }?.try_borrow_mut().ok()
 }
 
 macro_rules! create {
@@ -3858,8 +3922,19 @@ fn create_controls(parent: Hwnd) -> UiState {
         c.statistics,
         advanced_hint,
     ];
+    let paint = Rc::new(PaintFields {
+        lang: Cell::new(lang),
+        tab_index: Cell::new(0),
+        splitter_position: Cell::new(420),
+        pages: pages.clone(),
+        page_scrollbar,
+        log: c.log,
+        log_scrollbar,
+        muted,
+    });
+    PAINT_FIELDS.with(|fields| fields.borrow_mut().insert(parent as usize, Rc::clone(&paint)));
     let mut state = UiState {
-        lang,
+        paint,
         main_window: parent,
         controls: c,
         custom_bytes_label,
@@ -3868,9 +3943,7 @@ fn create_controls(parent: Hwnd) -> UiState {
         pages,
         wheel_remainders: HashMap::new(),
         tabs,
-        tab_index: 0,
         labels,
-        muted,
         buttons,
         base,
         profile_path,
@@ -3910,7 +3983,6 @@ fn create_controls(parent: Hwnd) -> UiState {
         splitter_tabs_y: HEADER_HEIGHT + 56,
         splitter_max: 350,
         compact_layout: None,
-        splitter_position: 420,
         dragging_splitter: false,
         sizing: false,
         log_box: None,
@@ -4697,8 +4769,8 @@ fn bar_geometry(client_height: i32, metrics: &BarMetrics) -> BarGeometry {
     }
 }
 
-fn page_bar_metrics(state: &UiState) -> BarMetrics {
-    let page = match state.pages.get(state.tab_index) {
+fn page_bar_metrics(state: &PaintFields) -> BarMetrics {
+    let page = match state.pages.get(state.tab_index.get()) {
         Some(page) => *page,
         None => {
             return BarMetrics {
@@ -4778,11 +4850,11 @@ unsafe fn install_scrollbar(hwnd: Hwnd, main: Hwnd) {
     }
 }
 
-fn scrollbar_metrics(hwnd: Hwnd, state: &UiState) -> BarMetrics {
+fn scrollbar_metrics(hwnd: Hwnd, state: &PaintFields) -> BarMetrics {
     if hwnd == state.page_scrollbar {
         page_bar_metrics(state)
     } else {
-        log_bar_metrics(state.controls.log)
+        log_bar_metrics(state.log)
     }
 }
 
@@ -4790,16 +4862,16 @@ fn scrollbar_metrics(hwnd: Hwnd, state: &UiState) -> BarMetrics {
 /// `main` must be the main window with a live `UiState`, and `hwnd` must be one of its
 /// scrollbars.
 unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
-    let Some(state) = (unsafe { state(main) }) else {
+    let Some(state) = paint_fields(main) else {
         return;
     };
     if hwnd == state.page_scrollbar {
-        if let Some(page) = state.pages.get(state.tab_index).copied() {
-            let metrics = page_bar_metrics(state);
+        if let Some(page) = state.pages.get(state.tab_index.get()).copied() {
+            let metrics = page_bar_metrics(&state);
             scroll_page_with_bar(page, value.clamp(0, metrics.max), true, state.page_scrollbar);
         }
     } else if hwnd == state.log_scrollbar {
-        let log = state.controls.log;
+        let log = state.log;
         if log.is_null() {
             return;
         }
@@ -4837,8 +4909,8 @@ unsafe fn draw_scrollbar(hwnd: Hwnd) {
     let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ScrollbarVisual;
     if !pointer.is_null() && rect.right > 0 && rect.bottom > 0 {
         let main = unsafe { (*pointer).main };
-        if let Some(state) = unsafe { state(main) } {
-            let metrics = scrollbar_metrics(hwnd, state);
+        if let Some(state) = paint_fields(main) {
+            let metrics = scrollbar_metrics(hwnd, &state);
             let geometry = bar_geometry(rect.bottom, &metrics);
             if metrics.max > 0 {
                 let inset = scale(2).max(1);
@@ -4894,8 +4966,8 @@ unsafe extern "system" fn scrollbar_proc(
             let y = (lparam >> 16) as i16 as i32;
             let main = unsafe { (*pointer).main };
             let mut geometry = None;
-            if let Some(state) = unsafe { state(main) } {
-                let metrics = scrollbar_metrics(hwnd, state);
+            if let Some(state) = paint_fields(main) {
+                let metrics = scrollbar_metrics(hwnd, &state);
                 geometry = Some((metrics, bar_geometry(rect.bottom, &metrics)));
             }
             unsafe {
@@ -4946,8 +5018,8 @@ unsafe extern "system" fn scrollbar_proc(
             }
             let y = (lparam >> 16) as i16 as i32;
             let main = unsafe { (*pointer).main };
-            if let Some(state) = unsafe { state(main) } {
-                let metrics = scrollbar_metrics(hwnd, state);
+            if let Some(state) = paint_fields(main) {
+                let metrics = scrollbar_metrics(hwnd, &state);
                 let geometry = bar_geometry(rect.bottom, &metrics);
                 if y >= geometry.thumb_top && y < geometry.thumb_top + geometry.thumb_height {
                     unsafe {
@@ -5005,7 +5077,7 @@ unsafe fn refresh_dynamic_indicators(state: &UiState) {
             continue;
         }
         let metrics = if is_page {
-            page_bar_metrics(state)
+            page_bar_metrics(&state.paint)
         } else {
             log_bar_metrics(state.controls.log)
         };
@@ -5314,7 +5386,7 @@ fn numeric_choice(hwnd: Hwnd, values: &[i64]) -> i64 {
 }
 fn select_tab(state: &mut UiState, index: usize) {
     let index = index.min(state.pages.len().saturating_sub(1));
-    state.tab_index = index;
+    state.set_tab_index(index);
     show_page(state, index as i32);
     for tab in &state.tabs {
         unsafe {
@@ -5795,14 +5867,15 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         header_x[index] = right - header_widths[index];
         right = header_x[index] - 8;
     }
-    let profile_label_width = unscale(measured_text_width(hwnd, tr(state.lang, "profile"), ui_font())) + 8;
+    let profile_label_width = unscale(measured_text_width(hwnd, tr(state.lang(), "profile"), ui_font())) + 8;
     let profile_x = margin + profile_label_width + 6;
     let stacked_profile = header_x[0] - 12 - profile_x < 120;
     let action_toolbar_y = toolbar_y + if stacked_profile { 34 } else { 0 };
     let tabs_y = tabs_y + if stacked_profile { 34 } else { 0 };
     // The log toolbar is sized from its translated texts; narrow windows
     // tighten its spacing first and wrap copy/export only when necessary.
-    let text_width = |key| unscale(measured_text_width(hwnd, tr(state.lang, key), ui_font()));
+    let lang = state.lang();
+    let text_width = |key| unscale(measured_text_width(hwnd, tr(lang, key), ui_font()));
     let log_bar = log_toolbar_layout(
         width - margin * 2,
         text_width("log_section"),
@@ -5821,7 +5894,8 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     // By default the settings are exactly as tall as the current page's
     // content (it depends on the width, the tab and the shown fields, never
     // on the window height), so no empty band is left below it.
-    let page = state.pages[state.tab_index.min(state.pages.len() - 1)];
+    let tab = state.tab_index();
+    let page = state.pages[tab.min(state.pages.len() - 1)];
     state.default_tab_height = Some(unscale(page_content_height(page)) + 44);
     let tab_height = match state.splitter_height {
         Some(dragged) => dragged.clamp(104, settings_room(MIN_LOG_HEIGHT)),
@@ -5849,7 +5923,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
     let log_shown = task_shown && actions_top - 12 - log_top >= MIN_LOG_HEIGHT;
     let log_filters_shown = task_shown && splitter + 104 <= actions_top - 6;
     let log_buttons_shown = task_shown && log_buttons_y + 28 <= actions_top - 6;
-    state.splitter_position = if compact { i32::MIN / 4 } else { scale(splitter) };
+    state.set_splitter_position(if compact { i32::MIN / 4 } else { scale(splitter) });
     let caption_width = 40;
     let caption_gap = 2;
     let close_x = width - margin - caption_width;
@@ -5962,7 +6036,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
                     page_height,
                 );
             }
-            let shown = !task_only && index == state.tab_index;
+            let shown = !task_only && index == state.tab_index();
             ShowWindow(*page, if shown { SW_SHOW } else { SW_HIDE });
         }
         place_px(state.page_scrollbar, Rect {
@@ -6068,7 +6142,7 @@ fn layout(hwnd: Hwnd, state: &mut UiState) {
         // Laying out the pages can change the current page's content height
         // (narrow layout, shown fields); fit the settings to it once more.
         static REFITTING: AtomicBool = AtomicBool::new(false);
-        let fitted = unscale(page_content_height(state.pages[state.tab_index.min(state.pages.len() - 1)])) + 44;
+        let fitted = unscale(page_content_height(state.pages[state.tab_index().min(state.pages.len() - 1)])) + 44;
         if state.splitter_height.is_none()
             && Some(fitted) != state.default_tab_height
             && !REFITTING.swap(true, Ordering::Relaxed)
@@ -6869,8 +6943,8 @@ unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
         return true;
     }
     if (ID_TAB..ID_TAB + 3).contains(&id) {
-        let active = unsafe { state(hwnd) }
-            .map(|state| state.tab_index == id - ID_TAB)
+        let active = paint_fields(hwnd)
+            .map(|paint| paint.tab_index.get() == id - ID_TAB)
             .unwrap_or(false);
         unsafe { draw_tab_button(item, active) };
         return true;
@@ -7047,7 +7121,7 @@ unsafe fn paint_window(hwnd: Hwnd) {
             c_header_title(),
             DT_LEFT | DT_VCENTER | DT_SINGLELINE,
         );
-        let lang = state(hwnd).map(|state| state.lang).unwrap_or(Lang::Zh);
+        let lang = paint_fields(hwnd).map_or(Lang::Zh, |paint| paint.lang.get());
         let mut subtitle = Rect {
             left: scale(73),
             top: scale(38),
@@ -7062,14 +7136,16 @@ unsafe fn paint_window(hwnd: Hwnd) {
             c_header_subtitle(),
             DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS,
         );
-        let splitter = state(hwnd)
-            .map(|state| state.splitter_position)
+        let splitter = paint_fields(hwnd)
+            .map(|paint| paint.splitter_position.get())
             .unwrap_or(0);
         if splitter > header && splitter < rect.bottom - scale(60) {
+            // Ends at the settings panel's right edge, which leaves room for the page
+            // scrollbar (the page is placed `margin * 2 + 18` narrower than the window).
             let divider = Rect {
                 left: scale(18),
                 top: splitter - 1,
-                right: width - scale(18),
+                right: width - scale(36),
                 bottom: splitter,
             };
             FillRect(dc, &divider, border_brush());
@@ -7256,7 +7332,7 @@ fn refit_settings(state: &mut UiState) {
     if state.splitter_height.is_some() || state.main_window.is_null() {
         return;
     }
-    let page = state.pages[state.tab_index.min(state.pages.len() - 1)];
+    let page = state.pages[state.tab_index().min(state.pages.len() - 1)];
     let fitted = unscale(page_content_height(page)) + 44;
     let mut client: Rect = Rect::default();
     GetClientRect(state.main_window, &mut client);
@@ -7368,7 +7444,7 @@ fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16)
 }
 
 fn set_language(state: &mut UiState, lang: Lang) {
-    state.lang = lang;
+    state.set_lang(lang);
     state.statistics_text.clear();
     combo_select(
         state.controls.language,
@@ -7460,7 +7536,7 @@ fn update_choices(state: &UiState) {
     let imported = mode == 2;
     set_text(
         state.controls.audio_note,
-        tr(state.lang, audio_note_key(mode)),
+        tr(state.lang(), audio_note_key(mode)),
     );
     let custom_capacity = combo_index(state.controls.capacity) == 2;
      {
@@ -7730,12 +7806,12 @@ fn update_statistics(state: &mut UiState) {
         .started
         .map_or(state.elapsed_seconds, |s| s.elapsed().as_secs());
     let problems = state.problem_count;
-    let text = tr(state.lang, "statistics")
+    let text = tr(state.lang(), "statistics")
         .replace("{0}", &(elapsed / 3600).to_string())
         .replace("{1}", &format!("{:02}", elapsed / 60 % 60))
         .replace("{2}", &format!("{:02}", elapsed % 60))
         .replace("{3}", &problems.to_string());
-    let display = localized_detail(state.lang, &text);
+    let display = localized_detail(state.lang(), &text);
     if state.statistics_text != display {
         set_text(state.controls.statistics, &display);
         state.statistics_text = display;
@@ -7751,9 +7827,9 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
     let c = &state.controls;
     let mut error = None;
     if for_task && !SAMPLE_RATES.contains(&numeric_choice(c.rate, SAMPLE_RATES)) {
-        error = Some((c.rate, tr(state.lang, "invalid_sample_rate").into()));
+        error = Some((c.rate, tr(state.lang(), "invalid_sample_rate").into()));
     } else if for_task && !SAMPLE_BITS.contains(&numeric_choice(c.bits, SAMPLE_BITS)) {
-        error = Some((c.bits, tr(state.lang, "invalid_bits").into()));
+        error = Some((c.bits, tr(state.lang(), "invalid_bits").into()));
     }
     for (control, key, min, max) in [
         (c.group_limit, "group_limit", 1, 99),
@@ -7765,8 +7841,8 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
                 control,
                 format!(
                     "{}：{}",
-                    tr(state.lang, key),
-                    tr(state.lang, "invalid_integer")
+                    tr(state.lang(), key),
+                    tr(state.lang(), "invalid_integer")
                         .replace("{0}", &min.to_string())
                         .replace("{1}", &max.to_string())
                 ),
@@ -7782,8 +7858,8 @@ fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
             c.custom_bytes,
             format!(
                 "{}：{}",
-                tr(state.lang, "custom_bytes"),
-                tr(state.lang, "invalid_integer")
+                tr(state.lang(), "custom_bytes"),
+                tr(state.lang(), "invalid_integer")
                     .replace("{0}", "0")
                     .replace("{1}", "10000000000")
             ),
@@ -7826,7 +7902,7 @@ fn save_profile(state: &mut UiState) {
         path.set_extension("json");
     }
     let values = edited_profile_values(state);
-    match dvda_core::app::save_profile(&path, &values, state.lang.code()) {
+    match dvda_core::app::save_profile(&path, &values, state.lang().code()) {
         Ok(()) => {
             set_text(state.controls.profile, &path.to_string_lossy());
             set_text(state.controls.profile_origin, &path.to_string_lossy());
@@ -7836,13 +7912,13 @@ fn save_profile(state: &mut UiState) {
                 .or_else(|| AppOptions::load(None).ok());
             add_log(
                 state,
-                &format!("{}{}", tr(state.lang, "saved"), path.display()),
+                &format!("{}{}", tr(state.lang(), "saved"), path.display()),
                 false,
             );
         }
         Err(error) => add_log(
             state,
-            &format!("{}{}", tr(state.lang, "profile_error"), error),
+            &format!("{}{}", tr(state.lang(), "profile_error"), error),
             true,
         ),
     }
@@ -7851,8 +7927,8 @@ fn save_profile(state: &mut UiState) {
 fn autosave(state: &mut UiState) {
     let path = dvda_core::app::default_profile_path();
     let values = edited_profile_values(state);
-    if let Err(error) = dvda_core::app::save_profile(&path, &values, state.lang.code()) {
-        add_log(state, &format!("{}{}", tr(state.lang, "profile_error"), error), true);
+    if let Err(error) = dvda_core::app::save_profile(&path, &values, state.lang().code()) {
+        add_log(state, &format!("{}{}", tr(state.lang(), "profile_error"), error), true);
     }
 }
 fn save_profile_as(hwnd: Hwnd, state: &mut UiState) {
@@ -7863,8 +7939,8 @@ fn save_profile_as(hwnd: Hwnd, state: &mut UiState) {
         hwnd,
         true,
         &get_text(state.controls.profile),
-        tr(state.lang, "save_as"),
-        state.lang,
+        tr(state.lang(), "save_as"),
+        state.lang(),
         FileKind::Profile,
     ) {
         set_text(state.controls.profile, &path);
@@ -8015,8 +8091,8 @@ fn choose_and_load_profile(hwnd: Hwnd, state: &mut UiState) {
         hwnd,
         false,
         &get_text(state.controls.profile),
-        tr(state.lang, "select_profile"),
-        state.lang,
+        tr(state.lang(), "select_profile"),
+        state.lang(),
         FileKind::Profile,
     ) else {
         return;
@@ -8032,11 +8108,11 @@ fn choose_and_load_profile(hwnd: Hwnd, state: &mut UiState) {
             if let Some(code) = profile_language(&path) {
                 set_language(state, Lang::from_code(&code));
             }
-            add_log(state, tr(state.lang, "loaded"), false);
+            add_log(state, tr(state.lang(), "loaded"), false);
         }
         Err(error) => add_log(
             state,
-            &format!("{}{}", tr(state.lang, "profile_error"), error),
+            &format!("{}{}", tr(state.lang(), "profile_error"), error),
             true,
         ),
     }
@@ -8127,19 +8203,19 @@ fn start_operation(state: &mut UiState, command: usize) {
             Err(error) => {
                 add_log(
                     state,
-                    &format!("{}{}", tr(state.lang, "profile_error"), error),
+                    &format!("{}{}", tr(state.lang(), "profile_error"), error),
                     true,
                 );
                 return;
             }
         };
-    options.language = state.lang.code().into();
+    options.language = state.lang().code().into();
     let options = match if command == ID_VERIFY {
         Ok(options)
     } else if command == ID_PREPARE {
         options.scratch_options()
     } else if options.has_unfinished_task() {
-        recovery_choice(state.lang).and_then(|restart| options.recover_task(restart))
+        recovery_choice(state.lang()).and_then(|restart| options.recover_task(restart))
     } else {
         options.task_options()
     } {
@@ -8179,8 +8255,8 @@ fn start_operation(state: &mut UiState, command: usize) {
     };
     state.status_key = start_key;
     state.activity_raw = tr(Lang::Zh, start_key).into();
-    set_text(state.controls.status, tr(state.lang, start_key));
-    set_text(state.controls.activity, tr(state.lang, start_key));
+    set_text(state.controls.status, tr(state.lang(), start_key));
+    set_text(state.controls.activity, tr(state.lang(), start_key));
     // Verification can spend time in detailed-only checks, so keep a useful
     // summary row visible even when its low-level progress is filtered out.
     add_log(state, tr(Lang::Zh, start_key), false);
@@ -8192,7 +8268,7 @@ fn start_operation(state: &mut UiState, command: usize) {
         win::send_int(progress, PBM_SETRANGE32, 0, 100);
         win::send_int(progress, PBM_SETPOS, 0, 0);
     }
-    let lang = state.lang;
+    let lang = state.lang();
     let logs = state.log_sender.clone();
     thread::spawn(move || {
         let mut callbacks = WorkerCallbacks {
@@ -8346,7 +8422,7 @@ fn update_progress(state: &mut UiState, value: u16) {
             state.controls.status,
             &format!(
                 "{} \u{00b7} {}%",
-                tr(state.lang, state.status_key),
+                tr(state.lang(), state.status_key),
                 state.progress_value
             ),
         );
@@ -8364,21 +8440,21 @@ fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
     };
     state.status_key = key;
     let text = if kind == 2 {
-        tr(state.lang, "cancelled")
+        tr(state.lang(), "cancelled")
     } else {
         text
     };
-    set_text(state.controls.status, tr(state.lang, key));
-    set_text(state.controls.activity, &localized_log(state.lang, text));
+    set_text(state.controls.status, tr(state.lang(), key));
+    set_text(state.controls.activity, &localized_log(state.lang(), text));
     add_log(state, text, kind == 0);
     if kind == 1 && state.problem_count > 0 {
         set_text(
             state.controls.status,
             &format!(
                 "{} · {}",
-                tr(state.lang, key),
+                tr(state.lang(), key),
                 presentation::phrase(
-                    state.lang,
+                    state.lang(),
                     "有提示待查看",
                     "Review the warnings",
                     "警告を確認してください"
@@ -8387,7 +8463,7 @@ fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
         );
     }
     if kind == 0 {
-        let advice = presentation::error_advice(state.lang, text);
+        let advice = presentation::error_advice(state.lang(), text);
         add_log(state, &format!("[信息] {advice}"), false);
         set_text(state.controls.activity, &advice);
     }
@@ -8435,7 +8511,7 @@ fn cancel_operation(state: &mut UiState) {
             EnableWindow(state.controls.cancel, 0);
         }
         state.status_key = "stopping";
-        set_text(state.controls.status, tr(state.lang, "stopping"));
+        set_text(state.controls.status, tr(state.lang(), "stopping"));
         add_log(state, tr(Lang::Zh, "stopping"), false);
     }
 }
@@ -8511,7 +8587,7 @@ fn add_log(state: &mut UiState, text: &str, problem: bool) {
         {
             state.log_file = None;
             let message = presentation::phrase(
-                state.lang,
+                state.lang(),
                 "无法继续保存完整日志，窗口仅保留最近记录。请检查磁盘空间或目录权限。",
                 "Cannot continue saving the full log. Only recent records remain; check disk space and folder permissions.",
                 "完全なログを保存できません。最近の記録のみ表示されます。空き容量とフォルダー権限を確認してください。",
@@ -8544,7 +8620,7 @@ fn add_log(state: &mut UiState, text: &str, problem: bool) {
             },
         );
     }
-    if presentation::activity(state.lang, text).is_some() {
+    if presentation::activity(state.lang(), text).is_some() {
         state.activity_raw = text.to_owned();
         state.activity_dirty = true;
     }
@@ -8554,7 +8630,7 @@ fn add_log(state: &mut UiState, text: &str, problem: bool) {
 fn push_log_line(state: &mut UiState, line: LogLine) {
     // Decoder progress can fill the detail buffer before the next track ends.
     // Keep task history separately so that chatter cannot evict summary rows.
-    if presentation::summary(state.lang, &line.raw, line.problem).is_some() {
+    if presentation::summary(state.lang(), &line.raw, line.problem).is_some() {
         state.summary_logs.push(line.clone());
         if state.summary_logs.len() > 2500 {
             state.summary_logs.drain(..state.summary_logs.len() - 2000);
@@ -8590,7 +8666,7 @@ fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
                 WorkerEvent::Progress(value) => update_progress(state, value),
                 WorkerEvent::Finished(event) => state.pending_finish = Some(event),
                 WorkerEvent::Retention(options) => {
-                    if retention_choice(state.lang).unwrap_or(false) {
+                    if retention_choice(state.lang()).unwrap_or(false) {
                         options.discard_task();
                     }
                 }
@@ -8611,7 +8687,7 @@ fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
     {
         set_text(
             state.controls.activity,
-            &localized_log(state.lang, &state.activity_raw),
+            &localized_log(state.lang(), &state.activity_raw),
         );
     }
     state.activity_dirty = false;
@@ -8656,12 +8732,12 @@ fn render_log(state: &mut UiState) {
     } else {
         &state.summary_logs
     };
-    let can_append = state.log_render_language == Some(state.lang)
+    let can_append = state.log_render_language == Some(state.lang())
         && state.log_render_detail == detail
         && state.log_render_issues_only == issues_only
         && state.log_rendered_count <= lines.len();
     let text = display_log(
-        state.lang,
+        state.lang(),
         if can_append {
             &lines[state.log_rendered_count..]
         } else {
@@ -8680,7 +8756,7 @@ fn render_log(state: &mut UiState) {
         state.log_hold_until = None;
     }
     state.log_rendered_count = lines.len();
-    state.log_render_language = Some(state.lang);
+    state.log_render_language = Some(state.lang());
     state.log_render_detail = detail;
     state.log_render_issues_only = issues_only;
     state.log_first_visible_line = first_visible_log_line(state.controls.log);
@@ -8827,7 +8903,7 @@ fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         let tooltip = Tooltip {
             control,
             key,
-            text: wide(&setting_help(state.lang, key)),
+            text: wide(&setting_help(state.lang(), key)),
         };
         let info = tooltip_info(&tooltip);
         unsafe {
@@ -9238,8 +9314,8 @@ fn export_log(hwnd: Hwnd, state: &mut UiState) {
         hwnd,
         true,
         "DVD-Audio-Maker.log.txt",
-        tr(state.lang, "select_log"),
-        state.lang,
+        tr(state.lang(), "select_log"),
+        state.lang(),
         FileKind::Log,
     ) else {
         return;
@@ -9248,7 +9324,7 @@ fn export_log(hwnd: Hwnd, state: &mut UiState) {
     if let Err(error) = result {
         message_box(
             hwnd,
-            &format!("{}{}", tr(state.lang, "export_failed"), error),
+            &format!("{}{}", tr(state.lang(), "export_failed"), error),
             "DVD-Audio Maker",
             0x10,
         );
@@ -9258,7 +9334,7 @@ fn export_log(hwnd: Hwnd, state: &mut UiState) {
             &format!(
                 "[信息] {}",
                 presentation::phrase(
-                    state.lang,
+                    state.lang(),
                     "详细日志已导出，可用于排查问题。",
                     "The full log was exported for troubleshooting.",
                     "詳細ログを保存しました。問題の調査に利用できます。"
@@ -9284,7 +9360,7 @@ fn export_log_to(state: &mut UiState, destination: &Path) -> Result<(), String> 
             WorkerEvent::Progress(value) => update_progress(state, value),
             WorkerEvent::Finished(event) => state.pending_finish = Some(event),
                 WorkerEvent::Retention(options) => {
-                    if retention_choice(state.lang).unwrap_or(false) {
+                    if retention_choice(state.lang()).unwrap_or(false) {
                         options.discard_task();
                     }
                 }
@@ -9293,7 +9369,7 @@ fn export_log_to(state: &mut UiState, destination: &Path) -> Result<(), String> 
     if let Some((_, source)) = &state.log_file {
         if presentation::same_path(source, destination) {
             return Err(presentation::phrase(
-                state.lang,
+                state.lang(),
                 "请选择其他文件名，不能覆盖正在记录的日志。",
                 "Choose another file name; the active log cannot be overwritten.",
                 "別のファイル名を選んでください。記録中のログは上書きできません。",
@@ -9302,7 +9378,7 @@ fn export_log_to(state: &mut UiState, destination: &Path) -> Result<(), String> 
         }
         fs::copy(source, destination).map_err(|e| e.to_string())?;
     } else {
-        fs::write(destination, full_log(state.lang, &state.logs)).map_err(|e| e.to_string())?;
+        fs::write(destination, full_log(state.lang(), &state.logs)).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -9325,7 +9401,7 @@ fn full_log(lang: Lang, lines: &[LogLine]) -> String {
 fn open_output(hwnd: Hwnd, state: &UiState) {
     let path = get_text(state.controls.final_dir);
     if !Path::new(&path).is_dir() {
-        message_box(hwnd, tr(state.lang, "no_output"), "DVD-Audio Maker", 0x10);
+        message_box(hwnd, tr(state.lang(), "no_output"), "DVD-Audio Maker", 0x10);
         return;
     }
     let path = wide(&path);
@@ -9348,13 +9424,13 @@ fn browse_target(hwnd: Hwnd, state: &mut UiState, id: usize) {
     };
     let current = get_text(target);
     let result = match kind {
-        BrowseKind::Folder => folder_dialog(hwnd, &current, tr(state.lang, "browse")),
+        BrowseKind::Folder => folder_dialog(hwnd, &current, tr(state.lang(), "browse")),
         BrowseKind::Font => file_dialog(
             hwnd,
             false,
             &current,
-            tr(state.lang, "browse"),
-            state.lang,
+            tr(state.lang(), "browse"),
+            state.lang(),
             FileKind::Font,
         ),
 
@@ -9917,7 +9993,7 @@ mod presentation_tests {
             findings.entry(key).or_insert(detail);
         };
         let saved_dpi = UI_DPI.load(Ordering::Relaxed);
-        let saved_lang = ui.lang;
+        let saved_lang = ui.lang();
         for dpi in [96u32, 120, 144, 168] {
             UI_DPI.store(dpi, Ordering::Relaxed);
             rescale_ui(parent, ui);
@@ -10125,7 +10201,7 @@ mod presentation_tests {
             let target_rect = window_rect(ui.controls.source);
             assert_eq!(target_rect.bottom - target_rect.top, scale(24));
             let page = ui.pages[0];
-            let max_scroll = page_bar_metrics(&ui).max;
+            let max_scroll = page_bar_metrics(&ui.paint).max;
             scroll_page(page, scale(100), true);
             assert_eq!(GetWindowLongPtrW(page, GWLP_USERDATA), scale(100).min(max_scroll) as isize);
             layout_page_contents(&ui);
@@ -10142,9 +10218,9 @@ mod presentation_tests {
                 assert!(log_rect.bottom <= action_rect.top, "log overlaps actions at height {height}");
             }
             // Layout measures translated labels, so sweep every language.
-            let original_lang = ui.lang;
+            let original_lang = ui.lang();
             for lang in [Lang::Zh, Lang::En, Lang::Ja] {
-            ui.lang = lang;
+            ui.set_lang(lang);
             for width in [640, 800, 854, 960, 1053, 1054, 1180, 1400, 960, 640] {
                 for height in [360, 500, 820] {
                     MoveWindow(parent, 0, 0, scale(width), scale(height), 0);
@@ -10201,7 +10277,7 @@ mod presentation_tests {
                     }
                     // Short windows show only the settings while idle and only
                     // the task status and log while a task runs.
-                    let page = ui.pages[ui.tab_index];
+                    let page = ui.pages[ui.tab_index()];
                     let task_area = [ui.controls.status, ui.controls.progress,
                         label_handle(&ui, "operation_section")];
                     if compact {
@@ -10235,7 +10311,7 @@ mod presentation_tests {
                                 "{} reaches the actions during a task at {width}x{height}", get_text(control));
                         }
                         // Selecting a tab must not reveal a page while hidden.
-                        let next = (ui.tab_index + 1) % ui.pages.len();
+                        let next = (ui.tab_index() + 1) % ui.pages.len();
                         select_tab(&mut ui, next);
                         assert!(ui.pages.iter().all(|page| !shown(*page)));
                         select_tab(&mut ui, 0);
@@ -10266,7 +10342,7 @@ mod presentation_tests {
                 }
             }
         }
-        ui.lang = original_lang;
+        ui.set_lang(original_lang);
         let clipped = text_clipping_findings(parent, &mut ui);
         assert!(clipped.is_empty(), "clipped texts:\n{}", clipped.join("\n"));
         // Widening pixel by pixel must move every control edge in one
@@ -10463,16 +10539,19 @@ mod presentation_tests {
             observe_log_scroll(&mut ui);
             ui.log_hold_line = None;
             ui.log_hold_until = None;
-            unsafe { SetWindowLongPtrW(parent, GWLP_USERDATA, &mut ui as *mut UiState as isize) };
+            // The window owns its state through the cell, as in WM_CREATE.
+            let cell = RefCell::new(ui);
+            unsafe { SetWindowLongPtrW(parent, GWLP_USERDATA, &cell as *const RefCell<UiState> as isize) };
             unsafe { window_proc(parent, 0x0231, 0, 0) };
             // Growing a log scrolled to its end reveals earlier lines, which
             // changes its first visible line.
             for step in 1..=10 {
                 MoveWindow(parent, 0, 0, scale(1180), scale(820 + step * 4), 0);
-                layout(parent, &mut ui);
+                layout(parent, &mut cell.borrow_mut());
             }
             unsafe { window_proc(parent, 0x0232, 0, 0) };
             unsafe { SetWindowLongPtrW(parent, GWLP_USERDATA, 0) };
+            ui = cell.into_inner();
             assert!(!ui.sizing && !ui.log_frozen);
             // The log timer observes the scroll position next.
             observe_log_scroll(&mut ui);
@@ -10596,22 +10675,24 @@ mod presentation_tests {
             DestroyWindow(label);
             DestroyWindow(edit);
         }
-        let previous_lang = ui.lang.code();
+        let previous_lang = ui.lang().code();
         combo_select(ui.controls.language, 2);
         handle_command(ptr::null_mut(), &mut ui, ID_LANGUAGE, CBN_SELCHANGE);
-        assert_eq!(ui.lang.code(), previous_lang);
+        assert_eq!(ui.lang().code(), previous_lang);
         let cancel = Arc::new(AtomicBool::new(false));
         ui.cancel = Some(Arc::clone(&cancel));
+        let cell = RefCell::new(ui);
         unsafe {
-            SetWindowLongPtrW(parent, GWLP_USERDATA, &mut ui as *mut UiState as isize);
+            SetWindowLongPtrW(parent, GWLP_USERDATA, &cell as *const RefCell<UiState> as isize);
             window_proc(parent, WM_CLOSE, 0, 0);
             SetWindowLongPtrW(parent, GWLP_USERDATA, 0);
         }
+        let mut ui = cell.into_inner();
         assert!(ui.close_when_done);
         assert!(cancel.load(Ordering::Relaxed));
         assert_eq!(IsWindowEnabled(ui.controls.cancel), 0);
         finish_operation(&mut ui, 2, "operation returned interrupted");
-        assert!(get_text(ui.controls.log).contains(tr(ui.lang, "cancelled")));
+        assert!(get_text(ui.controls.log).contains(tr(ui.lang(), "cancelled")));
         assert!(!get_text(ui.controls.log).contains("operation returned interrupted"));
         assert_ne!(IsWindowEnabled(ui.controls.language), 0);
         assert_ne!(IsWindowEnabled(initially_enabled), 0);
@@ -10764,7 +10845,7 @@ mod presentation_tests {
         render_log(&mut ui);
         assert_eq!(
             get_text(ui.controls.log),
-            display_log(ui.lang, &ui.logs, true, false)
+            display_log(ui.lang(), &ui.logs, true, false)
         );
         combo_select(ui.controls.log_view, 0);
         render_log(&mut ui);

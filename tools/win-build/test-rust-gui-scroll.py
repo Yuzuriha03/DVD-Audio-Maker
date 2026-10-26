@@ -183,9 +183,8 @@ def main():
                         # fields that stretch are compared by their unchanged left part.
                         stationary = {"right": (2000, 110, 111, 106, 100, 200, 115),
                                       "bottom": (2000, 200, 1000, 100, 101, 117)}
-                        # Left/top drags are not compared: DWM can present the moved
-                        # window a frame before its repaint, so a few shifted frames
-                        # remain even when the app paints correctly.
+                        # Left/top drags are not compared: the content moves with
+                        # the dragged edge, so no control stays put to compare.
                         for edge in ("right", "bottom"):
                             before = w.RECT()
                             u.GetWindowRect(hwnd, c.byref(before))
@@ -199,35 +198,48 @@ def main():
                             time.sleep(.3)
                             stop = threading.Event()
                             targets = {cid: [] for cid in stationary[edge]}
-                            watchers = [threading.Thread(target=watch_language, args=(controls[cid], stop, frames))
-                                        for cid, frames in targets.items()]
-                            for watcher in watchers:
-                                watcher.start()
+                            watchers = []
+                            released = False
                             try:
                                 u.SetCursorPos(x, y)
                                 time.sleep(.15)
                                 print("edge input", edge, x, y, "zoomed", u.IsZoomed(hwnd), "client", client.right, client.bottom, "hit", u.SendMessageW(hwnd, 0x84, 0, (y << 16) | (x & 65535)), flush=True)
                                 u.mouse_event(2, 0, 0, 0, 0)
                                 time.sleep(.15)
-                                for delta in list(range(0, 121, 3)) + list(range(120, -1, -3)):
+                                for delta in range(0, 121, 3):
                                     u.SetCursorPos(x + (delta if edge == "right" else 0),
                                                    y + (delta if edge == "bottom" else 0))
                                     time.sleep(.016)
-                                    if delta == 120:
-                                        peak = w.RECT()
-                                        u.GetWindowRect(hwnd, c.byref(peak))
-                                        assert (peak.right > before.right + 60 if edge == "right"
-                                                else peak.bottom > before.bottom + 60), "native drag did not resize"
-                            finally:
+                                time.sleep(.15)
+                                # Edges show an outline while dragging; the window is sized on release.
+                                during = w.RECT()
+                                u.GetWindowRect(hwnd, c.byref(during))
+                                assert (during.left, during.top, during.right, during.bottom) == (before.left, before.top, before.right, before.bottom), "window resized during outline drag"
                                 u.mouse_event(4, 0, 0, 0, 0)
+                                released = True
+                                time.sleep(.4)
+                                after = w.RECT()
+                                u.GetWindowRect(hwnd, c.byref(after))
+                                assert (after.right > before.right + 60 if edge == "right"
+                                        else after.bottom > before.bottom + 60), "release did not resize"
+                                # The outline covers the window while dragging, so the stationary
+                                # controls are sampled after release, while the new layout settles.
+                                watchers = [threading.Thread(target=watch_language, args=(controls[cid], stop, frames))
+                                            for cid, frames in targets.items()]
+                                for watcher in watchers:
+                                    watcher.start()
+                                time.sleep(1.0)
+                            finally:
+                                if not released:
+                                    u.mouse_event(4, 0, 0, 0, 0)
                                 time.sleep(.1)
                                 stop.set()
                                 for watcher in watchers:
                                     watcher.join()
                             for cid, frames in targets.items():
-                                check_samples(frames, (language, edge, cid, "stationary control during native drag"))
+                                check_samples(frames, (language, edge, cid, "stationary control after edge release"))
                                 checked += len(frames)
-                            print("PASS native edge drag", language, edge, sum(map(len, targets.values())), flush=True)
+                            print("PASS edge drag", language, edge, sum(map(len, targets.values())), flush=True)
                     finally:
                         u.SetThreadDpiAwarenessContext(old_dpi)
                     continue
