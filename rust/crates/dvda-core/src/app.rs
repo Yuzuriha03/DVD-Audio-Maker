@@ -292,43 +292,6 @@ impl AppOptions {
             &["image-native"],
         )
     }
-    pub fn author_path(&self) -> PathBuf {
-        let configured = self.text("DvdaAuthor");
-        let path = resolve_path(&self.executable_directory, &configured);
-        if path.is_file() {
-            return path;
-        }
-        let flat = self.executable_directory.join(&configured);
-        if flat.is_file() {
-            return flat;
-        }
-        let bundled = self.executable_directory.join("menu-bin").join(&configured);
-        if bundled.is_file() {
-            return bundled;
-        }
-
-        // Profiles can retain an absolute path from an older development
-        // checkout. A release package has the same author binary in its
-        // extracted runtime, so resolve that stale setting by its filename.
-        // This keeps resume/signature checks portable without rewriting the
-        // user's profile.
-        if let Some(name) = Path::new(&configured).file_name() {
-            for candidate in [
-                crate::runtime::directory().map(|directory| directory.join(name)),
-                Some(self.executable_directory.join(name)),
-                crate::runtime::directory().map(|directory| directory.join("menu-bin").join(name)),
-                Some(self.executable_directory.join("menu-bin").join(name)),
-            ]
-            .into_iter()
-            .flatten()
-            {
-                if candidate.is_file() {
-                    return candidate;
-                }
-            }
-        }
-        path
-    }
     pub fn build_job(&self, dry_run: bool) -> Result<build::Job, String> {
         let source = self.source_directory();
         if source.as_os_str().is_empty() {
@@ -341,7 +304,6 @@ impl AppOptions {
             .transpose()?;
         let menu_enabled = self.boolean("MenuEnabled");
         let image_library = menu_enabled.then(|| self.image_library()).transpose()?;
-        let author = self.author_path();
         let configured_author_source = self.path("AuthorSource");
         let author_source = if configured_author_source.is_dir() {
             configured_author_source
@@ -417,8 +379,6 @@ impl AppOptions {
             mlp_batch_temp_directory: self.path("MlpBatchTempDirectory"),
             mlp_batch_output_directory: self.path("MlpBatchOutputDirectory"),
             encoder_identity: "rust-mlp-encoder".into(),
-            dvda_author: author.to_string_lossy().into_owned(),
-            author_working_directory: author.parent().map(Path::to_owned),
             menu_enabled,
             menu_still_pictures: self.boolean("MenuStillPictures"),
             menu_tracks_per_page: self.integer("MenuTracksPerPage") as i32,
@@ -658,7 +618,6 @@ fn normalize_profile_values(values: &Map<String, Value>) -> Map<String, Value> {
         ("IsoPrefix", "DVDA_ISO_PREFIX"),
         ("MlpSource", "DVDA_MLP_SOURCE"),
         ("MlpExternalDirectory", "DVDA_MLP_EXTERNAL_DIR"),
-        ("DvdaAuthor", "DVDA_AUTHOR"),
     ];
     for (effective, legacy) in aliases {
         if !result.contains_key(legacy)
@@ -998,32 +957,4 @@ mod tests {
         assert!(!options::defaults("").contains_key("DVDA_PREPARE_CACHE"));
     }
 
-    #[test]
-    fn stale_absolute_author_path_falls_back_to_portable_binary() {
-        let root = env::temp_dir().join(format!(
-            "dvda-author-fallback-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        let bundled = root.join("dvda-author-dev.exe");
-        std::fs::write(&bundled, b"test").unwrap();
-        let mut values = Map::new();
-        values.insert(
-            "DvdaAuthor".into(),
-            Value::String("C:/old-checkout/build/rust-author-current/dvda-author-dev.exe".into()),
-        );
-        let options = AppOptions {
-            language: "en".into(),
-            values,
-            stored_profile_values: Map::new(),
-            config_path: None,
-            executable_directory: root.clone(),
-            workspace: None,
-        };
-        assert_eq!(options.author_path(), bundled);
-        std::fs::remove_dir_all(root).unwrap();
-    }
 }

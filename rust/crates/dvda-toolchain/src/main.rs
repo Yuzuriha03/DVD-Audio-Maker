@@ -310,7 +310,8 @@ fn package(options: Args) -> Result<(), String> {
             copy_file(
                 &target.join("dvda-desktop.exe"),
                 &stage.join("DVD-Audio-Maker.exe"),
-            )
+            )?;
+            validation::validate_shipped(&stage.join("DVD-Audio-Maker.exe"))
         },
         compress_zip,
     )?;

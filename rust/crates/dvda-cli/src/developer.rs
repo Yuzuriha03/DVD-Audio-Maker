@@ -329,7 +329,6 @@ fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
             ("DVDA_MLP_INDEX", "MlpIndexPath"),
             ("DVDA_ALAC_FIX_DIR", "AlacFixDirectory"),
             ("DVDA_BUILD_LOG", "BuildLogPath"),
-            ("DVDA_AUTHOR", "DvdaAuthor"),
             ("DVDA_AUTHOR_SRC", "AuthorSource"),
             ("DVDA_GROUP_TRACK_LIMIT", "GroupTrackLimit"),
             ("DVDA_DISC_BYTES", "DiscBytes"),

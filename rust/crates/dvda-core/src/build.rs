@@ -49,8 +49,6 @@ pub struct Job {
     #[serde(default)]
     pub mlp_batch_output_directory: PathBuf,
     pub encoder_identity: String,
-    pub dvda_author: String,
-    pub author_working_directory: Option<PathBuf>,
     #[serde(default)]
     pub menu_enabled: bool,
     #[serde(default)]

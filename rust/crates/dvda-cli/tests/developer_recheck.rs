@@ -171,7 +171,7 @@ impl Fixture {
                 "DVDA_SRC":src, "DVDA_BUILD_DIR":work, "DVDA_FINAL_DIR":out,
                 "DVDA_TITLE":"Verification recheck", "DVDA_ISO_PREFIX":"check",
                 "DVDA_MLP_SOURCE":"lpcm", "DVDA_MENU":"off", "DVDA_TITLE_MODE":"1",
-                "DVDA_AUTHOR":std::env::var("DVDA_TEST_AUTHOR").expect("source built author")
+
             }),
         );
         expect(

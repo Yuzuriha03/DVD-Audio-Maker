@@ -219,14 +219,6 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
             .map_err(|error| format!("{}: {error}", path.display()))?;
         closure(name, &imports, &author_files, true)?;
     }
-    let author_exe = author.join("dvda-author-dev.exe");
-    let imports = validate_binary(
-        &author_exe,
-        &author_record["files"]["dvda-author-dev.exe"],
-        false,
-    )?;
-    closure("dvda-author-dev.exe", &imports, &author_files, true)?;
-    author_files.insert("dvda-author-dev.exe".into(), author_exe);
     for files in [media_files, image_files, author_files] {
         for (name, path) in files {
             if let Some(existing) = inputs.files.get(&name) {
@@ -369,14 +361,10 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
     {
         return Err("Rust author runtime contains a migrated project-owned DLL".into());
     }
-    let exe = author.join("dvda-author-dev.exe");
-    let imports = validate_binary(&exe, &record["files"]["dvda-author-dev.exe"], false)?;
-    if static_ffmpeg
-        && (!files.is_empty() || imports.iter().any(|name| !system_dependency(name, true)))
-    {
+    // The static-import check moved to the shipped executable (`validate_shipped`).
+    if static_ffmpeg && !files.is_empty() {
         return Err("Static author must not depend on bundled DLLs".into());
     }
-    closure("dvda-author-dev.exe", &imports, &files, true)?;
     // Authenticate the standalone acceptance executable without packaging it:
     // the GUI invokes the Rust author library inside its own process.
     let assets = record["runtime_assets"]
@@ -474,7 +462,7 @@ fn validate_linked(author: &Path, record: &Value) -> Result<Inputs, String> {
             return Err(format!("Embedded menu archive provenance mismatch: {name}"));
         }
     }
-    let (_, mut files) = component(
+    let (_, files) = component(
         author,
         "author-build.json",
         "runtime_files",
@@ -494,10 +482,6 @@ fn validate_linked(author: &Path, record: &Value) -> Result<Inputs, String> {
     {
         return Err("Linked runtime contains a migrated project-owned DLL".into());
     }
-    let exe = author.join("dvda-author-dev.exe");
-    let imports = validate_binary(&exe, &record["files"]["dvda-author-dev.exe"], false)?;
-    closure("dvda-author-dev.exe", &imports, &files, true)?;
-    files.insert("dvda-author-dev.exe".into(), exe);
     Ok(Inputs { files, records })
 }
 
@@ -717,6 +701,18 @@ fn system_dependency(name: &str, api_sets: bool) -> bool {
         .is_some_and(|root| PathBuf::from(root).join("System32").join(name).is_file())
 }
 
+/// The shipped GUI must be self-contained: every import is a Windows system DLL.
+/// The Rust author, the media and image libraries, and the menu archives are linked in.
+pub fn validate_shipped(executable: &Path) -> Result<(), String> {
+    let bytes = fs::read(executable).map_err(err)?;
+    let imports = pe::imports(&bytes, false)
+        .map_err(|error| format!("{}: {error}", executable.display()))?;
+    if let Some(name) = imports.iter().find(|name| !system_dependency(name, true)) {
+        return Err(format!("Shipped executable imports a bundled DLL: {name}"));
+    }
+    Ok(())
+}
+
 pub fn hash(bytes: &[u8]) -> String {
     dvda_core::hash::sha256(bytes)
         .iter()
@@ -887,13 +883,6 @@ pub(crate) mod tests {
                 .keys()
                 .all(|name| !name.ends_with(".dll"))
         );
-        let dll_exe = pe::fixture(false, &[], &["avcodec-63.dll"]);
-        fs::write(fixture.root.join("author/dvda-author-dev.exe"), &dll_exe).unwrap();
-        fixture.edit("author", |record| {
-            record["files"]["dvda-author-dev.exe"] =
-                serde_json::json!({"bytes":dll_exe.len(),"sha256":hash(&dll_exe)})
-        });
-        assert!(fixture.validate().unwrap_err().contains("must not depend"));
         fs::write(media.join("lib/avcodec.lib"), b"tampered").unwrap();
         assert!(fixture.validate().unwrap_err().contains("archive checksum"));
     }
@@ -1293,25 +1282,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn author_executable_must_not_import_unshipped_legacy_verifier() {
-        let f = Fixture::new();
-        let executable = pe::fixture(false, &["dvda-disc-verify.dll"], &[]);
-        fs::write(f.root.join("author/dvda-author-dev.exe"), &executable).unwrap();
-        f.edit("author", |record| {
-            record["files"]["dvda-author-dev.exe"] =
-                serde_json::json!({"bytes":executable.len(),"sha256":hash(&executable)});
-        });
-        assert!(
-            f.validate()
-                .unwrap_err()
-                .contains("Missing native dependency")
-        );
-    }
-
-    #[test]
     fn manifest_integrity_and_exact_inventory() {
         let f = Fixture::new();
-        assert_eq!(f.validate().unwrap().files.len(), 10);
+        assert_eq!(f.validate().unwrap().files.len(), 9);
         f.edit("media", |d| {
             d["files"].as_object_mut().unwrap().remove("dvda-media.dll");
         });

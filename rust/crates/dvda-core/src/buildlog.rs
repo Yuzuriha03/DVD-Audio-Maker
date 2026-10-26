@@ -55,7 +55,6 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let generated = text(object, "Generated");
-    let author = text(object, "DvdaAuthor");
     let output = text(object, "FinalDirectory");
     let iso_prefix = text(object, "IsoPrefix");
     let title = text(object, "Title");
@@ -66,7 +65,7 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
             "[Rust build]{} {generated}",
             if dry_run { " [DRY-RUN]" } else { "" }
         ),
-        format!("  dvda-author : {author}"),
+        "  dvda-author : in-process Rust author".into(),
         "  ISO writer  : dvda-author in-process C writer".into(),
         format!("  output      : {output}"),
         format!("  iso prefix  : {iso_prefix}"),
@@ -96,7 +95,7 @@ mod tests {
     fn formats_formal_and_dry_run_headers() {
         let request = json!({
             "DryRun":true,"Generated":"2026-10-05 12:34:56",
-            "DvdaAuthor":"author.exe","FinalDirectory":"out",
+            "FinalDirectory":"out",
             "IsoPrefix":"disc","Title":"Title"
         });
         let lines = dispatch("build.log_header", request).unwrap();

@@ -50,7 +50,6 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_MENU_FONT", "Noto-Sans-CJK-SC"),
         ("DVDA_MENU_FONT_JP", "Noto-Sans-CJK-SC"),
         ("DVDA_MENU_FONT_KR", "Noto-Sans-CJK-SC"),
-        ("DVDA_AUTHOR", "dvda-author-dev.exe"),
         ("DVDA_AUTHOR_SRC", ""),
         ("DVDA_RESUME", "off"),
         ("DVDA_LOSS_ERROR_S", "0.05"),
@@ -242,9 +241,7 @@ pub fn evaluate(request: Request) -> Value {
     ] {
         put(name, OptionValue::new(r.get(key).trim_end_matches('/')));
     }
-    for (name, key) in [("Title", "DVDA_TITLE"), ("DvdaAuthor", "DVDA_AUTHOR")] {
-        put(name, OptionValue::new(r.get(key)));
-    }
+    put("Title", OptionValue::new(r.get("DVDA_TITLE")));
     let iso_prefix = r.get("DVDA_ISO_PREFIX");
     put(
         "IsoPrefix",

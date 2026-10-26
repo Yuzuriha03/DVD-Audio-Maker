@@ -201,8 +201,7 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
     let profile = root.0.join("settings.json");
     let out = root.0.join("out");
     let build = root.0.join("work");
-    let author = std::env::var("DVDA_TEST_AUTHOR").expect("test author");
-    fs::write(&profile,serde_json::to_vec(&json!({"Version":1,"Language":"en","Values":{"DVDA_SRC":src,"DVDA_FINAL_DIR":out,"DVDA_BUILD_DIR":build,"DVDA_TITLE":"Developer fixture","DVDA_ISO_PREFIX":"fixture","DVDA_DISC_BYTES":"4700000000","DVDA_AUTHOR":author,"DVDA_MENU":"off"}})).unwrap()).unwrap();
+    fs::write(&profile,serde_json::to_vec(&json!({"Version":1,"Language":"en","Values":{"DVDA_SRC":src,"DVDA_FINAL_DIR":out,"DVDA_BUILD_DIR":build,"DVDA_TITLE":"Developer fixture","DVDA_ISO_PREFIX":"fixture","DVDA_DISC_BYTES":"4700000000","DVDA_MENU":"off"}})).unwrap()).unwrap();
     let profile = profile.to_str().unwrap();
     ok(run(&root.0, &["prepare", "--profile", profile, "--force"]));
     let plan = run(&root.0, &["plan", "--profile", profile]);
