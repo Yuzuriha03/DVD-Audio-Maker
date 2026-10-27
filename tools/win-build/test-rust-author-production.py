@@ -83,6 +83,8 @@ def validate_runtime(runtime, record):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runtime', type=Path, required=True)
+    parser.add_argument('--author', type=Path, default=Path('rust/target/x86_64-pc-windows-msvc/release/dvda-author-dev.exe'),
+                        help='Standalone dvda-author-dev command under test')
     parser.add_argument('--mlp', type=Path, default=Path('build/formats-real-parity/96000_24_6.aligned.mlp'))
     parser.add_argument('--menu', action='store_true', help='Also author CJK menu text and a still picture from shipped assets')
     parser.add_argument('--work-directory', type=Path)
@@ -95,7 +97,7 @@ def main():
     record_path = runtime / 'author-build.json'
     record = json.loads(record_path.read_text(encoding='utf-8-sig'))
     validate_runtime(runtime, record)
-    executable = runtime / 'dvda-author-dev.exe'
+    executable = args.author.resolve()
     # Restrict PATH to the staged runtime and Windows directories: an omitted
     # third-party dependency cannot be supplied by the development environment.
     windows = Path(os.environ.get('SystemRoot', r'C:\Windows'))

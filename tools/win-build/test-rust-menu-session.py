@@ -54,6 +54,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--vendor', type=Path, default=ROOT/'build/menu-msvc-vendor')
     parser.add_argument('--runtime', type=Path, default=ROOT/'build/rust-author-production')
+    parser.add_argument('--author', type=Path, default=ROOT/'rust/target/x86_64-pc-windows-msvc/release/dvda-author-dev.exe',
+                        help='Standalone dvda-author-dev command; its hash is recorded in the report')
     parser.add_argument('--source-mpeg', type=Path, default=ROOT/'build/menu-production-pal-1/背景.mpg')
     parser.add_argument('--sessions-only', action='store_true', help='Validate the new vendor before production rebuilding; record production_checked=false')
     parser.add_argument('--output', type=Path)
@@ -107,9 +109,9 @@ def main():
     # Use the actual assembled production runtime for codecs, image callbacks,
     # menu entry and filesystem production. Check payloads rather than compare
     # images from separate MPEG encodes byte for byte.
-    author = runtime/'dvda-author-dev.exe'
+    author = args.author.resolve()
     production_record = json.loads((runtime/'author-build.json').read_text(encoding='utf-8-sig'))
-    require(sha(author) == production_record['files'][author.name]['sha256'], 'Production executable checksum mismatch')
+    require(author.is_file(), 'Standalone author executable missing: '+str(author))
     require(production_record['implementation'] == 'rust' and not production_record['project_c_author_compiled'], 'Production still uses the C author')
     for name, item in production_record['runtime_files'].items():
         require(sha(runtime/name) == item['sha256'], 'Production dependency checksum mismatch: '+name)

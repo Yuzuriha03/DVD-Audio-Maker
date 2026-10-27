@@ -260,12 +260,14 @@ def clean(case):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runtime', type=Path, default=ROOT/'build/rust-author-production')
+    parser.add_argument('--author', type=Path, default=ROOT/'rust/target/x86_64-pc-windows-msvc/release/dvda-author-dev.exe',
+                        help='Standalone dvda-author-dev command (the GUI links the same author)')
     parser.add_argument('--ffmpeg', default=shutil.which('ffmpeg'))
     parser.add_argument('--mlp-fixtures', type=Path, default=ROOT/'build/formats-real-parity')
     parser.add_argument('--output', '--work-directory', dest='output', type=Path)
     args = parser.parse_args()
     runtime, fixtures = args.runtime.resolve(), args.mlp_fixtures.resolve()
-    executable = runtime/'dvda-author-dev.exe'
+    executable = args.author.resolve()
     manifest = json.loads((runtime/'author-build.json').read_text(encoding='utf-8-sig'))
     require(manifest['implementation'] == 'rust' and manifest['project_c_author_compiled'] is False, 'Production manifest still uses C author')
     require(manifest.get('target') == 'x86_64-pc-windows-msvc' and

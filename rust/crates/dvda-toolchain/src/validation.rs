@@ -755,8 +755,6 @@ pub(crate) mod tests {
         for name in ["dvda-menu-spu.dll", "dvda-menu-nav.dll"] {
             fs::remove_file(author.join(name)).unwrap();
         }
-        let bytes = pe::fixture(false, &["avcodec-63.dll"], &["avformat-63.dll"]);
-        fs::write(author.join("dvda-author-dev.exe"), &bytes).unwrap();
         let digest = hash(b"retained static menu archive");
         let rust_inputs: serde_json::Map<String, Value> = [
             "rust/crates/dvda-menu/src/session.rs",
@@ -827,7 +825,7 @@ pub(crate) mod tests {
             record["author_library"]=serde_json::json!({"implementation":"rust","available":true,"entry":"dvda_core::author_runtime::execute","serialization":"request-owned"});
             record["iso_writer"]=serde_json::json!({"implementation":"project-owned-rust","linkage":"embedded-rust-author"});
             record["source_inputs"]=sources.into();record["runtime_assets"]=assets.into();record["runtime_files"]=libraries.into();
-            record["files"]=serde_json::json!({"dvda-author-dev.exe":{"bytes":bytes.len(),"sha256":hash(&bytes)}});
+            record["files"]=serde_json::json!({});
         });
         fixture
     }
@@ -865,15 +863,12 @@ pub(crate) mod tests {
                 fs::remove_file(path).unwrap();
             }
         }
-        let bytes = pe::fixture(false, &["kernel32.dll"], &[]);
-        fs::write(fixture.root.join("author/dvda-author-dev.exe"), &bytes).unwrap();
         fixture.edit("author", |record| {
             record["ffmpeg_linkage"] = "static-source-built".into();
             record["ffmpeg_profile"] = "build-msvc-ffmpeg.py:static".into();
             record["ffmpeg_manifest"] = serde_json::json!({"sha256":hash(&manifest)});
             record["runtime_files"] = serde_json::json!({});
-            record["files"]["dvda-author-dev.exe"] =
-                serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)});
+            record["files"] = serde_json::json!({});
         });
         assert!(
             fixture
@@ -1042,9 +1037,7 @@ pub(crate) mod tests {
                 }
                 if dir == "author" {
                     record["runtime_files"] = record["files"].take();
-                    let b = pe::fixture(false, &["avcodec-63.dll"], &["dvda-menu-spu.dll"]);
-                    fs::write(folder.join("dvda-author-dev.exe"), &b).unwrap();
-                    record["files"] = serde_json::json!({"dvda-author-dev.exe":{"bytes":b.len(),"sha256":hash(&b)}});
+                    record["files"] = serde_json::json!({});
                     record["ffmpeg_linkage"] = "shared-source-built-shared-profile".into();
                     record["ffmpeg_profile"] = "build-msvc-ffmpeg.py:shared".into();
                     record["menu_linkage"] = "in-process-source-built".into();
