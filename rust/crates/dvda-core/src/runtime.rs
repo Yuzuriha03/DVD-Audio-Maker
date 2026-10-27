@@ -162,7 +162,8 @@ pub fn extract(archive: &[u8], cache: &Path) -> Result<PathBuf, String> {
         if hash::hex_digest(&data) != entry.sha256 {
             return Err(format!("Runtime checksum mismatch: {}", entry.path));
         }
-        state::write_bytes(&target, &data).map_err(|e| e.message)?;
+        state::write_bytes(&target, &data)
+            .map_err(|e| format!("Cannot write runtime file {}: {}", target.display(), e.message))?;
     }
     Ok(root)
 }

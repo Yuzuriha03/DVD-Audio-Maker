@@ -21,8 +21,11 @@ pub(crate) fn open_session_log() -> std::io::Result<(fs::File, PathBuf)> {
         .write(true)
         .read(true)
         .create_new(true)
-        .open(&path)?;
-    prune_session_logs(&root, &path)?;
+        .open(&path)
+        .map_err(|error| std::io::Error::new(error.kind(), format!("Cannot create session log {}: {error}", path.display())))?;
+    // Pruning is housekeeping: an old log that cannot be removed (another program
+    // holding it, or a security tool blocking the delete) must not stop the app.
+    let _ = prune_session_logs(&root, &path);
     Ok((file, path))
 }
 
@@ -45,7 +48,9 @@ pub(crate) fn prune_session_logs(root: &std::path::Path, current: &std::path::Pa
     }
     previous.sort_by(|a, b| b.cmp(a));
     for (_, path) in previous.into_iter().skip(2) {
-        fs::remove_file(path)?;
+        fs::remove_file(&path).map_err(|error| {
+            std::io::Error::new(error.kind(), format!("Cannot remove old session log {}: {error}", path.display()))
+        })?;
     }
     Ok(())
 }

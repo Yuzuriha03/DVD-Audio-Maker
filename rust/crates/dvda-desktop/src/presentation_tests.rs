@@ -1,6 +1,27 @@
 use super::ui_test_guard;
 
 #[test]
+fn session_log_that_cannot_be_removed_does_not_block_startup() {
+    let _ui_test_lock = ui_test_guard();
+    let root = std::env::temp_dir().join(format!("dvda-log-locked-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    for name in ["gui-1-1-0.log", "gui-2-1-0.log", "gui-3-1-0.log", "gui-4-1-0.log"] {
+        std::fs::write(root.join(name), name).unwrap();
+    }
+    // Holding the oldest log open without delete sharing makes its removal fail.
+    use std::os::windows::fs::OpenOptionsExt;
+    let locked = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0x1 | 0x2)
+        .open(root.join("gui-1-1-0.log"))
+        .unwrap();
+    let current = root.join("gui-4-1-0.log");
+    assert!(super::prune_session_logs(&root, &current).is_err());
+    drop(locked);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn session_log_retention_keeps_three_and_preserves_unrelated_files() {
     let _ui_test_lock = ui_test_guard();
     let root = std::env::temp_dir().join(format!("dvda-log-retention-{}", std::process::id()));
