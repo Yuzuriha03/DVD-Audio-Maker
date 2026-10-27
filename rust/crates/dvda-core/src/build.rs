@@ -59,6 +59,9 @@ pub struct Job {
     pub menu_index_minimum_albums: i32,
     #[serde(default)]
     pub menu_cover_dim: i32,
+    /// Menu video standard for the author's `--norm`: `pal`, `secam` or `ntsc`.
+    #[serde(default = "default_menu_norm")]
+    pub menu_norm: String,
     #[serde(default)]
     pub menu_font: String,
     #[serde(default)]
@@ -828,6 +831,10 @@ fn write_index(job: &Job, path: &Path, plan: &Value, dry_run: bool) -> Result<()
         }),
     )?;
     Ok(())
+}
+
+fn default_menu_norm() -> String {
+    "pal".into()
 }
 
 fn pending_path(path: &Path) -> PathBuf {

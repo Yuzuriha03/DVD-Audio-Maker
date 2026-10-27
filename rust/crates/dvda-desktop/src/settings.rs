@@ -13,6 +13,17 @@ pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[
     "192 kHz",
 ];
 
+/// Menu video standards in combo order; the option value passed to the author.
+pub(crate) const MENU_NORMS: &[&str] = &["pal", "secam", "ntsc"];
+
+pub(crate) fn norm_index(norm: &str) -> i32 {
+    MENU_NORMS.iter().position(|value| *value == norm).unwrap_or(0) as i32
+}
+
+pub(crate) fn norm_value(index: i32) -> &'static str {
+    MENU_NORMS.get(index.max(0) as usize).copied().unwrap_or("pal")
+}
+
 pub(crate) fn capacity_index(bytes: i64) -> i32 {
     match bytes {
         0 | 4_707_319_808 => 0,
@@ -144,6 +155,7 @@ pub(crate) fn populate(state: &mut UiState, options: &AppOptions) {
         state.controls.cover,
         &options.integer("MenuCoverDim").to_string(),
     );
+    combo_select(state.controls.norm, norm_index(&options.text("MenuNorm")));
 
     let menu_font = options.text("MenuFont");
     let menu_font_japanese = {
@@ -269,6 +281,11 @@ pub(crate) fn overrides(state: &UiState) -> Map<String, Value> {
         &mut values,
         "MenuCoverDim",
         json!(parse_i64(state.controls.cover, 35)),
+    );
+    put(
+        &mut values,
+        "MenuNorm",
+        json!(norm_value(combo_index(state.controls.norm))),
     );
 
     put(
@@ -476,6 +493,7 @@ pub(crate) fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "MenuStillPictures" => "DVDA_MENU_STILLPICS",
             "MenuTracksPerPage" => "DVDA_MENU_TRACKS_PER_PAGE",
             "MenuCoverDim" => "DVDA_MENU_COVER_DIM",
+            "MenuNorm" => "DVDA_MENU_NORM",
             "MenuFont" => "DVDA_MENU_FONT",
             "MenuFontJapanese" => "DVDA_MENU_FONT_JP",
             "MenuFontKorean" => "DVDA_MENU_FONT_KR",

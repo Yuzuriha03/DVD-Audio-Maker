@@ -1340,5 +1340,11 @@
     "[跳过] 菜单已关闭，成品按预期没有菜单。",
     "[Skipped] Menus are disabled; the disc is expected to have no menu.",
     "[スキップ] メニューが無効のため、ディスクにメニューがないことを想定しています。"
+  ],
+  [
+    "菜单视频的制式，应与播放设备一致。中国、欧洲通常选 PAL，美国、日本选 NTSC；SECAM 与 PAL 画面尺寸相同。",
+    "菜单视频的制式，应与播放设备一致。中国、欧洲通常选 PAL，美国、日本选 NTSC；SECAM 与 PAL 画面尺寸相同。",
+    "Video standard of the menu; match the player and TV. PAL is usual in China and Europe, NTSC in the US and Japan; SECAM uses the same frame size as PAL.",
+    "メニュー映像の方式です。再生機器に合わせてください。中国・欧州は通常 PAL、日本・米国は NTSC です。SECAM は PAL と同じ画面サイズです。"
   ]
 ]

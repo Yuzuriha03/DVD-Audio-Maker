@@ -159,6 +159,9 @@ impl dvda_author::menu::Backend for Backend {
             aspect,
             still,
         } = request;
+        // DVD video has only NTSC and PAL formats; SECAM regions use PAL
+        // (625-line, 25 fps) discs, which is how the author lays SECAM out.
+        let norm = if norm == "ntsc" { "ntsc" } else { "pal" };
         #[cfg(feature = "direct-bridges")]
         {
             status(

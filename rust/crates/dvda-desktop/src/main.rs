@@ -247,6 +247,7 @@ const ID_MENU: usize = 400;
 const ID_STILLS: usize = 401;
 const ID_TRACKS: usize = 402;
 const ID_COVER: usize = 403;
+const ID_NORM: usize = 404;
 const ID_FONT_SC: usize = 405;
 const ID_FONT_JP: usize = 406;
 const ID_FONT_KR: usize = 407;
@@ -262,6 +263,7 @@ const COMBO_IDS: &[usize] = &[
     ID_MODE,
     ID_RATE,
     ID_BITS,
+    ID_NORM,
 ];
 
 const HEADER_HEIGHT: i32 = 70;
@@ -832,6 +834,7 @@ struct Controls {
     stills: Hwnd,
     tracks: Hwnd,
     cover: Hwnd,
+    norm: Hwnd,
     font_sc: Hwnd,
     font_jp: Hwnd,
     font_kr: Hwnd,

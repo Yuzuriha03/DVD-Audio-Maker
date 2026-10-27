@@ -47,6 +47,7 @@ pub fn defaults(local_app_data: &str) -> Map<String, Value> {
         ("DVDA_MENU_INDEX_MIN_ALBUMS", "4"),
         ("DVDA_MENU_STILLPICS", "on"),
         ("DVDA_MENU_COVER_DIM", "35"),
+        ("DVDA_MENU_NORM", "pal"),
         ("DVDA_MENU_FONT", "Noto-Sans-CJK-SC"),
         ("DVDA_MENU_FONT_JP", "Noto-Sans-CJK-SC"),
         ("DVDA_MENU_FONT_KR", "Noto-Sans-CJK-SC"),
@@ -318,6 +319,16 @@ pub fn evaluate(request: Request) -> Value {
             OptionValue::new(r.int(key, fallback).clamp(low, high)),
         );
     }
+    // Menu video standard, passed to the author as --norm; empty means PAL.
+    let norm = trim(r.get_or("DVDA_MENU_NORM", "pal")).to_ascii_lowercase();
+    put(
+        "MenuNorm",
+        if matches!(norm.as_str(), "pal" | "secam" | "ntsc") {
+            OptionValue::new(norm)
+        } else {
+            OptionValue::failure("DVDA_MENU_NORM 仅支持 pal、secam 或 ntsc。")
+        },
+    );
     put("PlannedDiscs", OptionValue::new(0));
     put(
         "DiscBytes",

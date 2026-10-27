@@ -929,6 +929,10 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                             column,
                             25,
                         );
+                        // The video standard's items are too long for a third
+                        // column here, so it takes its own row.
+                        move_label(state, "norm", 14, 120 - sy, column, 20);
+                        move_child(*page, ID_NORM, 14, 140 - sy, column, 120);
                     }
                     let font_column = (page_width - 28 - 32) / 3;
                     let font_label_height = ["font_sc", "font_jp", "font_kr"]
@@ -953,9 +957,9 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                     {
                         let x = 14 + index as i32 * (font_column + 16);
                          {
-                            move_label(state, label_key, x, 120 - sy, font_column, font_label_height);
-                            move_child(*page, field_id, x, 120 + font_label_height - sy, font_column, 25);
-                            move_child(*page, browse_id, x, 154 + font_label_height - sy, font_column, 28);
+                            move_label(state, label_key, x, 174 - sy, font_column, font_label_height);
+                            move_child(*page, field_id, x, 174 + font_label_height - sy, font_column, 25);
+                            move_child(*page, browse_id, x, 208 + font_label_height - sy, font_column, 28);
                         }
                     }
                 } else {
@@ -964,6 +968,8 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_TRACKS, 14, 86 - sy, 220, 25);
                         move_label(state, "cover", 260, 66 - sy, 220, 20);
                         move_child(*page, ID_COVER, 260, 86 - sy, 220, 25);
+                        move_label(state, "norm", 506, 66 - sy, 260, 20);
+                        move_child(*page, ID_NORM, 506, 86 - sy, 260, 120);
                     }
                     for (index, (label_key, field_id, browse_id)) in [
                         ("font_sc", ID_FONT_SC, 1007usize),

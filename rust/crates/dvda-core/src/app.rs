@@ -384,6 +384,7 @@ impl AppOptions {
             menu_tracks_per_page: self.integer("MenuTracksPerPage") as i32,
             menu_index_minimum_albums: self.integer("MenuIndexMinimumAlbums") as i32,
             menu_cover_dim: self.integer("MenuCoverDim") as i32,
+            menu_norm: self.text("MenuNorm"),
             menu_font,
             menu_font_japanese,
             menu_font_korean,

@@ -600,6 +600,8 @@ pub fn build_assets(
         job.menu_binary_directory.to_string_lossy().into_owned(),
         "--datadir".into(),
         job.author_source.to_string_lossy().into_owned(),
+        "--norm".into(),
+        job.menu_norm.clone(),
     ];
     if index_pages > 0 {
         arguments.extend(["--index-pages".into(), index_pages.to_string()]);

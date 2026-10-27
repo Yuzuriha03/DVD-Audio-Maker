@@ -128,6 +128,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         stills: ptr::null_mut(),
         tracks: ptr::null_mut(),
         cover: ptr::null_mut(),
+        norm: ptr::null_mut(),
         font_sc: ptr::null_mut(),
         font_jp: ptr::null_mut(),
         font_kr: ptr::null_mut(),
@@ -384,6 +385,20 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         220,
         &mut labels,
     );
+    c.norm = combo_field!(
+        page_menu,
+        tr(lang, "norm"),
+        "norm",
+        ID_NORM,
+        506,
+        66,
+        260,
+        &mut labels,
+    );
+    for key in ["norm_pal", "norm_secam", "norm_ntsc"] {
+        combo_add(c.norm, tr(lang, key));
+    }
+    combo_select(c.norm, 0);
     c.font_sc = text_field!(
         page_menu,
         tr(lang, "font_sc"),
@@ -1654,6 +1669,7 @@ pub(crate) fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.tracks, "DVDA_MENU_TRACKS_PER_PAGE"),
         (c.stills, "DVDA_MENU_STILLPICS"),
         (c.cover, "DVDA_MENU_COVER_DIM"),
+        (c.norm, "DVDA_MENU_NORM"),
         (c.font_sc, "DVDA_MENU_FONT"),
         (c.font_jp, "DVDA_MENU_FONT_JP"),
         (c.font_kr, "DVDA_MENU_FONT_KR"),

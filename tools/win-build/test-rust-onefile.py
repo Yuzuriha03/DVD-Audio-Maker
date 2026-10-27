@@ -24,6 +24,22 @@ def generate(fixture_ffmpeg, root):
         "-f","lavfi","-i","testsrc2=size=320x320:rate=1","-frames:v","1",
         "-y",str(root/"cover.png")],check=True,creationflags=subprocess.CREATE_NO_WINDOW)
 
+def mpeg_sequences(path):
+    """(width, height, frame-rate code) of each 720-wide MPEG-2 sequence header in a disc image.
+
+    Menu pages and playback stills are the only video on a DVD-Audio disc. The
+    width filter drops start-code look-alikes inside audio payloads.
+    """
+    data=path.read_bytes()
+    found,start=[],0
+    while (start:=data.find(b"\x00\x00\x01\xb3",start))>=0:
+        b=data[start+4:start+8]
+        width,height=(b[0]<<4)|(b[1]>>4),((b[1]&0x0f)<<8)|b[2]
+        if width==720:
+            found.append((width,height,b[3]&0x0f))
+        start+=4
+    return found
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe",type=Path)
@@ -32,6 +48,8 @@ def main():
     parser.add_argument("--fixture-ffmpeg",type=Path,default=shutil.which("ffmpeg"),
         help="Independent FFmpeg executable used only to generate FLAC test inputs")
     parser.add_argument("--output",type=Path,default=Path("build/onefile-rust-validation.json"))
+    parser.add_argument("--norm",choices=("pal","secam","ntsc"),default="pal",
+        help="Menu video standard written to the profile and checked in the authored ISO")
     args=parser.parse_args()
     if args.generate:
         generate(*args.generate)
@@ -104,7 +122,7 @@ def main():
                 "DVDA_FINAL_DIR":str(root/mode/"output"),"DVDA_MLP_SOURCE":mode,
                 "DVDA_TITLE":"Test","DVDA_ISO_PREFIX":"disc","DVDA_MENU":"on",
                 "DVDA_MENU_STILLPICS":"on","DVDA_MENU_TRACKS_PER_PAGE":"1","DVDA_TITLE_MODE":"1",
-                "DVDA_MENU_INDEX_MIN_ALBUMS":"1"}
+                "DVDA_MENU_INDEX_MIN_ALBUMS":"1","DVDA_MENU_NORM":args.norm}
             profile.write_text(json.dumps({"Version":1,"Language":"en","Values":values}),encoding="utf-8")
         config("mlp-batch")
         proc,hwnd,controls=launch()
@@ -163,6 +181,11 @@ def main():
                     timings.append({"mode":mode,"action":action,"seconds":round(time.monotonic()-started,3)})
                     print(json.dumps(timings[-1]),flush=True)
                 assert (root/mode/"output/disc_1.iso").is_file()
+                # NTSC menus are 720x480 at 29.97 fps (code 4); PAL and SECAM 720x576 at 25 fps (code 3).
+                expected=(720,480,4) if args.norm=="ntsc" else (720,576,3)
+                sequences=mpeg_sequences(root/mode/"output/disc_1.iso")
+                assert sequences and set(sequences)=={expected}, (args.norm,sorted(set(sequences)))
+                print(f"{mode}: {len(sequences)} menu/still sequence headers, all {expected}",flush=True)
                 assert not (root/mode/"work/unfinished-task").exists(), "successful task workspace was not cleaned"
                 mode_checks.append({"mode":mode,"iso_created":True,"source_verification_passed":True})
                 completed.append(mode)
@@ -171,7 +194,7 @@ def main():
                 raise
             finally:
                 close(proc,hwnd)
-        record={"passed":True,"build_and_verify":completed,"menu_and_stills":True,
+        record={"passed":True,"build_and_verify":completed,"menu_and_stills":True,"menu_norm":args.norm,
             "standalone_exe":True,"runtime_files":len(runtime_paths),
             "mode_checks":mode_checks,
             "project_owned_runtime_dlls":[],"runtime_dlls":[p.name for p in runtime_dlls],"author_subprocess_shipped":False,

@@ -52,6 +52,24 @@ fn option_precedence_sources_numeric_fallbacks_and_derived_paths() {
 }
 
 #[test]
+fn menu_norm_accepts_pal_secam_ntsc_and_defaults_to_pal() {
+    assert_eq!(
+        evaluate(json!({}), json!({}))["Properties"]["MenuNorm"]["Value"],
+        "pal"
+    );
+    for (value, expected) in [("", "pal"), (" NTSC ", "ntsc"), ("Secam", "secam"), ("pal", "pal")] {
+        let r = evaluate(json!({"DVDA_MENU_NORM":value}), json!({}));
+        assert_eq!(r["Properties"]["MenuNorm"]["Value"], expected);
+        assert!(r["Properties"]["MenuNorm"]["Error"].is_null());
+    }
+    let environment = evaluate(json!({"DVDA_MENU_NORM":"pal"}), json!({"DVDA_MENU_NORM":"ntsc"}));
+    assert_eq!(environment["Properties"]["MenuNorm"]["Value"], "ntsc");
+    assert!(
+        evaluate(json!({"DVDA_MENU_NORM":"hd"}), json!({}))["Properties"]["MenuNorm"]["Error"].is_string()
+    );
+}
+
+#[test]
 fn option_ranges_sources_and_removed_branches() {
     for (value, expected) in [
         ("500", 99),

@@ -618,6 +618,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         layout(parent, &mut ui);
         for (combo, width) in [
             (ui.controls.capacity, 220),
+            (ui.controls.norm, 260),
             (ui.controls.mode, 300),
             (ui.controls.rate, 210),
             (ui.controls.bits, 160),
@@ -1017,6 +1018,23 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         PathBuf::from(evaluated.text("MlpExternalDirectory")),
         changed_work.join("mlp")
     );
+    // The video standard defaults to PAL and round-trips through the profile,
+    // a reload and a language switch.
+    assert_eq!(combo_index(ui.controls.norm), 0);
+    assert_eq!(evaluated.text("MenuNorm"), "pal");
+    combo_select(ui.controls.norm, 2);
+    let edited = edited_profile_values(&ui);
+    assert_eq!(edited["DVDA_MENU_NORM"], "ntsc");
+    let evaluated = ui.base.as_ref().unwrap().with_profile_values(edited).unwrap();
+    assert_eq!(evaluated.text("MenuNorm"), "ntsc");
+    combo_select(ui.controls.norm, 0);
+    populate(&mut ui, &evaluated);
+    assert_eq!(combo_index(ui.controls.norm), 2);
+    let original_lang = ui.lang();
+    set_language(&mut ui, Lang::En);
+    assert_eq!(combo_index(ui.controls.norm), 2);
+    assert_eq!(get_text(ui.controls.norm), "NTSC (US, Japan)");
+    set_language(&mut ui, original_lang);
     populate_numeric_choice(ui.controls.rate, SAMPLE_RATES, SAMPLE_RATE_LABELS, 12345);
     populate_numeric_choice(ui.controls.bits, SAMPLE_BITS, &["16", "20", "24"], 17);
     assert_eq!(get_text(ui.controls.rate), "12345");
@@ -1329,9 +1347,9 @@ fn settings_help_and_new_runtime_messages_cover_all_languages() {
     let _ui_test_lock = ui_test_guard();
     let help: HashMap<String, String> =
         serde_json::from_str(include_str!("../locales/help.json")).unwrap();
-    // DVDA_PREPARE_CACHE was retired together with its setting, so the
-    // help catalogue now has one entry fewer than the original baseline.
-    assert_eq!(help.len(), 27);
+    // DVDA_PREPARE_CACHE was retired together with its setting (one entry
+    // fewer than the original baseline); DVDA_MENU_NORM added one.
+    assert_eq!(help.len(), 28);
     for (key, original) in help {
         assert_eq!(setting_help(Lang::Zh, &key), original);
         for lang in [Lang::En, Lang::Ja] {

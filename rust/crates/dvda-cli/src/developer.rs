@@ -350,6 +350,7 @@ fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
             ("DVDA_MENU_INDEX_MIN_ALBUMS", "MenuIndexMinimumAlbums"),
             ("DVDA_MENU_STILLPICS", "MenuStillPictures"),
             ("DVDA_MENU_COVER_DIM", "MenuCoverDim"),
+            ("DVDA_MENU_NORM", "MenuNorm"),
             ("DVDA_MENU_FONT", "MenuFont"),
             ("DVDA_MENU_FONT_JP", "MenuFontJapanese"),
             ("DVDA_MENU_FONT_KR", "MenuFontKorean"),

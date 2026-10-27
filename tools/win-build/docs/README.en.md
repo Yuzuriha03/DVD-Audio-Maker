@@ -11,7 +11,7 @@ Required components are embedded and prepared automatically on first launch, whi
 ## Create a disc
 
 1. Select the FLAC/M4A source folder, output folder and work folder.
-2. Set the disc title, capacity and encoding mode. Enable cover menus if desired.
+2. Set the disc title, capacity and encoding mode. Enable cover menus if desired, and pick the video standard (PAL, SECAM or NTSC) that matches the player.
 3. Select **Start build**. The app checks sources, creates the discs and verifies the finished output automatically. Valid checks are reused for unchanged files.
 4. Open the ISO using DVD-Audio compatible burning software or a player.
 

@@ -118,7 +118,7 @@ pub fn disc_signature(job: &Job, disc: &Disc) -> Result<String, String> {
             "AuthorPath":"rust-author", "AuthorLibraryDirectory":job.media_library.parent(),
             "MenuEnabled":job.menu_enabled, "MenuTracksPerPage":job.menu_tracks_per_page,
             "MenuIndexMinimumAlbums":job.menu_index_minimum_albums, "MenuStillPictures":job.menu_still_pictures,
-            "MenuCoverDim":job.menu_cover_dim, "MenuFont":job.menu_font,
+            "MenuCoverDim":job.menu_cover_dim, "MenuNorm":job.menu_norm, "MenuFont":job.menu_font,
             "MenuFontJapanese":job.menu_font_japanese, "MenuFontKorean":job.menu_font_korean,
             "ImageLibraryDirectory":job.image_library.as_ref().and_then(|p| p.parent()),
             "Tracks":disc.tracks,

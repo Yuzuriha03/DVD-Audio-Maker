@@ -160,6 +160,12 @@ pub(crate) fn set_language(state: &mut UiState, lang: Lang) {
         &[tr(lang, "mlp"), tr(lang, "lpcm"), tr(lang, "import")],
         mode,
     );
+    let norm = combo_index(state.controls.norm);
+    combo_items(
+        state.controls.norm,
+        &[tr(lang, "norm_pal"), tr(lang, "norm_secam"), tr(lang, "norm_ntsc")],
+        norm,
+    );
     let log_view = combo_index(state.controls.log_view);
     combo_items(
         state.controls.log_view,

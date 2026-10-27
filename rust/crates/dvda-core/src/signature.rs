@@ -132,6 +132,8 @@ struct Request {
     menu_index_minimum_albums: i32,
     menu_still_pictures: bool,
     menu_cover_dim: i32,
+    #[serde(default = "default_menu_norm")]
+    menu_norm: String,
     menu_font: String,
     menu_font_japanese: String,
     menu_font_korean: String,
@@ -151,6 +153,10 @@ struct Track {
     channel_mask: Option<u32>,
     mlp_path: String,
     mlp_size: i64,
+}
+
+fn default_menu_norm() -> String {
+    "pal".into()
 }
 
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
@@ -191,12 +197,13 @@ fn build(request: Request) -> Result<String, String> {
         &mut canonical,
         "menu",
         format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}",
             format_bool(request.menu_enabled),
             request.menu_tracks_per_page,
             request.menu_index_minimum_albums,
             format_bool(request.menu_still_pictures),
             request.menu_cover_dim,
+            request.menu_norm,
             request.menu_font,
             request.menu_font_japanese,
             request.menu_font_korean
@@ -473,8 +480,17 @@ mod tests {
         });
         let first = build(serde_json::from_value(request.clone()).unwrap()).expect("signature");
         fs::write(menu.join("dvda-menu.dll"), [7, 8, 0]).expect("library");
-        let second = build(serde_json::from_value(request).unwrap()).expect("signature");
+        let second = build(serde_json::from_value(request.clone()).unwrap()).expect("signature");
         assert_ne!(first, second);
+        // The menu video standard is part of the signature; omitted means PAL.
+        let with_norm = |norm: &str| {
+            let mut request = request.clone();
+            request["MenuNorm"] = json!(norm);
+            build(serde_json::from_value(request).unwrap()).expect("signature")
+        };
+        assert_eq!(second, with_norm("pal"));
+        assert_ne!(second, with_norm("ntsc"));
+        assert_ne!(with_norm("ntsc"), with_norm("secam"));
         let _ = fs::remove_dir_all(root);
     }
 }

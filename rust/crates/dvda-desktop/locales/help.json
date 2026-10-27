@@ -17,6 +17,7 @@
   "DVDA_MENU": "在支持 DVD-Audio 的播放器中显示曲目菜单。",
   "DVDA_MENU_TRACKS_PER_PAGE": "控制选曲菜单每页的曲目数量。",
   "DVDA_MENU_STILLPICS": "在菜单中加入每张专辑的静态封面。",
+  "DVDA_MENU_NORM": "菜单视频的制式，应与播放设备一致。中国、欧洲通常选 PAL，美国、日本选 NTSC；SECAM 与 PAL 画面尺寸相同。",
   "DVDA_MENU_COVER_DIM": "数值越大，封面越暗。",
   "DVDA_MENU_INDEX_MIN_ALBUMS": "达到此专辑数量时，添加专辑索引页。",
   "DVDA_MENU_FONT": "一般使用随程序附带的字体。",
