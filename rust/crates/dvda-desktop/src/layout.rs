@@ -555,7 +555,9 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
                     ShowWindow(*handle, SW_HIDE);
                 }
                 "operation_section" => {
-                    place(*handle, margin, splitter + 12, section_width, 18);
+                    // 24 DIP holds the text at 100%; a shorter box lifts the text unevenly
+                    // and clips the descenders of the activity line.
+                    place(*handle, margin, splitter + 12, section_width, 24);
                     ShowWindow(*handle, if task_shown { SW_SHOW } else { SW_HIDE });
                 }
                 "log_section" => {
@@ -625,7 +627,7 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         let activity_x = margin + section_width + 12;
         let activity_width = width - margin - activity_x;
         if task_shown && activity_width >= 120 {
-            place(state.controls.activity, activity_x, splitter + 12, activity_width, 18);
+            place(state.controls.activity, activity_x, splitter + 12, activity_width, 24);
             ShowWindow(state.controls.activity, SW_SHOW);
         } else {
             ShowWindow(state.controls.activity, SW_HIDE);
