@@ -450,7 +450,7 @@ fn msvc_environment(
 
 fn compress_zip(stage: &Path, archive: &Path) -> Result<(), String> {
     let script = format!(
-        "$ErrorActionPreference = 'Stop'; Compress-Archive -Path '{}' -DestinationPath '{}' -CompressionLevel Optimal -Force",
+        "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; Compress-Archive -Path '{}' -DestinationPath '{}' -CompressionLevel Optimal -Force",
         stage.join("*").display().to_string().replace('\'', "''"),
         archive.display().to_string().replace('\'', "''")
     );
