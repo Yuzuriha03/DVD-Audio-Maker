@@ -822,7 +822,6 @@ pub(crate) fn checkbox(parent: Hwnd, text: &str, id: usize, (x, y, w, h): (i32, 
     }
     hwnd
 }
-
 pub(crate) fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
 
     let hwnd = create!(
@@ -1404,7 +1403,6 @@ pub(crate) unsafe fn draw_combo_arrow(hwnd: Hwnd) {
         finish_buffered_paint(hwnd, &paint, &buffer);
     }
 }
-
 pub(crate) fn sync_combo_overlays() {
     let Some(overlays) = COMBO_OVERLAYS.get() else {
         return;
@@ -1522,7 +1520,6 @@ pub(crate) fn set_text(hwnd: Hwnd, text: &str) {
         SetWindowTextW(hwnd, text.as_ptr());
     }
 }
-
 pub(crate) fn get_text(hwnd: Hwnd) -> String {
     let len = unsafe { GetWindowTextLengthW(hwnd) }.max(0) as usize;
     let mut value = vec![0u16; len + 1];
@@ -1530,7 +1527,6 @@ pub(crate) fn get_text(hwnd: Hwnd) -> String {
         unsafe { GetWindowTextW(hwnd, value.as_mut_ptr(), value.len() as i32) }.max(0) as usize;
     String::from_utf16_lossy(&value[..count])
 }
-
 pub(crate) fn window_class(hwnd: Hwnd) -> String {
     let mut buffer = [0u16; 64];
     let len = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
@@ -1540,30 +1536,25 @@ pub(crate) fn window_class(hwnd: Hwnd) -> String {
         String::new()
     }
 }
-
 pub(crate) fn check(hwnd: Hwnd, value: bool) {
      {
         win::send_int(hwnd, BM_SETCHECK, usize::from(value), 0);
     }
 }
-
 pub(crate) fn checked(hwnd: Hwnd) -> bool {
     win::send_int(hwnd, BM_GETCHECK, 0, 0) == 1
 }
-
 pub(crate) fn combo_add(hwnd: Hwnd, text: &str) {
     let text = wide(text);
     unsafe {
         SendMessageW(hwnd, CB_ADDSTRING, 0, text.as_ptr() as isize);
     }
 }
-
 pub(crate) fn combo_select(hwnd: Hwnd, index: i32) {
      {
         win::send_int(hwnd, CB_SETCURSEL, index.max(0) as usize, 0);
     }
 }
-
 pub(crate) fn combo_items(hwnd: Hwnd, items: &[&str], selected: i32) {
      {
         win::send_int(hwnd, CB_RESETCONTENT, 0, 0);
@@ -1573,11 +1564,9 @@ pub(crate) fn combo_items(hwnd: Hwnd, items: &[&str], selected: i32) {
     }
     combo_select(hwnd, selected.min(items.len().saturating_sub(1) as i32));
 }
-
 pub(crate) fn combo_index(hwnd: Hwnd) -> i32 {
     win::send_int(hwnd, CB_GETCURSEL, 0, 0) as i32
 }
-
 pub(crate) fn populate_numeric_choice(hwnd: Hwnd, values: &[i64], labels: &[&str], value: i64) {
     combo_items(hwnd, labels, 0);
     let index = values.iter().position(|v| *v == value).unwrap_or_else(|| {
@@ -1587,7 +1576,6 @@ pub(crate) fn populate_numeric_choice(hwnd: Hwnd, values: &[i64], labels: &[&str
     });
     combo_select(hwnd, index as i32);
 }
-
 pub(crate) fn numeric_choice(hwnd: Hwnd, values: &[i64]) -> i64 {
     usize::try_from(combo_index(hwnd))
         .ok()

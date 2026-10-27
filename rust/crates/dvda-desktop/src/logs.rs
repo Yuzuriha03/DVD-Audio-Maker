@@ -211,7 +211,6 @@ pub(crate) fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
         render_log(state);
     }
 }
-
 pub(crate) fn display_log(lang: Lang, lines: &[LogLine], detail: bool, only: bool) -> String {
     let mut text = String::new();
     for line in lines {
@@ -228,7 +227,6 @@ pub(crate) fn display_log(lang: Lang, lines: &[LogLine], detail: bool, only: boo
     }
     text
 }
-
 pub(crate) fn render_log(state: &mut UiState) {
     let detail = combo_index(state.controls.log_view) == 1;
     let issues_only = checked(state.controls.only_issues);
@@ -328,7 +326,6 @@ pub(crate) fn observe_log_scroll(state: &mut UiState) {
         state.log_hold_until = Some(Instant::now() + Duration::from_secs(10));
     }
 }
-
 pub(crate) fn log_is_problem(text: &str) -> bool {
     presentation::problem(text)
 }
@@ -707,7 +704,6 @@ pub(crate) fn batch_message(lang: Lang, raw: &str) -> Option<String> {
     // Substitute track names last so user data containing braces stays verbatim.
     Some(result.replace("{0}", name))
 }
-
 pub(crate) fn copy_log(state: &UiState) {
     let text = get_text(state.controls.log);
     let mut data = text
@@ -730,7 +726,6 @@ pub(crate) fn copy_log(state: &UiState) {
         }
     }
 }
-
 pub(crate) fn export_log(hwnd: Hwnd, state: &mut UiState) {
     let Some(path) = file_dialog(
         hwnd,

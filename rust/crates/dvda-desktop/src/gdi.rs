@@ -19,11 +19,9 @@ pub(crate) fn client_rect(hwnd: Hwnd) -> Rect {
 pub(crate) fn dpi() -> i32 {
     UI_DPI.load(Ordering::Relaxed).max(48) as i32
 }
-
 pub(crate) fn scale(value: i32) -> i32 {
     ((value as i64 * dpi() as i64 + 48) / 96) as i32
 }
-
 pub(crate) fn unscale(value: i32) -> i32 {
     if value <= 0 {
         value
@@ -31,7 +29,6 @@ pub(crate) fn unscale(value: i32) -> i32 {
         ((value as i64 * 96 + dpi() as i64 / 2) / dpi() as i64) as i32
     }
 }
-
 pub(crate) fn header_height() -> i32 {
     scale(HEADER_HEIGHT)
 }
@@ -82,23 +79,18 @@ pub(crate) fn font(height: i32, weight: i32, face: u8) -> Handle {
 pub(crate) fn ui_font() -> Handle {
     font(UI_FONT_HEIGHT, 400, 0)
 }
-
 pub(crate) fn semibold_font() -> Handle {
     font(UI_FONT_HEIGHT, 600, 1)
 }
-
 pub(crate) fn title_font() -> Handle {
     font(-25, 600, 1)
 }
-
 pub(crate) fn subtitle_font() -> Handle {
     font(-14, 400, 0)
 }
-
 pub(crate) fn small_font() -> Handle {
     font(-14, 400, 0)
 }
-
 pub(crate) fn brush(color: u32) -> Hbrush {
     let cache = BRUSH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
@@ -116,23 +108,18 @@ pub(crate) fn brush(color: u32) -> Hbrush {
     cache.insert(color, handle as usize);
     handle
 }
-
 pub(crate) fn body_brush() -> Hbrush {
     brush(c_body())
 }
-
 pub(crate) fn card_brush() -> Hbrush {
     brush(c_card())
 }
-
 pub(crate) fn panel_brush() -> Hbrush {
     brush(c_panel())
 }
-
 pub(crate) fn border_brush() -> Hbrush {
     brush(c_border())
 }
-
 pub(crate) fn header_icon() -> Handle {
     let current = dpi() as u32;
     let cache = ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -159,7 +146,6 @@ pub(crate) fn header_icon() -> Handle {
     cache.insert(current, icon as usize);
     icon
 }
-
 pub(crate) fn wide(text: &str) -> Vec<u16> {
     OsStr::new(text)
         .encode_wide()

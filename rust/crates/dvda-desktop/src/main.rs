@@ -78,359 +78,183 @@ use theme::*;
 use window::*;
 
 type Handle = *mut c_void;
-
 type Hwnd = Handle;
-
 type Hinstance = Handle;
-
 type Hmenu = Handle;
-
 type Hbrush = Handle;
-
 type Lparam = isize;
-
 type Wparam = usize;
-
 type Lresult = isize;
-
 type WndProc = unsafe extern "system" fn(Hwnd, u32, Wparam, Lparam) -> Lresult;
-
 type EnumChildProc = unsafe extern "system" fn(Hwnd, Lparam) -> i32;
 
 const WM_CREATE: u32 = 0x0001;
-
 const WM_DESTROY: u32 = 0x0002;
-
 const WM_SIZE: u32 = 0x0005;
-
 const WM_GETMINMAXINFO: u32 = 0x0024;
-
 const WM_CLOSE: u32 = 0x0010;
-
 const WM_SETREDRAW: u32 = 0x000b;
-
 const WM_DRAWITEM: u32 = 0x002b;
-
 const WM_MEASUREITEM: u32 = 0x002c;
-
 const WM_SETFOCUS: u32 = 0x0007;
-
 const WM_KILLFOCUS: u32 = 0x0008;
-
 const WM_TIMER: u32 = 0x0113;
-
 const WM_DPICHANGED: u32 = 0x02e0;
-
 const WM_SETTINGCHANGE: u32 = 0x001a;
-
 const WM_KEYDOWN: u32 = 0x0100;
-
 const WM_PAINT: u32 = 0x000f;
-
 const WM_ERASEBKGND: u32 = 0x0014;
-
 const ID_ADVANCED: usize = 117;
-
 const WM_COMMAND: u32 = 0x0111;
-
 const WM_NOTIFY: u32 = 0x004e;
-
 const WM_CTLCOLORSTATIC: u32 = 0x0138;
-
 const WM_CTLCOLOREDIT: u32 = 0x0133;
-
 const WM_CTLCOLORLISTBOX: u32 = 0x0134;
-
 const WM_CTLCOLORBTN: u32 = 0x0135;
-
 const WM_LBUTTONDOWN: u32 = 0x0201;
-
 const WM_LBUTTONUP: u32 = 0x0202;
-
 const WM_MOUSELEAVE: u32 = 0x02a3;
-
 const WM_NCDESTROY: u32 = 0x0082;
-
 const WM_MOUSEMOVE: u32 = 0x0200;
-
 const VK_RETURN: usize = 0x0d;
-
 const PBM_SETBARCOLOR: u32 = 0x0409;
-
 const PBM_SETBKCOLOR: u32 = 0x2001;
-
 const CB_GETDROPPEDSTATE: u32 = 0x0157;
-
 const TME_LEAVE: u32 = 0x0002;
-
 const LOG_QUEUE_CAPACITY: usize = 4096;
-
 const LOG_BATCH_LIMIT: usize = 4096;
-
 const LOG_BATCH_BUDGET: Duration = Duration::from_millis(12);
-
 const WM_SETFONT: u32 = 0x0030;
-
 const EM_SETLIMITTEXT: u32 = 0x00c5;
-
 const EM_SETMARGINS: u32 = 0x00d3;
-
 const EM_GETFIRSTVISIBLELINE: u32 = 0x00ce;
-
 const EM_GETLINECOUNT: u32 = 0x00ba;
-
 const WM_VSCROLL: u32 = 0x0115;
-
 const SB_BOTTOM: usize = 7;
-
 const EM_LINESCROLL: u32 = 0x00b6;
-
 const EM_GETSEL: u32 = 0x00b0;
-
 const EM_SETSEL: u32 = 0x00b1;
-
 const EM_REPLACESEL: u32 = 0x00c2;
-
 const EM_SETREADONLY: u32 = 0x00cf;
-
 const BM_GETCHECK: u32 = 0x00f0;
-
 const BM_SETCHECK: u32 = 0x00f1;
-
 const CB_ADDSTRING: u32 = 0x0143;
-
 const CB_GETCURSEL: u32 = 0x0147;
-
 const CB_RESETCONTENT: u32 = 0x014b;
-
 const CB_SETCURSEL: u32 = 0x014e;
-
 const CB_GETLBTEXT: u32 = 0x0148;
-
 const CB_GETLBTEXTLEN: u32 = 0x0149;
-
 const CB_SHOWDROPDOWN: u32 = 0x014f;
-
 const PBM_SETPOS: u32 = 0x0402;
-
 const PBM_SETRANGE32: u32 = 0x0406;
-
 const WS_THICKFRAME: u32 = 0x00040000;
-
 const WS_CAPTION: u32 = 0x00c00000;
-
 const WS_MINIMIZEBOX: u32 = 0x00020000;
-
 const WS_MAXIMIZEBOX: u32 = 0x00010000;
-
 const WS_SYSMENU: u32 = 0x00080000;
-
 const WS_CHILD: u32 = 0x40000000;
-
 const WS_VISIBLE: u32 = 0x10000000;
-
 const WS_TABSTOP: u32 = 0x00010000;
-
 const WS_CLIPCHILDREN: u32 = 0x02000000;
-
 const WS_POPUP: u32 = 0x80000000;
-
 const WS_EX_TOPMOST: u32 = 0x00000008;
-
 const WS_EX_TRANSPARENT: u32 = 0x00000020;
-
 const WS_EX_TOOLWINDOW: u32 = 0x00000080;
-
 const WS_EX_NOACTIVATE: u32 = 0x08000000;
-
 const SWP_NOACTIVATE: u32 = 0x0010;
-
 const SWP_SHOWWINDOW: u32 = 0x0040;
-
 const WS_EX_APPWINDOW: u32 = 0x00040000;
-
 const ES_AUTOHSCROLL: u32 = 0x0080;
-
 const ES_MULTILINE: u32 = 0x0004;
-
 const ES_AUTOVSCROLL: u32 = 0x0040;
-
 const ES_READONLY: u32 = 0x0800;
-
 const ES_WANTRETURN: u32 = 0x1000;
-
 const CBS_DROPDOWNLIST: u32 = 0x0003;
-
 const CBS_OWNERDRAWFIXED: u32 = 0x0010;
-
 const CBS_HASSTRINGS: u32 = 0x0200;
-
 const BS_AUTOCHECKBOX: u32 = 0x0003;
-
 const BS_OWNERDRAW: u32 = 0x0000000b;
-
 const ODS_SELECTED: u32 = 0x0001;
-
 const ODS_DISABLED: u32 = 0x0004;
-
 const ODS_FOCUS: u32 = 0x0010;
-
 const DT_CENTER: u32 = 0x00000001;
-
 const DT_VCENTER: u32 = 0x00000004;
-
 const DT_SINGLELINE: u32 = 0x00000020;
-
 const DT_CALCRECT: u32 = 0x00000400;
-
 const DT_LEFT: u32 = 0x00000000;
-
 const DT_TOP: u32 = 0x00000000;
-
 const DT_NOPREFIX: u32 = 0x00000800;
-
 const DT_END_ELLIPSIS: u32 = 0x00008000;
-
 const RDW_INVALIDATE: u32 = 0x0001;
-
 const RDW_ALLCHILDREN: u32 = 0x0080;
-
 const SW_SHOW: i32 = 5;
-
 const SW_HIDE: i32 = 0;
-
 const SW_MAXIMIZE: i32 = 3;
-
 const SW_MINIMIZE: i32 = 6;
-
 const SW_RESTORE: i32 = 9;
-
 const WM_NCCALCSIZE: u32 = 0x0083;
-
 const WM_NCHITTEST: u32 = 0x0084;
-
 const WM_NCLBUTTONDOWN: u32 = 0x00a1;
-
 const WM_NCLBUTTONDBLCLK: u32 = 0x00a3;
-
 const HTCLIENT: i32 = 1;
-
 const HTCAPTION: i32 = 2;
-
 const HTLEFT: i32 = 10;
-
 const HTRIGHT: i32 = 11;
-
 const HTTOP: i32 = 12;
-
 const HTTOPLEFT: i32 = 13;
-
 const HTTOPRIGHT: i32 = 14;
-
 const HTBOTTOM: i32 = 15;
-
 const HTBOTTOMLEFT: i32 = 16;
-
 const HTBOTTOMRIGHT: i32 = 17;
-
 const GWLP_USERDATA: i32 = -21;
-
 const GWLP_WNDPROC: i32 = -4;
-
 const BN_CLICKED: u16 = 0;
-
 const CBN_SELCHANGE: u16 = 1;
-
 const ID_PROFILE: usize = 100;
-
 const ID_OPEN_PROFILE: usize = 101;
-
 const ID_SAVE_PROFILE: usize = 102;
-
 const ID_LANGUAGE: usize = 103;
-
 const ID_TAB: usize = 2000;
-
 const ID_PREPARE: usize = 105;
-
 const ID_BUILD: usize = 106;
-
 const ID_VERIFY: usize = 107;
-
 const ID_CANCEL: usize = 108;
-
 const ID_OPEN_OUTPUT: usize = 109;
-
 const ID_LOG_VIEW: usize = 110;
-
 const ID_ONLY_ISSUES: usize = 111;
-
 const ID_LIVE: usize = 112;
-
 const ID_COPY: usize = 113;
-
 const ID_EXPORT: usize = 114;
-
 const ID_LOG: usize = 115;
-
 const ID_SAVE_AS: usize = 116;
-
 const ID_MINIMIZE: usize = 6000;
-
 const ID_MAXIMIZE: usize = 6001;
-
 const ID_CLOSE: usize = 6002;
-
 const ID_THEME: usize = 6003;
-
 const ID_SOURCE: usize = 200;
-
 const ID_FINAL: usize = 201;
-
 const ID_TITLE: usize = 202;
-
 const ID_CAPACITY: usize = 203;
-
 const ID_WORK_DIR: usize = 205;
-
 const ID_ISO_PREFIX: usize = 206;
-
 const ID_GROUP_LIMIT: usize = 207;
-
 const ID_CUSTOM_BYTES: usize = 210;
-
 const ID_MODE: usize = 300;
-
 const ID_RATE: usize = 301;
-
 const ID_BITS: usize = 302;
-
 const ID_IMPORT_FOLDER: usize = 305;
-
 const ID_MENU: usize = 400;
-
 const ID_STILLS: usize = 401;
-
 const ID_TRACKS: usize = 402;
-
 const ID_COVER: usize = 403;
-
 const ID_FONT_SC: usize = 405;
-
 const ID_FONT_JP: usize = 406;
-
 const ID_FONT_KR: usize = 407;
-
 const ID_KEEP_FILES: usize = 506;
-
 const ID_BROWSE_SOURCE: usize = 1000;
-
 const ID_BROWSE_FINAL: usize = 1001;
-
 const ID_BROWSE_WORK: usize = 1002;
-
 const ID_BROWSE_IMPORT: usize = 1006;
-
 const COMBO_IDS: &[usize] = &[
     ID_LANGUAGE,
     ID_LOG_VIEW,
@@ -441,7 +265,6 @@ const COMBO_IDS: &[usize] = &[
 ];
 
 const HEADER_HEIGHT: i32 = 70;
-
 const UI_FONT_HEIGHT: i32 = -16;
 
 #[repr(C)]
@@ -517,6 +340,7 @@ struct MeasureItemStruct {
     item_height: u32,
     item_data: usize,
 }
+
 
 #[repr(C)]
 struct WndClass {
@@ -619,6 +443,7 @@ struct DrawItemStruct {
     rect: Rect,
     data: usize,
 }
+
 
 #[repr(C)]
 struct ToolInfo {
@@ -947,28 +772,17 @@ unsafe extern "system" {
 }
 
 static PROFILE_OVERRIDE: OnceLock<Option<PathBuf>> = OnceLock::new();
-
 static LANGUAGE_OVERRIDE: OnceLock<Option<String>> = OnceLock::new();
-
 static UI_DPI: AtomicU32 = AtomicU32::new(96);
-
 type FontKey = (i32, i32, u8);
-
 static FONT_CACHE: OnceLock<Mutex<HashMap<FontKey, usize>>> = OnceLock::new();
-
 static BRUSH_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
-
 /// Design rectangle (x, y, width, height in DIPs) of each control, rescaled on DPI change.
 type ControlRect = (isize, i32, i32, i32, i32);
-
 static CONTROL_RECTS: OnceLock<Mutex<Vec<ControlRect>>> = OnceLock::new();
-
 static COMBO_OVERLAYS: OnceLock<Mutex<Vec<(isize, isize)>>> = OnceLock::new();
-
 static ICON_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
-
 static DARK_THEME: AtomicBool = AtomicBool::new(false);
-
 static DEFER_CONTROL_PAINT: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy)]

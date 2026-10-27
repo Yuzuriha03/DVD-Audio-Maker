@@ -3,9 +3,7 @@
 use super::*;
 
 pub(crate) const SAMPLE_RATES: &[i64] = &[44100, 48000, 88200, 96000, 176400, 192000];
-
 pub(crate) const SAMPLE_BITS: &[i64] = &[16, 20, 24];
-
 pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[
     "44.1 kHz",
     "48 kHz",
@@ -22,7 +20,6 @@ pub(crate) fn capacity_index(bytes: i64) -> i32 {
         _ => 2,
     }
 }
-
 pub(crate) fn mode_index(mode: &str) -> i32 {
     match mode {
         "lpcm" => 1,
@@ -30,7 +27,6 @@ pub(crate) fn mode_index(mode: &str) -> i32 {
         _ => 0,
     }
 }
-
 pub(crate) fn mode_value(index: i32) -> &'static str {
     match index {
         1 => "lpcm",
@@ -38,7 +34,6 @@ pub(crate) fn mode_value(index: i32) -> &'static str {
         _ => "mlp-batch",
     }
 }
-
 pub(crate) fn update_choices(state: &UiState) {
     let mode = combo_index(state.controls.mode);
     let imported = mode == 2;
@@ -309,7 +304,6 @@ pub(crate) fn update_advanced(state: &UiState) {
         ShowWindow(state.advanced_hint, if show { SW_HIDE } else { SW_SHOW });
     }
 }
-
 pub(crate) fn update_statistics(state: &mut UiState) {
     let elapsed = state
         .started
@@ -326,14 +320,12 @@ pub(crate) fn update_statistics(state: &mut UiState) {
         state.statistics_text = display;
     }
 }
-
 pub(crate) fn valid_integer(value: &str, min: i64, max: i64) -> bool {
     value
         .trim()
         .parse::<i64>()
         .is_ok_and(|n| (min..=max).contains(&n))
 }
-
 pub(crate) fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
     let c = &state.controls;
     let mut error = None;
@@ -442,7 +434,6 @@ pub(crate) fn autosave(state: &mut UiState) {
         add_log(state, &format!("{}{}", tr(state.lang(), "profile_error"), error), true);
     }
 }
-
 pub(crate) fn save_profile_as(hwnd: Hwnd, state: &mut UiState) {
     if !validate_controls(state, false) {
         return;

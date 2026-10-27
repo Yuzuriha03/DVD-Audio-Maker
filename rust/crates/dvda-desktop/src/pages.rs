@@ -184,7 +184,6 @@ pub(crate) unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lp
     }
     1
 }
-
 /// Height of a page's content in pixels: the lowest visible control (at
 /// scroll position 0) plus a bottom margin.
 pub(crate) fn page_content_height(page: Hwnd) -> i32 {
@@ -347,7 +346,6 @@ pub(crate) fn select_tab(state: &mut UiState, index: usize) {
         }
     }
 }
-
 pub(crate) fn show_page(state: &UiState, index: i32) {
     for (i, page) in state.pages.iter().enumerate() {
         unsafe {

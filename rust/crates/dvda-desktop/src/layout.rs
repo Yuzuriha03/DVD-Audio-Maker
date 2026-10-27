@@ -17,7 +17,6 @@ pub(crate) struct LogToolbar {
 }
 
 pub(crate) const LOG_COMBO_WIDTH: i32 = 132;
-
 pub(crate) const LOG_BUTTON_WIDTHS: [i32; 2] = [130, 148];
 
 /// Fits `(minimum, preferred, priority)` slots into `available`, returning
@@ -379,10 +378,8 @@ pub(crate) fn rescale_ui(hwnd: Hwnd, state: &mut UiState) {
 
 /// Settings height before the first full-size layout, in DIPs.
 pub(crate) const DEFAULT_SETTINGS_HEIGHT: i32 = 300;
-
 /// The log shows at least one line.
 pub(crate) const MIN_LOG_HEIGHT: i32 = 28;
-
 /// The default split shrinks the settings before the log drops below this.
 pub(crate) const DEFAULT_LOG_FLOOR: i32 = 60;
 

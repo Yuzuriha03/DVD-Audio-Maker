@@ -388,7 +388,6 @@ pub(crate) fn relayout_for_task(state: &mut UiState) {
         layout(state.main_window, state);
     }
 }
-
 pub(crate) fn cancel_operation(state: &mut UiState) {
     if let Some(cancel) = &state.cancel {
         cancel.store(true, Ordering::Relaxed);

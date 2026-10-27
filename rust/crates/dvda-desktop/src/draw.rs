@@ -6,7 +6,6 @@ use super::*;
 pub(crate) fn color16(value: u32) -> u16 {
     (value.min(255) * 257) as u16
 }
-
 pub(crate) fn rgb_components(color: u32) -> (u32, u32, u32) {
     (color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff)
 }
@@ -620,7 +619,6 @@ pub(crate) unsafe fn finish_buffered_paint(hwnd: Hwnd, paint: &PaintStruct, buff
         EndPaint(hwnd, paint);
     }
 }
-
 /// # Safety
 /// `hwnd` must be the main window, inside its WM_PAINT.
 pub(crate) unsafe fn paint_window(hwnd: Hwnd) {

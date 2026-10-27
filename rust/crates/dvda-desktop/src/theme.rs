@@ -8,7 +8,6 @@ use super::*;
 pub(crate) const fn rgb(r: u32, g: u32, b: u32) -> u32 {
     (b << 16) | (g << 8) | r
 }
-
 pub(crate) fn c_header_top() -> u32 {
     if dark_theme() {
         rgb(7, 11, 18)
@@ -16,7 +15,6 @@ pub(crate) fn c_header_top() -> u32 {
         rgb(10, 23, 39)
     }
 }
-
 pub(crate) fn c_header_bottom() -> u32 {
     if dark_theme() {
         rgb(17, 32, 49)
@@ -24,15 +22,12 @@ pub(crate) fn c_header_bottom() -> u32 {
         rgb(21, 51, 82)
     }
 }
-
 pub(crate) fn c_accent() -> u32 {
     rgb(88, 205, 224)
 }
-
 pub(crate) fn c_accent_hover() -> u32 {
     rgb(120, 219, 235)
 }
-
 pub(crate) fn c_accent_soft() -> u32 {
     if dark_theme() {
         rgb(30, 58, 68)
@@ -40,11 +35,9 @@ pub(crate) fn c_accent_soft() -> u32 {
         rgb(224, 245, 249)
     }
 }
-
 pub(crate) fn c_accent_pressed() -> u32 {
     rgb(56, 172, 192)
 }
-
 pub(crate) fn c_body() -> u32 {
     if dark_theme() {
         rgb(13, 19, 27)
@@ -52,7 +45,6 @@ pub(crate) fn c_body() -> u32 {
         rgb(243, 246, 250)
     }
 }
-
 pub(crate) fn c_panel() -> u32 {
     if dark_theme() {
         rgb(19, 27, 38)
@@ -60,7 +52,6 @@ pub(crate) fn c_panel() -> u32 {
         rgb(240, 245, 251)
     }
 }
-
 pub(crate) fn c_card() -> u32 {
     if dark_theme() {
         rgb(26, 35, 47)
@@ -68,7 +59,6 @@ pub(crate) fn c_card() -> u32 {
         rgb(255, 255, 255)
     }
 }
-
 pub(crate) fn c_secondary_hover() -> u32 {
     if dark_theme() {
         rgb(32, 43, 57)
@@ -76,7 +66,6 @@ pub(crate) fn c_secondary_hover() -> u32 {
         rgb(244, 248, 252)
     }
 }
-
 pub(crate) fn c_secondary_pressed() -> u32 {
     if dark_theme() {
         rgb(39, 52, 68)
@@ -84,7 +73,6 @@ pub(crate) fn c_secondary_pressed() -> u32 {
         rgb(233, 240, 248)
     }
 }
-
 pub(crate) fn c_border() -> u32 {
     if dark_theme() {
         rgb(45, 58, 74)
@@ -92,7 +80,6 @@ pub(crate) fn c_border() -> u32 {
         rgb(214, 223, 233)
     }
 }
-
 pub(crate) fn c_border_soft() -> u32 {
     if dark_theme() {
         rgb(33, 44, 57)
@@ -100,7 +87,6 @@ pub(crate) fn c_border_soft() -> u32 {
         rgb(228, 235, 242)
     }
 }
-
 pub(crate) fn c_ink() -> u32 {
     if dark_theme() {
         rgb(230, 238, 247)
@@ -108,7 +94,6 @@ pub(crate) fn c_ink() -> u32 {
         rgb(24, 40, 58)
     }
 }
-
 pub(crate) fn c_muted() -> u32 {
     if dark_theme() {
         rgb(139, 156, 176)
@@ -116,11 +101,9 @@ pub(crate) fn c_muted() -> u32 {
         rgb(99, 116, 138)
     }
 }
-
 pub(crate) fn c_header_title() -> u32 {
     rgb(240, 247, 252)
 }
-
 pub(crate) fn c_header_subtitle() -> u32 {
     if dark_theme() {
         rgb(143, 166, 191)
@@ -128,7 +111,6 @@ pub(crate) fn c_header_subtitle() -> u32 {
         rgb(160, 184, 208)
     }
 }
-
 pub(crate) fn c_danger() -> u32 {
     if dark_theme() {
         rgb(255, 138, 133)
@@ -136,7 +118,6 @@ pub(crate) fn c_danger() -> u32 {
         rgb(180, 35, 24)
     }
 }
-
 pub(crate) fn c_danger_hover() -> u32 {
     if dark_theme() {
         rgb(58, 29, 30)
@@ -144,7 +125,6 @@ pub(crate) fn c_danger_hover() -> u32 {
         rgb(253, 232, 232)
     }
 }
-
 pub(crate) fn c_danger_pressed() -> u32 {
     if dark_theme() {
         rgb(74, 38, 39)
@@ -152,7 +132,6 @@ pub(crate) fn c_danger_pressed() -> u32 {
         rgb(248, 214, 214)
     }
 }
-
 pub(crate) fn c_danger_border() -> u32 {
     if dark_theme() {
         rgb(107, 52, 52)
@@ -160,7 +139,6 @@ pub(crate) fn c_danger_border() -> u32 {
         rgb(228, 184, 184)
     }
 }
-
 pub(crate) fn c_disabled_fill() -> u32 {
     if dark_theme() {
         rgb(35, 44, 57)
@@ -168,7 +146,6 @@ pub(crate) fn c_disabled_fill() -> u32 {
         rgb(226, 233, 240)
     }
 }
-
 pub(crate) fn c_disabled_text() -> u32 {
     if dark_theme() {
         rgb(110, 124, 142)
@@ -176,7 +153,6 @@ pub(crate) fn c_disabled_text() -> u32 {
         rgb(146, 160, 175)
     }
 }
-
 pub(crate) fn c_bar_track() -> u32 {
     if dark_theme() {
         rgb(29, 39, 51)
@@ -188,7 +164,6 @@ pub(crate) fn c_bar_track() -> u32 {
 pub(crate) fn dark_theme() -> bool {
     DARK_THEME.load(Ordering::Relaxed)
 }
-
 pub(crate) fn system_prefers_dark() -> bool {
     let mut value: u32 = 1;
     let mut size = std::mem::size_of::<u32>() as u32;
@@ -206,9 +181,7 @@ pub(crate) fn system_prefers_dark() -> bool {
     };
     result == 0 && value == 0
 }
-
 pub(crate) static UXTHEME_ALLOW_DARK: OnceLock<Option<isize>> = OnceLock::new();
-
 pub(crate) fn uxtheme_allow_dark(hwnd: Hwnd, allow: bool) {
     let pointer = *UXTHEME_ALLOW_DARK.get_or_init(|| {
         let module = unsafe { LoadLibraryW(wide("uxtheme.dll").as_ptr()) };
@@ -226,9 +199,7 @@ pub(crate) fn uxtheme_allow_dark(hwnd: Hwnd, allow: bool) {
         }
     }
 }
-
 pub(crate) static UXTHEME_SET_PREFERRED: OnceLock<Option<isize>> = OnceLock::new();
-
 pub(crate) fn uxtheme_preferred_app_mode(dark: bool) {
     let pointer = *UXTHEME_SET_PREFERRED.get_or_init(|| {
         let module = unsafe { LoadLibraryW(wide("uxtheme.dll").as_ptr()) };
