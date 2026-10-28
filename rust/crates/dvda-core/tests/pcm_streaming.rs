@@ -182,16 +182,30 @@ fn fast_paths_copy_and_validate_storage() {
     );
     fs::remove_file(&output).unwrap();
 
-    let mut invalid_24 = fixture(48000, 24, 24, 1, 1, 1, false);
-    invalid_24[68] |= 1;
-    fs::write(&input, invalid_24).unwrap();
-    assert_eq!(
-        normalize(job(&input, &output, 48000, 20), &mut Events::default())
-            .unwrap_err()
-            .kind,
-        "InvalidData"
-    );
-    assert!(!output.exists());
+    for low_bits in 1..=15 {
+        let mut invalid_24 = fixture(48000, 24, 24, 1, 1, 1, false);
+        invalid_24[68] = (invalid_24[68] & 0xf0) | low_bits;
+        fs::write(&input, invalid_24).unwrap();
+        assert_eq!(
+            normalize(job(&input, &output, 48000, 20), &mut Events::default())
+                .unwrap_err()
+                .kind,
+            "InvalidData"
+        );
+        assert!(!output.exists());
+    }
+    for low_byte in [1, 2, 128, 255] {
+        let mut invalid_32 = fixture(48000, 24, 32, 1, 16385, 1, true);
+        invalid_32[68 + 16384 * 4] = low_byte;
+        fs::write(&input, invalid_32).unwrap();
+        assert_eq!(
+            normalize(job(&input, &output, 48000, 24), &mut Events::default())
+                .unwrap_err()
+                .kind,
+            "InvalidData"
+        );
+        assert!(!output.exists());
+    }
 }
 
 #[test]

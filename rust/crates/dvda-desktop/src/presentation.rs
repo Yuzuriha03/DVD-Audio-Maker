@@ -11,6 +11,9 @@ pub fn phrase(lang: Lang, zh: &'static str, en: &'static str, ja: &'static str) 
 
 pub fn problem(text: &str) -> bool {
     let text = text.trim();
+    if text.starts_with("[METRIC] ") {
+        return false;
+    }
     if let Some(event) = dvda_core::task_log::parse(text) {
         return event.warning || event.action == "pcm_failed";
     }
@@ -65,6 +68,9 @@ pub fn activity_only(text: &str) -> bool {
 
 pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String> {
     let text = text.trim();
+    if text.starts_with("[METRIC] ") {
+        return None;
+    }
     // Repetitive author diagnostics are retained verbatim in the archive.
     // The coordinator emits category summaries, including warning severity.
     if text.starts_with("[menu-cover] oversized ")
@@ -221,6 +227,9 @@ pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String>
 /// selected log view must not make decoder chatter the current task state.
 pub fn activity(lang: Lang, text: &str) -> Option<String> {
     let text = text.trim();
+    if text.starts_with("[METRIC] ") {
+        return None;
+    }
     if let Some(event) = dvda_core::task_log::parse(text) {
         if matches!(
             event.action.as_str(),
@@ -602,6 +611,19 @@ pub fn same_path(first: &std::path::Path, second: &std::path::Path) -> bool {
 mod tests {
     use super::*;
     use crate::ui_test_guard;
+    #[test]
+    fn metrics_remain_detail_only_even_with_failure_words() {
+        let _ui_test_lock = ui_test_guard();
+        let raw = r#"[METRIC] {"event":"finish","stage":"verify","succeeded":false,"temporary_roots":["C:\\failed\\error"],"incomplete_samples":1}"#;
+        assert!(!problem(raw));
+        for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+            assert!(summary(lang, raw, false).is_none());
+            assert!(summary(lang, raw, true).is_none());
+            assert!(activity(lang, raw).is_none());
+            assert_eq!(localized_log(lang, raw), raw);
+        }
+    }
+
     #[test]
     fn all_old_failure_markers_survive_summary_and_problem_filter() {
         let _ui_test_lock = ui_test_guard();

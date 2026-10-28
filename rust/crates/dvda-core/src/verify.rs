@@ -96,6 +96,23 @@ fn execute_with_reference(
     reference: Option<Value>,
     caller: &mut dyn Callbacks,
 ) -> Outcome {
+    crate::metrics::measure(
+        "verify",
+        vec![job.work_directory.clone()],
+        0,
+        caller,
+        |_, caller| execute_measured(job, mode, explicit_iso, reference, caller),
+        |result| result.succeeded,
+    )
+}
+
+fn execute_measured(
+    job: Job,
+    mode: Mode,
+    explicit_iso: Option<PathBuf>,
+    reference: Option<Value>,
+    caller: &mut dyn Callbacks,
+) -> Outcome {
     match run(job, mode, explicit_iso, reference, caller) {
         Ok(value) => value,
         Err(message) => Outcome {
@@ -301,7 +318,14 @@ fn run(
     }
     if matches!(mode, Mode::All | Mode::Lossless)
         && let Some(index) = index.as_ref()
-        && let Err(reason) = lossless(&job, &isos, index, source_reference, &mut diagnostics, caller)
+        && let Err(reason) = lossless(
+            &job,
+            &isos,
+            index,
+            source_reference,
+            &mut diagnostics,
+            caller,
+        )
     {
         diagnostics.push(error("LOSSLESS_FAILED", reason));
     }
@@ -983,6 +1007,38 @@ fn lossless(
     diagnostics: &mut Vec<Value>,
     caller: &mut dyn Callbacks,
 ) -> Result<(), String> {
+    let before = diagnostics.len();
+    crate::metrics::measure(
+        "verify_lossless",
+        vec![],
+        0,
+        caller,
+        |work, caller| {
+            let result = lossless_measured(
+                job,
+                isos,
+                index,
+                source_reference,
+                diagnostics,
+                caller,
+                work,
+            );
+            (result, diagnostics.len() == before)
+        },
+        |(result, clean)| result.is_ok() && *clean,
+    )
+    .0
+}
+
+fn lossless_measured(
+    job: &Job,
+    isos: &[PathBuf],
+    index: &Value,
+    source_reference: bool,
+    diagnostics: &mut Vec<Value>,
+    caller: &mut dyn Callbacks,
+    work: &crate::metrics::Work,
+) -> Result<(), String> {
     let verifier = NativeDiscVerifier::load()?;
     let mut pcm_tracks = Vec::new();
     let total_chunks = aob_chunk_total(isos);
@@ -1064,12 +1120,17 @@ fn lossless(
                 &format!("group {number}; {}", iso.display()),
             );
             let coded_reference = source_reference
-                && tracks.iter().all(|track| text(track, "mlp_source") == "mlp-batch");
+                && tracks
+                    .iter()
+                    .all(|track| text(track, "mlp_source") == "mlp-batch");
             if all_mlp && coded_reference {
                 group_progress.emit(1, "MLP comparison: mlp-coded-v1-no-auxiliary-stamp (coded-stream equality, not raw-file equality)");
             }
             let reader = chunks(iso, &names).map(|chunk| {
                 check_cancel(&mut group_progress)?;
+                if let Ok(data) = &chunk {
+                    work.read_stream(data.len());
+                }
                 completed_chunks = completed_chunks.saturating_add(1);
                 group_progress.progress(completed_chunks, total_chunks);
                 chunk
@@ -1155,6 +1216,28 @@ fn verify_tracks_parallel(
     diagnostics: &mut Vec<Value>,
     caller: &mut dyn Callbacks,
 ) -> Result<(), String> {
+    let before = diagnostics.len();
+    crate::metrics::measure(
+        "verify_pcm",
+        vec![],
+        crate::options::worker_count(tracks.len()),
+        caller,
+        |work, caller| {
+            let result = verify_tracks_measured(job, tracks, diagnostics, caller, work);
+            (result, diagnostics.len() == before)
+        },
+        |(result, clean)| result.is_ok() && *clean,
+    )
+    .0
+}
+
+fn verify_tracks_measured(
+    job: &Job,
+    tracks: Vec<Value>,
+    diagnostics: &mut Vec<Value>,
+    caller: &mut dyn Callbacks,
+    work: &crate::metrics::Work,
+) -> Result<(), String> {
     if tracks.is_empty() {
         return Ok(());
     }
@@ -1179,6 +1262,7 @@ fn verify_tracks_parallel(
         let sender = sender.clone();
         let library = job.media_library.clone();
         let root = job.work_directory.clone();
+        let work = work.clone();
         workers.push(std::thread::spawn(move || {
             loop {
                 let task = queue
@@ -1192,7 +1276,16 @@ fn verify_tracks_parallel(
                     cancelled: &cancelled,
                     messages: Vec::new(),
                 };
-                let result = crate::verify_audio::track(&library, &root, &track, &mut callbacks);
+                let result = {
+                    let _active = work.enter();
+                    let bytes = crate::metrics::file_bytes(text(&track, "src"));
+                    let result =
+                        crate::verify_audio::track(&library, &root, &track, &mut callbacks);
+                    if result.is_ok() {
+                        work.complete(bytes);
+                    }
+                    result
+                };
                 if sender
                     .send((track, result, std::mem::take(&mut callbacks.messages)))
                     .is_err()

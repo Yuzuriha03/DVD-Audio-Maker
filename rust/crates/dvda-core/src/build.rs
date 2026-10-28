@@ -210,6 +210,24 @@ pub struct Outcome {
 }
 
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
+    crate::metrics::measure(
+        "build",
+        vec![
+            job.temporary_root.clone(),
+            job.output_root.clone(),
+            job.iso_directory.clone(),
+            job.mlp_batch_temp_directory.clone(),
+            job.mlp_batch_output_directory.clone(),
+            job.build_directory.join("publish-staging"),
+        ],
+        0,
+        caller,
+        |_, caller| execute_measured(job, caller),
+        |result| result.succeeded,
+    )
+}
+
+fn execute_measured(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     match run(job, caller) {
         Ok(result) => result,
         Err(message) => Outcome {
@@ -260,10 +278,17 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     };
     let tracks_value = serde_json::to_value(&initial).map_err(|error| error.to_string())?;
     caller.progress(0, 100);
-    let acquisition = {
-        let mut progress = dvda_native::media::ProgressScope::new(caller, 0, 65);
-        acquire(&job, &source_root, tracks_value, &mut progress)?
-    };
+    let acquisition = crate::metrics::measure(
+        "acquire",
+        vec![],
+        0,
+        caller,
+        |_, caller| {
+            let mut progress = dvda_native::media::ProgressScope::new(caller, 0, 65);
+            acquire(&job, &source_root, tracks_value, &mut progress)
+        },
+        Result::is_ok,
+    )?;
     let tracks: Vec<disc::Track> = serde_json::from_value(Value::Array(acquisition.tracks.clone()))
         .map_err(|error| format!("Invalid acquired tracks: {error}"))?;
     diagnostics.extend(acquisition.diagnostics);
@@ -455,7 +480,17 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                 coordinate_warnings: 0,
                 phase: "",
             };
-            let result = author_runtime::execute(&arguments, &mut author_callbacks);
+            let result = crate::metrics::measure(
+                "author_iso",
+                vec![],
+                1,
+                &mut author_callbacks,
+                |work, caller| {
+                    let _active = work.enter();
+                    author_runtime::execute(&arguments, caller)
+                },
+                |result| result.failure.is_none() && result.exit_code == Some(0),
+            );
             author_callbacks.finish();
             result
         };
@@ -602,15 +637,42 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         "",
         &job.final_directory.to_string_lossy(),
     );
-    let publication = publication::dispatch(
-        "publish.set",
-        json!({
-            "IsoFiles":files,
-            "FinalDirectory":job.final_directory,
-            "PendingIndexPath":pending_index,
-            "FormalIndexPath":job.mlp_index_path,
-            "MoveStagedIsos":!job.keep_intermediate
-        }),
+    let publication = crate::metrics::measure(
+        "publish",
+        vec![],
+        1,
+        caller,
+        |work, _| {
+            let _active = work.enter();
+            let sizes: Vec<_> = staged
+                .iter()
+                .map(|(path, _)| crate::metrics::file_bytes(path))
+                .collect();
+            let result = publication::dispatch(
+                "publish.set",
+                json!({
+                    "IsoFiles":files,
+                    "FinalDirectory":job.final_directory,
+                    "PendingIndexPath":pending_index,
+                    "FormalIndexPath":job.mlp_index_path,
+                    "MoveStagedIsos":!job.keep_intermediate
+                }),
+            );
+            if result
+                .as_ref()
+                .is_ok_and(|value| value.get("Failure").is_none_or(Value::is_null))
+            {
+                for bytes in sizes {
+                    work.complete(bytes);
+                }
+            }
+            result
+        },
+        |result| {
+            result
+                .as_ref()
+                .is_ok_and(|value| value.get("Failure").is_none_or(Value::is_null))
+        },
     )?;
     let failure = publication
         .get("Failure")

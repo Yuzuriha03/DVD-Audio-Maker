@@ -169,6 +169,17 @@ pub fn execute(job: Job, events: &mut dyn Callbacks) -> Outcome {
     }
 }
 pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Failure> {
+    crate::metrics::measure(
+        "prepare",
+        vec![job.alac_fix_directory.clone()],
+        0,
+        events,
+        |_, events| run_measured(job, events),
+        Result::is_ok,
+    )
+}
+
+fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Failure> {
     alac::check_cancel(events)?;
     let start = Instant::now();
     let fingerprint = job.fingerprint()?;

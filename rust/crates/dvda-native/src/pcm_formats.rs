@@ -56,7 +56,12 @@ pub(super) fn compare(
             result.first_mismatch_offset = offset;
             return Ok(result);
         }
-        if let Some(index) = lhs[..n].iter().zip(&rhs[..n]).position(|(a, b)| a != b) {
+        if lhs[..n] != rhs[..n] {
+            let index = lhs[..n]
+                .iter()
+                .zip(&rhs[..n])
+                .position(|(a, b)| a != b)
+                .unwrap();
             result.reason_code = 2;
             result.first_mismatch_offset = offset + index as u64;
             return Ok(result);

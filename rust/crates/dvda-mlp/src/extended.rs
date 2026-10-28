@@ -7,6 +7,7 @@ impl Extended {
     pub(crate) fn tenth() -> Self {
         Self([0xcd, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xfb, 0x3f])
     }
+    #[inline(always)]
     pub(crate) fn from_f64(value: f64) -> Self {
         let mut result = Self([0; 10]);
         unsafe {

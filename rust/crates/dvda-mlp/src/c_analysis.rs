@@ -94,10 +94,8 @@ pub(crate) fn mlp_matrix_analysis_add(
     for ch in 0..work.channels as usize {
         for j in ch..work.channels as usize {
             let mut dot = E::from_f64(0.0);
-            for n in 0..count {
-                dot = dot.add(
-                    E::from_f64(difference[n * 6 + ch]).mul(E::from_f64(difference[n * 6 + j])),
-                );
+            for row in difference[..count * 6].chunks_exact(6) {
+                dot = dot.add(E::from_f64(row[ch]).mul(E::from_f64(row[j])));
             }
             let value = dot.add(E::from_f64(work.covariance[ch * 6 + j])).to_f64();
             if !value.is_finite() {

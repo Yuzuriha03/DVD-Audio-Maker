@@ -1,5 +1,6 @@
 //! Reconstruct the encoding input and compare full decoded PCM, without changing
 //! either the source or the encoded file. Keep conversion policy identical to batch.
+//! Emit normalized source samples directly as S24 instead of decoding a second WAV.
 use crate::{media, pcm};
 use dvda_native::{
     NativeFormats,
@@ -68,7 +69,8 @@ pub fn track(
     let directory = media::temporary_path(&root.join("track"));
     fs::create_dir(&directory).map_err(|e| e.to_string())?;
     let work = Workspace(directory);
-    let expected = if builtin || lpcm {
+    let source_raw = work.0.join("source.raw");
+    if builtin || lpcm {
         let converted = work.0.join("converted.wav");
         convert(
             library,
@@ -79,32 +81,28 @@ pub fn track(
             OutputFormat::Wave,
             caller,
         )?;
-        let normalized = work.0.join("input.wav");
-        pcm::normalize(
+        pcm::normalize_s24(
             pcm::Job {
                 source: converted.to_string_lossy().into_owned(),
-                destination: normalized.clone(),
+                destination: source_raw.clone(),
                 rate: rate as i32,
                 bits: bits as i32,
             },
             caller,
         )
         .map_err(|e| e.message)?;
-        normalized
     } else {
-        source
-    };
-    let source_raw = work.0.join("source.raw");
+        convert(
+            library,
+            &source,
+            &source_raw,
+            0,
+            24,
+            OutputFormat::S24,
+            caller,
+        )?;
+    }
     let decoded_raw = work.0.join("decoded.raw");
-    convert(
-        library,
-        &expected,
-        &source_raw,
-        0,
-        24,
-        OutputFormat::S24,
-        caller,
-    )?;
     convert(
         library,
         &encoded,
@@ -138,7 +136,7 @@ pub fn track(
     Ok(())
 }
 
-fn convert(
+pub(crate) fn convert(
     library: &Path,
     input: &Path,
     output: &Path,

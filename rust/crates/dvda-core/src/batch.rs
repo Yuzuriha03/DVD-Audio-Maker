@@ -363,6 +363,17 @@ fn worker_count(tracks: usize) -> usize {
 }
 
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
+    crate::metrics::measure(
+        "mlp_batch",
+        vec![job.temporary_directory.clone()],
+        worker_count(job.tracks.len()),
+        caller,
+        |work, caller| execute_measured(job, caller, work),
+        |result| result.failure.is_none() && result.exit_code == Some(0),
+    )
+}
+
+fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics::Work) -> Outcome {
     let result = (|| -> Result<(), Failure> {
         validate(&job)?;
         fs::create_dir_all(&job.temporary_directory)?;
@@ -390,7 +401,10 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
                             if index >= job.tracks.len() {
                                 break;
                             }
+                            let _active = work.enter();
+                            let bytes = crate::metrics::file_bytes(&job.tracks[index].source_path);
                             track(job, index, send.clone(), stop)?;
+                            work.complete(bytes);
                         }
                         Ok(())
                     }))

@@ -28,6 +28,7 @@ pub mod menu;
 pub mod menu_check;
 pub mod menu_fonts;
 pub mod menu_verify;
+mod metrics;
 pub mod mlp_import;
 pub mod mlp_workflow;
 mod native_components;

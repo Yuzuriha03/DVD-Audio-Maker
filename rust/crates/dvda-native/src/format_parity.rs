@@ -211,19 +211,52 @@ fn native_format_pcm_strict_zero_tail_and_chunk_mismatch_match_historical_cases(
             assert_eq!(result.trailing_zero_bytes, (frames * 6) as u64);
         }
     }
-    let mut large = vec![0; 300 * 1024];
+    let mut large = vec![0; 300 * 1024 + 1];
     fs::write(&source, &large).unwrap();
-    large[200000] = 255;
-    fs::write(&decoded, large).unwrap();
-    let result = native.compare_pcm(&source, &decoded, 0, 0).unwrap();
-    assert!(!result.matches);
-    assert_eq!(result.first_mismatch_offset, 200000);
+    for offset in [0, 1, 131071, 131072, 131073, 200000, large.len() - 1] {
+        large[offset] = 255;
+        fs::write(&decoded, &large).unwrap();
+        let result = native.compare_pcm(&source, &decoded, 0, 0).unwrap();
+        assert!(!result.matches);
+        assert_eq!(result.reason_code, 2);
+        assert_eq!(result.first_mismatch_offset, offset as u64);
+        large[offset] = 0;
+    }
+    fs::write(&decoded, &large).unwrap();
+    assert!(native.compare_pcm(&source, &decoded, 0, 0).unwrap().matches);
+    fs::write(&source, []).unwrap();
+    fs::write(&decoded, []).unwrap();
+    assert!(native.compare_pcm(&source, &decoded, 0, 0).unwrap().matches);
     assert!(native.compare_pcm(&source, &decoded, 0, 1).is_err());
     assert!(
         native
             .compare_pcm(&root.0.join("missing.raw"), &decoded, 0, 0)
             .is_err()
     );
+}
+
+#[test]
+#[ignore = "manual release PCM comparison benchmark"]
+fn pcm_comparison_throughput() {
+    let root = Scratch::new();
+    let source = root.0.join("source.raw");
+    let decoded = root.0.join("decoded.raw");
+    let bytes: Vec<u8> = (0..64 * 1024 * 1024 + 1).map(|n| n as u8).collect();
+    fs::write(&source, &bytes).unwrap();
+    fs::write(&decoded, &bytes).unwrap();
+    for round in 0..9 {
+        let start = std::time::Instant::now();
+        let result = NativeFormats.compare_pcm(&source, &decoded, 0, 0).unwrap();
+        let elapsed = start.elapsed();
+        assert!(result.matches);
+        assert_eq!(result.reason_code, 0);
+        assert_eq!(result.source_bytes, bytes.len() as u64);
+        assert_eq!(result.decoded_bytes, bytes.len() as u64);
+        println!(
+            "COMPARE_BENCH round={round} ms={:.3}",
+            elapsed.as_secs_f64() * 1000.0
+        );
+    }
 }
 
 #[repr(C, packed)]

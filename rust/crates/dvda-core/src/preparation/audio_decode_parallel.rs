@@ -62,6 +62,38 @@ pub(crate) fn inspect_jobs<R: Send>(
     durations: Option<&[f64]>,
     inspect: fn(&audio::Job, &mut dyn Callbacks) -> Result<R, Failure>,
 ) -> Result<Vec<R>, Failure> {
+    crate::metrics::measure(
+        phase,
+        vec![],
+        crate::options::worker_count(jobs.len()),
+        callbacks,
+        |work, callbacks| {
+            inspect_jobs_measured(
+                jobs,
+                callbacks,
+                phase,
+                progress_start,
+                progress_total,
+                durations,
+                inspect,
+                work,
+            )
+        },
+        Result::is_ok,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn inspect_jobs_measured<R: Send>(
+    jobs: &[audio::Job],
+    callbacks: &mut dyn Callbacks,
+    phase: &str,
+    progress_start: u64,
+    progress_total: u64,
+    durations: Option<&[f64]>,
+    inspect: fn(&audio::Job, &mut dyn Callbacks) -> Result<R, Failure>,
+    work: &crate::metrics::Work,
+) -> Result<Vec<R>, Failure> {
     enum Event<R> {
         Started(usize),
         Message(usize, i32, String),
@@ -144,7 +176,15 @@ pub(crate) fn inspect_jobs<R: Send>(
                     }
                     callbacks.index = index;
                     callbacks.last_progress = None;
-                    let result = inspect(job, &mut callbacks);
+                    let result = {
+                        let _active = work.enter();
+                        let bytes = crate::metrics::file_bytes(&job.input);
+                        let result = inspect(job, &mut callbacks);
+                        if result.is_ok() {
+                            work.complete(bytes);
+                        }
+                        result
+                    };
                     callbacks.flush_progress();
                     if send.send(Event::Finished(index, result)).is_err() {
                         break;
@@ -307,8 +347,7 @@ mod tests {
         for phase in ["source_metadata", "source_decode"] {
             let mut events = Events::default();
             let jobs = fixture_jobs();
-            inspect_jobs(&jobs, &mut events, phase, 2, 10, None, |_, _| Ok(()))
-                .unwrap();
+            inspect_jobs(&jobs, &mut events, phase, 2, 10, None, |_, _| Ok(())).unwrap();
             assert_eq!(events.0.len(), jobs.len());
             let mut names = std::collections::HashSet::new();
             for (index, event) in events.0.iter().enumerate() {

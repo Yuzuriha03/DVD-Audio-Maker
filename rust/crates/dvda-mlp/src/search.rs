@@ -909,9 +909,12 @@ pub(crate) fn mlp_search_iir_evaluate(
         }
     }
     for j in 0..=tail {
-        for n in 0..=tail - j {
-            h[j] += impulse[n + j] * impulse[n];
+        let mut sum = h[j];
+        let shifted = &impulse[j..=tail];
+        for n in 0..shifted.len() {
+            sum += shifted[n] * impulse[n];
         }
+        h[j] = sum;
     }
     for n in 0..=aorder {
         r[n] = h[0] * correlation[n];
