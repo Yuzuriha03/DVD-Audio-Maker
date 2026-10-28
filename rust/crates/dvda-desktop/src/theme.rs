@@ -286,7 +286,7 @@ pub(crate) fn apply_theme(hwnd: Hwnd, state: &mut UiState, dark: bool) {
             hwnd,
             ptr::null(),
             ptr::null_mut(),
-            RDW_INVALIDATE | RDW_ALLCHILDREN,
+            RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_FRAME,
         );
     }
 }

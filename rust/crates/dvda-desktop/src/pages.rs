@@ -71,6 +71,24 @@ pub(crate) unsafe extern "system" fn page_proc(
                 unsafe { SendMessageW(parent, message, wparam, lparam) }
             }
         }
+        // The 1-pixel page border is non-client, so scrolled controls that
+        // straddle the page edge are clipped inside it instead of covering it.
+        WM_NCCALCSIZE => {
+            // SAFETY: for this message lparam points to a RECT (the first member of
+            // NCCALCSIZE_PARAMS when wparam is set) that the system expects to be updated.
+            let rect = unsafe { &mut *(lparam as *mut Rect) };
+            if rect.right - rect.left > 2 && rect.bottom - rect.top > 2 {
+                rect.left += 1;
+                rect.top += 1;
+                rect.right -= 1;
+                rect.bottom -= 1;
+            }
+            0
+        }
+        WM_NCPAINT => {
+            unsafe { paint_page_border(hwnd) };
+            0
+        }
         WM_ERASEBKGND => 1,
         WM_PAINT => {
             unsafe { paint_page(hwnd) };
@@ -248,7 +266,8 @@ pub(crate) fn scroll_page_with_bar(hwnd: Hwnd, requested: i32, explicit: bool, b
             } else {
                 // Shift the shown pixels and every child in one operation, then
                 // paint only the uncovered strip. Moving and repainting each
-                // control separately showed mixed old/new frames (ghosting).
+                // control separately showed mixed old/new frames (ghosting). The
+                // border is non-client and stays where it is.
                 const SW_SCROLLCHILDREN: u32 = 0x0001;
                 const SW_INVALIDATE: u32 = 0x0002;
                 ScrollWindowEx(
@@ -261,14 +280,6 @@ pub(crate) fn scroll_page_with_bar(hwnd: Hwnd, requested: i32, explicit: bool, b
                     ptr::null_mut(),
                     SW_SCROLLCHILDREN | SW_INVALIDATE,
                 );
-                // The 1-pixel page border was shifted with the content.
-                let band = delta.abs() + 2;
-                for strip in [
-                    Rect { left: 0, top: 0, right: rect.right, bottom: band },
-                    Rect { left: 0, top: rect.bottom - band, right: rect.right, bottom: rect.bottom },
-                ] {
-                    RedrawWindow(hwnd, &strip, ptr::null_mut(), RDW_INVALIDATE | RDW_ALLCHILDREN);
-                }
                 RedrawWindow(hwnd, ptr::null(), ptr::null_mut(), RDW_ALLCHILDREN | 0x0100); // RDW_UPDATENOW
             }
         }
@@ -276,6 +287,11 @@ pub(crate) fn scroll_page_with_bar(hwnd: Hwnd, requested: i32, explicit: bool, b
     if !bar.is_null() {
         unsafe {
             InvalidateRect(bar, ptr::null(), 0);
+        }
+        // Paint the thumb with the content; left to the idle WM_PAINT it trails
+        // the page while a drag keeps the queue busy.
+        if pos != old && !DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
+            UpdateWindow(bar);
         }
     }
     if !DEFER_CONTROL_PAINT.load(Ordering::Relaxed) {
@@ -322,7 +338,7 @@ pub(crate) fn resize_page_fields(page: Hwnd) {
     for (edit_id, browse_id, y) in [
         (ID_SOURCE, ID_BROWSE_SOURCE, 38),
         (ID_FINAL, ID_BROWSE_FINAL, 86),
-        (ID_WORK_DIR, ID_BROWSE_WORK, 174),
+        (ID_WORK_DIR, ID_BROWSE_WORK, 182),
     ] {
         let edit = GetDlgItem(page, edit_id as i32);
         let browse = GetDlgItem(page, browse_id as i32);

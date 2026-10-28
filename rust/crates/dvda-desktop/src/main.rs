@@ -187,6 +187,7 @@ const DT_NOPREFIX: u32 = 0x00000800;
 const DT_END_ELLIPSIS: u32 = 0x00008000;
 const RDW_INVALIDATE: u32 = 0x0001;
 const RDW_ALLCHILDREN: u32 = 0x0080;
+const RDW_FRAME: u32 = 0x0400;
 const SW_SHOW: i32 = 5;
 const SW_HIDE: i32 = 0;
 const SW_MAXIMIZE: i32 = 3;
@@ -194,6 +195,7 @@ const SW_MINIMIZE: i32 = 6;
 const SW_RESTORE: i32 = 9;
 const WM_NCCALCSIZE: u32 = 0x0083;
 const WM_NCHITTEST: u32 = 0x0084;
+const WM_NCPAINT: u32 = 0x0085;
 const WM_NCLBUTTONDOWN: u32 = 0x00a1;
 const WM_NCLBUTTONDBLCLK: u32 = 0x00a3;
 const HTCLIENT: i32 = 1;
@@ -614,7 +616,7 @@ unsafe extern "system" {
     fn EndPaint(hwnd: Hwnd, paint: *const PaintStruct) -> i32;
     #[cfg(test)]
     safe fn GetDC(hwnd: Hwnd) -> Handle;
-    #[cfg(test)]
+    safe fn GetWindowDC(hwnd: Hwnd) -> Handle;
     safe fn ReleaseDC(hwnd: Hwnd, dc: Handle) -> i32;
     safe fn GetFocus() -> Hwnd;
     safe fn IsWindowEnabled(hwnd: Hwnd) -> i32;

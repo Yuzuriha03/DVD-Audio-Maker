@@ -840,12 +840,14 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_CUSTOM_BYTES, 760, 130 - sy, page_width - 774, 25);
                         let hint = get_text(label_handle(state, "advanced_hint"));
                         move_label(state, "advanced_hint", 14, 170 - sy, 780, wrapped_text_height(&hint, ui_font(), 780));
-                        move_label(state, "work_dir", 14, 150 - sy, 520, 22);
-                        move_label(state, "iso_prefix", 14, 198 - sy, 460, 20);
-                        move_child(*page, ID_ISO_PREFIX, 14, 218 - sy, 460, 25);
-                        move_label(state, "group_limit", 520, 198 - sy, 220, 20);
-                        move_child(*page, ID_GROUP_LIMIT, 520, 218 - sy, 220, 25);
-                        place(state.controls.keep_files, 760, 198 - sy, 230, 28);
+                        // The capacity list is 29 tall and starts at x = 520: this row
+                        // sits below it and its label stops short of it.
+                        move_label(state, "work_dir", 14, 162 - sy, 490, 20);
+                        move_label(state, "iso_prefix", 14, 210 - sy, 460, 20);
+                        move_child(*page, ID_ISO_PREFIX, 14, 230 - sy, 460, 25);
+                        move_label(state, "group_limit", 520, 210 - sy, 220, 20);
+                        move_child(*page, ID_GROUP_LIMIT, 520, 230 - sy, 220, 25);
+                        place(state.controls.keep_files, 760, 210 - sy, 230, 28);
                     }
                 }
             }
@@ -855,15 +857,15 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                      {
                         // Rates and depths are short; the mode list holds the
                         // longest texts and takes the remaining width.
-                        let mode_width = (page_width - 28 - 32 - 260).clamp(200, 300);
+                        let mode_width = (page_width - 28 - 32 - 258).clamp(200, 300);
                         let rate_x = 14 + mode_width + 16;
-                        let bits_x = rate_x + 130 + 16;
+                        let bits_x = rate_x + 129 + 16;
                         move_label(state, "audio_mode", 14, 18 - sy, mode_width, 20);
                         move_child(*page, ID_MODE, 14, 38 - sy, mode_width, 120);
-                        move_label(state, "sample_rate", rate_x, 18 - sy, 130, 20);
-                        move_child(*page, ID_RATE, rate_x, 38 - sy, 130, 120);
-                        move_label(state, "bits", bits_x, 18 - sy, 130, 20);
-                        move_child(*page, ID_BITS, bits_x, 38 - sy, 130, 120);
+                        move_label(state, "sample_rate", rate_x, 18 - sy, 129, 20);
+                        move_child(*page, ID_RATE, rate_x, 38 - sy, 129, 120);
+                        move_label(state, "bits", bits_x, 18 - sy, 129, 20);
+                        move_child(*page, ID_BITS, bits_x, 38 - sy, 129, 120);
                         // The note follows the lists; the MLP path follows the note.
                         let note = get_text(label_handle(state, "audio_note"));
                         let note_height = wrapped_text_height(&note, ui_font(), field_width);

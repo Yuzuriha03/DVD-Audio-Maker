@@ -163,20 +163,11 @@ pub(crate) unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
 /// `hwnd` must be a scrollbar installed by `install_scrollbar`, and this must run inside
 /// its WM_PAINT.
 pub(crate) unsafe fn draw_scrollbar(hwnd: Hwnd) {
+    // Composed off-screen: the track and the thumb reach the screen together.
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
-    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
-    let mut rect = Rect {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-     {
-        GetClientRect(hwnd, &mut rect);
-    }
-     {
-        FillRect(dc, &rect, brush(c_body()));
-    }
+    let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_body()) };
+    let dc = buffer.memory;
+    let rect = buffer.rect;
     let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ScrollbarVisual;
     if !pointer.is_null() && rect.right > 0 && rect.bottom > 0 {
         let main = unsafe { (*pointer).main };
@@ -200,7 +191,7 @@ pub(crate) unsafe fn draw_scrollbar(hwnd: Hwnd) {
         }
     }
     unsafe {
-        EndPaint(hwnd, &paint);
+        finish_buffered_paint(hwnd, &paint, &buffer);
     }
 }
 

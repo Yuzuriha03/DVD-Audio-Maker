@@ -541,7 +541,7 @@ pub(crate) struct BufferedPaint {
     pub(crate) memory: Handle,
     bitmap: Handle,
     previous: Handle,
-    rect: Rect,
+    pub(crate) rect: Rect,
 }
 
 /// # Safety
@@ -848,47 +848,33 @@ pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
 /// # Safety
 /// `hwnd` must be a settings page of this application, inside its WM_PAINT.
 pub(crate) unsafe fn paint_page(hwnd: Hwnd) {
+    // Only the panel colour: the controls paint themselves and the border is
+    // non-client. Unbuffered, so a scroll step fills just its uncovered strip.
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
-    let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_panel()) };
-    let dc = buffer.memory;
-    let mut rect = Rect {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
     unsafe {
-        GetClientRect(hwnd, &mut rect);
-        FillRect(dc, &rect, panel_brush());
-        let edges = [
-            Rect {
-                left: rect.left,
-                top: rect.top,
-                right: rect.right,
-                bottom: rect.top + 1,
-            },
-            Rect {
-                left: rect.left,
-                top: rect.bottom - 1,
-                right: rect.right,
-                bottom: rect.bottom,
-            },
-            Rect {
-                left: rect.left,
-                top: rect.top,
-                right: rect.left + 1,
-                bottom: rect.bottom,
-            },
-            Rect {
-                left: rect.right - 1,
-                top: rect.top,
-                right: rect.right,
-                bottom: rect.bottom,
-            },
-        ];
-        for edge in &edges {
-            FillRect(dc, edge, border_brush());
-        }
-        finish_buffered_paint(hwnd, &paint, &buffer);
+        let dc = BeginPaint(hwnd, &mut paint);
+        FillRect(dc, &paint.paint, panel_brush());
+        EndPaint(hwnd, &paint);
     }
+}
+
+/// # Safety
+/// `hwnd` must be a settings page of this application, inside its WM_NCPAINT.
+pub(crate) unsafe fn paint_page_border(hwnd: Hwnd) {
+    let mut window = Rect::default();
+    GetWindowRect(hwnd, &mut window);
+    let (width, height) = (window.right - window.left, window.bottom - window.top);
+    let dc = GetWindowDC(hwnd);
+    if dc.is_null() {
+        return;
+    }
+    for edge in [
+        Rect { left: 0, top: 0, right: width, bottom: 1 },
+        Rect { left: 0, top: height - 1, right: width, bottom: height },
+        Rect { left: 0, top: 0, right: 1, bottom: height },
+        Rect { left: width - 1, top: 0, right: width, bottom: height },
+    ] {
+        FillRect(dc, &edge, border_brush());
+    }
+    ReleaseDC(hwnd, dc);
 }
