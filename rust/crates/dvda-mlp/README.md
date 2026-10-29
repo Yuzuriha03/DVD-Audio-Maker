@@ -1,5 +1,66 @@
 # Rust MLP encoder status
 
+## Real-audio serialization optimization
+
+Bit insertion packs the pending bits and each input into a 64-bit value, then
+emits at most two 16-bit words without a per-chunk loop. Capacity checks run the same validating serializer
+in count-only mode, without materializing sample payloads or calculating their
+checksum. Restart headers still materialize their bits for CRC validation.
+No serialized-output caching or buffer reuse is introduced.
+
+Five alternating-order runs of three 60-second, stereo 48 kHz/24-bit clips
+used explicit metadata and restart interval 8. Encoding-only median times were:
+
+| Clip | Before (ms) | After (ms) | Reduction |
+| --- | ---: | ---: | ---: |
+| Against the Tide | 1705.797 | 1480.899 | 13.18% |
+| Beautiful Tomorrow | 1621.636 | 1212.522 | 25.23% |
+| 沉沦幻海 | 1483.506 | 1247.001 | 15.94% |
+
+These measurements combine the writer and capacity-check changes; they do not
+attribute gains separately. All 15 paired measurements improved, but timing
+variation was substantial. Final raw MLP SHA256 values matched the pre-change
+Rust baseline on all three clips, with sizes 14,222,332, 12,976,944 and 13,004,530
+bytes respectively. Independent FFmpeg decoding matched the prepared PCM.
+The IIR loop experiment was reverted because its additional gain was unstable.
+
+A subsequent packed-writer comparison against the 16-bit chunk-loop baseline used
+24 local music clips (60 seconds each, stereo 48 kHz/24-bit), six alternating-order
+rounds, and 288 timed encodes. The sum of per-clip median times fell from
+33,535.951 ms to 32,246.812 ms (3.84%). Twenty-one clips improved by median;
+119 of 144 paired measurements improved. All six round totals improved
+(1.28% to 4.88%), but three clip medians regressed, so this is not a universal
+speedup guarantee. Fixed-metadata raw MLP SHA256 matched the Rust baseline in
+every timed encode; all 24 clips independently decoded to identical PCM.
+These results cover one machine, one collection and one audio configuration.
+Boundary and 10,000-insertion sequence tests compare the writer with a bitwise
+reference; the 192-case FFmpeg matrix also passed with 12,801 input frames.
+
+Validation: 22 release unit tests, 192 independent FFmpeg lossless cases at
+12,801 frames each, and Clippy with the existing `chunks_exact_to_as_chunks`
+exemption passed. Tests cover chunk boundaries against a per-bit reference and
+counted versus materialized lengths/errors.
+
+### Long-stream rate-limit diagnostics
+
+The 64,001-frame, 88.2 kHz/20-bit/6-channel pattern-3 failure is a FIFO
+rate-limit rejection, not a serializer failure. This pseudorandom input has a
+raw PCM rate of 10.584 Mb/s; a failing 80-frame AU occupied 1,210 bytes
+(about 10.67 Mb/s), above the configured roughly 9.6 Mb/s delivery rate.
+Short inputs can fit within the initial FIFO timing margin; sufficiently long
+incompressible streams exhaust it. No lossless encoder can guarantee that
+arbitrary input fits below its information rate.
+
+The encoder retains status `-5` for ABI compatibility, but now preserves the
+specific diagnostic in `EncoderResult.error` through the public API and GUI
+error path: `MLP FIFO rate limit exceeded; input cannot be encoded at the required delivery rate`.
+All partial output must be discarded on failure. No rate checks, losslessness,
+or format constraints are relaxed. A non-ignored regression checks this exact
+long input and successful silence at the same format and length. The optional
+lossless matrix still expects success and is not an arbitrary-length acceptance
+test for incompressible inputs above the delivery limit.
+
+
 ## Native floating-point mode
 
 The matrix analysis and half-rate interpolation arithmetic now use Rust `f64`
@@ -29,8 +90,51 @@ zero padding through the production direct-streaming API:
 
 ```powershell
 $env:DVDA_FLOAT_REPORT = 'C:\temp\native-float.csv' # optional existing parent directory
+$env:DVDA_FLOAT_FRAMES = '12801' # optional; default 1281 frames per case
 cargo test --manifest-path rust\Cargo.toml -p dvda-mlp --release --test native_float -- --ignored --nocapture
 ```
+
+### Prediction-search budget experiment
+
+The primary joint predictor search now attempts 4 coefficient perturbations
+instead of 16. Candidate-pool evaluation, fresh-candidate generation, stability
+checks and the FIR fallback are retained. This changes search choices and RNG
+progression, not the lossless reconstruction or bitstream format. Serialization
+caching and output-buffer reuse experiments were reverted at user request.
+
+On Windows x64, three alternating baseline/current runs of the 192-case matrix
+(12,801 frames each) measured summed encoder times of 1.023/0.970,
+1.024/0.971 and 1.008/1.012 seconds. Median totals improved about 5.0%; one pair
+was slightly slower, so this is not a general throughput guarantee. FFmpeg
+reconstructed exact PCM and padding for all cases. Total output changed from
+5,789,668 to 5,787,766 bytes (-0.033%); 15 cases changed size, with the largest
+increase 584 bytes (+1.43%, 48 kHz/16-bit/6-channel correlated ramp).
+Compression acceptance remains subject to user review and real-audio testing.
+
+A subsequent arithmetic-loop optimization expresses the autocorrelation inner
+product as paired bounded slices instead of repeated indexed accesses. It keeps
+scalar accumulation order and the search budget unchanged, without caching or
+buffer reuse. Against the four-perturbation baseline, three alternating runs of
+the same 12,801-frame matrix measured encoder totals of 1.372/1.341,
+1.340/1.277 and 1.374/1.379 seconds (baseline/current). Median totals decreased
+about 2.3%, with one slightly slower pair. All 192 output sizes were unchanged
+in every pair, and every decode matched PCM and padding exactly. Equal sizes
+alone do not establish byte-identical bitstreams. These timings are from a
+separate run and should not be compared directly with the earlier experiment.
+
+A zero-order IIR fast-path experiment was rejected: skipping unit-impulse
+calculations alone gave no consistent benefit; additionally bypassing zero
+products gave baseline/current encoder totals of 0.977/1.040, 1.036/1.024 and
+1.003/0.984 seconds in three alternating 192-case, 12,801-frame runs. The median
+increased about 2.2%. All sizes and decoded PCM/padding matched, but the
+production fast path was reverted. A unit-impulse equivalence regression test
+was retained, including extreme finite correlations and invalid lag/order pairs.
+
+A longer 64,001-frame matrix exposed an existing encoder error (-5) at
+88.2 kHz/20-bit/6-channel pseudorandom input in both earlier pipeline versions.
+This limitation remains unresolved; short-matrix success does not certify long
+inputs. These measurements do not establish memory savings or physical-player
+compatibility.
 
 FFmpeg must be on PATH. The test does not certify physical DVD players or all
 mixed-rate layouts. Historical oracle comparisons remain optional diagnostics,

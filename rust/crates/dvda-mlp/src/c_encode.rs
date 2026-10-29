@@ -535,9 +535,9 @@ pub(crate) fn serialize_planned(
 pub(crate) fn interval_fits(pending: &mut IntervalOutput, channels: usize) -> Result<bool, ()> {
     pending.restart.maximum_lsbs = pending.maximum_lsbs;
     for au in 0..pending.au.len() {
-        let mut writer = Bits::default();
+        let mut writer = Bits { count_only: true, ..Bits::default() };
         serialize_planned(&mut writer, pending, au, channels)?;
-        if writer.words.len() + if au == 0 { 17 } else { 3 } > 0x300 {
+        if writer.word_len() + if au == 0 { 17 } else { 3 } > 0x300 {
             return Ok(false);
         }
     }
@@ -692,6 +692,27 @@ fn planned_interval_fallback_serializes() {
     let mut writer = Bits::default();
     serialize_planned(&mut writer, &pending, 0, 1).unwrap();
     assert!(!writer.words.is_empty());
+    let saved_blocksize = pending.au[0].main.blocksize;
+    let saved_flags = pending.au[0].main.flags;
+    for single in [false, true] {
+        pending.au[0].main.blocksize = if single { 16 } else { saved_blocksize };
+        pending.au[0].main.flags = if single { saved_flags | 2 } else { saved_flags };
+        for end in [false, true] {
+            pending.au[0].single_restart = single;
+            pending.au[0].end_markers = end;
+            let mut actual = Bits::default();
+            let mut counter = Bits { count_only: true, ..Bits::default() };
+            let actual_status = serialize_planned(&mut actual, &pending, 0, 1);
+            let counted_status = serialize_planned(&mut counter, &pending, 0, 1);
+            assert_eq!(actual_status, counted_status);
+            if !single { assert!(actual_status.is_ok()); }
+            assert_eq!(actual.word_len(), counter.word_len());
+        }
+    }
+    pending.au[0].main.blocksize = saved_blocksize;
+    pending.au[0].main.flags = saved_flags;
+    pending.au[0].single_restart = false;
+    pending.au[0].end_markers = true;
     assert_eq!(pending.restart.maximum_lsbs, pending.maximum_lsbs);
     let mut queue = crate::c_output_queue::MlpOutputQueue::mlp_output_queue_init();
     let mut rate = crate::c_rate::mlp_rate_init();

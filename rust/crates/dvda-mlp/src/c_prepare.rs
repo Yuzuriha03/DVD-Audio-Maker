@@ -341,7 +341,7 @@ pub(crate) fn prepare_matrix(
                     maximum_a: if limited { 4 } else { 8 },
                     maximum_b: if !limited && total >= 40 { 4 } else { 0 },
                     lag: 32,
-                    perturbations: 16,
+                    perturbations: 4,
                 },
                 if limited { 2 } else { 0 },
                 &mut m.prediction[ch],

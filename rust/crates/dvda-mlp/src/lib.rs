@@ -74,34 +74,43 @@ struct Bits {
     words: Vec<u32>,
     pending: u32,
     width: u32,
+    count_only: bool,
+    counted_words: usize,
 }
 impl Bits {
+    fn word_len(&self) -> usize {
+        self.words.len() + self.counted_words
+    }
+
+    fn finish_into(self, writer: &mut Self, last: bool) {
+        if self.count_only {
+            writer.counted_words = self.word_len() + usize::from(self.width != 0)
+                + if last { 3 } else { 1 };
+        } else {
+            writer.words = self.seal(last);
+        }
+    }
+
     #[inline(always)]
     fn put(&mut self, value: u32, width: u32) {
         debug_assert!(width <= 32 && (width == 32 || value >> width == 0));
 
-        // Optimized: process bits in bulk when possible
-        if width + self.width <= 16 {
-            // Fast path: all bits fit in current word
-            self.pending = (self.pending << width) | value;
-            self.width += width;
-            if self.width == 16 {
-                self.words.push(self.pending);
-                self.pending = 0;
-                self.width = 0;
-            }
-        } else {
-            // Slow path: spans word boundary
-            for i in (0..width).rev() {
-                self.pending = (self.pending << 1) | ((value >> i) & 1);
-                self.width += 1;
-                if self.width == 16 {
-                    self.words.push(self.pending);
-                    self.pending = 0;
-                    self.width = 0;
-                }
+        if self.count_only {
+            let bits = self.width + width;
+            self.counted_words += (bits / 16) as usize;
+            self.width = bits % 16;
+            return;
+        }
+        let packed = (u64::from(self.pending) << width) | u64::from(value);
+        let bits = self.width + width;
+        if bits >= 16 {
+            self.words.push(((packed >> (bits - 16)) & 0xffff) as u32);
+            if bits >= 32 {
+                self.words.push(((packed >> (bits - 32)) & 0xffff) as u32);
             }
         }
+        self.width = bits % 16;
+        self.pending = (packed & ((1u64 << self.width) - 1)) as u32;
     }
     fn seal(mut self, last: bool) -> Vec<u32> {
         if self.width != 0 {
@@ -824,6 +833,61 @@ mod tests {
         b.put(0x56, 8);
         assert_eq!(&b.seal(false)[..2], &[0x1234, 0x5600]);
         assert_eq!(checksum(&[]), 0xa9a2);
+    }
+    #[test]
+    fn bulk_writer_matches_bitwise_reference() {
+        for prefix in 0..16 {
+            for width in 0..=32 {
+                for value in [0, u32::MAX, 0x12345678, 0xaaaaaaaa] {
+                    let value = if width == 32 { value } else { value & ((1u32 << width) - 1) };
+                    let mut actual = Bits::default();
+                    let mut expected = Bits::default();
+                    let mut counter = Bits { count_only: true, ..Bits::default() };
+                    for (v, w) in [(0x5555 & ((1 << prefix) - 1), prefix), (value, width), (3, 2)] {
+                        actual.put(v, w);
+                        counter.put(v, w);
+                        for bit in (0..w).rev() {
+                            expected.pending = (expected.pending << 1) | ((v >> bit) & 1);
+                            expected.width += 1;
+                            if expected.width == 16 {
+                                expected.words.push(expected.pending);
+                                expected.pending = 0;
+                                expected.width = 0;
+                            }
+                        }
+                    }
+                    assert_eq!(actual.words, expected.words);
+                    assert_eq!((actual.pending, actual.width), (expected.pending, expected.width));
+                    let mut counted = Bits::default();
+                    counter.finish_into(&mut counted, true);
+                    assert_eq!(counted.word_len(), actual.seal(true).len());
+                }
+            }
+        }
+    }
+    #[test]
+    fn bulk_writer_matches_long_bit_sequence() {
+        let mut actual = Bits::default();
+        let mut expected = Bits::default();
+        let mut state = 0x12345678u32;
+        for _ in 0..10000 {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            let width = state % 33;
+            let value = if width == 32 { state } else { state & ((1u32 << width) - 1) };
+            actual.put(value, width);
+            for bit in (0..width).rev() {
+                expected.pending = (expected.pending << 1) | ((value >> bit) & 1);
+                expected.width += 1;
+                if expected.width == 16 {
+                    expected.words.push(expected.pending);
+                    expected.pending = 0;
+                    expected.width = 0;
+                }
+            }
+            assert_eq!((actual.pending, actual.width), (expected.pending, expected.width));
+        }
+        assert_eq!(actual.words, expected.words);
+        assert_eq!(actual.seal(true), expected.seal(true));
     }
     #[test]
     fn scaling_matrix_and_prediction_compress_correlated_pcm() {

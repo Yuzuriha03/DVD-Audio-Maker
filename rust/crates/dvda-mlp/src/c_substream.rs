@@ -43,6 +43,7 @@ fn samples(
 
 pub(crate) fn mlp_substream_put(writer: &mut Bits, s: &MlpSubstream<'_>) -> Result<(), ()> {
     if !writer.words.is_empty()
+        || writer.counted_words != 0
         || writer.width != 0
         || writer.pending != 0
         || s.count == 0
@@ -85,11 +86,15 @@ pub(crate) fn mlp_substream_put(writer: &mut Bits, s: &MlpSubstream<'_>) -> Resu
     let mut first = 0;
     if let Some(r) = s.restart {
         mlp_restart_put(&mut local, r, s.primary)?;
+    }
+    // The restart CRC needs actual header bits; subsequent fields only need their lengths.
+    local.count_only = writer.count_only;
+    if s.restart.is_some() {
         if s.single_restart {
             mlp_parameters_put(&mut local, s.main, s.previous, false, false)?;
             samples(&mut local, s, s.main, 0, s.count)?;
             local.put(1, 1);
-            writer.words = local.seal(s.end_markers);
+            local.finish_into(writer, s.end_markers);
             return Ok(());
         }
         let initial = s.initial.ok_or(())?;
@@ -108,6 +113,6 @@ pub(crate) fn mlp_substream_put(writer: &mut Bits, s: &MlpSubstream<'_>) -> Resu
     mlp_parameters_put(&mut local, s.main, baseline, s.restart.is_some(), false)?;
     samples(&mut local, s, s.main, first, s.count - first)?;
     local.put(1, 1);
-    writer.words = local.seal(s.end_markers);
+    local.finish_into(writer, s.end_markers);
     Ok(())
 }

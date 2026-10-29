@@ -152,6 +152,8 @@ pub(crate) fn mlp_parameters_put(
         words: Vec::new(),
         pending: writer.pending,
         width: writer.width,
+        count_only: writer.count_only,
+        counted_words: 0,
     };
     let eligible = initial || !restart;
     local.put(0, 1);
@@ -238,6 +240,7 @@ pub(crate) fn mlp_parameters_put(
         local.put(p.mode as u32, 2);
         local.put(p.total_width as u32, 5);
     }
+    writer.counted_words += local.counted_words;
     writer.words.extend(local.words);
     writer.pending = local.pending;
     writer.width = local.width;

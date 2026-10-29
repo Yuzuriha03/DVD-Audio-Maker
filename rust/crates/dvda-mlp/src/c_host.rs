@@ -136,6 +136,8 @@ pub(crate) fn encode_stream(
         status.get()
     } else if pcm.failed {
         -3
+    } else if let Some(message) = pending.failure {
+        crate::ffi::fail(result, -5, message)
     } else {
         -5
     }

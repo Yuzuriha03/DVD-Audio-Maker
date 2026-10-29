@@ -23,7 +23,9 @@ pub trait StreamIo {
 
 /// Counts and statuses follow the differential ABI: 0 success, -1 invalid
 /// configuration, -2 allocation/size failure, -3 input/cancellation, -4 output,
-/// -5 encoding failure/panic. Discard all output on any nonzero final status.
+/// -5 encoding failure/panic. `error` contains the diagnostic when available,
+/// including FIFO delivery-rate and access-unit size limits.
+/// Discard all output on any nonzero final status.
 /// Allocation exhaustion in internal infallible allocations can still abort.
 pub type StreamResult = ffi::EncoderResult;
 

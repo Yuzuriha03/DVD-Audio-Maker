@@ -816,8 +816,10 @@ pub(crate) fn mlp_search_correlation_extended(
         }
         for k in 0..=order {
             let mut sum = 0.0;
-            for n in 0..length {
-                sum += y[49 + n] * y[49 + n - k];
+            let current = &y[49..49 + length];
+            let delayed = &y[49 - k..49 - k + length];
+            for (&left, &right) in current.iter().zip(delayed) {
+                sum += left * right;
             }
             r[k] += sum;
         }
@@ -936,4 +938,45 @@ pub(crate) fn mlp_search_iir_evaluate(
     *reflection = k;
     *score = value;
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mlp_search_iir_evaluate;
+
+    #[test]
+    fn zero_order_matches_general_unit_impulse() {
+        for scale in [0.0, 1.0, 1e20, f64::MAX] {
+            let correlation: Vec<_> = (0..50).map(|lag| scale * 0.75f64.powi(lag)).collect();
+            for lag in 0..=49 {
+                for maximum_a in 0..=7 {
+                    let mut direct_k = [123.0; 8];
+                    let mut general_k = direct_k;
+                    let mut direct_score = 123.0;
+                    let mut general_score = direct_score;
+                    let direct = mlp_search_iir_evaluate(
+                        &correlation,
+                        lag,
+                        &[],
+                        0,
+                        maximum_a,
+                        &mut direct_k,
+                        &mut direct_score,
+                    );
+                    let general = mlp_search_iir_evaluate(
+                        &correlation,
+                        lag,
+                        &[0.0],
+                        1,
+                        maximum_a,
+                        &mut general_k,
+                        &mut general_score,
+                    );
+                    assert_eq!(direct, general);
+                    assert_eq!(direct_k.map(f64::to_bits), general_k.map(f64::to_bits));
+                    assert_eq!(direct_score.to_bits(), general_score.to_bits());
+                }
+            }
+        }
+    }
 }

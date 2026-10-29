@@ -60,8 +60,9 @@ impl Default for EncoderResult {
         }
     }
 }
-fn fail(result: &mut EncoderResult, status: i32, message: &str) -> i32 {
+pub(crate) fn fail(result: &mut EncoderResult, status: i32, message: &str) -> i32 {
     result.status = status;
+    result.error.fill(0);
     for (slot, byte) in result.error.iter_mut().take(191).zip(message.bytes()) {
         *slot = byte as c_char;
     }
@@ -223,6 +224,9 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
         );
         if status == 0 {
             0
+        } else if result.error[0] != 0 {
+            result.status = status;
+            status
         } else {
             fail(result, status, "Encoding failed; discard partial output")
         }
