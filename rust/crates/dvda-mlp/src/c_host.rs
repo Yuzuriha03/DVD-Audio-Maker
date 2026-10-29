@@ -1,5 +1,5 @@
 use crate::ffi::{EncoderConfig, EncoderResult, Read, Write};
-use crate::{Config, format::Profile, metadata::Metadata};
+use crate::{format::Profile, metadata::Metadata, Config};
 use std::cell::Cell;
 use std::ffi::c_void;
 
@@ -19,7 +19,7 @@ pub(crate) fn encode_stream(
     io: HostIo<'_>,
     result: &mut EncoderResult,
 ) -> i32 {
-    use crate::c_encode::{IntervalOutput, OutputFormat, encode};
+    use crate::c_encode::{encode, IntervalOutput, OutputFormat};
     use crate::c_prepare::{CallbackInput, MatrixInterval};
     let channels = c.channels as usize;
     let shift = u32::from(c.sample_rate > 48000) + u32::from(c.sample_rate > 96000);
@@ -50,7 +50,6 @@ pub(crate) fn encode_stream(
     for (ch, depth) in depths.iter_mut().enumerate().take(channels) {
         *depth = profile.depth(c, ch) as u32;
     }
-    let fp = crate::extended::HostFpScope::codec();
     let status = Cell::new(0);
     let input_frames = Cell::new(0u64);
     let read = io.read;
@@ -68,9 +67,7 @@ pub(crate) fn encode_stream(
         failed: false,
         callback: |buffer: &mut [i32], capacity: usize| {
             let mut received = 0;
-            let rc = fp.with_caller(|| unsafe {
-                (read)(input, buffer.as_mut_ptr(), capacity, &mut received)
-            });
+            let rc = unsafe { (read)(input, buffer.as_mut_ptr(), capacity, &mut received) };
             if rc != 0 || received == 0 || received > capacity {
                 status.set(-3);
                 return Err(());
@@ -78,11 +75,9 @@ pub(crate) fn encode_stream(
             input_frames.set(input_frames.get() + received as u64);
             Ok(received)
         },
-        stamp_refresh: || {
-            fp.with_caller(|| match refresh.as_mut() {
-                Some(source) => source(),
-                None => Ok(None),
-            })
+        stamp_refresh: || match refresh.as_mut() {
+            Some(source) => source(),
+            None => Ok(None),
         },
     };
     let mut matrix = MatrixInterval {
@@ -122,8 +117,7 @@ pub(crate) fn encode_stream(
                 .iter()
                 .flat_map(|w| (*w as u16).to_be_bytes())
                 .collect();
-            let rc =
-                fp.with_caller(|| unsafe { (io.write)(io.output, bytes.as_ptr(), bytes.len()) });
+            let rc = unsafe { (io.write)(io.output, bytes.as_ptr(), bytes.len()) };
             if rc != 0 {
                 status.set(-4);
                 return false;

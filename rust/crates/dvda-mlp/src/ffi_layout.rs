@@ -291,8 +291,6 @@ unsafe fn group_read_inner(
     if unsafe { s.load(last + 1 + if s.ratio == 2 { 103 } else { 0 }) }.is_err() {
         return -1;
     }
-    #[cfg(target_arch = "x86_64")]
-    let _codec = crate::extended::HostFpScope::codec();
     let channels = s.first + s.second;
     let pcm = unsafe { std::slice::from_raw_parts_mut(pcm, count * channels) };
     for n in 0..count {

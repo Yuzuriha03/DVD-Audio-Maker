@@ -1,5 +1,41 @@
 # Rust MLP encoder status
 
+## Native floating-point mode
+
+The matrix analysis and half-rate interpolation arithmetic now use Rust `f64`
+(including `f64::ln`), not x87 inline assembly or software x87 emulation.
+Function boundaries, operation order and the integer lossless coding pipeline
+are retained. Historical C byte equality is no longer an acceptance requirement
+for this mode; decoded PCM, format compatibility and reviewed output-size changes
+are the criteria. Compression acceptance remains subject to user review.
+
+The encoder no longer saves, changes or restores x87/MXCSR control state. Callers
+and callbacks must use the standard Rust floating-point environment (round to
+nearest, no flush-to-zero or enabled floating-point traps) and must not change it
+during encoding. Cross-platform bit-identical transcendental results are not
+promised. Existing platform gates remain; this change alone is not a portability
+certification. Half-rate interpolation synthesizes samples and may round
+differently from the old implementation.
+
+On the initial Windows x86-64 validation, all 192 cases decoded exactly; both
+x87 and native-float outputs totaled 596,226 bytes, with no per-case size changes.
+These are short synthetic inputs (1,281 frames each), not a real-album compression
+benchmark or proof of byte equality.
+
+An opt-in independent FFmpeg decoder test covers 192 deterministic combinations
+of all supported sample rates and depths, 1/2/6 channels where supported, silence,
+extreme values, correlated ramps and pseudorandom input. It checks exact PCM and
+zero padding through the production direct-streaming API:
+
+```powershell
+$env:DVDA_FLOAT_REPORT = 'C:\temp\native-float.csv' # optional existing parent directory
+cargo test --manifest-path rust\Cargo.toml -p dvda-mlp --release --test native_float -- --ignored --nocapture
+```
+
+FFmpeg must be on PATH. The test does not certify physical DVD players or all
+mixed-rate layouts. Historical oracle comparisons remain optional diagnostics,
+not a native-float release gate; see [MLP-PARITY](../../../docs/MLP-PARITY.md).
+
 `dvda-mlp` is an independent Rust MLP bitstream encoder, not a C wrapper. It
 implements lossless entropy modes 0-3, adaptive FIR and stable IIR prediction,
 reversible multichannel matrix decorrelation, and common-bit scaling for
