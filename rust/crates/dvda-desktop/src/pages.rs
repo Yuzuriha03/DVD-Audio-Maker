@@ -86,7 +86,7 @@ pub(crate) unsafe extern "system" fn page_proc(
             0
         }
         WM_NCPAINT => {
-            unsafe { paint_page_border(hwnd) };
+            paint_page_border(hwnd);
             0
         }
         WM_ERASEBKGND => 1,

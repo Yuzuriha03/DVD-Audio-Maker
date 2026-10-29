@@ -20,6 +20,9 @@ struct Audio {
     bits: i32,
     channels: i32,
     format: i32,
+    /// Sample format and rate of the first frame, which the resampler was set up for.
+    input_format: i32,
+    input_rate: i32,
     initialized: bool,
     samples: i64,
     progress: i64,
@@ -322,6 +325,12 @@ impl Audio {
                 if self.channels <= 0 || self.rate <= 0 || !matches!(self.bits, 16 | 20 | 24) {
                     return Err(EINVAL);
                 }
+                // Raw 24-bit and 32-bit outputs read the packed buffer as 32-bit samples.
+                if self.bits == 16 && matches!(request.output_format, 2 | 4) {
+                    return Err(EINVAL);
+                }
+                self.input_format = (*frame).format();
+                self.input_rate = (*frame).sample_rate();
                 self.format = if self.bits == 20 {
                     AV_SAMPLE_FMT_DBLP
                 } else if self.bits == 16 {
@@ -372,9 +381,9 @@ impl Audio {
                 self.initialized = true;
             }
             if !frame.is_null()
-                && ((*frame).sample_rate() != (*self.decoder).sample_rate()
+                && ((*frame).sample_rate() != self.input_rate
                     || (*frame).ch_layout().nb_channels() != self.channels
-                    || (*frame).format() != (*self.decoder).sample_fmt())
+                    || (*frame).format() != self.input_format)
             {
                 return Err(-1668179713);
             }
@@ -529,6 +538,8 @@ pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Resul
             bits: 0,
             channels: 0,
             format: 0,
+            input_format: 0,
+            input_rate: 0,
             initialized: false,
             samples: 0,
             progress: 0,

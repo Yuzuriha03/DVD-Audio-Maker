@@ -13,19 +13,25 @@ pub(crate) unsafe extern "system" fn window_proc(
     lparam: Lparam,
 ) -> Lresult {
     if message == WM_CLOSE {
-        if let Some(mut state) = unsafe { state(hwnd) }
-            && state.busy
-        {
+        let Some(mut state) = (unsafe { state(hwnd) }) else {
+            if GetWindowLongPtrW(hwnd, GWLP_USERDATA) != 0 {
+                // The state is borrowed further up the stack (a modal dialog is open
+                // inside a handler). Destroying the window now would free it under that
+                // borrow, so the next WM_TIMER closes once the borrow has ended.
+                CLOSE_REQUESTED.store(true, Ordering::Relaxed);
+                return 0;
+            }
+            DestroyWindow(hwnd);
+            return 0;
+        };
+        if state.busy {
             state.close_when_done = true;
             cancel_operation(&mut state);
             return 0;
         }
-        if let Some(mut state) = unsafe { state(hwnd) } {
-            autosave(&mut state);
-        }
-         {
-            DestroyWindow(hwnd);
-        }
+        autosave(&mut state);
+        drop(state);
+        DestroyWindow(hwnd);
         return 0;
     }
     if message == WM_DESTROY {
@@ -35,9 +41,10 @@ pub(crate) unsafe extern "system" fn window_proc(
         PAINT_FIELDS.with(|fields| fields.borrow_mut().remove(&(hwnd as usize)));
         let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<UiState>;
         if !pointer.is_null() {
+            // Detach first: nothing reached while the state drops may find it again.
             unsafe {
-                drop(Box::from_raw(pointer));
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                drop(Box::from_raw(pointer));
             }
         }
          {
@@ -59,6 +66,11 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         WM_TIMER => {
             if let Some(mut state) = unsafe { state(hwnd) } {
+                if CLOSE_REQUESTED.swap(false, Ordering::Relaxed) {
+                    unsafe {
+                        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                    }
+                }
                 drain_worker_logs(hwnd, &mut state);
                 update_statistics(&mut state);
                 unsafe {

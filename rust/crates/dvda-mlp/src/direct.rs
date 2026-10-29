@@ -87,9 +87,13 @@ unsafe extern "C" fn write<I: StreamIo>(p: *mut c_void, bytes: *const u8, size: 
         if context.io.cancelled() {
             return Err(-4);
         }
-        context
-            .io
-            .write(unsafe { std::slice::from_raw_parts(bytes, size) })
+        // A null pointer is only valid for an empty block.
+        let data = if size == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(bytes, size) }
+        };
+        context.io.write(data)
     })) {
         Ok(Ok(())) => 0,
         Ok(Err(_)) => -4,

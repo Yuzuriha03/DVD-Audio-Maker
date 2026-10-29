@@ -962,9 +962,18 @@ pub(crate) fn owner_draw_button(
     hwnd
 }
 
+/// The window procedure `hwnd` currently has, or `None` if it has none (an invalid window).
+fn current_proc(hwnd: Hwnd) -> Option<WndProc> {
+    // SAFETY: a window procedure address and `Option<WndProc>` have the same layout, and a
+    // zero address becomes `None`.
+    unsafe { std::mem::transmute::<isize, Option<WndProc>>(GetWindowLongPtrW(hwnd, GWLP_WNDPROC)) }
+}
+
 pub(crate) fn install_button_visual(hwnd: Hwnd) {
+    let Some(original) = current_proc(hwnd) else {
+        return;
+    };
     unsafe {
-        let original: WndProc = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
         let visual = Box::new(ButtonVisual {
             hover: false,
             original,
@@ -1049,8 +1058,10 @@ pub(crate) fn button_hovered(hwnd: Hwnd) -> bool {
 }
 
 pub(crate) fn install_check_visual(hwnd: Hwnd, panel: bool) {
+    let Some(original) = current_proc(hwnd) else {
+        return;
+    };
     unsafe {
-        let original: WndProc = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
         let visual = Box::new(CheckVisual {
             hover: false,
             panel,
@@ -1219,8 +1230,10 @@ pub(crate) unsafe fn draw_checkbox(hwnd: Hwnd) {
 }
 
 pub(crate) fn install_combo_arrow(hwnd: Hwnd, combo: Hwnd) {
+    let Some(original) = current_proc(hwnd) else {
+        return;
+    };
     unsafe {
-        let original: WndProc = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
         let visual = Box::new(ComboArrowVisual {
             hover: false,
             combo,
@@ -1299,6 +1312,11 @@ pub(crate) unsafe extern "system" fn combo_arrow_proc(
             return 0;
         }
         WM_NCDESTROY => {
+            if let Some(overlays) = COMBO_OVERLAYS.get()
+                && let Ok(mut overlays) = overlays.lock()
+            {
+                overlays.retain(|(_, overlay)| *overlay != hwnd as isize);
+            }
             let original = unsafe { Box::from_raw(pointer) }.original;
             unsafe {
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);

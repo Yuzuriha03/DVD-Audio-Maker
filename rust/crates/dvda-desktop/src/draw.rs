@@ -858,9 +858,8 @@ pub(crate) unsafe fn paint_page(hwnd: Hwnd) {
     }
 }
 
-/// # Safety
-/// `hwnd` must be a settings page of this application, inside its WM_NCPAINT.
-pub(crate) unsafe fn paint_page_border(hwnd: Hwnd) {
+/// Draws the 1-pixel border of a settings page; for its WM_NCPAINT.
+pub(crate) fn paint_page_border(hwnd: Hwnd) {
     let mut window = Rect::default();
     GetWindowRect(hwnd, &mut window);
     let (width, height) = (window.right - window.left, window.bottom - window.top);

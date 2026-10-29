@@ -199,7 +199,12 @@ pub struct DictEntry {
 /// # Safety
 /// Pointer arguments must be valid for their documented ABI and remain live throughout the call.
 pub unsafe fn streams(f: *mut Format) -> Vec<*mut Stream> {
-    unsafe { std::slice::from_raw_parts((*f).streams(), (*f).nb_streams() as usize).to_vec() }
+    let count = unsafe { (*f).nb_streams() } as usize;
+    if count == 0 {
+        // FFmpeg leaves `streams` null when there are none.
+        return Vec::new();
+    }
+    unsafe { std::slice::from_raw_parts((*f).streams(), count).to_vec() }
 }
 /// # Safety
 /// Pointer arguments must be valid for their documented ABI and remain live throughout the call.

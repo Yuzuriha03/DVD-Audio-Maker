@@ -368,6 +368,12 @@ pub(crate) unsafe fn refresh_dynamic_indicators(state: &UiState) {
         if combo.is_null() || overlay.is_null() {
             continue;
         }
+        // The overlay removes itself from the registry when it is destroyed, so a window
+        // found here is still the arrow button that owns a `ComboArrowVisual`. Page
+        // combos are also subclassed by comctl32, so its window procedure cannot be compared.
+        if IsWindow(overlay) == 0 {
+            continue;
+        }
         let pointer = GetWindowLongPtrW(overlay, GWLP_USERDATA) as *mut ComboArrowVisual;
         if pointer.is_null() {
             continue;

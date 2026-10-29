@@ -182,7 +182,18 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
         SetCapture(hwnd);
         let mut apply = false;
         let mut message: Message = std::mem::zeroed();
-        while GetCapture() == hwnd && GetMessageW(&mut message, ptr::null_mut(), 0, 0) > 0 {
+        // WM_QUIT (GetMessageW returns 0) must reach the outer loop again, or the
+        // process would keep running after the window is destroyed mid-drag.
+        let mut quit = None;
+        while GetCapture() == hwnd {
+            match GetMessageW(&mut message, ptr::null_mut(), 0, 0) {
+                0 => {
+                    quit = Some(message.wparam as i32);
+                    break;
+                }
+                -1 => break,
+                _ => {}
+            }
             match message.message {
                 0x0200 => {
                     // WM_MOUSEMOVE
@@ -226,6 +237,10 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
         if !outline.is_null() {
             ShowWindow(outline, SW_HIDE);
             DestroyWindow(outline);
+        }
+        if let Some(code) = quit {
+            PostQuitMessage(code);
+            return;
         }
         if apply
             && dragging

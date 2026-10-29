@@ -785,6 +785,8 @@ static BRUSH_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
 type ControlRect = (isize, i32, i32, i32, i32);
 static CONTROL_RECTS: OnceLock<Mutex<Vec<ControlRect>>> = OnceLock::new();
 static COMBO_OVERLAYS: OnceLock<Mutex<Vec<(isize, isize)>>> = OnceLock::new();
+/// A close request that arrived while the main window's state was borrowed.
+static CLOSE_REQUESTED: AtomicBool = AtomicBool::new(false);
 static ICON_CACHE: OnceLock<Mutex<HashMap<u32, usize>>> = OnceLock::new();
 static DARK_THEME: AtomicBool = AtomicBool::new(false);
 static DEFER_CONTROL_PAINT: AtomicBool = AtomicBool::new(false);

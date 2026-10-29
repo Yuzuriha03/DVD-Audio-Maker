@@ -382,9 +382,10 @@ unsafe fn groups(
         || c.abi_version != 1
         || ![16, 20, 24].contains(&c.bits)
         || ![16, 20, 24].contains(&g.group2_bits)
+        || !(1..=6).contains(&c.channels)
         || !profile.valid(&core)
         || g.assignment >= 21
-        || FIRST[g.assignment as usize] == c.channels as usize
+        || FIRST[g.assignment as usize] >= c.channels as usize
         || c.frames == 0
         || ![44100, 48000, 88200, 96000].contains(&c.sample_rate)
         || c.restart_interval > 32

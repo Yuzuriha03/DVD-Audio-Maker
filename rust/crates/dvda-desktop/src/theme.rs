@@ -181,9 +181,45 @@ pub(crate) fn system_prefers_dark() -> bool {
     };
     result == 0 && value == 0
 }
+/// Whether this Windows build has the dark-mode entry points at uxtheme ordinals 133
+/// (AllowDarkModeForWindow) and 135 (SetPreferredAppMode). They are undocumented: 1809
+/// (build 17763) used 135 for a different function, and they have kept their meaning
+/// from 1903 (build 18362) on. On anything older they are not called at all.
+fn uxtheme_ordinals_supported() -> bool {
+    static SUPPORTED: OnceLock<bool> = OnceLock::new();
+    *SUPPORTED.get_or_init(|| {
+        #[repr(C)]
+        struct OsVersionInfo {
+            size: u32,
+            major: u32,
+            minor: u32,
+            build: u32,
+            platform: u32,
+            service_pack: [u16; 128],
+        }
+        #[link(name = "ntdll")]
+        unsafe extern "system" {
+            fn RtlGetVersion(info: *mut OsVersionInfo) -> i32;
+        }
+        let mut info = OsVersionInfo {
+            size: std::mem::size_of::<OsVersionInfo>() as u32,
+            major: 0,
+            minor: 0,
+            build: 0,
+            platform: 0,
+            service_pack: [0; 128],
+        };
+        // SAFETY: `info` is a correctly sized OSVERSIONINFOW with its size field set.
+        let status = unsafe { RtlGetVersion(&mut info) };
+        status == 0 && info.major == 10 && info.build >= 18362
+    })
+}
 pub(crate) static UXTHEME_ALLOW_DARK: OnceLock<Option<isize>> = OnceLock::new();
 pub(crate) fn uxtheme_allow_dark(hwnd: Hwnd, allow: bool) {
     let pointer = *UXTHEME_ALLOW_DARK.get_or_init(|| {
+        if !uxtheme_ordinals_supported() {
+            return None;
+        }
         let module = unsafe { LoadLibraryW(wide("uxtheme.dll").as_ptr()) };
         if module.is_null() {
             return None;
@@ -202,6 +238,9 @@ pub(crate) fn uxtheme_allow_dark(hwnd: Hwnd, allow: bool) {
 pub(crate) static UXTHEME_SET_PREFERRED: OnceLock<Option<isize>> = OnceLock::new();
 pub(crate) fn uxtheme_preferred_app_mode(dark: bool) {
     let pointer = *UXTHEME_SET_PREFERRED.get_or_init(|| {
+        if !uxtheme_ordinals_supported() {
+            return None;
+        }
         let module = unsafe { LoadLibraryW(wide("uxtheme.dll").as_ptr()) };
         if module.is_null() {
             return None;
