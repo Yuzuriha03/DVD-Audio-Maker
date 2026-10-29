@@ -454,7 +454,7 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
     // down to one line, so a dragged bottom edge moves only the log's lower
     // edge and the actions row. Moving the whole task area with the edge
     // made it visibly shake, as DWM shows it a frame early or late.
-    let task_rows = if log_bar.wrap { 144 } else { 110 };
+    let task_rows = if log_bar.wrap { 154 } else { 120 };
     // A dragged splitter may leave the log one line; the default split keeps
     // a few lines for a running task.
     let settings_room = |log_floor: i32| (actions_top - 12 - log_floor - task_rows - tabs_y).max(104);
@@ -482,13 +482,13 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
     let page_height = if settings_only { actions_top - 12 - page_y } else { tab_height - 44 };
     let splitter = if task_only { tabs_y - 12 } else { tabs_y + tab_height };
     let section_width = text_width("operation_section") + 8;
-    let log_buttons_y = splitter + if log_bar.wrap { 110 } else { 76 };
+    let log_buttons_y = splitter + if log_bar.wrap { 120 } else { 86 };
     let log_top = log_buttons_y + 34;
     // Short task views hide the log first, then any toolbar row that would
     // reach the action buttons.
     let task_shown = !settings_only;
     let log_shown = task_shown && actions_top - 12 - log_top >= MIN_LOG_HEIGHT;
-    let log_filters_shown = task_shown && splitter + 104 <= actions_top - 6;
+    let log_filters_shown = task_shown && splitter + 114 <= actions_top - 6;
     let log_buttons_shown = task_shown && log_buttons_y + 28 <= actions_top - 6;
     state.set_splitter_position(if compact { i32::MIN / 4 } else { scale(splitter) });
     let caption_width = 40;
@@ -561,7 +561,7 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
                     ShowWindow(*handle, if task_shown { SW_SHOW } else { SW_HIDE });
                 }
                 "log_section" => {
-                    place(*handle, margin, splitter + 78, log_bar.label_width, 22);
+                    place(*handle, margin, splitter + 88, log_bar.label_width, 22);
                     ShowWindow(*handle, if log_filters_shown { SW_SHOW } else { SW_HIDE });
                 }
                 _ => {}
@@ -621,8 +621,10 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         });
         ShowWindow(state.page_scrollbar, settings_visible);
         // Status sentences get the whole row; the activity hint follows the
-        // section title. Both end in "..." when a message is still longer.
-        place(state.controls.status, margin, splitter + 30, width - margin * 2, 24);
+        // section title. Both end in "..." when a message is still longer. The
+        // status row starts below the title row's 24 DIP box, or the two overlap
+        // and the status text is cut.
+        place(state.controls.status, margin, splitter + 40, width - margin * 2, 24);
         ShowWindow(state.controls.status, if task_shown { SW_SHOW } else { SW_HIDE });
         let activity_x = margin + section_width + 12;
         let activity_width = width - margin - activity_x;
@@ -635,7 +637,7 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         place(
             state.controls.progress,
             margin,
-            splitter + 62,
+            splitter + 72,
             width - margin * 2,
             7,
         );
@@ -643,12 +645,12 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         place(
             state.controls.log_view,
             margin + log_bar.combo_x,
-            splitter + 76,
+            splitter + 86,
             LOG_COMBO_WIDTH,
             120,
         );
         for (index, check) in [state.controls.only_issues, state.controls.live].into_iter().enumerate() {
-            place(check, margin + log_bar.check_x[index], splitter + 78, log_bar.check_width[index], 22);
+            place(check, margin + log_bar.check_x[index], splitter + 88, log_bar.check_width[index], 22);
         }
         for control in [state.controls.log_view, state.controls.only_issues, state.controls.live] {
             ShowWindow(control, if log_filters_shown { SW_SHOW } else { SW_HIDE });

@@ -921,8 +921,8 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                 }
                 if low == 504 {
                     // Once the default split leaves the log its floor (tabs at
-                    // 126, task rows 110, actions 60), only the log grows.
-                    let fixed_from = ui.default_tab_height.unwrap() + 126 + 110 + 60 + DEFAULT_LOG_FLOOR;
+                    // 126, task rows 120, actions 60), only the log grows.
+                    let fixed_from = ui.default_tab_height.unwrap() + 126 + 120 + 60 + DEFAULT_LOG_FLOOR;
                     // The test window cannot exceed the screen; judge the
                     // heights it really reached.
                     let reached = *client_heights.iter().max().unwrap();
