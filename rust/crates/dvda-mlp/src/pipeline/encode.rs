@@ -1,7 +1,9 @@
-use crate::Bits;
-use crate::c_restart::MlpRestart;
-use crate::c_substream::{MlpSubstream, mlp_substream_put};
-use crate::parameters::{MlpCodingParams, MlpParameters};
+use std::borrow::Cow;
+
+use crate::bitstream::Bits;
+use crate::syntax::restart::MlpRestart;
+use crate::syntax::access_unit::{interval_fits, serialize_planned};
+use crate::syntax::parameters::{MlpCodingParams, MlpParameters};
 
 pub(crate) struct PlannedAu {
     pub initial: MlpParameters,
@@ -17,11 +19,32 @@ pub(crate) struct PlannedAu {
     pub stamp: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum IntervalFailure {
+    Fallback,
+    OversizedFallback,
+    Serialization,
+    AccessUnitTooLarge,
+    FifoRateLimit,
+}
+
+impl IntervalFailure {
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            Self::Fallback => "Cannot build lossless oversized-AU fallback",
+            Self::OversizedFallback => "Access unit too large after lossless fallback (1536-byte limit)",
+            Self::Serialization => "Cannot serialize lossless access unit",
+            Self::AccessUnitTooLarge => "Access unit too large (1536-byte limit)",
+            Self::FifoRateLimit => "MLP FIFO rate limit exceeded; input cannot be encoded at the required delivery rate",
+        }
+    }
+}
+
 pub(crate) struct IntervalOutput {
     pub au: Vec<PlannedAu>,
     pub maximum_lsbs: u32,
     pub restart: MlpRestart,
-    pub failure: Option<&'static str>,
+    pub failure: Option<IntervalFailure>,
 }
 
 pub(crate) struct OutputFormat {
@@ -32,10 +55,10 @@ pub(crate) struct OutputFormat {
 }
 
 pub(crate) fn flush_interval(
-    queue: &mut crate::c_output_queue::MlpOutputQueue,
+    queue: &mut crate::output::queue::MlpOutputQueue,
     pending: &mut IntervalOutput,
     format: &OutputFormat,
-    rate: &mut crate::c_rate::MlpRateState,
+    rate: &mut crate::output::rate::MlpRateState,
     words_total: &mut u64,
     emit: &mut impl FnMut(&[u32]) -> bool,
 ) -> bool {
@@ -45,16 +68,16 @@ pub(crate) fn flush_interval(
     let mut fits = interval_fits(pending, format.channels);
     if fits == Ok(false) {
         if unpredicted_interval(pending, format.channels).is_err() {
-            pending.failure = Some("Cannot build lossless oversized-AU fallback");
+            pending.failure = Some(IntervalFailure::Fallback);
             return false;
         }
         fits = interval_fits(pending, format.channels);
     }
     if fits != Ok(true) {
         pending.failure = Some(if fits == Ok(false) {
-            "Access unit too large after lossless fallback (1536-byte limit)"
+            IntervalFailure::OversizedFallback
         } else {
-            "Cannot serialize lossless access unit"
+            IntervalFailure::Serialization
         });
         return false;
     }
@@ -76,20 +99,20 @@ pub(crate) fn flush_interval(
         }
         let mut flags = 0;
         let mut arrival = 0;
-        if crate::c_rate::mlp_rate_update(
+        if crate::output::rate::mlp_rate_update(
             rate,
             p.count as u32,
             length,
             format.rate_field,
             &mut flags,
             &mut arrival,
-        ) != 0
+        ) != Ok(false)
             || flags & 0x2000 != 0
         {
             pending.failure = Some(if flags & 0x2000 != 0 {
-                "Access unit too large (1536-byte limit)"
+                IntervalFailure::AccessUnitTooLarge
             } else {
-                "MLP FIFO rate limit exceeded; input cannot be encoded at the required delivery rate"
+                IntervalFailure::FifoRateLimit
             });
             return false;
         }
@@ -130,12 +153,12 @@ pub(crate) struct EncodeOptions<'a> {
 }
 
 pub(crate) fn encode(
-    input: &mut impl crate::c_prepare::PcmInput,
+    input: &mut impl crate::pipeline::input::PcmInput,
     options: EncodeOptions<'_>,
-    mut matrix: Option<&mut crate::c_prepare::MatrixInterval>,
+    mut matrix: Option<&mut crate::pipeline::prepare::MatrixInterval>,
     pending: &mut IntervalOutput,
-    queue: &mut crate::c_output_queue::MlpOutputQueue,
-    mut stamp: Option<&mut crate::c_stamp::MlpStampState<'_>>,
+    queue: &mut crate::output::queue::MlpOutputQueue,
+    mut stamp: Option<&mut crate::pipeline::stamp::MlpStampState<'_>>,
     emit: &mut impl FnMut(&[u32]) -> bool,
 ) -> Result<(), ()> {
     let EncodeOptions {
@@ -145,7 +168,7 @@ pub(crate) fn encode(
         predict,
         allow_bypass,
     } = options;
-    use crate::c_prepare::{lossless, prepare_matrix};
+    use crate::pipeline::prepare::{lossless, prepare_matrix};
     let channels = input.channels();
     if channels != format.channels
         || !(1..=6).contains(&channels)
@@ -164,9 +187,9 @@ pub(crate) fn encode(
         base.coding[ch].total_width = 24;
     }
     let mut previous = base.clone();
-    let mut history: [crate::c_predict::MlpPredictState; 6] = Default::default();
+    let mut history: [crate::analysis::prediction::MlpPredictState; 6] = Default::default();
     let mut prediction_reset = [0; 6];
-    let mut rate = crate::c_rate::mlp_rate_init();
+    let mut rate = crate::output::rate::mlp_rate_init();
     let mut boundary = Default::default();
     let mut au = 0u32;
     let mut timing = 0u32;
@@ -176,11 +199,11 @@ pub(crate) fn encode(
     let mut frames = 0;
     let total_frames = input.frames();
     if let Some(m) = matrix.as_deref_mut() {
-        crate::c_analysis::mlp_matrix_analysis_init(&mut m.analysis, channels as u32)?;
+        crate::analysis::decorrelation::mlp_matrix_analysis_init(&mut m.analysis, channels as u32)?;
         if m.joint_search {
             m.search_rng = 1;
             for pool in &mut m.pool {
-                crate::search::mlp_search_pool_init(pool, m.search_rng);
+                crate::analysis::search::mlp_search_pool_init(pool, m.search_rng);
                 m.search_rng = pool.rng;
             }
         }
@@ -188,24 +211,21 @@ pub(crate) fn encode(
     while frames < total_frames {
         let mut span = restart_interval as usize;
         let is_restart = if cycle != 0 {
-            let decision = crate::interval::mlp_interval_boundary(
+            let decision = crate::analysis::interval::mlp_interval_boundary(
                 &mut boundary,
                 cycle,
                 restart_interval,
                 input.au_samples() as u32,
-            );
-            if decision < 0 {
-                return Err(());
-            }
-            if matrix.is_some() && decision != 0 {
+            )?;
+            if matrix.is_some() && decision {
                 let mut ahead = boundary;
                 span = 1;
-                while crate::interval::mlp_interval_boundary(
+                while crate::analysis::interval::mlp_interval_boundary(
                     &mut ahead,
                     cycle,
                     restart_interval,
                     input.au_samples() as u32,
-                ) == 0
+                ) == Ok(false)
                 {
                     span += 1;
                     if span > 128 {
@@ -216,7 +236,7 @@ pub(crate) fn encode(
                     return Err(());
                 }
             }
-            decision != 0
+            decision
         } else {
             au.is_multiple_of(restart_interval)
         };
@@ -227,14 +247,16 @@ pub(crate) fn encode(
         let mut p = base.clone();
         let mut initial = base.clone();
         let mut restart = MlpRestart::default();
-        let mut search: [Option<crate::search::MlpSearchPlan>; 6] = Default::default();
-        let (pcm, count, bypass, bypass_bits) = if let Some(m) = matrix.as_deref_mut() {
-            if m.slot == m.lengths.len() {
-                if !is_restart {
-                    return Err(());
-                }
-                prepare_matrix(input, m, span, allow_bypass, &mut 0)?;
+        let mut search: [Option<&crate::analysis::search::MlpSearchPlan>; 6] = Default::default();
+        if let Some(m) = matrix.as_deref_mut()
+            && m.slot == m.lengths.len()
+        {
+            if !is_restart {
+                return Err(());
             }
+            prepare_matrix(input, m, span, allow_bypass, &mut 0)?;
+        }
+        let (pcm, count, bypass, bypass_bits) = if let Some(m) = matrix.as_deref() {
             let count = m.lengths[m.slot];
             p.matrix_count = m.count as u32;
             initial.matrix_count = m.count as u32;
@@ -248,11 +270,11 @@ pub(crate) fn encode(
                     initial.output_shift[ch] = p.output_shift[ch];
                 }
                 if m.joint_search && m.search_ready[ch] {
-                    *plan = Some(m.prediction[ch].clone());
+                    *plan = Some(&m.prediction[ch]);
                 }
             }
             (
-                m.pcm[m.offset * channels..(m.offset + count) * channels].to_vec(),
+                Cow::Borrowed(&m.pcm[m.offset * channels..(m.offset + count) * channels]),
                 count,
                 m.bypass[m.offset..m.offset + count].to_vec(),
                 m.bits,
@@ -268,7 +290,7 @@ pub(crate) fn encode(
             if pcm.len() != count * channels {
                 return Err(());
             }
-            (pcm, count, Vec::new(), 0)
+            (Cow::Owned(pcm), count, Vec::new(), 0)
         };
         let first = if is_restart && count >= 16 { 8 } else { 0 };
         p.flags = u32::from(is_restart || count != previous.blocksize as usize) * 2;
@@ -308,7 +330,7 @@ pub(crate) fn encode(
         let mut planned = PlannedAu {
             initial,
             main: p,
-            previous: previous.clone(),
+            previous,
             residual: Vec::new(),
             unpredicted: Vec::new(),
             bypass,
@@ -343,11 +365,11 @@ pub(crate) fn encode(
             }
             if first != 0 {
                 planned.initial.coding[ch] =
-                    crate::c_channels::select(&output[..first], qss, base.coding[ch], true, limit);
+                    crate::pipeline::channels::select(&output[..first], qss, base.coding[ch], true, limit);
             }
-            let mut a = crate::c_predict::MlpPredictFilter::default();
-            let mut b = crate::c_predict::MlpPredictFilter::default();
-            let mut rc = 0;
+            let mut a = crate::analysis::prediction::MlpPredictFilter::default();
+            let mut b = crate::analysis::prediction::MlpPredictFilter::default();
+            let mut outcome = crate::analysis::prediction::PredictionOutcome::Predicted;
             let searched = search[ch].is_some()
                 && (!is_restart || first != 0)
                 && (planned.count - first) & 1 == 0;
@@ -380,7 +402,7 @@ pub(crate) fn encode(
                 }
             } else if planned.count > first {
                 let feedback = b.order != 0;
-                rc = crate::c_predict::mlp_predict_block(
+                outcome = crate::analysis::prediction::mlp_predict_block(
                     &mut a,
                     if feedback { Some(&mut b) } else { None },
                     &mut history[ch],
@@ -388,11 +410,9 @@ pub(crate) fn encode(
                     &input[first..],
                     &mut output[first..],
                     prediction_reset[ch],
-                );
+                )?;
             }
-            if rc < 0 {
-                return Err(());
-            }
+            let fallback = outcome == crate::analysis::prediction::PredictionOutcome::Fallback;
             if a.order == 0 && !is_restart && planned.previous.a[ch].order != 0 {
                 a.order = 1;
                 a.coefficient = [0.0; 8];
@@ -419,17 +439,17 @@ pub(crate) fn encode(
                         .zip(&planned.previous.b[ch].coefficient)
                         .any(|(a, b)| a.to_bits() != b.to_bits()),
             );
-            if rc == 1 && prediction_reset[ch] != 0 {
+            if fallback && prediction_reset[ch] != 0 {
                 planned.main.a[ch] = planned.previous.a[ch].clone();
                 planned.main.b[ch] = planned.previous.b[ch].clone();
                 planned.main.a[ch].changed = 0;
                 planned.main.b[ch].changed = 0;
             }
-            prediction_reset[ch] = u32::from(rc == 1);
+            prediction_reset[ch] = u32::from(fallback);
             if b.order == 0 {
                 planned.main.state[ch].changed = 0;
             }
-            planned.main.coding[ch] = crate::c_channels::select(
+            planned.main.coding[ch] = crate::pipeline::channels::select(
                 &output[first..],
                 qss,
                 if first != 0 {
@@ -457,14 +477,12 @@ pub(crate) fn encode(
             return Err(());
         }
         if let Some(s) = stamp.as_deref_mut() {
-            if !crate::c_stamp::mlp_stamp_next(s, &mut planned.stamp) {
-                return Err(());
-            }
+            planned.stamp = crate::pipeline::stamp::mlp_stamp_next(s).ok_or(())?;
             // The original refreshes after emitting the packet separator. The
             // replacement therefore starts at the next AU, never mid-packet.
             if s.start_boundary()
                 && let Some(metadata) = input.refresh_stamp().map_err(|_| ())?
-                && !crate::c_stamp::mlp_stamp_refresh(s, metadata)
+                && !crate::pipeline::stamp::mlp_stamp_refresh(s, metadata)
             {
                 return Err(());
             }
@@ -474,7 +492,7 @@ pub(crate) fn encode(
         }
         previous = planned.main.clone();
         pending.au.push(planned);
-        if crate::matrix::mlp_matrix_noise(
+        if crate::analysis::matrix::mlp_matrix_noise(
             &mut noise_seed,
             count,
             0,
@@ -494,7 +512,7 @@ pub(crate) fn encode(
     }
     if stamp
         .as_ref()
-        .is_some_and(|s| !crate::c_stamp::mlp_stamp_complete(s))
+        .is_some_and(|s| !crate::pipeline::stamp::mlp_stamp_complete(s))
         || !flush_interval(queue, pending, format, &mut rate, &mut words_total, emit)
         || !queue.mlp_output_queue_finish(emit)
     {
@@ -504,44 +522,6 @@ pub(crate) fn encode(
         return Err(());
     }
     Ok(())
-}
-
-pub(crate) fn serialize_planned(
-    writer: &mut Bits,
-    pending: &IntervalOutput,
-    au: usize,
-    channels: usize,
-) -> Result<(), ()> {
-    let p = pending.au.get(au).ok_or(())?;
-    mlp_substream_put(
-        writer,
-        &MlpSubstream {
-            restart: (au == 0).then_some(&pending.restart),
-            initial: Some(&p.initial),
-            main: &p.main,
-            previous: &p.previous,
-            residual: &p.residual,
-            bypass: &p.bypass,
-            count: p.count,
-            stride: channels,
-            bypass_bits: p.bypass_bits,
-            primary: true,
-            single_restart: p.single_restart,
-            end_markers: p.end_markers,
-        },
-    )
-}
-
-pub(crate) fn interval_fits(pending: &mut IntervalOutput, channels: usize) -> Result<bool, ()> {
-    pending.restart.maximum_lsbs = pending.maximum_lsbs;
-    for au in 0..pending.au.len() {
-        let mut writer = Bits { count_only: true, ..Bits::default() };
-        serialize_planned(&mut writer, pending, au, channels)?;
-        if writer.word_len() + if au == 0 { 17 } else { 3 } > 0x300 {
-            return Ok(false);
-        }
-    }
-    Ok(true)
 }
 
 fn select(
@@ -666,14 +646,14 @@ fn planned_interval_fallback_serializes() {
             ..Default::default()
         },
     };
-    let mut history: [crate::c_predict::MlpPredictState; 6] = Default::default();
+    let mut history: [crate::analysis::prediction::MlpPredictState; 6] = Default::default();
     let mut reset = [1; 6];
     let base = pending.au[0].previous.clone();
     let mut planned = pending.au.remove(0);
-    crate::c_channels::encode_channels(
+    crate::pipeline::channels::encode_channels(
         &mut planned,
         &(0..16).collect::<Vec<_>>(),
-        &mut crate::c_channels::ChannelContext {
+        &mut crate::pipeline::channels::ChannelContext {
             base: &base,
             history: &mut history,
             prediction_reset: &mut reset,
@@ -701,11 +681,13 @@ fn planned_interval_fallback_serializes() {
             pending.au[0].single_restart = single;
             pending.au[0].end_markers = end;
             let mut actual = Bits::default();
-            let mut counter = Bits { count_only: true, ..Bits::default() };
+            let mut counter = Bits::counting();
             let actual_status = serialize_planned(&mut actual, &pending, 0, 1);
             let counted_status = serialize_planned(&mut counter, &pending, 0, 1);
             assert_eq!(actual_status, counted_status);
-            if !single { assert!(actual_status.is_ok()); }
+            if !single {
+                assert!(actual_status.is_ok());
+            }
             assert_eq!(actual.word_len(), counter.word_len());
         }
     }
@@ -714,8 +696,8 @@ fn planned_interval_fallback_serializes() {
     pending.au[0].single_restart = false;
     pending.au[0].end_markers = true;
     assert_eq!(pending.restart.maximum_lsbs, pending.maximum_lsbs);
-    let mut queue = crate::c_output_queue::MlpOutputQueue::mlp_output_queue_init();
-    let mut rate = crate::c_rate::mlp_rate_init();
+    let mut queue = crate::output::queue::MlpOutputQueue::mlp_output_queue_init();
+    let mut rate = crate::output::rate::mlp_rate_init();
     let mut total = 0;
     let mut emitted = Vec::new();
     let mut emit = |words: &[u32]| {

@@ -19,10 +19,10 @@ pub(crate) fn mlp_rate_update(
     rate_field: u32,
     flags: &mut u32,
     arrival: &mut u16,
-) -> i32 {
+) -> Result<bool, ()> {
     let rate = rate_field & 0x7fff;
     if samples == 0 || samples > 160 || words == 0 || words > 0xfff || rate == 0 {
-        return -1;
+        return Err(());
     }
     let mut start = i32::from(state.arrival);
     let lower = i32::from(state.decode) - samples as i32 * 90;
@@ -45,5 +45,46 @@ pub(crate) fn mlp_rate_update(
     *arrival = start as u16;
     state.arrival = end as u16;
     state.decode = state.decode.wrapping_add(samples as u16);
-    i32::from(failure)
+    Ok(failure)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_input_preserves_state_and_outputs() {
+        let mut state = mlp_rate_init();
+        let before = state;
+        let mut flags = 7;
+        let mut arrival = 123;
+        assert_eq!(
+            mlp_rate_update(&mut state, 0, 1, 1, &mut flags, &mut arrival),
+            Err(())
+        );
+        assert_eq!(state, before);
+        assert_eq!((flags, arrival), (7, 123));
+    }
+
+    #[test]
+    fn rate_failure_still_commits_timing_and_flags() {
+        let mut state = MlpRateState {
+            arrival: 99,
+            decode: 100,
+        };
+        let mut flags = 1;
+        let mut arrival = 0;
+        assert_eq!(
+            mlp_rate_update(&mut state, 40, 0x301, 256, &mut flags, &mut arrival),
+            Ok(true)
+        );
+        assert_eq!(
+            state,
+            MlpRateState {
+                arrival: 100,
+                decode: 140
+            }
+        );
+        assert_eq!((flags, arrival), (0x2101, 99));
+    }
 }

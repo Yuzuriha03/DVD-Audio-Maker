@@ -64,8 +64,8 @@ impl Timing {
         let mut read = self.read;
         self.times[write as usize] = d.decode.wrapping_add(d.samples).wrapping_add(1);
         self.sizes[write as usize] = [d.words, d.groups[0], d.groups[1]];
-        for i in 0..3 {
-            self.totals[i] = self.totals[i].wrapping_add(self.sizes[write as usize][i]);
+        for (total, size) in self.totals.iter_mut().zip(self.sizes[write as usize]) {
+            *total = total.wrapping_add(size);
         }
         write = (write + 1) % 100;
         if write == read {
@@ -89,8 +89,8 @@ impl Timing {
                 }
                 delay = (self.times[read as usize].wrapping_sub(d.decode) & 65535) as i32 - 65536;
             }
-            for i in 0..3 {
-                self.totals[i] = self.totals[i].wrapping_sub(self.sizes[read as usize][i]);
+            for (total, size) in self.totals.iter_mut().zip(self.sizes[read as usize]) {
+                *total = total.wrapping_sub(size);
             }
             read = (read + 1) % 100;
         }
@@ -110,8 +110,11 @@ impl Timing {
         };
         let range = if self.cursor < 0 {
             self.aggregate = pair;
-            for i in 1..LOOKAHEAD {
-                self.tree[i] = combine(self.tree[i], self.tree[i - 1]);
+            let (first, rest) = self.tree.split_first_mut().unwrap();
+            let mut previous = *first;
+            for entry in rest {
+                *entry = combine(*entry, previous);
+                previous = *entry;
             }
             self.cursor = LOOKAHEAD as i32 - 1;
             combine(self.tree[self.cursor as usize], self.aggregate)

@@ -1,4 +1,4 @@
-use crate::Bits;
+use crate::bitstream::Bits;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Coding {
     pub mode: u32,
@@ -103,19 +103,16 @@ fn mlp_cost_table(mode: u32, q: i32) -> u32 {
 }
 
 fn mlp_cost_analyze(samples: &[i32]) -> MlpCostStats {
-    let mut stats = MlpCostStats::default();
-    if let Some(&sample) = samples.first() {
-        stats.minimum = sample;
-        stats.maximum = sample;
-    }
+    let first = samples.first().copied().unwrap_or_default();
+    let mut stats = MlpCostStats {
+        minimum: first,
+        maximum: first,
+        ..MlpCostStats::default()
+    };
     for &sample in samples {
         assert!((-8388608..=8388607).contains(&sample));
-        if sample < stats.minimum {
-            stats.minimum = sample;
-        }
-        if sample > stats.maximum {
-            stats.maximum = sample;
-        }
+        stats.minimum = stats.minimum.min(sample);
+        stats.maximum = stats.maximum.max(sample);
     }
     while arithmetic_shift(stats.minimum, stats.shift) < -9
         || arithmetic_shift(stats.maximum, stats.shift) > 8
@@ -124,9 +121,8 @@ fn mlp_cost_analyze(samples: &[i32]) -> MlpCostStats {
     }
     for &sample in samples {
         let q = arithmetic_shift(sample * 2, stats.shift);
-        for mode in 0..3 {
-            stats.packed_cost[mode] =
-                stats.packed_cost[mode].wrapping_add(mlp_cost_table(mode as u32 + 1, q));
+        for (mode, packed_cost) in stats.packed_cost.iter_mut().enumerate() {
+            *packed_cost = packed_cost.wrapping_add(mlp_cost_table(mode as u32 + 1, q));
         }
     }
     stats
@@ -149,18 +145,16 @@ fn overhead(old: Coding, base: u32, mode: u32, width: u32, offset: i32) -> i64 {
     }
 }
 
-fn consider(
+#[derive(Debug, PartialEq, Eq)]
+struct CostCandidate {
     cost: i64,
     mode: u32,
     width: u32,
-    best: &mut i64,
-    best_mode: &mut u32,
-    best_width: &mut u32,
-) {
-    if cost < *best {
-        *best = cost;
-        *best_mode = mode;
-        *best_width = width;
+}
+
+fn consider(cost: i64, mode: u32, width: u32, best: &mut CostCandidate) {
+    if cost < best.cost {
+        *best = CostCandidate { cost, mode, width };
     }
 }
 
@@ -199,9 +193,11 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
     let n = samples.len() as i64;
     let qlo = floor_shift(lo * 2, shift);
     let qhi = floor_shift(hi * 2, shift);
-    let mut best_cost = i64::from(i32::MAX);
-    let mut best_mode = 0;
-    let mut best_width = 0;
+    let mut best = CostCandidate {
+        cost: i64::from(i32::MAX),
+        mode: 0,
+        width: 0,
+    };
     for mode in 1..=3u32 {
         let index = (mode - 1) as usize;
         let a = qlo - [-18, -16, -15][index];
@@ -209,25 +205,11 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
         let cost = n * i64::from(shift + 2)
             + i64::from(packed[index] & 0x3ff)
             + overhead(old, qss, mode, shift + 2, 0);
-        consider(
-            cost,
-            mode,
-            shift + 2,
-            &mut best_cost,
-            &mut best_mode,
-            &mut best_width,
-        );
+        consider(cost, mode, shift + 2, &mut best);
         let cost = n * i64::from(shift + 1)
             + i64::from((packed[index] >> 10) & 0x3ff)
             + overhead(old, qss, mode, shift + 1, 0);
-        consider(
-            cost,
-            mode,
-            shift + 1,
-            &mut best_cost,
-            &mut best_mode,
-            &mut best_width,
-        );
+        consider(cost, mode, shift + 1, &mut best);
         if a >= 0
             && b >= 0
             && shift as i32 + 9 - a / 2 <= limit as i32
@@ -236,14 +218,7 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
             let cost = n * i64::from(shift)
                 + i64::from(packed[index] >> 20)
                 + overhead(old, qss, mode, shift, 0);
-            consider(
-                cost,
-                mode,
-                shift,
-                &mut best_cost,
-                &mut best_mode,
-                &mut best_width,
-            );
+            consider(cost, mode, shift, &mut best);
         }
     }
     let mut width = 0;
@@ -276,7 +251,7 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
         } else {
             0
         };
-    if cost < best_cost {
+    if cost < best.cost {
         Coding {
             mode: 0,
             width: qss + width,
@@ -284,8 +259,8 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
         }
     } else {
         Coding {
-            mode: best_mode,
-            width: qss + best_width,
+            mode: best.mode,
+            width: qss + best.width,
             offset: 0,
         }
     }
@@ -293,6 +268,35 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn candidate_selection_retains_first_tie_and_replaces_all_fields() {
+        let mut best = CostCandidate {
+            cost: 100,
+            mode: 1,
+            width: 8,
+        };
+        consider(100, 2, 7, &mut best);
+        consider(101, 3, 6, &mut best);
+        assert_eq!(
+            best,
+            CostCandidate {
+                cost: 100,
+                mode: 1,
+                width: 8
+            }
+        );
+        consider(99, 3, 6, &mut best);
+        assert_eq!(
+            best,
+            CostCandidate {
+                cost: 99,
+                mode: 3,
+                width: 6
+            }
+        );
+    }
+
     #[test]
     fn mode_zero_and_rice_bounds() {
         assert_eq!(

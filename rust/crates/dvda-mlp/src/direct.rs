@@ -12,7 +12,7 @@ pub trait StreamIo {
     fn write(&mut self, access_unit: &[u8]) -> Result<(), i32>;
     /// Called only by `encode_stream_with_stamp_refresh`, after a complete
     /// packet separator. Return None to repeat it, or a replacement with the
-    /// same outer header/length, start = 0 and valid_bits = 0. Errors abort.
+    /// same outer header/length, start = 0 and `valid_bits` = 0. Errors abort.
     fn refresh_stamp(&mut self) -> Result<Option<Metadata>, i32> {
         Ok(None)
     }
@@ -109,7 +109,9 @@ unsafe extern "C" fn write<I: StreamIo>(p: *mut c_void, bytes: *const u8, size: 
 /// Encode with bounded restart/FIFO buffering and shared ABI validation/timing.
 /// `secondary_frames = Some(n)` selects independent native-rate group input;
 /// `None` selects interleaved uniform-rate input, including mixed-depth layouts.
-/// Callback panics are caught before crossing an extern boundary and return -5.
+/// With `panic = "unwind"`, callback panics are caught before crossing an extern
+/// boundary and return -5. With `panic = "abort"` (the workspace release profile),
+/// a panic terminates the process; callbacks should return errors instead.
 /// Calls are independent and may run concurrently or reentrantly.
 pub fn encode_stream<I: StreamIo>(
     config: &Config,
@@ -204,13 +206,13 @@ fn encode_stream_inner<I: StreamIo>(
         },
         panicked: false,
     };
-    let p = (&mut context as *mut Context<'_, I>).cast::<c_void>();
-    unsafe {
-        if refresh_stamps {
-            // The native call is synchronous. Read, write and refresh execute
-            // sequentially and each releases its context borrow before return.
-            let mut refresh = || (&mut *p.cast::<Context<'_, I>>()).io.refresh_stamp();
-            result = ffi::encode_stream_with_stamp_refresh(
+    let p = (&raw mut context).cast::<c_void>();
+    if refresh_stamps {
+        // The synchronous callbacks borrow the context sequentially, never
+        // retaining a reference across a read, write, or refresh invocation.
+        let mut refresh = || unsafe { (&mut *p.cast::<Context<'_, I>>()).io.refresh_stamp() };
+        result = unsafe {
+            ffi::encode_stream_with_stamp_refresh(
                 &primary,
                 profile.clone(),
                 read::<I>,
@@ -218,57 +220,59 @@ fn encode_stream_inner<I: StreamIo>(
                 write::<I>,
                 p,
                 &mut refresh,
-            );
-        } else if let Some(group2_frames) = secondary_frames {
-            let groups = ffi::GroupsConfig {
-                struct_size: size_of::<ffi::GroupsConfig>() as u32,
-                primary,
-                assignment: profile.assignment as u32,
-                group2_sample_rate: profile.group2_rate,
-                group2_bits: profile.group2_bits.into(),
-                group2_frames,
-            };
+            )
+        };
+    } else if let Some(group2_frames) = secondary_frames {
+        let groups = ffi::GroupsConfig {
+            struct_size: size_of::<ffi::GroupsConfig>() as u32,
+            primary,
+            assignment: profile.assignment as u32,
+            group2_sample_rate: profile.group2_rate,
+            group2_bits: profile.group2_bits.into(),
+            group2_frames,
+        };
+        unsafe {
             ffi::mlp_encode_stream_groups(
-                &groups,
+                &raw const groups,
                 Some(read::<I>),
                 p,
                 Some(read_second::<I>),
                 p,
                 Some(write::<I>),
                 p,
-                &mut result,
+                &raw mut result,
             );
-        } else if profile.group2_rate != config.sample_rate {
-            result.status = -1;
-        } else if first < config.channels as usize {
+        }
+    } else if profile.group2_rate != config.sample_rate {
+        result.status = -1;
+    } else if first < config.channels as usize {
+        unsafe {
             ffi::mlp_encode_stream_depths(
-                &primary,
+                &raw const primary,
                 profile.assignment as u32,
                 profile.group2_bits.into(),
                 Some(read::<I>),
                 p,
                 Some(write::<I>),
                 p,
-                &mut result,
+                &raw mut result,
             );
-        } else {
+        }
+    } else {
+        unsafe {
             ffi::mlp_encode_stream_layout(
-                &primary,
+                &raw const primary,
                 profile.assignment as u32,
                 Some(read::<I>),
                 p,
                 Some(write::<I>),
                 p,
-                &mut result,
+                &raw mut result,
             );
         }
     }
     if context.panicked {
-        result.status = -5;
-        result.error.fill(0);
-        for (slot, byte) in result.error.iter_mut().zip(b"Rust stream callback panic") {
-            *slot = *byte as _;
-        }
+        ffi::fail(&mut result, -5, "Rust stream callback panic");
     }
     result
 }
@@ -439,7 +443,7 @@ mod tests {
                 panic_group,
                 output: Vec::new(),
             };
-            let secondary = 802 / (96000 / rate) as u64;
+            let secondary = 802 / u64::from(96000 / rate);
             let records = [Metadata {
                 start: 0,
                 packet: vec![0, 0, 64, 0],

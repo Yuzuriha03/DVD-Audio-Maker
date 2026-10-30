@@ -17,13 +17,13 @@ pub(crate) fn mlp_matrix_noise(
         return -1;
     }
     let mut state = *seed;
-    for n in 0..count {
+    for (first, second) in first[..count].iter_mut().zip(&mut second[..count]) {
         let t = ((state as i32) >> 7) as u32;
-        let a = ((t >> 8) as u8 as i8) as i32;
-        let b = (t as u8 as i8) as i32;
+        let a = i32::from((t >> 8) as u8 as i8);
+        let b = i32::from(t as u8 as i8);
         state = ((((state & 127) << 11) ^ t) << 5) ^ t;
-        first[n] = (a as u32).wrapping_shl(shift) as i32;
-        second[n] = (b as u32).wrapping_shl(shift) as i32;
+        *first = (a as u32).wrapping_shl(shift) as i32;
+        *second = (b as u32).wrapping_shl(shift) as i32;
     }
     *seed = state;
     0
@@ -104,39 +104,39 @@ pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
     for i in 0..matrix.len() {
         let p = &matrix[if inverse { matrix.len() - 1 - i } else { i }];
         let target = p.target as usize;
-        let step = (1u32 << qss[target]) as f64;
-        for n in 0..count {
+        let step = f64::from(1u32 << qss[target]);
+        for (n, (frame, bits)) in work.chunks_exact_mut(channels).zip(&mut bits).enumerate() {
             let mut sum = 0.0;
-            for j in 0..channels {
-                sum += work[n * channels + j] as f64 * (p.coefficient[j] as f64 / 16384.0);
+            for (&sample, &coefficient) in frame.iter().zip(&p.coefficient) {
+                sum += f64::from(sample) * (f64::from(coefficient) / 16384.0);
             }
             if let Some(extra) = extra0 {
-                sum += extra[n] as f64 * (p.coefficient[channels] as f64 / 16384.0);
+                sum += f64::from(extra[n]) * (f64::from(p.coefficient[channels]) / 16384.0);
             }
             if let Some(extra) = extra1 {
-                sum += extra[n] as f64 * (p.coefficient[channels + 1] as f64 / 16384.0);
+                sum += f64::from(extra[n]) * (f64::from(p.coefficient[channels + 1]) / 16384.0);
             }
             let mut value;
             if p.bypass != 0 {
                 if inverse {
-                    value = sum.floor() + ((bits[n] >> (remaining - 1)) & 1) as f64;
-                    bits[n] &= ((1u32 << (remaining - 1)) - 1) as u8;
+                    value = sum.floor() + f64::from((*bits >> (remaining - 1)) & 1);
+                    *bits &= ((1u32 << (remaining - 1)) - 1) as u8;
                 } else {
-                    value = (sum + work[n * channels + target] as f64).floor();
+                    value = (sum + f64::from(frame[target])).floor();
                     if !value.is_finite()
-                        || value < i32::MIN as f64
-                        || value > i32::MAX as f64 - 1.0
+                        || value < f64::from(i32::MIN)
+                        || value > f64::from(i32::MAX) - 1.0
                     {
                         return -1;
                     }
                     let rounded = value as i64;
-                    bits[n] = (((rounded as u32 & 1) * 128) + (bits[n] >> 1) as u32) as u8;
+                    *bits = (((rounded as u32 & 1) * 128) + u32::from(*bits >> 1)) as u8;
                     value = ((value + 1.0) / 2.0).floor();
                 }
             } else {
                 value = (sum / step).floor() * step;
             }
-            if !value.is_finite() || value < i32::MIN as f64 || value > i32::MAX as f64 {
+            if !value.is_finite() || value < f64::from(i32::MIN) || value > f64::from(i32::MAX) {
                 return -1;
             }
             if !(-8388608.0..=8388607.0).contains(&value) {
@@ -145,7 +145,7 @@ pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
                     value = if value < 0.0 { -8388608.0 } else { 8388607.0 };
                 }
             }
-            work[n * channels + target] = value as i32;
+            frame[target] = value as i32;
         }
         if inverse && p.bypass != 0 {
             remaining -= 1;
@@ -231,7 +231,10 @@ fn apply_interval(args: MatrixIntervalArgs<'_>) -> i32 {
     if samples[..count * channels]
         .iter()
         .any(|&v| !(-8388608..=8388607).contains(&v))
-        || (prefix != 0 && bypass[..count].iter().any(|&v| v as u32 >= 1u32 << used))
+        || (prefix != 0
+            && bypass[..count]
+                .iter()
+                .any(|&v| u32::from(v) >= 1u32 << used))
     {
         return -1;
     }
@@ -244,8 +247,8 @@ fn apply_interval(args: MatrixIntervalArgs<'_>) -> i32 {
     let mut i = prefix;
     while i < *primitives {
         let target = matrix[i].target as usize;
-        for n in 0..count {
-            saved[n] = work[n * channels + target];
+        for (saved, frame) in saved.iter_mut().zip(work.chunks_exact(channels)) {
+            *saved = frame[target];
         }
         let mut overflow = false;
         let mut first = 0;
@@ -276,16 +279,18 @@ fn apply_interval(args: MatrixIntervalArgs<'_>) -> i32 {
                 break;
             }
             if matrix[i].bypass != 0 {
-                for n in 0..block {
-                    bits[first + n] |= one[n] << used;
+                for (bits, one) in bits[first..first + block].iter_mut().zip(one) {
+                    *bits |= one << used;
                 }
             }
             first += block;
         }
         if overflow {
-            for n in 0..count {
-                work[n * channels + target] = saved[n];
-                bits[n] &= ((1u32 << used) - 1) as u8;
+            for ((frame, &saved), bits) in
+                work.chunks_exact_mut(channels).zip(&saved).zip(&mut bits)
+            {
+                frame[target] = saved;
+                *bits &= ((1u32 << used) - 1) as u8;
             }
             break;
         }
@@ -319,4 +324,78 @@ pub(crate) fn mlp_matrix_apply_suffix_blocks(mut args: MatrixIntervalArgs<'_>) -
     args.lengths = Some(lengths);
     args.blocks = lengths.len();
     apply_interval(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bypass_matrix_round_trip_preserves_samples() {
+        let matrix = [MlpMatrixPrimitive {
+            target: 0,
+            bypass: 1,
+            coefficient: [
+                -32768, 16384, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ],
+        }];
+        let original = [-17, 23, 19, -29, 0, 1, 1, 0];
+        let mut samples = original;
+        let mut bypass = [0; 4];
+        for inverse in [false, true] {
+            assert_eq!(
+                mlp_matrix_apply(MatrixApplyArgs {
+                    matrix: &matrix,
+                    channels: 2,
+                    qss: &[0, 0],
+                    samples: &mut samples,
+                    count: 4,
+                    extra0: None,
+                    extra1: None,
+                    bypass: Some(&mut bypass),
+                    inverse,
+                    clip: false,
+                }),
+                0
+            );
+        }
+        assert_eq!(samples, original);
+        assert_eq!(bypass, [0; 4]);
+    }
+
+    #[test]
+    fn interval_overflow_restores_entire_target_channel() {
+        let matrix = [MlpMatrixPrimitive {
+            target: 0,
+            coefficient: [
+                -16384, 32768, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ],
+            ..MlpMatrixPrimitive::default()
+        }];
+        let original = [1, 2, 0, 8388607];
+        let mut samples = original;
+        let mut primitives = 1;
+        let mut bypass = [0; 2];
+        let mut bypass_bits = 0;
+        assert_eq!(
+            mlp_matrix_apply_blocks(MatrixIntervalArgs {
+                matrix: &matrix,
+                primitives: &mut primitives,
+                channels: 2,
+                qss: &[[0; 6]; 2],
+                samples: &mut samples,
+                count: 2,
+                bypass: &mut bypass,
+                bypass_bits: &mut bypass_bits,
+                lengths: Some(&[1, 1]),
+                blocks: 2,
+                prefix: 0,
+            }),
+            1
+        );
+        assert_eq!(samples, original);
+        assert_eq!(primitives, 0);
+        assert_eq!(bypass_bits, 0);
+        assert_eq!(bypass, [0; 2]);
+    }
 }

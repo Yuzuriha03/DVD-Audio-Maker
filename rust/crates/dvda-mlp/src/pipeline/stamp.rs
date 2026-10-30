@@ -103,14 +103,14 @@ impl MlpStampState<'_> {
     }
 }
 
-pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>, result: &mut u32) -> bool {
+pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>) -> Option<u32> {
     if s.failed || s.position >= s.limit {
-        return false;
+        return None;
     }
     if s.index + 1 < s.records.len() && s.records[s.index + 1].start <= s.position {
         if !s.start || s.records[s.index + 1].start != s.position {
             s.failed = true;
-            return false;
+            return None;
         }
         s.index += 1;
     }
@@ -125,7 +125,7 @@ pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>, result: &mut u32) -> boo
         s.ones = 0;
     } else if r.valid_bits != 0 && s.byte as u32 * 8 + 7 - s.bit >= r.valid_bits {
         s.failed = true;
-        return false;
+        return None;
     } else if s.byte == r.packet.len() {
         bit = 0;
         s.byte = 0;
@@ -144,8 +144,7 @@ pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>, result: &mut u32) -> boo
         }
     }
     s.position += 1;
-    *result = bit;
-    true
+    Some(bit)
 }
 
 pub(crate) fn mlp_stamp_complete(s: &MlpStampState<'_>) -> bool {
@@ -155,6 +154,34 @@ pub(crate) fn mlp_stamp_complete(s: &MlpStampState<'_>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exhaustion_and_partial_packet_failure_do_not_advance() {
+        let record = Metadata {
+            start: 0,
+            packet: vec![0, 0, 0x40, 0],
+            valid_bits: 32,
+        };
+        let mut state = mlp_stamp_init(std::slice::from_ref(&record), 42).unwrap();
+        for _ in 0..41 {
+            assert!(mlp_stamp_next(&mut state).is_some());
+        }
+        assert_eq!(mlp_stamp_next(&mut state), None);
+        assert_eq!(state.position, 41);
+        assert!(state.failed);
+        assert!(!mlp_stamp_complete(&state));
+        assert_eq!(mlp_stamp_next(&mut state), None);
+        assert_eq!(state.position, 41);
+
+        let mut state = mlp_stamp_init(std::slice::from_ref(&record), 41).unwrap();
+        for _ in 0..41 {
+            assert!(mlp_stamp_next(&mut state).is_some());
+        }
+        assert!(mlp_stamp_complete(&state));
+        assert_eq!(mlp_stamp_next(&mut state), None);
+        assert!(!state.failed);
+        assert!(mlp_stamp_complete(&state));
+    }
 
     #[test]
     fn refresh_replaces_only_at_a_valid_stamp_boundary() {
@@ -169,23 +196,18 @@ mod tests {
             valid_bits: 0,
         };
         let mut state = mlp_stamp_init(std::slice::from_ref(&original), 204).unwrap();
-        let mut bit = 0;
-        assert!(mlp_stamp_next(&mut state, &mut bit));
+        assert_eq!(mlp_stamp_next(&mut state), Some(1));
         assert!(!mlp_stamp_refresh(&mut state, updated.clone()));
         let mut state = mlp_stamp_init(std::slice::from_ref(&original), 204).unwrap();
         let mut before = Vec::new();
         for _ in 0..50 {
-            let mut bit = 0;
-            assert!(mlp_stamp_next(&mut state, &mut bit));
-            before.push(bit);
+            before.push(mlp_stamp_next(&mut state).unwrap());
         }
         assert!(state.start_boundary());
         assert!(mlp_stamp_refresh(&mut state, updated.clone()));
         let mut after = Vec::new();
         for _ in 0..50 {
-            let mut bit = 0;
-            assert!(mlp_stamp_next(&mut state, &mut bit));
-            after.push(bit);
+            after.push(mlp_stamp_next(&mut state).unwrap());
         }
         let expected = crate::metadata::timeline(
             &[

@@ -1,6 +1,6 @@
-use crate::Bits;
-use crate::matrix::MlpMatrixPrimitive;
-use crate::search::{MlpWireFilter, MlpWireState};
+use crate::bitstream::Bits;
+use crate::analysis::matrix::MlpMatrixPrimitive;
+use crate::analysis::search::{MlpWireFilter, MlpWireState};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C)]
@@ -43,14 +43,14 @@ fn filter(w: &mut Bits, f: &MlpWireFilter, q: u32) -> Result<(), ()> {
     let mut cf = [0i32; 8];
     let mut combined = 0u32;
     let mut l = 16u32;
-    for (i, c) in cf.iter_mut().enumerate().take(f.order as usize) {
-        let scaled = (f.coefficient[i] * 65536.0).trunc();
-        if !scaled.is_finite() || scaled < i32::MIN as f64 || scaled > i32::MAX as f64 {
+    for (c, &coefficient) in cf[..f.order as usize].iter_mut().zip(&f.coefficient) {
+        let scaled = (coefficient * 65536.0).trunc();
+        if !scaled.is_finite() || scaled < f64::from(i32::MIN) || scaled > f64::from(i32::MAX) {
             return Err(());
         }
         *c = scaled as i32;
         combined |= *c as u32;
-        while l < 31 && ((*c as i64) < -(1i64 << l) || (*c as i64) >= 1i64 << l) {
+        while l < 31 && (i64::from(*c) < -(1i64 << l) || i64::from(*c) >= 1i64 << l) {
             l += 1;
         }
     }
@@ -83,7 +83,7 @@ fn state(w: &mut Bits, s: &MlpWireState) -> Result<(), ()> {
     let mut combined = 0u32;
     for &v in &s.value[..s.count as usize] {
         combined |= v as u32;
-        while e < 31 && ((v as i64) < -(1i64 << e) || (v as i64) >= 1i64 << e) {
+        while e < 31 && (i64::from(v) < -(1i64 << e) || i64::from(v) >= 1i64 << e) {
             e += 1;
         }
     }
@@ -105,14 +105,12 @@ fn state(w: &mut Bits, s: &MlpWireState) -> Result<(), ()> {
 }
 
 fn matrix(w: &mut Bits, c: &MlpParameters) -> Result<(), ()> {
-    let mut index = c.matrix_count as usize;
-    if index > 15 {
+    let count = c.matrix_count as usize;
+    if count > 15 {
         return Err(());
     }
-    w.put(index as u32, 4);
-    while index != 0 {
-        index -= 1;
-        let m = &c.matrix[index];
+    w.put(count as u32, 4);
+    for m in c.matrix[..count].iter().rev() {
         if m.target > 15 {
             return Err(());
         }
@@ -128,7 +126,7 @@ fn matrix(w: &mut Bits, c: &MlpParameters) -> Result<(), ()> {
         w.put(14 - t, 4);
         w.put(u32::from(m.bypass != 0), 1);
         for &v in &m.coefficient[..c.maximum_channel as usize + 3] {
-            let value = v as u16 as u32;
+            let value = u32::from(v as u16);
             w.put(u32::from(value != 0), 1);
             if value != 0 {
                 w.put(value >> t, 16 - t);
@@ -142,19 +140,15 @@ pub(crate) fn mlp_parameters_put(
     writer: &mut Bits,
     c: &MlpParameters,
     old: &MlpParameters,
-    restart: bool,
-    initial: bool,
+    block: crate::bitstream::ParameterBlock,
 ) -> Result<(), ()> {
+    use crate::bitstream::ParameterBlock;
+    let initial = matches!(block, ParameterBlock::RestartInitial);
+    let restart = !matches!(block, ParameterBlock::Continuation);
     if writer.width > 15 || c.minimum_channel > c.maximum_channel || c.maximum_channel > 15 {
         return Err(());
     }
-    let mut local = Bits {
-        words: Vec::new(),
-        pending: writer.pending,
-        width: writer.width,
-        count_only: writer.count_only,
-        counted_words: 0,
-    };
+    let mut local = writer.fork();
     let eligible = initial || !restart;
     local.put(0, 1);
     let changed = !initial && ((c.flags | old.flags) & 2 != 0);
@@ -173,11 +167,15 @@ pub(crate) fn mlp_parameters_put(
     }
     let end = c.maximum_channel as usize + 1;
     let mut changed = false;
-    for i in 0..end {
-        if !(-8..=7).contains(&c.output_shift[i]) || c.qss[i] > 15 {
+    for ((&shift, &previous), &qss) in c.output_shift[..end]
+        .iter()
+        .zip(&old.output_shift[..end])
+        .zip(&c.qss[..end])
+    {
+        if !(-8..=7).contains(&shift) || qss > 15 {
             return Err(());
         }
-        if c.output_shift[i] != old.output_shift[i] {
+        if shift != previous {
             changed = eligible;
         }
     }
@@ -240,9 +238,6 @@ pub(crate) fn mlp_parameters_put(
         local.put(p.mode as u32, 2);
         local.put(p.total_width as u32, 5);
     }
-    writer.counted_words += local.counted_words;
-    writer.words.extend(local.words);
-    writer.pending = local.pending;
-    writer.width = local.width;
+    writer.commit(local);
     Ok(())
 }

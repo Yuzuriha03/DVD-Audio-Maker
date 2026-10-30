@@ -1,9 +1,12 @@
-use crate::c_analysis::{
+use super::input::PcmInput;
+#[cfg(test)]
+use super::input::MatrixInput;
+use crate::analysis::decorrelation::{
     MlpMatrixAnalysis, mlp_matrix_analysis_add, mlp_matrix_analysis_reset, mlp_matrix_select,
 };
-use crate::matrix::{MlpMatrixPrimitive, mlp_matrix_apply_blocks, mlp_matrix_apply_interval};
-use crate::scale::{MlpScalePlan, mlp_scale_analyze};
-use crate::search::{MlpSearchPlan, MlpSearchPool, mlp_search_interval};
+use crate::analysis::matrix::{MlpMatrixPrimitive, mlp_matrix_apply_blocks, mlp_matrix_apply_interval};
+use crate::analysis::scale::{MlpScalePlan, mlp_scale_analyze};
+use crate::analysis::search::{MlpSearchPlan, MlpSearchPool, mlp_search_interval};
 
 #[derive(Default)]
 pub(crate) struct MatrixInterval {
@@ -36,133 +39,6 @@ pub(crate) fn lossless(mut check: u32, pcm: &[i32], count: usize, channels: usiz
         }
     }
     check
-}
-
-pub(crate) trait PcmInput {
-    fn channels(&self) -> usize;
-    fn bits(&self) -> u32;
-    fn au_samples(&self) -> usize;
-    fn frames(&self) -> usize;
-    fn position(&self) -> usize;
-    fn read(&mut self, capacity: usize) -> Result<Vec<i32>, ()>;
-    fn refresh_stamp(&mut self) -> Result<Option<crate::metadata::Metadata>, i32> {
-        Ok(None)
-    }
-}
-
-pub(crate) struct CallbackInput<F, S> {
-    pub channels: usize,
-    pub bits: u32,
-    pub depths: [u32; 6],
-    pub order: [usize; 6],
-    pub au_samples: usize,
-    pub frames: usize,
-    pub source_frames: usize,
-    pub position: usize,
-    pub failed: bool,
-    pub callback: F,
-    pub stamp_refresh: S,
-}
-impl<F, S> PcmInput for CallbackInput<F, S>
-where
-    F: FnMut(&mut [i32], usize) -> Result<usize, ()>,
-    S: FnMut() -> Result<Option<crate::metadata::Metadata>, i32>,
-{
-    fn channels(&self) -> usize {
-        self.channels
-    }
-    fn bits(&self) -> u32 {
-        self.bits
-    }
-    fn au_samples(&self) -> usize {
-        self.au_samples
-    }
-    fn frames(&self) -> usize {
-        self.frames
-    }
-    fn position(&self) -> usize {
-        self.position
-    }
-    fn read(&mut self, capacity: usize) -> Result<Vec<i32>, ()> {
-        self.failed = true;
-        if capacity == 0 || capacity > 160 || self.position > self.frames {
-            return Err(());
-        }
-        let count = capacity.min(self.frames - self.position);
-        let actual = count.min(self.source_frames.saturating_sub(self.position));
-        let mut pcm = vec![0; count * self.channels];
-        let mut done = 0;
-        while done < actual {
-            let got = (self.callback)(
-                &mut pcm[done * self.channels..actual * self.channels],
-                actual - done,
-            )?;
-            if got == 0 || got > actual - done {
-                return Err(());
-            }
-            done += got;
-        }
-        let mask = (1u32 << (24 - self.bits)) - 1;
-        if pcm[..actual * self.channels]
-            .iter()
-            .any(|&v| !(-8388608..=8388607).contains(&v) || v as u32 & mask != 0)
-        {
-            return Err(());
-        }
-        for frame in pcm.chunks_exact_mut(self.channels) {
-            let mut original = [0; 6];
-            original[..self.channels].copy_from_slice(frame);
-            for ch in 0..self.channels {
-                frame[ch] = original[self.order[ch]];
-                if frame[ch] as u32 & ((1u32 << (24 - self.depths[ch])) - 1) != 0 {
-                    return Err(());
-                }
-            }
-        }
-        self.position += count;
-        self.failed = false;
-        Ok(pcm)
-    }
-    fn refresh_stamp(&mut self) -> Result<Option<crate::metadata::Metadata>, i32> {
-        (self.stamp_refresh)()
-    }
-}
-
-#[cfg(test)]
-pub(crate) struct MatrixInput<'a> {
-    pub pcm: &'a [i32],
-    pub channels: usize,
-    pub bits: u32,
-    pub au_samples: usize,
-    pub position: usize,
-}
-#[cfg(test)]
-impl PcmInput for MatrixInput<'_> {
-    fn channels(&self) -> usize {
-        self.channels
-    }
-    fn bits(&self) -> u32 {
-        self.bits
-    }
-    fn au_samples(&self) -> usize {
-        self.au_samples
-    }
-    fn frames(&self) -> usize {
-        self.pcm.len() / self.channels
-    }
-    fn position(&self) -> usize {
-        self.position
-    }
-    fn read(&mut self, capacity: usize) -> Result<Vec<i32>, ()> {
-        if !self.pcm.len().is_multiple_of(self.channels) || self.position > self.frames() {
-            return Err(());
-        }
-        let count = capacity.min(self.frames() - self.position);
-        let pcm = self.pcm[self.position * self.channels..(self.position + count) * self.channels]
-            .to_vec();
-        self.position += count;
-        Ok(pcm)
-    }
 }
 
 pub(crate) fn prepare_matrix(
@@ -215,9 +91,9 @@ pub(crate) fn prepare_matrix(
             if i >= 32 {
                 return Err(());
             }
-            for n in 0..count {
-                for ch in 0..channels {
-                    summary[i * 6 + ch] |= p[n * channels + ch].unsigned_abs();
+            for frame in p.chunks_exact(channels) {
+                for (magnitude, sample) in summary[i * 6..i * 6 + channels].iter_mut().zip(frame) {
+                    *magnitude |= sample.unsigned_abs();
                 }
             }
         }
@@ -237,12 +113,12 @@ pub(crate) fn prepare_matrix(
         {
             return Err(());
         }
-        for ch in 0..channels {
-            if m.scale.shift[ch] > 7 {
+        for (ch, &shift) in m.scale.shift[..channels].iter().enumerate() {
+            if shift > 7 {
                 return Err(());
             }
-            for n in 0..total {
-                m.pcm[n * channels + ch] /= 1i32 << m.scale.shift[ch];
+            for frame in m.pcm.chunks_exact_mut(channels) {
+                frame[ch] /= 1i32 << shift;
             }
         }
     }
@@ -270,7 +146,7 @@ pub(crate) fn prepare_matrix(
         ratio[ch] = m.analysis.covariance[ch * 7] / m.analysis.energy[ch];
     }
     if m.enable_matrix {
-        mlp_matrix_select(crate::c_analysis::MatrixSelection {
+        mlp_matrix_select(crate::analysis::decorrelation::MatrixSelection {
             covariance: &m.analysis.covariance,
             ratio: &ratio,
             channels,
@@ -285,7 +161,7 @@ pub(crate) fn prepare_matrix(
         })?;
         m.selected_matrix = m.count != 0;
         let rc = if m.original_scale {
-            mlp_matrix_apply_blocks(crate::matrix::MatrixIntervalArgs {
+            mlp_matrix_apply_blocks(crate::analysis::matrix::MatrixIntervalArgs {
                 matrix: &m.matrix,
                 primitives: &mut m.count,
                 channels,
@@ -299,7 +175,7 @@ pub(crate) fn prepare_matrix(
                 prefix: 0,
             })
         } else {
-            mlp_matrix_apply_interval(crate::matrix::MatrixIntervalArgs {
+            mlp_matrix_apply_interval(crate::analysis::matrix::MatrixIntervalArgs {
                 matrix: &m.matrix,
                 primitives: &mut m.count,
                 channels,
@@ -329,15 +205,15 @@ pub(crate) fn prepare_matrix(
         let mut mono = vec![0; total];
         for ch in 0..channels {
             let limited = input.au_samples() == 160;
-            for (n, sample) in mono.iter_mut().enumerate() {
-                *sample = m.pcm[n * channels + ch];
+            for (sample, frame) in mono.iter_mut().zip(m.pcm.chunks_exact(channels)) {
+                *sample = frame[ch];
             }
             m.pool[ch].rng = m.search_rng;
             let mut rc = mlp_search_interval(
                 Some(&mut m.pool[ch]),
                 &mono,
                 &m.lengths,
-                crate::search::SearchOptions {
+                crate::analysis::search::SearchOptions {
                     maximum_a: if limited { 4 } else { 8 },
                     maximum_b: if !limited && total >= 40 { 4 } else { 0 },
                     lag: 32,
@@ -352,7 +228,7 @@ pub(crate) fn prepare_matrix(
                     None,
                     &mono,
                     &m.lengths,
-                    crate::search::SearchOptions {
+                    crate::analysis::search::SearchOptions {
                         maximum_a: if limited { 4 } else { 8 },
                         maximum_b: 0,
                         lag: 8,
@@ -371,29 +247,15 @@ pub(crate) fn prepare_matrix(
 #[test]
 fn matrix_interval_tail_and_lossless() {
     let mut m = MatrixInterval {
-        pcm: Vec::new(),
-        bypass: Vec::new(),
-        lengths: Vec::new(),
-        checks: Vec::new(),
-        slot: 0,
-        offset: 0,
-        bits: 0,
-        count: 0,
-        selected_matrix: false,
-        matrix: Default::default(),
-        analysis: Default::default(),
-        scale: Default::default(),
         original_scale: true,
         enable_matrix: true,
         joint_search: true,
-        search_ready: [false; 6],
-        prediction: Default::default(),
-        pool: Default::default(),
         search_rng: 1,
+        ..Default::default()
     };
-    crate::c_analysis::mlp_matrix_analysis_init(&mut m.analysis, 2).unwrap();
+    crate::analysis::decorrelation::mlp_matrix_analysis_init(&mut m.analysis, 2).unwrap();
     for pool in &mut m.pool {
-        crate::search::mlp_search_pool_init(pool, 1);
+        crate::analysis::search::mlp_search_pool_init(pool, 1);
     }
     let pcm: Vec<_> = (0..85).flat_map(|i| [i * 256, i * 256]).collect();
     let mut input = MatrixInput {

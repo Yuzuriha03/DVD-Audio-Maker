@@ -1,9 +1,9 @@
 //! Opt-in independent decoder validation; requires ffmpeg on PATH.
 use dvda_mlp::{
-    direct::{encode_stream, StreamIo},
+    Config,
+    direct::{StreamIo, encode_stream},
     format::Profile,
     metadata::Metadata,
-    Config,
 };
 use std::{process::Command, time::Instant};
 
@@ -48,14 +48,31 @@ fn long_stream_reports_fifo_rate_limit() {
             (((rng >> 12) as i32) - (1 << 19)) << 4
         })
         .collect();
-    let mut io = Io { pcm, position: 0, channels: 6, output: Vec::new() };
+    let mut io = Io {
+        pcm,
+        position: 0,
+        channels: 6,
+        output: Vec::new(),
+    };
     let result = encode_stream(
-        &config, &Profile::standard(&config), frames as u64, None, &records, &mut io,
+        &config,
+        &Profile::standard(&config),
+        frames as u64,
+        None,
+        &records,
+        &mut io,
     );
     assert_eq!(result.status, -5);
-    let error: Vec<u8> = result.error.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
-    assert_eq!(String::from_utf8(error).unwrap(),
-        "MLP FIFO rate limit exceeded; input cannot be encoded at the required delivery rate");
+    let error: Vec<u8> = result
+        .error
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect();
+    assert_eq!(
+        String::from_utf8(error).unwrap(),
+        "MLP FIFO rate limit exceeded; input cannot be encoded at the required delivery rate"
+    );
     assert!(result.input_frames > 0);
     assert_eq!(result.output_bytes, io.output.len() as u64);
     assert_eq!(result.encoded_frames, 0);
@@ -66,7 +83,12 @@ fn long_stream_reports_fifo_rate_limit() {
     io.position = 0;
     io.output.clear();
     let result = encode_stream(
-        &config, &Profile::standard(&config), frames as u64, None, &records, &mut io,
+        &config,
+        &Profile::standard(&config),
+        frames as u64,
+        None,
+        &records,
+        &mut io,
     );
     assert_eq!(result.status, 0);
     assert_eq!(result.encoded_frames, 64080);
@@ -87,7 +109,11 @@ fn native_float_lossless_matrix() {
                 }
                 for pattern in 0..4 {
                     let frames = std::env::var("DVDA_FLOAT_FRAMES")
-                        .map(|value| value.parse::<usize>().expect("DVDA_FLOAT_FRAMES must be an integer"))
+                        .map(|value| {
+                            value
+                                .parse::<usize>()
+                                .expect("DVDA_FLOAT_FRAMES must be an integer")
+                        })
                         .unwrap_or(1281);
                     assert!(frames > 0);
                     let mut rng = 0x12345678u32;

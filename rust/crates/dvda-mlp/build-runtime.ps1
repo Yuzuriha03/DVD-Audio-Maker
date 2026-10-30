@@ -25,18 +25,24 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Encoder tests failed' }
     & cargo clippy --manifest-path rust\Cargo.toml -p dvda-mlp --all-targets --offline -- -D warnings
     if ($LASTEXITCODE -ne 0) { throw 'Encoder lint failed' }
-    & cargo build --manifest-path rust\Cargo.toml -p dvda-mlp --release --offline
+    $buildMessages = & cargo build --manifest-path rust\Cargo.toml -p dvda-mlp --release --offline --message-format=json
     if ($LASTEXITCODE -ne 0) { throw 'Encoder release build failed' }
+    $artifacts = @($buildMessages | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object {
+        $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'dvda_mlp'
+    })
+    $libraries = @($artifacts | ForEach-Object { $_.filenames } | Where-Object { $_ -like '*.dll' })
+    if ($libraries.Count -ne 1) { throw 'Expected exactly one dvda-mlp DLL build artifact' }
+    $library = $libraries[0]
     if ($frozen) {
         foreach ($mode in @('--standard-only', '--groups-only')) {
-            & cargo run --manifest-path rust\Cargo.toml -p dvda-mlp --example differential --release --offline -- $frozen rust\target\release\dvda_mlp.dll $mode --stress
+            & cargo run --manifest-path rust\Cargo.toml -p dvda-mlp --example differential --release --offline -- $frozen $mode --stress
             if ($LASTEXITCODE -ne 0) { throw "Encoder external-oracle acceptance failed: $mode" }
         }
         if ((Get-FileHash -LiteralPath $frozen -Algorithm SHA256).Hash -ne $frozenHash) { throw 'External frozen oracle changed' }
     }
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     $destination = Join-Path $OutputDirectory 'mlp_encoder.dll'
-    Copy-Item -LiteralPath rust\target\release\dvda_mlp.dll -Destination $destination -Force
+    Copy-Item -LiteralPath $library -Destination $destination -Force
     $file = Get-Item -LiteralPath $destination
     $manifest = [ordered]@{
         implementation = 'rust'

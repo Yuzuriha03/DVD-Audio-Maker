@@ -139,14 +139,14 @@ mod windows {
             channels: 2,
             restart_interval: 8,
             frames: 401,
-            metadata: &record,
+            metadata: &raw const record,
             metadata_count: 1,
         };
         let mut s = state(vec![0; 802], 2);
-        let p = (&mut s as *mut State).cast();
+        let p = (&raw mut s).cast();
         let mut r = EncoderResult::default();
         assert_eq!(
-            unsafe { encode(&c, Some(read), p, Some(write), p, &mut r) },
+            unsafe { encode(&raw const c, Some(read), p, Some(write), p, &raw mut r) },
             0
         );
         assert_eq!(r.output_bytes, s.bytes.len() as u64);
@@ -220,7 +220,26 @@ mod windows {
         data
     }
     pub fn run() {
-        let path = std::env::args().nth(1).expect("frozen C DLL path required");
+        use sha2::{Digest, Sha256};
+
+        let path = std::env::args()
+            .nth(1)
+            .expect("reference DLL path required");
+        let rust_baseline = std::env::args().any(|arg| arg == "--rust-baseline");
+        let digest: String = Sha256::digest(std::fs::read(&path).unwrap())
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect();
+        let reference = if rust_baseline {
+            "pre-refactor Rust"
+        } else {
+            assert_eq!(
+                digest, "ECE6D0A8033A26E2528042A7B74C66C249EA3C8D7378C06809FB94C8F6BD79B8",
+                "external C oracle hash mismatch; use --rust-baseline only for Rust regression testing"
+            );
+            "frozen C"
+        };
+        println!("Reference: {reference}; DLL SHA256: {digest}");
         let path = CString::new(path).unwrap();
         let dll = unsafe { LoadLibraryA(path.as_ptr().cast()) };
         assert!(!dll.is_null());
@@ -257,20 +276,29 @@ mod windows {
                 channels: 2,
                 restart_interval: 8,
                 frames: 48000,
-                metadata: &record,
+                metadata: &raw const record,
                 metadata_count: 1,
             };
             let mut outputs = Vec::new();
             let mut timings = [Vec::new(), Vec::new()];
             for round in 0..6 {
                 for index in if round % 2 == 0 { [0, 1] } else { [1, 0] } {
-                    let (name, encode) = [("C", old), ("Rust", rust_encode)][index];
+                    let (name, encode) = [(reference, old), ("Rust", rust_encode)][index];
                     let mut s = state(pcm.clone(), 2);
-                    let p = (&mut s as *mut State).cast();
+                    let p = (&raw mut s).cast();
                     let mut result = EncoderResult::default();
                     let start = std::time::Instant::now();
                     assert_eq!(
-                        unsafe { encode(&config, Some(read), p, Some(write), p, &mut result) },
+                        unsafe {
+                            encode(
+                                &raw const config,
+                                Some(read),
+                                p,
+                                Some(write),
+                                p,
+                                &raw mut result,
+                            )
+                        },
                         0
                     );
                     let elapsed = start.elapsed().as_secs_f64();
@@ -288,7 +316,7 @@ mod windows {
                     }
                 }
             }
-            for (index, name) in ["C", "Rust"].iter().enumerate() {
+            for (index, name) in [reference, "Rust"].iter().enumerate() {
                 timings[index].sort_by(f64::total_cmp);
                 let median = timings[index][2];
                 println!(
@@ -298,7 +326,7 @@ mod windows {
                 );
             }
             println!(
-                "Rust/C median elapsed ratio: {:.3}; every round raw bytes and SHA256 identical",
+                "Rust/{reference} median elapsed ratio: {:.3}; every round raw bytes and SHA256 identical",
                 timings[1][2] / timings[0][2]
             );
             let _decoded = decode(&outputs[0], "benchmark");
@@ -347,17 +375,28 @@ mod windows {
                         };
                         let mut a = state(pcm.clone(), channels as usize);
                         let mut b = state(pcm.clone(), channels as usize);
-                        let pa = (&mut a as *mut State).cast();
-                        let pb = (&mut b as *mut State).cast();
+                        let pa = (&raw mut a).cast();
+                        let pb = (&raw mut b).cast();
                         let mut ra = EncoderResult::default();
                         let mut rb = EncoderResult::default();
                         assert_eq!(
-                            unsafe { old(&c, Some(read), pa, Some(write), pa, &mut ra) },
+                            unsafe {
+                                old(&raw const c, Some(read), pa, Some(write), pa, &raw mut ra)
+                            },
                             0,
-                            "C profile {rate}/{bits}/{channels}"
+                            "{reference} profile {rate}/{bits}/{channels}"
                         );
                         assert_eq!(
-                            unsafe { rust_encode(&c, Some(read), pb, Some(write), pb, &mut rb) },
+                            unsafe {
+                                rust_encode(
+                                    &raw const c,
+                                    Some(read),
+                                    pb,
+                                    Some(write),
+                                    pb,
+                                    &raw mut rb,
+                                )
+                            },
                             0,
                             "Rust profile {rate}/{bits}/{channels}"
                         );
@@ -365,10 +404,11 @@ mod windows {
                             a.bytes.iter().zip(&b.bytes).position(|(a, b)| a != b);
                         assert!(
                             a.bytes == b.bytes,
-                            "raw MLP mismatch for {rate}/{bits}/{channels}: first differing byte {first_difference:?}, C length {}, Rust length {}",
+                            "raw MLP mismatch for {rate}/{bits}/{channels}: first differing byte {first_difference:?}, {reference} length {}, Rust length {}",
                             a.bytes.len(),
                             b.bytes.len()
                         );
+                        assert_eq!(Sha256::digest(&a.bytes), Sha256::digest(&b.bytes));
                         assert_eq!(
                             decode(&a.bytes, "c"),
                             decode(&b.bytes, "rust"),
@@ -402,59 +442,64 @@ mod windows {
                     }
                     let mut a = state(pcm.clone(), channels);
                     let mut b = state(pcm.clone(), channels);
-                    let pa = (&mut a as *mut State).cast();
-                    let pb = (&mut b as *mut State).cast();
+                    let pa = (&raw mut a).cast();
+                    let pb = (&raw mut b).cast();
                     let mut ra = EncoderResult::default();
                     let mut rb = EncoderResult::default();
                     let (sa, sb) = unsafe {
                         if distinct {
                             (
                                 depths(
-                                    &c,
+                                    &raw const c,
                                     assignment as u32,
                                     20,
                                     Some(read),
                                     pa,
                                     Some(write),
                                     pa,
-                                    &mut ra,
+                                    &raw mut ra,
                                 ),
                                 rust_depths(
-                                    &c,
+                                    &raw const c,
                                     assignment as u32,
                                     20,
                                     Some(read),
                                     pb,
                                     Some(write),
                                     pb,
-                                    &mut rb,
+                                    &raw mut rb,
                                 ),
                             )
                         } else {
                             (
                                 layout(
-                                    &c,
+                                    &raw const c,
                                     assignment as u32,
                                     Some(read),
                                     pa,
                                     Some(write),
                                     pa,
-                                    &mut ra,
+                                    &raw mut ra,
                                 ),
                                 rust_layout(
-                                    &c,
+                                    &raw const c,
                                     assignment as u32,
                                     Some(read),
                                     pb,
                                     Some(write),
                                     pb,
-                                    &mut rb,
+                                    &raw mut rb,
                                 ),
                             )
                         }
                     };
                     assert_eq!(sa, 0);
                     assert_eq!(sb, 0);
+                    assert!(
+                        a.bytes == b.bytes,
+                        "raw layout {assignment} distinct {distinct}"
+                    );
+                    assert_eq!(Sha256::digest(&a.bytes), Sha256::digest(&b.bytes));
                     assert_eq!(
                         decode(&a.bytes, "c"),
                         decode(&b.bytes, "rust"),
@@ -496,12 +541,15 @@ mod windows {
                             metadata_count: 1,
                         };
                         let mut decoded = Vec::new();
+                        let mut encoded = Vec::new();
                         for f in [old, rust_encode] {
                             let mut s = state(pcm.clone(), 2);
-                            let p = (&mut s as *mut State).cast();
+                            let p = (&raw mut s).cast();
                             let mut result = EncoderResult::default();
                             assert_eq!(
-                                unsafe { f(&c, Some(read), p, Some(write), p, &mut result) },
+                                unsafe {
+                                    f(&raw const c, Some(read), p, Some(write), p, &raw mut result)
+                                },
                                 0,
                                 "stress pattern {pattern} restart {restart}"
                             );
@@ -511,7 +559,13 @@ mod windows {
                             assert_eq!(&output[..expected.len()], expected);
                             assert!(output[expected.len()..].iter().all(|&x| x == 0));
                             decoded.push(output);
+                            encoded.push(s.bytes);
                         }
+                        assert_eq!(
+                            encoded[0], encoded[1],
+                            "raw stress pattern {pattern} restart {restart}"
+                        );
+                        assert_eq!(Sha256::digest(&encoded[0]), Sha256::digest(&encoded[1]));
                         assert_eq!(decoded[0], decoded[1]);
                         tested += 1;
                     }
@@ -556,13 +610,22 @@ mod windows {
                             })
                         })
                         .collect();
+                    let mut reference_bytes = None;
                     for f in [layout, rust_layout] {
                         let mut s = state(pcm.clone(), channels);
-                        let p = (&mut s as *mut State).cast();
+                        let p = (&raw mut s).cast();
                         let mut r = EncoderResult::default();
                         assert_eq!(
                             unsafe {
-                                f(&c, assignment as u32, Some(read), p, Some(write), p, &mut r)
+                                f(
+                                    &raw const c,
+                                    assignment as u32,
+                                    Some(read),
+                                    p,
+                                    Some(write),
+                                    p,
+                                    &raw mut r,
+                                )
                             },
                             0
                         );
@@ -575,6 +638,15 @@ mod windows {
                             "multichannel matrix/impulse/extreme assignment{assignment}"
                         );
                         assert!(decoded[expected.len()..].iter().all(|&x| x == 0));
+                        if let Some(reference) = &reference_bytes {
+                            assert!(
+                                &s.bytes == reference,
+                                "raw multichannel {assignment}/{pattern}"
+                            );
+                            assert_eq!(Sha256::digest(&s.bytes), Sha256::digest(reference));
+                        } else {
+                            reference_bytes = Some(s.bytes);
+                        }
                     }
                     tested += 1;
                 }
@@ -630,14 +702,14 @@ mod windows {
                                 assert_eq!(
                                     unsafe {
                                         f(
-                                            &g,
+                                            &raw const g,
                                             Some(read),
-                                            (&mut x as *mut State).cast(),
+                                            (&raw mut x).cast(),
                                             Some(read),
-                                            (&mut y as *mut State).cast(),
+                                            (&raw mut y).cast(),
                                             Some(write),
-                                            (&mut out as *mut State).cast(),
-                                            &mut r,
+                                            (&raw mut out).cast(),
+                                            &raw mut r,
                                         )
                                     },
                                     0,
@@ -713,14 +785,14 @@ mod windows {
                                     assert_eq!(
                                         unsafe {
                                             f(
-                                                &g,
+                                                &raw const g,
                                                 Some(read),
-                                                (&mut x as *mut State).cast(),
+                                                (&raw mut x).cast(),
                                                 Some(read),
-                                                (&mut y as *mut State).cast(),
+                                                (&raw mut y).cast(),
                                                 Some(write),
-                                                (&mut out as *mut State).cast(),
-                                                &mut r,
+                                                (&raw mut out).cast(),
+                                                &raw mut r,
                                             )
                                         },
                                         expected
@@ -755,7 +827,7 @@ mod windows {
                                     channels: 6,
                                     restart_interval: 8,
                                     frames: 802,
-                                    metadata: &record,
+                                    metadata: &raw const record,
                                     metadata_count: 1,
                                 },
                                 assignment: 20,
@@ -780,14 +852,14 @@ mod windows {
                             assert_eq!(
                                 unsafe {
                                     rust_groups(
-                                        &g,
+                                        &raw const g,
                                         Some(read),
-                                        (&mut x as *mut State).cast(),
+                                        (&raw mut x).cast(),
                                         Some(read),
-                                        (&mut y as *mut State).cast(),
+                                        (&raw mut y).cast(),
                                         Some(write),
-                                        (&mut out as *mut State).cast(),
-                                        &mut r,
+                                        (&raw mut out).cast(),
+                                        &raw mut r,
                                     )
                                 },
                                 0
@@ -805,7 +877,7 @@ mod windows {
                 "eight concurrent equal-rate and half-rate grouped Rust DLL encodes deterministic"
             );
             println!(
-                "{grouped} group cases: complete raw MLP bytes/SHA256 plus original header/parity and decoded PCM parity against frozen DLL"
+                "{grouped} group cases: complete raw MLP bytes/SHA256 plus original header/parity and decoded PCM parity against {reference}"
             );
         }
         if !groups_only {
@@ -837,12 +909,13 @@ mod windows {
                     metadata_count: 2,
                 };
                 let mut stamp_streams = Vec::new();
+                let mut encoded = Vec::new();
                 for f in [old, rust_encode] {
                     let mut s = state(vec![0; c.frames as usize * 2], 2);
-                    let p = (&mut s as *mut State).cast();
+                    let p = (&raw mut s).cast();
                     let mut r = EncoderResult::default();
                     assert_eq!(
-                        unsafe { f(&c, Some(read), p, Some(write), p, &mut r) },
+                        unsafe { f(&raw const c, Some(read), p, Some(write), p, &raw mut r) },
                         if malformed { -1 } else { 0 }
                     );
                     if malformed {
@@ -867,13 +940,16 @@ mod windows {
                         at += words * 2;
                     }
                     stamp_streams.push(bits);
+                    encoded.push(s.bytes);
                 }
                 if !malformed {
+                    assert_eq!(encoded[0], encoded[1], "raw multi-record/partial metadata");
+                    assert_eq!(Sha256::digest(&encoded[0]), Sha256::digest(&encoded[1]));
                     assert_eq!(stamp_streams[0], stamp_streams[1]);
                 }
             }
             println!(
-                "stuffed multi-record/partial metadata bits and malformed early admission passed"
+                "stuffed multi-record/partial metadata raw bytes/SHA256 and malformed early admission passed"
             );
             std::thread::scope(|scope| {
                 let mut handles = Vec::new();
@@ -894,14 +970,16 @@ mod windows {
                             channels: 2,
                             restart_interval: 8,
                             frames: 401,
-                            metadata: &record,
+                            metadata: &raw const record,
                             metadata_count: 1,
                         };
                         let mut s = state(vec![0; 802], 2);
-                        let p = (&mut s as *mut State).cast();
+                        let p = (&raw mut s).cast();
                         let mut r = EncoderResult::default();
                         assert_eq!(
-                            unsafe { rust_encode(&c, Some(read), p, Some(write), p, &mut r) },
+                            unsafe {
+                                rust_encode(&raw const c, Some(read), p, Some(write), p, &raw mut r)
+                            },
                             0
                         );
                         s.bytes
@@ -932,7 +1010,7 @@ mod windows {
                             3 => s.nested = Some(f),
                             _ => {}
                         }
-                        let p = (&mut s as *mut State).cast();
+                        let p = (&raw mut s).cast();
                         let mut r = EncoderResult::default();
                         let expected = match mode {
                             1 => -3,
@@ -940,7 +1018,7 @@ mod windows {
                             _ => 0,
                         };
                         assert_eq!(
-                            unsafe { f(&c, Some(read), p, Some(write), p, &mut r) },
+                            unsafe { f(&raw const c, Some(read), p, Some(write), p, &raw mut r) },
                             expected
                         );
                         assert_eq!(r.status, expected);
@@ -966,7 +1044,7 @@ mod windows {
                 }
             }
             println!(
-                "bounded first-output pacing, late read/write cancellation, counters and nested reentrancy passed against C"
+                "bounded first-output pacing, late read/write cancellation, counters and nested reentrancy passed against {reference}"
             );
             for test in 0..13 {
                 for f in [old, rust_encode] {
@@ -1003,12 +1081,12 @@ mod windows {
                         }
                         _ => {}
                     }
-                    let p = (&mut s as *mut State).cast();
+                    let p = (&raw mut s).cast();
                     let mut r = EncoderResult::default();
                     let config = if test == 11 { std::ptr::null() } else { &c };
                     let reader = if test == 12 { None } else { Some(read as Read) };
                     assert_eq!(
-                        unsafe { f(config, reader, p, Some(write), p, &mut r) },
+                        unsafe { f(config, reader, p, Some(write), p, &raw mut r) },
                         expected,
                         "admission {test}"
                     );
@@ -1016,7 +1094,7 @@ mod windows {
                     assert!(s.bytes.is_empty());
                 }
             }
-            println!("13 malformed configuration/callback/precision cases match frozen C");
+            println!("13 malformed configuration/callback/precision cases match {reference}");
             for (read_error, write_error, expected) in [(true, false, -3), (false, true, -4)] {
                 for f in [old, rust_encode] {
                     let c = EncoderConfig {
@@ -1033,10 +1111,10 @@ mod windows {
                     let mut s = state(vec![0; 802], 2);
                     s.read_error = read_error;
                     s.write_error = write_error;
-                    let p = (&mut s as *mut State).cast();
+                    let p = (&raw mut s).cast();
                     let mut r = EncoderResult::default();
                     assert_eq!(
-                        unsafe { f(&c, Some(read), p, Some(write), p, &mut r) },
+                        unsafe { f(&raw const c, Some(read), p, Some(write), p, &raw mut r) },
                         expected
                     );
                     assert_eq!(r.status, expected);
@@ -1047,7 +1125,7 @@ mod windows {
             FreeLibrary(dll);
         }
         println!(
-            "{tested} frozen-C PCM differential cases passed; input/output cancellation statuses matched"
+            "{tested} {reference} differential cases passed; input/output cancellation statuses matched"
         );
     }
 }

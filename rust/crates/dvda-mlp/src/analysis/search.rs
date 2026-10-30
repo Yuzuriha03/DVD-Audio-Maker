@@ -58,8 +58,8 @@ pub(crate) fn mlp_search_iir_random(
             }
             a[m] = k[m];
         }
-        for (i, value) in a.iter().enumerate().take(order as usize) {
-            f.coefficient[i] = (value * scale + 0.5).floor() / scale;
+        for (coefficient, value) in f.coefficient[..order as usize].iter_mut().zip(a) {
+            *coefficient = (value * scale + 0.5).floor() / scale;
         }
         let coefficients = f.coefficient[..4].try_into().unwrap();
         if mlp_search_iir_stable(&coefficients, order as usize) == 1 {
@@ -104,8 +104,7 @@ pub(crate) fn mlp_search_pool_init(pool: &mut MlpSearchPool, seed: u32) -> i32 {
         rng: seed,
         ..Default::default()
     };
-    for i in 0..work.count as usize {
-        let e = &mut work.entry[i];
+    for (i, e) in work.entry[..work.count as usize].iter_mut().enumerate() {
         if i < 6 {
             e.filter.changed = 1;
             e.filter.order = if i < 3 { 1 } else { 2 };
@@ -191,8 +190,8 @@ pub(crate) fn mlp_search_pool_select(
         return -1;
     }
     let mut work = pool.clone();
-    for i in 0..work.count as usize {
-        let f = &work.entry[i].filter;
+    for (i, entry) in work.entry[..work.count as usize].iter().enumerate() {
+        let f = &entry.filter;
         if f.order > 4 || f.precision > 15 {
             return -1;
         }
@@ -388,11 +387,11 @@ pub(crate) fn mlp_search_joint(
         }
     }
     let scale = f64::from(1u32 << q);
-    for i in (1..=8).rev() {
-        let v = feedback * rho + scale * direct[i - 1];
+    for (coefficient, direct) in a.coefficient.iter_mut().zip(direct).rev() {
+        let v = feedback * rho + scale * direct;
         let z = (v + 0.5).floor();
         feedback = z - v;
-        a.coefficient[i - 1] = -z / scale;
+        *coefficient = -z / scale;
     }
     while order != 0 && a.coefficient[order - 1] == 0.0 {
         order -= 1;
@@ -480,11 +479,11 @@ pub(crate) fn mlp_search_fir(
         }
     }
     let scale = f64::from(1u32 << q);
-    for i in (1..=8).rev() {
-        let v = feedback * rho + scale * a[i - 1];
+    for (coefficient, direct) in f.coefficient.iter_mut().zip(a).rev() {
+        let v = feedback * rho + scale * direct;
         let z = (v + 0.5).floor();
         feedback = z - v;
-        f.coefficient[i - 1] = -z / scale;
+        *coefficient = -z / scale;
     }
     while order != 0 && f.coefficient[order - 1] == 0.0 {
         order -= 1;
@@ -804,7 +803,11 @@ pub(crate) fn mlp_search_correlation_extended(
     for (b, &length) in lengths.iter().enumerate() {
         let step = 160 / length;
         y[..49].copy_from_slice(&history);
-        for n in 0..length {
+        for (n, (sample, &pcm)) in y[49..49 + length]
+            .iter_mut()
+            .zip(&pcm[offset..offset + length])
+            .enumerate()
+        {
             let w = if b == 0 {
                 window[n * step]
             } else if b == lengths.len() - 1 {
@@ -812,16 +815,16 @@ pub(crate) fn mlp_search_correlation_extended(
             } else {
                 1.0
             };
-            y[49 + n] = f64::from(pcm[offset + n] as f32) * w;
+            *sample = f64::from(pcm as f32) * w;
         }
-        for k in 0..=order {
+        for (k, correlation) in r[..=order].iter_mut().enumerate() {
             let mut sum = 0.0;
             let current = &y[49..49 + length];
             let delayed = &y[49 - k..49 - k + length];
             for (&left, &right) in current.iter().zip(delayed) {
                 sum += left * right;
             }
-            r[k] += sum;
+            *correlation += sum;
         }
         history.copy_from_slice(&y[length..length + 49]);
         offset += length;
@@ -910,13 +913,12 @@ pub(crate) fn mlp_search_iir_evaluate(
             return -1;
         }
     }
-    for j in 0..=tail {
-        let mut sum = h[j];
-        let shifted = &impulse[j..=tail];
-        for n in 0..shifted.len() {
-            sum += shifted[n] * impulse[n];
+    for (j, value) in h[..=tail].iter_mut().enumerate() {
+        let mut sum = *value;
+        for (shifted, original) in impulse[j..=tail].iter().zip(&impulse) {
+            sum += shifted * original;
         }
-        h[j] = sum;
+        *value = sum;
     }
     for n in 0..=aorder {
         r[n] = h[0] * correlation[n];

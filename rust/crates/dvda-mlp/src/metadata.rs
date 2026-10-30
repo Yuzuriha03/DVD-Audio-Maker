@@ -1,4 +1,4 @@
-use crate::{Error, stamp};
+use crate::{Error, encoder::stamp};
 #[derive(Clone, Debug)]
 pub struct Metadata {
     pub start: u64,

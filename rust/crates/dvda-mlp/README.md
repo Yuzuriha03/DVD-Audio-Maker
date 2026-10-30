@@ -1,6 +1,91 @@
 # Rust MLP encoder status
 
-## Real-audio serialization optimization
+## Module layout
+
+- `lib.rs` declares modules and re-exports the batch API.
+- `config.rs` defines public configuration/errors and borrowed batch validation.
+- `bitstream.rs` contains the internal bit writer and checksums.
+- `encoder.rs` contains batch encoding and the fallback AU encoder.
+- `direct.rs` adapts the safe `StreamIo` interface to the synchronous FFI host.
+- `ffi.rs` and `ffi_layout.rs` implement the ABI and its format adapters.
+- `streaming.rs` validates metadata packets and owns the fallback metadata cursor.
+- `analysis/` groups decorrelation, matrix transforms, scaling, prediction,
+ interval partitioning, search and arithmetic support.
+- `pipeline/` owns streaming orchestration, per-channel encoding, matrix
+ preparation, callback PCM input and metadata stamp progression. Input adapters
+ and their tests are separate from matrix preparation.
+- `syntax/` serializes residuals, restart headers, parameters, substreams and
+ planned access units. Access-unit size checks share the same serializer.
+- `output/` owns the delayed output queue and rate state; `timing.rs` provides
+ shared timing calculations.
+- `tests.rs` and module-local tests cover the internal and public contracts.
+
+These internal module groups are x86-64-only, as before. Historical reference
+function boundaries and call relationships are retained without `c_` module
+names or a runtime C dependency.
+
+Internal state uses named parameter blocks, owned output queues, borrowed PCM
+and prediction plans, and typed outcomes/errors. Candidate order, strict-less
+cost tie breaking, arithmetic order, serialization and failure commit points
+remain part of the behavior contract. Refactoring must not merge corresponding
+reference functions or reorganize their call relationships.
+
+## Refactoring verification
+
+The crate-wide idiomatic rewrite remains in progress. The phase reports record
+what was actually changed and tested, including limits of the evidence:
+[refactoring plan and results](../../../docs/MLP-RUST-REFACTOR-PHASE-1.md).
+Historical performance/decoder measurements below are not fresh results for the
+current revision and do not establish frozen C acceptance or release approval.
+
+For a Windows Rust regression comparison, explicitly select an independently
+built, pre-change DLL. The candidate is the Rust crate linked into the example,
+not a second DLL argument:
+
+```powershell
+cargo run --manifest-path rust\Cargo.toml -p dvda-mlp --release --example differential -- 'C:\path\to\pre-refactor\dvda_mlp.dll' --rust-baseline
+```
+
+The non-stress suite compares 361 complete fixed-metadata streams using raw
+bytes and SHA256 (133 standard/layout/depth and 228 grouped cases). With
+`--stress`, it compares 370 streams (142 standard/layout/depth and 228 grouped
+cases), including longer grouped inputs. A valid multi-record/partial-metadata
+case additionally compares complete raw bytes and SHA256; it is not included in
+those totals. Cancellation, reentrancy, admission and malformed-metadata checks
+are additional contract checks, not additional complete-stream comparisons.
+Without `--rust-baseline`, the harness requires the frozen C oracle SHA256 before
+loading the supplied DLL. Rust baseline results must not be reported as
+historical C acceptance.
+
+Phase-six x86-64 Windows validation passed the 370-case stress comparison plus
+the additional metadata comparison against the independently saved phase-two
+pre-change Rust DLL, all 47 Release unit tests, both integration tests (including
+the normally ignored FFmpeg matrix), and all-target Clippy. Other architectures
+remain unverified with the installed toolchain. The batch baseline independence
+limitation in the phase report remains open; no fresh frozen C acceptance or
+release approval is implied.
+
+## Streaming API safety
+
+`direct::StreamIo` is the safe Rust streaming interface. Its borrowed context is
+used synchronously; read, write and metadata refresh callbacks run sequentially.
+The adapter limits unsafe blocks to pointer access and FFI calls, and uses the
+shared diagnostic writer for callback failures. With `panic = "unwind"`, Rust
+callback panics are caught and reported as status -5. The workspace release
+profile uses `panic = "abort"`: panics terminate the process, so callers should
+return errors instead. Foreign callbacks must never unwind across the C ABI.
+
+The FFI entry-point documentation specifies pointer validity, exclusive result
+storage and callback buffer lifetimes directly. The internal callback host is
+unsafe to call because it relies on those contracts; raw-pointer validity is not
+established by format validation. ABI v1 structures and entry-point admission
+ordering are unchanged. Regression tests pin 64-bit field offsets, sizes and
+alignment, null-result handling, initialized failure results, and diagnostic
+truncation/clearing. The phase-four 361-case fixed-metadata differential against
+the actual pre-change Rust DLL passed complete raw-byte and SHA256 comparisons.
+This does not constitute frozen C acceptance or validation on other architectures.
+
+## Historical real-audio serialization optimization
 
 Bit insertion packs the pending bits and each input into a 64-bit value, then
 emits at most two 16-bit words without a per-chunk loop. Capacity checks run the same validating serializer
@@ -66,9 +151,14 @@ test for incompressible inputs above the delivery limit.
 The matrix analysis and half-rate interpolation arithmetic now use Rust `f64`
 (including `f64::ln`), not x87 inline assembly or software x87 emulation.
 Function boundaries, operation order and the integer lossless coding pipeline
-are retained. Historical C byte equality is no longer an acceptance requirement
-for this mode; decoded PCM, format compatibility and reviewed output-size changes
-are the criteria. Compression acceptance remains subject to user review.
+are retained. Decoded PCM, format compatibility and output-size checks are useful
+regressions, but do not substitute for historical C acceptance. Identical PCM,
+parameters and explicit metadata require byte-for-byte and raw SHA256 equality.
+Default metadata comparisons may use only the documented
+`mlp-coded-v1-no-auxiliary-stamp` scheme after validating original header parity;
+this is coded-stream equality, not raw-file equality. See
+[MLP parity requirements](../../../docs/MLP-PARITY.md). The native-float results
+below do not establish historical C acceptance.
 
 The encoder no longer saves, changes or restores x87/MXCSR control state. Callers
 and callbacks must use the standard Rust floating-point environment (round to
@@ -130,15 +220,18 @@ increased about 2.2%. All sizes and decoded PCM/padding matched, but the
 production fast path was reverted. A unit-impulse equivalence regression test
 was retained, including extreme finite correlations and invalid lag/order pairs.
 
-A longer 64,001-frame matrix exposed an existing encoder error (-5) at
+A longer 64,001-frame matrix exposed a FIFO rate-limit rejection (-5) at
 88.2 kHz/20-bit/6-channel pseudorandom input in both earlier pipeline versions.
-This limitation remains unresolved; short-matrix success does not certify long
-inputs. These measurements do not establish memory savings or physical-player
-compatibility.
+See the rate-limit diagnostics above: arbitrary incompressible input cannot be
+guaranteed to fit the delivery rate. Short-matrix success does not certify long
+inputs, memory savings or physical-player compatibility.
 
 FFmpeg must be on PATH. The test does not certify physical DVD players or all
-mixed-rate layouts. Historical oracle comparisons remain optional diagnostics,
-not a native-float release gate; see [MLP-PARITY](../../../docs/MLP-PARITY.md).
+mixed-rate layouts. Historical oracle tests are optional for normal Rust builds,
+but strict frozen C comparison remains required for migration acceptance;
+see [MLP-PARITY](../../../docs/MLP-PARITY.md).
+
+## Building and using the encoder
 
 `dvda-mlp` is an independent Rust MLP bitstream encoder, not a C wrapper. It
 implements lossless entropy modes 0-3, adaptive FIR and stable IIR prediction,
@@ -163,8 +256,9 @@ optional secondary frame count, a mandatory metadata timeline, and `StreamIo`.
 `Config.metadata` is not used by this streaming API; pass records explicitly.
 `StreamIo` receives bounded PCM/output slices, returns frame counts (not sample
 counts), and can cancel before reads/writes. Uniform input is canonical speaker
-order; independent groups use assignment order. Callback panics return `-5`;
-all output must be discarded on failure. Calls are synchronous, independent,
+order; independent groups use assignment order. Callback panics return `-5`
+only in unwind builds; release builds abort (see Streaming API safety above).
+All output must be discarded on failure. Calls are synchronous, independent,
 and support concurrency/reentrancy. Internal allocation exhaustion can still
 abort. The `cdylib` is retained only as a differential acceptance adapter.
 
@@ -178,7 +272,8 @@ lookahead, and buffers at most one restart interval per input group. Output
 callbacks receive individual AUs. Nonzero read/write callbacks return -3/-4
 respectively. Callers must discard output on any nonzero final result.
 
-`build-runtime.ps1` runs 17 Rust unit tests, strict Clippy and a release build,
+`build-runtime.ps1` runs the default Rust tests, strict Clippy and a release build,
+resolves the DLL from Cargo's JSON artifact output (including configured targets),
 then emits
 `mlp_encoder.dll` plus `encoder-build.json`. The manifest is ABI version 1,
 identifies the Rust implementation and DLL SHA-256/size, but deliberately sets
@@ -206,6 +301,12 @@ the `external-oracle` feature, validates the original hash before and after, and
 runs standard/grouped differential stress suites. Those four tests require an
 explicit comparison runtime; default builds and tests require only Rust.
 
+### Historical acceptance records
+
+These records describe earlier revisions, not a rerun or acceptance of the
+current native-float implementation. Decoder/PCM-only checks are not raw-byte
+parity checks, including the additional standard stress cases.
+
 The historical recipe with an external C oracle was executed successfully with output directory
 `build\mlp-encoder-validation`. Its actual release DLL passes 142 standard,
 layout, depth and long-stream PCM cases and 228 grouped profiles against the
@@ -214,7 +315,7 @@ check primary input, secondary input and output cancellation. Standard tests
 cover immediate/late errors, first-output pacing, counters, nested reentrancy,
 eight simultaneous calls, 13 malformed ABI cases and metadata bit timelines.
 The direct API tests cover grouped equal/half-rate reads, bounded buffers,
-concurrency, invalid duration, panic containment and cancellation. That external-oracle run passed 21 tests, including 27,360 grouped raw-byte/SHA256 cases and independent quantized FIR/IIR state reconstruction. The default recipe now runs 17 Rust tests; four historical differential tests require the explicit external oracle feature. Source-only C state/interpolation tests were removed. Strict Clippy is required.
+concurrency, invalid duration, panic containment and cancellation. That external-oracle run passed 21 tests, including 27,360 grouped raw-byte/SHA256 cases and independent quantized FIR/IIR state reconstruction. Four historical differential tests require the explicit external oracle feature. Source-only C state/interpolation tests were removed. Strict Clippy is required.
 The stress streams contain 70,001 standard frames and 9,602 grouped primary
 frames. These finite tests are not exhaustive FIFO/compression certification.
 
@@ -226,6 +327,7 @@ returns usage/status 2 for `--capabilities`, while the legacy probe returns DLL
 capabilities/status 11. This is not a passed decoder acceptance run and does
 not certify native mixed-rate playback.
 
-No production fallback to C is implemented. The current finite acceptance was
-approved for built-in Rust production and GUI-ONLY publication. The limitations
-above remain documented; they do not restore a dependency on deleted C sources.
+No production fallback to C is implemented. Earlier publication decisions are
+historical, not approval to release this refactoring. Migration completion and
+release still require the strict acceptance documented in MLP-PARITY and renewed
+user authorization. These requirements do not restore a default C dependency.

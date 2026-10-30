@@ -1,4 +1,4 @@
-use crate::Bits;
+use crate::bitstream::Bits;
 
 #[derive(Clone, Debug, Default)]
 #[repr(C)]

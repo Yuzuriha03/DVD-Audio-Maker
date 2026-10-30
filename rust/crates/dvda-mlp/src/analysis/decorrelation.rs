@@ -1,4 +1,4 @@
-use crate::extended::Extended as E;
+use crate::analysis::arithmetic::Extended as E;
 
 #[derive(Clone, Debug, PartialEq)]
 #[repr(C)]
@@ -73,13 +73,16 @@ pub(crate) fn mlp_matrix_analysis_add(
         if !last.is_finite() || !delta.is_finite() || !work.energy[ch].is_finite() {
             return Err(());
         }
-        for n in 0..count {
-            let v = samples[n * stride + ch];
+        for (frame, differences) in samples[..count * stride]
+            .chunks_exact(stride)
+            .zip(difference[..count * 6].as_chunks_mut::<6>().0)
+        {
+            let v = frame[ch];
             if !(-8388608..=8388607).contains(&v) {
                 return Err(());
             }
             let next = f64::from(v) - last;
-            difference[n * 6 + ch] = next - delta;
+            differences[ch] = next - delta;
             last = f64::from(v);
             delta = next;
             energy = E::from_f64(last)
@@ -94,7 +97,7 @@ pub(crate) fn mlp_matrix_analysis_add(
     for ch in 0..work.channels as usize {
         for j in ch..work.channels as usize {
             let mut dot = E::from_f64(0.0);
-            for row in difference[..count * 6].chunks_exact(6) {
+            for row in difference[..count * 6].as_chunks::<6>().0 {
                 dot = dot.add(E::from_f64(row[ch]).mul(E::from_f64(row[j])));
             }
             let value = dot.add(E::from_f64(work.covariance[ch * 6 + j])).to_f64();
@@ -110,7 +113,11 @@ pub(crate) fn mlp_matrix_analysis_add(
     Ok(())
 }
 
-type Decorrelation = ([u32; 6], [f64; 36], [f64; 36]);
+pub(crate) struct Decorrelation {
+    order: [u32; 6],
+    transform: [f64; 36],
+    reduced: [f64; 36],
+}
 
 pub(crate) fn mlp_matrix_decorrelate(
     covariance: &[f64; 36],
@@ -205,7 +212,11 @@ pub(crate) fn mlp_matrix_decorrelate(
     if t.iter().chain(&c).any(|v| !v.is_finite()) {
         return Err(());
     }
-    Ok((sequence, t, c))
+    Ok(Decorrelation {
+        order: sequence,
+        transform: t,
+        reduced: c,
+    })
 }
 
 pub(crate) struct MatrixSelection<'a> {
@@ -217,7 +228,7 @@ pub(crate) struct MatrixSelection<'a> {
     pub qss: &'a [u32; 6],
     pub scale_count: &'a [u32; 6],
     pub allow_bypass: bool,
-    pub matrix: &'a mut [crate::matrix::MlpMatrixPrimitive; 6],
+    pub matrix: &'a mut [crate::analysis::matrix::MlpMatrixPrimitive; 6],
     pub primitives: &'a mut usize,
     pub bypass_bits: &'a mut u32,
 }
@@ -236,7 +247,7 @@ pub(crate) fn mlp_matrix_select_append(args: MatrixSelection<'_>) -> Result<(), 
         primitives,
         bypass_bits,
     } = args;
-    use crate::matrix::MlpMatrixPrimitive;
+    use crate::analysis::matrix::MlpMatrixPrimitive;
     if samples == 0
         || samples > i32::MAX as usize
         || !(1..=6).contains(&channels)
@@ -263,8 +274,11 @@ pub(crate) fn mlp_matrix_select_append(args: MatrixSelection<'_>) -> Result<(), 
     if bits != *bypass_bits || (0..channels).any(|i| qss[i] > 15 || scale_count[i] > 8) {
         return Err(());
     }
-    let (order, transform, reduced) =
-        mlp_matrix_decorrelate(covariance, ratio, channels, fixed, 10.0)?;
+    let Decorrelation {
+        order,
+        transform,
+        reduced,
+    } = mlp_matrix_decorrelate(covariance, ratio, channels, fixed, 10.0)?;
     for i in (0..channels).rev() {
         if count == 6 {
             break;
@@ -299,12 +313,12 @@ pub(crate) fn mlp_matrix_select_append(args: MatrixSelection<'_>) -> Result<(), 
             for j in 0..channels {
                 let rounded = E::from_f64(0.5)
                     .sub(
-                        E::from_f64((1u32 << precision) as f64)
+                        E::from_f64(f64::from(1u32 << precision))
                             .mul(E::from_f64(transform[target * 6 + j])),
                     )
                     .to_f64()
                     .floor();
-                let coefficient = rounded * (1u32 << (14 - precision)) as f64;
+                let coefficient = rounded * f64::from(1u32 << (14 - precision));
                 if !(-32768.0..=32767.0).contains(&coefficient) {
                     useful = false;
                 } else {
@@ -345,7 +359,7 @@ pub(crate) fn mlp_matrix_select(args: MatrixSelection<'_>) -> Result<(), ()> {
         primitives,
         bypass_bits,
     } = args;
-    let mut work = [crate::matrix::MlpMatrixPrimitive::default(); 6];
+    let mut work = [crate::analysis::matrix::MlpMatrixPrimitive::default(); 6];
     let mut count = 0;
     let mut bits = 0;
     mlp_matrix_select_append(MatrixSelection {
@@ -365,4 +379,32 @@ pub(crate) fn mlp_matrix_select(args: MatrixSelection<'_>) -> Result<(), ()> {
     *primitives = count;
     *bypass_bits = bits;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn analysis_honors_stride_and_preserves_state_on_failure() {
+        let mut state = MlpMatrixAnalysis::default();
+        mlp_matrix_analysis_init(&mut state, 2).unwrap();
+        let mut packed = state.clone();
+        mlp_matrix_analysis_add(&mut state, &[1, 2, i32::MAX, 3, 4, i32::MIN], 2, 3).unwrap();
+        mlp_matrix_analysis_add(&mut packed, &[1, 2, 3, 4], 2, 2).unwrap();
+        assert_eq!(state, packed);
+        assert_eq!(state.last[..2], [3.0, 4.0]);
+        assert_eq!(state.difference[..2], [2.0, 2.0]);
+        assert_eq!(state.energy[..2], [11.0, 21.0]);
+        assert_eq!(state.covariance[0], 2.0);
+        assert_eq!(state.covariance[1], 2.0);
+        assert_eq!(state.covariance[7], 4.0);
+
+        let before = state.clone();
+        assert_eq!(
+            mlp_matrix_analysis_add(&mut state, &[5, 6, 7, 8388608], 2, 2),
+            Err(())
+        );
+        assert_eq!(state, before);
+    }
 }

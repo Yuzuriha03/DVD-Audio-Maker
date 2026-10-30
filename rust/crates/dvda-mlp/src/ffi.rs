@@ -7,7 +7,19 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 mod layout;
 pub use layout::*;
 
+/// Reads interleaved PCM frames into a caller-owned buffer.
+///
+/// # Safety
+/// The encoder supplies storage for `capacity * channels` samples and a writable
+/// frame count. The callback must initialize the count on success, write at most
+/// `capacity` frames, and neither retain buffer pointers nor unwind. Its opaque
+/// context must remain valid for the synchronous encoding call.
 pub type Read = unsafe extern "C" fn(*mut c_void, *mut i32, usize, *mut usize) -> i32;
+/// Receives one access unit; the bytes are valid only during the callback.
+///
+/// # Safety
+/// The callback must not mutate or retain the byte buffer, or unwind. Its opaque
+/// context must remain valid for the synchronous encoding call.
 pub type Write = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> i32;
 
 pub(crate) struct StreamCall<'a> {
@@ -77,8 +89,12 @@ pub extern "C" fn mlp_encoder_abi_version() -> u32 {
 /// Synchronous C ABI for standard layouts, uniform depths, and a complete metadata packet.
 ///
 /// # Safety
-/// Config, metadata, result and callback buffers must satisfy mlp_encoder.h pointer contracts.
-/// Callbacks must not unwind and must write no more than the requested capacity.
+/// Config may be null (rejected), otherwise it must point to a readable, aligned
+/// `EncoderConfig`; its metadata array and packet buffers must be valid for their
+/// declared lengths throughout the call. Result may be null (rejected), otherwise
+/// it must point to aligned writable storage for one `EncoderResult`, exclusively
+/// accessible to the encoder and disjoint from config, metadata and callback data.
+/// Callbacks and opaque contexts must satisfy the [`Read`] and [`Write`] contracts.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mlp_encode_stream(
     config: *const EncoderConfig,
@@ -134,7 +150,7 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
         .checked_add(samples - 1)
         .ok_or("Frame count overflow")?
         / samples;
-    if aus > u32::MAX as u64 {
+    if aus > u64::from(u32::MAX) {
         return Err("Too many access units");
     }
     let mut records = Vec::new();
@@ -149,7 +165,7 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
             valid_bits: record.valid_bits,
         });
     }
-    crate::streaming::Stamps::new(&records, aus as usize)
+    crate::streaming::MetadataCursor::new(&records, aus as usize)
         .map_err(|_| "Invalid metadata timeline")?;
     Ok(records)
 }
@@ -157,7 +173,7 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
 /// `call.config` must be null or point to a readable `EncoderConfig`. `call.read`, `call.write`,
 /// `call.input` and `call.output` must follow the `Read`/`Write` callback contracts for the whole call.
 /// `result` must be valid for writes and not aliased. A `stamp_refresh` callback is only supported on
-/// x86_64; other targets reject it with -1.
+/// `x86_64`; other targets reject it with -1.
 unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
     let StreamCall {
         config,
@@ -208,20 +224,24 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
     };
     #[cfg(target_arch = "x86_64")]
     {
-        let status = crate::c_host::encode_stream(
-            config,
-            &c,
-            &profile,
-            &records,
-            crate::c_host::HostIo {
-                read,
-                input,
-                write,
-                output,
-                stamp_refresh,
-            },
-            result,
-        );
+        // Callback validity is supplied by stream's caller; configuration and
+        // metadata have been checked above. The host does not retain pointers.
+        let status = unsafe {
+            crate::pipeline::host::encode_stream(
+                config,
+                &c,
+                &profile,
+                &records,
+                crate::pipeline::host::HostIo {
+                    read,
+                    input,
+                    write,
+                    output,
+                    stamp_refresh,
+                },
+                result,
+            )
+        };
         if status == 0 {
             0
         } else if result.error[0] != 0 {
@@ -250,9 +270,9 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
         };
         let count = config.frames.div_ceil(samples as u64) as usize;
         let mut stamps =
-            crate::streaming::Stamps::new(&records, count).expect("validated metadata");
+            crate::streaming::MetadataCursor::new(&records, count).expect("validated metadata");
         // Buffer one restart interval so matrix decisions are bounded and stable.
-        let mut encoder = crate::AuEncoder::new(&c, &profile, 0);
+        let mut encoder = crate::encoder::AuEncoder::new(&c, &profile, 0);
         let mut queue = crate::timing::Queue::new(samples as u32);
         let mut buffer = vec![0; samples * channels * c.restart_interval];
         let deliver = |bytes: Vec<u8>, result: &mut EncoderResult| -> Result<(), i32> {
@@ -286,9 +306,14 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
                 at += received;
                 result.input_frames += received as u64;
             }
-            encoder.matrix = crate::pair_matrix(&c, &profile, &buffer[..needed * channels]);
-            encoder.quantization =
-                crate::quantization(&c, &profile, &buffer[..needed * channels], encoder.matrix);
+            encoder.matrix =
+                crate::encoder::pair_matrix(&c, &profile, &buffer[..needed * channels]);
+            encoder.quantization = crate::encoder::quantization(
+                &c,
+                &profile,
+                &buffer[..needed * channels],
+                encoder.matrix,
+            );
             for offset in 0..aus {
                 let au = base + offset;
                 let start = offset * samples * channels;
@@ -330,7 +355,7 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
 /// # Safety
 /// `config` must point to a readable `EncoderConfig`; `read`, `input`, `write` and `output` must follow
 /// the `Read`/`Write` callback contracts for the whole call. `stamp_refresh` is only called during this
-/// call, and only on x86_64.
+/// call, and only on `x86_64`.
 pub(crate) unsafe fn encode_stream_with_stamp_refresh(
     config: &EncoderConfig,
     profile: Profile,
@@ -394,6 +419,129 @@ mod tests {
         i32::from(s.output_error && s.writes == 2)
     }
     #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn abi_v1_layout_is_stable() {
+        use std::mem::{align_of, offset_of};
+        assert_eq!(mlp_encoder_abi_version(), 1);
+        assert_eq!(
+            (size_of::<StampRecord>(), align_of::<StampRecord>()),
+            (32, 8)
+        );
+        assert_eq!(offset_of!(StampRecord, start), 0);
+        assert_eq!(offset_of!(StampRecord, size), 8);
+        assert_eq!(offset_of!(StampRecord, packet), 16);
+        assert_eq!(offset_of!(StampRecord, valid_bits), 24);
+        assert_eq!(
+            (size_of::<EncoderConfig>(), align_of::<EncoderConfig>()),
+            (48, 8)
+        );
+        assert_eq!(offset_of!(EncoderConfig, struct_size), 0);
+        assert_eq!(offset_of!(EncoderConfig, abi_version), 4);
+        assert_eq!(offset_of!(EncoderConfig, sample_rate), 8);
+        assert_eq!(offset_of!(EncoderConfig, bits), 12);
+        assert_eq!(offset_of!(EncoderConfig, channels), 16);
+        assert_eq!(offset_of!(EncoderConfig, restart_interval), 20);
+        assert_eq!(offset_of!(EncoderConfig, frames), 24);
+        assert_eq!(offset_of!(EncoderConfig, metadata), 32);
+        assert_eq!(offset_of!(EncoderConfig, metadata_count), 40);
+        assert_eq!(
+            (size_of::<GroupsConfig>(), align_of::<GroupsConfig>()),
+            (80, 8)
+        );
+        assert_eq!(offset_of!(GroupsConfig, struct_size), 0);
+        assert_eq!(offset_of!(GroupsConfig, primary), 8);
+        assert_eq!(offset_of!(GroupsConfig, assignment), 56);
+        assert_eq!(offset_of!(GroupsConfig, group2_sample_rate), 60);
+        assert_eq!(offset_of!(GroupsConfig, group2_bits), 64);
+        assert_eq!(offset_of!(GroupsConfig, group2_frames), 72);
+        assert_eq!(
+            (size_of::<EncoderResult>(), align_of::<EncoderResult>()),
+            (224, 8)
+        );
+        assert_eq!(offset_of!(EncoderResult, status), 0);
+        assert_eq!(offset_of!(EncoderResult, access_units), 4);
+        assert_eq!(offset_of!(EncoderResult, input_frames), 8);
+        assert_eq!(offset_of!(EncoderResult, encoded_frames), 16);
+        assert_eq!(offset_of!(EncoderResult, output_bytes), 24);
+        assert_eq!(offset_of!(EncoderResult, error), 32);
+    }
+
+    #[test]
+    fn null_boundaries_initialize_results_and_preserve_error_priority() {
+        use std::ptr::{null, null_mut};
+        for entry in 0..4 {
+            let invoke = |result| unsafe {
+                match entry {
+                    0 => mlp_encode_stream(null(), None, null_mut(), None, null_mut(), result),
+                    1 => mlp_encode_stream_layout(
+                        null(),
+                        0,
+                        None,
+                        null_mut(),
+                        None,
+                        null_mut(),
+                        result,
+                    ),
+                    2 => mlp_encode_stream_depths(
+                        null(),
+                        0,
+                        0,
+                        None,
+                        null_mut(),
+                        None,
+                        null_mut(),
+                        result,
+                    ),
+                    _ => mlp_encode_stream_groups(
+                        null(),
+                        None,
+                        null_mut(),
+                        None,
+                        null_mut(),
+                        None,
+                        null_mut(),
+                        result,
+                    ),
+                }
+            };
+            assert_eq!(invoke(null_mut()), -1);
+            let mut result = std::mem::MaybeUninit::<EncoderResult>::uninit();
+            assert_eq!(invoke(result.as_mut_ptr()), -1);
+            let result = unsafe { result.assume_init() };
+            assert_eq!(result.status, -1);
+            assert_eq!(result.access_units, 0);
+            assert_eq!(result.input_frames, 0);
+            assert_eq!(result.encoded_frames, 0);
+            assert_eq!(result.output_bytes, 0);
+            let expected = if entry == 3 {
+                "Missing group configuration"
+            } else {
+                "Missing configuration"
+            };
+            let mut error = [0; 192];
+            for (slot, byte) in error.iter_mut().zip(expected.bytes()) {
+                *slot = byte as c_char;
+            }
+            assert_eq!(result.error, error);
+        }
+    }
+
+    #[test]
+    fn failure_text_is_truncated_terminated_and_cleared() {
+        let mut result = EncoderResult {
+            access_units: 7,
+            ..Default::default()
+        };
+        assert_eq!(fail(&mut result, -4, &"x".repeat(250)), -4);
+        assert!(result.error[..191].iter().all(|&c| c == b'x' as c_char));
+        assert_eq!(result.error[191], 0);
+        assert_eq!(fail(&mut result, -5, "short"), -5);
+        assert_eq!(result.status, -5);
+        assert_eq!(result.access_units, 7);
+        assert!(result.error[5..].iter().all(|&c| c == 0));
+    }
+
+    #[test]
     fn callbacks_results_and_failures() {
         let packet = [0, 0, 0x40, 0];
         let record = StampRecord {
@@ -410,7 +558,7 @@ mod tests {
             channels: 2,
             restart_interval: 0,
             frames: 41,
-            metadata: &record,
+            metadata: &raw const record,
             metadata_count: 1,
         };
         for frames in [u64::MAX - 159, u64::MAX] {
@@ -421,10 +569,19 @@ mod tests {
                 input_error: false,
                 output_error: false,
             };
-            let p = (&mut state as *mut State).cast();
+            let p = (&raw mut state).cast();
             let mut result = EncoderResult::default();
             assert_eq!(
-                unsafe { mlp_encode_stream(&invalid, Some(read), p, Some(write), p, &mut result) },
+                unsafe {
+                    mlp_encode_stream(
+                        &raw const invalid,
+                        Some(read),
+                        p,
+                        Some(write),
+                        p,
+                        &raw mut result,
+                    )
+                },
                 -1
             );
             assert_eq!((state.reads, state.writes), (0, 0));
@@ -439,10 +596,19 @@ mod tests {
                 input_error,
                 output_error,
             };
-            let p = (&mut state as *mut State).cast();
+            let p = (&raw mut state).cast();
             let mut result = EncoderResult::default();
             assert_eq!(
-                unsafe { mlp_encode_stream(&config, Some(read), p, Some(write), p, &mut result) },
+                unsafe {
+                    mlp_encode_stream(
+                        &raw const config,
+                        Some(read),
+                        p,
+                        Some(write),
+                        p,
+                        &raw mut result,
+                    )
+                },
                 status
             );
             assert_eq!(result.status, status);

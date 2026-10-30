@@ -1,12 +1,12 @@
 #[cfg(test)]
-use crate::c_encode::{IntervalOutput, PlannedAu};
+use crate::pipeline::encode::{IntervalOutput, PlannedAu};
 #[cfg(test)]
-use crate::c_predict::{MlpPredictFilter, MlpPredictState, mlp_predict_block};
-use crate::parameters::MlpCodingParams;
+use crate::analysis::prediction::{MlpPredictFilter, MlpPredictState, mlp_predict_block};
+use crate::syntax::parameters::MlpCodingParams;
 #[cfg(test)]
-use crate::parameters::MlpParameters;
+use crate::syntax::parameters::MlpParameters;
 #[cfg(test)]
-use crate::search::MlpSearchPlan;
+use crate::analysis::search::MlpSearchPlan;
 
 pub(crate) fn select(
     samples: &[i32],
@@ -93,7 +93,7 @@ pub(crate) fn encode_channels(
         }
         let mut a = MlpPredictFilter::default();
         let mut b = MlpPredictFilter::default();
-        let mut rc = 0;
+        let mut outcome = crate::analysis::prediction::PredictionOutcome::Predicted;
         let searched = context.search[ch].is_some()
             && (!context.restart || first != 0)
             && (p.count - first) & 1 == 0;
@@ -126,7 +126,7 @@ pub(crate) fn encode_channels(
             }
         } else if p.count > first {
             let feedback = b.order != 0;
-            rc = mlp_predict_block(
+            outcome = mlp_predict_block(
                 &mut a,
                 if feedback { Some(&mut b) } else { None },
                 &mut context.history[ch],
@@ -134,11 +134,9 @@ pub(crate) fn encode_channels(
                 &input[first..],
                 &mut output[first..],
                 context.prediction_reset[ch],
-            );
+            )?;
         }
-        if rc < 0 {
-            return Err(());
-        }
+        let fallback = outcome == crate::analysis::prediction::PredictionOutcome::Fallback;
         if a.order == 0 && !context.restart && p.previous.a[ch].order != 0 {
             a.order = 1;
             a.coefficient = [0.0; 8];
@@ -165,13 +163,13 @@ pub(crate) fn encode_channels(
                     .zip(&p.previous.b[ch].coefficient)
                     .any(|(a, b)| a.to_bits() != b.to_bits()),
         );
-        if rc == 1 && context.prediction_reset[ch] != 0 {
+        if fallback && context.prediction_reset[ch] != 0 {
             p.main.a[ch] = p.previous.a[ch].clone();
             p.main.b[ch] = p.previous.b[ch].clone();
             p.main.a[ch].changed = 0;
             p.main.b[ch].changed = 0;
         }
-        context.prediction_reset[ch] = u32::from(rc == 1);
+        context.prediction_reset[ch] = u32::from(fallback);
         if b.order == 0 {
             p.main.state[ch].changed = 0;
         }

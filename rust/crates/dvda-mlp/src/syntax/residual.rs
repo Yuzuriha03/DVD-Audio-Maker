@@ -1,5 +1,5 @@
-use crate::Bits;
-use crate::parameters::MlpCodingParams;
+use crate::bitstream::Bits;
+use crate::syntax::parameters::MlpCodingParams;
 
 fn floor_div(value: i64, divisor: i64) -> i64 {
     if value >= 0 {
@@ -24,14 +24,12 @@ pub(crate) fn mlp_entropy_code(x: i32, p: &MlpCodingParams, qss: u32) -> Result<
         return Err(());
     }
     let unit = 1u64 << b;
-    let (code, width);
-    if p.mode == 0 {
+    let (code, width) = if p.mode == 0 {
         let u = i64::from(x) - i64::from(p.offset) + (unit / 2) as i64;
         if u < 0 || u as u64 >= unit {
             return Err(());
         }
-        code = u as u64;
-        width = b;
+        (u as u64, b)
     } else {
         let central = 1u64 << (b + 3 - p.mode as u32);
         let u = i64::from(x) - i64::from(p.offset) + (central / 2) as i64;
@@ -40,20 +38,22 @@ pub(crate) fn mlp_entropy_code(x: i32, p: &MlpCodingParams, qss: u32) -> Result<
             if quotient < -7 {
                 return Err(());
             }
-            width = b + (-quotient) as u32 + 2;
-            code = unit | (u as u64 & (unit - 1));
+            let width = b + (-quotient) as u32 + 2;
+            (unit | (u as u64 & (unit - 1)), width)
         } else if u as u64 >= central {
             let quotient = floor_div(u - central as i64, unit as i64);
             if quotient > 6 {
                 return Err(());
             }
-            width = b + quotient as u32 + 3;
-            code = unit | (1u64 << (width - 2)) | (u as u64 & (unit - 1));
+            let width = b + quotient as u32 + 3;
+            (
+                unit | (1u64 << (width - 2)) | (u as u64 & (unit - 1)),
+                width,
+            )
         } else {
-            width = b + 4 - p.mode as u32;
-            code = u as u64 + central;
+            (u as u64 + central, b + 4 - p.mode as u32)
         }
-    }
+    };
     if width > 31 || width > b + 9 || code >= 1u64 << width {
         return Err(());
     }

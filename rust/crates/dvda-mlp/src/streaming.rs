@@ -1,19 +1,27 @@
-use crate::{Error, metadata::Metadata, stamp};
+use crate::{Error, encoder::stamp, metadata::Metadata};
 
-/// Metadata packets are bounded independently of stream duration.
-pub(crate) struct Stamps {
-    #[cfg(not(target_arch = "x86_64"))]
-    packets: Vec<(u64, Vec<u32>, bool)>,
-    #[cfg(not(target_arch = "x86_64"))]
+#[cfg(any(test, not(target_arch = "x86_64")))]
+struct StampPacket {
+    start: u64,
+    bits: Vec<u32>,
+    partial: bool,
+}
+
+/// Validates metadata packets and, on the fallback path, advances their bit cursor.
+pub(crate) struct MetadataCursor {
+    #[cfg(any(test, not(target_arch = "x86_64")))]
+    packets: Vec<StampPacket>,
+    #[cfg(any(test, not(target_arch = "x86_64")))]
     record: usize,
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(any(test, not(target_arch = "x86_64")))]
     position: usize,
 }
-impl Stamps {
+impl MetadataCursor {
     pub(crate) fn new(records: &[Metadata], count: usize) -> Result<Self, Error> {
         if records.is_empty() || records[0].start != 0 {
             return Err(Error::InvalidMetadata);
         }
+        #[cfg(any(test, not(target_arch = "x86_64")))]
         let mut packets = Vec::new();
         for (i, r) in records.iter().enumerate() {
             let p = &r.packet;
@@ -62,33 +70,68 @@ impl Stamps {
             } else {
                 full
             };
-            packets.push((r.start, bits, partial));
+            #[cfg(any(test, not(target_arch = "x86_64")))]
+            packets.push(StampPacket {
+                start: r.start,
+                bits,
+                partial,
+            });
+            #[cfg(all(not(test), target_arch = "x86_64"))]
+            let _ = bits;
         }
         Ok(Self {
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(any(test, not(target_arch = "x86_64")))]
             packets,
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(any(test, not(target_arch = "x86_64")))]
             record: 0,
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(any(test, not(target_arch = "x86_64")))]
             position: 0,
         })
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(any(test, not(target_arch = "x86_64")))]
     pub(crate) fn next(&mut self, au: usize) -> u32 {
         if self
             .packets
             .get(self.record + 1)
-            .is_some_and(|p| p.0 == au as u64)
+            .is_some_and(|p| p.start == au as u64)
         {
             self.record += 1;
             self.position = 0;
         }
-        let bits = &self.packets[self.record].1;
-        let bit = bits[self.position];
+        let packet = &self.packets[self.record];
+        let bit = packet.bits[self.position];
         self.position += 1;
-        if self.position == bits.len() && !self.packets[self.record].2 {
+        if self.position == packet.bits.len() && !packet.partial {
             self.position = 0;
         }
         bit
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packet_cursor_matches_timeline_across_repeat_and_partial_tail() {
+        let packet = vec![0, 1, 0x40, 0, 0xff];
+        let boundary = stamp(&packet).len() * 2;
+        let records = [
+            Metadata {
+                start: 0,
+                packet: packet.clone(),
+                valid_bits: 0,
+            },
+            Metadata {
+                start: boundary as u64,
+                packet,
+                valid_bits: 37,
+            },
+        ];
+        let count = boundary + 40;
+        let expected = crate::metadata::timeline(&records, count).unwrap();
+        let mut stamps = MetadataCursor::new(&records, count).unwrap();
+        let actual: Vec<_> = (0..count).map(|au| stamps.next(au)).collect();
+        assert_eq!(actual, expected);
     }
 }

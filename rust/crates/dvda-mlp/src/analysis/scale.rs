@@ -58,14 +58,14 @@ pub(crate) fn mlp_scale_analyze(
             return -1;
         }
     }
-    for b in 0..blocks {
-        for i in 0..channels {
-            let v = summary[b * 6 + i];
-            if v > 0xffffff {
+    let (summary, _) = summary.as_chunks::<6>();
+    for block in summary.iter().take(blocks) {
+        for (combined, &value) in combined[..channels].iter_mut().zip(block) {
+            if value > 0xffffff {
                 return -1;
             }
-            combined[i] |= v;
-            all |= v;
+            *combined |= value;
+            all |= value;
         }
     }
     let mut common = if all != 0 { trailing(all) } else { 0 };
@@ -80,9 +80,7 @@ pub(crate) fn mlp_scale_analyze(
         } else {
             24 - common
         };
-        if high[i] < minimum {
-            minimum = high[i];
-        }
+        minimum = minimum.min(high[i]);
     }
     work.maximum_bits = 25;
     let mut v = all;
@@ -102,9 +100,7 @@ pub(crate) fn mlp_scale_analyze(
             all >>= 1;
         }
         for item in &mut dimension[..channels] {
-            if *item < common {
-                *item = common;
-            }
+            *item = (*item).max(common);
         }
     } else {
         for i in 0..channels {
@@ -118,19 +114,13 @@ pub(crate) fn mlp_scale_analyze(
         }
     }
     for i in 0..channels {
-        work.shift[i] = if dimension[i] < low[i] {
-            dimension[i]
-        } else {
-            low[i]
-        };
+        work.shift[i] = dimension[i].min(low[i]);
         work.scale_count[i] = dimension[i] - work.shift[i];
-        if work.maximum_shift < work.shift[i] {
-            work.maximum_shift = work.shift[i];
-        }
-        for b in 0..blocks {
-            if work.scale_count[i] == 0 && summary[b * 6 + i] != 0 {
-                let q = trailing(summary[b * 6 + i]) - work.shift[i];
-                work.qss[b][i] = if q > 15 { 15 } else { q };
+        work.maximum_shift = work.maximum_shift.max(work.shift[i]);
+        for (qss, block) in work.qss[..blocks].iter_mut().zip(summary) {
+            if work.scale_count[i] == 0 && block[i] != 0 {
+                let q = trailing(block[i]) - work.shift[i];
+                qss[i] = q.min(15);
             }
         }
     }

@@ -26,19 +26,19 @@ pub(crate) fn mlp_interval_boundary(
     mut cycle: u32,
     preferred_span: u32,
     samples: u32,
-) -> i32 {
+) -> Result<bool, ()> {
     if cycle > i32::MAX as u32
         || preferred_span == 0
         || preferred_span > i32::MAX as u32
         || samples > 160
     {
-        return -1;
+        return Err(());
     }
     let mut work = *state;
     if samples == 0 {
         work.position = 0;
         *state = work;
-        return 1;
+        return Ok(true);
     }
     if cycle == 0 {
         cycle = preferred_span;
@@ -51,14 +51,12 @@ pub(crate) fn mlp_interval_boundary(
         work.position = 0;
         work.index = 0;
     }
-    let boundary = i32::from(
-        signed32(work.index.wrapping_mul(cycle))
-            <= signed32(work.segments.wrapping_mul(work.position)),
-    );
-    work.index = work.index.wrapping_add(boundary as u32);
+    let boundary = signed32(work.index.wrapping_mul(cycle))
+        <= signed32(work.segments.wrapping_mul(work.position));
+    work.index = work.index.wrapping_add(u32::from(boundary));
     work.position = work.position.wrapping_add(1);
     *state = work;
-    boundary
+    Ok(boundary)
 }
 
 #[cfg(test)]
@@ -101,13 +99,13 @@ mod tests {
     fn balanced_boundaries_and_empty_endpoint() {
         let mut state = MlpBoundaryState::default();
         let positions: Vec<_> = (0..20)
-            .filter(|_| mlp_interval_boundary(&mut state, 20, 8, 40) == 1)
+            .filter(|_| mlp_interval_boundary(&mut state, 20, 8, 40) == Ok(true))
             .collect();
         assert_eq!(positions, [0, 10]);
         let before = state;
-        assert_eq!(mlp_interval_boundary(&mut state, 20, 0, 40), -1);
+        assert_eq!(mlp_interval_boundary(&mut state, 20, 0, 40), Err(()));
         assert_eq!(state, before);
-        assert_eq!(mlp_interval_boundary(&mut state, 20, 8, 0), 1);
+        assert_eq!(mlp_interval_boundary(&mut state, 20, 8, 0), Ok(true));
         assert_eq!(state.index, before.index);
         assert_eq!(state.segments, before.segments);
         let mut slots = [MlpIntervalSlot::default(); MLP_INTERVAL_SLOTS];

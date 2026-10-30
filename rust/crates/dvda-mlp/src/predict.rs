@@ -15,21 +15,20 @@ fn adaptive(samples: &[i32], history: &[i32], order: usize) -> Option<Vec<i32>> 
         if history.len() + n < order {
             continue;
         }
-        let prior: Vec<f64> = (0..order)
-            .map(|k| {
-                let index = history.len() + n - k - 1;
-                f64::from(if index < history.len() {
-                    history[index]
-                } else {
-                    samples[index - history.len()]
-                })
-            })
-            .collect();
-        for row in 0..order {
-            for col in 0..order {
-                equations[row][col] += prior[row] * prior[col];
+        let mut prior = [0.0; 8];
+        for (k, value) in prior[..order].iter_mut().enumerate() {
+            let index = history.len() + n - k - 1;
+            *value = f64::from(if index < history.len() {
+                history[index]
+            } else {
+                samples[index - history.len()]
+            });
+        }
+        for (equation, &row_value) in equations[..order].iter_mut().zip(&prior) {
+            for (value, &column_value) in equation[..order].iter_mut().zip(&prior) {
+                *value += row_value * column_value;
             }
-            equations[row][order] += prior[row] * f64::from(x);
+            equation[order] += row_value * f64::from(x);
         }
     }
     for col in 0..order {

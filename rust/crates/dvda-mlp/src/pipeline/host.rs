@@ -1,5 +1,5 @@
 use crate::ffi::{EncoderConfig, EncoderResult, Read, Write};
-use crate::{format::Profile, metadata::Metadata, Config};
+use crate::{Config, format::Profile, metadata::Metadata};
 use std::cell::Cell;
 use std::ffi::c_void;
 
@@ -11,7 +11,11 @@ pub(crate) struct HostIo<'a> {
     pub stamp_refresh: Option<&'a mut dyn FnMut() -> Result<Option<Metadata>, i32>>,
 }
 
-pub(crate) fn encode_stream(
+/// # Safety
+/// The read and write callbacks and their opaque pointers must remain valid for this
+/// synchronous call. Read must write at most the requested number of interleaved
+/// frames; callbacks must not unwind or retain the supplied buffer pointers.
+pub(crate) unsafe fn encode_stream(
     config: &EncoderConfig,
     c: &Config,
     profile: &Profile,
@@ -19,8 +23,9 @@ pub(crate) fn encode_stream(
     io: HostIo<'_>,
     result: &mut EncoderResult,
 ) -> i32 {
-    use crate::c_encode::{encode, IntervalOutput, OutputFormat};
-    use crate::c_prepare::{CallbackInput, MatrixInterval};
+    use crate::pipeline::encode::{IntervalOutput, OutputFormat, encode};
+    use crate::pipeline::input::CallbackInput;
+    use crate::pipeline::prepare::MatrixInterval;
     let channels = c.channels as usize;
     let shift = u32::from(c.sample_rate > 48000) + u32::from(c.sample_rate > 96000);
     let samples = 40usize << shift;
@@ -42,13 +47,13 @@ pub(crate) fn encode_stream(
         channels,
         sample_rate: c.sample_rate,
         rate_field,
-        major: crate::major(c, profile, rate_code, rate_field, samples as u32),
+        major: crate::encoder::major(c, profile, rate_code, rate_field, samples as u32),
     };
     let mut order = [0; 6];
     order[..channels].copy_from_slice(&profile.order());
     let mut depths = [0; 6];
     for (ch, depth) in depths.iter_mut().enumerate().take(channels) {
-        *depth = profile.depth(c, ch) as u32;
+        *depth = u32::from(profile.depth(c, ch));
     }
     let status = Cell::new(0);
     let input_frames = Cell::new(0u64);
@@ -57,7 +62,7 @@ pub(crate) fn encode_stream(
     let mut refresh = io.stamp_refresh;
     let mut pcm = CallbackInput {
         channels,
-        bits: c.bits as u32,
+        bits: u32::from(c.bits),
         depths,
         order,
         au_samples: samples,
@@ -67,7 +72,7 @@ pub(crate) fn encode_stream(
         failed: false,
         callback: |buffer: &mut [i32], capacity: usize| {
             let mut received = 0;
-            let rc = unsafe { (read)(input, buffer.as_mut_ptr(), capacity, &mut received) };
+            let rc = unsafe { (read)(input, buffer.as_mut_ptr(), capacity, &raw mut received) };
             if rc != 0 || received == 0 || received > capacity {
                 status.set(-3);
                 return Err(());
@@ -92,13 +97,13 @@ pub(crate) fn encode_stream(
         restart: Default::default(),
         failure: None,
     };
-    let mut queue = crate::c_output_queue::MlpOutputQueue::mlp_output_queue_init();
-    let Some(mut stamp) = crate::c_stamp::mlp_stamp_init(records, (frames / samples) as u64) else {
+    let mut queue = crate::output::queue::MlpOutputQueue::mlp_output_queue_init();
+    let Some(mut stamp) = crate::pipeline::stamp::mlp_stamp_init(records, (frames / samples) as u64) else {
         return -1;
     };
     let ok = encode(
         &mut pcm,
-        crate::c_encode::EncodeOptions {
+        crate::pipeline::encode::EncodeOptions {
             format: &format,
             restart_interval: c.restart_interval as u32,
             cycle: c.sample_rate / samples as u32,
@@ -136,8 +141,8 @@ pub(crate) fn encode_stream(
         status.get()
     } else if pcm.failed {
         -3
-    } else if let Some(message) = pending.failure {
-        crate::ffi::fail(result, -5, message)
+    } else if let Some(failure) = pending.failure {
+        crate::ffi::fail(result, -5, failure.message())
     } else {
         -5
     }

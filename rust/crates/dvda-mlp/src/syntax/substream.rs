@@ -1,6 +1,6 @@
-use crate::Bits;
-use crate::c_restart::{MlpRestart, mlp_restart_put};
-use crate::parameters::{MlpParameters, mlp_parameters_put};
+use crate::bitstream::{Bits, ParameterBlock};
+use crate::syntax::restart::{MlpRestart, mlp_restart_put};
+use crate::syntax::parameters::{MlpParameters, mlp_parameters_put};
 
 pub(crate) struct MlpSubstream<'a> {
     pub main: &'a MlpParameters,
@@ -24,18 +24,21 @@ fn samples(
     first: usize,
     count: usize,
 ) -> Result<(), ()> {
-    for n in first..first + count {
+    let channels = p.minimum_channel as usize..=p.maximum_channel as usize;
+    let frames = s.residual[first * s.stride..(first + count) * s.stride].chunks_exact(s.stride);
+    for (offset, frame) in frames.enumerate() {
         if s.bypass_bits != 0 {
-            w.put(u32::from(s.bypass[n]) >> (8 - s.bypass_bits), s.bypass_bits);
+            w.put(
+                u32::from(s.bypass[first + offset]) >> (8 - s.bypass_bits),
+                s.bypass_bits,
+            );
         }
-        for ch in p.minimum_channel..=p.maximum_channel {
-            let ch = ch as usize;
-            crate::c_entropy::mlp_entropy_put(
-                w,
-                s.residual[n * s.stride + ch],
-                &p.coding[ch],
-                p.qss[ch],
-            )?;
+        for ((&residual, coding), &qss) in frame[channels.clone()]
+            .iter()
+            .zip(&p.coding[channels.clone()])
+            .zip(&p.qss[channels.clone()])
+        {
+            crate::syntax::residual::mlp_entropy_put(w, residual, coding, qss)?;
         }
     }
     Ok(())
@@ -43,7 +46,7 @@ fn samples(
 
 pub(crate) fn mlp_substream_put(writer: &mut Bits, s: &MlpSubstream<'_>) -> Result<(), ()> {
     if !writer.words.is_empty()
-        || writer.counted_words != 0
+        || writer.has_counted_words()
         || writer.width != 0
         || writer.pending != 0
         || s.count == 0
@@ -83,34 +86,34 @@ pub(crate) fn mlp_substream_put(writer: &mut Bits, s: &MlpSubstream<'_>) -> Resu
         }
     }
     let mut local = Bits::default();
-    let mut first = 0;
     if let Some(r) = s.restart {
         mlp_restart_put(&mut local, r, s.primary)?;
     }
     // The restart CRC needs actual header bits; subsequent fields only need their lengths.
-    local.count_only = writer.count_only;
-    if s.restart.is_some() {
+    local.copy_mode_from(writer);
+    let (first, baseline, block) = if s.restart.is_some() {
         if s.single_restart {
-            mlp_parameters_put(&mut local, s.main, s.previous, false, false)?;
+            mlp_parameters_put(&mut local, s.main, s.previous, ParameterBlock::Continuation)?;
             samples(&mut local, s, s.main, 0, s.count)?;
             local.put(1, 1);
             local.finish_into(writer, s.end_markers);
             return Ok(());
         }
         let initial = s.initial.ok_or(())?;
-        mlp_parameters_put(&mut local, initial, s.previous, true, true)?;
+        mlp_parameters_put(
+            &mut local,
+            initial,
+            s.previous,
+            ParameterBlock::RestartInitial,
+        )?;
         samples(&mut local, s, initial, 0, 8)?;
         local.put(2, 3);
-        first = 8;
+        (8, initial, ParameterBlock::RestartMain)
     } else {
         local.put(2, 2);
-    }
-    let baseline = if s.restart.is_some() {
-        s.initial.ok_or(())?
-    } else {
-        s.previous
+        (0, s.previous, ParameterBlock::Continuation)
     };
-    mlp_parameters_put(&mut local, s.main, baseline, s.restart.is_some(), false)?;
+    mlp_parameters_put(&mut local, s.main, baseline, block)?;
     samples(&mut local, s, s.main, first, s.count - first)?;
     local.put(1, 1);
     local.finish_into(writer, s.end_markers);

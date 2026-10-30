@@ -48,7 +48,7 @@ unsafe fn entry(
     }
 }
 /// # Safety
-/// All pointers and callbacks must obey mlp_encoder.h.
+/// Pointers and callbacks must satisfy [`mlp_encode_stream`]'s contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mlp_encode_stream_layout(
     config: *const EncoderConfig,
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn mlp_encode_stream_layout(
     }
 }
 /// # Safety
-/// All pointers and callbacks must obey mlp_encoder.h.
+/// Pointers and callbacks must satisfy [`mlp_encode_stream`]'s contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mlp_encode_stream_depths(
     config: *const EncoderConfig,
@@ -161,7 +161,12 @@ impl GroupSource {
             let capacity = (end - self.loaded).min(160);
             let mut got = 0;
             if unsafe {
-                (self.secondary.0)(self.secondary.1, buffer.as_mut_ptr(), capacity, &mut got)
+                (self.secondary.0)(
+                    self.secondary.1,
+                    buffer.as_mut_ptr(),
+                    capacity,
+                    &raw mut got,
+                )
             } != 0
                 || got == 0
                 || got > capacity
@@ -193,7 +198,7 @@ impl GroupSource {
     }
     fn midpoint(&mut self, low: usize, ch: usize) -> i32 {
         #[cfg(target_arch = "x86_64")]
-        let mut value = crate::extended::Extended::from_f64(0.0);
+        let mut value = crate::analysis::arithmetic::Extended::from_f64(0.0);
         #[cfg(not(target_arch = "x86_64"))]
         let mut value = 0.0;
         for (i, &coefficient) in crate::coefficients::COEFFICIENTS.iter().enumerate() {
@@ -204,8 +209,8 @@ impl GroupSource {
             #[cfg(target_arch = "x86_64")]
             {
                 value = value.add(
-                    crate::extended::Extended::from_f64(sample)
-                        .mul(crate::extended::Extended::from_f64(coefficient)),
+                    crate::analysis::arithmetic::Extended::from_f64(sample)
+                        .mul(crate::analysis::arithmetic::Extended::from_f64(coefficient)),
                 );
             }
             #[cfg(not(target_arch = "x86_64"))]
@@ -215,12 +220,12 @@ impl GroupSource {
         }
         let u = ((self.rng[ch] as i32) >> 7) as u32;
         self.rng[ch] = ((((self.rng[ch] & 127) << 11) ^ u) << 5) ^ u;
-        let dither =
-            f64::from((u >> 8) as i8 as i32 + u as i8 as i32) * 2f64.powi(16 - self.bits as i32);
+        let dither = f64::from(i32::from((u >> 8) as i8) + i32::from(u as i8))
+            * 2f64.powi(16 - self.bits as i32);
         let step = 1i64 << (24 - self.bits);
         #[cfg(target_arch = "x86_64")]
         let rounded = value
-            .add(crate::extended::Extended::from_f64(dither))
+            .add(crate::analysis::arithmetic::Extended::from_f64(dither))
             .to_f64()
             * 2f64.powi(self.bits as i32 - 24)
             + 0.5;
@@ -277,7 +282,7 @@ unsafe fn group_read_inner(
                 s.primary.1,
                 primary[done * s.first..].as_mut_ptr(),
                 count - done,
-                &mut got,
+                &raw mut got,
             )
         } != 0
             || got == 0
@@ -315,7 +320,9 @@ unsafe fn group_read_inner(
     0
 }
 /// # Safety
-/// All pointers and callbacks must obey mlp_encoder.h.
+/// Config may be null (rejected), otherwise it must point to a readable, aligned
+/// `GroupsConfig`. Its primary metadata, both read callbacks, write callback,
+/// opaque contexts and result must satisfy [`mlp_encode_stream`]'s contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mlp_encode_stream_groups(
     config: *const GroupsConfig,
@@ -424,7 +431,7 @@ unsafe fn groups(
             StreamCall {
                 config: c,
                 read: Some(group_read),
-                input: (&mut source as *mut GroupSource).cast(),
+                input: (&raw mut source).cast(),
                 write,
                 output,
                 profile: Some(profile),
