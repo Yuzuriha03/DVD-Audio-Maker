@@ -135,9 +135,9 @@ pub unsafe extern "C" fn mlp_encode_stream_depths(
     }
 }
 
-struct GroupSource {
-    primary: (Read, *mut c_void),
-    secondary: (Read, *mut c_void),
+struct GroupSource<'a> {
+    primary: callbacks::Reader<'a>,
+    secondary: callbacks::Reader<'a>,
     frames: usize,
     position: usize,
     loaded: usize,
@@ -150,29 +150,13 @@ struct GroupSource {
     rng: Vec<u32>,
     panicked: bool,
 }
-impl GroupSource {
-    /// # Safety
-    /// `self.secondary` must be a read callback with its opaque pointer that is valid for this call. Each
-    /// call may write at most `capacity` frames of `second` samples into the `160 * second` element buffer.
-    unsafe fn load(&mut self, need: usize) -> Result<(), ()> {
+impl GroupSource<'_> {
+    fn load(&mut self, need: usize) -> Result<(), ()> {
         let end = need.min(self.frames / self.ratio);
         let mut buffer = vec![0; 160 * self.second];
         while self.loaded < end {
             let capacity = (end - self.loaded).min(160);
-            let mut got = 0;
-            if unsafe {
-                (self.secondary.0)(
-                    self.secondary.1,
-                    buffer.as_mut_ptr(),
-                    capacity,
-                    &raw mut got,
-                )
-            } != 0
-                || got == 0
-                || got > capacity
-            {
-                return Err(());
-            }
+            let got = self.secondary.read(&mut buffer, capacity)?;
             for (n, frame) in buffer[..got * self.second]
                 .chunks_exact(self.second)
                 .enumerate()
@@ -240,64 +224,56 @@ unsafe extern "C" fn group_read(
     capacity: usize,
     frames: *mut usize,
 ) -> i32 {
-    match catch_unwind(AssertUnwindSafe(|| unsafe {
-        group_read_inner(p, pcm, capacity, frames)
+    // SAFETY: stream invokes this trampoline with its live GroupSource and
+    // exclusive, initialized PCM/count buffers; none are retained by the call.
+    let source = unsafe { &mut *p.cast::<GroupSource<'_>>() };
+    match catch_unwind(AssertUnwindSafe(|| {
+        if capacity == 0 || capacity > 160 {
+            return -1;
+        }
+        let pcm = unsafe {
+            std::slice::from_raw_parts_mut(pcm, capacity * (source.first + source.second))
+        };
+        let frames = unsafe { &mut *frames };
+        group_read_inner(source, pcm, capacity, frames)
     })) {
         Ok(status) => status,
         Err(_) => {
-            unsafe {
-                (*p.cast::<GroupSource>()).panicked = true;
-            }
+            source.panicked = true;
             -1
         }
     }
 }
-/// # Safety
-/// `p` must point to a live `GroupSource`, and no other reference to it may be in use. `pcm` must be
-/// valid for `capacity * (first + second)` writes and `frames` for a write. `capacity` is range-checked
-/// here (1..=160), so larger values are rejected rather than used.
-unsafe fn group_read_inner(
-    p: *mut c_void,
-    pcm: *mut i32,
+fn group_read_inner(
+    s: &mut GroupSource<'_>,
+    pcm: &mut [i32],
     capacity: usize,
-    frames: *mut usize,
+    frames: &mut usize,
 ) -> i32 {
-    let s = unsafe { &mut *p.cast::<GroupSource>() };
     if capacity == 0 || capacity > 160 {
         return -1;
     }
     let count = capacity.min(s.frames - s.position);
     if count == 0 {
-        unsafe {
-            *frames = 0;
-        }
+        *frames = 0;
         return 0;
     }
     let mut primary = vec![0; count * s.first];
     let mut done = 0;
     while done < count {
-        let mut got = 0;
-        if unsafe {
-            (s.primary.0)(
-                s.primary.1,
-                primary[done * s.first..].as_mut_ptr(),
-                count - done,
-                &raw mut got,
-            )
-        } != 0
-            || got == 0
-            || got > count - done
-        {
+        let Ok(got) = s.primary.read(&mut primary[done * s.first..], count - done) else {
             return -1;
-        }
+        };
         done += got;
     }
     let last = (s.position + count - 1) / s.ratio;
-    if unsafe { s.load(last + 1 + if s.ratio == 2 { 103 } else { 0 }) }.is_err() {
+    if s.load(last + 1 + if s.ratio == 2 { 103 } else { 0 })
+        .is_err()
+    {
         return -1;
     }
     let channels = s.first + s.second;
-    let pcm = unsafe { std::slice::from_raw_parts_mut(pcm, count * channels) };
+    let pcm = &mut pcm[..count * channels];
     for n in 0..count {
         let at = s.position + n;
         let low = at / s.ratio;
@@ -314,9 +290,7 @@ unsafe fn group_read_inner(
         }
     }
     s.position += count;
-    unsafe {
-        *frames = count;
-    }
+    *frames = count;
     0
 }
 /// # Safety
@@ -410,8 +384,10 @@ unsafe fn groups(
     let first = FIRST[profile.assignment];
     let second = c.channels as usize - first;
     let mut source = GroupSource {
-        primary: (read1, input1),
-        secondary: (read2, input2),
+        // SAFETY: the caller guarantees synchronous callback/context validity;
+        // validated group widths match the buffers used by GroupSource.
+        primary: unsafe { callbacks::Reader::new(read1, input1, first) },
+        secondary: unsafe { callbacks::Reader::new(read2, input2, second) },
         frames,
         position: 0,
         loaded: 0,

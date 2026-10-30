@@ -3,6 +3,8 @@ use crate::Error;
 use crate::{Config, format::Profile, metadata::Metadata};
 use std::ffi::{c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+#[path = "ffi_callbacks.rs"]
+pub(crate) mod callbacks;
 #[path = "ffi_layout.rs"]
 mod layout;
 pub use layout::*;
@@ -13,13 +15,17 @@ pub use layout::*;
 /// The encoder supplies storage for `capacity * channels` samples and a writable
 /// frame count. The callback must initialize the count on success, write at most
 /// `capacity` frames, and neither retain buffer pointers nor unwind. Its opaque
-/// context must remain valid for the synchronous encoding call.
+/// context must remain valid for the synchronous encoding call. The PCM buffer
+/// and frame count are initialized, exclusive borrows for this invocation. Shared
+/// opaque contexts are allowed only with sequential access; a callback must not
+/// invalidate another callback's context or access encoder-owned data through an alias.
 pub type Read = unsafe extern "C" fn(*mut c_void, *mut i32, usize, *mut usize) -> i32;
 /// Receives one access unit; the bytes are valid only during the callback.
 ///
 /// # Safety
 /// The callback must not mutate or retain the byte buffer, or unwind. Its opaque
-/// context must remain valid for the synchronous encoding call.
+/// context must remain valid for the synchronous encoding call. Shared contexts
+/// obey the same sequential-access and non-invalidation rules as [`Read`].
 pub type Write = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> i32;
 
 pub(crate) struct StreamCall<'a> {
@@ -91,7 +97,8 @@ pub extern "C" fn mlp_encoder_abi_version() -> u32 {
 /// # Safety
 /// Config may be null (rejected), otherwise it must point to a readable, aligned
 /// `EncoderConfig`; its metadata array and packet buffers must be valid for their
-/// declared lengths throughout the call. Result may be null (rejected), otherwise
+/// declared lengths throughout the call, initialized and not mutated (including
+/// by callbacks or other threads). Result may be null (rejected), otherwise
 /// it must point to aligned writable storage for one `EncoderResult`, exclusively
 /// accessible to the encoder and disjoint from config, metadata and callback data.
 /// Callbacks and opaque contexts must satisfy the [`Read`] and [`Write`] contracts.
@@ -222,26 +229,24 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
         Ok(records) => records,
         Err(message) => return fail(result, -1, message),
     };
+    // SAFETY: stream's caller supplies live callback contexts; validation above
+    // establishes the frame width. The adapters never escape this call.
+    let mut reader = unsafe { callbacks::Reader::new(read, input, c.channels as usize) };
+    let mut writer = unsafe { callbacks::Writer::new(write, output) };
     #[cfg(target_arch = "x86_64")]
     {
-        // Callback validity is supplied by stream's caller; configuration and
-        // metadata have been checked above. The host does not retain pointers.
-        let status = unsafe {
-            crate::pipeline::host::encode_stream(
-                config,
-                &c,
-                &profile,
-                &records,
-                crate::pipeline::host::HostIo {
-                    read,
-                    input,
-                    write,
-                    output,
-                    stamp_refresh,
-                },
-                result,
-            )
-        };
+        let status = crate::pipeline::host::encode_stream(
+            config,
+            &c,
+            &profile,
+            &records,
+            crate::pipeline::host::HostIo {
+                read: &mut reader,
+                write: &mut writer,
+                stamp_refresh,
+            },
+            result,
+        );
         if status == 0 {
             0
         } else if result.error[0] != 0 {
@@ -275,8 +280,8 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
         let mut encoder = crate::encoder::AuEncoder::new(&c, &profile, 0);
         let mut queue = crate::timing::Queue::new(samples as u32);
         let mut buffer = vec![0; samples * channels * c.restart_interval];
-        let deliver = |bytes: Vec<u8>, result: &mut EncoderResult| -> Result<(), i32> {
-            if unsafe { write(output, bytes.as_ptr(), bytes.len()) } != 0 {
+        let mut deliver = |bytes: Vec<u8>, result: &mut EncoderResult| -> Result<(), i32> {
+            if writer.write(&bytes).is_err() {
                 return Err(-4);
             }
             result.access_units += 1;
@@ -288,21 +293,10 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
             let needed = (config.frames - result.input_frames).min((aus * samples) as u64) as usize;
             let mut at = 0;
             while at < needed {
-                let mut received = 0;
                 let capacity = (needed - at).min(samples);
-                if unsafe {
-                    read(
-                        input,
-                        buffer[at * channels..].as_mut_ptr(),
-                        capacity,
-                        &mut received,
-                    )
-                } != 0
-                    || received == 0
-                    || received > capacity
-                {
+                let Ok(received) = reader.read(&mut buffer[at * channels..], capacity) else {
                     return fail(result, -3, "Input callback failed or cancelled");
-                }
+                };
                 at += received;
                 result.input_frames += received as u64;
             }

@@ -1,26 +1,22 @@
-use crate::ffi::{EncoderConfig, EncoderResult, Read, Write};
+use crate::ffi::{
+    EncoderConfig, EncoderResult,
+    callbacks::{Reader, Writer},
+};
 use crate::{Config, format::Profile, metadata::Metadata};
 use std::cell::Cell;
-use std::ffi::c_void;
 
-pub(crate) struct HostIo<'a> {
-    pub read: Read,
-    pub input: *mut c_void,
-    pub write: Write,
-    pub output: *mut c_void,
-    pub stamp_refresh: Option<&'a mut dyn FnMut() -> Result<Option<Metadata>, i32>>,
+pub(crate) struct HostIo<'a, 'io, 'refresh> {
+    pub read: &'a mut Reader<'io>,
+    pub write: &'a mut Writer<'io>,
+    pub stamp_refresh: Option<&'refresh mut dyn FnMut() -> Result<Option<Metadata>, i32>>,
 }
 
-/// # Safety
-/// The read and write callbacks and their opaque pointers must remain valid for this
-/// synchronous call. Read must write at most the requested number of interleaved
-/// frames; callbacks must not unwind or retain the supplied buffer pointers.
-pub(crate) unsafe fn encode_stream(
+pub(crate) fn encode_stream(
     config: &EncoderConfig,
     c: &Config,
     profile: &Profile,
     records: &[Metadata],
-    io: HostIo<'_>,
+    io: HostIo<'_, '_, '_>,
     result: &mut EncoderResult,
 ) -> i32 {
     use crate::pipeline::encode::{IntervalOutput, OutputFormat, encode};
@@ -58,7 +54,6 @@ pub(crate) unsafe fn encode_stream(
     let status = Cell::new(0);
     let input_frames = Cell::new(0u64);
     let read = io.read;
-    let input = io.input;
     let mut refresh = io.stamp_refresh;
     let mut pcm = CallbackInput {
         channels,
@@ -71,12 +66,9 @@ pub(crate) unsafe fn encode_stream(
         position: 0,
         failed: false,
         callback: |buffer: &mut [i32], capacity: usize| {
-            let mut received = 0;
-            let rc = unsafe { (read)(input, buffer.as_mut_ptr(), capacity, &raw mut received) };
-            if rc != 0 || received == 0 || received > capacity {
+            let received = read.read(buffer, capacity).map_err(|()| {
                 status.set(-3);
-                return Err(());
-            }
+            })?;
             input_frames.set(input_frames.get() + received as u64);
             Ok(received)
         },
@@ -98,7 +90,9 @@ pub(crate) unsafe fn encode_stream(
         failure: None,
     };
     let mut queue = crate::output::queue::MlpOutputQueue::mlp_output_queue_init();
-    let Some(mut stamp) = crate::pipeline::stamp::mlp_stamp_init(records, (frames / samples) as u64) else {
+    let Some(mut stamp) =
+        crate::pipeline::stamp::mlp_stamp_init(records, (frames / samples) as u64)
+    else {
         return -1;
     };
     let ok = encode(
@@ -122,8 +116,7 @@ pub(crate) unsafe fn encode_stream(
                 .iter()
                 .flat_map(|w| (*w as u16).to_be_bytes())
                 .collect();
-            let rc = unsafe { (io.write)(io.output, bytes.as_ptr(), bytes.len()) };
-            if rc != 0 {
+            if io.write.write(&bytes).is_err() {
                 status.set(-4);
                 return false;
             }

@@ -30,6 +30,31 @@ cost tie breaking, arithmetic order, serialization and failure commit points
 remain part of the behavior contract. Refactoring must not merge corresponding
 reference functions or reorganize their call relationships.
 
+## Unsafe boundary
+
+Production unsafe code is restricted by a crate-level lint to `direct` and
+`ffi` (including its private adapters); the optional external-oracle test module
+is separately exempted. Unsafe operations in unsafe functions must still use
+explicit blocks. The encoding, analysis, serialization and output modules use
+safe Rust.
+
+`ffi_callbacks.rs` owns private, non-cloneable reader/writer capabilities with
+unsafe constructors confined to the FFI module. Their lifetime contracts require
+live synchronous contexts and sequential access when contexts are shared. Safe
+methods accept slices, check frame capacity before invoking a reader, and reject
+zero/overreported frame counts and callback failures. The host and grouped-input
+logic use these methods, not raw function pointers. This cannot protect against
+an external callback that violates its unsafe contract by writing out of bounds.
+
+The remaining raw operations initialize ABI results, borrow validated foreign
+config/metadata, invoke foreign callbacks, and bridge the safe direct API through
+synchronous trampolines. Config/metadata must stay initialized and immutable;
+results and callback buffers must obey the documented exclusive-access rules.
+Direct callbacks borrow their shared context one at a time and retain no buffer
+references. Callback panics are caught only with `panic = "unwind"`; release
+`panic = "abort"` still terminates the process. Oracle DLL loading/function-pointer
+conversion is test-only and is not a production dependency.
+
 ## Refactoring verification
 
 The crate-wide idiomatic rewrite remains in progress. The phase reports record

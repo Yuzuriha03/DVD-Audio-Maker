@@ -1,5 +1,7 @@
 //! Pure Rust MLP encoder with adaptive entropy, prediction and decorrelation.
 //! Production links this crate directly; its DLL is a development ABI adapter.
+#![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 #[cfg(target_arch = "x86_64")]
 mod analysis;
@@ -10,11 +12,14 @@ mod pipeline;
 #[cfg(target_arch = "x86_64")]
 mod syntax;
 mod coefficients;
+#[allow(unsafe_code)]
 pub mod direct;
 mod entropy;
+#[allow(unsafe_code)]
 pub mod ffi;
 pub mod format;
 #[cfg(all(test, windows, target_arch = "x86_64", feature = "external-oracle"))]
+#[allow(unsafe_code)]
 mod frozen_reference;
 pub mod metadata;
 mod predict;
