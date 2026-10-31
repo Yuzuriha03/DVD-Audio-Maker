@@ -523,10 +523,10 @@
     "設定プロファイルを書き込めません。"
   ],
   [
-    "Language must be auto, en, zh-CN, or ja.",
-    "语言设置必须为 auto、en、zh-CN 或 ja。",
-    "Language must be auto, en, zh-CN, or ja.",
-    "言語には auto、en、zh-CN、ja のいずれかを指定してください。"
+    "Language must be auto, en, zh-CN, zh-TW, ja, or ko.",
+    "语言设置必须为 auto、en、zh-CN、zh-TW、ja 或 ko。",
+    "Language must be auto, en, zh-CN, zh-TW, ja, or ko.",
+    "言語には auto、en、zh-CN、zh-TW、ja、ko のいずれかを指定してください。"
   ],
   [
     "Final directory is missing: {0}",

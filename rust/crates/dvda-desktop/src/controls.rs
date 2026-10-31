@@ -73,14 +73,18 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     );
     let language = combo(parent, ID_LANGUAGE, 1055, 10, 100, 120);
     combo_add(language, tr(lang, "language_zh"));
+    combo_add(language, tr(lang, "language_zh_hant"));
     combo_add(language, tr(lang, "language_en"));
     combo_add(language, tr(lang, "language_ja"));
+    combo_add(language, tr(lang, "language_ko"));
     combo_select(
         language,
         match lang {
             Lang::Zh => 0,
-            Lang::En => 1,
-            Lang::Ja => 2,
+            Lang::ZhHant => 1,
+            Lang::En => 2,
+            Lang::Ja => 3,
+            Lang::Ko => 4,
         },
     );
     let origin = label!(
@@ -240,7 +244,8 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         760,
         194,
         &mut labels,
-    );    c.custom_bytes = text_field!(
+    );
+    c.custom_bytes = text_field!(
         page_start,
         tr(lang, "custom_bytes"),
         "custom_bytes",
@@ -254,7 +259,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         .last()
         .map(|(handle, _)| *handle)
         .unwrap_or(ptr::null_mut());
-     {
+    {
         ShowWindow(custom_bytes_label, SW_HIDE);
         ShowWindow(c.custom_bytes, SW_HIDE);
     }
@@ -268,7 +273,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         48,
         &mut labels,
     );
-     {
+    {
         win::send_int(advanced_hint, WM_SETFONT, small_font() as usize, 1);
     }
     pages.push(create_page(parent));
@@ -331,11 +336,12 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         .map(|(handle, _)| *handle)
         .unwrap_or(ptr::null_mut());
     let import_browse = browse_buttons.last().copied().unwrap_or(ptr::null_mut());
-     {
+    {
         ShowWindow(import_folder_label, SW_HIDE);
         ShowWindow(c.import_folder, SW_HIDE);
         ShowWindow(import_browse, SW_HIDE);
-    }    c.audio_note = label!(
+    }
+    c.audio_note = label!(
         page_audio,
         tr(lang, "mlp_note"),
         "audio_note",
@@ -493,8 +499,20 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     combo_add(log_view, tr(lang, "summary"));
     combo_add(log_view, tr(lang, "detail"));
     combo_select(log_view, 0);
-    let only_issues = checkbox(parent, tr(lang, "issues"), ID_ONLY_ISSUES, (170, 508, 150, 24), false);
-    let live = checkbox(parent, tr(lang, "live"), ID_LIVE, (330, 508, 150, 24), false);
+    let only_issues = checkbox(
+        parent,
+        tr(lang, "issues"),
+        ID_ONLY_ISSUES,
+        (170, 508, 150, 24),
+        false,
+    );
+    let live = checkbox(
+        parent,
+        tr(lang, "live"),
+        ID_LIVE,
+        (330, 508, 150, 24),
+        false,
+    );
     check(live, true);
     let copy = button(parent, tr(lang, "copy"), ID_COPY, 720, 478, 125, 28);
     let export = button(parent, tr(lang, "export"), ID_EXPORT, 855, 478, 130, 28);
@@ -503,12 +521,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         log_frame,
         "EDIT",
         "",
-        WS_CHILD
-            | WS_VISIBLE
-            | ES_MULTILINE
-            | ES_AUTOVSCROLL
-            | ES_READONLY
-            | ES_WANTRETURN,
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | ES_WANTRETURN,
         0,
         0,
         1140,
@@ -542,7 +555,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         install_scrollbar(log_scrollbar, parent);
         touch::install(log, true);
     }
-     {
+    {
         win::send_int(log, EM_SETLIMITTEXT, 1_000_000, 0);
     }
     // Keep the legacy command IDs for automation/tests, but expose the
@@ -585,7 +598,13 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         (copy, "copy"),
         (export, "export"),
     ]);
-    c.advanced = checkbox(parent, tr(lang, "advanced"), ID_ADVANCED, (440, 42, 215, 22), false);
+    c.advanced = checkbox(
+        parent,
+        tr(lang, "advanced"),
+        ID_ADVANCED,
+        (440, 42, 215, 22),
+        false,
+    );
     labels.push((c.advanced, "advanced"));
     let caption_minimize = caption_button(parent, ID_MINIMIZE);
     let caption_maximize = caption_button(parent, ID_MAXIMIZE);
@@ -658,7 +677,11 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         log_scrollbar,
         muted,
     });
-    PAINT_FIELDS.with(|fields| fields.borrow_mut().insert(parent as usize, Rc::clone(&paint)));
+    PAINT_FIELDS.with(|fields| {
+        fields
+            .borrow_mut()
+            .insert(parent as usize, Rc::clone(&paint))
+    });
     let mut state = UiState {
         paint,
         main_window: parent,
@@ -775,8 +798,10 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         let message = presentation::phrase(
             lang,
             "无法保存完整日志，请检查磁盘空间或目录权限。",
+            "無法儲存完整日志，請檢查磁盤空間或目錄權限。",
             "Cannot save the full log; check disk space and folder permissions.",
             "完全なログを保存できません。空き容量とフォルダー権限を確認してください。",
+            "전체 로그를 저장할 수 없습니다. 디스크 공간과 폴더 권한을 확인하세요.",
         );
         add_log(&mut state, &format!("[警告] {message} {error}"), true);
     }
@@ -820,7 +845,13 @@ pub(crate) fn check_field(
     hwnd
 }
 
-pub(crate) fn checkbox(parent: Hwnd, text: &str, id: usize, (x, y, w, h): (i32, i32, i32, i32), panel: bool) -> Hwnd {
+pub(crate) fn checkbox(
+    parent: Hwnd,
+    text: &str,
+    id: usize,
+    (x, y, w, h): (i32, i32, i32, i32),
+    panel: bool,
+) -> Hwnd {
     let hwnd = create!(
         parent,
         "BUTTON",
@@ -838,7 +869,6 @@ pub(crate) fn checkbox(parent: Hwnd, text: &str, id: usize, (x, y, w, h): (i32, 
     hwnd
 }
 pub(crate) fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-
     let hwnd = create!(
         parent,
         "COMBOBOX",
@@ -866,7 +896,7 @@ pub(crate) fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> 
         right: 0,
         bottom: 0,
     };
-     {
+    {
         GetClientRect(hwnd, &mut rect);
     }
     touch::install_combo(hwnd);
@@ -908,7 +938,15 @@ pub(crate) fn button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32
     )
 }
 
-pub(crate) fn primary_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
+pub(crate) fn primary_button(
+    parent: Hwnd,
+    text: &str,
+    id: usize,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Hwnd {
     owner_draw_button(
         parent,
         text,
@@ -918,7 +956,15 @@ pub(crate) fn primary_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32
     )
 }
 
-pub(crate) fn danger_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
+pub(crate) fn danger_button(
+    parent: Hwnd,
+    text: &str,
+    id: usize,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Hwnd {
     owner_draw_button(
         parent,
         text,
@@ -928,7 +974,15 @@ pub(crate) fn danger_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32,
     )
 }
 
-pub(crate) fn tab_button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
+pub(crate) fn tab_button(
+    parent: Hwnd,
+    text: &str,
+    id: usize,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Hwnd {
     owner_draw_button(
         parent,
         text,
@@ -1161,11 +1215,7 @@ pub(crate) unsafe fn draw_checkbox(hwnd: Hwnd) {
         let fill = if !enabled {
             c_disabled_fill()
         } else if checked {
-            if hover {
-                c_accent_hover()
-            } else {
-                c_accent()
-            }
+            if hover { c_accent_hover() } else { c_accent() }
         } else {
             c_card()
         };
@@ -1303,7 +1353,7 @@ pub(crate) unsafe extern "system" fn combo_arrow_proc(
         WM_LBUTTONDOWN => return 0,
         WM_LBUTTONUP => {
             let combo = unsafe { (*pointer).combo };
-             {
+            {
                 if IsWindowEnabled(combo) != 0 {
                     SetFocus(combo);
                     win::send_int(combo, CB_SHOWDROPDOWN, 1, 0);
@@ -1453,7 +1503,7 @@ pub(crate) fn sync_combo_overlays() {
         // can drift (width changes or a DPI/font change of the item height).
         let mut combo_rect: Rect = Rect::default();
         let mut overlay_rect: Rect = Rect::default();
-         {
+        {
             GetClientRect(combo, &mut combo_rect);
             GetClientRect(overlay, &mut overlay_rect);
         }
@@ -1475,7 +1525,8 @@ pub(crate) fn sync_combo_overlays() {
     }
 }
 
-pub(crate) fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec {
+pub(crate) fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
+    let CreateSpec {
         parent,
         class,
         title,
@@ -1524,9 +1575,23 @@ pub(crate) fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec
         if window_class(hwnd) == "Static" {
             #[link(name = "comctl32")]
             unsafe extern "system" {
-                fn SetWindowSubclass(hwnd: Hwnd, proc: unsafe extern "system" fn(Hwnd, u32, Wparam, Lparam, usize, usize) -> Lresult, id: usize, data: usize) -> i32;
+                fn SetWindowSubclass(
+                    hwnd: Hwnd,
+                    proc: unsafe extern "system" fn(
+                        Hwnd,
+                        u32,
+                        Wparam,
+                        Lparam,
+                        usize,
+                        usize,
+                    ) -> Lresult,
+                    id: usize,
+                    data: usize,
+                ) -> i32;
             }
-            unsafe { SetWindowSubclass(hwnd, buffered_label_proc, 2, 0); }
+            unsafe {
+                SetWindowSubclass(hwnd, buffered_label_proc, 2, 0);
+            }
         }
         if window_class(parent) == "DVD_AUDIO_PAGE_RUST" {
             touch::install(hwnd, false);
@@ -1535,7 +1600,7 @@ pub(crate) fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {    let CreateSpec
         if let Ok(mut registry) = registry.lock() {
             registry.push((hwnd as isize, design.0, design.1, design.2, design.3));
         }
-         {
+        {
             win::send_int(hwnd, WM_SETFONT, ui_font() as usize, 1);
             if is_edit {
                 // Breathing room inside the borderless field.
@@ -1570,7 +1635,7 @@ pub(crate) fn window_class(hwnd: Hwnd) -> String {
     }
 }
 pub(crate) fn check(hwnd: Hwnd, value: bool) {
-     {
+    {
         win::send_int(hwnd, BM_SETCHECK, usize::from(value), 0);
     }
 }
@@ -1584,12 +1649,12 @@ pub(crate) fn combo_add(hwnd: Hwnd, text: &str) {
     }
 }
 pub(crate) fn combo_select(hwnd: Hwnd, index: i32) {
-     {
+    {
         win::send_int(hwnd, CB_SETCURSEL, index.max(0) as usize, 0);
     }
 }
 pub(crate) fn combo_items(hwnd: Hwnd, items: &[&str], selected: i32) {
-     {
+    {
         win::send_int(hwnd, CB_RESETCONTENT, 0, 0);
     }
     for item in items {
@@ -1622,7 +1687,11 @@ pub(crate) fn single_line_label(hwnd: Hwnd) {
     unsafe {
         let style = GetWindowLongPtrW(hwnd, -16) as u32;
         // SS_LEFTNOWORDWRAP | SS_NOPREFIX | SS_ENDELLIPSIS
-        SetWindowLongPtrW(hwnd, -16, ((style & !0x1f) | 0x0c | 0x0080 | 0x4000) as isize);
+        SetWindowLongPtrW(
+            hwnd,
+            -16,
+            ((style & !0x1f) | 0x0c | 0x0080 | 0x4000) as isize,
+        );
     }
 }
 
@@ -1666,7 +1735,7 @@ pub(crate) fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         return;
     }
     state.tooltip_window = tooltip_window;
-     {
+    {
         win::send_int(tooltip_window, 0x0418, 0, 460);
     }
     let c = &state.controls;

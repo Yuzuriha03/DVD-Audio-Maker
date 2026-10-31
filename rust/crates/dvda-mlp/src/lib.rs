@@ -5,12 +5,6 @@
 
 #[cfg(target_arch = "x86_64")]
 mod analysis;
-#[cfg(target_arch = "x86_64")]
-mod output;
-#[cfg(target_arch = "x86_64")]
-mod pipeline;
-#[cfg(target_arch = "x86_64")]
-mod syntax;
 mod coefficients;
 #[allow(unsafe_code)]
 pub mod direct;
@@ -22,8 +16,14 @@ pub mod format;
 #[allow(unsafe_code)]
 mod frozen_reference;
 pub mod metadata;
+#[cfg(target_arch = "x86_64")]
+mod output;
+#[cfg(target_arch = "x86_64")]
+mod pipeline;
 mod predict;
 mod streaming;
+#[cfg(target_arch = "x86_64")]
+mod syntax;
 mod timing;
 
 mod bitstream;

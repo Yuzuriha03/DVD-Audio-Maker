@@ -44,7 +44,10 @@ const INTEGER_MESSAGES: &[u32] = &[
 /// never hands a pointer to another window.
 pub(crate) fn send_int(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> isize {
     if !INTEGER_MESSAGES.contains(&message) {
-        debug_assert!(false, "message {message:#x} carries pointers; use an unsafe call");
+        debug_assert!(
+            false,
+            "message {message:#x} carries pointers; use an unsafe call"
+        );
         return 0;
     }
     // SAFETY: the message is in the integer-only list, so neither parameter is

@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
 use crate::bitstream::Bits;
-use crate::syntax::restart::MlpRestart;
 use crate::syntax::access_unit::{interval_fits, serialize_planned};
 use crate::syntax::parameters::{MlpCodingParams, MlpParameters};
+use crate::syntax::restart::MlpRestart;
 
 pub(crate) struct PlannedAu {
     pub initial: MlpParameters,
@@ -32,10 +32,14 @@ impl IntervalFailure {
     pub(crate) fn message(self) -> &'static str {
         match self {
             Self::Fallback => "Cannot build lossless oversized-AU fallback",
-            Self::OversizedFallback => "Access unit too large after lossless fallback (1536-byte limit)",
+            Self::OversizedFallback => {
+                "Access unit too large after lossless fallback (1536-byte limit)"
+            }
             Self::Serialization => "Cannot serialize lossless access unit",
             Self::AccessUnitTooLarge => "Access unit too large (1536-byte limit)",
-            Self::FifoRateLimit => "MLP FIFO rate limit exceeded; input cannot be encoded at the required delivery rate",
+            Self::FifoRateLimit => {
+                "MLP FIFO rate limit exceeded; input cannot be encoded at the required delivery rate"
+            }
         }
     }
 }
@@ -364,8 +368,13 @@ pub(crate) fn encode(
                 history[ch].input[i] = input[7 - i] as f32;
             }
             if first != 0 {
-                planned.initial.coding[ch] =
-                    crate::pipeline::channels::select(&output[..first], qss, base.coding[ch], true, limit);
+                planned.initial.coding[ch] = crate::pipeline::channels::select(
+                    &output[..first],
+                    qss,
+                    base.coding[ch],
+                    true,
+                    limit,
+                );
             }
             let mut a = crate::analysis::prediction::MlpPredictFilter::default();
             let mut b = crate::analysis::prediction::MlpPredictFilter::default();

@@ -1,12 +1,12 @@
 #[cfg(test)]
-use crate::pipeline::encode::{IntervalOutput, PlannedAu};
-#[cfg(test)]
 use crate::analysis::prediction::{MlpPredictFilter, MlpPredictState, mlp_predict_block};
+#[cfg(test)]
+use crate::analysis::search::MlpSearchPlan;
+#[cfg(test)]
+use crate::pipeline::encode::{IntervalOutput, PlannedAu};
 use crate::syntax::parameters::MlpCodingParams;
 #[cfg(test)]
 use crate::syntax::parameters::MlpParameters;
-#[cfg(test)]
-use crate::analysis::search::MlpSearchPlan;
 
 pub(crate) fn select(
     samples: &[i32],

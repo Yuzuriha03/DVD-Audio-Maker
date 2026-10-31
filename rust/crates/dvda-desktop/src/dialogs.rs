@@ -37,7 +37,6 @@ pub(crate) fn browse_target(hwnd: Hwnd, state: &mut UiState, id: usize) {
             state.lang(),
             FileKind::Font,
         ),
-
     };
     if let Some(path) = result {
         set_text(target, &path);

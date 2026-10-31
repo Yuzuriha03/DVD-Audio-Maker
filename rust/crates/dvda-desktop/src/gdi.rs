@@ -97,7 +97,7 @@ pub(crate) fn brush(color: u32) -> Hbrush {
     if let Some(value) = cache.get(&color) {
         return *value as Hbrush;
     }
-    let handle =  {
+    let handle = {
         let brush = CreateSolidBrush(color);
         if brush.is_null() {
             GetSysColorBrush(15)
@@ -138,7 +138,10 @@ pub(crate) fn header_icon() -> Handle {
             0,
         );
         if icon.is_null() {
-            LoadIconW(GetModuleHandleW(ptr::null()), ptr::without_provenance::<u16>(1))
+            LoadIconW(
+                GetModuleHandleW(ptr::null()),
+                ptr::without_provenance::<u16>(1),
+            )
         } else {
             icon
         }
@@ -160,10 +163,21 @@ pub(crate) fn wrapped_text_height(text: &str, font: Handle, width: i32) -> i32 {
         return 20;
     }
     let wide_text = wide(text);
-    let mut rect = Rect { left: 0, top: 0, right: scale(width).max(1), bottom: 0 };
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: scale(width).max(1),
+        bottom: 0,
+    };
     unsafe {
         let old = SelectObject(dc, font);
-        DrawTextW(dc, wide_text.as_ptr(), -1, &mut rect, 0x0010 | DT_CALCRECT | DT_NOPREFIX); // DT_WORDBREAK
+        DrawTextW(
+            dc,
+            wide_text.as_ptr(),
+            -1,
+            &mut rect,
+            0x0010 | DT_CALCRECT | DT_NOPREFIX,
+        ); // DT_WORDBREAK
         SelectObject(dc, old);
         DeleteDC(dc);
     }
@@ -203,7 +217,7 @@ pub(crate) fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 
 /// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn font_child_proc(hwnd: Hwnd, parameter: Lparam) -> i32 {
-     {
+    {
         win::send_int(hwnd, WM_SETFONT, parameter as usize, 1);
     }
     1

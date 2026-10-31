@@ -160,22 +160,60 @@ pub fn normalize_language(
 ) -> Result<String, Failure> {
     let language = crate::config::trim(language.unwrap_or("")).to_ascii_lowercase();
     Ok(match language.as_str() {
-        "" | "auto" => match installed_language {
-            "zh" => "zh-CN",
+        "" | "auto" => match installed_language.to_ascii_lowercase().as_str() {
+            "zh-tw" | "zh-hant" | "zh-hk" | "zh-mo" => "zh-TW",
+            "zh" | "zh-cn" | "zh-hans" => "zh-CN",
+            "ko" | "ko-kr" => "ko",
             "ja" => "ja",
             _ => "en",
         },
-        "zh" | "zh-cn" | "zh-hans" | "中文" => "zh-CN",
+        "zh" | "zh-cn" | "zh-hans" | "中文" | "简体中文" => "zh-CN",
+        "zh-tw" | "zh-hant" | "zh-hk" | "zh-mo" | "繁體中文" | "繁体中文" => "zh-TW",
         "en" | "en-us" | "en-gb" | "english" => "en",
+        "ko" | "ko-kr" | "한국어" | "korean" => "ko",
         "ja" | "ja-jp" | "日本語" | "japanese" => "ja",
         _ => {
             return Err(Failure::validation(
                 "Argument",
-                "Language must be auto, en, zh-CN, or ja.",
+                "Language must be auto, en, zh-CN, zh-TW, ja, or ko.",
             ));
         }
     }
     .into())
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::normalize_language;
+
+    #[test]
+    fn korean_language_aliases() {
+        for alias in ["ko", "ko-KR", "한국어", "korean"] {
+            assert_eq!(normalize_language(Some(alias), "en").unwrap(), "ko");
+        }
+        assert_eq!(normalize_language(None, "ko-KR").unwrap(), "ko");
+        assert_eq!(normalize_language(Some("auto"), "ko").unwrap(), "ko");
+    }
+
+    #[test]
+    fn traditional_aliases_and_installed_language_are_normalized() {
+        for alias in ["zh-TW", "zh-Hant", "zh-HK", "zh-MO", "繁體中文", "繁体中文"] {
+            assert_eq!(normalize_language(Some(alias), "en").unwrap(), "zh-TW");
+        }
+        for installed in ["zh-TW", "zh-Hant", "zh-HK", "zh-MO"] {
+            assert_eq!(normalize_language(None, installed).unwrap(), "zh-TW");
+            assert_eq!(
+                normalize_language(Some("auto"), installed).unwrap(),
+                "zh-TW"
+            );
+        }
+        for language in ["zh-CN", "en", "ja", "zh-TW", "ko"] {
+            assert_eq!(
+                normalize_language(Some(language), "zh-TW").unwrap(),
+                language
+            );
+        }
+    }
 }
 
 fn read_profile(path: &str, defaults: &Value) -> Result<Value, Failure> {

@@ -52,7 +52,7 @@ After native inputs are available:
 tools\win-build\build-all.cmd ^
   --media-runtime build\msvc-native\ffmpeg-static\install ^
   --image-runtime build\msvc-native\image-runtime ^
-  --image-author build\static-ffmpeg-20261013\author ^
+  --image-author build\rust-author-production ^
   --prebuilt build\msvc-native\package-assets ^
   --version v1.0
 ```
@@ -60,3 +60,13 @@ tools\win-build\build-all.cmd ^
 This calls `dvda-toolchain package` and writes `DVD-Audio-Maker-v1.0-win-x64.zip` under the ignored release directory. The staging root contains one GUI EXE with embedded runtime components and companion user documentation. It excludes .NET files, the developer CLI, PDBs, build JSON and local profiles.
 
 The packager normalizes Windows extended paths before invoking `Compress-Archive`, checks the archive can be extracted, and audits the final file list. Place the three user READMEs, licenses and both NOTICE files beside the EXE in the ZIP; runtime files are embedded.
+
+### Lossless menu font optimization
+
+For the static Regular TTC containing all four SC/JP/KR/TC faces, use the build-only Python dependencies `fonttools==4.68.0` and `cffsubr==0.4.0`:
+
+```powershell
+.venv\Scripts\python.exe tools\win-build\optimize-menu-fonts.py build\font-sources\DvdaNotoCJK-Regular.ttc build\font-sources\optimized\DvdaNotoCJK-Regular.ttc
+```
+
+The destination must not exist. The script compresses the shared CFF2 outlines using subroutines, shares identical collection tables, and writes only after checking all 65,535 glyph outlines, font/private parameters, glyph order, and every non-CFF2 table (excluding the dependent `head.checksumAdjustment`). Unsupported hinted or variable programs are rejected. No characters or regional faces are removed; mappings, layout, metrics and metadata remain unchanged. After native rendering acceptance and `dvda-toolchain font verify-collection`, copy the result into `build\msvc-native\package-assets\fonts\DvdaNotoCJK-Regular.ttc` before packaging. Keep the source unchanged for comparison. Raw font savings are not the same as compressed release ZIP savings.

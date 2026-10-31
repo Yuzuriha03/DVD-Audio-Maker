@@ -177,13 +177,14 @@ The matrix analysis and half-rate interpolation arithmetic now use Rust `f64`
 (including `f64::ln`), not x87 inline assembly or software x87 emulation.
 Function boundaries, operation order and the integer lossless coding pipeline
 are retained. Decoded PCM, format compatibility and output-size checks are useful
-regressions, but do not substitute for historical C acceptance. Identical PCM,
-parameters and explicit metadata require byte-for-byte and raw SHA256 equality.
-Default metadata comparisons may use only the documented
-`mlp-coded-v1-no-auxiliary-stamp` scheme after validating original header parity;
-this is coded-stream equality, not raw-file equality. See
-[MLP parity requirements](../../../docs/MLP-PARITY.md). The native-float results
-below do not establish historical C acceptance.
+regressions. By user authorization, complete historical C byte/coded-stream
+comparison is no longer a migration or release gate, now or for future releases.
+Historical explicit-metadata comparisons still report byte-for-byte and raw
+SHA256 equality; default-metadata comparisons may use the documented
+`mlp-coded-v1-no-auxiliary-stamp` scheme after validating original header parity.
+This is coded-stream equality, not raw-file equality. See
+[MLP parity documentation](../../../docs/MLP-PARITY.md). The native-float results
+below do not establish historical C equality.
 
 The encoder no longer saves, changes or restores x87/MXCSR control state. Callers
 and callbacks must use the standard Rust floating-point environment (round to
@@ -211,11 +212,17 @@ cargo test --manifest-path rust\Cargo.toml -p dvda-mlp --release --test native_f
 
 ### Prediction-search budget experiment
 
-The primary joint predictor search now attempts 4 coefficient perturbations
-instead of 16. Candidate-pool evaluation, fresh-candidate generation, stability
-checks and the FIR fallback are retained. This changes search choices and RNG
-progression, not the lossless reconstruction or bitstream format. Serialization
-caching and output-buffer reuse experiments were reverted at user request.
+The primary joint predictor search again attempts 16 coefficient perturbations,
+matching the historical C implementation. The earlier reduction to 4 changed
+candidate choices and RNG progression, causing frozen-vector output differences.
+Restoring 16 passes all 116 explicit-metadata frozen vectors, including their
+output lengths and raw SHA256 hashes. Historical C comparison remains available
+for diagnostics, but is no longer a release gate by user authorization.
+Serialization caching and output-buffer
+reuse experiments were reverted at user request.
+
+The following measurements describe the historical four-perturbation experiment,
+not the current production search budget.
 
 On Windows x64, three alternating baseline/current runs of the 192-case matrix
 (12,801 frames each) measured summed encoder times of 1.023/0.970,
@@ -253,7 +260,7 @@ inputs, memory savings or physical-player compatibility.
 
 FFmpeg must be on PATH. The test does not certify physical DVD players or all
 mixed-rate layouts. Historical oracle tests are optional for normal Rust builds,
-but strict frozen C comparison remains required for migration acceptance;
+but complete frozen C comparison is no longer a migration or release gate;
 see [MLP-PARITY](../../../docs/MLP-PARITY.md).
 
 ## Building and using the encoder
@@ -352,7 +359,8 @@ returns usage/status 2 for `--capabilities`, while the legacy probe returns DLL
 capabilities/status 11. This is not a passed decoder acceptance run and does
 not certify native mixed-rate playback.
 
-No production fallback to C is implemented. Earlier publication decisions are
-historical, not approval to release this refactoring. Migration completion and
-release still require the strict acceptance documented in MLP-PARITY and renewed
-user authorization. These requirements do not restore a default C dependency.
+No production fallback to C is implemented. By user authorization, complete
+historical C comparison is no longer required for this or future releases.
+Lossless/format regression checks and honest reporting of observed differences
+remain applicable. Publication still requires user authorization; this does not
+restore a default C dependency.

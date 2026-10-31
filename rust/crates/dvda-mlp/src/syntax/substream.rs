@@ -1,6 +1,6 @@
 use crate::bitstream::{Bits, ParameterBlock};
-use crate::syntax::restart::{MlpRestart, mlp_restart_put};
 use crate::syntax::parameters::{MlpParameters, mlp_parameters_put};
+use crate::syntax::restart::{MlpRestart, mlp_restart_put};
 
 pub(crate) struct MlpSubstream<'a> {
     pub main: &'a MlpParameters,

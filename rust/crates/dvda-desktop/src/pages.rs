@@ -111,8 +111,8 @@ pub(crate) unsafe extern "system" fn page_proc(
                 SetTextColor(dc, if muted { c_muted() } else { c_ink() });
                 panel_brush() as Lresult
             }
-        },
-        WM_CTLCOLOREDIT =>  {
+        }
+        WM_CTLCOLOREDIT => {
             let dc = wparam as Handle;
             SetBkMode(dc, 1);
             if IsWindowEnabled(hwnd) == 0 {
@@ -124,18 +124,18 @@ pub(crate) unsafe extern "system" fn page_proc(
                 SetTextColor(dc, c_ink());
                 card_brush() as Lresult
             }
-        },
-        WM_CTLCOLORLISTBOX =>  {
+        }
+        WM_CTLCOLORLISTBOX => {
             SetBkMode(wparam as Handle, 1);
             SetBkColor(wparam as Handle, c_card());
             SetTextColor(wparam as Handle, c_ink());
             card_brush() as Lresult
-        },
-        WM_CTLCOLORBTN =>  {
+        }
+        WM_CTLCOLORBTN => {
             SetBkMode(wparam as Handle, 1);
             SetBkColor(wparam as Handle, c_panel());
             panel_brush() as Lresult
-        },
+        }
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }
 }
@@ -170,7 +170,10 @@ mod wheel_tests {
                     .sum();
                 assert_eq!(distance, direction * step);
                 assert_eq!(remainder, 0);
-                assert_eq!(wheel_pixels(direction * 240, step, &mut remainder), direction * step * 2);
+                assert_eq!(
+                    wheel_pixels(direction * 240, step, &mut remainder),
+                    direction * step * 2
+                );
             }
         }
     }
@@ -195,10 +198,21 @@ pub(crate) unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lp
         return 1;
     }
     let rect = window_rect(hwnd);
-    let mut point = Point { x: rect.left, y: rect.top };
+    let mut point = Point {
+        x: rect.left,
+        y: rect.top,
+    };
     unsafe {
         ScreenToClient(*page, &mut point);
-        SetWindowPos(hwnd, ptr::null_mut(), point.x, point.y + delta, 0, 0, 0x011D);
+        SetWindowPos(
+            hwnd,
+            ptr::null_mut(),
+            point.x,
+            point.y + delta,
+            0,
+            0,
+            0x011D,
+        );
     }
     1
 }
@@ -210,7 +224,10 @@ pub(crate) fn page_content_height(page: Hwnd) -> i32 {
         if GetParent(hwnd) == *page && (GetWindowLongPtrW(hwnd, -16) as u32) & WS_VISIBLE != 0 {
             let mut rect: Rect = Rect::default();
             GetWindowRect(hwnd, &mut rect);
-            let mut corner = Point { x: rect.left, y: rect.bottom };
+            let mut corner = Point {
+                x: rect.left,
+                y: rect.bottom,
+            };
             ScreenToClient(*page, &mut corner);
             *bottom = (*bottom).max(corner.y);
         }
@@ -219,7 +236,11 @@ pub(crate) fn page_content_height(page: Hwnd) -> i32 {
     let mut found = (page, 0);
     unsafe { EnumChildWindows(page, lowest, &mut found as *mut _ as Lparam) };
     let scroll = GetWindowLongPtrW(page, GWLP_USERDATA) as i32;
-    if found.1 <= 0 { scale(100) } else { found.1 + scroll + scale(14) }
+    if found.1 <= 0 {
+        scale(100)
+    } else {
+        found.1 + scroll + scale(14)
+    }
 }
 
 pub(crate) fn page_is_narrow(width: i32) -> bool {
@@ -248,7 +269,7 @@ pub(crate) fn scroll_page_with_bar(hwnd: Hwnd, requested: i32, explicit: bool, b
         right: 0,
         bottom: 0,
     };
-     {
+    {
         GetClientRect(hwnd, &mut rect);
     }
     let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
@@ -326,7 +347,7 @@ pub(crate) fn resize_page_fields(page: Hwnd) {
         right: 0,
         bottom: 0,
     };
-     {
+    {
         GetClientRect(page, &mut rect);
     }
     let width = unscale(rect.right).max(1);

@@ -1,6 +1,6 @@
-use crate::bitstream::Bits;
 use crate::analysis::matrix::MlpMatrixPrimitive;
 use crate::analysis::search::{MlpWireFilter, MlpWireState};
+use crate::bitstream::Bits;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C)]

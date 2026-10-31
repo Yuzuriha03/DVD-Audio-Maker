@@ -289,7 +289,7 @@ fn package(options: Args) -> Result<(), String> {
         return Err("Required shared CJK font collection is missing".into());
     }
     let mut typemap = String::from("<typemap>");
-    for (face, language) in [(0, "SC"), (1, "JP"), (2, "KR")] {
+    for (face, language) in [(0, "SC"), (1, "JP"), (2, "KR"), (3, "TC")] {
         for prefix in ["DVDA-", ""] {
             typemap.push_str(&format!("<type name=\"{prefix}Noto-Sans-CJK-{language}\" family=\"Noto Sans CJK {language}\" format=\"truetype\" style=\"normal\" stretch=\"normal\" weight=\"400\" face=\"{face}\" glyphs=\"fonts/DvdaNotoCJK-Regular.ttc\"/>"));
         }

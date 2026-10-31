@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md)
 
-将 FLAC、ALAC/M4A 音乐制作成 DVD-Audio ISO，支持 MLP / LPCM 编码、自动分盘、选曲菜单、专辑封面和成品验证。适用于 Windows x64，界面与日志支持中文、英文和日语。
+将 FLAC、ALAC/M4A 音乐制作成 DVD-Audio ISO，支持 MLP / LPCM 编码、自动分盘、选曲菜单、专辑封面和成品验证。适用于 Windows x64，界面与日志支持简体中文、繁體中文、英文和日语。
 
 发布包是 Windows x64 原生 Rust GUI。
 
@@ -106,6 +106,8 @@ cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --wo
 ```
 
 `dry-run` 仅供开发调试，通过源码 CLI 使用；它会准备音源、编码 MLP 并生成独立索引，不生成 ISO，也不是零写入操作。GUI 只提供检查、制作、验证。内置编码配置使用 `mlp-batch`，已有文件导入使用 `external`。采样率与位深配置键为 `DVDA_MLP_SAMPLE_RATE`、`DVDA_MLP_BITS`；旧配置请使用这些名称重新保存。
+
+CLI 可用 `--language zh-CN|zh-TW|en|ja|ko` 或 `DVDA_LANGUAGE` 选择核心任务消息的语言；繁体也接受 `zh-Hant`、`zh-HK` 和 `zh-MO`，韩语也接受 `ko-KR`、`korean` 和 `한국어`。五种语言共享英文 CLI 帮助及直接参数错误，未匹配翻译目录的第三方诊断和未知消息保留原文。JSON 字段名、配置键及用户路径、曲名和专辑名不随语言改变；`Language` 字段反映归一化后的所选语言。
 
 - [Windows 构建、原生组件与发布](tools/win-build/README.md)
 

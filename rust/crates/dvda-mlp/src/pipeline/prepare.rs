@@ -1,10 +1,12 @@
-use super::input::PcmInput;
 #[cfg(test)]
 use super::input::MatrixInput;
+use super::input::PcmInput;
 use crate::analysis::decorrelation::{
     MlpMatrixAnalysis, mlp_matrix_analysis_add, mlp_matrix_analysis_reset, mlp_matrix_select,
 };
-use crate::analysis::matrix::{MlpMatrixPrimitive, mlp_matrix_apply_blocks, mlp_matrix_apply_interval};
+use crate::analysis::matrix::{
+    MlpMatrixPrimitive, mlp_matrix_apply_blocks, mlp_matrix_apply_interval,
+};
 use crate::analysis::scale::{MlpScalePlan, mlp_scale_analyze};
 use crate::analysis::search::{MlpSearchPlan, MlpSearchPool, mlp_search_interval};
 
@@ -217,7 +219,7 @@ pub(crate) fn prepare_matrix(
                     maximum_a: if limited { 4 } else { 8 },
                     maximum_b: if !limited && total >= 40 { 4 } else { 0 },
                     lag: 32,
-                    perturbations: 4,
+                    perturbations: 16,
                 },
                 if limited { 2 } else { 0 },
                 &mut m.prediction[ch],

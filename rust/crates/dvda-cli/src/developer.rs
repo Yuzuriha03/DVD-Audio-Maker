@@ -131,7 +131,7 @@ fn execute(arguments: &[String]) -> Result<i32> {
     };
     if command == "help" || args.iter().any(|a| matches!(a.as_str(), "--help" | "-h")) {
         println!(
-            "Usage: dvda-cli [config|prepare|plan|build|verify|quick-check|audit|convert|aob-pts|mlp|alac|iso] [--profile settings.json] [--language zh-CN|en|ja]\n  build [--dry-run] [--no-resume]\n  convert PATH... [--in-place] [--dry-run] [--level 0..8]\n  mlp (--check|--align) [-o DIR] [-q] FILE...\n  alac check INPUT | alac repair INPUT [OUTPUT]\n  iso list ISO [INNER] | iso extract ISO INNER OUTPUT\n  quick-check|audit [--iso-dir DIR] [--manifest FILE] [--log FILE]"
+            "Usage: dvda-cli [config|prepare|plan|build|verify|quick-check|audit|convert|aob-pts|mlp|alac|iso] [--profile settings.json] [--language zh-CN|zh-TW|en|ja|ko]\n  build [--dry-run] [--no-resume]\n  convert PATH... [--in-place] [--dry-run] [--level 0..8]\n  mlp (--check|--align) [-o DIR] [-q] FILE...\n  alac check INPUT | alac repair INPUT [OUTPUT]\n  iso list ISO [INNER] | iso extract ISO INNER OUTPUT\n  quick-check|audit [--iso-dir DIR] [--manifest FILE] [--log FILE]"
         );
         return Ok(0);
     }
@@ -165,21 +165,35 @@ fn execute(arguments: &[String]) -> Result<i32> {
             }
             let continue_task = flag(&mut args, "--continue")?;
             let restart_task = flag(&mut args, "--restart")?;
-            if continue_task && restart_task { return Err(usage("Choose --continue or --restart, not both")); }
+            if continue_task && restart_task {
+                return Err(usage("Choose --continue or --restart, not both"));
+            }
             empty(&args)?;
             let recovery = options.has_unfinished_task();
             if recovery || continue_task || restart_task {
-                let restart = if restart_task { true } else if continue_task { false } else {
+                let restart = if restart_task {
+                    true
+                } else if continue_task {
+                    false
+                } else {
                     use std::io::{IsTerminal, Write};
                     if !std::io::stdin().is_terminal() {
-                        return Err(usage("Unfinished task found: choose build --continue or build --restart"));
+                        return Err(usage(
+                            "Unfinished task found: choose build --continue or build --restart",
+                        ));
                     }
                     loop {
                         eprint!("Unfinished task: 1) Continue production  2) Restart production: ");
                         std::io::stderr().flush().map_err(failure)?;
                         let mut line = String::new();
-                        if std::io::stdin().read_line(&mut line).map_err(failure)? == 0 { return Err(failure("No recovery choice received; files preserved")); }
-                        match line.trim() { "1" => break false, "2" => break true, _ => {} }
+                        if std::io::stdin().read_line(&mut line).map_err(failure)? == 0 {
+                            return Err(failure("No recovery choice received; files preserved"));
+                        }
+                        match line.trim() {
+                            "1" => break false,
+                            "2" => break true,
+                            _ => {}
+                        }
                     }
                 };
                 options = options.recover_task(restart).map_err(failure)?;
@@ -195,7 +209,9 @@ fn execute(arguments: &[String]) -> Result<i32> {
                     let verified = dvda_core::app::run_verify(&options, &mut events)?;
                     result.succeeded = verified.succeeded;
                     result.diagnostics.extend(verified.diagnostics);
-                    if result.succeeded { options.finish_task(); }
+                    if result.succeeded {
+                        options.finish_task();
+                    }
                 }
                 Ok::<_, String>(result)
             })();
@@ -206,15 +222,22 @@ fn execute(arguments: &[String]) -> Result<i32> {
                         eprint!("Production unfinished: 1) Keep progress  2) Delete progress: ");
                         std::io::stderr().flush().map_err(failure)?;
                         let mut line = String::new();
-                        if std::io::stdin().read_line(&mut line).map_err(failure)? == 0 { break; }
+                        if std::io::stdin().read_line(&mut line).map_err(failure)? == 0 {
+                            break;
+                        }
                         match line.trim() {
                             "1" => break,
-                            "2" => { options.discard_task(); break; }
+                            "2" => {
+                                options.discard_task();
+                                break;
+                            }
                             _ => {}
                         }
                     }
                 } else {
-                    eprintln!("Production unfinished; progress preserved. Choose build --continue or build --restart next time.");
+                    eprintln!(
+                        "Production unfinished; progress preserved. Choose build --continue or build --restart next time."
+                    );
                 }
             }
             let result = outcome.map_err(failure)?;

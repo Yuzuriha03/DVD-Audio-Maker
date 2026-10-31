@@ -25,7 +25,10 @@ impl Workspace {
         reject_reparse(build)?;
         let path = build.join("unfinished-task");
         if Self::unfinished(build) && restart.is_none() {
-            return Err("An unfinished task exists. Choose Continue production or Restart production.".into());
+            return Err(
+                "An unfinished task exists. Choose Continue production or Restart production."
+                    .into(),
+            );
         }
         let task = Self::open(path, retain)?;
         if restart == Some(true) {
@@ -87,12 +90,20 @@ impl Workspace {
             match fs::create_dir(&path) {
                 Ok(()) => return Self::open(path, false),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(format!("Cannot create task workspace {}: {error}", path.display())),
+                Err(error) => {
+                    return Err(format!(
+                        "Cannot create task workspace {}: {error}",
+                        path.display()
+                    ));
+                }
             }
         }
     }
     fn open(path: PathBuf, retain_unfinished: bool) -> Result<Self, String> {
-        let lease_path = if path.file_name().is_some_and(|name| name == "unfinished-task") {
+        let lease_path = if path
+            .file_name()
+            .is_some_and(|name| name == "unfinished-task")
+        {
             path.with_file_name(".unfinished-task.lease")
         } else {
             path.with_extension("lease")
@@ -109,7 +120,10 @@ impl Workspace {
         if retain_unfinished && path.exists() {
             reject_reparse(&path)?;
             if fs::read(path.join(".owner")).ok().as_deref() != Some(b"dvda-task-v1") {
-                return Err(format!("Refusing to adopt an unowned task directory: {}", path.display()));
+                return Err(format!(
+                    "Refusing to adopt an unowned task directory: {}",
+                    path.display()
+                ));
             }
         }
         if retain_unfinished && path.join(".finished").exists() {

@@ -11,7 +11,9 @@ static UI_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
 fn ui_test_guard() -> std::sync::MutexGuard<'static, ()> {
-    UI_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner())
+    UI_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
 }
 
 mod touch;
@@ -53,13 +55,13 @@ mod i18n;
 mod layout;
 mod logs;
 mod pages;
+#[cfg(test)]
+mod presentation_tests;
 mod scrollbar;
 mod settings;
 mod task;
 mod theme;
 mod window;
-#[cfg(test)]
-mod presentation_tests;
 
 use commands::*;
 use controls::*;
@@ -345,7 +347,6 @@ struct MeasureItemStruct {
     item_data: usize,
 }
 
-
 #[repr(C)]
 struct WndClass {
     style: u32,
@@ -447,7 +448,6 @@ struct DrawItemStruct {
     rect: Rect,
     data: usize,
 }
-
 
 #[repr(C)]
 struct ToolInfo {
@@ -694,7 +694,17 @@ unsafe extern "system" {
     safe fn CreateCompatibleDC(dc: Handle) -> Handle;
     safe fn GetTextMetricsW(dc: Handle, metrics: &mut TextMetric) -> i32;
     safe fn CreateCompatibleBitmap(dc: Handle, width: i32, height: i32) -> Handle;
-    safe fn BitBlt(dest: Handle, x: i32, y: i32, width: i32, height: i32, source: Handle, source_x: i32, source_y: i32, rop: u32) -> i32;
+    safe fn BitBlt(
+        dest: Handle,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        source: Handle,
+        source_x: i32,
+        source_y: i32,
+        rop: u32,
+    ) -> i32;
     safe fn DeleteDC(dc: Handle) -> i32;
     safe fn SetBkColor(dc: Handle, color: u32) -> u32;
     fn RoundRect(
@@ -1070,7 +1080,7 @@ fn parse_startup_args(
     args: impl IntoIterator<Item = String>,
     environment_language: Option<&str>,
 ) -> Result<StartupArgs, String> {
-    let usage = "Usage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|ja]";
+    let usage = "Usage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|zh-TW|ja]";
     let mut result = StartupArgs {
         profile: None,
         language: None,
@@ -1123,7 +1133,7 @@ fn normalize_startup_language(value: &str) -> Result<String, String> {
             | "japanese"
             | "日本語"
     ) {
-        return Err("Language must be auto, en, zh-CN, or ja.".into());
+        return Err("Language must be auto, en, zh-CN, zh-TW, ja, or ko.".into());
     }
     Ok(Lang::from_code(value).code().into())
 }

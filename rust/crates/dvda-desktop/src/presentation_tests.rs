@@ -5,7 +5,12 @@ fn session_log_that_cannot_be_removed_does_not_block_startup() {
     let _ui_test_lock = ui_test_guard();
     let root = std::env::temp_dir().join(format!("dvda-log-locked-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
-    for name in ["gui-1-1-0.log", "gui-2-1-0.log", "gui-3-1-0.log", "gui-4-1-0.log"] {
+    for name in [
+        "gui-1-1-0.log",
+        "gui-2-1-0.log",
+        "gui-3-1-0.log",
+        "gui-4-1-0.log",
+    ] {
         std::fs::write(root.join(name), name).unwrap();
     }
     // Holding the oldest log open without delete sharing makes its removal fail.
@@ -26,7 +31,14 @@ fn session_log_retention_keeps_three_and_preserves_unrelated_files() {
     let _ui_test_lock = ui_test_guard();
     let root = std::env::temp_dir().join(format!("dvda-log-retention-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
-    for name in ["gui-1-1-0.log", "gui-2-1-0.log", "gui-3-1-0.log", "gui-4-1-0.log", "gui-not-ours.log", "notes.log"] {
+    for name in [
+        "gui-1-1-0.log",
+        "gui-2-1-0.log",
+        "gui-3-1-0.log",
+        "gui-4-1-0.log",
+        "gui-not-ours.log",
+        "notes.log",
+    ] {
         std::fs::write(root.join(name), name).unwrap();
     }
     let current = root.join("gui-4-1-0.log");
@@ -118,7 +130,7 @@ fn source_issue_diagnostics_include_severity_reason_source_and_details() {
 }
 
 #[test]
-fn every_ui_translation_key_exists_in_all_three_languages() {
+fn every_ui_translation_key_exists_in_all_five_languages() {
     let _ui_test_lock = ui_test_guard();
     // The translation table lives in i18n.rs.
     let source = include_str!("i18n.rs");
@@ -141,7 +153,7 @@ fn every_ui_translation_key_exists_in_all_three_languages() {
     }
     assert!(keys.len() >= 100);
     for key in keys {
-        for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+        for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja, Lang::Ko] {
             assert!(!tr(lang, key).is_empty(), "Missing {} / {key}", lang.code());
         }
     }
@@ -265,130 +277,126 @@ fn full_log_includes_records_beyond_display_limit_and_raw_diagnostics() {
 fn file_filters_keep_correct_extensions_and_localized_labels() {
     let _ui_test_lock = ui_test_guard();
     for lang in [Lang::Zh, Lang::En, Lang::Ja] {
-            for (kind, extension) in [
-                (FileKind::Profile, "json"),
-                (FileKind::Log, "txt"),
-                ] {
-                let (filter, actual) = dialog_filter(lang, kind);
-                assert_eq!(actual, extension);
-                assert!(filter.ends_with("\0\0"));
-                assert!(filter.contains(tr(lang, "all_filter")));
-            }
+        for (kind, extension) in [(FileKind::Profile, "json"), (FileKind::Log, "txt")] {
+            let (filter, actual) = dialog_filter(lang, kind);
+            assert_eq!(actual, extension);
+            assert!(filter.ends_with("\0\0"));
+            assert!(filter.contains(tr(lang, "all_filter")));
         }
     }
+}
 
-    #[test]
-    fn import_and_custom_capacity_are_not_replaced_with_defaults() {
-        let _ui_test_lock = ui_test_guard();
-        assert_eq!(mode_value(mode_index("external")), "external");
-        assert_eq!(mode_value(mode_index("lpcm")), "lpcm");
-        assert_eq!(capacity_index(4_000_000_000), 2);
-        assert_eq!(capacity_index(4_707_319_808), 0);
-        assert_eq!(capacity_index(8_540_123_136), 1);
-        assert_eq!(capacity_index(8_543_666_176), 2);
-        assert!(valid_integer("0", 0, 10_000_000_000));
-        assert!(!valid_integer("10000000001", 0, 10_000_000_000));
-    }
+#[test]
+fn import_and_custom_capacity_are_not_replaced_with_defaults() {
+    let _ui_test_lock = ui_test_guard();
+    assert_eq!(mode_value(mode_index("external")), "external");
+    assert_eq!(mode_value(mode_index("lpcm")), "lpcm");
+    assert_eq!(capacity_index(4_000_000_000), 2);
+    assert_eq!(capacity_index(4_707_319_808), 0);
+    assert_eq!(capacity_index(8_540_123_136), 1);
+    assert_eq!(capacity_index(8_543_666_176), 2);
+    assert!(valid_integer("0", 0, 10_000_000_000));
+    assert!(!valid_integer("10000000001", 0, 10_000_000_000));
+}
 
-    #[test]
-    fn audio_mode_note_matches_the_selected_workflow() {
-        let _ui_test_lock = ui_test_guard();
-        assert_eq!(audio_note_key(0), "mlp_note");
-        assert_eq!(audio_note_key(1), "lpcm_note");
-        assert_eq!(audio_note_key(2), "import_note");
-        assert_eq!(audio_note_key(99), "mlp_note");
-        for lang in [Lang::Zh, Lang::En, Lang::Ja] {
-            for mode in [0, 1, 2] {
-                assert!(!tr(lang, audio_note_key(mode)).is_empty());
-            }
+#[test]
+fn audio_mode_note_matches_the_selected_workflow() {
+    let _ui_test_lock = ui_test_guard();
+    assert_eq!(audio_note_key(0), "mlp_note");
+    assert_eq!(audio_note_key(1), "lpcm_note");
+    assert_eq!(audio_note_key(2), "import_note");
+    assert_eq!(audio_note_key(99), "mlp_note");
+    for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+        for mode in [0, 1, 2] {
+            assert!(!tr(lang, audio_note_key(mode)).is_empty());
         }
     }
+}
 
-    #[test]
-    fn detailed_view_ignores_summary_filter_and_preserves_chatter() {
-        let _ui_test_lock = ui_test_guard();
-        let lines = vec![
-            LogLine {
-                raw: "frame=42".into(),
-                problem: false,
-                timestamp: "12:34:56".into(),
-            },
-            LogLine {
-                raw: "[WAR] warning".into(),
-                problem: true,
-                timestamp: "12:34:57".into(),
-            },
-        ];
-        let detail = display_log(Lang::En, &lines, true, true);
-        assert!(detail.contains("12:34:56  frame=42") && detail.contains("[WAR] warning"));
-        let summary = display_log(Lang::En, &lines, false, false);
-        assert!(!summary.contains("frame=42") && summary.contains("[WAR] warning"));
+#[test]
+fn detailed_view_ignores_summary_filter_and_preserves_chatter() {
+    let _ui_test_lock = ui_test_guard();
+    let lines = vec![
+        LogLine {
+            raw: "frame=42".into(),
+            problem: false,
+            timestamp: "12:34:56".into(),
+        },
+        LogLine {
+            raw: "[WAR] warning".into(),
+            problem: true,
+            timestamp: "12:34:57".into(),
+        },
+    ];
+    let detail = display_log(Lang::En, &lines, true, true);
+    assert!(detail.contains("12:34:56  frame=42") && detail.contains("[WAR] warning"));
+    let summary = display_log(Lang::En, &lines, false, false);
+    assert!(!summary.contains("frame=42") && summary.contains("[WAR] warning"));
+}
+
+#[test]
+fn overall_progress_stays_monotonic_and_reserves_completion_for_success() {
+    let _ui_test_lock = ui_test_guard();
+    let (logs, events) = sync_channel(32);
+    let mut callbacks = WorkerCallbacks {
+        logs,
+        cancel: Arc::new(AtomicBool::new(false)),
+        range: (0, 100),
+        last_progress: 0,
+    };
+    callbacks.set_progress_range(0, 15);
+    callbacks.progress(50, 100);
+    callbacks.progress(20, 100);
+    callbacks.progress(0, 0);
+    callbacks.progress(100, 100);
+    callbacks.set_progress_range(15, 65);
+    callbacks.progress(40, 100);
+    callbacks.set_progress_range(65, 100);
+    callbacks.progress(100, 100);
+    let values: Vec<_> = events
+        .try_iter()
+        .map(|event| match event {
+            WorkerEvent::Progress(value) => value,
+            _ => panic!("unexpected log event"),
+        })
+        .collect();
+    assert_eq!(values, [7, 15, 35, 65, 99]);
+}
+
+#[test]
+fn task_start_is_visible_in_summary_before_progress_events() {
+    let _ui_test_lock = ui_test_guard();
+    for (lang, key) in [
+        (Lang::Zh, "started_check"),
+        (Lang::En, "started_build"),
+        (Lang::Ja, "started_verify"),
+    ] {
+        let lines = [LogLine {
+            raw: tr(Lang::Zh, key).into(),
+            problem: false,
+            timestamp: "12:34:56".into(),
+        }];
+        assert!(
+            !display_log(lang, &lines, false, false).trim().is_empty(),
+            "{key} should remain visible in the summary"
+        );
     }
+}
 
-    #[test]
-    fn overall_progress_stays_monotonic_and_reserves_completion_for_success() {
-        let _ui_test_lock = ui_test_guard();
-        let (logs, events) = sync_channel(32);
-        let mut callbacks = WorkerCallbacks {
-            logs,
-            cancel: Arc::new(AtomicBool::new(false)),
-            range: (0, 100),
-            last_progress: 0,
-        };
-        callbacks.set_progress_range(0, 15);
-        callbacks.progress(50, 100);
-        callbacks.progress(20, 100);
-        callbacks.progress(0, 0);
-        callbacks.progress(100, 100);
-        callbacks.set_progress_range(15, 65);
-        callbacks.progress(40, 100);
-        callbacks.set_progress_range(65, 100);
-        callbacks.progress(100, 100);
-        let values: Vec<_> = events
-            .try_iter()
-            .map(|event| match event {
-                WorkerEvent::Progress(value) => value,
-                _ => panic!("unexpected log event"),
-            })
-            .collect();
-        assert_eq!(values, [7, 15, 35, 65, 99]);
+#[test]
+fn combo_measurement_preserves_original_item_height() {
+    let _ui_test_lock = ui_test_guard();
+    let mut item: MeasureItemStruct = unsafe { std::mem::zeroed() };
+    unsafe {
+        window_proc(
+            ptr::null_mut(),
+            WM_MEASUREITEM,
+            0,
+            &mut item as *mut MeasureItemStruct as Lparam,
+        );
     }
-
-    #[test]
-    fn task_start_is_visible_in_summary_before_progress_events() {
-        let _ui_test_lock = ui_test_guard();
-        for (lang, key) in [
-            (Lang::Zh, "started_check"),
-            (Lang::En, "started_build"),
-            (Lang::Ja, "started_verify"),
-        ] {
-            let lines = [LogLine {
-                raw: tr(Lang::Zh, key).into(),
-                problem: false,
-                timestamp: "12:34:56".into(),
-            }];
-            assert!(
-                !display_log(lang, &lines, false, false).trim().is_empty(),
-                "{key} should remain visible in the summary"
-            );
-        }
-    }
-
-    #[test]
-    fn combo_measurement_preserves_original_item_height() {
-        let _ui_test_lock = ui_test_guard();
-        let mut item: MeasureItemStruct = unsafe { std::mem::zeroed() };
-        unsafe {
-            window_proc(
-                ptr::null_mut(),
-                WM_MEASUREITEM,
-                0,
-                &mut item as *mut MeasureItemStruct as Lparam,
-            );
-        }
-        assert_eq!(item.item_height, scale(26).max(scale(20)) as u32);
-    }
-
+    assert_eq!(item.item_height, scale(26).max(scale(20)) as u32);
+}
 
 /// Every text the UI shows must fit the rectangle it is drawn into, in
 /// every language, at every supported scale and width. Returns one line
@@ -403,14 +411,25 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
             let dc = CreateCompatibleDC(ptr::null_mut());
             let old = SelectObject(dc, font);
             let wide_text = wide(text);
-            let mut rect = Rect { left: 0, top: 0, right: width.max(1), bottom: 0 };
-            DrawTextW(dc, wide_text.as_ptr(), -1, &mut rect, flags | DT_CALCRECT | DT_NOPREFIX);
+            let mut rect = Rect {
+                left: 0,
+                top: 0,
+                right: width.max(1),
+                bottom: 0,
+            };
+            DrawTextW(
+                dc,
+                wide_text.as_ptr(),
+                -1,
+                &mut rect,
+                flags | DT_CALCRECT | DT_NOPREFIX,
+            );
             SelectObject(dc, old);
             DeleteDC(dc);
             (rect.right, rect.bottom)
         }
     };
-    let lift = |font: Handle, needed: i32, available: i32|  {
+    let lift = |font: Handle, needed: i32, available: i32| {
         let dc = CreateCompatibleDC(ptr::null_mut());
         let old = SelectObject(dc, font);
         let lift = text_lift(dc, needed, available);
@@ -438,7 +457,8 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         unsafe { (*(list as *mut Vec<Hwnd>)).push(hwnd) };
         1
     }
-    let mut findings: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut findings: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
     let mut note = |key: String, detail: String| {
         findings.entry(key).or_insert(detail);
     };
@@ -457,9 +477,12 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                     layout(parent, ui);
                     for tab in 0..ui.pages.len() {
                         select_tab(ui, tab);
-                        let at = format!("{} {dpi}dpi {width}w adv={advanced} tab{tab}", lang.code());
+                        let at =
+                            format!("{} {dpi}dpi {width}w adv={advanced} tab{tab}", lang.code());
                         let mut children: Vec<Hwnd> = Vec::new();
-                        unsafe { EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam) };
+                        unsafe {
+                            EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam)
+                        };
                         for hwnd in children.into_iter().filter(|hwnd| shown(*hwnd)) {
                             let class = window_class(hwnd);
                             let text = get_text(hwnd);
@@ -475,48 +498,104 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                                     // text into the internal leading when needed.
                                     let (w, h) = measure(&text, font, cw, DT_WORDBREAK);
                                     if w > cw || h - lift(font, h, ch) > ch {
-                                        note(format!("label {text:?}"), format!("needs {}x{} has {cw}x{ch} at {at}", unscale(w), unscale(h)));
+                                        note(
+                                            format!("label {text:?}"),
+                                            format!(
+                                                "needs {}x{} has {cw}x{ch} at {at}",
+                                                unscale(w),
+                                                unscale(h)
+                                            ),
+                                        );
                                     }
                                 }
-                                "Button" if style(hwnd) & 0xf == BS_OWNERDRAW && !text.is_empty() => {
-                                    let (font, top, bottom, pad) = if (ID_TAB..ID_TAB + 3).contains(&id) {
-                                        (semibold_font(), -2, 6, 8)
-                                    } else if id == ID_BUILD {
-                                        (semibold_font(), 0, 0, 8)
-                                    } else {
-                                        (ui_font(), 0, 0, 8)
-                                    };
+                                "Button"
+                                    if style(hwnd) & 0xf == BS_OWNERDRAW && !text.is_empty() =>
+                                {
+                                    let (font, top, bottom, pad) =
+                                        if (ID_TAB..ID_TAB + 3).contains(&id) {
+                                            (semibold_font(), -2, 6, 8)
+                                        } else if id == ID_BUILD {
+                                            (semibold_font(), 0, 0, 8)
+                                        } else {
+                                            (ui_font(), 0, 0, 8)
+                                        };
                                     let (w, h) = measure(&text, font, cw, DT_SINGLELINE);
-                                    if w > cw - scale(pad) * 2 || h > ch - scale(top) - scale(bottom) {
-                                        note(format!("button {text:?}"), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(cw) - pad * 2, unscale(ch) - top - bottom));
+                                    if w > cw - scale(pad) * 2
+                                        || h > ch - scale(top) - scale(bottom)
+                                    {
+                                        note(
+                                            format!("button {text:?}"),
+                                            format!(
+                                                "needs {}x{} has {}x{} at {at}",
+                                                unscale(w),
+                                                unscale(h),
+                                                unscale(cw) - pad * 2,
+                                                unscale(ch) - top - bottom
+                                            ),
+                                        );
                                     }
                                 }
-                                "Button" if matches!(style(hwnd) & 0xf, 2 | 3) && !text.is_empty() => {
+                                "Button"
+                                    if matches!(style(hwnd) & 0xf, 2 | 3) && !text.is_empty() =>
+                                {
                                     let available = cw - scale(25);
                                     let (w, h) = measure(&text, ui_font(), cw, DT_SINGLELINE);
                                     if w > available || h > ch {
-                                        note(format!("checkbox {text:?}"), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(available), unscale(ch)));
+                                        note(
+                                            format!("checkbox {text:?}"),
+                                            format!(
+                                                "needs {}x{} has {}x{} at {at}",
+                                                unscale(w),
+                                                unscale(h),
+                                                unscale(available),
+                                                unscale(ch)
+                                            ),
+                                        );
                                     }
                                 }
                                 "ComboBox" => {
                                     let count = win::send_int(hwnd, CB_GETCOUNT, 0, 0) as i32;
                                     let closed = cw - scale(36);
-                                    let dropped = (win::send_int(hwnd, CB_GETDROPPEDWIDTH, 0, 0) as i32).max(cw) - scale(12);
+                                    let dropped = (win::send_int(hwnd, CB_GETDROPPEDWIDTH, 0, 0)
+                                        as i32)
+                                        .max(cw)
+                                        - scale(12);
                                     for index in 0..count {
                                         let item = unsafe { combo_item_text(hwnd, index) };
                                         let (w, _) = measure(&item, ui_font(), cw, DT_SINGLELINE);
                                         if w > closed {
-                                            note(format!("combo {id} closed {item:?}"), format!("needs {} has {} at {at}", unscale(w), unscale(closed)));
+                                            note(
+                                                format!("combo {id} closed {item:?}"),
+                                                format!(
+                                                    "needs {} has {} at {at}",
+                                                    unscale(w),
+                                                    unscale(closed)
+                                                ),
+                                            );
                                         }
                                         if w > dropped {
-                                            note(format!("combo {id} list {item:?}"), format!("needs {} has {} at {at}", unscale(w), unscale(dropped)));
+                                            note(
+                                                format!("combo {id} list {item:?}"),
+                                                format!(
+                                                    "needs {} has {} at {at}",
+                                                    unscale(w),
+                                                    unscale(dropped)
+                                                ),
+                                            );
                                         }
                                     }
                                 }
                                 "Edit" => {
                                     let (_, h) = measure("Agy国", font, cw, DT_SINGLELINE);
                                     if h > ch {
-                                        note(format!("edit {id} height"), format!("needs {} has {} at {at}", unscale(h), unscale(ch)));
+                                        note(
+                                            format!("edit {id} height"),
+                                            format!(
+                                                "needs {} has {} at {at}",
+                                                unscale(h),
+                                                unscale(ch)
+                                            ),
+                                        );
                                     }
                                 }
                                 _ => {}
@@ -530,35 +609,88 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                         let mut last_tab: Rect = Rect::default();
                         GetWindowRect(*ui.tabs.last().unwrap(), &mut last_tab);
                         if last_tab.right > advanced_rect.left {
-                            note("tabs overlap the advanced switch".into(), format!("at {at}"));
+                            note(
+                                "tabs overlap the advanced switch".into(),
+                                format!("at {at}"),
+                            );
                         }
                         // Status texts the task area cycles through.
                         if tab == 0 && !advanced {
                             let (cw, ch) = client(ui.controls.status);
-                            let status_font = win::send_int(ui.controls.status, WM_GETFONT, 0, 0) as Handle;
-                            for key in ["ready", "started_check", "started_build", "started_verify", "done", "cancelled", "failed", "stopping"] {
+                            let status_font =
+                                win::send_int(ui.controls.status, WM_GETFONT, 0, 0) as Handle;
+                            for key in [
+                                "ready",
+                                "started_check",
+                                "started_build",
+                                "started_verify",
+                                "done",
+                                "cancelled",
+                                "failed",
+                                "stopping",
+                            ] {
                                 let (w, h) = measure(tr(lang, key), status_font, cw, DT_SINGLELINE);
                                 if w > cw || h > ch {
-                                    note(format!("status {:?}", tr(lang, key)), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(cw), unscale(ch)));
+                                    note(
+                                        format!("status {:?}", tr(lang, key)),
+                                        format!(
+                                            "needs {}x{} has {}x{} at {at}",
+                                            unscale(w),
+                                            unscale(h),
+                                            unscale(cw),
+                                            unscale(ch)
+                                        ),
+                                    );
                                 }
                             }
-                            let stats = tr(lang, "statistics").replace("{0}", "99").replace("{1}", "59").replace("{2}", "59").replace("{3}", "9999");
+                            let stats = tr(lang, "statistics")
+                                .replace("{0}", "99")
+                                .replace("{1}", "59")
+                                .replace("{2}", "59")
+                                .replace("{3}", "9999");
                             let (cw, ch) = client(ui.controls.statistics);
-                            let stats_font = win::send_int(ui.controls.statistics, WM_GETFONT, 0, 0) as Handle;
+                            let stats_font =
+                                win::send_int(ui.controls.statistics, WM_GETFONT, 0, 0) as Handle;
                             let (w, h) = measure(&stats, stats_font, cw, DT_SINGLELINE);
                             if w > cw || h > ch {
-                                note(format!("statistics {stats:?}"), format!("needs {}x{} has {}x{} at {at}", unscale(w), unscale(h), unscale(cw), unscale(ch)));
+                                note(
+                                    format!("statistics {stats:?}"),
+                                    format!(
+                                        "needs {}x{} has {}x{} at {at}",
+                                        unscale(w),
+                                        unscale(h),
+                                        unscale(cw),
+                                        unscale(ch)
+                                    ),
+                                );
                             }
                             // Header title and subtitle, as paint_window draws them.
                             let right = (scale(width) - scale(308)).max(scale(240));
-                            let (w, h) = measure("DVD-Audio Maker", title_font(), right, DT_SINGLELINE);
+                            let (w, h) =
+                                measure("DVD-Audio Maker", title_font(), right, DT_SINGLELINE);
                             if w > right - scale(72) || h > scale(34) {
-                                note("header title".into(), format!("needs {}x{} at {at}", unscale(w), unscale(h)));
+                                note(
+                                    "header title".into(),
+                                    format!("needs {}x{} at {at}", unscale(w), unscale(h)),
+                                );
                             }
                             // Narrow windows shorten the subtitle with "..." by design.
-                            let (w, h) = measure(tr(lang, "app_subtitle"), subtitle_font(), right, DT_SINGLELINE);
+                            let (w, h) = measure(
+                                tr(lang, "app_subtitle"),
+                                subtitle_font(),
+                                right,
+                                DT_SINGLELINE,
+                            );
                             if (width >= 1000 && w > right - scale(73)) || h > scale(22) {
-                                note(format!("header subtitle {:?}", tr(lang, "app_subtitle")), format!("needs {}x{} has {} at {at}", unscale(w), unscale(h), unscale(right) - 73));
+                                note(
+                                    format!("header subtitle {:?}", tr(lang, "app_subtitle")),
+                                    format!(
+                                        "needs {}x{} has {} at {at}",
+                                        unscale(w),
+                                        unscale(h),
+                                        unscale(right) - 73
+                                    ),
+                                );
                             }
                         }
                     }
@@ -572,105 +704,124 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     check(ui.controls.advanced, false);
     update_advanced(ui);
     select_tab(ui, 0);
-    findings.into_iter().map(|(key, detail)| format!("{key}: {detail}")).collect()
+    findings
+        .into_iter()
+        .map(|(key, detail)| format!("{key}: {detail}"))
+        .collect()
 }
 
-    #[test]
-    fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
-        let _ui_test_lock = ui_test_guard();
-        #[link(name = "user32")]
-        unsafe extern "system" {
-            safe fn IsWindowEnabled(hwnd: Hwnd) -> i32;
-        }
-        use std::sync::atomic::AtomicU64;
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "dvda-gui-controls-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let profile = root.join("settings.json");
-        fs::write(
-            &profile,
-            b"{\"Version\":1,\"Language\":\"en\",\"Values\":{}}",
-        )
-        .unwrap();
-        PROFILE_OVERRIDE.set(Some(profile)).unwrap();
-        let page_class = wide("DVD_AUDIO_PAGE_RUST");
-        let registration = WndClass {
-            style: 0,
-            procedure: page_proc,
-            extra_class: 0,
-            extra_window: 0,
-            instance: unsafe { GetModuleHandleW(ptr::null()) },
-            icon: ptr::null_mut(),
-            cursor: ptr::null_mut(),
-            background: ptr::null_mut(),
-            menu: ptr::null(),
-            class_name: page_class.as_ptr(),
-        };
-        unsafe {
-            RegisterClassW(&registration);
-            InitCommonControlsEx(&InitCommonControlsEx {
-                size: std::mem::size_of::<InitCommonControlsEx>() as u32,
-                classes: 0xffff,
-            });
-        }
-        // The main window class and procedure, as in run(): state() only
-        // reads user data from windows of this class.
-        let main_class = wide("DVD_AUDIO_MAKER_RUST");
-        let main_registration = WndClass {
-            style: 0,
-            procedure: window_proc,
-            extra_class: 0,
-            extra_window: 0,
-            instance: unsafe { GetModuleHandleW(ptr::null()) },
-            icon: ptr::null_mut(),
-            cursor: ptr::null_mut(),
-            background: ptr::null_mut(),
-            menu: ptr::null(),
-            class_name: main_class.as_ptr(),
-        };
-        unsafe { RegisterClassW(&main_registration) };
-        let parent = create!(ptr::null_mut(), "DVD_AUDIO_MAKER_RUST", "", 0, 0, 0, 1180, 820, 0);
-        assert!(!parent.is_null());
-        let mut ui = create_controls(parent);
+#[test]
+fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
+    let _ui_test_lock = ui_test_guard();
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        safe fn IsWindowEnabled(hwnd: Hwnd) -> i32;
+    }
+    use std::sync::atomic::AtomicU64;
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let root = std::env::temp_dir().join(format!(
+        "dvda-gui-controls-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let profile = root.join("settings.json");
+    fs::write(
+        &profile,
+        b"{\"Version\":1,\"Language\":\"en\",\"Values\":{}}",
+    )
+    .unwrap();
+    PROFILE_OVERRIDE.set(Some(profile)).unwrap();
+    let page_class = wide("DVD_AUDIO_PAGE_RUST");
+    let registration = WndClass {
+        style: 0,
+        procedure: page_proc,
+        extra_class: 0,
+        extra_window: 0,
+        instance: unsafe { GetModuleHandleW(ptr::null()) },
+        icon: ptr::null_mut(),
+        cursor: ptr::null_mut(),
+        background: ptr::null_mut(),
+        menu: ptr::null(),
+        class_name: page_class.as_ptr(),
+    };
+    unsafe {
+        RegisterClassW(&registration);
+        InitCommonControlsEx(&InitCommonControlsEx {
+            size: std::mem::size_of::<InitCommonControlsEx>() as u32,
+            classes: 0xffff,
+        });
+    }
+    // The main window class and procedure, as in run(): state() only
+    // reads user data from windows of this class.
+    let main_class = wide("DVD_AUDIO_MAKER_RUST");
+    let main_registration = WndClass {
+        style: 0,
+        procedure: window_proc,
+        extra_class: 0,
+        extra_window: 0,
+        instance: unsafe { GetModuleHandleW(ptr::null()) },
+        icon: ptr::null_mut(),
+        cursor: ptr::null_mut(),
+        background: ptr::null_mut(),
+        menu: ptr::null(),
+        class_name: main_class.as_ptr(),
+    };
+    unsafe { RegisterClassW(&main_registration) };
+    let parent = create!(
+        ptr::null_mut(),
+        "DVD_AUDIO_MAKER_RUST",
+        "",
+        0,
+        0,
+        0,
+        1180,
+        820,
+        0
+    );
+    assert!(!parent.is_null());
+    let mut ui = create_controls(parent);
+    layout(parent, &mut ui);
+    for (combo, width) in [
+        (ui.controls.capacity, 220),
+        (ui.controls.norm, 260),
+        (ui.controls.mode, 300),
+        (ui.controls.rate, 210),
+        (ui.controls.bits, 160),
+        (ui.controls.language, 104),
+        (ui.controls.log_view, 132),
+    ] {
+        let rect = window_rect(combo);
+        assert_eq!(rect.right - rect.left, scale(width));
+    }
+    let target_rect = window_rect(ui.controls.source);
+    assert_eq!(target_rect.bottom - target_rect.top, scale(24));
+    let page = ui.pages[0];
+    let max_scroll = page_bar_metrics(&ui.paint).max;
+    scroll_page(page, scale(100), true);
+    assert_eq!(
+        GetWindowLongPtrW(page, GWLP_USERDATA),
+        scale(100).min(max_scroll) as isize
+    );
+    layout_page_contents(&ui);
+    scroll_page(page, 0, true);
+    for height in [500, 600, 820] {
+        MoveWindow(parent, 0, 0, scale(800), scale(height), 0);
         layout(parent, &mut ui);
-        for (combo, width) in [
-            (ui.controls.capacity, 220),
-            (ui.controls.norm, 260),
-            (ui.controls.mode, 300),
-            (ui.controls.rate, 210),
-            (ui.controls.bits, 160),
-            (ui.controls.language, 104),
-            (ui.controls.log_view, 132),
-        ] {
-            let rect = window_rect(combo);
-            assert_eq!(rect.right - rect.left, scale(width));
+        let mut log_rect: Rect = Rect::default();
+        let mut action_rect: Rect = Rect::default();
+        {
+            GetWindowRect(ui.controls.log, &mut log_rect);
+            GetWindowRect(ui.controls.build, &mut action_rect);
         }
-        let target_rect = window_rect(ui.controls.source);
-        assert_eq!(target_rect.bottom - target_rect.top, scale(24));
-        let page = ui.pages[0];
-        let max_scroll = page_bar_metrics(&ui.paint).max;
-        scroll_page(page, scale(100), true);
-        assert_eq!(GetWindowLongPtrW(page, GWLP_USERDATA), scale(100).min(max_scroll) as isize);
-        layout_page_contents(&ui);
-        scroll_page(page, 0, true);
-        for height in [500, 600, 820] {
-            MoveWindow(parent, 0, 0, scale(800), scale(height), 0);
-            layout(parent, &mut ui);
-            let mut log_rect: Rect = Rect::default();
-            let mut action_rect: Rect = Rect::default();
-             {
-                GetWindowRect(ui.controls.log, &mut log_rect);
-                GetWindowRect(ui.controls.build, &mut action_rect);
-            }
-            assert!(log_rect.bottom <= action_rect.top, "log overlaps actions at height {height}");
-        }
-        // Layout measures translated labels, so sweep every language.
-        let original_lang = ui.lang();
-        for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+        assert!(
+            log_rect.bottom <= action_rect.top,
+            "log overlaps actions at height {height}"
+        );
+    }
+    // Layout measures translated labels, so sweep every language.
+    let original_lang = ui.lang();
+    for lang in [Lang::Zh, Lang::En, Lang::Ja] {
         ui.set_lang(lang);
         for width in [640, 800, 854, 960, 1053, 1054, 1180, 1400, 960, 640] {
             for height in [360, 500, 820] {
@@ -680,86 +831,134 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                 // wrapping rather than hiding controls in narrow windows.
                 // Short windows hide the log first and toolbar controls
                 // only where they would reach the action buttons.
-                let rect_of = |hwnd: Hwnd| {
-                    window_rect(hwnd)
-                };
-                let shown = |hwnd: Hwnd| {
-                    (GetWindowLongPtrW(hwnd, -16) as u32) & WS_VISIBLE != 0
-                };
+                let rect_of = |hwnd: Hwnd| window_rect(hwnd);
+                let shown = |hwnd: Hwnd| (GetWindowLongPtrW(hwnd, -16) as u32) & WS_VISIBLE != 0;
                 let client = window_rect(parent);
                 let progress = rect_of(ui.controls.progress);
-                let log_buttons: Vec<Hwnd> = ui.buttons.iter()
+                let log_buttons: Vec<Hwnd> = ui
+                    .buttons
+                    .iter()
                     .filter(|(_, key)| matches!(*key, "copy" | "export"))
                     .map(|(handle, _)| *handle)
                     .collect();
                 assert_eq!(log_buttons.len(), 2);
                 let log = rect_of(ui.controls.log);
                 let actions = rect_of(ui.controls.build);
-                let toolbar = [ui.controls.log_view, ui.controls.only_issues, ui.controls.live]
-                    .into_iter()
-                    .chain(log_buttons.iter().copied())
-                    .chain([label_handle(&ui, "log_section")]);
+                let toolbar = [
+                    ui.controls.log_view,
+                    ui.controls.only_issues,
+                    ui.controls.live,
+                ]
+                .into_iter()
+                .chain(log_buttons.iter().copied())
+                .chain([label_handle(&ui, "log_section")]);
                 // The layout decides with hysteresis around 500 DIPs; check what it decided.
                 let compact = ui.compact_layout == Some(true);
-                assert!(compact || shown(ui.controls.log), "log hidden at {width}x{height}");
+                assert!(
+                    compact || shown(ui.controls.log),
+                    "log hidden at {width}x{height}"
+                );
                 for control in toolbar {
-                    assert!(shown(control) || (!shown(ui.controls.log) && compact),
-                        "{} hidden at {width}x{height}", get_text(control));
+                    assert!(
+                        shown(control) || (!shown(ui.controls.log) && compact),
+                        "{} hidden at {width}x{height}",
+                        get_text(control)
+                    );
                 }
-                let row: Vec<(Hwnd, Rect)> = [ui.controls.log_view, ui.controls.only_issues, ui.controls.live]
-                    .into_iter()
-                    .chain(log_buttons.iter().copied())
-                    .filter(|hwnd| shown(*hwnd))
-                    .map(|hwnd| (hwnd, rect_of(hwnd)))
-                    .collect();
+                let row: Vec<(Hwnd, Rect)> = [
+                    ui.controls.log_view,
+                    ui.controls.only_issues,
+                    ui.controls.live,
+                ]
+                .into_iter()
+                .chain(log_buttons.iter().copied())
+                .filter(|hwnd| shown(*hwnd))
+                .map(|hwnd| (hwnd, rect_of(hwnd)))
+                .collect();
                 for (index, (hwnd, rect)) in row.iter().enumerate() {
                     let text = get_text(*hwnd);
-                    assert!(rect.top >= progress.bottom,
-                        "{text} overlaps the progress bar at {width}x{height}");
-                    assert!(rect.right <= client.right && rect.bottom <= client.bottom,
-                        "{text} leaves the window at {width}x{height}");
-                    assert!((!shown(ui.controls.log) || rect.bottom <= log.top) && rect.bottom <= actions.top,
-                        "{text} overlaps the log or actions at {width}x{height}");
+                    assert!(
+                        rect.top >= progress.bottom,
+                        "{text} overlaps the progress bar at {width}x{height}"
+                    );
+                    assert!(
+                        rect.right <= client.right && rect.bottom <= client.bottom,
+                        "{text} leaves the window at {width}x{height}"
+                    );
+                    assert!(
+                        (!shown(ui.controls.log) || rect.bottom <= log.top)
+                            && rect.bottom <= actions.top,
+                        "{text} overlaps the log or actions at {width}x{height}"
+                    );
                     for (other, other_rect) in &row[index + 1..] {
-                        assert!(rect.right <= other_rect.left || other_rect.right <= rect.left
-                            || rect.bottom <= other_rect.top || other_rect.bottom <= rect.top,
-                            "{text} overlaps {} at {width}x{height}", get_text(*other));
+                        assert!(
+                            rect.right <= other_rect.left
+                                || other_rect.right <= rect.left
+                                || rect.bottom <= other_rect.top
+                                || other_rect.bottom <= rect.top,
+                            "{text} overlaps {} at {width}x{height}",
+                            get_text(*other)
+                        );
                     }
                 }
                 // Short windows show only the settings while idle and only
                 // the task status and log while a task runs.
                 let page = ui.pages[ui.tab_index()];
-                let task_area = [ui.controls.status, ui.controls.progress,
-                    label_handle(&ui, "operation_section")];
+                let task_area = [
+                    ui.controls.status,
+                    ui.controls.progress,
+                    label_handle(&ui, "operation_section"),
+                ];
                 if compact {
                     // The fixture does not register the scrollbar class.
                     let bar_shown = ui.page_scrollbar.is_null() || shown(ui.page_scrollbar);
-                    assert!(shown(page) && bar_shown && ui.tabs.iter().all(|tab| shown(*tab)),
-                        "settings hidden while idle at {width}x{height}");
-                    assert!(task_area.iter().chain([&ui.controls.log]).all(|control| !shown(*control)),
-                        "task area shown while idle at {width}x{height}");
+                    assert!(
+                        shown(page) && bar_shown && ui.tabs.iter().all(|tab| shown(*tab)),
+                        "settings hidden while idle at {width}x{height}"
+                    );
+                    assert!(
+                        task_area
+                            .iter()
+                            .chain([&ui.controls.log])
+                            .all(|control| !shown(*control)),
+                        "task area shown while idle at {width}x{height}"
+                    );
                     let page_rect = rect_of(page);
-                    assert!(page_rect.bottom <= actions.top
-                        && page_rect.bottom >= actions.top - scale(12) - 1,
-                        "settings do not fill the short window at {width}x{height}");
+                    assert!(
+                        page_rect.bottom <= actions.top
+                            && page_rect.bottom >= actions.top - scale(12) - 1,
+                        "settings do not fill the short window at {width}x{height}"
+                    );
                     ui.busy = true;
                     layout(parent, &mut ui);
-                    assert!(ui.pages.iter().chain(&ui.tabs).chain([&ui.page_scrollbar, &ui.controls.advanced])
-                        .all(|control| !shown(*control)),
-                        "settings shown during a task at {width}x{height}");
-                    assert!(task_area.iter().all(|control| shown(*control)),
-                        "task area hidden during a task at {width}x{height}");
+                    assert!(
+                        ui.pages
+                            .iter()
+                            .chain(&ui.tabs)
+                            .chain([&ui.page_scrollbar, &ui.controls.advanced])
+                            .all(|control| !shown(*control)),
+                        "settings shown during a task at {width}x{height}"
+                    );
+                    assert!(
+                        task_area.iter().all(|control| shown(*control)),
+                        "task area hidden during a task at {width}x{height}"
+                    );
                     let status = rect_of(label_handle(&ui, "operation_section"));
                     let tab = rect_of(ui.tabs[0]);
-                    assert!(status.top <= tab.top + scale(2),
-                        "task area does not move up during a task at {width}x{height}");
+                    assert!(
+                        status.top <= tab.top + scale(2),
+                        "task area does not move up during a task at {width}x{height}"
+                    );
                     for control in [ui.controls.log, ui.controls.log_view, ui.controls.progress]
                         .into_iter()
                         .chain(log_buttons.iter().copied())
                         .filter(|control| shown(*control))
                     {
-                        assert!(rect_of(control).bottom <= actions.top,
-                            "{} reaches the actions during a task at {width}x{height}", get_text(control));
+                        assert!(
+                            rect_of(control).bottom <= actions.top,
+                            "{} reaches the actions during a task at {width}x{height}",
+                            get_text(control)
+                        );
                     }
                     // Selecting a tab must not reveal a page while hidden.
                     let next = (ui.tab_index() + 1) % ui.pages.len();
@@ -770,15 +969,43 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                     layout(parent, &mut ui);
                     assert!(shown(ui.pages[0]) && !shown(ui.controls.status));
                 } else {
-                    assert!(shown(page) && task_area.iter().all(|control| shown(*control)),
-                        "tall windows hide an area at {width}x{height}");
+                    assert!(
+                        shown(page) && task_area.iter().all(|control| shown(*control)),
+                        "tall windows hide an area at {width}x{height}"
+                    );
                 }
                 for (page_index, ids) in [
-                    (0, &[ID_SOURCE, ID_FINAL, ID_TITLE, ID_CAPACITY, ID_CUSTOM_BYTES,
-                        ID_WORK_DIR, ID_BROWSE_WORK, ID_ISO_PREFIX, ID_GROUP_LIMIT][..]),
-                    (1, &[ID_MODE, ID_RATE, ID_BITS, ID_IMPORT_FOLDER, ID_BROWSE_IMPORT][..]),
-                    (2, &[ID_TRACKS, ID_COVER, ID_FONT_SC, ID_FONT_JP, ID_FONT_KR,
-                        1007, 1008, 1009][..]),
+                    (
+                        0,
+                        &[
+                            ID_SOURCE,
+                            ID_FINAL,
+                            ID_TITLE,
+                            ID_CAPACITY,
+                            ID_CUSTOM_BYTES,
+                            ID_WORK_DIR,
+                            ID_BROWSE_WORK,
+                            ID_ISO_PREFIX,
+                            ID_GROUP_LIMIT,
+                        ][..],
+                    ),
+                    (
+                        1,
+                        &[
+                            ID_MODE,
+                            ID_RATE,
+                            ID_BITS,
+                            ID_IMPORT_FOLDER,
+                            ID_BROWSE_IMPORT,
+                        ][..],
+                    ),
+                    (
+                        2,
+                        &[
+                            ID_TRACKS, ID_COVER, ID_FONT_SC, ID_FONT_JP, ID_FONT_KR, 1007, 1008,
+                            1009,
+                        ][..],
+                    ),
                 ] {
                     let page = ui.pages[page_index];
                     let bounds = window_rect(page);
@@ -786,8 +1013,10 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                         let child = GetDlgItem(page, *id as i32);
                         assert!(!child.is_null());
                         let child_rect = window_rect(child);
-                        assert!(child_rect.left >= bounds.left && child_rect.right <= bounds.right,
-                            "control {id} overflows page {page_index} at {width}x{height}");
+                        assert!(
+                            child_rect.left >= bounds.left && child_rect.right <= bounds.right,
+                            "control {id} overflows page {page_index} at {width}x{height}"
+                        );
                     }
                 }
             }
@@ -808,7 +1037,9 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         for dpi_value in [96u32, 144] {
             UI_DPI.store(dpi_value, Ordering::Relaxed);
             let mut children: Vec<Hwnd> = Vec::new();
-            unsafe { EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam); }
+            unsafe {
+                EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam);
+            }
             let position = |hwnd: Hwnd| {
                 let rect = window_rect(hwnd);
                 let mut origin = Point { x: 0, y: 0 };
@@ -817,7 +1048,8 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
             };
             let mut history: Vec<Vec<(i32, i32)>> = vec![Vec::new(); children.len()];
             let mut frame: Rect = Rect::default();
-            MoveWindow(parent, 0, 0, scale(700), scale(820), 0); GetWindowRect(parent, &mut frame);
+            MoveWindow(parent, 0, 0, scale(700), scale(820), 0);
+            GetWindowRect(parent, &mut frame);
             let client = client_rect(parent);
             let border = (frame.right - frame.left) - client.right;
             let widths: Vec<i32> = (scale(640)..scale(1400)).collect();
@@ -830,21 +1062,30 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
             }
             for (index, child) in children.iter().enumerate() {
                 for (side, pick) in [("left", 0usize), ("right", 1)] {
-                    let values: Vec<i32> = history[index].iter().map(|p| if pick == 0 { p.0 } else { p.1 }).collect();
+                    let values: Vec<i32> = history[index]
+                        .iter()
+                        .map(|p| if pick == 0 { p.0 } else { p.1 })
+                        .collect();
                     let mut reversals = Vec::new();
                     let mut direction = 0;
                     for step in 1..values.len() {
                         let delta = values[step] - values[step - 1];
-                        if delta == 0 { continue; }
+                        if delta == 0 {
+                            continue;
+                        }
                         let sign = delta.signum();
                         if direction != 0 && sign != direction {
                             reversals.push((unscale(widths[step]), values[step - 1], values[step]));
                         }
                         direction = sign;
                     }
-                    assert!(reversals.len() <= 1,
+                    assert!(
+                        reversals.len() <= 1,
                         "{} {:?} {side} edge jitters at {dpi_value} DPI: {:?}",
-                        window_class(*child), get_text(*child), &reversals[..reversals.len().min(4)]);
+                        window_class(*child),
+                        get_text(*child),
+                        &reversals[..reversals.len().min(4)]
+                    );
                 }
             }
         }
@@ -866,7 +1107,9 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         for dpi_value in [96u32, 144] {
             UI_DPI.store(dpi_value, Ordering::Relaxed);
             let mut children: Vec<Hwnd> = Vec::new();
-            unsafe { EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam); }
+            unsafe {
+                EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam);
+            }
             let position = |hwnd: Hwnd| {
                 let rect = window_rect(hwnd);
                 let mut origin = Point { x: 0, y: 0 };
@@ -874,7 +1117,8 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                 (rect.top - origin.y, rect.bottom - origin.y)
             };
             let mut frame: Rect = Rect::default();
-            MoveWindow(parent, 0, 0, scale(1000), scale(820), 0); GetWindowRect(parent, &mut frame);
+            MoveWindow(parent, 0, 0, scale(1000), scale(820), 0);
+            GetWindowRect(parent, &mut frame);
             let client = client_rect(parent);
             let border = (frame.bottom - frame.top) - client.bottom;
             // Growing switches out of the short layout at 504 DIPs.
@@ -893,57 +1137,102 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                 }
                 for (index, child) in children.iter().enumerate() {
                     for (side, pick) in [("top", 0usize), ("bottom", 1)] {
-                        let values: Vec<i32> = history[index].iter().map(|p| if pick == 0 { p.0 } else { p.1 }).collect();
+                        let values: Vec<i32> = history[index]
+                            .iter()
+                            .map(|p| if pick == 0 { p.0 } else { p.1 })
+                            .collect();
                         let mut reversals = Vec::new();
                         let mut direction = 0;
                         for step in 1..values.len() {
                             let delta = values[step] - values[step - 1];
-                            if delta == 0 { continue; }
+                            if delta == 0 {
+                                continue;
+                            }
                             let sign = delta.signum();
                             if direction != 0 && sign != direction {
-                                reversals.push((unscale(heights[step]), values[step - 1], values[step]));
+                                reversals.push((
+                                    unscale(heights[step]),
+                                    values[step - 1],
+                                    values[step],
+                                ));
                             }
                             direction = sign;
                         }
-                        assert!(reversals.len() <= 1,
+                        assert!(
+                            reversals.len() <= 1,
                             "{} {:?} {side} edge jitters at {dpi_value} DPI: {:?}",
-                            window_class(*child), get_text(*child), &reversals[..reversals.len().min(4)]);
+                            window_class(*child),
+                            get_text(*child),
+                            &reversals[..reversals.len().min(4)]
+                        );
                     }
                 }
                 // Rows tied to the bottom edge keep an exact pixel gap to it.
                 for control in [ui.controls.build, ui.controls.statistics] {
                     let index = children.iter().position(|child| *child == control).unwrap();
-                    let gaps: std::collections::BTreeSet<i32> = client_heights.iter().zip(&history[index])
+                    let gaps: std::collections::BTreeSet<i32> = client_heights
+                        .iter()
+                        .zip(&history[index])
                         .map(|(client_height, p)| client_height - p.0)
                         .collect();
-                    assert_eq!(gaps.len(), 1, "{} gap to the bottom edge wobbles at {dpi_value} DPI: {gaps:?}",
-                        get_text(control));
+                    assert_eq!(
+                        gaps.len(),
+                        1,
+                        "{} gap to the bottom edge wobbles at {dpi_value} DPI: {gaps:?}",
+                        get_text(control)
+                    );
                 }
                 if low == 504 {
                     // Once the default split leaves the log its floor (tabs at
                     // 126, task rows 120, actions 60), only the log grows.
-                    let fixed_from = ui.default_tab_height.unwrap() + 126 + 120 + 60 + DEFAULT_LOG_FLOOR;
+                    let fixed_from =
+                        ui.default_tab_height.unwrap() + 126 + 120 + 60 + DEFAULT_LOG_FLOOR;
                     // The test window cannot exceed the screen; judge the
                     // heights it really reached.
                     let reached = *client_heights.iter().max().unwrap();
-                    assert!(reached >= scale(fixed_from + 20), "sweep reached only {} DIPs at {dpi_value} DPI", unscale(reached));
-                    let status = children.iter().position(|child| *child == ui.controls.status).unwrap();
-                    let log = children.iter().position(|child| *child == ui.controls.log).unwrap();
-                    for control in [ui.controls.status, ui.controls.progress, ui.controls.log_view, ui.controls.log] {
+                    assert!(
+                        reached >= scale(fixed_from + 20),
+                        "sweep reached only {} DIPs at {dpi_value} DPI",
+                        unscale(reached)
+                    );
+                    let status = children
+                        .iter()
+                        .position(|child| *child == ui.controls.status)
+                        .unwrap();
+                    let log = children
+                        .iter()
+                        .position(|child| *child == ui.controls.log)
+                        .unwrap();
+                    for control in [
+                        ui.controls.status,
+                        ui.controls.progress,
+                        ui.controls.log_view,
+                        ui.controls.log,
+                    ] {
                         let index = children.iter().position(|child| *child == control).unwrap();
-                        let tops: std::collections::BTreeSet<i32> = client_heights.iter().zip(&history[index])
+                        let tops: std::collections::BTreeSet<i32> = client_heights
+                            .iter()
+                            .zip(&history[index])
                             .filter(|(client_height, _)| **client_height >= scale(fixed_from))
                             .map(|(_, p)| p.0)
                             .collect();
-                        assert_eq!(tops.len(), 1, "{} moves with the height at {dpi_value} DPI", window_class(control));
+                        assert_eq!(
+                            tops.len(),
+                            1,
+                            "{} moves with the height at {dpi_value} DPI",
+                            window_class(control)
+                        );
                     }
                     // Below that the task area may only follow the edge while
                     // the log is at its floor.
                     for step in 1..history[status].len() {
                         if history[status][step].0 != history[status][step - 1].0 {
                             let (top, bottom) = history[log][step];
-                            assert!((bottom - top - scale(DEFAULT_LOG_FLOOR)).abs() <= 1,
-                                "task area moves while the log has room at {dpi_value} DPI: log {} px", bottom - top);
+                            assert!(
+                                (bottom - top - scale(DEFAULT_LOG_FLOOR)).abs() <= 1,
+                                "task area moves while the log has room at {dpi_value} DPI: log {} px",
+                                bottom - top
+                            );
                         }
                     }
                 }
@@ -957,7 +1246,9 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     // keeps its size (clipped to the new log area) until the drag ends.
     {
         let line = "2026-10-24 12:00:00  Encoding track 07 of 12 (MLP, 96 kHz / 24 bit, 5.1)";
-        let text: String = (0..2500).map(|i| format!("{i:04} {line}{}{}", 13 as char, 10 as char)).collect();
+        let text: String = (0..2500)
+            .map(|i| format!("{i:04} {line}{}{}", 13 as char, 10 as char))
+            .collect();
         set_text(ui.controls.log, &text);
         MoveWindow(parent, 0, 0, scale(1180), scale(820), 0);
         layout(parent, &mut ui);
@@ -969,21 +1260,38 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         let before = log_size(ui.controls.log);
         ui.sizing = true;
         for step in 1..=20 {
-            MoveWindow(parent, 0, 0, scale(1180 - step * 3), scale(820 - step * 3), 0);
+            MoveWindow(
+                parent,
+                0,
+                0,
+                scale(1180 - step * 3),
+                scale(820 - step * 3),
+                0,
+            );
             layout(parent, &mut ui);
-            assert_eq!(log_size(ui.controls.log), before, "log resized during live sizing");
+            assert_eq!(
+                log_size(ui.controls.log),
+                before,
+                "log resized during live sizing"
+            );
         }
         assert!(ui.log_frozen);
         // The frame follows the layout while the EDIT keeps its size.
         let mut frame: Rect = Rect::default();
         GetClientRect(ui.log_frame, &mut frame);
         let target = ui.log_box.unwrap();
-        assert_eq!((frame.right, frame.bottom), (target.right - target.left, target.bottom - target.top));
+        assert_eq!(
+            (frame.right, frame.bottom),
+            (target.right - target.left, target.bottom - target.top)
+        );
         ui.sizing = false;
         layout(parent, &mut ui);
         assert!(!ui.log_frozen);
         let target = ui.log_box.unwrap();
-        assert_eq!(log_size(ui.controls.log), (target.right - target.left, target.bottom - target.top));
+        assert_eq!(
+            log_size(ui.controls.log),
+            (target.right - target.left, target.bottom - target.top)
+        );
         // The real sizing messages: a resize is not a user scroll, so live
         // follow is not paused, and the log gets its size at the end.
         win::send_int(ui.controls.log, EM_LINESCROLL, 0, 2500);
@@ -992,7 +1300,13 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         ui.log_hold_until = None;
         // The window owns its state through the cell, as in WM_CREATE.
         let cell = RefCell::new(ui);
-        unsafe { SetWindowLongPtrW(parent, GWLP_USERDATA, &cell as *const RefCell<UiState> as isize) };
+        unsafe {
+            SetWindowLongPtrW(
+                parent,
+                GWLP_USERDATA,
+                &cell as *const RefCell<UiState> as isize,
+            )
+        };
         unsafe { window_proc(parent, 0x0231, 0, 0) };
         // Growing a log scrolled to its end reveals earlier lines, which
         // changes its first visible line.
@@ -1008,7 +1322,10 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         observe_log_scroll(&mut ui);
         assert!(ui.log_hold_until.is_none(), "resizing paused live follow");
         let target = ui.log_box.unwrap();
-        assert_eq!(log_size(ui.controls.log), (target.right - target.left, target.bottom - target.top));
+        assert_eq!(
+            log_size(ui.controls.log),
+            (target.right - target.left, target.bottom - target.top)
+        );
         // Esc in the log posts WM_CLOSE to its parent frame; the log survives.
         {
             win::send_int(ui.log_frame, WM_CLOSE, 0, 0);
@@ -1046,7 +1363,12 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     combo_select(ui.controls.norm, 2);
     let edited = edited_profile_values(&ui);
     assert_eq!(edited["DVDA_MENU_NORM"], "ntsc");
-    let evaluated = ui.base.as_ref().unwrap().with_profile_values(edited).unwrap();
+    let evaluated = ui
+        .base
+        .as_ref()
+        .unwrap()
+        .with_profile_values(edited)
+        .unwrap();
     assert_eq!(evaluated.text("MenuNorm"), "ntsc");
     combo_select(ui.controls.norm, 0);
     populate(&mut ui, &evaluated);
@@ -1151,7 +1473,11 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     ui.cancel = Some(Arc::clone(&cancel));
     let cell = RefCell::new(ui);
     unsafe {
-        SetWindowLongPtrW(parent, GWLP_USERDATA, &cell as *const RefCell<UiState> as isize);
+        SetWindowLongPtrW(
+            parent,
+            GWLP_USERDATA,
+            &cell as *const RefCell<UiState> as isize,
+        );
         window_proc(parent, WM_CLOSE, 0, 0);
         SetWindowLongPtrW(parent, GWLP_USERDATA, 0);
     }
@@ -1165,7 +1491,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     assert_ne!(IsWindowEnabled(ui.controls.language), 0);
     assert_ne!(IsWindowEnabled(initially_enabled), 0);
     assert_eq!(IsWindowEnabled(initially_disabled), 0);
-     {
+    {
         DestroyWindow(initially_enabled);
         DestroyWindow(initially_disabled);
     }
@@ -1220,9 +1546,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     assert!(get_text(ui.controls.log).contains("last warning"));
     assert!(get_text(ui.controls.log).contains("日本語.flac"));
     assert!(ui.elapsed_seconds >= 2);
-    assert!(
-        get_text(ui.controls.statistics).contains(&format!("0:00:{:02}", ui.elapsed_seconds))
-    );
+    assert!(get_text(ui.controls.statistics).contains(&format!("0:00:{:02}", ui.elapsed_seconds)));
     let archived = fs::read_to_string(&stress_path).unwrap();
     let progress = archived
         .lines()
@@ -1242,7 +1566,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     ui.log_hold_until = None;
     combo_select(ui.controls.log_view, 0);
     check(ui.controls.only_issues, false);
-     {
+    {
         MoveWindow(ui.controls.log, 0, 0, 600, 80, 0);
     }
     for track in 0..40 {
@@ -1274,7 +1598,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     );
     // Preserve exactly the existing hold interval and the user's selection
     // when new rows arrive during upward review.
-     {
+    {
         win::send_int(ui.controls.log, EM_SETSEL, 5, 12);
         win::send_int(ui.controls.log, EM_LINESCROLL, 0, -1000);
         win::send_int(ui.controls.log, EM_LINESCROLL, 0, 8);
@@ -1321,7 +1645,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     assert!(get_text(ui.controls.log).contains("summary-after-hold"));
     // Close the per-test archive before deleting its own temporary folder.
     ui.log_file = None;
-     {
+    {
         DestroyWindow(ui.tooltip_window);
         DestroyWindow(parent);
     }
@@ -1373,7 +1697,7 @@ fn settings_help_and_new_runtime_messages_cover_all_languages() {
     assert_eq!(help.len(), 28);
     for (key, original) in help {
         assert_eq!(setting_help(Lang::Zh, &key), original);
-        for lang in [Lang::En, Lang::Ja] {
+        for lang in [Lang::En, Lang::Ja, Lang::ZhHant, Lang::Ko] {
             let translated = setting_help(lang, &key);
             assert!(
                 !translated.is_empty() && translated != original,
@@ -1387,7 +1711,7 @@ fn settings_help_and_new_runtime_messages_cover_all_languages() {
         "Menu data directory is missing: C:/data",
         "MLP 编码结果无效: C:/music.flac",
     ] {
-        for lang in [Lang::En, Lang::Ja] {
+        for lang in [Lang::En, Lang::Ja, Lang::ZhHant, Lang::Ko] {
             assert_ne!(localized_detail(lang, source), source);
         }
     }
@@ -1404,4 +1728,48 @@ fn unicode_paths_are_opaque_in_errors_and_problem_classification() {
     }
     let progress = json!({"Kind":"PcmProgress","Name":path,"Track":0,"Value":50}).to_string();
     assert!(!log_is_problem(&progress));
+}
+
+#[test]
+fn traditional_messages_preserve_user_titles_and_paths() {
+    use super::{Lang, localized_detail, localized_log};
+    let lang = Lang::ZhHant;
+    let title = "音乐简体专辑";
+    assert_eq!(
+        localized_log(lang, &format!("[MLP-CHECK] progress 1/2 {title}")),
+        format!("正在檢查已有 MLP：1/2 首；{title}")
+    );
+    let path = r"D:\音乐\检查失败.flac";
+    assert_eq!(
+        localized_log(lang, &format!("[verify] pcm 1/2 ok: {path}")),
+        format!("成品音訊校驗：1/2 首一致：{path}")
+    );
+    assert_eq!(
+        localized_detail(lang, &format!("报告已写入: {path}")),
+        format!("報告已寫入: {path}")
+    );
+    assert!(localized_log(lang, &format!("[menu-cover] background 1/2 {title}")).contains(title));
+}
+
+#[test]
+fn korean_messages_preserve_user_titles_and_paths() {
+    use super::{Lang, localized_detail, localized_log};
+    let title = "한국어 앨범 臺灣樂曲";
+    let path = r"D:\사용자\음악\한글 곡.flac";
+    for message in [
+        format!("[MLP-CHECK] progress 1/2 {title}"),
+        format!("[menu-cover] background 1/2 {title}"),
+    ] {
+        let output = localized_log(Lang::Ko, &message);
+        assert!(output.contains(title));
+        assert_ne!(output, message);
+    }
+    let input = format!("[verify] pcm 1/2 ok: {path}");
+    let output = localized_log(Lang::Ko, &input);
+    assert!(output.contains(path));
+    assert_ne!(output, input);
+    let input = format!("报告已写入: {path}");
+    let output = localized_detail(Lang::Ko, &input);
+    assert!(output.contains(path));
+    assert_ne!(output, input);
 }

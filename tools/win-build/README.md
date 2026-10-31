@@ -45,9 +45,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\generate-app
 tools\win-build\build-all.cmd ^
   --media-runtime build\msvc-native\ffmpeg-static\install ^
   --image-runtime build\msvc-native\image-runtime ^
-  --image-author build\static-ffmpeg-20261013\author ^
+  --image-author build\rust-author-production ^
   --prebuilt build\msvc-native\package-assets ^
   --version v1.0
 ```
 
 命令通过 `dvda-toolchain package` 生成 `DVD-Audio-Maker-v1.0-win-x64.zip`。静态发布包只包含内嵌菜单资源和字体的 GUI EXE，以及旁置用户文档，不包含 .NET、开发 CLI、PDB、构建 JSON 或本机配置。三语用户 README、许可证与两个 NOTICE 均在 EXE 旁边。
+
+### 无损精简菜单字体
+
+静态 Regular TTC 必须包含完整 SC/JP/KR/TC 四地区字体；仅构建时需要 `fonttools==4.68.0` 和 `cffsubr==0.4.0`：
+
+```powershell
+.venv\Scripts\python.exe tools\win-build\optimize-menu-fonts.py build\font-sources\DvdaNotoCJK-Regular.ttc build\font-sources\optimized\DvdaNotoCJK-Regular.ttc
+```
+
+输出目标不得已存在。脚本对子程序化压缩后的共享 CFF2 轮廓及集合表进行优化，逐一核对全部 65,535 个字形轮廓、字体及 Private 参数、字形顺序与所有非 CFF2 表（仅排除依赖内容的 `head.checksumAdjustment`），全部通过后才写出。遇到不支持的 hint 或可变程序会拒绝处理。不删字符或地区字形，字符映射、排版、度量和元数据保持不变。通过原生渲染验收和 `dvda-toolchain font verify-collection` 后，将结果复制到 `build\msvc-native\package-assets\fonts\DvdaNotoCJK-Regular.ttc` 再打包；保留源字体用于对照。字体原始大小的降幅不等同于发布 ZIP 的降幅。

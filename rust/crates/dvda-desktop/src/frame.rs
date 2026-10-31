@@ -144,8 +144,13 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 rect.top = (start.top + dy).clamp(start.bottom - max_h, start.bottom - min_h);
                 // Like Snap: a top edge taken to the top of the screen makes the
                 // window as tall as the work area.
-                let mut info = MonitorInfo { size: std::mem::size_of::<MonitorInfo>() as u32, ..std::mem::zeroed() };
-                if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0 && cursor.y <= info.monitor.top {
+                let mut info = MonitorInfo {
+                    size: std::mem::size_of::<MonitorInfo>() as u32,
+                    ..std::mem::zeroed()
+                };
+                if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0
+                    && cursor.y <= info.monitor.top
+                {
                     rect.top = info.work.top;
                     rect.bottom = info.work.bottom;
                 }
@@ -154,8 +159,13 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 rect.bottom = (start.bottom + dy).clamp(start.top + min_h, start.top + max_h);
                 // Mirror of the top edge: a bottom edge taken to the bottom of the
                 // screen makes the window as tall as the work area.
-                let mut info = MonitorInfo { size: std::mem::size_of::<MonitorInfo>() as u32, ..std::mem::zeroed() };
-                if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0 && cursor.y >= info.monitor.bottom - 1 {
+                let mut info = MonitorInfo {
+                    size: std::mem::size_of::<MonitorInfo>() as u32,
+                    ..std::mem::zeroed()
+                };
+                if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0
+                    && cursor.y >= info.monitor.bottom - 1
+                {
                     rect.top = info.work.top;
                     rect.bottom = info.work.bottom;
                 }
@@ -199,7 +209,10 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                     // WM_MOUSEMOVE
                     let mut cursor = Point { x: 0, y: 0 };
                     GetCursorPos(&mut cursor);
-                    if !dragging && (cursor.x - origin.x).abs() < drag_x && (cursor.y - origin.y).abs() < drag_y {
+                    if !dragging
+                        && (cursor.x - origin.x).abs() < drag_x
+                        && (cursor.y - origin.y).abs() < drag_y
+                    {
                         continue;
                     }
                     if !dragging {
@@ -255,10 +268,19 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 // as its normal (restore) position, so a later caption drag
                 // does not jump back to the size from before the snap.
                 // rcNormalPosition uses workspace coordinates.
-                let mut info = MonitorInfo { size: std::mem::size_of::<MonitorInfo>() as u32, ..std::mem::zeroed() };
-                let center = Point { x: (current.left + current.right) / 2, y: (current.top + current.bottom) / 2 };
+                let mut info = MonitorInfo {
+                    size: std::mem::size_of::<MonitorInfo>() as u32,
+                    ..std::mem::zeroed()
+                };
+                let center = Point {
+                    x: (current.left + current.right) / 2,
+                    y: (current.top + current.bottom) / 2,
+                };
                 let (dx, dy) = if GetMonitorInfoW(MonitorFromPoint(center, 2), &mut info) != 0 {
-                    (info.work.left - info.monitor.left, info.work.top - info.monitor.top)
+                    (
+                        info.work.left - info.monitor.left,
+                        info.work.top - info.monitor.top,
+                    )
                 } else {
                     (0, 0)
                 };
@@ -311,12 +333,12 @@ pub(crate) unsafe fn update_splitter_preview(state: &mut UiState, main: Hwnd, cl
     }
     // Same range as layout() allows, measured from the real tabs top.
     let low = scale(state.splitter_tabs_y + 104);
-    let client_y = client_y.clamp(low, scale(state.splitter_tabs_y + state.splitter_max.max(104)).max(low));
+    let client_y = client_y.clamp(
+        low,
+        scale(state.splitter_tabs_y + state.splitter_max.max(104)).max(low),
+    );
     state.splitter_preview = Some(client_y);
-    let mut point = Point {
-        x: 0,
-        y: client_y,
-    };
+    let mut point = Point { x: 0, y: client_y };
     let mut window_rect = Rect {
         left: 0,
         top: 0,
@@ -341,7 +363,7 @@ pub(crate) unsafe fn update_splitter_preview(state: &mut UiState, main: Hwnd, cl
 
 pub(crate) fn hide_splitter_preview(state: &mut UiState) {
     if !state.splitter_preview_window.is_null() {
-         {
+        {
             ShowWindow(state.splitter_preview_window, SW_HIDE);
         }
     }

@@ -247,8 +247,14 @@ fn run(job: &pipeline::Job, root: &Path, events: &mut Events) -> Value {
         .filter_map(|line| dvda_core::task_log::parse(line))
         .collect();
     for action in ["source_metadata", "source_decode", "source_result"] {
-        let phase: Vec<_> = tasks.iter().filter(|event| event.action == action).collect();
-        let files: Vec<_> = phase.iter().filter(|event| !event.name.is_empty()).collect();
+        let phase: Vec<_> = tasks
+            .iter()
+            .filter(|event| event.action == action)
+            .collect();
+        let files: Vec<_> = phase
+            .iter()
+            .filter(|event| !event.name.is_empty())
+            .collect();
         for (index, event) in files.iter().enumerate() {
             assert_eq!(event.current, index as u64 + 1, "{action}");
             assert_eq!(event.total, files.len() as u64, "{action}");

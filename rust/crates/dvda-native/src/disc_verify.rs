@@ -679,14 +679,37 @@ mod tests {
         let mut stamp = original.clone();
         stamp[32] ^= 0x10;
         stamp[0] ^= 0x10;
-        assert!(verifier.verify_mlp(&sources, [Ok(mlp(&stamp))].into_iter()).is_err());
-        assert!(verifier.verify_mlp_coded(&sources, [Ok(mlp(&stamp[..9])), Ok(mlp(&stamp[9..]))].into_iter()).is_ok());
+        assert!(
+            verifier
+                .verify_mlp(&sources, [Ok(mlp(&stamp))].into_iter())
+                .is_err()
+        );
+        assert!(
+            verifier
+                .verify_mlp_coded(
+                    &sources,
+                    [Ok(mlp(&stamp[..9])), Ok(mlp(&stamp[9..]))].into_iter()
+                )
+                .is_ok()
+        );
         let mut broken = stamp.clone();
         broken[0] ^= 0x10;
-        assert!(verifier.verify_mlp_coded(&sources, [Ok(mlp(&broken))].into_iter()).is_err());
+        assert!(
+            verifier
+                .verify_mlp_coded(&sources, [Ok(mlp(&broken))].into_iter())
+                .is_err()
+        );
         stamp[35] ^= 1;
-        assert!(verifier.verify_mlp_coded(&sources, [Ok(mlp(&stamp))].into_iter()).is_err());
-        assert!(verifier.verify_mlp_coded(&sources, [Ok(mlp(&original[..35]))].into_iter()).is_err());
+        assert!(
+            verifier
+                .verify_mlp_coded(&sources, [Ok(mlp(&stamp))].into_iter())
+                .is_err()
+        );
+        assert!(
+            verifier
+                .verify_mlp_coded(&sources, [Ok(mlp(&original[..35]))].into_iter())
+                .is_err()
+        );
     }
 
     #[test]

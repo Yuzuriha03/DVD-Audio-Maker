@@ -12,10 +12,11 @@ use std::{
 };
 
 pub const COLLECTION_FILE: &str = "DvdaNotoCJK-Regular.ttc";
-pub const TARGETS: [(&str, &str); 3] = [
+pub const TARGETS: [(&str, &str); 4] = [
     ("Noto Sans CJK SC", "NotoSansCJKsc-Regular.otf"),
     ("Noto Sans CJK JP", "NotoSansCJKjp-Regular.otf"),
     ("Noto Sans CJK KR", "NotoSansCJKkr-Regular.otf"),
+    ("Noto Sans CJK TC", "NotoSansCJKtc-Regular.otf"),
 ];
 const TTC: u32 = 0x7474_6366;
 const CHECKSUM_MAGIC: u32 = 0xb1b0_afba;
@@ -494,13 +495,16 @@ fn verify_collection_bytes(data: &[u8]) -> Result<(), String> {
     }
     let faces = read_faces(data)?;
     if faces.len() != TARGETS.len() {
-        return Err("Menu collection must contain exactly SC, JP and KR faces".into());
+        return Err("Menu collection must contain exactly SC, JP, KR and TC faces".into());
     }
     for (index, (face, (family, _))) in faces.iter().zip(TARGETS).enumerate() {
         if face.family != family || !coverage(data, face)?.into_iter().all(|present| present) {
             return Err(format!(
                 "Collection face[{index}] has an incorrect family or representative character coverage"
             ));
+        }
+        if face.tables.iter().any(|table| table.tag == *b"fvar") {
+            return Err("Menu fonts must be static Regular instances; instantiate variable fonts at weight 400 before packing".into());
         }
         validate_tables(data, face)?;
         verify_bytes(&standalone(data, face)?, family)?;
@@ -593,12 +597,16 @@ pub fn extract_noto_cjk_faces(
 
 fn pack_bytes(sources: &[Vec<u8>]) -> Result<Vec<u8>, String> {
     if sources.len() != TARGETS.len() {
-        return Err("Expected three regional source fonts".into());
+        return Err("Expected four regional source fonts (SC, JP, KR, TC)".into());
     }
     let mut faces = Vec::new();
     for (source, (family, _)) in sources.iter().zip(TARGETS) {
         verify_bytes(source, family)?;
-        faces.push(parse_face(source, 0)?);
+        let face = parse_face(source, 0)?;
+        if face.tables.iter().any(|table| table.tag == *b"fvar") {
+            return Err("Menu fonts must be static Regular instances; instantiate variable fonts at weight 400 before packing".into());
+        }
+        faces.push(face);
     }
     let mut directories = Vec::new();
     let mut length = 12 + sources.len() * 4;
@@ -684,7 +692,7 @@ pub fn stage_menu_fonts(sources: &[PathBuf], destination: &Path) -> Result<(), S
         }
     }
     Err(format!(
-        "Required menu fonts are missing. Supply {COLLECTION_FILE} or all SC/JP/KR source OTF files in: {}",
+        "Required menu fonts are missing. Supply {COLLECTION_FILE} or all SC/JP/KR/TC source OTF files in: {}",
         sources
             .iter()
             .map(|path| path.display().to_string())
@@ -717,11 +725,11 @@ pub fn run(args: &[String]) -> Result<(), String> {
         [command, path] if command == "inspect" => print_inspection(&inspect_face(Path::new(path))?),
         [command, source, output] if command == "pack" => {
             pack_noto_cjk_faces(Path::new(source), Path::new(output))?;
-            println!("[OK] Verified SC/JP/KR collection: {output}");
+            println!("[OK] Verified SC/JP/KR/TC collection: {output}");
         }
         [command, path] if command == "verify-collection" => {
             verify_noto_cjk_collection(Path::new(path))?;
-            println!("[OK] Verified SC/JP/KR collection: {path}");
+            println!("[OK] Verified SC/JP/KR/TC collection: {path}");
         }
         _ => return Err("Usage: dvda-toolchain font extract <TTC> <output-directory> | verify <OTF> <family> | inspect <OTF> | pack <OTF-directory> <TTC> | verify-collection <TTC>".into()),
     }
@@ -951,6 +959,36 @@ mod tests {
     }
 
     #[test]
+    fn fonts_pack_rejects_variable_sources() {
+        let mut sources = sources();
+        let face = parse_face(&sources[0], 0).unwrap();
+        let index = face
+            .tables
+            .iter()
+            .position(|table| table.tag == *b"CFF ")
+            .unwrap();
+        sources[0][12 + index * 16..16 + index * 16].copy_from_slice(b"fvar");
+        sources[0] = standalone(&sources[0], &parse_face(&sources[0], 0).unwrap()).unwrap();
+        verify_bytes(&sources[0], TARGETS[0].0).unwrap();
+        assert!(pack_bytes(&sources).unwrap_err().contains("static Regular"));
+        let mut packed = pack_bytes(&self::sources()).unwrap();
+        let face_offset = u32_at(&packed, 12).unwrap() as usize;
+        let face = read_faces(&packed).unwrap().remove(0);
+        let index = face
+            .tables
+            .iter()
+            .position(|table| table.tag == *b"CFF ")
+            .unwrap();
+        packed[face_offset + 12 + index * 16..face_offset + 16 + index * 16]
+            .copy_from_slice(b"fvar");
+        assert!(
+            verify_collection_bytes(&packed)
+                .unwrap_err()
+                .contains("static Regular")
+        );
+    }
+
+    #[test]
     fn fonts_pack_deduplicates_shared_tables_preserves_regions_and_rebuilds_exactly() {
         let sources = sources();
         let packed = pack_bytes(&sources).unwrap();
@@ -982,18 +1020,19 @@ mod tests {
         put32(&mut wrong, 12, second);
         put32(&mut wrong, 16, first);
         assert!(verify_collection_bytes(&wrong).is_err());
+        for count in [2, 3] {
+            let mut wrong = good.clone();
+            put32(&mut wrong, 8, count);
+            assert!(
+                verify_collection_bytes(&wrong)
+                    .unwrap_err()
+                    .contains("exactly")
+            );
+        }
         let mut wrong = good.clone();
-        put32(&mut wrong, 8, 2);
-        assert!(
-            verify_collection_bytes(&wrong)
-                .unwrap_err()
-                .contains("exactly")
-        );
-        let mut wrong = good.clone();
-        // Insert another directory offset while adjusting existing directory and
-        // table addresses to form a structurally valid four-face collection.
-        wrong.splice(24..24, [0, 0, 0, 0]);
-        put32(&mut wrong, 8, 4);
+        // Insert a fifth directory entry without changing the original faces.
+        wrong.splice(28..28, [0, 0, 0, 0]);
+        put32(&mut wrong, 8, 5);
         let faces = read_faces(&good).unwrap();
         for (index, face) in faces.iter().enumerate() {
             put32(&mut wrong, 12 + index * 4, (face.offset + 4) as u32);
@@ -1005,7 +1044,7 @@ mod tests {
                 );
             }
         }
-        put32(&mut wrong, 24, (faces[0].offset + 4) as u32);
+        put32(&mut wrong, 28, (faces[0].offset + 4) as u32);
         assert!(
             verify_collection_bytes(&wrong)
                 .unwrap_err()
@@ -1049,7 +1088,7 @@ mod tests {
                 .iter()
                 .map(|result| result.source_face_index)
                 .collect::<Vec<_>>(),
-            [0, 1, 2]
+            [0, 1, 2, 3]
         );
         let hashes: Vec<_> = results
             .iter()
@@ -1067,7 +1106,7 @@ mod tests {
                 .iter()
                 .map(|result| result.source_face_index)
                 .collect::<Vec<_>>(),
-            [1, 0, 2]
+            [1, 0, 2, 3]
         );
         let mut wrong = good.clone();
         let first = u32_at(&wrong, 12).unwrap();
@@ -1093,7 +1132,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             hashes
         );
-        assert_eq!(fs::read_dir(&output).unwrap().count(), 3);
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 4);
     }
 
     #[test]
@@ -1108,7 +1147,7 @@ mod tests {
         stage_menu_fonts(std::slice::from_ref(&source), &stage).unwrap();
         verify_noto_cjk_collection(&stage.join(COLLECTION_FILE)).unwrap();
         assert_eq!(fs::read_dir(&stage).unwrap().count(), 1);
-        assert_eq!(fs::read_dir(&source).unwrap().count(), 3);
+        assert_eq!(fs::read_dir(&source).unwrap().count(), 4);
         // The original packer regenerates from complete source faces even if a
         // stale prepacked TTC is also present in the same source directory.
         fs::write(source.join(COLLECTION_FILE), b"stale collection").unwrap();

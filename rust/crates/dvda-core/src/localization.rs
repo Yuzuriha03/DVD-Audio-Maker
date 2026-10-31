@@ -11,8 +11,10 @@ enum Part {
 struct Entry {
     source: String,
     chinese: String,
+    traditional: String,
     english: String,
     japanese: String,
+    korean: String,
     pattern: Vec<Part>,
     parameters: usize,
     nested: Vec<usize>,
@@ -66,12 +68,20 @@ fn entries() -> &'static [Entry] {
             .expect("embedded English catalog");
         let ja: Value = serde_json::from_str(include_str!("../locales/messages.ja.json"))
             .expect("embedded Japanese catalog");
+        let hant: HashMap<String, String> =
+            serde_json::from_str(include_str!("../locales/messages.zh-TW.json"))
+                .expect("embedded Traditional Chinese catalog");
+        let ko: HashMap<String, String> =
+            serde_json::from_str(include_str!("../locales/messages.ko.json"))
+                .expect("embedded Korean catalog");
         let mut entries = en
             .into_iter()
             .map(|v| {
                 let source = v["Source"].as_str().unwrap().to_owned();
                 Entry {
                     chinese: source.clone(),
+                    traditional: hant[&source].clone(),
+                    korean: ko[&source].clone(),
                     english: v["English"].as_str().unwrap().to_owned(),
                     japanese: ja[&source]
                         .as_str()
@@ -105,6 +115,8 @@ fn entries() -> &'static [Entry] {
                 .unwrap_or(0);
             entries.retain(|e| e.source != source);
             entries.push(Entry {
+                traditional: hant[&source].clone(),
+                korean: ko[&source].clone(),
                 source,
                 pattern,
                 parameters,
@@ -206,8 +218,10 @@ fn channel_counts(language: &str, text: &str) -> Option<String> {
         counts?
             .into_iter()
             .map(|(channels, tracks)| match language {
+                "zh-TW" => format!("{channels} 聲道 × {tracks} 首"),
                 "zh" | "zh-CN" => format!("{channels} 声道 × {tracks} 首"),
                 "ja" => format!("{channels} チャンネル × {tracks} 曲"),
+                "ko" => format!("{channels}채널 × {tracks}곡"),
                 _ => format!("{channels} channels × {tracks} tracks"),
             })
             .collect::<Vec<_>>()
@@ -233,6 +247,8 @@ fn translate_inner(language: &str, text: &str, depth: usize) -> String {
     });
     let target = |e: &'static Entry| match language {
         "ja" => &e.japanese,
+        "ko" => &e.korean,
+        "zh-TW" => &e.traditional,
         "zh" | "zh-CN" => &e.chinese,
         _ => &e.english,
     };
@@ -288,6 +304,10 @@ mod tests {
             "1 チャンネル × 1 曲; 2 チャンネル × 3 曲; 6 チャンネル × 12 曲"
         );
         assert_eq!(translate("zh-CN", input), input);
+        assert_eq!(
+            translate("zh-TW", input),
+            "1 聲道 × 1 首; 2 聲道 × 3 首; 6 聲道 × 12 首"
+        );
         for user_value in [
             r"D:\音乐\1 声道 × 1 首; 2 声道 × 3 首.flac",
             "音轨; 标题",
@@ -298,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn all_catalog_entries_preserve_parameters_in_both_languages() {
+    fn all_catalog_entries_preserve_parameters_in_all_languages() {
         assert!(entries().len() >= 980);
         for e in entries() {
             let args = (0..e.parameters)
@@ -318,12 +338,43 @@ mod tests {
                 .map(|v| v.unwrap_or_default().to_owned())
                 .collect::<Vec<_>>();
             assert_eq!(render(&e.source, &captured), input, "{}", e.source);
-            for template in [&e.chinese, &e.english, &e.japanese] {
+            for template in [
+                &e.chinese,
+                &e.traditional,
+                &e.english,
+                &e.japanese,
+                &e.korean,
+            ] {
                 assert!(!template.is_empty());
                 let output = render(template, &captured);
                 for arg in &args {
                     assert!(output.contains(arg), "{} -> {}", e.source, output);
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn catalogs_preserve_placeholder_indices() {
+        fn indices(text: &str) -> Vec<usize> {
+            let mut indices = parts(text)
+                .into_iter()
+                .filter_map(|part| match part {
+                    Part::Argument(index) => Some(index),
+                    Part::Literal(_) => None,
+                })
+                .collect::<Vec<_>>();
+            indices.sort_unstable();
+            indices
+        }
+        for entry in entries() {
+            for template in [&entry.traditional, &entry.korean] {
+                assert_eq!(
+                    indices(&entry.source),
+                    indices(template),
+                    "{}",
+                    entry.source
+                );
             }
         }
     }
@@ -335,8 +386,16 @@ mod tests {
         assert_ne!(en, raw);
         assert!(en.contains("D:\\音乐\\失败.flac"));
         assert_eq!(translate("zh-CN", raw), raw);
-        let diagnostic = "decoder 0x6f: unknown failure at offset 98765";
-        assert_eq!(translate("ja", diagnostic), diagnostic);
+        assert_eq!(translate("zh-TW", raw), "報告已寫入: D:\\音乐\\失败.flac");
+        for language in ["zh-CN", "zh-TW", "en", "ja", "ko"] {
+            for diagnostic in [
+                "decoder 0x6f: unknown failure at offset 98765",
+                "[flac @ 00000123] invalid residual at D:\\音乐\\音源.flac",
+                r#"{"ExitCode":1,"Path":"音乐.flac","Message":"unknown diagnostic"}"#,
+            ] {
+                assert_eq!(translate(language, diagnostic), diagnostic);
+            }
+        }
         assert_eq!(translate("ja", "停止任务"), "停止");
     }
 }

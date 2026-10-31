@@ -164,6 +164,65 @@ fn json_profiles_help_shell_and_argument_validation() {
     assert!(ok(run(&root.0, &["abi.version"])).contains("rust"));
 }
 #[test]
+fn language_selection_preserves_shared_help_errors_and_machine_output() {
+    let root = Scratch::new();
+    let profile = root.0.join("方案.json");
+    fs::write(
+        &profile,
+        serde_json::to_vec(&json!({
+            "Version": 1,
+            "Language": "en",
+            "Values": {
+                "DVDA_SRC": "C:/音乐/音源",
+                "DVDA_FINAL_DIR": "C:/output",
+                "DVDA_TITLE": "专辑與音樂"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let path = profile.to_str().unwrap();
+    let help = ok(run(&root.0, &["help"]));
+    assert!(help.contains("--language zh-CN|zh-TW|en|ja|ko"));
+    let mut baseline = None;
+    for language in ["zh-CN", "zh-TW", "en", "ja", "zh-Hant", "zh-HK", "zh-MO"] {
+        assert_eq!(ok(run(&root.0, &["help", "--language", language])), help);
+        let error = run(
+            &root.0,
+            &[
+                "--language",
+                language,
+                "config",
+                "--profile",
+                path,
+                "--unknown",
+            ],
+        );
+        assert_eq!(error.status.code(), Some(2));
+        assert!(error.stdout.is_empty());
+        assert_eq!(error.stderr, b"[ERROR] Unexpected argument: --unknown\n");
+        let output = ok(run(
+            &root.0,
+            &["--language", language, "config", "--profile", path],
+        ));
+        let mut value: Value = serde_json::from_str(&output).unwrap();
+        let canonical = if language.starts_with("zh-") && language != "zh-CN" {
+            "zh-TW"
+        } else {
+            language
+        };
+        assert_eq!(value["Language"], canonical);
+        assert_eq!(value["StoredValues"]["DVDA_TITLE"], "专辑與音樂");
+        value.as_object_mut().unwrap().remove("Language");
+        if let Some(baseline) = &baseline {
+            assert_eq!(&value, baseline);
+        } else {
+            baseline = Some(value);
+        }
+    }
+}
+
+#[test]
 #[ignore = "requires existing source-built x64 media/formats/encoder/author/verifier"]
 fn cli_conversion_audio_tools_and_disc_verification_modes() {
     let root = Scratch::new();

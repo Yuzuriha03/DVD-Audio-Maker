@@ -134,6 +134,8 @@ struct Request {
     menu_cover_dim: i32,
     #[serde(default = "default_menu_norm")]
     menu_norm: String,
+    #[serde(default)]
+    menu_language: String,
     menu_font: String,
     menu_font_japanese: String,
     menu_font_korean: String,
@@ -210,6 +212,14 @@ fn build(request: Request) -> Result<String, String> {
         ),
     );
     if request.menu_enabled {
+        let language =
+            crate::config_files::normalize_language(Some(&request.menu_language), "zh-CN")
+                .map_err(|error| {
+                    error
+                        .message
+                        .unwrap_or_else(|| "Invalid menu language".into())
+                })?;
+        line(&mut canonical, "menu_language", language);
         append_library_hashes(
             &mut canonical,
             "image",
@@ -491,6 +501,21 @@ mod tests {
         assert_eq!(second, with_norm("pal"));
         assert_ne!(second, with_norm("ntsc"));
         assert_ne!(with_norm("ntsc"), with_norm("secam"));
+        let with_language = |language: &str, enabled: bool| {
+            let mut request = request.clone();
+            request["MenuLanguage"] = json!(language);
+            request["MenuEnabled"] = json!(enabled);
+            build(serde_json::from_value(request).unwrap()).expect("signature")
+        };
+        assert_eq!(second, with_language("zh-CN", true));
+        assert_eq!(with_language("zh-TW", true), with_language("zh-Hant", true));
+        for language in ["zh-TW", "ja", "en"] {
+            assert_ne!(second, with_language(language, true));
+            assert_eq!(
+                with_language("zh-CN", false),
+                with_language(language, false)
+            );
+        }
         let _ = fs::remove_dir_all(root);
     }
 }

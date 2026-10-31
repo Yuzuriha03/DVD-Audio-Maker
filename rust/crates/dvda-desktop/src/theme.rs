@@ -317,7 +317,11 @@ pub(crate) fn apply_theme(hwnd: Hwnd, state: &mut UiState, dark: bool) {
             let dark_name = wide("DarkMode_Explorer");
             SetWindowTheme(
                 state.tooltip_window,
-                if dark { dark_name.as_ptr() } else { ptr::null() },
+                if dark {
+                    dark_name.as_ptr()
+                } else {
+                    ptr::null()
+                },
                 ptr::null(),
             );
         }

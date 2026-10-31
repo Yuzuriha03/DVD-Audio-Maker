@@ -28,45 +28,150 @@ pub(crate) fn retention_choice(lang: Lang) -> Result<bool, String> {
 
 pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
     #[repr(C, packed)]
-    struct Button { id: i32, text: *const u16 }
+    struct Button {
+        id: i32,
+        text: *const u16,
+    }
     #[repr(C, packed)]
     struct Config {
-        size: u32, parent: Hwnd, instance: *mut std::ffi::c_void, flags: u32,
-        common: u32, title: *const u16, icon: *const u16, instruction: *const u16,
-        content: *const u16, count: u32, buttons: *const Button, default_button: i32,
-        radio_count: u32, radios: *const Button, default_radio: i32,
-        verification: *const u16, expanded: *const u16, expanded_control: *const u16,
-        collapsed_control: *const u16, footer_icon: *const u16, footer: *const u16,
-        callback: usize, callback_data: isize, width: u32,
+        size: u32,
+        parent: Hwnd,
+        instance: *mut std::ffi::c_void,
+        flags: u32,
+        common: u32,
+        title: *const u16,
+        icon: *const u16,
+        instruction: *const u16,
+        content: *const u16,
+        count: u32,
+        buttons: *const Button,
+        default_button: i32,
+        radio_count: u32,
+        radios: *const Button,
+        default_radio: i32,
+        verification: *const u16,
+        expanded: *const u16,
+        expanded_control: *const u16,
+        collapsed_control: *const u16,
+        footer_icon: *const u16,
+        footer: *const u16,
+        callback: usize,
+        callback_data: isize,
+        width: u32,
     }
     #[link(name = "comctl32")]
     unsafe extern "system" {
-        fn TaskDialogIndirect(config: *const Config, button: *mut i32, radio: *mut i32, verified: *mut i32) -> i32;
+        fn TaskDialogIndirect(
+            config: *const Config,
+            button: *mut i32,
+            radio: *mut i32,
+            verified: *mut i32,
+        ) -> i32;
     }
     let (title, content, continue_text, restart_text) = if retention {
         match lang {
-            Lang::Zh => ("制作未完成", "是否保留本次进度，以便下次继续制作？删除进度只会删除此任务的中间文件，不会删除音源或已输出的 ISO。", "保留进度", "删除进度"),
-            Lang::Ja => ("作成が完了していません", "次回再開するため進捗を保存しますか？削除するのはタスクの一時ファイルのみです。", "進捗を保存", "進捗を削除"),
-            _ => ("Production unfinished", "Keep progress to continue next time? Deletion removes only this task's intermediate files, not sources or published ISOs.", "Keep progress", "Delete progress"),
+            Lang::Zh => (
+                "制作未完成",
+                "是否保留本次进度，以便下次继续制作？删除进度只会删除此任务的中间文件，不会删除音源或已输出的 ISO。",
+                "保留进度",
+                "删除进度",
+            ),
+            Lang::ZhHant => (
+                "製作未完成",
+                "是否保留本次進度，以便下次繼續製作？刪除進度只會刪除此任務的中間檔案，不會刪除音源或已輸出的 ISO。",
+                "保留進度",
+                "刪除進度",
+            ),
+            Lang::Ja => (
+                "作成が完了していません",
+                "次回再開するため進捗を保存しますか？削除するのはタスクの一時ファイルのみです。",
+                "進捗を保存",
+                "進捗を削除",
+            ),
+            Lang::Ko => (
+                "제작 미완료",
+                "다음에 계속할 수 있도록 진행 상황을 보관할까요? 삭제 시 이 작업의 중간 파일만 삭제하며 음원과 출력된 ISO는 삭제하지 않습니다.",
+                "진행 상황 보관",
+                "진행 상황 삭제",
+            ),
+            _ => (
+                "Production unfinished",
+                "Keep progress to continue next time? Deletion removes only this task's intermediate files, not sources or published ISOs.",
+                "Keep progress",
+                "Delete progress",
+            ),
         }
-    } else { match lang {
-        Lang::Zh => ("发现未完成的制作", "继续制作会校验并使用已保存的进度；重新制作会删除该任务的中间文件，从头开始。音源和已输出的 ISO 不会删除。", "继续制作", "重新制作"),
-        Lang::Ja => ("未完了の作業があります", "保存済みの進捗を確認して再開するか、このタスクの一時ファイルを削除して最初から作成します。音源と出力済み ISO は削除しません。", "作成を続ける", "最初から作成"),
-        _ => ("Unfinished production found", "Continue validates saved progress. Restart deletes this task's intermediate files and starts over. Sources and published ISOs are preserved.", "Continue production", "Restart production"),
-    } };
+    } else {
+        match lang {
+            Lang::Zh => (
+                "发现未完成的制作",
+                "继续制作会校验并使用已保存的进度；重新制作会删除该任务的中间文件，从头开始。音源和已输出的 ISO 不会删除。",
+                "继续制作",
+                "重新制作",
+            ),
+            Lang::ZhHant => (
+                "發現未完成的製作",
+                "繼續製作會校驗并使用已儲存的進度；重新製作會刪除該任務的中間檔案，從頭開始。音源和已輸出的 ISO 不會刪除。",
+                "繼續製作",
+                "重新製作",
+            ),
+            Lang::Ja => (
+                "未完了の作業があります",
+                "保存済みの進捗を確認して再開するか、このタスクの一時ファイルを削除して最初から作成します。音源と出力済み ISO は削除しません。",
+                "作成を続ける",
+                "最初から作成",
+            ),
+            Lang::Ko => (
+                "미완료 제작 발견",
+                "계속하면 저장된 진행 상황을 검증하여 사용합니다. 다시 시작하면 이 작업의 중간 파일을 삭제하고 처음부터 제작합니다. 음원과 출력된 ISO는 보존됩니다.",
+                "제작 계속",
+                "처음부터 제작",
+            ),
+            _ => (
+                "Unfinished production found",
+                "Continue validates saved progress. Restart deletes this task's intermediate files and starts over. Sources and published ISOs are preserved.",
+                "Continue production",
+                "Restart production",
+            ),
+        }
+    };
     let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
-    let title = wide(title); let content = wide(content);
-    let continue_text = wide(continue_text); let restart_text = wide(restart_text);
-    let buttons = [Button { id: 1001, text: continue_text.as_ptr() }, Button { id: 1002, text: restart_text.as_ptr() }];
+    let title = wide(title);
+    let content = wide(content);
+    let continue_text = wide(continue_text);
+    let restart_text = wide(restart_text);
+    let buttons = [
+        Button {
+            id: 1001,
+            text: continue_text.as_ptr(),
+        },
+        Button {
+            id: 1002,
+            text: restart_text.as_ptr(),
+        },
+    ];
     let mut config: Config = unsafe { std::mem::zeroed() };
     config.size = std::mem::size_of::<Config>() as u32;
-    config.title = title.as_ptr(); config.instruction = title.as_ptr();
-    config.content = content.as_ptr(); config.count = 2;
-    config.buttons = buttons.as_ptr(); config.default_button = 1001;
+    config.title = title.as_ptr();
+    config.instruction = title.as_ptr();
+    config.content = content.as_ptr();
+    config.count = 2;
+    config.buttons = buttons.as_ptr();
+    config.default_button = 1001;
     let mut button = 0;
-    let result = unsafe { TaskDialogIndirect(&config, &mut button, std::ptr::null_mut(), std::ptr::null_mut()) };
+    let result = unsafe {
+        TaskDialogIndirect(
+            &config,
+            &mut button,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
     if result < 0 || !matches!(button, 1001 | 1002) {
-        return Err("Cannot display unfinished-task recovery choice; task files have been preserved.".into());
+        return Err(
+            "Cannot display unfinished-task recovery choice; task files have been preserved."
+                .into(),
+        );
     }
     Ok(button == 1002)
 }
@@ -125,11 +230,11 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
         state.controls.build,
         state.controls.verify,
     ] {
-         {
+        {
             EnableWindow(hwnd, 0);
         }
     }
-     {
+    {
         EnableWindow(state.controls.cancel, 1);
     }
     let start_key = match command {
@@ -147,7 +252,7 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
     if checked(state.controls.live) {
         render_log(state);
     }
-     {
+    {
         let progress = state.controls.progress;
         win::send_int(progress, PBM_SETRANGE32, 0, 100);
         win::send_int(progress, PBM_SETPOS, 0, 0);
@@ -253,7 +358,9 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
             options.finish_task();
         }
         if !ok && command == ID_BUILD {
-            let _ = callbacks.logs.send(WorkerEvent::Retention(Box::new(options)));
+            let _ = callbacks
+                .logs
+                .send(WorkerEvent::Retention(Box::new(options)));
         } else {
             drop(options);
         }
@@ -293,7 +400,7 @@ pub(crate) fn emit_diagnostics(callbacks: &mut dyn Callbacks, diagnostics: &[Val
 
 pub(crate) fn update_progress(state: &mut UiState, value: u16) {
     state.progress_value = state.progress_value.max(value.min(99));
-     {
+    {
         win::send_int(
             state.controls.progress,
             PBM_SETPOS,
@@ -340,8 +447,10 @@ pub(crate) fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
                 presentation::phrase(
                     state.lang(),
                     "有提示待查看",
+                    "有提示待查看",
                     "Review the warnings",
-                    "警告を確認してください"
+                    "警告を確認してください",
+                    "경고 확인"
                 )
             ),
         );
@@ -354,13 +463,13 @@ pub(crate) fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
     render_log(state);
     if kind == 1 {
         state.progress_value = 100;
-         {
+        {
             win::send_int(state.controls.progress, PBM_SETPOS, 100, 0);
         }
     }
     // Publish idle only after the final diagnostics, progress and status are
     // complete. A new task must not be accepted inside an unfinished callback.
-     {
+    {
         EnableWindow(state.controls.cancel, 0);
     }
     set_busy_controls(state, false);
@@ -369,7 +478,7 @@ pub(crate) fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
         state.controls.build,
         state.controls.verify,
     ] {
-         {
+        {
             EnableWindow(hwnd, 1);
         }
     }
@@ -391,7 +500,7 @@ pub(crate) fn relayout_for_task(state: &mut UiState) {
 pub(crate) fn cancel_operation(state: &mut UiState) {
     if let Some(cancel) = &state.cancel {
         cancel.store(true, Ordering::Relaxed);
-         {
+        {
             EnableWindow(state.controls.cancel, 0);
         }
         state.status_key = "stopping";
@@ -432,7 +541,12 @@ pub(crate) fn set_busy_controls(state: &mut UiState, busy: bool) {
     }
     for page in &state.pages {
         unsafe {
-            RedrawWindow(*page, ptr::null(), ptr::null_mut(), RDW_INVALIDATE | RDW_ALLCHILDREN);
+            RedrawWindow(
+                *page,
+                ptr::null(),
+                ptr::null_mut(),
+                RDW_INVALIDATE | RDW_ALLCHILDREN,
+            );
         }
     }
     for hwnd in state
@@ -453,7 +567,7 @@ pub(crate) fn set_busy_controls(state: &mut UiState, busy: bool) {
     }
     for (hwnd, key) in &state.buttons {
         if matches!(*key, "open" | "save" | "save_as") {
-             {
+            {
                 EnableWindow(*hwnd, enabled);
             }
         }

@@ -23,13 +23,7 @@ pub(crate) fn draw_text_run(
         let old = SelectObject(dc, font);
         SetBkMode(dc, 1);
         SetTextColor(dc, color);
-        DrawTextW(
-            dc,
-            text.as_ptr(),
-            (text.len() - 1) as i32,
-            rect,
-            format,
-        );
+        DrawTextW(dc, text.as_ptr(), (text.len() - 1) as i32, rect, format);
         SelectObject(dc, old);
     }
 }
@@ -149,11 +143,7 @@ pub(crate) unsafe fn draw_action_button(item: &DrawItemStruct, primary: bool) {
             &label,
             item.dc,
             &mut text_rect,
-            if primary {
-                semibold_font()
-            } else {
-                ui_font()
-            },
+            if primary { semibold_font() } else { ui_font() },
             text,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
         );
@@ -206,11 +196,7 @@ pub(crate) unsafe fn draw_tab_button(item: &DrawItemStruct, active: bool) {
             &label,
             item.dc,
             &mut text_rect,
-            if active {
-                semibold_font()
-            } else {
-                ui_font()
-            },
+            if active { semibold_font() } else { ui_font() },
             if disabled {
                 c_disabled_text()
             } else if active || hover {
@@ -240,7 +226,11 @@ pub(crate) fn header_gradient_at(y: i32) -> u32 {
     let mix = |top: u32, bottom: u32| -> u32 {
         (top as f64 + (bottom as f64 - top as f64) * ratio) as u32
     };
-    rgb(mix(top_r, bottom_r), mix(top_g, bottom_g), mix(top_b, bottom_b))
+    rgb(
+        mix(top_r, bottom_r),
+        mix(top_g, bottom_g),
+        mix(top_b, bottom_b),
+    )
 }
 
 pub(crate) fn lighten(color: u32, amount: i32) -> u32 {
@@ -312,19 +302,9 @@ pub(crate) unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
                 }
             }
             2 => {
-                MoveToEx(
-                    item.dc,
-                    center_x - unit,
-                    center_y - unit,
-                    ptr::null_mut(),
-                );
+                MoveToEx(item.dc, center_x - unit, center_y - unit, ptr::null_mut());
                 LineTo(item.dc, center_x + unit, center_y + unit);
-                MoveToEx(
-                    item.dc,
-                    center_x + unit,
-                    center_y - unit,
-                    ptr::null_mut(),
-                );
+                MoveToEx(item.dc, center_x + unit, center_y - unit, ptr::null_mut());
                 LineTo(item.dc, center_x - unit, center_y + unit);
             }
             _ => {
@@ -386,7 +366,8 @@ pub(crate) unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
                         );
                     }
                 }
-            }        }
+            }
+        }
         SelectObject(item.dc, old_pen);
         DeleteObject(pen);
     }
@@ -448,7 +429,7 @@ pub(crate) unsafe fn draw_combo_item(item: &DrawItemStruct) {
     } else {
         c_card()
     };
-     {
+    {
         FillRect(item.dc, &item.rect, brush(background));
         let mut rect = item.rect;
         rect.left += scale(8);
@@ -458,11 +439,7 @@ pub(crate) unsafe fn draw_combo_item(item: &DrawItemStruct) {
             item.dc,
             &mut rect,
             ui_font(),
-            if disabled {
-                c_disabled_text()
-            } else {
-                c_ink()
-            },
+            if disabled { c_disabled_text() } else { c_ink() },
             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS,
         );
     }
@@ -474,29 +451,64 @@ pub(crate) unsafe fn draw_combo_item(item: &DrawItemStruct) {
 pub(crate) unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     unsafe {
         let memory = CreateCompatibleDC(item.dc);
-        let bitmap = CreateCompatibleBitmap(item.dc, item.rect.right.max(1), item.rect.bottom.max(1));
+        let bitmap =
+            CreateCompatibleBitmap(item.dc, item.rect.right.max(1), item.rect.bottom.max(1));
         if memory.is_null() || bitmap.is_null() {
-            if !memory.is_null() { DeleteDC(memory); }
-            if !bitmap.is_null() { DeleteObject(bitmap); }
+            if !memory.is_null() {
+                DeleteDC(memory);
+            }
+            if !bitmap.is_null() {
+                DeleteObject(bitmap);
+            }
             return draw_owner_item_contents(hwnd, item);
         }
         let previous = SelectObject(memory, bitmap);
         // Rounded corners must show the parent's background. Copying the
         // screen instead would preserve stale pixels from earlier layouts,
         // because the clipped parent never repaints under its children.
-        let background = SendMessageW(GetParent(item.item), WM_CTLCOLORBTN, memory as Wparam, item.item as Lparam) as Hbrush;
-        FillRect(memory, &item.rect, if background.is_null() { body_brush() } else { background });
+        let background = SendMessageW(
+            GetParent(item.item),
+            WM_CTLCOLORBTN,
+            memory as Wparam,
+            item.item as Lparam,
+        ) as Hbrush;
+        FillRect(
+            memory,
+            &item.rect,
+            if background.is_null() {
+                body_brush()
+            } else {
+                background
+            },
+        );
         let buffered = DrawItemStruct {
-            control_type: item.control_type, control_id: item.control_id,
-            item_id: item.item_id, action: item.action, state: item.state,
-            item: item.item, dc: memory,
-            rect: Rect { left: item.rect.left, top: item.rect.top, right: item.rect.right, bottom: item.rect.bottom },
+            control_type: item.control_type,
+            control_id: item.control_id,
+            item_id: item.item_id,
+            action: item.action,
+            state: item.state,
+            item: item.item,
+            dc: memory,
+            rect: Rect {
+                left: item.rect.left,
+                top: item.rect.top,
+                right: item.rect.right,
+                bottom: item.rect.bottom,
+            },
             data: item.data,
         };
         let handled = draw_owner_item_contents(hwnd, &buffered);
-        BitBlt(item.dc, item.rect.left, item.rect.top,
-            item.rect.right - item.rect.left, item.rect.bottom - item.rect.top,
-            memory, item.rect.left, item.rect.top, 0x00cc0020);
+        BitBlt(
+            item.dc,
+            item.rect.left,
+            item.rect.top,
+            item.rect.right - item.rect.left,
+            item.rect.bottom - item.rect.top,
+            memory,
+            item.rect.left,
+            item.rect.top,
+            0x00cc0020,
+        );
         SelectObject(memory, previous);
         DeleteObject(bitmap);
         DeleteDC(memory);
@@ -560,7 +572,7 @@ pub(crate) unsafe fn begin_buffered_paint(
         right: 0,
         bottom: 0,
     };
-     {
+    {
         GetClientRect(hwnd, &mut rect);
     }
     let width = rect.right.max(1);
@@ -583,7 +595,7 @@ pub(crate) unsafe fn begin_buffered_paint(
         };
     }
     let previous = SelectObject(memory, bitmap);
-     {
+    {
         FillRect(memory, &rect, brush(background));
     }
     BufferedPaint {
@@ -598,7 +610,11 @@ pub(crate) unsafe fn begin_buffered_paint(
 /// # Safety
 /// Must be called exactly once, with the `hwnd`, `paint` and `buffer` returned by the
 /// matching `begin_buffered_paint` call in the same WM_PAINT.
-pub(crate) unsafe fn finish_buffered_paint(hwnd: Hwnd, paint: &PaintStruct, buffer: &BufferedPaint) {
+pub(crate) unsafe fn finish_buffered_paint(
+    hwnd: Hwnd,
+    paint: &PaintStruct,
+    buffer: &BufferedPaint,
+) {
     unsafe {
         if !buffer.bitmap.is_null() {
             BitBlt(
@@ -750,12 +766,21 @@ pub(crate) unsafe fn paint_window(hwnd: Hwnd) {
 /// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn buffered_label_proc(
-    hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam, id: usize, _data: usize,
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+    id: usize,
+    _data: usize,
 ) -> Lresult {
     #[link(name = "comctl32")]
     unsafe extern "system" {
         fn DefSubclassProc(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
-        fn RemoveWindowSubclass(hwnd: Hwnd, proc: unsafe extern "system" fn(Hwnd, u32, Wparam, Lparam, usize, usize) -> Lresult, id: usize) -> i32;
+        fn RemoveWindowSubclass(
+            hwnd: Hwnd,
+            proc: unsafe extern "system" fn(Hwnd, u32, Wparam, Lparam, usize, usize) -> Lresult,
+            id: usize,
+        ) -> i32;
     }
     unsafe {
         match message {
@@ -806,7 +831,12 @@ pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
     unsafe {
         let mut rect = client_rect(hwnd);
         // The parent picks the brush and text colour (muted, log, disabled).
-        let brush = SendMessageW(GetParent(hwnd), WM_CTLCOLORSTATIC, dc as Wparam, hwnd as Lparam) as Hbrush;
+        let brush = SendMessageW(
+            GetParent(hwnd),
+            WM_CTLCOLORSTATIC,
+            dc as Wparam,
+            hwnd as Lparam,
+        ) as Hbrush;
         if !brush.is_null() {
             FillRect(dc, &rect, brush);
         }
@@ -837,7 +867,12 @@ pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
         let font = SendMessageW(hwnd, WM_SETFONT + 1, 0, 0) as Handle; // WM_GETFONT
         let old = SelectObject(dc, if font.is_null() { ui_font() } else { font });
         let wide_text = wide(&text);
-        let mut needed = Rect { left: 0, top: 0, right: rect.right, bottom: 0 };
+        let mut needed = Rect {
+            left: 0,
+            top: 0,
+            right: rect.right,
+            bottom: 0,
+        };
         DrawTextW(dc, wide_text.as_ptr(), -1, &mut needed, flags | DT_CALCRECT);
         rect.top -= text_lift(dc, needed.bottom, rect.bottom);
         DrawTextW(dc, wide_text.as_ptr(), -1, &mut rect, flags);
@@ -868,10 +903,30 @@ pub(crate) fn paint_page_border(hwnd: Hwnd) {
         return;
     }
     for edge in [
-        Rect { left: 0, top: 0, right: width, bottom: 1 },
-        Rect { left: 0, top: height - 1, right: width, bottom: height },
-        Rect { left: 0, top: 0, right: 1, bottom: height },
-        Rect { left: width - 1, top: 0, right: width, bottom: height },
+        Rect {
+            left: 0,
+            top: 0,
+            right: width,
+            bottom: 1,
+        },
+        Rect {
+            left: 0,
+            top: height - 1,
+            right: width,
+            bottom: height,
+        },
+        Rect {
+            left: 0,
+            top: 0,
+            right: 1,
+            bottom: height,
+        },
+        Rect {
+            left: width - 1,
+            top: 0,
+            right: width,
+            bottom: height,
+        },
     ] {
         FillRect(dc, &edge, border_brush());
     }

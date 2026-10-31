@@ -705,8 +705,8 @@ fn system_dependency(name: &str, api_sets: bool) -> bool {
 /// The Rust author, the media and image libraries, and the menu archives are linked in.
 pub fn validate_shipped(executable: &Path) -> Result<(), String> {
     let bytes = fs::read(executable).map_err(err)?;
-    let imports = pe::imports(&bytes, false)
-        .map_err(|error| format!("{}: {error}", executable.display()))?;
+    let imports =
+        pe::imports(&bytes, false).map_err(|error| format!("{}: {error}", executable.display()))?;
     if let Some(name) = imports.iter().find(|name| !system_dependency(name, true)) {
         return Err(format!("Shipped executable imports a bundled DLL: {name}"));
     }

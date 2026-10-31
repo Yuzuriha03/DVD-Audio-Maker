@@ -44,7 +44,12 @@ pub(crate) fn fit_row(slots: &[(i32, i32, u8)], available: i32) -> Option<Vec<i3
 /// Text widths are measured DIPs. Spacing shrinks first (the empty space
 /// after the title and checkbox texts, then the gaps between controls), then
 /// the button padding; the buttons wrap only when even that cannot fit.
-pub(crate) fn log_toolbar_layout(available: i32, label_text: i32, check_text: [i32; 2], button_text: [i32; 2]) -> LogToolbar {
+pub(crate) fn log_toolbar_layout(
+    available: i32,
+    label_text: i32,
+    check_text: [i32; 2],
+    button_text: [i32; 2],
+) -> LogToolbar {
     const BUTTON: u8 = 0;
     const GAP: u8 = 1;
     const SLACK: u8 = 2;
@@ -64,12 +69,19 @@ pub(crate) fn log_toolbar_layout(available: i32, label_text: i32, check_text: [i
         (6, 8, GAP),
         button(button_text[1], LOG_BUTTON_WIDTHS[1]),
     ];
-    let single: Vec<_> = left.iter().chain(&[(12, 12, GAP)]).chain(&right).copied().collect();
+    let single: Vec<_> = left
+        .iter()
+        .chain(&[(12, 12, GAP)])
+        .chain(&right)
+        .copied()
+        .collect();
     let (left_sizes, right_sizes, wrap) = match fit_row(&single, available) {
         Some(sizes) => (sizes[..7].to_vec(), sizes[8..].to_vec(), false),
         None => (
-            fit_row(&left, available).unwrap_or_else(|| left.iter().map(|(min, _, _)| *min).collect()),
-            fit_row(&right, available).unwrap_or_else(|| right.iter().map(|(min, _, _)| *min).collect()),
+            fit_row(&left, available)
+                .unwrap_or_else(|| left.iter().map(|(min, _, _)| *min).collect()),
+            fit_row(&right, available)
+                .unwrap_or_else(|| right.iter().map(|(min, _, _)| *min).collect()),
             true,
         ),
     };
@@ -100,8 +112,14 @@ mod log_toolbar_tests {
         let _ui_test_lock = ui_test_guard();
         let bar = log_toolbar_layout(1200, 60, [80, 70], [90, 100]);
         assert!(!bar.wrap);
-        assert_eq!((bar.label_width, bar.combo_x, bar.check_x, bar.check_width), (120, 128, [276, 414], [130, 130]));
-        assert_eq!((bar.button_x, bar.button_width), ([1200 - 148 - 8 - 130, 1200 - 148], [130, 148]));
+        assert_eq!(
+            (bar.label_width, bar.combo_x, bar.check_x, bar.check_width),
+            (120, 128, [276, 414], [130, 130])
+        );
+        assert_eq!(
+            (bar.button_x, bar.button_width),
+            ([1200 - 148 - 8 - 130, 1200 - 148], [130, 148])
+        );
     }
 
     #[test]
@@ -114,14 +132,20 @@ mod log_toolbar_tests {
         assert!(!tight.wrap);
         assert_eq!(tight.check_width, [107, 97]);
         assert_eq!(tight.button_width, [114, 124]);
-        assert_eq!(tight.button_x[0], tight.check_x[1] + tight.check_width[1] + 12);
+        assert_eq!(
+            tight.button_x[0],
+            tight.check_x[1] + tight.check_width[1] + 12
+        );
         assert!(log_toolbar_layout(minimum - 1, label, checks, buttons).wrap);
         let mut previous = tight;
         for available in minimum + 1..900 {
             let bar = log_toolbar_layout(available, label, checks, buttons);
             assert!(!bar.wrap);
             assert!(bar.combo_x >= previous.combo_x && bar.check_x[1] >= previous.check_x[1]);
-            assert!(bar.button_x[0] >= previous.button_x[0], "copy moved left at {available}");
+            assert!(
+                bar.button_x[0] >= previous.button_x[0],
+                "copy moved left at {available}"
+            );
             assert!(bar.button_x[0] >= bar.check_x[1] + bar.check_width[1] + 12);
             assert_eq!(bar.button_x[1] + bar.button_width[1], available);
             previous = bar;
@@ -174,7 +198,10 @@ pub(crate) fn begin_placement_batch() {
 pub(crate) fn placement_matches(hwnd: Hwnd, parent: Hwnd, target: &Rect) -> bool {
     let mut rect: Rect = Rect::default();
     GetWindowRect(hwnd, &mut rect);
-    let mut origin = Point { x: rect.left, y: rect.top };
+    let mut origin = Point {
+        x: rect.left,
+        y: rect.top,
+    };
     ScreenToClient(parent, &mut origin);
     let fixed_combo_height = COMBO_IDS.contains(&(GetDlgCtrlID(hwnd) as usize));
     origin.x == target.left
@@ -200,7 +227,10 @@ pub(crate) fn end_placement_batch() {
         }
     }
     for parent in parents {
-        let group: Vec<&(Hwnd, Hwnd, Rect)> = moves.iter().filter(|(_, owner, _)| *owner == parent).collect();
+        let group: Vec<&(Hwnd, Hwnd, Rect)> = moves
+            .iter()
+            .filter(|(_, owner, _)| *owner == parent)
+            .collect();
         let mut handle = unsafe { BeginDeferWindowPos(group.len() as i32) };
         for (hwnd, _, target) in &group {
             if handle.is_null() {
@@ -265,7 +295,15 @@ pub(crate) fn place_log(state: &mut UiState, target: Rect, revealed: bool) {
     if state.sizing && !revealed && current_size.0 > 0 && current_size.1 > 0 {
         state.log_frozen = current_size != size;
     } else {
-        place_px(log, Rect { left: 0, top: 0, right: size.0, bottom: size.1 });
+        place_px(
+            log,
+            Rect {
+                left: 0,
+                top: 0,
+                right: size.0,
+                bottom: size.1,
+            },
+        );
         state.log_frozen = false;
     }
 }
@@ -276,7 +314,12 @@ pub(crate) fn place_log(state: &mut UiState, target: Rect, revealed: bool) {
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
 /// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
-pub(crate) unsafe extern "system" fn log_frame_proc(hwnd: Hwnd, message: u32, wparam: Wparam, lparam: Lparam) -> Lresult {
+pub(crate) unsafe extern "system" fn log_frame_proc(
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
     match message {
         WM_ERASEBKGND => 1,
         WM_PAINT => {
@@ -315,16 +358,29 @@ pub(crate) fn create_log_frame(parent: Hwnd) -> Hwnd {
         };
         let _ = RegisterClassW(&registration);
     });
-    create!(parent, "DVD_AUDIO_LOG_FRAME_RUST", "", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 18, 540, 1140, 215, 0)
+    create!(
+        parent,
+        "DVD_AUDIO_LOG_FRAME_RUST",
+        "",
+        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
+        18,
+        540,
+        1140,
+        215,
+        0
+    )
 }
 
 pub(crate) fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
-    place_px(hwnd, Rect {
-        left: scale(x),
-        top: scale(y),
-        right: scale(x) + scale(width),
-        bottom: scale(y) + scale(height),
-    });
+    place_px(
+        hwnd,
+        Rect {
+            left: scale(x),
+            top: scale(y),
+            right: scale(x) + scale(width),
+            bottom: scale(y) + scale(height),
+        },
+    );
 }
 
 /// Like place(), with a target rectangle in pixels.
@@ -335,7 +391,11 @@ pub(crate) fn place_px(hwnd: Hwnd, target: Rect) {
         let Some(batch) = batch.as_mut() else {
             return false;
         };
-        match batch.pending.iter_mut().find(|(control, _, _)| *control == hwnd) {
+        match batch
+            .pending
+            .iter_mut()
+            .find(|(control, _, _)| *control == hwnd)
+        {
             Some(entry) => entry.2 = target,
             None => batch.pending.push((hwnd, parent, target)),
         }
@@ -360,7 +420,7 @@ pub(crate) fn rescale_ui(hwnd: Hwnd, state: &mut UiState) {
             if *handle as Hwnd == state.controls.log || *handle as Hwnd == state.log_frame {
                 continue;
             }
-             {
+            {
                 MoveWindow(
                     *handle as Hwnd,
                     scale(*x),
@@ -395,7 +455,7 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         right: 0,
         bottom: 0,
     };
-     {
+    {
         GetClientRect(hwnd, &mut rect);
     }
     let width = unscale(rect.right - rect.left).max(640);
@@ -434,7 +494,11 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         header_x[index] = right - header_widths[index];
         right = header_x[index] - 8;
     }
-    let profile_label_width = unscale(measured_text_width(hwnd, tr(state.lang(), "profile"), ui_font())) + 8;
+    let profile_label_width = unscale(measured_text_width(
+        hwnd,
+        tr(state.lang(), "profile"),
+        ui_font(),
+    )) + 8;
     let profile_x = margin + profile_label_width + 6;
     let stacked_profile = header_x[0] - 12 - profile_x < 120;
     let action_toolbar_y = toolbar_y + if stacked_profile { 34 } else { 0 };
@@ -457,7 +521,8 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
     let task_rows = if log_bar.wrap { 154 } else { 120 };
     // A dragged splitter may leave the log one line; the default split keeps
     // a few lines for a running task.
-    let settings_room = |log_floor: i32| (actions_top - 12 - log_floor - task_rows - tabs_y).max(104);
+    let settings_room =
+        |log_floor: i32| (actions_top - 12 - log_floor - task_rows - tabs_y).max(104);
     // By default the settings are exactly as tall as the current page's
     // content (it depends on the width, the tab and the shown fields, never
     // on the window height), so no empty band is left below it.
@@ -479,8 +544,16 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
     let task_only = compact && state.busy;
     state.settings_hidden = task_only;
     let page_y = tabs_y + 44;
-    let page_height = if settings_only { actions_top - 12 - page_y } else { tab_height - 44 };
-    let splitter = if task_only { tabs_y - 12 } else { tabs_y + tab_height };
+    let page_height = if settings_only {
+        actions_top - 12 - page_y
+    } else {
+        tab_height - 44
+    };
+    let splitter = if task_only {
+        tabs_y - 12
+    } else {
+        tabs_y + tab_height
+    };
     let section_width = text_width("operation_section") + 8;
     let log_buttons_y = splitter + if log_bar.wrap { 120 } else { 86 };
     let log_top = log_buttons_y + 34;
@@ -490,7 +563,11 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
     let log_shown = task_shown && actions_top - 12 - log_top >= MIN_LOG_HEIGHT;
     let log_filters_shown = task_shown && splitter + 114 <= actions_top - 6;
     let log_buttons_shown = task_shown && log_buttons_y + 28 <= actions_top - 6;
-    state.set_splitter_position(if compact { i32::MIN / 4 } else { scale(splitter) });
+    state.set_splitter_position(if compact {
+        i32::MIN / 4
+    } else {
+        scale(splitter)
+    });
     let caption_width = 40;
     let caption_gap = 2;
     let close_x = width - margin - caption_width;
@@ -506,7 +583,11 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
             state.controls.profile,
             profile_x,
             toolbar_y,
-            if stacked_profile { width - margin - profile_x } else { header_x[0] - 12 - profile_x },
+            if stacked_profile {
+                width - margin - profile_x
+            } else {
+                header_x[0] - 12 - profile_x
+            },
             26,
         );
         place(
@@ -540,7 +621,13 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
                 }
                 "copy" | "export" => {
                     let index = usize::from(*key == "export");
-                    place(*handle, margin + log_bar.button_x[index], log_buttons_y, log_bar.button_width[index], 28);
+                    place(
+                        *handle,
+                        margin + log_bar.button_x[index],
+                        log_buttons_y,
+                        log_bar.button_width[index],
+                        28,
+                    );
                     ShowWindow(*handle, if log_buttons_shown { SW_SHOW } else { SW_HIDE });
                 }
                 _ => {}
@@ -567,8 +654,12 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
                 _ => {}
             }
         }
-        let advanced_width =
-            (unscale(measured_text_width(hwnd, &get_text(state.controls.advanced), ui_font())) + 33).max(120);
+        let advanced_width = (unscale(measured_text_width(
+            hwnd,
+            &get_text(state.controls.advanced),
+            ui_font(),
+        )) + 33)
+            .max(120);
         place(
             state.controls.advanced,
             width - margin - advanced_width,
@@ -582,54 +673,70 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         // The active tab uses the semibold font; size every tab for it.
         let mut tab_x = margin;
         for tab in &state.tabs {
-            let tab_width =
-                (unscale(measured_text_width(hwnd, &get_text(*tab), semibold_font())) + 28).max(132);
+            let tab_width = (unscale(measured_text_width(hwnd, &get_text(*tab), semibold_font()))
+                + 28)
+                .max(132);
             place(*tab, tab_x, tabs_y, tab_width, 34);
             ShowWindow(*tab, settings_visible);
             tab_x += tab_width + 6;
         }
         for (index, page) in state.pages.iter().enumerate() {
             if settings_only {
-                place_px(*page, Rect {
-                    left: scale(margin),
-                    top: scale(page_y),
-                    right: scale(width - margin - 18),
-                    bottom: (rect.bottom - scale(60)).max(scale(page_y) + 1),
-                });
-            } else {
-                place(
+                place_px(
                     *page,
-                    margin,
-                    page_y,
-                    width - margin * 2 - 18,
-                    page_height,
+                    Rect {
+                        left: scale(margin),
+                        top: scale(page_y),
+                        right: scale(width - margin - 18),
+                        bottom: (rect.bottom - scale(60)).max(scale(page_y) + 1),
+                    },
                 );
+            } else {
+                place(*page, margin, page_y, width - margin * 2 - 18, page_height);
             }
             let shown = !task_only && index == state.tab_index();
             ShowWindow(*page, if shown { SW_SHOW } else { SW_HIDE });
         }
-        place_px(state.page_scrollbar, Rect {
-            left: scale(width - margin - 12),
-            top: scale(page_y + 2),
-            right: scale(width - margin - 2),
-            bottom: if settings_only {
-                rect.bottom - scale(62)
-            } else {
-                scale(page_y + 2) + scale((page_height - 4).max(20))
-            }
-            .max(scale(page_y + 2) + 1),
-        });
+        place_px(
+            state.page_scrollbar,
+            Rect {
+                left: scale(width - margin - 12),
+                top: scale(page_y + 2),
+                right: scale(width - margin - 2),
+                bottom: if settings_only {
+                    rect.bottom - scale(62)
+                } else {
+                    scale(page_y + 2) + scale((page_height - 4).max(20))
+                }
+                .max(scale(page_y + 2) + 1),
+            },
+        );
         ShowWindow(state.page_scrollbar, settings_visible);
         // Status sentences get the whole row; the activity hint follows the
         // section title. Both end in "..." when a message is still longer. The
         // status row starts below the title row's 24 DIP box, or the two overlap
         // and the status text is cut.
-        place(state.controls.status, margin, splitter + 40, width - margin * 2, 24);
-        ShowWindow(state.controls.status, if task_shown { SW_SHOW } else { SW_HIDE });
+        place(
+            state.controls.status,
+            margin,
+            splitter + 40,
+            width - margin * 2,
+            24,
+        );
+        ShowWindow(
+            state.controls.status,
+            if task_shown { SW_SHOW } else { SW_HIDE },
+        );
         let activity_x = margin + section_width + 12;
         let activity_width = width - margin - activity_x;
         if task_shown && activity_width >= 120 {
-            place(state.controls.activity, activity_x, splitter + 12, activity_width, 24);
+            place(
+                state.controls.activity,
+                activity_x,
+                splitter + 12,
+                activity_width,
+                24,
+            );
             ShowWindow(state.controls.activity, SW_SHOW);
         } else {
             ShowWindow(state.controls.activity, SW_HIDE);
@@ -641,7 +748,10 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
             width - margin * 2,
             7,
         );
-        ShowWindow(state.controls.progress, if task_shown { SW_SHOW } else { SW_HIDE });
+        ShowWindow(
+            state.controls.progress,
+            if task_shown { SW_SHOW } else { SW_HIDE },
+        );
         place(
             state.controls.log_view,
             margin + log_bar.combo_x,
@@ -649,10 +759,23 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
             LOG_COMBO_WIDTH,
             120,
         );
-        for (index, check) in [state.controls.only_issues, state.controls.live].into_iter().enumerate() {
-            place(check, margin + log_bar.check_x[index], splitter + 88, log_bar.check_width[index], 22);
+        for (index, check) in [state.controls.only_issues, state.controls.live]
+            .into_iter()
+            .enumerate()
+        {
+            place(
+                check,
+                margin + log_bar.check_x[index],
+                splitter + 88,
+                log_bar.check_width[index],
+                22,
+            );
         }
-        for control in [state.controls.log_view, state.controls.only_issues, state.controls.live] {
+        for control in [
+            state.controls.log_view,
+            state.controls.only_issues,
+            state.controls.live,
+        ] {
             ShowWindow(control, if log_filters_shown { SW_SHOW } else { SW_HIDE });
         }
         // Rows tied to the bottom edge are placed from the client's pixel
@@ -660,7 +783,12 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         // wobble by a pixel at 125%/150%.
         let from_bottom = |offset: i32| rect.bottom - scale(offset);
         let log_bottom = from_bottom(60).max(scale(log_top) + 1);
-        let log_target = Rect { left: scale(margin), top: scale(log_top), right: scale(width - margin - 18), bottom: log_bottom };
+        let log_target = Rect {
+            left: scale(margin),
+            top: scale(log_top),
+            right: scale(width - margin - 18),
+            bottom: log_bottom,
+        };
         let log_was_shown = state.log_box.is_some();
         state.log_box = log_shown.then_some(log_target);
         place_log(state, log_target, log_shown && !log_was_shown);
@@ -686,15 +814,27 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         };
         place_px(state.controls.prepare, action(margin, 1, 1, actions_px));
         place_px(state.controls.build, action(margin, 140, 34, actions_px));
-        place_px(state.controls.verify, action(margin + 148, 1, 1, actions_px));
-        place_px(state.controls.cancel, action(margin + 148, 120, 34, actions_px));
-        place_px(state.controls.open_output, action(margin + 276, 120, 34, actions_px));
+        place_px(
+            state.controls.verify,
+            action(margin + 148, 1, 1, actions_px),
+        );
+        place_px(
+            state.controls.cancel,
+            action(margin + 148, 120, 34, actions_px),
+        );
+        place_px(
+            state.controls.open_output,
+            action(margin + 276, 120, 34, actions_px),
+        );
         let (statistics_x, statistics_width) = if width >= 900 {
             (width - margin - 360, 360)
         } else {
             (margin + 404, (width - margin * 2 - 404).max(120))
         };
-        place_px(state.controls.statistics, action(statistics_x, statistics_width, 24, from_bottom(42)));
+        place_px(
+            state.controls.statistics,
+            action(statistics_x, statistics_width, 24, from_bottom(42)),
+        );
         end_placement_batch();
         state.log_first_visible_line = first_visible_log_line(state.controls.log);
         for page in &state.pages {
@@ -713,7 +853,9 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         // Laying out the pages can change the current page's content height
         // (narrow layout, shown fields); fit the settings to it once more.
         static REFITTING: AtomicBool = AtomicBool::new(false);
-        let fitted = unscale(page_content_height(state.pages[state.tab_index().min(state.pages.len() - 1)])) + 44;
+        let fitted = unscale(page_content_height(
+            state.pages[state.tab_index().min(state.pages.len() - 1)],
+        )) + 44;
         if state.splitter_height.is_none()
             && Some(fitted) != state.default_tab_height
             && !REFITTING.swap(true, Ordering::Relaxed)
@@ -734,7 +876,11 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         };
         RedrawWindow(
             hwnd,
-            if state.dragging_splitter { &splitter_dirty } else { ptr::null() },
+            if state.dragging_splitter {
+                &splitter_dirty
+            } else {
+                ptr::null()
+            },
             ptr::null_mut(),
             if state.dragging_splitter {
                 RDW_INVALIDATE
@@ -785,7 +931,7 @@ pub(crate) fn layout_page_contents(state: &UiState) {
             0 => {
                 if narrow {
                     let field_width = page_width - 28;
-                     {
+                    {
                         move_label(state, "title", 14, 110 - sy, field_width, 20);
                         move_child(*page, ID_TITLE, 14, 130 - sy, field_width, 24);
                         move_label(state, "capacity", 14, 154 - sy, 220, 20);
@@ -799,16 +945,16 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                             custom_width,
                             20,
                         );
-                        move_child(
-                            *page,
-                            ID_CUSTOM_BYTES,
-                            custom_x,
-                            174 - sy,
-                            custom_width,
-                            25,
-                        );
+                        move_child(*page, ID_CUSTOM_BYTES, custom_x, 174 - sy, custom_width, 25);
                         let hint = get_text(label_handle(state, "advanced_hint"));
-                        move_label(state, "advanced_hint", 14, 208 - sy, field_width, wrapped_text_height(&hint, ui_font(), field_width));
+                        move_label(
+                            state,
+                            "advanced_hint",
+                            14,
+                            208 - sy,
+                            field_width,
+                            wrapped_text_height(&hint, ui_font(), field_width),
+                        );
                         move_label(state, "work_dir", 14, 214 - sy, field_width, 22);
                         move_child(
                             *page,
@@ -833,15 +979,28 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                         place(state.controls.keep_files, 14, 380 - sy, 230, 28);
                     }
                 } else {
-                     {
+                    {
                         move_label(state, "title", 14, 110 - sy, 470, 20);
                         move_child(*page, ID_TITLE, 14, 130 - sy, 470, 24);
                         move_label(state, "capacity", 520, 110 - sy, 220, 20);
                         move_child(*page, ID_CAPACITY, 520, 130 - sy, 220, 120);
-                        place(state.custom_bytes_label, 760, 110 - sy, page_width - 774, 20);
+                        place(
+                            state.custom_bytes_label,
+                            760,
+                            110 - sy,
+                            page_width - 774,
+                            20,
+                        );
                         move_child(*page, ID_CUSTOM_BYTES, 760, 130 - sy, page_width - 774, 25);
                         let hint = get_text(label_handle(state, "advanced_hint"));
-                        move_label(state, "advanced_hint", 14, 170 - sy, 780, wrapped_text_height(&hint, ui_font(), 780));
+                        move_label(
+                            state,
+                            "advanced_hint",
+                            14,
+                            170 - sy,
+                            780,
+                            wrapped_text_height(&hint, ui_font(), 780),
+                        );
                         // The capacity list is 29 tall and starts at x = 520: this row
                         // sits below it and its label stops short of it.
                         move_label(state, "work_dir", 14, 162 - sy, 490, 20);
@@ -856,7 +1015,7 @@ pub(crate) fn layout_page_contents(state: &UiState) {
             1 => {
                 if narrow {
                     let field_width = page_width - 28;
-                     {
+                    {
                         // Rates and depths are short; the mode list holds the
                         // longest texts and takes the remaining width.
                         let mode_width = (page_width - 28 - 32 - 258).clamp(200, 300);
@@ -890,10 +1049,9 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                             90,
                             24,
                         );
-
                     }
                 } else {
-                     {
+                    {
                         move_label(state, "audio_mode", 14, 18 - sy, 300, 20);
                         move_child(*page, ID_MODE, 14, 38 - sy, 300, 120);
                         move_label(state, "sample_rate", 340, 18 - sy, 210, 20);
@@ -907,8 +1065,22 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                         let import_y = 80 + note_height + 12;
                         move_label(state, "import_folder", 14, import_y - sy, 520, 20);
                         let edit_width = browse_edit_width(page_width);
-                        move_child(*page, ID_IMPORT_FOLDER, 14, import_y + 20 - sy, edit_width, 24);
-                        move_child(*page, ID_BROWSE_IMPORT, 14 + edit_width + 10, import_y + 20 - sy, 90, 24);
+                        move_child(
+                            *page,
+                            ID_IMPORT_FOLDER,
+                            14,
+                            import_y + 20 - sy,
+                            edit_width,
+                            24,
+                        );
+                        move_child(
+                            *page,
+                            ID_BROWSE_IMPORT,
+                            14 + edit_width + 10,
+                            import_y + 20 - sy,
+                            90,
+                            24,
+                        );
                     }
                 }
             }
@@ -918,23 +1090,17 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                 };
                 let menu_width = switch_width(state.controls.menu);
                 let stills_x = (14 + menu_width + 24).max(300);
-                let stills_width = switch_width(state.controls.stills).min(page_width - 14 - stills_x);
+                let stills_width =
+                    switch_width(state.controls.stills).min(page_width - 14 - stills_x);
                 place(state.controls.menu, 14, 18 - sy, menu_width, 28);
                 place(state.controls.stills, stills_x, 18 - sy, stills_width, 28);
                 if narrow {
                     let column = (page_width - 28 - 16) / 2;
-                     {
+                    {
                         move_label(state, "tracks", 14, 66 - sy, column, 20);
                         move_child(*page, ID_TRACKS, 14, 86 - sy, column, 25);
                         move_label(state, "cover", 14 + column + 16, 66 - sy, column, 20);
-                        move_child(
-                            *page,
-                            ID_COVER,
-                            14 + column + 16,
-                            86 - sy,
-                            column,
-                            25,
-                        );
+                        move_child(*page, ID_COVER, 14 + column + 16, 86 - sy, column, 25);
                         // The video standard's items are too long for a third
                         // column here, so it takes its own row.
                         move_label(state, "norm", 14, 120 - sy, column, 20);
@@ -962,14 +1128,35 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                     .enumerate()
                     {
                         let x = 14 + index as i32 * (font_column + 16);
-                         {
-                            move_label(state, label_key, x, 174 - sy, font_column, font_label_height);
-                            move_child(*page, field_id, x, 174 + font_label_height - sy, font_column, 25);
-                            move_child(*page, browse_id, x, 208 + font_label_height - sy, font_column, 28);
+                        {
+                            move_label(
+                                state,
+                                label_key,
+                                x,
+                                174 - sy,
+                                font_column,
+                                font_label_height,
+                            );
+                            move_child(
+                                *page,
+                                field_id,
+                                x,
+                                174 + font_label_height - sy,
+                                font_column,
+                                25,
+                            );
+                            move_child(
+                                *page,
+                                browse_id,
+                                x,
+                                208 + font_label_height - sy,
+                                font_column,
+                                28,
+                            );
                         }
                     }
                 } else {
-                     {
+                    {
                         move_label(state, "tracks", 14, 66 - sy, 220, 20);
                         move_child(*page, ID_TRACKS, 14, 86 - sy, 220, 25);
                         move_label(state, "cover", 260, 66 - sy, 220, 20);
@@ -986,7 +1173,7 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                     .enumerate()
                     {
                         let x = 14 + index as i32 * 326;
-                         {
+                        {
                             move_label(state, label_key, x, 120 - sy, 300, 20);
                             move_child(*page, field_id, x, 140 - sy, 300, 25);
                             move_child(*page, browse_id, x, 174 - sy, 150, 28);

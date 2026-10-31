@@ -28,8 +28,7 @@ pub(crate) fn bar_geometry(client_height: i32, metrics: &BarMetrics) -> BarGeome
         };
     }
     let total = (metrics.page + metrics.max) as f64;
-    let mut thumb_height =
-        (track_height as f64 * metrics.page as f64 / total) as i32;
+    let mut thumb_height = (track_height as f64 * metrics.page as f64 / total) as i32;
     thumb_height = thumb_height.clamp(scale(18).max(8).min(track_height), track_height);
     let travel = (track_height - thumb_height).max(0);
     let ratio = (metrics.value as f64 / metrics.max as f64).clamp(0.0, 1.0);
@@ -48,7 +47,7 @@ pub(crate) fn page_bar_metrics(state: &PaintFields) -> BarMetrics {
                 value: 0,
                 max: 0,
                 page: 1,
-            }
+            };
         }
     };
     let mut rect = Rect {
@@ -57,7 +56,7 @@ pub(crate) fn page_bar_metrics(state: &PaintFields) -> BarMetrics {
         right: 0,
         bottom: 0,
     };
-     {
+    {
         GetClientRect(page, &mut rect);
     }
     let page_height = (rect.bottom - rect.top).max(1);
@@ -73,8 +72,7 @@ pub(crate) fn page_bar_metrics(state: &PaintFields) -> BarMetrics {
 
 pub(crate) fn log_bar_metrics(log: Hwnd) -> BarMetrics {
     let total = (win::send_int(log, EM_GETLINECOUNT, 0, 0) as i32).max(1);
-    let first =
-        (win::send_int(log, EM_GETFIRSTVISIBLELINE, 0, 0) as i32).max(0);
+    let first = (win::send_int(log, EM_GETFIRSTVISIBLELINE, 0, 0) as i32).max(0);
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -82,12 +80,16 @@ pub(crate) fn log_bar_metrics(log: Hwnd) -> BarMetrics {
         bottom: 0,
     };
     let mut frame: Rect = Rect::default();
-     {
+    {
         GetClientRect(log, &mut rect);
         GetClientRect(GetParent(log), &mut frame);
     }
     // While live sizing freezes the EDIT, only the frame's part is visible.
-    let visible_height = if frame.bottom > 0 { rect.bottom.min(frame.bottom) } else { rect.bottom };
+    let visible_height = if frame.bottom > 0 {
+        rect.bottom.min(frame.bottom)
+    } else {
+        rect.bottom
+    };
     let height = (visible_height - rect.top).max(1);
     let line_height = scale(19).max(1);
     let visible = (height / line_height).max(1);
@@ -139,7 +141,12 @@ pub(crate) unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
     if hwnd == state.page_scrollbar {
         if let Some(page) = state.pages.get(state.tab_index.get()).copied() {
             let metrics = page_bar_metrics(&state);
-            scroll_page_with_bar(page, value.clamp(0, metrics.max), true, state.page_scrollbar);
+            scroll_page_with_bar(
+                page,
+                value.clamp(0, metrics.max),
+                true,
+                state.page_scrollbar,
+            );
         }
     } else if hwnd == state.log_scrollbar {
         let log = state.log;
@@ -149,7 +156,7 @@ pub(crate) unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
         let metrics = log_bar_metrics(log);
         let target = value.clamp(0, metrics.max);
         if target != metrics.value {
-             {
+            {
                 win::send_int(log, EM_LINESCROLL, 0, (target - metrics.value) as isize);
             }
         }
@@ -184,7 +191,7 @@ pub(crate) unsafe fn draw_scrollbar(hwnd: Hwnd) {
                 };
                 let hovered = unsafe { (*pointer).hover || (*pointer).dragging };
                 let color = if hovered { c_muted() } else { c_border() };
-                 {
+                {
                     FillRect(dc, &thumb, brush(color));
                 }
             }
@@ -222,7 +229,7 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
                 right: 0,
                 bottom: 0,
             };
-             {
+            {
                 GetClientRect(hwnd, &mut rect);
             }
             let y = (lparam >> 16) as i16 as i32;
@@ -275,7 +282,7 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
                 right: 0,
                 bottom: 0,
             };
-             {
+            {
                 GetClientRect(hwnd, &mut rect);
             }
             let y = (lparam >> 16) as i16 as i32;
@@ -327,10 +334,7 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
 /// `state` must be the live `UiState` of the main window, whose scrollbars and combo
 /// overlays were installed by this application. Runs on the UI thread.
 pub(crate) unsafe fn refresh_dynamic_indicators(state: &UiState) {
-    for (hwnd, is_page) in [
-        (state.page_scrollbar, true),
-        (state.log_scrollbar, false),
-    ] {
+    for (hwnd, is_page) in [(state.page_scrollbar, true), (state.log_scrollbar, false)] {
         if hwnd.is_null() {
             continue;
         }

@@ -63,6 +63,8 @@ pub struct Job {
     #[serde(default = "default_menu_norm")]
     pub menu_norm: String,
     #[serde(default)]
+    pub menu_language: String,
+    #[serde(default)]
     pub menu_font: String,
     #[serde(default)]
     pub menu_font_japanese: String,

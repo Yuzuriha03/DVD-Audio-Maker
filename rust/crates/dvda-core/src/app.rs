@@ -20,6 +20,22 @@ pub struct AppOptions {
     workspace: Option<std::sync::Arc<crate::workspace::Workspace>>,
 }
 
+fn default_menu_font<'a>(language: &str, configured: &'a str) -> &'a str {
+    if !configured.trim().is_empty() {
+        configured
+    } else {
+        match crate::config_files::normalize_language(Some(language), "zh-CN")
+            .as_deref()
+            .unwrap_or("zh-CN")
+        {
+            "zh-TW" => "Noto-Sans-CJK-TC",
+            "ko" => "Noto-Sans-CJK-KR",
+            "ja" => "Noto-Sans-CJK-JP",
+            _ => "Noto-Sans-CJK-SC",
+        }
+    }
+}
+
 impl AppOptions {
     pub fn load(config_path: Option<&Path>) -> Result<Self, String> {
         let executable_directory = crate::runtime::directory()
@@ -131,15 +147,24 @@ impl AppOptions {
 
     pub fn recover_task(&self, restart: bool) -> Result<Self, String> {
         let workspace = std::sync::Arc::new(crate::workspace::Workspace::create_task(
-            &self.path("BuildDirectory"), true, Some(restart),
+            &self.path("BuildDirectory"),
+            true,
+            Some(restart),
         )?);
         let saved = workspace.path().join("task-options.json");
         let original = if !restart && saved.is_file() {
-            let value: Value = serde_json::from_slice(&std::fs::read(&saved).map_err(|e| e.to_string())?)
-                .map_err(|e| format!("Cannot read original task parameters: {e}"))?;
+            let value: Value =
+                serde_json::from_slice(&std::fs::read(&saved).map_err(|e| e.to_string())?)
+                    .map_err(|e| format!("Cannot read original task parameters: {e}"))?;
             let mut original = self.clone();
-            original.values = value["values"].as_object().cloned().ok_or("Invalid task parameters")?;
-            original.stored_profile_values = value["profile"].as_object().cloned().ok_or("Invalid task profile")?;
+            original.values = value["values"]
+                .as_object()
+                .cloned()
+                .ok_or("Invalid task parameters")?;
+            original.stored_profile_values = value["profile"]
+                .as_object()
+                .cloned()
+                .ok_or("Invalid task profile")?;
             original
         } else {
             self.save_task_parameters(&saved)?;
@@ -148,7 +173,8 @@ impl AppOptions {
         let mut copy = original.bind_workspace(workspace);
         // Reuse saved progress only within this unfinished task, including crash recovery.
         copy.values.insert("ResumeEnabled".into(), json!(true));
-        copy.values.insert("PrepareCacheEnabled".into(), json!(true));
+        copy.values
+            .insert("PrepareCacheEnabled".into(), json!(true));
         Ok(copy)
     }
 
@@ -167,8 +193,10 @@ impl AppOptions {
     }
 
     fn save_task_parameters(&self, path: &Path) -> Result<(), String> {
-        let data = serde_json::to_vec(&json!({"values": self.values, "profile": self.stored_profile_values}))
-            .map_err(|e| e.to_string())?;
+        let data = serde_json::to_vec(
+            &json!({"values": self.values, "profile": self.stored_profile_values}),
+        )
+        .map_err(|e| e.to_string())?;
         std::fs::write(path, data).map_err(|e| e.to_string())
     }
 
@@ -199,7 +227,8 @@ impl AppOptions {
                 .insert("MlpExternalDirectory".into(), json!(root.join("mlp")));
         }
         copy.values.insert("ResumeEnabled".into(), json!(true));
-        copy.values.insert("PrepareCacheEnabled".into(), json!(true));
+        copy.values
+            .insert("PrepareCacheEnabled".into(), json!(true));
         copy.values.insert("KeepTemporary".into(), json!(false));
         copy.values.insert("KeepIntermediate".into(), json!(false));
         copy.workspace = Some(workspace);
@@ -207,7 +236,8 @@ impl AppOptions {
     }
 
     pub fn scratch_options(&self) -> Result<Self, String> {
-        let workspace = std::sync::Arc::new(crate::workspace::Workspace::create(Path::new(""), false)?);
+        let workspace =
+            std::sync::Arc::new(crate::workspace::Workspace::create(Path::new(""), false)?);
         Ok(self.clone().bind_workspace(workspace))
     }
 
@@ -325,31 +355,11 @@ impl AppOptions {
             &author_source,
             &self.executable_directory,
         )?;
-        let menu_font = {
-            let configured = self.text("MenuFont");
-            if configured.trim().is_empty() {
-                "Noto-Sans-CJK-SC".to_owned()
-            } else {
-                configured
-            }
-        };
-        let menu_font_japanese = {
-            let configured = self.text("MenuFontJapanese");
-            if configured.trim().is_empty() {
-                menu_font.clone()
-            } else {
-                configured
-            }
-        };
-        let menu_font_korean = {
-            let configured = self.text("MenuFontKorean");
-            if configured.trim().is_empty() {
-                menu_font.clone()
-            } else {
-                configured
-            }
-        };
+        let menu_font = default_menu_font(&self.language, &self.text("MenuFont")).to_owned();
+        let menu_font_japanese = self.text("MenuFontJapanese");
+        let menu_font_korean = self.text("MenuFontKorean");
         Ok(build::Job {
+            menu_language: self.language.clone(),
             resume_enabled: self.boolean("ResumeEnabled"),
             diagnostic_album_limit: self
                 .value("DiagnosticAlbumLimit")
@@ -785,6 +795,30 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn menu_defaults_follow_language_and_keep_explicit_fonts() {
+        for (language, expected) in [
+            ("zh-TW", "Noto-Sans-CJK-TC"),
+            ("zh-Hant", "Noto-Sans-CJK-TC"),
+            ("繁體中文", "Noto-Sans-CJK-TC"),
+            ("zh-CN", "Noto-Sans-CJK-SC"),
+            ("ja", "Noto-Sans-CJK-JP"),
+            ("ko", "Noto-Sans-CJK-KR"),
+            ("ko-KR", "Noto-Sans-CJK-KR"),
+            ("en", "Noto-Sans-CJK-SC"),
+        ] {
+            assert_eq!(default_menu_font(language, ""), expected);
+            assert_eq!(default_menu_font(language, "  "), expected);
+            for explicit in ["Noto-Sans-CJK-SC", "Custom-Font", r"C:\字型\我的字體.otf"] {
+                assert_eq!(default_menu_font(language, explicit), explicit);
+            }
+        }
+        let defaults = options::defaults(".");
+        for key in ["DVDA_MENU_FONT", "DVDA_MENU_FONT_JP", "DVDA_MENU_FONT_KR"] {
+            assert_eq!(defaults[key], "");
+        }
+    }
+
+    #[test]
     fn menu_runtime_selection_prefers_explicit_then_embedded_then_sibling() {
         let root = env::temp_dir().join(format!(
             "dvda-menu-selection-{}",
@@ -947,15 +981,16 @@ mod tests {
             stored_profile_values: serde_json::from_value(json!({
                 "DVDA_PREPARE_CACHE": "on",
                 "DVDA_TITLE": "My Disc"
-            })).unwrap(),
+            }))
+            .unwrap(),
             config_path: None,
             executable_directory: PathBuf::new(),
             workspace: None,
         };
-        assert_eq!(options.profile_values(), serde_json::from_value::<Map<String, Value>>(
-            json!({"DVDA_TITLE": "My Disc"})
-        ).unwrap());
+        assert_eq!(
+            options.profile_values(),
+            serde_json::from_value::<Map<String, Value>>(json!({"DVDA_TITLE": "My Disc"})).unwrap()
+        );
         assert!(!options::defaults("").contains_key("DVDA_PREPARE_CACHE"));
     }
-
 }

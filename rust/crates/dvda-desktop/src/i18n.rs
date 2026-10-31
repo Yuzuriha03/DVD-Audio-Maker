@@ -2,22 +2,33 @@
 
 use super::*;
 
+#[path = "i18n_ko.rs"]
+mod korean;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Lang {
     Zh,
+    ZhHant,
     En,
     Ja,
+    Ko,
 }
 
 impl Lang {
     pub(crate) fn from_code(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
-            "zh" | "zh-cn" | "zh-hans" | "中文" => Self::Zh,
+            "zh" | "zh-cn" | "zh-hans" | "中文" | "简体中文" => Self::Zh,
+            "zh-tw" | "zh-hant" | "zh-hk" | "zh-mo" | "繁體中文" | "繁体中文" => {
+                Self::ZhHant
+            }
             "en" | "en-us" | "en-gb" | "english" => Self::En,
+            "ko" | "ko-kr" | "korean" | "한국어" => Self::Ko,
             "ja" | "ja-jp" | "japanese" | "日本語" => Self::Ja,
-            _ => match GetUserDefaultUILanguage() & 0x3ff {
-                4 => Self::Zh,
-                17 => Self::Ja,
+            _ => match GetUserDefaultUILanguage() {
+                1028 | 3076 | 5124 => Self::ZhHant,
+                ui if ui & 0x3ff == 4 => Self::Zh,
+                ui if ui & 0x3ff == 18 => Self::Ko,
+                ui if ui & 0x3ff == 17 => Self::Ja,
                 _ => Self::En,
             },
         }
@@ -25,14 +36,17 @@ impl Lang {
     pub(crate) fn code(self) -> &'static str {
         match self {
             Self::Zh => "zh-CN",
+            Self::ZhHant => "zh-TW",
             Self::En => "en",
             Self::Ja => "ja",
+            Self::Ko => "ko",
         }
     }
 }
 
 pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
     match lang {
+        Lang::Ko => korean::tr(key),
         Lang::Zh => match key {
             "app_subtitle" => "把音乐制作成 DVD-Audio 光盘镜像",
             "advanced_hint" => {
@@ -138,9 +152,11 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "custom" => "自定义容量",
             "custom_bytes" => "自定义容量 (字节)",
             "no_output" => "尚未找到成品路径，请先完成制作。",
-            "language_zh" => "中文",
+            "language_zh" => "简体中文",
+            "language_zh_hant" => "繁體中文",
             "language_en" => "English",
             "language_ja" => "日本語",
+            "language_ko" => "한국어",
             "mlp" => "MLP 编码",
             "lpcm" => "LPCM 编码",
             "dvd5" => "DVD5 (4.7 GB)",
@@ -163,6 +179,141 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "copy_ok" => "日志已复制到剪贴板。",
             "external_tools" => {
                 "发布包已内置必要组件，不需要安装 FFmpeg、ImageMagick、eac3to 或外部 MLP 编码器。"
+            }
+            _ => "",
+        },
+        Lang::ZhHant => match key {
+            "app_subtitle" => "把音樂製作成 DVD-Audio 光碟映像",
+            "advanced_hint" => {
+                "這些設定已經足夠製作第一張光碟。需要暫存工作路徑、選單字型等高級選項時，請開啟上方的“顯示高級設定”。"
+            }
+            "profile" => "設定方案",
+            "open" => "打開方案",
+            "save" => "儲存方案",
+            "save_as" => "另存方案",
+            "advanced" => "顯示高級設定",
+            "font_filter" => "字型檔案",
+            "title_mode" => "標題分組（album / one / 每組曲數）",
+            "album_limit" => "限制專輯數量（0 表示不限）",
+            "language" => "語言",
+            "source" => "音源路徑",
+            "final" => "成品儲存路徑",
+            "title" => "光碟名稱",
+            "capacity" => "光碟容量",
+            "work_dir" => "暫存工作路徑",
+            "iso_prefix" => "映像檔案名前綴",
+            "group_limit" => "每組最多曲目",
+            "cache" => "重用檢查結果",
+            "audio_mode" => "音訊編碼方式",
+            "sample_rate" => "取樣率",
+            "bits" => "音訊位深",
+            "menu" => "光碟選單",
+            "menu_enable" => "製作選曲選單",
+            "stills" => "在選單中顯示專輯封面",
+            "tracks" => "每頁顯示幾首",
+            "cover" => "封面暗化程度 (%)",
+            "norm" => "視訊制式",
+            "norm_pal" => "PAL（中國、歐洲）",
+            "norm_secam" => "SECAM（法國、俄羅斯）",
+            "norm_ntsc" => "NTSC（美國、日本）",
+            "index" => "專輯目錄啟用門檻",
+            "font_sc" => "中文選單字型",
+            "font_jp" => "日文選單字型",
+            "font_kr" => "韓文選單字型",
+            "tools" => "其他設定",
+            "author" => "光碟製作工具",
+            "keep_tmp" => "保留暫存檔案",
+            "keep_intermediate" => "保留製作中間檔案",
+            "keep_files" => "保留暫存/中間檔案",
+            "loss_warn" => "時長差異提醒 (秒)",
+            "loss_error" => "時長差異上限 (秒)",
+            "browse" => "瀏覽...",
+            "start" => "基本設定",
+            "audio" => "音訊編碼",
+            "check" => "檢查音源",
+            "build" => "開始製作",
+            "verify" => "驗證成品",
+            "cancel" => "停止任務",
+            "open_output" => "查看成品",
+            "summary" => "任務摘要",
+            "detail" => "詳細日志",
+            "issues" => "只看提醒",
+            "live" => "實時更新",
+            "copy" => "復制當前內容",
+            "export" => "匯出詳細日志...",
+            "ready" => "準備就緒",
+            "ready_hint" => "選擇音源和成品位置，然后按一下“開始製作”。",
+            "operation_section" => "任務狀態",
+            "log_section" => "活動日志",
+            "statistics" => "用時 {0}:{1}:{2} · 提醒 {3}",
+            "running_confirm" => "任務仍在運行。要停止任務并退出嗎？",
+            "log_found_audio" => "發現 {0} 個音訊檔案，正在讀取曲目資訊。",
+            "log_resample_none" => "音源取樣率符合設定，無需重取樣。",
+            "log_resample_count" => "有 {0} 首音訊需要調整取樣率。",
+            "log_cache_metadata" => "音源檢查快取：重用 {0} 首，重新檢查 {1} 首。",
+            "log_cache_verified" => "解碼檢查快取：重用 {0} 首，重新檢查 {1} 首。",
+            "log_encoding" => "正在進行 MLP 無損編碼：{0}",
+            "log_lpcm" => "LPCM：{0}",
+            "log_author_disc" => "正在製作第 {0} 張光碟。",
+            "log_loaded_tracks" => "已讀取 {0} 首曲目，開始規劃光碟。",
+            "log_total_tracks" => "已完成 {0} 首音訊檢查。",
+            "log_report_written" => "音源檢查報告已儲存：{0}",
+            "log_manifest_written" => "音源清單已生成：{0}",
+            "log_warning_prefix" => "提醒：",
+            "log_error_prefix" => "錯誤：",
+            "loaded" => "方案已載入。",
+            "saved" => "方案已儲存：",
+            "profile_missing" => "方案檔案不存在：",
+            "profile_error" => "方案無法載入：",
+            "started_check" => "正在檢查音源...",
+            "started_build" => "正在檢查音源、製作光碟并驗證成品...",
+            "started_verify" => "正在驗證成品...",
+            "done" => "任務完成。",
+            "failed" => "任務失敗。",
+            "cancelled" => "任務已取消。",
+            "stopping" => "正在停止任務，請稍候...",
+            "json_filter" => "JSON 設定方案",
+            "text_filter" => "文本日志",
+            "all_filter" => "所有檔案",
+            "export_failed" => "日志儲存失敗：",
+            "log_started" => "開始處理：{0}",
+            "log_pcm_started" => "正在準備音訊：{0}",
+            "log_pcm_progress" => "正在準備音訊：{0}（{1}%）",
+            "log_pcm_finished" => "音訊準備完成，開始 MLP 編碼：{0}",
+            "log_encoded" => "MLP 編碼完成：{0}；{1} Hz / {2} 位 / {3} 聲道，{4} 位元組",
+            "log_pcm_error" => "音訊轉換提示：{0}；{1}",
+            "import" => "匯入現有 MLP 檔案",
+            "import_folder" => "MLP 檔案路徑",
+            "custom" => "自定義容量",
+            "custom_bytes" => "自定義容量 (位元組)",
+            "no_output" => "尚未找到成品路徑，請先完成製作。",
+            "language_zh" => "简体中文",
+            "language_zh_hant" => "繁體中文",
+            "language_en" => "English",
+            "language_ja" => "日本語",
+            "language_ko" => "한국어",
+            "mlp" => "MLP 編碼",
+            "lpcm" => "LPCM 編碼",
+            "dvd5" => "DVD5 (4.7 GB)",
+            "dvd9" => "DVD9 (8.5 GB)",
+            "import_note" => {
+                "MLP 無損壓縮、占用較小；LPCM 不壓縮。匯入現有 MLP 時，選擇與音源目錄結構對應的路徑。"
+            }
+            "mlp_note" => {
+                "MLP 編碼會進行無損壓縮，適合大多數 DVD-Audio 製作。取樣率和位深按右側設定處理。"
+            }
+            "lpcm_note" => "LPCM 不壓縮音訊，速度較快但占用空間更大。請確認光碟容量足夠。",
+            "invalid_sample_rate" => "MLP 目標取樣率無效。",
+            "invalid_bits" => "MLP 目標位深必須為 16、20 或 24。",
+            "invalid_integer" => "請輸入 {0} 至 {1} 的整數。",
+            "invalid_nonnegative" => "請輸入非負有限數值。",
+            "invalid_title_mode" => "標題分組規則須為 album、one 或正整數。",
+            "invalid_album_limit" => "請輸入非負整數，或留空。",
+            "select_profile" => "選擇 JSON 方案",
+            "select_log" => "儲存日志",
+            "copy_ok" => "日志已復制到剪貼簿。",
+            "external_tools" => {
+                "發布包已內置必要組件，不需要安裝 FFmpeg、ImageMagick、eac3to 或外部 MLP 編碼器。"
             }
             _ => "",
         },
@@ -275,9 +426,11 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "custom" => "Custom capacity",
             "custom_bytes" => "Custom capacity (bytes)",
             "no_output" => "The output folder does not exist yet.",
-            "language_zh" => "中文",
+            "language_zh" => "简体中文",
+            "language_zh_hant" => "繁體中文",
             "language_en" => "English",
             "language_ja" => "日本語",
+            "language_ko" => "한국어",
             "mlp" => "MLP encoding",
             "lpcm" => "LPCM encoding",
             "dvd5" => "DVD5 (4.7 GB)",
@@ -414,9 +567,11 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "custom" => "容量を指定",
             "custom_bytes" => "指定容量 (バイト)",
             "no_output" => "出力フォルダーがまだありません。",
-            "language_zh" => "中文",
+            "language_zh" => "简体中文",
+            "language_zh_hant" => "繁體中文",
             "language_en" => "English",
             "language_ja" => "日本語",
+            "language_ko" => "한국어",
             "mlp" => "MLP エンコード",
             "lpcm" => "LPCM エンコード",
             "dvd5" => "DVD5 (4.7 GB)",
@@ -444,5 +599,163 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             }
             _ => "",
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn all_ui_keys_exist_in_all_languages() {
+        for key in [
+            "app_subtitle",
+            "advanced_hint",
+            "profile",
+            "open",
+            "save",
+            "save_as",
+            "advanced",
+            "font_filter",
+            "title_mode",
+            "album_limit",
+            "language",
+            "source",
+            "final",
+            "title",
+            "capacity",
+            "work_dir",
+            "iso_prefix",
+            "group_limit",
+            "cache",
+            "audio_mode",
+            "sample_rate",
+            "bits",
+            "menu",
+            "menu_enable",
+            "stills",
+            "tracks",
+            "cover",
+            "norm",
+            "norm_pal",
+            "norm_secam",
+            "norm_ntsc",
+            "index",
+            "font_sc",
+            "font_jp",
+            "font_kr",
+            "tools",
+            "author",
+            "keep_tmp",
+            "keep_intermediate",
+            "keep_files",
+            "loss_warn",
+            "loss_error",
+            "browse",
+            "start",
+            "audio",
+            "check",
+            "build",
+            "verify",
+            "cancel",
+            "open_output",
+            "summary",
+            "detail",
+            "issues",
+            "live",
+            "copy",
+            "export",
+            "ready",
+            "ready_hint",
+            "operation_section",
+            "log_section",
+            "statistics",
+            "running_confirm",
+            "log_found_audio",
+            "log_resample_none",
+            "log_resample_count",
+            "log_cache_metadata",
+            "log_cache_verified",
+            "log_encoding",
+            "log_lpcm",
+            "log_author_disc",
+            "log_loaded_tracks",
+            "log_total_tracks",
+            "log_report_written",
+            "log_manifest_written",
+            "log_warning_prefix",
+            "log_error_prefix",
+            "loaded",
+            "saved",
+            "profile_missing",
+            "profile_error",
+            "started_check",
+            "started_build",
+            "started_verify",
+            "done",
+            "failed",
+            "cancelled",
+            "stopping",
+            "json_filter",
+            "text_filter",
+            "all_filter",
+            "export_failed",
+            "log_started",
+            "log_pcm_started",
+            "log_pcm_progress",
+            "log_pcm_finished",
+            "log_encoded",
+            "log_pcm_error",
+            "import",
+            "import_folder",
+            "custom",
+            "custom_bytes",
+            "no_output",
+            "language_zh",
+            "language_zh_hant",
+            "language_en",
+            "language_ja",
+            "language_ko",
+            "mlp",
+            "lpcm",
+            "import_note",
+            "mlp_note",
+            "lpcm_note",
+            "invalid_sample_rate",
+            "invalid_bits",
+            "invalid_integer",
+            "invalid_nonnegative",
+            "invalid_title_mode",
+            "invalid_album_limit",
+            "select_profile",
+            "select_log",
+            "copy_ok",
+            "external_tools",
+        ] {
+            for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja, Lang::Ko] {
+                assert!(
+                    !tr(lang, key).is_empty(),
+                    "missing {key} in {}",
+                    lang.code()
+                );
+            }
+        }
+    }
+    #[test]
+    fn korean_language_aliases_and_names() {
+        for code in ["ko", "ko-KR", "korean", "한국어"] {
+            assert!(Lang::from_code(code) == Lang::Ko);
+        }
+        assert_eq!(Lang::Ko.code(), "ko");
+        assert_eq!(tr(Lang::Ko, "language_ko"), "한국어");
+    }
+
+    #[test]
+    fn traditional_language_aliases_and_names() {
+        for code in ["zh-TW", "zh-Hant", "zh-HK", "zh-MO", "繁體中文"] {
+            assert!(Lang::from_code(code) == Lang::ZhHant);
+        }
+        assert_eq!(Lang::ZhHant.code(), "zh-TW");
+        assert_eq!(tr(Lang::ZhHant, "language_zh"), "简体中文");
+        assert_eq!(tr(Lang::ZhHant, "language_zh_hant"), "繁體中文");
     }
 }

@@ -21,8 +21,26 @@ fn main() {
     assert_ne!(runtime, std::env::current_exe().unwrap().parent().unwrap());
     // Startup precedes native initialization and thread creation.
     unsafe { std::env::set_var("DVDA_IMAGE_NATIVE_DIR", &runtime) };
-    for face in ["SC", "JP", "KR"] {
-        for text in ["Ag(", "中文", "あいう", "アイウ", "한글", "、《》"] {
+    let snapshots = std::env::args_os().nth(2).map(PathBuf::from);
+    if let Some(directory) = &snapshots {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    for face in ["SC", "JP", "KR", "TC"] {
+        for (index, text) in [
+            "Ag(",
+            "中文",
+            "あいう",
+            "アイウ",
+            "한글",
+            "、《》",
+            "臺灣樂曲",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let output = snapshots
+                .as_ref()
+                .map(|directory| directory.join(format!("{face}-{index}.png")));
             let arguments: Vec<_> = [
                 "magick".to_owned(),
                 "-size".into(),
@@ -39,9 +57,14 @@ fn main() {
                 text.into(),
                 "-format".into(),
                 "%[fx:mean.a]".into(),
-                "info:".into(),
             ]
             .into_iter()
+            .chain(
+                output
+                    .iter()
+                    .flat_map(|path| ["-write".to_owned(), path.to_string_lossy().into_owned()]),
+            )
+            .chain(std::iter::once("info:".to_owned()))
             .map(|argument| CString::new(argument).unwrap())
             .collect();
             let mut messages = (String::new(), String::new());
@@ -62,6 +85,6 @@ fn main() {
         }
     }
     println!(
-        "PASS 18 directly linked CJK font renders from runtime configuration outside EXE directory"
+        "PASS 28 directly linked CJK font renders from runtime configuration outside EXE directory"
     );
 }

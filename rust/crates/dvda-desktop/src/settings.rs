@@ -17,11 +17,17 @@ pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[
 pub(crate) const MENU_NORMS: &[&str] = &["pal", "secam", "ntsc"];
 
 pub(crate) fn norm_index(norm: &str) -> i32 {
-    MENU_NORMS.iter().position(|value| *value == norm).unwrap_or(0) as i32
+    MENU_NORMS
+        .iter()
+        .position(|value| *value == norm)
+        .unwrap_or(0) as i32
 }
 
 pub(crate) fn norm_value(index: i32) -> &'static str {
-    MENU_NORMS.get(index.max(0) as usize).copied().unwrap_or("pal")
+    MENU_NORMS
+        .get(index.max(0) as usize)
+        .copied()
+        .unwrap_or("pal")
 }
 
 pub(crate) fn capacity_index(bytes: i64) -> i32 {
@@ -53,7 +59,7 @@ pub(crate) fn update_choices(state: &UiState) {
         tr(state.lang(), audio_note_key(mode)),
     );
     let custom_capacity = combo_index(state.controls.capacity) == 2;
-     {
+    {
         ShowWindow(
             state.custom_bytes_label,
             if custom_capacity { SW_SHOW } else { SW_HIDE },
@@ -76,10 +82,7 @@ pub(crate) fn update_choices(state: &UiState) {
         );
         EnableWindow(state.controls.custom_bytes, i32::from(custom_capacity));
         EnableWindow(state.controls.import_folder, i32::from(imported));
-        for hwnd in [
-            state.controls.rate,
-            state.controls.bits,
-        ] {
+        for hwnd in [state.controls.rate, state.controls.bits] {
             EnableWindow(hwnd, i32::from(!imported));
         }
     }
@@ -158,26 +161,11 @@ pub(crate) fn populate(state: &mut UiState, options: &AppOptions) {
     combo_select(state.controls.norm, norm_index(&options.text("MenuNorm")));
 
     let menu_font = options.text("MenuFont");
-    let menu_font_japanese = {
-        let configured = options.text("MenuFontJapanese");
-        if configured.trim().is_empty() {
-            menu_font.clone()
-        } else {
-            configured
-        }
-    };
-    let menu_font_korean = {
-        let configured = options.text("MenuFontKorean");
-        if configured.trim().is_empty() {
-            menu_font.clone()
-        } else {
-            configured
-        }
-    };
+    let menu_font_japanese = options.text("MenuFontJapanese");
+    let menu_font_korean = options.text("MenuFontKorean");
     set_text(state.controls.font_sc, &menu_font);
     set_text(state.controls.font_jp, &menu_font_japanese);
     set_text(state.controls.font_kr, &menu_font_korean);
-
 
     check(
         state.controls.keep_files,
@@ -231,16 +219,8 @@ pub(crate) fn overrides(state: &UiState) -> Map<String, Value> {
         "GroupTrackLimit",
         json!(parse_i64(state.controls.group_limit, 99)),
     );
-    put(
-        &mut values,
-        "PrepareCacheEnabled",
-        json!(true),
-    );
-    put(
-        &mut values,
-        "ResumeEnabled",
-        json!(true),
-    );
+    put(&mut values, "PrepareCacheEnabled", json!(true));
+    put(&mut values, "ResumeEnabled", json!(true));
     put(
         &mut values,
         "MlpSource",
@@ -313,11 +293,11 @@ pub(crate) fn overrides(state: &UiState) -> Map<String, Value> {
 pub(crate) fn update_advanced(state: &UiState) {
     let show = checked(state.controls.advanced);
     for control in &state.advanced_controls {
-         {
+        {
             ShowWindow(*control, if show { SW_SHOW } else { SW_HIDE });
         }
     }
-     {
+    {
         ShowWindow(state.advanced_hint, if show { SW_HIDE } else { SW_SHOW });
     }
 }
@@ -388,14 +368,10 @@ pub(crate) fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
     if let Some((control, message)) = error {
         check(state.controls.advanced, true);
         update_advanced(state);
-        if let Some(index) = state
-            .pages
-            .iter()
-            .position(|p| *p == GetParent(control))
-        {
+        if let Some(index) = state.pages.iter().position(|p| *p == GetParent(control)) {
             select_tab(state, index);
         }
-         {
+        {
             SetFocus(control);
             win::send_int(control, 0x00b1, 0, -1);
         }
@@ -448,7 +424,11 @@ pub(crate) fn autosave(state: &mut UiState) {
     let path = dvda_core::app::default_profile_path();
     let values = edited_profile_values(state);
     if let Err(error) = dvda_core::app::save_profile(&path, &values, state.lang().code()) {
-        add_log(state, &format!("{}{}", tr(state.lang(), "profile_error"), error), true);
+        add_log(
+            state,
+            &format!("{}{}", tr(state.lang(), "profile_error"), error),
+            true,
+        );
     }
 }
 pub(crate) fn save_profile_as(hwnd: Hwnd, state: &mut UiState) {

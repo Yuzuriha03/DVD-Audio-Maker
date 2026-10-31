@@ -12,10 +12,11 @@ const PROBES: [(&str, &str); 6] = [
     ("韩文", "한글"),
     ("CJK标点", "、《》"),
 ];
-const CANDIDATES: [&str; 14] = [
+const CANDIDATES: [&str; 15] = [
     "DVDA-Noto-Sans-CJK-SC",
     "DVDA-Noto-Sans-CJK-JP",
     "DVDA-Noto-Sans-CJK-KR",
+    "DVDA-Noto-Sans-CJK-TC",
     "Noto-Sans-CJK-SC",
     "Noto-Sans-CJK-JP",
     "Noto-Sans-CJK-KR",

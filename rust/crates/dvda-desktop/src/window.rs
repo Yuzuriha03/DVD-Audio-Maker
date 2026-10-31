@@ -35,7 +35,7 @@ pub(crate) unsafe extern "system" fn window_proc(
         return 0;
     }
     if message == WM_DESTROY {
-         {
+        {
             KillTimer(hwnd, 1);
         }
         PAINT_FIELDS.with(|fields| fields.borrow_mut().remove(&(hwnd as usize)));
@@ -47,7 +47,7 @@ pub(crate) unsafe extern "system" fn window_proc(
                 drop(Box::from_raw(pointer));
             }
         }
-         {
+        {
             PostQuitMessage(0);
         }
         return 0;
@@ -105,7 +105,7 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         WM_NCLBUTTONDBLCLK => {
             if wparam as i32 == HTCAPTION {
-                 {
+                {
                     if IsZoomed(hwnd) != 0 {
                         ShowWindow(hwnd, SW_RESTORE);
                     } else {
@@ -130,14 +130,15 @@ pub(crate) unsafe extern "system" fn window_proc(
                     }
                 } else if message == 0x0202 && state.dragging_splitter {
                     state.dragging_splitter = false;
-                     {
+                    {
                         ReleaseCapture();
                     }
                     let preview = state.splitter_preview;
                     hide_splitter_preview(&mut state);
                     if let Some(preview_y) = preview {
                         state.splitter_height = Some(
-                            (unscale(preview_y) - state.splitter_tabs_y).clamp(104, state.splitter_max.max(104)),
+                            (unscale(preview_y) - state.splitter_tabs_y)
+                                .clamp(104, state.splitter_max.max(104)),
                         );
                         // layout() moves children with SWP_NOREDRAW and then
                         // repaints the whole tree synchronously.
@@ -216,7 +217,7 @@ pub(crate) unsafe extern "system" fn window_proc(
                 right: 0,
                 bottom: 0,
             };
-             {
+            {
                 ScreenToClient(hwnd, &mut point);
                 GetClientRect(hwnd, &mut rect);
             }
@@ -385,25 +386,25 @@ pub(crate) unsafe extern "system" fn window_proc(
                 SetTextColor(dc, if muted { c_muted() } else { c_ink() });
                 body_brush() as Lresult
             }
-        },
-        WM_CTLCOLOREDIT =>  {
+        }
+        WM_CTLCOLOREDIT => {
             let dc = wparam as Handle;
             SetBkMode(dc, 1);
             SetBkColor(dc, c_card());
             SetTextColor(dc, c_ink());
             card_brush() as Lresult
-        },
-        WM_CTLCOLORLISTBOX =>  {
+        }
+        WM_CTLCOLORLISTBOX => {
             SetBkMode(wparam as Handle, 1);
             SetBkColor(wparam as Handle, c_card());
             SetTextColor(wparam as Handle, c_ink());
             card_brush() as Lresult
-        },
-        WM_CTLCOLORBTN =>  {
+        }
+        WM_CTLCOLORBTN => {
             SetBkMode(wparam as Handle, 1);
             SetBkColor(wparam as Handle, c_body());
             body_brush() as Lresult
-        },
+        }
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }
 }

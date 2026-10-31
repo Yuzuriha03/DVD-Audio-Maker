@@ -65,6 +65,63 @@ fn menu_pages_text_and_multi_index_cells_match_historical_examples() {
 }
 
 #[test]
+fn menu_fixed_labels_follow_language_without_translating_metadata() {
+    for (language, select, continued) in [
+        ("zh-CN", "选择专辑", "（续）"),
+        ("ko", "앨범 선택", " (계속)"),
+        ("ko-KR", "앨범 선택", " (계속)"),
+        ("zh-TW", "選擇專輯", "（續）"),
+        ("zh-Hant", "選擇專輯", "（續）"),
+        ("ja-JP", "アルバム選択", "（続き）"),
+        ("en-US", "Select album", " (cont.)"),
+    ] {
+        let value = run(
+            "menu.plan",
+            json!({
+                "Language": language, "Title": "繁體光碟",
+                "MenuTracksPerPage": 1, "MenuIndexMinimumAlbums": 1,
+                "Disc": {"Groups": [{"Tracks": [
+                    {"Title": "臺灣樂曲", "Album": "繁體專輯", "SourcePath": "C:\\使用者\\繁體專輯\\樂曲.flac"},
+                    {"Title": "", "Album": "繁體專輯", "SourcePath": "C:\\使用者\\繁體專輯\\續曲.flac"}
+                ]}]}
+            }),
+        );
+        let text = value["ScreenText"].as_str().unwrap();
+        assert!(
+            text.starts_with(&format!("繁體光碟={select}=")),
+            "{language}: {text}"
+        );
+        assert!(
+            text.contains(&format!("繁體專輯{continued}")),
+            "{language}: {text}"
+        );
+        assert!(text.contains("臺灣樂曲"), "{language}: {text}");
+        assert!(text.contains("續曲"), "{language}: {text}");
+        assert!(!text.contains("繁体专辑"));
+    }
+}
+
+#[test]
+fn korean_menu_preserves_titles_and_source_names() {
+    let value = run(
+        "menu.plan",
+        json!({
+            "Language": "ko", "Title": "한국어 음반",
+            "MenuTracksPerPage": 1, "MenuIndexMinimumAlbums": 1,
+            "Disc": {"Groups": [{"Tracks": [
+                {"Title": "한글 곡", "Album": "한국어 앨범", "SourcePath": "C:\\사용자\\한국어 앨범\\노래.flac"},
+                {"Title": "", "Album": "한국어 앨범", "SourcePath": "C:\\사용자\\한국어 앨범\\다음 곡.flac"}
+            ]}]}
+        }),
+    );
+    let text = value["ScreenText"].as_str().unwrap();
+    assert!(text.starts_with("한국어 음반=앨범 선택="), "{text}");
+    assert!(text.contains("한국어 앨범 (계속)"), "{text}");
+    assert!(text.contains("한글 곡"), "{text}");
+    assert!(text.contains("다음 곡"), "{text}");
+}
+
+#[test]
 fn menu_visual_thresholds_and_nonfinite_statistics_match_historical_examples() {
     for (value, expected) in [(75, false), (160, false), (161, true), (238, true)] {
         assert_eq!(

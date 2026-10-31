@@ -27,9 +27,9 @@ pub(crate) fn refit_settings(state: &mut UiState) {
 pub(crate) fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
     if (ID_MINIMIZE..=ID_THEME).contains(&id) && notify == BN_CLICKED {
         match id {
-            ID_MINIMIZE =>  {
+            ID_MINIMIZE => {
                 ShowWindow(hwnd, SW_MINIMIZE);
-            },
+            }
             _ => toggle_theme(hwnd, state),
         }
         return;
@@ -59,8 +59,10 @@ pub(crate) fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, n
         set_language(
             state,
             match combo_index(state.controls.language) {
-                1 => Lang::En,
-                2 => Lang::Ja,
+                1 => Lang::ZhHant,
+                2 => Lang::En,
+                3 => Lang::Ja,
+                4 => Lang::Ko,
                 _ => Lang::Zh,
             },
         );
@@ -123,8 +125,10 @@ pub(crate) fn set_language(state: &mut UiState, lang: Lang) {
         state.controls.language,
         match lang {
             Lang::Zh => 0,
-            Lang::En => 1,
-            Lang::Ja => 2,
+            Lang::ZhHant => 1,
+            Lang::En => 2,
+            Lang::Ja => 3,
+            Lang::Ko => 4,
         },
     );
     for (hwnd, key) in &state.labels {
@@ -163,7 +167,11 @@ pub(crate) fn set_language(state: &mut UiState, lang: Lang) {
     let norm = combo_index(state.controls.norm);
     combo_items(
         state.controls.norm,
-        &[tr(lang, "norm_pal"), tr(lang, "norm_secam"), tr(lang, "norm_ntsc")],
+        &[
+            tr(lang, "norm_pal"),
+            tr(lang, "norm_secam"),
+            tr(lang, "norm_ntsc"),
+        ],
         norm,
     );
     let log_view = combo_index(state.controls.log_view);

@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md)
 
-FLAC、ALAC/M4A の音楽から DVD-Audio ISO イメージを作成します。MLP / LPCM エンコード、ディスクへの自動振り分け、選曲メニュー、アルバム画像、完成品の検証に対応しています。Windows x64 用で、画面とログは中国語・英語・日本語に切り替えられます。
+FLAC、ALAC/M4A の音楽から DVD-Audio ISO イメージを作成します。MLP / LPCM エンコード、ディスクへの自動振り分け、選曲メニュー、アルバム画像、完成品の検証に対応しています。Windows x64 用で、画面とログは簡体字中国語・繁体字中国語・英語・日本語に切り替えられます。
 
 配布パッケージは Windows x64 のネイティブ Rust GUI です。
 

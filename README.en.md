@@ -4,7 +4,7 @@ Task recovery: only Start production asks Continue production / Restart producti
 
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md)
 
-Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP and LPCM encoding, automatic disc splitting, track menus, album covers and output verification. The application runs on Windows x64 and supports Chinese, English and Japanese interfaces and logs.
+Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP and LPCM encoding, automatic disc splitting, track menus, album covers and output verification. The application runs on Windows x64 and supports Simplified Chinese, Traditional Chinese, English, Japanese and Korean interfaces and logs.
 
 The release is a native Windows x64 Rust GUI.
 

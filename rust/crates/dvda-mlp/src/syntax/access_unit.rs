@@ -1,6 +1,6 @@
+use super::substream::{MlpSubstream, mlp_substream_put};
 use crate::bitstream::Bits;
 use crate::pipeline::encode::IntervalOutput;
-use super::substream::{MlpSubstream, mlp_substream_put};
 
 pub(crate) fn serialize_planned(
     writer: &mut Bits,

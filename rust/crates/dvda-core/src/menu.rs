@@ -167,6 +167,22 @@ pub fn pages(request: Value) -> Result<Value, String> {
 
 pub fn plan(request: Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected menu plan request")?;
+    let language = crate::config_files::normalize_language(
+        object.get("Language").and_then(Value::as_str),
+        "zh-CN",
+    )
+    .map_err(|error| {
+        error
+            .message
+            .unwrap_or_else(|| "Invalid menu language".into())
+    })?;
+    let (select_album, continued) = match language.as_str() {
+        "zh-TW" => ("選擇專輯", "（續）"),
+        "ko" => ("앨범 선택", " (계속)"),
+        "ja" => ("アルバム選択", "（続き）"),
+        "en" => ("Select album", " (cont.)"),
+        _ => ("选择专辑", "（续）"),
+    };
     let disc = object
         .get("Disc")
         .and_then(Value::as_object)
@@ -252,7 +268,7 @@ pub fn plan(request: Value) -> Result<Value, String> {
             .map(|label| sanitize_record(&label, &mut sanitized))
             .map(|label| truncate_value(&label, font_size, 660))
             .collect();
-        chunks.push(format!("选择专辑={}", names.join(",")));
+        chunks.push(format!("{select_album}={}", names.join(",")));
     }
     for page in &pages {
         let raw_album = page["Album"].as_str().unwrap_or_default();
@@ -261,7 +277,7 @@ pub fn plan(request: Value) -> Result<Value, String> {
             &format!(
                 "{}{}",
                 labels.get(raw_album).cloned().unwrap_or_default(),
-                if continuation { "（续）" } else { "" }
+                if continuation { continued } else { "" }
             ),
             &mut sanitized,
         );
@@ -356,6 +372,7 @@ pub fn build_assets(
     let request = json!({
         "Disc": disc,
         "Title": job.title,
+        "Language": job.menu_language,
         "MenuTracksPerPage": job.menu_tracks_per_page,
         "MenuIndexMinimumAlbums": job.menu_index_minimum_albums,
     });

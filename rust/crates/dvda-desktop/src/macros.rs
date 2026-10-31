@@ -79,10 +79,7 @@ macro_rules! browse_edit {
             24,
         );
         $browse_buttons.push(browse_button);
-        $browse.insert(
-            $browse_id,
-            (edit, BrowseKind::Folder),
-        );
+        $browse.insert($browse_id, (edit, BrowseKind::Folder));
         edit
     }};
 }
