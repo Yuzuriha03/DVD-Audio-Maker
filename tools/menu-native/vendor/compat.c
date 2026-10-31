@@ -35,25 +35,6 @@ int da_fsync(int fd)
     Useful string stuff
 */
 
-void strconcat
-  (
-    char * dest,
-    size_t maxdestlen,
-    const char * src
-  )
-  /* appends null-terminated src onto dest, ensuring length of contents
-    of latter (including terminating null) do not exceed maxdestlen. */
-  {
-    const size_t destlen = strlen(dest);
-    size_t srclen = strlen(src);
-    assert(destlen < maxdestlen);
-    if (srclen > maxdestlen - 1 - destlen)
-      {
-        srclen = maxdestlen - 1 - destlen;
-      } /*if*/
-    memcpy(dest + destlen, src, srclen);
-    dest[destlen + srclen] = 0;
-  } /*strconcat*/
 
 unsigned int strtounsigned
   (
@@ -86,36 +67,6 @@ unsigned int strtounsigned
     return result;
   } /*strtounsigned*/
 
-int strtosigned
-  (
-    const char * s,
-    const char * what /* description of what I'm trying to convert, for error message */
-  )
-  /* parses s as a signed decimal integer, returning its value. Aborts the
-    program on error. */
-  {
-    char * s_end;
-    long result;
-    errno = 0;
-    result = strtol(s, &s_end, 10);
-    if (errno == 0)
-      {
-        if (*s_end != '\0')
-          {
-            errno = EINVAL;
-          }
-        else if (result < -INT_MAX || result > INT_MAX)
-          {
-            errno = ERANGE;
-          }
-      } /*if*/
-    if (errno != 0)
-      {
-        fprintf(stderr, "ERR:  %d converting %s \"%s\" -- %s\n", errno, what, s, strerror(errno));
-        exit(1);
-      } /*if*/
-    return result;
-  } /*strtosigned*/
 
 #ifndef HAVE_STRNDUP
 char * strndup
@@ -182,79 +133,7 @@ static iconv_t
 
 #endif /*HAVE_ICONV*/
 
-void init_locale()
-  /* does locale initialization and obtains the default character set. */
-  {
-#ifdef HAVE_ICONV
-    setlocale(LC_ALL, "");
-#ifdef _WIN32
-    /* MinGW 没有 <langinfo.h> / nl_langinfo()。Windows 也没有「locale 字符集」
-       这个概念（那是 POSIX 的），与之对应的是 **ANSI 代码页**，用 GetACP()
-       取（如 936 = 简体中文、1252 = 西欧）。iconv 认 "CP936" 这种名字。
-       用 extern 声明代替 <windows.h>，与 subfont.c 里取 GetModuleFileNameA
-       的写法一致（避免把整个 windows.h 拖进来）。
-       ⚠️ LOCALIZE_FILENAMES 默认**关闭**，所以 default_charset 只会在
-       locale_decode() 里用到，而那个函数目前没有任何调用者 —— 这条路径
-       实际不参与文件名转换，这里只要给出一个合法值即可。 */
-    {
-      extern unsigned int __stdcall GetACP(void);
-      snprintf(default_charset_buf, sizeof default_charset_buf, "CP%u", GetACP());
-    }
-#else
-    strncpy(default_charset_buf, nl_langinfo(CODESET), sizeof default_charset_buf - 1);
-#endif
-    default_charset_buf[sizeof default_charset_buf - 1] = 0;
-    default_charset = default_charset_buf;
-    // fprintf(stderr, "INFO: default codeset is \"%s\"\n", default_charset); /* debug */
-    setlocale(LC_ALL, "C"); /* don't need locale for anything else */
-#else
-    // fprintf(stderr, "INFO: all text will be interpreted as UTF-8\n"); /* debug */
-#endif /*HAVE_ICONV*/
-  } /*init_locale*/
 
-char * locale_decode
-  (
-    const char * localestr
-  )
-  /* allocates and returns a string containing the UTF-8 representation of
-    localestr interpreted according to the user's locale settings. */
-  /* not actually used anywhere */
-  {
-    char * result;
-#ifdef HAVE_ICONV
-    size_t inlen, outlen;
-    char * resultnext;
-    if (from_locale == ICONV_NULL)
-      {
-        from_locale = iconv_open("UTF-8", default_charset);
-        if (from_locale == ICONV_NULL)
-          {
-            fprintf(stderr, "ERR:  Cannot convert from charset \"%s\" to UTF-8\n", default_charset);
-            exit(1);
-          } /*if*/
-      } /*if*/
-    inlen = strlen(localestr);
-    outlen = inlen * 5; /* should be enough? */
-    result = malloc(outlen);
-    resultnext = result;
-    if (iconv(from_locale, (char **)&localestr, &inlen, &resultnext, &outlen) < 0)
-      {
-        fprintf
-          (
-            stderr,
-            "ERR:  Error %d -- %s decoding string \"%s\"\n",
-            errno, strerror(errno), localestr
-          );
-        exit(1);
-      } /*if*/
-    assert(outlen != 0); /* there will be room for ... */
-    *resultnext++ = 0; /* ... terminating null */
-    result = realloc(result, resultnext - result); /* free unneeded memory */
-#else
-    result = strdup(localestr);
-#endif /*HAVE_ICONV*/
-    return result;
-  } /*locale_decode*/
 
 #if HAVE_ICONV && LOCALIZE_FILENAMES
 

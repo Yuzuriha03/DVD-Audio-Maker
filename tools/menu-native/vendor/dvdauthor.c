@@ -1162,33 +1162,7 @@ static void forceaddentry(struct pgcgroup *va, int entry)
       } /*if*/
   } /*forceaddentry*/
 
-static void checkaddentry(struct pgcgroup *va, int entry)
-  /* gives the first PGC in va the specified entry type, if this is not present already
-    and it has at least one PGC. */
-  {
-    if (va->numpgcs)
-        forceaddentry(va, entry);
-  } /*checkaddentry*/
 
-static int getvtsnum(const char *fbase)
-  /* returns the next unused titleset number within output directory fbase. */
-  {
-    static char realfbase[1000];
-    int i;
-    if (!fbase)
-        return 1;
-    for (i = 1; i <= 99; i++)
-      {
-        FILE *h;
-        snprintf(realfbase, sizeof realfbase, "%s/VIDEO_TS/VTS_%02d_0.IFO", fbase, i);
-        h = fopen(realfbase, "rb");
-        if (!h)
-            break; /* doesn't look like this number is in use */
-        fclose(h);
-      } /*for*/
-    fprintf(stderr, "STAT: Picking VTS %02d\n", i);
-    return i;
-  } /*getvtsnum*/
 
 static void deletedir(const char * fbase)
   /* deletes any existing output directory structure. Note for safety I only look for
@@ -2072,59 +2046,3 @@ void dvdauthor_amgm_gen(struct menugroup *menus,const char *fbase)
  }
 
 
-void dvdauthor_vts_gen(struct menugroup *menus, struct pgcgroup *titles, const char *fbase)
-  /* generates a VTS (titleset). */
-  {
-    int vtsnum, i;
-    static char realfbase[1000];
-    struct workset ws;
-
-    fprintf(stderr, "INFO: dvdauthor creating VTS\n");
-    initdir(fbase);
-    ws.titlesets = 0;
-    ws.menus = menus;
-    ws.titles = titles;
-    jp_force_menu(menus, VTYPE_VTSM);
-    for (i = 0; i < menus->numgroups; i++)
-      {
-        validatesummary(menus->groups[i].pg);
-        pgcgroup_createvobs(menus->groups[i].pg, menus->mg_vg);
-        forceaddentry(menus->groups[i].pg, 0x80); /* entry=ptt? */
-        checkaddentry(menus->groups[i].pg, 0x08); /* entry=root */
-      } /*for*/
-    validatesummary(titles);
-    pgcgroup_createvobs(titles, titles->pg_vg);
-    if (titles->numpgcs == 0)
-      {
-        fprintf(stderr, "ERR:  no titles defined\n");
-        exit(1);
-      } /*if*/
-    vtsnum = getvtsnum(fbase);
-    if (fbase)
-      {
-        snprintf(realfbase, sizeof realfbase, "%s/VIDEO_TS/VTS_%02d", fbase, vtsnum);
-        fbase = realfbase;
-      } /*if*/
-    if (menus->mg_vg->numvobs != 0)
-      {
-        FindVobus(fbase, menus->mg_vg, VTYPE_VTSM);
-        MarkChapters(menus->mg_vg);
-        setattr(menus->mg_vg, VTYPE_VTSM);
-      }
-    else if (menus->mg_vg->numallpgcs != 0)
-      {
-        set_video_format_attr(menus->mg_vg, VTYPE_VTSM); /* for the sake of buildtimeeven */
-      } /*if*/
-    FindVobus(fbase, titles->pg_vg, VTYPE_VTS);
-    MarkChapters(titles->pg_vg);
-    setattr(titles->pg_vg, VTYPE_VTS);
-    if (!menus->mg_vg->numvobs) // for undefined menus, we'll just copy the video type of the title
-      {
-        menus->mg_vg->vd = titles->pg_vg->vd;
-      } /*if*/
-    fprintf(stderr, "\n");
-    WriteIFOs(fbase, &ws);
-    if (menus->mg_vg->numvobs)
-        FixVobus(fbase, menus->mg_vg, &ws, VTYPE_VTSM,1);
-    FixVobus(fbase, titles->pg_vg, &ws, VTYPE_VTS,1);
-  } /*dvdauthor_vts_gen*/

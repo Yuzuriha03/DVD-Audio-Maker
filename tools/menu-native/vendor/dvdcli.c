@@ -59,90 +59,12 @@ static bool
 static char
     *cur_chapters = 0;
 
-static void parsevideoopts(struct pgcgroup *va,const char *o)
-{
-    char *s;
-    while(NULL!=(s=str_extract_until(&o,"+"))) {
-        if(pgcgroup_set_video_attr(va,VIDEO_ANY,s)) {
-            fprintf(stderr,"ERR:  Video option '%s' overrides previous option\n",s);
-            exit(1);
-        }
-        free(s);
-    }
-}
 
-static void parseaudiotrack(struct pgcgroup *va,const char *o,int c)
-{
-    char *s;
-    while(NULL!=(s=str_extract_until(&o,"+"))) {
-        if(pgcgroup_set_audio_attr(va,AUDIO_ANY,s,c)) {
-            fprintf(stderr,"ERR:  Audio option '%s' on track %d overrides previous option\n",s,c);
-            exit(1);
-        }
-        free(s);
-    }
-}
 
-static void parseaudioopts(struct pgcgroup *va,const char *o)
-{
-    char *s;
-    int ch=0;
-    while(NULL!=(s=str_extract_until(&o,", "))) {
-        parseaudiotrack(va,s,ch);
-        free(s);
-        ch++;
-    }
-}
 
-static void parsesubpicturetrack(struct pgcgroup *va,const char *o,int c)
-{
-    char *s;
-    while(NULL!=(s=str_extract_until(&o,"+"))) {
-        if(pgcgroup_set_subpic_attr(va,SPU_ANY,s,c)) {
-            fprintf(stderr,"ERR:  Subpicture option '%s' on track %d overrides previous option\n",s,c);
-            exit(1);
-        }
-        free(s);
-    }
-}
 
-static void parsesubpictureopts(struct pgcgroup *va,const char *o)
-{
-    char *s;
-    int ch=0;
-    while(NULL!=(s=str_extract_until(&o,", "))) {
-        parsesubpicturetrack(va,s,ch);
-        free(s);
-        ch++;
-    }
-}
 
-static void parsebutton(struct pgc *va,char *b)
-{
-    char *bnm=0;
 
-    if( strchr(b,'=') ) {
-        char *p=strchr(b,'=');
-        p[0]=0;
-        bnm=b;
-        b=p+1;
-    }
-    pgc_add_button(va,bnm,b);
-}
-
-static void parseinstructions(struct pgc *va,const char *b)
-{
-    char *c=str_extract_until(&b,"=");
-    if(!strcasecmp(c,"post")) {
-        pgc_set_post(va,b);
-    } else if(!strcasecmp(c,"pre")) {
-        pgc_set_pre(va,b);
-    } else {
-        fprintf(stderr,"Unknown instruction block: %s\n",c);
-        exit(1);
-    }
-    free(c);
-}
 
 static void parseentries(struct pgc *p, vtypes ismenuf, const char *b)
   {
@@ -244,83 +166,6 @@ static void readpalette(struct pgc *p,const char *fname)
     varied_close(h);
 }
 
-static void usage()
-{
-#ifdef HAVE_GETOPT_LONG
-#define LONGOPT(x) x
-#define LONGOPT2(x,y) x
-#else
-#define LONGOPT(x)
-#define LONGOPT2(x,y) y
-#endif
-
-    fprintf(stderr,
-            "syntax: dvdauthor [-o VTSBASE | -n] [options] VOBFILE(s)\n"
-            "\n\t-x XMLFILE where XMLFILE is a configuration file describing the\n"
-            "\t    structure of the DVD to create.  If you use a config file, then you\n"
-            "\t    do not need to specify any other options, except -o and -n.\n"
-            "\n\t-n skips writing any files, for testing purposes.  MUST occur before any\n"
-            "\t    other options.\n"
-            "\n\t" LONGOPT("--video=VOPTS or ") "-v VOPTS where VOPTS is a plus (+) separated list of\n"
-            "\t    video options.  dvdauthor will try to infer any unspecified options.\n"
-            "\t\tpal, ntsc, 4:3, 16:9, 720xfull, 720x576, 720x480, 704xfull,\n"
-            "\t\t704x576, 704x480, 352xfull, 352x576, 352x480, 352xhalf,\n"
-            "\t\t352x288, 352x240, nopanscan, noletterbox, crop.\n"
-            "\t    Default is ntsc, 4:3, 720xfull\n"
-            "\n\t" LONGOPT("--audio=AOPTS or ") "-a AOPTS where AOPTS is a plus (+) separated list of\n"
-            "\t    options for an audio track, with each track separated by a\n"
-            "\t    comma (,).  For example -a ac3+en,mp2+de specifies two audio\n"
-            "\t    tracks: the first is an English track encoded in AC3, the second is\n"
-            "\t    a German track encoded using MPEG-1 layer 2 compression.\n"
-            "\t\tac3, mp2, pcm, dts, 16bps, 20bps, 24bps, drc, surround, nolang,\n"
-            "\t\t1ch, 2ch, 3ch, 4ch, 5ch, 6ch, 7ch, 8ch, and any two letter\n"
-            "\t\tISO 639 language abbreviation.\n"
-            "\t    Default is 1 track, mp2, 20bps, nolang, 2ch.\n"
-            "\t    'ac3' implies drc, 6ch.\n"
-            "\n\t" LONGOPT("--subpictures=SOPTS or ") "-s SOPTS where SOPTS is a plus (+) separated list\n"
-            "\t    of options for a subpicture track, with each track separated by a\n"
-            "\t    comma (,).\n"
-            "\t\tnolang and any two letter language abbreviation (see -a)\n"
-            "\t    Default is no subpicture tracks.\n"
-            "\n\t" LONGOPT("--palette[=FILE] or ") "-p FILE or -P where FILE specifies where to get the\n"
-            "\t    subpicture palette.  Settable per title and per menu.  If the\n"
-            "\t    filename ends in .rgb (case insensitive) then it is assumed to be\n"
-            "\t    RGB, otherwise it is YUV.  Entries should be 6 hexadecimal digits.\n"
-            "\t    FILE defaults to xste-palette.dat\n"
-            "\n\t" LONGOPT2("--file=FILE or -f FILE or FILE","-f FILE") " where FILE is either a file, a pipe, or a\n"
-            "\t    shell command ending in | which supplies an MPEG-2 system stream\n"
-            "\t    with VOB sectors inserted in the appropriate places\n"
-            "\t    (using mplex -f 8 to generate)\n"
-            "\n\t" LONGOPT("--chapter[s][=COPTS] or ") "-c COPTS or -C where COPTS is a comma (,)\n"
-            "\t    separated list of chapter markers.  Each marker is of the form\n"
-            "\t    [[h:]mm:]ss[.frac] and is relative to the SCR of the next file\n"
-            "\t    listed (independent of any timestamp transposing that occurs within\n"
-            "\t    dvdauthor).  The chapter markers ONLY apply to the next file listed.\n"
-            "\t    COPTS defaults to 0\n"
-            "\n\t" LONGOPT("--menu or ") "-m creates a menu.\n"
-            "\n\t" LONGOPT("--title or ") "-t creates a title.\n"
-            "\n\t" LONGOPT("--toc or ") "-T creates the table of contents file instead of a titleset.\n"
-            "\t    If this option is used, it should be listed first, and you may not\n"
-            "\t    specify any titles.\n"
-            "\n\t" LONGOPT("--entry=EOPTS or ") "-e EOPTS makes the current menu the default for\n"
-            "\t    certain circumstances.  EOPTS is a comma separated list of any of:\n"
-            "\t\tfor TOC menus: title\n"
-            "\t\tfor VTS menus: root, ptt, audio, subtitle, angle\n"
-            "\n\t" LONGOPT("--button or ") "-b DEST specifies what command to issue for each button.\n"
-            "\t    See " LONGOPT("--instructions or ") "-i for a description of\n"
-            "\t    DEST.\n"
-            "\n\t" LONGOPT("--instructions or ") "-i post=DEST executes the DEST instructions at the\n"
-            "\t    end of the title.\n"
-            "\n\t" LONGOPT("--fpc or ") "-F CMD sets the commands to be executed when the disc is first\n"
-            "\t    inserted.\n"
-            "\n\t" LONGOPT("--jumppad or ") "-j enables the creation of jumppads, which allow greater\n"
-            "\t    flexibility in choosing jump/call desinations.\n"
-            "\n\t" LONGOPT("--allgprm or ") "-g enables the use of all 16 general purpose registers.\n"
-            "\n\t" LONGOPT("--help or ") "-h displays this screen.\n"
-              "\n\t" LONGOPT("--version or ") "-V displays software version.\n"
-        );
-    exit(1);
-}
 
 /* bits for authoring via command line */
 #define NOXML                                                                          \
@@ -540,69 +385,18 @@ static void dvdauthor_end()
      }
   } /*dvdauthor_end*/
 
-static void titleset_start()
-{
-    mg=menugroup_new();
-    istoc = false;
-}
 
 
 // DVDA-AUTHOR PATCH
 
-static void audiogroup_start()
-{
-    mg=menugroup_new();
-    istoc=0;
-}
 
 
 // END OF DVDA-AUTHOR PATCH
 
 
-static void titleset_end()
-  { /* called on </titles> end tag, generates the output titleset. */
-    getfbase();
-    if (!parser_err)
-      {
-        if (!titles)
-            titles = pgcgroup_new(VTYPE_VTS);
-        dvdauthor_vts_gen(mg, titles, fbase);
-        menugroup_free(mg);
-        pgcgroup_free(titles);
-        mg = 0;
-        titles = 0;
-      } /*if*/
-  } /*titleset_end*/
 
 
-static void audiogroup_end()
-{
-    getfbase();
-    if( !parser_err ) {
-        if( !titles )
-            titles=pgcgroup_new(VTYPE_VTS);
-        dvdauthor_vts_gen(mg,titles,fbase);
-        if( mg )
-            menugroup_free(mg);
-        pgcgroup_free(titles);
-        mg=0;
-        titles=0;
-    }
-}
 
-static void vmgm_start()
-{
-    if (hadtoc) {
-        fprintf(stderr,"ERR:  Can only define one VMGM\n");
-        parser_err = true;
-        return;
-    }
-    mg=menugroup_new();
-    istoc = true;
-    hadtoc = true;
-    audioedit=false;
-    videoedit=true;
-}
 
 static void amgm_start()
 {
@@ -616,13 +410,6 @@ static void amgm_start()
     videoedit=false;
     istoc=1;
     hadaudiotoc=1;
-}
-static void vmgm_end()
-{
-    getfbase();
-    // we put off compilation of vmgm until after the titlesets
-    vmgmmenus=mg;
-    mg=0;
 }
 
 static void amgm_end()
@@ -663,27 +450,6 @@ static void pgcgroup_start()
     subpmode = DA_PGCGROUP;
   } /*pgcgroup_start*/
 
-static void titles_start()
-  /* called on a <titles> tag. */
-  {
-    if (titles)
-      {
-        fprintf(stderr, "ERR:  Titles already defined\n");
-        parser_err = true;
-      }
-    else if (istoc)
-      {
-        fprintf(stderr, "ERR:  Cannot have titles in a VMGM\n");
-        parser_err = true;
-      }
-    else
-      {
-        titles = pgcgroup_new(VTYPE_VTS);
-        curgroup = titles;
-        ismenuf = VTYPE_VTS;
-        pgcgroup_start();
-      } /*if*/
-  }
 
 static void menus_start()
   /* called on a <menus> tag. */

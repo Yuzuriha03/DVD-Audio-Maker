@@ -461,16 +461,6 @@ static stinfo *getnextsub(void)
       } /*while*/
   } /*getnextsub*/
 
-static void usage()
-{
-    fprintf(stderr, "syntax: spumux [options] script.sub < in.mpg > out.mpg\n");
-    fprintf(stderr, "\t-m <mode>   dvd, cvd, or svcd (only the first letter is checked).\n\t\tDefault is DVD.\n");
-    fprintf(stderr, "\t-s <stream> number of the substream to insert (default 0)\n");
-    fprintf(stderr, "\t-v <level>  verbosity level (default 0) \n");
-    fprintf(stderr, "\t-P          enable progress indicator\n");
-    fprintf(stderr,"\n\tSee manpage for config file format.\n");
-    exit(-1);
-}
 
 static void muxnext(bool eoinput)
   {
