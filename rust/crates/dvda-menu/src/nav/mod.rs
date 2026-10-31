@@ -5,6 +5,7 @@
 pub(crate) mod build;
 pub(crate) mod dvdata;
 pub(crate) mod mpeg;
+pub(crate) mod navpack;
 pub(crate) mod model;
 pub(crate) mod vm;
 pub(crate) mod vob;
