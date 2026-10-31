@@ -176,8 +176,12 @@ test for incompressible inputs above the delivery limit.
 The matrix analysis and half-rate interpolation arithmetic now use Rust `f64`
 (including `f64::ln`), not x87 inline assembly or software x87 emulation.
 Function boundaries, operation order and the integer lossless coding pipeline
-are retained. Decoded PCM, format compatibility and output-size checks are useful
-regressions. By user authorization, complete historical C byte/coded-stream
+are retained. Lossless acceptance requires an independent decoder's complete
+PCM output to have the same SHA256 as the encoder input PCM, using identical
+sample rate, valid bit depth, channel order and byte representation, with equal
+sample counts and no container headers in the hash. Encoded bytes and compressed
+sizes may differ; output-size measurements are diagnostic, not an equality gate.
+Format compatibility checks remain applicable. By user authorization, complete historical C byte/coded-stream
 comparison is no longer a migration or release gate, now or for future releases.
 Historical explicit-metadata comparisons still report byte-for-byte and raw
 SHA256 equality; default-metadata comparisons may use the documented
@@ -231,7 +235,8 @@ was slightly slower, so this is not a general throughput guarantee. FFmpeg
 reconstructed exact PCM and padding for all cases. Total output changed from
 5,789,668 to 5,787,766 bytes (-0.033%); 15 cases changed size, with the largest
 increase 584 bytes (+1.43%, 48 kHz/16-bit/6-channel correlated ramp).
-Compression acceptance remains subject to user review and real-audio testing.
+Compression differences are permitted; these size measurements are diagnostic
+and do not replace the decoded-PCM SHA256 lossless acceptance check.
 
 A subsequent arithmetic-loop optimization expresses the autocorrelation inner
 product as paired bounded slices instead of repeated indexed accesses. It keeps
