@@ -324,7 +324,7 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
             return Err(format!("Rust author/menu source checksum mismatch: {path}"));
         }
     }
-    for name in ["dvda_menu_spu_vendor.lib", "dvda_menu_nav_vendor.lib"] {
+    for name in ["dvda_menu_nav_vendor.lib"] {
         if inputs
             .get(&format!("menu-runtime/{name}"))
             .and_then(Value::as_str)
@@ -768,7 +768,7 @@ pub(crate) mod tests {
         let menu = serde_json::json!({"adapter":"rust","linkage":"static-vendor","target":"x86_64-pc-windows-msvc","toolchain":"msvc","crt":"static",
             "session":{"implementation":"rust","boundary":"c-setjmp-varargs"},
             "state_reset":{"implementation":"rust"},"rust_inputs":rust_inputs,"files":{
-            "dvda_menu_spu_vendor.lib":{"sha256":digest},"dvda_menu_nav_vendor.lib":{"sha256":digest}
+            "dvda_menu_nav_vendor.lib":{"sha256":digest}
         }});
         let menu_bytes = serde_json::to_vec(&menu).unwrap();
         fs::write(author.join("menu-build.json"), &menu_bytes).unwrap();
@@ -936,7 +936,7 @@ pub(crate) mod tests {
         );
         let fixture = rust_author_fixture();
         fixture.edit("author", |record| {
-            record["source_inputs"]["menu-runtime/dvda_menu_spu_vendor.lib"] = "0".repeat(64).into()
+            record["source_inputs"]["menu-runtime/dvda_menu_nav_vendor.lib"] = "0".repeat(64).into()
         });
         assert!(
             fixture

@@ -17,7 +17,7 @@ from msvc_env import msvc_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = 'x86_64-pc-windows-msvc'
-VENDOR_ARCHIVES = ('dvda_menu_spu_vendor.lib', 'dvda_menu_nav_vendor.lib')
+VENDOR_ARCHIVES = ('dvda_menu_nav_vendor.lib',)
 
 
 def sha(path):

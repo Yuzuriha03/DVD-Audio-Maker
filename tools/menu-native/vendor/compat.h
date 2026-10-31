@@ -298,10 +298,4 @@ struct vfile varied_open
 void varied_close(struct vfile vf);
   /* closes a file previously opened by varied_open. */
 
-colorspec parse_color
-  (
-    const char * colorstr,
-    const char * what /* additional explanatory text for error message */
-  );
-  /* parses colorstr and returns the resulting colour. Will abort the process
-    on any errors. */
+

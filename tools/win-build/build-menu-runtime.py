@@ -109,13 +109,12 @@ def main():
     flags=['/nologo','/O2','/std:c11','/MT','/utf-8','/Zl','/Gy-','/Gw-',
            '/D_CRT_SECURE_NO_WARNINGS','/D_CRT_NONSTDC_NO_WARNINGS','/D_USE_MATH_DEFINES',
            '/I'+str(root/'msvc'),'/I'+str(root),'/I'+str(vendor),'/FI'+str(root/'session.h')]
-    groups={'spu':['subgen','subgen-parse-xml','subgen-encode','subgen-image','compat'],
-            'nav':['dvdauthor','dvdcompile','dvdvml','dvdvmy','dvdifo','dvdvob','dvdpgc','dvdcli','compat']}
+    groups={'nav':['dvdauthor','dvdcompile','dvdvml','dvdvmy','dvdifo','dvdvob','dvdpgc','dvdcli','compat']}
     files={}; state_resets={}
     for group,names in groups.items():
         objects=out/('objects-'+group);objects.mkdir(exist_ok=True)
         sources=[vendor/(n+'.c') for n in names]+[root/'session-rust.c']
-        group_flags=flags+(['/DDVDA_SUBPICTURE'] if group=='spu' else [])+(['/DDVDA_DIRECT_LINK'] if a.direct_link else [])
+        group_flags=flags+(['/DDVDA_DIRECT_LINK'] if a.direct_link else [])
         def compile_one(source):
             target=objects/(source.stem+'.obj')
             local_flags=group_flags+(['/DDVDA_SESSION_IMPLEMENTATION'] if source.name == 'session-rust.c' else [])

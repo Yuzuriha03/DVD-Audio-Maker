@@ -11,10 +11,12 @@ use std::{
 mod direct;
 mod resources;
 mod session;
+#[cfg(any(feature = "direct-link", test))]
+mod spu;
 #[cfg(feature = "direct-link")]
 pub use direct::{
     MenuError, MenuRequest, ReadRgba, dvda_menu_run_navigation, dvda_menu_run_spu, run_navigation,
-    run_spu,
+    run_spu, run_spu_files,
 };
 #[cfg(all(feature = "direct-link", not(test)))]
 use direct::{menu_accepts_body, menu_attribute, menu_body, menu_callback};

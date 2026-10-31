@@ -67,7 +67,6 @@ fn main() {
     }
     for name in [
         "menu-build.json",
-        "dvda_menu_spu_vendor.lib",
         "dvda_menu_nav_vendor.lib",
     ] {
         let path = output.join(name);
@@ -79,7 +78,6 @@ fn main() {
         println!("cargo:rerun-if-changed={}", path.display());
     }
     println!("cargo:rustc-link-search=native={}", output.display());
-    println!("cargo:rustc-link-lib=static=dvda_menu_spu_vendor");
-    println!("cargo:rustc-link-lib=static=dvda_menu_nav_vendor");
+        println!("cargo:rustc-link-lib=static=dvda_menu_nav_vendor");
     println!("cargo:rustc-link-lib=ws2_32");
 }

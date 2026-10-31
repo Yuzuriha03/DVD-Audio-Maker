@@ -96,7 +96,7 @@ def main():
                      'rust/crates/dvda-menu/src/lib.rs'):
         if menu_record.get('rust_inputs', {}).get(relative) != sha(repo/relative):
             raise ValueError('Menu Rust source checksum mismatch: '+relative)
-    for name in ('dvda_menu_spu_vendor.lib', 'dvda_menu_nav_vendor.lib'):
+    for name in ('dvda_menu_nav_vendor.lib',):
         if sha(menu/name) != menu_record['files'][name]['sha256']:
             raise ValueError('Menu archive checksum mismatch: '+name)
     required = [magick/'compile/MagickWand/.libs/MagickWand-7.Q16HDRI.lib',
@@ -148,7 +148,7 @@ def main():
     for path in work.glob('*.dll'):
         if path.name.lower() not in seen:
             path.unlink()
-    for name in ('menu-build.json', 'dvda_menu_spu_vendor.lib', 'dvda_menu_nav_vendor.lib'):
+    for name in ('menu-build.json', 'dvda_menu_nav_vendor.lib'):
         inputs['menu-runtime/'+name] = sha(menu/name)
     shutil.copy2(menu/'menu-build.json', work/'menu-build.json')
     if (menu/'NOTICE.txt').is_file():
@@ -159,7 +159,7 @@ def main():
             if path.is_file():
                 dependencies[str(path)] = sha(path)
     for path in [ffmpeg/'build-manifest.json', magick/'image-build.json', *required,
-                 menu/'menu-build.json', menu/'dvda_menu_spu_vendor.lib', menu/'dvda_menu_nav_vendor.lib']:
+                 menu/'menu-build.json', menu/'dvda_menu_nav_vendor.lib']:
         dependencies[str(path)] = sha(path)
     for pattern in ('compile/config/*.h','ImageMagick-7.0.8-47/MagickCore/*.h'):
         for path in sorted(magick.glob(pattern)):

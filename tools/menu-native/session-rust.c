@@ -83,11 +83,7 @@ int menu_read_rgba(const char *p,unsigned char *b,size_t n,unsigned *w,unsigned 
     return menu_rust_read_rgba(p,b,n,w,h);
 }
 
-#ifdef DVDA_SUBPICTURE
-int menu_spu_core(const char *,int,int);
-#else
 int menu_nav_core(const char *,const char *);
-#endif
 #ifdef DVDA_DIRECT_LINK
 void menu_vendor_reset(void);
 #endif
@@ -95,12 +91,9 @@ void menu_vendor_reset(void);
 static int menu_core_island(const char *xml,const char *output,int input,int outfd) {
     jmp_buf island;jmp_buf *previous=failure_target;
     volatile int result=1;failure_target=&island;
+    (void)input;(void)outfd;
     if(setjmp(island)==0) {
-#ifdef DVDA_SUBPICTURE
-        result=menu_spu_core(xml,input,outfd);
-#else
         result=menu_nav_core(xml,output);
-#endif
     }
     failure_target=previous;return result;
 }
@@ -109,12 +102,7 @@ int dvda_menu_run(const DvdaMenuRequest *request) {
 #else
 __declspec(dllexport) int dvda_menu_run(const DvdaMenuRequest *request) {
 #endif
-    return menu_rust_run(request,
-#ifdef DVDA_SUBPICTURE
-        0,
-#else
-        1,
-#endif
+    return menu_rust_run(request,1,
         menu_core_island,
 #ifdef DVDA_DIRECT_LINK
         menu_vendor_reset,
