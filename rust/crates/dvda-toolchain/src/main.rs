@@ -686,39 +686,6 @@ mod tests {
         }
     }
 
-    #[test]
-    #[ignore = "obsolete menu-vendor acceptance"]
-    fn package_entry_rejects_menu_before_touching_release() {
-        for failure in ["legacy", "missing", "unauthenticated", "tamper", "mismatch"] {
-            let f = Fixture::new();
-            let output = f.root.join("output");
-            fs::create_dir_all(output.join("DVD-Audio-Maker")).unwrap();
-            let old_names = [
-                "DVD-Audio-Maker/DVD-Audio-Maker.exe",
-                "DVD-Audio-Maker-v1.0-win-x64.zip",
-                "MANIFEST.txt",
-            ];
-            for name in old_names {
-                fs::write(output.join(name), b"known good").unwrap();
-            }
-            match failure {
-                "legacy" => f.edit_menu(|record| record["adapter"] = "c".into()),
-                "missing" => fs::remove_file(f.root.join("author/menu-build.json")).unwrap(),
-                "unauthenticated" => f.edit("author", |record| {
-                    record["source_inputs"] = serde_json::Value::Null
-                }),
-                "tamper" => fs::write(f.root.join("author/menu-build.json"), b"tampered").unwrap(),
-                _ => f.edit_menu(|record| {
-                    record["files"]["dvda-menu-spu.dll"]["sha256"] = "0".repeat(64).into()
-                }),
-            }
-            assert!(entry(&f).is_err(), "{failure}");
-            for name in old_names {
-                assert_eq!(fs::read(output.join(name)).unwrap(), b"known good");
-            }
-            assert_eq!(fs::read_dir(&output).unwrap().count(), 3);
-        }
-    }
 
     #[test]
     fn build_copy_and_zip_failure_leave_old_release_and_hashes_untouched() {

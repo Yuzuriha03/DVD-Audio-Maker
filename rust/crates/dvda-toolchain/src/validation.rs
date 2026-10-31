@@ -80,9 +80,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
             .extend([manifest, image.join("image-build.json")]);
         return Ok(inputs);
     }
-    if author_record["implementation"] == "rust"
-        || author_record["menu_linkage"] == "direct-static-vendor"
-    {
+    if author_record["implementation"] == "rust" {
         let (media_record, mut media_files) = component(
             media,
             "media-build.json",
@@ -112,11 +110,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         if image_record["implementation"] != "project-owned-rust" {
             return Err("Image provenance must identify the Rust implementation".into());
         }
-        let mut linked = if author_record["implementation"] == "rust" {
-            validate_rust_author(author, &author_record)?
-        } else {
-            validate_linked(author, &author_record)?
-        };
+        let mut linked = validate_rust_author(author, &author_record)?;
         for (name, path) in media_files {
             if let Some(existing) = linked.files.get(&name) {
                 if fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)? {
@@ -331,82 +325,6 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
         files,
         records: vec![author.join("author-build.json")],
     })
-}
-
-fn validate_linked(author: &Path, record: &Value) -> Result<Inputs, String> {
-    if record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
-        || record["ffmpeg_profile"] != "build-msvc-ffmpeg.py:shared"
-    {
-        return Err("Linked author requires the authenticated shared FFmpeg profile".into());
-    }
-    let mut records = vec![author.join("author-build.json")];
-    let mut authenticated = Vec::new();
-    for (name, key) in [
-        ("author-bridge-build.json", "rust/author-bridge-build.json"),
-        ("menu-build.json", "menu-runtime/menu-build.json"),
-    ] {
-        let path = author.join(name);
-        let bytes = fs::read(&path).map_err(err)?;
-        if record["source_inputs"][key].as_str() != Some(hash(&bytes).as_str()) {
-            return Err(format!("Linked author provenance mismatch: {name}"));
-        }
-        authenticated.push(read_json(&path)?);
-        records.push(path);
-    }
-    let bridge = &authenticated[0];
-    let menu = &authenticated[1];
-    let features: BTreeSet<_> = bridge["features"]
-        .as_array()
-        .ok_or("Missing bridge features")?
-        .iter()
-        .filter_map(Value::as_str)
-        .collect();
-    if bridge["schema_version"] != 1
-        || bridge["implementation"] != "project-owned-rust"
-        || bridge["component"] != "author"
-        || bridge["target"] != "x86_64-pc-windows-msvc"
-        || features != BTreeSet::from(["media", "image", "menu"])
-        || menu["adapter"] != "rust"
-        || menu["linkage"] != "static-vendor"
-    {
-        return Err("Author must statically link Rust media, image and menu".into());
-    }
-    for name in ["dvda_menu_spu_vendor.lib", "dvda_menu_nav_vendor.lib"] {
-        let digest = menu["files"][name]["sha256"]
-            .as_str()
-            .ok_or("Missing menu archive hash")?;
-        let matches: Vec<_> = bridge["source_inputs"]
-            .as_object()
-            .ok_or("Missing bridge inputs")?
-            .iter()
-            .filter(|(path, _)| path.replace('\\', "/").rsplit('/').next() == Some(name))
-            .map(|(_, value)| value.as_str())
-            .collect();
-        if matches != vec![Some(digest)] {
-            return Err(format!("Embedded menu archive provenance mismatch: {name}"));
-        }
-    }
-    let (_, files) = component(
-        author,
-        "author-build.json",
-        "runtime_files",
-        &[
-            "avcodec-63.dll",
-            "avformat-63.dll",
-            "avutil-61.dll",
-            "swresample-7.dll",
-            "swscale-10.dll",
-        ],
-        false,
-        true,
-    )?;
-    if files
-        .keys()
-        .any(|name| name.starts_with("dvda-") || name == "mlp_encoder.dll")
-    {
-        return Err("Linked runtime contains a migrated project-owned DLL".into());
-    }
-    Ok(Inputs { files, records })
 }
 
 pub fn validate_encoder(directory: &Path) -> Result<Inputs, String> {
@@ -796,88 +714,6 @@ pub(crate) mod tests {
         assert!(fixture.validate().unwrap_err().contains("asset checksum"));
     }
 
-    #[test]
-    #[ignore = "obsolete menu-vendor acceptance"]
-    fn rust_author_rejects_incomplete_migration_or_unauthenticated_menu() {
-        let fixture = rust_author_fixture();
-        fixture.edit("author", |record| {
-            record["iso_writer"]["linkage"] = "compiled-c".into()
-        });
-        assert!(
-            fixture
-                .validate()
-                .unwrap_err()
-                .contains("complete Rust library")
-        );
-        let fixture = rust_author_fixture();
-        fixture.edit("author", |record| {
-            record["project_c_author_compiled"] = true.into()
-        });
-        assert!(
-            fixture
-                .validate()
-                .unwrap_err()
-                .contains("complete Rust library")
-        );
-        let fixture = rust_author_fixture();
-        fixture.edit("author", |record| {
-            record["source_inputs"]
-                .as_object_mut()
-                .unwrap()
-                .remove("rust/crates/dvda-author/src/command.rs");
-        });
-        assert!(
-            fixture
-                .validate()
-                .unwrap_err()
-                .contains("source is missing")
-        );
-        let fixture = rust_author_fixture();
-        fixture.edit("author", |record| {
-            record["source_inputs"]["menu-runtime/dvda_menu_nav_vendor.lib"] = "0".repeat(64).into()
-        });
-        assert!(
-            fixture
-                .validate()
-                .unwrap_err()
-                .contains("embedded menu archive")
-        );
-    }
-    #[test]
-    #[ignore = "obsolete menu-vendor acceptance"]
-    fn rust_author_rejects_legacy_session_reset_and_stale_menu_rust_sources() {
-        for component in ["session", "state_reset"] {
-            let fixture = rust_author_fixture();
-            fixture.edit_menu(|menu| menu[component]["implementation"] = "c".into());
-            assert!(
-                fixture
-                    .validate()
-                    .unwrap_err()
-                    .contains("migrated Rust menu"),
-                "{component}"
-            );
-        }
-        let fixture = rust_author_fixture();
-        fixture.edit_menu(|menu| {
-            menu["session"]["boundary"] = "c-session".into();
-        });
-        assert!(
-            fixture
-                .validate()
-                .unwrap_err()
-                .contains("migrated Rust menu")
-        );
-        let fixture = rust_author_fixture();
-        fixture.edit_menu(|menu| {
-            menu["rust_inputs"]["rust/crates/dvda-menu/src/session.rs"] = "0".repeat(64).into();
-        });
-        assert!(
-            fixture
-                .validate()
-                .unwrap_err()
-                .contains("source checksum mismatch")
-        );
-    }
 
     pub struct Fixture {
         pub root: PathBuf,
@@ -953,16 +789,6 @@ pub(crate) mod tests {
             change(&mut d);
             fs::write(path, serde_json::to_vec(&d).unwrap()).unwrap();
         }
-        pub fn edit_menu(&self, change: impl FnOnce(&mut Value)) {
-            let path = self.root.join("author/menu-build.json");
-            let mut record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-            change(&mut record);
-            let bytes = serde_json::to_vec(&record).unwrap();
-            fs::write(path, &bytes).unwrap();
-            self.edit("author", |d| {
-                d["source_inputs"]["menu-runtime/menu-build.json"] = hash(&bytes).into();
-            });
-        }
         pub fn replace(&self, dir: &str, name: &str, bytes: Vec<u8>) {
             fs::write(self.root.join(dir).join(name), &bytes).unwrap();
             self.edit(dir, |d| {
@@ -970,14 +796,8 @@ pub(crate) mod tests {
                     "runtime_files"
                 } else {
                     "files"
-                }][name] = serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)})
+                }][name] = serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)});
             });
-            if false && dir == "author" && name.starts_with("dvda-menu-") {
-                self.edit_menu(|record| {
-                    record["files"][name] =
-                        serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)});
-                });
-            }
         }
     }
     impl Drop for Fixture {
@@ -1070,93 +890,7 @@ pub(crate) mod tests {
         assert!(validate_encoder(&f.root.join("encoder")).is_err());
     }
 
-    #[test]
-    #[ignore = "obsolete menu-vendor acceptance"]
-    fn menu_requires_authenticated_rust_provenance_and_matching_inventory() {
-        let f = Fixture::new();
-        assert!(
-            f.validate()
-                .unwrap()
-                .records
-                .contains(&f.root.join("author/menu-build.json"))
-        );
-        f.edit("author", |record| {
-            record["source_inputs"]
-                .as_object_mut()
-                .unwrap()
-                .remove("menu-runtime/menu-build.json");
-        });
-        assert!(
-            f.validate()
-                .unwrap_err()
-                .contains("authenticated menu provenance")
-        );
 
-        let f = Fixture::new();
-        fs::write(f.root.join("author/menu-build.json"), b"tampered").unwrap();
-        assert!(f.validate().unwrap_err().contains("manifest checksum"));
-
-        let f = Fixture::new();
-        fs::remove_file(f.root.join("author/menu-build.json")).unwrap();
-        assert!(f.validate().unwrap_err().contains("Cannot read"));
-
-        let f = Fixture::new();
-        f.edit_menu(|record| record["adapter"] = "c".into());
-        assert!(f.validate().unwrap_err().contains("Rust adapter"));
-
-        for name in ["dvda-menu-spu.dll", "dvda-menu-nav.dll"] {
-            let f = Fixture::new();
-            f.edit_menu(|record| record["files"][name]["sha256"] = "0".repeat(64).into());
-            assert!(f.validate().unwrap_err().contains("checksum"));
-            let f = Fixture::new();
-            f.edit_menu(|record| {
-                record["files"].as_object_mut().unwrap().remove(name);
-            });
-            assert!(f.validate().unwrap_err().contains("exactly"));
-        }
-        let f = Fixture::new();
-        f.edit_menu(|record| {
-            record["files"]["extra.dll"] = record["files"]["dvda-menu-spu.dll"].clone()
-        });
-        assert!(f.validate().unwrap_err().contains("exactly"));
-        let f = Fixture::new();
-        f.edit_menu(|record| record["files"] = Value::Null);
-        assert!(f.validate().unwrap_err().contains("DLL inventory"));
-
-        let f = Fixture::new();
-        fs::write(f.root.join("author/menu-build.json"), b"not JSON").unwrap();
-        f.edit("author", |record| {
-            record["source_inputs"]["menu-runtime/menu-build.json"] = hash(b"not JSON").into();
-        });
-        assert!(f.validate().unwrap_err().contains("Invalid"));
-    }
-
-    #[test]
-    #[ignore = "obsolete menu-vendor acceptance"]
-    fn legacy_verifier_is_authenticated_but_never_shipped_or_used_as_import_closure() {
-        let f = Fixture::new();
-        let verifier = pe::fixture(true, &["kernel32.dll"], &[]);
-        fs::write(f.root.join("author/dvda-disc-verify.dll"), &verifier).unwrap();
-        f.edit("author", |record| {
-            record["runtime_files"]["dvda-disc-verify.dll"] =
-                serde_json::json!({"bytes":verifier.len(), "sha256":hash(&verifier)});
-        });
-        let files = f.validate().unwrap().files;
-        assert!(!files.contains_key("dvda-disc-verify.dll"));
-        f.replace(
-            "author",
-            "dvda-menu-nav.dll",
-            pe::fixture(true, &["dvda-disc-verify.dll"], &[]),
-        );
-        assert!(
-            f.validate()
-                .unwrap_err()
-                .contains("Missing native dependency")
-        );
-        f.replace("author", "dvda-menu-nav.dll", pe::fixture(true, &[], &[]));
-        fs::write(f.root.join("author/dvda-disc-verify.dll"), b"tampered").unwrap();
-        assert!(f.validate().unwrap_err().contains("checksum"));
-    }
 
     #[test]
     fn manifest_integrity_and_exact_inventory() {
@@ -1191,80 +925,5 @@ pub(crate) mod tests {
             });
             assert!(f.validate().is_err());
         }
-    }
-    #[test]
-    #[ignore = "obsolete menu-vendor acceptance"]
-    fn component_architecture_dependencies_and_shared_profile() {
-        for dir in ["media", "image", "author"] {
-            let name = match dir {
-                "media" => "dvda-media.dll",
-                "image" => "dvda-image.dll",
-                _ => "dvda-menu-nav.dll",
-            };
-            for delayed in [false, true] {
-                let f = Fixture::new();
-                f.replace(
-                    dir,
-                    name,
-                    pe::fixture(
-                        true,
-                        if delayed { &[] } else { &["missing.dll"] },
-                        if delayed { &["missing.dll"] } else { &[] },
-                    ),
-                );
-                assert!(
-                    f.validate()
-                        .unwrap_err()
-                        .contains("Missing native dependency")
-                );
-            }
-            let f = Fixture::new();
-            let mut b = pe::fixture(true, &[], &[]);
-            b[132..134].copy_from_slice(&0x14cu16.to_le_bytes());
-            f.replace(dir, name, b);
-            assert!(f.validate().unwrap_err().contains("x64"));
-            let f = Fixture::new();
-            let mut b = pe::fixture(true, &[], &[]);
-            b[264 + 14 * 8] = 1;
-            f.replace(dir, name, b);
-            assert!(f.validate().unwrap_err().contains("Managed"));
-            let f = Fixture::new();
-            fs::remove_file(f.root.join(dir).join(format!("{dir}-build.json"))).unwrap();
-            assert!(f.validate().is_err());
-        }
-        let f = Fixture::new();
-        f.edit("media", |d| d["profile"] = "media".into());
-        assert!(f.validate().unwrap_err().contains("profile=shared"));
-        for field in ["ffmpeg_profile", "ffmpeg_linkage", "menu_linkage"] {
-            let f = Fixture::new();
-            f.edit("author", |d| d[field] = "wrong".into());
-            assert!(f.validate().is_err());
-        }
-        for name in ["dvda-menu-spu.dll", "dvda-menu-nav.dll"] {
-            let f = Fixture::new();
-            f.edit("author", |d| {
-                d["runtime_files"].as_object_mut().unwrap().remove(name);
-            });
-            assert!(f.validate().is_err());
-        }
-        let f = Fixture::new();
-        let mut b = pe::fixture(true, &["kernel32.dll"], &[]);
-        b[900] = 1;
-        f.replace("author", "avcodec-63.dll", b);
-        assert!(
-            f.validate()
-                .unwrap_err()
-                .contains("differs between consumers")
-        );
-        let f = Fixture::new();
-        f.replace(
-            "author",
-            "dvda-menu-spu.dll",
-            pe::fixture(true, &["api-ms-win-core-file-l1-1-0.dll"], &[]),
-        );
-        assert!(f.validate().is_ok());
-        let f = Fixture::new();
-        fs::write(f.root.join("image/extra.dll"), b"x").unwrap();
-        assert!(f.validate().is_err());
     }
 }
