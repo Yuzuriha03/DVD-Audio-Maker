@@ -6,6 +6,7 @@
 //! time-step tables.
 
 #![allow(dead_code)]
+#![allow(clippy::manual_div_ceil)] // binary-search midpoint, not a ceiling division
 
 use super::build::Build;
 use super::dvdata::DvdData;
@@ -24,8 +25,10 @@ pub(crate) struct VobuTiming {
     pub(crate) end: u32,
     /// Reference frame end sectors relative to the VOBU start.
     pub(crate) references: Vec<u32>,
-    /// Subpicture packet presentation ranges and relative sectors.
-    pub(crate) subpictures: Vec<(u32, u32, usize)>,
+    /// Audio channel entries: channel -> (pts start, pts end, absolute sector).
+    pub(crate) audio: BTreeMap<u8, Vec<(u32, u32, usize)>>,
+    /// Subpicture channel entries: channel -> (pts start, pts end, absolute sector).
+    pub(crate) subpictures: BTreeMap<u8, Vec<(u32, u32, usize)>>,
 }
 
 fn write_u32(sector: &mut [u8], at: usize, value: u32) {
@@ -75,20 +78,24 @@ fn scan_vobu(build: &Build, vobu_index: usize) -> VobuTiming {
                     pending_reference = ptype == 1 || ptype == 2;
                 }
                 0xbd => {
-                    let substream = bytes.get(offset.saturating_add(6)).copied().unwrap_or(0);
-                    if (0x20..=0x3f).contains(&substream) {
-                        let mut pts0 = 0u32;
-                        let mut pts1 = 0u32;
-                        if bytes[offset + 7] & 0x80 != 0 {
-                            pts0 = mpeg::read_pts(&bytes[offset + 9..]);
-                            pts1 = pts0;
+                    let header_len = usize::from(bytes[offset + 8]);
+                    let data = offset + 9 + header_len;
+                    let Some(sid) = bytes.get(data).copied() else { continue };
+                    let Some(&frames) = bytes.get(data + 1) else { continue };
+                    let mut pts0 = 0u32;
+                    if bytes[offset + 7] & 0x80 != 0 {
+                        pts0 = mpeg::read_pts(&bytes[offset + 9..]);
+                    }
+                    match sid & 0xf8 {
+                        0x80 => {
+                            let pts1 = pts0.saturating_add(2880 * u32::from(frames));
+                            timing.audio.entry(sid & 7).or_default().push((pts0, pts1, sector_index));
                         }
-                        let header_len = usize::from(bytes[offset + 8]);
-                        let payload = offset + 9 + header_len;
-                        if payload + 2 < SECTOR && bytes[payload] == 0x00 && bytes[payload + 1] == 0x03 {
-                            // presentation end is derived by the muxer; keep start
+                        0x20 | 0x28 | 0x30 | 0x38 => {
+                            let pts1 = pts0;
+                            timing.subpictures.entry(sid).or_default().push((pts0, pts1, sector_index));
                         }
-                        timing.subpictures.push((pts0, pts1, sector_index - first));
+                        _ => {}
                     }
                 }
                 _ => {}
@@ -99,6 +106,54 @@ fn scan_vobu(build: &Build, vobu_index: usize) -> VobuTiming {
 }
 
 /// Builds the button colour lookup table from the dvdauthor-data groups.
+fn find_vobu_timing(timings: &[VobuTiming], pts: i64) -> isize {
+    let high = timings.len() as isize - 1;
+    if high < 0 {
+        return -1;
+    }
+    if pts < i64::from(timings[0].start) {
+        return -1;
+    }
+    if pts >= i64::from(timings[timings.len() - 1].end) {
+        return high + 1;
+    }
+    let (mut l, mut h) = (0isize, high);
+    while l < h {
+        let m = (l + h + 1) / 2;
+        if pts < i64::from(timings[m.max(0) as usize].start) {
+            h = m - 1;
+        } else {
+            l = m;
+        }
+    }
+    l
+}
+
+fn find_vobu_by_sector(build: &Build, sector: usize) -> Option<usize> {
+    let mut found = None;
+    for (index, vobu) in build.vobus.iter().enumerate() {
+        if vobu.sector > sector {
+            break;
+        }
+        found = Some(index);
+    }
+    found
+}
+
+fn find_subpicture_index(entries: &[(u32, u32, usize)], pts: u32) -> usize {
+    let mut l = 0usize;
+    let mut h = entries.len().saturating_sub(1);
+    while l < h {
+        let m = (l + h + 1) / 2;
+        if pts < entries[m].0 {
+            h = m - 1;
+        } else {
+            l = m;
+        }
+    }
+    l
+}
+
 fn button_colours(data: &DvdData) -> [u8; 24] {
     let mut table = [0u8; 24];
     if let Some(group) = data.groups.first() {
@@ -154,10 +209,32 @@ pub(crate) fn fill(
     data: &DvdData,
     commands: &BTreeMap<String, [u8; 8]>,
 ) -> Result<(), String> {
-    let timings: Vec<VobuTiming> = (0..build.vobus.len()).map(|index| scan_vobu(build, index)).collect();
+    let mut timings: Vec<VobuTiming> = (0..build.vobus.len()).map(|index| scan_vobu(build, index)).collect();
     let numvobus = build.vobus.len();
     let vob_start = timings.first().map_or(0, |timing| timing.start);
-    let vob_end = timings.last().map_or(0, |timing| timing.end);
+    let mut audio: BTreeMap<u8, Vec<(u32, u32, usize)>> = BTreeMap::new();
+    let mut subpictures: BTreeMap<u8, Vec<(u32, u32, usize)>> = BTreeMap::new();
+    for timing in &timings {
+        for (channel, entries) in &timing.audio {
+            audio.entry(*channel).or_default().extend(entries.iter().copied());
+        }
+        for (channel, entries) in &timing.subpictures {
+            subpictures.entry(*channel).or_default().extend(entries.iter().copied());
+        }
+    }
+    for entries in audio.values_mut().chain(subpictures.values_mut()) {
+        entries.sort_by_key(|entry| entry.0);
+    }
+    let mut final_audio = 0u32;
+    for entries in audio.values() {
+        if let Some(last) = entries.last() {
+            final_audio = final_audio.max(last.1);
+        }
+    }
+    let vob_end = timings.last().map_or(0, |timing| timing.end).max(final_audio);
+    if let Some(last) = timings.last_mut() {
+        last.end = vob_end;
+    }
     let rate = FrameRate::Pal25;
     for (index, timing) in timings.iter().enumerate() {
         let vobu = build.vobus[index].clone();
@@ -203,6 +280,50 @@ pub(crate) fn fill(
         let same_cell = |_: usize, _: usize| true;
         let next_video = (index + 1..numvobus).find(|&other| build.vobus[other].first_video_pts.is_some());
         let prev_video = (0..index).rev().find(|&other| build.vobus[other].first_video_pts.is_some());
+        for (track, entries) in audio.values().enumerate().take(8) {
+            let mut found: Option<usize> = None;
+            for entry in entries {
+                if entry.0 <= timing.start {
+                    found = Some(entry.2);
+                }
+            }
+            let value = match found {
+                Some(asect) => {
+                    let delta = asect as i64 - vobu.sector as i64;
+                    if delta.unsigned_abs() > 0x1fff {
+                        0u16
+                    } else if delta < 0 {
+                        (delta.unsigned_abs() as u16) | 0x8000
+                    } else {
+                        delta as u16
+                    }
+                }
+                None => 0x3fff,
+            };
+            write_u16(&mut sector, 0x599 + track * 2, value);
+        }
+        for (channel_index, entries) in subpictures.values().enumerate() {
+            if entries.is_empty() {
+                continue;
+            }
+            let id = find_subpicture_index(entries, timing.start);
+            let (start, end, entry_sector) = entries[id];
+            let target = if start < timing.end && end >= timing.start {
+                find_vobu_by_sector(build, entry_sector)
+            } else if end < timing.start && (id + 1 == entries.len() || entries[id + 1].0 >= timing.end) {
+                Some(index)
+            } else if id + 1 < entries.len() {
+                find_vobu_by_sector(build, entries[id + 1].2)
+            } else {
+                None
+            };
+            let Some(target) = target else { continue };
+            let prior = target < index;
+            let encoded = get_sector(&build.vobus, index, target as isize, false, 0x7fff_ffff, same_cell) & 0x7fff_ffff;
+            let encoded = if encoded == 0 { 0x7fff_ffff } else { encoded };
+            let encoded = if encoded != 0x7fff_ffff && prior { encoded | 0x8000_0000 } else { encoded };
+            write_u32(&mut sector, 0x5a9 + channel_index * 4, encoded);
+        }
         write_u32(&mut sector, 0x4f1, get_sector(&build.vobus, index, next_video.map_or(-1, |value| value as isize), false, 0xbfff_ffff, same_cell));
         write_u32(&mut sector, 0x595, get_sector(&build.vobus, index, prev_video.map_or(-1, |value| value as isize), false, 0xbfff_ffff, same_cell));
         write_u32(&mut sector, 0x541, get_sector(&build.vobus, index, index as isize + 1, false, 0x3fff_ffff, same_cell));
@@ -211,8 +332,8 @@ pub(crate) fn fill(
         let mut backward = index;
         for (step, offset) in TIMELINE.iter().enumerate() {
             let time = i64::from(timing.start) + offset * HALF_SECOND;
-            let next = super::navpack::find_vobu(&build.vobus, time, 0, numvobus as isize - 1);
-            let previous = super::navpack::find_vobu(&build.vobus, i64::from(timing.start) - offset * HALF_SECOND, 0, numvobus as isize - 1);
+            let next = find_vobu_timing(&timings, time);
+            let previous = find_vobu_timing(&timings, i64::from(timing.start) - offset * HALF_SECOND);
             let skip = step >= 15;
             let next = if next < 0 { -1 } else { next };
             let previous = if previous < 0 { -1 } else { previous };
@@ -250,7 +371,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "last VOBU end PTS uses the C finalaudiopts/subpicture display-duration rule, still pending"]
     fn filled_nav_packs_match_the_c_baseline() {
         let Some((input, baseline, data)) = fixture() else {
             return;
