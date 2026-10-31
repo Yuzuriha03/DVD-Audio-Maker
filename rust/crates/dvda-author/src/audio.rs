@@ -262,7 +262,6 @@ fn mlp(
     let mut header_offset = 64u64;
     let mut last_rank = 0u64;
     let mut last_position = 0;
-    let mut previous_timing = None;
     let mut substreams = 0usize;
     while position < size {
         if count.is_multiple_of(1024) && callbacks.cancelled() {
@@ -344,14 +343,9 @@ fn mlp(
         if ((parity >> 4) ^ parity) & 15 != 15 {
             return Err("MLP access-unit header parity mismatch".into());
         }
+        // Bytes 2..4 are arrival time, adjusted for coded size and decoder buffering.
+        // They need not advance by the AU's decoded sample count (including at wraparound).
         let frame = 40 * (rate / if rate % 44100 == 0 { 44100 } else { 48000 });
-        let timing = u16::from_be_bytes(packet[2..4].try_into().unwrap());
-        if previous_timing
-            .is_some_and(|previous: u16| timing.wrapping_sub(previous) != frame as u16)
-        {
-            return Err("MLP input timing is discontinuous".into());
-        }
-        previous_timing = Some(timing);
         let rank = (position + header_offset - 1) / 2048;
         if count == 0 || rank != last_rank {
             if rank != last_rank {
@@ -454,5 +448,102 @@ pub(crate) fn append_pcm_pair(input: &[u8], bits: u8, channels: u8, output: &mut
         }
     } else {
         output.extend(permutation.iter().map(|&index| input[index]));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    // Synthetic parser-only headers, not decodable audio payloads.
+    fn stream(rate_code: u8, arrivals: &[u16]) -> Vec<u8> {
+        let mut result = Vec::new();
+        for (index, arrival) in arrivals.iter().enumerate() {
+            let major = index == 0;
+            let mut packet = vec![0u8; if major { 34 } else { 6 }];
+            packet[1] = (packet.len() / 2) as u8;
+            packet[2..4].copy_from_slice(&arrival.to_be_bytes());
+            let header = if major {
+                packet[4..8].copy_from_slice(&[0xf8, 0x72, 0x6f, 0xbb]);
+                packet[9] = rate_code << 4;
+                packet[11] = 12;
+                packet[20] = 0x10;
+                let mut crc = 0u16;
+                for byte in &packet[4..28] {
+                    crc ^= u16::from(*byte) << 8;
+                    for _ in 0..8 {
+                        crc = if crc & 0x8000 != 0 {
+                            crc.wrapping_shl(1) ^ 0x2d
+                        } else {
+                            crc.wrapping_shl(1)
+                        };
+                    }
+                }
+                packet[30..32].copy_from_slice(&crc.to_be_bytes());
+                32
+            } else {
+                4
+            };
+            let parity = packet[..4]
+                .iter()
+                .chain(&packet[header..])
+                .fold(0u8, |a, b| a ^ b);
+            packet[0] |= (((parity >> 4) ^ parity) ^ 15) << 4;
+            result.extend(packet);
+        }
+        result
+    }
+
+    #[test]
+    fn mlp_arrival_jitter_and_wrap_do_not_change_sample_timeline() {
+        for (rate, arrivals, frame) in [
+            (0, vec![65496, 0, 40, 80], 40),
+            (1, vec![65454, 0, 80, 158, 240], 80),
+            (1, vec![4000, 4042, 4160], 80),
+            (9, vec![65454, 0, 78, 160], 80),
+        ] {
+            let bytes = stream(rate, &arrivals);
+            let info = mlp(&mut Cursor::new(&bytes), bytes.len() as u64, &mut Silent).unwrap();
+            assert_eq!(info.samples, arrivals.len() as u64 * frame);
+            assert_eq!(info.mlp_layout.last().unwrap().samples, info.samples);
+            assert_eq!(info.frame_samples(), frame as u32);
+            assert_eq!(
+                info.pts_length().unwrap(),
+                ((info.samples * 90000 + u64::from(info.rate) / 2) / u64::from(info.rate)) as u32
+            );
+        }
+    }
+
+    #[test]
+    fn mlp_bad_major_checksum_and_truncation_are_rejected() {
+        let bytes = stream(1, &[65454, 0, 80]);
+        let mut bad_crc = bytes.clone();
+        bad_crc[30] ^= 1;
+        assert!(
+            mlp(
+                &mut Cursor::new(&bad_crc),
+                bad_crc.len() as u64,
+                &mut Silent
+            )
+            .is_err()
+        );
+        let truncated = &bytes[..bytes.len() - 1];
+        assert!(
+            mlp(
+                &mut Cursor::new(truncated),
+                truncated.len() as u64,
+                &mut Silent
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn mlp_arrival_corruption_still_fails_header_parity() {
+        let mut bytes = stream(1, &[65454, 0, 80]);
+        bytes[36] ^= 1;
+        let error = mlp(&mut Cursor::new(&bytes), bytes.len() as u64, &mut Silent).unwrap_err();
+        assert_eq!(error, "MLP access-unit header parity mismatch");
     }
 }

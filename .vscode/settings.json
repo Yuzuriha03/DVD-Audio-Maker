@@ -1,0 +1,41 @@
+{
+  // ===================== 通用 =====================
+  "files.eol": "\n",
+  "files.encoding": "utf8",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  "files.associations": {
+    "*.env": "properties",
+    "*.gitattributes": "properties"
+  },
+
+  // 本工作区没有 C# 产品项目；避免加载 build 中第三方遗留示例。
+  "dotnet.defaultSolution": "disable",
+
+  // ===================== Rust =====================
+  "rust-analyzer.linkedProjects": ["rust/Cargo.toml"],
+  "rust-analyzer.cargo.buildScripts.invocationStrategy": "per_workspace",
+  "rust-analyzer.check.invocationStrategy": "per_workspace",
+  "rust-analyzer.cargo.buildScripts.overrideCommand": [
+    "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+    "../tools/win-build/cargo-msvc.ps1",
+    "check", "--manifest-path", "rust/Cargo.toml", "--workspace",
+    "--all-targets", "--offline", "--message-format=json"
+  ],
+  "rust-analyzer.check.overrideCommand": [
+    "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+    "../tools/win-build/cargo-msvc.ps1",
+    "check", "--manifest-path", "rust/Cargo.toml", "--workspace",
+    "--all-targets", "--offline", "--message-format=json"
+  ],
+
+  // ===================== 编辑器 =====================
+  "[bat]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false
+  }
+}

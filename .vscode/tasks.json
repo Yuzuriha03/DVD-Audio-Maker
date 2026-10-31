@@ -4,8 +4,13 @@
     {
       "label": "Rust: build workspace x64",
       "type": "process",
-      "command": "cargo",
+      "command": "powershell",
       "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\tools\\win-build\\cargo-msvc.ps1",
         "build",
         "--manifest-path",
         "${workspaceFolder}/rust/Cargo.toml",
@@ -35,8 +40,13 @@
     {
       "label": "Rust: build release x64",
       "type": "process",
-      "command": "cargo",
+      "command": "powershell",
       "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\tools\\win-build\\cargo-msvc.ps1",
         "build",
         "--manifest-path",
         "${workspaceFolder}/rust/Cargo.toml",
@@ -77,6 +87,25 @@
       "command": "${workspaceFolder}\\tools\\win-build\\build-all.cmd",
       "args": [],
       "problemMatcher": []
+    },
+    {
+      "label": "Rust: rebuild production author",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+      "args": [
+        "tools\\win-build\\build-rust-author.py",
+        "--ffmpeg-runtime",
+        "build\\msvc-native\\ffmpeg-static\\install",
+        "--magick-work",
+        "build\\msvc-native\\image",
+        "--assets-runtime",
+        "build\\msvc-native\\package-assets",
+        "--work-directory",
+        "build\\rust-author-production"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "build"
     }
   ]
 }
