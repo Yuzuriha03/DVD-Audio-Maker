@@ -12,6 +12,8 @@ mod direct;
 mod resources;
 mod session;
 #[cfg(any(feature = "direct-link", test))]
+mod nav;
+#[cfg(any(feature = "direct-link", test))]
 mod spu;
 #[cfg(feature = "direct-link")]
 pub use direct::{
