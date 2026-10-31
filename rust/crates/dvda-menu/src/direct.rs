@@ -9,6 +9,7 @@ use std::{
 pub struct MenuError(pub c_int);
 static SESSION: Mutex<()> = Mutex::new(());
 thread_local! { static NAV: Cell<bool> = const { Cell::new(false) }; static ACTIVE: Cell<bool> = const { Cell::new(false) }; }
+#[allow(dead_code)] // C bridge symbols are kept until the vendor navigation library is deleted
 unsafe extern "C" {
     fn dvda_nav_dvda_menu_run(request: *const MenuRequest) -> c_int;
     fn dvda_nav_menu_callback(callback: Option<unsafe extern "C" fn()>) -> c_int;
@@ -72,13 +73,40 @@ unsafe fn run(request: *const MenuRequest, navigation: bool) -> c_int {
         let _active = Active;
         if navigation {
             NAV.set(true);
-            unsafe { dvda_nav_dvda_menu_run(request) }
+            unsafe { run_navigation_request(request) }
         } else {
             unsafe { run_spu_request(request) }
         }
     })
     .unwrap_or(1)
 }
+/// # Safety
+/// The request must follow the MenuRequest contract: valid size and non-null
+/// UTF-8 xml/output paths.
+unsafe fn run_navigation_request(request: *const MenuRequest) -> c_int {
+    let Some(request) = (unsafe { request.as_ref() }) else {
+        return 1;
+    };
+    if request.size as usize != size_of::<MenuRequest>()
+        || request.xml.is_null()
+        || request.output.is_null()
+    {
+        return 1;
+    }
+    let xml = unsafe { CStr::from_ptr(request.xml) }.to_str().map(std::path::PathBuf::from);
+    let output = unsafe { CStr::from_ptr(request.output) }.to_str().map(std::path::PathBuf::from);
+    let (Ok(xml), Ok(output)) = (xml, output) else {
+        return 1;
+    };
+    crate::nav::amgm::run(&xml, &output).map_or_else(
+        |error| {
+            eprintln!("ERR: invalid navigation XML: {error}");
+            1
+        },
+        |_| 0,
+    )
+}
+
 /// # Safety
 /// The request must follow the MenuRequest contract: valid size, non-null UTF-8
 /// paths and a read_rgba callback that obeys the image ABI.

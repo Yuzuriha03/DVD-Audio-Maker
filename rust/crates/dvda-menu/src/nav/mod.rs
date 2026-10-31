@@ -2,6 +2,7 @@
 
 #![allow(dead_code)] // wired into the VOB builder and menu entry in the next slices
 
+pub(crate) mod amgm;
 pub(crate) mod build;
 pub(crate) mod dvdata;
 pub(crate) mod fixvobus;
