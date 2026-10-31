@@ -13,7 +13,7 @@
 - 修复 MLP 输入到达时间抖动或回绕被误判为不连续的回归，提升第三方 MLP 输入兼容性。
 - 发布验收覆盖进程内 Rust 菜单的跨进程可重复性与 production 制盘（pal-1albums），校验 UDF 载荷与 SPU 调色板／AMG 一致性。
 
-验收说明：经用户授权，本次及以后以经独立 MLP 解码后的完整 PCM 样本数据与编码输入的 SHA256 一致作为无损验收标准，统一样本字节表示并排除容器头。允许编码码流和压缩大小不同，不再要求完整旧 C 严格对照作为发布门槛。格式兼容性检查继续保留；116 个冻结向量及编码哈希用于回归诊断，不应表述为全部输入与旧 C 字节一致。
+验收说明：本次及以后以经独立 MLP 解码后的完整 PCM 样本数据与编码输入的 SHA256 一致作为无损验收标准，统一样本字节表示并排除容器头。允许编码码流和压缩大小不同，不再要求完整旧 C 严格对照作为发布门槛。格式兼容性检查继续保留；116 个冻结向量及编码哈希用于回归诊断，不应表述为全部输入与旧 C 字节一致。
 
 ### English
 
@@ -26,7 +26,7 @@
 - Fix a regression where MLP arrival-time jitter or wraparound was rejected as discontinuous, improving compatibility with third-party MLP inputs.
 - Release acceptance now covers cross-process repeatability of the in-process Rust menu plus production authoring (pal-1albums), checking UDF payloads and SPU palette/AMG consistency.
 
-Acceptance note: by user authorization, lossless acceptance for this and future releases requires matching SHA256 of the complete independently MLP-decoded PCM and encoder input, using the same sample representation and excluding container headers. Encoded bytes and compressed sizes may differ; complete historical C comparison is not a release gate. Format compatibility checks remain applicable. The 116 frozen vectors and encoded hashes are regression diagnostics, not a claim of historical C byte equality for all inputs.
+Acceptance note: lossless acceptance for this and future releases requires matching SHA256 of the complete independently MLP-decoded PCM and encoder input, using the same sample representation and excluding container headers. Encoded bytes and compressed sizes may differ; complete historical C comparison is not a release gate. Format compatibility checks remain applicable. The 116 frozen vectors and encoded hashes are regression diagnostics, not a claim of historical C byte equality for all inputs.
 
 ### 日本語
 
@@ -39,4 +39,4 @@ Acceptance note: by user authorization, lossless acceptance for this and future 
 - MLP 入力の到達時刻の揺らぎやラップアラウンドが不連続と誤判定されるリグレッションを修正し、サードパーティ製 MLP 入力の互換性を改善しました。
 - リリース受け入れでは、プロセス内 Rust メニューのプロセス間再現性と production オーサリング（pal-1albums）を検証し、UDF ペイロードと SPU パレット／AMG の整合性を確認します。
 
-受け入れ基準：ユーザーの承認に基づき、今回以降のリリースでは、独立した MLP デコーダーで復号した全 PCM サンプルとエンコーダー入力の SHA256 の一致をロスレス性の基準とします。サンプルのバイト表現を統一し、コンテナーヘッダーは除外します。符号化ビットストリームや圧縮後のサイズの違いは許容し、旧 C 実装との完全な厳密比較はリリース条件としません。形式の互換性確認は継続します。116 件の固定テストベクトルと符号化データのハッシュは回帰診断用であり、すべての入力で旧 C 実装とバイト単位で一致することを意味しません。
+受け入れ基準：今回以降のリリースでは、独立した MLP デコーダーで復号した全 PCM サンプルとエンコーダー入力の SHA256 の一致をロスレス性の基準とします。サンプルのバイト表現を統一し、コンテナーヘッダーは除外します。符号化ビットストリームや圧縮後のサイズの違いは許容し、旧 C 実装との完全な厳密比較はリリース条件としません。形式の互換性確認は継続します。116 件の固定テストベクトルと符号化データのハッシュは回帰診断用であり、すべての入力で旧 C 実装とバイト単位で一致することを意味しません。
