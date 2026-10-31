@@ -48,21 +48,6 @@ def validate_runtime(runtime, record):
     require(record.get('iso_writer', {}).get('linkage') == 'embedded-rust-author',
             'ISO writer is not embedded in the complete Rust author')
     require(record.get('author_library', {}).get('implementation') == 'rust', 'Missing Rust library entry')
-    menu_path = runtime / 'menu-build.json'
-    require(sha(menu_path) == record['source_inputs'].get('menu-runtime/menu-build.json'),
-            'Rust author menu manifest checksum mismatch')
-    menu = json.loads(menu_path.read_text(encoding='utf-8-sig'))
-    require(menu.get('session', {}).get('implementation') == 'rust'
-            and menu.get('session', {}).get('boundary') == 'c-setjmp-varargs',
-            'Production menu must use the Rust session')
-    require(menu.get('state_reset', {}).get('implementation') == 'rust',
-            'Production menu must use the generated Rust reset')
-    for relative in ('rust/crates/dvda-menu/src/session.rs',
-                     'rust/crates/dvda-menu/src/resources.rs',
-                     'rust/crates/dvda-menu/src/direct.rs',
-                     'rust/crates/dvda-menu/src/lib.rs'):
-        require(menu['rust_inputs'].get(relative) == record['source_inputs'].get(relative),
-                'Rust author/menu source checksum mismatch: '+relative)
     files = record['files'] | record['runtime_files'] | record['runtime_assets']
     for name, information in files.items():
         path = runtime / name

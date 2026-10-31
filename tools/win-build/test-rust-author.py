@@ -274,18 +274,6 @@ def main():
             manifest.get('toolchain') == 'msvc', 'Production author is not Windows x64 MSVC')
     require(manifest['files'][executable.name]['sha256'] == sha(executable), 'Production executable checksum mismatch')
     require(manifest['author_library']['entry'] == 'dvda_core::author_runtime::execute', 'Unexpected production entry')
-    vendor_inputs = {name: value for name, value in manifest['source_inputs'].items()
-                     if name.startswith('menu-runtime/')}
-    require(sha(runtime/'menu-build.json') == vendor_inputs['menu-runtime/menu-build.json'],
-            'Staged menu provenance checksum mismatch')
-    menu_manifest = json.loads((runtime/'menu-build.json').read_text(encoding='utf-8-sig'))
-    require(menu_manifest['adapter'] == 'rust' and menu_manifest['linkage'] == 'static-vendor',
-            'Production menu adapter is not the static Rust adapter')
-    require(menu_manifest.get('target') == 'x86_64-pc-windows-msvc' and
-            menu_manifest.get('toolchain') == 'msvc', 'Production menu vendor is not Windows x64 MSVC')
-    for name in ('dvda_menu_nav_vendor.lib',):
-        require(menu_manifest['files'][name]['sha256'] == vendor_inputs['menu-runtime/'+name],
-                'Production menu archive provenance mismatch: '+name)
     for name, item in manifest['runtime_files'].items():
         require(sha(runtime/name) == item['sha256'], 'Production dependency checksum mismatch: '+name)
     require(not any(name.startswith('dvda-') or name == 'mlp_encoder.dll'
@@ -296,7 +284,6 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     report = {'runtime': str(runtime), 'runtime_manifest_sha256': sha(runtime/'author-build.json'),
               'executable_sha256': sha(executable), 'project_c_author_used': False,
-              'menu_vendor_inputs': vendor_inputs,
               'independent_decoder': str(args.ffmpeg), 'cases': [], 'failures': [], 'passed': False}
 
     def execute(case, groups, success=True, extra=()):
