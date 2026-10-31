@@ -2,6 +2,7 @@
 
 //! Navigation (PGCI/VOB/VM) migration.
 
+pub(crate) mod mpeg;
 pub(crate) mod model;
 pub(crate) mod vm;
 pub(crate) mod vob;

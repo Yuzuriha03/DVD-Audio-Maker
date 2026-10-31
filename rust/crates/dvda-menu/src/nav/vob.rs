@@ -146,7 +146,9 @@ pub(crate) fn parse_nav_packs(vob: &[u8]) -> Result<Vec<NavPack>, String> {
     if !vob.len().is_multiple_of(SECTOR) {
         return Err("VOB size is not a multiple of 2048 bytes".into());
     }
-    vob.chunks_exact(SECTOR)
+    let (sectors, _) = vob.as_chunks::<SECTOR>();
+    sectors
+        .iter()
         .enumerate()
         .filter(|(_, sector)| sector[..4] == PACK_START && sector.get(0x26..0x2a) == Some(&PRIVATE_2))
         .map(|(index, sector)| parse_nav_pack(index, sector))
