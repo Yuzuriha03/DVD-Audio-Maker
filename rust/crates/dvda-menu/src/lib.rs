@@ -1,6 +1,6 @@
 //! Menu XML validation and callback dispatch. Vendor callbacks are entered only
 //! through a C setjmp island; a vendor exit must never jump over a Rust frame.
-use quick_xml::{Reader, events::Event};
+use quick_xml::{Reader, XmlVersion, events::Event};
 use std::{
     ffi::{CStr, CString, c_char, c_int},
     io::Write,
@@ -111,6 +111,7 @@ fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
     let mut seen = false;
     let mut closed = false;
     let mut declaration = false;
+    let mut xml_version = XmlVersion::Implicit1_0;
     let mut preceding_event = false;
     loop {
         let event = reader.read_event().map_err(|e| e.to_string())?;
@@ -119,16 +120,12 @@ fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
         let empty = matches!(&event, Event::Empty(_));
         match event {
             Event::Start(e) | Event::Empty(e) => {
-                let name = std::str::from_utf8(e.name().as_ref())
-                    .map_err(|e| e.to_string())?
-                    .to_owned();
+                let name = e.name().as_ref().to_owned();
                 let mut attrs = Vec::new();
                 for a in e.attributes() {
                     let a = a.map_err(|e| e.to_string())?;
-                    let key = std::str::from_utf8(a.key.as_ref())
-                        .map_err(|e| e.to_string())?
-                        .to_owned();
-                    let raw = std::str::from_utf8(a.value.as_ref()).map_err(|e| e.to_string())?;
+                    let key = a.key.as_ref().to_owned();
+                    let raw = a.value.as_ref();
                     let normalized = raw.replace("\r\n", " ").replace(['\r', '\n', '\t'], " ");
                     let value = quick_xml::escape::unescape(&normalized)
                         .map_err(|e| e.to_string())?
@@ -159,9 +156,7 @@ fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
                 }
             }
             Event::End(e) => {
-                let name = std::str::from_utf8(e.name().as_ref())
-                    .map_err(|e| e.to_string())?
-                    .to_owned();
+                let name = e.name().as_ref().to_owned();
                 if stack.pop().as_deref() != Some(&name) {
                     return Err("unmatched end tag".into());
                 }
@@ -171,7 +166,7 @@ fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
                 tokens.push(Token::End(name));
             }
             Event::Text(e) => {
-                let decoded = e.xml_content().map_err(|e| e.to_string())?;
+                let decoded = e.xml_content(xml_version);
                 let text = quick_xml::escape::unescape(&decoded)
                     .map_err(|e| e.to_string())?
                     .into_owned();
@@ -185,12 +180,12 @@ fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
                 if stack.is_empty() {
                     return Err("CDATA outside root".into());
                 }
-                let value = e.xml_content().map_err(|e| e.to_string())?.into_owned();
+                let value = e.xml_content(xml_version).into_owned();
                 xml_characters(&value)?;
                 tokens.push(Token::Text(value));
             }
             Event::GeneralRef(e) => {
-                let reference = e.decode().map_err(|e| e.to_string())?;
+                let reference = e.into_inner();
                 let value = quick_xml::escape::unescape(&format!("&{reference};"))
                     .map_err(|e| e.to_string())?
                     .into_owned();
@@ -202,22 +197,23 @@ fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
             }
             Event::Comment(_) => {}
             Event::Decl(e) if !seen && !declaration && declaration_allowed => {
-                if e.version().map_err(|e| e.to_string())?.as_ref() != b"1.0" {
+                if e.version().map_err(|e| e.to_string())?.as_ref() != "1.0" {
                     return Err("unsupported XML version".into());
                 }
                 if let Some(encoding) = e.encoding() {
                     let encoding = encoding.map_err(|e| e.to_string())?;
-                    if !encoding.eq_ignore_ascii_case(b"utf-8") {
+                    if !encoding.eq_ignore_ascii_case("utf-8") {
                         return Err("only UTF-8 XML is supported".into());
                     }
                 }
                 if let Some(standalone) = e.standalone() {
                     let standalone = standalone.map_err(|e| e.to_string())?;
-                    if standalone.as_ref() != b"yes" && standalone.as_ref() != b"no" {
+                    if standalone.as_ref() != "yes" && standalone.as_ref() != "no" {
                         return Err("invalid XML standalone declaration".into());
                     }
                 }
                 declaration = true;
+                xml_version = XmlVersion::Explicit1_0;
             }
             Event::Eof => break,
             _ => return Err("DTD, processing instruction or misplaced declaration".into()),

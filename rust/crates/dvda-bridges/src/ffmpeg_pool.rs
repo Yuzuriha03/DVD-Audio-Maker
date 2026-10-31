@@ -5,8 +5,7 @@ use crate::ffmpeg::{
     Frame, Packet, av_frame_alloc, av_frame_free, av_frame_unref, av_packet_alloc, av_packet_free,
     av_packet_unref,
 };
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 /// Frame pool for reusing FFmpeg frame objects
 pub struct FramePool {
@@ -150,10 +149,10 @@ impl Drop for PacketPool {
 }
 
 /// Global frame pool - 16 frames should be enough for most use cases
-pub static FRAME_POOL: Lazy<FramePool> = Lazy::new(|| FramePool::new(16));
+pub static FRAME_POOL: LazyLock<FramePool> = LazyLock::new(|| FramePool::new(16));
 
 /// Global packet pool
-pub static PACKET_POOL: Lazy<PacketPool> = Lazy::new(|| PacketPool::new(32));
+pub static PACKET_POOL: LazyLock<PacketPool> = LazyLock::new(|| PacketPool::new(32));
 
 /// RAII guard for automatic frame return to pool
 pub struct PooledFrame(*mut Frame);

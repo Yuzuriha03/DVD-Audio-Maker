@@ -13,4 +13,4 @@ external-oracle = []
 [dependencies]
 
 [dev-dependencies]
-sha2 = { version = "=0.11.0", default-features = false }
+sha2 = { version = "=0.11.1", default-features = false }

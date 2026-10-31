@@ -12,7 +12,7 @@ default = []
 direct-link = []
 
 [dependencies]
-quick-xml = "0.38"
+quick-xml = "0.42"
 
 [build-dependencies]
 serde_json.workspace = true
