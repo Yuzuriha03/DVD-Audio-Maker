@@ -4,5 +4,6 @@
 
 pub(crate) mod model;
 pub(crate) mod vm;
+pub(crate) mod vob;
 pub(crate) mod xml;
 
