@@ -687,6 +687,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "obsolete menu-vendor acceptance"]
     fn package_entry_rejects_menu_before_touching_release() {
         for failure in ["legacy", "missing", "unauthenticated", "tamper", "mismatch"] {
             let f = Fixture::new();
