@@ -162,7 +162,6 @@ impl Timing {
     }
 }
 /// Holds at most the timing lookahead plus the AU currently being delivered.
-#[cfg(not(target_arch = "x86_64"))]
 pub(crate) struct Queue {
     timing: Timing,
     pending: std::collections::VecDeque<(Descriptor, Vec<u8>)>,
@@ -171,7 +170,6 @@ pub(crate) struct Queue {
     samples: u32,
     primed: usize,
 }
-#[cfg(not(target_arch = "x86_64"))]
 impl Queue {
     pub(crate) fn new(samples: u32) -> Self {
         Self {
@@ -226,56 +224,4 @@ impl Queue {
         }
         self.advance(Descriptor::default())
     }
-}
-/// Port of the native 1200-AU lookahead and decoder FIFO admission state machine.
-pub fn rewrite(bytes: &mut [u8], samples: u32) -> Result<(), Error> {
-    let mut descriptors = Vec::new();
-    let mut offsets = Vec::new();
-    let mut at = 0;
-    let mut rate = 0;
-    let mut decode = 0;
-    while at < bytes.len() {
-        let word = |i: usize| {
-            u32::from(u16::from_be_bytes([
-                bytes[at + i * 2],
-                bytes[at + i * 2 + 1],
-            ]))
-        };
-        let header = word(0);
-        let words = header & 4095;
-        let major = word(2) == 0xf872 && word(3) == 0x6fbb;
-        let directory = if major {
-            rate = word(9);
-            16
-        } else {
-            2
-        };
-        let first = word(directory) & 4095;
-        descriptors.push(Descriptor {
-            rate,
-            samples,
-            decode,
-            words,
-            groups: [first, 0],
-            arrival: word(1),
-            header,
-        });
-        offsets.push(at);
-        at += words as usize * 2;
-        decode = (decode + samples) & 65535;
-    }
-    let mut timing = Timing::new();
-    let empty = Descriptor::default();
-    for i in 0..LOOKAHEAD {
-        let mut dummy = empty;
-        timing.step(descriptors.get(i).copied().unwrap_or(empty), &mut dummy)?;
-    }
-    for i in 0..descriptors.len() {
-        let next = descriptors.get(i + LOOKAHEAD).copied().unwrap_or(empty);
-        timing.step(next, &mut descriptors[i])?;
-        let at = offsets[i];
-        bytes[at..at + 2].copy_from_slice(&(descriptors[i].header as u16).to_be_bytes());
-        bytes[at + 2..at + 4].copy_from_slice(&(descriptors[i].arrival as u16).to_be_bytes());
-    }
-    Ok(())
 }

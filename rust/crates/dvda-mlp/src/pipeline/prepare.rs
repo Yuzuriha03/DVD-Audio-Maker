@@ -115,22 +115,21 @@ pub(crate) fn prepare_matrix(
         {
             return Err(());
         }
-        for (ch, &shift) in m.scale.shift[..channels].iter().enumerate() {
+        for &shift in &m.scale.shift[..channels] {
             if shift > 7 {
                 return Err(());
-            }
-            for frame in m.pcm.chunks_exact_mut(channels) {
-                frame[ch] /= 1i32 << shift;
             }
         }
     }
     let mut offset = 0;
+    let shifts = m.scale.shift;
     for &length in &m.lengths {
         mlp_matrix_analysis_add(
             &mut m.analysis,
-            &m.pcm[offset * channels..],
+            &mut m.pcm[offset * channels..],
             length,
             channels,
+            if m.original_scale { Some(&shifts) } else { None },
         )?;
         offset += length;
     }

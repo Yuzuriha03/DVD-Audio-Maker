@@ -14,6 +14,7 @@ pub(crate) struct Bits {
     counted_words: usize,
 }
 impl Bits {
+    #[cfg(test)]
     pub(crate) fn counting() -> Self {
         Self {
             count_only: true,

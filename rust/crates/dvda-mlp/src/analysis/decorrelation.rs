@@ -51,9 +51,10 @@ fn add_in_original_order(left: f64, right: f64) -> f64 {
 }
 pub(crate) fn mlp_matrix_analysis_add(
     state: &mut MlpMatrixAnalysis,
-    samples: &[i32],
+    samples: &mut [i32],
     count: usize,
     stride: usize,
+    shifts: Option<&[u32; 6]>,
 ) -> Result<(), ()> {
     if !(1..=6).contains(&state.channels)
         || !(1..=160).contains(&count)
@@ -73,10 +74,16 @@ pub(crate) fn mlp_matrix_analysis_add(
         if !last.is_finite() || !delta.is_finite() || !work.energy[ch].is_finite() {
             return Err(());
         }
+        let shift = shifts.map_or(0, |shifts| shifts[ch]);
         for (frame, differences) in samples[..count * stride]
-            .chunks_exact(stride)
+            .chunks_exact_mut(stride)
             .zip(difference[..count * 6].as_chunks_mut::<6>().0)
         {
+            // The caller no longer divides the shared interval buffer first:
+            // scale here while the sample is already in cache for analysis.
+            if shift != 0 {
+                frame[ch] /= 1i32 << shift;
+            }
             let v = frame[ch];
             if !(-8388608..=8388607).contains(&v) {
                 return Err(());
@@ -390,8 +397,8 @@ mod tests {
         let mut state = MlpMatrixAnalysis::default();
         mlp_matrix_analysis_init(&mut state, 2).unwrap();
         let mut packed = state.clone();
-        mlp_matrix_analysis_add(&mut state, &[1, 2, i32::MAX, 3, 4, i32::MIN], 2, 3).unwrap();
-        mlp_matrix_analysis_add(&mut packed, &[1, 2, 3, 4], 2, 2).unwrap();
+        mlp_matrix_analysis_add(&mut state, &mut [1, 2, i32::MAX, 3, 4, i32::MIN], 2, 3, None).unwrap();
+        mlp_matrix_analysis_add(&mut packed, &mut [1, 2, 3, 4], 2, 2, None).unwrap();
         assert_eq!(state, packed);
         assert_eq!(state.last[..2], [3.0, 4.0]);
         assert_eq!(state.difference[..2], [2.0, 2.0]);
@@ -402,7 +409,7 @@ mod tests {
 
         let before = state.clone();
         assert_eq!(
-            mlp_matrix_analysis_add(&mut state, &[5, 6, 7, 8388608], 2, 2),
+            mlp_matrix_analysis_add(&mut state, &mut [5, 6, 7, 8388608], 2, 2, None),
             Err(())
         );
         assert_eq!(state, before);

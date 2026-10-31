@@ -28,6 +28,7 @@ pub(crate) fn serialize_planned(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn interval_fits(pending: &mut IntervalOutput, channels: usize) -> Result<bool, ()> {
     pending.restart.maximum_lsbs = pending.maximum_lsbs;
     for au in 0..pending.au.len() {

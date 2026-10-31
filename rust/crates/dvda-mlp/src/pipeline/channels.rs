@@ -1,12 +1,7 @@
-#[cfg(test)]
 use crate::analysis::prediction::{MlpPredictFilter, MlpPredictState, mlp_predict_block};
-#[cfg(test)]
 use crate::analysis::search::MlpSearchPlan;
-#[cfg(test)]
 use crate::pipeline::encode::{IntervalOutput, PlannedAu};
-use crate::syntax::parameters::MlpCodingParams;
-#[cfg(test)]
-use crate::syntax::parameters::MlpParameters;
+use crate::syntax::parameters::{MlpCodingParams, MlpParameters};
 
 pub(crate) fn select(
     samples: &[i32],
@@ -33,23 +28,30 @@ pub(crate) fn select(
     }
 }
 
-#[cfg(test)]
-pub(crate) struct ChannelContext<'a> {
-    pub base: &'a MlpParameters,
-    pub history: &'a mut [MlpPredictState; 6],
-    pub prediction_reset: &'a mut [u32; 6],
-    pub search: &'a [Option<MlpSearchPlan>; 6],
-    pub restart: bool,
-    pub predict: bool,
-    pub channels: usize,
+/// Reusable per-channel work buffers; avoids one allocation per channel and
+/// access unit while keeping the gather/scatter order unchanged.
+#[derive(Default)]
+pub(crate) struct ChannelScratch {
+    pub(crate) input: Vec<i32>,
+    pub(crate) output: Vec<i32>,
 }
 
-#[cfg(test)]
+pub(crate) struct ChannelContext<'a> {
+    pub(crate) base: &'a MlpParameters,
+    pub(crate) history: &'a mut [MlpPredictState; 6],
+    pub(crate) prediction_reset: &'a mut [u32; 6],
+    pub(crate) search: &'a [Option<&'a MlpSearchPlan>; 6],
+    pub(crate) restart: bool,
+    pub(crate) predict: bool,
+    pub(crate) channels: usize,
+}
+
 pub(crate) fn encode_channels(
     p: &mut PlannedAu,
     pcm: &[i32],
     context: &mut ChannelContext<'_>,
     pending: &mut IntervalOutput,
+    scratch: &mut ChannelScratch,
 ) -> Result<(), ()> {
     let channels = context.channels;
     if !(1..=6).contains(&channels)
@@ -66,6 +68,7 @@ pub(crate) fn encode_channels(
     };
     p.residual.resize(p.count * channels, 0);
     p.unpredicted.resize(p.count * channels, 0);
+    let ChannelScratch { input, output } = scratch;
     for ch in 0..channels {
         let qss = p.main.qss[ch];
         if qss > 15 {
@@ -77,19 +80,22 @@ pub(crate) fn encode_channels(
             } else {
                 0
             };
-        let input: Vec<i32> = (0..p.count).map(|i| pcm[i * channels + ch]).collect();
-        let mut output = vec![0i32; p.count];
-        for (i, &value) in input.iter().enumerate() {
+        input.clear();
+        input.reserve(p.count);
+        for i in 0..p.count {
+            let value = pcm[i * channels + ch];
+            input.push(value);
             p.unpredicted[i * channels + ch] = value / (1i32 << qss);
         }
+        output.clear();
+        output.resize(p.count, 0);
         p.initial.qss[ch] = qss;
         for i in 0..first {
             output[i] = input[i] / (1i32 << qss);
             context.history[ch].input[i] = input[7 - i] as f32;
         }
         if first != 0 {
-            p.initial.coding[ch] =
-                select(&output[..first], qss, context.base.coding[ch], true, limit);
+            p.initial.coding[ch] = select(&output[..first], qss, context.base.coding[ch], true, limit);
         }
         let mut a = MlpPredictFilter::default();
         let mut b = MlpPredictFilter::default();

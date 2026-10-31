@@ -242,87 +242,107 @@ pub fn encode_profile(
 ) -> Result<Vec<u8>, Error> {
     let validated = crate::config::BatchConfig::new(c, profile, pcm.len())?;
     let c = validated.config();
-    let order = profile.order();
-    for frame in pcm.chunks_exact(c.channels as usize) {
-        for (ch, &input) in order.iter().enumerate() {
-            let x = frame[input];
-            let qss = 24 - profile.depth(c, ch);
-            if !(-8388608..=8388607).contains(&x) || x & ((1 << qss) - 1) != 0 {
-                return Err(Error::InvalidPcm);
-            }
-        }
-    }
-    let matrix = pair_matrix(c, profile, pcm);
+    let (matrix, quantization) = analyze(c, profile, pcm)?;
     let samples = validated.samples_per_access_unit();
     let channels = usize::from(c.channels);
     let au_len = samples as usize * channels;
     let count = pcm.len().div_ceil(au_len);
     let stamps = metadata::timeline(records, count)?;
     let mut encoder = AuEncoder::new(c, profile, matrix);
-    encoder.quantization = quantization(c, profile, pcm, matrix);
+    encoder.quantization = quantization;
+    // The batch path and the callback ABI share one timing queue: each access
+    // unit is admitted and stamped as soon as the 1200-AU lookahead allows it
+    // instead of parsing the finished byte stream a second time.
+    let mut queue = timing::Queue::new(samples);
     let mut output = Vec::new();
     for (au, &bit) in stamps.iter().enumerate() {
         if cancelled() {
             return Err(Error::Cancelled);
         }
         let start = au * au_len;
-        output.extend(encoder.push(
+        let bytes = encoder.push(
             &pcm[start..(start + au_len).min(pcm.len())],
             bit,
             au + 1 == count,
-        )?);
+        )?;
+        if let Some(finalized) = queue.push(bytes)? {
+            output.extend_from_slice(&finalized);
+        }
     }
-    timing::rewrite(&mut output, samples)?;
+    while let Some(finalized) = queue.finish()? {
+        output.extend_from_slice(&finalized);
+    }
     Ok(output)
 }
 
-pub(crate) fn pair_matrix(c: &Config, profile: &format::Profile, pcm: &[i32]) -> u32 {
+struct BatchStats {
+    matrix: u32,
+    plain_lsb: [u32; 6],
+    delta_lsb: [u32; 6],
+}
+
+/// Single pass over the batch PCM: validates, accumulates the pair-matrix
+/// statistics and the per-channel LSB bounds the quantization step needs.
+fn batch_stats(c: &Config, profile: &format::Profile, pcm: &[i32]) -> Result<BatchStats, Error> {
     let order = profile.order();
-    let mut mask = 0;
-    for target in 1..c.channels as usize {
-        if profile.depth(c, 0) != profile.depth(c, target) {
-            continue;
-        }
-        let mut plain = 0u64;
-        let mut difference = 0u64;
-        let mut valid = true;
-        for frame in pcm.chunks_exact(c.channels as usize) {
-            let delta = i64::from(frame[order[target]]) - i64::from(frame[order[0]]);
-            if !(-8388608..=8388607).contains(&delta) {
-                valid = false;
-                break;
+    let channels = usize::from(c.channels);
+    let mut eligible = [false; 6];
+    for (target, eligible_target) in eligible.iter_mut().enumerate().take(channels).skip(1) {
+        *eligible_target = profile.depth(c, 0) == profile.depth(c, target);
+    }
+    let mut valid = [true; 6];
+    let mut plain = [0u64; 6];
+    let mut difference = [0u64; 6];
+    let mut plain_lsb = [15u32; 6];
+    let mut delta_lsb = [15u32; 6];
+    for frame in pcm.chunks_exact(channels) {
+        for (ch, &input) in order.iter().enumerate() {
+            let x = frame[input];
+            let qss = 24 - u32::from(profile.depth(c, ch));
+            if !(-8388608..=8388607).contains(&x) || x & ((1 << qss) - 1) != 0 {
+                return Err(Error::InvalidPcm);
             }
-            plain += u64::from(frame[order[target]].unsigned_abs());
-            difference += delta.unsigned_abs();
+            plain_lsb[ch] = plain_lsb[ch].min(x.trailing_zeros().min(15));
         }
-        if valid && difference.saturating_mul(2) < plain {
-            mask |= 1 << target;
+        for target in 1..channels {
+            if !eligible[target] || !valid[target] {
+                continue;
+            }
+            let value = frame[order[target]];
+            let delta = value - frame[order[0]];
+            if !(-8388608..=8388607).contains(&delta) {
+                valid[target] = false;
+                continue;
+            }
+            plain[target] += u64::from(value.unsigned_abs());
+            difference[target] += u64::from(delta.unsigned_abs());
+            delta_lsb[target] = delta_lsb[target].min(delta.trailing_zeros().min(15));
         }
     }
-    mask
+    let mut matrix = 0;
+    for (target, &eligible_target) in eligible.iter().enumerate().take(channels).skip(1) {
+        if eligible_target && valid[target] && difference[target].saturating_mul(2) < plain[target] {
+            matrix |= 1 << target;
+        }
+    }
+    Ok(BatchStats {
+        matrix,
+        plain_lsb,
+        delta_lsb,
+    })
 }
-pub(crate) fn quantization(
-    c: &Config,
-    profile: &format::Profile,
-    pcm: &[i32],
-    matrix: u32,
-) -> Vec<u32> {
-    let order = profile.order();
-    let mut values: Vec<_> = (0..c.channels as usize)
+
+fn quantize(c: &Config, profile: &format::Profile, stats: &BatchStats) -> Vec<u32> {
+    let channels = usize::from(c.channels);
+    let matrix = stats.matrix;
+    let mut values: Vec<u32> = (0..channels)
         .map(|ch| {
             let minimum = 24 - u32::from(profile.depth(c, ch));
-            pcm.chunks_exact(c.channels as usize)
-                .map(|frame| {
-                    let x = if matrix & (1 << ch) != 0 {
-                        frame[order[ch]] - frame[order[0]]
-                    } else {
-                        frame[order[ch]]
-                    };
-                    x.trailing_zeros().min(15)
-                })
-                .min()
-                .unwrap_or(minimum)
-                .max(minimum)
+            if matrix & (1 << ch) != 0 {
+                stats.delta_lsb[ch].max(minimum)
+            } else {
+                stats.plain_lsb[ch].max(minimum)
+            }
         })
         .collect();
     if matrix != 0 {
@@ -340,6 +360,30 @@ pub(crate) fn quantization(
         }
     }
     values
+}
+
+/// Validates the batch PCM and returns the pair matrix plus the quantization
+/// shifts in one pass over the samples.
+pub(crate) fn analyze(c: &Config, profile: &format::Profile, pcm: &[i32]) -> Result<(u32, Vec<u32>), Error> {
+    let stats = batch_stats(c, profile, pcm)?;
+    let quantization = quantize(c, profile, &stats);
+    Ok((stats.matrix, quantization))
+}
+
+#[cfg(any(test, not(target_arch = "x86_64")))]
+pub(crate) fn pair_matrix(c: &Config, profile: &format::Profile, pcm: &[i32]) -> u32 {
+    batch_stats(c, profile, pcm).map_or(0, |stats| stats.matrix)
+}
+
+#[cfg(any(test, not(target_arch = "x86_64")))]
+pub(crate) fn quantization(c: &Config, profile: &format::Profile, pcm: &[i32], matrix: u32) -> Vec<u32> {
+    let channels = usize::from(c.channels);
+    match batch_stats(c, profile, pcm) {
+        Ok(stats) => quantize(c, profile, &BatchStats { matrix, ..stats }),
+        Err(_) => (0..channels)
+            .map(|ch| 24 - u32::from(profile.depth(c, ch)))
+            .collect(),
+    }
 }
 /// Stateful AU encoding; retains predictor history and one restart checksum interval.
 pub(crate) struct AuEncoder {
