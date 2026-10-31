@@ -21,3 +21,13 @@
 - Retain GUI-only distribution packaging.
 
 Acceptance note: by user authorization, lossless acceptance for this and future releases requires matching SHA256 of the complete independently MLP-decoded PCM and encoder input, using the same sample representation and excluding container headers. Encoded bytes and compressed sizes may differ; complete historical C comparison is not a release gate. Format compatibility checks remain applicable. The 116 frozen vectors and encoded hashes are regression diagnostics, not a claim of historical C byte equality for all inputs.
+
+### 日本語
+
+- GUI、コアメッセージ、CLI の言語選択、システム言語の検出に繁体字中国語と韓国語のサポートを追加しました。
+- 各言語の DVD-Audio メニューの定型文と SC／TC／JP／KR の既定の地域別字形を統一しました。ユーザーのパス、曲名、アルバム名の Unicode 文字は保持されます。
+- 全文字と 4 地域の字形を保持する、ロスレスなメニューフォントコレクション最適化ツールを追加しました。アウトライン、レイアウト、メトリクスの保持も検証します。
+- ネイティブ MLP エンコーダーの固定ベンチマークにおけるリグレッションを修正しました。主予測器の摂動探索回数を 4 回から従来の C 実装と同じ 16 回に戻し、116 件すべてで出力長と元の SHA256 の検証に合格しました。
+- 配布パッケージは引き続き GUI のみです。
+
+受け入れ基準：ユーザーの承認に基づき、今回以降のリリースでは、独立した MLP デコーダーで復号した全 PCM サンプルとエンコーダー入力の SHA256 の一致をロスレス性の基準とします。サンプルのバイト表現を統一し、コンテナーヘッダーは除外します。符号化ビットストリームや圧縮後のサイズの違いは許容し、旧 C 実装との完全な厳密比較はリリース条件としません。形式の互換性確認は継続します。116 件の固定テストベクトルと符号化データのハッシュは回帰診断用であり、すべての入力で旧 C 実装とバイト単位で一致することを意味しません。
