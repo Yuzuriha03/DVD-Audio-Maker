@@ -17,7 +17,6 @@ from msvc_env import msvc_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = 'x86_64-pc-windows-msvc'
-VENDOR_ARCHIVES = ('dvda_menu_nav_vendor.lib',)
 
 
 def sha(path):
@@ -52,7 +51,6 @@ def authenticate(inputs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--vendor', type=Path, default=ROOT/'build/menu-msvc-vendor')
     parser.add_argument('--runtime', type=Path, default=ROOT/'build/rust-author-production')
     parser.add_argument('--author', type=Path, default=ROOT/'rust/target/x86_64-pc-windows-msvc/release/dvda-author-dev.exe',
                         help='Standalone dvda-author-dev command; its hash is recorded in the report')
@@ -63,19 +61,11 @@ def main():
     output = (args.output or ROOT/'build'/('menu-session-acceptance-'+uuid.uuid4().hex[:8])).resolve()
     require(not output.exists() or not any(output.iterdir()), 'Use a new or empty acceptance directory')
     output.mkdir(parents=True, exist_ok=True)
-    vendor, runtime = args.vendor.resolve(), args.runtime.resolve()
+    runtime = args.runtime.resolve()
     source = args.source_mpeg.resolve()
     require(source.is_file(), 'Provide a fixed sector-aligned PAL/DVD MPEG test source')
     require(source.stat().st_size > 0 and source.stat().st_size % 2048 == 0, 'MPEG fixture must be sector aligned')
-    record = json.loads((vendor/'menu-build.json').read_text(encoding='utf-8-sig'))
-    require(record['adapter'] == 'rust' and record['linkage'] == 'static-vendor', 'Unexpected migrated menu vendor provenance')
-    require(record.get('target') == TARGET and record.get('toolchain') == 'msvc', 'Session acceptance requires MSVC vendor libraries')
-    for name in VENDOR_ARCHIVES:
-        require(sha(vendor/name) == record['files'][name]['sha256'], 'Vendor archive checksum mismatch: '+name)
-    inputs = current_menu_inputs(record)
-    stale = authenticate(inputs)
-    require(not stale, 'New vendor sources changed since build: '+', '.join(stale))
-    env = msvc_environment() | {'DVDA_MENU_NATIVE_DIR': str(vendor)}
+    env = msvc_environment()
     env['RUSTFLAGS'] = env.get('RUSTFLAGS', '')+' -C target-feature=+crt-static'
     target = output/'harness-target'
     run(['cargo', 'build', '--offline', '--manifest-path', ROOT/'rust/Cargo.toml', '-p', 'dvda-menu',
@@ -93,14 +83,12 @@ def main():
     new_nav, repeated_nav = [tree(case/'导航 日本語') for case in (new, repeated)]
     require(new_nav and new_nav == repeated_nav, 'Navigation output differs across fresh Rust processes')
     if args.sessions_only:
-        require(not authenticate(inputs), 'New vendor sources changed during acceptance')
         report = {'passed': True, 'scope': 'menu sessions', 'production_checked': False,
                   'runtime_source_inputs_current': True, 'vendor_calls_synchronous': True,
                   'vendor_cancellation_hook': False, 'reference': 'two fresh Rust processes',
-                  'vendor': str(vendor), 'harness_sha256': sha(current),
-                  'vendor_manifest_sha256': sha(vendor/'menu-build.json'),
+                  'harness_sha256': sha(current),
                   'source_mpeg_sha256': sha(source), 'spu_repeatable': True,
-                  'navigation_repeatable': True, 'sessions': sessions, 'menu_source_inputs': inputs,
+                  'navigation_repeatable': True, 'sessions': sessions,
                   'acceptance_source_inputs': {name: sha(ROOT/name) for name in [
                       'tools/win-build/test-rust-menu-session.py', 'rust/crates/dvda-menu/examples/session-acceptance.rs']}}
         (output/'acceptance.json').write_text(json.dumps(report, indent=2, ensure_ascii=False)+'\n', encoding='utf-8')
@@ -115,8 +103,6 @@ def main():
     require(production_record['implementation'] == 'rust' and not production_record['project_c_author_compiled'], 'Production still uses the C author')
     for name, item in production_record['runtime_files'].items():
         require(sha(runtime/name) == item['sha256'], 'Production dependency checksum mismatch: '+name)
-    for name in ('menu-build.json', *VENDOR_ARCHIVES):
-        require(production_record['source_inputs']['menu-runtime/'+name] == sha(vendor/name), 'Production links a different menu vendor: '+name)
     spec = importlib.util.spec_from_file_location('menu_acceptance', ROOT/'tools/win-build/test-rust-author-menu.py')
     menu_acceptance = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(menu_acceptance)
@@ -159,21 +145,19 @@ def main():
     run(['cargo', 'test', '--offline', '--manifest-path', ROOT/'rust/Cargo.toml', '-p', 'dvda-author',
          '--test', 'full_author_large', '--target', TARGET,
          '--target-dir', output/'author-cancel-target'], ROOT, output/'author-cancellation.log', env)
-    stale = authenticate(inputs)
     production_inputs = {name: digest for name, digest in production_record['source_inputs'].items()
                          if name.startswith('rust/') or name.startswith('tools/win-build/')}
     production_stale = authenticate(production_inputs)
-    require(not stale and not production_stale, 'Source inputs changed during menu acceptance')
+    require(not production_stale, 'Source inputs changed during menu acceptance')
     report = {'passed': True, 'scope': 'menu sessions and production', 'production_checked': True,
               'runtime_source_inputs_current': True,
               'vendor_calls_synchronous': True, 'vendor_cancellation_hook': False,
               'author_callback_cancellation_tests_passed': True, 'reference': 'two fresh Rust processes',
-              'vendor': str(vendor), 'harness_sha256': sha(current), 'production_executable_sha256': sha(author),
-              'vendor_manifest_sha256': sha(vendor/'menu-build.json'),
+              'harness_sha256': sha(current), 'production_executable_sha256': sha(author),
               'source_mpeg_sha256': sha(source), 'spu_repeatable': True,
               'navigation_repeatable': True, 'navigation_files': {name: hashlib.sha256(data).hexdigest() for name, data in new_nav.items()},
               'sessions': sessions, 'production_menu': checks, 'production_failure_retry': True,
-              'menu_source_inputs': inputs, 'production_source_inputs': production_inputs,
+              'production_source_inputs': production_inputs,
               'acceptance_source_inputs': {name: sha(ROOT/name) for name in [
                   'tools/win-build/test-rust-menu-session.py', 'tools/win-build/test-rust-author-menu.py',
                   'rust/crates/dvda-menu/examples/session-acceptance.rs', 'rust/crates/dvda-author/tests/full_author_large.rs']}}

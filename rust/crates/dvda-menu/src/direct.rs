@@ -2,58 +2,16 @@
 pub use crate::{resources::ReadRgba, session::MenuRequest};
 use std::{
     cell::Cell,
-    ffi::{CStr, c_char, c_int},
+    ffi::{CStr, c_int},
     sync::Mutex,
 };
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuError(pub c_int);
 static SESSION: Mutex<()> = Mutex::new(());
-thread_local! { static NAV: Cell<bool> = const { Cell::new(false) }; static ACTIVE: Cell<bool> = const { Cell::new(false) }; }
-#[allow(dead_code)] // C bridge symbols are kept until the vendor navigation library is deleted
-unsafe extern "C" {
-    fn dvda_nav_dvda_menu_run(request: *const MenuRequest) -> c_int;
-    fn dvda_nav_menu_callback(callback: Option<unsafe extern "C" fn()>) -> c_int;
-    fn dvda_nav_menu_attribute(
-        callback: Option<unsafe extern "C" fn(*const c_char)>,
-        value: *const c_char,
-    ) -> c_int;
-    fn dvda_nav_menu_body(value: *const c_char) -> c_int;
-    fn dvda_nav_menu_accepts_body() -> c_int;
-}
-/// # Safety
-/// `callback`, when present, must not unwind, longjmp, or retain pointers, as for
-/// the vendor menu API.
-#[cfg(not(test))]
-pub(super) unsafe fn menu_callback(callback: Option<unsafe extern "C" fn()>) -> c_int {
-    unsafe { dvda_nav_menu_callback(callback) }
-}
-/// # Safety
-/// `value` must be null or a NUL-terminated string valid for the call. `callback`,
-/// when present, has the same obligations as in `menu_callback`.
-#[cfg(not(test))]
-pub(super) unsafe fn menu_attribute(
-    callback: Option<unsafe extern "C" fn(*const c_char)>,
-    value: *const c_char,
-) -> c_int {
-    unsafe { dvda_nav_menu_attribute(callback, value) }
-}
-/// # Safety
-/// `value` must be null or a NUL-terminated string valid for the call.
-#[cfg(not(test))]
-pub(super) unsafe fn menu_body(value: *const c_char) -> c_int {
-    unsafe { dvda_nav_menu_body(value) }
-}
-/// # Safety
-/// Takes no pointers. It queries the vendor library, so it is only meaningful inside
-/// a menu run that dispatches to that library (the same session as `run`).
-#[cfg(not(test))]
-pub(super) unsafe fn menu_accepts_body() -> c_int {
-    unsafe { dvda_nav_menu_accepts_body() }
-}
+thread_local! { static ACTIVE: Cell<bool> = const { Cell::new(false) }; }
 struct Active;
 impl Drop for Active {
     fn drop(&mut self) {
-        NAV.set(false);
         ACTIVE.set(false);
     }
 }
@@ -72,7 +30,6 @@ unsafe fn run(request: *const MenuRequest, navigation: bool) -> c_int {
         ACTIVE.set(true);
         let _active = Active;
         if navigation {
-            NAV.set(true);
             unsafe { run_navigation_request(request) }
         } else {
             unsafe { run_spu_request(request) }

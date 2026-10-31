@@ -1,11 +1,5 @@
-//! Menu XML validation and callback dispatch. Vendor callbacks are entered only
-//! through a C setjmp island; a vendor exit must never jump over a Rust frame.
+//! Menu XML tokenizer shared by the SPU and navigation implementations.
 use quick_xml::{Reader, XmlVersion, events::Event};
-use std::{
-    ffi::{CStr, CString, c_char, c_int},
-    io::Write,
-    panic::{AssertUnwindSafe, catch_unwind},
-};
 
 #[cfg(feature = "direct-link")]
 mod direct;
@@ -20,70 +14,9 @@ pub use direct::{
     MenuError, MenuRequest, ReadRgba, dvda_menu_run_navigation, dvda_menu_run_spu, run_navigation,
     run_spu, run_spu_files,
 };
-#[cfg(all(feature = "direct-link", not(test)))]
-use direct::{menu_accepts_body, menu_attribute, menu_body, menu_callback};
-
-#[repr(C)]
-pub struct Element {
-    name: *const c_char,
-    parent: c_int,
-    state: c_int,
-    start: Option<unsafe extern "C" fn()>,
-    end: Option<unsafe extern "C" fn()>,
-}
-#[repr(C)]
-pub struct Attribute {
-    element: *const c_char,
-    name: *const c_char,
-    callback: Option<unsafe extern "C" fn(*const c_char)>,
-}
-#[cfg(all(not(test), not(feature = "direct-link")))]
-unsafe extern "C" {
-    fn menu_callback(callback: Option<unsafe extern "C" fn()>) -> c_int;
-    fn menu_attribute(
-        callback: Option<unsafe extern "C" fn(*const c_char)>,
-        value: *const c_char,
-    ) -> c_int;
-    fn menu_body(value: *const c_char) -> c_int;
-    fn menu_accepts_body() -> c_int;
-}
-
-/// # Safety
-/// Test stub with the same obligations as the vendor `menu_callback`.
-#[cfg(test)]
-unsafe fn menu_callback(callback: Option<unsafe extern "C" fn()>) -> c_int {
-    if let Some(callback) = callback {
-        unsafe { callback() };
-    }
-    0
-}
-/// # Safety
-/// Test stub with the same obligations as the vendor `menu_attribute`.
-#[cfg(test)]
-unsafe fn menu_attribute(
-    callback: Option<unsafe extern "C" fn(*const c_char)>,
-    value: *const c_char,
-) -> c_int {
-    if let Some(callback) = callback {
-        unsafe { callback(value) };
-    }
-    0
-}
-/// # Safety
-/// Test stub with the same obligations as the vendor `menu_body`.
-#[cfg(test)]
-unsafe fn menu_body(_value: *const c_char) -> c_int {
-    0
-}
-/// # Safety
-/// Test stub with the same obligations as the vendor `menu_accepts_body`.
-#[cfg(test)]
-unsafe fn menu_accepts_body() -> c_int {
-    0
-}
 
 #[derive(Debug, PartialEq)]
-enum Token {
+pub(crate) enum Token {
     Start(String, Vec<(String, String)>, bool),
     End(String),
     Text(String),
@@ -104,7 +37,7 @@ fn xml_characters(text: &str) -> Result<(), String> {
     }
 }
 
-fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
+pub(crate) fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
     let document = std::str::from_utf8(input).map_err(|e| e.to_string())?;
     xml_characters(document)?;
     let mut reader = Reader::from_reader(input);
@@ -227,164 +160,6 @@ fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
         return Err("incomplete XML document".into());
     }
     Ok(tokens)
-}
-
-/// # Safety
-/// `p` must be null or a NUL-terminated string that stays valid and unmodified for `'a`.
-unsafe fn text<'a>(p: *const c_char) -> Result<&'a str, String> {
-    if p.is_null() {
-        return Err("null string".into());
-    }
-    unsafe { CStr::from_ptr(p) }
-        .to_str()
-        .map_err(|e| e.to_string())
-}
-
-/// # Safety
-/// `elements` and `attributes` must be readable up to the terminating entry (a null
-/// `name` or `element`) that the table walks in this function stop at.
-unsafe fn dispatch(
-    tokens: Vec<Token>,
-    elements: *const Element,
-    attributes: *const Attribute,
-) -> Result<(), String> {
-    if elements.is_null() || attributes.is_null() {
-        return Err("null descriptor table".into());
-    }
-    let mut state = 0;
-    let mut stack: Vec<usize> = Vec::new();
-    let mut body = String::new();
-    unsafe {
-        if menu_body(std::ptr::null()) != 0 {
-            return Err("body reset failed".into());
-        }
-    }
-    for token in tokens {
-        match token {
-            Token::Start(name, attrs, empty) => {
-                if !body.is_empty() {
-                    return Err("mixed XML content".into());
-                }
-                let mut index = 0;
-                loop {
-                    let elem = unsafe { &*elements.add(index) };
-                    if elem.name.is_null() {
-                        return Err(format!("unsupported element {name}"));
-                    }
-                    if elem.parent == state && unsafe { text(elem.name)? } == name {
-                        break;
-                    }
-                    index += 1;
-                }
-                let elem = unsafe { &*elements.add(index) };
-                if unsafe { menu_callback(elem.start) } != 0 {
-                    return Err("element callback failed".into());
-                }
-                for (key, value) in attrs {
-                    let mut a = 0;
-                    loop {
-                        let attr = unsafe { &*attributes.add(a) };
-                        if attr.element.is_null() {
-                            return Err(format!("unsupported attribute {key}"));
-                        }
-                        if unsafe { text(attr.element)? } == name
-                            && unsafe { text(attr.name)? } == key
-                        {
-                            break;
-                        }
-                        a += 1;
-                    }
-                    let value = CString::new(value).map_err(|e| e.to_string())?;
-                    if unsafe { menu_attribute((*attributes.add(a)).callback, value.as_ptr()) } != 0
-                    {
-                        return Err("attribute callback failed".into());
-                    }
-                }
-                if empty {
-                    if unsafe { menu_callback(elem.end) } != 0 {
-                        return Err("end callback failed".into());
-                    }
-                    unsafe {
-                        if menu_body(std::ptr::null()) != 0 {
-                            return Err("body reset failed".into());
-                        }
-                    }
-                } else {
-                    stack.push(index);
-                    state = elem.state;
-                }
-            }
-            Token::End(_) => {
-                let index = stack.pop().ok_or("invalid callback stack")?;
-                let elem = unsafe { &*elements.add(index) };
-                if unsafe { menu_callback(elem.end) } != 0 {
-                    return Err("end callback failed".into());
-                }
-                state = elem.parent;
-                body.clear();
-                unsafe {
-                    if menu_body(std::ptr::null()) != 0 {
-                        return Err("body reset failed".into());
-                    }
-                }
-            }
-            Token::Text(value) => {
-                if unsafe { menu_accepts_body() } == 0 {
-                    if !xml_whitespace(&value) {
-                        return Err("unexpected XML text".into());
-                    }
-                } else {
-                    body.push_str(&value);
-                    let value = CString::new(body.as_str()).map_err(|e| e.to_string())?;
-                    if unsafe { menu_body(value.as_ptr()) } != 0 {
-                        return Err("body allocation failed".into());
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-/// # Safety
-/// Arguments must be valid terminated vendor descriptor tables and UTF-8 path.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn menu_rust_readxml(
-    path: *const c_char,
-    elements: *const Element,
-    attributes: *const Attribute,
-) -> c_int {
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
-        let path = unsafe { text(path)? };
-        let data = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-        unsafe { dispatch(tokenize(&data)?, elements, attributes) }
-    }));
-    match result {
-        Ok(Ok(())) => 0,
-        Ok(Err(e)) => {
-            // Broken/closed stderr must not panic outside the unwind guard.
-            let _ = writeln!(std::io::stderr().lock(), "ERR: invalid menu XML: {e}");
-            1
-        }
-        Err(_) => 1,
-    }
-}
-
-/// # Safety
-/// `value` must point to a terminated UTF-8 string, or be null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn menu_rust_boolean(value: *const c_char) -> c_int {
-    catch_unwind(|| {
-        let Ok(value) = (unsafe { text(value) }) else {
-            return -1;
-        };
-        match value.to_ascii_lowercase().as_str() {
-            "1" | "on" | "yes" => 1,
-            "0" | "off" | "no" => 0,
-            _ => -1,
-        }
-    })
-    .unwrap_or(-1)
 }
 
 #[cfg(test)]

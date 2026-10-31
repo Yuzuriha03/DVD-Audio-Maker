@@ -1,3 +1,4 @@
+#![allow(dead_code)] // retained for the in-process callers and tests
 //! Rust ownership for the vendor's private heap and CRT resources.
 //! Every export returns normally; only a caller in C may promote a failure to longjmp.
 use std::{
