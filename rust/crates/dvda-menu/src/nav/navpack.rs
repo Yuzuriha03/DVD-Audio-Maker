@@ -67,6 +67,32 @@ pub(crate) fn find_next_video(vobus: &[Vobu], cur: isize, forward: bool) -> Opti
     }
 }
 
+/// Finds the VOBU containing a presentation time within [low, high] (C findvobu).
+pub(crate) fn find_vobu(vobus: &[Vobu], pts: i64, low: isize, high: isize) -> isize {
+    if high < low {
+        return low - 1;
+    }
+    let low_index = low.max(0) as usize;
+    let high_index = high.max(0) as usize;
+    if pts < i64::from(vobus[low_index].start_pts) {
+        return low - 1;
+    }
+    if pts >= i64::from(vobus[high_index].end_pts) {
+        return high + 1;
+    }
+    let (mut l, mut h) = (low, high);
+    while l < h {
+        let m = (l + h + 1) / 2;
+        let index = m.max(0) as usize;
+        if pts < i64::from(vobus[index].start_pts) {
+            h = m - 1;
+        } else {
+            l = m;
+        }
+    }
+    l
+}
+
 /// Relative VOBU sector offset with the backward/multi-vobu flag bits (C getsect).
 pub(crate) fn get_sector(
     vobus: &[Vobu],

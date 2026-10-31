@@ -146,19 +146,24 @@ pub(crate) fn build(input: &[u8], aspect: Aspect) -> Result<Build, String> {
         let mut sector = *source;
         mpeg::transpose_ts(&mut sector, -back_offs);
         fix_sequence_headers(&mut sector, aspect);
-        if sector[0] == 0 && sector[1] == 0 && sector[2] == 1 && sector[3] == 0xba
-            && sector[14] == 0 && sector[15] == 0 && sector[16] == 1 && sector[17] == 0xe0
-            && sector[21] & 0x80 != 0
-        {
-            let pts = mpeg::read_pts(&sector[23..]);
-            if let Some(vobu) = vobu.as_mut() {
-                if vobu.first_video_pts.is_none() {
-                    vobu.first_video_pts = Some(pts);
-                    vobu.start_pts = pts;
-                }
-                vobu.end_pts = pts;
-                if sector.windows(4).any(|window| window == [0, 0, 1, 0xb7]) {
+        #[allow(clippy::collapsible_if)]
+        for offset in 0..SECTOR - 9 {
+            if sector[offset..offset + 3] != [0, 0, 1] {
+                continue;
+            }
+            if sector[offset + 3] == 0xb7 {
+                if let Some(vobu) = vobu.as_mut() {
                     vobu.has_sequence_end = true;
+                }
+            }
+            if sector[offset + 3] == 0xe0 && sector[offset + 7] & 0x80 != 0 {
+                let pts = mpeg::read_pts(&sector[offset + 9..]);
+                if let Some(vobu) = vobu.as_mut() {
+                    if vobu.first_video_pts.is_none() {
+                        vobu.first_video_pts = Some(pts);
+                        vobu.start_pts = pts;
+                    }
+                    vobu.end_pts = pts;
                 }
             }
         }
