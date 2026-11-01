@@ -156,9 +156,9 @@ fn find_subpicture_index(entries: &[(u32, u32, usize)], pts: u32) -> usize {
 
 fn button_colours(data: &DvdData) -> [u8; 24] {
     let mut table = [0u8; 24];
-    if let Some(group) = data.groups.first() {
+    for (group_index, group) in data.groups.iter().take(3).enumerate() {
         for (index, word) in group.entries.iter().enumerate() {
-            write_u16(&mut table, index * 2, *word);
+            write_u16(&mut table, group_index * 8 + index * 2, *word);
         }
     }
     table
@@ -209,6 +209,18 @@ pub(crate) fn fill(
     data: &DvdData,
     commands: &BTreeMap<String, [u8; 8]>,
 ) -> Result<(), String> {
+    fill_vob(build, data, commands, 0, 1)
+}
+
+/// Source-local searches stop at VOB boundaries; only recorded disc addresses
+/// include the sector base of this source in AUDIO_TS.VOB.
+pub(crate) fn fill_vob(
+    build: &mut Build,
+    data: &DvdData,
+    commands: &BTreeMap<String, [u8; 8]>,
+    sector_base: u32,
+    vob_id: u16,
+) -> Result<(), String> {
     let mut timings: Vec<VobuTiming> = (0..build.vobus.len()).map(|index| scan_vobu(build, index)).collect();
     let numvobus = build.vobus.len();
     let vob_start = timings.first().map_or(0, |timing| timing.start);
@@ -248,7 +260,7 @@ pub(crate) fn fill(
         write_u16(&mut sector, 0x404, 0x3fa);
         sector[0x406] = 1;
         sector[0x407..].fill(0);
-        write_u32(&mut sector, 0x2d, vobu.sector as u32);
+        write_u32(&mut sector, 0x2d, sector_base + vobu.sector as u32);
         write_u32(&mut sector, 0x39, timing.start);
         write_u32(&mut sector, 0x3d, timing.end);
         if vobu.has_sequence_end {
@@ -267,11 +279,11 @@ pub(crate) fn fill(
         button_table(data, commands, &mut sector);
         let scr = mpeg::read_scr(&sector[4..9]);
         write_u32(&mut sector, 0x407, scr);
-        write_u32(&mut sector, 0x40b, vobu.sector as u32);
+        write_u32(&mut sector, 0x40b, sector_base + vobu.sector as u32);
         for (slot, reference) in timing.references.iter().enumerate().take(3) {
             write_u32(&mut sector, 0x413 + slot * 4, *reference);
         }
-        write_u16(&mut sector, 0x41f, 1);
+        write_u16(&mut sector, 0x41f, vob_id);
         sector[0x422] = 1;
         write_u32(&mut sector, 0x423, elapsed);
         write_u32(&mut sector, 0x433, vob_start);

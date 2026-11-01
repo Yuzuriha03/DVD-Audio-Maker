@@ -182,40 +182,6 @@ pub fn normalize_language(
     .into())
 }
 
-#[cfg(test)]
-mod language_tests {
-    use super::normalize_language;
-
-    #[test]
-    fn korean_language_aliases() {
-        for alias in ["ko", "ko-KR", "한국어", "korean"] {
-            assert_eq!(normalize_language(Some(alias), "en").unwrap(), "ko");
-        }
-        assert_eq!(normalize_language(None, "ko-KR").unwrap(), "ko");
-        assert_eq!(normalize_language(Some("auto"), "ko").unwrap(), "ko");
-    }
-
-    #[test]
-    fn traditional_aliases_and_installed_language_are_normalized() {
-        for alias in ["zh-TW", "zh-Hant", "zh-HK", "zh-MO", "繁體中文", "繁体中文"] {
-            assert_eq!(normalize_language(Some(alias), "en").unwrap(), "zh-TW");
-        }
-        for installed in ["zh-TW", "zh-Hant", "zh-HK", "zh-MO"] {
-            assert_eq!(normalize_language(None, installed).unwrap(), "zh-TW");
-            assert_eq!(
-                normalize_language(Some("auto"), installed).unwrap(),
-                "zh-TW"
-            );
-        }
-        for language in ["zh-CN", "en", "ja", "zh-TW", "ko"] {
-            assert_eq!(
-                normalize_language(Some(language), "zh-TW").unwrap(),
-                language
-            );
-        }
-    }
-}
-
 fn read_profile(path: &str, defaults: &Value) -> Result<Value, Failure> {
     let mut bytes = Vec::new();
     crate::identity::open_read(path)?.read_to_end(&mut bytes)?;
@@ -323,5 +289,39 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
         _ => Err(format!(
             "Unsupported configuration file operation: {operation}"
         )),
+    }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::normalize_language;
+
+    #[test]
+    fn korean_language_aliases() {
+        for alias in ["ko", "ko-KR", "한국어", "korean"] {
+            assert_eq!(normalize_language(Some(alias), "en").unwrap(), "ko");
+        }
+        assert_eq!(normalize_language(None, "ko-KR").unwrap(), "ko");
+        assert_eq!(normalize_language(Some("auto"), "ko").unwrap(), "ko");
+    }
+
+    #[test]
+    fn traditional_aliases_and_installed_language_are_normalized() {
+        for alias in ["zh-TW", "zh-Hant", "zh-HK", "zh-MO", "繁體中文", "繁体中文"] {
+            assert_eq!(normalize_language(Some(alias), "en").unwrap(), "zh-TW");
+        }
+        for installed in ["zh-TW", "zh-Hant", "zh-HK", "zh-MO"] {
+            assert_eq!(normalize_language(None, installed).unwrap(), "zh-TW");
+            assert_eq!(
+                normalize_language(Some("auto"), installed).unwrap(),
+                "zh-TW"
+            );
+        }
+        for language in ["zh-CN", "en", "ja", "zh-TW", "ko"] {
+            assert_eq!(
+                normalize_language(Some(language), "zh-TW").unwrap(),
+                language
+            );
+        }
     }
 }

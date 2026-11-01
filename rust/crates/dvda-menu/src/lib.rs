@@ -1,9 +1,11 @@
 //! Menu XML tokenizer shared by the SPU and navigation implementations.
+#[cfg(any(feature = "direct-link", test))]
 use quick_xml::{Reader, XmlVersion, events::Event};
 
 #[cfg(feature = "direct-link")]
 mod direct;
 mod resources;
+#[cfg(feature = "direct-link")]
 mod session;
 #[cfg(any(feature = "direct-link", test))]
 mod nav;
@@ -15,6 +17,7 @@ pub use direct::{
     run_spu, run_spu_files,
 };
 
+#[cfg(any(feature = "direct-link", test))]
 #[derive(Debug, PartialEq)]
 pub(crate) enum Token {
     Start(String, Vec<(String, String)>, bool),
@@ -25,10 +28,12 @@ pub(crate) enum Token {
 // Parse the entire document before invoking vendor callbacks. Malformed XML
 // cannot partially configure vendor state; a failed transaction may still have
 // created an output file, which the caller must discard.
+#[cfg(any(feature = "direct-link", test))]
 fn xml_whitespace(text: &str) -> bool {
     text.chars().all(|c| matches!(c, ' ' | '\t' | '\r' | '\n'))
 }
 
+#[cfg(any(feature = "direct-link", test))]
 fn xml_characters(text: &str) -> Result<(), String> {
     if text.chars().all(|c| matches!(c as u32, 0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF)) {
         Ok(())
@@ -37,6 +42,7 @@ fn xml_characters(text: &str) -> Result<(), String> {
     }
 }
 
+#[cfg(any(feature = "direct-link", test))]
 pub(crate) fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
     let document = std::str::from_utf8(input).map_err(|e| e.to_string())?;
     xml_characters(document)?;

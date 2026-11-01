@@ -75,10 +75,9 @@ unsafe fn wide(value: *const c_char) -> Result<Vec<u16>, ()> {
         .chain(Some(0))
         .collect())
 }
-/// # Safety
-/// Returns heap memory owned by the caller. It must be released with `free`, or
-/// handed to `own` with a matching kind, and must not be used after that.
-unsafe fn allocate(bytes: usize, zero: bool) -> Result<*mut c_void, ()> {
+/// Returns heap memory owned by the caller. Release it with `free`, or hand it
+/// to `own` with a matching kind, before the session ends.
+fn allocate(bytes: usize, zero: bool) -> Result<*mut c_void, ()> {
     let heap = HEAP.get();
     if heap.is_null() {
         return Err(());
@@ -240,7 +239,7 @@ pub unsafe extern "C" fn menu_rust_mkdir(path: *const c_char) -> c_int {
 /// `output` must be writable; vendor pointers belong to the current private heap.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_malloc(bytes: usize, output: *mut *mut c_void) -> c_int {
-    guarded(1, || match unsafe { allocate(bytes, false) } {
+    guarded(1, || match allocate(bytes, false) {
         Ok(object) => {
             unsafe { *output = object };
             0
@@ -260,7 +259,7 @@ pub unsafe extern "C" fn menu_rust_calloc(
         let Some(bytes) = count.checked_mul(bytes) else {
             return 1;
         };
-        match unsafe { allocate(bytes, true) } {
+        match allocate(bytes, true) {
             Ok(object) => {
                 unsafe { *output = object };
                 0
@@ -279,7 +278,7 @@ pub unsafe extern "C" fn menu_rust_realloc(
 ) -> c_int {
     guarded(1, || {
         let result = if object.is_null() {
-            unsafe { allocate(bytes, false) }
+            allocate(bytes, false)
         } else if bytes == 0 {
             unsafe { free(object) }.map(|_| ptr::null_mut())
         } else {
@@ -328,7 +327,7 @@ pub unsafe extern "C" fn menu_rust_strndup(
         let Some(bytes) = length.checked_add(1) else {
             return 1;
         };
-        let Ok(object) = (unsafe { allocate(bytes, false) }) else {
+        let Ok(object) = allocate(bytes, false) else {
             return 1;
         };
         let object = object.cast::<c_char>();
@@ -443,7 +442,7 @@ pub unsafe extern "C" fn menu_rust_opendir(path: *const c_char, output: *mut *mu
                 return 0;
             }
         };
-        let Ok(object) = (unsafe { allocate(std::mem::size_of::<Directory>(), false) }) else {
+        let Ok(object) = allocate(std::mem::size_of::<Directory>(), false) else {
             return 1;
         };
         unsafe {

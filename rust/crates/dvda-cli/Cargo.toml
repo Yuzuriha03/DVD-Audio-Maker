@@ -16,6 +16,9 @@ serde_json.workspace = true
 serde.workspace = true
 dvda-native = { path = "../dvda-native" }
 
+[build-dependencies]
+serde_json.workspace = true
+
 [[bin]]
 name = "dvda-author-dev"
 path = "src/author_main.rs"

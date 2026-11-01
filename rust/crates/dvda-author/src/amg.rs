@@ -427,7 +427,7 @@ fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> 
         put32(bytes, pgc + 286, sector);
         put32(bytes, pgc + 294, sector);
         put32(bytes, pgc + 298, add(sector, size - 2)?);
-        put32(bytes, pgc + 302, 0x10001);
+        put32(bytes, pgc + 302, ((page as u32 + 1) << 16) | 1);
         sector = add(sector, size - 1)?;
     }
     Ok(())
@@ -521,4 +521,27 @@ fn write_text(
     bytes[base + 0x13] = (i - 1) as u8;
     bytes[base + 0x1f] = (i - 1 - 0x1c) as u8;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn menu_cells_reference_each_pages_vob() {
+        let menu = Menu {
+            page_sectors: vec![70, 74, 42],
+            ..Menu::default()
+        };
+        let mut bytes = vec![0; 2048];
+        write_menu(&mut bytes, 0, &menu).unwrap();
+        for (page, sector) in [0u32, 69, 142].into_iter().enumerate() {
+            let pgc = 24 + 8 * 3 + 306 * page;
+            assert_eq!(&bytes[pgc + 286..pgc + 290], &sector.to_be_bytes());
+            assert_eq!(
+                &bytes[pgc + 302..pgc + 306],
+                &[0, page as u8 + 1, 0, 1]
+            );
+        }
+    }
 }

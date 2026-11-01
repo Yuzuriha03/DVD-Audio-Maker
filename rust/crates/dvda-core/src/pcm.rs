@@ -328,6 +328,13 @@ mod tests {
     }
 }
 
+impl Callbacks for NoEvents {
+    fn emit(&mut self, _: i32, _: &str) {}
+    fn cancelled(&mut self) -> bool {
+        false
+    }
+}
+
 #[cfg(test)]
 mod storage_tests {
     use super::*;
@@ -376,7 +383,7 @@ mod storage_tests {
             .unwrap();
             let elapsed = start.elapsed();
             let bytes = std::fs::read(&destination).unwrap();
-            for (sample, actual) in samples.iter().zip(bytes.chunks_exact(3)) {
+            for (sample, actual) in samples.iter().zip(bytes.as_chunks::<3>().0.iter()) {
                 assert_eq!(actual, &(i32::from(*sample) << 8).to_le_bytes()[..3]);
             }
             println!(
@@ -397,7 +404,7 @@ mod storage_tests {
         std::fs::create_dir(&root).unwrap();
         let source = root.join("source.wav");
         let destination = root.join("output.raw");
-        let samples: Vec<i32> = (0..16_777_217).map(|n| (n as i32) << 8).collect();
+        let samples: Vec<i32> = (0..16_777_217).map(|n| n << 8).collect();
         let mut wave = wave_16(&[]);
         let size = (samples.len() * 4) as u32;
         wave[4..8].copy_from_slice(&(36 + size).to_le_bytes());
@@ -424,7 +431,7 @@ mod storage_tests {
             let elapsed = start.elapsed();
             let bytes = std::fs::read(&destination).unwrap();
             assert_eq!(bytes.len(), samples.len() * 3);
-            for (sample, actual) in samples.iter().zip(bytes.chunks_exact(3)) {
+            for (sample, actual) in samples.iter().zip(bytes.as_chunks::<3>().0.iter()) {
                 assert_eq!(actual, &sample.to_le_bytes()[1..]);
             }
             println!(
@@ -470,12 +477,5 @@ mod storage_tests {
             assert_eq!(std::fs::read(&destination).unwrap(), expected);
             std::fs::remove_file(&destination).unwrap();
         }
-    }
-}
-
-impl Callbacks for NoEvents {
-    fn emit(&mut self, _: i32, _: &str) {}
-    fn cancelled(&mut self) -> bool {
-        false
     }
 }

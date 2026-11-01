@@ -147,7 +147,7 @@ pub fn run_spu_files(
     xml: &std::path::Path,
     input: &std::path::Path,
     output: &std::path::Path,
-    rgba: &mut dyn FnMut(&std::path::Path, &mut [u8]) -> Result<(u32, u32), String>,
+    rgba: &mut crate::spu::RgbaReader<'_>,
 ) -> Result<(), MenuError> {
     crate::spu::run(xml, input, output, rgba).map_err(|error| {
         eprintln!("ERR: invalid menu XML: {error}");
