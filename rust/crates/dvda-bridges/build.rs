@@ -1,8 +1,19 @@
 use std::{env, path::PathBuf};
 fn main() {
     let target = env::var("TARGET").expect("Cargo must provide TARGET to the bridge build script");
-    if target != "x86_64-pc-windows-msvc" {
-        panic!("MSVC-only dvda-bridges requires TARGET=x86_64-pc-windows-msvc, got {target}");
+    if !matches!(
+        target.as_str(),
+        "x86_64-pc-windows-msvc" | "aarch64-pc-windows-msvc"
+    ) {
+        panic!("MSVC-only dvda-bridges requires a Windows MSVC target, got {target}");
+    }
+    if target == "aarch64-pc-windows-msvc"
+        && (env::var_os("CARGO_FEATURE_MEDIA").is_some()
+            || env::var_os("CARGO_FEATURE_IMAGE").is_some())
+    {
+        panic!(
+            "ARM64 media/image bridges require ARM64 FFmpeg/ImageMagick builds, which are not              available yet; build with --no-default-features or provide ARM64 native libraries"
+        );
     }
     println!("cargo:rerun-if-env-changed=DVDA_FFMPEG_PREFIX");
     println!("cargo:rerun-if-env-changed=DVDA_MAGICK_WORK");

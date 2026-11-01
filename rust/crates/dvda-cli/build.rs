@@ -1,8 +1,11 @@
 fn main() {
-    assert_eq!(
-        std::env::var("TARGET").unwrap(),
-        "x86_64-pc-windows-msvc",
-        "DVD-Audio Maker supports only Windows x64 MSVC"
+    let target = std::env::var("TARGET").unwrap();
+    assert!(
+        matches!(
+            target.as_str(),
+            "x86_64-pc-windows-msvc" | "aarch64-pc-windows-msvc"
+        ),
+        "DVD-Audio Maker supports only Windows x64/ARM64 MSVC, got {target}"
     );
     if std::env::var_os("CARGO_FEATURE_DIRECT_BRIDGES").is_some() && !static_ffmpeg() {
         for library in [

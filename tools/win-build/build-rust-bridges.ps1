@@ -9,13 +9,15 @@ param(
  [string]$DependencyRuntime,
  [string]$AcceptanceReport,
  [switch]$DirectMenu,
- [switch]$LegacyImageLoader
+ [switch]$LegacyImageLoader,
+ [ValidateSet('x86_64-pc-windows-msvc','aarch64-pc-windows-msvc')][string]$Target='x86_64-pc-windows-msvc'
 )
 $ErrorActionPreference='Stop'
 if($Component -ne 'direct' -and $Component -ne 'author'){Write-Warning 'DLL/shim modes are differential adapters only, not production integration.'}
 if($Component -eq 'direct' -and (Get-ChildItem $Output -Filter 'dvda-*.dll' -File -ErrorAction SilentlyContinue)){throw 'Direct output must not contain project-owned adapter DLLs'}
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$BuildTriple='x86_64-pc-windows-msvc'
+$BuildTriple=$Target
+if($Target -eq 'aarch64-pc-windows-msvc'){throw 'ARM64 bridge builds require ARM64 FFmpeg/ImageMagick libraries, which are not available yet; use build-rust-arm64.ps1 for the portable ARM64 checks.'}
 $msvcJson=& python -X utf8 (Join-Path $PSScriptRoot 'msvc_env.py') --json
 if($LASTEXITCODE -ne 0){throw 'Cannot initialize Visual Studio x64 environment'}
 $msvc=$msvcJson | ConvertFrom-Json
