@@ -1,8 +1,17 @@
 //! Bounded PE32+ reader used before packaging untrusted or stale build outputs.
 use std::collections::BTreeSet;
 
+#[allow(dead_code)]
 pub fn imports(bytes: &[u8], dll: bool) -> Result<BTreeSet<String>, String> {
-    let pe = Pe::new(bytes, dll)?;
+    imports_with_machine(bytes, dll, 0x8664)
+}
+
+pub fn imports_with_machine(
+    bytes: &[u8],
+    dll: bool,
+    machine: u16,
+) -> Result<BTreeSet<String>, String> {
+    let pe = Pe::new(bytes, dll, machine)?;
     let mut result = BTreeSet::new();
     for (index, width, name_offset) in [(1, 20, 12), (13, 32, 4)] {
         let (rva, size) = pe.directory(index)?;
@@ -92,14 +101,17 @@ struct Pe<'a> {
 }
 
 impl<'a> Pe<'a> {
-    fn new(bytes: &'a [u8], dll: bool) -> Result<Self, String> {
+    fn new(bytes: &'a [u8], dll: bool, machine: u16) -> Result<Self, String> {
         if bytes.get(..2) != Some(b"MZ") {
             return Err("Missing DOS header".into());
         }
         let offset = u32_at(bytes, 0x3c)? as usize;
         let header = slice(bytes, offset, 24)?;
-        if &header[..4] != b"PE\0\0" || u16_at(header, 4)? != 0x8664 {
-            return Err("Native component must be Windows x64".into());
+        let actual = u16_at(header, 4)?;
+        if &header[..4] != b"PE\0\0" || actual != machine {
+            return Err(format!(
+                "Native component machine 0x{actual:04X} does not match target 0x{machine:04X}"
+            ));
         }
         let flags = u16_at(header, 22)?;
         if flags & 2 == 0 || (flags & 0x2000 != 0) != dll {

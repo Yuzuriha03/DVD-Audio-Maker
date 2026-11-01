@@ -26,7 +26,10 @@ struct Args {
     image_author: Option<PathBuf>,
     source: Option<PathBuf>,
     prebuilt: Option<PathBuf>,
+    magick_work: Option<PathBuf>,
+    image_deps: Option<PathBuf>,
     version: String,
+    target: String,
 }
 
 fn main() {
@@ -62,6 +65,7 @@ fn run_args(arguments: Vec<String>) -> Result<(), String> {
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut options = Args {
         version: "v1.0".into(),
+        target: "x86_64-pc-windows-msvc".into(),
         ..Args::default()
     };
     while let Some(argument) = args.next() {
@@ -75,12 +79,24 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--image-author" => options.image_author = Some(value.into()),
             "--source" => options.source = Some(value.into()),
             "--prebuilt" => options.prebuilt = Some(value.into()),
+            "--magick-work" => options.magick_work = Some(value.into()),
+            "--image-deps" => options.image_deps = Some(value.into()),
             "--version" => options.version = value,
+            "--target" => options.target = value,
             _ => return Err(format!("Unknown option: {argument}")),
         }
     }
     validate_version(&options.version)?;
+    validation::target_machine(&options.target)?;
     Ok(options)
+}
+
+fn target_label(target: &str) -> &'static str {
+    if target == "aarch64-pc-windows-msvc" {
+        "Windows ARM64"
+    } else {
+        "Windows x64"
+    }
 }
 
 fn validate_version(value: &str) -> Result<(), String> {
@@ -132,7 +148,13 @@ fn package(options: Args) -> Result<(), String> {
         .or_else(|| env::current_dir().ok())
         .ok_or("Cannot determine repository directory")?;
     let repository = normal_path(canonical(&repository)?);
-    let target = repository.join("rust/target/x86_64-pc-windows-msvc/release");
+    let target_machine = validation::target_machine(&options.target)?;
+    let arm64 = target_machine == 0xAA64;
+    let suffix = if arm64 { "win-arm64" } else { "win-x64" };
+    let target = repository
+        .join("rust/target")
+        .join(&options.target)
+        .join("release");
     let output = options
         .output
         .map(|path| absolutize(&repository, path))
@@ -177,13 +199,21 @@ fn package(options: Args) -> Result<(), String> {
         "tools/win-build/prebuilt",
     );
     // All provenance and dependency checks precede any changes to release files.
-    let mut inputs = validation::validate(&media, &image, &author)?;
+    let magick_work = options
+        .magick_work
+        .clone()
+        .map(|path| absolutize(&repository, path));
+    let image_deps = options
+        .image_deps
+        .clone()
+        .map(|path| absolutize(&repository, path));
+    let mut inputs = validation::validate(&media, &image, &author, &options.target)?;
     // Optional encoder artifacts are authenticated as oracles, never shipped.
     if let Some(encoder) = options.encoder_runtime {
         let encoder = required_dir(absolutize(&repository, encoder), "encoder oracle")?;
         inputs
             .records
-            .extend(validation::validate_encoder(&encoder)?.records);
+            .extend(validation::validate_encoder(&encoder, &options.target)?.records);
     }
     for name in [
         "Cargo.lock",
@@ -296,22 +326,33 @@ fn package(options: Args) -> Result<(), String> {
     }
     typemap.push_str("</typemap>");
     fs::write(runtime.join("type.xml"), typemap).map_err(io_error)?;
-    validation::validate_staged(&runtime)?;
+    validation::validate_staged(&runtime, &options.target)?;
     let embedded = candidate.root.join("runtime.bin");
     fs::write(&embedded, dvda_core::runtime::pack(&runtime)?).map_err(io_error)?;
-    let archive_name = format!("DVD-Audio-Maker-{}-win-x64.zip", options.version);
+    let archive_name = format!("DVD-Audio-Maker-{}-{suffix}.zip", options.version);
     finish_release(
         &candidate.root,
         &output,
         &inputs,
         &options.version,
+        suffix,
+        &options.target,
         || {
-            build_gui(&repository, &embedded, &options.version, &media)?;
+            build_gui(
+                &repository,
+                &embedded,
+                &options.version,
+                &media,
+                &options.target,
+                arm64,
+                magick_work.as_deref(),
+                image_deps.as_deref(),
+            )?;
             copy_file(
                 &target.join("dvda-desktop.exe"),
                 &stage.join("DVD-Audio-Maker.exe"),
             )?;
-            validation::validate_shipped(&stage.join("DVD-Audio-Maker.exe"))
+            validation::validate_shipped(&stage.join("DVD-Audio-Maker.exe"), &options.target)
         },
         compress_zip,
     )?;
@@ -336,6 +377,8 @@ fn finish_release(
     output: &Path,
     inputs: &validation::Inputs,
     version: &str,
+    suffix: &str,
+    target: &str,
     build: impl FnOnce() -> Result<(), String>,
     compress: impl FnOnce(&Path, &Path) -> Result<(), String>,
 ) -> Result<(), String> {
@@ -343,11 +386,11 @@ fn finish_release(
     let stage = candidate.join("DVD-Audio-Maker");
     let runtime = candidate.join("runtime-input");
     if runtime.is_dir() {
-        validation::validate_combined(&[&stage, &runtime])?;
+        validation::validate_combined(&[&stage, &runtime], target)?;
     } else {
-        validation::validate_staged(&stage)?;
+        validation::validate_staged(&stage, target)?;
     }
-    let archive_name = format!("DVD-Audio-Maker-{version}-win-x64.zip");
+    let archive_name = format!("DVD-Audio-Maker-{version}-{suffix}.zip");
     let archive = candidate.join(&archive_name);
     compress(&stage, &archive)?;
     if !archive.is_file() || fs::metadata(&archive).map_err(io_error)?.len() == 0 {
@@ -363,7 +406,7 @@ fn finish_release(
         .collect::<Result<_, _>>()?;
     relative_files.sort();
     relative_files.push(PathBuf::from(&archive_name));
-    write_records(candidate, &relative_files, inputs, version)?;
+    write_records(candidate, &relative_files, inputs, version, target)?;
     relative_files.push(PathBuf::from("MANIFEST.txt"));
     relative_files.push(PathBuf::from("release-build.json"));
     publication::commit(candidate, output, &relative_files)
@@ -374,6 +417,7 @@ fn write_records(
     files: &[PathBuf],
     inputs: &validation::Inputs,
     version: &str,
+    target: &str,
 ) -> Result<(), String> {
     let mut rows = String::new();
     let mut records = serde_json::Map::new();
@@ -390,24 +434,44 @@ fn write_records(
         .map(|path| Ok(serde_json::json!({"path":path,"sha256":validation::file_hash(path)?})))
         .collect::<Result<_, String>>()?;
     fs::write(candidate.join("MANIFEST.txt"), rows).map_err(io_error)?;
-    fs::write(candidate.join("release-build.json"),serde_json::to_vec_pretty(&serde_json::json!({"version":version,"target":"Windows x64","files":records,"component_manifests":sources})).map_err(io_error)?).map_err(io_error)
+    fs::write(candidate.join("release-build.json"),serde_json::to_vec_pretty(&serde_json::json!({"version":version,"target":target_label(target),"files":records,"component_manifests":sources})).map_err(io_error)?).map_err(io_error)
 }
 
-fn build_gui(repository: &Path, archive: &Path, version: &str, media: &Path) -> Result<(), String> {
-    let mut environment = msvc_environment(repository)?;
+fn build_gui(
+    repository: &Path,
+    archive: &Path,
+    version: &str,
+    media: &Path,
+    target: &str,
+    arm64: bool,
+    magick_work: Option<&Path>,
+    image_deps: Option<&Path>,
+) -> Result<(), String> {
+    let mut environment = msvc_environment(repository, arm64)?;
+    if let Some(cargo_bin) = env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".cargo/bin")) {
+        let path = environment
+            .get("PATH")
+            .cloned()
+            .unwrap_or_default();
+        environment.insert(
+            "PATH".into(),
+            format!("{};{path}", cargo_bin.display()),
+        );
+    }
     if media.join("build-manifest.json").is_file() {
         environment.insert(
             "DVDA_FFMPEG_PREFIX".into(),
             media.to_string_lossy().into_owned(),
         );
     }
-    let status = Command::new("cargo")
+    let mut command = Command::new("cargo");
+    command
         .args([
             "build",
             "--manifest-path",
             "rust/Cargo.toml",
             "--target",
-            "x86_64-pc-windows-msvc",
+            target,
             "--release",
             "--offline",
             "-p",
@@ -418,9 +482,20 @@ fn build_gui(repository: &Path, archive: &Path, version: &str, media: &Path) -> 
         .current_dir(repository)
         .envs(environment)
         .env("DVDA_RUNTIME_ARCHIVE", archive)
-        .env("DVDA_PRODUCT_VERSION", version)
-        .status()
-        .map_err(io_error)?;
+        .env("DVDA_PRODUCT_VERSION", version);
+    if let Some(path) = magick_work
+        .map(|path| path.to_string_lossy().into_owned())
+        .or_else(|| env::var("DVDA_MAGICK_WORK").ok())
+    {
+        command.env("DVDA_MAGICK_WORK", path);
+    }
+    if let Some(path) = image_deps
+        .map(|path| path.to_string_lossy().into_owned())
+        .or_else(|| env::var("DVDA_IMAGE_DEPS_DIR").ok())
+    {
+        command.env("DVDA_IMAGE_DEPS_DIR", path);
+    }
+    let status = command.status().map_err(io_error)?;
     if status.success() {
         Ok(())
     } else {
@@ -430,17 +505,25 @@ fn build_gui(repository: &Path, archive: &Path, version: &str, media: &Path) -> 
 
 fn msvc_environment(
     repository: &Path,
+    arm64: bool,
 ) -> Result<std::collections::BTreeMap<String, String>, String> {
-    let output = Command::new("python")
+    let mut command = Command::new("python");
+    command
         .args(["-X", "utf8"])
         .arg(repository.join("tools/win-build/msvc_env.py"))
         .arg("--json")
-        .current_dir(repository)
+        .args(if arm64 {
+            vec!["--arch", "arm64"]
+        } else {
+            Vec::new()
+        })
+        .current_dir(repository);
+    let output = command
         .output()
-        .map_err(|error| format!("Initialize Visual Studio x64 build environment: {error}"))?;
+        .map_err(|error| format!("Initialize Visual Studio MSVC build environment: {error}"))?;
     if !output.status.success() {
         return Err(format!(
-            "Visual Studio x64 build environment initialization failed: {}",
+            "Visual Studio MSVC build environment initialization failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
@@ -539,7 +622,7 @@ fn io_error(error: impl std::fmt::Display) -> String {
 
 fn print_usage() {
     println!(
-        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--media-runtime PATH] [--image-runtime PATH] [--encoder-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
+        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--media-runtime PATH] [--image-runtime PATH] [--encoder-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--magick-work PATH] [--image-deps PATH] [--target TRIPLE] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
     );
 }
 
@@ -718,6 +801,8 @@ mod tests {
                 &output,
                 &inputs,
                 "v1.0",
+                "win-x64",
+                "x86_64-pc-windows-msvc",
                 || match reason {
                     "build" => Err("build failed".into()),
                     "copy" => copy_file(
@@ -746,7 +831,7 @@ mod tests {
             fs::write(f.root.join(file), b"first").unwrap();
         }
         let inputs = f.validate().unwrap();
-        write_records(&f.root, &files, &inputs, "v1.0").unwrap();
+        write_records(&f.root, &files, &inputs, "v1.0", "x86_64-pc-windows-msvc").unwrap();
         let old = fs::read(f.root.join("MANIFEST.txt")).unwrap();
         let record: serde_json::Value =
             serde_json::from_slice(&fs::read(f.root.join("release-build.json")).unwrap()).unwrap();
@@ -757,7 +842,7 @@ mod tests {
             );
         }
         fs::write(f.root.join("app.exe"), b"other").unwrap();
-        write_records(&f.root, &files, &inputs, "v1.0").unwrap();
+        write_records(&f.root, &files, &inputs, "v1.0", "x86_64-pc-windows-msvc").unwrap();
         assert_ne!(old, fs::read(f.root.join("MANIFEST.txt")).unwrap());
     }
 }

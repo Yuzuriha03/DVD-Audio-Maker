@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'native'))
 from pe_dependencies import Pe
 from msvc_env import is_vc_runtime, msvc_environment, vc_runtime_roots
 
-TARGET = 'x86_64-pc-windows-msvc'
+TARGETS = {'x64': 'x86_64-pc-windows-msvc', 'arm64': 'aarch64-pc-windows-msvc'}
 
 
 def sha(path):
@@ -47,7 +47,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, help='Legacy configured source, used only for menu assets')
     parser.add_argument('--msys-root', type=Path, help=argparse.SUPPRESS)
-    parser.add_argument('--work-directory', type=Path, default=Path('build/rust-author-production'))
+    parser.add_argument('--arch', choices=tuple(TARGETS), default='x64',
+                        help='Target architecture for the author runtime (default x64)')
+    parser.add_argument('--work-directory', type=Path,
+                        help='Defaults to build/rust-author-production (x64) or rust-author-production-arm64')
     parser.add_argument('--ffmpeg-runtime', type=Path, default=os.environ.get('DVDA_FFMPEG_PREFIX'))
     parser.add_argument('--magick-work', type=Path, default=os.environ.get('DVDA_MAGICK_WORK'))
     parser.add_argument('--image-dependencies', type=Path, default=os.environ.get('DVDA_IMAGE_DEPS_DIR'),
@@ -63,7 +66,8 @@ def main():
     args = parser.parse_args()
     if not args.ffmpeg_runtime or not args.magick_work:
         parser.error('--ffmpeg-runtime and --magick-work (or corresponding DVDA env vars) are required')
-    work = args.work_directory.resolve()
+    target = TARGETS[args.arch]
+    work = (args.work_directory or Path('build/rust-author-production' if args.arch == 'x64' else 'build/rust-author-production-arm64')).resolve()
     work.mkdir(parents=True, exist_ok=True)
     ffmpeg, magick = [p.resolve() for p in (args.ffmpeg_runtime, args.magick_work)]
     image_dependencies = args.image_dependencies.resolve() if args.image_dependencies else magick/'lib'
@@ -75,8 +79,8 @@ def main():
         path = ffmpeg/('lib' if static_ffmpeg else 'bin')/name
         if sha(path) != entry['sha256'] or path.stat().st_size != entry['bytes']:
             raise ValueError('FFmpeg input checksum mismatch: '+name)
-    if ffmpeg_record.get('target') != TARGET or ffmpeg_record.get('toolchain') != 'msvc':
-        raise ValueError('Production Rust author requires FFmpeg built with Windows x64 MSVC')
+    if ffmpeg_record.get('target') != target or ffmpeg_record.get('toolchain') != 'msvc':
+        raise ValueError(f'Production Rust author requires FFmpeg built with Windows MSVC for {target}')
     required = [magick/'compile/MagickWand/.libs/MagickWand-7.Q16HDRI.lib',
                 magick/'compile/MagickCore/.libs/MagickCore-7.Q16HDRI.lib',
                 magick/'freetype-minimal.lib']
@@ -88,16 +92,16 @@ def main():
         if not path.is_file():
             raise FileNotFoundError('MSVC-native image codec .lib dependency is missing: '+str(path))
         required.append(path)
-    env = msvc_environment()
+    env = msvc_environment(arch=args.arch)
     env.update({
         'PATH': str(Path.home()/'.cargo/bin')+os.pathsep+env['PATH'],
         'DVDA_FFMPEG_PREFIX': str(ffmpeg), 'DVDA_MAGICK_WORK': str(magick),
         'DVDA_IMAGE_DEPS_DIR': str(image_dependencies),
     })
     env['RUSTFLAGS'] = env.get('RUSTFLAGS', '') + ' -C target-feature=+crt-static'
-    target = args.target_directory.resolve()
+    target_dir = args.target_directory.resolve()
     command = ['cargo', 'build', '--offline', '--release', '--manifest-path', str(repo/'rust/Cargo.toml'),
-               '--target', TARGET, '--target-dir', str(target), '-p', 'dvda-core',
+               '--target', target, '--target-dir', str(target_dir), '-p', 'dvda-core',
                '--no-default-features', '--features', 'direct-bridges,rust-mlp']
     inputs = rust_sources(repo)
     with (work/'rust-author-build.log').open('wb') as log:
@@ -173,7 +177,7 @@ def main():
     (work/'type.xml').write_text(typemap+'</typemap>',encoding='utf-8')
     runtime_files={p.name:{'sha256':sha(p),'bytes':p.stat().st_size,'imports':sorted(Pe(p).imports())} for p in sorted(work.glob('*.dll'))}
     assets={p.relative_to(work).as_posix():{'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted([*work.glob('*.xml'),*work.glob('fonts/*'),*work.glob('data/menu/*')]) if p.is_file()}
-    record={'schema_version':1,'implementation':'rust','target':TARGET,'toolchain':'msvc',
+    record={'schema_version':1,'implementation':'rust','target':target,'toolchain':'msvc',
         'project_c_author_compiled':False,'menu_linkage':'in-process-rust',
         'ffmpeg_linkage':'static-source-built' if static_ffmpeg else 'shared-source-built-shared-profile',
         'ffmpeg_profile':'build-msvc-ffmpeg.py:'+ffmpeg_record['profile'],

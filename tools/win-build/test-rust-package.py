@@ -71,7 +71,16 @@ def runtime(executable):
 def check(root):
     root = root.resolve()
     record = json.loads((root / "release-build.json").read_text(encoding="utf-8"))
-    archive_name = f"DVD-Audio-Maker-{record['version']}-win-x64.zip"
+    target = record.get("target")
+    if target == "Windows ARM64":
+        suffix = "win-arm64"
+        expected_machine = 0xAA64
+    elif target == "Windows x64":
+        suffix = "win-x64"
+        expected_machine = 0x8664
+    else:
+        raise AssertionError(f"Unknown release target: {target!r}")
+    archive_name = f"DVD-Audio-Maker-{record['version']}-{suffix}.zip"
     archive = root / archive_name
     expected_records = {"DVD-Audio-Maker/" + name for name in EXPECTED} | {archive_name}
     assert set(record["files"]) == expected_records
@@ -96,9 +105,13 @@ def check(root):
         for name in EXPECTED:
             assert zipped.read(name) == (root / "DVD-Audio-Maker" / name).read_bytes(), name
     executable = (root / "DVD-Audio-Maker/DVD-Audio-Maker.exe").read_bytes()
+    pe_offset = struct.unpack_from("<I", executable, 0x3C)[0]
+    machine = struct.unpack_from("<H", executable, pe_offset + 4)[0]
+    assert machine == expected_machine, (
+        f"Shipped EXE machine 0x{machine:04X} does not match target {target}")
     hashes = runtime(executable)
     assert not list(root.glob(".package-*")), "Temporary package candidates remain"
-    return {"directory": str(root), "zip": archive_name,
+    return {"directory": str(root), "target": target, "zip": archive_name,
             "zip_sha256": sha(archive.read_bytes()), "exe_sha256": sha(executable),
             "zip_root_files": sorted(EXPECTED), "manifest_records": len(manifest),
             "embedded_files": len(hashes), "runtime_hashes": hashes,

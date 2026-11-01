@@ -7,14 +7,6 @@ fn main() {
     ) {
         panic!("MSVC-only dvda-bridges requires a Windows MSVC target, got {target}");
     }
-    if target == "aarch64-pc-windows-msvc"
-        && (env::var_os("CARGO_FEATURE_MEDIA").is_some()
-            || env::var_os("CARGO_FEATURE_IMAGE").is_some())
-    {
-        panic!(
-            "ARM64 media/image bridges require ARM64 FFmpeg/ImageMagick builds, which are not              available yet; build with --no-default-features or provide ARM64 native libraries"
-        );
-    }
     println!("cargo:rerun-if-env-changed=DVDA_FFMPEG_PREFIX");
     println!("cargo:rerun-if-env-changed=DVDA_MAGICK_WORK");
     println!("cargo:rerun-if-env-changed=DVDA_IMAGE_DEPS_DIR");
@@ -35,8 +27,8 @@ fn main() {
         )
         .expect("invalid FFmpeg build-manifest.json");
         assert!(
-            record["target"] == "x86_64-pc-windows-msvc" && record["toolchain"] == "msvc",
-            "MSVC-only media bridge requires FFmpeg libraries compiled with MSVC; rebuild with tools/win-build/build-msvc-ffmpeg.py"
+            record["target"] == target && record["toolchain"] == "msvc",
+            "media bridge requires FFmpeg libraries compiled with MSVC for {target}; rebuild with tools/win-build/build-msvc-ffmpeg.py"
         );
         generate_layout(&prefix);
         std::fs::write(
@@ -91,7 +83,11 @@ fn main() {
                         .arg("/nologo")
                         .arg(format!("/def:{}", definition.display()))
                         .arg(format!("/name:{lib}-{version}.dll"))
-                        .arg("/machine:x64")
+                        .arg(if target == "aarch64-pc-windows-msvc" {
+                            "/machine:arm64"
+                        } else {
+                            "/machine:x64"
+                        })
                         .arg(format!("/out:{}", archive.display()))
                         .status()
                         .expect("cannot generate MSVC FFmpeg import library with LIB")
@@ -173,18 +169,49 @@ fn require_msvc_library(directory: &std::path::Path, name: &str) {
 fn generate_layout(prefix: &std::path::Path) {
     use std::{fs, process::Command};
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let exe = out.join("layout-probe.exe");
-    let cc = env::var_os("CC").unwrap_or_else(|| "cl.exe".into());
+    let target = env::var("TARGET").unwrap();
+    // ARM64 Windows follows the same LLP64 data layout as x64 (8-byte pointers,
+    // 8-byte alignment for i64/double), so probe the ABI with a host x64 cl.exe
+    // and run the probe locally; the generated offsets are valid for ARM64 too.
+    let mut exe = out.join("layout-probe.exe");
+    let mut cc = env::var_os("CC").unwrap_or_else(|| "cl.exe".into());
+    if target == "aarch64-pc-windows-msvc" {
+        let configured = env::var_os("DVDA_HOST_CC").map(std::ffi::OsString::from);
+        let derived = std::path::PathBuf::from(&cc)
+            .to_string_lossy()
+            .replace("\\ARM64\\", "\\x64\\")
+            .replace("\\arm64\\", "\\x64\\")
+            .replace("/ARM64/", "/x64/")
+            .replace("/arm64/", "/x64/");
+        let host: std::ffi::OsString = configured.unwrap_or_else(|| derived.into());
+        assert!(
+            std::path::Path::new(&host).is_file() || std::process::Command::new(&host).arg("/?").output().is_ok(),
+            "ARM64 cross layout probe needs host x64 cl.exe; set DVDA_HOST_CC to <VC>/bin/Hostx64/x64/cl.exe"
+        );
+        cc = host;
+        exe = out.join("layout-probe-host.exe");
+    }
+    let mut probe = Command::new(cc);
+    probe
+        .args(["/nologo", "/TC", "/std:c17"])
+        .arg(format!("/I{}", prefix.join("include").display()))
+        .arg("layout-probe.c")
+        .arg(format!("/Fe:{}", exe.display()))
+        .arg(format!("/Fo:{}", out.join("layout-probe.obj").display()));
+    if target == "aarch64-pc-windows-msvc" {
+        // The ARM64 VsDevCmd environment points INCLUDE/LIB at ARM64 CRT and
+        // SDK libraries; the host x64 probe must use the x64 equivalents.
+        for name in ["INCLUDE", "LIB"] {
+            if let Some(value) = env::var_os(name) {
+                let value = value.to_string_lossy()
+                    .replace("ARM64", "x64")
+                    .replace("arm64", "x64");
+                probe.env(name, value);
+            }
+        }
+    }
     assert!(
-        Command::new(cc)
-            .args(["/nologo", "/TC", "/std:c17"])
-            .arg(format!("/I{}", prefix.join("include").display()))
-            .arg("layout-probe.c")
-            .arg(format!("/Fe:{}", exe.display()))
-            .arg(format!("/Fo:{}", out.join("layout-probe.obj").display()))
-            .status()
-            .unwrap()
-            .success(),
+        probe.status().unwrap().success(),
         "MSVC FFmpeg layout probe compilation failed; set CC to cl.exe-compatible compiler"
     );
     println!("cargo:rerun-if-changed=layout-probe.c");
@@ -235,30 +262,54 @@ fn generate_layout(prefix: &std::path::Path) {
 fn generate_image_layout(work: &std::path::Path) {
     use std::{fs, process::Command};
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let exe = out.join("image-layout-probe.exe");
-    let cc = env::var_os("CC").unwrap_or_else(|| "cl.exe".into());
+    let target = env::var("TARGET").unwrap();
+    // ARM64 Windows has the same LLP64 data layout as x64, so run the probe
+    // with the host x64 compiler and reuse the resulting offsets on ARM64.
+    let mut exe = out.join("image-layout-probe.exe");
+    let mut cc = env::var_os("CC").unwrap_or_else(|| "cl.exe".into());
+    let cross = target == "aarch64-pc-windows-msvc";
+    if cross {
+        let configured = env::var_os("DVDA_HOST_CC").map(std::ffi::OsString::from);
+        let derived = PathBuf::from(&cc)
+            .to_string_lossy()
+            .replace("\\ARM64\\", "\\x64\\")
+            .replace("\\arm64\\", "\\x64\\")
+            .replace("/ARM64/", "/x64/")
+            .replace("/arm64/", "/x64/");
+        cc = configured.unwrap_or_else(|| derived.into());
+        exe = out.join("image-layout-probe-host.exe");
+    }
+    let mut probe = Command::new(cc);
+    probe
+        .args([
+            "image-layout-probe.c",
+            "/nologo",
+            "/TP",
+            "/std:c++17",
+            "/DMAGICKCORE_QUANTUM_DEPTH=16",
+            "/DMAGICKCORE_HDRI_ENABLE=1",
+        ])
+        .arg(format!("/I{}", work.join("compile").display()))
+        .arg(format!("/I{}", work.join("include").display()))
+        .arg(format!("/I{}", work.join("ImageMagick").display()))
+        .arg(format!("/I{}", work.join("ImageMagick-7.0.8-47").display()))
+        .arg(format!("/Fe:{}", exe.display()))
+        .arg(format!(
+            "/Fo:{}",
+            out.join("image-layout-probe.obj").display()
+        ));
+    if cross {
+        for name in ["INCLUDE", "LIB"] {
+            if let Some(value) = env::var_os(name) {
+                let value = value.to_string_lossy()
+                    .replace("ARM64", "x64")
+                    .replace("arm64", "x64");
+                probe.env(name, value);
+            }
+        }
+    }
     assert!(
-        Command::new(cc)
-            .args([
-                "image-layout-probe.c",
-                "/nologo",
-                "/TP",
-                "/std:c++17",
-                "/DMAGICKCORE_QUANTUM_DEPTH=16",
-                "/DMAGICKCORE_HDRI_ENABLE=1",
-            ])
-            .arg(format!("/I{}", work.join("compile").display()))
-            .arg(format!("/I{}", work.join("include").display()))
-            .arg(format!("/I{}", work.join("ImageMagick").display()))
-            .arg(format!("/I{}", work.join("ImageMagick-7.0.8-47").display()))
-            .arg(format!("/Fe:{}", exe.display()))
-            .arg(format!(
-                "/Fo:{}",
-                out.join("image-layout-probe.obj").display()
-            ))
-            .status()
-            .unwrap()
-            .success(),
+        probe.status().unwrap().success(),
         "MSVC ImageMagick layout probe compilation failed; set CC to cl.exe-compatible compiler"
     );
     println!("cargo:rerun-if-changed=image-layout-probe.c");

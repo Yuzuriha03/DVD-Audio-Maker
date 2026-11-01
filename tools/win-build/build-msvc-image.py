@@ -1,4 +1,4 @@
-"""Build pinned ImageMagick 7 Q16 HDRI and delegates with native MSVC x64 tools.
+"""Build pinned ImageMagick 7 Q16 HDRI and delegates with MSVC x64/ARM64 tools.
 
 The upstream project generator is compiled without its optional MFC GUI. No
 MinGW compiler, Unix shell, prebuilt codec library or UCRT jump shim is used.
@@ -18,7 +18,7 @@ from zipfile import ZipFile
 from msvc_env import msvc_environment
 from worker_policy import worker_count
 
-TARGET = 'x86_64-pc-windows-msvc'
+TARGETS = {'x64': 'x86_64-pc-windows-msvc', 'arm64': 'aarch64-pc-windows-msvc'}
 VERSION = '7.1.2-33'
 CODERS = ['JPEG', 'PNG', 'WEBP', 'XC', 'GRADIENT', 'INFO', 'NULL',
           'RGB', 'GRAY', 'LABEL', 'CAPTION', 'MPR', 'MVG']
@@ -60,9 +60,12 @@ HEADLESS = r'''
 #include "XmlConfigFiles.h"
 #include "ResourceFiles.h"
 int wmain(int argc, wchar_t **argv) {
-  if (argc != 2) return 2;
+  if (argc != 3) return 2;
   try {
     Options o(std::wstring(argv[1])+L"\\");
+    if (std::wstring(argv[2]) == L"arm64") o.architecture=Architecture::Arm64;
+    else if (std::wstring(argv[2]) == L"x64") o.architecture=Architecture::x64;
+    else return 2;
     o.checkImageMagickVersion();
     o.isStaticBuild=TRUE; o.useOpenCL=FALSE; o.useOpenMP=FALSE;
     o.enableDpc=FALSE; o.excludeDeprecated=FALSE; o.onlyMagick=TRUE;
@@ -193,7 +196,9 @@ static FT_FILE *dvda_utf8_fopen(const char *path)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--work-directory', type=Path, default=Path('build/msvc-native/image'))
+    parser.add_argument('--arch', choices=tuple(TARGETS), default='x64')
+    parser.add_argument('--work-directory', type=Path,
+                        help='Defaults to build/msvc-native/image (x64) or image-arm64 (ARM64)')
     parser.add_argument('--source-directory', type=Path, help='Reuse an authenticated Windows source/build tree')
     parser.add_argument('--cache-directory', type=Path, help='Pinned source ZIP cache')
     parser.add_argument('--jobs', type=int, default=worker_count())
@@ -201,8 +206,17 @@ def main():
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error('--jobs must be positive')
-    work = args.work_directory.resolve(); work.mkdir(parents=True, exist_ok=True)
+    default_work = Path('build/msvc-native')/('image' if args.arch == 'x64' else 'image-arm64')
+    work = (args.work_directory or default_work).resolve(); work.mkdir(parents=True, exist_ok=True)
     source = (args.source_directory or work/'source').resolve()
+    manifest = work/'image-build.json'
+    if manifest.exists():
+        previous_target = json.loads(manifest.read_text(encoding='utf-8')).get('target')
+        if previous_target != TARGETS[args.arch]:
+            parser.error('Use separate work directories for x64 and ARM64 builds')
+    other_arch = 'arm64' if args.arch == 'x64' else 'x64'
+    if (source/'ProjectFiles'/other_arch).exists():
+        parser.error('Use separate source/work directories for x64 and ARM64 builds')
     cache = (args.cache_directory or work/'downloads').resolve(); cache.mkdir(parents=True, exist_ok=True)
     sources = {}
     for name in SOURCES:
@@ -227,7 +241,9 @@ def main():
     if args.prepare_only:
         print('Pinned MSVC image sources authenticated: '+str(source), flush=True)
         return
-    env = msvc_environment()
+    # The generator must run on the build host, even when emitting ARM64 projects.
+    env = msvc_environment(arch='x64')
+    target_env = msvc_environment(arch=args.arch)
     env['PATH'] = str(source/'Configure/Tools')+os.pathsep+env['PATH']
     commands = []
 
@@ -247,7 +263,9 @@ def main():
          configure/'src/headless.cpp', '/Fe'+str(configure/'headless.exe'), '/Fo'+str(configure)+os.sep,
          '/link', 'shlwapi.lib', 'version.lib'], configure, 'configure-build.log')
     (source/'Artifacts/bin').mkdir(parents=True, exist_ok=True)
-    run([configure/'headless.exe', source], source, 'configure-generate.log')
+    run([configure/'headless.exe', source, args.arch], source, 'configure-generate.log')
+    env = target_env
+    env['PATH'] = str(source/'Configure/Tools')+os.pathsep+env['PATH']
     generated_patches = {}
     for project in (source/'ProjectFiles').rglob('*.vcxproj'):
         text = project.read_text(encoding='utf-8')
@@ -267,14 +285,16 @@ def main():
         write_changed(project, text)
         generated_patches[project.relative_to(source).as_posix()] = sha(project)
     msbuild = Path(env['VSINSTALLDIR'])/'MSBuild/Current/Bin/MSBuild.exe'
-    solution_filter = source/'IM7.Static.x64.libraries.slnf'
-    projects = sorted(path.relative_to(source).as_posix() for path in (source/'ProjectFiles/x64').glob('CORE_*/*.vcxproj')
+    solution_filter = source/f'IM7.Static.{args.arch}.libraries.slnf'
+    projects = sorted(path.relative_to(source).as_posix() for path in (source/'ProjectFiles'/args.arch).glob('CORE_*/*.vcxproj')
                       if path.parent.name != 'CORE_Magick++')
-    write_changed(solution_filter, json.dumps({'solution': {'path': 'IM7.Static.x64.sln', 'projects': projects}}, indent=2)+'\n')
+    if not projects:
+        raise RuntimeError(f'No {args.arch} library projects generated')
+    write_changed(solution_filter, json.dumps({'solution': {'path': f'IM7.Static.{args.arch}.sln', 'projects': projects}}, indent=2)+'\n')
     # Upstream solutions dispatch Build correctly, including all delegate and
     # codec project dependencies. /MP is limited to keep /m bounded as well.
     run([msbuild, solution_filter, '/nologo', '/t:Build', '/m:'+str(args.jobs),
-         '/p:Configuration=Release', '/p:Platform=x64', '/p:PlatformToolset=v145',
+         '/p:Configuration=Release', '/p:Platform='+args.arch, '/p:PlatformToolset=v145',
          '/p:CL_MPCount=1', '/v:minimal'], source, 'image-msbuild.log')
     libs = source/'Artifacts/lib'
     core = work/'compile/MagickCore/.libs/MagickCore-7.Q16HDRI.lib'
@@ -318,7 +338,7 @@ def main():
         shutil.copy2(config, work/config.name)
     shutil.copy2(source/'ImageMagick/LICENSE', work/'NOTICE.txt')
     headers = {path.relative_to(work).as_posix(): sha(path) for path in sorted((work/'include').rglob('*.h'))}
-    record = {'schema_version': 1, 'version': VERSION, 'target': TARGET, 'toolchain': 'msvc',
+    record = {'schema_version': 1, 'version': VERSION, 'target': TARGETS[args.arch], 'toolchain': 'msvc',
               'profile': 'static', 'crt': 'static', 'quantum_depth': 16, 'hdri': True, 'openmp': False, 'opencl': False,
               'external_delegates': False, 'coders': CODERS, 'source_directory': str(source),
               'sources': sources, 'patches': patched, 'generated_projects': generated_patches,

@@ -29,6 +29,16 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --wor
 
 生成的 ImageMagick/委托库工程使用项目名前缀命名对象文件，避免合并 MagickCore、JPEG 8/12/16 位静态库时出现同名对象和 MSVC LNK4255 调试信息丢失警告。
 
+### ImageMagick MSVC ARM64 交叉构建
+
+```bat
+python tools\win-build\build-msvc-image.py --arch arm64 --cache-directory build\msvc-native\image\downloads
+```
+
+需要 Visual Studio v145 的 x64 与 ARM64 C++ 工具及 Windows SDK。无界面生成器仍编译为可在宿主运行的 x64，显式选择上游 `Architecture::Arm64` 后，使用交叉工具链构建 ARM64 库，不在宿主执行 ARM64 程序。默认输出为 `build/msvc-native/image-arm64`；不传 `--arch` 保持原来的 x64 和 `build/msvc-native/image`。两种架构必须使用独立源码/构建目录（生成头文件及库名相同），只能共享 ZIP 缓存。清单 target 为 `aarch64-pc-windows-msvc`。这不代表已完成整个应用的 ARM64 打包或真机运行验收。
+
+架构选择回归测试：`python tools\win-build\test-msvc-image.py`。
+
 ## 应用图标
 
 图标源文件为 [SVG](../../assets/dvd-audio-maker.svg)，[PNG](../../assets/dvd-audio-maker.png) 为透明背景栅格母版，[ICO](../../assets/dvd-audio-maker.ico) 包含 16、20、24、32、40、48、64、96、128、256 像素版本。更新 SVG 后，先在浏览器导出透明背景正方形 PNG，再运行：

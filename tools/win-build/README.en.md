@@ -31,6 +31,23 @@ The packager verifies hashes, sizes, x64 architecture, the full import closure a
 
 FFmpeg and ImageMagick command-line programs are not runtime inputs. Rust bridges call their retained source-built libraries.
 
+### ImageMagick MSVC ARM64 cross-build
+
+```bat
+python tools\win-build\build-msvc-image.py --arch arm64 --cache-directory build\msvc-native\image\downloads
+```
+
+Install the Visual Studio v145 x64 **and ARM64** C++ tools and Windows SDK. The
+headless generator runs as x64; it explicitly selects upstream `Architecture::Arm64`
+and builds the ARM64 library solution with the cross toolchain. No ARM64 program
+is executed on the host. The default output is `build/msvc-native/image-arm64`;
+omitting `--arch` retains x64 and `build/msvc-native/image`. Source/build trees must
+be separate because generated headers and archive names are shared; only the ZIP
+cache may be shared. The manifest records `aarch64-pc-windows-msvc`. This adds the
+native image libraries, not full ARM64 application packaging or runtime validation.
+
+Run architecture-selection regressions with `python tools\win-build\test-msvc-image.py`.
+
 Build static FFmpeg in a separate directory to preserve shared comparison builds:
 
 ```bat

@@ -13,6 +13,18 @@ pub struct Inputs {
     pub records: Vec<PathBuf>,
 }
 
+pub fn target_machine(target: &str) -> Result<u16, String> {
+    match target {
+        "x86_64-pc-windows-msvc" => Ok(0x8664),
+        "aarch64-pc-windows-msvc" => Ok(0xAA64),
+        other => Err(format!("Unsupported Windows target: {other}")),
+    }
+}
+
+fn imports_for(bytes: &[u8], dll: bool, target: &str) -> Result<BTreeSet<String>, String> {
+    pe::imports_with_machine(bytes, dll, target_machine(target)?)
+}
+
 fn read_json(path: &Path) -> Result<Value, String> {
     let mut bytes = fs::read(path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -21,14 +33,20 @@ fn read_json(path: &Path) -> Result<Value, String> {
     serde_json::from_slice(&bytes).map_err(|e| format!("Invalid {}: {e}", path.display()))
 }
 
-pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, String> {
+pub fn validate(
+    media: &Path,
+    image: &Path,
+    author: &Path,
+    target: &str,
+) -> Result<Inputs, String> {
+    target_machine(target)?;
     let author_record = read_json(&author.join("author-build.json"))?;
     if author_record["implementation"] == "rust"
         && author_record["ffmpeg_linkage"] == "static-source-built"
     {
         let manifest = media.join("build-manifest.json");
         let native = read_json(&manifest)?;
-        if native["target"] != "x86_64-pc-windows-msvc"
+        if native["target"] != target
             || native["toolchain"] != "msvc"
             || native["profile"] != "static"
             || native["linkage"] != "static"
@@ -63,18 +81,34 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
                 ));
             }
         }
-        let (image_record, _) = component(
-            image,
-            "image-build.json",
-            "files",
-            &["dvda-image.dll"],
-            true,
-            true,
-        )?;
-        if image_record["implementation"] != "project-owned-rust" {
-            return Err("Image provenance must identify the Rust implementation".into());
-        }
-        let mut inputs = validate_rust_author(author, &author_record)?;
+        let _image_record = if target == "aarch64-pc-windows-msvc" {
+            // ARM64 static builds link the image implementation in-process; the
+            // image directory supplies the build provenance and the shared
+            // colors/policy configuration, not a dvda-image DLL.
+            let record = read_json(&image.join("image-build.json"))?;
+            if record["target"] != target || record["toolchain"] != "msvc" {
+                return Err(format!(
+                    "Image provenance must identify the ARM64 Rust implementation: {}",
+                    image.join("image-build.json").display()
+                ));
+            }
+            record
+        } else {
+            let (record, _) = component(
+                image,
+                "image-build.json",
+                "files",
+                &["dvda-image.dll"],
+                true,
+                true,
+                target,
+            )?;
+            if record["implementation"] != "project-owned-rust" {
+                return Err("Image provenance must identify the Rust implementation".into());
+            }
+            record
+        };
+        let mut inputs = validate_rust_author(author, &author_record, target)?;
         inputs
             .records
             .extend([manifest, image.join("image-build.json")]);
@@ -94,6 +128,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
             ],
             false,
             true,
+            target,
         )?;
         if media_record["profile"] != "shared" {
             return Err("Onefile media runtime must use profile=shared".into());
@@ -106,11 +141,12 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
             &["dvda-image.dll"],
             true,
             true,
+            target,
         )?;
         if image_record["implementation"] != "project-owned-rust" {
             return Err("Image provenance must identify the Rust implementation".into());
         }
-        let mut linked = validate_rust_author(author, &author_record)?;
+        let mut linked = validate_rust_author(author, &author_record, target)?;
         for (name, path) in media_files {
             if let Some(existing) = linked.files.get(&name) {
                 if fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)? {
@@ -144,6 +180,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         ],
         false,
         true,
+        target,
     )?;
     if media_record["profile"] != "shared" {
         return Err("Onefile media runtime must use profile=shared".into());
@@ -155,6 +192,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         &["dvda-image.dll"],
         true,
         true,
+        target,
     )?;
     let _ = image_record;
     let (author_record, author_files) = component(
@@ -168,6 +206,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
         ],
         false,
         true,
+        target,
     )?;
     if author_record["ffmpeg_linkage"] != "shared-source-built-shared-profile"
         || author_record["ffmpeg_profile"] != "build-msvc-ffmpeg.py:shared"
@@ -180,7 +219,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
     // directory, but check the executable against the DLLs actually shipped.
     author_files.remove("dvda-disc-verify.dll");
     for (name, path) in &author_files {
-        let imports = pe::imports(&fs::read(path).map_err(err)?, true)
+        let imports = imports_for(&fs::read(path).map_err(err)?, true, target)
             .map_err(|error| format!("{}: {error}", path.display()))?;
         closure(name, &imports, &author_files, true)?;
     }
@@ -207,11 +246,11 @@ pub fn validate(media: &Path, image: &Path, author: &Path) -> Result<Inputs, Str
     Ok(inputs)
 }
 
-fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String> {
+fn validate_rust_author(author: &Path, record: &Value, target: &str) -> Result<Inputs, String> {
     let static_ffmpeg = record["ffmpeg_linkage"] == "static-source-built"
         && record["ffmpeg_profile"] == "build-msvc-ffmpeg.py:static";
     if record["schema_version"] != 1
-        || record["target"] != "x86_64-pc-windows-msvc"
+        || record["target"] != target
         || record["toolchain"] != "msvc"
         || record["project_c_author_compiled"] != false
         || record["menu_linkage"] != "in-process-rust"
@@ -272,6 +311,7 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
         required,
         false,
         true,
+        target,
     )?;
     if files
         .keys()
@@ -327,7 +367,7 @@ fn validate_rust_author(author: &Path, record: &Value) -> Result<Inputs, String>
     })
 }
 
-pub fn validate_encoder(directory: &Path) -> Result<Inputs, String> {
+pub fn validate_encoder(directory: &Path, target: &str) -> Result<Inputs, String> {
     let (record, files) = component(
         directory,
         "encoder-build.json",
@@ -335,6 +375,7 @@ pub fn validate_encoder(directory: &Path) -> Result<Inputs, String> {
         &["mlp_encoder.dll"],
         true,
         true,
+        target,
     )?;
     if record["implementation"] != "rust" || record["abi_version"].as_u64() != Some(1) {
         return Err(
@@ -354,6 +395,7 @@ fn component(
     required: &[&str],
     single: bool,
     api_sets: bool,
+    target: &str,
 ) -> Result<(Value, BTreeMap<String, PathBuf>), String> {
     let path = directory.join(manifest);
     let record = read_json(&path)?;
@@ -376,7 +418,7 @@ fn component(
                 return Err(format!("Artifact checksum mismatch: {name}"));
             }
             if name.ends_with(".exe") {
-                validate_binary(&path, entry, false)?;
+                validate_binary(&path, entry, false, target)?;
             }
         } else {
             libraries.insert(name.clone(), entry.clone());
@@ -425,7 +467,7 @@ fn component(
         ));
     }
     for (name, metadata) in metadata {
-        let imports = validate_binary(&directory.join(name), metadata, true)?;
+        let imports = validate_binary(&directory.join(name), metadata, true, target)?;
         closure(name, &imports, &files, api_sets)?;
     }
     Ok((record, files))
@@ -435,6 +477,7 @@ pub fn validate_binary(
     path: &Path,
     metadata: &Value,
     dll: bool,
+    target: &str,
 ) -> Result<BTreeSet<String>, String> {
     let bytes = fs::read(path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
     let expected = metadata["sha256"]
@@ -448,7 +491,7 @@ pub fn validate_binary(
             path.display()
         ));
     }
-    pe::imports(&bytes, dll).map_err(|e| format!("{}: {e}", path.display()))
+    imports_for(&bytes, dll, target).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 fn closure(
@@ -465,11 +508,12 @@ fn closure(
     Ok(())
 }
 
-pub fn validate_staged(directory: &Path) -> Result<(), String> {
-    validate_combined(&[directory])
+pub fn validate_staged(directory: &Path, target: &str) -> Result<(), String> {
+    validate_combined(&[directory], target)
 }
 
-pub fn validate_combined(directories: &[&Path]) -> Result<(), String> {
+pub fn validate_combined(directories: &[&Path], target: &str) -> Result<(), String> {
+    target_machine(target)?;
     let mut files = BTreeMap::new();
     for directory in directories {
         for entry in fs::read_dir(directory).map_err(err)? {
@@ -489,7 +533,7 @@ pub fn validate_combined(directories: &[&Path]) -> Result<(), String> {
         }
     }
     for (name, path) in &files {
-        let imports = pe::imports(&fs::read(path).map_err(err)?, name.ends_with(".dll"))
+        let imports = imports_for(&fs::read(path).map_err(err)?, name.ends_with(".dll"), target)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         closure(name, &imports, &files, true)?;
     }
@@ -545,10 +589,10 @@ fn system_dependency(name: &str, api_sets: bool) -> bool {
 
 /// The shipped GUI must be self-contained: every import is a Windows system DLL.
 /// The Rust author, the media and image libraries, and the menu archives are linked in.
-pub fn validate_shipped(executable: &Path) -> Result<(), String> {
+pub fn validate_shipped(executable: &Path, target: &str) -> Result<(), String> {
     let bytes = fs::read(executable).map_err(err)?;
-    let imports =
-        pe::imports(&bytes, false).map_err(|error| format!("{}: {error}", executable.display()))?;
+    let imports = imports_for(&bytes, false, target)
+        .map_err(|error| format!("{}: {error}", executable.display()))?;
     if let Some(name) = imports.iter().find(|name| !system_dependency(name, true)) {
         return Err(format!("Shipped executable imports a bundled DLL: {name}"));
     }
@@ -781,6 +825,7 @@ pub(crate) mod tests {
                 &self.root.join("media"),
                 &self.root.join("image"),
                 &self.root.join("author"),
+                "x86_64-pc-windows-msvc",
             )
         }
         pub fn edit(&self, dir: &str, change: impl FnOnce(&mut Value)) {
@@ -810,14 +855,14 @@ pub(crate) mod tests {
     fn encoder_requires_rust_abi_integrity_and_closed_inventory() {
         let f = Fixture::new();
         let directory = f.root.join("encoder");
-        assert_eq!(validate_encoder(&directory).unwrap().files.len(), 1);
+        assert_eq!(validate_encoder(&directory, "x86_64-pc-windows-msvc").unwrap().files.len(), 1);
         for (field, value) in [
             ("implementation", serde_json::json!("c")),
             ("abi_version", serde_json::json!(2)),
         ] {
             f.edit("encoder", |d| d[field] = value);
             assert!(
-                validate_encoder(&directory)
+                validate_encoder(&directory, "x86_64-pc-windows-msvc")
                     .unwrap_err()
                     .contains("ABI version 1")
             );
@@ -828,7 +873,7 @@ pub(crate) mod tests {
         }
         fs::write(directory.join("mlp_encoder.dll"), b"tampered").unwrap();
         assert!(
-            validate_encoder(&directory)
+            validate_encoder(&directory, "x86_64-pc-windows-msvc")
                 .unwrap_err()
                 .contains("checksum")
         );
@@ -838,7 +883,7 @@ pub(crate) mod tests {
             pe::fixture(true, &["missing.dll"], &[]),
         );
         assert!(
-            validate_encoder(&directory)
+            validate_encoder(&directory, "x86_64-pc-windows-msvc")
                 .unwrap_err()
                 .contains("Missing native dependency")
         );
@@ -848,21 +893,21 @@ pub(crate) mod tests {
             pe::fixture(true, &[], &["missing.dll"]),
         );
         assert!(
-            validate_encoder(&directory)
+            validate_encoder(&directory, "x86_64-pc-windows-msvc")
                 .unwrap_err()
                 .contains("Missing native dependency")
         );
         f.replace("encoder", "mlp_encoder.dll", pe::fixture(true, &[], &[]));
         fs::write(directory.join("extra.dll"), pe::fixture(true, &[], &[])).unwrap();
         assert!(
-            validate_encoder(&directory)
+            validate_encoder(&directory, "x86_64-pc-windows-msvc")
                 .unwrap_err()
                 .contains("actual DLL files")
         );
         fs::remove_file(directory.join("extra.dll")).unwrap();
         fs::remove_file(directory.join("encoder-build.json")).unwrap();
         assert!(
-            validate_encoder(&directory)
+            validate_encoder(&directory, "x86_64-pc-windows-msvc")
                 .unwrap_err()
                 .contains("Cannot read")
         );
@@ -873,21 +918,21 @@ pub(crate) mod tests {
         let f = Fixture::new();
         let directory = f.root.join("encoder");
         fs::remove_file(directory.join("mlp_encoder.dll")).unwrap();
-        assert!(validate_encoder(&directory).is_err());
+        assert!(validate_encoder(&directory, "x86_64-pc-windows-msvc").is_err());
 
         let mut x86 = pe::fixture(true, &[], &[]);
         x86[132..134].copy_from_slice(&0x14cu16.to_le_bytes());
         for bytes in [b"not a PE".to_vec(), x86] {
             let f = Fixture::new();
             f.replace("encoder", "mlp_encoder.dll", bytes);
-            assert!(validate_encoder(&f.root.join("encoder")).is_err());
+            assert!(validate_encoder(&f.root.join("encoder"), "x86_64-pc-windows-msvc").is_err());
         }
 
         let f = Fixture::new();
         f.edit("encoder", |record| {
             record["files"]["extra.dll"] = record["files"]["mlp_encoder.dll"].clone();
         });
-        assert!(validate_encoder(&f.root.join("encoder")).is_err());
+        assert!(validate_encoder(&f.root.join("encoder"), "x86_64-pc-windows-msvc").is_err());
     }
 
 
