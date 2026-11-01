@@ -221,8 +221,18 @@ mod tests {
     fn normalized_s24_matches_wave_decoder() {
         let root = std::env::temp_dir().join(format!("dvda-s24-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
-        let library = PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").unwrap_or_default())
-            .join("dvda-media.dll");
+        let Some(media_dir) = std::env::var_os("DVDA_MEDIA_NATIVE_DIR") else {
+            eprintln!("skipping PCM differential check: DVDA_MEDIA_NATIVE_DIR is not set");
+            return;
+        };
+        let library = PathBuf::from(media_dir).join("dvda-media.dll");
+        if !library.is_file() {
+            eprintln!(
+                "skipping PCM differential check: retained dvda-media.dll not found at {}",
+                library.display()
+            );
+            return;
+        }
         for (bits, channels) in [16, 20, 24]
             .into_iter()
             .flat_map(|bits| (1..=6).map(move |channels| (bits, channels)))

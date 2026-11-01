@@ -66,7 +66,6 @@ pub fn validate(
             "swscale",
             "swresample",
             "soxr",
-            "zlib",
         ] {
             let filename = format!("{name}.lib");
             let path = media.join("lib").join(&filename);
@@ -702,7 +701,6 @@ pub(crate) mod tests {
             "swresample",
             "swscale",
             "soxr",
-            "zlib",
         ] {
             let name = format!("{name}.lib");
             let bytes = b"!<arch>\nfixture";

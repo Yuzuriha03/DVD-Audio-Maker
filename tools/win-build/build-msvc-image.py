@@ -20,8 +20,8 @@ from worker_policy import worker_count
 
 TARGETS = {'x64': 'x86_64-pc-windows-msvc', 'arm64': 'aarch64-pc-windows-msvc'}
 VERSION = '7.1.2-33'
-CODERS = ['JPEG', 'PNG', 'WEBP', 'XC', 'GRADIENT', 'INFO', 'NULL',
-          'RGB', 'GRAY', 'LABEL', 'CAPTION', 'MPR', 'MVG']
+CODERS = ['JPEG', 'PNG', 'WEBP', 'XC', 'GRADIENT', 'INFO',
+          'CAPTION', 'MVG']
 # Official ImageMagick repositories, frozen by revision and compressed bytes.
 SOURCES = {
     'Windows': ('8c38b33481e36f76b6d75596bda8c56a49b64ea5', '475908f4b12840f25bea5fc5f939d23ed723bd908831a5bb5532f787a1c0e12e'),

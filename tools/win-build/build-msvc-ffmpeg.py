@@ -2,7 +2,7 @@
 
 MSYS2 supplies only the POSIX configure/make shell. C compilation, archive
 creation, and linking use Visual Studio. The static profile embeds all five
-FFmpeg libraries, zlib and libsoxr with the static CRT; shared profiles remain
+FFmpeg libraries and libsoxr with the static CRT; shared profiles remain
 available for development comparisons. No MinGW runtime is included.
 """
 from pathlib import Path
@@ -26,12 +26,8 @@ TARGET = 'x86_64-pc-windows-msvc'
 VERSION = '9.0.2'
 SOURCE_SHA256 = '8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e'
 SIGNER = 'FCF986EA15E6E293A5644F10B4322F04D67658D8'
-NASM_VERSION = '2.16.03'
-NASM_SHA256 = '3ee4782247bcb874378d02f7eab4e294a84d3d15f3f6ee2de2f47a46aa7226e6'
 SOXR_URL = 'https://codeload.github.com/chirlu/soxr/tar.gz/refs/tags/0.1.3'
 SOXR_SHA256 = 'db6ca1b1e8405c6ef92f8294fc123d910abf0a114003b3f0f13fa57a95fd62d0'
-ZLIB_URL = 'https://zlib.net/fossils/zlib-1.3.2.tar.gz'
-ZLIB_SHA256 = 'bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16'
 
 
 def sha(path):
@@ -146,26 +142,6 @@ def build_dependencies(work, downloads, cache, cmake, env, log, static_crt=False
     ctest = Path(cmake).with_name('ctest.exe')
     run_logged([ctest, '--test-dir', soxr_build, '--output-on-failure'], log, env)
     run_logged([cmake, '--install', soxr_build], log, env)
-    zlib_archive = downloads/'zlib-1.3.2.tar.gz'
-    download(ZLIB_URL, zlib_archive, ZLIB_SHA256, cache)
-    zlib = extract(zlib_archive, sources, 'zlib-1.3.2')
-    zlib_build = work/'zlib-compile'
-    zlib_build.mkdir(exist_ok=True)
-    zlib_sources = ('adler32', 'compress', 'crc32', 'deflate', 'gzclose', 'gzlib',
-                    'gzread', 'gzwrite', 'inflate', 'infback', 'inftrees',
-                    'inffast', 'trees', 'uncompr', 'zutil')
-    run_logged([env['CC'], '/nologo', '/c', '/O2', '/MT' if static_crt else '/MD', '/std:c17',
-                '/D_CRT_SECURE_NO_WARNINGS', '/I'+str(zlib)] +
-               [zlib/(name+'.c') for name in zlib_sources], log, env, zlib_build)
-    run_logged([env['DVDA_LIB_TOOL'], '/nologo', '/machine:x64',
-                '/out:'+str(prefix/'lib/zlib.lib')] +
-               [zlib_build/(name+'.obj') for name in zlib_sources], log, env)
-    for name in ('zlib.h', 'zconf.h'):
-        shutil.copyfile(zlib/name, prefix/'include'/name)
-    run_logged([env['CC'], '/nologo', '/O2', '/MT' if static_crt else '/MD', '/I'+str(zlib),
-                zlib/'test/example.c', prefix/'lib/zlib.lib',
-                '/Fe:'+str(zlib_build/'zlib-test.exe'), '/Fo:'+str(zlib_build/'zlib-test.obj')], log, env)
-    run_logged([zlib_build/'zlib-test.exe'], log, env, zlib_build)
     return prefix
 
 
@@ -174,7 +150,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--msys-root', type=Path, default=Path(os.environ.get('MSYS2_ROOT', 'C:/msys64')))
     parser.add_argument('--work-directory', type=Path, default=repo/'build/msvc-native/ffmpeg')
-    parser.add_argument('--source-cache', type=Path, help='Optional directory holding pinned FFmpeg/NASM/source archives')
+    parser.add_argument('--source-cache', type=Path, help='Optional directory holding pinned FFmpeg/source archives')
     parser.add_argument('--cmake', type=Path, help='Native Windows CMake executable for MSVC libsoxr')
     parser.add_argument('--profile', choices=['mlp', 'menu', 'media', 'shared', 'static'], default='shared')
     args = parser.parse_args()
@@ -217,15 +193,6 @@ def main():
     sources = work/'sources'
     sources.mkdir(exist_ok=True)
     source = extract(archive, sources, f'ffmpeg-{VERSION}')
-    nasm_url = f'https://www.nasm.us/pub/nasm/releasebuilds/{NASM_VERSION}/win64/nasm-{NASM_VERSION}-win64.zip'
-    nasm_archive = downloads/f'nasm-{NASM_VERSION}-win64.zip'
-    download(nasm_url, nasm_archive, NASM_SHA256, cache)
-    with zipfile.ZipFile(nasm_archive) as file:
-        for name in file.namelist():
-            if Path(name).is_absolute() or '..' in Path(name).parts:
-                raise ValueError('Unsafe NASM archive entry: '+name)
-        file.extractall(work/'nasm')
-    nasm = work/'nasm'/f'nasm-{NASM_VERSION}'/'nasm.exe'
     build, prefix = work/'compile', work/'install'
     build.mkdir(exist_ok=True)
     prefix.mkdir(exist_ok=True)
@@ -233,11 +200,11 @@ def main():
     with (work/'build.log').open('wb') as log:
         deps = build_dependencies(work, downloads, cache, Path(cmake).resolve(), env, log,
                                   static_crt=args.profile == 'static')
-        for name in ('soxr.lib', 'zlib.lib'):
+        for name in ('soxr.lib',):
             if not (deps/'lib'/name).is_file():
                 raise FileNotFoundError('MSVC static FFmpeg dependency is missing: '+str(deps/'lib'/name))
         configure = [short_path(source)+'/configure', '--prefix='+short_path(prefix),
-                     '--toolchain=msvc', '--target-os=win32', '--arch=x86_64', '--cpu=x86-64',
+                     '--toolchain=msvc', '--target-os=win32', '--arch=x86_64', '--cpu=x86-64', '--disable-asm',
                      '--disable-programs', '--disable-doc', '--disable-debug',
                      '--disable-autodetect', '--disable-everything', '--disable-network',
                      '--disable-avdevice', '--disable-avfilter', '--disable-swscale', '--disable-swresample',
@@ -245,7 +212,6 @@ def main():
                      '--enable-decoder=mlp', '--enable-encoder=mlp', '--enable-parser=mlp',
                      '--enable-demuxer=mlp', '--enable-muxer=mlp', '--enable-protocol=file,pipe',
                      '--disable-pthreads', '--enable-w32threads', '--enable-small', '--enable-gpl', '--enable-version3',
-                     '--x86asmexe='+short_path(nasm),
                      '--extra-cflags='+('-MT' if args.profile == 'static' else '-MD')+' -I'+native_short_path(deps/'include'),
                      '--extra-ldflags=-libpath:'+native_short_path(deps/'lib')]
         if args.profile == 'static':
@@ -261,10 +227,10 @@ def main():
                           '--enable-decoder=mlp,pcm_s16le,pcm_s24le,pcm_s32le', '--enable-encoder=mlp,mpeg2video,mp2',
                           '--enable-parser=mlp,mpegvideo,mpegaudio', '--enable-demuxer=mlp,wav', '--enable-muxer=mlp,mpeg2dvd']
         if args.profile in ('media', 'shared', 'static'):
-            configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr', '--enable-zlib',
-                '--enable-decoder=mlp,flac,alac,aac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video,png,mjpeg',
-                '--enable-encoder=mlp,flac,pcm_s16le,pcm_s24le,png', '--enable-parser=mlp,flac,aac,mpegvideo,png,mjpeg',
-                '--enable-demuxer=mlp,flac,mov,wav,mpegps,mpegvideo', '--enable-muxer=mlp,flac,wav']
+            configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr',
+                '--enable-decoder=mlp,flac,alac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video',
+                '--enable-encoder=mlp,pcm_s16le,pcm_s24le', '--enable-parser=mlp,flac,mpegvideo,mpegaudio',
+                '--enable-demuxer=mlp,flac,mov,wav,mpegps,mpegvideo', '--enable-muxer=mlp,wav']
         if args.profile in ('shared', 'static'):
             configure += ['--enable-encoder=mpeg2video,mp2', '--enable-parser=mpegaudio', '--enable-muxer=mpeg2dvd']
         commands = ['set -eu', 'export LC_ALL=C', 'export SOURCE_DATE_EPOCH=1789699562',
@@ -293,7 +259,7 @@ def main():
             if source_lib.resolve() != destination.resolve():
                 shutil.copyfile(source_lib, destination)
             files[destination.name] = {'sha256': sha(destination), 'bytes': destination.stat().st_size}
-        for name in ('soxr.lib', 'zlib.lib'):
+        for name in ('soxr.lib',):
             destination = prefix/'lib'/name
             shutil.copyfile(deps/'lib'/name, destination)
             files[name] = {'sha256': sha(destination), 'bytes': destination.stat().st_size}
@@ -323,16 +289,15 @@ def main():
                  for name in sorted(expected)}
     record = {'version': VERSION, 'profile': args.profile, 'target': TARGET, 'toolchain': 'msvc',
               'source_url': source_url, 'source_sha256': SOURCE_SHA256, 'signer': SIGNER,
-              'nasm_url': nasm_url, 'nasm_sha256': NASM_SHA256,
               'compiler': env['CC'], 'configure': configure,
               'imports': imports,
               'dependencies': {'soxr': {'version': '0.1.3', 'source_url': SOXR_URL, 'source_sha256': SOXR_SHA256,
                                          'linkage': 'static', 'toolchain': 'msvc',
                                          'source_patch': 'Quote CMake lsr-tests path for workspaces containing spaces',
                                          'validation': '9 upstream native resampler tests'},
-                               'zlib': {'version': '1.3.2', 'source_url': ZLIB_URL, 'source_sha256': ZLIB_SHA256,
+                               'soxr': {'version': '0.1.3',
                                         'linkage': 'static', 'toolchain': 'msvc',
-                                        'validation': 'Native upstream compression/decompression/gzip/dictionary example'}},
+                                        'validation': 'Native upstream resampler tests'}},
               'linkage': 'static' if args.profile == 'static' else 'shared',
               'crt': 'static' if args.profile == 'static' else 'shared',
               'files': files}

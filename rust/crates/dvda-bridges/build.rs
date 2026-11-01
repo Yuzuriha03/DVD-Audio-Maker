@@ -55,7 +55,7 @@ fn main() {
                 );
                 println!("cargo:rustc-link-lib=static={name}");
             }
-            for name in ["soxr", "zlib"] {
+            for name in ["soxr"] {
                 require_msvc_library(&lib_directory, name);
                 println!(
                     "cargo:rerun-if-changed={}",

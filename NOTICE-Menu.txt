@@ -1,7 +1,7 @@
 Menu algorithms derived from patched dvdauthor 0.7.1.
 LPCM byte packing translated from GPL-3.0-or-later dvda-author audio.c.
 Historical author source revision/hashes: rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json.
-Menu source: tools/menu-native/vendor; provenance: ORIGIN.json.
+Menu algorithms are implemented in Rust in rust/crates/dvda-menu; the historical C vendor sources were removed after the migration. Attribution: derived from patched dvdauthor 0.7.1 (GPL-2.0-or-later).
 
 		    GNU GENERAL PUBLIC LICENSE
 		       Version 2, June 1991

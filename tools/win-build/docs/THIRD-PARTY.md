@@ -6,8 +6,7 @@
 | 组件 | 用途 | 许可证/来源 |
 |---|---|---|
 | 内置 Rust author 与 ISO writer | DVD-Audio IFO/AOB、菜单编排及 ISO9660/UDF 镜像 | 项目 GPL v3；迁移自 `dvda-author` 的规则保留上游归属 |
-| 内置 Rust 菜单会话与资源管理 | 菜单生命周期、失败恢复和状态重置 | 项目 GPL v3 |
-| 静态链接的 dvdauthor/spumux 菜单库 | DVD-Video 导航和子图像 | GPL v2 或更高版本，来自 `tools/menu-native/vendor`；保留少量 C 错误处理与可变参数边界 |
+| 内置 Rust 菜单实现 | DVD-Video 导航、子图像及菜单会话/资源管理；行为与规则衍生自 dvdauthor/spumux，归属保留于 `NOTICE-Menu.txt` | 项目 GPL v3；dvdauthor/spumux 归属 |
 | 内置 Rust 媒体适配层与 FFmpeg 库 | 解码、重采样、PCM 校验和菜单 MPEG 生成 | 项目 GPL v3；FFmpeg 及其依赖遵循各自上游许可证 |
 | 内置 Rust 图像适配层与 ImageMagick/FreeType | 图像处理、菜单绘制和字体渲染 | 项目 GPL v3 及 ImageMagick、FreeType 等上游许可证 |
 | 内置 Rust 格式解析与成品校验 | IFO/AOB、MLP/LPCM 和镜像验证 | 项目 GPL v3；LPCM 规则保留 `dvda-author` 归属 |

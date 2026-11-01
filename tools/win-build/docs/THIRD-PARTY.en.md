@@ -7,8 +7,7 @@ libraries. License and provenance notices are at the ZIP root as `LICENSE`,
 | Component | Use | License/source |
 |---|---|---|
 | Built-in Rust author and ISO writer | DVD-Audio IFO/AOB, menu orchestration and ISO9660/UDF images | Project GPL v3; rules translated from `dvda-author` retain upstream attribution |
-| Built-in Rust menu session and resource management | Menu lifecycle, failure recovery and state reset | Project GPL v3 |
-| Statically linked dvdauthor/spumux menu libraries | DVD-Video navigation and subpictures | GPL v2 or later, from `tools/menu-native/vendor`; a small C error-handling and varargs boundary is retained |
+| Built-in Rust menu implementation | DVD-Video navigation, subpictures and menu session/resource management; behavior derived from dvdauthor/spumux with attribution retained in `NOTICE-Menu.txt` | Project GPL v3; dvdauthor/spumux attribution |
 | Built-in Rust media adapter and FFmpeg libraries | Decoding, resampling, PCM checks and menu MPEG generation | Project GPL v3; FFmpeg and dependencies retain their upstream licenses |
 | Built-in Rust image adapter and ImageMagick/FreeType | Image operations, menu drawing and font rendering | Project GPL v3 and upstream ImageMagick, FreeType and dependency licenses |
 | Built-in Rust formats and disc verification | IFO/AOB, MLP/LPCM and image verification | Project GPL v3; LPCM rules retain `dvda-author` attribution |
