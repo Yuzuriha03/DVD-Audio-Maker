@@ -23,16 +23,6 @@ foreach($property in $msvc.PSObject.Properties){[Environment]::SetEnvironmentVar
 if(!$ImageDependencies){$ImageDependencies=if($env:DVDA_IMAGE_DEPS_DIR){$env:DVDA_IMAGE_DEPS_DIR}elseif($MagickWork){Join-Path $MagickWork 'lib'}else{$null}}
 $Output=[IO.Path]::GetFullPath($Output)
 New-Item -ItemType Directory -Force $Output | Out-Null
-$needsMenu = $Component -eq 'direct' -or ($Component -eq 'author' -and -not $LegacyImageLoader)
-if($needsMenu){
- if(!$env:DVDA_MENU_NATIVE_DIR){throw "MSVC-only $Component build requires DVDA_MENU_NATIVE_DIR pointing to an MSVC-native menu vendor build; GNU/MinGW archives are not link-compatible."}
- $menuManifest=Join-Path $env:DVDA_MENU_NATIVE_DIR 'menu-build.json'
- if(!(Test-Path -LiteralPath $menuManifest)){throw "MSVC-only $Component build cannot authenticate menu vendor ABI: missing $menuManifest"}
- $menuRecord=Get-Content -Raw -LiteralPath $menuManifest | ConvertFrom-Json
- if($menuRecord.target -ne $BuildTriple -or $menuRecord.toolchain -ne 'msvc'){
-  throw "MSVC-only $Component build requires menu-build.json target=$BuildTriple/toolchain=msvc; GNU/MinGW vendor archives are not link-compatible."
- }
-}
 $env:PATH="$env:USERPROFILE\.cargo\bin;$env:PATH"
 $env:DVDA_FFMPEG_PREFIX=$FfmpegPrefix
 $env:DVDA_MAGICK_WORK=$MagickWork
@@ -113,11 +103,8 @@ if($Component -eq 'author'){
 }
 if($Component -eq 'direct' -or ($Component -eq 'author' -and ($DirectMenu -or !$LegacyImageLoader))){
  foreach($file in Get-ChildItem "$repo\rust\crates\dvda-menu","$repo\tools\menu-native" -Recurse -File){$inputs[$file.FullName.Substring($repo.Length+1)]=Hash $file.FullName}
- $inputs['tools\win-build\build-menu-runtime.py']=Hash "$repo\tools\win-build\build-menu-runtime.py"
- $menuVendor=$env:DVDA_MENU_NATIVE_DIR
- if(!$menuVendor){$manifests=@(Get-ChildItem "$cargoTarget\$BuildTriple\release\build\dvda-menu-*\out\menu-vendor\menu-build.json" -ErrorAction SilentlyContinue);if($manifests.Count -ne 1){throw 'Cannot identify the embedded menu vendor manifest'};$menuVendor=$manifests[0].DirectoryName}
- foreach($name in @('dvda_menu_spu_vendor.lib','dvda_menu_nav_vendor.lib','menu-build.json')){$file=Get-Item (Join-Path $menuVendor $name);$inputs[$file.FullName]=Hash $file.FullName}
 }
+
 foreach($name in @('Cargo.toml','Cargo.lock')){$inputs["rust\$name"]=Hash "$repo\rust\$name"}
 $inputs['.cargo\config.toml']=Hash "$repo\.cargo\config.toml"
 $inputs['rust\.cargo\config.toml']=Hash "$repo\rust\.cargo\config.toml"

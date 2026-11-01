@@ -1,45 +1,43 @@
-# dvda-menu direct link
+# dvda-menu
 
-The `direct-link` feature embeds the namespaced menu vendor archives in the Rust crate. It is intended for the main application and embedded author; production callers do not load a menu DLL.
+In-process Rust implementation of the DVD-Audio menu pipeline: subpicture
+generation and navigation. No C menu vendor, static vendor archives or menu DLLs
+are built or loaded; dvda-core and the embedded author call this crate directly.
+
+## Modules
+
+- `spu`: menu XML model, palette/button composition, DVD subpicture RLE encoder
+  and MPEG-PS muxer.
+- `nav`: navigation XML model/parser, DVD VM command compiler, private
+  dvdauthor-data sector parsing, MPEG program-stream primitives, VOB scan/write,
+  NAV pack (PCI/DSI) generation, colour remapping and AMGM menu orchestration.
+- `resources`, `session`, `direct`: request ABI, resource handling and the
+  `direct-link` entry points used by dvda-core/dvda-bridges.
 
 ## Build
 
-The supported target is `x86_64-pc-windows-msvc`. Cargo invokes `tools/win-build/build-menu-runtime.py --direct-link` when the MSVC vendor directory is absent. Set `DVDA_MENU_NATIVE_DIR` to a directory containing prebuilt `dvda_menu_spu_vendor.lib` and `dvda_menu_nav_vendor.lib` archives to skip regeneration.
-
-The vendor builder requires Visual Studio C++ x64 tools, the Windows SDK, Cargo/rustc and Python. It uses `cl.exe` and `lib.exe` with static CRT. The acceptance harness uses an image DLL only as a test callback provider; production callers supply the directly linked bridge callback instead.
-
-The vendor archives remain a static third-party boundary. Vendor `exit`/`longjmp` paths are contained by C callback islands and never cross Rust frames. Calls are serialized and per-call state is reset; re-entry and poisoned-session calls fail closed.
+The supported target is `x86_64-pc-windows-msvc`. The crate has no build script:
+`cargo build -p dvda-menu` needs no `DVDA_MENU_NATIVE_DIR` and no vendor archive.
+The `direct-link` feature exposes the in-process entry points; it does not embed
+third-party archives.
 
 ## API
 
-`run_spu(xml, input, output, read_rgba)` is an unsafe Rust wrapper because the supplied callback must satisfy the image-buffer contract; `run_navigation(xml, output)` is safe. Both return `Result<(), MenuError>`. The SPU image callback has the `ReadRgba` ABI used by `dvda_bridges::image::dvda_image_read_rgba`. Raw C callers use `MenuRequest` and `dvda_menu_run_spu` / `dvda_menu_run_navigation`.
-
-Paths and XML must be valid UTF-8 C strings. Callback buffers and dimensions must obey the declared capacity and remain valid only for the call. Callbacks must not unwind, longjmp, retain pointers, or invoke menu entry points recursively. Failed calls may produce partial files; callers must discard them. The direct API reports a nonzero `MenuError` code on vendor/parser failure.
-
-## Core and author integration
-
-`dvda-native/direct-bridges` enables the bridge `menu` feature along with media/image. `dvda-bridges::menu` exports dvd-author's `dvda_menu_subpictures` and `dvda_menu_navigation` ABI using the static menu implementation; SPU uses the directly linked image callback when `image` is enabled. Core's direct feature skips the two menu DLL existence checks while retaining menu assets/fonts checks. Default-feature selection belongs to the main integration.
-
-The legacy `author-loader` configuration still loads menu DLLs. Opting into `author-loader,menu` replaces only that menu loader and retains its image DLL callback provider. `build-rust-bridges.ps1 -Component author -DirectMenu` records that feature combination; `build-image-author.py` accepts it and verifies the static vendor manifest rather than copying menu DLLs. A complete author/main production run remains required before marking a release accepted.
-
-## Frozen C versus Rust source comparison
-
-The frozen `HEAD:tools/menu-native/readxml.c` uses XmlLite, qualified element/attribute names, descriptor parent states, ordered start/attribute/end callbacks, depth below ten, body accumulation, and ASCII-insensitive `1/on/yes` and `0/off/no` booleans. Rust retains that dispatch and boolean behavior. Literal attribute CR/LF/tab normalization now matches XML 1.0; character references preserve their referenced whitespace. Invalid `standalone` declarations are rejected. Both implementations reject DTDs, processing instructions, unknown descriptors and non-body non-whitespace text.
-
-`resources.rs` owns the Win32 private heap, allocation/reallocation, UTF-8 to UTF-16 CRT file access, UTF-8 directory enumeration and file/directory/COM acquisition and reverse-order cleanup. `session.rs` owns request validation, sector-aligned SPU input checks, image callbacks and transaction cleanup. `session-rust.c` contains only the vendor `setjmp` islands, variadic argument decoding and promotion of returned Rust errors into C failures. Rust hooks always return before C calls `longjmp`; jumps never cross a Rust frame.
-
-Direct calls serialize and restore vendor state using a generated `no_std` Rust reset object. The builder records each writable vendor section and its exact size in `menu-build.json`, captures its initial relocated bytes once, and restores those bytes between calls. `session` and `state_reset` provenance identify the Rust implementation. The production vendor directory is `build/menu-direct-vendor-rust-session`. The old C comparison artifacts have been removed after parity acceptance.
-
-Remaining parser parity limits: XmlLite can decode additional XML encodings, while Rust deliberately accepts UTF-8/XML 1.0 only; Rust validates the entire document before callbacks whereas C validates while dispatching, so malformed inputs can fail at different points and leave different partial files. Rust's tokenizer does not fully implement XmlLite's XML name/namespace and declaration grammar validation; generated menu XML does not exercise those forms. Qualified-name descriptor matching is preserved, rather than stripping namespace prefixes.
-
-Menu subpictures are generated by the Rust module `src/spu` (XML model, palette/button composition, DVD RLE encoder and MPEG-PS muxer); no C subpicture code remains. The remaining third-party C algorithms are navigation-only: `dvdauthor.c`, `dvdcompile.c`, `dvdvml.c`, `dvdvmy.c`, `dvdifo.c`, `dvdvob.c`, `dvdpgc.c`, `dvdcli.c` and `compat.c`, including DVD VM parsing and PGCI/VOB construction. They have not been rewritten in Rust.
+- `run_spu_files(xml, input, output, &mut ReadRgba)` and `run_navigation(xml, output)`.
+- Raw callers use `MenuRequest` with `dvda_menu_run_spu` / `dvda_menu_run_navigation`.
+- `run_spu` is unsafe because the RGBA callback must honour the image ABI; the
+  callback must not unwind, longjmp, retain pointers or call back into the menu
+  APIs. Failed runs may leave partial files that callers must discard.
 
 ## Validation
 
-`test-menu-direct.py --bridge-archive <libdvda_bridges.a>` links an executable against the dvd-author ABI and directly linked image callback, without loading an owned menu/image DLL. All four existing PAL/NTSC one-/two-menu fixtures passed SPU byte equality and every navigation file equality against frozen legacy outputs, plus repeated missing-file/invalid-boolean recovery and five null-argument ABI rejection checks. Reports are in `build\menu-author-abi-{pal-1,pal-2,ntsc-1,ntsc-2}\report.json`. Static crate API tests passed the same four fixtures in `build\menu-integrated-*`. All four menu unit tests passed after attribute/declaration fixes. Core direct-feature checking passed with `DVDA_FFMPEG_PREFIX`, `DVDA_MAGICK_WORK`, and `DVDA_MENU_NATIVE_DIR` pointing to the retained source-built dependencies; the earlier concurrent `encode_rust` blocker is no longer present. The 13 filtered legacy core menu tests also passed. Both legacy `author-loader` and `menu,author-loader` checks passed. The `author -DirectMenu` package builder succeeded, and its archive provenance acceptance/stale-hash rejection checks passed; its media-enabled archive is not supported by the menu-only harness linker (which omits FFmpeg import libraries). These are bridge/fixture evidence, not a completed main-program menu authoring acceptance run.
+`cargo test -p dvda-menu` runs the unit and differential tests, including
+byte-identical SPU output, VOB/NAV pack comparison against frozen C baselines,
+multi-page menu assembly and colour-remapping tests.
 
-## Closure and limitations
+`tools/win-build/test-rust-menu-session.py` drives fresh-process SPU/navigation
+sessions (no vendor directory required); production mode uses the assembled
+runtime. `tools/win-build/test-rust-workflow.ps1 -Mode Functional` runs the
+opt-in workspace integration tests that need source-built media/image runtimes.
 
-`test-menu-rust-reset.py` verifies actual `.data`/`.bss` restoration, private statics, relocated pointers and independent SPU/NAV state. `test-rust-menu-session.py` compares complete SPU/navigation outputs from two fresh Rust processes and exercises repeated failures followed by success, Unicode paths, re-entry rejection, serialized concurrent callers, heap/handle counts, real author menus and cancellation. Historical C byte parity is recorded in earlier acceptance reports. The owned C migration record kept in the local source working copy holds the evidence.
-
-The static third-party vendor and its Windows runtime dependencies (`ws2_32` and CRT) remain. The historical DLL producer is available for differential testing; it permits one call per DLL load. The direct API serializes concurrent callers, and rejects recursive calls. Non-Windows targets and callbacks that unwind or jump across Rust frames are unsupported.
+XML input is UTF-8/XML 1.0 only and is validated before any output is written.
