@@ -629,6 +629,59 @@ pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Resul
         Ok(())
     }
 }
+fn rgb24_raster(
+    size: dvda_image::geometry::Dimensions,
+    stride: usize,
+    data: &[u8],
+) -> Result<dvda_image::raster::Raster, i32> {
+    let row_bytes = (size.width() as usize).checked_mul(3).ok_or(INVALID)?;
+    let required = (size.height() as usize - 1)
+        .checked_mul(stride)
+        .and_then(|offset| offset.checked_add(row_bytes))
+        .ok_or(INVALID)?;
+    if stride < row_bytes || data.len() < required {
+        return Err(INVALID);
+    }
+    let mut image = dvda_image::raster::Raster::solid(size, [0, 0, 0, 255]).map_err(|_| ENOMEM)?;
+    for y in 0..size.height() {
+        let start = y as usize * stride;
+        for (x, pixel) in data[start..start + row_bytes].chunks_exact(3).enumerate() {
+            image.blend_pixel(x as i32, y as i32, [pixel[0], pixel[1], pixel[2], 255]);
+        }
+    }
+    Ok(image)
+}
+
+#[cfg(test)]
+mod video_png_tests {
+    use super::*;
+    use dvda_image::{codec, geometry::Dimensions};
+
+    #[test]
+    fn rgb24_padding_and_png_pixels() {
+        let size = Dimensions::new(2, 2).unwrap();
+        let data = [255, 0, 1, 2, 128, 254, 99, 99, 0, 3, 255, 127, 64, 32];
+        let image = rgb24_raster(size, 8, &data).unwrap();
+        let expected = [
+            255, 0, 1, 255, 2, 128, 254, 255, 0, 3, 255, 255, 127, 64, 32, 255,
+        ];
+        assert_eq!(image.rgba(), expected);
+        let mut png = Vec::new();
+        codec::write_png(&image, &mut png).unwrap();
+        let decoded = codec::decode(std::io::Cursor::new(png)).unwrap();
+        assert_eq!(decoded.dimensions(), size);
+        assert_eq!(decoded.rgba(), expected);
+    }
+
+    #[test]
+    fn rgb24_rejects_invalid_layout() {
+        let size = Dimensions::new(2, 2).unwrap();
+        for (stride, data) in [(5, &[0; 14][..]), (8, &[0; 13][..]), (usize::MAX, &[][..])] {
+            assert_eq!(rgb24_raster(size, stride, data).unwrap_err(), INVALID);
+        }
+    }
+}
+
 /// # Safety
 /// `input` must be an open `AVFormatContext` whose stream information has been read, owned by
 /// the caller and alive for the call. `request` and `call` must be valid for the call.
@@ -641,7 +694,6 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
         let stream = av_find_best_stream(input, 0, -1, -1, &mut codec, 0);
         done(stream)?;
         let mut decoder = avcodec_alloc_context3(codec);
-        let mut encoder = ptr::null_mut();
         let mut frame = av_frame_alloc();
         let mut rgb = av_frame_alloc();
         let mut packet = av_packet_alloc();
@@ -713,32 +765,34 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
             {
                 return Err(EIO);
             }
-            codec = avcodec_find_encoder(AV_CODEC_ID_PNG);
-            encoder = avcodec_alloc_context3(codec);
-            if encoder.is_null() {
-                return Err(ENOMEM);
+            let size = dvda_image::geometry::Dimensions::new(
+                (*rgb).width() as u32,
+                (*rgb).height() as u32,
+            )
+            .map_err(|_| INVALID)?;
+            let row_bytes = (size.width() as usize).checked_mul(3).ok_or(ENOMEM)?;
+            let stride = (*rgb).linesize()[0];
+            if stride < 0 || (stride as usize) < row_bytes || (*rgb).data()[0].is_null() {
+                return Err(INVALID);
             }
-            *(*encoder).width_ptr() = (*rgb).width();
-            *(*encoder).height_ptr() = (*rgb).height();
-            *(*encoder).pix_fmt_ptr() = AV_PIX_FMT_RGB24;
-            *(*encoder).time_base_ptr() = Rational { num: 1, den: 25 };
-            *(*encoder).thread_count_ptr() = 1;
-            done(avcodec_open2(encoder, codec, ptr::null_mut()))?;
-            av_packet_unref(packet);
-            done(avcodec_send_frame(encoder, rgb))?;
-            done(avcodec_receive_packet(encoder, packet))?;
+            let image = rgb24_raster(
+                size,
+                stride as usize,
+                std::slice::from_raw_parts(
+                    (*rgb).data()[0],
+                    (size.height() as usize - 1)
+                        .checked_mul(stride as usize)
+                        .and_then(|offset| offset.checked_add(row_bytes))
+                        .ok_or(INVALID)?,
+                ),
+            )?;
             let mut file = File::create(text(request.output)).map_err(open_error)?;
-            file.write_all(std::slice::from_raw_parts(
-                (*packet).data(),
-                (*packet).size() as usize,
-            ))
-            .map_err(|_| EIO)?;
+            dvda_image::codec::write_png(&image, &mut file).map_err(|_| EIO)?;
             file.flush().map_err(|_| EIO)?;
             Ok(())
         })();
         sws_freeContext(scale);
         avcodec_free_context(&mut decoder);
-        avcodec_free_context(&mut encoder);
         av_frame_free(&mut frame);
         av_frame_free(&mut rgb);
         av_packet_free(&mut packet);

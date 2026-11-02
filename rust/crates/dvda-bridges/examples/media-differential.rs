@@ -175,8 +175,19 @@ fn main() {
             );
             assert_eq!(rust, c, "status operation {operation}");
             assert_eq!(actual, expected, "output operation {operation}");
-            if ((operation == 3 && matches!(output_format, 1 | 2 | 3 | 4 | 6))
-                || matches!(operation, 4 | 5))
+            if operation == 4 && c == 0 {
+                let decode = |path| {
+                    dvda_image::codec::decode(std::io::BufReader::new(
+                        std::fs::File::open(path).unwrap(),
+                    ))
+                    .unwrap()
+                };
+                let expected_image = decode("build\\bridge-media-c.pcm");
+                let actual_image = decode("build\\bridge-media-rust.pcm");
+                assert_eq!(actual_image.dimensions(), expected_image.dimensions());
+                assert_eq!(actual_image.rgba(), expected_image.rgba(), "PNG pixels");
+            }
+            if ((operation == 3 && matches!(output_format, 1 | 2 | 3 | 4 | 6)) || operation == 5)
                 && c == 0
             {
                 assert_eq!(

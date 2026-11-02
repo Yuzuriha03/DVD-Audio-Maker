@@ -247,7 +247,7 @@ def main():
         if args.profile in ('media', 'shared', 'static'):
             configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr', '--enable-zlib',
                 '--enable-decoder=mlp,flac,alac,aac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video',
-                '--enable-encoder=pcm_s16le,pcm_s24le,flac,png', '--enable-parser=mlp,flac,aac,mpegvideo,mpegaudio',
+                '--enable-encoder=pcm_s16le,pcm_s24le,flac', '--enable-parser=mlp,flac,aac,mpegvideo,mpegaudio',
                 '--enable-demuxer=mlp,flac,mov,wav,mpegps,mpegvideo', '--enable-muxer=wav,flac',
                 '--enable-protocol=file,pipe']
         if args.profile in ('shared', 'static'):

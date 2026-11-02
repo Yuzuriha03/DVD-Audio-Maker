@@ -25,6 +25,15 @@ No ImageMagick libraries or XML configuration are used by production builds.
 `DVDA_FFMPEG_PREFIX` names the retained FFmpeg install; its native dependencies
 remain required. Media callback routing is thread-local.
 
+Video-frame extraction (operation 4) retains FFmpeg video decoding and swscale
+RGB24 conversion, but writes PNG through `dvda-image`. FFmpeg profiles no longer
+enable the PNG encoder. RGB row padding is excluded and output alpha is opaque;
+decoded pixels, not compressed PNG bytes, are the compatibility contract for this
+operation. The earlier frozen-oracle PNG byte-parity evidence below predates this
+change. PNG and JPEG/JPG cover input decoding remains in `dvda-image`. Existing
+FFmpeg installations must be rebuilt to realize the component reduction; zlib
+and swscale have not been removed.
+
 `tools\win-build\build-rust-bridges.ps1` defaults to `-Component direct`, emitting
 an rlib and provenance manifest, not adapter DLLs. A final executable build must
 resolve and audit its own PE dependency closure; the rlib manifest is not a
