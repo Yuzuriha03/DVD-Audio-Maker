@@ -167,10 +167,9 @@ fn capabilities(minimal: bool) -> i32 {
             muxers,
             protocols
         );
-        if (minimal && codecs == 2 && demuxers == 1 && muxers == 1 && protocols == 2)
+        if (minimal && codecs == 1 && demuxers == 1 && muxers == 1 && protocols == 2)
             || (!minimal
                 && !avcodec_find_decoder(AV_CODEC_ID_MLP).is_null()
-                && !avcodec_find_encoder(AV_CODEC_ID_MLP).is_null()
                 && demuxers >= 1
                 && muxers >= 1
                 && protocols == 2)

@@ -28,6 +28,8 @@ SOURCE_SHA256 = '8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002
 SIGNER = 'FCF986EA15E6E293A5644F10B4322F04D67658D8'
 SOXR_URL = 'https://codeload.github.com/chirlu/soxr/tar.gz/refs/tags/0.1.3'
 SOXR_SHA256 = 'db6ca1b1e8405c6ef92f8294fc123d910abf0a114003b3f0f13fa57a95fd62d0'
+ZLIB_URL = 'https://zlib.net/fossils/zlib-1.3.2.tar.gz'
+ZLIB_SHA256 = 'bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16'
 
 
 def sha(path):
@@ -142,6 +144,22 @@ def build_dependencies(work, downloads, cache, cmake, env, log, static_crt=False
     ctest = Path(cmake).with_name('ctest.exe')
     run_logged([ctest, '--test-dir', soxr_build, '--output-on-failure'], log, env)
     run_logged([cmake, '--install', soxr_build], log, env)
+    zlib_archive = downloads/'zlib-1.3.2.tar.gz'
+    download(ZLIB_URL, zlib_archive, ZLIB_SHA256, cache)
+    zlib = extract(zlib_archive, sources, 'zlib-1.3.2')
+    zlib_build = work/'zlib-compile'
+    zlib_build.mkdir(exist_ok=True)
+    zlib_sources = ('adler32', 'compress', 'crc32', 'deflate', 'gzclose', 'gzlib',
+                    'gzread', 'gzwrite', 'inflate', 'infback', 'inftrees',
+                    'inffast', 'trees', 'uncompr', 'zutil')
+    run_logged([env['CC'], '/nologo', '/c', '/O2', '/MT' if static_crt else '/MD', '/std:c17',
+                '/D_CRT_SECURE_NO_WARNINGS', '/I'+str(zlib)] +
+               [zlib/(name+'.c') for name in zlib_sources], log, env, zlib_build)
+    run_logged([env['DVDA_LIB_TOOL'], '/nologo', '/machine:x64',
+                '/out:'+str(prefix/'lib/zlib.lib')] +
+               [zlib_build/(name+'.obj') for name in zlib_sources], log, env)
+    for name in ('zlib.h', 'zconf.h'):
+        shutil.copyfile(zlib/name, prefix/'include'/name)
     return prefix
 
 
@@ -200,7 +218,7 @@ def main():
     with (work/'build.log').open('wb') as log:
         deps = build_dependencies(work, downloads, cache, Path(cmake).resolve(), env, log,
                                   static_crt=args.profile == 'static')
-        for name in ('soxr.lib',):
+        for name in ('soxr.lib', 'zlib.lib'):
             if not (deps/'lib'/name).is_file():
                 raise FileNotFoundError('MSVC static FFmpeg dependency is missing: '+str(deps/'lib'/name))
         configure = [short_path(source)+'/configure', '--prefix='+short_path(prefix),
@@ -209,7 +227,7 @@ def main():
                      '--disable-autodetect', '--disable-everything', '--disable-network',
                      '--disable-avdevice', '--disable-avfilter', '--disable-swscale', '--disable-swresample',
                      '--enable-avcodec', '--enable-avformat', '--enable-avutil',
-                     '--enable-decoder=mlp', '--enable-encoder=mlp', '--enable-parser=mlp',
+                     '--enable-decoder=mlp', '--enable-parser=mlp',
                      '--enable-demuxer=mlp', '--enable-muxer=mlp', '--enable-protocol=file,pipe',
                      '--disable-pthreads', '--enable-w32threads', '--enable-small', '--enable-gpl', '--enable-version3',
                      '--extra-cflags='+('-MT' if args.profile == 'static' else '-MD')+' -I'+native_short_path(deps/'include'),
@@ -224,13 +242,14 @@ def main():
                          and item not in ('--disable-swscale', '--disable-swresample')]
         if args.profile == 'menu':
             configure += ['--disable-swscale', '--disable-swresample',
-                          '--enable-decoder=mlp,pcm_s16le,pcm_s24le,pcm_s32le', '--enable-encoder=mlp,mpeg2video,mp2',
+                          '--enable-decoder=mlp,pcm_s16le,pcm_s24le,pcm_s32le', '--enable-encoder=mpeg2video,mp2',
                           '--enable-parser=mlp,mpegvideo,mpegaudio', '--enable-demuxer=mlp,wav', '--enable-muxer=mlp,mpeg2dvd']
         if args.profile in ('media', 'shared', 'static'):
-            configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr',
-                '--enable-decoder=mlp,flac,alac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video',
-                '--enable-encoder=mlp,pcm_s16le,pcm_s24le', '--enable-parser=mlp,flac,mpegvideo,mpegaudio',
-                '--enable-demuxer=mlp,flac,mov,wav,mpegps,mpegvideo', '--enable-muxer=mlp,wav']
+            configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr', '--enable-zlib',
+                '--enable-decoder=mlp,flac,alac,aac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video',
+                '--enable-encoder=pcm_s16le,pcm_s24le,flac,png', '--enable-parser=mlp,flac,aac,mpegvideo,mpegaudio',
+                '--enable-demuxer=mlp,flac,mov,wav,mpegps,mpegvideo', '--enable-muxer=wav,flac',
+                '--enable-protocol=file,pipe']
         if args.profile in ('shared', 'static'):
             configure += ['--enable-encoder=mpeg2video,mp2', '--enable-parser=mpegaudio', '--enable-muxer=mpeg2dvd']
         commands = ['set -eu', 'export LC_ALL=C', 'export SOURCE_DATE_EPOCH=1789699562',
@@ -297,7 +316,9 @@ def main():
                                          'validation': '9 upstream native resampler tests'},
                                'soxr': {'version': '0.1.3',
                                         'linkage': 'static', 'toolchain': 'msvc',
-                                        'validation': 'Native upstream resampler tests'}},
+                                        'validation': 'Native upstream resampler tests'},
+                               'zlib': {'version': '1.3.2', 'source_url': ZLIB_URL, 'source_sha256': ZLIB_SHA256,
+                                        'linkage': 'static', 'toolchain': 'msvc'}},
               'linkage': 'static' if args.profile == 'static' else 'shared',
               'crt': 'static' if args.profile == 'static' else 'shared',
               'files': files}
