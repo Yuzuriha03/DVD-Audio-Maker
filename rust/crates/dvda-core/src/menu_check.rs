@@ -49,15 +49,13 @@ pub fn buttons(directory: &Path, total: usize, index: usize) -> Vec<Value> {
         ));
     }
     for (page, data) in pages.iter().enumerate() {
-        let overlay = match fs::read_to_string(directory.join(format!("spu_xmltemp_{page}.xml"))) {
-            Ok(text) => text,
-            Err(_) => {
-                issues.push(issue(
-                    "MENU_BUTTON_OVERLAY_XML_MISSING",
-                    format!("第 {} 页缺少按钮位置 XML。", page + 1),
-                ));
-                continue;
-            }
+        let Ok(overlay) = fs::read_to_string(directory.join(format!("spu_xmltemp_{page}.xml")))
+        else {
+            issues.push(issue(
+                "MENU_BUTTON_OVERLAY_XML_MISSING",
+                format!("第 {} 页缺少按钮位置 XML。", page + 1),
+            ));
+            continue;
         };
         let jumps = numbers(data, "name=\"button", "\"");
         let positions = numbers(&overlay, "name=\"button", "\"");

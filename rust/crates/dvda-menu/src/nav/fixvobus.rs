@@ -6,7 +6,6 @@
 //! time-step tables.
 
 #![allow(dead_code)]
-#![allow(clippy::manual_div_ceil)] // binary-search midpoint, not a ceiling division
 
 use super::build::Build;
 use super::dvdata::DvdData;
@@ -46,7 +45,6 @@ fn read_u16(bytes: &[u8]) -> u16 {
 }
 
 /// Scans one VOBU for reference frames and subpicture packets.
-#[allow(unused_assignments)]
 fn scan_vobu(build: &Build, vobu_index: usize) -> VobuTiming {
     let vobu = &build.vobus[vobu_index];
     let mut timing = VobuTiming {
@@ -80,7 +78,6 @@ fn scan_vobu(build: &Build, vobu_index: usize) -> VobuTiming {
                                 .references
                                 .push((previous_sector.saturating_sub(first) as u32).min(0x3fff));
                         }
-                        pending_reference = false;
                     }
                     let ptype = (bytes[offset + 5] >> 3) & 7;
                     pending_reference = ptype == 1 || ptype == 2;
@@ -150,21 +147,19 @@ fn find_vobu_timing(timings: &[VobuTiming], pts: i64) -> isize {
 }
 
 fn find_vobu_by_sector(build: &Build, sector: usize) -> Option<usize> {
-    let mut found = None;
-    for (index, vobu) in build.vobus.iter().enumerate() {
-        if vobu.sector > sector {
-            break;
-        }
-        found = Some(index);
-    }
-    found
+    build
+        .vobus
+        .iter()
+        .take_while(|vobu| vobu.sector <= sector)
+        .count()
+        .checked_sub(1)
 }
 
 fn find_subpicture_index(entries: &[(u32, u32, usize)], pts: u32) -> usize {
     let mut l = 0usize;
     let mut h = entries.len().saturating_sub(1);
     while l < h {
-        let m = (l + h + 1) / 2;
+        let m = l + (h - l).div_ceil(2);
         if pts < entries[m].0 {
             h = m - 1;
         } else {
@@ -184,19 +179,9 @@ fn button_colours(data: &DvdData) -> [u8; 24] {
     table
 }
 
-fn neighbour(
-    name: &Option<String>,
-    buttons: &[super::dvdata::Button],
-    _index: usize,
-    fallback: usize,
-) -> u8 {
-    match name {
-        Some(value) => buttons
-            .iter()
-            .position(|button| &button.name == value)
-            .map_or(fallback as u8, |found| (found + 1) as u8),
-        None => fallback as u8,
-    }
+fn neighbour(name: Option<&str>, buttons: &[super::dvdata::Button], fallback: usize) -> u8 {
+    name.and_then(|value| buttons.iter().position(|button| button.name == value))
+        .map_or(fallback as u8, |found| (found + 1) as u8)
 }
 
 fn button_table(data: &DvdData, commands: &BTreeMap<String, [u8; 8]>, sector: &mut [u8]) {
@@ -204,27 +189,23 @@ fn button_table(data: &DvdData, commands: &BTreeMap<String, [u8; 8]>, sector: &m
     for (index, button) in data.buttons.iter().enumerate() {
         let at = 0xbb + index * 18;
         let up = neighbour(
-            &button.up,
+            button.up.as_deref(),
             &data.buttons,
-            index,
             if index == 0 { count } else { index },
         );
         let down = neighbour(
-            &button.down,
+            button.down.as_deref(),
             &data.buttons,
-            index,
             if index + 1 == count { 1 } else { index + 2 },
         );
         let left = neighbour(
-            &button.left,
+            button.left.as_deref(),
             &data.buttons,
-            index,
             if index == 0 { count } else { index },
         );
         let right = neighbour(
-            &button.right,
+            button.right.as_deref(),
             &data.buttons,
-            index,
             if index + 1 == count { 1 } else { index + 2 },
         );
         sector[at] = (button.group << 6) | ((button.x0 >> 4) as u8 & 0x3f);
@@ -237,10 +218,7 @@ fn button_table(data: &DvdData, commands: &BTreeMap<String, [u8; 8]>, sector: &m
         sector[at + 7] = down;
         sector[at + 8] = left;
         sector[at + 9] = right;
-        let command = commands
-            .get(&button.name)
-            .or_else(|| commands.get(button.name.as_str()))
-            .copied();
+        let command = commands.get(&button.name).copied();
         if let Some(command) = command {
             sector[at + 10..at + 18].copy_from_slice(&command);
         }
@@ -526,6 +504,31 @@ mod tests {
             [0x20, 0x04, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x01],
         );
         map
+    }
+
+    #[test]
+    fn neighbour_uses_first_named_button_or_fallback() {
+        let buttons: Vec<_> = ["first", "second", "first"]
+            .into_iter()
+            .map(|name| dvdata::Button {
+                name: name.to_owned(),
+                auto_action: false,
+                group: 0,
+                x0: 0,
+                y0: 0,
+                x1: 0,
+                y1: 0,
+                up: None,
+                down: None,
+                left: None,
+                right: None,
+            })
+            .collect();
+        assert_eq!(neighbour(Some("first"), &buttons, 3), 1);
+        assert_eq!(neighbour(Some("second"), &buttons, 3), 2);
+        assert_eq!(neighbour(Some("missing"), &buttons, 3), 3);
+        assert_eq!(neighbour(None, &buttons, 3), 3);
+        assert_eq!(neighbour(Some("first"), &[], 0), 0);
     }
 
     #[test]

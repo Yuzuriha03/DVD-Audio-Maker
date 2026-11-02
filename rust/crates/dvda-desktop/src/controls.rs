@@ -255,10 +255,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         360,
         &mut labels,
     );
-    let custom_bytes_label = labels
-        .last()
-        .map(|(handle, _)| *handle)
-        .unwrap_or(ptr::null_mut());
+    let custom_bytes_label = labels.last().map_or(ptr::null_mut(), |(handle, _)| *handle);
     {
         ShowWindow(custom_bytes_label, SW_HIDE);
         ShowWindow(c.custom_bytes, SW_HIDE);
@@ -331,10 +328,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         &mut browse_buttons,
         lang,
     );
-    let import_folder_label = labels
-        .last()
-        .map(|(handle, _)| *handle)
-        .unwrap_or(ptr::null_mut());
+    let import_folder_label = labels.last().map_or(ptr::null_mut(), |(handle, _)| *handle);
     let import_browse = browse_buttons.last().copied().unwrap_or(ptr::null_mut());
     {
         ShowWindow(import_folder_label, SW_HIDE);

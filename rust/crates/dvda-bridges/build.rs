@@ -137,7 +137,7 @@ fn generate_layout(prefix: &std::path::Path) {
     let mut exe = out.join("layout-probe.exe");
     let mut cc = env::var_os("CC").unwrap_or_else(|| "cl.exe".into());
     if target == "aarch64-pc-windows-msvc" {
-        let configured = env::var_os("DVDA_HOST_CC").map(std::ffi::OsString::from);
+        let configured = env::var_os("DVDA_HOST_CC");
         let derived = std::path::PathBuf::from(&cc)
             .to_string_lossy()
             .replace("\\ARM64\\", "\\x64\\")

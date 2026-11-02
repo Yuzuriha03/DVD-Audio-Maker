@@ -313,7 +313,7 @@ fn cancellation_and_changed_input_are_reported() {
             &work.0.join("changed"),
             1,
             &[TrackInput::new(&source)],
-            &mut Shrink(source.clone())
+            &mut Shrink(source)
         )
         .unwrap_err()
         .contains("Truncated PCM")

@@ -104,7 +104,7 @@ fn metadata_parse(request: Value) -> Result<Value, String> {
 }
 
 fn value(line: &str) -> &str {
-    line.split_once('=').map(|(_, value)| value).unwrap_or("")
+    line.split_once('=').map_or("", |(_, value)| value)
 }
 
 fn calculate_duration(timestamp: Option<i64>, time_base: Option<&str>) -> Option<f64> {
@@ -124,8 +124,7 @@ fn calculate_duration(timestamp: Option<i64>, time_base: Option<&str>) -> Option
 fn file_stem(path: &str) -> String {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     name.rsplit_once('.')
-        .map(|(stem, _)| stem)
-        .unwrap_or(name)
+        .map_or(name, |(stem, _)| stem)
         .to_owned()
 }
 

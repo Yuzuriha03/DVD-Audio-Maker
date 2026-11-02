@@ -253,7 +253,9 @@ fn disabled_resume_and_intermediate_mode_ignore_locked_old_record() {
         json!({"DVDA_RESUME":true,"DVDA_KEEP_INTERMEDIATE":true}),
     ] {
         let mut options = options.clone();
-        options.values.insert("ResumeEnabled".into(), values["DVDA_RESUME"].clone());
+        options
+            .values
+            .insert("ResumeEnabled".into(), values["DVDA_RESUME"].clone());
         options.values.insert(
             "KeepIntermediate".into(),
             json!(values["DVDA_KEEP_INTERMEDIATE"].as_bool().unwrap_or(false)),
@@ -606,7 +608,9 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
         .unwrap();
     // Inspect retained menu artifacts without changing the application's task defaults.
     options.values.insert("KeepTemporary".into(), json!(true));
-    options.values.insert("KeepIntermediate".into(), json!(true));
+    options
+        .values
+        .insert("KeepIntermediate".into(), json!(true));
     let mut events = Events::default();
     assert!(options.boolean("MenuEnabled"));
     assert!(options.boolean("KeepTemporary"));
@@ -647,21 +651,20 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
         ..Default::default()
     };
     let mut no_resume = options.clone();
-    no_resume.values.insert("ResumeEnabled".into(), json!(false));
+    no_resume
+        .values
+        .insert("ResumeEnabled".into(), json!(false));
     assert!(
         !app::run_build(&no_resume, false, &mut interrupted)
             .unwrap()
             .succeeded
     );
     let mut changed_pixels = cover.rgba().to_vec();
-    for pixel in changed_pixels.chunks_exact_mut(4) {
+    for pixel in changed_pixels.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }
-    let changed_cover = dvda_image::raster::Raster::from_rgba(
-        cover.dimensions(),
-        changed_pixels,
-    )
-    .unwrap();
+    let changed_cover =
+        dvda_image::raster::Raster::from_rgba(cover.dimensions(), changed_pixels).unwrap();
     dvda_image::codec::write_png(
         &changed_cover,
         fs::File::create(root.0.join("src/cover.png")).unwrap(),
@@ -739,7 +742,7 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
         assert_menu_file_missing(menu_only());
         fs::write(&index_path, &original_index).unwrap();
     }
-    let mut zero = original_value.clone();
+    let mut zero = original_value;
     zero["__discs__"][0]["menu"]["stills"] = json!(0);
     fs::write(&index_path, serde_json::to_vec(&zero).unwrap()).unwrap();
     let mut no_stills = original_iso.clone();
@@ -1343,7 +1346,9 @@ fn application_failed_author_keeps_workspace_and_previous_release() {
         )
         .unwrap();
     options.values.insert("KeepTemporary".into(), json!(true));
-    options.values.insert("KeepIntermediate".into(), json!(true));
+    options
+        .values
+        .insert("KeepIntermediate".into(), json!(true));
     options.values.insert("ResumeEnabled".into(), json!(false));
     let success = app::run_build(&options, false, &mut Events::default()).unwrap();
     assert!(success.succeeded, "{:?}", success.diagnostics);

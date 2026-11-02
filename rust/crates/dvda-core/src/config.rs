@@ -12,10 +12,7 @@ pub fn trim(text: &str) -> &str {
 pub fn safe_basename(request: Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected path")?;
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    let stem = name
-        .rsplit_once('.')
-        .map(|(value, _)| value)
-        .unwrap_or(name);
+    let stem = name.rsplit_once('.').map_or(name, |(value, _)| value);
     let result: String = stem
         .chars()
         .map(|c| {

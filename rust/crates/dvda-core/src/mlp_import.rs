@@ -84,7 +84,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> 
             continue;
         };
         let path = Path::new(hit);
-        if !path.is_file() || path.metadata().map(|m| m.len()).unwrap_or(0) == 0 {
+        if !path.is_file() || path.metadata().map_or(0, |m| m.len()) == 0 {
             diagnostics.push(error(
                 "EXTERNAL_MLP_EMPTY",
                 format!("外部 MLP 是空文件: {hit}"),
@@ -94,8 +94,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> 
         }
         let valid = native
             .inspect_file(path)
-            .map(|inspection| inspection.is_valid && inspection.has_end_of_stream)
-            .unwrap_or(false);
+            .is_ok_and(|inspection| inspection.is_valid && inspection.has_end_of_stream);
         if !valid {
             diagnostics.push(error(
                 "EXTERNAL_MLP_INVALID",

@@ -270,8 +270,7 @@ pub fn normalize(path: &str) -> String {
     // Retain the original snapshot's full-path treatment of tool identifiers.
     // The identifiers are fingerprint data and are never executed as paths.
     std::path::absolute(path)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| path.trim().into())
+        .map_or_else(|_| path.trim().into(), |p| p.to_string_lossy().into_owned())
 }
 pub(super) fn relative(root: &str, path: &str) -> String {
     let root = normalize(root);

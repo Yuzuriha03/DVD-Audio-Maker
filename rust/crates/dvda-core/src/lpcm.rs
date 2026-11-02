@@ -286,12 +286,7 @@ fn updated_track(
     track.insert("MlpPath".into(), Value::String(destination.into()));
     track.insert(
         "MlpSize".into(),
-        Value::Number(
-            fs::metadata(destination)
-                .map(|m| m.len())
-                .unwrap_or(0)
-                .into(),
-        ),
+        Value::Number(fs::metadata(destination).map_or(0, |m| m.len()).into()),
     );
     track.insert("ChannelMask".into(), json!(layout.channel_mask));
     track.insert("MlpSource".into(), json!("lpcm"));

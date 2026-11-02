@@ -1461,7 +1461,7 @@ fn index_track_count(index: &Value) -> i32 {
     index
         .get("__discs__")
         .and_then(Value::as_array)
-        .map(|discs| {
+        .map_or(0, |discs| {
             discs
                 .iter()
                 .flat_map(|disc| {
@@ -1479,7 +1479,6 @@ fn index_track_count(index: &Value) -> i32 {
                 })
                 .count() as i32
         })
-        .unwrap_or(0)
 }
 fn error(code: &str, message: impl Into<String>) -> Value {
     json!({"Severity":2,"Code":code,"Message":message.into()})

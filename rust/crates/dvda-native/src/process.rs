@@ -515,7 +515,9 @@ impl Child {
                 1,
                 0x08000000 | 0x00080000 | 0x400 | 4,
                 environment.as_mut_ptr().cast(),
-                directory.as_ref().map_or(ptr::null(), |v| v.as_ptr()),
+                directory
+                    .as_ref()
+                    .map_or(ptr::null(), std::vec::Vec::as_ptr),
                 &startup,
                 &mut info,
             )

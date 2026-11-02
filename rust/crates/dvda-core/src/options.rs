@@ -348,8 +348,7 @@ pub fn evaluate(request: Request) -> Value {
     } else {
         integer(&mode, &r.positive_sign, &r.negative_sign)
             .filter(|n| *n > 0 && *n <= i32::MAX as i64)
-            .map(|n| n.to_string())
-            .unwrap_or("album".into())
+            .map_or("album".into(), |n| n.to_string())
     };
     put("DiagnosticTitleMode", OptionValue::new(mode));
     for (name, key, fallback) in [

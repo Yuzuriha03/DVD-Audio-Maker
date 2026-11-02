@@ -533,7 +533,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             ));
             break;
         }
-        if !iso.is_file() || fs::metadata(&iso).map(|m| m.len()).unwrap_or(0) == 0 {
+        if !iso.is_file() || fs::metadata(&iso).map_or(0, |m| m.len()) == 0 {
             diagnostics.push(error(
                 "ISO_WRITER_FAILED",
                 format!("author did not create ISO for disc {}", disc.number),
@@ -679,7 +679,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     let failure = publication
         .get("Failure")
         .filter(|value| !value.is_null())
-        .map(|value| value.to_string());
+        .map(std::string::ToString::to_string);
     if let Some(failure) = failure {
         diagnostics.push(error("FINAL_PUBLICATION_FAILED", failure));
     }

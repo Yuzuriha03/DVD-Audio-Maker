@@ -629,9 +629,7 @@ mod tests {
 
     #[test]
     fn automatic_workers_follow_detected_parallelism_and_caps() {
-        let detected = std::thread::available_parallelism()
-            .map(|count| count.get())
-            .unwrap_or(1);
+        let detected = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
         assert_eq!(worker_count(usize::MAX), detected);
         assert_eq!(worker_count(2), detected.min(2));
         assert_eq!(worker_count(0), 1);

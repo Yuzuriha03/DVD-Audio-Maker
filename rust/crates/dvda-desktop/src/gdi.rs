@@ -63,7 +63,9 @@ pub(crate) fn font(height: i32, weight: i32, face: u8) -> Handle {
     let height = scale(height);
     let key = (height, weight, face);
     let cache = FONT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(value) = cache.get(&key) {
         return *value as Handle;
     }
@@ -93,7 +95,9 @@ pub(crate) fn small_font() -> Handle {
 }
 pub(crate) fn brush(color: u32) -> Hbrush {
     let cache = BRUSH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(value) = cache.get(&color) {
         return *value as Hbrush;
     }
@@ -123,7 +127,9 @@ pub(crate) fn border_brush() -> Hbrush {
 pub(crate) fn header_icon() -> Handle {
     let current = dpi() as u32;
     let cache = ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(value) = cache.get(&current) {
         return *value as Handle;
     }

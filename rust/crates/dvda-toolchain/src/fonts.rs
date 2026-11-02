@@ -890,7 +890,7 @@ mod tests {
         let mut bad = good.clone();
         put32(&mut bad, cmap.offset + 24, u32::MAX);
         assert!(read_faces(&bad).is_err());
-        let mut bad = good.clone();
+        let mut bad = good;
         put32(&mut bad, cmap.offset + 28, 0x110000);
         assert!(read_faces(&bad).is_err());
         let mut collection = pack_bytes(&sources()).unwrap();

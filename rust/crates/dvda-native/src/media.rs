@@ -275,8 +275,11 @@ pub struct Media {
     #[cfg(not(feature = "direct-bridges"))]
     run: Run,
 }
-// The C module uses a per-call/TLS state and thread-safe one-time initialization.
+// The dynamically loaded C module uses per-call/TLS state and thread-safe initialization.
+// Direct bridges contain no raw module handle and derive the auto traits normally.
+#[cfg(not(feature = "direct-bridges"))]
 unsafe impl Send for Media {}
+#[cfg(not(feature = "direct-bridges"))]
 unsafe impl Sync for Media {}
 impl Drop for Media {
     fn drop(&mut self) {

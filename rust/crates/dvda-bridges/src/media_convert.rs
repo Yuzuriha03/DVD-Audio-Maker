@@ -645,48 +645,23 @@ fn rgb24_raster(
     let mut image = dvda_image::raster::Raster::solid(size, [0, 0, 0, 255]).map_err(|_| ENOMEM)?;
     for y in 0..size.height() {
         let start = y as usize * stride;
-        for (x, pixel) in data[start..start + row_bytes].chunks_exact(3).enumerate() {
+        for (x, pixel) in data[start..start + row_bytes]
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .enumerate()
+        {
             image.blend_pixel(x as i32, y as i32, [pixel[0], pixel[1], pixel[2], 255]);
         }
     }
     Ok(image)
 }
 
-#[cfg(test)]
-mod video_png_tests {
-    use super::*;
-    use dvda_image::{codec, geometry::Dimensions};
-
-    #[test]
-    fn rgb24_padding_and_png_pixels() {
-        let size = Dimensions::new(2, 2).unwrap();
-        let data = [255, 0, 1, 2, 128, 254, 99, 99, 0, 3, 255, 127, 64, 32];
-        let image = rgb24_raster(size, 8, &data).unwrap();
-        let expected = [
-            255, 0, 1, 255, 2, 128, 254, 255, 0, 3, 255, 255, 127, 64, 32, 255,
-        ];
-        assert_eq!(image.rgba(), expected);
-        let mut png = Vec::new();
-        codec::write_png(&image, &mut png).unwrap();
-        let decoded = codec::decode(std::io::Cursor::new(png)).unwrap();
-        assert_eq!(decoded.dimensions(), size);
-        assert_eq!(decoded.rgba(), expected);
-    }
-
-    #[test]
-    fn rgb24_rejects_invalid_layout() {
-        let size = Dimensions::new(2, 2).unwrap();
-        for (stride, data) in [(5, &[0; 14][..]), (8, &[0; 13][..]), (usize::MAX, &[][..])] {
-            assert_eq!(rgb24_raster(size, stride, data).unwrap_err(), INVALID);
-        }
-    }
-}
-
 /// # Safety
 /// `input` must be an open `AVFormatContext` whose stream information has been read, owned by
 /// the caller and alive for the call. `request` and `call` must be valid for the call.
 pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Result<(), i32> {
-    unsafe {
+    let (image, output) = unsafe {
         if request.output.is_null() {
             return Err(EINVAL);
         }
@@ -786,10 +761,7 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
                         .ok_or(INVALID)?,
                 ),
             )?;
-            let mut file = File::create(text(request.output)).map_err(open_error)?;
-            dvda_image::codec::write_png(&image, &mut file).map_err(|_| EIO)?;
-            file.flush().map_err(|_| EIO)?;
-            Ok(())
+            Ok((image, text(request.output)))
         })();
         sws_freeContext(scale);
         avcodec_free_context(&mut decoder);
@@ -797,5 +769,39 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
         av_frame_free(&mut rgb);
         av_packet_free(&mut packet);
         result
+    }?;
+    let mut file = File::create(output).map_err(open_error)?;
+    dvda_image::codec::write_png(&image, &mut file).map_err(|_| EIO)?;
+    file.flush().map_err(|_| EIO)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod video_png_tests {
+    use super::*;
+    use dvda_image::{codec, geometry::Dimensions};
+
+    #[test]
+    fn rgb24_padding_and_png_pixels() {
+        let size = Dimensions::new(2, 2).unwrap();
+        let data = [255, 0, 1, 2, 128, 254, 99, 99, 0, 3, 255, 127, 64, 32];
+        let image = rgb24_raster(size, 8, &data).unwrap();
+        let expected = [
+            255, 0, 1, 255, 2, 128, 254, 255, 0, 3, 255, 255, 127, 64, 32, 255,
+        ];
+        assert_eq!(image.rgba(), expected);
+        let mut png = Vec::new();
+        codec::write_png(&image, &mut png).unwrap();
+        let decoded = codec::decode(std::io::Cursor::new(png)).unwrap();
+        assert_eq!(decoded.dimensions(), size);
+        assert_eq!(decoded.rgba(), expected);
+    }
+
+    #[test]
+    fn rgb24_rejects_invalid_layout() {
+        let size = Dimensions::new(2, 2).unwrap();
+        for (stride, data) in [(5, &[0; 14][..]), (8, &[0; 13][..]), (usize::MAX, &[][..])] {
+            assert_eq!(rgb24_raster(size, stride, data).unwrap_err(), INVALID);
+        }
     }
 }

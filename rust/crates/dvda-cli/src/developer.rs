@@ -390,8 +390,7 @@ fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
                 options
                     .value(property)
                     .as_str()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| options.value(property).to_string())
+                    .map_or_else(|| options.value(property).to_string(), str::to_owned)
             };
             println!(
                 "{}",
@@ -523,8 +522,7 @@ fn verification(
         let result = dvda_core::verify::inspect(
             dvda_core::verify::Inspection {
                 final_directory: directory
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| options.path("FinalDirectory")),
+                    .map_or_else(|| options.path("FinalDirectory"), PathBuf::from),
                 iso_prefix: options.text("IsoPrefix"),
                 manifest_path: manifest
                     .map(PathBuf::from)
@@ -637,10 +635,10 @@ fn mlp(args: &mut Vec<String>) -> Result<i32> {
             } else {
                 let input = fs::read(&path).map_err(|e| e.to_string())?;
                 let result = native.align(&input)?;
-                let target = output
-                    .as_ref()
-                    .map(|o| Path::new(o).join(Path::new(path).file_name().unwrap()))
-                    .unwrap_or_else(|| PathBuf::from(&path));
+                let target = output.as_ref().map_or_else(
+                    || PathBuf::from(&path),
+                    |o| Path::new(o).join(Path::new(path).file_name().unwrap()),
+                );
                 if result.data != input {
                     state::write_bytes(&target, &result.data).map_err(|e| e.message)?;
                 }
@@ -677,10 +675,10 @@ fn alac_command(options: &AppOptions, args: &[String], events: &mut dyn Callback
             !inspection.patches.is_empty() || !decode_ok(&library, source, events)?,
         ));
     }
-    let target = args
-        .get(2)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(format!("{}.fixed.m4a", args[1])));
+    let target = args.get(2).map_or_else(
+        || PathBuf::from(format!("{}.fixed.m4a", args[1])),
+        PathBuf::from,
+    );
     if dvda_native::files::ordinal_ignore_case(
         &std::path::absolute(source)
             .map_err(failure)?

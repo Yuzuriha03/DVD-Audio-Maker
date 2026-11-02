@@ -72,8 +72,7 @@ pub(crate) fn inspect_jobs<R: Send>(
                 jobs,
                 callbacks,
                 phase,
-                progress_start,
-                progress_total,
+                (progress_start, progress_total),
                 durations,
                 inspect,
                 work,
@@ -83,13 +82,11 @@ pub(crate) fn inspect_jobs<R: Send>(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn inspect_jobs_measured<R: Send>(
     jobs: &[audio::Job],
     callbacks: &mut dyn Callbacks,
     phase: &str,
-    progress_start: u64,
-    progress_total: u64,
+    (progress_start, progress_total): (u64, u64),
     durations: Option<&[f64]>,
     inspect: fn(&audio::Job, &mut dyn Callbacks) -> Result<R, Failure>,
     work: &crate::metrics::Work,

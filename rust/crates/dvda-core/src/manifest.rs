@@ -58,8 +58,8 @@ pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
             let manifest_name = text(item, &["name", "Name"]);
             let mlp_path =
                 PathBuf::from(mlp_directory).join(manifest_name.replace('/', "__") + ".mlp");
-            let source_size = fs::metadata(&source).map(|m| m.len() as i64).unwrap_or(0);
-            let mlp_size = fs::metadata(&mlp_path).map(|m| m.len() as i64).unwrap_or(0);
+            let source_size = fs::metadata(&source).map_or(0, |m| m.len() as i64);
+            let mlp_size = fs::metadata(&mlp_path).map_or(0, |m| m.len() as i64);
             let title = text(item, &["title", "Title"]);
             let album = {
                 let value = text(item, &["album", "Album"]);

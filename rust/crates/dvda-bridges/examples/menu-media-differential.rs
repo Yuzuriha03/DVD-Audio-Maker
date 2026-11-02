@@ -83,10 +83,7 @@ fn main() {
                             std::fs::read("build\\bridge-menu-c.mpg").unwrap(),
                             std::fs::read("build\\bridge-menu-rust.mpg").unwrap()
                         );
-                        println!(
-                            "PASS {:?} still={still} samples={count} aspect={aspect:?}",
-                            norm
-                        );
+                        println!("PASS {norm:?} still={still} samples={count} aspect={aspect:?}");
                     }
                 }
             }

@@ -82,11 +82,8 @@ impl NativeDiscVerifier {
             0
         };
         while status == 0 {
-            let next =
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| chunks.next())) {
-                    Ok(next) => next,
-                    Err(_) => return Err("ISO reader callback panicked".into()),
-                };
+            let next = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| chunks.next()))
+                .map_err(|_| "ISO reader callback panicked".to_owned())?;
             let chunk = match next {
                 None => break,
                 Some(Err(error)) => return Err(error),

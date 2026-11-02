@@ -148,15 +148,14 @@ pub(crate) fn build(input: &[u8], aspect: Aspect) -> Result<Build, String> {
         let mut sector = *source;
         mpeg::transpose_ts(&mut sector, -back_offs);
         fix_sequence_headers(&mut sector, aspect);
-        #[allow(clippy::collapsible_if)]
         for offset in 0..SECTOR - 9 {
             if sector[offset..offset + 3] != [0, 0, 1] {
                 continue;
             }
-            if sector[offset + 3] == 0xb7 {
-                if let Some(vobu) = vobu.as_mut() {
-                    vobu.has_sequence_end = true;
-                }
+            if sector[offset + 3] == 0xb7
+                && let Some(vobu) = vobu.as_mut()
+            {
+                vobu.has_sequence_end = true;
             }
             if sector[offset + 3] == 0xe0 && sector[offset + 7] & 0x80 != 0 {
                 let pts = mpeg::read_pts(&sector[offset + 9..]);

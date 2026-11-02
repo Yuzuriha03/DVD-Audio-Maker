@@ -793,9 +793,7 @@ mod tests {
 
     #[test]
     fn automatic_check_workers_follow_cores_with_the_encoding_cap() {
-        let detected = std::thread::available_parallelism()
-            .map(|count| count.get())
-            .unwrap_or(1);
+        let detected = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
         assert_eq!(check_worker_count(147), detected.min(147));
         assert_eq!(check_worker_count(2), detected.min(2));
         assert_eq!(check_worker_count(1), 1);
@@ -1135,7 +1133,7 @@ mod tests {
                 "accepted changed {field}"
             );
         }
-        entries[&key] = entry.clone();
+        entries[&key] = entry;
         let time = fs::metadata(&destination).unwrap().modified().unwrap();
         fs::write(&destination, b"change").unwrap();
         fs::OpenOptions::new()

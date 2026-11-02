@@ -13,7 +13,7 @@ static UI_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn ui_test_guard() -> std::sync::MutexGuard<'static, ()> {
     UI_TEST_LOCK
         .lock()
-        .unwrap_or_else(|error| error.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 mod touch;

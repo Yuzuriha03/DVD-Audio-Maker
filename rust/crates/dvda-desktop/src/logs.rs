@@ -773,8 +773,7 @@ pub(crate) fn batch_message(lang: Lang, raw: &str) -> Option<String> {
                 &format!("{{{}}}", i + 1),
                 &detail
                     .get(field)
-                    .map(Value::to_string)
-                    .unwrap_or_else(|| "?".into()),
+                    .map_or_else(|| "?".into(), Value::to_string),
             );
         }
     } else if key == "log_pcm_progress" {
@@ -782,8 +781,7 @@ pub(crate) fn batch_message(lang: Lang, raw: &str) -> Option<String> {
             "{1}",
             &detail
                 .as_i64()
-                .map(|v| v.clamp(0, 100).to_string())
-                .unwrap_or_else(|| "?".into()),
+                .map_or_else(|| "?".into(), |v| v.clamp(0, 100).to_string()),
         );
     } else if key == "log_pcm_error" {
         result = result.replace(

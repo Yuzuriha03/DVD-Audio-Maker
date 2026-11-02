@@ -116,12 +116,8 @@ fn verify_dvd_audio_filesystem_reader(
             return Err(format!("UDF_RECOGNITION_INVALID: sector {lba}"));
         }
     }
-    let anchor = match require_udf_tag(input, 256, 2, 256) {
-        Ok(anchor) => anchor,
-        Err(_) => {
-            return Err("UDF_ANCHOR_MISSING: invalid anchor descriptor at sector 256".into());
-        }
-    };
+    let anchor = require_udf_tag(input, 256, 2, 256)
+        .map_err(|_| "UDF_ANCHOR_MISSING: invalid anchor descriptor at sector 256".to_owned())?;
     let mut descriptor_sequences = Vec::new();
     for (length_at, location_at) in [(16, 20), (24, 28)] {
         let bytes = u64::from(little_u32(&anchor[length_at..length_at + 4]));

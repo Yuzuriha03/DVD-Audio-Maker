@@ -131,9 +131,9 @@ fn mlp_import_uses_unicode_ordinal_case_without_linguistic_expansion() {
         );
         assert_eq!(
             actual,
-            expected
-                .map(|p| json!(root.0.join(p).components().collect::<PathBuf>()))
-                .unwrap_or(Value::Null)
+            expected.map_or(Value::Null, |p| json!(
+                root.0.join(p).components().collect::<PathBuf>()
+            ))
         );
     }
 }

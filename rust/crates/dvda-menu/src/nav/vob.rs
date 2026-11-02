@@ -175,13 +175,11 @@ mod tests {
     /// AUDIO_TS.VOB produced by the historical C implementation to run this
     /// differential parser check; it is skipped when no baseline is present.
     fn baseline() -> Option<Vec<u8>> {
-        let path = std::env::var_os("DVDA_MENU_NAV_BASELINE")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
+        let path = std::env::var_os("DVDA_MENU_NAV_BASELINE").map_or_else(|| {
                 std::path::PathBuf::from(
                     r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker\build\menu-accept-old2\导航 日本語\AUDIO_TS\AUDIO_TS.VOB",
                 )
-            });
+            }, std::path::PathBuf::from);
         std::fs::read(path).ok()
     }
 

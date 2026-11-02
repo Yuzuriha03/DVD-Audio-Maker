@@ -161,10 +161,10 @@ fn package(options: Args) -> Result<(), String> {
         "rust/target",
     );
     let target = target_directory.join(&options.target).join("release");
-    let output = options
-        .output
-        .map(|path| absolutize(&repository, path))
-        .unwrap_or_else(|| repository.join("tools/win-build/release-onefile"));
+    let output = options.output.map_or_else(
+        || repository.join("tools/win-build/release-onefile"),
+        |path| absolutize(&repository, path),
+    );
     let media = required_dir(
         input_path(
             &repository,
@@ -323,8 +323,7 @@ fn package(options: Args) -> Result<(), String> {
         &candidate.root,
         &output,
         &inputs,
-        &options.version,
-        suffix,
+        (&options.version, suffix),
         &options.target,
         || {
             build_gui(
@@ -364,8 +363,7 @@ fn finish_release(
     candidate: &Path,
     output: &Path,
     inputs: &validation::Inputs,
-    version: &str,
-    suffix: &str,
+    (version, suffix): (&str, &str),
     target: &str,
     build: impl FnOnce() -> Result<(), String>,
     compress: impl FnOnce(&Path, &Path) -> Result<(), String>,
@@ -819,8 +817,7 @@ mod tests {
                 &candidate.root,
                 &output,
                 &inputs,
-                "v1.0",
-                "win-x64",
+                ("v1.0", "win-x64"),
                 "x86_64-pc-windows-msvc",
                 || match reason {
                     "build" => Err("build failed".into()),

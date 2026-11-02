@@ -233,7 +233,7 @@ fn resolve_with(
         let mut best_score = None;
         for font in CANDIDATES
             .iter()
-            .map(|font| font.to_string())
+            .map(std::string::ToString::to_string)
             .chain(available.iter().cloned())
         {
             if !cjk_hint(&font)

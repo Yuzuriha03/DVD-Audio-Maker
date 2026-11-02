@@ -275,21 +275,24 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
                 }
                 (
                     outcome.succeeded(),
-                    outcome.failure.map(|f| f.message).unwrap_or_else(|| {
-                        tr(
-                            lang,
-                            if outcome
-                                .data
-                                .as_ref()
-                                .is_some_and(|data| data.failure_count == 0)
-                            {
-                                "done"
-                            } else {
-                                "failed"
-                            },
-                        )
-                        .into()
-                    }),
+                    outcome.failure.map_or_else(
+                        || {
+                            tr(
+                                lang,
+                                if outcome
+                                    .data
+                                    .as_ref()
+                                    .is_some_and(|data| data.failure_count == 0)
+                                {
+                                    "done"
+                                } else {
+                                    "failed"
+                                },
+                            )
+                            .into()
+                        },
+                        |f| f.message,
+                    ),
                 )
             }
             ID_BUILD => {
@@ -303,8 +306,7 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
                         false,
                         prepared
                             .failure
-                            .map(|failure| failure.message)
-                            .unwrap_or_else(|| tr(lang, "failed").into()),
+                            .map_or_else(|| tr(lang, "failed").into(), |failure| failure.message),
                     )
                 } else {
                     callbacks.set_progress_range(15, 65);

@@ -58,7 +58,7 @@ impl Work {
 pub(crate) fn file_bytes(path: impl AsRef<Path>) -> Option<u64> {
     fs::metadata(path)
         .ok()
-        .filter(|m| m.is_file())
+        .filter(std::fs::Metadata::is_file)
         .map(|m| m.len())
 }
 
@@ -160,13 +160,15 @@ impl Sampler {
                 loop {
                     sample(&paths, &mut space);
                     let (lock, wake) = &*signal;
-                    let stopped = lock.lock().unwrap_or_else(|e| e.into_inner());
+                    let stopped = lock
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if *stopped {
                         break;
                     }
                     let (stopped, _) = wake
                         .wait_timeout_while(stopped, SAMPLE_INTERVAL, |stop| !*stop)
-                        .unwrap_or_else(|e| e.into_inner());
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if *stopped {
                         break;
                     }
@@ -179,7 +181,9 @@ impl Sampler {
     }
     fn finish(&mut self) -> Option<Space> {
         let (lock, wake) = &*self.stop;
-        *lock.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        *lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
         wake.notify_all();
         self.thread.take().and_then(|thread| thread.join().ok())
     }

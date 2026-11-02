@@ -547,7 +547,7 @@ fn frozen_dll_pcm_and_pts_differential() {
         (
             bytes.clone(),
             {
-                let mut r = bytes.clone();
+                let mut r = bytes;
                 r[199999] ^= 1;
                 r
             },

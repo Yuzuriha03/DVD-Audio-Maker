@@ -538,9 +538,7 @@ pub(crate) unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct)
         return true;
     }
     if (ID_TAB..ID_TAB + 3).contains(&id) {
-        let active = paint_fields(hwnd)
-            .map(|paint| paint.tab_index.get() == id - ID_TAB)
-            .unwrap_or(false);
+        let active = paint_fields(hwnd).is_some_and(|paint| paint.tab_index.get() == id - ID_TAB);
         unsafe { draw_tab_button(item, active) };
         return true;
     }
@@ -735,9 +733,7 @@ pub(crate) unsafe fn paint_window(hwnd: Hwnd) {
             c_header_subtitle(),
             DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS,
         );
-        let splitter = paint_fields(hwnd)
-            .map(|paint| paint.splitter_position.get())
-            .unwrap_or(0);
+        let splitter = paint_fields(hwnd).map_or(0, |paint| paint.splitter_position.get());
         if splitter > header && splitter < rect.bottom - scale(60) {
             // Ends at the settings panel's right edge, which leaves room for the page
             // scrollbar (the page is placed `margin * 2 + 18` narrower than the window).

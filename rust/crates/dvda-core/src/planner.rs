@@ -165,7 +165,7 @@ pub fn track_number(value: &str) -> i32 {
     let digits: String = value
         .trim_start_matches(crate::config::whitespace)
         .chars()
-        .take_while(|c| c.is_ascii_digit())
+        .take_while(char::is_ascii_digit)
         .collect();
     digits.parse().unwrap_or(9999)
 }

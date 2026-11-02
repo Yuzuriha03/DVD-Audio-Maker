@@ -27,20 +27,18 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DVDA_RUNTIME_ARCHIVE");
     println!("cargo:rerun-if-env-changed=DVDA_PRODUCT_VERSION");
     let generated = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let archive = env::var_os("DVDA_RUNTIME_ARCHIVE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
+    let archive = env::var_os("DVDA_RUNTIME_ARCHIVE").map_or_else(
+        || {
             let empty = generated.join("empty-runtime.bin");
             std::fs::write(&empty, []).unwrap();
             empty
-        });
+        },
+        PathBuf::from,
+    );
     println!("cargo:rerun-if-changed={}", archive.display());
     std::fs::write(
         generated.join("runtime.rs"),
-        format!(
-            "static EMBEDDED_RUNTIME: &[u8] = include_bytes!({:?});",
-            archive
-        ),
+        format!("static EMBEDDED_RUNTIME: &[u8] = include_bytes!({archive:?});"),
     )
     .unwrap();
     println!("cargo:rerun-if-changed=app.manifest");

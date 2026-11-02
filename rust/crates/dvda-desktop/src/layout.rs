@@ -896,8 +896,7 @@ pub(crate) fn label_handle(state: &UiState, key: &str) -> Hwnd {
         .labels
         .iter()
         .find(|(_, label_key)| *label_key == key)
-        .map(|(handle, _)| *handle)
-        .unwrap_or(ptr::null_mut())
+        .map_or(ptr::null_mut(), |(handle, _)| *handle)
 }
 
 pub(crate) fn move_child(page: Hwnd, id: usize, x: i32, y: i32, width: i32, height: i32) {

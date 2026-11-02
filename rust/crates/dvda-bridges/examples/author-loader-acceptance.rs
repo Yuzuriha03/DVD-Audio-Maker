@@ -1,6 +1,8 @@
-use dvda_bridges::author_loader::{
-    dvda_image_command, dvda_image_write_y4m, dvda_menu_navigation, dvda_menu_subpictures,
-};
+use dvda_bridges::author_loader::{dvda_image_command, dvda_image_write_y4m};
+#[cfg(not(feature = "menu"))]
+use dvda_bridges::author_loader::{dvda_menu_navigation, dvda_menu_subpictures};
+#[cfg(feature = "menu")]
+use dvda_bridges::menu::{dvda_menu_navigation, dvda_menu_subpictures};
 use std::{ffi::CString, path::PathBuf};
 fn main() {
     let arguments: Vec<_> = std::env::args().collect();

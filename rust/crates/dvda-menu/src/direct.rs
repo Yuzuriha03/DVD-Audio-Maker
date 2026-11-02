@@ -23,9 +23,8 @@ unsafe fn run(request: *const MenuRequest, navigation: bool) -> c_int {
         if ACTIVE.get() {
             return 1;
         }
-        let _lock = match SESSION.lock() {
-            Ok(lock) => lock,
-            Err(_) => return 1,
+        let Ok(_lock) = SESSION.lock() else {
+            return 1;
         };
         ACTIVE.set(true);
         let _active = Active;

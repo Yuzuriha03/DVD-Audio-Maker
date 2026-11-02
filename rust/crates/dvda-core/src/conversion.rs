@@ -210,7 +210,7 @@ fn md5(library: &Path, input: &Path, caller: &mut dyn Callbacks) -> Result<Strin
     text.lines()
         .find_map(|line| line.trim().strip_prefix("MD5="))
         .filter(|s| s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit()))
-        .map(|s| s.to_ascii_lowercase())
+        .map(str::to_ascii_lowercase)
         .ok_or("Missing PCM MD5".into())
 }
 fn one(job: &Job, input: &Path, caller: &mut dyn Callbacks) -> Result<ResultRow, String> {

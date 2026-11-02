@@ -680,12 +680,15 @@ fn menu_runtime_directory(
         }
         return Ok(path);
     }
-    Ok(embedded.map(Path::to_owned).unwrap_or_else(|| {
-        author_source
-            .parent()
-            .unwrap_or(executable_directory)
-            .join("menu-bin")
-    }))
+    Ok(embedded.map_or_else(
+        || {
+            author_source
+                .parent()
+                .unwrap_or(executable_directory)
+                .join("menu-bin")
+        },
+        Path::to_owned,
+    ))
 }
 
 #[cfg(any(not(feature = "direct-bridges"), not(feature = "rust-mlp")))]

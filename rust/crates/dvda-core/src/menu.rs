@@ -114,8 +114,7 @@ pub fn short_album(request: Value) -> Result<Value, String> {
     let index = value
         .char_indices()
         .find(|(_, c)| matches!(c, '(' | '[' | '（' | '【'))
-        .map(|(i, _)| i)
-        .unwrap_or(value.len());
+        .map_or(value.len(), |(i, _)| i);
     let mut output = value[..index]
         .trim()
         .trim_end_matches(['-', '–', '—'])
