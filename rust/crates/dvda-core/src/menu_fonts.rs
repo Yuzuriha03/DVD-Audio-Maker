@@ -1,9 +1,8 @@
-//! Probe the scripts actually used by a menu through the in-process image ABI.
-//! This retains the old representative-rendering test (not a Unicode coverage
-//! proof), candidate fallback and optional Japanese/Korean face selection.
-use dvda_native::{images::Images, media::Callbacks};
+//! Probe menu scripts with the same Rust shaping and rasterization as authoring.
+//! Representative rendering is not a complete Unicode coverage proof.
+use dvda_native::media::Callbacks;
 use serde_json::{Value, json};
-use std::{collections::BTreeSet, fs, path::Path};
+use std::{collections::BTreeSet, path::Path};
 const PROBES: [(&str, &str); 6] = [
     ("ASCII", "Ag("),
     ("汉字", "中文"),
@@ -65,11 +64,14 @@ fn normalize_name(font: &str) -> String {
         .collect()
 }
 fn font_exists(font: &str, available: &[String]) -> bool {
-    if font.trim().is_empty() || font.chars().any(char::is_whitespace) {
+    if font.trim().is_empty() {
         return false;
     }
     if Path::new(font).is_file() {
         return true;
+    }
+    if font.chars().any(char::is_whitespace) {
+        return false;
     }
     let target = normalize_name(font);
     available.iter().any(|font| {
@@ -117,98 +119,45 @@ trait Probe {
     fn fonts(&mut self) -> Result<Vec<String>, String>;
     fn ink(&mut self, font: &str, text: &str) -> Result<bool, String>;
 }
-struct NativeProbe<'a> {
-    images: &'a Images,
-    directory: &'a Path,
+struct RustProbe<'a> {
+    runtime: &'a Path,
     caller: &'a mut dyn Callbacks,
+    cache: dvda_image::fonts::FontCache,
 }
-struct Capture<'a> {
-    caller: &'a mut dyn Callbacks,
-    text: String,
-}
-impl Callbacks for Capture<'_> {
-    fn emit(&mut self, stream: i32, text: &str) {
-        if stream == 1 {
-            self.text.push_str(text);
-        } else {
-            self.caller.emit(stream, text);
-        }
-    }
-    fn cancelled(&mut self) -> bool {
-        self.caller.cancelled()
-    }
-
-    fn progress(&mut self, completed: u64, total: u64) {
-        self.caller.progress(completed, total);
-    }
-}
-impl NativeProbe<'_> {
-    fn run(&mut self, args: &[String]) -> Result<Option<String>, String> {
+impl Probe for RustProbe<'_> {
+    fn fonts(&mut self) -> Result<Vec<String>, String> {
         if self.caller.cancelled() {
             return Err("Build cancelled".into());
         }
-        let mut capture = Capture {
-            caller: self.caller,
-            text: String::new(),
-        };
-        let status = self
-            .images
-            .run(args, &mut capture)
-            .map_err(|e| e.to_string())?;
-        if capture.cancelled() {
-            return Err("Build cancelled".into());
+        let mut fonts = Vec::new();
+        for region in ["SC", "JP", "KR", "TC"] {
+            let name = format!("DVDA-Noto-Sans-CJK-{region}");
+            if let Ok(location) = dvda_image::fonts::resolve(&name, self.runtime)
+                && self.cache.load(&location).is_ok()
+            {
+                fonts.push(name);
+            }
         }
-        Ok((status == 0).then_some(capture.text))
-    }
-}
-impl Probe for NativeProbe<'_> {
-    fn fonts(&mut self) -> Result<Vec<String>, String> {
-        Ok(self
-            .run(&["magick".into(), "-list".into(), "font".into()])?
-            .unwrap_or_default()
-            .lines()
-            .filter_map(|line| {
-                line.trim()
-                    .strip_prefix("Font:")
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .map(str::to_owned)
-            })
-            .collect())
+        Ok(fonts)
     }
     fn ink(&mut self, font: &str, text: &str) -> Result<bool, String> {
-        let path = crate::media::temporary_path(&self.directory.join("font-probe.txt"));
-        if let Err(reason) = fs::write(&path, text) {
-            let _ = fs::remove_file(&path);
-            return Err(reason.to_string());
+        if self.caller.cancelled() {
+            return Err("Build cancelled".into());
         }
-        let result = self.run(
-            &[
-                "magick",
-                "-size",
-                "160x48",
-                "xc:none",
-                "-font",
-                font,
-                "-pointsize",
-                "20",
-                "-fill",
-                "white",
-                "-annotate",
-                "+2+32",
-                &format!("@{}", path.to_string_lossy().replace('\\', "/")),
-                "-format",
-                "%[fx:mean.a]",
-                "info:",
-            ]
-            .map(str::to_owned),
-        );
-        let cleanup = fs::remove_file(&path).map_err(|e| e.to_string());
-        let result = result?;
-        cleanup?;
-        Ok(result
-            .and_then(|value| value.trim().parse::<f64>().ok())
-            .is_some_and(|value| value.is_finite() && value > 0.0))
+        let result = (|| -> std::io::Result<bool> {
+            let location = dvda_image::fonts::resolve(font, self.runtime)?;
+            let data = self.cache.load(&location)?;
+            let mask =
+                dvda_image::text::shape_masks(&data, location.face_index, text, 20.0, false)?;
+            Ok(mask
+                .glyphs
+                .iter()
+                .any(|glyph| glyph.coverage.iter().any(|&alpha| alpha != 0)))
+        })();
+        if self.caller.cancelled() {
+            return Err("Build cancelled".into());
+        }
+        Ok(result.unwrap_or(false))
     }
 }
 fn coverage(
@@ -365,17 +314,16 @@ fn resolve_with(
     Ok(result)
 }
 pub fn resolve(
-    images: &Images,
-    directory: &Path,
+    runtime: &Path,
     preferred: [&str; 3],
     text: &str,
     caller: &mut dyn Callbacks,
 ) -> Result<Resolution, String> {
     resolve_with(
-        &mut NativeProbe {
-            images,
-            directory,
+        &mut RustProbe {
+            runtime,
             caller,
+            cache: dvda_image::fonts::FontCache::default(),
         },
         preferred[0],
         preferred[1],
@@ -386,6 +334,30 @@ pub fn resolve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rust_probe_observes_cancellation_and_missing_runtime() {
+        struct Caller(bool);
+        impl Callbacks for Caller {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                self.0
+            }
+        }
+        let mut caller = Caller(false);
+        let mut probe = RustProbe {
+            runtime: Path::new("missing-font-runtime"),
+            caller: &mut caller,
+            cache: dvda_image::fonts::FontCache::default(),
+        };
+        assert!(probe.fonts().unwrap().is_empty());
+        assert!(!probe.ink("DVDA-Noto-Sans-CJK-SC", "中文").unwrap());
+        caller.0 = true;
+        assert_eq!(
+            resolve(Path::new("."), [""; 3], "中文", &mut caller).unwrap_err(),
+            "Build cancelled"
+        );
+    }
+
     struct Fake {
         fonts: Vec<String>,
         ink: Vec<(String, String)>,

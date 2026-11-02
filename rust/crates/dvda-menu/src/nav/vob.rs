@@ -74,7 +74,9 @@ fn button_table(sector: &[u8], count: u8) -> Result<Vec<ButtonInfo>, String> {
     let mut buttons = Vec::with_capacity(count as usize);
     for index in 0..count as usize {
         let at = 0xbb + index * 18;
-        let entry = sector.get(at..at + 18).ok_or("PCI button table out of range")?;
+        let entry = sector
+            .get(at..at + 18)
+            .ok_or("PCI button table out of range")?;
         let x_start = u16::from(entry[0] & 0x3f) << 4 | u16::from(entry[1] >> 4);
         let x_end = u16::from(entry[1] & 0x0f) << 8 | u16::from(entry[2]);
         let y_start = u16::from(entry[3] & 0x3f) << 4 | u16::from(entry[4] >> 4);
@@ -103,13 +105,17 @@ fn parse_nav_pack(sector_index: usize, sector: &[u8]) -> Result<NavPack, String>
         return Err("short sector".into());
     }
     if sector[..4] != PACK_START {
-        return Err(format!("sector {sector_index} does not start with a PACK header"));
+        return Err(format!(
+            "sector {sector_index} does not start with a PACK header"
+        ));
     }
     if sector[0x26..0x2a] != PRIVATE_2 || sector[0x400..0x404] != PRIVATE_2 {
         return Err(format!("sector {sector_index} is not a navigation pack"));
     }
     if sector[0x2c] != 0 || sector[0x406] != 1 {
-        return Err(format!("sector {sector_index} has unexpected NAV substream IDs"));
+        return Err(format!(
+            "sector {sector_index} has unexpected NAV substream IDs"
+        ));
     }
     let button_count = sector[0x9e];
     let pci = Pci {
@@ -138,7 +144,11 @@ fn parse_nav_pack(sector_index: usize, sector: &[u8]) -> Result<NavPack, String>
         next_vobu: be32(&sector[0x541..]),
         previous_vobu: be32(&sector[0x545..]),
     };
-    Ok(NavPack { sector: sector_index as u32, pci, dsi })
+    Ok(NavPack {
+        sector: sector_index as u32,
+        pci,
+        dsi,
+    })
 }
 
 /// Extracts every navigation pack from a VOB byte image.
@@ -150,7 +160,9 @@ pub(crate) fn parse_nav_packs(vob: &[u8]) -> Result<Vec<NavPack>, String> {
     sectors
         .iter()
         .enumerate()
-        .filter(|(_, sector)| sector[..4] == PACK_START && sector.get(0x26..0x2a) == Some(&PRIVATE_2))
+        .filter(|(_, sector)| {
+            sector[..4] == PACK_START && sector.get(0x26..0x2a) == Some(&PRIVATE_2)
+        })
         .map(|(index, sector)| parse_nav_pack(index, sector))
         .collect()
 }
@@ -182,17 +194,29 @@ mod tests {
             return;
         };
         let packs = parse_nav_packs(&vob).unwrap();
-        assert_eq!(packs.len(), 4, "the C baseline has four VOBUs with NAV packs");
+        assert_eq!(
+            packs.len(),
+            4,
+            "the C baseline has four VOBUs with NAV packs"
+        );
         let sectors: Vec<u32> = packs.iter().map(|pack| pack.sector).collect();
         assert_eq!(sectors, [0, 235, 480, 725]);
         for (index, pack) in packs.iter().enumerate() {
             assert_eq!(pack.pci.sector, sectors[index]);
             assert_eq!((pack.dsi.vob_id, pack.dsi.cell_id), (1, 1));
         }
-        let points: Vec<(u32, u32)> = packs.iter().map(|pack| (pack.pci.start_pts, pack.pci.end_pts)).collect();
+        let points: Vec<(u32, u32)> = packs
+            .iter()
+            .map(|pack| (pack.pci.start_pts, pack.pci.end_pts))
+            .collect();
         assert_eq!(
             points,
-            [(48600, 102600), (102600, 156600), (156600, 210600), (210600, 229560)]
+            [
+                (48600, 102600),
+                (102600, 156600),
+                (156600, 210600),
+                (210600, 229560)
+            ]
         );
         for pack in &packs {
             assert_eq!(pack.pci.button_count, 1);
@@ -200,7 +224,10 @@ mod tests {
             let button = &pack.pci.buttons[0];
             assert_eq!((button.x_start, button.x_end), (20, 700));
             assert_eq!((button.y_start, button.y_end), (56, 100));
-            assert_eq!((button.up, button.down, button.left, button.right), (1, 1, 1, 1));
+            assert_eq!(
+                (button.up, button.down, button.left, button.right),
+                (1, 1, 1, 1)
+            );
             assert_eq!(
                 button.command,
                 [0x20, 0x04, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x01]

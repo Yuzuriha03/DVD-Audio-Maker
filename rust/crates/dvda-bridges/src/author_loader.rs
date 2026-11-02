@@ -6,10 +6,12 @@ use std::{
 };
 type Command = unsafe extern "C" fn(*const c_char) -> i32;
 type Y4m = unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, *const c_char) -> i32;
+#[cfg(not(feature = "menu"))]
 type Rgba = unsafe extern "C" fn(*const c_char, *mut u8, usize, *mut u32, *mut u32) -> i32;
 struct Image {
     command: Command,
     y4m: Y4m,
+    #[cfg(not(feature = "menu"))]
     rgba: Rgba,
 }
 static IMAGE: OnceLock<Image> = OnceLock::new();
@@ -90,6 +92,7 @@ unsafe fn image() -> Result<&'static Image, ()> {
             Ok(Image {
                 command: std::mem::transmute::<*mut c_void, Command>(command),
                 y4m: std::mem::transmute::<*mut c_void, Y4m>(y4m),
+                #[cfg(not(feature = "menu"))]
                 rgba: std::mem::transmute::<*mut c_void, Rgba>(rgba),
             })
         })()?;
@@ -122,16 +125,6 @@ struct Request {
     input: *const c_char,
     output: *const c_char,
     rgba: Rgba,
-}
-#[cfg(feature = "menu")]
-pub(crate) fn menu_read_rgba(
-    path: *const c_char,
-    pixels: *mut u8,
-    capacity: usize,
-    width: *mut u32,
-    height: *mut u32,
-) -> i32 {
-    image().map_or(-1, |i| (i.rgba)(path, pixels, capacity, width, height))
 }
 
 #[cfg(not(feature = "menu"))]

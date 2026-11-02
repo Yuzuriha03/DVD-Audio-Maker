@@ -29,8 +29,8 @@ try {
         & cargo test --no-run --offline --target $target @profile @core
         if($LASTEXITCODE -ne 0){throw 'ARM64 core test link failed'}
     }
-    # The media/image bridges need ARM64 FFmpeg/ImageMagick builds; compile the
-    # CLI and desktop crates without those features to validate the ARM64 code.
+    # The media bridge needs an ARM64 FFmpeg build. Rust image processing
+    # has no ImageMagick dependency on either architecture.
     & cargo check --offline --target $target @profile --no-default-features -p dvda-cli -p dvda-desktop
     if($LASTEXITCODE -ne 0){throw 'ARM64 CLI/desktop check failed'}
     if(-not $CheckOnly){
@@ -38,5 +38,5 @@ try {
         if($LASTEXITCODE -ne 0){throw 'ARM64 CLI/desktop build failed'}
         Write-Host "ARM64 binaries: $root\rust\target\$target\$($Configuration.ToLower())"
     }
-    Write-Host 'ARM64 cross-build passed (media/image bridges remain Windows x64-only until ARM64 native libraries exist).'
+    Write-Host 'ARM64 cross-build passed (media integration still requires ARM64 FFmpeg; cross-build does not verify runtime behavior).'
 } finally {Set-Location $oldLocation}

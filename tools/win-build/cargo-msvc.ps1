@@ -15,8 +15,6 @@ foreach ($line in $environment) {
 }
 $defaults = @{
     DVDA_FFMPEG_PREFIX = 'build\msvc-native\ffmpeg-static\install'
-    DVDA_MAGICK_WORK = 'build\msvc-native\image'
-    DVDA_IMAGE_DEPS_DIR = 'build\msvc-native\image\lib'
 }
 foreach ($name in $defaults.Keys) {
     if (-not [Environment]::GetEnvironmentVariable($name, 'Process')) {

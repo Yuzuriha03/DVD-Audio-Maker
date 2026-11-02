@@ -204,13 +204,12 @@ fn task_lifecycle_cleans_success_failure_and_cancel_and_retains_only_unfinished(
             let result = app::run_build(&failed, false, &mut Events::default());
             assert!(result.is_err() || !result.unwrap().succeeded);
             drop(failed);
-            assert_eq!(failed_work.exists(), resume);
-            if resume {
-                let task = broken.task_options().unwrap();
-                task.finish_task();
-                drop(task);
-                assert!(!failed_work.exists());
-            }
+            assert!(failed_work.exists());
+            assert!(broken.has_unfinished_task());
+            let task = broken.recover_task(false).unwrap();
+            task.discard_task();
+            drop(task);
+            assert!(!failed_work.exists());
             let base = base
                 .with_profile_values(json!({"DVDA_RESUME":resume}).as_object().unwrap().clone())
                 .unwrap();
@@ -223,13 +222,12 @@ fn task_lifecycle_cleans_success_failure_and_cancel_and_retains_only_unfinished(
             let result = app::run_build(&task, false, &mut events);
             assert!(result.is_err() || !result.unwrap().succeeded);
             drop(task);
-            assert_eq!(work.exists(), resume);
-            if resume {
-                let task = base.task_options().unwrap();
-                task.finish_task();
-                drop(task);
-                assert!(!work.exists());
-            }
+            assert!(work.exists());
+            assert!(base.has_unfinished_task());
+            let task = base.recover_task(false).unwrap();
+            task.discard_task();
+            drop(task);
+            assert!(!work.exists());
         }
     }
 }
@@ -254,9 +252,12 @@ fn disabled_resume_and_intermediate_mode_ignore_locked_old_record() {
         json!({"DVDA_RESUME":false}),
         json!({"DVDA_RESUME":true,"DVDA_KEEP_INTERMEDIATE":true}),
     ] {
-        let options = options
-            .with_profile_values(values.as_object().unwrap().clone())
-            .unwrap();
+        let mut options = options.clone();
+        options.values.insert("ResumeEnabled".into(), values["DVDA_RESUME"].clone());
+        options.values.insert(
+            "KeepIntermediate".into(),
+            json!(values["DVDA_KEEP_INTERMEDIATE"].as_bool().unwrap_or(false)),
+        );
         let mut events = Events::default();
         let result = app::run_build(&options, false, &mut events).unwrap();
         assert!(result.succeeded, "{:?}", result.diagnostics);
@@ -549,37 +550,52 @@ fn application_preparation_cache_resume_and_lossless_verification() {
 }
 
 #[test]
-#[ignore = "requires source-built author and image/media DLLs plus menu data/fonts"]
+#[ignore = "requires source-built author/media plus menu data/fonts"]
 fn application_menu_and_title_boundaries() {
+    check_application_menu_and_title_boundaries("pal");
+}
+
+#[test]
+#[ignore = "requires source-built author/media plus menu data/fonts"]
+fn application_ntsc_menu_and_title_boundaries() {
+    check_application_menu_and_title_boundaries("ntsc");
+}
+
+fn check_application_menu_and_title_boundaries(norm: &str) {
     let root = Scratch::new();
     sources(&root.0);
-    let image_library =
-        PathBuf::from(std::env::var_os("DVDA_IMAGE_NATIVE_DIR").unwrap()).join("dvda-image.dll");
-    let images = dvda_native::images::Images::load(&image_library).unwrap();
-    assert_eq!(
-        images
-            .run(
-                &[
-                    "convert".into(),
-                    "-size".into(),
-                    "320x320".into(),
-                    "gradient:#102040-#c0e0ff".into(),
-                    root.0.join("src/cover.png").to_string_lossy().into_owned(),
-                ],
-                &mut Events::default()
-            )
-            .unwrap(),
-        0
-    );
+    let mut pixels = Vec::with_capacity(320 * 320 * 4);
+    for y in 0..320_u32 {
+        let channel = |start: u32, end: u32| (start + (end - start) * y / 319) as u8;
+        for _ in 0..320 {
+            pixels.extend_from_slice(&[
+                channel(0x10, 0xc0),
+                channel(0x20, 0xe0),
+                channel(0x40, 0xff),
+                255,
+            ]);
+        }
+    }
+    let cover = dvda_image::raster::Raster::from_rgba(
+        dvda_image::geometry::Dimensions::new(320, 320).unwrap(),
+        pixels,
+    )
+    .unwrap();
+    dvda_image::codec::write_png(
+        &cover,
+        fs::File::create(root.0.join("src/cover.png")).unwrap(),
+    )
+    .unwrap();
     let data =
         PathBuf::from(std::env::var_os("DVDA_TEST_MENU_DATA").expect("Set DVDA_TEST_MENU_DATA"));
     let mode = std::env::var("DVDA_TEST_MLP_MODE").unwrap_or_else(|_| "lpcm".into());
     assert!(matches!(mode.as_str(), "lpcm" | "mlp-batch"));
-    let options = options(&root.0, &mode)
+    let mut options = options(&root.0, &mode)
         .with_profile_values(
             json!({
             "DVDA_MENU":true, "DVDA_MENU_STILLPICS":true,"DVDA_MENU_INDEX_MIN_ALBUMS":1,
                 "DVDA_AUTHOR_SRC":data,"DVDA_TITLE_MODE":"1","DVDA_MENU_TRACKS_PER_PAGE":1,
+                "DVDA_MENU_NORM":norm,
                 "DVDA_KEEP_TMP":true,"DVDA_KEEP_INTERMEDIATE":true,
                 "DVDA_MENU_FONT":"nonexistent preferred family", "DVDA_MENU_FONT_JP":"nonexistent regional family"
             })
@@ -588,6 +604,9 @@ fn application_menu_and_title_boundaries() {
             .clone(),
         )
         .unwrap();
+    // Inspect retained menu artifacts without changing the application's task defaults.
+    options.values.insert("KeepTemporary".into(), json!(true));
+    options.values.insert("KeepIntermediate".into(), json!(true));
     let mut events = Events::default();
     assert!(options.boolean("MenuEnabled"));
     assert!(options.boolean("KeepTemporary"));
@@ -627,29 +646,27 @@ fn application_menu_and_title_boundaries() {
         cancel_on_staged: true,
         ..Default::default()
     };
-    let no_resume = options
-        .with_profile_values(json!({"DVDA_RESUME":false}).as_object().unwrap().clone())
-        .unwrap();
+    let mut no_resume = options.clone();
+    no_resume.values.insert("ResumeEnabled".into(), json!(false));
     assert!(
         !app::run_build(&no_resume, false, &mut interrupted)
             .unwrap()
             .succeeded
     );
-    assert_eq!(
-        images
-            .run(
-                &[
-                    "convert".into(),
-                    "-size".into(),
-                    "320x320".into(),
-                    "gradient:#602040-#80e0ff".into(),
-                    root.0.join("src/cover.png").to_string_lossy().into_owned()
-                ],
-                &mut Events::default()
-            )
-            .unwrap(),
-        0
-    );
+    let mut changed_pixels = cover.rgba().to_vec();
+    for pixel in changed_pixels.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    let changed_cover = dvda_image::raster::Raster::from_rgba(
+        cover.dimensions(),
+        changed_pixels,
+    )
+    .unwrap();
+    dvda_image::codec::write_png(
+        &changed_cover,
+        fs::File::create(root.0.join("src/cover.png")).unwrap(),
+    )
+    .unwrap();
     let mut restarted = Events::default();
     assert!(
         app::run_build(&options, false, &mut restarted)
@@ -1317,7 +1334,7 @@ fn split_aob(iso: &Path, original: &[u8]) -> Vec<u8> {
 fn application_failed_author_keeps_workspace_and_previous_release() {
     let root = Scratch::new();
     sources(&root.0);
-    let options = options(&root.0, "lpcm")
+    let mut options = options(&root.0, "lpcm")
         .with_profile_values(
             json!({"DVDA_KEEP_TMP":true,"DVDA_KEEP_INTERMEDIATE":true,"DVDA_RESUME":false})
                 .as_object()
@@ -1325,6 +1342,9 @@ fn application_failed_author_keeps_workspace_and_previous_release() {
                 .clone(),
         )
         .unwrap();
+    options.values.insert("KeepTemporary".into(), json!(true));
+    options.values.insert("KeepIntermediate".into(), json!(true));
+    options.values.insert("ResumeEnabled".into(), json!(false));
     let success = app::run_build(&options, false, &mut Events::default()).unwrap();
     assert!(success.succeeded, "{:?}", success.diagnostics);
     let iso = options.path("FinalDirectory").join("regression_1.iso");

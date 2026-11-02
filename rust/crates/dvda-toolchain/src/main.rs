@@ -19,6 +19,7 @@ use std::{
 struct Args {
     repository: Option<PathBuf>,
     output: Option<PathBuf>,
+    target_directory: Option<PathBuf>,
     media_runtime: Option<PathBuf>,
     image_runtime: Option<PathBuf>,
     /// Explicit legacy encoder oracle; it is never embedded in linked releases.
@@ -26,8 +27,6 @@ struct Args {
     image_author: Option<PathBuf>,
     source: Option<PathBuf>,
     prebuilt: Option<PathBuf>,
-    magick_work: Option<PathBuf>,
-    image_deps: Option<PathBuf>,
     version: String,
     target: String,
 }
@@ -73,14 +72,18 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         match argument.as_str() {
             "--repo" => options.repository = Some(value.into()),
             "--output" => options.output = Some(value.into()),
+            "--target-dir" => options.target_directory = Some(value.into()),
             "--media-runtime" => options.media_runtime = Some(value.into()),
             "--image-runtime" => options.image_runtime = Some(value.into()),
             "--encoder-runtime" => options.encoder_runtime = Some(value.into()),
             "--image-author" => options.image_author = Some(value.into()),
             "--source" => options.source = Some(value.into()),
             "--prebuilt" => options.prebuilt = Some(value.into()),
-            "--magick-work" => options.magick_work = Some(value.into()),
-            "--image-deps" => options.image_deps = Some(value.into()),
+            "--magick-work" | "--image-deps" => {
+                return Err(format!(
+                    "{argument} is retired; Rust images need no ImageMagick build"
+                ));
+            }
             "--version" => options.version = value,
             "--target" => options.target = value,
             _ => return Err(format!("Unknown option: {argument}")),
@@ -151,10 +154,13 @@ fn package(options: Args) -> Result<(), String> {
     let target_machine = validation::target_machine(&options.target)?;
     let arm64 = target_machine == 0xAA64;
     let suffix = if arm64 { "win-arm64" } else { "win-x64" };
-    let target = repository
-        .join("rust/target")
-        .join(&options.target)
-        .join("release");
+    let target_directory = input_path(
+        &repository,
+        options.target_directory,
+        env::var_os("CARGO_TARGET_DIR"),
+        "rust/target",
+    );
+    let target = target_directory.join(&options.target).join("release");
     let output = options
         .output
         .map(|path| absolutize(&repository, path))
@@ -168,15 +174,12 @@ fn package(options: Args) -> Result<(), String> {
         ),
         "media runtime",
     )?;
-    let image = required_dir(
-        input_path(
-            &repository,
-            options.image_runtime,
-            None,
-            "build/image-native",
-        ),
-        "image runtime",
-    )?;
+    let image = input_path(
+        &repository,
+        options.image_runtime,
+        None,
+        "build/image-native",
+    );
     let author = required_dir(
         input_path(
             &repository,
@@ -199,14 +202,6 @@ fn package(options: Args) -> Result<(), String> {
         "tools/win-build/prebuilt",
     );
     // All provenance and dependency checks precede any changes to release files.
-    let magick_work = options
-        .magick_work
-        .clone()
-        .map(|path| absolutize(&repository, path));
-    let image_deps = options
-        .image_deps
-        .clone()
-        .map(|path| absolutize(&repository, path));
     let mut inputs = validation::validate(&media, &image, &author, &options.target)?;
     // Optional encoder artifacts are authenticated as oracles, never shipped.
     if let Some(encoder) = options.encoder_runtime {
@@ -279,12 +274,6 @@ fn package(options: Args) -> Result<(), String> {
     for (name, path) in &inputs.files {
         copy_file(path, &runtime.join(name))?;
     }
-    for name in ["colors.xml", "policy.xml"] {
-        let destination = runtime.join(name);
-        if !destination.is_file() {
-            copy_file(&image.join(name), &destination)?;
-        }
-    }
     let font_sources = [
         prebuilt.join("fonts"),
         prebuilt.join("menu-bin/fonts"),
@@ -344,9 +333,8 @@ fn package(options: Args) -> Result<(), String> {
                 &options.version,
                 &media,
                 &options.target,
+                &target_directory,
                 arm64,
-                magick_work.as_deref(),
-                image_deps.as_deref(),
             )?;
             copy_file(
                 &target.join("dvda-desktop.exe"),
@@ -443,20 +431,15 @@ fn build_gui(
     version: &str,
     media: &Path,
     target: &str,
+    target_directory: &Path,
     arm64: bool,
-    magick_work: Option<&Path>,
-    image_deps: Option<&Path>,
 ) -> Result<(), String> {
     let mut environment = msvc_environment(repository, arm64)?;
-    if let Some(cargo_bin) = env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".cargo/bin")) {
-        let path = environment
-            .get("PATH")
-            .cloned()
-            .unwrap_or_default();
-        environment.insert(
-            "PATH".into(),
-            format!("{};{path}", cargo_bin.display()),
-        );
+    if let Some(cargo_bin) =
+        env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".cargo/bin"))
+    {
+        let path = environment.get("PATH").cloned().unwrap_or_default();
+        environment.insert("PATH".into(), format!("{};{path}", cargo_bin.display()));
     }
     if media.join("build-manifest.json").is_file() {
         environment.insert(
@@ -479,22 +462,14 @@ fn build_gui(
             "--features",
             "direct-bridges,rust-mlp",
         ])
+        .arg("--target-dir")
+        .arg(target_directory)
         .current_dir(repository)
         .envs(environment)
         .env("DVDA_RUNTIME_ARCHIVE", archive)
         .env("DVDA_PRODUCT_VERSION", version);
-    if let Some(path) = magick_work
-        .map(|path| path.to_string_lossy().into_owned())
-        .or_else(|| env::var("DVDA_MAGICK_WORK").ok())
-    {
-        command.env("DVDA_MAGICK_WORK", path);
-    }
-    if let Some(path) = image_deps
-        .map(|path| path.to_string_lossy().into_owned())
-        .or_else(|| env::var("DVDA_IMAGE_DEPS_DIR").ok())
-    {
-        command.env("DVDA_IMAGE_DEPS_DIR", path);
-    }
+    command.env_remove("DVDA_MAGICK_WORK");
+    command.env_remove("DVDA_IMAGE_DEPS_DIR");
     let status = command.status().map_err(io_error)?;
     if status.success() {
         Ok(())
@@ -622,7 +597,7 @@ fn io_error(error: impl std::fmt::Display) -> String {
 
 fn print_usage() {
     println!(
-        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--media-runtime PATH] [--image-runtime PATH] [--encoder-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--magick-work PATH] [--image-deps PATH] [--target TRIPLE] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
+        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--target-dir PATH] [--media-runtime PATH] [--image-runtime PATH] [--encoder-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--target TRIPLE] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
     );
 }
 
@@ -630,6 +605,45 @@ fn print_usage() {
 mod tests {
     use super::*;
     use validation::tests::Fixture;
+
+    #[test]
+    fn retired_magick_options_fail_before_package_io() {
+        for option in ["--magick-work", "--image-deps"] {
+            let error =
+                run_args(vec!["package".into(), option.into(), "unused".into()]).unwrap_err();
+            assert!(error.contains("is retired"), "{error}");
+        }
+    }
+
+    #[test]
+    fn isolated_target_directory_is_parsed_and_resolved() {
+        let options =
+            parse_args(vec!["--target-dir".into(), "build/isolated target".into()].into_iter())
+                .unwrap();
+        let repository = Path::new("C:/repo");
+        assert_eq!(
+            input_path(
+                repository,
+                options.target_directory,
+                Some("ignored".into()),
+                "rust/target"
+            ),
+            repository.join("build/isolated target")
+        );
+        assert_eq!(
+            input_path(
+                repository,
+                None,
+                Some("build/environment".into()),
+                "rust/target"
+            ),
+            repository.join("build/environment")
+        );
+        assert_eq!(
+            input_path(repository, None, None, "rust/target"),
+            repository.join("rust/target")
+        );
+    }
 
     #[test]
     fn version_paths_and_missing_values() {
@@ -649,7 +663,13 @@ mod tests {
         ] {
             assert!(validate_version(version).is_err());
         }
-        for option in ["--source", "--prebuilt", "--version", "--encoder-runtime"] {
+        for option in [
+            "--source",
+            "--prebuilt",
+            "--version",
+            "--encoder-runtime",
+            "--target-dir",
+        ] {
             assert!(parse_args(vec![option.into()].into_iter()).is_err());
             assert!(parse_args(vec![option.into(), String::new()].into_iter()).is_err());
             assert!(parse_args(vec![option.into(), "--repo".into()].into_iter()).is_err());
@@ -768,7 +788,6 @@ mod tests {
             assert_eq!(fs::read_dir(&output).unwrap().count(), 3);
         }
     }
-
 
     #[test]
     fn build_copy_and_zip_failure_leave_old_release_and_hashes_untouched() {

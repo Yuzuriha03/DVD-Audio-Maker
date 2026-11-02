@@ -4,10 +4,7 @@ use crate::{
     formats, media,
     verify::{Job, read_iso_file},
 };
-use dvda_native::{
-    images::Images,
-    media::{Callbacks, Operation, OutputFormat, Request},
-};
+use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -324,60 +321,52 @@ impl Drop for Workspace {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-struct Capture<'a> {
-    caller: &'a mut dyn Callbacks,
-    text: String,
-}
-impl Callbacks for Capture<'_> {
-    fn emit(&mut self, stream: i32, text: &str) {
-        if stream == 1 {
-            self.text.push_str(text);
-            self.text.push(' ');
-        } else {
-            self.caller.emit(stream, text);
+fn stats(
+    image: &dvda_image::raster::Raster,
+    crop: Option<(usize, usize, usize, usize)>,
+    caller: &mut dyn Callbacks,
+) -> Result<[f64; 4], String> {
+    let size = image.dimensions();
+    let width = size.width() as usize;
+    let height = size.height() as usize;
+    let (x, y, w, h) = crop.unwrap_or((0, 0, width, height));
+    if w == 0
+        || h == 0
+        || x.checked_add(w).is_none_or(|end| end > width)
+        || y.checked_add(h).is_none_or(|end| end > height)
+    {
+        return Err("Invalid menu statistics crop".into());
+    }
+    let mut sum = [0.0; 3];
+    let mut squares = [0.0; 3];
+    let mut maximum = 0u8;
+    let mut colors = std::collections::HashSet::new();
+    for row in y..y + h {
+        cancel(caller)?;
+        for pixel in image.rgba()[(row * width + x) * 4..(row * width + x + w) * 4]
+            .as_chunks::<4>()
+            .0
+        {
+            colors.insert([pixel[0], pixel[1], pixel[2]]);
+            for channel in 0..3 {
+                let value = f64::from(pixel[channel]);
+                sum[channel] += value;
+                squares[channel] += value * value;
+                maximum = maximum.max(pixel[channel]);
+            }
         }
     }
-    fn cancelled(&mut self) -> bool {
-        self.caller.cancelled()
-    }
-
-    fn progress(&mut self, completed: u64, total: u64) {
-        self.caller.progress(completed, total);
-    }
-}
-fn stats(
-    images: &Images,
-    image: &Path,
-    crop: Option<&str>,
-    format: &str,
-    caller: &mut dyn Callbacks,
-) -> Result<Vec<f64>, String> {
-    let mut args = vec!["identify".into()];
-    if let Some(crop) = crop {
-        args.extend(["-crop".into(), crop.into()]);
-    }
-    args.extend([
-        "-format".into(),
-        format.into(),
-        image.to_string_lossy().into_owned(),
-    ]);
-    let mut capture = Capture {
-        caller,
-        text: String::new(),
-    };
-    let code = images.run(&args, &mut capture).map_err(|e| e.to_string())?;
-    if code != 0 {
-        return Err("Cannot read menu image statistics".into());
-    }
-    let values = capture
-        .text
-        .split_whitespace()
-        .map(|v| v.parse::<f64>().map_err(|e| e.to_string()))
-        .collect::<Result<Vec<_>, _>>()?;
-    if values.is_empty() || values.iter().any(|v| !v.is_finite()) {
-        return Err("Invalid menu image statistics".into());
-    }
-    Ok(values)
+    let count = (w * h) as f64;
+    let mean = sum.iter().sum::<f64>() / (3.0 * count);
+    let deviation = (0..3)
+        .map(|channel| {
+            ((squares[channel] - sum[channel] * sum[channel] / count) / (count - 1.0).max(1.0))
+                .max(0.0)
+                .sqrt()
+        })
+        .sum::<f64>()
+        / 3.0;
+    Ok([mean, f64::from(maximum), deviation, colors.len() as f64])
 }
 
 pub fn verify_iso_navigation(iso: &Path) -> Result<(), String> {
@@ -457,8 +446,6 @@ pub fn verify(
         writer.write_all(&data).map_err(|e| e.to_string())?;
     }
     drop(writer);
-    let images = crate::native_components::images(job.image_library.as_deref())
-        .map_err(|e| e.to_string())?;
     let mut source = fs::File::open(vob_path).map_err(|e| e.to_string())?;
     let index_pages = expected
         .and_then(|v| v["index_pages"].as_u64())
@@ -521,54 +508,44 @@ pub fn verify(
         if result.exit_code != Some(0) || result.failure.is_some() {
             return Err("Cannot decode menu page".into());
         }
-        let frame = stats(
-            &images,
-            &output,
-            None,
-            "%[fx:standard_deviation*255] %k %h",
-            caller,
-        )?;
-        if frame.len() != 3 || !matches!(frame[2] as usize, 480 | 576) {
+        let image = fs::File::open(&output)
+            .and_then(|file| dvda_image::codec::decode(std::io::BufReader::new(file)))
+            .map_err(|error| error.to_string())?;
+        let frame = stats(&image, None, caller)?;
+        let height = image.dimensions().height() as usize;
+        if !matches!(height, 480 | 576) {
             return Err("Invalid menu frame statistics".into());
         }
-        if frame[0] <= 1.0 || frame[1] <= 50.0 {
+        if frame[2] <= 1.0 || frame[3] <= 50.0 {
             issues.push(issue(
                 "MENU_FRAME_NEAR_SOLID",
                 format!("Menu page {} is nearly solid", page + 1),
             ));
         }
         if page < index_pages {
-            let height = frame[2] as usize;
             let scaled = |value: usize| (value * height / 576) & !1;
             let thumb = scaled(100).max(50);
             for cell in 0..albums.saturating_sub(page * 12).min(12) {
                 let x = (cell % 4) * 180;
                 let y = scaled(60) + (cell / 4) * scaled(140);
-                for (code, crop, format, kind) in [
-                    (
-                        "MENU_INDEX_BACKGROUND_INVALID",
-                        format!("3x3+{}+{}", x + 1, y + 1),
-                        "%[fx:mean*255]",
-                        0,
-                    ),
+                for (code, crop, kind) in [
+                    ("MENU_INDEX_BACKGROUND_INVALID", (x + 1, y + 1, 3, 3), 0),
                     (
                         "MENU_INDEX_THUMBNAIL_MISSING",
-                        format!("{thumb}x{thumb}+{}+{}", x + (180 - thumb) / 2, y + 5),
-                        "%[fx:mean*255]",
+                        (x + (180 - thumb) / 2, y + 5, thumb, thumb),
                         1,
                     ),
                     (
                         "MENU_INDEX_LABEL_MISSING",
-                        format!("170x{}+{}+{}", scaled(28).max(20), x + 5, y + 5 + thumb + 2),
-                        "%[fx:maxima*255] %[fx:mean*255]",
+                        (x + 5, y + 5 + thumb + 2, 170, scaled(28).max(20)),
                         2,
                     ),
                 ] {
-                    let value = stats(&images, &output, Some(&crop), format, caller)?;
+                    let value = stats(&image, Some(crop), caller)?;
                     let bad = match kind {
                         0 => value[0] > 160.0,
                         1 => value[0] <= 3.0,
-                        _ => value.len() != 2 || value[0] <= 200.0 || value[1] > 200.0,
+                        _ => value[1] <= 200.0 || value[0] > 200.0,
                     };
                     if bad {
                         issues.push(issue(
@@ -587,6 +564,35 @@ pub fn verify(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rust_statistics_preserve_channel_mean_sample_deviation_and_crop() {
+        struct Caller(bool);
+        impl Callbacks for Caller {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                self.0
+            }
+        }
+        let image = dvda_image::raster::Raster::from_rgba(
+            dvda_image::geometry::Dimensions::new(2, 1).unwrap(),
+            vec![0, 10, 20, 255, 100, 110, 120, 255],
+        )
+        .unwrap();
+        let mut caller = Caller(false);
+        let values = stats(&image, None, &mut caller).unwrap();
+        assert_eq!(values[0], 60.0);
+        assert_eq!(values[1], 120.0);
+        assert!((values[2] - 5000_f64.sqrt()).abs() < 1e-10);
+        assert_eq!(values[3], 2.0);
+        assert_eq!(
+            stats(&image, Some((1, 0, 1, 1)), &mut caller).unwrap(),
+            [110.0, 120.0, 0.0, 1.0]
+        );
+        assert!(stats(&image, Some((usize::MAX, 0, 1, 1)), &mut caller).is_err());
+        caller.0 = true;
+        assert!(stats(&image, None, &mut caller).is_err());
+    }
 
     fn file(name: &str, lba: u32, size: u32, extended_attribute_blocks: u8) -> IsoEntryInfo {
         IsoEntryInfo {

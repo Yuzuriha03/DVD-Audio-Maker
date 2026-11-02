@@ -1,8 +1,7 @@
-//! Safe calls into the source-built C image component. No executable is launched.
+//! Explicit external-oracle access; production image operations use dvda-image.
 use crate::media::{CallbackState, Callbacks, cancel, emit};
-#[cfg(not(feature = "direct-bridges"))]
+use sha2::{Digest, Sha256};
 use std::ffi::{c_char, c_void};
-#[cfg(not(feature = "direct-bridges"))]
 use std::{
     collections::HashMap,
     os::windows::ffi::OsStrExt,
@@ -11,26 +10,59 @@ use std::{
 };
 use std::{ffi::CString, io, path::Path, sync::Arc};
 
-#[cfg(not(feature = "direct-bridges"))]
+fn validate_oracle(bytes: &[u8]) -> io::Result<()> {
+    let digest: String = Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    if digest != "ac8afb08c95b980a16e0212538403058b1b71340c78159dc19d6642cacedf1db" {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Image oracle SHA256 does not match the frozen migration reference",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_non_reference_oracle() {
+        for bytes in [b"".as_slice(), b"not the frozen image oracle".as_slice()] {
+            assert_eq!(
+                validate_oracle(bytes).unwrap_err().kind(),
+                io::ErrorKind::InvalidData
+            );
+        }
+    }
+
+    #[test]
+    fn load_rejects_invalid_library_before_loading() {
+        let path =
+            std::env::temp_dir().join(format!("dvda-image-invalid-{}.dll", std::process::id()));
+        std::fs::write(&path, b"not a DLL").unwrap();
+        let result = Images::load(&path);
+        std::fs::remove_file(path).unwrap();
+        assert!(matches!(result, Err(error) if error.kind() == io::ErrorKind::InvalidData));
+    }
+}
+
 type Run = unsafe extern "C" fn(
     i32,
     *const *const c_char,
-    crate::media::Emit,
-    crate::media::Cancel,
+    unsafe extern "C" fn(*mut c_void, i32, *const c_char),
+    unsafe extern "C" fn(*mut c_void) -> i32,
     *mut c_void,
 ) -> i32;
-#[cfg(not(feature = "direct-bridges"))]
 type ReadRgba = unsafe extern "C" fn(*const c_char, *mut u8, usize, *mut u32, *mut u32) -> i32;
-#[cfg(not(feature = "direct-bridges"))]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn LoadLibraryExW(path: *const u16, file: *mut c_void, flags: u32) -> *mut c_void;
     fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
     fn FreeLibrary(module: *mut c_void) -> i32;
 }
-#[cfg(feature = "direct-bridges")]
-pub struct Images {}
-#[cfg(not(feature = "direct-bridges"))]
 pub struct Images {
     module: *mut c_void,
     run: Run,
@@ -41,28 +73,16 @@ unsafe impl Send for Images {}
 unsafe impl Sync for Images {}
 impl Drop for Images {
     fn drop(&mut self) {
-        #[cfg(not(feature = "direct-bridges"))]
         unsafe {
             FreeLibrary(self.module);
         }
     }
 }
 impl Images {
-    #[cfg(feature = "direct-bridges")]
-    pub fn linked() -> Arc<Self> {
-        Arc::new(Self {})
-    }
-
-    /// Compatibility entry point; direct builds use the linked implementation, not this path.
-    #[cfg(feature = "direct-bridges")]
-    pub fn load(_path: &Path) -> io::Result<Arc<Self>> {
-        Ok(Self::linked())
-    }
-
-    #[cfg(not(feature = "direct-bridges"))]
     pub fn load(path: &Path) -> io::Result<Arc<Self>> {
         static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Images>>>> = OnceLock::new();
         let path = std::path::absolute(path)?;
+        validate_oracle(&std::fs::read(&path)?)?;
         let mut cache = CACHE
             .get_or_init(Default::default)
             .lock()
@@ -98,26 +118,6 @@ impl Images {
         cache.insert(path, Arc::clone(&images));
         Ok(images)
     }
-    #[cfg(feature = "direct-bridges")]
-    pub fn read_rgba(&self, path: &Path) -> io::Result<(u32, u32, Vec<u8>)> {
-        let path = CString::new(path.to_string_lossy().as_bytes())
-            .map_err(|_| io::Error::from_raw_os_error(123))?;
-        let image = dvda_bridges::direct::read_rgba(path.as_c_str()).map_err(|status| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Could not decode menu RGBA pixels (status {status})"),
-            )
-        })?;
-        if image.width == 0 || image.width > 720 || image.height == 0 || image.height > 576 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Could not decode menu RGBA pixels",
-            ));
-        }
-        Ok((image.width, image.height, image.pixels))
-    }
-
-    #[cfg(not(feature = "direct-bridges"))]
     pub fn read_rgba(&self, path: &Path) -> io::Result<(u32, u32, Vec<u8>)> {
         let path = CString::new(path.to_string_lossy().as_bytes())
             .map_err(|_| io::Error::from_raw_os_error(123))?;
@@ -142,40 +142,7 @@ impl Images {
         pixels.truncate(width as usize * height as usize * 4);
         Ok((width, height, pixels))
     }
-    #[cfg(feature = "direct-bridges")]
-    pub fn run(&self, arguments: &[String], callbacks: &mut dyn Callbacks) -> io::Result<i32> {
-        if arguments.len() > 8192 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Too many image arguments",
-            ));
-        }
-        let strings: Vec<_> = arguments
-            .iter()
-            .map(|text| CString::new(text.as_str()).map_err(|_| io::Error::from_raw_os_error(123)))
-            .collect::<io::Result<_>>()?;
-        let mut state = CallbackState {
-            callbacks,
-            panicked: false,
-        };
-        let result = unsafe {
-            dvda_bridges::direct::image_run_with_callbacks(
-                &strings,
-                dvda_bridges::Call {
-                    emit: Some(emit),
-                    cancel: Some(cancel),
-                    state: (&mut state as *mut CallbackState<'_>).cast(),
-                },
-            )
-        };
-        if state.panicked {
-            return Err(io::Error::other("Panic caught in image callback"));
-        }
-        Ok(result)
-    }
-
-    #[cfg(not(feature = "direct-bridges"))]
-    /// Arguments target the project's C image API, never a command shell or subprocess.
+    /// Arguments target the explicit external image oracle, never a command shell.
     pub fn run(&self, arguments: &[String], callbacks: &mut dyn Callbacks) -> io::Result<i32> {
         if arguments.len() > 8192 {
             return Err(io::Error::new(

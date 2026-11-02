@@ -333,7 +333,7 @@ impl AppOptions {
             .then(|| self.encoder_library())
             .transpose()?;
         let menu_enabled = self.boolean("MenuEnabled");
-        let image_library = menu_enabled.then(|| self.image_library()).transpose()?;
+        let image_library = None;
         let configured_author_source = self.path("AuthorSource");
         let author_source = if configured_author_source.is_dir() {
             configured_author_source
@@ -431,7 +431,7 @@ impl AppOptions {
 
     pub fn verify_job(&self) -> Result<verify::Job, String> {
         Ok(verify::Job {
-            image_library: self.image_library().ok(),
+            image_library: None,
             media_library: self.media_library()?,
             work_directory: self.path("BuildDirectory").join("verify-tmp"),
             final_directory: self.path("FinalDirectory"),

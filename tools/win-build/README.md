@@ -20,24 +20,20 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --wor
 生产构建默认使用 `build/msvc-native/ffmpeg-static/install`。使用
 `build-msvc-ffmpeg.py --profile static --work-directory build/msvc-native/ffmpeg-static`
 生成 MSVC 静态库，并通过 `--msys-root`、`--cmake` 指定本机工具路径。
-五个 FFmpeg 库、soxr、zlib 和 C 运行库静态链接到 EXE；内嵌资源只需解压字体、XML 和菜单素材。
+五个 FFmpeg 库、soxr、zlib 和 C 运行库静态链接到 EXE；内嵌资源只需解压字体和菜单素材。
 开发对照仍可显式设置 `DVDA_FFMPEG_PREFIX` 使用 shared 构建。静态链接不代表已经测得编码提速。
 
-打包器需要已验证的 x64 媒体/图像构建记录与 `build/rust-author-production`，并验证摘要、大小、PE 架构、DLL 闭包及字体/菜单素材。图像记录必须标识 Rust 实现；本机验收使用 `build/rust-image-runtime`。MLP 编码器直接编入 Rust 应用，`--encoder-runtime` 仅用于认证可选对照产物，不分发编码器 DLL。FFmpeg 和 ImageMagick 命令行程序不是运行时输入，第三方库由 Rust bridge 调用；媒体/图像开发 adapter DLL 不进入静态链接发布包。
+打包器需要已验证的 x64 媒体/图像构建记录与 `build/rust-author-production`，并验证摘要、大小、PE 架构、DLL 闭包及字体/菜单素材。图像记录必须标识 Rust 实现；本机验收使用 `build/rust-image-runtime`。MLP 编码器直接编入 Rust 应用，`--encoder-runtime` 仅用于认证可选对照产物，不分发编码器 DLL。FFmpeg 命令行程序不是运行时输入，媒体库由 Rust bridge 调用；图像直接使用 Rust 实现，媒体/图像开发 adapter DLL 不进入静态链接发布包。
 
 格式解析、MLP CRC/奇偶校验、PCM 比较及只读 AOB 成品校验已经内置为 Rust 实现，不需要格式或校验 DLL。打包不再接受 `--formats-runtime` 输入。
 
-生成的 ImageMagick/委托库工程使用项目名前缀命名对象文件，避免合并 MagickCore、JPEG 8/12/16 位静态库时出现同名对象和 MSVC LNK4255 调试信息丢失警告。
+### Rust 图像链路
 
-### ImageMagick MSVC ARM64 交叉构建
+图像解码、缩放、合成、文字排版及 Y4M 输出由 `dvda-image` 实现，不需要 ImageMagick、MagickCore/Wand、委托库或 XML 配置。菜单外部封面支持 JPEG、PNG 和 WebP；嵌入封面另支持 BMP、GIF、TIFF 的尺寸及原始位深读取，原图字节保持不变。后者不扩展菜单外部封面的文件搜索规则。
 
-```bat
-python tools\win-build\build-msvc-image.py --arch arm64 --cache-directory build\msvc-native\image\downloads
-```
+图像依赖关闭默认 features，仅启用所需格式；GIF/TIFF 解码使用 Rust crates，不增加 C/C++ 图像构建步骤。构建 author 时只需 FFmpeg 和字体/菜单素材输入。旧 `--magick-work`、`--image-dependencies` 参数会明确报错，不会自动恢复旧后端。
 
-需要 Visual Studio v145 的 x64 与 ARM64 C++ 工具及 Windows SDK。无界面生成器仍编译为可在宿主运行的 x64，显式选择上游 `Architecture::Arm64` 后，使用交叉工具链构建 ARM64 库，不在宿主执行 ARM64 程序。默认输出为 `build/msvc-native/image-arm64`；不传 `--arch` 保持原来的 x64 和 `build/msvc-native/image`。两种架构必须使用独立源码/构建目录（生成头文件及库名相同），只能共享 ZIP 缓存。清单 target 为 `aarch64-pc-windows-msvc`。这不代表已完成整个应用的 ARM64 打包或真机运行验收。
-
-架构选择回归测试：`python tools\win-build\test-msvc-image.py`。
+可选差分测试通过 `test-rust-workflow.ps1 -ImageRuntime <外部参考目录>` 指定冻结图像 DLL，并校验其 SHA256；默认构建和测试不查找或下载该 DLL。ARM64 使用 Rust 对应 target，仍需匹配架构的 FFmpeg 与 MSVC 工具；交叉编译通过不等于 ARM64 真机验收。
 
 ## 应用图标
 
@@ -54,7 +50,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\generate-app
 ```bat
 tools\win-build\build-all.cmd ^
   --media-runtime build\msvc-native\ffmpeg-static\install ^
-  --image-runtime build\msvc-native\image-runtime ^
   --image-author build\rust-author-production ^
   --prebuilt build\msvc-native\package-assets ^
   --version v1.0

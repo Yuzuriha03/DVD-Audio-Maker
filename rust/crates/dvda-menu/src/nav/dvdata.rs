@@ -83,7 +83,10 @@ impl<'a> Reader<'a> {
 
 /// Parses one dvdauthor-data payload (the bytes after the private-stream header).
 pub(crate) fn parse(payload: &[u8]) -> Result<DvdData, String> {
-    let mut reader = Reader { bytes: payload, at: 0 };
+    let mut reader = Reader {
+        bytes: payload,
+        at: 0,
+    };
     let tag = reader.string()?;
     if tag != "dvdauthor-data" {
         return Err(format!("unexpected dvdauthor-data tag {tag:?}"));
@@ -94,7 +97,11 @@ pub(crate) fn parse(payload: &[u8]) -> Result<DvdData, String> {
     let stream = reader.u8()?;
     let start_pts = reader.u32()?;
     let end_pts = reader.u32()?;
-    let mut data = DvdData { start_pts, end_pts, ..DvdData::default() };
+    let mut data = DvdData {
+        start_pts,
+        end_pts,
+        ..DvdData::default()
+    };
     let _palette_marker = reader.u8()?;
     let numpal = reader.u8()?;
     for _ in 0..numpal {
@@ -166,7 +173,8 @@ mod tests {
     use super::*;
 
     fn sector() -> Option<Vec<u8>> {
-        let root = std::path::Path::new(r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker");
+        let root =
+            std::path::Path::new(r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker");
         let bytes = std::fs::read(root.join("build/menu-accept-old2/menu.mpg")).ok()?;
         let sector = bytes.get(119 * 2048..120 * 2048)?.to_vec();
         Some(sector)
@@ -177,13 +185,18 @@ mod tests {
         let Some(sector) = sector() else {
             return;
         };
-        let data = parse_sector(&sector).expect("dvdauthor-data sector").unwrap();
+        let data = parse_sector(&sector)
+            .expect("dvdauthor-data sector")
+            .unwrap();
         assert_eq!(data.start_pts, 48_600);
         assert_eq!(data.palette.len(), 3);
         assert_eq!(data.buttons.len(), 1);
         let button = &data.buttons[0];
         assert_eq!(button.name, "button01");
-        assert_eq!((button.x0, button.y0, button.x1, button.y1), (20, 56, 700, 100));
+        assert_eq!(
+            (button.x0, button.y0, button.x1, button.y1),
+            (20, 56, 700, 100)
+        );
         assert!(!button.auto_action);
         assert_eq!(button.group, 1);
         assert_eq!(button.up.as_deref(), Some("button01"));

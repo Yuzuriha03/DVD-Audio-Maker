@@ -2,14 +2,14 @@
 
 #![allow(dead_code)] // wired into the VOB builder and menu entry in the next slices
 
-pub(crate) mod remap;
 pub(crate) mod amgm;
 pub(crate) mod build;
 pub(crate) mod dvdata;
 pub(crate) mod fixvobus;
+pub(crate) mod model;
 pub(crate) mod mpeg;
 pub(crate) mod navpack;
-pub(crate) mod model;
+pub(crate) mod remap;
 pub(crate) mod vm;
 pub(crate) mod vob;
 pub(crate) mod xml;

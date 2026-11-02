@@ -29,24 +29,23 @@ The package assembler expects validated x64 directories:
 
 The packager verifies hashes, sizes, x64 architecture, the full import closure and assets. The MLP encoder is compiled directly into Rust. Image provenance must identify the Rust implementation; the local acceptance uses `build/rust-image-runtime`. Media/image adapter DLLs are development provenance inputs and are excluded from linked releases.
 
-FFmpeg and ImageMagick command-line programs are not runtime inputs. Rust bridges call their retained source-built libraries.
+FFmpeg command-line programs are not runtime inputs. Rust bridges call the retained source-built FFmpeg libraries; image processing uses Rust directly.
 
-### ImageMagick MSVC ARM64 cross-build
+### Rust image pipeline
 
-```bat
-python tools\win-build\build-msvc-image.py --arch arm64 --cache-directory build\msvc-native\image\downloads
-```
+Production builds require no ImageMagick, MagickCore/Wand, delegate libraries, or
+ImageMagick XML configuration. Menu cover files support JPEG, PNG, and WebP.
+Embedded-cover metadata also supports BMP, GIF, and TIFF while preserving the
+original image bytes. Only the required pure-Rust `image` features are enabled.
 
-Install the Visual Studio v145 x64 **and ARM64** C++ tools and Windows SDK. The
-headless generator runs as x64; it explicitly selects upstream `Architecture::Arm64`
-and builds the ARM64 library solution with the cross toolchain. No ARM64 program
-is executed on the host. The default output is `build/msvc-native/image-arm64`;
-omitting `--arch` retains x64 and `build/msvc-native/image`. Source/build trees must
-be separate because generated headers and archive names are shared; only the ZIP
-cache may be shared. The manifest records `aarch64-pc-windows-msvc`. This adds the
-native image libraries, not full ARM64 application packaging or runtime validation.
+The old `--magick-work` and `--image-dependencies` author-build options are
+explicitly rejected. Optional differential tests accept an external frozen oracle
+through `test-rust-workflow.ps1 -ImageRuntime`; its SHA256 is checked before use.
+It is not a production dependency or a fallback.
 
-Run architecture-selection regressions with `python tools\win-build\test-msvc-image.py`.
+`build-rust-arm64.ps1 -CheckOnly` checks the Rust ARM64 integration without
+ImageMagick. Cross-compilation does not replace ARM64 device acceptance, and media
+integration still requires ARM64 FFmpeg.
 
 Build static FFmpeg in a separate directory to preserve shared comparison builds:
 
@@ -68,7 +67,6 @@ After native inputs are available:
 ```bat
 tools\win-build\build-all.cmd ^
   --media-runtime build\msvc-native\ffmpeg-static\install ^
-  --image-runtime build\msvc-native\image-runtime ^
   --image-author build\rust-author-production ^
   --prebuilt build\msvc-native\package-assets ^
   --version v1.0

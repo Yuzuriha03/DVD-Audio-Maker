@@ -4,11 +4,11 @@ use quick_xml::{Reader, XmlVersion, events::Event};
 
 #[cfg(feature = "direct-link")]
 mod direct;
+#[cfg(any(feature = "direct-link", test))]
+mod nav;
 mod resources;
 #[cfg(feature = "direct-link")]
 mod session;
-#[cfg(any(feature = "direct-link", test))]
-mod nav;
 #[cfg(any(feature = "direct-link", test))]
 mod spu;
 #[cfg(feature = "direct-link")]

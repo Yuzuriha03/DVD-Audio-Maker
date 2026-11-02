@@ -1,0 +1,12 @@
+[package]
+name = "dvda-image"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
+rustybuzz = "0.20.1"
+swash = "0.2.10"
+unicode-segmentation = "1.12"

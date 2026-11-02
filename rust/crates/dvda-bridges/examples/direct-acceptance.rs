@@ -1,5 +1,10 @@
 use dvda_bridges::{Call, direct::*};
-use std::ffi::{CStr, CString, c_void};
+use std::ffi::{CStr, c_void};
+use std::io::BufReader;
+
+fn read_image(path: &str) -> std::io::Result<dvda_image::raster::Raster> {
+    dvda_image::codec::decode(BufReader::new(std::fs::File::open(path)?))
+}
 unsafe extern "C" fn emit(state: *mut c_void, _: i32, text: *const i8) {
     unsafe {
         (*(state as *mut Vec<String>)).push(CStr::from_ptr(text).to_string_lossy().into_owned());
@@ -12,18 +17,20 @@ fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(args.len(), 3, "audio and Unicode image fixtures");
     std::fs::copy(&args[1], "build\\桥接音频.wav").unwrap();
-    let image_path = CString::new(args[2].as_str()).unwrap();
-    let image = read_rgba(&image_path).unwrap();
+    let image_path = args[2].clone();
+    let image = read_image(&image_path).unwrap();
     assert_eq!(
-        image.pixels.len(),
-        image.width as usize * image.height as usize * 4
+        image.rgba().len(),
+        image.dimensions().width() as usize * image.dimensions().height() as usize * 4
     );
     let threads: Vec<_> = (0..4)
         .map(|_| {
             let path = image_path.clone();
             let expected = image.clone();
             std::thread::spawn(move || {
-                assert_eq!(read_rgba(&path).unwrap(), expected);
+                let actual = read_image(&path).unwrap();
+                assert_eq!(actual.dimensions(), expected.dimensions());
+                assert_eq!(actual.rgba(), expected.rgba());
                 let request = MediaRequest::new(1, "build\\桥接音频.wav", "").unwrap();
                 let mut messages = Vec::<String>::new();
                 let status = unsafe {
@@ -60,41 +67,10 @@ fn main() {
         },
         -1414092869
     );
-    let arguments = vec![CString::new("identify").unwrap(), image_path];
-    assert_eq!(
-        unsafe {
-            image_run_with_callbacks(
-                &arguments,
-                Call {
-                    emit: None,
-                    cancel: Some(cancel),
-                    state: std::ptr::null_mut(),
-                },
-            )
-        },
-        130
-    );
-    assert_eq!(image_run(&[]), 2);
-    assert!(read_rgba(c"build\\missing-direct.png").is_err());
-    let mut messages = Vec::<String>::new();
-    assert_eq!(
-        unsafe {
-            image_run_with_callbacks(
-                &arguments,
-                Call {
-                    emit: Some(emit),
-                    cancel: None,
-                    state: (&mut messages as *mut Vec<String>).cast(),
-                },
-            )
-        },
-        0
-    );
-    // Identify without -format writes no metadata callback in the legacy API.
-    assert!(messages.is_empty());
+    assert!(read_image("build\\missing-direct.png").is_err());
     std::fs::remove_file("build\\桥接音频.wav").unwrap();
     let _ = std::fs::remove_file("build\\direct-cancel.wav");
     println!(
-        "PASS direct rlib Unicode, four-way concurrent image/media callbacks, cancellation, errors and buffer sizing"
+        "PASS direct rlib Unicode, four-way concurrent image decoding and media callbacks, media cancellation, errors and RGBA sizing"
     );
 }

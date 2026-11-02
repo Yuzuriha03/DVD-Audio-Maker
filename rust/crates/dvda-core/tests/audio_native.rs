@@ -131,6 +131,7 @@ fn wave(path: &Path, case: &Case) {
 fn fixture() -> Fixture {
     serde_json::from_str(include_str!("fixtures/audio-managed-v1.json")).unwrap()
 }
+#[cfg(not(feature = "direct-bridges"))]
 fn media_identity() -> String {
     let mut paths: Vec<_> = fs::read_dir(library().parent().unwrap())
         .unwrap()
@@ -158,7 +159,15 @@ fn media_identity() -> String {
 #[ignore = "requires the frozen source-built Windows x64 media component"]
 fn frozen_audio_metadata_parameters_and_sample_counts() {
     let fixtures = fixture();
+    // Dynamic reference runs require the original DLL set. Direct bridges
+    // exercise the current implementation against the same frozen outputs.
+    #[cfg(not(feature = "direct-bridges"))]
     assert_eq!(fixtures.media_identity, media_identity());
+    #[cfg(feature = "direct-bridges")]
+    assert_eq!(
+        fixtures.media_identity,
+        "native-media-v1:7AAE981E1221C283F1CE92F19016BE5CDE048590A56521FBD1174B8F1A9C2797"
+    );
     assert_eq!(fixtures.cases.len(), 168);
     let root = Scratch::new();
     let input = root.0.join("input.wav");

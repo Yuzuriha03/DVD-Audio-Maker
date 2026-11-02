@@ -27,13 +27,11 @@ pub struct MpegRequest<'a> {
     pub still: bool,
 }
 
-/// All calls are synchronous and operate on owned argument vectors or paths.
-/// `write_y4m` receives `pal`/`secam`/`ntsc` and a display aspect string; the
-/// image bridge maps the norm to its `25`/`30` frame-rate argument. `create_mpg`
+/// All calls are synchronous and operate on paths and typed requests.
+/// `write_y4m` receives `pal`/`secam`/`ntsc` and a display aspect string;
+/// the backend maps the norm to its frame rate. `create_mpg`
 /// receives the MPEG aspect code (`1`..`4`).
 pub trait Backend {
-    fn image_run(&mut self, args: Vec<String>, callbacks: &mut dyn Callbacks)
-    -> Result<(), String>;
     fn write_y4m(
         &mut self,
         input: &Path,
@@ -101,6 +99,7 @@ pub struct Options {
     pub highlights: Vec<PathBuf>,
     pub selects: Vec<PathBuf>,
     pub data_directory: Option<PathBuf>,
+    pub binary_directory: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -147,6 +146,7 @@ impl Default for Options {
             highlights: Vec::new(),
             selects: Vec::new(),
             data_directory: None,
+            binary_directory: None,
         }
     }
 }
@@ -303,11 +303,7 @@ impl Options {
                 self.palette[..values.len()].copy_from_slice(&values);
             }
             "datadir" => self.data_directory = Some(required()?.into()),
-            // Image/media/menu implementations are linked into the Rust
-            // runtime. Keep the old asset-builder CLI compatible.
-            "bindir" => {
-                let _ = required()?;
-            }
+            "bindir" => self.binary_directory = Some(required()?.into()),
             _ => return Ok(false),
         }
         Ok(true)
@@ -797,57 +793,32 @@ fn font_for<'a>(text: &str, options: &'a Options) -> &'a str {
     }
     &options.font_name
 }
-fn literal_text(text: &str) -> String {
-    // ImageMagick expands image properties and @file syntax inside annotation
-    // strings. Treat author labels as text even when they contain those forms.
-    text.replace('\\', "\\\\")
-        .replace('%', "%%")
-        .replace('@', "\\@")
-}
-fn text_args(
-    args: &mut Vec<String>,
-    text: &str,
-    x: u16,
-    y: u16,
-    size: u16,
-    color: &str,
-    options: &Options,
-) {
-    args.extend([
-        "-stroke".into(),
-        "none".into(),
-        "-fill".into(),
-        color.into(),
-        "-font".into(),
-        font_for(text, options).replace('\\', "/"),
-        "-pointsize".into(),
-        size.to_string(),
-        "-gravity".into(),
-        "NorthWest".into(),
-        "-annotate".into(),
-        format!("+{x}+{y}"),
-        literal_text(text),
-    ]);
-}
 fn baseline_text(
-    args: &mut Vec<String>,
+    image: &mut dvda_image::raster::Raster,
     text: &str,
-    x: u16,
-    baseline: u16,
+    position: [u16; 2],
     size: u16,
-    color: &str,
+    color: [u8; 4],
     options: &Options,
-) {
-    // NorthWest annotation uses a top coordinate rather than MVG's baseline.
-    text_args(
-        args,
-        text,
-        x,
-        baseline.saturating_sub(size),
-        size,
-        color,
-        options,
-    );
+    fonts: &mut dvda_image::fonts::FontCache,
+) -> Result<(), String> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    let runtime = options
+        .binary_directory
+        .as_deref()
+        .or(options.data_directory.as_deref())
+        .unwrap_or_else(|| Path::new("."));
+    let location =
+        dvda_image::fonts::resolve(font_for(text, options), runtime).map_err(|e| e.to_string())?;
+    let data = fonts.load(&location).map_err(|e| e.to_string())?;
+    let mask =
+        dvda_image::text::shape_masks(&data, location.face_index, text, f32::from(size), false)
+            .map_err(|e| e.to_string())?;
+    image
+        .draw_text_mask(&mask, i32::from(position[0]), i32::from(position[1]), color)
+        .map_err(|e| e.to_string())
 }
 fn caption_size(label: &str, options: &Options) -> u16 {
     let units: f32 = label
@@ -863,158 +834,145 @@ fn caption_size(label: &str, options: &Options) -> u16 {
     .clamp(9, maximum)
 }
 
-fn run_image(
-    backend: &mut dyn Backend,
-    args: Vec<String>,
-    callbacks: &mut dyn Callbacks,
-) -> Result<(), String> {
-    check(callbacks)?;
-    backend.image_run(args, callbacks)?;
-    check(callbacks)
-}
 fn make_index_background(
     page: &Page,
     rank: usize,
     covers: &[PathBuf],
     output: &Path,
     options: &Options,
-    backend: &mut dyn Backend,
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
     let height = options.height();
-    let mut args: Vec<String> = ["magick", "+antialias", "-size"]
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-    args.extend([
-        format!("720x{height}"),
-        "(".into(),
-        "xc:rgb(62,107,138)".into(),
-        "-sparse-color".into(),
-        "bilinear".into(),
-        format!("0,0 rgb(62,107,138) 719,{} rgb(34,22,48)", height - 1),
-        "-stroke".into(),
-        "none".into(),
-        "-fill".into(),
-        "rgba(255,255,255,0.14)".into(),
-    ]);
-    let mut grid = String::new();
+    use dvda_image::{
+        codec,
+        geometry::{Dimensions, ResizeMode},
+        raster::Raster,
+    };
+    check(callbacks)?;
+    let mut image = Raster::diagonal_gradient(
+        Dimensions::new(720, u32::from(height)).map_err(|e| e.to_string())?,
+        [62, 107, 138],
+        [34, 22, 48],
+    )
+    .map_err(|e| e.to_string())?;
     for col in 1..4 {
-        write!(
-            grid,
-            "rectangle {},0 {},{} ",
-            col * 180,
-            col * 180,
-            height - 1
-        )
-        .unwrap();
+        image.fill_rectangle(
+            [col * 180, 0, col * 180, i32::from(height) - 1],
+            [255, 255, 255, 36],
+        );
     }
     for row in 0..=3 {
-        let at = scaled_y(60, height) + row * scaled_y(140, height);
-        write!(grid, "rectangle 0,{at} 719,{at} ").unwrap();
+        let at = i32::from(scaled_y(60, height) + row * scaled_y(140, height));
+        image.fill_rectangle([0, at, 719, at], [255, 255, 255, 36]);
     }
-    args.extend([
-        "-draw".into(),
-        grid,
-        "(".into(),
-        "-size".into(),
-        format!("720x{height}"),
-        "radial-gradient:#ffffff-#8090a0".into(),
-        ")".into(),
-        "-compose".into(),
-        "multiply".into(),
-        "-composite".into(),
-        "-compose".into(),
-        "over".into(),
-        "-colorspace".into(),
-        "sRGB".into(),
-        "-type".into(),
-        "TrueColor".into(),
-        ")".into(),
-    ]);
+    image.multiply_radial([255; 3], [128, 144, 160]);
     let thumb = scaled_y(100, height).max(50);
     let label_height = scaled_y(28, height).max(20);
-    let mut borders = String::new();
+    let mut fonts = dvda_image::fonts::FontCache::default();
     for (cell, button) in page
         .buttons
         .iter()
         .filter(|button| button.thumbnail)
         .enumerate()
     {
+        check(callbacks)?;
         let [x0, y0, _, _] = button.rectangle;
         let tx = x0 + (170 - thumb) / 2;
         if let Some(cover) = covers.get(rank * INDEX_CELLS + cell) {
-            args.extend([
-                "(".into(),
-                path_text(cover)?,
-                "-resize".into(),
-                format!("{thumb}x{thumb}^"),
-                "-gravity".into(),
-                "center".into(),
-                "-extent".into(),
-                format!("{thumb}x{thumb}"),
-                "-repage".into(),
-                format!("+{tx}+{y0}"),
-                ")".into(),
-            ]);
+            let size =
+                Dimensions::new(u32::from(thumb), u32::from(thumb)).map_err(|e| e.to_string())?;
+            let cover = codec::decode(std::io::BufReader::new(
+                File::open(cover).map_err(|e| e.to_string())?,
+            ))
+            .map_err(|e| e.to_string())?
+            .resized(size, ResizeMode::Fill)
+            .map_err(|e| e.to_string())?
+            .centered_extent(size, [0, 0, 0, 255])
+            .map_err(|e| e.to_string())?;
+            image.composite(&cover, i32::from(tx), i32::from(y0));
         }
-        args.extend([
-            "(".into(),
-            "-background".into(),
-            "none".into(),
-            "-stroke".into(),
-            "none".into(),
-            "-fill".into(),
-            "black".into(),
-            "-font".into(),
-            font_for(&button.label, options).replace('\\', "/"),
-            "-pointsize".into(),
-            caption_size(&button.label, options).to_string(),
-            "-size".into(),
-            format!("170x{label_height}"),
-            "-gravity".into(),
-            "center".into(),
-            format!("caption:{}", literal_text(&button.label)),
-            "-repage".into(),
-            format!("+{}+{}", x0 + 2, y0 + thumb + 4),
-            "(".into(),
-            "+clone".into(),
-            "-fill".into(),
-            "white".into(),
-            "-colorize".into(),
-            "100".into(),
-            "-repage".into(),
-            format!("+{x0}+{}", y0 + thumb + 2),
-            ")".into(),
-            ")".into(),
-        ]);
-        write!(
-            borders,
-            "rectangle {tx},{y0} {},{} ",
-            tx + thumb - 1,
-            y0 + thumb - 1
-        )
-        .unwrap();
+        if !button.label.is_empty() {
+            let runtime = options
+                .binary_directory
+                .as_deref()
+                .or(options.data_directory.as_deref())
+                .unwrap_or_else(|| Path::new("."));
+            let location = dvda_image::fonts::resolve(font_for(&button.label, options), runtime)
+                .map_err(|e| e.to_string())?;
+            let data = fonts.load(&location).map_err(|e| e.to_string())?;
+            let size = caption_size(&button.label, options);
+            let lines = dvda_image::text::wrap_lines(
+                &data,
+                location.face_index,
+                &button.label,
+                f32::from(size),
+                170.0,
+            )
+            .map_err(|e| e.to_string())?;
+            let line_height = i32::from(size) + 2;
+            let visible_lines = usize::from(label_height).div_ceil(line_height as usize);
+            let masks = lines
+                .iter()
+                .take(visible_lines)
+                .map(|line| {
+                    dvda_image::text::shape_masks(
+                        &data,
+                        location.face_index,
+                        line,
+                        f32::from(size),
+                        false,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            let mut caption = Raster::solid(
+                Dimensions::new(170, u32::from(label_height)).map_err(|e| e.to_string())?,
+                [0; 4],
+            )
+            .map_err(|e| e.to_string())?;
+            let baseline =
+                (i32::from(label_height) - masks.len() as i32 * line_height) / 2 + i32::from(size);
+            for (color, dx, dy) in [([0, 0, 0, 255], 2, 4), ([255; 4], 0, 2)] {
+                for (line, mask) in masks.iter().enumerate() {
+                    caption
+                        .draw_text_mask(
+                            mask,
+                            ((170.0 - mask.advance) / 2.0).round() as i32,
+                            baseline + line as i32 * line_height,
+                            color,
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                image.composite(&caption, i32::from(x0) + dx, i32::from(y0 + thumb) + dy);
+            }
+        }
+        let [x, y, end_x, end_y] = [
+            i32::from(tx),
+            i32::from(y0),
+            i32::from(tx + thumb - 1),
+            i32::from(y0 + thumb - 1),
+        ];
+        for bounds in [
+            [x - 1, y - 1, end_x, y],
+            [x - 1, end_y - 1, end_x, end_y],
+            [x - 1, y, x, end_y],
+            [end_x - 1, y, end_x, end_y],
+        ] {
+            image.fill_rectangle(bounds, [42, 42, 42, 255]);
+        }
     }
-    args.extend([
-        "-flatten".into(),
-        "-stroke".into(),
-        "rgb(42,42,42)".into(),
-        "-strokewidth".into(),
-        "2".into(),
-        "-fill".into(),
-        "none".into(),
-        "-draw".into(),
-        borders,
-        "-colorspace".into(),
-        "sRGB".into(),
-        "-type".into(),
-        "TrueColor".into(),
-        "-quality".into(),
-        "92".into(),
-        path_text(output)?,
-    ]);
-    run_image(backend, args, callbacks)
+    check(callbacks)?;
+    let mut writer = std::io::BufWriter::new(File::create(output).map_err(|e| e.to_string())?);
+    let result = (|| -> Result<(), String> {
+        codec::write_jpeg(&image, &mut writer, 92, [0; 3]).map_err(|e| e.to_string())?;
+        writer.flush().map_err(|e| e.to_string())?;
+        check(callbacks)
+    })();
+    drop(writer);
+    if result.is_err() {
+        let _ = fs::remove_file(output);
+    }
+    result
 }
 
 fn make_masks(
@@ -1022,55 +980,69 @@ fn make_masks(
     blank: &Path,
     layers: [&Path; 3],
     options: &Options,
-    backend: &mut dyn Backend,
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
     let [image, highlight, select] = layers;
-    let mut image_args = vec!["magick".into(), path_text(blank)?, "+antialias".into()];
-    let mut highlight_args = image_args.clone();
-    for args in [&mut image_args, &mut highlight_args] {
-        baseline_text(args, &page.title, 46, 50, 25, "black", options);
-        baseline_text(args, &page.title, 44, 48, 25, "white", options);
-        if !page.index {
-            let rows = page
-                .buttons
-                .iter()
-                .filter(|button| matches!(button.target, Target::Track { .. }))
-                .count();
-            let baseline = even(y(0, rows + 4, options.height()));
-            baseline_text(
-                args,
-                &page.subtitle,
-                46,
-                baseline + 2,
-                options.font_size * 4 / 5,
-                "black",
-                options,
-            );
-            baseline_text(
-                args,
-                &page.subtitle,
-                44,
-                baseline,
-                options.font_size * 4 / 5,
-                "white",
-                options,
-            );
-        }
+    let mut base = dvda_image::codec::decode(std::io::BufReader::new(
+        File::open(blank).map_err(|e| e.to_string())?,
+    ))
+    .map_err(|e| e.to_string())?;
+    let mut fonts = dvda_image::fonts::FontCache::default();
+    let mut label = |raster: &mut dvda_image::raster::Raster,
+                     text: &str,
+                     position: [u16; 2],
+                     size|
+     -> Result<(), String> {
+        check(callbacks)?;
+        baseline_text(
+            raster,
+            text,
+            [position[0] + 2, position[1] + 2],
+            size,
+            [0, 0, 0, 255],
+            options,
+            &mut fonts,
+        )?;
+        baseline_text(raster, text, position, size, [255; 4], options, &mut fonts)
+    };
+    label(&mut base, &page.title, [44, 48], 25)?;
+    if !page.index {
+        let rows = page
+            .buttons
+            .iter()
+            .filter(|button| matches!(button.target, Target::Track { .. }))
+            .count();
+        label(
+            &mut base,
+            &page.subtitle,
+            [44, even(y(0, rows + 4, options.height()))],
+            options.font_size * 4 / 5,
+        )?;
     }
     for button in &page.buttons {
+        if !button.thumbnail {
+            let size = options.font_size.min(
+                button.rectangle[3]
+                    .saturating_sub(button.rectangle[1])
+                    .saturating_sub(3)
+                    .max(7),
+            );
+            label(&mut base, &button.label, button.baseline, size)?;
+        }
+    }
+    let mut highlighted = base.clone();
+    for button in &page.buttons {
+        check(callbacks)?;
         if button.thumbnail {
-            let [x0, y0, x1, y1] = button.rectangle;
-            highlight_args.extend([
-                "-fill".into(),
-                "none".into(),
-                "-stroke".into(),
-                "red".into(),
-                "-strokewidth".into(),
-                "6".into(),
-                "-draw".into(),
-                format!("rectangle {x0},{y0} {x1},{y1}"),
-            ]);
+            let [x0, y0, x1, y1] = button.rectangle.map(i32::from);
+            for bounds in [
+                [x0 - 3, y0 - 3, x1 + 3, y0 + 2],
+                [x0 - 3, y1 - 2, x1 + 3, y1 + 3],
+                [x0 - 3, y0 + 3, x0 + 2, y1 - 3],
+                [x1 - 2, y0 + 3, x1 + 3, y1 - 3],
+            ] {
+                highlighted.fill_rectangle(bounds, [255, 0, 0, 255]);
+            }
         } else {
             let [x, baseline] = button.baseline;
             let size = options.font_size.min(
@@ -1079,51 +1051,80 @@ fn make_masks(
                     .saturating_sub(3)
                     .max(7),
             );
-            for args in [&mut image_args, &mut highlight_args] {
-                baseline_text(
-                    args,
-                    &button.label,
-                    x + 2,
-                    baseline + 2,
-                    size,
-                    "black",
-                    options,
-                );
-                baseline_text(args, &button.label, x, baseline, size, "white", options);
-            }
-            let ax = x.saturating_sub(11);
-            let ay = baseline.saturating_sub(size / 2);
-            highlight_args.extend([
-                "-stroke".into(),
-                "none".into(),
-                "-fill".into(),
-                "red".into(),
-                "-draw".into(),
-                format!(
-                    "polygon {},{ay} {ax},{} {ax},{}",
-                    ax + 7,
-                    ay.saturating_sub(6),
-                    ay + 6
-                ),
-            ]);
+            let ax = i32::from(x.saturating_sub(11));
+            let ay = i32::from(baseline.saturating_sub(size / 2));
+            highlighted.fill_triangle(
+                [[ax + 7, ay], [ax, (ay - 6).max(0)], [ax, ay + 6]],
+                [255, 0, 0, 255],
+            );
         }
     }
-    image_args.extend([
-        "-depth".into(),
-        "8".into(),
-        format!("PNG32:{}", path_text(image)?),
-    ]);
-    highlight_args.extend([
-        "-depth".into(),
-        "8".into(),
-        format!("PNG32:{}", path_text(highlight)?),
-    ]);
-    run_image(backend, image_args, callbacks)?;
-    run_image(backend, highlight_args, callbacks)?;
-    // The three layers share the same white glyphs and black shadows. Only
-    // the highlighted layer adds red motifs, staying within four SPU tuples.
-    fs::copy(image, select).map_err(|error| error.to_string())?;
+    for (raster, path) in [(&base, image), (&highlighted, highlight), (&base, select)] {
+        check(callbacks)?;
+        let mut created = false;
+        let result = (|| -> Result<(), String> {
+            let mut writer =
+                std::io::BufWriter::new(File::create(path).map_err(|e| e.to_string())?);
+            created = true;
+            dvda_image::codec::write_png(raster, &mut writer).map_err(|e| e.to_string())?;
+            writer.flush().map_err(|e| e.to_string())?;
+            check(callbacks)
+        })();
+        if result.is_err() && created {
+            let _ = fs::remove_file(path);
+        }
+        result?;
+    }
     Ok(())
+}
+
+fn prepare_picture(
+    input: Option<&Path>,
+    output: &Path,
+    height: u16,
+    transparent: bool,
+    callbacks: &mut dyn Callbacks,
+) -> Result<(), String> {
+    use dvda_image::{
+        codec,
+        geometry::{Dimensions, ResizeMode},
+        raster::Raster,
+    };
+    use std::io::{BufReader, BufWriter};
+    let mut created = false;
+    let result = (|| -> Result<(), String> {
+        check(callbacks)?;
+        let size = Dimensions::new(720, u32::from(height)).map_err(|e| e.to_string())?;
+        let image = if let Some(input) = input {
+            let image = codec::decode(BufReader::new(
+                File::open(input).map_err(|e| e.to_string())?,
+            ))
+            .map_err(|e| e.to_string())?;
+            check(callbacks)?;
+            image
+                .resized(size, ResizeMode::Exact)
+                .map_err(|e| e.to_string())?
+        } else {
+            Raster::solid(size, [0, 0, 0, if transparent { 0 } else { 255 }])
+                .map_err(|e| e.to_string())?
+        };
+        check(callbacks)?;
+        let mut writer = BufWriter::new(File::create(output).map_err(|e| e.to_string())?);
+        created = true;
+        if transparent {
+            codec::write_png(&image, &mut writer)
+        } else {
+            codec::write_jpeg(&image, &mut writer, 92, [0; 3])
+        }
+        .map_err(|e| e.to_string())?;
+        writer.flush().map_err(|e| e.to_string())?;
+        writer.get_ref().sync_all().map_err(|e| e.to_string())?;
+        check(callbacks)
+    })();
+    if result.is_err() && created {
+        let _ = fs::remove_file(output);
+    }
+    result
 }
 
 fn choose(paths: &[PathBuf], rank: usize) -> Option<&Path> {
@@ -1458,35 +1459,13 @@ pub fn author(
             &format!("[menu] Authoring {} menu page(s)\n", pages.len()),
         );
         let blank = temporary.join("menu-blank.png");
-        if let Some(input) = &options.blankscreen {
-            run_image(
-                backend,
-                vec![
-                    "magick".into(),
-                    path_text(input)?,
-                    "-resize".into(),
-                    format!("720x{}!", options.height()),
-                    "-depth".into(),
-                    "8".into(),
-                    format!("PNG32:{}", path_text(&blank)?),
-                ],
-                callbacks,
-            )?;
-        } else {
-            run_image(
-                backend,
-                vec![
-                    "magick".into(),
-                    "-size".into(),
-                    format!("720x{}", options.height()),
-                    "xc:none".into(),
-                    "-depth".into(),
-                    "8".into(),
-                    format!("PNG32:{}", path_text(&blank)?),
-                ],
-                callbacks,
-            )?;
-        }
+        prepare_picture(
+            options.blankscreen.as_deref(),
+            &blank,
+            options.height(),
+            true,
+            callbacks,
+        )?;
         let covers = if let Some(path) = &options.index_covers {
             fs::read_to_string(path)
                 .map_err(|error| format!("Index cover list {}: {error}", path.display()))?
@@ -1510,9 +1489,7 @@ pub fn author(
                 } else {
                     let picture = temporary.join(format!("menu-background-{rank}.jpg"));
                     if page.index {
-                        make_index_background(
-                            page, rank, &covers, &picture, options, backend, callbacks,
-                        )?;
+                        make_index_background(page, rank, &covers, &picture, options, callbacks)?;
                     } else {
                         let content_rank =
                             if options.backgrounds.len() == pages.len() - options.index_pages {
@@ -1520,26 +1497,13 @@ pub fn author(
                             } else {
                                 rank
                             };
-                        let mut args = vec!["magick".into()];
-                        if let Some(input) = choose(&options.backgrounds, content_rank) {
-                            args.push(path_text(input)?);
-                        } else {
-                            args.extend([
-                                "-size".into(),
-                                format!("720x{}", options.height()),
-                                "xc:black".into(),
-                            ]);
-                        }
-                        args.extend([
-                            "-resize".into(),
-                            format!("720x{}!", options.height()),
-                            "-colorspace".into(),
-                            "sRGB".into(),
-                            "-quality".into(),
-                            "92".into(),
-                            path_text(&picture)?,
-                        ]);
-                        run_image(backend, args, callbacks)?;
+                        prepare_picture(
+                            choose(&options.backgrounds, content_rank),
+                            &picture,
+                            options.height(),
+                            false,
+                            callbacks,
+                        )?;
                     }
                     let path = temporary.join(format!("menu-background-{rank}.mpg"));
                     encode_picture(
@@ -1564,7 +1528,6 @@ pub fn author(
                     &blank,
                     [&image, &highlight, &select],
                     options,
-                    backend,
                     callbacks,
                 )?;
                 for (paths, target) in [
@@ -1663,21 +1626,7 @@ pub fn author(
             for (rank, input) in flat.iter().enumerate() {
                 check(callbacks)?;
                 let picture = temporary.join(format!("still-picture-{rank}.jpg"));
-                run_image(
-                    backend,
-                    vec![
-                        "magick".into(),
-                        path_text(input)?,
-                        "-resize".into(),
-                        format!("720x{}!", options.height()),
-                        "-colorspace".into(),
-                        "sRGB".into(),
-                        "-quality".into(),
-                        "92".into(),
-                        path_text(&picture)?,
-                    ],
-                    callbacks,
-                )?;
+                prepare_picture(Some(input), &picture, options.height(), false, callbacks)?;
                 let stream = temporary.join(format!("still-picture-{rank}.mpg"));
                 encode_picture(
                     PicturePaths {

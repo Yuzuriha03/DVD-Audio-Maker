@@ -70,7 +70,10 @@ fn element_allowed(parent: Option<Node>, name: &str) -> Option<Node> {
 }
 
 fn accepts_body(node: Node) -> bool {
-    matches!(node, Node::Fpc | Node::Pre | Node::Post | Node::Button | Node::Cell)
+    matches!(
+        node,
+        Node::Fpc | Node::Pre | Node::Post | Node::Button | Node::Cell
+    )
 }
 
 fn boolean(value: &str) -> Option<bool> {
@@ -100,7 +103,9 @@ fn parse_unsigned(value: &str, what: &str) -> Result<u32, String> {
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(format!("bad {what}: {value:?}"));
     }
-    digits.parse().map_err(|error| format!("bad {what}: {error}"))
+    digits
+        .parse()
+        .map_err(|error| format!("bad {what}: {error}"))
 }
 
 fn parse_entries(entries: &mut u8, is_vts: bool, value: &str) -> Result<(), String> {
@@ -139,12 +144,12 @@ impl Builder {
             Node::Dvdauthor => match name {
                 "dest" => self.document.output_dir = Some(PathBuf::from(value)),
                 "jumppad" => {
-                    self.document.jumppad =
-                        boolean(value).ok_or_else(|| format!("invalid boolean for jumppad: {value:?}"))?;
+                    self.document.jumppad = boolean(value)
+                        .ok_or_else(|| format!("invalid boolean for jumppad: {value:?}"))?;
                 }
                 "allgprm" => {
-                    self.document.allgprm =
-                        boolean(value).ok_or_else(|| format!("invalid boolean for allgprm: {value:?}"))?;
+                    self.document.allgprm = boolean(value)
+                        .ok_or_else(|| format!("invalid boolean for allgprm: {value:?}"))?;
                 }
                 "format" => self.document.format = parse_format(value)?,
                 _ => return Err(format!("unsupported dvdauthor attribute {name:?}")),
@@ -203,7 +208,10 @@ impl Builder {
                 }
             }
             Node::Button => {
-                let button = self.button.as_mut().ok_or("button attribute outside button")?;
+                let button = self
+                    .button
+                    .as_mut()
+                    .ok_or("button attribute outside button")?;
                 match name {
                     "name" => button.name = Some(value.to_string()),
                     "up" => button.up = Some(value.to_string()),
@@ -231,21 +239,27 @@ impl Builder {
                 match name {
                     "start" => cell.start = Some(value.to_string()),
                     "end" => cell.end = Some(value.to_string()),
-                    "chapter" => cell.chapter = boolean(value).ok_or("invalid boolean for cell chapter")?,
-                    "program" => cell.program = boolean(value).ok_or("invalid boolean for cell program")?,
+                    "chapter" => {
+                        cell.chapter = boolean(value).ok_or("invalid boolean for cell chapter")?
+                    }
+                    "program" => {
+                        cell.program = boolean(value).ok_or("invalid boolean for cell program")?
+                    }
                     "pause" => cell.pause = parse_pause(value)?,
                     _ => return Err(format!("unsupported cell attribute {name:?}")),
                 }
             }
             Node::Amgm | Node::Fpc | Node::Pre | Node::Post => {
-                return Err(format!("unsupported attribute {name:?}"))
+                return Err(format!("unsupported attribute {name:?}"));
             }
         }
         Ok(())
     }
 
     fn menus_mut(&mut self) -> Result<&mut MenuGroup, String> {
-        self.menus.as_mut().ok_or_else(|| "menus attribute outside menus".to_string())
+        self.menus
+            .as_mut()
+            .ok_or_else(|| "menus attribute outside menus".to_string())
     }
 
     fn cell_mut(&mut self) -> Result<&mut Cell, String> {
@@ -256,7 +270,9 @@ impl Builder {
     }
 
     fn pgc_mut(&mut self) -> Result<&mut Pgc, String> {
-        self.pgc.as_mut().ok_or_else(|| "pgc child outside pgc".to_string())
+        self.pgc
+            .as_mut()
+            .ok_or_else(|| "pgc child outside pgc".to_string())
     }
 
     fn start(&mut self, node: Node) -> Result<(), String> {
@@ -280,7 +296,10 @@ impl Builder {
                 if self.menus.is_some() {
                     return Err("nested <menus>".into());
                 }
-                self.menus = Some(MenuGroup { lang: "en".into(), ..MenuGroup::default() });
+                self.menus = Some(MenuGroup {
+                    lang: "en".into(),
+                    ..MenuGroup::default()
+                });
             }
             Node::Pgc => {
                 if self.pgc.is_some() {
@@ -290,7 +309,13 @@ impl Builder {
             }
             Node::Pre | Node::Post => self.body.clear(),
             Node::Button => {
-                self.button = Some(Button { x0: -1, y0: -1, x1: -1, y1: -1, ..Button::default() });
+                self.button = Some(Button {
+                    x0: -1,
+                    y0: -1,
+                    x1: -1,
+                    y1: -1,
+                    ..Button::default()
+                });
                 self.body.clear();
             }
             Node::Vob => {
@@ -304,7 +329,11 @@ impl Builder {
                 vob.cells.push(Cell::default());
                 self.body.clear();
             }
-            Node::Video | Node::Audio | Node::SubpictureMenus | Node::SubpicturePgc | Node::Stream => {}
+            Node::Video
+            | Node::Audio
+            | Node::SubpictureMenus
+            | Node::SubpicturePgc
+            | Node::Stream => {}
         }
         Ok(())
     }
@@ -353,7 +382,10 @@ impl Builder {
             }
             Node::Stream => {
                 let stream = self.stream.take().unwrap_or_default();
-                self.subpicture.get_or_insert_with(SubpictureAttrs::default).streams.push(stream);
+                self.subpicture
+                    .get_or_insert_with(SubpictureAttrs::default)
+                    .streams
+                    .push(stream);
             }
             Node::Pre => {
                 self.pgc_mut()?.pre = std::mem::take(&mut self.body);
@@ -390,9 +422,7 @@ impl Builder {
     }
 
     fn text(&mut self, value: &str) -> Result<(), String> {
-        if !self.current_body
-            && !value.chars().all(|c| matches!(c, ' ' | '\t' | '\r' | '\n'))
-        {
+        if !self.current_body && !value.chars().all(|c| matches!(c, ' ' | '\t' | '\r' | '\n')) {
             return Err("unexpected XML text".into());
         }
         if self.current_body {
@@ -403,7 +433,9 @@ impl Builder {
 
     fn finish(mut self) -> Result<Document, String> {
         for group in &mut self.document.menus {
-            let context = VmContext { menu_pgc_count: group.pgcs.len() as u16 };
+            let context = VmContext {
+                menu_pgc_count: group.pgcs.len() as u16,
+            };
             for pgc in &mut group.pgcs {
                 pgc.pre_compiled = vm::compile_text(&pgc.pre, context)?;
                 pgc.post_compiled = vm::compile_text(&pgc.post, context)?;
@@ -418,7 +450,11 @@ impl Builder {
             }
         }
         let fpc_context = VmContext {
-            menu_pgc_count: self.document.menus.first().map_or(0, |group| group.pgcs.len() as u16),
+            menu_pgc_count: self
+                .document
+                .menus
+                .first()
+                .map_or(0, |group| group.pgcs.len() as u16),
         };
         if let Some(fpc) = &mut self.document.fpc {
             fpc.pre_compiled = vm::compile_text(&fpc.pre, fpc_context)?;
@@ -507,13 +543,25 @@ mod tests {
         assert_eq!(menu.audio[0].format.as_deref(), Some("mp2"));
         assert_eq!(menu.pgcs.len(), 1);
         let pgc = &menu.pgcs[0];
-        assert_eq!(pgc.pre_compiled, [0x71, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]);
-        assert_eq!(pgc.post_compiled, [0x20, 0x04, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x01]);
+        assert_eq!(
+            pgc.pre_compiled,
+            [0x71, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]
+        );
+        assert_eq!(
+            pgc.post_compiled,
+            [0x20, 0x04, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x01]
+        );
         assert_eq!(pgc.buttons.len(), 1);
         assert_eq!(pgc.buttons[0].name.as_deref(), Some("button01"));
-        assert_eq!(pgc.buttons[0].compiled, [0x20, 0x04, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x01]);
+        assert_eq!(
+            pgc.buttons[0].compiled,
+            [0x20, 0x04, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x01]
+        );
         assert_eq!(pgc.vobs.len(), 1);
-        assert_eq!(pgc.vobs[0].file.as_deref(), Some(std::path::Path::new("menu.mpg")));
+        assert_eq!(
+            pgc.vobs[0].file.as_deref(),
+            Some(std::path::Path::new("menu.mpg"))
+        );
     }
 
     #[test]
@@ -523,7 +571,10 @@ mod tests {
         let pgc = &document.menus[0].pgcs[0];
         assert_eq!(pgc.entries, 1 << 3);
         assert_eq!(pgc.buttons[0].name.as_deref(), Some("1"));
-        assert_eq!(pgc.buttons[0].compiled, [0x30, 0x0a, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00]);
+        assert_eq!(
+            pgc.buttons[0].compiled,
+            [0x30, 0x0a, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00]
+        );
         assert_eq!(pgc.vobs[0].cells.len(), 1);
         assert_eq!(pgc.vobs[0].cells[0].pause, 255);
         assert_eq!(document.menus[0].lang, "ja");
@@ -533,8 +584,14 @@ mod tests {
     fn rejects_unknown_or_malformed_documents() {
         assert!(document("<dvdauthor><amgm/></dvdauthor>").is_err());
         assert!(document("<dvdauthor><amgm><menus><unknown/></menus></amgm></dvdauthor>").is_err());
-        assert!(document("<dvdauthor><amgm><menus><pgc bogus=\"1\"/></menus></amgm></dvdauthor>").is_err());
-        assert!(document("<dvdauthor format=\"secam\"><amgm><menus><pgc/></menus></amgm></dvdauthor>").is_err());
+        assert!(
+            document("<dvdauthor><amgm><menus><pgc bogus=\"1\"/></menus></amgm></dvdauthor>")
+                .is_err()
+        );
+        assert!(
+            document("<dvdauthor format=\"secam\"><amgm><menus><pgc/></menus></amgm></dvdauthor>")
+                .is_err()
+        );
         assert!(document("<dvdauthor><amgm><menus><pgc><button>call menu 1;</button></pgc></menus></amgm></dvdauthor>").is_err());
     }
 }

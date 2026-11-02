@@ -50,8 +50,12 @@ unsafe fn run_navigation_request(request: *const MenuRequest) -> c_int {
     {
         return 1;
     }
-    let xml = unsafe { CStr::from_ptr(request.xml) }.to_str().map(std::path::PathBuf::from);
-    let output = unsafe { CStr::from_ptr(request.output) }.to_str().map(std::path::PathBuf::from);
+    let xml = unsafe { CStr::from_ptr(request.xml) }
+        .to_str()
+        .map(std::path::PathBuf::from);
+    let output = unsafe { CStr::from_ptr(request.output) }
+        .to_str()
+        .map(std::path::PathBuf::from);
     let (Ok(xml), Ok(output)) = (xml, output) else {
         return 1;
     };
@@ -64,9 +68,20 @@ unsafe fn run_navigation_request(request: *const MenuRequest) -> c_int {
     )
 }
 
+fn read_image_rgba(path: &std::path::Path, buffer: &mut [u8]) -> Result<(u32, u32), String> {
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let image = dvda_image::codec::decode(std::io::BufReader::new(file))
+        .map_err(|error| error.to_string())?;
+    if buffer.len() < image.rgba().len() {
+        return Err("RGBA buffer is too small".into());
+    }
+    buffer[..image.rgba().len()].copy_from_slice(image.rgba());
+    Ok((image.dimensions().width(), image.dimensions().height()))
+}
+
 /// # Safety
 /// The request must follow the MenuRequest contract: valid size, non-null UTF-8
-/// paths and a read_rgba callback that obeys the image ABI.
+/// paths and, when supplied, a read_rgba callback that obeys the image ABI.
 unsafe fn run_spu_request(request: *const MenuRequest) -> c_int {
     let Some(request) = (unsafe { request.as_ref() }) else {
         return 1;
@@ -78,22 +93,34 @@ unsafe fn run_spu_request(request: *const MenuRequest) -> c_int {
     {
         return 1;
     }
-    let xml = unsafe { CStr::from_ptr(request.xml) }.to_str().map(std::path::PathBuf::from);
-    let input = unsafe { CStr::from_ptr(request.input) }.to_str().map(std::path::PathBuf::from);
-    let output = unsafe { CStr::from_ptr(request.output) }.to_str().map(std::path::PathBuf::from);
+    let xml = unsafe { CStr::from_ptr(request.xml) }
+        .to_str()
+        .map(std::path::PathBuf::from);
+    let input = unsafe { CStr::from_ptr(request.input) }
+        .to_str()
+        .map(std::path::PathBuf::from);
+    let output = unsafe { CStr::from_ptr(request.output) }
+        .to_str()
+        .map(std::path::PathBuf::from);
     let (Ok(xml), Ok(input), Ok(output)) = (xml, input, output) else {
         return 1;
     };
     let read_rgba = request.read_rgba;
     let mut callback = |path: &std::path::Path, buffer: &mut [u8]| -> Result<(u32, u32), String> {
         let Some(read) = read_rgba else {
-            return Err("missing RGBA callback".into());
+            return read_image_rgba(path, buffer);
         };
         let name = path.to_str().ok_or("non-UTF-8 image path")?;
         let name = std::ffi::CString::new(name).map_err(|error| error.to_string())?;
         let (mut width, mut height) = (0u32, 0u32);
         let status = unsafe {
-            read(name.as_ptr(), buffer.as_mut_ptr(), buffer.len(), &mut width, &mut height)
+            read(
+                name.as_ptr(),
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                &mut width,
+                &mut height,
+            )
         };
         if status != 0 {
             return Err(format!("image callback failed for {}", path.display()));
@@ -168,5 +195,34 @@ pub fn run_navigation(xml: &CStr, output: &CStr) -> Result<(), MenuError> {
         Ok(())
     } else {
         Err(MenuError(status))
+    }
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::read_image_rgba;
+
+    #[test]
+    fn rust_reader_preserves_alpha_and_checks_capacity() {
+        let directory =
+            std::env::temp_dir().join(format!("dvda menu image {}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("图层.png");
+        let image = dvda_image::raster::Raster::from_rgba(
+            dvda_image::geometry::Dimensions::new(2, 1).unwrap(),
+            vec![255, 9, 17, 0, 0, 128, 255, 128],
+        )
+        .unwrap();
+        dvda_image::codec::write_png(&image, std::fs::File::create(&path).unwrap()).unwrap();
+        let mut small = [77; 7];
+        assert!(read_image_rgba(&path, &mut small).is_err());
+        assert_eq!(small, [77; 7]);
+        let mut output = [77; 12];
+        assert_eq!(read_image_rgba(&path, &mut output).unwrap(), (2, 1));
+        assert_eq!(&output[..8], image.rgba());
+        assert_eq!(&output[8..], &[77; 4]);
+        std::fs::write(&path, b"invalid").unwrap();
+        assert!(read_image_rgba(&path, &mut output).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

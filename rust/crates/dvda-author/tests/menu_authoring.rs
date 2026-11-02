@@ -22,7 +22,12 @@ impl Workspace {
     }
     fn file(&self, name: &str) -> PathBuf {
         let path = self.0.join(name);
-        fs::write(&path, b"fixture image").unwrap();
+        let image = dvda_image::raster::Raster::solid(
+            dvda_image::geometry::Dimensions::new(32, 24).unwrap(),
+            [40, 100, 180, 255],
+        )
+        .unwrap();
+        dvda_image::codec::write_png(&image, &mut fs::File::create(&path).unwrap()).unwrap();
         path
     }
 }
@@ -64,24 +69,20 @@ fn program(norm: &str, still: bool) -> Vec<u8> {
     data
 }
 impl Backend for FixtureBackend {
-    fn image_run(&mut self, args: Vec<String>, _: &mut dyn Callbacks) -> Result<(), String> {
-        let path = args
-            .last()
-            .unwrap()
-            .strip_prefix("PNG32:")
-            .unwrap_or(args.last().unwrap());
-        fs::write(path, b"image").map_err(|error| error.to_string())?;
-        self.images.push(args);
-        Ok(())
-    }
     fn write_y4m(
         &mut self,
-        _: &Path,
+        input: &Path,
         output: &Path,
         _: &str,
         _: &str,
         _: &mut dyn Callbacks,
     ) -> Result<(), String> {
+        let image = dvda_image::codec::decode(std::io::BufReader::new(
+            fs::File::open(input).map_err(|e| e.to_string())?,
+        ))
+        .map_err(|e| e.to_string())?;
+        assert_eq!(image.dimensions().width(), 720);
+        assert!([480, 576].contains(&image.dimensions().height()));
         fs::write(output, b"y4m").map_err(|error| error.to_string())
     }
     fn create_mpg(
@@ -112,6 +113,40 @@ impl Backend for FixtureBackend {
         }
         let document = fs::read_to_string(xml).unwrap();
         assert!(document.contains("<subpictures format="));
+        let mut layers = Vec::new();
+        for attribute in ["image", "highlight", "select"] {
+            let marker = format!("{attribute}=\"");
+            let path = document
+                .split_once(&marker)
+                .unwrap()
+                .1
+                .split('"')
+                .next()
+                .unwrap();
+            let raster =
+                dvda_image::codec::decode(std::io::BufReader::new(fs::File::open(path).unwrap()))
+                    .unwrap();
+            assert_eq!(raster.dimensions().width(), 720);
+            assert!(matches!(raster.dimensions().height(), 480 | 576));
+            let colors: std::collections::HashSet<_> = raster
+                .rgba()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|pixel| pixel.to_vec())
+                .collect();
+            assert!(
+                colors.len() <= 4,
+                "SPU layer exceeds four colors: {colors:?}"
+            );
+            assert!(
+                colors.contains(&vec![255, 255, 255, 255]),
+                "missing label ink"
+            );
+            layers.push(raster.rgba().to_vec());
+        }
+        assert_eq!(layers[0], layers[2]);
+        assert_ne!(layers[0], layers[1]);
         let mut data = fs::read(input).unwrap();
         data.extend([0; 2048]);
         fs::write(output, data).map_err(|error| error.to_string())?;

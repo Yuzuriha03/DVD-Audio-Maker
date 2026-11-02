@@ -73,53 +73,6 @@ fn status(code: i32, callbacks: &mut dyn dvda_author::Callbacks) -> Result<(), S
 }
 
 impl dvda_author::menu::Backend for Backend {
-    fn image_run(
-        &mut self,
-        arguments: Vec<String>,
-        callbacks: &mut dyn dvda_author::Callbacks,
-    ) -> Result<(), String> {
-        #[cfg(feature = "direct-bridges")]
-        {
-            use std::ffi::{CStr, c_char, c_void};
-            struct State<'a>(&'a mut dyn dvda_author::Callbacks);
-            unsafe extern "C" fn emit(state: *mut c_void, stream: i32, text: *const c_char) {
-                if !text.is_null() {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-                        (*(state as *mut State<'_>))
-                            .0
-                            .emit(stream, &CStr::from_ptr(text).to_string_lossy());
-                    }));
-                }
-            }
-            unsafe extern "C" fn cancel(state: *mut c_void) -> i32 {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-                    (*(state as *mut State<'_>)).0.cancelled() as i32
-                }))
-                .unwrap_or(1)
-            }
-            let arguments = arguments
-                .iter()
-                .map(|s| string(s))
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut state = State(callbacks);
-            let code = unsafe {
-                dvda_bridges::direct::image_run_with_callbacks(
-                    &arguments,
-                    dvda_bridges::Call {
-                        emit: Some(emit),
-                        cancel: Some(cancel),
-                        state: &mut state as *mut State<'_> as *mut c_void,
-                    },
-                )
-            };
-            status(code, callbacks)
-        }
-        #[cfg(not(feature = "direct-bridges"))]
-        {
-            let _ = (arguments, callbacks);
-            Err("Menu authoring requires the direct-bridges feature".into())
-        }
-    }
     fn write_y4m(
         &mut self,
         input: &Path,
@@ -128,23 +81,57 @@ impl dvda_author::menu::Backend for Backend {
         aspect: &str,
         callbacks: &mut dyn dvda_author::Callbacks,
     ) -> Result<(), String> {
-        #[cfg(feature = "direct-bridges")]
-        {
-            status(
-                dvda_bridges::direct::write_y4m(
-                    &path(input)?,
-                    &path(output)?,
-                    &string(if norm == "ntsc" { "30" } else { "25" })?,
-                    &string(aspect)?,
-                ),
-                callbacks,
-            )
+        if callbacks.cancelled() {
+            return Err("Author cancelled".into());
         }
-        #[cfg(not(feature = "direct-bridges"))]
-        {
-            let _ = (input, output, norm, aspect, callbacks);
-            Err("Menu authoring requires the direct-bridges feature".into())
-        }
+        let result = (|| -> std::io::Result<()> {
+            use std::io::Write;
+            let image =
+                dvda_image::codec::decode(std::io::BufReader::new(std::fs::File::open(input)?))?;
+            let size = image.dimensions();
+            // The old RGB export ignores alpha rather than flattening it.
+            let rgb: Vec<u8> = image
+                .rgba()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .flat_map(|pixel| pixel[..3].iter().copied())
+                .collect();
+            if callbacks.cancelled() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "Author cancelled",
+                ));
+            }
+            let mut bytes = Vec::new();
+            dvda_image::y4m::write_rgb(
+                &mut bytes,
+                &rgb,
+                size.width() as usize,
+                size.height() as usize,
+                if norm == "ntsc" { "30" } else { "25" },
+                aspect,
+            )?;
+            let mut file = std::fs::File::create(output)?;
+            let written = (|| -> std::io::Result<()> {
+                file.write_all(&bytes)?;
+                file.flush()?;
+                file.sync_all()?;
+                if callbacks.cancelled() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "Author cancelled",
+                    ));
+                }
+                Ok(())
+            })();
+            drop(file);
+            if written.is_err() {
+                let _ = std::fs::remove_file(output);
+            }
+            written
+        })();
+        result.map_err(|error| error.to_string())
     }
     fn create_mpg(
         &mut self,
@@ -233,5 +220,66 @@ impl dvda_author::menu::Backend for Backend {
             let _ = (xml, output, callbacks);
             Err("Menu authoring requires the direct-bridges feature".into())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dvda_author::menu::Backend as _;
+
+    #[test]
+    fn rust_y4m_preserves_rgb_and_cleans_cancelled_output() {
+        struct Cancel {
+            calls: usize,
+            at: usize,
+        }
+        impl dvda_author::Callbacks for Cancel {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                self.calls += 1;
+                self.calls >= self.at
+            }
+        }
+        let input = std::env::temp_dir().join(format!("dvda-y4m-{}.png", std::process::id()));
+        let output = input.with_extension("y4m");
+        let image = dvda_image::raster::Raster::solid(
+            dvda_image::geometry::Dimensions::new(2, 2).unwrap(),
+            [255, 0, 0, 0],
+        )
+        .unwrap();
+        dvda_image::codec::write_png(&image, std::fs::File::create(&input).unwrap()).unwrap();
+        for (norm, rate) in [("pal", "25"), ("ntsc", "30"), ("secam", "25")] {
+            let mut callbacks = Cancel {
+                calls: 0,
+                at: usize::MAX,
+            };
+            Backend
+                .write_y4m(&input, &output, norm, "4:3", &mut callbacks)
+                .unwrap();
+            let mut expected = Vec::new();
+            dvda_image::y4m::write_rgb(&mut expected, &[255, 0, 0].repeat(4), 2, 2, rate, "4:3")
+                .unwrap();
+            assert_eq!(std::fs::read(&output).unwrap(), expected);
+            std::fs::remove_file(&output).unwrap();
+        }
+        let mut callbacks = Cancel { calls: 0, at: 3 };
+        assert!(
+            Backend
+                .write_y4m(&input, &output, "pal", "4:3", &mut callbacks)
+                .is_err()
+        );
+        assert!(!output.exists());
+        let mut callbacks = Cancel {
+            calls: 0,
+            at: usize::MAX,
+        };
+        assert!(
+            Backend
+                .write_y4m(&input, &output, "pal", "invalid", &mut callbacks)
+                .is_err()
+        );
+        assert!(!output.exists());
+        std::fs::remove_file(input).unwrap();
     }
 }

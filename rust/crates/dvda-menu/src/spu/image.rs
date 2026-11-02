@@ -23,7 +23,12 @@ pub(crate) struct Rect {
 }
 
 impl Rect {
-    pub(crate) const UNBOUND: Self = Self { x0: -1, y0: -1, x1: -1, y1: -1 };
+    pub(crate) const UNBOUND: Self = Self {
+        x0: -1,
+        y0: -1,
+        x1: -1,
+        y1: -1,
+    };
 }
 
 #[derive(Clone, Debug, Default)]
@@ -40,7 +45,11 @@ pub(crate) struct Button {
 
 impl Button {
     pub(crate) fn new(autoaction: bool) -> Self {
-        Self { autoaction, r: Rect::UNBOUND, ..Default::default() }
+        Self {
+            autoaction,
+            r: Rect::UNBOUND,
+            ..Default::default()
+        }
     }
 }
 
@@ -105,7 +114,12 @@ impl Pict {
         let (width, height) = rgba(&fname, &mut buffer)?;
         let (width, height) = (width as usize, height as usize);
         if width == 0 || height == 0 || width > MAXX || height > MAXY {
-            return Err(format!("bad image {}: {}x{}", fname.display(), width, height));
+            return Err(format!(
+                "bad image {}: {}x{}",
+                fname.display(),
+                width,
+                height
+            ));
         }
         self.create_image(width, height);
         for y in 0..height {
@@ -151,7 +165,11 @@ pub(crate) struct SubPicture {
 
 impl SubPicture {
     pub(crate) fn new() -> Self {
-        Self { pal: [Color::TRANSPARENT; 4], transparentc: Color::TRANSPARENT, ..Default::default() }
+        Self {
+            pal: [Color::TRANSPARENT; 4],
+            transparentc: Color::TRANSPARENT,
+            ..Default::default()
+        }
     }
 
     pub(crate) fn find_master_pal(&mut self, color: Color) -> i32 {
@@ -173,7 +191,10 @@ impl SubPicture {
         // Replace the requested transparent colour only when the image carries no
         // alpha information of its own.
         if pict.pal.iter().all(|entry| entry.a == 255)
-            && let Some(entry) = pict.pal.iter_mut().find(|entry| **entry == self.transparentc)
+            && let Some(entry) = pict
+                .pal
+                .iter_mut()
+                .find(|entry| **entry == self.transparentc)
         {
             *entry = Color::TRANSPARENT;
         }
@@ -208,7 +229,11 @@ impl SubPicture {
         if width == 0 {
             return Err("no picture".into());
         }
-        for (pict, name) in [(&mut self.img, "img"), (&mut self.hlt, "hlt"), (&mut self.sel, "sel")] {
+        for (pict, name) in [
+            (&mut self.img, "img"),
+            (&mut self.hlt, "hlt"),
+            (&mut self.sel, "sel"),
+        ] {
             if pict.img.is_empty() {
                 pict.construct_blank(width, height);
             } else if pict.width != width || pict.height != height {
@@ -249,7 +274,12 @@ impl SubPicture {
             self.fill_button_areas(useimg)?;
         }
 
-        self.pal.fill(Color { r: 255, g: 255, b: 255, a: 0 });
+        self.pal.fill(Color {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 0,
+        });
         for index in 0..(w * h) {
             let slot = self.fimg[index];
             if slot != 255 {
@@ -319,7 +349,8 @@ impl SubPicture {
         let yd_usize = self.yd as usize;
         for row in 0..yd_usize {
             let source = row * w + crop_x0 as usize + crop_y0 as usize * w;
-            self.fimg.copy_within(source..source + xd_usize, row * xd_usize);
+            self.fimg
+                .copy_within(source..source + xd_usize, row * xd_usize);
         }
         for button in &mut self.buttons {
             button.r.x0 += self.x0 as i32;
@@ -364,8 +395,11 @@ impl SubPicture {
     }
 
     fn tricolor(&self, at: usize, useimg: bool) -> i32 {
-        (if useimg { i32::from(self.img.img[at]) << 16 } else { 0 })
-            | i32::from(self.hlt.img[at]) << 8
+        (if useimg {
+            i32::from(self.img.img[at]) << 16
+        } else {
+            0
+        }) | i32::from(self.hlt.img[at]) << 8
             | i32::from(self.sel.img[at])
     }
 
@@ -381,8 +415,12 @@ impl SubPicture {
         let mut results = Vec::with_capacity(self.buttons.len());
         for index in 0..self.buttons.len() {
             let button = self.buttons[index].clone();
-            let mut found =
-                [button.up.clone(), button.down.clone(), button.left.clone(), button.right.clone()];
+            let mut found = [
+                button.up.clone(),
+                button.down.clone(),
+                button.left.clone(),
+                button.right.clone(),
+            ];
             for (slot, angle) in found.iter_mut().zip([0i32, 180, 270, 90]) {
                 if slot.is_none() {
                     *slot = Some(self.find_best_bindir(index, angle));
@@ -475,7 +513,11 @@ impl SubPicture {
                 self.buttons[index].group = (target + 1) as i32;
                 remaining /= groups;
                 for entry in &button_palettes[index][..button_counts[index]] {
-                    if !check_color(&mut group_palettes[target], &mut group_counts[target], *entry) {
+                    if !check_color(
+                        &mut group_palettes[target],
+                        &mut group_counts[target],
+                        *entry,
+                    ) {
                         ok = false;
                         break;
                     }
@@ -599,8 +641,12 @@ impl SubPicture {
                 if visit[y * w + x] == 0 {
                     continue;
                 }
-                let mut rect =
-                    Rect { x0: x as i32, y0: y as i32, x1: x as i32 + 1, y1: y as i32 + 1 };
+                let mut rect = Rect {
+                    x0: x as i32,
+                    y0: y as i32,
+                    x1: x as i32 + 1,
+                    y1: y as i32 + 1,
+                };
                 loop {
                     let mut worked = false;
                     while self.scan_vline(&visit, &rect, rect.x0, -1) {

@@ -71,9 +71,7 @@ fn is_placeholder(sector: &[u8]) -> bool {
 }
 
 fn is_dvdauthor_data(sector: &[u8]) -> bool {
-    sector.len() >= 40
-        && sector[14..18] == [0, 0, 1, 0xbe]
-        && &sector[20..34] == b"dvdauthor-data"
+    sector.len() >= 40 && sector[14..18] == [0, 0, 1, 0xbe] && &sector[20..34] == b"dvdauthor-data"
 }
 
 fn nav_placeholder(source: &[u8]) -> [u8; SECTOR] {
@@ -129,7 +127,11 @@ pub(crate) fn build(input: &[u8], aspect: Aspect) -> Result<Build, String> {
                 previous.last_sector = build.output.len() / SECTOR - 1;
                 build.vobus.push(previous);
             }
-            let mut info = Vobu { sector: build.output.len() / SECTOR, input_sector: index, ..Vobu::default() };
+            let mut info = Vobu {
+                sector: build.output.len() / SECTOR,
+                input_sector: index,
+                ..Vobu::default()
+            };
             info.sectdata.copy_from_slice(&source[..0x26]);
             let nav = nav_placeholder(source);
             build.output.extend_from_slice(&nav);
@@ -187,8 +189,12 @@ mod tests {
     use super::*;
 
     fn paths() -> (std::path::PathBuf, std::path::PathBuf) {
-        let root = std::path::Path::new(r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker");
-        (root.join("build/menu-accept-old2/menu.mpg"), root.join("build/menu-accept-old2/导航 日本語/AUDIO_TS/AUDIO_TS.VOB"))
+        let root =
+            std::path::Path::new(r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker");
+        (
+            root.join("build/menu-accept-old2/menu.mpg"),
+            root.join("build/menu-accept-old2/导航 日本語/AUDIO_TS/AUDIO_TS.VOB"),
+        )
     }
 
     #[test]

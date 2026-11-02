@@ -91,11 +91,17 @@ fn write_profile(root: &Path, values: Value) -> PathBuf {
 }
 
 struct Fixture {
+    task: dvda_core::app::AppOptions,
     scratch: Scratch,
     profile: PathBuf,
     iso: PathBuf,
     work: PathBuf,
     original: Vec<u8>,
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.task.finish_task();
+    }
 }
 impl Fixture {
     fn build() -> Self {
@@ -174,22 +180,13 @@ impl Fixture {
 
             }),
         );
-        expect(
-            run(root, &["prepare", "--profile", profile.to_str().unwrap()]),
-            0,
-        );
-        expect(
-            run(
-                root,
-                &[
-                    "build",
-                    "--profile",
-                    profile.to_str().unwrap(),
-                    "--no-resume",
-                ],
-            ),
-            0,
-        );
+        let task = dvda_core::app::AppOptions::load(Some(&profile))
+            .unwrap()
+            .task_options()
+            .unwrap();
+        let result = dvda_core::app::run_build(&task, false, &mut Quiet).unwrap();
+        assert!(result.succeeded, "{:?}", result.diagnostics);
+        let work = task.path("BuildDirectory");
         let iso = out.join("check_1.iso");
         let original = fs::read(&iso).unwrap();
         Self {
@@ -198,7 +195,20 @@ impl Fixture {
             iso,
             work,
             original,
+            task,
         }
+    }
+    fn verify_scoped(&self, mode: &str) -> Value {
+        let mode = match mode {
+            "all" => dvda_core::verify::Mode::All,
+            "lossless" => dvda_core::verify::Mode::Lossless,
+            "timeline" => dvda_core::verify::Mode::Timeline,
+            _ => panic!("unsupported scoped verification mode"),
+        };
+        serde_json::to_value(
+            dvda_core::app::run_verify_mode(&self.task, mode, None, &mut Quiet).unwrap(),
+        )
+        .unwrap()
     }
     fn verify(&self, mode: &str, code: i32) -> Value {
         outcome(
@@ -212,6 +222,12 @@ impl Fixture {
     fn inspect(&self, mode: &str, explicit_directory: bool, code: i32) -> Value {
         let directory = self.iso.parent().unwrap().to_str().unwrap();
         let mut args = vec![mode, "--profile", self.profile.to_str().unwrap()];
+        let manifest = self.work.join("manifest.json");
+        let log = self.work.join("build.log");
+        if manifest.is_file() {
+            args.extend(["--manifest", manifest.to_str().unwrap()]);
+        }
+        args.extend(["--log", log.to_str().unwrap()]);
         if explicit_directory {
             args.extend(["--iso-dir", directory]);
         }
@@ -340,7 +356,7 @@ fn index_material_failures_do_not_skip_all_independent_checks() {
             fs::remove_file(&index).unwrap();
         }
         for mode in ["lossless", "all"] {
-            let result = fixture.verify(mode, 2);
+            let result = fixture.verify_scoped(mode);
             assert!(has(&result, code), "{result}");
             let issue = result["Diagnostics"]
                 .as_array()
@@ -360,7 +376,8 @@ fn index_material_failures_do_not_skip_all_independent_checks() {
         b"{\"album\":{\"files\":[]}}",
     )
     .unwrap();
-    let result = fixture.verify("all", 1);
+    let result = fixture.verify_scoped("all");
+    assert_eq!(result["Succeeded"], false);
     for code in [
         "MLP_INDEX_MISSING",
         "PTS_NOT_ADVANCING",
@@ -373,7 +390,8 @@ fn index_material_failures_do_not_skip_all_independent_checks() {
     }
     assert_eq!(result["TrackCount"], 2);
     fs::write(&fixture.iso, b"invalid ISO").unwrap();
-    let result = fixture.verify("all", 1);
+    let result = fixture.verify_scoped("all");
+    assert_eq!(result["Succeeded"], false);
     assert!(
         has(&result, "MLP_INDEX_MISSING") && has(&result, "ISO_READ_FAILED"),
         "{result}"

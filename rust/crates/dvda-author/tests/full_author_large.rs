@@ -8,9 +8,6 @@ use std::{
 
 struct NoMenu;
 impl menu::Backend for NoMenu {
-    fn image_run(&mut self, _: Vec<String>, _: &mut dyn Callbacks) -> Result<(), String> {
-        panic!("Unexpected menu operation")
-    }
     fn write_y4m(
         &mut self,
         _: &Path,

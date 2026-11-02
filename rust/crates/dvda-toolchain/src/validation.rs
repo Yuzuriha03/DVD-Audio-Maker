@@ -81,37 +81,8 @@ pub fn validate(
                 ));
             }
         }
-        let _image_record = if target == "aarch64-pc-windows-msvc" {
-            // ARM64 static builds link the image implementation in-process; the
-            // image directory supplies the build provenance and the shared
-            // colors/policy configuration, not a dvda-image DLL.
-            let record = read_json(&image.join("image-build.json"))?;
-            if record["target"] != target || record["toolchain"] != "msvc" {
-                return Err(format!(
-                    "Image provenance must identify the ARM64 Rust implementation: {}",
-                    image.join("image-build.json").display()
-                ));
-            }
-            record
-        } else {
-            let (record, _) = component(
-                image,
-                "image-build.json",
-                "files",
-                &["dvda-image.dll"],
-                true,
-                true,
-                target,
-            )?;
-            if record["implementation"] != "project-owned-rust" {
-                return Err("Image provenance must identify the Rust implementation".into());
-            }
-            record
-        };
         let mut inputs = validate_rust_author(author, &author_record, target)?;
-        inputs
-            .records
-            .extend([manifest, image.join("image-build.json")]);
+        inputs.records.push(manifest);
         return Ok(inputs);
     }
     if author_record["implementation"] == "rust" {
@@ -134,18 +105,6 @@ pub fn validate(
             return Err("Onefile media runtime must use profile=shared".into());
         }
         media_files.remove("dvda-media.dll");
-        let (image_record, _) = component(
-            image,
-            "image-build.json",
-            "files",
-            &["dvda-image.dll"],
-            true,
-            true,
-            target,
-        )?;
-        if image_record["implementation"] != "project-owned-rust" {
-            return Err("Image provenance must identify the Rust implementation".into());
-        }
         let mut linked = validate_rust_author(author, &author_record, target)?;
         for (name, path) in media_files {
             if let Some(existing) = linked.files.get(&name) {
@@ -159,7 +118,6 @@ pub fn validate(
             }
         }
         linked.records.push(media.join("media-build.json"));
-        linked.records.push(image.join("image-build.json"));
         return Ok(linked);
     }
     let mut inputs = Inputs {
@@ -284,6 +242,8 @@ fn validate_rust_author(author: &Path, record: &Value, target: &str) -> Result<I
         "rust/crates/dvda-menu/src/resources.rs",
         "rust/crates/dvda-menu/src/direct.rs",
         "rust/crates/dvda-menu/src/lib.rs",
+        "rust/crates/dvda-image/src/lib.rs",
+        "rust/crates/dvda-image/src/fonts.rs",
     ] {
         let digest = inputs
             .get(path)
@@ -329,9 +289,6 @@ fn validate_rust_author(author: &Path, record: &Value, target: &str) -> Result<I
         .as_object()
         .ok_or("Rust author is missing runtime asset inventory")?;
     for required in [
-        "policy.xml",
-        "colors.xml",
-        "type.xml",
         "fonts/DvdaNotoCJK-Regular.ttc",
         "data/menu/activeheader",
         "data/menu/black_NTSC_720x480.jpg",
@@ -654,14 +611,13 @@ pub(crate) mod tests {
             "rust/crates/dvda-menu/src/resources.rs",
             "rust/crates/dvda-menu/src/direct.rs",
             "rust/crates/dvda-menu/src/lib.rs",
+            "rust/crates/dvda-image/src/lib.rs",
+            "rust/crates/dvda-image/src/fonts.rs",
         ] {
             sources.insert(path.into(), hash(b"Rust source").into());
         }
         let mut assets = serde_json::Map::new();
         for name in [
-            "policy.xml",
-            "colors.xml",
-            "type.xml",
             "fonts/DvdaNotoCJK-Regular.ttc",
             "data/menu/activeheader",
             "data/menu/black_NTSC_720x480.jpg",
@@ -729,6 +685,7 @@ pub(crate) mod tests {
             record["runtime_files"] = serde_json::json!({});
             record["files"] = serde_json::json!({});
         });
+        fs::remove_dir_all(fixture.root.join("image")).unwrap();
         assert!(
             fixture
                 .validate()
@@ -754,7 +711,7 @@ pub(crate) mod tests {
                 .keys()
                 .any(|name| name.starts_with("dvda-menu-"))
         );
-        fs::write(fixture.root.join("author/policy.xml"), b"tampered").unwrap();
+        fs::write(fixture.root.join("author/data/menu/activeheader"), b"tampered").unwrap();
         assert!(fixture.validate().unwrap_err().contains("asset checksum"));
     }
 

@@ -30,7 +30,7 @@ def read_json(path):
 
 def rust_sources(repo):
     result = {}
-    for crate in ('dvda-author', 'dvda-core', 'dvda-cli', 'dvda-native', 'dvda-bridges', 'dvda-menu', 'dvda-mlp'):
+    for crate in ('dvda-author', 'dvda-core', 'dvda-cli', 'dvda-native', 'dvda-bridges', 'dvda-menu', 'dvda-mlp', 'dvda-image'):
         root = repo/'rust/crates'/crate
         for path in sorted(root.rglob('*')):
             if path.is_file() and (path.suffix in ('.rs', '.toml') or path.name.endswith('-probe.c')) and not any(part in ('tests','examples') for part in path.relative_to(root).parts):
@@ -52,9 +52,8 @@ def main():
     parser.add_argument('--work-directory', type=Path,
                         help='Defaults to build/rust-author-production (x64) or rust-author-production-arm64')
     parser.add_argument('--ffmpeg-runtime', type=Path, default=os.environ.get('DVDA_FFMPEG_PREFIX'))
-    parser.add_argument('--magick-work', type=Path, default=os.environ.get('DVDA_MAGICK_WORK'))
-    parser.add_argument('--image-dependencies', type=Path, default=os.environ.get('DVDA_IMAGE_DEPS_DIR'),
-                        help='Directory containing MSVC-native jpeg/png/webp/zlib .lib dependencies')
+    parser.add_argument('--magick-work', type=Path, help='Retired; supplying this option is an error')
+    parser.add_argument('--image-dependencies', type=Path, help='Retired; supplying this option is an error')
     parser.add_argument('--menu-assets', type=Path, help='Directory containing activeheader and black/silent menu assets')
     parser.add_argument('--font', type=Path, help='Prepared DvdaNotoCJK-Regular.ttc collection')
     parser.add_argument('--assets-runtime', type=Path, help='Existing portable runtime supplying data/menu and fonts')
@@ -64,13 +63,14 @@ def main():
     # archive is never linked: all Rust sources are rebuilt by Cargo below.
     parser.add_argument('--rust-bridges', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if not args.ffmpeg_runtime or not args.magick_work:
-        parser.error('--ffmpeg-runtime and --magick-work (or corresponding DVDA env vars) are required')
+    if args.magick_work or args.image_dependencies:
+        parser.error('--magick-work and --image-dependencies are retired; Rust images need neither')
+    if not args.ffmpeg_runtime:
+        parser.error('--ffmpeg-runtime (or DVDA_FFMPEG_PREFIX) is required')
     target = TARGETS[args.arch]
     work = (args.work_directory or Path('build/rust-author-production' if args.arch == 'x64' else 'build/rust-author-production-arm64')).resolve()
     work.mkdir(parents=True, exist_ok=True)
-    ffmpeg, magick = [p.resolve() for p in (args.ffmpeg_runtime, args.magick_work)]
-    image_dependencies = args.image_dependencies.resolve() if args.image_dependencies else magick/'lib'
+    ffmpeg = args.ffmpeg_runtime.resolve()
     ffmpeg_record = read_json(ffmpeg/'build-manifest.json')
     static_ffmpeg = ffmpeg_record.get('linkage') == 'static'
     if ffmpeg_record.get('profile') != ('static' if static_ffmpeg else 'shared'):
@@ -81,23 +81,13 @@ def main():
             raise ValueError('FFmpeg input checksum mismatch: '+name)
     if ffmpeg_record.get('target') != target or ffmpeg_record.get('toolchain') != 'msvc':
         raise ValueError(f'Production Rust author requires FFmpeg built with Windows MSVC for {target}')
-    required = [magick/'compile/MagickWand/.libs/MagickWand-7.Q16HDRI.lib',
-                magick/'compile/MagickCore/.libs/MagickCore-7.Q16HDRI.lib',
-                magick/'freetype-minimal.lib']
-    for path in required:
-        if not path.is_file():
-            raise FileNotFoundError('MSVC-native image .lib dependency is missing: '+str(path))
-    for name in ('jpeg.lib', 'png16.lib', 'webpdecoder.lib', 'webpmux.lib', 'z.lib'):
-        path = image_dependencies/name
-        if not path.is_file():
-            raise FileNotFoundError('MSVC-native image codec .lib dependency is missing: '+str(path))
-        required.append(path)
     env = msvc_environment(arch=args.arch)
     env.update({
         'PATH': str(Path.home()/'.cargo/bin')+os.pathsep+env['PATH'],
-        'DVDA_FFMPEG_PREFIX': str(ffmpeg), 'DVDA_MAGICK_WORK': str(magick),
-        'DVDA_IMAGE_DEPS_DIR': str(image_dependencies),
+        'DVDA_FFMPEG_PREFIX': str(ffmpeg),
     })
+    for name in ('DVDA_MAGICK_WORK', 'DVDA_IMAGE_DEPS_DIR'):
+        env.pop(name, None)
     env['RUSTFLAGS'] = env.get('RUSTFLAGS', '') + ' -C target-feature=+crt-static'
     target_dir = args.target_directory.resolve()
     command = ['cargo', 'build', '--offline', '--release', '--manifest-path', str(repo/'rust/Cargo.toml'),
@@ -135,12 +125,7 @@ def main():
         for path in sorted(root.rglob('*')):
             if path.is_file():
                 dependencies[str(path)] = sha(path)
-    for path in [ffmpeg/'build-manifest.json', magick/'image-build.json', *required,
-                 ]:
-        dependencies[str(path)] = sha(path)
-    for pattern in ('compile/config/*.h','ImageMagick-7.0.8-47/MagickCore/*.h'):
-        for path in sorted(magick.glob(pattern)):
-            dependencies[str(path)] = sha(path)
+    dependencies[str(ffmpeg/'build-manifest.json')] = sha(ffmpeg/'build-manifest.json')
     menu_assets = args.menu_assets
     runtime = args.assets_runtime.resolve() if args.assets_runtime else None
     if not menu_assets:
@@ -168,15 +153,8 @@ def main():
     destination.parent.mkdir(exist_ok=True)
     shutil.copy2(font,destination)
     asset_sources['fonts/DvdaNotoCJK-Regular.ttc'] = {'path':str(font.resolve()),'sha256':sha(font)}
-    (work/'policy.xml').write_text('<policymap>\n  <policy domain="delegate" rights="none" pattern="*"/>\n</policymap>\n',encoding='utf-8')
-    (work/'colors.xml').write_text('<colormap/>\n',encoding='utf-8')
-    typemap='<typemap>'
-    for face, language in enumerate(('SC','JP','KR')):
-        for prefix in ('DVDA-',''):
-            typemap+=f'<type name="{prefix}Noto-Sans-CJK-{language}" family="Noto Sans CJK {language}" format="truetype" style="normal" stretch="normal" weight="400" face="{face}" glyphs="fonts/DvdaNotoCJK-Regular.ttc"/>'
-    (work/'type.xml').write_text(typemap+'</typemap>',encoding='utf-8')
+    assets={name:{'sha256':sha(work/name),'bytes':(work/name).stat().st_size} for name in sorted(asset_sources)}
     runtime_files={p.name:{'sha256':sha(p),'bytes':p.stat().st_size,'imports':sorted(Pe(p).imports())} for p in sorted(work.glob('*.dll'))}
-    assets={p.relative_to(work).as_posix():{'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted([*work.glob('*.xml'),*work.glob('fonts/*'),*work.glob('data/menu/*')]) if p.is_file()}
     record={'schema_version':1,'implementation':'rust','target':target,'toolchain':'msvc',
         'project_c_author_compiled':False,'menu_linkage':'in-process-rust',
         'ffmpeg_linkage':'static-source-built' if static_ffmpeg else 'shared-source-built-shared-profile',

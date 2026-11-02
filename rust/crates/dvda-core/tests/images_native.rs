@@ -48,7 +48,7 @@ fn job(args: &[&str], output: Option<&Path>) -> Job {
 }
 
 #[test]
-#[ignore = "requires the source-built Windows x64 image DLL"]
+#[ignore = "requires the explicitly supplied frozen Windows x64 image oracle"]
 fn pixels_diagnostics_concurrency_and_failure_protection() {
     let root = std::env::temp_dir().join(format!(
         "dvda-rust-image-中文-日本語-🎵-{}-{}",

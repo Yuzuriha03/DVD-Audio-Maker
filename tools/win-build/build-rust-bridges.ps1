@@ -1,34 +1,26 @@
 param(
- [ValidateSet('direct','media','image','author','shim')][string]$Component='direct',
+ [ValidateSet('direct','media','author')][string]$Component='direct',
  [Parameter(Mandatory=$true)][string]$Output,
  [string]$FfmpegPrefix,
- [string]$MagickWork,
- [string]$ImageDependencies,
- [string]$ImageOracle,
- [string]$MsysRoot='C:\msys64',
  [string]$DependencyRuntime,
  [string]$AcceptanceReport,
- [switch]$DirectMenu,
- [switch]$LegacyImageLoader,
  [ValidateSet('x86_64-pc-windows-msvc','aarch64-pc-windows-msvc')][string]$Target='x86_64-pc-windows-msvc'
 )
 $ErrorActionPreference='Stop'
-if($Component -ne 'direct' -and $Component -ne 'author'){Write-Warning 'DLL/shim modes are differential adapters only, not production integration.'}
+if($Component -ne 'direct' -and $Component -ne 'author'){Write-Warning 'DLL mode are differential adapters only, not production integration.'}
 if($Component -eq 'direct' -and (Get-ChildItem $Output -Filter 'dvda-*.dll' -File -ErrorAction SilentlyContinue)){throw 'Direct output must not contain project-owned adapter DLLs'}
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $BuildTriple=$Target
-if($Target -eq 'aarch64-pc-windows-msvc'){throw 'ARM64 bridge builds require ARM64 FFmpeg/ImageMagick libraries, which are not available yet; use build-rust-arm64.ps1 for the portable ARM64 checks.'}
+if($Target -eq 'aarch64-pc-windows-msvc'){throw 'ARM64 bridge builds require ARM64 FFmpeg libraries, which are not available yet; use build-rust-arm64.ps1 for the portable ARM64 checks.'}
 $msvcJson=& python -X utf8 (Join-Path $PSScriptRoot 'msvc_env.py') --json
 if($LASTEXITCODE -ne 0){throw 'Cannot initialize Visual Studio x64 environment'}
 $msvc=$msvcJson | ConvertFrom-Json
 foreach($property in $msvc.PSObject.Properties){[Environment]::SetEnvironmentVariable($property.Name,[string]$property.Value,'Process')}
-if(!$ImageDependencies){$ImageDependencies=if($env:DVDA_IMAGE_DEPS_DIR){$env:DVDA_IMAGE_DEPS_DIR}elseif($MagickWork){Join-Path $MagickWork 'lib'}else{$null}}
 $Output=[IO.Path]::GetFullPath($Output)
+if($FfmpegPrefix){$FfmpegPrefix=(Resolve-Path -LiteralPath $FfmpegPrefix).Path}
 New-Item -ItemType Directory -Force $Output | Out-Null
 $env:PATH="$env:USERPROFILE\.cargo\bin;$env:PATH"
 $env:DVDA_FFMPEG_PREFIX=$FfmpegPrefix
-$env:DVDA_MAGICK_WORK=$MagickWork
-$env:DVDA_IMAGE_DEPS_DIR=$ImageDependencies
 $staticFfmpeg=$false
 if($FfmpegPrefix){
  $vendor=Get-Content -Raw -LiteralPath (Join-Path $FfmpegPrefix 'build-manifest.json') | ConvertFrom-Json
@@ -37,27 +29,22 @@ if($FfmpegPrefix){
 $cargoTarget=Join-Path $Output 'cargo-target'
 $args=@('build','--offline','--release','--manifest-path',"$repo\rust\Cargo.toml",'--target',$BuildTriple,'-p','dvda-bridges','--target-dir',$cargoTarget)
 switch($Component){
- direct {$args+=@('--features','media,image,menu','--lib')}
+ direct {$args+=@('--features','media,menu','--lib')}
  media {$args+=@('--features','media','--lib','--bin','mlp-decode-probe')}
- image {$args+=@('--features','image','--lib')}
- author {if($LegacyImageLoader){$args+=@('--features','media,author-loader,author-iso','--lib')}else{$args+=@('--features','media,image,menu,author-iso','--lib')}}
- shim {$args+=@('--bin','magick-shim')}
+ author {$args+=@('--features','media,menu,author-iso','--lib')}
 }
-if($Component -eq 'author' -and $DirectMenu -and $LegacyImageLoader){$args+=@('--features','menu')}
 & cargo @args
 if($LASTEXITCODE -ne 0){throw 'Rust bridge build failed'}
 $release=Join-Path $cargoTarget "$BuildTriple\release"
 switch($Component){
- direct {Copy-Item "$release\libdvda_bridges.rlib" $Output;if($ImageOracle){foreach($name in @('policy.xml','colors.xml','NOTICE.txt')){Copy-Item (Join-Path $ImageOracle $name) $Output}}}
+ direct {Copy-Item "$release\libdvda_bridges.rlib" $Output}
  media {Copy-Item "$release\dvda_bridges.dll" "$Output\dvda-media.dll";Copy-Item "$release\mlp-decode-probe.exe" $Output;if(!$staticFfmpeg){Copy-Item "$FfmpegPrefix\bin\*.dll" $Output}}
- image {Copy-Item "$release\dvda_bridges.dll" "$Output\dvda-image.dll";if($ImageOracle){foreach($name in @('policy.xml','colors.xml','NOTICE.txt')){Copy-Item (Join-Path $ImageOracle $name) $Output}}}
  author {
   $static=Join-Path $release 'dvda_bridges.lib'
   if(!(Test-Path -LiteralPath $static)){throw 'MSVC author bridge build did not produce dvda_bridges.lib.'}
   Copy-Item $static $Output
   if(!$staticFfmpeg){Copy-Item "$FfmpegPrefix\bin\*.dll" $Output}
  }
- shim {Copy-Item "$release\magick-shim.exe" $Output}
 }
 function Hash($path){(Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()}
 $runtimeSources=[ordered]@{}
@@ -99,11 +86,11 @@ while($pending.Count){
  }
 }
 $inputs=[ordered]@{}
-foreach($file in Get-ChildItem "$repo\rust\crates\dvda-bridges" -Recurse -File){$inputs[$file.FullName.Substring($repo.Length+1)]=Hash $file.FullName}
+foreach($file in Get-ChildItem "$repo\rust\crates\dvda-bridges","$repo\rust\crates\dvda-image" -Recurse -File){$inputs[$file.FullName.Substring($repo.Length+1)]=Hash $file.FullName}
 if($Component -eq 'author'){
  foreach($file in Get-ChildItem "$repo\rust\crates\dvda-author" -Recurse -File){$inputs[$file.FullName.Substring($repo.Length+1)]=Hash $file.FullName}
 }
-if($Component -eq 'direct' -or ($Component -eq 'author' -and ($DirectMenu -or !$LegacyImageLoader))){
+if($Component -in @('direct','author')){
  foreach($file in Get-ChildItem "$repo\rust\crates\dvda-menu","$repo\tools\menu-native" -Recurse -File){$inputs[$file.FullName.Substring($repo.Length+1)]=Hash $file.FullName}
 }
 
@@ -114,11 +101,10 @@ $inputs['builder']=Hash $PSCommandPath
 $inputs['tools\win-build\msvc_env.py']=Hash (Join-Path $PSScriptRoot 'msvc_env.py')
 $dependencies=[ordered]@{}
 if($FfmpegPrefix){foreach($root in @('include','lib','bin')){$path=Join-Path $FfmpegPrefix $root;if(Test-Path -LiteralPath $path){foreach($file in Get-ChildItem -LiteralPath $path -Recurse -File){$dependencies[$file.FullName]=Hash $file.FullName}}}}
-if($MagickWork){foreach($pattern in @('compile\MagickWand\.libs\*.lib','compile\MagickCore\.libs\*.lib','freetype-minimal.lib','image-build.json','compile\config\*.h','ImageMagick-7.0.8-47\MagickCore\*.h')){foreach($file in Get-ChildItem (Join-Path $MagickWork $pattern) -ErrorAction SilentlyContinue){$dependencies[$file.FullName]=Hash $file.FullName}};foreach($name in @('jpeg.lib','png16.lib','webpdecoder.lib','webpmux.lib','z.lib')){$path=Join-Path $ImageDependencies $name;if(!(Test-Path -LiteralPath $path)){throw "MSVC-native image codec dependency is missing: $path"};$dependencies[$path]=Hash $path}}
 $files=[ordered]@{}
 foreach($file in Get-ChildItem $Output -File){if($file.Name -notlike '*build.json'){$entry=@{sha256=Hash $file.FullName;bytes=$file.Length};if($file.Extension -in @('.dll','.exe')){$entry.imports=@(Imports $file.FullName)};$files[$file.Name]=$entry}}
-$name=switch($Component){direct{'direct-bridge-build.json'}media{'media-build.json'}image{'image-build.json'}author{'author-bridge-build.json'}shim{'shim-build.json'}}
-$features=switch($Component){direct{@('media','image','menu')}media{@('media')}image{@('image')}author{if($LegacyImageLoader){@('media','author-loader','author-iso');if($DirectMenu){'menu'}}else{@('media','image','menu','author-iso')}}shim{@()}}
+$name=switch($Component){direct{'direct-bridge-build.json'}media{'media-build.json'}author{'author-bridge-build.json'}}
+$features=switch($Component){direct{@('media','menu')}media{@('media')}author{@('media','menu','author-iso')}}
 $evidence=$null
 if($AcceptanceReport){$evidence=@{path=[IO.Path]::GetFullPath($AcceptanceReport);sha256=Hash $AcceptanceReport}}
 $record=@{schema_version=1;implementation='project-owned-rust';component=$Component;features=@($features);target=$BuildTriple;toolchain='msvc';compiler=(& rustc --version);cargo_arguments=@($args);source_inputs=$inputs;third_party_inputs=$dependencies;runtime_dependency_inputs=$runtimeSources;files=$files;acceptance_evidence=$evidence;production_accepted=$false}

@@ -123,7 +123,11 @@ pub(crate) fn get_sector(
         0
     };
     let distance = vobus[target].sector.abs_diff(vobus[current].sector) as u32;
-    let video_bit = if vobus[target].first_video_pts.is_some() { 0x8000_0000 } else { 0 };
+    let video_bit = if vobus[target].first_video_pts.is_some() {
+        0x8000_0000
+    } else {
+        0
+    };
     distance | video_bit | skip_bits
 }
 
@@ -132,7 +136,11 @@ mod tests {
     use super::*;
 
     fn vobu(sector: usize, pts: Option<u32>) -> Vobu {
-        Vobu { sector, first_video_pts: pts, ..Vobu::default() }
+        Vobu {
+            sector,
+            first_video_pts: pts,
+            ..Vobu::default()
+        }
     }
 
     #[test]
@@ -145,11 +153,28 @@ mod tests {
 
     #[test]
     fn forward_and_backward_offsets_use_the_flag_bits() {
-        let vobus = [vobu(0, Some(1)), vobu(235, Some(2)), vobu(480, Some(3)), vobu(725, Some(4))];
+        let vobus = [
+            vobu(0, Some(1)),
+            vobu(235, Some(2)),
+            vobu(480, Some(3)),
+            vobu(725, Some(4)),
+        ];
         let same = |_: usize, _: usize| true;
-        assert_eq!(get_sector(&vobus, 0, 1, false, 0x3fff_ffff, same), 235 | 0x8000_0000);
-        assert_eq!(get_sector(&vobus, 1, 0, false, 0x3fff_ffff, same), 235 | 0x8000_0000);
-        assert_eq!(get_sector(&vobus, 0, 4, false, 0x3fff_ffff, same), 0x3fff_ffff);
-        assert_eq!(get_sector(&vobus, 3, 4, false, 0x3fff_ffff, same), 0x3fff_ffff);
+        assert_eq!(
+            get_sector(&vobus, 0, 1, false, 0x3fff_ffff, same),
+            235 | 0x8000_0000
+        );
+        assert_eq!(
+            get_sector(&vobus, 1, 0, false, 0x3fff_ffff, same),
+            235 | 0x8000_0000
+        );
+        assert_eq!(
+            get_sector(&vobus, 0, 4, false, 0x3fff_ffff, same),
+            0x3fff_ffff
+        );
+        assert_eq!(
+            get_sector(&vobus, 3, 4, false, 0x3fff_ffff, same),
+            0x3fff_ffff
+        );
     }
 }

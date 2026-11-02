@@ -10,22 +10,18 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [features]
 default = []
-image = []
-media = []
+media = ["dep:dvda-image"]
 author-loader = []
 author-iso = ["dep:dvda-author"]
 menu = ["dep:dvda-menu", "dvda-menu/direct-link"]
 
 [dependencies]
+dvda-image = { path = "../dvda-image", optional = true }
 dvda-menu = { path = "../dvda-menu", optional = true }
 dvda-author = { path = "../dvda-author", optional = true }
 
 [build-dependencies]
 serde_json.workspace = true
-
-[[bin]]
-name = "magick-shim"
-path = "src/bin/magick-shim.rs"
 
 [[bin]]
 name = "mlp-decode-probe"
@@ -38,19 +34,11 @@ required-features = ["author-loader"]
 
 [[example]]
 name = "direct-acceptance"
-required-features = ["media", "image"]
+required-features = ["media"]
 
 [[example]]
 name = "media-differential"
 required-features = ["media"]
-
-[[example]]
-name = "font-acceptance"
-required-features = ["image"]
-
-[[example]]
-name = "image-differential"
-required-features = ["image"]
 
 [[example]]
 name = "menu-media-differential"

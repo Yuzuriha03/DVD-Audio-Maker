@@ -65,8 +65,23 @@ fn menuless_and_multigroup_tables_match_c() {
     );
 }
 
+fn assert_menu_matches_c_with_page_vob_ids(actual: &[u8], expected: &[u8], pages: usize) {
+    assert_eq!(actual.len(), expected.len());
+    let mut cursor = 0;
+    for page in 0..pages {
+        // The original C used VOB 1 for every page. The per-source navigation
+        // fix (99296a8) assigns each page its own VOB; all other bytes stay frozen.
+        let offset = 0x1800 + 24 + 8 * pages + 306 * page + 302;
+        assert_eq!(&actual[cursor..offset], &expected[cursor..offset]);
+        assert_eq!(&expected[offset..offset + 4], &[0, 1, 0, 1]);
+        assert_eq!(&actual[offset..offset + 4], &[0, page as u8 + 1, 0, 1]);
+        cursor = offset + 4;
+    }
+    assert_eq!(&actual[cursor..], &expected[cursor..]);
+}
+
 #[test]
-fn pal_and_ntsc_full_menu_pgci_match_c() {
+fn pal_and_ntsc_full_menu_pgci_match_c_except_page_vob_ids() {
     let mut o = options();
     o.menu = Some(Menu {
         page_sectors: vec![17, 17],
@@ -78,9 +93,10 @@ fn pal_and_ntsc_full_menu_pgci_match_c() {
     };
     let actual = amg::encode(&groups(), &layout, &o).unwrap();
     assert_eq!(actual.sectors, 4);
-    assert_eq!(
-        actual.bytes,
-        include_bytes!("fixtures/manager/menu-pal-two.ifo").as_slice()
+    assert_menu_matches_c_with_page_vob_ids(
+        &actual.bytes,
+        include_bytes!("fixtures/manager/menu-pal-two.ifo"),
+        2,
     );
     let pages = vec![17, 17, 23, 29, 31, 37, 41, 43, 47];
     let layout = Layout {
@@ -97,9 +113,10 @@ fn pal_and_ntsc_full_menu_pgci_match_c() {
     });
     let actual = amg::encode(&groups(), &layout, &o).unwrap();
     assert_eq!(actual.sectors, 5);
-    assert_eq!(
-        actual.bytes,
-        include_bytes!("fixtures/manager/menu-ntsc-nine.ifo").as_slice()
+    assert_menu_matches_c_with_page_vob_ids(
+        &actual.bytes,
+        include_bytes!("fixtures/manager/menu-ntsc-nine.ifo"),
+        9,
     );
 }
 

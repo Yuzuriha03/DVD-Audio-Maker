@@ -9,15 +9,16 @@ libraries. License and provenance notices are at the ZIP root as `LICENSE`,
 | Built-in Rust author and ISO writer | DVD-Audio IFO/AOB, menu orchestration and ISO9660/UDF images | Project GPL v3; rules translated from `dvda-author` retain upstream attribution |
 | Built-in Rust menu implementation | DVD-Video navigation, subpictures and menu session/resource management; behavior derived from dvdauthor/spumux with attribution retained in `NOTICE-Menu.txt` | Project GPL v3; dvdauthor/spumux attribution |
 | Built-in Rust media adapter and FFmpeg libraries | Decoding, resampling, PCM checks and menu MPEG generation | Project GPL v3; FFmpeg and dependencies retain their upstream licenses |
-| Built-in Rust image adapter and ImageMagick/FreeType | Image operations, menu drawing and font rendering | Project GPL v3 and upstream ImageMagick, FreeType and dependency licenses |
+| Built-in Rust image pipeline (`image`, `rustybuzz`, `swash`) | Image operations, menu drawing and font rendering | Project GPL v3; upstream MIT/Apache-2.0 alternatives and BSD, Zlib and Unicode terms as listed with full notices in `NOTICE-Image.txt` |
 | Built-in Rust formats and disc verification | IFO/AOB, MLP/LPCM and image verification | Project GPL v3; LPCM rules retain `dvda-author` attribution |
 | Built-in Rust MLP encoder | MLP encoding | Project GPL v3 |
 | `DvdaNotoCJK-Regular.ttc` | Chinese, Japanese and Korean menu fonts | SIL Open Font License 1.1 |
 
 Users run a single Rust GUI executable. The author, project adapters and MLP
-encoder and third-party FFmpeg/ImageMagick libraries are statically integrated; fonts and menu data
+encoder, Rust image libraries and third-party FFmpeg libraries are statically integrated; fonts and menu data
 are embedded. The old project C author, adapter DLLs and C17 encoder have been
-removed. FFmpeg, ImageMagick and other libraries enable only workflow features.
+removed. ImageMagick and FreeType are no longer image build or runtime dependencies;
+explicit external historical image oracles are used only for optional tests.
 The release does not contain `ffmpeg.exe`, `ffprobe.exe`, ImageMagick command-line
 programs, eac3to or external MLP encoders.
 

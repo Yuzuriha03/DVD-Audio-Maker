@@ -211,7 +211,10 @@ impl Mux {
     }
 
     fn mux_next(&mut self, eoinput: bool, rgba: &mut RgbaReader<'_>) -> Result<(), String> {
-        if self.lastgts == 0 || self.tofs == -1 || (!self.lps.is_multiple_of(SECTOR_SIZE as u64) && !eoinput) {
+        if self.lastgts == 0
+            || self.tofs == -1
+            || (!self.lps.is_multiple_of(SECTOR_SIZE as u64) && !eoinput)
+        {
             return Ok(());
         }
         while let Some(mut current) = self.next.take() {
@@ -273,7 +276,15 @@ impl Mux {
         sector[at] = SUB_STREAM;
         at += 1;
         write_long(sector, &mut at, spu.spts as u32);
-        write_long(sector, &mut at, if spu.sd == -1 { u32::MAX } else { (spu.sd + spu.spts) as u32 });
+        write_long(
+            sector,
+            &mut at,
+            if spu.sd == -1 {
+                u32::MAX
+            } else {
+                (spu.sd + spu.spts) as u32
+            },
+        );
         sector[at] = 1;
         at += 1;
         sector[at] = spu.numpal as u8;
@@ -331,7 +342,11 @@ impl Mux {
                 write_short(sector, &mut at, button.r.x1 as u16);
                 write_short(sector, &mut at, button.r.y1 as u16);
                 let first = if index == 0 { spu.buttons.len() } else { index };
-                let second = if index + 1 != spu.buttons.len() { index + 2 } else { 1 };
+                let second = if index + 1 != spu.buttons.len() {
+                    index + 2
+                } else {
+                    1
+                };
                 let up = button.up.clone().unwrap_or_else(|| first.to_string());
                 let down = button.down.clone().unwrap_or_else(|| second.to_string());
                 let left = button.left.clone().unwrap_or_else(|| first.to_string());
@@ -432,7 +447,11 @@ impl Mux {
                     if start == 0x100 + MPID_PRIVATE1 {
                         let offset = payload[2] as usize + 3;
                         let substream = payload[offset];
-                        let substream = if (substream & 0xE0) != 0x80 { Some(substream) } else { None };
+                        let substream = if (substream & 0xE0) != 0x80 {
+                            Some(substream)
+                        } else {
+                            None
+                        };
                         if let Some(substream) = substream
                             && substream == SUB_STREAM
                         {
@@ -512,11 +531,12 @@ pub(crate) fn run(
     if document.format != VideoFormat::Pal {
         // The historical menu path always programs PAL; keep the check explicit.
     }
-    let input_file = std::fs::File::open(input)
-        .map_err(|error| format!("{}: {error}", input.display()))?;
+    let input_file =
+        std::fs::File::open(input).map_err(|error| format!("{}: {error}", input.display()))?;
     let mut mux = Mux::new(input_file, document);
     mux.run(rgba)?;
-    let mut file = std::fs::File::create(output).map_err(|error| format!("{}: {error}", output.display()))?;
+    let mut file =
+        std::fs::File::create(output).map_err(|error| format!("{}: {error}", output.display()))?;
     file.write_all(&mux.output)
         .map_err(|error| format!("{}: {error}", output.display()))?;
     Ok(())

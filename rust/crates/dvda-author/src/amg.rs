@@ -538,10 +538,7 @@ mod tests {
         for (page, sector) in [0u32, 69, 142].into_iter().enumerate() {
             let pgc = 24 + 8 * 3 + 306 * page;
             assert_eq!(&bytes[pgc + 286..pgc + 290], &sector.to_be_bytes());
-            assert_eq!(
-                &bytes[pgc + 302..pgc + 306],
-                &[0, page as u8 + 1, 0, 1]
-            );
+            assert_eq!(&bytes[pgc + 302..pgc + 306], &[0, page as u8 + 1, 0, 1]);
         }
     }
 }

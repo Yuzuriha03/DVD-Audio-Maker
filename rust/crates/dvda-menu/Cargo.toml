@@ -12,5 +12,6 @@ default = []
 direct-link = []
 
 [dependencies]
+dvda-image = { path = "../dvda-image" }
 quick-xml = "0.42"
 

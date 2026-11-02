@@ -11,7 +11,8 @@ rust-mlp = ["dep:dvda-mlp"]
 
 [dependencies]
 dvda-author = { path = "../dvda-author" }
-dvda-bridges = { path = "../dvda-bridges", optional = true, features = ["media", "image", "menu"] }
+dvda-image = { path = "../dvda-image" }
+dvda-bridges = { path = "../dvda-bridges", optional = true, features = ["media", "menu"] }
 dvda-mlp = { path = "../dvda-mlp", optional = true }
 dvda-native = { path = "../dvda-native" }
 serde.workspace = true

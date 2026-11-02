@@ -247,6 +247,22 @@ impl Audio {
                         (*picture).codecpar(),
                         (*source).codecpar(),
                     ))?;
+                    // The minimal audio build has no image decoders, so FFmpeg may
+                    // leave attached-picture dimensions unset. Keep the packet intact.
+                    let parameters = (*picture).codecpar();
+                    if (*parameters).width() <= 0 || (*parameters).height() <= 0 {
+                        let packet = (*source).attached_pic();
+                        if packet.size() <= 0 || packet.data().is_null() {
+                            return Err(EINVAL);
+                        }
+                        let bytes =
+                            std::slice::from_raw_parts(packet.data(), packet.size() as usize);
+                        let (dimensions, _) =
+                            dvda_image::codec::metadata(std::io::Cursor::new(bytes))
+                                .map_err(|_| EINVAL)?;
+                        *(*parameters).width_ptr() = dimensions.width() as i32;
+                        *(*parameters).height_ptr() = dimensions.height() as i32;
+                    }
                     *(*picture).disposition_ptr() = AV_DISPOSITION_ATTACHED_PIC;
                     *(*picture).time_base_ptr() = Rational { num: 1, den: 90000 };
                     cover = source;

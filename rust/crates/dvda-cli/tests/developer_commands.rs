@@ -275,9 +275,12 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
         &root.0,
         &["build", "--profile", profile, "--no-resume"],
     ));
-    for mode in ["quick", "capacity", "audit", "timeline", "lossless", "all"] {
+    for mode in ["quick", "capacity", "timeline", "lossless", "all"] {
         ok(run(&root.0, &["verify", mode, "--profile", profile]));
     }
+    let audit = run(&root.0, &["verify", "audit", "--profile", profile]);
+    assert_eq!(audit.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&audit.stdout).contains("BUILD_LOG_MISSING"));
     let iso = fs::read_dir(&out)
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -327,8 +330,25 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
         .code(),
         Some(2)
     );
-    let index: Value =
-        serde_json::from_slice(&fs::read(build.join("mlp_index.json")).unwrap()).unwrap();
+    // Standalone builds clean their intermediates. Keep a scoped task alive to
+    // exercise the MLP commands against real prepared output instead.
+    struct Quiet;
+    impl dvda_native::media::Callbacks for Quiet {
+        fn emit(&mut self, _: i32, _: &str) {}
+        fn cancelled(&mut self) -> bool {
+            false
+        }
+    }
+    let task = dvda_core::app::AppOptions::load(Some(Path::new(profile)))
+        .unwrap()
+        .task_options()
+        .unwrap();
+    let result = dvda_core::app::run_build(&task, false, &mut Quiet).unwrap();
+    assert!(result.succeeded, "{:?}", result.diagnostics);
+    let index: Value = serde_json::from_slice(
+        &fs::read(task.path("BuildDirectory").join("mlp_index.json")).unwrap(),
+    )
+    .unwrap();
     let mlp = index
         .as_object()
         .unwrap()
@@ -339,4 +359,5 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
     let before = fs::read(mlp).unwrap();
     ok(run(&root.0, &["mlp", "--align", mlp, "-q"]));
     assert_eq!(fs::read(mlp).unwrap(), before);
+    task.finish_task();
 }

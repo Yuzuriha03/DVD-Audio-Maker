@@ -8,8 +8,6 @@ fn main() {
         panic!("MSVC-only dvda-bridges requires a Windows MSVC target, got {target}");
     }
     println!("cargo:rerun-if-env-changed=DVDA_FFMPEG_PREFIX");
-    println!("cargo:rerun-if-env-changed=DVDA_MAGICK_WORK");
-    println!("cargo:rerun-if-env-changed=DVDA_IMAGE_DEPS_DIR");
     println!("cargo:rerun-if-env-changed=CC");
     println!("cargo:rerun-if-env-changed=LIB");
     println!("cargo:rerun-if-env-changed=DVDA_LIB_TOOL");
@@ -100,43 +98,6 @@ fn main() {
             println!("cargo:rustc-link-lib=delayimp");
         }
     }
-    if env::var_os("CARGO_FEATURE_IMAGE").is_some() {
-        let work = PathBuf::from(env::var_os("DVDA_MAGICK_WORK").expect(
-            "DVDA_MAGICK_WORK must name the ImageMagick build directory when the image feature is enabled",
-        ));
-        generate_image_layout(&work);
-        for (dir, name) in [
-            ("compile/MagickWand/.libs", "MagickWand-7.Q16HDRI"),
-            ("compile/MagickCore/.libs", "MagickCore-7.Q16HDRI"),
-            (".", "freetype-minimal"),
-        ] {
-            require_msvc_library(&work.join(dir), name);
-            println!(
-                "cargo:rerun-if-changed={}",
-                work.join(dir).join(format!("{name}.lib")).display()
-            );
-            println!(
-                "cargo:rustc-link-search=native={}",
-                work.join(dir).display()
-            );
-            println!("cargo:rustc-link-lib=static={name}");
-        }
-        let image_deps = env::var_os("DVDA_IMAGE_DEPS_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| work.join("lib"));
-        println!("cargo:rustc-link-search=native={}", image_deps.display());
-        for name in ["jpeg", "png16", "webpdecoder", "webpmux", "z"] {
-            require_msvc_library(&image_deps, name);
-            println!(
-                "cargo:rerun-if-changed={}",
-                image_deps.join(format!("{name}.lib")).display()
-            );
-            println!("cargo:rustc-link-lib=static={name}");
-        }
-        for name in ["shell32", "gdi32", "user32", "ws2_32", "advapi32"] {
-            println!("cargo:rustc-link-lib={name}");
-        }
-    }
 }
 
 fn msvc_lib_tool() -> std::ffi::OsString {
@@ -185,7 +146,8 @@ fn generate_layout(prefix: &std::path::Path) {
             .replace("/arm64/", "/x64/");
         let host: std::ffi::OsString = configured.unwrap_or_else(|| derived.into());
         assert!(
-            std::path::Path::new(&host).is_file() || std::process::Command::new(&host).arg("/?").output().is_ok(),
+            std::path::Path::new(&host).is_file()
+                || std::process::Command::new(&host).arg("/?").output().is_ok(),
             "ARM64 cross layout probe needs host x64 cl.exe; set DVDA_HOST_CC to <VC>/bin/Hostx64/x64/cl.exe"
         );
         cc = host;
@@ -203,7 +165,8 @@ fn generate_layout(prefix: &std::path::Path) {
         // SDK libraries; the host x64 probe must use the x64 equivalents.
         for name in ["INCLUDE", "LIB"] {
             if let Some(value) = env::var_os(name) {
-                let value = value.to_string_lossy()
+                let value = value
+                    .to_string_lossy()
                     .replace("ARM64", "x64")
                     .replace("arm64", "x64");
                 probe.env(name, value);
@@ -258,62 +221,4 @@ fn generate_layout(prefix: &std::path::Path) {
         }
     }
     fs::write(out.join("ffmpeg-layout.rs"), code).unwrap();
-}
-fn generate_image_layout(work: &std::path::Path) {
-    use std::{fs, process::Command};
-    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let target = env::var("TARGET").unwrap();
-    // ARM64 Windows has the same LLP64 data layout as x64, so run the probe
-    // with the host x64 compiler and reuse the resulting offsets on ARM64.
-    let mut exe = out.join("image-layout-probe.exe");
-    let mut cc = env::var_os("CC").unwrap_or_else(|| "cl.exe".into());
-    let cross = target == "aarch64-pc-windows-msvc";
-    if cross {
-        let configured = env::var_os("DVDA_HOST_CC").map(std::ffi::OsString::from);
-        let derived = PathBuf::from(&cc)
-            .to_string_lossy()
-            .replace("\\ARM64\\", "\\x64\\")
-            .replace("\\arm64\\", "\\x64\\")
-            .replace("/ARM64/", "/x64/")
-            .replace("/arm64/", "/x64/");
-        cc = configured.unwrap_or_else(|| derived.into());
-        exe = out.join("image-layout-probe-host.exe");
-    }
-    let mut probe = Command::new(cc);
-    probe
-        .args([
-            "image-layout-probe.c",
-            "/nologo",
-            "/TP",
-            "/std:c++17",
-            "/DMAGICKCORE_QUANTUM_DEPTH=16",
-            "/DMAGICKCORE_HDRI_ENABLE=1",
-        ])
-        .arg(format!("/I{}", work.join("compile").display()))
-        .arg(format!("/I{}", work.join("include").display()))
-        .arg(format!("/I{}", work.join("ImageMagick").display()))
-        .arg(format!("/I{}", work.join("ImageMagick-7.0.8-47").display()))
-        .arg(format!("/Fe:{}", exe.display()))
-        .arg(format!(
-            "/Fo:{}",
-            out.join("image-layout-probe.obj").display()
-        ));
-    if cross {
-        for name in ["INCLUDE", "LIB"] {
-            if let Some(value) = env::var_os(name) {
-                let value = value.to_string_lossy()
-                    .replace("ARM64", "x64")
-                    .replace("arm64", "x64");
-                probe.env(name, value);
-            }
-        }
-    }
-    assert!(
-        probe.status().unwrap().success(),
-        "MSVC ImageMagick layout probe compilation failed; set CC to cl.exe-compatible compiler"
-    );
-    println!("cargo:rerun-if-changed=image-layout-probe.c");
-    let run = Command::new(exe).output().unwrap();
-    assert!(run.status.success());
-    fs::write(out.join("image-layout.rs"), run.stdout).unwrap();
 }

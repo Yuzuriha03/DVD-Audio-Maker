@@ -25,14 +25,19 @@ struct BitWriter {
 
 impl BitWriter {
     fn new() -> Self {
-        Self { data: vec![0; SUB_BUFFER_MAX + HEADROOM], position: 0, remain: 8 }
+        Self {
+            data: vec![0; SUB_BUFFER_MAX + HEADROOM],
+            position: 0,
+            remain: 8,
+        }
     }
 
     fn bits(&mut self, value: u32, mut bits: u32) {
         const MASK: [u32; 9] = [0, 1, 3, 7, 15, 31, 63, 127, 255];
         while bits != 0 {
             if bits > self.remain {
-                self.data[self.position] |= ((value >> (bits - self.remain)) & MASK[self.remain as usize]) as u8;
+                self.data[self.position] |=
+                    ((value >> (bits - self.remain)) & MASK[self.remain as usize]) as u8;
                 self.position += 1;
                 bits -= self.remain;
                 self.remain = 8;
@@ -42,7 +47,8 @@ impl BitWriter {
                 self.remain = 8;
                 return;
             } else {
-                self.data[self.position] |= ((value & MASK[bits as usize]) << (self.remain - bits)) as u8;
+                self.data[self.position] |=
+                    ((value & MASK[bits as usize]) << (self.remain - bits)) as u8;
                 self.remain -= bits;
                 return;
             }
@@ -164,7 +170,11 @@ pub(crate) fn dvd_encode(picture: &mut SubPicture) -> Result<Vec<u8>, String> {
     let mut next_command = writer.position;
     writer.position += 2;
 
-    writer.byte(if picture.forced { SPU_FSTA_DSP } else { SPU_STA_DSP });
+    writer.byte(if picture.forced {
+        SPU_FSTA_DSP
+    } else {
+        SPU_STA_DSP
+    });
 
     writer.byte(SPU_SET_COLOR);
     let p3 = picture.find_master_pal(picture.pal[3]);

@@ -204,14 +204,18 @@ fn lex(text: &str) -> Result<Vec<Token>, String> {
             if let Some(register) = word.strip_prefix('g')
                 && register.bytes().all(|byte| byte.is_ascii_digit())
             {
-                let value: u16 = register.parse().map_err(|error| format!("bad GPRM: {error}"))?;
+                let value: u16 = register
+                    .parse()
+                    .map_err(|error| format!("bad GPRM: {error}"))?;
                 tokens.push(Token::Register(value));
                 continue;
             }
             if let Some(register) = word.strip_prefix('s')
                 && register.bytes().all(|byte| byte.is_ascii_digit())
             {
-                let value: u16 = register.parse().map_err(|error| format!("bad SPRM: {error}"))?;
+                let value: u16 = register
+                    .parse()
+                    .map_err(|error| format!("bad SPRM: {error}"))?;
                 tokens.push(Token::SystemRegister(value));
                 continue;
             }
@@ -246,7 +250,8 @@ fn lex(text: &str) -> Result<Vec<Token>, String> {
             }
         } else {
             (
-                single_symbol(byte).ok_or_else(|| format!("bad VM character {:?}", byte as char))?,
+                single_symbol(byte)
+                    .ok_or_else(|| format!("bad VM character {:?}", byte as char))?,
                 1,
             )
         };
@@ -282,9 +287,15 @@ fn single_symbol(byte: u8) -> Option<Symbol> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Statement {
-    Set { target: RegisterTarget, value: Value },
+    Set {
+        target: RegisterTarget,
+        value: Value,
+    },
     JumpMenu(u16),
-    JumpTrack { group: u16, track: u16 },
+    JumpTrack {
+        group: u16,
+        track: u16,
+    },
     Exit,
     Resume,
 }
@@ -393,7 +404,10 @@ impl Parser {
             other => return Err(format!("unsupported set value: {other:?}")),
         };
         self.expect_symbol(Symbol::Semicolon)?;
-        Ok(Statement::Set { target: RegisterTarget::Gprm(register), value })
+        Ok(Statement::Set {
+            target: RegisterTarget::Gprm(register),
+            value,
+        })
     }
 }
 
@@ -416,7 +430,16 @@ pub(crate) fn compile(statements: &[Statement], context: VmContext) -> Result<Ve
                 if *register > 15 {
                     return Err(format!("GPRM {register} out of range"));
                 }
-                [0x71, 0x00, 0x00, *register as u8, 0x00, *value as u8, 0x00, 0x00]
+                [
+                    0x71,
+                    0x00,
+                    0x00,
+                    *register as u8,
+                    0x00,
+                    *value as u8,
+                    0x00,
+                    0x00,
+                ]
             }
             Statement::JumpMenu(menu) => {
                 if *menu == 0 || *menu > context.menu_pgc_count {
@@ -430,9 +453,16 @@ pub(crate) fn compile(statements: &[Statement], context: VmContext) -> Result<Ve
                 }
                 [0x20, 0x04, 0x00, 0x00, 0x00, 0xc0, 0x00, *menu as u8]
             }
-            Statement::JumpTrack { group, track } => {
-                [0x30, 0x0a, 0x00, *group as u8, 0x00, *track as u8, 0x00, 0x00]
-            }
+            Statement::JumpTrack { group, track } => [
+                0x30,
+                0x0a,
+                0x00,
+                *group as u8,
+                0x00,
+                *track as u8,
+                0x00,
+                0x00,
+            ],
             Statement::Exit => [0x30, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
             Statement::Resume => [0x20, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16],
         };

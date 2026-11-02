@@ -110,26 +110,29 @@ pub fn verify(
     if issues.iter().any(|d| d["Severity"] == 2) {
         return Ok(issues);
     }
-    let images = match crate::native_components::images(job.image_library.as_deref()) {
-        Ok(images) => images,
-        _ => {
-            issues.push(json!({"Severity":1,"Code":"MENU_OVERLAY_CHECK_SKIPPED","Message":"内置图像组件缺失，无法完成菜单文字与高亮检查。"}));
-            return Ok(issues);
-        }
+    let read = |path: &Path| {
+        std::fs::File::open(path)
+            .and_then(|file| dvda_image::codec::decode(std::io::BufReader::new(file)))
     };
     for page in 0..total {
         if caller.cancelled() {
             return Err("Build cancelled".into());
         }
-        let normal = images.read_rgba(&temporary.join(format!("impic{page}.png")));
-        let highlighted = images.read_rgba(&temporary.join(format!("hlpic{page}.png")));
-        let (Ok((width, height, normal)), Ok((hw, hh, highlighted))) = (normal, highlighted) else {
+        let normal = read(&temporary.join(format!("impic{page}.png")));
+        let highlighted = read(&temporary.join(format!("hlpic{page}.png")));
+        let (Ok(normal), Ok(highlighted)) = (normal, highlighted) else {
             issues.push(issue(
                 "MENU_OVERLAY_MISSING",
                 format!("第 {} 页缺少可读取的文字层或高亮层。", page + 1),
             ));
             continue;
         };
+        let size = normal.dimensions();
+        let (width, height) = (size.width(), size.height());
+        let highlighted_size = highlighted.dimensions();
+        let (hw, hh) = (highlighted_size.width(), highlighted_size.height());
+        let normal = normal.rgba();
+        let highlighted = highlighted.rgba();
         let alpha = |data: &[u8]| {
             data.as_chunks::<4>()
                 .0
@@ -137,7 +140,7 @@ pub fn verify(
                 .map(|pixel| pixel[3] as u64)
                 .sum::<u64>()
         };
-        if (width, height) != (hw, hh) || alpha(&highlighted) <= alpha(&normal) {
+        if (width, height) != (hw, hh) || alpha(highlighted) <= alpha(normal) {
             issues.push(issue(
                 "MENU_OVERLAY_EMPTY",
                 format!("第 {} 页高亮层没有比文字层增加墨迹。", page + 1),

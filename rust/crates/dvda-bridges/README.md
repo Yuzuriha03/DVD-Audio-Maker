@@ -1,11 +1,12 @@
 # Directly linked native bridges
 
-Production integration is a Cargo path dependency with `features = ["media", "image"]`
-(default features are empty). Project-owned media and image code is linked as an
-rlib; these features never load `dvda-media.dll` or `dvda-image.dll`.
-`author-loader` is a differential-only adapter and is deliberately excluded from
-this feature combination. The C ABI exports remain available for native author
-linkage and frozen-oracle differential tests.
+Production integration uses the `media` feature for FFmpeg bridges and the
+`dvda-image` crate for Rust image decoding and rendering (default features are
+empty). The `direct` build enables `media,menu`; the `author` build enables
+`media,menu,author-iso`. Neither requires
+ImageMagick libraries or XML configuration. `author-loader` is a differential-only
+adapter. The C ABI exports remain available for native author linkage and
+frozen-oracle differential tests.
 
 ## Integration contract
 
@@ -16,24 +17,21 @@ sequence of key/value C strings. `run()` discards callback messages;
 state remaining valid and callbacks never unwinding. Invalid tag pairs fail with
 -22 without dereferencing missing values.
 
-`direct::{read_rgba,write_y4m,image_command,image_run}` offer safe owned-buffer and
-CStr/CString entry points. `image_run_with_callbacks` has the same callback safety
-contract. `image::dvda_image_read_rgba` is the C-compatible callback for the
-menu crate's explicit `ReadRgba` injection (no dependency cycle).
-ImageMagick is initialized once and serialized; media callback routing is
-thread-local. Put `policy.xml` and `colors.xml` beside the final executable.
+The legacy ImageMagick bridge, layout probe, shim and image feature have been retired.
+Image decoding and rendering use `dvda-image`. Explicit frozen-oracle tests remain
+in `dvda-core`, using the hash-validated external adapter in `dvda-native`.
+No ImageMagick libraries or XML configuration are used by production builds.
 
-`DVDA_FFMPEG_PREFIX` names the retained FFmpeg shared install;
-`DVDA_MAGICK_WORK` names the existing ImageMagick work root including static
-Wand/Core, `freetype-minimal.lib` and MSVC delegate archives. `DVDA_IMAGE_DEPS_DIR`
-selects the delegate library directory. Third-party FFmpeg runtime dependencies are still required;
-ImageMagick static libraries and their existing delegates remain third-party.
+`DVDA_FFMPEG_PREFIX` names the retained FFmpeg install; its native dependencies
+remain required. Media callback routing is thread-local.
 
 `tools\win-build\build-rust-bridges.ps1` defaults to `-Component direct`, emitting
 an rlib and provenance manifest, not adapter DLLs. A final executable build must
 resolve and audit its own PE dependency closure; the rlib manifest is not a
-runtime-package acceptance claim. Explicit media/image/author modes are retained
-only for differential tests. All manifests keep `production_accepted=false`.
+runtime-package acceptance claim. `author` emits the static author bridge;
+The explicit media mode is a differential adapter. Image/shim modes and legacy image inputs are no longer supported. `FfmpegPrefix` may be absolute or relative
+to the invoking working directory; it is resolved before Cargo runs.
+All manifests keep `production_accepted=false`.
 
 ## Verified evidence and remaining gates
 
@@ -54,8 +52,12 @@ Fresh retained-oracle runs under `build`:
 - `bridge-loader-fresh.log`: author-loader missing-runtime retry, Unicode RGBA via
   SPU, image command/Y4M, navigation and error paths. Run in a fresh target;
   acceptance refuses to rename or overwrite a pre-existing image runtime.
-- `bridge-direct-acceptance.log`: owned API Unicode, concurrent image/media,
-  callback isolation, cancellation, errors and buffer sizing.
+- `direct-acceptance` now requires only `media`: it decodes images through
+  `dvda-image` while exercising four concurrent media callback streams, Unicode
+  audio paths, media cancellation, missing-image errors and RGBA length checks.
+  Run with `--features media --example direct-acceptance -- <audio.wav> <image.png>`;
+  no ImageMagick library or configuration is needed for this acceptance example.
+  Legacy image CLI callback/cancellation checks belong to the frozen-oracle tests.
 
 Production readiness remains **gated**: final application/embedded-author direct
 linkage and final executable dependency closure are not certified here.
@@ -65,21 +67,12 @@ extraction and image processing remains a release gate. Operation 4 extracts
 the first video frame as PNG; general video transcoding is not a bridge API
 operation. Do not represent these passes as complete feature certification.
 
-## Embedded font configuration
+## Fonts
 
-The image bridge uses `DVDA_IMAGE_NATIVE_DIR` for ImageMagick configuration when
-set by embedded-runtime initialization. Direct linking places the bridge in the
-EXE, not alongside the extracted `type.xml` and `fonts` directory. Without a
-runtime override, standalone DLL builds retain module-local configuration.
-
-Validate the actual bundled CJK fonts from a directory outside the executable:
-
-```powershell
-cargo run --offline --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc -p dvda-bridges --features image --example font-acceptance -- <extracted-runtime-directory>
-```
-
-This checks 18 rendered script/face combinations, nonzero ink and no native font
-warnings; it is a representative rendering check, not exhaustive glyph coverage.
+Bundled CJK fonts are selected and rendered by `dvda-image`; production does not
+load ImageMagick font configuration. See the crate's text tests and the application's
+PAL/NTSC menu acceptance tests for current coverage. Historical bridge logs above
+are not substitutes for Rust rendering acceptance.
 
 ## Decoder validation
 

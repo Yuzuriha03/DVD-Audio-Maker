@@ -340,6 +340,11 @@ fn one(job: &Job, input: &Path, caller: &mut dyn Callbacks) -> Result<ResultRow,
         {
             return Err("封面字节内容不一致".into());
         }
+        let (dimensions, depth) = dvda_image::codec::metadata(std::io::Cursor::new(&bytes))
+            .map_err(|e| format!("封面描述读取失败: {e}"))?;
+        picture["Descriptor"]["Width"] = json!(dimensions.width());
+        picture["Descriptor"]["Height"] = json!(dimensions.height());
+        picture["Descriptor"]["Depth"] = json!(depth);
         picture["Descriptor"]["Type"] = json!(3);
         picture["Description"] = json!("");
         formats::dispatch(

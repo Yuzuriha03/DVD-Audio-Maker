@@ -13,14 +13,12 @@ pub use ffi_optimized::{
 #[cfg(feature = "media")]
 pub use ffmpeg_pool::{FRAME_POOL, FramePool, PACKET_POOL, PacketPool, PooledFrame, PooledPacket};
 
-#[cfg(all(feature = "author-loader", not(feature = "image")))]
+#[cfg(feature = "author-loader")]
 pub mod author_loader;
-#[cfg(any(feature = "media", feature = "image"))]
+#[cfg(feature = "media")]
 pub mod direct;
 #[cfg(feature = "media")]
 pub mod ffmpeg;
-#[cfg(feature = "image")]
-pub mod image;
 #[cfg(feature = "author-iso")]
 pub mod iso;
 #[cfg(feature = "media")]

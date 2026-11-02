@@ -37,10 +37,7 @@ set "DVDA_LIB_TOOL=lib.exe"
 set "_DVDA_VSDEV_CMD="
 set "_DVDA_VSWHERE="
 if not defined DVDA_FFMPEG_PREFIX set "DVDA_FFMPEG_PREFIX=%~dp0..\..\build\msvc-native\ffmpeg-static\install"
-if not defined DVDA_MAGICK_WORK set "DVDA_MAGICK_WORK=%~dp0..\..\build\msvc-native\image"
-if not defined DVDA_IMAGE_DEPS_DIR set "DVDA_IMAGE_DEPS_DIR=%DVDA_MAGICK_WORK%\lib"
 if not defined DVDA_MEDIA_NATIVE_DIR set "DVDA_MEDIA_NATIVE_DIR=%~dp0..\..\build\msvc-native\media-runtime"
-if not defined DVDA_IMAGE_NATIVE_DIR set "DVDA_IMAGE_NATIVE_DIR=%~dp0..\..\build\msvc-native\image-runtime"
 if not defined DVDA_ENCODER_LIBRARY set "DVDA_ENCODER_LIBRARY=%~dp0..\..\build\mlp-encoder\mlp_encoder.dll"
 exit /b 0
 

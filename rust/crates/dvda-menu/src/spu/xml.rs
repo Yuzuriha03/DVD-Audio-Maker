@@ -23,7 +23,10 @@ pub(crate) struct Document {
 
 impl Default for Document {
     fn default() -> Self {
-        Self { format: VideoFormat::Pal, spus: Vec::new() }
+        Self {
+            format: VideoFormat::Pal,
+            spus: Vec::new(),
+        }
     }
 }
 
@@ -171,7 +174,9 @@ fn apply_attribute(
                 "outlinewidth" => spu.outlinewidth = parse_unsigned(value, "spu outlinewidth")?,
                 "xoffset" => spu.x0 = parse_unsigned(value, "spu xoffset")?,
                 "yoffset" => spu.y0 = parse_unsigned(value, "spu yoffset")?,
-                "force" => spu.forced = parse_boolean(value).ok_or("invalid boolean for spu force")?,
+                "force" => {
+                    spu.forced = parse_boolean(value).ok_or("invalid boolean for spu force")?
+                }
                 "transparent" => spu.transparentc = parse_color(value)?,
                 "autooutline" => {
                     if value != "infer" {
@@ -189,7 +194,10 @@ fn apply_attribute(
         }
         "button" | "action" => {
             let spu = current.ok_or("button attribute outside spu")?;
-            let button = spu.buttons.last_mut().ok_or("button attribute without button")?;
+            let button = spu
+                .buttons
+                .last_mut()
+                .ok_or("button attribute without button")?;
             match name {
                 "name" => button.name = Some(value.to_string()),
                 "up" => button.up = Some(value.to_string()),
@@ -231,8 +239,14 @@ fn parse_unsigned(text: &str, what: &str) -> Result<u32, String> {
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(format!("bad number for {what}: {text:?}"));
     }
-    let value: u64 = digits.parse().map_err(|error| format!("bad number for {what}: {error}"))?;
-    Ok(if negative { (value as u32).wrapping_neg() } else { value as u32 })
+    let value: u64 = digits
+        .parse()
+        .map_err(|error| format!("bad number for {what}: {error}"))?;
+    Ok(if negative {
+        (value as u32).wrapping_neg()
+    } else {
+        value as u32
+    })
 }
 
 fn parse_time(text: &str) -> u32 {

@@ -1,10 +1,9 @@
 use crate::{build::Job, disc::Disc};
-use dvda_native::{images::Images, media::Callbacks};
+use dvda_native::media::Callbacks;
 use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use serde_json::{Value, json};
@@ -339,23 +338,14 @@ pub fn plan(request: Value) -> Result<Value, String> {
     }))
 }
 
-const FRAME_WIDTH: &str = "720";
-const FRAME_HEIGHT: &str = "576";
-
 /// Build the on-disk menu assets consumed by the project-built author.
-/// ImageMagick is reached only through the bundled C ABI; no image process is
-/// started and no shell command is constructed here.
+/// Image decoding, layout and font probing use the Rust image implementation.
 pub fn build_assets(
     job: &Job,
     disc: &Disc,
     callbacks: &mut dyn Callbacks,
     diagnostics: &mut Vec<Value>,
 ) -> Result<Vec<String>, String> {
-    let library = job.image_library.as_deref();
-    if !crate::native_components::images_available(library) {
-        diagnostics.push(json!({"Severity":2,"Code":"IMAGEMAGICK_MISSING","Message":"内置图像组件缺失，请重新解压或修复发布包。"}));
-        diagnostics.push(json!({"Severity":2,"Code":"IMAGEMAGICK_IDENTIFY_MISSING","Message":"内置图像组件缺失，无法验证菜单图片尺寸。"}));
-    }
     let data_menu = job.author_source.join("menu");
     if !data_menu.is_dir() {
         diagnostics.push(json!({"Severity":2,"Code":"MENU_DATA_MISSING","Message":format!("找不到 dvda-author 菜单素材目录: {}",data_menu.display())}));
@@ -382,16 +372,13 @@ pub fn build_assets(
         fs::remove_dir_all(&directory).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-    let images = crate::native_components::images(library)
-        .map_err(|error| format!("Could not load menu image library: {error}"))?;
     let configured = [
         resolve_font(&job.menu_font, &job.menu_binary_directory),
         resolve_font(&job.menu_font_japanese, &job.menu_binary_directory),
         resolve_font(&job.menu_font_korean, &job.menu_binary_directory),
     ];
     let fonts = crate::menu_fonts::resolve(
-        &images,
-        &directory,
+        &job.menu_binary_directory,
         [&configured[0], &configured[1], &configured[2]],
         plan["ScreenText"].as_str().unwrap_or_default(),
         callbacks,
@@ -401,20 +388,8 @@ pub fn build_assets(
         return Ok(Vec::new());
     }
     let blank = directory.join("blankscreen.png");
-    run_image(
-        &images,
-        vec![
-            "magick".into(),
-            "-size".into(),
-            format!("{FRAME_WIDTH}x{FRAME_HEIGHT}"),
-            "xc:none".into(),
-            "-depth".into(),
-            "8".into(),
-            format!("PNG32:{}", blank.display()),
-        ],
-        callbacks,
-    )?;
-    require_frame(&images, &blank, callbacks)?;
+    write_blank(&blank, callbacks)?;
+    require_frame(&blank, callbacks)?;
 
     let pages = plan
         .get("AlbumPages")
@@ -447,37 +422,13 @@ pub fn build_assets(
             .unwrap_or_default();
         let output = directory.join(format!("bg{index}.jpg"));
         let cover = covers.get(album).and_then(Option::as_deref);
-        let mut arguments = vec!["magick".into()];
-        if let Some(cover) = cover {
-            arguments.extend([
-                cover.to_string_lossy().into_owned(),
-                "-resize".into(),
-                format!("{FRAME_WIDTH}x{FRAME_HEIGHT}^"),
-                "-gravity".into(),
-                "center".into(),
-                "-extent".into(),
-                format!("{FRAME_WIDTH}x{FRAME_HEIGHT}"),
-            ]);
-            if job.menu_cover_dim > 0 {
-                arguments.extend([
-                    "-brightness-contrast".into(),
-                    format!("-{}x0", job.menu_cover_dim.clamp(0, 100)),
-                ]);
-            }
-        } else {
-            arguments.extend([
-                "-size".into(),
-                format!("{FRAME_WIDTH}x{FRAME_HEIGHT}"),
-                "xc:black".into(),
-            ]);
-        }
-        arguments.extend([
-            "-quality".into(),
-            "88".into(),
-            output.to_string_lossy().into_owned(),
-        ]);
-        run_image(&images, arguments, callbacks)?;
-        require_frame(&images, &output, callbacks)?;
+        write_background(
+            cover,
+            &output,
+            job.menu_cover_dim.clamp(0, 100) as u8,
+            callbacks,
+        )?;
+        require_frame(&output, callbacks)?;
         callbacks.emit(
             1,
             &format!(
@@ -542,28 +493,8 @@ pub fn build_assets(
             };
             let output = directory.join(format!("still{index}.jpg"));
             let generated = (|| -> Result<(), String> {
-                run_image(
-                    &images,
-                    vec![
-                        "magick".into(),
-                        cover.to_string_lossy().into_owned(),
-                        "-resize".into(),
-                        "93.75%x100%!".into(),
-                        "-resize".into(),
-                        format!("{FRAME_WIDTH}x{FRAME_HEIGHT}"),
-                        "-background".into(),
-                        "black".into(),
-                        "-gravity".into(),
-                        "center".into(),
-                        "-extent".into(),
-                        format!("{FRAME_WIDTH}x{FRAME_HEIGHT}"),
-                        "-quality".into(),
-                        "92".into(),
-                        output.to_string_lossy().into_owned(),
-                    ],
-                    callbacks,
-                )?;
-                require_frame(&images, &output, callbacks)
+                write_still(cover, &output, callbacks)?;
+                require_frame(&output, callbacks)
             })();
             if let Err(reason) = generated {
                 if callbacks.cancelled() {
@@ -670,63 +601,138 @@ pub fn build_assets(
     Ok(arguments)
 }
 
-fn run_image(
-    images: &Arc<Images>,
-    arguments: Vec<String>,
+fn write_background(
+    input: Option<&Path>,
+    output: &Path,
+    dim: u8,
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
-    let status = images
-        .run(&arguments, callbacks)
-        .map_err(|error| error.to_string())?;
-    if status == 0 {
+    use dvda_image::{
+        geometry::{Dimensions, ResizeMode},
+        raster::Raster,
+    };
+    use std::io::{BufReader, BufWriter, Write};
+    let mut created = false;
+    let result = (|| -> std::io::Result<()> {
+        let cancelled = || std::io::Error::new(std::io::ErrorKind::Interrupted, "Build cancelled");
+        if callbacks.cancelled() {
+            return Err(cancelled());
+        }
+        let frame = Dimensions::new(720, 576).map_err(std::io::Error::other)?;
+        let mut image = if let Some(input) = input {
+            let image = dvda_image::codec::decode(BufReader::new(fs::File::open(input)?))?;
+            if callbacks.cancelled() {
+                return Err(cancelled());
+            }
+            let image = image.resized(frame, ResizeMode::Fill)?;
+            if callbacks.cancelled() {
+                return Err(cancelled());
+            }
+            image.centered_extent(frame, [0, 0, 0, 255])?
+        } else {
+            Raster::solid(frame, [0, 0, 0, 255])?
+        };
+        image.dim(dim);
+        if callbacks.cancelled() {
+            return Err(cancelled());
+        }
+        let mut file = BufWriter::new(fs::File::create(output)?);
+        created = true;
+        dvda_image::codec::write_jpeg(&image, &mut file, 88, [0; 3])?;
+        file.flush()?;
+        file.get_ref().sync_all()?;
+        if callbacks.cancelled() {
+            return Err(cancelled());
+        }
         Ok(())
-    } else {
-        Err(format!("Menu image operation failed with status {status}"))
+    })();
+    if result.is_err() && created {
+        let _ = fs::remove_file(output);
     }
+    result.map_err(|error| error.to_string())
 }
 
-fn require_frame(
-    images: &Arc<Images>,
-    path: &Path,
-    callbacks: &mut dyn Callbacks,
-) -> Result<(), String> {
-    let mut output = String::new();
-    struct Capture<'a> {
-        target: &'a mut String,
-        parent: &'a mut dyn Callbacks,
+fn write_still(input: &Path, output: &Path, callbacks: &mut dyn Callbacks) -> Result<(), String> {
+    use dvda_image::geometry::{Dimensions, ResizeMode};
+    use std::io::{BufReader, BufWriter, Write};
+    let mut created = false;
+    let result = (|| -> std::io::Result<()> {
+        let cancelled = || std::io::Error::new(std::io::ErrorKind::Interrupted, "Build cancelled");
+        if callbacks.cancelled() {
+            return Err(cancelled());
+        }
+        let image = dvda_image::codec::decode(BufReader::new(fs::File::open(input)?))?;
+        let size = image.dimensions();
+        let compressed = Dimensions::new(((size.width() * 15 + 8) / 16).max(1), size.height())
+            .map_err(std::io::Error::other)?;
+        let frame = Dimensions::new(720, 576).map_err(std::io::Error::other)?;
+        if callbacks.cancelled() {
+            return Err(cancelled());
+        }
+        let image = image.resized(compressed, ResizeMode::Exact)?;
+        if callbacks.cancelled() {
+            return Err(cancelled());
+        }
+        let image = image.resized(frame, ResizeMode::Fit)?;
+        let image = image.centered_extent(frame, [0, 0, 0, 255])?;
+        if callbacks.cancelled() {
+            return Err(cancelled());
+        }
+        let mut file = BufWriter::new(fs::File::create(output)?);
+        created = true;
+        dvda_image::codec::write_jpeg(&image, &mut file, 92, [0; 3])?;
+        file.flush()?;
+        file.get_ref().sync_all()?;
+        if callbacks.cancelled() {
+            return Err(cancelled());
+        }
+        Ok(())
+    })();
+    if result.is_err() && created {
+        let _ = fs::remove_file(output);
     }
-    impl Callbacks for Capture<'_> {
-        fn emit(&mut self, stream: i32, text: &str) {
-            if stream == 1 {
-                self.target.push_str(text);
-            } else {
-                self.parent.emit(stream, text);
-            }
-        }
-        fn cancelled(&mut self) -> bool {
-            self.parent.cancelled()
-        }
+    result.map_err(|error| error.to_string())
+}
 
-        fn progress(&mut self, completed: u64, total: u64) {
-            self.parent.progress(completed, total);
-        }
+fn write_blank(path: &Path, callbacks: &mut dyn Callbacks) -> Result<(), String> {
+    if callbacks.cancelled() {
+        return Err("Build cancelled".into());
     }
-    let mut capture = Capture {
-        target: &mut output,
-        parent: callbacks,
-    };
-    let status = images
-        .run(
-            &[
-                "identify".into(),
-                "-format".into(),
-                "%w %h".into(),
-                path.to_string_lossy().into_owned(),
-            ],
-            &mut capture,
-        )
-        .map_err(|error| error.to_string())?;
-    if status != 0 || output.split_whitespace().collect::<Vec<_>>() != [FRAME_WIDTH, FRAME_HEIGHT] {
+    let result = (|| -> std::io::Result<()> {
+        use std::io::Write;
+        let size =
+            dvda_image::geometry::Dimensions::new(720, 576).map_err(std::io::Error::other)?;
+        let image = dvda_image::raster::Raster::solid(size, [0; 4])?;
+        let file = fs::File::create(path)?;
+        let mut output = std::io::BufWriter::new(file);
+        dvda_image::codec::write_png(&image, &mut output)?;
+        output.flush()?;
+        output.get_ref().sync_all()?;
+        if callbacks.cancelled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Build cancelled",
+            ));
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(path);
+    }
+    result.map_err(|error| error.to_string())
+}
+
+fn require_frame(path: &Path, callbacks: &mut dyn Callbacks) -> Result<(), String> {
+    if callbacks.cancelled() {
+        return Err("Build cancelled".into());
+    }
+    let file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let image = dvda_image::codec::decode(std::io::BufReader::new(file))
+        .map_err(|error| format!("Could not decode menu image {}: {error}", path.display()))?;
+    if callbacks.cancelled() {
+        return Err("Build cancelled".into());
+    }
+    if image.dimensions().width() != 720 || image.dimensions().height() != 576 {
         return Err(format!(
             "Menu image has invalid dimensions: {}",
             path.display()
@@ -761,10 +767,7 @@ fn resolve_font(configured: &str, binary_directory: &Path) -> String {
     if candidate.is_file() {
         return author_font_path(&candidate);
     }
-    // The bundled ImageMagick typemap exposes these names as separate CJK
-    // faces. Keep the family name instead of expanding it to a TTC path;
-    // dvda-author can then select the registered face without parsing a
-    // collection filename in its menu command.
+    // Preserve the regional alias so Rust can select the correct TTC face.
     if configured.starts_with("DVDA-") {
         return configured.to_owned();
     }
@@ -1207,6 +1210,123 @@ pub fn parse_overlay_batch(request: Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires DVDA_TEST_COVER_ROOT with external album cover.jpg files"]
+    fn external_large_cover_stills() {
+        struct Quiet;
+        impl Callbacks for Quiet {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+        }
+        let root = std::env::var_os("DVDA_TEST_COVER_ROOT").expect("DVDA_TEST_COVER_ROOT");
+        let output =
+            std::env::temp_dir().join(format!("dvda-cover-still-{}.jpg", std::process::id()));
+        let mut count = 0;
+        for entry in fs::read_dir(root).unwrap() {
+            let cover = entry.unwrap().path().join("cover.jpg");
+            if !cover.is_file() {
+                continue;
+            }
+            write_still(&cover, &output, &mut Quiet)
+                .unwrap_or_else(|error| panic!("{}: {error}", cover.display()));
+            require_frame(&output, &mut Quiet).unwrap();
+            fs::remove_file(&output).unwrap();
+            count += 1;
+        }
+        assert!(count > 0);
+        eprintln!("Validated {count} complete playback stills");
+    }
+
+    #[test]
+    fn blank_is_transparent_and_cancelled_write_leaves_no_file() {
+        struct Cancellation {
+            checks: usize,
+            cancel_at: usize,
+        }
+        impl Callbacks for Cancellation {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                self.checks += 1;
+                self.checks >= self.cancel_at
+            }
+        }
+        let path = std::env::temp_dir().join(format!("dvda-rust-blank-{}.png", std::process::id()));
+        let mut callbacks = Cancellation {
+            checks: 0,
+            cancel_at: usize::MAX,
+        };
+        write_blank(&path, &mut callbacks).unwrap();
+        require_frame(&path, &mut callbacks).unwrap();
+        let still = path.with_extension("jpg");
+        write_still(&path, &still, &mut callbacks).unwrap();
+        require_frame(&still, &mut callbacks).unwrap();
+        fs::remove_file(&still).unwrap();
+        let mut cancel_still = Cancellation {
+            checks: 0,
+            cancel_at: 5,
+        };
+        assert!(write_still(&path, &still, &mut cancel_still).is_err());
+        assert!(!still.exists());
+        write_background(None, &still, 20, &mut callbacks).unwrap();
+        require_frame(&still, &mut callbacks).unwrap();
+        let background =
+            dvda_image::codec::decode(std::io::BufReader::new(fs::File::open(&still).unwrap()))
+                .unwrap();
+        assert!(
+            background
+                .rgba()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| *pixel == [0, 0, 0, 255])
+        );
+        let existing = fs::read(&still).unwrap();
+        let missing = path.with_extension("missing");
+        assert!(write_background(Some(&missing), &still, 20, &mut callbacks).is_err());
+        assert_eq!(fs::read(&still).unwrap(), existing);
+        fs::remove_file(&still).unwrap();
+        let mut cancel_background = Cancellation {
+            checks: 0,
+            cancel_at: 5,
+        };
+        assert!(write_background(Some(&path), &still, 20, &mut cancel_background).is_err());
+        assert!(!still.exists());
+        let image =
+            dvda_image::codec::decode(std::io::BufReader::new(fs::File::open(&path).unwrap()))
+                .unwrap();
+        assert_eq!(
+            image.dimensions(),
+            dvda_image::geometry::Dimensions::new(720, 576).unwrap()
+        );
+        assert!(
+            image
+                .rgba()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel[3] == 0)
+        );
+        fs::remove_file(&path).unwrap();
+        let small = dvda_image::raster::Raster::solid(
+            dvda_image::geometry::Dimensions::new(1, 1).unwrap(),
+            [0; 4],
+        )
+        .unwrap();
+        dvda_image::codec::write_png(&small, fs::File::create(&path).unwrap()).unwrap();
+        assert!(require_frame(&path, &mut callbacks).is_err());
+        fs::write(&path, b"invalid PNG").unwrap();
+        assert!(require_frame(&path, &mut callbacks).is_err());
+        fs::remove_file(&path).unwrap();
+        let mut callbacks = Cancellation {
+            checks: 0,
+            cancel_at: 2,
+        };
+        assert!(write_blank(&path, &mut callbacks).is_err());
+        assert!(!path.exists());
+    }
 
     #[test]
     fn parses_single_frame_statistics_and_rejects_non_finite_values() {

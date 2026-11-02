@@ -1,7 +1,7 @@
 param(
     [ValidateSet('Functional', 'Benchmarks')][string]$Mode = 'Functional',
     [string]$MediaRuntime = 'build\rust-author-production',
-    [string]$ImageRuntime = 'build\rust-author-production',
+    [string]$ImageRuntime = '',
     [string]$EncoderLibrary = '',
     [string]$MenuData = 'build\rust-author-production\data',
     [string]$MenuRuntime = 'build\rust-author-production',
@@ -36,7 +36,26 @@ function Show-CompilerMessages($Lines) {
     }
 }
 $env:DVDA_MEDIA_NATIVE_DIR = Require-Path $MediaRuntime
-$env:DVDA_IMAGE_NATIVE_DIR = Require-Path $ImageRuntime
+Remove-Item Env:DVDA_IMAGE_NATIVE_DIR -ErrorAction SilentlyContinue
+Remove-Item Env:MAGICK_CONFIGURE_PATH -ErrorAction SilentlyContinue
+Remove-Item Env:MAGICK_FONT_PATH -ErrorAction SilentlyContinue
+if ($ImageRuntime) {
+    $env:DVDA_IMAGE_NATIVE_DIR = Require-Path $ImageRuntime
+    $imageOracle = Require-Path (Join-Path $env:DVDA_IMAGE_NATIVE_DIR 'dvda-image.dll') Leaf
+    if ((Get-FileHash -LiteralPath $imageOracle -Algorithm SHA256).Hash -ne 'AC8AFB08C95B980A16E0212538403058B1B71340C78159DC19D6642CACEDF1DB') {
+        throw 'ImageRuntime must contain the explicitly supplied frozen image oracle.'
+    }
+    $env:MAGICK_CONFIGURE_PATH = $env:DVDA_IMAGE_NATIVE_DIR
+    $env:MAGICK_FONT_PATH = $env:DVDA_IMAGE_NATIVE_DIR
+    $env:PATH = "$env:DVDA_IMAGE_NATIVE_DIR;$env:PATH"
+} else {
+    Skip-Test 'pixels_diagnostics_concurrency_and_failure_protection' 'explicit frozen image oracle required via -ImageRuntime'
+}
+if (-not $ImageRuntime -or -not $env:DVDA_IMAGE_TEST_CMYK_ICC) {
+    Skip-Test 'decoder_color_and_first_frame_policies' 'requires -ImageRuntime and an external CMYK ICC profile via DVDA_IMAGE_TEST_CMYK_ICC'
+} else {
+    $env:DVDA_IMAGE_TEST_CMYK_ICC = Require-Path $env:DVDA_IMAGE_TEST_CMYK_ICC Leaf
+}
 $env:DVDA_TEST_MENU_DATA = Require-Path $MenuData
 $env:DVDA_MENU_NATIVE_DIR = Require-Path $MenuRuntime
 if ($EncoderLibrary) { $env:DVDA_ENCODER_LIBRARY = Require-Path $EncoderLibrary Leaf }
@@ -60,9 +79,7 @@ if ($Mode -eq 'Benchmarks' -and -not $skipped.Contains('synthetic_batch_worker_b
         Skip-Test 'synthetic_batch_worker_benchmark' 'requires DVDA_BATCH_BENCH=1, a new DVDA_BATCH_BENCH_ROOT and a packaged DVDA_BATCH_BENCH_EXE'
     }
 }
-$env:MAGICK_CONFIGURE_PATH = $env:DVDA_IMAGE_NATIVE_DIR
-$env:MAGICK_FONT_PATH = $env:DVDA_IMAGE_NATIVE_DIR
-$env:PATH = "$env:DVDA_MEDIA_NATIVE_DIR;$env:DVDA_IMAGE_NATIVE_DIR;$env:PATH"
+$env:PATH = "$env:DVDA_MEDIA_NATIVE_DIR;$env:PATH"
 if ($OtherVolume) { $env:DVDA_TEST_OTHER_VOLUME = Require-Path $OtherVolume }
 if ($Mode -eq 'Functional') {
     foreach ($name in $benchmarks) { Skip-Test $name 'manual benchmark; use -Mode Benchmarks' }
@@ -126,7 +143,7 @@ try {
         $stage = Join-Path (Get-Location) ('build\rust-workflow\author-' + [Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $stage | Out-Null
         Copy-Item -LiteralPath $author[0] -Destination $stage
-        foreach ($runtime in @($env:DVDA_MEDIA_NATIVE_DIR, $env:DVDA_IMAGE_NATIVE_DIR) | Select-Object -Unique) {
+        foreach ($runtime in @($env:DVDA_MEDIA_NATIVE_DIR)) {
             Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Copy-Item -Destination $stage -Force
         }
         $env:DVDA_TEST_AUTHOR = Join-Path $stage 'dvda-author-dev.exe'
