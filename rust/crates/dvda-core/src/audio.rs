@@ -130,6 +130,7 @@ fn run(
                 bits: 0,
                 output_format: OutputFormat::None,
                 soxr: decode && job.resample_to.is_some(),
+                dither: false,
                 compression: 8,
                 cover: false,
                 input: job.input.clone(),

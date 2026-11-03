@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
 use crate::bitstream::Bits;
-use crate::syntax::access_unit::serialize_planned;
 #[cfg(test)]
 use crate::syntax::access_unit::interval_fits;
-use crate::syntax::parameters::MlpParameters;
+use crate::syntax::access_unit::serialize_planned;
 #[cfg(test)]
 use crate::syntax::parameters::MlpCodingParams;
+use crate::syntax::parameters::MlpParameters;
 use crate::syntax::restart::MlpRestart;
 
 pub(crate) struct PlannedAu {
@@ -285,7 +285,16 @@ pub(crate) fn encode(
         } else {
             au.is_multiple_of(restart_interval)
         };
-        if is_restart && !flush_interval(queue, pending, &mut recycled_au, format, &mut rate, &mut words_total, emit)
+        if is_restart
+            && !flush_interval(
+                queue,
+                pending,
+                &mut recycled_au,
+                format,
+                &mut rate,
+                &mut words_total,
+                emit,
+            )
         {
             return Err(());
         }
@@ -464,7 +473,15 @@ pub(crate) fn encode(
     if stamp
         .as_ref()
         .is_some_and(|s| !crate::pipeline::stamp::mlp_stamp_complete(s))
-        || !flush_interval(queue, pending, &mut recycled_au, format, &mut rate, &mut words_total, emit)
+        || !flush_interval(
+            queue,
+            pending,
+            &mut recycled_au,
+            format,
+            &mut rate,
+            &mut words_total,
+            emit,
+        )
         || !queue.mlp_output_queue_finish(emit)
     {
         return Err(());
@@ -511,8 +528,13 @@ pub(crate) fn unpredicted_interval(
             p.main.a[ch].precision = 8;
             p.initial.a[ch].precision = 8;
             if first != 0 {
-                p.initial.coding[ch] =
-                    crate::pipeline::channels::select(&mono[..first], qss, previous.coding[ch], true, limit);
+                p.initial.coding[ch] = crate::pipeline::channels::select(
+                    &mono[..first],
+                    qss,
+                    previous.coding[ch],
+                    true,
+                    limit,
+                );
             }
             p.main.coding[ch] = crate::pipeline::channels::select(
                 &mono[first..],

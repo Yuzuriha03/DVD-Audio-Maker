@@ -1026,11 +1026,11 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_RATE, rate_x, 38 - sy, 129, 120);
                         move_label(state, "bits", bits_x, 18 - sy, 129, 20);
                         move_child(*page, ID_BITS, bits_x, 38 - sy, 129, 120);
-                        // The note follows the lists; the MLP path follows the note.
+                        place(state.controls.dither, 14, 74 - sy, field_width, 28);
                         let note = get_text(label_handle(state, "audio_note"));
                         let note_height = wrapped_text_height(&note, ui_font(), field_width);
-                        move_label(state, "audio_note", 14, 80 - sy, field_width, note_height);
-                        let import_y = 80 + note_height + 12;
+                        move_label(state, "audio_note", 14, 112 - sy, field_width, note_height);
+                        let import_y = 112 + note_height + 12;
                         move_label(state, "import_folder", 14, import_y - sy, field_width, 20);
                         move_child(
                             *page,
@@ -1057,11 +1057,12 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_RATE, 340, 38 - sy, 210, 120);
                         move_label(state, "bits", 575, 18 - sy, 160, 20);
                         move_child(*page, ID_BITS, 575, 38 - sy, 160, 120);
+                        place(state.controls.dither, 14, 74 - sy, page_width - 28, 28);
                         let note_width = 900.min(page_width - 28);
                         let note = get_text(label_handle(state, "audio_note"));
                         let note_height = wrapped_text_height(&note, ui_font(), note_width);
-                        move_label(state, "audio_note", 14, 80 - sy, note_width, note_height);
-                        let import_y = 80 + note_height + 12;
+                        move_label(state, "audio_note", 14, 112 - sy, note_width, note_height);
+                        let import_y = 112 + note_height + 12;
                         move_label(state, "import_folder", 14, import_y - sy, 520, 20);
                         let edit_width = browse_edit_width(page_width);
                         move_child(

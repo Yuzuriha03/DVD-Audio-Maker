@@ -14,6 +14,7 @@ pub struct Request {
     pub bits: u32,
     pub output_format: u32,
     pub soxr: u32,
+    pub dither: u32,
     pub compression: u32,
     pub cover: u32,
     pub tag_count: u32,
@@ -229,6 +230,27 @@ unsafe fn run(request: &Request, call: &mut Call) -> Result<(), i32> {
         if !matches!(request.operation, 1..=5) {
             return Err(EINVAL);
         }
+        let path = text(request.input);
+        let wave_reader = if let Ok(mut source) = std::fs::File::open(&path) {
+            use std::io::{Read, Seek, SeekFrom};
+            let mut signature = [0; 12];
+            if source.read_exact(&mut signature).is_ok()
+                && matches!(&signature[..4], b"RIFF" | b"RF64")
+                && &signature[8..] == b"WAVE"
+            {
+                source
+                    .seek(SeekFrom::Start(0))
+                    .map_err(crate::media_convert::open_error)?;
+                Some(
+                    dvda_audio::wav::Reader::new(source)
+                        .map_err(crate::media_convert::open_error)?,
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let mut format = avformat_alloc_context();
         if format.is_null() {
             return Err(ENOMEM);
@@ -245,6 +267,80 @@ unsafe fn run(request: &Request, call: &mut Call) -> Result<(), i32> {
             ptr::null()
         };
         let result = (|| {
+            if let Some(reader) = wave_reader {
+                use dvda_audio::pcm::Encoding;
+                let spec = reader.format;
+                let stream = avformat_new_stream(format, ptr::null());
+                if stream.is_null() {
+                    return Err(ENOMEM);
+                }
+                let p = (*stream).codecpar();
+                *(*p).codec_type_ptr() = 1;
+                *(*p).codec_id_ptr() = match spec.encoding {
+                    Encoding::Signed8 => AV_CODEC_ID_PCM_S8,
+                    Encoding::Unsigned8 => AV_CODEC_ID_PCM_U8,
+                    Encoding::Signed16 => AV_CODEC_ID_PCM_S16LE,
+                    Encoding::Signed24 => AV_CODEC_ID_PCM_S24LE,
+                    Encoding::Signed32 => AV_CODEC_ID_PCM_S32LE,
+                    Encoding::Float32 => AV_CODEC_ID_PCM_F32LE,
+                    Encoding::Float64 => AV_CODEC_ID_PCM_F64LE,
+                };
+                *(*p).sample_rate_ptr() = spec.sample_rate as i32;
+                *(*p).bits_per_raw_sample_ptr() = spec.valid_bits as i32;
+                if spec.channel_mask != 0 {
+                    done(av_channel_layout_from_mask(
+                        (*p).ch_layout_ptr(),
+                        spec.channel_mask.into(),
+                    ))?;
+                } else {
+                    av_channel_layout_default((*p).ch_layout_ptr(), spec.channels.into());
+                }
+                *(*stream).time_base_ptr() = Rational {
+                    num: 1,
+                    den: spec.sample_rate as i32,
+                };
+                *(*stream).duration_ptr() = i64::try_from(reader.frames()).map_err(|_| INVALID)?;
+                *(*format).duration_ptr() =
+                    av_rescale((*stream).duration(), 1_000_000, spec.sample_rate.into());
+                for (key, value) in &reader.tags {
+                    let key = std::ffi::CString::new(key.as_str()).map_err(|_| INVALID)?;
+                    let value = std::ffi::CString::new(value.as_str()).map_err(|_| INVALID)?;
+                    done(av_dict_set(
+                        (*format).metadata_ptr(),
+                        key.as_ptr(),
+                        value.as_ptr(),
+                        0,
+                    ))?;
+                }
+                return match request.operation {
+                    1 => probe(call, format),
+                    2 => {
+                        let align = spec.block_align() as u64;
+                        let chunk = (4096 / align).max(1) * align;
+                        let mut offset = 0;
+                        while offset < reader.data_bytes {
+                            if call.cancelled() {
+                                return Err(EXIT);
+                            }
+                            let size = chunk.min(reader.data_bytes - offset);
+                            call.message(
+                                1,
+                                &format!(
+                                    "{:.9},{:.9},{},{}",
+                                    (offset / align) as f64 / f64::from(spec.sample_rate),
+                                    (size / align) as f64 / f64::from(spec.sample_rate),
+                                    size,
+                                    reader.data_offset + offset
+                                ),
+                            );
+                            offset += size;
+                        }
+                        Ok(())
+                    }
+                    3 => crate::media_convert::audio_input(request, call, format, Some(reader)),
+                    _ => Err(-1381258232),
+                };
+            }
             done(avformat_open_input(
                 &mut format,
                 request.input,
@@ -277,7 +373,7 @@ pub unsafe extern "C" fn dvdamedia_run(
     unsafe {
         if request.is_null()
             || (*request).size as usize != std::mem::size_of::<Request>()
-            || (*request).abi != 1
+            || (*request).abi != 2
             || (*request).input.is_null()
             || emit.is_none()
         {

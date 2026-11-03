@@ -88,6 +88,8 @@ unsafe extern "C" {
     pub fn av_frame_unref(f: *mut Frame);
     pub fn av_frame_get_buffer(f: *mut Frame, align: i32) -> i32;
     pub fn av_channel_layout_copy(d: *mut Layout, s: *const Layout) -> i32;
+    pub fn av_channel_layout_channel_from_index(layout: *const Layout, index: u32) -> i32;
+    pub fn av_channel_layout_default(d: *mut Layout, channels: i32);
     pub fn av_channel_layout_from_mask(d: *mut Layout, mask: u64) -> i32;
     pub fn av_dict_set(
         d: *mut *mut c_void,

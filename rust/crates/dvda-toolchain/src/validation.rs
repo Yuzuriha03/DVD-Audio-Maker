@@ -33,12 +33,7 @@ fn read_json(path: &Path) -> Result<Value, String> {
     serde_json::from_slice(&bytes).map_err(|e| format!("Invalid {}: {e}", path.display()))
 }
 
-pub fn validate(
-    media: &Path,
-    image: &Path,
-    author: &Path,
-    target: &str,
-) -> Result<Inputs, String> {
+pub fn validate(media: &Path, image: &Path, author: &Path, target: &str) -> Result<Inputs, String> {
     target_machine(target)?;
     let author_record = read_json(&author.join("author-build.json"))?;
     if author_record["implementation"] == "rust"
@@ -157,11 +152,7 @@ pub fn validate(
         author,
         "author-build.json",
         "runtime_files",
-        &[
-            "avcodec-63.dll",
-            "avformat-63.dll",
-            "avutil-61.dll",
-        ],
+        &["avcodec-63.dll", "avformat-63.dll", "avutil-61.dll"],
         false,
         true,
         target,
@@ -490,8 +481,12 @@ pub fn validate_combined(directories: &[&Path], target: &str) -> Result<(), Stri
         }
     }
     for (name, path) in &files {
-        let imports = imports_for(&fs::read(path).map_err(err)?, name.ends_with(".dll"), target)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let imports = imports_for(
+            &fs::read(path).map_err(err)?,
+            name.ends_with(".dll"),
+            target,
+        )
+        .map_err(|e| format!("{}: {e}", path.display()))?;
         closure(name, &imports, &files, true)?;
     }
     Ok(())
@@ -711,10 +706,13 @@ pub(crate) mod tests {
                 .keys()
                 .any(|name| name.starts_with("dvda-menu-"))
         );
-        fs::write(fixture.root.join("author/data/menu/activeheader"), b"tampered").unwrap();
+        fs::write(
+            fixture.root.join("author/data/menu/activeheader"),
+            b"tampered",
+        )
+        .unwrap();
         assert!(fixture.validate().unwrap_err().contains("asset checksum"));
     }
-
 
     pub struct Fixture {
         pub root: PathBuf,
@@ -812,7 +810,13 @@ pub(crate) mod tests {
     fn encoder_requires_rust_abi_integrity_and_closed_inventory() {
         let f = Fixture::new();
         let directory = f.root.join("encoder");
-        assert_eq!(validate_encoder(&directory, "x86_64-pc-windows-msvc").unwrap().files.len(), 1);
+        assert_eq!(
+            validate_encoder(&directory, "x86_64-pc-windows-msvc")
+                .unwrap()
+                .files
+                .len(),
+            1
+        );
         for (field, value) in [
             ("implementation", serde_json::json!("c")),
             ("abi_version", serde_json::json!(2)),
@@ -891,8 +895,6 @@ pub(crate) mod tests {
         });
         assert!(validate_encoder(&f.root.join("encoder"), "x86_64-pc-windows-msvc").is_err());
     }
-
-
 
     #[test]
     fn manifest_integrity_and_exact_inventory() {

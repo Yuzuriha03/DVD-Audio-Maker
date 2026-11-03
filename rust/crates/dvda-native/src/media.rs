@@ -44,11 +44,17 @@ pub struct Request {
     pub bits: u32,
     pub output_format: OutputFormat,
     pub soxr: bool,
+    #[serde(default = "default_dither")]
+    pub dither: bool,
     pub compression: u32,
     pub cover: bool,
     pub input: String,
     pub output: Option<String>,
     pub tags: Vec<(String, String)>,
+}
+
+pub const fn default_dither() -> bool {
+    true
 }
 
 impl Request {
@@ -96,6 +102,7 @@ struct RawRequest {
     bits: u32,
     output_format: u32,
     soxr: u32,
+    dither: u32,
     compression: u32,
     cover: u32,
     tag_count: u32,
@@ -356,6 +363,7 @@ impl Media {
         direct.bits = request.bits;
         direct.output_format = request.output_format as u32;
         direct.soxr = request.soxr;
+        direct.dither = request.dither;
         direct.compression = request.compression;
         direct.cover = request.cover;
         direct.tags = request
@@ -398,12 +406,13 @@ impl Media {
         let pointers: Vec<_> = tags.iter().map(|tag| tag.as_ptr()).collect();
         let raw = RawRequest {
             size: std::mem::size_of::<RawRequest>() as u32,
-            abi: 1,
+            abi: 2,
             operation: request.operation as u32,
             rate: request.rate,
             bits: request.bits,
             output_format: request.output_format as u32,
             soxr: u32::from(request.soxr),
+            dither: u32::from(request.dither),
             compression: request.compression,
             cover: u32::from(request.cover),
             tag_count: u32::try_from(request.tags.len())
@@ -457,9 +466,9 @@ mod tests {
 
     #[test]
     fn media_abi_matches_c_header() {
-        assert_eq!(std::mem::size_of::<RawRequest>(), 64);
-        assert_eq!(std::mem::offset_of!(RawRequest, input), 40);
-        assert_eq!(std::mem::offset_of!(RawRequest, tags), 56);
+        assert_eq!(std::mem::size_of::<RawRequest>(), 72);
+        assert_eq!(std::mem::offset_of!(RawRequest, input), 48);
+        assert_eq!(std::mem::offset_of!(RawRequest, tags), 64);
     }
 
     #[cfg(feature = "direct-bridges")]

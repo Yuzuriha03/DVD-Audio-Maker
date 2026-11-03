@@ -82,7 +82,11 @@ pub(crate) fn update_choices(state: &UiState) {
         );
         EnableWindow(state.controls.custom_bytes, i32::from(custom_capacity));
         EnableWindow(state.controls.import_folder, i32::from(imported));
-        for hwnd in [state.controls.rate, state.controls.bits] {
+        for hwnd in [
+            state.controls.rate,
+            state.controls.bits,
+            state.controls.dither,
+        ] {
             EnableWindow(hwnd, i32::from(!imported));
         }
     }
@@ -148,6 +152,7 @@ pub(crate) fn populate(state: &mut UiState, options: &AppOptions) {
         &["16", "20", "24"],
         options.integer("MlpBits"),
     );
+    check(state.controls.dither, options.boolean("Dither16"));
     check(state.controls.menu, options.boolean("MenuEnabled"));
     check(state.controls.stills, options.boolean("MenuStillPictures"));
     set_text(
@@ -242,6 +247,11 @@ pub(crate) fn overrides(state: &UiState) -> Map<String, Value> {
         json!(numeric_choice(state.controls.bits, SAMPLE_BITS)),
     );
 
+    put(
+        &mut values,
+        "Dither16",
+        json!(checked(state.controls.dither)),
+    );
     put(
         &mut values,
         "MenuEnabled",
@@ -469,6 +479,7 @@ pub(crate) fn edited_profile_values(state: &UiState) -> Map<String, Value> {
             "MlpExternalDirectory" => "DVDA_MLP_EXTERNAL_DIR",
             "MlpSampleRate" => "DVDA_MLP_SAMPLE_RATE",
             "MlpBits" => "DVDA_MLP_BITS",
+            "Dither16" => "DVDA_DITHER_16",
             "MenuEnabled" => "DVDA_MENU",
             "MenuStillPictures" => "DVDA_MENU_STILLPICS",
             "MenuTracksPerPage" => "DVDA_MENU_TRACKS_PER_PAGE",

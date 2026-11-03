@@ -15,6 +15,8 @@ F(Context,AVCodecContext,sample_fmt) F(Context,AVCodecContext,sample_rate) F(Con
 F(Frame,AVFrame,data) F(Frame,AVFrame,extended_data) F(Frame,AVFrame,linesize) F(Frame,AVFrame,nb_samples) F(Frame,AVFrame,format) F(Frame,AVFrame,sample_rate) F(Frame,AVFrame,ch_layout) F(Frame,AVFrame,pts) F(Frame,AVFrame,width) F(Frame,AVFrame,height) F(Frame,AVFrame,pict_type) F(Frame,AVFrame,flags)
 F(Packet,AVPacket,stream_index) F(Packet,AVPacket,pts) F(Packet,AVPacket,dts) F(Packet,AVPacket,duration) F(Packet,AVPacket,size) F(Packet,AVPacket,pos) F(Packet,AVPacket,data) F(Packet,AVPacket,flags)
 F(Layout,AVChannelLayout,nb_channels) F(Io,AVIOContext,error) F(Codec,AVCodec,id) F(OutputFormat,AVOutputFormat,flags)
+K(AV_SAMPLE_FMT_FLT) K(AV_SAMPLE_FMT_FLTP)
+K(AV_CODEC_ID_PCM_S8) K(AV_CODEC_ID_PCM_U8) K(AV_CODEC_ID_PCM_S32LE) K(AV_CODEC_ID_PCM_F32LE) K(AV_CODEC_ID_PCM_F64LE) K(AV_SAMPLE_FMT_DBL)
 K(AV_CODEC_ID_FLAC) K(AV_CODEC_ID_PCM_S16LE) K(AV_CODEC_ID_PCM_S24LE) K(AV_CODEC_ID_PNG) K(AV_CODEC_ID_MPEG2VIDEO) K(AV_CODEC_ID_MP2) K(AV_CODEC_ID_MLP) K(AV_SAMPLE_FMT_S16) K(AV_SAMPLE_FMT_S32) K(AV_SAMPLE_FMT_DBLP) K(AV_PIX_FMT_RGB24) K(AV_PIX_FMT_YUV420P) K(AV_CODEC_FLAG_GLOBAL_HEADER) K(AV_CODEC_FLAG_CLOSED_GOP) K(AVFMT_GLOBALHEADER) K(AVFMT_NOFILE) K(AV_EF_CRCCHECK) K(AV_EF_EXPLODE) K(AV_DISPOSITION_ATTACHED_PIC)
 return 0;
 }

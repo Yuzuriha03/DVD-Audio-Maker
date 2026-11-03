@@ -158,6 +158,7 @@ pub(crate) fn convert(
                 bits,
                 output_format,
                 soxr: false,
+                dither: false,
                 compression: 8,
                 cover: false,
                 tags: Vec::new(),

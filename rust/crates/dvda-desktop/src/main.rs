@@ -246,6 +246,7 @@ const ID_CUSTOM_BYTES: usize = 210;
 const ID_MODE: usize = 300;
 const ID_RATE: usize = 301;
 const ID_BITS: usize = 302;
+const ID_DITHER: usize = 303;
 const ID_IMPORT_FOLDER: usize = 305;
 const ID_MENU: usize = 400;
 const ID_STILLS: usize = 401;
@@ -843,6 +844,7 @@ struct Controls {
     mode: Hwnd,
     rate: Hwnd,
     bits: Hwnd,
+    dither: Hwnd,
     import_folder: Hwnd,
     menu: Hwnd,
     stills: Hwnd,

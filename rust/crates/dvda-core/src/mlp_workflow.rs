@@ -32,6 +32,8 @@ pub struct Job {
     pub stage_directory: PathBuf,
     pub sample_rate: i32,
     pub bits: i32,
+    #[serde(default = "dvda_native::media::default_dither")]
+    pub dither: bool,
     #[serde(default, skip_deserializing)]
     pub jobs: i32, // Deprecated compatibility field; production ignores explicit worker counts.
     pub metadata_context: String,
@@ -130,7 +132,10 @@ impl Callbacks for Forward<'_> {
 pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<Outcome, String> {
     validate(&job)?;
     job.encoder_identity = crate::signature::encoding_identity(
-        &format!("mlp-swr-normalized-v1|{}", job.encoder_identity),
+        &format!(
+            "mlp-rust-pcm-v2|dither={}|{}",
+            job.dither, job.encoder_identity
+        ),
         &job.media_library,
         Some(&job.encoder_library),
         &job.metadata_context,
@@ -177,6 +182,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                 output_directory: stage.clone(),
                 sample_rate: job.sample_rate,
                 bits: job.bits,
+                dither: job.dither,
                 jobs: 0,
                 metadata_context: job.metadata_context.clone(),
                 tracks: pending
@@ -762,6 +768,7 @@ mod tests {
             stage_directory: root.join("stage"),
             sample_rate: 48000,
             bits: 24,
+            dither: false,
             jobs: 0,
             metadata_context: String::new(),
             encoder_identity: "encoder-v1".into(),
@@ -963,7 +970,7 @@ mod tests {
         job.encoder_library = path("DVDA_MLP_PREFLIGHT_ENCODER");
         job.output_root = output_root.clone();
         job.encoder_identity = crate::signature::encoding_identity(
-            "mlp-swr-normalized-v1|rust-mlp-encoder",
+            "mlp-rust-pcm-v2|dither=false|rust-mlp-encoder",
             &job.media_library,
             Some(&job.encoder_library),
             "",
@@ -1107,6 +1114,7 @@ mod tests {
             stage_directory: PathBuf::new(),
             sample_rate: 48000,
             bits: 24,
+            dither: false,
             jobs: 1,
             metadata_context: String::new(),
             encoder_identity: "encoder-v1".into(),
@@ -1205,6 +1213,7 @@ mod tests {
             stage_directory: root.join("stage"),
             sample_rate: 48000,
             bits: 24,
+            dither: false,
             jobs: 1,
             metadata_context: String::new(),
             encoder_identity: "encoder-v1".into(),

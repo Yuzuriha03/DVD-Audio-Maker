@@ -127,6 +127,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         mode: ptr::null_mut(),
         rate: ptr::null_mut(),
         bits: ptr::null_mut(),
+        dither: ptr::null_mut(),
         import_folder: ptr::null_mut(),
         menu: ptr::null_mut(),
         stills: ptr::null_mut(),
@@ -315,6 +316,15 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     for item in ["16", "20", "24"] {
         combo_add(c.bits, item);
     }
+    c.dither = check_field(
+        page_audio,
+        tr(lang, "dither16"),
+        "dither16",
+        ID_DITHER,
+        14,
+        74,
+        &mut labels,
+    );
     c.import_folder = browse_edit!(
         page_audio,
         tr(lang, "import_folder"),
@@ -1745,6 +1755,7 @@ pub(crate) fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         (c.mode, "DVDA_MLP_SOURCE"),
         (c.rate, "DVDA_MLP_SAMPLE_RATE"),
         (c.bits, "DVDA_MLP_BITS"),
+        (c.dither, "DVDA_DITHER_16"),
         (c.import_folder, "DVDA_MLP_EXTERNAL_DIR"),
         (c.menu, "DVDA_MENU"),
         (c.tracks, "DVDA_MENU_TRACKS_PER_PAGE"),

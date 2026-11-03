@@ -385,6 +385,7 @@ impl AppOptions {
             group_track_limit: self.integer("GroupTrackLimit") as i32,
             mlp_sample_rate: self.integer("MlpSampleRate") as i32,
             mlp_bits: self.integer("MlpBits") as i32,
+            dither: self.boolean("Dither16"),
             mlp_metadata_context: self.text("MlpMetadataContext"),
             mlp_batch_temp_directory: self.path("MlpBatchTempDirectory"),
             mlp_batch_output_directory: self.path("MlpBatchOutputDirectory"),

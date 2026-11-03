@@ -242,13 +242,13 @@ def main():
                          and item not in ('--disable-swscale', '--disable-swresample')]
         if args.profile == 'menu':
             configure += ['--disable-swscale', '--disable-swresample',
-                          '--enable-decoder=mlp,pcm_s16le,pcm_s24le,pcm_s32le', '--enable-encoder=mpeg2video,mp2',
-                          '--enable-parser=mlp,mpegvideo,mpegaudio', '--enable-demuxer=mlp,wav', '--enable-muxer=mlp,mpeg2dvd']
+                          '--enable-decoder=mlp', '--enable-encoder=mpeg2video,mp2',
+                          '--enable-parser=mlp,mpegvideo,mpegaudio', '--enable-demuxer=mlp', '--enable-muxer=mlp,mpeg2dvd']
         if args.profile in ('media', 'shared', 'static'):
             configure += ['--enable-swscale', '--enable-swresample', '--enable-libsoxr', '--enable-zlib',
-                '--enable-decoder=mlp,flac,alac,aac,pcm_s8,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,mpeg2video',
-                '--enable-encoder=pcm_s16le,pcm_s24le,flac', '--enable-parser=mlp,flac,aac,mpegvideo,mpegaudio',
-                '--enable-demuxer=mlp,flac,mov,wav,mpegps,mpegvideo', '--enable-muxer=wav,flac',
+                '--enable-decoder=mlp,flac,alac,aac,mpeg2video',
+                '--enable-encoder=flac', '--enable-parser=mlp,flac,aac,mpegvideo,mpegaudio',
+                '--enable-demuxer=mlp,flac,mov,mpegps,mpegvideo', '--enable-muxer=flac',
                 '--enable-protocol=file,pipe']
         if args.profile in ('shared', 'static'):
             configure += ['--enable-encoder=mpeg2video,mp2', '--enable-parser=mpegaudio', '--enable-muxer=mpeg2dvd']

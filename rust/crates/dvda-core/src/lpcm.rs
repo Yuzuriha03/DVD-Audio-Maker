@@ -71,6 +71,8 @@ pub struct PrepareJob {
     pub cache_path: PathBuf,
     pub rate: i32,
     pub bits: i32,
+    #[serde(default = "dvda_native::media::default_dither")]
+    pub dither: bool,
     pub identity: String,
     pub tracks: Vec<Value>,
 }
@@ -86,7 +88,7 @@ pub struct PrepareResult {
 
 pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<PrepareResult, String> {
     job.identity = crate::signature::encoding_identity(
-        &format!("lpcm-swr-normalized-v1|{}", job.identity),
+        &format!("lpcm-rust-pcm-v2|dither={}|{}", job.dither, job.identity),
         &job.media_library,
         None,
         "",
@@ -194,6 +196,7 @@ fn prepare_track(
                     bits: job.bits as u32,
                     output_format: OutputFormat::Wave,
                     soxr: false,
+                    dither: job.dither,
                     compression: 8,
                     cover: false,
                     input: source_path.into(),

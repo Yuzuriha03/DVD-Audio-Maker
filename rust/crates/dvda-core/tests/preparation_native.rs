@@ -150,6 +150,7 @@ fn audio(root: &Path, track: Track<'_>) {
                 bits: 0,
                 output_format: OutputFormat::Flac,
                 soxr: false,
+                dither: false,
                 compression: 8,
                 cover: false,
                 input: wave.to_str().unwrap().into(),

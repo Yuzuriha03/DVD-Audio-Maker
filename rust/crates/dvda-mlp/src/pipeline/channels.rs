@@ -95,7 +95,8 @@ pub(crate) fn encode_channels(
             context.history[ch].input[i] = input[7 - i] as f32;
         }
         if first != 0 {
-            p.initial.coding[ch] = select(&output[..first], qss, context.base.coding[ch], true, limit);
+            p.initial.coding[ch] =
+                select(&output[..first], qss, context.base.coding[ch], true, limit);
         }
         let mut a = MlpPredictFilter::default();
         let mut b = MlpPredictFilter::default();

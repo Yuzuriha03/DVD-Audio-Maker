@@ -189,6 +189,7 @@ fn frozen_audio_metadata_parameters_and_sample_counts() {
                         bits: 0,
                         output_format: OutputFormat::Flac,
                         soxr: false,
+                        dither: false,
                         compression: 8,
                         cover: false,
                         input: input.to_str().unwrap().into(),

@@ -16,6 +16,8 @@ struct Audio {
     swr: *mut c_void,
     md5: *mut c_void,
     file: Option<File>,
+    wave: Option<dvda_audio::writer::Writer<File>>,
+    wave_tags: Vec<(String, String)>,
     rate: i32,
     bits: i32,
     channels: i32,
@@ -24,6 +26,10 @@ struct Audio {
     input_format: i32,
     input_rate: i32,
     initialized: bool,
+    source_pcm: bool,
+    source_bits: u16,
+    source_float: bool,
+    dither: Option<dvda_audio::dither::Tpdf>,
     samples: i64,
     progress: i64,
     encoder: *mut Context,
@@ -151,13 +157,44 @@ impl Audio {
                 return Err(EINVAL);
             }
             let flac = request.output_format == 6;
-            let codec = avcodec_find_encoder(if flac {
-                AV_CODEC_ID_FLAC
-            } else if self.bits == 16 {
-                AV_CODEC_ID_PCM_S16LE
-            } else {
-                AV_CODEC_ID_PCM_S24LE
-            });
+            if !flac {
+                let mut mask = 0u32;
+                for index in 0..self.channels as u32 {
+                    let channel =
+                        av_channel_layout_channel_from_index((*frame).ch_layout_ptr(), index);
+                    if !(0..32).contains(&channel) {
+                        mask = 0;
+                        break;
+                    }
+                    mask |= 1 << channel;
+                }
+                for index in 0..request.tag_count as usize {
+                    self.wave_tags.push((
+                        text(*request.tags.add(index * 2)),
+                        text(*request.tags.add(index * 2 + 1)),
+                    ));
+                }
+                let file = File::create(text(request.output)).map_err(open_error)?;
+                self.wave = Some(
+                    dvda_audio::writer::Writer::new(
+                        file,
+                        dvda_audio::wav::Format {
+                            encoding: if self.bits == 16 {
+                                dvda_audio::pcm::Encoding::Signed16
+                            } else {
+                                dvda_audio::pcm::Encoding::Signed24
+                            },
+                            channels: self.channels.try_into().map_err(|_| EINVAL)?,
+                            sample_rate: self.rate as u32,
+                            valid_bits: if self.bits == 16 { 16 } else { 24 },
+                            channel_mask: mask,
+                        },
+                    )
+                    .map_err(open_error)?,
+                );
+                return Ok(());
+            }
+            let codec = avcodec_find_encoder(AV_CODEC_ID_FLAC);
             if codec.is_null() {
                 return Err(-1129203192);
             }
@@ -171,13 +208,7 @@ impl Audio {
                 AV_SAMPLE_FMT_S32
             };
             *(*self.encoder).sample_rate_ptr() = self.rate;
-            *(*self.encoder).bits_per_raw_sample_ptr() = if flac {
-                self.bits
-            } else if self.bits == 16 {
-                16
-            } else {
-                24
-            };
+            *(*self.encoder).bits_per_raw_sample_ptr() = self.bits;
             *(*self.encoder).time_base_ptr() = Rational {
                 num: 1,
                 den: self.rate,
@@ -190,11 +221,7 @@ impl Audio {
             done(avformat_alloc_output_context2(
                 &mut self.output,
                 ptr::null(),
-                if flac {
-                    c"flac".as_ptr()
-                } else {
-                    c"wav".as_ptr()
-                },
+                c"flac".as_ptr(),
                 request.output,
             ))?;
             *(*self.output).interrupt_callback_ptr() = Interrupt {
@@ -205,14 +232,12 @@ impl Audio {
                 *(*self.encoder).flags_ptr() |= AV_CODEC_FLAG_GLOBAL_HEADER;
             }
             let mut options = ptr::null_mut();
-            if flac {
-                av_dict_set_int(
-                    &mut options,
-                    c"compression_level".as_ptr(),
-                    request.compression as i64,
-                    0,
-                );
-            }
+            av_dict_set_int(
+                &mut options,
+                c"compression_level".as_ptr(),
+                request.compression as i64,
+                0,
+            );
             let status = avcodec_open2(self.encoder, codec, &mut options);
             av_dict_free(&mut options);
             done(status)?;
@@ -234,7 +259,7 @@ impl Audio {
                 ))?;
             }
             let mut cover = ptr::null_mut();
-            if request.cover != 0 && flac {
+            if request.cover != 0 {
                 for source in streams(input) {
                     if (*source).disposition() & AV_DISPOSITION_ATTACHED_PIC == 0 {
                         continue;
@@ -276,9 +301,6 @@ impl Audio {
                 (*self.output).interrupt_callback_ptr(),
                 ptr::null_mut(),
             ))?;
-            if !flac {
-                av_dict_set(&mut options, c"rf64".as_ptr(), c"never".as_ptr(), 0);
-            }
             let status = avformat_write_header(self.output, &mut options);
             av_dict_free(&mut options);
             done(status)?;
@@ -329,8 +351,11 @@ impl Audio {
                 } else {
                     request.rate as i32
                 };
+                if self.source_bits == 0 {
+                    self.source_bits = (*self.decoder).bits_per_raw_sample().max(0) as u16;
+                }
                 self.bits = if request.bits == 0 {
-                    if (*self.decoder).bits_per_raw_sample() > 16 {
+                    if self.source_bits > 16 || self.source_float {
                         24
                     } else {
                         16
@@ -347,7 +372,32 @@ impl Audio {
                 }
                 self.input_format = (*frame).format();
                 self.input_rate = (*frame).sample_rate();
-                self.format = if self.bits == 20 {
+                let source_float = self.source_float
+                    || (!self.source_pcm
+                        && self.source_bits == 0
+                        && matches!(
+                            (*frame).format(),
+                            AV_SAMPLE_FMT_FLT
+                                | AV_SAMPLE_FMT_FLTP
+                                | AV_SAMPLE_FMT_DBL
+                                | AV_SAMPLE_FMT_DBLP
+                        ));
+                if dvda_audio::dither::enabled(
+                    request.dither != 0 && request.output_format != 5,
+                    self.source_bits,
+                    source_float,
+                    self.bits as u16,
+                ) {
+                    use std::hash::{BuildHasher, Hasher};
+                    let seed = std::collections::hash_map::RandomState::new()
+                        .build_hasher()
+                        .finish();
+                    self.dither = Some(dvda_audio::dither::Tpdf::new(seed));
+                    call.message(2, "16-bit output: applying Rust TPDF dither");
+                }
+                self.format = if self.dither.is_some() {
+                    AV_SAMPLE_FMT_DBL
+                } else if self.bits == 20 {
                     AV_SAMPLE_FMT_DBLP
                 } else if self.bits == 16 {
                     AV_SAMPLE_FMT_S16
@@ -437,7 +487,20 @@ impl Audio {
                 }
                 let values = count as usize * self.channels as usize;
                 let mut converted = Vec::<i32>::new();
-                let packed = if self.bits == 20 {
+                let mut quantized = Vec::<i16>::new();
+                let packed = if let Some(dither) = &mut self.dither {
+                    let plane = *data;
+                    if plane.is_null() {
+                        return Err(INVALID);
+                    }
+                    quantized.reserve(values);
+                    for index in 0..values {
+                        quantized.push(
+                            dither.quantize(ptr::read_unaligned(plane.cast::<f64>().add(index))),
+                        );
+                    }
+                    quantized.as_ptr().cast::<u8>()
+                } else if self.bits == 20 {
                     converted.reserve(values);
                     for sample in 0..count as usize {
                         for channel in 0..self.channels as usize {
@@ -460,6 +523,19 @@ impl Audio {
                     return Err(INVALID);
                 }
                 self.samples += count as i64;
+                if let Some(wave) = &mut self.wave {
+                    if self.bits == 16 {
+                        wave.write_frames(std::slice::from_raw_parts(packed, values * 2))
+                            .map_err(open_error)?;
+                    } else {
+                        let mut bytes = Vec::with_capacity(values * 3);
+                        for index in 0..values {
+                            let value = ptr::read_unaligned(packed.cast::<u32>().add(index)) >> 8;
+                            bytes.extend_from_slice(&value.to_le_bytes()[..3]);
+                        }
+                        wave.write_frames(&bytes).map_err(open_error)?;
+                    }
+                }
                 if !self.fifo.is_null() {
                     let mut plane = packed as *mut u8;
                     if av_audio_fifo_write(self.fifo, (&mut plane as *mut *mut u8).cast(), count)
@@ -508,6 +584,78 @@ impl Audio {
     /// # Safety
     /// `self.decoder` and `self.frame` must be the live objects of this converter. `request` and
     /// `call` must be valid for the call.
+    unsafe fn pcm_packet(&mut self, request: &Request, call: &Call, codec: i32) -> Result<(), i32> {
+        use dvda_audio::pcm::Encoding;
+        unsafe {
+            let encoding = match codec {
+                AV_CODEC_ID_PCM_S8 => Encoding::Signed8,
+                AV_CODEC_ID_PCM_U8 => Encoding::Unsigned8,
+                AV_CODEC_ID_PCM_S16LE => Encoding::Signed16,
+                AV_CODEC_ID_PCM_S24LE => Encoding::Signed24,
+                AV_CODEC_ID_PCM_S32LE => Encoding::Signed32,
+                AV_CODEC_ID_PCM_F32LE => Encoding::Float32,
+                AV_CODEC_ID_PCM_F64LE => Encoding::Float64,
+                _ => return Err(EINVAL),
+            };
+            let channels = (*self.decoder).ch_layout().nb_channels();
+            let size = (*self.packet).size();
+            if channels <= 0
+                || size < 0
+                || !(size as usize).is_multiple_of(channels as usize * encoding.bytes())
+            {
+                return Err(INVALID);
+            }
+            if size == 0 {
+                return Ok(());
+            }
+            if (*self.packet).data().is_null() {
+                return Err(INVALID);
+            }
+            self.pcm_bytes(
+                request,
+                call,
+                encoding,
+                std::slice::from_raw_parts((*self.packet).data(), size as usize),
+            )
+        }
+    }
+    unsafe fn pcm_bytes(
+        &mut self,
+        request: &Request,
+        call: &Call,
+        encoding: dvda_audio::pcm::Encoding,
+        bytes: &[u8],
+    ) -> Result<(), i32> {
+        unsafe {
+            let channels = (*self.decoder).ch_layout().nb_channels();
+            if channels <= 0
+                || !bytes
+                    .len()
+                    .is_multiple_of(channels as usize * encoding.bytes())
+            {
+                return Err(INVALID);
+            }
+            let mut samples = Vec::new();
+            encoding.decode(bytes, &mut samples).map_err(|_| INVALID)?;
+            av_frame_unref(self.frame);
+            *(*self.frame).format_ptr() = AV_SAMPLE_FMT_DBL;
+            *(*self.frame).sample_rate_ptr() = (*self.decoder).sample_rate();
+            *(*self.frame).nb_samples_ptr() = (samples.len() / channels as usize) as i32;
+            done(av_channel_layout_copy(
+                (*self.frame).ch_layout_ptr(),
+                (*self.decoder).ch_layout_ptr(),
+            ))?;
+            done(av_frame_get_buffer(self.frame, 0))?;
+            std::ptr::copy_nonoverlapping(
+                samples.as_ptr().cast::<u8>(),
+                (*self.frame).data()[0],
+                samples.len() * 8,
+            );
+            self.convert(request, call, self.frame)?;
+            av_frame_unref(self.frame);
+            Ok(())
+        }
+    }
     unsafe fn receive(&mut self, request: &Request, call: &Call) -> Result<(), i32> {
         unsafe {
             loop {
@@ -530,6 +678,15 @@ impl Audio {
 /// `input` must be an open `AVFormatContext` whose stream information has been read, owned by
 /// the caller and alive for the call. `request` and `call` must be valid for the call.
 pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Result<(), i32> {
+    unsafe { audio_input(request, call, input, None) }
+}
+
+pub(crate) unsafe fn audio_input(
+    request: &Request,
+    call: &Call,
+    input: *mut Format,
+    mut wave: Option<dvda_audio::wav::Reader<std::fs::File>>,
+) -> Result<(), i32> {
     unsafe {
         if request.output_format > 6 {
             return Err(EINVAL);
@@ -539,8 +696,19 @@ pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Resul
             .iter()
             .position(|s| (*(**s).codecpar()).codec_type() == 1)
             .ok_or(-1381258232)?;
-        let codec = avcodec_find_decoder((*(*streams[stream]).codecpar()).codec_id());
-        if codec.is_null() {
+        let parameters = (*streams[stream]).codecpar();
+        let pcm = matches!(
+            (*parameters).codec_id(),
+            AV_CODEC_ID_PCM_S8
+                | AV_CODEC_ID_PCM_U8
+                | AV_CODEC_ID_PCM_S16LE
+                | AV_CODEC_ID_PCM_S24LE
+                | AV_CODEC_ID_PCM_S32LE
+                | AV_CODEC_ID_PCM_F32LE
+                | AV_CODEC_ID_PCM_F64LE
+        );
+        let codec = avcodec_find_decoder((*parameters).codec_id());
+        if codec.is_null() && !pcm {
             return Err(-1128613112);
         }
         let mut a = Audio {
@@ -550,6 +718,8 @@ pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Resul
             swr: ptr::null_mut(),
             md5: ptr::null_mut(),
             file: None,
+            wave: None,
+            wave_tags: Vec::new(),
             rate: 0,
             bits: 0,
             channels: 0,
@@ -557,6 +727,23 @@ pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Resul
             input_format: 0,
             input_rate: 0,
             initialized: false,
+            source_pcm: pcm,
+            source_bits: match (*parameters).bits_per_raw_sample() {
+                bits if bits > 0 => bits as u16,
+                _ => match (*parameters).codec_id() {
+                    AV_CODEC_ID_PCM_S8 | AV_CODEC_ID_PCM_U8 => 8,
+                    AV_CODEC_ID_PCM_S16LE => 16,
+                    AV_CODEC_ID_PCM_S24LE => 24,
+                    AV_CODEC_ID_PCM_S32LE | AV_CODEC_ID_PCM_F32LE => 32,
+                    AV_CODEC_ID_PCM_F64LE => 64,
+                    _ => 0,
+                },
+            },
+            source_float: matches!(
+                (*parameters).codec_id(),
+                AV_CODEC_ID_PCM_F32LE | AV_CODEC_ID_PCM_F64LE
+            ),
+            dither: None,
             samples: 0,
             progress: 0,
             encoder: ptr::null_mut(),
@@ -573,24 +760,46 @@ pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Resul
         ))?;
         *(*a.decoder).thread_count_ptr() = win::workers();
         *(*a.decoder).err_recognition_ptr() = AV_EF_CRCCHECK | AV_EF_EXPLODE;
-        done(avcodec_open2(a.decoder, codec, ptr::null_mut()))?;
-        loop {
-            if call.cancelled() {
-                return Err(EXIT);
-            }
-            let status = av_read_frame(input, a.packet);
-            if status == EOF {
-                break;
-            }
-            done(status)?;
-            if (*a.packet).stream_index() == stream as i32 {
-                done(avcodec_send_packet(a.decoder, a.packet))?;
-                a.receive(request, call)?;
-            }
-            av_packet_unref(a.packet);
+        if !pcm {
+            done(avcodec_open2(a.decoder, codec, ptr::null_mut()))?;
         }
-        done(avcodec_send_packet(a.decoder, ptr::null()))?;
-        a.receive(request, call)?;
+        if let Some(reader) = &mut wave {
+            let mut bytes = vec![0; reader.format.block_align() * 4096];
+            loop {
+                if call.cancelled() {
+                    return Err(EXIT);
+                }
+                let count = reader.read_frames(&mut bytes).map_err(open_error)?;
+                if count == 0 {
+                    break;
+                }
+                a.pcm_bytes(request, call, reader.format.encoding, &bytes[..count])?;
+            }
+        } else {
+            loop {
+                if call.cancelled() {
+                    return Err(EXIT);
+                }
+                let status = av_read_frame(input, a.packet);
+                if status == EOF {
+                    break;
+                }
+                done(status)?;
+                if (*a.packet).stream_index() == stream as i32 {
+                    if pcm {
+                        a.pcm_packet(request, call, (*parameters).codec_id())?;
+                    } else {
+                        done(avcodec_send_packet(a.decoder, a.packet))?;
+                        a.receive(request, call)?;
+                    }
+                }
+                av_packet_unref(a.packet);
+            }
+        }
+        if !pcm {
+            done(avcodec_send_packet(a.decoder, ptr::null()))?;
+            a.receive(request, call)?;
+        }
         a.convert(request, call, ptr::null_mut())?;
         if !a.initialized {
             return Err(INVALID);
@@ -600,6 +809,9 @@ pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Resul
             a.encode(ptr::null_mut())?;
             done(av_write_trailer(a.output))?;
             done(avio_closep((*a.output).pb_ptr()))?;
+        }
+        if let Some(wave) = a.wave.take() {
+            wave.finish_with_tags(&a.wave_tags).map_err(open_error)?;
         }
         if let Some(file) = &mut a.file {
             file.flush().map_err(|_| EIO)?;

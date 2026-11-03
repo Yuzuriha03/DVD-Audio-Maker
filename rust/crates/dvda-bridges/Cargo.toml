@@ -10,12 +10,13 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [features]
 default = []
-media = ["dep:dvda-image"]
+media = ["dep:dvda-image", "dep:dvda-audio"]
 author-loader = []
 author-iso = ["dep:dvda-author"]
-menu = ["dep:dvda-menu", "dvda-menu/direct-link"]
+menu = ["dep:dvda-menu", "dvda-menu/direct-link", "dep:dvda-audio"]
 
 [dependencies]
+dvda-audio = { path = "../dvda-audio", optional = true }
 dvda-image = { path = "../dvda-image", optional = true }
 dvda-menu = { path = "../dvda-menu", optional = true }
 dvda-author = { path = "../dvda-author", optional = true }

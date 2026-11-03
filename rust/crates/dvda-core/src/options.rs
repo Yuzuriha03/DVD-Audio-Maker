@@ -285,6 +285,7 @@ pub fn evaluate(request: Request) -> Value {
         }),
     );
     for (name, key, default_on) in [
+        ("Dither16", "DVDA_DITHER_16", true),
         ("PrepareCacheEnabled", "DVDA_RESUME", false),
         ("ResumeEnabled", "DVDA_RESUME", false),
         ("MenuEnabled", "DVDA_MENU", false),

@@ -68,6 +68,7 @@ fn job(input: &Path, output: &Path, rate: u32, bits: u32) -> Job {
             bits: if bits == 16 { 24 } else { bits },
             output_format: OutputFormat::S24,
             soxr: false,
+            dither: false,
             compression: 8,
             cover: false,
             input: input.to_str().unwrap().into(),
@@ -125,6 +126,186 @@ fn wave(path: &Path, rate: u32, bits: u32, channels: u16) -> Vec<u8> {
     }
     fs::write(path, wav).unwrap();
     expected
+}
+
+#[test]
+#[ignore = "requires the source-built Windows x64 media DLL"]
+fn rust_wave_probe_packets_and_signature_detection() {
+    let root = Scratch::new();
+    let input = root.0.join("input.bin");
+    let output = root.0.join("output.raw");
+    let expected = wave(&input, 48000, 24, 2);
+    let mut probe = job(&input, &output, 48000, 24);
+    probe.request.operation = Operation::Probe;
+    probe.request.output = None;
+    probe.request.output_format = OutputFormat::None;
+    let mut events = Events::default();
+    passed(execute(probe, &mut events));
+    let json: serde_json::Value = serde_json::from_str(
+        &events
+            .text
+            .iter()
+            .filter(|(stream, _)| *stream == 1)
+            .map(|(_, text)| text.as_str())
+            .collect::<String>(),
+    )
+    .unwrap();
+    assert_eq!(json["streams"][0]["codec_name"], "pcm_s24le");
+    assert_eq!(json["streams"][0]["channels"], 2);
+    assert_eq!(json["streams"][0]["duration_ts"], 417);
+    let mut packets = job(&input, &output, 48000, 24);
+    packets.request.operation = Operation::Packets;
+    packets.request.output = None;
+    packets.request.output_format = OutputFormat::None;
+    let mut events = Events::default();
+    passed(execute(packets, &mut events));
+    assert!(
+        events
+            .text
+            .iter()
+            .any(|(stream, text)| *stream == 1 && text == "0.000000000,0.008687500,2502,68"),
+        "{:?}",
+        events.text
+    );
+    passed(execute(
+        job(&input, &output, 48000, 24),
+        &mut Events::default(),
+    ));
+    assert_eq!(fs::read(&output).unwrap(), expected);
+}
+
+#[test]
+#[ignore = "requires the source-built Windows x64 media DLL"]
+fn rust_wave_s16_output_preserves_full_precision_input() {
+    let root = Scratch::new();
+    let input = root.0.join("input.wav");
+    let output = root.0.join("output.raw");
+    let source = wave(&input, 48000, 16, 2);
+    let expected: Vec<u8> = source
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .flat_map(|sample| [sample[1], sample[2]])
+        .collect();
+    let mut request = job(&input, &output, 48000, 16);
+    request.request.bits = 16;
+    request.request.output_format = OutputFormat::S16;
+    passed(execute(request, &mut Events::default()));
+    assert_eq!(fs::read(output).unwrap(), expected);
+}
+
+#[test]
+#[ignore = "requires the source-built Windows x64 media DLL"]
+fn rust_wave_pcm_encodings_preserve_exact_samples() {
+    let root = Scratch::new();
+    for (tag, bits) in [(1u16, 8u16), (1, 16), (1, 24), (1, 32), (3, 32), (3, 64)] {
+        let input = root.0.join(format!("pcm-{tag}-{bits}.wav"));
+        let output = root.0.join(format!("pcm-{tag}-{bits}.raw"));
+        let values = [-128i32, -127, -1, 0, 1, 126, 127];
+        let mut data = Vec::new();
+        let mut expected = Vec::new();
+        for value in values.into_iter().cycle().take(5003) {
+            match (tag, bits) {
+                (1, 8) => data.push((value + 128) as u8),
+                (1, 16) => data.extend(((value << 8) as i16).to_le_bytes()),
+                (1, 24) => data.extend(&(value << 16).to_le_bytes()[..3]),
+                (1, 32) => data.extend((value << 24).to_le_bytes()),
+                (3, 32) => data.extend((value as f32 / 128.0).to_le_bytes()),
+                (3, 64) => data.extend((f64::from(value) / 128.0).to_le_bytes()),
+                _ => unreachable!(),
+            }
+            expected.extend_from_slice(&(value << 16).to_le_bytes()[..3]);
+        }
+        let size = data.len() as u32;
+        let mut bytes = b"RIFF".to_vec();
+        bytes.extend((36 + size + size % 2).to_le_bytes());
+        bytes.extend(b"WAVEfmt ");
+        bytes.extend(16u32.to_le_bytes());
+        bytes.extend(tag.to_le_bytes());
+        bytes.extend(1u16.to_le_bytes());
+        bytes.extend(48000u32.to_le_bytes());
+        bytes.extend((48000 * u32::from(bits / 8)).to_le_bytes());
+        bytes.extend((bits / 8).to_le_bytes());
+        bytes.extend(bits.to_le_bytes());
+        bytes.extend(b"data");
+        bytes.extend(size.to_le_bytes());
+        bytes.extend(data);
+        if !size.is_multiple_of(2) {
+            bytes.push(0);
+        }
+        fs::write(&input, bytes).unwrap();
+        passed(execute(
+            job(&input, &output, 48000, 24),
+            &mut Events::default(),
+        ));
+        assert_eq!(
+            fs::read(&output).unwrap(),
+            expected,
+            "tag {tag}, bits {bits}"
+        );
+        let mut results = Vec::new();
+        for enabled in [false, true] {
+            let mut request = job(&input, &output, 48000, 16);
+            request.replace = true;
+            request.request.bits = 16;
+            request.request.output_format = OutputFormat::S16;
+            request.request.dither = enabled;
+            let mut events = Events::default();
+            passed(execute(request, &mut events));
+            assert_eq!(
+                events
+                    .text
+                    .iter()
+                    .filter(|(_, text)| text.contains("applying Rust TPDF"))
+                    .count(),
+                usize::from(enabled && (tag == 3 || bits > 16)),
+                "tag {tag}, bits {bits}"
+            );
+            results.push(fs::read(&output).unwrap());
+        }
+        if tag == 1 && bits <= 16 {
+            assert_eq!(results[0], results[1]);
+        } else {
+            assert_ne!(results[0], results[1]);
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires source-built native media libraries"]
+fn dither_policy_uses_original_source_precision() {
+    let root = Scratch::new();
+    let input = root.0.join("input.wav");
+    let output = root.0.join("output.raw");
+    for source_bits in [16, 20, 24] {
+        wave(&input, 48000, source_bits, 2);
+        for rate in [48000, 44100] {
+            let mut results = Vec::new();
+            for enabled in [false, true] {
+                let mut request = job(&input, &output, rate, 16);
+                request.replace = true;
+                request.request.bits = 16;
+                request.request.output_format = OutputFormat::S16;
+                request.request.dither = enabled;
+                let mut events = Events::default();
+                passed(execute(request, &mut events));
+                assert_eq!(
+                    events
+                        .text
+                        .iter()
+                        .filter(|(_, text)| text.contains("applying Rust TPDF"))
+                        .count(),
+                    usize::from(enabled && source_bits > 16),
+                );
+                results.push(fs::read(&output).unwrap());
+            }
+            if source_bits == 16 {
+                assert_eq!(results[0], results[1], "16-bit source at {rate}");
+            } else {
+                assert_ne!(results[0], results[1], "{source_bits}-bit source at {rate}");
+            }
+        }
+    }
 }
 
 #[test]

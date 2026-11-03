@@ -129,7 +129,11 @@ pub(crate) fn prepare_matrix(
             &mut m.pcm[offset * channels..],
             length,
             channels,
-            if m.original_scale { Some(&shifts) } else { None },
+            if m.original_scale {
+                Some(&shifts)
+            } else {
+                None
+            },
         )?;
         offset += length;
     }

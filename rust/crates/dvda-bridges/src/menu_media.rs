@@ -81,110 +81,44 @@ unsafe fn packets(
 unsafe fn audio(path: *const c_char, codec: *mut Context, output: *mut Format) -> Result<(), i32> {
     unsafe {
         struct Decode {
-            input: *mut Format,
-            decoder: *mut Context,
-            frame: *mut Frame,
-            packet: *mut Packet,
             fifo: *mut c_void,
         }
         impl Drop for Decode {
             fn drop(&mut self) {
-                unsafe {
-                    avformat_close_input(&mut self.input);
-                    avcodec_free_context(&mut self.decoder);
-                    av_frame_free(&mut self.frame);
-                    av_packet_free(&mut self.packet);
-                    av_audio_fifo_free(self.fifo);
-                }
+                unsafe { av_audio_fifo_free(self.fifo) };
             }
         }
-        let mut d = Decode {
-            input: ptr::null_mut(),
-            decoder: ptr::null_mut(),
-            frame: av_frame_alloc(),
-            packet: av_packet_alloc(),
-            fifo: av_audio_fifo_alloc(AV_SAMPLE_FMT_S16, 2, 4096),
-        };
-        if d.frame.is_null() || d.packet.is_null() || d.fifo.is_null() {
-            return Err(ENOMEM);
-        }
-        done(avformat_open_input(
-            &mut d.input,
-            path,
-            ptr::null(),
-            ptr::null_mut(),
-        ))?;
-        done(avformat_find_stream_info(d.input, ptr::null_mut()))?;
-        let index = streams(d.input)
-            .iter()
-            .position(|stream| (*(**stream).codecpar()).codec_type() == 1)
-            .ok_or(INVALID)?;
-        let parameters = (*streams(d.input)[index]).codecpar();
-        if (*parameters).codec_id() != AV_CODEC_ID_PCM_S16LE {
-            return Err(-1);
-        }
-        let decoder = avcodec_find_decoder((*parameters).codec_id());
-        if decoder.is_null() {
-            return Err(INVALID);
-        }
-        d.decoder = avcodec_alloc_context3(decoder);
-        if d.decoder.is_null() {
-            return Err(ENOMEM);
-        }
-        done(avcodec_parameters_to_context(d.decoder, parameters))?;
-        done(avcodec_open2(d.decoder, decoder, ptr::null_mut()))?;
-        if (*d.decoder).sample_rate() != 48000
-            || (*d.decoder).sample_fmt() != AV_SAMPLE_FMT_S16
-            || (*d.decoder).ch_layout().nb_channels() != 2
+        let file = std::fs::File::open(CStr::from_ptr(path).to_str().map_err(|_| EINVAL)?)
+            .map_err(|_| EIO)?;
+        let mut reader = dvda_audio::wav::Reader::new(BufReader::new(file)).map_err(|_| INVALID)?;
+        if reader.format.encoding != dvda_audio::pcm::Encoding::Signed16
+            || reader.format.sample_rate != 48000
+            || reader.format.channels != 2
         {
             return Err(-1);
         }
-        let mut samples = 0i64;
-        let consume = |d: &mut Decode, samples: &mut i64| -> Result<(), i32> {
-            loop {
-                let status = avcodec_receive_frame(d.decoder, d.frame);
-                if status == EOF || status == EAGAIN {
-                    return Ok(());
-                }
-                done(status)?;
-                if (*d.frame).format() != AV_SAMPLE_FMT_S16
-                    || (*d.frame).sample_rate() != 48000
-                    || (*d.frame).ch_layout().nb_channels() != 2
-                {
-                    return Err(EINVAL);
-                }
-                let count = (*d.frame).nb_samples();
-                if av_audio_fifo_write(d.fifo, (*d.frame).data().as_mut_ptr().cast(), count)
-                    != count
-                {
-                    return Err(EIO);
-                }
-                av_frame_unref(d.frame);
-                while av_audio_fifo_size(d.fifo) >= audio_frame_size(codec) {
-                    encode_audio(d.fifo, codec, output, samples)?;
-                }
-            }
+        let d = Decode {
+            fifo: av_audio_fifo_alloc(AV_SAMPLE_FMT_S16, 2, 4096),
         };
+        if d.fifo.is_null() {
+            return Err(ENOMEM);
+        }
+        let mut samples = 0i64;
+        let mut pcm = vec![0u8; 4096 * 4];
         loop {
-            let status = av_read_frame(d.input, d.packet);
-            if status == EOF {
+            let bytes = reader.read_frames(&mut pcm).map_err(|_| INVALID)?;
+            if bytes == 0 {
                 break;
             }
-            done(status)?;
-            if (*d.packet).flags() & 2 != 0 {
-                return Err(INVALID);
+            let count = (bytes / 4) as i32;
+            let mut plane = pcm.as_mut_ptr();
+            if av_audio_fifo_write(d.fifo, (&mut plane as *mut *mut u8).cast(), count) != count {
+                return Err(EIO);
             }
-            if (*d.packet).stream_index() == index as i32 {
-                done(avcodec_send_packet(d.decoder, d.packet))?;
-                consume(&mut d, &mut samples)?;
+            while av_audio_fifo_size(d.fifo) >= audio_frame_size(codec) {
+                encode_audio(d.fifo, codec, output, &mut samples)?;
             }
-            av_packet_unref(d.packet);
         }
-        if !(*d.input).pb().is_null() {
-            done((*(*d.input).pb()).error())?;
-        }
-        done(avcodec_send_packet(d.decoder, ptr::null()))?;
-        consume(&mut d, &mut samples)?;
         let remaining = av_audio_fifo_size(d.fifo);
         if remaining > 0 {
             let missing = audio_frame_size(codec) - remaining;

@@ -133,6 +133,7 @@ pub fn request(
         },
         output_format: format,
         soxr: false,
+        dither: false,
         compression: 8,
         cover: false,
         input: input.to_string_lossy().into_owned(),

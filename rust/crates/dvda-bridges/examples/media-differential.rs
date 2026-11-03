@@ -62,12 +62,13 @@ fn main() {
             let output = CString::new(destination.clone()).unwrap();
             let request = Request {
                 size: std::mem::size_of::<Request>() as u32,
-                abi: 1,
+                abi: 2,
                 operation: 3,
                 rate: 0,
                 bits: 16,
                 output_format: 6,
                 soxr: 0,
+                dither: 0,
                 compression: 0,
                 cover: 0,
                 tag_count: 0,
@@ -145,12 +146,13 @@ fn main() {
             let tags = [c"title".as_ptr(), c"Rust bridge parity".as_ptr()];
             let mut request = Request {
                 size: std::mem::size_of::<Request>() as u32,
-                abi: 1,
+                abi: 2,
                 operation,
                 rate,
                 bits,
                 output_format,
                 soxr: u32::from(rate == 48000),
+                dither: 0,
                 compression: if rate == 96000 { 8 } else { 0 },
                 cover: u32::from(output_format == 6),
                 tag_count: u32::from(matches!(output_format, 1 | 6)),
@@ -218,12 +220,13 @@ fn main() {
             let output_path = CString::new(output_path).unwrap();
             let request = Request {
                 size: std::mem::size_of::<Request>() as u32,
-                abi: 1,
+                abi: 2,
                 operation: 3,
                 rate: 0,
                 bits: 16,
                 output_format: 2,
                 soxr: 0,
+                dither: 0,
                 compression: 0,
                 cover: 0,
                 tag_count: 0,
@@ -253,12 +256,13 @@ fn main() {
         let output = CString::new("build\\bridge-media-invalid.pcm").unwrap();
         let base = Request {
             size: std::mem::size_of::<Request>() as u32,
-            abi: 1,
+            abi: 2,
             operation: 1,
             rate: 0,
             bits: 0,
             output_format: 0,
             soxr: 0,
+            dither: 0,
             compression: 0,
             cover: 0,
             tag_count: 0,

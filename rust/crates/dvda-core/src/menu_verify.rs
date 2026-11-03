@@ -498,6 +498,7 @@ pub fn verify(
                     bits: 0,
                     output_format: OutputFormat::None,
                     soxr: false,
+                    dither: false,
                     compression: 0,
                     cover: false,
                     tags: Vec::new(),

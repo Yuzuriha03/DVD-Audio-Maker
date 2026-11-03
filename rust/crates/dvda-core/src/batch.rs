@@ -38,6 +38,8 @@ pub struct Job {
     pub output_directory: PathBuf,
     pub sample_rate: i32,
     pub bits: i32,
+    #[serde(default = "dvda_native::media::default_dither")]
+    pub dither: bool,
     #[serde(default, skip_deserializing)]
     pub jobs: i32, // Deprecated compatibility field; production always uses automatic saturation.
     pub metadata_context: String,
@@ -310,6 +312,7 @@ fn track(
                     bits: job.bits as u32,
                     output_format: OutputFormat::Wave,
                     soxr: false,
+                    dither: job.dither,
                     compression: 8,
                     cover: false,
                     input: track.source_path.clone(),

@@ -397,7 +397,14 @@ mod tests {
         let mut state = MlpMatrixAnalysis::default();
         mlp_matrix_analysis_init(&mut state, 2).unwrap();
         let mut packed = state.clone();
-        mlp_matrix_analysis_add(&mut state, &mut [1, 2, i32::MAX, 3, 4, i32::MIN], 2, 3, None).unwrap();
+        mlp_matrix_analysis_add(
+            &mut state,
+            &mut [1, 2, i32::MAX, 3, 4, i32::MIN],
+            2,
+            3,
+            None,
+        )
+        .unwrap();
         mlp_matrix_analysis_add(&mut packed, &mut [1, 2, 3, 4], 2, 2, None).unwrap();
         assert_eq!(state, packed);
         assert_eq!(state.last[..2], [3.0, 4.0]);

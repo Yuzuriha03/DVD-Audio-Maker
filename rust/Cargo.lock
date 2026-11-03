@@ -145,6 +145,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "dvda-audio"
+version = "0.1.0"
+
+[[package]]
 name = "dvda-author"
 version = "0.1.0"
 dependencies = [
@@ -155,6 +159,7 @@ dependencies = [
 name = "dvda-bridges"
 version = "0.1.0"
 dependencies = [
+ "dvda-audio",
  "dvda-author",
  "dvda-image",
  "dvda-menu",

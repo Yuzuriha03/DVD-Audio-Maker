@@ -321,7 +321,8 @@ fn batch_stats(c: &Config, profile: &format::Profile, pcm: &[i32]) -> Result<Bat
     }
     let mut matrix = 0;
     for (target, &eligible_target) in eligible.iter().enumerate().take(channels).skip(1) {
-        if eligible_target && valid[target] && difference[target].saturating_mul(2) < plain[target] {
+        if eligible_target && valid[target] && difference[target].saturating_mul(2) < plain[target]
+        {
             matrix |= 1 << target;
         }
     }
@@ -364,7 +365,11 @@ fn quantize(c: &Config, profile: &format::Profile, stats: &BatchStats) -> Vec<u3
 
 /// Validates the batch PCM and returns the pair matrix plus the quantization
 /// shifts in one pass over the samples.
-pub(crate) fn analyze(c: &Config, profile: &format::Profile, pcm: &[i32]) -> Result<(u32, Vec<u32>), Error> {
+pub(crate) fn analyze(
+    c: &Config,
+    profile: &format::Profile,
+    pcm: &[i32],
+) -> Result<(u32, Vec<u32>), Error> {
     let stats = batch_stats(c, profile, pcm)?;
     let quantization = quantize(c, profile, &stats);
     Ok((stats.matrix, quantization))
@@ -376,7 +381,12 @@ pub(crate) fn pair_matrix(c: &Config, profile: &format::Profile, pcm: &[i32]) ->
 }
 
 #[cfg(any(test, not(target_arch = "x86_64")))]
-pub(crate) fn quantization(c: &Config, profile: &format::Profile, pcm: &[i32], matrix: u32) -> Vec<u32> {
+pub(crate) fn quantization(
+    c: &Config,
+    profile: &format::Profile,
+    pcm: &[i32],
+    matrix: u32,
+) -> Vec<u32> {
     let channels = usize::from(c.channels);
     match batch_stats(c, profile, pcm) {
         Ok(stats) => quantize(c, profile, &BatchStats { matrix, ..stats }),

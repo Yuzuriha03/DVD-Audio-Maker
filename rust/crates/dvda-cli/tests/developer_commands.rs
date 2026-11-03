@@ -100,6 +100,7 @@ fn disc_source(root: &Path, destination: &Path) {
                 bits: 0,
                 output_format: OutputFormat::Flac,
                 soxr: false,
+                dither: false,
                 compression: 8,
                 cover: false,
                 tags: vec![],

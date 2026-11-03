@@ -254,6 +254,7 @@ pub fn packets(
                 bits: 0,
                 output_format: OutputFormat::None,
                 soxr: false,
+                dither: false,
                 compression: 8,
                 cover: false,
                 input: path.into(),

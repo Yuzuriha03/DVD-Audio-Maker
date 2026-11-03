@@ -24,6 +24,7 @@ pub(super) fn tr(key: &str) -> &'static str {
         "audio_mode" => "오디오 인코딩",
         "sample_rate" => "샘플 레이트",
         "bits" => "비트 깊이",
+        "dither16" => "16-bit 출력 디더 (권장)",
         "menu" => "디스크 메뉴",
         "menu_enable" => "곡 목록 메뉴 만들기",
         "stills" => "메뉴에 앨범 표지 표시",

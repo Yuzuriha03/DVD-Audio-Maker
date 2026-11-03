@@ -43,6 +43,8 @@ pub struct Job {
     pub group_track_limit: i32,
     pub mlp_sample_rate: i32,
     pub mlp_bits: i32,
+    #[serde(default = "dvda_native::media::default_dither")]
+    pub dither: bool,
     pub mlp_metadata_context: String,
     #[serde(default)]
     pub mlp_batch_temp_directory: PathBuf,
@@ -799,6 +801,7 @@ fn acquire(
                     },
                     sample_rate: job.mlp_sample_rate,
                     bits: job.mlp_bits,
+                    dither: job.dither,
                     jobs: 0,
                     metadata_context: job.mlp_metadata_context.clone(),
                     encoder_identity: job.encoder_identity.clone(),
@@ -838,6 +841,7 @@ fn acquire(
                     cache_path: job.build_directory.join("lpcm/lpcm-cache.json"),
                     rate: job.mlp_sample_rate,
                     bits: job.mlp_bits,
+                    dither: job.dither,
                     identity: job.encoder_identity.clone(),
                     tracks: tracks.as_array().cloned().unwrap_or_default(),
                 },
