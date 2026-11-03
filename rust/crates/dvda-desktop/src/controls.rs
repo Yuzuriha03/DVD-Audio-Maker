@@ -313,7 +313,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         160,
         &mut labels,
     );
-    for item in ["16", "20", "24"] {
+    for item in SAMPLE_BITS_LABELS {
         combo_add(c.bits, item);
     }
     c.dither = check_field(

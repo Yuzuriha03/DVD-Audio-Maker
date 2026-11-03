@@ -4,6 +4,7 @@ use super::*;
 
 pub(crate) const SAMPLE_RATES: &[i64] = &[44100, 48000, 88200, 96000, 176400, 192000];
 pub(crate) const SAMPLE_BITS: &[i64] = &[16, 20, 24];
+pub(crate) const SAMPLE_BITS_LABELS: &[&str] = &["16 bit", "20 bit", "24 bit"];
 pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[
     "44.1 kHz",
     "48 kHz",
@@ -80,6 +81,14 @@ pub(crate) fn update_choices(state: &UiState) {
             state.import_browse,
             if imported { SW_SHOW } else { SW_HIDE },
         );
+        ShowWindow(
+            state.controls.dither,
+            if numeric_choice(state.controls.bits, SAMPLE_BITS) == 16 {
+                SW_SHOW
+            } else {
+                SW_HIDE
+            },
+        );
         EnableWindow(state.controls.custom_bytes, i32::from(custom_capacity));
         EnableWindow(state.controls.import_folder, i32::from(imported));
         for hwnd in [
@@ -149,7 +158,7 @@ pub(crate) fn populate(state: &mut UiState, options: &AppOptions) {
     populate_numeric_choice(
         state.controls.bits,
         SAMPLE_BITS,
-        &["16", "20", "24"],
+        SAMPLE_BITS_LABELS,
         options.integer("MlpBits"),
     );
     check(state.controls.dither, options.boolean("Dither16"));

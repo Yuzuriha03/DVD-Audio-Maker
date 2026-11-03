@@ -3853,6 +3853,12 @@
     "English": "24-bit is the usual choice. Reducing bit depth may discard source precision."
   },
   {
+    "Source": "将高于 16 位或浮点音频转换为 16 bit 时，加入轻微噪声以减少量化失真。推荐开启；原始 16 位及以下音频不添加抖动。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Adds low-level noise to reduce quantization distortion when converting higher-than-16-bit or floating-point audio to 16 bit. Recommended; no dither is added to sources of 16 bits or less."
+  },
+  {
     "Source": "音源转换与校验工具",
     "Parameters": 0,
     "Nested": [],

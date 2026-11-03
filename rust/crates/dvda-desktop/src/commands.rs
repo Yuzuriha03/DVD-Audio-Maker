@@ -77,7 +77,7 @@ pub(crate) fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, n
         render_log(state);
         return;
     }
-    if (id == ID_CAPACITY || id == ID_MODE) && notify == CBN_SELCHANGE {
+    if matches!(id, ID_CAPACITY | ID_MODE | ID_BITS) && notify == CBN_SELCHANGE {
         update_choices(state);
         return;
     }

@@ -786,8 +786,8 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
         (ui.controls.capacity, 220),
         (ui.controls.norm, 260),
         (ui.controls.mode, 300),
-        (ui.controls.rate, 210),
-        (ui.controls.bits, 160),
+        (ui.controls.rate, 160),
+        (ui.controls.bits, 129),
         (ui.controls.language, 104),
         (ui.controls.log_view, 132),
     ] {
@@ -821,8 +821,8 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     }
     // Layout measures translated labels, so sweep every language.
     let original_lang = ui.lang();
-    for lang in [Lang::Zh, Lang::En, Lang::Ja] {
-        ui.set_lang(lang);
+    for lang in [Lang::Zh, Lang::En, Lang::Ja, Lang::ZhHant, Lang::Ko] {
+        set_language(&mut ui, lang);
         for width in [640, 800, 854, 960, 1053, 1054, 1180, 1400, 960, 640] {
             for height in [360, 500, 820] {
                 MoveWindow(parent, 0, 0, scale(width), scale(height), 0);
@@ -834,6 +834,20 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
                 let rect_of = |hwnd: Hwnd| window_rect(hwnd);
                 let shown = |hwnd: Hwnd| (GetWindowLongPtrW(hwnd, -16) as u32) & WS_VISIBLE != 0;
                 let client = window_rect(parent);
+                let bits = rect_of(ui.controls.bits);
+                let dither = rect_of(ui.controls.dither);
+                assert!(dither.left > bits.right);
+                assert_eq!(dither.top, bits.top);
+                assert!(dither.right <= rect_of(ui.pages[1]).right);
+                assert!(
+                    dither.right - dither.left
+                        >= measured_text_width(parent, &get_text(ui.controls.dither), ui_font())
+                            + scale(28),
+                    "dither text clipped at {width} in {}",
+                    lang.code()
+                );
+                let note = rect_of(ui.controls.audio_note);
+                assert_eq!(note.top - dither.top, scale(36));
                 let progress = rect_of(ui.controls.progress);
                 let log_buttons: Vec<Hwnd> = ui
                     .buttons
@@ -1022,7 +1036,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
             }
         }
     }
-    ui.set_lang(original_lang);
+    set_language(&mut ui, original_lang);
     let clipped = text_clipping_findings(parent, &mut ui);
     assert!(clipped.is_empty(), "clipped texts:\n{}", clipped.join("\n"));
     // Widening pixel by pixel must move every control edge in one
@@ -1379,7 +1393,28 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     assert_eq!(get_text(ui.controls.norm), "NTSC (US, Japan)");
     set_language(&mut ui, original_lang);
     populate_numeric_choice(ui.controls.rate, SAMPLE_RATES, SAMPLE_RATE_LABELS, 12345);
-    populate_numeric_choice(ui.controls.bits, SAMPLE_BITS, &["16", "20", "24"], 17);
+    check(ui.controls.dither, false);
+    for (index, bits) in SAMPLE_BITS.iter().enumerate() {
+        combo_select(ui.controls.bits, index as i32);
+        handle_command(parent, &mut ui, ID_BITS, CBN_SELCHANGE);
+        assert_eq!(get_text(ui.controls.bits), SAMPLE_BITS_LABELS[index]);
+        assert_eq!(
+            edited_profile_values(&ui)["DVDA_MLP_BITS"],
+            bits.to_string()
+        );
+        assert_eq!(
+            (GetWindowLongPtrW(ui.controls.dither, -16) as u32) & WS_VISIBLE != 0,
+            *bits == 16
+        );
+    }
+    combo_select(ui.controls.bits, 0);
+    handle_command(parent, &mut ui, ID_BITS, CBN_SELCHANGE);
+    assert!(!checked(ui.controls.dither));
+    assert_ne!(
+        GetWindowLongPtrW(ui.controls.dither, -16) as u32 & WS_VISIBLE,
+        0
+    );
+    populate_numeric_choice(ui.controls.bits, SAMPLE_BITS, SAMPLE_BITS_LABELS, 17);
     assert_eq!(get_text(ui.controls.rate), "12345");
     assert_eq!(get_text(ui.controls.bits), "17");
     assert_eq!(edited_profile_values(&ui)["DVDA_MLP_SAMPLE_RATE"], "12345");
@@ -1692,9 +1727,7 @@ fn settings_help_and_new_runtime_messages_cover_all_languages() {
     let _ui_test_lock = ui_test_guard();
     let help: HashMap<String, String> =
         serde_json::from_str(include_str!("../locales/help.json")).unwrap();
-    // DVDA_PREPARE_CACHE was retired together with its setting (one entry
-    // fewer than the original baseline); DVDA_MENU_NORM added one.
-    assert_eq!(help.len(), 28);
+    assert_eq!(help.len(), 29);
     for (key, original) in help {
         assert_eq!(setting_help(Lang::Zh, &key), original);
         for lang in [Lang::En, Lang::Ja, Lang::ZhHant, Lang::Ko] {

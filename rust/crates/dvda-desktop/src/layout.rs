@@ -1024,13 +1024,37 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                         move_child(*page, ID_MODE, 14, 38 - sy, mode_width, 120);
                         move_label(state, "sample_rate", rate_x, 18 - sy, 129, 20);
                         move_child(*page, ID_RATE, rate_x, 38 - sy, 129, 120);
-                        move_label(state, "bits", bits_x, 18 - sy, 129, 20);
-                        move_child(*page, ID_BITS, bits_x, 38 - sy, 129, 120);
-                        place(state.controls.dither, 14, 74 - sy, field_width, 28);
+                        let dither_width = unscale(measured_text_width(
+                            *page,
+                            &get_text(state.controls.dither),
+                            ui_font(),
+                        )) + 33;
+                        let wrap_bits = bits_x + 129 + 16 + dither_width > page_width - 14;
+                        let (bits_x, bits_y, note_y) = if wrap_bits {
+                            (14, 92, 128)
+                        } else {
+                            (bits_x, 38, 74)
+                        };
+                        move_label(state, "bits", bits_x, bits_y - 20 - sy, 129, 20);
+                        move_child(*page, ID_BITS, bits_x, bits_y - sy, 129, 120);
+                        place(
+                            state.controls.dither,
+                            bits_x + 129 + 16,
+                            bits_y - sy,
+                            dither_width,
+                            28,
+                        );
                         let note = get_text(label_handle(state, "audio_note"));
                         let note_height = wrapped_text_height(&note, ui_font(), field_width);
-                        move_label(state, "audio_note", 14, 112 - sy, field_width, note_height);
-                        let import_y = 112 + note_height + 12;
+                        move_label(
+                            state,
+                            "audio_note",
+                            14,
+                            note_y - sy,
+                            field_width,
+                            note_height,
+                        );
+                        let import_y = note_y + note_height + 12;
                         move_label(state, "import_folder", 14, import_y - sy, field_width, 20);
                         move_child(
                             *page,
@@ -1053,16 +1077,16 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                     {
                         move_label(state, "audio_mode", 14, 18 - sy, 300, 20);
                         move_child(*page, ID_MODE, 14, 38 - sy, 300, 120);
-                        move_label(state, "sample_rate", 340, 18 - sy, 210, 20);
-                        move_child(*page, ID_RATE, 340, 38 - sy, 210, 120);
-                        move_label(state, "bits", 575, 18 - sy, 160, 20);
-                        move_child(*page, ID_BITS, 575, 38 - sy, 160, 120);
-                        place(state.controls.dither, 14, 74 - sy, page_width - 28, 28);
+                        move_label(state, "sample_rate", 340, 18 - sy, 160, 20);
+                        move_child(*page, ID_RATE, 340, 38 - sy, 160, 120);
+                        move_label(state, "bits", 525, 18 - sy, 129, 20);
+                        move_child(*page, ID_BITS, 525, 38 - sy, 129, 120);
+                        place(state.controls.dither, 670, 38 - sy, page_width - 684, 28);
                         let note_width = 900.min(page_width - 28);
                         let note = get_text(label_handle(state, "audio_note"));
                         let note_height = wrapped_text_height(&note, ui_font(), note_width);
-                        move_label(state, "audio_note", 14, 112 - sy, note_width, note_height);
-                        let import_y = 112 + note_height + 12;
+                        move_label(state, "audio_note", 14, 74 - sy, note_width, note_height);
+                        let import_y = 74 + note_height + 12;
                         move_label(state, "import_folder", 14, import_y - sy, 520, 20);
                         let edit_width = browse_edit_width(page_width);
                         move_child(
