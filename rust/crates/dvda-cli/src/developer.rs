@@ -267,7 +267,6 @@ fn execute(arguments: &[String]) -> Result<i32> {
                     library: options.media_library().map_err(failure)?,
                     paths: args.into_iter().map(PathBuf::from).collect(),
                     compression,
-                    jobs: 0,
                     dry_run,
                     delete_sources,
                 },

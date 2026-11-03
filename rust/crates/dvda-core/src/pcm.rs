@@ -43,6 +43,27 @@ pub(crate) fn normalize_s24(job: Job, caller: &mut dyn Callbacks) -> Result<u64,
     normalize_impl(job, caller, true)
 }
 
+enum Output {
+    Raw(std::fs::File),
+    Wave(dvda_audio::writer::Writer<std::fs::File>),
+}
+
+impl Output {
+    fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::Raw(file) => file.write_all(bytes),
+            Self::Wave(writer) => writer.write_frames(bytes),
+        }
+    }
+
+    fn finish(self) -> std::io::Result<()> {
+        match self {
+            Self::Raw(mut file) => file.flush(),
+            Self::Wave(writer) => writer.finish().map(drop),
+        }
+    }
+}
+
 fn normalize_impl(job: Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result<u64, Failure> {
     let mut callbacks = Timed::new(caller, None);
     let mut owned = Temporary(None);
@@ -78,32 +99,30 @@ fn normalize_impl(job: Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result
         if riff_size > u64::from(u32::MAX) {
             return Err(invalid("PCM 超出 RIFF 4 GiB 限制；请拆分过长音轨。"));
         }
-        let mut header = Vec::with_capacity(68);
-        header.extend_from_slice(b"RIFF");
-        header.extend_from_slice(&(riff_size as u32).to_le_bytes());
-        header.extend_from_slice(b"WAVEfmt ");
-        header.extend_from_slice(&40u32.to_le_bytes());
-        header.extend_from_slice(&0xfffeu16.to_le_bytes());
-        header.extend_from_slice(&(channels as u16).to_le_bytes());
-        header.extend_from_slice(&(job.rate as u32).to_le_bytes());
-        header.extend_from_slice(&(job.rate as u32 * channels as u32 * width as u32).to_le_bytes());
-        header.extend_from_slice(&((channels * width) as u16).to_le_bytes());
-        header.extend_from_slice(&((width * 8) as u16).to_le_bytes());
-        header.extend_from_slice(&22u16.to_le_bytes());
-        header.extend_from_slice(&(job.bits as u16).to_le_bytes());
-        header.extend_from_slice(&mask.to_le_bytes());
-        header.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
-        header.extend_from_slice(b"data");
-        header.extend_from_slice(&(size as u32).to_le_bytes());
-        let mut output = OpenOptions::new()
+        let output = OpenOptions::new()
             .write(true)
             .create_new(true)
             .share_mode(0)
             .open(&job.destination)?;
         owned.0 = Some(job.destination.clone());
-        if !raw_s24 {
-            output.write_all(&header)?;
-        }
+        let mut output = if raw_s24 {
+            Output::Raw(output)
+        } else {
+            Output::Wave(dvda_audio::writer::Writer::new_riff(
+                output,
+                dvda_audio::wav::Format {
+                    encoding: if width == 2 {
+                        dvda_audio::pcm::Encoding::Signed16
+                    } else {
+                        dvda_audio::pcm::Encoding::Signed24
+                    },
+                    channels: channels as u16,
+                    sample_rate: job.rate as u32,
+                    valid_bits: job.bits as u16,
+                    channel_mask: mask,
+                },
+            )?)
+        };
         input.seek(SeekFrom::Start(layout.data_offset as u64))?;
         let mut raw = vec![0u8; 8192 * channels * input_width];
         let mut converted = Vec::with_capacity(8192 * channels * width);
@@ -189,11 +208,8 @@ fn normalize_impl(job: Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result
             }
             remaining -= count as u64;
         }
-        if !raw_s24 && size & 1 != 0 {
-            output.write_all(&[0])?;
-        }
         callbacks.check()?;
-        drop(output);
+        output.finish()?;
         owned.0 = None;
         Ok(if raw_s24 { size } else { riff_size + 8 })
     })();

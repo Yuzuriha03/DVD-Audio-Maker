@@ -8,11 +8,21 @@ pub struct Writer<W> {
     destination: W,
     format: Format,
     bytes: u64,
+    rf64: bool,
 }
 
 impl<W: Write + Seek> Writer<W> {
     /// Write an extensible PCM header. RF64 is selected at finalization only when needed.
-    pub fn new(mut destination: W, format: Format) -> Result<Self> {
+    pub fn new(destination: W, format: Format) -> Result<Self> {
+        Self::create(destination, format, true)
+    }
+
+    /// Write compact RIFF without RF64 reservation; reject output exceeding the RIFF limit.
+    pub fn new_riff(destination: W, format: Format) -> Result<Self> {
+        Self::create(destination, format, false)
+    }
+
+    fn create(mut destination: W, format: Format, rf64: bool) -> Result<Self> {
         let bits = match format.encoding {
             Encoding::Signed16 => 16u16,
             Encoding::Signed24 => 24,
@@ -42,9 +52,12 @@ impl<W: Write + Seek> Writer<W> {
             ));
         }
         destination.seek(SeekFrom::Start(0))?;
-        destination.write_all(b"RIFF\0\0\0\0WAVEJUNK")?;
-        destination.write_all(&28u32.to_le_bytes())?;
-        destination.write_all(&[0; 28])?;
+        destination.write_all(b"RIFF\0\0\0\0WAVE")?;
+        if rf64 {
+            destination.write_all(b"JUNK")?;
+            destination.write_all(&28u32.to_le_bytes())?;
+            destination.write_all(&[0; 28])?;
+        }
         destination.write_all(b"fmt ")?;
         destination.write_all(&40u32.to_le_bytes())?;
         destination.write_all(&0xfffeu16.to_le_bytes())?;
@@ -62,6 +75,7 @@ impl<W: Write + Seek> Writer<W> {
             destination,
             format,
             bytes: 0,
+            rf64,
         })
     }
 
@@ -77,6 +91,12 @@ impl<W: Write + Seek> Writer<W> {
             .checked_add(bytes.len() as u64)
             .filter(|length| length.checked_add(97).is_some())
             .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "WAVE output size overflow"))?;
+        if !self.rf64 && 60 + length + (length & 1) > u64::from(u32::MAX) {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "WAVE exceeds RIFF size limit",
+            ));
+        }
         self.destination.write_all(bytes)?;
         self.bytes = length;
         Ok(())
@@ -125,6 +145,12 @@ impl<W: Write + Seek> Writer<W> {
             self.destination.write_all(&info)?;
         }
         let riff_size = self.destination.stream_position()? - 8;
+        if !self.rf64 && riff_size > u64::from(u32::MAX) {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "WAVE exceeds RIFF size limit",
+            ));
+        }
         self.destination.seek(SeekFrom::Start(0))?;
         if riff_size > u64::from(u32::MAX) {
             self.destination.write_all(b"RF64")?;
@@ -143,7 +169,8 @@ impl<W: Write + Seek> Writer<W> {
             self.destination.seek(SeekFrom::Start(4))?;
             self.destination
                 .write_all(&(riff_size as u32).to_le_bytes())?;
-            self.destination.seek(SeekFrom::Start(100))?;
+            self.destination
+                .seek(SeekFrom::Start(if self.rf64 { 100 } else { 64 }))?;
             self.destination
                 .write_all(&(self.bytes as u32).to_le_bytes())?;
         }
@@ -158,6 +185,33 @@ mod tests {
     use super::*;
     use crate::wav::Reader;
     use std::io::Cursor;
+
+    #[test]
+    fn compact_riff_layout_padding_and_limit() {
+        let format = Format {
+            encoding: Encoding::Signed24,
+            channels: 1,
+            sample_rate: 48000,
+            valid_bits: 20,
+            channel_mask: 4,
+        };
+        let mut writer = Writer::new_riff(Cursor::new(Vec::new()), format).unwrap();
+        writer.write_frames(&[16, 32, 48]).unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        assert_eq!(bytes.len(), 72);
+        assert_eq!(&bytes[..4], b"RIFF");
+        assert_eq!(&bytes[4..8], &64u32.to_le_bytes());
+        assert_eq!(&bytes[12..16], b"fmt ");
+        assert_eq!(&bytes[60..68], b"data\x03\0\0\0");
+        assert_eq!(&bytes[68..], &[16, 32, 48, 0]);
+        let reader = Reader::new(Cursor::new(bytes)).unwrap();
+        assert_eq!(reader.format, format);
+        assert_eq!(reader.data_offset, 68);
+        let mut writer = Writer::new_riff(Cursor::new(Vec::new()), format).unwrap();
+        writer.bytes = u64::from(u32::MAX) - 60;
+        assert!(writer.write_frames(&[0; 3]).is_err());
+        assert_eq!(writer.destination.get_ref().len(), 68);
+    }
 
     #[test]
     fn trailing_info_keeps_pcm_size_and_padding() {

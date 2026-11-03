@@ -40,8 +40,6 @@ pub struct Job {
     pub bits: i32,
     #[serde(default = "dvda_native::media::default_dither")]
     pub dither: bool,
-    #[serde(default, skip_deserializing)]
-    pub jobs: i32, // Deprecated compatibility field; production always uses automatic saturation.
     pub metadata_context: String,
     pub tracks: Vec<Track>,
 }

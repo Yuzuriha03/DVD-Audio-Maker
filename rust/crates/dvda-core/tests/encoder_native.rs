@@ -398,7 +398,7 @@ fn encoder_transactions_and_parallel_calls() {
     );
 }
 
-fn batch_job(root: &Path, cases: &[Case], workers: i32) -> dvda_core::batch::Job {
+fn batch_job(root: &Path, cases: &[Case]) -> dvda_core::batch::Job {
     dvda_core::batch::Job {
         media_library: PathBuf::from(
             std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
@@ -410,7 +410,6 @@ fn batch_job(root: &Path, cases: &[Case], workers: i32) -> dvda_core::batch::Job
         sample_rate: cases[0].rate as i32,
         bits: cases[0].bits as i32,
         dither: false,
-        jobs: workers,
         metadata_context: String::new(),
         tracks: cases
             .iter()
@@ -480,33 +479,31 @@ fn batch_matrix_matches_frozen_encoder_bytes() {
                 .filter(|c| c.rate == rate && c.bits == bits)
                 .cloned()
                 .collect();
-            for workers in [1, 4] {
-                let folder = root.0.join(format!("{rate}-{bits}-{workers}"));
-                fs::create_dir(&folder).unwrap();
-                let job = batch_job(&folder, &cases, workers);
-                let mut events = BatchEvents::new();
-                passed(dvda_core::batch::execute(job, &mut events));
-                assert_eq!(fs::read_dir(folder.join("temp")).unwrap().count(), 0);
-                for (index, case) in cases.iter().enumerate() {
-                    assert_eq!(
-                        digest(&fs::read(folder.join(format!("output/track{index}.mlp"))).unwrap()),
-                        case.mlp_sha256,
-                        "Batch {rate}/{bits}/{workers}/{index}"
-                    );
-                    let kinds: Vec<_> = events
-                        .events
-                        .iter()
-                        .filter(|e| e["Track"] == index)
-                        .filter_map(|e| e["Kind"].as_str())
-                        .filter(|k| *k != "PcmProgress")
-                        .collect();
-                    assert_eq!(kinds, ["Started", "PcmStarted", "PcmFinished", "Encoded"]);
-                    outputs += 1;
-                }
+            let folder = root.0.join(format!("{rate}-{bits}"));
+            fs::create_dir(&folder).unwrap();
+            let job = batch_job(&folder, &cases);
+            let mut events = BatchEvents::new();
+            passed(dvda_core::batch::execute(job, &mut events));
+            assert_eq!(fs::read_dir(folder.join("temp")).unwrap().count(), 0);
+            for (index, case) in cases.iter().enumerate() {
+                assert_eq!(
+                    digest(&fs::read(folder.join(format!("output/track{index}.mlp"))).unwrap()),
+                    case.mlp_sha256,
+                    "Batch {rate}/{bits}/{index}"
+                );
+                let kinds: Vec<_> = events
+                    .events
+                    .iter()
+                    .filter(|e| e["Track"] == index)
+                    .filter_map(|e| e["Kind"].as_str())
+                    .filter(|k| *k != "PcmProgress")
+                    .collect();
+                assert_eq!(kinds, ["Started", "PcmStarted", "PcmFinished", "Encoded"]);
+                outputs += 1;
             }
         }
     }
-    assert_eq!(outputs, 168);
+    assert_eq!(outputs, 84);
 }
 
 #[test]
@@ -540,7 +537,6 @@ fn mlp_acquisition_upgrades_legacy_parameter_cache_without_reencoding_or_track_c
         sample_rate: 48000,
         bits: 24,
         dither: false,
-        jobs: 0,
         metadata_context: String::new(),
         encoder_identity: "acquisition-regression".into(),
         tracks: tracks.clone(),
@@ -594,7 +590,7 @@ fn batch_cancellation_panic_and_partial_failure() {
     for scenario in ["cancel", "panic", "malformed", "existing", "duplicate"] {
         let folder = root.0.join(scenario);
         fs::create_dir(&folder).unwrap();
-        let mut job = batch_job(&folder, &[case.clone(), case.clone(), case.clone()], 1);
+        let mut job = batch_job(&folder, &[case.clone(), case.clone(), case.clone()]);
         let mut events = BatchEvents::new();
         events.cancel_on_started = scenario == "cancel";
         events.panic_on_started = scenario == "panic";
@@ -718,13 +714,8 @@ fn synthetic_batch_worker_benchmark() {
             .collect();
         let mut reference = Vec::new();
         for repeat in 0..3 {
-            let workers: Vec<_> = if repeat == 1 {
-                vec![16, 8, 4, 2, 1]
-            } else {
-                vec![1, 2, 4, 8, 16]
-            };
-            for workers in workers {
-                let run = root.join(format!("run-{bits}-{repeat}-{workers}"));
+            for run_index in 0..5 {
+                let run = root.join(format!("run-{bits}-{repeat}-{run_index}"));
                 fs::create_dir(&run).unwrap();
                 let job = dvda_core::batch::Job {
                     media_library: media_library.clone(),
@@ -734,7 +725,6 @@ fn synthetic_batch_worker_benchmark() {
                     sample_rate: 48000,
                     bits: bits as i32,
                     dither: false,
-                    jobs: workers,
                     metadata_context: String::new(),
                     tracks: tracks
                         .iter()
@@ -765,12 +755,12 @@ fn synthetic_batch_worker_benchmark() {
                     let bytes = fs::read(&mlp).unwrap();
                     output_bytes += bytes.len();
                     let checksum = digest(&bytes);
-                    if repeat == 0 && workers == 1 {
+                    if repeat == 0 && run_index == 0 {
                         reference.push(checksum);
                     } else {
                         assert_eq!(
                             checksum, reference[index],
-                            "non-deterministic worker output"
+                            "non-deterministic automatic-policy output"
                         );
                     }
                     let expected = wave(&run.join(format!("expected-{index}.wav")), case);
@@ -804,14 +794,14 @@ fn synthetic_batch_worker_benchmark() {
                     assert_eq!(
                         digest(&decoded[..expected.len()]),
                         digest(&expected),
-                        "lossless decode {bits}/{workers}/{index}"
+                        "lossless decode {bits}/{run_index}/{index}"
                     );
                     assert!(decoded[expected.len()..].iter().all(|byte| *byte == 0));
                     verified += 1;
                 }
-                measurements.push(serde_json::json!({"bits":bits,"requested_workers":workers,"workers":dvda_core::options::worker_count(tracks.len()),"repeat":repeat,"seconds":seconds,"output_bytes":output_bytes,"tracks":16}));
+                measurements.push(serde_json::json!({"bits":bits,"run":run_index,"workers":dvda_core::options::worker_count(tracks.len()),"repeat":repeat,"seconds":seconds,"output_bytes":output_bytes,"tracks":16}));
                 println!(
-                    "BENCH bits={bits} repeat={repeat} requested_workers={workers} workers={} seconds={seconds:.6} verified=16",
+                    "BENCH bits={bits} repeat={repeat} run={run_index} workers={} seconds={seconds:.6} verified=16",
                     dvda_core::options::worker_count(tracks.len())
                 );
                 fs::write(&report, serde_json::to_vec_pretty(&serde_json::json!({

@@ -21,7 +21,6 @@ pub struct Job {
     pub library: PathBuf,
     pub paths: Vec<PathBuf>,
     pub compression: u32,
-    pub jobs: usize, // Deprecated compatibility field; production ignores explicit worker counts.
     pub dry_run: bool,
     pub delete_sources: bool,
 }

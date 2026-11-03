@@ -95,13 +95,22 @@ pub struct Reader<R> {
 }
 
 impl<R: Read + Seek> Reader<R> {
-    pub fn new(mut source: R) -> Result<Self> {
+    pub fn new(source: R) -> Result<Self> {
+        Self::open(source, false)
+    }
+
+    /// Read integer RIFF PCM for authoring, without interpreting ancillary metadata.
+    pub fn new_integer_riff(source: R) -> Result<Self> {
+        Self::open(source, true)
+    }
+
+    fn open(mut source: R, integer_riff: bool) -> Result<Self> {
         let length = source.seek(SeekFrom::End(0))?;
         source.seek(SeekFrom::Start(0))?;
         let mut header = [0; 12];
         source.read_exact(&mut header)?;
         let rf64 = &header[..4] == b"RF64";
-        if (!rf64 && &header[..4] != b"RIFF") || &header[8..] != b"WAVE" {
+        if (integer_riff && rf64) || (!rf64 && &header[..4] != b"RIFF") || &header[8..] != b"WAVE" {
             return Err(invalid("not a RIFF/RF64 WAVE file"));
         }
         let mut end = if rf64 {
@@ -138,10 +147,18 @@ impl<R: Read + Seek> Reader<R> {
                 };
             }
             let start = position + 8;
-            let next = start
+            let payload_end = start
                 .checked_add(size)
-                .and_then(|v| v.checked_add(size & 1))
                 .ok_or_else(|| invalid("WAVE chunk size overflow"))?;
+            let next =
+                if integer_riff && &chunk[..4] == b"data" && payload_end == end && end == length {
+                    // Accept an unpadded terminal data chunk, but never a truncated payload.
+                    payload_end
+                } else {
+                    payload_end
+                        .checked_add(size & 1)
+                        .ok_or_else(|| invalid("WAVE chunk size overflow"))?
+                };
             if next > end {
                 return Err(invalid("truncated WAVE chunk"));
             }
@@ -171,14 +188,30 @@ impl<R: Read + Seek> Reader<R> {
                         rf64_sizes.push((id, u64le(&entry[4..])));
                     }
                 }
-                b"fmt " if format.is_none() => {
+                b"fmt " if integer_riff || format.is_none() => {
+                    if format.is_some() || (integer_riff && size > 4096) {
+                        return Err(invalid("Invalid or duplicate WAVE fmt chunk"));
+                    }
                     let mut bytes = [0; 40];
                     let count = size.min(40) as usize;
                     source.read_exact(&mut bytes[..count])?;
-                    format = Some(Format::parse(&bytes[..count])?);
+                    let parsed = Format::parse(&bytes[..count])?;
+                    if integer_riff
+                        && !matches!(
+                            parsed.encoding,
+                            Encoding::Signed16 | Encoding::Signed24 | Encoding::Signed32
+                        )
+                    {
+                        return Err(invalid("WAVE input must be integer PCM"));
+                    }
+                    format = Some(parsed);
                 }
-                b"data" if data.is_none() => data = Some((start, size)),
-                b"LIST" if size >= 4 => {
+                b"data" if integer_riff || data.is_none() => {
+                    if data.replace((start, size)).is_some() {
+                        return Err(invalid("Duplicate WAVE data chunk"));
+                    }
+                }
+                b"LIST" if size >= 4 && !integer_riff => {
                     let mut kind = [0; 4];
                     source.read_exact(&mut kind)?;
                     if &kind == b"INFO" {
@@ -293,6 +326,77 @@ mod tests {
     }
 
     #[test]
+    fn integer_riff_rejects_non_integer_formats_and_oversized_fmt() {
+        for (tag, bits) in [(1u16, 8u16), (3, 32), (3, 64)] {
+            let mut bytes = wave(&[]);
+            bytes[20..22].copy_from_slice(&tag.to_le_bytes());
+            bytes[32..34].copy_from_slice(&(2 * bits / 8).to_le_bytes());
+            bytes[34..36].copy_from_slice(&bits.to_le_bytes());
+            assert!(Reader::new(Cursor::new(&bytes)).is_ok());
+            assert!(Reader::new_integer_riff(Cursor::new(bytes)).is_err());
+        }
+        let mut bytes = wave(&[0; 4]);
+        bytes.splice(36..36, vec![0; 4082]);
+        bytes[16..20].copy_from_slice(&4098u32.to_le_bytes());
+        let size = bytes.len() as u32 - 8;
+        bytes[4..8].copy_from_slice(&size.to_le_bytes());
+        assert!(Reader::new(Cursor::new(&bytes)).is_ok());
+        assert!(Reader::new_integer_riff(Cursor::new(bytes)).is_err());
+    }
+
+    #[test]
+    fn integer_riff_preserves_authoring_chunk_policy() {
+        let original = wave(&[0; 4]);
+        for chunk in [&original[12..36], &original[36..]] {
+            let mut bytes = original.clone();
+            bytes.extend(chunk);
+            let size = bytes.len() as u32 - 8;
+            bytes[4..8].copy_from_slice(&size.to_le_bytes());
+            assert!(Reader::new_integer_riff(Cursor::new(&bytes)).is_err());
+            assert!(Reader::new(Cursor::new(bytes)).is_ok());
+        }
+        let mut bytes = original;
+        bytes.extend(b"LIST\x0c\0\0\0INFOINAM\xff\xff\xff\xff");
+        let size = bytes.len() as u32 - 8;
+        bytes[4..8].copy_from_slice(&size.to_le_bytes());
+        assert!(Reader::new(Cursor::new(&bytes)).is_err());
+        assert!(
+            Reader::new_integer_riff(Cursor::new(bytes))
+                .unwrap()
+                .tags
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn integer_riff_accepts_only_missing_terminal_data_padding() {
+        let format = Format {
+            encoding: Encoding::Signed24,
+            channels: 1,
+            sample_rate: 48000,
+            valid_bits: 24,
+            channel_mask: 4,
+        };
+        let mut writer = crate::writer::Writer::new_riff(Cursor::new(Vec::new()), format).unwrap();
+        writer.write_frames(&[1, 2, 3]).unwrap();
+        let mut bytes = writer.finish().unwrap().into_inner();
+        bytes.pop();
+        let size = bytes.len() as u32 - 8;
+        bytes[4..8].copy_from_slice(&size.to_le_bytes());
+        assert_eq!(
+            Reader::new_integer_riff(Cursor::new(&bytes))
+                .unwrap()
+                .data_bytes,
+            3
+        );
+        assert!(Reader::new(Cursor::new(&bytes)).is_err());
+        bytes.extend(b"JUNK\0\0\0\0");
+        let size = bytes.len() as u32 - 8;
+        bytes[4..8].copy_from_slice(&size.to_le_bytes());
+        assert!(Reader::new_integer_riff(Cursor::new(bytes)).is_err());
+    }
+
+    #[test]
     fn info_entries_are_bounded_and_unknown_keys_survive() {
         let mut bytes = wave(&[0; 4]);
         let mut info = b"INFOIZZZ".to_vec();
@@ -395,6 +499,7 @@ mod tests {
         let reader = Reader::new(Cursor::new(&bytes)).unwrap();
         assert_eq!(reader.frames(), 2);
         assert_eq!(reader.format, format);
+        assert!(Reader::new_integer_riff(Cursor::new(&bytes)).is_err());
         bytes[12..16].copy_from_slice(b"JUNK");
         assert!(Reader::new(Cursor::new(bytes)).is_err());
     }

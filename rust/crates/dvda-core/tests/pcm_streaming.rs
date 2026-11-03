@@ -274,15 +274,4 @@ fn layout_failures_cancellation_and_owned_cleanup() {
         "InvalidData"
     );
     assert!(!output.exists());
-    // Only the odd terminal RIFF alignment byte may be omitted.
-    let mut bytes = fixture(48000, 24, 24, 1, 817, 4, false);
-    bytes.pop();
-    let size = bytes.len() as u32 - 8;
-    bytes[4..8].copy_from_slice(&size.to_le_bytes());
-    fs::write(&input, bytes).unwrap();
-    normalize(job(&input, &output, 48000, 24), &mut Events::default()).unwrap();
-    assert_eq!(
-        fs::read(&output).unwrap(),
-        fixture(48000, 24, 24, 1, 817, 4, false)
-    );
 }

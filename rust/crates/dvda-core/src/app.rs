@@ -622,22 +622,6 @@ fn normalize_profile_values(values: &Map<String, Value>) -> Map<String, Value> {
             }
         }
     }
-    let aliases = [
-        ("SourceDirectory", "DVDA_SRC"),
-        ("FinalDirectory", "DVDA_FINAL_DIR"),
-        ("BuildDirectory", "DVDA_BUILD_DIR"),
-        ("Title", "DVDA_TITLE"),
-        ("IsoPrefix", "DVDA_ISO_PREFIX"),
-        ("MlpSource", "DVDA_MLP_SOURCE"),
-        ("MlpExternalDirectory", "DVDA_MLP_EXTERNAL_DIR"),
-    ];
-    for (effective, legacy) in aliases {
-        if !result.contains_key(legacy)
-            && let Some(value) = values.get(effective)
-        {
-            result.insert(legacy.into(), value.clone());
-        }
-    }
     result
 }
 
@@ -934,6 +918,23 @@ mod tests {
         std::fs::create_dir(&path).unwrap();
         assert!(save_profile(&path, &Map::new(), "ja").is_err());
         std::fs::remove_dir(&path).unwrap();
+    }
+
+    #[test]
+    fn profile_normalization_does_not_expand_retired_aliases() {
+        let values = json!({
+            "SourceDirectory": "old-source",
+            "FinalDirectory": "old-output",
+            "BuildDirectory": "old-work",
+            "Title": "old-title",
+            "IsoPrefix": "old-prefix",
+            "MlpSource": "old-mode",
+            "MlpExternalDirectory": "old-mlp"
+        });
+        assert_eq!(
+            normalize_profile_values(values.as_object().unwrap()),
+            values.as_object().unwrap().clone()
+        );
     }
 
     #[test]

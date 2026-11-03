@@ -52,7 +52,6 @@ fn job(root: &Path) -> Job {
             .join("dvda-media.dll"),
         paths: vec![root.to_owned()],
         compression: 8,
-        jobs: 2,
         dry_run: false,
         delete_sources: false,
     }

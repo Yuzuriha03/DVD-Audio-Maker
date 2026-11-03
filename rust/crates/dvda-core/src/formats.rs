@@ -750,8 +750,6 @@ pub struct WavLayout {
     pub channel_mask: u32,
 }
 
-const PCM_GUID: [u8; 16] = [1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113];
-
 fn wav_layout(request: Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected WAVE path")?;
     let layout = read_wav_layout(path)?;
@@ -802,92 +800,22 @@ impl std::fmt::Display for WavError {
 impl std::error::Error for WavError {}
 
 pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout, WavError> {
-    let length = input.seek(SeekFrom::End(0))?;
-    input.seek(SeekFrom::Start(0))?;
-    let mut head = [0u8; 12];
-    input.read_exact(&mut head)?;
-    if &head[..4] != b"RIFF" || &head[8..12] != b"WAVE" {
-        return Err("WAVE input must be an integer RIFF/WAVE PCM stream.".into());
-    }
-    let riff_size = u32_le(&head[4..8])? as u64;
-    let end = riff_size.checked_add(8).ok_or("WAVE length overflow")?;
-    if end > length || end < 12 {
-        return Err("WAVE length field is invalid or the file is truncated.".into());
-    }
-    let file_length = length;
-    let mut position = 12u64;
-    let mut bits = 0i32;
-    let mut valid = 0i32;
-    let mut channels = 0i32;
-    let mut rate = 0i32;
-    let mut align = 0i32;
-    let mut mask = 0u32;
-    let mut data_offset = None;
-    let mut data_size = 0i64;
-    while position + 8 <= end {
-        input.seek(SeekFrom::Start(position))?;
-        let mut chunk = [0u8; 8];
-        input.read_exact(&mut chunk)?;
-        let id = &chunk[..4];
-        let length = u32_le(&chunk[4..])? as u64;
-        let payload = position + 8;
-        let payload_end = payload
-            .checked_add(length)
-            .ok_or("WAVE chunk length overflow")?;
-        let mut next = payload_end
-            .checked_add(length & 1)
-            .ok_or("WAVE chunk alignment overflow")?;
-        if length & 1 != 0 && id == b"data" && payload_end == end && end == file_length {
-            // eac3to omits the RIFF alignment byte after an odd terminal data chunk.
-            next = end;
+    let reader = dvda_audio::wav::Reader::new_integer_riff(input).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::InvalidData {
+            WavError::Invalid(error.to_string())
+        } else {
+            WavError::Io(error)
         }
-        if payload_end > end || next > end {
-            return Err("WAVE chunk exceeds the file boundary.".into());
-        }
-        if id == b"fmt " {
-            if bits != 0 || !(16..=4096).contains(&length) {
-                return Err("WAVE fmt chunk is invalid.".into());
-            }
-            let mut fmt = vec![0u8; length as usize];
-            input.read_exact(&mut fmt)?;
-            let tag = u16_le(&fmt[0..2])?;
-            channels = u16_le(&fmt[2..4])? as i32;
-            rate = u32_le(&fmt[4..8])?
-                .try_into()
-                .map_err(|_| WavError::Overflow)?;
-            align = u16_le(&fmt[12..14])? as i32;
-            bits = u16_le(&fmt[14..16])? as i32;
-            valid = bits;
-            if tag == 0xfffe {
-                if length < 40 || u16_le(&fmt[16..18])? < 22 || fmt[24..40] != PCM_GUID {
-                    return Err("WAVE extensible format is not integer PCM.".into());
-                }
-                valid = u16_le(&fmt[18..20])? as i32;
-                mask = u32_le(&fmt[20..24])?;
-                if valid == 0 {
-                    valid = bits;
-                }
-            } else if tag != 1 {
-                return Err("Compressed or floating-point WAVE input is not supported.".into());
-            }
-        } else if id == b"data" {
-            if data_offset.is_some() {
-                return Err("WAVE contains duplicate data chunks.".into());
-            }
-            data_offset = Some(payload as i64);
-            data_size = length as i64;
-        }
-        position = next;
-    }
-    if position != end
-        || !matches!(bits, 16 | 24 | 32)
-        || valid < 1
-        || valid > bits
-        || !(1..=6).contains(&channels)
-        || align != channels * (bits / 8)
-        || data_offset.is_none()
+    })?;
+    let format = reader.format;
+    let bits = (format.encoding.bytes() * 8) as i32;
+    let valid = i32::from(format.valid_bits);
+    let channels = i32::from(format.channels);
+    let rate = i32::try_from(format.sample_rate).map_err(|_| WavError::Overflow)?;
+    let mut mask = format.channel_mask;
+    let data_size = reader.data_bytes as i64;
+    if !(1..=6).contains(&channels)
         || data_size <= 0
-        || data_size % i64::from(align) != 0
         || !matches!(rate, 44_100 | 48_000 | 88_200 | 96_000 | 176_400 | 192_000)
         || (rate > 96_000 && channels > 2)
     {
@@ -912,7 +840,7 @@ pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout,
         valid_bits: valid,
         channels,
         sample_rate: rate,
-        data_offset: data_offset.unwrap_or_default(),
+        data_offset: reader.data_offset as i64,
         data_size,
         bytes_per_sample: bits / 8,
         channel_mask: mask,

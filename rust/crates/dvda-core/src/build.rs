@@ -802,7 +802,6 @@ fn acquire(
                     sample_rate: job.mlp_sample_rate,
                     bits: job.mlp_bits,
                     dither: job.dither,
-                    jobs: 0,
                     metadata_context: job.mlp_metadata_context.clone(),
                     encoder_identity: job.encoder_identity.clone(),
                     tracks: tracks.as_array().cloned().unwrap_or_default(),

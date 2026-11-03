@@ -34,8 +34,6 @@ pub struct Job {
     pub bits: i32,
     #[serde(default = "dvda_native::media::default_dither")]
     pub dither: bool,
-    #[serde(default, skip_deserializing)]
-    pub jobs: i32, // Deprecated compatibility field; production ignores explicit worker counts.
     pub metadata_context: String,
     pub encoder_identity: String,
     pub tracks: Vec<Value>,
@@ -183,7 +181,6 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                 sample_rate: job.sample_rate,
                 bits: job.bits,
                 dither: job.dither,
-                jobs: 0,
                 metadata_context: job.metadata_context.clone(),
                 tracks: pending
                     .iter()
@@ -769,7 +766,6 @@ mod tests {
             sample_rate: 48000,
             bits: 24,
             dither: false,
-            jobs: 0,
             metadata_context: String::new(),
             encoder_identity: "encoder-v1".into(),
             tracks,
@@ -980,16 +976,7 @@ mod tests {
         let mut entries = cache::load_mlp(&output_root.join("mlp-cache.json"), &mut events);
         let mut records = Vec::new();
         let mut previous = None;
-        for (label, workers) in [
-            ("parallel_first", 0),
-            ("parallel_cached_parameters", 0),
-            ("serial_cached_parameters", 1),
-            ("workers_2_cached_parameters", 2),
-            ("workers_4_cached_parameters", 4),
-            ("workers_8_cached_parameters", 8),
-            ("workers_16_cached_parameters", 16),
-        ] {
-            job.jobs = workers;
+        for label in ["automatic_first", "automatic_cached_parameters"] {
             let mut updated = job.tracks.clone();
             let mut events = CheckEvents::default();
             let mut diagnostics = Vec::new();
@@ -1014,7 +1001,7 @@ mod tests {
                 assert_eq!(&updated, previous);
             }
             previous = Some(updated);
-            let record = json!({"phase":label,"requested_workers":workers,"workers":check_worker_count(job.tracks.len()),"tracks":hits,"seconds":seconds,"progress_events":events.progress.len()});
+            let record = json!({"phase":label,"workers":check_worker_count(job.tracks.len()),"tracks":hits,"seconds":seconds,"progress_events":events.progress.len()});
             println!("{record}");
             records.push(record);
         }
@@ -1115,7 +1102,6 @@ mod tests {
             sample_rate: 48000,
             bits: 24,
             dither: false,
-            jobs: 1,
             metadata_context: String::new(),
             encoder_identity: "encoder-v1".into(),
             tracks: vec![],
@@ -1214,7 +1200,6 @@ mod tests {
             sample_rate: 48000,
             bits: 24,
             dither: false,
-            jobs: 1,
             metadata_context: String::new(),
             encoder_identity: "encoder-v1".into(),
             tracks: vec![json!({"SourcePath":root.join("missing.flac"),"Title":"missing"})],

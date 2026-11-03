@@ -10,6 +10,7 @@ direct-bridges = ["dvda-native/direct-bridges", "dep:dvda-bridges"]
 rust-mlp = ["dep:dvda-mlp"]
 
 [dependencies]
+dvda-audio = { path = "../dvda-audio" }
 dvda-author = { path = "../dvda-author" }
 dvda-image = { path = "../dvda-image" }
 dvda-bridges = { path = "../dvda-bridges", optional = true, features = ["media", "menu"] }
