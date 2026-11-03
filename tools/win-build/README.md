@@ -20,7 +20,9 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --wor
 生产构建默认使用 `build/msvc-native/ffmpeg-static/install`。使用
 `build-msvc-ffmpeg.py --profile static --work-directory build/msvc-native/ffmpeg-static`
 生成 MSVC 静态库，并通过 `--msys-root`、`--cmake` 指定本机工具路径。
-五个 FFmpeg 库、soxr、zlib 和 C 运行库静态链接到 EXE；内嵌资源只需解压字体和菜单素材。
+五个 FFmpeg 库、soxr 和 C 运行库静态链接到 EXE；内嵌资源只需解压字体和菜单素材。
+FFmpeg 显式禁用原生 zlib；普通 M4A/ALAC 不受影响，但不再支持带压缩 `cmov` atom 的 MOV/M4A 文件。
+请在新的工作目录重建 FFmpeg，勿复用旧的启用 zlib 的库。Rust PNG 编解码不受影响。
 开发对照仍可显式设置 `DVDA_FFMPEG_PREFIX` 使用 shared 构建。静态链接不代表已经测得编码提速。
 
 打包器需要已验证的 x64 媒体/图像构建记录与 `build/rust-author-production`，并验证摘要、大小、PE 架构、DLL 闭包及字体/菜单素材。图像记录必须标识 Rust 实现；本机验收使用 `build/rust-image-runtime`。MLP 编码器直接编入 Rust 应用，`--encoder-runtime` 仅用于认证可选对照产物，不分发编码器 DLL。FFmpeg 命令行程序不是运行时输入，媒体库由 Rust bridge 调用；图像直接使用 Rust 实现，媒体/图像开发 adapter DLL 不进入静态链接发布包。

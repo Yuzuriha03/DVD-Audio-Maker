@@ -31,8 +31,10 @@ enable the PNG encoder. RGB row padding is excluded and output alpha is opaque;
 decoded pixels, not compressed PNG bytes, are the compatibility contract for this
 operation. The earlier frozen-oracle PNG byte-parity evidence below predates this
 change. PNG and JPEG/JPG cover input decoding remains in `dvda-image`. Existing
-FFmpeg installations must be rebuilt to realize the component reduction; zlib
-and swscale have not been removed.
+FFmpeg installations must be rebuilt in a fresh work directory to realize the
+component reduction. Native zlib is disabled and no longer linked; swscale remains
+required. Ordinary M4A/ALAC inputs remain supported, but MOV/M4A files with a
+compressed `cmov` atom are no longer supported. Rust PNG compression is unaffected.
 
 `tools\win-build\build-rust-bridges.ps1` defaults to `-Component direct`, emitting
 an rlib and provenance manifest, not adapter DLLs. A final executable build must

@@ -21,13 +21,18 @@ The package assembler expects validated x64 directories:
 
 | Input | Default | Required content |
 | --- | --- | --- |
-| Media | `build/msvc-native/ffmpeg-static/install` | authenticated static FFmpeg, soxr and zlib archives |
+| Media | `build/msvc-native/ffmpeg-static/install` | authenticated static FFmpeg and soxr archives |
 | Image | `build/image-native` | `dvda-image.dll`, XML policy/type/color files and notice |
 | Author | explicit `--image-author` | complete Rust author built with the same static FFmpeg manifest |
 | Fonts/assets | `tools/win-build/prebuilt` or explicit `--prebuilt` | prepared menu assets and CJK fonts; missing inputs fail explicitly |
 | MLP oracle (optional) | `--encoder-runtime` | authenticated encoder oracle; never shipped |
 
 The packager verifies hashes, sizes, x64 architecture, the full import closure and assets. The MLP encoder is compiled directly into Rust. Image provenance must identify the Rust implementation; the local acceptance uses `build/rust-image-runtime`. Media/image adapter DLLs are development provenance inputs and are excluded from linked releases.
+
+FFmpeg explicitly disables native zlib. Ordinary M4A/ALAC remains supported, but
+MOV/M4A inputs with compressed `cmov` atoms are unsupported. Rebuild FFmpeg in a
+fresh work directory instead of reusing old zlib-enabled libraries. Rust PNG
+encoding and decoding are unaffected.
 
 FFmpeg command-line programs are not runtime inputs. Rust bridges call the retained source-built FFmpeg libraries; image processing uses Rust directly.
 
