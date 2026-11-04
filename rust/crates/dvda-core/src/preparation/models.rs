@@ -42,6 +42,17 @@ pub struct ManifestTrack {
     pub repaired: usize,
     pub repair_detail: Option<Vec<String>>,
     pub orig_src: Option<String>,
+    pub source_sample_rate: i32,
+    pub source_bits: i32,
+    pub channels: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_identity: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prepared_pcm_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prepared_pcm_identity: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prepared_pcm_signature: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ManifestGroup {

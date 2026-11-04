@@ -143,8 +143,8 @@ impl Callbacks for Progress {
 #[test]
 fn cli_assembles_multiple_groups_and_samg_addresses_match_real_iso() {
     let directory = Directory::new();
-    wav(&directory.0.join("a.wav"), 2, 4800);
-    wav(&directory.0.join("b.wav"), 2, 4800);
+    wav(&directory.0.join("a.wav"), 2, 96000);
+    wav(&directory.0.join("b.wav"), 2, 96000);
     let mut progress = Progress::default();
     command::run(&args(&directory.0), &mut NoMenu, &mut progress).unwrap();
     assert_eq!(progress.0.first(), Some(&0));

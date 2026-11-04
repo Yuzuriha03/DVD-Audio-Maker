@@ -35,6 +35,86 @@ impl From<WavError> for Failure {
 fn invalid(text: &str) -> Failure {
     Failure::new("InvalidData", text)
 }
+pub(crate) fn reusable_wave(
+    input: &mut (impl Read + Seek),
+    rate: i32,
+    bits: i32,
+    caller: &mut dyn Callbacks,
+) -> Result<bool, Failure> {
+    let mut callbacks = Timed::new(caller, None);
+    callbacks.check()?;
+    if !matches!(bits, 16 | 20 | 24) {
+        return Err(invalid("目标位深必须是 16/20/24。"));
+    }
+    let layout = formats::read_wav_layout_from(input)?;
+    if layout.sample_rate != rate {
+        return Err(invalid("PCM 输出采样率与任务不符。"));
+    }
+    let width = if bits == 16 { 2 } else { 3 };
+    let frames = layout.data_size as u64 / (layout.channels * layout.bytes_per_sample) as u64;
+    let size = frames * layout.channels as u64 * width as u64;
+    if 60 + size + (size & 1) > u64::from(u32::MAX) {
+        return Err(invalid("PCM 超出 RIFF 4 GiB 限制；请拆分过长音轨。"));
+    }
+    if layout.container_bits != width * 8
+        || layout.valid_bits != bits
+        || layout.channel_mask & 0x600 != 0
+    {
+        return Ok(false);
+    }
+    // Matching headers do not prove 20-bit precision; scan the low four bits.
+    if bits == 20 {
+        input.seek(SeekFrom::Start(layout.data_offset as u64))?;
+        let mut raw = vec![0; 8192 * layout.channels as usize * width as usize];
+        let mut remaining = layout.data_size as u64;
+        while remaining != 0 {
+            callbacks.check()?;
+            let count = remaining.min(raw.len() as u64) as usize;
+            input.read_exact(&mut raw[..count]).map_err(WavError::Io)?;
+            if raw[..count]
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .any(|sample| sample[0] & 15 != 0)
+            {
+                return Err(invalid(
+                    "PCM 有效精度高于目标位深；拒绝静默截断，请检查音源转换设置。",
+                ));
+            }
+            remaining -= count as u64;
+        }
+    }
+    callbacks.check()?;
+    Ok(true)
+}
+
+pub(crate) fn prepare_wave(
+    decoded: &std::path::Path,
+    prepared: &std::path::Path,
+    rate: i32,
+    bits: i32,
+    callbacks: &mut dyn Callbacks,
+) -> Result<PathBuf, Failure> {
+    let reuse = {
+        let mut input = crate::identity::open_read(&decoded.to_string_lossy())?;
+        reusable_wave(&mut input, rate, bits, callbacks)?
+    };
+    if reuse {
+        return Ok(decoded.to_path_buf());
+    }
+    normalize(
+        Job {
+            source: decoded.to_string_lossy().into_owned(),
+            destination: prepared.to_path_buf(),
+            rate,
+            bits,
+        },
+        callbacks,
+    )?;
+    std::fs::remove_file(decoded)?;
+    Ok(prepared.to_path_buf())
+}
+
 pub fn normalize(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
     normalize_impl(job, caller, false)
 }

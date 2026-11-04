@@ -4,6 +4,18 @@ use dvda_native::media::Callbacks;
 use std::{path::Path, time::Instant};
 
 pub fn execute(arguments: &[String], caller: &mut dyn Callbacks) -> Outcome {
+    execute_with_image_cache(
+        arguments,
+        caller,
+        std::sync::Arc::new(dvda_image::cache::ImageCache::default()),
+    )
+}
+
+pub fn execute_with_image_cache(
+    arguments: &[String],
+    caller: &mut dyn Callbacks,
+    image_cache: std::sync::Arc<dvda_image::cache::ImageCache>,
+) -> Outcome {
     let start = Instant::now();
     struct Capture<'a> {
         caller: &'a mut dyn Callbacks,
@@ -31,7 +43,12 @@ pub fn execute(arguments: &[String], caller: &mut dyn Callbacks) -> Outcome {
         caller,
         output: [String::new(), String::new()],
     };
-    let result = dvda_author::command::run(arguments, &mut Backend, &mut capture);
+    let result = dvda_author::command::run_with_image_cache(
+        arguments,
+        &mut Backend,
+        &mut capture,
+        image_cache,
+    );
     let failure = result.err().map(|message| {
         dvda_author::Callbacks::emit(&mut capture, 2, &message);
         let kind = if dvda_author::Callbacks::cancelled(&mut capture) {

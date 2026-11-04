@@ -58,95 +58,26 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> 
     let native = NativeFormats::load()?;
     let mut output = Vec::with_capacity(job.tracks.len());
     let mut channel_counts: HashMap<i32, i32> = HashMap::new();
-    for track in &job.tracks {
-        if caller.cancelled() {
-            return Err("MLP 导入已被取消。".into());
+    let mut completed = 0;
+    let imported = crate::parallel::map(
+        &job.tracks,
+        caller,
+        "MLP 导入已被取消。",
+        |_, track, callbacks| import_track(&job, &index, &native, track, callbacks),
+        |_, _, callbacks| {
+            completed += 1;
+            callbacks.progress(completed, job.tracks.len() as u64);
+        },
+    )?;
+    for result in imported {
+        let imported = result?;
+        if let Some(issue) = imported.diagnostic {
+            diagnostics.push(issue);
         }
-        let source = text(track, "SourcePath").ok_or("Missing source path")?;
-        let hit = acquisition::dispatch(
-            "build.mlp_resolve",
-            json!({
-                "SourcePath":source,
-                "SourceRoot":job.source_root,
-                "ExternalRoot":job.external_root,
-                "BasenameIndex":index
-            }),
-        )?;
-        let Some(hit) = hit.as_str() else {
-            diagnostics.push(error(
-                "EXTERNAL_MLP_MISSING",
-                format!(
-                    "找不到外部 MLP: {}",
-                    text(track, "Title").unwrap_or("Track")
-                ),
-            ));
-            output.push(track.clone());
-            continue;
-        };
-        let path = Path::new(hit);
-        if !path.is_file() || path.metadata().map_or(0, |m| m.len()) == 0 {
-            diagnostics.push(error(
-                "EXTERNAL_MLP_EMPTY",
-                format!("外部 MLP 是空文件: {hit}"),
-            ));
-            output.push(track.clone());
-            continue;
+        if let Some(channels) = imported.channels {
+            *channel_counts.entry(channels).or_default() += 1;
         }
-        let valid = native
-            .inspect_file(path)
-            .is_ok_and(|inspection| inspection.is_valid && inspection.has_end_of_stream);
-        if !valid {
-            diagnostics.push(error(
-                "EXTERNAL_MLP_INVALID",
-                format!("外部 MLP 结构校验失败: {hit}"),
-            ));
-            output.push(track.clone());
-            continue;
-        }
-        let mlp = parameters(&job.media_library, hit, caller)?;
-        let source_parameters = parameters(&job.media_library, source, caller)?;
-        if mlp.sample_rate <= 0 || mlp.bits <= 0 {
-            diagnostics.push(error(
-                "EXTERNAL_MLP_PROBE_FAILED",
-                format!("无法探测外部 MLP 参数: {hit}"),
-            ));
-            output.push(track.clone());
-            continue;
-        }
-        *channel_counts.entry(mlp.channels).or_default() += 1;
-        let resampled =
-            source_parameters.sample_rate > 0 && source_parameters.sample_rate != mlp.sample_rate;
-        let rebitded = source_parameters.bits > 0 && source_parameters.bits != mlp.bits;
-        let mut value = track
-            .as_object()
-            .cloned()
-            .ok_or("Track must be an object")?;
-        value.insert("SampleRate".into(), json!(mlp.sample_rate));
-        value.insert("Bits".into(), json!(mlp.bits));
-        value.insert("Channels".into(), json!(mlp.channels));
-        value.insert(
-            "SourceSampleRate".into(),
-            json!(source_parameters.sample_rate),
-        );
-        value.insert("SourceBits".into(), json!(source_parameters.bits));
-        value.insert(
-            "ResampleTo".into(),
-            if resampled {
-                json!(mlp.sample_rate)
-            } else {
-                Value::Null
-            },
-        );
-        value.insert("MlpPath".into(), json!(hit));
-        value.insert(
-            "MlpSize".into(),
-            json!(path.metadata().map_err(|e| e.to_string())?.len()),
-        );
-        value.insert("MlpSource".into(), json!("external"));
-        value.insert("ExternalResampled".into(), json!(resampled));
-        value.insert("ExternalRebitded".into(), json!(rebitded));
-        value.insert("ParametersChanged".into(), json!(resampled || rebitded));
-        output.push(Value::Object(value));
+        output.push(imported.track);
     }
     if channel_counts.len() > 1 {
         diagnostics.push(error(
@@ -169,6 +100,121 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> 
     })
 }
 
+struct ImportedTrack {
+    track: Value,
+    diagnostic: Option<Value>,
+    channels: Option<i32>,
+}
+
+fn import_track(
+    job: &Job,
+    index: &HashMap<String, String>,
+    native: &NativeFormats,
+    track: &Value,
+    caller: &mut dyn Callbacks,
+) -> Result<ImportedTrack, String> {
+    let source = text(track, "SourcePath").ok_or("Missing source path")?;
+    let hit = acquisition::dispatch(
+        "build.mlp_resolve",
+        json!({
+            "SourcePath":source,
+            "SourceRoot":job.source_root,
+            "ExternalRoot":job.external_root,
+            "BasenameIndex":index
+        }),
+    )?;
+    let Some(hit) = hit.as_str() else {
+        return Ok(ImportedTrack {
+            track: track.clone(),
+            diagnostic: Some(error(
+                "EXTERNAL_MLP_MISSING",
+                format!(
+                    "找不到外部 MLP: {}",
+                    text(track, "Title").unwrap_or("Track")
+                ),
+            )),
+            channels: None,
+        });
+    };
+    let path = Path::new(hit);
+    if !path.is_file() || path.metadata().map_or(0, |m| m.len()) == 0 {
+        return Ok(ImportedTrack {
+            track: track.clone(),
+            diagnostic: Some(error(
+                "EXTERNAL_MLP_EMPTY",
+                format!("外部 MLP 是空文件: {hit}"),
+            )),
+            channels: None,
+        });
+    }
+    let valid = native
+        .inspect_file(path)
+        .is_ok_and(|inspection| inspection.is_valid && inspection.has_end_of_stream);
+    if !valid {
+        return Ok(ImportedTrack {
+            track: track.clone(),
+            diagnostic: Some(error(
+                "EXTERNAL_MLP_INVALID",
+                format!("外部 MLP 结构校验失败: {hit}"),
+            )),
+            channels: None,
+        });
+    }
+    let mlp = parameters(&job.media_library, hit, caller)?;
+    let source_identity = crate::identity::compute(source).map_err(|error| error.to_string())?;
+    let source_parameters = match audio::parameters_from_track(track, &source_identity) {
+        Some(parameters) => parameters,
+        None => parameters(&job.media_library, source, caller)?,
+    };
+    if mlp.sample_rate <= 0 || mlp.bits <= 0 {
+        return Ok(ImportedTrack {
+            track: track.clone(),
+            diagnostic: Some(error(
+                "EXTERNAL_MLP_PROBE_FAILED",
+                format!("无法探测外部 MLP 参数: {hit}"),
+            )),
+            channels: None,
+        });
+    }
+    let resampled =
+        source_parameters.sample_rate > 0 && source_parameters.sample_rate != mlp.sample_rate;
+    let rebitded = source_parameters.bits > 0 && source_parameters.bits != mlp.bits;
+    let mut value = track
+        .as_object()
+        .cloned()
+        .ok_or("Track must be an object")?;
+    value.insert("SampleRate".into(), json!(mlp.sample_rate));
+    value.insert("Bits".into(), json!(mlp.bits));
+    value.insert("Channels".into(), json!(mlp.channels));
+    value.insert(
+        "SourceSampleRate".into(),
+        json!(source_parameters.sample_rate),
+    );
+    value.insert("SourceBits".into(), json!(source_parameters.bits));
+    value.insert(
+        "ResampleTo".into(),
+        if resampled {
+            json!(mlp.sample_rate)
+        } else {
+            Value::Null
+        },
+    );
+    value.insert("MlpPath".into(), json!(hit));
+    value.insert(
+        "MlpSize".into(),
+        json!(path.metadata().map_err(|e| e.to_string())?.len()),
+    );
+    value.insert("MlpSource".into(), json!("external"));
+    value.insert("ExternalResampled".into(), json!(resampled));
+    value.insert("ExternalRebitded".into(), json!(rebitded));
+    value.insert("ParametersChanged".into(), json!(resampled || rebitded));
+    Ok(ImportedTrack {
+        track: Value::Object(value),
+        diagnostic: None,
+        channels: Some(mlp.channels),
+    })
+}
+
 fn parameters(
     library: &Path,
     input: &str,
@@ -180,6 +226,7 @@ fn parameters(
             input: input.into(),
             operation: audio::Operation::Parameters,
             resample_to: None,
+            decode_output: None,
         },
         caller,
     )

@@ -3,7 +3,10 @@ use std::{
     cell::RefCell,
     io::{Read, Seek, SeekFrom, Write},
 };
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 struct IsoSource {
     file: RefCell<fs::File>,
@@ -299,6 +302,41 @@ pub struct IsoEntryInfo {
     pub size: u32,
     pub extended_attribute_blocks: u8,
     pub is_multi_extent: bool,
+}
+
+type DirectoryEntries = std::sync::Mutex<
+    std::collections::HashMap<(PathBuf, String), Result<Vec<IsoEntryInfo>, String>>,
+>;
+
+#[derive(Default)]
+pub struct IsoMetadataCache {
+    entries: DirectoryEntries,
+}
+
+impl IsoMetadataCache {
+    pub fn list_directory(
+        &self,
+        path: &Path,
+        inner_path: &str,
+    ) -> Result<Vec<IsoEntryInfo>, String> {
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        let key = (path, inner_path.to_ascii_lowercase());
+        if let Some(result) = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&key)
+            .cloned()
+        {
+            return result;
+        }
+        let result = iso_list_directory(&key.0, inner_path);
+        self.entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(key, result.clone());
+        result
+    }
 }
 
 /// A bounded, sector-aligned reader for one ISO9660 file.

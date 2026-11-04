@@ -192,6 +192,8 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                             .unwrap_or("Track")
                             .into(),
                         duration_seconds: number(&job.tracks[item.index], "Duration"),
+                        source_identity: item.source_identity.clone(),
+                        source_evidence: job.tracks[item.index].clone(),
                     })
                     .collect(),
             };
@@ -210,67 +212,58 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
             }
             let mut finalize_progress = dvda_native::media::ProgressScope::new(caller, 85, 100);
             finalize_progress.emit(1, &format!("[MLP-FINALIZE] start {}", pending.len()));
-            for (work_index, item) in pending.iter().enumerate() {
-                if finalize_progress.cancelled() {
-                    return Err("MLP 编码已被取消。".into());
-                }
-                let display_name = text(&job.tracks[item.index], "Title").unwrap_or("Track");
-                finalize_progress.emit(
-                    1,
-                    &format!(
-                        "[MLP-FINALIZE] progress {}/{} {}",
-                        hits as usize + work_index + 1,
-                        job.tracks.len(),
-                        display_name
-                    ),
-                );
-                let staged = stage.join(format!("__mlp_{:04}.mlp", work_index + 1));
-                let inspection = native.inspect_file(&staged).ok().filter(valid_inspection);
-                let Some(inspection) = inspection else {
-                    diagnostics.push(error(
-                        "MLP_OUTPUT_INVALID",
-                        format!("MLP 编码结果无效: {}", item.source),
-                    ));
+            let mut destinations = std::collections::HashSet::new();
+            let independent = pending
+                .iter()
+                .all(|item| destinations.insert(item.destination.to_string_lossy().to_uppercase()));
+            let workers = if independent {
+                crate::options::worker_count(pending.len())
+            } else {
+                1
+            };
+            let mut finalized_count = 0;
+            let finalized = crate::parallel::map_with_workers(
+                &pending,
+                workers,
+                &mut finalize_progress,
+                "MLP 编码已被取消。",
+                |work_index, item, callbacks| {
+                    finalize_track(&job, &native, &stage, work_index, item, callbacks)
+                },
+                |work_index, _, callbacks| {
+                    finalized_count += 1;
+                    let item = &pending[work_index];
+                    let display_name = text(&job.tracks[item.index], "Title").unwrap_or("Track");
+                    callbacks.emit(
+                        1,
+                        &format!(
+                            "[MLP-FINALIZE] progress {}/{} {}",
+                            hits as usize + finalized_count,
+                            job.tracks.len(),
+                            display_name
+                        ),
+                    );
+                    callbacks.progress(finalized_count as u64, pending.len() as u64);
+                },
+            )?;
+            for result in finalized {
+                let finalized = result?;
+                if let Some(issue) = finalized.diagnostic {
+                    diagnostics.push(issue);
                     continue;
-                };
-                if !same_identity(
-                    &item.source_identity,
-                    &identity::compute(&item.source).map_err(|e| e.to_string())?,
-                ) {
-                    return Err(format!("编码过程中源文件发生变化: {}", item.source));
                 }
-                if let Some(parent) = item.destination.parent() {
-                    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-                }
-                publish_encoded(&staged, &item.destination)?;
-                let output_identity = identity::compute(&item.destination.to_string_lossy())
-                    .map_err(|error| error.to_string())?;
-                let updated = update_track(
-                    &job.tracks[item.index],
-                    &item.destination,
-                    &inspection,
-                    None,
-                    &job.media_library,
-                    &mut finalize_progress,
-                )?;
+                let updated = finalized
+                    .updated
+                    .ok_or("MLP finalization returned no track update")?;
                 cache::record_mlp(
                     &mut cache_entries,
-                    &item.destination,
-                    json!({
-                        "source": item.source_identity.clone(),
-                        "output": output_identity,
-                        "encoder": job.encoder_identity,
-                        "bits": job.bits,
-                        "resample_to": job.sample_rate,
-                        "max_interval": REQUIRED_MAJOR_SYNC_INTERVAL,
-                        "parameters_version": 1,
-                        "source_parameters": updated.source_parameters,
-                        "output_parameters": updated.output_parameters
-                    }),
+                    &finalized.destination,
+                    finalized
+                        .cache_entry
+                        .ok_or("MLP finalization returned no cache entry")?,
                 );
-                tracks[item.index] = updated.track;
+                tracks[finalized.index] = updated.track;
                 rebuilt += 1;
-                finalize_progress.progress((work_index + 1) as u64, pending.len() as u64);
             }
             finalize_progress.emit(1, &format!("[MLP-FINALIZE] complete {}", pending.len()));
             Ok(())
@@ -495,6 +488,7 @@ fn check_track(
         let mut entry = cache::find_mlp(entries, &destination).unwrap().clone();
         let updated = update_track(
             track,
+            Some(&source_identity),
             &destination,
             &inspection,
             Some(&entry),
@@ -566,10 +560,81 @@ fn cache_matches(
         })
 }
 
+struct FinalizedTrack {
+    index: usize,
+    destination: PathBuf,
+    updated: Option<UpdatedTrack>,
+    cache_entry: Option<Value>,
+    diagnostic: Option<Value>,
+}
+
 fn publish_encoded(staged: &Path, destination: &Path) -> Result<(), String> {
     // File.Move(overwrite:true) semantics: preserve an existing destination on
     // same-volume failure and support configured staging on another volume.
     dvda_native::files::move_file(staged, destination, true).map_err(|error| error.to_string())
+}
+
+fn finalize_track(
+    job: &Job,
+    native: &NativeFormats,
+    stage: &Path,
+    work_index: usize,
+    item: &Pending,
+    caller: &mut dyn Callbacks,
+) -> Result<FinalizedTrack, String> {
+    let staged = stage.join(format!("__mlp_{:04}.mlp", work_index + 1));
+    let inspection = native.inspect_file(&staged).ok().filter(valid_inspection);
+    let Some(inspection) = inspection else {
+        return Ok(FinalizedTrack {
+            index: item.index,
+            destination: item.destination.clone(),
+            updated: None,
+            cache_entry: None,
+            diagnostic: Some(error(
+                "MLP_OUTPUT_INVALID",
+                format!("MLP 编码结果无效: {}", item.source),
+            )),
+        });
+    };
+    if !same_identity(
+        &item.source_identity,
+        &identity::compute(&item.source).map_err(|e| e.to_string())?,
+    ) {
+        return Err(format!("编码过程中源文件发生变化: {}", item.source));
+    }
+    if let Some(parent) = item.destination.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    publish_encoded(&staged, &item.destination)?;
+    let output_identity = identity::compute(&item.destination.to_string_lossy())
+        .map_err(|error| error.to_string())?;
+    let updated = update_track(
+        &job.tracks[item.index],
+        Some(&item.source_identity),
+        &item.destination,
+        &inspection,
+        None,
+        &job.media_library,
+        caller,
+    )?;
+    let cache_entry = json!({
+        "source": item.source_identity.clone(),
+        "output": output_identity,
+        "encoder": job.encoder_identity,
+        "bits": job.bits,
+        "resample_to": job.sample_rate,
+        "max_interval": REQUIRED_MAJOR_SYNC_INTERVAL,
+        "parameters_version": 1,
+        "source_parameters": updated.source_parameters.clone(),
+        "output_parameters": updated.output_parameters.clone()
+    });
+    Ok(FinalizedTrack {
+        index: item.index,
+        destination: item.destination.clone(),
+        updated: Some(updated),
+        cache_entry: Some(cache_entry),
+        diagnostic: None,
+    })
 }
 
 fn valid_inspection(inspection: &MlpInspection) -> bool {
@@ -596,6 +661,7 @@ fn cached_parameters(entry: Option<&Value>, key: &str) -> Option<audio::Paramete
 
 fn update_track(
     track: &Value,
+    current_identity: Option<&Value>,
     destination: &Path,
     inspection: &MlpInspection,
     entry: Option<&Value>,
@@ -605,7 +671,9 @@ fn update_track(
     let source = text(track, "SourcePath").ok_or("Missing source path")?;
     // Parameter evidence is only supplied after source/output identities and
     // the full MLP stream have passed validation. Old caches probe once.
-    let source_parameters = match cached_parameters(entry, "source_parameters") {
+    let source_parameters = match cached_parameters(entry, "source_parameters").or_else(|| {
+        current_identity.and_then(|identity| audio::parameters_from_track(track, identity))
+    }) {
         Some(parameters) => parameters,
         None => audio::read_parameters(
             &audio::Job {
@@ -613,6 +681,7 @@ fn update_track(
                 input: source.into(),
                 operation: audio::Operation::Parameters,
                 resample_to: None,
+                decode_output: None,
             },
             caller,
         )
@@ -628,6 +697,7 @@ fn update_track(
                 input: destination.to_string_lossy().into_owned(),
                 operation: audio::Operation::Parameters,
                 resample_to: None,
+                decode_output: None,
             },
             caller,
         )

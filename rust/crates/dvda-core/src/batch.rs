@@ -1,7 +1,7 @@
 //! Batch MLP encoding through typed native APIs, with bounded worker/event queues.
 use crate::{
-    encoder, formats,
-    media::{self, Failure, Outcome, Timed, temporary_path},
+    encoder,
+    media::{self, Failure, Outcome, temporary_path},
     pcm,
 };
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
@@ -10,7 +10,6 @@ use serde_json::json;
 use std::{
     collections::HashSet,
     fs,
-    io::{Read, Seek, SeekFrom},
     panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
     sync::{
@@ -28,6 +27,10 @@ pub struct Track {
     pub work_name: String,
     pub display_name: String,
     pub duration_seconds: f64,
+    #[serde(default)]
+    pub source_identity: serde_json::Value,
+    #[serde(default)]
+    pub source_evidence: serde_json::Value,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -183,102 +186,12 @@ fn timeout(seconds: f64, factor: f64) -> Result<u64, Failure> {
     }
     Ok(millis.trunc() as u64)
 }
-// The encoder consumes parsed PCM, not a canonical 68-byte WAV header. Keep
-// normalization for storage/precision changes and side-to-back mask remapping.
-fn reusable_wave(
-    input: &mut (impl Read + Seek),
-    rate: i32,
-    bits: i32,
-    caller: &mut dyn Callbacks,
-) -> Result<bool, Failure> {
-    let mut callbacks = Timed::new(caller, None);
-    callbacks.check()?;
-    if !matches!(bits, 16 | 20 | 24) {
-        return Err(Failure::new("InvalidData", "目标位深必须是 16/20/24。"));
-    }
-    let layout = formats::read_wav_layout_from(input)?;
-    if layout.sample_rate != rate {
-        return Err(Failure::new("InvalidData", "PCM 输出采样率与任务不符。"));
-    }
-    let width = if bits == 16 { 2 } else { 3 };
-    let frames = layout.data_size as u64 / (layout.channels * layout.bytes_per_sample) as u64;
-    let size = frames * layout.channels as u64 * width as u64;
-    if 60 + size + (size & 1) > u64::from(u32::MAX) {
-        return Err(Failure::new(
-            "InvalidData",
-            "PCM 超出 RIFF 4 GiB 限制；请拆分过长音轨。",
-        ));
-    }
-    if layout.container_bits != width * 8
-        || layout.valid_bits != bits
-        || layout.channel_mask & 0x600 != 0
-    {
-        return Ok(false);
-    }
-    // Even a matching valid-bits header does not prove sample precision. Full
-    // 16/24-bit storage cannot exceed its target; 20-bit storage must be scanned.
-    if bits == 20 {
-        input.seek(SeekFrom::Start(layout.data_offset as u64))?;
-        let mut raw = vec![0; 8192 * layout.channels as usize * width as usize];
-        let mut remaining = layout.data_size as u64;
-        while remaining != 0 {
-            callbacks.check()?;
-            let count = remaining.min(raw.len() as u64) as usize;
-            input
-                .read_exact(&mut raw[..count])
-                .map_err(formats::WavError::Io)?;
-            if raw[..count]
-                .as_chunks::<3>()
-                .0
-                .iter()
-                .any(|sample| sample[0] & 15 != 0)
-            {
-                return Err(Failure::new(
-                    "InvalidData",
-                    "PCM 有效精度高于目标位深；拒绝静默截断，请检查音源转换设置。",
-                ));
-            }
-            remaining -= count as u64;
-        }
-    }
-    callbacks.check()?;
-    Ok(true)
-}
-
-fn prepare_wave(
-    decoded: &Path,
-    prepared: &Path,
-    rate: i32,
-    bits: i32,
-    callbacks: &mut dyn Callbacks,
-) -> Result<PathBuf, Failure> {
-    let reuse = {
-        let mut input = crate::identity::open_read(&decoded.to_string_lossy())?;
-        reusable_wave(&mut input, rate, bits, callbacks)?
-    };
-    if reuse {
-        // Both paths belong to the track's private Folder, which cleans up on
-        // success, failure and cancellation. Leave decoded.wav in place.
-        return Ok(decoded.to_path_buf());
-    }
-    pcm::normalize(
-        pcm::Job {
-            source: decoded.to_string_lossy().into_owned(),
-            destination: prepared.to_path_buf(),
-            rate,
-            bits,
-        },
-        callbacks,
-    )?;
-    fs::remove_file(decoded)?;
-    Ok(prepared.to_path_buf())
-}
-
 fn track(
     job: &Job,
     index: usize,
     send: SyncSender<String>,
     stop: &AtomicBool,
+    pcm_signature: &str,
 ) -> Result<(), Failure> {
     let track = &job.tracks[index];
     let mut events = Events {
@@ -297,45 +210,61 @@ fn track(
     let result = (|| -> Result<(), Failure> {
         events.event("Started", json!(null));
         events.event("PcmStarted", json!(null));
-        let decoded = folder.0.join("decoded.wav");
+        let mut decoded = folder.0.join("decoded.wav");
         let prepared = folder.0.join("input.wav");
-        let result = media::execute(
-            media::Job {
-                library: job.media_library.clone(),
-                replace: false,
-                timeout_millis: Some(timeout(track.duration_seconds, 2.0)?),
-                request: Request {
-                    operation: Operation::Audio,
-                    rate: job.sample_rate as u32,
-                    bits: job.bits as u32,
-                    output_format: OutputFormat::Wave,
-                    soxr: false,
-                    dither: job.dither,
-                    compression: 8,
-                    cover: false,
-                    input: track.source_path.clone(),
-                    output: Some(decoded.to_string_lossy().into_owned()),
-                    tags: vec![],
-                },
-            },
+        let reused = crate::audio::reusable_production_pcm(
+            &track.source_evidence,
+            &track.source_identity,
+            pcm_signature,
+            job.sample_rate,
+            job.bits,
             &mut events,
-        );
-        if let Some(error) = result.failure {
-            return Err(error);
-        }
-        if result.exit_code != Some(0) {
-            return Err(Failure::new(
-                "InvalidOperation",
-                &format!(
-                    "音源转换失败：{}（FFmpeg 退出码 {}）。{}",
-                    track.display_name,
-                    result.exit_code.unwrap_or(-1),
-                    events.errors.trim()
-                ),
-            ));
+        )?;
+        if reused.is_none() {
+            let result = media::execute(
+                media::Job {
+                    library: job.media_library.clone(),
+                    replace: false,
+                    timeout_millis: Some(timeout(track.duration_seconds, 2.0)?),
+                    request: Request {
+                        operation: Operation::Audio,
+                        rate: job.sample_rate as u32,
+                        bits: job.bits as u32,
+                        output_format: OutputFormat::Wave,
+                        soxr: false,
+                        dither: job.dither,
+                        compression: 8,
+                        cover: false,
+                        input: track.source_path.clone(),
+                        output: Some(decoded.to_string_lossy().into_owned()),
+                        tags: vec![],
+                    },
+                },
+                &mut events,
+            );
+            if let Some(error) = result.failure {
+                return Err(error);
+            }
+            if result.exit_code != Some(0) {
+                return Err(Failure::new(
+                    "InvalidOperation",
+                    &format!(
+                        "音源转换失败：{}（FFmpeg 退出码 {}）。{}",
+                        track.display_name,
+                        result.exit_code.unwrap_or(-1),
+                        events.errors.trim()
+                    ),
+                ));
+            }
         }
         events.event("PcmFinished", json!(null));
-        let prepared = prepare_wave(&decoded, &prepared, job.sample_rate, job.bits, &mut events)?;
+        let prepared = if let Some(path) = reused {
+            path
+        } else {
+            decoded =
+                pcm::prepare_wave(&decoded, &prepared, job.sample_rate, job.bits, &mut events)?;
+            decoded
+        };
         events.media_phase = false;
         let result = encoder::execute(
             encoder::Job {
@@ -377,6 +306,13 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
 fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics::Work) -> Outcome {
     let result = (|| -> Result<(), Failure> {
         validate(&job)?;
+        let pcm_signature = crate::audio::production_pcm_signature(
+            &job.media_library,
+            job.sample_rate,
+            job.bits,
+            job.dither,
+        )
+        .map_err(|error| Failure::new("InvalidData", &error))?;
         fs::create_dir_all(&job.temporary_directory)?;
         fs::create_dir_all(&job.output_directory)?;
         if caller.cancelled() {
@@ -395,6 +331,7 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics:
                 let next = &next;
                 let stop = &stop;
                 let errors = &first_error;
+                let pcm_signature = &pcm_signature;
                 scope.spawn(move || {
                     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), Failure> {
                         while !stop.load(Ordering::Acquire) {
@@ -404,7 +341,7 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics:
                             }
                             let _active = work.enter();
                             let bytes = crate::metrics::file_bytes(&job.tracks[index].source_path);
-                            track(job, index, send.clone(), stop)?;
+                            track(job, index, send.clone(), stop, pcm_signature)?;
                             work.complete(bytes);
                         }
                         Ok(())
@@ -471,8 +408,12 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics:
 
 #[cfg(test)]
 mod tests {
-    use super::{Folder, prepare_wave, reusable_wave, worker_count};
-    use crate::{formats, media::temporary_path, pcm};
+    use super::{Folder, worker_count};
+    use crate::{
+        formats,
+        media::temporary_path,
+        pcm::{self, prepare_wave, reusable_wave},
+    };
     use dvda_native::media::Callbacks;
     use std::{fs, io::Cursor};
 

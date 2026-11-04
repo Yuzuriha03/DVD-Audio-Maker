@@ -10,6 +10,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 const SECTOR: u64 = 2048;
@@ -100,6 +101,7 @@ pub struct Options {
     pub selects: Vec<PathBuf>,
     pub data_directory: Option<PathBuf>,
     pub binary_directory: Option<PathBuf>,
+    pub image_cache: Option<Arc<dvda_image::cache::ImageCache>>,
 }
 
 impl Default for Options {
@@ -147,6 +149,7 @@ impl Default for Options {
             selects: Vec::new(),
             data_directory: None,
             binary_directory: None,
+            image_cache: None,
         }
     }
 }
@@ -841,6 +844,7 @@ fn make_index_background(
     output: &Path,
     options: &Options,
     callbacks: &mut dyn Callbacks,
+    cache: &dvda_image::cache::ImageCache,
 ) -> Result<(), String> {
     let height = options.height();
     use dvda_image::{
@@ -881,14 +885,9 @@ fn make_index_background(
         if let Some(cover) = covers.get(rank * INDEX_CELLS + cell) {
             let size =
                 Dimensions::new(u32::from(thumb), u32::from(thumb)).map_err(|e| e.to_string())?;
-            let cover = codec::decode(std::io::BufReader::new(
-                File::open(cover).map_err(|e| e.to_string())?,
-            ))
-            .map_err(|e| e.to_string())?
-            .resized(size, ResizeMode::Fill)
-            .map_err(|e| e.to_string())?
-            .centered_extent(size, [0, 0, 0, 255])
-            .map_err(|e| e.to_string())?;
+            let cover = cache
+                .resized(cover, size, ResizeMode::Fill, true)
+                .map_err(|e| e.to_string())?;
             image.composite(&cover, i32::from(tx), i32::from(y0));
         }
         if !button.label.is_empty() {
@@ -1078,35 +1077,35 @@ fn make_masks(
     Ok(())
 }
 
-fn prepare_picture(
+fn prepare_picture_cached(
     input: Option<&Path>,
     output: &Path,
     height: u16,
     transparent: bool,
     callbacks: &mut dyn Callbacks,
+    cache: &dvda_image::cache::ImageCache,
 ) -> Result<(), String> {
     use dvda_image::{
         codec,
         geometry::{Dimensions, ResizeMode},
         raster::Raster,
     };
-    use std::io::{BufReader, BufWriter};
+    use std::io::BufWriter;
     let mut created = false;
     let result = (|| -> Result<(), String> {
         check(callbacks)?;
         let size = Dimensions::new(720, u32::from(height)).map_err(|e| e.to_string())?;
         let image = if let Some(input) = input {
-            let image = codec::decode(BufReader::new(
-                File::open(input).map_err(|e| e.to_string())?,
-            ))
-            .map_err(|e| e.to_string())?;
+            let image = cache
+                .resized(input, size, ResizeMode::Exact, false)
+                .map_err(|e| e.to_string())?;
             check(callbacks)?;
             image
-                .resized(size, ResizeMode::Exact)
-                .map_err(|e| e.to_string())?
         } else {
-            Raster::solid(size, [0, 0, 0, if transparent { 0 } else { 255 }])
-                .map_err(|e| e.to_string())?
+            Arc::new(
+                Raster::solid(size, [0, 0, 0, if transparent { 0 } else { 255 }])
+                    .map_err(|e| e.to_string())?,
+            )
         };
         check(callbacks)?;
         let mut writer = BufWriter::new(File::create(output).map_err(|e| e.to_string())?);
@@ -1409,6 +1408,7 @@ pub fn author(
     callbacks: &mut dyn Callbacks,
 ) -> Result<Output, String> {
     check(callbacks)?;
+    let image_cache = options.image_cache.clone().unwrap_or_default();
     let pictures = picture_paths(groups, options)?;
     let picture_count = pictures.iter().flatten().map(Vec::len).sum::<usize>();
     let mut menu_count = 0usize;
@@ -1459,12 +1459,13 @@ pub fn author(
             &format!("[menu] Authoring {} menu page(s)\n", pages.len()),
         );
         let blank = temporary.join("menu-blank.png");
-        prepare_picture(
+        prepare_picture_cached(
             options.blankscreen.as_deref(),
             &blank,
             options.height(),
             true,
             callbacks,
+            &image_cache,
         )?;
         let covers = if let Some(path) = &options.index_covers {
             fs::read_to_string(path)
@@ -1489,7 +1490,15 @@ pub fn author(
                 } else {
                     let picture = temporary.join(format!("menu-background-{rank}.jpg"));
                     if page.index {
-                        make_index_background(page, rank, &covers, &picture, options, callbacks)?;
+                        make_index_background(
+                            page,
+                            rank,
+                            &covers,
+                            &picture,
+                            options,
+                            callbacks,
+                            &image_cache,
+                        )?;
                     } else {
                         let content_rank =
                             if options.backgrounds.len() == pages.len() - options.index_pages {
@@ -1497,12 +1506,13 @@ pub fn author(
                             } else {
                                 rank
                             };
-                        prepare_picture(
+                        prepare_picture_cached(
                             choose(&options.backgrounds, content_rank),
                             &picture,
                             options.height(),
                             false,
                             callbacks,
+                            &image_cache,
                         )?;
                     }
                     let path = temporary.join(format!("menu-background-{rank}.mpg"));
@@ -1626,7 +1636,14 @@ pub fn author(
             for (rank, input) in flat.iter().enumerate() {
                 check(callbacks)?;
                 let picture = temporary.join(format!("still-picture-{rank}.jpg"));
-                prepare_picture(Some(input), &picture, options.height(), false, callbacks)?;
+                prepare_picture_cached(
+                    Some(input),
+                    &picture,
+                    options.height(),
+                    false,
+                    callbacks,
+                    &image_cache,
+                )?;
                 let stream = temporary.join(format!("still-picture-{rank}.mpg"));
                 encode_picture(
                     PicturePaths {

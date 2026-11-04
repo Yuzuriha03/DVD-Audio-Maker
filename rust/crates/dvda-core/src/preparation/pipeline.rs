@@ -31,6 +31,17 @@ pub struct Job {
     pub loss_error_seconds: f64,
     pub loss_warning_seconds: f64,
     pub force_revalidation: bool,
+    #[serde(default)]
+    pub production: Option<Production>,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct Production {
+    pub rate: i32,
+    pub bits: i32,
+    pub dither: bool,
+    pub directory: PathBuf,
+    pub signature: String,
 }
 fn report_language() -> String {
     "zh-CN".into()
@@ -59,7 +70,22 @@ impl Job {
             input: path.into(),
             operation: audio::Operation::Metadata,
             resample_to,
+            decode_output: None,
         }
+    }
+    fn decode_audio(&self, path: &str, resample_to: Option<i32>) -> audio::Job {
+        let mut job = self.audio(path, resample_to);
+        if let Some(production) = &self.production {
+            let output = crate::media::temporary_path(&production.directory.join("decoded.wav"));
+            job.decode_output = Some(audio::DecodeOutput {
+                normalized: output.with_extension("normalized.wav"),
+                output,
+                rate: production.rate,
+                bits: production.bits,
+                dither: production.dither,
+            });
+        }
+        job
     }
 }
 struct Quiet<'a>(&'a mut dyn Callbacks);
@@ -132,7 +158,11 @@ fn repaired_targets_valid(job: &Job, events: &mut dyn Callbacks) -> Result<bool,
     for group in manifest.as_object().into_iter().flat_map(|o| o.values()) {
         for track in group["files"].as_array().into_iter().flatten() {
             if let Some(original) = track["orig_src"].as_str() {
-                repaired.push((original, track["src"].as_str().unwrap_or_default()));
+                repaired.push((
+                    original,
+                    track["src"].as_str().unwrap_or_default(),
+                    track["source_identity"].clone(),
+                ));
             }
         }
     }
@@ -140,13 +170,16 @@ fn repaired_targets_valid(job: &Job, events: &mut dyn Callbacks) -> Result<bool,
         return Ok(true);
     }
     let cache = state::Cache::load(&job.prepare_cache_path, events);
-    for (original, actual) in repaired {
+    for (original, actual, evidence) in repaired {
         alac::check_cancel(events)?;
-        if !cache
+        let cached = cache
             .find(original)
             .and_then(|e| e.validation.repaired_file.as_ref())
-            .is_some_and(|identity| state::matches(actual, identity))
-        {
+            .is_some_and(|identity| state::matches(actual, identity));
+        let manifested = crate::identity::compute(actual)
+            .ok()
+            .is_some_and(|current| crate::identity::equivalent(&evidence, &current));
+        if !cached && !manifested {
             events.emit(1, "[快照] 修复音源已改变，将重新检查。");
             return Ok(false);
         }
@@ -181,6 +214,9 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
 
 fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Failure> {
     alac::check_cancel(events)?;
+    if let Some(production) = &job.production {
+        fs::create_dir_all(&production.directory)?;
+    }
     let start = Instant::now();
     let fingerprint = job.fingerprint()?;
     let evidence_path = job.prepare_cache_path.with_extension("identity.json");
@@ -298,7 +334,7 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                 .get(&track.path)
                 .is_some_and(|entry| state::reusable(entry, track, rules::expected_samples(track)))
         })
-        .map(|track| job.audio(&track.path, track.resample_to))
+        .map(|track| job.decode_audio(&track.path, track.resample_to))
         .collect();
     let duration_by_path: HashMap<_, _> = tracks
         .iter()
@@ -324,6 +360,14 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
         .zip(decoded)
         .map(|(job, result)| (job.input.clone(), result))
         .collect();
+    let mut decode_outputs: HashMap<_, _> = decode_jobs
+        .iter()
+        .filter_map(|job| {
+            job.decode_output
+                .as_ref()
+                .map(|output| (job.input.clone(), output.clone()))
+        })
+        .collect();
     for ((rate, bits), group) in rules::ordered_groups(&tracks) {
         let name = format!("group_{rate}_{bits}");
         let mut files = Vec::with_capacity(group.len());
@@ -343,6 +387,12 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
             let mut detail = None;
             let mut patches = Vec::new();
             let expected = rules::expected_samples(track);
+            let decode_rate = job
+                .production
+                .as_ref()
+                .map_or(track.sample_rate, |production| production.rate);
+            let decode_expected = rules::expected_samples_at(track, decode_rate);
+            let mut prepared_pcm = None;
             if let Some(entry) = cached
                 .get(&track.path)
                 .filter(|entry| state::reusable(entry, track, expected))
@@ -372,7 +422,9 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                     Failure::new("InvalidOperation", "Missing audio decode result")
                 })?;
                 if (check.error_count > 0
-                    || (check.samples.is_some() && expected.is_some() && check.samples != expected))
+                    || (check.samples.is_some()
+                        && decode_expected.is_some()
+                        && check.samples != decode_expected))
                     && let Some(repair) = alac::try_repair(
                         &job.library,
                         &source,
@@ -380,13 +432,14 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                         &mut Quiet(events),
                     )?
                 {
-                    let repaired = audio::check_decode(
-                        &job.audio(&repair.output_path, track.resample_to),
-                        &mut Quiet(events),
-                    )?;
+                    let repaired_job = job.decode_audio(&repair.output_path, track.resample_to);
+                    if let Some(output) = &repaired_job.decode_output {
+                        decode_outputs.insert(repair.output_path.clone(), output.clone());
+                    }
+                    let repaired = audio::check_decode(&repaired_job, &mut Quiet(events))?;
                     if repaired.error_count == 0
                         && repaired.samples.is_some()
-                        && (expected.is_none() || repaired.samples == expected)
+                        && (decode_expected.is_none() || repaired.samples == decode_expected)
                     {
                         original = Some(source);
                         source = repair.output_path;
@@ -410,11 +463,23 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                         let _ = fs::remove_file(&repair.output_path);
                     }
                 }
+                if check.error_count == 0
+                    && check.samples.is_some()
+                    && let Some(output) = decode_outputs.get(&source)
+                {
+                    let path = output.prepared_path();
+                    if path.is_file() {
+                        prepared_pcm = Some(path);
+                    }
+                }
                 if let Some(issue) = rules::evaluate(
                     track,
                     &source,
                     &check,
-                    expected,
+                    rules::DecodeTarget {
+                        samples: decode_expected,
+                        sample_rate: decode_rate,
+                    },
                     patches.len(),
                     job.loss_error_seconds,
                     job.loss_warning_seconds,
@@ -430,7 +495,9 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                         ),
                     );
                     issues.push(issue);
-                } else if let Some(cache) = &mut cache {
+                } else if prepared_pcm.is_none()
+                    && let Some(cache) = &mut cache
+                {
                     state::record(cache, track, &source, expected, check.samples, &patches);
                 }
             }
@@ -441,6 +508,19 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
             } else {
                 track.duration
             };
+            let source_identity = crate::identity::compute(&source).ok();
+            let prepared_pcm_identity = prepared_pcm
+                .as_ref()
+                .and_then(|path| crate::identity::compute(&path.to_string_lossy()).ok());
+            let prepared_pcm_path = prepared_pcm_identity
+                .is_some()
+                .then(|| prepared_pcm.map(|path| path.to_string_lossy().into_owned()))
+                .flatten();
+            let prepared_pcm_signature = prepared_pcm_path.as_ref().and_then(|_| {
+                job.production
+                    .as_ref()
+                    .map(|production| production.signature.clone())
+            });
             files.push(ManifestTrack {
                 n: index + 1,
                 src: source,
@@ -454,6 +534,13 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                 repaired: patches.len(),
                 repair_detail: detail,
                 orig_src: original,
+                source_sample_rate: track.source_sample_rate,
+                source_bits: track.source_bits,
+                channels: track.channels,
+                source_identity,
+                prepared_pcm_path,
+                prepared_pcm_identity,
+                prepared_pcm_signature,
             });
             events.progress(
                 sources.len() as u64 + checked.max(decode_count) as u64,
@@ -661,5 +748,55 @@ mod report_tests {
             assert!(translated.contains("D:/音源/不能改名.flac"));
             assert!(translated.contains("Native decoder unknown diagnostic 1234"));
         }
+    }
+
+    #[test]
+    fn repaired_snapshot_accepts_manifest_identity_without_decode_cache() {
+        struct Silent;
+        impl Callbacks for Silent {
+            fn emit(&mut self, _: i32, _: &str) {}
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+        }
+        let root = std::env::temp_dir().join(format!(
+            "dvda-repaired-evidence-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let original = root.join("original.m4a");
+        let repaired = root.join("repaired.m4a");
+        fs::write(&original, b"original").unwrap();
+        fs::write(&repaired, b"repaired").unwrap();
+        let identity = crate::identity::compute(&repaired.to_string_lossy()).unwrap();
+        state::write_json(
+            &root.join("manifest.json"),
+            &json!({"group":{"files":[{"orig_src":original,"src":repaired,"source_identity":identity}]}}),
+        )
+        .unwrap();
+        let job = Job {
+            language: "zh-CN".into(),
+            library: PathBuf::new(),
+            source_directory: root.to_string_lossy().into_owned(),
+            manifest_path: root.join("manifest.json"),
+            report_path: root.join("report.txt"),
+            prepare_cache_path: root.join("missing-cache.json"),
+            prepare_snapshot_path: root.join("snapshot.json"),
+            alac_fix_directory: root.clone(),
+            mlp_source: "mlp-batch".into(),
+            prepare_cache_enabled: true,
+            loss_error_seconds: 0.05,
+            loss_warning_seconds: 0.005,
+            force_revalidation: false,
+            production: None,
+        };
+        assert!(repaired_targets_valid(&job, &mut Silent).unwrap());
+        fs::write(&repaired, b"changed").unwrap();
+        assert!(!repaired_targets_valid(&job, &mut Silent).unwrap());
+        fs::remove_dir_all(root).unwrap();
     }
 }

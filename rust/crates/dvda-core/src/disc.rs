@@ -40,6 +40,14 @@ pub struct Track {
     pub source_sample_rate: Option<i32>,
     #[serde(default)]
     pub source_bits: Option<i32>,
+    #[serde(default)]
+    pub source_identity: Option<Value>,
+    #[serde(default)]
+    pub prepared_pcm_path: Option<String>,
+    #[serde(default)]
+    pub prepared_pcm_identity: Option<Value>,
+    #[serde(default)]
+    pub prepared_pcm_signature: Option<String>,
     #[serde(default = "default_source")]
     pub mlp_source: String,
     #[serde(default)]

@@ -12,8 +12,12 @@ use serde_json::{Value, json};
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc,
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +92,8 @@ pub struct Job {
     pub keep_temporary: bool,
     #[serde(default)]
     pub keep_intermediate: bool,
+    #[serde(skip)]
+    pub image_cache: Arc<dvda_image::cache::ImageCache>,
 }
 
 struct AuthorCallbacks<'a> {
@@ -97,6 +103,7 @@ struct AuthorCallbacks<'a> {
     oversized: u64,
     coordinate_warnings: u64,
     phase: &'static str,
+    menu_stop: Option<&'a AtomicBool>,
 }
 
 impl Callbacks for AuthorCallbacks<'_> {
@@ -133,7 +140,11 @@ impl Callbacks for AuthorCallbacks<'_> {
     }
 
     fn cancelled(&mut self) -> bool {
-        self.parent.cancelled()
+        let cancelled = self.parent.cancelled();
+        if cancelled && let Some(stop) = self.menu_stop {
+            stop.store(true, Ordering::Release);
+        }
+        cancelled
     }
 
     fn progress(&mut self, completed: u64, total: u64) {
@@ -167,6 +178,60 @@ impl AuthorCallbacks<'_> {
                 self.coordinate_warnings,
                 &disc,
             );
+        }
+    }
+}
+
+struct MenuAssets {
+    result: Result<Vec<String>, String>,
+    diagnostics: Vec<Value>,
+    logs: Vec<(i32, String)>,
+}
+
+struct MenuWorkerCallbacks<'a> {
+    stop: &'a AtomicBool,
+    logs: Vec<(i32, String)>,
+}
+
+impl Callbacks for MenuWorkerCallbacks<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        self.logs.push((stream, text.into()));
+    }
+
+    fn cancelled(&mut self) -> bool {
+        self.stop.load(Ordering::Acquire)
+    }
+}
+
+struct StopMenus<'a>(&'a AtomicBool);
+impl Drop for StopMenus<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+fn receive_menu(
+    receiver: &mpsc::Receiver<MenuAssets>,
+    caller: &mut dyn Callbacks,
+    stop: &AtomicBool,
+) -> Result<MenuAssets, String> {
+    loop {
+        if caller.cancelled() {
+            stop.store(true, Ordering::Release);
+            return Err("Build cancelled".into());
+        }
+        match receiver.recv_timeout(Duration::from_millis(20)) {
+            Ok(assets) => {
+                for (stream, line) in &assets.logs {
+                    caller.emit(*stream, line);
+                }
+                return Ok(assets);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                stop.store(true, Ordering::Release);
+                return Err("Menu asset worker stopped unexpectedly".into());
+            }
         }
     }
 }
@@ -270,7 +335,24 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         return Err("manifest.json contains no tracks".into());
     }
     caller.emit(1, &format!("[build] {} tracks loaded", initial.len()));
-    let mut diagnostics = crate::disk_space::check(&job, &initial, None, caller)?;
+    let tracks_value = serde_json::to_value(&initial).map_err(|error| error.to_string())?;
+    let mut diagnostics = Vec::new();
+    if job.menu_enabled {
+        menu::preflight(&job, &mut diagnostics);
+        if diagnostics.iter().any(is_error) {
+            return Ok(Outcome {
+                succeeded: false,
+                plan: None,
+                tracks: tracks_value.as_array().cloned().unwrap_or_default(),
+                cache_hits: 0,
+                cache_rebuilt: 0,
+                published: Vec::new(),
+                diagnostics,
+                index_path: None,
+            });
+        }
+    }
+    diagnostics.extend(crate::disk_space::check(&job, &initial, None, caller)?);
     let source_root = if job.source_root.is_empty() {
         job.manifest_path
             .parent()
@@ -280,7 +362,6 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     } else {
         job.source_root.clone()
     };
-    let tracks_value = serde_json::to_value(&initial).map_err(|error| error.to_string())?;
     caller.progress(0, 100);
     let acquisition = crate::metrics::measure(
         "acquire",
@@ -359,260 +440,306 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     let mut resume = can_resume.then(|| crate::resume::Store::load(&staging, caller));
     let mut staged = Vec::new();
     caller.progress(65, 100);
-    for (disc_index, disc) in plan.discs.iter().enumerate() {
-        if caller.cancelled() {
-            remove_if_file(&pending_index);
-            return Err("Build cancelled".into());
-        }
-        let tag = format!("disc{}", disc.number);
-        let output = job.output_root.join(&tag);
-        let temporary = job.temporary_root.join(&tag);
-        let iso = job.iso_directory.join(format!("{tag}.iso"));
-        let staged_iso = staging.join(job.iso_name(disc.number));
-        let signature = resume
-            .as_ref()
-            .map(|_| crate::resume::disc_signature(&job, disc))
-            .transpose()?;
-        if let Some(store) = resume.as_ref()
-            && let Some(signature) = signature.as_deref()
-            && store.matches(disc.number, signature, &staged_iso)
-        {
-            caller.emit(
-                1,
-                &format!("[续跑] 复用第 {} 张已完成的光盘。", disc.number),
-            );
-            // Re-emit the exact original author evidence into this formal build
-            // section. Never manufacture track rows from the index or ISO.
-            let audit_log = store.audit_log(disc.number).unwrap();
-            if job.menu_enabled {
-                update_still_expectation(
-                    &pending_index,
-                    disc.number,
-                    crate::verification::still_picture_count(audit_log),
-                )?;
-            }
-            let mut callbacks = AuthorCallbacks {
-                parent: caller,
-                disc: disc.number as u64,
-                total: plan.discs.len() as u64,
-                oversized: 0,
-                coordinate_warnings: 0,
-                phase: "",
-            };
-            for line in audit_log.lines() {
-                callbacks.emit(1, line);
-            }
-            callbacks.finish();
-            staged.push((staged_iso, job.iso_name(disc.number)));
-            caller.progress(65 + ((disc_index + 1) * 30 / plan.discs.len()) as u64, 100);
-            continue;
-        }
-        if let Some(store) = resume.as_mut() {
-            store.discard(disc.number);
-        }
-        if staged_iso.exists() {
-            fs::remove_file(&staged_iso).map_err(|e| e.to_string())?;
-        }
-        let menu_arguments = if job.menu_enabled {
-            match menu::build_assets(&job, disc, caller, &mut diagnostics) {
-                Ok(arguments) => arguments,
-                Err(reason) => {
-                    diagnostics.push(error("MENU_ASSET_FAILED", reason));
-                    break;
-                }
-            }
+    let menu_stop = AtomicBool::new(false);
+    let author_loop = std::thread::scope(|scope| -> Result<(), String> {
+        let _stop_menus = StopMenus(&menu_stop);
+        let job = &job;
+        let schedule_menu = |index: usize| {
+            let disc = &plan.discs[index];
+            let (send, receive) = mpsc::channel();
+            let stop = &menu_stop;
+            let _worker = scope.spawn(move || {
+                let mut callbacks = MenuWorkerCallbacks {
+                    stop,
+                    logs: Vec::new(),
+                };
+                let mut diagnostics = Vec::new();
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    menu::build_assets(job, disc, &mut callbacks, &mut diagnostics)
+                }))
+                .unwrap_or_else(|_| Err("Menu asset worker panicked".into()));
+                let _ = send.send(MenuAssets {
+                    result,
+                    diagnostics,
+                    logs: callbacks.logs,
+                });
+            });
+            receive
+        };
+        let mut next_menu = if job.menu_enabled && !plan.discs.is_empty() {
+            Some(schedule_menu(0))
         } else {
-            Vec::new()
+            None
         };
-        if diagnostics.iter().any(is_error) {
-            break;
-        }
-        reset_directory(&output)?;
-        reset_directory(&temporary)?;
-        remove_file(&iso).map_err(|e| format!("清理文件失败 {}: {e}", iso.display()))?;
-        let args = author::dispatch(
-            "author.build_args",
-            json!({
-                "Disc":disc,
-                "OutputDirectory":output,
-                "TemporaryDirectory":temporary,
-                "TitleMode":job.diagnostic_title_mode,
-                "MenuArguments":if menu_arguments.is_empty() { job.menu_arguments.clone() } else { menu_arguments },
-                "IsoPath":iso,
-                "IsoVolume":format!("{} {}",job.title,disc.number)
-            }),
-        )?;
-        let arguments: Vec<String> =
-            serde_json::from_value(args).map_err(|error| error.to_string())?;
-        caller.emit(1, &format!("[author] disc {}", disc.number));
-        crate::task_log::emit(
-            caller,
-            "author_disc",
-            disc.number as u64,
-            plan.discs.len() as u64,
-            "",
-            "",
-        );
-        let author_command = format!(
-            "+ \"{}\" {}",
-            "Rust author",
-            arguments
-                .iter()
-                .map(|arg| if arg.contains(char::is_whitespace) {
-                    format!("\"{arg}\"")
-                } else {
-                    arg.clone()
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-        );
-        if job.menu_enabled {
-            update_still_expectation(
-                &pending_index,
-                disc.number,
-                crate::verification::still_picture_count(&author_command),
-            )?;
-        }
-        caller.emit(1, &author_command);
-        let arguments_for_menu = arguments.clone();
-        let result = {
-            let mut author_callbacks = AuthorCallbacks {
-                parent: caller,
-                disc: disc.number as u64,
-                total: plan.discs.len() as u64,
-                oversized: 0,
-                coordinate_warnings: 0,
-                phase: "",
-            };
-            let result = crate::metrics::measure(
-                "author_iso",
-                vec![],
-                1,
-                &mut author_callbacks,
-                |work, caller| {
-                    let _active = work.enter();
-                    author_runtime::execute(&arguments, caller)
-                },
-                |result| result.failure.is_none() && result.exit_code == Some(0),
-            );
-            author_callbacks.finish();
-            result
-        };
-        if result.failure.is_some() || result.exit_code != Some(0) {
-            let detail = result
-                .failure
+        for (disc_index, disc) in plan.discs.iter().enumerate() {
+            let current_menu = next_menu.take();
+            if job.menu_enabled && disc_index + 1 < plan.discs.len() {
+                next_menu = Some(schedule_menu(disc_index + 1));
+            }
+            if caller.cancelled() {
+                remove_if_file(&pending_index);
+                return Err("Build cancelled".into());
+            }
+            let tag = format!("disc{}", disc.number);
+            let output = job.output_root.join(&tag);
+            let temporary = job.temporary_root.join(&tag);
+            let iso = job.iso_directory.join(format!("{tag}.iso"));
+            let staged_iso = staging.join(job.iso_name(disc.number));
+            let signature = resume
                 .as_ref()
-                .map(|failure| format!("{}: {}", failure.kind, failure.message))
-                .or_else(|| result.exit_code.map(|code| format!("exit code {code}")))
-                .unwrap_or_else(|| "unknown process failure".into());
-            caller.emit(
-                2,
-                &format!(
-                    "[author] disc {} failed ({detail}){}",
-                    disc.number,
-                    result
-                        .standard_error
-                        .lines()
-                        .rev()
-                        .take(4)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .map(|line| format!("\n{line}"))
-                        .collect::<String>()
-                ),
-            );
-            diagnostics.push(error(
-                "DVDA_AUTHOR_FAILED",
-                format!("author failed for disc {} ({detail})", disc.number),
-            ));
-            break;
-        }
-        if !output.join("AUDIO_TS").is_dir() {
-            diagnostics.push(error(
-                "AUDIO_TS_MISSING",
-                format!("author did not create AUDIO_TS for disc {}", disc.number),
-            ));
-            break;
-        }
-        if !iso.is_file() || fs::metadata(&iso).map_or(0, |m| m.len()) == 0 {
-            diagnostics.push(error(
-                "ISO_WRITER_FAILED",
-                format!("author did not create ISO for disc {}", disc.number),
-            ));
-            break;
-        }
-        if let Err(message) = validate_iso(&iso, job.disc_bytes) {
-            diagnostics.push(error("ISO_VALIDATION_FAILED", message));
-            break;
-        }
-        if job.menu_enabled {
+                .map(|_| crate::resume::disc_signature(job, disc))
+                .transpose()?;
+            if let Some(store) = resume.as_ref()
+                && let Some(signature) = signature.as_deref()
+                && store.matches(disc.number, signature, &staged_iso)
+            {
+                caller.emit(
+                    1,
+                    &format!("[续跑] 复用第 {} 张已完成的光盘。", disc.number),
+                );
+                // Re-emit the exact original author evidence into this formal build
+                // section. Never manufacture track rows from the index or ISO.
+                let audit_log = store.audit_log(disc.number).unwrap();
+                if job.menu_enabled {
+                    update_still_expectation(
+                        &pending_index,
+                        disc.number,
+                        crate::verification::still_picture_count(audit_log),
+                    )?;
+                }
+                let mut callbacks = AuthorCallbacks {
+                    parent: caller,
+                    disc: disc.number as u64,
+                    total: plan.discs.len() as u64,
+                    oversized: 0,
+                    coordinate_warnings: 0,
+                    phase: "",
+                    menu_stop: None,
+                };
+                for line in audit_log.lines() {
+                    callbacks.emit(1, line);
+                }
+                callbacks.finish();
+                staged.push((staged_iso, job.iso_name(disc.number)));
+                caller.progress(65 + ((disc_index + 1) * 30 / plan.discs.len()) as u64, 100);
+                continue;
+            }
+            if let Some(store) = resume.as_mut() {
+                store.discard(disc.number);
+            }
+            if staged_iso.exists() {
+                fs::remove_file(&staged_iso).map_err(|e| e.to_string())?;
+            }
+            let menu_arguments = if let Some(receiver) = current_menu {
+                let assets = receive_menu(&receiver, caller, &menu_stop)?;
+                diagnostics.extend(assets.diagnostics);
+                match assets.result {
+                    Ok(arguments) => arguments,
+                    Err(reason) => {
+                        diagnostics.push(error("MENU_ASSET_FAILED", reason));
+                        break;
+                    }
+                }
+            } else {
+                Vec::new()
+            };
+            if diagnostics.iter().any(is_error) {
+                break;
+            }
+            reset_directory(&output)?;
+            reset_directory(&temporary)?;
+            remove_file(&iso).map_err(|e| format!("清理文件失败 {}: {e}", iso.display()))?;
+            let args = author::dispatch(
+                "author.build_args",
+                json!({
+                    "Disc":disc,
+                    "OutputDirectory":output,
+                    "TemporaryDirectory":temporary,
+                    "TitleMode":job.diagnostic_title_mode,
+                    "MenuArguments":if menu_arguments.is_empty() { job.menu_arguments.clone() } else { menu_arguments },
+                    "IsoPath":iso,
+                    "IsoVolume":format!("{} {}",job.title,disc.number)
+                }),
+            )?;
+            let arguments: Vec<String> =
+                serde_json::from_value(args).map_err(|error| error.to_string())?;
+            caller.emit(1, &format!("[author] disc {}", disc.number));
             crate::task_log::emit(
                 caller,
-                "author_check_menu",
+                "author_disc",
                 disc.number as u64,
                 plan.discs.len() as u64,
                 "",
                 "",
             );
-            if let Err(message) = crate::menu_verify::verify_iso_navigation(&iso) {
-                diagnostics.push(error("ISO_NAVIGATION_INVALID", message));
+            let author_command = format!(
+                "+ \"{}\" {}",
+                "Rust author",
+                arguments
+                    .iter()
+                    .map(|arg| if arg.contains(char::is_whitespace) {
+                        format!("\"{arg}\"")
+                    } else {
+                        arg.clone()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+            if job.menu_enabled {
+                update_still_expectation(
+                    &pending_index,
+                    disc.number,
+                    crate::verification::still_picture_count(&author_command),
+                )?;
+            }
+            caller.emit(1, &author_command);
+            let arguments_for_menu = arguments.clone();
+            let result = {
+                let mut author_callbacks = AuthorCallbacks {
+                    parent: caller,
+                    disc: disc.number as u64,
+                    total: plan.discs.len() as u64,
+                    oversized: 0,
+                    coordinate_warnings: 0,
+                    phase: "",
+                    menu_stop: Some(&menu_stop),
+                };
+                let result = crate::metrics::measure(
+                    "author_iso",
+                    vec![],
+                    1,
+                    &mut author_callbacks,
+                    |work, caller| {
+                        let _active = work.enter();
+                        author_runtime::execute_with_image_cache(
+                            &arguments,
+                            caller,
+                            Arc::clone(&job.image_cache),
+                        )
+                    },
+                    |result| result.failure.is_none() && result.exit_code == Some(0),
+                );
+                author_callbacks.finish();
+                result
+            };
+            if result.failure.is_some() || result.exit_code != Some(0) {
+                let detail = result
+                    .failure
+                    .as_ref()
+                    .map(|failure| format!("{}: {}", failure.kind, failure.message))
+                    .or_else(|| result.exit_code.map(|code| format!("exit code {code}")))
+                    .unwrap_or_else(|| "unknown process failure".into());
+                caller.emit(
+                    2,
+                    &format!(
+                        "[author] disc {} failed ({detail}){}",
+                        disc.number,
+                        result
+                            .standard_error
+                            .lines()
+                            .rev()
+                            .take(4)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .map(|line| format!("\n{line}"))
+                            .collect::<String>()
+                    ),
+                );
+                diagnostics.push(error(
+                    "DVDA_AUTHOR_FAILED",
+                    format!("author failed for disc {} ({detail})", disc.number),
+                ));
                 break;
             }
-            diagnostics.extend(crate::menu_check::verify(
-                &job,
-                disc,
-                &output,
-                &temporary,
-                &arguments_for_menu,
-                caller,
-            )?);
-            if diagnostics.iter().any(is_error) {
+            if !output.join("AUDIO_TS").is_dir() {
+                diagnostics.push(error(
+                    "AUDIO_TS_MISSING",
+                    format!("author did not create AUDIO_TS for disc {}", disc.number),
+                ));
                 break;
             }
+            if !iso.is_file() || fs::metadata(&iso).map_or(0, |m| m.len()) == 0 {
+                diagnostics.push(error(
+                    "ISO_WRITER_FAILED",
+                    format!("author did not create ISO for disc {}", disc.number),
+                ));
+                break;
+            }
+            if let Err(message) = validate_iso(&iso, job.disc_bytes) {
+                diagnostics.push(error("ISO_VALIDATION_FAILED", message));
+                break;
+            }
+            if job.menu_enabled {
+                crate::task_log::emit(
+                    caller,
+                    "author_check_menu",
+                    disc.number as u64,
+                    plan.discs.len() as u64,
+                    "",
+                    "",
+                );
+                if let Err(message) = crate::menu_verify::verify_iso_navigation(&iso) {
+                    diagnostics.push(error("ISO_NAVIGATION_INVALID", message));
+                    break;
+                }
+                diagnostics.extend(crate::menu_check::verify(
+                    job,
+                    disc,
+                    &output,
+                    &temporary,
+                    &arguments_for_menu,
+                    caller,
+                )?);
+                if diagnostics.iter().any(is_error) {
+                    break;
+                }
+            }
+            if caller.cancelled() {
+                return Err("Build cancelled".into());
+            }
+            let operation = if job.keep_intermediate {
+                "publish.copy"
+            } else {
+                "publish.stage"
+            };
+            let staged_result = if job.keep_intermediate {
+                publication::dispatch(operation, json!({"Source":iso,"Destination":staged_iso}))?
+            } else {
+                publication::dispatch(
+                    operation,
+                    json!({"Source":iso,"Directory":staging,"Name":job.iso_name(disc.number)}),
+                )?
+            };
+            if !staged_result["Failure"].is_null() {
+                return Err(staged_result["Failure"].to_string());
+            }
+            let audit_log = format!(
+                "{author_command}\n{}\n{}",
+                result.standard_output, result.standard_error
+            );
+            if let Some(store) = resume.as_mut()
+                && let Some(signature) = signature.as_deref()
+                && let Err(reason) = store.record(disc.number, signature, &staged_iso, &audit_log)
+            {
+                let message = format!("[警告] 续跑记录写入失败: {reason}");
+                caller.emit(2, &message);
+                diagnostics.push(warning("RESUME_WRITE_FAILED", message));
+            }
+            staged.push((staged_iso, job.iso_name(disc.number)));
+            caller.progress(65 + ((disc_index + 1) * 30 / plan.discs.len()) as u64, 100);
+            caller.emit(1, &format!("[build] staged disc {}", disc.number));
+            if !job.keep_temporary {
+                cleanup_directory(&temporary, &mut diagnostics, "TEMP_CLEANUP_FAILED");
+            }
+            if !job.keep_intermediate {
+                cleanup_file(&iso, &mut diagnostics, "ISO_CLEANUP_FAILED");
+                cleanup_directory(&output, &mut diagnostics, "OUTPUT_CLEANUP_FAILED");
+            }
         }
-        if caller.cancelled() {
-            return Err("Build cancelled".into());
-        }
-        let operation = if job.keep_intermediate {
-            "publish.copy"
-        } else {
-            "publish.stage"
-        };
-        let staged_result = if job.keep_intermediate {
-            publication::dispatch(operation, json!({"Source":iso,"Destination":staged_iso}))?
-        } else {
-            publication::dispatch(
-                operation,
-                json!({"Source":iso,"Directory":staging,"Name":job.iso_name(disc.number)}),
-            )?
-        };
-        if !staged_result["Failure"].is_null() {
-            return Err(staged_result["Failure"].to_string());
-        }
-        let audit_log = format!(
-            "{author_command}\n{}\n{}",
-            result.standard_output, result.standard_error
-        );
-        if let Some(store) = resume.as_mut()
-            && let Some(signature) = signature.as_deref()
-            && let Err(reason) = store.record(disc.number, signature, &staged_iso, &audit_log)
-        {
-            let message = format!("[警告] 续跑记录写入失败: {reason}");
-            caller.emit(2, &message);
-            diagnostics.push(warning("RESUME_WRITE_FAILED", message));
-        }
-        staged.push((staged_iso, job.iso_name(disc.number)));
-        caller.progress(65 + ((disc_index + 1) * 30 / plan.discs.len()) as u64, 100);
-        caller.emit(1, &format!("[build] staged disc {}", disc.number));
-        if !job.keep_temporary {
-            cleanup_directory(&temporary, &mut diagnostics, "TEMP_CLEANUP_FAILED");
-        }
-        if !job.keep_intermediate {
-            cleanup_file(&iso, &mut diagnostics, "ISO_CLEANUP_FAILED");
-            cleanup_directory(&output, &mut diagnostics, "OUTPUT_CLEANUP_FAILED");
-        }
-    }
+        Ok(())
+    });
+    author_loop?;
     if diagnostics.iter().any(is_error) || staged.len() != plan.discs.len() {
         remove_if_file(&pending_index);
         return Ok(Outcome {
@@ -1061,6 +1188,7 @@ mod tests {
                 oversized: 0,
                 coordinate_warnings: 0,
                 phase: "",
+                menu_stop: None,
             };
             callbacks.emit(
                 2,

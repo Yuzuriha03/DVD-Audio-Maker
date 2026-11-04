@@ -8,6 +8,7 @@ use serde_json::{Map, Value, json};
 use std::{
     env,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 #[derive(Clone, Debug)]
@@ -407,6 +408,7 @@ impl AppOptions {
             dry_run,
             keep_temporary: self.boolean("KeepTemporary"),
             keep_intermediate: self.boolean("KeepIntermediate"),
+            image_cache: Arc::new(dvda_image::cache::ImageCache::default()),
         })
     }
     pub fn prepare_job(
@@ -427,6 +429,7 @@ impl AppOptions {
             loss_error_seconds: f64::from_bits(self.integer("LossErrorSeconds") as u64),
             loss_warning_seconds: f64::from_bits(self.integer("LossWarningSeconds") as u64),
             force_revalidation,
+            production: None,
         })
     }
 
@@ -453,6 +456,7 @@ pub fn run_prepare(
     force_revalidation: bool,
     callbacks: &mut dyn Callbacks,
 ) -> preparation::pipeline::Outcome {
+    let _identity_scope = crate::signature::TaskIdentityScope::new();
     let options = match options.task_options() {
         Ok(options) => options,
         Err(error) => {
@@ -478,6 +482,7 @@ pub fn run_build(
     dry_run: bool,
     callbacks: &mut dyn Callbacks,
 ) -> Result<build::Outcome, String> {
+    let _identity_scope = crate::signature::TaskIdentityScope::new();
     let standalone = options.workspace.is_none();
     let options = options.task_options()?;
     let log = if dry_run {
@@ -497,7 +502,21 @@ pub fn run_build(
                 .as_secs()
         ),
     );
-    preparation::pipeline::ensure_ready(&options.prepare_job(false)?, &mut callbacks)
+    let mut preparation = options.prepare_job(false)?;
+    if !dry_run && matches!(options.text("MlpSource").as_str(), "mlp-batch" | "lpcm") {
+        let rate = options.integer("MlpSampleRate") as i32;
+        let bits = options.integer("MlpBits") as i32;
+        let dither = options.boolean("Dither16");
+        let media = options.media_library()?;
+        preparation.production = Some(preparation::pipeline::Production {
+            rate,
+            bits,
+            dither,
+            directory: options.path("BuildDirectory").join("production-pcm"),
+            signature: crate::audio::production_pcm_signature(&media, rate, bits, dither)?,
+        });
+    }
+    preparation::pipeline::ensure_ready(&preparation, &mut callbacks)
         .map_err(|failure| failure.message)?;
     let mut result = build::execute(options.build_job(dry_run)?, &mut callbacks);
     if standalone && result.succeeded && !dry_run {
@@ -524,6 +543,7 @@ pub fn run_verify_mode(
     iso: Option<PathBuf>,
     callbacks: &mut dyn Callbacks,
 ) -> Result<verify::Outcome, String> {
+    let _identity_scope = crate::signature::TaskIdentityScope::new();
     if options.workspace.is_some() {
         return Ok(verify::execute_mode(
             options.verify_job()?,

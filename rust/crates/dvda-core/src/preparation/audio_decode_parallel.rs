@@ -234,6 +234,7 @@ mod tests {
                 input: index.to_string(),
                 operation: audio::Operation::Metadata,
                 resample_to: None,
+                decode_output: None,
             })
             .collect()
     }

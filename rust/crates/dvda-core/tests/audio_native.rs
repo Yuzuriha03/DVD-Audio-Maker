@@ -83,6 +83,7 @@ fn job(path: &Path) -> audio::Job {
         input: path.to_str().unwrap().into(),
         operation: audio::Operation::Metadata,
         resample_to: None,
+        decode_output: None,
     }
 }
 fn digest(bytes: &[u8]) -> String {

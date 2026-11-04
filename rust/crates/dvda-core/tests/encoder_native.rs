@@ -422,6 +422,8 @@ fn batch_job(root: &Path, cases: &[Case]) -> dvda_core::batch::Job {
                     work_name: format!("track{index}"),
                     display_name: format!("音轨 日本語 🎵 {index}"),
                     duration_seconds: case.frames as f64 / f64::from(case.rate),
+                    source_identity: serde_json::Value::Null,
+                    source_evidence: serde_json::Value::Null,
                 }
             })
             .collect(),
@@ -709,6 +711,8 @@ fn synthetic_batch_worker_benchmark() {
                     work_name: format!("track{index}"),
                     display_name: format!("synthetic {bits}-bit {}ch {index}", case.channels),
                     duration_seconds: case.frames as f64 / f64::from(case.rate),
+                    source_identity: serde_json::Value::Null,
+                    source_evidence: serde_json::Value::Null,
                 }
             })
             .collect();
@@ -733,6 +737,8 @@ fn synthetic_batch_worker_benchmark() {
                             work_name: track.work_name.clone(),
                             display_name: track.display_name.clone(),
                             duration_seconds: track.duration_seconds,
+                            source_identity: serde_json::Value::Null,
+                            source_evidence: serde_json::Value::Null,
                         })
                         .collect(),
                 };

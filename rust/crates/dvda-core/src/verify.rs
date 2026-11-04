@@ -198,6 +198,7 @@ fn run(
         ));
         index = None;
     }
+    let metadata = formats::IsoMetadataCache::default();
     let tracks = index.as_ref().map_or(0, index_track_count);
     if matches!(mode, Mode::All | Mode::Capacity) {
         capacity(
@@ -205,6 +206,7 @@ fn run(
             &isos,
             index.as_ref().map_or(1, |_| tracks),
             &mut diagnostics,
+            &metadata,
         );
     } else if isos.is_empty() {
         diagnostics.push(error("NO_ISO", "No published ISO images were found"));
@@ -232,6 +234,7 @@ fn run(
                 &mut progress,
                 true,
                 true,
+                &metadata,
             )?
         };
         caller.progress(35, 100);
@@ -252,82 +255,43 @@ fn run(
         }
         actual_tracks = evidence.iter().map(|disc| disc.track_count() as i32).sum();
     }
-    if mode == Mode::All || (mode == Mode::Menu && (index.is_some() || selected)) {
-        let mut progress = dvda_native::media::ProgressScope::new(caller, 35, 40);
-        for (iso_index, iso) in isos.iter().enumerate() {
-            check_cancel(&mut progress)?;
-            crate::task_log::emit(
-                &mut progress,
-                "verify_menu_disc",
-                (iso_index + 1) as u64,
-                isos.len() as u64,
-                iso.file_name()
-                    .unwrap_or_default()
-                    .to_str()
-                    .unwrap_or_default(),
-                &iso.to_string_lossy(),
-            );
-            let expected = index
-                .as_ref()
-                .and_then(|index| index["__discs__"].as_array())
-                .and_then(|discs| {
-                    discs.iter().find(|disc| {
-                        iso.file_name().is_some_and(|name| {
-                            name.to_string_lossy()
-                                .eq_ignore_ascii_case(&text(disc, "iso"))
-                        })
-                    })
-                })
-                .map(|disc| &disc["menu"])
-                .filter(|value| !value.is_null());
-            let has_menu = match formats::iso_list_directory(iso, "AUDIO_TS") {
-                Ok(entries) => entries
-                    .iter()
-                    .any(|entry| entry.name.eq_ignore_ascii_case("AUDIO_TS.VOB")),
-                Err(reason) => {
-                    diagnostics.push(error("ISO_READ_FAILED", reason));
-                    continue;
-                }
-            };
-            if expected.is_some() || has_menu || mode == Mode::Menu {
-                let mut pages = dvda_native::media::ProgressScope::new(
-                    &mut progress,
-                    (iso_index * 100 / isos.len()) as u64,
-                    ((iso_index + 1) * 100 / isos.len()) as u64,
-                );
-                match crate::menu_verify::verify(iso, expected, &job, &mut pages) {
-                    Ok(issues) => diagnostics.extend(issues),
-                    Err(reason) => {
-                        let code = reason.split(':').next().unwrap_or_default();
-                        let code = if code.starts_with("ASVS_")
-                            || code.starts_with("AMG_")
-                            || code.starts_with("ISO_")
-                            || code.starts_with("UDF_")
-                            || code == "MENU_FILE_MISSING"
-                        {
-                            code
-                        } else {
-                            "MENU_VERIFICATION_FAILED"
-                        };
-                        diagnostics.push(error(code, reason.clone()));
-                    }
-                }
-            }
-            progress.progress((iso_index + 1) as u64, isos.len() as u64);
+    if mode == Mode::All {
+        if let Some(index) = index.as_ref() {
+            let (menu, lossless) =
+                verify_menu_and_lossless(&job, &isos, index, source_reference, &metadata, caller)?;
+            diagnostics.extend(menu);
+            diagnostics.extend(lossless);
+        } else {
+            diagnostics.extend(verify_menus(
+                &job, &isos, None, mode, selected, &metadata, caller,
+            )?);
         }
-    }
-    if matches!(mode, Mode::All | Mode::Lossless)
-        && let Some(index) = index.as_ref()
-        && let Err(reason) = lossless(
-            &job,
-            &isos,
-            index,
-            source_reference,
-            &mut diagnostics,
-            caller,
-        )
-    {
-        diagnostics.push(error("LOSSLESS_FAILED", reason));
+    } else {
+        if mode == Mode::Menu && (index.is_some() || selected) {
+            diagnostics.extend(verify_menus(
+                &job,
+                &isos,
+                index.as_ref(),
+                mode,
+                selected,
+                &metadata,
+                caller,
+            )?);
+        }
+        if mode == Mode::Lossless
+            && let Some(index) = index.as_ref()
+            && let Err(reason) = lossless(
+                &job,
+                &isos,
+                index,
+                source_reference,
+                &mut diagnostics,
+                caller,
+                &metadata,
+            )
+        {
+            diagnostics.push(error("LOSSLESS_FAILED", reason));
+        }
     }
     let succeeded = !diagnostics.iter().any(is_error);
     caller.emit(
@@ -347,6 +311,187 @@ fn run(
         diagnostics,
         iso_count: isos.len() as i32,
         track_count: actual_tracks,
+    })
+}
+
+fn verify_menus(
+    job: &Job,
+    isos: &[PathBuf],
+    index: Option<&Value>,
+    mode: Mode,
+    _selected: bool,
+    metadata: &formats::IsoMetadataCache,
+    caller: &mut dyn Callbacks,
+) -> Result<Vec<Value>, String> {
+    let mut diagnostics = Vec::new();
+    let mut progress = dvda_native::media::ProgressScope::new(caller, 35, 40);
+    for (iso_index, iso) in isos.iter().enumerate() {
+        check_cancel(&mut progress)?;
+        crate::task_log::emit(
+            &mut progress,
+            "verify_menu_disc",
+            (iso_index + 1) as u64,
+            isos.len() as u64,
+            iso.file_name()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or_default(),
+            &iso.to_string_lossy(),
+        );
+        let expected = index
+            .and_then(|index| index["__discs__"].as_array())
+            .and_then(|discs| {
+                discs.iter().find(|disc| {
+                    iso.file_name().is_some_and(|name| {
+                        name.to_string_lossy()
+                            .eq_ignore_ascii_case(&text(disc, "iso"))
+                    })
+                })
+            })
+            .map(|disc| &disc["menu"])
+            .filter(|value| !value.is_null());
+        let has_menu = match metadata.list_directory(iso, "AUDIO_TS") {
+            Ok(entries) => entries
+                .iter()
+                .any(|entry| entry.name.eq_ignore_ascii_case("AUDIO_TS.VOB")),
+            Err(reason) => {
+                diagnostics.push(error("ISO_READ_FAILED", reason));
+                continue;
+            }
+        };
+        if expected.is_some() || has_menu || mode == Mode::Menu {
+            let mut pages = dvda_native::media::ProgressScope::new(
+                &mut progress,
+                (iso_index * 100 / isos.len()) as u64,
+                ((iso_index + 1) * 100 / isos.len()) as u64,
+            );
+            match crate::menu_verify::verify_with_cache(iso, expected, job, metadata, &mut pages) {
+                Ok(issues) => diagnostics.extend(issues),
+                Err(reason) => {
+                    let code = reason.split(':').next().unwrap_or_default();
+                    let code = if code.starts_with("ASVS_")
+                        || code.starts_with("AMG_")
+                        || code.starts_with("ISO_")
+                        || code.starts_with("UDF_")
+                        || code == "MENU_FILE_MISSING"
+                    {
+                        code
+                    } else {
+                        "MENU_VERIFICATION_FAILED"
+                    };
+                    diagnostics.push(error(code, reason.clone()));
+                }
+            }
+        }
+        progress.progress((iso_index + 1) as u64, isos.len() as u64);
+    }
+    Ok(diagnostics)
+}
+
+struct MenuVerificationCallbacks<'a> {
+    stop: &'a AtomicBool,
+    logs: Vec<(i32, String)>,
+}
+
+impl Callbacks for MenuVerificationCallbacks<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        self.logs.push((stream, text.into()));
+    }
+
+    fn cancelled(&mut self) -> bool {
+        self.stop.load(Ordering::Acquire)
+    }
+}
+
+struct LosslessCancellation<'a> {
+    parent: &'a mut dyn Callbacks,
+    stop: &'a AtomicBool,
+}
+
+impl Callbacks for LosslessCancellation<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        self.parent.emit(stream, text);
+    }
+
+    fn cancelled(&mut self) -> bool {
+        let cancelled = self.parent.cancelled();
+        if cancelled {
+            self.stop.store(true, Ordering::Release);
+        }
+        cancelled
+    }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        self.parent.progress(completed, total);
+    }
+}
+
+fn verify_menu_and_lossless(
+    job: &Job,
+    isos: &[PathBuf],
+    index: &Value,
+    source_reference: bool,
+    metadata: &formats::IsoMetadataCache,
+    caller: &mut dyn Callbacks,
+) -> Result<(Vec<Value>, Vec<Value>), String> {
+    let stop = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let (send, receive) = mpsc::channel();
+        let menu_stop = &stop;
+        let worker = scope.spawn(move || {
+            let mut callbacks = MenuVerificationCallbacks {
+                stop: menu_stop,
+                logs: Vec::new(),
+            };
+            let result = verify_menus(
+                job,
+                isos,
+                Some(index),
+                Mode::All,
+                false,
+                metadata,
+                &mut callbacks,
+            );
+            let _ = send.send((result, callbacks.logs));
+        });
+        let mut lossless_diagnostics = Vec::new();
+        {
+            let mut cancellation = LosslessCancellation {
+                parent: caller,
+                stop: &stop,
+            };
+            if let Err(reason) = lossless(
+                job,
+                isos,
+                index,
+                source_reference,
+                &mut lossless_diagnostics,
+                &mut cancellation,
+                metadata,
+            ) {
+                lossless_diagnostics.push(error("LOSSLESS_FAILED", reason));
+            }
+        }
+        let (menu_result, logs) = loop {
+            if caller.cancelled() {
+                stop.store(true, Ordering::Release);
+            }
+            match receive.recv_timeout(Duration::from_millis(20)) {
+                Ok(result) => break result,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    stop.store(true, Ordering::Release);
+                    return Err("Menu verification worker stopped unexpectedly".into());
+                }
+            }
+        };
+        for (stream, line) in logs {
+            caller.emit(stream, &line);
+        }
+        worker
+            .join()
+            .map_err(|_| "Menu verification worker panicked".to_string())?;
+        Ok((menu_result?, lossless_diagnostics))
     })
 }
 
@@ -520,25 +665,31 @@ fn iso_number(path: &Path) -> Option<i32> {
         .ok()
 }
 
-fn capacity(job: &Job, isos: &[PathBuf], expected_tracks: i32, diagnostics: &mut Vec<Value>) {
+fn capacity(
+    job: &Job,
+    isos: &[PathBuf],
+    expected_tracks: i32,
+    diagnostics: &mut Vec<Value>,
+    metadata: &formats::IsoMetadataCache,
+) {
     if isos.is_empty() {
         diagnostics.push(error("NO_ISO", "No published ISO images were found"));
         return;
     }
     for iso in isos {
         match fs::metadata(iso) {
-            Ok(metadata) => {
-                if job.disc_bytes > 0 && metadata.len() > job.disc_bytes as u64 {
+            Ok(file_metadata) => {
+                if job.disc_bytes > 0 && file_metadata.len() > job.disc_bytes as u64 {
                     diagnostics.push(error(
                         "ISO_CAPACITY_EXCEEDED",
                         format!(
                             "{} is {} bytes, above the configured disc capacity",
                             iso.display(),
-                            metadata.len()
+                            file_metadata.len()
                         ),
                     ));
                 }
-                match formats::iso_list_directory(iso, "") {
+                match metadata.list_directory(iso, "") {
                     Ok(entries)
                         if !entries.iter().any(|entry| {
                             entry.is_directory && entry.name.eq_ignore_ascii_case("AUDIO_TS")
@@ -564,7 +715,7 @@ fn capacity(job: &Job, isos: &[PathBuf], expected_tracks: i32, diagnostics: &mut
                         Err(reason) => diagnostics.push(error("ISO_READ_FAILED", reason)),
                     }
                 }
-                match formats::iso_list_directory(iso, "AUDIO_TS") {
+                match metadata.list_directory(iso, "AUDIO_TS") {
                     Ok(entries) => {
                         let aob = entries.iter().filter(|entry| is_aob(&entry.name)).count();
                         let ifo = entries.iter().filter(|entry| is_ifo(&entry.name)).count();
@@ -619,7 +770,16 @@ pub fn inspect(job: Inspection, caller: &mut dyn Callbacks) -> Outcome {
         if isos.is_empty() {
             diagnostics.push(error("NO_ISO", "No published ISO images were found"));
         }
-        let evidence = timeline(&isos, None, &mut diagnostics, caller, job.audit, false)?;
+        let metadata = formats::IsoMetadataCache::default();
+        let evidence = timeline(
+            &isos,
+            None,
+            &mut diagnostics,
+            caller,
+            job.audit,
+            false,
+            &metadata,
+        )?;
         diagnostics.extend(verification::manifest_issues(
             job.manifest_path.as_deref(),
             &evidence,
@@ -660,8 +820,9 @@ fn timeline(
     caller: &mut dyn Callbacks,
     audit: bool,
     statistics: bool,
+    metadata: &formats::IsoMetadataCache,
 ) -> Result<Vec<DiscEvidence>, String> {
-    let total_chunks = aob_chunk_total(isos);
+    let total_chunks = aob_chunk_total(isos, metadata);
     let mut completed_chunks = 0u64;
     let discs = index.and_then(|value| value["__discs__"].as_array());
     let mut observations = Vec::new();
@@ -687,7 +848,7 @@ fn timeline(
             ));
         }
         let groups = disc.and_then(|disc| disc["groups"].as_array());
-        let entries = match formats::iso_list_directory(iso, "AUDIO_TS") {
+        let entries = match metadata.list_directory(iso, "AUDIO_TS") {
             Ok(entries) => entries,
             Err(reason) => {
                 diagnostics.push(error("ISO_READ_FAILED", reason));
@@ -1006,6 +1167,7 @@ fn lossless(
     source_reference: bool,
     diagnostics: &mut Vec<Value>,
     caller: &mut dyn Callbacks,
+    metadata: &formats::IsoMetadataCache,
 ) -> Result<(), String> {
     let before = diagnostics.len();
     crate::metrics::measure(
@@ -1021,13 +1183,18 @@ fn lossless(
                 source_reference,
                 diagnostics,
                 caller,
-                work,
+                LosslessMeasurement { work, metadata },
             );
             (result, diagnostics.len() == before)
         },
         |(result, clean)| result.is_ok() && *clean,
     )
     .0
+}
+
+struct LosslessMeasurement<'a> {
+    work: &'a crate::metrics::Work,
+    metadata: &'a formats::IsoMetadataCache,
 }
 
 fn lossless_measured(
@@ -1037,11 +1204,11 @@ fn lossless_measured(
     source_reference: bool,
     diagnostics: &mut Vec<Value>,
     caller: &mut dyn Callbacks,
-    work: &crate::metrics::Work,
+    measurement: LosslessMeasurement<'_>,
 ) -> Result<(), String> {
     let verifier = NativeDiscVerifier::load()?;
     let mut pcm_tracks = Vec::new();
-    let total_chunks = aob_chunk_total(isos);
+    let total_chunks = aob_chunk_total(isos, measurement.metadata);
     let mut completed_chunks = 0u64;
     let discs = index
         .get("__discs__")
@@ -1086,7 +1253,7 @@ fn lossless_measured(
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
-            let names = aob_names(iso, number)?;
+            let names = aob_names(iso, number, measurement.metadata)?;
             let all_lpcm = tracks
                 .iter()
                 .all(|track| text(track, "mlp_source") == "lpcm");
@@ -1129,7 +1296,7 @@ fn lossless_measured(
             let reader = chunks(iso, &names).map(|chunk| {
                 check_cancel(&mut group_progress)?;
                 if let Ok(data) = &chunk {
-                    work.read_stream(data.len());
+                    measurement.work.read_stream(data.len());
                 }
                 completed_chunks = completed_chunks.saturating_add(1);
                 group_progress.progress(completed_chunks, total_chunks);
@@ -1175,10 +1342,10 @@ fn lossless_measured(
     verify_tracks_parallel(job, pcm_tracks, diagnostics, &mut track_progress)
 }
 
-fn aob_chunk_total(isos: &[PathBuf]) -> u64 {
+fn aob_chunk_total(isos: &[PathBuf], metadata: &formats::IsoMetadataCache) -> u64 {
     let mut total = 0u64;
     for iso in isos {
-        let Ok(entries) = formats::iso_list_directory(iso, "AUDIO_TS") else {
+        let Ok(entries) = metadata.list_directory(iso, "AUDIO_TS") else {
             continue;
         };
         total = total.saturating_add(
@@ -1381,8 +1548,12 @@ fn track_display_name(track: &Value) -> String {
     }
 }
 
-fn aob_names(iso: &Path, group: i64) -> Result<Vec<String>, String> {
-    let entries = formats::iso_list_directory(iso, "AUDIO_TS")?;
+fn aob_names(
+    iso: &Path,
+    group: i64,
+    metadata: &formats::IsoMetadataCache,
+) -> Result<Vec<String>, String> {
+    let entries = metadata.list_directory(iso, "AUDIO_TS")?;
     let mut names = entries
         .into_iter()
         .filter_map(|entry| {

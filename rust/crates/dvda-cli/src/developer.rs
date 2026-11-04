@@ -737,6 +737,7 @@ fn decode_ok(library: &Path, path: &Path, events: &mut dyn Callbacks) -> Result<
             input: path.to_string_lossy().into_owned(),
             operation: audio::Operation::Decode,
             resample_to: None,
+            decode_output: None,
         },
         events,
     )

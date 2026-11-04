@@ -94,10 +94,11 @@ pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
     {
         return -1;
     }
-    let mut work = samples[..count * channels].to_vec();
-    let mut bits = vec![0u8; count];
+    let mut work = [0i32; 960];
+    work[..count * channels].copy_from_slice(&samples[..count * channels]);
+    let mut bits = [0u8; 160];
     if let Some(input) = bypass.as_ref() {
-        bits.copy_from_slice(&input[..count]);
+        bits[..count].copy_from_slice(&input[..count]);
     }
     let mut remaining = bypass_count;
     let mut overflow = 0;
@@ -105,16 +106,23 @@ pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
         let p = &matrix[if inverse { matrix.len() - 1 - i } else { i }];
         let target = p.target as usize;
         let step = f64::from(1u32 << qss[target]);
-        for (n, (frame, bits)) in work.chunks_exact_mut(channels).zip(&mut bits).enumerate() {
+        let coefficients = p
+            .coefficient
+            .map(|coefficient| f64::from(coefficient) / 16384.0);
+        for (n, (frame, bits)) in work[..count * channels]
+            .chunks_exact_mut(channels)
+            .zip(&mut bits[..count])
+            .enumerate()
+        {
             let mut sum = 0.0;
-            for (&sample, &coefficient) in frame.iter().zip(&p.coefficient) {
-                sum += f64::from(sample) * (f64::from(coefficient) / 16384.0);
+            for (&sample, &coefficient) in frame.iter().zip(&coefficients) {
+                sum += f64::from(sample) * coefficient;
             }
             if let Some(extra) = extra0 {
-                sum += f64::from(extra[n]) * (f64::from(p.coefficient[channels]) / 16384.0);
+                sum += f64::from(extra[n]) * coefficients[channels];
             }
             if let Some(extra) = extra1 {
-                sum += f64::from(extra[n]) * (f64::from(p.coefficient[channels + 1]) / 16384.0);
+                sum += f64::from(extra[n]) * coefficients[channels + 1];
             }
             let mut value;
             if p.bypass != 0 {
@@ -152,13 +160,13 @@ pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
         }
     }
     if !inverse && bypass_count != 0 {
-        for bit in &mut bits {
+        for bit in &mut bits[..count] {
             *bit >>= 8 - bypass_count;
         }
     }
-    samples[..count * channels].copy_from_slice(&work);
+    samples[..count * channels].copy_from_slice(&work[..count * channels]);
     if let Some(output) = bypass.as_mut() {
-        output[..count].copy_from_slice(&bits);
+        output[..count].copy_from_slice(&bits[..count]);
     }
     overflow
 }

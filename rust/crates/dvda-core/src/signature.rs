@@ -3,9 +3,76 @@ use crate::{hash, identity};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
+    cell::RefCell,
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
+
+#[derive(Default)]
+struct TaskIdentityState {
+    depth: usize,
+    files: HashMap<PathBuf, (Value, String)>,
+}
+
+thread_local! {
+    static TASK_IDENTITIES: RefCell<TaskIdentityState> = RefCell::new(TaskIdentityState::default());
+}
+
+pub struct TaskIdentityScope;
+impl TaskIdentityScope {
+    pub fn new() -> Self {
+        TASK_IDENTITIES.with(|state| state.borrow_mut().depth += 1);
+        Self
+    }
+}
+impl Default for TaskIdentityScope {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Drop for TaskIdentityScope {
+    fn drop(&mut self) {
+        TASK_IDENTITIES.with(|state| {
+            let mut state = state.borrow_mut();
+            state.depth -= 1;
+            if state.depth == 0 {
+                state.files.clear();
+            }
+        });
+    }
+}
+
+fn task_file_hash(path: &Path) -> Result<String, String> {
+    let read = || {
+        identity::open_read(&path.to_string_lossy())
+            .and_then(hash::reader_digest)
+            .map_err(|error| format!("{}: {error}", path.display()))
+    };
+    let active = TASK_IDENTITIES.with(|state| state.borrow().depth > 0);
+    if !active {
+        return read();
+    }
+    let key = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let current = identity::compute(&path.to_string_lossy())
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    if let Some(hash) = TASK_IDENTITIES.with(|state| {
+        let state = state.borrow();
+        state.files.get(&key).and_then(|(identity, hash)| {
+            identity::equivalent(identity, &current).then(|| hash.clone())
+        })
+    }) {
+        return Ok(hash);
+    }
+    let hash = read()?;
+    TASK_IDENTITIES.with(|state| {
+        let mut state = state.borrow_mut();
+        if state.depth > 0 {
+            state.files.insert(key, (current, hash.clone()));
+        }
+    });
+    Ok(hash)
+}
 
 /// Cache identity includes the code that converts PCM, its native dependencies,
 /// the codec, and the exact optional metadata context. Full hashes also detect
@@ -16,11 +83,7 @@ pub fn encoding_identity(
     encoder: Option<&Path>,
     metadata_context: &str,
 ) -> Result<String, String> {
-    let file_hash = |path: &Path| {
-        identity::open_read(&path.to_string_lossy())
-            .and_then(hash::reader_digest)
-            .map_err(|error| format!("{}: {error}", path.display()))
-    };
+    let file_hash = task_file_hash;
     let mut components = std::collections::BTreeMap::new();
     components.insert("media".to_owned(), file_hash(media)?);
     #[cfg(feature = "direct-bridges")]
@@ -416,6 +479,7 @@ mod tests {
                 .as_nanos()
         ));
         fs::create_dir_all(&root).unwrap();
+        let _scope = TaskIdentityScope::new();
         let media = root.join("media.dll");
         let encoder = root.join("encoder.bin");
         let context = root.join("context.bin");

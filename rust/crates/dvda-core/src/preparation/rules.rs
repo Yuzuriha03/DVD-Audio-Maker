@@ -92,14 +92,21 @@ pub fn validate_channels(tracks: &[Metadata], source: &str, lpcm: bool) -> Vec<I
     issues
 }
 pub fn expected_samples(track: &Metadata) -> Option<i64> {
+    expected_samples_at(track, track.sample_rate)
+}
+pub fn expected_samples_at(track: &Metadata, sample_rate: i32) -> Option<i64> {
     (track.duration > 0.0)
-        .then(|| (track.duration * f64::from(track.sample_rate)).round_ties_even() as i64)
+        .then(|| (track.duration * f64::from(sample_rate)).round_ties_even() as i64)
+}
+pub struct DecodeTarget {
+    pub samples: Option<i64>,
+    pub sample_rate: i32,
 }
 pub fn evaluate(
     track: &Metadata,
     path: &str,
     check: &DecodeResult,
-    expected: Option<i64>,
+    target: DecodeTarget,
     repaired: usize,
     error_seconds: f64,
     warning_seconds: f64,
@@ -118,8 +125,8 @@ pub fn evaluate(
         detail.extend(check.error_lines.iter().cloned());
     }
     if let Some(samples) = check.samples {
-        let loss = expected.map(|value| {
-            value.wrapping_sub(samples) as f64 / f64::from(track.sample_rate) * 1000.0
+        let loss = target.samples.map(|value| {
+            value.wrapping_sub(samples) as f64 / f64::from(target.sample_rate) * 1000.0
         });
         let direction = if loss.is_some_and(|v| v > 0.0) {
             "少"
@@ -129,7 +136,7 @@ pub fn evaluate(
         detail.push(format!(
             "源声明 {:.3} 秒 -> 期望 {} 采样 / 实解 {samples} 采样 / {}",
             track.duration,
-            expected.map_or_else(|| "?".into(), |v| v.to_string()),
+            target.samples.map_or_else(|| "?".into(), |v| v.to_string()),
             loss.map_or_else(|| "?".into(), |v| format!("{direction} {:.0} ms", v.abs()))
         ));
         if let Some(loss) = loss {

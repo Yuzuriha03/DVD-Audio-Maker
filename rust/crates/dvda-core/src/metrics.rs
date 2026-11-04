@@ -13,7 +13,15 @@ use std::{
 
 pub const PREFIX: &str = "[METRIC] ";
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
+const MAX_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
 const SCAN_LIMIT: usize = 16_384;
+
+fn next_sample_interval(current: Duration) -> Duration {
+    current
+        .checked_mul(2)
+        .unwrap_or(MAX_SAMPLE_INTERVAL)
+        .min(MAX_SAMPLE_INTERVAL)
+}
 
 #[derive(Default)]
 struct Counters {
@@ -157,6 +165,7 @@ impl Sampler {
             .name("workflow-metrics".into())
             .spawn(move || {
                 let mut space = Space::default();
+                let mut interval = SAMPLE_INTERVAL;
                 loop {
                     sample(&paths, &mut space);
                     let (lock, wake) = &*signal;
@@ -167,11 +176,12 @@ impl Sampler {
                         break;
                     }
                     let (stopped, _) = wake
-                        .wait_timeout_while(stopped, SAMPLE_INTERVAL, |stop| !*stop)
+                        .wait_timeout_while(stopped, interval, |stop| !*stop)
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if *stopped {
                         break;
                     }
+                    interval = next_sample_interval(interval);
                 }
                 sample(&paths, &mut space);
                 space
@@ -308,6 +318,16 @@ mod tests {
         assert_eq!(event["stream_bytes_read"], 42);
         assert_eq!(event["active_workers_peak"], 1);
         assert!(event["temporary_space"].is_null());
+    }
+    #[test]
+    fn sampling_interval_backs_off_without_exceeding_five_seconds() {
+        let mut interval = SAMPLE_INTERVAL;
+        let mut observed = Vec::new();
+        for _ in 0..5 {
+            interval = next_sample_interval(interval);
+            observed.push(interval.as_secs());
+        }
+        assert_eq!(observed, [2, 4, 5, 5, 5]);
     }
     #[test]
     fn space_samples_include_existing_files_and_handle_deleted_roots() {

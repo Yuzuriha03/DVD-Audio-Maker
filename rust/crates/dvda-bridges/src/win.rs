@@ -112,6 +112,45 @@ pub unsafe fn wtext(p: *const u16) -> Vec<u16> {
         std::slice::from_raw_parts(p, n).to_vec()
     }
 }
+static ACTIVE_MEDIA_JOBS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub(crate) struct MediaJobGuard;
+impl Drop for MediaJobGuard {
+    fn drop(&mut self) {
+        ACTIVE_MEDIA_JOBS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
+pub(crate) fn media_job() -> MediaJobGuard {
+    ACTIVE_MEDIA_JOBS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    MediaJobGuard
+}
+
+fn workers_for(processors: usize, jobs: usize) -> i32 {
+    processors
+        .max(1)
+        .div_ceil(jobs.max(1))
+        .min(i32::MAX as usize) as i32
+}
+
 pub fn workers() -> i32 {
-    unsafe { GetActiveProcessorCount(0xffff).max(1).min(i32::MAX as u32) as i32 }
+    let processors = unsafe { GetActiveProcessorCount(0xffff) } as usize;
+    let jobs = ACTIVE_MEDIA_JOBS.load(std::sync::atomic::Ordering::Acquire);
+    workers_for(processors, jobs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codec_workers_share_processors_between_active_media_jobs() {
+        assert_eq!(workers_for(8, 0), 8);
+        assert_eq!(workers_for(8, 1), 8);
+        assert_eq!(workers_for(8, 2), 4);
+        assert_eq!(workers_for(8, 3), 3);
+        assert_eq!(workers_for(8, 8), 1);
+        assert_eq!(workers_for(16, 5), 4);
+        assert_eq!(workers_for(1, 16), 1);
+    }
 }

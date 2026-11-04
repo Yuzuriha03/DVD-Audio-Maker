@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use serde_json::{Value, json};
@@ -337,14 +338,7 @@ pub fn plan(request: Value) -> Result<Value, String> {
     }))
 }
 
-/// Build the on-disk menu assets consumed by the project-built author.
-/// Image decoding, layout and font probing use the Rust image implementation.
-pub fn build_assets(
-    job: &Job,
-    disc: &Disc,
-    callbacks: &mut dyn Callbacks,
-    diagnostics: &mut Vec<Value>,
-) -> Result<Vec<String>, String> {
+pub fn preflight(job: &Job, diagnostics: &mut Vec<Value>) {
     let data_menu = job.author_source.join("menu");
     if !data_menu.is_dir() {
         diagnostics.push(json!({"Severity":2,"Code":"MENU_DATA_MISSING","Message":format!("找不到 dvda-author 菜单素材目录: {}",data_menu.display())}));
@@ -355,6 +349,17 @@ pub fn build_assets(
             diagnostics.push(json!({"Severity":2,"Code":"MENU_LIBRARY_MISSING","Message":format!("内置菜单组件缺失：{name}。请重新解压或修复发布包。" )}));
         }
     }
+}
+
+/// Build the on-disk menu assets consumed by the project-built author.
+/// Image decoding, layout and font probing use the Rust image implementation.
+pub fn build_assets(
+    job: &Job,
+    disc: &Disc,
+    callbacks: &mut dyn Callbacks,
+    diagnostics: &mut Vec<Value>,
+) -> Result<Vec<String>, String> {
+    preflight(job, diagnostics);
     if diagnostics.iter().any(|d| d["Severity"] == 2) {
         return Ok(Vec::new());
     }
@@ -414,6 +419,8 @@ pub fn build_assets(
     if !missing_covers.is_empty() {
         diagnostics.push(json!({"Severity":1,"Code":"MENU_COVER_MISSING","Message":format!("{} 张专辑没有 cover.jpg/jpeg/png/webp，页面将使用黑色背景: {}{}",missing_covers.len(),missing_covers.iter().take(3).cloned().collect::<Vec<_>>().join("、"),if missing_covers.len()>3 {"…"}else{""})}));
     }
+    let images = DecodedImages(Arc::clone(&job.image_cache));
+    let mut background_by_cover = HashMap::<Option<PathBuf>, PathBuf>::new();
     for (index, page) in pages.iter().enumerate() {
         let album = page
             .get("Album")
@@ -421,13 +428,20 @@ pub fn build_assets(
             .unwrap_or_default();
         let output = directory.join(format!("bg{index}.jpg"));
         let cover = covers.get(album).and_then(Option::as_deref);
-        write_background(
-            cover,
-            &output,
-            job.menu_cover_dim.clamp(0, 100) as u8,
-            callbacks,
-        )?;
+        let key = cover.map(Path::to_path_buf);
+        if let Some(existing) = background_by_cover.get(&key) {
+            fs::copy(existing, &output).map_err(|error| error.to_string())?;
+        } else {
+            write_background_cached(
+                cover,
+                &output,
+                job.menu_cover_dim.clamp(0, 100) as u8,
+                callbacks,
+                &images,
+            )?;
+        }
         require_frame(&output, callbacks)?;
+        background_by_cover.insert(key, output.clone());
         callbacks.emit(
             1,
             &format!(
@@ -492,7 +506,7 @@ pub fn build_assets(
             };
             let output = directory.join(format!("still{index}.jpg"));
             let generated = (|| -> Result<(), String> {
-                write_still(cover, &output, callbacks)?;
+                write_still_cached(cover, &output, callbacks, &images)?;
                 require_frame(&output, callbacks)
             })();
             if let Err(reason) = generated {
@@ -600,17 +614,63 @@ pub fn build_assets(
     Ok(arguments)
 }
 
+#[derive(Clone, Default)]
+struct DecodedImages(Arc<dvda_image::cache::ImageCache>);
+
+impl DecodedImages {
+    fn decode(
+        &self,
+        path: &Path,
+        callbacks: &mut dyn Callbacks,
+    ) -> Result<Arc<dvda_image::raster::Raster>, String> {
+        let image = self.0.decode(path).map_err(|error| error.to_string())?;
+        if callbacks.cancelled() {
+            return Err("Build cancelled".into());
+        }
+        Ok(image)
+    }
+}
+
+fn cover_frame(
+    image: &dvda_image::raster::Raster,
+    callbacks: &mut dyn Callbacks,
+) -> std::io::Result<dvda_image::raster::Raster> {
+    use dvda_image::geometry::{Dimensions, ResizeMode};
+    let cancelled = || std::io::Error::new(std::io::ErrorKind::Interrupted, "Build cancelled");
+    let size = image.dimensions();
+    let compressed = Dimensions::new(((size.width() * 15 + 8) / 16).max(1), size.height())
+        .map_err(std::io::Error::other)?;
+    let frame = Dimensions::new(720, 576).map_err(std::io::Error::other)?;
+    let image = image.resized(compressed, ResizeMode::Exact)?;
+    if callbacks.cancelled() {
+        return Err(cancelled());
+    }
+    let image = image.resized(frame, ResizeMode::Fit)?;
+    if callbacks.cancelled() {
+        return Err(cancelled());
+    }
+    image.centered_extent(frame, [0, 0, 0, 255])
+}
+
+#[cfg(test)]
 fn write_background(
     input: Option<&Path>,
     output: &Path,
     dim: u8,
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
-    use dvda_image::{
-        geometry::{Dimensions, ResizeMode},
-        raster::Raster,
-    };
-    use std::io::{BufReader, BufWriter, Write};
+    write_background_cached(input, output, dim, callbacks, &DecodedImages::default())
+}
+
+fn write_background_cached(
+    input: Option<&Path>,
+    output: &Path,
+    dim: u8,
+    callbacks: &mut dyn Callbacks,
+    images: &DecodedImages,
+) -> Result<(), String> {
+    use dvda_image::{geometry::Dimensions, raster::Raster};
+    use std::io::{BufWriter, Write};
     let mut created = false;
     let result = (|| -> std::io::Result<()> {
         let cancelled = || std::io::Error::new(std::io::ErrorKind::Interrupted, "Build cancelled");
@@ -619,15 +679,13 @@ fn write_background(
         }
         let frame = Dimensions::new(720, 576).map_err(std::io::Error::other)?;
         let mut image = if let Some(input) = input {
-            let image = dvda_image::codec::decode(BufReader::new(fs::File::open(input)?))?;
+            let image = images
+                .decode(input, callbacks)
+                .map_err(std::io::Error::other)?;
             if callbacks.cancelled() {
                 return Err(cancelled());
             }
-            let image = image.resized(frame, ResizeMode::Fill)?;
-            if callbacks.cancelled() {
-                return Err(cancelled());
-            }
-            image.centered_extent(frame, [0, 0, 0, 255])?
+            cover_frame(&image, callbacks)?
         } else {
             Raster::solid(frame, [0, 0, 0, 255])?
         };
@@ -651,29 +709,28 @@ fn write_background(
     result.map_err(|error| error.to_string())
 }
 
+#[cfg(test)]
 fn write_still(input: &Path, output: &Path, callbacks: &mut dyn Callbacks) -> Result<(), String> {
-    use dvda_image::geometry::{Dimensions, ResizeMode};
-    use std::io::{BufReader, BufWriter, Write};
+    write_still_cached(input, output, callbacks, &DecodedImages::default())
+}
+
+fn write_still_cached(
+    input: &Path,
+    output: &Path,
+    callbacks: &mut dyn Callbacks,
+    images: &DecodedImages,
+) -> Result<(), String> {
+    use std::io::{BufWriter, Write};
     let mut created = false;
     let result = (|| -> std::io::Result<()> {
         let cancelled = || std::io::Error::new(std::io::ErrorKind::Interrupted, "Build cancelled");
         if callbacks.cancelled() {
             return Err(cancelled());
         }
-        let image = dvda_image::codec::decode(BufReader::new(fs::File::open(input)?))?;
-        let size = image.dimensions();
-        let compressed = Dimensions::new(((size.width() * 15 + 8) / 16).max(1), size.height())
+        let image = images
+            .decode(input, callbacks)
             .map_err(std::io::Error::other)?;
-        let frame = Dimensions::new(720, 576).map_err(std::io::Error::other)?;
-        if callbacks.cancelled() {
-            return Err(cancelled());
-        }
-        let image = image.resized(compressed, ResizeMode::Exact)?;
-        if callbacks.cancelled() {
-            return Err(cancelled());
-        }
-        let image = image.resized(frame, ResizeMode::Fit)?;
-        let image = image.centered_extent(frame, [0, 0, 0, 255])?;
+        let image = cover_frame(&image, callbacks)?;
         if callbacks.cancelled() {
             return Err(cancelled());
         }
@@ -1325,6 +1382,37 @@ mod tests {
         };
         assert!(write_blank(&path, &mut callbacks).is_err());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn cover_geometry_preserves_aspect_and_centers_padding() {
+        let source = dvda_image::raster::Raster::solid(
+            dvda_image::geometry::Dimensions::new(400, 200).unwrap(),
+            [40, 120, 200, 255],
+        )
+        .unwrap();
+        let mut callbacks = crate::pcm::NoEvents;
+        let framed = cover_frame(&source, &mut callbacks).unwrap();
+        assert_eq!(
+            framed.dimensions(),
+            dvda_image::geometry::Dimensions::new(720, 576).unwrap()
+        );
+        let pixels: Vec<_> = framed
+            .rgba()
+            .as_chunks::<4>()
+            .0
+            .as_chunks::<720>()
+            .0
+            .iter()
+            .collect();
+        assert!(pixels[0].iter().all(|pixel| *pixel == [0, 0, 0, 255]));
+        assert!(pixels[575].iter().all(|pixel| *pixel == [0, 0, 0, 255]));
+        assert!(
+            pixels[288]
+                .iter()
+                .all(|pixel| *pixel == [40, 120, 200, 255])
+        );
+        assert_eq!(pixels[0].len(), pixels[575].len());
     }
 
     #[test]

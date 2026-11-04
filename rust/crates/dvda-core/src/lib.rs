@@ -33,6 +33,7 @@ pub mod mlp_import;
 pub mod mlp_workflow;
 mod native_components;
 pub mod options;
+mod parallel;
 pub mod pcm;
 pub mod planner;
 pub mod preparation;

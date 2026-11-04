@@ -81,6 +81,7 @@ fn job(root: &Path) -> pipeline::Job {
         loss_error_seconds: 0.05,
         loss_warning_seconds: 0.005,
         force_revalidation: false,
+        production: None,
     }
 }
 struct Track<'a> {
@@ -230,6 +231,17 @@ fn canonical(value: &mut Value, root: &Path) {
             for item in object.values_mut() {
                 canonical(item, root);
             }
+            if let Some(identity) = object.remove("source_identity") {
+                assert!(identity["Size"].as_u64().is_some());
+                assert!(identity["LastWriteUtcTicks"].as_i64().is_some());
+                assert_eq!(identity["HeadHash"].as_str().unwrap().len(), 32);
+                assert_eq!(identity["TailHash"].as_str().unwrap().len(), 32);
+            }
+            // Dynamic evidence has dedicated matching tests; keep this fixture
+            // focused on the established manifest/report contract.
+            object.remove("source_sample_rate");
+            object.remove("source_bits");
+            object.remove("channels");
         }
         Value::Array(array) => {
             for item in array {
@@ -447,6 +459,7 @@ fn alac_repair_preserves_source_and_matches_valid_container() {
             input: repair.output_path.clone(),
             operation: audio::Operation::Decode,
             resample_to: None,
+            decode_output: None,
         },
         &mut Events::default(),
     )

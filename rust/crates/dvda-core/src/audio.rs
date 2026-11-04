@@ -18,6 +18,26 @@ pub struct Job {
     pub input: String,
     pub operation: Operation,
     pub resample_to: Option<i32>,
+    #[serde(default)]
+    pub decode_output: Option<DecodeOutput>,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct DecodeOutput {
+    pub output: PathBuf,
+    pub normalized: PathBuf,
+    pub rate: i32,
+    pub bits: i32,
+    pub dither: bool,
+}
+impl DecodeOutput {
+    pub fn prepared_path(&self) -> PathBuf {
+        if self.normalized.is_file() {
+            self.normalized.clone()
+        } else {
+            self.output.clone()
+        }
+    }
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
@@ -26,6 +46,77 @@ pub struct Parameters {
     pub channels: i32,
     pub bits: i32,
 }
+pub fn production_pcm_signature(
+    library: &std::path::Path,
+    rate: i32,
+    bits: i32,
+    dither: bool,
+) -> Result<String, String> {
+    crate::signature::encoding_identity(
+        &format!("production-pcm-v1|rate={rate}|bits={bits}|dither={dither}"),
+        library,
+        None,
+        "",
+    )
+}
+
+pub fn reusable_production_pcm(
+    track: &Value,
+    current_source: &Value,
+    signature: &str,
+    rate: i32,
+    bits: i32,
+    caller: &mut dyn Callbacks,
+) -> Result<Option<PathBuf>, Failure> {
+    let Some(source) = track.get("SourceIdentity") else {
+        return Ok(None);
+    };
+    if !crate::identity::equivalent(source, current_source)
+        || track.get("PreparedPcmSignature").and_then(Value::as_str) != Some(signature)
+    {
+        return Ok(None);
+    }
+    let Some(path) = track
+        .get("PreparedPcmPath")
+        .and_then(Value::as_str)
+        .filter(|path| !path.is_empty())
+    else {
+        return Ok(None);
+    };
+    let Some(expected) = track.get("PreparedPcmIdentity") else {
+        return Ok(None);
+    };
+    let Ok(current) = crate::identity::compute(path) else {
+        return Ok(None);
+    };
+    if !crate::identity::equivalent(expected, &current) {
+        return Ok(None);
+    }
+    let mut input = crate::identity::open_read(path)?;
+    match crate::pcm::reusable_wave(&mut input, rate, bits, caller) {
+        Ok(true) => Ok(Some(PathBuf::from(path))),
+        Ok(false) => Ok(None),
+        Err(error) if error.kind == "Cancelled" => Err(error),
+        Err(_) => Ok(None),
+    }
+}
+
+pub fn parameters_from_track(track: &Value, current_identity: &Value) -> Option<Parameters> {
+    let evidence = track.get("SourceIdentity")?;
+    if !crate::identity::equivalent(evidence, current_identity) {
+        return None;
+    }
+    let parameters = Parameters {
+        sample_rate: track.get("SourceSampleRate")?.as_i64()? as i32,
+        channels: track.get("Channels")?.as_i64()? as i32,
+        bits: track.get("SourceBits")?.as_i64()? as i32,
+    };
+    (parameters.sample_rate > 0
+        && (1..=64).contains(&parameters.bits)
+        && (1..=8).contains(&parameters.channels))
+    .then_some(parameters)
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub struct Metadata {
@@ -111,6 +202,7 @@ fn run(
         errors: String::new(),
     };
     let decode = matches!(operation, Operation::Decode);
+    let decode_output = job.decode_output.as_ref();
     let result = media::execute(
         media::Job {
             library: job.library.clone(),
@@ -122,19 +214,26 @@ fn run(
                 } else {
                     MediaOperation::Probe
                 },
-                rate: if decode {
-                    job.resample_to.unwrap_or(0) as u32
+                rate: decode_output.map_or(
+                    if decode {
+                        job.resample_to.unwrap_or(0) as u32
+                    } else {
+                        0
+                    },
+                    |output| output.rate as u32,
+                ),
+                bits: decode_output.map_or(0, |output| output.bits as u32),
+                output_format: if decode_output.is_some() {
+                    OutputFormat::Wave
                 } else {
-                    0
+                    OutputFormat::None
                 },
-                bits: 0,
-                output_format: OutputFormat::None,
-                soxr: decode && job.resample_to.is_some(),
-                dither: false,
+                soxr: decode_output.is_none() && decode && job.resample_to.is_some(),
+                dither: decode_output.is_some_and(|output| output.dither),
                 compression: 8,
                 cover: false,
                 input: job.input.clone(),
-                output: None,
+                output: decode_output.map(|output| output.output.to_string_lossy().into_owned()),
                 tags: Vec::new(),
             },
         },
@@ -305,7 +404,20 @@ pub fn read_parameters(job: &Job, caller: &mut dyn Callbacks) -> Result<Paramete
 }
 pub fn check_decode(job: &Job, caller: &mut dyn Callbacks) -> Result<DecodeResult, Failure> {
     let (code, _, errors) = run(job, Operation::Decode, caller)?;
-    Ok(decode_from_log(&errors, code))
+    let result = decode_from_log(&errors, code);
+    if result.error_count == 0
+        && result.samples.is_some()
+        && let Some(output) = &job.decode_output
+    {
+        crate::pcm::prepare_wave(
+            &output.output,
+            &output.normalized,
+            output.rate,
+            output.bits,
+            caller,
+        )?;
+    }
+    Ok(result)
 }
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     let result = match job.operation {
@@ -398,5 +510,22 @@ mod tests {
         );
         assert_eq!(decode_from_log("native failure", 1).error_count, 1);
         assert_eq!(decode_from_log("", 0).samples, None);
+    }
+
+    #[test]
+    fn track_parameters_require_matching_current_source_identity() {
+        let identity = json!({"Size":12,"LastWriteUtcTicks":34,"HeadHash":"a","TailHash":"b"});
+        let track = json!({"SourceIdentity":identity,"SourceSampleRate":48000,"SourceBits":24,"Channels":2});
+        assert_eq!(
+            parameters_from_track(&track, &identity),
+            Some(Parameters {
+                sample_rate: 48000,
+                bits: 24,
+                channels: 2,
+            })
+        );
+        let changed = json!({"Size":12,"LastWriteUtcTicks":34,"HeadHash":"changed","TailHash":"b"});
+        assert_eq!(parameters_from_track(&track, &changed), None);
+        assert_eq!(parameters_from_track(&json!({}), &identity), None);
     }
 }

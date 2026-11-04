@@ -4,7 +4,11 @@ use crate::{Callbacks, amg, aob, asvs, atsi, iso, menu, samg};
 use std::{
     fs::{self, OpenOptions},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        mpsc,
+    },
+    time::Duration,
 };
 
 struct StageProgress<'a> {
@@ -40,6 +44,140 @@ impl Callbacks for StageProgress<'_> {
         self.last = self.last.max(value);
         self.parent.progress(self.last, 1000);
     }
+}
+
+enum GroupEvent {
+    Log(i32, String),
+    Progress(u64),
+    Finished(usize, Result<aob::GroupOutput, String>),
+}
+
+struct GroupCallbacks<'a> {
+    send: &'a mpsc::Sender<GroupEvent>,
+    stop: &'a AtomicBool,
+}
+impl Callbacks for GroupCallbacks<'_> {
+    fn emit(&mut self, stream: i32, text: &str) {
+        if self
+            .send
+            .send(GroupEvent::Log(stream, text.into()))
+            .is_err()
+        {
+            self.stop.store(true, Ordering::Release);
+        }
+    }
+    fn cancelled(&mut self) -> bool {
+        self.stop.load(Ordering::Acquire)
+    }
+    fn progress(&mut self, completed: u64, _: u64) {
+        let _ = self.send.send(GroupEvent::Progress(completed));
+    }
+}
+
+fn author_groups(
+    groups: &[Vec<aob::TrackInput>],
+    audio_ts: &Path,
+    callbacks: &mut dyn Callbacks,
+) -> Result<Vec<aob::GroupOutput>, String> {
+    let group_bytes: Vec<u64> = groups
+        .iter()
+        .map(|group| {
+            group
+                .iter()
+                .map(|track| fs::metadata(&track.path).map_or(1, |meta| meta.len()))
+                .sum()
+        })
+        .collect();
+    let mut starts = Vec::with_capacity(groups.len());
+    let mut completed_bytes = 0u64;
+    for bytes in &group_bytes {
+        starts.push(completed_bytes);
+        completed_bytes += bytes;
+    }
+    let total_bytes = completed_bytes.max(1);
+    let workers = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(4)
+        .min(groups.len());
+    let next = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
+    let (send, receive) = mpsc::channel();
+    let mut results: Vec<_> = (0..groups.len()).map(|_| None).collect();
+    let mut failure = None;
+    let mut last_progress = 0;
+    callbacks.progress(0, 1000);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            let send = send.clone();
+            let next = &next;
+            let stop = &stop;
+            let starts = &starts;
+            let group_bytes = &group_bytes;
+            scope.spawn(move || {
+                let mut worker_callbacks = GroupCallbacks { send: &send, stop };
+                while !worker_callbacks.cancelled() {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(group) = groups.get(index) else {
+                        break;
+                    };
+                    worker_callbacks.emit(1, &format!("[INF] Creating ATS_{:02} audio", index + 1));
+                    let start = (600u128 * starts[index] as u128 / total_bytes as u128) as u64;
+                    let end = (600u128 * (starts[index] + group_bytes[index]) as u128
+                        / total_bytes as u128) as u64;
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let mut progress = StageProgress::new(&mut worker_callbacks, start, end);
+                        let output =
+                            aob::author_group(audio_ts, (index + 1) as u8, group, &mut progress);
+                        progress.progress(1, 1);
+                        output
+                    }))
+                    .unwrap_or_else(|_| Err("AOB worker panicked".into()));
+                    let failed = result.is_err();
+                    if send.send(GroupEvent::Finished(index, result)).is_err() {
+                        break;
+                    }
+                    if failed {
+                        stop.store(true, Ordering::Release);
+                        break;
+                    }
+                }
+            });
+        }
+        drop(send);
+        loop {
+            if callbacks.cancelled() {
+                stop.store(true, Ordering::Release);
+            }
+            match receive.recv_timeout(Duration::from_millis(20)) {
+                Ok(GroupEvent::Log(stream, text)) => callbacks.emit(stream, &text),
+                Ok(GroupEvent::Progress(value)) => {
+                    if value > last_progress {
+                        last_progress = value;
+                        callbacks.progress(value, 1000);
+                    }
+                }
+                Ok(GroupEvent::Finished(index, result)) => {
+                    if let Err(error) = &result {
+                        failure.get_or_insert_with(|| error.clone());
+                        stop.store(true, Ordering::Release);
+                    }
+                    results[index] = Some(result);
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+    });
+    if callbacks.cancelled() {
+        return Err("Author cancelled".into());
+    }
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    results
+        .into_iter()
+        .map(|result| result.ok_or_else(|| "AOB worker returned no result".to_string())?)
+        .collect()
 }
 
 #[derive(Debug)]
@@ -214,6 +352,24 @@ pub fn run(
     backend: &mut dyn menu::Backend,
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
+    run_internal(arguments, backend, callbacks, None)
+}
+
+pub fn run_with_image_cache(
+    arguments: &[String],
+    backend: &mut dyn menu::Backend,
+    callbacks: &mut dyn Callbacks,
+    cache: std::sync::Arc<dvda_image::cache::ImageCache>,
+) -> Result<(), String> {
+    run_internal(arguments, backend, callbacks, Some(cache))
+}
+
+fn run_internal(
+    arguments: &[String],
+    backend: &mut dyn menu::Backend,
+    callbacks: &mut dyn Callbacks,
+    cache: Option<std::sync::Arc<dvda_image::cache::ImageCache>>,
+) -> Result<(), String> {
     if arguments
         .iter()
         .any(|arg| matches!(arg.as_str(), "--help" | "-h"))
@@ -225,7 +381,9 @@ pub fn run(
         callbacks.emit(1, concat!("dvda-author Rust ", env!("CARGO_PKG_VERSION")));
         return Ok(());
     }
-    author(&parse(arguments)?, backend, callbacks)
+    let mut request = parse(arguments)?;
+    request.menu.image_cache = cache;
+    author(&request, backend, callbacks)
 }
 
 fn io<T>(result: std::io::Result<T>) -> Result<T, String> {
@@ -392,28 +550,7 @@ pub fn author(
     io(fs::create_dir_all(&request.temporary))?;
     let mut audio_groups = Vec::new();
     let mut title_starts = Vec::new();
-    let group_bytes: Vec<u64> = request
-        .groups
-        .iter()
-        .map(|group| {
-            group
-                .iter()
-                .map(|track| fs::metadata(&track.path).map_or(1, |meta| meta.len()))
-                .sum()
-        })
-        .collect();
-    let total_bytes = group_bytes.iter().sum::<u64>().max(1);
-    let mut completed_bytes = 0u64;
-    callbacks.progress(0, 1000);
-    for (index, group) in request.groups.iter().enumerate() {
-        check(callbacks)?;
-        callbacks.emit(1, &format!("[INF] Creating ATS_{:02} audio", index + 1));
-        let start = (600u128 * completed_bytes as u128 / total_bytes as u128) as u64;
-        completed_bytes += group_bytes[index];
-        let end = (600u128 * completed_bytes as u128 / total_bytes as u128) as u64;
-        let mut progress = StageProgress::new(callbacks, start, end);
-        let output = aob::author_group(&audio_ts, (index + 1) as u8, group, &mut progress)?;
-        progress.progress(1, 1);
+    for output in author_groups(&request.groups, &audio_ts, callbacks)? {
         audio_groups.push(output.tracks);
         title_starts.push(output.title_starts);
     }

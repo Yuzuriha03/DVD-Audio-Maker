@@ -386,6 +386,7 @@ pub unsafe extern "C" fn dvdamedia_run(
             cancel,
             state,
         };
+        let _media_job = crate::win::media_job();
         av_log_set_callback(Some(logger));
         let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&call)));
         let result =

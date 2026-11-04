@@ -368,8 +368,15 @@ fn stats(
 }
 
 pub fn verify_iso_navigation(iso: &Path) -> Result<(), String> {
-    let audio_files = formats::iso_list_directory(iso, "AUDIO_TS")?;
-    let video_files = formats::iso_list_directory(iso, "VIDEO_TS").unwrap_or_default();
+    verify_iso_navigation_with_cache(iso, &formats::IsoMetadataCache::default())
+}
+
+pub fn verify_iso_navigation_with_cache(
+    iso: &Path,
+    cache: &formats::IsoMetadataCache,
+) -> Result<(), String> {
+    let audio_files = cache.list_directory(iso, "AUDIO_TS")?;
+    let video_files = cache.list_directory(iso, "VIDEO_TS").unwrap_or_default();
     let iso_sectors = fs::metadata(iso).map_err(|error| error.to_string())?.len() / 2048;
     let amg = read_iso_file(iso, "AUDIO_TS/AUDIO_TS.IFO")?;
     verify_navigation_pointers(&amg, &audio_files, &video_files, iso_sectors)
@@ -381,10 +388,26 @@ pub fn verify(
     job: &Job,
     caller: &mut dyn Callbacks,
 ) -> Result<Vec<Value>, String> {
+    verify_with_cache(
+        iso,
+        expected,
+        job,
+        &formats::IsoMetadataCache::default(),
+        caller,
+    )
+}
+
+pub fn verify_with_cache(
+    iso: &Path,
+    expected: Option<&Value>,
+    job: &Job,
+    cache: &formats::IsoMetadataCache,
+    caller: &mut dyn Callbacks,
+) -> Result<Vec<Value>, String> {
     cancel(caller)?;
     formats::verify_dvd_audio_filesystem(iso)?;
-    verify_iso_navigation(iso)?;
-    let files = formats::iso_list_directory(iso, "AUDIO_TS")?;
+    verify_iso_navigation_with_cache(iso, cache)?;
+    let files = cache.list_directory(iso, "AUDIO_TS")?;
     let vob = files
         .iter()
         .find(|f| f.name.eq_ignore_ascii_case("AUDIO_TS.VOB"))

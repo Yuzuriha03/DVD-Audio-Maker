@@ -41,6 +41,12 @@ pub fn compute(path: &str) -> io::Result<Value> {
     )
 }
 
+pub(crate) fn equivalent(left: &Value, right: &Value) -> bool {
+    ["Size", "LastWriteUtcTicks", "HeadHash", "TailHash"]
+        .iter()
+        .all(|key| left.get(*key) == right.get(*key))
+}
+
 pub fn dispatch(request: Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected identity file path")?;
     Ok(compute(path).unwrap_or(Value::Null))

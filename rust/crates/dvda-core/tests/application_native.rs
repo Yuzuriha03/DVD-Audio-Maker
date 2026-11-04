@@ -1480,3 +1480,148 @@ fn application_failed_author_keeps_workspace_and_previous_release() {
         );
     }
 }
+
+fn long_album(root: &Path, directory: &str, album: &str) {
+    let frames = 1_200_000u32;
+    let size = frames * 4;
+    let mut wave = Vec::with_capacity(size as usize + 44);
+    wave.extend_from_slice(b"RIFF");
+    wave.extend_from_slice(&(size + 36).to_le_bytes());
+    wave.extend_from_slice(b"WAVEfmt ");
+    wave.extend_from_slice(&16u32.to_le_bytes());
+    wave.extend_from_slice(&1u16.to_le_bytes());
+    wave.extend_from_slice(&2u16.to_le_bytes());
+    wave.extend_from_slice(&48000u32.to_le_bytes());
+    wave.extend_from_slice(&192000u32.to_le_bytes());
+    wave.extend_from_slice(&4u16.to_le_bytes());
+    wave.extend_from_slice(&16u16.to_le_bytes());
+    wave.extend_from_slice(b"data");
+    wave.extend_from_slice(&size.to_le_bytes());
+    for frame in 0..frames {
+        for channel in 0..2 {
+            let sample = ((frame * (31 + channel * 13) + 17) % 60001) as i32 - 30000;
+            wave.extend_from_slice(&(sample as i16).to_le_bytes());
+        }
+    }
+    let input = root.join(format!("{directory}.wav"));
+    fs::write(&input, wave).unwrap();
+    let output_directory = root.join("src").join(directory);
+    fs::create_dir_all(&output_directory).unwrap();
+    let mut pixels = Vec::with_capacity(64 * 64 * 4);
+    for y in 0..64u32 {
+        for x in 0..64u32 {
+            pixels.extend_from_slice(&[(x * 4) as u8, (y * 4) as u8, ((x + y) * 2) as u8, 255]);
+        }
+    }
+    let cover = dvda_image::raster::Raster::from_rgba(
+        dvda_image::geometry::Dimensions::new(64, 64).unwrap(),
+        pixels,
+    )
+    .unwrap();
+    dvda_image::codec::write_png(
+        &cover,
+        fs::File::create(output_directory.join("cover.png")).unwrap(),
+    )
+    .unwrap();
+    let result = media::execute(
+        media::Job {
+            library: library(),
+            replace: false,
+            timeout_millis: None,
+            request: Request {
+                operation: Operation::Audio,
+                rate: 0,
+                bits: 0,
+                output_format: OutputFormat::Flac,
+                soxr: false,
+                dither: false,
+                compression: 8,
+                cover: false,
+                input: input.to_string_lossy().into_owned(),
+                output: Some(
+                    output_directory
+                        .join("track.flac")
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                tags: vec![
+                    ("ALBUM".into(), album.into()),
+                    ("TRACK".into(), "1".into()),
+                    ("TITLE".into(), format!("{album} track")),
+                    ("DATE".into(), "2026".into()),
+                ],
+            },
+        },
+        &mut Events::default(),
+    );
+    assert_eq!(result.exit_code, Some(0), "{:?}", result.failure);
+}
+
+#[test]
+#[ignore = "requires source-built author/media plus menu data/fonts"]
+fn lpcm_wave_reuse_and_menu_prefetch_build_two_verified_discs() {
+    let root = Scratch::new();
+    long_album(&root.0, "album-a", "Album A");
+    long_album(&root.0, "album-b", "Album B");
+    let data =
+        PathBuf::from(std::env::var_os("DVDA_TEST_MENU_DATA").expect("Set DVDA_TEST_MENU_DATA"));
+    let options = options(&root.0, "lpcm")
+        .with_profile_values(
+            json!({
+                "DVDA_MENU":true, "DVDA_MENU_STILLPICS":false,
+                "DVDA_MENU_INDEX_MIN_ALBUMS":99, "DVDA_AUTHOR_SRC":data,
+                "DVDA_DISC_BYTES":14_000_000, "DVDA_MLP_BITS":16
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .unwrap();
+    let mut events = Events::default();
+    let built = app::run_build(&options, false, &mut events).unwrap();
+    assert!(
+        built.succeeded,
+        "{:?}\n{}",
+        built.diagnostics,
+        events.lines.join("\n")
+    );
+    assert_eq!(built.published.len(), 2, "{:?}", built.plan);
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(options.path("ManifestPath")).unwrap()).unwrap();
+    let files: Vec<_> = manifest
+        .as_object()
+        .into_iter()
+        .flat_map(|groups| groups.values())
+        .filter_map(|group| group["files"].as_array())
+        .flatten()
+        .collect();
+    assert_eq!(files.len(), 2);
+    for file in files {
+        assert!(file["source_identity"].is_object());
+        assert!(!file["prepared_pcm_path"].as_str().unwrap_or("").is_empty());
+        assert!(file["prepared_pcm_identity"].is_object());
+        assert!(
+            !file["prepared_pcm_signature"]
+                .as_str()
+                .unwrap_or("")
+                .is_empty()
+        );
+    }
+    for disc in 1..=2 {
+        assert!(
+            options
+                .path("MenuDirectory")
+                .join(format!("disc{disc}/blankscreen.png"))
+                .is_file()
+        );
+        assert!(
+            events
+                .lines
+                .iter()
+                .any(|line| line == &format!("[author] disc {disc}"))
+        );
+    }
+    let verified = app::run_verify(&options, &mut Events::default()).unwrap();
+    assert!(verified.succeeded, "{:?}", verified.diagnostics);
+    assert_eq!(verified.iso_count, 2);
+}

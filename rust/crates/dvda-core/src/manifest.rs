@@ -28,6 +28,11 @@ fn optional_integer(object: &Map<String, Value>, names: &[&str]) -> Option<i32> 
         }
     })
 }
+fn optional_value(object: &Map<String, Value>, names: &[&str]) -> Option<Value> {
+    field(object, names)
+        .filter(|value| !value.is_null())
+        .cloned()
+}
 fn number(object: &Map<String, Value>, names: &[&str]) -> f64 {
     field(object, names).and_then(Value::as_f64).unwrap_or(0.)
 }
@@ -83,10 +88,27 @@ pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
                 source_size,
                 mlp_path: mlp_path.to_string_lossy().into_owned(),
                 mlp_size,
-                channels: None,
+                channels: optional_integer(item, &["channels", "Channels"]),
                 channel_mask: None,
-                source_sample_rate: None,
-                source_bits: None,
+                source_sample_rate: optional_integer(
+                    item,
+                    &["source_sample_rate", "SourceSampleRate"],
+                ),
+                source_bits: optional_integer(item, &["source_bits", "SourceBits"]),
+                source_identity: optional_value(item, &["source_identity", "SourceIdentity"]),
+                prepared_pcm_path: field(item, &["prepared_pcm_path", "PreparedPcmPath"])
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                prepared_pcm_identity: optional_value(
+                    item,
+                    &["prepared_pcm_identity", "PreparedPcmIdentity"],
+                ),
+                prepared_pcm_signature: field(
+                    item,
+                    &["prepared_pcm_signature", "PreparedPcmSignature"],
+                )
+                .and_then(Value::as_str)
+                .map(str::to_owned),
                 mlp_source: "mlp-batch".into(),
                 external_resampled: false,
                 external_rebitded: false,

@@ -86,6 +86,12 @@ pub struct PrepareResult {
     diagnostics: Vec<Value>,
 }
 
+struct PreparedTrack {
+    track: Value,
+    cached: bool,
+    cache_entry: Option<(String, Value)>,
+}
+
 pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<PrepareResult, String> {
     job.identity = crate::signature::encoding_identity(
         &format!("lpcm-rust-pcm-v2|dither={}|{}", job.dither, job.identity),
@@ -101,36 +107,61 @@ pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<Prepar
     }
     let root = job.build_directory.join("lpcm");
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+    let pcm_signature =
+        audio::production_pcm_signature(&job.media_library, job.rate, job.bits, job.dither)?;
     let mut cache = load_cache(&job.cache_path);
     let mut output = Vec::with_capacity(job.tracks.len());
     let mut diagnostics = Vec::new();
     let mut hits = 0;
     let mut rebuilt = 0;
+    let mut completed = 0;
     caller.progress(0, job.tracks.len() as u64);
-    for (index, track) in job.tracks.iter().enumerate() {
-        if caller.cancelled() {
-            return Err("LPCM 准备已取消。".into());
-        }
-        match prepare_track(&job, &root, &mut cache, track, caller) {
-            Ok((track, true)) => {
-                hits += 1;
-                output.push(track.clone());
-            }
-            Ok((track, false)) => {
-                rebuilt += 1;
-                output.push(track.clone());
+    let mut destinations = std::collections::HashSet::new();
+    let independent = job.tracks.iter().all(|track| {
+        string(track, "SourcePath")
+            .is_some_and(|source| destinations.insert(cache_path(&job.build_directory, source)))
+    });
+    let workers = if independent {
+        crate::options::worker_count(job.tracks.len())
+    } else {
+        1
+    };
+    let prepared = crate::parallel::map_with_workers(
+        &job.tracks,
+        workers,
+        caller,
+        "LPCM 准备已取消。",
+        |index, track, callbacks| {
+            prepare_track(&job, &root, &cache, &pcm_signature, index, track, callbacks)
+        },
+        |_, _, callbacks| {
+            completed += 1;
+            callbacks.progress(completed, job.tracks.len() as u64);
+        },
+    )?;
+    for (source, result) in job.tracks.iter().zip(prepared) {
+        match result {
+            Ok(prepared) => {
+                if prepared.cached {
+                    hits += 1;
+                } else {
+                    rebuilt += 1;
+                }
+                if let Some((path, entry)) = prepared.cache_entry {
+                    cache.insert(path, entry);
+                }
+                output.push(prepared.track);
             }
             Err(error) => {
-                let title = string(track, "Title").unwrap_or("unknown");
+                let title = string(source, "Title").unwrap_or("unknown");
                 diagnostics.push(json!({
                     "Severity": 2,
                     "Code": "LPCM_PREPARATION_FAILED",
                     "Message": format!("LPCM 音源准备失败：{title}（{error}）")
                 }));
-                output.push(track.clone());
+                output.push(source.clone());
             }
         }
-        caller.progress((index + 1) as u64, job.tracks.len() as u64);
     }
     save_cache(&job.cache_path, &cache)?;
     Ok(PrepareResult {
@@ -144,12 +175,18 @@ pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<Prepar
 fn prepare_track(
     job: &PrepareJob,
     root: &Path,
-    cache: &mut Map<String, Value>,
+    cache: &Map<String, Value>,
+    pcm_signature: &str,
+    index: usize,
     track: &Value,
     caller: &mut dyn Callbacks,
-) -> Result<(Value, bool), String> {
+) -> Result<PreparedTrack, String> {
     let source_path = string(track, "SourcePath").ok_or("缺少音源路径")?;
-    let source_parameters = probe_parameters(&job.media_library, source_path, caller)?;
+    let source_identity = identity::compute(source_path).map_err(|error| error.to_string())?;
+    let source_parameters = match audio::parameters_from_track(track, &source_identity) {
+        Some(parameters) => parameters,
+        None => probe_parameters(&job.media_library, source_path, caller)?,
+    };
     let format = format_code(
         i64::from(job.rate),
         i64::from(job.bits),
@@ -162,7 +199,6 @@ fn prepare_track(
             "LPCM 支持 16/24 位、最多六声道；176.4/192 kHz 最多双声道。".into()
         });
     }
-    let source_identity = identity::compute(source_path).map_err(|error| error.to_string())?;
     let destination = cache_path(&job.build_directory, source_path);
     if let Some(entry) = cache.get(&destination)
         && cache_matches(entry, &source_identity, &job.identity, job.bits, job.rate)
@@ -170,14 +206,16 @@ fn prepare_track(
     {
         let layout = formats::read_wav_layout(&destination)?;
         validate_layout(&layout)?;
-        return Ok((
-            updated_track(track, &destination, &layout, &source_parameters),
-            true,
-        ));
+        return Ok(PreparedTrack {
+            track: updated_track(track, &destination, &layout, &source_parameters),
+            cached: true,
+            cache_entry: None,
+        });
     }
     let directory = root.join(format!(
-        ".lpcm-{}-{}",
+        ".lpcm-{}-{}-{}",
         std::process::id(),
+        index,
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|error| error.to_string())?
@@ -186,45 +224,50 @@ fn prepare_track(
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     let decoded = directory.join("converted.wav");
     let normalized = directory.join("input.wav");
-    let result = (|| -> Result<Value, String> {
-        let media_result = media::execute(
-            media::Job {
-                library: job.media_library.clone(),
-                request: Request {
-                    operation: Operation::Audio,
-                    rate: job.rate as u32,
-                    bits: job.bits as u32,
-                    output_format: OutputFormat::Wave,
-                    soxr: false,
-                    dither: job.dither,
-                    compression: 8,
-                    cover: false,
-                    input: source_path.into(),
-                    output: Some(decoded.to_string_lossy().into_owned()),
-                    tags: Vec::new(),
-                },
-                replace: false,
-                timeout_millis: None,
-            },
-            caller,
-        );
-        if let Some(error) = media_result.failure {
-            return Err(error.message);
-        }
-        if media_result.exit_code != Some(0) {
-            return Err("音源转换失败。".into());
-        }
-        crate::pcm::normalize(
-            crate::pcm::Job {
-                source: decoded.to_string_lossy().into_owned(),
-                destination: normalized.clone(),
-                rate: job.rate,
-                bits: job.bits,
-            },
+    let result = (|| -> Result<PreparedTrack, String> {
+        let reused = audio::reusable_production_pcm(
+            track,
+            &source_identity,
+            pcm_signature,
+            job.rate,
+            job.bits,
             caller,
         )
         .map_err(|error| error.message)?;
-        let layout = formats::read_wav_layout(&normalized.to_string_lossy())?;
+        let prepared = if let Some(path) = reused {
+            path
+        } else {
+            let media_result = media::execute(
+                media::Job {
+                    library: job.media_library.clone(),
+                    request: Request {
+                        operation: Operation::Audio,
+                        rate: job.rate as u32,
+                        bits: job.bits as u32,
+                        output_format: OutputFormat::Wave,
+                        soxr: false,
+                        dither: job.dither,
+                        compression: 8,
+                        cover: false,
+                        input: source_path.into(),
+                        output: Some(decoded.to_string_lossy().into_owned()),
+                        tags: Vec::new(),
+                    },
+                    replace: false,
+                    timeout_millis: None,
+                },
+                caller,
+            );
+            if let Some(error) = media_result.failure {
+                return Err(error.message);
+            }
+            if media_result.exit_code != Some(0) {
+                return Err("音源转换失败。".into());
+            }
+            crate::pcm::prepare_wave(&decoded, &normalized, job.rate, job.bits, caller)
+                .map_err(|error| error.message)?
+        };
+        let layout = formats::read_wav_layout(&prepared.to_string_lossy())?;
         validate_layout(&layout)?;
         if layout.channels != source_parameters.channels {
             return Err("LPCM 转换改变了声道数。".into());
@@ -238,28 +281,24 @@ fn prepare_track(
         if Path::new(&destination).exists() {
             fs::remove_file(&destination).map_err(|error| error.to_string())?;
         }
-        fs::rename(&normalized, &destination).map_err(|error| error.to_string())?;
+        fs::rename(&prepared, &destination).map_err(|error| error.to_string())?;
         let output_identity = identity::compute(&destination).map_err(|error| error.to_string())?;
-        cache.insert(
-            destination.clone(),
-            json!({
-                "source": source_identity,
-                "output": output_identity,
-                "encoder": job.identity,
-                "bits": job.bits,
-                "resample_to": job.rate,
-                "max_interval": 0
-            }),
-        );
-        Ok(updated_track(
-            track,
-            &destination,
-            &layout,
-            &source_parameters,
-        ))
+        let entry = json!({
+            "source": source_identity,
+            "output": output_identity,
+            "encoder": job.identity,
+            "bits": job.bits,
+            "resample_to": job.rate,
+            "max_interval": 0
+        });
+        Ok(PreparedTrack {
+            track: updated_track(track, &destination, &layout, &source_parameters),
+            cached: false,
+            cache_entry: Some((destination, entry)),
+        })
     })();
     let _ = fs::remove_dir_all(&directory);
-    result.map(|track| (track, false))
+    result
 }
 
 fn probe_parameters(
@@ -273,6 +312,7 @@ fn probe_parameters(
             input: input.to_owned(),
             operation: AudioOperation::Parameters,
             resample_to: None,
+            decode_output: None,
         },
         caller,
     )
