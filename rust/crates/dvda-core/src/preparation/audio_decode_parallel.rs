@@ -1,7 +1,5 @@
-// Audio decoding parallel implementation
-// Provides thread-safe parallel audio validation and decoding
+//! Parallel audio inspection with progress callbacks owned by the caller.
 
-use super::parallel_enhanced::{BatchProcessor, ParallelConfig};
 use crate::{audio, media::Failure};
 use dvda_native::media::Callbacks;
 use std::{
@@ -11,45 +9,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-
-/// Enable parallel audio decoding for a group of tracks
-///
-/// This is a configuration flag that can be integrated into pipeline.rs
-/// to enable parallel processing of audio validation
-pub const ENABLE_PARALLEL_AUDIO_DECODE: bool = true;
-
-/// Minimum tracks to enable parallel audio processing
-pub const MIN_TRACKS_FOR_PARALLEL: usize = 4;
-
-/// Configuration for parallel audio operations
-pub fn audio_parallel_config() -> ParallelConfig {
-    ParallelConfig {
-        min_items_for_parallel: MIN_TRACKS_FOR_PARALLEL,
-        max_threads: None, // Auto-detect
-        enabled: ENABLE_PARALLEL_AUDIO_DECODE,
-        chunk_size: Some(4), // Process in chunks of 4
-    }
-}
-
-/// Run independent audio jobs in parallel while preserving input order.
-///
-/// The callback must own all state it needs for one item.  Progress and GUI
-/// callbacks stay outside this function so they are updated on the caller's
-/// thread after the batch completes; this keeps the media FFI boundary free of
-/// shared mutable callback state.
-pub fn process_audio_jobs<T, R, E, F>(
-    items: Vec<T>,
-    config: ParallelConfig,
-    process: F,
-) -> Result<Vec<R>, E>
-where
-    T: Send + Sync,
-    R: Send,
-    E: Send,
-    F: Fn(&T) -> Result<R, E> + Send + Sync,
-{
-    BatchProcessor::new(items, config).process_with_result(process)
-}
 
 /// Inspect files with private per-worker callbacks. The caller's callbacks are
 /// polled and invoked only on the caller thread, including during long decodes.
@@ -267,22 +226,6 @@ fn inspect_jobs_measured<R: Send>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_audio_config() {
-        let config = audio_parallel_config();
-        assert!(config.enabled);
-        assert_eq!(config.min_items_for_parallel, 4);
-    }
-
-    #[test]
-    fn processes_audio_jobs_in_input_order() {
-        let result = process_audio_jobs(vec![1_u32, 2, 3, 4], audio_parallel_config(), |value| {
-            Ok::<_, ()>(value * 2)
-        })
-        .unwrap();
-        assert_eq!(result, vec![2, 4, 6, 8]);
-    }
 
     fn fixture_jobs() -> Vec<audio::Job> {
         (0..8)

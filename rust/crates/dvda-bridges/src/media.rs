@@ -286,7 +286,9 @@ unsafe fn run(request: &Request, call: &mut Call) -> Result<(), i32> {
                     Encoding::Float64 => AV_CODEC_ID_PCM_F64LE,
                 };
                 *(*p).sample_rate_ptr() = spec.sample_rate as i32;
-                *(*p).bits_per_raw_sample_ptr() = spec.valid_bits as i32;
+                // Match ffprobe's historical storage-width reporting: 20 valid
+                // bits in a 24-bit extensible WAV container are reported as 24.
+                *(*p).bits_per_raw_sample_ptr() = (spec.encoding.bytes() * 8) as i32;
                 if spec.channel_mask != 0 {
                     done(av_channel_layout_from_mask(
                         (*p).ch_layout_ptr(),

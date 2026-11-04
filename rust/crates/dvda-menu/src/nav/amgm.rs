@@ -3,12 +3,11 @@
 //! Parses the navigation XML, scans each PGC VOB source independently, fills
 //! its NAV packs and concatenates the results into <dest>/AUDIO_TS/AUDIO_TS.VOB.
 
-#![allow(dead_code)]
-
 use super::build::{self, Aspect};
 use super::dvdata;
 use super::fixvobus;
 use super::xml;
+use crate::spu::format::VideoFormat;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -17,6 +16,20 @@ fn aspect(group: &super::model::MenuGroup) -> Aspect {
         Some(value) if value.eq_ignore_ascii_case("4:3") => Aspect::FourByThree,
         Some(value) if value.eq_ignore_ascii_case("16:9") => Aspect::SixteenByNine,
         _ => Aspect::Unknown,
+    }
+}
+
+fn video_format(
+    document: &super::model::Document,
+    group: &super::model::MenuGroup,
+) -> Result<VideoFormat, String> {
+    match group.video.format.as_deref() {
+        None => Ok(document.format),
+        Some(value) if value.eq_ignore_ascii_case("ntsc") => Ok(VideoFormat::Ntsc),
+        Some(value) if value.eq_ignore_ascii_case("pal") || value.eq_ignore_ascii_case("secam") => {
+            Ok(VideoFormat::Pal)
+        }
+        Some(value) => Err(format!("unrecognized video format {value:?}")),
     }
 }
 
@@ -29,6 +42,7 @@ pub(crate) fn run(xml_path: &Path, output: &Path) -> Result<(), String> {
     let mut output_bytes = Vec::new();
     let mut vob_id = 0u16;
     for group in &document.menus {
+        let format = video_format(&document, group)?;
         for pgc in &group.pgcs {
             let mut commands: BTreeMap<String, [u8; 8]> = BTreeMap::new();
             for (index, button) in pgc.buttons.iter().enumerate() {
@@ -78,7 +92,7 @@ pub(crate) fn run(xml_path: &Path, output: &Path) -> Result<(), String> {
                 vob_id = vob_id.checked_add(1).ok_or("too many menu VOB sources")?;
                 let sector_base = u32::try_from(output_bytes.len() / 2048)
                     .map_err(|_| "menu VOB sector address overflow")?;
-                fixvobus::fill_vob(&mut build, &data, &commands, sector_base, vob_id)?;
+                fixvobus::fill_vob(&mut build, &data, &commands, format, sector_base, vob_id)?;
                 output_bytes.extend_from_slice(&build.output);
             }
         }
@@ -110,6 +124,24 @@ mod tests {
         dir
     }
 
+    #[test]
+    fn menu_group_video_format_controls_dvd_scan_timing() {
+        let mut document = crate::nav::model::Document::default();
+        let mut group = crate::nav::model::MenuGroup::default();
+        document.format = VideoFormat::Ntsc;
+        assert_eq!(video_format(&document, &group).unwrap(), VideoFormat::Ntsc);
+        for (name, expected) in [
+            ("pal", VideoFormat::Pal),
+            ("secam", VideoFormat::Pal),
+            ("ntsc", VideoFormat::Ntsc),
+        ] {
+            group.video.format = Some(name.into());
+            assert_eq!(video_format(&document, &group).unwrap(), expected);
+        }
+        group.video.format = Some("invalid".into());
+        assert!(video_format(&document, &group).is_err());
+    }
+
     fn synthetic_menu(x: u16, colour: u16) -> Vec<u8> {
         let mut sector = vec![0u8; 2048];
         sector[14..18].copy_from_slice(&[0, 0, 1, 0xbb]);
@@ -136,6 +168,38 @@ mod tests {
         metadata[20..20 + payload.len()].copy_from_slice(&payload);
         sector.extend_from_slice(&metadata);
         sector
+    }
+
+    #[test]
+    fn generated_nav_packs_share_pal_secam_timing_and_distinguish_ntsc() {
+        let dir = scratch();
+        let menu = dir.join("menu.mpg");
+        std::fs::write(&menu, synthetic_menu(40, 0x1110)).unwrap();
+        let xml = dir.join("menus.xml");
+
+        for (norm, elapsed, frame_duration) in [
+            ("pal", 0x40_u32, 3_600),
+            ("secam", 0x40, 3_600),
+            ("ntsc", 0xc0, 3_003),
+        ] {
+            std::fs::write(
+                &xml,
+                format!(
+                    "<dvdauthor jumppad=\"1\"><amgm><menus><video format=\"{norm}\"/><pgc><button name=\"button01\">jump menu 1;</button><vob file=\"{}\"/></pgc></menus></amgm></dvdauthor>",
+                    menu.display()
+                ),
+            )
+            .unwrap();
+            run(&xml, &dir).unwrap();
+            let bytes = std::fs::read(dir.join("AUDIO_TS/AUDIO_TS.VOB")).unwrap();
+            assert_eq!(bytes.len(), 2048);
+            assert_eq!(&bytes[0x45..0x49], &elapsed.to_be_bytes(), "{norm} PCI");
+            assert_eq!(&bytes[0x423..0x427], &elapsed.to_be_bytes(), "{norm} DSI");
+            let start = u32::from_be_bytes(bytes[0x39..0x3d].try_into().unwrap());
+            let end = u32::from_be_bytes(bytes[0x3d..0x41].try_into().unwrap());
+            assert_eq!(end - start, frame_duration, "{norm} VOBU duration");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

@@ -6,10 +6,7 @@
 //! way the C scanner does and writes the VOB bytes with placeholder PCI/DSI
 //! packets that the NAV-pack pass fills in later.
 
-#![allow(dead_code)]
-
 use super::mpeg;
-use std::path::Path;
 
 const SECTOR: usize = 2048;
 
@@ -24,8 +21,6 @@ pub(crate) enum Aspect {
 pub(crate) struct Vobu {
     /// Sector index in the output VOB.
     pub(crate) sector: usize,
-    /// Sector index in the input program stream.
-    pub(crate) input_sector: usize,
     /// Last output sector of the VOBU (inclusive).
     pub(crate) last_sector: usize,
     /// First video PTS seen in the VOBU, if any.
@@ -41,7 +36,6 @@ impl Default for Vobu {
     fn default() -> Self {
         Self {
             sector: 0,
-            input_sector: 0,
             last_sector: 0,
             first_video_pts: None,
             start_pts: 0,
@@ -57,10 +51,6 @@ pub(crate) struct Build {
     pub(crate) output: Vec<u8>,
     pub(crate) vobus: Vec<Vobu>,
     pub(crate) dvdauthor_data: Vec<Vec<u8>>,
-}
-
-fn read_u16(bytes: &[u8]) -> u16 {
-    u16::from_be_bytes([bytes[0], bytes[1]])
 }
 
 fn is_placeholder(sector: &[u8]) -> bool {
@@ -117,7 +107,7 @@ pub(crate) fn build(input: &[u8], aspect: Aspect) -> Result<Build, String> {
     let mut vobu: Option<Vobu> = None;
     let mut back_offs = 0i64;
     let mut first_pack = true;
-    for (index, source) in sectors.iter().enumerate() {
+    for source in sectors {
         if first_pack && source[0] == 0 && source[1] == 0 && source[2] == 1 && source[3] == 0xba {
             back_offs = i64::from(mpeg::read_scr(&source[4..9]));
             first_pack = false;
@@ -129,7 +119,6 @@ pub(crate) fn build(input: &[u8], aspect: Aspect) -> Result<Build, String> {
             }
             let mut info = Vobu {
                 sector: build.output.len() / SECTOR,
-                input_sector: index,
                 ..Vobu::default()
             };
             info.sectdata.copy_from_slice(&source[..0x26]);
@@ -175,12 +164,6 @@ pub(crate) fn build(input: &[u8], aspect: Aspect) -> Result<Build, String> {
         build.vobus.push(previous);
     }
     Ok(build)
-}
-
-/// Convenience wrapper for file-based callers.
-pub(crate) fn build_file(input: &Path, aspect: Aspect) -> Result<Build, String> {
-    let bytes = std::fs::read(input).map_err(|error| format!("{}: {error}", input.display()))?;
-    build(&bytes, aspect)
 }
 
 #[cfg(test)]

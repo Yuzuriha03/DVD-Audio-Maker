@@ -4,7 +4,7 @@
 //! Native Rust disc verification. It deliberately has no media-process fallback.
 use crate::{
     aob, formats,
-    verification::{self, DiscEvidence, GroupEvidence},
+    verification::{self, DiscEvidence, GroupEvidence, issue as error, unavailable},
 };
 use dvda_native::{disc_verify::NativeDiscVerifier, media::Callbacks};
 use serde::{Deserialize, Serialize};
@@ -1479,12 +1479,6 @@ fn index_track_count(index: &Value) -> i32 {
                 })
                 .count() as i32
         })
-}
-fn error(code: &str, message: impl Into<String>) -> Value {
-    json!({"Severity":2,"Code":code,"Message":message.into()})
-}
-fn unavailable(code: &str, message: impl Into<String>) -> Value {
-    json!({"Severity":2,"Code":code,"Message":message.into(),"Unavailable":true})
 }
 fn is_error(value: &Value) -> bool {
     value.get("Severity").and_then(Value::as_i64) == Some(2)

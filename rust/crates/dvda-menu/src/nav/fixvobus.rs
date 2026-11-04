@@ -5,16 +5,14 @@
 //! timing, reference-frame sectors, dvdauthor-data buttons and the VOBU
 //! time-step tables.
 
-#![allow(dead_code)]
-
 use super::build::Build;
 use super::dvdata::DvdData;
 use super::mpeg;
-use super::navpack::{FrameRate, cell_elapsed, get_sector};
+use super::navpack::{cell_elapsed, get_sector};
+use crate::spu::format::VideoFormat;
 use std::collections::BTreeMap;
 
 const SECTOR: usize = 2048;
-const FRAME_PTS_PAL: u32 = 3_600;
 const HALF_SECOND: i64 = 45_000;
 const TIMELINE: [i64; 19] = [
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 60, 120, 240,
@@ -40,16 +38,12 @@ fn write_u16(sector: &mut [u8], at: usize, value: u16) {
     sector[at..at + 2].copy_from_slice(&value.to_be_bytes());
 }
 
-fn read_u16(bytes: &[u8]) -> u16 {
-    u16::from_be_bytes([bytes[0], bytes[1]])
-}
-
 /// Scans one VOBU for reference frames and subpicture packets.
-fn scan_vobu(build: &Build, vobu_index: usize) -> VobuTiming {
+fn scan_vobu(build: &Build, vobu_index: usize, format: VideoFormat) -> VobuTiming {
     let vobu = &build.vobus[vobu_index];
     let mut timing = VobuTiming {
         start: vobu.start_pts,
-        end: vobu.end_pts + FRAME_PTS_PAL,
+        end: vobu.end_pts + format.frame_duration(),
         ..VobuTiming::default()
     };
     let first = vobu.sector;
@@ -225,26 +219,18 @@ fn button_table(data: &DvdData, commands: &BTreeMap<String, [u8; 8]>, sector: &m
     }
 }
 
-/// Writes the PCI and DSI payloads into every placeholder NAV sector.
-pub(crate) fn fill(
-    build: &mut Build,
-    data: &DvdData,
-    commands: &BTreeMap<String, [u8; 8]>,
-) -> Result<(), String> {
-    fill_vob(build, data, commands, 0, 1)
-}
-
 /// Source-local searches stop at VOB boundaries; only recorded disc addresses
 /// include the sector base of this source in AUDIO_TS.VOB.
 pub(crate) fn fill_vob(
     build: &mut Build,
     data: &DvdData,
     commands: &BTreeMap<String, [u8; 8]>,
+    format: VideoFormat,
     sector_base: u32,
     vob_id: u16,
 ) -> Result<(), String> {
     let mut timings: Vec<VobuTiming> = (0..build.vobus.len())
-        .map(|index| scan_vobu(build, index))
+        .map(|index| scan_vobu(build, index, format))
         .collect();
     let numvobus = build.vobus.len();
     let vob_start = timings.first().map_or(0, |timing| timing.start);
@@ -280,7 +266,6 @@ pub(crate) fn fill_vob(
     if let Some(last) = timings.last_mut() {
         last.end = vob_end;
     }
-    let rate = FrameRate::Pal25;
     for (index, timing) in timings.iter().enumerate() {
         let vobu = build.vobus[index].clone();
         let base = vobu.sector * SECTOR;
@@ -299,7 +284,7 @@ pub(crate) fn fill_vob(
         if vobu.has_sequence_end {
             write_u32(&mut sector, 0x41, timing.end);
         }
-        let elapsed = cell_elapsed(i64::from(timing.start - vob_start), rate);
+        let elapsed = cell_elapsed(i64::from(timing.start - vob_start), format);
         write_u32(&mut sector, 0x45, elapsed);
         write_u16(&mut sector, 0x8d, 1);
         write_u32(&mut sector, 0x8f, vob_start);
@@ -544,7 +529,7 @@ mod tests {
                 v.sector, v.last_sector, v.start_pts, v.end_pts
             );
         }
-        fill(&mut build, &data, &commands()).unwrap();
+        fill_vob(&mut build, &data, &commands(), VideoFormat::Pal, 0, 1).unwrap();
         assert_eq!(build.output.len(), baseline.len());
         for index in 0..build.vobus.len() {
             let vobu = &build.vobus[index];

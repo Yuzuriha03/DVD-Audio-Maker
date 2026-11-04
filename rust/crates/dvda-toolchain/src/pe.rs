@@ -1,11 +1,6 @@
 //! Bounded PE32+ reader used before packaging untrusted or stale build outputs.
 use std::collections::BTreeSet;
 
-#[allow(dead_code)]
-pub fn imports(bytes: &[u8], dll: bool) -> Result<BTreeSet<String>, String> {
-    imports_with_machine(bytes, dll, 0x8664)
-}
-
 pub fn imports_with_machine(
     bytes: &[u8],
     dll: bool,
@@ -273,6 +268,11 @@ pub(crate) fn fixture(dll: bool, ordinary: &[&str], delay: &[&str]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn imports(bytes: &[u8], dll: bool) -> Result<BTreeSet<String>, String> {
+        imports_with_machine(bytes, dll, 0x8664)
+    }
+
     #[test]
     fn ordinary_and_delay_imports_are_bounded_and_normalized() {
         let bytes = fixture(true, &["KERNEL32.dll"], &["delayed.dll"]);

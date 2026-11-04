@@ -81,8 +81,8 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     expected = {
         "zh-CN": (0, "检查音源", "开始制作", "停止任务", "只看提醒", "实时更新", "方案已保存："),
-        "en": (1, "Check sources", "Build discs", "Stop task", "Problems only", "Live update", "Profile saved: "),
-        "ja": (2, "音源を検査", "ディスクを作成", "タスクを停止", "問題のみ", "ライブ更新", "プロファイルを保存しました: "),
+        "en": (2, "Check sources", "Build discs", "Stop task", "Problems only", "Live update", "Profile saved: "),
+        "ja": (3, "音源を検査", "ディスクを作成", "タスクを停止", "問題のみ", "ライブ更新", "プロファイルを保存しました: "),
     }
     records = []
     with tempfile.TemporaryDirectory(prefix="dvda-gui-") as temporary:
@@ -113,7 +113,7 @@ def main():
                     print(json.dumps([{"id": u.GetDlgCtrlID(h), "class": classname(h), "text": text(h)} for h in children], ensure_ascii=False))
                     raise AssertionError("Source field was not created")
                 assert 204 not in controls, "Planned-disc input should remain removed"
-                assert 303 not in controls, "MLP worker-count input should remain removed"
+                assert classname(controls[303]) == "Button", "Dither checkbox replaced the removed MLP worker-count input"
                 assert text(controls[200]) == source
                 assert u.SendMessageW(controls[300], 0x0147, 0, 0) == 2, "MLP import lost on load"
                 assert u.SendMessageW(controls[203], 0x0147, 0, 0) == 2, "Custom capacity lost on load"
@@ -124,7 +124,7 @@ def main():
                 assert 2003 not in controls, "Other-settings tab should remain removed"
                 pages = [h for h in children if classname(h) == "DVD_AUDIO_PAGE_RUST"]
                 assert len(pages) == 3
-                assert u.SendMessageW(controls[103], 0x0147, 0, 0) == (0 if launch == 0 else 2), "Language was not restored"
+                assert u.SendMessageW(controls[103], 0x0147, 0, 0) == (0 if launch == 0 else 3), "Language was not restored"
                 if launch:
                     break
                 # DVD9 uses the original safe preset; selecting it must not
@@ -181,7 +181,9 @@ def main():
                 for language, (index, check, build, stop, issues, live, saved) in expected.items():
                     u.SendMessageW(controls[103], 0x014E, index, 0)
                     u.SendMessageW(hwnd, 0x0111, 103 | (1 << 16), controls[103])
-                    assert [text(controls[i]) for i in (105, 106, 108, 111, 112)] == [check, build, stop, issues, live]
+                    assert not u.IsWindowVisible(controls[105]), "Separate prepare action should remain hidden"
+                    labels = [text(controls[i]) for i in (106, 108, 111, 112)]
+                    assert labels == [build, stop, issues, live], (language, labels)
                     assert text(controls[200]) == source, "Language switch modified source data"
                     wait_for(lambda: daily.is_file())
                     automatic = json.loads(daily.read_text(encoding="utf-8-sig"))

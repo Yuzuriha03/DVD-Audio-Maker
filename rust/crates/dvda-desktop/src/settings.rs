@@ -60,44 +60,28 @@ pub(crate) fn update_choices(state: &UiState) {
         tr(state.lang(), audio_note_key(mode)),
     );
     let custom_capacity = combo_index(state.controls.capacity) == 2;
-    {
-        ShowWindow(
-            state.custom_bytes_label,
-            if custom_capacity { SW_SHOW } else { SW_HIDE },
-        );
-        ShowWindow(
-            state.controls.custom_bytes,
-            if custom_capacity { SW_SHOW } else { SW_HIDE },
-        );
-        ShowWindow(
-            state.import_folder_label,
-            if imported { SW_SHOW } else { SW_HIDE },
-        );
-        ShowWindow(
-            state.controls.import_folder,
-            if imported { SW_SHOW } else { SW_HIDE },
-        );
-        ShowWindow(
-            state.import_browse,
-            if imported { SW_SHOW } else { SW_HIDE },
-        );
-        ShowWindow(
-            state.controls.dither,
-            if numeric_choice(state.controls.bits, SAMPLE_BITS) == 16 {
-                SW_SHOW
-            } else {
-                SW_HIDE
-            },
-        );
-        EnableWindow(state.controls.custom_bytes, i32::from(custom_capacity));
-        EnableWindow(state.controls.import_folder, i32::from(imported));
-        for hwnd in [
-            state.controls.rate,
-            state.controls.bits,
-            state.controls.dither,
-        ] {
-            EnableWindow(hwnd, i32::from(!imported));
-        }
+    for hwnd in [state.custom_bytes_label, state.controls.custom_bytes] {
+        show_window(hwnd, custom_capacity);
+    }
+    for hwnd in [
+        state.import_folder_label,
+        state.controls.import_folder,
+        state.import_browse,
+    ] {
+        show_window(hwnd, imported);
+    }
+    show_window(
+        state.controls.dither,
+        numeric_choice(state.controls.bits, SAMPLE_BITS) == 16,
+    );
+    EnableWindow(state.controls.custom_bytes, i32::from(custom_capacity));
+    EnableWindow(state.controls.import_folder, i32::from(imported));
+    for hwnd in [
+        state.controls.rate,
+        state.controls.bits,
+        state.controls.dither,
+    ] {
+        EnableWindow(hwnd, i32::from(!imported));
     }
 }
 
@@ -311,14 +295,10 @@ pub(crate) fn overrides(state: &UiState) -> Map<String, Value> {
 
 pub(crate) fn update_advanced(state: &UiState) {
     let show = checked(state.controls.advanced);
-    for control in &state.advanced_controls {
-        {
-            ShowWindow(*control, if show { SW_SHOW } else { SW_HIDE });
-        }
+    for &control in &state.advanced_controls {
+        show_window(control, show);
     }
-    {
-        ShowWindow(state.advanced_hint, if show { SW_HIDE } else { SW_SHOW });
-    }
+    show_window(state.advanced_hint, !show);
 }
 pub(crate) fn update_statistics(state: &mut UiState) {
     let elapsed = state

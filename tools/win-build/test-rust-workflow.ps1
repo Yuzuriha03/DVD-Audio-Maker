@@ -82,6 +82,12 @@ if ($Mode -eq 'Benchmarks' -and -not $skipped.Contains('synthetic_batch_worker_b
 $env:PATH = "$env:DVDA_MEDIA_NATIVE_DIR;$env:PATH"
 if ($OtherVolume) { $env:DVDA_TEST_OTHER_VOLUME = Require-Path $OtherVolume }
 if ($Mode -eq 'Functional') {
+    if ($env:DVDA_TEST_COVER_ROOT) {
+        $env:DVDA_TEST_COVER_ROOT = Require-Path $env:DVDA_TEST_COVER_ROOT
+    } else {
+        Skip-Test 'external_large_cover_stills' 'set DVDA_TEST_COVER_ROOT to a directory of album folders'
+        Skip-Test 'external_covers_downscale_to_dvd_sizes' 'set DVDA_TEST_COVER_ROOT to a directory of album folders'
+    }
     foreach ($name in $benchmarks) { Skip-Test $name 'manual benchmark; use -Mode Benchmarks' }
     $other = $env:DVDA_TEST_OTHER_VOLUME
     if (-not $other) {

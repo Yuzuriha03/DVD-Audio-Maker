@@ -197,6 +197,9 @@ unsafe fn create(
             return Err(EINVAL);
         }
         let norm = CStr::from_ptr(norm).to_str().map_err(|_| EINVAL)?;
+        // This FFI accepts DVD scan-system names, not analogue television output names.
+        // The caller maps SECAM to the shared PAL/SECAM 625/50 DVD representation;
+        // SECAM analogue colour encoding remains a player output concern.
         let ntsc = match norm {
             "ntsc" => true,
             "pal" => false,

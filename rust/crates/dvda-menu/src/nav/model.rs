@@ -4,7 +4,7 @@
 //! VOB/cell sources) without the C ownership machinery: every collection is a
 //! Vec, every string an owned String and every failure a Result.
 
-use crate::spu::xml::VideoFormat;
+use crate::spu::format::VideoFormat;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug, Default)]

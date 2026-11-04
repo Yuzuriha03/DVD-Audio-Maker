@@ -5,8 +5,6 @@
 //! The VOB builder consumes that record when it fills the PCI button table, so
 //! it is parsed into owned data structures here instead of C structs.
 
-#![allow(dead_code)]
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Colour {
     pub(crate) y: u8,

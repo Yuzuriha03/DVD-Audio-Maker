@@ -1616,6 +1616,10 @@ pub(crate) fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
     hwnd
 }
 
+pub(crate) fn show_window(hwnd: Hwnd, visible: bool) {
+    ShowWindow(hwnd, if visible { SW_SHOW } else { SW_HIDE });
+}
+
 pub(crate) fn set_text(hwnd: Hwnd, text: &str) {
     let text = wide(text);
     unsafe {

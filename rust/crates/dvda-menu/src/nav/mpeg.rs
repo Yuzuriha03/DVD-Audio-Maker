@@ -1,18 +1,14 @@
 //! MPEG program-stream primitives needed by the navigation VOB writer.
 //!
 //! These are the small, testable pieces of the C VOB builder: SCR/PTS field
-//! codecs, timestamp transposition and GOP detection. They operate on borrowed
-//! sectors and return Results (or plain bool) instead of touching global state.
-
-#![allow(dead_code)]
+//! codecs and timestamp transposition. They operate on borrowed sectors instead
+//! of touching global state.
 
 const PACK: u8 = 0xba;
 const SYSTEM: u8 = 0xbb;
 const PRIVATE_1: u8 = 0xbd;
 const AUDIO_FIRST: u8 = 0xc0;
-const VIDEO_FIRST: u8 = 0xe0;
 const VIDEO_LAST: u8 = 0xef;
-const GOP: u8 = 0xb8;
 
 fn be16(bytes: &[u8]) -> u16 {
     u16::from_be_bytes([bytes[0], bytes[1]])
@@ -92,33 +88,6 @@ pub(crate) fn transpose_ts(sector: &mut [u8], offset: i64) {
     }
 }
 
-/// Reports whether the sector contains a video GOP start code, as the C builder does.
-pub(crate) fn has_gop(sector: &[u8]) -> bool {
-    if sector[14] != 0
-        || sector[15] != 0
-        || sector[16] != 1
-        || sector[17] != SYSTEM
-        || sector[38] != 0
-        || sector[39] != 0
-        || sector[40] != 1
-        || sector[41] != VIDEO_FIRST
-    {
-        return false;
-    }
-    let mut index = 42;
-    while index < 1024 {
-        if sector[index] == 0
-            && sector[index + 1] == 0
-            && sector[index + 2] == 1
-            && sector[index + 3] == GOP
-        {
-            return true;
-        }
-        index += 4;
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,7 +124,7 @@ mod tests {
         sector[14] = 0;
         sector[15] = 0;
         sector[16] = 1;
-        sector[17] = VIDEO_FIRST;
+        sector[17] = 0xe0;
         sector[20] = 0x80;
         sector[21] = 0xc0;
         write_pts(&mut sector[23..28], 90_000);
@@ -172,24 +141,5 @@ mod tests {
         assert_ne!(sector, original);
         transpose_ts(&mut sector, -12_345);
         assert_eq!(sector, original);
-    }
-
-    #[test]
-    fn has_gop_requires_the_c_sector_layout() {
-        let mut sector = sample_sector();
-        assert!(!has_gop(&sector));
-        sector[14] = 0;
-        sector[15] = 0;
-        sector[16] = 1;
-        sector[17] = SYSTEM;
-        sector[38] = 0;
-        sector[39] = 0;
-        sector[40] = 1;
-        sector[41] = VIDEO_FIRST;
-        sector[42] = 0;
-        sector[43] = 0;
-        sector[44] = 1;
-        sector[45] = GOP;
-        assert!(has_gop(&sector));
     }
 }

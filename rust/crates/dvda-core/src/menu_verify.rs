@@ -2,10 +2,11 @@
 use crate::formats::IsoEntryInfo;
 use crate::{
     formats, media,
+    verification::issue,
     verify::{Job, read_iso_file},
 };
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::{
     fs,
     io::{Read, Seek, SeekFrom, Write},
@@ -26,9 +27,6 @@ fn read32(data: &[u8], offset: usize) -> Result<u32, String> {
             .try_into()
             .unwrap(),
     ))
-}
-fn issue(code: &str, message: impl Into<String>) -> Value {
-    json!({"Severity":2,"Code":code,"Message":message.into()})
 }
 fn cancel(caller: &mut dyn Callbacks) -> Result<(), String> {
     if caller.cancelled() {

@@ -223,6 +223,49 @@ fn album_geometry_and_track_targets_match_c_layout() {
 }
 
 #[test]
+fn pal_and_secam_share_dvd_geometry_while_ntsc_uses_525_60() {
+    // These are DVD stream attributes, not assertions about analogue colour encoding.
+    let work = Workspace::new();
+    for (norm, height, spu_format, nav_format, attribute) in [
+        ("pal", 576, "PAL", "pal", 0x53),
+        ("secam", 576, "PAL", "pal", 0x53),
+        ("ntsc", 480, "NTSC", "ntsc", 0x43),
+    ] {
+        let mut options = Options::default();
+        options.parse_option("norm", Some(norm)).unwrap();
+        options.parse_option("topmenu", None).unwrap();
+        options
+            .parse_option("screentext", Some("DISC=Album=Track"))
+            .unwrap();
+        assert_eq!(options.height(), height);
+
+        let pages = menu::plan(&[tracks(1)], &options).unwrap();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].height, height);
+        let spu = menu::subpicture_xml(
+            &pages[0],
+            Path::new("image.png"),
+            Path::new("highlight.png"),
+            Path::new("select.png"),
+        )
+        .unwrap();
+        assert!(
+            spu.contains(&format!("<subpictures format=\"{spu_format}\">")),
+            "unexpected SPU format for {norm}"
+        );
+        let nav = menu::navigation_xml(&pages, &["menu.vob".into()], &options).unwrap();
+        assert!(
+            nav.contains(&format!("<video format=\"{nav_format}\" />")),
+            "unexpected navigation format for {norm}"
+        );
+
+        let stream = work.0.join(format!("{norm}.mpg"));
+        fs::write(&stream, program(norm, false)).unwrap();
+        assert_eq!(menu::video_attribute(&stream, norm).unwrap(), attribute);
+    }
+}
+
+#[test]
 fn two_index_pages_keep_index_album_blocks_separate_in_pal_and_ntsc() {
     for norm in ["pal", "ntsc"] {
         let labels = (1..=13).map(|n| format!("Album {n}")).collect::<Vec<_>>();

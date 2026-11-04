@@ -6,6 +6,7 @@ use quick_xml::{Reader, XmlVersion, events::Event};
 mod direct;
 #[cfg(any(feature = "direct-link", test))]
 mod nav;
+#[cfg(any(feature = "direct-link", test))]
 mod resources;
 #[cfg(feature = "direct-link")]
 mod session;

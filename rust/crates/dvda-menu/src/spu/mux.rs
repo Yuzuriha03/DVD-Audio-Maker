@@ -5,8 +5,9 @@
 //! same order with the same timing state machine.
 
 use super::encode::dvd_encode;
+use super::format::VideoFormat;
 use super::image::{RgbaReader, SubPicture};
-use super::xml::{Document, VideoFormat};
+use super::xml::Document;
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -18,7 +19,6 @@ const MPID_SYSTEM: u32 = 0xbb;
 const MPID_PROGRAM_END: u32 = 0xb9;
 const MPID_PRIVATE1: u32 = 0xbd;
 const MPID_PAD: u32 = 0xbe;
-const MPID_AUDIO_FIRST: u32 = 0xc0;
 const MPID_VIDEO_FIRST: u32 = 0xe0;
 const MPID_VIDEO_LAST: u32 = 0xef;
 const TBS: i32 = 90;
@@ -540,4 +540,67 @@ pub(crate) fn run(
     file.write_all(&mux.output)
         .map_err(|error| format!("{}: {error}", output.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complete_pipeline_writes_subpicture_and_authoring_metadata() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("dvda-spu-pipeline-{}-{unique}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let xml = directory.join("menu.xml");
+        let input = directory.join("input.mpg");
+        let output = directory.join("output.mpg");
+        let image = directory.join("image.png");
+        std::fs::write(
+            &xml,
+            format!(
+                "<subpictures format=\"PAL\"><stream><spu force=\"yes\" start=\"00:00:00.00\" end=\"00:00:01.00\" image=\"{}\"/></stream></subpictures>",
+                image.display()
+            ),
+        )
+        .unwrap();
+
+        let mut source = vec![0u8; SECTOR_SIZE];
+        source[..4].copy_from_slice(&[0, 0, 1, MPID_PACK as u8]);
+        let mut header = [0u8; 32];
+        pack_header(&mut header, 90_000 * 300, 25_200, 0);
+        source[4..14].copy_from_slice(&header[..10]);
+        source[14..18].copy_from_slice(&[0, 0, 1, MPID_VIDEO_FIRST as u8]);
+        source[18..20].copy_from_slice(&8u16.to_be_bytes());
+        pes_header0(&mut header, 90_000);
+        source[20..28].copy_from_slice(&header[..8]);
+        source[28..32].copy_from_slice(&[0, 0, 1, MPID_PROGRAM_END as u8]);
+        std::fs::write(&input, source).unwrap();
+
+        let mut reads = 0;
+        let mut rgba = |path: &Path, buffer: &mut [u8]| {
+            assert_eq!(path, image);
+            buffer[..16].copy_from_slice(&[255, 255, 255, 255].repeat(4));
+            reads += 1;
+            Ok((2, 2))
+        };
+        super::super::run(&xml, &input, &output, &mut rgba).unwrap();
+        assert_eq!(reads, 1);
+
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(bytes.len(), 3 * SECTOR_SIZE);
+        let data = crate::nav::dvdata::parse_sector(&bytes[SECTOR_SIZE..2 * SECTOR_SIZE])
+            .expect("private metadata sector")
+            .unwrap();
+        assert_eq!(data.start_pts, 90_000);
+        assert_eq!(data.end_pts, 180_000);
+        assert_eq!(
+            &bytes[2 * SECTOR_SIZE + 14..2 * SECTOR_SIZE + 18],
+            &[0, 0, 1, MPID_PRIVATE1 as u8]
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }

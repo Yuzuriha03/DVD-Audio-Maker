@@ -8,7 +8,7 @@ use super::model::{
     AudioAttrs, Button, Cell, Document, MenuGroup, Pgc, StreamAttrs, SubpictureAttrs, Vob,
 };
 use super::vm::{self, VmContext};
-use crate::spu::xml::VideoFormat;
+use crate::spu::format::VideoFormat;
 use crate::{Token, tokenize};
 use std::path::{Path, PathBuf};
 

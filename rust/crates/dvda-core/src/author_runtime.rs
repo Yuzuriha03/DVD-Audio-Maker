@@ -146,8 +146,10 @@ impl dvda_author::menu::Backend for Backend {
             aspect,
             still,
         } = request;
-        // DVD video has only NTSC and PAL formats; SECAM regions use PAL
-        // (625-line, 25 fps) discs, which is how the author lays SECAM out.
+        // PAL and SECAM have different, incompatible analogue colour encodings,
+        // but DVD-Video stores both using the same 625-line, 25 fps representation.
+        // Mapping SECAM to "pal" selects that shared disc layout; SECAM analogue
+        // output remains the player's responsibility and is not a colour conversion here.
         let norm = if norm == "ntsc" { "ntsc" } else { "pal" };
         #[cfg(feature = "direct-bridges")]
         {
@@ -229,7 +231,7 @@ mod tests {
     use dvda_author::menu::Backend as _;
 
     #[test]
-    fn rust_y4m_preserves_rgb_and_cleans_cancelled_output() {
+    fn rust_y4m_preserves_rgb_scan_rates_and_cleans_cancelled_output() {
         struct Cancel {
             calls: usize,
             at: usize,

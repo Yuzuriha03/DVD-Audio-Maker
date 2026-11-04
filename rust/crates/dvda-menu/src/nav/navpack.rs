@@ -4,93 +4,28 @@
 //! offsets. Both are small pure functions over the scanned VOBU table, so they
 //! are modelled here without pointers and checked against the C baseline values.
 
-#![allow(dead_code)]
-
 use super::build::Vobu;
-
-/// Frame rate used for cell/pgc BCD playback times (menu authoring is PAL).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum FrameRate {
-    Pal25,
-    Ntsc30,
-}
-
-impl FrameRate {
-    fn denominator(self) -> i64 {
-        match self {
-            FrameRate::Pal25 => 90_000,
-            FrameRate::Ntsc30 => 90_090,
-        }
-    }
-
-    fn nominal(self) -> i64 {
-        match self {
-            FrameRate::Pal25 => 25,
-            FrameRate::Ntsc30 => 30,
-        }
-    }
-
-    fn rate_code(self) -> u32 {
-        match self {
-            FrameRate::Pal25 => 1,
-            FrameRate::Ntsc30 => 3,
-        }
-    }
-}
+use crate::spu::format::VideoFormat;
 
 fn tobcd(value: i64) -> i64 {
     (value / 10) * 16 + value % 10
 }
 
-/// BCD hhmmssff playback time with the frame-rate code, as written to PCI/DSI.
-pub(crate) fn cell_elapsed(pts: i64, rate: FrameRate) -> u32 {
-    let denom = rate.denominator();
-    let frate = rate.nominal();
-    let mut num = pts + denom / (2 * frate) + 1;
-    let mut sec = num / denom;
+/// BCD hhmmssff playback time with the selected frame-rate code, as written to PCI/DSI.
+pub(crate) fn cell_elapsed(pts: i64, format: VideoFormat) -> u32 {
+    let (denominator, frame_rate, rate_code) = match format {
+        VideoFormat::Pal => (90_000, 25, 1),
+        VideoFormat::Ntsc => (90_090, 30, 3),
+    };
+    let mut num = pts + denominator / (2 * frame_rate) + 1;
+    let mut sec = num / denominator;
     let min = sec / 60;
     let hr = tobcd(min / 60);
     let min = tobcd(min % 60);
     sec = tobcd(sec % 60);
-    num %= denom;
-    let fr = tobcd(num * frate / denom);
-    ((hr << 24) | (min << 16) | (sec << 8) | fr) as u32 | (rate.rate_code() << 6)
-}
-
-/// Returns the next/previous VOBU index that carries video.
-pub(crate) fn find_next_video(vobus: &[Vobu], cur: isize, forward: bool) -> Option<usize> {
-    let has_video = |index: usize| vobus[index].first_video_pts.is_some();
-    if forward {
-        (cur as usize + 1..vobus.len()).find(|&index| has_video(index))
-    } else {
-        (0..cur as usize).rev().find(|&index| has_video(index))
-    }
-}
-
-/// Finds the VOBU containing a presentation time within [low, high] (C findvobu).
-pub(crate) fn find_vobu(vobus: &[Vobu], pts: i64, low: isize, high: isize) -> isize {
-    if high < low {
-        return low - 1;
-    }
-    let low_index = low.max(0) as usize;
-    let high_index = high.max(0) as usize;
-    if pts < i64::from(vobus[low_index].start_pts) {
-        return low - 1;
-    }
-    if pts >= i64::from(vobus[high_index].end_pts) {
-        return high + 1;
-    }
-    let (mut l, mut h) = (low, high);
-    while l < h {
-        let m = (l + h + 1) / 2;
-        let index = m.max(0) as usize;
-        if pts < i64::from(vobus[index].start_pts) {
-            h = m - 1;
-        } else {
-            l = m;
-        }
-    }
-    l
+    num %= denominator;
+    let fr = tobcd(num * frame_rate / denominator);
+    ((hr << 24) | (min << 16) | (sec << 8) | fr) as u32 | (rate_code << 6)
 }
 
 /// Relative VOBU sector offset with the backward/multi-vobu flag bits (C getsect).
@@ -145,10 +80,12 @@ mod tests {
 
     #[test]
     fn bcd_matches_the_c_baseline_values() {
-        assert_eq!(cell_elapsed(0, FrameRate::Pal25), 0x40);
-        assert_eq!(cell_elapsed(54_000, FrameRate::Pal25), 0x55);
-        assert_eq!(cell_elapsed(108_000, FrameRate::Pal25), 0x145);
-        assert_eq!(cell_elapsed(162_000, FrameRate::Pal25), 0x160);
+        assert_eq!(cell_elapsed(0, VideoFormat::Pal), 0x40);
+        assert_eq!(cell_elapsed(54_000, VideoFormat::Pal), 0x55);
+        assert_eq!(cell_elapsed(108_000, VideoFormat::Pal), 0x145);
+        assert_eq!(cell_elapsed(162_000, VideoFormat::Pal), 0x160);
+        assert_eq!(cell_elapsed(0, VideoFormat::Ntsc), 0xc0);
+        assert_eq!(cell_elapsed(90_090, VideoFormat::Ntsc), 0x1c0);
     }
 
     #[test]

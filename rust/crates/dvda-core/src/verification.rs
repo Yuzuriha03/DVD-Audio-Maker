@@ -275,11 +275,11 @@ impl DiscEvidence {
         self.groups.values().map(|group| group.rows.len()).sum()
     }
 }
-fn issue(code: &str, message: impl Into<String>) -> Value {
+pub(crate) fn issue(code: &str, message: impl Into<String>) -> Value {
     json!({"Severity":2,"Code":code,"Message":message.into()})
 }
-fn unavailable(code: &str, message: &str) -> Value {
-    json!({"Severity":2,"Code":code,"Message":message,"Unavailable":true})
+pub(crate) fn unavailable(code: &str, message: impl Into<String>) -> Value {
+    json!({"Severity":2,"Code":code,"Message":message.into(),"Unavailable":true})
 }
 pub fn manifest_issues(path: Option<&Path>, discs: &[DiscEvidence]) -> Vec<Value> {
     let Some(path) = path.filter(|path| path.exists()) else {
@@ -427,7 +427,7 @@ pub fn log_issues(
         Err(reason) => {
             return vec![unavailable(
                 "BUILD_LOG_UNREADABLE",
-                &format!("构建日志无法读取：{}：{reason}", path.display()),
+                format!("构建日志无法读取：{}：{reason}", path.display()),
             )];
         }
     };
@@ -451,7 +451,7 @@ pub fn log_issues(
         if command.rows.len() != disc.track_count() {
             issues.push(unavailable(
                 "DISC_TRACK_MAPPING_MISMATCH",
-                &format!(
+                format!(
                     "日志映射 {} 轨 != ISO IFO 声明 {} 轨",
                     command.rows.len(),
                     disc.track_count()

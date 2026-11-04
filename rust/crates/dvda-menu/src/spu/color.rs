@@ -9,6 +9,7 @@ pub(crate) struct Color {
 }
 
 impl Color {
+    #[cfg(any(feature = "direct-link", test))]
     pub(crate) const TRANSPARENT: Self = Self {
         r: 0,
         g: 0,

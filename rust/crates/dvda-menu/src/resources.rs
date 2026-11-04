@@ -1,4 +1,3 @@
-#![allow(dead_code)] // retained for the in-process callers and tests
 //! Rust ownership for the vendor's private heap and CRT resources.
 //! Every export returns normally; only a caller in C may promote a failure to longjmp.
 use std::{
@@ -13,11 +12,13 @@ pub type ReadRgba =
     unsafe extern "C" fn(*const c_char, *mut u8, usize, *mut u32, *mut u32) -> c_int;
 #[link(name = "kernel32")]
 unsafe extern "system" {
+    #[cfg(test)]
     fn HeapCreate(options: u32, initial: usize, maximum: usize) -> *mut c_void;
     fn HeapAlloc(heap: *mut c_void, flags: u32, bytes: usize) -> *mut c_void;
     fn HeapReAlloc(heap: *mut c_void, flags: u32, object: *mut c_void, bytes: usize)
     -> *mut c_void;
     fn HeapFree(heap: *mut c_void, flags: u32, object: *mut c_void) -> c_int;
+    #[cfg(test)]
     fn HeapDestroy(heap: *mut c_void) -> c_int;
 }
 unsafe extern "C" {
@@ -26,6 +27,7 @@ unsafe extern "C" {
     fn fclose(file: *mut c_void) -> c_int;
     fn _wopen(path: *const u16, flags: c_int, ...) -> c_int;
     fn _close(file: c_int) -> c_int;
+    #[cfg(test)]
     fn _filelengthi64(file: c_int) -> i64;
 }
 const FILE: c_int = 1;
@@ -173,9 +175,11 @@ unsafe fn own(object: *mut c_void, kind: c_int) -> Result<(), ()> {
     }
     result
 }
+#[cfg(test)]
 pub(crate) struct Session {
     heap: *mut c_void,
 }
+#[cfg(test)]
 impl Session {
     pub(crate) fn begin(pixels: Option<ReadRgba>) -> Result<Self, ()> {
         if !HEAP.get().is_null() || RESOURCES.with(|resources| !resources.borrow().is_empty()) {
@@ -212,6 +216,7 @@ impl Session {
         succeeded
     }
 }
+#[cfg(test)]
 impl Drop for Session {
     fn drop(&mut self) {
         self.finish();
@@ -402,6 +407,7 @@ pub unsafe extern "C" fn menu_rust_close(file: c_int) -> c_int {
 }
 /// # Safety
 /// `file` must be an open CRT file descriptor that stays open for the call.
+#[cfg(test)]
 pub(crate) unsafe fn file_length(file: c_int) -> Result<u64, ()> {
     u64::try_from(unsafe { _filelengthi64(file) }).map_err(|_| ())
 }

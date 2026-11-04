@@ -6,8 +6,6 @@
 //! subset and reports every other construct as an explicit error instead of
 //! guessing at DVD-Video VM semantics.
 
-#![allow(dead_code)] // slices 2 and 3 wire this into the VOB writer next
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
     Number(u16),
@@ -287,28 +285,11 @@ fn single_symbol(byte: u8) -> Option<Symbol> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Statement {
-    Set {
-        target: RegisterTarget,
-        value: Value,
-    },
+    Set { register: u16, value: u16 },
     JumpMenu(u16),
-    JumpTrack {
-        group: u16,
-        track: u16,
-    },
+    JumpTrack { group: u16, track: u16 },
     Exit,
     Resume,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RegisterTarget {
-    Gprm(u16),
-    System(u16),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Value {
-    Literal(u16),
 }
 
 struct Parser {
@@ -400,14 +381,11 @@ impl Parser {
     fn set(&mut self, register: u16) -> Result<Statement, String> {
         self.expect_symbol(Symbol::Assign)?;
         let value = match self.next() {
-            Some(Token::Number(value)) => Value::Literal(value),
+            Some(Token::Number(value)) => value,
             other => return Err(format!("unsupported set value: {other:?}")),
         };
         self.expect_symbol(Symbol::Semicolon)?;
-        Ok(Statement::Set {
-            target: RegisterTarget::Gprm(register),
-            value,
-        })
+        Ok(Statement::Set { register, value })
     }
 }
 
@@ -422,11 +400,7 @@ pub(crate) fn compile(statements: &[Statement], context: VmContext) -> Result<Ve
     let mut bytes = Vec::with_capacity(statements.len() * 8);
     for statement in statements {
         let instruction = match statement {
-            Statement::Set { target, value } => {
-                let RegisterTarget::Gprm(register) = target else {
-                    return Err("system register writes are not supported yet".into());
-                };
-                let Value::Literal(value) = value;
+            Statement::Set { register, value } => {
                 if *register > 15 {
                     return Err(format!("GPRM {register} out of range"));
                 }

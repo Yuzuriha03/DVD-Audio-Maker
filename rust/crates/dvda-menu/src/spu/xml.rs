@@ -5,15 +5,10 @@
 //! element/attribute descriptor table the C session used to hand to readxml.
 
 use super::color::{Color, parse_hex};
+use super::format::VideoFormat;
 use super::image::{Button, SubPicture};
 use crate::{Token, tokenize};
 use std::path::{Path, PathBuf};
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum VideoFormat {
-    Pal,
-    Ntsc,
-}
 
 #[derive(Debug)]
 pub(crate) struct Document {
