@@ -252,6 +252,7 @@ pub(crate) fn encode(
     let mut recycled_au: Vec<PlannedAu> = Vec::new();
     let mut noise_left: Vec<i32> = Vec::new();
     let mut noise_right: Vec<i32> = Vec::new();
+    let mut pcm = Vec::new();
     while frames < input.frames() {
         let mut span = restart_interval as usize;
         let is_restart = if cycle != 0 {
@@ -345,11 +346,11 @@ pub(crate) fn encode(
                 capacity = remaining - 8;
             }
             let count = capacity.min(remaining);
-            let pcm = input.read(count)?;
+            input.read_into(count, &mut pcm)?;
             if pcm.len() != count * channels {
                 return Err(());
             }
-            (Cow::Owned(pcm), count, Vec::new(), 0)
+            (Cow::Borrowed(pcm.as_slice()), count, Vec::new(), 0)
         };
         let first = if is_restart && count >= 16 { 8 } else { 0 };
         p.flags = u32::from(is_restart || count != previous.blocksize as usize) * 2;

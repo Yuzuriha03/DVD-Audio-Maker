@@ -71,9 +71,17 @@ struct DecoderSink {
     started: bool,
     frames: u64,
     send: SyncSender<Event>,
+    recycled: mpsc::Receiver<Vec<i32>>,
 }
 impl DecoderSink {
-    fn new(side: Side, channels: u32, rate: u32, bits: u32, send: SyncSender<Event>) -> Self {
+    fn new(
+        side: Side,
+        channels: u32,
+        rate: u32,
+        bits: u32,
+        send: SyncSender<Event>,
+        recycled: mpsc::Receiver<Vec<i32>>,
+    ) -> Self {
         Self {
             side,
             channels: channels as usize,
@@ -82,6 +90,7 @@ impl DecoderSink {
             started: false,
             frames: 0,
             send,
+            recycled,
         }
     }
 }
@@ -102,8 +111,14 @@ impl PcmSink for DecoderSink {
         if !self.started || !pcm.len().is_multiple_of(self.channels) {
             return Err(dvda_bridges::ffmpeg::EINVAL);
         }
-        for chunk in pcm.chunks(CHUNK_FRAMES * self.channels) {
-            let mut samples = chunk.to_vec();
+        let chunk_samples = CHUNK_FRAMES * self.channels;
+        for chunk in pcm.chunks(chunk_samples) {
+            let mut samples = self
+                .recycled
+                .try_recv()
+                .unwrap_or_else(|_| Vec::with_capacity(chunk_samples));
+            samples.clear();
+            samples.extend_from_slice(chunk);
             if self.bits != 16 {
                 for sample in &mut samples {
                     *sample >>= 8;
@@ -149,7 +164,7 @@ impl Comparison {
         }
     }
 
-    fn push(&mut self, side: Side, samples: Vec<i32>) {
+    fn push(&mut self, side: Side, samples: Vec<i32>, recycled: &[SyncSender<Vec<i32>>; 2]) {
         let index = side.index();
         self.received[index] += samples.len() as u64;
         if matches!(side, Side::Decoded) && self.tail_samples != 0 {
@@ -162,13 +177,14 @@ impl Comparison {
         }
         if let Some(chunk) = &mut self.chunks[index] {
             chunk.samples.extend_from_slice(&samples);
+            let _ = recycled[index].try_send(samples);
         } else {
             self.chunks[index] = Some(Chunk { samples, offset: 0 });
         }
-        self.compare();
+        self.compare(recycled);
     }
 
-    fn compare(&mut self) {
+    fn compare(&mut self, recycled: &[SyncSender<Vec<i32>>; 2]) {
         if self.mismatch.is_some() {
             return;
         }
@@ -186,12 +202,14 @@ impl Comparison {
             let left_done = left.offset + available == left.samples.len();
             let right_done = right.offset + available == right.samples.len();
             if left_done {
-                self.chunks[0] = None;
+                let consumed = self.chunks[0].take().unwrap();
+                let _ = recycled[0].try_send(consumed.samples);
             } else {
                 self.chunks[0].as_mut().unwrap().offset += available;
             }
             if right_done {
-                self.chunks[1] = None;
+                let consumed = self.chunks[1].take().unwrap();
+                let _ = recycled[1].try_send(consumed.samples);
             } else {
                 self.chunks[1].as_mut().unwrap().offset += available;
             }
@@ -254,7 +272,12 @@ pub(crate) struct CompareJob<'a> {
     pub channels: u32,
     pub builtin: bool,
 }
-fn decode(job: DecodeJob<'_>, stop: Arc<AtomicBool>, send: SyncSender<Event>) {
+fn decode(
+    job: DecodeJob<'_>,
+    stop: Arc<AtomicBool>,
+    send: SyncSender<Event>,
+    recycled: mpsc::Receiver<Vec<i32>>,
+) {
     let DecodeJob {
         side,
         library,
@@ -267,7 +290,7 @@ fn decode(job: DecodeJob<'_>, stop: Arc<AtomicBool>, send: SyncSender<Event>) {
         stop,
         send: send.clone(),
     };
-    let mut sink = DecoderSink::new(side, channels, rate, bits, send.clone());
+    let mut sink = DecoderSink::new(side, channels, rate, bits, send.clone(), recycled);
     let result = (|| {
         let media = crate::native_components::media(library).map_err(|error| error.to_string())?;
         let status = media
@@ -311,11 +334,17 @@ pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result
     let max_padding_frames = if builtin { (rate - 1) / 1000 } else { 0 };
     let mut comparison = Comparison::new(channels, max_padding_frames);
     let (send, receive) = mpsc::sync_channel(QUEUE_EVENTS);
+    let (source_recycled, source_recycle) = mpsc::sync_channel(QUEUE_EVENTS);
+    let (decoded_recycled, decoded_recycle) = mpsc::sync_channel(QUEUE_EVENTS);
+    let recycled = [source_recycled, decoded_recycled];
+    let recycle = [source_recycle, decoded_recycle];
     let mut errors = [None, None];
     let mut mismatch_stopped = false;
     std::thread::scope(|scope| {
-        for (side, input, actual_bits) in
+        for ((side, input, actual_bits), recycle) in
             [(Side::Source, source, bits), (Side::Decoded, decoded, 24)]
+                .into_iter()
+                .zip(recycle)
         {
             let stop = Arc::clone(&stop);
             let send = send.clone();
@@ -331,6 +360,7 @@ pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result
                     },
                     stop,
                     send,
+                    recycle,
                 );
             });
         }
@@ -342,7 +372,7 @@ pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result
             }
             match receive.recv_timeout(Duration::from_millis(20)) {
                 Ok(Event::Data(side, samples)) => {
-                    comparison.push(side, samples);
+                    comparison.push(side, samples, &recycled);
                     if comparison.mismatch.is_some() && !mismatch_stopped {
                         mismatch_stopped = true;
                         stop.store(true, Ordering::Release);
@@ -375,24 +405,92 @@ pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result
 mod tests {
     use super::*;
 
+    type RecycleChannels = ([SyncSender<Vec<i32>>; 2], [mpsc::Receiver<Vec<i32>>; 2]);
+
+    fn recycle_channels() -> RecycleChannels {
+        let (source_send, source_receive) = mpsc::sync_channel(QUEUE_EVENTS);
+        let (decoded_send, decoded_receive) = mpsc::sync_channel(QUEUE_EVENTS);
+        (
+            [source_send, decoded_send],
+            [source_receive, decoded_receive],
+        )
+    }
+
     #[test]
     fn streaming_comparison_handles_fragmentation_padding_and_mismatch_offsets() {
+        let (recycled, _recycle) = recycle_channels();
         let mut comparison = Comparison::new(2, 2);
-        comparison.push(Side::Source, vec![1]);
-        comparison.push(Side::Source, vec![2, 3]);
-        comparison.push(Side::Decoded, vec![1]);
-        comparison.push(Side::Decoded, vec![2, 3, 0, 0]);
+        comparison.push(Side::Source, vec![1], &recycled);
+        comparison.push(Side::Source, vec![2, 3], &recycled);
+        comparison.push(Side::Decoded, vec![1], &recycled);
+        comparison.push(Side::Decoded, vec![2, 3, 0, 0], &recycled);
         comparison.finish(2, 2).unwrap();
         assert_eq!(comparison.positions, [3, 3]);
 
         let mut comparison = Comparison::new(2, 2);
-        comparison.push(Side::Source, vec![1, 2, 3, 4]);
-        comparison.push(Side::Decoded, vec![1, 2, 9, 4]);
+        comparison.push(Side::Source, vec![1, 2, 3, 4], &recycled);
+        comparison.push(Side::Decoded, vec![1, 2, 9, 4], &recycled);
         assert_eq!(comparison.finish(2, 2).unwrap_err(), mismatch(2, 6, 12, 12));
 
         let mut comparison = Comparison::new(2, 2);
-        comparison.push(Side::Source, vec![1, 2]);
-        comparison.push(Side::Decoded, vec![1, 2, 0, 1]);
+        comparison.push(Side::Source, vec![1, 2], &recycled);
+        comparison.push(Side::Decoded, vec![1, 2, 0, 1], &recycled);
         assert_eq!(comparison.finish(2, 2).unwrap_err(), mismatch(3, 9, 6, 12));
+    }
+
+    #[test]
+    fn streaming_comparison_returns_appended_and_consumed_buffers() {
+        let (recycled, recycle) = recycle_channels();
+        let mut comparison = Comparison::new(2, 0);
+        let source = vec![1, 2];
+        let source_allocation = source.as_ptr();
+        comparison.push(Side::Source, source, &recycled);
+        comparison.push(Side::Decoded, vec![1, 2], &recycled);
+        let returned = recycle[0].try_recv().unwrap();
+        assert_eq!(returned.as_ptr(), source_allocation);
+        assert!(recycle[1].try_recv().is_ok());
+
+        comparison.push(Side::Source, vec![3], &recycled);
+        assert!(recycle[0].try_recv().is_err());
+        let appended = vec![4];
+        let appended_allocation = appended.as_ptr();
+        comparison.push(Side::Source, appended, &recycled);
+        let returned = recycle[0].try_recv().unwrap();
+        assert_eq!(returned.as_ptr(), appended_allocation);
+        comparison.push(Side::Decoded, vec![3, 4], &recycled);
+        assert_eq!(recycle[0].try_recv().unwrap(), [3, 4]);
+        assert!(recycle[1].try_recv().is_ok());
+        comparison.finish(2, 0).unwrap();
+    }
+
+    #[test]
+    fn decoder_sink_reuses_allocation_and_preserves_sample_conversion() {
+        let (send, events) = mpsc::sync_channel(1);
+        let (recycled, recycle) = mpsc::sync_channel(1);
+        let mut sink = DecoderSink::new(Side::Source, 2, 48_000, 24, send, recycle);
+        sink.start(PcmFormat {
+            sample_rate: 48_000,
+            bits: 24,
+            channels: 2,
+            channel_mask: 3,
+        })
+        .unwrap();
+        let spare = Vec::with_capacity(CHUNK_FRAMES * 2);
+        let allocation = spare.as_ptr();
+        recycled.send(spare).unwrap();
+        sink.write(&[256, -256, 512, -512]).unwrap();
+        let Event::Data(Side::Source, samples) = events.recv().unwrap() else {
+            panic!("expected PCM data");
+        };
+        assert_eq!(samples, [1, -1, 2, -2]);
+        assert_eq!(samples.as_ptr(), allocation);
+        recycled.send(samples).unwrap();
+        sink.write(&[768, -768]).unwrap();
+        let Event::Data(Side::Source, samples) = events.recv().unwrap() else {
+            panic!("expected recycled PCM data");
+        };
+        assert_eq!(samples, [3, -3]);
+        assert_eq!(samples.as_ptr(), allocation);
+        sink.finish().unwrap();
     }
 }

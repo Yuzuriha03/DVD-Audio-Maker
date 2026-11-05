@@ -648,8 +648,29 @@ impl DecodedImages {
         }
         Ok(image)
     }
+
+    fn resized_chain(
+        &self,
+        path: &Path,
+        steps: &[(
+            dvda_image::geometry::Dimensions,
+            dvda_image::geometry::ResizeMode,
+        )],
+        extent: Option<dvda_image::geometry::Dimensions>,
+        callbacks: &mut dyn Callbacks,
+    ) -> Result<Arc<dvda_image::raster::Raster>, String> {
+        let image = self
+            .0
+            .resized_chain(path, steps, extent)
+            .map_err(|error| error.to_string())?;
+        if callbacks.cancelled() {
+            return Err("Build cancelled".into());
+        }
+        Ok(image)
+    }
 }
 
+#[cfg(test)]
 fn cover_frame(
     image: &dvda_image::raster::Raster,
     callbacks: &mut dyn Callbacks,
@@ -702,14 +723,12 @@ fn write_background_cached(
         let frame = Dimensions::new(720, 576).map_err(std::io::Error::other)?;
         let mut image = if let Some(input) = input {
             let image = images
-                .decode(input, callbacks)
+                .resized_chain(input, &[(frame, ResizeMode::Fill)], Some(frame), callbacks)
                 .map_err(std::io::Error::other)?;
             if callbacks.cancelled() {
                 return Err(cancelled());
             }
-            image
-                .resized(frame, ResizeMode::Fill)?
-                .centered_extent(frame, [0, 0, 0, 255])?
+            image.as_ref().clone()
         } else {
             Raster::solid(frame, [0, 0, 0, 255])?
         };
@@ -751,10 +770,22 @@ fn write_still_cached(
         if callbacks.cancelled() {
             return Err(cancelled());
         }
-        let image = images
+        use dvda_image::geometry::{Dimensions, ResizeMode};
+        let source = images
             .decode(input, callbacks)
             .map_err(std::io::Error::other)?;
-        let image = cover_frame(&image, callbacks)?;
+        let size = source.dimensions();
+        let compressed = Dimensions::new(((size.width() * 15 + 8) / 16).max(1), size.height())
+            .map_err(std::io::Error::other)?;
+        let frame = Dimensions::new(720, 576).map_err(std::io::Error::other)?;
+        let image = images
+            .resized_chain(
+                input,
+                &[(compressed, ResizeMode::Exact), (frame, ResizeMode::Fit)],
+                Some(frame),
+                callbacks,
+            )
+            .map_err(std::io::Error::other)?;
         if callbacks.cancelled() {
             return Err(cancelled());
         }
@@ -1472,6 +1503,68 @@ mod tests {
                 .zip([40, 120, 200, 255])
                 .all(|(actual, expected)| actual.abs_diff(expected) <= 2)
         }));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cached_menu_images_match_direct_pixel_pipelines() {
+        use dvda_image::{
+            geometry::{Dimensions, ResizeMode},
+            raster::Raster,
+        };
+        let root = std::env::temp_dir().join(format!(
+            "dvda-menu-cache-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let input = root.join("input.png");
+        let size = Dimensions::new(73, 129).unwrap();
+        let pixels = (0i32..73 * 129)
+            .flat_map(i32::to_le_bytes)
+            .collect();
+        let source = Raster::from_rgba(size, pixels).unwrap();
+        dvda_image::codec::write_png(&source, fs::File::create(&input).unwrap()).unwrap();
+        let frame = Dimensions::new(720, 576).unwrap();
+        let images = DecodedImages::default();
+
+        let mut expected = source
+            .resized(frame, ResizeMode::Fill)
+            .unwrap()
+            .centered_extent(frame, [0, 0, 0, 255])
+            .unwrap();
+        expected.dim(20);
+        let mut encoded = Vec::new();
+        dvda_image::codec::write_jpeg(&expected, &mut encoded, 88, [0; 3]).unwrap();
+        let expected = dvda_image::codec::decode(std::io::Cursor::new(encoded)).unwrap();
+        let background = root.join("background.jpg");
+        write_background_cached(
+            Some(&input),
+            &background,
+            20,
+            &mut crate::pcm::NoEvents,
+            &images,
+        )
+        .unwrap();
+        let actual = dvda_image::codec::decode(std::io::BufReader::new(
+            fs::File::open(&background).unwrap(),
+        ))
+        .unwrap();
+        assert_eq!(actual.rgba(), expected.rgba());
+
+        let expected = cover_frame(&source, &mut crate::pcm::NoEvents).unwrap();
+        let mut encoded = Vec::new();
+        dvda_image::codec::write_jpeg(&expected, &mut encoded, 92, [0; 3]).unwrap();
+        let expected = dvda_image::codec::decode(std::io::Cursor::new(encoded)).unwrap();
+        let still = root.join("still.jpg");
+        write_still_cached(&input, &still, &mut crate::pcm::NoEvents, &images).unwrap();
+        let actual =
+            dvda_image::codec::decode(std::io::BufReader::new(fs::File::open(&still).unwrap()))
+                .unwrap();
+        assert_eq!(actual.rgba(), expected.rgba());
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -4,7 +4,7 @@ pub(crate) trait PcmInput {
     fn au_samples(&self) -> usize;
     fn frames(&self) -> usize;
     fn position(&self) -> usize;
-    fn read(&mut self, capacity: usize) -> Result<Vec<i32>, ()>;
+    fn read_into(&mut self, capacity: usize, pcm: &mut Vec<i32>) -> Result<(), ()>;
     fn refresh_stamp(&mut self) -> Result<Option<crate::metadata::Metadata>, i32> {
         Ok(None)
     }
@@ -43,14 +43,15 @@ where
     fn position(&self) -> usize {
         self.position
     }
-    fn read(&mut self, capacity: usize) -> Result<Vec<i32>, ()> {
+    fn read_into(&mut self, capacity: usize, pcm: &mut Vec<i32>) -> Result<(), ()> {
         self.failed = true;
         if capacity == 0 || capacity > 160 || self.position > self.frames {
             return Err(());
         }
         let count = capacity.min(self.frames - self.position);
         let actual = count.min(self.source_frames.saturating_sub(self.position));
-        let mut pcm = vec![0; count * self.channels];
+        pcm.clear();
+        pcm.resize(count * self.channels, 0);
         let mut done = 0;
         while done < actual {
             let got = (self.callback)(
@@ -70,11 +71,12 @@ where
                 pcm[done * self.channels..].fill(0);
                 if actual_frames == rounded && done == 0 {
                     self.failed = false;
-                    return Ok(Vec::new());
+                    pcm.clear();
+                    return Ok(());
                 }
                 self.position = rounded;
                 self.failed = false;
-                return Ok(pcm);
+                return Ok(());
             }
             if got > actual - done {
                 return Err(());
@@ -100,7 +102,7 @@ where
         }
         self.position += count;
         self.failed = false;
-        Ok(pcm)
+        Ok(())
     }
     fn refresh_stamp(&mut self) -> Result<Option<crate::metadata::Metadata>, i32> {
         (self.stamp_refresh)()
@@ -132,15 +134,17 @@ impl PcmInput for MatrixInput<'_> {
     fn position(&self) -> usize {
         self.position
     }
-    fn read(&mut self, capacity: usize) -> Result<Vec<i32>, ()> {
+    fn read_into(&mut self, capacity: usize, pcm: &mut Vec<i32>) -> Result<(), ()> {
         if !self.pcm.len().is_multiple_of(self.channels) || self.position > self.frames() {
             return Err(());
         }
         let count = capacity.min(self.frames() - self.position);
-        let pcm = self.pcm[self.position * self.channels..(self.position + count) * self.channels]
-            .to_vec();
+        pcm.clear();
+        pcm.extend_from_slice(
+            &self.pcm[self.position * self.channels..(self.position + count) * self.channels],
+        );
         self.position += count;
-        Ok(pcm)
+        Ok(())
     }
 }
 
@@ -168,10 +172,13 @@ fn callback_input_reorders_partial_reads_and_pads_tail() {
         },
         stamp_refresh: || Ok(None),
     };
-    assert_eq!(input.read(3), Ok(vec![512, 256, 1024, 768, 0, 0]));
+    let mut pcm = Vec::new();
+    input.read_into(3, &mut pcm).unwrap();
+    assert_eq!(pcm, [512, 256, 1024, 768, 0, 0]);
     assert_eq!(input.position, 3);
     assert!(!input.failed);
-    assert_eq!(input.read(1), Ok(Vec::new()));
+    input.read_into(1, &mut pcm).unwrap();
+    assert_eq!(pcm, Vec::<i32>::new());
     assert_eq!(calls, 2);
 }
 
@@ -194,7 +201,7 @@ fn callback_input_failure_does_not_advance_position() {
             },
             stamp_refresh: || Ok(None),
         };
-        assert_eq!(input.read(1), Err(()));
+        assert_eq!(input.read_into(1, &mut Vec::new()), Err(()));
         assert_eq!(input.position, 0);
         assert!(input.failed);
     }

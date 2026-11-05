@@ -12,7 +12,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::{Receiver, SyncSender, sync_channel},
+        mpsc::{self, Receiver, SyncSender, sync_channel},
     },
     thread::JoinHandle,
 };
@@ -22,6 +22,7 @@ const PCM_QUEUE_CHUNKS: usize = 4;
 
 struct EncoderInput {
     receiver: Receiver<Vec<i32>>,
+    recycled: SyncSender<Vec<i32>>,
     current: Vec<i32>,
     offset: usize,
     channels: usize,
@@ -50,6 +51,10 @@ impl StreamIo for EncoderInput {
         let mut written = 0;
         while written < capacity {
             if self.offset == self.current.len() {
+                if !self.current.is_empty() {
+                    let consumed = std::mem::take(&mut self.current);
+                    let _ = self.recycled.try_send(consumed);
+                }
                 match self.receiver.recv() {
                     Ok(chunk) => {
                         self.current = chunk;
@@ -105,6 +110,7 @@ impl StreamIo for EncoderInput {
 
 struct Pipeline {
     sender: Option<SyncSender<Vec<i32>>>,
+    recycled: Option<Receiver<Vec<i32>>>,
     worker: Option<JoinHandle<Result<u64, Failure>>>,
     output: Option<File>,
     channels: usize,
@@ -118,6 +124,7 @@ impl Pipeline {
     fn new(output: File) -> Self {
         Self {
             sender: None,
+            recycled: None,
             worker: None,
             output: Some(output),
             channels: 0,
@@ -218,6 +225,7 @@ impl dvda_bridges::PcmSink for Pipeline {
         }];
         let channels = format.channels as usize;
         let (sender, receiver) = sync_channel(PCM_QUEUE_CHUNKS);
+        let (recycled_sender, recycled) = mpsc::sync_channel(PCM_QUEUE_CHUNKS + 1);
         let cancelled = Arc::clone(&self.cancelled);
         let output = match self.output.take() {
             Some(output) => output,
@@ -226,6 +234,7 @@ impl dvda_bridges::PcmSink for Pipeline {
         self.worker = Some(std::thread::spawn(move || {
             let mut input = EncoderInput {
                 receiver,
+                recycled: recycled_sender,
                 current: Vec::new(),
                 offset: 0,
                 channels,
@@ -267,6 +276,7 @@ impl dvda_bridges::PcmSink for Pipeline {
         self.channels = channels;
         self.bits = format.bits;
         self.sender = Some(sender);
+        self.recycled = Some(recycled);
         Ok(())
     }
 
@@ -281,7 +291,13 @@ impl dvda_bridges::PcmSink for Pipeline {
             if self.cancelled.load(Ordering::Acquire) {
                 return Err(dvda_bridges::ffmpeg::EXIT);
             }
-            let mut owned = chunk.to_vec();
+            let mut owned = self
+                .recycled
+                .as_ref()
+                .and_then(|recycled| recycled.try_recv().ok())
+                .unwrap_or_else(|| Vec::with_capacity(chunk_samples));
+            owned.clear();
+            owned.extend_from_slice(chunk);
             if self.bits != 16 {
                 for sample in &mut owned {
                     *sample >>= 8;
