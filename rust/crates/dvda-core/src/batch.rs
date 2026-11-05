@@ -333,18 +333,35 @@ fn worker_count(tracks: usize) -> usize {
 }
 
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
+    execute_with(job, caller, |_, _, _| Ok(())).0
+}
+
+pub fn execute_with<R, F>(job: Job, caller: &mut dyn Callbacks, finalize: F) -> (Outcome, Vec<R>)
+where
+    R: Send,
+    F: Fn(usize, &Track, &mut dyn Callbacks) -> Result<R, Failure> + Sync,
+{
     crate::metrics::measure(
         "mlp_batch",
         vec![job.temporary_directory.clone()],
         worker_count(job.tracks.len()),
         caller,
-        |work, caller| execute_measured(job, caller, work),
-        |result| result.failure.is_none() && result.exit_code == Some(0),
+        |work, caller| execute_measured_with(job, caller, work, &finalize),
+        |(outcome, _)| outcome.failure.is_none() && outcome.exit_code == Some(0),
     )
 }
 
-fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics::Work) -> Outcome {
-    let result = (|| -> Result<(), Failure> {
+fn execute_measured_with<R, F>(
+    job: Job,
+    caller: &mut dyn Callbacks,
+    work: &crate::metrics::Work,
+    finalize: &F,
+) -> (Outcome, Vec<R>)
+where
+    R: Send,
+    F: Fn(usize, &Track, &mut dyn Callbacks) -> Result<R, Failure> + Sync,
+{
+    let result = (|| -> Result<Vec<R>, Failure> {
         validate(&job)?;
         let pcm_signature = crate::audio::production_pcm_signature(
             &job.media_library,
@@ -364,9 +381,12 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics:
         let external = AtomicBool::new(false);
         let first_error = Mutex::new(None);
         let (send, receive) = mpsc::sync_channel::<String>(64);
+        let (complete_send, complete_receive) = mpsc::sync_channel::<(usize, R)>(count * 2);
+        let mut results: Vec<_> = (0..job.tracks.len()).map(|_| None).collect();
         std::thread::scope(|scope| {
             for _ in 0..count {
                 let send = send.clone();
+                let complete_send = complete_send.clone();
                 let job = &job;
                 let next = &next;
                 let stop = &stop;
@@ -382,6 +402,23 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics:
                             let _active = work.enter();
                             let bytes = crate::metrics::file_bytes(&job.tracks[index].source_path);
                             track(job, index, send.clone(), stop, pcm_signature)?;
+                            let info = &job.tracks[index];
+                            let mut events = Events {
+                                index,
+                                track: info,
+                                send: send.clone(),
+                                stop,
+                                media_phase: false,
+                                previous: -1,
+                                errors: String::new(),
+                            };
+                            let finalized = finalize(index, info, &mut events)?;
+                            if complete_send.send((index, finalized)).is_err() {
+                                return Err(Failure::new(
+                                    "InvalidOperation",
+                                    "Batch result receiver stopped unexpectedly",
+                                ));
+                            }
                             work.complete(bytes);
                         }
                         Ok(())
@@ -402,9 +439,13 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics:
                 });
             }
             drop(send);
+            drop(complete_send);
             // Keep draining after cancellation so workers never block during cleanup.
             let callbacks = catch_unwind(AssertUnwindSafe(|| {
                 loop {
+                    while let Ok((index, result)) = complete_receive.try_recv() {
+                        results[index] = Some(result);
+                    }
                     if caller.cancelled() {
                         external.store(true, Ordering::Release);
                         stop.store(true, Ordering::Release);
@@ -419,11 +460,15 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics:
             if callbacks.is_err() {
                 stop.store(true, Ordering::Release);
                 while receive.recv().is_ok() {}
+                while complete_receive.recv().is_ok() {}
                 let mut first = first_error.lock().unwrap();
                 *first = Some(Failure::new(
                     "InvalidOperation",
                     "Panic caught in batch callback",
                 ));
+            }
+            while let Ok((index, result)) = complete_receive.try_recv() {
+                results[index] = Some(result);
             }
         });
         if external.load(Ordering::Acquire) {
@@ -432,17 +477,23 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks, work: &crate::metrics:
         if let Some(error) = first_error.into_inner().unwrap() {
             return Err(error);
         }
-        Ok(())
+        Ok(results.into_iter().flatten().collect())
     })();
     match result {
-        Ok(()) => Outcome {
-            exit_code: Some(0),
-            failure: None,
-        },
-        Err(error) => Outcome {
-            exit_code: None,
-            failure: Some(error),
-        },
+        Ok(results) => (
+            Outcome {
+                exit_code: Some(0),
+                failure: None,
+            },
+            results,
+        ),
+        Err(error) => (
+            Outcome {
+                exit_code: None,
+                failure: Some(error),
+            },
+            Vec::new(),
+        ),
     }
 }
 

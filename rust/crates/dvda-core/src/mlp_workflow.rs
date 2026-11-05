@@ -60,6 +60,7 @@ struct Forward<'a> {
     caller: &'a mut dyn Callbacks,
     base_completed: usize,
     completed_tracks: usize,
+    finalized_tracks: usize,
     track_progress: Vec<u8>,
     total: usize,
 }
@@ -70,6 +71,19 @@ impl Forward<'_> {
             return;
         };
         let kind = event["Kind"].as_str().unwrap_or_default();
+        if kind == "Finalized" {
+            self.finalized_tracks += 1;
+            self.caller.emit(
+                1,
+                &format!(
+                    "[MLP-FINALIZE] progress {}/{} {}",
+                    self.finalized_tracks,
+                    self.total,
+                    event["Name"].as_str().unwrap_or("Track")
+                ),
+            );
+            return;
+        }
         let track = event["Track"]
             .as_u64()
             .and_then(|index| usize::try_from(index).ok())
@@ -198,56 +212,40 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                     .collect(),
             };
             let mut encode_progress = dvda_native::media::ProgressScope::new(caller, 10, 85);
+            encode_progress.emit(1, &format!("[MLP-FINALIZE] start {}", pending.len()));
             let mut forward = Forward {
                 caller: &mut encode_progress,
                 base_completed: hits as usize,
                 completed_tracks: hits as usize,
+                finalized_tracks: hits as usize,
                 track_progress: vec![0; pending.len()],
                 total: job.tracks.len(),
             };
-            let outcome = batch::execute(batch_job, &mut forward);
+            let (outcome, finalized) =
+                batch::execute_with(batch_job, &mut forward, |work_index, info, callbacks| {
+                    let finalized = finalize_track(
+                        &job,
+                        &native,
+                        &stage,
+                        work_index,
+                        &pending[work_index],
+                        callbacks,
+                    )
+                    .map_err(|error| crate::media::Failure::new("InvalidOperation", &error))?;
+                    callbacks.emit(
+                        5,
+                        &json!({"Kind":"Finalized","Track":work_index,
+                            "Name":info.display_name,"Value":null})
+                        .to_string(),
+                    );
+                    Ok(finalized)
+                });
             drop(forward);
             if let Some(failure) = outcome.failure {
                 return Err(failure.message);
             }
             let mut finalize_progress = dvda_native::media::ProgressScope::new(caller, 85, 100);
-            finalize_progress.emit(1, &format!("[MLP-FINALIZE] start {}", pending.len()));
-            let mut destinations = std::collections::HashSet::new();
-            let independent = pending
-                .iter()
-                .all(|item| destinations.insert(item.destination.to_string_lossy().to_uppercase()));
-            let workers = if independent {
-                crate::options::worker_count(pending.len())
-            } else {
-                1
-            };
-            let mut finalized_count = 0;
-            let finalized = crate::parallel::map_with_workers(
-                &pending,
-                workers,
-                &mut finalize_progress,
-                "MLP 编码已被取消。",
-                |work_index, item, callbacks| {
-                    finalize_track(&job, &native, &stage, work_index, item, callbacks)
-                },
-                |work_index, _, callbacks| {
-                    finalized_count += 1;
-                    let item = &pending[work_index];
-                    let display_name = text(&job.tracks[item.index], "Title").unwrap_or("Track");
-                    callbacks.emit(
-                        1,
-                        &format!(
-                            "[MLP-FINALIZE] progress {}/{} {}",
-                            hits as usize + finalized_count,
-                            job.tracks.len(),
-                            display_name
-                        ),
-                    );
-                    callbacks.progress(finalized_count as u64, pending.len() as u64);
-                },
-            )?;
-            for result in finalized {
-                let finalized = result?;
+            for finalized in finalized {
                 if let Some(issue) = finalized.diagnostic {
                     diagnostics.push(issue);
                     continue;

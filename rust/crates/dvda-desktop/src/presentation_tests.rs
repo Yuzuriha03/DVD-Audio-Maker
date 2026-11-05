@@ -220,6 +220,18 @@ fn batch_progress_preserves_track_names_and_audio_parameters() {
 }
 
 #[test]
+fn finalized_events_stay_out_of_summary_and_activity() {
+    let _ui_test_lock = ui_test_guard();
+    let raw =
+        json!({"Kind":"Finalized","Track":81,"Name":"Slashing Bloom","Value":null}).to_string();
+    for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja, Lang::Ko] {
+        assert!(crate::presentation::summary(lang, &raw, false).is_none());
+        assert!(crate::presentation::activity(lang, &raw).is_none());
+        assert!(localized_log(lang, &raw).contains("Slashing Bloom"));
+    }
+}
+
+#[test]
 fn menu_cover_progress_is_localized_with_album_and_position() {
     let _ui_test_lock = ui_test_guard();
     let raw = "[menu-cover] background 2/17 Album 名称";

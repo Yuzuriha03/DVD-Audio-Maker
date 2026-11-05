@@ -175,6 +175,9 @@ pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String>
     }
     if text.starts_with('{') {
         let event: serde_json::Value = serde_json::from_str(text).ok()?;
+        if event["Kind"] == "Finalized" {
+            return None;
+        }
         if event["Kind"] == "Detail" {
             return summary(lang, event["Value"].as_str().unwrap_or_default(), false);
         }
@@ -255,10 +258,13 @@ pub fn activity(lang: Lang, text: &str) -> Option<String> {
         }
         return task_message(lang, text);
     }
-    if let Ok(event) = serde_json::from_str::<serde_json::Value>(text)
-        && event["Kind"] == "Detail"
-    {
-        return activity(lang, event["Value"].as_str()?);
+    if let Ok(event) = serde_json::from_str::<serde_json::Value>(text) {
+        if event["Kind"] == "Finalized" {
+            return None;
+        }
+        if event["Kind"] == "Detail" {
+            return activity(lang, event["Value"].as_str()?);
+        }
     }
     if activity_only(text) {
         return Some(localized_log(lang, text));

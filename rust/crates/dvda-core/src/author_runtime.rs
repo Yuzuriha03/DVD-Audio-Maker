@@ -200,13 +200,7 @@ impl dvda_author::menu::Backend for Backend {
         #[cfg(feature = "direct-bridges")]
         {
             status(
-                unsafe {
-                    dvda_bridges::menu::dvda_menu_subpictures(
-                        path(xml)?.as_ptr(),
-                        path(input)?.as_ptr(),
-                        path(output)?.as_ptr(),
-                    )
-                },
+                dvda_bridges::menu::subpictures(xml, input, output),
                 callbacks,
             )
         }
@@ -224,15 +218,7 @@ impl dvda_author::menu::Backend for Backend {
     ) -> Result<(), String> {
         #[cfg(feature = "direct-bridges")]
         {
-            status(
-                unsafe {
-                    dvda_bridges::menu::dvda_menu_navigation(
-                        path(xml)?.as_ptr(),
-                        path(output)?.as_ptr(),
-                    )
-                },
-                callbacks,
-            )
+            status(dvda_bridges::menu::navigation(xml, output), callbacks)
         }
         #[cfg(not(feature = "direct-bridges"))]
         {
