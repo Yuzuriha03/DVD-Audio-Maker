@@ -119,6 +119,7 @@ pub fn normalize(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
     normalize_impl(job, caller, false)
 }
 
+#[cfg(any(not(feature = "direct-bridges"), test))]
 pub(crate) fn normalize_s24(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
     normalize_impl(job, caller, true)
 }

@@ -83,6 +83,9 @@ pub(crate) fn prepare_matrix(
         }
         let count = capacity.min(remaining);
         let buffer = input.read(count)?;
+        if buffer.is_empty() && input.position() == input.frames() {
+            break;
+        }
         if buffer.len() != count * channels {
             return Err(());
         }
@@ -101,6 +104,9 @@ pub(crate) fn prepare_matrix(
         }
         m.pcm.extend_from_slice(p);
         total += count;
+    }
+    if m.lengths.is_empty() {
+        return Ok(());
     }
     m.bypass.resize(total, 0);
     if m.original_scale {

@@ -25,6 +25,8 @@ pub mod iso;
 pub mod media;
 #[cfg(feature = "media")]
 mod media_convert;
+#[cfg(feature = "media")]
+pub use media_convert::{PcmFormat, PcmSink};
 #[cfg(feature = "menu")]
 pub mod menu;
 #[cfg(feature = "media")]

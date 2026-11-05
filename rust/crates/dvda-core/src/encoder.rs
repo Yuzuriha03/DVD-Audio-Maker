@@ -54,7 +54,7 @@ pub fn access_units(frames: i64, rate: u32) -> Result<u64, Failure> {
         .map(|n| (n / block) as u64)
         .ok_or_else(|| Failure::new("Overflow", "PCM frame count overflow"))
 }
-fn assignment(mask: u32) -> Result<u32, Failure> {
+pub(crate) fn assignment(mask: u32) -> Result<u32, Failure> {
     [
         4, 3, 0x103, 0x33, 0xb, 0x10b, 0x3b, 7, 0x107, 0x37, 0xf, 0x10f, 0x3f,
     ]

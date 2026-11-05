@@ -389,6 +389,43 @@ impl Media {
         Ok(result)
     }
 
+    #[cfg(feature = "direct-bridges")]
+    pub fn run_pcm(
+        &self,
+        request: &Request,
+        callbacks: &mut dyn Callbacks,
+        sink: &mut dyn dvda_bridges::PcmSink,
+    ) -> io::Result<i32> {
+        request.validate()?;
+        let mut direct =
+            dvda_bridges::direct::MediaRequest::new(request.operation as u32, &request.input, "")
+                .map_err(|_| io::Error::from_raw_os_error(123))?;
+        direct.output = None;
+        direct.rate = request.rate;
+        direct.bits = request.bits;
+        direct.output_format = request.output_format as u32;
+        direct.soxr = request.soxr;
+        direct.dither = request.dither;
+        let mut state = CallbackState {
+            callbacks,
+            panicked: false,
+        };
+        let result = unsafe {
+            direct.run_pcm_with_callbacks(
+                dvda_bridges::Call {
+                    emit: Some(emit),
+                    cancel: Some(cancel),
+                    state: (&mut state as *mut CallbackState<'_>).cast(),
+                },
+                sink,
+            )
+        };
+        if state.panicked {
+            return Err(io::Error::other("Panic caught in media callback"));
+        }
+        Ok(result)
+    }
+
     #[cfg(not(feature = "direct-bridges"))]
     pub fn run(&self, request: &Request, callbacks: &mut dyn Callbacks) -> io::Result<i32> {
         request.validate()?;

@@ -61,6 +61,18 @@ impl MediaRequest {
         })
     }
 
+    /// # Safety
+    /// Callback and sink state must remain valid for the synchronous call and must not unwind.
+    pub unsafe fn run_pcm_with_callbacks(
+        &self,
+        mut callbacks: crate::Call,
+        sink: &mut dyn crate::media_convert::PcmSink,
+    ) -> i32 {
+        self.with_raw_request(|request| unsafe {
+            crate::media::audio_sink(request, &mut callbacks, sink)
+        })
+    }
+
     fn with_raw_request(&self, run: impl FnOnce(&crate::media::Request) -> i32) -> i32 {
         if !self.tags.len().is_multiple_of(2) || self.tags.len() / 2 > u32::MAX as usize {
             return -22;

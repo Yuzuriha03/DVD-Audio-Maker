@@ -33,7 +33,7 @@ impl<'a> Reader<'a> {
         // holds the requested frames and the count is exclusive stack storage.
         let status =
             unsafe { (self.callback)(self.context, buffer.as_mut_ptr(), capacity, &mut received) };
-        if status != 0 || received == 0 || received > capacity {
+        if status != 0 || received > capacity {
             Err(())
         } else {
             Ok(received)
@@ -110,11 +110,13 @@ mod tests {
         assert_eq!(reader.read(&mut buffer, usize::MAX), Err(()));
         assert_eq!(state.calls, 0);
         assert_eq!(reader.read(&mut buffer, 2), Ok(1));
-        for count in [0, 3, usize::MAX] {
+        for count in [3, usize::MAX] {
             state.count = count;
             std::hint::black_box(&state);
             assert_eq!(reader.read(&mut buffer, 2), Err(()));
         }
+        state.count = 0;
+        assert_eq!(reader.read(&mut buffer, 2), Ok(0));
         state.count = 2;
         state.status = -1;
         std::hint::black_box(&state);

@@ -222,12 +222,16 @@ unsafe fn cover(request: &Request, format: *mut Format) -> Result<(), i32> {
 /// `request.input` must not be NULL and must be a valid NUL-terminated string for the call.
 /// `request` must be readable for the call. `call` is registered as the interrupt callback's
 /// opaque state, so it must stay alive and must not move until `run` returns.
-unsafe fn run(request: &Request, call: &mut Call) -> Result<(), i32> {
+unsafe fn run(
+    request: &Request,
+    call: &mut Call,
+    pcm_sink: Option<&mut dyn crate::media_convert::PcmSink>,
+) -> Result<(), i32> {
     unsafe {
         if call.cancelled() {
             return Err(EXIT);
         }
-        if !matches!(request.operation, 1..=5) {
+        if !matches!(request.operation, 1..=5) || (pcm_sink.is_some() && request.operation != 3) {
             return Err(EINVAL);
         }
         let path = text(request.input);
@@ -339,7 +343,13 @@ unsafe fn run(request: &Request, call: &mut Call) -> Result<(), i32> {
                         }
                         Ok(())
                     }
-                    3 => crate::media_convert::audio_input(request, call, format, Some(reader)),
+                    3 => crate::media_convert::audio_input(
+                        request,
+                        call,
+                        format,
+                        Some(reader),
+                        pcm_sink,
+                    ),
                     _ => Err(-1381258232),
                 };
             }
@@ -353,7 +363,7 @@ unsafe fn run(request: &Request, call: &mut Call) -> Result<(), i32> {
             match request.operation {
                 1 => probe(call, format),
                 2 => packets(call, format),
-                3 => crate::media_convert::audio(request, call, format),
+                3 => crate::media_convert::audio_input(request, call, format, None, pcm_sink),
                 4 => crate::media_convert::video(request, call, format),
                 5 => cover(request, format),
                 _ => Err(EINVAL),
@@ -389,9 +399,51 @@ pub unsafe extern "C" fn dvdamedia_run(
         let _media_job = crate::win::media_job();
         av_log_set_callback(Some(logger));
         let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&call)));
-        let result =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&*request, &mut call)))
-                .unwrap_or(Err(EIO));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run(&*request, &mut call, None)
+        }))
+        .unwrap_or(Err(EIO));
+        match result {
+            Ok(()) => 0,
+            Err(error) => {
+                if error != EXIT {
+                    let mut message = [0i8; 128];
+                    av_strerror(error, message.as_mut_ptr(), message.len());
+                    call.message(
+                        2,
+                        &format!(
+                            "Error while decoding or processing media: {}",
+                            text(message.as_ptr())
+                        ),
+                    );
+                }
+                error
+            }
+        }
+    }
+}
+
+/// # Safety
+/// `request`, `call` and `sink` must remain live and exclusively accessible for this synchronous call.
+pub unsafe fn audio_sink(
+    request: &Request,
+    call: &mut Call,
+    sink: &mut dyn crate::media_convert::PcmSink,
+) -> i32 {
+    unsafe {
+        if request.size as usize != std::mem::size_of::<Request>()
+            || request.abi != 2
+            || request.input.is_null()
+        {
+            return EINVAL;
+        }
+        let _media_job = crate::win::media_job();
+        av_log_set_callback(Some(logger));
+        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&*call)));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run(request, call, Some(sink))
+        }))
+        .unwrap_or(Err(EIO));
         match result {
             Ok(()) => 0,
             Err(error) => {

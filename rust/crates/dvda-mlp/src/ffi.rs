@@ -152,11 +152,11 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
     } else {
         40
     };
-    let aus = config
-        .frames
-        .checked_add(samples - 1)
-        .ok_or("Frame count overflow")?
-        / samples;
+    let aus = if config.frames == u64::MAX {
+        0
+    } else {
+        config.frames.div_ceil(samples)
+    };
     if aus > u64::from(u32::MAX) {
         return Err("Too many access units");
     }
@@ -172,8 +172,10 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
             valid_bits: record.valid_bits,
         });
     }
-    crate::streaming::MetadataCursor::new(&records, aus as usize)
-        .map_err(|_| "Invalid metadata timeline")?;
+    if config.frames != u64::MAX {
+        crate::streaming::MetadataCursor::new(&records, aus as usize)
+            .map_err(|_| "Invalid metadata timeline")?;
+    }
     Ok(records)
 }
 /// # Safety
@@ -204,11 +206,18 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
         || !(1..=6).contains(&config.channels)
         || config.restart_interval > 32
         || config.frames == 0
-        || config.frames > u64::MAX - 160
+        || (config.frames > u64::MAX - 160 && config.frames != u64::MAX)
         || ![44100, 48000, 88200, 96000, 176400, 192000].contains(&config.sample_rate)
         || (config.sample_rate > 96000 && config.channels > 2)
     {
         return fail(result, -1, "Invalid configuration");
+    }
+    if config.frames == u64::MAX && stamp_refresh.is_none() {
+        return fail(
+            result,
+            -1,
+            "Unknown-length input requires live metadata refresh",
+        );
     }
     let c = Config {
         sample_rate: config.sample_rate,
@@ -297,6 +306,9 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
                 let Ok(received) = reader.read(&mut buffer[at * channels..], capacity) else {
                     return fail(result, -3, "Input callback failed or cancelled");
                 };
+                if received == 0 {
+                    return fail(result, -3, "Input ended before the declared frame count");
+                }
                 at += received;
                 result.input_frames += received as u64;
             }

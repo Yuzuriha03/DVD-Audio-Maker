@@ -1135,8 +1135,7 @@ struct AlacFindRequest {
 fn alac_find_bad_frames(request: Value) -> Result<Value, String> {
     let request: AlacFindRequest =
         serde_json::from_value(request).map_err(|error| error.to_string())?;
-    let data = fs::read(&request.path).map_err(|error| format!("{}: {error}", request.path))?;
-    crate::preparation::alac::find_patches(&data, &request.cookie, &request.packets)
+    crate::preparation::alac::find_patches_file(&request.path, &request.cookie, &request.packets)
         .map(|patches| json!(patches))
         .map_err(|error| error.message)
 }
@@ -1159,22 +1158,13 @@ struct AlacPatch {
 fn alac_apply_patches(request: Value) -> Result<Value, String> {
     let request: AlacApplyRequest =
         serde_json::from_value(request).map_err(|error| error.to_string())?;
-    let mut data =
-        fs::read(&request.source).map_err(|error| format!("{}: {error}", request.source))?;
-    crate::preparation::alac::apply_bits(
-        &mut data,
+    let written = crate::preparation::alac::apply_patches_file(
+        &request.source,
+        Path::new(&request.destination),
         request.patches.iter().map(|p| (p.position, p.end_bit)),
     )
     .map_err(|error| error.message)?;
-    let parent = Path::new(&request.destination).parent();
-    if let Some(parent) = parent
-        && !parent.as_os_str().is_empty()
-    {
-        fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
-    }
-    fs::write(&request.destination, &data)
-        .map_err(|error| format!("{}: {error}", request.destination))?;
-    Ok(json!({"WrittenBytes": data.len()}))
+    Ok(json!({"WrittenBytes": written}))
 }
 
 fn read_flac(path: &str) -> Result<Vec<(u8, Vec<u8>)>, String> {

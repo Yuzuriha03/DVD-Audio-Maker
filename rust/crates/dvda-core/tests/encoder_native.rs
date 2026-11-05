@@ -1,5 +1,5 @@
 //! Frozen pre-migration host references; this test does not execute C#.
-use dvda_core::{encoder, hash, media};
+use dvda_core::{audio, encoder, hash, media};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde::Deserialize;
 use std::{
@@ -233,6 +233,210 @@ fn linked_mlp_matrix_without_encoder_dll() {
         assert_eq!(digest(&actual), case.mlp_sha256, "case {index}: {case:?}");
         assert!(!missing_library.exists());
         fs::remove_file(&output).unwrap();
+    }
+}
+
+#[test]
+#[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+#[ignore = "requires source-built media runtime"]
+fn streamed_decode_to_mlp_matches_the_lossless_pcm_matrix_without_wave_output() {
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
+    let root = Scratch::new();
+    let input = root.0.join("input.wav");
+    let output = root.0.join("streamed.mlp");
+    let raw = root.0.join("decoded.raw");
+    let unwanted = root.0.join("production.wav");
+    let normalized = root.0.join("normalized.wav");
+    for (index, case) in fixtures.cases.iter().enumerate() {
+        let expected = wave(&input, case);
+        let result = audio::check_decode(
+            &audio::Job {
+                library: PathBuf::from(
+                    std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
+                )
+                .join("dvda-media.dll"),
+                input: input.to_string_lossy().into_owned(),
+                operation: audio::Operation::Decode,
+                resample_to: None,
+                decode_output: Some(audio::DecodeOutput {
+                    output: unwanted.clone(),
+                    normalized: normalized.clone(),
+                    rate: case.rate as i32,
+                    bits: case.bits as i32,
+                    dither: false,
+                    mlp_output: Some(output.clone()),
+                }),
+            },
+            &mut Events::default(),
+        )
+        .unwrap();
+        assert_eq!(result.error_count, 0, "case {index}: {case:?}");
+        assert_eq!(result.samples, Some(case.frames as i64));
+        assert!(!unwanted.exists());
+        assert!(!normalized.exists());
+        decode(&output, &raw);
+        let decoded = fs::read(&raw).unwrap();
+        let block = 40
+            * (case.rate
+                / if case.rate.is_multiple_of(44100) {
+                    44100
+                } else {
+                    48000
+                });
+        let padded_frames = case.frames.div_ceil(block as usize) * block as usize;
+        assert_eq!(
+            decoded.len(),
+            padded_frames * usize::from(case.channels) * 3,
+            "decoded length {index}"
+        );
+        assert_eq!(&decoded[..expected.len()], expected, "PCM case {index}");
+        assert!(decoded[expected.len()..].iter().all(|byte| *byte == 0));
+        fs::remove_file(&output).unwrap();
+        fs::remove_file(&raw).unwrap();
+    }
+}
+
+#[test]
+#[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+#[ignore = "requires source-built media runtime"]
+fn streamed_resampling_matches_the_wave_encoding_path() {
+    let root = Scratch::new();
+    let input = root.0.join("input.wav");
+    let case = Case {
+        rate: 44100,
+        bits: 24,
+        channels: 2,
+        frames: 8193,
+        mask: None,
+        metadata_version: 0,
+        wide: false,
+        wave_sha256: String::new(),
+        mlp_sha256: String::new(),
+        bytes: 0,
+    };
+    wave(&input, &case);
+    let streamed = root.0.join("streamed.mlp");
+    let result = audio::check_decode(
+        &audio::Job {
+            library: PathBuf::from(
+                std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
+            )
+            .join("dvda-media.dll"),
+            input: input.to_string_lossy().into_owned(),
+            operation: audio::Operation::Decode,
+            resample_to: None,
+            decode_output: Some(audio::DecodeOutput {
+                output: root.0.join("unused.wav"),
+                normalized: root.0.join("unused-normalized.wav"),
+                rate: 48000,
+                bits: 24,
+                dither: false,
+                mlp_output: Some(streamed.clone()),
+            }),
+        },
+        &mut Events::default(),
+    )
+    .unwrap();
+    assert_eq!(result.error_count, 0);
+    assert!(
+        result
+            .samples
+            .is_some_and(|samples| samples > case.frames as i64)
+    );
+    let pcm = root.0.join("baseline.wav");
+    passed(media::execute(
+        media::Job {
+            library: PathBuf::from(
+                std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
+            )
+            .join("dvda-media.dll"),
+            request: Request {
+                operation: Operation::Audio,
+                rate: 48000,
+                bits: 24,
+                output_format: OutputFormat::Wave,
+                soxr: false,
+                dither: false,
+                compression: 8,
+                cover: false,
+                input: input.to_string_lossy().into_owned(),
+                output: Some(pcm.to_string_lossy().into_owned()),
+                tags: Vec::new(),
+            },
+            replace: false,
+            timeout_millis: None,
+        },
+        &mut Events::default(),
+    ));
+    let baseline = root.0.join("baseline.mlp");
+    passed(encoder::execute(
+        encoder::Job {
+            library: root.0.join("unused-encoder.dll"),
+            wave: pcm.to_string_lossy().into_owned(),
+            destination: baseline.clone(),
+            metadata_context: String::new(),
+            timeout_millis: None,
+        },
+        &mut Events::default(),
+    ));
+    let streamed_raw = root.0.join("streamed.raw");
+    let baseline_raw = root.0.join("baseline.raw");
+    decode(&streamed, &streamed_raw);
+    decode(&baseline, &baseline_raw);
+    let streamed_bytes = fs::read(&streamed_raw).unwrap();
+    assert!(!streamed_bytes.is_empty());
+    assert_eq!(streamed_bytes, fs::read(&baseline_raw).unwrap());
+}
+
+#[test]
+#[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+#[ignore = "requires source-built media runtime"]
+fn streamed_decode_cancellation_discards_all_outputs() {
+    let root = Scratch::new();
+    let input = root.0.join("input.wav");
+    let case = Case {
+        rate: 48000,
+        bits: 24,
+        channels: 2,
+        frames: 200003,
+        mask: None,
+        metadata_version: 0,
+        wide: false,
+        wave_sha256: String::new(),
+        mlp_sha256: String::new(),
+        bytes: 0,
+    };
+    wave(&input, &case);
+    for polls in [1, 3, 10] {
+        let output = root.0.join("cancelled.mlp");
+        let error = audio::check_decode(
+            &audio::Job {
+                library: PathBuf::from(
+                    std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
+                )
+                .join("dvda-media.dll"),
+                input: input.to_string_lossy().into_owned(),
+                operation: audio::Operation::Decode,
+                resample_to: None,
+                decode_output: Some(audio::DecodeOutput {
+                    output: root.0.join("unused.wav"),
+                    normalized: root.0.join("unused-normalized.wav"),
+                    rate: 48000,
+                    bits: 24,
+                    dither: false,
+                    mlp_output: Some(output.clone()),
+                }),
+            },
+            &mut Events {
+                cancel_after: Some(polls),
+                ..Events::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.kind, "Cancelled");
+        assert!(!output.exists());
+        assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
     }
 }
 

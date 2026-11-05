@@ -30,6 +30,8 @@ pub mod menu_fonts;
 pub mod menu_verify;
 mod metrics;
 pub mod mlp_import;
+#[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+mod mlp_stream;
 pub mod mlp_workflow;
 mod native_components;
 pub mod options;
@@ -48,6 +50,8 @@ pub mod validation;
 pub mod verification;
 pub mod verify;
 pub mod verify_audio;
+#[cfg(feature = "direct-bridges")]
+mod verify_audio_stream;
 pub mod workflow;
 pub mod workspace;
 

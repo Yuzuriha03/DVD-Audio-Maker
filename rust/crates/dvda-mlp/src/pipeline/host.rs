@@ -3,7 +3,7 @@ use crate::ffi::{
     callbacks::{Reader, Writer},
 };
 use crate::{Config, format::Profile, metadata::Metadata};
-use std::cell::Cell;
+use std::{cell::Cell, rc::Rc};
 
 pub(crate) struct HostIo<'a, 'io, 'refresh> {
     pub read: &'a mut Reader<'io>,
@@ -25,16 +25,27 @@ pub(crate) fn encode_stream(
     let channels = c.channels as usize;
     let shift = u32::from(c.sample_rate > 48000) + u32::from(c.sample_rate > 96000);
     let samples = 40usize << shift;
-    let Ok(source_frames) = usize::try_from(config.frames) else {
-        return -1;
+    let unknown = config.frames == u64::MAX;
+    let source_frames = if unknown {
+        usize::MAX
+    } else {
+        let Ok(frames) = usize::try_from(config.frames) else {
+            return -1;
+        };
+        frames
     };
-    let Some(frames) = source_frames
-        .checked_add(samples - 1)
-        .map(|n| n / samples * samples)
-    else {
-        return -1;
+    let frames = if unknown {
+        usize::MAX
+    } else {
+        let Some(frames) = source_frames
+            .checked_add(samples - 1)
+            .map(|n| n / samples * samples)
+        else {
+            return -1;
+        };
+        frames
     };
-    if frames / samples > u32::MAX as usize {
+    if !unknown && frames / samples > u32::MAX as usize {
         return -1;
     }
     let rate_code = (u32::from([44100, 88200, 176400].contains(&c.sample_rate)) * 8) | shift;
@@ -55,6 +66,26 @@ pub(crate) fn encode_stream(
     let input_frames = Cell::new(0u64);
     let read = io.read;
     let mut refresh = io.stamp_refresh;
+    let Some(initial_stamp) = crate::pipeline::stamp::mlp_stamp_init(
+        records,
+        if unknown {
+            1
+        } else {
+            (frames / samples) as u64
+        },
+    ) else {
+        return -1;
+    };
+    let stamp_limit = Rc::new(Cell::new(if unknown {
+        1
+    } else {
+        (frames / samples) as u64
+    }));
+    let mut stamp = initial_stamp;
+    if unknown {
+        crate::pipeline::stamp::mlp_stamp_share_limit(&mut stamp, &stamp_limit);
+    }
+    let callback_limit = Rc::clone(&stamp_limit);
     let mut pcm = CallbackInput {
         channels,
         bits: u32::from(c.bits),
@@ -70,6 +101,9 @@ pub(crate) fn encode_stream(
                 status.set(-3);
             })?;
             input_frames.set(input_frames.get() + received as u64);
+            if unknown {
+                callback_limit.set(input_frames.get().div_ceil(samples as u64).max(1));
+            }
             Ok(received)
         },
         stamp_refresh: || match refresh.as_mut() {
@@ -90,11 +124,6 @@ pub(crate) fn encode_stream(
         failure: None,
     };
     let mut queue = crate::output::queue::MlpOutputQueue::mlp_output_queue_init();
-    let Some(mut stamp) =
-        crate::pipeline::stamp::mlp_stamp_init(records, (frames / samples) as u64)
-    else {
-        return -1;
-    };
     let ok = encode(
         &mut pcm,
         crate::pipeline::encode::EncodeOptions {
@@ -127,8 +156,11 @@ pub(crate) fn encode_stream(
     );
     queue.mlp_output_queue_dispose();
     result.input_frames = input_frames.get();
+    if unknown && result.input_frames == 0 {
+        return -3;
+    }
     if ok.is_ok() {
-        result.encoded_frames = frames as u64;
+        result.encoded_frames = pcm.frames as u64;
         0
     } else if status.get() != 0 {
         status.get()

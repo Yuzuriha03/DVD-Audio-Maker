@@ -9,7 +9,21 @@ pub(crate) fn open_error(error: std::io::Error) -> i32 {
         _ => EIO,
     }
 }
-struct Audio {
+#[derive(Clone, Copy)]
+pub struct PcmFormat {
+    pub sample_rate: u32,
+    pub bits: u32,
+    pub channels: u32,
+    pub channel_mask: u32,
+}
+
+pub trait PcmSink {
+    fn start(&mut self, format: PcmFormat) -> Result<(), i32>;
+    fn write(&mut self, pcm: &[i32]) -> Result<(), i32>;
+    fn finish(&mut self) -> Result<(), i32>;
+}
+
+struct Audio<'a> {
     decoder: *mut Context,
     frame: *mut Frame,
     packet: *mut Packet,
@@ -36,8 +50,9 @@ struct Audio {
     output: *mut Format,
     fifo: *mut c_void,
     input: *mut Format,
+    pcm_sink: Option<&'a mut dyn PcmSink>,
 }
-impl Drop for Audio {
+impl Drop for Audio<'_> {
     fn drop(&mut self) {
         unsafe {
             if !self.output.is_null() {
@@ -54,7 +69,7 @@ impl Drop for Audio {
         }
     }
 }
-impl Audio {
+impl Audio<'_> {
     /// # Safety
     /// `self.encoder` must be an open encoder owned by `self`. `frame` is sent to it as-is: it
     /// must be a valid frame for that encoder, or NULL to flush. The caller keeps ownership of
@@ -430,7 +445,24 @@ impl Audio {
                     ))?;
                 }
                 done(swr_init(self.swr))?;
-                if matches!(request.output_format, 1 | 6) {
+                if let Some(sink) = self.pcm_sink.as_deref_mut() {
+                    let mut mask = 0u32;
+                    for index in 0..self.channels as u32 {
+                        let channel =
+                            av_channel_layout_channel_from_index((*frame).ch_layout_ptr(), index);
+                        if !(0..32).contains(&channel) {
+                            mask = 0;
+                            break;
+                        }
+                        mask |= 1 << channel;
+                    }
+                    sink.start(PcmFormat {
+                        sample_rate: self.rate as u32,
+                        bits: self.bits as u32,
+                        channels: self.channels as u32,
+                        channel_mask: mask,
+                    })?;
+                } else if matches!(request.output_format, 1 | 6) {
                     self.container(request, call, self.input, frame)?;
                 } else if request.output_format == 5 {
                     self.md5 = av_md5_alloc();
@@ -564,6 +596,20 @@ impl Audio {
                         .map_err(|_| EIO)?;
                     }
                 }
+                if let Some(sink) = self.pcm_sink.as_deref_mut() {
+                    if self.bits == 16 {
+                        let mut pcm = Vec::with_capacity(values);
+                        for index in 0..values {
+                            pcm.push(
+                                i32::from(ptr::read_unaligned(packed.cast::<i16>().add(index)))
+                                    << 8,
+                            );
+                        }
+                        sink.write(&pcm)?;
+                    } else {
+                        sink.write(std::slice::from_raw_parts(packed.cast::<i32>(), values))?;
+                    }
+                }
                 if self.samples - self.progress >= i64::from((self.rate / 4).max(1)) {
                     self.progress = self.samples;
                     call.message(
@@ -677,18 +723,15 @@ impl Audio {
 /// # Safety
 /// `input` must be an open `AVFormatContext` whose stream information has been read, owned by
 /// the caller and alive for the call. `request` and `call` must be valid for the call.
-pub unsafe fn audio(request: &Request, call: &Call, input: *mut Format) -> Result<(), i32> {
-    unsafe { audio_input(request, call, input, None) }
-}
-
 pub(crate) unsafe fn audio_input(
     request: &Request,
     call: &Call,
     input: *mut Format,
     mut wave: Option<dvda_audio::wav::Reader<std::fs::File>>,
+    pcm_sink: Option<&mut dyn PcmSink>,
 ) -> Result<(), i32> {
     unsafe {
-        if request.output_format > 6 {
+        if request.output_format > 6 || (pcm_sink.is_some() && request.output_format != 0) {
             return Err(EINVAL);
         }
         let streams = streams(input);
@@ -750,6 +793,7 @@ pub(crate) unsafe fn audio_input(
             output: ptr::null_mut(),
             fifo: ptr::null_mut(),
             input,
+            pcm_sink,
         };
         if a.decoder.is_null() || a.frame.is_null() || a.packet.is_null() {
             return Err(ENOMEM);
@@ -815,6 +859,9 @@ pub(crate) unsafe fn audio_input(
         }
         if let Some(file) = &mut a.file {
             file.flush().map_err(|_| EIO)?;
+        }
+        if let Some(sink) = a.pcm_sink.as_deref_mut() {
+            sink.finish()?;
         }
         call.message(
             3,

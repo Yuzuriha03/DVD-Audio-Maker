@@ -109,6 +109,19 @@ pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
                 )
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+                prepared_mlp_path: field(item, &["prepared_mlp_path", "PreparedMlpPath"])
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                prepared_mlp_identity: optional_value(
+                    item,
+                    &["prepared_mlp_identity", "PreparedMlpIdentity"],
+                ),
+                prepared_mlp_signature: field(
+                    item,
+                    &["prepared_mlp_signature", "PreparedMlpSignature"],
+                )
+                .and_then(Value::as_str)
+                .map(str::to_owned),
                 mlp_source: "mlp-batch".into(),
                 external_resampled: false,
                 external_rebitded: false,

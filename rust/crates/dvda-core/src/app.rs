@@ -514,6 +514,9 @@ pub fn run_build(
             dither,
             directory: options.path("BuildDirectory").join("production-pcm"),
             signature: crate::audio::production_pcm_signature(&media, rate, bits, dither)?,
+            stream_mlp: options.text("MlpSource") == "mlp-batch"
+                && crate::config::trim(&options.text("MlpMetadataContext")).is_empty()
+                && cfg!(all(feature = "direct-bridges", feature = "rust-mlp")),
         });
     }
     preparation::pipeline::ensure_ready(&preparation, &mut callbacks)

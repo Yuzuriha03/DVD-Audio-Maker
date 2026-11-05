@@ -210,6 +210,46 @@ fn track(
     let result = (|| -> Result<(), Failure> {
         events.event("Started", json!(null));
         events.event("PcmStarted", json!(null));
+        if let Some(prepared) = track
+            .source_evidence
+            .get("PreparedMlpPath")
+            .and_then(serde_json::Value::as_str)
+            .map(Path::new)
+        {
+            let valid = track
+                .source_evidence
+                .get("PreparedMlpIdentity")
+                .is_some_and(|expected| {
+                    crate::identity::equivalent(
+                        expected,
+                        &crate::identity::compute(&prepared.to_string_lossy())
+                            .unwrap_or(serde_json::Value::Null),
+                    )
+                })
+                && track
+                    .source_evidence
+                    .get("PreparedMlpSignature")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(pcm_signature)
+                && track
+                    .source_evidence
+                    .get("SourceIdentity")
+                    .is_some_and(|source| {
+                        crate::identity::equivalent(source, &track.source_identity)
+                    });
+            if valid {
+                events.check()?;
+                let destination = job
+                    .output_directory
+                    .join(format!("{}.mlp", track.work_name));
+                let bytes = fs::metadata(prepared)?.len();
+                dvda_native::files::move_file(prepared, &destination, false)?;
+                events.event("PcmFinished", json!(null));
+                events.media_phase = false;
+                events.emit(4, &json!({"Bytes":bytes}).to_string());
+                return Ok(());
+            }
+        }
         let mut decoded = folder.0.join("decoded.wav");
         let prepared = folder.0.join("input.wav");
         let reused = crate::audio::reusable_production_pcm(

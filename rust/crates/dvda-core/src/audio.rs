@@ -29,6 +29,8 @@ pub struct DecodeOutput {
     pub rate: i32,
     pub bits: i32,
     pub dither: bool,
+    #[serde(default)]
+    pub mlp_output: Option<PathBuf>,
 }
 impl DecodeOutput {
     pub fn prepared_path(&self) -> PathBuf {
@@ -203,42 +205,66 @@ fn run(
     };
     let decode = matches!(operation, Operation::Decode);
     let decode_output = job.decode_output.as_ref();
-    let result = media::execute(
-        media::Job {
-            library: job.library.clone(),
-            replace: false,
-            timeout_millis: None,
-            request: Request {
-                operation: if decode {
-                    MediaOperation::Audio
-                } else {
-                    MediaOperation::Probe
-                },
-                rate: decode_output.map_or(
-                    if decode {
-                        job.resample_to.unwrap_or(0) as u32
-                    } else {
-                        0
-                    },
-                    |output| output.rate as u32,
-                ),
-                bits: decode_output.map_or(0, |output| output.bits as u32),
-                output_format: if decode_output.is_some() {
-                    OutputFormat::Wave
-                } else {
-                    OutputFormat::None
-                },
-                soxr: decode_output.is_none() && decode && job.resample_to.is_some(),
-                dither: decode_output.is_some_and(|output| output.dither),
-                compression: 8,
-                cover: false,
-                input: job.input.clone(),
-                output: decode_output.map(|output| output.output.to_string_lossy().into_owned()),
-                tags: Vec::new(),
-            },
+    #[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+    let streamed = decode_output.and_then(|output| output.mlp_output.as_deref());
+    #[cfg(not(all(feature = "direct-bridges", feature = "rust-mlp")))]
+    let streamed = None::<&std::path::Path>;
+    let request = Request {
+        operation: if decode {
+            MediaOperation::Audio
+        } else {
+            MediaOperation::Probe
         },
-        &mut capture,
-    );
+        rate: decode_output.map_or(
+            if decode {
+                job.resample_to.unwrap_or(0) as u32
+            } else {
+                0
+            },
+            |output| output.rate as u32,
+        ),
+        bits: decode_output.map_or(0, |output| output.bits as u32),
+        output_format: if decode_output.is_some() && streamed.is_none() {
+            OutputFormat::Wave
+        } else {
+            OutputFormat::None
+        },
+        soxr: decode_output.is_none() && decode && job.resample_to.is_some(),
+        dither: decode_output.is_some_and(|output| output.dither),
+        compression: 8,
+        cover: false,
+        input: job.input.clone(),
+        output: decode_output
+            .filter(|_| streamed.is_none())
+            .map(|output| output.output.to_string_lossy().into_owned()),
+        tags: Vec::new(),
+    };
+    let result = if let Some(_destination) = streamed {
+        #[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+        {
+            crate::mlp_stream::execute(
+                &job.library,
+                &job.input,
+                _destination,
+                decode_output.unwrap().rate,
+                decode_output.unwrap().bits,
+                decode_output.unwrap().dither,
+                &mut capture,
+            )
+        }
+        #[cfg(not(all(feature = "direct-bridges", feature = "rust-mlp")))]
+        unreachable!("streamed output is disabled without direct Rust codecs")
+    } else {
+        media::execute(
+            media::Job {
+                library: job.library.clone(),
+                replace: false,
+                timeout_millis: None,
+                request,
+            },
+            &mut capture,
+        )
+    };
     if let Some(failure) = result.failure {
         return Err(failure);
     }
@@ -408,6 +434,7 @@ pub fn check_decode(job: &Job, caller: &mut dyn Callbacks) -> Result<DecodeResul
     if result.error_count == 0
         && result.samples.is_some()
         && let Some(output) = &job.decode_output
+        && output.mlp_output.is_none()
     {
         crate::pcm::prepare_wave(
             &output.output,

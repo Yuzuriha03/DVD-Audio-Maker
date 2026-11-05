@@ -42,6 +42,7 @@ pub struct Production {
     pub dither: bool,
     pub directory: PathBuf,
     pub signature: String,
+    pub stream_mlp: bool,
 }
 fn report_language() -> String {
     "zh-CN".into()
@@ -77,12 +78,14 @@ impl Job {
         let mut job = self.audio(path, resample_to);
         if let Some(production) = &self.production {
             let output = crate::media::temporary_path(&production.directory.join("decoded.wav"));
+            let mlp_output = production.stream_mlp.then(|| output.with_extension("mlp"));
             job.decode_output = Some(audio::DecodeOutput {
                 normalized: output.with_extension("normalized.wav"),
                 output,
                 rate: production.rate,
                 bits: production.bits,
                 dither: production.dither,
+                mlp_output,
             });
         }
         job
@@ -393,6 +396,7 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                 .map_or(track.sample_rate, |production| production.rate);
             let decode_expected = rules::expected_samples_at(track, decode_rate);
             let mut prepared_pcm = None;
+            let mut prepared_mlp = None;
             if let Some(entry) = cached
                 .get(&track.path)
                 .filter(|entry| state::reusable(entry, track, expected))
@@ -471,6 +475,9 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                     if path.is_file() {
                         prepared_pcm = Some(path);
                     }
+                    if let Some(path) = output.mlp_output.as_ref().filter(|path| path.is_file()) {
+                        prepared_mlp = Some(path.clone());
+                    }
                 }
                 if let Some(issue) = rules::evaluate(
                     track,
@@ -496,6 +503,7 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                     );
                     issues.push(issue);
                 } else if prepared_pcm.is_none()
+                    && prepared_mlp.is_none()
                     && let Some(cache) = &mut cache
                 {
                     state::record(cache, track, &source, expected, check.samples, &patches);
@@ -521,6 +529,18 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                     .as_ref()
                     .map(|production| production.signature.clone())
             });
+            let prepared_mlp_identity = prepared_mlp
+                .as_ref()
+                .and_then(|path| crate::identity::compute(&path.to_string_lossy()).ok());
+            let prepared_mlp_path = prepared_mlp_identity
+                .as_ref()
+                .and(prepared_mlp)
+                .map(|path| path.to_string_lossy().into_owned());
+            let prepared_mlp_signature = prepared_mlp_path.as_ref().and_then(|_| {
+                job.production
+                    .as_ref()
+                    .map(|production| production.signature.clone())
+            });
             files.push(ManifestTrack {
                 n: index + 1,
                 src: source,
@@ -541,6 +561,9 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                 prepared_pcm_path,
                 prepared_pcm_identity,
                 prepared_pcm_signature,
+                prepared_mlp_path,
+                prepared_mlp_identity,
+                prepared_mlp_signature,
             });
             events.progress(
                 sources.len() as u64 + checked.max(decode_count) as u64,

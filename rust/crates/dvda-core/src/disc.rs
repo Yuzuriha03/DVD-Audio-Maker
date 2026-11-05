@@ -48,6 +48,12 @@ pub struct Track {
     pub prepared_pcm_identity: Option<Value>,
     #[serde(default)]
     pub prepared_pcm_signature: Option<String>,
+    #[serde(default)]
+    pub prepared_mlp_path: Option<String>,
+    #[serde(default)]
+    pub prepared_mlp_identity: Option<Value>,
+    #[serde(default)]
+    pub prepared_mlp_signature: Option<String>,
     #[serde(default = "default_source")]
     pub mlp_source: String,
     #[serde(default)]

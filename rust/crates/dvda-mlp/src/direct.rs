@@ -4,7 +4,8 @@ use std::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// PCM is signed 24-bit, left-aligned for 16/20-bit precision. Reads return frames,
-/// not samples, and may fragment a request. Returning zero or `Err` cancels input.
+/// not samples, and may fragment a request. Zero means EOF for unknown-length
+/// input; a known-length input treats premature zero and `Err` as failures.
 /// Grouped reads use DVD assignment order within each group; uniform reads use
 /// canonical speaker order. Output is one access unit per call.
 pub trait StreamIo {
@@ -144,6 +145,17 @@ pub fn encode_stream_with_stamp_refresh<I: StreamIo>(
     io: &mut I,
 ) -> StreamResult {
     encode_stream_inner(config, profile, frames, None, metadata, io, true)
+}
+
+/// Encode an interleaved stream whose length is discovered at EOF. Live stamp
+/// refresh is required because the metadata timeline is extended while reading.
+pub fn encode_stream_with_stamp_refresh_unknown<I: StreamIo>(
+    config: &Config,
+    profile: &Profile,
+    metadata: &[Metadata],
+    io: &mut I,
+) -> StreamResult {
+    encode_stream_inner(config, profile, u64::MAX, None, metadata, io, true)
 }
 
 fn encode_stream_inner<I: StreamIo>(
@@ -369,6 +381,94 @@ mod tests {
                 assert_eq!(actual.io.output, expected.io.output);
             }
         }
+    }
+
+    struct FiniteIo {
+        pcm: Vec<i32>,
+        position: usize,
+        output: Vec<u8>,
+    }
+    impl StreamIo for FiniteIo {
+        fn read(&mut self, _: usize, pcm: &mut [i32]) -> Result<usize, i32> {
+            let channels = 2;
+            let remaining = self.pcm.len() / channels - self.position;
+            let count = remaining.min(pcm.len() / channels);
+            let start = self.position * channels;
+            pcm[..count * channels].copy_from_slice(&self.pcm[start..start + count * channels]);
+            self.position += count;
+            Ok(count)
+        }
+        fn write(&mut self, bytes: &[u8]) -> Result<(), i32> {
+            self.output.extend_from_slice(bytes);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn unknown_length_matches_known_output_and_pads_the_final_access_unit() {
+        let config = Config {
+            sample_rate: 48000,
+            bits: 24,
+            channels: 2,
+            restart_interval: 8,
+            metadata: Vec::new(),
+        };
+        let profile = Profile::standard(&config);
+        let metadata = [Metadata {
+            start: 0,
+            packet: vec![0, 1, 64, 0, 0],
+            valid_bits: 0,
+        }];
+        for frames in [1, 39, 40, 41, 123, 319, 320, 321, 800, 801, 817, 1280, 5000] {
+            let pcm: Vec<_> = (0..frames * 2)
+                .map(|index| ((index as i32 * 17) % 1000 - 500) << 8)
+                .collect();
+            let mut known = FiniteIo {
+                pcm: pcm.clone(),
+                position: 0,
+                output: Vec::new(),
+            };
+            let known_result =
+                encode_stream(&config, &profile, frames, None, &metadata, &mut known);
+            let mut unknown = FiniteIo {
+                pcm,
+                position: 0,
+                output: Vec::new(),
+            };
+            let unknown_result = encode_stream_with_stamp_refresh_unknown(
+                &config,
+                &profile,
+                &metadata,
+                &mut unknown,
+            );
+            assert_eq!(known_result.status, 0, "known input length {frames}");
+            let error: Vec<_> = unknown_result
+                .error
+                .iter()
+                .take_while(|&&byte| byte != 0)
+                .map(|&byte| byte as u8)
+                .collect();
+            assert_eq!(
+                unknown_result.status,
+                0,
+                "unknown input length {frames}: {}",
+                String::from_utf8_lossy(&error)
+            );
+            assert_eq!(known_result.input_frames, frames);
+            assert_eq!(unknown_result.input_frames, frames);
+            assert_eq!(known_result.encoded_frames, frames.div_ceil(40) * 40);
+            assert_eq!(unknown_result.encoded_frames, known_result.encoded_frames);
+            assert_eq!(unknown.output, known.output, "output length {frames}");
+        }
+        let mut empty = FiniteIo {
+            pcm: Vec::new(),
+            position: 0,
+            output: Vec::new(),
+        };
+        let result =
+            encode_stream_with_stamp_refresh_unknown(&config, &profile, &metadata, &mut empty);
+        assert_eq!(result.status, -3);
+        assert!(empty.output.is_empty());
     }
 
     struct Io {

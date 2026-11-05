@@ -57,7 +57,26 @@ where
                 &mut pcm[done * self.channels..actual * self.channels],
                 actual - done,
             )?;
-            if got == 0 || got > actual - done {
+            if got == 0 {
+                if self.source_frames != usize::MAX {
+                    return Err(());
+                }
+                let actual_frames = self.position + done;
+                let Some(rounded) = actual_frames.checked_next_multiple_of(self.au_samples) else {
+                    return Err(());
+                };
+                self.source_frames = actual_frames;
+                self.frames = rounded;
+                pcm[done * self.channels..].fill(0);
+                if actual_frames == rounded && done == 0 {
+                    self.failed = false;
+                    return Ok(Vec::new());
+                }
+                self.position = rounded;
+                self.failed = false;
+                return Ok(pcm);
+            }
+            if got > actual - done {
                 return Err(());
             }
             done += got;

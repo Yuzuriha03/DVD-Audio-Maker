@@ -1,11 +1,12 @@
 use crate::metadata::Metadata;
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::Cell, rc::Rc};
 
 pub(crate) struct MlpStampState<'a> {
     records: Cow<'a, [Metadata]>,
     index: usize,
     position: u64,
     limit: u64,
+    shared_limit: Option<Rc<Cell<u64>>>,
     byte: usize,
     bit: u32,
     prefix: u32,
@@ -65,6 +66,7 @@ pub(crate) fn mlp_stamp_init(records: &[Metadata], aus: u64) -> Option<MlpStampS
         index: 0,
         position: 0,
         limit: aus,
+        shared_limit: None,
         byte: 0,
         bit: 7,
         prefix: 9,
@@ -104,7 +106,7 @@ impl MlpStampState<'_> {
 }
 
 pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>) -> Option<u32> {
-    if s.failed || s.position >= s.limit {
+    if s.failed || s.position >= current_limit(s) {
         return None;
     }
     if s.index + 1 < s.records.len() && s.records[s.index + 1].start <= s.position {
@@ -147,8 +149,16 @@ pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>) -> Option<u32> {
     Some(bit)
 }
 
+fn current_limit(s: &MlpStampState<'_>) -> u64 {
+    s.shared_limit.as_ref().map_or(s.limit, |limit| limit.get())
+}
+
+pub(crate) fn mlp_stamp_share_limit(s: &mut MlpStampState<'_>, limit: &Rc<Cell<u64>>) {
+    s.shared_limit = Some(Rc::clone(limit));
+}
+
 pub(crate) fn mlp_stamp_complete(s: &MlpStampState<'_>) -> bool {
-    !s.failed && s.position == s.limit && s.index + 1 == s.records.len()
+    !s.failed && s.position == current_limit(s) && s.index + 1 == s.records.len()
 }
 
 #[cfg(test)]

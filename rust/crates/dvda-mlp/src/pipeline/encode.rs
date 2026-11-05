@@ -238,7 +238,6 @@ pub(crate) fn encode(
     let mut noise_seed = 2;
     let mut words_total = 0;
     let mut frames = 0;
-    let total_frames = input.frames();
     if let Some(m) = matrix.as_deref_mut() {
         crate::analysis::decorrelation::mlp_matrix_analysis_init(&mut m.analysis, channels as u32)?;
         if m.joint_search {
@@ -253,7 +252,7 @@ pub(crate) fn encode(
     let mut recycled_au: Vec<PlannedAu> = Vec::new();
     let mut noise_left: Vec<i32> = Vec::new();
     let mut noise_right: Vec<i32> = Vec::new();
-    while frames < total_frames {
+    while frames < input.frames() {
         let mut span = restart_interval as usize;
         let is_restart = if cycle != 0 {
             let decision = crate::analysis::interval::mlp_interval_boundary(
@@ -285,6 +284,24 @@ pub(crate) fn encode(
         } else {
             au.is_multiple_of(restart_interval)
         };
+        let mut p = base.clone();
+        let mut initial = base.clone();
+        let mut restart = MlpRestart::default();
+        let mut search: [Option<&crate::analysis::search::MlpSearchPlan>; 6] = Default::default();
+        if let Some(m) = matrix.as_deref_mut()
+            && m.slot == m.lengths.len()
+        {
+            if !is_restart {
+                return Err(());
+            }
+            prepare_matrix(input, m, span, allow_bypass, &mut 0)?;
+            if m.lengths.is_empty() {
+                if let Some(last) = pending.au.last_mut() {
+                    last.end_markers = true;
+                }
+                break;
+            }
+        }
         if is_restart
             && !flush_interval(
                 queue,
@@ -297,18 +314,6 @@ pub(crate) fn encode(
             )
         {
             return Err(());
-        }
-        let mut p = base.clone();
-        let mut initial = base.clone();
-        let mut restart = MlpRestart::default();
-        let mut search: [Option<&crate::analysis::search::MlpSearchPlan>; 6] = Default::default();
-        if let Some(m) = matrix.as_deref_mut()
-            && m.slot == m.lengths.len()
-        {
-            if !is_restart {
-                return Err(());
-            }
-            prepare_matrix(input, m, span, allow_bypass, &mut 0)?;
         }
         let (pcm, count, bypass, bypass_bits) = if let Some(m) = matrix.as_deref() {
             let count = m.lengths[m.slot];
@@ -334,7 +339,7 @@ pub(crate) fn encode(
                 m.bits,
             )
         } else {
-            let remaining = total_frames - input.position();
+            let remaining = input.frames() - input.position();
             let mut capacity = input.au_samples();
             if remaining > capacity && remaining < capacity + 8 {
                 capacity = remaining - 8;
@@ -390,7 +395,7 @@ pub(crate) fn encode(
                 recycled.count = count;
                 recycled.bypass_bits = bypass_bits;
                 recycled.single_restart = is_restart && first == 0;
-                recycled.end_markers = frames + count == total_frames;
+                recycled.end_markers = frames + count == input.frames();
                 recycled.stamp = 0;
                 recycled.residual.clear();
                 recycled.unpredicted.clear();
@@ -406,7 +411,7 @@ pub(crate) fn encode(
                 count,
                 bypass_bits,
                 single_restart: is_restart && first == 0,
-                end_markers: frames + count == total_frames,
+                end_markers: frames + count == input.frames(),
                 stamp: 0,
             },
         };
@@ -486,7 +491,7 @@ pub(crate) fn encode(
     {
         return Err(());
     }
-    if frames != total_frames {
+    if frames != input.frames() {
         return Err(());
     }
     Ok(())

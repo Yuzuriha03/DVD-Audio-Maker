@@ -53,6 +53,12 @@ pub struct ManifestTrack {
     pub prepared_pcm_identity: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prepared_pcm_signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prepared_mlp_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prepared_mlp_identity: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prepared_mlp_signature: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ManifestGroup {
