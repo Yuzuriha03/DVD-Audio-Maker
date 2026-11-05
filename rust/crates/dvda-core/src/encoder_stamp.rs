@@ -43,7 +43,7 @@ fn machine_identity() -> Result<String, Failure> {
     let mut name = [0u16; 256];
     let mut length = name.len() as u32;
     // SAFETY: length advertises the writable buffer capacity in UTF-16 units.
-    if unsafe { GetComputerNameW(name.as_mut_ptr(), &mut length) } == 0 {
+    if unsafe { GetComputerNameW(name.as_mut_ptr(), &raw mut length) } == 0 {
         return Err(std::io::Error::last_os_error().into());
     }
     let name = name
@@ -105,7 +105,7 @@ fn timestamp() -> Result<[u8; 20], Failure> {
     }
     let mut now = LocalTime::default();
     // SAFETY: LocalTime has the Win32 SYSTEMTIME layout and is writable.
-    unsafe { GetLocalTime(&mut now) };
+    unsafe { GetLocalTime(&raw mut now) };
     format_time(&now)
 }
 

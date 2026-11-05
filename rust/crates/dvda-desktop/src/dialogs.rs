@@ -1,6 +1,10 @@
 //! Folder and file dialogs, the output-folder shortcut and message boxes.
 
-use super::*;
+use super::{
+    BrowseInfo, BrowseKind, CoTaskMemFree, GetOpenFileNameW, GetSaveFileNameW, Hwnd, Lang,
+    MessageBoxW, OpenFileName, Path, SHBrowseForFolderW, SHGetPathFromIDListW, SW_SHOW,
+    ShellExecuteW, UiState, get_text, ptr, set_text, tr, wide,
+};
 
 pub(crate) fn open_output(hwnd: Hwnd, state: &UiState) {
     let path = get_text(state.controls.final_dir);
@@ -56,7 +60,7 @@ pub(crate) fn folder_dialog(owner: Hwnd, current: &str, title: &str) -> Option<S
         param: 0,
         image: 0,
     };
-    let item = unsafe { SHBrowseForFolderW(&info) };
+    let item = unsafe { SHBrowseForFolderW(&raw const info) };
     if item.is_null() {
         return None;
     }
@@ -132,7 +136,7 @@ pub(crate) fn file_dialog(
         file_title_max: 0,
         initial_dir: ptr::null(),
         title: title.as_ptr(),
-        flags: 0x00000800 | if save { 0x00000002 } else { 0x00001000 },
+        flags: 0x0000_0800 | if save { 0x0000_0002 } else { 0x0000_1000 },
         file_offset: 0,
         file_extension: 0,
         def_ext: default_extension.as_ptr(),
@@ -145,9 +149,9 @@ pub(crate) fn file_dialog(
     };
     let ok = unsafe {
         if save {
-            GetSaveFileNameW(&mut dialog)
+            GetSaveFileNameW(&raw mut dialog)
         } else {
-            GetOpenFileNameW(&mut dialog)
+            GetOpenFileNameW(&raw mut dialog)
         }
     };
     if ok == 0 {

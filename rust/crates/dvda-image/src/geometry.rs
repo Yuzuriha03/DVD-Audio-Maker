@@ -20,6 +20,10 @@ impl fmt::Display for InvalidDimensions {
 impl Error for InvalidDimensions {}
 
 impl Dimensions {
+    /// Construct dimensions within the image working-memory limits.
+    ///
+    /// # Errors
+    /// Returns `InvalidDimensions` when either axis is zero or exceeds `MAX_DIMENSION`.
     pub fn new(width: u32, height: u32) -> Result<Self, InvalidDimensions> {
         if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
             return Err(InvalidDimensions);
@@ -27,14 +31,17 @@ impl Dimensions {
         Ok(Self { width, height })
     }
 
+    #[must_use]
     pub fn width(self) -> u32 {
         self.width
     }
 
+    #[must_use]
     pub fn height(self) -> u32 {
         self.height
     }
 
+    #[must_use]
     pub fn byte_len(self, channels: usize) -> Option<usize> {
         (self.width as usize)
             .checked_mul(self.height as usize)?
@@ -43,6 +50,9 @@ impl Dimensions {
 
     /// Aspect-preserving size, rounded to nearest with half values rounded up.
     /// Fill can exceed the target; the intermediate size is still resource-limited.
+    ///
+    /// # Errors
+    /// Returns `InvalidDimensions` if aspect-ratio scaling overflows or produces an empty or oversized image.
     pub fn resized(self, target: Self, mode: ResizeMode) -> Result<Self, InvalidDimensions> {
         if mode == ResizeMode::Exact {
             return Ok(target);
@@ -67,6 +77,7 @@ impl Dimensions {
 
     /// Source/destination overlap for a centered extent, without unsigned underflow.
     /// An odd spare pixel is placed at the right or bottom.
+    #[must_use]
     pub fn centered_extent(self, target: Self) -> Extent {
         let width = self.width.min(target.width);
         let height = self.height.min(target.height);

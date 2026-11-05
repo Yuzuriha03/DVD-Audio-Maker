@@ -117,7 +117,7 @@ fn ninety_nine_and_eight_hundred_ninety_one_titles_expand_all_tables() {
         assert_eq!(simple.len(), sectors * 2048);
         assert_eq!(usize::from(be16(&simple, 12)), count);
         let matrix = simple.len() / 8;
-        assert!(simple.as_chunks::<8>().1.is_empty());
+        assert_eq!(simple.as_chunks::<8>().1, []);
         for copy in 1..8 {
             assert_eq!(
                 &simple[..matrix],

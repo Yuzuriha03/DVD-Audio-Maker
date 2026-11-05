@@ -1,3 +1,9 @@
+// Signed delays, 16-bit arrival timestamps and wrapping totals intentionally follow the C bitstream.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
 use crate::Error;
 pub(crate) const LOOKAHEAD: usize = 1200;
 #[repr(C)]

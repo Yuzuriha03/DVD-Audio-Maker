@@ -96,7 +96,7 @@ fn wave(path: &Path, case: &Case) {
     let mut data = Vec::new();
     for n in 0..case.frames {
         for channel in 0..usize::from(case.channels) {
-            let value = (((n * (97 + channel * 18) + channel * 53) % 100001) as i32 - 50000)
+            let value = (((n * (97 + channel * 18) + channel * 53) % 100_001) as i32 - 50000)
                 & !((1 << (24 - case.bits)) - 1);
             let stored = if width == 2 { value >> 8 } else { value };
             data.extend_from_slice(&stored.to_le_bytes()[..width]);

@@ -36,7 +36,7 @@ pub(crate) struct MatrixInterval {
 pub(crate) fn lossless(mut check: u32, pcm: &[i32], count: usize, channels: usize) -> u32 {
     for n in 0..count {
         for ch in 0..channels {
-            let v = (pcm[n * channels + ch] as u32 & 0xffffff) << ch;
+            let v = (pcm[n * channels + ch] as u32 & 0x00ff_ffff) << ch;
             check ^= (v ^ (v >> 8) ^ (v >> 16) ^ (v >> 24)) & 255;
         }
     }

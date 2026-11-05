@@ -1,5 +1,5 @@
-//! Streaming ISO9660 / UDF 1.02 bridge writer, migrated from iso_writer.c.
-//! Directory records are alphabetical; AUDIO_TS payloads follow DVD-Audio order.
+//! Streaming ISO9660 / UDF 1.02 bridge writer, migrated from `iso_writer.c`.
+//! Directory records are alphabetical; `AUDIO_TS` payloads follow DVD-Audio order.
 use std::{
     cmp::Ordering,
     fs::{self, File, OpenOptions},
@@ -381,15 +381,14 @@ impl Image {
     }
     fn iso_record(&self, id: usize, special: Option<u8>) -> Vec<u8> {
         let node = &self.nodes[id];
-        let name = match special {
-            Some(value) => vec![value],
-            None => {
-                let mut name = node.name.as_bytes().to_vec();
-                if node.file {
-                    name.extend_from_slice(b";1");
-                }
-                name
+        let name = if let Some(value) = special {
+            vec![value]
+        } else {
+            let mut name = node.name.as_bytes().to_vec();
+            if node.file {
+                name.extend_from_slice(b";1");
             }
+            name
         };
         let length = 33 + name.len() + usize::from(name.len().is_multiple_of(2));
         let mut record = vec![0; length];
@@ -464,7 +463,7 @@ impl Image {
             let mut remaining = node.size;
             let mut location = node.lba - PARTITION;
             while remaining > 0 {
-                let length = remaining.min(0x3ffff800);
+                let length = remaining.min(0x3fff_f800);
                 extent(&mut data, 176 + allocation_bytes, location, length);
                 allocation_bytes += 8;
                 location += sectors(length);

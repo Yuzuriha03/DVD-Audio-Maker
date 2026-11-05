@@ -110,6 +110,7 @@ pub struct Outcome {
     pub data: Option<models::Result>,
 }
 impl Outcome {
+    #[must_use]
     pub fn succeeded(&self) -> bool {
         self.exit_code == Some(0)
             && self.failure.is_none()
@@ -180,8 +181,7 @@ fn repaired_targets_valid(job: &Job, events: &mut dyn Callbacks) -> Result<bool,
             .and_then(|e| e.validation.repaired_file.as_ref())
             .is_some_and(|identity| state::matches(actual, identity));
         let manifested = crate::identity::compute(actual)
-            .ok()
-            .is_some_and(|current| crate::identity::equivalent(&evidence, &current));
+            .is_ok_and(|current| crate::identity::equivalent(&evidence, &current));
         if !cached && !manifested {
             events.emit(1, "[快照] 修复音源已改变，将重新检查。");
             return Ok(false);
@@ -611,7 +611,7 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
     if let Some(cache) = cache {
         match cache
             .save(&job.prepare_cache_path)
-            .and_then(|_| state::write_json(&evidence_path, &fingerprint))
+            .and_then(|()| state::write_json(&evidence_path, &fingerprint))
         {
             Ok(()) => events.emit(
                 1,
@@ -662,6 +662,7 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
     );
     Ok(result)
 }
+#[must_use]
 pub fn localized_report(result: &models::Result, language: &str) -> String {
     let original = report(result);
     if matches!(language, "zh" | "zh-CN") {
@@ -686,6 +687,7 @@ pub fn localized_report(result: &models::Result, language: &str) -> String {
         + "\r\n"
 }
 
+#[must_use]
 pub fn report(result: &models::Result) -> String {
     let mut lines = vec![
         "音源校验报告".into(),

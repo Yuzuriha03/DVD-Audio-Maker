@@ -81,7 +81,18 @@ fn font_exists(font: &str, available: &[String]) -> bool {
     })
 }
 pub fn derive_regional_face(font: &str, tag: &str, exists: impl Fn(&str) -> bool) -> String {
-    let candidate = if !font.contains(['/', '\\']) {
+    let candidate = if font.contains(['/', '\\']) {
+        let normalized = font.replace('\\', "/");
+        let (directory, name) = normalized.rsplit_once('/').unwrap_or(("", &normalized));
+        let lower = name.to_ascii_lowercase();
+        if !lower.starts_with("notosanscjk")
+            || !["sc", "jp", "kr", "tc", "hk"].contains(&lower.get(11..13).unwrap_or_default())
+            || !lower.get(13..).unwrap_or_default().starts_with('-')
+        {
+            return String::new();
+        }
+        format!("{directory}/{}{tag}{}", &name[..11], &name[13..])
+    } else {
         let lower = font.to_ascii_lowercase();
         let Some(start) = lower.find("noto-sans-cjk-") else {
             return String::new();
@@ -97,17 +108,6 @@ pub fn derive_regional_face(font: &str, tag: &str, exists: impl Fn(&str) -> bool
             tag.to_ascii_uppercase(),
             &font[face + 2..]
         )
-    } else {
-        let normalized = font.replace('\\', "/");
-        let (directory, name) = normalized.rsplit_once('/').unwrap_or(("", &normalized));
-        let lower = name.to_ascii_lowercase();
-        if !lower.starts_with("notosanscjk")
-            || !["sc", "jp", "kr", "tc", "hk"].contains(&lower.get(11..13).unwrap_or_default())
-            || !lower.get(13..).unwrap_or_default().starts_with('-')
-        {
-            return String::new();
-        }
-        format!("{directory}/{}{tag}{}", &name[..11], &name[13..])
     };
     if exists(&candidate) {
         candidate
@@ -349,7 +349,7 @@ mod tests {
             caller: &mut caller,
             cache: dvda_image::fonts::FontCache::default(),
         };
-        assert!(probe.fonts().unwrap().is_empty());
+        assert_eq!(probe.fonts().unwrap(), [] as [std::string::String; 0]);
         assert!(!probe.ink("DVDA-Noto-Sans-CJK-SC", "中文").unwrap());
         caller.0 = true;
         assert_eq!(
@@ -427,8 +427,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(selected.font, "Noto-Sans-CJK-SC");
-        assert!(selected.japanese.is_empty());
-        assert!(selected.korean.is_empty());
+        assert_eq!(selected.japanese, "");
+        assert_eq!(selected.korean, "");
         for code in [
             "MENU_FONT_UNAVAILABLE",
             "MENU_REGIONAL_FONT_UNAVAILABLE",

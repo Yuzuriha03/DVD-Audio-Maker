@@ -1,4 +1,17 @@
-use crate::{Call, Cancel, Emit, ffmpeg::*};
+use crate::{
+    Call, Cancel, Emit,
+    ffmpeg::{
+        AV_CODEC_ID_PCM_F32LE, AV_CODEC_ID_PCM_F64LE, AV_CODEC_ID_PCM_S8, AV_CODEC_ID_PCM_S16LE,
+        AV_CODEC_ID_PCM_S24LE, AV_CODEC_ID_PCM_S32LE, AV_CODEC_ID_PCM_U8,
+        AV_DISPOSITION_ATTACHED_PIC, EINVAL, EIO, ENOMEM, EOF, EXIT, Format, INVALID, Interrupt,
+        Rational, av_channel_layout_default, av_channel_layout_from_mask, av_dict_iterate,
+        av_dict_set, av_find_input_format, av_get_bits_per_sample, av_get_media_type_string,
+        av_log_format_line2, av_log_set_callback, av_packet_alloc, av_packet_free, av_packet_unref,
+        av_read_frame, av_rescale, av_strerror, avcodec_get_name, avformat_alloc_context,
+        avformat_close_input, avformat_find_stream_info, avformat_new_stream, avformat_open_input,
+        done, streams, text,
+    },
+};
 use std::{
     ffi::{CStr, c_char, c_void},
     io::Write,
@@ -49,7 +62,7 @@ unsafe extern "C" fn logger(
                 arguments,
                 buffer.as_mut_ptr(),
                 buffer.len() as i32,
-                &mut print_prefix,
+                &raw mut print_prefix,
             );
             buffer[2047] = 0;
             if let Some(emit) = (*call).emit {
@@ -65,7 +78,7 @@ impl Drop for ActiveGuard {
     }
 }
 pub(crate) unsafe extern "C" fn interrupted(state: *mut c_void) -> i32 {
-    unsafe { (*(state.cast::<Call>())).cancelled() as i32 }
+    unsafe { i32::from((*(state.cast::<Call>())).cancelled()) }
 }
 fn quoted(value: &str) -> String {
     let mut out = String::from("\"");
@@ -148,9 +161,9 @@ unsafe fn packets(call: &Call, format: *mut Format) -> Result<(), i32> {
         let index = streams
             .iter()
             .position(|s| (*(**s).codecpar()).codec_type() == 1)
-            .ok_or(-1381258232)?;
+            .ok_or(-1_381_258_232)?;
         let base = (*streams[index]).time_base();
-        let time = base.num as f64 / base.den as f64;
+        let time = f64::from(base.num) / f64::from(base.den);
         let mut packet = av_packet_alloc();
         if packet.is_null() {
             return Err(ENOMEM);
@@ -184,7 +197,7 @@ unsafe fn packets(call: &Call, format: *mut Format) -> Result<(), i32> {
                 av_packet_unref(packet);
             }
         })();
-        av_packet_free(&mut packet);
+        av_packet_free(&raw mut packet);
         result
     }
 }
@@ -215,7 +228,7 @@ unsafe fn cover(request: &Request, format: *mut Format) -> Result<(), i32> {
             file.flush().map_err(|_| EIO)?;
             return Ok(());
         }
-        Err(-1381258232)
+        Err(-1_381_258_232)
     }
 }
 /// # Safety
@@ -261,7 +274,7 @@ unsafe fn run(
         }
         *(*format).interrupt_callback_ptr() = Interrupt {
             callback: Some(interrupted),
-            opaque: (call as *mut Call).cast(),
+            opaque: std::ptr::from_mut::<Call>(call).cast(),
         };
         let forced = if CStr::from_ptr(request.input).to_bytes().ends_with(b".mlp")
             || text(request.input).to_ascii_lowercase().ends_with(".mlp")
@@ -350,11 +363,11 @@ unsafe fn run(
                         Some(reader),
                         pcm_sink,
                     ),
-                    _ => Err(-1381258232),
+                    _ => Err(-1_381_258_232),
                 };
             }
             done(avformat_open_input(
-                &mut format,
+                &raw mut format,
                 request.input,
                 forced,
                 ptr::null_mut(),
@@ -369,7 +382,7 @@ unsafe fn run(
                 _ => Err(EINVAL),
             }
         })();
-        avformat_close_input(&mut format);
+        avformat_close_input(&raw mut format);
         result
     }
 }
@@ -398,7 +411,7 @@ pub unsafe extern "C" fn dvdamedia_run(
         };
         let _media_job = crate::win::media_job();
         av_log_set_callback(Some(logger));
-        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&call)));
+        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&raw const call)));
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run(&*request, &mut call, None)
         }))
@@ -439,7 +452,7 @@ pub unsafe fn audio_sink(
         }
         let _media_job = crate::win::media_job();
         av_log_set_callback(Some(logger));
-        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&*call)));
+        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&raw const *call)));
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run(request, call, Some(sink))
         }))

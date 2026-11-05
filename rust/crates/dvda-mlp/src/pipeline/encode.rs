@@ -625,7 +625,7 @@ fn planned_interval_fallback_serializes() {
     assert!(interval_fits(&mut pending, 1).unwrap());
     let mut writer = Bits::default();
     serialize_planned(&mut writer, &pending, 0, 1).unwrap();
-    assert!(!writer.words.is_empty());
+    assert_ne!(writer.words, [] as [u32; 0]);
     let saved_blocksize = pending.au[0].main.blocksize;
     let saved_flags = pending.au[0].main.flags;
     for single in [false, true] {

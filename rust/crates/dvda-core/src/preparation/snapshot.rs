@@ -11,6 +11,7 @@ use std::{
 };
 
 /// Invariant Double.ToString("R") spelling used by historical cache signatures.
+#[must_use]
 pub fn roundtrip(value: f64) -> String {
     if value.is_nan() {
         return "NaN".into();
@@ -105,6 +106,7 @@ snapshot_record!(Snapshot {
     configuration_fingerprint:Option<String>="configurationfingerprint",
     sources:Option<Vec<Option<Source>>>="sources",manifest:Option<Identity>="manifest",
 });
+#[must_use]
 pub fn load(path: &Path) -> Option<Value> {
     let mut bytes = Vec::new();
     crate::identity::open_read(&path.to_string_lossy())
@@ -168,8 +170,8 @@ mod tests {
             (f64::from_bits(1), "5E-324"),
             (f64::INFINITY, "Infinity"),
             (f64::NEG_INFINITY, "-Infinity"),
-            (f64::from_bits(0x43073f9c2996809a), "817983051190291.2"),
-            (f64::from_bits(0x42bc32771e19a310), "31003072403875.062"),
+            (f64::from_bits(0x4307_3f9c_2996_809a), "817983051190291.2"),
+            (f64::from_bits(0x42bc_3277_1e19_a310), "31003072403875.062"),
         ] {
             assert_eq!(roundtrip(value), expected);
         }

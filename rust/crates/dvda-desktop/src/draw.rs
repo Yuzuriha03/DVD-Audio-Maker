@@ -1,7 +1,24 @@
 //! Owner drawing: buttons, tabs, caption buttons, combo items, labels, the window
 //! background and buffered painting.
 
-use super::*;
+use super::{
+    BeginPaint, BitBlt, CB_GETCURSEL, CB_GETLBTEXT, CB_GETLBTEXTLEN, COMBO_IDS,
+    CreateCompatibleBitmap, CreateCompatibleDC, CreatePen, CreateSolidBrush, DT_CALCRECT,
+    DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER, DeleteDC,
+    DeleteObject, DrawFocusRect, DrawIconEx, DrawItemStruct, DrawTextW, Ellipse, EndPaint,
+    FillRect, GetClientRect, GetParent, GetStockObject, GetTextMetricsW, GetWindowDC,
+    GetWindowLongPtrW, GetWindowRect, GradientFill, GradientRect, Handle, Hbrush, Hwnd, ID_BUILD,
+    ID_CANCEL, ID_MINIMIZE, ID_TAB, ID_THEME, IsZoomed, Lang, LineTo, Lparam, Lresult, MoveToEx,
+    ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, PaintStruct, Rect, ReleaseDC, RoundRect, SelectObject,
+    SendMessageW, SetBkMode, SetTextColor, TextMetric, TriVertex, WM_CTLCOLORBTN,
+    WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCDESTROY, WM_PAINT, WM_SETFONT, Wparam, body_brush,
+    border_brush, brush, button_hovered, c_accent, c_accent_hover, c_accent_pressed, c_accent_soft,
+    c_body, c_border, c_border_soft, c_card, c_danger, c_danger_border, c_danger_hover,
+    c_danger_pressed, c_disabled_fill, c_disabled_text, c_header_bottom, c_header_subtitle,
+    c_header_title, c_header_top, c_ink, c_muted, c_panel, c_secondary_hover, c_secondary_pressed,
+    client_rect, dark_theme, get_text, header_height, header_icon, paint_fields, panel_brush, ptr,
+    rgb, scale, semibold_font, subtitle_font, title_font, tr, ui_font, wide, win, window_class,
+};
 
 pub(crate) fn color16(value: u32) -> u16 {
     (value.min(255) * 257) as u16
@@ -69,7 +86,7 @@ pub(crate) fn fill_round_rect(dc: Handle, rect: &Rect, radius: i32, fill: u32, b
 }
 
 /// # Safety
-/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for one of this
+/// `item` must be the `DrawItemStruct` of a `WM_DRAWITEM` message for one of this
 /// application's owner-draw buttons, and it is only valid during that message.
 pub(crate) unsafe fn draw_secondary_button(item: &DrawItemStruct) {
     let disabled = item.state & ODS_DISABLED != 0;
@@ -104,13 +121,13 @@ pub(crate) unsafe fn draw_secondary_button(item: &DrawItemStruct) {
                 right: item.rect.right - inset,
                 bottom: item.rect.bottom - inset,
             };
-            DrawFocusRect(item.dc, &focus);
+            DrawFocusRect(item.dc, &raw const focus);
         }
     }
 }
 
 /// # Safety
-/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for one of this
+/// `item` must be the `DrawItemStruct` of a `WM_DRAWITEM` message for one of this
 /// application's owner-draw buttons, and it is only valid during that message.
 pub(crate) unsafe fn draw_action_button(item: &DrawItemStruct, primary: bool) {
     let disabled = item.state & ODS_DISABLED != 0;
@@ -155,13 +172,13 @@ pub(crate) unsafe fn draw_action_button(item: &DrawItemStruct, primary: bool) {
                 right: item.rect.right - inset,
                 bottom: item.rect.bottom - inset,
             };
-            DrawFocusRect(item.dc, &focus);
+            DrawFocusRect(item.dc, &raw const focus);
         }
     }
 }
 
 /// # Safety
-/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for one of this
+/// `item` must be the `DrawItemStruct` of a `WM_DRAWITEM` message for one of this
 /// application's owner-draw buttons, and it is only valid during that message.
 pub(crate) unsafe fn draw_tab_button(item: &DrawItemStruct, active: bool) {
     let disabled = item.state & ODS_DISABLED != 0;
@@ -213,18 +230,18 @@ pub(crate) unsafe fn draw_tab_button(item: &DrawItemStruct, active: bool) {
                 right: item.rect.right - scale(4),
                 bottom: item.rect.bottom - scale(6),
             };
-            DrawFocusRect(item.dc, &focus);
+            DrawFocusRect(item.dc, &raw const focus);
         }
     }
 }
 
 pub(crate) fn header_gradient_at(y: i32) -> u32 {
     let height = header_height().max(1);
-    let ratio = y.clamp(0, height) as f64 / height as f64;
+    let ratio = f64::from(y.clamp(0, height)) / f64::from(height);
     let (top_r, top_g, top_b) = rgb_components(c_header_top());
     let (bottom_r, bottom_g, bottom_b) = rgb_components(c_header_bottom());
     let mix = |top: u32, bottom: u32| -> u32 {
-        (top as f64 + (bottom as f64 - top as f64) * ratio) as u32
+        (f64::from(top) + (f64::from(bottom) - f64::from(top)) * ratio) as u32
     };
     rgb(
         mix(top_r, bottom_r),
@@ -240,11 +257,11 @@ pub(crate) fn lighten(color: u32, amount: i32) -> u32 {
 }
 
 /// # Safety
-/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for one of this
+/// `item` must be the `DrawItemStruct` of a `WM_DRAWITEM` message for one of this
 /// application's caption buttons, and it is only valid during that message.
 pub(crate) unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
     let hover = button_hovered(item.item);
-    let center_y = (item.rect.top + item.rect.bottom) / 2;
+    let center_y = i32::midpoint(item.rect.top, item.rect.bottom);
     let base = header_gradient_at(center_y);
     let fill = if hover {
         if kind == 2 {
@@ -267,7 +284,7 @@ pub(crate) unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
             return;
         }
         let old_pen = SelectObject(item.dc, pen);
-        let center_x = (item.rect.left + item.rect.right) / 2;
+        let center_x = i32::midpoint(item.rect.left, item.rect.right);
         let unit = scale(6);
         match kind {
             0 => {
@@ -350,9 +367,9 @@ pub(crate) unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
                     );
                     SelectObject(item.dc, old_brush);
                     for index in 0..8 {
-                        let angle = index as f64 * std::f64::consts::PI / 4.0;
-                        let inner = radius as f64 + scale(3) as f64;
-                        let outer = radius as f64 + scale(6) as f64;
+                        let angle = f64::from(index) * std::f64::consts::PI / 4.0;
+                        let inner = f64::from(radius) + f64::from(scale(3));
+                        let outer = f64::from(radius) + f64::from(scale(6));
                         MoveToEx(
                             item.dc,
                             center_x + (angle.cos() * inner) as i32,
@@ -391,28 +408,26 @@ pub(crate) unsafe fn combo_item_text(hwnd: Hwnd, index: i32) -> String {
     if index < 0 {
         return String::new();
     }
-    let length = win::send_int(hwnd, CB_GETLBTEXTLEN, index as usize, 0);
-    if length < 0 {
+    let Ok(index) = usize::try_from(index) else {
         return String::new();
-    }
-    let mut buffer = vec![0u16; length as usize + 1];
-    let count = unsafe {
-        SendMessageW(
-            hwnd,
-            CB_GETLBTEXT,
-            index as usize,
-            buffer.as_mut_ptr() as isize,
-        )
     };
-    if count < 0 {
-        String::new()
-    } else {
-        String::from_utf16_lossy(&buffer[..count as usize])
-    }
+    let length = win::send_int(hwnd, CB_GETLBTEXTLEN, index, 0);
+    let Ok(length) = usize::try_from(length) else {
+        return String::new();
+    };
+    let Some(capacity) = length.checked_add(1) else {
+        return String::new();
+    };
+    let mut buffer = vec![0u16; capacity];
+    let count = unsafe { SendMessageW(hwnd, CB_GETLBTEXT, index, buffer.as_mut_ptr() as isize) };
+    let Ok(count) = usize::try_from(count) else {
+        return String::new();
+    };
+    String::from_utf16_lossy(&buffer[..count.min(length)])
 }
 
 /// # Safety
-/// `item` must be the `DrawItemStruct` of a WM_DRAWITEM message for a combo box of this
+/// `item` must be the `DrawItemStruct` of a `WM_DRAWITEM` message for a combo box of this
 /// application, and it is only valid during that message.
 pub(crate) unsafe fn draw_combo_item(item: &DrawItemStruct) {
     let selected = item.item_id == u32::MAX;
@@ -446,7 +461,7 @@ pub(crate) unsafe fn draw_combo_item(item: &DrawItemStruct) {
 }
 
 /// # Safety
-/// `hwnd` must be the window that received this WM_DRAWITEM, and `item` must be that
+/// `hwnd` must be the window that received this `WM_DRAWITEM`, and `item` must be that
 /// message's `DrawItemStruct`, valid only during the message.
 pub(crate) unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     unsafe {
@@ -507,7 +522,7 @@ pub(crate) unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool 
             memory,
             item.rect.left,
             item.rect.top,
-            0x00cc0020,
+            0x00cc_0020,
         );
         SelectObject(memory, previous);
         DeleteObject(bitmap);
@@ -517,7 +532,7 @@ pub(crate) unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool 
 }
 
 /// # Safety
-/// `hwnd` must be the window that received this WM_DRAWITEM, and `item` must be that
+/// `hwnd` must be the window that received this `WM_DRAWITEM`, and `item` must be that
 /// message's `DrawItemStruct`, valid only during the message.
 pub(crate) unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     let id = item.control_id as usize;
@@ -555,8 +570,8 @@ pub(crate) struct BufferedPaint {
 }
 
 /// # Safety
-/// `hwnd` must be inside its WM_PAINT, and `paint` must be the storage the same
-/// BeginPaint call fills. Each call must be followed by `finish_buffered_paint` with
+/// `hwnd` must be inside its `WM_PAINT`, and `paint` must be the storage the same
+/// `BeginPaint` call fills. Each call must be followed by `finish_buffered_paint` with
 /// the same arguments, before the paint cycle ends.
 pub(crate) unsafe fn begin_buffered_paint(
     hwnd: Hwnd,
@@ -607,7 +622,7 @@ pub(crate) unsafe fn begin_buffered_paint(
 
 /// # Safety
 /// Must be called exactly once, with the `hwnd`, `paint` and `buffer` returned by the
-/// matching `begin_buffered_paint` call in the same WM_PAINT.
+/// matching `begin_buffered_paint` call in the same `WM_PAINT`.
 pub(crate) unsafe fn finish_buffered_paint(
     hwnd: Hwnd,
     paint: &PaintStruct,
@@ -624,7 +639,7 @@ pub(crate) unsafe fn finish_buffered_paint(
                 buffer.memory,
                 0,
                 0,
-                0x00cc0020,
+                0x00cc_0020,
             );
             SelectObject(buffer.memory, buffer.previous);
             DeleteObject(buffer.bitmap);
@@ -634,7 +649,7 @@ pub(crate) unsafe fn finish_buffered_paint(
     }
 }
 /// # Safety
-/// `hwnd` must be the main window, inside its WM_PAINT.
+/// `hwnd` must be the main window, inside its `WM_PAINT`.
 pub(crate) unsafe fn paint_window(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_body()) };
@@ -759,7 +774,7 @@ pub(crate) unsafe fn paint_window(hwnd: Hwnd) {
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn buffered_label_proc(
     hwnd: Hwnd,
@@ -819,7 +834,7 @@ pub(crate) fn text_lift(dc: Handle, needed: i32, available: i32) -> i32 {
 /// wrap, prefixes, ellipsis styles) into the label's paint buffer.
 /// # Safety
 /// `hwnd` must be a STATIC label of this application, and `dc` the device context being
-/// painted for it during WM_PAINT or WM_CTLCOLORSTATIC.
+/// painted for it during `WM_PAINT` or `WM_CTLCOLORSTATIC`.
 pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
     const DT_WORDBREAK: u32 = 0x0010;
     const DT_EXPANDTABS: u32 = 0x0040;
@@ -869,27 +884,33 @@ pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
             right: rect.right,
             bottom: 0,
         };
-        DrawTextW(dc, wide_text.as_ptr(), -1, &mut needed, flags | DT_CALCRECT);
+        DrawTextW(
+            dc,
+            wide_text.as_ptr(),
+            -1,
+            &raw mut needed,
+            flags | DT_CALCRECT,
+        );
         rect.top -= text_lift(dc, needed.bottom, rect.bottom);
-        DrawTextW(dc, wide_text.as_ptr(), -1, &mut rect, flags);
+        DrawTextW(dc, wide_text.as_ptr(), -1, &raw mut rect, flags);
         SelectObject(dc, old);
     }
 }
 
 /// # Safety
-/// `hwnd` must be a settings page of this application, inside its WM_PAINT.
+/// `hwnd` must be a settings page of this application, inside its `WM_PAINT`.
 pub(crate) unsafe fn paint_page(hwnd: Hwnd) {
     // Only the panel colour: the controls paint themselves and the border is
     // non-client. Unbuffered, so a scroll step fills just its uncovered strip.
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     unsafe {
-        let dc = BeginPaint(hwnd, &mut paint);
+        let dc = BeginPaint(hwnd, &raw mut paint);
         FillRect(dc, &paint.paint, panel_brush());
-        EndPaint(hwnd, &paint);
+        EndPaint(hwnd, &raw const paint);
     }
 }
 
-/// Draws the 1-pixel border of a settings page; for its WM_NCPAINT.
+/// Draws the 1-pixel border of a settings page; for its `WM_NCPAINT`.
 pub(crate) fn paint_page_border(hwnd: Hwnd) {
     let mut window = Rect::default();
     GetWindowRect(hwnd, &mut window);

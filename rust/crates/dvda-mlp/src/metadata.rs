@@ -5,6 +5,10 @@ pub struct Metadata {
     pub packet: Vec<u8>,
     pub valid_bits: u32,
 }
+/// Expand ordered metadata records into one decision bit per access unit.
+///
+/// # Errors
+/// Returns `InvalidMetadata` for missing, unsorted, malformed, or out-of-range records.
 pub fn timeline(records: &[Metadata], count: usize) -> Result<Vec<u32>, Error> {
     if records.is_empty() || records[0].start != 0 {
         return Err(Error::InvalidMetadata);

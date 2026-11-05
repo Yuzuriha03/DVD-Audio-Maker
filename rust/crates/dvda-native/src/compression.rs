@@ -37,9 +37,9 @@ impl Handle {
         // SAFETY: valid output pointer, default allocator, XPRESS_HUFF algorithm.
         let ok = unsafe {
             if compress {
-                CreateCompressor(4, ptr::null(), &mut value)
+                CreateCompressor(4, ptr::null(), &raw mut value)
             } else {
-                CreateDecompressor(4, ptr::null(), &mut value)
+                CreateDecompressor(4, ptr::null(), &raw mut value)
             }
         };
         if ok == 0 {
@@ -72,7 +72,7 @@ pub fn compress(input: &[u8]) -> io::Result<Vec<u8>> {
             input.len(),
             ptr::null_mut(),
             0,
-            &mut needed,
+            &raw mut needed,
         );
     }
     if needed == 0 {
@@ -87,7 +87,7 @@ pub fn compress(input: &[u8]) -> io::Result<Vec<u8>> {
             input.len(),
             output.as_mut_ptr(),
             output.len(),
-            &mut needed,
+            &raw mut needed,
         )
     } == 0
     {
@@ -108,7 +108,7 @@ pub fn decompress(input: &[u8], size: usize) -> io::Result<Vec<u8>> {
             input.len(),
             output.as_mut_ptr(),
             output.len(),
-            &mut written,
+            &raw mut written,
         )
     } == 0
     {

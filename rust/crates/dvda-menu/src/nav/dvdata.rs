@@ -47,7 +47,7 @@ struct Reader<'a> {
     at: usize,
 }
 
-impl<'a> Reader<'a> {
+impl Reader<'_> {
     fn u8(&mut self) -> Result<u8, String> {
         let value = *self.bytes.get(self.at).ok_or("truncated dvdauthor-data")?;
         self.at += 1;

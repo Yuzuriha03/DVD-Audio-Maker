@@ -1,6 +1,13 @@
 //! Background tasks: start, progress, completion, cancellation and busy state.
 
-use super::*;
+use super::{
+    AppOptions, Arc, AtomicBool, Callbacks, EnableWindow, EnumChildWindows, GetClientRect, Hwnd,
+    ID_BUILD, ID_PREPARE, ID_VERIFY, Instant, IsWindowEnabled, Lang, Lparam, Ordering, PBM_SETPOS,
+    PBM_SETRANGE32, PathBuf, RDW_ALLCHILDREN, RDW_INVALIDATE, Rect, RedrawWindow, UiEvent, UiState,
+    Value, WorkerCallbacks, WorkerEvent, add_log, autosave, checked, edited_profile_values,
+    get_text, layout, localized_log, presentation, ptr, render_log, reset_task_log, set_text,
+    thread, tr, update_statistics, validate_controls, win, window_class,
+};
 
 pub(crate) fn emit_preparation_issues(
     callbacks: &mut dyn Callbacks,
@@ -161,8 +168,8 @@ pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
     let mut button = 0;
     let result = unsafe {
         TaskDialogIndirect(
-            &config,
-            &mut button,
+            &raw const config,
+            &raw mut button,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
         )
@@ -301,21 +308,12 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
                 if let Some(data) = &prepared.data {
                     emit_preparation_issues(&mut callbacks, &data.issues);
                 }
-                if !prepared.succeeded() {
-                    (
-                        false,
-                        prepared
-                            .failure
-                            .map_or_else(|| tr(lang, "failed").into(), |failure| failure.message),
-                    )
-                } else {
+                if prepared.succeeded() {
                     callbacks.set_progress_range(15, 65);
                     match dvda_core::app::run_build(&options, false, &mut callbacks) {
                         Ok(result) => {
                             emit_diagnostics(&mut callbacks, &result.diagnostics);
-                            if !result.succeeded {
-                                (false, tr(lang, "failed").into())
-                            } else {
+                            if result.succeeded {
                                 callbacks.set_progress_range(65, 100);
                                 match dvda_core::app::run_verify(&options, &mut callbacks) {
                                     Ok(verification) => {
@@ -335,10 +333,19 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
                                     }
                                     Err(error) => (false, error),
                                 }
+                            } else {
+                                (false, tr(lang, "failed").into())
                             }
                         }
                         Err(error) => (false, error),
                     }
+                } else {
+                    (
+                        false,
+                        prepared
+                            .failure
+                            .map_or_else(|| tr(lang, "failed").into(), |failure| failure.message),
+                    )
                 }
             }
             _ => {
@@ -368,10 +375,8 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
         }
         let kind = if cancel.load(Ordering::Relaxed) {
             2
-        } else if ok {
-            1
         } else {
-            0
+            u32::from(ok)
         };
         let _ = callbacks
             .logs
@@ -513,7 +518,7 @@ pub(crate) fn cancel_operation(state: &mut UiState) {
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn disable_busy_child(hwnd: Hwnd, parameter: Lparam) -> i32 {
     let disabled = unsafe { &mut *(parameter as *mut Vec<Hwnd>) };
@@ -532,7 +537,7 @@ pub(crate) fn set_busy_controls(state: &mut UiState, busy: bool) {
                 EnumChildWindows(
                     *page,
                     disable_busy_child,
-                    &mut state.busy_disabled_controls as *mut Vec<Hwnd> as Lparam,
+                    &raw mut state.busy_disabled_controls as Lparam,
                 );
             }
         }

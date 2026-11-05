@@ -53,14 +53,14 @@ pub fn parse(data: &[u8], group: i32) -> Result<Group, String> {
         if tracks == 0 {
             return Err("IFO_TRACKS_MISSING".into());
         }
-        let title_length = u32_at(header, 4)? as i64;
+        let title_length = i64::from(u32_at(header, 4)?);
         let sectors = offset + u16_at(header, 12)? as usize;
         let pictures = u16_at(header, 14)? as usize;
         let mut previous = None;
         for track in 0..tracks {
             let cell = offset + 16 + track * 20;
-            let first_pts = u32_at(pgc, cell + 6)? as i64;
-            let length = u32_at(pgc, cell + 10)? as i64;
+            let first_pts = i64::from(u32_at(pgc, cell + 6)?);
+            let length = i64::from(u32_at(pgc, cell + 10)?);
             if previous.is_some_and(|v| first_pts <= v) {
                 result.issues.push("PGC_TIMELINE_NOT_INCREASING".into());
             }
@@ -124,7 +124,7 @@ mod tests {
     fn reads_actual_track_boundaries_and_rejects_truncated_tables() {
         let data = fixture();
         let parsed = parse(&data, 1).unwrap();
-        assert!(parsed.issues.is_empty());
+        assert_eq!(parsed.issues, [] as [std::string::String; 0]);
         assert_eq!(parsed.rows.len(), 2);
         assert_eq!((parsed.rows[1].first, parsed.rows[1].last), (5, 9));
         for length in [0, 100, 212, 2048, 2100] {

@@ -53,6 +53,7 @@ pub struct Request {
     pub tags: Vec<(String, String)>,
 }
 
+#[must_use]
 pub const fn default_dither() -> bool {
     true
 }
@@ -190,12 +191,11 @@ pub(crate) unsafe extern "C" fn cancel(state: *mut c_void) -> i32 {
     if state.panicked {
         return 1;
     }
-    match catch_unwind(AssertUnwindSafe(|| state.callbacks.cancelled())) {
-        Ok(value) => i32::from(value),
-        Err(_) => {
-            state.panicked = true;
-            1
-        }
+    if let Ok(value) = catch_unwind(AssertUnwindSafe(|| state.callbacks.cancelled())) {
+        i32::from(value)
+    } else {
+        state.panicked = true;
+        1
     }
 }
 
@@ -231,7 +231,7 @@ pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
                 GetCurrentProcess(),
                 modules.as_mut_ptr(),
                 bytes,
-                &mut needed,
+                &raw mut needed,
             )
         } == 0
         {
@@ -298,11 +298,15 @@ impl Drop for Media {
 }
 impl Media {
     #[cfg(feature = "direct-bridges")]
+    #[must_use]
     pub fn linked() -> Arc<Self> {
         Arc::new(Self {})
     }
 
     /// Compatibility entry point; direct builds use the linked implementation, not this path.
+    ///
+    /// # Errors
+    /// Direct builds always return `Ok`; dynamic builds report path, library, symbol, and cache-lock failures.
     #[cfg(feature = "direct-bridges")]
     pub fn load(_path: &Path) -> io::Result<Arc<Self>> {
         Ok(Self::linked())
@@ -380,7 +384,7 @@ impl Media {
             direct.run_with_callbacks(dvda_bridges::Call {
                 emit: Some(emit),
                 cancel: Some(cancel),
-                state: (&mut state as *mut CallbackState<'_>).cast(),
+                state: (&raw mut state).cast(),
             })
         };
         if state.panicked {
@@ -415,7 +419,7 @@ impl Media {
                 dvda_bridges::Call {
                     emit: Some(emit),
                     cancel: Some(cancel),
-                    state: (&mut state as *mut CallbackState<'_>).cast(),
+                    state: (&raw mut state).cast(),
                 },
                 sink,
             )

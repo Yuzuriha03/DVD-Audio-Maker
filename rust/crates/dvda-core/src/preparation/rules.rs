@@ -2,7 +2,7 @@ use super::models::{Issue, Patch};
 use crate::audio::{DecodeResult, Metadata};
 use std::collections::{BTreeMap, HashMap};
 
-/// Count ties keep the first occurrence, as does the original stable GroupBy.
+/// Count ties keep the first occurrence, as does the original stable `GroupBy`.
 pub fn normalize_albums(tracks: &mut [Metadata]) {
     let mut albums: HashMap<String, Vec<usize>> = HashMap::new();
     for (index, track) in tracks.iter().enumerate() {
@@ -52,6 +52,7 @@ fn majority(counts: &[(i32, usize)]) -> i32 {
     }
     best.0
 }
+#[must_use]
 pub fn validate_channels(tracks: &[Metadata], source: &str, lpcm: bool) -> Vec<Issue> {
     if lpcm {
         return Vec::new();
@@ -91,9 +92,11 @@ pub fn validate_channels(tracks: &[Metadata], source: &str, lpcm: bool) -> Vec<I
     }
     issues
 }
+#[must_use]
 pub fn expected_samples(track: &Metadata) -> Option<i64> {
     expected_samples_at(track, track.sample_rate)
 }
+#[must_use]
 pub fn expected_samples_at(track: &Metadata, sample_rate: i32) -> Option<i64> {
     (track.duration > 0.0)
         .then(|| (track.duration * f64::from(sample_rate)).round_ties_even() as i64)
@@ -102,6 +105,7 @@ pub struct DecodeTarget {
     pub samples: Option<i64>,
     pub sample_rate: i32,
 }
+#[must_use]
 pub fn evaluate(
     track: &Metadata,
     path: &str,
@@ -161,6 +165,7 @@ pub fn evaluate(
         detail,
     })
 }
+#[must_use]
 pub fn repair_detail(patch: &Patch) -> String {
     let minutes = (patch.presentation_time / 60.0) as i32;
     let seconds = patch.presentation_time - f64::from(minutes) * 60.0;
@@ -169,6 +174,7 @@ pub fn repair_detail(patch: &Patch) -> String {
         patch.presentation_time, patch.previous_bits, patch.sample_count
     )
 }
+#[must_use]
 pub fn ordered_groups(tracks: &[Metadata]) -> BTreeMap<(i32, i32), Vec<&Metadata>> {
     let mut groups: BTreeMap<_, Vec<_>> = BTreeMap::new();
     for track in tracks {

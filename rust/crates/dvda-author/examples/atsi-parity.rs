@@ -1,6 +1,6 @@
 //! Compare all ATSI bytes with a frozen C output.
-//! Usage: atsi-parity ATS_01_0.IFO [tracks.csv]
-//! CSV rows: title,mlp,channels,bits,rate,cga,first_pts,pts_length,first_sector,last_sector,downmix_rank
+//! Usage: atsi-parity `ATS_01_0.IFO` [tracks.csv]
+//! CSV rows: `title,mlp,channels,bits,rate,cga,first_pts,pts_length,first_sector,last_sector,downmix_rank`
 //! Without CSV, compares the original 96 kHz stereo MLP oracle fixture.
 
 use dvda_author::{

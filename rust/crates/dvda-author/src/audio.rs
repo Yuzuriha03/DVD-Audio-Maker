@@ -34,6 +34,7 @@ pub struct AudioInfo {
     pub mlp_layout: Vec<MlpSector>,
 }
 impl AudioInfo {
+    #[must_use]
     pub fn frame_samples(&self) -> u32 {
         40 * (self.rate
             / if self.rate.is_multiple_of(44100) {
@@ -42,6 +43,7 @@ impl AudioInfo {
                 48000
             })
     }
+    #[must_use]
     pub fn frame_bytes(&self) -> u64 {
         u64::from(self.frame_samples()) * u64::from(self.channels) * u64::from(self.bits) / 8
     }
@@ -52,6 +54,7 @@ impl AudioInfo {
             .try_into()
             .map_err(|_| "Audio duration exceeds the 32-bit DVD PTS domain".into())
     }
+    #[must_use]
     pub fn same_format(&self, other: &Self) -> bool {
         (
             self.mlp,
@@ -77,7 +80,7 @@ fn le32(b: &[u8], p: usize) -> u32 {
 fn validate(info: &AudioInfo) -> Result<(), String> {
     if !(1..=6).contains(&info.channels)
         || ![16, 20, 24].contains(&info.bits)
-        || ![44100, 48000, 88200, 96000, 176400, 192000].contains(&info.rate)
+        || ![44100, 48000, 88200, 96000, 176_400, 192_000].contains(&info.rate)
     {
         return Err(
             "DVD audio requires 1..6 channels, 16/20/24 bits and a supported sample rate".into(),
@@ -307,10 +310,10 @@ fn mlp(
             let rate = match packet[9] >> 4 {
                 0 => 48000,
                 1 => 96000,
-                2 => 192000,
+                2 => 192_000,
                 8 => 44100,
                 9 => 88200,
-                10 => 176400,
+                10 => 176_400,
                 _ => return Err("Invalid MLP sample rate".into()),
             };
             let cga = packet[11] & 31;

@@ -48,6 +48,7 @@ impl Drop for Workspace {
     }
 }
 
+#[must_use]
 pub fn normalize_tags(raw: &serde_json::Map<String, Value>) -> Vec<(String, String)> {
     let mut entries: Vec<_> = raw.iter().collect();
     entries.sort_by_key(|(k, _)| k.to_uppercase());
@@ -116,6 +117,7 @@ fn collect(paths: &[PathBuf], caller: &mut dyn Callbacks) -> Result<Vec<PathBuf>
     Ok(found)
 }
 
+#[must_use]
 pub fn request(
     input: &Path,
     operation: Operation,
@@ -483,8 +485,8 @@ mod tests {
         assert!(tags.contains(&("TITLESORT".into(), " x ".into())));
         assert_eq!(tags.len(), 4);
         let mut rows = vec![
-            failed(Path::new("one.m4a"), "".into()),
-            failed(Path::new("two.m4a"), "".into()),
+            failed(Path::new("one.m4a"), String::new()),
+            failed(Path::new("two.m4a"), String::new()),
         ];
         let mut calls = 0;
         delete_sources(&mut rows, |_| {

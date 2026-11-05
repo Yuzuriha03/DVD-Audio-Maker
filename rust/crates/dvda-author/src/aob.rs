@@ -203,7 +203,7 @@ struct AobWriter {
 }
 impl AobWriter {
     fn new(directory: &Path, group: u8, split_sectors: u32) -> Result<Self, String> {
-        if split_sectors == 0 || split_sectors > 524288 {
+        if split_sectors == 0 || split_sectors > 524_288 {
             return Err("AOB split size must be at most 1 GiB".into());
         }
         std::fs::create_dir_all(directory).map_err(|e| e.to_string())?;
@@ -415,7 +415,7 @@ fn packet(
         let rate = match info.rate {
             48000 => 0,
             96000 => 1,
-            192000 => 2,
+            192_000 => 2,
             44100 => 8,
             88200 => 9,
             _ => 10,
@@ -456,7 +456,7 @@ pub fn author_group(
     inputs: &[TrackInput],
     callbacks: &mut dyn Callbacks,
 ) -> Result<GroupOutput, String> {
-    author_group_with_split(audio_ts, group, inputs, callbacks, 524288)
+    author_group_with_split(audio_ts, group, inputs, callbacks, 524_288)
 }
 /// A smaller split limit supports acceptance without generating a GiB fixture.
 pub fn author_group_with_split(

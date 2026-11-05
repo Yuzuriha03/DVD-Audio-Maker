@@ -85,7 +85,7 @@ fn bit_writer_transactions_preserve_output_and_counting() {
             );
 
             let mut local = writer.fork();
-            for (value, width) in [(0x12345678, 32), (5, 3), (0, 0)] {
+            for (value, width) in [(0x1234_5678, 32), (5, 3), (0, 0)] {
                 local.put(value, width);
                 expected.put(value, width);
             }
@@ -104,7 +104,7 @@ fn bit_writer_transactions_preserve_output_and_counting() {
 fn bulk_writer_matches_bitwise_reference() {
     for prefix in 0..16 {
         for width in 0..=32 {
-            for value in [0, u32::MAX, 0x12345678, 0xaaaaaaaa] {
+            for value in [0, u32::MAX, 0x1234_5678, 0xaaaa_aaaa] {
                 let value = if width == 32 {
                     value
                 } else {
@@ -148,7 +148,7 @@ fn bulk_writer_matches_long_bit_sequence() {
     let mut expected = Bits::default();
     let mut state = 0x12345678u32;
     for _ in 0..10000 {
-        state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
         let width = state % 33;
         let value = if width == 32 {
             state

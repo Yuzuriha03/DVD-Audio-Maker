@@ -27,10 +27,10 @@ struct Progress {
 unsafe extern "C" fn progress(state: *mut c_void, stream: i32, text: *const i8) {
     unsafe {
         collect(
-            (&mut (*state.cast::<Progress>()).messages as *mut Vec<_>).cast(),
+            (&raw mut (*state.cast::<Progress>()).messages).cast(),
             stream,
             text,
-        )
+        );
     }
 }
 unsafe extern "C" fn cancel_after_progress(state: *mut c_void) -> i32 {
@@ -79,10 +79,10 @@ fn main() {
             let mut messages = Vec::<(i32, String)>::new();
             assert_eq!(
                 oracle(
-                    &request,
+                    &raw const request,
                     Some(collect),
                     None,
-                    (&mut messages as *mut Vec<_>).cast()
+                    (&raw mut messages).cast()
                 ),
                 0
             );
@@ -163,17 +163,17 @@ fn main() {
             let mut expected = Vec::<(i32, String)>::new();
             let mut actual = Vec::<(i32, String)>::new();
             let c = oracle(
-                &request,
+                &raw const request,
                 Some(collect),
                 None,
-                (&mut expected as *mut Vec<(i32, String)>).cast(),
+                (&raw mut expected).cast(),
             );
             request.output = actual_path.as_ptr();
             let rust = dvdamedia_run(
-                &request,
+                &raw const request,
                 Some(collect),
                 None,
-                (&mut actual as *mut Vec<(i32, String)>).cast(),
+                (&raw mut actual).cast(),
             );
             assert_eq!(rust, c, "status operation {operation}");
             assert_eq!(actual, expected, "output operation {operation}");
@@ -238,16 +238,16 @@ fn main() {
                 (Vec::<(i32, String)>::new(), Vec::<(i32, String)>::new());
             let callback: Cancel = if cancel { Some(cancelled) } else { None };
             let c = oracle(
-                &request,
+                &raw const request,
                 Some(collect),
                 callback,
-                (&mut expected as *mut Vec<_>).cast(),
+                (&raw mut expected).cast(),
             );
             let r = dvdamedia_run(
-                &request,
+                &raw const request,
                 Some(collect),
                 callback,
-                (&mut actual as *mut Vec<_>).cast(),
+                (&raw mut actual).cast(),
             );
             assert_eq!(r, c, "negative status");
             assert_eq!(actual, expected, "negative callbacks");
@@ -275,16 +275,16 @@ fn main() {
         let (mut expected_progress, mut actual_progress) =
             (Progress::default(), Progress::default());
         let c = oracle(
-            &packet_request,
+            &raw const packet_request,
             Some(progress),
             Some(cancel_after_progress),
-            (&mut expected_progress as *mut Progress).cast(),
+            (&raw mut expected_progress).cast(),
         );
         let rust = dvdamedia_run(
-            &packet_request,
+            &raw const packet_request,
             Some(progress),
             Some(cancel_after_progress),
-            (&mut actual_progress as *mut Progress).cast(),
+            (&raw mut actual_progress).cast(),
         );
         assert_eq!(rust, c, "mid-operation cancellation status");
         assert_eq!(
@@ -292,14 +292,14 @@ fn main() {
             "mid-operation cancellation callbacks"
         );
         assert_eq!(
-            rust, -1414092869,
+            rust, -1_414_092_869,
             "must cancel after a real packet callback"
         );
         assert!(actual_progress.polls > 1);
         println!("PASS mid-operation cancellation after packet delivery: {rust}");
         for (label, request, with_emit) in [
             ("null request", std::ptr::null(), true),
-            ("null emit", &base as *const Request, false),
+            ("null emit", &raw const base, false),
         ] {
             let emit = if with_emit {
                 Some(collect as unsafe extern "C" fn(_, _, _))
@@ -327,16 +327,16 @@ fn main() {
             let (mut expected, mut actual) =
                 (Vec::<(i32, String)>::new(), Vec::<(i32, String)>::new());
             let c = oracle(
-                &request,
+                &raw const request,
                 Some(collect),
                 None,
-                (&mut expected as *mut Vec<_>).cast(),
+                (&raw mut expected).cast(),
             );
             let rust = dvdamedia_run(
-                &request,
+                &raw const request,
                 Some(collect),
                 None,
-                (&mut actual as *mut Vec<_>).cast(),
+                (&raw mut actual).cast(),
             );
             assert_eq!(rust, c, "{label}");
             assert_eq!(actual, expected, "{label} callbacks");

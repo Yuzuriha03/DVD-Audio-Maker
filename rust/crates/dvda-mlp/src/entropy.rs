@@ -1,3 +1,9 @@
+// Entropy codes use explicitly bounded integers and C-compatible wrapping cost arithmetic.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
 use crate::bitstream::Bits;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Coding {
@@ -75,23 +81,83 @@ fn arithmetic_shift(value: i32, shift: u32) -> i32 {
 fn mlp_cost_table(mode: u32, q: i32) -> u32 {
     const TABLES: [[u32; 18]; 2] = [
         [
-            0x00901403, 0x00801003, 0x00701003, 0x00600c03, 0x00500c03, 0x00400c03, 0x00300c03,
-            0x00300c03, 0x00300c03, 0x00300c03, 0x00300c03, 0x00300c03, 0x00400c03, 0x00500c03,
-            0x00600c03, 0x00701003, 0x00801003, 0x00901403,
+            0x0090_1403,
+            0x0080_1003,
+            0x0070_1003,
+            0x0060_0c03,
+            0x0050_0c03,
+            0x0040_0c03,
+            0x0030_0c03,
+            0x0030_0c03,
+            0x0030_0c03,
+            0x0030_0c03,
+            0x0030_0c03,
+            0x0030_0c03,
+            0x0040_0c03,
+            0x0050_0c03,
+            0x0060_0c03,
+            0x0070_1003,
+            0x0080_1003,
+            0x0090_1403,
         ],
         [
-            0x0ff01804, 0x00901403, 0x00801403, 0x00701003, 0x00601003, 0x00500c02, 0x00400c02,
-            0x00300802, 0x00200802, 0x00200802, 0x00300802, 0x00400c02, 0x00500c02, 0x00601003,
-            0x00701003, 0x00801403, 0x00901403, 0x0ff01804,
+            0x0ff0_1804,
+            0x0090_1403,
+            0x0080_1403,
+            0x0070_1003,
+            0x0060_1003,
+            0x0050_0c02,
+            0x0040_0c02,
+            0x0030_0802,
+            0x0020_0802,
+            0x0020_0802,
+            0x0030_0802,
+            0x0040_0c02,
+            0x0050_0c02,
+            0x0060_1003,
+            0x0070_1003,
+            0x0080_1403,
+            0x0090_1403,
+            0x0ff0_1804,
         ],
     ];
     const THIRD: [u32; 36] = [
-        0x0ff01804, 0x0ff01804, 0x0ff01804, 0x00901804, 0x00901404, 0x00801404, 0x00801403,
-        0x00701403, 0x00701003, 0x00601003, 0x00601003, 0x00501003, 0x00500c03, 0x00400c03,
-        0x00400c01, 0x00300c01, 0x00300401, 0x00100401, 0x00100401, 0x00300401, 0x00300c01,
-        0x00400c01, 0x00400c03, 0x00500c03, 0x00501003, 0x00601003, 0x00601003, 0x00701003,
-        0x00701403, 0x00801403, 0x00801404, 0x00901404, 0x00901804, 0x0ff01804, 0x0ff01804,
-        0x0ff01804,
+        0x0ff0_1804,
+        0x0ff0_1804,
+        0x0ff0_1804,
+        0x0090_1804,
+        0x0090_1404,
+        0x0080_1404,
+        0x0080_1403,
+        0x0070_1403,
+        0x0070_1003,
+        0x0060_1003,
+        0x0060_1003,
+        0x0050_1003,
+        0x0050_0c03,
+        0x0040_0c03,
+        0x0040_0c01,
+        0x0030_0c01,
+        0x0030_0401,
+        0x0010_0401,
+        0x0010_0401,
+        0x0030_0401,
+        0x0030_0c01,
+        0x0040_0c01,
+        0x0040_0c03,
+        0x0050_0c03,
+        0x0050_1003,
+        0x0060_1003,
+        0x0060_1003,
+        0x0070_1003,
+        0x0070_1403,
+        0x0080_1403,
+        0x0080_1404,
+        0x0090_1404,
+        0x0090_1804,
+        0x0ff0_1804,
+        0x0ff0_1804,
+        0x0ff0_1804,
     ];
     assert!((1..=3).contains(&mode) && (-18..=17).contains(&q));
     let index = (q + 18) as usize;
@@ -110,7 +176,7 @@ fn mlp_cost_analyze(samples: &[i32]) -> MlpCostStats {
         ..MlpCostStats::default()
     };
     for &sample in samples {
-        assert!((-8388608..=8388607).contains(&sample));
+        assert!((-8_388_608..=8_388_607).contains(&sample));
         stats.minimum = stats.minimum.min(sample);
         stats.maximum = stats.maximum.max(sample);
     }
@@ -255,7 +321,7 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
         Coding {
             mode: 0,
             width: qss + width,
-            offset: if width != 24 { offset } else { 0 },
+            offset: if width == 24 { 0 } else { offset },
         }
     } else {
         Coding {

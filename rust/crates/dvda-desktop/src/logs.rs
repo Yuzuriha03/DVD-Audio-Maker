@@ -1,6 +1,15 @@
 //! Session and task logs: queueing, rendering, localization, copy and export.
 
-use super::*;
+use super::{
+    CloseClipboard, Duration, EM_GETFIRSTVISIBLELINE, EM_GETSEL, EM_LINESCROLL, EM_REPLACESEL,
+    EM_SETREADONLY, EM_SETSEL, EmptyClipboard, EnableWindow, FileKind, GetWindowTextLengthW,
+    GlobalAlloc, GlobalLock, GlobalUnlock, Hwnd, Instant, LOG_BATCH_BUDGET, LOG_BATCH_LIMIT,
+    LOG_QUEUE_CAPACITY, Lang, LogLine, OpenClipboard, Ordering, Path, PathBuf, PostMessageW,
+    RDW_INVALIDATE, RedrawWindow, SB_BOTTOM, SendMessageW, SetClipboardData, SetWindowTextW,
+    UiState, Value, WM_CLOSE, WM_SETREDRAW, WM_VSCROLL, WorkerEvent, Write, checked, combo_index,
+    file_dialog, finish_operation, fs, get_text, localization, message_box, presentation, ptr,
+    retention_choice, set_text, tr, update_progress, wide, win,
+};
 
 pub(crate) fn open_session_log() -> std::io::Result<(fs::File, PathBuf)> {
     let root = dvda_core::app::default_profile_path()
@@ -80,7 +89,7 @@ pub(crate) fn log_timestamp() -> String {
     }
     let mut value = [0u16; 8];
     unsafe {
-        GetLocalTime(&mut value);
+        GetLocalTime(&raw mut value);
     }
     format!("{:02}:{:02}:{:02}", value[4], value[5], value[6])
 }
@@ -112,7 +121,7 @@ pub(crate) fn add_log(state: &mut UiState, text: &str, problem: bool) {
     let problem = problem || log_is_problem(text);
     for text in text.split(['\r', '\n']).filter(|line| !line.is_empty()) {
         if let Some((file, _)) = &mut state.log_file
-            && let Err(error) = writeln!(file, "[{timestamp}] {text}").and_then(|_| file.flush())
+            && let Err(error) = writeln!(file, "[{timestamp}] {text}").and_then(|()| file.flush())
         {
             state.log_file = None;
             let message = presentation::phrase(
@@ -305,8 +314,8 @@ pub(crate) fn update_log_text(log: Hwnd, text: &str, append: bool, hold_line: Op
         SendMessageW(
             log,
             EM_GETSEL,
-            &mut selection_start as *mut u32 as usize,
-            &mut selection_end as *mut u32 as isize,
+            &raw mut selection_start as usize,
+            &raw mut selection_end as isize,
         );
         // Keep text changes, selection and viewport positioning in one redraw.
         // Following the tail must not restore an old caret at the first line.
@@ -803,7 +812,7 @@ pub(crate) fn copy_log(state: &UiState) {
             EmptyClipboard();
             let handle = GlobalAlloc(0x42, data.len() * 2);
             if !handle.is_null() {
-                let destination = GlobalLock(handle) as *mut u16;
+                let destination = GlobalLock(handle).cast::<u16>();
                 if !destination.is_null() {
                     std::ptr::copy_nonoverlapping(data.as_mut_ptr(), destination, data.len());
                     GlobalUnlock(handle);

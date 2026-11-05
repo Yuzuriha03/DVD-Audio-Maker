@@ -109,7 +109,7 @@ fn wave(path: &Path, case: &Case) -> Vec<u8> {
     let mut expected = Vec::new();
     for n in 0..case.frames {
         for channel in 0..usize::from(case.channels) {
-            let value = (((n * (97 + channel * 18) + channel * 53) % 100001) as i32 - 50000)
+            let value = (((n * (97 + channel * 18) + channel * 53) % 100_001) as i32 - 50000)
                 & !((1 << (24 - case.bits)) - 1);
             expected.extend_from_slice(&value.to_le_bytes()[..3]);
             let stored = if case.wide {
@@ -154,10 +154,10 @@ fn context(path: &Path, case: &Case) -> String {
     // Frozen files used an empty stamp; supply it explicitly now that the
     // production default records the machine identity and encoding time.
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(if case.metadata_version != 2 {
-        b"MSCTX001"
-    } else {
+    bytes.extend_from_slice(if case.metadata_version == 2 {
         b"MSCTX002"
+    } else {
+        b"MSCTX001"
     });
     bytes.extend_from_slice(
         &encoder::access_units(case.frames as i64, case.rate)
@@ -385,7 +385,7 @@ fn streamed_resampling_matches_the_wave_encoding_path() {
     decode(&streamed, &streamed_raw);
     decode(&baseline, &baseline_raw);
     let streamed_bytes = fs::read(&streamed_raw).unwrap();
-    assert!(!streamed_bytes.is_empty());
+    assert_ne!(streamed_bytes, [] as [u8; 0]);
     assert_eq!(streamed_bytes, fs::read(&baseline_raw).unwrap());
 }
 
@@ -399,7 +399,7 @@ fn streamed_decode_cancellation_discards_all_outputs() {
         rate: 48000,
         bits: 24,
         channels: 2,
-        frames: 200003,
+        frames: 200_003,
         mask: None,
         metadata_version: 0,
         wide: false,
@@ -603,12 +603,19 @@ fn encoder_transactions_and_parallel_calls() {
 }
 
 fn batch_job(root: &Path, cases: &[Case]) -> dvda_core::batch::Job {
+    let media_library = PathBuf::from(
+        std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
+    )
+    .join("dvda-media.dll");
+    let media_library = if media_library.is_file() {
+        media_library
+    } else {
+        PathBuf::from(std::env::var_os("DVDA_TEST_AUTHOR").expect("Set DVDA_TEST_AUTHOR"))
+    };
     dvda_core::batch::Job {
-        media_library: PathBuf::from(
-            std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
-        )
-        .join("dvda-media.dll"),
-        encoder_library: library(),
+        media_library,
+        encoder_library: std::env::var_os("DVDA_ENCODER_LIBRARY")
+            .map_or_else(|| root.join("missing-encoder.dll"), PathBuf::from),
         temporary_directory: root.join("temp"),
         output_directory: root.join("output"),
         sample_rate: cases[0].rate as i32,
@@ -678,7 +685,7 @@ fn batch_matrix_matches_frozen_encoder_bytes() {
         serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
     let root = Scratch::new();
     let mut outputs = 0;
-    for rate in [44100, 48000, 88200, 96000, 176400, 192000] {
+    for rate in [44100, 48000, 88200, 96000, 176_400, 192_000] {
         for bits in [16, 20, 24] {
             let cases: Vec<_> = fixtures.cases[..84]
                 .iter()
@@ -710,6 +717,75 @@ fn batch_matrix_matches_frozen_encoder_bytes() {
         }
     }
     assert_eq!(outputs, 84);
+}
+
+#[test]
+#[cfg(feature = "rust-mlp")]
+#[ignore = "requires source-built media DLL"]
+fn execute_with_runs_finalizers_concurrently_and_preserves_result_order() {
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
+    let root = Scratch::new();
+    let active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let peak = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (outcome, results) = dvda_core::batch::execute_with(
+        batch_job(&root.0, &fixtures.cases[..3]),
+        &mut Events::default(),
+        {
+            let active = active.clone();
+            let peak = peak.clone();
+            let calls = calls.clone();
+            move |index, _, _| {
+                active.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                peak.fetch_max(
+                    active.load(std::sync::atomic::Ordering::Acquire),
+                    std::sync::atomic::Ordering::AcqRel,
+                );
+                std::thread::sleep(std::time::Duration::from_millis(25));
+                calls.lock().unwrap().push(index);
+                active.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+                Ok(index)
+            }
+        },
+    );
+    passed(outcome);
+    assert_eq!(results, [0, 1, 2]);
+    assert_eq!(calls.lock().unwrap().len(), 3);
+    assert!(peak.load(std::sync::atomic::Ordering::Acquire) >= 2);
+
+    let root = Scratch::new();
+    let (outcome, results) = dvda_core::batch::execute_with(
+        batch_job(&root.0, &fixtures.cases[..2]),
+        &mut Events::default(),
+        |index, _, _| {
+            if index == 1 {
+                Err(std::io::Error::other("intentional finalize failure").into())
+            } else {
+                Ok(index)
+            }
+        },
+    );
+    assert_eq!(
+        outcome.failure.unwrap().message,
+        "intentional finalize failure"
+    );
+    assert_eq!(results, [] as [usize; 0]);
+
+    let root = Scratch::new();
+    let (outcome, results) = dvda_core::batch::execute_with(
+        batch_job(&root.0, &fixtures.cases[..1]),
+        &mut Events {
+            cancel_after: Some(1),
+            ..Events::default()
+        },
+        |index, _, events| {
+            assert!(events.cancelled());
+            Ok(index)
+        },
+    );
+    assert_eq!(outcome.failure.unwrap().kind, "Cancelled");
+    assert_eq!(results, [] as [usize; 0]);
 }
 
 #[test]
@@ -749,7 +825,7 @@ fn mlp_acquisition_upgrades_legacy_parameter_cache_without_reencoding_or_track_c
     };
     let first = dvda_core::mlp_workflow::execute(job(), &mut Events::default()).unwrap();
     assert_eq!((first.cache_hits, first.cache_rebuilt), (0, 2));
-    assert!(first.diagnostics.is_empty());
+    assert_eq!(first.diagnostics, [] as [serde_json::Value; 0]);
     let bytes: Vec<_> = first
         .tracks
         .iter()
@@ -791,7 +867,7 @@ fn batch_cancellation_panic_and_partial_failure() {
     let fixtures: Fixtures =
         serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
     let mut case = fixtures.cases[17].clone();
-    case.frames = 192017;
+    case.frames = 192_017;
     let root = Scratch::new();
     for scenario in ["cancel", "panic", "malformed", "existing", "duplicate"] {
         let folder = root.0.join(scenario);
@@ -834,12 +910,12 @@ fn batch_cancellation_panic_and_partial_failure() {
                 for index in [0, 2] {
                     let output = folder.join(format!("output/track{index}.mlp"));
                     if output.exists() {
-                        assert!(!fs::read(output).unwrap().is_empty());
+                        assert_ne!(fs::read(output).unwrap(), [] as [u8; 0]);
                     }
                 }
             }
             "cancel" | "panic" => {
-                assert_eq!(fs::read_dir(folder.join("output")).unwrap().count(), 0)
+                assert_eq!(fs::read_dir(folder.join("output")).unwrap().count(), 0);
             }
             _ => assert!(!folder.join("output").exists()),
         }

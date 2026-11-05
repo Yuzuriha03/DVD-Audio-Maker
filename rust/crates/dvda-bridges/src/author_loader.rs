@@ -1,4 +1,4 @@
-use crate::win::*;
+use crate::win::{GetLastError, GetModuleFileNameW, GetProcAddress, Handle, wide};
 use std::{
     ffi::{c_char, c_void},
     path::PathBuf,
@@ -72,8 +72,8 @@ unsafe fn image() -> Result<&'static Image, ()> {
                     .parent()
                     .ok_or(())?
                     .join("image-native")
-                    .join("dvda-image.dll")
-            };
+                    .join("dvda-image.dll");
+            }
             let module = load(&path);
             if module.is_null() {
                 eprintln!(

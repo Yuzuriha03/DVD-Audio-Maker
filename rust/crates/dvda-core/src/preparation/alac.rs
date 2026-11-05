@@ -52,6 +52,7 @@ pub fn check_cancel(events: &mut dyn Callbacks) -> Result<(), Failure> {
         Ok(())
     }
 }
+#[must_use]
 pub fn parse_cookie(data: &[u8], offset: i32) -> Option<Cookie> {
     if data.len() < 24 {
         return None;
@@ -69,12 +70,13 @@ pub fn parse_cookie(data: &[u8], offset: i32) -> Option<Cookie> {
         && matches!(cookie.sample_size, 16 | 20 | 24 | 32)
         && (1..=8).contains(&cookie.channels)
         && [
-            8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000, 176400,
-            192000, 352800, 384000,
+            8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000, 176_400,
+            192_000, 352_800, 384_000,
         ]
         .contains(&cookie.sample_rate))
     .then_some(cookie)
 }
+#[must_use]
 pub fn read_cookie(data: &[u8]) -> Option<Cookie> {
     for (index, _) in data.windows(4).enumerate().filter(|(_, v)| *v == b"alac") {
         for skip in [8, 12, 4] {
@@ -141,7 +143,7 @@ fn packet_patch(
     cookie: &Cookie,
     input: &mut impl BitInput,
 ) -> Result<Option<Patch>, Failure> {
-    let flags = input.bits(16, 8)?.unwrap_or(0) as u8;
+    let flags = u8::try_from(input.bits(16, 8)?.unwrap_or(0)).unwrap_or(0);
     if flags & 2 == 0 {
         return Ok(None);
     }
@@ -168,7 +170,9 @@ fn packet_patch(
     {
         return Ok(None);
     }
-    let Some(previous_bits) = input.bits(end_bit as usize, 3)? else {
+    let end_bit = usize::try_from(end_bit)
+        .map_err(|_| Failure::new("Overflow", "ALAC frame bit offset overflow"))?;
+    let Some(previous_bits) = input.bits(end_bit, 3)? else {
         return Ok(None);
     };
     if previous_bits == 7 {
@@ -181,10 +185,16 @@ fn packet_patch(
         position: packet.position,
         size: packet.size,
         sample_count: samples,
-        end_bit,
-        previous_bits: previous_bits as i32,
+        end_bit: i64::try_from(end_bit)
+            .map_err(|_| Failure::new("Overflow", "ALAC frame bit offset overflow"))?,
+        previous_bits: i32::try_from(previous_bits)
+            .map_err(|_| Failure::new("Overflow", "ALAC frame header overflow"))?,
     }))
 }
+/// Locate ALAC end-marker patches in a memory-backed packet sequence.
+///
+/// # Errors
+/// Returns an error for invalid ALAC metadata, arithmetic overflow, or bitstream read failures.
 pub fn find_patches(
     data: &[u8],
     cookie: &Cookie,
@@ -193,11 +203,13 @@ pub fn find_patches(
     let mut patches = Vec::new();
     let mut input = SliceBits(data);
     for (packet_index, packet) in packets.iter().enumerate() {
-        if packet.size < 4
-            || packet.position < 0
-            || packet.position as u64 > data.len() as u64
-            || packet.size as u64 > data.len() as u64 - packet.position as u64
-        {
+        let (Ok(position), Ok(packet_size)) =
+            (u64::try_from(packet.position), u64::try_from(packet.size))
+        else {
+            continue;
+        };
+        let data_size = data.len() as u64;
+        if packet.size < 4 || position > data_size || packet_size > data_size - position {
             continue;
         }
         if let Some(patch) = packet_patch(packet_index, packet, cookie, &mut input)? {
@@ -219,17 +231,18 @@ fn find_patches_file_impl(
         if cancelled() {
             return Err(Failure::new("Cancelled", "Source preparation cancelled"));
         }
-        if packet.size < 4
-            || packet.position < 0
-            || packet.position as u64 > size
-            || packet.size as u64 > size - packet.position as u64
-        {
+        let (Ok(position), Ok(packet_size)) =
+            (u64::try_from(packet.position), u64::try_from(packet.size))
+        else {
+            continue;
+        };
+        if packet.size < 4 || position > size || packet_size > size - position {
             continue;
         }
         let mut input = FileBits {
             file: &mut file,
-            position: packet.position as u64,
-            size: packet.size as u64,
+            position,
+            size: packet_size,
         };
         if let Some(patch) = packet_patch(packet_index, packet, cookie, &mut input)? {
             patches.push(patch);
@@ -270,14 +283,18 @@ pub fn apply_bits(
         let end = base
             .checked_add(3)
             .ok_or_else(|| Failure::new("Overflow", "ALAC patch bit position overflow"))?;
-        if end as u64 > data.len() as u64 * 8 {
+        let end_u64 = u64::try_from(end)
+            .map_err(|_| Failure::new("Overflow", "ALAC patch bit position overflow"))?;
+        if end_u64 > data.len() as u64 * 8 {
             return Err(Failure::new(
                 "InvalidData",
                 "ALAC patch exceeds the file boundary",
             ));
         }
         for bit in base..end {
-            data[bit as usize / 8] |= 1 << (7 - bit % 8);
+            let bit = usize::try_from(bit)
+                .map_err(|_| Failure::new("Overflow", "ALAC patch bit position overflow"))?;
+            data[bit / 8] |= 1 << (7 - bit % 8);
         }
     }
     Ok(())
@@ -308,14 +325,18 @@ fn apply_file_impl(
         let end = base
             .checked_add(3)
             .ok_or_else(|| Failure::new("Overflow", "ALAC patch bit position overflow"))?;
-        if end as u64 > bits {
+        let end_u64 = u64::try_from(end)
+            .map_err(|_| Failure::new("Overflow", "ALAC patch bit position overflow"))?;
+        if end_u64 > bits {
             return Err(Failure::new(
                 "InvalidData",
                 "ALAC patch exceeds the file boundary",
             ));
         }
         for bit in base..end {
-            masks.push(((bit / 8) as u64, 1 << (7 - bit % 8)));
+            let byte = u64::try_from(bit / 8)
+                .map_err(|_| Failure::new("Overflow", "ALAC patch byte position overflow"))?;
+            masks.push((byte, 1 << (7 - bit % 8)));
         }
     }
     masks.sort_by_key(|(byte, _)| *byte);

@@ -110,11 +110,11 @@ fn stills(data: &[u8], vob_bytes: u64) -> Result<u32, String> {
     let mut pictures = 0;
     for i in 0..records {
         let offset = 0x60 + i * 8;
-        let count = *data.get(offset).ok_or("ASVS_TABLE_TRUNCATED")? as u32;
+        let count = u32::from(*data.get(offset).ok_or("ASVS_TABLE_TRUNCATED")?);
         if count == 0 {
             return Err("ASVS_EMPTY_RECORD".into());
         }
-        if read16(data, offset + 2)? as u32 != pictures + 1 {
+        if u32::from(read16(data, offset + 2)?) != pictures + 1 {
             return Err("ASVS_PICTURE_SEQUENCE_BROKEN".into());
         }
         if u64::from(read32(data, offset + 4)?) * 2048 >= vob_bytes {
@@ -432,10 +432,10 @@ pub fn verify_with_cache(
         .any(|file| file.name.eq_ignore_ascii_case("AUDIO_SV.IFO"));
     let required = expected.is_none_or(|value| value["stills"].as_u64().unwrap_or(0) > 0);
     if required && (!still_ifo || still_vob.is_none()) {
-        return Err(if !still_ifo {
-            "MENU_FILE_MISSING: AUDIO_SV.IFO"
-        } else {
+        return Err(if still_ifo {
             "MENU_FILE_MISSING: AUDIO_SV.VOB"
+        } else {
+            "MENU_FILE_MISSING: AUDIO_SV.IFO"
         }
         .into());
     }

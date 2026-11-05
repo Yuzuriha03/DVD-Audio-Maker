@@ -1,4 +1,4 @@
-//! MPEG program-stream copy and subpicture insertion (port of menu_spu_core).
+//! MPEG program-stream copy and subpicture insertion (port of `menu_spu_core`).
 //!
 //! Reproduces the historical multiplexer byte for byte: PACK/PES headers, the
 //! private dvdauthor-data sector and the subpicture packets are written in the
@@ -23,30 +23,35 @@ const MPID_VIDEO_FIRST: u32 = 0xe0;
 const MPID_VIDEO_LAST: u32 = 0xef;
 const TBS: i32 = 90;
 
+fn low_byte(value: u64) -> u8 {
+    value.to_le_bytes()[0]
+}
+
 fn pack_header(header: &mut [u8; 32], time: u64, muxrate: u32, stuffing: u8) {
     let th = time / 300;
     let tl = time % 300;
-    header[0] = 0x44 | ((th >> 27) & 0x38) as u8 | ((th >> 28) & 3) as u8;
-    header[1] = (th >> 20) as u8;
-    header[2] = 4 | ((th >> 12) & 0xf8) as u8 | ((th >> 13) & 3) as u8;
-    header[3] = (th >> 5) as u8;
-    header[4] = 4 | ((th & 31) << 3) as u8 | ((tl >> 7) & 3) as u8;
-    header[5] = 1 | (tl << 1) as u8;
-    header[6] = (muxrate >> 14) as u8;
-    header[7] = (muxrate >> 6) as u8;
-    header[8] = 3 | (muxrate << 2) as u8;
+    header[0] = 0x44 | low_byte((th >> 27) & 0x38) | low_byte((th >> 28) & 3);
+    header[1] = low_byte(th >> 20);
+    header[2] = 4 | low_byte((th >> 12) & 0xf8) | low_byte((th >> 13) & 3);
+    header[3] = low_byte(th >> 5);
+    header[4] = 4 | low_byte((th & 31) << 3) | low_byte((tl >> 7) & 3);
+    header[5] = 1 | low_byte(tl << 1);
+    header[6] = low_byte(u64::from(muxrate >> 14));
+    header[7] = low_byte(u64::from(muxrate >> 6));
+    header[8] = 3 | low_byte(u64::from(muxrate << 2));
     header[9] = 0xF8 | stuffing;
 }
 
 fn pes_header0(header: &mut [u8; 32], pts: u32) {
+    let pts = u64::from(pts);
     header[0] = 0x81;
     header[1] = 0x80;
     header[2] = 5;
-    header[3] = 0x21 | ((pts >> 29) & 6) as u8;
-    header[4] = (pts >> 22) as u8;
-    header[5] = 1 | (pts >> 14) as u8;
-    header[6] = (pts >> 7) as u8;
-    header[7] = 1 | (pts << 1) as u8;
+    header[3] = 0x21 | low_byte((pts >> 29) & 6);
+    header[4] = low_byte(pts >> 22);
+    header[5] = 1 | low_byte(pts >> 14);
+    header[6] = low_byte(pts >> 7);
+    header[7] = 1 | low_byte(pts << 1);
 }
 
 fn pes_header1(header: &mut [u8; 32], pts: u32) {
@@ -96,6 +101,7 @@ fn fix_gts(gts: &mut u64, nextgts: &mut u64) {
 }
 
 fn get_pts(buffer: &[u8]) -> Option<u32> {
+    let buffer = buffer.get(..8)?;
     if (buffer[1] & 0xc0) == 0
         || buffer[2] < 4
         || (buffer[3] & 0xe1) != 0x21
@@ -111,6 +117,12 @@ fn get_pts(buffer: &[u8]) -> Option<u32> {
             + u32::from(buffer[4]) * 16384 * 256
             + u32::from(buffer[3] & 14) * 16384 * 256 * 128,
     )
+}
+
+fn private_substream(payload: &[u8]) -> Result<Option<u8>, String> {
+    let offset = usize::from(*payload.get(2).ok_or("truncated private PES header")?) + 3;
+    let substream = *payload.get(offset).ok_or("truncated private PES payload")?;
+    Ok(((substream & 0xE0) != 0x80).then_some(substream))
 }
 
 fn be32(value: u32) -> [u8; 4] {
@@ -131,16 +143,12 @@ fn write_string(data: &mut [u8], at: &mut usize, text: &str) {
 }
 
 fn write_short(data: &mut [u8], at: &mut usize, value: u16) {
-    data[*at] = (value >> 8) as u8;
-    data[*at + 1] = value as u8;
+    data[*at..*at + 2].copy_from_slice(&value.to_be_bytes());
     *at += 2;
 }
 
 fn write_long(data: &mut [u8], at: &mut usize, value: u32) {
-    data[*at] = (value >> 24) as u8;
-    data[*at + 1] = (value >> 16) as u8;
-    data[*at + 2] = (value >> 8) as u8;
-    data[*at + 3] = value as u8;
+    data[*at..*at + 4].copy_from_slice(&value.to_be_bytes());
     *at += 4;
 }
 
@@ -287,19 +295,19 @@ impl Mux {
         );
         sector[at] = 1;
         at += 1;
-        sector[at] = spu.numpal as u8;
+        sector[at] = u8::try_from(spu.numpal).expect("master palette is limited to 16 entries");
         at += 1;
         for index in 0..spu.numpal {
             let color = spu.masterpal[index];
-            sector[at] = color.y() as u8;
-            sector[at + 1] = color.cr() as u8;
-            sector[at + 2] = color.cb() as u8;
+            sector[at] = u8::try_from(color.y()).expect("Y is byte-ranged");
+            sector[at + 1] = u8::try_from(color.cr()).expect("Cr is byte-ranged");
+            sector[at + 2] = u8::try_from(color.cb()).expect("Cb is byte-ranged");
             at += 3;
         }
         if spu.numgroups != 0 {
             sector[at] = 2;
             at += 1;
-            sector[at] = spu.numgroups as u8;
+            sector[at] = u8::try_from(spu.numgroups).expect("button groups are limited to three");
             at += 1;
             for group in 0..spu.numgroups {
                 let mut words = [0u16; 4];
@@ -328,24 +336,40 @@ impl Mux {
         if !spu.buttons.is_empty() {
             sector[at] = 3;
             at += 1;
-            sector[at] = spu.buttons.len() as u8;
+            sector[at] = u8::try_from(spu.buttons.len()).expect("button count is limited to 36");
             at += 1;
             for (index, button) in spu.buttons.iter().enumerate() {
                 write_string(sector, &mut at, button.name.as_deref().unwrap_or(""));
                 write_short(sector, &mut at, 0);
                 sector[at] = u8::from(button.autoaction);
                 at += 1;
-                sector[at] = button.group as u8;
+                sector[at] = u8::try_from(button.group).expect("button group is validated");
                 at += 1;
-                write_short(sector, &mut at, button.r.x0 as u16);
-                write_short(sector, &mut at, button.r.y0 as u16);
-                write_short(sector, &mut at, button.r.x1 as u16);
-                write_short(sector, &mut at, button.r.y1 as u16);
+                write_short(
+                    sector,
+                    &mut at,
+                    u16::try_from(button.r.x0).expect("button x0 is validated"),
+                );
+                write_short(
+                    sector,
+                    &mut at,
+                    u16::try_from(button.r.y0).expect("button y0 is validated"),
+                );
+                write_short(
+                    sector,
+                    &mut at,
+                    u16::try_from(button.r.x1).expect("button x1 is validated"),
+                );
+                write_short(
+                    sector,
+                    &mut at,
+                    u16::try_from(button.r.y1).expect("button y1 is validated"),
+                );
                 let first = if index == 0 { spu.buttons.len() } else { index };
-                let second = if index + 1 != spu.buttons.len() {
-                    index + 2
-                } else {
+                let second = if index + 1 == spu.buttons.len() {
                     1
+                } else {
+                    index + 2
                 };
                 let up = button.up.clone().unwrap_or_else(|| first.to_string());
                 let down = button.down.clone().unwrap_or_else(|| second.to_string());
@@ -444,19 +468,10 @@ impl Mux {
                     if self.input.read_exact(&mut payload).is_err() {
                         break;
                     }
-                    if start == 0x100 + MPID_PRIVATE1 {
-                        let offset = payload[2] as usize + 3;
-                        let substream = payload[offset];
-                        let substream = if (substream & 0xE0) != 0x80 {
-                            Some(substream)
-                        } else {
-                            None
-                        };
-                        if let Some(substream) = substream
-                            && substream == SUB_STREAM
-                        {
-                            return Err(format!("duplicate substream ID {SUB_STREAM:02x}"));
-                        }
+                    if start == 0x100 + MPID_PRIVATE1
+                        && private_substream(&payload)? == Some(SUB_STREAM)
+                    {
+                        return Err(format!("duplicate substream ID {SUB_STREAM:02x}"));
                     }
                     self.write(&payload);
                     if start == 0x100 + MPID_VIDEO_FIRST
@@ -602,5 +617,26 @@ mod tests {
             &[0, 0, 1, MPID_PRIVATE1 as u8]
         );
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn truncated_pes_headers_are_rejected_without_panicking() {
+        for payload in [
+            &[][..],
+            &[0][..],
+            &[0, 0][..],
+            &[0, 0, 0][..],
+            &[0, 0, 4, 0][..],
+        ] {
+            assert!(private_substream(payload).is_err(), "payload {payload:?}");
+        }
+        assert_eq!(
+            private_substream(&[0, 0, 0, SUB_STREAM]),
+            Ok(Some(SUB_STREAM))
+        );
+        assert_eq!(private_substream(&[0, 0, 0, 0x80]), Ok(None));
+        for length in 0..8 {
+            assert_eq!(get_pts(&vec![0; length]), None);
+        }
     }
 }

@@ -213,7 +213,7 @@ fn native_format_pcm_strict_zero_tail_and_chunk_mismatch_match_historical_cases(
     }
     let mut large = vec![0; 300 * 1024 + 1];
     fs::write(&source, &large).unwrap();
-    for offset in [0, 1, 131071, 131072, 131073, 200000, large.len() - 1] {
+    for offset in [0, 1, 131_071, 131_072, 131_073, 200_000, large.len() - 1] {
         large[offset] = 255;
         fs::write(&decoded, &large).unwrap();
         let result = native.compare_pcm(&source, &decoded, 0, 0).unwrap();
@@ -241,7 +241,7 @@ fn pcm_comparison_throughput() {
     let root = Scratch::new();
     let source = root.0.join("source.raw");
     let decoded = root.0.join("decoded.raw");
-    let bytes: Vec<u8> = (0..64 * 1024 * 1024 + 1).map(|n| n as u8).collect();
+    let bytes: Vec<u8> = (0..=(64 * 1024 * 1024)).map(|n| n as u8).collect();
     fs::write(&source, &bytes).unwrap();
     fs::write(&decoded, &bytes).unwrap();
     for round in 0..9 {
@@ -386,7 +386,7 @@ fn frozen_dll_mlp_and_checksum_differential() {
         let data: Vec<u8> = (0..length).map(|_| random()).collect();
         let mut expected = 0;
         assert_eq!(
-            unsafe { crc16(data.as_ptr(), data.len(), &mut expected) },
+            unsafe { crc16(data.as_ptr(), data.len(), &raw mut expected) },
             0
         );
         assert_eq!(
@@ -396,7 +396,7 @@ fn frozen_dll_mlp_and_checksum_differential() {
         );
         let mut expected8 = 0;
         assert_eq!(
-            unsafe { crc8(data.as_ptr(), data.len(), &mut expected8) },
+            unsafe { crc8(data.as_ptr(), data.len(), &raw mut expected8) },
             0
         );
         assert_eq!(
@@ -436,7 +436,7 @@ fn frozen_dll_mlp_and_checksum_differential() {
     }
     for case in cases {
         let mut raw = OracleInspection::default();
-        let status = unsafe { inspect(case.as_ptr(), case.len(), &mut raw) };
+        let status = unsafe { inspect(case.as_ptr(), case.len(), &raw mut raw) };
         let rust = mlp_formats::inspect_buffer(&case);
         assert_eq!(status == 0, rust.is_ok(), "inspect len {}", case.len());
         if let Ok(value) = rust {
@@ -479,9 +479,9 @@ fn frozen_dll_mlp_and_checksum_differential() {
             align(
                 case.as_ptr(),
                 case.len(),
-                &mut pointer,
-                &mut length,
-                &mut alignment,
+                &raw mut pointer,
+                &raw mut length,
+                &raw mut alignment,
             )
         };
         let rust = NativeFormats.align(&case);
@@ -548,7 +548,7 @@ fn frozen_dll_pcm_and_pts_differential() {
             bytes.clone(),
             {
                 let mut r = bytes;
-                r[199999] ^= 1;
+                r[199_999] ^= 1;
                 r
             },
             0,
@@ -559,7 +559,7 @@ fn frozen_dll_pcm_and_pts_differential() {
         fs::write(&source, left).unwrap();
         fs::write(&decoded, right).unwrap();
         let mut raw = OracleComparison::default();
-        let status = unsafe { compare(src.as_ptr(), dst.as_ptr(), frame, max, &mut raw) };
+        let status = unsafe { compare(src.as_ptr(), dst.as_ptr(), frame, max, &raw mut raw) };
         let result = NativeFormats.compare_pcm(&source, &decoded, frame, max);
         assert_eq!(status == 0, result.is_ok());
         if let Ok(value) = result {
@@ -592,7 +592,7 @@ fn frozen_dll_pcm_and_pts_differential() {
             n.wrapping_mul(41),
         ];
         let mut raw = 0;
-        assert_eq!(unsafe { parse(data.as_ptr(), data.len(), &mut raw) }, 0);
+        assert_eq!(unsafe { parse(data.as_ptr(), data.len(), &raw mut raw) }, 0);
         assert_eq!(NativeFormats.parse_pts(&data).unwrap(), raw);
     }
 }
@@ -621,7 +621,7 @@ fn frozen_dll_real_mlp_file_differential() {
     let name =
         std::ffi::CString::new(path.to_str().expect("real sample path must be UTF-8")).unwrap();
     let mut raw = OracleInspection::default();
-    let status = unsafe { inspect(name.as_ptr(), &mut raw) };
+    let status = unsafe { inspect(name.as_ptr(), &raw mut raw) };
     let rust = NativeFormats.inspect_file(&path);
     assert_eq!(
         status == 0,
@@ -779,12 +779,12 @@ fn frozen_dll_encoded_mlp_profiles_differential() {
         let name_c = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
         let mut from_file = OracleInspection::default();
         let mut from_buffer = OracleInspection::default();
-        let file_status = unsafe { inspect_file(name_c.as_ptr(), &mut from_file) };
+        let file_status = unsafe { inspect_file(name_c.as_ptr(), &raw mut from_file) };
         let buffer_status = unsafe {
             inspect_buffer(
                 stream.output.as_ptr(),
                 stream.output.len(),
-                &mut from_buffer,
+                &raw mut from_buffer,
             )
         };
         let rust_file = NativeFormats.inspect_file(&path);
@@ -855,9 +855,9 @@ fn frozen_dll_encoded_mlp_profiles_differential() {
             align(
                 stream.output.as_ptr(),
                 stream.output.len(),
-                &mut pointer,
-                &mut length,
-                &mut aligned,
+                &raw mut pointer,
+                &raw mut length,
+                &raw mut aligned,
             )
         };
         let rust = NativeFormats.align(&stream.output);

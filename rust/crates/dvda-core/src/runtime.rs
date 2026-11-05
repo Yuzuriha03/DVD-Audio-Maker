@@ -131,7 +131,7 @@ pub fn extract(archive: &[u8], cache: &Path) -> Result<PathBuf, String> {
                 if error.raw_os_error() == Some(32)
                     && started.elapsed() < Duration::from_secs(120) =>
             {
-                std::thread::sleep(Duration::from_millis(50))
+                std::thread::sleep(Duration::from_millis(50));
             }
             Err(error) => return Err(format!("Cannot lock runtime cache: {error}")),
         }
@@ -229,7 +229,7 @@ pub unsafe fn initialize(archive: &[u8]) -> Result<(), String> {
         .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
     std::process::Command::new(powershell)
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .creation_flags(0x08000000)
+        .creation_flags(0x0800_0000)
         .spawn()
         .map_err(|e| format!("Cannot start runtime cleanup: {e}"))?;
     // Keep the exclusive lease until process teardown; the helper then removes it.

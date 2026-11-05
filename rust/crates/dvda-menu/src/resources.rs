@@ -204,13 +204,13 @@ impl Session {
                 break;
             };
             if unsafe { close_resource(object as *mut c_void, kind) }.is_err() {
-                succeeded = false
+                succeeded = false;
             }
         }
         PIXELS.set(None);
         HEAP.set(ptr::null_mut());
         if unsafe { HeapDestroy(self.heap) } == 0 {
-            succeeded = false
+            succeeded = false;
         }
         self.heap = ptr::null_mut();
         succeeded
@@ -285,7 +285,7 @@ pub unsafe extern "C" fn menu_rust_realloc(
         let result = if object.is_null() {
             allocate(bytes, false)
         } else if bytes == 0 {
-            unsafe { free(object) }.map(|_| ptr::null_mut())
+            unsafe { free(object) }.map(|()| ptr::null_mut())
         } else {
             let heap = HEAP.get();
             if heap.is_null() {
@@ -327,7 +327,7 @@ pub unsafe extern "C" fn menu_rust_strndup(
         }
         let mut length = 0;
         while length < maximum && unsafe { *value.add(length) } != 0 {
-            length += 1
+            length += 1;
         }
         let Some(bytes) = length.checked_add(1) else {
             return 1;
@@ -460,7 +460,7 @@ pub unsafe extern "C" fn menu_rust_opendir(path: *const c_char, output: *mut *mu
                     name_length: 0,
                     name: [0; 260],
                 },
-            })
+            });
         };
         if unsafe { own(object, DIRECTORY) }.is_err() {
             return 1;
@@ -504,10 +504,10 @@ pub unsafe extern "C" fn menu_rust_readdir(
         }
         directory.entry.name.fill(0);
         for (target, byte) in directory.entry.name.iter_mut().zip(name.bytes()) {
-            *target = byte as c_char
+            *target = byte as c_char;
         }
         directory.entry.name_length = name.len() as u16;
-        unsafe { *output = &mut directory.entry };
+        unsafe { *output = &raw mut directory.entry };
         0
     })
 }
@@ -529,13 +529,13 @@ pub unsafe extern "C" fn menu_rust_closedir(directory: *mut c_void) -> c_int {
     })
 }
 /// # Safety
-/// `object` is a live IUnknown. Ownership transfers on success.
+/// `object` is a live `IUnknown`. Ownership transfers on success.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_own_com(object: *mut c_void) -> c_int {
     guarded(1, || c_int::from(unsafe { own(object, COM) }.is_err()))
 }
 /// # Safety
-/// `object` is null or a live registered IUnknown.
+/// `object` is null or a live registered `IUnknown`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn menu_rust_release_com(object: *mut c_void) -> c_int {
     guarded(1, || {
@@ -598,18 +598,18 @@ mod tests {
         let mut session = Session::begin(None).unwrap();
         let mut object = ptr::null_mut();
         unsafe {
-            assert_eq!(menu_rust_malloc(4, &mut object), 0);
-            object.cast::<u32>().write(0x12345678);
-            assert_eq!(menu_rust_realloc(object, 8, &mut object), 0);
-            assert_eq!(object.cast::<u32>().read(), 0x12345678);
+            assert_eq!(menu_rust_malloc(4, &raw mut object), 0);
+            object.cast::<u32>().write(0x1234_5678);
+            assert_eq!(menu_rust_realloc(object, 8, &raw mut object), 0);
+            assert_eq!(object.cast::<u32>().read(), 0x1234_5678);
             assert_eq!(menu_rust_free(object), 0);
-            assert_eq!(menu_rust_calloc(usize::MAX, 2, &mut object), 1);
-            assert_eq!(menu_rust_calloc(3, 4, &mut object), 0);
+            assert_eq!(menu_rust_calloc(usize::MAX, 2, &raw mut object), 1);
+            assert_eq!(menu_rust_calloc(3, 4, &raw mut object), 0);
             assert_eq!(
                 std::slice::from_raw_parts(object.cast::<u8>(), 12),
                 &[0; 12]
             );
-            assert_eq!(menu_rust_realloc(object, 0, &mut object), 0);
+            assert_eq!(menu_rust_realloc(object, 0, &raw mut object), 0);
             assert!(object.is_null());
         }
         assert!(session.finish());
@@ -638,28 +638,31 @@ mod tests {
             let mut directory = ptr::null_mut();
             let mut entry = ptr::null_mut();
             unsafe {
-                assert_eq!(menu_rust_open(file_path.as_ptr(), 0, 0, &mut descriptor), 0);
+                assert_eq!(
+                    menu_rust_open(file_path.as_ptr(), 0, 0, &raw mut descriptor),
+                    0
+                );
                 assert_eq!(file_length(descriptor).unwrap(), 16);
                 assert_eq!(
-                    menu_rust_fopen(file_path.as_ptr(), c"rb".as_ptr(), &mut stream),
+                    menu_rust_fopen(file_path.as_ptr(), c"rb".as_ptr(), &raw mut stream),
                     0
                 );
                 assert!(!stream.is_null());
                 assert_eq!(
-                    menu_rust_opendir(directory_path.as_ptr(), &mut directory),
+                    menu_rust_opendir(directory_path.as_ptr(), &raw mut directory),
                     0
                 );
                 assert!(!directory.is_null());
-                assert_eq!(menu_rust_readdir(directory, &mut entry), 0);
+                assert_eq!(menu_rust_readdir(directory, &raw mut entry), 0);
                 assert_eq!(
                     CStr::from_ptr((*entry).name.as_ptr()).to_str().unwrap(),
                     "音源-日本語.dat"
                 );
-                assert_eq!(menu_rust_readdir(directory, &mut entry), 0);
+                assert_eq!(menu_rust_readdir(directory, &raw mut entry), 0);
                 assert!(entry.is_null());
                 let invalid = [0xff_u8, 0];
                 assert_eq!(
-                    menu_rust_fopen(invalid.as_ptr().cast(), c"rb".as_ptr(), &mut stream),
+                    menu_rust_fopen(invalid.as_ptr().cast(), c"rb".as_ptr(), &raw mut stream),
                     1
                 );
             }

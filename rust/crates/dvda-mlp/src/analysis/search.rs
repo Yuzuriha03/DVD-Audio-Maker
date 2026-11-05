@@ -41,7 +41,7 @@ pub(crate) fn mlp_search_iir_random(
         f.precision = order + 4;
         let scale = f64::from(1u32 << f.precision);
         for (i, value) in k.iter_mut().enumerate().take(order as usize) {
-            let u = f64::from(mlp_search_rand(&mut rng)) * f64::from_bits(0x3f00002000400080);
+            let u = f64::from(mlp_search_rand(&mut rng)) * f64::from_bits(0x3f00_0020_0040_0080);
             *value = if i < order as usize - 1 {
                 (u - 0.5) * 1.9
             } else {
@@ -95,7 +95,7 @@ pub(crate) fn mlp_search_pool_init(pool: &mut MlpSearchPool, seed: u32) -> i32 {
         [-0.875, 0.0],
         [-0.9375, 0.0],
         [-0.96875, 0.0],
-        [-1.921875, 0.92578125],
+        [-1.921_875, 0.925_781_25],
         [-1.78125, 0.8125],
         [-1.34375, 0.5625],
     ];
@@ -185,7 +185,7 @@ pub(crate) fn mlp_search_pool_select(
         || lag > 49
         || correlation.len() <= lag
         || correlation[0] <= 0.0
-        || perturbations > 100000
+        || perturbations > 100_000
     {
         return -1;
     }
@@ -374,7 +374,7 @@ pub(crate) fn mlp_search_joint(
             magnitude = v as u32;
         }
     }
-    if magnitude & 0xffffe000 < 0x07ffc000 {
+    if magnitude & 0xffff_e000 < 0x07ff_c000 {
         while factor > ratio {
             q += 1;
             factor *= 0.25;
@@ -466,7 +466,7 @@ pub(crate) fn mlp_search_fir(
             maximum = magnitude as u32;
         }
     }
-    if maximum & 0xffffe000 < 0x07ffc000 {
+    if maximum & 0xffff_e000 < 0x07ff_c000 {
         while factor * original > r[0] {
             q += 1;
             factor *= 0.25;
@@ -513,7 +513,7 @@ pub(crate) fn mlp_search_feedback_state(
         || b.order == 0
         || b.order > 4
         || attempts == 0
-        || pcm.iter().any(|v| !(-8388608..=8388607).contains(v))
+        || pcm.iter().any(|v| !(-8_388_608..=8_388_607).contains(v))
         || a.coefficient[..a.order as usize]
             .iter()
             .any(|v| !v.is_finite())
@@ -603,7 +603,7 @@ pub(crate) fn mlp_search_feedback_state(
             if !z.is_finite() {
                 return -1;
             }
-            if !(-8388607.0..=8388607.0).contains(&z) {
+            if !(-8_388_607.0..=8_388_607.0).contains(&z) {
                 invalid = true;
                 break;
             }
@@ -727,7 +727,7 @@ pub(crate) fn mlp_search_interval(
 }
 
 pub(crate) fn mlp_search_rand(state: &mut u32) -> u32 {
-    *state = state.wrapping_mul(214013).wrapping_add(2531011);
+    *state = state.wrapping_mul(214_013).wrapping_add(2_531_011);
     (*state >> 16) & 32767
 }
 
@@ -789,14 +789,14 @@ pub(crate) fn mlp_search_correlation_extended(
         if end > pcm.len()
             || pcm[offset..end]
                 .iter()
-                .any(|v| !(-8388608..=8388607).contains(v))
+                .any(|v| !(-8_388_608..=8_388_607).contains(v))
         {
             return -1;
         }
         offset = end;
     }
     for (n, w) in window.iter_mut().enumerate() {
-        let t = (n + 1) as f64 * f64::from_bits(0x3f7970e4f80cb872);
+        let t = (n + 1) as f64 * f64::from_bits(0x3f79_70e4_f80c_b872);
         *w = (3.0 - (t + t)) * t * t;
     }
     offset = 0;

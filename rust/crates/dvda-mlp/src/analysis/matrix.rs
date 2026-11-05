@@ -90,7 +90,7 @@ pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
     }
     if samples[..count * channels]
         .iter()
-        .any(|&v| !(-8388608..=8388607).contains(&v))
+        .any(|&v| !(-8_388_608..=8_388_607).contains(&v))
     {
         return -1;
     }
@@ -139,7 +139,7 @@ pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
                     }
                     let rounded = value as i64;
                     *bits = (((rounded as u32 & 1) * 128) + u32::from(*bits >> 1)) as u8;
-                    value = ((value + 1.0) / 2.0).floor();
+                    value = f64::midpoint(value, 1.0).floor();
                 }
             } else {
                 value = (sum / step).floor() * step;
@@ -147,10 +147,14 @@ pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
             if !value.is_finite() || value < f64::from(i32::MIN) || value > f64::from(i32::MAX) {
                 return -1;
             }
-            if !(-8388608.0..=8388607.0).contains(&value) {
+            if !(-8_388_608.0..=8_388_607.0).contains(&value) {
                 overflow = 1;
                 if clip {
-                    value = if value < 0.0 { -8388608.0 } else { 8388607.0 };
+                    value = if value < 0.0 {
+                        -8_388_608.0
+                    } else {
+                        8_388_607.0
+                    };
                 }
             }
             frame[target] = value as i32;
@@ -238,7 +242,7 @@ fn apply_interval(args: MatrixIntervalArgs<'_>) -> i32 {
     }
     if samples[..count * channels]
         .iter()
-        .any(|&v| !(-8388608..=8388607).contains(&v))
+        .any(|&v| !(-8_388_608..=8_388_607).contains(&v))
         || (prefix != 0
             && bypass[..count]
                 .iter()
@@ -268,7 +272,7 @@ fn apply_interval(args: MatrixIntervalArgs<'_>) -> i32 {
             }
             let current_qss = &qss[if lengths.is_some() { b } else { 0 }];
             let result = mlp_matrix_apply(MatrixApplyArgs {
-                matrix: &matrix[i..i + 1],
+                matrix: &matrix[i..=i],
                 channels,
                 qss: current_qss,
                 samples: &mut work[first * channels..],
@@ -380,7 +384,7 @@ mod tests {
             ],
             ..MlpMatrixPrimitive::default()
         }];
-        let original = [1, 2, 0, 8388607];
+        let original = [1, 2, 0, 8_388_607];
         let mut samples = original;
         let mut primitives = 1;
         let mut bypass = [0; 2];

@@ -1,6 +1,6 @@
 //! Build-time OpenType font preparation. Only the verified collection is shipped.
 //!
-//! This is a Rust port of the former FontTool, kept in the developer tool rather
+//! This is a Rust port of the former `FontTool`, kept in the developer tool rather
 //! than the application C17 DLL because no runtime font parsing API is needed.
 use dvda_core::hash::sha256;
 use std::{
@@ -86,6 +86,11 @@ fn put16(data: &mut [u8], offset: usize, value: u16) {
 fn put32(data: &mut [u8], offset: usize, value: u32) {
     data[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
 }
+fn put_size(data: &mut [u8], offset: usize, value: usize) -> Result<(), String> {
+    let value = u32::try_from(value).map_err(|_| "Font offset or length exceeds 32 bits")?;
+    put32(data, offset, value);
+    Ok(())
+}
 fn align4(length: usize) -> Result<usize, String> {
     length
         .checked_add(3)
@@ -95,7 +100,7 @@ fn align4(length: usize) -> Result<usize, String> {
 fn grow(length: usize, extra: usize) -> Result<usize, String> {
     length
         .checked_add(extra)
-        .filter(|value| *value <= i32::MAX as usize)
+        .filter(|value| i32::try_from(*value).is_ok())
         .ok_or("Font size exceeds supported range".into())
 }
 fn checksum(data: &[u8]) -> u32 {
@@ -316,7 +321,7 @@ fn format4(data: &[u8], coverage: &mut [bool; 4]) -> Result<(), String> {
             )?;
         }
         for (point, found) in REPRESENTATIVES.iter().zip(coverage.iter_mut()) {
-            if *point < start as u32 || *point > end as u32 {
+            if *point < u32::from(start) || *point > u32::from(end) {
                 continue;
             }
             let glyph = if relative == 0 {
@@ -391,17 +396,36 @@ fn validate_tables(data: &[u8], face: &Face) -> Result<(), String> {
 
 fn standalone(source: &[u8], face: &Face) -> Result<Vec<u8>, String> {
     let count = face.tables.len();
+    if !(1..=4095).contains(&count) {
+        return Err("OpenType table count must be 1..=4095".into());
+    }
     let mut length = 12 + count * 16;
     for table in &face.tables {
         length = grow(align4(length)?, align4(table.length)?)?;
     }
     let mut output = vec![0; length];
     put32(&mut output, 0, face.scaler);
-    put16(&mut output, 4, count as u16);
+    put16(
+        &mut output,
+        4,
+        u16::try_from(count).map_err(|_| "OpenType table count overflow")?,
+    );
     let power = 1usize << (usize::BITS - 1 - count.leading_zeros());
-    put16(&mut output, 6, (power * 16) as u16);
-    put16(&mut output, 8, power.ilog2() as u16);
-    put16(&mut output, 10, (count * 16 - power * 16) as u16);
+    put16(
+        &mut output,
+        6,
+        u16::try_from(power * 16).map_err(|_| "OpenType searchRange overflow")?,
+    );
+    put16(
+        &mut output,
+        8,
+        u16::try_from(power.ilog2()).map_err(|_| "OpenType entrySelector overflow")?,
+    );
+    put16(
+        &mut output,
+        10,
+        u16::try_from(count * 16 - power * 16).map_err(|_| "OpenType rangeShift overflow")?,
+    );
     let mut offset = 12 + count * 16;
     let mut head = None;
     for (index, table) in face.tables.iter().enumerate() {
@@ -418,8 +442,8 @@ fn standalone(source: &[u8], face: &Face) -> Result<Vec<u8>, String> {
         output[record..record + 4].copy_from_slice(&table.tag);
         let sum = checksum(&output[offset..offset + table.length]);
         put32(&mut output, record + 4, sum);
-        put32(&mut output, record + 8, offset as u32);
-        put32(&mut output, record + 12, table.length as u32);
+        put_size(&mut output, record + 8, offset)?;
+        put_size(&mut output, record + 12, table.length)?;
         offset += align4(table.length)?;
     }
     let head = head.ok_or("Font is missing the head table")?;
@@ -640,17 +664,17 @@ fn pack_bytes(sources: &[Vec<u8>]) -> Result<Vec<u8>, String> {
     let mut output = vec![0; length];
     put32(&mut output, 0, TTC);
     put32(&mut output, 4, 0x0001_0000);
-    put32(&mut output, 8, sources.len() as u32);
+    put_size(&mut output, 8, sources.len())?;
     for (index, ((source, face), directory)) in
         sources.iter().zip(&faces).zip(directories).enumerate()
     {
-        put32(&mut output, 12 + index * 4, directory as u32);
+        put_size(&mut output, 12 + index * 4, directory)?;
         output[directory..directory + 12].copy_from_slice(&source[face.offset..face.offset + 12]);
         for (table_index, table_offset) in all_offsets[index].iter().enumerate() {
             let record = 12 + table_index * 16;
             output[directory + record..directory + record + 16]
                 .copy_from_slice(&source[record..record + 16]);
-            put32(&mut output, directory + record + 8, *table_offset as u32);
+            put_size(&mut output, directory + record + 8, *table_offset)?;
         }
     }
     for (_, (offset, bytes)) in shared {
@@ -828,7 +852,7 @@ mod tests {
             put16(
                 &mut data,
                 12 + 16 + count * 4 + index * 2,
-                if point == 0xffff { 1 } else { 0 },
+                u16::from(point == 0xffff),
             );
         }
         data
@@ -856,6 +880,28 @@ mod tests {
             data.resize(align4(data.len()).unwrap(), 0);
         }
         standalone(&data, &parse_face(&data, 0).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn standalone_enforces_opentype_table_count_limit() {
+        let face = |count| Face {
+            offset: 0,
+            scaler: 0x0001_0000,
+            tables: (0..count)
+                .map(|index| Table {
+                    tag: if index == 0 { *b"head" } else { *b"test" },
+                    checksum: 0,
+                    offset: 0,
+                    length: if index == 0 { 12 } else { 0 },
+                })
+                .collect(),
+            family: String::new(),
+            post_script: String::new(),
+        };
+        let source = [0u8; 12];
+        assert!(standalone(&source, &face(0)).is_err());
+        assert!(standalone(&source, &face(4096)).is_err());
+        assert!(standalone(&source, &face(4095)).is_ok());
     }
 
     fn sources() -> Vec<Vec<u8>> {

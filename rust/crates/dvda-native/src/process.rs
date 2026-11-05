@@ -267,14 +267,14 @@ impl Attributes {
     fn new(handles: &mut [Handle]) -> io::Result<Self> {
         let mut bytes = 0;
         unsafe {
-            InitializeProcThreadAttributeList(ptr::null_mut(), 1, 0, &mut bytes);
+            InitializeProcThreadAttributeList(ptr::null_mut(), 1, 0, &raw mut bytes);
         }
         if bytes == 0 {
             return Err(io::Error::last_os_error());
         }
         let mut storage = vec![0usize; bytes.div_ceil(size_of::<usize>())];
         if unsafe {
-            InitializeProcThreadAttributeList(storage.as_mut_ptr().cast(), 1, 0, &mut bytes)
+            InitializeProcThreadAttributeList(storage.as_mut_ptr().cast(), 1, 0, &raw mut bytes)
         } == 0
         {
             return Err(io::Error::last_os_error());
@@ -314,7 +314,7 @@ fn security() -> Security {
 fn pipe() -> io::Result<(Owned, Owned)> {
     let mut read = ptr::null_mut();
     let mut write = ptr::null_mut();
-    if unsafe { CreatePipe(&mut read, &mut write, &security(), 0) } == 0 {
+    if unsafe { CreatePipe(&raw mut read, &raw mut write, &security(), 0) } == 0 {
         return Err(io::Error::last_os_error());
     }
     let read = Owned::new(read)?;
@@ -468,7 +468,7 @@ impl Child {
         let input = Owned::new(unsafe {
             CreateFileW(
                 nul.as_ptr(),
-                0x80000000,
+                0x8000_0000,
                 3,
                 &security(),
                 3,
@@ -498,7 +498,7 @@ impl Child {
             SetInformationJobObject(
                 job.0,
                 9,
-                (&limits as *const Limits).cast(),
+                (&raw const limits).cast(),
                 size_of::<Limits>() as u32,
             )
         } == 0
@@ -513,13 +513,13 @@ impl Child {
                 ptr::null(),
                 ptr::null(),
                 1,
-                0x08000000 | 0x00080000 | 0x400 | 4,
+                0x0800_0000 | 0x0008_0000 | 0x400 | 4,
                 environment.as_mut_ptr().cast(),
                 directory
                     .as_ref()
                     .map_or(ptr::null(), std::vec::Vec::as_ptr),
-                &startup,
-                &mut info,
+                &raw const startup,
+                &raw mut info,
             )
         } == 0
         {
@@ -559,7 +559,7 @@ impl Child {
                 ptr::null_mut(),
                 0,
                 ptr::null_mut(),
-                &mut available,
+                &raw mut available,
                 ptr::null_mut(),
             )
         } == 0
@@ -581,7 +581,7 @@ impl Child {
                 self.pipes[stream].0,
                 buffer.as_mut_ptr().cast(),
                 count as u32,
-                &mut read,
+                &raw mut read,
                 ptr::null_mut(),
             )
         } == 0
@@ -594,7 +594,7 @@ impl Child {
         match unsafe { WaitForSingleObject(self.process.0, 0) } {
             0 => {
                 let mut code = 0;
-                if unsafe { GetExitCodeProcess(self.process.0, &mut code) } == 0 {
+                if unsafe { GetExitCodeProcess(self.process.0, &raw mut code) } == 0 {
                     return Err(io::Error::last_os_error());
                 }
                 Ok(Some(code as i32))

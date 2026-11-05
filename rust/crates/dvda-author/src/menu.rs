@@ -135,7 +135,7 @@ impl Default for Options {
             aspect: 2,
             duration: [0; 3],
             looped: false,
-            palette: [0xeb8080, 0x108080, 0x52f05a, 0x108080],
+            palette: [0x00eb_8080, 0x0010_8080, 0x0052_f05a, 0x0010_8080],
             still_pics: None,
             top_menus: Vec::new(),
             top_vob: None,
@@ -299,7 +299,8 @@ impl Options {
                     .map(|value| u32::from_str_radix(value.trim_start_matches("0x"), 16))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|_| "Invalid --topmenu-palette")?;
-                if !(3..=4).contains(&values.len()) || values.iter().any(|value| *value > 0xffffff)
+                if !(3..=4).contains(&values.len())
+                    || values.iter().any(|value| *value > 0x00ff_ffff)
                 {
                     return Err("--topmenu-palette requires text:highlight:select[:background] YCrCb values".into());
                 }
@@ -312,6 +313,7 @@ impl Options {
         Ok(true)
     }
 
+    #[must_use]
     pub fn height(&self) -> u16 {
         if self.norm == "ntsc" { 480 } else { 576 }
     }
@@ -420,7 +422,7 @@ fn index_arrow(label: &str, target: usize, next: bool, options: &Options) -> But
 }
 fn valid_xml(value: &str) -> Result<(), String> {
     if value.chars().all(
-        |c| matches!(c as u32, 9 | 10 | 13 | 0x20..=0xd7ff | 0xe000..=0xfffd | 0x10000..=0x10ffff),
+        |c| matches!(c as u32, 9 | 10 | 13 | 0x20..=0xd7ff | 0xe000..=0xfffd | 0x10000..=0x0010_ffff),
     ) {
         Ok(())
     } else {
@@ -459,6 +461,9 @@ fn check(callbacks: &mut dyn Callbacks) -> Result<(), String> {
 
 /// Build all page targets and coordinates together so rendered masks and both
 /// XML documents use precisely the same button ordering and rectangles.
+///
+/// # Errors
+/// Rejects invalid group counts, menu geometry, page capacity, fonts, and inconsistent picture assignments.
 pub fn plan(groups: &[Vec<Track>], options: &Options) -> Result<Vec<Page>, String> {
     if groups.is_empty() || groups.len() > 9 || groups.iter().any(Vec::is_empty) {
         return Err("Menus require 1..=9 nonempty audio groups".into());
@@ -1398,7 +1403,7 @@ fn concatenate(
     file.flush().map_err(|error| error.to_string())
 }
 
-/// Produce AUDIO_TS.VOB / AUDIO_SV.VOB plus metadata for AMG, ASVS and ATSI.
+/// Produce `AUDIO_TS.VOB` / `AUDIO_SV.VOB` plus metadata for AMG, ASVS and ATSI.
 pub fn author(
     audio_ts: &Path,
     temporary: &Path,
@@ -1578,10 +1583,13 @@ pub fn author(
                 // highlight can allocate red before white). Pin its palette
                 // to the indices written into the final AMG, for every page.
                 let palette = temporary.join("menu-palette.yuv");
-                let colors = [0xeb8080, 0x108080, 0x52f05a];
+                let colors = [0x00eb_8080, 0x0010_8080, 0x0052_f05a];
                 let palette_text: String = (0..16)
                     .map(|index| {
-                        format!("{:06x}\n", colors.get(index).copied().unwrap_or(0x108080))
+                        format!(
+                            "{:06x}\n",
+                            colors.get(index).copied().unwrap_or(0x0010_8080)
+                        )
                     })
                     .collect();
                 fs::write(&palette, palette_text).map_err(|error| error.to_string())?;

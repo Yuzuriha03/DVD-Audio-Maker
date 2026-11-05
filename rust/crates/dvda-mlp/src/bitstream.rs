@@ -101,8 +101,8 @@ pub(crate) fn checksum(words: &[u32]) -> u32 {
     }
 
     for _ in 0..15 {
-        if c & 0x400000 != 0 {
-            c ^= 0x58c000;
+        if c & 0x0040_0000 != 0 {
+            c ^= 0x0058_c000;
         }
         c <<= 1;
     }

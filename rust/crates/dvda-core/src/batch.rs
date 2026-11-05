@@ -8,6 +8,7 @@ use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde::Deserialize;
 use serde_json::json;
 use std::{
+    cell::RefCell,
     collections::HashSet,
     fs,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -62,7 +63,7 @@ fn validate(job: &Job) -> Result<(), Failure> {
     }
     if !matches!(
         job.sample_rate,
-        44100 | 48000 | 88200 | 96000 | 176400 | 192000
+        44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
     ) {
         return Err(Failure::new(
             "InvalidData",
@@ -351,6 +352,150 @@ where
     )
 }
 
+struct BatchState<R> {
+    log_send: RefCell<Option<SyncSender<String>>>,
+    log_receive: mpsc::Receiver<String>,
+    complete_send: RefCell<Option<SyncSender<(usize, R)>>>,
+    complete_receive: mpsc::Receiver<(usize, R)>,
+    results: RefCell<Vec<Option<R>>>,
+    stop: AtomicBool,
+    external: AtomicBool,
+    first_error: Mutex<Option<Failure>>,
+}
+
+impl<R> BatchState<R> {
+    fn new(workers: usize, tracks: usize) -> Self {
+        let (log_send, log_receive) = mpsc::sync_channel(64);
+        let (complete_send, complete_receive) = mpsc::sync_channel(workers * 2);
+        Self {
+            log_send: RefCell::new(Some(log_send)),
+            log_receive,
+            complete_send: RefCell::new(Some(complete_send)),
+            complete_receive,
+            results: RefCell::new((0..tracks).map(|_| None).collect()),
+            stop: AtomicBool::new(false),
+            external: AtomicBool::new(false),
+            first_error: Mutex::new(None),
+        }
+    }
+
+    fn drain(&self, caller: &mut dyn Callbacks) {
+        let callbacks = catch_unwind(AssertUnwindSafe(|| {
+            loop {
+                while let Ok((index, result)) = self.complete_receive.try_recv() {
+                    self.results.borrow_mut()[index] = Some(result);
+                }
+                if caller.cancelled() {
+                    self.external.store(true, Ordering::Release);
+                    self.stop.store(true, Ordering::Release);
+                }
+                match self.log_receive.recv_timeout(Duration::from_millis(20)) {
+                    Ok(event) => caller.emit(5, &event),
+                    Err(mpsc::RecvTimeoutError::Timeout) => (),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        }));
+        if callbacks.is_err() {
+            self.stop.store(true, Ordering::Release);
+            while self.log_receive.recv().is_ok() {}
+            while self.complete_receive.recv().is_ok() {}
+            let mut first = self.first_error.lock().unwrap();
+            *first = Some(Failure::new(
+                "InvalidOperation",
+                "Panic caught in batch callback",
+            ));
+        }
+        while let Ok((index, result)) = self.complete_receive.try_recv() {
+            self.results.borrow_mut()[index] = Some(result);
+        }
+    }
+
+    fn finish(self) -> Result<Vec<R>, Failure> {
+        if self.external.load(Ordering::Acquire) {
+            return Err(Failure::new("Cancelled", "Batch encoding cancelled"));
+        }
+        if let Some(error) = self.first_error.into_inner().unwrap() {
+            return Err(error);
+        }
+        Ok(self.results.into_inner().into_iter().flatten().collect())
+    }
+}
+
+struct BatchWorker<'a, R, F> {
+    job: &'a Job,
+    work: &'a crate::metrics::Work,
+    finalize: &'a F,
+    next: &'a AtomicUsize,
+    stop: &'a AtomicBool,
+    first_error: &'a Mutex<Option<Failure>>,
+    pcm_signature: &'a str,
+    result: std::marker::PhantomData<R>,
+}
+
+fn run_worker<R, F>(
+    context: &BatchWorker<'_, R, F>,
+    send: &SyncSender<String>,
+    complete_send: &SyncSender<(usize, R)>,
+) where
+    R: Send,
+    F: Fn(usize, &Track, &mut dyn Callbacks) -> Result<R, Failure> + Sync,
+{
+    let BatchWorker {
+        job,
+        work,
+        finalize,
+        next,
+        stop,
+        first_error,
+        pcm_signature,
+        result: _,
+    } = context;
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), Failure> {
+        while !stop.load(Ordering::Acquire) {
+            let index = next.fetch_add(1, Ordering::Relaxed);
+            if index >= job.tracks.len() {
+                break;
+            }
+            let _active = work.enter();
+            let bytes = crate::metrics::file_bytes(&job.tracks[index].source_path);
+            track(job, index, send.clone(), stop, pcm_signature)?;
+            let info = &job.tracks[index];
+            let mut events = Events {
+                index,
+                track: info,
+                send: send.clone(),
+                stop,
+                media_phase: false,
+                previous: -1,
+                errors: String::new(),
+            };
+            let finalized = finalize(index, info, &mut events)?;
+            if complete_send.send((index, finalized)).is_err() {
+                return Err(Failure::new(
+                    "InvalidOperation",
+                    "Batch result receiver stopped unexpectedly",
+                ));
+            }
+            work.complete(bytes);
+        }
+        Ok(())
+    }))
+    .unwrap_or_else(|_| {
+        Err(Failure::new(
+            "InvalidOperation",
+            "Panic caught in encoding worker",
+        ))
+    });
+    if let Err(error) = result {
+        let mut first = first_error.lock().unwrap();
+        if first.is_none() {
+            *first = Some(error);
+        }
+        stop.store(true, Ordering::Release);
+    }
+}
+
 fn execute_measured_with<R, F>(
     job: Job,
     caller: &mut dyn Callbacks,
@@ -377,107 +522,28 @@ where
         }
         let count = worker_count(job.tracks.len());
         let next = AtomicUsize::new(0);
-        let stop = AtomicBool::new(false);
-        let external = AtomicBool::new(false);
-        let first_error = Mutex::new(None);
-        let (send, receive) = mpsc::sync_channel::<String>(64);
-        let (complete_send, complete_receive) = mpsc::sync_channel::<(usize, R)>(count * 2);
-        let mut results: Vec<_> = (0..job.tracks.len()).map(|_| None).collect();
+        let state = BatchState::new(count, job.tracks.len());
         std::thread::scope(|scope| {
             for _ in 0..count {
-                let send = send.clone();
-                let complete_send = complete_send.clone();
-                let job = &job;
-                let next = &next;
-                let stop = &stop;
-                let errors = &first_error;
-                let pcm_signature = &pcm_signature;
-                scope.spawn(move || {
-                    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), Failure> {
-                        while !stop.load(Ordering::Acquire) {
-                            let index = next.fetch_add(1, Ordering::Relaxed);
-                            if index >= job.tracks.len() {
-                                break;
-                            }
-                            let _active = work.enter();
-                            let bytes = crate::metrics::file_bytes(&job.tracks[index].source_path);
-                            track(job, index, send.clone(), stop, pcm_signature)?;
-                            let info = &job.tracks[index];
-                            let mut events = Events {
-                                index,
-                                track: info,
-                                send: send.clone(),
-                                stop,
-                                media_phase: false,
-                                previous: -1,
-                                errors: String::new(),
-                            };
-                            let finalized = finalize(index, info, &mut events)?;
-                            if complete_send.send((index, finalized)).is_err() {
-                                return Err(Failure::new(
-                                    "InvalidOperation",
-                                    "Batch result receiver stopped unexpectedly",
-                                ));
-                            }
-                            work.complete(bytes);
-                        }
-                        Ok(())
-                    }))
-                    .unwrap_or_else(|_| {
-                        Err(Failure::new(
-                            "InvalidOperation",
-                            "Panic caught in encoding worker",
-                        ))
-                    });
-                    if let Err(error) = result {
-                        let mut first = errors.lock().unwrap();
-                        if first.is_none() {
-                            *first = Some(error);
-                        }
-                        stop.store(true, Ordering::Release);
-                    }
-                });
+                let send = state.log_send.borrow().as_ref().unwrap().clone();
+                let complete_send = state.complete_send.borrow().as_ref().unwrap().clone();
+                let context = BatchWorker {
+                    job: &job,
+                    work,
+                    finalize,
+                    next: &next,
+                    stop: &state.stop,
+                    first_error: &state.first_error,
+                    pcm_signature: &pcm_signature,
+                    result: std::marker::PhantomData,
+                };
+                scope.spawn(move || run_worker(&context, &send, &complete_send));
             }
-            drop(send);
-            drop(complete_send);
-            // Keep draining after cancellation so workers never block during cleanup.
-            let callbacks = catch_unwind(AssertUnwindSafe(|| {
-                loop {
-                    while let Ok((index, result)) = complete_receive.try_recv() {
-                        results[index] = Some(result);
-                    }
-                    if caller.cancelled() {
-                        external.store(true, Ordering::Release);
-                        stop.store(true, Ordering::Release);
-                    }
-                    match receive.recv_timeout(Duration::from_millis(20)) {
-                        Ok(event) => caller.emit(5, &event),
-                        Err(mpsc::RecvTimeoutError::Timeout) => (),
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    }
-                }
-            }));
-            if callbacks.is_err() {
-                stop.store(true, Ordering::Release);
-                while receive.recv().is_ok() {}
-                while complete_receive.recv().is_ok() {}
-                let mut first = first_error.lock().unwrap();
-                *first = Some(Failure::new(
-                    "InvalidOperation",
-                    "Panic caught in batch callback",
-                ));
-            }
-            while let Ok((index, result)) = complete_receive.try_recv() {
-                results[index] = Some(result);
-            }
+            state.log_send.borrow_mut().take();
+            state.complete_send.borrow_mut().take();
+            state.drain(caller);
         });
-        if external.load(Ordering::Acquire) {
-            return Err(Failure::new("Cancelled", "Batch encoding cancelled"));
-        }
-        if let Some(error) = first_error.into_inner().unwrap() {
-            return Err(error);
-        }
-        Ok(results.into_iter().flatten().collect())
+        state.finish()
     })();
     match result {
         Ok(results) => (
@@ -578,7 +644,7 @@ mod tests {
             assert_eq!(error.kind, "InvalidData");
             assert!(error.message.contains("精度"));
         }
-        for sample in [0, 16, -16, 0x7ffff0, -0x800000] {
+        for sample in [0, 16, -16, 0x007f_fff0, -0x0080_0000] {
             assert!(
                 reusable_wave(
                     &mut Cursor::new(wave(24, 20, 1, 4, sample)),
@@ -626,7 +692,7 @@ mod tests {
             let error = reusable_wave(
                 &mut Cursor::new(wave(stored, bits, 1, 4, 0)),
                 48000,
-                bits as i32,
+                i32::from(bits),
                 &mut Cancel { polls: 0, at },
             )
             .unwrap_err();

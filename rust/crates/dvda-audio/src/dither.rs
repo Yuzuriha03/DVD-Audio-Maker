@@ -7,17 +7,18 @@ pub struct Tpdf {
 }
 
 impl Tpdf {
+    #[must_use]
     pub const fn new(seed: u64) -> Self {
         Self { state: seed }
     }
 
     fn uniform(&mut self) -> f64 {
-        self.state = self.state.wrapping_add(0x9e3779b97f4a7c15);
+        self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut value = self.state;
-        value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-        value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
+        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         value ^= value >> 31;
-        (value >> 11) as f64 * (1.0 / 9007199254740992.0)
+        (value >> 11) as f64 * (1.0 / 9_007_199_254_740_992.0)
     }
 
     pub fn noise(&mut self) -> f64 {
@@ -31,6 +32,7 @@ impl Tpdf {
     }
 }
 
+#[must_use]
 pub const fn enabled(switch: bool, source_bits: u16, source_float: bool, target_bits: u16) -> bool {
     switch && target_bits == 16 && (source_float || source_bits > 16)
 }
@@ -57,7 +59,7 @@ mod tests {
 
     #[test]
     fn noise_has_triangular_moments_and_independent_channels() {
-        let mut generator = Tpdf::new(0x123456789abcdef0);
+        let mut generator = Tpdf::new(0x1234_5678_9abc_def0);
         let count = 200_000;
         let mut sum = 0.0;
         let mut square = 0.0;
@@ -78,7 +80,7 @@ mod tests {
     #[test]
     fn sample_sequence_does_not_depend_on_blocks() {
         let samples: Vec<_> = (0..10_003)
-            .map(|n| f64::from(n - 5000) / 327680.0)
+            .map(|n| f64::from(n - 5000) / 327_680.0)
             .collect();
         let mut reference = Tpdf::new(42);
         let expected: Vec<_> = samples

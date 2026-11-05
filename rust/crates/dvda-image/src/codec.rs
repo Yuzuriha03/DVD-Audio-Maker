@@ -7,6 +7,9 @@ use std::io::{self, BufRead, Seek, Write};
 
 /// Decodes the first image without applying EXIF orientation or an ICC transform.
 /// Color-policy integration is deliberately separate from container decoding.
+///
+/// # Errors
+/// Rejects unsupported, malformed or oversized images and propagates decoder and allocation failures.
 pub fn decode(reader: impl BufRead + Seek) -> io::Result<Raster> {
     let mut reader = ImageReader::new(reader).with_guessed_format()?;
     if !matches!(
@@ -35,6 +38,9 @@ pub fn decode(reader: impl BufRead + Seek) -> io::Result<Raster> {
 }
 
 /// Reads source dimensions and bit depth without converting its pixels to RGBA.
+///
+/// # Errors
+/// Rejects unsupported, malformed or oversized containers and propagates metadata decoder failures.
 pub fn metadata(reader: impl BufRead + Seek) -> io::Result<(Dimensions, u16)> {
     use image::ImageDecoder;
     let mut reader = ImageReader::new(reader).with_guessed_format()?;
@@ -66,6 +72,10 @@ pub fn metadata(reader: impl BufRead + Seek) -> io::Result<(Dimensions, u16)> {
     Ok((dimensions, decoder.original_color_type().bits_per_pixel()))
 }
 
+/// Encode the raster as RGBA PNG.
+///
+/// # Errors
+/// Propagates PNG encoding and destination write failures.
 pub fn write_png(image: &Raster, output: impl Write) -> io::Result<()> {
     let size = image.dimensions();
     image::codecs::png::PngEncoder::new(output)
@@ -78,6 +88,10 @@ pub fn write_png(image: &Raster, output: impl Write) -> io::Result<()> {
         .map_err(io::Error::other)
 }
 
+/// Encode the raster as JPEG after flattening alpha onto `background`.
+///
+/// # Errors
+/// Rejects quality outside `1..=100` and propagates encoder or destination write failures.
 pub fn write_jpeg(
     image: &Raster,
     output: impl Write,
@@ -204,6 +218,6 @@ mod tests {
         let image = Raster::solid(Dimensions::new(1, 1).unwrap(), [0; 4]).unwrap();
         let mut output = Vec::new();
         assert!(write_jpeg(&image, &mut output, 0, [0; 3]).is_err());
-        assert!(output.is_empty());
+        assert_eq!(output, [] as [u8; 0]);
     }
 }

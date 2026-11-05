@@ -72,7 +72,7 @@ fn fixture(
     let mut data = Vec::new();
     for n in 0..frames {
         for channel in 0..usize::from(channels) {
-            let value = (((n * (97 + channel * 18) + channel * 53) % 100001) as i32 - 50000)
+            let value = (((n * (97 + channel * 18) + channel * 53) % 100_001) as i32 - 50000)
                 & !((1 << (24 - precision)) - 1);
             let stored = if wide {
                 value << 8
@@ -115,7 +115,7 @@ fn complete_wav_matrix_including_wide_storage() {
     let input = root.0.join("input.wav");
     let output = root.0.join("output.wav");
     let mut count = 0;
-    for rate in [44100, 48000, 88200, 96000, 176400, 192000] {
+    for rate in [44100, 48000, 88200, 96000, 176_400, 192_000] {
         for precision in [16, 20, 24] {
             for channels in 1..=if rate > 96000 { 2 } else { 6 } {
                 let mask = [0, 4, 3, 7, 0x33, 0x37, 0x3f][channels as usize];

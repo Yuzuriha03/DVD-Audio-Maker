@@ -28,7 +28,7 @@ impl<'a> Writer<'a> {
 impl Callbacks for Writer<'_> {
     fn emit(&mut self, stream: i32, text: &str) {
         if !self.failed
-            && let Err(error) = writeln!(self.file, "{text}").and_then(|_| self.file.flush())
+            && let Err(error) = writeln!(self.file, "{text}").and_then(|()| self.file.flush())
         {
             self.failed = true;
             self.caller

@@ -34,9 +34,10 @@ fn wav(path: &Path, rate: u32, bits: u16, channels: u16, frames: u32, seed: u32)
     let mask = [4u32, 3, 7, 0x33, 0x37, 0x3f][channels as usize - 1];
     let mut data = Vec::with_capacity(frames as usize * channels as usize * width);
     for i in 0..frames {
-        for channel in 0..channels as u32 {
-            let sample = (i as u64 * 7919 + channel as u64 * 32771 + seed as u64 * 104729)
-                & ((1u64 << bits) - 1);
+        for channel in 0..u32::from(channels) {
+            let sample =
+                (u64::from(i) * 7919 + u64::from(channel) * 32771 + u64::from(seed) * 104_729)
+                    & ((1u64 << bits) - 1);
             data.extend_from_slice(&sample.to_le_bytes()[..width]);
         }
     }
@@ -46,7 +47,7 @@ fn wav(path: &Path, rate: u32, bits: u16, channels: u16, frames: u32, seed: u32)
     body.extend_from_slice(&0xfffeu16.to_le_bytes());
     body.extend_from_slice(&channels.to_le_bytes());
     body.extend_from_slice(&rate.to_le_bytes());
-    body.extend_from_slice(&(rate * channels as u32 * width as u32).to_le_bytes());
+    body.extend_from_slice(&(rate * u32::from(channels) * width as u32).to_le_bytes());
     body.extend_from_slice(&(channels * width as u16).to_le_bytes());
     body.extend_from_slice(&bits.to_le_bytes());
     body.extend_from_slice(&22u16.to_le_bytes());
@@ -171,7 +172,7 @@ fn case(author: &Path, root: &Path, scenario: Scenario) {
         };
         assert_eq!(
             result.bytes,
-            expected_frames as u64 * channels as u64 * (bits / 8) as u64,
+            u64::from(expected_frames) * u64::from(channels) * u64::from(bits / 8),
             "{label}: wrong PCM length"
         );
     }
@@ -213,15 +214,15 @@ fn authored_lpcm_formats_and_short_titles() {
     let workspace = Workspace::new();
     let quick = std::env::var_os("DVDA_TEST_AUTHOR_QUICK").is_some();
     let formats: Vec<(u32, u16, u16)> = if quick {
-        vec![(48000, 16, 2), (48000, 24, 6), (192000, 24, 2)]
+        vec![(48000, 16, 2), (48000, 24, 6), (192_000, 24, 2)]
     } else {
-        [44100, 48000, 88200, 96000, 176400, 192000]
+        [44100, 48000, 88200, 96000, 176_400, 192_000]
             .into_iter()
             .flat_map(|rate| {
                 [16, 24].into_iter().flat_map(move |bits| {
                     (1..=6)
                         .filter(move |&channels| {
-                            rate * bits as u32 * channels as u32 <= 9_600_000
+                            rate * u32::from(bits) * u32::from(channels) <= 9_600_000
                                 && (rate <= 96000 || channels <= 2)
                         })
                         .map(move |channels| (rate, bits, channels))

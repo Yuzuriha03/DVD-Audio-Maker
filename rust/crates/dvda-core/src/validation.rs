@@ -52,6 +52,7 @@ fn decode_hex(text: &str) -> Option<Vec<u8>> {
 
 /// Returns the distance, in access units, between the first two major-sync markers.
 /// A malformed or incomplete access-unit stream has no usable interval.
+#[must_use]
 pub fn major_sync_interval(data: &[u8]) -> Option<i64> {
     let mut position = 0usize;
     let mut access_unit = 0i64;

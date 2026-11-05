@@ -207,7 +207,7 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
         || config.restart_interval > 32
         || config.frames == 0
         || (config.frames > u64::MAX - 160 && config.frames != u64::MAX)
-        || ![44100, 48000, 88200, 96000, 176400, 192000].contains(&config.sample_rate)
+        || ![44100, 48000, 88200, 96000, 176_400, 192_000].contains(&config.sample_rate)
         || (config.sample_rate > 96000 && config.channels > 2)
     {
         return fail(result, -1, "Invalid configuration");

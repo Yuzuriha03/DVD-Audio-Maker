@@ -15,7 +15,7 @@ pub(crate) fn mlp_entropy_code(x: i32, p: &MlpCodingParams, qss: u32) -> Result<
         || p.total_width < qss as i32
         || p.total_width > 31
         || !(-16384..=16383).contains(&p.offset)
-        || !(-8388608..=8388607).contains(&x)
+        || !(-8_388_608..=8_388_607).contains(&x)
     {
         return Err(());
     }

@@ -1,10 +1,28 @@
 //! The main window procedure.
 
-use super::*;
+use super::{
+    CLOSE_REQUESTED, DefWindowProcW, DestroyWindow, DrawItemStruct, GWLP_USERDATA, GetClientRect,
+    GetDlgCtrlID, GetWindowLongPtrW, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT,
+    HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, Handle, Hwnd, ID_CLOSE, ID_LOG, ID_MAXIMIZE,
+    IsWindowEnabled, IsZoomed, KillTimer, LoadCursorW, Lparam, Lresult, MeasureItemStruct,
+    Ordering, PAINT_FIELDS, Point, PostMessageW, PostQuitMessage, Rect, RefCell, ReleaseCapture,
+    SW_MAXIMIZE, SW_RESTORE, ScreenToClient, SetBkColor, SetBkMode, SetCapture, SetCursor,
+    SetTextColor, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW,
+    UI_DPI, UiState, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLOREDIT,
+    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM, WM_ERASEBKGND,
+    WM_GETMINMAXINFO, WM_MEASUREITEM, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
+    WM_NCLBUTTONDOWN, WM_NOTIFY, WM_PAINT, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, Wparam,
+    apply_theme, autosave, body_brush, brush, c_body, c_card, c_disabled_fill, c_disabled_text,
+    c_ink, c_muted, c_void, cancel_operation, card_brush, checked, create_controls, dark_theme,
+    drain_worker_logs, draw_owner_item, handle_command, header_height, hide_splitter_preview,
+    layout, outline_resize, paint_fields, paint_window, ptr, refresh_dynamic_indicators,
+    render_log, rescale_ui, scale, state, system_prefers_dark, unscale, update_splitter_preview,
+    update_statistics, win, window_class,
+};
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn window_proc(
     hwnd: Hwnd,
@@ -94,8 +112,8 @@ pub(crate) unsafe extern "system" fn window_proc(
             // Every sizing edge and corner (HTLEFT..=HTBOTTOMRIGHT) uses the outline.
             if matches!(wparam as i32, HTLEFT..=HTBOTTOMRIGHT) && IsZoomed(hwnd) == 0 {
                 let origin = Point {
-                    x: (lparam & 0xffff) as u16 as i16 as i32,
-                    y: ((lparam >> 16) & 0xffff) as u16 as i16 as i32,
+                    x: i32::from((lparam & 0xffff) as u16 as i16),
+                    y: i32::from(((lparam >> 16) & 0xffff) as u16 as i16),
                 };
                 unsafe { outline_resize(hwnd, wparam, origin) };
                 0
@@ -118,7 +136,7 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         0x0200..=0x0202 => {
             if let Some(mut state) = unsafe { state(hwnd) } {
-                let y = (lparam >> 16) as i16 as i32;
+                let y = i32::from((lparam >> 16) as i16);
                 let over = (state.splitter_position() - scale(5)
                     ..state.splitter_position() + scale(10))
                     .contains(&y);
@@ -208,8 +226,8 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         WM_NCHITTEST => {
             let result = unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
-            let x = (lparam & 0xffff) as u16 as i16 as i32;
-            let y = ((lparam >> 16) & 0xffff) as u16 as i16 as i32;
+            let x = i32::from((lparam & 0xffff) as u16 as i16);
+            let y = i32::from(((lparam >> 16) & 0xffff) as u16 as i16);
             let mut point = Point { x, y };
             let mut rect = Rect {
                 left: 0,
@@ -271,9 +289,8 @@ pub(crate) unsafe extern "system" fn window_proc(
                     right: 0,
                     bottom: 0,
                 };
-                if unsafe {
-                    SystemParametersInfoW(0x0030, 0, &mut work as *mut Rect as *mut c_void, 0)
-                } != 0
+                if unsafe { SystemParametersInfoW(0x0030, 0, (&raw mut work).cast::<c_void>(), 0) }
+                    != 0
                 {
                     // A very small or heavily scaled screen must still be usable.
                     let work_width = work.right - work.left;

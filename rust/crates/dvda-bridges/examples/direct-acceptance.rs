@@ -1,4 +1,4 @@
-use dvda_bridges::{Call, direct::*};
+use dvda_bridges::{Call, direct::MediaRequest};
 use std::ffi::{CStr, c_void};
 use std::io::BufReader;
 
@@ -7,7 +7,7 @@ fn read_image(path: &str) -> std::io::Result<dvda_image::raster::Raster> {
 }
 unsafe extern "C" fn emit(state: *mut c_void, _: i32, text: *const i8) {
     unsafe {
-        (*(state as *mut Vec<String>)).push(CStr::from_ptr(text).to_string_lossy().into_owned());
+        (*state.cast::<Vec<String>>()).push(CStr::from_ptr(text).to_string_lossy().into_owned());
     }
 }
 extern "C" fn cancel(_: *mut c_void) -> i32 {
@@ -37,11 +37,11 @@ fn main() {
                     request.run_with_callbacks(Call {
                         emit: Some(emit),
                         cancel: None,
-                        state: (&mut messages as *mut Vec<String>).cast(),
+                        state: (&raw mut messages).cast(),
                     })
                 };
                 assert_eq!(status, 0);
-                assert!(!messages.is_empty());
+                assert_ne!(messages, [] as [std::string::String; 0]);
                 messages
             })
         })
@@ -65,7 +65,7 @@ fn main() {
                 state: std::ptr::null_mut(),
             })
         },
-        -1414092869
+        -1_414_092_869
     );
     assert!(read_image("build\\missing-direct.png").is_err());
     std::fs::remove_file("build\\桥接音频.wav").unwrap();

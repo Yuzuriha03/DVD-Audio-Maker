@@ -37,7 +37,7 @@ unsafe fn run(request: *const MenuRequest, navigation: bool) -> c_int {
     .unwrap_or(1)
 }
 /// # Safety
-/// The request must follow the MenuRequest contract: valid size and non-null
+/// The request must follow the `MenuRequest` contract: valid size and non-null
 /// UTF-8 xml/output paths.
 unsafe fn run_navigation_request(request: *const MenuRequest) -> c_int {
     let Some(request) = (unsafe { request.as_ref() }) else {
@@ -63,7 +63,7 @@ unsafe fn run_navigation_request(request: *const MenuRequest) -> c_int {
             eprintln!("ERR: invalid navigation XML: {error}");
             1
         },
-        |_| 0,
+        |()| 0,
     )
 }
 
@@ -79,8 +79,8 @@ fn read_image_rgba(path: &std::path::Path, buffer: &mut [u8]) -> Result<(u32, u3
 }
 
 /// # Safety
-/// The request must follow the MenuRequest contract: valid size, non-null UTF-8
-/// paths and, when supplied, a read_rgba callback that obeys the image ABI.
+/// The request must follow the `MenuRequest` contract: valid size, non-null UTF-8
+/// paths and, when supplied, a `read_rgba` callback that obeys the image ABI.
 unsafe fn run_spu_request(request: *const MenuRequest) -> c_int {
     let Some(request) = (unsafe { request.as_ref() }) else {
         return 1;
@@ -117,8 +117,8 @@ unsafe fn run_spu_request(request: *const MenuRequest) -> c_int {
                 name.as_ptr(),
                 buffer.as_mut_ptr(),
                 buffer.len(),
-                &mut width,
-                &mut height,
+                &raw mut width,
+                &raw mut height,
             )
         };
         if status != 0 {
@@ -126,7 +126,7 @@ unsafe fn run_spu_request(request: *const MenuRequest) -> c_int {
         }
         Ok((width, height))
     };
-    run_spu_files(&xml, &input, &output, &mut callback).map_or(1, |_| 0)
+    run_spu_files(&xml, &input, &output, &mut callback).map_or(1, |()| 0)
 }
 
 /// # Safety
@@ -146,6 +146,9 @@ pub unsafe extern "C" fn dvda_menu_run_navigation(request: *const MenuRequest) -
 /// `read_rgba`, when present, must accept the image ABI, obey its buffer capacity,
 /// and not unwind, longjmp, or retain any supplied pointer. Paths must be UTF-8.
 /// Discard partial outputs when this call fails.
+///
+/// # Errors
+/// Returns the native menu status when XML, image, MPEG, or output processing fails.
 pub unsafe fn run_spu(
     xml: &CStr,
     input: &CStr,
@@ -159,7 +162,7 @@ pub unsafe fn run_spu(
         output: output.as_ptr(),
         read_rgba,
     };
-    let status = unsafe { dvda_menu_run_spu(&request) };
+    let status = unsafe { dvda_menu_run_spu(&raw const request) };
     if status == 0 {
         Ok(())
     } else {
@@ -168,6 +171,9 @@ pub unsafe fn run_spu(
 }
 /// Rust subpicture pipeline entry used by tests and the differential harness.
 /// The RGBA callback must fill the provided buffer for the requested image path.
+///
+/// # Errors
+/// Returns `MenuError(1)` for invalid XML, image, MPEG, scheduling, or output failures.
 #[cfg(feature = "direct-link")]
 pub fn run_spu_files(
     xml: &std::path::Path,
@@ -181,6 +187,10 @@ pub fn run_spu_files(
     })
 }
 
+/// Generate DVD navigation packs for an already-authored menu video.
+///
+/// # Errors
+/// Returns the native navigation status for invalid XML, malformed menu data, or output failures.
 pub fn run_navigation(xml: &CStr, output: &CStr) -> Result<(), MenuError> {
     let request = MenuRequest {
         size: size_of::<MenuRequest>() as u32,
@@ -189,7 +199,7 @@ pub fn run_navigation(xml: &CStr, output: &CStr) -> Result<(), MenuError> {
         output: output.as_ptr(),
         read_rgba: None,
     };
-    let status = unsafe { dvda_menu_run_navigation(&request) };
+    let status = unsafe { dvda_menu_run_navigation(&raw const request) };
     if status == 0 {
         Ok(())
     } else {

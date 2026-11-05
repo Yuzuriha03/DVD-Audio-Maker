@@ -44,7 +44,7 @@ fn long_stream_reports_fifo_rate_limit() {
     let mut rng = 0x12345678u32;
     let pcm = (0..frames * 6)
         .map(|_| {
-            rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
             (((rng >> 12) as i32) - (1 << 19)) << 4
         })
         .collect();
@@ -76,7 +76,7 @@ fn long_stream_reports_fifo_rate_limit() {
     assert!(result.input_frames > 0);
     assert_eq!(result.output_bytes, io.output.len() as u64);
     assert_eq!(result.encoded_frames, 0);
-    assert!(result.error.last() == Some(&0));
+    assert_eq!(result.error.last(), Some(&0));
 
     // The format itself is valid: compressible PCM at the same settings succeeds.
     io.pcm.fill(0);
@@ -101,26 +101,24 @@ fn native_float_lossless_matrix() {
     let root = std::env::temp_dir().join(format!("dvda-float-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     let mut report = String::from("rate,bits,channels,pattern,bytes,encode_us\n");
-    for rate in [44100, 48000, 88200, 96000, 176400, 192000] {
+    for rate in [44100, 48000, 88200, 96000, 176_400, 192_000] {
         for bits in [16, 20, 24] {
             for channels in [1, 2, 6] {
                 if rate > 96000 && channels > 2 {
                     continue;
                 }
                 for pattern in 0..4 {
-                    let frames = std::env::var("DVDA_FLOAT_FRAMES")
-                        .map(|value| {
-                            value
-                                .parse::<usize>()
-                                .expect("DVDA_FLOAT_FRAMES must be an integer")
-                        })
-                        .unwrap_or(1281);
+                    let frames = std::env::var("DVDA_FLOAT_FRAMES").map_or(1281, |value| {
+                        value
+                            .parse::<usize>()
+                            .expect("DVDA_FLOAT_FRAMES must be an integer")
+                    });
                     assert!(frames > 0);
                     let mut rng = 0x12345678u32;
                     let mut pcm = Vec::new();
                     for n in 0..frames {
                         for ch in 0..channels {
-                            rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                            rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
                             let max = (1i32 << (bits - 1)) - 1;
                             let value = match pattern {
                                 0 => 0,

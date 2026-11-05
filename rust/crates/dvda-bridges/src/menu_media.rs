@@ -1,4 +1,17 @@
-use crate::ffmpeg::*;
+use crate::ffmpeg::{
+    AV_CODEC_FLAG_CLOSED_GOP, AV_CODEC_ID_MP2, AV_CODEC_ID_MPEG2VIDEO, AV_PIX_FMT_YUV420P,
+    AV_SAMPLE_FMT_S16, Context, EAGAIN, EINVAL, EIO, ENOMEM, EOF, Format, Frame, INVALID, Rational,
+    av_audio_fifo_alloc, av_audio_fifo_free, av_audio_fifo_read, av_audio_fifo_size,
+    av_audio_fifo_write, av_channel_layout_copy, av_channel_layout_from_mask, av_dict_count,
+    av_dict_free, av_dict_set, av_frame_alloc, av_frame_free, av_frame_get_buffer, av_grow_packet,
+    av_interleaved_write_frame, av_log_get_level, av_log_set_level, av_opt_set_int,
+    av_packet_alloc, av_packet_free, av_packet_rescale_ts, av_packet_unref, av_write_trailer,
+    avcodec_alloc_context3, avcodec_find_encoder, avcodec_free_context, avcodec_open2,
+    avcodec_parameters_from_context, avcodec_receive_packet, avcodec_send_frame,
+    avformat_alloc_output_context2, avformat_free_context, avformat_new_stream,
+    avformat_write_header, avio_closep, avio_flush, avio_open2, avio_seek, avio_write, done,
+    streams,
+};
 use std::{
     ffi::{CStr, c_char, c_void},
     io::{BufRead, BufReader, Read},
@@ -17,9 +30,9 @@ impl Drop for State {
                 avio_closep((*self.output).pb_ptr());
                 avformat_free_context(self.output);
             }
-            avcodec_free_context(&mut self.video);
-            avcodec_free_context(&mut self.audio);
-            av_frame_free(&mut self.frame);
+            avcodec_free_context(&raw mut self.video);
+            avcodec_free_context(&raw mut self.audio);
+            av_frame_free(&raw mut self.frame);
         }
     }
 }
@@ -70,7 +83,7 @@ unsafe fn packets(
                 av_packet_unref(packet);
             }
         })();
-        av_packet_free(&mut packet);
+        av_packet_free(&raw mut packet);
         result
     }
 }
@@ -112,7 +125,7 @@ unsafe fn audio(path: *const c_char, codec: *mut Context, output: *mut Format) -
             }
             let count = (bytes / 4) as i32;
             let mut plane = pcm.as_mut_ptr();
-            if av_audio_fifo_write(d.fifo, (&mut plane as *mut *mut u8).cast(), count) != count {
+            if av_audio_fifo_write(d.fifo, (&raw mut plane).cast(), count) != count {
                 return Err(EIO);
             }
             while av_audio_fifo_size(d.fifo) >= audio_frame_size(codec) {
@@ -124,8 +137,7 @@ unsafe fn audio(path: *const c_char, codec: *mut Context, output: *mut Format) -
             let missing = audio_frame_size(codec) - remaining;
             let mut silence = vec![0u8; missing as usize * 4];
             let mut plane = silence.as_mut_ptr();
-            if av_audio_fifo_write(d.fifo, (&mut plane as *mut *mut u8).cast(), missing) != missing
-            {
+            if av_audio_fifo_write(d.fifo, (&raw mut plane).cast(), missing) != missing {
                 return Err(EIO);
             }
             encode_audio(d.fifo, codec, output, &mut samples)?;
@@ -165,7 +177,7 @@ unsafe fn encode_audio(
             *(*frame).format_ptr() = AV_SAMPLE_FMT_S16;
             *(*frame).sample_rate_ptr() = 48000;
             *(*frame).pts_ptr() = *samples;
-            *samples += count as i64;
+            *samples += i64::from(count);
             done(av_channel_layout_copy(
                 (*frame).ch_layout_ptr(),
                 (*codec).ch_layout_ptr(),
@@ -176,7 +188,7 @@ unsafe fn encode_audio(
             }
             packets(codec, output, 1, frame, false)
         })();
-        av_frame_free(&mut frame);
+        av_frame_free(&raw mut frame);
         result
     }
 }
@@ -242,8 +254,8 @@ unsafe fn create(
             || height != if ntsc { 480 } else { 576 }
             || num <= 0
             || den <= 0
-            || num as i64 * if ntsc { 1001 } else { 1 }
-                != den as i64 * if ntsc { 30000 } else { 25 }
+            || i64::from(num) * if ntsc { 1001 } else { 1 }
+                != i64::from(den) * if ntsc { 30000 } else { 25 }
             || !token('C').is_some_and(|v| v.starts_with("420"))
         {
             return Err(INVALID);
@@ -326,10 +338,10 @@ unsafe fn create(
             num: sar.0,
             den: sar.1,
         };
-        *(*s.video).bit_rate_ptr() = 9800000;
-        *(*s.video).rc_min_rate_ptr() = 9800000;
-        *(*s.video).rc_max_rate_ptr() = 9800000;
-        *(*s.video).rc_buffer_size_ptr() = 1835008;
+        *(*s.video).bit_rate_ptr() = 9_800_000;
+        *(*s.video).rc_min_rate_ptr() = 9_800_000;
+        *(*s.video).rc_max_rate_ptr() = 9_800_000;
+        *(*s.video).rc_buffer_size_ptr() = 1_835_008;
         *(*s.video).qmax_ptr() = 28;
         *(*s.video).gop_size_ptr() = 0;
         *(*s.video).max_b_frames_ptr() = 0;
@@ -343,11 +355,11 @@ unsafe fn create(
             (c"non_linear_quant", c"1"),
             (c"sc_threshold", c"1000000000"),
         ] {
-            av_dict_set(&mut options, key.as_ptr(), value.as_ptr(), 0);
+            av_dict_set(&raw mut options, key.as_ptr(), value.as_ptr(), 0);
         }
-        let status = avcodec_open2(s.video, video, &mut options);
+        let status = avcodec_open2(s.video, video, &raw mut options);
         let unused = av_dict_count(options);
-        av_dict_free(&mut options);
+        av_dict_free(&raw mut options);
         done(status)?;
         if unused != 0 {
             return Err(INVALID);
@@ -363,13 +375,13 @@ unsafe fn create(
             }
             *(*s.audio).sample_fmt_ptr() = AV_SAMPLE_FMT_S16;
             *(*s.audio).sample_rate_ptr() = 48000;
-            *(*s.audio).bit_rate_ptr() = 224000;
+            *(*s.audio).bit_rate_ptr() = 224_000;
             *(*s.audio).time_base_ptr() = Rational { num: 1, den: 48000 };
             done(av_channel_layout_from_mask((*s.audio).ch_layout_ptr(), 3))?;
             done(avcodec_open2(s.audio, codec, ptr::null_mut()))?;
         }
         done(avformat_alloc_output_context2(
-            &mut s.output,
+            &raw mut s.output,
             ptr::null(),
             c"dvd".as_ptr(),
             path,
@@ -378,7 +390,7 @@ unsafe fn create(
         done(av_opt_set_int(
             (*s.output).priv_data(),
             c"preload".as_ptr(),
-            120000,
+            120_000,
             0,
         ))?;
         for codec in [s.video, s.audio] {

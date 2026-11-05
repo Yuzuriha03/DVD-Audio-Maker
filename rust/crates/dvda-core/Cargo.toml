@@ -23,3 +23,6 @@ sha2 = { version = "=0.11.1", default-features = false }
 [[example]]
 name = "embedded_runtime"
 required-features = ["direct-bridges"]
+
+[lints]
+workspace = true

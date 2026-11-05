@@ -129,8 +129,8 @@ impl Images {
                 path.as_ptr(),
                 pixels.as_mut_ptr(),
                 pixels.len(),
-                &mut width,
-                &mut height,
+                &raw mut width,
+                &raw mut height,
             )
         };
         if result != 0 || width == 0 || width > 720 || height == 0 || height > 576 {
@@ -166,7 +166,7 @@ impl Images {
                 pointers.as_ptr(),
                 emit,
                 cancel,
-                (&mut state as *mut CallbackState<'_>).cast(),
+                (&raw mut state).cast(),
             )
         };
         if state.panicked {

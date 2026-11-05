@@ -64,7 +64,9 @@ pub(crate) fn reusable_wave(
     }
     // Matching headers do not prove 20-bit precision; scan the low four bits.
     if bits == 20 {
-        input.seek(SeekFrom::Start(layout.data_offset as u64))?;
+        input.seek(SeekFrom::Start(
+            u64::try_from(layout.data_offset).map_err(|_| invalid("PCM 数据偏移超出范围。"))?,
+        ))?;
         let mut raw = vec![0; 8192 * layout.channels as usize * width as usize];
         let mut remaining = layout.data_size as u64;
         while remaining != 0 {
@@ -145,6 +147,44 @@ impl Output {
     }
 }
 
+fn create_output(
+    destination: &std::path::Path,
+    rate: i32,
+    bits: i32,
+    channels: usize,
+    width: usize,
+    mask: u32,
+    raw_s24: bool,
+) -> Result<(Output, Temporary), Failure> {
+    let output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .share_mode(0)
+        .open(destination)?;
+    let owned = Temporary(Some(destination.to_path_buf()));
+    let output = if raw_s24 {
+        Output::Raw(output)
+    } else {
+        Output::Wave(dvda_audio::writer::Writer::new_riff(
+            output,
+            dvda_audio::wav::Format {
+                encoding: if width == 2 {
+                    dvda_audio::pcm::Encoding::Signed16
+                } else {
+                    dvda_audio::pcm::Encoding::Signed24
+                },
+                channels: u16::try_from(channels)
+                    .map_err(|_| invalid("PCM 声道数超出 WAVE 范围。"))?,
+                sample_rate: u32::try_from(rate)
+                    .map_err(|_| invalid("PCM 采样率超出 WAVE 范围。"))?,
+                valid_bits: u16::try_from(bits).map_err(|_| invalid("PCM 位深超出 WAVE 范围。"))?,
+                channel_mask: mask,
+            },
+        )?)
+    };
+    Ok((output, owned))
+}
+
 fn normalize_impl(job: Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result<u64, Failure> {
     let mut callbacks = Timed::new(caller, None);
     let mut owned = Temporary(None);
@@ -180,31 +220,19 @@ fn normalize_impl(job: Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result
         if riff_size > u64::from(u32::MAX) {
             return Err(invalid("PCM 超出 RIFF 4 GiB 限制；请拆分过长音轨。"));
         }
-        let output = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .share_mode(0)
-            .open(&job.destination)?;
-        owned.0 = Some(job.destination.clone());
-        let mut output = if raw_s24 {
-            Output::Raw(output)
-        } else {
-            Output::Wave(dvda_audio::writer::Writer::new_riff(
-                output,
-                dvda_audio::wav::Format {
-                    encoding: if width == 2 {
-                        dvda_audio::pcm::Encoding::Signed16
-                    } else {
-                        dvda_audio::pcm::Encoding::Signed24
-                    },
-                    channels: channels as u16,
-                    sample_rate: job.rate as u32,
-                    valid_bits: job.bits as u16,
-                    channel_mask: mask,
-                },
-            )?)
-        };
-        input.seek(SeekFrom::Start(layout.data_offset as u64))?;
+        let (mut output, output_owner) = create_output(
+            &job.destination,
+            job.rate,
+            job.bits,
+            channels,
+            width,
+            mask,
+            raw_s24,
+        )?;
+        owned = output_owner;
+        input.seek(SeekFrom::Start(
+            u64::try_from(layout.data_offset).map_err(|_| invalid("PCM 数据偏移超出范围。"))?,
+        ))?;
         let mut raw = vec![0u8; 8192 * channels * input_width];
         let mut converted = Vec::with_capacity(8192 * channels * width);
         let precision_mask = (1i64 << (24 - job.bits)) - 1;
@@ -346,10 +374,10 @@ mod tests {
                 let mut expected = Vec::new();
                 for n in 0..16385 * channels {
                     let value = (match n % 5 {
-                        0 => -8388608i32,
-                        1 => 8388607,
+                        0 => -8_388_608_i32,
+                        1 => 8_388_607,
                         2 => -1,
-                        _ => n * 97 - 500000,
+                        _ => n * 97 - 500_000,
                     }) & !((1 << (24 - bits)) - 1);
                     expected.extend_from_slice(&value.to_le_bytes()[..3]);
                     let stored = match width {
@@ -515,7 +543,7 @@ mod storage_tests {
         let mut wave = wave_16(&[]);
         let size = (samples.len() * 4) as u32;
         wave[4..8].copy_from_slice(&(36 + size).to_le_bytes());
-        wave[28..32].copy_from_slice(&192000u32.to_le_bytes());
+        wave[28..32].copy_from_slice(&192_000_u32.to_le_bytes());
         wave[32..34].copy_from_slice(&4u16.to_le_bytes());
         wave[34..36].copy_from_slice(&32u16.to_le_bytes());
         wave[40..44].copy_from_slice(&size.to_le_bytes());

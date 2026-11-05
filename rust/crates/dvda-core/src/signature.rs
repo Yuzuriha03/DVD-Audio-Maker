@@ -21,6 +21,7 @@ thread_local! {
 
 pub struct TaskIdentityScope;
 impl TaskIdentityScope {
+    #[must_use]
     pub fn new() -> Self {
         TASK_IDENTITIES.with(|state| state.borrow_mut().depth += 1);
         Self

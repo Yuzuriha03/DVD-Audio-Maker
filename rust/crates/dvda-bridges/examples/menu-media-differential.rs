@@ -48,7 +48,7 @@ fn main() {
                     data.extend(1u16.to_le_bytes());
                     data.extend(2u16.to_le_bytes());
                     data.extend(48000u32.to_le_bytes());
-                    data.extend(192000u32.to_le_bytes());
+                    data.extend(192_000_u32.to_le_bytes());
                     data.extend(4u16.to_le_bytes());
                     data.extend(16u16.to_le_bytes());
                     data.extend(b"data");

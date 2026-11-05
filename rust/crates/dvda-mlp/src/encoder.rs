@@ -26,8 +26,8 @@ fn restart(b: &mut Bits, channels: u8, timing: u32, check: u8) {
         crc = ((((crc & 0x1ff) << 15) ^ t) << 1) ^ word ^ t;
     }
     for _ in 0..17 {
-        if crc & 0x1000000 != 0 {
-            crc ^= 0x11d0000;
+        if crc & 0x0100_0000 != 0 {
+            crc ^= 0x011d_0000;
         }
         crc <<= 1;
     }
@@ -35,8 +35,8 @@ fn restart(b: &mut Bits, channels: u8, timing: u32, check: u8) {
         crc ^= b.pending << (17 - b.width);
     }
     for _ in 0..b.width {
-        if crc & 0x1000000 != 0 {
-            crc ^= 0x11d0000;
+        if crc & 0x0100_0000 != 0 {
+            crc ^= 0x011d_0000;
         }
         crc <<= 1;
     }
@@ -220,6 +220,9 @@ pub(crate) fn stamp(packet: &[u8]) -> Vec<u32> {
 
 /// Encode signed, left-aligned 24-bit interleaved PCM, padding the last AU with zeros.
 /// Cancellation is checked before each AU; no partial output is returned on failure.
+///
+/// # Errors
+/// Returns an error for invalid encoder geometry or PCM, cancellation, or an encoding invariant failure.
 pub fn encode(c: &Config, pcm: &[i32], cancelled: impl FnMut() -> bool) -> Result<Vec<u8>, Error> {
     encode_profile(
         c,
@@ -233,6 +236,11 @@ pub fn encode(c: &Config, pcm: &[i32], cancelled: impl FnMut() -> bool) -> Resul
         cancelled,
     )
 }
+
+/// Encode PCM with an explicit channel layout and metadata timeline.
+///
+/// # Errors
+/// Returns an error for incompatible profile/PCM geometry, invalid metadata, cancellation, or encoding failure.
 pub fn encode_profile(
     c: &Config,
     profile: &format::Profile,
@@ -299,7 +307,7 @@ fn batch_stats(c: &Config, profile: &format::Profile, pcm: &[i32]) -> Result<Bat
         for (ch, &input) in order.iter().enumerate() {
             let x = frame[input];
             let qss = 24 - u32::from(profile.depth(c, ch));
-            if !(-8388608..=8388607).contains(&x) || x & ((1 << qss) - 1) != 0 {
+            if !(-8_388_608..=8_388_607).contains(&x) || x & ((1 << qss) - 1) != 0 {
                 return Err(Error::InvalidPcm);
             }
             plain_lsb[ch] = plain_lsb[ch].min(x.trailing_zeros().min(15));
@@ -310,7 +318,7 @@ fn batch_stats(c: &Config, profile: &format::Profile, pcm: &[i32]) -> Result<Bat
             }
             let value = frame[order[target]];
             let delta = value - frame[order[0]];
-            if !(-8388608..=8388607).contains(&delta) {
+            if !(-8_388_608..=8_388_607).contains(&delta) {
                 valid[target] = false;
                 continue;
             }
@@ -442,17 +450,15 @@ impl AuEncoder {
             for (ch, &input) in order.iter().enumerate() {
                 let x = frame[input];
                 let precision = 24 - u32::from(profile.depth(c, ch));
-                if !(-8388608..=8388607).contains(&x) || x & ((1 << precision) - 1) != 0 {
+                if !(-8_388_608..=8_388_607).contains(&x) || x & ((1 << precision) - 1) != 0 {
                     return Err(Error::InvalidPcm);
                 }
             }
         }
         let shift = if c.sample_rate > 96000 {
             2
-        } else if c.sample_rate > 48000 {
-            1
         } else {
-            0
+            u32::from(c.sample_rate > 48000)
         };
         let base = if c.sample_rate.is_multiple_of(44100) {
             44100
@@ -536,7 +542,7 @@ impl AuEncoder {
             let mut preceding = 0;
             for frame in self.preceding.chunks_exact(channels) {
                 for (ch, &input_ch) in order.iter().enumerate() {
-                    let v = (frame[input_ch] as u32 & 0xffffff) << ch;
+                    let v = (frame[input_ch] as u32 & 0x00ff_ffff) << ch;
                     preceding ^= (v ^ (v >> 8) ^ (v >> 16) ^ (v >> 24)) as u8;
                 }
             }

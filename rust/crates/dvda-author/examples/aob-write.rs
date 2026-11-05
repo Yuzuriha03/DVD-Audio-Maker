@@ -1,4 +1,4 @@
-//! Isolated packetizer acceptance entry point; production uses author_group.
+//! Isolated packetizer acceptance entry point; production uses `author_group`.
 use dvda_author::{
     Silent,
     aob::{self, TrackInput},
@@ -21,7 +21,7 @@ fn run() -> Result<(), String> {
     let mut new_title = false;
     let mut cga = None;
     let mut downmix = 0;
-    let mut split = 524288;
+    let mut split = 524_288;
     while let Some(argument) = arguments.next() {
         match argument.to_str() {
             Some("--new-title") => new_title = true,
@@ -31,19 +31,19 @@ fn run() -> Result<(), String> {
                         .next()
                         .and_then(|s| s.to_str().and_then(|s| s.parse::<u8>().ok()))
                         .ok_or("Invalid CGA")?,
-                )
+                );
             }
             Some("--downmix") => {
                 downmix = arguments
                     .next()
                     .and_then(|s| s.to_str().and_then(|s| s.parse::<u8>().ok()))
-                    .ok_or("Invalid downmix")?
+                    .ok_or("Invalid downmix")?;
             }
             Some("--split-sectors") => {
                 split = arguments
                     .next()
                     .and_then(|s| s.to_str().and_then(|s| s.parse::<u32>().ok()))
-                    .ok_or("Invalid split")?
+                    .ok_or("Invalid split")?;
             }
             _ => {
                 tracks.push(TrackInput {
@@ -65,7 +65,7 @@ fn run() -> Result<(), String> {
             track.last_sector,
             track.first_pts,
             track.pts_length,
-            track.mlp as u8,
+            u8::from(track.mlp),
             track.bits,
             track.rate,
             track.channels,

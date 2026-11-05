@@ -1,6 +1,6 @@
 //! UI languages and the translation table.
 
-use super::*;
+use super::GetUserDefaultUILanguage;
 
 #[path = "i18n_ko.rs"]
 mod korean;

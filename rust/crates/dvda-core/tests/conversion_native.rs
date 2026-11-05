@@ -134,7 +134,10 @@ fn converter_preserves_tags_cover_pcm_and_batch_failure_semantics() {
         .find(|r| r.source_path.ends_with("cover.m4a"))
         .unwrap();
     assert!(covered.has_cover && covered.cover_exact);
-    assert!(covered.missing_tags.is_empty());
+    assert_eq!(
+        covered.missing_tags,
+        [] as [(std::string::String, std::string::String); 0]
+    );
     assert_eq!(covered.picture.as_ref().unwrap()["Type"], 3);
     let comments =
         formats::dispatch("flac.comments", json!(source.with_extension("flac"))).unwrap();

@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    AssertUnwindSafe, Config, EncoderConfig, EncoderResult, Profile, Read, StreamCall, Write,
+    c_void, callbacks, catch_unwind, fail, metadata_records, stream,
+};
 use crate::format::{FIRST, SPEAKERS};
 #[repr(C)]
 pub struct GroupsConfig {
@@ -70,7 +73,7 @@ pub unsafe extern "C" fn mlp_encode_stream_layout(
             config,
             Profile {
                 assignment: assignment as usize,
-                group2_bits: bits as u8,
+                group2_bits: u8::try_from(bits).unwrap_or(0),
                 group2_rate: rate,
             },
             read,
@@ -123,7 +126,7 @@ pub unsafe extern "C" fn mlp_encode_stream_depths(
             config,
             Profile {
                 assignment: assignment as usize,
-                group2_bits: group2_bits as u8,
+                group2_bits: u8::try_from(group2_bits).unwrap_or(0),
                 group2_rate: rate,
             },
             read,
@@ -157,12 +160,16 @@ impl GroupSource<'_> {
         while self.loaded < end {
             let capacity = (end - self.loaded).min(160);
             let got = self.secondary.read(&mut buffer, capacity)?;
+            if got == 0 {
+                return Err(());
+            }
             for (n, frame) in buffer[..got * self.second]
                 .chunks_exact(self.second)
                 .enumerate()
             {
                 for (ch, &x) in frame.iter().enumerate() {
-                    if !(-8388608..=8388607).contains(&x) || x & ((1 << (24 - self.bits)) - 1) != 0
+                    if !(-8388608..=8_388_607).contains(&x)
+                        || x & ((1 << (24 - self.bits)) - 1) != 0
                     {
                         return Err(());
                     }
@@ -215,7 +222,7 @@ impl GroupSource<'_> {
             + 0.5;
         #[cfg(not(target_arch = "x86_64"))]
         let rounded = (value + dither) * 2f64.powi(self.bits as i32 - 24) + 0.5;
-        (rounded.floor() as i64 * step).clamp(-8388608, 8388608 - step) as i32
+        (rounded.floor() as i64 * step).clamp(-8_388_608, 8_388_608 - step) as i32
     }
 }
 unsafe extern "C" fn group_read(
@@ -227,7 +234,7 @@ unsafe extern "C" fn group_read(
     // SAFETY: stream invokes this trampoline with its live GroupSource and
     // exclusive, initialized PCM/count buffers; none are retained by the call.
     let source = unsafe { &mut *p.cast::<GroupSource<'_>>() };
-    match catch_unwind(AssertUnwindSafe(|| {
+    if let Ok(status) = catch_unwind(AssertUnwindSafe(|| {
         if capacity == 0 || capacity > 160 {
             return -1;
         }
@@ -237,11 +244,10 @@ unsafe extern "C" fn group_read(
         let frames = unsafe { &mut *frames };
         group_read_inner(source, pcm, capacity, frames)
     })) {
-        Ok(status) => status,
-        Err(_) => {
-            source.panicked = true;
-            -1
-        }
+        status
+    } else {
+        source.panicked = true;
+        -1
     }
 }
 fn group_read_inner(
@@ -264,6 +270,9 @@ fn group_read_inner(
         let Ok(got) = s.primary.read(&mut primary[done * s.first..], count - done) else {
             return -1;
         };
+        if got == 0 {
+            return -1;
+        }
         done += got;
     }
     let last = (s.position + count - 1) / s.ratio;
@@ -344,15 +353,22 @@ unsafe fn groups(
     let (Some(read1), Some(read2), Some(_)) = (read1, read2, write) else {
         return fail(r, -1, "Missing group callback");
     };
+    let (Ok(group2_bits), Ok(bits), Ok(channels)) = (
+        u8::try_from(g.group2_bits),
+        u8::try_from(c.bits),
+        u8::try_from(c.channels),
+    ) else {
+        return fail(r, -1, "Invalid group format");
+    };
     let profile = Profile {
         assignment: g.assignment as usize,
-        group2_bits: g.group2_bits as u8,
+        group2_bits,
         group2_rate: g.group2_sample_rate,
     };
     let core = Config {
         sample_rate: c.sample_rate,
-        bits: c.bits as u8,
-        channels: c.channels as u8,
+        bits,
+        channels,
         restart_interval: 8,
         metadata: Vec::new(),
     };
@@ -398,7 +414,7 @@ unsafe fn groups(
         order: profile.order(),
         ring: vec![0; 512 * second],
         rng: (first..first + second)
-            .map(|ch| ((ch as u32 * 214013 + 2531011) >> 16) & 32767)
+            .map(|ch| ((ch as u32 * 214_013 + 2_531_011) >> 16) & 32767)
             .collect(),
         panicked: false,
     };
@@ -420,5 +436,72 @@ unsafe fn groups(
         fail(r, -5, "Rust group source panic")
     } else {
         status
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct State {
+        calls: usize,
+        fill: i32,
+    }
+
+    unsafe extern "C" fn read(p: *mut c_void, pcm: *mut i32, _: usize, frames: *mut usize) -> i32 {
+        let state = unsafe { &mut *p.cast::<State>() };
+        state.calls += 1;
+        if state.calls == 1 && state.fill != 0 {
+            unsafe {
+                *pcm = state.fill;
+                *frames = 1;
+            }
+        } else {
+            unsafe { *frames = 0 };
+        }
+        0
+    }
+
+    fn make_source<'a>(primary: &'a mut State, secondary: &'a mut State) -> GroupSource<'a> {
+        GroupSource {
+            primary: unsafe {
+                callbacks::Reader::new(read, std::ptr::from_mut::<State>(primary).cast(), 1)
+            },
+            secondary: unsafe {
+                callbacks::Reader::new(read, std::ptr::from_mut::<State>(secondary).cast(), 1)
+            },
+            frames: 2,
+            position: 0,
+            loaded: 0,
+            ratio: 1,
+            first: 1,
+            second: 1,
+            bits: 24,
+            order: vec![0],
+            ring: vec![0; 512],
+            rng: vec![0],
+            panicked: false,
+        }
+    }
+
+    #[test]
+    fn grouped_inputs_reject_early_zero_frames_without_advancing() {
+        let mut primary = State {
+            calls: 0,
+            fill: 256,
+        };
+        let mut secondary = State { calls: 0, fill: 0 };
+        let mut source = make_source(&mut primary, &mut secondary);
+        let mut pcm = [0; 2];
+        let mut frames = 0;
+        assert_eq!(group_read_inner(&mut source, &mut pcm, 2, &mut frames), -1);
+        assert_eq!(source.position, 0);
+        assert_eq!(frames, 0);
+
+        let mut primary = State { calls: 0, fill: 0 };
+        let mut secondary = State { calls: 0, fill: 0 };
+        let mut source = make_source(&mut primary, &mut secondary);
+        assert_eq!(source.load(1), Err(()));
+        assert_eq!(source.loaded, 0);
     }
 }

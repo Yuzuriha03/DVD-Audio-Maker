@@ -11,7 +11,7 @@ pub(crate) const MAXX: usize = 720;
 pub(crate) const MAXY: usize = 576;
 
 /// Reads RGBA pixels into the supplied buffer (row-major, four bytes per pixel)
-/// and returns the image dimensions. Mirrors the C DvdaReadRgba callback.
+/// and returns the image dimensions. Mirrors the C `DvdaReadRgba` callback.
 pub(crate) type RgbaReader<'a> = dyn FnMut(&Path, &mut [u8]) -> Result<(u32, u32), String> + 'a;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -244,6 +244,9 @@ impl SubPicture {
     }
 
     fn crop_and_group(&mut self) -> Result<(), String> {
+        if self.x0 >= MAXX as u32 || self.y0 >= MAXY as u32 {
+            return Err("subpicture offset is outside the DVD frame".into());
+        }
         let w = self.img.width;
         let h = self.img.height;
         self.xd = w as u32;
@@ -251,6 +254,9 @@ impl SubPicture {
 
         if self.autooutline {
             self.detect_buttons();
+        }
+        if self.buttons.len() > 36 {
+            return Err("a DVD subpicture supports at most 36 buttons".into());
         }
         self.fix_names();
         self.detect_directions();
@@ -551,16 +557,15 @@ impl SubPicture {
                                 break;
                             }
                         }
-                        let slot = match found {
-                            Some(slot) => slot,
-                            None => {
-                                if palette_count == 4 {
-                                    ok = false;
-                                    break 'groups;
-                                }
-                                palette_count += 1;
-                                palette_count - 1
+                        let slot = if let Some(slot) = found {
+                            slot
+                        } else {
+                            if palette_count == 4 {
+                                ok = false;
+                                break 'groups;
                             }
+                            palette_count += 1;
+                            palette_count - 1
                         };
                         palette[slot] = color | 256;
                         groupmap[group][slot] = *value;
@@ -632,8 +637,10 @@ impl SubPicture {
             self.outlinewidth = 1;
         }
         for (index, visited) in visit.iter_mut().enumerate() {
-            *visited = (self.hlt.pal[self.hlt.img[index] as usize].a != 0
-                || self.sel.pal[self.sel.img[index] as usize].a != 0) as u8;
+            *visited = u8::from(
+                self.hlt.pal[self.hlt.img[index] as usize].a != 0
+                    || self.sel.pal[self.sel.img[index] as usize].a != 0,
+            );
         }
         let mut rects: Vec<Rect> = Vec::new();
         for y in 0..h {
@@ -682,20 +689,20 @@ impl SubPicture {
 
         while !rects.is_empty() {
             let mut chosen = 0usize;
-            if !self.autoorder {
+            if self.autoorder {
                 for index in 1..rects.len() {
-                    if rects[index].y0 < rects[chosen].y0
-                        || (rects[index].y0 == rects[chosen].y0
-                            && rects[index].x0 < rects[chosen].x0)
+                    if rects[index].x0 < rects[chosen].x0
+                        || (rects[index].x0 == rects[chosen].x0
+                            && rects[index].y0 < rects[chosen].y0)
                     {
                         chosen = index;
                     }
                 }
             } else {
                 for index in 1..rects.len() {
-                    if rects[index].x0 < rects[chosen].x0
-                        || (rects[index].x0 == rects[chosen].x0
-                            && rects[index].y0 < rects[chosen].y0)
+                    if rects[index].y0 < rects[chosen].y0
+                        || (rects[index].y0 == rects[chosen].y0
+                            && rects[index].x0 < rects[chosen].x0)
                     {
                         chosen = index;
                     }
@@ -713,12 +720,11 @@ impl SubPicture {
                 }
             }
             let slot = self.buttons.iter().position(|button| button.r.x0 < 0);
-            let index = match slot {
-                Some(index) => index,
-                None => {
-                    self.buttons.push(Button::new(false));
-                    self.buttons.len() - 1
-                }
+            let index = if let Some(index) = slot {
+                index
+            } else {
+                self.buttons.push(Button::new(false));
+                self.buttons.len() - 1
             };
             self.buttons[index].r = rects[chosen];
             rects.remove(chosen);
@@ -789,9 +795,9 @@ fn angle_between(a0: i32, a1: i32, b0: i32, b1: i32, distance: i32) -> (i32, i32
         d1 = -d1;
         sign = -1;
     }
-    let angle =
-        (sign as f64) * 180.0 / std::f64::consts::PI * ((d1 as f64) / (distance as f64)).atan();
-    let dist = ((d1 * d1 + distance * distance) as f64).sqrt();
+    let angle = f64::from(sign) * 180.0 / std::f64::consts::PI
+        * (f64::from(d1) / f64::from(distance)).atan();
+    let dist = f64::from(d1 * d1 + distance * distance).sqrt();
     (angle as i32, dist as i32)
 }
 

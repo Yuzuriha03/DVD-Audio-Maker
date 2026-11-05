@@ -42,6 +42,7 @@ impl Failure {
     }
 }
 
+#[must_use]
 pub fn outcome(result: Result<Value, Failure>) -> Value {
     match result {
         Ok(value) => json!({"Value": value, "Failure": null}),
@@ -49,7 +50,8 @@ pub fn outcome(result: Result<Value, Failure>) -> Value {
     }
 }
 
-/// Match StreamReader BOM detection. Invalid sequences use replacement text.
+/// Match `StreamReader` BOM detection. Invalid sequences use replacement text.
+#[must_use]
 pub fn decode_text(bytes: &[u8]) -> String {
     if bytes.starts_with(&[0xff, 0xfe, 0, 0]) || bytes.starts_with(&[0, 0, 0xfe, 0xff]) {
         let little = bytes[0] == 0xff;
@@ -119,7 +121,8 @@ impl<'de> Deserialize<'de> for Profile {
                         "Version" => profile.version = map.next_value()?,
                         "Language" => profile.language = map.next_value()?,
                         "Values" => {
-                            profile.values = map.next_value::<Option<ProfileValues>>()?.map(|v| v.0)
+                            profile.values =
+                                map.next_value::<Option<ProfileValues>>()?.map(|v| v.0);
                         }
                         _ => {
                             map.next_value::<de::IgnoredAny>()?;

@@ -12,7 +12,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             video_attribute: 0x53,
-            palette: [0x108080, 0xeb8080, 0x108080, 0x808080],
+            palette: [0x0010_8080, 0x00eb_8080, 0x0010_8080, 0x0080_8080],
             sectors: None,
         }
     }

@@ -57,7 +57,7 @@ impl Drop for Directory {
     }
 }
 fn wav(path: &Path, channels: u16, samples: u32) {
-    let size = samples * channels as u32 * 2;
+    let size = samples * u32::from(channels) * 2;
     let mut bytes = Vec::new();
     bytes.extend(b"RIFF");
     bytes.extend((36 + size).to_le_bytes());
@@ -66,12 +66,12 @@ fn wav(path: &Path, channels: u16, samples: u32) {
     bytes.extend(1u16.to_le_bytes());
     bytes.extend(channels.to_le_bytes());
     bytes.extend(48000u32.to_le_bytes());
-    bytes.extend((48000 * channels as u32 * 2).to_le_bytes());
+    bytes.extend((48000 * u32::from(channels) * 2).to_le_bytes());
     bytes.extend((channels * 2).to_le_bytes());
     bytes.extend(16u16.to_le_bytes());
     bytes.extend(b"data");
     bytes.extend(size.to_le_bytes());
-    for index in 0..samples * channels as u32 {
+    for index in 0..samples * u32::from(channels) {
         bytes.extend((index as i16).wrapping_mul(37).to_le_bytes());
     }
     fs::write(path, bytes).unwrap();
@@ -112,7 +112,7 @@ fn records(iso: &[u8], lba: u32, size: u32) -> Vec<(String, u32, u32)> {
         }
         assert!(at % 2048 + length <= 2048);
         let name = &iso[at + 33..at + 33 + iso[at + 32] as usize];
-        if !matches!(name, [0] | [1]) {
+        if !matches!(name, [0 | 1]) {
             result.push((
                 String::from_utf8(name.to_vec()).unwrap(),
                 le32(iso, at + 2),

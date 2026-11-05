@@ -245,6 +245,6 @@ mod tests {
             }
         }
         assert_eq!(changed, 1470);
-        assert_eq!(digest, 0x739a6fe43d7bd265);
+        assert_eq!(digest, 0x739a_6fe4_3d7b_d265);
     }
 }

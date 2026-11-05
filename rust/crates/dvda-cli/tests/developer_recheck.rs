@@ -191,12 +191,12 @@ impl Fixture {
         let iso = out.join("check_1.iso");
         let original = fs::read(&iso).unwrap();
         Self {
+            task,
             scratch,
             profile,
             iso,
             work,
             original,
-            task,
         }
     }
     fn verify_scoped(&self, mode: &str) -> Value {

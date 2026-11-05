@@ -185,7 +185,7 @@ fn lex(text: &str) -> Result<Vec<Token>, String> {
             } else {
                 value
             };
-            if value > u16::MAX as u32 {
+            if value > u32::from(u16::MAX) {
                 return Err(format!("VM number {value} out of range"));
             }
             tokens.push(Token::Number(value as u16));

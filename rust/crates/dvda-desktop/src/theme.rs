@@ -1,6 +1,11 @@
 //! Colours and light/dark theme switching.
 
-use super::*;
+use super::{
+    DARK_THEME, DwmSetWindowAttribute, EnumChildWindows, GetProcAddress, Handle, Hwnd,
+    LoadLibraryW, Lparam, OnceLock, Ordering, PBM_SETBARCOLOR, PBM_SETBKCOLOR, RDW_ALLCHILDREN,
+    RDW_FRAME, RDW_INVALIDATE, RedrawWindow, RegGetValueW, SendMessageW, SetWindowTheme, UiState,
+    c_void, ptr, wide, window_class,
+};
 
 // Visual language follows the application icon: deep navy, cool silver and a
 // cyan waveform accent. COLORREF is 0x00BBGGRR, so rgb() converts from the
@@ -174,15 +179,15 @@ pub(crate) fn system_prefers_dark() -> bool {
             wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize").as_ptr(),
             wide("AppsUseLightTheme").as_ptr(),
             0x0000_0010,
-            &mut kind,
-            &mut value as *mut u32 as *mut c_void,
-            &mut size,
+            &raw mut kind,
+            (&raw mut value).cast::<c_void>(),
+            &raw mut size,
         )
     };
     result == 0 && value == 0
 }
 /// Whether this Windows build has the dark-mode entry points at uxtheme ordinals 133
-/// (AllowDarkModeForWindow) and 135 (SetPreferredAppMode). They are undocumented: 1809
+/// (`AllowDarkModeForWindow`) and 135 (`SetPreferredAppMode`). They are undocumented: 1809
 /// (build 17763) used 135 for a different function, and they have kept their meaning
 /// from 1903 (build 18362) on. On anything older they are not called at all.
 fn uxtheme_ordinals_supported() -> bool {
@@ -210,7 +215,7 @@ fn uxtheme_ordinals_supported() -> bool {
             service_pack: [0; 128],
         };
         // SAFETY: `info` is a correctly sized OSVERSIONINFOW with its size field set.
-        let status = unsafe { RtlGetVersion(&mut info) };
+        let status = unsafe { RtlGetVersion(&raw mut info) };
         status == 0 && info.major == 10 && info.build >= 18362
     })
 }
@@ -259,7 +264,7 @@ pub(crate) fn uxtheme_preferred_app_mode(dark: bool) {
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn theme_child_proc(hwnd: Hwnd, _parameter: Lparam) -> i32 {
     uxtheme_allow_dark(hwnd, dark_theme());
@@ -285,17 +290,17 @@ pub(crate) fn apply_theme(hwnd: Hwnd, state: &mut UiState, dark: bool) {
     DARK_THEME.store(dark, Ordering::Relaxed);
     uxtheme_preferred_app_mode(dark);
     unsafe {
-        let dark_flag: u32 = if dark { 1 } else { 0 };
+        let dark_flag: u32 = u32::from(dark);
         DwmSetWindowAttribute(
             hwnd,
             20,
-            &dark_flag as *const u32 as *const c_void,
+            (&raw const dark_flag).cast::<c_void>(),
             std::mem::size_of::<u32>() as u32,
         );
         DwmSetWindowAttribute(
             hwnd,
             19,
-            &dark_flag as *const u32 as *const c_void,
+            (&raw const dark_flag).cast::<c_void>(),
             std::mem::size_of::<u32>() as u32,
         );
         EnumChildWindows(hwnd, theme_child_proc, 0);

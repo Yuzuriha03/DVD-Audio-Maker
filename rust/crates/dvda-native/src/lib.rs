@@ -55,6 +55,7 @@ pub struct MlpAlignment {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NativeFormats;
 
+#[must_use]
 pub fn sample_pts() -> [i64; 4] {
     [0, 1, 90_000, 0x1_FFFF_FFFFi64]
 }

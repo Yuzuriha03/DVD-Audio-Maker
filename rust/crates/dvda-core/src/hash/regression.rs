@@ -4,9 +4,9 @@ use std::{fs, hint::black_box, path::Path, time::Instant};
 
 #[test]
 fn batch_matches_sha2_for_padding_and_chunk_boundaries() {
-    let mut seed = 0x9e3779b97f4a7c15u64;
+    let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
     for size in (0..=260).chain([
-        511, 512, 513, 1023, 4096, 65535, 65536, 65537, 131071, 131072, 131073,
+        511, 512, 513, 1023, 4096, 65535, 65536, 65537, 131_071, 131_072, 131_073,
     ]) {
         let data: Vec<u8> = (0..size)
             .map(|_| {
@@ -19,7 +19,7 @@ fn batch_matches_sha2_for_padding_and_chunk_boundaries() {
         let expected: [u8; 32] = sha2::Sha256::digest(&data).into();
         assert_eq!(sha256(&data), expected, "size={size}");
         assert_eq!(reader_digest(data.as_slice()).unwrap(), hex(&expected));
-        for chunk_size in [1, 7, 55, 56, 63, 64, 65, 127, 4096, 65537, 131072] {
+        for chunk_size in [1, 7, 55, 56, 63, 64, 65, 127, 4096, 65537, 131_072] {
             let mut new = Sha256::default();
             new.update(&[]);
             for chunk in data.chunks(chunk_size) {
@@ -47,7 +47,7 @@ fn release_files_benchmark() {
         &std::env::var("DVDA_HASH_BENCH_INPUTS").expect("JSON array of real file paths"),
     )
     .unwrap();
-    assert!(!inputs.is_empty());
+    assert_ne!(inputs, [] as [std::path::PathBuf; 0]);
     let report = std::env::var_os("DVDA_HASH_BENCH_REPORT").expect("Report destination");
     assert!(
         !Path::new(&report).exists(),

@@ -56,7 +56,7 @@ pub(crate) fn mlp_predict_block(
         || output.len() < count
         || !valid_filter(a, 8)
         || b.as_ref().is_some_and(|filter| !valid_filter(filter, 4))
-        || input.iter().any(|v| !(-8388608..=8388607).contains(v))
+        || input.iter().any(|v| !(-8_388_608..=8_388_607).contains(v))
         || state
             .input
             .iter()
@@ -70,7 +70,7 @@ pub(crate) fn mlp_predict_block(
     let mut temporary = [0i32; 160];
     let mut fallback = false;
     let divisor = f64::from(1u32 << qss);
-    let bound = 8388608.0 / divisor;
+    let bound = 8_388_608.0 / divisor;
     for (&sample, destination) in input.iter().zip(&mut temporary) {
         let mut prediction = 0.0;
         for (&coefficient, &sample) in a.coefficient.iter().zip(&work.input) {
@@ -90,7 +90,7 @@ pub(crate) fn mlp_predict_block(
         };
         let result = (residual / divisor).ceil();
         if !residual.is_finite()
-            || !(-2147483647.0..=2147483647.0).contains(&residual)
+            || !(-2_147_483_647.0..=2_147_483_647.0).contains(&residual)
             || result < -bound
             || result >= bound
         {

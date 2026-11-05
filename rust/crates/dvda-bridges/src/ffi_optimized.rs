@@ -7,6 +7,7 @@ use std::ffi::c_char;
 /// A non-null pointer must address a terminated, readable C string which stays
 /// live and immutable for the entire returned borrow.
 #[inline]
+#[must_use]
 pub unsafe fn text_borrowed<'a>(p: *const c_char) -> &'a str {
     if p.is_null() {
         ""
@@ -29,6 +30,7 @@ pub fn check_result_unchecked(code: i32) {
 }
 
 #[inline]
+#[must_use]
 pub fn should_batch_process(count: usize) -> bool {
     count >= 4
 }
@@ -61,7 +63,10 @@ pub fn convert_audio_i16_to_f32_simd(input: &[i16], output: &mut [f32]) {
 /// `input` and `output` must have the same length, as `convert_audio_i16_to_f32_simd`
 /// asserts. The eight-lane loop reads and writes only within both slices.
 unsafe fn convert_avx2(input: &[i16], output: &mut [f32]) {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{
+        _mm_loadu_si128, _mm256_cvtepi16_epi32, _mm256_cvtepi32_ps, _mm256_mul_ps, _mm256_set1_ps,
+        _mm256_storeu_ps,
+    };
     let scale = _mm256_set1_ps(1.0 / 32768.0);
     let prefix = input.len() / 8 * 8;
     for index in (0..prefix).step_by(8) {

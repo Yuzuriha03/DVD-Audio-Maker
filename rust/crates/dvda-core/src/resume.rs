@@ -30,6 +30,7 @@ impl Store {
         };
         Self { path, entries }
     }
+    #[must_use]
     pub fn matches(&self, disc: usize, signature: &str, iso: &Path) -> bool {
         self.entries.get(&disc.to_string()).is_some_and(|entry| {
             entry["signature"] == signature
@@ -37,6 +38,7 @@ impl Store {
                 && self.audit_log(disc).is_some()
         })
     }
+    #[must_use]
     pub fn audit_log(&self, disc: usize) -> Option<&str> {
         let entry = self.entries.get(&disc.to_string())?;
         let log = entry["audit_log"].as_str()?;

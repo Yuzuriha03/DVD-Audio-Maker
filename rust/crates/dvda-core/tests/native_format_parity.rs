@@ -1,4 +1,4 @@
-//! ISO fixture preserved from the historical C# IsoMigrationTests.
+//! ISO fixture preserved from the historical C# `IsoMigrationTests`.
 use dvda_core::formats;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
@@ -190,10 +190,9 @@ fn alac_end_marker_extra_bits_and_cookie_follow_historical_parser_contract() {
         alac::apply_bits(&mut data, patches.iter().map(|p| (p.position, p.end_bit))).unwrap();
         assert_eq!(data[6] & 1, 1);
         assert_eq!(data[7] & 0xc0, 0xc0);
-        assert!(
-            alac::find_patches(&data, &cookie, &packets)
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            alac::find_patches(&data, &cookie, &packets).unwrap(),
+            [] as [dvda_core::preparation::models::Patch; 0]
         );
     }
     let mut data = [0; 24];

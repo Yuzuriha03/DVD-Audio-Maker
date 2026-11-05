@@ -1,4 +1,4 @@
-//! VOB scan/write pass (the FindVobus stage of the navigation builder).
+//! VOB scan/write pass (the `FindVobus` stage of the navigation builder).
 //!
 //! Reads a menu MPEG program stream, splits it into VOBUs at the NAV-pack
 //! placeholder sectors written by the SPU multiplexer, drops the private

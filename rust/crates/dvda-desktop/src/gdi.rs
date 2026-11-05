@@ -1,6 +1,13 @@
 //! DPI scaling, fonts, brushes, the header icon and text measurement.
 
-use super::*;
+use super::{
+    BRUSH_CACHE, CreateCompatibleDC, CreateFontW, CreateSolidBrush, DT_CALCRECT, DT_NOPREFIX,
+    DT_SINGLELINE, DeleteDC, DrawTextW, EnumChildWindows, FONT_CACHE, GetClientRect,
+    GetModuleHandleW, GetStockObject, GetSysColorBrush, GetWindowRect, HEADER_HEIGHT, Handle,
+    HashMap, Hbrush, Hwnd, ICON_CACHE, LoadIconW, LoadImageW, Lparam, Mutex, Ordering, OsStr,
+    OsStrExt, Rect, SelectObject, UI_DPI, UI_FONT_HEIGHT, UiState, WM_SETFONT, c_body, c_border,
+    c_card, c_panel, ptr, win,
+};
 
 /// Window bounds in screen coordinates.
 pub(crate) fn window_rect(hwnd: Hwnd) -> Rect {
@@ -20,13 +27,13 @@ pub(crate) fn dpi() -> i32 {
     UI_DPI.load(Ordering::Relaxed).max(48) as i32
 }
 pub(crate) fn scale(value: i32) -> i32 {
-    ((value as i64 * dpi() as i64 + 48) / 96) as i32
+    ((i64::from(value) * i64::from(dpi()) + 48) / 96) as i32
 }
 pub(crate) fn unscale(value: i32) -> i32 {
     if value <= 0 {
         value
     } else {
-        ((value as i64 * 96 + dpi() as i64 / 2) / dpi() as i64) as i32
+        ((i64::from(value) * 96 + i64::from(dpi()) / 2) / i64::from(dpi())) as i32
     }
 }
 pub(crate) fn header_height() -> i32 {
@@ -181,7 +188,7 @@ pub(crate) fn wrapped_text_height(text: &str, font: Handle, width: i32) -> i32 {
             dc,
             wide_text.as_ptr(),
             -1,
-            &mut rect,
+            &raw mut rect,
             0x0010 | DT_CALCRECT | DT_NOPREFIX,
         ); // DT_WORDBREAK
         SelectObject(dc, old);
@@ -208,8 +215,8 @@ pub(crate) fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 
         DrawTextW(
             dc,
             text.as_ptr(),
-            (text.len() - 1) as i32,
-            &mut rect,
+            i32::try_from(text.len() - 1).unwrap_or(i32::MAX),
+            &raw mut rect,
             DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX,
         );
         SelectObject(dc, old);
@@ -220,7 +227,7 @@ pub(crate) fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn font_child_proc(hwnd: Hwnd, parameter: Lparam) -> i32 {
     {

@@ -42,7 +42,7 @@ impl<'a> BatchConfig<'a> {
         let shift = match config.sample_rate {
             44100 | 48000 => 0,
             88200 | 96000 => 1,
-            176400 | 192000 => 2,
+            176_400 | 192_000 => 2,
             _ => return Err(Error::InvalidConfig),
         };
         if shift == 2 && config.channels > 2 {
@@ -101,7 +101,7 @@ mod tests {
         let mut c = c;
         c.restart_interval = 8;
         let admitted = BatchConfig::new(&c, &profile, 2).unwrap();
-        assert!(std::ptr::eq(admitted.config(), &c));
+        assert!(std::ptr::eq(admitted.config(), &raw const c));
         c.channels = 0;
         assert!(matches!(
             BatchConfig::new(&c, &profile, 2),

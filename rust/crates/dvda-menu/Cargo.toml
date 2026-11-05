@@ -15,3 +15,6 @@ direct-link = []
 dvda-image = { path = "../dvda-image" }
 quick-xml = "0.42"
 
+
+[lints]
+workspace = true

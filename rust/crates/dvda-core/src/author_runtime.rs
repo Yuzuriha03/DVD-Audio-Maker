@@ -23,7 +23,7 @@ pub fn execute_with_image_cache(
     }
     impl dvda_author::Callbacks for Capture<'_> {
         fn emit(&mut self, stream: i32, text: &str) {
-            let index = if stream == 2 { 1 } else { 0 };
+            let index = usize::from(stream == 2);
             self.output[index].push_str(text);
             if !text.ends_with('\n') {
                 self.output[index].push('\n');
@@ -60,7 +60,7 @@ pub fn execute_with_image_cache(
     });
     let [standard_output, standard_error] = capture.output;
     Outcome {
-        exit_code: Some(if failure.is_some() { 1 } else { 0 }),
+        exit_code: Some(i32::from(failure.is_some())),
         failure,
         standard_output,
         standard_error,
@@ -178,7 +178,7 @@ impl dvda_author::menu::Backend for Backend {
                         path(output)?.as_ptr(),
                         string(norm)?.as_ptr(),
                         string(aspect)?.as_ptr(),
-                        still as i32,
+                        i32::from(still),
                     )
                 },
                 callbacks,

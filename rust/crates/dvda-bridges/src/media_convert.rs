@@ -1,4 +1,31 @@
-use crate::{Call, ffmpeg::*, media::Request, win};
+use crate::{
+    Call,
+    ffmpeg::{
+        AV_CODEC_FLAG_GLOBAL_HEADER, AV_CODEC_ID_FLAC, AV_CODEC_ID_PCM_F32LE,
+        AV_CODEC_ID_PCM_F64LE, AV_CODEC_ID_PCM_S8, AV_CODEC_ID_PCM_S16LE, AV_CODEC_ID_PCM_S24LE,
+        AV_CODEC_ID_PCM_S32LE, AV_CODEC_ID_PCM_U8, AV_DISPOSITION_ATTACHED_PIC, AV_EF_CRCCHECK,
+        AV_EF_EXPLODE, AV_PIX_FMT_RGB24, AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_DBLP, AV_SAMPLE_FMT_FLT,
+        AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S32, AVFMT_GLOBALHEADER, Context,
+        EAGAIN, EINVAL, EIO, ENOMEM, EOF, EXIT, Format, Frame, INVALID, Interrupt, Packet,
+        Rational, av_audio_fifo_alloc, av_audio_fifo_free, av_audio_fifo_read, av_audio_fifo_size,
+        av_audio_fifo_write, av_channel_layout_channel_from_index, av_channel_layout_copy,
+        av_dict_free, av_dict_set, av_dict_set_int, av_find_best_stream, av_frame_alloc,
+        av_frame_free, av_frame_get_buffer, av_frame_unref, av_free, av_freep,
+        av_interleaved_write_frame, av_md5_alloc, av_md5_final, av_md5_init, av_md5_update,
+        av_opt_set, av_packet_alloc, av_packet_clone, av_packet_free, av_packet_rescale_ts,
+        av_packet_unref, av_read_frame, av_rescale, av_samples_alloc_array_and_samples,
+        av_write_trailer, avcodec_alloc_context3, avcodec_find_decoder, avcodec_find_encoder,
+        avcodec_free_context, avcodec_open2, avcodec_parameters_copy,
+        avcodec_parameters_from_context, avcodec_parameters_to_context, avcodec_receive_frame,
+        avcodec_receive_packet, avcodec_send_frame, avcodec_send_packet,
+        avformat_alloc_output_context2, avformat_free_context, avformat_new_stream,
+        avformat_write_header, avio_closep, avio_open2, done, streams, swr_alloc_set_opts2,
+        swr_convert, swr_free, swr_get_out_samples, swr_init, sws_freeContext, sws_getContext,
+        sws_scale, text,
+    },
+    media::Request,
+    win,
+};
 use std::{ffi::c_void, fs::File, io::Write, ptr};
 pub(crate) fn open_error(error: std::io::Error) -> i32 {
     match error.kind() {
@@ -18,8 +45,20 @@ pub struct PcmFormat {
 }
 
 pub trait PcmSink {
+    /// Start a PCM stream with its final output geometry.
+    ///
+    /// # Errors
+    /// Returns a backend error code when the geometry is unsupported or initialization fails.
     fn start(&mut self, format: PcmFormat) -> Result<(), i32>;
+    /// Write left-aligned interleaved samples.
+    ///
+    /// # Errors
+    /// Returns a backend error code when the buffer is invalid or writing fails.
     fn write(&mut self, pcm: &[i32]) -> Result<(), i32>;
+    /// Finish the PCM stream.
+    ///
+    /// # Errors
+    /// Returns a backend error code when finalization or flushing fails.
     fn finish(&mut self) -> Result<(), i32>;
 }
 
@@ -60,11 +99,11 @@ impl Drop for Audio<'_> {
                 avformat_free_context(self.output);
             }
             av_audio_fifo_free(self.fifo);
-            avcodec_free_context(&mut self.encoder);
-            avcodec_free_context(&mut self.decoder);
-            av_frame_free(&mut self.frame);
-            av_packet_free(&mut self.packet);
-            swr_free(&mut self.swr);
+            avcodec_free_context(&raw mut self.encoder);
+            avcodec_free_context(&raw mut self.decoder);
+            av_frame_free(&raw mut self.frame);
+            av_packet_free(&raw mut self.packet);
+            swr_free(&raw mut self.swr);
             av_free(self.md5);
         }
     }
@@ -98,7 +137,7 @@ impl Audio<'_> {
                     av_packet_unref(packet);
                 }
             })();
-            av_packet_free(&mut packet);
+            av_packet_free(&raw mut packet);
             result
         }
     }
@@ -134,7 +173,7 @@ impl Audio<'_> {
                     };
                     *(*frame).sample_rate_ptr() = self.rate;
                     *(*frame).pts_ptr() = if (*self.encoder).frame_num() != 0 {
-                        self.samples - remaining as i64
+                        self.samples - i64::from(remaining)
                     } else {
                         0
                     };
@@ -150,9 +189,54 @@ impl Audio<'_> {
                     }
                     self.encode(frame)
                 })();
-                av_frame_free(&mut frame);
+                av_frame_free(&raw mut frame);
                 result?;
             }
+        }
+    }
+    /// # Safety
+    /// `input` must be an open `AVFormatContext` whose stream information has been read. `frame`
+    /// must be a valid frame for `self`'s encoder. Both are owned by the caller and live for the call.
+    /// `request.output` must not be NULL. `request.tags` must point to readable entries for
+    /// `request.tag_count` items when that count is non-zero.
+    /// # Safety
+    /// `frame` must be a live input frame and `request` must contain valid output and tag pointers.
+    unsafe fn wave_container(&mut self, request: &Request, frame: *mut Frame) -> Result<(), i32> {
+        unsafe {
+            let mut mask = 0u32;
+            for index in 0..u32::try_from(self.channels).map_err(|_| EINVAL)? {
+                let channel = av_channel_layout_channel_from_index((*frame).ch_layout_ptr(), index);
+                if !(0..32).contains(&channel) {
+                    mask = 0;
+                    break;
+                }
+                mask |= 1 << channel;
+            }
+            for index in 0..request.tag_count as usize {
+                self.wave_tags.push((
+                    text(*request.tags.add(index * 2)),
+                    text(*request.tags.add(index * 2 + 1)),
+                ));
+            }
+            let file = File::create(text(request.output)).map_err(open_error)?;
+            self.wave = Some(
+                dvda_audio::writer::Writer::new(
+                    file,
+                    dvda_audio::wav::Format {
+                        encoding: if self.bits == 16 {
+                            dvda_audio::pcm::Encoding::Signed16
+                        } else {
+                            dvda_audio::pcm::Encoding::Signed24
+                        },
+                        channels: self.channels.try_into().map_err(|_| EINVAL)?,
+                        sample_rate: u32::try_from(self.rate).map_err(|_| EINVAL)?,
+                        valid_bits: if self.bits == 16 { 16 } else { 24 },
+                        channel_mask: mask,
+                    },
+                )
+                .map_err(open_error)?,
+            );
+            Ok(())
         }
     }
     /// # Safety
@@ -171,47 +255,12 @@ impl Audio<'_> {
             if request.output.is_null() || (request.tag_count > 0 && request.tags.is_null()) {
                 return Err(EINVAL);
             }
-            let flac = request.output_format == 6;
-            if !flac {
-                let mut mask = 0u32;
-                for index in 0..self.channels as u32 {
-                    let channel =
-                        av_channel_layout_channel_from_index((*frame).ch_layout_ptr(), index);
-                    if !(0..32).contains(&channel) {
-                        mask = 0;
-                        break;
-                    }
-                    mask |= 1 << channel;
-                }
-                for index in 0..request.tag_count as usize {
-                    self.wave_tags.push((
-                        text(*request.tags.add(index * 2)),
-                        text(*request.tags.add(index * 2 + 1)),
-                    ));
-                }
-                let file = File::create(text(request.output)).map_err(open_error)?;
-                self.wave = Some(
-                    dvda_audio::writer::Writer::new(
-                        file,
-                        dvda_audio::wav::Format {
-                            encoding: if self.bits == 16 {
-                                dvda_audio::pcm::Encoding::Signed16
-                            } else {
-                                dvda_audio::pcm::Encoding::Signed24
-                            },
-                            channels: self.channels.try_into().map_err(|_| EINVAL)?,
-                            sample_rate: self.rate as u32,
-                            valid_bits: if self.bits == 16 { 16 } else { 24 },
-                            channel_mask: mask,
-                        },
-                    )
-                    .map_err(open_error)?,
-                );
-                return Ok(());
+            if request.output_format != 6 {
+                return self.wave_container(request, frame);
             }
             let codec = avcodec_find_encoder(AV_CODEC_ID_FLAC);
             if codec.is_null() {
-                return Err(-1129203192);
+                return Err(-1_129_203_192);
             }
             self.encoder = avcodec_alloc_context3(codec);
             if self.encoder.is_null() {
@@ -234,27 +283,27 @@ impl Audio<'_> {
                 (*frame).ch_layout_ptr(),
             ))?;
             done(avformat_alloc_output_context2(
-                &mut self.output,
+                &raw mut self.output,
                 ptr::null(),
                 c"flac".as_ptr(),
                 request.output,
             ))?;
             *(*self.output).interrupt_callback_ptr() = Interrupt {
                 callback: Some(crate::media::interrupted),
-                opaque: (call as *const Call as *mut Call).cast(),
+                opaque: std::ptr::from_ref(call).cast_mut().cast(),
             };
             if (*(*self.output).oformat()).flags() & AVFMT_GLOBALHEADER != 0 {
                 *(*self.encoder).flags_ptr() |= AV_CODEC_FLAG_GLOBAL_HEADER;
             }
             let mut options = ptr::null_mut();
             av_dict_set_int(
-                &mut options,
+                &raw mut options,
                 c"compression_level".as_ptr(),
-                request.compression as i64,
+                i64::from(request.compression),
                 0,
             );
-            let status = avcodec_open2(self.encoder, codec, &mut options);
-            av_dict_free(&mut options);
+            let status = avcodec_open2(self.encoder, codec, &raw mut options);
+            av_dict_free(&raw mut options);
             done(status)?;
             let stream = avformat_new_stream(self.output, ptr::null());
             if stream.is_null() {
@@ -295,13 +344,15 @@ impl Audio<'_> {
                         if packet.size() <= 0 || packet.data().is_null() {
                             return Err(EINVAL);
                         }
-                        let bytes =
-                            std::slice::from_raw_parts(packet.data(), packet.size() as usize);
+                        let packet_size = usize::try_from(packet.size()).map_err(|_| EINVAL)?;
+                        let bytes = std::slice::from_raw_parts(packet.data(), packet_size);
                         let (dimensions, _) =
                             dvda_image::codec::metadata(std::io::Cursor::new(bytes))
                                 .map_err(|_| EINVAL)?;
-                        *(*parameters).width_ptr() = dimensions.width() as i32;
-                        *(*parameters).height_ptr() = dimensions.height() as i32;
+                        *(*parameters).width_ptr() =
+                            i32::try_from(dimensions.width()).map_err(|_| EINVAL)?;
+                        *(*parameters).height_ptr() =
+                            i32::try_from(dimensions.height()).map_err(|_| EINVAL)?;
                     }
                     *(*picture).disposition_ptr() = AV_DISPOSITION_ATTACHED_PIC;
                     *(*picture).time_base_ptr() = Rational { num: 1, den: 90000 };
@@ -316,8 +367,8 @@ impl Audio<'_> {
                 (*self.output).interrupt_callback_ptr(),
                 ptr::null_mut(),
             ))?;
-            let status = avformat_write_header(self.output, &mut options);
-            av_dict_free(&mut options);
+            let status = avformat_write_header(self.output, &raw mut options);
+            av_dict_free(&raw mut options);
             done(status)?;
             if !cover.is_null() {
                 let mut picture = av_packet_clone((*cover).attached_pic_ptr());
@@ -328,7 +379,7 @@ impl Audio<'_> {
                 *(*picture).pts_ptr() = 0;
                 *(*picture).dts_ptr() = 0;
                 let status = av_interleaved_write_frame(self.output, picture);
-                av_packet_free(&mut picture);
+                av_packet_free(&raw mut picture);
                 done(status)?;
             }
             self.fifo = av_audio_fifo_alloc(
@@ -347,8 +398,107 @@ impl Audio<'_> {
         }
     }
     /// # Safety
+    /// `frame` must be a live frame produced by `self.decoder`, and `call` must be valid for the call.
+    unsafe fn initialize_resampler(
+        &mut self,
+        request: &Request,
+        call: &Call,
+        frame: *mut Frame,
+    ) -> Result<(), i32> {
+        unsafe {
+            self.channels = (*frame).ch_layout().nb_channels();
+            self.rate = if request.rate == 0 {
+                (*frame).sample_rate()
+            } else {
+                i32::try_from(request.rate).map_err(|_| EINVAL)?
+            };
+            if self.source_bits == 0 {
+                self.source_bits = u16::try_from((*self.decoder).bits_per_raw_sample().max(0))
+                    .map_err(|_| EINVAL)?;
+            }
+            self.bits = if request.bits == 0 {
+                if self.source_bits > 16 || self.source_float {
+                    24
+                } else {
+                    16
+                }
+            } else {
+                i32::try_from(request.bits).map_err(|_| EINVAL)?
+            };
+            if self.channels <= 0 || self.rate <= 0 || !matches!(self.bits, 16 | 20 | 24) {
+                return Err(EINVAL);
+            }
+            // Raw 24-bit and 32-bit outputs read the packed buffer as 32-bit samples.
+            if self.bits == 16 && matches!(request.output_format, 2 | 4) {
+                return Err(EINVAL);
+            }
+            self.input_format = (*frame).format();
+            self.input_rate = (*frame).sample_rate();
+            let source_float = self.source_float
+                || (!self.source_pcm
+                    && self.source_bits == 0
+                    && matches!(
+                        (*frame).format(),
+                        AV_SAMPLE_FMT_FLT
+                            | AV_SAMPLE_FMT_FLTP
+                            | AV_SAMPLE_FMT_DBL
+                            | AV_SAMPLE_FMT_DBLP
+                    ));
+            if dvda_audio::dither::enabled(
+                request.dither != 0 && request.output_format != 5,
+                self.source_bits,
+                source_float,
+                u16::try_from(self.bits).map_err(|_| EINVAL)?,
+            ) {
+                use std::hash::{BuildHasher, Hasher};
+                let seed = std::collections::hash_map::RandomState::new()
+                    .build_hasher()
+                    .finish();
+                self.dither = Some(dvda_audio::dither::Tpdf::new(seed));
+                call.message(2, "16-bit output: applying Rust TPDF dither");
+            }
+            self.format = if self.dither.is_some() {
+                AV_SAMPLE_FMT_DBL
+            } else if self.bits == 20 {
+                AV_SAMPLE_FMT_DBLP
+            } else if self.bits == 16 {
+                AV_SAMPLE_FMT_S16
+            } else {
+                AV_SAMPLE_FMT_S32
+            };
+            done(swr_alloc_set_opts2(
+                &raw mut self.swr,
+                (*frame).ch_layout_ptr(),
+                self.format,
+                self.rate,
+                (*frame).ch_layout_ptr(),
+                (*frame).format(),
+                (*frame).sample_rate(),
+                0,
+                ptr::null_mut(),
+            ))?;
+            done(av_opt_set(
+                self.swr,
+                c"dither_method".as_ptr(),
+                c"none".as_ptr(),
+                0,
+            ))?;
+            if request.soxr != 0 {
+                done(av_opt_set(
+                    self.swr,
+                    c"resampler".as_ptr(),
+                    c"soxr".as_ptr(),
+                    0,
+                ))?;
+            }
+            done(swr_init(self.swr))
+        }
+    }
+    /// # Safety
     /// `frame` must be a frame produced by `self.decoder`. It may be NULL only while the converter
     /// is still uninitialized, before the first frame arrives. The caller keeps ownership of `frame`.
+    // Scalar plane reads are unaligned; packed i32 writes use FFmpeg or Vec alignment guarantees.
+    #[allow(clippy::cast_ptr_alignment)]
     unsafe fn convert(
         &mut self,
         request: &Request,
@@ -360,94 +510,10 @@ impl Audio<'_> {
                 if frame.is_null() {
                     return Ok(());
                 }
-                self.channels = (*frame).ch_layout().nb_channels();
-                self.rate = if request.rate == 0 {
-                    (*frame).sample_rate()
-                } else {
-                    request.rate as i32
-                };
-                if self.source_bits == 0 {
-                    self.source_bits = (*self.decoder).bits_per_raw_sample().max(0) as u16;
-                }
-                self.bits = if request.bits == 0 {
-                    if self.source_bits > 16 || self.source_float {
-                        24
-                    } else {
-                        16
-                    }
-                } else {
-                    request.bits as i32
-                };
-                if self.channels <= 0 || self.rate <= 0 || !matches!(self.bits, 16 | 20 | 24) {
-                    return Err(EINVAL);
-                }
-                // Raw 24-bit and 32-bit outputs read the packed buffer as 32-bit samples.
-                if self.bits == 16 && matches!(request.output_format, 2 | 4) {
-                    return Err(EINVAL);
-                }
-                self.input_format = (*frame).format();
-                self.input_rate = (*frame).sample_rate();
-                let source_float = self.source_float
-                    || (!self.source_pcm
-                        && self.source_bits == 0
-                        && matches!(
-                            (*frame).format(),
-                            AV_SAMPLE_FMT_FLT
-                                | AV_SAMPLE_FMT_FLTP
-                                | AV_SAMPLE_FMT_DBL
-                                | AV_SAMPLE_FMT_DBLP
-                        ));
-                if dvda_audio::dither::enabled(
-                    request.dither != 0 && request.output_format != 5,
-                    self.source_bits,
-                    source_float,
-                    self.bits as u16,
-                ) {
-                    use std::hash::{BuildHasher, Hasher};
-                    let seed = std::collections::hash_map::RandomState::new()
-                        .build_hasher()
-                        .finish();
-                    self.dither = Some(dvda_audio::dither::Tpdf::new(seed));
-                    call.message(2, "16-bit output: applying Rust TPDF dither");
-                }
-                self.format = if self.dither.is_some() {
-                    AV_SAMPLE_FMT_DBL
-                } else if self.bits == 20 {
-                    AV_SAMPLE_FMT_DBLP
-                } else if self.bits == 16 {
-                    AV_SAMPLE_FMT_S16
-                } else {
-                    AV_SAMPLE_FMT_S32
-                };
-                done(swr_alloc_set_opts2(
-                    &mut self.swr,
-                    (*frame).ch_layout_ptr(),
-                    self.format,
-                    self.rate,
-                    (*frame).ch_layout_ptr(),
-                    (*frame).format(),
-                    (*frame).sample_rate(),
-                    0,
-                    ptr::null_mut(),
-                ))?;
-                done(av_opt_set(
-                    self.swr,
-                    c"dither_method".as_ptr(),
-                    c"none".as_ptr(),
-                    0,
-                ))?;
-                if request.soxr != 0 {
-                    done(av_opt_set(
-                        self.swr,
-                        c"resampler".as_ptr(),
-                        c"soxr".as_ptr(),
-                        0,
-                    ))?;
-                }
-                done(swr_init(self.swr))?;
+                self.initialize_resampler(request, call, frame)?;
                 if let Some(sink) = self.pcm_sink.as_deref_mut() {
                     let mut mask = 0u32;
-                    for index in 0..self.channels as u32 {
+                    for index in 0..u32::try_from(self.channels).map_err(|_| EINVAL)? {
                         let channel =
                             av_channel_layout_channel_from_index((*frame).ch_layout_ptr(), index);
                         if !(0..32).contains(&channel) {
@@ -457,9 +523,9 @@ impl Audio<'_> {
                         mask |= 1 << channel;
                     }
                     sink.start(PcmFormat {
-                        sample_rate: self.rate as u32,
-                        bits: self.bits as u32,
-                        channels: self.channels as u32,
+                        sample_rate: u32::try_from(self.rate).map_err(|_| EINVAL)?,
+                        bits: u32::try_from(self.bits).map_err(|_| EINVAL)?,
+                        channels: u32::try_from(self.channels).map_err(|_| EINVAL)?,
                         channel_mask: mask,
                     })?;
                 } else if matches!(request.output_format, 1 | 6) {
@@ -483,7 +549,7 @@ impl Audio<'_> {
                     || (*frame).ch_layout().nb_channels() != self.channels
                     || (*frame).format() != self.input_format)
             {
-                return Err(-1668179713);
+                return Err(-1_668_179_713);
             }
             let input_count = if frame.is_null() {
                 0
@@ -494,7 +560,7 @@ impl Audio<'_> {
             done(capacity)?;
             let mut data = ptr::null_mut();
             done(av_samples_alloc_array_and_samples(
-                &mut data,
+                &raw mut data,
                 ptr::null_mut(),
                 self.channels,
                 capacity.max(1),
@@ -517,7 +583,13 @@ impl Audio<'_> {
                 if count == 0 {
                     return Ok(());
                 }
-                let values = count as usize * self.channels as usize;
+                let sample_count = usize::try_from(count).map_err(|_| EINVAL)?;
+                let channels = usize::try_from(self.channels).map_err(|_| EINVAL)?;
+                let values = sample_count.checked_mul(channels).ok_or(ENOMEM)?;
+                let max_values = usize::try_from(isize::MAX).map_err(|_| ENOMEM)? / 4;
+                if values > max_values {
+                    return Err(ENOMEM);
+                }
                 let mut converted = Vec::<i32>::new();
                 let mut quantized = Vec::<i16>::new();
                 let packed = if let Some(dither) = &mut self.dither {
@@ -534,17 +606,20 @@ impl Audio<'_> {
                     quantized.as_ptr().cast::<u8>()
                 } else if self.bits == 20 {
                     converted.reserve(values);
-                    for sample in 0..count as usize {
-                        for channel in 0..self.channels as usize {
+                    for sample in 0..sample_count {
+                        for channel in 0..channels {
                             let plane = *data.add(channel);
                             if plane.is_null() {
                                 return Err(INVALID);
                             }
                             let value = ptr::read_unaligned(plane.cast::<f64>().add(sample));
-                            converted.push(
-                                (value * 524288.0 + 0.5).floor().clamp(-524288.0, 524287.0) as i32
-                                    * 4096,
-                            );
+                            // The clamp guarantees the destination i32 range before quantization.
+                            #[allow(clippy::cast_possible_truncation)]
+                            let quantized = (value * 524_288.0 + 0.5)
+                                .floor()
+                                .clamp(-524_288.0, 524_287.0)
+                                as i32;
+                            converted.push(quantized * 4096);
                         }
                     }
                     converted.as_ptr().cast::<u8>()
@@ -554,7 +629,7 @@ impl Audio<'_> {
                 if packed.is_null() {
                     return Err(INVALID);
                 }
-                self.samples += count as i64;
+                self.samples += i64::from(count);
                 if let Some(wave) = &mut self.wave {
                     if self.bits == 16 {
                         wave.write_frames(std::slice::from_raw_parts(packed, values * 2))
@@ -569,10 +644,8 @@ impl Audio<'_> {
                     }
                 }
                 if !self.fifo.is_null() {
-                    let mut plane = packed as *mut u8;
-                    if av_audio_fifo_write(self.fifo, (&mut plane as *mut *mut u8).cast(), count)
-                        != count
-                    {
+                    let mut plane = packed.cast_mut();
+                    if av_audio_fifo_write(self.fifo, (&raw mut plane).cast(), count) != count {
                         return Err(ENOMEM);
                     }
                     self.encode_fifo(call, false)?;
@@ -616,14 +689,14 @@ impl Audio<'_> {
                         3,
                         &format!(
                             "out_time_us={}",
-                            av_rescale(self.samples, 1_000_000, self.rate as i64)
+                            av_rescale(self.samples, 1_000_000, i64::from(self.rate))
                         ),
                     );
                 }
                 Ok(())
             })();
             av_freep(data.cast());
-            av_freep((&mut data as *mut *mut *mut u8).cast());
+            av_freep((&raw mut data).cast());
             result
         }
     }
@@ -645,10 +718,13 @@ impl Audio<'_> {
             };
             let channels = (*self.decoder).ch_layout().nb_channels();
             let size = (*self.packet).size();
-            if channels <= 0
-                || size < 0
-                || !(size as usize).is_multiple_of(channels as usize * encoding.bytes())
-            {
+            if channels <= 0 || size < 0 {
+                return Err(INVALID);
+            }
+            let channels = usize::try_from(channels).map_err(|_| EINVAL)?;
+            let size = usize::try_from(size).map_err(|_| EINVAL)?;
+            let frame_bytes = channels.checked_mul(encoding.bytes()).ok_or(ENOMEM)?;
+            if !size.is_multiple_of(frame_bytes) {
                 return Err(INVALID);
             }
             if size == 0 {
@@ -661,7 +737,7 @@ impl Audio<'_> {
                 request,
                 call,
                 encoding,
-                std::slice::from_raw_parts((*self.packet).data(), size as usize),
+                std::slice::from_raw_parts((*self.packet).data(), size),
             )
         }
     }
@@ -674,19 +750,22 @@ impl Audio<'_> {
     ) -> Result<(), i32> {
         unsafe {
             let channels = (*self.decoder).ch_layout().nb_channels();
-            if channels <= 0
-                || !bytes
-                    .len()
-                    .is_multiple_of(channels as usize * encoding.bytes())
-            {
+            if channels <= 0 {
+                return Err(INVALID);
+            }
+            let channels = usize::try_from(channels).map_err(|_| EINVAL)?;
+            let frame_bytes = channels.checked_mul(encoding.bytes()).ok_or(ENOMEM)?;
+            if !bytes.len().is_multiple_of(frame_bytes) {
                 return Err(INVALID);
             }
             let mut samples = Vec::new();
             encoding.decode(bytes, &mut samples).map_err(|_| INVALID)?;
+            let frames = i32::try_from(samples.len() / channels).map_err(|_| EINVAL)?;
+            let sample_bytes = samples.len().checked_mul(size_of::<f64>()).ok_or(ENOMEM)?;
             av_frame_unref(self.frame);
             *(*self.frame).format_ptr() = AV_SAMPLE_FMT_DBL;
             *(*self.frame).sample_rate_ptr() = (*self.decoder).sample_rate();
-            *(*self.frame).nb_samples_ptr() = (samples.len() / channels as usize) as i32;
+            *(*self.frame).nb_samples_ptr() = frames;
             done(av_channel_layout_copy(
                 (*self.frame).ch_layout_ptr(),
                 (*self.decoder).ch_layout_ptr(),
@@ -695,7 +774,7 @@ impl Audio<'_> {
             std::ptr::copy_nonoverlapping(
                 samples.as_ptr().cast::<u8>(),
                 (*self.frame).data()[0],
-                samples.len() * 8,
+                sample_bytes,
             );
             self.convert(request, call, self.frame)?;
             av_frame_unref(self.frame);
@@ -738,7 +817,8 @@ pub(crate) unsafe fn audio_input(
         let stream = streams
             .iter()
             .position(|s| (*(**s).codecpar()).codec_type() == 1)
-            .ok_or(-1381258232)?;
+            .ok_or(-1_381_258_232)?;
+        let stream_index = i32::try_from(stream).map_err(|_| EINVAL)?;
         let parameters = (*streams[stream]).codecpar();
         let pcm = matches!(
             (*parameters).codec_id(),
@@ -752,7 +832,7 @@ pub(crate) unsafe fn audio_input(
         );
         let codec = avcodec_find_decoder((*parameters).codec_id());
         if codec.is_null() && !pcm {
-            return Err(-1128613112);
+            return Err(-1_128_613_112);
         }
         let mut a = Audio {
             decoder: avcodec_alloc_context3(codec),
@@ -772,7 +852,7 @@ pub(crate) unsafe fn audio_input(
             initialized: false,
             source_pcm: pcm,
             source_bits: match (*parameters).bits_per_raw_sample() {
-                bits if bits > 0 => bits as u16,
+                bits if bits > 0 => u16::try_from(bits).map_err(|_| EINVAL)?,
                 _ => match (*parameters).codec_id() {
                     AV_CODEC_ID_PCM_S8 | AV_CODEC_ID_PCM_U8 => 8,
                     AV_CODEC_ID_PCM_S16LE => 16,
@@ -829,7 +909,7 @@ pub(crate) unsafe fn audio_input(
                     break;
                 }
                 done(status)?;
-                if (*a.packet).stream_index() == stream as i32 {
+                if (*a.packet).stream_index() == stream_index {
                     if pcm {
                         a.pcm_packet(request, call, (*parameters).codec_id())?;
                     } else {
@@ -867,7 +947,7 @@ pub(crate) unsafe fn audio_input(
             3,
             &format!(
                 "out_time_us={}",
-                av_rescale(a.samples, 1_000_000, a.rate as i64)
+                av_rescale(a.samples, 1_000_000, i64::from(a.rate))
             ),
         );
         if !a.md5.is_null() {
@@ -904,13 +984,15 @@ fn rgb24_raster(
     let mut image = dvda_image::raster::Raster::solid(size, [0, 0, 0, 255]).map_err(|_| ENOMEM)?;
     for y in 0..size.height() {
         let start = y as usize * stride;
+        let y = i32::try_from(y).map_err(|_| INVALID)?;
         for (x, pixel) in data[start..start + row_bytes]
             .as_chunks::<3>()
             .0
             .iter()
             .enumerate()
         {
-            image.blend_pixel(x as i32, y as i32, [pixel[0], pixel[1], pixel[2], 255]);
+            let x = i32::try_from(x).map_err(|_| INVALID)?;
+            image.blend_pixel(x, y, [pixel[0], pixel[1], pixel[2], 255]);
         }
     }
     Ok(image)
@@ -925,7 +1007,7 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
             return Err(EINVAL);
         }
         let mut codec = ptr::null();
-        let stream = av_find_best_stream(input, 0, -1, -1, &mut codec, 0);
+        let stream = av_find_best_stream(input, 0, -1, -1, &raw mut codec, 0);
         done(stream)?;
         let mut decoder = avcodec_alloc_context3(codec);
         let mut frame = av_frame_alloc();
@@ -936,9 +1018,10 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
             if decoder.is_null() || frame.is_null() || rgb.is_null() || packet.is_null() {
                 return Err(ENOMEM);
             }
+            let stream_offset = usize::try_from(stream).map_err(|_| EINVAL)?;
             done(avcodec_parameters_to_context(
                 decoder,
-                (*streams(input)[stream as usize]).codecpar(),
+                (*streams(input)[stream_offset]).codecpar(),
             ))?;
             *(*decoder).thread_count_ptr() = win::workers();
             done(avcodec_open2(decoder, codec, ptr::null_mut()))?;
@@ -1000,22 +1083,26 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
                 return Err(EIO);
             }
             let size = dvda_image::geometry::Dimensions::new(
-                (*rgb).width() as u32,
-                (*rgb).height() as u32,
+                u32::try_from((*rgb).width()).map_err(|_| INVALID)?,
+                u32::try_from((*rgb).height()).map_err(|_| INVALID)?,
             )
             .map_err(|_| INVALID)?;
             let row_bytes = (size.width() as usize).checked_mul(3).ok_or(ENOMEM)?;
             let stride = (*rgb).linesize()[0];
-            if stride < 0 || (stride as usize) < row_bytes || (*rgb).data()[0].is_null() {
+            if stride < 0 || (*rgb).data()[0].is_null() {
+                return Err(INVALID);
+            }
+            let stride = usize::try_from(stride).map_err(|_| INVALID)?;
+            if stride < row_bytes {
                 return Err(INVALID);
             }
             let image = rgb24_raster(
                 size,
-                stride as usize,
+                stride,
                 std::slice::from_raw_parts(
                     (*rgb).data()[0],
                     (size.height() as usize - 1)
-                        .checked_mul(stride as usize)
+                        .checked_mul(stride)
                         .and_then(|offset| offset.checked_add(row_bytes))
                         .ok_or(INVALID)?,
                 ),
@@ -1023,10 +1110,10 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
             Ok((image, text(request.output)))
         })();
         sws_freeContext(scale);
-        avcodec_free_context(&mut decoder);
-        av_frame_free(&mut frame);
-        av_frame_free(&mut rgb);
-        av_packet_free(&mut packet);
+        avcodec_free_context(&raw mut decoder);
+        av_frame_free(&raw mut frame);
+        av_frame_free(&raw mut rgb);
+        av_packet_free(&raw mut packet);
         result
     }?;
     let mut file = File::create(output).map_err(open_error)?;

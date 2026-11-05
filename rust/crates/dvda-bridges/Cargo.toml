@@ -44,3 +44,6 @@ required-features = ["media"]
 [[example]]
 name = "menu-media-differential"
 required-features = ["media"]
+
+[lints]
+workspace = true

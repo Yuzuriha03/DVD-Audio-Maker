@@ -199,7 +199,7 @@ mod tests {
             &mut events,
             "cancelled fixture",
             |_, _, _| (),
-            |_, _, _| {},
+            |_, (), _| {},
         )
         .unwrap_err();
         assert_eq!(error, "cancelled fixture");

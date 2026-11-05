@@ -1,4 +1,4 @@
-//! Regression cases from the former DiscPublisher contract, using real files.
+//! Regression cases from the former `DiscPublisher` contract, using real files.
 use dvda_core::dispatch;
 use serde_json::{Value, json};
 use std::{

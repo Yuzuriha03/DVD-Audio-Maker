@@ -15,6 +15,7 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    #[must_use]
     pub fn unfinished(build: &Path) -> bool {
         let path = build.join("unfinished-task");
         path.join(".owner").is_file() && !path.join(".finished").exists()
@@ -70,7 +71,7 @@ impl Workspace {
                 .create(true)
                 .truncate(false)
                 .share_mode(0)
-                .custom_flags(0x04000000)
+                .custom_flags(0x0400_0000)
                 .open(path.with_extension("lease"))
             {
                 let _ = fs::remove_dir_all(path);
@@ -114,7 +115,7 @@ impl Workspace {
             .create(true)
             .truncate(false)
             .share_mode(0)
-            .custom_flags(0x04000000)
+            .custom_flags(0x0400_0000)
             .open(lease_path)
             .map_err(|e| format!("Cannot lock task workspace {}: {e}", path.display()))?;
         if retain_unfinished && path.exists() {

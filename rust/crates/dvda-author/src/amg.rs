@@ -36,7 +36,7 @@ impl Default for Menu {
             video_attribute: 0x53,
             duration: [0; 3],
             looped: false,
-            palette: [0x00eb8080, 0x0051f05a, 0x00808080, 0x00108080],
+            palette: [0x00eb_8080, 0x0051_f05a, 0x0080_8080, 0x0010_8080],
         }
     }
 }
@@ -205,7 +205,7 @@ fn record(
     put32(bytes, offset + 10, sector);
 }
 
-/// Encode AUDIO_TS.IFO; write the exact same bytes to AUDIO_TS.BUP.
+/// Encode `AUDIO_TS.IFO`; write the exact same bytes to `AUDIO_TS.BUP`.
 pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<Encoded, String> {
     let count = total_titles(groups, options)?;
     let sectors = sector_count(groups, options)?;
@@ -225,7 +225,9 @@ pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<En
     if layout.still_vob_sectors > 0 {
         put32(&mut bytes, 0x30, span);
     }
-    bytes[0x3f] = (groups.len() + options.playlist_groups.len() + options.video_links.len()) as u8;
+    bytes[0x3f] =
+        u8::try_from(groups.len() + options.playlist_groups.len() + options.video_links.len())
+            .map_err(|_| "AMG group count exceeds 255")?;
     let provider = options.provider.as_bytes();
     let length = provider.len().min(30);
     bytes[0x40..0x40 + length].copy_from_slice(&provider[..length]);
@@ -310,10 +312,14 @@ pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<En
                 record(
                     &mut bytes,
                     table + 4 + 14 * index,
-                    tag | (g as u8 + 1),
-                    title.tracks.len() as u8,
+                    tag | (u8::try_from(g).map_err(|_| "AMG group index exceeds 255")? + 1),
+                    u8::try_from(title.tracks.len())
+                        .map_err(|_| "AMG title track count exceeds 255")?,
                     title_length(title)?,
-                    (g as u8 + 1, t as u8 + 1),
+                    (
+                        u8::try_from(g).map_err(|_| "AMG group index exceeds 255")? + 1,
+                        u8::try_from(t).map_err(|_| "AMG title index exceeds 255")? + 1,
+                    ),
                     offsets[g],
                 );
                 index += 1;
@@ -326,7 +332,8 @@ pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<En
             record(
                 &mut bytes,
                 table + 4 + 14 * index,
-                0x40 | (groups.len() + rank + 1) as u8,
+                0x40 | u8::try_from(groups.len() + rank + 1)
+                    .map_err(|_| "AMG video group index exceeds 255")?,
                 1,
                 link.pts_length,
                 (link.titleset, 1),
@@ -341,10 +348,14 @@ pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<En
                 record(
                     &mut bytes,
                     table + 4 + 14 * index,
-                    0x80 | (g as u8 + 1),
-                    title.tracks.len() as u8,
+                    0x80 | (u8::try_from(g).map_err(|_| "AMG group index exceeds 255")? + 1),
+                    u8::try_from(title.tracks.len())
+                        .map_err(|_| "AMG title track count exceeds 255")?,
                     title_length(title)?,
-                    (g as u8 + 1, t as u8 + 1),
+                    (
+                        u8::try_from(g).map_err(|_| "AMG group index exceeds 255")? + 1,
+                        u8::try_from(t).map_err(|_| "AMG title index exceeds 255")? + 1,
+                    ),
                     offsets[g],
                 );
                 index += 1;
@@ -369,7 +380,7 @@ fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> 
     let count = menu.page_sectors.len();
     put32(bytes, base, 0x10000);
     put32(bytes, base + 4, (23 + 314 * count) as u32);
-    put32(bytes, base + 8, 0x656e0080);
+    put32(bytes, base + 8, 0x656e_0080);
     put32(bytes, base + 12, 16);
     put16(bytes, base + 16, count as u16);
     put32(bytes, base + 20, (7 + 314 * count) as u32);
@@ -377,7 +388,7 @@ fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> 
     for (page, &size) in menu.page_sectors.iter().enumerate() {
         let directory = base + 24 + 8 * page;
         if page == 0 {
-            put32(bytes, directory, 0x82000000);
+            put32(bytes, directory, 0x8200_0000);
         }
         put32(bytes, directory + 4, (8 * (count + 1) + 306 * page) as u32);
         let pgc = base + 24 + 8 * count + 306 * page;
@@ -391,7 +402,7 @@ fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> 
         } else {
             0
         };
-        put32(bytes, pgc + 28, 0x80000000);
+        put32(bytes, pgc + 28, 0x8000_0000);
         if page + 1 < count {
             put16(bytes, pgc + 156, page as u16 + 2);
         }
@@ -406,19 +417,19 @@ fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> 
                 if index < 4 {
                     menu.palette[index]
                 } else {
-                    0x108080
+                    0x0010_8080
                 },
             );
         }
-        put32(bytes, pgc + 228, 0xec0114);
-        put32(bytes, pgc + 232, 0x116012e);
+        put32(bytes, pgc + 228, 0x00ec_0114);
+        put32(bytes, pgc + 232, 0x0116_012e);
         put32(bytes, pgc + 236, 0x10003);
         put32(bytes, pgc + 240, 0x27);
         if menu.looped {
             put16(bytes, pgc + 252, 0x2004);
             bytes[pgc + 247] = 1;
         }
-        put32(bytes, pgc + 276, 0x1000200);
+        put32(bytes, pgc + 276, 0x0100_0200);
         put16(bytes, pgc + 280, if menu.looped { 1 } else { 0xff00 });
         for index in 0..3 {
             bytes[pgc + 282 + index] = bcd(menu.duration[index]);

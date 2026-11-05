@@ -238,10 +238,12 @@ pub struct PtsStatistics {
     pub issue_codes: Vec<String>,
 }
 
+#[must_use]
 pub fn pts_statistics(values: &[i64]) -> PtsStatistics {
     pts_statistics_with_resets(values, &[])
 }
 
+#[must_use]
 pub fn pts_statistics_with_resets(values: &[i64], resets: &[usize]) -> PtsStatistics {
     let first_pts = values.first().copied();
     let last_pts = values.last().copied();
@@ -276,13 +278,13 @@ pub fn pts_statistics_with_resets(values: &[i64], resets: &[usize]) -> PtsStatis
     let median_step = if ordered.len() % 2 == 1 {
         ordered[middle] as f64
     } else {
-        (ordered[middle - 1] as f64 + ordered[middle] as f64) / 2.0
+        f64::midpoint(ordered[middle - 1] as f64, ordered[middle] as f64)
     };
     let abnormal_steps = steps
         .iter()
         .filter(|&&step| step <= 0 || (step as f64) > median_step * 20.0)
         .count() as i32;
-    let abnormal_ratio = abnormal_steps as f64 * 100.0 / steps.len() as f64;
+    let abnormal_ratio = f64::from(abnormal_steps) * 100.0 / steps.len() as f64;
     let mut issue_codes = Vec::new();
     if first_pts == last_pts {
         issue_codes.push("PTS_NOT_ADVANCING".to_string());
@@ -352,7 +354,7 @@ mod tests {
         let stats = pts_statistics_with_resets(&values, &[3]);
         assert_eq!(stats.abnormal_steps, 0);
         assert_eq!(stats.steps.len(), 4);
-        assert!(stats.issue_codes.is_empty());
+        assert_eq!(stats.issue_codes, [] as [std::string::String; 0]);
         assert_eq!(pts_statistics_with_resets(&values, &[2]).abnormal_steps, 1);
     }
     use serde_json::json;
@@ -424,7 +426,7 @@ mod tests {
     fn reports_too_few_pts() {
         let result = pts_statistics(&[100, 200]);
         assert_eq!(result.issue_codes, vec!["PTS_TOO_FEW"]);
-        assert!(result.steps.is_empty());
+        assert_eq!(result.steps, [] as [i64; 0]);
     }
 
     #[test]

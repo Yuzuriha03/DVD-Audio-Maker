@@ -14,9 +14,9 @@ pub struct Interrupt {
 }
 include!(concat!(env!("OUT_DIR"), "/ffmpeg-layout.rs"));
 include!(concat!(env!("OUT_DIR"), "/ffmpeg-linkage.rs"));
-pub const EOF: i32 = -541478725;
-pub const EXIT: i32 = -1414092869;
-pub const INVALID: i32 = -1094995529;
+pub const EOF: i32 = -541_478_725;
+pub const EXIT: i32 = -1_414_092_869;
+pub const INVALID: i32 = -1_094_995_529;
 pub const EAGAIN: i32 = -11;
 pub const ENOMEM: i32 = -12;
 pub const EIO: i32 = -5;
@@ -210,6 +210,7 @@ pub unsafe fn streams(f: *mut Format) -> Vec<*mut Stream> {
 }
 /// # Safety
 /// Pointer arguments must be valid for their documented ABI and remain live throughout the call.
+#[must_use]
 pub unsafe fn text(p: *const c_char) -> String {
     if p.is_null() {
         String::new()

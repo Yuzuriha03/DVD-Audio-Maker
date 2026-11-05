@@ -48,7 +48,7 @@ pub(crate) fn encode_stream(
     if !unknown && frames / samples > u32::MAX as usize {
         return -1;
     }
-    let rate_code = (u32::from([44100, 88200, 176400].contains(&c.sample_rate)) * 8) | shift;
+    let rate_code = (u32::from([44100, 88200, 176_400].contains(&c.sample_rate)) * 8) | shift;
     let rate_field = 0x8000 | ((if rate_code & 8 != 0 { 3482 } else { 3200 }) >> shift);
     let format = OutputFormat {
         channels,

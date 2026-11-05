@@ -124,13 +124,13 @@ fn frozen_groups(signal_boundaries: bool) {
                                             channels: channels as u32,
                                             restart_interval: 8,
                                             frames: frames as u64,
-                                            metadata: &record,
+                                            metadata: &raw const record,
                                             metadata_count: 1,
                                         },
                                         assignment: assignment as u32,
                                         group2_sample_rate: rate / ratio,
                                         group2_bits: bits,
-                                        group2_frames: frames as u64 / ratio as u64,
+                                        group2_frames: frames as u64 / u64::from(ratio),
                                     };
                                     let make = |channels, frames: usize, depth: u32| Input {
                                         pcm: (0..frames * channels)
@@ -167,12 +167,12 @@ fn frozen_groups(signal_boundaries: bool) {
                                                                 }
                                                         }
                                                         _ => {
-                                                            let mut x =
-                                                                (n as u32).wrapping_add(0x9e3779b9);
+                                                            let mut x = (n as u32)
+                                                                .wrapping_add(0x9e37_79b9);
                                                             x ^= x >> 16;
-                                                            x = x.wrapping_mul(0x85ebca6b);
+                                                            x = x.wrapping_mul(0x85eb_ca6b);
                                                             x ^= x >> 13;
-                                                            x = x.wrapping_mul(0xc2b2ae35);
+                                                            x = x.wrapping_mul(0xc2b2_ae35);
                                                             x ^= x >> 16;
                                                             (x & ((1u32 << depth) - 1)) as i32 + min
                                                         }
@@ -202,14 +202,14 @@ fn frozen_groups(signal_boundaries: bool) {
                                         };
                                         assert_eq!(
                                             encode(
-                                                &config,
+                                                &raw const config,
                                                 Some(read),
-                                                (&mut primary as *mut Input).cast(),
+                                                (&raw mut primary).cast(),
                                                 Some(read),
-                                                (&mut secondary as *mut Input).cast(),
+                                                (&raw mut secondary).cast(),
                                                 Some(write),
-                                                (&mut outputs[backend] as *mut Vec<u8>).cast(),
-                                                &mut results[backend]
+                                                (&raw mut outputs[backend]).cast(),
+                                                &raw mut results[backend]
                                             ),
                                             0,
                                             "group status assignment {assignment} rate {rate} ratio {ratio} depths {primary_bits}/{bits} frames {frames}"
@@ -301,7 +301,7 @@ fn frozen_bytes(layouts: bool) {
             } else {
                 [16, 20, 24][case / 6 % 3]
             };
-            let rate = [44100, 48000, 88200, 96000, 176400, 192000][if layouts {
+            let rate = [44100, 48000, 88200, 96000, 176_400, 192_000][if layouts {
                 case / 21 % 6
             } else {
                 case / 18 % 6
@@ -348,11 +348,11 @@ fn frozen_bytes(layouts: bool) {
                 struct_size: std::mem::size_of::<EncoderConfig>() as u32,
                 abi_version: 1,
                 sample_rate: rate,
-                bits: bits as u32,
+                bits: u32::from(bits),
                 channels: channels as u32,
                 restart_interval: 8,
                 frames: frames as u64,
-                metadata: &record,
+                metadata: &raw const record,
                 metadata_count: 1,
             };
             let mut expected = Vec::new();
@@ -362,34 +362,34 @@ fn frozen_bytes(layouts: bool) {
                 if layouts {
                     if crate::format::FIRST[profile.assignment] < channels {
                         depths(
-                            &c,
+                            &raw const c,
                             profile.assignment as u32,
-                            profile.group2_bits as u32,
+                            u32::from(profile.group2_bits),
                             Some(read),
-                            (&mut input as *mut Input).cast(),
+                            (&raw mut input).cast(),
                             Some(write),
-                            (&mut expected as *mut Vec<u8>).cast(),
-                            &mut result,
+                            (&raw mut expected).cast(),
+                            &raw mut result,
                         )
                     } else {
                         layout(
-                            &c,
+                            &raw const c,
                             profile.assignment as u32,
                             Some(read),
-                            (&mut input as *mut Input).cast(),
+                            (&raw mut input).cast(),
                             Some(write),
-                            (&mut expected as *mut Vec<u8>).cast(),
-                            &mut result,
+                            (&raw mut expected).cast(),
+                            &raw mut result,
                         )
                     }
                 } else {
                     reference(
-                        &c,
+                        &raw const c,
                         Some(read),
-                        (&mut input as *mut Input).cast(),
+                        (&raw mut input).cast(),
                         Some(write),
-                        (&mut expected as *mut Vec<u8>).cast(),
-                        &mut result,
+                        (&raw mut expected).cast(),
+                        &raw mut result,
                     )
                 },
                 0,
@@ -410,34 +410,34 @@ fn frozen_bytes(layouts: bool) {
                 if layouts {
                     if crate::format::FIRST[profile.assignment] < channels {
                         crate::ffi::mlp_encode_stream_depths(
-                            &c,
+                            &raw const c,
                             profile.assignment as u32,
-                            profile.group2_bits as u32,
+                            u32::from(profile.group2_bits),
                             Some(read),
-                            (&mut rust_input as *mut Input).cast(),
+                            (&raw mut rust_input).cast(),
                             Some(write),
-                            (&mut actual as *mut Vec<u8>).cast(),
-                            &mut rust_result,
+                            (&raw mut actual).cast(),
+                            &raw mut rust_result,
                         )
                     } else {
                         crate::ffi::mlp_encode_stream_layout(
-                            &c,
+                            &raw const c,
                             profile.assignment as u32,
                             Some(read),
-                            (&mut rust_input as *mut Input).cast(),
+                            (&raw mut rust_input).cast(),
                             Some(write),
-                            (&mut actual as *mut Vec<u8>).cast(),
-                            &mut rust_result,
+                            (&raw mut actual).cast(),
+                            &raw mut rust_result,
                         )
                     }
                 } else {
                     crate::ffi::mlp_encode_stream(
-                        &c,
+                        &raw const c,
                         Some(read),
-                        (&mut rust_input as *mut Input).cast(),
+                        (&raw mut rust_input).cast(),
                         Some(write),
-                        (&mut actual as *mut Vec<u8>).cast(),
-                        &mut rust_result,
+                        (&raw mut actual).cast(),
+                        &raw mut rust_result,
                     )
                 },
                 0,

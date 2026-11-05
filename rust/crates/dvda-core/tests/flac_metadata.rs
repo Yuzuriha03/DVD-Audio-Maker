@@ -1,4 +1,4 @@
-//! Former FlacMetadataEditor SpanReader failure semantics at the public boundary.
+//! Former `FlacMetadataEditor` `SpanReader` failure semantics at the public boundary.
 use dvda_core::formats;
 use serde_json::{Value, json};
 use std::{

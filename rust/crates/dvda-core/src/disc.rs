@@ -117,7 +117,7 @@ struct Request {
 }
 fn estimate(bytes: i64) -> Result<i64, String> {
     let value = (bytes as f64 * 1.025).ceil();
-    if !value.is_finite() || value >= 9223372036854775808.0 {
+    if !value.is_finite() || value >= 9_223_372_036_854_775_808.0 {
         return Err("AOB size overflow".into());
     }
     Ok(value as i64)

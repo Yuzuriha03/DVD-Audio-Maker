@@ -1,6 +1,19 @@
 //! Borderless-frame sizing: window-size clamps, the outline resize and the splitter preview.
 
-use super::*;
+use super::{
+    BeginPaint, ClientToScreen, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+    EndPaint, FillRect, GetCapture, GetClientRect, GetCursorPos, GetDpiForWindow, GetMessageW,
+    GetModuleHandleW, GetMonitorInfoW, GetProcAddress, GetSystemMetrics, GetWindowLongPtrW,
+    GetWindowPlacement, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTLEFT, HTRIGHT,
+    HTTOP, HTTOPLEFT, HTTOPRIGHT, Hwnd, LoadCursorW, Lparam, Lresult, Message, MonitorFromPoint,
+    MonitorInfo, OnceLock, PaintStruct, Point, PostQuitMessage, Rect, RegisterClassW,
+    ReleaseCapture, SW_HIDE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SendMessageW, SetCapture,
+    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos, ShowWindow,
+    SystemParametersInfoW, TranslateMessage, UiState, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_PAINT,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    WindowPlacement, WndClass, Wparam, brush, c_accent, c_void, ptr, scale, unscale, wide,
+    window_rect,
+};
 
 pub(crate) fn clamp_window_size(width: i32, height: i32) -> (i32, i32) {
     let mut work = Rect {
@@ -9,7 +22,7 @@ pub(crate) fn clamp_window_size(width: i32, height: i32) -> (i32, i32) {
         right: 0,
         bottom: 0,
     };
-    if unsafe { SystemParametersInfoW(0x0030, 0, &mut work as *mut Rect as *mut c_void, 0) } != 0 {
+    if unsafe { SystemParametersInfoW(0x0030, 0, (&raw mut work).cast::<c_void>(), 0) } != 0 {
         let available_w = unscale(work.right - work.left) - 24;
         let available_h = unscale(work.bottom - work.top) - 24;
         (
@@ -25,7 +38,7 @@ pub(crate) static SPLITTER_PREVIEW_CLASS_READY: OnceLock<()> = OnceLock::new();
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn splitter_preview_proc(
     hwnd: Hwnd,
@@ -36,7 +49,7 @@ pub(crate) unsafe extern "system" fn splitter_preview_proc(
     match message {
         WM_PAINT => {
             let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
-            let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+            let dc = unsafe { BeginPaint(hwnd, &raw mut paint) };
             let mut rect = Rect {
                 left: 0,
                 top: 0,
@@ -46,7 +59,7 @@ pub(crate) unsafe extern "system" fn splitter_preview_proc(
             unsafe {
                 GetClientRect(hwnd, &mut rect);
                 FillRect(dc, &rect, brush(c_accent()));
-                EndPaint(hwnd, &paint);
+                EndPaint(hwnd, &raw const paint);
             }
             0
         }
@@ -72,7 +85,7 @@ pub(crate) unsafe fn ensure_splitter_preview(owner: Hwnd) -> Hwnd {
             menu: ptr::null(),
             class_name: class_name.as_ptr(),
         };
-        let _ = RegisterClassW(&registration);
+        let _ = RegisterClassW(&raw const registration);
     });
     let class_name = wide("DVD_AUDIO_SPLITTER_PREVIEW_RUST");
     unsafe {
@@ -98,7 +111,7 @@ pub(crate) unsafe fn ensure_splitter_preview(owner: Hwnd) -> Hwnd {
 /// right/bottom-anchored controls jumped back and forth. Such drags show a
 /// translucent outline of the new bounds instead and resize once on release
 /// (Esc or a lost capture cancels). Right/bottom drags stay live.
-/// Whether Windows Snap arranged the window (IsWindowArranged, Windows 10+).
+/// Whether Windows Snap arranged the window (`IsWindowArranged`, Windows 10+).
 pub(crate) fn window_arranged(hwnd: Hwnd) -> bool {
     type IsWindowArranged = unsafe extern "system" fn(Hwnd) -> i32;
     static FUNCTION: OnceLock<usize> = OnceLock::new();
@@ -115,7 +128,7 @@ pub(crate) fn window_arranged(hwnd: Hwnd) -> bool {
 
 /// # Safety
 /// `hwnd` must be the main window and this must run on its UI thread, from its
-/// WM_NCLBUTTONDOWN handler. It runs a nested message loop that dispatches messages
+/// `WM_NCLBUTTONDOWN` handler. It runs a nested message loop that dispatches messages
 /// to windows of this process.
 pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
     unsafe {
@@ -240,7 +253,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 0x0100..=0x0109 => {}
                 _ => {
                     TranslateMessage(&message);
-                    DispatchMessageW(&message);
+                    DispatchMessageW(&raw const message);
                 }
             }
         }
@@ -273,8 +286,8 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                     ..std::mem::zeroed()
                 };
                 let center = Point {
-                    x: (current.left + current.right) / 2,
-                    y: (current.top + current.bottom) / 2,
+                    x: i32::midpoint(current.left, current.right),
+                    y: i32::midpoint(current.top, current.bottom),
                 };
                 let (dx, dy) = if GetMonitorInfoW(MonitorFromPoint(center, 2), &mut info) != 0 {
                     (

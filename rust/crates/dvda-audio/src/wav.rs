@@ -26,6 +26,7 @@ pub struct Format {
 }
 
 impl Format {
+    #[must_use]
     pub fn block_align(self) -> usize {
         usize::from(self.channels) * self.encoding.bytes()
     }
@@ -95,11 +96,18 @@ pub struct Reader<R> {
 }
 
 impl<R: Read + Seek> Reader<R> {
+    /// Open RIFF or RF64 PCM and read its format and metadata.
+    ///
+    /// # Errors
+    /// Returns an error for malformed or unsupported WAVE data and for underlying I/O failures.
     pub fn new(source: R) -> Result<Self> {
         Self::open(source, false)
     }
 
     /// Read integer RIFF PCM for authoring, without interpreting ancillary metadata.
+    ///
+    /// # Errors
+    /// Returns an error for non-integer, malformed or unsupported RIFF data and for I/O failures.
     pub fn new_integer_riff(source: R) -> Result<Self> {
         Self::open(source, true)
     }
@@ -287,6 +295,9 @@ impl<R: Read + Seek> Reader<R> {
     }
 
     /// Read whole frames into a reusable buffer. A zero result denotes end of data.
+    ///
+    /// # Errors
+    /// Returns `InvalidInput` if the buffer cannot hold one frame, or an I/O error for truncated input.
     pub fn read_frames(&mut self, buffer: &mut [u8]) -> Result<usize> {
         let align = self.format.block_align();
         let capacity = buffer.len() / align * align;
@@ -360,11 +371,9 @@ mod tests {
         let size = bytes.len() as u32 - 8;
         bytes[4..8].copy_from_slice(&size.to_le_bytes());
         assert!(Reader::new(Cursor::new(&bytes)).is_err());
-        assert!(
-            Reader::new_integer_riff(Cursor::new(bytes))
-                .unwrap()
-                .tags
-                .is_empty()
+        assert_eq!(
+            Reader::new_integer_riff(Cursor::new(bytes)).unwrap().tags,
+            [] as [(std::string::String, std::string::String); 0]
         );
     }
 

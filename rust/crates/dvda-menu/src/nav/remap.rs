@@ -16,7 +16,7 @@ impl ColorRemap {
     pub(crate) fn new(data: &DvdData, palette: [u32; 16]) -> Self {
         let mut colors = std::array::from_fn(|i| i as u32);
         for (index, color) in data.palette.iter().enumerate().take(16) {
-            colors[index] = 0x1000000
+            colors[index] = 0x0100_0000
                 | (u32::from(color.y) << 16)
                 | (u32::from(color.cr) << 8)
                 | u32::from(color.cb);
@@ -37,12 +37,12 @@ impl ColorRemap {
         if self.colors[index] < 16 {
             return Ok(self.colors[index] as u8);
         }
-        let color = self.colors[index] & 0xffffff;
+        let color = self.colors[index] & 0x00ff_ffff;
         let index_out = self
             .palette
             .iter()
             .position(|&v| v == color)
-            .or_else(|| self.palette.iter().position(|&v| v == 0x1000000))
+            .or_else(|| self.palette.iter().position(|&v| v == 0x0100_0000))
             .ok_or("color map full, unable to allocate new colors")?;
         self.palette[index_out] = color;
         self.colors[index] = index_out as u32;
@@ -165,7 +165,7 @@ impl ColorRemap {
                 }
                 17 => {
                     self.line |= u32::from(*byte);
-                    if self.line == 0x0fffffff {
+                    if self.line == 0x0fff_ffff {
                         self.state = 10;
                     } else {
                         self.line = (self.line >> 12) & 15;

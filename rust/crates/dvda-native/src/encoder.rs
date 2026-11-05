@@ -174,6 +174,10 @@ impl Drop for Encoder {
     }
 }
 impl Encoder {
+    /// Load and cache the native MLP encoder for an absolute library path.
+    ///
+    /// # Errors
+    /// Returns an error for invalid paths, library or symbol loading failures, unsupported architectures, or cache-lock failures.
     pub fn load(path: &Path) -> io::Result<Arc<Self>> {
         static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Encoder>>>> = OnceLock::new();
         let path = std::path::absolute(path)?;
@@ -260,17 +264,17 @@ impl Encoder {
             channels: request.channels as usize,
             failure: None,
         };
-        let pointer = (&mut state as *mut State<'_>).cast();
+        let pointer = (&raw mut state).cast();
         // SAFETY: config, metadata, packet storage, state and result live for the synchronous invocation.
         let status = unsafe {
             (self.encode)(
-                &config,
+                &raw const config,
                 request.assignment,
                 read,
                 pointer,
                 write,
                 pointer,
-                &mut result,
+                &raw mut result,
             )
         };
         if let Some(error) = state.failure {

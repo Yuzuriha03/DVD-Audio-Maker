@@ -1,6 +1,15 @@
 //! The custom 10-DIP scrollbars of the settings page and the log.
 
-use super::*;
+use super::{
+    CB_GETCURSEL, COMBO_OVERLAYS, ComboArrowVisual, DefWindowProcW, EM_GETFIRSTVISIBLELINE,
+    EM_GETLINECOUNT, EM_LINESCROLL, FillRect, GWLP_USERDATA, GetClientRect, GetParent,
+    GetWindowLongPtrW, Hwnd, InvalidateRect, IsWindow, IsWindowEnabled, Lparam, Lresult,
+    PaintFields, PaintStruct, Rect, ReleaseCapture, ScrollbarVisual, SetCapture, SetWindowLongPtrW,
+    TME_LEAVE, TrackMouseEvent, TrackMouseEventData, UiState, WM_ERASEBKGND, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, Wparam,
+    begin_buffered_paint, brush, c_body, c_border, c_muted, finish_buffered_paint,
+    page_content_height, paint_fields, ptr, scale, scroll_page_with_bar, win,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) struct BarMetrics {
@@ -27,14 +36,14 @@ pub(crate) fn bar_geometry(client_height: i32, metrics: &BarMetrics) -> BarGeome
             thumb_height: track_height,
         };
     }
-    let total = (metrics.page + metrics.max) as f64;
-    let mut thumb_height = (track_height as f64 * metrics.page as f64 / total) as i32;
+    let total = f64::from(metrics.page + metrics.max);
+    let mut thumb_height = (f64::from(track_height) * f64::from(metrics.page) / total) as i32;
     thumb_height = thumb_height.clamp(scale(18).max(8).min(track_height), track_height);
     let travel = (track_height - thumb_height).max(0);
-    let ratio = (metrics.value as f64 / metrics.max as f64).clamp(0.0, 1.0);
+    let ratio = (f64::from(metrics.value) / f64::from(metrics.max)).clamp(0.0, 1.0);
     BarGeometry {
         track_height,
-        thumb_top: track_top + (travel as f64 * ratio) as i32,
+        thumb_top: track_top + (f64::from(travel) * ratio) as i32,
         thumb_height,
     }
 }
@@ -168,7 +177,7 @@ pub(crate) unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
 
 /// # Safety
 /// `hwnd` must be a scrollbar installed by `install_scrollbar`, and this must run inside
-/// its WM_PAINT.
+/// its `WM_PAINT`.
 pub(crate) unsafe fn draw_scrollbar(hwnd: Hwnd) {
     // Composed off-screen: the track and the thumb reach the screen together.
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
@@ -204,7 +213,7 @@ pub(crate) unsafe fn draw_scrollbar(hwnd: Hwnd) {
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn scrollbar_proc(
     hwnd: Hwnd,
@@ -232,7 +241,7 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
             {
                 GetClientRect(hwnd, &mut rect);
             }
-            let y = (lparam >> 16) as i16 as i32;
+            let y = i32::from((lparam >> 16) as i16);
             let main = unsafe { (*pointer).main };
             let mut geometry = None;
             if let Some(state) = paint_fields(main) {
@@ -246,7 +255,8 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
                         if travel > 0 && metrics.max > 0 {
                             let delta = y - (*pointer).drag_start_cursor;
                             let value = (*pointer).drag_start_value
-                                + (delta as f64 * metrics.max as f64 / travel as f64) as i32;
+                                + (f64::from(delta) * f64::from(metrics.max) / f64::from(travel))
+                                    as i32;
                             apply_scrollbar_value(main, hwnd, value);
                         }
                     }
@@ -260,7 +270,7 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
                         track: hwnd,
                         hover_time: 0,
                     };
-                    TrackMouseEvent(&mut track);
+                    TrackMouseEvent(&raw mut track);
                     InvalidateRect(hwnd, ptr::null(), 0);
                 }
             }
@@ -285,7 +295,7 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
             {
                 GetClientRect(hwnd, &mut rect);
             }
-            let y = (lparam >> 16) as i16 as i32;
+            let y = i32::from((lparam >> 16) as i16);
             let main = unsafe { (*pointer).main };
             if let Some(state) = paint_fields(main) {
                 let metrics = scrollbar_metrics(hwnd, &state);

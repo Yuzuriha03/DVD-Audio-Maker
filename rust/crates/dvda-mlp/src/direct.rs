@@ -468,7 +468,7 @@ mod tests {
         let result =
             encode_stream_with_stamp_refresh_unknown(&config, &profile, &metadata, &mut empty);
         assert_eq!(result.status, -3);
-        assert!(empty.output.is_empty());
+        assert_eq!(empty.output, [] as [u8; 0]);
     }
 
     struct Io {
@@ -477,9 +477,7 @@ mod tests {
     }
     impl StreamIo for Io {
         fn read(&mut self, _: usize, pcm: &mut [i32]) -> Result<usize, i32> {
-            if self.mode == 1 {
-                panic!("input panic");
-            }
+            assert!(self.mode != 1, "input panic");
             pcm.fill(0);
             Ok(if self.mode == 2 {
                 usize::MAX
@@ -488,9 +486,7 @@ mod tests {
             })
         }
         fn write(&mut self, bytes: &[u8]) -> Result<(), i32> {
-            if self.mode == 3 {
-                panic!("output panic");
-            }
+            assert!(self.mode != 3, "output panic");
             if self.mode == 4 {
                 return Err(1);
             }

@@ -21,7 +21,7 @@ fn trailing(mut value: u32) -> u32 {
 
 fn headroom(mut value: u32) -> u32 {
     let mut n = 0;
-    while value & 0xc00000 == 0 {
+    while value & 0x00c0_0000 == 0 {
         value <<= 1;
         n += 1;
     }
@@ -61,7 +61,7 @@ pub(crate) fn mlp_scale_analyze(
     let (summary, _) = summary.as_chunks::<6>();
     for block in summary.iter().take(blocks) {
         for (combined, &value) in combined[..channels].iter_mut().zip(block) {
-            if value > 0xffffff {
+            if value > 0x00ff_ffff {
                 return -1;
             }
             *combined |= value;
@@ -84,7 +84,7 @@ pub(crate) fn mlp_scale_analyze(
     }
     work.maximum_bits = 25;
     let mut v = all;
-    while v & 0x800000 == 0 && work.maximum_bits != 0 {
+    while v & 0x0080_0000 == 0 && work.maximum_bits != 0 {
         v <<= 1;
         work.maximum_bits -= 1;
     }
@@ -95,7 +95,7 @@ pub(crate) fn mlp_scale_analyze(
     }
     if all & 1 == 0 {
         common = 0;
-        while all & 0xf00000 != 0 && all & 1 == 0 {
+        while all & 0x00f0_0000 != 0 && all & 1 == 0 {
             common += 1;
             all >>= 1;
         }

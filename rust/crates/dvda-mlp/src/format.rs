@@ -34,6 +34,7 @@ pub struct Profile {
     pub group2_rate: u32,
 }
 impl Profile {
+    #[must_use]
     pub fn standard(c: &crate::Config) -> Self {
         Self {
             assignment: [0, 1, 7, 3, 9, 12]
@@ -44,6 +45,7 @@ impl Profile {
             group2_rate: c.sample_rate,
         }
     }
+    #[must_use]
     pub fn valid(&self, c: &crate::Config) -> bool {
         self.assignment < 21
             && SPEAKERS[self.assignment].len() == c.channels as usize
@@ -54,6 +56,7 @@ impl Profile {
                         || ([88200, 96000].contains(&c.sample_rate)
                             && self.group2_rate == c.sample_rate / 2))))
     }
+    #[must_use]
     pub fn order(&self) -> Vec<usize> {
         let speakers = SPEAKERS[self.assignment];
         speakers
@@ -61,6 +64,7 @@ impl Profile {
             .map(|s| speakers.iter().filter(|t| *t < s).count())
             .collect()
     }
+    #[must_use]
     pub fn depth(&self, c: &crate::Config, ch: usize) -> u8 {
         if ch < FIRST[self.assignment] {
             c.bits

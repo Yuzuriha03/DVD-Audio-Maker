@@ -331,7 +331,7 @@ pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result
                     },
                     stop,
                     send,
-                )
+                );
             });
         }
         drop(send);

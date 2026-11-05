@@ -695,7 +695,7 @@ fn capacity(
                             entry.is_directory && entry.name.eq_ignore_ascii_case("AUDIO_TS")
                         }) =>
                     {
-                        diagnostics.push(error("AUDIO_TS_MISSING", "ISO 根目录缺少 AUDIO_TS"))
+                        diagnostics.push(error("AUDIO_TS_MISSING", "ISO 根目录缺少 AUDIO_TS"));
                     }
                     Err(reason) => diagnostics.push(error("ISO_READ_FAILED", reason)),
                     _ => {}
@@ -883,7 +883,7 @@ fn timeline(
             }
         }
         let mut actual: Vec<_> = actual.into_iter().collect();
-        actual.sort();
+        actual.sort_unstable();
         for number in actual {
             check_cancel(caller)?;
             let parsed = match read_iso_file(iso, &format!("AUDIO_TS/ATS_{number:02}_0.IFO"))

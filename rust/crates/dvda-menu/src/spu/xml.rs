@@ -64,7 +64,7 @@ pub(crate) fn parse(path: &Path) -> Result<Document, String> {
                     "spu" => current = Some(SubPicture::new()),
                     "button" | "action" => {
                         let spu = current.as_mut().ok_or("button outside spu")?;
-                        spu.buttons.push(Button::new(name == "action"));
+                        add_button(spu, name == "action")?;
                     }
                     _ => {}
                 }
@@ -98,6 +98,14 @@ pub(crate) fn parse(path: &Path) -> Result<Document, String> {
         }
     }
     Ok(document)
+}
+
+fn add_button(spu: &mut SubPicture, action: bool) -> Result<(), String> {
+    if spu.buttons.len() >= 36 {
+        return Err("a DVD subpicture supports at most 36 buttons".into());
+    }
+    spu.buttons.push(Button::new(action));
+    Ok(())
 }
 
 fn finish_spu(document: &mut Document, current: &mut Option<SubPicture>) -> Result<(), String> {
@@ -164,13 +172,13 @@ fn apply_attribute(
                 "image" => spu.img.fname = Some(PathBuf::from(value)),
                 "highlight" => spu.hlt.fname = Some(PathBuf::from(value)),
                 "select" => spu.sel.fname = Some(PathBuf::from(value)),
-                "start" => spu.spts = parse_time(value) as i32,
-                "end" => spu.sd = parse_time(value) as i32,
+                "start" => spu.spts = parse_time(value)?,
+                "end" => spu.sd = parse_time(value)?,
                 "outlinewidth" => spu.outlinewidth = parse_unsigned(value, "spu outlinewidth")?,
                 "xoffset" => spu.x0 = parse_unsigned(value, "spu xoffset")?,
                 "yoffset" => spu.y0 = parse_unsigned(value, "spu yoffset")?,
                 "force" => {
-                    spu.forced = parse_boolean(value).ok_or("invalid boolean for spu force")?
+                    spu.forced = parse_boolean(value).ok_or("invalid boolean for spu force")?;
                 }
                 "transparent" => spu.transparentc = parse_color(value)?,
                 "autooutline" => {
@@ -199,10 +207,10 @@ fn apply_attribute(
                 "down" => button.down = Some(value.to_string()),
                 "left" => button.left = Some(value.to_string()),
                 "right" => button.right = Some(value.to_string()),
-                "x0" => button.r.x0 = parse_unsigned(value, "button x0")? as i32,
-                "y0" => button.r.y0 = parse_unsigned(value, "button y0")? as i32,
-                "x1" => button.r.x1 = parse_unsigned(value, "button x1")? as i32,
-                "y1" => button.r.y1 = parse_unsigned(value, "button y1")? as i32,
+                "x0" => button.r.x0 = parse_coordinate(value, "button x0")?,
+                "y0" => button.r.y0 = parse_coordinate(value, "button y0")?,
+                "x1" => button.r.x1 = parse_coordinate(value, "button x1")?,
+                "y1" => button.r.y1 = parse_coordinate(value, "button y1")?,
                 _ => unreachable!(),
             }
         }
@@ -237,22 +245,28 @@ fn parse_unsigned(text: &str, what: &str) -> Result<u32, String> {
     let value: u64 = digits
         .parse()
         .map_err(|error| format!("bad number for {what}: {error}"))?;
+    let value = u32::try_from(value).map_err(|_| format!("number out of range for {what}"))?;
     Ok(if negative {
-        (value as u32).wrapping_neg()
+        value.wrapping_neg()
     } else {
-        value as u32
+        value
     })
 }
 
-fn parse_time(text: &str) -> u32 {
+fn parse_coordinate(text: &str, what: &str) -> Result<i32, String> {
+    i32::try_from(parse_unsigned(text, what)?)
+        .map_err(|_| format!("coordinate out of range for {what}"))
+}
+
+fn parse_time(text: &str) -> Result<i32, String> {
     let mut fraction = false;
-    let mut total: i64 = 0;
-    let mut last: i64 = 0;
-    let mut scale: i64 = 1;
+    let mut total: i128 = 0;
+    let mut last: i128 = 0;
+    let mut scale: i128 = 1;
     for byte in text.bytes() {
         if byte.is_ascii_digit() {
             if scale < 10000 {
-                last = last * 10 + i64::from(byte - b'0');
+                last = last * 10 + i128::from(byte - b'0');
                 scale *= 10;
             }
         } else if byte == b':' {
@@ -271,7 +285,7 @@ fn parse_time(text: &str) -> u32 {
     } else {
         (total * 60 + last) * 90000
     };
-    value as u32
+    i32::try_from(value).map_err(|_| format!("timestamp out of range: {text:?}"))
 }
 
 #[cfg(test)]
@@ -280,11 +294,12 @@ mod tests {
 
     #[test]
     fn times_match_historical_parser() {
-        assert_eq!(parse_time("0"), 0);
-        assert_eq!(parse_time("1"), 90_000);
-        assert_eq!(parse_time("00:00:00.00"), 0);
-        assert_eq!(parse_time("00:01:02.50"), (60 + 2) * 90_000 + 45_000);
-        assert_eq!(parse_time("1:02"), 62 * 90_000);
+        assert_eq!(parse_time("0"), Ok(0));
+        assert_eq!(parse_time("1"), Ok(90_000));
+        assert_eq!(parse_time("00:00:00.00"), Ok(0));
+        assert_eq!(parse_time("00:01:02.50"), Ok((60 + 2) * 90_000 + 45_000));
+        assert_eq!(parse_time("1:02"), Ok(62 * 90_000));
+        assert!(parse_time("999999999999:00:00").is_err());
     }
 
     #[test]
@@ -293,6 +308,17 @@ mod tests {
         assert_eq!(parse_unsigned("-1", "x").unwrap(), u32::MAX);
         assert!(parse_unsigned("4x", "x").is_err());
         assert!(parse_unsigned("", "x").is_err());
+        assert!(parse_unsigned("4294967296", "x").is_err());
+        assert!(parse_coordinate("2147483648", "x").is_err());
+    }
+
+    #[test]
+    fn button_count_is_limited_before_image_processing() {
+        let mut spu = SubPicture::new();
+        for _ in 0..36 {
+            add_button(&mut spu, false).unwrap();
+        }
+        assert!(add_button(&mut spu, false).is_err());
     }
 
     #[test]

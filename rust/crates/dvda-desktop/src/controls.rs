@@ -1,7 +1,38 @@
 //! Control creation (the settings pages and toolbars), owner-drawn buttons, checkboxes,
 //! combo arrows, tooltips, and small text/combo helpers.
 
-use super::*;
+use super::{
+    AppOptions, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_OWNERDRAW, BeginPaint, BrowseKind,
+    ButtonVisual, CB_ADDSTRING, CB_GETCURSEL, CB_GETDROPPEDSTATE, CB_RESETCONTENT, CB_SETCURSEL,
+    CB_SHOWDROPDOWN, CBS_DROPDOWNLIST, CBS_HASSTRINGS, CBS_OWNERDRAWFIXED, COMBO_OVERLAYS,
+    CONTROL_RECTS, Cell, CheckVisual, ComboArrowVisual, Controls, CreatePen, CreateWindowExW,
+    DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DefWindowProcW, DeleteObject,
+    DrawFocusRect, EM_SETLIMITTEXT, EM_SETMARGINS, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE,
+    ES_READONLY, ES_WANTRETURN, EnableWindow, EndPaint, FillRect, GWLP_USERDATA, GWLP_WNDPROC,
+    GetClassNameW, GetClientRect, GetDlgCtrlID, GetFocus, GetModuleHandleW, GetParent,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HEADER_HEIGHT, HashMap, Hmenu, Hwnd,
+    ID_ADVANCED, ID_BITS, ID_BROWSE_FINAL, ID_BROWSE_IMPORT, ID_BROWSE_SOURCE, ID_BROWSE_WORK,
+    ID_BUILD, ID_CANCEL, ID_CAPACITY, ID_CLOSE, ID_COPY, ID_COVER, ID_CUSTOM_BYTES, ID_DITHER,
+    ID_EXPORT, ID_FINAL, ID_FONT_JP, ID_FONT_KR, ID_FONT_SC, ID_GROUP_LIMIT, ID_IMPORT_FOLDER,
+    ID_ISO_PREFIX, ID_KEEP_FILES, ID_LANGUAGE, ID_LIVE, ID_LOG, ID_LOG_VIEW, ID_MAXIMIZE, ID_MENU,
+    ID_MINIMIZE, ID_MODE, ID_NORM, ID_ONLY_ISSUES, ID_OPEN_OUTPUT, ID_OPEN_PROFILE, ID_PREPARE,
+    ID_PROFILE, ID_RATE, ID_SAVE_AS, ID_SAVE_PROFILE, ID_SOURCE, ID_STILLS, ID_TAB, ID_THEME,
+    ID_TITLE, ID_TRACKS, ID_VERIFY, ID_WORK_DIR, InvalidateRect, IsWindow, IsWindowEnabled,
+    LOG_QUEUE_CAPACITY, Lang, LineTo, Lparam, Lresult, MoveToEx, Mutex, PAINT_FIELDS,
+    PBM_SETBARCOLOR, PBM_SETBKCOLOR, PROFILE_OVERRIDE, PaintFields, PaintStruct, Rc, Rect,
+    SAMPLE_BITS_LABELS, SAMPLE_RATE_LABELS, SW_HIDE, SW_SHOW, SelectObject, SendMessageW, SetFocus,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, SetWindowTheme, ShowWindow, TME_LEAVE,
+    ToolInfo, Tooltip, TrackMouseEvent, TrackMouseEventData, UiState, WM_ERASEBKGND, WM_KILLFOCUS,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WM_SETFOCUS,
+    WM_SETFONT, WS_CHILD, WS_CLIPCHILDREN, WS_TABSTOP, WS_VISIBLE, WndProc, Wparam, add_log,
+    begin_buffered_paint, body_brush, brush, buffered_label_proc, c_accent, c_accent_hover,
+    c_bar_track, c_border, c_card, c_disabled_fill, c_disabled_text, c_header_top, c_ink,
+    c_secondary_hover, combo_item_text, create_log_frame, draw_text_run, fill_round_rect,
+    finish_buffered_paint, install_scrollbar, open_session_log, panel_brush, parse_i64, populate,
+    presentation, profile_language, ptr, scale, semibold_font, set_language, setting_help,
+    show_page, small_font, startup_language, sync_channel, touch, tr, ui_font, unscale,
+    update_advanced, update_statistics, wide, win,
+};
 
 pub(crate) struct CreateSpec<'a> {
     pub(crate) parent: Hwnd,
@@ -1043,7 +1074,7 @@ pub(crate) fn install_button_visual(hwnd: Hwnd) {
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn button_proc(
     hwnd: Hwnd,
@@ -1069,7 +1100,7 @@ pub(crate) unsafe extern "system" fn button_proc(
                         track: hwnd,
                         hover_time: 0,
                     };
-                    TrackMouseEvent(&mut track);
+                    TrackMouseEvent(&raw mut track);
                     InvalidateRect(hwnd, ptr::null(), 0);
                 }
             }
@@ -1132,7 +1163,7 @@ pub(crate) fn install_check_visual(hwnd: Hwnd, panel: bool) {
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn checkbox_proc(
     hwnd: Hwnd,
@@ -1160,7 +1191,7 @@ pub(crate) unsafe extern "system" fn checkbox_proc(
                         track: hwnd,
                         hover_time: 0,
                     };
-                    TrackMouseEvent(&mut track);
+                    TrackMouseEvent(&raw mut track);
                     InvalidateRect(hwnd, ptr::null(), 0);
                 }
             }
@@ -1195,10 +1226,10 @@ pub(crate) unsafe extern "system" fn checkbox_proc(
 
 /// # Safety
 /// `hwnd` must be a checkbox created by `checkbox`, and this must run inside its
-/// WM_PAINT (it calls BeginPaint and EndPaint).
+/// `WM_PAINT` (it calls `BeginPaint` and `EndPaint`).
 pub(crate) unsafe fn draw_checkbox(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
-    let dc = unsafe { BeginPaint(hwnd, &mut paint) };
+    let dc = unsafe { BeginPaint(hwnd, &raw mut paint) };
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -1277,9 +1308,9 @@ pub(crate) unsafe fn draw_checkbox(hwnd: Hwnd) {
                 right: rect.right - scale(1),
                 bottom: rect.bottom - scale(1),
             };
-            DrawFocusRect(dc, &focus);
+            DrawFocusRect(dc, &raw const focus);
         }
-        EndPaint(hwnd, &paint);
+        EndPaint(hwnd, &raw const paint);
     }
 }
 
@@ -1302,7 +1333,7 @@ pub(crate) fn install_combo_arrow(hwnd: Hwnd, combo: Hwnd) {
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn combo_arrow_proc(
     hwnd: Hwnd,
@@ -1330,7 +1361,7 @@ pub(crate) unsafe extern "system" fn combo_arrow_proc(
                         track: hwnd,
                         hover_time: 0,
                     };
-                    TrackMouseEvent(&mut track);
+                    TrackMouseEvent(&raw mut track);
                     InvalidateRect(hwnd, ptr::null(), 0);
                 }
             }
@@ -1386,7 +1417,7 @@ pub(crate) unsafe extern "system" fn combo_arrow_proc(
 
 /// # Safety
 /// `hwnd` must be a combo arrow overlay installed by `install_combo_arrow`, and this
-/// must run inside its WM_PAINT.
+/// must run inside its `WM_PAINT`.
 pub(crate) unsafe fn draw_combo_arrow(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_card()) };
@@ -1477,7 +1508,7 @@ pub(crate) unsafe fn draw_combo_arrow(hwnd: Hwnd) {
             if !pen.is_null() {
                 let old = SelectObject(dc, pen);
                 let center_x = rect.right - scale(13);
-                let center_y = (rect.top + rect.bottom) / 2;
+                let center_y = i32::midpoint(rect.top, rect.bottom);
                 let half = scale(4);
                 let drop = scale(2);
                 MoveToEx(dc, center_x - half, center_y - drop, ptr::null_mut());
@@ -1554,7 +1585,7 @@ pub(crate) fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
             } else if class.as_slice() == wide("DVD_AUDIO_PAGE_RUST").as_slice()
                 || class.as_slice() == wide("DVD_AUDIO_LOG_FRAME_RUST").as_slice()
             {
-                0x00010000 // WS_EX_CONTROLPARENT
+                0x0001_0000 // WS_EX_CONTROLPARENT
             } else {
                 0
             },
@@ -1627,11 +1658,21 @@ pub(crate) fn set_text(hwnd: Hwnd, text: &str) {
     }
 }
 pub(crate) fn get_text(hwnd: Hwnd) -> String {
-    let len = unsafe { GetWindowTextLengthW(hwnd) }.max(0) as usize;
-    let mut value = vec![0u16; len + 1];
-    let count =
-        unsafe { GetWindowTextW(hwnd, value.as_mut_ptr(), value.len() as i32) }.max(0) as usize;
-    String::from_utf16_lossy(&value[..count])
+    let Ok(length) = usize::try_from(unsafe { GetWindowTextLengthW(hwnd) }) else {
+        return String::new();
+    };
+    let Some(capacity) = length.checked_add(1) else {
+        return String::new();
+    };
+    let Ok(capacity_i32) = i32::try_from(capacity) else {
+        return String::new();
+    };
+    let mut value = vec![0u16; capacity];
+    let count = unsafe { GetWindowTextW(hwnd, value.as_mut_ptr(), capacity_i32) };
+    let Ok(count) = usize::try_from(count) else {
+        return String::new();
+    };
+    String::from_utf16_lossy(&value[..count.min(length)])
 }
 pub(crate) fn window_class(hwnd: Hwnd) -> String {
     let mut buffer = [0u16; 64];
@@ -1716,7 +1757,7 @@ pub(crate) fn tooltip_info(tooltip: &Tooltip) -> ToolInfo {
             bottom: 0,
         },
         instance: ptr::null_mut(),
-        text: tooltip.text.as_ptr() as *mut u16,
+        text: tooltip.text.as_ptr().cast_mut(),
         param: 0,
         reserved: ptr::null_mut(),
     }
@@ -1728,7 +1769,7 @@ pub(crate) fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
             0x8,
             wide("tooltips_class32").as_ptr(),
             ptr::null(),
-            0x80000003,
+            0x8000_0003,
             0,
             0,
             0,
@@ -1778,7 +1819,7 @@ pub(crate) fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
         };
         let info = tooltip_info(&tooltip);
         unsafe {
-            SendMessageW(tooltip_window, 0x0432, 0, &info as *const ToolInfo as isize);
+            SendMessageW(tooltip_window, 0x0432, 0, &raw const info as isize);
         }
         state.tooltips.push(tooltip);
     }

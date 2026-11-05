@@ -14,6 +14,7 @@ pub enum Encoding {
 }
 
 impl Encoding {
+    #[must_use]
     pub const fn bytes(self) -> usize {
         match self {
             Self::Signed8 | Self::Unsigned8 => 1,
@@ -24,12 +25,19 @@ impl Encoding {
         }
     }
 
+    #[must_use]
     pub const fn is_float(self) -> bool {
         matches!(self, Self::Float32 | Self::Float64)
     }
 
     /// Decode complete interleaved samples without changing their ordering.
     /// Integer PCM is exactly representable in the normalized f64 result.
+    ///
+    /// # Errors
+    /// Returns `InvalidData` when the input ends with an incomplete sample.
+    ///
+    /// # Panics
+    /// Panics only if a validated sample chunk no longer matches its encoding width.
     pub fn decode(self, bytes: &[u8], output: &mut Vec<f64>) -> Result<()> {
         if !bytes.len().is_multiple_of(self.bytes()) {
             return Err(Error::new(ErrorKind::InvalidData, "incomplete PCM sample"));
@@ -43,10 +51,10 @@ impl Encoding {
                 Self::Signed16 => f64::from(i16::from_le_bytes([sample[0], sample[1]])) / 32768.0,
                 Self::Signed24 => {
                     let aligned = i32::from_le_bytes([0, sample[0], sample[1], sample[2]]);
-                    f64::from(aligned) / 2147483648.0
+                    f64::from(aligned) / 2_147_483_648.0
                 }
                 Self::Signed32 => {
-                    f64::from(i32::from_le_bytes(sample.try_into().unwrap())) / 2147483648.0
+                    f64::from(i32::from_le_bytes(sample.try_into().unwrap())) / 2_147_483_648.0
                 }
                 Self::Float32 => f64::from(f32::from_le_bytes(sample.try_into().unwrap())),
                 Self::Float64 => f64::from_le_bytes(sample.try_into().unwrap()),
@@ -82,12 +90,12 @@ mod tests {
             (
                 Encoding::Signed24,
                 vec![0, 0, 128, 255, 255, 127, 255, 255, 255],
-                vec![-1.0, 8388607.0 / 8388608.0, -1.0 / 8388608.0],
+                vec![-1.0, 8_388_607.0 / 8_388_608.0, -1.0 / 8_388_608.0],
             ),
             (
                 Encoding::Signed32,
                 vec![0, 0, 0, 128, 255, 255, 255, 127],
-                vec![-1.0, 2147483647.0 / 2147483648.0],
+                vec![-1.0, 2_147_483_647.0 / 2_147_483_648.0],
             ),
         ] {
             let mut decoded = vec![42.0];

@@ -49,7 +49,7 @@ fn peak_rate(rate: i32) -> i32 {
     if rate <= 0 {
         0
     } else {
-        ((9600000i64 * 16 - 8 + i64::from(rate) - 1) / i64::from(rate)) as i32
+        ((9_600_000_i64 * 16 - 8 + i64::from(rate) - 1) / i64::from(rate)) as i32
     }
 }
 
@@ -138,7 +138,7 @@ impl State {
                 let peak = i32::from(be16(&header[14..]) & 0x7fff);
                 let extended = i32::from(header[16] & 3);
                 if let Ok(rate) = sample_rate(header) {
-                    if i64::from(peak) < (9600000i64 * 16) / i64::from(rate)
+                    if i64::from(peak) < (9_600_000_i64 * 16) / i64::from(rate)
                         || peak > peak_rate(rate)
                     {
                         self.major_errors += 1;
@@ -207,7 +207,7 @@ impl State {
             && self.major_errors == 0
             && self.parity_errors == 0
             && self.substream_errors == 0
-            && i64::from(peak) >= (9600000i64 * 16) / i64::from(rate.max(1))
+            && i64::from(peak) >= (9_600_000_i64 * 16) / i64::from(rate.max(1))
             && peak <= peak_rate(rate)
             && extended == 1;
         MlpInspection {
@@ -362,7 +362,7 @@ pub(super) fn align(data: &[u8]) -> Result<MlpAlignment, String> {
         );
         let body_end = body_end + 4;
         output[body_end] = parity(&output[begin..body_end]) ^ 0xa9;
-        output[body_end + 1] = checksum8(&output[begin..body_end + 1]);
+        output[body_end + 1] = checksum8(&output[begin..=body_end]);
         header = (header & 0xf000) | ((header & 0x0fff).wrapping_add(2) & 0x0fff);
         output[offset..offset + 2].copy_from_slice(&header.to_be_bytes());
         let nibble = parity_nibble(be16(&output[last + 2..]), length / 2 + 2, header);

@@ -365,7 +365,7 @@ mod tests {
                 {"MlpSize":0,"SourceSize":5000,"Duration":1.0,"Channels":2},
                 {"MlpSize":4096,"SourceSize":1000,"Duration":1.0,"Channels":2}
             ],
-            "Discs":[{"EstimatedAobBytes":1000000},{"EstimatedAobBytes":2000000}]
+            "Discs":[{"EstimatedAobBytes":1_000_000},{"EstimatedAobBytes":2_000_000}]
         });
         let groups = crate::dispatch("disk.estimate_requirements", request).unwrap();
         assert_eq!(groups.as_array().unwrap().len(), 1);

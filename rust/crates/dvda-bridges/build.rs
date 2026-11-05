@@ -117,12 +117,11 @@ fn require_msvc_library(directory: &std::path::Path, name: &str) {
         directory.join(format!("{name}.lib")),
         directory.join(format!("lib{name}.lib")),
     ];
-    if !candidates.iter().any(|path| path.is_file()) {
-        panic!(
-            "MSVC-only image bridge requires a .lib archive for {name} in {}; GNU .a archives are not link-compatible",
-            directory.display()
-        );
-    }
+    assert!(
+        candidates.iter().any(|path| path.is_file()),
+        "MSVC-only image bridge requires a .lib archive for {name} in {}; GNU .a archives are not link-compatible",
+        directory.display()
+    );
 }
 
 fn generate_layout(prefix: &std::path::Path) {
@@ -186,7 +185,7 @@ fn generate_layout(prefix: &std::path::Path) {
                 code += &format!(
                     "#[repr(C,align(8))] pub struct {} {{ _opaque:[u8;{}] }}\n",
                     p[1], p[2]
-                )
+                );
             }
             "K" => code += &format!("pub const {}:i32={}u32 as i32;\n", p[1], p[2]),
             "F" => {

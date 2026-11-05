@@ -1,4 +1,4 @@
-//! NAV pack assembly (the FixVobus stage of the navigation builder).
+//! NAV pack assembly (the `FixVobus` stage of the navigation builder).
 //!
 //! For every scanned VOBU this pass writes the full PCI/DSI packets into the
 //! placeholder NAV sectors produced by the scan/write pass, using the VOBU
@@ -220,7 +220,7 @@ fn button_table(data: &DvdData, commands: &BTreeMap<String, [u8; 8]>, sector: &m
 }
 
 /// Source-local searches stop at VOB boundaries; only recorded disc addresses
-/// include the sector base of this source in AUDIO_TS.VOB.
+/// include the sector base of this source in `AUDIO_TS.VOB`.
 pub(crate) fn fill_vob(
     build: &mut Build,
     data: &DvdData,

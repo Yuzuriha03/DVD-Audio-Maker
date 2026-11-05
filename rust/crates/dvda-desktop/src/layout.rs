@@ -165,10 +165,10 @@ mod log_toolbar_tests {
 
 /// Control moves recorded while a layout batch is open. Only the last
 /// target of each control counts: layout code may position a control more
-/// than once, and a DeferWindowPos batch must not contain the same window
+/// than once, and a `DeferWindowPos` batch must not contain the same window
 /// twice (Windows then keeps the first entry, so consecutive layouts would
 /// alternate between both positions). The batch end applies every move with
-/// one BeginDeferWindowPos per parent, recomputing visible regions once
+/// one `BeginDeferWindowPos` per parent, recomputing visible regions once
 /// instead of after every control.
 #[derive(Default)]
 pub(crate) struct PlacementBatch {
@@ -312,7 +312,7 @@ pub(crate) fn place_log(state: &mut UiState, target: Rect, revealed: bool) {
 /// EDIT's notifications and colour requests on to the main window.
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn log_frame_proc(
     hwnd: Hwnd,
@@ -356,7 +356,7 @@ pub(crate) fn create_log_frame(parent: Hwnd) -> Hwnd {
             menu: ptr::null(),
             class_name: class_name.as_ptr(),
         };
-        let _ = RegisterClassW(&registration);
+        let _ = RegisterClassW(&raw const registration);
     });
     create!(
         parent,
@@ -383,7 +383,7 @@ pub(crate) fn place(hwnd: Hwnd, x: i32, y: i32, width: i32, height: i32) {
     );
 }
 
-/// Like place(), with a target rectangle in pixels.
+/// Like `place()`, with a target rectangle in pixels.
 pub(crate) fn place_px(hwnd: Hwnd, target: Rect) {
     let parent = GetParent(hwnd);
     let recorded = PLACEMENT_BATCH.with(|batch| {
@@ -877,7 +877,7 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         RedrawWindow(
             hwnd,
             if state.dragging_splitter {
-                &splitter_dirty
+                &raw const splitter_dirty
             } else {
                 ptr::null()
             },

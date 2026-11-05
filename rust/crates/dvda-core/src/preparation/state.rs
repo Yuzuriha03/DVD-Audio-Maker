@@ -27,6 +27,7 @@ pub struct ProbeFacts {
     pub dur: f64,
 }
 impl ProbeFacts {
+    #[must_use]
     pub fn metadata(&self, path: &str) -> Metadata {
         Metadata {
             path: path.into(),
@@ -68,6 +69,7 @@ pub struct Cache {
     entries: Vec<(String, Entry)>,
 }
 
+#[must_use]
 pub fn matches(path: &str, expected: &Value) -> bool {
     identity::compute(path).is_ok_and(|current| {
         ["Size", "LastWriteUtcTicks", "HeadHash", "TailHash"]
@@ -151,12 +153,15 @@ impl Cache {
             }
         }
     }
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+    #[must_use]
     pub fn find(&self, path: &str) -> Option<&Entry> {
         let index = self.index(path).ok()?;
         let entry = &self.entries[index].1;
@@ -181,6 +186,7 @@ impl Cache {
         write_json(path, &entries)
     }
 }
+#[must_use]
 pub fn reusable(entry: &Entry, track: &Metadata, expected: Option<i64>) -> bool {
     let v = &entry.validation;
     v.decoded > 0
@@ -263,6 +269,7 @@ pub fn enumerate_sources(root: &Path) -> Result<Vec<String>, Failure> {
     result.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
     Ok(result)
 }
+#[must_use]
 pub fn normalize(path: &str) -> String {
     if crate::config::trim(path).is_empty() {
         return String::new();
@@ -302,6 +309,7 @@ pub(super) fn relative(root: &str, path: &str) -> String {
         parts.join("/")
     }
 }
+#[must_use]
 pub fn save_snapshot(
     path: &Path,
     root: &str,

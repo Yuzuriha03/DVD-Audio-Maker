@@ -84,7 +84,7 @@ where
         let mask = (1u32 << (24 - self.bits)) - 1;
         if pcm[..actual * self.channels]
             .iter()
-            .any(|&v| !(-8388608..=8388607).contains(&v) || v as u32 & mask != 0)
+            .any(|&v| !(-8_388_608..=8_388_607).contains(&v) || v as u32 & mask != 0)
         {
             return Err(());
         }
@@ -177,7 +177,7 @@ fn callback_input_reorders_partial_reads_and_pads_tail() {
 
 #[test]
 fn callback_input_failure_does_not_advance_position() {
-    for samples in [[256, 1], [256, 8388608]] {
+    for samples in [[256, 1], [256, 8_388_608]] {
         let mut input = CallbackInput {
             channels: 2,
             bits: 24,

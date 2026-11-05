@@ -149,23 +149,23 @@ const CB_GETLBTEXTLEN: u32 = 0x0149;
 const CB_SHOWDROPDOWN: u32 = 0x014f;
 const PBM_SETPOS: u32 = 0x0402;
 const PBM_SETRANGE32: u32 = 0x0406;
-const WS_THICKFRAME: u32 = 0x00040000;
-const WS_CAPTION: u32 = 0x00c00000;
-const WS_MINIMIZEBOX: u32 = 0x00020000;
-const WS_MAXIMIZEBOX: u32 = 0x00010000;
-const WS_SYSMENU: u32 = 0x00080000;
-const WS_CHILD: u32 = 0x40000000;
-const WS_VISIBLE: u32 = 0x10000000;
-const WS_TABSTOP: u32 = 0x00010000;
-const WS_CLIPCHILDREN: u32 = 0x02000000;
-const WS_POPUP: u32 = 0x80000000;
-const WS_EX_TOPMOST: u32 = 0x00000008;
-const WS_EX_TRANSPARENT: u32 = 0x00000020;
-const WS_EX_TOOLWINDOW: u32 = 0x00000080;
-const WS_EX_NOACTIVATE: u32 = 0x08000000;
+const WS_THICKFRAME: u32 = 0x0004_0000;
+const WS_CAPTION: u32 = 0x00c0_0000;
+const WS_MINIMIZEBOX: u32 = 0x0002_0000;
+const WS_MAXIMIZEBOX: u32 = 0x0001_0000;
+const WS_SYSMENU: u32 = 0x0008_0000;
+const WS_CHILD: u32 = 0x4000_0000;
+const WS_VISIBLE: u32 = 0x1000_0000;
+const WS_TABSTOP: u32 = 0x0001_0000;
+const WS_CLIPCHILDREN: u32 = 0x0200_0000;
+const WS_POPUP: u32 = 0x8000_0000;
+const WS_EX_TOPMOST: u32 = 0x0000_0008;
+const WS_EX_TRANSPARENT: u32 = 0x0000_0020;
+const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
+const WS_EX_NOACTIVATE: u32 = 0x0800_0000;
 const SWP_NOACTIVATE: u32 = 0x0010;
 const SWP_SHOWWINDOW: u32 = 0x0040;
-const WS_EX_APPWINDOW: u32 = 0x00040000;
+const WS_EX_APPWINDOW: u32 = 0x0004_0000;
 const ES_AUTOHSCROLL: u32 = 0x0080;
 const ES_MULTILINE: u32 = 0x0004;
 const ES_AUTOVSCROLL: u32 = 0x0040;
@@ -175,18 +175,18 @@ const CBS_DROPDOWNLIST: u32 = 0x0003;
 const CBS_OWNERDRAWFIXED: u32 = 0x0010;
 const CBS_HASSTRINGS: u32 = 0x0200;
 const BS_AUTOCHECKBOX: u32 = 0x0003;
-const BS_OWNERDRAW: u32 = 0x0000000b;
+const BS_OWNERDRAW: u32 = 0x0000_000b;
 const ODS_SELECTED: u32 = 0x0001;
 const ODS_DISABLED: u32 = 0x0004;
 const ODS_FOCUS: u32 = 0x0010;
-const DT_CENTER: u32 = 0x00000001;
-const DT_VCENTER: u32 = 0x00000004;
-const DT_SINGLELINE: u32 = 0x00000020;
-const DT_CALCRECT: u32 = 0x00000400;
-const DT_LEFT: u32 = 0x00000000;
-const DT_TOP: u32 = 0x00000000;
-const DT_NOPREFIX: u32 = 0x00000800;
-const DT_END_ELLIPSIS: u32 = 0x00008000;
+const DT_CENTER: u32 = 0x0000_0001;
+const DT_VCENTER: u32 = 0x0000_0004;
+const DT_SINGLELINE: u32 = 0x0000_0020;
+const DT_CALCRECT: u32 = 0x0000_0400;
+const DT_LEFT: u32 = 0x0000_0000;
+const DT_TOP: u32 = 0x0000_0000;
+const DT_NOPREFIX: u32 = 0x0000_0800;
+const DT_END_ELLIPSIS: u32 = 0x0000_8000;
 const RDW_INVALIDATE: u32 = 0x0001;
 const RDW_ALLCHILDREN: u32 = 0x0080;
 const RDW_FRAME: u32 = 0x0400;
@@ -951,7 +951,7 @@ struct UiState {
     /// Whether the last layout was the short-window one (with hysteresis).
     compact_layout: Option<bool>,
     dragging_splitter: bool,
-    /// Inside the modal sizing loop (WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE).
+    /// Inside the modal sizing loop (`WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE`).
     sizing: bool,
     /// Log area of the last layout, in client pixels.
     log_box: Option<Rect>,
@@ -1051,7 +1051,7 @@ fn main() {
         let _ = PROFILE_OVERRIDE.set(args.profile);
         let _ = LANGUAGE_OVERRIDE.set(args.language);
         // SAFETY: entrypoint has not started the GUI, worker threads or native libraries.
-        unsafe { dvda_core::runtime::initialize(EMBEDDED_RUNTIME) }.and_then(|_| run())
+        unsafe { dvda_core::runtime::initialize(EMBEDDED_RUNTIME) }.and_then(|()| run())
     });
     if let Err(error) = started {
         if let Ok((mut file, _)) = open_session_log() {
@@ -1166,7 +1166,7 @@ fn run() -> Result<(), String> {
             size: std::mem::size_of::<InitCommonControlsEx>() as u32,
             classes: 0xffff,
         };
-        InitCommonControlsEx(&init);
+        InitCommonControlsEx(&raw const init);
     }
     let instance = unsafe { GetModuleHandleW(ptr::null()) };
     if instance.is_null() {
@@ -1200,7 +1200,7 @@ fn run() -> Result<(), String> {
         menu: ptr::null(),
         class_name: class_name.as_ptr(),
     };
-    if unsafe { RegisterClassW(&registration) } == 0 {
+    if unsafe { RegisterClassW(&raw const registration) } == 0 {
         return Err("Cannot register desktop window".into());
     }
     let page_class_name = wide("DVD_AUDIO_PAGE_RUST");
@@ -1216,7 +1216,7 @@ fn run() -> Result<(), String> {
         menu: ptr::null(),
         class_name: page_class_name.as_ptr(),
     };
-    if unsafe { RegisterClassW(&page_registration) } == 0 {
+    if unsafe { RegisterClassW(&raw const page_registration) } == 0 {
         return Err("Cannot register desktop page class".into());
     }
     let scroll_class_name = wide("DVD_AUDIO_SCROLLBAR_RUST");
@@ -1232,7 +1232,7 @@ fn run() -> Result<(), String> {
         menu: ptr::null(),
         class_name: scroll_class_name.as_ptr(),
     };
-    if unsafe { RegisterClassW(&scroll_registration) } == 0 {
+    if unsafe { RegisterClassW(&raw const scroll_registration) } == 0 {
         return Err("Cannot register desktop scrollbar class".into());
     }
     let title = wide("DVD-Audio Maker");
@@ -1245,8 +1245,7 @@ fn run() -> Result<(), String> {
     };
     let mut window_x = scale(100);
     let mut window_y = scale(70);
-    if unsafe { SystemParametersInfoW(0x0030, 0, &mut window_rect as *mut Rect as *mut c_void, 0) }
-        != 0
+    if unsafe { SystemParametersInfoW(0x0030, 0, (&raw mut window_rect).cast::<c_void>(), 0) } != 0
     {
         window_x = window_x
             .min(window_rect.right - scale(window_width) - scale(16))
@@ -1288,14 +1287,14 @@ fn run() -> Result<(), String> {
         let mut dark_applied = DwmSetWindowAttribute(
             window,
             20,
-            &dark as *const u32 as *const c_void,
+            (&raw const dark).cast::<c_void>(),
             std::mem::size_of::<u32>() as u32,
         ) == 0;
         if !dark_applied {
             dark_applied = DwmSetWindowAttribute(
                 window,
                 19,
-                &dark as *const u32 as *const c_void,
+                (&raw const dark).cast::<c_void>(),
                 std::mem::size_of::<u32>() as u32,
             ) == 0;
         }
@@ -1306,14 +1305,14 @@ fn run() -> Result<(), String> {
             DwmSetWindowAttribute(
                 window,
                 35,
-                &caption as *const u32 as *const c_void,
+                (&raw const caption).cast::<c_void>(),
                 std::mem::size_of::<u32>() as u32,
             );
             let caption_text: u32 = c_header_title();
             DwmSetWindowAttribute(
                 window,
                 36,
-                &caption_text as *const u32 as *const c_void,
+                (&raw const caption_text).cast::<c_void>(),
                 std::mem::size_of::<u32>() as u32,
             );
         }
@@ -1361,9 +1360,9 @@ fn run() -> Result<(), String> {
                     continue;
                 }
             }
-            if IsDialogMessageW(window, &mut message) == 0 {
+            if IsDialogMessageW(window, &raw mut message) == 0 {
                 TranslateMessage(&message);
-                DispatchMessageW(&message);
+                DispatchMessageW(&raw const message);
             }
         }
     }

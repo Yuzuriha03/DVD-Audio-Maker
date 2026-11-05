@@ -1,7 +1,7 @@
-//! AMGM menu generation: the Rust equivalent of dvdauthor_amgm_gen.
+//! AMGM menu generation: the Rust equivalent of `dvdauthor_amgm_gen`.
 //!
 //! Parses the navigation XML, scans each PGC VOB source independently, fills
-//! its NAV packs and concatenates the results into <dest>/AUDIO_TS/AUDIO_TS.VOB.
+//! its NAV packs and concatenates the results into <dest>/`AUDIO_TS/AUDIO_TS.VOB`.
 
 use super::build::{self, Aspect};
 use super::dvdata;

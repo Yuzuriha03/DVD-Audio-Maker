@@ -1,7 +1,17 @@
-//! WM_COMMAND dispatch for buttons and combo boxes, the language switch and
+//! `WM_COMMAND` dispatch for buttons and combo boxes, the language switch and
 //! settings refits.
 
-use super::*;
+use super::{
+    BN_CLICKED, CBN_SELCHANGE, GetClientRect, Hwnd, ID_ADVANCED, ID_BITS, ID_BUILD, ID_CANCEL,
+    ID_CAPACITY, ID_COPY, ID_EXPORT, ID_LANGUAGE, ID_LIVE, ID_LOG_VIEW, ID_MINIMIZE, ID_MODE,
+    ID_ONLY_ISSUES, ID_OPEN_OUTPUT, ID_OPEN_PROFILE, ID_PREPARE, ID_SAVE_AS, ID_SAVE_PROFILE,
+    ID_TAB, ID_THEME, ID_VERIFY, Lang, Rect, SW_MINIMIZE, SendMessageW, ShowWindow, UiState,
+    autosave, browse_target, cancel_operation, checked, choose_and_load_profile, combo_index,
+    combo_items, combo_select, copy_log, export_log, layout, localized_log, open_output,
+    page_content_height, render_log, save_profile, save_profile_as, select_tab, set_text,
+    setting_help, start_operation, toggle_theme, tooltip_info, tr, unscale, update_advanced,
+    update_choices, update_statistics, wide,
+};
 
 pub(crate) fn handle_command(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
     handle_command_inner(hwnd, state, id, notify);
@@ -144,12 +154,7 @@ pub(crate) fn set_language(state: &mut UiState, lang: Lang) {
         tooltip.text = wide(&setting_help(lang, tooltip.key));
         let info = tooltip_info(tooltip);
         unsafe {
-            SendMessageW(
-                state.tooltip_window,
-                0x0439,
-                0,
-                &info as *const ToolInfo as isize,
-            );
+            SendMessageW(state.tooltip_window, 0x0439, 0, &raw const info as isize);
         }
     }
     let capacity = combo_index(state.controls.capacity);

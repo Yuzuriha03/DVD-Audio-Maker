@@ -452,10 +452,10 @@ fn plan(options: &AppOptions) -> Result<i32> {
             let bits = options.integer("MlpBits") as i32;
             if let Some(wave) = &layout
                 && dvda_core::lpcm::layout_code(
-                    wave.sample_rate as i64,
-                    wave.valid_bits as i64,
-                    wave.channels as i64,
-                    wave.channel_mask as i64,
+                    i64::from(wave.sample_rate),
+                    i64::from(wave.valid_bits),
+                    i64::from(wave.channels),
+                    i64::from(wave.channel_mask),
                 ) != 0
             {
                 return Err(failure("Invalid cached LPCM layout"));
@@ -585,7 +585,7 @@ fn iso(args: &[String]) -> Result<i32> {
         return Err(usage("iso list|extract ISO ..."));
     };
     match (mode.as_str(), rest) {
-        ("list", [path]) | ("list", [path, _]) => {
+        ("list", [path] | [path, _]) => {
             let value = dvda_core::dispatch(
                 "iso.all_paths",
                 json!({"Path":path,"InnerPath":rest.get(1).cloned().unwrap_or_default()}),

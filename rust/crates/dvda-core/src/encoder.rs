@@ -37,8 +37,12 @@ fn io_failure(error: io::Error) -> Failure {
         _ => error.into(),
     }
 }
+/// Compute the number of padded MLP access units for a PCM stream.
+///
+/// # Errors
+/// Rejects non-positive frame counts and unsupported sample rates, and reports arithmetic overflow.
 pub fn access_units(frames: i64, rate: u32) -> Result<u64, Failure> {
-    if frames <= 0 || !matches!(rate, 44100 | 48000 | 88200 | 96000 | 176400 | 192000) {
+    if frames <= 0 || !matches!(rate, 44100 | 48000 | 88200 | 96000 | 176_400 | 192_000) {
         return Err(invalid("无效的 PCM 帧数或采样率。"));
     }
     let block = 40
@@ -95,7 +99,7 @@ pub fn metadata(path: &str, units: u64) -> Result<Vec<Stamp>, Failure> {
             0
         };
         total += u64::from(size);
-        if !(4..=65539).contains(&size) || total > 16777216 {
+        if !(4..=65539).contains(&size) || total > 16_777_216 {
             return Err(invalid("元数据记录长度无效。"));
         }
         let mut packet = vec![0; size as usize];
@@ -117,6 +121,10 @@ pub fn metadata(path: &str, units: u64) -> Result<Vec<Stamp>, Failure> {
     }
     Ok(result)
 }
+/// Write a new metadata context for a PCM stream without replacing an existing file.
+///
+/// # Errors
+/// Rejects invalid PCM geometry and existing destinations, and propagates metadata generation or I/O failures.
 pub fn write_metadata(path: &Path, frames: i64, rate: u32) -> Result<(), Failure> {
     let units = access_units(frames, rate)?;
     let stamp = crate::encoder_stamp::current()?;
@@ -170,9 +178,9 @@ impl Stream for PcmStream<'_, '_> {
                     )) << 8
                 }
                 3 => {
-                    ((self.raw[offset] as i32
-                        | (self.raw[offset + 1] as i32) << 8
-                        | (self.raw[offset + 2] as i32) << 16)
+                    ((i32::from(self.raw[offset])
+                        | i32::from(self.raw[offset + 1]) << 8
+                        | i32::from(self.raw[offset + 2]) << 16)
                         << 8)
                         >> 8
                 }
@@ -533,7 +541,7 @@ mod rust_tests {
         bytes.extend_from_slice(&1u16.to_le_bytes());
         bytes.extend_from_slice(&2u16.to_le_bytes());
         bytes.extend_from_slice(&48000u32.to_le_bytes());
-        bytes.extend_from_slice(&192000u32.to_le_bytes());
+        bytes.extend_from_slice(&192_000_u32.to_le_bytes());
         bytes.extend_from_slice(&4u16.to_le_bytes());
         bytes.extend_from_slice(&16u16.to_le_bytes());
         bytes.extend_from_slice(b"data");
@@ -550,7 +558,7 @@ mod rust_tests {
         let outcome = execute(job(), &mut Caller);
         assert_eq!(outcome.exit_code, Some(0), "{:?}", outcome.failure);
         let output = std::fs::read(&destination).unwrap();
-        assert!(!output.is_empty());
+        assert_ne!(output, [] as [u8; 0]);
         assert!(execute(job(), &mut Caller).failure.is_some());
         assert_eq!(std::fs::read(&destination).unwrap(), output);
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
@@ -573,7 +581,7 @@ mod rust_tests {
             sample_rate: 48000,
             bits: 24,
             channels: 2,
-            frames: 160000,
+            frames: 160_000,
             assignment: 1,
             metadata: vec![identity],
         };

@@ -571,7 +571,7 @@ pub(crate) mod tests {
     fn rust_author_fixture() -> Fixture {
         let fixture = Fixture::new();
         fixture.edit("image", |record| {
-            record["implementation"] = "project-owned-rust".into()
+            record["implementation"] = "project-owned-rust".into();
         });
         let author = fixture.root.join("author");
         let mut libraries = serde_json::Map::new();
@@ -923,7 +923,7 @@ pub(crate) mod tests {
         ] {
             let f = Fixture::new();
             f.edit("media", |d| {
-                d["files"][name] = d["files"]["dvda-media.dll"].clone()
+                d["files"][name] = d["files"]["dvda-media.dll"].clone();
             });
             assert!(f.validate().is_err());
         }

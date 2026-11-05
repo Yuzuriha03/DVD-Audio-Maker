@@ -234,7 +234,7 @@ mod tests {
         let samples: Vec<i32> = (8..40).map(|n| n * 100).collect();
         let history = [600, 700];
         let plan = select(&samples, &history, &history, 0, Coding::default(), &[], &[]);
-        assert!(!plan.filter.is_empty());
+        assert_ne!(plan.filter, [] as [i32; 0]);
         let mut decoded = history.to_vec();
         for &residual in &plan.residual {
             let prediction: i64 = plan

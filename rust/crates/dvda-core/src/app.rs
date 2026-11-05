@@ -22,9 +22,7 @@ pub struct AppOptions {
 }
 
 fn default_menu_font<'a>(language: &str, configured: &'a str) -> &'a str {
-    if !configured.trim().is_empty() {
-        configured
-    } else {
+    if configured.trim().is_empty() {
         match crate::config_files::normalize_language(Some(language), "zh-CN")
             .as_deref()
             .unwrap_or("zh-CN")
@@ -34,10 +32,16 @@ fn default_menu_font<'a>(language: &str, configured: &'a str) -> &'a str {
             "ja" => "Noto-Sans-CJK-JP",
             _ => "Noto-Sans-CJK-SC",
         }
+    } else {
+        configured
     }
 }
 
 impl AppOptions {
+    /// Load application options and normalize the selected profile and runtime paths.
+    ///
+    /// # Errors
+    /// Returns an error for unreadable or invalid profiles, invalid path overrides, or unavailable runtime components.
     pub fn load(config_path: Option<&Path>) -> Result<Self, String> {
         let executable_directory = crate::runtime::directory()
             .map(Path::to_owned)
@@ -142,6 +146,7 @@ impl AppOptions {
         Ok(copy)
     }
 
+    #[must_use]
     pub fn has_unfinished_task(&self) -> bool {
         crate::workspace::Workspace::unfinished(&self.path("BuildDirectory"))
     }
@@ -254,27 +259,34 @@ impl AppOptions {
         }
     }
 
+    #[must_use]
     pub fn profile_values(&self) -> Map<String, Value> {
         let mut values = self.stored_profile_values.clone();
         values.remove("DVDA_PREPARE_CACHE");
         values
     }
 
+    #[must_use]
     pub fn value(&self, name: &str) -> &Value {
         self.values.get(name).unwrap_or(&Value::Null)
     }
+    #[must_use]
     pub fn text(&self, name: &str) -> String {
         self.value(name).as_str().unwrap_or_default().to_owned()
     }
+    #[must_use]
     pub fn boolean(&self, name: &str) -> bool {
         self.value(name).as_bool().unwrap_or(false)
     }
+    #[must_use]
     pub fn integer(&self, name: &str) -> i64 {
         self.value(name).as_i64().unwrap_or(0)
     }
+    #[must_use]
     pub fn path(&self, name: &str) -> PathBuf {
         resolve_path(&self.executable_directory, &self.text(name))
     }
+    #[must_use]
     pub fn source_directory(&self) -> PathBuf {
         self.path("SourceDirectory")
     }
@@ -586,6 +598,7 @@ pub fn run_verify_mode(
     ))
 }
 
+#[must_use]
 pub fn default_profile_path() -> PathBuf {
     let base = env::current_exe()
         .ok()

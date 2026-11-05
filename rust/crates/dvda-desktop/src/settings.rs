@@ -1,8 +1,13 @@
 //! Settings values: choices, profile load/save and validation.
 
-use super::*;
+use super::{
+    AppOptions, EnableWindow, FileKind, GetParent, HashMap, Hwnd, Lang, Map, OnceLock, Path,
+    PathBuf, SetFocus, UiState, Value, add_log, check, checked, combo_index, combo_select,
+    file_dialog, fs, get_text, json, localization, localized_detail, numeric_choice,
+    populate_numeric_choice, select_tab, set_language, set_text, show_window, tr, win,
+};
 
-pub(crate) const SAMPLE_RATES: &[i64] = &[44100, 48000, 88200, 96000, 176400, 192000];
+pub(crate) const SAMPLE_RATES: &[i64] = &[44100, 48000, 88200, 96000, 176_400, 192_000];
 pub(crate) const SAMPLE_BITS: &[i64] = &[16, 20, 24];
 pub(crate) const SAMPLE_BITS_LABELS: &[&str] = &["16 bit", "20 bit", "24 bit"];
 pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[

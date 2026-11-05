@@ -17,6 +17,10 @@ fn wide(value: &OsStr) -> io::Result<Vec<u16>> {
     Ok(result)
 }
 
+/// Move a file with optional replacement and cross-volume support.
+///
+/// # Errors
+/// Rejects paths containing NUL and returns the Windows error when the move fails or replacement is disallowed.
 pub fn move_file(source: &Path, destination: &Path, replace: bool) -> io::Result<()> {
     let source = wide(source.as_os_str())?;
     let destination = wide(destination.as_os_str())?;
@@ -30,6 +34,10 @@ pub fn move_file(source: &Path, destination: &Path, replace: bool) -> io::Result
     }
 }
 
+/// Copy a file with optional replacement of an existing destination.
+///
+/// # Errors
+/// Rejects paths containing NUL and returns the Windows error when copying fails or replacement is disallowed.
 pub fn copy_file(source: &Path, destination: &Path, replace: bool) -> io::Result<()> {
     let source = wide(source.as_os_str())?;
     let destination = wide(destination.as_os_str())?;
@@ -41,6 +49,7 @@ pub fn copy_file(source: &Path, destination: &Path, replace: bool) -> io::Result
     }
 }
 
+#[must_use]
 pub fn ordinal_ignore_case(left: &str, right: &str) -> bool {
     ordinal_ignore_case_cmp(left, right).is_eq()
 }

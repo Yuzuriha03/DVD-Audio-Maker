@@ -169,7 +169,7 @@ impl dvda_bridges::PcmSink for Pipeline {
             || self.channels != 0
             || !matches!(
                 format.sample_rate,
-                44100 | 48000 | 88200 | 96000 | 176400 | 192000
+                44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
             )
             || !matches!(format.bits, 16 | 20 | 24)
             || !(1..=6).contains(&format.channels)
@@ -288,7 +288,7 @@ impl dvda_bridges::PcmSink for Pipeline {
                 }
             }
             if let Some((index, &sample)) = owned.iter().enumerate().find(|(_, sample)| {
-                !(-8388608..=8388607).contains(*sample) || **sample as u32 & precision_mask != 0
+                !(-8_388_608..=8_388_607).contains(*sample) || **sample as u32 & precision_mask != 0
             }) {
                 return Err(self.fail(
                     "InvalidData",

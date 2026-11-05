@@ -44,7 +44,7 @@ fn available(root: &str) -> Option<u64> {
     (unsafe {
         GetDiskFreeSpaceExW(
             wide.as_ptr(),
-            &mut bytes,
+            &raw mut bytes,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
         )

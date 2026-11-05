@@ -9,7 +9,7 @@ pub(crate) struct Reader<'a> {
     lifetime: PhantomData<&'a mut c_void>,
 }
 
-impl<'a> Reader<'a> {
+impl Reader<'_> {
     /// # Safety
     /// The callback/context must satisfy `Read` for `'a`, with exactly `channels`
     /// samples per frame. Calls sharing a context must be sequential, and must not
@@ -31,8 +31,14 @@ impl<'a> Reader<'a> {
         let mut received = 0;
         // SAFETY: construction establishes callback validity; the checked slice
         // holds the requested frames and the count is exclusive stack storage.
-        let status =
-            unsafe { (self.callback)(self.context, buffer.as_mut_ptr(), capacity, &mut received) };
+        let status = unsafe {
+            (self.callback)(
+                self.context,
+                buffer.as_mut_ptr(),
+                capacity,
+                &raw mut received,
+            )
+        };
         if status != 0 || received > capacity {
             Err(())
         } else {
@@ -47,7 +53,7 @@ pub(crate) struct Writer<'a> {
     lifetime: PhantomData<&'a mut c_void>,
 }
 
-impl<'a> Writer<'a> {
+impl Writer<'_> {
     /// # Safety
     /// The callback/context must satisfy `Write` for `'a`. Calls sharing a context
     /// must be sequential and must not invalidate other live readers/writers.

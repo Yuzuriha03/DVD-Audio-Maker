@@ -24,7 +24,7 @@ mod acceptance {
     fn handles() -> u32 {
         let mut count = 0;
         assert_ne!(
-            unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut count) },
+            unsafe { GetProcessHandleCount(GetCurrentProcess(), &raw mut count) },
             0
         );
         count
@@ -149,10 +149,13 @@ mod acceptance {
         fs::create_dir(nav_output.join("VIDEO_TS")).unwrap();
         assert_eq!(spu(&document, &input, &output), 0);
         let expected_spu = fs::read(&output).unwrap();
-        assert!(!expected_spu.is_empty());
+        assert_ne!(expected_spu, [] as [u8; 0]);
         assert_eq!(nav(&nav_document, &nav_output), 0);
         let expected_nav = tree(&nav_output);
-        assert!(!expected_nav.is_empty());
+        assert_ne!(
+            expected_nav,
+            [] as [(std::path::PathBuf, std::vec::Vec<u8>); 0]
+        );
         fs::write(root.join("expected-spu.mpg"), &expected_spu).unwrap();
         let before_handles = handles();
         let before_heaps = heaps();
@@ -217,7 +220,7 @@ mod acceptance {
                 output: output.as_ptr(),
                 read_rgba: Some(pixels),
             };
-            assert_ne!(dvda_menu_run_spu(&request), 0);
+            assert_ne!(dvda_menu_run_spu(&raw const request), 0);
             request.size = std::mem::size_of::<MenuRequest>() as u32;
             for field in 0..3 {
                 let saved = match field {
@@ -229,23 +232,23 @@ mod acceptance {
                     0 => request.xml = std::ptr::null(),
                     1 => request.input = std::ptr::null(),
                     _ => request.output = std::ptr::null(),
-                };
-                assert_ne!(dvda_menu_run_spu(&request), 0);
+                }
+                assert_ne!(dvda_menu_run_spu(&raw const request), 0);
                 match field {
                     0 => request.xml = saved,
                     1 => request.input = saved,
                     _ => request.output = saved,
-                };
+                }
             }
             let invalid = CString::new(vec![0xff]).unwrap();
             request.xml = invalid.as_ptr();
-            assert_ne!(dvda_menu_run_spu(&request), 0);
+            assert_ne!(dvda_menu_run_spu(&raw const request), 0);
             request.xml = xml.as_ptr();
             request.input = invalid.as_ptr();
-            assert_ne!(dvda_menu_run_spu(&request), 0);
+            assert_ne!(dvda_menu_run_spu(&raw const request), 0);
             request.input = input.as_ptr();
             request.output = invalid.as_ptr();
-            assert_ne!(dvda_menu_run_spu(&request), 0);
+            assert_ne!(dvda_menu_run_spu(&raw const request), 0);
         }
         assert_eq!(spu(&document, &input, &output), 0);
         REENTER.store(true, Ordering::Relaxed);

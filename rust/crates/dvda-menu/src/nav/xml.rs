@@ -62,9 +62,7 @@ fn element_allowed(parent: Option<Node>, name: &str) -> Option<Node> {
         (Some(Node::Pgc), "vob") => Node::Vob,
         (Some(Node::Pgc), "subpicture") => Node::SubpicturePgc,
         (Some(Node::Vob), "cell") => Node::Cell,
-        (Some(Node::SubpictureMenus), "stream") | (Some(Node::SubpicturePgc), "stream") => {
-            Node::Stream
-        }
+        (Some(Node::SubpictureMenus | Node::SubpicturePgc), "stream") => Node::Stream,
         _ => return None,
     })
 }
@@ -240,10 +238,10 @@ impl Builder {
                     "start" => cell.start = Some(value.to_string()),
                     "end" => cell.end = Some(value.to_string()),
                     "chapter" => {
-                        cell.chapter = boolean(value).ok_or("invalid boolean for cell chapter")?
+                        cell.chapter = boolean(value).ok_or("invalid boolean for cell chapter")?;
                     }
                     "program" => {
-                        cell.program = boolean(value).ok_or("invalid boolean for cell program")?
+                        cell.program = boolean(value).ok_or("invalid boolean for cell program")?;
                     }
                     "pause" => cell.pause = parse_pause(value)?,
                     _ => return Err(format!("unsupported cell attribute {name:?}")),

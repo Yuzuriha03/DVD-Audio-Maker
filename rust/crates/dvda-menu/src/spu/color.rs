@@ -22,18 +22,19 @@ impl Color {
     }
 
     pub(crate) fn cr(self) -> i32 {
-        (439 * i32::from(self.r) - 368 * i32::from(self.g) - 71 * i32::from(self.b) + 128500) / 1000
+        (439 * i32::from(self.r) - 368 * i32::from(self.g) - 71 * i32::from(self.b) + 128_500)
+            / 1000
     }
 
     pub(crate) fn cb(self) -> i32 {
-        (-148 * i32::from(self.r) - 291 * i32::from(self.g) + 439 * i32::from(self.b) + 128500)
+        (-148 * i32::from(self.r) - 291 * i32::from(self.g) + 439 * i32::from(self.b) + 128_500)
             / 1000
     }
 }
 
 /// Parses a spumux colour spec: optional hash followed by 3, 6, 9 or 12 hex digits.
 /// The parser keeps the historical C semantics (three equal-length components, each
-/// scaled to 0..=255, alpha opaque); named and rgb() forms are not used by the menu
+/// scaled to 0..=255, alpha opaque); named and `rgb()` forms are not used by the menu
 /// authoring path and are rejected.
 pub(crate) fn parse_hex(text: &str) -> Result<Color, String> {
     let digits = text.strip_prefix('#').unwrap_or(text);
@@ -117,7 +118,7 @@ mod tests {
             a: 255,
         };
         assert_eq!(red.y(), (257 * 255 + 16500) / 1000);
-        assert_eq!(red.cr(), (439 * 255 + 128500) / 1000);
-        assert_eq!(red.cb(), (-148 * 255 + 128500) / 1000);
+        assert_eq!(red.cr(), (439 * 255 + 128_500) / 1000);
+        assert_eq!(red.cb(), (-148 * 255 + 128_500) / 1000);
     }
 }

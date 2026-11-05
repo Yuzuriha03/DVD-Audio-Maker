@@ -1,6 +1,10 @@
 #[cfg(windows)]
 mod windows {
-    use dvda_mlp::ffi::*;
+    use dvda_mlp::ffi::{
+        EncoderConfig, EncoderResult, GroupsConfig, Read, StampRecord, Write, mlp_encode_stream,
+        mlp_encode_stream_depths, mlp_encode_stream_groups, mlp_encode_stream_layout,
+        mlp_encoder_abi_version,
+    };
     use std::{
         ffi::{CString, c_void},
         path::PathBuf,
@@ -355,7 +359,7 @@ mod windows {
         let groups_only = std::env::args().any(|arg| arg == "--groups-only");
         let mut tested = 0;
         if !groups_only {
-            for rate in [44100, 48000, 88200, 96000, 176400, 192000] {
+            for rate in [44100, 48000, 88200, 96000, 176_400, 192_000] {
                 for bits in [16, 20, 24] {
                     for channels in 1..=if rate > 96000 { 2 } else { 6 } {
                         let frames = 401;
@@ -515,15 +519,15 @@ mod windows {
                         let mut seed = 0x12345678u32;
                         let pcm: Vec<i32> = (0..frames * 2)
                             .map(|n| {
-                                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
                                 match pattern {
                                     0 => (n as i32 / 2 % 10000 - 5000) * 256,
                                     1 => ((seed >> 16) as i32 - 32768) * 256,
                                     _ => {
                                         if n % 2 == 0 {
-                                            -8388608
+                                            -8_388_608
                                         } else {
-                                            8388352
+                                            8_388_352
                                         }
                                     }
                                 }
@@ -594,16 +598,16 @@ mod windows {
                                     0 => (x + ch as i32) * 256,
                                     1 => {
                                         if n % 101 == 0 {
-                                            8388607 - ch as i32
+                                            8_388_607 - ch as i32
                                         } else {
                                             0
                                         }
                                     }
                                     _ => {
                                         if (n + ch) % 2 == 0 {
-                                            8388607
+                                            8_388_607
                                         } else {
-                                            -8388608
+                                            -8_388_608
                                         }
                                     }
                                 }
@@ -920,7 +924,7 @@ mod windows {
                     );
                     if malformed {
                         assert_eq!(s.at, 0);
-                        assert!(s.bytes.is_empty());
+                        assert_eq!(s.bytes, [] as [u8; 0]);
                         continue;
                     }
                     assert_eq!(r.input_frames, c.frames);
@@ -1073,11 +1077,11 @@ mod windows {
                         8 => c.metadata = std::ptr::null(),
                         9 => {
                             s.pcm[0] = 1;
-                            expected = -3
+                            expected = -3;
                         }
                         10 => {
                             s.bad_read = true;
-                            expected = -3
+                            expected = -3;
                         }
                         _ => {}
                     }
@@ -1091,7 +1095,7 @@ mod windows {
                         "admission {test}"
                     );
                     assert_eq!(r.status, expected);
-                    assert!(s.bytes.is_empty());
+                    assert_eq!(s.bytes, [] as [u8; 0]);
                 }
             }
             println!("13 malformed configuration/callback/precision cases match {reference}");

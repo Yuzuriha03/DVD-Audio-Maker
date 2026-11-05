@@ -14,21 +14,28 @@ impl Sha256 {
         self.0.update(data);
     }
 
+    #[must_use]
     pub fn finish(self) -> [u8; 32] {
         self.0.finalize().into()
     }
 }
 
+#[must_use]
 pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut hash = Sha256::default();
     hash.update(data);
     hash.finish()
 }
 
+#[must_use]
 pub fn hex_digest(data: &[u8]) -> String {
     hex(&sha256(data))
 }
 
+/// Compute a lowercase SHA-256 digest from a stream.
+///
+/// # Errors
+/// Propagates any non-interrupted reader failure.
 pub fn reader_digest(mut reader: impl Read) -> io::Result<String> {
     let mut hash = Sha256::default();
     let mut buffer = vec![0; 128 * 1024];

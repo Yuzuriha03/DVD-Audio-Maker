@@ -13,11 +13,17 @@ pub struct Writer<W> {
 
 impl<W: Write + Seek> Writer<W> {
     /// Write an extensible PCM header. RF64 is selected at finalization only when needed.
+    ///
+    /// # Errors
+    /// Rejects unsupported PCM geometry and propagates seek or write failures.
     pub fn new(destination: W, format: Format) -> Result<Self> {
         Self::create(destination, format, true)
     }
 
     /// Write compact RIFF without RF64 reservation; reject output exceeding the RIFF limit.
+    ///
+    /// # Errors
+    /// Rejects unsupported PCM geometry and propagates seek or write failures.
     pub fn new_riff(destination: W, format: Format) -> Result<Self> {
         Self::create(destination, format, false)
     }
@@ -79,6 +85,10 @@ impl<W: Write + Seek> Writer<W> {
         })
     }
 
+    /// Write complete interleaved PCM frames.
+    ///
+    /// # Errors
+    /// Rejects partial frames and RIFF size overflow, and propagates output failures.
     pub fn write_frames(&mut self, bytes: &[u8]) -> Result<()> {
         if !bytes.len().is_multiple_of(self.format.block_align()) {
             return Err(Error::new(
@@ -102,10 +112,18 @@ impl<W: Write + Seek> Writer<W> {
         Ok(())
     }
 
+    /// Finalize container sizes and return the destination.
+    ///
+    /// # Errors
+    /// Propagates metadata, padding, header rewrite, and output failures.
     pub fn finish(self) -> Result<W> {
         self.finish_with_tags(&[])
     }
 
+    /// Finalize the container with INFO tags and return the destination.
+    ///
+    /// # Errors
+    /// Rejects oversized tags and propagates metadata, padding, header rewrite, and output failures.
     pub fn finish_with_tags(mut self, tags: &[(String, String)]) -> Result<W> {
         let padding = self.bytes & 1;
         if padding != 0 {

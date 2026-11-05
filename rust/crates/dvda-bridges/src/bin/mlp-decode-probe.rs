@@ -1,9 +1,20 @@
-use dvda_bridges::ffmpeg::*;
+use dvda_bridges::ffmpeg::{
+    AV_CODEC_ID_MLP, AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S32, EAGAIN, EINVAL, EIO, ENOMEM, EOF,
+    INVALID, av_codec_iterate, av_demuxer_iterate, av_find_best_stream, av_frame_alloc,
+    av_frame_free, av_frame_unref, av_get_packed_sample_fmt, av_muxer_iterate, av_packet_alloc,
+    av_packet_free, av_packet_unref, av_read_frame, av_sample_fmt_is_planar,
+    avcodec_alloc_context3, avcodec_find_decoder, avcodec_free_context, avcodec_open2,
+    avcodec_parameters_to_context, avcodec_receive_frame, avcodec_send_packet, avcodec_version,
+    avformat_close_input, avformat_find_stream_info, avformat_open_input, avformat_version,
+    avio_enum_protocols, avutil_version, done, streams,
+};
 use std::{ffi::CString, fs::File, io::Write, ptr};
 /// # Safety
-/// FFmpeg's libraries must be linked and usable on this thread.
+/// `FFmpeg`'s libraries must be linked and usable on this thread.
 /// `input` is copied into a C string here. Every format, context, frame and packet
 /// allocated in this function is released before it returns.
+// FFmpeg sample planes are only guaranteed byte alignment here, so every read is unaligned.
+#[allow(clippy::cast_ptr_alignment)]
 unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32> {
     unsafe {
         let path = CString::new(input).map_err(|_| EINVAL)?;
@@ -13,14 +24,14 @@ unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32>
         let mut packet = ptr::null_mut();
         let result = (|| {
             done(avformat_open_input(
-                &mut format,
+                &raw mut format,
                 path.as_ptr(),
                 ptr::null(),
                 ptr::null_mut(),
             ))?;
             done(avformat_find_stream_info(format, ptr::null_mut()))?;
             let mut codec = ptr::null();
-            let stream = av_find_best_stream(format, 1, -1, -1, &mut codec, 0);
+            let stream = av_find_best_stream(format, 1, -1, -1, &raw mut codec, 0);
             done(stream)?;
             context = avcodec_alloc_context3(codec);
             frame = av_frame_alloc();
@@ -93,7 +104,7 @@ unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32>
                                     sample * ch as usize + channel
                                 };
                                 let value = if depth == 16 {
-                                    ptr::read_unaligned(plane.cast::<i16>().add(index)) as i32
+                                    i32::from(ptr::read_unaligned(plane.cast::<i16>().add(index)))
                                         * 65536
                                 } else {
                                     ptr::read_unaligned(plane.cast::<i32>().add(index))
@@ -116,10 +127,10 @@ unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32>
             }
             Ok((count, channels, rate, bits))
         })();
-        av_packet_free(&mut packet);
-        av_frame_free(&mut frame);
-        avcodec_free_context(&mut context);
-        avformat_close_input(&mut format);
+        av_packet_free(&raw mut packet);
+        av_frame_free(&raw mut frame);
+        avcodec_free_context(&raw mut context);
+        avformat_close_input(&raw mut format);
         result
     }
 }
@@ -136,7 +147,7 @@ fn capabilities(minimal: bool) -> i32 {
     unsafe {
         let mut iterator = ptr::null_mut();
         let mut codecs = 0;
-        while let Some(codec) = av_codec_iterate(&mut iterator).as_ref() {
+        while let Some(codec) = av_codec_iterate(&raw mut iterator).as_ref() {
             codecs += 1;
             if minimal && codec.id() != AV_CODEC_ID_MLP {
                 return 11;
@@ -144,17 +155,17 @@ fn capabilities(minimal: bool) -> i32 {
         }
         iterator = ptr::null_mut();
         let mut demuxers = 0;
-        while !av_demuxer_iterate(&mut iterator).is_null() {
+        while !av_demuxer_iterate(&raw mut iterator).is_null() {
             demuxers += 1;
         }
         iterator = ptr::null_mut();
         let mut muxers = 0;
-        while !av_muxer_iterate(&mut iterator).is_null() {
+        while !av_muxer_iterate(&raw mut iterator).is_null() {
             muxers += 1;
         }
         iterator = ptr::null_mut();
         let mut protocols = 0;
-        while !avio_enum_protocols(&mut iterator, 0).is_null() {
+        while !avio_enum_protocols(&raw mut iterator, 0).is_null() {
             protocols += 1;
         }
         println!(

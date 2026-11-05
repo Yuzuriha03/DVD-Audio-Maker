@@ -4,7 +4,7 @@ use super::*;
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn page_proc(
     hwnd: Hwnd,
@@ -50,7 +50,7 @@ pub(crate) unsafe extern "system" fn page_proc(
         }
         0x020a => {
             let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
-            let delta = (wparam >> 16) as i16 as i32;
+            let delta = i32::from((wparam >> 16) as i16);
             let pixels = if let Some(mut state) = unsafe { state(GetParent(hwnd)) } {
                 wheel_pixels(
                     delta,
@@ -190,7 +190,7 @@ mod wheel_tests {
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
-/// that pass pointers in `lparam` (such as WM_DRAWITEM or WM_NCCALCSIZE) it points to the
+/// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lparam) -> i32 {
     let (page, delta) = unsafe { &*(parameter as *const (Hwnd, i32)) };
@@ -234,7 +234,7 @@ pub(crate) fn page_content_height(page: Hwnd) -> i32 {
         1
     }
     let mut found = (page, 0);
-    unsafe { EnumChildWindows(page, lowest, &mut found as *mut _ as Lparam) };
+    unsafe { EnumChildWindows(page, lowest, &raw mut found as Lparam) };
     let scroll = GetWindowLongPtrW(page, GWLP_USERDATA) as i32;
     if found.1 <= 0 {
         scale(100)
@@ -260,7 +260,7 @@ pub(crate) fn scroll_page(hwnd: Hwnd, requested: i32, explicit: bool) {
     scroll_page_with_bar(hwnd, requested, explicit, bar);
 }
 
-/// `scroll_page` for callers that already hold the UiState: `bar` is its page
+/// `scroll_page` for callers that already hold the `UiState`: `bar` is its page
 /// scrollbar, invalidated after the scroll (null if there is none).
 pub(crate) fn scroll_page_with_bar(hwnd: Hwnd, requested: i32, explicit: bool, bar: Hwnd) {
     let mut rect = Rect {
@@ -283,7 +283,7 @@ pub(crate) fn scroll_page_with_bar(hwnd: Hwnd, requested: i32, explicit: bool, b
             if DEFER_CONTROL_PAINT.load(Ordering::Relaxed) || IsWindowVisible(hwnd) == 0 {
                 // Layout repaints everything afterwards; just move the children.
                 let movement = (hwnd, delta);
-                EnumChildWindows(hwnd, scroll_page_child, &movement as *const _ as Lparam);
+                EnumChildWindows(hwnd, scroll_page_child, &raw const movement as Lparam);
             } else {
                 // Shift the shown pixels and every child in one operation, then
                 // paint only the uncovered strip. Moving and repainting each

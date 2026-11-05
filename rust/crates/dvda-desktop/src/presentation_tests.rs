@@ -197,7 +197,7 @@ fn batch_progress_preserves_track_names_and_audio_parameters() {
     ] {
         let value = match kind {
             "Encoded" => {
-                json!({"Frames":192000,"Rate":96000,"Bits":24,"Channels":6,"Bytes":7654321})
+                json!({"Frames":192_000,"Rate":96000,"Bits":24,"Channels":6,"Bytes":7_654_321})
             }
             "PcmProgress" => json!(47),
             _ => json!("原始诊断 0xABC"),
@@ -320,7 +320,7 @@ fn audio_mode_note_matches_the_selected_workflow() {
     assert_eq!(audio_note_key(99), "mlp_note");
     for lang in [Lang::Zh, Lang::En, Lang::Ja] {
         for mode in [0, 1, 2] {
-            assert!(!tr(lang, audio_note_key(mode)).is_empty());
+            assert_ne!(tr(lang, audio_note_key(mode)), "");
         }
     }
 }
@@ -400,12 +400,7 @@ fn combo_measurement_preserves_original_item_height() {
     let _ui_test_lock = ui_test_guard();
     let mut item: MeasureItemStruct = unsafe { std::mem::zeroed() };
     unsafe {
-        window_proc(
-            ptr::null_mut(),
-            WM_MEASUREITEM,
-            0,
-            &mut item as *mut MeasureItemStruct as Lparam,
-        );
+        window_proc(ptr::null_mut(), WM_MEASUREITEM, 0, &raw mut item as Lparam);
     }
     assert_eq!(item.item_height, scale(26).max(scale(20)) as u32);
 }
@@ -433,7 +428,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                 dc,
                 wide_text.as_ptr(),
                 -1,
-                &mut rect,
+                &raw mut rect,
                 flags | DT_CALCRECT | DT_NOPREFIX,
             );
             SelectObject(dc, old);
@@ -492,9 +487,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                         let at =
                             format!("{} {dpi}dpi {width}w adv={advanced} tab{tab}", lang.code());
                         let mut children: Vec<Hwnd> = Vec::new();
-                        unsafe {
-                            EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam)
-                        };
+                        unsafe { EnumChildWindows(parent, collect, &raw mut children as Lparam) };
                         for hwnd in children.into_iter().filter(|hwnd| shown(*hwnd)) {
                             let class = window_class(hwnd);
                             let text = get_text(hwnd);
@@ -758,7 +751,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
         class_name: page_class.as_ptr(),
     };
     unsafe {
-        RegisterClassW(&registration);
+        RegisterClassW(&raw const registration);
         InitCommonControlsEx(&InitCommonControlsEx {
             size: std::mem::size_of::<InitCommonControlsEx>() as u32,
             classes: 0xffff,
@@ -779,7 +772,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
         menu: ptr::null(),
         class_name: main_class.as_ptr(),
     };
-    unsafe { RegisterClassW(&main_registration) };
+    unsafe { RegisterClassW(&raw const main_registration) };
     let parent = create!(
         ptr::null_mut(),
         "DVD_AUDIO_MAKER_RUST",
@@ -1064,7 +1057,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
             UI_DPI.store(dpi_value, Ordering::Relaxed);
             let mut children: Vec<Hwnd> = Vec::new();
             unsafe {
-                EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam);
+                EnumChildWindows(parent, collect, &raw mut children as Lparam);
             }
             let position = |hwnd: Hwnd| {
                 let rect = window_rect(hwnd);
@@ -1134,7 +1127,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
             UI_DPI.store(dpi_value, Ordering::Relaxed);
             let mut children: Vec<Hwnd> = Vec::new();
             unsafe {
-                EnumChildWindows(parent, collect, &mut children as *mut _ as Lparam);
+                EnumChildWindows(parent, collect, &raw mut children as Lparam);
             }
             let position = |hwnd: Hwnd| {
                 let rect = window_rect(hwnd);
@@ -1326,13 +1319,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
         ui.log_hold_until = None;
         // The window owns its state through the cell, as in WM_CREATE.
         let cell = RefCell::new(ui);
-        unsafe {
-            SetWindowLongPtrW(
-                parent,
-                GWLP_USERDATA,
-                &cell as *const RefCell<UiState> as isize,
-            )
-        };
+        unsafe { SetWindowLongPtrW(parent, GWLP_USERDATA, &raw const cell as isize) };
         unsafe { window_proc(parent, 0x0231, 0, 0) };
         // Growing a log scrolled to its end reveals earlier lines, which
         // changes its first visible line.
@@ -1520,11 +1507,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     ui.cancel = Some(Arc::clone(&cancel));
     let cell = RefCell::new(ui);
     unsafe {
-        SetWindowLongPtrW(
-            parent,
-            GWLP_USERDATA,
-            &cell as *const RefCell<UiState> as isize,
-        );
+        SetWindowLongPtrW(parent, GWLP_USERDATA, &raw const cell as isize);
         window_proc(parent, WM_CLOSE, 0, 0);
         SetWindowLongPtrW(parent, GWLP_USERDATA, 0);
     }
@@ -1550,7 +1533,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     ui.logs.clear();
     ui.problem_count = 0;
     ui.busy = true;
-    ui.started = Some(Instant::now() - Duration::from_secs(2));
+    ui.started = Some(Instant::now().checked_sub(Duration::from_secs(2)).unwrap());
     set_busy_controls(&mut ui, true);
     let stress_path = root.join("stress.log");
     ui.log_file = Some((fs::File::create(&stress_path).unwrap(), stress_path.clone()));
@@ -1664,12 +1647,12 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
         SendMessageW(
             ui.controls.log,
             EM_GETSEL,
-            &mut start as *mut u32 as usize,
-            &mut end as *mut u32 as isize,
+            &raw mut start as usize,
+            &raw mut end as isize,
         );
     }
     assert_eq!((start, end), (5, 12));
-    ui.log_hold_until = Some(Instant::now() - Duration::from_secs(1));
+    ui.log_hold_until = Some(Instant::now().checked_sub(Duration::from_secs(1)).unwrap());
     add_log(&mut ui, "[build] summary-after-hold", false);
     render_log(&mut ui);
     assert!(first_visible_log_line(ui.controls.log) > 30);

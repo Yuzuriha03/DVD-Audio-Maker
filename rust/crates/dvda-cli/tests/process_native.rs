@@ -150,14 +150,14 @@ fn assert_terminated(path: &std::path::Path) {
         .parse()
         .unwrap();
     let handle = unsafe { OpenProcess(0x100000, 0, pid) };
-    if !handle.is_null() {
+    if handle.is_null() {
+        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(87));
+    } else {
         let code = unsafe { WaitForSingleObject(handle, 5000) };
         unsafe {
             CloseHandle(handle);
         }
         assert_eq!(code, 0, "Leaked descendant {pid}");
-    } else {
-        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(87));
     }
 }
 #[test]

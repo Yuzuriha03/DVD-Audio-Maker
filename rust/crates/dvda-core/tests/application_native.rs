@@ -83,7 +83,7 @@ fn sources_aligned(root: &Path, align: bool) {
         wave.extend_from_slice(&1u16.to_le_bytes());
         wave.extend_from_slice(&2u16.to_le_bytes());
         wave.extend_from_slice(&48000u32.to_le_bytes());
-        wave.extend_from_slice(&192000u32.to_le_bytes());
+        wave.extend_from_slice(&192_000_u32.to_le_bytes());
         wave.extend_from_slice(&4u16.to_le_bytes());
         wave.extend_from_slice(&16u16.to_le_bytes());
         wave.extend_from_slice(b"data");
@@ -835,7 +835,7 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
         &mut missing_diagnostics,
     )
     .unwrap();
-    assert!(missing_assets.is_empty());
+    assert_eq!(missing_assets, [] as [std::string::String; 0]);
     let mut missing_codes = vec!["MENU_DATA_MISSING"];
     if !cfg!(feature = "direct-bridges") {
         missing_codes.extend([
@@ -933,7 +933,10 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
         "MenuTracksPerPage":1,"MenuIndexMinimumAlbums":1}))
     .unwrap();
     let total = pages["TotalPages"].as_u64().unwrap() as usize;
-    assert!(dvda_core::menu_check::buttons(&temporary, total, 1).is_empty());
+    assert_eq!(
+        dvda_core::menu_check::buttons(&temporary, total, 1),
+        [] as [serde_json::Value; 0]
+    );
     fs::write(
         temporary.join("spu_xmltemp_0.xml"),
         "<button name=\"button999\"/>",
@@ -1492,7 +1495,7 @@ fn long_album(root: &Path, directory: &str, album: &str) {
     wave.extend_from_slice(&1u16.to_le_bytes());
     wave.extend_from_slice(&2u16.to_le_bytes());
     wave.extend_from_slice(&48000u32.to_le_bytes());
-    wave.extend_from_slice(&192000u32.to_le_bytes());
+    wave.extend_from_slice(&192_000_u32.to_le_bytes());
     wave.extend_from_slice(&4u16.to_le_bytes());
     wave.extend_from_slice(&16u16.to_le_bytes());
     wave.extend_from_slice(b"data");
@@ -1598,14 +1601,9 @@ fn lpcm_wave_reuse_and_menu_prefetch_build_two_verified_discs() {
     assert_eq!(files.len(), 2);
     for file in files {
         assert!(file["source_identity"].is_object());
-        assert!(!file["prepared_pcm_path"].as_str().unwrap_or("").is_empty());
+        assert_ne!(file["prepared_pcm_path"].as_str().unwrap_or(""), "");
         assert!(file["prepared_pcm_identity"].is_object());
-        assert!(
-            !file["prepared_pcm_signature"]
-                .as_str()
-                .unwrap_or("")
-                .is_empty()
-        );
+        assert_ne!(file["prepared_pcm_signature"].as_str().unwrap_or(""), "");
     }
     for disc in 1..=2 {
         assert!(

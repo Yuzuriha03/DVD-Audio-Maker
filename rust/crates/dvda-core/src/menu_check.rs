@@ -35,6 +35,7 @@ fn pgc_pages(project: &str) -> Vec<&str> {
         .collect()
 }
 
+#[must_use]
 pub fn buttons(directory: &Path, total: usize, index: usize) -> Vec<Value> {
     let mut issues = Vec::new();
     let project = match fs::read_to_string(directory.join("xmltemp")) {
@@ -135,7 +136,7 @@ pub fn verify(
             data.as_chunks::<4>()
                 .0
                 .iter()
-                .map(|pixel| pixel[3] as u64)
+                .map(|pixel| u64::from(pixel[3]))
                 .sum::<u64>()
         };
         if (width, height) != (hw, hh) || alpha(highlighted) <= alpha(normal) {
@@ -168,6 +169,7 @@ pub fn verify(
 
 /// Inspect the effective --stillpics list, including developer menu arguments,
 /// so disabled/missing source covers do not produce a false warning.
+#[must_use]
 pub fn still_warnings(output: &Path, author_arguments: &[String]) -> Vec<Value> {
     let has_pictures = author_arguments.windows(2).any(|args| {
         args[0] == "--stillpics" && args[1].split(';').any(|path| !path.trim().is_empty())

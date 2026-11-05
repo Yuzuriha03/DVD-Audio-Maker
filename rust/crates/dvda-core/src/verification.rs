@@ -45,6 +45,7 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     }
 }
 
+#[must_use]
 pub fn parse_audit_log(text: &str) -> AuditLogData {
     let stripped = strip_ansi(text);
     let text = select_latest_formal_section(&stripped);
@@ -77,6 +78,7 @@ pub fn parse_audit_log(text: &str) -> AuditLogData {
     AuditLogData { rows, commands }
 }
 
+#[must_use]
 pub fn strip_ansi(text: &str) -> String {
     let mut output = String::with_capacity(text.len());
     let bytes = text.as_bytes();
@@ -271,6 +273,7 @@ pub struct DiscEvidence {
     pub groups: BTreeMap<i32, GroupEvidence>,
 }
 impl DiscEvidence {
+    #[must_use]
     pub fn track_count(&self) -> usize {
         self.groups.values().map(|group| group.rows.len()).sum()
     }
@@ -318,6 +321,7 @@ pub fn manifest_issues(path: Option<&Path>, discs: &[DiscEvidence]) -> Vec<Value
         )],
     }
 }
+#[must_use]
 pub fn select_latest_build_log(requested: &Path, allow_fallback: bool) -> Option<PathBuf> {
     let mut candidates = vec![requested.to_path_buf()];
     if allow_fallback && let Some(parent) = requested.parent() {
@@ -337,6 +341,7 @@ pub fn select_latest_build_log(requested: &Path, allow_fallback: bool) -> Option
         .sort_by_key(|path| std::cmp::Reverse(fs::metadata(path).and_then(|m| m.modified()).ok()));
     existing.into_iter().next()
 }
+#[must_use]
 pub fn has_padding_failure(text: &str) -> bool {
     strip_ansi(text)
         .to_ascii_lowercase()
@@ -388,6 +393,7 @@ fn mapped_command<'a>(
         })
         .or_else(|| log.commands.get(position))
 }
+#[must_use]
 pub fn sector_relations(rows: &[TrackRow], sectors: i64, context: &str) -> Vec<Value> {
     let mut ordered = rows.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|row| row.first);
@@ -410,6 +416,7 @@ pub fn sector_relations(rows: &[TrackRow], sectors: i64, context: &str) -> Vec<V
     }
     issues
 }
+#[must_use]
 pub fn log_issues(
     requested: Option<&Path>,
     allow_fallback: bool,
@@ -512,6 +519,7 @@ pub fn log_issues(
     issues
 }
 
+#[must_use]
 pub fn still_picture_count(log: &str) -> usize {
     log.lines()
         .find(|line| parse_author_command(line).is_some())
@@ -596,7 +604,10 @@ mod tests {
             "disc2"
         );
         assert!(mapped_command(&log, Path::new("release_3.iso"), 2).is_none());
-        assert!(sector_relations(&[row(1, 0, 9), row(2, 10, 19)], 20, "x").is_empty());
+        assert_eq!(
+            sector_relations(&[row(1, 0, 9), row(2, 10, 19)], 20, "x"),
+            [] as [serde_json::Value; 0]
+        );
         for first in [9, 11] {
             assert_eq!(
                 sector_relations(&[row(1, 0, 9), row(2, first, 19)], 20, "x")[0]["Code"],
@@ -658,7 +669,7 @@ mod tests {
         ] {
             for language in ["zh", "en", "ja"] {
                 let translated = crate::localization::translate(language, message);
-                assert!(!translated.is_empty());
+                assert_ne!(translated, "");
                 if language != "zh" {
                     assert_ne!(translated, message, "{language}: {message}");
                 }

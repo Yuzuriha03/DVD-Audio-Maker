@@ -37,7 +37,7 @@ fn wave(
     let rate = 48000u32;
     let width = container / 8;
     let mut fmt = Vec::new();
-    fmt.extend_from_slice(&if container != bits { 0xfffeu16 } else { 1 }.to_le_bytes());
+    fmt.extend_from_slice(&if container == bits { 1 } else { 0xfffeu16 }.to_le_bytes());
     fmt.extend_from_slice(&channels.to_le_bytes());
     fmt.extend_from_slice(&rate.to_le_bytes());
     fmt.extend_from_slice(&(rate * u32::from(channels * width)).to_le_bytes());

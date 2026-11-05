@@ -95,10 +95,10 @@ pub fn font_width(request: Value) -> Result<Value, String> {
         for unit in units(value) {
             if is_wide_unit(unit) {
                 wide += 1.0;
-                bytes += 3.0
+                bytes += 3.0;
             } else {
                 narrow += 1.0;
-                bytes += 1.0
+                bytes += 1.0;
             }
         }
     }
@@ -353,6 +353,9 @@ pub fn preflight(job: &Job, diagnostics: &mut Vec<Value>) {
 
 /// Build the on-disk menu assets consumed by the project-built author.
 /// Image decoding, layout and font probing use the Rust image implementation.
+///
+/// # Errors
+/// Returns an error for invalid menu configuration, missing runtime resources, image/font failures, or output I/O failures.
 pub fn build_assets(
     job: &Job,
     disc: &Disc,

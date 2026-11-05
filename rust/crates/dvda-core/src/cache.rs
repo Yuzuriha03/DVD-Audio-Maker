@@ -14,8 +14,8 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     }
 }
 
-/// The application cache loader retains the old MlpCacheIndex warning and
-/// OrdinalIgnoreCase dictionary behavior. The developer JSON envelope stays
+/// The application cache loader retains the old `MlpCacheIndex` warning and
+/// `OrdinalIgnoreCase` dictionary behavior. The developer JSON envelope stays
 /// permissive for compatibility with its historical generic load operation.
 pub fn load_mlp(path: &Path, events: &mut dyn Callbacks) -> Map<String, Value> {
     if !path.exists() {
@@ -72,6 +72,7 @@ struct IdentityShape {
     tail_hash: Option<String>,
 }
 
+#[must_use]
 pub fn find_mlp<'a>(entries: &'a Map<String, Value>, path: &Path) -> Option<&'a Value> {
     entries
         .iter()
@@ -183,7 +184,7 @@ mod tests {
         let path = root.join("cache.json");
         let mut events = Events::default();
         assert!(load_mlp(&path, &mut events).is_empty());
-        assert!(events.0.is_empty());
+        assert_eq!(events.0, [] as [std::string::String; 0]);
         let key = Path::new("C:\\Music\\ÉTÉ\\song.MLP");
         let valid = json!({key.to_str().unwrap():{"source":{"Size":1},"output":{"Size":2},"encoder":"same","bits":24,"resample_to":48000,"max_interval":8}});
         save(json!({"Path":path,"Entries":valid})).unwrap();
@@ -221,7 +222,7 @@ mod tests {
         fs::write(&path, "null").unwrap();
         events.0.clear();
         assert!(load_mlp(&path, &mut events).is_empty());
-        assert!(events.0.is_empty());
+        assert_eq!(events.0, [] as [std::string::String; 0]);
         fs::remove_dir_all(root).unwrap();
     }
 

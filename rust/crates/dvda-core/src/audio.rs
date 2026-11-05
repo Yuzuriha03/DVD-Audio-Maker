@@ -33,6 +33,7 @@ pub struct DecodeOutput {
     pub mlp_output: Option<PathBuf>,
 }
 impl DecodeOutput {
+    #[must_use]
     pub fn prepared_path(&self) -> PathBuf {
         if self.normalized.is_file() {
             self.normalized.clone()
@@ -103,6 +104,7 @@ pub fn reusable_production_pcm(
     }
 }
 
+#[must_use]
 pub fn parameters_from_track(track: &Value, current_identity: &Value) -> Option<Parameters> {
     let evidence = track.get("SourceIdentity")?;
     if !crate::identity::equivalent(evidence, current_identity) {
@@ -292,6 +294,7 @@ fn stream(document: &Value) -> &Value {
         })
         .unwrap_or(&Value::Null)
 }
+#[must_use]
 pub fn parameters_from_probe(document: &Value) -> Parameters {
     let stream = stream(document);
     Parameters {
@@ -300,6 +303,7 @@ pub fn parameters_from_probe(document: &Value) -> Parameters {
         bits: int(&stream["bits_per_raw_sample"]),
     }
 }
+#[must_use]
 pub fn metadata_from_probe(path: &str, document: &Value) -> Metadata {
     let parameters = parameters_from_probe(document);
     let stream = stream(document);

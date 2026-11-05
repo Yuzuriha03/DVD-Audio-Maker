@@ -1,4 +1,4 @@
-//! NAV pack filling helpers (the FixVobus stage of the navigation builder).
+//! NAV pack filling helpers (the `FixVobus` stage of the navigation builder).
 //!
 //! The PCI/DSI packets store playback-time BCD fields and relative VOBU sector
 //! offsets. Both are small pure functions over the scanned VOBU table, so they

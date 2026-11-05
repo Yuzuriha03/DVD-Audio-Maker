@@ -17,8 +17,9 @@ fn request_integer(request: &Value, key: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("Missing {key}"))
 }
 
+#[must_use]
 pub fn format_code(rate: i64, bits: i64, channels: i64) -> i64 {
-    if !matches!(rate, 44100 | 48000 | 88200 | 96000 | 176400 | 192000)
+    if !matches!(rate, 44100 | 48000 | 88200 | 96000 | 176_400 | 192_000)
         || !matches!(bits, 16 | 24)
         || !(1..=6).contains(&channels)
         || (rate > 96000 && channels > 2)
@@ -31,6 +32,7 @@ pub fn format_code(rate: i64, bits: i64, channels: i64) -> i64 {
     0
 }
 
+#[must_use]
 pub fn layout_code(rate: i64, bits: i64, channels: i64, mask: i64) -> i64 {
     let format = format_code(rate, bits, channels);
     if format != 0 {
@@ -353,6 +355,7 @@ fn updated_track(
     Value::Object(track)
 }
 
+#[must_use]
 pub fn cache_path(build_directory: &Path, source_path: &str) -> String {
     let canonical = std::path::absolute(source_path)
         .unwrap_or_else(|_| PathBuf::from(source_path))
@@ -377,9 +380,7 @@ fn identity_matches_file(path: &str, expected: Option<&Value>) -> bool {
     let Some(expected) = expected else {
         return false;
     };
-    identity::compute(path)
-        .ok()
-        .is_some_and(|actual| same_identity(Some(&actual), Some(expected)))
+    identity::compute(path).is_ok_and(|actual| same_identity(Some(&actual), Some(expected)))
 }
 
 fn identity_matches_value(path: &str, expected: &Value) -> Result<bool, String> {
@@ -449,7 +450,7 @@ mod tests {
     #[test]
     fn accepts_dvd_audio_format_matrix_and_bitrate_limit() {
         assert_eq!(format_code(48000, 24, 6), 0);
-        assert_eq!(format_code(192000, 24, 3), 1);
+        assert_eq!(format_code(192_000, 24, 3), 1);
         assert_eq!(format_code(96000, 24, 6), 2);
     }
 

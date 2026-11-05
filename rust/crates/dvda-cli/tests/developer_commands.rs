@@ -200,7 +200,7 @@ fn language_selection_preserves_shared_help_errors_and_machine_output() {
             ],
         );
         assert_eq!(error.status.code(), Some(2));
-        assert!(error.stdout.is_empty());
+        assert_eq!(error.stdout, [] as [u8; 0]);
         assert_eq!(error.stderr, b"[ERROR] Unexpected argument: --unknown\n");
         let output = ok(run(
             &root.0,

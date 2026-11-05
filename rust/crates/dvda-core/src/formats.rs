@@ -78,6 +78,10 @@ fn require_udf_tag(
     Ok(descriptor)
 }
 
+fn udf_location(lba: u64) -> Result<u32, String> {
+    u32::try_from(lba).map_err(|_| format!("UDF_DESCRIPTOR_OUT_OF_RANGE: LBA {lba}"))
+}
+
 fn verify_dvd_audio_filesystem_reader(
     input: &mut (impl Read + Seek),
     byte_length: u64,
@@ -90,8 +94,8 @@ fn verify_dvd_audio_filesystem_reader(
     if pvd[0] != 1 || &pvd[1..6] != b"CD001" || pvd[6] != 1 {
         return Err("ISO_PVD_INVALID: primary volume descriptor is missing or malformed".into());
     }
-    if u32::from_le_bytes(pvd[80..84].try_into().unwrap()) as u64 != sectors
-        || u32::from_be_bytes(pvd[84..88].try_into().unwrap()) as u64 != sectors
+    if u64::from(u32::from_le_bytes(pvd[80..84].try_into().unwrap())) != sectors
+        || u64::from(u32::from_be_bytes(pvd[84..88].try_into().unwrap())) != sectors
     {
         return Err("ISO_VOLUME_SPACE_MISMATCH: PVD size does not match the image".into());
     }
@@ -152,20 +156,17 @@ fn verify_dvd_audio_filesystem_reader(
     let expected_ids = [1u16, 4, 5, 6, 7, 8];
     let mut main_descriptors = Vec::with_capacity(expected_ids.len());
     for (index, expected_id) in expected_ids.into_iter().enumerate() {
+        let lba = main_vds + index as u64;
         main_descriptors.push(require_udf_tag(
             input,
-            main_vds + index as u64,
+            lba,
             expected_id,
-            (main_vds + index as u64) as u32,
+            udf_location(lba)?,
         )?);
     }
     for (index, expected_id) in [1u16, 4, 5, 6, 7, 8].into_iter().enumerate() {
-        require_udf_tag(
-            input,
-            reserve_vds + index as u64,
-            expected_id,
-            (reserve_vds + index as u64) as u32,
-        )?;
+        let lba = reserve_vds + index as u64;
+        require_udf_tag(input, lba, expected_id, udf_location(lba)?)?;
     }
     let partition = &main_descriptors[2];
     let partition_start = u64::from(little_u32(&partition[188..192]));
@@ -193,12 +194,17 @@ fn verify_dvd_audio_filesystem_reader(
     {
         return Err("UDF_INTEGRITY_SEQUENCE_INVALID: location is outside the image".into());
     }
-    require_udf_tag(input, integrity_lba, 9, integrity_lba as u32)?;
-    require_udf_tag(input, integrity_lba + 1, 8, (integrity_lba + 1) as u32)?;
+    require_udf_tag(input, integrity_lba, 9, udf_location(integrity_lba)?)?;
+    require_udf_tag(
+        input,
+        integrity_lba + 1,
+        8,
+        udf_location(integrity_lba + 1)?,
+    )?;
     require_udf_tag(input, partition_start, 256, 0)?;
     require_udf_tag(input, partition_start + 1, 8, 1)?;
     let end_anchor_lba = sectors - 1;
-    let end_anchor = require_udf_tag(input, end_anchor_lba, 2, end_anchor_lba as u32)?;
+    let end_anchor = require_udf_tag(input, end_anchor_lba, 2, udf_location(end_anchor_lba)?)?;
     if u64::from(little_u32(&end_anchor[20..24])) != main_vds
         || u64::from(little_u32(&end_anchor[28..32])) != reserve_vds
     {
@@ -207,6 +213,10 @@ fn verify_dvd_audio_filesystem_reader(
     Ok(())
 }
 
+/// Validate the ISO9660 and UDF structures required by a DVD-Audio image.
+///
+/// # Errors
+/// Returns a diagnostic for file I/O failures, malformed descriptors, invalid extents, or inconsistent volume sizes.
 pub fn verify_dvd_audio_filesystem(path: &Path) -> Result<(), String> {
     let path = path.to_string_lossy();
     let mut input = crate::identity::open_read(&path).map_err(|error| error.to_string())?;
@@ -404,7 +414,7 @@ pub fn iso_file_chunks(
     Ok(IsoFileChunks {
         source,
         offset,
-        remaining: entry.size as u64,
+        remaining: u64::from(entry.size),
         chunk_size,
     })
 }
@@ -473,10 +483,10 @@ fn iso_all_paths(request: Value) -> Result<Value, String> {
         format!("/{}", parts.join("/"))
     };
     let mut output = Vec::new();
-    if !root.is_directory {
-        output.push(prefix);
-    } else {
+    if root.is_directory {
         iso_recurse_paths(&bytes, &info, &root, &prefix, &mut output)?;
+    } else {
+        output.push(prefix);
     }
     Ok(json!(output))
 }
@@ -608,7 +618,7 @@ fn parse_iso_info(path: &str, bytes: &IsoSource) -> Result<IsoInfo, String> {
         if sector.len() < 190 {
             return Err("ISO primary volume root entry is truncated.".into());
         }
-        let mut sector_size = u16_le(&sector[128..130])? as i32;
+        let mut sector_size = i32::from(u16_le(&sector[128..130])?);
         if sector_size == 0 {
             sector_size = DEFAULT_SECTOR as i32;
         }
@@ -851,7 +861,10 @@ pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout,
     let channels = i32::from(format.channels);
     let rate = i32::try_from(format.sample_rate).map_err(|_| WavError::Overflow)?;
     let mut mask = format.channel_mask;
-    let data_size = reader.data_bytes as i64;
+    let data_size = i64::try_from(reader.data_bytes)
+        .map_err(|_| WavError::Invalid("WAVE data size exceeds the supported range".into()))?;
+    let data_offset = i64::try_from(reader.data_offset)
+        .map_err(|_| WavError::Invalid("WAVE data offset exceeds the supported range".into()))?;
     if !(1..=6).contains(&channels)
         || data_size <= 0
         || !matches!(rate, 44_100 | 48_000 | 88_200 | 96_000 | 176_400 | 192_000)
@@ -878,7 +891,7 @@ pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout,
         valid_bits: valid,
         channels,
         sample_rate: rate,
-        data_offset: reader.data_offset as i64,
+        data_offset,
         data_size,
         bytes_per_sample: bits / 8,
         channel_mask: mask,

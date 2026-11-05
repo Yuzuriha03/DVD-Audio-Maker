@@ -57,7 +57,7 @@ pub fn run(args: &[String]) -> io::Result<i32> {
                 Some(
                     Command::new(std::env::current_exe()?)
                         .args(["process-fixture", "sleep", &args[2]])
-                        .creation_flags(0x08000000)
+                        .creation_flags(0x0800_0000)
                         .spawn()?,
                 )
             } else {

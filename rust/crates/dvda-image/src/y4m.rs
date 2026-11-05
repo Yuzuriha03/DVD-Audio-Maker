@@ -43,7 +43,7 @@ pub fn write_rgb(
                 for dx in 0..2 {
                     let p = &rgb[((row + dy) * width + col + dx) * 3..];
                     for k in 0..3 {
-                        sum[k] += p[k] as u32;
+                        sum[k] += u32::from(p[k]);
                     }
                 }
             }
@@ -67,13 +67,13 @@ fn byte(value: i32) -> u8 {
     value.clamp(0, 255) as u8
 }
 fn y(r: u8, g: u8, b: u8) -> u8 {
-    byte(((66 * r as i32 + 129 * g as i32 + 25 * b as i32 + 128) >> 8) + 16)
+    byte(((66 * i32::from(r) + 129 * i32::from(g) + 25 * i32::from(b) + 128) >> 8) + 16)
 }
 fn u(r: u8, g: u8, b: u8) -> u8 {
-    byte(((-38 * r as i32 - 74 * g as i32 + 112 * b as i32 + 128) >> 8) + 128)
+    byte(((-38 * i32::from(r) - 74 * i32::from(g) + 112 * i32::from(b) + 128) >> 8) + 128)
 }
 fn v(r: u8, g: u8, b: u8) -> u8 {
-    byte(((112 * r as i32 - 94 * g as i32 - 18 * b as i32 + 128) >> 8) + 128)
+    byte(((112 * i32::from(r) - 94 * i32::from(g) - 18 * i32::from(b) + 128) >> 8) + 128)
 }
 
 #[cfg(test)]
@@ -120,7 +120,7 @@ mod tests {
             let err =
                 write_rgb(&mut output, &vec![0; len], width, height, rate, aspect).unwrap_err();
             assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-            assert!(output.is_empty());
+            assert_eq!(output, [] as [u8; 0]);
         }
     }
 

@@ -1,4 +1,4 @@
-//! Presentation rules retained from TaskLogPresentation without coupling to widgets.
+//! Presentation rules retained from `TaskLogPresentation` without coupling to widgets.
 use super::{Lang, localized_detail, localized_log};
 
 pub fn phrase(
@@ -70,9 +70,7 @@ pub fn problem(text: &str) -> bool {
 
 pub fn activity_only(text: &str) -> bool {
     text.starts_with("[PCM] ")
-        || serde_json::from_str::<serde_json::Value>(text)
-            .ok()
-            .is_some_and(|v| v["Kind"] == "PcmProgress")
+        || serde_json::from_str::<serde_json::Value>(text).is_ok_and(|v| v["Kind"] == "PcmProgress")
 }
 
 pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String> {
@@ -627,7 +625,7 @@ fn space_message(lang: Lang, text: &str) -> Option<String> {
         phrase(lang, "未知", "未知", "unknown", "不明", "알 수 없음").to_owned()
     } else {
         let bytes = available.strip_suffix(" B")?.parse::<u64>().ok()?;
-        format!("{:.2} GiB", bytes as f64 / 1073741824.0)
+        format!("{:.2} GiB", bytes as f64 / 1_073_741_824.0)
     };
     let (volume, purpose) = head.split_once(": ")?;
     let purpose = if purpose == "MLP 编码输出" {
@@ -653,7 +651,7 @@ fn space_message(lang: Lang, text: &str) -> Option<String> {
     } else {
         dvda_core::localization::translate(lang.code(), purpose)
     };
-    let gib = |bytes: u64| format!("{:.2} GiB", bytes as f64 / 1073741824.0);
+    let gib = |bytes: u64| format!("{:.2} GiB", bytes as f64 / 1_073_741_824.0);
     Some(match lang {
         Lang::Zh => format!(
             "空间检查 · {volume} · {purpose}：预计需要 {}，可用 {available}。",
@@ -684,7 +682,7 @@ fn group_message(lang: Lang, text: &str) -> Option<String> {
     let rate = rate.parse::<u32>().ok()?;
     let bits = bits.parse::<u32>().ok()?;
     let tracks = tracks.strip_suffix(" 首")?.parse::<u32>().ok()?;
-    let khz = format!("{} kHz", rate as f64 / 1000.0);
+    let khz = format!("{} kHz", f64::from(rate) / 1000.0);
     Some(match lang {
         Lang::Zh => format!("音源分组 · {khz} / {bits} 位：{tracks} 首"),
         Lang::ZhHant => format!("音源分組 · {khz} / {bits} 位：{tracks} 首"),
@@ -785,7 +783,7 @@ mod tests {
         }
         for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja] {
             assert!(summary(lang, "[ERR] Directory not recognized", false).is_some());
-            assert!(!error_advice(lang, "Access is denied (os error 5)").is_empty());
+            assert_ne!(error_advice(lang, "Access is denied (os error 5)"), "");
             assert_ne!(
                 error_advice(lang, "timeout"),
                 error_advice(lang, "missing source")
@@ -829,7 +827,7 @@ mod tests {
                     "출력 오디오 검사: 5/12곡 불일치: D:/music/bad.flac"
                 )
             );
-            assert!(complete_text.contains("2") && complete_text.contains("24"));
+            assert!(complete_text.contains('2') && complete_text.contains("24"));
         }
     }
 

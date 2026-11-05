@@ -83,9 +83,11 @@ pub struct Job {
     pub peak_process: usize,
     pub peak_job: usize,
 }
+#[must_use]
 pub fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain([0]).collect()
 }
+#[must_use]
 pub fn module_path(name: &str) -> Option<String> {
     let wide_name = wide(name);
     let module = unsafe { GetModuleHandleW(wide_name.as_ptr()) };
@@ -102,6 +104,7 @@ pub fn module_path(name: &str) -> Option<String> {
 }
 /// # Safety
 /// Pointer arguments must be valid for their documented ABI and remain live throughout the call.
+#[must_use]
 pub unsafe fn wtext(p: *const u16) -> Vec<u16> {
     // SAFETY: the caller guarantees a readable, NUL-terminated UTF-16 string.
     unsafe {

@@ -1,4 +1,5 @@
 /// Encode the MPEG-2 system clock reference without rounding.
+#[must_use]
 pub fn pack_scr(base: u64, extension: u16) -> [u8; 6] {
     let lsb = base & 0xffff_ffff;
     [
@@ -12,6 +13,7 @@ pub fn pack_scr(base: u64, extension: u16) -> [u8; 6] {
 }
 
 /// Encode the original author's 32-bit PTS/DTS domain.
+#[must_use]
 pub fn pack_timestamp(value: u32, prefix: u8) -> [u8; 5] {
     [
         prefix | (((value >> 30) as u8 & 3) << 1) | 1,
@@ -22,6 +24,7 @@ pub fn pack_timestamp(value: u32, prefix: u8) -> [u8; 5] {
     ]
 }
 
+#[must_use]
 pub fn pack_header(clock: u64) -> [u8; 14] {
     let mut bytes = [0, 0, 1, 0xba, 0, 0, 0, 0, 0, 0, 1, 0x89, 0xc3, 0xf8];
     bytes[4..10].copy_from_slice(&pack_scr(clock / 300, (clock % 300) as u16));

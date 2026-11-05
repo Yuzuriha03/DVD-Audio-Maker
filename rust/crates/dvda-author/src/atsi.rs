@@ -1,4 +1,4 @@
-//! Audio titleset information (ATS_XX_0.IFO/BUP), ported from `atsi2.c`.
+//! Audio titleset information (`ATS_XX_0.IFO/BUP`), ported from `atsi2.c`.
 //!
 //! `encode_checked` is used by the Rust author and indexes attributes by the
 //! actual format and title. `encode` preserves frozen C indexing for differential
@@ -78,10 +78,10 @@ fn rate_code(rate: u32) -> Result<u8, String> {
     match rate {
         48000 => Ok(0),
         96000 => Ok(1),
-        192000 => Ok(2),
+        192_000 => Ok(2),
         44100 => Ok(8),
         88200 => Ok(9),
-        176400 => Ok(10),
+        176_400 => Ok(10),
         _ => Err("Unsupported ATSI sample rate".into()),
     }
 }

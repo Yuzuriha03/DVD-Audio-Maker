@@ -37,6 +37,7 @@ impl MediaRequest {
         })
     }
 
+    #[must_use]
     pub fn run(&self) -> i32 {
         unsafe {
             self.run_with_callbacks(crate::Call {
@@ -49,6 +50,7 @@ impl MediaRequest {
 
     /// # Safety
     /// Callback state must remain valid for the call. Callbacks must not unwind.
+    #[must_use]
     pub unsafe fn run_with_callbacks(&self, callbacks: crate::Call) -> i32 {
         extern "C" fn discard(_: *mut std::ffi::c_void, _: i32, _: *const std::ffi::c_char) {}
         self.with_raw_request(|request| unsafe {
@@ -85,10 +87,10 @@ impl MediaRequest {
             rate: self.rate,
             bits: self.bits,
             output_format: self.output_format,
-            soxr: self.soxr as u32,
-            dither: self.dither as u32,
+            soxr: u32::from(self.soxr),
+            dither: u32::from(self.dither),
             compression: self.compression,
-            cover: self.cover as u32,
+            cover: u32::from(self.cover),
             tag_count: (tags.len() / 2) as u32,
             input: self.input.as_ptr(),
             output: self
@@ -130,7 +132,7 @@ mod media_request_tests {
         ];
         owned.with_raw_request(|raw| {
             assert!(!raw.output.is_null());
-            assert!(unsafe { CStr::from_ptr(raw.output) }.to_bytes().is_empty());
+            assert_eq!(unsafe { CStr::from_ptr(raw.output) }.to_bytes(), []);
             assert_eq!(raw.tag_count, 1);
             assert_eq!(unsafe { CStr::from_ptr(*raw.tags) }.to_bytes(), b"title");
             assert_eq!(

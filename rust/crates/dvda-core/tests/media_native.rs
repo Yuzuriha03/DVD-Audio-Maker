@@ -86,16 +86,16 @@ fn wave(path: &Path, rate: u32, bits: u32, channels: u16) -> Vec<u8> {
     let width = if bits == 16 { 2usize } else { 3 };
     let mut data = Vec::new();
     let mut expected = Vec::new();
-    let mut seed = 0x713291abu32;
+    let mut seed = 0x7132_91ab_u32;
     for index in 0..frames * channels as usize {
         seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
         let value = match index % 17 {
-            0 => -8388608,
-            1 => 8388607,
+            0 => -8_388_608,
+            1 => 8_388_607,
             2 => 0,
             3 => 1,
             4 => -1,
-            _ => (seed >> 8) as i32 - 8388608,
+            _ => (seed >> 8) as i32 - 8_388_608,
         };
         let value = value & !((1 << (24 - bits)) - 1);
         expected.extend_from_slice(&value.to_le_bytes()[..3]);
@@ -111,7 +111,7 @@ fn wave(path: &Path, rate: u32, bits: u32, channels: u16) -> Vec<u8> {
     wav.extend_from_slice(&0xfffeu16.to_le_bytes());
     wav.extend_from_slice(&channels.to_le_bytes());
     wav.extend_from_slice(&rate.to_le_bytes());
-    wav.extend_from_slice(&(rate * channels as u32 * width as u32).to_le_bytes());
+    wav.extend_from_slice(&(rate * u32::from(channels) * width as u32).to_le_bytes());
     wav.extend_from_slice(&(channels * width as u16).to_le_bytes());
     wav.extend_from_slice(&(width as u16 * 8).to_le_bytes());
     wav.extend_from_slice(&22u16.to_le_bytes());
@@ -315,7 +315,7 @@ fn exact_pcm_matrix_and_transaction_failures() {
     let input = root.0.join("input.wav");
     let output = root.0.join("output.raw");
     let mut cases = 0;
-    for rate in [44100, 48000, 88200, 96000, 176400, 192000] {
+    for rate in [44100, 48000, 88200, 96000, 176_400, 192_000] {
         for bits in [16, 20, 24] {
             for channels in 1..=if rate > 96000 { 2 } else { 6 } {
                 let expected = wave(&input, rate, bits, channels);

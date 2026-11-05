@@ -62,6 +62,7 @@ fn emit_event(caller: &mut dyn Callbacks, event: Event) {
     );
 }
 
+#[must_use]
 pub fn parse(text: &str) -> Option<Event> {
     serde_json::from_str(text.trim().strip_prefix(PREFIX)?).ok()
 }

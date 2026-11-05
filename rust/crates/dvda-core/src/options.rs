@@ -11,6 +11,7 @@ pub fn worker_count(work_items: usize) -> usize {
     processors.max(1).min(work_items.max(1))
 }
 
+#[must_use]
 pub fn combine(left: &str, right: &str) -> String {
     if left.is_empty()
         || right.starts_with(['/', '\\'])
@@ -28,6 +29,7 @@ pub fn combine(left: &str, right: &str) -> String {
     }
 }
 
+#[must_use]
 pub fn defaults(local_app_data: &str) -> Map<String, Value> {
     let mut result = Map::new();
     for (key, value) in [
@@ -101,6 +103,7 @@ impl OptionValue {
 }
 
 impl Request {
+    #[must_use]
     pub fn get(&self, key: &str) -> &str {
         self.get_or(key, "")
     }
@@ -181,7 +184,7 @@ fn integer(text: &str, positive: &str, negative: &str) -> Option<i64> {
     }
     let magnitude = digits.parse::<u64>().ok()?;
     if negative_value {
-        i64::try_from(-(magnitude as i128)).ok()
+        i64::try_from(-i128::from(magnitude)).ok()
     } else {
         i64::try_from(magnitude).ok()
     }
@@ -227,6 +230,7 @@ fn prefix(title: &str) -> String {
     }
 }
 
+#[must_use]
 pub fn evaluate(request: Request) -> Value {
     let r = &request;
     let mut properties = Map::new();
@@ -348,7 +352,7 @@ pub fn evaluate(request: Request) -> Value {
         mode
     } else {
         integer(&mode, &r.positive_sign, &r.negative_sign)
-            .filter(|n| *n > 0 && *n <= i32::MAX as i64)
+            .filter(|n| *n > 0 && *n <= i64::from(i32::MAX))
             .map_or("album".into(), |n| n.to_string())
     };
     put("DiagnosticTitleMode", OptionValue::new(mode));
@@ -399,14 +403,14 @@ pub fn evaluate(request: Request) -> Value {
     let external = trim(r.get("DVDA_MLP_EXTERNAL_DIR")).trim_end_matches('/');
     put(
         "MlpExternalDirectory",
-        if !external.is_empty() {
-            OptionValue::new(external)
-        } else {
+        if external.is_empty() {
             match source {
                 Ok("mlp-batch") => OptionValue::new(combine(build, "mlp")),
                 Ok(_) => OptionValue::new(""),
                 Err(e) => OptionValue::failure(e),
             }
+        } else {
+            OptionValue::new(external)
         },
     );
     let keys: BTreeSet<_> = r

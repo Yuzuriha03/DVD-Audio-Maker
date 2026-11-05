@@ -26,7 +26,7 @@ pub fn compute(path: &str) -> io::Result<Value> {
     let ticks = metadata
         .last_write_time()
         .checked_add(FILETIME_EPOCH_TICKS)
-        .filter(|value| *value <= i64::MAX as u64)
+        .filter(|value| i64::try_from(*value).is_ok())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "File timestamp overflow"))?;
     let mut file = open_read(path)?;
     let mut head = vec![0; SAMPLE_BYTES.min(size as usize)];

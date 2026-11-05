@@ -1299,7 +1299,7 @@ mod tests {
         let mut events = Events::default();
         channel.drain(&mut events);
         assert_eq!(events.logs, ["[menu-cover] background 1/4 Album"]);
-        assert_eq!(events.progress, [(74375, 100000)]);
+        assert_eq!(events.progress, [(74375, 100_000)]);
         assert!(channel.assets.borrow().is_none());
         send.send(MenuEvent::Finished(MenuAssets {
             result: Ok(vec!["ready".into()]),
@@ -1350,7 +1350,7 @@ mod tests {
         diagnostics.clear();
         cleanup_file(&file, &mut diagnostics, "ISO_CLEANUP_FAILED");
         cleanup_file(&file, &mut diagnostics, "ISO_CLEANUP_FAILED");
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, [] as [serde_json::Value; 0]);
         assert!(!file.exists());
         fs::remove_dir(directory).unwrap();
     }

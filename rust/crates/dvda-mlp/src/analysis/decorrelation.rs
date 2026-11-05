@@ -85,7 +85,7 @@ pub(crate) fn mlp_matrix_analysis_add(
                 frame[ch] /= 1i32 << shift;
             }
             let v = frame[ch];
-            if !(-8388608..=8388607).contains(&v) {
+            if !(-8_388_608..=8_388_607).contains(&v) {
                 return Err(());
             }
             let next = f64::from(v) - last;
@@ -312,10 +312,10 @@ pub(crate) fn mlp_matrix_select_append(args: MatrixSelection<'_>) -> Result<(), 
             .less(gain.sub(E::from_f64(0.05)).mul(E::from_f64(samples as f64)));
         let mut p = MlpMatrixPrimitive::default();
         if useful {
-            let precision = if !gain.less(E::from_f64(9.0)) {
-                12
-            } else {
+            let precision = if gain.less(E::from_f64(9.0)) {
                 gain.to_f64() as u32 + 3
+            } else {
+                12
             };
             for j in 0..channels {
                 let rounded = E::from_f64(0.5)
@@ -326,10 +326,10 @@ pub(crate) fn mlp_matrix_select_append(args: MatrixSelection<'_>) -> Result<(), 
                     .to_f64()
                     .floor();
                 let coefficient = rounded * f64::from(1u32 << (14 - precision));
-                if !(-32768.0..=32767.0).contains(&coefficient) {
-                    useful = false;
-                } else {
+                if (-32768.0..=32767.0).contains(&coefficient) {
                     p.coefficient[j] = coefficient as i32;
+                } else {
+                    useful = false;
                 }
             }
         }
@@ -416,7 +416,7 @@ mod tests {
 
         let before = state.clone();
         assert_eq!(
-            mlp_matrix_analysis_add(&mut state, &mut [5, 6, 7, 8388608], 2, 2, None),
+            mlp_matrix_analysis_add(&mut state, &mut [5, 6, 7, 8_388_608], 2, 2, None),
             Err(())
         );
         assert_eq!(state, before);

@@ -7,7 +7,7 @@ use crate::ffmpeg::{
 };
 use std::sync::{LazyLock, Mutex};
 
-/// Frame pool for reusing FFmpeg frame objects
+/// Frame pool for reusing `FFmpeg` frame objects
 pub struct FramePool {
     available: Mutex<Vec<usize>>,
     capacity: usize,
@@ -15,6 +15,7 @@ pub struct FramePool {
 }
 
 impl FramePool {
+    #[must_use]
     pub fn new(capacity: usize) -> Self {
         Self {
             available: Mutex::new(Vec::with_capacity(capacity)),
@@ -57,7 +58,7 @@ impl FramePool {
         } else {
             // Pool full, free the frame
             let mut frame = frame;
-            unsafe { av_frame_free(&mut frame) };
+            unsafe { av_frame_free(&raw mut frame) };
         }
     }
 
@@ -74,12 +75,12 @@ impl Drop for FramePool {
         let mut available = self.available.lock().unwrap();
         for frame in available.drain(..) {
             let mut frame = frame as *mut Frame;
-            unsafe { av_frame_free(&mut frame) };
+            unsafe { av_frame_free(&raw mut frame) };
         }
     }
 }
 
-/// Packet pool for reusing FFmpeg packet objects
+/// Packet pool for reusing `FFmpeg` packet objects
 pub struct PacketPool {
     available: Mutex<Vec<usize>>,
     capacity: usize,
@@ -87,6 +88,7 @@ pub struct PacketPool {
 }
 
 impl PacketPool {
+    #[must_use]
     pub fn new(capacity: usize) -> Self {
         Self {
             available: Mutex::new(Vec::with_capacity(capacity)),
@@ -127,7 +129,7 @@ impl PacketPool {
             available.push(packet as usize);
         } else {
             let mut packet = packet;
-            unsafe { av_packet_free(&mut packet) };
+            unsafe { av_packet_free(&raw mut packet) };
         }
     }
 
@@ -143,7 +145,7 @@ impl Drop for PacketPool {
         let mut available = self.available.lock().unwrap();
         for packet in available.drain(..) {
             let mut packet = packet as *mut Packet;
-            unsafe { av_packet_free(&mut packet) };
+            unsafe { av_packet_free(&raw mut packet) };
         }
     }
 }
@@ -162,6 +164,7 @@ impl PooledFrame {
         Self(FRAME_POOL.acquire())
     }
 
+    #[must_use]
     pub fn as_ptr(&self) -> *mut Frame {
         self.0
     }
@@ -187,6 +190,7 @@ impl PooledPacket {
         Self(PACKET_POOL.acquire())
     }
 
+    #[must_use]
     pub fn as_ptr(&self) -> *mut Packet {
         self.0
     }

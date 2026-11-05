@@ -6,7 +6,7 @@
 //! arguments to reach memory in this process. Messages outside the list are
 //! rejected, which keeps the function sound for every argument value.
 
-use super::*;
+use super::{Hwnd, SendMessageW};
 
 /// Messages whose `wparam` and `lparam` are integers, handles or flags only.
 const INTEGER_MESSAGES: &[u32] = &[

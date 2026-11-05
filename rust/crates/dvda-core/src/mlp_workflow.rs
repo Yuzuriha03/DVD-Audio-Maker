@@ -172,7 +172,9 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
     };
 
     let mut rebuilt = 0;
-    if !pending.is_empty() {
+    if pending.is_empty() {
+        caller.progress(100, 100);
+    } else {
         caller.emit(1, &format!("[MLP-PROGRESS] {hits}/{}", job.tracks.len()));
         let token = format!(
             "{}-{}",
@@ -269,8 +271,6 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::remove_dir_all(&stage);
         result?;
-    } else {
-        caller.progress(100, 100);
     }
     caller.progress(100, 100);
     cache::dispatch(
@@ -553,8 +553,7 @@ fn cache_matches(
     crate::workflow::dispatch("cache.mlp_match", request).ok() == Some(json!(true))
         && entry.get("output").is_some_and(|output| {
             identity::compute(&destination.to_string_lossy())
-                .ok()
-                .is_some_and(|current| same_identity(output, &current))
+                .is_ok_and(|current| same_identity(output, &current))
         })
 }
 
@@ -924,7 +923,7 @@ mod tests {
         .unwrap();
         assert!(pending.is_empty());
         assert_eq!(hits, 6);
-        assert!(diagnostics.is_empty());
+        assert_eq!(diagnostics, [] as [serde_json::Value; 0]);
         assert_eq!(
             events.progress,
             (1..=6).map(|done| (done, 6)).collect::<Vec<_>>()
@@ -1064,7 +1063,7 @@ mod tests {
                 pending.len()
             );
             assert_eq!(hits as usize, job.tracks.len());
-            assert!(diagnostics.is_empty());
+            assert_eq!(diagnostics, [] as [serde_json::Value; 0]);
             if let Some(previous) = &previous {
                 assert_eq!(&updated, previous);
             }

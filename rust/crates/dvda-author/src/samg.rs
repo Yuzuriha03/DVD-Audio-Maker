@@ -27,7 +27,7 @@ fn put32(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
 }
 
-/// Produce all eight copies of AUDIO_PP.IFO in original group/track order.
+/// Produce all eight copies of `AUDIO_PP.IFO` in original group/track order.
 pub fn encode(groups: &[Vec<Track>], layout: &Layout) -> Result<(Vec<u8>, u32), String> {
     if groups.is_empty() || groups.len() > 9 || layout.atsi_sectors.len() < groups.len() {
         return Err("SAMG requires 1–9 groups and each ATSI size".into());
@@ -71,10 +71,10 @@ pub fn encode(groups: &[Vec<Track>], layout: &Layout) -> Result<(Vec<u8>, u32), 
             let rate = match track.rate {
                 48000 => 0,
                 96000 => 1,
-                192000 => 2,
+                192_000 => 2,
                 44100 => 8,
                 88200 => 9,
-                176400 => 10,
+                176_400 => 10,
                 _ => return Err("Unsupported sample rate".into()),
             };
             bytes[position + 2] = (group_index + 1) as u8;

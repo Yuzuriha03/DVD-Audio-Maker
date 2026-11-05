@@ -72,7 +72,7 @@ unsafe extern "system" {
 pub(super) fn install_combo(hwnd: Hwnd) {
     let mut info: ComboInfo = unsafe { std::mem::zeroed() };
     info.size = std::mem::size_of::<ComboInfo>() as u32;
-    if unsafe { GetComboBoxInfo(hwnd, &mut info) } != 0 {
+    if unsafe { GetComboBoxInfo(hwnd, &raw mut info) } != 0 {
         install(info.list, false);
     }
 }
@@ -88,7 +88,7 @@ pub(super) fn install(hwnd: Hwnd, log: bool) {
             hwnd,
             0,
             1,
-            &config,
+            &raw const config,
             std::mem::size_of::<GestureConfig>() as u32,
         ) == 0
         {
@@ -130,7 +130,7 @@ unsafe extern "system" fn pan_proc(
     if message == WM_GESTURE {
         let mut info: GestureInfo = unsafe { std::mem::zeroed() };
         info.size = std::mem::size_of::<GestureInfo>() as u32;
-        if unsafe { GetGestureInfo(lparam as Handle, &mut info) } != 0 && info.id == GID_PAN {
+        if unsafe { GetGestureInfo(lparam as Handle, &raw mut info) } != 0 && info.id == GID_PAN {
             let pan = unsafe { &mut *(data as *mut Pan) };
             if info.flags & 1 != 0 {
                 pan.last_y = None;
@@ -228,8 +228,8 @@ mod tests {
                 hwnd,
                 0,
                 0,
-                &mut count,
-                &mut config,
+                &raw mut count,
+                &raw mut config,
                 std::mem::size_of::<GestureConfig>() as u32,
             )
         };

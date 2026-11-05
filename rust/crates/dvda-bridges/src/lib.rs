@@ -42,6 +42,7 @@ pub struct Call {
     pub state: *mut c_void,
 }
 impl Call {
+    #[must_use]
     pub fn cancelled(&self) -> bool {
         self.cancel.is_some_and(|f| unsafe { f(self.state) != 0 })
     }
@@ -50,9 +51,9 @@ impl Call {
         if let Some(f) = self.emit {
             unsafe { f(self.state, stream, s.as_ptr()) }
         } else if stream == 2 {
-            eprint!("{text}")
+            eprint!("{text}");
         } else {
-            print!("{text}")
+            print!("{text}");
         }
     }
 }

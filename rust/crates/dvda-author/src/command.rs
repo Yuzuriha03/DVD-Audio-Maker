@@ -39,8 +39,8 @@ impl Callbacks for StageProgress<'_> {
             return;
         }
         let value = self.start
-            + ((self.end - self.start) as u128 * completed.min(total) as u128 / total as u128)
-                as u64;
+            + (u128::from(self.end - self.start) * u128::from(completed.min(total))
+                / u128::from(total)) as u64;
         self.last = self.last.max(value);
         self.parent.progress(self.last, 1000);
     }
@@ -121,9 +121,10 @@ fn author_groups(
                         break;
                     };
                     worker_callbacks.emit(1, &format!("[INF] Creating ATS_{:02} audio", index + 1));
-                    let start = (600u128 * starts[index] as u128 / total_bytes as u128) as u64;
-                    let end = (600u128 * (starts[index] + group_bytes[index]) as u128
-                        / total_bytes as u128) as u64;
+                    let start =
+                        (600u128 * u128::from(starts[index]) / u128::from(total_bytes)) as u64;
+                    let end = (600u128 * u128::from(starts[index] + group_bytes[index])
+                        / u128::from(total_bytes)) as u64;
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let mut progress = StageProgress::new(&mut worker_callbacks, start, end);
                         let output =
@@ -257,7 +258,7 @@ pub fn parse(arguments: &[String]) -> Result<Request, String> {
                             .and_then(|n| n.checked_sub(1))
                             .ok_or("Playlist groups must be positive integers".to_owned())
                     })
-                    .collect::<Result<_, _>>()?
+                    .collect::<Result<_, _>>()?;
             }
             "--downmix" => {
                 let values = value()?

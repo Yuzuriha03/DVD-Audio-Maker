@@ -23,3 +23,6 @@ serde_json.workspace = true
 name = "dvda-author-dev"
 path = "src/author_main.rs"
 required-features = ["direct-bridges"]
+
+[lints]
+workspace = true

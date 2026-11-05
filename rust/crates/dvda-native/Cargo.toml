@@ -11,3 +11,6 @@ direct-bridges = ["dep:dvda-bridges"]
 serde = { workspace = true }
 sha2 = { version = "=0.11.1", default-features = false }
 dvda-bridges = { path = "../dvda-bridges", optional = true, features = ["media", "menu"] }
+
+[lints]
+workspace = true

@@ -9,7 +9,7 @@ fn main() {
     let mut raw = Vec::new();
     for n in 0..frames {
         for ch in 0..channels {
-            let value = (((n as i32 * 7919 + i32::from(ch) * 104729) % (1 << bits))
+            let value = (((n as i32 * 7919 + i32::from(ch) * 104_729) % (1 << bits))
                 - (1 << (bits - 1)))
                 << (24 - bits);
             pcm.push(value);

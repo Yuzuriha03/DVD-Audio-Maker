@@ -36,7 +36,7 @@ fn xml_whitespace(text: &str) -> bool {
 
 #[cfg(any(feature = "direct-link", test))]
 fn xml_characters(text: &str) -> Result<(), String> {
-    if text.chars().all(|c| matches!(c as u32, 0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF)) {
+    if text.chars().all(|c| matches!(c as u32, 0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x0010_FFFF)) {
         Ok(())
     } else {
         Err("invalid XML character".into())

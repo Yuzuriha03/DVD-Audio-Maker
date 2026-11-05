@@ -400,7 +400,10 @@ fn failure_stops_before_navigation_and_disabled_menu_needs_no_backend() {
     )
     .unwrap();
     assert!(result.top_menu.is_none() && result.still.is_none());
-    assert!(backend.images.is_empty());
+    assert_eq!(
+        backend.images,
+        [] as [std::vec::Vec<std::string::String>; 0]
+    );
     let options = Options {
         enabled: true,
         ..Options::default()
@@ -448,5 +451,8 @@ fn invalid_inputs_are_rejected_before_media_encoding() {
         )
         .is_err()
     );
-    assert!(backend.images.is_empty());
+    assert_eq!(
+        backend.images,
+        [] as [std::vec::Vec<std::string::String>; 0]
+    );
 }

@@ -130,7 +130,7 @@ fn audio(root: &Path, track: Track<'_>) {
     bytes.extend_from_slice(&(size as u32).to_le_bytes());
     for n in 0..frames {
         for c in 0..usize::from(channels) {
-            let value = (((n * (97 + c * 18) + c * 53) % 100001) as i32 - 50000)
+            let value = (((n * (97 + c * 18) + c * 53) % 100_001) as i32 - 50000)
                 & !((1 << (24 - bits)) - 1);
             let stored = if bits == 16 { value >> 8 } else { value };
             bytes.extend_from_slice(&stored.to_le_bytes()[..width]);
@@ -213,7 +213,7 @@ fn sources(root: &Path) {
         },
         Track {
             name: "e",
-            rate: 192000,
+            rate: 192_000,
             bits: 24,
             channels: 2,
             album: "Album C",

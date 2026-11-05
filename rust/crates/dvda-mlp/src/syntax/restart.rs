@@ -22,8 +22,8 @@ fn checksum(writer: &Bits) -> u32 {
         crc = ((((crc & 0x1ff) << 15) ^ t) << 1) ^ word ^ t;
     }
     for _ in 0..17 {
-        if crc & 0x01000000 != 0 {
-            crc ^= 0x011d0000;
+        if crc & 0x0100_0000 != 0 {
+            crc ^= 0x011d_0000;
         }
         crc <<= 1;
     }
@@ -31,8 +31,8 @@ fn checksum(writer: &Bits) -> u32 {
         crc ^= writer.pending << (17 - writer.width);
     }
     for _ in 0..writer.width {
-        if crc & 0x01000000 != 0 {
-            crc ^= 0x011d0000;
+        if crc & 0x0100_0000 != 0 {
+            crc ^= 0x011d_0000;
         }
         crc <<= 1;
     }
@@ -47,7 +47,7 @@ pub(crate) fn mlp_restart_put(writer: &mut Bits, h: &MlpRestart, primary: bool) 
         || h.minimum_channel > h.maximum_channel
         || h.maximum_channel > 15
         || h.dither_shift > 15
-        || h.seed > 0x7fffff
+        || h.seed > 0x007f_ffff
         || h.maximum_lsbs > 31
         || h.maximum_bits > 31
         || h.lossless_check > 255

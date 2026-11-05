@@ -197,6 +197,7 @@ fn capture<'a>(
     }
 }
 
+#[must_use]
 pub fn translate(language: &str, text: &str) -> String {
     translate_inner(language, text, 0)
 }
@@ -345,7 +346,7 @@ mod tests {
                 &e.japanese,
                 &e.korean,
             ] {
-                assert!(!template.is_empty());
+                assert_ne!(template, "");
                 let output = render(template, &captured);
                 for arg in &args {
                     assert!(output.contains(arg), "{} -> {}", e.source, output);

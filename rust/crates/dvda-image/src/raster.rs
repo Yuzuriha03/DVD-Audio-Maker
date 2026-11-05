@@ -74,11 +74,13 @@ impl Raster {
         })
     }
 
+    #[must_use]
     pub fn dimensions(&self) -> Dimensions {
         Dimensions::new(self.pixels.width(), self.pixels.height())
             .expect("raster dimensions validated at construction")
     }
 
+    #[must_use]
     pub fn rgba(&self) -> &[u8] {
         self.pixels.as_raw()
     }
@@ -237,12 +239,9 @@ impl Raster {
             for (index, coverage) in glyph.coverage.iter().enumerate() {
                 let mut pixel = color;
                 pixel[3] = ((u16::from(color[3]) * u16::from(*coverage) + 127) / 255) as u8;
-                let gx = i64::from(x)
-                    + i64::from(glyph.x)
-                    + (index as u64 % u64::from(glyph.width)) as i64;
-                let gy = i64::from(baseline)
-                    + i64::from(glyph.y)
-                    + (index as u64 / u64::from(glyph.width)) as i64;
+                let index = i64::try_from(index).map_err(io::Error::other)?;
+                let gx = i64::from(x) + i64::from(glyph.x) + index % i64::from(glyph.width);
+                let gy = i64::from(baseline) + i64::from(glyph.y) + index / i64::from(glyph.width);
                 if let (Ok(gx), Ok(gy)) = (i32::try_from(gx), i32::try_from(gy)) {
                     self.blend_pixel(gx, gy, pixel);
                 }
@@ -305,10 +304,15 @@ impl Raster {
             (i64::from(y) + i64::from(source.pixels.height())).min(i64::from(self.pixels.height()));
         for dy in top..bottom {
             for dx in left..right {
-                let pixel = source
-                    .pixels
-                    .get_pixel((dx - i64::from(x)) as u32, (dy - i64::from(y)) as u32);
-                self.blend_pixel(dx as i32, dy as i32, pixel.0);
+                if let (Ok(source_x), Ok(source_y), Ok(destination_x), Ok(destination_y)) = (
+                    u32::try_from(dx - i64::from(x)),
+                    u32::try_from(dy - i64::from(y)),
+                    i32::try_from(dx),
+                    i32::try_from(dy),
+                ) {
+                    let pixel = source.pixels.get_pixel(source_x, source_y);
+                    self.blend_pixel(destination_x, destination_y, pixel.0);
+                }
             }
         }
     }
@@ -350,6 +354,7 @@ impl Raster {
         }
     }
 
+    #[must_use]
     pub fn flatten(&self, background: [u8; 3]) -> Vec<u8> {
         self.pixels
             .pixels()

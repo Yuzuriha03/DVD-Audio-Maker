@@ -41,6 +41,7 @@ pub struct Session {
 }
 
 impl Session {
+    #[must_use]
     pub fn new(image: Raster) -> Self {
         Self { image: Some(image) }
     }
@@ -59,7 +60,7 @@ impl Session {
             match operation {
                 Operation::Resize { size, mode } => image = image.resized(*size, *mode)?,
                 Operation::Extent { size, background } => {
-                    image = image.centered_extent(*size, *background)?
+                    image = image.centered_extent(*size, *background)?;
                 }
                 Operation::Rectangle { bounds, color } => image.fill_rectangle(*bounds, *color),
                 Operation::Triangle { points, color } => image.fill_triangle(*points, *color),

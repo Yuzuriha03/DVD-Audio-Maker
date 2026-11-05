@@ -73,10 +73,10 @@ impl NativeDiscVerifier {
         compare.coded = coded;
         let mut pcm = ends.map(Pcm::new);
         let mut status = if let Some(p) = &mut pcm {
-            if !p.ends.last().is_some_and(|end| *end != 0) {
-                -9
-            } else {
+            if p.ends.last().is_some_and(|end| *end != 0) {
                 p.open(&mut compare).err().unwrap_or(0)
+            } else {
+                -9
             }
         } else {
             0
@@ -482,7 +482,7 @@ impl<'a> Pcm<'a> {
             || size == 0
             || size % align as u64 != 0
             || rate * channels * bits > 9_600_000
-            || ![44100, 48000, 88200, 96000, 176400, 192000].contains(&rate)
+            || ![44100, 48000, 88200, 96000, 176_400, 192_000].contains(&rate)
             || rate > 96000 && channels > 2
         {
             return Err(-4);
@@ -568,7 +568,7 @@ impl<'a> Pcm<'a> {
                 let rate = match self.rate {
                     48000 => 0,
                     96000 => 1,
-                    192000 => 2,
+                    192_000 => 2,
                     44100 => 8,
                     88200 => 9,
                     _ => 10,
@@ -950,8 +950,8 @@ mod dll_parity {
                     ends.as_ptr(),
                     1,
                     read,
-                    (&mut state as *mut (&[u8], usize)).cast(),
-                    &mut result,
+                    (&raw mut state).cast(),
+                    &raw mut result,
                 );
             } else {
                 let verify: VerifyMlp = std::mem::transmute(symbol);
@@ -959,8 +959,8 @@ mod dll_parity {
                     sources.as_ptr(),
                     1,
                     read,
-                    (&mut state as *mut (&[u8], usize)).cast(),
-                    &mut result,
+                    (&raw mut state).cast(),
+                    &raw mut result,
                 );
             }
         }
