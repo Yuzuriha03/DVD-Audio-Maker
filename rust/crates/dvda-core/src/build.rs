@@ -10,6 +10,7 @@ use dvda_native::media::Callbacks;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    cell::RefCell,
     fs,
     path::{Path, PathBuf},
     sync::{
@@ -104,10 +105,12 @@ struct AuthorCallbacks<'a> {
     coordinate_warnings: u64,
     phase: &'static str,
     menu_stop: Option<&'a AtomicBool>,
+    menu_events: Option<&'a MenuChannel>,
 }
 
 impl Callbacks for AuthorCallbacks<'_> {
     fn emit(&mut self, stream: i32, text: &str) {
+        self.drain_menus();
         if let Some(number) = oversized_still_picture_number(text) {
             self.oversized += 1;
             self.parent
@@ -140,6 +143,7 @@ impl Callbacks for AuthorCallbacks<'_> {
     }
 
     fn cancelled(&mut self) -> bool {
+        self.drain_menus();
         let cancelled = self.parent.cancelled();
         if cancelled && let Some(stop) = self.menu_stop {
             stop.store(true, Ordering::Release);
@@ -148,6 +152,7 @@ impl Callbacks for AuthorCallbacks<'_> {
     }
 
     fn progress(&mut self, completed: u64, total: u64) {
+        self.drain_menus();
         if total == 0 {
             return;
         }
@@ -159,7 +164,14 @@ impl Callbacks for AuthorCallbacks<'_> {
 }
 
 impl AuthorCallbacks<'_> {
+    fn drain_menus(&mut self) {
+        if let Some(channel) = self.menu_events {
+            channel.drain(self.parent);
+        }
+    }
+
     fn finish(&mut self) {
+        self.drain_menus();
         let disc = format!("{}", self.disc);
         if self.oversized > 0 {
             crate::task_log::emit(
@@ -185,21 +197,74 @@ impl AuthorCallbacks<'_> {
 struct MenuAssets {
     result: Result<Vec<String>, String>,
     diagnostics: Vec<Value>,
-    logs: Vec<(i32, String)>,
+}
+
+enum MenuEvent {
+    Log(i32, String),
+    Progress(u64, u64),
+    Finished(MenuAssets),
+}
+
+struct MenuChannel {
+    receiver: mpsc::Receiver<MenuEvent>,
+    assets: RefCell<Option<MenuAssets>>,
+    disc: usize,
+    total: usize,
+}
+
+impl MenuChannel {
+    fn new(receiver: mpsc::Receiver<MenuEvent>, disc: usize, total: usize) -> Self {
+        Self {
+            receiver,
+            assets: RefCell::new(None),
+            disc,
+            total,
+        }
+    }
+
+    fn forward(&self, event: MenuEvent, caller: &mut dyn Callbacks) {
+        match event {
+            MenuEvent::Log(stream, text) => caller.emit(stream, &text),
+            MenuEvent::Progress(completed, total) => {
+                let disc = self.disc as u64;
+                let discs = self.total.max(1) as u64;
+                let start = 65_000 + disc.saturating_sub(1) * 30_000 / discs;
+                let span = 30_000 / discs;
+                let Some(portion) = (span * completed.min(total)).checked_div(total) else {
+                    return;
+                };
+                caller.progress(start + portion, 100_000);
+            }
+            MenuEvent::Finished(assets) => *self.assets.borrow_mut() = Some(assets),
+        }
+    }
+
+    fn drain(&self, caller: &mut dyn Callbacks) {
+        while self.assets.borrow().is_none() {
+            match self.receiver.try_recv() {
+                Ok(event) => self.forward(event, caller),
+                Err(_) => break,
+            }
+        }
+    }
 }
 
 struct MenuWorkerCallbacks<'a> {
     stop: &'a AtomicBool,
-    logs: Vec<(i32, String)>,
+    send: &'a mpsc::SyncSender<MenuEvent>,
 }
 
 impl Callbacks for MenuWorkerCallbacks<'_> {
     fn emit(&mut self, stream: i32, text: &str) {
-        self.logs.push((stream, text.into()));
+        let _ = self.send.send(MenuEvent::Log(stream, text.into()));
     }
 
     fn cancelled(&mut self) -> bool {
         self.stop.load(Ordering::Acquire)
+    }
+
+    fn progress(&mut self, completed: u64, total: u64) {
+        let _ = self.send.send(MenuEvent::Progress(completed, total));
     }
 }
 
@@ -211,22 +276,20 @@ impl Drop for StopMenus<'_> {
 }
 
 fn receive_menu(
-    receiver: &mpsc::Receiver<MenuAssets>,
+    channel: &MenuChannel,
     caller: &mut dyn Callbacks,
     stop: &AtomicBool,
 ) -> Result<MenuAssets, String> {
     loop {
+        if let Some(assets) = channel.assets.borrow_mut().take() {
+            return Ok(assets);
+        }
         if caller.cancelled() {
             stop.store(true, Ordering::Release);
             return Err("Build cancelled".into());
         }
-        match receiver.recv_timeout(Duration::from_millis(20)) {
-            Ok(assets) => {
-                for (stream, line) in &assets.logs {
-                    caller.emit(*stream, line);
-                }
-                return Ok(assets);
-            }
+        match channel.receiver.recv_timeout(Duration::from_millis(20)) {
+            Ok(event) => channel.forward(event, caller),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 stop.store(true, Ordering::Release);
@@ -446,25 +509,21 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         let job = &job;
         let schedule_menu = |index: usize| {
             let disc = &plan.discs[index];
-            let (send, receive) = mpsc::channel();
+            let (send, receive) = mpsc::sync_channel(64);
             let stop = &menu_stop;
             let _worker = scope.spawn(move || {
-                let mut callbacks = MenuWorkerCallbacks {
-                    stop,
-                    logs: Vec::new(),
-                };
+                let mut callbacks = MenuWorkerCallbacks { stop, send: &send };
                 let mut diagnostics = Vec::new();
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     menu::build_assets(job, disc, &mut callbacks, &mut diagnostics)
                 }))
                 .unwrap_or_else(|_| Err("Menu asset worker panicked".into()));
-                let _ = send.send(MenuAssets {
+                let _ = send.send(MenuEvent::Finished(MenuAssets {
                     result,
                     diagnostics,
-                    logs: callbacks.logs,
-                });
+                }));
             });
-            receive
+            MenuChannel::new(receive, disc.number, plan.discs.len())
         };
         let mut next_menu = if job.menu_enabled && !plan.discs.is_empty() {
             Some(schedule_menu(0))
@@ -515,6 +574,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                     coordinate_warnings: 0,
                     phase: "",
                     menu_stop: None,
+                    menu_events: next_menu.as_ref(),
                 };
                 for line in audit_log.lines() {
                     callbacks.emit(1, line);
@@ -603,6 +663,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                     coordinate_warnings: 0,
                     phase: "",
                     menu_stop: Some(&menu_stop),
+                    menu_events: next_menu.as_ref(),
                 };
                 let result = crate::metrics::measure(
                     "author_iso",
@@ -1189,6 +1250,7 @@ mod tests {
                 coordinate_warnings: 0,
                 phase: "",
                 menu_stop: None,
+                menu_events: None,
             };
             callbacks.emit(
                 2,
@@ -1203,6 +1265,49 @@ mod tests {
                 (2, "[ERR]  Image encoder failed".into())
             ]
         );
+    }
+
+    #[test]
+    fn menu_logs_and_progress_are_forwarded_before_prefetch_completion() {
+        #[derive(Default)]
+        struct Events {
+            logs: Vec<String>,
+            progress: Vec<(u64, u64)>,
+        }
+        impl Callbacks for Events {
+            fn emit(&mut self, _: i32, text: &str) {
+                self.logs.push(text.into());
+            }
+            fn cancelled(&mut self) -> bool {
+                false
+            }
+            fn progress(&mut self, completed: u64, total: u64) {
+                self.progress.push((completed, total));
+            }
+        }
+        let (send, receive) = mpsc::sync_channel(64);
+        let channel = MenuChannel::new(receive, 2, 4);
+        let stop = AtomicBool::new(false);
+        {
+            let mut worker = MenuWorkerCallbacks {
+                stop: &stop,
+                send: &send,
+            };
+            worker.emit(1, "[menu-cover] background 1/4 Album");
+            worker.progress(1, 4);
+        }
+        let mut events = Events::default();
+        channel.drain(&mut events);
+        assert_eq!(events.logs, ["[menu-cover] background 1/4 Album"]);
+        assert_eq!(events.progress, [(74375, 100000)]);
+        assert!(channel.assets.borrow().is_none());
+        send.send(MenuEvent::Finished(MenuAssets {
+            result: Ok(vec!["ready".into()]),
+            diagnostics: Vec::new(),
+        }))
+        .unwrap();
+        let assets = receive_menu(&channel, &mut events, &stop).unwrap();
+        assert_eq!(assets.result.unwrap(), ["ready"]);
     }
 
     #[test]

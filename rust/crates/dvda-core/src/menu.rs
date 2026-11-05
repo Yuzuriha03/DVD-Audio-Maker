@@ -420,6 +420,14 @@ pub fn build_assets(
         diagnostics.push(json!({"Severity":1,"Code":"MENU_COVER_MISSING","Message":format!("{} 张专辑没有 cover.jpg/jpeg/png/webp，页面将使用黑色背景: {}{}",missing_covers.len(),missing_covers.iter().take(3).cloned().collect::<Vec<_>>().join("、"),if missing_covers.len()>3 {"…"}else{""})}));
     }
     let images = DecodedImages(Arc::clone(&job.image_cache));
+    let progress_total = (pages.len()
+        + if job.menu_still_pictures {
+            covers.len()
+        } else {
+            0
+        }) as u64;
+    let mut completed = 0u64;
+    callbacks.progress(completed, progress_total);
     let mut background_by_cover = HashMap::<Option<PathBuf>, PathBuf>::new();
     for (index, page) in pages.iter().enumerate() {
         let album = page
@@ -451,6 +459,8 @@ pub fn build_assets(
             ),
         );
         backgrounds.push(output);
+        completed += 1;
+        callbacks.progress(completed, progress_total);
     }
 
     let index_pages = plan.get("IndexPages").and_then(Value::as_i64).unwrap_or(0);
@@ -502,6 +512,8 @@ pub fn build_assets(
             }
             let Some(cover) = covers.get(album).and_then(Option::as_deref) else {
                 still_by_album.insert(album.to_owned(), String::new());
+                completed += 1;
+                callbacks.progress(completed, progress_total);
                 continue;
             };
             let output = directory.join(format!("still{index}.jpg"));
@@ -516,6 +528,8 @@ pub fn build_assets(
                 diagnostics.push(json!({"Severity":1,"Code":"MENU_STILL_FAILED","Message":format!("生成专辑 {album} 的播放静图失败: {reason}")}));
                 let _ = fs::remove_file(&output);
                 still_by_album.insert(album.to_owned(), String::new());
+                completed += 1;
+                callbacks.progress(completed, progress_total);
                 continue;
             }
             still_by_album.insert(album.to_owned(), output.to_string_lossy().into_owned());
@@ -527,6 +541,8 @@ pub fn build_assets(
                 1,
                 &format!("[menu-cover] still {still_completed}/{still_total} {album}"),
             );
+            completed += 1;
+            callbacks.progress(completed, progress_total);
         }
         for page in pages {
             let album = page
@@ -669,7 +685,10 @@ fn write_background_cached(
     callbacks: &mut dyn Callbacks,
     images: &DecodedImages,
 ) -> Result<(), String> {
-    use dvda_image::{geometry::Dimensions, raster::Raster};
+    use dvda_image::{
+        geometry::{Dimensions, ResizeMode},
+        raster::Raster,
+    };
     use std::io::{BufWriter, Write};
     let mut created = false;
     let result = (|| -> std::io::Result<()> {
@@ -685,7 +704,9 @@ fn write_background_cached(
             if callbacks.cancelled() {
                 return Err(cancelled());
             }
-            cover_frame(&image, callbacks)?
+            image
+                .resized(frame, ResizeMode::Fill)?
+                .centered_extent(frame, [0, 0, 0, 255])?
         } else {
             Raster::solid(frame, [0, 0, 0, 255])?
         };
@@ -1413,6 +1434,42 @@ mod tests {
                 .all(|pixel| *pixel == [40, 120, 200, 255])
         );
         assert_eq!(pixels[0].len(), pixels[575].len());
+    }
+
+    #[test]
+    fn menu_background_fills_the_frame_without_letterboxing() {
+        let root = std::env::temp_dir().join(format!(
+            "dvda-menu-fill-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let input = root.join("input.png");
+        let output = root.join("background.jpg");
+        let source = dvda_image::raster::Raster::solid(
+            dvda_image::geometry::Dimensions::new(400, 200).unwrap(),
+            [40, 120, 200, 255],
+        )
+        .unwrap();
+        dvda_image::codec::write_png(&source, fs::File::create(&input).unwrap()).unwrap();
+        write_background(Some(&input), &output, 0, &mut crate::pcm::NoEvents).unwrap();
+        let image =
+            dvda_image::codec::decode(std::io::BufReader::new(fs::File::open(&output).unwrap()))
+                .unwrap();
+        assert_eq!(
+            image.dimensions(),
+            dvda_image::geometry::Dimensions::new(720, 576).unwrap()
+        );
+        assert!(image.rgba().as_chunks::<4>().0.iter().all(|pixel| {
+            pixel
+                .iter()
+                .zip([40, 120, 200, 255])
+                .all(|(actual, expected)| actual.abs_diff(expected) <= 2)
+        }));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
