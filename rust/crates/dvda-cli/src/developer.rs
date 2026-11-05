@@ -1,4 +1,10 @@
 //! Human-oriented developer commands; JSON operation dispatch remains available.
+#![expect(
+    clippy::items_after_statements,
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    reason = "Developer command dispatch retains shared helpers and scoped verification modes"
+)]
 use dvda_core::{
     app::AppOptions,
     audio, conversion, formats,
@@ -382,7 +388,7 @@ fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
                 .chain(extra.into_iter().take(if all { extra.len() } else { 0 }))
         {
             let value = if property.starts_with("Loss") {
-                f64::from_bits(options.integer(property) as u64).to_string()
+                f64::from_bits(options.integer(property).cast_unsigned()).to_string()
             } else if let Some(value) = options.value(property).as_bool() {
                 if value { "on" } else { "off" }.into()
             } else {
@@ -448,8 +454,8 @@ fn plan(options: &AppOptions) -> Result<i32> {
                 .then(|| formats::read_wav_layout(&cache))
                 .transpose()
                 .map_err(failure)?;
-            let rate = options.integer("MlpSampleRate") as i32;
-            let bits = options.integer("MlpBits") as i32;
+            let rate = i32::try_from(options.integer("MlpSampleRate")).map_err(failure)?;
+            let bits = i32::try_from(options.integer("MlpBits")).map_err(failure)?;
             if let Some(wave) = &layout
                 && dvda_core::lpcm::layout_code(
                     i64::from(wave.sample_rate),
@@ -467,7 +473,7 @@ fn plan(options: &AppOptions) -> Result<i32> {
                 .as_ref()
                 .is_some_and(|w| w.sample_rate == rate && w.valid_bits == bits)
             {
-                fs::metadata(&cache).map_err(failure)?.len() as i64
+                i64::try_from(fs::metadata(&cache).map_err(failure)?.len()).map_err(failure)?
             } else {
                 0
             };
@@ -479,7 +485,7 @@ fn plan(options: &AppOptions) -> Result<i32> {
     let result = dvda_core::disc::plan(
         tracks,
         options.integer("DiscBytes"),
-        options.integer("GroupTrackLimit") as i32,
+        i32::try_from(options.integer("GroupTrackLimit")).map_err(failure)?,
     )
     .map_err(failure)?;
     let code = i32::from(result.has_errors);

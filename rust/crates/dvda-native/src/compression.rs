@@ -61,6 +61,10 @@ impl Drop for Handle {
         }
     }
 }
+/// Compress a buffer with the Windows compression API.
+///
+/// # Errors
+/// Propagates compressor initialization, sizing, encoding, and allocation failures.
 pub fn compress(input: &[u8]) -> io::Result<Vec<u8>> {
     let handle = Handle::new(true)?;
     let mut needed = 0;
@@ -96,6 +100,10 @@ pub fn compress(input: &[u8]) -> io::Result<Vec<u8>> {
     output.truncate(needed);
     Ok(output)
 }
+/// Decompress a buffer into the validated output size.
+///
+/// # Errors
+/// Propagates decompressor initialization, malformed input, size, and allocation failures.
 pub fn decompress(input: &[u8], size: usize) -> io::Result<Vec<u8>> {
     let handle = Handle::new(false)?;
     let mut output = vec![0; size];

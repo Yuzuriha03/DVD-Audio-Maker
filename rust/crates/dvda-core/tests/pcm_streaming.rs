@@ -1,4 +1,10 @@
 //! Independent integer fixtures: no C# runner or codec DLL is needed.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "PCM fixtures intentionally construct signed samples and WAVE size fields"
+)]
 use dvda_core::pcm::{Job, normalize};
 use dvda_native::media::Callbacks;
 use std::{

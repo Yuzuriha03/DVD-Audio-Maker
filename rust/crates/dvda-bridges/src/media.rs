@@ -1,3 +1,10 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "FFmpeg packet fields use validated C ABI widths and floating-point seconds for diagnostics"
+)]
 use crate::{
     Call, Cancel, Emit,
     ffmpeg::{
@@ -86,7 +93,9 @@ fn quoted(value: &str) -> String {
         match ch {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            ch if ch < ' ' => out.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch if ch < ' ' => {
+                let _ = std::fmt::Write::write_fmt(&mut out, format_args!("\\u{:04x}", ch as u32));
+            }
             ch => out.push(ch),
         }
     }
@@ -117,6 +126,10 @@ unsafe fn dictionary(metadata: *const c_void) -> String {
 /// # Safety
 /// `format` must be an open `AVFormatContext` whose stream information has been read, owned
 /// by the caller and alive for the call. `call` must be the active request.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "Probe keeps the common fallible media-operation signature"
+)]
 unsafe fn probe(call: &Call, format: *mut Format) -> Result<(), i32> {
     unsafe {
         let mut records = Vec::new();
@@ -235,6 +248,10 @@ unsafe fn cover(request: &Request, format: *mut Format) -> Result<(), i32> {
 /// `request.input` must not be NULL and must be a valid NUL-terminated string for the call.
 /// `request` must be readable for the call. `call` is registered as the interrupt callback's
 /// opaque state, so it must stay alive and must not move until `run` returns.
+#[expect(
+    clippy::too_many_lines,
+    reason = "The function retains one scoped FFmpeg open/run/cleanup transaction"
+)]
 unsafe fn run(
     request: &Request,
     call: &mut Call,

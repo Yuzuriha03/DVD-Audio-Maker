@@ -1,3 +1,7 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "ATSI parity fixtures construct fixed-width protocol fields"
+)]
 use dvda_author::{
     atsi::{self, Options, StillPicture, Title, Track},
     samg,

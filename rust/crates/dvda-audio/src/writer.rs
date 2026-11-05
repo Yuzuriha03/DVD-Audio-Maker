@@ -185,12 +185,18 @@ impl<W: Write + Seek> Writer<W> {
             self.destination.write_all(&u32::MAX.to_le_bytes())?;
         } else {
             self.destination.seek(SeekFrom::Start(4))?;
-            self.destination
-                .write_all(&(riff_size as u32).to_le_bytes())?;
+            self.destination.write_all(
+                &u32::try_from(riff_size)
+                    .map_err(|_| Error::new(ErrorKind::InvalidData, "RIFF size overflow"))?
+                    .to_le_bytes(),
+            )?;
             self.destination
                 .seek(SeekFrom::Start(if self.rf64 { 100 } else { 64 }))?;
-            self.destination
-                .write_all(&(self.bytes as u32).to_le_bytes())?;
+            self.destination.write_all(
+                &u32::try_from(self.bytes)
+                    .map_err(|_| Error::new(ErrorKind::InvalidData, "RIFF data size overflow"))?
+                    .to_le_bytes(),
+            )?;
         }
         self.destination.seek(SeekFrom::Start(riff_size + 8))?;
         self.destination.flush()?;

@@ -59,6 +59,10 @@ pub const fn default_dither() -> bool {
 }
 
 impl Request {
+    /// Validate the media request before passing it to the native bridge.
+    ///
+    /// # Errors
+    /// Rejects invalid geometry, operation codes, inconsistent outputs, and invalid tag lists.
     pub fn validate(&self) -> io::Result<()> {
         let invalid = |message| io::Error::new(io::ErrorKind::InvalidInput, message);
         if self.input.is_empty() || self.rate > i32::MAX as u32 {
@@ -208,6 +212,10 @@ unsafe extern "system" {
 }
 
 #[cfg(feature = "direct-bridges")]
+/// Return the native media module and its resolved dependency paths.
+///
+/// # Errors
+/// Propagates module enumeration and Windows path-query failures.
 pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
     use std::os::windows::ffi::OsStringExt;
     #[link(name = "kernel32")]
@@ -250,8 +258,9 @@ pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
     let mut paths = Vec::new();
     for module in modules {
         let mut path = vec![0u16; 32768];
-        let length =
-            unsafe { GetModuleFileNameW(module, path.as_mut_ptr(), path.len() as u32) } as usize;
+        let capacity = u32::try_from(path.len())
+            .map_err(|_| io::Error::other("Module path buffer exceeds u32"))?;
+        let length = unsafe { GetModuleFileNameW(module, path.as_mut_ptr(), capacity) } as usize;
         if length == 0 {
             let error = io::Error::last_os_error();
             // An oracle DLL can unload after the module snapshot was captured.
@@ -312,6 +321,10 @@ impl Media {
         Ok(Self::linked())
     }
 
+    /// Load and cache the native media library from an explicit path.
+    ///
+    /// # Errors
+    /// Propagates path conversion, library loading, symbol resolution, and cache-lock failures.
     #[cfg(not(feature = "direct-bridges"))]
     pub fn load(path: &Path) -> io::Result<Arc<Self>> {
         static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Media>>>> = OnceLock::new();
@@ -351,6 +364,14 @@ impl Media {
     }
 
     #[cfg(feature = "direct-bridges")]
+    /// Execute a validated media request with synchronous callbacks.
+    ///
+    /// # Errors
+    /// Propagates request validation, path conversion, media processing, and callback failures.
+    #[expect(
+        clippy::items_after_statements,
+        reason = "The path conversion helper is scoped to the direct request adapter"
+    )]
     pub fn run(&self, request: &Request, callbacks: &mut dyn Callbacks) -> io::Result<i32> {
         request.validate()?;
         fn string(text: &str) -> io::Result<CString> {
@@ -394,6 +415,10 @@ impl Media {
     }
 
     #[cfg(feature = "direct-bridges")]
+    /// Execute a media conversion and stream normalized PCM into a sink.
+    ///
+    /// # Errors
+    /// Propagates request validation, sink initialization, PCM conversion, and callback failures.
     pub fn run_pcm(
         &self,
         request: &Request,
@@ -431,6 +456,17 @@ impl Media {
     }
 
     #[cfg(not(feature = "direct-bridges"))]
+    /// Execute a validated media request with synchronous callbacks.
+    ///
+    /// # Errors
+    /// Propagates request validation, path conversion, media processing, and callback failures.
+    ///
+    /// # Panics
+    /// Panics only if the compile-time native request size cannot fit in `u32`.
+    #[expect(
+        clippy::items_after_statements,
+        reason = "The path conversion helper is scoped to the dynamic request adapter"
+    )]
     pub fn run(&self, request: &Request, callbacks: &mut dyn Callbacks) -> io::Result<i32> {
         request.validate()?;
         fn string(text: &str) -> io::Result<CString> {
@@ -446,7 +482,8 @@ impl Media {
             .collect::<io::Result<_>>()?;
         let pointers: Vec<_> = tags.iter().map(|tag| tag.as_ptr()).collect();
         let raw = RawRequest {
-            size: std::mem::size_of::<RawRequest>() as u32,
+            size: u32::try_from(std::mem::size_of::<RawRequest>())
+                .expect("native request fits in u32"),
             abi: 2,
             operation: request.operation as u32,
             rate: request.rate,
@@ -471,14 +508,7 @@ impl Media {
             panicked: false,
         };
         // SAFETY: every pointer remains live until this synchronous function returns.
-        let result = unsafe {
-            (self.run)(
-                &raw,
-                emit,
-                cancel,
-                (&mut state as *mut CallbackState<'_>).cast(),
-            )
-        };
+        let result = unsafe { (self.run)(&raw const raw, emit, cancel, (&raw mut state).cast()) };
         if state.panicked {
             return Err(io::Error::other("Panic caught in media callback"));
         }

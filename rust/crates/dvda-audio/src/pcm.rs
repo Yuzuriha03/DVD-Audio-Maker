@@ -46,7 +46,7 @@ impl Encoding {
         output.reserve(bytes.len() / self.bytes());
         for sample in bytes.chunks_exact(self.bytes()) {
             let value = match self {
-                Self::Signed8 => f64::from(sample[0] as i8) / 128.0,
+                Self::Signed8 => f64::from(sample[0].cast_signed()) / 128.0,
                 Self::Unsigned8 => (f64::from(sample[0]) - 128.0) / 128.0,
                 Self::Signed16 => f64::from(i16::from_le_bytes([sample[0], sample[1]])) / 32768.0,
                 Self::Signed24 => {

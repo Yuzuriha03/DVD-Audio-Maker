@@ -2,6 +2,14 @@
 //!
 //! This is a Rust port of the former `FontTool`, kept in the developer tool rather
 //! than the application C17 DLL because no runtime font parsing API is needed.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::items_after_statements,
+    clippy::struct_excessive_bools,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unreadable_literal,
+    reason = "OpenType fixtures and diagnostics preserve format-width fields and explicit font capability flags"
+)]
 use dvda_core::hash::sha256;
 use std::{
     collections::{HashMap, HashSet},

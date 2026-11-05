@@ -149,6 +149,9 @@ pub unsafe extern "C" fn dvda_menu_run_navigation(request: *const MenuRequest) -
 ///
 /// # Errors
 /// Returns the native menu status when XML, image, MPEG, or output processing fails.
+///
+/// # Panics
+/// Panics only if the compile-time menu request size cannot fit in `u32`.
 pub unsafe fn run_spu(
     xml: &CStr,
     input: &CStr,
@@ -156,7 +159,7 @@ pub unsafe fn run_spu(
     read_rgba: Option<ReadRgba>,
 ) -> Result<(), MenuError> {
     let request = MenuRequest {
-        size: size_of::<MenuRequest>() as u32,
+        size: u32::try_from(size_of::<MenuRequest>()).expect("menu request fits in u32"),
         xml: xml.as_ptr(),
         input: input.as_ptr(),
         output: output.as_ptr(),
@@ -191,9 +194,12 @@ pub fn run_spu_files(
 ///
 /// # Errors
 /// Returns the native navigation status for invalid XML, malformed menu data, or output failures.
+///
+/// # Panics
+/// Panics only if the compile-time menu request size cannot fit in `u32`.
 pub fn run_navigation(xml: &CStr, output: &CStr) -> Result<(), MenuError> {
     let request = MenuRequest {
-        size: size_of::<MenuRequest>() as u32,
+        size: u32::try_from(size_of::<MenuRequest>()).expect("menu request fits in u32"),
         xml: xml.as_ptr(),
         input: std::ptr::null(),
         output: output.as_ptr(),

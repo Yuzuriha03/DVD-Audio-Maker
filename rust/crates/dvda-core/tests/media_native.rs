@@ -1,4 +1,13 @@
 //! Standalone tests: no managed runner or external converter is involved.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::needless_pass_by_value,
+    clippy::struct_excessive_bools,
+    reason = "Media fixtures use explicit callback switches and bounded PCM test data"
+)]
 use dvda_core::media::{Job, Outcome, execute};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use std::{

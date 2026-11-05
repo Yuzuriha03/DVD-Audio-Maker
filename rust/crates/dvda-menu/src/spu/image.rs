@@ -4,6 +4,14 @@
 //! order and integer arithmetic follow the C implementation so the encoded
 //! subpicture bytes stay identical.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::similar_names,
+    clippy::too_many_lines,
+    reason = "Subpicture coordinates, palette indices, and crop arithmetic intentionally mirror the bounded C implementation"
+)]
 use super::color::Color;
 use std::path::{Path, PathBuf};
 

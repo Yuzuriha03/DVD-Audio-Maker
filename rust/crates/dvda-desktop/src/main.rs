@@ -1,3 +1,12 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::struct_excessive_bools,
+    clippy::struct_field_names,
+    clippy::too_many_lines,
+    clippy::wildcard_imports,
+    reason = "The desktop root coordinates UI modules, Win32 state flags, and intentional module re-exports"
+)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[macro_use]

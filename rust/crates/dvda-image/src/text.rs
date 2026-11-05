@@ -1,3 +1,8 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Font coordinates intentionally use f32-compatible scaling and rounded pixel positions"
+)]
 use std::io;
 use swash::{
     FontRef,
@@ -20,6 +25,9 @@ pub struct GlyphMask {
 
 /// Shapes literal Unicode text using an explicit face in a TTF/OTF/TTC font.
 /// Coordinates are relative to the baseline, with positive y pointing down.
+///
+/// # Errors
+/// Rejects invalid sizes, fonts, and face indices, and propagates shaping or allocation failures.
 pub fn shape_masks(
     data: &[u8],
     face_index: u32,
@@ -97,6 +105,9 @@ pub fn shape_masks(
 
 /// Wraps at word boundaries where possible, with Unicode grapheme breaks for
 /// words wider than the caption. Explicit newlines are preserved.
+///
+/// # Errors
+/// Rejects invalid fonts, face indices, text sizes, widths, and oversized text.
 pub fn wrap_lines(
     data: &[u8],
     face_index: u32,

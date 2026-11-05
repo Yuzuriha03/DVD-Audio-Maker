@@ -1,3 +1,7 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "FFmpeg conversion stages retain their resource and cleanup boundaries"
+)]
 use crate::{
     Call,
     ffmpeg::{
@@ -27,6 +31,10 @@ use crate::{
     win,
 };
 use std::{ffi::c_void, fs::File, io::Write, ptr};
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The helper is shared directly by fallible map_err call sites"
+)]
 pub(crate) fn open_error(error: std::io::Error) -> i32 {
     match error.kind() {
         std::io::ErrorKind::NotFound => -2,
@@ -953,16 +961,11 @@ pub(crate) unsafe fn audio_input(
         if !a.md5.is_null() {
             let mut digest = [0u8; 16];
             av_md5_final(a.md5, digest.as_mut_ptr());
-            call.message(
-                1,
-                &format!(
-                    "MD5={}",
-                    digest
-                        .iter()
-                        .map(|b| format!("{b:02x}"))
-                        .collect::<String>()
-                ),
-            );
+            let text = digest.iter().fold(String::new(), |mut text, byte| {
+                let _ = std::fmt::Write::write_fmt(&mut text, format_args!("{byte:02x}"));
+                text
+            });
+            call.message(1, &format!("MD5={text}"));
         }
         call.message(2, &format!("Number of samples: {}", a.samples));
         Ok(())

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::items_after_statements,
+    clippy::wildcard_imports,
+    reason = "Touch handling preserves native gesture structures and the shared desktop scope"
+)]
 use super::*;
 
 const WM_GESTURE: u32 = 0x0119;

@@ -1,5 +1,9 @@
 //! Colour values and the small subset of spumux colour parsing the menu path uses.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "Subpicture colour conversion intentionally produces byte-sized channels"
+)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub(crate) struct Color {
     pub(crate) r: u8,

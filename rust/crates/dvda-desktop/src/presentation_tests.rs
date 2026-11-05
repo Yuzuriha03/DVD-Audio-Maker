@@ -1,3 +1,13 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::format_collect,
+    clippy::items_after_statements,
+    clippy::similar_names,
+    clippy::too_many_lines,
+    reason = "UI integration fixtures intentionally cover Win32 geometry and complete log scenarios"
+)]
 use super::ui_test_guard;
 
 #[test]

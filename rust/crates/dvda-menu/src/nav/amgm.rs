@@ -3,6 +3,10 @@
 //! Parses the navigation XML, scans each PGC VOB source independently, fills
 //! its NAV packs and concatenates the results into <dest>/`AUDIO_TS/AUDIO_TS.VOB`.
 
+#![allow(
+    clippy::cast_possible_truncation,
+    reason = "AMGM output preserves fixed-width sector and page fields"
+)]
 use super::build::{self, Aspect};
 use super::dvdata;
 use super::fixvobus;

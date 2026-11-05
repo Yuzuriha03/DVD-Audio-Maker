@@ -4,6 +4,15 @@
 //! private dvdauthor-data sector and the subpicture packets are written in the
 //! same order with the same timing state machine.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::decimal_bitwise_operands,
+    clippy::too_many_lines,
+    clippy::unnecessary_wraps,
+    reason = "MPEG PACK/PES fields retain their protocol widths and C-compatible scheduling arithmetic"
+)]
 use super::encode::dvd_encode;
 use super::format::VideoFormat;
 use super::image::{RgbaReader, SubPicture};

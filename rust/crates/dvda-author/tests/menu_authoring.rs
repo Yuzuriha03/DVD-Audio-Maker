@@ -1,3 +1,7 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "Menu fixtures construct bounded DVD coordinates"
+)]
 use dvda_author::{
     Callbacks, Silent,
     menu::{self, Backend, Options, Target, Track},

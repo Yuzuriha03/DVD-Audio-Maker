@@ -1,3 +1,10 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    reason = "The window procedure intentionally extracts signed coordinates from Win32 message bit fields"
+)]
 //! The main window procedure.
 
 use super::{

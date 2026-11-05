@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unnecessary_debug_formatting,
+    reason = "The generated include_bytes path uses debug escaping for a valid Rust literal"
+)]
 use std::{
     env,
     path::{Path, PathBuf},

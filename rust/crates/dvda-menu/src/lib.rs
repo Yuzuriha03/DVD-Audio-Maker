@@ -1,4 +1,8 @@
 //! Menu XML tokenizer shared by the SPU and navigation implementations.
+#![allow(
+    clippy::too_many_lines,
+    reason = "The tokenizer regression test covers one complete malformed-input matrix"
+)]
 #[cfg(any(feature = "direct-link", test))]
 use quick_xml::{Reader, XmlVersion, events::Event};
 

@@ -1,3 +1,7 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    reason = "Dialog structures use compile-time sizes and bounded path buffers"
+)]
 //! Folder and file dialogs, the output-folder shortcut and message boxes.
 
 use super::{

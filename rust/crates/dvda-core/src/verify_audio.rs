@@ -24,9 +24,13 @@ impl Drop for Workspace {
     }
 }
 
+#[allow(
+    unused_variables,
+    reason = "The workspace root is used only by the non-direct verification backend"
+)]
 pub fn track(
     library: &Path,
-    _root: &Path,
+    root: &Path,
     track: &Value,
     caller: &mut dyn Callbacks,
 ) -> Result<(), String> {
@@ -85,8 +89,8 @@ pub fn track(
     );
     #[cfg(not(feature = "direct-bridges"))]
     {
-        fs::create_dir_all(_root).map_err(|e| e.to_string())?;
-        let directory = media::temporary_path(&_root.join("track"));
+        fs::create_dir_all(root).map_err(|e| e.to_string())?;
+        let directory = media::temporary_path(&root.join("track"));
         fs::create_dir(&directory).map_err(|e| e.to_string())?;
         let work = Workspace(directory);
         let source_raw = work.0.join("source.raw");
@@ -105,8 +109,8 @@ pub fn track(
                 pcm::Job {
                     source: converted.to_string_lossy().into_owned(),
                     destination: source_raw.clone(),
-                    rate: rate as i32,
-                    bits: bits as i32,
+                    rate: rate.cast_signed(),
+                    bits: bits.cast_signed(),
                 },
                 caller,
             )

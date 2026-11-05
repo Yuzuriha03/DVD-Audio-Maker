@@ -1,8 +1,16 @@
 //! Single-frame DVD menu Y4M serialization, preserving the bridge's integer rounding.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Y4M color conversion intentionally rounds and clamps RGB channels to bytes"
+)]
 use std::io::{self, Write};
 
 /// Write one progressive 4:2:0 frame. Validation completes before any output is written.
 /// The caller owns flushing, syncing and removal of failed filesystem outputs.
+///
+/// # Errors
+/// Rejects invalid dimensions, rates, aspect ratios, and buffer sizes, and propagates output failures.
 pub fn write_rgb(
     output: &mut impl Write,
     rgb: &[u8],

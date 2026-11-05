@@ -1,4 +1,9 @@
 //! Former `FlacMetadataEditor` `SpanReader` failure semantics at the public boundary.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "FLAC fixtures construct protocol-width metadata blocks and deterministic payload bytes"
+)]
 use dvda_core::formats;
 use serde_json::{Value, json};
 use std::{

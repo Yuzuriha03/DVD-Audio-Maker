@@ -61,14 +61,26 @@ pub fn sample_pts() -> [i64; 4] {
 }
 
 impl NativeFormats {
+    /// Construct the project-owned native format implementation.
+    ///
+    /// # Errors
+    /// The current implementation has no fallible initialization; the result is retained for API compatibility.
     pub fn load() -> Result<Self, String> {
         Ok(Self)
     }
 
+    /// Inspect MLP packet boundaries and timing in a file.
+    ///
+    /// # Errors
+    /// Propagates file I/O, malformed packet, and inspection failures.
     pub fn inspect_file(&self, path: &Path) -> Result<MlpInspection, String> {
         mlp_formats::inspect_file(path)
     }
 
+    /// Compare source and decoded PCM, allowing only validated zero padding.
+    ///
+    /// # Errors
+    /// Propagates file access and comparison setup failures.
     pub fn compare_pcm(
         &self,
         source: &Path,
@@ -79,6 +91,10 @@ impl NativeFormats {
         pcm_formats::compare(source, decoded, bytes_per_frame, max_zero_frames)
     }
 
+    /// Parse the five-byte MPEG presentation timestamp.
+    ///
+    /// # Errors
+    /// Returns an error when fewer than five bytes are available.
     pub fn parse_pts(&self, data: &[u8]) -> Result<i64, String> {
         if data.len() < 5 {
             return Err("PTS parsing failed: -4".into());
@@ -88,6 +104,10 @@ impl NativeFormats {
             | i64::from(u16::from_be_bytes([data[3], data[4]]) >> 1))
     }
 
+    /// Inspect MLP access-unit alignment in a byte buffer.
+    ///
+    /// # Errors
+    /// Returns an error for truncated or malformed MLP access units.
     pub fn align(&self, data: &[u8]) -> Result<MlpAlignment, String> {
         mlp_formats::align(data)
     }

@@ -1,3 +1,7 @@
+#![allow(
+    clippy::too_many_lines,
+    reason = "Translation tables intentionally retain complete language mappings"
+)]
 //! UI languages and the translation table.
 
 use super::GetUserDefaultUILanguage;

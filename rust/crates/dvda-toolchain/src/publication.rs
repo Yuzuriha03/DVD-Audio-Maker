@@ -1,4 +1,8 @@
 //! Candidates live next to final outputs; no final file is removed before success.
+#![expect(
+    clippy::needless_continue,
+    reason = "Publication retry loops keep their explicit retry control flow"
+)]
 use std::{
     fs,
     path::{Path, PathBuf},

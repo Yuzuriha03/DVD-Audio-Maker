@@ -1,3 +1,14 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::decimal_bitwise_operands,
+    clippy::format_collect,
+    clippy::items_after_statements,
+    clippy::many_single_char_names,
+    clippy::too_many_lines,
+    clippy::unreadable_literal,
+    reason = "Differential fixtures preserve complete C ABI calls, deterministic PCM, and reference vectors"
+)]
 #[cfg(windows)]
 mod windows {
     use dvda_mlp::ffi::{

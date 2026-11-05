@@ -1,3 +1,8 @@
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    reason = "Presentation retains human-readable capacity rounding and complete message classification"
+)]
 //! Presentation rules retained from `TaskLogPresentation` without coupling to widgets.
 use super::{Lang, localized_detail, localized_log};
 

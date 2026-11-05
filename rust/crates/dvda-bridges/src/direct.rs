@@ -21,6 +21,10 @@ pub struct MediaRequest {
 
 #[cfg(feature = "media")]
 impl MediaRequest {
+    /// Construct an owned media request from UTF-8 paths.
+    ///
+    /// # Errors
+    /// Returns `NulError` when either path contains an embedded NUL.
     pub fn new(operation: u32, input: &str, output: &str) -> Result<Self, NulError> {
         Ok(Self {
             operation,
@@ -81,7 +85,8 @@ impl MediaRequest {
         }
         let tags: Vec<_> = self.tags.iter().map(|tag| tag.as_ptr()).collect();
         let request = crate::media::Request {
-            size: std::mem::size_of::<crate::media::Request>() as u32,
+            size: u32::try_from(std::mem::size_of::<crate::media::Request>())
+                .expect("media request fits in u32"),
             abi: 2,
             operation: self.operation,
             rate: self.rate,
@@ -91,7 +96,7 @@ impl MediaRequest {
             dither: u32::from(self.dither),
             compression: self.compression,
             cover: u32::from(self.cover),
-            tag_count: (tags.len() / 2) as u32,
+            tag_count: u32::try_from(tags.len() / 2).expect("tag count was checked"),
             input: self.input.as_ptr(),
             output: self
                 .output

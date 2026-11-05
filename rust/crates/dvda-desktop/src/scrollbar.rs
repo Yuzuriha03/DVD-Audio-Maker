@@ -1,3 +1,8 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "Scrollbar geometry intentionally converts bounded floating-point ratios to native pixels"
+)]
 //! The custom 10-DIP scrollbars of the settings page and the log.
 
 use super::{

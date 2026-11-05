@@ -46,6 +46,10 @@ impl Call {
     pub fn cancelled(&self) -> bool {
         self.cancel.is_some_and(|f| unsafe { f(self.state) != 0 })
     }
+    /// Emit a message through the active callback or standard output.
+    ///
+    /// # Panics
+    /// Panics only if removing NUL characters still cannot construct a C string.
     pub fn message(&self, stream: i32, text: &str) {
         let s = std::ffi::CString::new(text.replace('\0', "")).unwrap();
         if let Some(f) = self.emit {

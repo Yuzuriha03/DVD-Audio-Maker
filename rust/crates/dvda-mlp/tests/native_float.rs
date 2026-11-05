@@ -1,4 +1,13 @@
 //! Opt-in independent decoder validation; requires ffmpeg on PATH.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::format_push_string,
+    clippy::too_many_lines,
+    clippy::unreadable_literal,
+    reason = "Decoder fixtures construct deterministic PCM and complete independent validation matrices"
+)]
 use dvda_mlp::{
     Config,
     direct::{StreamIo, encode_stream},

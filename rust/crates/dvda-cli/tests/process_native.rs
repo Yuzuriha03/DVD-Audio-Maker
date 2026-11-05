@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unreadable_literal,
+    reason = "The Win32 process flag is a fixed hexadecimal constant"
+)]
 use dvda_core::process::{Job, Outcome, execute};
 use dvda_native::media::Callbacks;
 use std::{

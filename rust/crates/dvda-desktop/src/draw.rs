@@ -1,3 +1,10 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    reason = "Owner drawing intentionally rounds bounded geometry and converts native color fields"
+)]
 //! Owner drawing: buttons, tabs, caption buttons, combo items, labels, the window
 //! background and buffered painting.
 

@@ -1,3 +1,9 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Menu media packet sizes and FFmpeg stream indices are checked against their C ABI fields"
+)]
 use crate::ffmpeg::{
     AV_CODEC_FLAG_CLOSED_GOP, AV_CODEC_ID_MP2, AV_CODEC_ID_MPEG2VIDEO, AV_PIX_FMT_YUV420P,
     AV_SAMPLE_FMT_S16, Context, EAGAIN, EINVAL, EIO, ENOMEM, EOF, Format, Frame, INVALID, Rational,
@@ -196,6 +202,10 @@ unsafe fn encode_audio(
 /// `y4m`, `path` and `norm` must be non-NULL, valid NUL-terminated strings that stay live for
 /// the call. `wav` may be NULL or empty when there is no audio, and `aspect` may be NULL to use
 /// the default.
+#[expect(
+    clippy::too_many_lines,
+    reason = "The menu transaction keeps FFmpeg setup, encoding, and cleanup together"
+)]
 unsafe fn create(
     y4m: *const c_char,
     wav: *const c_char,
@@ -464,8 +474,7 @@ pub unsafe extern "C" fn dvda_menu_create_mpg(
             Ok(Ok(())) => 0,
             // The legacy menu bridge exposes one generic failure status for all
             // rejected inputs and output paths.
-            Ok(Err(_)) => -1,
-            Err(_) => -1,
+            Ok(Err(_)) | Err(_) => -1,
         }
     }
 }

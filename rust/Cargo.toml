@@ -3,9 +3,8 @@ resolver = "3"
 members = ["crates/dvda-audio", "crates/dvda-image", "crates/dvda-core", "crates/dvda-cli", "crates/dvda-native", "crates/dvda-desktop", "crates/dvda-toolchain", "crates/dvda-menu", "crates/dvda-mlp", "crates/dvda-bridges", "crates/dvda-author"]
 
 [workspace.lints.clippy]
-# Protocol bit packing and established numeric conversions were audited separately.
-# Keep the standard correctness lints strict without enforcing stylistic pedantic rules.
-pedantic = "allow"
+# Keep pedantic diagnostics visible; strict verification promotes them to errors.
+pedantic = "warn"
 
 [workspace.package]
 version = "0.1.0"

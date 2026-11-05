@@ -1,5 +1,13 @@
 //! Streaming ISO9660 / UDF 1.02 bridge writer, migrated from `iso_writer.c`.
 //! Directory records are alphabetical; `AUDIO_TS` payloads follow DVD-Audio order.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::items_after_statements,
+    clippy::large_stack_arrays,
+    clippy::needless_continue,
+    clippy::too_many_lines,
+    reason = "ISO/UDF records use validated field widths and retain streaming copy loops"
+)]
 use std::{
     cmp::Ordering,
     fs::{self, File, OpenOptions},
@@ -714,12 +722,23 @@ impl Drop for Temporary {
 }
 /// Write a disc image with bounded memory and atomically replace the destination
 /// only after every source file, buffered write and final flush succeeds.
+/// Stream an ISO9660/UDF image from an authored directory.
+///
+/// # Errors
+/// Rejects invalid source trees and propagates planning, allocation, and output failures.
 pub fn write(source: &Path, destination: &Path, label: Option<&str>) -> io::Result<()> {
     write_with_callbacks(source, destination, label, &mut crate::Silent)
 }
 
 /// File payload addresses from the same layout used by the writer. This lets
 /// SAMG reference the actual AOB locations, including filesystem metadata.
+/// Return the planned ISO file extents without writing an image.
+///
+/// # Errors
+/// Propagates source validation and layout planning failures.
+///
+/// # Panics
+/// Panics only if the planned file list violates its internal nonempty invariant.
 pub fn file_layout(source: &Path) -> io::Result<Vec<(PathBuf, u32, u32)>> {
     let source = source.canonicalize()?;
     let image = Image::plan(&source)?;
@@ -737,6 +756,10 @@ pub fn file_layout(source: &Path) -> io::Result<Vec<(PathBuf, u32, u32)>> {
         .collect())
 }
 
+/// Stream an ISO image while forwarding cancellation and progress callbacks.
+///
+/// # Errors
+/// Propagates source validation, cancellation, allocation, and output failures.
 pub fn write_with_callbacks(
     source: &Path,
     destination: &Path,

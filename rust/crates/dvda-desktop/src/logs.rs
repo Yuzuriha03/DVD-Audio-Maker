@@ -1,3 +1,13 @@
+#![allow(
+    clippy::assigning_clones,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::format_push_string,
+    clippy::items_after_statements,
+    clippy::too_many_lines,
+    reason = "Log rendering preserves Win32 text positions and incremental localized string building"
+)]
 //! Session and task logs: queueing, rendering, localization, copy and export.
 
 use super::{

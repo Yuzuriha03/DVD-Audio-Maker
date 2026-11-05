@@ -1,3 +1,10 @@
+#![expect(
+    clippy::cast_possible_wrap,
+    clippy::items_after_statements,
+    clippy::too_many_lines,
+    clippy::unreadable_literal,
+    reason = "CLI integration fixtures construct deterministic WAVE data and complete command scenarios"
+)]
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -354,7 +361,11 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
         .as_object()
         .unwrap()
         .keys()
-        .find(|k| k.ends_with(".mlp"))
+        .find(|k| {
+            Path::new(k)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("mlp"))
+        })
         .unwrap();
     ok(run(&root.0, &["mlp", "--check", mlp]));
     let before = fs::read(mlp).unwrap();

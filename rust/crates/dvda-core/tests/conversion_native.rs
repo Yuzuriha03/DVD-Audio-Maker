@@ -1,4 +1,10 @@
 //! Standalone conversion parity, including metadata, cover, failure and cancellation.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Conversion fixtures construct bounded metadata atoms and complete failure scenarios"
+)]
 use dvda_core::{
     conversion::{self, Job},
     formats,

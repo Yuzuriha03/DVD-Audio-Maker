@@ -1,3 +1,8 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "Theme handling preserves native color channels and pointer-width window values"
+)]
 //! Colours and light/dark theme switching.
 
 use super::{

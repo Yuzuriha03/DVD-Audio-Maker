@@ -1,4 +1,14 @@
 //! Exercise the same entry points as the desktop, with generated audio only.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::format_push_string,
+    clippy::items_after_statements,
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    reason = "Application fixtures construct complete generated-media tasks and protocol records"
+)]
 use dvda_core::{app, media, verify_audio};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde_json::{Value, json};

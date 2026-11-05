@@ -1,4 +1,9 @@
 //! Streaming integer WAVE and MLP input parsing; no media decoder is required.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "Audio packet fields retain their validated DVD sizes and streaming parse state"
+)]
 use crate::{Callbacks, Silent};
 use std::{
     fs::File,
@@ -47,6 +52,10 @@ impl AudioInfo {
     pub fn frame_bytes(&self) -> u64 {
         u64::from(self.frame_samples()) * u64::from(self.channels) * u64::from(self.bits) / 8
     }
+    /// Compute the track duration in MPEG PTS units.
+    ///
+    /// # Errors
+    /// Returns an error when the sample count, rate, or duration overflows the protocol field.
     pub fn pts_length(&self) -> Result<u32, String> {
         let ticks =
             (u128::from(self.samples) * 90000 + u128::from(self.rate) / 2) / u128::from(self.rate);
@@ -96,9 +105,17 @@ fn validate(info: &AudioInfo) -> Result<(), String> {
     info.pts_length()?;
     Ok(())
 }
+/// Parse an audio input and return its DVD-relevant stream properties.
+///
+/// # Errors
+/// Rejects unsupported or malformed WAVE/MLP inputs and propagates file failures.
 pub fn probe(path: &Path) -> Result<AudioInfo, String> {
     probe_with_callbacks(path, &mut Silent)
 }
+/// Parse audio properties while forwarding cancellation callbacks.
+///
+/// # Errors
+/// Rejects unsupported inputs and propagates cancellation or file parsing failures.
 pub fn probe_with_callbacks(
     path: &Path,
     callbacks: &mut dyn Callbacks,
@@ -414,6 +431,10 @@ const PERM24: [&[usize]; 6] = [
 ];
 /// Convert two interleaved little-endian sample frames into DVD-Audio byte order.
 /// Twenty valid bits occupy the most significant bits of each input 24-bit word.
+/// Pack an integer PCM pair into the author's big-endian channel order.
+///
+/// # Errors
+/// Rejects unsupported geometry, incomplete frames, and overflowing packet sizes.
 pub fn pack_pcm_pair(input: &[u8], bits: u8, channels: u8) -> Result<Vec<u8>, String> {
     if !(1..=6).contains(&channels) || ![16, 20, 24].contains(&bits) {
         return Err("Invalid LPCM packing format".into());

@@ -1,3 +1,8 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "The fixture generator intentionally produces deterministic signed PCM samples"
+)]
 use dvda_mlp::{Config, encode};
 fn main() {
     let args: Vec<String> = std::env::args().collect();

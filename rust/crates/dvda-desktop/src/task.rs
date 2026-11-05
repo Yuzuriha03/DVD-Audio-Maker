@@ -1,3 +1,10 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::format_push_string,
+    clippy::match_wildcard_for_single_variants,
+    clippy::too_many_lines,
+    reason = "Task lifecycle code preserves typed event dispatch and incremental diagnostic formatting"
+)]
 //! Background tasks: start, progress, completion, cancellation and busy state.
 
 use super::{

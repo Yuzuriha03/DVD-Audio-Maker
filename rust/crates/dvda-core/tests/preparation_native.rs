@@ -1,5 +1,12 @@
 //! Independent preparation regression; fixtures were frozen from the old host.
 //! Only the source-built C media component is loaded. No managed/external host.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::needless_pass_by_value,
+    clippy::struct_field_names,
+    reason = "Preparation fixtures construct deterministic source evidence and owned task records"
+)]
 use dvda_core::{
     audio, media,
     preparation::{alac, pipeline, state},

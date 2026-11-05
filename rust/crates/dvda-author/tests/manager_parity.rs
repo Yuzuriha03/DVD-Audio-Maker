@@ -1,3 +1,7 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "Manager fixtures construct protocol-sized indices"
+)]
 use dvda_author::{
     amg::{self, Group, Layout, Menu, Options, VideoLink},
     asvs,

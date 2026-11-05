@@ -70,6 +70,10 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(
+        clippy::unicode_not_nfc,
+        reason = "The fixture intentionally tests non-NFC Unicode scalar mappings"
+    )]
     fn ordinal_supplementary_case_matches_dotnet_without_expanding_sharp_s() {
         // Frozen against .NET 10 StringComparer.OrdinalIgnoreCase. Each row
         // covers a separate supplementary-plane alphabet with casing.

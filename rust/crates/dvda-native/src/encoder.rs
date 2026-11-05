@@ -34,7 +34,14 @@ pub struct ResultInfo {
 /// Both methods run synchronously on the invoking thread, with borrowed buffers.
 pub trait Stream {
     /// Returns complete frames, each containing exactly the declared channel count.
+    ///
+    /// # Errors
+    /// Propagates input and short-read failures from the PCM source.
     fn read(&mut self, samples: &mut [i32]) -> io::Result<usize>;
+    /// Write one encoded byte sequence synchronously.
+    ///
+    /// # Errors
+    /// Propagates output failures from the destination.
     fn write(&mut self, bytes: &[u8]) -> io::Result<()>;
 }
 #[repr(C)]
@@ -223,6 +230,13 @@ impl Encoder {
         Ok(encoder)
     }
 
+    /// Encode a synchronous PCM stream with the loaded native encoder.
+    ///
+    /// # Errors
+    /// Rejects invalid channels and metadata sizes, and propagates stream or native encoding failures.
+    ///
+    /// # Panics
+    /// Panics only if the compile-time encoder configuration size cannot fit in `u32`.
     pub fn encode(&self, request: &Request, stream: &mut dyn Stream) -> io::Result<ResultInfo> {
         if !(1..=6).contains(&request.channels) {
             return Err(io::Error::other("Invalid channel count"));
@@ -241,7 +255,8 @@ impl Encoder {
             })
             .collect::<io::Result<_>>()?;
         let config = Config {
-            struct_size: std::mem::size_of::<Config>() as u32,
+            struct_size: u32::try_from(std::mem::size_of::<Config>())
+                .expect("encoder config fits in u32"),
             abi: 1,
             sample_rate: request.sample_rate,
             bits: request.bits,

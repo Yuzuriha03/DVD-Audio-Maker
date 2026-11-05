@@ -1,4 +1,13 @@
 //! Streaming, read-only DVD-Audio PES payload verification.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "Disc verification uses bounded sector counts and packet fields"
+)]
+#![allow(
+    clippy::unreadable_literal,
+    reason = "Test fixtures use fixed WAVE byte constants"
+)]
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
@@ -18,10 +27,18 @@ pub struct ResultInfo {
 pub struct NativeDiscVerifier;
 
 impl NativeDiscVerifier {
+    /// Construct the project-owned streaming verifier.
+    ///
+    /// # Errors
+    /// The current native verifier has no fallible initialization; the result is retained for API compatibility.
     pub fn load() -> Result<Self, String> {
         Ok(Self)
     }
 
+    /// Verify streaming MLP payloads against their source files.
+    ///
+    /// # Errors
+    /// Propagates source, chunk, malformed-packet, and comparison failures.
     pub fn verify_mlp<I>(&self, sources: &[PathBuf], chunks: I) -> Result<ResultInfo, String>
     where
         I: Iterator<Item = Result<Vec<u8>, String>>,
@@ -29,6 +46,10 @@ impl NativeDiscVerifier {
         self.verify(sources, None, chunks, false)
     }
 
+    /// Verify MLP payloads while retaining coded metadata differences for validation.
+    ///
+    /// # Errors
+    /// Propagates source, chunk, malformed-packet, and coded-comparison failures.
     pub fn verify_mlp_coded<I>(&self, sources: &[PathBuf], chunks: I) -> Result<ResultInfo, String>
     where
         I: Iterator<Item = Result<Vec<u8>, String>>,
@@ -36,6 +57,10 @@ impl NativeDiscVerifier {
         self.verify(sources, None, chunks, true)
     }
 
+    /// Verify LPCM payloads with explicit title boundaries.
+    ///
+    /// # Errors
+    /// Rejects mismatched title boundaries and propagates source, chunk, or comparison failures.
     pub fn verify_lpcm<I>(
         &self,
         sources: &[PathBuf],
@@ -51,6 +76,10 @@ impl NativeDiscVerifier {
         self.verify(sources, Some(title_ends), chunks, false)
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "Verification remains an instance method shared by all verifier entry points"
+    )]
     fn verify<I>(
         &self,
         sources: &[PathBuf],

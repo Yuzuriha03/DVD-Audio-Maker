@@ -1,3 +1,9 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::too_many_lines,
+    reason = "The differential fixture constructs bounded menu media and deterministic PCM test patterns"
+)]
 use dvda_bridges::menu_media::dvda_menu_create_mpg;
 use std::ffi::{CString, c_void};
 #[link(name = "kernel32")]

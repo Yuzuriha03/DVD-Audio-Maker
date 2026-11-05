@@ -4,6 +4,13 @@
 //! actual format and title. `encode` preserves frozen C indexing for differential
 //! fixtures, including C's mixed-format lookup defects.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::float_cmp,
+    clippy::too_many_lines,
+    reason = "ATSI tables preserve checked track counts and the historical downmix conversion"
+)]
 use crate::samg;
 
 /// One still-picture entry. `None` onset uses one-second intervals within a track.
@@ -89,6 +96,10 @@ fn rate_code(rate: u32) -> Result<u8, String> {
 /// Reproduces the C coefficient conversion, including its truncation in 0..1.4
 /// dB and discontinuous high-attenuation ranges. NaN/infinity are rejected instead
 /// of relying on undefined float-to-integer conversions.
+/// Convert a downmix attenuation in decibels to its DVD coefficient.
+///
+/// # Errors
+/// Returns an error for negative or non-finite attenuation values.
 pub fn downmix_coefficient(db: f32) -> Result<u8, String> {
     if !db.is_finite() || !(0.0..=100.0).contains(&db) {
         return Err("Downmix attenuation must be finite and in 0..=100 dB".into());
@@ -146,12 +157,20 @@ fn same_format(a: &samg::Track, b: &samg::Track) -> bool {
 /// identities. Titles must be homogeneous in rate/width/channels, as prepared by
 /// C's `create_tracktables`; the caller supplies title boundaries and AOB ranges.
 /// Overflow and malformed metadata are errors rather than truncated table fields.
+/// Encode ATSI tables with the historical frozen layout behavior.
+///
+/// # Errors
+/// Rejects invalid title formats, excessive counts, and overflowing sector metadata.
 pub fn encode(titles: &[Title], options: &Options) -> Result<Encoded, String> {
     encode_impl(titles, options, false)
 }
 
 /// Production encoder: codec and channel assignment are part of the audio
 /// format identity, and every title/track points to its own attributes.
+/// Encode ATSI tables using each title's actual format and channel assignment.
+///
+/// # Errors
+/// Rejects inconsistent title formats, invalid counts, and overflowing metadata.
 pub fn encode_checked(titles: &[Title], options: &Options) -> Result<Encoded, String> {
     encode_impl(titles, options, true)
 }

@@ -1,4 +1,9 @@
 //! ISO fixture preserved from the historical C# `IsoMigrationTests`.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "The ISO fixture retains complete historical sector records"
+)]
 use dvda_core::formats;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};

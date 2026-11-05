@@ -16,6 +16,12 @@ pub struct FontLocation {
 
 /// Resolve the aliases emitted by the runtime packager without a Magick typemap.
 /// Arbitrary family-name discovery belongs to the application's font selector.
+///
+/// # Errors
+/// Returns `NotFound` when neither a packaged alias nor an existing font path can be resolved.
+///
+/// # Panics
+/// Panics only if the fixed four-region alias table exceeds the `u32` face-index range.
 pub fn resolve(name: &str, runtime: &Path) -> io::Result<FontLocation> {
     let alias = name.strip_prefix("DVDA-").unwrap_or(name);
     if let Some(face_index) = ["SC", "JP", "KR", "TC"]
@@ -24,7 +30,7 @@ pub fn resolve(name: &str, runtime: &Path) -> io::Result<FontLocation> {
     {
         return Ok(FontLocation {
             path: runtime.join("fonts").join("DvdaNotoCJK-Regular.ttc"),
-            face_index: face_index as u32,
+            face_index: u32::try_from(face_index).expect("the packaged font has four faces"),
         });
     }
     let path = PathBuf::from(name);
@@ -48,6 +54,17 @@ pub struct FontCache {
 }
 
 impl FontCache {
+    /// Load, validate, and cache one font file within the job's memory budget.
+    ///
+    /// # Errors
+    /// Returns an error for path resolution, I/O, oversized fonts, or an invalid face index.
+    ///
+    /// # Panics
+    /// Panics only if an internal cache position no longer identifies an existing entry.
+    #[expect(
+        clippy::items_after_statements,
+        reason = "The streaming Read trait import is intentionally scoped to file loading"
+    )]
     pub fn load(&mut self, location: &FontLocation) -> io::Result<Arc<[u8]>> {
         let path = location.path.canonicalize()?;
         if let Some(index) = self.entries.iter().position(|entry| entry.0 == path) {
@@ -106,7 +123,7 @@ mod tests {
                     Path::new("runtime"),
                 )
                 .unwrap();
-                assert_eq!(location.face_index, face as u32);
+                assert_eq!(location.face_index, u32::try_from(face).unwrap());
                 assert_eq!(
                     location.path,
                     Path::new("runtime")

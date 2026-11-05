@@ -46,11 +46,12 @@ pub(super) fn compare(
     }
     let mut left = BufReader::with_capacity(128 * 1024, left);
     let mut right = BufReader::with_capacity(128 * 1024, right);
-    let mut lhs = [0u8; 128 * 1024];
-    let mut rhs = [0u8; 128 * 1024];
+    let mut lhs = vec![0u8; 128 * 1024];
+    let mut rhs = vec![0u8; 128 * 1024];
     let mut offset = 0;
     while offset < source_bytes {
-        let n = (source_bytes - offset).min(lhs.len() as u64) as usize;
+        let n = usize::try_from((source_bytes - offset).min(lhs.len() as u64))
+            .expect("chunk fits the buffer");
         if left.read_exact(&mut lhs[..n]).is_err() || right.read_exact(&mut rhs[..n]).is_err() {
             result.reason_code = 4;
             result.first_mismatch_offset = offset;
@@ -72,7 +73,8 @@ pub(super) fn compare(
         let extra = extra.unwrap();
         let mut remaining = extra;
         while remaining > 0 {
-            let n = remaining.min(rhs.len() as u64) as usize;
+            let n =
+                usize::try_from(remaining.min(rhs.len() as u64)).expect("chunk fits the buffer");
             if right.read_exact(&mut rhs[..n]).is_err() {
                 result.reason_code = 4;
                 result.first_mismatch_offset = source_bytes + extra - remaining;

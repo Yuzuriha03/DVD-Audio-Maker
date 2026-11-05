@@ -124,8 +124,13 @@ fn require_msvc_library(directory: &std::path::Path, name: &str) {
     );
 }
 
+fn hex_literal(value: u64) -> String {
+    let digits = format!("{value:08x}");
+    format!("0x{}_{}", &digits[..4], &digits[4..])
+}
+
 fn generate_layout(prefix: &std::path::Path) {
-    use std::{fs, process::Command};
+    use std::{fmt::Write as _, fs, process::Command};
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let target = env::var("TARGET").unwrap();
     // ARM64 Windows follows the same LLP64 data layout as x64 (8-byte pointers,
@@ -182,12 +187,16 @@ fn generate_layout(prefix: &std::path::Path) {
         let p: Vec<_> = line.split_whitespace().collect();
         match p[0] {
             "T" => {
-                code += &format!(
-                    "#[repr(C,align(8))] pub struct {} {{ _opaque:[u8;{}] }}\n",
+                let _ = writeln!(
+                    code,
+                    "#[repr(C,align(8))] pub struct {} {{ _opaque:[u8;{}] }}",
                     p[1], p[2]
                 );
             }
-            "K" => code += &format!("pub const {}:i32={}u32 as i32;\n", p[1], p[2]),
+            "K" => {
+                let value = hex_literal(u64::from(p[2].parse::<u32>().unwrap()));
+                let _ = writeln!(code, "pub const {}:i32={value}u32.cast_signed();", p[1]);
+            }
             "F" => {
                 let ty = match p[2] {
                     "streams" => "*mut *mut Stream",
@@ -209,9 +218,11 @@ fn generate_layout(prefix: &std::path::Path) {
                     "linesize" => "[i32;8]",
                     _ => "i32",
                 };
-                code += &format!(
-                    "impl {} {{ /// # Safety\n/// The receiver must refer to a live FFmpeg object from the probed ABI.\npub unsafe fn {}(&self)->{} {{unsafe{{std::ptr::read_unaligned((self as *const Self as *const u8).add({}).cast())}}}} /// # Safety\n/// The receiver must be exclusively accessible and use the probed ABI.\npub unsafe fn {}_ptr(&mut self)->*mut {} {{unsafe{{(self as *mut Self as *mut u8).add({}).cast()}}}} }}\n",
-                    p[1], p[2], ty, p[3], p[2], ty, p[3]
+                let offset = hex_literal(p[3].parse::<u64>().unwrap());
+                let _ = writeln!(
+                    code,
+                    "impl {} {{ /// # Safety\n/// The receiver must refer to a live `FFmpeg` object from the probed ABI.\n#[must_use]\npub unsafe fn {}(&self)->{} {{unsafe{{std::ptr::read_unaligned(std::ptr::from_ref(self).cast::<u8>().add({offset}).cast())}}}} /// # Safety\n/// The receiver must be exclusively accessible and use the probed ABI.\n#[must_use]\npub unsafe fn {}_ptr(&mut self)->*mut {} {{unsafe{{std::ptr::from_mut(self).cast::<u8>().add({offset}).cast()}}}} }}",
+                    p[1], p[2], ty, p[2], ty
                 );
             }
             _ => panic!("unknown ABI record"),

@@ -1,3 +1,8 @@
+#![expect(
+    clippy::needless_pass_by_value,
+    clippy::unicode_not_nfc,
+    reason = "Acquisition fixtures consume JSON values and intentionally cover non-NFC Unicode mappings"
+)]
 use serde_json::{Value, json};
 use std::{
     fs,

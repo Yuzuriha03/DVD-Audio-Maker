@@ -1,4 +1,9 @@
 //! Independent Rust checks against the frozen pre-migration audio host.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "Audio fixtures construct protocol-sized PCM and timestamp fields"
+)]
 use dvda_core::{audio, hash, media};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde::Deserialize;

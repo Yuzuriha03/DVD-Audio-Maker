@@ -25,6 +25,10 @@ impl FramePool {
     }
 
     /// Acquire a frame from the pool
+    /// Acquire an object from the pool or allocate a temporary one.
+    ///
+    /// # Panics
+    /// Panics if an internal pool mutex is poisoned.
     pub fn acquire(&self) -> *mut Frame {
         let mut available = self.available.lock().unwrap();
 
@@ -63,6 +67,10 @@ impl FramePool {
     }
 
     /// Get pool statistics
+    /// Return the number of available and allocated objects.
+    ///
+    /// # Panics
+    /// Panics if an internal pool mutex is poisoned.
     pub fn stats(&self) -> (usize, usize) {
         let available = self.available.lock().unwrap().len();
         let allocated = *self.allocated.lock().unwrap();
@@ -98,6 +106,10 @@ impl PacketPool {
     }
 
     /// Acquire a packet from the pool
+    /// Acquire an object from the pool or allocate a temporary one.
+    ///
+    /// # Panics
+    /// Panics if an internal pool mutex is poisoned.
     pub fn acquire(&self) -> *mut Packet {
         let mut available = self.available.lock().unwrap();
 
@@ -133,6 +145,10 @@ impl PacketPool {
         }
     }
 
+    /// Return the number of available and allocated objects.
+    ///
+    /// # Panics
+    /// Panics if an internal pool mutex is poisoned.
     pub fn stats(&self) -> (usize, usize) {
         let available = self.available.lock().unwrap().len();
         let allocated = *self.allocated.lock().unwrap();

@@ -218,6 +218,10 @@ pub unsafe fn text(p: *const c_char) -> String {
         unsafe { std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned() }
     }
 }
+/// Treat a negative `FFmpeg` return value as an error.
+///
+/// # Errors
+/// Returns the original value when it is negative.
 pub fn done(v: i32) -> Result<(), i32> {
     if v < 0 { Err(v) } else { Ok(()) }
 }

@@ -1,3 +1,11 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    clippy::wildcard_imports,
+    reason = "Page dispatch preserves Win32 message fields and the shared desktop module scope"
+)]
 //! Settings pages: the page window procedure, scrolling and the browse rows.
 
 use super::*;

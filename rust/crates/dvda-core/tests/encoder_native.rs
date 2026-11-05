@@ -1,5 +1,15 @@
 //! Frozen pre-migration host references; this test does not execute C#.
-use dvda_core::{audio, encoder, hash, media};
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    reason = "Encoder fixtures preserve deterministic PCM and complete frozen oracle cases"
+)]
+#[cfg(feature = "direct-bridges")]
+use dvda_core::audio;
+use dvda_core::{encoder, hash, media};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde::Deserialize;
 use std::{

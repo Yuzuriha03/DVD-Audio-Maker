@@ -1,5 +1,10 @@
 //! Rust ownership for the vendor's private heap and CRT resources.
 //! Every export returns normally; only a caller in C may promote a failure to longjmp.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "Private CRT resources preserve their C integer and pointer-width conversions"
+)]
 use std::{
     cell::{Cell, RefCell},
     ffi::{CStr, c_char, c_int, c_long, c_void},

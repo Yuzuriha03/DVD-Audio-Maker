@@ -1,3 +1,8 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "The differential fixture intentionally constructs complete C ABI requests and media packets"
+)]
 use dvda_bridges::{
     Cancel, Emit,
     media::{Request, dvdamedia_run},

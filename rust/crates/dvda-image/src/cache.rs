@@ -29,7 +29,8 @@ fn file_identity(path: &Path) -> std::io::Result<FileIdentity> {
         .unwrap_or_default()
         .as_nanos();
     let mut file = File::open(path)?;
-    let mut head = vec![0; 4096usize.min(metadata.len() as usize)];
+    let head_bytes = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
+    let mut head = vec![0; 4096usize.min(head_bytes)];
     file.read_exact(&mut head)?;
     let mut tail = vec![0; head.len()];
     file.seek(SeekFrom::Start(
@@ -140,6 +141,10 @@ impl ImageCache {
         image
     }
 
+    /// Decode and cache an image using its current file identity.
+    ///
+    /// # Errors
+    /// Propagates file identity, image decoding, allocation, and I/O failures.
     pub fn decode(&self, path: &Path) -> std::io::Result<Arc<Raster>> {
         let identity = file_identity(path)?;
         let key = Key {
@@ -153,6 +158,10 @@ impl ImageCache {
         Ok(self.insert(key, identity, image))
     }
 
+    /// Resize and cache an image using the requested geometry and centering policy.
+    ///
+    /// # Errors
+    /// Propagates file identity, image decoding, resizing, allocation, and I/O failures.
     pub fn resized(
         &self,
         path: &Path,

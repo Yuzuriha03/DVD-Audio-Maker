@@ -4,6 +4,12 @@
 //! codecs and timestamp transposition. They operate on borrowed sectors instead
 //! of touching global state.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::decimal_bitwise_operands,
+    reason = "SCR and PTS codecs intentionally extract fixed-width protocol fields"
+)]
 const PACK: u8 = 0xba;
 const SYSTEM: u8 = 0xbb;
 const PRIVATE_1: u8 = 0xbd;

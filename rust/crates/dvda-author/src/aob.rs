@@ -1,4 +1,12 @@
 //! Streaming DVD-Audio pack/PES packetization for MLP and integer LPCM.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::items_after_statements,
+    clippy::too_many_lines,
+    reason = "AOB packet fields and timestamps preserve bounded DVD sizes and historical rounding"
+)]
 use crate::{
     Callbacks,
     audio::{self, AudioInfo},
@@ -450,6 +458,10 @@ fn packet(
     Ok((result, pts))
 }
 
+/// Author one AOB group with streaming packetization.
+///
+/// # Errors
+/// Propagates invalid input, cancellation, media parsing, and output failures.
 pub fn author_group(
     audio_ts: &Path,
     group: u8,
@@ -459,6 +471,10 @@ pub fn author_group(
     author_group_with_split(audio_ts, group, inputs, callbacks, 524_288)
 }
 /// A smaller split limit supports acceptance without generating a GiB fixture.
+/// Author one AOB group with explicit packet split control.
+///
+/// # Errors
+/// Propagates invalid input, cancellation, media parsing, and output failures.
 pub fn author_group_with_split(
     audio_ts: &Path,
     group: u8,

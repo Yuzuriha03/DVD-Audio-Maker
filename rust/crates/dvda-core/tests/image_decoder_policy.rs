@@ -1,4 +1,9 @@
 //! Explicit frozen-oracle comparison of menu decoder policies.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    reason = "Image policy fixtures retain diagnostic floating-point ratios and complete decoder matrices"
+)]
 use dvda_native::{images::Images, media::Callbacks};
 use std::{fs, io::Cursor, path::PathBuf};
 

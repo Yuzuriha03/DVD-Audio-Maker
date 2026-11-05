@@ -11,10 +11,12 @@ use std::{
 use std::{ffi::CString, io, path::Path, sync::Arc};
 
 fn validate_oracle(bytes: &[u8]) -> io::Result<()> {
-    let digest: String = Sha256::digest(bytes)
+    let digest = Sha256::digest(bytes)
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+        .fold(String::new(), |mut text, byte| {
+            let _ = std::fmt::Write::write_fmt(&mut text, format_args!("{byte:02x}"));
+            text
+        });
     if digest != "ac8afb08c95b980a16e0212538403058b1b71340c78159dc19d6642cacedf1db" {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -79,6 +81,10 @@ impl Drop for Images {
     }
 }
 impl Images {
+    /// Validate, load, and cache the external image oracle.
+    ///
+    /// # Errors
+    /// Returns an error for invalid paths, failed validation, missing symbols, or cache-lock failures.
     pub fn load(path: &Path) -> io::Result<Arc<Self>> {
         static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Images>>>> = OnceLock::new();
         let path = std::path::absolute(path)?;
@@ -118,6 +124,10 @@ impl Images {
         cache.insert(path, Arc::clone(&images));
         Ok(images)
     }
+    /// Decode an image into the bounded RGBA buffer used by menu authoring.
+    ///
+    /// # Errors
+    /// Rejects invalid paths, decode failures, and dimensions outside the DVD menu bounds.
     pub fn read_rgba(&self, path: &Path) -> io::Result<(u32, u32, Vec<u8>)> {
         let path = CString::new(path.to_string_lossy().as_bytes())
             .map_err(|_| io::Error::from_raw_os_error(123))?;
@@ -143,6 +153,12 @@ impl Images {
         Ok((width, height, pixels))
     }
     /// Arguments target the explicit external image oracle, never a command shell.
+    ///
+    /// # Errors
+    /// Rejects excessive arguments and embedded NUL values, and propagates process or callback failures.
+    ///
+    /// # Panics
+    /// Panics only if the validated argument count cannot fit in `i32`.
     pub fn run(&self, arguments: &[String], callbacks: &mut dyn Callbacks) -> io::Result<i32> {
         if arguments.len() > 8192 {
             return Err(io::Error::new(
@@ -162,7 +178,7 @@ impl Images {
         // SAFETY: strings, pointer array and synchronous callback state remain live.
         let result = unsafe {
             (self.run)(
-                pointers.len() as i32,
+                i32::try_from(pointers.len()).expect("image argument count was bounded"),
                 pointers.as_ptr(),
                 emit,
                 cancel,

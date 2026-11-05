@@ -12,6 +12,10 @@ impl Tpdf {
         Self { state: seed }
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "The random value is shifted to exactly 53 bits before conversion"
+    )]
     fn uniform(&mut self) -> f64 {
         self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut value = self.state;
@@ -26,6 +30,10 @@ impl Tpdf {
     }
 
     /// Quantize normalized audio to S16, adding TPDF once before rounding.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rounding and clamping define the intentional S16 quantization"
+    )]
     pub fn quantize(&mut self, sample: f64) -> i16 {
         let value = sample * 32768.0 + self.noise();
         value.round_ties_even().clamp(-32768.0, 32767.0) as i16

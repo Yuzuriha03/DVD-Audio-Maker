@@ -1,4 +1,9 @@
 //! Native image behavior independent of the temporary managed comparison runner.
+#![allow(
+    clippy::items_after_statements,
+    clippy::too_many_lines,
+    reason = "Image fixtures retain scoped helpers and complete native behavior scenarios"
+)]
 use dvda_core::images::{Job, Output, execute};
 use dvda_native::{images::Images, media::Callbacks};
 use std::{

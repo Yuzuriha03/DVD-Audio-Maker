@@ -1,3 +1,11 @@
+#![allow(
+    clippy::assigning_clones,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    reason = "Settings code preserves profile values and native control indices"
+)]
 //! Settings values: choices, profile load/save and validation.
 
 use super::{

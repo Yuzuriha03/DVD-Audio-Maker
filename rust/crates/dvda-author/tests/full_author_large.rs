@@ -1,4 +1,10 @@
 //! Capacity, cancellation and transaction tests through the production command.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::struct_field_names,
+    clippy::unreadable_literal,
+    reason = "Large-author fixtures intentionally construct protocol-size fields and capacity boundaries"
+)]
 use dvda_author::{Callbacks, Silent, command, menu};
 use std::{
     fs,

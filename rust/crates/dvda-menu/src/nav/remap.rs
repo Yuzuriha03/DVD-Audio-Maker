@@ -1,4 +1,13 @@
 //! Colour remapping corresponding to dvdvob.c's remapcolor/remapbyte/procremap.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "Colour remapping preserves fixed palette fields and the historical byte stream"
+)]
+#![allow(
+    clippy::unreadable_literal,
+    reason = "Palette fixtures retain their historical colour constants"
+)]
 use super::dvdata::DvdData;
 
 pub(crate) struct ColorRemap {

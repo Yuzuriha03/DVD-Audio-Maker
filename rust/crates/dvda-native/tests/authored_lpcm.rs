@@ -1,3 +1,8 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::needless_pass_by_value,
+    reason = "Integration fixtures construct bounded WAV data and consume complete test scenarios"
+)]
 use dvda_native::disc_verify::NativeDiscVerifier;
 use std::{
     fs::{self, File},

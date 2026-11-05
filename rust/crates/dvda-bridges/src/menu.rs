@@ -4,6 +4,8 @@ use std::{ffi::c_char, path::Path};
 #[unsafe(no_mangle)]
 /// # Safety
 /// Paths must be terminated UTF-8 strings valid throughout the call.
+/// # Panics
+/// Panics only if the compile-time menu request size cannot fit in `u32`.
 pub unsafe extern "C" fn dvda_menu_subpictures(
     xml: *const c_char,
     input: *const c_char,
@@ -11,7 +13,8 @@ pub unsafe extern "C" fn dvda_menu_subpictures(
 ) -> i32 {
     let callback = None;
     let request = dvda_menu::MenuRequest {
-        size: std::mem::size_of::<dvda_menu::MenuRequest>() as u32,
+        size: u32::try_from(std::mem::size_of::<dvda_menu::MenuRequest>())
+            .expect("menu request fits in u32"),
         xml,
         input,
         output,
@@ -23,9 +26,12 @@ pub unsafe extern "C" fn dvda_menu_subpictures(
 #[unsafe(no_mangle)]
 /// # Safety
 /// Paths must be terminated UTF-8 strings valid throughout the call.
+/// # Panics
+/// Panics only if the compile-time menu request size cannot fit in `u32`.
 pub unsafe extern "C" fn dvda_menu_navigation(xml: *const c_char, output: *const c_char) -> i32 {
     let request = dvda_menu::MenuRequest {
-        size: std::mem::size_of::<dvda_menu::MenuRequest>() as u32,
+        size: u32::try_from(std::mem::size_of::<dvda_menu::MenuRequest>())
+            .expect("menu request fits in u32"),
         xml,
         input: std::ptr::null(),
         output,

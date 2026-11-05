@@ -1,3 +1,7 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "SCR fields intentionally extract protocol-width bytes"
+)]
 /// Encode the MPEG-2 system clock reference without rounding.
 #[must_use]
 pub fn pack_scr(base: u64, extension: u16) -> [u8; 6] {

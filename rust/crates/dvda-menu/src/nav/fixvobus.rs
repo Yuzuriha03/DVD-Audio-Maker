@@ -5,6 +5,14 @@
 //! timing, reference-frame sectors, dvdauthor-data buttons and the VOBU
 //! time-step tables.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    clippy::unnecessary_wraps,
+    reason = "NAV sector references and VOBU indices intentionally use their protocol field widths"
+)]
 use super::build::Build;
 use super::dvdata::DvdData;
 use super::mpeg;

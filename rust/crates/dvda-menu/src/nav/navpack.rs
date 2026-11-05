@@ -4,6 +4,15 @@
 //! offsets. Both are small pure functions over the scanned VOBU table, so they
 //! are modelled here without pointers and checked against the C baseline values.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "NAV pack BCD and relative-sector fields use fixed protocol masks"
+)]
+#![allow(
+    clippy::decimal_bitwise_operands,
+    reason = "Test masks use the historical decimal constants"
+)]
 use super::build::Vobu;
 use crate::spu::format::VideoFormat;
 

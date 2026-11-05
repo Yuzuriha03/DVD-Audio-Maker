@@ -1,4 +1,9 @@
 //! Exercise real, statically linked vendor calls through the public Rust boundary.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "The acceptance fixture constructs complete menu sessions and fixed C ABI requests"
+)]
 #[cfg(feature = "direct-link")]
 mod acceptance {
     use dvda_menu::{

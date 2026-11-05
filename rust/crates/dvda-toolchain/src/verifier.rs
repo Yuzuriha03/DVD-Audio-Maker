@@ -1,4 +1,8 @@
 //! Developer-only streaming verifier for authored AOB fixtures.
+#![expect(
+    clippy::needless_continue,
+    reason = "Interrupted reads retain the explicit retry loop"
+)]
 use std::{fs::File, io::Read, path::PathBuf};
 
 pub fn run(args: &[String]) -> Result<(), String> {

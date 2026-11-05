@@ -1,3 +1,8 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "MLP fields intentionally retain protocol-width checksums and packet headers"
+)]
 use super::{MlpAlignment, MlpInspection};
 use std::{
     fs::File,

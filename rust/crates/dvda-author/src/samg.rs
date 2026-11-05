@@ -1,3 +1,7 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "SAMG tables preserve checked sector and group field widths"
+)]
 #[derive(Clone, Copy, Debug)]
 pub struct Track {
     pub mlp: bool,
@@ -28,6 +32,10 @@ fn put32(bytes: &mut [u8], offset: usize, value: u32) {
 }
 
 /// Produce all eight copies of `AUDIO_PP.IFO` in original group/track order.
+/// Encode the still-audio manager tables.
+///
+/// # Errors
+/// Rejects invalid groups, excessive table sizes, and overflowing sector addresses.
 pub fn encode(groups: &[Vec<Track>], layout: &Layout) -> Result<(Vec<u8>, u32), String> {
     if groups.is_empty() || groups.len() > 9 || layout.atsi_sectors.len() < groups.len() {
         return Err("SAMG requires 1–9 groups and each ATSI size".into());

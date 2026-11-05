@@ -4,6 +4,12 @@
 //! session handed to readxml, but the model is built directly instead of through
 //! C callbacks, so the whole document is validated before any model state exists.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::too_many_lines,
+    reason = "Navigation XML indices and VM fields retain their validated C-compatible widths"
+)]
 use super::model::{
     AudioAttrs, Button, Cell, Document, MenuGroup, Pgc, StreamAttrs, SubpictureAttrs, Vob,
 };

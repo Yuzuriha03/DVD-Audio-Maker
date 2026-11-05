@@ -6,6 +6,11 @@
 //! subset and reports every other construct as an explicit error instead of
 //! guessing at DVD-Video VM semantics.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "The VM compiler preserves opcode widths and the complete parser state machine"
+)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
     Number(u16),

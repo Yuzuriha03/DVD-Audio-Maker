@@ -1,4 +1,13 @@
 //! Rust format behavior and differential checks against the frozen C17 DLL.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::items_after_statements,
+    clippy::too_many_lines,
+    clippy::unreadable_literal,
+    reason = "Differential tests intentionally construct C ABI fixtures and complete protocol packets"
+)]
 use super::*;
 use std::{
     fs,

@@ -1,3 +1,7 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "AOB fixtures construct bounded packet fields"
+)]
 use dvda_author::{
     Callbacks, Silent,
     aob::{self, TrackInput},

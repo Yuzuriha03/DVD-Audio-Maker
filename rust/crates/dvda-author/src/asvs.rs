@@ -1,4 +1,8 @@
 //! Still video information, ported from `asvs.c` with checked picture offsets.
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "Still-video tables preserve validated picture offsets and sector widths"
+)]
 use crate::atsi::Title;
 
 #[derive(Clone, Debug)]
@@ -36,6 +40,10 @@ fn put32(b: &mut [u8], o: usize, v: u32) {
 /// The picture sizes follow group/title/track/picture order and refer to each
 /// complete still VOB segment. Titles without new pictures reuse previous ASVS
 /// entries and are omitted here, matching ATSI's picture-title rank.
+/// Encode the still-video information table.
+///
+/// # Errors
+/// Rejects invalid picture counts, geometry, and overflowing sector references.
 pub fn encode(
     groups: &[Vec<Title>],
     picture_sectors: &[u32],

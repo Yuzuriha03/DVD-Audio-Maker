@@ -88,6 +88,10 @@ pub fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain([0]).collect()
 }
 #[must_use]
+/// Resolve the path of an already-loaded module.
+///
+/// # Panics
+/// Panics only if the fixed 32,768-element buffer cannot fit in `u32`.
 pub fn module_path(name: &str) -> Option<String> {
     let wide_name = wide(name);
     let module = unsafe { GetModuleHandleW(wide_name.as_ptr()) };
@@ -95,7 +99,8 @@ pub fn module_path(name: &str) -> Option<String> {
         return None;
     }
     let mut buf = vec![0u16; 32768];
-    let len = unsafe { GetModuleFileNameW(module, buf.as_mut_ptr(), buf.len() as u32) };
+    let capacity = u32::try_from(buf.len()).expect("module path buffer fits in u32");
+    let len = unsafe { GetModuleFileNameW(module, buf.as_mut_ptr(), capacity) };
     if len == 0 || len as usize >= buf.len() {
         return None;
     }
@@ -130,10 +135,11 @@ pub(crate) fn media_job() -> MediaJobGuard {
 }
 
 fn workers_for(processors: usize, jobs: usize) -> i32 {
-    processors
+    let workers = processors
         .max(1)
         .div_ceil(jobs.max(1))
-        .min(i32::MAX as usize) as i32
+        .min(i32::MAX as usize);
+    i32::try_from(workers).expect("worker count is clamped to i32")
 }
 
 pub fn workers() -> i32 {

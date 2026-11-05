@@ -4,6 +4,13 @@
 //! Optional text follows the menu table; C wrote it over the menu table despite
 //! pointing to a later sector. Its historical byte-sized text indices are kept.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::comparison_chain,
+    clippy::too_many_lines,
+    reason = "AMG tables preserve validated title counts, text offsets, and protocol field widths"
+)]
 use crate::atsi::{Title, Track};
 
 #[derive(Clone, Debug)]
@@ -95,6 +102,13 @@ fn add(a: u32, b: u32) -> Result<u32, String> {
 
 /// Group by audio attributes and explicit boundaries. A codec change also starts
 /// a title: C omitted this test, permitting LPCM and MLP in one playback title.
+/// Group tracks by audio format and explicit title boundaries.
+///
+/// # Errors
+/// Rejects empty groups, more than 99 tracks, or mismatched title-boundary flags.
+///
+/// # Panics
+/// Panics only if the internal title-creation invariant is violated.
 pub fn group_tracks(tracks: Vec<Track>, forced_new_titles: &[bool]) -> Result<Vec<Title>, String> {
     if tracks.is_empty()
         || tracks.len() > 99
@@ -152,6 +166,10 @@ fn total_titles(groups: &[Group], options: &Options) -> Result<usize, String> {
 }
 
 /// Compute layout before assigning SAMG absolute addresses.
+/// Compute the AMG table size in sectors.
+///
+/// # Errors
+/// Rejects invalid title/menu counts, malformed menu pages, and tables exceeding 255 sectors.
 pub fn sector_count(groups: &[Group], options: &Options) -> Result<u8, String> {
     let titles = total_titles(groups, options)?;
     let table_sectors = (4 + 14 * titles).div_ceil(2048);
@@ -206,6 +224,13 @@ fn record(
 }
 
 /// Encode `AUDIO_TS.IFO`; write the exact same bytes to `AUDIO_TS.BUP`.
+/// Encode `AUDIO_TS.IFO` and its backup contents.
+///
+/// # Errors
+/// Rejects invalid groups, inconsistent layout, invalid menu/text data, and overflowing addresses.
+///
+/// # Panics
+/// Panics only if a group accepted by validation has no title or track entries.
 pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<Encoded, String> {
     let count = total_titles(groups, options)?;
     let sectors = sector_count(groups, options)?;

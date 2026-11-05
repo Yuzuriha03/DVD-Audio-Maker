@@ -112,6 +112,10 @@ impl<R: Read + Seek> Reader<R> {
         Self::open(source, true)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Sequential RIFF chunk parsing is kept in one function for state consistency"
+    )]
     fn open(mut source: R, integer_riff: bool) -> Result<Self> {
         let length = source.seek(SeekFrom::End(0))?;
         source.seek(SeekFrom::Start(0))?;
@@ -234,7 +238,12 @@ impl<R: Read + Seek> Reader<R> {
                             }
                             // Bound individual metadata allocation independently of the audio size.
                             if count <= 1024 * 1024 {
-                                let mut value = vec![0; count as usize];
+                                let mut value = vec![
+                                    0;
+                                    usize::try_from(count).map_err(|_| invalid(
+                                        "WAVE INFO entry too large"
+                                    ))?
+                                ];
                                 source.read_exact(&mut value)?;
                                 let key = match &entry[..4] {
                                     b"IART" => "artist",
@@ -256,7 +265,7 @@ impl<R: Read + Seek> Reader<R> {
                                         String::from_utf8_lossy(&value[..end]).into_owned(),
                                     ));
                                 }
-                                source.seek(SeekFrom::Current((count & 1) as i64))?;
+                                source.seek(SeekFrom::Current((count & 1).cast_signed()))?;
                             } else {
                                 return Err(invalid("WAVE INFO entry exceeds metadata limit"));
                             }
@@ -307,7 +316,8 @@ impl<R: Read + Seek> Reader<R> {
                 "buffer cannot hold a PCM frame",
             ));
         }
-        let count = self.remaining.min(capacity as u64) as usize;
+        let count = usize::try_from(self.remaining.min(capacity as u64))
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "WAVE frame read is too large"))?;
         self.source.read_exact(&mut buffer[..count])?;
         self.remaining -= count as u64;
         Ok(count)
@@ -321,17 +331,18 @@ mod tests {
 
     fn wave(data: &[u8]) -> Vec<u8> {
         let mut bytes = b"RIFF".to_vec();
-        bytes.extend((36 + data.len() as u32).to_le_bytes());
+        bytes
+            .extend((36 + u32::try_from(data.len()).expect("test data fits in u32")).to_le_bytes());
         bytes.extend(b"WAVEfmt ");
         bytes.extend(16u32.to_le_bytes());
         bytes.extend(1u16.to_le_bytes());
         bytes.extend(2u16.to_le_bytes());
         bytes.extend(48000u32.to_le_bytes());
-        bytes.extend(192000u32.to_le_bytes());
+        bytes.extend(192_000_u32.to_le_bytes());
         bytes.extend(4u16.to_le_bytes());
         bytes.extend(16u16.to_le_bytes());
         bytes.extend(b"data");
-        bytes.extend((data.len() as u32).to_le_bytes());
+        bytes.extend((u32::try_from(data.len()).expect("test data fits in u32")).to_le_bytes());
         bytes.extend(data);
         bytes
     }
@@ -349,7 +360,7 @@ mod tests {
         let mut bytes = wave(&[0; 4]);
         bytes.splice(36..36, vec![0; 4082]);
         bytes[16..20].copy_from_slice(&4098u32.to_le_bytes());
-        let size = bytes.len() as u32 - 8;
+        let size = u32::try_from(bytes.len()).expect("test data fits in u32") - 8;
         bytes[4..8].copy_from_slice(&size.to_le_bytes());
         assert!(Reader::new(Cursor::new(&bytes)).is_ok());
         assert!(Reader::new_integer_riff(Cursor::new(bytes)).is_err());
@@ -361,14 +372,14 @@ mod tests {
         for chunk in [&original[12..36], &original[36..]] {
             let mut bytes = original.clone();
             bytes.extend(chunk);
-            let size = bytes.len() as u32 - 8;
+            let size = u32::try_from(bytes.len()).expect("test data fits in u32") - 8;
             bytes[4..8].copy_from_slice(&size.to_le_bytes());
             assert!(Reader::new_integer_riff(Cursor::new(&bytes)).is_err());
             assert!(Reader::new(Cursor::new(bytes)).is_ok());
         }
         let mut bytes = original;
         bytes.extend(b"LIST\x0c\0\0\0INFOINAM\xff\xff\xff\xff");
-        let size = bytes.len() as u32 - 8;
+        let size = u32::try_from(bytes.len()).expect("test data fits in u32") - 8;
         bytes[4..8].copy_from_slice(&size.to_le_bytes());
         assert!(Reader::new(Cursor::new(&bytes)).is_err());
         assert_eq!(
@@ -390,7 +401,7 @@ mod tests {
         writer.write_frames(&[1, 2, 3]).unwrap();
         let mut bytes = writer.finish().unwrap().into_inner();
         bytes.pop();
-        let size = bytes.len() as u32 - 8;
+        let size = u32::try_from(bytes.len()).expect("test data fits in u32") - 8;
         bytes[4..8].copy_from_slice(&size.to_le_bytes());
         assert_eq!(
             Reader::new_integer_riff(Cursor::new(&bytes))
@@ -400,7 +411,7 @@ mod tests {
         );
         assert!(Reader::new(Cursor::new(&bytes)).is_err());
         bytes.extend(b"JUNK\0\0\0\0");
-        let size = bytes.len() as u32 - 8;
+        let size = u32::try_from(bytes.len()).expect("test data fits in u32") - 8;
         bytes[4..8].copy_from_slice(&size.to_le_bytes());
         assert!(Reader::new_integer_riff(Cursor::new(bytes)).is_err());
     }
@@ -412,9 +423,9 @@ mod tests {
         info.extend(3u32.to_le_bytes());
         info.extend(b"ok\0\0");
         bytes.extend(b"LIST");
-        bytes.extend((info.len() as u32).to_le_bytes());
+        bytes.extend((u32::try_from(info.len()).expect("test metadata fits in u32")).to_le_bytes());
         bytes.extend(info);
-        let length = bytes.len() as u32 - 8;
+        let length = u32::try_from(bytes.len()).expect("test data fits in u32") - 8;
         bytes[4..8].copy_from_slice(&length.to_le_bytes());
         let reader = Reader::new(Cursor::new(&bytes)).unwrap();
         assert_eq!(reader.tags, [("IZZZ".into(), "ok".into())]);
@@ -542,7 +553,7 @@ mod tests {
     fn skips_padded_unknown_chunks() {
         let mut bytes = wave(&[1, 2, 3, 4]);
         bytes.splice(12..12, *b"JUNK\x01\0\0\0x\0");
-        let length = bytes.len() as u32 - 8;
+        let length = u32::try_from(bytes.len()).expect("test data fits in u32") - 8;
         bytes[4..8].copy_from_slice(&length.to_le_bytes());
         let mut reader = Reader::new(Cursor::new(bytes)).unwrap();
         let mut data = [0; 4];

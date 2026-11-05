@@ -1,3 +1,9 @@
+#![expect(
+    clippy::cast_sign_loss,
+    clippy::similar_names,
+    clippy::too_many_lines,
+    reason = "This diagnostic probe intentionally mirrors one complete FFmpeg decode loop"
+)]
 use dvda_bridges::ffmpeg::{
     AV_CODEC_ID_MLP, AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S32, EAGAIN, EINVAL, EIO, ENOMEM, EOF,
     INVALID, av_codec_iterate, av_demuxer_iterate, av_find_best_stream, av_frame_alloc,

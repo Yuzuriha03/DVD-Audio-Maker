@@ -1,4 +1,8 @@
 //! Exercise the public entry and independently read its ISO directory records.
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "The authoring fixture constructs fixed-size protocol fields"
+)]
 use dvda_author::{Callbacks, Silent, command, menu};
 use std::{
     fs,

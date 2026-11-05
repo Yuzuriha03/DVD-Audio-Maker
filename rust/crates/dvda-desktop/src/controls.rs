@@ -1,3 +1,12 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    clippy::used_underscore_binding,
+    reason = "Control helpers preserve Win32 handle widths, callback contracts, and layout arithmetic"
+)]
 //! Control creation (the settings pages and toolbars), owner-drawn buttons, checkboxes,
 //! combo arrows, tooltips, and small text/combo helpers.
 

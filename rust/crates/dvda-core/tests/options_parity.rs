@@ -1,3 +1,8 @@
+#![allow(
+    clippy::cast_sign_loss,
+    clippy::needless_pass_by_value,
+    reason = "Option fixtures preserve native indices and owned JSON values"
+)]
 use dvda_core::{dispatch, options};
 use serde_json::{Value, json};
 

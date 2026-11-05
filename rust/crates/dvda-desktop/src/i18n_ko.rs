@@ -1,3 +1,7 @@
+#![allow(
+    clippy::too_many_lines,
+    reason = "The Korean translation table is intentionally complete"
+)]
 pub(super) fn tr(key: &str) -> &'static str {
     match key {
         "app_subtitle" => "음악으로 DVD-Audio 디스크 이미지 만들기",

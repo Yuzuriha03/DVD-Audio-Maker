@@ -1,3 +1,9 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "GDI scaling and text measurement use bounded native integer geometry"
+)]
 //! DPI scaling, fonts, brushes, the header icon and text measurement.
 
 use super::{

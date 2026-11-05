@@ -18,6 +18,10 @@ pub unsafe fn text_borrowed<'a>(p: *const c_char) -> &'a str {
     }
 }
 
+/// Convert an `FFmpeg` status into a Rust result.
+///
+/// # Errors
+/// Returns the original negative `FFmpeg` status as an error.
 #[inline]
 pub fn check_result(code: i32) -> Result<(), i32> {
     if code >= 0 { Ok(()) } else { Err(code) }
@@ -37,6 +41,9 @@ pub fn should_batch_process(count: usize) -> bool {
 
 /// Convert signed PCM samples to floats. AVX2 is selected at runtime so the
 /// same executable also works on computers without that instruction set.
+///
+/// # Panics
+/// Panics when input and output slices have different lengths.
 pub fn convert_audio_i16_to_f32_simd(input: &[i16], output: &mut [f32]) {
     assert_eq!(
         input.len(),
@@ -87,6 +94,10 @@ unsafe fn convert_avx2(input: &[i16], output: &mut [f32]) {
 mod tests {
     use super::*;
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "SIMD output must exactly match the scalar conversion bits"
+    )]
     fn conversion_matches_scalar_for_vectors_and_tail() {
         let input: Vec<_> = (i16::MIN..=i16::MAX).step_by(13).collect();
         let mut output = vec![0.0; input.len()];

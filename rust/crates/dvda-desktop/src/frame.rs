@@ -1,3 +1,10 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    reason = "Frame sizing preserves Win32 hit-test fields and native window placement types"
+)]
 //! Borderless-frame sizing: window-size clamps, the outline resize and the splitter preview.
 
 use super::{

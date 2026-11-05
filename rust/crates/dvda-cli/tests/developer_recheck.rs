@@ -1,4 +1,12 @@
 //! Real command/ISO regressions for the independent migration recheck R01-R05.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::needless_pass_by_value,
+    clippy::unreadable_literal,
+    reason = "Recheck fixtures intentionally construct MPEG timestamps and deterministic WAVE data"
+)]
 use dvda_core::{formats, media};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde_json::{Value, json};
@@ -238,7 +246,11 @@ impl Fixture {
         let entries = formats::iso_list_directory(&self.iso, "AUDIO_TS").unwrap();
         let mut bytes = self.original.clone();
         let mut count = 0;
-        for entry in entries.iter().filter(|entry| entry.name.ends_with(".AOB")) {
+        for entry in entries.iter().filter(|entry| {
+            Path::new(&entry.name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("AOB"))
+        }) {
             let offset = (entry.logical_block_address as usize
                 + entry.extended_attribute_blocks as usize)
                 * 2048;

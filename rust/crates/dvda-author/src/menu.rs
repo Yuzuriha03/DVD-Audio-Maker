@@ -4,6 +4,18 @@
 //! sector accounting live here. The caller supplies the existing image,
 //! MPEG-2 and menu implementations through `Backend`; no C author is invoked.
 
+#![expect(
+    clippy::assigning_clones,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::format_collect,
+    clippy::items_after_statements,
+    clippy::large_stack_arrays,
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    reason = "Menu authoring preserves bounded DVD coordinates, fixed sectors, and sequential backend orchestration"
+)]
 use crate::{Callbacks, atsi};
 use std::{
     fmt::Write as _,
@@ -33,6 +45,10 @@ pub struct MpegRequest<'a> {
 /// the backend maps the norm to its frame rate. `create_mpg`
 /// receives the MPEG aspect code (`1`..`4`).
 pub trait Backend {
+    /// Write one Y4M frame using the selected norm and aspect.
+    ///
+    /// # Errors
+    /// Propagates image conversion, cancellation, and output failures.
     fn write_y4m(
         &mut self,
         input: &Path,
@@ -41,11 +57,19 @@ pub trait Backend {
         aspect: &str,
         callbacks: &mut dyn Callbacks,
     ) -> Result<(), String>;
+    /// Create an MPEG menu video from a typed request.
+    ///
+    /// # Errors
+    /// Propagates media encoding, cancellation, and output failures.
     fn create_mpg(
         &mut self,
         request: MpegRequest<'_>,
         callbacks: &mut dyn Callbacks,
     ) -> Result<(), String>;
+    /// Multiplex subpictures into the menu video.
+    ///
+    /// # Errors
+    /// Propagates XML, image, MPEG, cancellation, and output failures.
     fn subpictures(
         &mut self,
         xml: &Path,
@@ -54,6 +78,9 @@ pub trait Backend {
         callbacks: &mut dyn Callbacks,
     ) -> Result<(), String>;
     /// `output` is the disc root; write `output/AUDIO_TS/AUDIO_TS.VOB`.
+    ///
+    /// # Errors
+    /// Propagates navigation generation, cancellation, and output failures.
     fn navigation(
         &mut self,
         xml: &Path,
@@ -173,6 +200,10 @@ fn paths(value: &str) -> Vec<PathBuf> {
 
 impl Options {
     /// Parse a long option without consuming audio/ISO author options.
+    /// Parse one supported menu option.
+    ///
+    /// # Errors
+    /// Rejects invalid values, missing required values, and unsupported option syntax.
     pub fn parse_option(&mut self, name: &str, value: Option<&str>) -> Result<bool, String> {
         let name = name.trim_start_matches('-');
         let required = || value.ok_or_else(|| format!("--{name} requires a value"));
@@ -720,6 +751,10 @@ pub fn plan(groups: &[Vec<Track>], options: &Options) -> Result<Vec<Page>, Strin
     Ok(pages)
 }
 
+/// Generate subpicture XML from the planned menu buttons.
+///
+/// # Errors
+/// Rejects invalid XML characters, unsupported paths, and inconsistent button data.
 pub fn subpicture_xml(
     page: &Page,
     image: &Path,
@@ -745,6 +780,10 @@ pub fn subpicture_xml(
     document.push_str("    </spu>\n  </stream>\n</subpictures>\n");
     Ok(document)
 }
+/// Generate navigation XML from the planned menu pages.
+///
+/// # Errors
+/// Rejects invalid XML characters, unsupported paths, and inconsistent page links.
 pub fn navigation_xml(
     pages: &[Page],
     menus: &[PathBuf],
@@ -1217,6 +1256,10 @@ fn silence(output: &Path, duration: [u8; 3], callbacks: &mut dyn Callbacks) -> R
 }
 
 /// Inspect the produced stream rather than assuming every backend made PAL.
+/// Inspect the generated stream and return its actual video attribute.
+///
+/// # Errors
+/// Propagates file I/O failures and rejects missing or inconsistent video headers.
 pub fn video_attribute(path: &Path, norm: &str) -> Result<u8, String> {
     let mut bytes = Vec::new();
     File::open(path)
@@ -1243,6 +1286,9 @@ pub fn video_attribute(path: &Path, norm: &str) -> Result<u8, String> {
 /// Match the C author's three still-stream repairs, before measuring sectors.
 /// All edits preserve byte count except moving a trailing program-end code
 /// into its own sector. Backends already producing that form remain unchanged.
+///
+/// # Errors
+/// Rejects unaligned or malformed still streams and propagates file read/write failures.
 pub fn repair_still(path: &Path) -> Result<(), String> {
     let mut file = OpenOptions::new()
         .read(true)
@@ -1404,6 +1450,9 @@ fn concatenate(
 }
 
 /// Produce `AUDIO_TS.VOB` / `AUDIO_SV.VOB` plus metadata for AMG, ASVS and ATSI.
+///
+/// # Errors
+/// Propagates menu planning, image/media backend, cancellation, and output transaction failures.
 pub fn author(
     audio_ts: &Path,
     temporary: &Path,

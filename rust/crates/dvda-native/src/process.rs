@@ -1,5 +1,11 @@
 //! Windows child process ownership. Launch suspended, join a kill-on-close job,
 //! then resume; cancellation cannot miss a descendant created during startup.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Win32 process buffers and handles use validated pointer-width and C ABI conversions"
+)]
 use std::{
     ffi::{OsStr, OsString, c_void},
     io,
@@ -21,6 +27,10 @@ unsafe extern "system" {
 }
 /// Decode a completed line. UTF-16/32 are handled explicitly because Windows
 /// code-page conversion does not implement these .NET encoding identifiers.
+/// Decode a completed child-process line using a Windows code page.
+///
+/// # Errors
+/// Returns an error for unsupported code pages, invalid lengths, or Windows conversion failures.
 pub fn decode(bytes: &[u8], code_page: u32) -> io::Result<String> {
     if bytes.is_empty() {
         return Ok(String::new());
@@ -446,6 +456,14 @@ pub struct Child {
     pipes: [Owned; 2],
 }
 impl Child {
+    /// Launch a suspended child in a kill-on-close job and resume it.
+    ///
+    /// # Errors
+    /// Propagates path conversion, Windows process/job creation, and startup failures.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Launch owns the complete process configuration for one spawn operation"
+    )]
     pub fn spawn(request: Launch<'_>) -> io::Result<Self> {
         let application = executable(request.file)?;
         let argv0 = OsString::from_wide(&application[..application.len() - 1])
@@ -545,6 +563,10 @@ impl Child {
         }
         Ok(child)
     }
+    /// Read from a child pipe while retaining cancellation and stream state.
+    ///
+    /// # Errors
+    /// Propagates Windows pipe read and state failures.
     pub fn read(&mut self, stream: usize, buffer: &mut [u8]) -> io::Result<ReadState> {
         if stream >= 2 || buffer.is_empty() {
             return Err(io::Error::new(
@@ -590,6 +612,10 @@ impl Child {
         }
         Ok(ReadState::Data(read as usize))
     }
+    /// Return the child exit code, or `None` while it is still running.
+    ///
+    /// # Errors
+    /// Propagates Windows process status query failures.
     pub fn exit_code(&self) -> io::Result<Option<i32>> {
         match unsafe { WaitForSingleObject(self.process.0, 0) } {
             0 => {

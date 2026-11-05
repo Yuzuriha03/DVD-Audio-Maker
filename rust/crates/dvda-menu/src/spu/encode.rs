@@ -3,6 +3,13 @@
 //! The bit writer, RLE codes and control-block layout are reproduced exactly so
 //! the resulting subpicture unit matches the historical C encoder byte for byte.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::comparison_chain,
+    reason = "RLE bit fields and subpicture lengths intentionally preserve the C encoder arithmetic"
+)]
 use super::image::SubPicture;
 
 pub(crate) const SUB_BUFFER_MAX: usize = 53220;

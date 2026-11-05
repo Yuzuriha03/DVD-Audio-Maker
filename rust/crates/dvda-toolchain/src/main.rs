@@ -3,6 +3,16 @@
 //! The release ZIP contains one application EXE and user documentation.
 //! Build provenance files, source trees, C# outputs and local profiles never
 //! enter the user package.
+#![expect(
+    clippy::format_push_string,
+    clippy::too_many_lines,
+    reason = "Release assembly retains sequential packaging stages"
+)]
+#![allow(
+    clippy::default_trait_access,
+    clippy::items_after_statements,
+    reason = "Scoped test imports and inferred defaults vary with enabled test targets"
+)]
 mod fonts;
 mod pe;
 mod publication;

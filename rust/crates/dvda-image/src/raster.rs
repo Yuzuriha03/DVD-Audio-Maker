@@ -1,3 +1,9 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Raster dimensions and color channels are bounded before integer or floating-point quantization"
+)]
 use crate::geometry::{Dimensions, ResizeMode};
 use image::{GenericImageView, ImageBuffer, Rgba, RgbaImage, imageops};
 use std::io;
@@ -46,6 +52,10 @@ impl GenericImageView for Premultiplied<'_> {
 }
 
 impl Raster {
+    /// Allocate a solid RGBA raster within the working-memory budget.
+    ///
+    /// # Errors
+    /// Returns an error when dimensions overflow, exceed the memory budget, or cannot be allocated.
     pub fn solid(size: Dimensions, color: [u8; 4]) -> io::Result<Self> {
         let length = size
             .byte_len(4)
@@ -60,6 +70,10 @@ impl Raster {
         Self::from_rgba(size, pixels)
     }
 
+    /// Construct a raster from tightly packed RGBA pixels.
+    ///
+    /// # Errors
+    /// Returns `InvalidInput` when the pixel length or image dimensions do not match.
     pub fn from_rgba(size: Dimensions, pixels: Vec<u8>) -> io::Result<Self> {
         if size.byte_len(4) != Some(pixels.len()) {
             return Err(io::Error::new(
@@ -74,6 +88,10 @@ impl Raster {
         })
     }
 
+    /// Return the dimensions established at construction.
+    ///
+    /// # Panics
+    /// Panics only if internal storage violates the construction invariant.
     #[must_use]
     pub fn dimensions(&self) -> Dimensions {
         Dimensions::new(self.pixels.width(), self.pixels.height())
@@ -95,6 +113,10 @@ impl Raster {
         }
     }
 
+    /// Resize the raster using the requested aspect-ratio policy.
+    ///
+    /// # Errors
+    /// Returns an error for invalid target geometry, excessive working memory, or allocation failure.
     pub fn resized(&self, target: Dimensions, mode: ResizeMode) -> io::Result<Self> {
         let size = self
             .dimensions()
@@ -170,6 +192,10 @@ impl Raster {
         Ok(Self { pixels })
     }
 
+    /// Crop or pad the raster into a centered target extent.
+    ///
+    /// # Errors
+    /// Returns an error when the target exceeds the working-memory budget or allocation fails.
     pub fn centered_extent(&self, target: Dimensions, background: [u8; 4]) -> io::Result<Self> {
         check_working_bytes(&[
             self.rgba().len(),
@@ -216,6 +242,10 @@ impl Raster {
         destination[3] = ((alpha + 127) / 255) as u8;
     }
 
+    /// Composite validated text glyph coverage onto the raster.
+    ///
+    /// # Errors
+    /// Returns `InvalidInput` when a glyph's coverage length does not match its dimensions.
     pub fn draw_text_mask(
         &mut self,
         mask: &crate::text::TextMask,
@@ -263,6 +293,9 @@ impl Raster {
     }
 
     /// Opaque sRGB gradient projected along the top-left to bottom-right diagonal.
+    ///
+    /// # Errors
+    /// Returns an error when the raster exceeds the working-memory budget or allocation fails.
     pub fn diagonal_gradient(size: Dimensions, start: [u8; 3], end: [u8; 3]) -> io::Result<Self> {
         let mut result = Self::solid(size, [0, 0, 0, 255])?;
         let dx = u64::from(size.width() - 1);
@@ -318,6 +351,9 @@ impl Raster {
     }
 
     /// Binary coverage for DVD subpicture triangles; no intermediate palette colors.
+    ///
+    /// # Panics
+    /// Panics only if the fixed three-point array violates the triangle routine's internal contract.
     pub fn fill_triangle(&mut self, points: [[i32; 2]; 3], color: [u8; 4]) {
         let edge = |a: [i32; 2], b: [i32; 2], p: [i32; 2]| {
             (i128::from(b[0]) - i128::from(a[0])) * (i128::from(p[1]) - i128::from(a[1]))

@@ -1,4 +1,14 @@
 //! Validate provenance, architecture and the complete DLL closure before staging.
+#![expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::format_collect,
+    clippy::too_many_lines,
+    reason = "Validation uses normalized package names and retains sequential provenance checks"
+)]
+#![allow(
+    clippy::needless_pass_by_value,
+    reason = "Test fixture replacement consumes complete byte buffers"
+)]
 use crate::pe;
 use serde_json::Value;
 use std::{

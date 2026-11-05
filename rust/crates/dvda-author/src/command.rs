@@ -1,5 +1,13 @@
 //! CLI compatibility and complete disc assembly. Audio, tables and filesystem
 //! generation stay in Rust; image/video codecs are supplied by the menu backend.
+#![expect(
+    clippy::assigning_clones,
+    clippy::cast_possible_truncation,
+    clippy::items_after_statements,
+    clippy::needless_continue,
+    clippy::too_many_lines,
+    reason = "Command orchestration retains complete authoring transactions and validated CLI field widths"
+)]
 use crate::{Callbacks, amg, aob, asvs, atsi, iso, menu, samg};
 use std::{
     fs::{self, OpenOptions},
@@ -195,6 +203,10 @@ pub struct Request {
 
 const HELP: &str = "Rust DVD-Audio author\nUsage: dvda-author-dev -g track.mlp track.wav [-z track ...] [-g ...] -o disc\n  -D temporary  --iso=image.iso  --iso-volume LABEL\n  --topmenu --background files --screentext text --stillpics files\n  --provider TEXT --autoplay --playlist groups --downmix coefficients\nMLP and integer PCM WAV inputs; 1..=9 groups, 1..=99 tracks per group.";
 
+/// Parse authoring command-line arguments into a typed request.
+///
+/// # Errors
+/// Rejects unknown options, missing values, invalid numbers, and inconsistent authoring modes.
 pub fn parse(arguments: &[String]) -> Result<Request, String> {
     let mut request = Request {
         groups: Vec::new(),
@@ -348,6 +360,10 @@ pub fn parse(arguments: &[String]) -> Result<Request, String> {
     Ok(request)
 }
 
+/// Execute a parsed authoring request.
+///
+/// # Errors
+/// Propagates option validation, input processing, authoring, and output failures.
 pub fn run(
     arguments: &[String],
     backend: &mut dyn menu::Backend,
@@ -356,6 +372,10 @@ pub fn run(
     run_internal(arguments, backend, callbacks, None)
 }
 
+/// Execute an authoring request with an explicit image cache.
+///
+/// # Errors
+/// Propagates option validation, image processing, authoring, and output failures.
 pub fn run_with_image_cache(
     arguments: &[String],
     backend: &mut dyn menu::Backend,
@@ -495,6 +515,13 @@ fn within(path: &Path, directory: &Path) -> bool {
     }
 }
 
+/// Assemble the complete DVD-Audio disc tree and ISO image.
+///
+/// # Errors
+/// Propagates invalid inputs, cancellation, backend failures, and output transaction errors.
+///
+/// # Panics
+/// Panics only if validated disc groups violate the authoring pipeline's internal invariants.
 pub fn author(
     request: &Request,
     backend: &mut dyn menu::Backend,

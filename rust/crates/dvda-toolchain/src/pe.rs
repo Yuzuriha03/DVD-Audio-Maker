@@ -1,4 +1,9 @@
 //! Bounded PE32+ reader used before packaging untrusted or stale build outputs.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::unreadable_literal,
+    reason = "PE fixtures construct fixed-width headers and bounded offsets"
+)]
 use std::collections::BTreeSet;
 
 pub fn imports_with_machine(

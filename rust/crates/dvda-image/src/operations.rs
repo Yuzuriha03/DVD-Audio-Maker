@@ -46,6 +46,10 @@ impl Session {
         Self { image: Some(image) }
     }
 
+    /// Apply image operations atomically within this session.
+    ///
+    /// # Errors
+    /// Returns an error when an operation fails, allocation fails, or cancellation is requested.
     pub fn apply(
         &mut self,
         operations: &[Operation<'_>],
@@ -78,6 +82,10 @@ impl Session {
         Ok(())
     }
 
+    /// Consume the session and return its final image.
+    ///
+    /// # Errors
+    /// Returns an error if a previous operation left the session failed.
     pub fn finish(self) -> io::Result<Raster> {
         self.image
             .ok_or_else(|| io::Error::other("image session has failed"))
