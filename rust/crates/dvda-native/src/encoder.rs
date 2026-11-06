@@ -1,9 +1,9 @@
 //! Streaming interface to the pinned C MLP core; encoded bytes are never rewritten.
+use crate::library::Library;
 use std::{
     collections::HashMap,
-    ffi::{c_char, c_void},
+    ffi::c_void,
     io,
-    os::windows::ffi::OsStrExt,
     panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
@@ -160,26 +160,13 @@ unsafe extern "C" fn write(state: *mut c_void, bytes: *const u8, count: usize) -
         state.stream.write(data)
     })
 }
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    fn LoadLibraryExW(path: *const u16, file: *mut c_void, flags: u32) -> *mut c_void;
-    fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
-    fn FreeLibrary(module: *mut c_void) -> i32;
-}
 pub struct Encoder {
-    module: *mut c_void,
+    _module: Library,
     encode: Encode,
 }
 // Each C invocation owns codec/FP state and restores the caller state around callbacks.
 unsafe impl Send for Encoder {}
 unsafe impl Sync for Encoder {}
-impl Drop for Encoder {
-    fn drop(&mut self) {
-        unsafe {
-            FreeLibrary(self.module);
-        }
-    }
-}
 impl Encoder {
     /// Load and cache the native MLP encoder for an absolute library path.
     ///
@@ -195,36 +182,18 @@ impl Encoder {
         if let Some(encoder) = cache.get(&path) {
             return Ok(Arc::clone(encoder));
         }
-        let mut wide: Vec<_> = path.as_os_str().encode_wide().collect();
-        if wide.contains(&0) {
-            return Err(io::Error::from_raw_os_error(123));
-        }
-        wide.push(0);
-        // SAFETY: validated terminated UTF-16 path; dependencies only beside DLL/System32.
-        let module = unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), 0x100 | 0x800) };
-        if module.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        let entry = unsafe { GetProcAddress(module, c"mlp_encode_stream_layout".as_ptr()) };
-        let version = unsafe { GetProcAddress(module, c"mlp_encoder_abi_version".as_ptr()) };
-        if entry.is_null() || version.is_null() {
-            let error = io::Error::last_os_error();
-            unsafe {
-                FreeLibrary(module);
-            }
-            return Err(error);
-        }
+        let module = Library::load(&path)?;
         // SAFETY: fixed frozen encoder API layouts declared in dvda-mlp/src/ffi.rs.
-        let version = unsafe { std::mem::transmute::<*mut c_void, Version>(version) };
+        let entry: Encode = unsafe { module.symbol(c"mlp_encode_stream_layout") }?;
+        // SAFETY: the ABI version export has no arguments or pointer obligations.
+        let version: Version = unsafe { module.symbol(c"mlp_encoder_abi_version") }?;
+        // SAFETY: version is resolved from the loaded pinned encoder ABI.
         if unsafe { version() } != 1 {
-            unsafe {
-                FreeLibrary(module);
-            }
             return Err(io::Error::other("Unsupported MLP encoder ABI"));
         }
         let encoder = Arc::new(Self {
-            module,
-            encode: unsafe { std::mem::transmute::<*mut c_void, Encode>(entry) },
+            _module: module,
+            encode: entry,
         });
         cache.insert(path, Arc::clone(&encoder));
         Ok(encoder)

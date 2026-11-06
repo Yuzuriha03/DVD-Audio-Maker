@@ -10,6 +10,10 @@ if($LASTEXITCODE -ne 0){throw 'Cannot initialize the Visual Studio ARM64 environ
 $msvc=$msvcJson | ConvertFrom-Json
 foreach($property in $msvc.PSObject.Properties){[Environment]::SetEnvironmentVariable($property.Name,[string]$property.Value,'Process')}
 $env:Path=(Join-Path $env:USERPROFILE '.cargo/bin')+';'+$env:Path
+$ffmpeg=Join-Path $root 'build/msvc-native/ffmpeg-arm64/install'
+if(-not $env:DVDA_FFMPEG_PREFIX -and (Test-Path (Join-Path $ffmpeg 'lib/avcodec.lib'))){
+    $env:DVDA_FFMPEG_PREFIX=$ffmpeg
+}
 $oldLocation=Get-Location
 try {
     Set-Location (Join-Path $root 'rust')
@@ -29,12 +33,12 @@ try {
         & cargo test --no-run --offline --target $target @profile @core
         if($LASTEXITCODE -ne 0){throw 'ARM64 core test link failed'}
     }
-    # The media bridge needs an ARM64 FFmpeg build. Rust image processing
-    # has no ImageMagick dependency on either architecture.
-    & cargo check --offline --target $target @profile --no-default-features -p dvda-cli -p dvda-desktop
+    # Match x64 production: linked media bridges and the default rust-mlp backend.
+    # Rust image processing has no ImageMagick dependency on either architecture.
+    & cargo check --offline --target $target @profile -p dvda-cli -p dvda-desktop
     if($LASTEXITCODE -ne 0){throw 'ARM64 CLI/desktop check failed'}
     if(-not $CheckOnly){
-        & cargo build --offline --target $target @profile --no-default-features -p dvda-cli -p dvda-desktop
+        & cargo build --offline --target $target @profile -p dvda-cli -p dvda-desktop
         if($LASTEXITCODE -ne 0){throw 'ARM64 CLI/desktop build failed'}
         Write-Host "ARM64 binaries: $root\rust\target\$target\$($Configuration.ToLower())"
     }

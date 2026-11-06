@@ -468,7 +468,7 @@ fn build_gui(
             "-p",
             "dvda-desktop",
             "--features",
-            "direct-bridges,rust-mlp",
+            "rust-mlp",
         ])
         .arg("--target-dir")
         .arg(target_directory)

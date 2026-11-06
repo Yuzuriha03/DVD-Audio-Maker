@@ -62,15 +62,7 @@ impl Callbacks for Events {
     }
 }
 fn library() -> PathBuf {
-    #[cfg(feature = "direct-bridges")]
-    {
-        std::env::current_exe().unwrap()
-    }
-    #[cfg(not(feature = "direct-bridges"))]
-    {
-        PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"))
-            .join("dvda-media.dll")
-    }
+    std::env::current_exe().unwrap()
 }
 fn job(root: &Path) -> pipeline::Job {
     let build = root.join("build");

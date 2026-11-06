@@ -1,10 +1,10 @@
 //! Explicit external-oracle access; production image operations use dvda-image.
+use crate::library::Library;
 use crate::media::{CallbackState, Callbacks, cancel, emit};
 use sha2::{Digest, Sha256};
 use std::ffi::{c_char, c_void};
 use std::{
     collections::HashMap,
-    os::windows::ffi::OsStrExt,
     path::PathBuf,
     sync::{Mutex, OnceLock},
 };
@@ -26,31 +26,6 @@ fn validate_oracle(bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_non_reference_oracle() {
-        for bytes in [b"".as_slice(), b"not the frozen image oracle".as_slice()] {
-            assert_eq!(
-                validate_oracle(bytes).unwrap_err().kind(),
-                io::ErrorKind::InvalidData
-            );
-        }
-    }
-
-    #[test]
-    fn load_rejects_invalid_library_before_loading() {
-        let path =
-            std::env::temp_dir().join(format!("dvda-image-invalid-{}.dll", std::process::id()));
-        std::fs::write(&path, b"not a DLL").unwrap();
-        let result = Images::load(&path);
-        std::fs::remove_file(path).unwrap();
-        assert!(matches!(result, Err(error) if error.kind() == io::ErrorKind::InvalidData));
-    }
-}
-
 type Run = unsafe extern "C" fn(
     i32,
     *const *const c_char,
@@ -59,27 +34,14 @@ type Run = unsafe extern "C" fn(
     *mut c_void,
 ) -> i32;
 type ReadRgba = unsafe extern "C" fn(*const c_char, *mut u8, usize, *mut u32, *mut u32) -> i32;
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    fn LoadLibraryExW(path: *const u16, file: *mut c_void, flags: u32) -> *mut c_void;
-    fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
-    fn FreeLibrary(module: *mut c_void) -> i32;
-}
 pub struct Images {
-    module: *mut c_void,
+    _module: Library,
     run: Run,
     read_rgba: ReadRgba,
 }
 // The C implementation serializes its global state; callbacks remain per request.
 unsafe impl Send for Images {}
 unsafe impl Sync for Images {}
-impl Drop for Images {
-    fn drop(&mut self) {
-        unsafe {
-            FreeLibrary(self.module);
-        }
-    }
-}
 impl Images {
     /// Validate, load, and cache the external image oracle.
     ///
@@ -96,30 +58,15 @@ impl Images {
         if let Some(images) = cache.get(&path) {
             return Ok(Arc::clone(images));
         }
-        let mut wide: Vec<_> = path.as_os_str().encode_wide().collect();
-        if wide.contains(&0) {
-            return Err(io::Error::from_raw_os_error(123));
-        }
-        wide.push(0);
-        // SAFETY: path is terminated and live; dependencies resolve locally/System32 only.
-        let module = unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), 0x100 | 0x800) };
-        if module.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        let entry = unsafe { GetProcAddress(module, c"dvda_image_run".as_ptr()) };
-        let rgba = unsafe { GetProcAddress(module, c"dvda_image_read_rgba".as_ptr()) };
-        if entry.is_null() || rgba.is_null() {
-            let error = io::Error::last_os_error();
-            unsafe {
-                FreeLibrary(module);
-            }
-            return Err(error);
-        }
-        // SAFETY: exact ABI from tools/win-build/native/dvda-image.c.
+        let module = Library::load(&path)?;
+        // SAFETY: exact ABIs from tools/win-build/native/dvda-image.c.
+        let run: Run = unsafe { module.symbol(c"dvda_image_run") }?;
+        // SAFETY: exact ABIs from tools/win-build/native/dvda-image.c.
+        let read_rgba: ReadRgba = unsafe { module.symbol(c"dvda_image_read_rgba") }?;
         let images = Arc::new(Self {
-            module,
-            run: unsafe { std::mem::transmute::<*mut c_void, Run>(entry) },
-            read_rgba: unsafe { std::mem::transmute::<*mut c_void, ReadRgba>(rgba) },
+            _module: module,
+            run,
+            read_rgba,
         });
         cache.insert(path, Arc::clone(&images));
         Ok(images)
@@ -189,5 +136,30 @@ impl Images {
             return Err(io::Error::other("Panic caught in image callback"));
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_non_reference_oracle() {
+        for bytes in [b"".as_slice(), b"not the frozen image oracle".as_slice()] {
+            assert_eq!(
+                validate_oracle(bytes).unwrap_err().kind(),
+                io::ErrorKind::InvalidData
+            );
+        }
+    }
+
+    #[test]
+    fn load_rejects_invalid_library_before_loading() {
+        let path =
+            std::env::temp_dir().join(format!("dvda-image-invalid-{}.dll", std::process::id()));
+        std::fs::write(&path, b"not a DLL").unwrap();
+        let result = Images::load(&path);
+        std::fs::remove_file(path).unwrap();
+        assert!(matches!(result, Err(error) if error.kind() == io::ErrorKind::InvalidData));
     }
 }

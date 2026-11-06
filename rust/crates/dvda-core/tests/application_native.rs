@@ -65,8 +65,7 @@ impl Callbacks for Events {
     }
 }
 fn library() -> PathBuf {
-    PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"))
-        .join("dvda-media.dll")
+    std::env::current_exe().unwrap()
 }
 fn sources(root: &Path) {
     sources_aligned(root, false);
@@ -830,11 +829,7 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
     let overlay_skipped = skipped
         .iter()
         .any(|d| d["Code"] == "MENU_OVERLAY_CHECK_SKIPPED" && d["Severity"] == 1);
-    assert_eq!(
-        overlay_skipped,
-        !cfg!(feature = "direct-bridges"),
-        "{skipped:?}"
-    );
+    assert!(!overlay_skipped, "{skipped:?}");
     let mut missing_diagnostics = Vec::new();
     missing_images.author_source = root.0.join("missing-menu-data");
     missing_images.menu_binary_directory = root.0.join("missing-menu-runtime");
@@ -846,22 +841,12 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
     )
     .unwrap();
     assert_eq!(missing_assets, [] as [std::string::String; 0]);
-    let mut missing_codes = vec!["MENU_DATA_MISSING"];
-    if !cfg!(feature = "direct-bridges") {
-        missing_codes.extend([
-            "IMAGEMAGICK_MISSING",
-            "IMAGEMAGICK_IDENTIFY_MISSING",
-            "MENU_LIBRARY_MISSING",
-        ]);
-    }
-    for code in missing_codes {
-        assert!(
-            missing_diagnostics
-                .iter()
-                .any(|d| d["Code"] == code && d["Severity"] == 2),
-            "{code}: {missing_diagnostics:?}"
-        );
-    }
+    assert!(
+        missing_diagnostics
+            .iter()
+            .any(|d| d["Code"] == "MENU_DATA_MISSING" && d["Severity"] == 2),
+        "{missing_diagnostics:?}"
+    );
     // A playback JPEG failure is advisory: retaining the valid page background
     // still permits a disc with zero playback pictures. Trigger it by creating
     // a directory at that fixture's output filename after background rendering.

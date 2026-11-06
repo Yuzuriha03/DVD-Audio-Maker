@@ -27,9 +27,6 @@ pub struct Outcome {
 }
 
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
-    if !crate::native_components::media_available(&job.media_library) {
-        return Err("内置媒体组件缺失，请完整解压发布包。".into());
-    }
     if !Path::new(&job.external_root).is_dir() {
         return Ok(Outcome {
             tracks: job.tracks,

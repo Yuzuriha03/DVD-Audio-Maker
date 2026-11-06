@@ -92,7 +92,7 @@ def main():
     target_dir = args.target_directory.resolve()
     command = ['cargo', 'build', '--offline', '--release', '--manifest-path', str(repo/'rust/Cargo.toml'),
                '--target', target, '--target-dir', str(target_dir), '-p', 'dvda-core',
-               '--no-default-features', '--features', 'direct-bridges,rust-mlp']
+               '--features', 'rust-mlp']
     inputs = rust_sources(repo)
     with (work/'rust-author-build.log').open('wb') as log:
         result = subprocess.run(command, cwd=repo, env=env, stdout=log, stderr=subprocess.STDOUT)

@@ -87,14 +87,12 @@ pub fn encoding_identity(
     let file_hash = task_file_hash;
     let mut components = std::collections::BTreeMap::new();
     components.insert("media".to_owned(), file_hash(media)?);
-    #[cfg(feature = "direct-bridges")]
     components.insert(
         "linked-media-executable".to_owned(),
         file_hash(&std::env::current_exe().map_err(|error| error.to_string())?)?,
     );
     let dependency_directories: Vec<PathBuf> =
         media.parent().map(Path::to_owned).into_iter().collect();
-    #[cfg(feature = "direct-bridges")]
     let dependency_directories = {
         let mut directories = dependency_directories;
         if let Some(directory) = crate::runtime::directory()
@@ -117,7 +115,6 @@ pub fn encoding_identity(
             }
         }
     }
-    #[cfg(feature = "direct-bridges")]
     {
         dependencies.extend(media_loaded_dependencies(
             &dependencies,
@@ -146,7 +143,6 @@ pub fn encoding_identity(
     Ok(hash::hex_digest(&canonical))
 }
 
-#[cfg(any(feature = "direct-bridges", test))]
 fn media_loaded_dependencies(known: &[PathBuf], loaded: Vec<PathBuf>) -> Vec<PathBuf> {
     let names: std::collections::BTreeSet<_> = known
         .iter()

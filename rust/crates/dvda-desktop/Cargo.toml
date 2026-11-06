@@ -5,8 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-default = ["direct-bridges", "rust-mlp"]
-direct-bridges = ["dvda-core/direct-bridges", "dvda-native/direct-bridges"]
+default = ["rust-mlp"]
 rust-mlp = ["dvda-core/rust-mlp"]
 
 [dependencies]

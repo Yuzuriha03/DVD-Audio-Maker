@@ -107,6 +107,101 @@ unsafe extern "C" fn write<I: StreamIo>(p: *mut c_void, bytes: *const u8, size: 
     }
 }
 
+/// The safe direct API owns all raw context/result pointers at this boundary.
+/// The exported C functions retain their signatures for external callers.
+#[derive(Clone, Copy)]
+enum FfiCall<'a> {
+    Layout {
+        config: &'a ffi::EncoderConfig,
+        assignment: usize,
+    },
+    Depths {
+        config: &'a ffi::EncoderConfig,
+        assignment: usize,
+        group2_bits: u8,
+    },
+    Groups(&'a ffi::GroupsConfig),
+    Refresh {
+        config: &'a ffi::EncoderConfig,
+        profile: &'a Profile,
+    },
+}
+
+fn invoke_ffi<I: StreamIo>(call: FfiCall<'_>, context: &mut Context<'_, I>) -> StreamResult {
+    let p = (&raw mut *context).cast::<c_void>();
+    let mut result = StreamResult::default();
+    match call {
+        FfiCall::Layout { config, assignment } => {
+            // SAFETY: config and its metadata are borrowed for the synchronous call;
+            // context/result are live, exclusive stack objects and callbacks are serial.
+            unsafe {
+                ffi::mlp_encode_stream_layout(
+                    config,
+                    assignment as u32,
+                    Some(read::<I>),
+                    p,
+                    Some(write::<I>),
+                    p,
+                    &raw mut result,
+                );
+            }
+        }
+        FfiCall::Depths {
+            config,
+            assignment,
+            group2_bits,
+        } => {
+            // SAFETY: same owned synchronous borrows as the layout branch.
+            unsafe {
+                ffi::mlp_encode_stream_depths(
+                    config,
+                    assignment as u32,
+                    group2_bits.into(),
+                    Some(read::<I>),
+                    p,
+                    Some(write::<I>),
+                    p,
+                    &raw mut result,
+                );
+            }
+        }
+        FfiCall::Groups(config) => {
+            // SAFETY: both callbacks borrow the same context sequentially, as
+            // required by the grouped ABI; no pointer escapes this invocation.
+            unsafe {
+                ffi::mlp_encode_stream_groups(
+                    config,
+                    Some(read::<I>),
+                    p,
+                    Some(read_second::<I>),
+                    p,
+                    Some(write::<I>),
+                    p,
+                    &raw mut result,
+                );
+            }
+        }
+        FfiCall::Refresh { config, profile } => {
+            // The synchronous callbacks borrow the context sequentially, never
+            // retaining a reference across a read, write, or refresh invocation.
+            let mut refresh = || unsafe { (&mut *p.cast::<Context<'_, I>>()).io.refresh_stamp() };
+            // SAFETY: the refresh closure and all ABI borrows end with this call.
+            result = unsafe {
+                ffi::encode_stream_with_stamp_refresh(
+                    config,
+                    profile.clone(),
+                    read::<I>,
+                    p,
+                    write::<I>,
+                    p,
+                    &mut refresh,
+                )
+            };
+        }
+    }
+    result
+}
+
 /// Encode with bounded restart/FIFO buffering and shared ABI validation/timing.
 /// `secondary_frames = Some(n)` selects independent native-rate group input;
 /// `None` selects interleaved uniform-rate input, including mixed-depth layouts.
@@ -218,22 +313,14 @@ fn encode_stream_inner<I: StreamIo>(
         },
         panicked: false,
     };
-    let p = (&raw mut context).cast::<c_void>();
     if refresh_stamps {
-        // The synchronous callbacks borrow the context sequentially, never
-        // retaining a reference across a read, write, or refresh invocation.
-        let mut refresh = || unsafe { (&mut *p.cast::<Context<'_, I>>()).io.refresh_stamp() };
-        result = unsafe {
-            ffi::encode_stream_with_stamp_refresh(
-                &primary,
-                profile.clone(),
-                read::<I>,
-                p,
-                write::<I>,
-                p,
-                &mut refresh,
-            )
-        };
+        result = invoke_ffi(
+            FfiCall::Refresh {
+                config: &primary,
+                profile,
+            },
+            &mut context,
+        );
     } else if let Some(group2_frames) = secondary_frames {
         let groups = ffi::GroupsConfig {
             struct_size: size_of::<ffi::GroupsConfig>() as u32,
@@ -243,45 +330,26 @@ fn encode_stream_inner<I: StreamIo>(
             group2_bits: profile.group2_bits.into(),
             group2_frames,
         };
-        unsafe {
-            ffi::mlp_encode_stream_groups(
-                &raw const groups,
-                Some(read::<I>),
-                p,
-                Some(read_second::<I>),
-                p,
-                Some(write::<I>),
-                p,
-                &raw mut result,
-            );
-        }
+        result = invoke_ffi(FfiCall::Groups(&groups), &mut context);
     } else if profile.group2_rate != config.sample_rate {
         result.status = -1;
     } else if first < config.channels as usize {
-        unsafe {
-            ffi::mlp_encode_stream_depths(
-                &raw const primary,
-                profile.assignment as u32,
-                profile.group2_bits.into(),
-                Some(read::<I>),
-                p,
-                Some(write::<I>),
-                p,
-                &raw mut result,
-            );
-        }
+        result = invoke_ffi(
+            FfiCall::Depths {
+                config: &primary,
+                assignment: profile.assignment,
+                group2_bits: profile.group2_bits,
+            },
+            &mut context,
+        );
     } else {
-        unsafe {
-            ffi::mlp_encode_stream_layout(
-                &raw const primary,
-                profile.assignment as u32,
-                Some(read::<I>),
-                p,
-                Some(write::<I>),
-                p,
-                &raw mut result,
-            );
-        }
+        result = invoke_ffi(
+            FfiCall::Layout {
+                config: &primary,
+                assignment: profile.assignment,
+            },
+            &mut context,
+        );
     }
     if context.panicked {
         ffi::fail(&mut result, -5, "Rust stream callback panic");
@@ -497,6 +565,49 @@ mod tests {
             self.mode == 5
         }
     }
+    #[test]
+    fn mixed_depth_direct_stream_preserves_counts_and_output_accounting() {
+        struct FourChannels {
+            output: Vec<u8>,
+        }
+        impl StreamIo for FourChannels {
+            fn read(&mut self, group: usize, pcm: &mut [i32]) -> Result<usize, i32> {
+                assert_eq!(group, 0);
+                assert_eq!(pcm.len() % 4, 0);
+                pcm.fill(0);
+                Ok(pcm.len() / 4)
+            }
+            fn write(&mut self, bytes: &[u8]) -> Result<(), i32> {
+                self.output.extend_from_slice(bytes);
+                Ok(())
+            }
+        }
+
+        let config = Config {
+            sample_rate: 48000,
+            bits: 24,
+            channels: 4,
+            restart_interval: 8,
+            metadata: Vec::new(),
+        };
+        let profile = Profile {
+            assignment: 3,
+            group2_bits: 16,
+            group2_rate: 48000,
+        };
+        let metadata = [Metadata {
+            start: 0,
+            packet: vec![0, 0, 64, 0],
+            valid_bits: 0,
+        }];
+        let mut io = FourChannels { output: Vec::new() };
+        let result = encode_stream(&config, &profile, 41, None, &metadata, &mut io);
+        assert_eq!(result.status, 0);
+        assert_eq!(result.input_frames, 41);
+        assert_eq!(result.encoded_frames, 80);
+        assert_eq!(result.output_bytes, io.output.len() as u64);
+    }
+
     #[test]
     fn grouped_direct_streams_are_bounded_and_independent() {
         struct Groups {

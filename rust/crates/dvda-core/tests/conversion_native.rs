@@ -54,8 +54,7 @@ impl Drop for Scratch {
 }
 fn job(root: &Path) -> Job {
     Job {
-        library: PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("media runtime"))
-            .join("dvda-media.dll"),
+        library: std::env::current_exe().unwrap(),
         paths: vec![root.to_owned()],
         compression: 8,
         dry_run: false,

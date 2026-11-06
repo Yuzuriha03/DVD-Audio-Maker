@@ -79,8 +79,7 @@ impl Callbacks for Events {
     }
 }
 fn library() -> PathBuf {
-    PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"))
-        .join("dvda-media.dll")
+    std::env::current_exe().unwrap()
 }
 fn job(path: &Path) -> audio::Job {
     audio::Job {
@@ -137,39 +136,11 @@ fn wave(path: &Path, case: &Case) {
 fn fixture() -> Fixture {
     serde_json::from_str(include_str!("fixtures/audio-managed-v1.json")).unwrap()
 }
-#[cfg(not(feature = "direct-bridges"))]
-fn media_identity() -> String {
-    let mut paths: Vec<_> = fs::read_dir(library().parent().unwrap())
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
-        })
-        .collect();
-    paths.sort_by_key(|p| p.file_name().unwrap().to_string_lossy().to_lowercase());
-    let text = paths
-        .iter()
-        .map(|p| {
-            format!(
-                "{}:{}",
-                p.file_name().unwrap().to_string_lossy(),
-                digest(&fs::read(p).unwrap())
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("|");
-    format!("native-media-v1:{}", digest(text.as_bytes()))
-}
 #[test]
 #[ignore = "requires the frozen source-built Windows x64 media component"]
 fn frozen_audio_metadata_parameters_and_sample_counts() {
     let fixtures = fixture();
-    // Dynamic reference runs require the original DLL set. Direct bridges
-    // exercise the current implementation against the same frozen outputs.
-    #[cfg(not(feature = "direct-bridges"))]
-    assert_eq!(fixtures.media_identity, media_identity());
-    #[cfg(feature = "direct-bridges")]
+    // Linked bridges exercise the current implementation against frozen outputs.
     assert_eq!(
         fixtures.media_identity,
         "native-media-v1:7AAE981E1221C283F1CE92F19016BE5CDE048590A56521FBD1174B8F1A9C2797"

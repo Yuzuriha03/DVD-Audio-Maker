@@ -343,12 +343,6 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     execute_with(job, caller, cfg!(feature = "rust-mlp"))
 }
 
-/// Explicit linked backend entrypoint for parity and host integration tests.
-#[cfg(feature = "rust-mlp")]
-pub fn execute_rust(job: Job, caller: &mut dyn Callbacks) -> Outcome {
-    execute_with(job, caller, true)
-}
-
 fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Outcome {
     let mut callbacks = Timed::new(caller, job.timeout_millis);
     let mut temporary = Temporary(None);

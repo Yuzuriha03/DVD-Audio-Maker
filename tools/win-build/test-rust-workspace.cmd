@@ -10,5 +10,5 @@ if not exist "%ROOT%\build\test-tmp" mkdir "%ROOT%\build\test-tmp"
 set "TEMP=%ROOT%\build\test-tmp"
 set "TMP=%ROOT%\build\test-tmp"
 cd /d "%ROOT%\rust"
-cargo test --workspace --no-default-features --features rust-mlp %*
+cargo test --workspace %*
 exit /b %ERRORLEVEL%

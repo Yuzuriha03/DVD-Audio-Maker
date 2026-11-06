@@ -291,49 +291,13 @@ impl AppOptions {
         self.path("SourceDirectory")
     }
     pub fn media_library(&self) -> Result<PathBuf, String> {
-        #[cfg(feature = "direct-bridges")]
-        return env::current_exe().map_err(|error| error.to_string());
-        #[cfg(not(feature = "direct-bridges"))]
-        locate_file(
-            "DVDA_MEDIA_NATIVE_LIBRARY",
-            "DVDA_MEDIA_NATIVE_DIR",
-            &self.executable_directory,
-            &["dvda-media.dll"],
-            &["media-native", "menu-bin"],
-        )
+        env::current_exe().map_err(|error| error.to_string())
     }
     pub fn encoder_library(&self) -> Result<PathBuf, String> {
-        #[cfg(feature = "rust-mlp")]
-        return env::current_exe().map_err(|error| error.to_string());
-        #[cfg(not(feature = "rust-mlp"))]
-        locate_file(
-            "DVDA_ENCODER_LIBRARY",
-            "",
-            &self.executable_directory,
-            &["mlp_encoder.dll"],
-            &[],
-        )
-        .or_else(|error| {
-            if env::var_os("DVDA_ENCODER_LIBRARY").is_some() {
-                return Err(error);
-            }
-            let development = PathBuf::from("build/mlp-encoder/mlp_encoder.dll");
-            development
-                .canonicalize()
-                .map_err(|error| format!("MLP encoder DLL not found: {error}"))
-        })
+        env::current_exe().map_err(|error| error.to_string())
     }
     pub fn image_library(&self) -> Result<PathBuf, String> {
-        #[cfg(feature = "direct-bridges")]
-        return env::current_exe().map_err(|error| error.to_string());
-        #[cfg(not(feature = "direct-bridges"))]
-        locate_file(
-            "DVDA_IMAGE_NATIVE_LIBRARY",
-            "DVDA_IMAGE_NATIVE_DIR",
-            &self.executable_directory,
-            &["dvda-image.dll"],
-            &["image-native"],
-        )
+        env::current_exe().map_err(|error| error.to_string())
     }
     pub fn build_job(&self, dry_run: bool) -> Result<build::Job, String> {
         let source = self.source_directory();
@@ -528,7 +492,7 @@ pub fn run_build(
             signature: crate::audio::production_pcm_signature(&media, rate, bits, dither)?,
             stream_mlp: options.text("MlpSource") == "mlp-batch"
                 && crate::config::trim(&options.text("MlpMetadataContext")).is_empty()
-                && cfg!(all(feature = "direct-bridges", feature = "rust-mlp")),
+                && cfg!(feature = "rust-mlp"),
         });
     }
     preparation::pipeline::ensure_ready(&preparation, &mut callbacks)
@@ -712,74 +676,6 @@ fn menu_runtime_directory(
     ))
 }
 
-#[cfg(any(not(feature = "direct-bridges"), not(feature = "rust-mlp")))]
-fn locate_file(
-    primary_env: &str,
-    directory_env: &str,
-    base: &Path,
-    names: &[&str],
-    directories: &[&str],
-) -> Result<PathBuf, String> {
-    locate_file_from_overrides(
-        [
-            (
-                primary_env,
-                (!primary_env.is_empty())
-                    .then(|| env::var_os(primary_env))
-                    .flatten()
-                    .map(PathBuf::from),
-            ),
-            (
-                directory_env,
-                (!directory_env.is_empty())
-                    .then(|| env::var_os(directory_env))
-                    .flatten()
-                    .map(PathBuf::from),
-            ),
-        ],
-        base,
-        names,
-        directories,
-    )
-}
-
-#[cfg(any(test, not(feature = "direct-bridges"), not(feature = "rust-mlp")))]
-fn locate_file_from_overrides(
-    overrides: [(&str, Option<PathBuf>); 2],
-    base: &Path,
-    names: &[&str],
-    directories: &[&str],
-) -> Result<PathBuf, String> {
-    for (index, (name, value)) in overrides.into_iter().enumerate() {
-        if let Some(path) = value {
-            if path.as_os_str().is_empty() {
-                return Err(format!("{name} must not be empty"));
-            }
-            let candidate = if index == 1 && (path.is_dir() || path.extension().is_none()) {
-                path.join(names[0])
-            } else {
-                path
-            };
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-            return Err(format!(
-                "{name}: component not found: {}",
-                candidate.display()
-            ));
-        }
-    }
-    for directory in directories {
-        for name in names {
-            let candidate = base.join(directory).join(name);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-    }
-    Err(format!("内置组件缺失: {}", names.join(", ")))
-}
-
 pub fn save_profile(
     path: &Path,
     values: &Map<String, Value>,
@@ -864,55 +760,6 @@ mod tests {
                 .contains("DVDA_MENU_NATIVE_DIR")
         );
         assert!(select(Some(PathBuf::new()), Some(&embedded)).is_err());
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn component_overrides_are_explicit_and_fail_closed() {
-        let root = env::temp_dir().join(format!(
-            "dvda-component-selection-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let directory = root.join("runtime.v1");
-        std::fs::create_dir_all(&directory).unwrap();
-        let library = directory.join("component.dll");
-        std::fs::write(&library, b"test").unwrap();
-        let select = |primary, secondary| {
-            locate_file_from_overrides(
-                [("PRIMARY", primary), ("DIRECTORY", secondary)],
-                &root,
-                &["component.dll"],
-                &["runtime.v1"],
-            )
-        };
-        assert_eq!(select(None, None).unwrap(), library);
-        assert_eq!(select(Some(library.clone()), None).unwrap(), library);
-        assert_eq!(select(None, Some(directory.clone())).unwrap(), library);
-        assert_eq!(select(None, Some(library.clone())).unwrap(), library);
-        let missing = root.join("missing.dll");
-        assert!(
-            select(Some(missing.clone()), Some(directory))
-                .unwrap_err()
-                .contains("PRIMARY")
-        );
-        assert!(
-            select(None, Some(missing))
-                .unwrap_err()
-                .contains("DIRECTORY")
-        );
-        assert!(
-            select(Some(PathBuf::new()), None)
-                .unwrap_err()
-                .contains("must not be empty")
-        );
-        assert!(
-            select(None, Some(PathBuf::new()))
-                .unwrap_err()
-                .contains("must not be empty")
-        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

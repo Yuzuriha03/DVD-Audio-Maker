@@ -121,7 +121,7 @@ pub fn normalize(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
     normalize_impl(job, caller, false)
 }
 
-#[cfg(any(not(feature = "direct-bridges"), test))]
+#[cfg(test)]
 pub(crate) fn normalize_s24(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
     normalize_impl(job, caller, true)
 }
@@ -338,7 +338,7 @@ pub fn execute(job: Job, callbacks: &mut dyn Callbacks) -> Outcome {
 }
 pub(crate) struct NoEvents;
 
-#[cfg(all(test, feature = "direct-bridges"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -346,18 +346,7 @@ mod tests {
     fn normalized_s24_matches_wave_decoder() {
         let root = std::env::temp_dir().join(format!("dvda-s24-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
-        let Some(media_dir) = std::env::var_os("DVDA_MEDIA_NATIVE_DIR") else {
-            eprintln!("skipping PCM differential check: DVDA_MEDIA_NATIVE_DIR is not set");
-            return;
-        };
-        let library = PathBuf::from(media_dir).join("dvda-media.dll");
-        if !library.is_file() {
-            eprintln!(
-                "skipping PCM differential check: retained dvda-media.dll not found at {}",
-                library.display()
-            );
-            return;
-        }
+        let library = std::env::current_exe().unwrap();
         for (bits, channels) in [16, 20, 24]
             .into_iter()
             .flat_map(|bits| (1..=6).map(move |channels| (bits, channels)))

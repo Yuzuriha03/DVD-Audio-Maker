@@ -1,36 +1,15 @@
 //! Reconstruct the encoding input and compare full decoded PCM without changing
-//! either the source or the encoded file. Direct builds compare bounded streams;
-//! compatibility builds emit normalized S24 files and use the file comparator.
-#[cfg(any(not(feature = "direct-bridges"), test))]
+//! either the source or the encoded file, using bounded linked streams.
+#[cfg(test)]
 use crate::media;
-#[cfg(not(feature = "direct-bridges"))]
-use crate::pcm;
-#[cfg(not(feature = "direct-bridges"))]
-use dvda_native::NativeFormats;
 use dvda_native::media::Callbacks;
-#[cfg(any(not(feature = "direct-bridges"), test))]
+#[cfg(test)]
 use dvda_native::media::{Operation, OutputFormat, Request};
 use serde_json::Value;
-#[cfg(not(feature = "direct-bridges"))]
-use std::fs;
 use std::path::{Path, PathBuf};
-
-#[cfg(not(feature = "direct-bridges"))]
-struct Workspace(PathBuf);
-#[cfg(not(feature = "direct-bridges"))]
-impl Drop for Workspace {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-#[allow(
-    unused_variables,
-    reason = "The workspace root is used only by the non-direct verification backend"
-)]
 pub fn track(
     library: &Path,
-    root: &Path,
+    _root: &Path,
     track: &Value,
     caller: &mut dyn Callbacks,
 ) -> Result<(), String> {
@@ -74,8 +53,7 @@ pub fn track(
     {
         return Err("旧外部 MLP 的转换策略未知，不能代替 PCM 一致性校验。".into());
     }
-    #[cfg(feature = "direct-bridges")]
-    return crate::verify_audio_stream::compare(
+    crate::verify_audio_stream::compare(
         crate::verify_audio_stream::CompareJob {
             library,
             source: &source,
@@ -86,82 +64,10 @@ pub fn track(
             builtin,
         },
         caller,
-    );
-    #[cfg(not(feature = "direct-bridges"))]
-    {
-        fs::create_dir_all(root).map_err(|e| e.to_string())?;
-        let directory = media::temporary_path(&root.join("track"));
-        fs::create_dir(&directory).map_err(|e| e.to_string())?;
-        let work = Workspace(directory);
-        let source_raw = work.0.join("source.raw");
-        if builtin || lpcm {
-            let converted = work.0.join("converted.wav");
-            convert(
-                library,
-                &source,
-                &converted,
-                rate,
-                bits,
-                OutputFormat::Wave,
-                caller,
-            )?;
-            pcm::normalize_s24(
-                pcm::Job {
-                    source: converted.to_string_lossy().into_owned(),
-                    destination: source_raw.clone(),
-                    rate: rate.cast_signed(),
-                    bits: bits.cast_signed(),
-                },
-                caller,
-            )
-            .map_err(|e| e.message)?;
-        } else {
-            convert(
-                library,
-                &source,
-                &source_raw,
-                0,
-                24,
-                OutputFormat::S24,
-                caller,
-            )?;
-        }
-        let decoded_raw = work.0.join("decoded.raw");
-        convert(
-            library,
-            &encoded,
-            &decoded_raw,
-            0,
-            24,
-            OutputFormat::S24,
-            caller,
-        )?;
-        if caller.cancelled() {
-            return Err("成品验证已取消。".into());
-        }
-        let comparison = NativeFormats::load()?.compare_pcm(
-            &source_raw,
-            &decoded_raw,
-            3 * channels,
-            if builtin { (rate - 1) / 1000 } else { 0 },
-        )?;
-        if caller.cancelled() {
-            return Err("成品验证已取消。".into());
-        }
-        if !comparison.matches {
-            return Err(format!(
-                "PCM 不一致：原因 {}，偏移 {}，源 {} 字节，解码 {} 字节。",
-                comparison.reason_code,
-                comparison.first_mismatch_offset,
-                comparison.source_bytes,
-                comparison.decoded_bytes
-            ));
-        }
-        Ok(())
-    }
+    )
 }
 
-#[cfg(any(not(feature = "direct-bridges"), test))]
+#[cfg(test)]
 pub(crate) fn convert(
     library: &Path,
     input: &Path,

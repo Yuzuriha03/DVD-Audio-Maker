@@ -60,11 +60,7 @@ impl Callbacks for Events {
     }
 }
 fn library() -> PathBuf {
-    PathBuf::from(
-        std::env::var_os("DVDA_MEDIA_NATIVE_DIR")
-            .expect("Set DVDA_MEDIA_NATIVE_DIR for native media tests"),
-    )
-    .join("dvda-media.dll")
+    std::env::current_exe().unwrap()
 }
 fn job(input: &Path, output: &Path, rate: u32, bits: u32) -> Job {
     Job {

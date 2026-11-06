@@ -156,7 +156,7 @@ try {
         Write-Host "Test author: $env:DVDA_TEST_AUTHOR"
     }
     $packages = @(if ($Mode -eq 'Benchmarks') { '-p'; 'dvda-core'; '-p'; 'dvda-native' } else { '--workspace' })
-    $compiled = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $wrapper test @common @packages --features dvda-core/direct-bridges,dvda-native/direct-bridges --no-run --message-format=json)
+    $compiled = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $wrapper test @common @packages --no-run --message-format=json)
     Show-CompilerMessages $compiled
     if ($LASTEXITCODE -ne 0) { throw 'Workspace test compilation failed' }
     $executables = @($compiled | ForEach-Object { $_ | ConvertFrom-Json } |

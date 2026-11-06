@@ -7,7 +7,6 @@
     clippy::too_many_lines,
     reason = "Encoder fixtures preserve deterministic PCM and complete frozen oracle cases"
 )]
-#[cfg(feature = "direct-bridges")]
 use dvda_core::audio;
 use dvda_core::{encoder, hash, media};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
@@ -85,6 +84,9 @@ fn library() -> PathBuf {
         std::env::var_os("DVDA_ENCODER_LIBRARY")
             .expect("Set DVDA_ENCODER_LIBRARY to the pinned x64 C encoder"),
     )
+}
+fn media_library() -> PathBuf {
+    std::env::current_exe().unwrap()
 }
 fn job(wave: &Path, destination: &Path, context: String) -> encoder::Job {
     encoder::Job {
@@ -187,10 +189,7 @@ fn context(path: &Path, case: &Case) -> String {
 fn decode(input: &Path, output: &Path) {
     passed(media::execute(
         media::Job {
-            library: PathBuf::from(
-                std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
-            )
-            .join("dvda-media.dll"),
+            library: media_library(),
             request: Request {
                 operation: Operation::Audio,
                 rate: 0,
@@ -247,7 +246,7 @@ fn linked_mlp_matrix_without_encoder_dll() {
 }
 
 #[test]
-#[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+#[cfg(feature = "rust-mlp")]
 #[ignore = "requires source-built media runtime"]
 fn streamed_decode_to_mlp_matches_the_lossless_pcm_matrix_without_wave_output() {
     let fixtures: Fixtures =
@@ -262,10 +261,7 @@ fn streamed_decode_to_mlp_matches_the_lossless_pcm_matrix_without_wave_output() 
         let expected = wave(&input, case);
         let result = audio::check_decode(
             &audio::Job {
-                library: PathBuf::from(
-                    std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
-                )
-                .join("dvda-media.dll"),
+                library: media_library(),
                 input: input.to_string_lossy().into_owned(),
                 operation: audio::Operation::Decode,
                 resample_to: None,
@@ -308,7 +304,7 @@ fn streamed_decode_to_mlp_matches_the_lossless_pcm_matrix_without_wave_output() 
 }
 
 #[test]
-#[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+#[cfg(feature = "rust-mlp")]
 #[ignore = "requires source-built media runtime"]
 fn streamed_resampling_matches_the_wave_encoding_path() {
     let root = Scratch::new();
@@ -329,10 +325,7 @@ fn streamed_resampling_matches_the_wave_encoding_path() {
     let streamed = root.0.join("streamed.mlp");
     let result = audio::check_decode(
         &audio::Job {
-            library: PathBuf::from(
-                std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
-            )
-            .join("dvda-media.dll"),
+            library: media_library(),
             input: input.to_string_lossy().into_owned(),
             operation: audio::Operation::Decode,
             resample_to: None,
@@ -357,10 +350,7 @@ fn streamed_resampling_matches_the_wave_encoding_path() {
     let pcm = root.0.join("baseline.wav");
     passed(media::execute(
         media::Job {
-            library: PathBuf::from(
-                std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
-            )
-            .join("dvda-media.dll"),
+            library: media_library(),
             request: Request {
                 operation: Operation::Audio,
                 rate: 48000,
@@ -400,7 +390,7 @@ fn streamed_resampling_matches_the_wave_encoding_path() {
 }
 
 #[test]
-#[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+#[cfg(feature = "rust-mlp")]
 #[ignore = "requires source-built media runtime"]
 fn streamed_decode_cancellation_discards_all_outputs() {
     let root = Scratch::new();
@@ -422,10 +412,7 @@ fn streamed_decode_cancellation_discards_all_outputs() {
         let output = root.0.join("cancelled.mlp");
         let error = audio::check_decode(
             &audio::Job {
-                library: PathBuf::from(
-                    std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
-                )
-                .join("dvda-media.dll"),
+                library: media_library(),
                 input: input.to_string_lossy().into_owned(),
                 operation: audio::Operation::Decode,
                 resample_to: None,
@@ -613,15 +600,7 @@ fn encoder_transactions_and_parallel_calls() {
 }
 
 fn batch_job(root: &Path, cases: &[Case]) -> dvda_core::batch::Job {
-    let media_library = PathBuf::from(
-        std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("Set DVDA_MEDIA_NATIVE_DIR"),
-    )
-    .join("dvda-media.dll");
-    let media_library = if media_library.is_file() {
-        media_library
-    } else {
-        PathBuf::from(std::env::var_os("DVDA_TEST_AUTHOR").expect("Set DVDA_TEST_AUTHOR"))
-    };
+    let media_library = media_library();
     dvda_core::batch::Job {
         media_library,
         encoder_library: std::env::var_os("DVDA_ENCODER_LIBRARY")
@@ -818,8 +797,7 @@ fn mlp_acquisition_upgrades_legacy_parameter_cache_without_reencoding_or_track_c
     let cache = root.0.join("cache.json");
     let output = root.0.join("output");
     let job = || dvda_core::mlp_workflow::Job {
-        media_library: PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").unwrap())
-            .join("dvda-media.dll"),
+        media_library: media_library(),
         encoder_library: library(),
         source_root: root.0.to_string_lossy().into_owned(),
         output_root: output.clone(),
@@ -961,9 +939,8 @@ fn synthetic_batch_worker_benchmark() {
             executable.get(offset..offset + 12 + length + end)
         })
         .expect("embedded verified runtime archive");
-    let runtime = dvda_core::runtime::extract(archive, &root.join("runtime")).unwrap();
-    let media_library = runtime.join("dvda-media.dll");
-    assert!(media_library.is_file());
+    let _runtime = dvda_core::runtime::extract(archive, &root.join("runtime")).unwrap();
+    let media_library = media_library();
     let fixtures: Fixtures =
         serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
     let mut measurements = Vec::new();

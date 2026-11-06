@@ -235,7 +235,7 @@ mod metrics;
     reason = "MLP import retains shared native format arguments and owned track records"
 )]
 pub mod mlp_import;
-#[cfg(all(feature = "direct-bridges", feature = "rust-mlp"))]
+#[cfg(feature = "rust-mlp")]
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -383,7 +383,6 @@ pub mod verify;
     reason = "Audio verification retains complete per-track comparison stages"
 )]
 pub mod verify_audio;
-#[cfg(feature = "direct-bridges")]
 #[allow(
     clippy::cast_possible_truncation,
     clippy::needless_pass_by_value,

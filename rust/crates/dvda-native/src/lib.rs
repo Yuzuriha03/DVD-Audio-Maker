@@ -4,6 +4,7 @@ pub mod disc_verify;
 pub mod encoder;
 pub mod files;
 pub mod images;
+mod library;
 pub mod media;
 mod mlp_formats;
 mod pcm_formats;

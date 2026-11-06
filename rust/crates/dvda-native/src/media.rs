@@ -1,17 +1,9 @@
 //! Typed API for the project's in-process C media implementation.
 use serde::{Deserialize, Serialize};
-#[cfg(not(feature = "direct-bridges"))]
-use std::{
-    collections::HashMap,
-    os::windows::ffi::OsStrExt,
-    path::PathBuf,
-    sync::{Mutex, OnceLock},
-};
 use std::{
     ffi::{CStr, CString, c_char, c_void},
     io,
     panic::{AssertUnwindSafe, catch_unwind},
-    path::Path,
     sync::Arc,
 };
 
@@ -97,31 +89,6 @@ impl Request {
     }
 }
 
-#[cfg(any(test, not(feature = "direct-bridges")))]
-#[repr(C)]
-struct RawRequest {
-    size: u32,
-    abi: u32,
-    operation: u32,
-    rate: u32,
-    bits: u32,
-    output_format: u32,
-    soxr: u32,
-    dither: u32,
-    compression: u32,
-    cover: u32,
-    tag_count: u32,
-    input: *const c_char,
-    output: *const c_char,
-    tags: *const *const c_char,
-}
-#[cfg(not(feature = "direct-bridges"))]
-pub(crate) type Emit = unsafe extern "C" fn(*mut c_void, i32, *const c_char);
-#[cfg(not(feature = "direct-bridges"))]
-pub(crate) type Cancel = unsafe extern "C" fn(*mut c_void) -> i32;
-#[cfg(not(feature = "direct-bridges"))]
-type Run = unsafe extern "C" fn(*const RawRequest, Emit, Cancel, *mut c_void) -> i32;
-
 /// Callbacks are synchronous and run on the calling thread. No borrowed state is retained.
 pub trait Callbacks {
     fn emit(&mut self, stream: i32, text: &str);
@@ -203,15 +170,6 @@ pub(crate) unsafe extern "C" fn cancel(state: *mut c_void) -> i32 {
     }
 }
 
-#[cfg(not(feature = "direct-bridges"))]
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    fn LoadLibraryExW(path: *const u16, file: *mut c_void, flags: u32) -> *mut c_void;
-    fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
-    fn FreeLibrary(module: *mut c_void) -> i32;
-}
-
-#[cfg(feature = "direct-bridges")]
 /// Return the native media module and its resolved dependency paths.
 ///
 /// # Errors
@@ -285,85 +243,13 @@ pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
     Ok(paths)
 }
 
-pub struct Media {
-    #[cfg(not(feature = "direct-bridges"))]
-    module: *mut c_void,
-    #[cfg(not(feature = "direct-bridges"))]
-    run: Run,
-}
-// The dynamically loaded C module uses per-call/TLS state and thread-safe initialization.
-// Direct bridges contain no raw module handle and derive the auto traits normally.
-#[cfg(not(feature = "direct-bridges"))]
-unsafe impl Send for Media {}
-#[cfg(not(feature = "direct-bridges"))]
-unsafe impl Sync for Media {}
-impl Drop for Media {
-    fn drop(&mut self) {
-        #[cfg(not(feature = "direct-bridges"))]
-        unsafe {
-            FreeLibrary(self.module);
-        }
-    }
-}
+pub struct Media;
 impl Media {
-    #[cfg(feature = "direct-bridges")]
     #[must_use]
     pub fn linked() -> Arc<Self> {
-        Arc::new(Self {})
+        Arc::new(Self)
     }
 
-    /// Compatibility entry point; direct builds use the linked implementation, not this path.
-    ///
-    /// # Errors
-    /// Direct builds always return `Ok`; dynamic builds report path, library, symbol, and cache-lock failures.
-    #[cfg(feature = "direct-bridges")]
-    pub fn load(_path: &Path) -> io::Result<Arc<Self>> {
-        Ok(Self::linked())
-    }
-
-    /// Load and cache the native media library from an explicit path.
-    ///
-    /// # Errors
-    /// Propagates path conversion, library loading, symbol resolution, and cache-lock failures.
-    #[cfg(not(feature = "direct-bridges"))]
-    pub fn load(path: &Path) -> io::Result<Arc<Self>> {
-        static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Media>>>> = OnceLock::new();
-        let path = std::path::absolute(path)?;
-        let mut cache = CACHE
-            .get_or_init(Default::default)
-            .lock()
-            .map_err(|_| io::Error::other("Media library cache lock poisoned"))?;
-        if let Some(media) = cache.get(&path) {
-            return Ok(Arc::clone(media));
-        }
-        let mut wide: Vec<_> = path.as_os_str().encode_wide().collect();
-        if wide.contains(&0) {
-            return Err(io::Error::from_raw_os_error(123));
-        }
-        wide.push(0);
-        // Only resolve dependent DLLs beside this library and in System32, never PATH/CWD.
-        let module = unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), 0x100 | 0x800) };
-        if module.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        let entry = unsafe { GetProcAddress(module, c"dvdamedia_run".as_ptr()) };
-        if entry.is_null() {
-            let error = io::Error::last_os_error();
-            unsafe {
-                FreeLibrary(module);
-            }
-            return Err(error);
-        }
-        // SAFETY: dvdamedia_run is the fixed C ABI defined in native/dvda-media.c.
-        let media = Arc::new(Self {
-            module,
-            run: unsafe { std::mem::transmute::<*mut c_void, Run>(entry) },
-        });
-        cache.insert(path, Arc::clone(&media));
-        Ok(media)
-    }
-
-    #[cfg(feature = "direct-bridges")]
     /// Execute a validated media request with synchronous callbacks.
     ///
     /// # Errors
@@ -414,7 +300,6 @@ impl Media {
         Ok(result)
     }
 
-    #[cfg(feature = "direct-bridges")]
     /// Execute a media conversion and stream normalized PCM into a sink.
     ///
     /// # Errors
@@ -454,66 +339,6 @@ impl Media {
         }
         Ok(result)
     }
-
-    #[cfg(not(feature = "direct-bridges"))]
-    /// Execute a validated media request with synchronous callbacks.
-    ///
-    /// # Errors
-    /// Propagates request validation, path conversion, media processing, and callback failures.
-    ///
-    /// # Panics
-    /// Panics only if the compile-time native request size cannot fit in `u32`.
-    #[expect(
-        clippy::items_after_statements,
-        reason = "The path conversion helper is scoped to the dynamic request adapter"
-    )]
-    pub fn run(&self, request: &Request, callbacks: &mut dyn Callbacks) -> io::Result<i32> {
-        request.validate()?;
-        fn string(text: &str) -> io::Result<CString> {
-            CString::new(text).map_err(|_| io::Error::from_raw_os_error(123))
-        }
-        let input = string(&request.input)?;
-        let output = request.output.as_deref().map(string).transpose()?;
-        let tags: Vec<CString> = request
-            .tags
-            .iter()
-            .flat_map(|(key, value)| [key.as_str(), value.as_str()])
-            .map(string)
-            .collect::<io::Result<_>>()?;
-        let pointers: Vec<_> = tags.iter().map(|tag| tag.as_ptr()).collect();
-        let raw = RawRequest {
-            size: u32::try_from(std::mem::size_of::<RawRequest>())
-                .expect("native request fits in u32"),
-            abi: 2,
-            operation: request.operation as u32,
-            rate: request.rate,
-            bits: request.bits,
-            output_format: request.output_format as u32,
-            soxr: u32::from(request.soxr),
-            dither: u32::from(request.dither),
-            compression: request.compression,
-            cover: u32::from(request.cover),
-            tag_count: u32::try_from(request.tags.len())
-                .map_err(|_| io::Error::other("Too many media tags"))?,
-            input: input.as_ptr(),
-            output: output.as_ref().map_or(std::ptr::null(), |p| p.as_ptr()),
-            tags: if pointers.is_empty() {
-                std::ptr::null()
-            } else {
-                pointers.as_ptr()
-            },
-        };
-        let mut state = CallbackState {
-            callbacks,
-            panicked: false,
-        };
-        // SAFETY: every pointer remains live until this synchronous function returns.
-        let result = unsafe { (self.run)(&raw const raw, emit, cancel, (&raw mut state).cast()) };
-        if state.panicked {
-            return Err(io::Error::other("Panic caught in media callback"));
-        }
-        Ok(result)
-    }
 }
 
 #[cfg(test)]
@@ -535,14 +360,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn media_abi_matches_c_header() {
-        assert_eq!(std::mem::size_of::<RawRequest>(), 72);
-        assert_eq!(std::mem::offset_of!(RawRequest, input), 48);
-        assert_eq!(std::mem::offset_of!(RawRequest, tags), 64);
-    }
-
-    #[cfg(feature = "direct-bridges")]
     #[test]
     fn dependency_identity_contains_actual_loaded_ffmpeg() {
         assert_ne!(unsafe { dvda_bridges::ffmpeg::avcodec_version() }, 0);

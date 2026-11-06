@@ -70,15 +70,12 @@ pub fn execute_with_image_cache(
 
 pub struct Backend;
 
-#[cfg(feature = "direct-bridges")]
 fn string(value: &str) -> Result<std::ffi::CString, String> {
     std::ffi::CString::new(value).map_err(|_| "Menu argument contains NUL".into())
 }
-#[cfg(feature = "direct-bridges")]
 fn path(value: &Path) -> Result<std::ffi::CString, String> {
     string(value.to_str().ok_or("Menu path is not valid Unicode")?)
 }
-#[cfg(feature = "direct-bridges")]
 fn status(code: i32, callbacks: &mut dyn dvda_author::Callbacks) -> Result<(), String> {
     if callbacks.cancelled() {
         Err("Author cancelled".into())
@@ -168,27 +165,19 @@ impl dvda_author::menu::Backend for Backend {
         // Mapping SECAM to "pal" selects that shared disc layout; SECAM analogue
         // output remains the player's responsibility and is not a colour conversion here.
         let norm = if norm == "ntsc" { "ntsc" } else { "pal" };
-        #[cfg(feature = "direct-bridges")]
-        {
-            status(
-                unsafe {
-                    dvda_bridges::menu_media::dvda_menu_create_mpg(
-                        path(y4m)?.as_ptr(),
-                        path(wav)?.as_ptr(),
-                        path(output)?.as_ptr(),
-                        string(norm)?.as_ptr(),
-                        string(aspect)?.as_ptr(),
-                        i32::from(still),
-                    )
-                },
-                callbacks,
-            )
-        }
-        #[cfg(not(feature = "direct-bridges"))]
-        {
-            let _ = (y4m, wav, output, norm, aspect, still, callbacks);
-            Err("Menu authoring requires the direct-bridges feature".into())
-        }
+        status(
+            unsafe {
+                dvda_bridges::menu_media::dvda_menu_create_mpg(
+                    path(y4m)?.as_ptr(),
+                    path(wav)?.as_ptr(),
+                    path(output)?.as_ptr(),
+                    string(norm)?.as_ptr(),
+                    string(aspect)?.as_ptr(),
+                    i32::from(still),
+                )
+            },
+            callbacks,
+        )
     }
     fn subpictures(
         &mut self,
@@ -197,18 +186,10 @@ impl dvda_author::menu::Backend for Backend {
         output: &Path,
         callbacks: &mut dyn dvda_author::Callbacks,
     ) -> Result<(), String> {
-        #[cfg(feature = "direct-bridges")]
-        {
-            status(
-                dvda_bridges::menu::subpictures(xml, input, output),
-                callbacks,
-            )
-        }
-        #[cfg(not(feature = "direct-bridges"))]
-        {
-            let _ = (xml, input, output, callbacks);
-            Err("Menu authoring requires the direct-bridges feature".into())
-        }
+        status(
+            dvda_bridges::menu::subpictures(xml, input, output),
+            callbacks,
+        )
     }
     fn navigation(
         &mut self,
@@ -216,15 +197,7 @@ impl dvda_author::menu::Backend for Backend {
         output: &Path,
         callbacks: &mut dyn dvda_author::Callbacks,
     ) -> Result<(), String> {
-        #[cfg(feature = "direct-bridges")]
-        {
-            status(dvda_bridges::menu::navigation(xml, output), callbacks)
-        }
-        #[cfg(not(feature = "direct-bridges"))]
-        {
-            let _ = (xml, output, callbacks);
-            Err("Menu authoring requires the direct-bridges feature".into())
-        }
+        status(dvda_bridges::menu::navigation(xml, output), callbacks)
     }
 }
 
