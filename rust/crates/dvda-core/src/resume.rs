@@ -48,6 +48,13 @@ impl Store {
         let parsed = crate::verification::parse_audit_log(log);
         (!parsed.rows.is_empty() && parsed.commands.len() == 1).then_some(log)
     }
+    /// Record a validated disc and persist the updated resume entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ISO identity cannot be read or the resume JSON
+    /// cannot be serialized, written, or replaced. A persistence failure leaves
+    /// the new entry in memory.
     pub fn record(
         &mut self,
         disc: usize,
@@ -110,6 +117,14 @@ fn validate_entries(value: Value) -> Result<Map<String, Value>, String> {
     Ok(validated)
 }
 
+/// Hash the disc configuration, author executable, sources, and menu assets.
+///
+/// # Errors
+///
+/// Returns an error if the base disc signature cannot be computed, the current
+/// executable cannot be located or read, a source identity cannot be read, menu
+/// asset enumeration or hashing fails, or the combined evidence cannot be
+/// serialized.
 pub fn disc_signature(job: &Job, disc: &Disc) -> Result<String, String> {
     let value = signature::dispatch(
         "build.disc_signature",

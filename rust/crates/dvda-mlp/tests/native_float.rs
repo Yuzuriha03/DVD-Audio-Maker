@@ -3,7 +3,6 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::format_push_string,
     clippy::too_many_lines,
     clippy::unreadable_literal,
     reason = "Decoder fixtures construct deterministic PCM and complete independent validation matrices"
@@ -14,7 +13,7 @@ use dvda_mlp::{
     format::Profile,
     metadata::Metadata,
 };
-use std::{process::Command, time::Instant};
+use std::{fmt::Write as _, process::Command, time::Instant};
 
 struct Io {
     pcm: Vec<i32>,
@@ -199,10 +198,11 @@ fn native_float_lossless_matrix() {
                     );
                     assert!(raw[expected.len()..].iter().all(|&x| x == 0));
                     assert_eq!(raw.len(), result.encoded_frames as usize * channels * 4);
-                    report.push_str(&format!(
-                        "{rate},{bits},{channels},{pattern},{},{elapsed}\n",
+                    let _ = writeln!(
+                        report,
+                        "{rate},{bits},{channels},{pattern},{},{elapsed}",
                         io.output.len()
-                    ));
+                    );
                 }
             }
         }

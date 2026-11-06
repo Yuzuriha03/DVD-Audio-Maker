@@ -1,10 +1,8 @@
 //! CLI compatibility and complete disc assembly. Audio, tables and filesystem
 //! generation stay in Rust; image/video codecs are supplied by the menu backend.
 #![expect(
-    clippy::assigning_clones,
     clippy::cast_possible_truncation,
     clippy::items_after_statements,
-    clippy::needless_continue,
     clippy::too_many_lines,
     reason = "Command orchestration retains complete authoring transactions and validated CLI field widths"
 )]
@@ -259,7 +257,7 @@ pub fn parse(arguments: &[String]) -> Result<Request, String> {
             "-D" | "--tempdir" => request.temporary = PathBuf::from(value()?),
             "--iso" => request.iso = Some(PathBuf::from(value()?)),
             "--iso-volume" => request.volume = Some(value()?.to_owned()),
-            "--provider" => request.manager.provider = value()?.to_owned(),
+            "--provider" => value()?.clone_into(&mut request.manager.provider),
             "--autoplay" | "-a" => request.manager.autoplay = true,
             "--playlist" => {
                 request.manager.playlist_groups = value()?
@@ -568,7 +566,7 @@ pub fn author(
         ));
         match fs::create_dir(&directory) {
             Ok(()) => break Staging(directory, true),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(e.to_string()),
         }
     };
@@ -790,7 +788,7 @@ pub fn author(
             ));
             match OpenOptions::new().write(true).create_new(true).open(&path) {
                 Ok(_) => break StagedIso(path),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(e) => return Err(e.to_string()),
             }
         };

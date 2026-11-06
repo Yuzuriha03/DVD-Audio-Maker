@@ -141,6 +141,12 @@ fn write_index(request: Value) -> Result<Value, String> {
     fs::write(&path, &bytes).map_err(|e| format!("{path}: {e}"))?;
     Ok(Value::Bool(true))
 }
+/// Writes the acquisition index for `build.write_index`.
+///
+/// # Errors
+/// Rejects unsupported operations and case-insensitive duplicate MLP paths.
+/// Propagates menu-planning, JSON serialization, directory creation, and index
+/// file writing errors. Title-boundary lookup failures are ignored.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     if operation == "build.write_index" {
         write_index(request)

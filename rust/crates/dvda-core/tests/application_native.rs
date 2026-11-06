@@ -3,7 +3,6 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::format_push_string,
     clippy::items_after_statements,
     clippy::needless_pass_by_value,
     clippy::too_many_lines,
@@ -13,6 +12,7 @@ use dvda_core::{app, media, verify_audio};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde_json::{Value, json};
 use std::{
+    fmt::Write as _,
     fs,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -1014,10 +1014,11 @@ fn render_command(command: &dvda_core::verification::DiscCommand) -> String {
         command.disc_tag
     );
     for row in &command.rows {
-        result.push_str(&format!(
-            "{} {}/1 {} {} {} {} {} 0\n",
+        let _ = writeln!(
+            result,
+            "{} {}/1 {} {} {} {} {} 0",
             row.group, row.title, row.track, row.first, row.last, row.pts, row.length
-        ));
+        );
     }
     result
 }

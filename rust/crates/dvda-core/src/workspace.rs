@@ -90,7 +90,7 @@ impl Workspace {
             ));
             match fs::create_dir(&path) {
                 Ok(()) => return Self::open(path, false),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(error) => {
                     return Err(format!(
                         "Cannot create task workspace {}: {error}",

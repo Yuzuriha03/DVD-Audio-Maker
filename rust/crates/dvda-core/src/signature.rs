@@ -78,6 +78,12 @@ fn task_file_hash(path: &Path) -> Result<String, String> {
 /// Cache identity includes the code that converts PCM, its native dependencies,
 /// the codec, and the exact optional metadata context. Full hashes also detect
 /// replacements that preserve file size and timestamps.
+///
+/// # Errors
+/// Returns an error if the executable path or loaded media dependencies cannot
+/// be obtained, dependency directories cannot be enumerated, a required file
+/// cannot be identified or read, or the canonical identity cannot be serialized.
+/// A nonempty metadata context is a file path and must also be readable.
 pub fn encoding_identity(
     policy: &str,
     media: &Path,
@@ -221,6 +227,14 @@ fn default_menu_norm() -> String {
     "pal".into()
 }
 
+/// Computes the requested disc resume signature.
+///
+/// # Errors
+/// Returns an error for an unsupported operation or malformed request, an
+/// unreadable executable or included library, directory enumeration failures
+/// other than a missing optional directory, an invalid enabled-menu language,
+/// or incomplete fields in a successfully obtained track identity.
+/// Unavailable track identities are recorded as missing instead.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     if operation != "build.disc_signature" {
         return Err(format!("Unsupported signature operation: {operation}"));

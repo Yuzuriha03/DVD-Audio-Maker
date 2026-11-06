@@ -128,6 +128,13 @@ struct Request {
     #[serde(default)]
     sources: Vec<String>,
 }
+/// Dispatch preparation normalization and snapshot operations.
+///
+/// # Errors
+///
+/// Returns an error for an unknown operation, a request that cannot deserialize
+/// to the operation's input type, or a source enumeration failure during listing
+/// or snapshot reuse. Snapshot save failures are reported as `Ok(false)`.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     if operation == "prepare.normalize_albums" {
         let mut tracks: Vec<Metadata> =

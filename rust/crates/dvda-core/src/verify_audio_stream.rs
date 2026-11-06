@@ -292,7 +292,7 @@ fn decode(
     };
     let mut sink = DecoderSink::new(side, channels, rate, bits, send.clone(), recycled);
     let result = (|| {
-        let media = crate::native_components::media(library).map_err(|error| error.to_string())?;
+        let media = crate::native_components::media(library);
         let status = media
             .run_pcm(
                 &Request {

@@ -34,6 +34,12 @@ pub struct AuditLogData {
     pub commands: Vec<DiscCommand>,
 }
 
+/// Parses audit-log evidence or checks an ISO filename.
+///
+/// # Errors
+/// Returns an error for an unsupported operation, non-string audit-log input,
+/// an ISO-name request that is not an object or lacks a string path, or failure
+/// to serialize parsed audit evidence.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "verify.parse_audit_log" => {

@@ -77,12 +77,24 @@ pub fn matches(path: &str, expected: &Value) -> bool {
             .all(|key| !expected[*key].is_null() && current[*key] == expected[*key])
     })
 }
+/// Read a JSON value, accepting an optional UTF-8 BOM.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened or read, or its contents are
+/// not valid JSON.
 pub fn read_json(path: &Path) -> Result<Value, Failure> {
     let mut bytes = Vec::new();
     identity::open_read(&path.to_string_lossy())?.read_to_end(&mut bytes)?;
     serde_json::from_slice(bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes))
         .map_err(|error| Failure::new("InvalidData", &error.to_string()))
 }
+/// Write bytes through a temporary file and replace the destination.
+///
+/// # Errors
+///
+/// Returns an error if parent directories or the exclusive temporary file cannot
+/// be created, writing fails, or the temporary file cannot replace the destination.
 pub fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
@@ -101,6 +113,12 @@ pub fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
     owned.0 = None;
     Ok(())
 }
+/// Serialize pretty JSON with a trailing CRLF and replace the destination.
+///
+/// # Errors
+///
+/// Returns an error if serialization fails or [`write_bytes`] cannot create,
+/// write, or commit the destination file.
 pub fn write_json(path: &Path, value: &impl Serialize) -> Result<(), Failure> {
     let mut data = serde_json::to_vec_pretty(value)
         .map_err(|error| Failure::new("InvalidData", &error.to_string()))?;
@@ -177,6 +195,12 @@ impl Cache {
         self.entries
             .binary_search_by(|(key, _)| files::ordinal_ignore_case_cmp(key, path))
     }
+    /// Persist the current cache entries as JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if JSON serialization or creating, writing, or replacing
+    /// the cache file fails.
     pub fn save(&self, path: &Path) -> Result<(), Failure> {
         let entries: Map<_, _> = self
             .entries
@@ -241,6 +265,13 @@ pub fn record(
         },
     );
 }
+/// Enumerate FLAC and M4A sources recursively in UTF-16 path order.
+/// A root that is not a directory produces an empty list.
+///
+/// # Errors
+///
+/// Returns an error if a directory cannot be canonicalized or enumerated, an
+/// entry cannot be read, or a directory link leads back to an ancestor.
 pub fn enumerate_sources(root: &Path) -> Result<Vec<String>, Failure> {
     let mut result = Vec::new();
     if !root.is_dir() {
@@ -342,6 +373,14 @@ pub fn invalidate(path: &Path) {
         let _ = fs::remove_file(path);
     }
 }
+/// Check a saved snapshot against configuration, manifest, and source identities.
+/// Missing, invalid, or outdated snapshots return `Ok` with no reusable value
+/// and an explanation.
+///
+/// # Errors
+///
+/// Returns an error if source enumeration fails, including unreadable directories
+/// or directory link cycles; see [`enumerate_sources`].
 pub fn reuse_snapshot(
     path: &Path,
     root: &str,

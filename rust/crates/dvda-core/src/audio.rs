@@ -244,13 +244,13 @@ fn run(
             .map(|output| output.output.to_string_lossy().into_owned()),
         tags: Vec::new(),
     };
-    let result = if let Some(_destination) = streamed {
+    let result = if let Some(destination) = streamed {
         #[cfg(feature = "rust-mlp")]
         {
             crate::mlp_stream::execute(
                 &job.library,
                 &job.input,
-                _destination,
+                destination,
                 decode_output.unwrap().rate,
                 decode_output.unwrap().bits,
                 decode_output.unwrap().dither,
@@ -258,7 +258,10 @@ fn run(
             )
         }
         #[cfg(not(feature = "rust-mlp"))]
-        unreachable!("streamed output is disabled without rust-mlp")
+        {
+            let _ = destination;
+            unreachable!("streamed output is disabled without rust-mlp")
+        }
     } else {
         media::execute(
             media::Job {

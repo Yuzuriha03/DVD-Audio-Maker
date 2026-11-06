@@ -1,9 +1,7 @@
 //! Validate provenance, architecture and the complete DLL closure before staging.
 #![expect(
     clippy::case_sensitive_file_extension_comparisons,
-    clippy::format_collect,
-    clippy::too_many_lines,
-    reason = "Validation uses normalized package names and retains sequential provenance checks"
+    reason = "Validation uses normalized package names"
 )]
 #![allow(
     clippy::needless_pass_by_value,
@@ -49,80 +47,10 @@ pub fn validate(media: &Path, image: &Path, author: &Path, target: &str) -> Resu
     if author_record["implementation"] == "rust"
         && author_record["ffmpeg_linkage"] == "static-source-built"
     {
-        let manifest = media.join("build-manifest.json");
-        let native = read_json(&manifest)?;
-        if native["target"] != target
-            || native["toolchain"] != "msvc"
-            || native["profile"] != "static"
-            || native["linkage"] != "static"
-            || native["crt"] != "static"
-        {
-            return Err("Static FFmpeg requires the authenticated MSVC static profile".into());
-        }
-        if author_record["ffmpeg_manifest"]["sha256"].as_str()
-            != Some(file_hash(&manifest)?.as_str())
-        {
-            return Err("Author and package FFmpeg manifests differ".into());
-        }
-        for name in [
-            "avcodec",
-            "avformat",
-            "avutil",
-            "swscale",
-            "swresample",
-            "soxr",
-        ] {
-            let filename = format!("{name}.lib");
-            let path = media.join("lib").join(&filename);
-            let bytes = fs::read(&path).map_err(err)?;
-            let entry = &native["files"][&filename];
-            if !bytes.starts_with(b"!<arch>\n")
-                || entry["sha256"].as_str() != Some(hash(&bytes).as_str())
-                || entry["bytes"].as_u64() != Some(bytes.len() as u64)
-            {
-                return Err(format!(
-                    "Static FFmpeg archive checksum mismatch: {filename}"
-                ));
-            }
-        }
-        let mut inputs = validate_rust_author(author, &author_record, target)?;
-        inputs.records.push(manifest);
-        return Ok(inputs);
+        return validate_static_media(media, author, &author_record, target);
     }
     if author_record["implementation"] == "rust" {
-        let (media_record, mut media_files) = component(
-            media,
-            "media-build.json",
-            "files",
-            &[
-                "avcodec-63.dll",
-                "avformat-63.dll",
-                "avutil-61.dll",
-                "swresample-7.dll",
-                "swscale-10.dll",
-            ],
-            false,
-            true,
-            target,
-        )?;
-        if media_record["profile"] != "shared" {
-            return Err("Onefile media runtime must use profile=shared".into());
-        }
-        media_files.remove("dvda-media.dll");
-        let mut linked = validate_rust_author(author, &author_record, target)?;
-        for (name, path) in media_files {
-            if let Some(existing) = linked.files.get(&name) {
-                if fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)? {
-                    return Err(format!(
-                        "Shared native component differs between consumers: {name}"
-                    ));
-                }
-            } else {
-                linked.files.insert(name, path);
-            }
-        }
-        linked.records.push(media.join("media-build.json"));
-        return Ok(linked);
+        return validate_shared_media(media, author, &author_record, target);
     }
     let mut inputs = Inputs {
         files: BTreeMap::new(),
@@ -204,6 +132,96 @@ pub fn validate(media: &Path, image: &Path, author: &Path, target: &str) -> Resu
     Ok(inputs)
 }
 
+fn validate_shared_media(
+    media: &Path,
+    author: &Path,
+    author_record: &Value,
+    target: &str,
+) -> Result<Inputs, String> {
+    let (media_record, mut media_files) = component(
+        media,
+        "media-build.json",
+        "files",
+        &[
+            "avcodec-63.dll",
+            "avformat-63.dll",
+            "avutil-61.dll",
+            "swresample-7.dll",
+            "swscale-10.dll",
+        ],
+        false,
+        true,
+        target,
+    )?;
+    if media_record["profile"] != "shared" {
+        return Err("Onefile media runtime must use profile=shared".into());
+    }
+    media_files.remove("dvda-media.dll");
+    let mut linked = validate_rust_author(author, author_record, target)?;
+    for (name, path) in media_files {
+        if let Some(existing) = linked.files.get(&name) {
+            if fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)? {
+                return Err(format!(
+                    "Shared native component differs between consumers: {name}"
+                ));
+            }
+        } else {
+            linked.files.insert(name, path);
+        }
+    }
+    linked.records.push(media.join("media-build.json"));
+    Ok(linked)
+}
+
+fn validate_static_media(
+    media: &Path,
+    author: &Path,
+    author_record: &Value,
+    target: &str,
+) -> Result<Inputs, String> {
+    let manifest = media.join("build-manifest.json");
+    let native = read_json(&manifest)?;
+    if native["target"] != target
+        || native["toolchain"] != "msvc"
+        || native["profile"] != "static"
+        || native["linkage"] != "static"
+        || native["crt"] != "static"
+    {
+        return Err("Static FFmpeg requires the authenticated MSVC static profile".into());
+    }
+    if author_record["ffmpeg_manifest"]["sha256"].as_str() != Some(file_hash(&manifest)?.as_str()) {
+        return Err("Author and package FFmpeg manifests differ".into());
+    }
+    for name in [
+        "avcodec",
+        "avformat",
+        "avutil",
+        "swscale",
+        "swresample",
+        "soxr",
+    ] {
+        let filename = format!("{name}.lib");
+        let path = media.join("lib").join(&filename);
+        let bytes = fs::read(&path).map_err(err)?;
+        let entry = &native["files"][&filename];
+        if !bytes.starts_with(b"!<arch>\n")
+            || entry["sha256"].as_str() != Some(hash(&bytes).as_str())
+            || entry["bytes"].as_u64() != Some(bytes.len() as u64)
+        {
+            return Err(format!(
+                "Static FFmpeg archive checksum mismatch: {filename}"
+            ));
+        }
+    }
+    let mut inputs = validate_rust_author(author, author_record, target)?;
+    inputs.records.push(manifest);
+    Ok(inputs)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep ordered author provenance and inventory checks together"
+)]
 fn validate_rust_author(author: &Path, record: &Value, target: &str) -> Result<Inputs, String> {
     let static_ffmpeg = record["ffmpeg_linkage"] == "static-source-built"
         && record["ffmpeg_profile"] == "build-msvc-ffmpeg.py:static";
@@ -563,8 +581,11 @@ pub fn validate_shipped(executable: &Path, target: &str) -> Result<(), String> {
 pub fn hash(bytes: &[u8]) -> String {
     dvda_core::hash::sha256(bytes)
         .iter()
-        .map(|value| format!("{value:02x}"))
-        .collect()
+        .fold(String::new(), |mut text, value| {
+            use std::fmt::Write as _;
+            let _ = write!(text, "{value:02x}");
+            text
+        })
 }
 pub fn file_hash(path: &Path) -> Result<String, String> {
     Ok(hash(&fs::read(path).map_err(err)?))

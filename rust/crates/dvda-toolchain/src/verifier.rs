@@ -1,8 +1,4 @@
 //! Developer-only streaming verifier for authored AOB fixtures.
-#![expect(
-    clippy::needless_continue,
-    reason = "Interrupted reads retain the explicit retry loop"
-)]
 use std::{fs::File, io::Read, path::PathBuf};
 
 pub fn run(args: &[String]) -> Result<(), String> {
@@ -66,7 +62,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 match current.as_mut().unwrap().read(&mut data[filled..]) {
                     Ok(0) => break,
                     Ok(length) => filled += length,
-                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
                     Err(error) => return Some(Err(error.to_string())),
                 }
             }

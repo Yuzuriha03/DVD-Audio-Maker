@@ -3,8 +3,6 @@
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
     clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    clippy::used_underscore_binding,
     reason = "Control helpers preserve Win32 handle widths, callback contracts, and layout arithmetic"
 )]
 //! Control creation (the settings pages and toolbars), owner-drawn buttons, checkboxes,
@@ -55,6 +53,10 @@ pub(crate) struct CreateSpec<'a> {
     pub(crate) id: usize,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Ordered control creation shares handle registries and assembles one UiState; splitting requires a parallel mutable state structure"
+)]
 pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     // Only entries of destroyed windows are dropped; other windows' controls stay.
     if let Some(registry) = CONTROL_RECTS.get()
@@ -488,7 +490,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         browse.insert(id, (field, BrowseKind::Font));
         browse_buttons.push(handle);
     }
-    let _operation_section = label!(
+    let operation_section = label!(
         parent,
         tr(lang, "operation_section"),
         "operation_section",
@@ -529,7 +531,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         8,
         0,
     );
-    let _log_section = label!(
+    let log_section = label!(
         parent,
         tr(lang, "log_section"),
         "log_section",
@@ -705,8 +707,8 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     let muted = vec![
         profile_label,
         origin,
-        _operation_section,
-        _log_section,
+        operation_section,
+        log_section,
         activity,
         c.statistics,
         advanced_hint,
@@ -1427,6 +1429,10 @@ pub(crate) unsafe extern "system" fn combo_arrow_proc(
 /// # Safety
 /// `hwnd` must be a combo arrow overlay installed by `install_combo_arrow`, and this
 /// must run inside its `WM_PAINT`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps the buffered paint lifetime and GDI object restoration visible in one ordered drawing operation"
+)]
 pub(crate) unsafe fn draw_combo_arrow(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_card()) };

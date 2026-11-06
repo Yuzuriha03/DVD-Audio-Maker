@@ -4,7 +4,6 @@
 //! Build provenance files, source trees, C# outputs and local profiles never
 //! enter the user package.
 #![expect(
-    clippy::format_push_string,
     clippy::too_many_lines,
     reason = "Release assembly retains sequential packaging stages"
 )]
@@ -20,7 +19,9 @@ mod validation;
 mod verifier;
 
 use std::{
-    env, fs,
+    env,
+    fmt::Write as _,
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -320,7 +321,10 @@ fn package(options: Args) -> Result<(), String> {
     let mut typemap = String::from("<typemap>");
     for (face, language) in [(0, "SC"), (1, "JP"), (2, "KR"), (3, "TC")] {
         for prefix in ["DVDA-", ""] {
-            typemap.push_str(&format!("<type name=\"{prefix}Noto-Sans-CJK-{language}\" family=\"Noto Sans CJK {language}\" format=\"truetype\" style=\"normal\" stretch=\"normal\" weight=\"400\" face=\"{face}\" glyphs=\"fonts/DvdaNotoCJK-Regular.ttc\"/>"));
+            let _ = write!(
+                typemap,
+                "<type name=\"{prefix}Noto-Sans-CJK-{language}\" family=\"Noto Sans CJK {language}\" format=\"truetype\" style=\"normal\" stretch=\"normal\" weight=\"400\" face=\"{face}\" glyphs=\"fonts/DvdaNotoCJK-Regular.ttc\"/>"
+            );
         }
     }
     typemap.push_str("</typemap>");
@@ -421,7 +425,10 @@ fn write_records(
         let path = candidate.join(relative);
         let digest = validation::file_hash(&path)?;
         let name = relative.to_string_lossy().replace('\\', "/");
-        rows.push_str(&format!("{digest}  {name}\n"));
+        rows.push_str(&digest);
+        rows.push_str("  ");
+        rows.push_str(&name);
+        rows.push('\n');
         records.insert(name,serde_json::json!({"bytes":fs::metadata(path).map_err(io_error)?.len(),"sha256":digest}));
     }
     let sources: Vec<_> = inputs

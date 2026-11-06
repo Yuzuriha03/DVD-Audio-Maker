@@ -76,6 +76,10 @@ pub fn major_sync_interval(data: &[u8]) -> Option<i64> {
     None
 }
 
+/// Returns the major-sync interval, or JSON null for unusable input.
+///
+/// # Errors
+/// Returns an error only when the operation name is unsupported.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "mlp.major_sync_interval" => {
@@ -122,10 +126,11 @@ mod tests {
 
     #[test]
     fn dispatch_accepts_hex_request_and_invalid_hex_is_null() {
-        let encoded = fixture()
-            .iter()
-            .map(|value| format!("{value:02X}"))
-            .collect::<String>();
+        let encoded = fixture().iter().fold(String::new(), |mut text, value| {
+            use std::fmt::Write as _;
+            let _ = write!(text, "{value:02X}");
+            text
+        });
         assert_eq!(
             dispatch("mlp.major_sync_interval", json!({"DataHex": encoded})).unwrap(),
             json!(2)

@@ -477,8 +477,11 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                             .collect::<Vec<_>>()
                             .into_iter()
                             .rev()
-                            .map(|line| format!("\n{line}"))
-                            .collect::<String>()
+                            .fold(String::new(), |mut text, line| {
+                                text.push('\n');
+                                text.push_str(line);
+                                text
+                            })
                     ),
                 );
                 diagnostics.push(error(
@@ -935,7 +938,7 @@ fn independent_staging(root: &Path) -> Result<PathBuf, String> {
         ));
         match fs::create_dir(&path) {
             Ok(()) => return Ok(path),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error.to_string()),
         }
     }

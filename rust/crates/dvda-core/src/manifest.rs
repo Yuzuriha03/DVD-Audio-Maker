@@ -39,6 +39,13 @@ fn number(object: &Map<String, Value>, names: &[&str]) -> f64 {
 fn path_text(value: String) -> String {
     value.replace('/', "\\")
 }
+/// Loads manifest tracks and sorts them by date, track number, and UTF-16 title.
+/// Unavailable source or MLP file metadata contributes a zero size.
+///
+/// # Errors
+/// Returns an error if the manifest cannot be read as UTF-8 or parsed as a JSON
+/// object, a group sample rate or bit depth is outside its destination integer
+/// range, or an entry in a group's files array is not an object.
 pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
     let contents = fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
     let root: Map<String, Value> =
@@ -141,6 +148,11 @@ pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
     });
     Ok(tracks)
 }
+/// Loads manifest tracks from an owned JSON request.
+///
+/// # Errors
+/// Rejects non-object requests or missing/non-string `ManifestPath` and
+/// `MlpDirectory` fields. Propagates [`read`] errors and track serialization errors.
 pub fn dispatch(request: Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected manifest request")?;
     let path = field(object, &["ManifestPath"])

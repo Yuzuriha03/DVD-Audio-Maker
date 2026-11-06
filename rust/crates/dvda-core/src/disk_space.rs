@@ -51,6 +51,12 @@ fn available(root: &str) -> Option<u64> {
     } != 0)
         .then_some(bytes)
 }
+/// Returns advisory low-space diagnostics for the job's estimated volume usage.
+/// An unavailable free-space reading is logged as unknown, not treated as an error.
+///
+/// # Errors
+/// Returns an error if requirement estimation fails, or its response is not an
+/// array of entries with a string volume root and an unsigned byte requirement.
 pub fn check(
     job: &Job,
     tracks: &[Track],

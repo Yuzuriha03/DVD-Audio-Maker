@@ -1,6 +1,5 @@
 #![allow(
     clippy::cast_possible_truncation,
-    clippy::format_push_string,
     clippy::match_wildcard_for_single_variants,
     clippy::too_many_lines,
     reason = "Task lifecycle code preserves typed event dispatch and incremental diagnostic formatting"
@@ -23,10 +22,12 @@ pub(crate) fn emit_preparation_issues(
     for issue in issues {
         let mut text = format!("[{}] {}\n    {}", issue.level, issue.title, issue.reason);
         if !issue.path.is_empty() {
-            text.push_str(&format!("\n    {}", issue.path));
+            text.push_str("\n    ");
+            text.push_str(&issue.path);
         }
         for detail in &issue.detail {
-            text.push_str(&format!("\n    {detail}"));
+            text.push_str("\n    ");
+            text.push_str(detail);
         }
         callbacks.emit(if issue.level == "FAIL" { 2 } else { 1 }, &text);
     }

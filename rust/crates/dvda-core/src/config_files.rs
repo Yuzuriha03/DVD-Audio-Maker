@@ -157,6 +157,12 @@ impl<'de> Deserialize<'de> for ProfileValues {
     }
 }
 
+/// Resolve a language alias, using the installed language for automatic selection.
+///
+/// # Errors
+///
+/// Returns an `Argument` failure if the requested language is not a supported
+/// alias. An unrecognized installed language falls back to English.
 pub fn normalize_language(
     language: Option<&str>,
     installed_language: &str,
@@ -279,6 +285,13 @@ fn save_profile(path: &str, profile: &Value) -> Result<Value, Failure> {
     result
 }
 
+/// Load or save a portable profile and wrap its outcome in JSON.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported operation or a missing/non-string `Path`.
+/// File I/O, JSON parsing, and profile validation failures are instead returned
+/// in the successful response's `Failure` field.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "profile.load" => {

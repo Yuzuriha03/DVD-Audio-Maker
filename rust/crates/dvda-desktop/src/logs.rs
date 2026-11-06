@@ -1,9 +1,7 @@
 #![allow(
-    clippy::assigning_clones,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::format_push_string,
     clippy::items_after_statements,
     clippy::too_many_lines,
     reason = "Log rendering preserves Win32 text positions and incremental localized string building"
@@ -171,7 +169,7 @@ pub(crate) fn add_log(state: &mut UiState, text: &str, problem: bool) {
         );
     }
     if presentation::activity(state.lang(), text).is_some() {
-        state.activity_raw = text.to_owned();
+        text.clone_into(&mut state.activity_raw);
         state.activity_dirty = true;
     }
     state.log_dirty = true;
@@ -266,7 +264,10 @@ pub(crate) fn display_log(lang: Lang, lines: &[LogLine], detail: bool, only: boo
             presentation::summary(lang, &line.raw, line.problem)
         };
         if let Some(message) = message {
-            text.push_str(&format!("{}  {}\r\n", line.timestamp, message));
+            text.push_str(&line.timestamp);
+            text.push_str("  ");
+            text.push_str(&message);
+            text.push_str("\r\n");
         }
     }
     text
@@ -915,7 +916,9 @@ pub(crate) fn full_log(lang: Lang, lines: &[LogLine]) -> String {
     let mut text = String::new();
     for line in lines {
         let translated = localized_detail(lang, &line.raw);
-        text.push_str(&format!("[{}] ", line.timestamp));
+        text.push('[');
+        text.push_str(&line.timestamp);
+        text.push_str("] ");
         text.push_str(&translated);
         text.push_str("\r\n");
         if translated != line.raw.trim() {

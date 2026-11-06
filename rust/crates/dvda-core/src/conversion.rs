@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::{
     collections::HashSet,
+    fmt::Write as _,
     fs,
     path::{Path, PathBuf},
     sync::{
@@ -165,6 +166,11 @@ impl Callbacks for Capture<'_> {
         self.caller.progress(completed, total);
     }
 }
+/// Run a media operation and capture its standard output.
+///
+/// # Errors
+/// Returns the media executor's failure message (including cancellation and I/O
+/// errors), or captured diagnostics when the operation does not exit successfully.
 pub fn run_media(
     library: &Path,
     request: Request,
@@ -195,6 +201,10 @@ pub fn run_media(
     }
     Ok(capture.stdout)
 }
+/// Read the media backend's JSON description of an input.
+///
+/// # Errors
+/// Propagates media probing failures and rejects output that is not valid JSON.
 pub fn probe(library: &Path, input: &Path, caller: &mut dyn Callbacks) -> Result<Value, String> {
     serde_json::from_str(&run_media(
         library,
@@ -267,7 +277,7 @@ fn one(job: &Job, input: &Path, caller: &mut dyn Callbacks) -> Result<ResultRow,
     let target = work.0.join("converted.flac");
     let mut request = request(source, Operation::Audio, OutputFormat::Flac, Some(&target));
     request.compression = job.compression;
-    request.tags = tags.clone();
+    request.tags.clone_from(&tags);
     request.cover = row.has_cover;
     run_media(&job.library, request, caller)?;
     let reference = md5(&job.library, source, caller)?;
@@ -275,13 +285,48 @@ fn one(job: &Job, input: &Path, caller: &mut dyn Callbacks) -> Result<ResultRow,
     if reference != result {
         return Err("PCM MD5 不一致".into());
     }
+    verify_pcm(&job.library, source, &target, &work.0, stream, caller)?;
+    row.pcm_md5 = Some(result);
+    let comments = formats::dispatch("flac.comments", json!(target))?;
+    let comments = comments.as_array().ok_or("Invalid FLAC comments")?;
+    row.destination_tag_count = comments.len();
+    row.missing_tags = tags
+        .into_iter()
+        .filter(|(k, v)| !comments.iter().any(|t| t["Key"] == *k && t["Value"] == *v))
+        .collect();
+    if let Some(cover) = cover {
+        row.picture = Some(verify_cover(
+            &job.library,
+            source,
+            &target,
+            &work.0,
+            cover,
+            caller,
+        )?);
+        row.cover_exact = true;
+    }
+    if caller.cancelled() {
+        return Err("Conversion cancelled".into());
+    }
+    files::move_file(&target, &destination, true).map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+fn verify_pcm(
+    library: &Path,
+    source: &Path,
+    target: &Path,
+    work: &Path,
+    stream: &Value,
+    caller: &mut dyn Callbacks,
+) -> Result<(), String> {
     // Also compare all valid PCM bits; the historic MD5 output uses s16.
     let bits = stream["bits_per_raw_sample"]
         .as_i64()
         .or_else(|| stream["bits_per_raw_sample"].as_str()?.parse().ok())
         .unwrap_or(24);
-    let raw_paths = [work.0.join("source.pcm"), work.0.join("converted.pcm")];
-    for (source, raw) in [source, target.as_path()].into_iter().zip(&raw_paths) {
+    let raw_paths = [work.join("source.pcm"), work.join("converted.pcm")];
+    for (source, raw) in [source, target].into_iter().zip(&raw_paths) {
         let mut request = self::request(
             source,
             Operation::Audio,
@@ -293,7 +338,7 @@ fn one(job: &Job, input: &Path, caller: &mut dyn Callbacks) -> Result<ResultRow,
             Some(raw),
         );
         request.bits = if bits <= 16 { 16 } else { 24 };
-        run_media(&job.library, request, caller)?;
+        run_media(library, request, caller)?;
     }
     let native = dvda_native::NativeFormats::load()?;
     if !native
@@ -302,74 +347,72 @@ fn one(job: &Job, input: &Path, caller: &mut dyn Callbacks) -> Result<ResultRow,
     {
         return Err("Converted PCM differs at full precision".into());
     }
-    row.pcm_md5 = Some(result);
-    let comments = formats::dispatch("flac.comments", json!(target))?;
-    let comments = comments.as_array().ok_or("Invalid FLAC comments")?;
-    row.destination_tag_count = comments.len();
-    row.missing_tags = tags
-        .into_iter()
-        .filter(|(k, v)| !comments.iter().any(|t| t["Key"] == *k && t["Value"] == *v))
-        .collect();
-    if let Some(cover) = cover {
-        let mime = match cover["codec_name"].as_str().unwrap_or_default() {
-            "png" => "image/png",
-            "bmp" => "image/bmp",
-            "gif" => "image/gif",
-            "webp" => "image/webp",
-            "tiff" => "image/tiff",
-            _ => "image/jpeg",
-        };
-        let source_cover = work.0.join("cover.bin");
-        run_media(
-            &job.library,
-            self::request(
-                source,
-                Operation::Cover,
-                OutputFormat::None,
-                Some(&source_cover),
-            ),
-            caller,
-        )?;
-        let mut picture = formats::dispatch("flac.picture", json!(target))?;
-        if picture.is_null() {
-            return Err("FLAC PICTURE block is missing".into());
-        }
-        let bytes = fs::read(&source_cover).map_err(|e| e.to_string())?;
-        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-        if !picture["ImageHex"]
-            .as_str()
-            .is_some_and(|s| s.eq_ignore_ascii_case(&hex))
-        {
-            return Err("封面字节内容不一致".into());
-        }
-        let (dimensions, depth) = dvda_image::codec::metadata(std::io::Cursor::new(&bytes))
-            .map_err(|e| format!("封面描述读取失败: {e}"))?;
-        picture["Descriptor"]["Width"] = json!(dimensions.width());
-        picture["Descriptor"]["Height"] = json!(dimensions.height());
-        picture["Descriptor"]["Depth"] = json!(depth);
-        picture["Descriptor"]["Type"] = json!(3);
-        picture["Description"] = json!("");
-        formats::dispatch(
-            "flac.replace_picture",
-            json!({"Path":target,"ImagePath":source_cover,"Template":picture}),
-        )?;
-        let descriptor = &picture["Descriptor"];
-        if descriptor["MimeType"] != mime
-            || ["Width", "Height", "Depth"]
-                .iter()
-                .any(|k| descriptor[*k].as_i64().unwrap_or(0) <= 0)
-            || (mime == "image/jpeg" && descriptor["Depth"] != 24)
-        {
-            return Err("FLAC PICTURE 描述不合规".into());
-        }
-        row.cover_exact = true;
-        row.picture = Some(descriptor.clone());
+    Ok(())
+}
+
+fn verify_cover(
+    library: &Path,
+    source: &Path,
+    target: &Path,
+    work: &Path,
+    cover: &Value,
+    caller: &mut dyn Callbacks,
+) -> Result<Value, String> {
+    let mime = match cover["codec_name"].as_str().unwrap_or_default() {
+        "png" => "image/png",
+        "bmp" => "image/bmp",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "tiff" => "image/tiff",
+        _ => "image/jpeg",
+    };
+    let source_cover = work.join("cover.bin");
+    run_media(
+        library,
+        self::request(
+            source,
+            Operation::Cover,
+            OutputFormat::None,
+            Some(&source_cover),
+        ),
+        caller,
+    )?;
+    let mut picture = formats::dispatch("flac.picture", json!(target))?;
+    if picture.is_null() {
+        return Err("FLAC PICTURE block is missing".into());
     }
-    if caller.cancelled() {
-        return Err("Conversion cancelled".into());
+    let bytes = fs::read(&source_cover).map_err(|e| e.to_string())?;
+    let hex = bytes.iter().fold(String::new(), |mut text, byte| {
+        let _ = write!(text, "{byte:02x}");
+        text
+    });
+    if !picture["ImageHex"]
+        .as_str()
+        .is_some_and(|s| s.eq_ignore_ascii_case(&hex))
+    {
+        return Err("封面字节内容不一致".into());
     }
-    files::move_file(&target, &destination, true).map_err(|e| e.to_string())?;
-    Ok(row)
+    let (dimensions, depth) = dvda_image::codec::metadata(std::io::Cursor::new(&bytes))
+        .map_err(|e| format!("封面描述读取失败: {e}"))?;
+    picture["Descriptor"]["Width"] = json!(dimensions.width());
+    picture["Descriptor"]["Height"] = json!(dimensions.height());
+    picture["Descriptor"]["Depth"] = json!(depth);
+    picture["Descriptor"]["Type"] = json!(3);
+    picture["Description"] = json!("");
+    formats::dispatch(
+        "flac.replace_picture",
+        json!({"Path":target,"ImagePath":source_cover,"Template":picture}),
+    )?;
+    let descriptor = &picture["Descriptor"];
+    if descriptor["MimeType"] != mime
+        || ["Width", "Height", "Depth"]
+            .iter()
+            .any(|k| descriptor[*k].as_i64().unwrap_or(0) <= 0)
+        || (mime == "image/jpeg" && descriptor["Depth"] != 24)
+    {
+        return Err("FLAC PICTURE 描述不合规".into());
+    }
+    Ok(descriptor.clone())
 }
 
 fn failed(path: &Path, error: String) -> ResultRow {
@@ -396,6 +439,13 @@ impl Callbacks for Worker<'_> {
         self.0.load(Ordering::Acquire)
     }
 }
+/// Convert discovered ALAC inputs and report each file's outcome.
+///
+/// # Errors
+/// Rejects compression levels above eight and propagates source enumeration
+/// failures, cancellation, and callback panics observed by the coordinator.
+/// Individual conversion failures are returned as failed rows; source deletion
+/// failures are recorded in each row without aborting the remaining deletions.
 pub fn execute(job: &Job, caller: &mut dyn Callbacks) -> Result<Vec<ResultRow>, String> {
     if job.compression > 8 {
         return Err("FLAC level must be 0–8".into());

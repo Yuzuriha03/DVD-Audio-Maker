@@ -3,8 +3,6 @@
 #![expect(
     clippy::cast_possible_truncation,
     clippy::items_after_statements,
-    clippy::large_stack_arrays,
-    clippy::needless_continue,
     clippy::too_many_lines,
     reason = "ISO/UDF records use validated field widths and retain streaming copy loops"
 )]
@@ -599,7 +597,7 @@ impl Image {
             }
             zeroes(output, u64::from(node.size - offset))?;
         }
-        let mut buffer = [0; 64 * 1024];
+        let mut buffer = vec![0; 64 * 1024];
         for id in &self.files {
             let node = &self.nodes[*id];
             let mut input = File::open(&node.path)?;
@@ -789,7 +787,7 @@ pub fn write_with_callbacks(
         ));
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(file) => break (Temporary(path), file),
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error),
         }
     };

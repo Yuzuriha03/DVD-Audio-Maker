@@ -1,9 +1,7 @@
 #![allow(
-    clippy::assigning_clones,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::too_many_lines,
     reason = "Settings code preserves profile values and native control indices"
 )]
 //! Settings values: choices, profile load/save and validation.
@@ -190,6 +188,10 @@ pub(crate) fn set_combo_value(hwnd: Hwnd, index: i32) {
     combo_select(hwnd, index);
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Flat control-to-profile mapping keeps all override keys and their defaults together"
+)]
 pub(crate) fn overrides(state: &UiState) -> Map<String, Value> {
     let mut values = Map::new();
     let put = |values: &mut Map<String, Value>, key: &str, value: Value| {
@@ -414,7 +416,7 @@ pub(crate) fn save_profile(state: &mut UiState) {
         Ok(()) => {
             set_text(state.controls.profile, &path.to_string_lossy());
             set_text(state.controls.profile_origin, &path.to_string_lossy());
-            state.profile_path = path.clone();
+            state.profile_path.clone_from(&path);
             state.base = AppOptions::load(Some(&path))
                 .ok()
                 .or_else(|| AppOptions::load(None).ok());
@@ -535,7 +537,7 @@ pub(crate) fn choose_and_load_profile(hwnd: Hwnd, state: &mut UiState) {
     let path = PathBuf::from(path);
     match AppOptions::load(Some(&path)) {
         Ok(options) => {
-            state.profile_path = path.clone();
+            state.profile_path.clone_from(&path);
             set_text(state.controls.profile, &path.to_string_lossy());
             set_text(state.controls.profile_origin, &path.to_string_lossy());
             state.base = Some(options.clone());

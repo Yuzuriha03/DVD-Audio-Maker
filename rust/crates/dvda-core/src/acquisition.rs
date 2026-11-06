@@ -6,6 +6,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Dispatch an MLP lookup, source resolution, or destination-path request.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported operation or a missing required string
+/// field. Lookup also fails if the root or any descendant directory cannot be
+/// enumerated, or a directory entry cannot be read.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "build.mlp_lookup" => lookup(request),

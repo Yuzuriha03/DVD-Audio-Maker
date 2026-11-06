@@ -32,7 +32,7 @@ pub fn hex_digest(data: &[u8]) -> String {
     hex(&sha256(data))
 }
 
-/// Compute a lowercase SHA-256 digest from a stream.
+/// Compute an uppercase SHA-256 digest from a stream.
 ///
 /// # Errors
 /// Propagates any non-interrupted reader failure.
@@ -61,6 +61,11 @@ fn hex(digest: &[u8; 32]) -> String {
     result
 }
 
+/// Hashes text or a file selected by the operation.
+///
+/// # Errors
+/// Returns an error for an unsupported operation or a non-string request.
+/// File open/read failures are returned as JSON error fields, not as `Err`.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "hash.sha256_hex" => Ok(Value::String(hex_digest(

@@ -155,7 +155,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> Outcome {
             job.request.output = Some(path.to_string_lossy().into_owned());
             temporary.0 = Some(path);
         }
-        let media = crate::native_components::media(&job.library)?;
+        let media = crate::native_components::media(&job.library);
         let status = media.run(&job.request, &mut callbacks)?;
         callbacks.check()?;
         if status >= 0

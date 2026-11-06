@@ -202,7 +202,7 @@ fn inspect_jobs_measured<R: Send>(
                     }
                     callbacks.emit(level, &text);
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         }

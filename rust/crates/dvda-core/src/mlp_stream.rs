@@ -227,9 +227,8 @@ impl dvda_bridges::PcmSink for Pipeline {
         let (sender, receiver) = sync_channel(PCM_QUEUE_CHUNKS);
         let (recycled_sender, recycled) = mpsc::sync_channel(PCM_QUEUE_CHUNKS + 1);
         let cancelled = Arc::clone(&self.cancelled);
-        let output = match self.output.take() {
-            Some(output) => output,
-            None => return Err(self.fail("InvalidOperation", "MLP 输出已关闭。")),
+        let Some(output) = self.output.take() else {
+            return Err(self.fail("InvalidOperation", "MLP 输出已关闭。"));
         };
         self.worker = Some(std::thread::spawn(move || {
             let mut input = EncoderInput {
@@ -372,7 +371,7 @@ pub(crate) fn execute(
             .open(&path)?;
         temporary.0 = Some(path.clone());
         let mut pipeline = Pipeline::new(output);
-        let status = crate::native_components::media(library)?.run_pcm(
+        let status = crate::native_components::media(library).run_pcm(
             &Request {
                 operation: Operation::Audio,
                 rate: rate as u32,

@@ -895,7 +895,7 @@ fn short_album_text(value: &str, maximum: usize) -> String {
         .trim()
         .to_owned();
     if output.is_empty() {
-        output = value.to_owned();
+        value.clone_into(&mut output);
     }
     from_units(&units(&output).into_iter().take(maximum).collect::<Vec<_>>())
 }
@@ -1044,7 +1044,8 @@ pub fn parse_index_batch(request: Value) -> Result<Value, String> {
     {
         let mut fields: Vec<String> = line.split('|').map(str::to_owned).collect();
         if fields.len() > 1 {
-            fields[1] = fields[1].trim_end_matches('\0').to_owned();
+            let trimmed_len = fields[1].trim_end_matches('\0').len();
+            fields[1].truncate(trimmed_len);
         }
         if fields.len() < 3
             || !matches!(fields[0].as_str(), "B" | "T" | "L")

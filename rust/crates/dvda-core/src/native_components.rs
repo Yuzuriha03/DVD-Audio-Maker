@@ -2,8 +2,8 @@
 use dvda_native::{images::Images, media::Media};
 use std::{io, path::Path, sync::Arc};
 
-pub(crate) fn media(_path: &Path) -> io::Result<Arc<Media>> {
-    Ok(Media::linked())
+pub(crate) fn media(_path: &Path) -> Arc<Media> {
+    Media::linked()
 }
 
 pub(crate) fn images(path: Option<&Path>) -> io::Result<Arc<Images>> {
@@ -19,7 +19,7 @@ mod tests {
     #[test]
     fn linked_media_ignores_legacy_paths_and_image_oracle_is_explicit() {
         let path = Path::new("missing-native-component.dll");
-        assert!(media(path).is_ok());
+        let _media = media(path);
         assert!(images(None).is_err());
     }
 }

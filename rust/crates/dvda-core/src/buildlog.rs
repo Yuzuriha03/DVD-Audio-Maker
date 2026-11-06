@@ -9,6 +9,12 @@ pub struct Writer<'a> {
     failed: bool,
 }
 impl<'a> Writer<'a> {
+    /// Open an append-only build log, creating its parent directories as needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parent directory cannot be created or the log file
+    /// cannot be opened for appending.
     pub fn open(path: &Path, caller: &'a mut dyn Callbacks) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -45,6 +51,12 @@ impl Callbacks for Writer<'_> {
     }
 }
 
+/// Format the build log header as a JSON array of lines.
+///
+/// # Errors
+///
+/// Returns an error if the operation is not `build.log_header` or the request
+/// is not a JSON object. Missing header fields use their default values.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     if operation != "build.log_header" {
         return Err(format!("Unsupported build log operation: {operation}"));

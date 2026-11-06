@@ -2,7 +2,6 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::decimal_bitwise_operands,
-    clippy::format_collect,
     clippy::items_after_statements,
     clippy::many_single_char_names,
     clippy::too_many_lines,
@@ -241,10 +240,14 @@ mod windows {
             .nth(1)
             .expect("reference DLL path required");
         let rust_baseline = std::env::args().any(|arg| arg == "--rust-baseline");
-        let digest: String = Sha256::digest(std::fs::read(&path).unwrap())
-            .iter()
-            .map(|byte| format!("{byte:02X}"))
-            .collect();
+        let digest: String = Sha256::digest(std::fs::read(&path).unwrap()).iter().fold(
+            String::new(),
+            |mut text, byte| {
+                use std::fmt::Write as _;
+                let _ = write!(text, "{byte:02X}");
+                text
+            },
+        );
         let reference = if rust_baseline {
             "pre-refactor Rust"
         } else {

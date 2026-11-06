@@ -188,6 +188,7 @@ pub fn still_warnings(output: &Path, author_arguments: &[String]) -> Vec<Value> 
 mod tests {
     use super::*;
     use std::{
+        fmt::Write as _,
         path::PathBuf,
         sync::atomic::{AtomicU64, Ordering},
     };
@@ -205,9 +206,10 @@ mod tests {
             let mut document = String::from("<dvdauthor><amgm><menus>");
             for page in 0..31 {
                 let target = if page < 3 { page + 4 } else { 1 };
-                document.push_str(&format!(
+                let _ = write!(
+                    document,
                     "{open}<button name=\"button01\">jump menu {target};</button></pgc>"
-                ));
+                );
                 fs::write(
                     directory.join(format!("spu_xmltemp_{page}.xml")),
                     "<button name=\"button01\"/>",

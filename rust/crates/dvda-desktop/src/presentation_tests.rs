@@ -2,7 +2,6 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::format_collect,
     clippy::items_after_statements,
     clippy::similar_names,
     clippy::too_many_lines,
@@ -1275,9 +1274,11 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     // keeps its size (clipped to the new log area) until the drag ends.
     {
         let line = "2026-10-24 12:00:00  Encoding track 07 of 12 (MLP, 96 kHz / 24 bit, 5.1)";
-        let text: String = (0..2500)
-            .map(|i| format!("{i:04} {line}{}{}", 13 as char, 10 as char))
-            .collect();
+        let text = (0..2500).fold(String::new(), |mut text, i| {
+            use std::fmt::Write as _;
+            let _ = write!(text, "{i:04} {line}\r\n");
+            text
+        });
         set_text(ui.controls.log, &text);
         MoveWindow(parent, 0, 0, scale(1180), scale(820), 0);
         layout(parent, &mut ui);

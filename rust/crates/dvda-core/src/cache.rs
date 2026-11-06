@@ -6,6 +6,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Load or save a cache or resume index.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported operation or a missing/non-string path.
+/// Saving also fails if `Entries` is absent, serialization fails, the parent
+/// directory cannot be created, or the index cannot be committed. Loading an
+/// unreadable, invalid, or non-object index returns an empty object instead.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "cache.load" | "resume.load" => load(request),

@@ -5,14 +5,9 @@
 //! MPEG-2 and menu implementations through `Backend`; no C author is invoked.
 
 #![expect(
-    clippy::assigning_clones,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::format_collect,
-    clippy::items_after_statements,
-    clippy::large_stack_arrays,
-    clippy::needless_pass_by_value,
     clippy::too_many_lines,
     reason = "Menu authoring preserves bounded DVD coordinates, fixed sectors, and sequential backend orchestration"
 )]
@@ -543,7 +538,7 @@ pub fn plan(groups: &[Vec<Track>], options: &Options) -> Result<Vec<Page>, Strin
                 ));
             }
         } else if !text.is_empty() {
-            title = text.clone();
+            title.clone_from(text);
         }
     }
     if segments.is_empty()
@@ -890,12 +885,12 @@ fn make_index_background(
     callbacks: &mut dyn Callbacks,
     cache: &dvda_image::cache::ImageCache,
 ) -> Result<(), String> {
-    let height = options.height();
     use dvda_image::{
         codec,
         geometry::{Dimensions, ResizeMode},
         raster::Raster,
     };
+    let height = options.height();
     check(callbacks)?;
     let mut image = Raster::diagonal_gradient(
         Dimensions::new(720, u32::from(height)).map_err(|e| e.to_string())?,
@@ -952,8 +947,9 @@ fn make_index_background(
                 170.0,
             )
             .map_err(|e| e.to_string())?;
-            let line_height = i32::from(size) + 2;
-            let visible_lines = usize::from(label_height).div_ceil(line_height as usize);
+            let line_height = size + 2;
+            let visible_lines = usize::from(label_height).div_ceil(usize::from(line_height));
+            let line_height = i32::from(line_height);
             let masks = lines
                 .iter()
                 .take(visible_lines)
@@ -1184,7 +1180,7 @@ struct PicturePaths<'a> {
 }
 
 fn encode_picture(
-    paths: PicturePaths<'_>,
+    paths: &PicturePaths<'_>,
     still: bool,
     options: &Options,
     backend: &mut dyn Backend,
@@ -1233,7 +1229,8 @@ fn silence(output: &Path, duration: [u8; 3], callbacks: &mut dyn Callbacks) -> R
     let bytes = seconds
         .checked_mul(48_000 * 4)
         .filter(|bytes| *bytes <= u64::from(u32::MAX) - 36)
-        .ok_or("Menu soundtrack duration exceeds WAV capacity")? as u32;
+        .and_then(|bytes| u32::try_from(bytes).ok())
+        .ok_or("Menu soundtrack duration exceeds WAV capacity")?;
     let mut file = File::create(output).map_err(|error| error.to_string())?;
     file.write_all(b"RIFF")
         .and_then(|()| file.write_all(&(36 + bytes).to_le_bytes()))
@@ -1243,7 +1240,7 @@ fn silence(output: &Path, duration: [u8; 3], callbacks: &mut dyn Callbacks) -> R
         .and_then(|()| file.write_all(b"\x04\0\x10\0data"))
         .and_then(|()| file.write_all(&bytes.to_le_bytes()))
         .map_err(|error| error.to_string())?;
-    let zeroes = [0; 64 * 1024];
+    let zeroes = vec![0; 64 * 1024];
     let mut remaining = bytes as usize;
     while remaining > 0 {
         check(callbacks)?;
@@ -1255,11 +1252,11 @@ fn silence(output: &Path, duration: [u8; 3], callbacks: &mut dyn Callbacks) -> R
     Ok(())
 }
 
-/// Inspect the produced stream rather than assuming every backend made PAL.
-/// Inspect the generated stream and return its actual video attribute.
+/// Inspects the generated stream for its video attribute, falling back to `norm`
+/// when no sequence header is found in the first 64 KiB.
 ///
 /// # Errors
-/// Propagates file I/O failures and rejects missing or inconsistent video headers.
+/// Returns an error if opening or reading the stream fails.
 pub fn video_attribute(path: &Path, norm: &str) -> Result<u8, String> {
     let mut bytes = Vec::new();
     File::open(path)
@@ -1433,7 +1430,7 @@ fn concatenate(
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
     let mut file = File::create(output).map_err(|error| error.to_string())?;
-    let mut buffer = [0; 64 * 1024];
+    let mut buffer = vec![0; 64 * 1024];
     for path in paths {
         let mut input = File::open(path).map_err(|error| error.to_string())?;
         loop {
@@ -1571,7 +1568,7 @@ pub fn author(
                     }
                     let path = temporary.join(format!("menu-background-{rank}.mpg"));
                     encode_picture(
-                        PicturePaths {
+                        &PicturePaths {
                             input: &picture,
                             y4m: &temporary.join(format!("menu-{rank}.y4m")),
                             output: &path,
@@ -1633,14 +1630,14 @@ pub fn author(
                 // to the indices written into the final AMG, for every page.
                 let palette = temporary.join("menu-palette.yuv");
                 let colors = [0x00eb_8080, 0x0010_8080, 0x0052_f05a];
-                let palette_text: String = (0..16)
-                    .map(|index| {
-                        format!(
-                            "{:06x}\n",
-                            colors.get(index).copied().unwrap_or(0x0010_8080)
-                        )
-                    })
-                    .collect();
+                let palette_text = (0..16).fold(String::new(), |mut text, index| {
+                    let _ = writeln!(
+                        text,
+                        "{:06x}",
+                        colors.get(index).copied().unwrap_or(0x0010_8080)
+                    );
+                    text
+                });
                 fs::write(&palette, palette_text).map_err(|error| error.to_string())?;
                 let document = navigation_xml(&pages, &menus, options)?.replace(
                     "<pgc>",
@@ -1703,7 +1700,7 @@ pub fn author(
                 )?;
                 let stream = temporary.join(format!("still-picture-{rank}.mpg"));
                 encode_picture(
-                    PicturePaths {
+                    &PicturePaths {
                         input: &picture,
                         y4m: &temporary.join(format!("still-{rank}.y4m")),
                         output: &stream,

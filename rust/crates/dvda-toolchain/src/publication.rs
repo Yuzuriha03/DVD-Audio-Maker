@@ -1,8 +1,4 @@
 //! Candidates live next to final outputs; no final file is removed before success.
-#![expect(
-    clippy::needless_continue,
-    reason = "Publication retry loops keep their explicit retry control flow"
-)]
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -24,7 +20,7 @@ impl Candidate {
             ));
             match fs::create_dir(&root) {
                 Ok(()) => return Ok(Self { root }),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(e) => return Err(err(e)),
             }
         }
@@ -57,7 +53,7 @@ impl Recovery {
                         retain: false,
                     });
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(e) => return Err(err(e)),
             }
         }

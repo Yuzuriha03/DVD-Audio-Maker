@@ -113,7 +113,7 @@ pub fn short_album(request: Value) -> Result<Value, String> {
         .trim()
         .to_owned();
     if output.is_empty() {
-        output = value.to_owned();
+        value.clone_into(&mut output);
     }
     output = from_units(&units(&output).into_iter().take(max).collect::<Vec<_>>());
     Ok(Value::String(output))

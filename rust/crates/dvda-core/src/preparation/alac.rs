@@ -45,6 +45,8 @@ pub struct Repair {
     pub cookie: Cookie,
     pub patches: Vec<Patch>,
 }
+/// # Errors
+/// Returns `Cancelled` when the callback requests cancellation.
 pub fn check_cancel(events: &mut dyn Callbacks) -> Result<(), Failure> {
     if events.cancelled() {
         Err(Failure::new("Cancelled", "Source preparation cancelled"))
@@ -194,7 +196,9 @@ fn packet_patch(
 /// Locate ALAC end-marker patches in a memory-backed packet sequence.
 ///
 /// # Errors
-/// Returns an error for invalid ALAC metadata, arithmetic overflow, or bitstream read failures.
+/// Rejects sample counts, frame bit counts, offsets, or packet indices that
+/// overflow their representation. Packets outside `data` and incomplete headers
+/// are skipped rather than reported as errors.
 pub fn find_patches(
     data: &[u8],
     cookie: &Cookie,
@@ -250,6 +254,9 @@ fn find_patches_file_impl(
     }
     Ok(patches)
 }
+/// # Errors
+/// Propagates file open, metadata, seek, and read failures, and rejects packet
+/// sample counts or calculated patch positions that overflow their representation.
 pub fn find_patches_file(
     path: &str,
     cookie: &Cookie,
@@ -265,6 +272,9 @@ fn find_patches_file_cancellable(
 ) -> Result<Vec<Patch>, Failure> {
     find_patches_file_impl(path, cookie, packets, || events.cancelled())
 }
+/// # Errors
+/// Rejects negative, overflowing, or out-of-buffer patch positions. Patches
+/// applied before an invalid position remain in `data`.
 pub fn apply_bits(
     data: &mut [u8],
     positions: impl IntoIterator<Item = (i64, i64)>,
@@ -364,7 +374,7 @@ fn apply_file_impl(
         .open(&temporary)?;
     let mut owned = media::Temporary(Some(temporary.clone()));
     let result = (|| -> Result<(), Failure> {
-        let mut buffer = [0u8; 65536];
+        let mut buffer = vec![0u8; 65536];
         let mut position = 0u64;
         let mut patch = 0usize;
         while position < size {
@@ -398,6 +408,10 @@ fn apply_file_impl(
     });
     owned.clean().map_err(Failure::from).and(result)
 }
+/// # Errors
+/// Rejects invalid or overflowing patch positions and propagates source reads,
+/// destination directory creation, temporary-file writes, replacement, or cleanup
+/// failures. Source bytes are never patched in place.
 pub fn apply_patches_file(
     source: &str,
     destination: &Path,
@@ -423,7 +437,7 @@ fn supported(path: &str) -> bool {
 fn read_cookie_file(path: &str, events: &mut dyn Callbacks) -> Result<Option<Cookie>, Failure> {
     check_cancel(events)?;
     let mut file = identity::open_read(path)?;
-    let mut buffer = [0u8; 65536];
+    let mut buffer = vec![0u8; 65536];
     let mut carry = Vec::new();
     let mut total = 0u64;
     loop {
@@ -475,6 +489,9 @@ impl Callbacks for Packets<'_> {
         self.events.cancelled()
     }
 }
+/// # Errors
+/// Propagates media execution failures, including cancellation, and returns
+/// `InvalidData` when packet enumeration exits unsuccessfully.
 pub fn packets(
     library: &Path,
     path: &str,
@@ -519,6 +536,10 @@ pub fn packets(
     }
     Ok(capture.packets)
 }
+/// # Errors
+/// Rejects unsupported extensions or missing ALAC cookies. Propagates file I/O,
+/// cookie-offset or packet arithmetic overflow, packet enumeration failures, and
+/// callback cancellation while scanning the source.
 pub fn inspect(
     library: &Path,
     path: &str,
@@ -541,6 +562,11 @@ pub fn inspect(
     check_cancel(events)?;
     Ok(Inspection { cookie, patches })
 }
+/// # Errors
+/// Propagates cookie scanning, packet enumeration, patch calculation, and file
+/// copy/replacement failures, including cancellation. Rejects a destination that
+/// resolves to the source path. Unsupported extensions, missing cookies, and
+/// sources requiring no patches return `Ok(None)` instead.
 pub fn try_repair(
     library: &Path,
     path: &str,

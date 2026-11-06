@@ -1,8 +1,15 @@
 use serde_json::{Value, json};
 
+/// Normalize title mode, find title boundaries, or build author arguments.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported operation or malformed disc/group
+/// structure. Building arguments also rejects tracks that are not objects.
+/// Title-mode normalization accepts any JSON value and defaults to `album`.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
-        "author.normalize_title_mode" => normalize_title_mode(request),
+        "author.normalize_title_mode" => Ok(normalize_title_mode(request)),
         "author.title_ends" => title_ends(request),
         "author.build_args" => build_arguments(request),
         _ => Err(format!("Unsupported Rust author operation: {operation}")),
@@ -20,8 +27,8 @@ fn mode(value: &str) -> String {
     }
 }
 
-fn normalize_title_mode(request: Value) -> Result<Value, String> {
-    Ok(json!(mode(request.as_str().unwrap_or("album"))))
+fn normalize_title_mode(request: Value) -> Value {
+    json!(mode(request.as_str().unwrap_or("album")))
 }
 
 fn title_ends(request: Value) -> Result<Value, String> {

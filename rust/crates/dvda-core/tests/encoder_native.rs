@@ -7,6 +7,7 @@
     clippy::too_many_lines,
     reason = "Encoder fixtures preserve deterministic PCM and complete frozen oracle cases"
 )]
+#[cfg(feature = "rust-mlp")]
 use dvda_core::audio;
 use dvda_core::{encoder, hash, media};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};

@@ -79,7 +79,7 @@ fn scan_file(path: &str, maximum: Option<i32>) -> Result<FileScan, ScanError> {
             match file.read(&mut buffer[count..request]) {
                 Ok(0) => break,
                 Ok(n) => count += n,
-                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
                 Err(e) => return Err(ScanError::Io(e)),
             }
         }
