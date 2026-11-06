@@ -230,7 +230,7 @@ mod tests {
     fn fixture_jobs() -> Vec<audio::Job> {
         (0..8)
             .map(|index| audio::Job {
-                library: Default::default(),
+                library: std::path::PathBuf::default(),
                 input: index.to_string(),
                 operation: audio::Operation::Metadata,
                 resample_to: None,

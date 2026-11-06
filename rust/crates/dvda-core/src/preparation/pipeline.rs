@@ -48,6 +48,9 @@ fn report_language() -> String {
     "zh-CN".into()
 }
 impl Job {
+    /// # Errors
+    /// Returns `InvalidData` if the media-library encoding identity cannot be
+    /// resolved for the preparation fingerprint.
     pub fn fingerprint(&self) -> Result<String, Failure> {
         let values = [
             state::normalize(&self.source_directory),
@@ -123,6 +126,11 @@ impl Outcome {
 
 /// The build entrypoint must never consume a stale manifest after preparation
 /// fails. Reuse only a snapshot whose sources, settings and manifest still match.
+///
+/// # Errors
+/// Returns an error on cancellation, fingerprint/snapshot or reused-manifest
+/// read failure, any failure propagated by [`run`], or preparation results
+/// containing failed source checks.
 pub fn ensure_ready(job: &Job, events: &mut dyn Callbacks) -> Result<(), Failure> {
     alac::check_cancel(events)?;
     if !job.force_revalidation {
@@ -204,6 +212,13 @@ pub fn execute(job: Job, events: &mut dyn Callbacks) -> Outcome {
         },
     }
 }
+/// # Errors
+/// Returns an error on cancellation, production-directory creation or old
+/// manifest removal failure, fingerprint/source enumeration failure, metadata
+/// or decode job failure/missing results, ALAC repair failure, invalid basename,
+/// or report/manifest write failure. Source validation issues remain in the
+/// returned result; cache writes only emit warnings and snapshot-save failures
+/// do not fail preparation.
 pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Failure> {
     crate::metrics::measure(
         "prepare",

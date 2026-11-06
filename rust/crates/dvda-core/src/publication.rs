@@ -257,6 +257,10 @@ fn publish(source: &Path, directory: &Path, name: &str) -> Result<Value> {
     }
 }
 
+/// # Errors
+/// Returns an error for invalid `publish.set` request data, missing required
+/// source/destination/directory/name strings, or an unknown operation. File
+/// publication failures are encoded in the returned `Failure` field instead.
 pub fn dispatch(operation: &str, request: Value) -> std::result::Result<Value, String> {
     let result = if operation == "publish.set" {
         publish_set(serde_json::from_value(request).map_err(|e| e.to_string())?)

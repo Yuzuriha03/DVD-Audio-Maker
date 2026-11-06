@@ -81,6 +81,10 @@ pub fn buttons(directory: &Path, total: usize, index: usize) -> Vec<Value> {
     }
     issues
 }
+/// # Errors
+/// Returns an error if menu planning fails, its page counts are invalid, or the
+/// caller cancels image inspection. Missing menu assets and overlay/button
+/// defects are returned as diagnostics rather than errors.
 pub fn verify(
     job: &Job,
     disc: &Disc,

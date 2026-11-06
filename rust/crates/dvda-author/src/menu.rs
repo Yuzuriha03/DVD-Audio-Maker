@@ -8,7 +8,6 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::too_many_lines,
     reason = "Menu authoring preserves bounded DVD coordinates, fixed sectors, and sequential backend orchestration"
 )]
 use crate::{Callbacks, atsi};
@@ -199,6 +198,10 @@ impl Options {
     ///
     /// # Errors
     /// Rejects invalid values, missing required values, and unsupported option syntax.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep menu option validation and assignments together"
+    )]
     pub fn parse_option(&mut self, name: &str, value: Option<&str>) -> Result<bool, String> {
         let name = name.trim_start_matches('-');
         let required = || value.ok_or_else(|| format!("--{name} requires a value"));
@@ -490,6 +493,10 @@ fn check(callbacks: &mut dyn Callbacks) -> Result<(), String> {
 ///
 /// # Errors
 /// Rejects invalid group counts, menu geometry, page capacity, fonts, and inconsistent picture assignments.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep sequential menu pagination and layout rules together"
+)]
 pub fn plan(groups: &[Vec<Track>], options: &Options) -> Result<Vec<Page>, String> {
     if groups.is_empty() || groups.len() > 9 || groups.iter().any(Vec::is_empty) {
         return Err("Menus require 1..=9 nonempty audio groups".into());
@@ -876,6 +883,10 @@ fn caption_size(label: &str, options: &Options) -> u16 {
     .clamp(9, maximum)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep ordered index background drawing arguments together"
+)]
 fn make_index_background(
     page: &Page,
     rank: usize,
@@ -1450,6 +1461,10 @@ fn concatenate(
 ///
 /// # Errors
 /// Propagates menu planning, image/media backend, cancellation, and output transaction failures.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep sequential menu backend authoring and sector accounting together"
+)]
 pub fn author(
     audio_ts: &Path,
     temporary: &Path,

@@ -791,7 +791,7 @@ fn timeline(
         check_cancel(caller)?;
         let mut evidence = DiscEvidence {
             path: iso.clone(),
-            groups: Default::default(),
+            groups: std::collections::BTreeMap::default(),
         };
         let disc = discs.and_then(|discs| {
             discs.iter().find(|value| {

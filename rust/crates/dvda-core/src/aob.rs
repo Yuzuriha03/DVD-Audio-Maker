@@ -27,6 +27,9 @@ fn sector_pts_with(
     parse(&sector[marker + 9..marker + 14])
 }
 
+/// # Errors
+/// Returns an error if the format backend cannot load or rejects the PTS bytes.
+/// Short sectors and absent timestamps return sentinel values instead.
 pub fn sector_pts(sector: &[u8], require_pack: bool) -> Result<i64, String> {
     sector_pts_with(sector, require_pack, |pts| {
         FORMATS
@@ -39,6 +42,10 @@ pub fn sector_pts(sector: &[u8], require_pack: bool) -> Result<i64, String> {
 
 /// The caller supplies whole records; partial AOB tails are excluded by its
 /// chunk iterator. Audit records may be shorter than the 2048-byte DVD sector.
+///
+/// # Errors
+/// Returns an error for zero stride, partial records, mismatched output capacity,
+/// or a format-backend failure while reading a timestamp.
 pub fn scan_pts(
     data: &[u8],
     stride: usize,
@@ -124,6 +131,8 @@ impl Default for AuditState {
 }
 
 impl AuditState {
+    /// # Errors
+    /// Returns an error if timestamp parsing fails or the sector counter overflows.
     pub fn observe(&mut self, data: &[u8]) -> Result<i32, String> {
         if self.missing_sector >= 0 {
             return Ok(-1);
@@ -243,6 +252,9 @@ pub fn pts_statistics(values: &[i64]) -> PtsStatistics {
     pts_statistics_with_resets(values, &[])
 }
 
+/// # Panics
+/// Panics with overflow checks enabled if adjacent timestamps cannot be
+/// subtracted in `i64`. The extrema lookups rely on the preceding empty-step guard.
 #[must_use]
 pub fn pts_statistics_with_resets(values: &[i64], resets: &[usize]) -> PtsStatistics {
     let first_pts = values.first().copied();
@@ -307,6 +319,10 @@ pub fn pts_statistics_with_resets(values: &[i64], resets: &[usize]) -> PtsStatis
     }
 }
 
+/// # Errors
+/// Returns an error for unknown operations, invalid audit requests, missing paths,
+/// invalid sector limits or PTS arrays, timestamp-backend failures, or statistics
+/// serialization failures. File I/O failures are returned in `ErrorCode` instead.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "aob.audit_diagnostics" => audit_diagnostics(request),

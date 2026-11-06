@@ -269,6 +269,12 @@ impl IsoSource {
     }
 }
 
+/// # Errors
+/// Rejects unknown operations, malformed requests, invalid hex data, and
+/// unrepresentable request values. Propagates the selected ISO lookup/read/
+/// extraction, WAVE validation/normalization, FLAC metadata parsing/replacement,
+/// or ALAC patch scanning/application error, including filesystem failures.
+/// An absent FLAC picture or unrecognized ALAC cookie returns JSON null instead.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "iso.info" => iso_info(request),
@@ -324,6 +330,9 @@ pub struct IsoMetadataCache {
 }
 
 impl IsoMetadataCache {
+    /// # Errors
+    /// Returns the errors from [`iso_list_directory`]. Both successful listings
+    /// and errors are cached for the normalized path and directory key.
     pub fn list_directory(
         &self,
         path: &Path,
@@ -358,6 +367,9 @@ pub struct IsoFileChunks {
 }
 
 impl IsoFileChunks {
+    /// # Errors
+    /// Returns an error on ISO read failure, a short read relative to the
+    /// directory-declared size, or chunk-size/offset overflow.
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
         if self.remaining == 0 {
             return Ok(None);
@@ -380,6 +392,10 @@ impl IsoFileChunks {
     }
 }
 
+/// # Errors
+/// Returns an error if the ISO cannot be opened or parsed, the requested entry
+/// cannot be resolved, is not a directory, or its directory records cannot be
+/// read or parsed.
 pub fn iso_list_directory(path: &Path, inner_path: &str) -> Result<Vec<IsoEntryInfo>, String> {
     let source = IsoSource::open(&path.to_string_lossy())?;
     let info = parse_iso_info(&path.to_string_lossy(), &source)?;
@@ -393,6 +409,10 @@ pub fn iso_list_directory(path: &Path, inner_path: &str) -> Result<Vec<IsoEntryI
         .collect())
 }
 
+/// # Errors
+/// Rejects a zero or non-sector-aligned chunk size. Propagates ISO open, parse,
+/// lookup, and data-offset errors, and rejects directories and multi-extent
+/// entries. File-data read failures are reported by [`IsoFileChunks::next_chunk`].
 pub fn iso_file_chunks(
     path: &Path,
     inner_path: &str,
@@ -804,6 +824,9 @@ fn wav_layout(request: Value) -> Result<Value, String> {
     serde_json::to_value(layout).map_err(|error| error.to_string())
 }
 
+/// # Errors
+/// Returns an error if the file cannot be opened or [`read_wav_layout_from`]
+/// rejects its contents or encounters an I/O failure.
 pub fn read_wav_layout(path: &str) -> Result<WavLayout, String> {
     let mut input = crate::identity::open_read(path).map_err(|e| format!("{path}: {e}"))?;
     read_wav_layout_from(&mut input).map_err(|e| e.to_string())
@@ -847,6 +870,12 @@ impl std::fmt::Display for WavError {
 }
 impl std::error::Error for WavError {}
 
+/// # Errors
+/// Returns [`WavError::Io`] on reader I/O failure and [`WavError::Overflow`] if
+/// the sample rate cannot fit in `i32`. Returns [`WavError::Invalid`] for invalid
+/// integer RIFF/WAVE input, unrepresentable data sizes/offsets, empty audio,
+/// unsupported DVD-Audio sample-rate/channel combinations, or a channel mask
+/// whose set-bit count differs from the channel count.
 pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout, WavError> {
     let reader = dvda_audio::wav::Reader::new_integer_riff(input).map_err(|error| {
         if error.kind() == std::io::ErrorKind::InvalidData {

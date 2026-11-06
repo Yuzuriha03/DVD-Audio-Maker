@@ -141,6 +141,12 @@ impl Callbacks for Forward<'_> {
     }
 }
 
+/// # Errors
+/// Propagates job validation, encoding identity, native-format initialization,
+/// directory creation, clock, track-check scheduling, batch encoding/finalization,
+/// and cache-save failures (including cancellation). Missing tracks and finalization
+/// diagnostics may instead be collected in the returned outcome. Temporary-directory
+/// cleanup failures are ignored.
 pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<Outcome, String> {
     validate(&job)?;
     job.encoder_identity = crate::signature::encoding_identity(

@@ -340,6 +340,9 @@ pub(super) fn relative(root: &str, path: &str) -> String {
         parts.join("/")
     }
 }
+/// # Panics
+/// Sorting requires string-valued `RelativePath` fields. Every record is built
+/// locally from the string returned by `relative`, preserving this invariant.
 #[must_use]
 pub fn save_snapshot(
     path: &Path,
@@ -381,6 +384,11 @@ pub fn invalidate(path: &Path) {
 ///
 /// Returns an error if source enumeration fails, including unreadable directories
 /// or directory link cycles; see [`enumerate_sources`].
+///
+/// # Panics
+/// Sorting and searching require string-valued `RelativePath` fields. All
+/// records are validated before these operations; malformed records return
+/// a non-reusable snapshot instead.
 pub fn reuse_snapshot(
     path: &Path,
     root: &str,

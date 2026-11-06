@@ -13,6 +13,9 @@ mod text;
 pub use text::{font_size, font_width, normalize_path, pages, sanitize, short_album, truncate};
 use text::{from_units, text, units};
 
+/// # Errors
+/// Rejects a non-object request, unsupported language, or missing disc/groups.
+/// Propagates errors from menu pagination and text-layout helpers.
 pub fn plan(request: Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected menu plan request")?;
     let language = crate::config_files::normalize_language(
@@ -950,6 +953,8 @@ fn unique(values: Vec<String>) -> Vec<String> {
     output
 }
 
+/// # Errors
+/// Requires numeric `StandardDeviation` and `Colors` fields.
 pub fn visual_near_solid(request: Value) -> Result<Value, String> {
     let standard_deviation = request["StandardDeviation"]
         .as_f64()
@@ -958,22 +963,31 @@ pub fn visual_near_solid(request: Value) -> Result<Value, String> {
     Ok(json!(colors <= 50.0 || standard_deviation <= 1.0))
 }
 
+/// # Errors
+/// Returns an error unless the request is a numeric background mean.
 pub fn visual_background_invalid(request: Value) -> Result<Value, String> {
     let mean = request.as_f64().ok_or("Expected background mean")?;
     Ok(json!(mean > 160.0))
 }
 
+/// # Errors
+/// Returns an error unless the request is a numeric thumbnail mean.
 pub fn visual_thumbnail_missing(request: Value) -> Result<Value, String> {
     let mean = request.as_f64().ok_or("Expected thumbnail mean")?;
     Ok(json!(mean <= 3.0))
 }
 
+/// # Errors
+/// Requires numeric `Maximum` and `Mean` fields.
 pub fn visual_label_missing(request: Value) -> Result<Value, String> {
     let maximum = request["Maximum"].as_f64().ok_or("Missing label maximum")?;
     let mean = request["Mean"].as_f64().ok_or("Missing label mean")?;
     Ok(json!(maximum <= 200.0 || mean > 200.0))
 }
 
+/// # Errors
+/// Requires `i64` album count, page index, and per-page count fields, and rejects
+/// a non-positive per-page count.
 pub fn visual_expected_index_cells(request: Value) -> Result<Value, String> {
     let album_count = request["AlbumCount"]
         .as_i64()
@@ -1000,6 +1014,9 @@ fn finite_number(value: &str) -> Option<f64> {
     parsed.is_finite().then_some(parsed)
 }
 
+/// # Errors
+/// Rejects a non-string request. Missing, duplicate, or malformed frame records
+/// return JSON null instead of an error.
 pub fn parse_batch_frame_stats(request: Value) -> Result<Value, String> {
     let output = request.as_str().ok_or("Expected ImageMagick output")?;
     let lines: Vec<&str> = output
@@ -1027,6 +1044,9 @@ pub fn parse_batch_frame_stats(request: Value) -> Result<Value, String> {
     Ok(json!([mean, deviation, colors]))
 }
 
+/// # Errors
+/// Requires an `i64` `Expected` count and a boolean `Succeeded` flag. Missing or
+/// invalid image-statistics records are reported in the returned issue lists.
 pub fn parse_index_batch(request: Value) -> Result<Value, String> {
     let output = text(&request, "Output");
     let expected = request["Expected"]
@@ -1118,6 +1138,9 @@ pub fn parse_index_batch(request: Value) -> Result<Value, String> {
     }))
 }
 
+/// # Errors
+/// Requires string `Output` and boolean `Succeeded`/`NeedsArrow` fields.
+/// Malformed or missing statistics are represented by the returned checks.
 pub fn parse_overlay_batch(request: Value) -> Result<Value, String> {
     let output = request["Output"].as_str().ok_or("Missing overlay output")?;
     let succeeded = request["Succeeded"]

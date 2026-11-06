@@ -111,6 +111,9 @@ impl AppOptions {
 
     /// Re-evaluate edited settings, including every path derived from the work
     /// folder. Explicit UI values take precedence for this unsaved session.
+    /// # Errors
+    /// Returns an error if normalized profile properties are not an object or
+    /// option evaluation reports an invalid value.
     pub fn with_profile_values(&self, edits: Map<String, Value>) -> Result<Self, String> {
         let edits = normalize_profile_values(&edits);
         let mut copy = self.clone();
@@ -151,6 +154,10 @@ impl AppOptions {
         crate::workspace::Workspace::unfinished(&self.path("BuildDirectory"))
     }
 
+    /// # Errors
+    /// Returns an error if the task workspace cannot be created, its saved
+    /// options cannot be read or parsed, the saved values/profile are not
+    /// objects, or the current task options cannot be saved.
     pub fn recover_task(&self, restart: bool) -> Result<Self, String> {
         let workspace = std::sync::Arc::new(crate::workspace::Workspace::create_task(
             &self.path("BuildDirectory"),
@@ -185,6 +192,9 @@ impl AppOptions {
     }
 
     /// Share one owned workspace across preparation, production and verification.
+    /// # Errors
+    /// Returns an error if a new task workspace cannot be created or its
+    /// options cannot be serialized and written. An already bound task is reused.
     pub fn task_options(&self) -> Result<Self, String> {
         if self.workspace.is_some() {
             return Ok(self.clone());
@@ -241,6 +251,8 @@ impl AppOptions {
         self
     }
 
+    /// # Errors
+    /// Returns an error if the temporary task workspace cannot be created.
     pub fn scratch_options(&self) -> Result<Self, String> {
         let workspace =
             std::sync::Arc::new(crate::workspace::Workspace::create(Path::new(""), false)?);
@@ -290,15 +302,24 @@ impl AppOptions {
     pub fn source_directory(&self) -> PathBuf {
         self.path("SourceDirectory")
     }
+    /// # Errors
+    /// Returns an error if the current executable path cannot be determined.
     pub fn media_library(&self) -> Result<PathBuf, String> {
         env::current_exe().map_err(|error| error.to_string())
     }
+    /// # Errors
+    /// Returns an error if the current executable path cannot be determined.
     pub fn encoder_library(&self) -> Result<PathBuf, String> {
         env::current_exe().map_err(|error| error.to_string())
     }
+    /// # Errors
+    /// Returns an error if the current executable path cannot be determined.
     pub fn image_library(&self) -> Result<PathBuf, String> {
         env::current_exe().map_err(|error| error.to_string())
     }
+    /// # Errors
+    /// Returns an error if the source directory is empty, the executable path
+    /// cannot be determined, or an explicit menu runtime directory is invalid.
     pub fn build_job(&self, dry_run: bool) -> Result<build::Job, String> {
         let source = self.source_directory();
         if source.as_os_str().is_empty() {
@@ -387,6 +408,8 @@ impl AppOptions {
             image_cache: Arc::new(dvda_image::cache::ImageCache::default()),
         })
     }
+    /// # Errors
+    /// Returns an error if the current executable path cannot be determined.
     pub fn prepare_job(
         &self,
         force_revalidation: bool,
@@ -409,6 +432,8 @@ impl AppOptions {
         })
     }
 
+    /// # Errors
+    /// Returns an error if the current executable path cannot be determined.
     pub fn verify_job(&self) -> Result<verify::Job, String> {
         Ok(verify::Job {
             image_library: None,
@@ -453,6 +478,10 @@ pub fn run_prepare(
     }
 }
 
+/// # Errors
+/// Returns an error if task options or the build log cannot be created, job
+/// configuration or the PCM signature cannot be obtained, or source preparation
+/// fails. Build and verification execution failures are reported in the outcome.
 pub fn run_build(
     options: &AppOptions,
     dry_run: bool,
@@ -509,6 +538,9 @@ pub fn run_build(
     Ok(result)
 }
 
+/// # Errors
+/// Returns the setup and source-reference reconstruction errors from
+/// [`run_verify_mode`]. Verification failures are reported in the outcome.
 pub fn run_verify(
     options: &AppOptions,
     callbacks: &mut dyn Callbacks,
@@ -516,6 +548,10 @@ pub fn run_verify(
     run_verify_mode(options, verify::Mode::All, None, callbacks)
 }
 
+/// # Errors
+/// Returns an error if workspace creation, job configuration, or source
+/// preparation fails, or reconstructed verification references cannot be built,
+/// located, read, or parsed. Verification failures are reported in the outcome.
 pub fn run_verify_mode(
     options: &AppOptions,
     mode: verify::Mode,
@@ -676,6 +712,9 @@ fn menu_runtime_directory(
     ))
 }
 
+/// # Errors
+/// Returns an error if the path has no `.json` extension, profile dispatch
+/// fails, or the profile writer reports a filesystem failure.
 pub fn save_profile(
     path: &Path,
     values: &Map<String, Value>,

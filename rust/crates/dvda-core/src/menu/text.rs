@@ -13,6 +13,8 @@ pub(super) fn text<'a>(value: &'a Value, key: &str) -> &'a str {
     value[key].as_str().unwrap_or("")
 }
 
+/// # Errors
+/// Returns an error when the request is not a string.
 pub fn sanitize(request: Value) -> Result<Value, String> {
     let value = request.as_str().ok_or("Expected menu text")?;
     let input = units(value);
@@ -24,11 +26,9 @@ pub fn sanitize(request: Value) -> Result<Value, String> {
         .into_iter()
         .map(|unit| match unit {
             0x2c if wide => 0xff0c,
-            0x2c => 0x00b7,
             0x3a if wide => 0xff1a,
-            0x3a => 0x00b7,
             0x3d if wide => 0xff1d,
-            0x3d => 0x00b7,
+            0x2c | 0x3a | 0x3d => 0x00b7,
             other => other,
         })
         .collect();
@@ -52,6 +52,8 @@ fn round_even(value: f64) -> f64 {
         lower + 1.0
     }
 }
+/// # Errors
+/// Returns an error when `FontSize` is missing or is not an integer.
 pub fn truncate(request: Value) -> Result<Value, String> {
     let value = text(&request, "Value");
     let font_size = request["FontSize"].as_i64().ok_or("Missing FontSize")?;
@@ -70,12 +72,20 @@ pub fn truncate(request: Value) -> Result<Value, String> {
     };
     Ok(Value::String(result))
 }
+/// # Errors
+/// Returns an error when the row count is not an integer.
+///
+/// # Panics
+/// Panics for a row count of -4, or if layout arithmetic overflows with
+/// overflow checks enabled. Callers must supply a supported menu row count.
 pub fn font_size(request: Value) -> Result<Value, String> {
     let rows = request.as_i64().ok_or("Expected row count")?;
     let span = rows + 4;
     let label_height = (576 - 56 - 40 - span * 12) / span;
     Ok(json!((label_height + 2).clamp(7, 30)))
 }
+/// # Errors
+/// Returns an error when the request is not an array of strings.
 pub fn font_width(request: Value) -> Result<Value, String> {
     let texts = request.as_array().ok_or("Expected text array")?;
     let mut wide = 0f64;
@@ -100,6 +110,9 @@ pub fn font_width(request: Value) -> Result<Value, String> {
         round_even(10.0 * (wide + 0.5 * narrow) / bytes).clamp(1.0, 10.0) as i64
     ))
 }
+/// # Errors
+/// This operation does not return errors; it retains the fallible JSON
+/// operation interface used by the menu dispatcher.
 pub fn short_album(request: Value) -> Result<Value, String> {
     let value = text(&request, "Value");
     let max = request["MaximumCharacters"].as_i64().unwrap_or(24).max(0) as usize;
@@ -118,12 +131,17 @@ pub fn short_album(request: Value) -> Result<Value, String> {
     output = from_units(&units(&output).into_iter().take(max).collect::<Vec<_>>());
     Ok(Value::String(output))
 }
+/// # Errors
+/// Returns an error when the request is not a path string.
 pub fn normalize_path(request: Value) -> Result<Value, String> {
     Ok(Value::String(
         request.as_str().ok_or("Expected path")?.replace('\\', "/"),
     ))
 }
 
+/// # Errors
+/// Returns an error when `Tracks` or `Albums` is not an array, their lengths
+/// differ, or `RowCap` is not a positive integer.
 pub fn pages(request: Value) -> Result<Value, String> {
     let tracks = request["Tracks"].as_array().ok_or("Missing Tracks")?;
     let albums = request["Albums"].as_array().ok_or("Missing Albums")?;
@@ -153,4 +171,27 @@ pub fn pages(request: Value) -> Result<Value, String> {
         block_start = block_end;
     }
     Ok(Value::Array(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn punctuation_preserves_wide_guard_priority_and_utf16() {
+        for (input, expected, changed) in [
+            ("a,b:c=d", "a·b·c·d", true),
+            ("中,a:b=c", "中，a：b＝c", true),
+            ("Ａ,:=", "Ａ，：＝", true),
+            ("😀,:=", "😀···", true),
+            ("中😀", "中😀", false),
+            ("", "", false),
+        ] {
+            assert_eq!(
+                sanitize(json!(input)).unwrap(),
+                json!({"Value": expected, "Changed": changed})
+            );
+        }
+        assert_eq!(sanitize(Value::Null).unwrap_err(), "Expected menu text");
+    }
 }

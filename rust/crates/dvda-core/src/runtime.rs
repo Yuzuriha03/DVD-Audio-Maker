@@ -37,6 +37,10 @@ fn relative(path: &str) -> Result<PathBuf, String> {
     }
     Ok(parsed)
 }
+/// # Errors
+/// Returns an error if directory traversal or file reads fail, a symlink is
+/// encountered, a file is empty or exceeds 128 MiB, or compression or metadata
+/// serialization fails.
 pub fn pack(root: &Path) -> Result<Vec<u8>, String> {
     fn collect(root: &Path, folder: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {
         for entry in fs::read_dir(folder)? {
@@ -94,6 +98,14 @@ fn safe_target(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     }
     Ok(target)
 }
+/// # Errors
+/// Returns an error for malformed headers, metadata, paths, duplicate entries,
+/// invalid sizes or payload ranges, reparse points, cache creation/locking or
+/// file-write failures, decompression failures, or checksum mismatches.
+///
+/// # Panics
+/// The header conversion requires exactly four bytes; the checked `8..12`
+/// slice enforces that invariant before conversion.
 pub fn extract(archive: &[u8], cache: &Path) -> Result<PathBuf, String> {
     if archive.get(..8) != Some(MAGIC.as_slice()) {
         return Err("Invalid runtime archive header".into());
@@ -204,6 +216,12 @@ fn configure_library_search(root: &Path) -> Result<(), String> {
 }
 
 /// Initialize embedded components.
+///
+/// # Errors
+/// Returns an error if workspace creation or archive extraction fails,
+/// `SystemRoot` is unavailable, the cleanup process cannot start, DLL search
+/// configuration fails, or a nonempty runtime has already been initialized.
+/// An empty archive is a no-op.
 ///
 /// # Safety
 /// Call once from main before any other thread or native component is started.

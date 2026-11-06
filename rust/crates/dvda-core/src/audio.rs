@@ -52,6 +52,9 @@ pub struct Parameters {
     pub channels: i32,
     pub bits: i32,
 }
+/// # Errors
+/// Returns an error if executable or dependency discovery, file identity/hash
+/// reads, or serialization of the encoding identity fails.
 pub fn production_pcm_signature(
     library: &std::path::Path,
     rate: i32,
@@ -66,6 +69,10 @@ pub fn production_pcm_signature(
     )
 }
 
+/// # Errors
+/// Returns an error if an identity-matched PCM file cannot be reopened or
+/// validation is cancelled. Missing or stale cache evidence and other WAVE
+/// validation failures return `None` instead.
 pub fn reusable_production_pcm(
     track: &Value,
     current_source: &Value,
@@ -302,12 +309,18 @@ fn probe(job: &Job, operation: Operation, caller: &mut dyn Callbacks) -> Result<
     }
     serde_json::from_str(&output).map_err(|error| Failure::new("InvalidData", &error.to_string()))
 }
+/// # Errors
+/// Returns an error on cancellation, media-backend execution failure, a nonzero
+/// probe exit code, or invalid JSON probe output.
 pub fn read_metadata(job: &Job, caller: &mut dyn Callbacks) -> Result<Metadata, Failure> {
     Ok(metadata_from_probe(
         &job.input,
         &probe(job, Operation::Metadata, caller)?,
     ))
 }
+/// # Errors
+/// Returns an error on cancellation, media-backend execution failure, a nonzero
+/// probe exit code, or invalid JSON probe output.
 pub fn read_parameters(job: &Job, caller: &mut dyn Callbacks) -> Result<Parameters, Failure> {
     Ok(parameters_from_probe(&probe(
         job,
@@ -315,6 +328,11 @@ pub fn read_parameters(job: &Job, caller: &mut dyn Callbacks) -> Result<Paramete
         caller,
     )?))
 }
+/// # Errors
+/// Returns an error on cancellation, negative resampling rates, media/streaming
+/// backend failure, or failure to validate and normalize a successful WAVE
+/// decode. Decoder log errors and exit codes are otherwise represented in the
+/// returned decode result.
 pub fn check_decode(job: &Job, caller: &mut dyn Callbacks) -> Result<DecodeResult, Failure> {
     let (code, _, errors) = run(job, Operation::Decode, caller)?;
     let result = decode_from_log(&errors, code);

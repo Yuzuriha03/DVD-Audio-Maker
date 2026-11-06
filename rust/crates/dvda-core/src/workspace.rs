@@ -21,6 +21,10 @@ impl Workspace {
         path.join(".owner").is_file() && !path.join(".finished").exists()
     }
 
+    /// # Errors
+    /// Returns an error for an unresolved unfinished task, a reparse-point
+    /// ancestor, an unowned existing task directory, or a filesystem failure
+    /// while locking, creating, or resetting the task and its ownership marker.
     pub fn create_task(build: &Path, retain: bool, restart: Option<bool>) -> Result<Self, String> {
         fs::create_dir_all(build).map_err(|e| e.to_string())?;
         reject_reparse(build)?;
@@ -40,6 +44,10 @@ impl Workspace {
         Ok(task)
     }
 
+    /// # Errors
+    /// Returns an error if the workspace root cannot be inspected or created,
+    /// an ancestor is a reparse point, a resumed directory is unowned, or the
+    /// workspace cannot be locked, initialized, or reset after completion.
     pub fn create(build: &Path, resume: bool) -> Result<Self, String> {
         let root = if resume {
             build.join("unfinished-task")

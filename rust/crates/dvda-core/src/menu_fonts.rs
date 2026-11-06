@@ -313,6 +313,10 @@ fn resolve_with(
     }
     Ok(result)
 }
+/// # Errors
+/// Returns an error when the caller cancels font enumeration or rendering probes.
+/// Unavailable fonts and failed rendering probes produce fallback choices and
+/// diagnostics instead of propagating font-loading or shaping errors.
 pub fn resolve(
     runtime: &Path,
     preferred: [&str; 3],

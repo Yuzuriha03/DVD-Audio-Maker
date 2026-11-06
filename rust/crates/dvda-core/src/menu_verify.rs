@@ -35,6 +35,15 @@ fn cancel(caller: &mut dyn Callbacks) -> Result<(), String> {
         Ok(())
     }
 }
+/// # Errors
+/// Returns an error for truncated AMG tables, zero pages, inconsistent PGC
+/// strides, cell chains or navigation links, or an end sector inconsistent with
+/// the VOB length.
+///
+/// # Panics
+/// Offset arithmetic can overflow on narrow targets with malformed pointers
+/// when overflow checks are enabled. The final range lookup requires a nonempty
+/// page list, ensured by rejecting zero pages above.
 pub fn ranges(amg: &[u8], vob_bytes: u64) -> Result<Vec<(u32, u32)>, String> {
     let pointer = read32(amg, 0xcc)? as usize;
     let directory = if pointer == 0 { 0x1800 } else { pointer * 2048 };
@@ -367,10 +376,17 @@ fn stats(
     Ok([mean, f64::from(maximum), deviation, colors.len() as f64])
 }
 
+/// # Errors
+/// Returns an error if the audio directory, ISO metadata, or AMG cannot be read,
+/// or navigation pointers fail validation. An unreadable video directory is
+/// treated as empty.
 pub fn verify_iso_navigation(iso: &Path) -> Result<(), String> {
     verify_iso_navigation_with_cache(iso, &formats::IsoMetadataCache::default())
 }
 
+/// # Errors
+/// Returns the same directory, metadata, AMG-read, and navigation-validation
+/// errors as [`verify_iso_navigation`], using the supplied directory cache.
 pub fn verify_iso_navigation_with_cache(
     iso: &Path,
     cache: &formats::IsoMetadataCache,
@@ -382,6 +398,9 @@ pub fn verify_iso_navigation_with_cache(
     verify_navigation_pointers(&amg, &audio_files, &video_files, iso_sectors)
 }
 
+/// # Errors
+/// Returns the same cancellation, filesystem, navigation, extraction, decoding,
+/// and image-statistics errors as [`verify_with_cache`].
 pub fn verify(
     iso: &Path,
     expected: Option<&Value>,
@@ -397,6 +416,11 @@ pub fn verify(
     )
 }
 
+/// # Errors
+/// Returns an error on cancellation, invalid DVD-Audio filesystem/navigation or
+/// still-picture tables, missing required menu files, ISO/workspace I/O failure,
+/// page/frame decoding failure, or invalid image dimensions/crops. Plan count
+/// mismatches and visual quality defects are returned as issues instead.
 pub fn verify_with_cache(
     iso: &Path,
     expected: Option<&Value>,

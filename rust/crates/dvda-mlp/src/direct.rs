@@ -9,11 +9,21 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 /// Grouped reads use DVD assignment order within each group; uniform reads use
 /// canonical speaker order. Output is one access unit per call.
 pub trait StreamIo {
+    /// # Errors
+    /// Implementations return an error if PCM input cannot be read. The encoder
+    /// maps callback errors to input failure rather than preserving their code.
     fn read(&mut self, group: usize, pcm: &mut [i32]) -> Result<usize, i32>;
+    /// # Errors
+    /// Implementations return an error if the access unit cannot be written.
+    /// The encoder maps callback errors to output failure.
     fn write(&mut self, access_unit: &[u8]) -> Result<(), i32>;
     /// Called only by `encode_stream_with_stamp_refresh`, after a complete
     /// packet separator. Return None to repeat it, or a replacement with the
     /// same outer header/length, start = 0 and `valid_bits` = 0. Errors abort.
+    ///
+    /// # Errors
+    /// Overrides may fail when replacement metadata cannot be obtained. The
+    /// default implementation always succeeds without replacing the stamp.
     fn refresh_stamp(&mut self) -> Result<Option<Metadata>, i32> {
         Ok(None)
     }

@@ -26,6 +26,13 @@ pub struct Outcome {
     pub diagnostics: Vec<Value>,
 }
 
+/// # Errors
+/// Returns an error if lookup construction/resolution, lookup deserialization,
+/// native-format initialization, parallel scheduling, or cancellation fails.
+/// Track errors propagate for missing source paths, media probing, source
+/// identity reads, non-object tracks, and final MLP metadata reads. Invalid
+/// external directories and missing, empty, or structurally invalid MLP files
+/// are returned as diagnostics instead.
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     if !Path::new(&job.external_root).is_dir() {
         return Ok(Outcome {

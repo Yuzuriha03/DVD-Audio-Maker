@@ -48,6 +48,10 @@ pub fn layout_code(rate: i64, bits: i64, channels: i64, mask: i64) -> i64 {
     }
 }
 
+/// # Errors
+/// Returns an error for an unknown operation or a missing/non-integer `Rate`,
+/// `Bits`, or `Channels`, and additionally `ChannelMask` for layout validation.
+/// Unsupported formats and layouts are returned as numeric validation codes.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     let rate = request_integer(&request, "Rate")?;
     let bits = request_integer(&request, "Bits")?;
@@ -94,6 +98,12 @@ struct PreparedTrack {
     cache_entry: Option<(String, Value)>,
 }
 
+/// # Errors
+/// Returns an error if encoder/PCM signatures cannot be computed, the target
+/// format is unsupported, the working directory cannot be created, parallel
+/// preparation is cancelled or fails, or the updated cache cannot be saved.
+/// Individual track failures become diagnostics and preserve the original track
+/// in the result rather than failing the entire batch.
 pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<PrepareResult, String> {
     job.identity = crate::signature::encoding_identity(
         &format!("lpcm-rust-pcm-v2|dither={}|{}", job.dither, job.identity),

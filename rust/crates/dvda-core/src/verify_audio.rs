@@ -7,6 +7,11 @@ use dvda_native::media::Callbacks;
 use dvda_native::media::{Operation, OutputFormat, Request};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+/// # Errors
+/// Returns an error on cancellation, missing source/encoded files, invalid
+/// sample rate, bit depth or channel count, or an unknown legacy external MLP
+/// conversion policy. Decode/comparison errors, including unequal PCM, are
+/// propagated from the streaming verifier.
 pub fn track(
     library: &Path,
     _root: &Path,

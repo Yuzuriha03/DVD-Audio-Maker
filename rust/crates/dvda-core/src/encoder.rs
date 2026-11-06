@@ -72,6 +72,10 @@ fn read_number<const N: usize>(input: &mut File) -> Result<[u8; N], Failure> {
     input.read_exact(&mut bytes).map_err(io_failure)?;
     Ok(bytes)
 }
+/// # Errors
+/// Propagates default stamp generation or context-file I/O failures. Rejects an
+/// unknown context version, a mismatched access-unit count, invalid record
+/// counts/sizes, truncated packets, and trailing data.
 pub fn metadata(path: &str, units: u64) -> Result<Vec<Stamp>, Failure> {
     if crate::config::trim(path).is_empty() {
         return Ok(vec![crate::encoder_stamp::current()?]);
@@ -675,6 +679,10 @@ mod rust_tests {
     }
 }
 
+/// # Errors
+/// Rejects unknown operations or missing/invalid output path, frame count, or
+/// sample rate. Metadata-writing failures are returned in the JSON `Failure`
+/// field rather than as an error from this function.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     if operation != "encoder.write_metadata" {
         return Err("Unknown encoder operation".into());

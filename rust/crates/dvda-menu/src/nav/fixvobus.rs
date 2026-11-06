@@ -10,7 +10,6 @@
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
     clippy::too_many_lines,
-    clippy::unnecessary_wraps,
     reason = "NAV sector references and VOBU indices intentionally use their protocol field widths"
 )]
 use super::build::Build;
@@ -236,7 +235,7 @@ pub(crate) fn fill_vob(
     format: VideoFormat,
     sector_base: u32,
     vob_id: u16,
-) -> Result<(), String> {
+) {
     let mut timings: Vec<VobuTiming> = (0..build.vobus.len())
         .map(|index| scan_vobu(build, index, format))
         .collect();
@@ -469,7 +468,6 @@ pub(crate) fn fill_vob(
         }
         build.output[base..base + SECTOR].copy_from_slice(&sector);
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -537,7 +535,7 @@ mod tests {
                 v.sector, v.last_sector, v.start_pts, v.end_pts
             );
         }
-        fill_vob(&mut build, &data, &commands(), VideoFormat::Pal, 0, 1).unwrap();
+        fill_vob(&mut build, &data, &commands(), VideoFormat::Pal, 0, 1);
         assert_eq!(build.output.len(), baseline.len());
         for index in 0..build.vobus.len() {
             let vobu = &build.vobus[index];

@@ -109,7 +109,7 @@ fn entries() -> &'static [Entry] {
                 .iter()
                 .filter_map(|p| match p {
                     Part::Argument(i) => Some(i + 1),
-                    _ => None,
+                    Part::Literal(_) => None,
                 })
                 .max()
                 .unwrap_or(0);
@@ -138,7 +138,7 @@ fn entries() -> &'static [Entry] {
                     .iter()
                     .map(|p| match p {
                         Part::Literal(s) => s.len(),
-                        _ => 0,
+                        Part::Argument(_) => 0,
                     })
                     .sum::<usize>(),
             )

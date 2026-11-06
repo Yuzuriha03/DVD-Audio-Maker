@@ -23,6 +23,11 @@ fn u32_at(data: &[u8], offset: usize) -> Result<u32, String> {
             .unwrap(),
     ))
 }
+/// # Errors
+/// Returns an error for a short or invalid ATS header, truncated fields,
+/// out-of-range program chains, titles, cells or still references, or titles
+/// without tracks. Timeline inconsistencies and reversed cell ranges are
+/// recorded in the returned group's issues instead.
 pub fn parse(data: &[u8], group: i32) -> Result<Group, String> {
     if data.len() < 212 {
         return Err("IFO_SHORT".into());

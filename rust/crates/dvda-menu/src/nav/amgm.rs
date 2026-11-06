@@ -96,7 +96,7 @@ pub(crate) fn run(xml_path: &Path, output: &Path) -> Result<(), String> {
                 vob_id = vob_id.checked_add(1).ok_or("too many menu VOB sources")?;
                 let sector_base = u32::try_from(output_bytes.len() / 2048)
                     .map_err(|_| "menu VOB sector address overflow")?;
-                fixvobus::fill_vob(&mut build, &data, &commands, format, sector_base, vob_id)?;
+                fixvobus::fill_vob(&mut build, &data, &commands, format, sector_base, vob_id);
                 output_bytes.extend_from_slice(&build.output);
             }
         }

@@ -54,6 +54,9 @@ pub fn check_cancel(events: &mut dyn Callbacks) -> Result<(), Failure> {
         Ok(())
     }
 }
+/// # Panics
+/// The fixed-width integer reads require four-byte slices within the first
+/// 24 bytes. The initial length check and fixed offsets guarantee this.
 #[must_use]
 pub fn parse_cookie(data: &[u8], offset: i32) -> Option<Cookie> {
     if data.len() < 24 {
@@ -567,6 +570,10 @@ pub fn inspect(
 /// copy/replacement failures, including cancellation. Rejects a destination that
 /// resolves to the source path. Unsupported extensions, missing cookies, and
 /// sources requiring no patches return `Ok(None)` instead.
+///
+/// # Panics
+/// Requires a filename when constructing the repaired output path. The supported
+/// file-extension check excludes paths without a filename before this point.
 pub fn try_repair(
     library: &Path,
     path: &str,

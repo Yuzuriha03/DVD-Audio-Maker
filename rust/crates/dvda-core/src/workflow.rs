@@ -42,6 +42,10 @@ fn identity_equal(left: &Value, right: &Value) -> bool {
         && text(left, "TailHash") == text(right, "TailHash")
 }
 
+/// # Errors
+/// Returns an error for an unknown operation, missing identity/cache fields,
+/// invalid disk-space request data, overflowing space estimates or totals, or
+/// a result serialization failure. Cache mismatches return `false`, not errors.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "identity.equal" => identity_equal_operation(request),

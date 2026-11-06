@@ -130,6 +130,14 @@ fn diagnostic(list: &mut Vec<Diagnostic>, severity: i32, code: &str, message: St
     });
 }
 
+/// # Errors
+/// Returns an error if accumulated MLP sizes overflow or an estimated AOB size
+/// is not representable. Missing MLP data and capacity/group-limit violations
+/// are recorded as diagnostics instead.
+///
+/// # Panics
+/// The last-track lookup and chunk indexing require nonempty groups; construction
+/// and the short-circuit guard maintain these invariants.
 pub fn plan(tracks: Vec<Track>, disc_bytes: i64, group_limit: i32) -> Result<Plan, String> {
     let mut diagnostics = Vec::new();
     for track in &tracks {
@@ -292,6 +300,9 @@ pub fn plan(tracks: Vec<Track>, disc_bytes: i64, group_limit: i32) -> Result<Pla
         has_errors,
     })
 }
+/// # Errors
+/// Returns an error for an invalid planning request, size overflow during
+/// planning, or failure to serialize the resulting plan.
 pub fn dispatch(request: Value) -> Result<Value, String> {
     let request: Request = serde_json::from_value(request).map_err(|e| e.to_string())?;
     serde_json::to_value(plan(
@@ -302,6 +313,9 @@ pub fn dispatch(request: Value) -> Result<Value, String> {
     .map_err(|e| e.to_string())
 }
 
+/// # Errors
+/// Returns an error for a non-object request, missing or invalid tracks, a
+/// non-integer album limit, or failure to serialize the retained tracks.
 pub fn limit_albums(request: Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected album limit request")?;
     let tracks: Vec<Track> = serde_json::from_value(

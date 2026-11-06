@@ -11,6 +11,11 @@ use std::{
 };
 
 /// Invariant Double.ToString("R") spelling used by historical cache signatures.
+///
+/// # Panics
+/// Panics if the JSON formatter cannot serialize a finite `f64` or produces
+/// a non-ASCII decimal or an invalid `i32` exponent. The formatter guarantees
+/// these invariants; non-finite inputs are handled before serialization.
 #[must_use]
 pub fn roundtrip(value: f64) -> String {
     if value.is_nan() {

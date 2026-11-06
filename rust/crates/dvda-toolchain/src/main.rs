@@ -8,7 +8,6 @@
     reason = "Release assembly retains sequential packaging stages"
 )]
 #![allow(
-    clippy::default_trait_access,
     clippy::items_after_statements,
     reason = "Scoped test imports and inferred defaults vary with enabled test targets"
 )]
@@ -818,7 +817,7 @@ mod tests {
             fs::write(output.join(name), b"known good").unwrap();
         }
         let inputs = validation::Inputs {
-            files: Default::default(),
+            files: std::collections::BTreeMap::default(),
             records: vec![],
         };
         for reason in ["build", "copy", "zip"] {

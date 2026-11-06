@@ -117,6 +117,12 @@ pub(crate) fn prepare_wave(
     Ok(prepared.to_path_buf())
 }
 
+/// # Errors
+/// Returns a failure on cancellation, source access or WAVE parsing errors,
+/// unsupported target depth, mismatched rate, conflicting surround layouts,
+/// output exceeding RIFF limits, or PCM precision that would be truncated.
+/// Output creation, reading, seeking, writing, finalization and temporary-file
+/// cleanup errors are propagated as failures as well.
 pub fn normalize(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
     normalize_impl(job, caller, false)
 }

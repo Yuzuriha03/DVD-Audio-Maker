@@ -21,7 +21,6 @@ mod coefficients;
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::missing_errors_doc,
     clippy::too_many_lines,
     reason = "Direct stream adapters preserve callback contracts and bounded PCM geometry"
 )]

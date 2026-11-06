@@ -14,6 +14,8 @@ fn size(tracks: &[Value]) -> Result<i64, String> {
             .ok_or("MLP size overflow".into())
     })
 }
+/// # Errors
+/// Returns an error if the overhead-adjusted size cannot be represented as `i64`.
 pub fn estimate(bytes: i64) -> Result<i64, String> {
     let value = (bytes as f64 * 1.025).ceil();
     if value < i64::MIN as f64 || value >= 9_223_372_036_854_775_808.0 {
@@ -37,6 +39,15 @@ pub fn albums(tracks: &[Value]) -> Vec<(String, Vec<Value>)> {
 fn diagnostic(list: &mut Vec<Value>, severity: i32, code: &str, message: String) {
     list.push(json!({"Severity":severity,"Code":code,"Message":message}));
 }
+/// # Errors
+/// Returns an error for missing or non-integer disc/group limits or track sizes,
+/// a missing tracks array, missing track sample rates/bit depths, or an overflow
+/// while summing album sizes or estimating AOB sizes. Capacity and group-limit
+/// violations are returned as diagnostics rather than errors.
+///
+/// # Panics
+/// The internal last-track lookup assumes a nonempty chunk; its preceding
+/// short-circuit check enforces that invariant.
 pub fn plan(request: Value) -> Result<Value, String> {
     let tracks = request["Tracks"].as_array().ok_or("Missing Tracks")?;
     let disc_bytes = number(&request, "DiscBytes")?;
@@ -170,16 +181,23 @@ pub fn track_number(value: &str) -> i32 {
         .collect();
     digits.parse().unwrap_or(9999)
 }
+/// # Errors
+/// Returns an error if the request is not a string.
 pub fn track_number_value(request: Value) -> Result<Value, String> {
     Ok(json!(track_number(
         request.as_str().ok_or("Expected track text")?
     )))
 }
+/// # Errors
+/// Returns an error if the request is not an integer or the estimated AOB size
+/// cannot be represented as `i64`.
 pub fn estimate_value(request: Value) -> Result<Value, String> {
     Ok(json!(estimate(
         request.as_i64().ok_or("Expected MLP bytes")?
     )?))
 }
+/// # Errors
+/// Returns an error if the request is not an integer disc size.
 pub fn content_limit_value(request: Value) -> Result<Value, String> {
     Ok(json!(
         request
@@ -189,6 +207,9 @@ pub fn content_limit_value(request: Value) -> Result<Value, String> {
             .max(0)
     ))
 }
+/// # Errors
+/// Returns an error if the request is not an array. Missing track text fields
+/// use empty strings, and unparseable track numbers sort as 9999.
 pub fn sort(request: Value) -> Result<Value, String> {
     let mut tracks = request.as_array().ok_or("Expected tracks")?.clone();
     // .NET ordinal compares UTF-16 code units, not Unicode scalar values.

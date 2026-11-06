@@ -10,7 +10,6 @@
     clippy::cast_sign_loss,
     clippy::decimal_bitwise_operands,
     clippy::too_many_lines,
-    clippy::unnecessary_wraps,
     reason = "MPEG PACK/PES fields retain their protocol widths and C-compatible scheduling arithmetic"
 )]
 use super::encode::dvd_encode;
@@ -268,7 +267,7 @@ impl Mux {
             self.subno += 1;
             self.lastgts = duegt as u64;
             self.write_dvdauthor_data(&mut current);
-            self.write_subpicture(&current, &sub_size)?;
+            self.write_subpicture(&current, &sub_size);
         }
         Ok(())
     }
@@ -394,7 +393,7 @@ impl Mux {
         self.write(&data);
     }
 
-    fn write_subpicture(&mut self, spu: &SubPicture, sub: &[u8]) -> Result<(), String> {
+    fn write_subpicture(&mut self, spu: &SubPicture, sub: &[u8]) {
         let sub_size = sub.len();
         let mut sent = 0usize;
         let mut seq: u8 = 0;
@@ -449,7 +448,6 @@ impl Mux {
             }
             let _ = seq;
         }
-        Ok(())
     }
 
     fn run(&mut self, rgba: &mut RgbaReader<'_>) -> Result<(), String> {

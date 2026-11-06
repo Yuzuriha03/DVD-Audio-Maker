@@ -444,6 +444,10 @@ pub fn evaluate(request: Request) -> Value {
     json!({"Properties": properties, "Raw": raw, "Sources": sources, "EffectiveKeys": keys, "Overrides": overrides, "MissingRequired": missing})
 }
 
+/// # Errors
+/// Returns an error for an unknown operation, a non-string defaults path, an
+/// evaluation request that cannot be deserialized, or missing/non-string shell
+/// assignment keys and values.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "options.defaults" => Ok(json!(defaults(

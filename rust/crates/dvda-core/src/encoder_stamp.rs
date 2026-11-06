@@ -148,19 +148,19 @@ impl LiveStamp {
         })
     }
     pub(crate) fn refresh(&mut self) -> Result<Option<Stamp>, Failure> {
-        self.refresh_at(timestamp()?)
+        Ok(self.refresh_at(timestamp()?))
     }
-    fn refresh_at(&mut self, time: [u8; 20]) -> Result<Option<Stamp>, Failure> {
+    fn refresh_at(&mut self, time: [u8; 20]) -> Option<Stamp> {
         let field = &mut self.packet[self.time_offset..self.time_offset + 20];
         if field == time {
-            return Ok(None);
+            return None;
         }
         field.copy_from_slice(&time);
-        Ok(Some(Stamp {
+        Some(Stamp {
             start: 0,
             packet: self.packet.clone(),
             valid_bits: 0,
-        }))
+        })
     }
 }
 
@@ -222,15 +222,12 @@ mod tests {
             valid_bits: 0,
         };
         let mut live = LiveStamp::new(&stamp).unwrap();
-        assert!(live.refresh_at(*b"Oct 14 2026 07:27:44").unwrap().is_none());
-        let next = live.refresh_at(*b"Oct 14 2026 07:27:45").unwrap().unwrap();
+        assert!(live.refresh_at(*b"Oct 14 2026 07:27:44").is_none());
+        let next = live.refresh_at(*b"Oct 14 2026 07:27:45").unwrap();
         assert_eq!(next.packet, packet(b"Oct 14 2026 07:27:45", b"machine-id"));
-        assert!(live.refresh_at(*b"Oct 14 2026 07:27:45").unwrap().is_none());
+        assert!(live.refresh_at(*b"Oct 14 2026 07:27:45").is_none());
         assert_eq!(
-            live.refresh_at(*b"Oct 14 2026 07:27:44")
-                .unwrap()
-                .unwrap()
-                .packet,
+            live.refresh_at(*b"Oct 14 2026 07:27:44").unwrap().packet,
             original
         );
         assert!(

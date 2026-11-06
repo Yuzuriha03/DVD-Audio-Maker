@@ -1,5 +1,9 @@
 use serde_json::{Value, json};
 
+/// # Errors
+/// Returns an error for an unknown operation, a non-text probe/decoder output,
+/// a metadata request without string `Path` and `Output` fields, or a result
+/// serialization failure.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "audio.parameters" => audio_parameters(request),
