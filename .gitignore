@@ -106,9 +106,16 @@ settings.local.json
 !.vscode/settings.json
 DVD-Audio-Maker.log.txt
 
-# Development, migration and diagnostics documentation stays in the local source
-# working copy; only the licensing notes are published.
+# Most development, migration and diagnostics documentation stays in the local
+# working copy. Only licensing and explicitly allowlisted guides are published.
 docs/*
 !docs/LICENSING.md
 !docs/LICENSING.en.md
 !docs/LICENSING.ja.md
+!docs/DEVELOPMENT.md
+!docs/DEVELOPMENT.en.md
+!docs/RUST-AUTHOR-MIGRATION.md
+!docs/RUST-MENU-SESSION-MIGRATION.md
+!docs/C17-FORMATS.md
+!docs/RUST-CLEANUP.md
+!docs/ONEFILE-PUBLISH.md

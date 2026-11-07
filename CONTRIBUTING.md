@@ -5,7 +5,7 @@
 - 根目录保留用户入口、README、许可、贡献指南和示例配置；`build.cmd`、`cli.cmd`、`gui*.cmd`、`verify.cmd` 是公开启动入口，不因目录美化而移动。
 - `rust/` 是 Cargo workspace，`rust/crates/` 按职责划分 crate。模块移动必须有调用图和 API 依据，不为排版或 lint 数量调整目录。
 - `tools/` 保存构建、发布与验证脚本；`assets/` 保存源资源。
-- `docs/` 延续现有本地开发文档约定，仅许可文档默认发布；根目录的贡献指南纳入版本控制。
+- `docs/` 延续本地开发文档约定，仅许可及 `.gitignore` 白名单中的必要指南纳入版本控制；完整构建与验证说明见 [开发说明](docs/DEVELOPMENT.md)，其余专项诊断文档保持本地。
 - `build/`、`target/`、`rust/target/` 和 `.venv/` 放生成物或本地环境，不手工整理其中的编译器输出，也不将其作为发布源码提交。
 - `build/clippy-audit/` 只保留可复验材料：`baseline/` 放基线，`strict/` 放严格检查，`tests/` 放测试与工作流日志，`expanded/` 放各 feature 的展开诊断，根部的 `current-force-warn.jsonl` 是当前审计，`implementation-summary.json` 是摘要。可重建的隔离 target、临时 fixture 和调试插桩输出应清理，不长期堆积。
 
