@@ -44,6 +44,11 @@ def rust_sources(repo):
 
 def main():
     repo = Path(__file__).resolve().parents[2]
+    # Keep linker temporaries inside the workspace to avoid antivirus/indexer
+    # locks in the system temp directory.
+    os.environ.setdefault('TMP', str(repo/'build/tmp'))
+    os.environ.setdefault('TEMP', str(repo/'build/tmp'))
+    (repo/'build/tmp').mkdir(parents=True, exist_ok=True)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, help='Legacy configured source, used only for menu assets')
     parser.add_argument('--msys-root', type=Path, help=argparse.SUPPRESS)
