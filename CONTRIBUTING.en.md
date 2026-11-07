@@ -1,5 +1,14 @@
 # Development and contribution
 
+## Workspace layout
+
+- Keep user entry points, READMEs, licenses, contributor guides, and example configuration at the root. `build.cmd`, `cli.cmd`, `gui*.cmd`, and `verify.cmd` are public launchers and must not be moved for cosmetic reasons.
+- `rust/` is the Cargo workspace and `rust/crates/` is organized by responsibility. Move modules only for call-graph or API reasons, never for formatting or lint counts.
+- `tools/` contains build, release, and validation scripts; `assets/` contains source resources.
+- `docs/` retains the existing local-development convention: only licensing documents are published by default. Root contributor guides are version controlled.
+- `build/`, `target/`, `rust/target/`, and `.venv/` contain generated artifacts or local environments. Do not manually reorganize compiler output or submit it as source releases.
+- `build/clippy-audit/` contains only reproducible evidence: `baseline/` for baselines, `strict/` for strict checks, `tests/` for tests and workflows, and `expanded/` for per-feature expanded diagnostics. Root `current-force-warn.jsonl` is the current audit and `implementation-summary.json` is the summary. Remove rebuildable isolated targets, temporary fixtures, and debugging instrumentation output instead of accumulating them.
+
 ## Clippy pedantic maintenance
 
 The workspace keeps `clippy::pedantic = "warn"` in `rust/Cargo.toml`; strict acceptance uses `-D warnings`. The goal is to keep diagnostics effective, not to drive the number of exemptions to zero.
