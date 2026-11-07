@@ -17,7 +17,7 @@ impl Store {
         let entries = if path.exists() {
             match state::read_json(&path)
                 .map_err(|e| e.message)
-                .and_then(validate_entries)
+                .and_then(|value| validate_entries(&value))
             {
                 Ok(entries) => entries,
                 Err(reason) => {
@@ -77,7 +77,7 @@ impl Store {
 // Match the old typed reader: absent fields and null reference values are
 // allowed, but malformed known fields invalidate the record with a warning.
 // Keep unknown fields so future additions do not make old records unreadable.
-fn validate_entries(value: Value) -> Result<Map<String, Value>, String> {
+fn validate_entries(value: &Value) -> Result<Map<String, Value>, String> {
     if value.is_null() {
         return Ok(Map::new());
     }

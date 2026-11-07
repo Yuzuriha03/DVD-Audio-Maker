@@ -12,6 +12,12 @@ pub(crate) fn mlp_rate_init() -> MlpRateState {
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Rate control intentionally retains wrapping signed totals and fixed-point delivery-rate conversions"
+)]
 pub(crate) fn mlp_rate_update(
     state: &mut MlpRateState,
     samples: u32,

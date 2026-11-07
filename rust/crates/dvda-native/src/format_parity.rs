@@ -1,20 +1,63 @@
 //! Rust format behavior and differential checks against the frozen C17 DLL.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::too_many_lines,
-    clippy::unreadable_literal,
-    reason = "Differential tests intentionally construct C ABI fixtures and complete protocol packets"
-)]
 use super::*;
+use crate::encoder::{Encoder, Request, Stamp, Stream};
 use std::{
-    fs,
+    fs, io,
     os::windows::ffi::OsStrExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
+
+type Inspect = unsafe extern "C" fn(*const u8, usize, *mut OracleInspection) -> i32;
+type InspectBuffer = unsafe extern "C" fn(*const u8, usize, *mut OracleInspection) -> i32;
+type InspectFile = unsafe extern "C" fn(*const std::ffi::c_char, *mut OracleInspection) -> i32;
+type Align =
+    unsafe extern "C" fn(*const u8, usize, *mut *mut u8, *mut usize, *mut OracleAlignment) -> i32;
+type Free = unsafe extern "C" fn(*mut std::ffi::c_void);
+type Crc16 = unsafe extern "C" fn(*const u8, usize, *mut u16) -> i32;
+type Crc8 = unsafe extern "C" fn(*const u8, usize, *mut u8) -> i32;
+type Compare = unsafe extern "C" fn(
+    *const std::ffi::c_char,
+    *const std::ffi::c_char,
+    u32,
+    u32,
+    *mut OracleComparison,
+) -> i32;
+type Pts = unsafe extern "C" fn(*const u8, usize, *mut i64) -> i32;
+
+struct DeterministicPcm {
+    frames: usize,
+    channels: usize,
+    bits: u32,
+    position: usize,
+    output: Vec<u8>,
+}
+impl Stream for DeterministicPcm {
+    fn read(&mut self, samples: &mut [i32]) -> io::Result<usize> {
+        let count = (self.frames - self.position).min(samples.len() / self.channels);
+        for frame in 0..count {
+            for channel in 0..self.channels {
+                let position = self.position + frame;
+                let level = if position < 17 || position >= self.frames - 13 {
+                    0
+                } else {
+                    ((i32::try_from(position).unwrap() * 37
+                        + i32::try_from(channel).unwrap() * 733)
+                        & 1023)
+                        - 512
+                };
+                samples[frame * self.channels + channel] =
+                    (level << (self.bits - 10)) << (24 - self.bits);
+            }
+        }
+        self.position += count;
+        Ok(count)
+    }
+    fn write(&mut self, data: &[u8]) -> io::Result<()> {
+        self.output.extend_from_slice(data);
+        Ok(())
+    }
+}
 
 struct Scratch(PathBuf);
 impl Scratch {
@@ -64,7 +107,7 @@ fn fixture(major: bool, eos: bool) -> Vec<u8> {
     let mut parity = words ^ 3;
     parity ^= parity >> 8;
     parity ^= parity >> 4;
-    let header = ((((parity & 15) ^ 15) << 12) | words) as u16;
+    let header = u16::try_from((((parity & 15) ^ 15) << 12) | words).unwrap();
     data[..2].copy_from_slice(&header.to_be_bytes());
     data
 }
@@ -74,13 +117,13 @@ fn native_format_checksum_parity_peak_rate_and_pts_match_historical_constants() 
     let native = NativeFormats::load().unwrap();
     assert_eq!(fixture_crc(&[0xf8, 0x72, 0x6f, 0xbb, 0, 0]), 0x8699);
     assert_eq!(mlp_formats::checksum8(&[1, 2, 3, 0]), 0xb0);
-    for value in [0, 1, 90000, 0x1_ffff_ffff] {
+    for value in [0_i64, 1, 90000, 0x1_ffff_ffff] {
         let encoded = [
-            0x21 | (((value >> 30) & 7) as u8) << 1,
-            (value >> 22) as u8,
-            (((value >> 15) & 0x7f) as u8) << 1 | 1,
-            (value >> 7) as u8,
-            ((value & 0x7f) as u8) << 1 | 1,
+            0x21 | ((value >> 30) & 7).to_le_bytes()[0] << 1,
+            (value >> 22).to_le_bytes()[0],
+            ((value >> 15) & 0x7f).to_le_bytes()[0] << 1 | 1,
+            (value >> 7).to_le_bytes()[0],
+            (value & 0x7f).to_le_bytes()[0] << 1 | 1,
         ];
         assert_eq!(native.parse_pts(&encoded).unwrap(), value);
         for length in 0..5 {
@@ -250,7 +293,9 @@ fn pcm_comparison_throughput() {
     let root = Scratch::new();
     let source = root.0.join("source.raw");
     let decoded = root.0.join("decoded.raw");
-    let bytes: Vec<u8> = (0..=(64 * 1024 * 1024)).map(|n| n as u8).collect();
+    let bytes: Vec<u8> = (0_i32..=(64 * 1024 * 1024))
+        .map(|n| n.to_le_bytes()[0])
+        .collect();
     fs::write(&source, &bytes).unwrap();
     fs::write(&decoded, &bytes).unwrap();
     for round in 0..9 {
@@ -361,27 +406,7 @@ impl Drop for Oracle {
     }
 }
 
-#[test]
-fn frozen_dll_mlp_and_checksum_differential() {
-    if !Oracle::enabled() {
-        eprintln!("set DVDA_FORMATS_ORACLE=1 to compare against the frozen format DLL");
-        return;
-    }
-    let oracle = Oracle::load();
-    type Inspect = unsafe extern "C" fn(*const u8, usize, *mut OracleInspection) -> i32;
-    type Align = unsafe extern "C" fn(
-        *const u8,
-        usize,
-        *mut *mut u8,
-        *mut usize,
-        *mut OracleAlignment,
-    ) -> i32;
-    type Free = unsafe extern "C" fn(*mut std::ffi::c_void);
-    type Crc16 = unsafe extern "C" fn(*const u8, usize, *mut u16) -> i32;
-    type Crc8 = unsafe extern "C" fn(*const u8, usize, *mut u8) -> i32;
-    let inspect: Inspect = unsafe { oracle.symbol(c"dvda_formats_mlp_inspect_buffer") };
-    let align: Align = unsafe { oracle.symbol(c"dvda_formats_mlp_align_buffer") };
-    let free: Free = unsafe { oracle.symbol(c"dvda_formats_free") };
+fn checksum_differential(oracle: &Oracle) {
     let crc16: Crc16 = unsafe { oracle.symbol(c"dvda_formats_checksum16") };
     let crc8: Crc8 = unsafe { oracle.symbol(c"dvda_formats_checksum8") };
     let mut seed = 0x8b2d_197a_ee30_145au64;
@@ -389,7 +414,7 @@ fn frozen_dll_mlp_and_checksum_differential() {
         seed ^= seed << 13;
         seed ^= seed >> 7;
         seed ^= seed << 17;
-        seed as u8
+        seed.to_le_bytes()[0]
     };
     for length in 2..260 {
         let data: Vec<u8> = (0..length).map(|_| random()).collect();
@@ -414,6 +439,9 @@ fn frozen_dll_mlp_and_checksum_differential() {
             "CRC8 length {length}"
         );
     }
+}
+
+fn mlp_differential_cases() -> Vec<Vec<u8>> {
     let mut cases = vec![
         vec![],
         fixture(true, true),
@@ -443,6 +471,21 @@ fn frozen_dll_mlp_and_checksum_differential() {
     for cut in 0..valid.len() {
         cases.push(valid[..cut].to_vec());
     }
+    cases
+}
+
+#[test]
+fn frozen_dll_mlp_and_checksum_differential() {
+    if !Oracle::enabled() {
+        eprintln!("set DVDA_FORMATS_ORACLE=1 to compare against the frozen format DLL");
+        return;
+    }
+    let oracle = Oracle::load();
+    let inspect: Inspect = unsafe { oracle.symbol(c"dvda_formats_mlp_inspect_buffer") };
+    let align: Align = unsafe { oracle.symbol(c"dvda_formats_mlp_align_buffer") };
+    let free: Free = unsafe { oracle.symbol(c"dvda_formats_free") };
+    checksum_differential(&oracle);
+    let cases = mlp_differential_cases();
     for case in cases {
         let mut raw = OracleInspection::default();
         let status = unsafe { inspect(case.as_ptr(), case.len(), &raw mut raw) };
@@ -530,14 +573,6 @@ fn frozen_dll_pcm_and_pts_differential() {
         return;
     }
     let oracle = Oracle::load();
-    type Compare = unsafe extern "C" fn(
-        *const std::ffi::c_char,
-        *const std::ffi::c_char,
-        u32,
-        u32,
-        *mut OracleComparison,
-    ) -> i32;
-    type Pts = unsafe extern "C" fn(*const u8, usize, *mut i64) -> i32;
     let compare: Compare = unsafe { oracle.symbol(c"dvda_formats_pcm_compare_files") };
     let parse: Pts = unsafe { oracle.symbol(c"dvda_formats_parse_pts") };
     let root = Scratch::new();
@@ -545,7 +580,7 @@ fn frozen_dll_pcm_and_pts_differential() {
     let decoded = root.0.join("decoded.raw");
     let src = std::ffi::CString::new(source.to_str().unwrap()).unwrap();
     let dst = std::ffi::CString::new(decoded.to_str().unwrap()).unwrap();
-    let bytes: Vec<_> = (0..300000u32).map(|i| i as u8).collect();
+    let bytes: Vec<_> = (0..300_000u32).map(|i| i.to_le_bytes()[0]).collect();
     for (left, right, frame, max) in [
         (vec![], vec![], 0, 0),
         (vec![1, 2, 3, 4], vec![1, 2, 3, 4], 0, 0),
@@ -625,7 +660,6 @@ fn frozen_dll_real_mlp_file_differential() {
         path.display()
     );
     let oracle = Oracle::load();
-    type InspectFile = unsafe extern "C" fn(*const std::ffi::c_char, *mut OracleInspection) -> i32;
     let inspect: InspectFile = unsafe { oracle.symbol(c"dvda_formats_mlp_inspect_file") };
     let name =
         std::ffi::CString::new(path.to_str().expect("real sample path must be UTF-8")).unwrap();
@@ -673,46 +707,136 @@ fn frozen_dll_real_mlp_file_differential() {
     }
 }
 
+type InspectionFields = (u64, u32, u32, f64, i32, i32, i32, i32, i32, i32, i32, i32);
+
+fn oracle_fields(raw: &OracleInspection) -> InspectionFields {
+    (
+        raw.size,
+        raw.units,
+        raw.majors,
+        raw.interval,
+        raw.major_errors,
+        raw.parity_errors,
+        raw.sub_errors,
+        raw.eos,
+        raw.peak,
+        raw.extended,
+        raw.rate,
+        raw.valid,
+    )
+}
+
+fn rust_fields(inspection: &MlpInspection) -> InspectionFields {
+    (
+        inspection.size,
+        inspection.access_unit_count,
+        inspection.major_sync_count,
+        inspection.major_sync_interval,
+        inspection.major_sync_error_count,
+        inspection.access_unit_parity_error_count,
+        inspection.substream_error_count,
+        i32::from(inspection.has_end_of_stream),
+        inspection.peak_bitrate_raw,
+        inspection.extended_substream_info,
+        inspection.sample_rate,
+        i32::from(inspection.is_valid),
+    )
+}
+
+fn encoded_inspection_differential(
+    inspect_file: InspectFile,
+    inspect_buffer: InspectBuffer,
+    path: &Path,
+    data: &[u8],
+    name: &str,
+) {
+    let name_c = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
+    let mut from_file = OracleInspection::default();
+    let mut from_buffer = OracleInspection::default();
+    let file_status = unsafe { inspect_file(name_c.as_ptr(), &raw mut from_file) };
+    let buffer_status = unsafe { inspect_buffer(data.as_ptr(), data.len(), &raw mut from_buffer) };
+    let rust_file = NativeFormats.inspect_file(path);
+    let rust_buffer = mlp_formats::inspect_buffer(data);
+    assert_eq!(file_status == 0, rust_file.is_ok(), "{name} file status");
+    assert_eq!(
+        buffer_status == 0,
+        rust_buffer.is_ok(),
+        "{name} buffer status"
+    );
+    let file_error = from_file.error;
+    let buffer_error = from_buffer.error;
+    if let Ok(inspection) = &rust_file {
+        assert_eq!(
+            rust_fields(inspection),
+            oracle_fields(&from_file),
+            "{name} file inspection"
+        );
+        assert_eq!(inspection.error_code, file_error, "{name} file error code");
+    }
+    if let Ok(inspection) = &rust_buffer {
+        assert_eq!(
+            rust_fields(inspection),
+            oracle_fields(&from_buffer),
+            "{name} buffer inspection"
+        );
+        assert_eq!(
+            inspection.error_code, buffer_error,
+            "{name} buffer error code"
+        );
+    }
+}
+
+fn alignment_differential(align: Align, free: Free, data: &[u8], outputs: &Path, name: &str) {
+    let mut pointer = std::ptr::null_mut();
+    let mut length = 0;
+    let mut aligned = OracleAlignment::default();
+    let status = unsafe {
+        align(
+            data.as_ptr(),
+            data.len(),
+            &raw mut pointer,
+            &raw mut length,
+            &raw mut aligned,
+        )
+    };
+    let rust = NativeFormats.align(data);
+    assert_eq!(status == 0, rust.is_ok(), "{name} align status");
+    if let Ok(value) = rust {
+        assert!(!pointer.is_null(), "{name} oracle output");
+        let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
+        assert_eq!(value.data, bytes, "{name} aligned bytes");
+        assert_eq!(
+            (
+                value.peak_changes,
+                value.extended_changes,
+                value.checksum_changes,
+                i32::from(value.inserted_end_of_stream),
+                value.old_header,
+                value.new_header
+            ),
+            (
+                aligned.peaks,
+                aligned.extended,
+                aligned.checksums,
+                aligned.inserted,
+                aligned.old,
+                aligned.new
+            ),
+            "{name} alignment fields"
+        );
+        fs::write(outputs.join(format!("{name}.aligned.mlp")), &value.data).unwrap();
+    }
+    if !pointer.is_null() {
+        unsafe { free(pointer.cast()) };
+    }
+}
+
 #[test]
 fn frozen_dll_encoded_mlp_profiles_differential() {
     if !Oracle::enabled() {
         eprintln!("set DVDA_FORMATS_ORACLE=1 to encode and compare real MLP profiles");
         return;
     }
-    use crate::encoder::{Encoder, Request, Stamp, Stream};
-    use std::io;
-
-    struct DeterministicPcm {
-        frames: usize,
-        channels: usize,
-        bits: u32,
-        position: usize,
-        output: Vec<u8>,
-    }
-    impl Stream for DeterministicPcm {
-        fn read(&mut self, samples: &mut [i32]) -> io::Result<usize> {
-            let count = (self.frames - self.position).min(samples.len() / self.channels);
-            for frame in 0..count {
-                for channel in 0..self.channels {
-                    let position = self.position + frame;
-                    let level = if position < 17 || position >= self.frames - 13 {
-                        0
-                    } else {
-                        ((position as i32 * 37 + channel as i32 * 733) & 1023) - 512
-                    };
-                    samples[frame * self.channels + channel] =
-                        (level << (self.bits - 10)) << (24 - self.bits);
-                }
-            }
-            self.position += count;
-            Ok(count)
-        }
-        fn write(&mut self, data: &[u8]) -> io::Result<()> {
-            self.output.extend_from_slice(data);
-            Ok(())
-        }
-    }
-
     let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..\\..\\..");
     let encoder_path = PathBuf::from(
         std::env::var_os("DVDA_ENCODER_LIBRARY")
@@ -725,16 +849,6 @@ fn frozen_dll_encoded_mlp_profiles_differential() {
     );
     let encoder = Encoder::load(&encoder_path).expect("load pinned MLP encoder");
     let oracle = Oracle::load();
-    type InspectFile = unsafe extern "C" fn(*const std::ffi::c_char, *mut OracleInspection) -> i32;
-    type InspectBuffer = unsafe extern "C" fn(*const u8, usize, *mut OracleInspection) -> i32;
-    type Align = unsafe extern "C" fn(
-        *const u8,
-        usize,
-        *mut *mut u8,
-        *mut usize,
-        *mut OracleAlignment,
-    ) -> i32;
-    type Free = unsafe extern "C" fn(*mut std::ffi::c_void);
     let inspect_file: InspectFile = unsafe { oracle.symbol(c"dvda_formats_mlp_inspect_file") };
     let inspect_buffer: InspectBuffer =
         unsafe { oracle.symbol(c"dvda_formats_mlp_inspect_buffer") };
@@ -785,120 +899,8 @@ fn frozen_dll_encoded_mlp_profiles_differential() {
         assert!(result.access_units > 0, "{name}");
         let path = outputs.join(format!("{name}.mlp"));
         fs::write(&path, &stream.output).unwrap();
-        let name_c = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
-        let mut from_file = OracleInspection::default();
-        let mut from_buffer = OracleInspection::default();
-        let file_status = unsafe { inspect_file(name_c.as_ptr(), &raw mut from_file) };
-        let buffer_status = unsafe {
-            inspect_buffer(
-                stream.output.as_ptr(),
-                stream.output.len(),
-                &raw mut from_buffer,
-            )
-        };
-        let rust_file = NativeFormats.inspect_file(&path);
-        let rust_buffer = mlp_formats::inspect_buffer(&stream.output);
-        assert_eq!(file_status == 0, rust_file.is_ok(), "{name} file status");
-        assert_eq!(
-            buffer_status == 0,
-            rust_buffer.is_ok(),
-            "{name} buffer status"
-        );
-        let fields = |raw: OracleInspection| {
-            (
-                raw.size,
-                raw.units,
-                raw.majors,
-                raw.interval,
-                raw.major_errors,
-                raw.parity_errors,
-                raw.sub_errors,
-                raw.eos,
-                raw.peak,
-                raw.extended,
-                raw.rate,
-                raw.valid,
-            )
-        };
-        let rust_fields = |inspection: &MlpInspection| {
-            (
-                inspection.size,
-                inspection.access_unit_count,
-                inspection.major_sync_count,
-                inspection.major_sync_interval,
-                inspection.major_sync_error_count,
-                inspection.access_unit_parity_error_count,
-                inspection.substream_error_count,
-                i32::from(inspection.has_end_of_stream),
-                inspection.peak_bitrate_raw,
-                inspection.extended_substream_info,
-                inspection.sample_rate,
-                i32::from(inspection.is_valid),
-            )
-        };
-        let file_error = from_file.error;
-        let buffer_error = from_buffer.error;
-        if let Ok(inspection) = &rust_file {
-            assert_eq!(
-                rust_fields(inspection),
-                fields(from_file),
-                "{name} file inspection"
-            );
-            assert_eq!(inspection.error_code, file_error, "{name} file error code");
-        }
-        if let Ok(inspection) = &rust_buffer {
-            assert_eq!(
-                rust_fields(inspection),
-                fields(from_buffer),
-                "{name} buffer inspection"
-            );
-            assert_eq!(
-                inspection.error_code, buffer_error,
-                "{name} buffer error code"
-            );
-        }
-        let mut pointer = std::ptr::null_mut();
-        let mut length = 0;
-        let mut aligned = OracleAlignment::default();
-        let status = unsafe {
-            align(
-                stream.output.as_ptr(),
-                stream.output.len(),
-                &raw mut pointer,
-                &raw mut length,
-                &raw mut aligned,
-            )
-        };
-        let rust = NativeFormats.align(&stream.output);
-        assert_eq!(status == 0, rust.is_ok(), "{name} align status");
-        if let Ok(value) = rust {
-            assert!(!pointer.is_null(), "{name} oracle output");
-            let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
-            assert_eq!(value.data, bytes, "{name} aligned bytes");
-            assert_eq!(
-                (
-                    value.peak_changes,
-                    value.extended_changes,
-                    value.checksum_changes,
-                    i32::from(value.inserted_end_of_stream),
-                    value.old_header,
-                    value.new_header
-                ),
-                (
-                    aligned.peaks,
-                    aligned.extended,
-                    aligned.checksums,
-                    aligned.inserted,
-                    aligned.old,
-                    aligned.new
-                ),
-                "{name} alignment fields"
-            );
-            fs::write(outputs.join(format!("{name}.aligned.mlp")), &value.data).unwrap();
-        }
-        if !pointer.is_null() {
-            unsafe { free(pointer.cast()) };
-        }
+        encoded_inspection_differential(inspect_file, inspect_buffer, &path, &stream.output, &name);
+        alignment_differential(align, free, &stream.output, &outputs, &name);
         eprintln!(
             "{name}: {frames} frames, {} access units, {} MLP bytes, inspection + align matched",
             result.access_units, result.output_bytes

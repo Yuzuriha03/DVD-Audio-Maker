@@ -1,7 +1,10 @@
 //! Manifest loading for the build stage.
 use crate::disc::Track;
 use serde_json::{Map, Value};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 fn field<'a>(object: &'a Map<String, Value>, names: &[&str]) -> Option<&'a Value> {
     names.iter().find_map(|name| {
@@ -36,8 +39,14 @@ fn optional_value(object: &Map<String, Value>, names: &[&str]) -> Option<Value> 
 fn number(object: &Map<String, Value>, names: &[&str]) -> f64 {
     field(object, names).and_then(Value::as_f64).unwrap_or(0.)
 }
-fn path_text(value: String) -> String {
+fn path_text(value: &str) -> String {
     value.replace('/', "\\")
+}
+
+fn file_size(path: &Path) -> i64 {
+    fs::metadata(path).map_or(0, |metadata| {
+        i64::try_from(metadata.len()).expect("Windows file sizes fit signed 64-bit offsets")
+    })
 }
 /// Loads manifest tracks and sorts them by date, track number, and UTF-16 title.
 /// Unavailable source or MLP file metadata contributes a zero size.
@@ -66,12 +75,12 @@ pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
             let Some(item) = item.as_object() else {
                 return Err("Manifest track must be an object".into());
             };
-            let source = path_text(text(item, &["src", "Source"]));
+            let source = path_text(&text(item, &["src", "Source"]));
             let manifest_name = text(item, &["name", "Name"]);
             let mlp_path =
                 PathBuf::from(mlp_directory).join(manifest_name.replace('/', "__") + ".mlp");
-            let source_size = fs::metadata(&source).map_or(0, |m| m.len() as i64);
-            let mlp_size = fs::metadata(&mlp_path).map_or(0, |m| m.len() as i64);
+            let source_size = file_size(Path::new(&source));
+            let mlp_size = file_size(&mlp_path);
             let title = text(item, &["title", "Title"]);
             let album = {
                 let value = text(item, &["album", "Album"]);
@@ -154,11 +163,13 @@ pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
 /// Rejects non-object requests or missing/non-string `ManifestPath` and
 /// `MlpDirectory` fields. Propagates [`read`] errors and track serialization errors.
 pub fn dispatch(request: Value) -> Result<Value, String> {
-    let object = request.as_object().ok_or("Expected manifest request")?;
-    let path = field(object, &["ManifestPath"])
+    let Value::Object(object) = request else {
+        return Err("Expected manifest request".into());
+    };
+    let path = field(&object, &["ManifestPath"])
         .and_then(Value::as_str)
         .ok_or("Missing manifest path")?;
-    let directory = field(object, &["MlpDirectory"])
+    let directory = field(&object, &["MlpDirectory"])
         .and_then(Value::as_str)
         .ok_or("Missing MLP directory")?;
     serde_json::to_value(read(path, directory)?).map_err(|e| e.to_string())

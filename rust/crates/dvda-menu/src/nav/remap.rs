@@ -1,13 +1,4 @@
 //! Colour remapping corresponding to dvdvob.c's remapcolor/remapbyte/procremap.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    reason = "Colour remapping preserves fixed palette fields and the historical byte stream"
-)]
-#![allow(
-    clippy::unreadable_literal,
-    reason = "Palette fixtures retain their historical colour constants"
-)]
 use super::dvdata::DvdData;
 
 pub(crate) struct ColorRemap {
@@ -23,7 +14,7 @@ pub(crate) struct ColorRemap {
 
 impl ColorRemap {
     pub(crate) fn new(data: &DvdData, palette: [u32; 16]) -> Self {
-        let mut colors = std::array::from_fn(|i| i as u32);
+        let mut colors = std::array::from_fn(|i| u32::try_from(i).unwrap());
         for (index, color) in data.palette.iter().enumerate().take(16) {
             colors[index] = 0x0100_0000
                 | (u32::from(color.y) << 16)
@@ -44,7 +35,7 @@ impl ColorRemap {
 
     fn remapcolor(&mut self, index: usize) -> Result<u8, String> {
         if self.colors[index] < 16 {
-            return Ok(self.colors[index] as u8);
+            return Ok(u8::try_from(self.colors[index]).unwrap());
         }
         let color = self.colors[index] & 0x00ff_ffff;
         let index_out = self
@@ -54,8 +45,8 @@ impl ColorRemap {
             .or_else(|| self.palette.iter().position(|&v| v == 0x0100_0000))
             .ok_or("color map full, unable to allocate new colors")?;
         self.palette[index_out] = color;
-        self.colors[index] = index_out as u32;
-        Ok(index_out as u8)
+        self.colors[index] = u32::try_from(index_out).unwrap();
+        Ok(u8::try_from(index_out).unwrap())
     }
 
     fn remapbyte(&mut self, byte: &mut u8) -> Result<(), String> {
@@ -77,6 +68,10 @@ impl ColorRemap {
         Ok(())
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The streaming command parser keeps split-command state and error order in one pass"
+    )]
     pub(crate) fn procremap(&mut self, bytes: &mut [u8], timespan: &mut u64) -> Result<(), String> {
         for byte in bytes {
             if self.state == 4 {
@@ -277,9 +272,9 @@ mod tests {
             }],
             ..DvdData::default()
         };
-        let mut palette = [0x108080; 16];
-        palette[0] = 0xeb8080;
-        palette[2] = 0x52f05a;
+        let mut palette = [0x10_8080; 16];
+        palette[0] = 0xeb_8080;
+        palette[2] = 0x52_f05a;
         let mut remap = ColorRemap::new(&data, palette);
         remap.groups(&mut data).unwrap();
         assert_eq!(data.groups[0].entries, [0x0211, 0xfff0, 0x1211, 0x0ff0]);

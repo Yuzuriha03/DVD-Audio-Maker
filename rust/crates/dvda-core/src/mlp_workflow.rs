@@ -147,6 +147,14 @@ impl Callbacks for Forward<'_> {
 /// and cache-save failures (including cancellation). Missing tracks and finalization
 /// diagnostics may instead be collected in the returned outcome. Temporary-directory
 /// cleanup failures are ignored.
+///
+/// # Panics
+/// Successful cache checking returns a nonnegative hit count representable as
+/// `usize`; the internal conversion expectation cannot fail on supported targets.
+#[allow(
+    clippy::too_many_lines,
+    reason = "MLP execution keeps cache checks, encoding, finalization, cancellation, and cache commit ordered"
+)]
 pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<Outcome, String> {
     validate(&job)?;
     job.encoder_identity = crate::signature::encoding_identity(
@@ -221,11 +229,13 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
             };
             let mut encode_progress = dvda_native::media::ProgressScope::new(caller, 10, 85);
             encode_progress.emit(1, &format!("[MLP-FINALIZE] start {}", pending.len()));
+            let cached_tracks = usize::try_from(hits)
+                .expect("successful cache checking returns a nonnegative hit count");
             let mut forward = Forward {
                 caller: &mut encode_progress,
-                base_completed: hits as usize,
-                completed_tracks: hits as usize,
-                finalized_tracks: hits as usize,
+                base_completed: cached_tracks,
+                completed_tracks: cached_tracks,
+                finalized_tracks: cached_tracks,
                 track_progress: vec![0; pending.len()],
                 total: job.tracks.len(),
             };
@@ -233,7 +243,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                 batch::execute_with(batch_job, &mut forward, |work_index, info, callbacks| {
                     let finalized = finalize_track(
                         &job,
-                        &native,
+                        native,
                         &stage,
                         work_index,
                         &pending[work_index],
@@ -333,6 +343,10 @@ fn check_worker_count(tracks: usize) -> usize {
     crate::options::worker_count(tracks)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Parallel cache checking coordinates worker cancellation and applies results in deterministic track order"
+)]
 fn check_tracks(
     job: &Job,
     entries: &mut Map<String, Value>,
@@ -371,7 +385,7 @@ fn check_tracks(
                         if index >= job.tracks.len() {
                             break;
                         }
-                        let result = check_track(job, entries, index, &native, &mut callbacks);
+                        let result = check_track(job, entries, index, native, &mut callbacks);
                         let failed = result.is_err();
                         if callbacks
                             .send
@@ -394,7 +408,7 @@ fn check_tracks(
         }
         drop(send);
         let callbacks = catch_unwind(AssertUnwindSafe(|| {
-            let mut completed = 0;
+            let mut completed = 0u64;
             loop {
                 if caller.cancelled() {
                     cancelled = true;
@@ -423,7 +437,7 @@ fn check_tracks(
                             }
                         }
                         completed += 1;
-                        caller.progress(completed as u64, job.tracks.len() as u64);
+                        caller.progress(completed, job.tracks.len() as u64);
                         caller.emit(
                             1,
                             &format!(
@@ -469,7 +483,7 @@ fn check_track(
     job: &Job,
     entries: &Map<String, Value>,
     index: usize,
-    native: &NativeFormats,
+    native: NativeFormats,
     caller: &mut dyn Callbacks,
 ) -> Result<CheckedTrack, String> {
     let track = &job.tracks[index];
@@ -477,7 +491,7 @@ fn check_track(
     if !Path::new(source).is_file() {
         return Ok(CheckedTrack::Missing(error(
             "SOURCE_MISSING",
-            format!("源文件不存在: {source}"),
+            &format!("源文件不存在: {source}"),
         )));
     }
     let source_identity = identity::compute(source).map_err(|error| error.to_string())?;
@@ -576,7 +590,7 @@ fn publish_encoded(staged: &Path, destination: &Path) -> Result<(), String> {
 
 fn finalize_track(
     job: &Job,
-    native: &NativeFormats,
+    native: NativeFormats,
     stage: &Path,
     work_index: usize,
     item: &Pending,
@@ -592,7 +606,7 @@ fn finalize_track(
             cache_entry: None,
             diagnostic: Some(error(
                 "MLP_OUTPUT_INVALID",
-                format!("MLP 编码结果无效: {}", item.source),
+                &format!("MLP 编码结果无效: {}", item.source),
             )),
         });
     };
@@ -788,7 +802,7 @@ fn number(value: &Value, key: &str) -> f64 {
         .unwrap_or(0.)
 }
 
-fn error(code: &str, message: String) -> Value {
+fn error(code: &str, message: &str) -> Value {
     json!({"Severity":2,"Code":code,"Message":message})
 }
 
@@ -875,6 +889,10 @@ mod tests {
 
     #[test]
     #[ignore = "requires source-built x64 media and author runtime"]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The ignored native integration test covers cache reuse, damage, cancellation, and failure rollback together"
+    )]
     fn parallel_checks_reuse_parameters_preserve_order_detect_middle_damage_and_cancel() {
         let root = std::env::temp_dir().join(format!("dvda-mlp-check-{}", std::process::id()));
         fs::create_dir_all(root.join("output")).unwrap();
@@ -1065,7 +1083,10 @@ mod tests {
                 "Refusing to encode: {} samples missed cache",
                 pending.len()
             );
-            assert_eq!(hits as usize, job.tracks.len());
+            assert_eq!(
+                usize::try_from(hits).expect("cache hit count is nonnegative"),
+                job.tracks.len()
+            );
             assert_eq!(diagnostics, [] as [serde_json::Value; 0]);
             if let Some(previous) = &previous {
                 assert_eq!(&updated, previous);

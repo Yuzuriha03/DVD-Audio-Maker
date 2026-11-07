@@ -5,7 +5,9 @@ use serde_json::{Value, json};
 use std::{fs, path::Path};
 
 fn issue(code: &str, message: String) -> Value {
-    json!({"Severity":2,"Code":code,"Message":message})
+    let mut value = json!({"Severity":2,"Code":code});
+    value["Message"] = Value::String(message);
+    value
 }
 fn numbers(text: &str, prefix: &str, suffix: &str) -> Vec<u32> {
     text.split(prefix)
@@ -104,10 +106,12 @@ pub fn verify(
         "MenuTracksPerPage":job.menu_tracks_per_page,"MenuIndexMinimumAlbums":job.menu_index_minimum_albums}))?;
     let total = plan["TotalPages"]
         .as_u64()
-        .ok_or("Invalid menu page count")? as usize;
+        .ok_or("Invalid menu page count")?;
+    let total = usize::try_from(total).unwrap_or(usize::MAX);
     let index = plan["IndexPages"]
         .as_u64()
-        .ok_or("Invalid menu index page count")? as usize;
+        .ok_or("Invalid menu index page count")?;
+    let index = usize::try_from(index).unwrap_or(usize::MAX);
     let mut issues = buttons(temporary, total, index);
     issues.extend(still_warnings(output, author_arguments));
     if issues.iter().any(|d| d["Severity"] == 2) {

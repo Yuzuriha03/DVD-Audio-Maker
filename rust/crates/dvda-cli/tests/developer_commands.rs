@@ -1,10 +1,3 @@
-#![expect(
-    clippy::cast_possible_wrap,
-    clippy::items_after_statements,
-    clippy::too_many_lines,
-    clippy::unreadable_literal,
-    reason = "CLI integration fixtures construct deterministic WAVE data and complete command scenarios"
-)]
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -78,8 +71,8 @@ fn disc_source(root: &Path, destination: &Path) {
     wav.extend(16u32.to_le_bytes());
     wav.extend(1u16.to_le_bytes());
     wav.extend(2u16.to_le_bytes());
-    wav.extend(48000u32.to_le_bytes());
-    wav.extend(192000u32.to_le_bytes());
+    wav.extend(48_000u32.to_le_bytes());
+    wav.extend(192_000u32.to_le_bytes());
     wav.extend(4u16.to_le_bytes());
     wav.extend(16u16.to_le_bytes());
     wav.extend(b"data");
@@ -87,7 +80,9 @@ fn disc_source(root: &Path, destination: &Path) {
     for frame in 0..frames {
         for channel in 0..2 {
             wav.extend(
-                (((frame * (97 + channel * 18)) % 60001) as i32 - 30000).to_le_bytes()[..2].iter(),
+                (i32::try_from((frame * (97 + channel * 18)) % 60_001).unwrap() - 30_000)
+                    .to_le_bytes()[..2]
+                    .iter(),
             );
         }
     }
@@ -232,7 +227,19 @@ fn language_selection_preserves_shared_help_errors_and_machine_output() {
 
 #[test]
 #[ignore = "requires existing source-built x64 media/formats/encoder/author/verifier"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The ignored end-to-end CLI scenario keeps ordered command and verification stages together"
+)]
 fn cli_conversion_audio_tools_and_disc_verification_modes() {
+    struct Quiet;
+    impl dvda_native::media::Callbacks for Quiet {
+        fn emit(&mut self, _: i32, _: &str) {}
+        fn cancelled(&mut self) -> bool {
+            false
+        }
+    }
+
     let root = Scratch::new();
     let src = root.0.join("src");
     fs::create_dir(&src).unwrap();
@@ -340,13 +347,6 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
     );
     // Standalone builds clean their intermediates. Keep a scoped task alive to
     // exercise the MLP commands against real prepared output instead.
-    struct Quiet;
-    impl dvda_native::media::Callbacks for Quiet {
-        fn emit(&mut self, _: i32, _: &str) {}
-        fn cancelled(&mut self) -> bool {
-            false
-        }
-    }
     let task = dvda_core::app::AppOptions::load(Some(Path::new(profile)))
         .unwrap()
         .task_options()

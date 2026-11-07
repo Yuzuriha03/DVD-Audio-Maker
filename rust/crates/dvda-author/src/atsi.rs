@@ -4,13 +4,6 @@
 //! actual format and title. `encode` preserves frozen C indexing for differential
 //! fixtures, including C's mixed-format lookup defects.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::float_cmp,
-    clippy::too_many_lines,
-    reason = "ATSI tables preserve checked track counts and the historical downmix conversion"
-)]
 use crate::samg;
 
 /// One still-picture entry. `None` onset uses one-second intervals within a track.
@@ -100,6 +93,12 @@ fn rate_code(rate: u32) -> Result<u8, String> {
 ///
 /// # Errors
 /// Returns an error for negative or non-finite attenuation values.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::float_cmp,
+    reason = "Match C downmix truncation, exact promoted-double comparisons and discontinuous attenuation ranges"
+)]
 pub fn downmix_coefficient(db: f32) -> Result<u8, String> {
     if !db.is_finite() || !(0.0..=100.0).contains(&db) {
         return Err("Downmix attenuation must be finite and in 0..=100 dB".into());
@@ -175,6 +174,10 @@ pub fn encode_checked(titles: &[Title], options: &Options) -> Result<Encoded, St
     encode_impl(titles, options, true)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep frozen and production ATSI layout writes in their shared protocol order"
+)]
 fn encode_impl(titles: &[Title], options: &Options, checked: bool) -> Result<Encoded, String> {
     let same_format = |a: &samg::Track, b: &samg::Track| {
         same_format(a, b)
@@ -269,12 +272,20 @@ fn encode_impl(titles: &[Title], options: &Options, checked: bool) -> Result<Enc
             }
         }
     }
-    put16(&mut bytes, 0x800, titles.len() as u16);
+    put16(
+        &mut bytes,
+        0x800,
+        u16::try_from(titles.len()).expect("at most 99 titles"),
+    );
     let all_pictures: Vec<&StillPicture> = tracks.iter().flat_map(|t| &t.pictures).collect();
     let mut preceding_group_pictures = 0;
     for (index, title) in titles.iter().enumerate() {
         let entry = 0x808 + index * 8;
-        put16(&mut bytes, entry, 0x8000 + (index as u16 + 1) * 0x100);
+        put16(
+            &mut bytes,
+            entry,
+            0x8000 + (u16::try_from(index).expect("at most 99 titles") + 1) * 0x100,
+        );
         // C writes a second u16 one byte after the first, retaining only 0x81..
         // from the first field and replacing its second byte with this flag.
         let flag_audio = if checked {
@@ -289,11 +300,16 @@ fn encode_impl(titles: &[Title], options: &Options, checked: bool) -> Result<Enc
         };
         put16(&mut bytes, entry + 1, flag);
         let start = bytes.len();
-        put32(&mut bytes, entry + 4, (start - 0x800) as u32);
+        put32(
+            &mut bytes,
+            entry + 4,
+            u32::try_from(start - 0x800).expect("at most 99 titles with 255 pictures each"),
+        );
         let count = title.tracks.len();
+        let track_count = u8::try_from(count).expect("at most 99 tracks");
         bytes.resize(start + 16 + 32 * count, 0);
-        bytes[start + 2] = count as u8;
-        bytes[start + 3] = count as u8;
+        bytes[start + 2] = track_count;
+        bytes[start + 3] = track_count;
         let length = title
             .tracks
             .iter()
@@ -301,9 +317,9 @@ fn encode_impl(titles: &[Title], options: &Options, checked: bool) -> Result<Enc
             .ok_or("ATSI title PTS length exceeds 32 bits")?;
         put32(&mut bytes, start + 4, length);
         put16(&mut bytes, start + 10, 16);
-        put16(&mut bytes, start + 12, (16 + 20 * count) as u16);
+        put16(&mut bytes, start + 12, 16 + 20 * u16::from(track_count));
         if stills {
-            put16(&mut bytes, start + 14, (16 + 32 * count) as u16);
+            put16(&mut bytes, start + 14, 16 + 32 * u16::from(track_count));
         }
         let format = formats
             .iter()
@@ -311,7 +327,7 @@ fn encode_impl(titles: &[Title], options: &Options, checked: bool) -> Result<Enc
             .unwrap();
         for (rank, track) in title.tracks.iter().enumerate() {
             let pts = start + 16 + 20 * rank;
-            let mut flags = (format as u16 * 8) << 8;
+            let mut flags = (u16::try_from(format).expect("at most eight formats") * 8) << 8;
             if rank == 0 {
                 flags |= 0xc000;
             }
@@ -327,7 +343,7 @@ fn encode_impl(titles: &[Title], options: &Options, checked: bool) -> Result<Enc
                 u16::from(track.downmix_table_rank - 1)
             };
             put16(&mut bytes, pts, flags);
-            bytes[pts + 4] = rank as u8 + 1;
+            bytes[pts + 4] = u8::try_from(rank + 1).expect("at most 99 tracks");
             put32(&mut bytes, pts + 6, track.audio.first_pts);
             put32(&mut bytes, pts + 10, track.audio.pts_length);
             let sector = start + 16 + 20 * count + 12 * rank;
@@ -358,23 +374,31 @@ fn encode_impl(titles: &[Title], options: &Options, checked: bool) -> Result<Enc
                     bytes[offset] = picture_titles;
                     bytes[offset + 1] = if manual { 4 } else { 0 };
                     let first = 6 * count + 10 * preceding;
-                    put16(&mut bytes, offset + 2, first as u16);
+                    put16(
+                        &mut bytes,
+                        offset + 2,
+                        u16::try_from(first).expect("at most 99 tracks and 255 pictures"),
+                    );
                     // A zero-picture track reuses the preceding title/picture.
                     put16(
                         &mut bytes,
                         offset + 4,
-                        (first + 10 * track.pictures.len() - 1) as u16,
+                        u16::try_from(first + 10 * track.pictures.len() - 1)
+                            .expect("at most 99 tracks and 255 pictures"),
                     );
                 }
                 for (pic_rank, picture) in track.pictures.iter().enumerate() {
                     let offset = still_start + rows + 10 * (preceding + pic_rank);
-                    bytes[offset] = (preceding + pic_rank + 1) as u8;
-                    bytes[offset + 3] = rank as u8 + 1;
+                    bytes[offset] =
+                        u8::try_from(preceding + pic_rank + 1).expect("at most 255 pictures");
+                    bytes[offset + 3] = u8::try_from(rank + 1).expect("at most 99 tracks");
                     let onset = match picture.onset_seconds {
                         Some(value) if value != 0 => u32::from(value)
                             .checked_mul(90000)
                             .ok_or("ATSI still onset exceeds 32-bit PTS")?,
-                        _ if !manual => pic_rank as u32 * 90000,
+                        _ if !manual => {
+                            u32::try_from(pic_rank).expect("at most 255 pictures") * 90000
+                        }
                         _ => 0,
                     };
                     put32(&mut bytes, offset + 4, onset);
@@ -395,7 +419,7 @@ fn encode_impl(titles: &[Title], options: &Options, checked: bool) -> Result<Enc
         .last_sector
         .checked_add(2 * u32::from(sectors))
         .ok_or("ATSI last sector exceeds 32 bits")?;
-    let end = (bytes.len() - 0x801) as u32;
+    let end = u32::try_from(bytes.len() - 0x801).expect("at most 255 sectors");
     put32(&mut bytes, 0x804, end);
     put32(&mut bytes, 12, last);
     put32(&mut bytes, 28, u32::from(sectors) - 1);

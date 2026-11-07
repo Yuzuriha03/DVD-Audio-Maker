@@ -1,9 +1,4 @@
 //! Exercise real, statically linked vendor calls through the public Rust boundary.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    reason = "The acceptance fixture constructs complete menu sessions and fixed C ABI requests"
-)]
 #[cfg(feature = "direct-link")]
 mod acceptance {
     use dvda_menu::{
@@ -132,6 +127,10 @@ mod acceptance {
         fs::rename(path, &swap).unwrap();
         fs::rename(swap, path).unwrap();
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The acceptance scenario intentionally exercises the complete failure and recovery matrix"
+    )]
     pub fn run() {
         let arguments: Vec<_> = std::env::args_os().skip(1).collect();
         assert_eq!(arguments.len(), 2, "session-acceptance OUTPUT SOURCE_MPEG");
@@ -226,7 +225,7 @@ mod acceptance {
                 read_rgba: Some(pixels),
             };
             assert_ne!(dvda_menu_run_spu(&raw const request), 0);
-            request.size = std::mem::size_of::<MenuRequest>() as u32;
+            request.size = u32::try_from(std::mem::size_of::<MenuRequest>()).unwrap();
             for field in 0..3 {
                 let saved = match field {
                     0 => request.xml,

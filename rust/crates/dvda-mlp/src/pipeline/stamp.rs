@@ -105,6 +105,10 @@ impl MlpStampState<'_> {
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Stamp timeline positions are bounded by the admitted AU count before conversion to protocol-width counters"
+)]
 pub(crate) fn mlp_stamp_next(s: &mut MlpStampState<'_>) -> Option<u32> {
     if s.failed || s.position >= current_limit(s) {
         return None;

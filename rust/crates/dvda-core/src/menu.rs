@@ -16,6 +16,10 @@ use text::{from_units, text, units};
 /// # Errors
 /// Rejects a non-object request, unsupported language, or missing disc/groups.
 /// Propagates errors from menu pagination and text-layout helpers.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn plan(request: Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected menu plan request")?;
     let language = crate::config_files::normalize_language(
@@ -58,22 +62,10 @@ pub fn plan(request: Value) -> Result<Value, String> {
         .get("MenuTracksPerPage")
         .and_then(Value::as_i64)
         .unwrap_or(1)
-        .clamp(1, 24) as usize;
+        .clamp(1, 24);
+    let row_cap = usize::try_from(row_cap).unwrap_or(24);
     let pages = menu_pages(&tracks, &albums, row_cap)?;
-    let maximum_rows = pages
-        .iter()
-        .map(|page| {
-            page.get("EndTrackIndex")
-                .and_then(Value::as_i64)
-                .unwrap_or(0)
-                - page
-                    .get("StartTrackIndex")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(0)
-        })
-        .max()
-        .unwrap_or(1)
-        .max(1);
+    let maximum_rows = pages.iter().map(page_rows).max().unwrap_or(1).max(1);
     let font_size = font_size(json!(maximum_rows))?.as_i64().unwrap_or(7);
     let mut index_pages = if pages.is_empty() {
         0
@@ -84,7 +76,8 @@ pub fn plan(request: Value) -> Result<Value, String> {
         .get("MenuIndexMinimumAlbums")
         .and_then(Value::as_i64)
         .unwrap_or(0);
-    if index_pages > 0 && pages.len() < minimum_albums.max(0) as usize {
+    if index_pages > 0 && pages.len() < usize::try_from(minimum_albums.max(0)).unwrap_or(usize::MAX)
+    {
         index_pages = 0;
     }
     let index_albums: Vec<Value> = (0..index_pages)
@@ -97,6 +90,51 @@ pub fn plan(request: Value) -> Result<Value, String> {
             )
         })
         .collect();
+    let (screen_text, font_width, sanitized) = screen_text(
+        &pages,
+        &index_albums,
+        font_size,
+        select_album,
+        continued,
+        object
+            .get("Title")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )?;
+    let track_count: i64 = pages.iter().map(page_rows).sum();
+    Ok(json!({
+        "TotalPages": index_pages + pages.len(),
+        "IndexPages": index_pages,
+        "MaximumRows": maximum_rows,
+        "FontSize": font_size,
+        "FontWidth": font_width,
+        "ScreenText": screen_text,
+        "AlbumPages": pages,
+        "IndexAlbums": index_albums,
+        "SanitizedValues": unique(sanitized),
+        "AlbumPageCount": pages.len(),
+        "TrackCount": track_count,
+    }))
+}
+
+fn page_rows(page: &Value) -> i64 {
+    page.get("EndTrackIndex")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        - page
+            .get("StartTrackIndex")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+}
+
+fn screen_text(
+    pages: &[Value],
+    index_albums: &[Value],
+    font_size: i64,
+    select_album: &str,
+    continued: &str,
+    title: &str,
+) -> Result<(String, i64, Vec<String>), String> {
     let page_albums: Vec<String> = pages
         .iter()
         .map(|page| page["Album"].as_str().unwrap_or_default().to_owned())
@@ -105,7 +143,7 @@ pub fn plan(request: Value) -> Result<Value, String> {
     let mut sanitized = Vec::new();
     let mut chunks = Vec::new();
     let mut displayed = Vec::new();
-    for page in &index_albums {
+    for page in index_albums {
         let names: Vec<String> = page
             .as_array()
             .into_iter()
@@ -121,7 +159,7 @@ pub fn plan(request: Value) -> Result<Value, String> {
             .collect();
         chunks.push(format!("{select_album}={}", names.join(",")));
     }
-    for page in &pages {
+    for page in pages {
         let raw_album = page["Album"].as_str().unwrap_or_default();
         let continuation = page["Continuation"].as_bool().unwrap_or(false);
         let album = sanitize_record(
@@ -151,43 +189,17 @@ pub fn plan(request: Value) -> Result<Value, String> {
         displayed.push(album);
         displayed.extend(titles);
     }
-    let title = sanitize(Value::String(
-        object
-            .get("Title")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-    ))?["Value"]
+    let title = sanitize(Value::String(title.to_owned()))?["Value"]
         .as_str()
         .unwrap_or_default()
         .to_owned();
     displayed.push(title.clone());
     let font_width = font_width(json!(displayed))?.as_i64().unwrap_or(5);
-    let track_count: i64 = pages
-        .iter()
-        .map(|page| {
-            page.get("EndTrackIndex")
-                .and_then(Value::as_i64)
-                .unwrap_or(0)
-                - page
-                    .get("StartTrackIndex")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(0)
-        })
-        .sum();
-    Ok(json!({
-        "TotalPages": index_pages + pages.len(),
-        "IndexPages": index_pages,
-        "MaximumRows": maximum_rows,
-        "FontSize": font_size,
-        "FontWidth": font_width,
-        "ScreenText": format!("{}={}", title, chunks.join(":")),
-        "AlbumPages": pages,
-        "IndexAlbums": index_albums,
-        "SanitizedValues": unique(sanitized),
-        "AlbumPageCount": pages.len(),
-        "TrackCount": track_count,
-    }))
+    Ok((
+        format!("{}={}", title, chunks.join(":")),
+        font_width,
+        sanitized,
+    ))
 }
 
 pub fn preflight(job: &Job, diagnostics: &mut Vec<Value>) {
@@ -202,6 +214,10 @@ pub fn preflight(job: &Job, diagnostics: &mut Vec<Value>) {
 ///
 /// # Errors
 /// Returns an error for invalid menu configuration, missing runtime resources, image/font failures, or output I/O failures.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Asset creation keeps font preflight, transparent frame, cover/still generation with cancellation cleanup, author arguments and ordered completeness diagnostics in one orchestration flow"
+)]
 pub fn build_assets(
     job: &Job,
     disc: &Disc,
@@ -292,7 +308,7 @@ pub fn build_assets(
             write_background_cached(
                 cover,
                 &output,
-                job.menu_cover_dim.clamp(0, 100) as u8,
+                u8::try_from(job.menu_cover_dim.clamp(0, 100)).unwrap_or(100),
                 callbacks,
                 &images,
             )?;
@@ -454,18 +470,19 @@ pub fn build_assets(
     if still_pictures.iter().any(|path| !path.is_empty()) {
         arguments.extend(["--stillpics".into(), still_pictures.join(";")]);
     }
-    let expected_pages = plan["TotalPages"].as_u64().unwrap_or(0) as usize;
+    let expected_pages =
+        usize::try_from(plan["TotalPages"].as_u64().unwrap_or(0)).unwrap_or(usize::MAX);
     if !blank.is_file() {
         diagnostics.push(json!({"Severity":2,"Code":"MENU_BLANKSCREEN_MISSING","Message":"未生成菜单透明底图。"}));
     }
     if backgrounds.len() != pages.len() || backgrounds.iter().any(|path| !path.is_file()) {
         diagnostics.push(json!({"Severity":2,"Code":"MENU_BACKGROUND_MISMATCH","Message":format!("菜单背景图数量或文件不完整: {}/{}。",backgrounds.len(),pages.len())}));
     }
-    let tracks = plan["TrackCount"].as_u64().unwrap_or(0) as usize;
+    let tracks = usize::try_from(plan["TrackCount"].as_u64().unwrap_or(0)).unwrap_or(usize::MAX);
     if !still_pictures.is_empty() && still_pictures.len() != tracks {
         diagnostics.push(json!({"Severity":2,"Code":"MENU_STILL_MISMATCH","Message":format!("播放静图列表 {} 项 != 曲目数 {tracks}。",still_pictures.len())}));
     }
-    if expected_pages != index_pages as usize + pages.len() {
+    if expected_pages != usize::try_from(index_pages).unwrap_or_default() + pages.len() {
         diagnostics.push(json!({"Severity":2,"Code":"MENU_PAGE_MISMATCH","Message":"总菜单页数与索引页、专辑页之和不一致。"}));
     }
     let segments = plan["ScreenText"]
@@ -609,6 +626,7 @@ fn write_still_cached(
     callbacks: &mut dyn Callbacks,
     images: &DecodedImages,
 ) -> Result<(), String> {
+    use dvda_image::geometry::{Dimensions, ResizeMode};
     use std::io::{BufWriter, Write};
     let mut created = false;
     let result = (|| -> std::io::Result<()> {
@@ -616,7 +634,6 @@ fn write_still_cached(
         if callbacks.cancelled() {
             return Err(cancelled());
         }
-        use dvda_image::geometry::{Dimensions, ResizeMode};
         let source = images
             .decode(input, callbacks)
             .map_err(std::io::Error::other)?;
@@ -955,6 +972,10 @@ fn unique(values: Vec<String>) -> Vec<String> {
 
 /// # Errors
 /// Requires numeric `StandardDeviation` and `Colors` fields.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn visual_near_solid(request: Value) -> Result<Value, String> {
     let standard_deviation = request["StandardDeviation"]
         .as_f64()
@@ -965,6 +986,10 @@ pub fn visual_near_solid(request: Value) -> Result<Value, String> {
 
 /// # Errors
 /// Returns an error unless the request is a numeric background mean.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn visual_background_invalid(request: Value) -> Result<Value, String> {
     let mean = request.as_f64().ok_or("Expected background mean")?;
     Ok(json!(mean > 160.0))
@@ -972,6 +997,10 @@ pub fn visual_background_invalid(request: Value) -> Result<Value, String> {
 
 /// # Errors
 /// Returns an error unless the request is a numeric thumbnail mean.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn visual_thumbnail_missing(request: Value) -> Result<Value, String> {
     let mean = request.as_f64().ok_or("Expected thumbnail mean")?;
     Ok(json!(mean <= 3.0))
@@ -979,6 +1008,10 @@ pub fn visual_thumbnail_missing(request: Value) -> Result<Value, String> {
 
 /// # Errors
 /// Requires numeric `Maximum` and `Mean` fields.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn visual_label_missing(request: Value) -> Result<Value, String> {
     let maximum = request["Maximum"].as_f64().ok_or("Missing label maximum")?;
     let mean = request["Mean"].as_f64().ok_or("Missing label mean")?;
@@ -988,6 +1021,10 @@ pub fn visual_label_missing(request: Value) -> Result<Value, String> {
 /// # Errors
 /// Requires `i64` album count, page index, and per-page count fields, and rejects
 /// a non-positive per-page count.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn visual_expected_index_cells(request: Value) -> Result<Value, String> {
     let album_count = request["AlbumCount"]
         .as_i64()
@@ -1017,6 +1054,10 @@ fn finite_number(value: &str) -> Option<f64> {
 /// # Errors
 /// Rejects a non-string request. Missing, duplicate, or malformed frame records
 /// return JSON null instead of an error.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn parse_batch_frame_stats(request: Value) -> Result<Value, String> {
     let output = request.as_str().ok_or("Expected ImageMagick output")?;
     let lines: Vec<&str> = output
@@ -1047,7 +1088,35 @@ pub fn parse_batch_frame_stats(request: Value) -> Result<Value, String> {
 /// # Errors
 /// Requires an `i64` `Expected` count and a boolean `Succeeded` flag. Missing or
 /// invalid image-statistics records are reported in the returned issue lists.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn parse_index_batch(request: Value) -> Result<Value, String> {
+    fn valid(
+        records: &HashMap<(String, i64), Vec<String>>,
+        duplicates: &HashSet<(String, i64)>,
+        succeeded: bool,
+        kind: &str,
+        index: i64,
+        count: usize,
+    ) -> Option<(f64, f64)> {
+        if !succeeded || duplicates.contains(&(kind.to_owned(), index)) {
+            return None;
+        }
+        let fields = records.get(&(kind.to_owned(), index))?;
+        if fields.len() != count {
+            return None;
+        }
+        let first = finite_number(&fields[2])?;
+        let second = if count == 3 {
+            0.0
+        } else {
+            finite_number(&fields[3])?
+        };
+        Some((first, second))
+    }
+
     let output = text(&request, "Output");
     let expected = request["Expected"]
         .as_i64()
@@ -1088,30 +1157,6 @@ pub fn parse_index_batch(request: Value) -> Result<Value, String> {
         }
     }
 
-    fn valid(
-        records: &HashMap<(String, i64), Vec<String>>,
-        duplicates: &HashSet<(String, i64)>,
-        succeeded: bool,
-        kind: &str,
-        index: i64,
-        count: usize,
-    ) -> Option<(f64, f64)> {
-        if !succeeded || duplicates.contains(&(kind.to_owned(), index)) {
-            return None;
-        }
-        let fields = records.get(&(kind.to_owned(), index))?;
-        if fields.len() != count {
-            return None;
-        }
-        let first = finite_number(&fields[2])?;
-        let second = if count == 3 {
-            0.0
-        } else {
-            finite_number(&fields[3])?
-        };
-        Some((first, second))
-    }
-
     let mut background = Vec::new();
     let mut thumbnail = Vec::new();
     let mut label = Vec::new();
@@ -1141,6 +1186,10 @@ pub fn parse_index_batch(request: Value) -> Result<Value, String> {
 /// # Errors
 /// Requires string `Output` and boolean `Succeeded`/`NeedsArrow` fields.
 /// Malformed or missing statistics are represented by the returned checks.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn parse_overlay_batch(request: Value) -> Result<Value, String> {
     let output = request["Output"].as_str().ok_or("Missing overlay output")?;
     let succeeded = request["Succeeded"]

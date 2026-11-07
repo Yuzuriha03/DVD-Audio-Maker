@@ -42,33 +42,37 @@ pub fn roundtrip(value: f64) -> String {
     if significant.is_empty() {
         return format!("{sign}0");
     }
-    let exponent: i32 = exponent.parse::<i32>().unwrap() + point as i32
-        - (digits.len() - significant.len()) as i32
+    let decimal_point = i32::try_from(point).expect("JSON f64 mantissa decimal position fits i32");
+    let leading_zeroes = digits.len() - significant.len();
+    let exponent: i32 = exponent.parse::<i32>().unwrap() + decimal_point
+        - i32::try_from(leading_zeroes).expect("JSON f64 leading-zero count fits i32")
         - 1;
     let significant = significant.trim_end_matches('0');
     if (-4..17).contains(&exponent) {
         let point = exponent + 1;
         if point <= 0 {
-            format!("{sign}0.{}{significant}", "0".repeat((-point) as usize))
-        } else if point as usize >= significant.len() {
             format!(
-                "{sign}{significant}{}",
-                "0".repeat(point as usize - significant.len())
+                "{sign}0.{}{significant}",
+                "0".repeat(usize::try_from(-point).expect("nonpositive decimal position"))
             )
         } else {
-            format!(
-                "{sign}{}.{}",
-                &significant[..point as usize],
-                &significant[point as usize..]
-            )
+            let point = usize::try_from(point).expect("positive decimal position");
+            if point >= significant.len() {
+                format!(
+                    "{sign}{significant}{}",
+                    "0".repeat(point - significant.len())
+                )
+            } else {
+                format!("{sign}{}.{}", &significant[..point], &significant[point..])
+            }
         }
     } else {
-        let significand = if significant.len() == 1 {
+        let scientific = if significant.len() == 1 {
             format!("{sign}{significant}")
         } else {
             format!("{sign}{}.{}", &significant[..1], &significant[1..])
         };
-        format!("{significand}E{exponent:+03}")
+        format!("{scientific}E{exponent:+03}")
     }
 }
 

@@ -1,10 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::too_many_lines,
-    reason = "Frame sizing preserves Win32 hit-test fields and native window placement types"
-)]
 //! Borderless-frame sizing: window-size clamps, the outline resize and the splitter preview.
 
 use super::{
@@ -137,6 +130,10 @@ pub(crate) fn window_arranged(hwnd: Hwnd) -> bool {
 /// `hwnd` must be the main window and this must run on its UI thread, from its
 /// `WM_NCLBUTTONDOWN` handler. It runs a nested message loop that dispatches messages
 /// to windows of this process.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps capture, modal resize, quit forwarding and placement restoration in one lifetime"
+)]
 pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
     unsafe {
         let start = window_rect(hwnd);
@@ -147,10 +144,11 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
         SendMessageW(hwnd, WM_GETMINMAXINFO, 0, limits.as_mut_ptr() as Lparam);
         let (min_w, min_h) = (limits[6].max(1), limits[7].max(1));
         let (max_w, max_h) = (limits[8].max(min_w), limits[9].max(min_h));
-        let left = matches!(hit as i32, HTLEFT | HTTOPLEFT | HTBOTTOMLEFT);
-        let top = matches!(hit as i32, HTTOP | HTTOPLEFT | HTTOPRIGHT);
-        let right = matches!(hit as i32, HTRIGHT | HTTOPRIGHT | HTBOTTOMRIGHT);
-        let bottom = matches!(hit as i32, HTBOTTOM | HTBOTTOMLEFT | HTBOTTOMRIGHT);
+        let hit = u32::try_from(hit & 0xffff_ffff).unwrap().cast_signed();
+        let left = matches!(hit, HTLEFT | HTTOPLEFT | HTBOTTOMLEFT);
+        let top = matches!(hit, HTTOP | HTTOPLEFT | HTTOPRIGHT);
+        let right = matches!(hit, HTRIGHT | HTTOPRIGHT | HTBOTTOMRIGHT);
+        let bottom = matches!(hit, HTBOTTOM | HTBOTTOMLEFT | HTBOTTOMRIGHT);
         let target = |cursor: Point| {
             let (dx, dy) = (cursor.x - origin.x, cursor.y - origin.y);
             let mut rect = start;
@@ -165,7 +163,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 // Like Snap: a top edge taken to the top of the screen makes the
                 // window as tall as the work area.
                 let mut info = MonitorInfo {
-                    size: std::mem::size_of::<MonitorInfo>() as u32,
+                    size: u32::try_from(std::mem::size_of::<MonitorInfo>()).unwrap(),
                     ..std::mem::zeroed()
                 };
                 if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0
@@ -180,7 +178,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 // Mirror of the top edge: a bottom edge taken to the bottom of the
                 // screen makes the window as tall as the work area.
                 let mut info = MonitorInfo {
-                    size: std::mem::size_of::<MonitorInfo>() as u32,
+                    size: u32::try_from(std::mem::size_of::<MonitorInfo>()).unwrap(),
                     ..std::mem::zeroed()
                 };
                 if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0
@@ -218,13 +216,17 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
         while GetCapture() == hwnd {
             match GetMessageW(&mut message, ptr::null_mut(), 0, 0) {
                 0 => {
-                    quit = Some(message.wparam as i32);
+                    quit = Some(
+                        u32::try_from(message.wparam & 0xffff_ffff)
+                            .unwrap()
+                            .cast_signed(),
+                    );
                     break;
                 }
                 -1 => break,
                 _ => {}
             }
-            match message.message {
+            match message.id {
                 0x0200 => {
                     // WM_MOUSEMOVE
                     let mut cursor = Point { x: 0, y: 0 };
@@ -240,8 +242,14 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                         outline = ensure_splitter_preview(hwnd);
                         if !outline.is_null() {
                             // Translucent accent fill (LWA_ALPHA) over the new bounds.
-                            let style = GetWindowLongPtrW(outline, -20) as u32;
-                            SetWindowLongPtrW(outline, -20, (style | 0x0008_0000) as isize); // WS_EX_LAYERED
+                            let style =
+                                u32::try_from(GetWindowLongPtrW(outline, -20) & 0xffff_ffff)
+                                    .unwrap();
+                            SetWindowLongPtrW(
+                                outline,
+                                -20,
+                                isize::try_from(style | 0x0008_0000).unwrap(),
+                            ); // WS_EX_LAYERED
                             SetLayeredWindowAttributes(outline, 0, 70, 0x2);
                         }
                     }
@@ -289,7 +297,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 // does not jump back to the size from before the snap.
                 // rcNormalPosition uses workspace coordinates.
                 let mut info = MonitorInfo {
-                    size: std::mem::size_of::<MonitorInfo>() as u32,
+                    size: u32::try_from(std::mem::size_of::<MonitorInfo>()).unwrap(),
                     ..std::mem::zeroed()
                 };
                 let center = Point {
@@ -305,7 +313,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                     (0, 0)
                 };
                 let mut placement = WindowPlacement {
-                    length: std::mem::size_of::<WindowPlacement>() as u32,
+                    length: u32::try_from(std::mem::size_of::<WindowPlacement>()).unwrap(),
                     ..WindowPlacement::default()
                 };
                 GetWindowPlacement(hwnd, &mut placement);

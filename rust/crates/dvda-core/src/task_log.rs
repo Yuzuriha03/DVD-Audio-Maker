@@ -26,7 +26,7 @@ pub fn emit(
 ) {
     emit_event(
         caller,
-        Event {
+        &Event {
             action: action.into(),
             current,
             total,
@@ -40,7 +40,7 @@ pub fn emit(
 pub fn warning(caller: &mut dyn Callbacks, action: &str, count: u64, name: &str) {
     emit_event(
         caller,
-        Event {
+        &Event {
             action: action.into(),
             current: count,
             total: count,
@@ -51,14 +51,14 @@ pub fn warning(caller: &mut dyn Callbacks, action: &str, count: u64, name: &str)
     );
 }
 
-fn emit_event(caller: &mut dyn Callbacks, event: Event) {
+fn emit_event(caller: &mut dyn Callbacks, event: &Event) {
     caller.emit(
         if event.warning || event.action == "pcm_failed" {
             2
         } else {
             1
         },
-        &format!("{PREFIX}{}", serde_json::to_string(&event).unwrap()),
+        &format!("{PREFIX}{}", serde_json::to_string(event).unwrap()),
     );
 }
 

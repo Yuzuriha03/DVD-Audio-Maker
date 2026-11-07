@@ -1,7 +1,3 @@
-#![allow(
-    clippy::unnecessary_debug_formatting,
-    reason = "The generated include_bytes path uses debug escaping for a valid Rust literal"
-)]
 use std::{
     env,
     path::{Path, PathBuf},
@@ -40,6 +36,10 @@ fn main() {
         PathBuf::from,
     );
     println!("cargo:rerun-if-changed={}", archive.display());
+    #[allow(
+        clippy::unnecessary_debug_formatting,
+        reason = "Debug escapes the archive path as a Rust string literal for include_bytes!"
+    )]
     std::fs::write(
         generated.join("runtime.rs"),
         format!("static EMBEDDED_RUNTIME: &[u8] = include_bytes!({archive:?});"),

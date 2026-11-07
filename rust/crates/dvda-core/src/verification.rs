@@ -40,13 +40,17 @@ pub struct AuditLogData {
 /// Returns an error for an unsupported operation, non-string audit-log input,
 /// an ISO-name request that is not an object or lacks a string path, or failure
 /// to serialize parsed audit evidence.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "verify.parse_audit_log" => {
             let text = request.as_str().ok_or("Expected build log text")?;
             serde_json::to_value(parse_audit_log(text)).map_err(|error| error.to_string())
         }
-        "verify.matches_iso_name" => matches_iso_name(request),
+        "verify.matches_iso_name" => matches_iso_name(&request),
         _ => Err(format!("Unsupported verification operation: {operation}")),
     }
 }
@@ -233,7 +237,7 @@ fn basename(path: &str) -> String {
         .to_owned()
 }
 
-fn matches_iso_name(request: Value) -> Result<Value, String> {
+fn matches_iso_name(request: &Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected ISO name request")?;
     let path = object
         .get("Path")
@@ -249,7 +253,11 @@ fn matches_iso_name(request: Value) -> Result<Value, String> {
     let name = basename(path);
     let lower_name = name.to_ascii_lowercase();
     let lower_prefix = prefix.to_ascii_lowercase();
-    if !lower_name.starts_with(&lower_prefix) || !lower_name.ends_with(".iso") {
+    if !lower_name.starts_with(&lower_prefix)
+        || !Path::new(&name)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("iso"))
+    {
         return Ok(json!(false));
     }
     let suffix = &name[prefix.len()..name.len() - 4];
@@ -689,7 +697,7 @@ mod tests {
     #[test]
     fn matches_current_iso_name_case_insensitively() {
         assert_eq!(
-            matches_iso_name(json!({
+            matches_iso_name(&json!({
                 "Path":"Wuthering_Waves_Singles_EPs_2.ISO",
                 "IsoPrefix":"Wuthering_Waves_Singles_EPs"
             }))
@@ -697,7 +705,7 @@ mod tests {
             json!(true)
         );
         assert_eq!(
-            matches_iso_name(json!({
+            matches_iso_name(&json!({
                 "Path":"Wuthering_Waves_Singles_EPs_MLP_2.iso",
                 "IsoPrefix":"Wuthering_Waves_Singles_EPs"
             }))

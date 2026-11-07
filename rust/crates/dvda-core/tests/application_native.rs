@@ -1,13 +1,4 @@
 //! Exercise the same entry points as the desktop, with generated audio only.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Application fixtures construct complete generated-media tasks and protocol records"
-)]
 use dvda_core::{app, media, verify_audio};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde_json::{Value, json};
@@ -15,6 +6,7 @@ use std::{
     fmt::Write as _,
     fs,
     io::{Read, Seek, SeekFrom, Write},
+    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -99,8 +91,9 @@ fn sources_aligned(root: &Path, align: bool) {
         wave.extend_from_slice(&size.to_le_bytes());
         for frame in 0..frames {
             for c in 0..2 {
-                let sample = ((frame * (97 + c * 18) + n * 53) % 60001) as i32 - 30000;
-                wave.extend_from_slice(&(sample as i16).to_le_bytes());
+                let sample =
+                    i32::try_from((frame * (97 + c * 18) + n * 53) % 60_001).unwrap() - 30_000;
+                wave.extend_from_slice(&i16::try_from(sample).unwrap().to_le_bytes());
             }
         }
         let input = root.join("input.wav");
@@ -437,6 +430,10 @@ fn cleanup_failure_warns_and_next_build_rejects_dirty_workspace() {
 
 #[test]
 #[ignore = "requires source-built x64 media/formats/encoder/author/disc verifier"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The ignored application scenario keeps cache, resume, and lossless verification stages ordered"
+)]
 fn application_preparation_cache_resume_and_lossless_verification() {
     for mode in ["mlp-batch", "lpcm"] {
         let root = Scratch::new();
@@ -573,12 +570,35 @@ fn application_ntsc_menu_and_title_boundaries() {
     check_application_menu_and_title_boundaries("ntsc");
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "The shared menu scenario keeps PAL/NTSC title boundaries and failure stages ordered"
+)]
 fn check_application_menu_and_title_boundaries(norm: &str) {
+    struct BlockStill {
+        root: PathBuf,
+        blocked: bool,
+    }
+    impl Callbacks for BlockStill {
+        fn emit(&mut self, _: i32, text: &str) {
+            if !self.blocked
+                && text.starts_with("[menu-cover] background ")
+                && self.root.join("bg0.jpg").is_file()
+            {
+                fs::create_dir(self.root.join("still0.jpg")).unwrap();
+                self.blocked = true;
+            }
+        }
+        fn cancelled(&mut self) -> bool {
+            false
+        }
+    }
+
     let root = Scratch::new();
     sources(&root.0);
     let mut pixels = Vec::with_capacity(320 * 320 * 4);
     for y in 0..320_u32 {
-        let channel = |start: u32, end: u32| (start + (end - start) * y / 319) as u8;
+        let channel = |start: u32, end: u32| u8::try_from(start + (end - start) * y / 319).unwrap();
         for _ in 0..320 {
             pixels.extend_from_slice(&[
                 channel(0x10, 0xc0),
@@ -850,24 +870,6 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
     // A playback JPEG failure is advisory: retaining the valid page background
     // still permits a disc with zero playback pictures. Trigger it by creating
     // a directory at that fixture's output filename after background rendering.
-    struct BlockStill {
-        root: PathBuf,
-        blocked: bool,
-    }
-    impl Callbacks for BlockStill {
-        fn emit(&mut self, _: i32, text: &str) {
-            if !self.blocked
-                && text.starts_with("[menu-cover] background ")
-                && self.root.join("bg0.jpg").is_file()
-            {
-                fs::create_dir(self.root.join("still0.jpg")).unwrap();
-                self.blocked = true;
-            }
-        }
-        fn cancelled(&mut self) -> bool {
-            false
-        }
-    }
     let mut blocker = BlockStill {
         root: options.path("MenuDirectory").join("disc1"),
         blocked: false,
@@ -927,7 +929,7 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
     let pages = dvda_core::menu::plan(json!({"Disc":plan["Discs"][0],"Title":"Test",
         "MenuTracksPerPage":1,"MenuIndexMinimumAlbums":1}))
     .unwrap();
-    let total = pages["TotalPages"].as_u64().unwrap() as usize;
+    let total = usize::try_from(pages["TotalPages"].as_u64().unwrap()).unwrap();
     assert_eq!(
         dvda_core::menu_check::buttons(&temporary, total, 1),
         [] as [serde_json::Value; 0]
@@ -985,24 +987,26 @@ fn application_import_preserves_bytes_and_verifies_aligned_pcm() {
 }
 
 fn assert_diagnostic(outcome: dvda_core::verify::Outcome, code: &str) {
-    assert!(!outcome.succeeded, "{code}: unexpectedly succeeded");
+    let succeeded = outcome.succeeded;
+    let diagnostics = outcome.diagnostics;
+    assert!(!succeeded, "{code}: unexpectedly succeeded");
     assert!(
-        outcome.diagnostics.iter().any(|d| d["Code"] == code),
-        "{code}: {:?}",
-        outcome.diagnostics
+        diagnostics.iter().any(|d| d["Code"] == code),
+        "{code}: {diagnostics:?}"
     );
 }
 fn assert_menu_file_missing(outcome: dvda_core::verify::Outcome) {
-    assert!(!outcome.succeeded, "missing menu files unexpectedly passed");
+    let succeeded = outcome.succeeded;
+    let diagnostics = outcome.diagnostics;
+    assert!(!succeeded, "missing menu files unexpectedly passed");
     assert!(
-        outcome.diagnostics.iter().any(|diagnostic| {
+        diagnostics.iter().any(|diagnostic| {
             matches!(
                 diagnostic["Code"].as_str(),
                 Some("MENU_FILE_MISSING" | "AMG_ASVS_TARGET_MISSING")
             )
         }),
-        "missing menu file was not diagnosed: {:?}",
-        outcome.diagnostics
+        "missing menu file was not diagnosed: {diagnostics:?}"
     );
 }
 fn render_command(command: &dvda_core::verification::DiscCommand) -> String {
@@ -1027,6 +1031,10 @@ fn run_verify(options: &app::AppOptions) -> dvda_core::verify::Outcome {
 }
 #[test]
 #[ignore = "requires source-built x64 media/formats/encoder/author/disc verifier"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The ignored audit scenario keeps manifest, log, and sector corruptions ordered"
+)]
 fn application_manifest_log_and_sector_audit_regressions() {
     let root = Scratch::new();
     sources(&root.0);
@@ -1192,14 +1200,14 @@ fn application_manifest_log_and_sector_audit_regressions() {
     let table2 = title2 + be16(&original_iso, title2 + 12);
     for delta in [-1i32, 1] {
         let mut corrupt = original_iso.clone();
-        let first = be32(&corrupt, table2 + 4) as i32;
+        let first = i32::try_from(be32(&corrupt, table2 + 4)).unwrap();
         corrupt[table2 + 4..table2 + 8].copy_from_slice(&(first + delta).to_be_bytes());
         fs::write(&iso, corrupt).unwrap();
         assert_diagnostic(run_verify(&options), "TRACK_GAP");
     }
     for delta in [-1i32, 1] {
         let mut corrupt = original_iso.clone();
-        let last = be32(&corrupt, table2 + 8) as i32;
+        let last = i32::try_from(be32(&corrupt, table2 + 8)).unwrap();
         corrupt[table2 + 8..table2 + 12].copy_from_slice(&(last + delta).to_be_bytes());
         fs::write(&iso, corrupt).unwrap();
         assert_diagnostic(run_verify(&options), "AOB_SECTOR_MISMATCH");
@@ -1286,8 +1294,8 @@ fn iso_record_offset(iso: &Path, bytes: &[u8], name: &str) -> usize {
     let directory =
         dvda_core::formats::dispatch("iso.entry", json!({"Path":iso,"InnerPath":"AUDIO_TS"}))
             .unwrap();
-    let base = directory["LogicalBlockAddress"].as_u64().unwrap() as usize * 2048;
-    let end = base + directory["Size"].as_u64().unwrap() as usize;
+    let base = usize::try_from(directory["LogicalBlockAddress"].as_u64().unwrap()).unwrap() * 2048;
+    let end = base + usize::try_from(directory["Size"].as_u64().unwrap()).unwrap();
     let mut offset = base;
     while offset < end {
         let length = bytes[offset] as usize;
@@ -1334,6 +1342,10 @@ fn split_aob(iso: &Path, original: &[u8]) -> Vec<u8> {
 
 #[test]
 #[ignore = "requires source-built x64 media/formats/encoder/author/disc verifier"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The ignored publication scenario keeps author failure, rollback, and existing-release checks ordered"
+)]
 fn application_failed_author_keeps_workspace_and_previous_release() {
     let root = Scratch::new();
     sources(&root.0);
@@ -1388,7 +1400,6 @@ fn application_failed_author_keeps_workspace_and_previous_release() {
         1
     );
     // Locking the previous release simulates Windows access/replacement failure.
-    use std::os::windows::fs::OpenOptionsExt;
     let locked = fs::OpenOptions::new()
         .read(true)
         .share_mode(1)
@@ -1498,8 +1509,9 @@ fn long_album(root: &Path, directory: &str, album: &str) {
     wave.extend_from_slice(&size.to_le_bytes());
     for frame in 0..frames {
         for channel in 0..2 {
-            let sample = ((frame * (31 + channel * 13) + 17) % 60001) as i32 - 30000;
-            wave.extend_from_slice(&(sample as i16).to_le_bytes());
+            let sample =
+                i32::try_from((frame * (31 + channel * 13) + 17) % 60_001).unwrap() - 30_000;
+            wave.extend_from_slice(&i16::try_from(sample).unwrap().to_le_bytes());
         }
     }
     let input = root.join(format!("{directory}.wav"));
@@ -1509,7 +1521,12 @@ fn long_album(root: &Path, directory: &str, album: &str) {
     let mut pixels = Vec::with_capacity(64 * 64 * 4);
     for y in 0..64u32 {
         for x in 0..64u32 {
-            pixels.extend_from_slice(&[(x * 4) as u8, (y * 4) as u8, ((x + y) * 2) as u8, 255]);
+            pixels.extend_from_slice(&[
+                u8::try_from(x * 4).unwrap(),
+                u8::try_from(y * 4).unwrap(),
+                u8::try_from((x + y) * 2).unwrap(),
+                255,
+            ]);
         }
     }
     let cover = dvda_image::raster::Raster::from_rgba(

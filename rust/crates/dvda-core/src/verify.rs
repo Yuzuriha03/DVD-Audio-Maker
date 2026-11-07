@@ -75,16 +75,24 @@ pub enum Mode {
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     execute_mode(job, Mode::All, None, caller)
 }
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public verification dispatch retains its owned request contract while private execution helpers borrow the request"
+)]
 pub fn execute_mode(
     job: Job,
     mode: Mode,
     explicit_iso: Option<PathBuf>,
     caller: &mut dyn Callbacks,
 ) -> Outcome {
-    execute_with_reference(job, mode, explicit_iso, None, caller)
+    execute_with_reference(&job, mode, explicit_iso, None, caller)
 }
 
 /// Recheck ISO content against current sources, without claiming historical build-log audit.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public verification dispatch retains its owned request contract while private execution helpers borrow the request"
+)]
 pub fn execute_source_reference(
     job: Job,
     mode: Mode,
@@ -92,11 +100,11 @@ pub fn execute_source_reference(
     reference: Value,
     caller: &mut dyn Callbacks,
 ) -> Outcome {
-    execute_with_reference(job, mode, explicit_iso, Some(reference), caller)
+    execute_with_reference(&job, mode, explicit_iso, Some(reference), caller)
 }
 
 fn execute_with_reference(
-    job: Job,
+    job: &Job,
     mode: Mode,
     explicit_iso: Option<PathBuf>,
     reference: Option<Value>,
@@ -113,7 +121,7 @@ fn execute_with_reference(
 }
 
 fn execute_measured(
-    job: Job,
+    job: &Job,
     mode: Mode,
     explicit_iso: Option<PathBuf>,
     reference: Option<Value>,
@@ -130,8 +138,12 @@ fn execute_measured(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Validate modes, index selection, ordered evidence checks and completion reporting in one flow so diagnostic priority and progress/cancellation boundaries remain unchanged"
+)]
 fn run(
-    job: Job,
+    job: &Job,
     mode: Mode,
     explicit_iso: Option<PathBuf>,
     reference: Option<Value>,
@@ -208,7 +220,7 @@ fn run(
     let tracks = index.as_ref().map_or(0, index_track_count);
     if matches!(mode, Mode::All | Mode::Capacity) {
         capacity(
-            &job,
+            job,
             &isos,
             index.as_ref().map_or(1, |_| tracks),
             &mut diagnostics,
@@ -259,23 +271,26 @@ fn run(
                 &evidence,
             ));
         }
-        actual_tracks = evidence.iter().map(|disc| disc.track_count() as i32).sum();
+        actual_tracks = evidence
+            .iter()
+            .map(|disc| reported_count(disc.track_count()))
+            .sum();
     }
     if mode == Mode::All {
         if let Some(index) = index.as_ref() {
             let (menu, lossless) =
-                verify_menu_and_lossless(&job, &isos, index, source_reference, &metadata, caller)?;
+                verify_menu_and_lossless(job, &isos, index, source_reference, &metadata, caller)?;
             diagnostics.extend(menu);
             diagnostics.extend(lossless);
         } else {
             diagnostics.extend(verify_menus(
-                &job, &isos, None, mode, selected, &metadata, caller,
+                job, &isos, None, mode, selected, &metadata, caller,
             )?);
         }
     } else {
         if mode == Mode::Menu && (index.is_some() || selected) {
             diagnostics.extend(verify_menus(
-                &job,
+                job,
                 &isos,
                 index.as_ref(),
                 mode,
@@ -287,7 +302,7 @@ fn run(
         if mode == Mode::Lossless
             && let Some(index) = index.as_ref()
             && let Err(reason) = lossless(
-                &job,
+                job,
                 &isos,
                 index,
                 source_reference,
@@ -315,7 +330,7 @@ fn run(
     Ok(Outcome {
         succeeded,
         diagnostics,
-        iso_count: isos.len() as i32,
+        iso_count: reported_count(isos.len()),
         track_count: actual_tracks,
     })
 }
@@ -640,7 +655,10 @@ fn capacity(
     for iso in isos {
         match fs::metadata(iso) {
             Ok(file_metadata) => {
-                if job.disc_bytes > 0 && file_metadata.len() > job.disc_bytes as u64 {
+                if job.disc_bytes > 0
+                    && file_metadata.len()
+                        > u64::try_from(job.disc_bytes).expect("positive disc byte limit")
+                {
                     diagnostics.push(error(
                         "ISO_CAPACITY_EXCEEDED",
                         format!(
@@ -723,6 +741,10 @@ pub struct Inspection {
     pub allow_log_fallback: bool,
     pub audit: bool,
 }
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public verification dispatch retains its owned request contract while private execution helpers borrow the request"
+)]
 pub fn inspect(job: Inspection, caller: &mut dyn Callbacks) -> Outcome {
     let mut run = || -> Result<Outcome, String> {
         check_cancel(caller)?;
@@ -760,8 +782,11 @@ pub fn inspect(job: Inspection, caller: &mut dyn Callbacks) -> Outcome {
         Ok(Outcome {
             succeeded: !diagnostics.iter().any(is_error),
             diagnostics,
-            iso_count: isos.len() as i32,
-            track_count: evidence.iter().map(|disc| disc.track_count() as i32).sum(),
+            iso_count: reported_count(isos.len()),
+            track_count: evidence
+                .iter()
+                .map(|disc| reported_count(disc.track_count()))
+                .sum(),
         })
     };
     match run() {
@@ -774,6 +799,10 @@ pub fn inspect(job: Inspection, caller: &mut dyn Callbacks) -> Outcome {
         },
     }
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "The nested ISO/group/sector audit retains shared timestamp state and ordered diagnostics; splitting the loop would obscure cancellation and first-error boundaries"
+)]
 fn timeline(
     isos: &[PathBuf],
     index: Option<&Value>,
@@ -848,7 +877,7 @@ fn timeline(
         for number in actual {
             check_cancel(caller)?;
             let parsed = match read_iso_file(iso, &format!("AUDIO_TS/ATS_{number:02}_0.IFO"))
-                .and_then(|data| crate::ifo::parse(&data, number as i32))
+                .and_then(|data| crate::ifo::parse(&data, reported_group(number)))
             {
                 Ok(parsed) => parsed,
                 Err(reason) => {
@@ -903,7 +932,7 @@ fn timeline(
             aobs.sort_by_key(|entry| parse_aob(&entry.name).unwrap().1);
             let sector_count = aobs
                 .iter()
-                .map(|entry| i64::from(entry.size) / SECTOR_SIZE as i64)
+                .map(|entry| i64::from(entry.size) / 2048_i64)
                 .sum();
             let mut observation = GroupEvidence {
                 rows: parsed.rows,
@@ -923,7 +952,7 @@ fn timeline(
                     "AOB_MISSING",
                     format!("{} group {number} has no AOB", iso.display()),
                 ));
-                evidence.groups.insert(number as i32, observation);
+                evidence.groups.insert(reported_group(number), observation);
                 continue;
             }
             if !audit {
@@ -933,14 +962,15 @@ fn timeline(
                     let mut header = [0u8; 4];
                     let mut found = false;
                     for entry in &aobs {
-                        let sectors = u64::from(entry.size).div_ceil(SECTOR_SIZE as u64) as i64;
+                        let sectors = i64::from(entry.size.div_ceil(2048));
                         if first >= 0 && first < sectors {
                             if entry.is_multi_extent {
                                 return Err("Multi-extent AOB is unsupported".into());
                             }
                             let offset = (u64::from(entry.logical_block_address)
                                 + u64::from(entry.extended_attribute_blocks)
-                                + first as u64)
+                                + u64::try_from(first)
+                                    .expect("nonnegative sector offset checked above"))
                                 * SECTOR_SIZE as u64;
                             input
                                 .seek(SeekFrom::Start(offset))
@@ -957,13 +987,13 @@ fn timeline(
                         ));
                     }
                 }
-                evidence.groups.insert(number as i32, observation);
+                evidence.groups.insert(reported_group(number), observation);
                 continue;
             }
             crate::task_log::emit(
                 caller,
                 "verify_timeline_group",
-                number as u64,
+                number.cast_unsigned(),
                 0,
                 iso.file_name()
                     .unwrap_or_default()
@@ -1053,8 +1083,9 @@ fn timeline(
             if statistics && !failed {
                 // Title boundaries reset PTS legitimately; the boundary audit below
                 // still rejects missing resets and drops outside those boundaries.
-                let stats = aob::pts_statistics_with_resets(&timestamps, &timestamp_resets);
-                for code in &stats.issue_codes {
+                let statistics_result =
+                    aob::pts_statistics_with_resets(&timestamps, &timestamp_resets);
+                for code in &statistics_result.issue_codes {
                     let message = match code.as_str() {
                         "PTS_TOO_FEW" => {
                             format!("有效 PTS 只有 {} 个，时间轴缺失", timestamps.len())
@@ -1062,9 +1093,9 @@ fn timeline(
                         "PTS_NOT_ADVANCING" => "首末 PTS 相同，时间轴没有推进".into(),
                         "PTS_ABNORMAL_RATIO" => format!(
                             "异常步长 {}/{}，占比 {:.3}% > 1%",
-                            stats.abnormal_steps,
-                            stats.steps.len(),
-                            stats.abnormal_ratio
+                            statistics_result.abnormal_steps,
+                            statistics_result.steps.len(),
+                            statistics_result.abnormal_ratio
                         ),
                         _ => unreachable!("PTS statistics returned an unknown diagnostic"),
                     };
@@ -1101,7 +1132,7 @@ fn timeline(
                     ));
                 }
             }
-            evidence.groups.insert(number as i32, observation);
+            evidence.groups.insert(reported_group(number), observation);
         }
         observations.push(evidence);
     }
@@ -1132,7 +1163,7 @@ fn lossless(
                 source_reference,
                 diagnostics,
                 caller,
-                LosslessMeasurement { work, metadata },
+                &LosslessMeasurement { work, metadata },
             );
             (result, diagnostics.len() == before)
         },
@@ -1146,6 +1177,10 @@ struct LosslessMeasurement<'a> {
     metadata: &'a formats::IsoMetadataCache,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Group verification keeps native reader consumption, cancellation checks, diagnostics, progress and subsequent PCM scheduling in their existing order"
+)]
 fn lossless_measured(
     job: &Job,
     isos: &[PathBuf],
@@ -1153,7 +1188,7 @@ fn lossless_measured(
     source_reference: bool,
     diagnostics: &mut Vec<Value>,
     caller: &mut dyn Callbacks,
-    measurement: LosslessMeasurement<'_>,
+    measurement: &LosslessMeasurement<'_>,
 ) -> Result<(), String> {
     let verifier = NativeDiscVerifier::load()?;
     let mut pcm_tracks = Vec::new();
@@ -1169,7 +1204,7 @@ fn lossless_measured(
         .map(|disc| disc["groups"].as_array().map_or(0, Vec::len))
         .sum::<usize>()
         .max(1);
-    let mut group_completed = 0;
+    let mut group_completed = 0usize;
     let mut group_progress = dvda_native::media::ProgressScope::new(caller, 40, 55);
     crate::task_log::emit(
         &mut group_progress,
@@ -1330,6 +1365,10 @@ fn verify_tracks_parallel(
     .0
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Worker startup, callback draining, cancellation and scoped-thread completion remain one ordered verification transaction"
+)]
 fn verify_tracks_measured(
     job: &Job,
     tracks: Vec<Value>,
@@ -1494,8 +1533,20 @@ fn number(value: &Value, key: &str) -> Option<i64> {
         .or_else(|| value.get(key.to_ascii_lowercase()))
         .and_then(Value::as_i64)
 }
+fn reported_group(number: i64) -> i32 {
+    // Malformed ISO names may parse outside the DVD group range; retain their low-bit field value.
+    let bytes = number.to_le_bytes();
+    i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+}
+
+fn reported_count(count: usize) -> i32 {
+    // Preserve the signed JSON field's low-32-bit interpretation even for oversized counts.
+    let bytes = count.to_le_bytes();
+    i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+}
+
 fn index_track_count(index: &Value) -> i32 {
-    index
+    let count = index
         .get("__discs__")
         .and_then(Value::as_array)
         .map_or(0, |discs| {
@@ -1514,8 +1565,9 @@ fn index_track_count(index: &Value) -> i32 {
                         .into_iter()
                         .flatten()
                 })
-                .count() as i32
-        })
+                .count()
+        });
+    reported_count(count)
 }
 fn is_error(value: &Value) -> bool {
     value.get("Severity").and_then(Value::as_i64) == Some(2)
@@ -1524,6 +1576,20 @@ fn is_error(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reported_counts_preserve_signed_low_32_bit_protocol_semantics() {
+        assert_eq!(reported_count(0), 0);
+        assert_eq!(reported_count(usize::try_from(i32::MAX).unwrap()), i32::MAX);
+        assert_eq!(
+            reported_count(usize::try_from(i32::MAX).unwrap() + 1),
+            i32::MIN
+        );
+        assert_eq!(reported_count(usize::MAX), -1);
+        assert_eq!(reported_group(-1), -1);
+        assert_eq!(reported_group(i64::from(i32::MAX) + 1), i32::MIN);
+        assert_eq!(reported_group(i64::MIN), 0);
+    }
+
     #[test]
     fn rejects_empty_groups_duplicate_discs_and_ambiguous_groups() {
         let valid = json!({"x.mlp":{"src":"x.flac","mlp_source":"mlp-batch"},

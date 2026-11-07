@@ -14,10 +14,14 @@ use std::{
 /// Saving also fails if `Entries` is absent, serialization fails, the parent
 /// directory cannot be created, or the index cannot be committed. Loading an
 /// unreadable, invalid, or non-object index returns an empty object instead.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
-        "cache.load" | "resume.load" => load(request),
-        "cache.save" | "resume.save" => save(request),
+        "cache.load" | "resume.load" => load(&request),
+        "cache.save" | "resume.save" => save(&request),
         _ => Err(format!("Unsupported cache operation: {operation}")),
     }
 }
@@ -99,8 +103,8 @@ pub fn record_mlp(entries: &mut Map<String, Value>, path: &Path, value: Value) {
     }
 }
 
-fn load(request: Value) -> Result<Value, String> {
-    let path = text(&request, "Path").ok_or("Missing cache path")?;
+fn load(request: &Value) -> Result<Value, String> {
+    let path = text(request, "Path").ok_or("Missing cache path")?;
     let entries = match fs::read_to_string(path) {
         Ok(text) => match serde_json::from_str::<Value>(&text) {
             Ok(value) if value.is_object() => value,
@@ -112,8 +116,8 @@ fn load(request: Value) -> Result<Value, String> {
     Ok(entries)
 }
 
-fn save(request: Value) -> Result<Value, String> {
-    let path = text(&request, "Path").ok_or("Missing cache path")?;
+fn save(request: &Value) -> Result<Value, String> {
+    let path = text(request, "Path").ok_or("Missing cache path")?;
     let entries = request.get("Entries").ok_or("Missing cache entries")?;
     let text = serde_json::to_string_pretty(entries)
         .map_err(|error| format!("Serialize cache entries: {error}"))?
@@ -158,7 +162,7 @@ mod tests {
     fn load_missing_and_save_round_trip() {
         let root = temporary_root();
         let path = root.join("nested").join("cache.json");
-        assert_eq!(load(json!({"Path":path})).expect("load"), json!({}));
+        assert_eq!(load(&json!({"Path":path})).expect("load"), json!({}));
         let entries = json!({
             "C:/song.mlp": {
                 "source": {"Path":"C:/song.flac", "Size": 1},
@@ -169,8 +173,8 @@ mod tests {
                 "max_interval": 8
             }
         });
-        save(json!({"Path":path, "Entries":entries})).expect("save");
-        assert_eq!(load(json!({"Path":path})).expect("reload"), entries);
+        save(&json!({"Path":path, "Entries":entries})).expect("save");
+        assert_eq!(load(&json!({"Path":path})).expect("reload"), entries);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -195,7 +199,7 @@ mod tests {
         assert_eq!(events.0, [] as [std::string::String; 0]);
         let key = Path::new("C:\\Music\\ÉTÉ\\song.MLP");
         let valid = json!({key.to_str().unwrap():{"source":{"Size":1},"output":{"Size":2},"encoder":"same","bits":24,"resample_to":48000,"max_interval":8}});
-        save(json!({"Path":path,"Entries":valid})).unwrap();
+        save(&json!({"Path":path,"Entries":valid})).unwrap();
         let mut entries = load_mlp(&path, &mut events);
         assert!(find_mlp(&entries, Path::new("c:\\music\\été\\SONG.mlp")).is_some());
         record_mlp(
@@ -240,7 +244,7 @@ mod tests {
         let root = temporary_root();
         fs::create_dir_all(&root).unwrap();
         let path = root.join("cache.json");
-        save(json!({"Path":path,"Entries":{"before":1}})).unwrap();
+        save(&json!({"Path":path,"Entries":{"before":1}})).unwrap();
         let before = fs::read(&path).unwrap();
         let foreign = root.join("cache.json.tmp");
         fs::write(&foreign, b"other writer").unwrap();
@@ -249,13 +253,13 @@ mod tests {
             .share_mode(1)
             .open(&path)
             .unwrap();
-        assert!(save(json!({"Path":path,"Entries":{"after":2}})).is_err());
+        assert!(save(&json!({"Path":path,"Entries":{"after":2}})).is_err());
         assert_eq!(fs::read(&path).unwrap(), before);
         assert_eq!(fs::read(&foreign).unwrap(), b"other writer");
         assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
         drop(lock);
-        save(json!({"Path":path,"Entries":{"after":2}})).unwrap();
-        assert_eq!(load(json!({"Path":path})).unwrap(), json!({"after":2}));
+        save(&json!({"Path":path,"Entries":{"after":2}})).unwrap();
+        assert_eq!(load(&json!({"Path":path})).unwrap(), json!({"after":2}));
         fs::remove_dir_all(root).unwrap();
     }
 }

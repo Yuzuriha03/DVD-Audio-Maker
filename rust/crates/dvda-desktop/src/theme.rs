@@ -1,8 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    reason = "Theme handling preserves native color channels and pointer-width window values"
-)]
 //! Colours and light/dark theme switching.
 
 use super::{
@@ -176,7 +171,7 @@ pub(crate) fn dark_theme() -> bool {
 }
 pub(crate) fn system_prefers_dark() -> bool {
     let mut value: u32 = 1;
-    let mut size = std::mem::size_of::<u32>() as u32;
+    let mut size = u32::try_from(std::mem::size_of::<u32>()).unwrap();
     let mut kind = 0u32;
     let result = unsafe {
         RegGetValueW(
@@ -212,7 +207,7 @@ fn uxtheme_ordinals_supported() -> bool {
             fn RtlGetVersion(info: *mut OsVersionInfo) -> i32;
         }
         let mut info = OsVersionInfo {
-            size: std::mem::size_of::<OsVersionInfo>() as u32,
+            size: u32::try_from(std::mem::size_of::<OsVersionInfo>()).unwrap(),
             major: 0,
             minor: 0,
             build: 0,
@@ -300,13 +295,13 @@ pub(crate) fn apply_theme(hwnd: Hwnd, state: &mut UiState, dark: bool) {
             hwnd,
             20,
             (&raw const dark_flag).cast::<c_void>(),
-            std::mem::size_of::<u32>() as u32,
+            u32::try_from(std::mem::size_of::<u32>()).unwrap(),
         );
         DwmSetWindowAttribute(
             hwnd,
             19,
             (&raw const dark_flag).cast::<c_void>(),
-            std::mem::size_of::<u32>() as u32,
+            u32::try_from(std::mem::size_of::<u32>()).unwrap(),
         );
         EnumChildWindows(hwnd, theme_child_proc, 0);
         let empty = wide("");
@@ -315,13 +310,13 @@ pub(crate) fn apply_theme(hwnd: Hwnd, state: &mut UiState, dark: bool) {
             state.controls.progress,
             PBM_SETBKCOLOR,
             0,
-            c_bar_track() as isize,
+            isize::try_from(c_bar_track()).unwrap(),
         );
         SendMessageW(
             state.controls.progress,
             PBM_SETBARCOLOR,
             0,
-            c_accent() as isize,
+            isize::try_from(c_accent()).unwrap(),
         );
         if !state.tooltip_window.is_null() {
             let dark_name = wide("DarkMode_Explorer");

@@ -9,6 +9,10 @@ pub(crate) struct Plan {
     pub coding: Coding,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Adaptive prediction reconstructs an i32-bounded filtered sample from the reference i64 accumulator"
+)]
 fn adaptive(samples: &[i32], history: &[i32], order: usize) -> Option<Vec<i32>> {
     let mut equations = [[0f64; 9]; 8];
     for (n, &x) in samples.iter().enumerate() {
@@ -65,6 +69,11 @@ fn adaptive(samples: &[i32], history: &[i32], order: usize) -> Option<Vec<i32>> 
         .then_some(coefficients)
 }
 /// Evaluate exact fixed-point FIR candidates with the decoder's retained PCM history.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "Prediction quantization preserves the original truncating conversions and strict-less-than candidate selection"
+)]
 pub(crate) fn select(
     samples: &[i32],
     history: &[i32],
@@ -230,6 +239,10 @@ pub(crate) fn select(
 mod tests {
     use super::*;
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The ramp fixture uses bounded sample indices in its deterministic PCM generator"
+    )]
     fn ramp_selects_prediction_and_reconstructs_exactly() {
         let samples: Vec<i32> = (8..40).map(|n| n * 100).collect();
         let history = [600, 700];
@@ -248,6 +261,10 @@ mod tests {
         assert_eq!(&decoded[2..], samples);
     }
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The transition fixture uses bounded quantized coefficients in its deterministic PCM generator"
+    )]
     fn quantized_filter_transitions_reconstruct_decoder_state() {
         for qss in [0, 4, 8] {
             let mut history = vec![0i32; 8];

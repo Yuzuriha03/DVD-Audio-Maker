@@ -230,10 +230,7 @@ fn prefix(title: &str) -> String {
     }
 }
 
-#[must_use]
-pub fn evaluate(request: Request) -> Value {
-    let r = &request;
-    let mut properties = Map::new();
+fn put_paths(r: &Request, properties: &mut Map<String, Value>) {
     let mut put = |name: &str, value: OptionValue| {
         properties.insert(name.into(), json!(value));
     };
@@ -288,6 +285,12 @@ pub fn evaluate(request: Request) -> Value {
             combine(parent, "menu-bin")
         }),
     );
+}
+
+fn put_common_options(r: &Request, properties: &mut Map<String, Value>) {
+    let mut put = |name: &str, value: OptionValue| {
+        properties.insert(name.into(), json!(value));
+    };
     for (name, key, default_on) in [
         ("Dither16", "DVDA_DITHER_16", true),
         ("PrepareCacheEnabled", "DVDA_RESUME", false),
@@ -334,6 +337,15 @@ pub fn evaluate(request: Request) -> Value {
             OptionValue::failure("DVDA_MENU_NORM 仅支持 pal、secam 或 ntsc。")
         },
     );
+}
+
+fn evaluate_properties(r: &Request) -> Map<String, Value> {
+    let mut properties = Map::new();
+    put_paths(r, &mut properties);
+    put_common_options(r, &mut properties);
+    let mut put = |name: &str, value: OptionValue| {
+        properties.insert(name.into(), json!(value));
+    };
     put("PlannedDiscs", OptionValue::new(0));
     put(
         "DiscBytes",
@@ -362,7 +374,7 @@ pub fn evaluate(request: Request) -> Value {
     ] {
         put(
             name,
-            OptionValue::new(real(r.get(key), fallback).to_bits() as i64),
+            OptionValue::new(real(r.get(key), fallback).to_bits().cast_signed()),
         );
     }
     for (name, key, slash) in [
@@ -400,6 +412,7 @@ pub fn evaluate(request: Request) -> Value {
             Err(e) => OptionValue::failure(e),
         },
     );
+    let build = r.get("DVDA_BUILD_DIR").trim_end_matches('/');
     let external = trim(r.get("DVDA_MLP_EXTERNAL_DIR")).trim_end_matches('/');
     put(
         "MlpExternalDirectory",
@@ -413,6 +426,17 @@ pub fn evaluate(request: Request) -> Value {
             OptionValue::new(external)
         },
     );
+    properties
+}
+
+#[must_use]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public option evaluation retains its owned Request API"
+)]
+pub fn evaluate(request: Request) -> Value {
+    let r = &request;
+    let properties = evaluate_properties(r);
     let keys: BTreeSet<_> = r
         .defaults
         .keys()
@@ -467,5 +491,34 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
             )))
         }
         _ => Err(format!("Unsupported options operation: {operation}")),
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn floating_option_bits_round_trip_through_signed_json_integers() {
+        for (text, expected) in [
+            ("-0", (-0.0_f64).to_bits()),
+            ("-0.05", (-0.05_f64).to_bits()),
+            ("-infinity", f64::NEG_INFINITY.to_bits()),
+            ("nan", 0xfff8_0000_0000_0000),
+        ] {
+            let mut environment = Map::new();
+            environment.insert("DVDA_LOSS_ERROR_S".into(), json!(text));
+            let evaluated = evaluate(Request {
+                config_path: None,
+                file_values: Map::new(),
+                environment,
+                defaults: defaults("."),
+                positive_sign: "+".into(),
+                negative_sign: "-".into(),
+            });
+            let encoded = evaluated["Properties"]["LossErrorSeconds"]["Value"]
+                .as_i64()
+                .unwrap();
+            assert_eq!(encoded.cast_unsigned(), expected);
+        }
     }
 }

@@ -1,7 +1,3 @@
-#![expect(
-    clippy::too_many_lines,
-    reason = "FFmpeg conversion stages retain their resource and cleanup boundaries"
-)]
 use crate::{
     Call,
     ffmpeg::{
@@ -31,11 +27,7 @@ use crate::{
     win,
 };
 use std::{ffi::c_void, fs::File, io::Write, ptr};
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "The helper is shared directly by fallible map_err call sites"
-)]
-pub(crate) fn open_error(error: std::io::Error) -> i32 {
+pub(crate) fn open_error(error: &std::io::Error) -> i32 {
     match error.kind() {
         std::io::ErrorKind::NotFound => -2,
         std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::IsADirectory => -13,
@@ -43,6 +35,15 @@ pub(crate) fn open_error(error: std::io::Error) -> i32 {
         std::io::ErrorKind::InvalidInput => EINVAL,
         _ => EIO,
     }
+}
+
+/// Read one scalar from a byte-addressed media buffer without imposing typed alignment.
+///
+/// # Safety
+/// `base` must be readable for `index + 1` values of `T`; no alignment beyond `u8` is required.
+// FFmpeg planes and packed conversion buffers may be byte-aligned; this helper only reads unaligned.
+unsafe fn read_unaligned_sample<T>(base: *const u8, index: usize) -> T {
+    unsafe { ptr::read_unaligned(base.cast::<T>().add(index)) }
 }
 #[derive(Clone, Copy)]
 pub struct PcmFormat {
@@ -226,7 +227,7 @@ impl Audio<'_> {
                     text(*request.tags.add(index * 2 + 1)),
                 ));
             }
-            let file = File::create(text(request.output)).map_err(open_error)?;
+            let file = File::create(text(request.output)).map_err(|error| open_error(&error))?;
             self.wave = Some(
                 dvda_audio::writer::Writer::new(
                     file,
@@ -242,7 +243,7 @@ impl Audio<'_> {
                         channel_mask: mask,
                     },
                 )
-                .map_err(open_error)?,
+                .map_err(|error| open_error(&error))?,
             );
             Ok(())
         }
@@ -252,6 +253,10 @@ impl Audio<'_> {
     /// must be a valid frame for `self`'s encoder. Both are owned by the caller and live for the call.
     /// `request.output` must not be NULL. `request.tags` must point to readable entries for
     /// `request.tag_count` items when that count is non-zero.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "FLAC container setup keeps codec, metadata, cover, I/O, and FIFO initialization together"
+    )]
     unsafe fn container(
         &mut self,
         request: &Request,
@@ -505,8 +510,10 @@ impl Audio<'_> {
     /// # Safety
     /// `frame` must be a frame produced by `self.decoder`. It may be NULL only while the converter
     /// is still uninitialized, before the first frame arrives. The caller keeps ownership of `frame`.
-    // Scalar plane reads are unaligned; packed i32 writes use FFmpeg or Vec alignment guarantees.
-    #[allow(clippy::cast_ptr_alignment)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Conversion keeps resampler output ownership, quantization, sinks, and cleanup in one transaction"
+    )]
     unsafe fn convert(
         &mut self,
         request: &Request,
@@ -548,7 +555,9 @@ impl Audio<'_> {
                     if request.output.is_null() {
                         return Err(EINVAL);
                     }
-                    self.file = Some(File::create(text(request.output)).map_err(open_error)?);
+                    self.file = Some(
+                        File::create(text(request.output)).map_err(|error| open_error(&error))?,
+                    );
                 }
                 self.initialized = true;
             }
@@ -607,9 +616,7 @@ impl Audio<'_> {
                     }
                     quantized.reserve(values);
                     for index in 0..values {
-                        quantized.push(
-                            dither.quantize(ptr::read_unaligned(plane.cast::<f64>().add(index))),
-                        );
+                        quantized.push(dither.quantize(read_unaligned_sample::<f64>(plane, index)));
                     }
                     quantized.as_ptr().cast::<u8>()
                 } else if self.bits == 20 {
@@ -620,9 +627,12 @@ impl Audio<'_> {
                             if plane.is_null() {
                                 return Err(INVALID);
                             }
-                            let value = ptr::read_unaligned(plane.cast::<f64>().add(sample));
+                            let value = read_unaligned_sample::<f64>(plane, sample);
                             // The clamp guarantees the destination i32 range before quantization.
-                            #[allow(clippy::cast_possible_truncation)]
+                            #[expect(
+                                clippy::cast_possible_truncation,
+                                reason = "floor and clamp produce integral values in the 20-bit signed range before this cast"
+                            )]
                             let quantized = (value * 524_288.0 + 0.5)
                                 .floor()
                                 .clamp(-524_288.0, 524_287.0)
@@ -641,14 +651,15 @@ impl Audio<'_> {
                 if let Some(wave) = &mut self.wave {
                     if self.bits == 16 {
                         wave.write_frames(std::slice::from_raw_parts(packed, values * 2))
-                            .map_err(open_error)?;
+                            .map_err(|error| open_error(&error))?;
                     } else {
                         let mut bytes = Vec::with_capacity(values * 3);
                         for index in 0..values {
-                            let value = ptr::read_unaligned(packed.cast::<u32>().add(index)) >> 8;
+                            let value = read_unaligned_sample::<u32>(packed, index) >> 8;
                             bytes.extend_from_slice(&value.to_le_bytes()[..3]);
                         }
-                        wave.write_frames(&bytes).map_err(open_error)?;
+                        wave.write_frames(&bytes)
+                            .map_err(|error| open_error(&error))?;
                     }
                 }
                 if !self.fifo.is_null() {
@@ -665,7 +676,7 @@ impl Audio<'_> {
                     if request.output_format == 2 {
                         let mut bytes = Vec::with_capacity(values * 3);
                         for i in 0..values {
-                            let value = ptr::read_unaligned(packed.cast::<u32>().add(i)) >> 8;
+                            let value = read_unaligned_sample::<u32>(packed, i) >> 8;
                             bytes.extend_from_slice(&value.to_le_bytes()[..3]);
                         }
                         file.write_all(&bytes).map_err(|_| EIO)?;
@@ -681,13 +692,14 @@ impl Audio<'_> {
                     if self.bits == 16 {
                         let mut pcm = Vec::with_capacity(values);
                         for index in 0..values {
-                            pcm.push(
-                                i32::from(ptr::read_unaligned(packed.cast::<i16>().add(index)))
-                                    << 8,
-                            );
+                            pcm.push(i32::from(read_unaligned_sample::<i16>(packed, index)) << 8);
                         }
                         sink.write(&pcm)?;
                     } else {
+                        #[expect(
+                            clippy::cast_ptr_alignment,
+                            reason = "This branch receives only FFmpeg-aligned S32 planes or Vec<i32>; i16 and f64 planes use other branches"
+                        )]
                         sink.write(std::slice::from_raw_parts(packed.cast::<i32>(), values))?;
                     }
                 }
@@ -810,6 +822,10 @@ impl Audio<'_> {
 /// # Safety
 /// `input` must be an open `AVFormatContext` whose stream information has been read, owned by
 /// the caller and alive for the call. `request` and `call` must be valid for the call.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Audio input retains decode, FIFO, flush, and cancellation cleanup in one transaction"
+)]
 pub(crate) unsafe fn audio_input(
     request: &Request,
     call: &Call,
@@ -901,7 +917,9 @@ pub(crate) unsafe fn audio_input(
                 if call.cancelled() {
                     return Err(EXIT);
                 }
-                let count = reader.read_frames(&mut bytes).map_err(open_error)?;
+                let count = reader
+                    .read_frames(&mut bytes)
+                    .map_err(|error| open_error(&error))?;
                 if count == 0 {
                     break;
                 }
@@ -943,7 +961,8 @@ pub(crate) unsafe fn audio_input(
             done(avio_closep((*a.output).pb_ptr()))?;
         }
         if let Some(wave) = a.wave.take() {
-            wave.finish_with_tags(&a.wave_tags).map_err(open_error)?;
+            wave.finish_with_tags(&a.wave_tags)
+                .map_err(|error| open_error(&error))?;
         }
         if let Some(file) = &mut a.file {
             file.flush().map_err(|_| EIO)?;
@@ -1004,6 +1023,10 @@ fn rgb24_raster(
 /// # Safety
 /// `input` must be an open `AVFormatContext` whose stream information has been read, owned by
 /// the caller and alive for the call. `request` and `call` must be valid for the call.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Video setup retains codec, scaler, frame ownership, and cleanup in one transaction"
+)]
 pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Result<(), i32> {
     let (image, output) = unsafe {
         if request.output.is_null() {
@@ -1119,7 +1142,7 @@ pub unsafe fn video(request: &Request, call: &Call, input: *mut Format) -> Resul
         av_packet_free(&raw mut packet);
         result
     }?;
-    let mut file = File::create(output).map_err(open_error)?;
+    let mut file = File::create(output).map_err(|error| open_error(&error))?;
     dvda_image::codec::write_png(&image, &mut file).map_err(|_| EIO)?;
     file.flush().map_err(|_| EIO)?;
     Ok(())

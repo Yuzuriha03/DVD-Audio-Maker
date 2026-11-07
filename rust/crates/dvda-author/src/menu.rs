@@ -4,12 +4,6 @@
 //! sector accounting live here. The caller supplies the existing image,
 //! MPEG-2 and menu implementations through `Backend`; no C author is invoked.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "Menu authoring preserves bounded DVD coordinates, fixed sectors, and sequential backend orchestration"
-)]
 use crate::{Callbacks, atsi};
 use std::{
     fmt::Write as _,
@@ -244,11 +238,13 @@ impl Options {
                 self.enabled = true;
             }
             "fontsize" => {
-                self.font_size = number(required()?, name, 7, 30)? as u16;
+                self.font_size = u16::try_from(number(required()?, name, 7, 30)?)
+                    .map_err(|_| "Validated menu option exceeds field width")?;
                 self.enabled = true;
             }
             "fontwidth" => {
-                self.font_width = number(required()?, name, 1, 10)? as u16;
+                self.font_width = u16::try_from(number(required()?, name, 1, 10)?)
+                    .map_err(|_| "Validated menu option exceeds field width")?;
                 self.enabled = true;
             }
             "font" => {
@@ -257,8 +253,10 @@ impl Options {
                     return Err("--font requires name,size,width".into());
                 }
                 self.font_name = values[0].into();
-                self.font_size = number(values[1], "fontsize", 7, 30)? as u16;
-                self.font_width = number(values[2], "fontwidth", 1, 10)? as u16;
+                self.font_size = u16::try_from(number(values[1], "fontsize", 7, 30)?)
+                    .map_err(|_| "Validated menu option exceeds field width")?;
+                self.font_width = u16::try_from(number(values[2], "fontwidth", 1, 10)?)
+                    .map_err(|_| "Validated menu option exceeds field width")?;
                 self.enabled = true;
             }
             "norm" => {
@@ -268,7 +266,10 @@ impl Options {
                 }
                 self.norm = norm;
             }
-            "aspect" => self.aspect = number(required()?, name, 1, 4)? as u8,
+            "aspect" => {
+                self.aspect = u8::try_from(number(required()?, name, 1, 4)?)
+                    .map_err(|_| "Validated menu option exceeds field width")?;
+            }
             "stillpics" => self.still_pics = Some(required()?.into()),
             "topvob" => {
                 self.top_vob = Some(required()?.into());
@@ -281,9 +282,12 @@ impl Options {
                     return Err("--duration requires hh:mm:ss".into());
                 }
                 self.duration = [
-                    number(fields[0], name, 0, 99)? as u8,
-                    number(fields[1], name, 0, 59)? as u8,
-                    number(fields[2], name, 0, 59)? as u8,
+                    u8::try_from(number(fields[0], name, 0, 99)?)
+                        .map_err(|_| "Validated menu option exceeds field width")?,
+                    u8::try_from(number(fields[1], name, 0, 59)?)
+                        .map_err(|_| "Validated menu option exceeds field width")?,
+                    u8::try_from(number(fields[2], name, 0, 59)?)
+                        .map_err(|_| "Validated menu option exceeds field width")?,
                 ];
             }
             "loop" => {
@@ -406,12 +410,19 @@ fn even(value: u16) -> u16 {
     value & !1
 }
 fn y(row: usize, rows: usize, height: u16) -> u16 {
-    let label_height = (i32::from(height) - 56 - 40 - rows as i32 * 12) / rows as i32;
-    (56 + row as i32 * (label_height + 12) + label_height / 2).max(0) as u16
+    let label_height =
+        (i32::from(height) - 56 - 40 - i32::try_from(rows).expect("at most 30 menu rows") * 12)
+            / i32::try_from(rows).expect("at most 30 menu rows");
+    u16::try_from(
+        (56 + i32::try_from(row).expect("at most 30 menu rows") * (label_height + 12)
+            + label_height / 2)
+            .max(0),
+    )
+    .expect("row center fits DVD height")
 }
 fn row_button(label: String, target: Target, row: usize, count: usize, height: u16) -> Button {
     let rows = count + 4;
-    let delta = even((height - 60) / (rows as u16 * 2));
+    let delta = even((height - 60) / (u16::try_from(rows).expect("at most 30 menu rows") * 2));
     Button {
         label,
         target,
@@ -426,18 +437,26 @@ fn row_button(label: String, target: Target, row: usize, count: usize, height: u
     }
 }
 fn scaled_y(value: u16, height: u16) -> u16 {
-    even((u32::from(value) * u32::from(height) / 576) as u16)
+    even(
+        u16::try_from(u32::from(value) * u32::from(height) / 576)
+            .expect("scaled PAL coordinates fit DVD height"),
+    )
 }
 fn index_rectangle(cell: usize, height: u16) -> [u16; 4] {
-    let x0 = (cell % 4) as u16 * 180 + 5;
-    let y0 = scaled_y(60, height) + (cell / 4) as u16 * scaled_y(140, height) + 5;
+    let x0 = u16::try_from(cell % 4).expect("four index columns") * 180 + 5;
+    let y0 = scaled_y(60, height)
+        + u16::try_from(cell / 4).expect("12 index cells") * scaled_y(140, height)
+        + 5;
     [x0, y0, x0 + 170, y0 + scaled_y(140, height) - 10]
 }
 fn index_arrow(label: &str, target: usize, next: bool, options: &Options) -> Button {
     let x0 = if next { 520 } else { 40 };
     let y0 = scaled_y(496, options.height());
     let y1 = scaled_y(552, options.height());
-    let text_width = options.font_width * options.font_size * label.len() as u16 / 10;
+    let text_width = options.font_width
+        * options.font_size
+        * u16::try_from(label.len()).expect("fixed index-arrow labels fit u16")
+        / 10;
     Button {
         label: label.into(),
         target: Target::Menu(target),
@@ -869,6 +888,11 @@ fn baseline_text(
         .draw_text_mask(&mask, i32::from(position[0]), i32::from(position[1]), color)
         .map_err(|e| e.to_string())
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Caption sizing intentionally truncates fractional font size before clamping to the historical 9..maximum range"
+)]
 fn caption_size(label: &str, options: &Options) -> u16 {
     let units: f32 = label
         .chars()
@@ -886,6 +910,10 @@ fn caption_size(label: &str, options: &Options) -> u16 {
 #[expect(
     clippy::too_many_lines,
     reason = "Keep ordered index background drawing arguments together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Centered text mask coordinates intentionally round to signed pixel positions, including negative overhang"
 )]
 fn make_index_background(
     page: &Page,
@@ -980,15 +1008,21 @@ fn make_index_background(
                 [0; 4],
             )
             .map_err(|e| e.to_string())?;
-            let baseline =
-                (i32::from(label_height) - masks.len() as i32 * line_height) / 2 + i32::from(size);
+            let baseline = (i32::from(label_height)
+                - i32::try_from(masks.len()).expect("caption masks limited by DVD label height")
+                    * line_height)
+                / 2
+                + i32::from(size);
             for (color, dx, dy) in [([0, 0, 0, 255], 2, 4), ([255; 4], 0, 2)] {
                 for (line, mask) in masks.iter().enumerate() {
                     caption
                         .draw_text_mask(
                             mask,
                             ((170.0 - mask.advance) / 2.0).round() as i32,
-                            baseline + line as i32 * line_height,
+                            baseline
+                                + i32::try_from(line)
+                                    .expect("caption masks limited by DVD label height")
+                                    * line_height,
                             color,
                         )
                         .map_err(|e| e.to_string())?;
@@ -1316,7 +1350,7 @@ pub fn repair_still(path: &Path) -> Result<(), String> {
         file.seek(SeekFrom::End(-4))
             .and_then(|_| file.write_all(&[255; 4]))
             .map_err(|error| error.to_string())?;
-        let mut sector = [255; SECTOR as usize];
+        let mut sector = [255; 2048];
         sector[..4].copy_from_slice(&tail);
         file.seek(SeekFrom::End(0))
             .and_then(|_| file.write_all(&sector))
@@ -1324,7 +1358,7 @@ pub fn repair_still(path: &Path) -> Result<(), String> {
     }
     file.seek(SeekFrom::Start(0))
         .map_err(|error| error.to_string())?;
-    let mut nav = [0; SECTOR as usize];
+    let mut nav = [0; 2048];
     file.read_exact(&mut nav)
         .map_err(|error| error.to_string())?;
     if nav[0x400..0x404] == [0, 0, 1, 0xbf] {
@@ -1698,7 +1732,12 @@ pub fn author(
                     "Imported still VOB cannot be split into equal-sized picture extents".into(),
                 );
             }
-            sizes.resize(flat.len(), total / flat.len() as u32);
+            sizes.resize(
+                flat.len(),
+                total
+                    / u32::try_from(flat.len())
+                        .map_err(|_| "Still picture count exceeds VOB sector count")?,
+            );
             fs::copy(input, &output).map_err(|error| error.to_string())?;
         } else {
             let mut streams = Vec::new();

@@ -1,11 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::too_many_lines,
-    reason = "Log rendering preserves Win32 text positions and incremental localized string building"
-)]
 //! Session and task logs: queueing, rendering, localization, copy and export.
 
 use super::{
@@ -20,11 +12,11 @@ use super::{
 };
 
 pub(crate) fn open_session_log() -> std::io::Result<(fs::File, PathBuf)> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let root = dvda_core::app::default_profile_path()
         .parent()
         .ok_or_else(|| std::io::Error::other("Missing application directory"))?
         .to_owned();
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -334,7 +326,7 @@ pub(crate) fn update_log_text(log: Hwnd, text: &str, append: bool, hold_line: Op
         if append {
             let end = GetWindowTextLengthW(log).max(0);
             win::send_int(log, EM_SETREADONLY, 0, 0);
-            win::send_int(log, EM_SETSEL, end as usize, end as isize);
+            win::send_int(log, EM_SETSEL, usize::try_from(end).unwrap(), end as isize);
             SendMessageW(log, EM_REPLACESEL, 0, text.as_ptr() as isize);
             win::send_int(log, EM_SETREADONLY, 1, 0);
         } else {
@@ -345,13 +337,13 @@ pub(crate) fn update_log_text(log: Hwnd, text: &str, append: bool, hold_line: Op
                 log,
                 EM_SETSEL,
                 selection_start as usize,
-                selection_end as isize,
+                isize::try_from(selection_end).unwrap(),
             );
             let current = first_visible_log_line(log);
             win::send_int(log, EM_LINESCROLL, 0, (line - current) as isize);
         } else {
             let end = GetWindowTextLengthW(log).max(0);
-            win::send_int(log, EM_SETSEL, end as usize, end as isize);
+            win::send_int(log, EM_SETSEL, usize::try_from(end).unwrap(), end as isize);
             win::send_int(log, WM_VSCROLL, SB_BOTTOM, 0);
         }
         win::send_int(log, WM_SETREDRAW, 1, 0);
@@ -360,7 +352,10 @@ pub(crate) fn update_log_text(log: Hwnd, text: &str, append: bool, hold_line: Op
 }
 
 pub(crate) fn first_visible_log_line(log: Hwnd) -> i32 {
-    (win::send_int(log, EM_GETFIRSTVISIBLELINE, 0, 0) as i32).max(0)
+    (u32::try_from(win::send_int(log, EM_GETFIRSTVISIBLELINE, 0, 0) & 0xffff_ffff)
+        .unwrap()
+        .cast_signed())
+    .max(0)
 }
 
 pub(crate) fn observe_log_scroll(state: &mut UiState) {
@@ -382,6 +377,10 @@ pub(crate) fn numbers(text: &str) -> Vec<String> {
         .collect()
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "The ordered legacy log translation table keeps precedence and language alternatives together"
+)]
 pub(crate) fn localized_log(lang: Lang, raw: &str) -> String {
     let text = raw.trim();
     if text.is_empty() {

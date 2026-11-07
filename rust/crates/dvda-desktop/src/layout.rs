@@ -1,16 +1,23 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::too_many_lines,
-    clippy::wildcard_imports,
-    reason = "Layout code retains native coordinate types and shared desktop imports"
-)]
 //! Window layout: the main layout pass, page contents, batched placement, the log
 //! toolbar row and the log frame.
 
-use super::*;
+use super::{
+    AtomicBool, BeginDeferWindowPos, COMBO_IDS, CONTROL_RECTS, CreateSpec, DEFER_CONTROL_PAINT,
+    DefWindowProcW, DeferWindowPos, EndDeferWindowPos, GWLP_USERDATA, GetAncestor, GetClientRect,
+    GetDlgCtrlID, GetDlgItem, GetModuleHandleW, GetParent, GetWindowLongPtrW, GetWindowRect,
+    HEADER_HEIGHT, Hwnd, ID_BITS, ID_BROWSE_IMPORT, ID_BROWSE_WORK, ID_CAPACITY, ID_COVER,
+    ID_CUSTOM_BYTES, ID_FONT_JP, ID_FONT_KR, ID_FONT_SC, ID_GROUP_LIMIT, ID_IMPORT_FOLDER,
+    ID_ISO_PREFIX, ID_MODE, ID_NORM, ID_RATE, ID_TITLE, ID_TRACKS, ID_WORK_DIR, InvalidateRect,
+    LoadCursorW, Lparam, Lresult, MoveWindow, OnceLock, Ordering, PaintStruct, Point,
+    RDW_ALLCHILDREN, RDW_INVALIDATE, Rect, RedrawWindow, RegisterClassW, SW_HIDE, SW_SHOW,
+    ScreenToClient, SendMessageW, SetWindowPos, ShowWindow, UiState, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NOTIFY, WM_PAINT, WS_CHILD,
+    WS_CLIPCHILDREN, WS_VISIBLE, WndClass, Wparam, begin_buffered_paint, browse_edit_width, c_card,
+    create_from_spec, finish_buffered_paint, first_visible_log_line, get_text, measured_text_width,
+    observe_log_scroll, page_content_height, page_is_narrow, ptr, refresh_fonts,
+    resize_page_fields, scale, scroll_page_with_bar, semibold_font, sync_combo_overlays, tr,
+    ui_font, unscale, wide, wrapped_text_height,
+};
 
 /// Horizontal layout of the log toolbar, in DIPs relative to the left margin.
 #[derive(Debug, PartialEq)]
@@ -115,6 +122,7 @@ pub(crate) fn log_toolbar_layout(
 #[cfg(test)]
 mod log_toolbar_tests {
     use super::*;
+    use crate::ui_test_guard;
 
     #[test]
     fn wide_rows_keep_preferred_spacing() {
@@ -212,7 +220,7 @@ pub(crate) fn placement_matches(hwnd: Hwnd, parent: Hwnd, target: &Rect) -> bool
         y: rect.top,
     };
     ScreenToClient(parent, &mut origin);
-    let fixed_combo_height = COMBO_IDS.contains(&(GetDlgCtrlID(hwnd) as usize));
+    let fixed_combo_height = COMBO_IDS.contains(&((GetDlgCtrlID(hwnd) as isize).cast_unsigned()));
     origin.x == target.left
         && origin.y == target.top
         && rect.right - rect.left == target.right - target.left
@@ -240,7 +248,7 @@ pub(crate) fn end_placement_batch() {
             .iter()
             .filter(|(_, owner, _)| *owner == parent)
             .collect();
-        let mut handle = unsafe { BeginDeferWindowPos(group.len() as i32) };
+        let mut handle = unsafe { BeginDeferWindowPos(i32::try_from(group.len()).unwrap()) };
         for (hwnd, _, target) in &group {
             if handle.is_null() {
                 break;
@@ -452,7 +460,12 @@ pub(crate) const MIN_LOG_HEIGHT: i32 = 28;
 /// The default split shrinks the settings before the log drops below this.
 pub(crate) const DEFAULT_LOG_FLOOR: i32 = 60;
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps the ordered batched layout, scroll restoration and reentrant refit pass together"
+)]
 pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
+    static REFITTING: AtomicBool = AtomicBool::new(false);
     // Record a real user scroll before resizing the log changes its first
     // visible line; the change caused by the resize itself is taken over
     // below, so it does not pause live follow.
@@ -861,7 +874,6 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         }
         // Laying out the pages can change the current page's content height
         // (narrow layout, shown fields); fit the settings to it once more.
-        static REFITTING: AtomicBool = AtomicBool::new(false);
         let fitted = unscale(page_content_height(
             state.pages[state.tab_index().min(state.pages.len() - 1)],
         )) + 44;
@@ -909,7 +921,7 @@ pub(crate) fn label_handle(state: &UiState, key: &str) -> Hwnd {
 }
 
 pub(crate) fn move_child(page: Hwnd, id: usize, x: i32, y: i32, width: i32, height: i32) {
-    let control = GetDlgItem(page, id as i32);
+    let control = GetDlgItem(page, u32::try_from(id & 0xffff_ffff).unwrap().cast_signed());
     if !control.is_null() {
         place(control, x, y, width, height);
     }
@@ -922,6 +934,10 @@ pub(crate) fn move_label(state: &UiState, key: &str, x: i32, y: i32, width: i32,
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps the narrow and wide positions of each settings page in one layout table"
+)]
 pub(crate) fn layout_page_contents(state: &UiState) {
     for (index, page) in state.pages.iter().enumerate() {
         let mut rect = Rect {
@@ -932,7 +948,9 @@ pub(crate) fn layout_page_contents(state: &UiState) {
         };
         GetClientRect(*page, &mut rect);
         let page_width = unscale(rect.right).max(1);
-        let scroll = GetWindowLongPtrW(*page, GWLP_USERDATA) as i32;
+        let scroll = u32::try_from(GetWindowLongPtrW(*page, GWLP_USERDATA) & 0xffff_ffff)
+            .unwrap()
+            .cast_signed();
         let sy = unscale(scroll);
         let narrow = page_is_narrow(page_width);
         match index {
@@ -1160,7 +1178,7 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                     .into_iter()
                     .enumerate()
                     {
-                        let x = 14 + index as i32 * (font_column + 16);
+                        let x = 14 + i32::try_from(index).unwrap() * (font_column + 16);
                         {
                             move_label(
                                 state,
@@ -1205,7 +1223,7 @@ pub(crate) fn layout_page_contents(state: &UiState) {
                     .into_iter()
                     .enumerate()
                     {
-                        let x = 14 + index as i32 * 326;
+                        let x = 14 + i32::try_from(index).unwrap() * 326;
                         {
                             move_label(state, label_key, x, 120 - sy, 300, 20);
                             move_child(*page, field_id, x, 140 - sy, 300, 25);

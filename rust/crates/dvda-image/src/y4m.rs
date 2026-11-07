@@ -1,9 +1,4 @@
 //! Single-frame DVD menu Y4M serialization, preserving the bridge's integer rounding.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Y4M color conversion intentionally rounds and clamps RGB channels to bytes"
-)]
 use std::io::{self, Write};
 
 /// Write one progressive 4:2:0 frame. Validation completes before any output is written.
@@ -55,10 +50,11 @@ pub fn write_rgb(
                     }
                 }
             }
-            let (r, g, b) = ((sum[0] + 2) / 4, (sum[1] + 2) / 4, (sum[2] + 2) / 4);
+            // Each sum contains four bytes, so the rounded average is at most 255.
+            let [r, g, b] = sum.map(|channel| u8::try_from((channel + 2) / 4).unwrap_or(u8::MAX));
             let at = (row / 2) * (width / 2) + col / 2;
-            uu[at] = u(r as u8, g as u8, b as u8);
-            vv[at] = v(r as u8, g as u8, b as u8);
+            uu[at] = u(r, g, b);
+            vv[at] = v(r, g, b);
         }
     }
     let header = format!(
@@ -72,7 +68,7 @@ pub fn write_rgb(
 }
 
 fn byte(value: i32) -> u8 {
-    value.clamp(0, 255) as u8
+    u8::try_from(value.clamp(0, 255)).expect("clamped to byte range")
 }
 fn y(r: u8, g: u8, b: u8) -> u8 {
     byte(((66 * i32::from(r) + 129 * i32::from(g) + 25 * i32::from(b) + 128) >> 8) + 16)

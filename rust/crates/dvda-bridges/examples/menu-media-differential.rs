@@ -1,9 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::too_many_lines,
-    reason = "The differential fixture constructs bounded menu media and deterministic PCM test patterns"
-)]
 use dvda_bridges::menu_media::dvda_menu_create_mpg;
 use std::ffi::{CString, c_void};
 #[link(name = "kernel32")]
@@ -11,6 +5,10 @@ unsafe extern "system" {
     fn LoadLibraryW(path: *const u16) -> *mut c_void;
     fn GetProcAddress(module: *mut c_void, name: *const i8) -> *mut c_void;
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "The fixture runs the menu parity matrix and negative cases in order before cleanup"
+)]
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     unsafe {
@@ -45,7 +43,7 @@ fn main() {
                 let wav = if count == 0 {
                     std::ptr::null()
                 } else {
-                    let size = (count * 4) as u32;
+                    let size = u32::try_from(count * 4).unwrap();
                     let mut data = Vec::new();
                     data.extend(b"RIFF");
                     data.extend((size + 36).to_le_bytes());
@@ -60,7 +58,8 @@ fn main() {
                     data.extend(b"data");
                     data.extend(size.to_le_bytes());
                     for n in 0..count * 2 {
-                        data.extend(((n as i32 * 151 % 65536 - 32768) as i16).to_le_bytes());
+                        let value = i32::try_from(n).unwrap() * 151 % 65_536 - 32_768;
+                        data.extend(i16::try_from(value).unwrap().to_le_bytes());
                     }
                     std::fs::write("build\\bridge-menu.wav", data).unwrap();
                     c"build\\bridge-menu.wav".as_ptr()

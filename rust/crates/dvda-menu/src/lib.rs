@@ -1,8 +1,4 @@
 //! Menu XML tokenizer shared by the SPU and navigation implementations.
-#![allow(
-    clippy::too_many_lines,
-    reason = "The tokenizer regression test covers one complete malformed-input matrix"
-)]
 #[cfg(any(feature = "direct-link", test))]
 use quick_xml::{Reader, XmlVersion, events::Event};
 
@@ -48,6 +44,10 @@ fn xml_characters(text: &str) -> Result<(), String> {
 }
 
 #[cfg(any(feature = "direct-link", test))]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One ordered event loop preserves XML declaration, depth, and error precedence"
+)]
 pub(crate) fn tokenize(input: &[u8]) -> Result<Vec<Token>, String> {
     let document = std::str::from_utf8(input).map_err(|e| e.to_string())?;
     xml_characters(document)?;

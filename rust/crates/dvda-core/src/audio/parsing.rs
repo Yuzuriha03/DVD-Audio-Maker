@@ -29,6 +29,10 @@ pub fn parameters_from_probe(document: &Value) -> Parameters {
     }
 }
 #[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Probe timestamps and rational denominators are diagnostic floating-point values"
+)]
 pub fn metadata_from_probe(path: &str, document: &Value) -> Metadata {
     let parameters = parameters_from_probe(document);
     let stream = stream(document);

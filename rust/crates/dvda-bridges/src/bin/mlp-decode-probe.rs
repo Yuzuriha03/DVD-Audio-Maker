@@ -1,9 +1,3 @@
-#![expect(
-    clippy::cast_sign_loss,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    reason = "This diagnostic probe intentionally mirrors one complete FFmpeg decode loop"
-)]
 use dvda_bridges::ffmpeg::{
     AV_CODEC_ID_MLP, AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S32, EAGAIN, EINVAL, EIO, ENOMEM, EOF,
     INVALID, av_codec_iterate, av_demuxer_iterate, av_find_best_stream, av_frame_alloc,
@@ -19,8 +13,10 @@ use std::{ffi::CString, fs::File, io::Write, ptr};
 /// `FFmpeg`'s libraries must be linked and usable on this thread.
 /// `input` is copied into a C string here. Every format, context, frame and packet
 /// allocated in this function is released before it returns.
-// FFmpeg sample planes are only guaranteed byte alignment here, so every read is unaligned.
-#[allow(clippy::cast_ptr_alignment)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The diagnostic probe keeps the FFmpeg decode loop and its resource cleanup together"
+)]
 unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32> {
     unsafe {
         let path = CString::new(input).map_err(|_| EINVAL)?;
@@ -47,7 +43,7 @@ unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32>
             }
             done(avcodec_parameters_to_context(
                 context,
-                (*streams(format)[stream as usize]).codecpar(),
+                (*streams(format)[usize::try_from(stream).map_err(|_| INVALID)?]).codecpar(),
             ))?;
             done(avcodec_open2(context, codec, ptr::null_mut()))?;
             let mut file = File::create(output).map_err(|_| EIO)?;
@@ -74,10 +70,10 @@ unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32>
                         let ch = (*frame).ch_layout().nb_channels();
                         let sr = (*frame).sample_rate();
                         let fmt = (*frame).format();
-                        let packed = av_get_packed_sample_fmt(fmt);
-                        let depth = if packed == AV_SAMPLE_FMT_S16 {
+                        let base_format = av_get_packed_sample_fmt(fmt);
+                        let depth = if base_format == AV_SAMPLE_FMT_S16 {
                             16
-                        } else if packed == AV_SAMPLE_FMT_S32 {
+                        } else if base_format == AV_SAMPLE_FMT_S32 {
                             32
                         } else {
                             return Err(INVALID);
@@ -98,8 +94,11 @@ unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32>
                         if data.is_null() {
                             return Err(INVALID);
                         }
-                        for sample in 0..(*frame).nb_samples() as usize {
-                            for channel in 0..ch as usize {
+                        let sample_count =
+                            usize::try_from((*frame).nb_samples()).map_err(|_| INVALID)?;
+                        let channel_count = usize::try_from(ch).map_err(|_| INVALID)?;
+                        for sample in 0..sample_count {
+                            for channel in 0..channel_count {
                                 let plane = *data.add(if planar { channel } else { 0 });
                                 if plane.is_null() {
                                     return Err(INVALID);
@@ -107,8 +106,12 @@ unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32>
                                 let index = if planar {
                                     sample
                                 } else {
-                                    sample * ch as usize + channel
+                                    sample * channel_count + channel
                                 };
+                                #[allow(
+                                    clippy::cast_ptr_alignment,
+                                    reason = "FFmpeg sample planes may be byte-aligned; both typed pointer casts are used only with read_unaligned"
+                                )]
                                 let value = if depth == 16 {
                                     i32::from(ptr::read_unaligned(plane.cast::<i16>().add(index)))
                                         * 65536
@@ -118,7 +121,7 @@ unsafe fn decode(input: &str, output: &str) -> Result<(u64, i32, i32, i32), i32>
                                 file.write_all(&value.to_le_bytes()).map_err(|_| EIO)?;
                             }
                         }
-                        count += (*frame).nb_samples() as u64;
+                        count += u64::try_from((*frame).nb_samples()).map_err(|_| INVALID)?;
                         av_frame_unref(frame);
                     }
                 }

@@ -1,8 +1,4 @@
 //! Still video information, ported from `asvs.c` with checked picture offsets.
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "Still-video tables preserve validated picture offsets and sector widths"
-)]
 use crate::atsi::Title;
 
 #[derive(Clone, Debug)]
@@ -64,7 +60,12 @@ pub fn encode(
                 .into(),
         );
     }
-    let count: usize = titles.iter().sum();
+    let title_count = u16::try_from(titles.len()).map_err(|_| "ASVS exceeds 99 picture titles")?;
+    let titles: Vec<u8> = titles
+        .into_iter()
+        .map(|n| u8::try_from(n).map_err(|_| "ASVS exceeds 255 pictures per title"))
+        .collect::<Result<_, _>>()?;
+    let count: usize = titles.iter().map(|&n| usize::from(n)).sum();
     if count != picture_sectors.len() || picture_sectors.contains(&0) {
         return Err("ASVS needs one nonzero VOB sector size per picture".into());
     }
@@ -77,7 +78,7 @@ pub fn encode(
     }
     let mut bytes = vec![0; usize::from(sectors) * 2048];
     bytes[..12].copy_from_slice(b"DVDAUDIOASVS");
-    put16(&mut bytes, 0xc, titles.len() as u16);
+    put16(&mut bytes, 0xc, title_count);
     put16(&mut bytes, 0xe, 0x12);
     bytes[0x13] = 2;
     bytes[0x18] = options.video_attribute;
@@ -88,7 +89,7 @@ pub fn encode(
     let mut total = 0u32;
     for (rank, &pictures) in titles.iter().enumerate() {
         let record = 0x60 + 8 * rank;
-        bytes[record] = pictures as u8;
+        bytes[record] = pictures;
         put16(
             &mut bytes,
             record + 2,
@@ -96,7 +97,7 @@ pub fn encode(
         );
         put32(&mut bytes, record + 4, total);
         let mut relative = 0u32;
-        for &size in &picture_sectors[index..index + pictures] {
+        for &size in &picture_sectors[index..index + usize::from(pictures)] {
             put16(
                 &mut bytes,
                 0x378 + 2 * index,
@@ -117,6 +118,6 @@ pub fn encode(
         bytes,
         sectors,
         vob_sectors: total,
-        picture_titles: titles.len() as u16,
+        picture_titles: title_count,
     })
 }

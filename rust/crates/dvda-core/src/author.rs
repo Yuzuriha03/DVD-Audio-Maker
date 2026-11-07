@@ -7,11 +7,15 @@ use serde_json::{Value, json};
 /// Returns an error for an unsupported operation or malformed disc/group
 /// structure. Building arguments also rejects tracks that are not objects.
 /// Title-mode normalization accepts any JSON value and defaults to `album`.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
-        "author.normalize_title_mode" => Ok(normalize_title_mode(request)),
-        "author.title_ends" => title_ends(request),
-        "author.build_args" => build_arguments(request),
+        "author.normalize_title_mode" => Ok(normalize_title_mode(&request)),
+        "author.title_ends" => title_ends(&request),
+        "author.build_args" => build_arguments(&request),
         _ => Err(format!("Unsupported Rust author operation: {operation}")),
     }
 }
@@ -27,11 +31,11 @@ fn mode(value: &str) -> String {
     }
 }
 
-fn normalize_title_mode(request: Value) -> Value {
+fn normalize_title_mode(request: &Value) -> Value {
     json!(mode(request.as_str().unwrap_or("album")))
 }
 
-fn title_ends(request: Value) -> Result<Value, String> {
+fn title_ends(request: &Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected author request")?;
     let disc = object.get("Disc").ok_or("Missing disc")?;
     let title_mode = object
@@ -83,7 +87,7 @@ fn title_ends(request: Value) -> Result<Value, String> {
     Ok(Value::Object(result))
 }
 
-fn build_arguments(request: Value) -> Result<Value, String> {
+fn build_arguments(request: &Value) -> Result<Value, String> {
     let object = request
         .as_object()
         .ok_or("Expected author argument request")?;
@@ -198,7 +202,7 @@ mod tests {
             "IsoVolume":"TEST_DISC"
         });
         assert_eq!(
-            build_arguments(request).unwrap(),
+            build_arguments(&request).unwrap(),
             json!([
                 "-g",
                 "a.mlp",

@@ -236,7 +236,9 @@ impl Comparison {
             return Err(mismatch(1, 0, source_bytes, decoded_bytes));
         }
         if padding {
-            let tail = extra as usize * channels as usize;
+            let tail = usize::try_from(extra)
+                .expect("padding frames are bounded by u32 max_padding_frames")
+                * channels as usize;
             let start = self.decoded_tail.len() - tail;
             if let Some(index) = self.decoded_tail.iter().skip(start).position(|&v| v != 0) {
                 return Err(mismatch(
@@ -273,9 +275,9 @@ pub(crate) struct CompareJob<'a> {
     pub builtin: bool,
 }
 fn decode(
-    job: DecodeJob<'_>,
+    job: &DecodeJob<'_>,
     stop: Arc<AtomicBool>,
-    send: SyncSender<Event>,
+    send: &SyncSender<Event>,
     recycled: mpsc::Receiver<Vec<i32>>,
 ) {
     let DecodeJob {
@@ -285,7 +287,7 @@ fn decode(
         rate,
         bits,
         channels,
-    } = job;
+    } = *job;
     let mut callbacks = WorkerCallbacks {
         stop,
         send: send.clone(),
@@ -320,7 +322,7 @@ fn decode(
     let _ = send.send(Event::Finished(side, result));
 }
 
-pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result<(), String> {
+pub(crate) fn compare(job: &CompareJob<'_>, caller: &mut dyn Callbacks) -> Result<(), String> {
     let CompareJob {
         library,
         source,
@@ -329,7 +331,7 @@ pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result
         bits,
         channels,
         builtin,
-    } = job;
+    } = *job;
     let stop = Arc::new(AtomicBool::new(false));
     let max_padding_frames = if builtin { (rate - 1) / 1000 } else { 0 };
     let mut comparison = Comparison::new(channels, max_padding_frames);
@@ -350,7 +352,7 @@ pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result
             let send = send.clone();
             scope.spawn(move || {
                 decode(
-                    DecodeJob {
+                    &DecodeJob {
                         side,
                         library,
                         input,
@@ -359,7 +361,7 @@ pub(crate) fn compare(job: CompareJob<'_>, caller: &mut dyn Callbacks) -> Result
                         channels,
                     },
                     stop,
-                    send,
+                    &send,
                     recycle,
                 );
             });

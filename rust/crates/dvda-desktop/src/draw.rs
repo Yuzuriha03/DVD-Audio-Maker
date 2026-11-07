@@ -1,10 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::too_many_lines,
-    reason = "Owner drawing intentionally rounds bounded geometry and converts native color fields"
-)]
 //! Owner drawing: buttons, tabs, caption buttons, combo items, labels, the window
 //! background and buffered painting.
 
@@ -28,7 +21,7 @@ use super::{
 };
 
 pub(crate) fn color16(value: u32) -> u16 {
-    (value.min(255) * 257) as u16
+    u16::try_from(value.min(255) * 257).unwrap()
 }
 pub(crate) fn rgb_components(color: u32) -> (u32, u32, u32) {
     (color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff)
@@ -47,6 +40,11 @@ pub(crate) fn draw_text_run(
         let old = SelectObject(dc, font);
         SetBkMode(dc, 1);
         SetTextColor(dc, color);
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            reason = "DrawTextW consumes a signed 32-bit UTF-16 length; retain the existing length conversion"
+        )]
         DrawTextW(dc, text.as_ptr(), (text.len() - 1) as i32, rect, format);
         SelectObject(dc, old);
     }
@@ -247,6 +245,11 @@ pub(crate) fn header_gradient_at(y: i32) -> u32 {
     let ratio = f64::from(y.clamp(0, height)) / f64::from(height);
     let (top_r, top_g, top_b) = rgb_components(c_header_top());
     let (bottom_r, bottom_g, bottom_b) = rgb_components(c_header_bottom());
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Interpolated RGB channels stay within 0..=255 and intentionally truncate fractional channel values"
+    )]
     let mix = |top: u32, bottom: u32| -> u32 {
         (f64::from(top) + (f64::from(bottom) - f64::from(top)) * ratio) as u32
     };
@@ -259,13 +262,17 @@ pub(crate) fn header_gradient_at(y: i32) -> u32 {
 
 pub(crate) fn lighten(color: u32, amount: i32) -> u32 {
     let (red, green, blue) = rgb_components(color);
-    let adjust = |value: u32| (value as i32 + amount).clamp(0, 255) as u32;
+    let adjust = |value: u32| (value.cast_signed() + amount).clamp(0, 255).cast_unsigned();
     rgb(adjust(red), adjust(green), adjust(blue))
 }
 
 /// # Safety
 /// `item` must be the `DrawItemStruct` of a `WM_DRAWITEM` message for one of this
 /// application's caption buttons, and it is only valid during that message.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps each caption glyph drawing and GDI object restoration in one paint operation"
+)]
 pub(crate) unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
     let hover = button_hovered(item.item);
     let center_y = i32::midpoint(item.rect.top, item.rect.bottom);
@@ -373,6 +380,10 @@ pub(crate) unsafe fn draw_caption_button(item: &DrawItemStruct, kind: u8) {
                         center_y + radius,
                     );
                     SelectObject(item.dc, old_brush);
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        reason = "Trigonometric caption-glyph endpoints intentionally truncate fractional native pixels"
+                    )]
                     for index in 0..8 {
                         let angle = f64::from(index) * std::f64::consts::PI / 4.0;
                         let inner = f64::from(radius) + f64::from(scale(3));
@@ -441,9 +452,11 @@ pub(crate) unsafe fn draw_combo_item(item: &DrawItemStruct) {
     let highlighted = item.state & ODS_SELECTED != 0;
     let disabled = item.state & ODS_DISABLED != 0;
     let index = if selected {
-        win::send_int(item.item, CB_GETCURSEL, 0, 0) as i32
+        u32::try_from(win::send_int(item.item, CB_GETCURSEL, 0, 0) & 0xffff_ffff)
+            .unwrap()
+            .cast_signed()
     } else {
-        item.item_id as i32
+        item.item_id.cast_signed()
     };
     let text = unsafe { combo_item_text(item.item, index) };
     let background = if highlighted && !selected {
@@ -548,7 +561,7 @@ pub(crate) unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct)
         return true;
     }
     if (ID_MINIMIZE..=ID_THEME).contains(&id) {
-        unsafe { draw_caption_button(item, (id - ID_MINIMIZE) as u8) };
+        unsafe { draw_caption_button(item, u8::try_from(id - ID_MINIMIZE).unwrap()) };
         return true;
     }
     if id == ID_BUILD {
@@ -657,6 +670,10 @@ pub(crate) unsafe fn finish_buffered_paint(
 }
 /// # Safety
 /// `hwnd` must be the main window, inside its `WM_PAINT`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps buffered window painting and GDI resource restoration in their original order"
+)]
 pub(crate) unsafe fn paint_window(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_body()) };
@@ -862,7 +879,7 @@ pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
         if text.is_empty() {
             return;
         }
-        let style = GetWindowLongPtrW(hwnd, -16) as u32;
+        let style = u32::try_from(GetWindowLongPtrW(hwnd, -16) & 0xffff_ffff).unwrap();
         let kind = style & 0x1f;
         let ellipsis = style & 0x4000 != 0; // SS_ENDELLIPSIS
         let mut flags = DT_EXPANDTABS

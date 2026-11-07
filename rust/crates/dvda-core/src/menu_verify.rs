@@ -172,10 +172,10 @@ fn verify_navigation_pointers(
         ));
     }
     let amgm = entry(audio_files, "AUDIO_TS.VOB").ok_or("AMG_AMGM_TARGET_MISSING")?;
-    let amgm_lba = extent_lba(amgm, iso_sectors)?;
-    if amgm_declared != amgm_lba {
+    let menu_vob_lba = extent_lba(amgm, iso_sectors)?;
+    if amgm_declared != menu_vob_lba {
         return Err(format!(
-            "AMG_AMGM_POINTER_MISMATCH: AUDIO_TS.VOB is at LBA {amgm_lba}, pointer resolves to {amgm_declared}"
+            "AMG_AMGM_POINTER_MISMATCH: AUDIO_TS.VOB is at LBA {menu_vob_lba}, pointer resolves to {amgm_declared}"
         ));
     }
 
@@ -237,6 +237,16 @@ fn verify_navigation_pointers(
         None => {}
     }
 
+    verify_title_pointers(amg, amg_lba, audio_files, video_files, iso_sectors)
+}
+
+fn verify_title_pointers(
+    amg: &[u8],
+    amg_lba: u64,
+    audio_files: &[IsoEntryInfo],
+    video_files: &[IsoEntryInfo],
+    iso_sectors: u64,
+) -> Result<(), String> {
     // The two title tables are copies in separate sectors. Validate every
     // declared record in both so neither stale copy can hide a bad pointer.
     let mut declared_count = None;
@@ -363,7 +373,8 @@ fn stats(
             }
         }
     }
-    let count = (w * h) as f64;
+    let count =
+        f64::from(u32::try_from(w * h).expect("crop is bounded by 16384-square raster dimensions"));
     let mean = sum.iter().sum::<f64>() / (3.0 * count);
     let deviation = (0..3)
         .map(|channel| {
@@ -373,7 +384,15 @@ fn stats(
         })
         .sum::<f64>()
         / 3.0;
-    Ok([mean, f64::from(maximum), deviation, colors.len() as f64])
+    Ok([
+        mean,
+        f64::from(maximum),
+        deviation,
+        f64::from(
+            u32::try_from(colors.len())
+                .expect("unique colors cannot exceed the bounded crop pixel count"),
+        ),
+    ])
 }
 
 /// # Errors
@@ -492,10 +511,14 @@ pub fn verify_with_cache(
     }
     drop(writer);
     let mut source = fs::File::open(vob_path).map_err(|e| e.to_string())?;
-    let index_pages = expected
-        .and_then(|v| v["index_pages"].as_u64())
-        .unwrap_or(0) as usize;
-    let albums = expected.and_then(|v| v["albums"].as_u64()).unwrap_or(0) as usize;
+    let index_pages = usize::try_from(
+        expected
+            .and_then(|v| v["index_pages"].as_u64())
+            .unwrap_or(0),
+    )
+    .unwrap_or(usize::MAX);
+    let albums = usize::try_from(expected.and_then(|v| v["albums"].as_u64()).unwrap_or(0))
+        .unwrap_or(usize::MAX);
     let page_total = ranges.len();
     for (page, (start, end)) in ranges.into_iter().enumerate() {
         cancel(caller)?;
@@ -511,99 +534,122 @@ pub fn verify_with_cache(
                 .unwrap_or_default(),
             &iso.to_string_lossy(),
         );
-        let input = work.0.join("page.vob");
-        let output = work.0.join("frame.png");
-        let mut file = fs::File::create(&input).map_err(|e| e.to_string())?;
+        let image = decode_page(&mut source, &work.0, (start, end), job, caller)?;
+        issues.extend(page_issues(&image, page, index_pages, albums, caller)?);
+    }
+    caller.progress(page_total as u64, page_total as u64);
+    Ok(issues)
+}
+
+fn decode_page(
+    source: &mut fs::File,
+    work: &Path,
+    (start, end): (u32, u32),
+    job: &Job,
+    caller: &mut dyn Callbacks,
+) -> Result<dvda_image::raster::Raster, String> {
+    let input = work.join("page.vob");
+    let output = work.join("frame.png");
+    let mut file = fs::File::create(&input).map_err(|e| e.to_string())?;
+    source
+        .seek(SeekFrom::Start(u64::from(start) * 2048))
+        .map_err(|e| e.to_string())?;
+    let mut remaining = (u64::from(end) - u64::from(start) + 1) * 2048;
+    let mut buffer = vec![0; 128 * 1024];
+    while remaining > 0 {
+        cancel(caller)?;
+        let count = usize::try_from(remaining.min(buffer.len() as u64))
+            .expect("chunk byte count is bounded by the buffer length");
         source
-            .seek(SeekFrom::Start(u64::from(start) * 2048))
+            .read_exact(&mut buffer[..count])
             .map_err(|e| e.to_string())?;
-        let mut remaining = (u64::from(end) - u64::from(start) + 1) * 2048;
-        let mut buffer = vec![0; 128 * 1024];
-        while remaining > 0 {
-            cancel(caller)?;
-            let count = remaining.min(buffer.len() as u64) as usize;
-            source
-                .read_exact(&mut buffer[..count])
-                .map_err(|e| e.to_string())?;
-            file.write_all(&buffer[..count])
-                .map_err(|e| e.to_string())?;
-            remaining -= count as u64;
-        }
-        drop(file);
-        let result = media::execute(
-            media::Job {
-                library: job.media_library.clone(),
-                replace: true,
-                timeout_millis: None,
-                request: Request {
-                    operation: Operation::VideoFrame,
-                    input: input.to_string_lossy().into_owned(),
-                    output: Some(output.to_string_lossy().into_owned()),
-                    rate: 0,
-                    bits: 0,
-                    output_format: OutputFormat::None,
-                    soxr: false,
-                    dither: false,
-                    compression: 0,
-                    cover: false,
-                    tags: Vec::new(),
-                },
+        file.write_all(&buffer[..count])
+            .map_err(|e| e.to_string())?;
+        remaining -= count as u64;
+    }
+    drop(file);
+    let result = media::execute(
+        media::Job {
+            library: job.media_library.clone(),
+            replace: true,
+            timeout_millis: None,
+            request: Request {
+                operation: Operation::VideoFrame,
+                input: input.to_string_lossy().into_owned(),
+                output: Some(output.to_string_lossy().into_owned()),
+                rate: 0,
+                bits: 0,
+                output_format: OutputFormat::None,
+                soxr: false,
+                dither: false,
+                compression: 0,
+                cover: false,
+                tags: Vec::new(),
             },
-            caller,
-        );
-        if result.exit_code != Some(0) || result.failure.is_some() {
-            return Err("Cannot decode menu page".into());
-        }
-        let image = fs::File::open(&output)
-            .and_then(|file| dvda_image::codec::decode(std::io::BufReader::new(file)))
-            .map_err(|error| error.to_string())?;
-        let frame = stats(&image, None, caller)?;
-        let height = image.dimensions().height() as usize;
-        if !matches!(height, 480 | 576) {
-            return Err("Invalid menu frame statistics".into());
-        }
-        if frame[2] <= 1.0 || frame[3] <= 50.0 {
-            issues.push(issue(
-                "MENU_FRAME_NEAR_SOLID",
-                format!("Menu page {} is nearly solid", page + 1),
-            ));
-        }
-        if page < index_pages {
-            let scaled = |value: usize| (value * height / 576) & !1;
-            let thumb = scaled(100).max(50);
-            for cell in 0..albums.saturating_sub(page * 12).min(12) {
-                let x = (cell % 4) * 180;
-                let y = scaled(60) + (cell / 4) * scaled(140);
-                for (code, crop, kind) in [
-                    ("MENU_INDEX_BACKGROUND_INVALID", (x + 1, y + 1, 3, 3), 0),
-                    (
-                        "MENU_INDEX_THUMBNAIL_MISSING",
-                        (x + (180 - thumb) / 2, y + 5, thumb, thumb),
-                        1,
-                    ),
-                    (
-                        "MENU_INDEX_LABEL_MISSING",
-                        (x + 5, y + 5 + thumb + 2, 170, scaled(28).max(20)),
-                        2,
-                    ),
-                ] {
-                    let value = stats(&image, Some(crop), caller)?;
-                    let bad = match kind {
-                        0 => value[0] > 160.0,
-                        1 => value[0] <= 3.0,
-                        _ => value[1] <= 200.0 || value[0] > 200.0,
-                    };
-                    if bad {
-                        issues.push(issue(
-                            code,
-                            format!("Menu page {}, cell {}", page + 1, cell + 1),
-                        ));
-                    }
+        },
+        caller,
+    );
+    if result.exit_code != Some(0) || result.failure.is_some() {
+        return Err("Cannot decode menu page".into());
+    }
+    fs::File::open(&output)
+        .and_then(|file| dvda_image::codec::decode(std::io::BufReader::new(file)))
+        .map_err(|error| error.to_string())
+}
+
+fn page_issues(
+    image: &dvda_image::raster::Raster,
+    page: usize,
+    index_pages: usize,
+    albums: usize,
+    caller: &mut dyn Callbacks,
+) -> Result<Vec<Value>, String> {
+    let mut issues = Vec::new();
+    let frame = stats(image, None, caller)?;
+    let height = image.dimensions().height() as usize;
+    if !matches!(height, 480 | 576) {
+        return Err("Invalid menu frame statistics".into());
+    }
+    if frame[2] <= 1.0 || frame[3] <= 50.0 {
+        issues.push(issue(
+            "MENU_FRAME_NEAR_SOLID",
+            format!("Menu page {} is nearly solid", page + 1),
+        ));
+    }
+    if page < index_pages {
+        let scaled = |value: usize| (value * height / 576) & !1;
+        let thumb = scaled(100).max(50);
+        for cell in 0..albums.saturating_sub(page * 12).min(12) {
+            let x = (cell % 4) * 180;
+            let y = scaled(60) + (cell / 4) * scaled(140);
+            for (code, crop, kind) in [
+                ("MENU_INDEX_BACKGROUND_INVALID", (x + 1, y + 1, 3, 3), 0),
+                (
+                    "MENU_INDEX_THUMBNAIL_MISSING",
+                    (x + (180 - thumb) / 2, y + 5, thumb, thumb),
+                    1,
+                ),
+                (
+                    "MENU_INDEX_LABEL_MISSING",
+                    (x + 5, y + 5 + thumb + 2, 170, scaled(28).max(20)),
+                    2,
+                ),
+            ] {
+                let value = stats(image, Some(crop), caller)?;
+                let bad = match kind {
+                    0 => value[0] > 160.0,
+                    1 => value[0] <= 3.0,
+                    _ => value[1] <= 200.0 || value[0] > 200.0,
+                };
+                if bad {
+                    issues.push(issue(
+                        code,
+                        format!("Menu page {}, cell {}", page + 1, cell + 1),
+                    ));
                 }
             }
         }
     }
-    caller.progress(page_total as u64, page_total as u64);
     Ok(issues)
 }
 
@@ -659,10 +705,10 @@ mod tests {
         let records = [(1u8, 80u32), (1, 80), (2, 140)];
         for table_start in [0x800usize, 0x1000] {
             amg[table_start..table_start + 2]
-                .copy_from_slice(&(records.len() as u16).to_be_bytes());
+                .copy_from_slice(&(u16::try_from(records.len()).unwrap()).to_be_bytes());
             let last_byte = 4 + 14 * records.len() - 1;
             amg[table_start + 2..table_start + 4]
-                .copy_from_slice(&(last_byte as u16).to_be_bytes());
+                .copy_from_slice(&(u16::try_from(last_byte).unwrap()).to_be_bytes());
             for (index, (titleset, pointer)) in records.iter().copied().enumerate() {
                 let record = table_start + 4 + index * 14;
                 amg[record] = 0x81;
@@ -703,8 +749,8 @@ mod tests {
                                 channel_assignment: 1,
                                 first_pts: 0,
                                 pts_length: 9000,
-                                first_sector: track as u32,
-                                last_sector: track as u32,
+                                first_sector: u32::try_from(track).unwrap(),
+                                last_sector: u32::try_from(track).unwrap(),
                             }
                             .into(),
                         ],
@@ -716,7 +762,7 @@ mod tests {
         amg::encode(
             &groups,
             &amg::Layout {
-                top_vob_sectors: pages as u32 * 2,
+                top_vob_sectors: u32::try_from(pages).unwrap() * 2,
                 ..Default::default()
             },
             &amg::Options {
@@ -739,7 +785,10 @@ mod tests {
             assert_eq!(
                 actual,
                 (0..pages)
-                    .map(|page| (page as u32 * 2, page as u32 * 2 + 1))
+                    .map(|page| (
+                        u32::try_from(page).unwrap() * 2,
+                        u32::try_from(page).unwrap() * 2 + 1
+                    ))
                     .collect::<Vec<_>>()
             );
         }
@@ -751,7 +800,12 @@ mod tests {
             let amg = authored_manager(&counts, 26);
             let amg_lba = 20;
             let mut files = vec![
-                file("AUDIO_TS.IFO", amg_lba, amg.len() as u32, 0),
+                file(
+                    "AUDIO_TS.IFO",
+                    amg_lba,
+                    u32::try_from(amg.len()).unwrap(),
+                    0,
+                ),
                 file(
                     "AUDIO_TS.VOB",
                     amg_lba + read32(&amg, 0xc0).unwrap(),
@@ -760,8 +814,9 @@ mod tests {
                 ),
                 file(
                     "AUDIO_TS.BUP",
-                    amg_lba + read32(&amg, 12).unwrap() + 1 - amg.len() as u32 / 2048,
-                    amg.len() as u32,
+                    amg_lba + read32(&amg, 12).unwrap() + 1
+                        - u32::try_from(amg.len()).unwrap() / 2048,
+                    u32::try_from(amg.len()).unwrap(),
                     0,
                 ),
             ];
@@ -788,7 +843,7 @@ mod tests {
         for table_start in [0x800usize, 0x1000] {
             amg[table_start..table_start + 2].copy_from_slice(&title_count.to_be_bytes());
             amg[table_start + 2..table_start + 4]
-                .copy_from_slice(&(last_byte as u16).to_be_bytes());
+                .copy_from_slice(&(u16::try_from(last_byte).unwrap()).to_be_bytes());
             let record = table_start + 4 + 3 * 14;
             amg[record] = 0x41;
             amg[record + 8] = 1;

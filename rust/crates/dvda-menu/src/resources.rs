@@ -1,10 +1,5 @@
 //! Rust ownership for the vendor's private heap and CRT resources.
 //! Every export returns normally; only a caller in C may promote a failure to longjmp.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    reason = "Private CRT resources preserve their C integer and pointer-width conversions"
-)]
 use std::{
     cell::{Cell, RefCell},
     ffi::{CStr, c_char, c_int, c_long, c_void},
@@ -137,6 +132,10 @@ unsafe fn release_com(object: *mut c_void) {
 /// `object` must be a live resource of `kind`: a `FILE*`, a CRT descriptor, a
 /// `Directory` from `allocate`, or an `IUnknown`. It is closed, released, or freed
 /// here and must not be used or closed again.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "The private CRT descriptor ABI stores the descriptor in the pointer's low C-int bits"
+)]
 unsafe fn close_resource(object: *mut c_void, kind: c_int) -> Result<(), ()> {
     match kind {
         FILE => {
@@ -509,9 +508,9 @@ pub unsafe extern "C" fn menu_rust_readdir(
         }
         directory.entry.name.fill(0);
         for (target, byte) in directory.entry.name.iter_mut().zip(name.bytes()) {
-            *target = byte as c_char;
+            *target = byte.cast_signed();
         }
-        directory.entry.name_length = name.len() as u16;
+        directory.entry.name_length = u16::try_from(name.len()).unwrap();
         unsafe { *output = &raw mut directory.entry };
         0
     })

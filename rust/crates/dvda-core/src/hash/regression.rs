@@ -13,7 +13,7 @@ fn batch_matches_sha2_for_padding_and_chunk_boundaries() {
                 seed ^= seed << 13;
                 seed ^= seed >> 7;
                 seed ^= seed << 17;
-                seed as u8
+                seed.to_le_bytes()[0]
             })
             .collect();
         let expected: [u8; 32] = sha2::Sha256::digest(&data).into();
@@ -42,6 +42,10 @@ fn median(values: &mut [f64]) -> f64 {
 
 #[test]
 #[ignore = "read-only Release benchmark; requires DVDA_HASH_BENCH_INPUTS and DVDA_HASH_BENCH_REPORT"]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Benchmark repetition counts and byte sizes are diagnostic floating-point throughput values"
+)]
 fn release_files_benchmark() {
     let inputs: Vec<std::path::PathBuf> = serde_json::from_str(
         &std::env::var("DVDA_HASH_BENCH_INPUTS").expect("JSON array of real file paths"),

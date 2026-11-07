@@ -1,14 +1,9 @@
 //! Human-oriented developer commands; JSON operation dispatch remains available.
-#![expect(
-    clippy::items_after_statements,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Developer command dispatch retains shared helpers and scoped verification modes"
-)]
 use dvda_core::{
     app::AppOptions,
     audio, conversion, formats,
     preparation::{alac, state},
+    verify::Mode,
 };
 use dvda_native::media::Callbacks;
 use serde_json::{Value, json};
@@ -83,9 +78,17 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 type Result<T> = std::result::Result<T, (i32, String)>;
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Error adapters accept owned native failures and string errors through one map_err contract"
+)]
 fn failure(error: impl ToString) -> (i32, String) {
     (1, error.to_string())
 }
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Usage adapters accept owned parser errors and static messages through one map_err contract"
+)]
 fn usage(error: impl ToString) -> (i32, String) {
     (2, error.to_string())
 }
@@ -122,6 +125,10 @@ fn empty(args: &[String]) -> Result<()> {
         Err(usage(format!("Unexpected argument: {}", args[0])))
     }
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "Developer command dispatch keeps option parsing and command-specific transaction order together"
+)]
 fn execute(arguments: &[String]) -> Result<i32> {
     let mut args = arguments.to_vec();
     let profile = take(&mut args, "--profile")?;
@@ -314,6 +321,10 @@ fn execute(arguments: &[String]) -> Result<i32> {
         _ => Err(usage(format!("Unknown command: {command}"))),
     }
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "Configuration output keeps the ordered shell mapping and its compatibility rules together"
+)]
 fn configuration(options: &AppOptions, args: &mut Vec<String>) -> Result<i32> {
     let check = flag(args, "--check")?;
     let shell = flag(args, "--shell")?;
@@ -545,7 +556,6 @@ fn verification(
     }
     let iso = take(args, "--iso")?.map(PathBuf::from);
     empty(args)?;
-    use dvda_core::verify::Mode;
     let mode = match mode.as_str() {
         "all" => Mode::All,
         "capacity" => Mode::Capacity,

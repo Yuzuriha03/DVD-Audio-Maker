@@ -1,14 +1,26 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "Raster dimensions and color channels are bounded before integer or floating-point quantization"
-)]
 use crate::geometry::{Dimensions, ResizeMode};
 use image::{GenericImageView, ImageBuffer, Rgba, RgbaImage, imageops};
 use std::io;
 
 pub const MAX_WORKING_BYTES: usize = 256 * 1024 * 1024;
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Callers supply rounded f32 channel values bounded to 0..=255; float-to-integer conversion has no standard checked equivalent"
+)]
+fn quantize_f32(value: f32) -> u8 {
+    value as u8
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Radial shading is a convex combination of u8 channels, so the rounded f64 result remains within 0..=255"
+)]
+fn quantize_f64(value: f64) -> u8 {
+    value as u8
+}
 
 pub(crate) fn check_working_bytes(buffers: &[usize]) -> io::Result<()> {
     let total = buffers
@@ -108,7 +120,7 @@ impl Raster {
         let offset = f32::from(percent.min(100)) * 255.0 / 100.0;
         for pixel in self.pixels.pixels_mut() {
             for channel in &mut pixel.0[..3] {
-                *channel = (f32::from(*channel) - offset).round().clamp(0.0, 255.0) as u8;
+                *channel = quantize_f32((f32::from(*channel) - offset).round().clamp(0.0, 255.0));
             }
         }
     }
@@ -182,10 +194,10 @@ impl Raster {
                 Rgba([0; 4])
             } else {
                 Rgba([
-                    (pixel[0] * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
-                    (pixel[1] * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
-                    (pixel[2] * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
-                    (alpha * 255.0).round() as u8,
+                    quantize_f32((pixel[0] * 255.0 / alpha).round().clamp(0.0, 255.0)),
+                    quantize_f32((pixel[1] * 255.0 / alpha).round().clamp(0.0, 255.0)),
+                    quantize_f32((pixel[2] * 255.0 / alpha).round().clamp(0.0, 255.0)),
+                    quantize_f32((alpha * 255.0).round()),
                 ])
             }
         });
@@ -237,9 +249,10 @@ impl Raster {
             destination[channel] = ((u32::from(color[channel]) * source_alpha * 255
                 + u32::from(destination[channel]) * destination_alpha * (255 - source_alpha)
                 + alpha / 2)
-                / alpha) as u8;
+                / alpha)
+                .to_le_bytes()[0];
         }
-        destination[3] = ((alpha + 127) / 255) as u8;
+        destination[3] = ((alpha + 127) / 255).to_le_bytes()[0];
     }
 
     /// Composite validated text glyph coverage onto the raster.
@@ -268,7 +281,8 @@ impl Raster {
             }
             for (index, coverage) in glyph.coverage.iter().enumerate() {
                 let mut pixel = color;
-                pixel[3] = ((u16::from(color[3]) * u16::from(*coverage) + 127) / 255) as u8;
+                pixel[3] =
+                    ((u16::from(color[3]) * u16::from(*coverage) + 127) / 255).to_le_bytes()[0];
                 let index = i64::try_from(index).map_err(io::Error::other)?;
                 let gx = i64::from(x) + i64::from(glyph.x) + index % i64::from(glyph.width);
                 let gy = i64::from(baseline) + i64::from(glyph.y) + index / i64::from(glyph.width);
@@ -283,8 +297,8 @@ impl Raster {
     /// Inclusive pixel bounds, matching menu rectangle coordinates.
     pub fn fill_rectangle(&mut self, bounds: [i32; 4], color: [u8; 4]) {
         let [left, top, right, bottom] = bounds;
-        let right = right.min(self.pixels.width() as i32 - 1);
-        let bottom = bottom.min(self.pixels.height() as i32 - 1);
+        let right = right.min(self.pixels.width().cast_signed() - 1);
+        let bottom = bottom.min(self.pixels.height().cast_signed() - 1);
         for y in top.max(0)..=bottom {
             for x in left.max(0)..=right {
                 self.blend_pixel(x, y, color);
@@ -307,7 +321,8 @@ impl Raster {
                 pixel[channel] = ((u64::from(start[channel]) * (denominator - position)
                     + u64::from(end[channel]) * position
                     + denominator / 2)
-                    / denominator) as u8;
+                    / denominator)
+                    .to_le_bytes()[0];
             }
         }
         Ok(result)
@@ -323,7 +338,7 @@ impl Raster {
             for channel in 0..3 {
                 let shade = f64::from(center[channel]) * (1.0 - position)
                     + f64::from(edge[channel]) * position;
-                pixel[channel] = (f64::from(pixel[channel]) * shade / 255.0).round() as u8;
+                pixel[channel] = quantize_f64((f64::from(pixel[channel]) * shade / 255.0).round());
             }
         }
     }
@@ -368,14 +383,14 @@ impl Raster {
             .map(|p| p[0])
             .max()
             .unwrap()
-            .min(self.pixels.width() as i32 - 1);
+            .min(self.pixels.width().cast_signed() - 1);
         let top = points.iter().map(|p| p[1]).min().unwrap().max(0);
         let bottom = points
             .iter()
             .map(|p| p[1])
             .max()
             .unwrap()
-            .min(self.pixels.height() as i32 - 1);
+            .min(self.pixels.height().cast_signed() - 1);
         for y in top..=bottom {
             for x in left..=right {
                 let edges = [
@@ -400,7 +415,8 @@ impl Raster {
                     ((u32::from(pixel[channel]) * alpha
                         + u32::from(background[channel]) * (255 - alpha)
                         + 127)
-                        / 255) as u8
+                        / 255)
+                        .to_le_bytes()[0]
                 })
             })
             .collect()
@@ -508,10 +524,10 @@ mod tests {
     fn banded_aspect_correction_matches_full_image() {
         let pixels = ImageBuffer::from_fn(73, 259, |x, y| {
             Rgba([
-                (x * 17 + y) as u8,
-                (y * 11) as u8,
-                (x * y) as u8,
-                ((x + y) * 5) as u8,
+                (x * 17 + y).to_le_bytes()[0],
+                (y * 11).to_le_bytes()[0],
+                (x * y).to_le_bytes()[0],
+                ((x + y) * 5).to_le_bytes()[0],
             ])
         });
         let full = imageops::resize(
@@ -527,10 +543,10 @@ mod tests {
                 Rgba([0; 4])
             } else {
                 Rgba([
-                    (pixel[0] * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
-                    (pixel[1] * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
-                    (pixel[2] * 255.0 / alpha).round().clamp(0.0, 255.0) as u8,
-                    (alpha * 255.0).round() as u8,
+                    quantize_f32((pixel[0] * 255.0 / alpha).round().clamp(0.0, 255.0)),
+                    quantize_f32((pixel[1] * 255.0 / alpha).round().clamp(0.0, 255.0)),
+                    quantize_f32((pixel[2] * 255.0 / alpha).round().clamp(0.0, 255.0)),
+                    quantize_f32((alpha * 255.0).round()),
                 ])
             }
         });
@@ -544,10 +560,10 @@ mod tests {
     fn lazy_premultiplication_matches_materialized_resize() {
         let source = ImageBuffer::from_fn(37, 29, |x, y| {
             Rgba([
-                (x * 7) as u8,
-                (y * 11) as u8,
-                (x * y) as u8,
-                ((x + y) * 5) as u8,
+                (x * 7).to_le_bytes()[0],
+                (y * 11).to_le_bytes()[0],
+                (x * y).to_le_bytes()[0],
+                ((x + y) * 5).to_le_bytes()[0],
             ])
         });
         let lazy = Premultiplied(&source);

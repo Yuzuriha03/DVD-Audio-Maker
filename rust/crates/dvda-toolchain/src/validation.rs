@@ -1,12 +1,4 @@
 //! Validate provenance, architecture and the complete DLL closure before staging.
-#![expect(
-    clippy::case_sensitive_file_extension_comparisons,
-    reason = "Validation uses normalized package names"
-)]
-#![allow(
-    clippy::needless_pass_by_value,
-    reason = "Test fixture replacement consumes complete byte buffers"
-)]
 use crate::pe;
 use serde_json::Value;
 use std::{
@@ -379,7 +371,7 @@ fn component(
         .ok_or_else(|| format!("{manifest}: missing {field}"))?;
     let mut libraries = serde_json::Map::new();
     for (name, entry) in metadata {
-        if record["implementation"] == "project-owned-rust" && !name.ends_with(".dll") {
+        if record["implementation"] == "project-owned-rust" && !name.as_bytes().ends_with(b".dll") {
             if name.contains(['/', '\\']) || name == "." || name == ".." {
                 return Err(format!("{manifest}: invalid artifact name {name}"));
             }
@@ -392,7 +384,7 @@ fn component(
             {
                 return Err(format!("Artifact checksum mismatch: {name}"));
             }
-            if name.ends_with(".exe") {
+            if name.as_bytes().ends_with(b".exe") {
                 validate_binary(&path, entry, false, target)?;
             }
         } else {
@@ -434,7 +426,9 @@ fn component(
         })
         .collect::<Result<Vec<_>, String>>()?
         .into_iter()
-        .filter_map(|(name, kind)| (name.ends_with(".dll") && kind.is_file()).then_some(name))
+        .filter_map(|(name, kind)| {
+            (name.as_bytes().ends_with(b".dll") && kind.is_file()).then_some(name)
+        })
         .collect();
     if actual != files.keys().cloned().collect() {
         return Err(format!(
@@ -499,7 +493,7 @@ pub fn validate_combined(directories: &[&Path], target: &str) -> Result<(), Stri
                 .to_string_lossy()
                 .to_ascii_lowercase();
             if path.is_file()
-                && (name.ends_with(".dll") || name.ends_with(".exe"))
+                && (name.as_bytes().ends_with(b".dll") || name.as_bytes().ends_with(b".exe"))
                 && let Some(existing) = files.insert(name, path.clone())
                 && fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)?
             {
@@ -510,7 +504,7 @@ pub fn validate_combined(directories: &[&Path], target: &str) -> Result<(), Stri
     for (name, path) in &files {
         let imports = imports_for(
             &fs::read(path).map_err(err)?,
-            name.ends_with(".dll"),
+            name.as_bytes().ends_with(b".dll"),
             target,
         )
         .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -716,7 +710,7 @@ pub(crate) mod tests {
                 .unwrap()
                 .files
                 .keys()
-                .all(|name| !name.ends_with(".dll"))
+                .all(|name| !name.as_bytes().ends_with(b".dll"))
         );
         fs::write(media.join("lib/avcodec.lib"), b"tampered").unwrap();
         assert!(fixture.validate().unwrap_err().contains("archive checksum"));
@@ -818,14 +812,14 @@ pub(crate) mod tests {
             change(&mut d);
             fs::write(path, serde_json::to_vec(&d).unwrap()).unwrap();
         }
-        pub fn replace(&self, dir: &str, name: &str, bytes: Vec<u8>) {
-            fs::write(self.root.join(dir).join(name), &bytes).unwrap();
+        pub fn replace(&self, dir: &str, name: &str, bytes: &[u8]) {
+            fs::write(self.root.join(dir).join(name), bytes).unwrap();
             self.edit(dir, |d| {
                 d[if dir == "author" {
                     "runtime_files"
                 } else {
                     "files"
-                }][name] = serde_json::json!({"bytes":bytes.len(),"sha256":hash(&bytes)});
+                }][name] = serde_json::json!({"bytes":bytes.len(),"sha256":hash(bytes)});
             });
         }
     }
@@ -870,7 +864,7 @@ pub(crate) mod tests {
         f.replace(
             "encoder",
             "mlp_encoder.dll",
-            pe::fixture(true, &["missing.dll"], &[]),
+            &pe::fixture(true, &["missing.dll"], &[]),
         );
         assert!(
             validate_encoder(&directory, "x86_64-pc-windows-msvc")
@@ -880,14 +874,14 @@ pub(crate) mod tests {
         f.replace(
             "encoder",
             "mlp_encoder.dll",
-            pe::fixture(true, &[], &["missing.dll"]),
+            &pe::fixture(true, &[], &["missing.dll"]),
         );
         assert!(
             validate_encoder(&directory, "x86_64-pc-windows-msvc")
                 .unwrap_err()
                 .contains("Missing native dependency")
         );
-        f.replace("encoder", "mlp_encoder.dll", pe::fixture(true, &[], &[]));
+        f.replace("encoder", "mlp_encoder.dll", &pe::fixture(true, &[], &[]));
         fs::write(directory.join("extra.dll"), pe::fixture(true, &[], &[])).unwrap();
         assert!(
             validate_encoder(&directory, "x86_64-pc-windows-msvc")
@@ -914,7 +908,7 @@ pub(crate) mod tests {
         x86[132..134].copy_from_slice(&0x14cu16.to_le_bytes());
         for bytes in [b"not a PE".to_vec(), x86] {
             let f = Fixture::new();
-            f.replace("encoder", "mlp_encoder.dll", bytes);
+            f.replace("encoder", "mlp_encoder.dll", &bytes);
             assert!(validate_encoder(&f.root.join("encoder"), "x86_64-pc-windows-msvc").is_err());
         }
 

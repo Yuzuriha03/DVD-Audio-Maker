@@ -1,7 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    reason = "Dialog structures use compile-time sizes and bounded path buffers"
-)]
 //! Folder and file dialogs, the output-folder shortcut and message boxes.
 
 use super::{
@@ -127,7 +123,7 @@ pub(crate) fn file_dialog(
         file[i] = unit;
     }
     let mut dialog = OpenFileName {
-        size: std::mem::size_of::<OpenFileName>() as u32,
+        size: u32::try_from(std::mem::size_of::<OpenFileName>()).unwrap(),
         owner,
         instance: ptr::null_mut(),
         filter: filter.as_ptr(),
@@ -135,7 +131,7 @@ pub(crate) fn file_dialog(
         custom_filter_max: 0,
         filter_index: 1,
         file: file.as_mut_ptr(),
-        file_max: file.len() as u32,
+        file_max: u32::try_from(file.len()).unwrap(),
         file_title: ptr::null_mut(),
         file_title_max: 0,
         initial_dir: ptr::null(),

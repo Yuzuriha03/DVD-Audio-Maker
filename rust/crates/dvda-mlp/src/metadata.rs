@@ -43,8 +43,9 @@ pub fn timeline(records: &[Metadata], count: usize) -> Result<Vec<u32>, Error> {
         {
             return Err(Error::InvalidMetadata);
         }
+        let duration = usize::try_from(end - r.start).map_err(|_| Error::InvalidMetadata)?;
         if r.valid_bits == 0 {
-            output.extend(full.iter().copied().cycle().take((end - r.start) as usize));
+            output.extend(full.iter().copied().cycle().take(duration));
         } else {
             let mut prefix = vec![1; 9];
             let mut ones = 0;
@@ -60,10 +61,10 @@ pub fn timeline(records: &[Metadata], count: usize) -> Result<Vec<u32>, Error> {
             if ones == 8 {
                 prefix.push(0);
             }
-            if (end - r.start) as usize > prefix.len() {
+            if duration > prefix.len() {
                 return Err(Error::InvalidMetadata);
             }
-            output.extend_from_slice(&prefix[..(end - r.start) as usize]);
+            output.extend_from_slice(&prefix[..duration]);
         }
     }
     Ok(output)

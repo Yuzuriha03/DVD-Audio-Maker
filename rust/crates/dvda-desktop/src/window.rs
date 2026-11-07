@@ -1,10 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::too_many_lines,
-    reason = "The window procedure intentionally extracts signed coordinates from Win32 message bit fields"
-)]
 //! The main window procedure.
 
 use super::{
@@ -31,6 +24,10 @@ use super::{
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
 /// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps main-window message dispatch and state teardown in one Win32 lifecycle"
+)]
 pub(crate) unsafe extern "system" fn window_proc(
     hwnd: Hwnd,
     message: u32,
@@ -117,10 +114,18 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         WM_NCLBUTTONDOWN => {
             // Every sizing edge and corner (HTLEFT..=HTBOTTOMRIGHT) uses the outline.
-            if matches!(wparam as i32, HTLEFT..=HTBOTTOMRIGHT) && IsZoomed(hwnd) == 0 {
+            if matches!(
+                u32::try_from(wparam & 0xffff_ffff).unwrap().cast_signed(),
+                HTLEFT..=HTBOTTOMRIGHT
+            ) && IsZoomed(hwnd) == 0
+            {
                 let origin = Point {
-                    x: i32::from((lparam & 0xffff) as u16 as i16),
-                    y: i32::from(((lparam >> 16) & 0xffff) as u16 as i16),
+                    x: i32::from(u16::try_from(lparam & 0xffff).unwrap().cast_signed()),
+                    y: i32::from(
+                        u16::try_from((lparam >> 16) & 0xffff)
+                            .unwrap()
+                            .cast_signed(),
+                    ),
                 };
                 unsafe { outline_resize(hwnd, wparam, origin) };
                 0
@@ -129,7 +134,7 @@ pub(crate) unsafe extern "system" fn window_proc(
             }
         }
         WM_NCLBUTTONDBLCLK => {
-            if wparam as i32 == HTCAPTION {
+            if u32::try_from(wparam & 0xffff_ffff).unwrap().cast_signed() == HTCAPTION {
                 {
                     if IsZoomed(hwnd) != 0 {
                         ShowWindow(hwnd, SW_RESTORE);
@@ -143,7 +148,11 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         0x0200..=0x0202 => {
             if let Some(mut state) = unsafe { state(hwnd) } {
-                let y = i32::from((lparam >> 16) as i16);
+                let y = i32::from(
+                    u16::try_from((lparam >> 16) & 0xffff)
+                        .unwrap()
+                        .cast_signed(),
+                );
                 let over = (state.splitter_position() - scale(5)
                     ..state.splitter_position() + scale(10))
                     .contains(&y);
@@ -233,8 +242,12 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         WM_NCHITTEST => {
             let result = unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
-            let x = i32::from((lparam & 0xffff) as u16 as i16);
-            let y = i32::from(((lparam >> 16) & 0xffff) as u16 as i16);
+            let x = i32::from(u16::try_from(lparam & 0xffff).unwrap().cast_signed());
+            let y = i32::from(
+                u16::try_from((lparam >> 16) & 0xffff)
+                    .unwrap()
+                    .cast_signed(),
+            );
             let mut point = Point { x, y };
             let mut rect = Rect {
                 left: 0,
@@ -319,7 +332,7 @@ pub(crate) unsafe extern "system" fn window_proc(
             0
         }
         WM_DPICHANGED => {
-            let new_dpi = (wparam & 0xffff) as u32;
+            let new_dpi = u32::try_from(wparam & 0xffff).unwrap();
             if new_dpi >= 48 {
                 UI_DPI.store(new_dpi, Ordering::Relaxed);
             }
@@ -344,7 +357,7 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         WM_COMMAND => {
             let id = wparam & 0xffff;
-            let notify = ((wparam >> 16) & 0xffff) as u16;
+            let notify = u16::try_from((wparam >> 16) & 0xffff).unwrap();
             // Window commands run before the UiState is borrowed: ShowWindow and
             // WM_CLOSE send messages back to this procedure synchronously, and a
             // borrowed state would skip their layout and close checks.
@@ -380,7 +393,7 @@ pub(crate) unsafe extern "system" fn window_proc(
         WM_MEASUREITEM => {
             if lparam != 0 {
                 let item = unsafe { &mut *(lparam as *mut MeasureItemStruct) };
-                item.item_height = scale(26).max(scale(20)) as u32;
+                item.item_height = scale(26).max(scale(20)).cast_unsigned();
             }
             0
         }
@@ -398,7 +411,7 @@ pub(crate) unsafe extern "system" fn window_proc(
                 SetBkColor(dc, c_disabled_fill());
                 SetTextColor(dc, c_disabled_text());
                 brush(c_disabled_fill()) as Lresult
-            } else if GetDlgCtrlID(control) as usize == ID_LOG {
+            } else if (GetDlgCtrlID(control) as isize).cast_unsigned() == ID_LOG {
                 // The log is a read-only EDIT, so it asks for its colour here. Its id
                 // identifies it without the UiState, which a layout may hold.
                 SetBkColor(dc, c_card());

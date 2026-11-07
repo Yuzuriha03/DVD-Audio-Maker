@@ -1,7 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "ATSI parity fixtures construct fixed-width protocol fields"
-)]
 use dvda_author::{
     atsi::{self, Options, StillPicture, Title, Track},
     samg,
@@ -18,16 +14,16 @@ fn metadata(csv: &str) -> Vec<Title> {
         titles[title - 1].tracks.push(Track {
             audio: samg::Track {
                 mlp: v[1] != 0,
-                channels: v[2] as u8,
-                bits: v[3] as u8,
+                channels: u8::try_from(v[2]).unwrap(),
+                bits: u8::try_from(v[3]).unwrap(),
                 rate: v[4],
-                channel_assignment: v[5] as u8,
+                channel_assignment: u8::try_from(v[5]).unwrap(),
                 first_pts: v[6],
                 pts_length: v[7],
                 first_sector: v[8],
                 last_sector: v[9],
             },
-            downmix_table_rank: v[10] as u8,
+            downmix_table_rank: u8::try_from(v[10]).unwrap(),
             pictures: Vec::new(),
         });
     }

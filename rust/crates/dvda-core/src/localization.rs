@@ -87,12 +87,17 @@ fn entries() -> &'static [Entry] {
                         .as_str()
                         .expect("Japanese catalog coverage")
                         .to_owned(),
-                    parameters: v["Parameters"].as_u64().unwrap_or(0) as usize,
+                    parameters: usize::try_from(v["Parameters"].as_u64().unwrap_or(0))
+                        .expect("embedded parameter count"),
                     nested: v["Nested"]
                         .as_array()
                         .into_iter()
                         .flatten()
-                        .filter_map(|x| x.as_u64().map(|i| i as usize))
+                        .filter_map(|x| {
+                            x.as_u64().map(|i| {
+                                usize::try_from(i).expect("embedded nested argument index")
+                            })
+                        })
                         .collect(),
                     pattern: parts(&source),
                     source,
@@ -128,7 +133,10 @@ fn entries() -> &'static [Entry] {
                     .and_then(Value::as_array)
                     .into_iter()
                     .flatten()
-                    .map(|i| i.as_u64().unwrap() as usize)
+                    .map(|i| {
+                        usize::try_from(i.as_u64().unwrap())
+                            .expect("embedded nested argument index")
+                    })
                     .collect(),
             });
         }
@@ -231,13 +239,14 @@ fn channel_counts(language: &str, text: &str) -> Option<String> {
 }
 
 fn translate_inner(language: &str, text: &str, depth: usize) -> String {
+    static EXACT: OnceLock<HashMap<String, usize>> = OnceLock::new();
+
     if depth > 6 || text.len() > 32768 {
         return text.into();
     }
     if let Some(translated) = channel_counts(language, text) {
         return translated;
     }
-    static EXACT: OnceLock<HashMap<String, usize>> = OnceLock::new();
     let exact = EXACT.get_or_init(|| {
         entries()
             .iter()

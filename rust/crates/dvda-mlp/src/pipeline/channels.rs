@@ -3,6 +3,11 @@ use crate::analysis::search::MlpSearchPlan;
 use crate::pipeline::encode::{IntervalOutput, PlannedAu};
 use crate::syntax::parameters::{MlpCodingParams, MlpParameters};
 
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Channel selection packs signed residuals and quantization shifts into their defined low-bit wire patterns"
+)]
 pub(crate) fn select(
     samples: &[i32],
     qss: u32,
@@ -46,6 +51,12 @@ pub(crate) struct ChannelContext<'a> {
     pub(crate) channels: usize,
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    reason = "Channel analysis deliberately stages PCM through f32, writes signed low-bit residuals, and keeps candidate selection order contiguous"
+)]
 pub(crate) fn encode_channels(
     p: &mut PlannedAu,
     pcm: &[i32],

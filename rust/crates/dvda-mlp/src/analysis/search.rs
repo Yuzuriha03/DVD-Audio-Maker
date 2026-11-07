@@ -156,6 +156,11 @@ pub(crate) struct SearchOptions {
     pub perturbations: u32,
 }
 
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::too_many_lines,
+    reason = "Pool indices use the validated C state widths; keeping candidate evaluation together preserves strict-less-than tie ordering"
+)]
 pub(crate) fn mlp_search_pool_select(
     pool: &mut MlpSearchPool,
     correlation: &[f64],
@@ -309,6 +314,13 @@ pub(crate) fn mlp_search_pool_select(
     0
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+    clippy::too_many_lines,
+    reason = "Levinson names mirror the reference recursion, nonnegative quantized gains use the original truncating conversion, and ordered candidates remain contiguous"
+)]
 pub(crate) fn mlp_search_joint(
     pool: &mut MlpSearchPool,
     correlation: &[f64],
@@ -424,6 +436,12 @@ pub(crate) fn mlp_search_joint(
     0
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+    reason = "FIR recursion names mirror the reference filter and nonnegative quantized gains retain the original truncating conversion"
+)]
 pub(crate) fn mlp_search_fir(
     correlation: &[f64; 9],
     mut order: usize,
@@ -495,6 +513,15 @@ pub(crate) fn mlp_search_fir(
     0
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names,
+    clippy::too_many_lines,
+    reason = "Feedback-state names, f32 PCM staging, power-of-two quantization, and signed wire casts preserve the reference recurrence and candidate order"
+)]
 pub(crate) fn mlp_search_feedback_state(
     pcm: &[i32; 40],
     a: &MlpWireFilter,
@@ -765,6 +792,10 @@ pub(crate) fn mlp_search_iir_stable(coefficient: &[f64; 4], order: usize) -> i32
     1
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Correlation deliberately stages signed PCM and integer energy through f32 before reference-compatible normalization"
+)]
 pub(crate) fn mlp_search_correlation_extended(
     pcm: &[i32],
     lengths: &[usize],
@@ -833,6 +864,10 @@ pub(crate) fn mlp_search_correlation_extended(
     0
 }
 
+#[allow(
+    clippy::many_single_char_names,
+    reason = "Lattice-filter names mirror the symmetric reflection recurrence and make its index symmetry auditable"
+)]
 fn reflect(r: &mut [f64; 9], order: usize, out: &mut [f64; 8]) -> i32 {
     let mut s = [0.0; 17];
     for j in 0..9 {

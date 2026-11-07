@@ -1,11 +1,5 @@
 //! CLI compatibility and complete disc assembly. Audio, tables and filesystem
 //! generation stay in Rust; image/video codecs are supplied by the menu backend.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::items_after_statements,
-    clippy::too_many_lines,
-    reason = "Command orchestration retains complete authoring transactions and validated CLI field widths"
-)]
 use crate::{Callbacks, amg, aob, asvs, atsi, iso, menu, samg};
 use std::{
     fs::{self, OpenOptions},
@@ -16,6 +10,11 @@ use std::{
     },
     time::Duration,
 };
+
+fn scaled_progress(completed: u64, total: u64, span: u64) -> u64 {
+    u64::try_from(u128::from(span) * u128::from(completed) / u128::from(total))
+        .expect("progress fraction is bounded by its u64 span")
+}
 
 struct StageProgress<'a> {
     parent: &'a mut dyn Callbacks,
@@ -44,9 +43,8 @@ impl Callbacks for StageProgress<'_> {
         if total == 0 {
             return;
         }
-        let value = self.start
-            + (u128::from(self.end - self.start) * u128::from(completed.min(total))
-                / u128::from(total)) as u64;
+        let value =
+            self.start + scaled_progress(completed.min(total), total, self.end - self.start);
         self.last = self.last.max(value);
         self.parent.progress(self.last, 1000);
     }
@@ -127,14 +125,12 @@ fn author_groups(
                         break;
                     };
                     worker_callbacks.emit(1, &format!("[INF] Creating ATS_{:02} audio", index + 1));
-                    let start =
-                        (600u128 * u128::from(starts[index]) / u128::from(total_bytes)) as u64;
-                    let end = (600u128 * u128::from(starts[index] + group_bytes[index])
-                        / u128::from(total_bytes)) as u64;
+                    let start = scaled_progress(starts[index], total_bytes, 600);
+                    let end = scaled_progress(starts[index] + group_bytes[index], total_bytes, 600);
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let mut progress = StageProgress::new(&mut worker_callbacks, start, end);
-                        let output =
-                            aob::author_group(audio_ts, (index + 1) as u8, group, &mut progress);
+                        let number = u8::try_from(index + 1).expect("at most nine groups");
+                        let output = aob::author_group(audio_ts, number, group, &mut progress);
                         progress.progress(1, 1);
                         output
                     }))
@@ -205,6 +201,10 @@ const HELP: &str = "Rust DVD-Audio author\nUsage: dvda-author-dev -g track.mlp t
 ///
 /// # Errors
 /// Rejects unknown options, missing values, invalid numbers, and inconsistent authoring modes.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep CLI option consumption, validation and error precedence together"
+)]
 pub fn parse(arguments: &[String]) -> Result<Request, String> {
     let mut request = Request {
         groups: Vec::new(),
@@ -520,11 +520,16 @@ fn within(path: &Path, directory: &Path) -> bool {
 ///
 /// # Panics
 /// Panics only if validated disc groups violate the authoring pipeline's internal invariants.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Preserve author transaction cancellation, staging, rollback and final ISO publication order"
+)]
 pub fn author(
     request: &Request,
     backend: &mut dyn menu::Backend,
     callbacks: &mut dyn Callbacks,
 ) -> Result<(), String> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     check(callbacks)?;
     if request.output.file_name().is_none() {
         return Err("Author output needs a directory name".into());
@@ -557,7 +562,6 @@ pub fn author(
         .unwrap_or(Path::new("."));
     io(fs::create_dir_all(parent))?;
     let parent = io(parent.canonicalize())?;
-    static NEXT: AtomicU64 = AtomicU64::new(0);
     let mut stage = loop {
         let directory = parent.join(format!(
             ".dvda-author-{}-{}",
@@ -726,7 +730,8 @@ pub fn author(
         atsi_sectors: groups.iter().map(|g| g.atsi_sectors).collect(),
         still_vob_sectors: layout.still_vob_sectors,
         top_vob_sectors: layout.top_vob_sectors,
-        video_link_tracks: options.video_links.len() as u16,
+        video_link_tracks: u16::try_from(options.video_links.len())
+            .expect("AMG validated at most nine total groups"),
     };
     let (simple, _) = samg::encode(&audio_groups, &samg_layout)?;
     for (index, tracks) in audio_groups.iter().enumerate() {

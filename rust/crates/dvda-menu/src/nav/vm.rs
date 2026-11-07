@@ -6,11 +6,6 @@
 //! subset and reports every other construct as an explicit error instead of
 //! guessing at DVD-Video VM semantics.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    reason = "The VM compiler preserves opcode widths and the complete parser state machine"
-)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
     Number(u16),
@@ -145,6 +140,10 @@ fn keyword(text: &str) -> Option<Keyword> {
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "The lexer keeps numeric, register, keyword, and comment precedence in one ordered scan"
+)]
 fn lex(text: &str) -> Result<Vec<Token>, String> {
     let bytes = text.as_bytes();
     let mut tokens = Vec::new();
@@ -193,7 +192,7 @@ fn lex(text: &str) -> Result<Vec<Token>, String> {
             if value > u32::from(u16::MAX) {
                 return Err(format!("VM number {value} out of range"));
             }
-            tokens.push(Token::Number(value as u16));
+            tokens.push(Token::Number(u16::try_from(value).unwrap()));
             continue;
         }
         if byte.is_ascii_alphabetic() || byte == b'_' {
@@ -413,9 +412,9 @@ pub(crate) fn compile(statements: &[Statement], context: VmContext) -> Result<Ve
                     0x71,
                     0x00,
                     0x00,
-                    *register as u8,
+                    u8::try_from(*register).unwrap(),
                     0x00,
-                    *value as u8,
+                    value.to_le_bytes()[0],
                     0x00,
                     0x00,
                 ]
@@ -430,15 +429,24 @@ pub(crate) fn compile(statements: &[Statement], context: VmContext) -> Result<Ve
                 if *menu >= 120 {
                     return Err("menu entry jumps are not supported yet".into());
                 }
-                [0x20, 0x04, 0x00, 0x00, 0x00, 0xc0, 0x00, *menu as u8]
+                [
+                    0x20,
+                    0x04,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0xc0,
+                    0x00,
+                    u8::try_from(*menu).unwrap(),
+                ]
             }
             Statement::JumpTrack { group, track } => [
                 0x30,
                 0x0a,
                 0x00,
-                *group as u8,
+                group.to_le_bytes()[0],
                 0x00,
-                *track as u8,
+                track.to_le_bytes()[0],
                 0x00,
                 0x00,
             ],

@@ -384,14 +384,17 @@ fn apply_file_impl(
             if cancelled() {
                 return Err(Failure::new("Cancelled", "Source preparation cancelled"));
             }
-            let count = (size - position).min(buffer.len() as u64) as usize;
+            let count = usize::try_from((size - position).min(buffer.len() as u64))
+                .expect("ALAC read chunk is bounded by the usize buffer length");
             input.read_exact(&mut buffer[..count])?;
             while patch < combined.len()
                 && combined[patch].0 >= position
                 && combined[patch].0 < position + count as u64
             {
                 let (byte, mask) = combined[patch];
-                buffer[(byte - position) as usize] |= mask;
+                let index = usize::try_from(byte - position)
+                    .expect("ALAC patch offset is bounded by the current buffer");
+                buffer[index] |= mask;
                 patch += 1;
             }
             output.write_all(&buffer[..count])?;
@@ -454,7 +457,8 @@ fn read_cookie_file(path: &str, events: &mut dyn Callbacks) -> Result<Option<Coo
         combined.extend_from_slice(&carry);
         combined.extend_from_slice(&buffer[..count]);
         if let Some(mut cookie) = read_cookie(&combined) {
-            let offset = base + cookie.offset as u64;
+            let offset = base
+                + u64::try_from(cookie.offset).expect("scanned ALAC cookie offset is nonnegative");
             cookie.offset = i32::try_from(offset)
                 .map_err(|_| Failure::new("Overflow", "ALAC magic cookie position overflow"))?;
             return Ok(Some(cookie));
@@ -697,7 +701,10 @@ mod tests {
         let cookie = read_cookie_file(path.to_str().unwrap(), &mut Events)
             .unwrap()
             .unwrap();
-        assert_eq!(cookie.offset as usize, marker + 8);
+        assert_eq!(
+            usize::try_from(cookie.offset).expect("fixture cookie offset is nonnegative"),
+            marker + 8
+        );
         assert_eq!(cookie.max_samples_per_frame, 512);
         assert_eq!(cookie.channels, 2);
     }
@@ -707,7 +714,7 @@ mod tests {
         let root = scratch();
         let source = root.0.join("source.m4a");
         let destination = root.0.join("repaired.m4a");
-        let original: Vec<u8> = (0..65552).map(|index| index as u8).collect();
+        let original: Vec<u8> = (0..=u8::MAX).cycle().take(65552).collect();
         std::fs::write(&source, &original).unwrap();
         let positions = [(65535, 6), (10, 0), (65535, 6)];
         let mut expected = original.clone();

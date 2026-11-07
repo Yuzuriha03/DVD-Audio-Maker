@@ -46,15 +46,15 @@ pub fn parse(data: &[u8], group: i32) -> Result<Group, String> {
         .get(..length)
         .filter(|p| p.len() >= 8)
         .ok_or("PGC_OUT_OF_RANGE")?;
-    let titles = u16_at(pgc, 0)? as usize;
-    if titles == 0 || 8 + titles * 8 > pgc.len() {
+    let titles = u16_at(pgc, 0)?;
+    if titles == 0 || 8 + usize::from(titles) * 8 > pgc.len() {
         return Err("TITLE_OUT_OF_RANGE".into());
     }
     let mut result = Group::default();
     for title in 0..titles {
-        let offset = u32_at(pgc, 12 + title * 8)? as usize;
+        let offset = u32_at(pgc, 12 + usize::from(title) * 8)? as usize;
         let header = pgc.get(offset..offset + 16).ok_or("TITLE_OUT_OF_RANGE")?;
-        let tracks = header[2] as usize;
+        let tracks = header[2];
         if tracks == 0 {
             return Err("IFO_TRACKS_MISSING".into());
         }
@@ -63,7 +63,7 @@ pub fn parse(data: &[u8], group: i32) -> Result<Group, String> {
         let pictures = u16_at(header, 14)? as usize;
         let mut previous = None;
         for track in 0..tracks {
-            let cell = offset + 16 + track * 20;
+            let cell = offset + 16 + usize::from(track) * 20;
             let first_pts = i64::from(u32_at(pgc, cell + 6)?);
             let length = i64::from(u32_at(pgc, cell + 10)?);
             if previous.is_some_and(|v| first_pts <= v) {
@@ -76,17 +76,17 @@ pub fn parse(data: &[u8], group: i32) -> Result<Group, String> {
             {
                 result.issues.push("PGC_TIMELINE_LENGTH_MISMATCH".into());
             }
-            let first = i32::try_from(u32_at(pgc, sectors + track * 12 + 4)?)
+            let first = i32::try_from(u32_at(pgc, sectors + usize::from(track) * 12 + 4)?)
                 .map_err(|_| "CELL_OUT_OF_RANGE")?;
-            let last = i32::try_from(u32_at(pgc, sectors + track * 12 + 8)?)
+            let last = i32::try_from(u32_at(pgc, sectors + usize::from(track) * 12 + 8)?)
                 .map_err(|_| "CELL_OUT_OF_RANGE")?;
             if last < first {
                 result.issues.push("CELL_OUT_OF_RANGE".into());
             }
             result.rows.push(TrackRow {
                 group,
-                title: title as i32 + 1,
-                track: track as i32 + 1,
+                title: i32::from(title) + 1,
+                track: i32::from(track) + 1,
                 first,
                 last,
                 pts: first_pts,
@@ -94,7 +94,7 @@ pub fn parse(data: &[u8], group: i32) -> Result<Group, String> {
             });
             if pictures != 0 {
                 let picture = *pgc
-                    .get(offset + pictures + track * 6)
+                    .get(offset + pictures + usize::from(track) * 6)
                     .ok_or("STILL_REFERENCE_OUT_OF_RANGE")?;
                 result.maximum_still = result.maximum_still.max(picture);
             }

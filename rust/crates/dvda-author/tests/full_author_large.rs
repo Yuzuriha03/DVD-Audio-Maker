@@ -1,10 +1,4 @@
 //! Capacity, cancellation and transaction tests through the production command.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::struct_field_names,
-    clippy::unreadable_literal,
-    reason = "Large-author fixtures intentionally construct protocol-size fields and capacity boundaries"
-)]
 use dvda_author::{Callbacks, Silent, command, menu};
 use std::{
     fs,
@@ -63,7 +57,7 @@ impl Directory {
         wave.extend(1u16.to_le_bytes());
         wave.extend(2u16.to_le_bytes());
         wave.extend(48000u32.to_le_bytes());
-        wave.extend(192000u32.to_le_bytes());
+        wave.extend(192_000u32.to_le_bytes());
         wave.extend(4u16.to_le_bytes());
         wave.extend(16u16.to_le_bytes());
         wave.extend(b"data");
@@ -149,10 +143,16 @@ fn ninety_nine_and_eight_hundred_ninety_one_titles_expand_all_tables() {
                 let title = 0x800 + be32(&atsi, 0x80c + track * 8) as usize;
                 assert_eq!(atsi[title + 2], 1);
                 let row = 16 + 52 * ((group - 1) * 99 + track);
-                assert_eq!(&simple[row + 2..row + 4], &[group as u8, track as u8 + 1]);
+                assert_eq!(
+                    &simple[row + 2..row + 4],
+                    &[
+                        u8::try_from(group).unwrap(),
+                        u8::try_from(track).unwrap() + 1
+                    ]
+                );
                 let sector = be32(&simple, row + 40) as usize;
-                assert_eq!(be32(&simple, row + 44), sector as u32);
-                assert_eq!(be32(&simple, row + 48), sector as u32);
+                assert_eq!(be32(&simple, row + 44), u32::try_from(sector).unwrap());
+                assert_eq!(be32(&simple, row + 48), u32::try_from(sector).unwrap());
                 assert_eq!(&image[sector * 2048..sector * 2048 + 4], b"\0\0\x01\xba");
             }
         }
@@ -163,22 +163,22 @@ fn ninety_nine_and_eight_hundred_ninety_one_titles_expand_all_tables() {
 struct Cancel {
     trigger: &'static str,
     iso: bool,
-    cancel: bool,
+    stop: bool,
     after_progress: bool,
 }
 impl Callbacks for Cancel {
     fn emit(&mut self, _: i32, text: &str) {
         if text.contains(self.trigger) {
             self.iso = true;
-            self.cancel = !self.after_progress;
+            self.stop = !self.after_progress;
         }
     }
     fn cancelled(&mut self) -> bool {
-        self.cancel
+        self.stop
     }
     fn progress(&mut self, completed: u64, total: u64) {
         if self.iso && self.after_progress && completed * 100 > total * 80 {
-            self.cancel = true;
+            self.stop = true;
         }
     }
 }
@@ -196,7 +196,7 @@ fn cancellation_before_and_during_iso_preserves_previous_image_and_disc() {
         let mut events = Cancel {
             trigger,
             iso: false,
-            cancel: false,
+            stop: false,
             after_progress,
         };
         let error = command::run(&work.arguments(1, 3), &mut NoMenu, &mut events).unwrap_err();
@@ -312,7 +312,7 @@ fn cancelled_iso_can_be_retried_with_the_same_arguments_and_empty_output() {
     let mut events = Cancel {
         trigger: "Writing ISO image",
         iso: false,
-        cancel: false,
+        stop: false,
         after_progress: true,
     };
     assert!(command::run(&arguments, &mut NoMenu, &mut events).is_err());

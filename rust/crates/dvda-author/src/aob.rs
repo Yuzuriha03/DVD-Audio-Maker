@@ -1,12 +1,4 @@
 //! Streaming DVD-Audio pack/PES packetization for MLP and integer LPCM.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::too_many_lines,
-    reason = "AOB packet fields and timestamps preserve bounded DVD sizes and historical rounding"
-)]
 use crate::{
     Callbacks,
     audio::{self, AudioInfo},
@@ -53,16 +45,6 @@ struct Parameters {
 }
 impl Parameters {
     fn for_audio(info: &AudioInfo) -> Self {
-        if info.mlp {
-            return Self {
-                payload: 2005,
-                decrement: 21,
-                first_header: 6,
-                mid_header: 6,
-                last_header: 6,
-                mid_pes: 2028,
-            };
-        }
         const TABLE16: [[usize; 6]; 6] = [
             [2000, 16, 11, 16, 16, 2028],
             [2000, 16, 11, 16, 10, 2028],
@@ -79,6 +61,16 @@ impl Parameters {
             [1980, 0, 15, 10, 10, 2002],
             [1980, 0, 15, 16, 16, 2008],
         ];
+        if info.mlp {
+            return Self {
+                payload: 2005,
+                decrement: 21,
+                first_header: 6,
+                mid_header: 6,
+                last_header: 6,
+                mid_pes: 2028,
+            };
+        }
         let value = if info.bits == 16 {
             TABLE16[info.channels as usize - 1]
         } else if info.bits == 24 {
@@ -94,10 +86,10 @@ impl Parameters {
         Self {
             payload: value[0],
             decrement: value[1],
-            first_header: value[2] as u8,
-            mid_header: value[3] as u8,
-            last_header: value[4] as u8,
-            mid_pes: value[5] as u16,
+            first_header: u8::try_from(value[2]).expect("header table values are at most 16"),
+            mid_header: u8::try_from(value[3]).expect("header table values are at most 16"),
+            last_header: u8::try_from(value[4]).expect("header table values are at most 16"),
+            mid_pes: u16::try_from(value[5]).expect("PES table values are at most 2028"),
         }
     }
 }
@@ -141,7 +133,8 @@ impl AudioReader {
             return Ok(());
         }
         if self.info.mlp {
-            let length = self.remaining.min(65536) as usize;
+            let length =
+                usize::try_from(self.remaining.min(65536)).expect("read chunk at most 65536 bytes");
             self.packed.resize(length, 0);
             self.file
                 .read_exact(&mut self.packed)
@@ -153,7 +146,8 @@ impl AudioReader {
         let container = usize::from(self.info.container_bits) / 8;
         let native = if self.info.bits == 16 { 2 } else { 3 };
         let align = usize::from(self.info.channels) * container;
-        let request = (65536 / align * align).min(self.remaining as usize);
+        let request = (65536 / align * align)
+            .min(usize::try_from(self.remaining).expect("Windows x64 input size fits usize"));
         let mut raw = vec![0; request];
         self.file
             .read_exact(&mut raw)
@@ -262,12 +256,20 @@ fn padding(packet: &mut Vec<u8>) {
     let length = 2048 - packet.len();
     if length >= 6 {
         packet.extend_from_slice(&[0, 0, 1, 0xbe]);
-        packet.extend_from_slice(&((length - 6) as u16).to_be_bytes());
+        packet.extend_from_slice(
+            &(u16::try_from(length - 6).expect("padding fits one 2048-byte sector")).to_be_bytes(),
+        );
         packet.resize(2048, 0xff);
     } else {
         packet.resize(2048, 0);
     }
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    reason = "MLP clock compatibility requires C division-before-multiplication, ceil/round and floating sample/offset conversion"
+)]
 fn clock(
     info: &AudioInfo,
     p: Parameters,
@@ -275,7 +277,9 @@ fn clock(
     shift: u32,
 ) -> Result<(u32, u32, u64), String> {
     if info.mlp {
-        let row = info.mlp_layout.get(index as usize);
+        let row = info
+            .mlp_layout
+            .get(usize::try_from(index).expect("Windows x64 sector index fits usize"));
         let (pts, dts, scr) = if let Some(row) = row {
             // Preserve C's division-before-multiplication rounding boundaries.
             let pts = ((row.samples + u64::from(info.frame_samples())) as f64
@@ -318,7 +322,8 @@ fn clock(
         let bps = u128::from(info.rate) * u128::from(info.channels) * u128::from(info.bits) / 8;
         let pts = u32::try_from((u128::from(aligned) * 90000 + bps / 2) / bps)
             .map_err(|_| "LPCM PTS overflow")?;
-        let scr = (u128::from(bytes) * 27_000_000 / bps) as u64;
+        let scr = u64::try_from(u128::from(bytes) * 27_000_000 / bps)
+            .expect("successful 32-bit LPCM PTS bounds SCR");
         Ok((
             pts.checked_add(shift).ok_or("PTS overflow")?,
             0,
@@ -326,6 +331,10 @@ fn clock(
         ))
     }
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep pack, PES and access-unit header writes in their wire order"
+)]
 fn packet(
     info: &AudioInfo,
     p: Parameters,
@@ -361,7 +370,9 @@ fn packet(
         usize::from(p.mid_pes)
     };
     result.extend_from_slice(&[0, 0, 1, 0xbd]);
-    result.extend_from_slice(&(pes_length as u16).to_be_bytes());
+    result.extend_from_slice(
+        &(u16::try_from(pes_length).expect("PES fits one 2048-byte sector")).to_be_bytes(),
+    );
     result.extend_from_slice(&[
         0x81,
         if info.mlp { 0xc0 } else { 0x80 } | u8::from(first),
@@ -390,7 +401,7 @@ fn packet(
                 (index - 1) * 2005 + 1984
             };
             info.mlp_layout
-                .get(index as usize)
+                .get(usize::try_from(index).expect("Windows x64 sector index fits usize"))
                 .map_or(0, |row| row.offset.saturating_sub(offset))
                 + u64::from(header)
                 - 1
@@ -407,7 +418,7 @@ fn packet(
         .map_err(|_| "First access-unit pointer exceeds DVD header capacity")?;
     result.extend_from_slice(&[
         if info.mlp { 0xa1 } else { 0xa0 },
-        (index % 32) as u8,
+        u8::try_from(index % 32).expect("counter modulo 32"),
         0,
         header,
     ]);
@@ -475,6 +486,10 @@ pub fn author_group(
 ///
 /// # Errors
 /// Propagates invalid input, cancellation, media parsing, and output failures.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep track packetization, cancellation and final flush order together"
+)]
 pub fn author_group_with_split(
     audio_ts: &Path,
     group: u8,

@@ -1,9 +1,4 @@
 //! Streaming integer WAVE and MLP input parsing; no media decoder is required.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    reason = "Audio packet fields retain their validated DVD sizes and streaming parse state"
-)]
 use crate::{Callbacks, Silent};
 use std::{
     fs::File,
@@ -140,6 +135,10 @@ pub fn probe_with_callbacks(
     validate(&info)?;
     Ok(info)
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep RF64/WAVE chunk validation and error precedence in streaming parse order"
+)]
 fn wave(input: &mut (impl Read + Seek), size: u64) -> Result<AudioInfo, String> {
     let mut head = [0; 12];
     input.read_exact(&mut head).map_err(|e| e.to_string())?;
@@ -194,7 +193,11 @@ fn wave(input: &mut (impl Read + Seek), size: u64) -> Result<AudioInfo, String> 
             if format.is_some() || length < 16 {
                 return Err("Invalid/duplicate WAVE format chunk".into());
             }
-            let mut fmt = vec![0; length.min(40) as usize];
+            let mut fmt = vec![
+                0;
+                usize::try_from(length.min(40))
+                    .expect("WAVE fmt prefix is at most 40 bytes")
+            ];
             input.read_exact(&mut fmt).map_err(|e| e.to_string())?;
             let tag = le16(&fmt, 0);
             let channels = le16(&fmt, 2);
@@ -223,21 +226,19 @@ fn wave(input: &mut (impl Read + Seek), size: u64) -> Result<AudioInfo, String> 
             {
                 return Err("Invalid PCM sample format/block alignment".into());
             }
+            let channels = u8::try_from(channels).expect("validated 1..=6 channels");
+            let bits = u8::try_from(bits).expect("validated 16/20/24 bits");
+            let container = u8::try_from(container).expect("validated 16/24/32 container bits");
             let cga = MASKS
                 .iter()
                 .position(|&m| m == mask)
-                .map_or(DEFAULT_CGA[channels as usize - 1], |i| i as u8);
-            if CHANNELS[cga as usize] != channels as u8 {
+                .map_or(DEFAULT_CGA[channels as usize - 1], |i| {
+                    u8::try_from(i).expect("21 speaker masks")
+                });
+            if CHANNELS[cga as usize] != channels {
                 return Err("WAVE speaker mask does not match its channel count".into());
             }
-            format = Some((
-                bits as u8,
-                container as u8,
-                rate,
-                channels as u8,
-                cga,
-                align,
-            ));
+            format = Some((bits, container, rate, channels, cga, align));
         } else if &chunk[..4] == b"data" {
             if data.is_some() {
                 return Err("Multiple WAVE data chunks are unsupported".into());
@@ -268,6 +269,10 @@ fn wave(input: &mut (impl Read + Seek), size: u64) -> Result<AudioInfo, String> 
         mlp_layout: vec![],
     })
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep MLP frame/CRC validation and access-unit scheduling in input order"
+)]
 fn mlp(
     input: &mut (impl Read + Seek),
     size: u64,
@@ -486,7 +491,7 @@ mod tests {
         for (index, arrival) in arrivals.iter().enumerate() {
             let major = index == 0;
             let mut packet = vec![0u8; if major { 34 } else { 6 }];
-            packet[1] = (packet.len() / 2) as u8;
+            packet[1] = u8::try_from(packet.len() / 2).unwrap();
             packet[2..4].copy_from_slice(&arrival.to_be_bytes());
             let header = if major {
                 packet[4..8].copy_from_slice(&[0xf8, 0x72, 0x6f, 0xbb]);
@@ -531,10 +536,13 @@ mod tests {
             let info = mlp(&mut Cursor::new(&bytes), bytes.len() as u64, &mut Silent).unwrap();
             assert_eq!(info.samples, arrivals.len() as u64 * frame);
             assert_eq!(info.mlp_layout.last().unwrap().samples, info.samples);
-            assert_eq!(info.frame_samples(), frame as u32);
+            assert_eq!(info.frame_samples(), u32::try_from(frame).unwrap());
             assert_eq!(
                 info.pts_length().unwrap(),
-                ((info.samples * 90000 + u64::from(info.rate) / 2) / u64::from(info.rate)) as u32
+                u32::try_from(
+                    (info.samples * 90000 + u64::from(info.rate) / 2) / u64::from(info.rate)
+                )
+                .unwrap()
             );
         }
     }

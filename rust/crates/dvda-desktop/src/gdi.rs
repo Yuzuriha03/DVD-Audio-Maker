@@ -1,9 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "GDI scaling and text measurement use bounded native integer geometry"
-)]
 //! DPI scaling, fonts, brushes, the header icon and text measurement.
 
 use super::{
@@ -30,11 +24,19 @@ pub(crate) fn client_rect(hwnd: Hwnd) -> Rect {
 }
 
 pub(crate) fn dpi() -> i32 {
-    UI_DPI.load(Ordering::Relaxed).max(48) as i32
+    UI_DPI.load(Ordering::Relaxed).max(48).cast_signed()
 }
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Preserves the existing rounded DPI calculation and low 32-bit Win32 coordinate result"
+)]
 pub(crate) fn scale(value: i32) -> i32 {
     ((i64::from(value) * i64::from(dpi()) + 48) / 96) as i32
 }
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Preserves the existing rounded inverse-DPI calculation and low 32-bit coordinate result"
+)]
 pub(crate) fn unscale(value: i32) -> i32 {
     if value <= 0 {
         value
@@ -138,7 +140,7 @@ pub(crate) fn border_brush() -> Hbrush {
     brush(c_border())
 }
 pub(crate) fn header_icon() -> Handle {
-    let current = dpi() as u32;
+    let current = dpi().cast_unsigned();
     let cache = ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let mut cache = cache
         .lock()
@@ -237,14 +239,14 @@ pub(crate) fn measured_text_width(_hwnd: Hwnd, text: &str, font: Handle) -> i32 
 /// structure the system defines for that message, valid for the duration of the call.
 pub(crate) unsafe extern "system" fn font_child_proc(hwnd: Hwnd, parameter: Lparam) -> i32 {
     {
-        win::send_int(hwnd, WM_SETFONT, parameter as usize, 1);
+        win::send_int(hwnd, WM_SETFONT, parameter.cast_unsigned(), 1);
     }
     1
 }
 
 pub(crate) fn refresh_fonts(hwnd: Hwnd, state: &UiState) {
     unsafe {
-        EnumChildWindows(hwnd, font_child_proc, ui_font() as usize as Lparam);
+        EnumChildWindows(hwnd, font_child_proc, ui_font() as Lparam);
         win::send_int(
             state.controls.status,
             WM_SETFONT,

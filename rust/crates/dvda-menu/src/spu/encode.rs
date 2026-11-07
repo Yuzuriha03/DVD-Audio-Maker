@@ -3,13 +3,6 @@
 //! The bit writer, RLE codes and control-block layout are reproduced exactly so
 //! the resulting subpicture unit matches the historical C encoder byte for byte.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::comparison_chain,
-    reason = "RLE bit fields and subpicture lengths intentionally preserve the C encoder arithmetic"
-)]
 use super::image::SubPicture;
 
 pub(crate) const SUB_BUFFER_MAX: usize = 53220;
@@ -42,22 +35,29 @@ impl BitWriter {
     fn bits(&mut self, value: u32, mut bits: u32) {
         const MASK: [u32; 9] = [0, 1, 3, 7, 15, 31, 63, 127, 255];
         while bits != 0 {
-            if bits > self.remain {
-                self.data[self.position] |=
-                    ((value >> (bits - self.remain)) & MASK[self.remain as usize]) as u8;
-                self.position += 1;
-                bits -= self.remain;
-                self.remain = 8;
-            } else if bits == self.remain {
-                self.data[self.position] |= (value & MASK[self.remain as usize]) as u8;
-                self.position += 1;
-                self.remain = 8;
-                return;
-            } else {
-                self.data[self.position] |=
-                    ((value & MASK[bits as usize]) << (self.remain - bits)) as u8;
-                self.remain -= bits;
-                return;
+            match bits.cmp(&self.remain) {
+                std::cmp::Ordering::Greater => {
+                    self.data[self.position] |= ((value >> (bits - self.remain))
+                        & MASK[usize::try_from(self.remain).unwrap()])
+                    .to_le_bytes()[0];
+                    self.position += 1;
+                    bits -= self.remain;
+                    self.remain = 8;
+                }
+                std::cmp::Ordering::Equal => {
+                    self.data[self.position] |=
+                        (value & MASK[usize::try_from(self.remain).unwrap()]).to_le_bytes()[0];
+                    self.position += 1;
+                    self.remain = 8;
+                    return;
+                }
+                std::cmp::Ordering::Less => {
+                    self.data[self.position] |= ((value & MASK[usize::try_from(bits).unwrap()])
+                        << (self.remain - bits))
+                        .to_le_bytes()[0];
+                    self.remain -= bits;
+                    return;
+                }
             }
         }
     }
@@ -88,14 +88,14 @@ impl BitWriter {
     }
 
     fn set_word(&mut self, at: usize, value: u32) {
-        self.data[at] = (value >> 8) as u8;
-        self.data[at + 1] = value as u8;
+        self.data[at] = (value >> 8).to_le_bytes()[0];
+        self.data[at + 1] = value.to_le_bytes()[0];
     }
 }
 
 fn rle(writer: &mut BitWriter, count: i32, color: u8) {
     debug_assert!((1..=255).contains(&count));
-    let value = ((count as u32) << 2) | u32::from(color);
+    let value = (count.cast_unsigned() << 2) | u32::from(color);
     if count >= 64 {
         writer.nibble(0);
         writer.nibble((value & 0xF00) >> 8);
@@ -120,7 +120,7 @@ fn encode_row(writer: &mut BitWriter, picture: &SubPicture, y: usize) -> Result<
     let mut next_run = 0usize;
     for x in 0..xd.saturating_sub(1) {
         if row[x + 1] != row[x] {
-            let mut count = (x + 1 - next_run) as i32;
+            let mut count = i32::try_from(x + 1 - next_run).unwrap();
             while count > 255 {
                 rle(writer, 255, row[x]);
                 count -= 255;
@@ -132,7 +132,7 @@ fn encode_row(writer: &mut BitWriter, picture: &SubPicture, y: usize) -> Result<
         }
     }
     if xd != next_run {
-        let count = (xd - next_run) as i32;
+        let count = i32::try_from(xd - next_run).unwrap();
         if count < 64 {
             rle(writer, count, row[next_run]);
         } else {
@@ -158,20 +158,20 @@ pub(crate) fn dvd_encode(picture: &mut SubPicture) -> Result<Vec<u8>, String> {
     let mut writer = BitWriter::new();
     writer.position = 4;
 
-    let offset0 = writer.position as u32;
+    let offset0 = u32::try_from(writer.position).unwrap();
     let mut y = 0usize;
     while y < ysize as usize {
         encode_row(&mut writer, picture, y)?;
         y += 2;
     }
-    let offset1 = writer.position as u32;
+    let offset1 = u32::try_from(writer.position).unwrap();
     y = 1;
     while y < ysize as usize {
         encode_row(&mut writer, picture, y)?;
         y += 2;
     }
 
-    let control = writer.position as u32;
+    let control = u32::try_from(writer.position).unwrap();
     writer.set_word(2, control);
     writer.word(0);
     let mut next_command = writer.position;
@@ -188,10 +188,10 @@ pub(crate) fn dvd_encode(picture: &mut SubPicture) -> Result<Vec<u8>, String> {
     let p2 = picture.find_master_pal(picture.pal[2]);
     let p1 = picture.find_master_pal(picture.pal[1]);
     let p0 = picture.find_master_pal(picture.pal[0]);
-    writer.nibble(p3 as u32);
-    writer.nibble(p2 as u32);
-    writer.nibble(p1 as u32);
-    writer.nibble(p0 as u32);
+    writer.nibble(p3.cast_unsigned());
+    writer.nibble(p2.cast_unsigned());
+    writer.nibble(p1.cast_unsigned());
+    writer.nibble(p0.cast_unsigned());
 
     writer.byte(SPU_SET_CONTR);
     writer.nibble(u32::from(picture.pal[3].a >> 4));
@@ -213,21 +213,24 @@ pub(crate) fn dvd_encode(picture: &mut SubPicture) -> Result<Vec<u8>, String> {
 
     if picture.sd >= 0 {
         let mut duration = (picture.sd + 512) / 1024;
-        writer.set_word(next_command, writer.position as u32);
+        writer.set_word(next_command, u32::try_from(writer.position).unwrap());
         next_command = writer.position;
         while duration >= 65536 {
             writer.word(65535);
-            writer.word((next_command + 5) as u32);
+            writer.word(u32::try_from(next_command + 5).unwrap());
             writer.byte(SPU_CMD_END);
             next_command = writer.position;
             duration -= 65535;
         }
-        writer.word(duration as u32);
-        writer.word(next_command as u32);
+        writer.word(duration.cast_unsigned());
+        writer.word(u32::try_from(next_command).unwrap());
         writer.byte(SPU_STP_DSP);
         writer.byte(SPU_CMD_END);
     } else {
-        writer.set_word(next_command, (next_command as u32).wrapping_sub(2));
+        writer.set_word(
+            next_command,
+            (u32::try_from(next_command).unwrap()).wrapping_sub(2),
+        );
     }
 
     if writer.position & 1 != 0 {
@@ -235,7 +238,7 @@ pub(crate) fn dvd_encode(picture: &mut SubPicture) -> Result<Vec<u8>, String> {
     }
 
     let size = writer.position;
-    writer.set_word(0, size as u32);
+    writer.set_word(0, u32::try_from(size).unwrap());
     if size >= SUB_BUFFER_MAX {
         return Err("subpicture too large".into());
     }

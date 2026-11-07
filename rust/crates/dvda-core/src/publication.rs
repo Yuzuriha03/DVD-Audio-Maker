@@ -48,6 +48,10 @@ struct SetRequest {
     move_staged_isos: bool,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Each publication item independently tracks source ownership, backup creation, and commit state for rollback"
+)]
 struct Item {
     source: PathBuf,
     destination: PathBuf,
@@ -117,7 +121,11 @@ fn copy_verified(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-fn publish_set(request: SetRequest) -> Result<Value> {
+#[allow(
+    clippy::too_many_lines,
+    reason = "Set publication keeps staging, ordered commit, reverse rollback, and cleanup in one transaction"
+)]
+fn publish_set(request: &SetRequest) -> Result<Value> {
     let mut groups: Vec<(&str, usize)> = Vec::new();
     for file in &request.iso_files {
         if let Some(group) = groups
@@ -263,7 +271,7 @@ fn publish(source: &Path, directory: &Path, name: &str) -> Result<Value> {
 /// publication failures are encoded in the returned `Failure` field instead.
 pub fn dispatch(operation: &str, request: Value) -> std::result::Result<Value, String> {
     let result = if operation == "publish.set" {
-        publish_set(serde_json::from_value(request).map_err(|e| e.to_string())?)
+        publish_set(&serde_json::from_value(request).map_err(|e| e.to_string())?)
     } else {
         let source = Path::new(request["Source"].as_str().ok_or("Missing source")?);
         if operation == "publish.copy" {

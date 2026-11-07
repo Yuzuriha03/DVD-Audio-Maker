@@ -1,9 +1,4 @@
 //! Independent Rust checks against the frozen pre-migration audio host.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    reason = "Audio fixtures construct protocol-sized PCM and timestamp fields"
-)]
 use dvda_core::{audio, hash, media};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde::Deserialize;
@@ -97,16 +92,20 @@ fn digest(bytes: &[u8]) -> String {
 }
 fn wave(path: &Path, case: &Case) {
     let width = if case.bits == 16 { 2 } else { 3 };
+    let width32 = u32::try_from(width).unwrap();
+    let width16 = u16::try_from(width).unwrap();
     let mut data = Vec::new();
     for n in 0..case.frames {
         for channel in 0..usize::from(case.channels) {
-            let value = (((n * (97 + channel * 18) + channel * 53) % 100_001) as i32 - 50000)
+            let value = (i32::try_from((n * (97 + channel * 18) + channel * 53) % 100_001)
+                .unwrap()
+                - 50_000)
                 & !((1 << (24 - case.bits)) - 1);
             let stored = if width == 2 { value >> 8 } else { value };
             data.extend_from_slice(&stored.to_le_bytes()[..width]);
         }
     }
-    let size = data.len() as u32;
+    let size = u32::try_from(data.len()).unwrap();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"RIFF");
     bytes.extend_from_slice(&(60 + size + size % 2).to_le_bytes());
@@ -115,11 +114,11 @@ fn wave(path: &Path, case: &Case) {
     bytes.extend_from_slice(&0xfffeu16.to_le_bytes());
     bytes.extend_from_slice(&case.channels.to_le_bytes());
     bytes.extend_from_slice(&case.rate.to_le_bytes());
-    bytes.extend_from_slice(&(case.rate * u32::from(case.channels) * width as u32).to_le_bytes());
-    bytes.extend_from_slice(&(case.channels * width as u16).to_le_bytes());
-    bytes.extend_from_slice(&(width as u16 * 8).to_le_bytes());
+    bytes.extend_from_slice(&(case.rate * u32::from(case.channels) * width32).to_le_bytes());
+    bytes.extend_from_slice(&(case.channels * width16).to_le_bytes());
+    bytes.extend_from_slice(&(width16 * 8).to_le_bytes());
     bytes.extend_from_slice(&22u16.to_le_bytes());
-    bytes.extend_from_slice(&(case.bits as u16).to_le_bytes());
+    bytes.extend_from_slice(&(u16::try_from(case.bits).unwrap()).to_le_bytes());
     bytes.extend_from_slice(
         &[0u32, 4, 3, 7, 0x33, 0x37, 0x3f][usize::from(case.channels)].to_le_bytes(),
     );

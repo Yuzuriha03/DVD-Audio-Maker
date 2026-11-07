@@ -24,6 +24,10 @@ fn valid_filter(filter: &MlpPredictFilter, limit: u32) -> bool {
     filter.order <= limit && filter.coefficient.iter().all(|v| v.is_finite())
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Arithmetic right shift computes an i32-bounded quotient in i64 to preserve negative-value rounding"
+)]
 fn sar(value: i32, shift: u32) -> i32 {
     let divisor = 1i64 << shift;
     let v = i64::from(value);
@@ -40,6 +44,11 @@ pub(crate) enum PredictionOutcome {
     Fallback,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Prediction deliberately uses the reference f32 state and truncating quantized-filter conversions"
+)]
 pub(crate) fn mlp_predict_block(
     a: &mut MlpPredictFilter,
     mut b: Option<&mut MlpPredictFilter>,

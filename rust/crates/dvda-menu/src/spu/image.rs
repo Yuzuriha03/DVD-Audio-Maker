@@ -4,14 +4,6 @@
 //! order and integer arithmetic follow the C implementation so the encoded
 //! subpicture bytes stay identical.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    reason = "Subpicture coordinates, palette indices, and crop arithmetic intentionally mirror the bounded C implementation"
-)]
 use super::color::Color;
 use std::path::{Path, PathBuf};
 
@@ -103,14 +95,14 @@ impl Pict {
             color
         };
         if let Some(index) = self.pal.iter().position(|entry| *entry == color) {
-            self.img[at] = index as u8;
+            self.img[at] = u8::try_from(index).unwrap();
             return;
         }
         if self.pal.len() == 256 {
             self.img[at] = 0;
             return;
         }
-        self.img[at] = self.pal.len() as u8;
+        self.img[at] = u8::try_from(self.pal.len()).unwrap();
         self.pal.push(color);
     }
 
@@ -186,13 +178,13 @@ impl SubPicture {
         }
         for (index, entry) in self.masterpal[..self.numpal].iter().enumerate() {
             if entry.r == color.r && entry.g == color.g && entry.b == color.b {
-                return index as i32;
+                return i32::try_from(index).unwrap();
             }
         }
         assert!(self.numpal < 16, "master palette overflow");
         self.masterpal[self.numpal] = color;
         self.numpal += 1;
-        (self.numpal - 1) as i32
+        i32::try_from(self.numpal - 1).unwrap()
     }
 
     fn scan_pict(&mut self, pict: &mut Pict) {
@@ -251,14 +243,18 @@ impl SubPicture {
         self.crop_and_group()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Cropping, palette grouping, and button rectangle adjustment share one validated coordinate pass"
+    )]
     fn crop_and_group(&mut self) -> Result<(), String> {
-        if self.x0 >= MAXX as u32 || self.y0 >= MAXY as u32 {
+        if self.x0 >= u32::try_from(MAXX).unwrap() || self.y0 >= u32::try_from(MAXY).unwrap() {
             return Err("subpicture offset is outside the DVD frame".into());
         }
         let w = self.img.width;
         let h = self.img.height;
-        self.xd = w as u32;
-        self.yd = h as u32;
+        self.xd = u32::try_from(w).unwrap();
+        self.yd = u32::try_from(h).unwrap();
 
         if self.autooutline {
             self.detect_buttons();
@@ -322,7 +318,7 @@ impl SubPicture {
                 }
             }
             let slot = found.ok_or_else(|| "too many colors in base picture".to_string())?;
-            self.fimg[index] = slot as u8;
+            self.fimg[index] = u8::try_from(slot).unwrap();
         }
 
         // Minimal visual area, then crop the image and adjust the button rectangles.
@@ -338,7 +334,7 @@ impl SubPicture {
                     || self.sel.pal[self.sel.img[index] as usize].a != 0
                 {
                     if first_y0 == -1 {
-                        first_y0 = y as i32;
+                        first_y0 = i32::try_from(y).unwrap();
                     }
                     yd = y;
                     if x < x0 {
@@ -351,29 +347,31 @@ impl SubPicture {
             }
         }
         if first_y0 == -1 {
-            self.xd = w as u32;
-            self.yd = h as u32;
+            self.xd = u32::try_from(w).unwrap();
+            self.yd = u32::try_from(h).unwrap();
             return Ok(());
         }
-        let crop_x0 = (x0 as i32) & -2;
-        let crop_y0 = first_y0 & -2;
-        self.xd = ((xd as i32 + 2 - crop_x0) & -2) as u32;
-        self.yd = ((yd as i32 + 2 - crop_y0) & -2) as u32;
+        let crop_left = i32::try_from(x0).unwrap() & -2;
+        let crop_top = first_y0 & -2;
+        self.xd = ((i32::try_from(xd).unwrap() + 2 - crop_left) & -2).cast_unsigned();
+        self.yd = ((i32::try_from(yd).unwrap() + 2 - crop_top) & -2).cast_unsigned();
         let xd_usize = self.xd as usize;
         let yd_usize = self.yd as usize;
         for row in 0..yd_usize {
-            let source = row * w + crop_x0 as usize + crop_y0 as usize * w;
+            let source = row * w
+                + usize::try_from(crop_left).unwrap()
+                + usize::try_from(crop_top).unwrap() * w;
             self.fimg
                 .copy_within(source..source + xd_usize, row * xd_usize);
         }
         for button in &mut self.buttons {
-            button.r.x0 += self.x0 as i32;
-            button.r.y0 += self.y0 as i32;
-            button.r.x1 += self.x0 as i32;
-            button.r.y1 += self.y0 as i32;
+            button.r.x0 += self.x0.cast_signed();
+            button.r.y0 += self.y0.cast_signed();
+            button.r.x1 += self.x0.cast_signed();
+            button.r.y1 += self.y0.cast_signed();
         }
-        self.x0 = (self.x0 as i32 + crop_x0) as u32;
-        self.y0 = (self.y0 as i32 + crop_y0) as u32;
+        self.x0 = (self.x0.cast_signed() + crop_left).cast_unsigned();
+        self.y0 = (self.y0.cast_signed() + crop_top).cast_unsigned();
         Ok(())
     }
 
@@ -385,12 +383,12 @@ impl SubPicture {
                 if button.group <= 0 {
                     return Err(format!("button {index} has no group"));
                 }
-                (button.group - 1) as usize
+                usize::try_from(button.group - 1).unwrap()
             };
             let rect = self.buttons[index].r;
             for y in rect.y0..rect.y1 {
                 for x in rect.x0..rect.x1 {
-                    let at = (y * w as i32 + x) as usize;
+                    let at = usize::try_from(y * i32::try_from(w).unwrap() + x).unwrap();
                     let color = self.tricolor(at, useimg);
                     let slot = self.groupmap[group]
                         .iter()
@@ -398,10 +396,10 @@ impl SubPicture {
                         .ok_or_else(|| {
                             format!("button {index} cannot find color {color:06x} in group {group}")
                         })?;
-                    if self.fimg[at] != 255 && self.fimg[at] != slot as u8 {
+                    if self.fimg[at] != 255 && self.fimg[at] != u8::try_from(slot).unwrap() {
                         return Err("overlapping buttons".into());
                     }
-                    self.fimg[at] = slot as u8;
+                    self.fimg[at] = u8::try_from(slot).unwrap();
                 }
             }
         }
@@ -481,6 +479,13 @@ impl SubPicture {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::too_many_lines,
+        reason = "Button grouping mirrors the bounded C coordinate and palette arithmetic in one search"
+    )]
     fn pick_button_groups(&mut self, groups: usize, useimg: bool) -> bool {
         let buttons = self.buttons.len();
         let mut button_palettes = vec![[0i32; 4]; buttons];
@@ -637,6 +642,12 @@ impl SubPicture {
         false
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Button detection converts between validated raster indices and signed coordinates"
+    )]
     fn detect_buttons(&mut self) {
         let w = self.xd as usize;
         let h = self.yd as usize;
@@ -739,6 +750,11 @@ impl SubPicture {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Vertical scans preserve signed rectangle arithmetic and raster index conversion"
+    )]
     fn scan_vline(&self, visit: &[u8], rect: &Rect, x: i32, direction: i32) -> bool {
         let w = self.xd as i32;
         let h = self.yd as i32;
@@ -757,6 +773,11 @@ impl SubPicture {
         false
     }
 
+    #[expect(
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Horizontal scans preserve signed rectangle arithmetic and raster index conversion"
+    )]
     fn scan_hline(&self, visit: &[u8], rect: &Rect, y: i32, direction: i32) -> bool {
         let w = self.xd as i32;
         let h = self.yd as i32;
@@ -788,6 +809,10 @@ fn check_color(palette: &mut [i32; 4], count: &mut usize, color: i32) -> bool {
     true
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Direction scoring intentionally truncates the floating-point angle and distance like C"
+)]
 fn angle_between(a0: i32, a1: i32, b0: i32, b1: i32, distance: i32) -> (i32, i32) {
     if a1 > b0 && a0 < b1 {
         return (0, distance);

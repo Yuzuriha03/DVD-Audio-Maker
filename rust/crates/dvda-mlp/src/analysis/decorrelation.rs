@@ -1,4 +1,5 @@
 use crate::analysis::arithmetic::Extended as E;
+use crate::analysis::matrix::MlpMatrixPrimitive;
 
 #[derive(Clone, Debug, PartialEq)]
 #[repr(C)]
@@ -126,6 +127,10 @@ pub(crate) struct Decorrelation {
     reduced: [f64; 36],
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Decorrelated channel indices are bounded by six before storage in protocol-width fields"
+)]
 pub(crate) fn mlp_matrix_decorrelate(
     covariance: &[f64; 36],
     ratio: &[f64; 6],
@@ -240,6 +245,13 @@ pub(crate) struct MatrixSelection<'a> {
     pub bypass_bits: &'a mut u32,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    reason = "Positive matrix gains use the original truncating quantization, admitted sample counts use f64 scoring, and ordered primitive appends remain contiguous"
+)]
 pub(crate) fn mlp_matrix_select_append(args: MatrixSelection<'_>) -> Result<(), ()> {
     let MatrixSelection {
         covariance,
@@ -254,7 +266,6 @@ pub(crate) fn mlp_matrix_select_append(args: MatrixSelection<'_>) -> Result<(), 
         primitives,
         bypass_bits,
     } = args;
-    use crate::analysis::matrix::MlpMatrixPrimitive;
     if samples == 0
         || samples > i32::MAX as usize
         || !(1..=6).contains(&channels)

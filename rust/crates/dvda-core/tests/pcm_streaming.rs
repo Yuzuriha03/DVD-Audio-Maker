@@ -1,10 +1,4 @@
 //! Independent integer fixtures: no C# runner or codec DLL is needed.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "PCM fixtures intentionally construct signed samples and WAVE size fields"
-)]
 use dvda_core::pcm::{Job, normalize};
 use dvda_native::media::Callbacks;
 use std::{
@@ -75,10 +69,14 @@ fn fixture(
     } else {
         3
     };
+    let width32 = u32::try_from(width).unwrap();
+    let width16 = u16::try_from(width).unwrap();
     let mut data = Vec::new();
     for n in 0..frames {
         for channel in 0..usize::from(channels) {
-            let value = (((n * (97 + channel * 18) + channel * 53) % 100_001) as i32 - 50000)
+            let value = (i32::try_from((n * (97 + channel * 18) + channel * 53) % 100_001)
+                .unwrap()
+                - 50_000)
                 & !((1 << (24 - precision)) - 1);
             let stored = if wide {
                 value << 8
@@ -90,7 +88,7 @@ fn fixture(
             data.extend_from_slice(&stored.to_le_bytes()[..width]);
         }
     }
-    let size = data.len() as u32;
+    let size = u32::try_from(data.len()).unwrap();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"RIFF");
     bytes.extend_from_slice(&(60 + size + size % 2).to_le_bytes());
@@ -99,11 +97,11 @@ fn fixture(
     bytes.extend_from_slice(&0xfffeu16.to_le_bytes());
     bytes.extend_from_slice(&channels.to_le_bytes());
     bytes.extend_from_slice(&rate.to_le_bytes());
-    bytes.extend_from_slice(&(rate * u32::from(channels) * width as u32).to_le_bytes());
-    bytes.extend_from_slice(&(channels * width as u16).to_le_bytes());
-    bytes.extend_from_slice(&(width as u16 * 8).to_le_bytes());
+    bytes.extend_from_slice(&(rate * u32::from(channels) * width32).to_le_bytes());
+    bytes.extend_from_slice(&(channels * width16).to_le_bytes());
+    bytes.extend_from_slice(&(width16 * 8).to_le_bytes());
     bytes.extend_from_slice(&22u16.to_le_bytes());
-    bytes.extend_from_slice(&(stored_bits as u16).to_le_bytes());
+    bytes.extend_from_slice(&(u16::try_from(stored_bits).unwrap()).to_le_bytes());
     bytes.extend_from_slice(&mask.to_le_bytes());
     bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
     bytes.extend_from_slice(b"data");
@@ -133,17 +131,17 @@ fn complete_wav_matrix_including_wide_storage() {
                     .unwrap();
                     for target in [16, 20, 24] {
                         let result = normalize(
-                            job(&input, &output, rate as i32, target),
+                            job(&input, &output, i32::try_from(rate).unwrap(), target),
                             &mut Events::default(),
                         );
-                        if target < precision as i32 {
+                        if target < i32::try_from(precision).unwrap() {
                             assert_eq!(result.unwrap_err().kind, "InvalidData");
                             assert!(!output.exists());
                         } else {
                             let expected = fixture(
                                 rate,
                                 precision,
-                                target as u32,
+                                u32::try_from(target).unwrap(),
                                 channels,
                                 8193,
                                 mask,

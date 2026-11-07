@@ -41,6 +41,13 @@ pub(crate) fn inspect_jobs<R: Send>(
     )
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    reason = "Worker progress retains clamped floating-point per-mille values and ordered cancellation/result delivery"
+)]
 fn inspect_jobs_measured<R: Send>(
     jobs: &[audio::Job],
     callbacks: &mut dyn Callbacks,

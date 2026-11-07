@@ -1,16 +1,11 @@
-#![allow(
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    reason = "Option fixtures preserve native indices and owned JSON values"
-)]
 use dvda_core::{dispatch, options};
 use serde_json::{Value, json};
 
 fn evaluate(file: Value, environment: Value) -> Value {
     options::evaluate(options::Request {
         config_path: Some("C:/工作/settings.json".into()),
-        file_values: file.as_object().unwrap().clone(),
-        environment: environment.as_object().unwrap().clone(),
+        file_values: serde_json::from_value(file).unwrap(),
+        environment: serde_json::from_value(environment).unwrap(),
         defaults: options::defaults("C:/Local"),
         positive_sign: "+".into(),
         negative_sign: "-".into(),
@@ -123,7 +118,7 @@ fn option_ranges_sources_and_removed_branches() {
     assert_eq!(p["ResumeEnabled"]["Value"], false);
     assert_eq!(p["MenuEnabled"]["Value"], true);
     assert_eq!(
-        p["LossErrorSeconds"]["Value"].as_i64().unwrap() as u64,
+        u64::try_from(p["LossErrorSeconds"]["Value"].as_i64().unwrap()).unwrap(),
         0.05_f64.to_bits()
     );
 }

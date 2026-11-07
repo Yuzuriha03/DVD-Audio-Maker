@@ -1,9 +1,4 @@
 //! Bounded PE32+ reader used before packaging untrusted or stale build outputs.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::unreadable_literal,
-    reason = "PE fixtures construct fixed-width headers and bounded offsets"
-)]
 use std::collections::BTreeSet;
 
 pub fn imports_with_machine(
@@ -240,7 +235,7 @@ pub(crate) fn fixture(dll: bool, ordinary: &[&str], delay: &[&str]) -> Vec<u8> {
     b[148..150].copy_from_slice(&240u16.to_le_bytes());
     b[150..152].copy_from_slice(&(2u16 | if dll { 0x2000 } else { 0 }).to_le_bytes());
     b[152..154].copy_from_slice(&0x20bu16.to_le_bytes());
-    b[176..184].copy_from_slice(&0x140000000u64.to_le_bytes());
+    b[176..184].copy_from_slice(&0x0001_4000_0000_u64.to_le_bytes());
     b[212..216].copy_from_slice(&512u32.to_le_bytes());
     b[260..264].copy_from_slice(&16u32.to_le_bytes());
     b[404..408].copy_from_slice(&512u32.to_le_bytes());
@@ -253,16 +248,20 @@ pub(crate) fn fixture(dll: bool, ordinary: &[&str], delay: &[&str]) -> Vec<u8> {
         if names.is_empty() {
             continue;
         }
-        b[264 + index * 8..268 + index * 8].copy_from_slice(&(at as u32).to_le_bytes());
-        b[268 + index * 8..272 + index * 8]
-            .copy_from_slice(&(((names.len() + 1) * width) as u32).to_le_bytes());
+        b[264 + index * 8..268 + index * 8]
+            .copy_from_slice(&u32::try_from(at).unwrap().to_le_bytes());
+        b[268 + index * 8..272 + index * 8].copy_from_slice(
+            &u32::try_from((names.len() + 1) * width)
+                .unwrap()
+                .to_le_bytes(),
+        );
         for (i, name) in names.iter().enumerate() {
             let row = at + i * width;
             if index == 13 {
                 b[row..row + 4].copy_from_slice(&1u32.to_le_bytes());
             }
             b[row + name_offset..row + name_offset + 4]
-                .copy_from_slice(&(name_at as u32).to_le_bytes());
+                .copy_from_slice(&u32::try_from(name_at).unwrap().to_le_bytes());
             b[name_at..name_at + name.len()].copy_from_slice(name.as_bytes());
             name_at += name.len() + 1;
         }

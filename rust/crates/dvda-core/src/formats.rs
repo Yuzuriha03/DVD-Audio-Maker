@@ -14,6 +14,8 @@ struct IsoSource {
 }
 
 const ISO_SECTOR_SIZE: u64 = 2048;
+const ISO_SECTOR_USIZE: usize = 2048;
+const ISO_SECTOR_U16: u16 = 2048;
 
 fn read_sector(input: &mut (impl Read + Seek), lba: u64) -> Result<[u8; 2048], String> {
     let offset = lba
@@ -22,7 +24,7 @@ fn read_sector(input: &mut (impl Read + Seek), lba: u64) -> Result<[u8; 2048], S
     input
         .seek(SeekFrom::Start(offset))
         .map_err(|error| error.to_string())?;
-    let mut sector = [0; ISO_SECTOR_SIZE as usize];
+    let mut sector = [0; ISO_SECTOR_USIZE];
     input
         .read_exact(&mut sector)
         .map_err(|error| format!("ISO_SECTOR_OUT_OF_RANGE: {error}"))?;
@@ -82,6 +84,10 @@ fn udf_location(lba: u64) -> Result<u32, String> {
     u32::try_from(lba).map_err(|_| format!("UDF_DESCRIPTOR_OUT_OF_RANGE: LBA {lba}"))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "ISO/UDF validation keeps descriptor ordering and extent checks in one fail-fast sequence"
+)]
 fn verify_dvd_audio_filesystem_reader(
     input: &mut (impl Read + Seek),
     byte_length: u64,
@@ -99,8 +105,8 @@ fn verify_dvd_audio_filesystem_reader(
     {
         return Err("ISO_VOLUME_SPACE_MISMATCH: PVD size does not match the image".into());
     }
-    if u16::from_le_bytes(pvd[128..130].try_into().unwrap()) != ISO_SECTOR_SIZE as u16
-        || u16::from_be_bytes(pvd[130..132].try_into().unwrap()) != ISO_SECTOR_SIZE as u16
+    if u16::from_le_bytes(pvd[128..130].try_into().unwrap()) != ISO_SECTOR_U16
+        || u16::from_be_bytes(pvd[130..132].try_into().unwrap()) != ISO_SECTOR_U16
     {
         return Err("ISO_BLOCK_SIZE_INVALID: PVD logical block size is not 2048".into());
     }
@@ -237,7 +243,8 @@ impl IsoSource {
         if count > i32::MAX as usize {
             return Err("Requested ISO range exceeds the managed size limit".into());
         }
-        let available = self.length.saturating_sub(offset).min(count as u64) as usize;
+        let available = usize::try_from(self.length.saturating_sub(offset).min(count as u64))
+            .expect("available byte count is bounded by the requested usize");
         let mut buffer = vec![0; available];
         let mut file = self.file.borrow_mut();
         file.seek(SeekFrom::Start(offset))
@@ -277,20 +284,20 @@ impl IsoSource {
 /// An absent FLAC picture or unrecognized ALAC cookie returns JSON null instead.
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
-        "iso.info" => iso_info(request),
-        "iso.list" => iso_list(request),
-        "iso.entry" => iso_entry(request),
-        "iso.all_paths" => iso_all_paths(request),
-        "iso.data_lba" => iso_data_lba(request),
-        "iso.read_file" => iso_read_file(request),
-        "iso.extract" => iso_extract(request),
-        "iso.strip_version" => strip_version(request),
-        "wav.layout" => wav_layout(request),
+        "iso.info" => iso_info(&request),
+        "iso.list" => iso_list(&request),
+        "iso.entry" => iso_entry(&request),
+        "iso.all_paths" => iso_all_paths(&request),
+        "iso.data_lba" => iso_data_lba(&request),
+        "iso.read_file" => iso_read_file(&request),
+        "iso.extract" => iso_extract(&request),
+        "iso.strip_version" => strip_version(&request),
+        "wav.layout" => wav_layout(&request),
         "wav.normalize" => wav_normalize(request),
-        "flac.comments" => flac_comments(request),
-        "flac.picture" => flac_picture(request),
+        "flac.comments" => flac_comments(&request),
+        "flac.picture" => flac_picture(&request),
         "flac.replace_picture" => flac_replace_picture(request),
-        "alac.cookie" => alac_cookie(request),
+        "alac.cookie" => alac_cookie(&request),
         "alac.find_bad_frames" => alac_find_bad_frames(request),
         "alac.apply_patches" => alac_apply_patches(request),
         _ => Err(format!("Unsupported Rust format operation: {operation}")),
@@ -461,15 +468,15 @@ struct IsoInfo {
     volume_identifier: String,
 }
 
-fn iso_info(request: Value) -> Result<Value, String> {
+fn iso_info(request: &Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected ISO path")?;
     let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     serde_json::to_value(info).map_err(|error| error.to_string())
 }
 
-fn iso_list(request: Value) -> Result<Value, String> {
-    let (path, inner_path) = iso_request(&request)?;
+fn iso_list(request: &Value) -> Result<Value, String> {
+    let (path, inner_path) = iso_request(request)?;
     let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let Ok(entry) = iso_lookup(&bytes, &info, inner_path) else {
@@ -481,16 +488,16 @@ fn iso_list(request: Value) -> Result<Value, String> {
     Ok(json!(iso_parse_directory(&bytes, &info, &entry)?))
 }
 
-fn iso_entry(request: Value) -> Result<Value, String> {
-    let (path, inner_path) = iso_request(&request)?;
+fn iso_entry(request: &Value) -> Result<Value, String> {
+    let (path, inner_path) = iso_request(request)?;
     let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let entry = iso_lookup(&bytes, &info, inner_path).ok();
     serde_json::to_value(entry).map_err(|error| error.to_string())
 }
 
-fn iso_all_paths(request: Value) -> Result<Value, String> {
-    let (path, inner_path) = iso_request(&request)?;
+fn iso_all_paths(request: &Value) -> Result<Value, String> {
+    let (path, inner_path) = iso_request(request)?;
     let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let Ok(root) = iso_lookup(&bytes, &info, inner_path) else {
@@ -511,8 +518,8 @@ fn iso_all_paths(request: Value) -> Result<Value, String> {
     Ok(json!(output))
 }
 
-fn iso_data_lba(request: Value) -> Result<Value, String> {
-    let (path, inner_path) = iso_request(&request)?;
+fn iso_data_lba(request: &Value) -> Result<Value, String> {
+    let (path, inner_path) = iso_request(request)?;
     let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let entry = iso_lookup(&bytes, &info, inner_path)?;
@@ -521,8 +528,8 @@ fn iso_data_lba(request: Value) -> Result<Value, String> {
     ))
 }
 
-fn iso_read_file(request: Value) -> Result<Value, String> {
-    let (path, inner_path) = iso_request(&request)?;
+fn iso_read_file(request: &Value) -> Result<Value, String> {
+    let (path, inner_path) = iso_request(request)?;
     let bytes = IsoSource::open(path)?;
     let info = parse_iso_info(path, &bytes)?;
     let entry = iso_lookup(&bytes, &info, inner_path)?;
@@ -536,7 +543,7 @@ fn iso_read_file(request: Value) -> Result<Value, String> {
     Ok(json!({"DataHex": hex_encode(&bytes.read_at(offset as u64, entry.size as usize)?)}))
 }
 
-fn iso_extract(request: Value) -> Result<Value, String> {
+fn iso_extract(request: &Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected ISO extract request")?;
     let path = object
         .get("Path")
@@ -640,7 +647,7 @@ fn parse_iso_info(path: &str, bytes: &IsoSource) -> Result<IsoInfo, String> {
         }
         let mut sector_size = i32::from(u16_le(&sector[128..130])?);
         if sector_size == 0 {
-            sector_size = DEFAULT_SECTOR as i32;
+            sector_size = i32::try_from(DEFAULT_SECTOR).expect("default ISO sector size fits i32");
         }
         let root = &sector[156..190];
         return Ok(IsoInfo {
@@ -673,8 +680,10 @@ fn iso_parse_directory(
     while cursor < blob.len() {
         let length = blob[cursor] as usize;
         if length == 0 {
-            let next = ((cursor / info.sector_size as usize) + 1)
-                .checked_mul(info.sector_size as usize)
+            let sector_size =
+                usize::try_from(info.sector_size).expect("parsed ISO sector size is positive");
+            let next = ((cursor / sector_size) + 1)
+                .checked_mul(sector_size)
                 .ok_or("ISO directory sector overflow")?;
             if next <= cursor {
                 break;
@@ -774,7 +783,7 @@ fn iso_data_offset(info: &IsoInfo, entry: &IsoEntry) -> Result<usize, String> {
     let lba = u64::from(entry.logical_block_address)
         .checked_add(u64::from(entry.extended_attribute_blocks))
         .ok_or("ISO logical block address overflow")?;
-    lba.checked_mul(info.sector_size as u64)
+    lba.checked_mul(u64::try_from(info.sector_size).expect("parsed ISO sector size is positive"))
         .and_then(|value| usize::try_from(value).ok())
         .ok_or("ISO data offset overflow".into())
 }
@@ -790,7 +799,7 @@ fn strip_iso_version(value: &str) -> String {
     }
 }
 
-fn strip_version(request: Value) -> Result<Value, String> {
+fn strip_version(request: &Value) -> Result<Value, String> {
     let value = request.as_str().ok_or("Expected ISO file name")?;
     let Some(index) = value.rfind(';') else {
         return Ok(Value::String(value.to_owned()));
@@ -818,7 +827,7 @@ pub struct WavLayout {
     pub channel_mask: u32,
 }
 
-fn wav_layout(request: Value) -> Result<Value, String> {
+fn wav_layout(request: &Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected WAVE path")?;
     let layout = read_wav_layout(path)?;
     serde_json::to_value(layout).map_err(|error| error.to_string())
@@ -876,6 +885,10 @@ impl std::error::Error for WavError {}
 /// integer RIFF/WAVE input, unrepresentable data sizes/offsets, empty audio,
 /// unsupported DVD-Audio sample-rate/channel combinations, or a channel mask
 /// whose set-bit count differs from the channel count.
+///
+/// # Panics
+/// Supported WAVE storage encodings contain at most four bytes per sample, so
+/// the internal bits-per-sample conversion expectation cannot fail.
 pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout, WavError> {
     let reader = dvda_audio::wav::Reader::new_integer_riff(input).map_err(|error| {
         if error.kind() == std::io::ErrorKind::InvalidData {
@@ -885,7 +898,8 @@ pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout,
         }
     })?;
     let format = reader.format;
-    let bits = (format.encoding.bytes() * 8) as i32;
+    let bits = i32::try_from(format.encoding.bytes() * 8)
+        .expect("supported WAVE storage width has at most 32 bits");
     let valid = i32::from(format.valid_bits);
     let channels = i32::from(format.channels);
     let rate = i32::try_from(format.sample_rate).map_err(|_| WavError::Overflow)?;
@@ -912,7 +926,7 @@ pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout,
             _ => 0,
         };
     }
-    if mask.count_ones() != channels as u32 {
+    if mask.count_ones() != channels.cast_unsigned() {
         return Err("WAVE channel mask does not match the channel count.".into());
     }
     Ok(WavLayout {
@@ -927,7 +941,7 @@ pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout,
     })
 }
 
-fn flac_comments(request: Value) -> Result<Value, String> {
+fn flac_comments(request: &Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected FLAC path")?;
     let document = read_flac(path)?;
     let block = document
@@ -958,7 +972,7 @@ fn flac_comments(request: Value) -> Result<Value, String> {
     Ok(Value::Array(comments))
 }
 
-fn flac_picture(request: Value) -> Result<Value, String> {
+fn flac_picture(request: &Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected FLAC path")?;
     let document = read_flac(path)?;
     let Some((_, data)) = document.iter().find(|(kind, _)| *kind == 6) else {
@@ -1064,9 +1078,8 @@ fn flac_replace_picture(request: Value) -> Result<Value, String> {
                     0
                 },
         );
-        output.push((data.len() >> 16) as u8);
-        output.push((data.len() >> 8) as u8);
-        output.push(data.len() as u8);
+        let length = u32::try_from(data.len()).expect("24-bit FLAC metadata length was validated");
+        output.extend_from_slice(&length.to_be_bytes()[1..]);
         output.extend_from_slice(data);
     }
     if audio_offset > source.len() {
@@ -1113,7 +1126,7 @@ fn build_picture_payload(template: &FlacPictureTemplate, image: &[u8]) -> Result
         .and_then(|value| value.checked_add(image.len()))
         .ok_or("FLAC PICTURE payload is too large")?;
     let mut output = Vec::with_capacity(total);
-    push_u32_be(&mut output, descriptor.picture_type as u32);
+    push_u32_be(&mut output, descriptor.picture_type.cast_unsigned());
     push_u32_be(
         &mut output,
         mime.len().try_into().map_err(|_| "MIME is too large")?,
@@ -1127,10 +1140,10 @@ fn build_picture_payload(template: &FlacPictureTemplate, image: &[u8]) -> Result
             .map_err(|_| "Description is too large")?,
     );
     output.extend_from_slice(description);
-    push_u32_be(&mut output, descriptor.width as u32);
-    push_u32_be(&mut output, descriptor.height as u32);
-    push_u32_be(&mut output, descriptor.depth as u32);
-    push_u32_be(&mut output, template.colors as u32);
+    push_u32_be(&mut output, descriptor.width.cast_unsigned());
+    push_u32_be(&mut output, descriptor.height.cast_unsigned());
+    push_u32_be(&mut output, descriptor.depth.cast_unsigned());
+    push_u32_be(&mut output, template.colors.cast_unsigned());
     push_u32_be(
         &mut output,
         image.len().try_into().map_err(|_| "Image is too large")?,
@@ -1152,7 +1165,7 @@ fn unique_suffix() -> String {
     format!("{value:x}")
 }
 
-fn alac_cookie(request: Value) -> Result<Value, String> {
+fn alac_cookie(request: &Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected ALAC cookie request")?;
     let hex = object
         .get("DataHex")
@@ -1350,8 +1363,8 @@ mod dvd_audio_filesystem_tests {
     const SECTORS: usize = 300;
 
     fn set_udf_tag(image: &mut [u8], lba: usize, id: u16, location: u32) {
-        let start = lba * ISO_SECTOR_SIZE as usize;
-        let descriptor = &mut image[start..start + ISO_SECTOR_SIZE as usize];
+        let start = lba * ISO_SECTOR_USIZE;
+        let descriptor = &mut image[start..start + ISO_SECTOR_USIZE];
         descriptor[..2].copy_from_slice(&id.to_le_bytes());
         descriptor[2..4].copy_from_slice(&2u16.to_le_bytes());
         descriptor[6..8].copy_from_slice(&1u16.to_le_bytes());
@@ -1366,38 +1379,39 @@ mod dvd_audio_filesystem_tests {
     }
 
     fn fixture() -> Vec<u8> {
-        let mut image = vec![0; SECTORS * ISO_SECTOR_SIZE as usize];
-        let pvd = &mut image[16 * ISO_SECTOR_SIZE as usize..17 * ISO_SECTOR_SIZE as usize];
+        let mut image = vec![0; SECTORS * ISO_SECTOR_USIZE];
+        let pvd = &mut image[16 * ISO_SECTOR_USIZE..17 * ISO_SECTOR_USIZE];
         pvd[0] = 1;
         pvd[1..6].copy_from_slice(b"CD001");
         pvd[6] = 1;
-        pvd[80..84].copy_from_slice(&(SECTORS as u32).to_le_bytes());
-        pvd[84..88].copy_from_slice(&(SECTORS as u32).to_be_bytes());
-        pvd[128..130].copy_from_slice(&(ISO_SECTOR_SIZE as u16).to_le_bytes());
-        pvd[130..132].copy_from_slice(&(ISO_SECTOR_SIZE as u16).to_be_bytes());
+        let sector_count = u32::try_from(SECTORS).expect("fixture sector count fits u32");
+        pvd[80..84].copy_from_slice(&sector_count.to_le_bytes());
+        pvd[84..88].copy_from_slice(&sector_count.to_be_bytes());
+        pvd[128..130].copy_from_slice(&(ISO_SECTOR_U16).to_le_bytes());
+        pvd[130..132].copy_from_slice(&(ISO_SECTOR_U16).to_be_bytes());
         pvd[156] = 34;
         pvd[181] = 2;
         pvd[184..186].copy_from_slice(&1u16.to_le_bytes());
         pvd[186..188].copy_from_slice(&1u16.to_be_bytes());
         pvd[881] = 1;
 
-        let terminator = &mut image[17 * ISO_SECTOR_SIZE as usize..18 * ISO_SECTOR_SIZE as usize];
+        let terminator = &mut image[17 * ISO_SECTOR_USIZE..18 * ISO_SECTOR_USIZE];
         terminator[0] = 255;
         terminator[1..6].copy_from_slice(b"CD001");
         terminator[6] = 1;
         for (lba, id) in [(18, b"BEA01".as_slice()), (19, b"NSR02"), (20, b"TEA01")] {
-            let start = lba * ISO_SECTOR_SIZE as usize;
+            let start = lba * ISO_SECTOR_USIZE;
             image[start] = 0;
             image[start + 1..start + 6].copy_from_slice(id);
         }
-        let anchor = &mut image[256 * ISO_SECTOR_SIZE as usize..257 * ISO_SECTOR_SIZE as usize];
+        let anchor = &mut image[256 * ISO_SECTOR_USIZE..257 * ISO_SECTOR_USIZE];
         anchor[..2].copy_from_slice(&2u16.to_le_bytes());
         for (length_at, location_at, location) in [(16, 20, 32u32), (24, 28, 48u32)] {
             anchor[length_at..length_at + 4].copy_from_slice(&(6 * 2048u32).to_le_bytes());
             anchor[location_at..location_at + 4].copy_from_slice(&location.to_le_bytes());
         }
         set_udf_tag(&mut image, 256, 2, 256);
-        let end_anchor = 299 * ISO_SECTOR_SIZE as usize;
+        let end_anchor = 299 * ISO_SECTOR_USIZE;
         for (length_at, location_at, location) in [(16, 20, 32u32), (24, 28, 48u32)] {
             image[end_anchor + length_at..end_anchor + length_at + 4]
                 .copy_from_slice(&(6 * 2048u32).to_le_bytes());
@@ -1405,15 +1419,20 @@ mod dvd_audio_filesystem_tests {
                 .copy_from_slice(&location.to_le_bytes());
         }
         set_udf_tag(&mut image, 299, 2, 299);
-        let partition = 34 * ISO_SECTOR_SIZE as usize;
+        let partition = 34 * ISO_SECTOR_USIZE;
         image[partition + 188..partition + 192].copy_from_slice(&257u32.to_le_bytes());
         image[partition + 192..partition + 196].copy_from_slice(&42u32.to_le_bytes());
-        let logical = 35 * ISO_SECTOR_SIZE as usize;
+        let logical = 35 * ISO_SECTOR_USIZE;
         image[logical + 432..logical + 436].copy_from_slice(&(2 * 2048u32).to_le_bytes());
         image[logical + 436..logical + 440].copy_from_slice(&64u32.to_le_bytes());
         for (vds, ids) in [(32, [1u16, 4, 5, 6, 7, 8]), (48, [1, 4, 5, 6, 7, 8])] {
             for (index, id) in ids.into_iter().enumerate() {
-                set_udf_tag(&mut image, vds + index, id, (vds + index) as u32);
+                set_udf_tag(
+                    &mut image,
+                    vds + index,
+                    id,
+                    u32::try_from(vds + index).expect("fixture LBA fits u32"),
+                );
             }
         }
         set_udf_tag(&mut image, 64, 9, 64);
@@ -1435,7 +1454,7 @@ mod dvd_audio_filesystem_tests {
     #[test]
     fn rejects_incorrect_pvd_root_record_and_volume_size() {
         let mut image = fixture();
-        image[16 * ISO_SECTOR_SIZE as usize + 181] = 1;
+        image[16 * ISO_SECTOR_USIZE + 181] = 1;
         assert!(
             verify(&image)
                 .unwrap_err()
@@ -1443,7 +1462,7 @@ mod dvd_audio_filesystem_tests {
         );
 
         let mut image = fixture();
-        image[16 * ISO_SECTOR_SIZE as usize + 80..16 * ISO_SECTOR_SIZE as usize + 84]
+        image[16 * ISO_SECTOR_USIZE + 80..16 * ISO_SECTOR_USIZE + 84]
             .copy_from_slice(&256u32.to_le_bytes());
         assert!(
             verify(&image)
@@ -1455,8 +1474,7 @@ mod dvd_audio_filesystem_tests {
     #[test]
     fn rejects_missing_udf_markers_anchor_and_out_of_range_descriptor_extents() {
         let mut image = fixture();
-        image[19 * ISO_SECTOR_SIZE as usize + 1..19 * ISO_SECTOR_SIZE as usize + 6]
-            .copy_from_slice(b"NSR01");
+        image[19 * ISO_SECTOR_USIZE + 1..19 * ISO_SECTOR_USIZE + 6].copy_from_slice(b"NSR01");
         assert!(
             verify(&image)
                 .unwrap_err()
@@ -1464,7 +1482,7 @@ mod dvd_audio_filesystem_tests {
         );
 
         let mut image = fixture();
-        image[256 * ISO_SECTOR_SIZE as usize..256 * ISO_SECTOR_SIZE as usize + 2]
+        image[256 * ISO_SECTOR_USIZE..256 * ISO_SECTOR_USIZE + 2]
             .copy_from_slice(&0u16.to_le_bytes());
         assert!(
             verify(&image)
@@ -1473,7 +1491,7 @@ mod dvd_audio_filesystem_tests {
         );
 
         let mut image = fixture();
-        let location = 256 * ISO_SECTOR_SIZE as usize + 20;
+        let location = 256 * ISO_SECTOR_USIZE + 20;
         image[location..location + 4].copy_from_slice(&u32::MAX.to_le_bytes());
         set_udf_tag(&mut image, 256, 2, 256);
         assert!(

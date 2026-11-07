@@ -1,12 +1,4 @@
 //! Real command/ISO regressions for the independent migration recheck R01-R05.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::unreadable_literal,
-    reason = "Recheck fixtures intentionally construct MPEG timestamps and deterministic WAVE data"
-)]
 use dvda_core::{formats, media};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde_json::{Value, json};
@@ -88,7 +80,7 @@ fn has(value: &Value, code: &str) -> bool {
         .iter()
         .any(|issue| issue["Code"] == code)
 }
-fn write_profile(root: &Path, values: Value) -> PathBuf {
+fn write_profile(root: &Path, values: &Value) -> PathBuf {
     let path = root.join("settings.json");
     fs::write(
         &path,
@@ -133,17 +125,18 @@ impl Fixture {
             wav.extend(16u32.to_le_bytes());
             wav.extend(1u16.to_le_bytes());
             wav.extend(2u16.to_le_bytes());
-            wav.extend(48000u32.to_le_bytes());
-            wav.extend(192000u32.to_le_bytes());
+            wav.extend(48_000u32.to_le_bytes());
+            wav.extend(192_000u32.to_le_bytes());
             wav.extend(4u16.to_le_bytes());
             wav.extend(16u16.to_le_bytes());
             wav.extend(b"data");
             wav.extend(size.to_le_bytes());
             for frame in 0..frames {
                 for channel in 0..2 {
-                    let sample =
-                        ((frame * (97 + channel * 18) + track * 53) % 60001) as i32 - 30000;
-                    wav.extend((sample as i16).to_le_bytes());
+                    let sample = i32::try_from((frame * (97 + channel * 18) + track * 53) % 60_001)
+                        .unwrap()
+                        - 30_000;
+                    wav.extend(i16::try_from(sample).unwrap().to_le_bytes());
                 }
             }
             let input = root.join("input.wav");
@@ -182,7 +175,7 @@ impl Fixture {
         let out = root.join("out");
         let profile = write_profile(
             root,
-            json!({
+            &json!({
                 "DVDA_SRC":src, "DVDA_BUILD_DIR":work, "DVDA_FINAL_DIR":out,
                 "DVDA_TITLE":"Verification recheck", "DVDA_ISO_PREFIX":"check",
                 "DVDA_MLP_SOURCE":"lpcm", "DVDA_MENU":"off", "DVDA_TITLE_MODE":"1",
@@ -266,13 +259,14 @@ impl Fixture {
                 let old = dvda_core::aob::sector_pts(sector, true).unwrap();
                 assert!(old >= 0);
                 if let Some(value) = change(count, old) {
-                    let pts = value as u64;
+                    let pts = u64::try_from(value).unwrap();
+                    let low_byte = |value: u64| value.to_le_bytes()[0];
                     sector[marker + 9..marker + 14].copy_from_slice(&[
-                        0x21 | (((pts >> 30) as u8 & 7) << 1),
-                        (pts >> 22) as u8,
-                        1 | (((pts >> 15) as u8 & 127) << 1),
-                        (pts >> 7) as u8,
-                        1 | ((pts as u8 & 127) << 1),
+                        0x21 | ((low_byte(pts >> 30) & 7) << 1),
+                        low_byte(pts >> 22),
+                        1 | ((low_byte(pts >> 15) & 127) << 1),
+                        low_byte(pts >> 7),
+                        1 | ((low_byte(pts) & 127) << 1),
                     ]);
                 } else {
                     sector[marker + 7] &= !0x80;
@@ -327,7 +321,7 @@ fn formal_timeline_and_all_check_pts_statistics_and_legal_title_resets() {
     }
     // Monotone, advancing timestamps with frequent zero steps independently
     // exercise the abnormal ratio check without the constant-clock check.
-    fixture.rewrite_pts(|index, _| Some((index / 2 * 900) as i64));
+    fixture.rewrite_pts(|index, _| Some(i64::try_from(index / 2 * 900).unwrap()));
     for mode in ["timeline", "all"] {
         let result = fixture.verify(mode, 1);
         assert!(has(&result, "PTS_ABNORMAL_RATIO"), "{result}");
@@ -417,7 +411,7 @@ fn explicit_verification_material_paths_must_exist() {
     let root = Scratch::new();
     let profile = write_profile(
         &root.0,
-        json!({"DVDA_FINAL_DIR":root.0,"DVDA_ISO_PREFIX":"check"}),
+        &json!({"DVDA_FINAL_DIR":root.0,"DVDA_ISO_PREFIX":"check"}),
     );
     for mode in ["quick-check", "audit", "verify"] {
         for option in ["--manifest", "--log", "--iso-dir"] {

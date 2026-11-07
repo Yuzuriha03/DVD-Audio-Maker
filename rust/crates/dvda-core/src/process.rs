@@ -84,6 +84,13 @@ impl Lines {
         Ok(())
     }
 }
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public typed process adapter retains its owned-job API"
+)]
+/// # Panics
+/// Process output is captured only for stream identifiers zero and one, so the
+/// internal stream-index conversion expectation cannot fail.
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     let start = Instant::now();
     let mut callbacks = Timed::new(caller, job.timeout_millis);
@@ -127,7 +134,10 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
                         captured[stream].push_str(line);
                         captured[stream].push_str("\r\n");
                     }
-                    callbacks.emit(stream as i32 + 1, line);
+                    callbacks.emit(
+                        i32::try_from(stream).expect("process has exactly two output streams") + 1,
+                        line,
+                    );
                 };
                 match child.read(stream, &mut buffer)? {
                     ReadState::Data(count) => {

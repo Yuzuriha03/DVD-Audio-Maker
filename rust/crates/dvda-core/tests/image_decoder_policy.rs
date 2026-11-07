@@ -1,9 +1,4 @@
 //! Explicit frozen-oracle comparison of menu decoder policies.
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::too_many_lines,
-    reason = "Image policy fixtures retain diagnostic floating-point ratios and complete decoder matrices"
-)]
 use dvda_native::{images::Images, media::Callbacks};
 use std::{fs, io::Cursor, path::PathBuf};
 
@@ -27,6 +22,11 @@ impl Drop for Temporary {
 
 #[test]
 #[ignore = "requires an explicit frozen Windows x64 image oracle and external CMYK ICC profile"]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    reason = "The ignored decoder matrix uses approximate diagnostic ratios and ordered color/frame cases"
+)]
 fn decoder_color_and_first_frame_policies() {
     let oracle = PathBuf::from(
         std::env::var_os("DVDA_IMAGE_NATIVE_DIR").expect("Set DVDA_IMAGE_NATIVE_DIR"),

@@ -1,8 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    reason = "Scrollbar geometry intentionally converts bounded floating-point ratios to native pixels"
-)]
 //! The custom 10-DIP scrollbars of the settings page and the log.
 
 use super::{
@@ -30,6 +25,10 @@ pub(crate) struct BarGeometry {
     thumb_height: i32,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Scrollbar ratios intentionally truncate fractional thumb heights and positions to native pixels"
+)]
 pub(crate) fn bar_geometry(client_height: i32, metrics: &BarMetrics) -> BarGeometry {
     let pad = scale(2).max(1);
     let track_top = pad;
@@ -76,7 +75,10 @@ pub(crate) fn page_bar_metrics(state: &PaintFields) -> BarMetrics {
     let page_height = (rect.bottom - rect.top).max(1);
     let content = page_content_height(page);
     let max = (content - page_height).max(0);
-    let value = (GetWindowLongPtrW(page, GWLP_USERDATA) as i32).clamp(0, max);
+    let value = (u32::try_from(GetWindowLongPtrW(page, GWLP_USERDATA) & 0xffff_ffff)
+        .unwrap()
+        .cast_signed())
+    .clamp(0, max);
     BarMetrics {
         value,
         max,
@@ -85,8 +87,14 @@ pub(crate) fn page_bar_metrics(state: &PaintFields) -> BarMetrics {
 }
 
 pub(crate) fn log_bar_metrics(log: Hwnd) -> BarMetrics {
-    let total = (win::send_int(log, EM_GETLINECOUNT, 0, 0) as i32).max(1);
-    let first = (win::send_int(log, EM_GETFIRSTVISIBLELINE, 0, 0) as i32).max(0);
+    let total = (u32::try_from(win::send_int(log, EM_GETLINECOUNT, 0, 0) & 0xffff_ffff)
+        .unwrap()
+        .cast_signed())
+    .max(1);
+    let first = (u32::try_from(win::send_int(log, EM_GETFIRSTVISIBLELINE, 0, 0) & 0xffff_ffff)
+        .unwrap()
+        .cast_signed())
+    .max(0);
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -220,6 +228,10 @@ pub(crate) unsafe fn draw_scrollbar(hwnd: Hwnd) {
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
 /// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps capture, drag, hover and destruction messages in one scrollbar lifecycle"
+)]
 pub(crate) unsafe extern "system" fn scrollbar_proc(
     hwnd: Hwnd,
     message: u32,
@@ -246,7 +258,11 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
             {
                 GetClientRect(hwnd, &mut rect);
             }
-            let y = i32::from((lparam >> 16) as i16);
+            let y = i32::from(
+                u16::try_from((lparam >> 16) & 0xffff)
+                    .unwrap()
+                    .cast_signed(),
+            );
             let main = unsafe { (*pointer).main };
             let mut geometry = None;
             if let Some(state) = paint_fields(main) {
@@ -259,6 +275,10 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
                         let travel = (geometry.track_height - geometry.thumb_height).max(0);
                         if travel > 0 && metrics.max > 0 {
                             let delta = y - (*pointer).drag_start_cursor;
+                            #[allow(
+                                clippy::cast_possible_truncation,
+                                reason = "Drag distance intentionally truncates fractional scroll units to the existing signed pixel result"
+                            )]
                             let value = (*pointer).drag_start_value
                                 + (f64::from(delta) * f64::from(metrics.max) / f64::from(travel))
                                     as i32;
@@ -270,7 +290,7 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
                 if !(*pointer).hover {
                     (*pointer).hover = true;
                     let mut track = TrackMouseEventData {
-                        size: std::mem::size_of::<TrackMouseEventData>() as u32,
+                        size: u32::try_from(std::mem::size_of::<TrackMouseEventData>()).unwrap(),
                         flags: TME_LEAVE,
                         track: hwnd,
                         hover_time: 0,
@@ -300,7 +320,11 @@ pub(crate) unsafe extern "system" fn scrollbar_proc(
             {
                 GetClientRect(hwnd, &mut rect);
             }
-            let y = i32::from((lparam >> 16) as i16);
+            let y = i32::from(
+                u16::try_from((lparam >> 16) & 0xffff)
+                    .unwrap()
+                    .cast_signed(),
+            );
             let main = unsafe { (*pointer).main };
             if let Some(state) = paint_fields(main) {
                 let metrics = scrollbar_metrics(hwnd, &state);
@@ -397,7 +421,9 @@ pub(crate) unsafe fn refresh_dynamic_indicators(state: &UiState) {
         if pointer.is_null() {
             continue;
         }
-        let mut index = win::send_int(combo, CB_GETCURSEL, 0, 0) as i32;
+        let mut index = u32::try_from(win::send_int(combo, CB_GETCURSEL, 0, 0) & 0xffff_ffff)
+            .unwrap()
+            .cast_signed();
         if index < 0 {
             index = -1;
         }

@@ -1,7 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "SAMG tables preserve checked sector and group field widths"
-)]
 #[derive(Clone, Copy, Debug)]
 pub struct Track {
     pub mlp: bool,
@@ -53,8 +49,9 @@ pub fn encode(groups: &[Vec<Track>], layout: &Layout) -> Result<(Vec<u8>, u32), 
     }
     let mut bytes = vec![0; size];
     bytes[..12].copy_from_slice(b"DVDAUDIOSAPP");
-    bytes[12..14]
-        .copy_from_slice(&((count + usize::from(layout.video_link_tracks)) as u16).to_be_bytes());
+    let total_tracks = u16::try_from(count + usize::from(layout.video_link_tracks))
+        .map_err(|_| "SAMG track table exceeds matrix capacity")?;
+    bytes[12..14].copy_from_slice(&total_tracks.to_be_bytes());
     bytes[14..16].copy_from_slice(&0x12_u16.to_be_bytes());
     let mut absolute = layout
         .start_sector
@@ -65,11 +62,11 @@ pub fn encode(groups: &[Vec<Track>], layout: &Layout) -> Result<(Vec<u8>, u32), 
         .wrapping_add(u32::from(layout.atsi_sectors[0]));
     let mut last = 0;
     let mut position = 16;
-    for (group_index, tracks) in groups.iter().enumerate() {
+    for ((group_index, tracks), group_number) in groups.iter().enumerate().zip(1u8..) {
         if tracks.is_empty() || tracks.len() > 255 {
             return Err("SAMG groups require 1–255 tracks".into());
         }
-        for (track_index, track) in tracks.iter().enumerate() {
+        for ((track_index, track), track_number) in tracks.iter().enumerate().zip(1u8..=255) {
             let bits = match track.bits {
                 16 => 0,
                 20 => 1,
@@ -85,8 +82,8 @@ pub fn encode(groups: &[Vec<Track>], layout: &Layout) -> Result<(Vec<u8>, u32), 
                 176_400 => 10,
                 _ => return Err("Unsupported sample rate".into()),
             };
-            bytes[position + 2] = (group_index + 1) as u8;
-            bytes[position + 3] = (track_index + 1) as u8;
+            bytes[position + 2] = group_number;
+            bytes[position + 3] = track_number;
             put32(&mut bytes, position + 4, track.first_pts);
             put32(&mut bytes, position + 8, track.pts_length);
             bytes[position + 16] = match (track_index == 0, track.mlp, track.channels > 2) {

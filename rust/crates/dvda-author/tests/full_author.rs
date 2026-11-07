@@ -1,8 +1,4 @@
 //! Exercise the public entry and independently read its ISO directory records.
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "The authoring fixture constructs fixed-size protocol fields"
-)]
 use dvda_author::{Callbacks, Silent, command, menu};
 use std::{
     fs,
@@ -76,7 +72,11 @@ fn wav(path: &Path, channels: u16, samples: u32) {
     bytes.extend(b"data");
     bytes.extend(size.to_le_bytes());
     for index in 0..samples * u32::from(channels) {
-        bytes.extend((index as i16).wrapping_mul(37).to_le_bytes());
+        bytes.extend(
+            (i16::from_le_bytes(index.to_le_bytes()[..2].try_into().unwrap()))
+                .wrapping_mul(37)
+                .to_le_bytes(),
+        );
     }
     fs::write(path, bytes).unwrap();
 }

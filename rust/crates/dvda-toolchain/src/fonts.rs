@@ -2,14 +2,6 @@
 //!
 //! This is a Rust port of the former `FontTool`, kept in the developer tool rather
 //! than the application C17 DLL because no runtime font parsing API is needed.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::items_after_statements,
-    clippy::struct_excessive_bools,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::unreadable_literal,
-    reason = "OpenType fixtures and diagnostics preserve format-width fields and explicit font capability flags"
-)]
 use dvda_core::hash::sha256;
 use std::{
     collections::{HashMap, HashSet},
@@ -31,6 +23,10 @@ const CHECKSUM_MAGIC: u32 = 0xb1b0_afba;
 const REPRESENTATIVES: [u32; 4] = [0x6c49, 0x3042, 0xac00, 0x41];
 
 #[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Public font diagnostics expose five independent coverage and checksum flags; grouping them would change the API"
+)]
 pub struct FontFaceInspection {
     pub family_name: String,
     pub post_script_name: String,
@@ -48,6 +44,8 @@ pub struct ExtractedFontFace {
     pub post_script_name: String,
     pub output_path: PathBuf,
 }
+
+type SharedTables = HashMap<([u8; 4], [u8; 32]), (usize, Vec<u8>)>;
 
 #[derive(Debug, Clone)]
 struct Table {
@@ -118,11 +116,16 @@ fn checksum(data: &[u8]) -> u32 {
         sum.wrapping_add(u32::from_be_bytes(word))
     })
 }
-fn required<'a>(face: &'a Face, tag: &[u8; 4]) -> Result<&'a Table, String> {
+fn required(face: &Face, tag: [u8; 4]) -> Result<&Table, String> {
     face.tables
         .iter()
-        .find(|table| &table.tag == tag)
-        .ok_or_else(|| format!("Font is missing the {} table", String::from_utf8_lossy(tag)))
+        .find(|table| table.tag == tag)
+        .ok_or_else(|| {
+            format!(
+                "Font is missing the {} table",
+                String::from_utf8_lossy(&tag)
+            )
+        })
 }
 fn table_bytes<'a>(data: &'a [u8], table: &Table) -> Result<&'a [u8], String> {
     range(
@@ -225,7 +228,7 @@ fn parse_face(data: &[u8], offset: usize) -> Result<Face, String> {
         family: String::new(),
         post_script: String::new(),
     };
-    let (family, post_script) = read_names(table_bytes(data, required(&face, b"name")?)?)?;
+    let (family, post_script) = read_names(table_bytes(data, required(&face, *b"name")?)?)?;
     face.family = family;
     face.post_script = post_script;
     // Validate every supported mapping, even if an earlier subtable has all four
@@ -276,7 +279,7 @@ fn format12(data: &[u8], coverage: &mut [bool; 4]) -> Result<(), String> {
         let end = u32_at(data, group + 4)?;
         let glyph = u32_at(data, group + 8)?;
         if start > end
-            || end > 0x10ffff
+            || end > 0x0010_ffff
             || previous_end.is_some_and(|previous| start <= previous)
             || glyph.checked_add(end - start).is_none()
         {
@@ -333,7 +336,9 @@ fn format4(data: &[u8], coverage: &mut [bool; 4]) -> Result<(), String> {
                 continue;
             }
             let glyph = if relative == 0 {
-                (*point as u16).wrapping_add(delta)
+                u16::try_from(*point)
+                    .expect("format 4 representative fits u16")
+                    .wrapping_add(delta)
             } else {
                 let raw = u16_at(
                     data,
@@ -351,7 +356,7 @@ fn format4(data: &[u8], coverage: &mut [bool; 4]) -> Result<(), String> {
 }
 
 fn coverage(data: &[u8], face: &Face) -> Result<[bool; 4], String> {
-    let cmap = table_bytes(data, required(face, b"cmap")?)?;
+    let cmap = table_bytes(data, required(face, *b"cmap")?)?;
     range(cmap, 0, 4, "cmap header")?;
     let count = u16_at(cmap, 2)? as usize;
     range(cmap, 4, count * 8, "cmap encoding records")?;
@@ -646,7 +651,6 @@ fn pack_bytes(sources: &[Vec<u8>]) -> Result<Vec<u8>, String> {
         directories.push(length);
         length = grow(length, 12 + face.tables.len() * 16)?;
     }
-    type SharedTables = HashMap<([u8; 4], [u8; 32]), (usize, Vec<u8>)>;
     let mut shared: SharedTables = HashMap::new();
     let mut all_offsets = Vec::new();
     for (source, face) in sources.iter().zip(&faces) {
@@ -771,6 +775,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    use std::os::windows::fs::OpenOptionsExt;
 
     struct Scratch(PathBuf);
     impl Scratch {
@@ -809,8 +815,8 @@ mod tests {
             put16(&mut data, record + 2, 1);
             put16(&mut data, record + 4, 0x409);
             put16(&mut data, record + 6, id);
-            put16(&mut data, record + 8, bytes.len() as u16);
-            put16(&mut data, record + 10, offset as u16);
+            put16(&mut data, record + 8, u16::try_from(bytes.len()).unwrap());
+            put16(&mut data, record + 10, u16::try_from(offset).unwrap());
         }
         data.extend_from_slice(&family);
         data.extend_from_slice(&ps);
@@ -828,13 +834,13 @@ mod tests {
         put32(&mut data, 8, 12);
         put16(&mut data, 12, 12);
         let length = data.len() - 12;
-        put32(&mut data, 16, length as u32);
-        put32(&mut data, 24, points.len() as u32);
+        put32(&mut data, 16, u32::try_from(length).unwrap());
+        put32(&mut data, 24, u32::try_from(points.len()).unwrap());
         for (index, point) in points.into_iter().enumerate() {
             let record = 28 + index * 12;
             put32(&mut data, record, point);
             put32(&mut data, record + 4, point);
-            put32(&mut data, record + 8, index as u32 + 1);
+            put32(&mut data, record + 8, u32::try_from(index).unwrap() + 1);
         }
         data
     }
@@ -850,11 +856,19 @@ mod tests {
         put16(&mut data, 6, 1);
         put32(&mut data, 8, 12);
         put16(&mut data, 12, 4);
-        put16(&mut data, 14, (16 + count * 8) as u16);
-        put16(&mut data, 18, (count * 2) as u16);
+        put16(&mut data, 14, u16::try_from(16 + count * 8).unwrap());
+        put16(&mut data, 18, u16::try_from(count * 2).unwrap());
         for (index, point) in points.into_iter().enumerate() {
-            put16(&mut data, 12 + 14 + index * 2, point as u16);
-            put16(&mut data, 12 + 16 + count * 2 + index * 2, point as u16);
+            put16(
+                &mut data,
+                12 + 14 + index * 2,
+                u16::try_from(point).unwrap(),
+            );
+            put16(
+                &mut data,
+                12 + 16 + count * 2 + index * 2,
+                u16::try_from(point).unwrap(),
+            );
             // Real representative code points map to nonzero IDs; the final
             // required 0xffff sentinel maps to .notdef.
             put16(
@@ -876,14 +890,14 @@ mod tests {
         ];
         let mut data = vec![0; 12 + source_tables.len() * 16];
         put32(&mut data, 0, 0x4f54_544f);
-        put16(&mut data, 4, source_tables.len() as u16);
+        put16(&mut data, 4, u16::try_from(source_tables.len()).unwrap());
         for (index, (tag, bytes)) in source_tables.into_iter().enumerate() {
             let offset = data.len();
             let record = 12 + index * 16;
             data[record..record + 4].copy_from_slice(tag);
             put32(&mut data, record + 4, checksum(&bytes));
-            put32(&mut data, record + 8, offset as u32);
-            put32(&mut data, record + 12, bytes.len() as u32);
+            put32(&mut data, record + 8, u32::try_from(offset).unwrap());
+            put32(&mut data, record + 12, u32::try_from(bytes.len()).unwrap());
             data.extend_from_slice(&bytes);
             data.resize(align4(data.len()).unwrap(), 0);
         }
@@ -916,7 +930,9 @@ mod tests {
         TARGETS
             .iter()
             .enumerate()
-            .map(|(index, (family, _))| synthetic(family, cmap12(None), index as u8))
+            .map(|(index, (family, _))| {
+                synthetic(family, cmap12(None), u8::try_from(index).unwrap())
+            })
             .collect()
     }
 
@@ -933,19 +949,27 @@ mod tests {
         put32(&mut bad, 20, u32::MAX);
         assert!(read_faces(&bad).is_err());
         let face = parse_face(&good, 0).unwrap();
-        let name = required(&face, b"name").unwrap();
+        let name = required(&face, *b"name").unwrap();
         let mut bad = good.clone();
-        put16(&mut bad, name.offset + 4, name.length as u16 - 1);
+        put16(
+            &mut bad,
+            name.offset + 4,
+            u16::try_from(name.length).unwrap() - 1,
+        );
         assert!(read_faces(&bad).is_err());
-        let cmap = required(&face, b"cmap").unwrap();
+        let cmap = required(&face, *b"cmap").unwrap();
         let mut bad = good.clone();
-        put32(&mut bad, cmap.offset + 8, cmap.length as u32 + 1);
+        put32(
+            &mut bad,
+            cmap.offset + 8,
+            u32::try_from(cmap.length).unwrap() + 1,
+        );
         assert!(read_faces(&bad).is_err());
         let mut bad = good.clone();
         put32(&mut bad, cmap.offset + 24, u32::MAX);
         assert!(read_faces(&bad).is_err());
         let mut bad = good;
-        put32(&mut bad, cmap.offset + 28, 0x110000);
+        put32(&mut bad, cmap.offset + 28, 0x0011_0000);
         assert!(read_faces(&bad).is_err());
         let mut collection = pack_bytes(&sources()).unwrap();
         for count in [0, 257, u32::MAX] {
@@ -996,7 +1020,7 @@ mod tests {
         put16(&mut mapping, offsets, 10);
         mapping.extend_from_slice(&1u16.to_be_bytes());
         let length = mapping.len() - 12;
-        put16(&mut mapping, 14, length as u16);
+        put16(&mut mapping, 14, u16::try_from(length).unwrap());
         verify_bytes(&synthetic(family, mapping.clone(), 1), family).unwrap();
         let last = mapping.len() - 1;
         mapping[last] = 0;
@@ -1051,12 +1075,12 @@ mod tests {
         for (index, face) in faces.iter().enumerate() {
             assert_eq!(standalone(&packed, face).unwrap(), sources[index]);
             assert_eq!(
-                required(face, b"hhea").unwrap().offset,
-                required(&faces[0], b"hhea").unwrap().offset
+                required(face, *b"hhea").unwrap().offset,
+                required(&faces[0], *b"hhea").unwrap().offset
             );
             assert_eq!(
-                table_bytes(&packed, required(face, b"CFF ").unwrap()).unwrap(),
-                &[index as u8; 9]
+                table_bytes(&packed, required(face, *b"CFF ").unwrap()).unwrap(),
+                &[u8::try_from(index).unwrap(); 9]
             );
             for table in &face.tables {
                 assert!(table.offset.is_multiple_of(4));
@@ -1089,23 +1113,27 @@ mod tests {
         put32(&mut wrong, 8, 5);
         let faces = read_faces(&good).unwrap();
         for (index, face) in faces.iter().enumerate() {
-            put32(&mut wrong, 12 + index * 4, (face.offset + 4) as u32);
+            put32(
+                &mut wrong,
+                12 + index * 4,
+                u32::try_from(face.offset + 4).unwrap(),
+            );
             for (table_index, table) in face.tables.iter().enumerate() {
                 put32(
                     &mut wrong,
                     face.offset + 4 + 12 + table_index * 16 + 8,
-                    (table.offset + 4) as u32,
+                    u32::try_from(table.offset + 4).unwrap(),
                 );
             }
         }
-        put32(&mut wrong, 28, (faces[0].offset + 4) as u32);
+        put32(&mut wrong, 28, u32::try_from(faces[0].offset + 4).unwrap());
         assert!(
             verify_collection_bytes(&wrong)
                 .unwrap_err()
                 .contains("exactly")
         );
         let mut wrong = good.clone();
-        let name = required(&faces[0], b"name").unwrap();
+        let name = required(&faces[0], *b"name").unwrap();
         wrong[name.offset + 30 + TARGETS[0].0.encode_utf16().count() * 2 - 1] = b'X';
         assert!(
             verify_collection_bytes(&wrong)
@@ -1116,11 +1144,11 @@ mod tests {
         wrong[name.offset + name.length - 1] ^= 1;
         assert!(verify_collection_bytes(&wrong).is_err());
         let mut wrong = good.clone();
-        let cmap = required(&faces[0], b"cmap").unwrap();
+        let cmap = required(&faces[0], *b"cmap").unwrap();
         put32(&mut wrong, cmap.offset + 28 + 8, 0);
         assert!(verify_collection_bytes(&wrong).is_err());
         let mut wrong = good;
-        let glyph = required(&faces[0], b"CFF ").unwrap();
+        let glyph = required(&faces[0], *b"CFF ").unwrap();
         wrong[glyph.offset] ^= 1;
         assert!(
             verify_collection_bytes(&wrong)
@@ -1237,7 +1265,6 @@ mod tests {
         {
             let file = OpenOptions::new().read(true).open(&output).unwrap();
             // An explicit no-delete-share handle represents a destination in use.
-            use std::os::windows::fs::OpenOptionsExt;
             let lock = OpenOptions::new()
                 .read(true)
                 .share_mode(1)

@@ -59,6 +59,10 @@ impl Bits {
         }
     }
 
+    #[allow(
+        clippy::inline_always,
+        reason = "Bit writing is the innermost serialization primitive and deliberately retains forced inlining on this hot path"
+    )]
     #[inline(always)]
     pub(crate) fn put(&mut self, value: u32, width: u32) {
         debug_assert!(width <= 32 && (width == 32 || value >> width == 0));
@@ -78,7 +82,8 @@ impl Bits {
             }
         }
         self.width = bits % 16;
-        self.pending = (packed & ((1u64 << self.width) - 1)) as u32;
+        self.pending = u32::try_from(packed & ((1u64 << self.width) - 1))
+            .expect("pending bits are masked to at most 15 bits");
     }
     pub(crate) fn seal(mut self, last: bool) -> Vec<u32> {
         if self.width != 0 {
@@ -91,6 +96,11 @@ impl Bits {
         self.words
     }
 }
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "CRC updates intentionally use signed arithmetic right shifts and reinterpret the shifted sign bits as unsigned"
+)]
 pub(crate) fn checksum(words: &[u32]) -> u32 {
     let (mut x, mut c) = (0xa9u32, 0xa2u32);
 

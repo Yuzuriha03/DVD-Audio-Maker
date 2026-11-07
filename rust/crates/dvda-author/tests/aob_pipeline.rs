@@ -1,7 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "AOB fixtures construct bounded packet fields"
-)]
 use dvda_author::{
     Callbacks, Silent,
     aob::{self, TrackInput},
@@ -71,10 +67,17 @@ fn wave(
         chunks.extend_from_slice(&0u32.to_le_bytes());
     }
     chunks.extend_from_slice(b"fmt ");
-    chunks.extend_from_slice(&(fmt.len() as u32).to_le_bytes());
+    chunks.extend_from_slice(&u32::try_from(fmt.len()).unwrap().to_le_bytes());
     chunks.extend_from_slice(&fmt);
     chunks.extend_from_slice(b"data");
-    chunks.extend_from_slice(&if rf64 { u32::MAX } else { data.len() as u32 }.to_le_bytes());
+    chunks.extend_from_slice(
+        &if rf64 {
+            u32::MAX
+        } else {
+            u32::try_from(data.len()).unwrap()
+        }
+        .to_le_bytes(),
+    );
     chunks.extend_from_slice(&data);
     if data.len() % 2 != 0 {
         chunks.push(0);
@@ -85,7 +88,7 @@ fn wave(
         &if rf64 {
             u32::MAX
         } else {
-            chunks.len() as u32 + 4
+            u32::try_from(chunks.len()).unwrap() + 4
         }
         .to_le_bytes(),
     );

@@ -36,7 +36,9 @@ pub struct Resolution {
     pub diagnostics: Vec<Value>,
 }
 fn diagnostic(severity: i32, code: &str, message: String) -> Value {
-    json!({"Severity":severity,"Code":code,"Message":message})
+    let mut value = json!({"Severity":severity,"Code":code});
+    value["Message"] = Value::String(message);
+    value
 }
 pub fn needed_scripts(text: &str) -> BTreeSet<String> {
     text.chars()
@@ -182,6 +184,50 @@ fn cjk_hint(font: &str) -> bool {
     .iter()
     .any(|part| font.contains(part))
 }
+fn resolve_regional_fonts(
+    probe: &mut impl Probe,
+    japanese: &str,
+    korean: &str,
+    available: &[String],
+    result: &mut Resolution,
+) -> Result<(), String> {
+    for (configured, tag, label, script) in [
+        (japanese, "jp", "日文", "平假名"),
+        (korean, "kr", "韩文", "韩文"),
+    ] {
+        let candidate = if configured.is_empty() {
+            derive_regional_face(&result.font, tag, |font| font_exists(font, available))
+        } else {
+            configured.to_owned()
+        };
+        if candidate.is_empty() {
+            continue;
+        }
+        if !font_exists(&candidate, available) {
+            result.diagnostics.push(diagnostic(
+                1,
+                "MENU_REGIONAL_FONT_UNAVAILABLE",
+                format!("{label}字体不可用，继续使用主字体: {candidate}"),
+            ));
+            continue;
+        }
+        if !coverage(probe, &candidate, &BTreeSet::from([script.to_owned()]))?.contains(script) {
+            result.diagnostics.push(diagnostic(
+                1,
+                "MENU_REGIONAL_FONT_INCOMPLETE",
+                format!("{label}字体无法实际渲染{script}，继续使用主字体: {candidate}"),
+            ));
+            continue;
+        }
+        if tag == "jp" {
+            result.japanese = candidate;
+        } else {
+            result.korean = candidate;
+        }
+    }
+    Ok(())
+}
+
 fn resolve_with(
     probe: &mut impl Probe,
     preferred: &str,
@@ -277,40 +323,7 @@ fn resolve_with(
             ),
         ));
     }
-    for (configured, tag, label, script) in [
-        (japanese, "jp", "日文", "平假名"),
-        (korean, "kr", "韩文", "韩文"),
-    ] {
-        let candidate = if configured.is_empty() {
-            derive_regional_face(&result.font, tag, |font| font_exists(font, &available))
-        } else {
-            configured.to_owned()
-        };
-        if candidate.is_empty() {
-            continue;
-        }
-        if !font_exists(&candidate, &available) {
-            result.diagnostics.push(diagnostic(
-                1,
-                "MENU_REGIONAL_FONT_UNAVAILABLE",
-                format!("{label}字体不可用，继续使用主字体: {candidate}"),
-            ));
-            continue;
-        }
-        if !coverage(probe, &candidate, &BTreeSet::from([script.to_owned()]))?.contains(script) {
-            result.diagnostics.push(diagnostic(
-                1,
-                "MENU_REGIONAL_FONT_INCOMPLETE",
-                format!("{label}字体无法实际渲染{script}，继续使用主字体: {candidate}"),
-            ));
-            continue;
-        }
-        if tag == "jp" {
-            result.japanese = candidate;
-        } else {
-            result.korean = candidate;
-        }
-    }
+    resolve_regional_fonts(probe, japanese, korean, &available, &mut result)?;
     Ok(result)
 }
 /// # Errors

@@ -94,10 +94,6 @@ unsafe fn convert_avx2(input: &[i16], output: &mut [f32]) {
 mod tests {
     use super::*;
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "SIMD output must exactly match the scalar conversion bits"
-    )]
     fn conversion_matches_scalar_for_vectors_and_tail() {
         let input: Vec<_> = (i16::MIN..=i16::MAX).step_by(13).collect();
         let mut output = vec![0.0; input.len()];
@@ -106,7 +102,7 @@ mod tests {
             input
                 .iter()
                 .zip(&output)
-                .all(|(i, o)| *o == f32::from(*i) / 32768.0)
+                .all(|(i, o)| o.to_bits() == (f32::from(*i) / 32768.0).to_bits())
         );
         convert_audio_i16_to_f32_simd(&[], &mut []);
     }

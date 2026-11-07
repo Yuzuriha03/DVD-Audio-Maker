@@ -1,9 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "Menu media packet sizes and FFmpeg stream indices are checked against their C ABI fields"
-)]
 use crate::ffmpeg::{
     AV_CODEC_FLAG_CLOSED_GOP, AV_CODEC_ID_MP2, AV_CODEC_ID_MPEG2VIDEO, AV_PIX_FMT_YUV420P,
     AV_SAMPLE_FMT_S16, Context, EAGAIN, EINVAL, EIO, ENOMEM, EOF, Format, Frame, INVALID, Rational,
@@ -56,6 +50,7 @@ unsafe fn packets(
 ) -> Result<(), i32> {
     unsafe {
         done(avcodec_send_frame(codec, frame))?;
+        let stream_index = i32::try_from(index).map_err(|_| INVALID)?;
         let mut packet = av_packet_alloc();
         if packet.is_null() {
             return Err(ENOMEM);
@@ -68,18 +63,18 @@ unsafe fn packets(
                 }
                 done(status)?;
                 if end {
-                    let bytes =
-                        std::slice::from_raw_parts((*packet).data(), (*packet).size() as usize);
+                    let packet_size = usize::try_from((*packet).size()).map_err(|_| INVALID)?;
+                    let bytes = std::slice::from_raw_parts((*packet).data(), packet_size);
                     if !bytes.ends_with(&[0, 0, 1, 0xb7]) {
                         done(av_grow_packet(packet, 4))?;
                         ptr::copy_nonoverlapping(
                             [0, 0, 1, 0xb7].as_ptr(),
-                            (*packet).data().add((*packet).size() as usize - 4),
+                            (*packet).data().add(packet_size),
                             4,
                         );
                     }
                 }
-                *(*packet).stream_index_ptr() = index as i32;
+                *(*packet).stream_index_ptr() = stream_index;
                 av_packet_rescale_ts(
                     packet,
                     (*codec).time_base(),
@@ -129,7 +124,7 @@ unsafe fn audio(path: *const c_char, codec: *mut Context, output: *mut Format) -
             if bytes == 0 {
                 break;
             }
-            let count = (bytes / 4) as i32;
+            let count = i32::try_from(bytes / 4).map_err(|_| INVALID)?;
             let mut plane = pcm.as_mut_ptr();
             if av_audio_fifo_write(d.fifo, (&raw mut plane).cast(), count) != count {
                 return Err(EIO);
@@ -141,7 +136,8 @@ unsafe fn audio(path: *const c_char, codec: *mut Context, output: *mut Format) -
         let remaining = av_audio_fifo_size(d.fifo);
         if remaining > 0 {
             let missing = audio_frame_size(codec) - remaining;
-            let mut silence = vec![0u8; missing as usize * 4];
+            let silence_len = usize::try_from(missing).map_err(|_| INVALID)? * 4;
+            let mut silence = vec![0u8; silence_len];
             let mut plane = silence.as_mut_ptr();
             if av_audio_fifo_write(d.fifo, (&raw mut plane).cast(), missing) != missing {
                 return Err(EIO);
@@ -292,9 +288,12 @@ unsafe fn create(
             let w = if plane == 0 { width } else { width / 2 };
             let h = if plane == 0 { height } else { height / 2 };
             for row in 0..h {
+                let offset =
+                    usize::try_from(row * (*s.frame).linesize()[plane]).map_err(|_| INVALID)?;
+                let plane_width = usize::try_from(w).map_err(|_| INVALID)?;
                 let destination = std::slice::from_raw_parts_mut(
-                    (*s.frame).data()[plane].add((row * (*s.frame).linesize()[plane]) as usize),
-                    w as usize,
+                    (*s.frame).data()[plane].add(offset),
+                    plane_width,
                 );
                 reader.read_exact(destination).map_err(|_| EIO)?;
             }

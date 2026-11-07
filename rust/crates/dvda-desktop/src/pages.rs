@@ -1,19 +1,28 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::too_many_lines,
-    clippy::wildcard_imports,
-    reason = "Page dispatch preserves Win32 message fields and the shared desktop module scope"
-)]
 //! Settings pages: the page window procedure, scrolling and the browse rows.
 
-use super::*;
+use super::{
+    DEFER_CONTROL_PAINT, DefWindowProcW, EnumChildWindows, GWLP_USERDATA, GetClientRect,
+    GetDlgItem, GetParent, GetWindowLongPtrW, GetWindowRect, Handle, Hwnd, ID_BROWSE_FINAL,
+    ID_BROWSE_SOURCE, ID_BROWSE_WORK, ID_FINAL, ID_SOURCE, ID_WORK_DIR, InvalidateRect,
+    IsWindowEnabled, IsWindowVisible, Lparam, Lresult, Ordering, Point, RDW_ALLCHILDREN,
+    RDW_INVALIDATE, Rect, RedrawWindow, SW_HIDE, SW_SHOW, ScreenToClient, ScrollWindowEx,
+    SendMessageW, SetBkColor, SetBkMode, SetTextColor, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    UiState, UpdateWindow, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX,
+    WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND, WM_MEASUREITEM, WM_NCCALCSIZE, WM_NCPAINT,
+    WM_NOTIFY, WM_PAINT, WM_SIZE, WS_VISIBLE, Wparam, brush, c_card, c_disabled_fill,
+    c_disabled_text, c_ink, c_muted, c_panel, card_brush, paint_fields, paint_page,
+    paint_page_border, panel_brush, place, ptr, scale, state, sync_combo_overlays, unscale,
+    window_class, window_rect,
+};
 
 /// # Safety
 /// Window procedure called by Windows. `hwnd` is a valid window handle, and for messages
 /// that pass pointers in `lparam` (such as `WM_DRAWITEM` or `WM_NCCALCSIZE`) it points to the
 /// structure the system defines for that message, valid for the duration of the call.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps the native page message dispatch and paint forwarding in one window procedure"
+)]
 pub(crate) unsafe extern "system" fn page_proc(
     hwnd: Hwnd,
     message: u32,
@@ -42,12 +51,19 @@ pub(crate) unsafe extern "system" fn page_proc(
             0
         }
         0x0115 => {
-            let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
+            let old = u32::try_from(GetWindowLongPtrW(hwnd, GWLP_USERDATA) & 0xffff_ffff)
+                .unwrap()
+                .cast_signed();
             let next = match wparam & 0xffff {
                 0 => old - scale(24),
                 1 => old + scale(24),
                 2 => old - scale(120),
                 3 => old + scale(120),
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_possible_wrap,
+                    reason = "Retains the existing signed 32-bit SB_THUMBPOSITION/SB_THUMBTRACK payload conversion"
+                )]
                 4 | 5 => (wparam >> 16) as i32,
                 6 => 0,
                 7 => i32::MAX,
@@ -57,8 +73,14 @@ pub(crate) unsafe extern "system" fn page_proc(
             0
         }
         0x020a => {
-            let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
-            let delta = i32::from((wparam >> 16) as i16);
+            let old = u32::try_from(GetWindowLongPtrW(hwnd, GWLP_USERDATA) & 0xffff_ffff)
+                .unwrap()
+                .cast_signed();
+            let delta = i32::from(
+                u16::try_from((wparam >> 16) & 0xffff)
+                    .unwrap()
+                    .cast_signed(),
+            );
             let pixels = if let Some(mut state) = unsafe { state(GetParent(hwnd)) } {
                 wheel_pixels(
                     delta,
@@ -157,7 +179,8 @@ pub(crate) fn wheel_pixels(delta: i32, step: i32, remainder: &mut i32) -> i32 {
 
 #[cfg(test)]
 mod wheel_tests {
-    use super::{ui_test_guard, wheel_pixels};
+    use super::wheel_pixels;
+    use crate::ui_test_guard;
 
     #[test]
     fn partial_notches_move_immediately() {
@@ -229,7 +252,10 @@ pub(crate) unsafe extern "system" fn scroll_page_child(hwnd: Hwnd, parameter: Lp
 pub(crate) fn page_content_height(page: Hwnd) -> i32 {
     unsafe extern "system" fn lowest(hwnd: Hwnd, parameter: Lparam) -> i32 {
         let (page, bottom) = unsafe { &mut *(parameter as *mut (Hwnd, i32)) };
-        if GetParent(hwnd) == *page && (GetWindowLongPtrW(hwnd, -16) as u32) & WS_VISIBLE != 0 {
+        if GetParent(hwnd) == *page
+            && (u32::try_from(GetWindowLongPtrW(hwnd, -16) & 0xffff_ffff).unwrap()) & WS_VISIBLE
+                != 0
+        {
             let mut rect: Rect = Rect::default();
             GetWindowRect(hwnd, &mut rect);
             let mut corner = Point {
@@ -243,7 +269,9 @@ pub(crate) fn page_content_height(page: Hwnd) -> i32 {
     }
     let mut found = (page, 0);
     unsafe { EnumChildWindows(page, lowest, &raw mut found as Lparam) };
-    let scroll = GetWindowLongPtrW(page, GWLP_USERDATA) as i32;
+    let scroll = u32::try_from(GetWindowLongPtrW(page, GWLP_USERDATA) & 0xffff_ffff)
+        .unwrap()
+        .cast_signed();
     if found.1 <= 0 {
         scale(100)
     } else {
@@ -280,7 +308,9 @@ pub(crate) fn scroll_page_with_bar(hwnd: Hwnd, requested: i32, explicit: bool, b
     {
         GetClientRect(hwnd, &mut rect);
     }
-    let old = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
+    let old = u32::try_from(GetWindowLongPtrW(hwnd, GWLP_USERDATA) & 0xffff_ffff)
+        .unwrap()
+        .cast_signed();
     let height = (rect.bottom - rect.top).max(1);
     let content = page_content_height(hwnd);
     let pos = if explicit { requested } else { old }.clamp(0, (content - height).max(0));
@@ -335,7 +365,8 @@ pub(crate) fn browse_edit_width(page_width: i32) -> i32 {
 
 #[cfg(test)]
 mod browse_layout_tests {
-    use super::{browse_edit_width, ui_test_guard};
+    use super::browse_edit_width;
+    use crate::ui_test_guard;
 
     #[test]
     fn browse_rows_preserve_right_margin_at_half_and_full_width() {
@@ -359,7 +390,9 @@ pub(crate) fn resize_page_fields(page: Hwnd) {
         GetClientRect(page, &mut rect);
     }
     let width = unscale(rect.right).max(1);
-    let scroll = GetWindowLongPtrW(page, GWLP_USERDATA) as i32;
+    let scroll = u32::try_from(GetWindowLongPtrW(page, GWLP_USERDATA) & 0xffff_ffff)
+        .unwrap()
+        .cast_signed();
     // Browse rows share the same geometry. Keeping the edit and its button
     // inside the page client area prevents a clipped right border after a
     // window resize or a DPI/layout change.
@@ -369,8 +402,8 @@ pub(crate) fn resize_page_fields(page: Hwnd) {
         (ID_FINAL, ID_BROWSE_FINAL, 86),
         (ID_WORK_DIR, ID_BROWSE_WORK, 182),
     ] {
-        let edit = GetDlgItem(page, edit_id as i32);
-        let browse = GetDlgItem(page, browse_id as i32);
+        let edit = GetDlgItem(page, i32::try_from(edit_id).unwrap());
+        let browse = GetDlgItem(page, i32::try_from(browse_id).unwrap());
         let top = y - unscale(scroll);
         if !edit.is_null() {
             place(edit, 14, top, edit_width, 24);
@@ -384,7 +417,7 @@ pub(crate) fn resize_page_fields(page: Hwnd) {
 pub(crate) fn select_tab(state: &mut UiState, index: usize) {
     let index = index.min(state.pages.len().saturating_sub(1));
     state.set_tab_index(index);
-    show_page(state, index as i32);
+    show_page(state, i32::try_from(index).unwrap());
     for tab in &state.tabs {
         unsafe {
             InvalidateRect(*tab, ptr::null(), 0);
@@ -396,13 +429,13 @@ pub(crate) fn show_page(state: &UiState, index: i32) {
         unsafe {
             ShowWindow(
                 *page,
-                if i == index.max(0) as usize && !state.settings_hidden {
+                if i == usize::try_from(index.max(0)).unwrap() && !state.settings_hidden {
                     SW_SHOW
                 } else {
                     SW_HIDE
                 },
             );
-            if i == index.max(0) as usize {
+            if i == usize::try_from(index.max(0)).unwrap() {
                 SetWindowPos(*page, ptr::null_mut(), 0, 0, 0, 0, 0x0013);
             }
         }

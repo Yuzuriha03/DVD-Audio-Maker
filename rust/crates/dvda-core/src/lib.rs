@@ -1,332 +1,57 @@
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Acquisition helpers retain owned JSON requests for the common dispatch contract"
-)]
 pub mod acquisition;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    reason = "AOB verification retains bounded sector arithmetic and complete diagnostic reporting"
-)]
 pub mod aob;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    reason = "Application options preserve validated configuration sizes and owned request values"
-)]
 pub mod app;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::match_same_arms,
-    clippy::needless_pass_by_value,
-    reason = "Audio inspection retains media ABI widths and callback-based error contracts"
-)]
 pub mod audio;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Author adapters retain the common owned-request dispatch signatures"
-)]
 pub mod author;
-#[allow(
-    clippy::items_after_statements,
-    reason = "Runtime helpers intentionally scope imports to their backend branches"
-)]
 pub mod author_runtime;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Batch processing retains ordered worker state and bounded track metadata"
-)]
 pub mod batch;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::struct_excessive_bools,
-    clippy::too_many_lines,
-    reason = "Build orchestration retains complete transactions and explicit configuration flags"
-)]
 pub mod build;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Build log helpers preserve the common owned-request dispatch contract"
-)]
 pub mod buildlog;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Cache helpers retain owned JSON requests for the common dispatch contract"
-)]
 pub mod cache;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Configuration helpers retain owned JSON values for the dispatch contract"
-)]
 pub mod config;
-#[allow(
-    clippy::items_after_statements,
-    clippy::needless_pass_by_value,
-    reason = "Profile loading retains scoped parser imports and owned profile values"
-)]
 pub mod config_files;
 pub mod conversion;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Disc planning retains validated capacity arithmetic and complete grouping rules"
-)]
 pub mod disc;
 pub mod disk_space;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    reason = "Encoder adapters preserve PCM widths, metadata sizes, and stream ownership"
-)]
 pub mod encoder;
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "Encoder stamp generation preserves fixed packet fields"
-)]
 mod encoder_stamp;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Format readers retain protocol field widths and owned parser requests"
-)]
 pub mod formats;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::needless_pass_by_value,
-    reason = "Hash helpers retain owned requests and benchmark fixtures"
-)]
 pub mod hash;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Identity dispatch retains owned requests"
-)]
 pub mod identity;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    reason = "IFO parsing retains protocol-sized group and sector fields"
-)]
 pub mod ifo;
 pub mod images;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Index generation retains owned track records"
-)]
 pub mod index;
-#[allow(
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "LPCM preparation retains validated audio geometry and streaming state"
-)]
 pub mod lpcm;
-#[allow(
-    clippy::cast_possible_wrap,
-    clippy::needless_pass_by_value,
-    reason = "Manifest parsing retains owned paths and protocol-sized indices"
-)]
 pub mod manifest;
 pub mod media;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::float_cmp,
-    clippy::items_after_statements,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Menu planning retains text quantization, owned JSON values, and complete layout rules"
-)]
 pub mod menu;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::needless_pass_by_value,
-    reason = "Menu checks retain bounded geometry and incremental XML diagnostics"
-)]
 pub mod menu_check;
-#[allow(
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Font resolution retains complete coverage and runtime fallback checks"
-)]
 pub mod menu_fonts;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    reason = "Menu verification retains sector arithmetic and complete navigation checks"
-)]
 pub mod menu_verify;
 mod metrics;
-#[allow(
-    clippy::needless_pass_by_value,
-    clippy::trivially_copy_pass_by_ref,
-    reason = "MLP import retains shared native format arguments and owned track records"
-)]
 pub mod mlp_import;
 #[cfg(feature = "rust-mlp")]
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::too_many_lines,
-    reason = "Streaming MLP conversion retains bounded PCM geometry and direct callback state"
-)]
 mod mlp_stream;
-#[allow(
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    clippy::trivially_copy_pass_by_ref,
-    reason = "MLP workflow retains cache evidence, native format arguments, and complete publication stages"
-)]
 pub mod mlp_workflow;
 mod native_components;
-#[allow(
-    clippy::cast_possible_wrap,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Option evaluation retains signed configuration values and complete precedence rules"
-)]
 pub mod options;
 mod parallel;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "PCM normalization retains validated WAVE geometry and streaming output state"
-)]
 pub mod pcm;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Planning helpers retain owned JSON requests and documented capacity rounding"
-)]
 pub mod planner;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    reason = "Preparation retains ALAC bit positions, snapshot values, and streaming worker state"
-)]
 pub mod preparation;
-#[allow(
-    clippy::cast_precision_loss,
-    clippy::needless_pass_by_value,
-    reason = "Probe dispatch retains owned requests and floating-point diagnostic formatting"
-)]
 pub mod probes;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::needless_pass_by_value,
-    reason = "Process adapters preserve native status widths and owned request values"
-)]
 pub mod process;
-#[allow(
-    clippy::needless_pass_by_value,
-    clippy::struct_excessive_bools,
-    clippy::too_many_lines,
-    reason = "Publication retains explicit transaction flags and complete rollback state"
-)]
 pub mod publication;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Resume records retain owned task data"
-)]
 pub mod resume;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::items_after_statements,
-    reason = "Runtime archive handling retains bounded headers and scoped platform imports"
-)]
 pub mod runtime;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Signature helpers retain owned evidence for the dispatch contract"
-)]
 pub mod signature;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Task log records intentionally own opaque text and paths"
-)]
 pub mod task_log;
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Validation helpers retain owned dispatch requests"
-)]
 pub mod validation;
-#[allow(
-    clippy::case_sensitive_file_extension_comparisons,
-    clippy::needless_pass_by_value,
-    reason = "Verification helpers retain normalized ISO names and owned audit records"
-)]
 pub mod verification;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::case_sensitive_file_extension_comparisons,
-    clippy::needless_pass_by_value,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    reason = "Disc verification retains sector arithmetic, normalized names, and complete evidence collection"
-)]
 pub mod verify;
-#[allow(
-    clippy::too_many_lines,
-    reason = "Audio verification retains complete per-track comparison stages"
-)]
 pub mod verify_audio;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::needless_pass_by_value,
-    reason = "Streaming comparison retains bounded offsets and owned track requests"
-)]
 mod verify_audio_stream;
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::needless_pass_by_value,
-    reason = "Workflow evidence retains owned JSON values and capacity estimates"
-)]
 pub mod workflow;
-#[allow(
-    clippy::items_after_statements,
-    reason = "Workspace lifecycle retains scoped imports and explicit retry control flow"
-)]
 pub mod workspace;
 
 use serde_json::{Value, json};
@@ -430,9 +155,4 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     }
 }
 
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::items_after_statements,
-    reason = "Localization retains complete translation tables and scoped language helpers"
-)]
 pub mod localization;

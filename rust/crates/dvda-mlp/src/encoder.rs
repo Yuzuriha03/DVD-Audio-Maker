@@ -54,6 +54,12 @@ struct ParameterState<'a> {
     iirs: &'a [Vec<i32>],
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::needless_pass_by_value,
+    reason = "Public configuration values cross the internal parameter boundary by value and validated PCM geometry uses protocol-width signed fields"
+)]
 fn parameters(
     b: &mut Bits,
     qss: &[u32],
@@ -153,6 +159,10 @@ fn transform(r: u32, last: u32) -> u32 {
     let v = (v ^ (t & 0x1fff)) << 1;
     ((v ^ (t & 0x3fff)) << 2) ^ ((t ^ last) & 65535)
 }
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Major-sync sizes and rates are validated before serialization into fixed-width header fields"
+)]
 pub(crate) fn major(
     c: &Config,
     profile: &format::Profile,
@@ -436,6 +446,12 @@ impl AuEncoder {
                 .collect(),
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::too_many_lines,
+        reason = "Access-unit lengths, signed PCM masks, and metadata counters use protocol widths while output commit and rollback order remain contiguous"
+    )]
     pub(crate) fn push(
         &mut self,
         pcm: &[i32],

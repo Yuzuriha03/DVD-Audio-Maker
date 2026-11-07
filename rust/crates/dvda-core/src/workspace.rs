@@ -49,6 +49,8 @@ impl Workspace {
     /// an ancestor is a reparse point, a resumed directory is unowned, or the
     /// workspace cannot be locked, initialized, or reset after completion.
     pub fn create(build: &Path, resume: bool) -> Result<Self, String> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = if resume {
             build.join("unfinished-task")
         } else {
@@ -85,7 +87,6 @@ impl Workspace {
                 let _ = fs::remove_dir_all(path);
             }
         }
-        static NEXT: AtomicU64 = AtomicU64::new(0);
         loop {
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

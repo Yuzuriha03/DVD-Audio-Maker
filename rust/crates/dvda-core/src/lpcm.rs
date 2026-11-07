@@ -52,6 +52,10 @@ pub fn layout_code(rate: i64, bits: i64, channels: i64, mask: i64) -> i64 {
 /// Returns an error for an unknown operation or a missing/non-integer `Rate`,
 /// `Bits`, or `Channels`, and additionally `ChannelMask` for layout validation.
 /// Unsupported formats and layouts are returned as numeric validation codes.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public JSON dispatcher retains the owned-request ABI contract"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     let rate = request_integer(&request, "Rate")?;
     let bits = request_integer(&request, "Bits")?;
@@ -181,6 +185,10 @@ pub fn execute(mut job: PrepareJob, caller: &mut dyn Callbacks) -> Result<Prepar
     })
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "LPCM track preparation keeps cache validation, conversion, identity checks, and commit ordered"
+)]
 fn prepare_track(
     job: &PrepareJob,
     root: &Path,
@@ -251,8 +259,10 @@ fn prepare_track(
                     library: job.media_library.clone(),
                     request: Request {
                         operation: Operation::Audio,
-                        rate: job.rate as u32,
-                        bits: job.bits as u32,
+                        rate: u32::try_from(job.rate)
+                            .expect("LPCM sample rate was validated before track preparation"),
+                        bits: u32::try_from(job.bits)
+                            .expect("LPCM bit depth was validated as 16 or 24"),
                         output_format: OutputFormat::Wave,
                         soxr: false,
                         dither: job.dither,

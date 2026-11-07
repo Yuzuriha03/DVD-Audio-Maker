@@ -1,8 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    reason = "The differential fixture intentionally constructs complete C ABI requests and media packets"
-)]
 use dvda_bridges::{
     Cancel, Emit,
     media::{Request, dvdamedia_run},
@@ -51,7 +46,16 @@ unsafe extern "C" fn cancel_after_progress(state: *mut c_void) -> i32 {
 extern "C" fn cancelled(_: *mut c_void) -> i32 {
     1
 }
+// FLAC stores these fixture lengths in the low 32 bits, matching the original cast.
+fn low_u32(value: usize) -> u32 {
+    u32::from_le_bytes(value.to_le_bytes()[..4].try_into().unwrap())
+}
+
 type Run = unsafe extern "C" fn(*const Request, Emit, Cancel, *mut c_void) -> i32;
+#[expect(
+    clippy::too_many_lines,
+    reason = "The differential driver keeps oracle calls, comparisons, and fixture cleanup in one sequence"
+)]
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(args.len(), 3, "legacy DLL and input required");
@@ -66,7 +70,7 @@ fn main() {
         if let Ok(destination) = std::env::var("DVDA_BRIDGE_COVER_FIXTURE") {
             let output = CString::new(destination.clone()).unwrap();
             let request = Request {
-                size: std::mem::size_of::<Request>() as u32,
+                size: u32::try_from(std::mem::size_of::<Request>()).unwrap(),
                 abi: 2,
                 operation: 3,
                 rate: 0,
@@ -113,12 +117,12 @@ fn main() {
             picture.extend(9u32.to_be_bytes());
             picture.extend(b"image/png");
             picture.extend(0u32.to_be_bytes());
-            for value in [720u32, 576, 24, 0, png.len() as u32] {
+            for value in [720u32, 576, 24, 0, low_u32(png.len())] {
                 picture.extend(value.to_be_bytes());
             }
             picture.extend(png);
             let mut block = vec![0x86];
-            block.extend(&(picture.len() as u32).to_be_bytes()[1..]);
+            block.extend(&(low_u32(picture.len())).to_be_bytes()[1..]);
             block.extend(picture);
             flac.splice(end..end, block);
             std::fs::write(destination, flac).unwrap();
@@ -150,7 +154,7 @@ fn main() {
             let actual_path = CString::new("build\\bridge-media-rust.pcm").unwrap();
             let tags = [c"title".as_ptr(), c"Rust bridge parity".as_ptr()];
             let mut request = Request {
-                size: std::mem::size_of::<Request>() as u32,
+                size: u32::try_from(std::mem::size_of::<Request>()).unwrap(),
                 abi: 2,
                 operation,
                 rate,
@@ -224,7 +228,7 @@ fn main() {
             let input_path = CString::new(input_path).unwrap();
             let output_path = CString::new(output_path).unwrap();
             let request = Request {
-                size: std::mem::size_of::<Request>() as u32,
+                size: u32::try_from(std::mem::size_of::<Request>()).unwrap(),
                 abi: 2,
                 operation: 3,
                 rate: 0,
@@ -260,7 +264,7 @@ fn main() {
         }
         let output = CString::new("build\\bridge-media-invalid.pcm").unwrap();
         let base = Request {
-            size: std::mem::size_of::<Request>() as u32,
+            size: u32::try_from(std::mem::size_of::<Request>()).unwrap(),
             abi: 2,
             operation: 1,
             rate: 0,

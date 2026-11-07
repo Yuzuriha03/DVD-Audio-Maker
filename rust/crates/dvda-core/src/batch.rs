@@ -122,7 +122,7 @@ struct Events<'a> {
     errors: String,
 }
 impl Events<'_> {
-    fn event(&self, kind: &str, value: serde_json::Value) {
+    fn event(&self, kind: &str, value: &serde_json::Value) {
         let event =
             json!({"Kind":kind,"Track":self.index,"Name":self.track.display_name,"Value":value})
                 .to_string();
@@ -139,6 +139,11 @@ impl Events<'_> {
     }
 }
 impl Callbacks for Events<'_> {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "FFmpeg microsecond progress retains the established clamped integer percentage"
+    )]
     fn emit(&mut self, stream: i32, text: &str) {
         if self.media_phase {
             let text = text.trim_end_matches(['\r', '\n']);
@@ -148,7 +153,7 @@ impl Callbacks for Events<'_> {
                 }
                 self.errors.push_str(text);
                 self.errors.push_str("\r\n");
-                self.event("PcmError", json!(text));
+                self.event("PcmError", &json!(text));
             } else if self.track.duration_seconds > 0.0
                 && let Some(value) = text.strip_prefix("out_time_us=")
                 && let Ok(microseconds) = value.trim().parse::<i64>()
@@ -157,22 +162,27 @@ impl Callbacks for Events<'_> {
                     .clamp(0.0, 99.0) as i32;
                 if percent != self.previous {
                     self.previous = percent;
-                    self.event("PcmProgress", json!(percent));
+                    self.event("PcmProgress", &json!(percent));
                 }
             }
         } else if stream == 4 {
             match serde_json::from_str(text) {
-                Ok(value) => self.event("Encoded", value),
-                Err(_) => self.event("Detail", json!(text)),
+                Ok(value) => self.event("Encoded", &value),
+                Err(_) => self.event("Detail", &json!(text)),
             }
         } else {
-            self.event("Detail", json!(text));
+            self.event("Detail", &json!(text));
         }
     }
     fn cancelled(&mut self) -> bool {
         self.stop.load(Ordering::Acquire)
     }
 }
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The validated finite timer is nonnegative, below u32::MAX, and intentionally truncated"
+)]
 fn timeout(seconds: f64, factor: f64) -> Result<u64, Failure> {
     let millis = (seconds * factor + 120.0).max(300.0) * 1000.0;
     // Preserve the timer range accepted by the previous CancellationTokenSource.
@@ -184,6 +194,10 @@ fn timeout(seconds: f64, factor: f64) -> Result<u64, Failure> {
     }
     Ok(millis.trunc() as u64)
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "One worker keeps PCM reuse, decoding, encoding, cancellation, and cleanup ordered"
+)]
 fn track(
     job: &Job,
     index: usize,
@@ -206,8 +220,8 @@ fn track(
     fs::create_dir(&path)?;
     let folder = Folder(path);
     let result = (|| -> Result<(), Failure> {
-        events.event("Started", json!(null));
-        events.event("PcmStarted", json!(null));
+        events.event("Started", &json!(null));
+        events.event("PcmStarted", &json!(null));
         if let Some(prepared) = track
             .source_evidence
             .get("PreparedMlpPath")
@@ -242,7 +256,7 @@ fn track(
                     .join(format!("{}.mlp", track.work_name));
                 let bytes = fs::metadata(prepared)?.len();
                 dvda_native::files::move_file(prepared, &destination, false)?;
-                events.event("PcmFinished", json!(null));
+                events.event("PcmFinished", &json!(null));
                 events.media_phase = false;
                 events.emit(4, &json!({"Bytes":bytes}).to_string());
                 return Ok(());
@@ -266,8 +280,10 @@ fn track(
                     timeout_millis: Some(timeout(track.duration_seconds, 2.0)?),
                     request: Request {
                         operation: Operation::Audio,
-                        rate: job.sample_rate as u32,
-                        bits: job.bits as u32,
+                        rate: u32::try_from(job.sample_rate)
+                            .expect("sample rate is validated before workers start"),
+                        bits: u32::try_from(job.bits)
+                            .expect("bit depth is validated as 16, 20, or 24"),
                         output_format: OutputFormat::Wave,
                         soxr: false,
                         dither: job.dither,
@@ -295,7 +311,7 @@ fn track(
                 ));
             }
         }
-        events.event("PcmFinished", json!(null));
+        events.event("PcmFinished", &json!(null));
         let prepared = if let Some(path) = reused {
             path
         } else {
@@ -334,6 +350,10 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     execute_with(job, caller, |_, _, _| Ok(())).0
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public typed batch adapter retains its owned-job API while its measured helper borrows"
+)]
 pub fn execute_with<R, F>(job: Job, caller: &mut dyn Callbacks, finalize: F) -> (Outcome, Vec<R>)
 where
     R: Send,
@@ -344,7 +364,7 @@ where
         vec![job.temporary_directory.clone()],
         worker_count(job.tracks.len()),
         caller,
-        |work, caller| execute_measured_with(job, caller, work, &finalize),
+        |work, caller| execute_measured_with(&job, caller, work, &finalize),
         |(outcome, _)| outcome.failure.is_none() && outcome.exit_code == Some(0),
     )
 }
@@ -494,7 +514,7 @@ fn run_worker<R, F>(
 }
 
 fn execute_measured_with<R, F>(
-    job: Job,
+    job: &Job,
     caller: &mut dyn Callbacks,
     work: &crate::metrics::Work,
     finalize: &F,
@@ -504,7 +524,7 @@ where
     F: Fn(usize, &Track, &mut dyn Callbacks) -> Result<R, Failure> + Sync,
 {
     let result = (|| -> Result<Vec<R>, Failure> {
-        validate(&job)?;
+        validate(job)?;
         let pcm_signature = crate::audio::production_pcm_signature(
             &job.media_library,
             job.sample_rate,
@@ -525,7 +545,7 @@ where
                 let send = state.log_send.borrow().as_ref().unwrap().clone();
                 let complete_send = state.complete_send.borrow().as_ref().unwrap().clone();
                 let context = BatchWorker {
-                    job: &job,
+                    job,
                     work,
                     finalize,
                     next: &next,
@@ -598,6 +618,19 @@ mod tests {
             bytes.push(0);
         }
         bytes
+    }
+
+    struct Cancel {
+        polls: usize,
+        at: usize,
+    }
+
+    impl Callbacks for Cancel {
+        fn emit(&mut self, _: i32, _: &str) {}
+        fn cancelled(&mut self) -> bool {
+            self.polls += 1;
+            self.polls >= self.at
+        }
     }
 
     #[test]
@@ -674,17 +707,6 @@ mod tests {
             .is_err()
         );
 
-        struct Cancel {
-            polls: usize,
-            at: usize,
-        }
-        impl Callbacks for Cancel {
-            fn emit(&mut self, _: i32, _: &str) {}
-            fn cancelled(&mut self) -> bool {
-                self.polls += 1;
-                self.polls >= self.at
-            }
-        }
         for (bits, stored, at) in [(16, 16, 1), (16, 16, 2), (20, 24, 2), (20, 24, 3)] {
             let error = reusable_wave(
                 &mut Cursor::new(wave(stored, bits, 1, 4, 0)),

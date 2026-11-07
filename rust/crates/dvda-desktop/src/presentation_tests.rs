@@ -1,13 +1,16 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    reason = "UI integration fixtures intentionally cover Win32 geometry and complete log scenarios"
-)]
+use super::dialogs::dialog_filter;
+use super::draw::text_lift;
+use super::layout::{DEFAULT_LOG_FLOOR, label_handle, layout_page_contents};
+use super::logs::{display_log, export_log_to, full_log, log_is_problem};
+use super::scrollbar::page_bar_metrics;
+use super::settings::{
+    SAMPLE_BITS, SAMPLE_RATES, audio_note_key, capacity_index, mode_index, mode_value,
+    valid_integer,
+};
+use super::task::{emit_preparation_issues, set_busy_controls};
 use super::ui_test_guard;
+use std::os::windows::fs::OpenOptionsExt;
+use std::sync::mpsc::TrySendError;
 
 #[test]
 fn session_log_that_cannot_be_removed_does_not_block_startup() {
@@ -23,14 +26,13 @@ fn session_log_that_cannot_be_removed_does_not_block_startup() {
         std::fs::write(root.join(name), name).unwrap();
     }
     // Holding the oldest log open without delete sharing makes its removal fail.
-    use std::os::windows::fs::OpenOptionsExt;
     let locked = std::fs::OpenOptions::new()
         .read(true)
         .share_mode(0x1 | 0x2)
         .open(root.join("gui-1-1-0.log"))
         .unwrap();
     let current = root.join("gui-4-1-0.log");
-    assert!(super::prune_session_logs(&root, &current).is_err());
+    assert!(super::logs::prune_session_logs(&root, &current).is_err());
     drop(locked);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -51,7 +53,7 @@ fn session_log_retention_keeps_three_and_preserves_unrelated_files() {
         std::fs::write(root.join(name), name).unwrap();
     }
     let current = root.join("gui-4-1-0.log");
-    super::prune_session_logs(&root, &current).unwrap();
+    super::logs::prune_session_logs(&root, &current).unwrap();
     let count = std::fs::read_dir(&root).unwrap().count();
     assert_eq!(count, 5);
     assert!(current.exists());
@@ -102,7 +104,6 @@ fn startup_arguments_keep_json_alias_and_language_precedence() {
 
 #[test]
 fn source_issue_diagnostics_include_severity_reason_source_and_details() {
-    let _ui_test_lock = ui_test_guard();
     #[derive(Default)]
     struct Capture(Vec<(i32, String)>);
     impl Callbacks for Capture {
@@ -113,6 +114,7 @@ fn source_issue_diagnostics_include_severity_reason_source_and_details() {
             false
         }
     }
+    let _ui_test_lock = ui_test_guard();
     let issues = ["FAIL", "WARN"].map(|level| dvda_core::preparation::models::Issue {
         level: level.into(),
         title: "Channel mismatch".into(),
@@ -411,13 +413,21 @@ fn combo_measurement_preserves_original_item_height() {
     unsafe {
         window_proc(ptr::null_mut(), WM_MEASUREITEM, 0, &raw mut item as Lparam);
     }
-    assert_eq!(item.item_height, scale(26).max(scale(20)) as u32);
+    assert_eq!(item.item_height, scale(26).max(scale(20)).cast_unsigned());
 }
 
 /// Every text the UI shows must fit the rectangle it is drawn into, in
 /// every language, at every supported scale and width. Returns one line
 /// per (kind, text) with the first failing condition.
+#[allow(
+    clippy::too_many_lines,
+    reason = "The complete control and language geometry audit shares one live UI fixture"
+)]
 fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
+    unsafe extern "system" fn collect(hwnd: Hwnd, list: Lparam) -> i32 {
+        unsafe { (*(list as *mut Vec<Hwnd>)).push(hwnd) };
+        1
+    }
     const DT_WORDBREAK: u32 = 0x10;
     const CB_GETCOUNT: u32 = 0x0146;
     const CB_GETDROPPEDWIDTH: u32 = 0x015f;
@@ -453,7 +463,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         DeleteDC(dc);
         lift
     };
-    let style = |hwnd: Hwnd| GetWindowLongPtrW(hwnd, -16) as u32;
+    let style = |hwnd: Hwnd| u32::try_from(GetWindowLongPtrW(hwnd, -16) & 0xffff_ffff).unwrap();
     let shown = |hwnd: Hwnd| {
         let mut current = hwnd;
         while !current.is_null() && current != parent {
@@ -469,10 +479,6 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         GetClientRect(hwnd, &mut rect);
         (rect.right, rect.bottom)
     };
-    unsafe extern "system" fn collect(hwnd: Hwnd, list: Lparam) -> i32 {
-        unsafe { (*(list as *mut Vec<Hwnd>)).push(hwnd) };
-        1
-    }
     let mut findings: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
     let mut note = |key: String, detail: String| {
@@ -501,7 +507,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                             let class = window_class(hwnd);
                             let text = get_text(hwnd);
                             let (cw, ch) = client(hwnd);
-                            let id = GetDlgCtrlID(hwnd) as usize;
+                            let id = (GetDlgCtrlID(hwnd) as isize).cast_unsigned();
                             let font = win::send_int(hwnd, WM_GETFONT, 0, 0) as Handle;
                             let font = if font.is_null() { ui_font() } else { font };
                             match class.as_str() {
@@ -568,11 +574,18 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                                     }
                                 }
                                 "ComboBox" => {
-                                    let count = win::send_int(hwnd, CB_GETCOUNT, 0, 0) as i32;
+                                    let count = u32::try_from(
+                                        win::send_int(hwnd, CB_GETCOUNT, 0, 0) & 0xffff_ffff,
+                                    )
+                                    .unwrap()
+                                    .cast_signed();
                                     let closed = cw - scale(36);
-                                    let dropped = (win::send_int(hwnd, CB_GETDROPPEDWIDTH, 0, 0)
-                                        as i32)
-                                        .max(cw)
+                                    let dropped = (u32::try_from(
+                                        win::send_int(hwnd, CB_GETDROPPEDWIDTH, 0, 0) & 0xffff_ffff,
+                                    )
+                                    .unwrap()
+                                    .cast_signed())
+                                    .max(cw)
                                         - scale(12);
                                     for index in 0..count {
                                         let item = unsafe { combo_item_text(hwnd, index) };
@@ -663,9 +676,9 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                                 .replace("{2}", "59")
                                 .replace("{3}", "9999");
                             let (cw, ch) = client(ui.controls.statistics);
-                            let stats_font =
+                            let statistics_font =
                                 win::send_int(ui.controls.statistics, WM_GETFONT, 0, 0) as Handle;
-                            let (w, h) = measure(&stats, stats_font, cw, DT_SINGLELINE);
+                            let (w, h) = measure(&stats, statistics_font, cw, DT_SINGLELINE);
                             if w > cw || h > ch {
                                 note(
                                     format!("statistics {stats:?}"),
@@ -725,14 +738,18 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The end-to-end UI fixture keeps control creation, cancellation, retention and teardown ordered"
+)]
 fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
-    let _ui_test_lock = ui_test_guard();
     #[link(name = "user32")]
     unsafe extern "system" {
         safe fn IsWindowEnabled(hwnd: Hwnd) -> i32;
     }
     use std::sync::atomic::AtomicU64;
     static NEXT: AtomicU64 = AtomicU64::new(0);
+    let _ui_test_lock = ui_test_guard();
     let root = std::env::temp_dir().join(format!(
         "dvda-gui-controls-{}-{}",
         std::process::id(),
@@ -762,7 +779,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     unsafe {
         RegisterClassW(&raw const registration);
         InitCommonControlsEx(&InitCommonControlsEx {
-            size: std::mem::size_of::<InitCommonControlsEx>() as u32,
+            size: u32::try_from(std::mem::size_of::<InitCommonControlsEx>()).unwrap(),
             classes: 0xffff,
         });
     }
@@ -846,7 +863,11 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
                 // Short windows hide the log first and toolbar controls
                 // only where they would reach the action buttons.
                 let rect_of = |hwnd: Hwnd| window_rect(hwnd);
-                let shown = |hwnd: Hwnd| (GetWindowLongPtrW(hwnd, -16) as u32) & WS_VISIBLE != 0;
+                let shown = |hwnd: Hwnd| {
+                    (u32::try_from(GetWindowLongPtrW(hwnd, -16) & 0xffff_ffff).unwrap())
+                        & WS_VISIBLE
+                        != 0
+                };
                 let client = window_rect(parent);
                 let bits = rect_of(ui.controls.bits);
                 let dither = rect_of(ui.controls.dither);
@@ -1038,7 +1059,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
                     let page = ui.pages[page_index];
                     let bounds = window_rect(page);
                     for id in ids {
-                        let child = GetDlgItem(page, *id as i32);
+                        let child = GetDlgItem(page, i32::try_from(*id).unwrap());
                         assert!(!child.is_null());
                         let child_rect = window_rect(child);
                         assert!(
@@ -1405,7 +1426,7 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     populate_numeric_choice(ui.controls.rate, SAMPLE_RATES, SAMPLE_RATE_LABELS, 12345);
     check(ui.controls.dither, false);
     for (index, bits) in SAMPLE_BITS.iter().enumerate() {
-        combo_select(ui.controls.bits, index as i32);
+        combo_select(ui.controls.bits, i32::try_from(index).unwrap());
         handle_command(parent, &mut ui, ID_BITS, CBN_SELCHANGE);
         assert_eq!(get_text(ui.controls.bits), SAMPLE_BITS_LABELS[index]);
         assert_eq!(
@@ -1413,7 +1434,9 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
             bits.to_string()
         );
         assert_eq!(
-            (GetWindowLongPtrW(ui.controls.dither, -16) as u32) & WS_VISIBLE != 0,
+            (u32::try_from(GetWindowLongPtrW(ui.controls.dither, -16) & 0xffff_ffff).unwrap())
+                & WS_VISIBLE
+                != 0,
             *bits == 16
         );
     }
@@ -1421,7 +1444,8 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     handle_command(parent, &mut ui, ID_BITS, CBN_SELCHANGE);
     assert!(!checked(ui.controls.dither));
     assert_ne!(
-        GetWindowLongPtrW(ui.controls.dither, -16) as u32 & WS_VISIBLE,
+        u32::try_from(GetWindowLongPtrW(ui.controls.dither, -16) & 0xffff_ffff).unwrap()
+            & WS_VISIBLE,
         0
     );
     populate_numeric_choice(ui.controls.bits, SAMPLE_BITS, SAMPLE_BITS_LABELS, 17);
@@ -1697,7 +1721,6 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
 #[test]
 fn log_queue_applies_backpressure_and_keeps_completion_after_diagnostics() {
     let _ui_test_lock = ui_test_guard();
-    use std::sync::mpsc::TrySendError;
     let (sender, receiver) = sync_channel(LOG_QUEUE_CAPACITY);
     for index in 0..LOG_QUEUE_CAPACITY {
         sender

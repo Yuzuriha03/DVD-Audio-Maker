@@ -1,8 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "MLP fields intentionally retain protocol-width checksums and packet headers"
-)]
 use super::{MlpAlignment, MlpInspection};
 use std::{
     fs::File,
@@ -54,7 +49,8 @@ fn peak_rate(rate: i32) -> i32 {
     if rate <= 0 {
         0
     } else {
-        ((9_600_000_i64 * 16 - 8 + i64::from(rate) - 1) / i64::from(rate)) as i32
+        i32::try_from((9_600_000_i64 * 16 - 8 + i64::from(rate) - 1) / i64::from(rate))
+            .expect("MLP peak rate fits i32")
     }
 }
 
@@ -62,7 +58,8 @@ fn peak_rate(rate: i32) -> i32 {
 pub(super) fn checksum16(data: &[u8]) -> u16 {
     let mut crc = 0u16;
     for &byte in &data[..data.len() - 2] {
-        crc = CRC16_TABLE[usize::from((crc as u8) ^ byte)] ^ (crc >> 8);
+        // The AV checksum indexes its table with the protocol's low CRC byte.
+        crc = CRC16_TABLE[usize::from(crc.to_le_bytes()[0] ^ byte)] ^ (crc >> 8);
     }
     crc ^ u16::from_le_bytes([data[data.len() - 2], data[data.len() - 1]])
 }
@@ -99,8 +96,10 @@ fn parity(data: &[u8]) -> u8 {
 }
 
 fn parity_nibble(timing: u16, words: usize, header: u16) -> u16 {
-    let mut value =
-        u32::from(timing) ^ words as u32 ^ u32::from(header >> 8) ^ u32::from(header & 255);
+    let mut value = u32::from(timing)
+        ^ u32::try_from(words).expect("MLP access-unit words fit u32")
+        ^ u32::from(header >> 8)
+        ^ u32::from(header & 255);
     value ^= value >> 8;
     value ^= value >> 4;
     (value & 15) as u16
@@ -331,7 +330,7 @@ pub(super) fn align(data: &[u8]) -> Result<MlpAlignment, String> {
         }
         let sync = &mut output[offset + 4..offset + 32];
         let rate = sample_rate(sync).map_err(|()| invalid())?;
-        let wanted = peak_rate(rate) as u16;
+        let wanted = u16::try_from(peak_rate(rate)).map_err(|_| invalid())?;
         let old = be16(&sync[14..]);
         if old & 0x7fff != wanted {
             sync[14..16].copy_from_slice(&((old & 0x8000) | (wanted & 0x7fff)).to_be_bytes());
@@ -372,7 +371,8 @@ pub(super) fn align(data: &[u8]) -> Result<MlpAlignment, String> {
         output[offset..offset + 2].copy_from_slice(&header.to_be_bytes());
         let nibble = parity_nibble(be16(&output[last + 2..]), length / 2 + 2, header);
         old_header = i32::from(be16(&output[last..]));
-        let updated = ((nibble ^ 15) << 12) | (((length / 2 + 2) as u16) & 0x0fff);
+        let updated = ((nibble ^ 15) << 12)
+            | (u16::try_from(length / 2 + 2).map_err(|_| invalid())? & 0x0fff);
         output[last..last + 2].copy_from_slice(&updated.to_be_bytes());
         new_header = i32::from(updated);
         inserted = true;

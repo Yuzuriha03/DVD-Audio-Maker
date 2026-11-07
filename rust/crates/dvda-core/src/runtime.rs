@@ -3,7 +3,10 @@ use crate::{hash, preparation::state};
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
-    os::windows::fs::OpenOptionsExt,
+    os::windows::{
+        fs::{MetadataExt, OpenOptionsExt},
+        process::CommandExt,
+    },
     path::{Component, Path, PathBuf},
     sync::OnceLock,
     time::{Duration, Instant},
@@ -78,7 +81,8 @@ pub fn pack(root: &Path) -> Result<Vec<u8>, String> {
     }
     let metadata = serde_json::to_vec(&entries).map_err(|e| e.to_string())?;
     let mut output = MAGIC.to_vec();
-    output.extend((metadata.len() as u32).to_le_bytes());
+    // The wire header stores the low four length bytes, including for oversized input.
+    output.extend_from_slice(&metadata.len().to_le_bytes()[..4]);
     output.extend(metadata);
     output.extend(payload);
     Ok(output)
@@ -89,11 +93,10 @@ fn safe_target(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     // Reject directory junctions and symlinks, including existing leaf files.
     for part in relative.components() {
         target.push(part.as_os_str());
-        if let Ok(metadata) = fs::symlink_metadata(&target) {
-            use std::os::windows::fs::MetadataExt;
-            if metadata.file_attributes() & 0x400 != 0 {
-                return Err("Runtime contains a reparse point".into());
-            }
+        if let Ok(metadata) = fs::symlink_metadata(&target)
+            && metadata.file_attributes() & 0x400 != 0
+        {
+            return Err("Runtime contains a reparse point".into());
         }
     }
     Ok(target)
@@ -234,7 +237,6 @@ pub unsafe fn initialize(archive: &[u8]) -> Result<(), String> {
     let root = extract(archive, &cache)?;
     // Loaded Windows DLLs cannot be removed before the owning process exits.
     // The helper owns only this uniquely allocated directory, never a shared cache.
-    use std::os::windows::process::CommandExt;
     let script = format!(
         "Wait-Process -Id {} -ErrorAction SilentlyContinue; for ($i=0; $i -lt 30; $i++) {{ Remove-Item -LiteralPath '{}' -Recurse -Force -ErrorAction SilentlyContinue; if (-not (Test-Path -LiteralPath '{}')) {{ break }}; Start-Sleep -Milliseconds 200 }}",
         std::process::id(),

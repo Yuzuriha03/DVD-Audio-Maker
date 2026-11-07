@@ -17,10 +17,18 @@ pub(crate) struct MlpIntervalSlot {
     pub flags: u32,
 }
 
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "Interval totals intentionally reinterpret the low 32 bits as a two's-complement signed value"
+)]
 fn signed32(value: u32) -> i32 {
     value as i32
 }
 
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "Cycle and span casts retain the C interval state transitions after explicit protocol-range admission"
+)]
 pub(crate) fn mlp_interval_boundary(
     state: &mut MlpBoundaryState,
     mut cycle: u32,

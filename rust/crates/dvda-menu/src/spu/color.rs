@@ -1,9 +1,5 @@
 //! Colour values and the small subset of spumux colour parsing the menu path uses.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "Subpicture colour conversion intentionally produces byte-sized channels"
-)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub(crate) struct Color {
     pub(crate) r: u8,
@@ -56,7 +52,7 @@ pub(crate) fn parse_hex(text: &str) -> Result<Color, String> {
                 .ok_or_else(|| format!("bad hex color string {text:?}"))?;
             value = value * 16 + digit;
         }
-        *component = (value * 255 / scale) as u8;
+        *component = u8::try_from(value * 255 / scale).unwrap();
     }
     Ok(Color {
         r: components[0],

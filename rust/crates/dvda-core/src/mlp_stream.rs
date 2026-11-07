@@ -55,17 +55,16 @@ impl StreamIo for EncoderInput {
                     let consumed = std::mem::take(&mut self.current);
                     let _ = self.recycled.try_send(consumed);
                 }
-                match self.receiver.recv() {
-                    Ok(chunk) => {
-                        self.current = chunk;
-                        self.offset = 0;
-                        if self.current.is_empty()
-                            || !self.current.len().is_multiple_of(self.channels)
-                        {
-                            return Err(self.fail("Invalid streaming PCM block", -3));
-                        }
+                if let Ok(chunk) = self.receiver.recv() {
+                    self.current = chunk;
+                    self.offset = 0;
+                    if self.current.is_empty() || !self.current.len().is_multiple_of(self.channels)
+                    {
+                        return Err(self.fail("Invalid streaming PCM block", -3));
                     }
-                    Err(_) => break,
+                } else {
+                    self.offset = 0;
+                    break;
                 }
             }
             let available = (self.current.len() - self.offset) / self.channels;
@@ -171,6 +170,10 @@ impl Drop for Pipeline {
 }
 
 impl dvda_bridges::PcmSink for Pipeline {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Stream startup validates PCM geometry and establishes encoder, metadata, queue, and worker state together"
+    )]
     fn start(&mut self, format: dvda_bridges::PcmFormat) -> Result<(), i32> {
         if self.worker.is_some()
             || self.channels != 0
@@ -208,13 +211,13 @@ impl dvda_bridges::PcmSink for Pipeline {
         };
         let config = Config {
             sample_rate: format.sample_rate,
-            bits: format.bits as u8,
-            channels: format.channels as u8,
+            bits: u8::try_from(format.bits).expect("streaming MLP bit depth is validated"),
+            channels: u8::try_from(format.channels).expect("streaming MLP channels are validated"),
             restart_interval: 8,
             metadata: Vec::new(),
         };
         let profile = Profile {
-            assignment: assignment as usize,
+            assignment: usize::try_from(assignment).expect("channel assignment index fits usize"),
             group2_bits: config.bits,
             group2_rate: config.sample_rate,
         };
@@ -223,7 +226,8 @@ impl dvda_bridges::PcmSink for Pipeline {
             packet: stamp.packet,
             valid_bits: stamp.valid_bits,
         }];
-        let channels = format.channels as usize;
+        let channels =
+            usize::try_from(format.channels).expect("validated channel count fits usize");
         let (sender, receiver) = sync_channel(PCM_QUEUE_CHUNKS);
         let (recycled_sender, recycled) = mpsc::sync_channel(PCM_QUEUE_CHUNKS + 1);
         let cancelled = Arc::clone(&self.cancelled);
@@ -259,7 +263,7 @@ impl dvda_bridges::PcmSink for Pipeline {
                     .error
                     .iter()
                     .take_while(|&&byte| byte != 0)
-                    .map(|&byte| byte as u8)
+                    .map(|&byte| byte.cast_unsigned())
                     .collect();
                 return Err(Failure::new(
                     "InvalidOperation",
@@ -303,7 +307,8 @@ impl dvda_bridges::PcmSink for Pipeline {
                 }
             }
             if let Some((index, &sample)) = owned.iter().enumerate().find(|(_, sample)| {
-                !(-8_388_608..=8_388_607).contains(*sample) || **sample as u32 & precision_mask != 0
+                !(-8_388_608..=8_388_607).contains(*sample)
+                    || (**sample).cast_unsigned() & precision_mask != 0
             }) {
                 return Err(self.fail(
                     "InvalidData",
@@ -374,8 +379,8 @@ pub(crate) fn execute(
         let status = crate::native_components::media(library).run_pcm(
             &Request {
                 operation: Operation::Audio,
-                rate: rate as u32,
-                bits: bits as u32,
+                rate: rate.cast_unsigned(),
+                bits: bits.cast_unsigned(),
                 output_format: OutputFormat::None,
                 soxr: false,
                 dither,

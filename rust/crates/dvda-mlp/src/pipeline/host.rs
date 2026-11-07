@@ -11,6 +11,11 @@ pub(crate) struct HostIo<'a, 'io, 'refresh> {
     pub stamp_refresh: Option<&'refresh mut dyn FnMut() -> Result<Option<Metadata>, i32>>,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "Host configuration is admitted before protocol-width conversion, and callback failure/cancellation priorities remain in one orchestration function"
+)]
 pub(crate) fn encode_stream(
     config: &EncoderConfig,
     c: &Config,
@@ -120,7 +125,7 @@ pub(crate) fn encode_stream(
     let mut pending = IntervalOutput {
         au: Vec::new(),
         maximum_lsbs: 0,
-        restart: Default::default(),
+        restart: crate::syntax::restart::MlpRestart::default(),
         failure: None,
     };
     let mut queue = crate::output::queue::MlpOutputQueue::mlp_output_queue_init();

@@ -14,6 +14,10 @@ pub fn trim(text: &str) -> &str {
 ///
 /// # Errors
 /// Returns an error if the request is not a JSON string containing a path.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public safe_basename preserves the owned JSON request API used by crate::dispatch"
+)]
 pub fn safe_basename(request: Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected path")?;
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);

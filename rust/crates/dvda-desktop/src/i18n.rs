@@ -1,7 +1,3 @@
-#![allow(
-    clippy::too_many_lines,
-    reason = "Translation tables intentionally retain complete language mappings"
-)]
 //! UI languages and the translation table.
 
 use super::GetUserDefaultUILanguage;
@@ -48,6 +44,10 @@ impl Lang {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "The complete UI translation table keeps all language alternatives next to each key"
+)]
 pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
     match lang {
         Lang::Ko => korean::tr(key),
@@ -614,6 +614,10 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
 mod tests {
     use super::*;
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The exhaustive translation-key fixture is kept beside the all-language assertion"
+    )]
     fn all_ui_keys_exist_in_all_languages() {
         for key in [
             "app_subtitle",

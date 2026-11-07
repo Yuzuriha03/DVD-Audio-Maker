@@ -78,6 +78,10 @@ impl Default for EncoderResult {
         }
     }
 }
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "C error storage uses signed char bytes and preserves their two's-complement representation"
+)]
 pub(crate) fn fail(result: &mut EncoderResult, status: i32, message: &str) -> i32 {
     result.status = status;
     result.error.fill(0);
@@ -141,6 +145,10 @@ pub unsafe extern "C" fn mlp_encode_stream(
 /// When `metadata_count` is non-zero and `metadata` is non-null, `metadata` must be valid for
 /// `metadata_count` reads, and each record's `packet` must be valid for `size` reads. Null pointers
 /// and out-of-range counts and sizes are rejected here; the extent of `packet` is not checked.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Metadata packet lengths are admitted against the 16-bit C record size before conversion"
+)]
 unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'static str> {
     if config.metadata_count == 0 || config.metadata.is_null() || config.metadata_count > 4096 {
         return Err("Missing metadata timeline");
@@ -183,6 +191,11 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
 /// `call.input` and `call.output` must follow the `Read`/`Write` callback contracts for the whole call.
 /// `result` must be valid for writes and not aliased. A `stamp_refresh` callback is only supported on
 /// `x86_64`; other targets reject it with -1.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "FFI stream lengths and counters use validated C widths while admission, cancellation, and failure commit order remain in one function"
+)]
 unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
     let StreamCall {
         config,
@@ -473,6 +486,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "The ABI fixture compares signed C status and char representations using their native bit patterns"
+    )]
     fn null_boundaries_initialize_results_and_preserve_error_priority() {
         use std::ptr::{null, null_mut};
         for entry in 0..4 {
@@ -533,6 +550,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "The failure-text fixture deliberately materializes non-ASCII signed C char bit patterns"
+    )]
     fn failure_text_is_truncated_terminated_and_cleared() {
         let mut result = EncoderResult {
             access_units: 7,
@@ -548,6 +569,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The callback fixture uses bounded byte counts in protocol-width result fields"
+    )]
     fn callbacks_results_and_failures() {
         let packet = [0, 0, 0x40, 0];
         let record = StampRecord {

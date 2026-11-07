@@ -1,10 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    reason = "FFmpeg packet fields use validated C ABI widths and floating-point seconds for diagnostics"
-)]
 use crate::{
     Call, Cancel, Emit,
     ffmpeg::{
@@ -68,7 +61,7 @@ unsafe extern "C" fn logger(
                 format,
                 arguments,
                 buffer.as_mut_ptr(),
-                buffer.len() as i32,
+                i32::try_from(buffer.len()).expect("FFmpeg log buffer fits in i32"),
                 &raw mut print_prefix,
             );
             buffer[2047] = 0;
@@ -126,11 +119,7 @@ unsafe fn dictionary(metadata: *const c_void) -> String {
 /// # Safety
 /// `format` must be an open `AVFormatContext` whose stream information has been read, owned
 /// by the caller and alive for the call. `call` must be the active request.
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "Probe keeps the common fallible media-operation signature"
-)]
-unsafe fn probe(call: &Call, format: *mut Format) -> Result<(), i32> {
+unsafe fn probe(call: &Call, format: *mut Format) {
     unsafe {
         let mut records = Vec::new();
         for (index, stream) in streams(format).into_iter().enumerate() {
@@ -152,7 +141,12 @@ unsafe fn probe(call: &Call, format: *mut Format) -> Result<(), i32> {
         let duration = if (*format).duration() == i64::MIN {
             String::from("null")
         } else {
-            format!("{:.9}", (*format).duration() as f64 / 1_000_000.0)
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "The diagnostic protocol formats FFmpeg's i64 microseconds as decimal seconds"
+            )]
+            let seconds = (*format).duration() as f64 / 1_000_000.0;
+            format!("{seconds:.9}")
         };
         call.message(
             1,
@@ -162,7 +156,6 @@ unsafe fn probe(call: &Call, format: *mut Format) -> Result<(), i32> {
                 dictionary((*format).metadata())
             ),
         );
-        Ok(())
     }
 }
 /// # Safety
@@ -175,6 +168,7 @@ unsafe fn packets(call: &Call, format: *mut Format) -> Result<(), i32> {
             .iter()
             .position(|s| (*(**s).codecpar()).codec_type() == 1)
             .ok_or(-1_381_258_232)?;
+        let stream_index = i32::try_from(index).map_err(|_| INVALID)?;
         let base = (*streams[index]).time_base();
         let time = f64::from(base.num) / f64::from(base.den);
         let mut packet = av_packet_alloc();
@@ -191,17 +185,27 @@ unsafe fn packets(call: &Call, format: *mut Format) -> Result<(), i32> {
                     return Ok(());
                 }
                 done(status)?;
-                if (*packet).stream_index() == index as i32 {
+                if (*packet).stream_index() == stream_index {
                     let pts = if (*packet).pts() == i64::MIN {
                         0.0
                     } else {
-                        (*packet).pts() as f64 * time
+                        #[expect(
+                            clippy::cast_precision_loss,
+                            reason = "Packet diagnostics intentionally convert FFmpeg timestamps to floating-point seconds"
+                        )]
+                        let seconds = (*packet).pts() as f64 * time;
+                        seconds
                     };
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "Packet diagnostics intentionally convert FFmpeg durations to floating-point seconds"
+                    )]
+                    let duration = (*packet).duration() as f64 * time;
                     call.message(
                         1,
                         &format!(
                             "{pts:.9},{:.9},{},{}",
-                            (*packet).duration() as f64 * time,
+                            duration,
                             (*packet).size(),
                             (*packet).pos()
                         ),
@@ -232,10 +236,10 @@ unsafe fn cover(request: &Request, format: *mut Format) -> Result<(), i32> {
                 return Err(INVALID);
             }
             let mut file = std::fs::File::create(text(request.output))
-                .map_err(crate::media_convert::open_error)?;
+                .map_err(|error| crate::media_convert::open_error(&error))?;
             file.write_all(std::slice::from_raw_parts(
                 packet.data(),
-                packet.size() as usize,
+                usize::try_from(packet.size()).map_err(|_| INVALID)?,
             ))
             .map_err(|_| EIO)?;
             file.flush().map_err(|_| EIO)?;
@@ -274,10 +278,10 @@ unsafe fn run(
             {
                 source
                     .seek(SeekFrom::Start(0))
-                    .map_err(crate::media_convert::open_error)?;
+                    .map_err(|error| crate::media_convert::open_error(&error))?;
                 Some(
                     dvda_audio::wav::Reader::new(source)
-                        .map_err(crate::media_convert::open_error)?,
+                        .map_err(|error| crate::media_convert::open_error(&error))?,
                 )
             } else {
                 None
@@ -319,10 +323,12 @@ unsafe fn run(
                     Encoding::Float32 => AV_CODEC_ID_PCM_F32LE,
                     Encoding::Float64 => AV_CODEC_ID_PCM_F64LE,
                 };
-                *(*p).sample_rate_ptr() = spec.sample_rate as i32;
+                // Preserve the legacy wrapping conversion; sample rates above i32::MAX are a known defect.
+                *(*p).sample_rate_ptr() = spec.sample_rate.cast_signed();
                 // Match ffprobe's historical storage-width reporting: 20 valid
                 // bits in a 24-bit extensible WAV container are reported as 24.
-                *(*p).bits_per_raw_sample_ptr() = (spec.encoding.bytes() * 8) as i32;
+                *(*p).bits_per_raw_sample_ptr() =
+                    i32::try_from(spec.encoding.bytes() * 8).map_err(|_| INVALID)?;
                 if spec.channel_mask != 0 {
                     done(av_channel_layout_from_mask(
                         (*p).ch_layout_ptr(),
@@ -333,7 +339,7 @@ unsafe fn run(
                 }
                 *(*stream).time_base_ptr() = Rational {
                     num: 1,
-                    den: spec.sample_rate as i32,
+                    den: spec.sample_rate.cast_signed(),
                 };
                 *(*stream).duration_ptr() = i64::try_from(reader.frames()).map_err(|_| INVALID)?;
                 *(*format).duration_ptr() =
@@ -349,7 +355,10 @@ unsafe fn run(
                     ))?;
                 }
                 return match request.operation {
-                    1 => probe(call, format),
+                    1 => {
+                        probe(call, format);
+                        Ok(())
+                    }
                     2 => {
                         let align = spec.block_align() as u64;
                         let chunk = (4096 / align).max(1) * align;
@@ -359,12 +368,20 @@ unsafe fn run(
                                 return Err(EXIT);
                             }
                             let size = chunk.min(reader.data_bytes - offset);
+                            #[expect(
+                                clippy::cast_precision_loss,
+                                reason = "WAV packet diagnostics intentionally present frame offsets as floating-point seconds"
+                            )]
+                            let position = (offset / align) as f64 / f64::from(spec.sample_rate);
+                            #[expect(
+                                clippy::cast_precision_loss,
+                                reason = "WAV packet diagnostics intentionally present frame counts as floating-point seconds"
+                            )]
+                            let duration = (size / align) as f64 / f64::from(spec.sample_rate);
                             call.message(
                                 1,
                                 &format!(
-                                    "{:.9},{:.9},{},{}",
-                                    (offset / align) as f64 / f64::from(spec.sample_rate),
-                                    (size / align) as f64 / f64::from(spec.sample_rate),
+                                    "{position:.9},{duration:.9},{},{}",
                                     size,
                                     reader.data_offset + offset
                                 ),
@@ -391,7 +408,10 @@ unsafe fn run(
             ))?;
             done(avformat_find_stream_info(format, ptr::null_mut()))?;
             match request.operation {
-                1 => probe(call, format),
+                1 => {
+                    probe(call, format);
+                    Ok(())
+                }
                 2 => packets(call, format),
                 3 => crate::media_convert::audio_input(request, call, format, None, pcm_sink),
                 4 => crate::media_convert::video(request, call, format),

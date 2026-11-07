@@ -1,14 +1,25 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    reason = "Font coordinates intentionally use f32-compatible scaling and rounded pixel positions"
-)]
 use std::io;
 use swash::{
     FontRef,
     scale::{Render, ScaleContext, Source, image::Content},
 };
 use unicode_segmentation::UnicodeSegmentation;
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "rustybuzz and swash shaping coordinates use f32; this preserves their established rounding instead of changing shaping arithmetic to f64"
+)]
+fn font_units_to_f32(value: i64) -> f32 {
+    value as f32
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Shaped glyph offsets are rounded before conversion and checked again when narrowed to the public i32 GlyphMask coordinates"
+)]
+fn rounded_font_offset(value: f32) -> i64 {
+    value as i64
+}
 
 pub struct TextMask {
     pub glyphs: Vec<GlyphMask>,
@@ -55,7 +66,7 @@ pub fn shape_masks(
     buffer.push_str(text);
     buffer.guess_segment_properties();
     let shaped = rustybuzz::shape(&face, &[], buffer);
-    let scale = size / face.units_per_em() as f32;
+    let scale = size / font_units_to_f32(i64::from(face.units_per_em()));
     let mut context = ScaleContext::new();
     let mut scaler = context.builder(font).size(size).hint(true).build();
     let mut glyphs = Vec::new();
@@ -85,10 +96,12 @@ pub fn shape_masks(
             }
             crate::raster::check_working_bytes(&[coverage_bytes, image.data.len()])?;
             coverage_bytes += image.data.len();
-            let gx = (x + position.x_offset as f32 * scale).round() as i64
-                + i64::from(image.placement.left);
-            let gy = -((y + position.y_offset as f32 * scale).round() as i64)
-                - i64::from(image.placement.top);
+            let gx = rounded_font_offset(
+                (x + font_units_to_f32(i64::from(position.x_offset)) * scale).round(),
+            ) + i64::from(image.placement.left);
+            let gy = -rounded_font_offset(
+                (y + font_units_to_f32(i64::from(position.y_offset)) * scale).round(),
+            ) - i64::from(image.placement.top);
             glyphs.push(GlyphMask {
                 x: i32::try_from(gx).map_err(io::Error::other)?,
                 y: i32::try_from(gy).map_err(io::Error::other)?,
@@ -97,8 +110,8 @@ pub fn shape_masks(
                 coverage: image.data,
             });
         }
-        x += position.x_advance as f32 * scale;
-        y += position.y_advance as f32 * scale;
+        x += font_units_to_f32(i64::from(position.x_advance)) * scale;
+        y += font_units_to_f32(i64::from(position.y_advance)) * scale;
     }
     Ok(TextMask { glyphs, advance: x })
 }
@@ -138,7 +151,9 @@ pub fn wrap_lines(
             .iter()
             .map(|p| i64::from(p.x_advance))
             .sum();
-        (advance as f32 * size / face.units_per_em() as f32).abs() <= width
+        (font_units_to_f32(advance) * size / font_units_to_f32(i64::from(face.units_per_em())))
+            .abs()
+            <= width
     };
     Ok(wrap_measured(text, fits))
 }

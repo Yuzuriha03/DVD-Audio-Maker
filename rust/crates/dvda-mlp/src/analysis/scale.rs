@@ -28,6 +28,10 @@ fn headroom(mut value: u32) -> u32 {
     n
 }
 
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "Scaling preserves the original signed interpretation of protocol-width quantization parameters"
+)]
 pub(crate) fn mlp_scale_analyze(
     summary: &[u32],
     blocks: usize,

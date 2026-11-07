@@ -41,7 +41,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> 
             cache_rebuilt: 0,
             diagnostics: vec![error(
                 "EXTERNAL_MLP_DIRECTORY_INVALID",
-                format!("外部 MLP 目录无效: {}", job.external_root),
+                &format!("外部 MLP 目录无效: {}", job.external_root),
             )],
         });
     }
@@ -55,7 +55,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> 
         .map(|name| {
             error(
                 "EXTERNAL_MLP_BASENAME_AMBIGUOUS",
-                format!("外部 MLP 文件名重复，无法安全回退匹配: {name}"),
+                &format!("外部 MLP 文件名重复，无法安全回退匹配: {name}"),
             )
         })
         .collect::<Vec<_>>();
@@ -67,7 +67,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> 
         &job.tracks,
         caller,
         "MLP 导入已被取消。",
-        |_, track, callbacks| import_track(&job, &index, &native, track, callbacks),
+        |_, track, callbacks| import_track(&job, &index, native, track, callbacks),
         |_, _, callbacks| {
             completed += 1;
             callbacks.progress(completed, job.tracks.len() as u64);
@@ -86,7 +86,7 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> 
     if channel_counts.len() > 1 {
         diagnostics.push(error(
             "EXTERNAL_MLP_CHANNELS_MIXED",
-            format!(
+            &format!(
                 "外部 MLP 声道数不一致: {}",
                 channel_counts
                     .into_iter()
@@ -113,7 +113,7 @@ struct ImportedTrack {
 fn import_track(
     job: &Job,
     index: &HashMap<String, String>,
-    native: &NativeFormats,
+    native: NativeFormats,
     track: &Value,
     caller: &mut dyn Callbacks,
 ) -> Result<ImportedTrack, String> {
@@ -132,7 +132,7 @@ fn import_track(
             track: track.clone(),
             diagnostic: Some(error(
                 "EXTERNAL_MLP_MISSING",
-                format!(
+                &format!(
                     "找不到外部 MLP: {}",
                     text(track, "Title").unwrap_or("Track")
                 ),
@@ -146,7 +146,7 @@ fn import_track(
             track: track.clone(),
             diagnostic: Some(error(
                 "EXTERNAL_MLP_EMPTY",
-                format!("外部 MLP 是空文件: {hit}"),
+                &format!("外部 MLP 是空文件: {hit}"),
             )),
             channels: None,
         });
@@ -159,7 +159,7 @@ fn import_track(
             track: track.clone(),
             diagnostic: Some(error(
                 "EXTERNAL_MLP_INVALID",
-                format!("外部 MLP 结构校验失败: {hit}"),
+                &format!("外部 MLP 结构校验失败: {hit}"),
             )),
             channels: None,
         });
@@ -175,7 +175,7 @@ fn import_track(
             track: track.clone(),
             diagnostic: Some(error(
                 "EXTERNAL_MLP_PROBE_FAILED",
-                format!("无法探测外部 MLP 参数: {hit}"),
+                &format!("无法探测外部 MLP 参数: {hit}"),
             )),
             channels: None,
         });
@@ -244,6 +244,6 @@ fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
         .and_then(Value::as_str)
 }
 
-fn error(code: &str, message: String) -> Value {
+fn error(code: &str, message: &str) -> Value {
     json!({"Severity":2,"Code":code,"Message":message})
 }

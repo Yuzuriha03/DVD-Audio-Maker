@@ -115,6 +115,11 @@ struct Request {
     disc_bytes: i64,
     group_track_limit: i32,
 }
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "Capacity estimates retain the established f64 multiply/ceil and saturating float-to-i64 conversion; integer arithmetic changes boundary results"
+)]
 fn estimate(bytes: i64) -> Result<i64, String> {
     let value = (bytes as f64 * 1.025).ceil();
     if !value.is_finite() || value >= 9_223_372_036_854_775_808.0 {
@@ -128,6 +133,89 @@ fn diagnostic(list: &mut Vec<Diagnostic>, severity: i32, code: &str, message: St
         code: code.into(),
         message,
     });
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "Group comparisons preserve the existing low-32-bit signed track count for oversized input arrays"
+)]
+fn group_track_count(count: usize) -> i32 {
+    count as i32
+}
+
+fn groups_for_albums(
+    items: &[(String, Vec<Track>, i64)],
+    group_limit: i32,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<Group> {
+    let mut bucket: Vec<(GroupKey, Vec<Track>)> = Vec::new();
+    for (_, members, _) in items {
+        for track in members {
+            let is_lpcm = track.mlp_source == "lpcm";
+            let key = (
+                track.sample_rate,
+                track.bits,
+                if is_lpcm { "lpcm" } else { "mlp" }.into(),
+                if is_lpcm {
+                    track.channels.unwrap_or(0)
+                } else {
+                    0
+                },
+                if is_lpcm {
+                    track.channel_mask.unwrap_or(0)
+                } else {
+                    0
+                },
+            );
+            if let Some((_, list)) = bucket.iter_mut().find(|(candidate, _)| *candidate == key) {
+                list.push(track.clone());
+            } else {
+                bucket.push((key, vec![track.clone()]));
+            }
+        }
+    }
+    let mut groups = Vec::new();
+    for (key, members) in bucket {
+        let mut chunks: Vec<Vec<Track>> = Vec::new();
+        let mut chunk: Vec<Track> = Vec::new();
+        for track in members {
+            if !chunk.is_empty()
+                && track.album != chunk.last().unwrap().album
+                && group_track_count(chunk.len()) >= group_limit
+            {
+                chunks.push(std::mem::take(&mut chunk));
+            }
+            chunk.push(track);
+        }
+        if !chunk.is_empty() {
+            chunks.push(chunk);
+        }
+        for chunk in chunks {
+            if group_track_count(chunk.len()) > group_limit {
+                diagnostic(
+                    diagnostics,
+                    1,
+                    "ALBUM_EXCEEDS_GROUP_LIMIT",
+                    format!(
+                        "专辑“{}”在 {}Hz/{}bit 组中有 {} 轨，超过组轨上限 {}；为保持专辑完整未拆分。",
+                        chunk[0].album,
+                        key.0,
+                        key.1,
+                        chunk.len(),
+                        group_limit
+                    ),
+                );
+            }
+            groups.push(Group {
+                number: groups.len() + 1,
+                sample_rate: key.0,
+                bits: key.1,
+                tracks: chunk,
+            });
+        }
+    }
+    groups
 }
 
 /// # Errors
@@ -204,73 +292,7 @@ pub fn plan(tracks: Vec<Track>, disc_bytes: i64, group_limit: i32) -> Result<Pla
                 ),
             );
         }
-        let mut bucket: Vec<(GroupKey, Vec<Track>)> = Vec::new();
-        for (_, members, _) in &items {
-            for track in members {
-                let is_lpcm = track.mlp_source == "lpcm";
-                let key = (
-                    track.sample_rate,
-                    track.bits,
-                    if is_lpcm { "lpcm" } else { "mlp" }.into(),
-                    if is_lpcm {
-                        track.channels.unwrap_or(0)
-                    } else {
-                        0
-                    },
-                    if is_lpcm {
-                        track.channel_mask.unwrap_or(0)
-                    } else {
-                        0
-                    },
-                );
-                if let Some((_, list)) = bucket.iter_mut().find(|(candidate, _)| *candidate == key)
-                {
-                    list.push(track.clone());
-                } else {
-                    bucket.push((key, vec![track.clone()]));
-                }
-            }
-        }
-        let mut groups = Vec::new();
-        for (key, members) in bucket {
-            let mut chunks: Vec<Vec<Track>> = Vec::new();
-            let mut chunk: Vec<Track> = Vec::new();
-            for track in members {
-                if !chunk.is_empty()
-                    && track.album != chunk.last().unwrap().album
-                    && chunk.len() as i32 >= group_limit
-                {
-                    chunks.push(std::mem::take(&mut chunk));
-                }
-                chunk.push(track);
-            }
-            if !chunk.is_empty() {
-                chunks.push(chunk);
-            }
-            for chunk in chunks {
-                if chunk.len() as i32 > group_limit {
-                    diagnostic(
-                        &mut diagnostics,
-                        1,
-                        "ALBUM_EXCEEDS_GROUP_LIMIT",
-                        format!(
-                            "专辑“{}”在 {}Hz/{}bit 组中有 {} 轨，超过组轨上限 {}；为保持专辑完整未拆分。",
-                            chunk[0].album,
-                            key.0,
-                            key.1,
-                            chunk.len(),
-                            group_limit
-                        ),
-                    );
-                }
-                groups.push(Group {
-                    number: groups.len() + 1,
-                    sample_rate: key.0,
-                    bits: key.1,
-                    tracks: chunk,
-                });
-            }
-        }
+        let groups = groups_for_albums(&items, group_limit, &mut diagnostics);
         let tracks_on_disc: Vec<_> = items
             .iter()
             .flat_map(|(_, tracks, _)| tracks.iter().cloned())
@@ -317,7 +339,9 @@ pub fn dispatch(request: Value) -> Result<Value, String> {
 /// Returns an error for a non-object request, missing or invalid tracks, a
 /// non-integer album limit, or failure to serialize the retained tracks.
 pub fn limit_albums(request: Value) -> Result<Value, String> {
-    let object = request.as_object().ok_or("Expected album limit request")?;
+    let Value::Object(object) = request else {
+        return Err("Expected album limit request".into());
+    };
     let tracks: Vec<Track> = serde_json::from_value(
         object
             .get("Tracks")
@@ -328,10 +352,13 @@ pub fn limit_albums(request: Value) -> Result<Value, String> {
     let Some(limit) = object.get("AlbumLimit").filter(|value| !value.is_null()) else {
         return serde_json::to_value(tracks).map_err(|error| error.to_string());
     };
-    let limit = limit
-        .as_i64()
-        .ok_or("Album limit must be an integer")?
-        .max(0) as usize;
+    let limit = usize::try_from(
+        limit
+            .as_i64()
+            .ok_or("Album limit must be an integer")?
+            .max(0),
+    )
+    .unwrap_or(usize::MAX);
     let mut seen = HashSet::new();
     let retained: HashSet<String> = tracks
         .iter()
@@ -363,6 +390,16 @@ mod tests {
             ..Track::default()
         }
     }
+    #[test]
+    fn signed_group_counts_keep_their_existing_low_bits() {
+        assert_eq!(group_track_count(99), 99);
+        assert_eq!(
+            group_track_count(usize::try_from(i32::MAX).unwrap() + 1),
+            i32::MIN
+        );
+        assert_eq!(group_track_count(usize::try_from(u32::MAX).unwrap()), -1);
+    }
+
     #[test]
     fn keeps_album_together_when_capacity_splits() {
         let result = plan(

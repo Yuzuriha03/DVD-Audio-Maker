@@ -1,8 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "The PTS fixture intentionally packs protocol-width timestamp fields"
-)]
 use std::{io::Read, path::Path};
 mod developer;
 mod process_fixture;
@@ -114,11 +109,12 @@ fn collect_mlp(root: &Path, output: &mut Vec<std::path::PathBuf>) -> Result<(), 
 }
 
 fn encode_pts(value: i64) -> [u8; 5] {
+    let low_byte = |value: i64| value.to_le_bytes()[0];
     [
-        0x21 | (((value >> 29) & 0x0e) as u8),
-        (value >> 22) as u8,
-        (((value >> 14) & 0xfe) as u8) | 1,
-        (value >> 7) as u8,
-        (((value << 1) & 0xfe) as u8) | 1,
+        0x21 | low_byte((value >> 29) & 0x0e),
+        low_byte(value >> 22),
+        low_byte((value >> 14) & 0xfe) | 1,
+        low_byte(value >> 7),
+        low_byte((value << 1) & 0xfe) | 1,
     ]
 }

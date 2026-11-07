@@ -35,7 +35,9 @@ fn matches_iso_name(path: &Path, prefix: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     let prefix = prefix.to_ascii_lowercase();
     lower.starts_with(&(prefix.clone() + "_"))
-        && lower.ends_with(".iso")
+        && path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("iso"))
         && lower[prefix.len() + 1..lower.len() - 4]
             .parse::<i32>()
             .is_ok()

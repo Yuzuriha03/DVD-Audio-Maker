@@ -1,12 +1,5 @@
 //! Independent preparation regression; fixtures were frozen from the old host.
 //! Only the source-built C media component is loaded. No managed/external host.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::needless_pass_by_value,
-    clippy::struct_field_names,
-    reason = "Preparation fixtures construct deterministic source evidence and owned task records"
-)]
 use dvda_core::{
     audio, media,
     preparation::{alac, pipeline, state},
@@ -83,6 +76,11 @@ fn job(root: &Path) -> pipeline::Job {
         production: None,
     }
 }
+#[derive(Clone, Copy)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "The fixture's track field is the serialized track-number metadata, not a redundant Rust prefix"
+)]
 struct Track<'a> {
     name: &'a str,
     rate: u32,
@@ -109,27 +107,30 @@ fn audio(root: &Path, track: Track<'_>) {
     let output = root.join("src").join(format!("{name}.flac"));
     let width = if bits == 16 { 2usize } else { 3 };
     let size = frames * usize::from(channels) * width;
+    let size32 = u32::try_from(size).unwrap();
+    let width32 = u32::try_from(width).unwrap();
+    let width16 = u16::try_from(width).unwrap();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(60 + size as u32 + size as u32 % 2).to_le_bytes());
+    bytes.extend_from_slice(&(60 + size32 + size32 % 2).to_le_bytes());
     bytes.extend_from_slice(b"WAVEfmt ");
     bytes.extend_from_slice(&40u32.to_le_bytes());
     bytes.extend_from_slice(&0xfffeu16.to_le_bytes());
     bytes.extend_from_slice(&channels.to_le_bytes());
     bytes.extend_from_slice(&rate.to_le_bytes());
-    bytes.extend_from_slice(&(rate * u32::from(channels) * width as u32).to_le_bytes());
-    bytes.extend_from_slice(&(channels * width as u16).to_le_bytes());
-    bytes.extend_from_slice(&(width as u16 * 8).to_le_bytes());
+    bytes.extend_from_slice(&(rate * u32::from(channels) * width32).to_le_bytes());
+    bytes.extend_from_slice(&(channels * width16).to_le_bytes());
+    bytes.extend_from_slice(&(width16 * 8).to_le_bytes());
     bytes.extend_from_slice(&22u16.to_le_bytes());
     bytes.extend_from_slice(&bits.to_le_bytes());
     bytes
         .extend_from_slice(&[0u32, 4, 3, 7, 0x33, 0x37, 0x3f][usize::from(channels)].to_le_bytes());
     bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
     bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&(size as u32).to_le_bytes());
+    bytes.extend_from_slice(&size32.to_le_bytes());
     for n in 0..frames {
         for c in 0..usize::from(channels) {
-            let value = (((n * (97 + c * 18) + c * 53) % 100_001) as i32 - 50000)
+            let value = (i32::try_from((n * (97 + c * 18) + c * 53) % 100_001).unwrap() - 50_000)
                 & !((1 << (24 - bits)) - 1);
             let stored = if bits == 16 { value >> 8 } else { value };
             bytes.extend_from_slice(&stored.to_le_bytes()[..width]);

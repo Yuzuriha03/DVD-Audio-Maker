@@ -43,6 +43,10 @@ where
     fn position(&self) -> usize {
         self.position
     }
+    #[allow(
+        clippy::cast_sign_loss,
+        reason = "Input parity masks the low 24 bits of signed PCM without changing its two's-complement representation"
+    )]
     fn read_into(&mut self, capacity: usize, pcm: &mut Vec<i32>) -> Result<(), ()> {
         self.failed = true;
         if capacity == 0 || capacity > 160 || self.position > self.frames {

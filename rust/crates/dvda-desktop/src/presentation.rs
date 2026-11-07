@@ -1,8 +1,3 @@
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::too_many_lines,
-    reason = "Presentation retains human-readable capacity rounding and complete message classification"
-)]
 //! Presentation rules retained from `TaskLogPresentation` without coupling to widgets.
 use super::{Lang, localized_detail, localized_log};
 
@@ -78,6 +73,10 @@ pub fn activity_only(text: &str) -> bool {
         || serde_json::from_str::<serde_json::Value>(text).is_ok_and(|v| v["Kind"] == "PcmProgress")
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps ordered summary classification and its complete five-language messages together"
+)]
 pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String> {
     let text = text.trim();
     if text.starts_with("[METRIC] ") {
@@ -300,6 +299,10 @@ pub fn activity(lang: Lang, text: &str) -> Option<String> {
     None
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps ordered task-message classification and complete translations together"
+)]
 pub fn task_message(lang: Lang, raw: &str) -> Option<String> {
     let event = dvda_core::task_log::parse(raw)?;
     let c = event.current;
@@ -626,11 +629,16 @@ fn space_message(lang: Lang, text: &str) -> Option<String> {
     let (head, available) = value.rsplit_once(", available ")?;
     let (head, required) = head.rsplit_once(", required ")?;
     let required = required.strip_suffix(" B")?.parse::<u64>().ok()?;
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Human-readable GiB retains the existing f64 rounding to two decimals, not exact byte arithmetic"
+    )]
+    let gib = |bytes: u64| format!("{:.2} GiB", bytes as f64 / 1_073_741_824.0);
     let available = if available == "unknown" {
         phrase(lang, "未知", "未知", "unknown", "不明", "알 수 없음").to_owned()
     } else {
         let bytes = available.strip_suffix(" B")?.parse::<u64>().ok()?;
-        format!("{:.2} GiB", bytes as f64 / 1_073_741_824.0)
+        gib(bytes)
     };
     let (volume, purpose) = head.split_once(": ")?;
     let purpose = if purpose == "MLP 编码输出" {
@@ -656,7 +664,6 @@ fn space_message(lang: Lang, text: &str) -> Option<String> {
     } else {
         dvda_core::localization::translate(lang.code(), purpose)
     };
-    let gib = |bytes: u64| format!("{:.2} GiB", bytes as f64 / 1_073_741_824.0);
     Some(match lang {
         Lang::Zh => format!(
             "空间检查 · {volume} · {purpose}：预计需要 {}，可用 {available}。",

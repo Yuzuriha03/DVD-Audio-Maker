@@ -1,10 +1,4 @@
 //! Standalone conversion parity, including metadata, cover, failure and cancellation.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    clippy::trivially_copy_pass_by_ref,
-    reason = "Conversion fixtures construct bounded metadata atoms and complete failure scenarios"
-)]
 use dvda_core::{
     conversion::{self, Job},
     formats,
@@ -61,17 +55,20 @@ fn job(root: &Path) -> Job {
         delete_sources: false,
     }
 }
-fn atom(name: &[u8; 4], data: &[u8]) -> Vec<u8> {
-    let mut result = ((data.len() + 8) as u32).to_be_bytes().to_vec();
-    result.extend_from_slice(name);
+fn atom(name: [u8; 4], data: &[u8]) -> Vec<u8> {
+    let mut result = u32::try_from(data.len() + 8)
+        .unwrap()
+        .to_be_bytes()
+        .to_vec();
+    result.extend_from_slice(&name);
     result.extend_from_slice(data);
     result
 }
-fn tag(name: &[u8; 4], data: &[u8], kind: u32) -> Vec<u8> {
+fn tag(name: [u8; 4], data: &[u8], kind: u32) -> Vec<u8> {
     let mut value = kind.to_be_bytes().to_vec();
     value.extend_from_slice(&[0; 4]);
     value.extend_from_slice(data);
-    atom(name, &atom(b"data", &value))
+    atom(name, &atom(*b"data", &value))
 }
 fn tagged() -> Vec<u8> {
     // Inject iTunes metadata into a tail moov; existing audio chunk offsets stay valid.
@@ -81,18 +78,18 @@ fn tagged() -> Vec<u8> {
         0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 12, 73, 68, 65, 84, 8, 215, 99, 248, 207, 192, 0, 0,
         3, 1, 1, 0, 24, 221, 141, 176, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ];
-    let mut tags = tag(b"\xa9nam", "  标题\n日本語  ".as_bytes(), 1);
-    tags.extend(tag(b"\xa9alb", "专辑".as_bytes(), 1));
-    tags.extend(tag(b"covr", &png, 14));
+    let mut tags = tag(*b"\xa9nam", "  标题\n日本語  ".as_bytes(), 1);
+    tags.extend(tag(*b"\xa9alb", "专辑".as_bytes(), 1));
+    tags.extend(tag(*b"covr", &png, 14));
     let mut metadata = vec![0; 4];
     metadata.extend(atom(
-        b"hdlr",
+        *b"hdlr",
         &[
             0, 0, 0, 0, 0, 0, 0, 0, b'm', b'd', b'i', b'r', b'a', b'p', b'p', b'l', 0, 0, 0, 0, 0,
             0, 0, 0, 0,
         ],
     ));
-    metadata.extend(atom(b"ilst", &tags));
+    metadata.extend(atom(*b"ilst", &tags));
     let mut output = vec![];
     let mut offset = 0;
     while offset < input.len() {
@@ -107,8 +104,8 @@ fn tagged() -> Vec<u8> {
                 }
                 child += n;
             }
-            body.extend(atom(b"udta", &atom(b"meta", &metadata)));
-            output.extend(atom(b"moov", &body));
+            body.extend(atom(*b"udta", &atom(*b"meta", &metadata)));
+            output.extend(atom(*b"moov", &body));
         } else {
             output.extend_from_slice(&input[offset..offset + size]);
         }
@@ -118,6 +115,10 @@ fn tagged() -> Vec<u8> {
 }
 #[test]
 #[ignore = "requires source-built media and C17 formats"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The ignored conversion parity scenario keeps metadata, PCM, failure, and cancellation stages ordered"
+)]
 fn converter_preserves_tags_cover_pcm_and_batch_failure_semantics() {
     let root = Scratch::new();
     let source = root.0.join("cover.m4a");

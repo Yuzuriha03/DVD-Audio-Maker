@@ -75,9 +75,10 @@ fn scan_file(path: &str, maximum: Option<i32>) -> Result<FileScan, ScanError> {
     let mut values = Vec::new();
     loop {
         let limit = maximum.filter(|n| *n > 0).unwrap_or(i32::MAX);
-        let request = buffer
-            .len()
-            .min((limit - sector_count) as usize * SECTOR_SIZE);
+        let request = buffer.len().min(
+            usize::try_from(limit - sector_count).expect("sector count never exceeds limit")
+                * SECTOR_SIZE,
+        );
         if request == 0 {
             break;
         }
@@ -256,6 +257,10 @@ pub fn pts_statistics(values: &[i64]) -> PtsStatistics {
 /// Panics with overflow checks enabled if adjacent timestamps cannot be
 /// subtracted in `i64`. The extrema lookups rely on the preceding empty-step guard.
 #[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "PTS medians and percentage thresholds intentionally use the existing f64 rounding for i64 timestamps and slice lengths"
+)]
 pub fn pts_statistics_with_resets(values: &[i64], resets: &[usize]) -> PtsStatistics {
     let first_pts = values.first().copied();
     let last_pts = values.last().copied();
@@ -292,10 +297,11 @@ pub fn pts_statistics_with_resets(values: &[i64], resets: &[usize]) -> PtsStatis
     } else {
         f64::midpoint(ordered[middle - 1] as f64, ordered[middle] as f64)
     };
+    // JSON counters retain their existing low-32-bit wrapping for oversized arrays.
     let abnormal_steps = steps
         .iter()
         .filter(|&&step| step <= 0 || (step as f64) > median_step * 20.0)
-        .count() as i32;
+        .fold(0_i32, |count, _| count.wrapping_add(1));
     let abnormal_ratio = f64::from(abnormal_steps) * 100.0 / steps.len() as f64;
     let mut issue_codes = Vec::new();
     if first_pts == last_pts {
@@ -309,8 +315,14 @@ pub fn pts_statistics_with_resets(values: &[i64], resets: &[usize]) -> PtsStatis
         last_pts,
         minimum_step: *steps.iter().min().expect("non-empty steps"),
         maximum_step: *steps.iter().max().expect("non-empty steps"),
-        negative_steps: steps.iter().filter(|&&step| step < 0).count() as i32,
-        zero_steps: steps.iter().filter(|&&step| step == 0).count() as i32,
+        negative_steps: steps
+            .iter()
+            .filter(|&&step| step < 0)
+            .fold(0_i32, |count, _| count.wrapping_add(1)),
+        zero_steps: steps
+            .iter()
+            .filter(|&&step| step == 0)
+            .fold(0_i32, |count, _| count.wrapping_add(1)),
         median_step,
         abnormal_steps,
         abnormal_ratio,
@@ -362,6 +374,16 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wide_timestamp_medians_keep_existing_float_rounding() {
+        let result = pts_statistics(&[0, 9_007_199_254_740_993, 18_014_398_509_481_986]);
+        assert_eq!(
+            result.median_step.to_bits(),
+            9_007_199_254_740_992_f64.to_bits()
+        );
+        assert_eq!(result.abnormal_steps, 0);
+    }
 
     #[test]
     fn statistics_exclude_only_declared_title_resets() {

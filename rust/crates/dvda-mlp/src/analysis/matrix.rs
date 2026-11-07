@@ -6,6 +6,12 @@ pub(crate) struct MlpMatrixPrimitive {
     pub coefficient: [i32; 18],
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Noise matrix coefficients deliberately pack signed values and channel indices into protocol-width bit patterns"
+)]
 pub(crate) fn mlp_matrix_noise(
     seed: &mut u32,
     count: usize,
@@ -42,6 +48,12 @@ pub(crate) struct MatrixApplyArgs<'a> {
     pub clip: bool,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    reason = "Matrix order and coefficient casts retain protocol widths and signed residual bit patterns while preserving the original block loop"
+)]
 pub(crate) fn mlp_matrix_apply(args: MatrixApplyArgs<'_>) -> i32 {
     let MatrixApplyArgs {
         matrix,
@@ -189,6 +201,11 @@ pub(crate) struct MatrixIntervalArgs<'a> {
     pub(crate) prefix: usize,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "Interval channel indices are bounded before protocol-width conversion and the matrix update sequence remains contiguous"
+)]
 fn apply_interval(args: MatrixIntervalArgs<'_>) -> i32 {
     let MatrixIntervalArgs {
         matrix,

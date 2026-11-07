@@ -1,7 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "Menu fixtures construct bounded DVD coordinates"
-)]
 use dvda_author::{
     Callbacks, Silent,
     menu::{self, Backend, Options, Target, Track},
@@ -59,8 +55,8 @@ fn program(norm: &str, still: bool) -> Vec<u8> {
     data[2100..2104].copy_from_slice(&[0, 0, 1, 0xb3]);
     data[2104..2112].copy_from_slice(&[
         0x2d,
-        (height >> 8) as u8,
-        height as u8,
+        height.to_be_bytes()[0],
+        height.to_be_bytes()[1],
         if norm == "ntsc" { 0x24 } else { 0x23 },
         0,
         0,

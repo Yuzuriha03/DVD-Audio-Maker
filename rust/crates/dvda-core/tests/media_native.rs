@@ -1,13 +1,4 @@
 //! Standalone tests: no managed runner or external converter is involved.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    clippy::struct_excessive_bools,
-    reason = "Media fixtures use explicit callback switches and bounded PCM test data"
-)]
 use dvda_core::media::{Job, Outcome, execute};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use std::{
@@ -39,6 +30,10 @@ impl Drop for Scratch {
     }
 }
 #[derive(Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The callback fixture independently controls cancellation, delay, and panic branches"
+)]
 struct Events {
     text: Vec<(i32, String)>,
     cancel: bool,
@@ -82,13 +77,15 @@ fn job(input: &Path, output: &Path, rate: u32, bits: u32) -> Job {
         },
     }
 }
-fn passed(result: Outcome) {
+fn passed(result: &Outcome) {
     assert!(result.failure.is_none(), "{:?}", result.failure);
     assert_eq!(result.exit_code, Some(0));
 }
 fn wave(path: &Path, rate: u32, bits: u32, channels: u16) -> Vec<u8> {
     let frames = 417usize;
     let width = if bits == 16 { 2usize } else { 3 };
+    let width32 = u32::try_from(width).unwrap();
+    let width16 = u16::try_from(width).unwrap();
     let mut data = Vec::new();
     let mut expected = Vec::new();
     let mut seed = 0x7132_91ab_u32;
@@ -100,14 +97,14 @@ fn wave(path: &Path, rate: u32, bits: u32, channels: u16) -> Vec<u8> {
             2 => 0,
             3 => 1,
             4 => -1,
-            _ => (seed >> 8) as i32 - 8_388_608,
+            _ => i32::try_from(seed >> 8).unwrap() - 8_388_608,
         };
         let value = value & !((1 << (24 - bits)) - 1);
         expected.extend_from_slice(&value.to_le_bytes()[..3]);
         let stored = if bits == 16 { value >> 8 } else { value };
         data.extend_from_slice(&stored.to_le_bytes()[..width]);
     }
-    let size = data.len() as u32;
+    let size = u32::try_from(data.len()).unwrap();
     let mut wav = Vec::new();
     wav.extend_from_slice(b"RIFF");
     wav.extend_from_slice(&(60 + size + size % 2).to_le_bytes());
@@ -116,11 +113,11 @@ fn wave(path: &Path, rate: u32, bits: u32, channels: u16) -> Vec<u8> {
     wav.extend_from_slice(&0xfffeu16.to_le_bytes());
     wav.extend_from_slice(&channels.to_le_bytes());
     wav.extend_from_slice(&rate.to_le_bytes());
-    wav.extend_from_slice(&(rate * u32::from(channels) * width as u32).to_le_bytes());
-    wav.extend_from_slice(&(channels * width as u16).to_le_bytes());
-    wav.extend_from_slice(&(width as u16 * 8).to_le_bytes());
+    wav.extend_from_slice(&(rate * u32::from(channels) * width32).to_le_bytes());
+    wav.extend_from_slice(&(channels * width16).to_le_bytes());
+    wav.extend_from_slice(&(width16 * 8).to_le_bytes());
     wav.extend_from_slice(&22u16.to_le_bytes());
-    wav.extend_from_slice(&(bits as u16).to_le_bytes());
+    wav.extend_from_slice(&(u16::try_from(bits).unwrap()).to_le_bytes());
     wav.extend_from_slice(&[0u32, 4, 3, 7, 0x33, 0x37, 0x3f][channels as usize].to_le_bytes());
     wav.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
     wav.extend_from_slice(b"data");
@@ -145,7 +142,7 @@ fn rust_wave_probe_packets_and_signature_detection() {
     probe.request.output = None;
     probe.request.output_format = OutputFormat::None;
     let mut events = Events::default();
-    passed(execute(probe, &mut events));
+    passed(&execute(probe, &mut events));
     let json: serde_json::Value = serde_json::from_str(
         &events
             .text
@@ -163,7 +160,7 @@ fn rust_wave_probe_packets_and_signature_detection() {
     packets.request.output = None;
     packets.request.output_format = OutputFormat::None;
     let mut events = Events::default();
-    passed(execute(packets, &mut events));
+    passed(&execute(packets, &mut events));
     assert!(
         events
             .text
@@ -172,7 +169,7 @@ fn rust_wave_probe_packets_and_signature_detection() {
         "{:?}",
         events.text
     );
-    passed(execute(
+    passed(&execute(
         job(&input, &output, 48000, 24),
         &mut Events::default(),
     ));
@@ -195,7 +192,7 @@ fn rust_wave_s16_output_preserves_full_precision_input() {
     let mut request = job(&input, &output, 48000, 16);
     request.request.bits = 16;
     request.request.output_format = OutputFormat::S16;
-    passed(execute(request, &mut Events::default()));
+    passed(&execute(request, &mut Events::default()));
     assert_eq!(fs::read(output).unwrap(), expected);
 }
 
@@ -211,17 +208,19 @@ fn rust_wave_pcm_encodings_preserve_exact_samples() {
         let mut expected = Vec::new();
         for value in values.into_iter().cycle().take(5003) {
             match (tag, bits) {
-                (1, 8) => data.push((value + 128) as u8),
-                (1, 16) => data.extend(((value << 8) as i16).to_le_bytes()),
+                (1, 8) => data.push(u8::try_from(value + 128).unwrap()),
+                (1, 16) => data.extend(i16::try_from(value << 8).unwrap().to_le_bytes()),
                 (1, 24) => data.extend(&(value << 16).to_le_bytes()[..3]),
                 (1, 32) => data.extend((value << 24).to_le_bytes()),
-                (3, 32) => data.extend((value as f32 / 128.0).to_le_bytes()),
+                (3, 32) => {
+                    data.extend((f32::from(i16::try_from(value).unwrap()) / 128.0).to_le_bytes());
+                }
                 (3, 64) => data.extend((f64::from(value) / 128.0).to_le_bytes()),
                 _ => unreachable!(),
             }
             expected.extend_from_slice(&(value << 16).to_le_bytes()[..3]);
         }
-        let size = data.len() as u32;
+        let size = u32::try_from(data.len()).unwrap();
         let mut bytes = b"RIFF".to_vec();
         bytes.extend((36 + size + size % 2).to_le_bytes());
         bytes.extend(b"WAVEfmt ");
@@ -239,7 +238,7 @@ fn rust_wave_pcm_encodings_preserve_exact_samples() {
             bytes.push(0);
         }
         fs::write(&input, bytes).unwrap();
-        passed(execute(
+        passed(&execute(
             job(&input, &output, 48000, 24),
             &mut Events::default(),
         ));
@@ -256,7 +255,7 @@ fn rust_wave_pcm_encodings_preserve_exact_samples() {
             request.request.output_format = OutputFormat::S16;
             request.request.dither = enabled;
             let mut events = Events::default();
-            passed(execute(request, &mut events));
+            passed(&execute(request, &mut events));
             assert_eq!(
                 events
                     .text
@@ -293,7 +292,7 @@ fn dither_policy_uses_original_source_precision() {
                 request.request.output_format = OutputFormat::S16;
                 request.request.dither = enabled;
                 let mut events = Events::default();
-                passed(execute(request, &mut events));
+                passed(&execute(request, &mut events));
                 assert_eq!(
                     events
                         .text
@@ -324,7 +323,7 @@ fn exact_pcm_matrix_and_transaction_failures() {
         for bits in [16, 20, 24] {
             for channels in 1..=if rate > 96000 { 2 } else { 6 } {
                 let expected = wave(&input, rate, bits, channels);
-                passed(execute(
+                passed(&execute(
                     job(&input, &output, rate, bits),
                     &mut Events::default(),
                 ));

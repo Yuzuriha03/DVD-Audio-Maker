@@ -4,13 +4,6 @@
 //! Optional text follows the menu table; C wrote it over the menu table despite
 //! pointing to a later sector. Its historical byte-sized text indices are kept.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::comparison_chain,
-    clippy::too_many_lines,
-    reason = "AMG tables preserve validated title counts, text offsets, and protocol field widths"
-)]
 use crate::atsi::{Title, Track};
 
 #[derive(Clone, Debug)]
@@ -231,6 +224,10 @@ fn record(
 ///
 /// # Panics
 /// Panics only if a group accepted by validation has no title or track entries.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the two independently expanded AMG title tables and sector references in protocol write order"
+)]
 pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<Encoded, String> {
     let count = total_titles(groups, options)?;
     let sectors = sector_count(groups, options)?;
@@ -267,12 +264,16 @@ pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<En
         },
     );
     put32(&mut bytes, 0xc4, 1);
-    put32(&mut bytes, 0xc8, second as u32);
+    put32(
+        &mut bytes,
+        0xc8,
+        u32::try_from(second).map_err(|_| "AMG exceeds 255 sectors")?,
+    );
     put32(
         &mut bytes,
         0xcc,
         if options.menu.is_some() {
-            menu_sector as u32
+            u32::try_from(menu_sector).map_err(|_| "AMG exceeds 255 sectors")?
         } else {
             0
         },
@@ -286,7 +287,7 @@ pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<En
         &mut bytes,
         0xd4,
         if options.text.is_some() {
-            text_sector as u32
+            u32::try_from(text_sector).map_err(|_| "AMG exceeds 255 sectors")?
         } else {
             0
         },
@@ -323,8 +324,16 @@ pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<En
         )?;
     }
     for (table_index, table) in [2048, second * 2048].into_iter().enumerate() {
-        put16(&mut bytes, table, count as u16);
-        put16(&mut bytes, table + 2, (3 + 14 * count) as u16);
+        put16(
+            &mut bytes,
+            table,
+            u16::try_from(count).map_err(|_| "AMG title count exceeds 891")?,
+        );
+        put16(
+            &mut bytes,
+            table + 2,
+            u16::try_from(3 + 14 * count).map_err(|_| "AMG title table exceeds 891 titles")?,
+        );
         let mut index = 0;
         for (g, group) in groups.iter().enumerate() {
             for (t, title) in group.titles.iter().enumerate() {
@@ -404,18 +413,35 @@ pub fn encode(groups: &[Group], layout: &Layout, options: &Options) -> Result<En
 fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> {
     let count = menu.page_sectors.len();
     put32(bytes, base, 0x10000);
-    put32(bytes, base + 4, (23 + 314 * count) as u32);
+    put32(
+        bytes,
+        base + 4,
+        u32::try_from(23 + 314 * count).map_err(|_| "AMG menu exceeds 255 pages")?,
+    );
     put32(bytes, base + 8, 0x656e_0080);
     put32(bytes, base + 12, 16);
-    put16(bytes, base + 16, count as u16);
-    put32(bytes, base + 20, (7 + 314 * count) as u32);
+    put16(
+        bytes,
+        base + 16,
+        u16::try_from(count).map_err(|_| "AMG menu exceeds 255 pages")?,
+    );
+    put32(
+        bytes,
+        base + 20,
+        u32::try_from(7 + 314 * count).map_err(|_| "AMG menu exceeds 255 pages")?,
+    );
     let mut sector = 0;
     for (page, &size) in menu.page_sectors.iter().enumerate() {
         let directory = base + 24 + 8 * page;
         if page == 0 {
             put32(bytes, directory, 0x8200_0000);
         }
-        put32(bytes, directory + 4, (8 * (count + 1) + 306 * page) as u32);
+        put32(
+            bytes,
+            directory + 4,
+            u32::try_from(8 * (count + 1) + 306 * page)
+                .map_err(|_| "AMG menu exceeds 255 pages")?,
+        );
         let pgc = base + 24 + 8 * count + 306 * page;
         put32(bytes, pgc, 0x101);
         for index in 0..3 {
@@ -429,10 +455,18 @@ fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> 
         };
         put32(bytes, pgc + 28, 0x8000_0000);
         if page + 1 < count {
-            put16(bytes, pgc + 156, page as u16 + 2);
+            put16(
+                bytes,
+                pgc + 156,
+                u16::try_from(page).map_err(|_| "AMG menu exceeds 255 pages")? + 2,
+            );
         }
         if page > 0 {
-            put16(bytes, pgc + 158, page as u16);
+            put16(
+                bytes,
+                pgc + 158,
+                u16::try_from(page).map_err(|_| "AMG menu exceeds 255 pages")?,
+            );
         }
         put16(bytes, pgc + 160, 1);
         for index in 0..16 {
@@ -463,7 +497,11 @@ fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> 
         put32(bytes, pgc + 286, sector);
         put32(bytes, pgc + 294, sector);
         put32(bytes, pgc + 298, add(sector, size - 2)?);
-        put32(bytes, pgc + 302, ((page as u32 + 1) << 16) | 1);
+        put32(
+            bytes,
+            pgc + 302,
+            ((u32::try_from(page).map_err(|_| "AMG menu exceeds 255 pages")? + 1) << 16) | 1,
+        );
         sector = add(sector, size - 1)?;
     }
     Ok(())
@@ -492,8 +530,8 @@ fn write_text(
     bytes[i] = 0x2a;
     i += 2;
     bytes[i] = 0x32;
-    bytes[base + 0x35] = (0x36 + 8 * count) as u8;
-    bytes[base + 0x47] = (3 + 4 * count) as u8;
+    bytes[base + 0x35] = (0x36 + 8 * count).to_le_bytes()[0];
+    bytes[base + 0x47] = (3 + 4 * count).to_le_bytes()[0];
     i = base + 0x4a;
     bytes[i] = 1;
     i += 4;
@@ -503,7 +541,7 @@ fn write_text(
     i += 4;
     bytes[i] = 0x38;
     i += 3;
-    let mut current = ((count + 1) * 16) as u8;
+    let mut current = ((count + 1) * 16).to_le_bytes()[0];
     bytes[i] = current;
     i += 1;
     bytes[i] = 3;
@@ -512,28 +550,32 @@ fn write_text(
     i -= 5;
     for (track, entry) in text.iter().take(2).enumerate() {
         if let Some(value) = entry {
-            current = current.wrapping_add((value.len() + 1) as u8);
+            current = current.wrapping_add((value.len() + 1).to_le_bytes()[0]);
         }
-        if (track as isize) < count as isize - 2 {
-            i += 8;
-            bytes[i + 1] = 3;
-            bytes[i + 5] = 0x38;
-        } else if track as isize == count as isize - 2 {
-            i += 8;
-            bytes[i + 1] = 2;
-            bytes[i + 5] = 3;
-            bytes[i + 9] = 0x38;
-        } else {
-            i += 12;
-            bytes[i + 1] = 3;
-            bytes[i + 5] = 0x38;
+        match (track + 2).cmp(&count) {
+            std::cmp::Ordering::Less => {
+                i += 8;
+                bytes[i + 1] = 3;
+                bytes[i + 5] = 0x38;
+            }
+            std::cmp::Ordering::Equal => {
+                i += 8;
+                bytes[i + 1] = 2;
+                bytes[i + 5] = 3;
+                bytes[i + 9] = 0x38;
+            }
+            std::cmp::Ordering::Greater => {
+                i += 12;
+                bytes[i + 1] = 3;
+                bytes[i + 5] = 0x38;
+            }
         }
         bytes[i] = current;
     }
     for (track, entry) in text.iter().take(count - 1).enumerate() {
         i += 8;
         if let Some(value) = entry {
-            current = current.wrapping_add((value.len() + 1) as u8);
+            current = current.wrapping_add((value.len() + 1).to_le_bytes()[0]);
         }
         bytes[i] = current;
         if track < count - 2 {
@@ -554,8 +596,8 @@ fn write_text(
         bytes[i] = 9;
         i += 1;
     }
-    bytes[base + 0x13] = (i - 1) as u8;
-    bytes[base + 0x1f] = (i - 1 - 0x1c) as u8;
+    bytes[base + 0x13] = (i - 1).to_le_bytes()[0];
+    bytes[base + 0x1f] = (i - 1 - 0x1c).to_le_bytes()[0];
     Ok(())
 }
 
@@ -574,7 +616,10 @@ mod tests {
         for (page, sector) in [0u32, 69, 142].into_iter().enumerate() {
             let pgc = 24 + 8 * 3 + 306 * page;
             assert_eq!(&bytes[pgc + 286..pgc + 290], &sector.to_be_bytes());
-            assert_eq!(&bytes[pgc + 302..pgc + 306], &[0, page as u8 + 1, 0, 1]);
+            assert_eq!(
+                &bytes[pgc + 302..pgc + 306],
+                &[0, u8::try_from(page + 1).unwrap(), 0, 1]
+            );
         }
     }
 }

@@ -41,6 +41,10 @@ fn io_failure(error: io::Error) -> Failure {
 ///
 /// # Errors
 /// Rejects non-positive frame counts and unsupported sample rates, and reports arithmetic overflow.
+///
+/// # Panics
+/// The validated positive access-unit count always fits `u64`; the internal conversion
+/// expectation is unreachable for every accepted frame count and sample rate.
 pub fn access_units(frames: i64, rate: u32) -> Result<u64, Failure> {
     if frames <= 0 || !matches!(rate, 44100 | 48000 | 88200 | 96000 | 176_400 | 192_000) {
         return Err(invalid("无效的 PCM 帧数或采样率。"));
@@ -55,7 +59,7 @@ pub fn access_units(frames: i64, rate: u32) -> Result<u64, Failure> {
         );
     frames
         .checked_add(block - 1)
-        .map(|n| (n / block) as u64)
+        .map(|n| u64::try_from(n / block).expect("positive access-unit count fits u64"))
         .ok_or_else(|| Failure::new("Overflow", "PCM frame count overflow"))
 }
 pub(crate) fn assignment(mask: u32) -> Result<u32, Failure> {
@@ -64,7 +68,7 @@ pub(crate) fn assignment(mask: u32) -> Result<u32, Failure> {
     ]
     .iter()
     .position(|m| *m == mask)
-    .map(|i| i as u32)
+    .map(|i| u32::try_from(i).expect("channel assignment index is at most 12"))
     .ok_or_else(|| invalid(&format!("不支持的 DVD-Audio 声道掩码：0x{mask:X}。")))
 }
 fn read_number<const N: usize>(input: &mut File) -> Result<[u8; N], Failure> {
@@ -129,6 +133,10 @@ pub fn metadata(path: &str, units: u64) -> Result<Vec<Stamp>, Failure> {
 ///
 /// # Errors
 /// Rejects invalid PCM geometry and existing destinations, and propagates metadata generation or I/O failures.
+///
+/// # Panics
+/// The embedded encoder stamp packet has a fixed `u32`-representable length, so
+/// its internal length-conversion expectation cannot fail.
 pub fn write_metadata(path: &Path, frames: i64, rate: u32) -> Result<(), Failure> {
     let units = access_units(frames, rate)?;
     let stamp = crate::encoder_stamp::current()?;
@@ -142,7 +150,9 @@ pub fn write_metadata(path: &Path, frames: i64, rate: u32) -> Result<(), Failure
         &units.to_le_bytes(),
         &1u32.to_le_bytes(),
         &0u64.to_le_bytes(),
-        &(stamp.packet.len() as u32).to_le_bytes(),
+        &u32::try_from(stamp.packet.len())
+            .expect("embedded encoder stamp packet length fits u32")
+            .to_le_bytes(),
         &stamp.packet,
     ] {
         file.write_all(bytes)?;
@@ -166,11 +176,13 @@ impl Stream for PcmStream<'_, '_> {
                 "MLP encoding cancelled",
             ));
         }
-        let channels = self.layout.channels as usize;
-        let width = self.layout.bytes_per_sample as usize;
+        let channels = usize::try_from(self.layout.channels)
+            .expect("validated WAVE channel count is positive");
+        let width = usize::try_from(self.layout.bytes_per_sample)
+            .expect("validated WAVE sample width is positive");
         let frames = (samples.len() / channels)
             .min(8192)
-            .min(self.remaining as usize);
+            .min(usize::try_from(self.remaining.min(8192)).expect("frame chunk is at most 8192"));
         let count = frames * channels;
         self.input.read_exact(&mut self.raw[..count * width])?;
         for (index, value) in samples[..count].iter_mut().enumerate() {
@@ -229,6 +241,10 @@ fn encode_rust(
 }
 
 #[cfg(feature = "rust-mlp")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The Rust encoder adapter keeps stream callbacks, stamp refresh, and result finalization ordered"
+)]
 fn encode_rust(
     request: &Request,
     stream: &mut dyn Stream,
@@ -331,7 +347,7 @@ fn encode_rust(
         .error
         .iter()
         .take_while(|&&c| c != 0)
-        .map(|&c| c as u8)
+        .map(|&c| c.cast_unsigned())
         .collect::<Vec<_>>();
     Ok(dvda_native::encoder::ResultInfo {
         status: result.status,
@@ -343,11 +359,19 @@ fn encode_rust(
     })
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public typed encoder adapter retains its owned-job API"
+)]
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
-    execute_with(job, caller, cfg!(feature = "rust-mlp"))
+    execute_with(&job, caller, cfg!(feature = "rust-mlp"))
 }
 
-fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Outcome {
+#[allow(
+    clippy::too_many_lines,
+    reason = "Streaming encoding keeps backend selection, cancellation, metadata, and atomic output cleanup together"
+)]
+fn execute_with(job: &Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Outcome {
     let mut callbacks = Timed::new(caller, job.timeout_millis);
     let mut temporary = Temporary(None);
     let result = (|| -> Result<i32, Failure> {
@@ -362,7 +386,7 @@ fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Out
         })?;
         let frames = layout.data_size / i64::from(layout.bytes_per_sample * layout.channels);
         let assignment = assignment(layout.channel_mask)?;
-        let encoder = if rust_backend {
+        let legacy_encoder = if rust_backend {
             None
         } else {
             let hash = crate::hash::reader_digest(File::open(&job.library)?)?;
@@ -375,8 +399,10 @@ fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Out
         };
         let metadata = metadata(
             &job.metadata_context,
-            access_units(frames, layout.sample_rate as u32)?,
+            access_units(frames, layout.sample_rate.cast_unsigned())?,
         )?;
+        let frame_count =
+            u64::try_from(frames).expect("access_units accepted a positive frame count");
         if job.destination.is_file() {
             return Err(Failure::new("Io", "拒绝覆盖已有的 MLP 输出文件。"));
         }
@@ -387,12 +413,14 @@ fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Out
             .share_mode(0)
             .open(&path)?;
         temporary.0 = Some(path.clone());
-        input.seek(SeekFrom::Start(layout.data_offset as u64))?;
+        input.seek(SeekFrom::Start(
+            u64::try_from(layout.data_offset).expect("WAVE data offset is nonnegative"),
+        ))?;
         let request = Request {
-            sample_rate: layout.sample_rate as u32,
-            bits: layout.valid_bits as u32,
-            channels: layout.channels as u32,
-            frames: frames as u64,
+            sample_rate: layout.sample_rate.cast_unsigned(),
+            bits: layout.valid_bits.cast_unsigned(),
+            channels: layout.channels.cast_unsigned(),
+            frames: frame_count,
             assignment,
             metadata,
         };
@@ -400,11 +428,17 @@ fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Out
             input,
             output,
             layout: &layout,
-            remaining: frames as u64,
-            raw: vec![0; 8192 * layout.channels as usize * layout.bytes_per_sample as usize],
+            remaining: frame_count,
+            raw: vec![
+                0;
+                8192 * usize::try_from(layout.channels)
+                    .expect("validated WAVE channel count is positive")
+                    * usize::try_from(layout.bytes_per_sample)
+                        .expect("validated WAVE sample width is positive")
+            ],
             callbacks: &mut callbacks,
         };
-        let encoded = match encoder {
+        let encoded = match legacy_encoder {
             Some(encoder) => encoder.encode(&request, &mut stream),
             None => encode_rust(
                 &request,
@@ -416,7 +450,7 @@ fn execute_with(job: Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Out
         let encoded = encoded.map_err(io_failure)?;
         let length = stream.output.metadata()?.len();
         if encoded.status != 0
-            || encoded.input_frames != frames as u64
+            || encoded.input_frames != frame_count
             || encoded.output_bytes != length
             || length == 0
         {
@@ -683,6 +717,10 @@ mod rust_tests {
 /// Rejects unknown operations or missing/invalid output path, frame count, or
 /// sample rate. Metadata-writing failures are returned in the JSON `Failure`
 /// field rather than as an error from this function.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public JSON dispatcher retains the owned-request ABI contract"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     if operation != "encoder.write_metadata" {
         return Err("Unknown encoder operation".into());

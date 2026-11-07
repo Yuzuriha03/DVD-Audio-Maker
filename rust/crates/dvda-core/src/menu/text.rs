@@ -15,6 +15,10 @@ pub(super) fn text<'a>(value: &'a Value, key: &str) -> &'a str {
 
 /// # Errors
 /// Returns an error when the request is not a string.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn sanitize(request: Value) -> Result<Value, String> {
     let value = request.as_str().ok_or("Expected menu text")?;
     let input = units(value);
@@ -35,6 +39,11 @@ pub fn sanitize(request: Value) -> Result<Value, String> {
     Ok(json!({"Value":from_units(&result),"Changed":true}))
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "Preserve UTF-16 width weighting in f64 followed by saturating truncation to signed pixel units, including caller-supplied i64 font sizes"
+)]
 fn text_pixels(value: &str, font_size: i64) -> i64 {
     let wide = units(value)
         .iter()
@@ -44,16 +53,14 @@ fn text_pixels(value: &str, font_size: i64) -> i64 {
     (wide * font_size as f64 + (length - wide) * font_size as f64 * 0.55) as i64
 }
 fn round_even(value: f64) -> f64 {
-    let lower = value.floor();
-    let fraction = value - lower;
-    if fraction < 0.5 || (fraction == 0.5 && (lower as i64) % 2 == 0) {
-        lower
-    } else {
-        lower + 1.0
-    }
+    value.round_ties_even()
 }
 /// # Errors
 /// Returns an error when `FontSize` is missing or is not an integer.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn truncate(request: Value) -> Result<Value, String> {
     let value = text(&request, "Value");
     let font_size = request["FontSize"].as_i64().ok_or("Missing FontSize")?;
@@ -78,6 +85,10 @@ pub fn truncate(request: Value) -> Result<Value, String> {
 /// # Panics
 /// Panics for a row count of -4, or if layout arithmetic overflows with
 /// overflow checks enabled. Callers must supply a supported menu row count.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn font_size(request: Value) -> Result<Value, String> {
     let rows = request.as_i64().ok_or("Expected row count")?;
     let span = rows + 4;
@@ -86,6 +97,14 @@ pub fn font_size(request: Value) -> Result<Value, String> {
 }
 /// # Errors
 /// Returns an error when the request is not an array of strings.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "The ties-even rounded width is clamped to 1..=10 before conversion to the integer JSON field"
+)]
 pub fn font_width(request: Value) -> Result<Value, String> {
     let texts = request.as_array().ok_or("Expected text array")?;
     let mut wide = 0f64;
@@ -113,9 +132,14 @@ pub fn font_width(request: Value) -> Result<Value, String> {
 /// # Errors
 /// This operation does not return errors; it retains the fallible JSON
 /// operation interface used by the menu dispatcher.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn short_album(request: Value) -> Result<Value, String> {
     let value = text(&request, "Value");
-    let max = request["MaximumCharacters"].as_i64().unwrap_or(24).max(0) as usize;
+    let max = usize::try_from(request["MaximumCharacters"].as_i64().unwrap_or(24).max(0))
+        .unwrap_or(usize::MAX);
     let index = value
         .char_indices()
         .find(|(_, c)| matches!(c, '(' | '[' | '（' | '【'))
@@ -133,6 +157,10 @@ pub fn short_album(request: Value) -> Result<Value, String> {
 }
 /// # Errors
 /// Returns an error when the request is not a path string.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn normalize_path(request: Value) -> Result<Value, String> {
     Ok(Value::String(
         request.as_str().ok_or("Expected path")?.replace('\\', "/"),
@@ -142,6 +170,10 @@ pub fn normalize_path(request: Value) -> Result<Value, String> {
 /// # Errors
 /// Returns an error when `Tracks` or `Albums` is not an array, their lengths
 /// differ, or `RowCap` is not a positive integer.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatcher accepts an owned request without changing its shared operation signature"
+)]
 pub fn pages(request: Value) -> Result<Value, String> {
     let tracks = request["Tracks"].as_array().ok_or("Missing Tracks")?;
     let albums = request["Albums"].as_array().ok_or("Missing Albums")?;
@@ -152,6 +184,7 @@ pub fn pages(request: Value) -> Result<Value, String> {
     if row_cap < 1 {
         return Err("RowCap must be positive".into());
     }
+    let row_cap = usize::try_from(row_cap).unwrap_or(usize::MAX);
     let mut result = Vec::new();
     let mut block_start = 0usize;
     while block_start < tracks.len() {
@@ -163,7 +196,7 @@ pub fn pages(request: Value) -> Result<Value, String> {
         let mut page_start = block_start;
         let mut continuation = false;
         while page_start < block_end {
-            let page_end = (page_start + row_cap as usize).min(block_end);
+            let page_end = (page_start + row_cap).min(block_end);
             result.push(json!({"Album":album,"StartTrackIndex":page_start,"EndTrackIndex":page_end,"Continuation":continuation,"Tracks":tracks[page_start..page_end].to_vec()}));
             continuation = true;
             page_start = page_end;
@@ -176,6 +209,38 @@ pub fn pages(request: Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn font_width_keeps_utf16_weighting_and_even_half_ties() {
+        for (text, expected) in [
+            ("", 5),
+            ("ABC", 5),
+            ("😀", 5),
+            ("中文", 3),
+            ("Ａ", 3),
+            ("中A", 4),
+            ("中文漢A", 4),   // 3.5 rounds up to even.
+            ("中ABCDEFG", 4), // 4.5 rounds down to even.
+        ] {
+            assert_eq!(font_width(json!([text])).unwrap(), json!(expected));
+        }
+    }
+
+    #[test]
+    fn nonnegative_menu_sizes_keep_full_i64_range_on_windows() {
+        assert_eq!(
+            short_album(json!({"Value":"😀ABC", "MaximumCharacters":i64::MAX})).unwrap(),
+            json!("😀ABC")
+        );
+        let result = pages(json!({"Tracks":[1,2], "Albums":["A","A"], "RowCap":i64::MAX})).unwrap();
+        assert_eq!(result.as_array().unwrap().len(), 1);
+        assert_eq!(result[0]["StartTrackIndex"], 0);
+        assert_eq!(result[0]["EndTrackIndex"], 2);
+        assert_eq!(
+            pages(json!({"Tracks":[], "Albums":["A"], "RowCap":0})).unwrap_err(),
+            "Track and album lists must have equal lengths"
+        );
+    }
 
     #[test]
     fn punctuation_preserves_wide_guard_priority_and_utf16() {

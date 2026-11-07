@@ -50,9 +50,11 @@ pub(crate) fn reusable_wave(
     if layout.sample_rate != rate {
         return Err(invalid("PCM 输出采样率与任务不符。"));
     }
-    let width = if bits == 16 { 2 } else { 3 };
-    let frames = layout.data_size as u64 / (layout.channels * layout.bytes_per_sample) as u64;
-    let size = frames * layout.channels as u64 * width as u64;
+    let width: i32 = if bits == 16 { 2 } else { 3 };
+    let frames = u64::try_from(layout.data_size).expect("validated WAVE data size is positive")
+        / u64::from((layout.channels * layout.bytes_per_sample).cast_unsigned());
+    let size =
+        frames * u64::from(layout.channels.cast_unsigned()) * u64::from(width.cast_unsigned());
     if 60 + size + (size & 1) > u64::from(u32::MAX) {
         return Err(invalid("PCM 超出 RIFF 4 GiB 限制；请拆分过长音轨。"));
     }
@@ -67,11 +69,18 @@ pub(crate) fn reusable_wave(
         input.seek(SeekFrom::Start(
             u64::try_from(layout.data_offset).map_err(|_| invalid("PCM 数据偏移超出范围。"))?,
         ))?;
-        let mut raw = vec![0; 8192 * layout.channels as usize * width as usize];
-        let mut remaining = layout.data_size as u64;
+        let mut raw = vec![
+            0;
+            8192 * usize::try_from(layout.channels)
+                .expect("validated WAVE channel count is positive")
+                * usize::try_from(width).expect("PCM output width is positive")
+        ];
+        let mut remaining =
+            u64::try_from(layout.data_size).expect("validated WAVE data size is positive");
         while remaining != 0 {
             callbacks.check()?;
-            let count = remaining.min(raw.len() as u64) as usize;
+            let count = usize::try_from(remaining.min(raw.len() as u64))
+                .expect("read chunk is bounded by the usize buffer length");
             input.read_exact(&mut raw[..count]).map_err(WavError::Io)?;
             if raw[..count]
                 .as_chunks::<3>()
@@ -123,13 +132,21 @@ pub(crate) fn prepare_wave(
 /// output exceeding RIFF limits, or PCM precision that would be truncated.
 /// Output creation, reading, seeking, writing, finalization and temporary-file
 /// cleanup errors are propagated as failures as well.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public typed PCM normalizer retains its owned-job API"
+)]
 pub fn normalize(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
-    normalize_impl(job, caller, false)
+    normalize_impl(&job, caller, false)
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The internal raw-S24 adapter mirrors the public owned-job normalization API"
+)]
 pub(crate) fn normalize_s24(job: Job, caller: &mut dyn Callbacks) -> Result<u64, Failure> {
-    normalize_impl(job, caller, true)
+    normalize_impl(&job, caller, true)
 }
 
 enum Output {
@@ -191,7 +208,11 @@ fn create_output(
     Ok((output, owned))
 }
 
-fn normalize_impl(job: Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result<u64, Failure> {
+#[allow(
+    clippy::too_many_lines,
+    reason = "PCM normalization keeps layout remapping, precision checks, streaming conversion, and cleanup ordered"
+)]
+fn normalize_impl(job: &Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result<u64, Failure> {
     let mut callbacks = Timed::new(caller, None);
     let mut owned = Temporary(None);
     let result = (|| -> Result<u64, Failure> {
@@ -213,14 +234,17 @@ fn normalize_impl(job: Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result
             }
             mask = (mask & !0x600) | ((mask & 0x600) >> 5);
         }
-        let channels = layout.channels as usize;
-        let input_width = layout.bytes_per_sample as usize;
+        let channels =
+            usize::try_from(layout.channels).expect("validated WAVE channel count is positive");
+        let input_width = usize::try_from(layout.bytes_per_sample)
+            .expect("validated WAVE sample width is positive");
         let width = if !raw_s24 && job.bits == 16 {
             2usize
         } else {
             3
         };
-        let frames = layout.data_size as u64 / (channels * input_width) as u64;
+        let frames = u64::try_from(layout.data_size).expect("validated WAVE data size is positive")
+            / (channels * input_width) as u64;
         let size = frames * channels as u64 * width as u64;
         let riff_size = 60 + size + (size & 1);
         if riff_size > u64::from(u32::MAX) {
@@ -247,10 +271,12 @@ fn normalize_impl(job: Job, caller: &mut dyn Callbacks, raw_s24: bool) -> Result
         let expand_16_to_24 = input_width == 2 && width == 3;
         let validate_and_copy_24 = input_width == 3 && width == 3 && job.bits == 20;
         let pack_32_to_24 = input_width == 4 && width == 3 && job.bits == 24;
-        let mut remaining = layout.data_size as u64;
+        let mut remaining =
+            u64::try_from(layout.data_size).expect("validated WAVE data size is positive");
         while remaining != 0 {
             callbacks.check()?;
-            let count = remaining.min(raw.len() as u64) as usize;
+            let count = usize::try_from(remaining.min(raw.len() as u64))
+                .expect("read chunk is bounded by the usize buffer length");
             input
                 .read_exact(&mut raw[..count])
                 .map_err(|error| Failure::from(WavError::Io(error)))?;
@@ -348,7 +374,20 @@ pub(crate) struct NoEvents;
 mod tests {
     use super::*;
 
+    struct Cancel;
+
+    impl Callbacks for Cancel {
+        fn emit(&mut self, _: i32, _: &str) {}
+        fn cancelled(&mut self) -> bool {
+            true
+        }
+    }
+
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The exhaustive PCM matrix checks encoding, decoding, cancellation, and invalid low bits per fixture"
+    )]
     fn normalized_s24_matches_wave_decoder() {
         let root = std::env::temp_dir().join(format!("dvda-s24-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
@@ -384,26 +423,37 @@ mod tests {
                 }
                 let mut bytes = Vec::new();
                 bytes.extend_from_slice(b"RIFF");
-                bytes.extend_from_slice(
-                    &(60u32 + data.len() as u32 + data.len() as u32 % 2).to_le_bytes(),
-                );
+                let data_length =
+                    u32::try_from(data.len()).expect("PCM fixture data length fits RIFF u32");
+                bytes.extend_from_slice(&(60u32 + data_length + data_length % 2).to_le_bytes());
                 bytes.extend_from_slice(b"WAVEfmt ");
                 bytes.extend_from_slice(&40u32.to_le_bytes());
                 bytes.extend_from_slice(&0xfffeu16.to_le_bytes());
-                bytes.extend_from_slice(&(channels as u16).to_le_bytes());
+                let channel_count =
+                    u16::try_from(channels).expect("fixture channel count is between one and six");
+                bytes.extend_from_slice(&channel_count.to_le_bytes());
                 bytes.extend_from_slice(&48000u32.to_le_bytes());
-                bytes.extend_from_slice(&(48000 * channels as u32 * width as u32).to_le_bytes());
-                bytes.extend_from_slice(&(channels as u16 * width as u16).to_le_bytes());
-                bytes.extend_from_slice(&(width as u16 * 8).to_le_bytes());
-                bytes.extend_from_slice(&22u16.to_le_bytes());
-                bytes.extend_from_slice(&(bits as u16).to_le_bytes());
+                let sample_width = u16::try_from(width).expect("fixture sample width fits u16");
                 bytes.extend_from_slice(
-                    &[0u32, 4, 3, 7, 0x33, 0x37, 0x3f][channels as usize].to_le_bytes(),
+                    &(48000 * u32::from(channel_count) * u32::from(sample_width)).to_le_bytes(),
+                );
+                bytes.extend_from_slice(&(channel_count * sample_width).to_le_bytes());
+                bytes.extend_from_slice(&(sample_width * 8).to_le_bytes());
+                bytes.extend_from_slice(&22u16.to_le_bytes());
+                bytes.extend_from_slice(
+                    &u16::try_from(bits)
+                        .expect("fixture bit depth fits u16")
+                        .to_le_bytes(),
+                );
+                bytes.extend_from_slice(
+                    &[0u32, 4, 3, 7, 0x33, 0x37, 0x3f]
+                        [usize::try_from(channels).expect("fixture channel index is nonnegative")]
+                    .to_le_bytes(),
                 );
                 bytes
                     .extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
                 bytes.extend_from_slice(b"data");
-                bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&data_length.to_le_bytes());
                 bytes.extend_from_slice(&data);
                 if data.len() % 2 != 0 {
                     bytes.push(0);
@@ -436,13 +486,6 @@ mod tests {
                 for path in [&wav, &raw, &decoded] {
                     std::fs::remove_file(path).unwrap();
                 }
-                struct Cancel;
-                impl Callbacks for Cancel {
-                    fn emit(&mut self, _: i32, _: &str) {}
-                    fn cancelled(&mut self) -> bool {
-                        true
-                    }
-                }
                 assert!(normalize_s24(job(raw.clone()), &mut Cancel).is_err());
                 assert!(!raw.exists());
                 if bits < 24 && width >= 3 {
@@ -469,8 +512,16 @@ impl Callbacks for NoEvents {
 mod storage_tests {
     use super::*;
 
+    struct Cleanup(PathBuf);
+
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     fn wave_16(samples: &[i16]) -> Vec<u8> {
-        let size = (samples.len() * 2) as u32;
+        let size = u32::try_from(samples.len() * 2).expect("test WAVE data length fits u32");
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"RIFF");
         bytes.extend_from_slice(&(36 + size).to_le_bytes());
@@ -497,7 +548,11 @@ mod storage_tests {
         std::fs::create_dir(&root).unwrap();
         let source = root.join("source.wav");
         let destination = root.join("output.raw");
-        let samples: Vec<_> = (0..16_777_216).map(|n| n as i16).collect();
+        let samples: Vec<_> = (0..=u16::MAX)
+            .cycle()
+            .take(16_777_216)
+            .map(u16::cast_signed)
+            .collect();
         std::fs::write(&source, wave_16(&samples)).unwrap();
         for round in 0..9 {
             let start = std::time::Instant::now();
@@ -536,7 +591,7 @@ mod storage_tests {
         let destination = root.join("output.raw");
         let samples: Vec<i32> = (0..16_777_217).map(|n| n << 8).collect();
         let mut wave = wave_16(&[]);
-        let size = (samples.len() * 4) as u32;
+        let size = u32::try_from(samples.len() * 4).expect("benchmark WAVE data length fits u32");
         wave[4..8].copy_from_slice(&(36 + size).to_le_bytes());
         wave[28..32].copy_from_slice(&192_000_u32.to_le_bytes());
         wave[32..34].copy_from_slice(&4u16.to_le_bytes());
@@ -578,12 +633,6 @@ mod storage_tests {
     fn all_i16_values_expand_losslessly_to_s24() {
         let root = std::env::temp_dir().join(format!("dvda-expand16-{}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
-        struct Cleanup(PathBuf);
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
         let _workspace = Cleanup(root.clone());
         let source = root.join("source.wav");
         let destination = root.join("output.raw");

@@ -1,9 +1,4 @@
 // Entropy codes use explicitly bounded integers and C-compatible wrapping cost arithmetic.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss
-)]
 use crate::bitstream::Bits;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Coding {
@@ -29,7 +24,7 @@ impl Coding {
         let unit = 1i64 << b;
         if self.mode == 0 {
             let u = i64::from(x) - i64::from(self.offset) + unit / 2;
-            return (u >= 0 && u < unit).then_some((u as u32, b));
+            return (u >= 0 && u < unit).then_some((u32::try_from(u).ok()?, b));
         }
         let central = 1i64 << (b + 3 - self.mode);
         let u = i64::from(x) - i64::from(self.offset) + central / 2;
@@ -38,18 +33,21 @@ impl Coding {
             if quotient < -7 {
                 return None;
             }
-            (unit | (u & (unit - 1)), b + (-quotient) as u32 + 2)
+            (
+                unit | (u & (unit - 1)),
+                b + u32::try_from(-quotient).ok()? + 2,
+            )
         } else if u >= central {
             let quotient = (u - central) / unit;
             if quotient > 6 {
                 return None;
             }
-            let width = b + quotient as u32 + 3;
+            let width = b + u32::try_from(quotient).ok()? + 3;
             (unit | (1i64 << (width - 2)) | (u & (unit - 1)), width)
         } else {
             (u + central, b + 4 - self.mode)
         };
-        (width <= 31 && code < (1i64 << width)).then_some((code as u32, width))
+        (width <= 31 && code < (1i64 << width)).then_some((u32::try_from(code).ok()?, width))
     }
     pub fn put(self, b: &mut Bits, x: i32, qss: u32) {
         let (value, width) = self.word(x, qss).expect("selected entropy code");
@@ -75,7 +73,9 @@ fn arithmetic_shift(value: i32, shift: u32) -> i32 {
         wide / divisor
     } else {
         -((-wide + divisor - 1) / divisor)
-    }) as i32
+    })
+    .try_into()
+    .expect("arithmetic shift of an i32 remains within i32")
 }
 
 fn mlp_cost_table(mode: u32, q: i32) -> u32 {
@@ -160,9 +160,9 @@ fn mlp_cost_table(mode: u32, q: i32) -> u32 {
         0x0ff0_1804,
     ];
     assert!((1..=3).contains(&mode) && (-18..=17).contains(&q));
-    let index = (q + 18) as usize;
+    let index = usize::try_from(q + 18).expect("asserted q range is nonnegative");
     if mode < 3 {
-        TABLES[(mode - 1) as usize][index / 2]
+        TABLES[usize::try_from(mode - 1).expect("mode is at least one")][index / 2]
     } else {
         THIRD[index]
     }
@@ -188,7 +188,10 @@ fn mlp_cost_analyze(samples: &[i32]) -> MlpCostStats {
     for &sample in samples {
         let q = arithmetic_shift(sample * 2, stats.shift);
         for (mode, packed_cost) in stats.packed_cost.iter_mut().enumerate() {
-            *packed_cost = packed_cost.wrapping_add(mlp_cost_table(mode as u32 + 1, q));
+            *packed_cost = packed_cost.wrapping_add(mlp_cost_table(
+                u32::try_from(mode).expect("three entropy modes") + 1,
+                q,
+            ));
         }
     }
     stats
@@ -204,7 +207,10 @@ fn floor_shift(value: i32, shift: u32) -> i32 {
 }
 
 fn overhead(old: Coding, base: u32, mode: u32, width: u32, offset: i32) -> i64 {
-    if old.mode == mode && old.width as i32 - base as i32 == width as i32 && old.offset == offset {
+    if old.mode == mode
+        && i64::from(old.width) - i64::from(base) == i64::from(width)
+        && old.offset == offset
+    {
         0
     } else {
         10
@@ -256,7 +262,7 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
         };
     }
     let packed = stats.packed_cost;
-    let n = samples.len() as i64;
+    let n = i64::try_from(samples.len()).expect("at most 160 samples");
     let qlo = floor_shift(lo * 2, shift);
     let qhi = floor_shift(hi * 2, shift);
     let mut best = CostCandidate {
@@ -278,8 +284,8 @@ fn mlp_cost_select(samples: &[i32], qss: u32, old: Coding, first8: bool, limit: 
         consider(cost, mode, shift + 1, &mut best);
         if a >= 0
             && b >= 0
-            && shift as i32 + 9 - a / 2 <= limit as i32
-            && shift as i32 + 9 - b / 2 <= limit as i32
+            && i64::from(shift) + 9 - i64::from(a) / 2 <= i64::from(limit)
+            && i64::from(shift) + 9 - i64::from(b) / 2 <= i64::from(limit)
         {
             let cost = n * i64::from(shift)
                 + i64::from(packed[index] >> 20)

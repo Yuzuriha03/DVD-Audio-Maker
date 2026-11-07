@@ -198,6 +198,10 @@ fn repaired_targets_valid(job: &Job, events: &mut dyn Callbacks) -> Result<bool,
     Ok(true)
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public typed preparation adapter retains its owned-job API"
+)]
 pub fn execute(job: Job, events: &mut dyn Callbacks) -> Outcome {
     match run(&job, events) {
         Ok(data) => Outcome {
@@ -230,6 +234,10 @@ pub fn run(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Fail
     )
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Preparation keeps cache identity, decoding, repair, cancellation, and snapshot publication in transaction order"
+)]
 fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result, Failure> {
     alac::check_cancel(events)?;
     if let Some(production) = &job.production {

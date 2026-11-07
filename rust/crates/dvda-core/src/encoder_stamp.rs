@@ -41,7 +41,7 @@ fn machine_fingerprint(name: &[u16]) -> String {
 }
 fn machine_identity() -> Result<String, Failure> {
     let mut name = [0u16; 256];
-    let mut length = name.len() as u32;
+    let mut length = u32::try_from(name.len()).expect("256 UTF-16 units fit in u32");
     // SAFETY: length advertises the writable buffer capacity in UTF-16 units.
     if unsafe { GetComputerNameW(name.as_mut_ptr(), &raw mut length) } == 0 {
         return Err(std::io::Error::last_os_error().into());

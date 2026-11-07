@@ -1,12 +1,4 @@
 //! Frozen pre-migration host references; this test does not execute C#.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::needless_pass_by_value,
-    clippy::too_many_lines,
-    reason = "Encoder fixtures preserve deterministic PCM and complete frozen oracle cases"
-)]
 #[cfg(feature = "rust-mlp")]
 use dvda_core::audio;
 use dvda_core::{encoder, hash, media};
@@ -98,10 +90,18 @@ fn job(wave: &Path, destination: &Path, context: String) -> encoder::Job {
         timeout_millis: None,
     }
 }
-fn passed(outcome: media::Outcome) {
+fn passed(outcome: &media::Outcome) {
     assert!(outcome.failure.is_none(), "{:?}", outcome.failure);
     assert_eq!(outcome.exit_code, Some(0));
 }
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Fixture frame counts are small, but duration_seconds is intentionally an approximate floating-point value"
+)]
+fn duration_seconds(case: &Case) -> f64 {
+    case.frames as f64 / f64::from(case.rate)
+}
+
 fn digest(bytes: &[u8]) -> String {
     hash::reader_digest(Cursor::new(bytes))
         .unwrap()
@@ -118,11 +118,15 @@ fn wave(path: &Path, case: &Case) -> Vec<u8> {
     } else {
         3
     };
+    let width32 = u32::try_from(width).unwrap();
+    let width16 = u16::try_from(width).unwrap();
     let mut data = Vec::new();
     let mut expected = Vec::new();
     for n in 0..case.frames {
         for channel in 0..usize::from(case.channels) {
-            let value = (((n * (97 + channel * 18) + channel * 53) % 100_001) as i32 - 50000)
+            let value = (i32::try_from((n * (97 + channel * 18) + channel * 53) % 100_001)
+                .unwrap()
+                - 50_000)
                 & !((1 << (24 - case.bits)) - 1);
             expected.extend_from_slice(&value.to_le_bytes()[..3]);
             let stored = if case.wide {
@@ -135,7 +139,7 @@ fn wave(path: &Path, case: &Case) -> Vec<u8> {
             data.extend_from_slice(&stored.to_le_bytes()[..width]);
         }
     }
-    let size = data.len() as u32;
+    let size = u32::try_from(data.len()).unwrap();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"RIFF");
     bytes.extend_from_slice(&(60 + size + size % 2).to_le_bytes());
@@ -144,11 +148,11 @@ fn wave(path: &Path, case: &Case) -> Vec<u8> {
     bytes.extend_from_slice(&0xfffeu16.to_le_bytes());
     bytes.extend_from_slice(&case.channels.to_le_bytes());
     bytes.extend_from_slice(&case.rate.to_le_bytes());
-    bytes.extend_from_slice(&(case.rate * u32::from(case.channels) * width as u32).to_le_bytes());
-    bytes.extend_from_slice(&(case.channels * width as u16).to_le_bytes());
-    bytes.extend_from_slice(&(width as u16 * 8).to_le_bytes());
+    bytes.extend_from_slice(&(case.rate * u32::from(case.channels) * width32).to_le_bytes());
+    bytes.extend_from_slice(&(case.channels * width16).to_le_bytes());
+    bytes.extend_from_slice(&(width16 * 8).to_le_bytes());
     bytes.extend_from_slice(&22u16.to_le_bytes());
-    bytes.extend_from_slice(&(case.bits as u16).to_le_bytes());
+    bytes.extend_from_slice(&(u16::try_from(case.bits).unwrap()).to_le_bytes());
     let mask = case
         .mask
         .unwrap_or([0, 4, 3, 7, 0x33, 0x37, 0x3f][usize::from(case.channels)]);
@@ -173,7 +177,7 @@ fn context(path: &Path, case: &Case) -> String {
         b"MSCTX001"
     });
     bytes.extend_from_slice(
-        &encoder::access_units(case.frames as i64, case.rate)
+        &encoder::access_units(i64::try_from(case.frames).unwrap(), case.rate)
             .unwrap()
             .to_le_bytes(),
     );
@@ -188,7 +192,7 @@ fn context(path: &Path, case: &Case) -> String {
     path.to_str().unwrap().into()
 }
 fn decode(input: &Path, output: &Path) {
-    passed(media::execute(
+    passed(&media::execute(
         media::Job {
             library: media_library(),
             request: Request {
@@ -227,7 +231,7 @@ fn linked_mlp_matrix_without_encoder_dll() {
         wave(&input, case);
         assert_eq!(digest(&fs::read(&input).unwrap()), case.wave_sha256);
         let mut events = Events::default();
-        passed(encoder::execute(
+        passed(&encoder::execute(
             encoder::Job {
                 library: missing_library.clone(),
                 wave: input.to_string_lossy().into_owned(),
@@ -269,8 +273,8 @@ fn streamed_decode_to_mlp_matches_the_lossless_pcm_matrix_without_wave_output() 
                 decode_output: Some(audio::DecodeOutput {
                     output: unwanted.clone(),
                     normalized: normalized.clone(),
-                    rate: case.rate as i32,
-                    bits: case.bits as i32,
+                    rate: i32::try_from(case.rate).unwrap(),
+                    bits: i32::try_from(case.bits).unwrap(),
                     dither: false,
                     mlp_output: Some(output.clone()),
                 }),
@@ -279,7 +283,7 @@ fn streamed_decode_to_mlp_matches_the_lossless_pcm_matrix_without_wave_output() 
         )
         .unwrap();
         assert_eq!(result.error_count, 0, "case {index}: {case:?}");
-        assert_eq!(result.samples, Some(case.frames as i64));
+        assert_eq!(result.samples, Some(i64::try_from(case.frames).unwrap()));
         assert!(!unwanted.exists());
         assert!(!normalized.exists());
         decode(&output, &raw);
@@ -346,10 +350,10 @@ fn streamed_resampling_matches_the_wave_encoding_path() {
     assert!(
         result
             .samples
-            .is_some_and(|samples| samples > case.frames as i64)
+            .is_some_and(|samples| samples > i64::try_from(case.frames).unwrap())
     );
     let pcm = root.0.join("baseline.wav");
-    passed(media::execute(
+    passed(&media::execute(
         media::Job {
             library: media_library(),
             request: Request {
@@ -371,7 +375,7 @@ fn streamed_resampling_matches_the_wave_encoding_path() {
         &mut Events::default(),
     ));
     let baseline = root.0.join("baseline.mlp");
-    passed(encoder::execute(
+    passed(&encoder::execute(
         encoder::Job {
             library: root.0.join("unused-encoder.dll"),
             wave: pcm.to_string_lossy().into_owned(),
@@ -458,7 +462,7 @@ fn frozen_mlp_matrix_and_lossless_decode() {
             "PCM generator case {index}: {case:?}"
         );
         let mut events = Events::default();
-        passed(encoder::execute(
+        passed(&encoder::execute(
             job(&input, &output, context(&stamp, case)),
             &mut events,
         ));
@@ -582,7 +586,7 @@ fn encoder_transactions_and_parallel_calls() {
             let input = input.clone();
             let output = root.0.join(format!("parallel-{index}.mlp"));
             std::thread::spawn(move || {
-                passed(encoder::execute(
+                passed(&encoder::execute(
                     job(&input, &output, String::new()),
                     &mut Events::default(),
                 ));
@@ -608,8 +612,8 @@ fn batch_job(root: &Path, cases: &[Case]) -> dvda_core::batch::Job {
             .map_or_else(|| root.join("missing-encoder.dll"), PathBuf::from),
         temporary_directory: root.join("temp"),
         output_directory: root.join("output"),
-        sample_rate: cases[0].rate as i32,
-        bits: cases[0].bits as i32,
+        sample_rate: i32::try_from(cases[0].rate).unwrap(),
+        bits: i32::try_from(cases[0].bits).unwrap(),
         dither: false,
         metadata_context: String::new(),
         tracks: cases
@@ -622,7 +626,7 @@ fn batch_job(root: &Path, cases: &[Case]) -> dvda_core::batch::Job {
                     source_path: source.to_str().unwrap().into(),
                     work_name: format!("track{index}"),
                     display_name: format!("音轨 日本語 🎵 {index}"),
-                    duration_seconds: case.frames as f64 / f64::from(case.rate),
+                    duration_seconds: duration_seconds(case),
                     source_identity: serde_json::Value::Null,
                     source_evidence: serde_json::Value::Null,
                 }
@@ -686,7 +690,7 @@ fn batch_matrix_matches_frozen_encoder_bytes() {
             fs::create_dir(&folder).unwrap();
             let job = batch_job(&folder, &cases);
             let mut events = BatchEvents::new();
-            passed(dvda_core::batch::execute(job, &mut events));
+            passed(&dvda_core::batch::execute(job, &mut events));
             assert_eq!(fs::read_dir(folder.join("temp")).unwrap().count(), 0);
             for (index, case) in cases.iter().enumerate() {
                 assert_eq!(
@@ -739,7 +743,7 @@ fn execute_with_runs_finalizers_concurrently_and_preserves_result_order() {
             }
         },
     );
-    passed(outcome);
+    passed(&outcome);
     assert_eq!(results, [0, 1, 2]);
     assert_eq!(calls.lock().unwrap().len(), 3);
     assert!(peak.load(std::sync::atomic::Ordering::Acquire) >= 2);
@@ -793,7 +797,7 @@ fn mlp_acquisition_upgrades_legacy_parameter_cache_without_reencoding_or_track_c
             .unwrap();
         let input = root.0.join(format!("input-{index}.wav"));
         wave(&input, case);
-        tracks.push(serde_json::json!({"SourcePath":input,"Title":format!("曲目 {index}"),"Duration":case.frames as f64 / f64::from(case.rate)}));
+        tracks.push(serde_json::json!({"SourcePath":input,"Title":format!("曲目 {index}"),"Duration":duration_seconds(case)}));
     }
     let cache = root.0.join("cache.json");
     let output = root.0.join("output");
@@ -913,6 +917,10 @@ fn batch_cancellation_panic_and_partial_failure() {
 
 #[test]
 #[ignore = "opt-in synthetic native batch worker benchmark"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The opt-in benchmark keeps generation, repeated execution, and byte verification stages ordered"
+)]
 fn synthetic_batch_worker_benchmark() {
     assert_eq!(std::env::var("DVDA_BATCH_BENCH").as_deref(), Ok("1"));
     let root = PathBuf::from(std::env::var_os("DVDA_BATCH_BENCH_ROOT").unwrap());
@@ -931,12 +939,12 @@ fn synthetic_batch_worker_benchmark() {
                     as usize;
             let metadata: serde_json::Value =
                 serde_json::from_slice(executable.get(offset + 12..offset + 12 + length)?).ok()?;
-            let end =
-                metadata.as_array()?.iter().try_fold(0usize, |end, entry| {
-                    Some(end.max(
-                        entry["offset"].as_u64()? as usize + entry["length"].as_u64()? as usize,
-                    ))
-                })?;
+            let end = metadata.as_array()?.iter().try_fold(0usize, |end, entry| {
+                Some(end.max(
+                    usize::try_from(entry["offset"].as_u64()?).ok()?
+                        + usize::try_from(entry["length"].as_u64()?).ok()?,
+                ))
+            })?;
             executable.get(offset..offset + 12 + length + end)
         })
         .expect("embedded verified runtime archive");
@@ -978,7 +986,7 @@ fn synthetic_batch_worker_benchmark() {
                     source_path: source.to_str().unwrap().into(),
                     work_name: format!("track{index}"),
                     display_name: format!("synthetic {bits}-bit {}ch {index}", case.channels),
-                    duration_seconds: case.frames as f64 / f64::from(case.rate),
+                    duration_seconds: duration_seconds(case),
                     source_identity: serde_json::Value::Null,
                     source_evidence: serde_json::Value::Null,
                 }
@@ -995,7 +1003,7 @@ fn synthetic_batch_worker_benchmark() {
                     temporary_directory: run.join("temp"),
                     output_directory: run.join("output"),
                     sample_rate: 48000,
-                    bits: bits as i32,
+                    bits: i32::try_from(bits).unwrap(),
                     dither: false,
                     metadata_context: String::new(),
                     tracks: tracks
@@ -1012,7 +1020,7 @@ fn synthetic_batch_worker_benchmark() {
                 };
                 let mut events = BatchEvents::new();
                 let started = std::time::Instant::now();
-                passed(dvda_core::batch::execute(job, &mut events));
+                passed(&dvda_core::batch::execute(job, &mut events));
                 let seconds = started.elapsed().as_secs_f64();
                 assert_eq!(
                     events
@@ -1039,7 +1047,7 @@ fn synthetic_batch_worker_benchmark() {
                     }
                     let expected = wave(&run.join(format!("expected-{index}.wav")), case);
                     let raw = run.join(format!("decoded-{index}.raw"));
-                    passed(media::execute(
+                    passed(&media::execute(
                         media::Job {
                             library: media_library.clone(),
                             request: Request {

@@ -62,6 +62,11 @@ impl MlpOutputQueue {
         Ok(())
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::verbose_bit_mask,
+        reason = "Queue word counts are admitted at 4..=4095 and the 0x7fff rate mask is an explicit MLP header field"
+    )]
     pub(crate) fn mlp_output_queue_push(
         &mut self,
         words: &[u32],
@@ -241,6 +246,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "FIFO fixtures use bounded queue positions in 16-bit arrival timestamps"
+    )]
     fn lookahead_wrap_preserves_fifo_order() {
         let mut queue = MlpOutputQueue::mlp_output_queue_init();
         let mut emitted = Vec::new();
@@ -281,6 +290,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Failure fixtures use bounded queue positions in protocol-width descriptor fields"
+    )]
     fn push_emit_failure_retains_both_front_and_new_node() {
         let mut queue = MlpOutputQueue::mlp_output_queue_init();
         assert!(queue.mlp_output_queue_push(&major_unit(), 40, &mut |_| true));

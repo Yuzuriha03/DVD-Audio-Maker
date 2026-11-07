@@ -13,17 +13,21 @@ use std::{
 /// Returns an error for an unsupported operation or a missing required string
 /// field. Lookup also fails if the root or any descendant directory cannot be
 /// enumerated, or a directory entry cannot be read.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public dispatch owns the JSON request at the operation boundary"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
-        "build.mlp_lookup" => lookup(request),
-        "build.mlp_resolve" => resolve(request),
-        "build.mlp_destination" => destination(request),
+        "build.mlp_lookup" => lookup(&request),
+        "build.mlp_resolve" => resolve(&request),
+        "build.mlp_destination" => destination(&request),
         _ => Err(format!("Unsupported acquisition operation: {operation}")),
     }
 }
 
-fn lookup(request: Value) -> Result<Value, String> {
-    let root = text(&request, "Root").ok_or("Missing MLP root")?;
+fn lookup(request: &Value) -> Result<Value, String> {
+    let root = text(request, "Root").ok_or("Missing MLP root")?;
     let mut paths = Vec::new();
     collect(&PathBuf::from(root), &mut paths)?;
     let mut named_paths: Vec<_> = paths
@@ -56,11 +60,11 @@ fn lookup(request: Value) -> Result<Value, String> {
     Ok(json!({"Index":entries,"AmbiguousNames":ambiguous_names}))
 }
 
-fn resolve(request: Value) -> Result<Value, String> {
-    let source = PathBuf::from(text(&request, "SourcePath").ok_or("Missing source path")?);
-    let source_root = PathBuf::from(text(&request, "SourceRoot").ok_or("Missing source root")?);
+fn resolve(request: &Value) -> Result<Value, String> {
+    let source = PathBuf::from(text(request, "SourcePath").ok_or("Missing source path")?);
+    let source_root = PathBuf::from(text(request, "SourceRoot").ok_or("Missing source root")?);
     let external_root =
-        PathBuf::from(text(&request, "ExternalRoot").ok_or("Missing external root")?);
+        PathBuf::from(text(request, "ExternalRoot").ok_or("Missing external root")?);
     let relative = relative_or_file_name(&source, &source_root);
     let mut mirror = external_root.join(relative);
     mirror.set_extension("mlp");
@@ -68,24 +72,24 @@ fn resolve(request: Value) -> Result<Value, String> {
         return Ok(Value::String(mirror.to_string_lossy().into_owned()));
     }
     let stem = source.file_stem().map(|value| value.to_string_lossy());
-    let index = request
+    let result = request
         .get("BasenameIndex")
         .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let result = stem.and_then(|stem| {
-        index
-            .iter()
-            .find(|(key, _)| ordinal_ignore_case(key, stem.as_ref()))
-            .map(|(_, value)| value.clone())
-    });
+        .and_then(|index| {
+            stem.and_then(|stem| {
+                index
+                    .iter()
+                    .find(|(key, _)| ordinal_ignore_case(key, stem.as_ref()))
+                    .map(|(_, value)| value.clone())
+            })
+        });
     Ok(result.unwrap_or(Value::Null))
 }
 
-fn destination(request: Value) -> Result<Value, String> {
-    let source = PathBuf::from(text(&request, "SourcePath").ok_or("Missing source path")?);
-    let source_root = PathBuf::from(text(&request, "SourceRoot").ok_or("Missing source root")?);
-    let output_root = PathBuf::from(text(&request, "OutputRoot").ok_or("Missing output root")?);
+fn destination(request: &Value) -> Result<Value, String> {
+    let source = PathBuf::from(text(request, "SourcePath").ok_or("Missing source path")?);
+    let source_root = PathBuf::from(text(request, "SourceRoot").ok_or("Missing source root")?);
+    let output_root = PathBuf::from(text(request, "OutputRoot").ok_or("Missing output root")?);
     let relative = relative_or_file_name(&source, &source_root);
     let mut destination = output_root.join(relative);
     destination.set_extension("mlp");
@@ -155,11 +159,11 @@ mod tests {
         fs::create_dir_all(external.join("b")).unwrap();
         fs::write(external.join("a/same.mlp"), [1]).unwrap();
         fs::write(external.join("b/SAME.MLP"), [2]).unwrap();
-        let lookup = lookup(json!({"Root":external})).unwrap();
+        let lookup = lookup(&json!({"Root":external})).unwrap();
         assert_eq!(lookup["AmbiguousNames"], json!(["same"]));
         assert!(lookup["Index"].as_object().unwrap().contains_key("track"));
         assert_eq!(
-            resolve(json!({
+            resolve(&json!({
                 "SourcePath":source_root.join("album/track.flac"),
                 "SourceRoot":source_root,
                 "ExternalRoot":external,
@@ -175,7 +179,7 @@ mod tests {
             )
         );
         assert_eq!(
-            resolve(json!({
+            resolve(&json!({
                 "SourcePath":source_root.join("other/TRACK.flac"),
                 "SourceRoot":source_root,
                 "ExternalRoot":root.join("missing"),

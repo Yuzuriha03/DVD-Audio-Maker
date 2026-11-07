@@ -1,11 +1,5 @@
 //! Streaming ISO9660 / UDF 1.02 bridge writer, migrated from `iso_writer.c`.
 //! Directory records are alphabetical; `AUDIO_TS` payloads follow DVD-Audio order.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::items_after_statements,
-    clippy::too_many_lines,
-    reason = "ISO/UDF records use validated field widths and retain streaming copy loops"
-)]
 use std::{
     cmp::Ordering,
     fs::{self, File, OpenOptions},
@@ -98,7 +92,10 @@ fn extent(data: &mut [u8], at: usize, location: u32, length: u32) {
 fn osta_name(name: &str) -> Vec<u8> {
     if name.chars().all(|c| u32::from(c) <= 255) {
         let mut bytes = vec![8];
-        bytes.extend(name.chars().map(|c| c as u8));
+        bytes.extend(
+            name.chars()
+                .map(|c| u8::try_from(c).expect("OSTA compression 8 was checked")),
+        );
         bytes
     } else {
         let mut bytes = vec![16];
@@ -120,7 +117,7 @@ fn dstring(data: &mut [u8], at: usize, size: usize, text: &str) {
     }
     let bytes = osta_name(&text[..end]);
     data[at..at + bytes.len()].copy_from_slice(&bytes);
-    data[at + size - 1] = bytes.len() as u8;
+    data[at + size - 1] = u8::try_from(bytes.len()).expect("dstring is limited to 255 bytes");
 }
 fn padded(data: &mut [u8], at: usize, size: usize, value: &[u8]) {
     data[at..at + size].fill(b' ');
@@ -130,7 +127,8 @@ fn padded(data: &mut [u8], at: usize, size: usize, value: &[u8]) {
 fn zeroes(output: &mut impl Write, mut count: u64) -> io::Result<()> {
     let zero = [0; SECTOR as usize];
     while count > 0 {
-        let length = count.min(u64::from(SECTOR)) as usize;
+        let length =
+            usize::try_from(count.min(u64::from(SECTOR))).expect("at most one 2048-byte sector");
         output.write_all(&zero[..length])?;
         count -= length as u64;
     }
@@ -184,7 +182,10 @@ fn dvd_rank(node: &Node, nodes: &[Node]) -> Option<u32> {
         if &bytes[..8] == *value {
             for (extension, value) in [b".IFO", b".VOB", b".BUP"].iter().enumerate() {
                 if &bytes[8..] == *value {
-                    return Some((prefix * 3 + extension) as u32);
+                    return Some(
+                        u32::try_from(prefix * 3 + extension)
+                            .expect("three prefixes and extensions"),
+                    );
                 }
             }
         }
@@ -200,7 +201,11 @@ fn dvd_rank(node: &Node, nodes: &[Node]) -> Option<u32> {
     let extension = [b".IFO", b".AOB", b".BUP"]
         .iter()
         .position(|value| &bytes[8..] == *value)?;
-    (title > 0).then_some(9 + title * 30 + extension as u32 * 10 + u32::from(bytes[7] - b'0'))
+    (title > 0).then_some(
+        9 + title * 30
+            + u32::try_from(extension).expect("three extensions") * 10
+            + u32::from(bytes[7] - b'0'),
+    )
 }
 fn scan(
     nodes: &mut Vec<Node>,
@@ -271,7 +276,8 @@ fn scan(
     Ok(id)
 }
 fn iso_record_length(node: &Node) -> u32 {
-    let length = node.name.len() as u32 + if node.file { 2 } else { 0 };
+    let length = u32::try_from(node.name.len()).expect("scan validates ISO name length")
+        + if node.file { 2 } else { 0 };
     33 + length + u32::from(length.is_multiple_of(2))
 }
 fn aligned_record(offset: u32, length: u32) -> io::Result<u32> {
@@ -315,13 +321,16 @@ impl Image {
             let length = if id == 0 {
                 1
             } else {
-                nodes[id].name.len() as u32
+                u32::try_from(nodes[id].name.len()).expect("scan validates ISO name length")
             };
             advance(&mut path_size, 8 + length + length % 2)?;
             let mut udf_length = 40;
             let mut iso_length = 68;
             for child in &nodes[id].children {
-                let fid = (38 + osta_name(&nodes[*child].name).len() as u32).next_multiple_of(4);
+                let fid = (38
+                    + u32::try_from(osta_name(&nodes[*child].name).len())
+                        .expect("scan validates UDF name length"))
+                .next_multiple_of(4);
                 // ECMA-167 directory streams contain consecutive FIDs. FIDs
                 // may straddle blocks; only each record's four-byte pad remains.
                 advance(&mut udf_length, fid)?;
@@ -398,12 +407,12 @@ impl Image {
         };
         let length = 33 + name.len() + usize::from(name.len().is_multiple_of(2));
         let mut record = vec![0; length];
-        record[0] = length as u8;
+        record[0] = u8::try_from(length).expect("scan bounds ISO records to 254 bytes");
         both32(&mut record, 2, node.lba);
         both32(&mut record, 10, node.size);
         record[25] = if node.file { 0 } else { 2 };
         both16(&mut record, 28, 1);
-        record[32] = name.len() as u8;
+        record[32] = u8::try_from(name.len()).expect("scan validates ISO/UDF name length");
         record[33..33 + name.len()].copy_from_slice(&name);
         record
     }
@@ -418,14 +427,14 @@ impl Image {
         let mut record = vec![0; length];
         le16(&mut record, 16, 1);
         record[18] = if node.file { 0 } else { 2 } | if parent { 8 } else { 0 };
-        record[19] = name.len() as u8;
+        record[19] = u8::try_from(name.len()).expect("scan validates ISO/UDF name length");
         extent(&mut record, 20, node.entry_lba - PARTITION, SECTOR);
         record[38..38 + name.len()].copy_from_slice(&name);
         tag(
             &mut record,
             257,
             self.nodes[directory].udf_lba - PARTITION + offset / SECTOR,
-            (length - 16) as u16,
+            u16::try_from(length - 16).expect("FID name at most 255 bytes"),
         );
         record
     }
@@ -479,15 +488,24 @@ impl Image {
             extent(&mut data, 176, node.udf_lba - PARTITION, node.udf_length);
             allocation_bytes = 8;
         }
-        le32(&mut data, 172, allocation_bytes as u32);
+        le32(
+            &mut data,
+            172,
+            u32::try_from(allocation_bytes)
+                .expect("32-bit file needs at most five allocation descriptors"),
+        );
         tag(
             &mut data,
             261,
             node.entry_lba - PARTITION,
-            (160 + allocation_bytes) as u16,
+            u16::try_from(160 + allocation_bytes).expect("allocation descriptors fit a sector"),
         );
         data
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep ISO/UDF descriptors, directory streams and payload copies in planned sector order"
+    )]
     fn write(&self, output: &mut impl Write, label: &str) -> io::Result<()> {
         zeroes(output, 16 * u64::from(SECTOR))?;
         let mut pvd = [0; SECTOR as usize];
@@ -498,7 +516,7 @@ impl Image {
         for at in [120, 124] {
             both16(&mut pvd, at, 1);
         }
-        both16(&mut pvd, 128, SECTOR as u16);
+        both16(&mut pvd, 128, 2048);
         both32(&mut pvd, 132, self.path_size);
         le32(&mut pvd, 140, self.path_lba);
         pvd[148..152].copy_from_slice(&self.path_m_lba.to_be_bytes());
@@ -544,7 +562,9 @@ impl Image {
                 let length = if parent {
                     40
                 } else {
-                    (38 + osta_name(&self.nodes[target].name).len() as u32).next_multiple_of(4)
+                    (38 + u32::try_from(osta_name(&self.nodes[target].name).len())
+                        .expect("scan validates UDF name length"))
+                    .next_multiple_of(4)
                 };
                 output.write_all(&self.fid(*id, target, parent, offset))?;
                 advance(&mut offset, length)?;
@@ -566,7 +586,7 @@ impl Image {
                     node.name.as_bytes()
                 };
                 let mut entry = vec![0; 8 + name.len() + name.len() % 2];
-                entry[0] = name.len() as u8;
+                entry[0] = u8::try_from(name.len()).expect("scan validates ISO/UDF name length");
                 let parent = self.nodes[node.parent].path_index;
                 if big {
                     entry[2..6].copy_from_slice(&node.lba.to_be_bytes());
@@ -590,8 +610,18 @@ impl Image {
             let mut offset = 68;
             for child in &node.children {
                 let record = self.iso_record(*child, None);
-                let next = aligned_record(offset, record.len() as u32)?;
-                zeroes(output, u64::from(next - offset - record.len() as u32))?;
+                let next = aligned_record(
+                    offset,
+                    u32::try_from(record.len()).expect("ISO records are at most 254 bytes"),
+                )?;
+                zeroes(
+                    output,
+                    u64::from(
+                        next - offset
+                            - u32::try_from(record.len())
+                                .expect("ISO records are at most 254 bytes"),
+                    ),
+                )?;
                 output.write_all(&record)?;
                 offset = next;
             }
@@ -603,7 +633,9 @@ impl Image {
             let mut input = File::open(&node.path)?;
             let mut remaining = u64::from(node.size);
             while remaining > 0 {
-                let capacity = buffer.len().min(remaining as usize);
+                let capacity = buffer.len().min(
+                    usize::try_from(remaining).expect("32-bit file length fits Windows x64 usize"),
+                );
                 let length = input.read(&mut buffer[..capacity])?;
                 if length == 0 {
                     return Err(io::Error::new(
@@ -685,8 +717,16 @@ impl Image {
         le32(&mut data, 76, 46);
         le32(&mut data, 84, partition_length);
         entity(&mut data, 88, b"*DVD-Audio Maker", None);
-        le32(&mut data, 120, self.files.len() as u32);
-        le32(&mut data, 124, self.directories.len() as u32);
+        le32(
+            &mut data,
+            120,
+            u32::try_from(self.files.len()).expect("planned sector addresses bound file count"),
+        );
+        le32(
+            &mut data,
+            124,
+            u32::try_from(self.directories.len()).expect("directory count fits u16 path index"),
+        );
         for at in [128, 130, 132] {
             le16(&mut data, at, 0x102);
         }
@@ -754,6 +794,29 @@ pub fn file_layout(source: &Path) -> io::Result<Vec<(PathBuf, u32, u32)>> {
         .collect())
 }
 
+struct Progress<'a, W> {
+    output: &'a mut W,
+    callbacks: &'a mut dyn crate::Callbacks,
+    completed: u64,
+    total: u64,
+}
+impl<W: Write> Write for Progress<'_, W> {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        if self.callbacks.cancelled() {
+            // write_all retries Interrupted, so cancellation must be
+            // a terminal error rather than an interrupted syscall.
+            return Err(io::Error::other("Author cancelled"));
+        }
+        let size = self.output.write(data)?;
+        self.completed += size as u64;
+        self.callbacks.progress(self.completed, self.total);
+        Ok(size)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.output.flush()
+    }
+}
+
 /// Stream an ISO image while forwarding cancellation and progress callbacks.
 ///
 /// # Errors
@@ -764,6 +827,7 @@ pub fn write_with_callbacks(
     label: Option<&str>,
     callbacks: &mut dyn crate::Callbacks,
 ) -> io::Result<()> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     let source = source.canonicalize()?;
     let parent = destination
         .parent()
@@ -778,7 +842,6 @@ pub fn write_with_callbacks(
         .ok_or_else(|| invalid("ISO destination requires a filename"))?;
     let destination = parent.join(filename);
     let image = Image::plan(&source)?;
-    static NEXT: AtomicU64 = AtomicU64::new(0);
     let (temporary, file) = loop {
         let path = parent.join(format!(
             ".dvda-iso-{}-{}.tmp",
@@ -793,28 +856,6 @@ pub fn write_with_callbacks(
     };
     {
         let mut output = BufWriter::with_capacity(64 * 1024, file);
-        struct Progress<'a, W> {
-            output: &'a mut W,
-            callbacks: &'a mut dyn crate::Callbacks,
-            completed: u64,
-            total: u64,
-        }
-        impl<W: Write> Write for Progress<'_, W> {
-            fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-                if self.callbacks.cancelled() {
-                    // write_all retries Interrupted, so cancellation must be
-                    // a terminal error rather than an interrupted syscall.
-                    return Err(io::Error::other("Author cancelled"));
-                }
-                let size = self.output.write(data)?;
-                self.completed += size as u64;
-                self.callbacks.progress(self.completed, self.total);
-                Ok(size)
-            }
-            fn flush(&mut self) -> io::Result<()> {
-                self.output.flush()
-            }
-        }
         image.write(
             &mut Progress {
                 output: &mut output,

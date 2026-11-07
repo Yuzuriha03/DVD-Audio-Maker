@@ -3,14 +3,6 @@
 //! The release ZIP contains one application EXE and user documentation.
 //! Build provenance files, source trees, C# outputs and local profiles never
 //! enter the user package.
-#![expect(
-    clippy::too_many_lines,
-    reason = "Release assembly retains sequential packaging stages"
-)]
-#![allow(
-    clippy::items_after_statements,
-    reason = "Scoped test imports and inferred defaults vary with enabled test targets"
-)]
 mod fonts;
 mod pe;
 mod publication;
@@ -154,6 +146,10 @@ fn input_path(
     )
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Release validation, staging, and publication remain in their required order"
+)]
 fn package(options: Args) -> Result<(), String> {
     validate_version(&options.version)?;
     let repository = options
@@ -737,7 +733,7 @@ mod tests {
             f.replace(
                 "media",
                 "dvda-media.dll",
-                pe::fixture(
+                &pe::fixture(
                     true,
                     if delayed { &[] } else { &["missing.dll"] },
                     if delayed { &["missing.dll"] } else { &[] },
@@ -748,7 +744,7 @@ mod tests {
             assert_eq!(fs::read_dir(f.root.join("output")).unwrap().count(), 1);
         }
         let f = Fixture::new();
-        f.replace("image", "dvda-image.dll", b"broken PE".to_vec());
+        f.replace("image", "dvda-image.dll", b"broken PE");
         assert!(entry(&f).unwrap_err().contains("DOS header"));
         let f = Fixture::new();
         f.edit("media", |d| d["profile"] = "wrong".into());
@@ -780,7 +776,7 @@ mod tests {
                 _ => f.replace(
                     "encoder",
                     "mlp_encoder.dll",
-                    pe::fixture(
+                    &pe::fixture(
                         true,
                         if failure == "import" {
                             &["missing.dll"]

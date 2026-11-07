@@ -4,14 +4,6 @@
 //! private dvdauthor-data sector and the subpicture packets are written in the
 //! same order with the same timing state machine.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::decimal_bitwise_operands,
-    clippy::too_many_lines,
-    reason = "MPEG PACK/PES fields retain their protocol widths and C-compatible scheduling arithmetic"
-)]
 use super::encode::dvd_encode;
 use super::format::VideoFormat;
 use super::image::{RgbaReader, SubPicture};
@@ -120,10 +112,10 @@ fn get_pts(buffer: &[u8]) -> Option<u32> {
     }
     Some(
         u32::from(buffer[7] >> 1)
-            + u32::from(buffer[6]) * 128
-            + u32::from(buffer[5] & 254) * 16384
+            + u32::from(buffer[6]) * 0x80
+            + u32::from(buffer[5] & 0xfe) * 16384
             + u32::from(buffer[4]) * 16384 * 256
-            + u32::from(buffer[3] & 14) * 16384 * 256 * 128,
+            + u32::from(buffer[3] & 0x0e) * 16384 * 256 * 128,
     )
 }
 
@@ -221,6 +213,10 @@ impl Mux {
         None
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The scheduling deadline intentionally truncates a nonnegative floating-point timestamp"
+    )]
     fn due_gts(spu: &SubPicture) -> i64 {
         let due = (f64::from(spu.spts) - 0.15 * 90000.0) * 300.0;
         if due < 0.0 { 0 } else { due as i64 }
@@ -235,7 +231,7 @@ impl Mux {
         }
         while let Some(mut current) = self.next.take() {
             let duegt = Self::due_gts(&current);
-            if duegt > self.lastgts as i64 && !eoinput {
+            if duegt > self.lastgts.cast_signed() && !eoinput {
                 self.next = Some(current);
                 break;
             }
@@ -265,13 +261,17 @@ impl Mux {
                 Err(error) => return Err(error),
             };
             self.subno += 1;
-            self.lastgts = duegt as u64;
+            self.lastgts = duegt.cast_unsigned();
             self.write_dvdauthor_data(&mut current);
             self.write_subpicture(&current, &sub_size);
         }
         Ok(())
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The private metadata sector is serialized in protocol order in one pass"
+    )]
     fn write_dvdauthor_data(&mut self, spu: &mut SubPicture) {
         let pdl = SECTOR_SIZE - 6 - 10 - 4;
         self.write_start(MPID_PACK);
@@ -279,8 +279,8 @@ impl Mux {
         pack_header(&mut header, self.lastgts, self.muxrate, 0);
         fix_gts(&mut self.lastgts, &mut self.nextgts);
         self.write(&header[..10]);
-        self.write(&[0, 0, 1, MPID_PAD as u8]);
-        self.write(&[(pdl >> 8) as u8, pdl as u8]);
+        self.write(&[0, 0, 1, MPID_PAD.to_le_bytes()[0]]);
+        self.write(&[(pdl >> 8).to_le_bytes()[0], pdl.to_le_bytes()[0]]);
         let sector = &mut self.sector;
         sector[..pdl].fill(0xff);
         let mut at = 0usize;
@@ -291,14 +291,14 @@ impl Mux {
         at += 1;
         sector[at] = SUB_STREAM;
         at += 1;
-        write_long(sector, &mut at, spu.spts as u32);
+        write_long(sector, &mut at, spu.spts.cast_unsigned());
         write_long(
             sector,
             &mut at,
             if spu.sd == -1 {
                 u32::MAX
             } else {
-                (spu.sd + spu.spts) as u32
+                (spu.sd + spu.spts).cast_unsigned()
             },
         );
         sector[at] = 1;
@@ -326,10 +326,11 @@ impl Mux {
                             *word <<= 4;
                         }
                     } else {
-                        let highlight = spu.hlt.pal[((entry >> 8) & 0xFF) as usize];
-                        let select = spu.sel.pal[(entry & 0xFF) as usize];
-                        let highlight_index = spu.find_master_pal(highlight) as u16;
-                        let select_index = spu.find_master_pal(select) as u16;
+                        let highlight = spu.hlt.pal[usize::try_from((entry >> 8) & 0xFF).unwrap()];
+                        let select = spu.sel.pal[usize::try_from(entry & 0xFF).unwrap()];
+                        let highlight_index =
+                            u16::try_from(spu.find_master_pal(highlight)).unwrap();
+                        let select_index = u16::try_from(spu.find_master_pal(select)).unwrap();
                         words[0] = (words[0] << 4) | highlight_index;
                         words[1] = (words[1] << 4) | u16::from(highlight.a >> 4);
                         words[2] = (words[2] << 4) | select_index;
@@ -404,15 +405,16 @@ impl Mux {
                 self.header_size = 9;
             }
             let mut bytes_this_packet = SECTOR_SIZE - 20 - self.header_size;
-            let mut stuffing = bytes_this_packet as i32 - (sub_size - sent) as i32;
+            let mut stuffing =
+                i32::try_from(bytes_this_packet).unwrap() - i32::try_from(sub_size - sent).unwrap();
             let stuffing = if stuffing < 0 {
                 0
             } else {
-                bytes_this_packet -= stuffing as usize;
+                bytes_this_packet -= usize::try_from(stuffing).unwrap();
                 if stuffing > 7 {
                     stuffing = 0;
                 }
-                stuffing as usize
+                usize::try_from(stuffing).unwrap()
             };
             self.write_start(MPID_PACK);
             let mut header = [0u8; 32];
@@ -420,16 +422,16 @@ impl Mux {
             fix_gts(&mut self.lastgts, &mut self.nextgts);
             self.write(&header[..10]);
             self.write_start(MPID_PRIVATE1);
-            let length = (bytes_this_packet + self.header_size + stuffing) as u16;
+            let length = u16::try_from(bytes_this_packet + self.header_size + stuffing).unwrap();
             self.write(&be16(length));
             if self.header_size == 9 {
-                pes_header0(&mut header, spu.spts as u32);
+                pes_header0(&mut header, spu.spts.cast_unsigned());
             } else if self.header_size == 12 {
-                pes_header1(&mut header, spu.spts as u32);
+                pes_header1(&mut header, spu.spts.cast_unsigned());
             } else {
                 pes_header2(&mut header);
             }
-            header[2] += stuffing as u8;
+            header[2] += u8::try_from(stuffing).unwrap();
             for byte in header.iter_mut().skip(self.header_size - 1).take(stuffing) {
                 *byte = 0xff;
             }
@@ -441,7 +443,7 @@ impl Mux {
             bytes_this_packet += 20 + self.header_size + stuffing;
             if bytes_this_packet != SECTOR_SIZE {
                 self.write_start(MPID_PAD);
-                let padding = (SECTOR_SIZE - bytes_this_packet - 6) as u16;
+                let padding = u16::try_from(SECTOR_SIZE - bytes_this_packet - 6).unwrap();
                 self.write(&be16(padding));
                 let fill = vec![0xff; padding as usize];
                 self.write(&fill);
@@ -486,9 +488,9 @@ impl Mux {
                         && let Some(pts) = get_pts(&payload)
                     {
                         if let Some(next) = self.next.as_mut() {
-                            next.spts += pts as i32;
+                            next.spts += pts.cast_signed();
                         }
-                        self.tofs = pts as i32;
+                        self.tofs = pts.cast_signed();
                     }
                 } else if start == 0x100 + MPID_PROGRAM_END {
                     self.write(&code);
@@ -534,7 +536,7 @@ impl Mux {
             }
         }
         self.mux_next(true, rgba)?;
-        if self.skipped != 0 || self.subno + 1 != self.spus.len() as i32 {
+        if self.skipped != 0 || self.subno + 1 != i32::try_from(self.spus.len()).unwrap() {
             return Err("subpicture scheduling incomplete".into());
         }
         Ok(())
@@ -591,15 +593,15 @@ mod tests {
         .unwrap();
 
         let mut source = vec![0u8; SECTOR_SIZE];
-        source[..4].copy_from_slice(&[0, 0, 1, MPID_PACK as u8]);
+        source[..4].copy_from_slice(&[0, 0, 1, MPID_PACK.to_le_bytes()[0]]);
         let mut header = [0u8; 32];
         pack_header(&mut header, 90_000 * 300, 25_200, 0);
         source[4..14].copy_from_slice(&header[..10]);
-        source[14..18].copy_from_slice(&[0, 0, 1, MPID_VIDEO_FIRST as u8]);
+        source[14..18].copy_from_slice(&[0, 0, 1, MPID_VIDEO_FIRST.to_le_bytes()[0]]);
         source[18..20].copy_from_slice(&8u16.to_be_bytes());
         pes_header0(&mut header, 90_000);
         source[20..28].copy_from_slice(&header[..8]);
-        source[28..32].copy_from_slice(&[0, 0, 1, MPID_PROGRAM_END as u8]);
+        source[28..32].copy_from_slice(&[0, 0, 1, MPID_PROGRAM_END.to_le_bytes()[0]]);
         std::fs::write(&input, source).unwrap();
 
         let mut reads = 0;
@@ -621,7 +623,7 @@ mod tests {
         assert_eq!(data.end_pts, 180_000);
         assert_eq!(
             &bytes[2 * SECTOR_SIZE + 14..2 * SECTOR_SIZE + 18],
-            &[0, 0, 1, MPID_PRIVATE1 as u8]
+            &[0, 0, 1, MPID_PRIVATE1.to_le_bytes()[0]]
         );
         std::fs::remove_dir_all(directory).unwrap();
     }

@@ -42,20 +42,20 @@ fn title_ends(disc: &Value, mode: &str) -> Result<Map<String, Value>, String> {
         .cloned()
         .ok_or("Invalid title boundary result".into())
 }
-fn write_index(request: Value) -> Result<Value, String> {
-    let path = text(&request, "Path");
-    let plan = field(&request, "Plan");
+fn write_index(request: &Value) -> Result<Value, String> {
+    let path = text(request, "Path");
+    let plan = field(request, "Plan");
     let all_tracks = tracks(plan);
     if let Some(path) = duplicate(&all_tracks) {
         return Err(format!("多首曲目映射到同一个 MLP，索引会发生覆盖: {path}"));
     }
-    let build_directory = text(&request, "BuildDirectory");
-    let build_log = text(&request, "BuildLogPath");
-    let dry_run = field(&request, "DryRun").as_bool().unwrap_or(false);
-    let mlp_source = text(&request, "MlpSource");
-    let external = text(&request, "MlpExternalDirectory");
-    let title_mode = text(&request, "DiagnosticTitleMode");
-    let generated = text(&request, "Generated");
+    let build_directory = text(request, "BuildDirectory");
+    let build_log = text(request, "BuildLogPath");
+    let dry_run = field(request, "DryRun").as_bool().unwrap_or(false);
+    let mlp_source = text(request, "MlpSource");
+    let external = text(request, "MlpExternalDirectory");
+    let title_mode = text(request, "DiagnosticTitleMode");
+    let generated = text(request, "Generated");
     let build_log = if dry_run {
         Path::new(&build_directory)
             .join("build-dryrun.log")
@@ -109,15 +109,15 @@ fn write_index(request: Value) -> Result<Value, String> {
             );
         }
         let menu = if request["MenuEnabled"].as_bool() == Some(true) {
-            let plan = crate::menu::plan(json!({"Disc":disc,"Title":text(&request,"Title"),
+            let plan = crate::menu::plan(json!({"Disc":disc,"Title":text(request,"Title"),
                 "MenuTracksPerPage":request["MenuTracksPerPage"],"MenuIndexMinimumAlbums":request["MenuIndexMinimumAlbums"]}))?;
             json!({"pages":plan["TotalPages"],"index_pages":plan["IndexPages"],"albums":plan["AlbumPageCount"],
                 "stills":if request["MenuStillPictures"].as_bool()==Some(true) {plan["TrackCount"].clone()} else {json!(0)}})
         } else {
             Value::Null
         };
-        disc_nodes.push(json!({"disc":disc_number,"volid":format!("{} {}",text(&request,"Title"),disc_number),
-            "iso":format!("{}_{}.iso",text(&request,"IsoPrefix"),disc_number),"groups":group_nodes,"menu":menu}));
+        disc_nodes.push(json!({"disc":disc_number,"volid":format!("{} {}",text(request,"Title"),disc_number),
+            "iso":format!("{}_{}.iso",text(request,"IsoPrefix"),disc_number),"groups":group_nodes,"menu":menu}));
     }
     root.insert("__discs__".into(), Value::Array(disc_nodes));
     for track in all_tracks {
@@ -147,9 +147,13 @@ fn write_index(request: Value) -> Result<Value, String> {
 /// Rejects unsupported operations and case-insensitive duplicate MLP paths.
 /// Propagates menu-planning, JSON serialization, directory creation, and index
 /// file writing errors. Title-boundary lookup failures are ignored.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     if operation == "build.write_index" {
-        write_index(request)
+        write_index(&request)
     } else {
         Err(format!("Unsupported index operation: {operation}"))
     }
@@ -195,7 +199,7 @@ mod tests {
                         "Title":"Track","ResampleTo":null}]}]}]
             }
         });
-        assert_eq!(write_index(request).unwrap(), Value::Bool(true));
+        assert_eq!(write_index(&request).unwrap(), Value::Bool(true));
         let contents = fs::read_to_string(&path).unwrap();
         assert!(contents.contains("\"__meta__\""));
         assert!(contents.contains("\"__discs__\""));

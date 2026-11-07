@@ -9,6 +9,8 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+static NEXT: AtomicU64 = AtomicU64::new(0);
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Failure {
@@ -255,7 +257,6 @@ fn save_profile(path: &str, profile: &Value) -> Result<Value, Failure> {
         .parent()
         .ok_or_else(|| Failure::validation("Argument", "Invalid profile parent."))?;
     fs::create_dir_all(parent)?;
-    static NEXT: AtomicU64 = AtomicU64::new(0);
     let token = format!(
         "{}-{}-{}",
         std::process::id(),
@@ -292,6 +293,10 @@ fn save_profile(path: &str, profile: &Value) -> Result<Value, Failure> {
 /// Returns an error for an unsupported operation or a missing/non-string `Path`.
 /// File I/O, JSON parsing, and profile validation failures are instead returned
 /// in the successful response's `Failure` field.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "profile.load" => {

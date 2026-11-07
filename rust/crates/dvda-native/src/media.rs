@@ -254,15 +254,11 @@ impl Media {
     ///
     /// # Errors
     /// Propagates request validation, path conversion, media processing, and callback failures.
-    #[expect(
-        clippy::items_after_statements,
-        reason = "The path conversion helper is scoped to the direct request adapter"
-    )]
     pub fn run(&self, request: &Request, callbacks: &mut dyn Callbacks) -> io::Result<i32> {
-        request.validate()?;
         fn string(text: &str) -> io::Result<CString> {
             CString::new(text).map_err(|_| io::Error::from_raw_os_error(123))
         }
+        request.validate()?;
         let mut direct = dvda_bridges::direct::MediaRequest::new(
             request.operation as u32,
             &request.input,

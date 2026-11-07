@@ -1,6 +1,7 @@
 use std::{
     collections::VecDeque,
-    fs, io,
+    fs,
+    io::{self, Read},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -61,10 +62,6 @@ impl FontCache {
     ///
     /// # Panics
     /// Panics only if an internal cache position no longer identifies an existing entry.
-    #[expect(
-        clippy::items_after_statements,
-        reason = "The streaming Read trait import is intentionally scoped to file loading"
-    )]
     pub fn load(&mut self, location: &FontLocation) -> io::Result<Arc<[u8]>> {
         let path = location.path.canonicalize()?;
         if let Some(index) = self.entries.iter().position(|entry| entry.0 == path) {
@@ -74,7 +71,6 @@ impl FontCache {
             validate(&data, location.face_index)?;
             return Ok(data);
         }
-        use std::io::Read;
         let file = fs::File::open(&path)?;
         if file.metadata()?.len() > MAX_FONT_BYTES {
             return Err(io::Error::new(

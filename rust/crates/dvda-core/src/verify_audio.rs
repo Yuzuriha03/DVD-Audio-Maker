@@ -59,7 +59,7 @@ pub fn track(
         return Err("旧外部 MLP 的转换策略未知，不能代替 PCM 一致性校验。".into());
     }
     crate::verify_audio_stream::compare(
-        crate::verify_audio_stream::CompareJob {
+        &crate::verify_audio_stream::CompareJob {
             library,
             source: &source,
             decoded: &encoded,

@@ -97,6 +97,10 @@ pub fn expected_samples(track: &Metadata) -> Option<i64> {
     expected_samples_at(track, track.sample_rate)
 }
 #[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Expected sample counts retain the established round-ties-even floating-point conversion"
+)]
 pub fn expected_samples_at(track: &Metadata, sample_rate: i32) -> Option<i64> {
     (track.duration > 0.0)
         .then(|| (track.duration * f64::from(sample_rate)).round_ties_even() as i64)
@@ -106,6 +110,14 @@ pub struct DecodeTarget {
     pub sample_rate: i32,
 }
 #[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Decode sample differences are reported as approximate floating-point milliseconds"
+)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public decode-evaluation API retains ownership of its target value"
+)]
 pub fn evaluate(
     track: &Metadata,
     path: &str,
@@ -166,6 +178,10 @@ pub fn evaluate(
     })
 }
 #[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Repair timestamps retain the established whole-minute truncation for diagnostics"
+)]
 pub fn repair_detail(patch: &Patch) -> String {
     let minutes = (patch.presentation_time / 60.0) as i32;
     let seconds = patch.presentation_time - f64::from(minutes) * 60.0;

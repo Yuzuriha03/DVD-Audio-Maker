@@ -168,7 +168,7 @@ impl GroupSource<'_> {
                 .enumerate()
             {
                 for (ch, &x) in frame.iter().enumerate() {
-                    if !(-8388608..=8_388_607).contains(&x)
+                    if !(-8_388_608..=8_388_607).contains(&x)
                         || x & ((1 << (24 - self.bits)) - 1) != 0
                     {
                         return Err(());
@@ -180,6 +180,11 @@ impl GroupSource<'_> {
         }
         Ok(())
     }
+    #[allow(
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Layout fixtures reconstruct signed PCM from C-compatible group and channel bit patterns"
+    )]
     fn sample(&self, n: isize, ch: usize) -> i32 {
         if n < 0 || n >= (self.frames / self.ratio) as isize {
             0
@@ -187,6 +192,12 @@ impl GroupSource<'_> {
             self.ring[(n as usize % 512) * self.second + ch]
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Midpoint fixtures preserve signed 24-bit reconstruction and protocol-width channel arithmetic"
+    )]
     fn midpoint(&mut self, low: usize, ch: usize) -> i32 {
         #[cfg(target_arch = "x86_64")]
         let mut value = crate::analysis::arithmetic::Extended::from_f64(0.0);
@@ -250,6 +261,10 @@ unsafe extern "C" fn group_read(
         -1
     }
 }
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "Grouped layout tests preserve the C callback's signed sample reconstruction"
+)]
 fn group_read_inner(
     s: &mut GroupSource<'_>,
     pcm: &mut [i32],
@@ -335,6 +350,10 @@ pub unsafe extern "C" fn mlp_encode_stream_groups(
 /// `config` must be null or point to a readable `GroupsConfig`. Both group read callbacks and the
 /// optional write callback must follow their contracts with their opaque inputs and `output` for the
 /// whole call. `r` must be exclusive and valid for writes.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Grouped FFI fixture counts are bounded by their C ABI configuration fields"
+)]
 unsafe fn groups(
     config: *const GroupsConfig,
     first_input: (Option<Read>, *mut c_void),

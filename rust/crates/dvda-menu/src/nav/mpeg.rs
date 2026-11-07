@@ -4,12 +4,6 @@
 //! codecs and timestamp transposition. They operate on borrowed sectors instead
 //! of touching global state.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::decimal_bitwise_operands,
-    reason = "SCR and PTS codecs intentionally extract fixed-width protocol fields"
-)]
 const PACK: u8 = 0xba;
 const SYSTEM: u8 = 0xbb;
 const PRIVATE_1: u8 = 0xbd;
@@ -32,8 +26,12 @@ pub(crate) fn read_scr(bytes: &[u8]) -> u32 {
 }
 
 /// Writes the 90 kHz SCR into a PACK header body, preserving the 27 MHz extension bits.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "SCR header bytes intentionally retain the low eight bits of masked fields"
+)]
 pub(crate) fn write_scr(bytes: &mut [u8], scr: u32) {
-    bytes[0] = (((scr >> 27) & 0x38) | ((scr >> 28) & 3)) as u8 | 68;
+    bytes[0] = (((scr >> 27) & 0x38) | ((scr >> 28) & 3)) as u8 | 0x44;
     bytes[1] = (scr >> 20) as u8;
     bytes[2] = ((scr >> 12) & 0xf8) as u8 | ((scr >> 13) & 3) as u8 | 4;
     bytes[3] = (scr >> 5) as u8;
@@ -49,6 +47,10 @@ pub(crate) fn read_pts(bytes: &[u8]) -> u32 {
 }
 
 /// Writes a 90 kHz PTS/DTS into a PES header, preserving the marker/top bits.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "PTS header words and bytes intentionally retain low protocol bits"
+)]
 pub(crate) fn write_pts(bytes: &mut [u8], pts: u32) {
     bytes[0] = ((pts >> 29) & 0x0e) as u8 | (bytes[0] & 0xf1);
     let word1 = ((pts >> 14) | 1) as u16;
@@ -68,6 +70,11 @@ fn sysoffs(sector: &[u8]) -> usize {
 }
 
 /// Adjusts the PACK SCR and the PES PTS/DTS by the given 90 kHz offset.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Timestamp transposition intentionally wraps to the 32-bit MPEG clock"
+)]
 pub(crate) fn transpose_ts(sector: &mut [u8], offset: i64) {
     if sector[0] != 0 || sector[1] != 0 || sector[2] != 1 || sector[3] != PACK {
         return;

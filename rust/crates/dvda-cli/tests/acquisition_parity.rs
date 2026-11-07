@@ -1,8 +1,3 @@
-#![expect(
-    clippy::needless_pass_by_value,
-    clippy::unicode_not_nfc,
-    reason = "Acquisition fixtures consume JSON values and intentionally cover non-NFC Unicode mappings"
-)]
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -36,7 +31,7 @@ impl Drop for Scratch {
     }
 }
 
-fn dispatch(operation: &str, request: Value) -> Value {
+fn dispatch(operation: &str, request: &Value) -> Value {
     let mut child = Command::new(env!("CARGO_BIN_EXE_dvda-cli"))
         .arg(operation)
         .stdin(Stdio::piped())
@@ -68,7 +63,7 @@ fn mlp_import_unicode_paths_preserve_mirrors_and_outside_root_fallbacks() {
     assert_eq!(
         dispatch(
             "build.mlp_resolve",
-            json!({
+            &json!({
                 "SourcePath":r"C:\MÚSIC\艺人\album\track.flac",
                 "SourceRoot":r"c:\músic\", "ExternalRoot":root.0,
                 "BasenameIndex":{"track":"wrong-fallback.mlp"}
@@ -80,7 +75,7 @@ fn mlp_import_unicode_paths_preserve_mirrors_and_outside_root_fallbacks() {
         assert_eq!(
             dispatch(
                 "build.mlp_resolve",
-                json!({
+                &json!({
                     "SourcePath":r"C:\中中\song.flac", "SourceRoot":source_root,
                     "ExternalRoot":root.0, "BasenameIndex":{"SONG":"expected-song.mlp"}
                 })
@@ -90,7 +85,7 @@ fn mlp_import_unicode_paths_preserve_mirrors_and_outside_root_fallbacks() {
         assert_eq!(
             dispatch(
                 "build.mlp_destination",
-                json!({
+                &json!({
                     "SourcePath":r"C:\中中\song.flac", "SourceRoot":source_root,
                     "OutputRoot":root.0
                 })
@@ -117,7 +112,7 @@ fn mlp_import_uses_unicode_ordinal_case_without_linguistic_expansion() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, b"fixture").unwrap();
     }
-    let lookup = dispatch("build.mlp_lookup", json!({"Root":root.0}));
+    let lookup = dispatch("build.mlp_lookup", &json!({"Root":root.0}));
     assert_eq!(lookup["AmbiguousNames"], json!(["Éclair", "Été"]));
     assert_eq!(lookup["Index"].as_object().unwrap().len(), 3);
     for (source_name, expected) in [
@@ -128,7 +123,7 @@ fn mlp_import_uses_unicode_ordinal_case_without_linguistic_expansion() {
     ] {
         let actual = dispatch(
             "build.mlp_resolve",
-            json!({
+            &json!({
                 "SourcePath":format!("C:\\source\\{source_name}.flac"),
                 "SourceRoot":r"C:\source", "ExternalRoot":root.0.join("missing"),
                 "BasenameIndex":lookup["Index"]
@@ -144,6 +139,10 @@ fn mlp_import_uses_unicode_ordinal_case_without_linguistic_expansion() {
 }
 
 #[test]
+#[expect(
+    clippy::unicode_not_nfc,
+    reason = "Ordinal-case fixtures intentionally include non-NFC Greek and compatibility mappings"
+)]
 fn mlp_import_supplementary_case_matches_dotnet_for_fallback_mirror_and_ambiguity() {
     let root = Scratch::new();
     let pairs = [
@@ -161,7 +160,7 @@ fn mlp_import_supplementary_case_matches_dotnet_for_fallback_mirror_and_ambiguit
         assert_eq!(
             dispatch(
                 "build.mlp_resolve",
-                json!({
+                &json!({
                     "SourcePath":format!("C:\\source\\{upper}.flac"),
                     "SourceRoot":r"C:\source", "ExternalRoot":root.0.join("missing"),
                     "BasenameIndex":{lower.to_string():"supplementary.mlp"}
@@ -172,7 +171,7 @@ fn mlp_import_supplementary_case_matches_dotnet_for_fallback_mirror_and_ambiguit
         assert_eq!(
             dispatch(
                 "build.mlp_resolve",
-                json!({
+                &json!({
                     "SourcePath":format!("C:\\{upper}\\album\\track.flac"),
                     "SourceRoot":format!("C:\\{lower}"), "ExternalRoot":root.0,
                     "BasenameIndex":{}
@@ -186,7 +185,7 @@ fn mlp_import_supplementary_case_matches_dotnet_for_fallback_mirror_and_ambiguit
             fs::write(path, b"duplicate").unwrap();
         }
     }
-    let lookup = dispatch("build.mlp_lookup", json!({"Root":root.0}));
+    let lookup = dispatch("build.mlp_lookup", &json!({"Root":root.0}));
     assert_eq!(
         lookup["AmbiguousNames"],
         json!(pairs.map(|(upper, _)| upper.to_string()))
@@ -199,7 +198,7 @@ fn mlp_import_supplementary_case_matches_dotnet_for_fallback_mirror_and_ambiguit
         assert_eq!(
             dispatch(
                 "build.mlp_resolve",
-                json!({
+                &json!({
                     "SourcePath":format!("C:\\source\\{upper}.flac"),
                     "SourceRoot":r"C:\source", "ExternalRoot":bmp.0.join("missing"),
                     "BasenameIndex":{lower.to_string():"bmp-variant.mlp"}
@@ -213,14 +212,14 @@ fn mlp_import_supplementary_case_matches_dotnet_for_fallback_mirror_and_ambiguit
             fs::write(path, b"duplicate").unwrap();
         }
     }
-    let lookup = dispatch("build.mlp_lookup", json!({"Root":bmp.0}));
+    let lookup = dispatch("build.mlp_lookup", &json!({"Root":bmp.0}));
     assert_eq!(lookup["AmbiguousNames"], json!(["Β", "Μ", "Σ", "ᾈ"]));
     assert!(lookup["Index"].as_object().unwrap().is_empty());
     for (left, right) in [("İ", "i"), ("ı", "I"), ("ſ", "S"), ("ẞ", "ß"), ("K", "k")] {
         assert_eq!(
             dispatch(
                 "build.mlp_resolve",
-                json!({
+                &json!({
                     "SourcePath":format!("C:\\source\\{left}.flac"),
                     "SourceRoot":r"C:\source", "ExternalRoot":bmp.0.join("missing"),
                     "BasenameIndex":{right:"must-not-match.mlp"}

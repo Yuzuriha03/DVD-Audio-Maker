@@ -28,6 +28,10 @@ use menu_events::{
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The JSON build request exposes independent resume, dither, and menu feature flags"
+)]
 pub struct Job {
     #[serde(default)]
     pub resume_enabled: bool,
@@ -115,6 +119,10 @@ pub struct Outcome {
     pub index_path: Option<String>,
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public typed build adapter retains its owned-job API while measured execution borrows"
+)]
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     crate::metrics::measure(
         "build",
@@ -128,12 +136,12 @@ pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
         ],
         0,
         caller,
-        |_, caller| execute_measured(job, caller),
+        |_, caller| execute_measured(&job, caller),
         |result| result.succeeded,
     )
 }
 
-fn execute_measured(job: Job, caller: &mut dyn Callbacks) -> Outcome {
+fn execute_measured(job: &Job, caller: &mut dyn Callbacks) -> Outcome {
     match run(job, caller) {
         Ok(result) => result,
         Err(message) => Outcome {
@@ -149,8 +157,12 @@ fn execute_measured(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     }
 }
 
-fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
-    validate(&job)?;
+#[allow(
+    clippy::too_many_lines,
+    reason = "The build transaction keeps validation, authoring, commit, rollback, and publication in one ordered sequence"
+)]
+fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
+    validate(job)?;
     for directory in [
         &job.build_directory,
         &job.output_root,
@@ -175,7 +187,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     let tracks_value = serde_json::to_value(&initial).map_err(|error| error.to_string())?;
     let mut diagnostics = Vec::new();
     if job.menu_enabled {
-        menu::preflight(&job, &mut diagnostics);
+        menu::preflight(job, &mut diagnostics);
         if diagnostics.iter().any(is_error) {
             return Ok(Outcome {
                 succeeded: false,
@@ -189,7 +201,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             });
         }
     }
-    diagnostics.extend(crate::disk_space::check(&job, &initial, None, caller)?);
+    diagnostics.extend(crate::disk_space::check(job, &initial, None, caller)?);
     let source_root = if job.source_root.is_empty() {
         job.manifest_path
             .parent()
@@ -207,7 +219,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         caller,
         |_, caller| {
             let mut progress = dvda_native::media::ProgressScope::new(caller, 0, 65);
-            acquire(&job, &source_root, tracks_value, &mut progress)
+            acquire(job, &source_root, &tracks_value, &mut progress)
         },
         Result::is_ok,
     )?;
@@ -226,7 +238,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
         "",
     );
     diagnostics.extend(crate::disk_space::check(
-        &job,
+        job,
         &tracks,
         Some(&plan.discs),
         caller,
@@ -239,7 +251,7 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     // Every early error/cancellation after creating the pending index must
     // remove it. A successfully published index has already been moved away.
     let _pending_cleanup = (!job.dry_run).then(|| PendingIndexCleanup(index_target.clone()));
-    write_index(&job, &index_target, &plan_value, job.dry_run)?;
+    write_index(job, &index_target, &plan_value, job.dry_run)?;
     if plan.has_errors || diagnostics.iter().any(is_error) {
         remove_if_file(&index_target);
         return Ok(Outcome {
@@ -708,7 +720,8 @@ fn run(job: Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
 
 fn validate_iso(iso: &Path, disc_bytes: i64) -> Result<(), String> {
     let size = fs::metadata(iso).map_err(|e| e.to_string())?.len();
-    if disc_bytes <= 0 || size > disc_bytes as u64 {
+    if disc_bytes <= 0 || size > u64::try_from(disc_bytes).expect("positive disc capacity fits u64")
+    {
         return Err(format!(
             "{} is {size} bytes, above the configured disc capacity",
             iso.display()
@@ -738,7 +751,7 @@ struct Acquisition {
 fn acquire(
     job: &Job,
     source_root: &str,
-    tracks: Value,
+    tracks: &Value,
     caller: &mut dyn Callbacks,
 ) -> Result<Acquisition, String> {
     match job.mlp_source.as_str() {
@@ -814,8 +827,10 @@ fn acquire(
             let value = serde_json::to_value(result).map_err(|error| error.to_string())?;
             Ok(Acquisition {
                 tracks: value["Tracks"].as_array().cloned().unwrap_or_default(),
-                cache_hits: value["CacheHits"].as_i64().unwrap_or(0) as i32,
-                cache_rebuilt: value["CacheRebuilt"].as_i64().unwrap_or(0) as i32,
+                cache_hits: i32::try_from(value["CacheHits"].as_i64().unwrap_or(0))
+                    .expect("LPCM cache hit counter is serialized from i32"),
+                cache_rebuilt: i32::try_from(value["CacheRebuilt"].as_i64().unwrap_or(0))
+                    .expect("LPCM cache rebuild counter is serialized from i32"),
                 diagnostics: value["Diagnostics"].as_array().cloned().unwrap_or_default(),
             })
         }

@@ -3,10 +3,6 @@
 //! Parses the navigation XML, scans each PGC VOB source independently, fills
 //! its NAV packs and concatenates the results into <dest>/`AUDIO_TS/AUDIO_TS.VOB`.
 
-#![allow(
-    clippy::cast_possible_truncation,
-    reason = "AMGM output preserves fixed-width sector and page fields"
-)]
 use super::build::{self, Aspect};
 use super::dvdata;
 use super::fixvobus;
@@ -168,7 +164,7 @@ mod tests {
         payload.extend_from_slice(&[0; 4]);
         let mut metadata = vec![0u8; 2048];
         metadata[14..18].copy_from_slice(&[0, 0, 1, 0xbe]);
-        metadata[18..20].copy_from_slice(&(payload.len() as u16).to_be_bytes());
+        metadata[18..20].copy_from_slice(&u16::try_from(payload.len()).unwrap().to_be_bytes());
         metadata[20..20 + payload.len()].copy_from_slice(&payload);
         sector.extend_from_slice(&metadata);
         sector
@@ -226,16 +222,25 @@ mod tests {
             .enumerate()
         {
             let nav = &bytes[index * 2048..(index + 1) * 2048];
-            assert_eq!(&nav[0x2d..0x31], &(index as u32).to_be_bytes());
-            assert_eq!(&nav[0x40b..0x40f], &(index as u32).to_be_bytes());
-            assert_eq!(&nav[0x41f..0x421], &((index + 1) as u16).to_be_bytes());
+            assert_eq!(
+                &nav[0x2d..0x31],
+                &u32::try_from(index).unwrap().to_be_bytes()
+            );
+            assert_eq!(
+                &nav[0x40b..0x40f],
+                &u32::try_from(index).unwrap().to_be_bytes()
+            );
+            assert_eq!(
+                &nav[0x41f..0x421],
+                &u16::try_from(index + 1).unwrap().to_be_bytes()
+            );
             assert_eq!(nav[0x422], 1);
             assert_eq!((u16::from_be_bytes([nav[0xbb], nav[0xbc]]) >> 4) & 0x3ff, x);
             assert_eq!(nav[0xbb + 17], target);
             for entry in 0..12usize {
                 assert_eq!(
                     &nav[0xa3 + entry * 2..0xa5 + entry * 2],
-                    &(colour + entry as u16).to_be_bytes()
+                    &(colour + u16::try_from(entry).unwrap()).to_be_bytes()
                 );
             }
             assert_eq!(&nav[0x541..0x545], &0x3fff_ffffu32.to_be_bytes());

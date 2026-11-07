@@ -9,6 +9,12 @@ fn floor_div(value: i64, divisor: i64) -> i64 {
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Negative residuals retain their low-bit two's-complement patterns and signed quotient casts during entropy packing"
+)]
 pub(crate) fn mlp_entropy_code(x: i32, p: &MlpCodingParams, qss: u32) -> Result<(u32, u32), ()> {
     if !(0..=3).contains(&p.mode)
         || qss > 15

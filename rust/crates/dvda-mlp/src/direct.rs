@@ -137,6 +137,10 @@ enum FfiCall<'a> {
     },
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Direct adapter lengths are bounded by callback buffers and C ABI field widths before conversion"
+)]
 fn invoke_ffi<I: StreamIo>(call: FfiCall<'_>, context: &mut Context<'_, I>) -> StreamResult {
     let p = (&raw mut *context).cast::<c_void>();
     let mut result = StreamResult::default();
@@ -263,6 +267,10 @@ pub fn encode_stream_with_stamp_refresh_unknown<I: StreamIo>(
     encode_stream_inner(config, profile, u64::MAX, None, metadata, io, true)
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Validated PCM geometry and stream counters use the C adapter's protocol-width fields"
+)]
 fn encode_stream_inner<I: StreamIo>(
     config: &Config,
     profile: &Profile,
@@ -483,6 +491,11 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "This fixture uses bounded stream lengths and deliberately reinterprets signed C error bytes as UTF-8 bytes"
+    )]
     fn unknown_length_matches_known_output_and_pads_the_final_access_unit() {
         let config = Config {
             sample_rate: 48000,
@@ -619,6 +632,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The grouped fixture derives bounded secondary frame counts before usize indexing"
+    )]
     fn grouped_direct_streams_are_bounded_and_independent() {
         struct Groups {
             channels: [usize; 2],

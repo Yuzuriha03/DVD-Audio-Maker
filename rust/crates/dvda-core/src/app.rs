@@ -115,7 +115,7 @@ impl AppOptions {
     /// Returns an error if normalized profile properties are not an object or
     /// option evaluation reports an invalid value.
     pub fn with_profile_values(&self, edits: Map<String, Value>) -> Result<Self, String> {
-        let edits = normalize_profile_values(&edits);
+        let edits = normalize_owned_profile_values(edits);
         let mut copy = self.clone();
         copy.stored_profile_values.extend(edits.clone());
         let mut overrides: Map<String, Value> = env::vars()
@@ -294,6 +294,18 @@ impl AppOptions {
     pub fn integer(&self, name: &str) -> i64 {
         self.value(name).as_i64().unwrap_or(0)
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Public values retain the historical low-i32 bit pattern even for out-of-range caller mutations"
+    )]
+    fn optional_integer32(&self, name: &str) -> Option<i32> {
+        self.value(name).as_i64().map(|value| value as i32)
+    }
+
+    fn integer32(&self, name: &str) -> i32 {
+        self.optional_integer32(name).unwrap_or(0)
+    }
+
     #[must_use]
     pub fn path(&self, name: &str) -> PathBuf {
         resolve_path(&self.executable_directory, &self.text(name))
@@ -359,10 +371,7 @@ impl AppOptions {
         Ok(build::Job {
             menu_language: self.language.clone(),
             resume_enabled: self.boolean("ResumeEnabled"),
-            diagnostic_album_limit: self
-                .value("DiagnosticAlbumLimit")
-                .as_i64()
-                .map(|v| v as i32),
+            diagnostic_album_limit: self.optional_integer32("DiagnosticAlbumLimit"),
             media_library: media,
             encoder_library: encoder,
             manifest_path: self.path("ManifestPath"),
@@ -380,9 +389,9 @@ impl AppOptions {
             iso_prefix: self.text("IsoPrefix"),
             diagnostic_title_mode: self.text("DiagnosticTitleMode"),
             disc_bytes: self.integer("DiscBytes"),
-            group_track_limit: self.integer("GroupTrackLimit") as i32,
-            mlp_sample_rate: self.integer("MlpSampleRate") as i32,
-            mlp_bits: self.integer("MlpBits") as i32,
+            group_track_limit: self.integer32("GroupTrackLimit"),
+            mlp_sample_rate: self.integer32("MlpSampleRate"),
+            mlp_bits: self.integer32("MlpBits"),
             dither: self.boolean("Dither16"),
             mlp_metadata_context: self.text("MlpMetadataContext"),
             mlp_batch_temp_directory: self.path("MlpBatchTempDirectory"),
@@ -390,9 +399,9 @@ impl AppOptions {
             encoder_identity: "rust-mlp-encoder".into(),
             menu_enabled,
             menu_still_pictures: self.boolean("MenuStillPictures"),
-            menu_tracks_per_page: self.integer("MenuTracksPerPage") as i32,
-            menu_index_minimum_albums: self.integer("MenuIndexMinimumAlbums") as i32,
-            menu_cover_dim: self.integer("MenuCoverDim") as i32,
+            menu_tracks_per_page: self.integer32("MenuTracksPerPage"),
+            menu_index_minimum_albums: self.integer32("MenuIndexMinimumAlbums"),
+            menu_cover_dim: self.integer32("MenuCoverDim"),
             menu_norm: self.text("MenuNorm"),
             menu_font,
             menu_font_japanese,
@@ -425,8 +434,10 @@ impl AppOptions {
             alac_fix_directory: self.path("AlacFixDirectory"),
             mlp_source: self.text("MlpSource"),
             prepare_cache_enabled: self.boolean("PrepareCacheEnabled"),
-            loss_error_seconds: f64::from_bits(self.integer("LossErrorSeconds") as u64),
-            loss_warning_seconds: f64::from_bits(self.integer("LossWarningSeconds") as u64),
+            loss_error_seconds: f64::from_bits(self.integer("LossErrorSeconds").cast_unsigned()),
+            loss_warning_seconds: f64::from_bits(
+                self.integer("LossWarningSeconds").cast_unsigned(),
+            ),
             force_revalidation,
             production: None,
         })
@@ -509,8 +520,8 @@ pub fn run_build(
     );
     let mut preparation = options.prepare_job(false)?;
     if !dry_run && matches!(options.text("MlpSource").as_str(), "mlp-batch" | "lpcm") {
-        let rate = options.integer("MlpSampleRate") as i32;
-        let bits = options.integer("MlpBits") as i32;
+        let rate = options.integer32("MlpSampleRate");
+        let bits = options.integer32("MlpBits");
         let dither = options.boolean("Dither16");
         let media = options.media_library()?;
         preparation.production = Some(preparation::pipeline::Production {
@@ -625,7 +636,8 @@ fn read_values(path: &Path, local_app_data: &str) -> Result<Map<String, Value>, 
                 failure
                     .get("Code")
                     .and_then(Value::as_i64)
-                    .map(|code| std::io::Error::from_raw_os_error(code as i32).to_string())
+                    .and_then(|code| i32::try_from(code).ok())
+                    .map(|code| std::io::Error::from_raw_os_error(code).to_string())
             })
             .unwrap_or_else(|| "Invalid JSON profile".into());
         return Err(format!("Cannot load profile {}: {detail}", path.display()));
@@ -640,7 +652,10 @@ fn read_values(path: &Path, local_app_data: &str) -> Result<Map<String, Value>, 
 }
 
 fn normalize_profile_values(values: &Map<String, Value>) -> Map<String, Value> {
-    let mut result = values.clone();
+    normalize_owned_profile_values(values.clone())
+}
+
+fn normalize_owned_profile_values(mut result: Map<String, Value>) -> Map<String, Value> {
     for key in [
         "DVDA_PLANNED_DISCS",
         "PlannedDiscs",
@@ -740,7 +755,8 @@ pub fn save_profile(
                 failure
                     .get("Code")
                     .and_then(Value::as_i64)
-                    .map(|code| std::io::Error::from_raw_os_error(code as i32).to_string())
+                    .and_then(|code| i32::try_from(code).ok())
+                    .map(|code| std::io::Error::from_raw_os_error(code).to_string())
             })
             .unwrap_or_else(|| "Cannot write profile".into());
         return Err(format!("Cannot save profile {}: {detail}", path.display()));
@@ -919,5 +935,24 @@ mod tests {
             serde_json::from_value::<Map<String, Value>>(json!({"DVDA_TITLE": "My Disc"})).unwrap()
         );
         assert!(!options::defaults("").contains_key("DVDA_PREPARE_CACHE"));
+    }
+
+    #[test]
+    fn public_values_preserve_low_i32_conversion_without_panicking() {
+        let mut options = AppOptions {
+            language: "en".into(),
+            values: Map::new(),
+            stored_profile_values: Map::new(),
+            config_path: None,
+            executable_directory: PathBuf::new(),
+            workspace: None,
+        };
+        options
+            .values
+            .insert("GroupTrackLimit".into(), json!(4_294_967_395_i64));
+        assert_eq!(options.integer32("GroupTrackLimit"), 99);
+        options.values.insert("MlpBits".into(), json!(-1));
+        assert_eq!(options.integer32("MlpBits"), -1);
+        assert_eq!(options.optional_integer32("Missing"), None);
     }
 }

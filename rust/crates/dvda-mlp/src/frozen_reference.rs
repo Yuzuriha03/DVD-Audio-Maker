@@ -60,6 +60,12 @@ fn frozen_group_signal_boundaries() {
     frozen_groups(true);
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::too_many_lines,
+    reason = "The complete frozen oracle fixture retains C ABI counters, signed PCM construction, and all reference vectors in one case"
+)]
 fn frozen_groups(signal_boundaries: bool) {
     let path = CString::new(std::env::var("MLP_FROZEN_REFERENCE").unwrap()).unwrap();
     unsafe {
@@ -244,6 +250,12 @@ fn frozen_groups(signal_boundaries: bool) {
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::too_many_lines,
+    reason = "The complete frozen byte fixture retains C ABI counters, signed PCM construction, and all reference vectors in one case"
+)]
 fn frozen_bytes(layouts: bool) {
     let path = CString::new(
         std::env::var("MLP_FROZEN_REFERENCE").expect("frozen ABI parity requires original C DLL"),

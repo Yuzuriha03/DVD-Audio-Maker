@@ -1,10 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    reason = "Control helpers preserve Win32 handle widths, callback contracts, and layout arithmetic"
-)]
 //! Control creation (the settings pages and toolbars), owner-drawn buttons, checkboxes,
 //! combo arrows, tooltips, and small text/combo helpers.
 
@@ -145,7 +138,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
             parent,
             tr(lang, key),
             ID_TAB + index,
-            18 + index as i32 * 138,
+            18 + i32::try_from(index).unwrap() * 138,
             126,
             132,
             34,
@@ -685,7 +678,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         if advanced_controls.contains(field)
             && let Some(button) = browse_buttons
                 .iter()
-                .find(|h| GetDlgCtrlID(**h) as usize == *id)
+                .find(|h| (GetDlgCtrlID(**h) as isize).cast_unsigned() == *id)
         {
             advanced_controls.push(*button);
         }
@@ -806,13 +799,13 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
             state.controls.progress,
             PBM_SETBKCOLOR,
             0,
-            c_bar_track() as isize,
+            isize::try_from(c_bar_track()).unwrap(),
         );
         SendMessageW(
             state.controls.progress,
             PBM_SETBARCOLOR,
             0,
-            c_accent() as isize,
+            isize::try_from(c_accent()).unwrap(),
         );
         win::send_int(
             state.controls.status,
@@ -1106,7 +1099,7 @@ pub(crate) unsafe extern "system" fn button_proc(
                 unsafe {
                     (*pointer).hover = true;
                     let mut track = TrackMouseEventData {
-                        size: std::mem::size_of::<TrackMouseEventData>() as u32,
+                        size: u32::try_from(std::mem::size_of::<TrackMouseEventData>()).unwrap(),
                         flags: TME_LEAVE,
                         track: hwnd,
                         hover_time: 0,
@@ -1197,7 +1190,7 @@ pub(crate) unsafe extern "system" fn checkbox_proc(
                 unsafe {
                     (*pointer).hover = true;
                     let mut track = TrackMouseEventData {
-                        size: std::mem::size_of::<TrackMouseEventData>() as u32,
+                        size: u32::try_from(std::mem::size_of::<TrackMouseEventData>()).unwrap(),
                         flags: TME_LEAVE,
                         track: hwnd,
                         hover_time: 0,
@@ -1367,7 +1360,7 @@ pub(crate) unsafe extern "system" fn combo_arrow_proc(
                 unsafe {
                     (*pointer).hover = true;
                     let mut track = TrackMouseEventData {
-                        size: std::mem::size_of::<TrackMouseEventData>() as u32,
+                        size: u32::try_from(std::mem::size_of::<TrackMouseEventData>()).unwrap(),
                         flags: TME_LEAVE,
                         track: hwnd,
                         hover_time: 0,
@@ -1496,7 +1489,9 @@ pub(crate) unsafe fn draw_combo_arrow(hwnd: Hwnd) {
             FillRect(dc, &edge, brush(border));
         }
         if !combo.is_null() {
-            let index = win::send_int(combo, CB_GETCURSEL, 0, 0) as i32;
+            let index = u32::try_from(win::send_int(combo, CB_GETCURSEL, 0, 0) & 0xffff_ffff)
+                .unwrap()
+                .cast_signed();
             let text = combo_item_text(combo, index);
             let mut text_rect = Rect {
                 left: rect.left + scale(8),
@@ -1575,6 +1570,10 @@ pub(crate) fn sync_combo_overlays() {
     }
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Consumes a temporary control-construction specification by destructuring its borrowed text and native fields"
+)]
 pub(crate) fn create_from_spec(spec: CreateSpec<'_>) -> Hwnd {
     let CreateSpec {
         parent,
@@ -1691,9 +1690,15 @@ pub(crate) fn get_text(hwnd: Hwnd) -> String {
 }
 pub(crate) fn window_class(hwnd: Hwnd) -> String {
     let mut buffer = [0u16; 64];
-    let len = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    let len = unsafe {
+        GetClassNameW(
+            hwnd,
+            buffer.as_mut_ptr(),
+            i32::try_from(buffer.len()).unwrap(),
+        )
+    };
     if len > 0 {
-        String::from_utf16_lossy(&buffer[..len as usize])
+        String::from_utf16_lossy(&buffer[..usize::try_from(len).unwrap()])
     } else {
         String::new()
     }
@@ -1714,7 +1719,12 @@ pub(crate) fn combo_add(hwnd: Hwnd, text: &str) {
 }
 pub(crate) fn combo_select(hwnd: Hwnd, index: i32) {
     {
-        win::send_int(hwnd, CB_SETCURSEL, index.max(0) as usize, 0);
+        win::send_int(
+            hwnd,
+            CB_SETCURSEL,
+            usize::try_from(index.max(0)).unwrap(),
+            0,
+        );
     }
 }
 pub(crate) fn combo_items(hwnd: Hwnd, items: &[&str], selected: i32) {
@@ -1724,10 +1734,17 @@ pub(crate) fn combo_items(hwnd: Hwnd, items: &[&str], selected: i32) {
     for item in items {
         combo_add(hwnd, item);
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Retains the existing narrowing of the item-count bound to the Win32 signed 32-bit combo index"
+    )]
     combo_select(hwnd, selected.min(items.len().saturating_sub(1) as i32));
 }
 pub(crate) fn combo_index(hwnd: Hwnd) -> i32 {
-    win::send_int(hwnd, CB_GETCURSEL, 0, 0) as i32
+    u32::try_from(win::send_int(hwnd, CB_GETCURSEL, 0, 0) & 0xffff_ffff)
+        .unwrap()
+        .cast_signed()
 }
 pub(crate) fn populate_numeric_choice(hwnd: Hwnd, values: &[i64], labels: &[&str], value: i64) {
     combo_items(hwnd, labels, 0);
@@ -1736,6 +1753,11 @@ pub(crate) fn populate_numeric_choice(hwnd: Hwnd, values: &[i64], labels: &[&str
         combo_add(hwnd, &value.to_string());
         values.len()
     });
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Retains the existing conversion of the selected or appended item index to the Win32 signed 32-bit index"
+    )]
     combo_select(hwnd, index as i32);
 }
 pub(crate) fn numeric_choice(hwnd: Hwnd, values: &[i64]) -> i64 {
@@ -1749,19 +1771,19 @@ pub(crate) fn numeric_choice(hwnd: Hwnd, values: &[i64]) -> i64 {
 /// an invisible second line.
 pub(crate) fn single_line_label(hwnd: Hwnd) {
     unsafe {
-        let style = GetWindowLongPtrW(hwnd, -16) as u32;
+        let style = u32::try_from(GetWindowLongPtrW(hwnd, -16) & 0xffff_ffff).unwrap();
         // SS_LEFTNOWORDWRAP | SS_NOPREFIX | SS_ENDELLIPSIS
         SetWindowLongPtrW(
             hwnd,
             -16,
-            ((style & !0x1f) | 0x0c | 0x0080 | 0x4000) as isize,
+            isize::try_from((style & !0x1f) | 0x0c | 0x0080 | 0x4000).unwrap(),
         );
     }
 }
 
 pub(crate) fn tooltip_info(tooltip: &Tooltip) -> ToolInfo {
     ToolInfo {
-        size: std::mem::size_of::<ToolInfo>() as u32,
+        size: u32::try_from(std::mem::size_of::<ToolInfo>()).unwrap(),
         flags: 0x11,
         owner: GetParent(tooltip.control),
         id: tooltip.control as usize,

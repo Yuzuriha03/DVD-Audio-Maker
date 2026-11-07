@@ -1,11 +1,8 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::items_after_statements,
-    clippy::wildcard_imports,
-    reason = "Touch handling preserves native gesture structures and the shared desktop scope"
-)]
-use super::*;
+use super::{
+    EM_LINESCROLL, GWLP_USERDATA, GetParent, GetWindowLongPtrW, Handle, Hwnd, Lparam, Lresult,
+    Rect, SendMessageW, WM_NCDESTROY, Wparam, observe_log_scroll, scale, scroll_page, state, win,
+    window_class,
+};
 
 const WM_GESTURE: u32 = 0x0119;
 const GID_PAN: u32 = 4;
@@ -78,7 +75,7 @@ unsafe extern "system" {
 
 pub(super) fn install_combo(hwnd: Hwnd) {
     let mut info: ComboInfo = unsafe { std::mem::zeroed() };
-    info.size = std::mem::size_of::<ComboInfo>() as u32;
+    info.size = u32::try_from(std::mem::size_of::<ComboInfo>()).unwrap();
     if unsafe { GetComboBoxInfo(hwnd, &raw mut info) } != 0 {
         install(info.list, false);
     }
@@ -96,7 +93,7 @@ pub(super) fn install(hwnd: Hwnd, log: bool) {
             0,
             1,
             &raw const config,
-            std::mem::size_of::<GestureConfig>() as u32,
+            u32::try_from(std::mem::size_of::<GestureConfig>()).unwrap(),
         ) == 0
         {
             return;
@@ -136,7 +133,7 @@ unsafe extern "system" fn pan_proc(
     }
     if message == WM_GESTURE {
         let mut info: GestureInfo = unsafe { std::mem::zeroed() };
-        info.size = std::mem::size_of::<GestureInfo>() as u32;
+        info.size = u32::try_from(std::mem::size_of::<GestureInfo>()).unwrap();
         if unsafe { GetGestureInfo(lparam as Handle, &raw mut info) } != 0 && info.id == GID_PAN {
             let pan = unsafe { &mut *(data as *mut Pan) };
             if info.flags & 1 != 0 {
@@ -158,7 +155,7 @@ unsafe extern "system" fn pan_proc(
                         let top = SendMessageW(hwnd, 0x018e, 0, 0); // LB_GETTOPINDEX
                         let count = SendMessageW(hwnd, 0x018b, 0, 0); // LB_GETCOUNT
                         let next = (top + lines as isize).clamp(0, (count - 1).max(0));
-                        SendMessageW(hwnd, 0x0197, next as usize, 0); // LB_SETTOPINDEX
+                        SendMessageW(hwnd, 0x0197, next.cast_unsigned(), 0); // LB_SETTOPINDEX
                     }
                 } else {
                     // Page controls, and combo overlays one level deeper.
@@ -170,7 +167,10 @@ unsafe extern "system" fn pan_proc(
                         page = GetParent(page);
                     }
                     if window_class(page) == "DVD_AUDIO_PAGE_RUST" {
-                        let old = GetWindowLongPtrW(page, GWLP_USERDATA) as i32;
+                        let old =
+                            u32::try_from(GetWindowLongPtrW(page, GWLP_USERDATA) & 0xffff_ffff)
+                                .unwrap()
+                                .cast_signed();
                         scroll_page(page, old.saturating_add(delta), true);
                     }
                 }
@@ -192,9 +192,9 @@ unsafe extern "system" fn pan_proc(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{CreateWindowExW, DestroyWindow, GetModuleHandleW, ptr, ui_test_guard, wide};
     #[test]
     fn native_window_enables_pan_and_vertical_single_finger_input() {
-        let _ui_test_lock = ui_test_guard();
         #[link(name = "user32")]
         unsafe extern "system" {
             fn GetGestureConfig(
@@ -206,6 +206,7 @@ mod tests {
                 size: u32,
             ) -> i32;
         }
+        let _ui_test_lock = ui_test_guard();
         let hwnd = unsafe {
             CreateWindowExW(
                 0,
@@ -237,7 +238,7 @@ mod tests {
                 0,
                 &raw mut count,
                 &raw mut config,
-                std::mem::size_of::<GestureConfig>() as u32,
+                u32::try_from(std::mem::size_of::<GestureConfig>()).unwrap(),
             )
         };
         DestroyWindow(hwnd);

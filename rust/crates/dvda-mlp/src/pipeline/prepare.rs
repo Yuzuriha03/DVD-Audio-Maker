@@ -11,6 +11,10 @@ use crate::analysis::scale::{MlpScalePlan, mlp_scale_analyze};
 use crate::analysis::search::{MlpSearchPlan, MlpSearchPool, mlp_search_interval};
 
 #[derive(Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent matrix, scaling, and joint-search switches mirror distinct encoding-stage controls"
+)]
 pub(crate) struct MatrixInterval {
     pub pcm: Vec<i32>,
     pub bypass: Vec<u8>,
@@ -33,6 +37,10 @@ pub(crate) struct MatrixInterval {
     pub search_rng: u32,
 }
 
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "Lossless parity masks the low 24 bits of signed PCM using its two's-complement representation"
+)]
 pub(crate) fn lossless(mut check: u32, pcm: &[i32], count: usize, channels: usize) -> u32 {
     for n in 0..count {
         for ch in 0..channels {
@@ -43,6 +51,11 @@ pub(crate) fn lossless(mut check: u32, pcm: &[i32], count: usize, channels: usiz
     check
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "Matrix channel indices use protocol-width fields and candidate preparation remains in the original commit order"
+)]
 pub(crate) fn prepare_matrix(
     input: &mut impl PcmInput,
     m: &mut MatrixInterval,

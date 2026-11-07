@@ -4,15 +4,6 @@
 //! offsets. Both are small pure functions over the scanned VOBU table, so they
 //! are modelled here without pointers and checked against the C baseline values.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "NAV pack BCD and relative-sector fields use fixed protocol masks"
-)]
-#![allow(
-    clippy::decimal_bitwise_operands,
-    reason = "Test masks use the historical decimal constants"
-)]
 use super::build::Vobu;
 use crate::spu::format::VideoFormat;
 
@@ -21,6 +12,11 @@ fn tobcd(value: i64) -> i64 {
 }
 
 /// BCD hhmmssff playback time with the selected frame-rate code, as written to PCI/DSI.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The packed BCD timestamp is emitted as its low 32 protocol bits"
+)]
 pub(crate) fn cell_elapsed(pts: i64, format: VideoFormat) -> u32 {
     let (denominator, frame_rate, rate_code) = match format {
         VideoFormat::Pal => (90_000, 25, 1),
@@ -38,6 +34,10 @@ pub(crate) fn cell_elapsed(pts: i64, format: VideoFormat) -> u32 {
 }
 
 /// Relative VOBU sector offset with the backward/multi-vobu flag bits (C getsect).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "The relative-sector field retains the low 32 bits of the sector distance"
+)]
 pub(crate) fn get_sector(
     vobus: &[Vobu],
     current: usize,
@@ -46,7 +46,7 @@ pub(crate) fn get_sector(
     not_found: u32,
     same_cell: impl Fn(usize, usize) -> bool,
 ) -> u32 {
-    let jump_index = if jump < 0 { None } else { Some(jump as usize) };
+    let jump_index = usize::try_from(jump).ok();
     let in_range = jump_index.is_some_and(|index| index < vobus.len() && same_cell(current, index));
     if !in_range {
         return not_found;
@@ -108,11 +108,11 @@ mod tests {
         let same = |_: usize, _: usize| true;
         assert_eq!(
             get_sector(&vobus, 0, 1, false, 0x3fff_ffff, same),
-            235 | 0x8000_0000
+            0xeb | 0x8000_0000
         );
         assert_eq!(
             get_sector(&vobus, 1, 0, false, 0x3fff_ffff, same),
-            235 | 0x8000_0000
+            0xeb | 0x8000_0000
         );
         assert_eq!(
             get_sector(&vobus, 0, 4, false, 0x3fff_ffff, same),

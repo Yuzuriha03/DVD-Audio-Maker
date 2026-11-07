@@ -1,8 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    reason = "The fixture generator intentionally produces deterministic signed PCM samples"
-)]
 use dvda_mlp::{Config, encode};
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -13,9 +8,9 @@ fn main() {
     let mut pcm = Vec::new();
     let mut raw = Vec::new();
     for n in 0..frames {
+        let n = i32::try_from(n).expect("fixture frame index must fit i32");
         for ch in 0..channels {
-            let value = (((n as i32 * 7919 + i32::from(ch) * 104_729) % (1 << bits))
-                - (1 << (bits - 1)))
+            let value = (((n * 7919 + i32::from(ch) * 104_729) % (1 << bits)) - (1 << (bits - 1)))
                 << (24 - bits);
             pcm.push(value);
             raw.extend((value << 8).to_le_bytes());

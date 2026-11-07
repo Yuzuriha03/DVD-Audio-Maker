@@ -1,9 +1,9 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "SCR fields intentionally extract protocol-width bytes"
-)]
 /// Encode the MPEG-2 system clock reference without rounding.
 #[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "SCR packing intentionally extracts the low protocol byte after bit shifts, including bases outside 33 bits"
+)]
 pub fn pack_scr(base: u64, extension: u16) -> [u8; 6] {
     let lsb = base & 0xffff_ffff;
     [
@@ -18,6 +18,10 @@ pub fn pack_scr(base: u64, extension: u16) -> [u8; 6] {
 
 /// Encode the original author's 32-bit PTS/DTS domain.
 #[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "PTS/DTS packing intentionally extracts low bytes from the full 32-bit timestamp"
+)]
 pub fn pack_timestamp(value: u32, prefix: u8) -> [u8; 5] {
     [
         prefix | (((value >> 30) as u8 & 3) << 1) | 1,
@@ -31,7 +35,10 @@ pub fn pack_timestamp(value: u32, prefix: u8) -> [u8; 5] {
 #[must_use]
 pub fn pack_header(clock: u64) -> [u8; 14] {
     let mut bytes = [0, 0, 1, 0xba, 0, 0, 0, 0, 0, 0, 1, 0x89, 0xc3, 0xf8];
-    bytes[4..10].copy_from_slice(&pack_scr(clock / 300, (clock % 300) as u16));
+    bytes[4..10].copy_from_slice(&pack_scr(
+        clock / 300,
+        u16::try_from(clock % 300).unwrap_or_else(|_| unreachable!("SCR extension is below 300")),
+    ));
     bytes
 }
 

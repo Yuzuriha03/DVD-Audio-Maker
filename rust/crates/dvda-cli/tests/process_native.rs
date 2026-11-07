@@ -1,7 +1,3 @@
-#![allow(
-    clippy::unreadable_literal,
-    reason = "The Win32 process flag is a fixed hexadecimal constant"
-)]
 use dvda_core::process::{Job, Outcome, execute};
 use dvda_native::media::Callbacks;
 use std::{
@@ -153,7 +149,7 @@ fn assert_terminated(path: &std::path::Path) {
         .expect("Fixture did not start")
         .parse()
         .unwrap();
-    let handle = unsafe { OpenProcess(0x100000, 0, pid) };
+    let handle = unsafe { OpenProcess(0x10_0000, 0, pid) };
     if handle.is_null() {
         assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(87));
     } else {

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use crate::bitstream::Bits;
+use crate::pipeline::prepare::{lossless, prepare_matrix};
 #[cfg(test)]
 use crate::syntax::access_unit::interval_fits;
 use crate::syntax::access_unit::serialize_planned;
@@ -62,6 +63,12 @@ pub(crate) struct OutputFormat {
     pub major: [u32; 14],
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Interval headers, timestamps, and signed PCM checks use bounded protocol fields and defined two's-complement bit patterns"
+)]
 pub(crate) fn flush_interval(
     queue: &mut crate::output::queue::MlpOutputQueue,
     pending: &mut IntervalOutput,
@@ -193,6 +200,13 @@ pub(crate) struct EncodeOptions<'a> {
     pub allow_bypass: bool,
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    reason = "EncodeOptions is consumed as one stage-configuration value; bounded AU geometry and wrapping timing fields remain in the original transactional encode sequence"
+)]
 pub(crate) fn encode(
     input: &mut impl crate::pipeline::input::PcmInput,
     options: EncodeOptions<'_>,
@@ -209,7 +223,6 @@ pub(crate) fn encode(
         predict,
         allow_bypass,
     } = options;
-    use crate::pipeline::prepare::{lossless, prepare_matrix};
     let channels = input.channels();
     if channels != format.channels
         || !(1..=6).contains(&channels)
@@ -231,7 +244,7 @@ pub(crate) fn encode(
     let mut history: [crate::analysis::prediction::MlpPredictState; 6] = Default::default();
     let mut prediction_reset = [0; 6];
     let mut rate = crate::output::rate::mlp_rate_init();
-    let mut boundary = Default::default();
+    let mut boundary = crate::analysis::interval::MlpBoundaryState::default();
     let mut au = 0u32;
     let mut timing = 0u32;
     let mut interval_check = 0;
@@ -498,6 +511,10 @@ pub(crate) fn encode(
     Ok(())
 }
 
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "Unpredicted fallback serializes the low 24 bits of signed PCM exactly as the wire format requires"
+)]
 pub(crate) fn unpredicted_interval(
     pending: &mut IntervalOutput,
     channels: usize,
@@ -568,6 +585,11 @@ pub(crate) fn unpredicted_interval(
 }
 
 #[test]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "This complete fallback fixture retains bounded protocol counters and the full ordered serialization scenario"
+)]
 fn planned_interval_fallback_serializes() {
     let parameters = MlpParameters {
         blocksize: 16,

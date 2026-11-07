@@ -108,13 +108,16 @@ pub fn reusable_production_pcm(
     let mut input = crate::identity::open_read(path)?;
     match crate::pcm::reusable_wave(&mut input, rate, bits, caller) {
         Ok(true) => Ok(Some(PathBuf::from(path))),
-        Ok(false) => Ok(None),
         Err(error) if error.kind == "Cancelled" => Err(error),
-        Err(_) => Ok(None),
+        Ok(false) | Err(_) => Ok(None),
     }
 }
 
 #[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Cached JSON fields retain the established low-i32 conversion before geometry validation"
+)]
 pub fn parameters_from_track(track: &Value, current_identity: &Value) -> Option<Parameters> {
     let evidence = track.get("SourceIdentity")?;
     if !crate::identity::equivalent(evidence, current_identity) {
@@ -199,6 +202,10 @@ impl Callbacks for Capture<'_> {
     }
 }
 
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "Validated nonnegative media geometry is passed to the unsigned native request ABI"
+)]
 fn run(
     job: &Job,
     operation: Operation,
@@ -351,6 +358,10 @@ pub fn check_decode(job: &Job, caller: &mut dyn Callbacks) -> Result<DecodeResul
     }
     Ok(result)
 }
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "The public audio operation boundary retains ownership of its deserialized job"
+)]
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
     let result = match job.operation {
         Operation::Metadata => read_metadata(&job, caller).map(Data::Metadata),

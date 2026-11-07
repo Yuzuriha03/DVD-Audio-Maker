@@ -135,9 +135,9 @@ fn bulk_writer_matches_bitwise_reference() {
                     (actual.pending, actual.width),
                     (expected.pending, expected.width)
                 );
-                let mut counted = Bits::default();
-                counter.finish_into(&mut counted, true);
-                assert_eq!(counted.word_len(), actual.seal(true).len());
+                let mut counted_output = Bits::default();
+                counter.finish_into(&mut counted_output, true);
+                assert_eq!(counted_output.word_len(), actual.seal(true).len());
             }
         }
     }
@@ -146,7 +146,7 @@ fn bulk_writer_matches_bitwise_reference() {
 fn bulk_writer_matches_long_bit_sequence() {
     let mut actual = Bits::default();
     let mut expected = Bits::default();
-    let mut state = 0x12345678u32;
+    let mut state = 0x1234_5678u32;
     for _ in 0..10000 {
         state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
         let width = state % 33;

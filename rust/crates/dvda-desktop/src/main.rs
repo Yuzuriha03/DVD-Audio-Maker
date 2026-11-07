@@ -1,12 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::struct_excessive_bools,
-    clippy::struct_field_names,
-    clippy::too_many_lines,
-    clippy::wildcard_imports,
-    reason = "The desktop root coordinates UI modules, Win32 state flags, and intentional module re-exports"
-)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[macro_use]
@@ -52,8 +43,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-// The UI split by topic. Each module sees the declarations in this file
-// through `use super::*`.
+// The UI is split by topic. Explicit imports below keep shared declarations
+// available to the modules through this root.
 mod commands;
 mod controls;
 mod dialogs;
@@ -72,21 +63,50 @@ mod task;
 mod theme;
 mod window;
 
-use commands::*;
-use controls::*;
-use dialogs::*;
-use draw::*;
-use frame::*;
-use gdi::*;
-use i18n::*;
-use layout::*;
-use logs::*;
-use pages::*;
-use scrollbar::*;
-use settings::*;
-use task::*;
-use theme::*;
-use window::*;
+use commands::{handle_command, set_language};
+use controls::{
+    CreateSpec, button_hovered, check, checked, combo_index, combo_items, combo_select,
+    create_controls, create_from_spec, get_text, numeric_choice, populate_numeric_choice, set_text,
+    show_window, sync_combo_overlays, tooltip_info, window_class,
+};
+use dialogs::{FileKind, browse_target, file_dialog, message_box, open_output};
+use draw::{
+    begin_buffered_paint, buffered_label_proc, combo_item_text, draw_owner_item, draw_text_run,
+    fill_round_rect, finish_buffered_paint, paint_page, paint_page_border, paint_window,
+};
+use frame::{clamp_window_size, hide_splitter_preview, outline_resize, update_splitter_preview};
+use gdi::{
+    body_brush, border_brush, brush, card_brush, client_rect, header_height, header_icon,
+    measured_text_width, panel_brush, refresh_fonts, scale, semibold_font, small_font,
+    subtitle_font, title_font, ui_font, unscale, wide, window_rect, wrapped_text_height,
+};
+use i18n::{Lang, tr};
+use layout::{create_log_frame, layout, place, rescale_ui};
+use logs::{
+    add_log, copy_log, drain_worker_logs, export_log, first_visible_log_line, localized_detail,
+    localized_log, observe_log_scroll, open_session_log, render_log, reset_task_log,
+};
+use pages::{
+    browse_edit_width, page_content_height, page_is_narrow, page_proc, resize_page_fields,
+    scroll_page, scroll_page_with_bar, select_tab, show_page,
+};
+use scrollbar::{install_scrollbar, refresh_dynamic_indicators, scrollbar_proc};
+use settings::{
+    SAMPLE_BITS_LABELS, SAMPLE_RATE_LABELS, autosave, choose_and_load_profile,
+    edited_profile_values, parse_i64, populate, profile_language, save_profile, save_profile_as,
+    setting_help, update_advanced, update_choices, update_statistics, validate_controls,
+};
+use task::{
+    cancel_operation, finish_operation, retention_choice, start_operation, update_progress,
+};
+use theme::{
+    apply_theme, c_accent, c_accent_hover, c_accent_pressed, c_accent_soft, c_bar_track, c_body,
+    c_border, c_border_soft, c_card, c_danger, c_danger_border, c_danger_hover, c_danger_pressed,
+    c_disabled_fill, c_disabled_text, c_header_bottom, c_header_subtitle, c_header_title,
+    c_header_top, c_ink, c_muted, c_panel, c_secondary_hover, c_secondary_pressed, dark_theme, rgb,
+    system_prefers_dark, toggle_theme, uxtheme_preferred_app_mode,
+};
+use window::window_proc;
 
 type Handle = *mut c_void;
 type Hwnd = Handle;
@@ -374,7 +394,7 @@ struct WndClass {
 #[repr(C)]
 struct Message {
     hwnd: Hwnd,
-    message: u32,
+    id: u32,
     wparam: Wparam,
     lparam: Lparam,
     time: u32,
@@ -902,6 +922,10 @@ fn paint_fields(main: Hwnd) -> Option<Rc<PaintFields>> {
     PAINT_FIELDS.with(|fields| fields.borrow().get(&(main as usize)).cloned())
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent task, log, sizing and shutdown flags can coexist; they are not mutually exclusive states"
+)]
 struct UiState {
     paint: Rc<PaintFields>,
     main_window: Hwnd,
@@ -1036,11 +1060,14 @@ impl Callbacks for WorkerCallbacks {
         if total == 0 {
             return;
         }
-        let portion = completed
-            .min(total)
-            .saturating_mul(100)
-            .checked_div(total)
-            .unwrap_or(100) as u16;
+        let portion = u16::try_from(
+            completed
+                .min(total)
+                .saturating_mul(100)
+                .checked_div(total)
+                .unwrap_or(100),
+        )
+        .unwrap();
         let value = (self.range.0 + (self.range.1 - self.range.0).saturating_mul(portion) / 100)
             .min(99)
             .max(self.last_progress);
@@ -1158,6 +1185,10 @@ fn startup_language(profile_language: &str) -> Lang {
     )
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps COM initialization, class registration, window lifetime and message dispatch in startup order"
+)]
 fn run() -> Result<(), String> {
     struct ComApartment(bool);
     impl Drop for ComApartment {
@@ -1172,7 +1203,7 @@ fn run() -> Result<(), String> {
     let _com = ComApartment(unsafe { CoInitializeEx(ptr::null_mut(), 2) } >= 0);
     unsafe {
         let init = InitCommonControlsEx {
-            size: std::mem::size_of::<InitCommonControlsEx>() as u32,
+            size: u32::try_from(std::mem::size_of::<InitCommonControlsEx>()).unwrap(),
             classes: 0xffff,
         };
         InitCommonControlsEx(&raw const init);
@@ -1297,14 +1328,14 @@ fn run() -> Result<(), String> {
             window,
             20,
             (&raw const dark).cast::<c_void>(),
-            std::mem::size_of::<u32>() as u32,
+            u32::try_from(std::mem::size_of::<u32>()).unwrap(),
         ) == 0;
         if !dark_applied {
             dark_applied = DwmSetWindowAttribute(
                 window,
                 19,
                 (&raw const dark).cast::<c_void>(),
-                std::mem::size_of::<u32>() as u32,
+                u32::try_from(std::mem::size_of::<u32>()).unwrap(),
             ) == 0;
         }
         if dark_applied {
@@ -1315,20 +1346,20 @@ fn run() -> Result<(), String> {
                 window,
                 35,
                 (&raw const caption).cast::<c_void>(),
-                std::mem::size_of::<u32>() as u32,
+                u32::try_from(std::mem::size_of::<u32>()).unwrap(),
             );
             let caption_text: u32 = c_header_title();
             DwmSetWindowAttribute(
                 window,
                 36,
                 (&raw const caption_text).cast::<c_void>(),
-                std::mem::size_of::<u32>() as u32,
+                u32::try_from(std::mem::size_of::<u32>()).unwrap(),
             );
         }
     }
     let mut message = Message {
         hwnd: ptr::null_mut(),
-        message: 0,
+        id: 0,
         wparam: 0,
         lparam: 0,
         time: 0,
@@ -1343,7 +1374,7 @@ fn run() -> Result<(), String> {
         unsafe {
             // The primary action owns Enter, but focused text fields, drop-down
             // lists and buttons keep their own keyboard behaviour.
-            if message.message == WM_KEYDOWN && message.wparam == VK_RETURN {
+            if message.id == WM_KEYDOWN && message.wparam == VK_RETURN {
                 let focus = GetFocus();
                 if focus.is_null() {
                     win::send_int(window, WM_COMMAND, ID_BUILD, 0);
@@ -1361,7 +1392,7 @@ fn run() -> Result<(), String> {
                 } else if class == "Button" {
                     let id = GetDlgCtrlID(focus);
                     if id > 0 {
-                        win::send_int(window, WM_COMMAND, id as usize, 0);
+                        win::send_int(window, WM_COMMAND, (id as isize).cast_unsigned(), 0);
                     }
                     continue;
                 } else {

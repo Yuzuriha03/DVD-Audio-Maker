@@ -1,9 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "Settings code preserves profile values and native control indices"
-)]
 //! Settings values: choices, profile load/save and validation.
 
 use super::{
@@ -29,15 +23,18 @@ pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[
 pub(crate) const MENU_NORMS: &[&str] = &["pal", "secam", "ntsc"];
 
 pub(crate) fn norm_index(norm: &str) -> i32 {
-    MENU_NORMS
-        .iter()
-        .position(|value| *value == norm)
-        .unwrap_or(0) as i32
+    i32::try_from(
+        MENU_NORMS
+            .iter()
+            .position(|value| *value == norm)
+            .unwrap_or(0),
+    )
+    .unwrap()
 }
 
 pub(crate) fn norm_value(index: i32) -> &'static str {
     MENU_NORMS
-        .get(index.max(0) as usize)
+        .get(usize::try_from(index.max(0)).unwrap())
         .copied()
         .unwrap_or("pal")
 }

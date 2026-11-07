@@ -1,7 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "Manager fixtures construct protocol-sized indices"
-)]
 use dvda_author::{
     amg::{self, Group, Layout, Menu, Options, VideoLink},
     asvs,
@@ -78,7 +74,10 @@ fn assert_menu_matches_c_with_page_vob_ids(actual: &[u8], expected: &[u8], pages
         let offset = 0x1800 + 24 + 8 * pages + 306 * page + 302;
         assert_eq!(&actual[cursor..offset], &expected[cursor..offset]);
         assert_eq!(&expected[offset..offset + 4], &[0, 1, 0, 1]);
-        assert_eq!(&actual[offset..offset + 4], &[0, page as u8 + 1, 0, 1]);
+        assert_eq!(
+            &actual[offset..offset + 4],
+            &[0, u8::try_from(page).unwrap() + 1, 0, 1]
+        );
         cursor = offset + 4;
     }
     assert_eq!(&actual[cursor..], &expected[cursor..]);
@@ -273,4 +272,82 @@ fn bounds_fail_before_serializing_truncated_fields() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn asvs_count_limits_encode_maximum_narrow_fields() {
+    let mut picture_track = track(0);
+    picture_track.pictures.resize(255, StillPicture::default());
+    let title = Title {
+        tracks: vec![picture_track],
+    };
+    let mut groups = vec![vec![title.clone(); 99]];
+    let sectors = vec![1; 99 * 255];
+    let encoded = asvs::encode(&groups, &sectors, &asvs::Options::default()).unwrap();
+    assert_eq!(encoded.picture_titles, 99);
+    assert_eq!(&encoded.bytes[0xc..0xe], &99u16.to_be_bytes());
+    assert_eq!(encoded.bytes[0x60 + 98 * 8], 255);
+    assert_eq!(encoded.vob_sectors, 99 * 255);
+    groups[0].push(title);
+    let count_error = asvs::encode(&groups, &[], &asvs::Options::default()).unwrap_err();
+    assert!(count_error.contains("1..=99 picture titles"));
+    groups[0].truncate(1);
+    groups[0][0].tracks[0]
+        .pictures
+        .push(StillPicture::default());
+    assert_eq!(
+        asvs::encode(&groups, &[], &asvs::Options::default()).unwrap_err(),
+        count_error
+    );
+}
+
+#[test]
+fn samg_count_limits_preserve_one_based_ids_and_error_priority() {
+    let audio = track(0).audio;
+    let layout = samg::Layout {
+        start_sector: u32::MAX,
+        samg_sectors: 64,
+        amg_sectors: 2,
+        asvs_sectors: 0,
+        atsi_sectors: vec![2; 9],
+        still_vob_sectors: 0,
+        top_vob_sectors: 0,
+        video_link_tracks: u16::MAX - 255,
+    };
+    let (bytes, _) = samg::encode(&[vec![audio; 255]], &layout).unwrap();
+    assert_eq!(&bytes[12..14], &u16::MAX.to_be_bytes());
+    assert_eq!(&bytes[16 + 254 * 52 + 2..16 + 254 * 52 + 4], &[1, 255]);
+    assert_eq!(
+        samg::encode(
+            &[vec![audio; 256]],
+            &samg::Layout {
+                video_link_tracks: 0,
+                ..layout.clone()
+            }
+        )
+        .unwrap_err(),
+        "SAMG groups require 1–255 tracks"
+    );
+    let mut invalid = audio;
+    invalid.bits = 0;
+    assert_eq!(
+        samg::encode(
+            &[vec![invalid; 255]],
+            &samg::Layout {
+                video_link_tracks: u16::MAX - 254,
+                ..layout.clone()
+            }
+        )
+        .unwrap_err(),
+        "SAMG track table exceeds matrix capacity"
+    );
+    let (bytes, _) = samg::encode(
+        &vec![vec![audio]; 9],
+        &samg::Layout {
+            video_link_tracks: 0,
+            ..layout
+        },
+    )
+    .unwrap();
+    assert_eq!(&bytes[16 + 8 * 52 + 2..16 + 8 * 52 + 4], &[9, 1]);
 }

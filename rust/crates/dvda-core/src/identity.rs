@@ -60,6 +60,10 @@ pub(crate) fn equivalent(left: &Value, right: &Value) -> bool {
 ///
 /// # Errors
 /// Returns an error if the request is not a string containing a file path.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(request: Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected identity file path")?;
     Ok(compute(path).unwrap_or(Value::Null))

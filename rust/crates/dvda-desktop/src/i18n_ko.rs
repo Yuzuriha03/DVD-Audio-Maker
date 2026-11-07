@@ -1,6 +1,6 @@
-#![allow(
+#[allow(
     clippy::too_many_lines,
-    reason = "The Korean translation table is intentionally complete"
+    reason = "The complete Korean UI translation table is one key-to-text mapping"
 )]
 pub(super) fn tr(key: &str) -> &'static str {
     match key {

@@ -16,7 +16,6 @@ pub fn execute_with_image_cache(
     caller: &mut dyn Callbacks,
     image_cache: std::sync::Arc<dvda_image::cache::ImageCache>,
 ) -> Outcome {
-    let start = Instant::now();
     struct Capture<'a> {
         caller: &'a mut dyn Callbacks,
         output: [String; 2],
@@ -39,6 +38,7 @@ pub fn execute_with_image_cache(
             self.caller.progress(completed, total);
         }
     }
+    let start = Instant::now();
     let mut capture = Capture {
         caller,
         output: [String::new(), String::new()],

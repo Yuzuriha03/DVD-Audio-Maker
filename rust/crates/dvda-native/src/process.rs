@@ -1,11 +1,5 @@
 //! Windows child process ownership. Launch suspended, join a kill-on-close job,
 //! then resume; cancellation cannot miss a descendant created during startup.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "Win32 process buffers and handles use validated pointer-width and C ABI conversions"
-)]
 use std::{
     ffi::{OsStr, OsString, c_void},
     io,
@@ -14,6 +8,20 @@ use std::{
     ptr,
 };
 type Handle = *mut c_void;
+
+fn win32_size<T>() -> u32 {
+    u32::try_from(size_of::<T>()).expect("Win32 structure size fits u32")
+}
+
+// CompareStringOrdinal takes signed lengths for non-NFC UTF-16 strings. Keep
+// the historical low-32-bit conversion without a module-wide cast exemption.
+fn ordinal_len(length: usize) -> i32 {
+    i32::from_le_bytes(
+        length.to_le_bytes()[..size_of::<i32>()]
+            .try_into()
+            .expect("ordinal length has four low bytes"),
+    )
+}
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn MultiByteToWideChar(
@@ -89,7 +97,7 @@ pub fn decode(bytes: &[u8], code_page: u32) -> io::Result<String> {
     if count == 0 {
         return Err(io::Error::last_os_error());
     }
-    let mut units = vec![0u16; count as usize];
+    let mut units = vec![0u16; usize::try_from(count).map_err(io::Error::other)?];
     if unsafe {
         MultiByteToWideChar(
             code_page,
@@ -316,7 +324,7 @@ impl Drop for Attributes {
 }
 fn security() -> Security {
     Security {
-        size: size_of::<Security>() as u32,
+        size: win32_size::<Security>(),
         descriptor: ptr::null_mut(),
         inherit: 1,
     }
@@ -351,9 +359,9 @@ fn equal_key(left: &OsStr, right: &OsStr) -> bool {
     unsafe {
         CompareStringOrdinal(
             left.as_ptr(),
-            left.len() as i32,
+            ordinal_len(left.len()),
             right.as_ptr(),
-            right.len() as i32,
+            ordinal_len(right.len()),
             1,
         ) == 2
     }
@@ -378,8 +386,16 @@ fn environment(overrides: &[(String, Option<String>)]) -> io::Result<Vec<u16>> {
     entries.sort_by(|(a, _), (b, _)| {
         let a: Vec<_> = a.encode_wide().collect();
         let b: Vec<_> = b.encode_wide().collect();
-        unsafe { CompareStringOrdinal(a.as_ptr(), a.len() as i32, b.as_ptr(), b.len() as i32, 1) }
-            .cmp(&2)
+        unsafe {
+            CompareStringOrdinal(
+                a.as_ptr(),
+                ordinal_len(a.len()),
+                b.as_ptr(),
+                ordinal_len(b.len()),
+                1,
+            )
+        }
+        .cmp(&2)
     });
     let mut block = Vec::new();
     for (key, value) in entries {
@@ -425,7 +441,7 @@ fn executable(file: &str) -> io::Result<Vec<u16>> {
             ptr::null(),
             file.as_ptr(),
             extension.as_ptr(),
-            buffer.len() as u32,
+            u32::try_from(buffer.len()).map_err(io::Error::other)?,
             buffer.as_mut_ptr(),
             ptr::null_mut(),
         )
@@ -498,7 +514,7 @@ impl Child {
         let attributes = Attributes::new(&mut inherited)?;
         let startup = StartupEx {
             base: Startup {
-                size: size_of::<StartupEx>() as u32,
+                size: win32_size::<StartupEx>(),
                 flags: 0x100,
                 stdin: input.0,
                 stdout: output_write.0,
@@ -513,12 +529,7 @@ impl Child {
             ..Limits::default()
         };
         if unsafe {
-            SetInformationJobObject(
-                job.0,
-                9,
-                (&raw const limits).cast(),
-                size_of::<Limits>() as u32,
-            )
+            SetInformationJobObject(job.0, 9, (&raw const limits).cast(), win32_size::<Limits>())
         } == 0
         {
             return Err(io::Error::last_os_error());
@@ -602,7 +613,7 @@ impl Child {
             ReadFile(
                 self.pipes[stream].0,
                 buffer.as_mut_ptr().cast(),
-                count as u32,
+                u32::try_from(count).map_err(io::Error::other)?,
                 &raw mut read,
                 ptr::null_mut(),
             )
@@ -623,7 +634,8 @@ impl Child {
                 if unsafe { GetExitCodeProcess(self.process.0, &raw mut code) } == 0 {
                     return Err(io::Error::last_os_error());
                 }
-                Ok(Some(code as i32))
+                // GetExitCodeProcess returns a u32 NTSTATUS/exit-code bit pattern.
+                Ok(Some(code.cast_signed()))
             }
             258 => Ok(None),
             _ => Err(io::Error::last_os_error()),

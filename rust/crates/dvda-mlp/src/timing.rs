@@ -1,9 +1,4 @@
 // Signed delays, 16-bit arrival timestamps and wrapping totals intentionally follow the C bitstream.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss
-)]
 use crate::Error;
 pub(crate) const LOOKAHEAD: usize = 1200;
 #[repr(C)]
@@ -56,7 +51,7 @@ impl Timing {
                 minimum: i32::MAX,
                 total: 0,
             },
-            cursor: LOOKAHEAD as i32 - 1,
+            cursor: i32::try_from(LOOKAHEAD).expect("lookahead fits i32") - 1,
             previous: i32::MIN,
             write: 0,
             read: 0,
@@ -65,6 +60,11 @@ impl Timing {
             totals: [0; 3],
         }
     }
+    #[allow(
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Signed delays use two's-complement bits and expiration compares wrapping 16-bit arrival timestamps"
+    )]
     fn buffer(&mut self, d: Descriptor, mut delay: i32) -> i32 {
         let mut write = self.write;
         let mut read = self.read;
@@ -87,13 +87,13 @@ impl Timing {
                     .decode
                     .wrapping_sub(self.times[read as usize])
                     .wrapping_add(delay as u32)
-                    & 65535)
+                    & 0xffff)
                     <= 32767;
             if !expired {
                 if !full {
                     break;
                 }
-                delay = (self.times[read as usize].wrapping_sub(d.decode) & 65535) as i32 - 65536;
+                delay = (self.times[read as usize].wrapping_sub(d.decode) & 0xffff) as i32 - 65536;
             }
             for (total, size) in self.totals.iter_mut().zip(self.sizes[read as usize]) {
                 *total = total.wrapping_sub(size);
@@ -104,6 +104,12 @@ impl Timing {
         self.read = read;
         delay
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Timing totals and sample durations preserve signed wrapping arithmetic while arrival timestamps wrap at 16 bits"
+    )]
     pub(crate) fn step(&mut self, next: Descriptor, d: &mut Descriptor) -> Result<(), Error> {
         let total = if next.words != 0 {
             next.samples as i32 - duration(next) as i32
@@ -122,7 +128,7 @@ impl Timing {
                 *entry = combine(*entry, previous);
                 previous = *entry;
             }
-            self.cursor = LOOKAHEAD as i32 - 1;
+            self.cursor = i32::try_from(LOOKAHEAD).expect("lookahead fits i32") - 1;
             combine(self.tree[self.cursor as usize], self.aggregate)
         } else {
             self.tree[self.cursor as usize] = pair;
@@ -153,13 +159,13 @@ impl Timing {
         self.previous = lower
             .wrapping_add(duration(*d) as i32 - d.samples as i32)
             .max(-(d.samples as i32) * 90);
-        let mut arrival = d.decode.wrapping_add(lower as u32) & 65535;
+        let mut arrival = d.decode.wrapping_add(lower as u32) & 0xffff;
         if d.rate & 0x8000 == 0 {
-            arrival = arrival.wrapping_sub(15 / d.rate).wrapping_sub(1) & 65535;
+            arrival = arrival.wrapping_sub(15 / d.rate).wrapping_sub(1) & 0xffff;
         }
         let mut delta = d.arrival ^ arrival;
         delta ^= ((delta as i32) >> 8) as u32;
-        d.header ^= (((delta & 15) << 4) ^ (delta & 240)) << 8;
+        d.header ^= (((delta & 0x0f) << 4) ^ (delta & 0xf0)) << 8;
         d.arrival = arrival;
         if failed {
             return Err(Error::FifoOverflow);
@@ -187,6 +193,10 @@ impl Queue {
             primed: 0,
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Queue depth is bounded by the 1200-entry lookahead plus one pending access unit before width conversion"
+    )]
     fn advance(&mut self, next: Descriptor) -> Result<Option<Vec<u8>>, Error> {
         if self.primed < LOOKAHEAD {
             self.timing.step(next, &mut Descriptor::default())?;
@@ -219,7 +229,7 @@ impl Queue {
             arrival: word(1),
             header: word(0),
         };
-        self.decode = (self.decode + self.samples) & 65535;
+        self.decode = (self.decode + self.samples) & 0xffff;
         let ready = self.advance(descriptor)?;
         self.pending.push_back((descriptor, bytes));
         Ok(ready)

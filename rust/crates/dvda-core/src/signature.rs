@@ -246,12 +246,12 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
 
 fn build(request: Request) -> Result<String, String> {
     let mut canonical = String::new();
-    line(&mut canonical, "disc", request.disc_number);
-    line(&mut canonical, "volid", request.volume_id);
-    line(&mut canonical, "iso", request.iso_name);
-    line(&mut canonical, "title", request.title);
-    line(&mut canonical, "title_mode", request.title_mode);
-    line(&mut canonical, "group_limit", request.group_limit);
+    line(&mut canonical, "disc", &request.disc_number);
+    line(&mut canonical, "volid", &request.volume_id);
+    line(&mut canonical, "iso", &request.iso_name);
+    line(&mut canonical, "title", &request.title);
+    line(&mut canonical, "title_mode", &request.title_mode);
+    line(&mut canonical, "group_limit", &request.group_limit);
     let author_identity = hash::reader_digest(
         fs::File::open(std::env::current_exe().map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?,
@@ -260,7 +260,7 @@ fn build(request: Request) -> Result<String, String> {
     line(
         &mut canonical,
         "author",
-        format!("rust-author|{author_identity}"),
+        &format!("rust-author|{author_identity}"),
     );
     canonical.push_str("iso_writer=rust-iso9660-udf102-v1\n");
     append_library_hashes(
@@ -272,7 +272,7 @@ fn build(request: Request) -> Result<String, String> {
     line(
         &mut canonical,
         "menu",
-        format!(
+        &format!(
             "{}|{}|{}|{}|{}|{}|{}|{}|{}",
             format_bool(request.menu_enabled),
             request.menu_tracks_per_page,
@@ -293,7 +293,7 @@ fn build(request: Request) -> Result<String, String> {
                         .message
                         .unwrap_or_else(|| "Invalid menu language".into())
                 })?;
-        line(&mut canonical, "menu_language", language);
+        line(&mut canonical, "menu_language", &language);
         append_library_hashes(
             &mut canonical,
             "image",
@@ -332,7 +332,7 @@ fn build(request: Request) -> Result<String, String> {
     Ok(hash::hex_digest(canonical.as_bytes()))
 }
 
-fn line<T: ToString>(output: &mut String, key: &str, value: T) {
+fn line<T: ToString>(output: &mut String, key: &str, value: &T) {
     output.push_str(key);
     output.push('=');
     output.push_str(&value.to_string());
@@ -423,7 +423,7 @@ fn append_library_hashes(
         line(
             output,
             label,
-            format!(
+            &format!(
                 "{}|{}",
                 path.file_name().unwrap_or_default().to_string_lossy(),
                 digest

@@ -1,12 +1,4 @@
 //! Opt-in independent decoder validation; requires ffmpeg on PATH.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::too_many_lines,
-    clippy::unreadable_literal,
-    reason = "Decoder fixtures construct deterministic PCM and complete independent validation matrices"
-)]
 use dvda_mlp::{
     Config,
     direct::{StreamIo, encode_stream},
@@ -35,6 +27,11 @@ impl StreamIo for Io {
 }
 
 #[test]
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "The deterministic PCM fixture uses signed bit patterns and the C error buffer's signed-char representation"
+)]
 fn long_stream_reports_fifo_rate_limit() {
     let frames = 64001;
     let config = Config {
@@ -49,7 +46,7 @@ fn long_stream_reports_fifo_rate_limit() {
         packet: config.metadata.clone(),
         valid_bits: 0,
     }];
-    let mut rng = 0x12345678u32;
+    let mut rng = 0x1234_5678u32;
     let pcm = (0..frames * 6)
         .map(|_| {
             rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
@@ -105,6 +102,12 @@ fn long_stream_reports_fifo_rate_limit() {
 
 #[test]
 #[ignore = "requires ffmpeg; run with --ignored --nocapture"]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::too_many_lines,
+    reason = "The opt-in decoder matrix uses bounded fixture indices, signed PCM bit patterns, and one complete rate/depth/channel scenario"
+)]
 fn native_float_lossless_matrix() {
     let root = std::env::temp_dir().join(format!("dvda-float-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
@@ -122,7 +125,7 @@ fn native_float_lossless_matrix() {
                             .expect("DVDA_FLOAT_FRAMES must be an integer")
                     });
                     assert!(frames > 0);
-                    let mut rng = 0x12345678u32;
+                    let mut rng = 0x1234_5678u32;
                     let mut pcm = Vec::new();
                     for n in 0..frames {
                         for ch in 0..channels {

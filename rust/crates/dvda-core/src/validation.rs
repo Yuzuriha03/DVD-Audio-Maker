@@ -80,6 +80,10 @@ pub fn major_sync_interval(data: &[u8]) -> Option<i64> {
 ///
 /// # Errors
 /// Returns an error only when the operation name is unsupported.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
         "mlp.major_sync_interval" => {

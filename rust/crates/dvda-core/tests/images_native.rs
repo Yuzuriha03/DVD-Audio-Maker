@@ -1,15 +1,17 @@
 //! Native image behavior independent of the temporary managed comparison runner.
-#![allow(
-    clippy::items_after_statements,
-    clippy::too_many_lines,
-    reason = "Image fixtures retain scoped helpers and complete native behavior scenarios"
-)]
 use dvda_core::images::{Job, Output, execute};
 use dvda_native::{images::Images, media::Callbacks};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+
+struct Clean(PathBuf);
+impl Drop for Clean {
+    fn drop(&mut self) {
+        fs::remove_dir_all(&self.0).unwrap();
+    }
+}
 
 #[derive(Default)]
 struct Events {
@@ -54,6 +56,10 @@ fn job(args: &[&str], output: Option<&Path>) -> Job {
 
 #[test]
 #[ignore = "requires the explicitly supplied frozen Windows x64 image oracle"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The ignored native-image scenario keeps pixel, diagnostic, concurrency, and cleanup stages ordered"
+)]
 fn pixels_diagnostics_concurrency_and_failure_protection() {
     let root = std::env::temp_dir().join(format!(
         "dvda-rust-image-中文-日本語-🎵-{}-{}",
@@ -64,12 +70,6 @@ fn pixels_diagnostics_concurrency_and_failure_protection() {
             .as_nanos()
     ));
     fs::create_dir(&root).unwrap();
-    struct Clean(PathBuf);
-    impl Drop for Clean {
-        fn drop(&mut self) {
-            fs::remove_dir_all(&self.0).unwrap();
-        }
-    }
     let _clean = Clean(root.clone());
     let path = root.join("pixels.png");
     let images = Images::load(&library()).unwrap();

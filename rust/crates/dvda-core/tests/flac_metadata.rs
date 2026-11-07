@@ -1,9 +1,4 @@
 //! Former `FlacMetadataEditor` `SpanReader` failure semantics at the public boundary.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "FLAC fixtures construct protocol-width metadata blocks and deterministic payload bytes"
-)]
 use dvda_core::formats;
 use serde_json::{Value, json};
 use std::{
@@ -37,7 +32,7 @@ fn stream(blocks: &[(u8, &[u8])], audio: &[u8]) -> Vec<u8> {
     all.extend_from_slice(blocks);
     for (index, (kind, data)) in all.iter().enumerate() {
         output.push(*kind | if index + 1 == all.len() { 0x80 } else { 0 });
-        output.extend_from_slice(&(data.len() as u32).to_be_bytes()[1..]);
+        output.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_be_bytes()[1..]);
         output.extend_from_slice(data);
     }
     output.extend_from_slice(audio);
@@ -46,9 +41,9 @@ fn stream(blocks: &[(u8, &[u8])], audio: &[u8]) -> Vec<u8> {
 fn comments(values: &[&str]) -> Vec<u8> {
     let mut data = 3u32.to_le_bytes().to_vec();
     data.extend_from_slice(b"old");
-    data.extend_from_slice(&(values.len() as u32).to_le_bytes());
+    data.extend_from_slice(&(u32::try_from(values.len()).unwrap()).to_le_bytes());
     for value in values {
-        data.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        data.extend_from_slice(&(u32::try_from(value.len()).unwrap()).to_le_bytes());
         data.extend_from_slice(value.as_bytes());
     }
     data
@@ -56,7 +51,7 @@ fn comments(values: &[&str]) -> Vec<u8> {
 fn picture() -> Vec<u8> {
     let mut data = 3u32.to_be_bytes().to_vec();
     for text in ["image/png", "中文 日本語"] {
-        data.extend_from_slice(&(text.len() as u32).to_be_bytes());
+        data.extend_from_slice(&(u32::try_from(text.len()).unwrap()).to_be_bytes());
         data.extend_from_slice(text.as_bytes());
     }
     for number in [3u32, 2, 24, 0, 4] {
@@ -189,7 +184,9 @@ fn flac_picture_replacement_preserves_audio_and_other_blocks_and_cleans_failed_c
     let image = scratch.0.join("new.png");
     let old_picture = picture();
     let comment = comments(&["TITLE=unchanged"]);
-    let audio: Vec<_> = (0..65539).map(|n| (n * 37 % 256) as u8).collect();
+    let audio: Vec<_> = (0..65_539)
+        .map(|n| u8::try_from(n * 37 % 256).unwrap())
+        .collect();
     let original = stream(
         &[
             (4, &comment),

@@ -1,13 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::decimal_bitwise_operands,
-    clippy::items_after_statements,
-    clippy::many_single_char_names,
-    clippy::too_many_lines,
-    clippy::unreadable_literal,
-    reason = "Differential fixtures preserve complete C ABI calls, deterministic PCM, and reference vectors"
-)]
 #[cfg(windows)]
 mod windows {
     use dvda_mlp::ffi::{
@@ -137,6 +127,10 @@ mod windows {
             bad_read: false,
         }
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "The nested ABI fixture stores the concrete C configuration size in its u32 struct_size field"
+    )]
     fn nested_encode(encode: Encode) {
         let packet = [0, 0, 64, 0];
         let record = StampRecord {
@@ -165,6 +159,10 @@ mod windows {
         );
         assert_eq!(r.output_bytes, s.bytes.len() as u64);
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Major-sync CRC deliberately retains the low 16 bits after the reference update recurrence"
+    )]
     fn major_crc(bytes: &[u8]) -> u16 {
         let mut r = u32::from(u16::from_be_bytes([bytes[0], bytes[1]]));
         for pair in bytes[2..26].as_chunks::<2>().0 {
@@ -178,6 +176,10 @@ mod windows {
         }
         r as u16
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Diagnostic CRC repair deliberately writes the low 16 bits of the recomputed major-sync CRC"
+    )]
     fn decode(bytes: &[u8], tag: &str) -> Vec<u8> {
         let base = PathBuf::from("build").join(format!("mlp-differential-{tag}"));
         let mlp = base.with_extension("mlp");
@@ -201,7 +203,7 @@ mod windows {
                 assert_eq!(tag, "groups", "unexpected differing group rates");
                 // Diagnostic decoding only: FFmpeg rejects the native-rate declaration,
                 // although the payload contains the reconstructed full-rate samples.
-                normalized[at + 9] = (normalized[at + 9] & 240) | (normalized[at + 9] >> 4);
+                normalized[at + 9] = (normalized[at + 9] & 0xf0) | (normalized[at + 9] >> 4);
                 let mut r = u32::from(u16::from_be_bytes([normalized[at + 4], normalized[at + 5]]));
                 for i in 1..13 {
                     let word = u32::from(u16::from_be_bytes([
@@ -233,6 +235,13 @@ mod windows {
         std::fs::remove_file(raw).unwrap();
         data
     }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::many_single_char_names,
+        clippy::too_many_lines,
+        reason = "The differential harness preserves C ABI widths, signed PCM patterns, compact callback state names, and complete ordered oracle scenarios"
+    )]
     pub fn run() {
         use sha2::{Digest, Sha256};
 
@@ -327,7 +336,6 @@ mod windows {
                         s.bytes, outputs[0],
                         "benchmark raw bytes {name} round {round}"
                     );
-                    use sha2::{Digest, Sha256};
                     assert_eq!(Sha256::digest(&s.bytes), Sha256::digest(&outputs[0]));
                     if round != 0 {
                         timings[index].push(elapsed);
@@ -530,7 +538,7 @@ mod windows {
                 for restart in [1, 8, 32] {
                     for pattern in [0, 1, 2] {
                         let frames = 70001usize;
-                        let mut seed = 0x12345678u32;
+                        let mut seed = 0x1234_5678u32;
                         let pcm: Vec<i32> = (0..frames * 2)
                             .map(|n| {
                                 seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
@@ -782,7 +790,6 @@ mod windows {
                                     .zip(&raw_outputs[1])
                                     .position(|(a, b)| a != b)
                             );
-                            use sha2::{Digest, Sha256};
                             assert_eq!(
                                 Sha256::digest(&raw_outputs[0]),
                                 Sha256::digest(&raw_outputs[1])

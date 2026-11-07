@@ -1,9 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::match_wildcard_for_single_variants,
-    clippy::too_many_lines,
-    reason = "Task lifecycle code preserves typed event dispatch and incremental diagnostic formatting"
-)]
 //! Background tasks: start, progress, completion, cancellation and busy state.
 
 use super::{
@@ -41,6 +35,10 @@ pub(crate) fn retention_choice(lang: Lang) -> Result<bool, String> {
     task_choice(lang, true)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps the packed TaskDialog ABI declarations, localized choices and their backing buffers together"
+)]
 pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
     #[repr(C, packed)]
     struct Button {
@@ -109,7 +107,7 @@ pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
                 "진행 상황 보관",
                 "진행 상황 삭제",
             ),
-            _ => (
+            Lang::En => (
                 "Production unfinished",
                 "Keep progress to continue next time? Deletion removes only this task's intermediate files, not sources or published ISOs.",
                 "Keep progress",
@@ -142,7 +140,7 @@ pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
                 "제작 계속",
                 "처음부터 제작",
             ),
-            _ => (
+            Lang::En => (
                 "Unfinished production found",
                 "Continue validates saved progress. Restart deletes this task's intermediate files and starts over. Sources and published ISOs are preserved.",
                 "Continue production",
@@ -166,7 +164,7 @@ pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
         },
     ];
     let mut config: Config = unsafe { std::mem::zeroed() };
-    config.size = std::mem::size_of::<Config>() as u32;
+    config.size = u32::try_from(std::mem::size_of::<Config>()).unwrap();
     config.title = title.as_ptr();
     config.instruction = title.as_ptr();
     config.content = content.as_ptr();
@@ -191,6 +189,10 @@ pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
     Ok(button == 1002)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keeps preparation, build, verification, retention and completion ordering in one worker lifecycle"
+)]
 pub(crate) fn start_operation(state: &mut UiState, command: usize) {
     if !validate_controls(state, true) {
         return;

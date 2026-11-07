@@ -1,8 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::needless_pass_by_value,
-    reason = "Integration fixtures construct bounded WAV data and consume complete test scenarios"
-)]
 use dvda_native::disc_verify::NativeDiscVerifier;
 use std::{
     fs::{self, File},
@@ -35,9 +30,10 @@ impl Drop for Workspace {
 }
 
 fn wav(path: &Path, rate: u32, bits: u16, channels: u16, frames: u32, seed: u32) {
-    let width = (bits / 8) as usize;
-    let mask = [4u32, 3, 7, 0x33, 0x37, 0x3f][channels as usize - 1];
-    let mut data = Vec::with_capacity(frames as usize * channels as usize * width);
+    let width = usize::from(bits / 8);
+    let mask = [4u32, 3, 7, 0x33, 0x37, 0x3f][usize::from(channels) - 1];
+    let mut data =
+        Vec::with_capacity(usize::try_from(frames).unwrap() * usize::from(channels) * width);
     for i in 0..frames {
         for channel in 0..u32::from(channels) {
             let sample =
@@ -52,22 +48,25 @@ fn wav(path: &Path, rate: u32, bits: u16, channels: u16, frames: u32, seed: u32)
     body.extend_from_slice(&0xfffeu16.to_le_bytes());
     body.extend_from_slice(&channels.to_le_bytes());
     body.extend_from_slice(&rate.to_le_bytes());
-    body.extend_from_slice(&(rate * u32::from(channels) * width as u32).to_le_bytes());
-    body.extend_from_slice(&(channels * width as u16).to_le_bytes());
+    body.extend_from_slice(
+        &(rate * u32::from(channels) * u32::try_from(width).unwrap()).to_le_bytes(),
+    );
+    body.extend_from_slice(&(channels * u16::try_from(width).unwrap()).to_le_bytes());
     body.extend_from_slice(&bits.to_le_bytes());
     body.extend_from_slice(&22u16.to_le_bytes());
     body.extend_from_slice(&bits.to_le_bytes());
     body.extend_from_slice(&mask.to_le_bytes());
     body.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
     body.extend_from_slice(b"data");
-    body.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    body.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
     body.extend_from_slice(&data);
     if data.len() % 2 != 0 {
         body.push(0);
     }
     let mut file = File::create(path).unwrap();
     file.write_all(b"RIFF").unwrap();
-    file.write_all(&(body.len() as u32).to_le_bytes()).unwrap();
+    file.write_all(&u32::try_from(body.len()).unwrap().to_le_bytes())
+        .unwrap();
     file.write_all(&body).unwrap();
 }
 
@@ -131,7 +130,7 @@ struct Scenario {
     tiny: bool,
 }
 
-fn case(author: &Path, root: &Path, scenario: Scenario) {
+fn case(author: &Path, root: &Path, scenario: &Scenario) {
     let Scenario {
         rate,
         bits,
@@ -139,7 +138,7 @@ fn case(author: &Path, root: &Path, scenario: Scenario) {
         frames,
         separate,
         tiny,
-    } = scenario;
+    } = *scenario;
     let label = format!(
         "{rate}-{bits}-{channels}-{frames}-{}",
         if separate { "titles" } else { "gapless" }
@@ -183,9 +182,9 @@ fn case(author: &Path, root: &Path, scenario: Scenario) {
     }
     let private = (14..200)
         .find(|&i| payload[i..i + 4] == [0, 0, 1, 0xbd])
-        .map(|q| q + 9 + payload[q + 8] as usize)
+        .map(|q| q + 9 + usize::from(payload[q + 8]))
         .expect("private stream packet");
-    let audio = private + 4 + payload[private + 3] as usize;
+    let audio = private + 4 + usize::from(payload[private + 3]);
     assert!(audio < payload.len(), "{label}: no private audio byte");
     let mut changed = payload.clone();
     changed[audio] ^= 1;
@@ -240,7 +239,7 @@ fn authored_lpcm_formats_and_short_titles() {
             case(
                 &author,
                 &workspace.0,
-                Scenario {
+                &Scenario {
                     rate,
                     bits,
                     channels,
@@ -257,7 +256,7 @@ fn authored_lpcm_formats_and_short_titles() {
                 case(
                     &author,
                     &workspace.0,
-                    Scenario {
+                    &Scenario {
                         rate: 48000,
                         bits,
                         channels,

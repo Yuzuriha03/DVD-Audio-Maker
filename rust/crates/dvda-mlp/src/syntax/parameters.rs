@@ -32,6 +32,12 @@ fn trailing(value: u32) -> u32 {
     value.trailing_zeros()
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+    reason = "Filter variable names mirror the reference recurrence and signed coefficients are serialized by their low-bit two's-complement patterns"
+)]
 fn filter(w: &mut Bits, f: &MlpWireFilter, q: u32) -> Result<(), ()> {
     if f.order > 8 || f.precision > 15 || !(8..=15).contains(&q) {
         return Err(());
@@ -75,6 +81,10 @@ fn filter(w: &mut Bits, f: &MlpWireFilter, q: u32) -> Result<(), ()> {
     Ok(())
 }
 
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "Prediction state writes use the low bits of signed residuals exactly as required by the wire format"
+)]
 fn state(w: &mut Bits, s: &MlpWireState) -> Result<(), ()> {
     if s.count > 8 {
         return Err(());
@@ -104,6 +114,11 @@ fn state(w: &mut Bits, s: &MlpWireState) -> Result<(), ()> {
     Ok(())
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Matrix targets and signed coefficients use bounded protocol fields and two's-complement low-bit serialization"
+)]
 fn matrix(w: &mut Bits, c: &MlpParameters) -> Result<(), ()> {
     let count = c.matrix_count as usize;
     if count > 15 {
@@ -136,6 +151,10 @@ fn matrix(w: &mut Bits, c: &MlpParameters) -> Result<(), ()> {
     Ok(())
 }
 
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "Parameter block flags and signed shifts are serialized from their defined low-bit patterns"
+)]
 pub(crate) fn mlp_parameters_put(
     writer: &mut Bits,
     c: &MlpParameters,

@@ -57,6 +57,10 @@ impl Callbacks for Writer<'_> {
 ///
 /// Returns an error if the operation is not `build.log_header` or the request
 /// is not a JSON object. Missing header fields use their default values.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     if operation != "build.log_header" {
         return Err(format!("Unsupported build log operation: {operation}"));

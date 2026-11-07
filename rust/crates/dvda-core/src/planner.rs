@@ -16,9 +16,14 @@ fn size(tracks: &[Value]) -> Result<i64, String> {
 }
 /// # Errors
 /// Returns an error if the overhead-adjusted size cannot be represented as `i64`.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "AOB estimates preserve the established f64 multiply/ceil rounding; the range check precedes conversion back to i64"
+)]
 pub fn estimate(bytes: i64) -> Result<i64, String> {
     let value = (bytes as f64 * 1.025).ceil();
-    if value < i64::MIN as f64 || value >= 9_223_372_036_854_775_808.0 {
+    if value < -9_223_372_036_854_775_808.0 || value >= 9_223_372_036_854_775_808.0 {
         return Err("AOB size overflow".into());
     }
     Ok(value as i64)
@@ -36,9 +41,84 @@ pub fn albums(tracks: &[Value]) -> Vec<(String, Vec<Value>)> {
     }
     albums
 }
-fn diagnostic(list: &mut Vec<Value>, severity: i32, code: &str, message: String) {
+fn diagnostic(list: &mut Vec<Value>, severity: i32, code: &str, message: &str) {
     list.push(json!({"Severity":severity,"Code":code,"Message":message}));
 }
+fn groups_for_albums(
+    items: &[(String, Vec<Value>)],
+    group_limit: i64,
+    diagnostics: &mut Vec<Value>,
+) -> Result<Vec<Value>, String> {
+    type Key = (i64, i64, String, i64, i64);
+    let mut buckets: Vec<(Key, Vec<Value>)> = Vec::new();
+    for (_, tracks) in items {
+        for track in tracks {
+            let lpcm = text(track, "MlpSource") == "lpcm";
+            let key = (
+                number(track, "SampleRate")?,
+                number(track, "Bits")?,
+                if lpcm { "lpcm" } else { "mlp" }.into(),
+                if lpcm {
+                    track["Channels"].as_i64().unwrap_or(0)
+                } else {
+                    0
+                },
+                if lpcm {
+                    track["ChannelMask"].as_i64().unwrap_or(0)
+                } else {
+                    0
+                },
+            );
+            if let Some((_, bucket)) = buckets.iter_mut().find(|(k, _)| *k == key) {
+                bucket.push(track.clone());
+            } else {
+                buckets.push((key, vec![track.clone()]));
+            }
+        }
+    }
+    let mut groups = Vec::new();
+    for (key, bucket) in buckets {
+        let mut chunks: Vec<Vec<Value>> = Vec::new();
+        let mut chunk: Vec<Value> = Vec::new();
+        for track in bucket {
+            if !chunk.is_empty()
+                && text(&track, "Album") != text(chunk.last().unwrap(), "Album")
+                && i64::try_from(chunk.len()).expect("Vec length is bounded by isize::MAX")
+                    >= group_limit
+            {
+                chunks.push(std::mem::take(&mut chunk));
+            }
+            chunk.push(track);
+        }
+        if !chunk.is_empty() {
+            chunks.push(chunk);
+        }
+        for chunk in chunks {
+            if i64::try_from(chunk.len()).expect("Vec length is bounded by isize::MAX")
+                > group_limit
+            {
+                diagnostic(
+                    diagnostics,
+                    1,
+                    "ALBUM_EXCEEDS_GROUP_LIMIT",
+                    &format!(
+                        "专辑“{}”在 {}Hz/{}bit 组中有 {} 轨，超过组轨上限 {}；为保持专辑完整未拆分。",
+                        text(&chunk[0], "Album"),
+                        key.0,
+                        key.1,
+                        chunk.len(),
+                        group_limit
+                    ),
+                );
+            }
+            groups.push(
+                json!({"Number":groups.len()+1,"SampleRate":key.0,"Bits":key.1,"Tracks":chunk}),
+            );
+        }
+    }
+    Ok(groups)
+}
+
 /// # Errors
 /// Returns an error for missing or non-integer disc/group limits or track sizes,
 /// a missing tracks array, missing track sample rates/bit depths, or an overflow
@@ -48,6 +128,10 @@ fn diagnostic(list: &mut Vec<Value>, severity: i32, code: &str, message: String)
 /// # Panics
 /// The internal last-track lookup assumes a nonempty chunk; its preceding
 /// short-circuit check enforces that invariant.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON planning operations retain the common owned-request API"
+)]
 pub fn plan(request: Value) -> Result<Value, String> {
     let tracks = request["Tracks"].as_array().ok_or("Missing Tracks")?;
     let disc_bytes = number(&request, "DiscBytes")?;
@@ -60,7 +144,7 @@ pub fn plan(request: Value) -> Result<Value, String> {
                 &mut diagnostics,
                 2,
                 "MLP_MISSING",
-                format!(
+                &format!(
                     "找不到或无法读取 MLP: {}（{}）",
                     text(track, "MlpPath"),
                     text(track, "Title")
@@ -89,7 +173,7 @@ pub fn plan(request: Value) -> Result<Value, String> {
                 &mut diagnostics,
                 1,
                 "ALBUM_EXCEEDS_DISC",
-                format!(
+                &format!(
                     "第 {} 盘仅含专辑“{}”，估算 AOB 已超过容量上限；专辑不会被拆分。",
                     i + 1,
                     items[0].0
@@ -99,70 +183,7 @@ pub fn plan(request: Value) -> Result<Value, String> {
     }
     let mut discs = Vec::new();
     for (disc_index, items) in disc_albums.into_iter().enumerate() {
-        type Key = (i64, i64, String, i64, i64);
-        let mut buckets: Vec<(Key, Vec<Value>)> = Vec::new();
-        for (_, tracks) in &items {
-            for track in tracks {
-                let lpcm = text(track, "MlpSource") == "lpcm";
-                let key = (
-                    number(track, "SampleRate")?,
-                    number(track, "Bits")?,
-                    if lpcm { "lpcm" } else { "mlp" }.into(),
-                    if lpcm {
-                        track["Channels"].as_i64().unwrap_or(0)
-                    } else {
-                        0
-                    },
-                    if lpcm {
-                        track["ChannelMask"].as_i64().unwrap_or(0)
-                    } else {
-                        0
-                    },
-                );
-                if let Some((_, bucket)) = buckets.iter_mut().find(|(k, _)| *k == key) {
-                    bucket.push(track.clone());
-                } else {
-                    buckets.push((key, vec![track.clone()]));
-                }
-            }
-        }
-        let mut groups = Vec::new();
-        for (key, bucket) in buckets {
-            let mut chunks: Vec<Vec<Value>> = Vec::new();
-            let mut chunk: Vec<Value> = Vec::new();
-            for track in bucket {
-                if !chunk.is_empty()
-                    && text(&track, "Album") != text(chunk.last().unwrap(), "Album")
-                    && chunk.len() as i64 >= group_limit
-                {
-                    chunks.push(std::mem::take(&mut chunk));
-                }
-                chunk.push(track);
-            }
-            if !chunk.is_empty() {
-                chunks.push(chunk);
-            }
-            for chunk in chunks {
-                if chunk.len() as i64 > group_limit {
-                    diagnostic(
-                        &mut diagnostics,
-                        1,
-                        "ALBUM_EXCEEDS_GROUP_LIMIT",
-                        format!(
-                            "专辑“{}”在 {}Hz/{}bit 组中有 {} 轨，超过组轨上限 {}；为保持专辑完整未拆分。",
-                            text(&chunk[0], "Album"),
-                            key.0,
-                            key.1,
-                            chunk.len(),
-                            group_limit
-                        ),
-                    );
-                }
-                groups.push(
-                    json!({"Number":groups.len()+1,"SampleRate":key.0,"Bits":key.1,"Tracks":chunk}),
-                );
-            }
-        }
+        let groups = groups_for_albums(&items, group_limit, &mut diagnostics)?;
         let albums: Vec<Value> = items
             .into_iter()
             .map(|(name, tracks)| json!({"Name":name,"Tracks":tracks}))
@@ -184,23 +205,30 @@ pub fn track_number(value: &str) -> i32 {
 /// # Errors
 /// Returns an error if the request is not a string.
 pub fn track_number_value(request: Value) -> Result<Value, String> {
-    Ok(json!(track_number(
-        request.as_str().ok_or("Expected track text")?
-    )))
+    let Value::String(text) = request else {
+        return Err("Expected track text".into());
+    };
+    Ok(json!(track_number(&text)))
 }
 /// # Errors
 /// Returns an error if the request is not an integer or the estimated AOB size
 /// cannot be represented as `i64`.
 pub fn estimate_value(request: Value) -> Result<Value, String> {
+    let Value::Number(bytes) = request else {
+        return Err("Expected MLP bytes".into());
+    };
     Ok(json!(estimate(
-        request.as_i64().ok_or("Expected MLP bytes")?
+        bytes.as_i64().ok_or("Expected MLP bytes")?
     )?))
 }
 /// # Errors
 /// Returns an error if the request is not an integer disc size.
 pub fn content_limit_value(request: Value) -> Result<Value, String> {
+    let Value::Number(bytes) = request else {
+        return Err("Expected disc bytes".into());
+    };
     Ok(json!(
-        request
+        bytes
             .as_i64()
             .ok_or("Expected disc bytes")?
             .saturating_sub(8 * 1024 * 1024)
@@ -211,7 +239,9 @@ pub fn content_limit_value(request: Value) -> Result<Value, String> {
 /// Returns an error if the request is not an array. Missing track text fields
 /// use empty strings, and unparseable track numbers sort as 9999.
 pub fn sort(request: Value) -> Result<Value, String> {
-    let mut tracks = request.as_array().ok_or("Expected tracks")?.clone();
+    let Value::Array(mut tracks) = request else {
+        return Err("Expected tracks".into());
+    };
     // .NET ordinal compares UTF-16 code units, not Unicode scalar values.
     tracks.sort_by(|a, b| {
         text(a, "Date")
@@ -231,6 +261,35 @@ pub fn sort(request: Value) -> Result<Value, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn owned_json_adapters_preserve_scalar_results_and_track_order() {
+        assert_eq!(track_number_value(json!("12/99")).unwrap(), json!(12));
+        assert_eq!(estimate_value(json!(40)).unwrap(), json!(41));
+        assert_eq!(
+            content_limit_value(json!(8 * 1024 * 1024 + 73)).unwrap(),
+            json!(73)
+        );
+        let sorted = sort(json!([
+            {"Date":"2026", "Track":"12", "Title":"second"},
+            {"Date":"2026", "Track":"2", "Title":"first"}
+        ]))
+        .unwrap();
+        assert_eq!(sorted[0]["Title"], "first");
+        assert_eq!(sorted[1]["Title"], "second");
+        assert_eq!(
+            track_number_value(Value::Null).unwrap_err(),
+            "Expected track text"
+        );
+        assert_eq!(
+            estimate_value(json!(1.5)).unwrap_err(),
+            "Expected MLP bytes"
+        );
+        assert_eq!(
+            content_limit_value(json!("1")).unwrap_err(),
+            "Expected disc bytes"
+        );
+    }
 
     #[test]
     fn ignores_legacy_disc_count_and_keeps_greedy_order() {

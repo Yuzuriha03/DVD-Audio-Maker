@@ -4,16 +4,20 @@ use serde_json::{Value, json};
 /// Returns an error for an unknown operation, a non-text probe/decoder output,
 /// a metadata request without string `Path` and `Output` fields, or a result
 /// serialization failure.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Public JSON dispatch preserves the owned-request API used by crate::dispatch"
+)]
 pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     match operation {
-        "audio.parameters" => audio_parameters(request),
-        "metadata.parse" => metadata_parse(request),
-        "decode.scan" => decode_scan(request),
+        "audio.parameters" => audio_parameters(&request),
+        "metadata.parse" => metadata_parse(&request),
+        "decode.scan" => decode_scan(&request),
         _ => Err(format!("Unsupported Rust probe operation: {operation}")),
     }
 }
 
-fn audio_parameters(request: Value) -> Result<Value, String> {
+fn audio_parameters(request: &Value) -> Result<Value, String> {
     let output = request.as_str().ok_or("Expected probe output text")?;
     let mut values = output
         .split('\n')
@@ -44,7 +48,7 @@ struct Metadata {
     source_bits: i32,
 }
 
-fn metadata_parse(request: Value) -> Result<Value, String> {
+fn metadata_parse(request: &Value) -> Result<Value, String> {
     let object = request.as_object().ok_or("Expected metadata request")?;
     let path = object
         .get("Path")
@@ -111,6 +115,10 @@ fn value(line: &str) -> &str {
     line.split_once('=').map_or("", |(_, value)| value)
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "ffprobe timestamps and time bases are converted to the existing f64 duration protocol"
+)]
 fn calculate_duration(timestamp: Option<i64>, time_base: Option<&str>) -> Option<f64> {
     let timestamp = timestamp?;
     let parts: Vec<_> = time_base?.split('/').collect();
@@ -139,7 +147,7 @@ struct DecodeScan {
     lines: Vec<String>,
 }
 
-fn decode_scan(request: Value) -> Result<Value, String> {
+fn decode_scan(request: &Value) -> Result<Value, String> {
     let stderr = request.as_str().ok_or("Expected decoder stderr text")?;
     let keywords = [
         "error submitting packet to decoder",
@@ -173,7 +181,7 @@ mod tests {
 
     #[test]
     fn metadata_prefers_timestamp_and_tags() {
-        let value = metadata_parse(json!({
+        let value = metadata_parse(&json!({
             "Path": "D:/album/song.flac",
             "Output": "sample_rate=48000\nbits_per_raw_sample=24\nchannels=2\nduration_ts=96000\ntime_base=1/48000\nTAG:TITLE=Song\nTAG:ALBUM=Album\n"
         }))
@@ -184,7 +192,7 @@ mod tests {
 
     #[test]
     fn decode_scan_keeps_three_examples() {
-        let value = decode_scan(json!("corrupt\nCORRUPT\ninvalid element\ncorrupt\n")).unwrap();
+        let value = decode_scan(&json!("corrupt\nCORRUPT\ninvalid element\ncorrupt\n")).unwrap();
         assert_eq!(value["Count"], 4);
         assert_eq!(value["Lines"].as_array().unwrap().len(), 3);
     }

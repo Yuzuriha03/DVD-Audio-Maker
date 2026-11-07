@@ -1,13 +1,4 @@
 //! Streaming, read-only DVD-Audio PES payload verification.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    reason = "Disc verification uses bounded sector counts and packet fields"
-)]
-#![allow(
-    clippy::unreadable_literal,
-    reason = "Test fixtures use fixed WAVE byte constants"
-)]
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
@@ -26,6 +17,16 @@ pub struct ResultInfo {
 
 pub struct NativeDiscVerifier;
 
+// ResultInfo exposes the historical C ABI i32 track field. Preserve the same
+// low 32 bits as the original usize-to-i32 cast on the Windows targets.
+fn result_track(index: usize) -> i32 {
+    i32::from_le_bytes(
+        index.to_le_bytes()[..size_of::<i32>()]
+            .try_into()
+            .expect("track index has four low bytes"),
+    )
+}
+
 impl NativeDiscVerifier {
     /// Construct the project-owned streaming verifier.
     ///
@@ -43,7 +44,7 @@ impl NativeDiscVerifier {
     where
         I: Iterator<Item = Result<Vec<u8>, String>>,
     {
-        self.verify(sources, None, chunks, false)
+        Self::verify(sources, None, chunks, false)
     }
 
     /// Verify MLP payloads while retaining coded metadata differences for validation.
@@ -54,7 +55,7 @@ impl NativeDiscVerifier {
     where
         I: Iterator<Item = Result<Vec<u8>, String>>,
     {
-        self.verify(sources, None, chunks, true)
+        Self::verify(sources, None, chunks, true)
     }
 
     /// Verify LPCM payloads with explicit title boundaries.
@@ -73,15 +74,10 @@ impl NativeDiscVerifier {
         if title_ends.len() != sources.len() {
             return Err("LPCM title boundary count does not match source count".into());
         }
-        self.verify(sources, Some(title_ends), chunks, false)
+        Self::verify(sources, Some(title_ends), chunks, false)
     }
 
-    #[expect(
-        clippy::unused_self,
-        reason = "Verification remains an instance method shared by all verifier entry points"
-    )]
     fn verify<I>(
-        &self,
         sources: &[PathBuf],
         ends: Option<&[u8]>,
         mut chunks: I,
@@ -148,7 +144,7 @@ impl NativeDiscVerifier {
                 }
             } else if compare.file.is_some() || compare.index != sources.len() {
                 status = -7;
-                compare.result.track = compare.index as i32;
+                compare.result.track = result_track(compare.index);
                 compare.result.offset = compare.offset;
             }
         }
@@ -196,7 +192,7 @@ impl<'a> Compare<'a> {
     }
     fn consume(&mut self, mut data: &[u8]) -> Result<(), i32> {
         while !data.is_empty() {
-            self.result.track = self.index as i32;
+            self.result.track = result_track(self.index);
             self.result.offset = self.offset;
             if self.file.is_none() {
                 if self.index == self.sources.len() {
@@ -211,7 +207,7 @@ impl<'a> Compare<'a> {
                 self.left = size;
                 self.offset = 0;
             }
-            let n = (data.len() as u64).min(self.left) as usize;
+            let n = usize::try_from((data.len() as u64).min(self.left)).map_err(|_| -4)?;
             let mut expected = vec![0; n];
             self.file
                 .as_mut()
@@ -474,7 +470,7 @@ impl<'a> Pcm<'a> {
                 if bits != 0 || n < 16 {
                     return Err(-4);
                 }
-                f.read_exact(&mut h[..(n as usize).min(40)])
+                f.read_exact(&mut h[..usize::try_from(n).unwrap_or(usize::MAX).min(40)])
                     .map_err(|_| -4)?;
                 let tag = le16(&h[..2]);
                 channels = le16(&h[2..4]);
@@ -549,13 +545,13 @@ impl<'a> Pcm<'a> {
                 }
                 self.open(c)?;
             }
-            let n = ((unit - used) as u64).min(c.left) as usize;
+            let n = usize::try_from(((unit - used) as u64).min(c.left)).map_err(|_| -4)?;
             c.file
                 .as_mut()
                 .unwrap()
                 .read_exact(&mut raw[used..used + n])
                 .map_err(|_| -4)?;
-            c.result.track = c.index as i32;
+            c.result.track = result_track(c.index);
             c.result.offset = c.offset;
             c.left -= n as u64;
             c.offset += n as u64;
@@ -657,7 +653,7 @@ mod tests {
         s[..4].copy_from_slice(&[0, 0, 1, 0xba]);
         s[4] = 0x40;
         s[14..18].copy_from_slice(&[0, 0, 1, 0xbd]);
-        s[18..20].copy_from_slice(&((payload.len() + 13) as u16).to_be_bytes());
+        s[18..20].copy_from_slice(&u16::try_from(payload.len() + 13).unwrap().to_be_bytes());
         s[20] = 0x80;
         s[22] = 0;
         s[23] = 0xa1;
@@ -667,17 +663,17 @@ mod tests {
     }
     pub(super) fn wave(data: &[u8]) -> Vec<u8> {
         let mut wav = Vec::from(&b"RIFF"[..]);
-        wav.extend_from_slice(&((36 + data.len()) as u32).to_le_bytes());
+        wav.extend_from_slice(&u32::try_from(36 + data.len()).unwrap().to_le_bytes());
         wav.extend_from_slice(b"WAVEfmt ");
         wav.extend_from_slice(&16u32.to_le_bytes());
         wav.extend_from_slice(&1u16.to_le_bytes());
         wav.extend_from_slice(&2u16.to_le_bytes());
         wav.extend_from_slice(&48000u32.to_le_bytes());
-        wav.extend_from_slice(&192000u32.to_le_bytes());
+        wav.extend_from_slice(&192_000u32.to_le_bytes());
         wav.extend_from_slice(&4u16.to_le_bytes());
         wav.extend_from_slice(&16u16.to_le_bytes());
         wav.extend_from_slice(b"data");
-        wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        wav.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
         wav.extend_from_slice(data);
         wav
     }
@@ -685,7 +681,7 @@ mod tests {
         let mut s = mlp(payload);
         s[23] = 0xa0;
         s[26] = 8;
-        s[18..20].copy_from_slice(&((payload.len() + 15) as u16).to_be_bytes());
+        s[18..20].copy_from_slice(&u16::try_from(payload.len() + 15).unwrap().to_be_bytes());
         s[30] = 0x0f;
         s[31] = 0x0f;
         s[33] = 1;
@@ -950,7 +946,7 @@ mod dll_parity {
             ptr::copy_nonoverlapping(state.0.as_ptr().add(state.1), out, count);
         }
         state.1 += count;
-        count as i32
+        result_track(count)
     }
     fn legacy(path: &Path, source: &Path, ends: Option<&[u8]>, sectors: &[u8]) -> ResultInfo {
         let wide: Vec<u16> = OsStr::new(path).encode_wide().chain(Some(0)).collect();
@@ -1083,7 +1079,7 @@ mod dll_parity {
                 valid_pcm.clone()
             };
             let position = (seed.wrapping_mul(7919) + seed / 3) % changed.len();
-            changed[position] ^= (seed as u8).wrapping_mul(41).wrapping_add(1);
+            changed[position] ^= seed.to_le_bytes()[0].wrapping_mul(41).wrapping_add(1);
             if seed & 1 == 0 {
                 compare(&dll, &source, None, changed);
             } else {

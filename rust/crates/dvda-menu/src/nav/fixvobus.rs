@@ -5,13 +5,6 @@
 //! timing, reference-frame sectors, dvdauthor-data buttons and the VOBU
 //! time-step tables.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::too_many_lines,
-    reason = "NAV sector references and VOBU indices intentionally use their protocol field widths"
-)]
 use super::build::Build;
 use super::dvdata::DvdData;
 use super::mpeg;
@@ -46,6 +39,10 @@ fn write_u16(sector: &mut [u8], at: usize, value: u16) {
 }
 
 /// Scans one VOBU for reference frames and subpicture packets.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Reference-frame sector deltas are clamped to the 14-bit NAV field"
+)]
 fn scan_vobu(build: &Build, vobu_index: usize, format: VideoFormat) -> VobuTiming {
     let vobu = &build.vobus[vobu_index];
     let mut timing = VobuTiming {
@@ -125,7 +122,7 @@ fn scan_vobu(build: &Build, vobu_index: usize, format: VideoFormat) -> VobuTimin
 
 /// Builds the button colour lookup table from the dvdauthor-data groups.
 fn find_vobu_timing(timings: &[VobuTiming], pts: i64) -> isize {
-    let high = timings.len() as isize - 1;
+    let high = timings.len().cast_signed() - 1;
     if high < 0 {
         return -1;
     }
@@ -138,7 +135,7 @@ fn find_vobu_timing(timings: &[VobuTiming], pts: i64) -> isize {
     let (mut l, mut h) = (0isize, high);
     while l < h {
         let m = (l + h + 1) / 2;
-        if pts < i64::from(timings[m.max(0) as usize].start) {
+        if pts < i64::from(timings[m.max(0).cast_unsigned()].start) {
             h = m - 1;
         } else {
             l = m;
@@ -182,7 +179,9 @@ fn button_colours(data: &DvdData) -> [u8; 24] {
 
 fn neighbour(name: Option<&str>, buttons: &[super::dvdata::Button], fallback: usize) -> u8 {
     name.and_then(|value| buttons.iter().position(|button| button.name == value))
-        .map_or(fallback as u8, |found| (found + 1) as u8)
+        .map_or(u8::try_from(fallback).unwrap(), |found| {
+            u8::try_from(found + 1).unwrap()
+        })
 }
 
 fn button_table(data: &DvdData, commands: &BTreeMap<String, [u8; 8]>, sector: &mut [u8]) {
@@ -209,12 +208,15 @@ fn button_table(data: &DvdData, commands: &BTreeMap<String, [u8; 8]>, sector: &m
             &data.buttons,
             if index + 1 == count { 1 } else { index + 2 },
         );
-        sector[at] = (button.group << 6) | ((button.x0 >> 4) as u8 & 0x3f);
-        sector[at + 1] = ((button.x0 as u8 & 0x0f) << 4) | ((button.x1 >> 8) as u8 & 0x0f);
-        sector[at + 2] = button.x1 as u8;
-        sector[at + 3] = (u8::from(button.auto_action) << 6) | ((button.y0 >> 4) as u8 & 0x3f);
-        sector[at + 4] = ((button.y0 as u8 & 0x0f) << 4) | ((button.y1 >> 8) as u8 & 0x0f);
-        sector[at + 5] = button.y1 as u8;
+        sector[at] = (button.group << 6) | ((button.x0 >> 4).to_le_bytes()[0] & 0x3f);
+        sector[at + 1] =
+            ((button.x0.to_le_bytes()[0] & 0x0f) << 4) | ((button.x1 >> 8).to_le_bytes()[0] & 0x0f);
+        sector[at + 2] = button.x1.to_le_bytes()[0];
+        sector[at + 3] =
+            (u8::from(button.auto_action) << 6) | ((button.y0 >> 4).to_le_bytes()[0] & 0x3f);
+        sector[at + 4] =
+            ((button.y0.to_le_bytes()[0] & 0x0f) << 4) | ((button.y1 >> 8).to_le_bytes()[0] & 0x0f);
+        sector[at + 5] = button.y1.to_le_bytes()[0];
         sector[at + 6] = up;
         sector[at + 7] = down;
         sector[at + 8] = left;
@@ -228,6 +230,11 @@ fn button_table(data: &DvdData, commands: &BTreeMap<String, [u8; 8]>, sector: &m
 
 /// Source-local searches stop at VOB boundaries; only recorded disc addresses
 /// include the sector base of this source in `AUDIO_TS.VOB`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    reason = "The ordered NAV writer preserves 32-bit sector fields and one packet layout pass"
+)]
 pub(crate) fn fill_vob(
     build: &mut Build,
     data: &DvdData,
@@ -298,8 +305,8 @@ pub(crate) fn fill_vob(
         write_u32(&mut sector, 0x93, u32::MAX);
         write_u32(&mut sector, 0x97, u32::MAX);
         write_u16(&mut sector, 0x9b, 0x1000);
-        sector[0x9e] = data.buttons.len() as u8;
-        sector[0x9f] = data.buttons.len() as u8;
+        sector[0x9e] = u8::try_from(data.buttons.len()).unwrap();
+        sector[0x9f] = u8::try_from(data.buttons.len()).unwrap();
         sector[0xa3..0xbb].copy_from_slice(&button_colours(data));
         button_table(data, commands, &mut sector);
         let scr = mpeg::read_scr(&sector[4..9]);
@@ -329,13 +336,13 @@ pub(crate) fn fill_vob(
             }
             let value = match found {
                 Some(asect) => {
-                    let delta = asect as i64 - vobu.sector as i64;
+                    let delta = asect.cast_signed() - vobu.sector.cast_signed();
                     if delta.unsigned_abs() > 0x1fff {
                         0u16
                     } else if delta < 0 {
-                        (delta.unsigned_abs() as u16) | 0x8000
+                        u16::try_from(delta.unsigned_abs()).unwrap() | 0x8000
                     } else {
-                        delta as u16
+                        u16::try_from(delta).unwrap()
                     }
                 }
                 None => 0x3fff,
@@ -364,7 +371,7 @@ pub(crate) fn fill_vob(
             let encoded = get_sector(
                 &build.vobus,
                 index,
-                target as isize,
+                target.cast_signed(),
                 false,
                 0x7fff_ffff,
                 same_cell,
@@ -383,7 +390,7 @@ pub(crate) fn fill_vob(
             get_sector(
                 &build.vobus,
                 index,
-                next_video.map_or(-1, |value| value as isize),
+                next_video.map_or(-1, usize::cast_signed),
                 false,
                 0xbfff_ffff,
                 same_cell,
@@ -395,7 +402,7 @@ pub(crate) fn fill_vob(
             get_sector(
                 &build.vobus,
                 index,
-                prev_video.map_or(-1, |value| value as isize),
+                prev_video.map_or(-1, usize::cast_signed),
                 false,
                 0xbfff_ffff,
                 same_cell,
@@ -407,7 +414,7 @@ pub(crate) fn fill_vob(
             get_sector(
                 &build.vobus,
                 index,
-                index as isize + 1,
+                index.cast_signed() + 1,
                 false,
                 0x3fff_ffff,
                 same_cell,
@@ -419,7 +426,7 @@ pub(crate) fn fill_vob(
             get_sector(
                 &build.vobus,
                 index,
-                index as isize - 1,
+                index.cast_signed() - 1,
                 false,
                 0x3fff_ffff,
                 same_cell,
@@ -442,7 +449,7 @@ pub(crate) fn fill_vob(
                     &build.vobus,
                     index,
                     next,
-                    skip && next > forward as isize + 1,
+                    skip && next > forward.cast_signed() + 1,
                     0x3fff_ffff,
                     same_cell,
                 ),
@@ -454,16 +461,16 @@ pub(crate) fn fill_vob(
                     &build.vobus,
                     index,
                     previous,
-                    skip && previous < backward as isize - 1,
+                    skip && previous < backward.cast_signed() - 1,
                     0x3fff_ffff,
                     same_cell,
                 ),
             );
             if next >= 0 {
-                forward = next as usize;
+                forward = next.cast_unsigned();
             }
             if previous >= 0 {
-                backward = previous as usize;
+                backward = previous.cast_unsigned();
             }
         }
         build.output[base..base + SECTOR].copy_from_slice(&sector);

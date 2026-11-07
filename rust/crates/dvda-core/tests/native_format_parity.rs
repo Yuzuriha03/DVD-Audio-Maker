@@ -1,9 +1,4 @@
 //! ISO fixture preserved from the historical C# `IsoMigrationTests`.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    reason = "The ISO fixture retains complete historical sector records"
-)]
 use dvda_core::formats;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
@@ -16,7 +11,7 @@ impl Drop for Scratch {
 }
 fn record(name: &[u8], lba: u32, size: u32, directory: bool, attributes: u8) -> Vec<u8> {
     let mut data = vec![0; 33 + name.len() + usize::from(name.len().is_multiple_of(2))];
-    data[0] = data.len() as u8;
+    data[0] = u8::try_from(data.len()).unwrap();
     data[1] = attributes;
     data[2..6].copy_from_slice(&lba.to_le_bytes());
     data[6..10].copy_from_slice(&lba.to_be_bytes());
@@ -25,12 +20,16 @@ fn record(name: &[u8], lba: u32, size: u32, directory: bool, attributes: u8) -> 
     data[25] = if directory { 2 } else { 0 };
     data[28] = 1;
     data[31] = 1;
-    data[32] = name.len() as u8;
+    data[32] = u8::try_from(name.len()).unwrap();
     data[33..33 + name.len()].copy_from_slice(name);
     data
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The historical ISO fixture keeps complete sector records and public-entry assertions together"
+)]
 fn iso_public_entrypoints_match_historical_extended_attribute_and_truncation_fixture() {
     let root =
         Scratch(std::env::temp_dir().join(format!("dvda-iso-parity-{}", std::process::id())));

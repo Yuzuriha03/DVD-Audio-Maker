@@ -4,12 +4,6 @@
 //! session handed to readxml, but the model is built directly instead of through
 //! C callbacks, so the whole document is validated before any model state exists.
 
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::too_many_lines,
-    reason = "Navigation XML indices and VM fields retain their validated C-compatible widths"
-)]
 use super::model::{
     AudioAttrs, Button, Cell, Document, MenuGroup, Pgc, StreamAttrs, SubpictureAttrs, Vob,
 };
@@ -98,7 +92,7 @@ fn parse_pause(value: &str) -> Result<u8, String> {
     if seconds > 254 {
         return Err(format!("pause time {seconds} out of range"));
     }
-    Ok(seconds as u8)
+    Ok(u8::try_from(seconds).unwrap())
 }
 
 fn parse_unsigned(value: &str, what: &str) -> Result<u32, String> {
@@ -143,6 +137,10 @@ fn parse_entries(entries: &mut u8, is_vts: bool, value: &str) -> Result<(), Stri
 }
 
 impl Builder {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The attribute dispatch keeps node-specific validation and error precedence in one match"
+    )]
     fn attribute(&mut self, node: Node, name: &str, value: &str) -> Result<(), String> {
         match node {
             Node::Dvdauthor => match name {
@@ -222,10 +220,10 @@ impl Builder {
                     "down" => button.down = Some(value.to_string()),
                     "left" => button.left = Some(value.to_string()),
                     "right" => button.right = Some(value.to_string()),
-                    "x0" => button.x0 = parse_unsigned(value, "button x0")? as i32,
-                    "y0" => button.y0 = parse_unsigned(value, "button y0")? as i32,
-                    "x1" => button.x1 = parse_unsigned(value, "button x1")? as i32,
-                    "y1" => button.y1 = parse_unsigned(value, "button y1")? as i32,
+                    "x0" => button.x0 = parse_unsigned(value, "button x0")?.cast_signed(),
+                    "y0" => button.y0 = parse_unsigned(value, "button y0")?.cast_signed(),
+                    "x1" => button.x1 = parse_unsigned(value, "button x1")?.cast_signed(),
+                    "y1" => button.y1 = parse_unsigned(value, "button y1")?.cast_signed(),
                     _ => return Err(format!("unsupported button attribute {name:?}")),
                 }
             }
@@ -435,6 +433,10 @@ impl Builder {
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The VM context retains the low 16 bits of the menu PGC count like the C compiler"
+    )]
     fn finish(mut self) -> Result<Document, String> {
         for group in &mut self.document.menus {
             let context = VmContext {
