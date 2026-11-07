@@ -6,7 +6,7 @@
 use crate::{audio, batch, cache, identity};
 use dvda_native::{MlpInspection, NativeFormats, media::Callbacks};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use std::{
     fs,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -271,8 +271,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
                 let updated = finalized
                     .updated
                     .ok_or("MLP finalization returned no track update")?;
-                cache::record_mlp(
-                    &mut cache_entries,
+                cache_entries.record(
                     &finalized.destination,
                     finalized
                         .cache_entry
@@ -291,7 +290,7 @@ pub fn execute(mut job: Job, caller: &mut dyn Callbacks) -> std::result::Result<
     caller.progress(100, 100);
     cache::dispatch(
         "cache.save",
-        json!({"Path":job.cache_path,"Entries":cache_entries}),
+        json!({"Path":job.cache_path,"Entries":cache_entries.entries()}),
     )?;
     Ok(Outcome {
         tracks,
@@ -349,7 +348,7 @@ fn check_worker_count(tracks: usize) -> usize {
 )]
 fn check_tracks(
     job: &Job,
-    entries: &mut Map<String, Value>,
+    entries: &mut cache::MlpCache,
     tracks: &mut [Value],
     diagnostics: &mut Vec<Value>,
     caller: &mut dyn Callbacks,
@@ -470,7 +469,7 @@ fn check_tracks(
         return Err(error);
     }
     for (destination, entry) in updates {
-        cache::record_mlp(entries, &destination, entry);
+        entries.record(&destination, entry);
     }
     pending.sort_by_key(|track| track.index);
     issues.sort_by_key(|(index, _)| *index);
@@ -481,7 +480,7 @@ fn check_tracks(
 
 fn check_track(
     job: &Job,
-    entries: &Map<String, Value>,
+    entries: &cache::MlpCache,
     index: usize,
     native: NativeFormats,
     caller: &mut dyn Callbacks,
@@ -503,7 +502,7 @@ fn check_track(
         if caller.cancelled() {
             return Err("MLP 编码已被取消。".into());
         }
-        let mut entry = cache::find_mlp(entries, &destination).unwrap().clone();
+        let mut entry = entries.find(&destination).unwrap().clone();
         let updated = update_track(
             track,
             Some(&source_identity),
@@ -547,13 +546,8 @@ fn validate(job: &Job) -> Result<(), String> {
     Ok(())
 }
 
-fn cache_matches(
-    entries: &Map<String, Value>,
-    destination: &Path,
-    source: &Value,
-    job: &Job,
-) -> bool {
-    let Some(entry) = cache::find_mlp(entries, destination) else {
+fn cache_matches(entries: &cache::MlpCache, destination: &Path, source: &Value, job: &Job) -> bool {
+    let Some(entry) = entries.find(destination) else {
         return false;
     };
     let request = json!({
@@ -903,7 +897,7 @@ mod tests {
         unit[32..34].copy_from_slice(&3u16.to_be_bytes());
         unit[34..38].copy_from_slice(&[0xd2, 0x34, 0xd2, 0x34]);
         let stream = native.align(&unit).unwrap().data.repeat(8000);
-        let mut entries = Map::new();
+        let mut entries = cache::MlpCache::default();
         let mut tracks = Vec::new();
         for index in 0..6 {
             let source = root.join(format!("音源-{index}.flac"));
@@ -914,8 +908,7 @@ mod tests {
             fs::write(&destination, &stream).unwrap();
             assert!(native.inspect_file(&destination).unwrap().is_valid);
             tracks.push(json!({"SourcePath":source,"Title":format!("曲目 {index}")}));
-            cache::record_mlp(
-                &mut entries,
+            entries.record(
                 &destination,
                 json!({
                     "source":identity::compute(&source.to_string_lossy()).unwrap(),
@@ -1175,10 +1168,10 @@ mod tests {
         fs::write(&destination, b"output").unwrap();
         let source_identity = identity::compute(&source.to_string_lossy()).unwrap();
         let output_identity = identity::compute(&destination.to_string_lossy()).unwrap();
-        let mut entries = Map::new();
+        let mut entries = cache::MlpCache::default();
         let key = destination.to_string_lossy().to_uppercase();
         let entry = json!({"source":source_identity,"output":output_identity,"encoder":"encoder-v1","bits":24,"resample_to":48000,"max_interval":8});
-        entries.insert(key.clone(), entry.clone());
+        entries.record(Path::new(&key), entry.clone());
         let job = Job {
             media_library: PathBuf::new(),
             encoder_library: PathBuf::new(),
@@ -1208,14 +1201,15 @@ mod tests {
             ("source", Value::Null),
             ("output", Value::Null),
         ] {
-            entries[&key] = entry.clone();
-            entries[&key][field] = replacement;
+            let mut changed = entry.clone();
+            changed[field] = replacement;
+            entries.record(Path::new(&key), changed);
             assert!(
                 !cache_matches(&entries, &destination, &source_identity, &job),
                 "accepted changed {field}"
             );
         }
-        entries[&key] = entry;
+        entries.record(Path::new(&key), entry);
         let time = fs::metadata(&destination).unwrap().modified().unwrap();
         fs::write(&destination, b"change").unwrap();
         fs::OpenOptions::new()

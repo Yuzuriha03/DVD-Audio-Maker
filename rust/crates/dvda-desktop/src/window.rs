@@ -13,11 +13,11 @@ use super::{
     WM_GETMINMAXINFO, WM_MEASUREITEM, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
     WM_NCLBUTTONDOWN, WM_NOTIFY, WM_PAINT, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, Wparam,
     apply_theme, autosave, body_brush, brush, c_body, c_card, c_disabled_fill, c_disabled_text,
-    c_ink, c_muted, c_void, cancel_operation, card_brush, checked, create_controls, dark_theme,
-    drain_worker_logs, draw_owner_item, handle_command, header_height, hide_splitter_preview,
-    layout, outline_resize, paint_fields, paint_window, ptr, refresh_dynamic_indicators,
-    render_log, rescale_ui, scale, state, system_prefers_dark, unscale, update_splitter_preview,
-    update_statistics, win, window_class,
+    c_ink, c_muted, c_void, cancel_operation, card_brush, checked, clear_window_paint_cache,
+    create_controls, dark_theme, drain_worker_logs, draw_owner_item, handle_command, header_height,
+    hide_splitter_preview, layout, outline_resize, paint_fields, paint_window, ptr,
+    refresh_dynamic_indicators, render_log, rescale_ui, scale, state, system_prefers_dark, unscale,
+    update_splitter_preview, update_statistics, win, window_class,
 };
 
 /// # Safety
@@ -61,6 +61,7 @@ pub(crate) unsafe extern "system" fn window_proc(
             KillTimer(hwnd, 1);
         }
         PAINT_FIELDS.with(|fields| fields.borrow_mut().remove(&(hwnd as usize)));
+        clear_window_paint_cache(hwnd);
         let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<UiState>;
         if !pointer.is_null() {
             // Detach first: nothing reached while the state drops may find it again.

@@ -943,14 +943,24 @@ pub fn read_wav_layout_from(input: &mut (impl Read + Seek)) -> Result<WavLayout,
 
 fn flac_comments(request: &Value) -> Result<Value, String> {
     let path = request.as_str().ok_or("Expected FLAC path")?;
-    let document = read_flac(path)?;
-    let block = document
-        .iter()
-        .find(|(kind, _)| *kind == 4)
-        .map(|(_, data)| data.as_slice());
-    let Some(data) = block else {
+    let (mut file, length) = open_flac(path)?;
+    flac_comments_reader(&mut file, length)
+}
+
+/// Streams the Vorbis comment block from a seekable FLAC source.
+///
+/// # Errors
+/// Returns a diagnostic for I/O failures, malformed block chains, or invalid
+/// comment data, with the same precedence as the `flac.comments` operation.
+#[doc(hidden)]
+pub fn flac_comments_reader<R: Read + Seek>(reader: &mut R, length: u64) -> Result<Value, String> {
+    let Some(data) = read_flac_metadata(reader, length, Some(4))? else {
         return Ok(json!([]));
     };
+    parse_flac_comments(&data)
+}
+
+fn parse_flac_comments(data: &[u8]) -> Result<Value, String> {
     let mut reader = FlacReader::new(data);
     let vendor_length = reader.u32_le()?;
     reader.bytes(vendor_length)?;
@@ -972,13 +982,49 @@ fn flac_comments(request: &Value) -> Result<Value, String> {
     Ok(Value::Array(comments))
 }
 
-fn flac_picture(request: &Value) -> Result<Value, String> {
-    let path = request.as_str().ok_or("Expected FLAC path")?;
-    let document = read_flac(path)?;
-    let Some((_, data)) = document.iter().find(|(kind, _)| *kind == 6) else {
-        return Ok(Value::Null);
+#[doc(hidden)]
+pub struct FlacPictureData {
+    pub metadata: Value,
+    block: Vec<u8>,
+    image_offset: usize,
+}
+
+impl FlacPictureData {
+    #[must_use]
+    pub fn image(&self) -> &[u8] {
+        &self.block[self.image_offset..]
+    }
+}
+
+#[doc(hidden)]
+pub fn flac_picture_data(path: &Path) -> Result<FlacPictureData, String> {
+    let path = path.to_str().ok_or("Expected FLAC path")?;
+    let (mut file, length) = open_flac(path)?;
+    flac_picture_data_reader(&mut file, length)
+}
+
+/// Streams the PICTURE block from a seekable FLAC source.
+///
+/// # Errors
+/// Returns a diagnostic for I/O failures, malformed block chains, or invalid
+/// picture data, with the same precedence as the `flac.picture` operation.
+#[doc(hidden)]
+pub fn flac_picture_data_reader<R: Read + Seek>(
+    reader: &mut R,
+    length: u64,
+) -> Result<FlacPictureData, String> {
+    let Some(block) = read_flac_metadata(reader, length, Some(6))? else {
+        return Ok(FlacPictureData {
+            metadata: Value::Null,
+            block: Vec::new(),
+            image_offset: 0,
+        });
     };
-    let mut reader = FlacReader::new(data);
+    parse_flac_picture(block)
+}
+
+fn parse_flac_picture(block: Vec<u8>) -> Result<FlacPictureData, String> {
+    let mut reader = FlacReader::new(&block);
     let picture_type = reader.u32_be()?;
     let mime_length = reader.u32_be()?;
     let mime = reader.text(mime_length)?;
@@ -989,7 +1035,7 @@ fn flac_picture(request: &Value) -> Result<Value, String> {
     let depth = reader.u32_be()?;
     let colors = reader.u32_be()?;
     let image_length = reader.u32_be()?;
-    let image = reader.bytes(image_length)?;
+    reader.bytes(image_length)?;
     reader.require_end()?;
     if picture_type > i32::MAX as u32
         || width > i32::MAX as u32
@@ -999,7 +1045,7 @@ fn flac_picture(request: &Value) -> Result<Value, String> {
     {
         return Err("FLAC PICTURE values exceed the supported range.".into());
     }
-    Ok(json!({
+    let metadata = json!({
         "Descriptor": {
             "Type": picture_type,
             "MimeType": mime,
@@ -1009,8 +1055,30 @@ fn flac_picture(request: &Value) -> Result<Value, String> {
         },
         "Description": description,
         "Colors": colors,
-        "ImageHex": hex_encode(image),
-    }))
+    });
+    Ok(FlacPictureData {
+        metadata,
+        image_offset: block.len() - image_length as usize,
+        block,
+    })
+}
+
+fn flac_picture(request: &Value) -> Result<Value, String> {
+    let path = request.as_str().ok_or("Expected FLAC path")?;
+    Ok(flac_picture_json(flac_picture_data(Path::new(path))?))
+}
+
+fn flac_picture_json(data: FlacPictureData) -> Value {
+    if data.metadata.is_null() {
+        return Value::Null;
+    }
+    let image = hex_encode(data.image());
+    let mut metadata = data.metadata;
+    metadata
+        .as_object_mut()
+        .expect("picture metadata is an object")
+        .insert("ImageHex".into(), Value::String(image));
+    metadata
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1222,9 +1290,81 @@ fn alac_apply_patches(request: Value) -> Result<Value, String> {
     Ok(json!({"WrittenBytes": written}))
 }
 
-fn read_flac(path: &str) -> Result<Vec<(u8, Vec<u8>)>, String> {
-    let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
-    read_flac_document(&bytes).map(|(blocks, _)| blocks)
+fn open_flac(path: &str) -> Result<(fs::File, u64), String> {
+    let file = fs::File::open(path).map_err(|error| format!("{path}: {error}"))?;
+    let length = file
+        .metadata()
+        .map_err(|error| format!("{path}: {error}"))?
+        .len();
+    Ok((file, length))
+}
+
+/// Streams the FLAC metadata block chain, capturing the first block of `wanted`.
+///
+/// Bodies of blocks that are not `wanted` are skipped with a seek, and audio
+/// frames after the final metadata block are never read.
+fn read_flac_metadata<R: Read + Seek>(
+    reader: &mut R,
+    length: u64,
+    wanted: Option<u8>,
+) -> Result<Option<Vec<u8>>, String> {
+    if length < 4 {
+        return Err("Not a FLAC stream.".into());
+    }
+    let mut magic = [0; 4];
+    reader
+        .read_exact(&mut magic)
+        .map_err(|error| error.to_string())?;
+    if &magic != b"fLaC" {
+        return Err("Not a FLAC stream.".into());
+    }
+    let mut offset = 4u64;
+    let mut first: Option<(u8, u32)> = None;
+    let mut captured: Option<Vec<u8>> = None;
+    let mut last = false;
+    while !last {
+        if length.saturating_sub(offset) < 4 {
+            return Err("FLAC metadata header is truncated.".into());
+        }
+        let mut header = [0; 4];
+        reader
+            .read_exact(&mut header)
+            .map_err(|error| error.to_string())?;
+        last = header[0] & 0x80 != 0;
+        let kind = header[0] & 0x7f;
+        let block_length =
+            (u32::from(header[1]) << 16) | (u32::from(header[2]) << 8) | u32::from(header[3]);
+        offset += 4;
+        let end = offset
+            .checked_add(u64::from(block_length))
+            .ok_or("FLAC metadata length overflow")?;
+        if end > length {
+            return Err("FLAC metadata block is truncated.".into());
+        }
+        if first.is_none() {
+            first = Some((kind, block_length));
+        }
+        if Some(kind) == wanted && captured.is_none() {
+            let mut block = vec![
+                0;
+                usize::try_from(block_length)
+                    .expect("24-bit FLAC metadata length fits usize")
+            ];
+            reader
+                .read_exact(&mut block)
+                .map_err(|error| error.to_string())?;
+            captured = Some(block);
+        } else {
+            reader
+                .seek(SeekFrom::Start(end))
+                .map_err(|error| error.to_string())?;
+        }
+        offset = end;
+    }
+    if first.is_none_or(|(kind, block_length)| kind != 0 || block_length != 34) {
+        return Err("FLAC STREAMINFO block is missing or invalid.".into());
+    }
+    Ok(captured)
 }
 
 type FlacBlocks = Vec<(u8, Vec<u8>)>;
@@ -1499,5 +1639,358 @@ mod dvd_audio_filesystem_tests {
                 .unwrap_err()
                 .starts_with("UDF_VDS_EXTENT_INVALID")
         );
+    }
+}
+
+/// Release-only A/B benchmark for the FLAC metadata streaming change.
+///
+/// The document path is the pre-change `fs::read` + `read_flac_document` query;
+/// the streaming path is `open_flac` + `read_flac_metadata`. Both use the same
+/// on-disk FLAC with a real audio region, large non-target metadata, a Vorbis
+/// comment block, and a PICTURE block. Run with:
+/// `cargo test --release -p dvda-core --lib -- --ignored --exact formats::flac_streaming_bench::flac_streaming_ab_benchmark --nocapture --test-threads=1`
+#[cfg(test)]
+mod flac_streaming_bench {
+    use super::{
+        FlacPictureData, flac_comments_reader, flac_picture_data_reader, flac_picture_json,
+        open_flac, parse_flac_comments, parse_flac_picture, read_flac_document, read_flac_metadata,
+    };
+    use serde_json::{Value, json};
+    use std::{
+        fmt::Debug,
+        fs::{self, File},
+        hint::black_box,
+        io::{BufWriter, Write},
+        path::{Path, PathBuf},
+        time::Instant,
+    };
+
+    const AUDIO_BYTES: usize = 64 * 1024 * 1024;
+    const LEADING_PADDING: u32 = 8 * 1024 * 1024;
+    const TRAILING_PADDING: u32 = 2 * 1024 * 1024;
+    const IMAGE_BYTES: usize = 6 * 1024 * 1024;
+    const ROUNDS: usize = 3;
+
+    struct BenchScratch(PathBuf);
+
+    impl BenchScratch {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("dvda-flac-stream-bench-{}", std::process::id()));
+            fs::create_dir_all(&path).expect("benchmark scratch directory is creatable");
+            Self(path)
+        }
+    }
+
+    impl Drop for BenchScratch {
+        fn drop(&mut self) {
+            drop(fs::remove_dir_all(&self.0));
+        }
+    }
+
+    fn encode_length(value: usize) -> u32 {
+        u32::try_from(value).expect("benchmark payload fits a 24-bit FLAC block length")
+    }
+
+    fn comment_payload() -> Vec<u8> {
+        let values = ["TITLE=streaming-benchmark", "ARTIST=DVDA"];
+        let vendor = b"bench";
+        let mut data = encode_length(vendor.len()).to_le_bytes().to_vec();
+        data.extend_from_slice(vendor);
+        data.extend_from_slice(&encode_length(values.len()).to_le_bytes());
+        for value in values {
+            data.extend_from_slice(&encode_length(value.len()).to_le_bytes());
+            data.extend_from_slice(value.as_bytes());
+        }
+        data
+    }
+
+    fn picture_payload() -> Vec<u8> {
+        let mut data = 3u32.to_be_bytes().to_vec();
+        for text in ["image/png", "streaming cover"] {
+            data.extend_from_slice(&encode_length(text.len()).to_be_bytes());
+            data.extend_from_slice(text.as_bytes());
+        }
+        for number in [3u32, 2, 24, 0, encode_length(IMAGE_BYTES)] {
+            data.extend_from_slice(&number.to_be_bytes());
+        }
+        for index in 0..IMAGE_BYTES {
+            data.push(u8::try_from((index * 37 + 11) % 256).expect("modulo fits u8"));
+        }
+        data
+    }
+
+    fn write_block_header<W: Write>(
+        output: &mut W,
+        kind: u8,
+        length: u32,
+        last: bool,
+    ) -> std::io::Result<()> {
+        let bytes = length.to_be_bytes();
+        output.write_all(&[
+            kind | if last { 0x80 } else { 0 },
+            bytes[1],
+            bytes[2],
+            bytes[3],
+        ])
+    }
+
+    fn write_zeros<W: Write>(output: &mut W, mut remaining: u32) -> std::io::Result<()> {
+        const CHUNK: u32 = 1024 * 1024;
+        let zeros = vec![0u8; usize::try_from(CHUNK).expect("chunk fits usize")];
+        while remaining > 0 {
+            let count = remaining.min(CHUNK);
+            output.write_all(&zeros[..usize::try_from(count).expect("count fits usize")])?;
+            remaining -= count;
+        }
+        Ok(())
+    }
+
+    fn write_audio<W: Write>(output: &mut W, mut remaining: usize) -> std::io::Result<()> {
+        const CHUNK: usize = 64 * 1024;
+        let mut buffer = vec![0u8; CHUNK];
+        let mut state = 0x1234_5678_u32;
+        while remaining > 0 {
+            let count = remaining.min(CHUNK);
+            for byte in &mut buffer[..count] {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                *byte = u8::try_from(state & 0xff).expect("masked generator byte fits u8");
+            }
+            output.write_all(&buffer[..count])?;
+            remaining -= count;
+        }
+        Ok(())
+    }
+
+    fn build_file(path: &Path) -> std::io::Result<()> {
+        let mut output = BufWriter::with_capacity(1024 * 1024, File::create(path)?);
+        output.write_all(b"fLaC")?;
+        write_block_header(&mut output, 0, 34, false)?;
+        output.write_all(&[0; 34])?;
+        write_block_header(&mut output, 1, LEADING_PADDING, false)?;
+        write_zeros(&mut output, LEADING_PADDING)?;
+        let comments = comment_payload();
+        write_block_header(&mut output, 4, encode_length(comments.len()), false)?;
+        output.write_all(&comments)?;
+        let picture = picture_payload();
+        write_block_header(&mut output, 6, encode_length(picture.len()), false)?;
+        output.write_all(&picture)?;
+        write_block_header(&mut output, 1, TRAILING_PADDING, true)?;
+        write_zeros(&mut output, TRAILING_PADDING)?;
+        write_audio(&mut output, AUDIO_BYTES)?;
+        output.flush()
+    }
+
+    fn document_comments(path: &str) -> Result<Value, String> {
+        let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+        let (blocks, _) = read_flac_document(&bytes)?;
+        let Some((_, data)) = blocks.iter().find(|(kind, _)| *kind == 4) else {
+            return Ok(json!([]));
+        };
+        parse_flac_comments(data)
+    }
+
+    fn document_picture_data(path: &str) -> Result<FlacPictureData, String> {
+        let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+        let (blocks, _) = read_flac_document(&bytes)?;
+        let Some((_, block)) = blocks.into_iter().find(|(kind, _)| *kind == 6) else {
+            return Ok(FlacPictureData {
+                metadata: Value::Null,
+                block: Vec::new(),
+                image_offset: 0,
+            });
+        };
+        parse_flac_picture(block)
+    }
+
+    fn stream_comments(path: &str) -> Result<Value, String> {
+        let (mut file, length) = open_flac(path)?;
+        flac_comments_reader(&mut file, length)
+    }
+
+    fn stream_picture_data(path: &str) -> Result<FlacPictureData, String> {
+        let (mut file, length) = open_flac(path)?;
+        flac_picture_data_reader(&mut file, length)
+    }
+
+    fn document_picture_json(path: &str) -> Result<Value, String> {
+        document_picture_data(path).map(flac_picture_json)
+    }
+
+    fn stream_picture_json(path: &str) -> Result<Value, String> {
+        stream_picture_data(path).map(flac_picture_json)
+    }
+
+    fn timed<T>(operation: impl FnOnce() -> T) -> (T, u128) {
+        let start = Instant::now();
+        let value = operation();
+        (black_box(value), start.elapsed().as_nanos())
+    }
+
+    fn compare_pair<T: Debug + PartialEq>(
+        reverse: bool,
+        document: impl Fn() -> T,
+        stream: impl Fn() -> T,
+    ) -> (u128, u128) {
+        if reverse {
+            let (stream_value, stream_ns) = timed(&stream);
+            let (document_value, document_ns) = timed(&document);
+            assert_eq!(document_value, stream_value, "old and new results differ");
+            (document_ns, stream_ns)
+        } else {
+            let (document_value, document_ns) = timed(&document);
+            let (stream_value, stream_ns) = timed(&stream);
+            assert_eq!(document_value, stream_value, "old and new results differ");
+            (document_ns, stream_ns)
+        }
+    }
+
+    #[derive(Default)]
+    struct Timings {
+        document: [u128; ROUNDS],
+        stream: [u128; ROUNDS],
+    }
+
+    fn median(mut values: [u128; ROUNDS]) -> u128 {
+        values.sort_unstable();
+        values[ROUNDS / 2]
+    }
+
+    fn report(label: &str, timings: &Timings) {
+        println!("[BENCH] {label}_document_ns={:?}", timings.document);
+        println!("[BENCH] {label}_stream_ns={:?}", timings.stream);
+        println!(
+            "[BENCH] {label}_median_document_ns={} median_stream_ns={}",
+            median(timings.document),
+            median(timings.stream)
+        );
+    }
+
+    fn verify_equivalence(path: &str, length: u64) {
+        let bytes = fs::read(path).expect("benchmark input is readable");
+        let (blocks, _) = read_flac_document(&bytes).expect("benchmark input has a block chain");
+        let document_comment_block = blocks
+            .iter()
+            .find(|(kind, _)| *kind == 4)
+            .expect("benchmark comment block exists")
+            .1
+            .clone();
+        let document_picture_block = blocks
+            .iter()
+            .find(|(kind, _)| *kind == 6)
+            .expect("benchmark picture block exists")
+            .1
+            .clone();
+
+        let (mut comment_reader, comment_length) =
+            open_flac(path).expect("benchmark input opens for comments");
+        assert_eq!(comment_length, length);
+        let stream_comment_block = read_flac_metadata(&mut comment_reader, length, Some(4))
+            .expect("comment block chain parses")
+            .expect("benchmark comment block exists");
+        let (mut picture_reader, picture_length) =
+            open_flac(path).expect("benchmark input opens for pictures");
+        assert_eq!(picture_length, length);
+        let stream_picture_block = read_flac_metadata(&mut picture_reader, length, Some(6))
+            .expect("picture block chain parses")
+            .expect("benchmark picture block exists");
+        assert_eq!(
+            document_comment_block, stream_comment_block,
+            "comment block bytes differ"
+        );
+        assert_eq!(
+            document_picture_block, stream_picture_block,
+            "picture block bytes differ"
+        );
+
+        let document_comments_value = document_comments(path).expect("old comments query succeeds");
+        let stream_comments_value = stream_comments(path).expect("new comments query succeeds");
+        assert_eq!(
+            document_comments_value, stream_comments_value,
+            "comments JSON differs"
+        );
+
+        let document_picture_value =
+            document_picture_data(path).expect("old picture query succeeds");
+        let stream_picture_value = stream_picture_data(path).expect("new picture query succeeds");
+        assert_eq!(
+            document_picture_value.metadata, stream_picture_value.metadata,
+            "picture metadata differs"
+        );
+        assert_eq!(
+            document_picture_value.image(),
+            stream_picture_value.image(),
+            "picture bytes differ"
+        );
+        let document_picture_json_value = flac_picture_json(document_picture_value);
+        let stream_picture_json_value = flac_picture_json(stream_picture_value);
+        assert_eq!(
+            document_picture_json_value, stream_picture_json_value,
+            "picture JSON differs"
+        );
+        assert!(
+            document_picture_json_value["ImageHex"]
+                .as_str()
+                .is_some_and(|hex| hex.len() == IMAGE_BYTES * 2),
+            "picture JSON does not contain the expected image bytes"
+        );
+    }
+
+    #[test]
+    #[ignore = "release-only A/B benchmark for FLAC metadata streaming"]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the benchmark keeps its input, alternating rounds, and comparison in one place"
+    )]
+    fn flac_streaming_ab_benchmark() {
+        let scratch = BenchScratch::new();
+        let path = scratch.0.join("stream-bench.flac");
+        build_file(&path).expect("benchmark FLAC is writable");
+        let path_text = path.to_str().expect("benchmark path is UTF-8");
+        let length = fs::metadata(&path).expect("benchmark FLAC exists").len();
+        verify_equivalence(path_text, length);
+
+        let mut comments = Timings::default();
+        let mut pictures = Timings::default();
+        let mut picture_json = Timings::default();
+        for round in 0..ROUNDS {
+            let reverse = round % 2 == 1;
+            let (document_ns, stream_ns) = compare_pair(
+                reverse,
+                || document_comments(path_text),
+                || stream_comments(path_text),
+            );
+            comments.document[round] = document_ns;
+            comments.stream[round] = stream_ns;
+
+            if reverse {
+                let (_, stream_ns) = timed(|| stream_picture_data(path_text));
+                pictures.stream[round] = stream_ns;
+                let (_, document_ns) = timed(|| document_picture_data(path_text));
+                pictures.document[round] = document_ns;
+            } else {
+                let (_, document_ns) = timed(|| document_picture_data(path_text));
+                pictures.document[round] = document_ns;
+                let (_, stream_ns) = timed(|| stream_picture_data(path_text));
+                pictures.stream[round] = stream_ns;
+            }
+
+            let (picture_document_ns, picture_stream_ns) = compare_pair(
+                reverse,
+                || document_picture_json(path_text),
+                || stream_picture_json(path_text),
+            );
+            picture_json.document[round] = picture_document_ns;
+            picture_json.stream[round] = picture_stream_ns;
+        }
+
+        println!(
+            "[BENCH] file_bytes={length} audio_bytes={AUDIO_BYTES} image_bytes={IMAGE_BYTES} leading_padding={LEADING_PADDING} trailing_padding={TRAILING_PADDING}"
+        );
+        report("comments", &comments);
+        report("picture_raw", &pictures);
+        report("picture_json", &picture_json);
     }
 }

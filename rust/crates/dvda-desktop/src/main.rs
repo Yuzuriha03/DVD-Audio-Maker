@@ -71,8 +71,9 @@ use controls::{
 };
 use dialogs::{FileKind, browse_target, file_dialog, message_box, open_output};
 use draw::{
-    begin_buffered_paint, buffered_label_proc, combo_item_text, draw_owner_item, draw_text_run,
-    fill_round_rect, finish_buffered_paint, paint_page, paint_page_border, paint_window,
+    begin_buffered_paint, buffered_label_proc, clear_window_paint_cache, combo_item_text,
+    draw_owner_item, draw_text_run, fill_round_rect, finish_buffered_paint, paint_page,
+    paint_page_border, paint_window,
 };
 use frame::{clamp_window_size, hide_splitter_preview, outline_resize, update_splitter_preview};
 use gdi::{

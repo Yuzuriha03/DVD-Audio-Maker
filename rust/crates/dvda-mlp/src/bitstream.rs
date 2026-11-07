@@ -14,6 +14,13 @@ pub(crate) struct Bits {
     counted_words: usize,
 }
 impl Bits {
+    pub(crate) fn with_capacity(words: usize) -> Self {
+        Self {
+            words: Vec::with_capacity(words),
+            ..Self::default()
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn counting() -> Self {
         Self {

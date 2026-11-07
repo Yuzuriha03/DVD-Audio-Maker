@@ -1,6 +1,8 @@
 //! Owner drawing: buttons, tabs, caption buttons, combo items, labels, the window
 //! background and buffered painting.
 
+use std::cell::RefCell;
+
 use super::{
     BeginPaint, BitBlt, CB_GETCURSEL, CB_GETLBTEXT, CB_GETLBTEXTLEN, COMBO_IDS,
     CreateCompatibleBitmap, CreateCompatibleDC, CreatePen, CreateSolidBrush, DT_CALCRECT,
@@ -551,9 +553,6 @@ pub(crate) unsafe fn draw_owner_item(hwnd: Hwnd, item: &DrawItemStruct) -> bool 
     }
 }
 
-/// # Safety
-/// `hwnd` must be the window that received this `WM_DRAWITEM`, and `item` must be that
-/// message's `DrawItemStruct`, valid only during the message.
 pub(crate) unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct) -> bool {
     let id = item.control_id as usize;
     if COMBO_IDS.contains(&id) {
@@ -582,6 +581,7 @@ pub(crate) unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct)
 }
 
 pub(crate) struct BufferedPaint {
+    window: Hwnd,
     target: Handle,
     pub(crate) memory: Handle,
     bitmap: Handle,
@@ -620,6 +620,7 @@ pub(crate) unsafe fn begin_buffered_paint(
             DeleteDC(memory);
         }
         return BufferedPaint {
+            window: hwnd,
             target,
             memory: target,
             bitmap: ptr::null_mut(),
@@ -632,6 +633,7 @@ pub(crate) unsafe fn begin_buffered_paint(
         FillRect(memory, &rect, brush(background));
     }
     BufferedPaint {
+        window: hwnd,
         target,
         memory,
         bitmap,
@@ -668,6 +670,96 @@ pub(crate) unsafe fn finish_buffered_paint(
         EndPaint(hwnd, paint);
     }
 }
+thread_local! {
+    static WINDOW_PAINT: RefCell<Option<BufferedPaint>> = const { RefCell::new(None) };
+}
+
+const fn same_rect(left: &Rect, right: &Rect) -> bool {
+    left.left == right.left
+        && left.top == right.top
+        && left.right == right.right
+        && left.bottom == right.bottom
+}
+
+fn destroy_buffer(buffer: &BufferedPaint) {
+    SelectObject(buffer.memory, buffer.previous);
+    DeleteObject(buffer.bitmap);
+    DeleteDC(buffer.memory);
+}
+
+/// # Safety
+/// `hwnd` must be the main window, inside its `WM_PAINT`.
+pub(crate) unsafe fn begin_window_paint(
+    hwnd: Hwnd,
+    paint: &mut PaintStruct,
+    background: u32,
+) -> BufferedPaint {
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    GetClientRect(hwnd, &mut rect);
+    WINDOW_PAINT.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(mut buffer) = cache.take() {
+            if buffer.window == hwnd && same_rect(&buffer.rect, &rect) {
+                buffer.target = unsafe { BeginPaint(hwnd, paint) };
+                buffer.previous = SelectObject(buffer.memory, buffer.bitmap);
+                FillRect(buffer.memory, &rect, brush(background));
+                return buffer;
+            }
+            destroy_buffer(&buffer);
+        }
+        drop(cache);
+        unsafe { begin_buffered_paint(hwnd, paint, background) }
+    })
+}
+
+/// # Safety
+/// Must be called exactly once with the result of `begin_window_paint` in the same paint cycle.
+pub(crate) unsafe fn finish_window_paint(hwnd: Hwnd, paint: &PaintStruct, buffer: BufferedPaint) {
+    unsafe {
+        if !buffer.bitmap.is_null() {
+            BitBlt(
+                buffer.target,
+                0,
+                0,
+                buffer.rect.right,
+                buffer.rect.bottom,
+                buffer.memory,
+                0,
+                0,
+                0x00cc_0020,
+            );
+            SelectObject(buffer.memory, buffer.previous);
+            WINDOW_PAINT.with(|cache| {
+                if let Some(old) = cache.borrow_mut().replace(buffer) {
+                    destroy_buffer(&old);
+                }
+            });
+        }
+        EndPaint(hwnd, paint);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn window_paint_cache_len() -> usize {
+    WINDOW_PAINT.with(|cache| usize::from(cache.borrow().is_some()))
+}
+
+pub(crate) fn clear_window_paint_cache(hwnd: Hwnd) {
+    WINDOW_PAINT.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.as_ref().is_some_and(|buffer| buffer.window == hwnd)
+            && let Some(buffer) = cache.take()
+        {
+            destroy_buffer(&buffer);
+        }
+    });
+}
+
 /// # Safety
 /// `hwnd` must be the main window, inside its `WM_PAINT`.
 #[allow(
@@ -676,7 +768,7 @@ pub(crate) unsafe fn finish_buffered_paint(
 )]
 pub(crate) unsafe fn paint_window(hwnd: Hwnd) {
     let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
-    let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_body()) };
+    let buffer = unsafe { begin_window_paint(hwnd, &mut paint, c_body()) };
     let dc = buffer.memory;
     let mut rect = Rect {
         left: 0,
@@ -792,7 +884,7 @@ pub(crate) unsafe fn paint_window(hwnd: Hwnd) {
             };
             FillRect(dc, &grip, border_brush());
         }
-        finish_buffered_paint(hwnd, &paint, &buffer);
+        finish_window_paint(hwnd, &paint, buffer);
     }
 }
 

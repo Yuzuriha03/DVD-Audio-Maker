@@ -9,6 +9,7 @@ struct Node {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum QueueFailure {
+    #[cfg(test)]
     Allocation,
     Timing,
     Output,
@@ -62,14 +63,30 @@ impl MlpOutputQueue {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub(crate) fn mlp_output_queue_push(
+        &mut self,
+        words: &[u32],
+        samples: u32,
+        emit: &mut impl FnMut(&[u32]) -> bool,
+    ) -> bool {
+        let mut owned = Vec::new();
+        if owned.try_reserve_exact(words.len()).is_err() {
+            self.failure = Some(QueueFailure::Allocation);
+            return false;
+        }
+        owned.extend_from_slice(words);
+        self.mlp_output_queue_push_owned(owned, samples, emit)
+    }
+
     #[allow(
         clippy::cast_possible_truncation,
         clippy::verbose_bit_mask,
         reason = "Queue word counts are admitted at 4..=4095 and the 0x7fff rate mask is an explicit MLP header field"
     )]
-    pub(crate) fn mlp_output_queue_push(
+    pub(crate) fn mlp_output_queue_push_owned(
         &mut self,
-        words: &[u32],
+        words: Vec<u32>,
         samples: u32,
         emit: &mut impl FnMut(&[u32]) -> bool,
     ) -> bool {
@@ -114,14 +131,8 @@ impl MlpOutputQueue {
             arrival: words[1],
             header: words[0],
         };
-        let mut copy = Vec::new();
-        if copy.try_reserve_exact(count).is_err() {
-            self.failure = Some(QueueFailure::Allocation);
-            return false;
-        }
-        copy.extend_from_slice(words);
         self.nodes.push_back(Node {
-            words: copy,
+            words,
             descriptor: d,
         });
         self.rate = rate;
@@ -336,5 +347,41 @@ mod tests {
         }
         assert!(queue.mlp_output_queue_push(&major_unit(), 40, &mut |_| true));
         assert!(queue.mlp_output_queue_finish(&mut |_| true));
+    }
+
+    #[test]
+    #[ignore = "deterministic throughput benchmark"]
+    fn queue_ownership_throughput() {
+        use std::time::Instant;
+
+        fn measure(owned: bool, source: &[u32]) -> (u128, usize) {
+            let mut elapsed = 0;
+            let mut pushed = 0;
+            for index in 0..10_000 {
+                let mut queue = MlpOutputQueue::mlp_output_queue_init();
+                let mut emit = |_: &[u32]| true;
+                assert!(queue.mlp_output_queue_push(&major_unit(), 40, &mut emit));
+                let words = source.to_vec();
+                let start = Instant::now();
+                let accepted = if owned {
+                    queue.mlp_output_queue_push_owned(words, 160, &mut emit)
+                } else {
+                    queue.mlp_output_queue_push(&words, 160, &mut emit)
+                };
+                elapsed += start.elapsed().as_nanos();
+                assert!(accepted, "index={index} failure={:?}", queue.failure);
+                pushed += 1;
+            }
+            (elapsed, pushed)
+        }
+
+        let mut source = vec![0; 495];
+        source[0] = 495;
+        source[2] = 492;
+        let (legacy, legacy_events) = measure(false, &source);
+        let (owned, owned_events) = measure(true, &source);
+        println!("[METRIC] queue_copy_ns={legacy} events={legacy_events}");
+        println!("[METRIC] queue_owned_ns={owned} events={owned_events}");
+        assert_eq!(legacy_events, owned_events);
     }
 }

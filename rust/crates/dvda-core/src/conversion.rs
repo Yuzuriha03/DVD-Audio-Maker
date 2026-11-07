@@ -8,7 +8,6 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::{
     collections::HashSet,
-    fmt::Write as _,
     fs,
     path::{Path, PathBuf},
     sync::{
@@ -280,12 +279,9 @@ fn one(job: &Job, input: &Path, caller: &mut dyn Callbacks) -> Result<ResultRow,
     request.tags.clone_from(&tags);
     request.cover = row.has_cover;
     run_media(&job.library, request, caller)?;
-    let reference = md5(&job.library, source, caller)?;
+    // The full-precision comparison below subsumes a separate source MD5 decode.
     let result = md5(&job.library, &target, caller)?;
-    if reference != result {
-        return Err("PCM MD5 不一致".into());
-    }
-    verify_pcm(&job.library, source, &target, &work.0, stream, caller)?;
+    verify_pcm(&job.library, source, &target, stream, caller)?;
     row.pcm_md5 = Some(result);
     let comments = formats::dispatch("flac.comments", json!(target))?;
     let comments = comments.as_array().ok_or("Invalid FLAC comments")?;
@@ -316,38 +312,59 @@ fn verify_pcm(
     library: &Path,
     source: &Path,
     target: &Path,
-    work: &Path,
     stream: &Value,
     caller: &mut dyn Callbacks,
 ) -> Result<(), String> {
     // Also compare all valid PCM bits; the historic MD5 output uses s16.
-    let bits = stream["bits_per_raw_sample"]
-        .as_i64()
-        .or_else(|| stream["bits_per_raw_sample"].as_str()?.parse().ok())
-        .unwrap_or(24);
-    let raw_paths = [work.join("source.pcm"), work.join("converted.pcm")];
-    for (source, raw) in [source, target].into_iter().zip(&raw_paths) {
-        let mut request = self::request(
+    let number = |key| {
+        stream[key]
+            .as_i64()
+            .or_else(|| stream[key].as_str()?.parse().ok())
+    };
+    let bits = number("bits_per_raw_sample").unwrap_or(24);
+    let rate = number("sample_rate")
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or("Missing PCM sample rate")?;
+    let channels = number("channels")
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or("Missing PCM channel count")?;
+    let result = crate::verify_audio_stream::compare(
+        &crate::verify_audio_stream::CompareJob {
+            library,
             source,
-            Operation::Audio,
-            if bits <= 16 {
-                OutputFormat::S16
-            } else {
-                OutputFormat::S24
-            },
-            Some(raw),
-        );
-        request.bits = if bits <= 16 { 16 } else { 24 };
-        run_media(library, request, caller)?;
+            decoded: target,
+            rate,
+            bits: if bits <= 16 { 16 } else { 24 },
+            channels,
+            builtin: false,
+        },
+        caller,
+    );
+    match result {
+        Err(error) if error.starts_with("PCM 不一致") => {
+            Err("Converted PCM differs at full precision".into())
+        }
+        Err(error) if error == "成品验证已取消。" => Err("Conversion cancelled".into()),
+        result => result,
     }
-    let native = dvda_native::NativeFormats::load()?;
-    if !native
-        .compare_pcm(&raw_paths[0], &raw_paths[1], 1, 0)?
-        .matches
-    {
-        return Err("Converted PCM differs at full precision".into());
+}
+
+#[cfg(test)]
+fn cover_hex_matches(bytes: &[u8], expected: &str) -> bool {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let expected = expected.as_bytes();
+    if bytes.len().checked_mul(2) != Some(expected.len()) {
+        return false;
     }
-    Ok(())
+    bytes
+        .iter()
+        .zip(expected.as_chunks::<2>().0)
+        .all(|(&byte, digits)| {
+            digits[0].eq_ignore_ascii_case(&HEX[usize::from(byte >> 4)])
+                && digits[1].eq_ignore_ascii_case(&HEX[usize::from(byte & 15)])
+        })
 }
 
 fn verify_cover(
@@ -377,21 +394,15 @@ fn verify_cover(
         ),
         caller,
     )?;
-    let mut picture = formats::dispatch("flac.picture", json!(target))?;
-    if picture.is_null() {
+    let picture_data = formats::flac_picture_data(target)?;
+    if picture_data.metadata.is_null() {
         return Err("FLAC PICTURE block is missing".into());
     }
     let bytes = fs::read(&source_cover).map_err(|e| e.to_string())?;
-    let hex = bytes.iter().fold(String::new(), |mut text, byte| {
-        let _ = write!(text, "{byte:02x}");
-        text
-    });
-    if !picture["ImageHex"]
-        .as_str()
-        .is_some_and(|s| s.eq_ignore_ascii_case(&hex))
-    {
+    if bytes != picture_data.image() {
         return Err("封面字节内容不一致".into());
     }
+    let mut picture = picture_data.metadata;
     let (dimensions, depth) = dvda_image::codec::metadata(std::io::Cursor::new(&bytes))
         .map_err(|e| format!("封面描述读取失败: {e}"))?;
     picture["Descriptor"]["Width"] = json!(dimensions.width());
@@ -456,7 +467,8 @@ pub fn execute(job: &Job, caller: &mut dyn Callbacks) -> Result<Vec<ResultRow>, 
     }
     let next = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
-    let count = crate::options::worker_count(paths.len());
+    let count = crate::options::WorkBudget::audio()
+        .workers(crate::options::worker_count(paths.len()), paths.len());
     let (send, receive) = mpsc::sync_channel(count);
     let mut rows = Vec::with_capacity(paths.len());
     let observed = std::thread::scope(|scope| {
@@ -526,6 +538,7 @@ fn delete_sources(rows: &mut [ResultRow], mut delete: impl FnMut(&str) -> std::i
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
     #[test]
     fn tags_preserve_values_and_delete_failures_do_not_stop_other_sources() {
         let raw = json!({"title":"  A\nB  ","track":"02/10","sort_name":" x ","encoder":"drop","blank":"  ","upc":"123"});
@@ -550,5 +563,294 @@ mod tests {
         assert_eq!(calls, 2);
         assert!(rows[0].source_delete_error.is_some());
         assert!(rows[1].source_delete_error.is_none());
+    }
+
+    fn wave(bits: u32, samples: &[i32]) -> Vec<u8> {
+        let width = (bits / 8) as usize;
+        let data_size = samples.len() * width;
+        let mut bytes = Vec::with_capacity(44 + data_size);
+        bytes.extend_from_slice(b"RIFF");
+        let data_size32 = u32::try_from(data_size).unwrap();
+        let bits16 = u16::try_from(bits).unwrap();
+        bytes.extend_from_slice(&(36 + data_size32).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&48_000u32.to_le_bytes());
+        bytes.extend_from_slice(&(48_000 * 2 * bits / 8).to_le_bytes());
+        bytes.extend_from_slice(&(2 * bits16 / 8).to_le_bytes());
+        bytes.extend_from_slice(&bits16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_size32.to_le_bytes());
+        for sample in samples {
+            bytes.extend_from_slice(&sample.to_le_bytes()[..width]);
+        }
+        bytes
+    }
+
+    #[test]
+    #[ignore = "requires source-built media"]
+    fn streaming_pcm_verification_preserves_precision_and_error_contract() {
+        let root =
+            std::env::temp_dir().join(format!("dvda-conversion-streaming-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir(&root).unwrap();
+        let work = Workspace(root);
+        let library = std::env::current_exe().unwrap();
+        let source = work.0.join("source.wav");
+        let target = work.0.join("converted.flac");
+        let samples = [0, 1, -1, 1 << 14, -(1 << 14), 12_345, -12_345, 42];
+        for bits in [16, 24] {
+            let scaled: Vec<_> = samples
+                .iter()
+                .map(|sample| if bits == 16 { *sample } else { sample << 8 })
+                .collect();
+            fs::write(&source, wave(bits, &scaled)).unwrap();
+            if target.exists() {
+                fs::remove_file(&target).unwrap();
+            }
+            run_media(
+                &library,
+                self::request(&source, Operation::Audio, OutputFormat::Flac, Some(&target)),
+                &mut crate::pcm::NoEvents,
+            )
+            .unwrap();
+            let stream = json!({
+                "sample_rate": "48000",
+                "channels": 2,
+                "bits_per_raw_sample": bits.to_string(),
+            });
+            verify_pcm(
+                &library,
+                &source,
+                &target,
+                &stream,
+                &mut crate::pcm::NoEvents,
+            )
+            .unwrap();
+            assert!(!work.0.join("source.pcm").exists());
+            assert!(!work.0.join("converted.pcm").exists());
+        }
+
+        let mut corrupted = wave(24, &samples.map(|sample| sample << 8));
+        let last = corrupted.len() - 3;
+        corrupted[last] ^= 1;
+        fs::write(&source, corrupted).unwrap();
+        let error = verify_pcm(
+            &library,
+            &source,
+            &target,
+            &json!({"sample_rate":48000,"channels":2,"bits_per_raw_sample":24}),
+            &mut crate::pcm::NoEvents,
+        )
+        .unwrap_err();
+        assert_eq!(error, "Converted PCM differs at full precision");
+    }
+
+    fn legacy_verify_pcm_24(
+        library: &Path,
+        source: &Path,
+        target: &Path,
+        work: &Path,
+        caller: &mut dyn Callbacks,
+    ) -> Result<(), String> {
+        let raw_paths = [work.join("source.pcm"), work.join("converted.pcm")];
+        for (input, raw) in [source, target].into_iter().zip(&raw_paths) {
+            if raw.exists() {
+                fs::remove_file(raw).map_err(|error| error.to_string())?;
+            }
+            let mut request = self::request(input, Operation::Audio, OutputFormat::S24, Some(raw));
+            request.bits = 24;
+            run_media(library, request, caller)?;
+        }
+        let native = dvda_native::NativeFormats::load()?;
+        if native
+            .compare_pcm(&raw_paths[0], &raw_paths[1], 1, 0)?
+            .matches
+        {
+            Ok(())
+        } else {
+            Err("Converted PCM differs at full precision".into())
+        }
+    }
+
+    #[test]
+    #[ignore = "deterministic native old-vs-new PCM comparison benchmark"]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The opt-in benchmark keeps fixture generation, alternating paired rounds, and metric reporting ordered"
+    )]
+    fn pcm_streaming_comparison_throughput() {
+        use std::time::Instant;
+
+        let root = std::env::temp_dir().join(format!(
+            "dvda-conversion-streaming-benchmark-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir(&root).unwrap();
+        let work = Workspace(root);
+        let library = std::env::current_exe().unwrap();
+        let source = work.0.join("source.wav");
+        let target = work.0.join("converted.flac");
+        let mut state = 0x4d59_5df4_1234_5678u64;
+        let samples: Vec<i32> = (0..48_000 * 10 * 2)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                i32::try_from(state >> 40).unwrap() - 8_388_608
+            })
+            .collect();
+        fs::write(&source, wave(24, &samples)).unwrap();
+        run_media(
+            &library,
+            self::request(&source, Operation::Audio, OutputFormat::Flac, Some(&target)),
+            &mut crate::pcm::NoEvents,
+        )
+        .unwrap();
+        let stream = json!({"sample_rate":48000,"channels":2,"bits_per_raw_sample":24});
+
+        for _ in 0..2 {
+            legacy_verify_pcm_24(
+                &library,
+                &source,
+                &target,
+                &work.0,
+                &mut crate::pcm::NoEvents,
+            )
+            .unwrap();
+            verify_pcm(
+                &library,
+                &source,
+                &target,
+                &stream,
+                &mut crate::pcm::NoEvents,
+            )
+            .unwrap();
+        }
+        let mut legacy_times = Vec::new();
+        let mut streaming_times = Vec::new();
+        for round in 0..6 {
+            if round % 2 == 0 {
+                let started = Instant::now();
+                legacy_verify_pcm_24(
+                    &library,
+                    &source,
+                    &target,
+                    &work.0,
+                    &mut crate::pcm::NoEvents,
+                )
+                .unwrap();
+                legacy_times.push(started.elapsed());
+                let started = Instant::now();
+                verify_pcm(
+                    &library,
+                    &source,
+                    &target,
+                    &stream,
+                    &mut crate::pcm::NoEvents,
+                )
+                .unwrap();
+                streaming_times.push(started.elapsed());
+            } else {
+                let started = Instant::now();
+                verify_pcm(
+                    &library,
+                    &source,
+                    &target,
+                    &stream,
+                    &mut crate::pcm::NoEvents,
+                )
+                .unwrap();
+                streaming_times.push(started.elapsed());
+                let started = Instant::now();
+                legacy_verify_pcm_24(
+                    &library,
+                    &source,
+                    &target,
+                    &work.0,
+                    &mut crate::pcm::NoEvents,
+                )
+                .unwrap();
+                legacy_times.push(started.elapsed());
+            }
+        }
+        for (round, (legacy, streaming)) in legacy_times.iter().zip(&streaming_times).enumerate() {
+            println!(
+                "[METRIC] pcm_round={} legacy_ms={:.4} streaming_ms={:.4}",
+                round + 1,
+                legacy.as_secs_f64() * 1000.0,
+                streaming.as_secs_f64() * 1000.0
+            );
+        }
+        assert!(work.0.join("source.pcm").is_file());
+        assert!(work.0.join("converted.pcm").is_file());
+    }
+
+    fn legacy_hex(bytes: &[u8]) -> String {
+        bytes.iter().fold(String::new(), |mut text, byte| {
+            let _ = write!(text, "{byte:02x}");
+            text
+        })
+    }
+
+    #[test]
+    fn cover_hex_comparison_matches_legacy_case_insensitive_behavior() {
+        let bytes: Vec<u8> = (0..=255).collect();
+        let lower = legacy_hex(&bytes);
+        assert!(cover_hex_matches(&bytes, &lower));
+        assert!(cover_hex_matches(&bytes, &lower.to_ascii_uppercase()));
+        assert!(!cover_hex_matches(&bytes, &lower[..lower.len() - 2]));
+        assert!(!cover_hex_matches(&bytes, "00"));
+        assert!(!cover_hex_matches(&[], "00"));
+        assert!(cover_hex_matches(&[], ""));
+        for index in [0, bytes.len() - 1] {
+            let mut changed = bytes.clone();
+            changed[index] ^= 1;
+            assert!(!cover_hex_matches(&changed, &lower));
+        }
+        let mut invalid = lower.into_bytes();
+        invalid[10] = b'x';
+        assert!(!cover_hex_matches(
+            &bytes,
+            std::str::from_utf8(&invalid).unwrap()
+        ));
+    }
+
+    #[test]
+    #[ignore = "deterministic throughput benchmark"]
+    fn cover_hex_comparison_throughput() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let mut state = 0x4d59_5df4u32;
+        let bytes: Vec<u8> = (0..1024 * 1024)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state >> 24) as u8
+            })
+            .collect();
+        let expected = legacy_hex(&bytes);
+        let mut legacy_ns = 0;
+        let mut direct_ns = 0;
+        let mut match_count = 0;
+        for _ in 0..10 {
+            let start = Instant::now();
+            let actual = legacy_hex(black_box(&bytes));
+            let legacy_match = black_box(expected.eq_ignore_ascii_case(black_box(&actual)));
+            legacy_ns += start.elapsed().as_nanos();
+            match_count += usize::from(legacy_match);
+
+            let start = Instant::now();
+            let direct_match =
+                black_box(cover_hex_matches(black_box(&bytes), black_box(&expected)));
+            direct_ns += start.elapsed().as_nanos();
+            match_count += usize::from(direct_match);
+        }
+        println!("[METRIC] cover_hex_legacy_ns={legacy_ns} matches={match_count}");
+        println!("[METRIC] cover_hex_direct_ns={direct_ns} matches={match_count}");
+        assert_eq!(match_count, 20);
     }
 }

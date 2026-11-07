@@ -1,5 +1,8 @@
 //! JSON cache and resume index persistence.
-use dvda_native::{files::ordinal_ignore_case, media::Callbacks};
+use dvda_native::{
+    files::{ordinal_ignore_case, ordinal_ignore_case_cmp},
+    media::Callbacks,
+};
 use serde_json::{Map, Value, json};
 use std::{
     fs,
@@ -26,31 +29,97 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MlpCache {
+    entries: Map<String, Value>,
+    ordered: Vec<String>,
+}
+
+impl MlpCache {
+    #[cfg(test)]
+    fn from_entries(entries: Map<String, Value>) -> Self {
+        let mut ordered: Vec<String> = entries.keys().cloned().collect();
+        ordered.sort_unstable_by(|left, right| ordinal_ignore_case_cmp(left, right));
+        Self { entries, ordered }
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    #[must_use]
+    pub fn entries(&self) -> &Map<String, Value> {
+        &self.entries
+    }
+
+    #[must_use]
+    pub fn find(&self, path: &Path) -> Option<&Value> {
+        let path = path.to_string_lossy();
+        let index = self
+            .ordered
+            .binary_search_by(|key| ordinal_ignore_case_cmp(key, &path))
+            .ok()?;
+        self.entries.get(&self.ordered[index])
+    }
+
+    /// # Panics
+    /// Panics if the ordered index and map diverge; they are only mutated together.
+    pub fn record(&mut self, path: &Path, value: Value) {
+        let path = path.to_string_lossy();
+        match self
+            .ordered
+            .binary_search_by(|key| ordinal_ignore_case_cmp(key, &path))
+        {
+            Ok(index) => {
+                *self
+                    .entries
+                    .get_mut(&self.ordered[index])
+                    .expect("ordered cache key exists") = value;
+            }
+            Err(index) => {
+                self.ordered.insert(index, path.clone().into_owned());
+                self.entries.insert(path.into_owned(), value);
+            }
+        }
+    }
+}
+
 /// The application cache loader retains the old `MlpCacheIndex` warning and
 /// `OrdinalIgnoreCase` dictionary behavior. The developer JSON envelope stays
 /// permissive for compatibility with its historical generic load operation.
-pub fn load_mlp(path: &Path, events: &mut dyn Callbacks) -> Map<String, Value> {
+pub fn load_mlp(path: &Path, events: &mut dyn Callbacks) -> MlpCache {
     if !path.exists() {
-        return Map::new();
+        return MlpCache::default();
     }
-    let result = (|| -> Result<Map<String, Value>, String> {
+    let result = (|| -> Result<MlpCache, String> {
         let value = crate::preparation::state::read_json(path).map_err(|error| error.message)?;
-        if value.is_null() {
-            return Ok(Map::new());
-        }
-        let entries = value
-            .as_object()
-            .ok_or("MLP cache index must be an object")?;
-        let mut result = Map::new();
-        for (path, entry) in entries {
-            let _ = serde_json::from_value::<MlpEntryShape>(entry.clone())
-                .map_err(|e| e.to_string())?;
-            if result.keys().any(|key| ordinal_ignore_case(path, key)) {
+        let entries = match value {
+            Value::Null => return Ok(MlpCache::default()),
+            Value::Object(entries) => entries,
+            _ => return Err("MLP cache index must be an object".into()),
+        };
+        let mut ordered: Vec<(usize, &String)> = entries.keys().enumerate().collect();
+        ordered.sort_unstable_by(|(_, left), (_, right)| ordinal_ignore_case_cmp(left, right));
+        let duplicate = ordered
+            .windows(2)
+            .filter(|pair| ordinal_ignore_case(pair[0].1, pair[1].1))
+            .map(|pair| pair[0].0.max(pair[1].0))
+            .min();
+        for (index, entry) in entries.values().enumerate() {
+            let _ = <MlpEntryShape as serde::Deserialize>::deserialize(entry)
+                .map_err(|error| error.to_string())?;
+            if duplicate == Some(index) {
                 return Err("MLP cache index contains duplicate paths".into());
             }
-            result.insert(path.clone(), entry.clone());
         }
-        Ok(result)
+        let ordered = ordered.into_iter().map(|(_, key)| key.clone()).collect();
+        Ok(MlpCache { entries, ordered })
     })();
     match result {
         Ok(entries) => entries,
@@ -59,7 +128,7 @@ pub fn load_mlp(path: &Path, events: &mut dyn Callbacks) -> Map<String, Value> {
                 1,
                 &format!("[警告] MLP 缓存索引无法读取，将重新编码: {error}"),
             );
-            Map::new()
+            MlpCache::default()
         }
     }
 }
@@ -82,25 +151,6 @@ struct IdentityShape {
     last_write_utc_ticks: i64,
     head_hash: Option<String>,
     tail_hash: Option<String>,
-}
-
-#[must_use]
-pub fn find_mlp<'a>(entries: &'a Map<String, Value>, path: &Path) -> Option<&'a Value> {
-    entries
-        .iter()
-        .find(|(key, _)| ordinal_ignore_case(key, &path.to_string_lossy()))
-        .map(|(_, value)| value)
-}
-
-pub fn record_mlp(entries: &mut Map<String, Value>, path: &Path, value: Value) {
-    if let Some((_, entry)) = entries
-        .iter_mut()
-        .find(|(key, _)| ordinal_ignore_case(key, &path.to_string_lossy()))
-    {
-        *entry = value;
-    } else {
-        entries.insert(path.to_string_lossy().into_owned(), value);
-    }
 }
 
 fn load(request: &Value) -> Result<Value, String> {
@@ -201,14 +251,17 @@ mod tests {
         let valid = json!({key.to_str().unwrap():{"source":{"Size":1},"output":{"Size":2},"encoder":"same","bits":24,"resample_to":48000,"max_interval":8}});
         save(&json!({"Path":path,"Entries":valid})).unwrap();
         let mut entries = load_mlp(&path, &mut events);
-        assert!(find_mlp(&entries, Path::new("c:\\music\\été\\SONG.mlp")).is_some());
-        record_mlp(
-            &mut entries,
+        assert!(
+            entries
+                .find(Path::new("c:\\music\\été\\SONG.mlp"))
+                .is_some()
+        );
+        entries.record(
             Path::new("c:\\music\\été\\SONG.mlp"),
             json!({"encoder":"new"}),
         );
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[key.to_str().unwrap()]["encoder"], "new");
+        assert_eq!(entries.entries()[key.to_str().unwrap()]["encoder"], "new");
         let mut bom = vec![0xef, 0xbb, 0xbf];
         bom.extend(serde_json::to_vec(&valid).unwrap());
         fs::write(&path, bom).unwrap();
@@ -235,6 +288,182 @@ mod tests {
         events.0.clear();
         assert!(load_mlp(&path, &mut events).is_empty());
         assert_eq!(events.0, [] as [std::string::String; 0]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mlp_loader_preserves_error_precedence_unicode_and_insertion_order() {
+        let root = temporary_root();
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("cache.json");
+        let valid = |key: &str| json!({key:{"source":{"Size":1},"output":{"Size":2},"encoder":"same","bits":24,"resample_to":48000,"max_interval":8}});
+        let mut events = Events::default();
+
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "C:\\Music\\B.mlp": valid("unused")["unused"],
+                "C:\\Music\\A.mlp": valid("unused")["unused"],
+                "C:\\Music\\c.mlp": valid("unused")["unused"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let loaded = load_mlp(&path, &mut events);
+        assert_eq!(
+            loaded.entries().keys().collect::<Vec<_>>(),
+            [r"C:\Music\B.mlp", r"C:\Music\A.mlp", r"C:\Music\c.mlp"]
+        );
+
+        fs::write(
+            &path,
+            br#"{"C:\\M.mlp":{"bits":24},"c:\\m.MLP":{"bits":24},"later":{"bits":"wrong"}}"#,
+        )
+        .unwrap();
+        assert!(load_mlp(&path, &mut events).is_empty());
+        assert!(events.0.last().unwrap().contains("duplicate paths"));
+
+        fs::write(
+            &path,
+            br#"{"C:\\M.mlp":{"bits":24},"c:\\m.MLP":{"bits":"wrong"}}"#,
+        )
+        .unwrap();
+        assert!(load_mlp(&path, &mut events).is_empty());
+        assert!(!events.0.last().unwrap().contains("duplicate paths"));
+
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "C:\\𐐀.mlp": valid("unused")["unused"],
+                "c:\\𐐨.MLP": valid("unused")["unused"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(load_mlp(&path, &mut events).is_empty());
+        assert!(events.0.last().unwrap().contains("duplicate paths"));
+
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "Straße.mlp": valid("unused")["unused"],
+                "STRASSE.mlp": valid("unused")["unused"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(load_mlp(&path, &mut events).len(), 2);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mlp_cache_updates_preserve_original_keys_and_insertion_order() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<MlpCache>();
+        let root = temporary_root();
+        let mut events = Events::default();
+        let mut entries = load_mlp(&root.join("missing.json"), &mut events);
+        for path in ["C:\\Music\\b.mlp", "C:\\Music\\A.mlp", "C:\\Music\\c.mlp"] {
+            entries.record(Path::new(path), json!({"encoder":"old"}));
+        }
+        entries.record(Path::new("c:\\music\\a.MLP"), json!({"encoder":"new"}));
+        assert_eq!(entries.len(), 3);
+        assert_eq!(
+            entries.entries().keys().collect::<Vec<_>>(),
+            [r"C:\Music\b.mlp", r"C:\Music\A.mlp", r"C:\Music\c.mlp"]
+        );
+        assert_eq!(entries.entries()[r"C:\Music\A.mlp"]["encoder"], "new");
+        assert!(entries.find(Path::new("c:\\music\\B.MLP")).is_some());
+    }
+
+    #[test]
+    fn mlp_cache_save_preserves_map_order_without_serializing_index() {
+        let root = temporary_root();
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("cache.json");
+        let mut entries = MlpCache::default();
+        for key in ["C:\\Music\\B.mlp", "C:\\Music\\A.mlp", "C:\\Music\\c.mlp"] {
+            entries.record(Path::new(key), json!({"encoder":"old"}));
+        }
+        entries.record(Path::new("c:\\music\\a.MLP"), json!({"encoder":"new"}));
+        entries.record(Path::new("C:\\Music\\d.mlp"), json!({"encoder":"added"}));
+        save(&json!({"Path":path,"Entries":entries.entries()})).unwrap();
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("ordered"));
+        let document: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            document.as_object().unwrap().keys().collect::<Vec<_>>(),
+            [
+                r"C:\Music\B.mlp",
+                r"C:\Music\A.mlp",
+                r"C:\Music\c.mlp",
+                r"C:\Music\d.mlp"
+            ]
+        );
+        let reloaded = load_mlp(&path, &mut Events::default());
+        assert_eq!(reloaded, entries);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "deterministic throughput benchmark"]
+    fn mlp_cache_lookup_throughput() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let mut entries = Map::new();
+        let mut paths = Vec::new();
+        for index in 0..5000 {
+            let path = format!("C:\\Music\\Album-{:03}\\Track-{index:05}.mlp", index / 20);
+            paths.push(PathBuf::from(&path));
+            entries.insert(path, json!({"encoder":"same","bits":24}));
+        }
+        let mut entries = MlpCache::from_entries(entries);
+        let start = Instant::now();
+        for path in &paths {
+            assert!(entries.find(black_box(path)).is_some());
+        }
+        let find_ns = start.elapsed().as_nanos();
+        let start = Instant::now();
+        for path in paths.iter().take(99) {
+            entries.record(black_box(path), json!({"encoder":"updated"}));
+        }
+        let record_ns = start.elapsed().as_nanos();
+        assert_eq!(entries.len(), 5000);
+        println!(
+            "[METRIC] mlp_cache_find_ns={find_ns} entries={}",
+            entries.len()
+        );
+        println!("[METRIC] mlp_cache_record_ns={record_ns} updates=99");
+    }
+
+    #[test]
+    #[ignore = "deterministic throughput benchmark"]
+    fn mlp_cache_load_throughput() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let root = temporary_root();
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("cache.json");
+        let mut entries = Map::new();
+        for index in 0..5000 {
+            entries.insert(
+                format!("C:\\Music\\Album-{:03}\\Track-{index:05}.mlp", index / 20),
+                json!({"source":{"Size":1},"output":{"Size":2},"encoder":"same","bits":24,"resample_to":48000,"max_interval":8}),
+            );
+        }
+        fs::write(&path, serde_json::to_vec(&entries).unwrap()).unwrap();
+        let mut events = Events::default();
+        let start = Instant::now();
+        let loaded = load_mlp(black_box(&path), black_box(&mut events));
+        let elapsed = start.elapsed().as_nanos();
+        assert_eq!(loaded.len(), entries.len());
+        assert_eq!(events.0, [] as [std::string::String; 0]);
+        println!(
+            "[METRIC] mlp_cache_load_ns={elapsed} entries={}",
+            loaded.len()
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

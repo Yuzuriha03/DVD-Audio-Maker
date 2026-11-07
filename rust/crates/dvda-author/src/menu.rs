@@ -1059,18 +1059,20 @@ fn make_index_background(
     result
 }
 
-fn make_masks(
+/// Draw the image and highlight layers from one decoded blank frame.
+///
+/// The source raster is consumed so callers that own a fresh decode avoid a
+/// copy, while callers reusing a cached frame pass a clone.
+///
+/// # Errors
+/// Propagates font resolution, text shaping, drawing, and cancellation failures.
+fn draw_masks(
+    source: dvda_image::raster::Raster,
     page: &Page,
-    blank: &Path,
-    layers: [&Path; 3],
     options: &Options,
     callbacks: &mut dyn Callbacks,
-) -> Result<(), String> {
-    let [image, highlight, select] = layers;
-    let mut base = dvda_image::codec::decode(std::io::BufReader::new(
-        File::open(blank).map_err(|e| e.to_string())?,
-    ))
-    .map_err(|e| e.to_string())?;
+) -> Result<(dvda_image::raster::Raster, dvda_image::raster::Raster), String> {
+    let mut base = source;
     let mut fonts = dvda_image::fonts::FontCache::default();
     let mut label = |raster: &mut dvda_image::raster::Raster,
                      text: &str,
@@ -1143,7 +1145,32 @@ fn make_masks(
             );
         }
     }
-    for (raster, path) in [(&base, image), (&highlighted, highlight), (&base, select)] {
+    Ok((base, highlighted))
+}
+
+/// Render the image, highlight and select masks for one menu page.
+///
+/// The blank frame is decoded through the caller's shared cache; only a private
+/// raster clone is drawn into. Image and select content are identical, so the
+/// select layer is produced by copying the encoded image instead of encoding the
+/// same raster again.
+///
+/// # Errors
+/// Propagates blank decoding, cache, mask drawing, encoding, copying, and
+/// cancellation failures.
+fn make_masks(
+    page: &Page,
+    blank: &Path,
+    layers: [&Path; 3],
+    options: &Options,
+    callbacks: &mut dyn Callbacks,
+    cache: &dvda_image::cache::ImageCache,
+) -> Result<(), String> {
+    let [image, highlight, select] = layers;
+    check(callbacks)?;
+    let source = cache.decode(blank).map_err(|e| e.to_string())?;
+    let (base, highlighted) = draw_masks(source.as_ref().clone(), page, options, callbacks)?;
+    for (raster, path) in [(&base, image), (&highlighted, highlight)] {
         check(callbacks)?;
         let mut created = false;
         let result = (|| -> Result<(), String> {
@@ -1159,7 +1186,15 @@ fn make_masks(
         }
         result?;
     }
-    Ok(())
+    check(callbacks)?;
+    let result = (|| -> Result<(), String> {
+        fs::copy(image, select).map_err(|e| e.to_string())?;
+        check(callbacks)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(select);
+    }
+    result
 }
 
 fn prepare_picture_cached(
@@ -1639,6 +1674,7 @@ pub fn author(
                     [&image, &highlight, &select],
                     options,
                     callbacks,
+                    &image_cache,
                 )?;
                 for (paths, target) in [
                     (&options.images, &image),
@@ -1793,4 +1829,338 @@ pub fn author(
         });
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Silent;
+    use dvda_image::{codec, geometry::Dimensions, raster::Raster};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    struct Scratch(PathBuf);
+    impl Scratch {
+        fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "dvda-menu-masks-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+        /// Write an opaque/transparent patterned PAL-sized blank frame.
+        fn blank(&self) -> (PathBuf, Raster) {
+            let path = self.0.join("blank.png");
+            let pixels = (0..720 * 576)
+                .flat_map(|index| {
+                    [
+                        u8::try_from(index % 251).unwrap(),
+                        u8::try_from((index / 7) % 241).unwrap(),
+                        u8::try_from((index / 13) % 239).unwrap(),
+                        if index % 3 == 0 { 0 } else { 255 },
+                    ]
+                })
+                .collect();
+            let raster = Raster::from_rgba(Dimensions::new(720, 576).unwrap(), pixels).unwrap();
+            codec::write_png(&raster, File::create(&path).unwrap()).unwrap();
+            (path, raster)
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn page() -> Page {
+        Page {
+            title: "Album".into(),
+            subtitle: "Solo".into(),
+            index: false,
+            height: 576,
+            buttons: vec![
+                Button {
+                    label: "Track 1".into(),
+                    target: Target::Track { group: 1, track: 1 },
+                    rectangle: [33, 128, 708, 208],
+                    baseline: [44, 170],
+                    thumbnail: false,
+                },
+                Button {
+                    label: "Next".into(),
+                    target: Target::Menu(2),
+                    rectangle: [33, 224, 708, 304],
+                    baseline: [44, 266],
+                    thumbnail: false,
+                },
+            ],
+        }
+    }
+
+    fn layers(scratch: &Scratch) -> [PathBuf; 3] {
+        [
+            scratch.0.join("image.png"),
+            scratch.0.join("highlight.png"),
+            scratch.0.join("select.png"),
+        ]
+    }
+
+    fn read(path: &Path) -> Raster {
+        codec::decode(std::io::BufReader::new(File::open(path).unwrap())).unwrap()
+    }
+
+    #[test]
+    fn masks_match_the_direct_pipeline_and_select_copies_image() {
+        let scratch = Scratch::new();
+        let (blank, direct) = scratch.blank();
+        let page = page();
+        let options = Options::default();
+        let cache = dvda_image::cache::ImageCache::default();
+        let cached = cache.decode(&blank).unwrap();
+        assert_eq!(cached.rgba(), direct.rgba());
+
+        let [image, highlight, select] = layers(&scratch);
+        make_masks(
+            &page,
+            &blank,
+            [&image, &highlight, &select],
+            &options,
+            &mut Silent,
+            &cache,
+        )
+        .unwrap();
+
+        // The same drawing on a direct decode must equal the cached-image output.
+        let (expected_image, expected_highlight) =
+            draw_masks(direct.clone(), &page, &options, &mut Silent).unwrap();
+        assert_eq!(read(&image).rgba(), expected_image.rgba());
+        assert_eq!(read(&highlight).rgba(), expected_highlight.rgba());
+        assert_ne!(fs::read(&image).unwrap(), fs::read(&highlight).unwrap());
+        // Image and select are byte-identical because select is copied, not encoded.
+        assert_eq!(fs::read(&image).unwrap(), fs::read(&select).unwrap());
+
+        // Drawing cloned the cached raster instead of mutating it.
+        let reused = cache.decode(&blank).unwrap();
+        assert!(Arc::ptr_eq(&cached, &reused));
+        assert_eq!(reused.rgba(), direct.rgba());
+    }
+
+    struct CancelWhen(PathBuf);
+    impl Callbacks for CancelWhen {
+        fn emit(&mut self, _: i32, _: &str) {}
+        fn cancelled(&mut self) -> bool {
+            self.0.exists()
+        }
+    }
+
+    #[test]
+    fn cancellation_removes_partial_masks_and_copied_select() {
+        let scratch = Scratch::new();
+        let (blank, _) = scratch.blank();
+        let page = page();
+        let options = Options::default();
+        let cache = dvda_image::cache::ImageCache::default();
+        let [image, highlight, select] = layers(&scratch);
+
+        // Cancel once the image layer lands: its cleanup removes the partial file.
+        let error = make_masks(
+            &page,
+            &blank,
+            [&image, &highlight, &select],
+            &options,
+            &mut CancelWhen(image.clone()),
+            &cache,
+        )
+        .unwrap_err();
+        assert_eq!(error, "Authoring cancelled");
+        assert!(!image.exists());
+        assert!(!highlight.exists() && !select.exists());
+
+        // Cancel once the copied select lands: only select is removed.
+        let error = make_masks(
+            &page,
+            &blank,
+            [&image, &highlight, &select],
+            &options,
+            &mut CancelWhen(select.clone()),
+            &cache,
+        )
+        .unwrap_err();
+        assert_eq!(error, "Authoring cancelled");
+        assert!(image.exists() && highlight.exists());
+        assert!(!select.exists());
+    }
+
+    /// One full old-path mask render: direct decode plus three PNG encodes.
+    fn legacy_make_masks(
+        page: &Page,
+        blank: &Path,
+        layers: [&Path; 3],
+        options: &Options,
+        callbacks: &mut dyn Callbacks,
+    ) -> Result<(), String> {
+        let [image, highlight, select] = layers;
+        check(callbacks)?;
+        let decoded = codec::decode(std::io::BufReader::new(
+            File::open(blank).map_err(|e| e.to_string())?,
+        ))
+        .map_err(|e| e.to_string())?;
+        let (base, highlighted) = draw_masks(decoded, page, options, callbacks)?;
+        for (raster, path) in [(&base, image), (&highlighted, highlight), (&base, select)] {
+            check(callbacks)?;
+            let mut writer =
+                std::io::BufWriter::new(File::create(path).map_err(|e| e.to_string())?);
+            codec::write_png(raster, &mut writer).map_err(|e| e.to_string())?;
+            writer.flush().map_err(|e| e.to_string())?;
+        }
+        check(callbacks)
+    }
+
+    fn bench_page(rank: usize) -> Page {
+        const HEIGHT: u16 = 576;
+        const ROWS: usize = 8;
+        let buttons = (0..ROWS)
+            .map(|row| {
+                let track = rank * ROWS + row + 1;
+                row_button(
+                    format!("Chapter {track:02}"),
+                    Target::Track { group: 1, track },
+                    row,
+                    ROWS,
+                    HEIGHT,
+                )
+            })
+            .collect();
+        Page {
+            title: format!("Album menu {rank:02}"),
+            subtitle: "A representative subtitle".into(),
+            index: false,
+            height: HEIGHT,
+            buttons,
+        }
+    }
+
+    fn bench_layers(scratch: &Scratch, side: &str, rank: usize) -> [PathBuf; 3] {
+        ["image", "highlight", "select"]
+            .map(|kind| scratch.0.join(format!("{side}-{rank:02}-{kind}.png")))
+    }
+
+    fn mask_refs(layers: &[PathBuf; 3]) -> [&Path; 3] {
+        [&layers[0], &layers[1], &layers[2]]
+    }
+
+    fn time_old(
+        pages: &[Page],
+        blank: &Path,
+        layers: &[[PathBuf; 3]],
+        options: &Options,
+    ) -> std::time::Duration {
+        let start = std::time::Instant::now();
+        for (page, paths) in pages.iter().zip(layers) {
+            legacy_make_masks(page, blank, mask_refs(paths), options, &mut Silent).unwrap();
+        }
+        start.elapsed()
+    }
+
+    fn time_new(
+        pages: &[Page],
+        blank: &Path,
+        layers: &[[PathBuf; 3]],
+        options: &Options,
+    ) -> std::time::Duration {
+        let cache = dvda_image::cache::ImageCache::default();
+        let start = std::time::Instant::now();
+        for (page, paths) in pages.iter().zip(layers) {
+            make_masks(page, blank, mask_refs(paths), options, &mut Silent, &cache).unwrap();
+        }
+        start.elapsed()
+    }
+
+    fn verify_masks(old: &[[PathBuf; 3]], new: &[[PathBuf; 3]]) {
+        for (rank, (old, new)) in old.iter().zip(new).enumerate() {
+            for (kind, name) in ["image", "highlight", "select"].iter().enumerate() {
+                let old_bytes = fs::read(&old[kind]).unwrap();
+                let new_bytes = fs::read(&new[kind]).unwrap();
+                assert!(old_bytes == new_bytes, "page {rank} {name} differs");
+            }
+        }
+    }
+
+    fn median_ms(times: &[std::time::Duration]) -> f64 {
+        let mut sorted = times.to_vec();
+        sorted.sort_unstable();
+        sorted[sorted.len() / 2].as_secs_f64() * 1000.0
+    }
+
+    /// Release-only, same-process old-vs-new timing of the complete mask path.
+    #[test]
+    #[ignore = "release-only microbenchmark; run with --release --ignored --nocapture"]
+    fn bench_make_masks_old_vs_new() {
+        const PAGES: usize = 32;
+        if cfg!(debug_assertions) {
+            eprintln!("bench_make_masks_old_vs_new requires --release; skipping");
+            return;
+        }
+        let scratch = Scratch::new();
+        let (blank, _) = scratch.blank();
+        let options = Options::default();
+        let pages: Vec<Page> = (0..PAGES).map(bench_page).collect();
+        let old_layers: Vec<[PathBuf; 3]> = (0..PAGES)
+            .map(|rank| bench_layers(&scratch, "old", rank))
+            .collect();
+        let new_layers: Vec<[PathBuf; 3]> = (0..PAGES)
+            .map(|rank| bench_layers(&scratch, "new", rank))
+            .collect();
+
+        // Warm font, file, and allocator caches without timing either side.
+        legacy_make_masks(
+            &pages[0],
+            &blank,
+            mask_refs(&old_layers[0]),
+            &options,
+            &mut Silent,
+        )
+        .unwrap();
+        let warm_cache = dvda_image::cache::ImageCache::default();
+        make_masks(
+            &pages[0],
+            &blank,
+            mask_refs(&new_layers[0]),
+            &options,
+            &mut Silent,
+            &warm_cache,
+        )
+        .unwrap();
+
+        let mut old_times = Vec::new();
+        let mut new_times = Vec::new();
+        for round in 0..3 {
+            let (old_time, new_time) = if round % 2 == 0 {
+                let old_time = time_old(&pages, &blank, &old_layers, &options);
+                let new_time = time_new(&pages, &blank, &new_layers, &options);
+                (old_time, new_time)
+            } else {
+                let new_time = time_new(&pages, &blank, &new_layers, &options);
+                let old_time = time_old(&pages, &blank, &old_layers, &options);
+                (old_time, new_time)
+            };
+            verify_masks(&old_layers, &new_layers);
+            println!(
+                "round {}: old={:.3} ms new={:.3} ms",
+                round + 1,
+                old_time.as_secs_f64() * 1000.0,
+                new_time.as_secs_f64() * 1000.0
+            );
+            old_times.push(old_time);
+            new_times.push(new_time);
+        }
+        let old_median = median_ms(&old_times);
+        let new_median = median_ms(&new_times);
+        println!(
+            "pages={PAGES} old_median={old_median:.3} ms new_median={new_median:.3} ms speedup={:.3}x outputs=identical",
+            old_median / new_median
+        );
+    }
 }

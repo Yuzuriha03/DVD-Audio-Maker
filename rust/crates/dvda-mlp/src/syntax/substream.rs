@@ -85,7 +85,8 @@ pub(crate) fn mlp_substream_put(writer: &mut Bits, s: &MlpSubstream<'_>) -> Resu
             return Err(());
         }
     }
-    let mut local = Bits::default();
+    // Cover typical access units without changing the buffer's growth semantics.
+    let mut local = Bits::with_capacity(512);
     if let Some(r) = s.restart {
         mlp_restart_put(&mut local, r, s.primary)?;
     }
@@ -118,4 +119,69 @@ pub(crate) fn mlp_substream_put(writer: &mut Bits, s: &MlpSubstream<'_>) -> Resu
     local.put(1, 1);
     local.finish_into(writer, s.end_markers);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::syntax::parameters::MlpCodingParams;
+
+    #[test]
+    #[ignore = "deterministic throughput benchmark"]
+    fn au_substream_buffer_throughput() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let mut parameters = MlpParameters {
+            blocksize: 160,
+            flags: 2,
+            maximum_channel: 1,
+            ..Default::default()
+        };
+        parameters.coding[0] = MlpCodingParams {
+            mode: 1,
+            total_width: 24,
+            offset: 0,
+        };
+        parameters.coding[1] = MlpCodingParams {
+            mode: 2,
+            total_width: 20,
+            offset: 0,
+        };
+        let mut state = 0x4d59_5df4u32;
+        let residual: Vec<i32> = (0..320)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                i32::try_from((state >> 16) & 0x1fff).unwrap() - 4096
+            })
+            .collect();
+        let substream = MlpSubstream {
+            main: &parameters,
+            previous: &parameters,
+            initial: None,
+            restart: None,
+            residual: &residual,
+            bypass: &[],
+            count: 160,
+            stride: 2,
+            bypass_bits: 0,
+            primary: false,
+            single_restart: false,
+            end_markers: true,
+        };
+        let mut words = 0u64;
+        let mut capacity = 0u64;
+        let start = Instant::now();
+        for _ in 0..10_000 {
+            let mut writer = Bits::default();
+            mlp_substream_put(black_box(&mut writer), black_box(&substream)).unwrap();
+            words += u64::try_from(writer.word_len()).unwrap();
+            capacity += u64::try_from(writer.words.capacity()).unwrap();
+        }
+        println!(
+            "[METRIC] au_substream_ns={} words={words} capacity={capacity}",
+            start.elapsed().as_nanos()
+        );
+        assert_ne!(words, 0);
+    }
 }

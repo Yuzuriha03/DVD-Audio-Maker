@@ -67,15 +67,7 @@ struct MlpCostStats {
 }
 
 fn arithmetic_shift(value: i32, shift: u32) -> i32 {
-    let divisor = 1i64 << shift;
-    let wide = i64::from(value);
-    (if wide >= 0 {
-        wide / divisor
-    } else {
-        -((-wide + divisor - 1) / divisor)
-    })
-    .try_into()
-    .expect("arithmetic shift of an i32 remains within i32")
+    value >> shift
 }
 
 fn mlp_cost_table(mode: u32, q: i32) -> u32 {
@@ -198,12 +190,7 @@ fn mlp_cost_analyze(samples: &[i32]) -> MlpCostStats {
 }
 
 fn floor_shift(value: i32, shift: u32) -> i32 {
-    let divisor = 1 << shift;
-    if value >= 0 {
-        value / divisor
-    } else {
-        -((-value + divisor - 1) / divisor)
-    }
+    value >> shift
 }
 
 fn overhead(old: Coding, base: u32, mode: u32, width: u32, offset: i32) -> i64 {
@@ -400,5 +387,119 @@ mod tests {
             }
         }
         assert_eq!(select(&[0; 40], 8, Coding::default()).width, 8);
+    }
+
+    fn reference_shift(value: i32, shift: u32) -> i32 {
+        let divisor = 1i64 << shift;
+        let wide = i64::from(value);
+        if wide >= 0 {
+            wide / divisor
+        } else {
+            -((-wide + divisor - 1) / divisor)
+        }
+        .try_into()
+        .unwrap()
+    }
+
+    fn generated_sample(state: u32) -> i32 {
+        i32::try_from((state >> 8) & 0x00ff_ffff).unwrap() - 8_388_608
+    }
+
+    #[test]
+    fn shifts_match_signed_floor_division() {
+        let values = [
+            -16_777_216,
+            -16_777_215,
+            -8_388_609,
+            -8_388_608,
+            -65_537,
+            -65_536,
+            -257,
+            -256,
+            -255,
+            -2,
+            -1,
+            0,
+            1,
+            2,
+            255,
+            256,
+            257,
+            65_535,
+            65_536,
+            65_537,
+            8_388_607,
+            16_777_214,
+        ];
+        for shift in 0..=24 {
+            for value in values {
+                assert_eq!(
+                    arithmetic_shift(value, shift),
+                    reference_shift(value, shift)
+                );
+                assert_eq!(floor_shift(value, shift), reference_shift(value, shift));
+            }
+        }
+        let mut state = 0x4d59_5df4u32;
+        for _ in 0..10_000 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let value = generated_sample(state);
+            let shift = state % 25;
+            assert_eq!(
+                arithmetic_shift(value, shift),
+                reference_shift(value, shift)
+            );
+            assert_eq!(floor_shift(value, shift), reference_shift(value, shift));
+        }
+    }
+
+    #[test]
+    #[ignore = "deterministic throughput benchmark"]
+    fn entropy_arithmetic_throughput() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let mut state = 0x4d59_5df4u32;
+        let mut accumulated = 0u64;
+        let start = Instant::now();
+        for _ in 0..1_000_000 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let x = generated_sample(state);
+            let coding = Coding {
+                mode: 1 + state % 3,
+                width: 8 + (state >> 3) % 17,
+                offset: i32::try_from((state >> 7) % 32_768).unwrap() - 16_384,
+            };
+            if let Some((code, width)) = black_box(coding).word(black_box(x), black_box(0)) {
+                accumulated = accumulated.wrapping_add(u64::from(code) + u64::from(width));
+            }
+        }
+        println!(
+            "[METRIC] entropy_word_ns={} accumulated={accumulated}",
+            start.elapsed().as_nanos()
+        );
+
+        let mut samples = [0i32; 160];
+        let start = Instant::now();
+        for block in 0..10_000u32 {
+            for (index, sample) in samples.iter_mut().enumerate() {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let base = generated_sample(state);
+                *sample = base.min(8_388_448) + i32::try_from(index).unwrap();
+            }
+            let selected = select(
+                black_box(&samples),
+                black_box(8),
+                black_box(Coding::default()),
+            );
+            accumulated = accumulated.wrapping_add(
+                u64::from(selected.mode) + u64::from(selected.width) + u64::from(block),
+            );
+        }
+        println!(
+            "[METRIC] entropy_select_ns={} accumulated={accumulated}",
+            start.elapsed().as_nanos()
+        );
+        assert_ne!(accumulated, 0);
     }
 }

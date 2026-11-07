@@ -158,7 +158,7 @@ pub(crate) fn flush_interval(
         words.push(directory);
         words.extend_from_slice(au_words);
         if words.len() != length as usize
-            || !queue.mlp_output_queue_push(&words, p.count as u32, emit)
+            || !queue.mlp_output_queue_push_owned(words, p.count as u32, emit)
         {
             return false;
         }

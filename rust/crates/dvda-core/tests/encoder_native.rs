@@ -1,4 +1,12 @@
 //! Frozen pre-migration host references; this test does not execute C#.
+#![cfg_attr(
+    not(feature = "rust-mlp"),
+    allow(
+        dead_code,
+        reason = "The fallback test target shares the fixture module but uses only its non-MLP cancellation helpers"
+    )
+)]
+
 #[cfg(feature = "rust-mlp")]
 use dvda_core::audio;
 use dvda_core::{encoder, hash, media};

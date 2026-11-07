@@ -1835,3 +1835,114 @@ fn korean_messages_preserve_user_titles_and_paths() {
     assert!(output.contains(path));
     assert_ne!(output, input);
 }
+
+fn paint_test_window() -> Hwnd {
+    let main_class = wide("DVD_AUDIO_MAKER_RUST");
+    let registration = WndClass {
+        style: 0,
+        procedure: window_proc,
+        extra_class: 0,
+        extra_window: 0,
+        instance: unsafe { GetModuleHandleW(ptr::null()) },
+        icon: ptr::null_mut(),
+        cursor: ptr::null_mut(),
+        background: ptr::null_mut(),
+        menu: ptr::null(),
+        class_name: main_class.as_ptr(),
+    };
+    unsafe { RegisterClassW(&raw const registration) };
+    create!(
+        ptr::null_mut(),
+        "DVD_AUDIO_MAKER_RUST",
+        "",
+        0,
+        0,
+        0,
+        1920,
+        1080,
+        0
+    )
+}
+
+#[test]
+fn window_paint_reuses_and_releases_the_correct_buffer() {
+    #[link(name = "gdi32")]
+    unsafe extern "system" {
+        safe fn GetPixel(dc: Handle, x: i32, y: i32) -> u32;
+    }
+    let _ui_test_lock = ui_test_guard();
+    let parent = paint_test_window();
+    assert!(!parent.is_null());
+    let pixel = |x, y| {
+        let dc = GetWindowDC(parent);
+        let value = GetPixel(dc, x, y);
+        ReleaseDC(parent, dc);
+        value
+    };
+    unsafe { paint_window(parent) };
+    let first = pixel(8, 8);
+    unsafe { paint_window(parent) };
+    assert_eq!(first, pixel(8, 8));
+    assert_eq!(super::draw::window_paint_cache_len(), 1);
+    MoveWindow(parent, 0, 0, 640, 480, 0);
+    unsafe { paint_window(parent) };
+    assert_eq!(super::draw::window_paint_cache_len(), 1);
+    DestroyWindow(parent);
+    assert_eq!(super::draw::window_paint_cache_len(), 0);
+}
+
+#[test]
+#[ignore = "deterministic GDI buffered paint throughput benchmark"]
+fn window_paint_cache_throughput() {
+    use std::time::Instant;
+    const CALLS: usize = 100;
+    let _ui_test_lock = ui_test_guard();
+    let parent = paint_test_window();
+    assert!(!parent.is_null());
+    let mut legacy_times = Vec::new();
+    let mut cached_times = Vec::new();
+    for round in 0..6 {
+        if round % 2 == 0 {
+            let started = Instant::now();
+            for _ in 0..CALLS {
+                let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+                let buffer = unsafe { begin_buffered_paint(parent, &mut paint, c_body()) };
+                unsafe { finish_buffered_paint(parent, &paint, &buffer) };
+            }
+            legacy_times.push(started.elapsed());
+            let started = Instant::now();
+            for _ in 0..CALLS {
+                let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+                let buffer =
+                    unsafe { super::draw::begin_window_paint(parent, &mut paint, c_body()) };
+                unsafe { super::draw::finish_window_paint(parent, &paint, buffer) };
+            }
+            cached_times.push(started.elapsed());
+        } else {
+            let started = Instant::now();
+            for _ in 0..CALLS {
+                let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+                let buffer =
+                    unsafe { super::draw::begin_window_paint(parent, &mut paint, c_body()) };
+                unsafe { super::draw::finish_window_paint(parent, &paint, buffer) };
+            }
+            cached_times.push(started.elapsed());
+            let started = Instant::now();
+            for _ in 0..CALLS {
+                let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+                let buffer = unsafe { begin_buffered_paint(parent, &mut paint, c_body()) };
+                unsafe { finish_buffered_paint(parent, &paint, &buffer) };
+            }
+            legacy_times.push(started.elapsed());
+        }
+    }
+    for (round, (legacy, cached)) in legacy_times.iter().zip(&cached_times).enumerate() {
+        println!(
+            "[METRIC] gdi_round={} legacy_ms={:.4} cached_ms={:.4}",
+            round + 1,
+            legacy.as_secs_f64() * 1000.0,
+            cached.as_secs_f64() * 1000.0
+        );
+    }
+    DestroyWindow(parent);
+}

@@ -479,14 +479,21 @@ impl SubPicture {
         }
     }
 
+    fn pick_button_groups(&mut self, groups: usize, useimg: bool) -> bool {
+        self.pick_button_groups_impl::<true>(groups, useimg)
+    }
+
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
         clippy::cast_sign_loss,
-        clippy::too_many_lines,
         reason = "Button grouping mirrors the bounded C coordinate and palette arithmetic in one search"
     )]
-    fn pick_button_groups(&mut self, groups: usize, useimg: bool) -> bool {
+    fn pick_button_groups_impl<const BACKTRACK: bool>(
+        &mut self,
+        groups: usize,
+        useimg: bool,
+    ) -> bool {
         let buttons = self.buttons.len();
         let mut button_palettes = vec![[0i32; 4]; buttons];
         let mut button_counts = vec![0usize; buttons];
@@ -522,6 +529,18 @@ impl SubPicture {
 
         let mut group_palettes = vec![[0i32; 4]; groups];
         let mut group_counts = vec![0usize; groups];
+        if BACKTRACK {
+            let found = self.assign_button_groups(
+                self.buttons.len(),
+                groups,
+                useimg,
+                &button_palettes,
+                &button_counts,
+                &mut group_palettes,
+                &mut group_counts,
+            );
+            return found;
+        }
         let combinations = groups.pow(buttons as u32);
         for combination in 0..combinations {
             group_counts.fill(0);
@@ -549,97 +568,180 @@ impl SubPicture {
                 continue;
             }
 
-            let mut groupmap = [[-1i32; 4]; 3];
-            if useimg {
-                let mut palette = [0i32; 4];
-                let mut palette_count = self.img.pal.len();
-                for (slot, entry) in palette.iter_mut().enumerate().take(palette_count) {
-                    *entry = slot as i32;
-                }
-                'groups: for group in 0..groups {
-                    groupmap[group].fill(-1);
-                    for entry in &mut palette[..palette_count] {
-                        *entry &= 255;
-                    }
-                    for value in &group_palettes[group][..group_counts[group]] {
-                        let color = value >> 16;
-                        let mut found = None;
-                        for (slot, entry) in palette.iter().enumerate().take(palette_count) {
-                            if *entry == color {
-                                found = Some(slot);
-                                break;
-                            }
-                        }
-                        let slot = if let Some(slot) = found {
-                            slot
-                        } else {
-                            if palette_count == 4 {
-                                ok = false;
-                                break 'groups;
-                            }
-                            palette_count += 1;
-                            palette_count - 1
-                        };
-                        palette[slot] = color | 256;
-                        groupmap[group][slot] = *value;
-                    }
-                }
-                if !ok {
-                    continue;
-                }
-            } else {
-                for group in 0..groups {
-                    for slot in 0..4 {
-                        groupmap[group][slot] = if slot < group_counts[group] {
-                            group_palettes[group][slot]
-                        } else {
-                            -1
-                        };
-                    }
-                }
+            if self.accept_group_assignment(groups, useimg, &group_palettes, &group_counts) {
+                return true;
             }
-
-            // Prefer a fully transparent entry at slot 0.
-            for map in groupmap.iter_mut().take(groups) {
-                let mut spare: Option<usize> = None;
-                let mut tri = 0i32;
-                for (slot, &entry) in map.iter().enumerate() {
-                    tri = entry;
-                    if tri == -1
-                        || (self.img.pal[((tri >> 16) & 0xFF) as usize].a == 0
-                            && self.hlt.pal[((tri >> 8) & 0xFF) as usize].a == 0
-                            && self.sel.pal[(tri & 0xFF) as usize].a == 0)
-                    {
-                        spare = Some(slot);
-                        break;
-                    }
-                }
-                let Some(spare) = spare else {
-                    continue;
-                };
-                if spare > 0 && tri == -1 {
-                    tri = 0;
-                    if let Some(index) = self.img.pal.iter().position(|entry| entry.a == 0) {
-                        tri |= (index as i32) << 16;
-                    }
-                    if let Some(index) = self.hlt.pal.iter().position(|entry| entry.a == 0) {
-                        tri |= (index as i32) << 8;
-                    }
-                    if let Some(index) = self.sel.pal.iter().position(|entry| entry.a == 0) {
-                        tri |= index as i32;
-                    }
-                }
-                if spare > 0 {
-                    map[spare] = map[0];
-                    map[0] = tri;
-                }
-            }
-
-            self.groupmap = groupmap;
-            self.numgroups = groups;
-            return true;
         }
         false
+    }
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::too_many_arguments,
+        reason = "Button group indices are bounded by the three DVD palette groups and shared search state"
+    )]
+    fn assign_button_groups(
+        &mut self,
+        index: usize,
+        groups: usize,
+        useimg: bool,
+        button_palettes: &[[i32; 4]],
+        button_counts: &[usize],
+        group_palettes: &mut [[i32; 4]],
+        group_counts: &mut [usize],
+    ) -> bool {
+        if index == 0 {
+            group_counts.fill(0);
+            for (index, palette) in button_palettes.iter().enumerate() {
+                let target = usize::try_from(self.buttons[index].group - 1).unwrap();
+                for entry in &palette[..button_counts[index]] {
+                    if !check_color(
+                        &mut group_palettes[target],
+                        &mut group_counts[target],
+                        *entry,
+                    ) {
+                        return false;
+                    }
+                }
+            }
+            return self.accept_group_assignment(groups, useimg, group_palettes, group_counts);
+        }
+        for target in 0..groups {
+            self.buttons[index - 1].group = (target + 1) as i32;
+            let previous = group_counts[target];
+            let mut ok = true;
+            for entry in &button_palettes[index - 1][..button_counts[index - 1]] {
+                if !check_color(
+                    &mut group_palettes[target],
+                    &mut group_counts[target],
+                    *entry,
+                ) {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok
+                && self.assign_button_groups(
+                    index - 1,
+                    groups,
+                    useimg,
+                    button_palettes,
+                    button_counts,
+                    group_palettes,
+                    group_counts,
+                )
+            {
+                return true;
+            }
+            group_counts[target] = previous;
+        }
+        false
+    }
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Groupmap acceptance retains the original bounded palette and spare-slot arithmetic"
+    )]
+    fn accept_group_assignment(
+        &mut self,
+        groups: usize,
+        useimg: bool,
+        group_palettes: &[[i32; 4]],
+        group_counts: &[usize],
+    ) -> bool {
+        let mut groupmap = [[-1i32; 4]; 3];
+        let mut ok = true;
+        if useimg {
+            let mut palette = [0i32; 4];
+            let mut palette_count = self.img.pal.len();
+            for (slot, entry) in palette.iter_mut().enumerate().take(palette_count) {
+                *entry = slot as i32;
+            }
+            'groups: for group in 0..groups {
+                groupmap[group].fill(-1);
+                for entry in &mut palette[..palette_count] {
+                    *entry &= 255;
+                }
+                for value in &group_palettes[group][..group_counts[group]] {
+                    let color = value >> 16;
+                    let mut found = None;
+                    for (slot, entry) in palette.iter().enumerate().take(palette_count) {
+                        if *entry == color {
+                            found = Some(slot);
+                            break;
+                        }
+                    }
+                    let slot = if let Some(slot) = found {
+                        slot
+                    } else {
+                        if palette_count == 4 {
+                            ok = false;
+                            break 'groups;
+                        }
+                        palette_count += 1;
+                        palette_count - 1
+                    };
+                    palette[slot] = color | 256;
+                    groupmap[group][slot] = *value;
+                }
+            }
+            if !ok {
+                return false;
+            }
+        } else {
+            for group in 0..groups {
+                for slot in 0..4 {
+                    groupmap[group][slot] = if slot < group_counts[group] {
+                        group_palettes[group][slot]
+                    } else {
+                        -1
+                    };
+                }
+            }
+        }
+
+        // Prefer a fully transparent entry at slot 0.
+        for map in groupmap.iter_mut().take(groups) {
+            let mut spare: Option<usize> = None;
+            let mut tri = 0i32;
+            for (slot, &entry) in map.iter().enumerate() {
+                tri = entry;
+                if tri == -1
+                    || (self.img.pal[((tri >> 16) & 0xFF) as usize].a == 0
+                        && self.hlt.pal[((tri >> 8) & 0xFF) as usize].a == 0
+                        && self.sel.pal[(tri & 0xFF) as usize].a == 0)
+                {
+                    spare = Some(slot);
+                    break;
+                }
+            }
+            let Some(spare) = spare else {
+                continue;
+            };
+            if spare > 0 && tri == -1 {
+                tri = 0;
+                if let Some(index) = self.img.pal.iter().position(|entry| entry.a == 0) {
+                    tri |= (index as i32) << 16;
+                }
+                if let Some(index) = self.hlt.pal.iter().position(|entry| entry.a == 0) {
+                    tri |= (index as i32) << 8;
+                }
+                if let Some(index) = self.sel.pal.iter().position(|entry| entry.a == 0) {
+                    tri |= index as i32;
+                }
+            }
+            if spare > 0 {
+                map[spare] = map[0];
+                map[0] = tri;
+            }
+        }
+
+        self.groupmap = groupmap;
+        self.numgroups = groups;
+        true
     }
 
     #[expect(
@@ -852,4 +954,158 @@ fn button_relative(a: &Rect, b: &Rect) -> Option<(i32, i32)> {
         return Some((90 + angle, distance));
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(buttons: usize) -> SubPicture {
+        let image = (0..buttons)
+            .map(|index| u8::try_from(index % 4).unwrap())
+            .collect::<Vec<_>>();
+        let highlight = (0..buttons)
+            .map(|index| u8::try_from(index / 4).unwrap())
+            .collect::<Vec<_>>();
+        let pict = |pixels, palette_len| Pict {
+            img: pixels,
+            pal: vec![Color::TRANSPARENT; palette_len],
+            width: buttons,
+            height: 1,
+            ..Pict::default()
+        };
+        SubPicture {
+            xd: u32::try_from(buttons).unwrap(),
+            yd: 1,
+            img: pict(image, 4),
+            hlt: pict(highlight, 4),
+            sel: pict(vec![0; buttons], 1),
+            buttons: (0..buttons)
+                .map(|index| {
+                    let index = i32::try_from(index).unwrap();
+                    Button {
+                        r: Rect {
+                            x0: index,
+                            y0: 0,
+                            x1: index + 1,
+                            y1: 1,
+                        },
+                        ..Button::new(false)
+                    }
+                })
+                .collect(),
+            ..SubPicture::new()
+        }
+    }
+
+    fn assert_same_search(before: &SubPicture, after: &SubPicture, groups: usize, useimg: bool) {
+        let mut legacy = before.clone();
+        let mut backtracking = after.clone();
+        let old = legacy.pick_button_groups_impl::<false>(groups, useimg);
+        let new = backtracking.pick_button_groups_impl::<true>(groups, useimg);
+        assert_eq!(
+            old, new,
+            "result differs for {groups} groups, useimg={useimg}"
+        );
+        assert_eq!(
+            legacy.groupmap,
+            backtracking.groupmap,
+            "groupmap differs for {} buttons, {groups} groups, useimg={useimg}",
+            before.buttons.len()
+        );
+        assert_eq!(legacy.numgroups, backtracking.numgroups);
+        if old && new {
+            assert_eq!(
+                legacy
+                    .buttons
+                    .iter()
+                    .map(|button| button.group)
+                    .collect::<Vec<_>>(),
+                backtracking
+                    .buttons
+                    .iter()
+                    .map(|button| button.group)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn backtracking_preserves_the_first_accepted_assignment() {
+        for buttons in [0, 1, 4, 8, 12] {
+            let picture = fixture(buttons);
+            for groups in 1..=3 {
+                for useimg in [false, true] {
+                    assert_same_search(&picture, &picture, groups, useimg);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn backtracking_preserves_final_acceptance_failures() {
+        let mut picture = fixture(12);
+        for pict in [&mut picture.img, &mut picture.hlt, &mut picture.sel] {
+            for color in &mut pict.pal {
+                color.a = 255;
+            }
+        }
+        for groups in 2..=3 {
+            for useimg in [false, true] {
+                assert_same_search(&picture, &picture, groups, useimg);
+            }
+        }
+    }
+
+    fn time_groups<const BACKTRACK: bool>(
+        picture: &SubPicture,
+        groups: usize,
+        expected: bool,
+        calls: usize,
+    ) -> std::time::Duration {
+        let started = std::time::Instant::now();
+        for _ in 0..calls {
+            let mut candidate = picture.clone();
+            assert_eq!(
+                candidate.pick_button_groups_impl::<BACKTRACK>(groups, true),
+                expected
+            );
+        }
+        started.elapsed()
+    }
+
+    #[test]
+    #[ignore = "deterministic SPU group search throughput benchmark"]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The opt-in benchmark keeps successful and exhausted searches paired with output validation"
+    )]
+    fn spu_backtracking_throughput() {
+        const CALLS: usize = 20;
+        let picture = fixture(12);
+        for groups in [2, 3] {
+            let expected = groups == 3;
+            let mut legacy_times = Vec::new();
+            let mut backtracking_times = Vec::new();
+            for round in 0..6 {
+                if round % 2 == 0 {
+                    legacy_times.push(time_groups::<false>(&picture, groups, expected, CALLS));
+                    backtracking_times.push(time_groups::<true>(&picture, groups, expected, CALLS));
+                } else {
+                    backtracking_times.push(time_groups::<true>(&picture, groups, expected, CALLS));
+                    legacy_times.push(time_groups::<false>(&picture, groups, expected, CALLS));
+                }
+            }
+            for (round, (legacy, backtracking)) in
+                legacy_times.iter().zip(&backtracking_times).enumerate()
+            {
+                println!(
+                    "[METRIC] spu_groups={groups} round={} legacy_ms={:.4} backtracking_ms={:.4}",
+                    round + 1,
+                    legacy.as_secs_f64() * 1000.0,
+                    backtracking.as_secs_f64() * 1000.0
+                );
+            }
+        }
+    }
 }
