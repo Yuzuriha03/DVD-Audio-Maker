@@ -140,3 +140,5 @@ GUI 中的“音源文件夹”对应 `DVDA_SRC`，“成品位置”对应 `DVD
 - [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.md)
 
 发布包内还包含 `NOTICE-Image.txt` 和 `NOTICE-Menu.txt`，请一并保留。
+
+开发贡献与 Clippy pedantic 维护约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。

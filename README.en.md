@@ -140,3 +140,5 @@ See [LICENSE](LICENSE) for the project license and these notices for bundled com
 - [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.md)
 
 The release also includes `NOTICE-Image.txt` and `NOTICE-Menu.txt`; please keep them.
+
+See [CONTRIBUTING.en.md](CONTRIBUTING.en.md) for development and Clippy pedantic maintenance guidance.
