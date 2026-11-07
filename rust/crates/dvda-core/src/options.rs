@@ -11,6 +11,43 @@ pub fn worker_count(work_items: usize) -> usize {
     processors.max(1).min(work_items.max(1))
 }
 
+const WORK_BUDGET_BYTES: usize = 1024 * 1024 * 1024;
+
+/// Internal scheduler budget for estimable working buffers, not a process RSS
+/// limit. Image tasks retain their independent task-level 256 MiB cap; audio
+/// workers are charged only for their PCM/decode buffers.
+#[derive(Clone, Copy)]
+pub(crate) struct WorkBudget {
+    total_bytes: usize,
+    per_worker_bytes: usize,
+}
+
+impl WorkBudget {
+    pub(crate) const fn new(total_bytes: usize, per_worker_bytes: usize) -> Self {
+        Self {
+            total_bytes,
+            per_worker_bytes,
+        }
+    }
+
+    pub(crate) fn audio() -> Self {
+        // Encoding and comparison are alternative phases of one work item, so
+        // reserve the larger estimate rather than adding both. Six channels is
+        // the supported DVD-Audio maximum and keeps scheduling input-agnostic.
+        #[cfg(feature = "rust-mlp")]
+        let encoding = crate::mlp_stream::pcm_working_bytes(6);
+        #[cfg(not(feature = "rust-mlp"))]
+        let encoding = 0;
+        let comparison = crate::verify_audio_stream::pcm_working_bytes(6).total();
+        Self::new(WORK_BUDGET_BYTES, encoding.max(comparison))
+    }
+
+    pub(crate) fn workers(self, requested: usize, work_items: usize) -> usize {
+        let affordable = (self.total_bytes / self.per_worker_bytes.max(1)).max(1);
+        requested.max(1).min(affordable).min(work_items.max(1))
+    }
+}
+
 #[must_use]
 pub fn combine(left: &str, right: &str) -> String {
     if left.is_empty()
@@ -496,6 +533,19 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn work_budget_caps_workers_and_degrades_to_one() {
+        assert_eq!(WorkBudget::new(100, 30).workers(8, 8), 3);
+        assert_eq!(WorkBudget::new(100, 30).workers(2, 8), 2);
+        assert_eq!(WorkBudget::new(100, 30).workers(8, 2), 2);
+        assert_eq!(WorkBudget::new(29, 30).workers(8, 8), 1);
+        assert_eq!(WorkBudget::new(0, 30).workers(0, 0), 1);
+
+        let audio = WorkBudget::audio();
+        assert_eq!(audio.workers(2, 99), 2);
+        assert_eq!(audio.workers(1024, 99), 99);
+    }
 
     #[test]
     fn floating_option_bits_round_trip_through_signed_json_integers() {

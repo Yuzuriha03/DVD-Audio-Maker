@@ -44,11 +44,6 @@ def rust_sources(repo):
 
 def main():
     repo = Path(__file__).resolve().parents[2]
-    # Keep linker temporaries inside the workspace to avoid antivirus/indexer
-    # locks in the system temp directory.
-    os.environ.setdefault('TMP', str(repo/'build/tmp'))
-    os.environ.setdefault('TEMP', str(repo/'build/tmp'))
-    (repo/'build/tmp').mkdir(parents=True, exist_ok=True)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, help='Legacy configured source, used only for menu assets')
     parser.add_argument('--msys-root', type=Path, help=argparse.SUPPRESS)
@@ -56,6 +51,8 @@ def main():
                         help='Target architecture for the author runtime (default x64)')
     parser.add_argument('--work-directory', type=Path,
                         help='Defaults to build/rust-author-production (x64) or rust-author-production-arm64')
+    parser.add_argument('--temp-directory', type=Path, default=repo/'build/tmp',
+                        help='Linker temporary directory (defaults to build/tmp inside the workspace)')
     parser.add_argument('--ffmpeg-runtime', type=Path, default=os.environ.get('DVDA_FFMPEG_PREFIX'))
     parser.add_argument('--magick-work', type=Path, help='Retired; supplying this option is an error')
     parser.add_argument('--image-dependencies', type=Path, help='Retired; supplying this option is an error')
@@ -86,10 +83,16 @@ def main():
             raise ValueError('FFmpeg input checksum mismatch: '+name)
     if ffmpeg_record.get('target') != target or ffmpeg_record.get('toolchain') != 'msvc':
         raise ValueError(f'Production Rust author requires FFmpeg built with Windows MSVC for {target}')
+    temporary = args.temp_directory.resolve()
+    temporary.mkdir(parents=True, exist_ok=True)
     env = msvc_environment(arch=args.arch)
     env.update({
         'PATH': str(Path.home()/'.cargo/bin')+os.pathsep+env['PATH'],
         'DVDA_FFMPEG_PREFIX': str(ffmpeg),
+        # Always set the child process temporary directory. setdefault() would
+        # silently retain an inherited system TEMP and can hit LNK1104.
+        'TMP': str(temporary),
+        'TEMP': str(temporary),
     })
     for name in ('DVDA_MAGICK_WORK', 'DVDA_IMAGE_DEPS_DIR'):
         env.pop(name, None)

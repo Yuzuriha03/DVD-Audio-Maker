@@ -41,9 +41,28 @@ pub(crate) fn map<T: Sync, R: Send>(
     operation: impl Fn(usize, &T, &mut dyn Callbacks) -> R + Sync,
     finished: impl FnMut(usize, &R, &mut dyn Callbacks),
 ) -> Result<Vec<R>, String> {
+    map_with_budget(
+        items,
+        crate::options::WorkBudget::audio(),
+        caller,
+        cancelled_message,
+        operation,
+        finished,
+    )
+}
+
+fn map_with_budget<T: Sync, R: Send>(
+    items: &[T],
+    budget: crate::options::WorkBudget,
+    caller: &mut dyn Callbacks,
+    cancelled_message: &str,
+    operation: impl Fn(usize, &T, &mut dyn Callbacks) -> R + Sync,
+    finished: impl FnMut(usize, &R, &mut dyn Callbacks),
+) -> Result<Vec<R>, String> {
+    let workers = budget.workers(crate::options::worker_count(items.len()), items.len());
     map_with_workers(
         items,
-        crate::options::worker_count(items.len()),
+        workers,
         caller,
         cancelled_message,
         operation,
@@ -187,6 +206,58 @@ mod tests {
     }
 
     #[test]
+    fn tiny_budget_preserves_order_and_runs_one_worker() {
+        let items = [3, 1, 4, 2];
+        let mut events = Events {
+            thread: Some(std::thread::current().id()),
+            ..Events::default()
+        };
+        let active = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let threads = std::sync::Mutex::new(Vec::new());
+        let mut completed = Vec::new();
+        let results = map_with_budget(
+            &items,
+            crate::options::WorkBudget::new(1, 1),
+            &mut events,
+            "cancelled",
+            |_, item, _| {
+                let running = active.fetch_add(1, Ordering::AcqRel) + 1;
+                peak.fetch_max(running, Ordering::AcqRel);
+                threads.lock().unwrap().push(std::thread::current().id());
+                std::thread::sleep(Duration::from_millis(2));
+                active.fetch_sub(1, Ordering::AcqRel);
+                *item
+            },
+            |index, _, _| completed.push(index),
+        )
+        .unwrap();
+        assert_eq!(results, items);
+        assert_eq!(completed, [0, 1, 2, 3]);
+        assert_eq!(peak.load(Ordering::Acquire), 1);
+        let threads = threads.into_inner().unwrap();
+        assert!(threads.iter().all(|thread| *thread == threads[0]));
+    }
+
+    #[test]
+    fn tiny_budget_retains_worker_panic_errors() {
+        let mut events = Events {
+            thread: Some(std::thread::current().id()),
+            ..Events::default()
+        };
+        let error = map_with_budget(
+            &[1],
+            crate::options::WorkBudget::new(1, 1),
+            &mut events,
+            "cancelled",
+            |_, _, _| panic!("worker fixture"),
+            |_, _, _| {},
+        )
+        .unwrap_err();
+        assert_eq!(error, "Parallel worker panicked");
+    }
+
+    #[test]
     fn cancellation_stops_new_work() {
         let items = [0; 32];
         let mut events = Events {
@@ -194,8 +265,9 @@ mod tests {
             cancel: true,
             ..Events::default()
         };
-        let error = map(
+        let error = map_with_budget(
             &items,
+            crate::options::WorkBudget::new(1, 1),
             &mut events,
             "cancelled fixture",
             |_, _, _| (),

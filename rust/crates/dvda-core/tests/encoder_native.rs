@@ -7,7 +7,6 @@ use serde::Deserialize;
 use std::{
     fs,
     io::Cursor,
-    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -28,7 +27,6 @@ struct Case {
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct Fixtures {
-    encoder: String,
     cases: Vec<Case>,
 }
 struct Scratch(PathBuf);
@@ -72,23 +70,8 @@ impl Callbacks for Events {
             || (self.cancel_on_complete && self.completed != 0)
     }
 }
-fn library() -> PathBuf {
-    PathBuf::from(
-        std::env::var_os("DVDA_ENCODER_LIBRARY")
-            .expect("Set DVDA_ENCODER_LIBRARY to the pinned x64 C encoder"),
-    )
-}
 fn media_library() -> PathBuf {
     std::env::current_exe().unwrap()
-}
-fn job(wave: &Path, destination: &Path, context: String) -> encoder::Job {
-    encoder::Job {
-        library: library(),
-        wave: wave.to_str().unwrap().into(),
-        destination: destination.into(),
-        metadata_context: context,
-        timeout_millis: None,
-    }
 }
 fn passed(outcome: &media::Outcome) {
     assert!(outcome.failure.is_none(), "{:?}", outcome.failure);
@@ -220,7 +203,6 @@ fn decode(input: &Path, output: &Path) {
 fn linked_mlp_matrix_without_encoder_dll() {
     let fixtures: Fixtures =
         serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
-    assert_eq!(fixtures.encoder, encoder::BINARY_SHA256);
     assert_eq!(fixtures.cases.len(), 116);
     let root = Scratch::new();
     let input = root.0.join("input.wav");
@@ -442,174 +424,11 @@ fn streamed_decode_cancellation_discards_all_outputs() {
     }
 }
 
-#[test]
-#[ignore = "requires the pinned C encoder and source-built media DLL"]
-fn frozen_mlp_matrix_and_lossless_decode() {
-    let fixtures: Fixtures =
-        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
-    assert_eq!(fixtures.encoder, encoder::BINARY_SHA256);
-    assert_eq!(fixtures.cases.len(), 116);
-    let root = Scratch::new();
-    let input = root.0.join("input.wav");
-    let output = root.0.join("output.mlp");
-    let raw = root.0.join("decoded.raw");
-    let stamp = root.0.join("context.bin");
-    for (index, case) in fixtures.cases.iter().enumerate() {
-        let expected = wave(&input, case);
-        assert_eq!(
-            digest(&fs::read(&input).unwrap()),
-            case.wave_sha256,
-            "PCM generator case {index}: {case:?}"
-        );
-        let mut events = Events::default();
-        passed(&encoder::execute(
-            job(&input, &output, context(&stamp, case)),
-            &mut events,
-        ));
-        assert_eq!(events.completed, 1);
-        let actual = fs::read(&output).unwrap();
-        assert_eq!(actual.len(), case.bytes, "case {index}: {case:?}");
-        assert_eq!(
-            digest(&actual),
-            case.mlp_sha256,
-            "Entire MLP case {index}: {case:?}"
-        );
-        decode(&output, &raw);
-        let decoded = fs::read(&raw).unwrap();
-        let block = 40
-            * (case.rate
-                / if case.rate.is_multiple_of(44100) {
-                    44100
-                } else {
-                    48000
-                });
-        let padded_frames = case.frames.div_ceil(block as usize) * block as usize;
-        assert_eq!(
-            decoded.len(),
-            padded_frames * usize::from(case.channels) * 3,
-            "Decoded length {index}"
-        );
-        assert_eq!(
-            &decoded[..expected.len()],
-            expected,
-            "Lossless PCM case {index}: {case:?}"
-        );
-        assert!(
-            decoded[expected.len()..].iter().all(|b| *b == 0),
-            "Nonzero final AU padding {index}"
-        );
-        fs::remove_file(&output).unwrap();
-        fs::remove_file(&raw).unwrap();
-    }
-}
-
-#[test]
-#[ignore = "requires the pinned C encoder"]
-fn encoder_transactions_and_parallel_calls() {
-    let fixtures: Fixtures =
-        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
-    let case = &fixtures.cases[17];
-    let root = Scratch::new();
-    let input = root.0.join("input.wav");
-    let output = root.0.join("output.mlp");
-    wave(&input, case);
-    for mut events in [
-        Events {
-            cancel_after: Some(1),
-            ..Events::default()
-        },
-        Events {
-            cancel_after: Some(3),
-            ..Events::default()
-        },
-        Events {
-            cancel_on_complete: true,
-            ..Events::default()
-        },
-    ] {
-        assert_eq!(
-            encoder::execute(job(&input, &output, String::new()), &mut events)
-                .failure
-                .unwrap()
-                .kind,
-            "Cancelled"
-        );
-        assert!(!output.exists());
-        assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
-    }
-    let mut timed = job(&input, &output, String::new());
-    timed.timeout_millis = Some(0);
-    assert_eq!(
-        encoder::execute(timed, &mut Events::default())
-            .failure
-            .unwrap()
-            .kind,
-        "Timeout"
-    );
-    fs::write(&output, b"preserve").unwrap();
-    assert_eq!(
-        encoder::execute(job(&input, &output, String::new()), &mut Events::default())
-            .failure
-            .unwrap()
-            .kind,
-        "Io"
-    );
-    assert_eq!(fs::read(&output).unwrap(), b"preserve");
-    fs::remove_file(&output).unwrap();
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .share_mode(0)
-        .open(&input)
-        .unwrap();
-    assert_eq!(
-        encoder::execute(job(&input, &output, String::new()), &mut Events::default())
-            .failure
-            .unwrap()
-            .code,
-        Some(32)
-    );
-    drop(lock);
-    let bad = root.0.join("bad.dll");
-    fs::write(&bad, b"not an encoder").unwrap();
-    let mut corrupted = job(&input, &output, String::new());
-    corrupted.library = bad.clone();
-    assert_eq!(
-        encoder::execute(corrupted, &mut Events::default())
-            .failure
-            .unwrap()
-            .kind,
-        "InvalidData"
-    );
-    fs::remove_file(&bad).unwrap();
-    let threads: Vec<_> = (0..4)
-        .map(|index| {
-            let input = input.clone();
-            let output = root.0.join(format!("parallel-{index}.mlp"));
-            std::thread::spawn(move || {
-                passed(&encoder::execute(
-                    job(&input, &output, String::new()),
-                    &mut Events::default(),
-                ));
-                fs::read(output).unwrap()
-            })
-        })
-        .collect();
-    for thread in threads {
-        assert_eq!(digest(&thread.join().unwrap()), case.mlp_sha256);
-    }
-    assert_eq!(
-        fs::read_dir(&root.0).unwrap().count(),
-        5,
-        "Leaked partial output"
-    );
-}
-
 fn batch_job(root: &Path, cases: &[Case]) -> dvda_core::batch::Job {
     let media_library = media_library();
     dvda_core::batch::Job {
         media_library,
-        encoder_library: std::env::var_os("DVDA_ENCODER_LIBRARY")
-            .map_or_else(|| root.join("missing-encoder.dll"), PathBuf::from),
+        encoder_library: root.join("missing-encoder.dll"),
         temporary_directory: root.join("temp"),
         output_directory: root.join("output"),
         sample_rate: i32::try_from(cases[0].rate).unwrap(),
@@ -672,47 +491,6 @@ impl Callbacks for BatchEvents {
         self.cancel
     }
 }
-#[test]
-#[ignore = "requires the pinned C encoder and source-built media DLL"]
-fn batch_matrix_matches_frozen_encoder_bytes() {
-    let fixtures: Fixtures =
-        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
-    let root = Scratch::new();
-    let mut outputs = 0;
-    for rate in [44100, 48000, 88200, 96000, 176_400, 192_000] {
-        for bits in [16, 20, 24] {
-            let cases: Vec<_> = fixtures.cases[..84]
-                .iter()
-                .filter(|c| c.rate == rate && c.bits == bits)
-                .cloned()
-                .collect();
-            let folder = root.0.join(format!("{rate}-{bits}"));
-            fs::create_dir(&folder).unwrap();
-            let job = batch_job(&folder, &cases);
-            let mut events = BatchEvents::new();
-            passed(&dvda_core::batch::execute(job, &mut events));
-            assert_eq!(fs::read_dir(folder.join("temp")).unwrap().count(), 0);
-            for (index, case) in cases.iter().enumerate() {
-                assert_eq!(
-                    digest(&fs::read(folder.join(format!("output/track{index}.mlp"))).unwrap()),
-                    case.mlp_sha256,
-                    "Batch {rate}/{bits}/{index}"
-                );
-                let kinds: Vec<_> = events
-                    .events
-                    .iter()
-                    .filter(|e| e["Track"] == index)
-                    .filter_map(|e| e["Kind"].as_str())
-                    .filter(|k| *k != "PcmProgress")
-                    .collect();
-                assert_eq!(kinds, ["Started", "PcmStarted", "PcmFinished", "Encoded"]);
-                outputs += 1;
-            }
-        }
-    }
-    assert_eq!(outputs, 84);
-}
-
 #[test]
 #[cfg(feature = "rust-mlp")]
 #[ignore = "requires source-built media DLL"]
@@ -780,139 +558,6 @@ fn execute_with_runs_finalizers_concurrently_and_preserves_result_order() {
     );
     assert_eq!(outcome.failure.unwrap().kind, "Cancelled");
     assert_eq!(results, [] as [usize; 0]);
-}
-
-#[test]
-#[ignore = "requires the pinned C encoder and source-built media/formats DLLs"]
-fn mlp_acquisition_upgrades_legacy_parameter_cache_without_reencoding_or_track_changes() {
-    let fixtures: Fixtures =
-        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
-    let root = Scratch::new();
-    let mut tracks = Vec::new();
-    for (index, rate) in [44100, 48000].iter().enumerate() {
-        let case = fixtures
-            .cases
-            .iter()
-            .find(|case| case.rate == *rate && case.bits == 16 && case.channels == 2)
-            .unwrap();
-        let input = root.0.join(format!("input-{index}.wav"));
-        wave(&input, case);
-        tracks.push(serde_json::json!({"SourcePath":input,"Title":format!("曲目 {index}"),"Duration":duration_seconds(case)}));
-    }
-    let cache = root.0.join("cache.json");
-    let output = root.0.join("output");
-    let job = || dvda_core::mlp_workflow::Job {
-        media_library: media_library(),
-        encoder_library: library(),
-        source_root: root.0.to_string_lossy().into_owned(),
-        output_root: output.clone(),
-        cache_path: cache.clone(),
-        temporary_directory: root.0.join("temporary"),
-        stage_directory: root.0.join("stage"),
-        sample_rate: 48000,
-        bits: 24,
-        dither: false,
-        metadata_context: String::new(),
-        encoder_identity: "acquisition-regression".into(),
-        tracks: tracks.clone(),
-    };
-    let first = dvda_core::mlp_workflow::execute(job(), &mut Events::default()).unwrap();
-    assert_eq!((first.cache_hits, first.cache_rebuilt), (0, 2));
-    assert_eq!(first.diagnostics, [] as [serde_json::Value; 0]);
-    let bytes: Vec<_> = first
-        .tracks
-        .iter()
-        .map(|track| fs::read(track["MlpPath"].as_str().unwrap()).unwrap())
-        .collect();
-    let mut evidence: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_slice(&fs::read(&cache).unwrap()).unwrap();
-    for entry in evidence.values_mut() {
-        assert_eq!(entry["parameters_version"], 1);
-        for key in [
-            "parameters_version",
-            "source_parameters",
-            "output_parameters",
-        ] {
-            entry.as_object_mut().unwrap().remove(key);
-        }
-    }
-    fs::write(&cache, serde_json::to_vec(&evidence).unwrap()).unwrap();
-    for _ in 0..2 {
-        let reused = dvda_core::mlp_workflow::execute(job(), &mut Events::default()).unwrap();
-        assert_eq!((reused.cache_hits, reused.cache_rebuilt), (2, 0));
-        assert_eq!(reused.tracks, first.tracks);
-        for (index, track) in reused.tracks.iter().enumerate() {
-            assert_eq!(
-                fs::read(track["MlpPath"].as_str().unwrap()).unwrap(),
-                bytes[index]
-            );
-        }
-        let evidence: serde_json::Value =
-            serde_json::from_slice(&fs::read(&cache).unwrap()).unwrap();
-        for entry in evidence.as_object().unwrap().values() {
-            assert_eq!(entry["parameters_version"], 1);
-        }
-    }
-}
-#[test]
-#[ignore = "requires the pinned C encoder and source-built media DLL"]
-fn batch_cancellation_panic_and_partial_failure() {
-    let fixtures: Fixtures =
-        serde_json::from_str(include_str!("fixtures/encoder-managed-v1.json")).unwrap();
-    let mut case = fixtures.cases[17].clone();
-    case.frames = 192_017;
-    let root = Scratch::new();
-    for scenario in ["cancel", "panic", "malformed", "existing", "duplicate"] {
-        let folder = root.0.join(scenario);
-        fs::create_dir(&folder).unwrap();
-        let mut job = batch_job(&folder, &[case.clone(), case.clone(), case.clone()]);
-        let mut events = BatchEvents::new();
-        events.cancel_on_started = scenario == "cancel";
-        events.panic_on_started = scenario == "panic";
-        match scenario {
-            "malformed" => {
-                fs::write(&job.tracks[1].source_path, b"invalid wave").unwrap();
-            }
-            "existing" => {
-                fs::create_dir_all(&job.output_directory).unwrap();
-                fs::write(job.output_directory.join("track0.mlp"), b"preserve").unwrap();
-            }
-            "duplicate" => job.tracks[1].work_name = "TRACK0".into(),
-            _ => (),
-        }
-        let result = dvda_core::batch::execute(job, &mut events);
-        assert_eq!(
-            result.failure.unwrap().kind,
-            match scenario {
-                "cancel" => "Cancelled",
-                "duplicate" => "InvalidData",
-                "existing" => "Io",
-                _ => "InvalidOperation",
-            }
-        );
-        if folder.join("temp").is_dir() {
-            assert_eq!(fs::read_dir(folder.join("temp")).unwrap().count(), 0);
-        }
-        match scenario {
-            "existing" => assert_eq!(
-                fs::read(folder.join("output/track0.mlp")).unwrap(),
-                b"preserve"
-            ),
-            "malformed" => {
-                assert!(!folder.join("output/track1.mlp").exists());
-                for index in [0, 2] {
-                    let output = folder.join(format!("output/track{index}.mlp"));
-                    if output.exists() {
-                        assert_ne!(fs::read(output).unwrap(), [] as [u8; 0]);
-                    }
-                }
-            }
-            "cancel" | "panic" => {
-                assert_eq!(fs::read_dir(folder.join("output")).unwrap().count(), 0);
-            }
-            _ => assert!(!folder.join("output").exists()),
-        }
-    }
 }
 
 #[test]
@@ -999,7 +644,7 @@ fn synthetic_batch_worker_benchmark() {
                 fs::create_dir(&run).unwrap();
                 let job = dvda_core::batch::Job {
                     media_library: media_library.clone(),
-                    encoder_library: library(),
+                    encoder_library: media_library.clone(),
                     temporary_directory: run.join("temp"),
                     output_directory: run.join("output"),
                     sample_rate: 48000,
@@ -1088,8 +733,8 @@ fn synthetic_batch_worker_benchmark() {
                 );
                 fs::write(&report, serde_json::to_vec_pretty(&serde_json::json!({
                     "profile":"release x86_64-pc-windows-msvc", "logical_processors":std::thread::available_parallelism().unwrap().get(),
-                    "media_library":media_library,"encoder_library":library(),"media_sha256":digest(&fs::read(&media_library).unwrap()),
-                    "encoder_sha256":digest(&fs::read(library()).unwrap()),"frames":"24013 + track_index * 7", "sample_rate":48000,
+                    "media_library":media_library,"encoder_library":media_library.clone(),"media_sha256":digest(&fs::read(&media_library).unwrap()),
+                    "encoder_sha256":digest(&fs::read(&media_library).unwrap()),"frames":"24013 + track_index * 7", "sample_rate":48000,
                     "channels":[2,6],"tracks_per_batch":16,"repeats":3,"verified_lossless_outputs":verified,
                     "verification":"Every output decoded to S24 and compared against independent fixture PCM; MLP SHA256 matches first automatic-policy baseline",
                     "measurements":measurements

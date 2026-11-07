@@ -20,6 +20,17 @@ use std::{
 const PCM_CHUNK_FRAMES: usize = 8192;
 const PCM_QUEUE_CHUNKS: usize = 4;
 
+/// Estimated PCM allocations owned by one streaming encoder. Besides the
+/// bounded queues, one block can be filled by the producer and one consumed by
+/// the encoder. This is scheduler accounting, not an RSS limit.
+pub(crate) const fn pcm_working_bytes(channels: usize) -> usize {
+    const QUEUE_BUFFERS: usize = PCM_QUEUE_CHUNKS + (PCM_QUEUE_CHUNKS + 1) + 2;
+    PCM_CHUNK_FRAMES
+        .saturating_mul(channels)
+        .saturating_mul(size_of::<i32>())
+        .saturating_mul(QUEUE_BUFFERS)
+}
+
 struct EncoderInput {
     receiver: Receiver<Vec<i32>>,
     recycled: SyncSender<Vec<i32>>,
@@ -415,5 +426,20 @@ pub(crate) fn execute(
             exit_code: None,
             failure: Some(error),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pcm_budget_covers_queues_recycling_and_active_blocks() {
+        let chunk = PCM_CHUNK_FRAMES * 6 * size_of::<i32>();
+        assert_eq!(
+            pcm_working_bytes(6),
+            chunk * (PCM_QUEUE_CHUNKS + (PCM_QUEUE_CHUNKS + 1) + 2)
+        );
+        assert_eq!(pcm_working_bytes(usize::MAX), usize::MAX);
     }
 }

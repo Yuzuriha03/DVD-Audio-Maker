@@ -37,7 +37,6 @@ set "DVDA_LIB_TOOL=lib.exe"
 set "_DVDA_VSDEV_CMD="
 set "_DVDA_VSWHERE="
 if not defined DVDA_FFMPEG_PREFIX set "DVDA_FFMPEG_PREFIX=%~dp0..\..\build\msvc-native\ffmpeg-static\install"
-if not defined DVDA_MEDIA_NATIVE_DIR set "DVDA_MEDIA_NATIVE_DIR=%~dp0..\..\build\msvc-native\media-runtime"
 exit /b 0
 
 :missing_tools

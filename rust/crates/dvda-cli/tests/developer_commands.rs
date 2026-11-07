@@ -90,8 +90,7 @@ fn disc_source(root: &Path, destination: &Path) {
     fs::write(&input, wav).unwrap();
     let result = media::execute(
         media::Job {
-            library: PathBuf::from(std::env::var_os("DVDA_MEDIA_NATIVE_DIR").unwrap())
-                .join("dvda-media.dll"),
+            library: std::env::current_exe().unwrap(),
             replace: false,
             timeout_millis: None,
             request: Request {

@@ -532,9 +532,6 @@ fn check_track(
 }
 
 fn validate(job: &Job) -> Result<(), String> {
-    if !cfg!(feature = "rust-mlp") && !job.encoder_library.is_file() {
-        return Err("MLP 编码器组件缺失。".into());
-    }
     if !matches!(
         job.sample_rate,
         44_100 | 48_000 | 88_200 | 96_000 | 176_400 | 192_000

@@ -13,9 +13,10 @@ Rust author、ISO writer、媒体/图像适配层、MLP 编码器和菜单会话
   `rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json`。
   完整旧源码及 patch 可从提交 `6c5086127590001c544373783653fe991f0ebaeb` 恢复。
 
-默认 MLP 测试为 17 项 Rust 测试；四项历史 C 差分测试仅通过
-`external-oracle` feature 和显式外部 DLL 启用。格式/成品校验的可选 oracle
-同样要求显式路径。素材默认目录为 `tools/win-build/prebuilt`，缺失素材明确报错。
+默认 MLP 测试只使用 Rust 实现。历史阶段曾通过 `external-oracle` feature
+和显式外部 DLL 运行 C 差分测试；该 feature、外部格式/成品校验入口及
+运行说明现已全部移除，不再提供外部 oracle 验收入口。素材默认目录为
+`tools/win-build/prebuilt`，缺失素材明确报错。
 
 仍保留第三方 dvdauthor/spumux 的 C 实现、少量 `setjmp`/可变参数兼容边界，
 以及编译时 FFmpeg/ImageMagick ABI 布局探针。它们不属于退役的自有业务实现。

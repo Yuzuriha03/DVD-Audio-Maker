@@ -128,16 +128,10 @@ pub fn encoding_identity(
         ));
     }
     add_dependency_hashes(&mut components, dependencies, &file_hash)?;
-    #[cfg(feature = "rust-mlp")]
     components.insert(
         "linked-encoder-executable".to_owned(),
         file_hash(&std::env::current_exe().map_err(|error| error.to_string())?)?,
     );
-    #[cfg(not(feature = "rust-mlp"))]
-    if let Some(encoder) = encoder {
-        components.insert("encoder".into(), file_hash(encoder)?);
-    }
-    #[cfg(feature = "rust-mlp")]
     let _ = encoder;
     let context = if metadata_context.is_empty() {
         "generated-project-live-local-stamp-v5".into()
@@ -502,10 +496,7 @@ mod tests {
             encoding_identity("policy", &media, Some(&encoder), context.to_str().unwrap()).unwrap()
         };
         let mut before = compute();
-        #[cfg(feature = "rust-mlp")]
         let paths = [&media, &context, &dependency];
-        #[cfg(not(feature = "rust-mlp"))]
-        let paths = [&media, &encoder, &context, &dependency];
         for path in paths {
             let modified = fs::metadata(path).unwrap().modified().unwrap();
             fs::write(path, b"ABCE").unwrap();

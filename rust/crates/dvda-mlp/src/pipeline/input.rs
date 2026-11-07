@@ -1,10 +1,18 @@
+use std::borrow::Cow;
+
+pub(crate) struct PcmChunk<'a> {
+    pub samples: Cow<'a, [i32]>,
+    pub position: usize,
+    pub frames: usize,
+}
+
 pub(crate) trait PcmInput {
     fn channels(&self) -> usize;
     fn bits(&self) -> u32;
     fn au_samples(&self) -> usize;
     fn frames(&self) -> usize;
     fn position(&self) -> usize;
-    fn read_into(&mut self, capacity: usize, pcm: &mut Vec<i32>) -> Result<(), ()>;
+    fn read_chunk(&mut self, capacity: usize) -> Result<PcmChunk<'_>, ()>;
     fn refresh_stamp(&mut self) -> Result<Option<crate::metadata::Metadata>, i32> {
         Ok(None)
     }
@@ -20,6 +28,7 @@ pub(crate) struct CallbackInput<F, S> {
     pub source_frames: usize,
     pub position: usize,
     pub failed: bool,
+    pub pcm: Vec<i32>,
     pub callback: F,
     pub stamp_refresh: S,
 }
@@ -47,13 +56,14 @@ where
         clippy::cast_sign_loss,
         reason = "Input parity masks the low 24 bits of signed PCM without changing its two's-complement representation"
     )]
-    fn read_into(&mut self, capacity: usize, pcm: &mut Vec<i32>) -> Result<(), ()> {
+    fn read_chunk(&mut self, capacity: usize) -> Result<PcmChunk<'_>, ()> {
         self.failed = true;
         if capacity == 0 || capacity > 160 || self.position > self.frames {
             return Err(());
         }
         let count = capacity.min(self.frames - self.position);
         let actual = count.min(self.source_frames.saturating_sub(self.position));
+        let pcm = &mut self.pcm;
         pcm.clear();
         pcm.resize(count * self.channels, 0);
         let mut done = 0;
@@ -76,11 +86,19 @@ where
                 if actual_frames == rounded && done == 0 {
                     self.failed = false;
                     pcm.clear();
-                    return Ok(());
+                    return Ok(PcmChunk {
+                        samples: Cow::Borrowed(pcm),
+                        position: self.position,
+                        frames: self.frames,
+                    });
                 }
                 self.position = rounded;
                 self.failed = false;
-                return Ok(());
+                return Ok(PcmChunk {
+                    samples: Cow::Borrowed(pcm),
+                    position: self.position,
+                    frames: self.frames,
+                });
             }
             if got > actual - done {
                 return Err(());
@@ -106,7 +124,11 @@ where
         }
         self.position += count;
         self.failed = false;
-        Ok(())
+        Ok(PcmChunk {
+            samples: Cow::Borrowed(pcm),
+            position: self.position,
+            frames: self.frames,
+        })
     }
     fn refresh_stamp(&mut self) -> Result<Option<crate::metadata::Metadata>, i32> {
         (self.stamp_refresh)()
@@ -138,17 +160,21 @@ impl PcmInput for MatrixInput<'_> {
     fn position(&self) -> usize {
         self.position
     }
-    fn read_into(&mut self, capacity: usize, pcm: &mut Vec<i32>) -> Result<(), ()> {
+    fn read_chunk(&mut self, capacity: usize) -> Result<PcmChunk<'_>, ()> {
         if !self.pcm.len().is_multiple_of(self.channels) || self.position > self.frames() {
             return Err(());
         }
         let count = capacity.min(self.frames() - self.position);
-        pcm.clear();
-        pcm.extend_from_slice(
-            &self.pcm[self.position * self.channels..(self.position + count) * self.channels],
-        );
+        let start = self.position * self.channels;
+        let end = (self.position + count) * self.channels;
         self.position += count;
-        Ok(())
+        let position = self.position;
+        let frames = self.frames();
+        Ok(PcmChunk {
+            samples: Cow::Borrowed(&self.pcm[start..end]),
+            position,
+            frames,
+        })
     }
 }
 
@@ -167,6 +193,7 @@ fn callback_input_reorders_partial_reads_and_pads_tail() {
         source_frames: 2,
         position: 0,
         failed: false,
+        pcm: Vec::new(),
         callback: |buffer: &mut [i32], capacity| {
             assert_eq!(capacity, 2 - calls);
             buffer[..2].copy_from_slice(&samples[next..next + 2]);
@@ -176,14 +203,33 @@ fn callback_input_reorders_partial_reads_and_pads_tail() {
         },
         stamp_refresh: || Ok(None),
     };
-    let mut pcm = Vec::new();
-    input.read_into(3, &mut pcm).unwrap();
-    assert_eq!(pcm, [512, 256, 1024, 768, 0, 0]);
+    let pcm = input.read_chunk(3).unwrap();
+    let allocation = pcm.samples.as_ptr();
+    assert_eq!(pcm.samples.as_ref(), [512, 256, 1024, 768, 0, 0]);
     assert_eq!(input.position, 3);
     assert!(!input.failed);
-    input.read_into(1, &mut pcm).unwrap();
-    assert_eq!(pcm, Vec::<i32>::new());
+    let pcm = input.read_chunk(1).unwrap();
+    assert!(pcm.samples.is_empty());
+    assert_eq!(pcm.samples.as_ptr(), allocation);
     assert_eq!(calls, 2);
+}
+
+#[test]
+fn matrix_input_borrows_the_original_slice() {
+    let samples = [1, 2, 3, 4, 5, 6];
+    let mut input = MatrixInput {
+        pcm: &samples,
+        channels: 2,
+        bits: 16,
+        au_samples: 40,
+        position: 0,
+    };
+    let chunk = input.read_chunk(2).unwrap();
+    assert!(matches!(&chunk.samples, Cow::Borrowed(_)));
+    assert_eq!(chunk.samples.as_ptr(), samples.as_ptr());
+    assert_eq!(chunk.samples.as_ref(), [1, 2, 3, 4]);
+    assert_eq!(chunk.position, 2);
+    assert_eq!(chunk.frames, 3);
 }
 
 #[test]
@@ -199,13 +245,14 @@ fn callback_input_failure_does_not_advance_position() {
             source_frames: 1,
             position: 0,
             failed: false,
+            pcm: Vec::new(),
             callback: |buffer: &mut [i32], _| {
                 buffer.copy_from_slice(&samples);
                 Ok(1)
             },
             stamp_refresh: || Ok(None),
         };
-        assert_eq!(input.read_into(1, &mut Vec::new()), Err(()));
+        assert!(input.read_chunk(1).is_err());
         assert_eq!(input.position, 0);
         assert!(input.failed);
     }

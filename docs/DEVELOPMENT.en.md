@@ -1,14 +1,11 @@
 # Development and debugging
 
-The application is a Windows x64 Rust workspace. User packages contain only
-the GUI; the developer CLI remains in source. Format processing and read-only
-disc verification use Rust directly. CLI and GUI default to `direct-bridges`
-and `rust-mlp`: owned media, image, menu adapters and MLP encoding are linked
-into the application. Third-party FFmpeg libraries remain native dependencies.
-Production encoding now uses Rust MLP, but packaging and end-to-end product
-acceptance are still being completed; a successful default build is not release
-certification. Use `--no-default-features` for legacy CLI/GUI oracle regressions.
-The linked encoder does not read `DVDA_ENCODER_LIBRARY`.
+The application is a Windows x64/ARM64 Rust workspace. User packages contain
+only the GUI; the developer CLI remains in source. CLI and GUI enable `rust-mlp`;
+owned media, image, menu adapters and MLP encoding are linked into the application,
+while third-party FFmpeg libraries remain native dependencies. The old
+`direct-bridges` switch and dynamic-loading fallback have been removed. Bounded
+std thread pools provide parallelism; rayon is not used.
 
 ## Source entry points
 
@@ -32,14 +29,13 @@ is a developer CLI diagnostic and is not exposed in the GUI.
 
 ## Native components
 
-Build third-party libraries and runtime assets using the [Windows build instructions](../tools/win-build/README.en.md). Linked builds use `DVDA_FFMPEG_PREFIX`, `DVDA_MAGICK_WORK` and `DVDA_IMAGE_DEPS_DIR`; `cargo-msvc.ps1` supplies defaults. No menu vendor is needed. The production FFmpeg static profile links all five libraries and their dependencies into the executable; only fonts, XML configuration and menu assets are extracted. The shared profile remains available for differential testing.
+Build third-party libraries and runtime assets using the [Windows build instructions](../tools/win-build/README.en.md). Linked builds use `DVDA_FFMPEG_PREFIX`; `cargo-msvc.ps1` supplies defaults. `DVDA_MAGICK_WORK` and `DVDA_IMAGE_DEPS_DIR` are retired; neither ImageMagick nor a menu vendor is needed. The production FFmpeg static profile links all five libraries and soxr into the executable, without native zlib; only fonts, XML configuration and menu assets are extracted. The shared profile remains available for development testing without external oracles.
 
-Only `--no-default-features` compatibility builds and frozen differential tests use
-`DVDA_MEDIA_NATIVE_DIR`, `DVDA_IMAGE_NATIVE_DIR` and `DVDA_ENCODER_LIBRARY` to
-select migrated backends. Default linked builds do not select them via those variables.
+External native/oracle differential entrypoints and their library/image environment
+variables have been removed. Builds and tests use the current linked backends.
 
-Production encoding uses the statically linked `dvda-mlp`; frozen legacy encoder
-artifacts are differential oracles only. Format parsing, MLP CRC/parity, PCM comparison and
+Production encoding uses the statically linked `dvda-mlp`; historical C oracle
+acceptance has been removed. Format parsing, MLP CRC/parity, PCM comparison and
 AOB disc verification are implemented in Rust in `dvda-native`, without a
 format or disc-verification DLL dependency.
 
@@ -58,8 +54,8 @@ libraries and build-only ABI probes remain. Historical stages are described in t
 ## VS Code
 
 Default encoder tests/builds require no C DLL. The Rust developer ABI adapter is
-generated in `build/mlp-encoder`; optional historical comparisons require an
-explicit external oracle and the `external-oracle` test feature.
+generated in `build/mlp-encoder`; the historical `external-oracle` feature and
+comparison harness have been removed.
 
 Use Rust Analyzer and CodeLLDB (or WinDbg) for `dvda-desktop` and `dvda-cli`.
 `.vscode/tasks.json` contains workspace build, test, release and packaging
@@ -73,9 +69,8 @@ dvda-toolchain.exe package --repo . --output build/release --media-runtime build
 ```
 
 The default GUI links the Rust MLP encoder into the application and ships no
-encoder DLL. An explicit `--encoder-runtime` additionally requires build-produced
-`encoder-build.json` identifying Rust ABI v1; packaging verifies hashes, sizes,
-x64 PE architecture and dependency closure.
+encoder DLL. The retired `--encoder-runtime` external comparison validation option has been
+removed; packaging accepts only current release inputs.
 
 The Rust author output contains `author-build.json`, authenticating source and
 runtime resources; no `menu-build.json` or static menu vendor is required.
@@ -128,14 +123,11 @@ prerequisite is printed as `NOT RUN`, never counted as a pass:
 - Cross-volume: `-OtherVolume` (or `DVDA_TEST_OTHER_VOLUME`), writable and on a different
   volume from the temporary directory; an invalid supplied directory is an error.
 - Lossless float matrix: `ffmpeg` on PATH; this is a functional test, not a benchmark.
-- Five external encoder integration cases: explicit `-EncoderLibrary` (or
-  `DVDA_ENCODER_LIBRARY`) with the frozen C oracle SHA256 documented in MLP parity.
-  No oracle is restored or searched for automatically.
 - Hash benchmark: `DVDA_HASH_BENCH_INPUTS` JSON file-path array and
   `DVDA_HASH_BENCH_REPORT` with an existing parent directory.
 - Real cached MLP: all six `DVDA_MLP_PREFLIGHT_{MANIFEST,ROOT,OUTPUT,MEDIA,ENCODER,REPORT}`
   values. Paths must exist (report parent must exist); the test validates cache identity.
-- Batch benchmark: oracle plus `DVDA_BATCH_BENCH=1`, a new `DVDA_BATCH_BENCH_ROOT`,
+- Batch benchmark: `DVDA_BATCH_BENCH=1`, a new `DVDA_BATCH_BENCH_ROOT`,
   and `DVDA_BATCH_BENCH_EXE` pointing to a packaged executable.
 
 Test failures produce a nonzero exit code; functional execution continues through
@@ -180,11 +172,11 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --off
 ```
 
 Rust tests cover full scans, CRC boundaries, alignment output and PCM comparison.
-Optional legacy-DLL differential tests are described in [format processing](C17-FORMATS.md).
+External legacy-DLL differential entrypoints have been removed; current format regressions use Rust and retained golden data. See [format processing](C17-FORMATS.md).
 The read-only
 `real_cached_mlp_preflight_benchmark_is_read_only` test needs
 `DVDA_MLP_PREFLIGHT_MANIFEST`, `ROOT`, `OUTPUT`, `MEDIA`, `ENCODER` and `REPORT`
-(all six use the `DVDA_MLP_PREFLIGHT_` prefix). Media/encoder DLL identities
+(all six use the `DVDA_MLP_PREFLIGHT_` prefix). Media/encoder component identities
 must match the cache. Any cache miss fails without encoding or overwriting
 samples. Benchmark timings do not replace full disc and playback validation.
 
@@ -194,12 +186,12 @@ All production worker pools use the detected logical processor count (minimum on
 
 Batch MLP encoding and LPCM preparation reuse the decoded temporary WAV only when its rate, storage/valid bits, channel mask, RIFF structure, and PCM precision satisfy the target. Otherwise normalization remains in place. Reusing 20-bit PCM checks the low four bits; cancellation and temporary-file cleanup are preserved. Normalization bulk-copies 16-to-16 and 24-to-24 PCM, validates then copies 24-to-20 PCM, and uses a dedicated 32-bit-storage-to-24-bit packing path without relaxing precision checks.
 
-When a production build needs a fresh full decode, it can write and normalize production PCM in the same pass. The default Rust MLP path instead uses that decode to feed a bounded in-memory queue and directly writes a temporary MLP, with no production WAV. The manifest carries source/intermediate identities and a signature covering target parameters, dither, and media components. MLP/LPCM reuse requires every item to match and otherwise falls back to the original conversion. Explicit MLP metadata and compatibility builds without direct codecs retain the WAV path. Standalone inspection writes no PCM. Direct-build verification decodes source and output concurrently, compares samples through a bounded queue without temporary WAV/raw files, and preserves first-mismatch offsets and zero-padding checks. ALAC cookie scanning, packet-bit inspection and repair use bounded file I/O, with repaired output still published atomically through a temporary file. Full verification runs menu-structure and lossless-content checks concurrently, then merges diagnostics in stable stage order.
+When a production build needs a fresh full decode, it can write and normalize production PCM in the same pass. The default Rust MLP path instead uses that decode to feed a bounded in-memory queue and directly writes a temporary MLP, with no production WAV. The manifest carries source/intermediate identities and a signature covering target parameters, dither, and media components. MLP/LPCM reuse requires every item to match and otherwise falls back to the original conversion. Explicit MLP metadata and builds with `rust-mlp` disabled retain the WAV path. Standalone inspection writes no PCM. Direct-build verification decodes source and output concurrently, compares samples through a bounded queue without temporary WAV/raw files, and preserves first-mismatch offsets and zero-padding checks. ALAC cookie scanning, packet-bit inspection and repair use bounded file I/O, with repaired output still published atomically through a temporary file. Full verification runs menu-structure and lossless-content checks concurrently, then merges diagnostics in stable stage order.
 
 WAV container parsing and writing are shared through `dvda-audio`; `dvda-core` retains DVD-Audio parameter restrictions and PCM conversion only. Authoring uses the integer RIFF reader policy (reject duplicate fmt/data, skip ancillary metadata, tolerate only a missing terminal data padding byte). Normalization uses the shared Writer's compact RIFF mode, preserving its 68-byte header and 32-bit size limit. General media input retains its existing RIFF/RF64 policy, and general output retains the 104-byte header with RF64 reservation.
 
-The real cached preflight benchmark compares the initial automatic-policy check with parameter-cache reuse and reports only the actual worker count. This measures cache checking, not full decoding/encoding throughput. Use real cached inputs and matching media/encoder DLLs, compare repeated-run medians, and monitor memory and CPU separately. Worker-policy unit tests alone do not justify production scheduling changes or performance claims.
+The real cached preflight benchmark compares the initial automatic-policy check with parameter-cache reuse and reports only the actual worker count. This measures cache checking, not full decoding/encoding throughput. Use real cached inputs and matching media/encoder components, compare repeated-run medians, and monitor memory and CPU separately. Worker-policy unit tests alone do not justify production scheduling changes or performance claims.
 
-For a bounded synthetic end-to-end benchmark, opt into the ignored `synthetic_batch_worker_benchmark` test in `encoder_native.rs`. Set `DVDA_BATCH_BENCH=1`, `DVDA_BATCH_BENCH_ROOT` to a **new short absolute directory** under ignored `build`, `DVDA_BATCH_BENCH_EXE` to an extracted shipped onefile EXE, and `DVDA_ENCODER_LIBRARY` to the pinned encoder DLL. Run `cargo test --manifest-path rust\Cargo.toml -p dvda-core --test encoder_native --release --target x86_64-pc-windows-msvc synthetic_batch_worker_benchmark -- --ignored --exact --nocapture`. The test extracts checksum-verified embedded media dependencies, generates 16 half-second stereo/6-channel tracks per 16/20/24-bit batch, measures the automatic policy over three repeats of five automatic-policy runs, and verifies all 720 outputs by deterministic MLP digest and lossless decoded PCM (including zero final-AU padding). It deletes each verified run's outputs and writes `worker-benchmark.json` inside the owned root. Short roots avoid legacy Win32 path limits during runtime extraction; timings exclude sample generation and verification, and are not a before/after optimization comparison or representative long-album benchmark.
+For a bounded synthetic end-to-end benchmark, opt into the ignored `synthetic_batch_worker_benchmark` test in `encoder_native.rs`. Set `DVDA_BATCH_BENCH=1`, `DVDA_BATCH_BENCH_ROOT` to a **new short absolute directory** under ignored `build`, `DVDA_BATCH_BENCH_EXE` to an extracted shipped onefile EXE,; encoding uses the current Rust test executable without an external encoder DLL. Run `cargo test --manifest-path rust\Cargo.toml -p dvda-core --test encoder_native --release --target x86_64-pc-windows-msvc synthetic_batch_worker_benchmark -- --ignored --exact --nocapture`. The test extracts checksum-verified embedded media dependencies, generates 16 half-second stereo/6-channel tracks per 16/20/24-bit batch, measures the automatic policy over three repeats of five automatic-policy runs, and verifies all 720 outputs by deterministic MLP digest and lossless decoded PCM (including zero final-AU padding). It deletes each verified run's outputs and writes `worker-benchmark.json` inside the owned root. Short roots avoid legacy Win32 path limits during runtime extraction; timings exclude sample generation and verification, and are not a before/after optimization comparison or representative long-album benchmark.
 
 Profiles use canonical `DVDA_*` keys. Legacy expansion of SourceDirectory, FinalDirectory, BuildDirectory, Title, IsoPrefix, MlpSource, and MlpExternalDirectory into profile keys has been removed. Evaluated fields with these names are unchanged.

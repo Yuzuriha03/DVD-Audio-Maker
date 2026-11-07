@@ -13,7 +13,7 @@ No format DLL, external utility or fallback implementation is required.
 
 ## Rust migration regression checks
 
-The formats and read-only MLP/LPCM disc verifiers require no C implementation or production DLL. The old C sources and frozen DLLs have been removed from the checkout. Historical format differential tests covered nine real MLP profiles (44.1–192 kHz, 16/20/24 bits, mono/stereo/six channels); optional external comparisons remain test-only.
+The formats and read-only MLP/LPCM disc verifiers require no C implementation or production DLL. The old C sources and frozen DLLs have been removed from the checkout. Historical format differential tests covered nine real MLP profiles (44.1–192 kHz, 16/20/24 bits, mono/stereo/six channels). The external comparison entry has now been removed; current regressions use the Rust implementation and retained golden data only.
 
 Set `DVDA_TEST_AUTHOR` to the project-built author executable and run `cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --offline -p dvda-native --test authored_lpcm` for the full authored LPCM matrix; leave `DVDA_TEST_AUTHOR_QUICK` unset. This covers gapless/separate titles, short and odd-length PCM, corrupted audio/headers, and truncation rejection.
 
@@ -35,15 +35,9 @@ cargo run --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --offl
 ```
 
 The command reports file count, bytes, valid headers, alignment results and PTS
-round trips. Optional migration differential tests use a previously built C DLL
-as a read-only oracle, never as a production fallback or release component.
-Enable `DVDA_FORMATS_ORACLE=1` and set `DVDA_FORMATS_ORACLE_DLL` to an external
-frozen format DLL for the synthetic MLP/checksum and PCM/PTS differential tests.
-Set `DVDA_ENCODER_LIBRARY` explicitly for encoded-profile comparisons. The
-optional disc-verifier oracle uses `DVDA_DISC_VERIFY_LIBRARY` without a bundled
-fallback. Set `DVDA_FORMATS_REAL_MLP` to an existing MLP
-file to also run `frozen_dll_real_mlp_file_differential`; without that variable,
-the optional real-file check does not perform a comparison.
+round trips. The former external format, encoder and disc-verifier oracle
+entrypoints and their environment variables have been removed. They are not
+available as production fallbacks or optional test modes.
 
 MLP cache checks retain full-stream CRC/parity validation. CRC tables and frame
 buffers are reused; the Rust coordinator reports per-track progress with bounded

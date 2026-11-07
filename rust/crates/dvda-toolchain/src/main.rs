@@ -24,8 +24,6 @@ struct Args {
     target_directory: Option<PathBuf>,
     media_runtime: Option<PathBuf>,
     image_runtime: Option<PathBuf>,
-    /// Explicit legacy encoder oracle; it is never embedded in linked releases.
-    encoder_runtime: Option<PathBuf>,
     image_author: Option<PathBuf>,
     source: Option<PathBuf>,
     prebuilt: Option<PathBuf>,
@@ -77,7 +75,6 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--target-dir" => options.target_directory = Some(value.into()),
             "--media-runtime" => options.media_runtime = Some(value.into()),
             "--image-runtime" => options.image_runtime = Some(value.into()),
-            "--encoder-runtime" => options.encoder_runtime = Some(value.into()),
             "--image-author" => options.image_author = Some(value.into()),
             "--source" => options.source = Some(value.into()),
             "--prebuilt" => options.prebuilt = Some(value.into()),
@@ -209,13 +206,6 @@ fn package(options: Args) -> Result<(), String> {
     );
     // All provenance and dependency checks precede any changes to release files.
     let mut inputs = validation::validate(&media, &image, &author, &options.target)?;
-    // Optional encoder artifacts are authenticated as oracles, never shipped.
-    if let Some(encoder) = options.encoder_runtime {
-        let encoder = required_dir(absolutize(&repository, encoder), "encoder oracle")?;
-        inputs
-            .records
-            .extend(validation::validate_encoder(&encoder, &options.target)?.records);
-    }
     for name in [
         "Cargo.lock",
         "crates/dvda-desktop/Cargo.toml",
@@ -607,7 +597,7 @@ fn io_error(error: impl std::fmt::Display) -> String {
 
 fn print_usage() {
     println!(
-        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--target-dir PATH] [--media-runtime PATH] [--image-runtime PATH] [--encoder-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--target TRIPLE] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
+        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--target-dir PATH] [--media-runtime PATH] [--image-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--target TRIPLE] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
     );
 }
 
@@ -673,13 +663,7 @@ mod tests {
         ] {
             assert!(validate_version(version).is_err());
         }
-        for option in [
-            "--source",
-            "--prebuilt",
-            "--version",
-            "--encoder-runtime",
-            "--target-dir",
-        ] {
+        for option in ["--source", "--prebuilt", "--version", "--target-dir"] {
             assert!(parse_args(vec![option.into()].into_iter()).is_err());
             assert!(parse_args(vec![option.into(), String::new()].into_iter()).is_err());
             assert!(parse_args(vec![option.into(), "--repo".into()].into_iter()).is_err());
@@ -702,7 +686,9 @@ mod tests {
             ),
             repo.join("chosen space")
         );
-        assert!(parse_args(vec!["--formats-runtime".into(), "unused".into()].into_iter()).is_err());
+        for option in ["--formats-runtime", "--encoder-runtime"] {
+            assert!(parse_args(vec![option.into(), "unused".into()].into_iter()).is_err());
+        }
     }
 
     fn entry(f: &Fixture) -> Result<(), String> {
@@ -716,8 +702,6 @@ mod tests {
             "image".into(),
             "--image-author".into(),
             "author".into(),
-            "--encoder-runtime".into(),
-            "encoder".into(),
             "--output".into(),
             "output".into(),
         ])
@@ -749,54 +733,6 @@ mod tests {
         let f = Fixture::new();
         f.edit("media", |d| d["profile"] = "wrong".into());
         assert!(entry(&f).unwrap_err().contains("profile=shared"));
-    }
-
-    #[test]
-    fn package_entry_rejects_encoder_before_touching_release() {
-        for failure in ["legacy", "manifest", "tamper", "import", "delay_import"] {
-            let f = Fixture::new();
-            let output = f.root.join("output");
-            fs::create_dir_all(output.join("DVD-Audio-Maker")).unwrap();
-            let old_names = [
-                "DVD-Audio-Maker/DVD-Audio-Maker.exe",
-                "DVD-Audio-Maker-v1.0-win-x64.zip",
-                "MANIFEST.txt",
-            ];
-            for name in old_names {
-                fs::write(output.join(name), b"known good").unwrap();
-            }
-            match failure {
-                "legacy" => f.edit("encoder", |record| record["implementation"] = "c".into()),
-                "manifest" => {
-                    fs::remove_file(f.root.join("encoder/encoder-build.json")).unwrap();
-                }
-                "tamper" => {
-                    fs::write(f.root.join("encoder/mlp_encoder.dll"), b"tampered").unwrap();
-                }
-                _ => f.replace(
-                    "encoder",
-                    "mlp_encoder.dll",
-                    &pe::fixture(
-                        true,
-                        if failure == "import" {
-                            &["missing.dll"]
-                        } else {
-                            &[]
-                        },
-                        if failure == "delay_import" {
-                            &["missing.dll"]
-                        } else {
-                            &[]
-                        },
-                    ),
-                ),
-            }
-            assert!(entry(&f).is_err(), "{failure}");
-            for name in old_names {
-                assert_eq!(fs::read(output.join(name)).unwrap(), b"known good");
-            }
-            assert_eq!(fs::read_dir(&output).unwrap().count(), 3);
-        }
     }
 
     #[test]

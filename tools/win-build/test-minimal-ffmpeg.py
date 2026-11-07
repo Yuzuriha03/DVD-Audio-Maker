@@ -1,4 +1,4 @@
-"""Compare MSVC shared-profile MLP decoding with a retained external oracle."""
+"""Validate MSVC shared-profile Rust MLP encoding and decoding."""
 from pathlib import Path
 import argparse
 import array
@@ -42,7 +42,6 @@ Write = c.CFUNCTYPE(c.c_int, c.c_void_p, c.c_void_p, c.c_size_t)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--baseline', required=True, type=Path, help='Original menu-bin directory')
     parser.add_argument('--candidate', required=True, type=Path, help='MSVC shared-profile DLL directory')
     parser.add_argument('--prefix', required=True, type=Path, help='Rebuilt FFmpeg install prefix')
     parser.add_argument('--output', required=True, type=Path)
@@ -50,7 +49,7 @@ def main():
                         help='Rust encoder acceptance DLL built by dvda-mlp/build-runtime.ps1')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
-    baseline, candidate, prefix, work = (p.resolve() for p in [args.baseline, args.candidate, args.prefix, args.output])
+    candidate, prefix, work = (p.resolve() for p in [args.candidate, args.prefix, args.output])
     work.mkdir(parents=True, exist_ok=False)
     manifest = json.loads((prefix/'build-manifest.json').read_text(encoding='utf-8-sig'))
     assert manifest.get('target') == 'x86_64-pc-windows-msvc' and manifest.get('toolchain') == 'msvc', \
@@ -64,9 +63,8 @@ def main():
                     str(Path(__file__).with_name('build-rust-bridges.ps1')), '-Component', 'media',
                     '-FfmpegPrefix', str(prefix),
                     '-Output', str(work / 'rust-probe')], check=True)
-    # Keep the executable away from its staged candidate DLLs. Windows searches
-    # the executable directory before PATH; otherwise the baseline run would
-    # silently load the candidate instead of the retained external oracle.
+    # Keep the executable away from its staged candidate DLLs so the run uses
+    # the candidate selected explicitly through PATH.
     probe = work/'mlp-decode-probe.exe'
     shutil.copyfile(work/'rust-probe/mlp-decode-probe.exe', probe)
     report = {'status': 'RUNNING', 'target': manifest['target'], 'toolchain': 'msvc',
@@ -76,9 +74,9 @@ def main():
         assert parsed.machine == 0x8664
         report['libraries'][name] = {'sha256': sha(candidate / name), 'bytes': (candidate / name).stat().st_size,
                                     'imports': sorted(parsed.imports())}
-    # Check all original consumers, including the new test probe.
+    # Check the Rust probe against the candidate export inventory.
     exports = {name: Pe(candidate / name).exports() for name in LIBRARIES}
-    for path in list(baseline.glob('*.exe')) + list(baseline.glob('*.dll')) + [probe]:
+    for path in [probe]:
         if path.name in LIBRARIES:
             continue
         for dependency, names in Pe(path).imports().items():
@@ -153,20 +151,17 @@ def main():
                 mlp = work / (label + '.mlp')
                 mlp.write_bytes(b''.join(chunks))
                 assert mlp.stat().st_size == result.bytes
-                old_pcm, new_pcm = work / (label + '.old.s32'), work / (label + '.new.s32')
-                old = run(baseline, [mlp, old_pcm])
-                new = run(candidate, [mlp, new_pcm])
-                assert old == new, (label, old, new)
+                decoded_pcm = work / (label + '.s32')
+                new = run(candidate, [mlp, decoded_pcm])
                 assert new['sample_rate'] == rate and new['channels'] == channels and new['bits'] == bits, (label, new)
-                data = new_pcm.read_bytes()
+                data = decoded_pcm.read_bytes()
                 expected = array.array('i', (value << 8 for value in samples)).tobytes()
-                assert old_pcm.read_bytes() == data, label + ' old/new decode mismatch'
                 assert data[:len(expected)] == expected, label + ' original PCM mismatch'
                 assert not any(data[len(expected):]), label + ' nonzero padding'
                 assert new['frames'] == result.encoded_frames
                 report['cases'].append({'case': label, 'input_frames': frames, 'decoded_frames': new['frames'],
-                    'mlp_bytes': result.bytes, 'mlp_sha256': sha(mlp), 'pcm_sha256': sha(new_pcm),
-                    'original_pcm_equal': True, 'baseline_decoder_equal': True})
+                    'mlp_bytes': result.bytes, 'mlp_sha256': sha(mlp), 'pcm_sha256': sha(decoded_pcm),
+                    'original_pcm_equal': True, 'candidate_decode_passed': True})
                 print('PASS ' + label, flush=True)
     report['status'] = 'PASS'
     (work / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

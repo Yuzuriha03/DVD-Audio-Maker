@@ -1,10 +1,10 @@
-//! Streaming PCM/metadata host for the linked Rust encoder or legacy C oracle. No output patching.
+//! Streaming PCM/metadata host for the linked Rust encoder. No output patching.
 use crate::{
     formats::{self, WavLayout},
     media::{Failure, Outcome, Temporary, Timed, temporary_path},
 };
 use dvda_native::{
-    encoder::{Encoder, Request, Stamp, Stream},
+    encoder::{Request, Stamp, Stream},
     files,
     media::Callbacks,
 };
@@ -17,7 +17,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const BINARY_SHA256: &str = "ece6d0a8033a26e2528042a7b74c66c249ea3c8d7378c06809fb94c8f6bd79b8";
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Job {
@@ -364,14 +363,14 @@ fn encode_rust(
     reason = "The public typed encoder adapter retains its owned-job API"
 )]
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
-    execute_with(&job, caller, cfg!(feature = "rust-mlp"))
+    execute_with(&job, caller)
 }
 
 #[allow(
     clippy::too_many_lines,
     reason = "Streaming encoding keeps backend selection, cancellation, metadata, and atomic output cleanup together"
 )]
-fn execute_with(job: &Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Outcome {
+fn execute_with(job: &Job, caller: &mut dyn Callbacks) -> Outcome {
     let mut callbacks = Timed::new(caller, job.timeout_millis);
     let mut temporary = Temporary(None);
     let result = (|| -> Result<i32, Failure> {
@@ -386,17 +385,6 @@ fn execute_with(job: &Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Ou
         })?;
         let frames = layout.data_size / i64::from(layout.bytes_per_sample * layout.channels);
         let assignment = assignment(layout.channel_mask)?;
-        let legacy_encoder = if rust_backend {
-            None
-        } else {
-            let hash = crate::hash::reader_digest(File::open(&job.library)?)?;
-            if !hash.eq_ignore_ascii_case(BINARY_SHA256) {
-                return Err(invalid(
-                    "MLP DLL 哈希不符，请清理损坏的原生核心缓存后重试。",
-                ));
-            }
-            Some(Encoder::load(&job.library)?)
-        };
         let metadata = metadata(
             &job.metadata_context,
             access_units(frames, layout.sample_rate.cast_unsigned())?,
@@ -438,14 +426,11 @@ fn execute_with(job: &Job, caller: &mut dyn Callbacks, rust_backend: bool) -> Ou
             ],
             callbacks: &mut callbacks,
         };
-        let encoded = match legacy_encoder {
-            Some(encoder) => encoder.encode(&request, &mut stream),
-            None => encode_rust(
-                &request,
-                &mut stream,
-                crate::config::trim(&job.metadata_context).is_empty(),
-            ),
-        };
+        let encoded = encode_rust(
+            &request,
+            &mut stream,
+            crate::config::trim(&job.metadata_context).is_empty(),
+        );
         stream.callbacks.check()?;
         let encoded = encoded.map_err(io_failure)?;
         let length = stream.output.metadata()?.len();

@@ -109,10 +109,7 @@ impl Fixture {
         let root = &scratch.0;
         let src = root.join("src");
         fs::create_dir(&src).unwrap();
-        let library = PathBuf::from(
-            std::env::var_os("DVDA_MEDIA_NATIVE_DIR").expect("native media directory"),
-        )
-        .join("dvda-media.dll");
+        let library = std::env::current_exe().unwrap();
         // Two one-second, frame-aligned tracks make a genuine two-title LPCM
         // disc. Its legal title reset is below the legacy 1% abnormal limit.
         for track in 1..=2u32 {

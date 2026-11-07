@@ -257,9 +257,7 @@ pub unsafe fn initialize(archive: &[u8]) -> Result<(), String> {
     configure_library_search(&root)?;
     // SAFETY: this startup-only call precedes all threads and native library loading.
     unsafe {
-        for key in ["DVDA_IMAGE_NATIVE_DIR", "DVDA_MENU_NATIVE_DIR"] {
-            std::env::set_var(key, &root);
-        }
+        std::env::set_var("DVDA_MENU_NATIVE_DIR", &root);
     }
     DIRECTORY
         .set(root)

@@ -25,7 +25,7 @@ FFmpeg 显式禁用原生 zlib；普通 M4A/ALAC 不受影响，但不再支持�
 请在新的工作目录重建 FFmpeg，勿复用旧的启用 zlib 的库。Rust PNG 编解码不受影响。
 开发对照仍可显式设置 `DVDA_FFMPEG_PREFIX` 使用 shared 构建。静态链接不代表已经测得编码提速。
 
-打包器需要已验证的 x64 媒体/图像构建记录与 `build/rust-author-production`，并验证摘要、大小、PE 架构、DLL 闭包及字体/菜单素材。图像记录必须标识 Rust 实现；本机验收使用 `build/rust-image-runtime`。MLP 编码器直接编入 Rust 应用，`--encoder-runtime` 仅用于认证可选对照产物，不分发编码器 DLL。FFmpeg 命令行程序不是运行时输入，媒体库由 Rust bridge 调用；图像直接使用 Rust 实现，媒体/图像开发 adapter DLL 不进入静态链接发布包。
+打包器需要已验证的 x64 媒体/图像构建记录与 `build/rust-author-production`，并验证摘要、大小、PE 架构、DLL 闭包及字体/菜单素材。图像记录必须标识 Rust 实现；本机验收使用 `build/rust-image-runtime`。MLP 编码器直接编入 Rust 应用，不分发编码器 DLL；旧 `--encoder-runtime` 外部对照验证入口已移除。FFmpeg 命令行程序不是运行时输入，媒体库由 Rust bridge 调用；图像直接使用 Rust 实现，媒体/图像开发 adapter DLL 不进入静态链接发布包。
 
 格式解析、MLP CRC/奇偶校验、PCM 比较及只读 AOB 成品校验已经内置为 Rust 实现，不需要格式或校验 DLL。打包不再接受 `--formats-runtime` 输入。
 
@@ -35,7 +35,7 @@ FFmpeg 显式禁用原生 zlib；普通 M4A/ALAC 不受影响，但不再支持�
 
 图像依赖关闭默认 features，仅启用所需格式；GIF/TIFF 解码使用 Rust crates，不增加 C/C++ 图像构建步骤。构建 author 时只需 FFmpeg 和字体/菜单素材输入。旧 `--magick-work`、`--image-dependencies` 参数会明确报错，不会自动恢复旧后端。
 
-可选差分测试通过 `test-rust-workflow.ps1 -ImageRuntime <外部参考目录>` 指定冻结图像 DLL，并校验其 SHA256；默认构建和测试不查找或下载该 DLL。ARM64 使用 Rust 对应 target，仍需匹配架构的 FFmpeg 与 MSVC 工具；交叉编译通过不等于 ARM64 真机验收。
+外部图像 oracle 与 `-ImageRuntime` 差分入口已移除；当前测试使用 Rust 图像实现。ARM64 使用 Rust 对应 target，仍需匹配架构的 FFmpeg 与 MSVC 工具；交叉编译通过不等于 ARM64 真机验收。
 
 ## 应用图标
 

@@ -19,7 +19,6 @@ pub mod formats;
 pub mod hash;
 pub mod identity;
 pub mod ifo;
-pub mod images;
 pub mod index;
 pub mod lpcm;
 pub mod manifest;

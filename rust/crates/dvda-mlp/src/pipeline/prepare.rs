@@ -85,7 +85,6 @@ pub(crate) fn prepare_matrix(
     m.slot = 0;
     m.offset = 0;
     mlp_matrix_analysis_reset(&mut m.analysis)?;
-    let mut buffer = Vec::new();
     for i in 0..interval {
         let remaining = input.frames() - input.position();
         if remaining == 0 {
@@ -96,14 +95,14 @@ pub(crate) fn prepare_matrix(
             capacity = remaining - 8;
         }
         let count = capacity.min(remaining);
-        input.read_into(count, &mut buffer)?;
-        if buffer.is_empty() && input.position() == input.frames() {
+        let buffer = input.read_chunk(count)?;
+        if buffer.samples.is_empty() && buffer.position == buffer.frames {
             break;
         }
-        if buffer.len() != count * channels {
+        if buffer.samples.len() != count * channels {
             return Err(());
         }
-        let p = &buffer;
+        let p = buffer.samples.as_ref();
         m.lengths.push(count);
         m.checks.push(lossless(0, p, count, channels));
         if m.original_scale {

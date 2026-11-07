@@ -25,7 +25,6 @@ The package assembler expects validated x64 directories:
 | Image | `build/image-native` | `dvda-image.dll`, XML policy/type/color files and notice |
 | Author | explicit `--image-author` | complete Rust author built with the same static FFmpeg manifest |
 | Fonts/assets | `tools/win-build/prebuilt` or explicit `--prebuilt` | prepared menu assets and CJK fonts; missing inputs fail explicitly |
-| MLP oracle (optional) | `--encoder-runtime` | authenticated encoder oracle; never shipped |
 
 The packager verifies hashes, sizes, x64 architecture, the full import closure and assets. The MLP encoder is compiled directly into Rust. Image provenance must identify the Rust implementation; the local acceptance uses `build/rust-image-runtime`. Media/image adapter DLLs are development provenance inputs and are excluded from linked releases.
 
@@ -44,9 +43,8 @@ Embedded-cover metadata also supports BMP, GIF, and TIFF while preserving the
 original image bytes. Only the required pure-Rust `image` features are enabled.
 
 The old `--magick-work` and `--image-dependencies` author-build options are
-explicitly rejected. Optional differential tests accept an external frozen oracle
-through `test-rust-workflow.ps1 -ImageRuntime`; its SHA256 is checked before use.
-It is not a production dependency or a fallback.
+explicitly rejected. The external image-oracle and `-ImageRuntime` differential
+entrypoints have been removed; current tests use the Rust image implementation.
 
 `build-rust-arm64.ps1 -CheckOnly` checks the Rust ARM64 integration without
 ImageMagick. Cross-compilation does not replace ARM64 device acceptance, and media

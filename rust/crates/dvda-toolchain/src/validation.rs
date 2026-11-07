@@ -334,27 +334,6 @@ fn validate_rust_author(author: &Path, record: &Value, target: &str) -> Result<I
     })
 }
 
-pub fn validate_encoder(directory: &Path, target: &str) -> Result<Inputs, String> {
-    let (record, files) = component(
-        directory,
-        "encoder-build.json",
-        "files",
-        &["mlp_encoder.dll"],
-        true,
-        true,
-        target,
-    )?;
-    if record["implementation"] != "rust" || record["abi_version"].as_u64() != Some(1) {
-        return Err(
-            "Encoder must use the source-built Rust implementation with ABI version 1".into(),
-        );
-    }
-    Ok(Inputs {
-        files,
-        records: vec![directory.join("encoder-build.json")],
-    })
-}
-
 fn component(
     directory: &Path,
     manifest: &str,
@@ -827,96 +806,6 @@ pub(crate) mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
-    }
-
-    #[test]
-    fn encoder_requires_rust_abi_integrity_and_closed_inventory() {
-        let f = Fixture::new();
-        let directory = f.root.join("encoder");
-        assert_eq!(
-            validate_encoder(&directory, "x86_64-pc-windows-msvc")
-                .unwrap()
-                .files
-                .len(),
-            1
-        );
-        for (field, value) in [
-            ("implementation", serde_json::json!("c")),
-            ("abi_version", serde_json::json!(2)),
-        ] {
-            f.edit("encoder", |d| d[field] = value);
-            assert!(
-                validate_encoder(&directory, "x86_64-pc-windows-msvc")
-                    .unwrap_err()
-                    .contains("ABI version 1")
-            );
-            f.edit("encoder", |d| {
-                d["implementation"] = "rust".into();
-                d["abi_version"] = 1.into();
-            });
-        }
-        fs::write(directory.join("mlp_encoder.dll"), b"tampered").unwrap();
-        assert!(
-            validate_encoder(&directory, "x86_64-pc-windows-msvc")
-                .unwrap_err()
-                .contains("checksum")
-        );
-        f.replace(
-            "encoder",
-            "mlp_encoder.dll",
-            &pe::fixture(true, &["missing.dll"], &[]),
-        );
-        assert!(
-            validate_encoder(&directory, "x86_64-pc-windows-msvc")
-                .unwrap_err()
-                .contains("Missing native dependency")
-        );
-        f.replace(
-            "encoder",
-            "mlp_encoder.dll",
-            &pe::fixture(true, &[], &["missing.dll"]),
-        );
-        assert!(
-            validate_encoder(&directory, "x86_64-pc-windows-msvc")
-                .unwrap_err()
-                .contains("Missing native dependency")
-        );
-        f.replace("encoder", "mlp_encoder.dll", &pe::fixture(true, &[], &[]));
-        fs::write(directory.join("extra.dll"), pe::fixture(true, &[], &[])).unwrap();
-        assert!(
-            validate_encoder(&directory, "x86_64-pc-windows-msvc")
-                .unwrap_err()
-                .contains("actual DLL files")
-        );
-        fs::remove_file(directory.join("extra.dll")).unwrap();
-        fs::remove_file(directory.join("encoder-build.json")).unwrap();
-        assert!(
-            validate_encoder(&directory, "x86_64-pc-windows-msvc")
-                .unwrap_err()
-                .contains("Cannot read")
-        );
-    }
-
-    #[test]
-    fn encoder_rejects_missing_malformed_and_non_x64_dlls() {
-        let f = Fixture::new();
-        let directory = f.root.join("encoder");
-        fs::remove_file(directory.join("mlp_encoder.dll")).unwrap();
-        assert!(validate_encoder(&directory, "x86_64-pc-windows-msvc").is_err());
-
-        let mut x86 = pe::fixture(true, &[], &[]);
-        x86[132..134].copy_from_slice(&0x14cu16.to_le_bytes());
-        for bytes in [b"not a PE".to_vec(), x86] {
-            let f = Fixture::new();
-            f.replace("encoder", "mlp_encoder.dll", &bytes);
-            assert!(validate_encoder(&f.root.join("encoder"), "x86_64-pc-windows-msvc").is_err());
-        }
-
-        let f = Fixture::new();
-        f.edit("encoder", |record| {
-            record["files"]["extra.dll"] = record["files"]["mlp_encoder.dll"].clone();
-        });
-        assert!(validate_encoder(&f.root.join("encoder"), "x86_64-pc-windows-msvc").is_err());
     }
 
     #[test]

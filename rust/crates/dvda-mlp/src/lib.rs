@@ -12,9 +12,6 @@ mod entropy;
 #[allow(unsafe_code)]
 pub mod ffi;
 pub mod format;
-#[cfg(all(test, windows, target_arch = "x86_64", feature = "external-oracle"))]
-#[allow(unsafe_code)]
-mod frozen_reference;
 pub mod metadata;
 #[cfg(target_arch = "x86_64")]
 mod output;

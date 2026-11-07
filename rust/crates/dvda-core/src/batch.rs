@@ -343,7 +343,7 @@ fn track(
 }
 
 fn worker_count(tracks: usize) -> usize {
-    crate::options::worker_count(tracks)
+    crate::options::WorkBudget::audio().workers(crate::options::worker_count(tracks), tracks)
 }
 
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
@@ -746,11 +746,11 @@ mod tests {
     }
 
     #[test]
-    fn automatic_workers_follow_detected_parallelism_and_caps() {
+    fn automatic_workers_follow_detected_parallelism_budget_and_caps() {
         let detected = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-        assert_eq!(worker_count(usize::MAX), detected);
-        assert_eq!(worker_count(2), detected.min(2));
-        assert_eq!(worker_count(0), 1);
-        assert_eq!(worker_count(99), detected.min(99));
+        let budget = crate::options::WorkBudget::audio();
+        for tracks in [usize::MAX, 2, 0, 99] {
+            assert_eq!(worker_count(tracks), budget.workers(detected, tracks));
+        }
     }
 }

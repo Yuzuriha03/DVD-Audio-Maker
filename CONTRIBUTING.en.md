@@ -52,4 +52,4 @@ cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manif
 
 A successful expanded-audit exit does not mean zero warnings. Deduplicate by rule, file, and line of the first primary span using the same toolchain and features, and check `unfulfilled_lint_expectations`. Workspace `no-default-features` does not cover Core defaults re-enabled by dependents, so retain the separate Core check above.
 
-Write build reports to the ignored `build/clippy-audit/` directory; they are not release artifacts. Tests lacking an external oracle, FFmpeg, media fixtures, another volume, or ARM64 native libraries must be marked NOT RUN rather than passed.
+Write build reports to the ignored `build/clippy-audit/` directory; they are not release artifacts. Tests lacking FFmpeg, media fixtures, another volume, or ARM64 native libraries must be marked NOT RUN rather than passed. External oracle acceptance has been removed and is not an optional prerequisite.

@@ -4,7 +4,7 @@ use crate::{
     raster::{MAX_WORKING_BYTES, Raster},
 };
 use std::{
-    collections::{HashMap, hash_map::DefaultHasher},
+    collections::{HashMap, VecDeque, hash_map::DefaultHasher},
     fs::File,
     hash::{Hash, Hasher},
     io::{BufReader, Read, Seek, SeekFrom},
@@ -94,7 +94,54 @@ struct Entry {
 #[derive(Default)]
 struct State {
     entries: HashMap<Key, Entry>,
+    lru: VecDeque<Key>,
     bytes: usize,
+}
+
+impl State {
+    fn lookup(&mut self, key: &Key, identity: FileIdentity) -> Option<Arc<Raster>> {
+        let image = match self.entries.get(key) {
+            Some(entry) if entry.identity == identity => Arc::clone(&entry.image),
+            Some(_) => {
+                self.remove(key);
+                return None;
+            }
+            None => return None,
+        };
+        self.lru.retain(|cached| cached != key);
+        self.lru.push_back(key.clone());
+        Some(image)
+    }
+
+    fn remove(&mut self, key: &Key) {
+        if let Some(entry) = self.entries.remove(key) {
+            self.bytes = self.bytes.saturating_sub(entry.image.rgba().len());
+            self.lru.retain(|cached| cached != key);
+        }
+    }
+
+    fn evict_oldest(&mut self) {
+        let Some(key) = self.lru.pop_front() else {
+            return;
+        };
+        if let Some(entry) = self.entries.remove(&key) {
+            self.bytes = self.bytes.saturating_sub(entry.image.rgba().len());
+        }
+    }
+
+    fn insert(&mut self, key: Key, identity: FileIdentity, image: Arc<Raster>, max_bytes: usize) {
+        let bytes = image.rgba().len();
+        if bytes > max_bytes {
+            return;
+        }
+        self.remove(&key);
+        while self.bytes.saturating_add(bytes) > max_bytes {
+            self.evict_oldest();
+        }
+        self.bytes = self.bytes.saturating_add(bytes);
+        self.lru.push_back(key.clone());
+        self.entries.insert(key, Entry { identity, image });
+    }
 }
 
 pub struct ImageCache {
@@ -126,37 +173,12 @@ impl ImageCache {
     }
 
     fn lookup(&self, key: &Key, identity: FileIdentity) -> Option<Arc<Raster>> {
-        let mut state = self.lock();
-        let entry = state.entries.get(key)?;
-        if entry.identity != identity {
-            let entry = state.entries.remove(key).unwrap();
-            state.bytes = state.bytes.saturating_sub(entry.image.rgba().len());
-            return None;
-        }
-        Some(Arc::clone(&entry.image))
+        self.lock().lookup(key, identity)
     }
 
     fn insert(&self, key: Key, identity: FileIdentity, image: Arc<Raster>) -> Arc<Raster> {
-        let bytes = image.rgba().len();
-        if bytes > MAX_WORKING_BYTES {
-            return image;
-        }
-        let mut state = self.lock();
-        if let Some(old) = state.entries.remove(&key) {
-            state.bytes = state.bytes.saturating_sub(old.image.rgba().len());
-        }
-        if state.bytes.saturating_add(bytes) > MAX_WORKING_BYTES {
-            state.entries.clear();
-            state.bytes = 0;
-        }
-        state.bytes = state.bytes.saturating_add(bytes);
-        state.entries.insert(
-            key,
-            Entry {
-                identity,
-                image: Arc::clone(&image),
-            },
-        );
+        self.lock()
+            .insert(key, identity, Arc::clone(&image), MAX_WORKING_BYTES);
         image
     }
 
@@ -362,5 +384,72 @@ mod tests {
         assert!(Arc::ptr_eq(&decoded, &unchanged));
         assert_eq!(cache.lock().entries.len(), 2);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cache_hit_updates_recency_and_eviction_is_lru() {
+        let identity = FileIdentity {
+            size: 1,
+            modified: 2,
+            head: 3,
+            tail: 4,
+        };
+        let key = |name: &str| Key {
+            path: PathBuf::from(name),
+            operation: Operation::Decode,
+        };
+        let image =
+            || Arc::new(Raster::solid(Dimensions::new(2, 2).unwrap(), [1, 2, 3, 255]).unwrap());
+        let a = key("a");
+        let b = key("b");
+        let c = key("c");
+        let d = key("d");
+        let a_image = image();
+        let mut state = State::default();
+        state.insert(a.clone(), identity, Arc::clone(&a_image), 48);
+        state.insert(b.clone(), identity, image(), 48);
+        state.insert(c.clone(), identity, image(), 48);
+        assert_eq!(state.bytes, 48);
+
+        let hit = state.lookup(&a, identity).unwrap();
+        assert!(Arc::ptr_eq(&hit, &a_image));
+        state.insert(d.clone(), identity, image(), 48);
+
+        assert_eq!(state.entries.len(), 3);
+        assert_eq!(state.lru.len(), 3);
+        assert_eq!(state.bytes, 48);
+        assert!(!state.entries.contains_key(&b));
+        assert!(state.entries.contains_key(&a));
+        assert!(state.entries.contains_key(&c));
+        assert!(state.entries.contains_key(&d));
+        assert_eq!(state.lru.front(), Some(&c));
+        assert_eq!(state.lru.back(), Some(&d));
+    }
+
+    #[test]
+    fn changed_identity_removes_entry_and_lru_key() {
+        let identity = FileIdentity {
+            size: 1,
+            modified: 2,
+            head: 3,
+            tail: 4,
+        };
+        let key = Key {
+            path: PathBuf::from("changed"),
+            operation: Operation::Decode,
+        };
+        let image =
+            Arc::new(Raster::solid(Dimensions::new(2, 2).unwrap(), [1, 2, 3, 255]).unwrap());
+        let mut state = State::default();
+        state.insert(key.clone(), identity, image, 48);
+        let changed = FileIdentity {
+            head: 5,
+            ..identity
+        };
+
+        assert!(state.lookup(&key, changed).is_none());
+        assert!(state.entries.is_empty());
+        assert!(state.lru.is_empty());
+        assert_eq!(state.bytes, 0);
     }
 }

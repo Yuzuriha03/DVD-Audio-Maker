@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import struct
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -98,12 +98,10 @@ def select(hwnd, controls, ident, index):
 
 
 @contextmanager
-def launch(exe, args, root, runtime=None, environment_language=None, overrides=None):
+def launch(exe, args, root, environment_language=None, overrides=None):
     root.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("DVDA_")}
     env["LOCALAPPDATA"] = str(root / "local")
-    if runtime:
-        env["DVDA_MEDIA_NATIVE_DIR"] = str(runtime)
     if environment_language is not None:
         env["DVDA_LANGUAGE"] = environment_language
     env.update(overrides or {})
@@ -133,47 +131,39 @@ def ready(proc, title):
     return hwnd, wait_for(loaded)
 
 
-def generate_flacs(runtime, folder):
-    class Request(c.Structure):
-        _fields_ = [(n, c.c_uint32) for n in
-            ("size", "abi", "operation", "rate", "bits", "format", "soxr", "compression", "cover", "tag_count")] + [
-            ("input", c.c_char_p), ("output", c.c_char_p), ("tags", c.POINTER(c.c_char_p))]
-    emit_type = c.CFUNCTYPE(None, c.c_void_p, c.c_int, c.c_char_p)
-    cancel_type = c.CFUNCTYPE(c.c_int, c.c_void_p)
-    library = c.CDLL(str(runtime / "dvda-media.dll"))
-    library.dvdamedia_run.argtypes = [c.POINTER(Request), emit_type, cancel_type, c.c_void_p]
+def generate_flacs(ffmpeg, folder):
+    # Independent FFmpeg only creates test inputs; the GUI uses its linked backend.
     folder.mkdir(parents=True)
-    logs = []
-    emit = emit_type(lambda _, stream, message: logs.append(message.decode("utf-8", "replace")))
-    cancel = cancel_type(lambda _: 0)
     for channels in [1, 2]:
         source = folder / f"track-{channels}.wav"
         with wave.open(str(source), "wb") as writer:
             writer.setparams((channels, 2, 48000, 0, "NONE", "not compressed"))
-            writer.writeframes(b"".join(struct.pack("<h", ((frame * 97 + channel * 113) % 60001) - 30000)
+            writer.writeframes(b"".join(
+                ((frame * 97 + channel * 113) % 60001 - 30000).to_bytes(2, "little", signed=True)
                 for frame in range(4800) for channel in range(channels)))
-        tags = (c.c_char_p * 6)(b"ALBUM", b"Channel audit", b"TITLE", f"Track {channels}".encode(),
-            b"TRACK", str(channels).encode())
-        request = Request(c.sizeof(Request), 1, 3, 0, 0, 6, 0, 8, 0, 3,
-            str(source).encode("utf-8"), str(source.with_suffix(".flac")).encode("utf-8"), tags)
-        assert library.dvdamedia_run(c.byref(request), emit, cancel, None) == 0, logs
+        subprocess.run([str(ffmpeg), "-hide_banner", "-nostdin", "-v", "error",
+            "-i", str(source), "-c:a", "flac", "-compression_level", "8",
+            "-metadata", "ALBUM=Channel audit", "-metadata", f"TITLE=Track {channels}",
+            "-metadata", f"TRACK={channels}", str(source.with_suffix(".flac"))],
+            check=True, creationflags=subprocess.CREATE_NO_WINDOW)
         source.unlink()
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--runtime", type=Path, help="Development media directory; omit for the bundled EXE")
+    parser.add_argument("--fixture-ffmpeg", type=Path, default=shutil.which("ffmpeg"),
+        help="Independent FFmpeg executable used only to generate FLAC test inputs")
     parser.add_argument("--generate", nargs=2, type=Path)
     parser.add_argument("--output", type=Path, default=Path("build/gui-recheck-validation.json"))
     args = parser.parse_args()
     if args.generate:
         generate_flacs(*args.generate)
         return
-    if not args.exe:
-        parser.error("--exe is required")
+    if not args.exe or not args.fixture_ffmpeg or not args.fixture_ffmpeg.is_file():
+        parser.error("--exe and an available --fixture-ffmpeg are required")
     exe = args.exe.resolve()
-    runtime = args.runtime.resolve() if args.runtime else None
+    fixture_ffmpeg = args.fixture_ffmpeg.resolve()
     records = []
     with tempfile.TemporaryDirectory(prefix="dvda-gui-recheck-") as temporary:
         root = Path(temporary)
@@ -181,7 +171,7 @@ def main():
         profile = case / "profile.json"
         write_profile(profile, {"DVDA_TITLE": "Original title", "DVDA_ISO_PREFIX": "",
             "DVDA_BUILD_DIR": str(case / "work"), "DVDA_MLP_EXTERNAL_DIR": ""})
-        with launch(exe, ["--profile", profile], case, runtime) as proc:
+        with launch(exe, ["--profile", profile], case) as proc:
             hwnd, controls = ready(proc, "Original title")
             assert text(controls[206]) == text(controls[305]) == "", "Automatic values became fixed values"
             set_text(controls[202], "New title")
@@ -195,13 +185,13 @@ def main():
             set_text(controls[206], "explicit-prefix")
             set_text(controls[305], str(case / "explicit-mlp"))
             command(hwnd, controls, 102)
-        with launch(exe, ["--profile", profile], case, runtime) as proc:
+        with launch(exe, ["--profile", profile], case) as proc:
             _, controls = ready(proc, "New title")
             assert text(controls[206]) == "explicit-prefix"
             assert text(controls[305]) == str(case / "explicit-mlp")
             records.append({"case": "explicit_derived_overrides_survive_reload", "passed": True})
         explicit = {"DVDA_ISO_PREFIX": "environment-prefix", "DVDA_MLP_EXTERNAL_DIR": str(case / "environment-mlp")}
-        with launch(exe, ["--profile", profile], case, runtime, overrides=explicit) as proc:
+        with launch(exe, ["--profile", profile], case, overrides=explicit) as proc:
             hwnd, controls = ready(proc, "New title")
             assert text(controls[206]) == explicit["DVDA_ISO_PREFIX"]
             assert text(controls[305]) == explicit["DVDA_MLP_EXTERNAL_DIR"]
@@ -223,7 +213,7 @@ def main():
             write_profile(profile, {"DVDA_TITLE": "Chosen marker"}, "ja")
             write_profile(case / "local/DVD-Audio-Maker/settings.json", {"DVDA_TITLE": "Daily marker"})
             flags = [str(profile) if value == "PROFILE" else value for value in flags]
-            with launch(exe, flags, case, runtime, env_language) as proc:
+            with launch(exe, flags, case, env_language) as proc:
                 _, controls = ready(proc, "Chosen marker")
                 actual = u.SendMessageW(controls[103], 0x0147, 0, 0)
                 assert actual == expected, (name, actual, expected)
@@ -232,7 +222,7 @@ def main():
         for index, flags in enumerate([["--unknown"], ["--config"], ["--profile"],
             ["--language"], ["--language", "bad"], ["--language", "en", "--language", "ja"]]):
             case = root / f"invalid-args-{index}"
-            with launch(exe, flags, case, runtime) as proc:
+            with launch(exe, flags, case) as proc:
                 dialog = wait_for(lambda: find_window(proc.pid, "#32770"))
                 error = wait_for(lambda: "\n".join(text(h) for h in windows(dialog) if class_name(h) == "Static").strip())
                 assert "Usage:" in error or all(code in error for code in ["auto", "en", "zh-CN", "ja"]), error
@@ -249,7 +239,7 @@ def main():
         write_profile(profile, {"DVDA_TITLE": "Invalid audio", "DVDA_MLP_SAMPLE_RATE": "12345",
             "DVDA_MLP_BITS": "17"})
         write_profile(daily, {"DVDA_TITLE": "Untouched daily"})
-        with launch(exe, ["--profile", profile], case, runtime) as proc:
+        with launch(exe, ["--profile", profile], case) as proc:
             hwnd, controls = ready(proc, "Invalid audio")
             assert text(controls[301]) == "12345" and text(controls[302]) == "17"
             command(hwnd, controls, 102)
@@ -271,7 +261,7 @@ def main():
         assert saved_daily["DVDA_MLP_BITS"] == "17"
         records.append({"case": "invalid_audio_preserved_and_actions_rejected", "rate": "12345", "bits": "17",
             "profile_sha256": hashlib.sha256(before).hexdigest(), "daily_preserves_unknown_values_after_close": True})
-        with launch(exe, ["--profile", profile], case, runtime) as proc:
+        with launch(exe, ["--profile", profile], case) as proc:
             hwnd, controls = ready(proc, "Invalid audio")
             select(hwnd, controls, 301, 1)
             command(hwnd, controls, 105)
@@ -289,10 +279,9 @@ def main():
         source = case / "audio 日本語"
         write_profile(profile, {"DVDA_TITLE": "Preparation issues", "DVDA_SRC": str(source),
             "DVDA_BUILD_DIR": str(case / "work"), "DVDA_MENU": "off"})
-        with launch(exe, ["--profile", profile], case, runtime) as proc:
+        with launch(exe, ["--profile", profile], case) as proc:
             hwnd, controls = ready(proc, "Preparation issues")
-            fixture_runtime = runtime or next((case / "local/DVD-Audio-Maker/runtime").glob("*/dvda-media.dll")).parent
-            subprocess.run([sys.executable, str(Path(__file__).resolve()), "--generate", str(fixture_runtime), str(source)],
+            subprocess.run([sys.executable, str(Path(__file__).resolve()), "--generate", str(fixture_ffmpeg), str(source)],
                 check=True, creationflags=subprocess.CREATE_NO_WINDOW)
             command(hwnd, controls, 105)
             wait_for(lambda: u.IsWindowEnabled(controls[106]) and "Task failed." in text(controls[115]))

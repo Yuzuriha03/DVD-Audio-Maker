@@ -87,7 +87,7 @@ def main():
     # third-party dependency cannot be supplied by the development environment.
     windows = Path(os.environ.get('SystemRoot', r'C:\Windows'))
     env = os.environ | {'PATH': os.pathsep.join(str(p) for p in (runtime, windows / 'System32', windows))}
-    for variable in ('DVDA_RUNTIME_DIRECTORY', 'DVDA_AUTHOR_BIN', 'DVDA_IMAGE_NATIVE_DIR',
+    for variable in ('DVDA_RUNTIME_DIRECTORY', 'DVDA_AUTHOR_BIN',
                      'MAGICK_CONFIGURE_PATH', 'MAGICK_HOME', 'DVDA_MENU_DATA', 'DVDA_FONT_DIR'):
         env.pop(variable, None)
     version_command = [str(executable), '--version']

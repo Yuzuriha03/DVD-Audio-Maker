@@ -37,13 +37,5 @@ required-features = ["author-loader"]
 name = "direct-acceptance"
 required-features = ["media"]
 
-[[example]]
-name = "media-differential"
-required-features = ["media"]
-
-[[example]]
-name = "menu-media-differential"
-required-features = ["media"]
-
 [lints]
 workspace = true

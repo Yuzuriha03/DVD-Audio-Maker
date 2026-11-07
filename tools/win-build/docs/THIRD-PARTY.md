@@ -15,8 +15,7 @@
 
 用户使用单文件 Rust GUI。author、项目适配层和 MLP 编码器静态集成在程序中，
 Rust 图像库、FFmpeg 及其依赖静态链接；字体和菜单数据随程序内嵌。旧项目 C author、适配 DLL 和 C17
-编码器已移除。ImageMagick 和 FreeType 不再是图像构建或运行时依赖；显式提供的历史图像 oracle
-仅用于可选测试，不随发布包分发。发布包不含
+编码器已移除。ImageMagick 和 FreeType 不再是图像构建或运行时依赖；历史图像 oracle 验收入口已移除，且不会随发布包分发。发布包不含
 `ffmpeg.exe`、`ffprobe.exe`、ImageMagick 命令行程序、eac3to 或 参考编码器。
 
 构建脚本、源码哈希和完整来源记录保留在仓库与本地 `build` 目录。退役 author

@@ -33,8 +33,8 @@ reference functions or reorganize their call relationships.
 ## Unsafe boundary
 
 Production unsafe code is restricted by a crate-level lint to `direct` and
-`ffi` (including its private adapters); the optional external-oracle test module
-is separately exempted. Unsafe operations in unsafe functions must still use
+`ffi` (including its private adapters); the external-oracle test module has
+been removed. Unsafe operations in unsafe functions must still use
 explicit blocks. The encoding, analysis, serialization and output modules use
 safe Rust.
 
@@ -52,8 +52,8 @@ synchronous trampolines. Config/metadata must stay initialized and immutable;
 results and callback buffers must obey the documented exclusive-access rules.
 Direct callbacks borrow their shared context one at a time and retain no buffer
 references. Callback panics are caught only with `panic = "unwind"`; release
-`panic = "abort"` still terminates the process. Oracle DLL loading/function-pointer
-conversion is test-only and is not a production dependency.
+`panic = "abort"` still terminates the process. External oracle DLL loading and
+function-pointer conversion have been removed.
 
 ## Refactoring verification
 
@@ -63,24 +63,10 @@ what was actually changed and tested, including limits of the evidence:
 Historical performance/decoder measurements below are not fresh results for the
 current revision and do not establish frozen C acceptance or release approval.
 
-For a Windows Rust regression comparison, explicitly select an independently
-built, pre-change DLL. The candidate is the Rust crate linked into the example,
-not a second DLL argument:
-
-```powershell
-cargo run --manifest-path rust\Cargo.toml -p dvda-mlp --release --example differential -- 'C:\path\to\pre-refactor\dvda_mlp.dll' --rust-baseline
-```
-
-The non-stress suite compares 361 complete fixed-metadata streams using raw
-bytes and SHA256 (133 standard/layout/depth and 228 grouped cases). With
-`--stress`, it compares 370 streams (142 standard/layout/depth and 228 grouped
-cases), including longer grouped inputs. A valid multi-record/partial-metadata
-case additionally compares complete raw bytes and SHA256; it is not included in
-those totals. Cancellation, reentrancy, admission and malformed-metadata checks
-are additional contract checks, not additional complete-stream comparisons.
-Without `--rust-baseline`, the harness requires the frozen C oracle SHA256 before
-loading the supplied DLL. Rust baseline results must not be reported as
-historical C acceptance.
+The former `differential` example and its external DLL loading modes have been
+removed. Current regression checks use the crate's Rust unit and integration
+tests; historical baseline comparisons below are records, not runnable
+acceptance entrypoints.
 
 Phase-six x86-64 Windows validation passed the 370-case stress comparison plus
 the additional metadata comparison against the independently saved phase-two
@@ -264,8 +250,8 @@ guaranteed to fit the delivery rate. Short-matrix success does not certify long
 inputs, memory savings or physical-player compatibility.
 
 FFmpeg must be on PATH. The test does not certify physical DVD players or all
-mixed-rate layouts. Historical oracle tests are optional for normal Rust builds,
-but complete frozen C comparison is no longer a migration or release gate;
+mixed-rate layouts. Historical oracle test entrypoints have been removed; complete frozen C
+comparison is not a migration or release gate;
 see [MLP-PARITY](../../../docs/MLP-PARITY.md).
 
 ## Building and using the encoder
@@ -297,9 +283,9 @@ order; independent groups use assignment order. Callback panics return `-5`
 only in unwind builds; release builds abort (see Streaming API safety above).
 All output must be discarded on failure. Calls are synchronous, independent,
 and support concurrency/reentrancy. Internal allocation exhaustion can still
-abort. The `cdylib` is retained only as a differential acceptance adapter.
+abort. The `cdylib` is retained only as a developer ABI acceptance adapter.
 
-The differential DLL exports `mlp_encoder_abi_version`, `mlp_encode_stream`, the explicit
+The developer DLL exports `mlp_encoder_abi_version`, `mlp_encode_stream`, the explicit
 layout/depth entrypoints, and `mlp_encode_stream_groups` with the original
 configuration/result layout and callback calling convention. It validates
 multiple metadata records (including a partial final record), uses DVD
@@ -333,15 +319,15 @@ Rust build command:
 powershell -ExecutionPolicy Bypass -File rust\crates\dvda-mlp\build-runtime.ps1
 ```
 
-An optional `-FrozenEncoder <external-DLL>` enables historical comparisons with
-the `external-oracle` feature, validates the original hash before and after, and
-runs standard/grouped differential stress suites. Those four tests require an
-explicit comparison runtime; default builds and tests require only Rust.
+The former `-FrozenEncoder` option, `external-oracle` feature and differential
+stress harness have been removed. The script now runs only Rust tests, Clippy
+and the developer DLL build; no external comparison runtime is accepted.
 
 ### Historical acceptance records
 
 These records describe earlier revisions, not a rerun or acceptance of the
-current native-float implementation. Decoder/PCM-only checks are not raw-byte
+current native-float implementation. The external-oracle acceptance entrypoint
+has since been removed. Decoder/PCM-only checks are not raw-byte
 parity checks, including the additional standard stress cases.
 
 The historical recipe with an external C oracle was executed successfully with output directory
@@ -356,7 +342,7 @@ concurrency, invalid duration, panic containment and cancellation. That external
 The stress streams contain 70,001 standard frames and 9,602 grouped primary
 frames. These finite tests are not exhaustive FIFO/compression certification.
 
-The existing `tools\win-build\test-rust-decoder.ps1` was also exercised with
+The retired `tools\win-build\test-rust-decoder.ps1` was historically exercised with
 both probes' media-runtime DLLs on PATH. All nine available fixtures passed
 PCM/metadata comparison, and malformed-input/output-error checks passed. The
 recipe nevertheless failed its final capability comparison: the Rust probe

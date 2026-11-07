@@ -232,6 +232,7 @@ pub(crate) fn encode(
     {
         return Err(());
     }
+    let bits = input.bits();
     let mut base = MlpParameters {
         maximum_channel: channels as u32 - 1,
         ..Default::default()
@@ -264,7 +265,6 @@ pub(crate) fn encode(
     let mut recycled_au: Vec<PlannedAu> = Vec::new();
     let mut noise_left: Vec<i32> = Vec::new();
     let mut noise_right: Vec<i32> = Vec::new();
-    let mut pcm = Vec::new();
     while frames < input.frames() {
         let mut span = restart_interval as usize;
         let is_restart = if cycle != 0 {
@@ -328,7 +328,7 @@ pub(crate) fn encode(
         {
             return Err(());
         }
-        let (pcm, count, bypass, bypass_bits) = if let Some(m) = matrix.as_deref() {
+        let (pcm, count, bypass, bypass_bits, end_markers) = if let Some(m) = matrix.as_deref() {
             let count = m.lengths[m.slot];
             p.matrix_count = m.count as u32;
             initial.matrix_count = m.count as u32;
@@ -350,6 +350,7 @@ pub(crate) fn encode(
                 count,
                 m.bypass[m.offset..m.offset + count].to_vec(),
                 m.bits,
+                frames + count == input.frames(),
             )
         } else {
             let remaining = input.frames() - input.position();
@@ -358,11 +359,13 @@ pub(crate) fn encode(
                 capacity = remaining - 8;
             }
             let count = capacity.min(remaining);
-            input.read_into(count, &mut pcm)?;
-            if pcm.len() != count * channels {
+            let chunk = input.read_chunk(count)?;
+            if chunk.samples.len() != count * channels {
                 return Err(());
             }
-            (Cow::Borrowed(pcm.as_slice()), count, Vec::new(), 0)
+            let input_frames = chunk.frames;
+            let pcm = chunk.samples;
+            (pcm, count, Vec::new(), 0, frames + count == input_frames)
         };
         let first = if is_restart && count >= 16 { 8 } else { 0 };
         p.flags = u32::from(is_restart || count != previous.blocksize as usize) * 2;
@@ -395,7 +398,7 @@ pub(crate) fn encode(
             p.qss[ch] = if let Some(m) = matrix.as_ref().filter(|m| m.original_scale) {
                 m.scale.qss[m.slot][ch]
             } else {
-                24 - input.bits()
+                24 - bits
             };
             initial.qss[ch] = p.qss[ch];
         }
@@ -408,7 +411,7 @@ pub(crate) fn encode(
                 recycled.count = count;
                 recycled.bypass_bits = bypass_bits;
                 recycled.single_restart = is_restart && first == 0;
-                recycled.end_markers = frames + count == input.frames();
+                recycled.end_markers = end_markers;
                 recycled.stamp = 0;
                 recycled.residual.clear();
                 recycled.unpredicted.clear();
@@ -424,7 +427,7 @@ pub(crate) fn encode(
                 count,
                 bypass_bits,
                 single_restart: is_restart && first == 0,
-                end_markers: frames + count == input.frames(),
+                end_markers,
                 stamp: 0,
             },
         };

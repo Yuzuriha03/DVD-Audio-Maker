@@ -14,6 +14,37 @@ use std::{
 const CHUNK_FRAMES: usize = 8192;
 const QUEUE_EVENTS: usize = 8;
 
+/// Estimated PCM allocations for one comparison, with independent recycling
+/// pools for the source and decoded sides. The shared event queue is accounted
+/// separately because either side can occupy its data events.
+pub(crate) struct PcmWorkingBytes {
+    pub(crate) source: usize,
+    pub(crate) decoded: usize,
+    pub(crate) shared: usize,
+}
+
+impl PcmWorkingBytes {
+    pub(crate) const fn total(&self) -> usize {
+        self.source
+            .saturating_add(self.decoded)
+            .saturating_add(self.shared)
+    }
+}
+
+pub(crate) const fn pcm_working_bytes(channels: usize) -> PcmWorkingBytes {
+    // Each side has its own recycle queue, a producer block, and comparison
+    // fragments. Data events in the shared queue are additional allocations.
+    const SIDE_BUFFERS: usize = QUEUE_EVENTS + 2;
+    let chunk = CHUNK_FRAMES
+        .saturating_mul(channels)
+        .saturating_mul(size_of::<i32>());
+    PcmWorkingBytes {
+        source: chunk.saturating_mul(SIDE_BUFFERS),
+        decoded: chunk.saturating_mul(SIDE_BUFFERS),
+        shared: chunk.saturating_mul(QUEUE_EVENTS),
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Side {
     Source,
@@ -145,7 +176,7 @@ impl PcmSink for DecoderSink {
 }
 
 struct Comparison {
-    chunks: [Option<Chunk>; 2],
+    chunks: [VecDeque<Chunk>; 2],
     positions: [u64; 2],
     received: [u64; 2],
     decoded_tail: VecDeque<i32>,
@@ -155,7 +186,7 @@ struct Comparison {
 impl Comparison {
     fn new(channels: u32, max_padding_frames: u32) -> Self {
         Self {
-            chunks: [None, None],
+            chunks: [VecDeque::new(), VecDeque::new()],
             positions: [0, 0],
             received: [0, 0],
             decoded_tail: VecDeque::new(),
@@ -175,12 +206,7 @@ impl Comparison {
                 self.decoded_tail.push_back(sample);
             }
         }
-        if let Some(chunk) = &mut self.chunks[index] {
-            chunk.samples.extend_from_slice(&samples);
-            let _ = recycled[index].try_send(samples);
-        } else {
-            self.chunks[index] = Some(Chunk { samples, offset: 0 });
-        }
+        self.chunks[index].push_back(Chunk { samples, offset: 0 });
         self.compare(recycled);
     }
 
@@ -188,7 +214,7 @@ impl Comparison {
         if self.mismatch.is_some() {
             return;
         }
-        while let (Some(left), Some(right)) = (&self.chunks[0], &self.chunks[1]) {
+        while let (Some(left), Some(right)) = (self.chunks[0].front(), self.chunks[1].front()) {
             let available =
                 (left.samples.len() - left.offset).min(right.samples.len() - right.offset);
             let lhs = &left.samples[left.offset..left.offset + available];
@@ -202,16 +228,16 @@ impl Comparison {
             let left_done = left.offset + available == left.samples.len();
             let right_done = right.offset + available == right.samples.len();
             if left_done {
-                let consumed = self.chunks[0].take().unwrap();
+                let consumed = self.chunks[0].pop_front().unwrap();
                 let _ = recycled[0].try_send(consumed.samples);
             } else {
-                self.chunks[0].as_mut().unwrap().offset += available;
+                self.chunks[0].front_mut().unwrap().offset += available;
             }
             if right_done {
-                let consumed = self.chunks[1].take().unwrap();
+                let consumed = self.chunks[1].pop_front().unwrap();
                 let _ = recycled[1].try_send(consumed.samples);
             } else {
-                self.chunks[1].as_mut().unwrap().offset += available;
+                self.chunks[1].front_mut().unwrap().offset += available;
             }
             if available == 0 {
                 break;
@@ -419,6 +445,17 @@ mod tests {
     }
 
     #[test]
+    fn pcm_budget_separates_source_decoded_and_shared_queues() {
+        let chunk = CHUNK_FRAMES * 6 * size_of::<i32>();
+        let working = pcm_working_bytes(6);
+        assert_eq!(working.source, chunk * (QUEUE_EVENTS + 2));
+        assert_eq!(working.decoded, chunk * (QUEUE_EVENTS + 2));
+        assert_eq!(working.shared, chunk * QUEUE_EVENTS);
+        assert_eq!(working.total(), chunk * (QUEUE_EVENTS * 3 + 4));
+        assert_eq!(pcm_working_bytes(usize::MAX).total(), usize::MAX);
+    }
+
+    #[test]
     fn streaming_comparison_handles_fragmentation_padding_and_mismatch_offsets() {
         let (recycled, _recycle) = recycle_channels();
         let mut comparison = Comparison::new(2, 2);
@@ -441,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    fn streaming_comparison_returns_appended_and_consumed_buffers() {
+    fn streaming_comparison_returns_consumed_fragments_without_merging() {
         let (recycled, recycle) = recycle_channels();
         let mut comparison = Comparison::new(2, 0);
         let source = vec![1, 2];
@@ -453,14 +490,15 @@ mod tests {
         assert!(recycle[1].try_recv().is_ok());
 
         comparison.push(Side::Source, vec![3], &recycled);
-        assert!(recycle[0].try_recv().is_err());
         let appended = vec![4];
         let appended_allocation = appended.as_ptr();
         comparison.push(Side::Source, appended, &recycled);
-        let returned = recycle[0].try_recv().unwrap();
-        assert_eq!(returned.as_ptr(), appended_allocation);
+        assert!(recycle[0].try_recv().is_err());
         comparison.push(Side::Decoded, vec![3, 4], &recycled);
-        assert_eq!(recycle[0].try_recv().unwrap(), [3, 4]);
+        assert_eq!(recycle[0].try_recv().unwrap(), [3]);
+        let returned = recycle[0].try_recv().unwrap();
+        assert_eq!(returned, [4]);
+        assert_eq!(returned.as_ptr(), appended_allocation);
         assert!(recycle[1].try_recv().is_ok());
         comparison.finish(2, 0).unwrap();
     }

@@ -101,6 +101,7 @@ pub(crate) fn encode_stream(
         source_frames,
         position: 0,
         failed: false,
+        pcm: Vec::new(),
         callback: |buffer: &mut [i32], capacity: usize| {
             let received = read.read(buffer, capacity).map_err(|()| {
                 status.set(-3);

@@ -4,9 +4,9 @@ Production integration uses the `media` feature for FFmpeg bridges and the
 `dvda-image` crate for Rust image decoding and rendering (default features are
 empty). The `direct` build enables `media,menu`; the `author` build enables
 `media,menu,author-iso`. Neither requires
-ImageMagick libraries or XML configuration. `author-loader` is a differential-only
-adapter. The C ABI exports remain available for native author linkage and
-frozen-oracle differential tests.
+ImageMagick libraries or XML configuration. `author-loader` is a development acceptance adapter. The C ABI exports remain
+available for native author linkage; external-oracle differential entrypoints
+have been removed.
 
 ## Integration contract
 
@@ -18,8 +18,8 @@ state remaining valid and callbacks never unwinding. Invalid tag pairs fail with
 -22 without dereferencing missing values.
 
 The legacy ImageMagick bridge, layout probe, shim and image feature have been retired.
-Image decoding and rendering use `dvda-image`. Explicit frozen-oracle tests remain
-in `dvda-core`, using the hash-validated external adapter in `dvda-native`.
+Image decoding and rendering use `dvda-image`. The former hash-validated external
+image adapter and frozen-oracle tests have been removed.
 No ImageMagick libraries or XML configuration are used by production builds.
 
 `DVDA_FFMPEG_PREFIX` names the retained FFmpeg install; its native dependencies
@@ -46,7 +46,7 @@ All manifests keep `production_accepted=false`.
 
 ## Verified evidence and remaining gates
 
-Fresh retained-oracle runs under `build`:
+Historical retained-oracle runs under `build` (the external comparison entry has since been removed):
 
 - `bridge-image-fresh.log`: four image fixtures, CLI commands, RGBA capacity
   boundaries and eight Y4M profiles; status/callback/output parity, plus each
@@ -68,7 +68,7 @@ Fresh retained-oracle runs under `build`:
   audio paths, media cancellation, missing-image errors and RGBA length checks.
   Run with `--features media --example direct-acceptance -- <audio.wav> <image.png>`;
   no ImageMagick library or configuration is needed for this acceptance example.
-  Legacy image CLI callback/cancellation checks belong to the frozen-oracle tests.
+  Legacy image CLI callback/cancellation checks are historical only; that acceptance entry has been removed.
 
 Production readiness remains **gated**: final application/embedded-author direct
 linkage and final executable dependency closure are not certified here.
@@ -89,10 +89,11 @@ are not substitutes for Rust rendering acceptance.
 
 ```powershell
 cargo build --offline --manifest-path rust\Cargo.toml -p dvda-bridges --features media --bin mlp-decode-probe
-tools\win-build\test-rust-decoder.ps1 -RustProbe rust\target\debug\mlp-decode-probe.exe -LegacyProbe build\legacy-mlp-decode-probe.exe
+rust\target\debug\mlp-decode-probe.exe --capabilities-shared
 ```
 
-Nine retained rate/depth/channel fixtures have byte-exact PCM/metadata parity;
-malformed input, unwritable output and capabilities statuses match. The
-`--capabilities` contract rejects non-MLP codecs (11) and incorrect component
-counts (12). Full retained FFmpeg gives 11, not minimal-build acceptance.
+The former LegacyProbe differential script has been removed. Current decoder
+checks run only the project-built Rust probe. Historical rate/depth/channel
+fixtures and malformed-input records remain evidence, not an external-oracle
+acceptance mode. The `--capabilities-shared` contract reports the actual linked
+FFmpeg component inventory.

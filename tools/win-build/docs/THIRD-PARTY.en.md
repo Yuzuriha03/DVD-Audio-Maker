@@ -18,7 +18,7 @@ Users run a single Rust GUI executable. The author, project adapters and MLP
 encoder, Rust image libraries and third-party FFmpeg libraries are statically integrated; fonts and menu data
 are embedded. The old project C author, adapter DLLs and C17 encoder have been
 removed. ImageMagick and FreeType are no longer image build or runtime dependencies;
-explicit external historical image oracles are used only for optional tests.
+the external historical image-oracle acceptance entrypoint has been removed.
 The release does not contain `ffmpeg.exe`, `ffprobe.exe`, ImageMagick command-line
 programs, eac3to or external MLP encoders.
 

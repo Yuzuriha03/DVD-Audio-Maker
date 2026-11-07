@@ -52,4 +52,4 @@ cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manif
 
 展开审计退出成功不代表零诊断。比较时按首个 primary span 的规则、文件和行号去重，保持相同工具链与 feature，并同时检查 `unfulfilled_lint_expectations`。workspace 的 `no-default-features` 不会覆盖依赖重新启用的 Core 默认 feature，因此必须保留上面的 Core 独立检查。
 
-构建报告写入被忽略的 `build/clippy-audit/`，不作为发布物。缺外部 oracle、FFmpeg、媒体 fixture、其他卷或 ARM64 原生库的测试必须标记 NOT RUN，不能计为通过。
+构建报告写入被忽略的 `build/clippy-audit/`，不作为发布物。缺 FFmpeg、媒体 fixture、其他卷或 ARM64 原生库的测试必须标记 NOT RUN，不能计为通过；外部 oracle 验收入口已移除，不再作为可选条件。

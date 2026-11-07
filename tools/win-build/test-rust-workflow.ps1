@@ -1,8 +1,6 @@
 param(
     [ValidateSet('Functional', 'Benchmarks')][string]$Mode = 'Functional',
     [string]$MediaRuntime = 'build\rust-author-production',
-    [string]$ImageRuntime = '',
-    [string]$EncoderLibrary = '',
     [string]$MenuData = 'build\rust-author-production\data',
     [string]$MenuRuntime = 'build\rust-author-production',
     [string]$OtherVolume = ''
@@ -35,43 +33,9 @@ function Show-CompilerMessages($Lines) {
         }
     }
 }
-$env:DVDA_MEDIA_NATIVE_DIR = Require-Path $MediaRuntime
-Remove-Item Env:DVDA_IMAGE_NATIVE_DIR -ErrorAction SilentlyContinue
-Remove-Item Env:MAGICK_CONFIGURE_PATH -ErrorAction SilentlyContinue
-Remove-Item Env:MAGICK_FONT_PATH -ErrorAction SilentlyContinue
-if ($ImageRuntime) {
-    $env:DVDA_IMAGE_NATIVE_DIR = Require-Path $ImageRuntime
-    $imageOracle = Require-Path (Join-Path $env:DVDA_IMAGE_NATIVE_DIR 'dvda-image.dll') Leaf
-    if ((Get-FileHash -LiteralPath $imageOracle -Algorithm SHA256).Hash -ne 'AC8AFB08C95B980A16E0212538403058B1B71340C78159DC19D6642CACEDF1DB') {
-        throw 'ImageRuntime must contain the explicitly supplied frozen image oracle.'
-    }
-    $env:MAGICK_CONFIGURE_PATH = $env:DVDA_IMAGE_NATIVE_DIR
-    $env:MAGICK_FONT_PATH = $env:DVDA_IMAGE_NATIVE_DIR
-    $env:PATH = "$env:DVDA_IMAGE_NATIVE_DIR;$env:PATH"
-} else {
-    Skip-Test 'pixels_diagnostics_concurrency_and_failure_protection' 'explicit frozen image oracle required via -ImageRuntime'
-}
-if (-not $ImageRuntime -or -not $env:DVDA_IMAGE_TEST_CMYK_ICC) {
-    Skip-Test 'decoder_color_and_first_frame_policies' 'requires -ImageRuntime and an external CMYK ICC profile via DVDA_IMAGE_TEST_CMYK_ICC'
-} else {
-    $env:DVDA_IMAGE_TEST_CMYK_ICC = Require-Path $env:DVDA_IMAGE_TEST_CMYK_ICC Leaf
-}
+$mediaRuntime = Require-Path $MediaRuntime
 $env:DVDA_TEST_MENU_DATA = Require-Path $MenuData
 $env:DVDA_MENU_NATIVE_DIR = Require-Path $MenuRuntime
-if ($EncoderLibrary) { $env:DVDA_ENCODER_LIBRARY = Require-Path $EncoderLibrary Leaf }
-if ($env:DVDA_ENCODER_LIBRARY) {
-    $oracle = Require-Path $env:DVDA_ENCODER_LIBRARY Leaf
-    if ((Get-FileHash -LiteralPath $oracle -Algorithm SHA256).Hash -ne 'ECE6D0A8033A26E2528042A7B74C66C249EA3C8D7378C06809FB94C8F6BD79B8') {
-        throw 'EncoderLibrary must be the explicitly supplied frozen C oracle with the documented SHA256.'
-    }
-} else {
-    $oracleTests = if ($Mode -eq 'Functional') {
-        @('frozen_mlp_matrix_and_lossless_decode', 'encoder_transactions_and_parallel_calls',
-          'batch_matrix_matches_frozen_encoder_bytes', 'mlp_acquisition_upgrades_legacy_parameter_cache_without_reencoding_or_track_changes',
-          'batch_cancellation_panic_and_partial_failure')
-    } else { @('synthetic_batch_worker_benchmark') }
-    foreach ($name in $oracleTests) { Skip-Test $name 'explicit frozen encoder oracle required via -EncoderLibrary' }
-}
 if ($Mode -eq 'Benchmarks' -and -not $skipped.Contains('synthetic_batch_worker_benchmark')) {
     $root = $env:DVDA_BATCH_BENCH_ROOT
     if ($env:DVDA_BATCH_BENCH -ne '1' -or -not $root -or (Test-Path -LiteralPath $root) -or
@@ -79,7 +43,7 @@ if ($Mode -eq 'Benchmarks' -and -not $skipped.Contains('synthetic_batch_worker_b
         Skip-Test 'synthetic_batch_worker_benchmark' 'requires DVDA_BATCH_BENCH=1, a new DVDA_BATCH_BENCH_ROOT and a packaged DVDA_BATCH_BENCH_EXE'
     }
 }
-$env:PATH = "$env:DVDA_MEDIA_NATIVE_DIR;$env:PATH"
+$env:PATH = "$mediaRuntime;$env:PATH"
 if ($OtherVolume) { $env:DVDA_TEST_OTHER_VOLUME = Require-Path $OtherVolume }
 if ($Mode -eq 'Functional') {
     if ($env:DVDA_TEST_COVER_ROOT) {
@@ -149,7 +113,7 @@ try {
         $stage = Join-Path (Get-Location) ('build\rust-workflow\author-' + [Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $stage | Out-Null
         Copy-Item -LiteralPath $author[0] -Destination $stage
-        foreach ($runtime in @($env:DVDA_MEDIA_NATIVE_DIR)) {
+        foreach ($runtime in @($mediaRuntime)) {
             Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Copy-Item -Destination $stage -Force
         }
         $env:DVDA_TEST_AUTHOR = Join-Path $stage 'dvda-author-dev.exe'

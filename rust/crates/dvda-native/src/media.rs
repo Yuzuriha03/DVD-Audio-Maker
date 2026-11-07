@@ -221,7 +221,7 @@ pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
         let length = unsafe { GetModuleFileNameW(module, path.as_mut_ptr(), capacity) } as usize;
         if length == 0 {
             let error = io::Error::last_os_error();
-            // An oracle DLL can unload after the module snapshot was captured.
+            // A delay-loaded DLL can unload after the module snapshot was captured.
             if error.raw_os_error() == Some(126) {
                 continue;
             }
