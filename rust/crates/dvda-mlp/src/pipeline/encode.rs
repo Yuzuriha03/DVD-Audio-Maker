@@ -203,20 +203,19 @@ pub(crate) struct EncodeOptions<'a> {
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
-    clippy::needless_pass_by_value,
     clippy::too_many_lines,
-    reason = "EncodeOptions is consumed as one stage-configuration value; bounded AU geometry and wrapping timing fields remain in the original transactional encode sequence"
+    reason = "Bounded AU geometry and wrapping timing fields remain in the original transactional encode sequence"
 )]
 pub(crate) fn encode(
     input: &mut impl crate::pipeline::input::PcmInput,
-    options: EncodeOptions<'_>,
+    options: &EncodeOptions<'_>,
     mut matrix: Option<&mut crate::pipeline::prepare::MatrixInterval>,
     pending: &mut IntervalOutput,
     queue: &mut crate::output::queue::MlpOutputQueue,
     mut stamp: Option<&mut crate::pipeline::stamp::MlpStampState<'_>>,
     emit: &mut impl FnMut(&[u32]) -> bool,
 ) -> Result<(), ()> {
-    let EncodeOptions {
+    let &EncodeOptions {
         format,
         restart_interval,
         cycle,

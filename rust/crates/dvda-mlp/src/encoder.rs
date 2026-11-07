@@ -57,26 +57,25 @@ struct ParameterState<'a> {
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::needless_pass_by_value,
-    reason = "Public configuration values cross the internal parameter boundary by value and validated PCM geometry uses protocol-width signed fields"
+    reason = "Validated PCM geometry uses protocol-width signed fields"
 )]
 fn parameters(
     b: &mut Bits,
     qss: &[u32],
-    state: ParameterState<'_>,
-    previous_state: ParameterState<'_>,
+    state: &ParameterState<'_>,
+    previous_state: &ParameterState<'_>,
     matrix: u32,
     block: ParameterBlock,
     samples: u32,
 ) {
     let initial = matches!(block, ParameterBlock::RestartInitial);
     let restart = !matches!(block, ParameterBlock::Continuation);
-    let ParameterState {
+    let &ParameterState {
         coding,
         filters,
         iirs,
     } = state;
-    let ParameterState {
+    let &ParameterState {
         coding: old,
         filters: old_filters,
         iirs: old_iirs,
@@ -572,12 +571,12 @@ impl AuEncoder {
             parameters(
                 &mut b,
                 qss,
-                ParameterState {
+                &ParameterState {
                     coding: &initial,
                     filters: &empty_filters,
                     iirs: &empty_filters,
                 },
-                ParameterState {
+                &ParameterState {
                     coding: &defaults,
                     filters: &empty_filters,
                     iirs: &empty_filters,
@@ -591,12 +590,12 @@ impl AuEncoder {
             parameters(
                 &mut b,
                 qss,
-                ParameterState {
+                &ParameterState {
                     coding: &main,
                     filters: &filters,
                     iirs: &iirs,
                 },
-                ParameterState {
+                &ParameterState {
                     coding: previous,
                     filters: previous_filters,
                     iirs: previous_iirs,
@@ -612,12 +611,12 @@ impl AuEncoder {
                 parameters(
                     &mut b,
                     qss,
-                    ParameterState {
+                    &ParameterState {
                         coding: &main,
                         filters: &filters,
                         iirs: &iirs,
                     },
-                    ParameterState {
+                    &ParameterState {
                         coding: &initial,
                         filters: &empty_filters,
                         iirs: &empty_filters,

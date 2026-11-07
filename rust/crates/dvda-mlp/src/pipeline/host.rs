@@ -131,7 +131,7 @@ pub(crate) fn encode_stream(
     let mut queue = crate::output::queue::MlpOutputQueue::mlp_output_queue_init();
     let ok = encode(
         &mut pcm,
-        crate::pipeline::encode::EncodeOptions {
+        &crate::pipeline::encode::EncodeOptions {
             format: &format,
             restart_interval: c.restart_interval as u32,
             cycle: c.sample_rate / samples as u32,
