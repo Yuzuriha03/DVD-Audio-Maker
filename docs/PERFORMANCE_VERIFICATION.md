@@ -369,6 +369,19 @@ Release 配对基准使用 4,000 条记录、2,499,987 字节缓存文件，每�
 
 `dvda-mlp/src/bitstream.rs` 中仅 x86_64 合成路径使用的 7 个 `Bits` 辅助方法（`with_capacity`、`copy_mode_from`、`has_counted_words`、`fork`、`commit`、`word_len`、`finish_into`）及两个对应事务测试加上 `cfg(target_arch = "x86_64")`。ARM64 交叉构建不再产生 dead_code 警告；ARM64 `dvda-mlp --all-targets -D warnings` 与测试目标编译通过，x64 行为与输出不变。
 
+## 端到端 P0 基准累计对比（2026-11-08，提交 768846d）
+
+`benchmark-report.py` 四个默认基准在优化前基线（`e8c4ae4`）与当前提交之间各执行三轮，当前提交另跑两轮以界定运行间噪声。四个基准的源码自基线提交以来均未变更，对比有效。
+
+| 基准 | 基线 ms | 优化后范围 ms | 变化 |
+| --- | ---: | ---: | ---: |
+| pcm_comparison_throughput | 27.778 | 24.170–24.581 | **-12.0% ± 0.7%** |
+| inspection_progress_callback | 1.454 | 1.226–1.327 | **-8.7% ~ -15.7%** |
+| normalization_throughput | 40.698 | 38.143–44.111 | -6.3% ~ +8.4%（噪声内） |
+| packing_32_throughput | 45.379 | 46.203–47.047 | +1.8% ~ +3.7%（噪声边缘） |
+
+同版本两次运行间 normalization 波动达 13.5%，故后两项不声称改善或回退。数据见 `build/benchmarks/baseline-vs-optimized-full.json`；完整报告为 `optimized-full-x64.json` 与 `optimized-full-x64-rerun.json`。
+
 ## 后续候选（静态审计，未测收益）
 
 1. `dvda-mlp/src/encoder.rs`：重启帧与参数块写入仍有逐字段 `put` 调用，可评估缓冲合并，需先以完整编码基准确认热点占比。
