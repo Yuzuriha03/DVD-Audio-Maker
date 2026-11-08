@@ -348,9 +348,31 @@ Release 使用 12 个按钮、每种实现 20 次调用、旧/新顺序交替六
 
 中位数约 0.2895 vs 0.2915 ms，基本持平，未达到保留标准。实现和基准已撤销，MLP 输出路径不因此改变。
 
+## 准备缓存直序列化（2026-11-08，未提交工作区）
+
+`dvda-core/src/preparation/state.rs` 的准备缓存读写不再经过中间 `serde_json::Value` 树：加载直接从字节反序列化为 `BTreeMap<String, Entry>`（保留 UTF-8 BOM 处理、`null` 视为空缓存、重复路径检测与 Windows 序数排序），保存通过 `Serialize for Cache` 的 `serialize_map` 一次写出。新旧实现输出字节一致（等价性测试断言逐字节相同）。
+
+Release 配对基准使用 4,000 条记录、2,499,987 字节缓存文件，每轮 10 次调用、交替顺序取六轮中位数：
+
+| 操作 | 旧 Value 树路径 ms | 直序列化 ms |
+| --- | ---: | ---: |
+| 加载 | 321.5516 | 162.1386（约 1.98×） |
+| 保存 | 172.0713 | 30.9390（约 5.56×） |
+
+单次文件操作折算：加载约 32.2 → 16.2 ms，保存约 17.2 → 3.1 ms。收益随缓存条目数增长，只表示该确定性基准，不代表完整准备流程耗时。`dvda-core` 全部单元测试与三组 pedantic Clippy 矩阵通过。
+
+复现命令：
+
+    & tools\win-build\cargo-msvc.ps1 test --manifest-path rust/Cargo.toml -p dvda-core --release --lib cache_load_save_throughput '--' '--ignored' '--nocapture'
+
+## ARM64 bitstream 目标条件化（2026-11-08，未提交工作区）
+
+`dvda-mlp/src/bitstream.rs` 中仅 x86_64 合成路径使用的 7 个 `Bits` 辅助方法（`with_capacity`、`copy_mode_from`、`has_counted_words`、`fork`、`commit`、`word_len`、`finish_into`）及两个对应事务测试加上 `cfg(target_arch = "x86_64")`。ARM64 交叉构建不再产生 dead_code 警告；ARM64 `dvda-mlp --all-targets -D warnings` 与测试目标编译通过，x64 行为与输出不变。
+
 ## 后续候选（静态审计，未测收益）
 
-1. `dvda-core/src/preparation/state.rs`：逐条 `value.clone()` 可评估借用反序列化，收益预计较小，需以真实状态加载基准决定。
+1. `dvda-mlp/src/encoder.rs`：重启帧与参数块写入仍有逐字段 `put` 调用，可评估缓冲合并，需先以完整编码基准确认热点占比。
+2. `dvda-core/src/buildlog.rs` 与任务日志聚合：大量小字符串追加，可评估容量预留策略。
 
 ## 未运行项目
 

@@ -6,8 +6,9 @@ use crate::{
 };
 use dvda_native::{files, media::Callbacks};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use std::{
+    collections::BTreeMap,
     fs,
     io::{Read, Write},
     os::windows::fs::OpenOptionsExt,
@@ -125,38 +126,54 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<(), Failure> {
     data.extend_from_slice(b"\r\n");
     write_bytes(path, &data)
 }
+#[derive(Deserialize)]
+struct CacheFile {
+    #[serde(flatten)]
+    entries: BTreeMap<String, Entry>,
+}
+
+impl Serialize for Cache {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
+        let mut map = serializer.serialize_map(Some(self.entries.len()))?;
+        for (key, value) in &self.entries {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
 impl Cache {
     pub fn load(path: &Path, events: &mut dyn Callbacks) -> Self {
         if !path.is_file() {
             return Self::default();
         }
         let loaded = (|| {
-            let value = read_json(path)?;
-            if value.is_null() {
+            let mut bytes = Vec::new();
+            identity::open_read(&path.to_string_lossy())?.read_to_end(&mut bytes)?;
+            let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes);
+            let Some(file) = serde_json::from_slice::<Option<CacheFile>>(bytes)
+                .map_err(|error| Failure::new("InvalidData", &error.to_string()))?
+            else {
                 return Ok(Self::default());
-            }
-            let object = value.as_object().ok_or_else(|| {
-                Failure::new("InvalidData", "Preparation cache must be an object")
-            })?;
-            let mut records: Vec<_> = object.iter().collect();
+            };
+            let mut records: Vec<(String, Entry)> = file.entries.into_iter().collect();
             records.sort_unstable_by(|(left, _), (right, _)| {
                 files::ordinal_ignore_case_cmp(left, right)
             });
             let mut cache = Self::default();
-            for (path, value) in records {
+            for (path, entry) in records {
                 if cache
                     .entries
                     .last()
-                    .is_some_and(|(key, _)| files::ordinal_ignore_case(path, key))
+                    .is_some_and(|(key, _)| files::ordinal_ignore_case(&path, key))
                 {
                     return Err(Failure::new(
                         "InvalidData",
                         "Duplicate preparation cache path",
                     ));
                 }
-                let entry = serde_json::from_value(value.clone())
-                    .map_err(|error| Failure::new("InvalidData", &error.to_string()))?;
-                cache.entries.push((path.clone(), entry));
+                cache.entries.push((path, entry));
             }
             Ok(cache)
         })();
@@ -202,12 +219,7 @@ impl Cache {
     /// Returns an error if JSON serialization or creating, writing, or replacing
     /// the cache file fails.
     pub fn save(&self, path: &Path) -> Result<(), Failure> {
-        let entries: Map<_, _> = self
-            .entries
-            .iter()
-            .map(|(key, value)| (key.clone(), json!(value)))
-            .collect();
-        write_json(path, &entries)
+        write_json(path, self)
     }
 }
 #[must_use]
@@ -475,6 +487,7 @@ pub fn reuse_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Map;
     use std::path::PathBuf;
 
     struct Scratch(PathBuf);
@@ -626,5 +639,176 @@ mod tests {
         fs::remove_file(source.join("a.flac")).unwrap();
         fs::write(source.join("replacement.flac"), b"source").unwrap();
         assert!(!reuse());
+    }
+
+    fn benchmark_cache(count: usize) -> Cache {
+        let mut cache = Cache::default();
+        for index in 0..count {
+            cache.record(
+                format!("D:/library/disc {index:04}/track {index:02}.flac"),
+                Entry {
+                    identity: json!({
+                        "Size": (index as u64) * 16_000_000 + 123_456,
+                        "LastWriteUtcTicks": 638_000_000_000_000_000u64 + index as u64,
+                        "HeadHash": format!("{index:016x}"),
+                        "TailHash": format!("{:016x}", index * 7 + 1),
+                    }),
+                    probe: ProbeFacts {
+                        sr: 96_000,
+                        bits: 24,
+                        ch: 2,
+                        date: "2026-11-08".into(),
+                        track: format!("{index}"),
+                        title: "Benchmark title".into(),
+                        album: format!("Album {index}"),
+                        dur: 180.0,
+                    },
+                    validation: Validation {
+                        sr: 96_000,
+                        bits: 24,
+                        resample_to: None,
+                        expected: Some(17_280_000),
+                        decoded: 17_280_000,
+                        patches: None,
+                        repaired_file: None,
+                    },
+                },
+            );
+        }
+        cache
+    }
+
+    fn legacy_save_bytes(cache: &Cache) -> Vec<u8> {
+        let entries: Map<_, _> = cache
+            .entries
+            .iter()
+            .map(|(key, value)| (key.clone(), json!(value)))
+            .collect();
+        let mut data = serde_json::to_vec_pretty(&entries).unwrap();
+        data.extend_from_slice(b"\r\n");
+        data
+    }
+
+    fn legacy_load(path: &Path) -> Cache {
+        let value = read_json(path).unwrap();
+        assert!(!value.is_null(), "benchmark cache is never null");
+        let object = value.as_object().unwrap();
+        let mut records: Vec<_> = object.iter().collect();
+        records
+            .sort_unstable_by(|(left, _), (right, _)| files::ordinal_ignore_case_cmp(left, right));
+        let mut cache = Cache::default();
+        for (path, value) in records {
+            let entry: Entry = serde_json::from_value(value.clone()).unwrap();
+            cache.entries.push((path.clone(), entry));
+        }
+        cache
+    }
+
+    fn new_save_bytes(cache: &Cache) -> Vec<u8> {
+        let mut data = serde_json::to_vec_pretty(cache).unwrap();
+        data.extend_from_slice(b"\r\n");
+        data
+    }
+
+    fn median_ms(times: &[std::time::Duration]) -> f64 {
+        let mut values: Vec<f64> = times
+            .iter()
+            .map(|time| time.as_secs_f64() * 1000.0)
+            .collect();
+        values.sort_by(f64::total_cmp);
+        let middle = values.len() / 2;
+        if values.len().is_multiple_of(2) {
+            f64::midpoint(values[middle - 1], values[middle])
+        } else {
+            values[middle]
+        }
+    }
+
+    #[test]
+    fn direct_cache_serialization_matches_legacy_value_tree() {
+        let cache = benchmark_cache(64);
+        let legacy = legacy_save_bytes(&cache);
+        let direct = new_save_bytes(&cache);
+        assert_eq!(legacy, direct);
+        let root = Scratch::new();
+        let path = root.0.join("cache.json");
+        fs::write(&path, &legacy).unwrap();
+        let loaded = legacy_load(&path);
+        assert_eq!(loaded.entries.len(), cache.entries.len());
+        let direct_loaded = Cache::load(&path, &mut Events::default());
+        assert_eq!(direct_loaded.entries.len(), cache.entries.len());
+        for ((legacy_key, _), (direct_key, _)) in loaded.entries.iter().zip(&direct_loaded.entries)
+        {
+            assert_eq!(legacy_key, direct_key);
+        }
+        fs::write(&path, b"null").unwrap();
+        assert!(Cache::load(&path, &mut Events::default()).is_empty());
+    }
+
+    #[test]
+    #[ignore = "deterministic preparation cache throughput benchmark"]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The opt-in benchmark keeps legacy and direct load/save paired with output validation"
+    )]
+    fn cache_load_save_throughput() {
+        let count = 4_000;
+        let cache = benchmark_cache(count);
+        let root = Scratch::new();
+        let path = root.0.join("cache.json");
+        let legacy_bytes = legacy_save_bytes(&cache);
+        fs::write(&path, &legacy_bytes).unwrap();
+        assert_eq!(new_save_bytes(&cache), legacy_bytes);
+
+        let mut legacy_load_times = Vec::new();
+        let mut direct_load_times = Vec::new();
+        let mut legacy_save_times = Vec::new();
+        let mut direct_save_times = Vec::new();
+        for round in 0..6 {
+            let legacy_first = round % 2 == 0;
+            let time_load = |direct: bool| {
+                let started = std::time::Instant::now();
+                for _ in 0..10 {
+                    let loaded = if direct {
+                        Cache::load(&path, &mut Events::default())
+                    } else {
+                        legacy_load(&path)
+                    };
+                    assert_eq!(loaded.entries.len(), count);
+                }
+                started.elapsed()
+            };
+            let time_save = |direct: bool| {
+                let started = std::time::Instant::now();
+                for _ in 0..10 {
+                    let bytes = if direct {
+                        new_save_bytes(&cache)
+                    } else {
+                        legacy_save_bytes(&cache)
+                    };
+                    assert_eq!(bytes.len(), legacy_bytes.len());
+                }
+                started.elapsed()
+            };
+            if legacy_first {
+                legacy_load_times.push(time_load(false));
+                direct_load_times.push(time_load(true));
+                legacy_save_times.push(time_save(false));
+                direct_save_times.push(time_save(true));
+            } else {
+                direct_load_times.push(time_load(true));
+                legacy_load_times.push(time_load(false));
+                direct_save_times.push(time_save(true));
+                legacy_save_times.push(time_save(false));
+            }
+        }
+        println!(
+            "[METRIC] cache_load_legacy_ms={:.4} cache_load_direct_ms={:.4} cache_save_legacy_ms={:.4} cache_save_direct_ms={:.4} entries={count} bytes={}",
+            median_ms(&legacy_load_times),
+            median_ms(&direct_load_times),
+            median_ms(&legacy_save_times),
+            median_ms(&direct_save_times),
+            legacy_bytes.len()
+        );
     }
 }
