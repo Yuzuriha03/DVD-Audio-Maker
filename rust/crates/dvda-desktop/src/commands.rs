@@ -2,15 +2,15 @@
 //! settings refits.
 
 use super::{
-    BN_CLICKED, CBN_SELCHANGE, GetClientRect, Hwnd, ID_ADVANCED, ID_BITS, ID_BUILD, ID_CANCEL,
-    ID_CAPACITY, ID_COPY, ID_EXPORT, ID_LANGUAGE, ID_LIVE, ID_LOG_VIEW, ID_MINIMIZE, ID_MODE,
-    ID_ONLY_ISSUES, ID_OPEN_OUTPUT, ID_OPEN_PROFILE, ID_PREPARE, ID_SAVE_AS, ID_SAVE_PROFILE,
-    ID_TAB, ID_THEME, ID_VERIFY, Lang, Rect, SW_MINIMIZE, SendMessageW, ShowWindow, UiState,
-    autosave, browse_target, cancel_operation, checked, choose_and_load_profile, combo_index,
-    combo_items, combo_select, copy_log, export_log, layout, localized_log, open_output,
-    page_content_height, render_log, save_profile, save_profile_as, select_tab, set_text,
-    setting_help, start_operation, toggle_theme, tooltip_info, tr, unscale, update_advanced,
-    update_choices, update_statistics, wide,
+    BN_CLICKED, CBN_SELCHANGE, GetClientRect, Hwnd, ID_ABOUT_PROJECT, ID_ADVANCED, ID_BITS,
+    ID_BUILD, ID_CANCEL, ID_CAPACITY, ID_COPY, ID_EXPORT, ID_LANGUAGE, ID_LIVE, ID_LOG_VIEW,
+    ID_MINIMIZE, ID_MODE, ID_ONLY_ISSUES, ID_OPEN_OUTPUT, ID_OPEN_PROFILE, ID_PREPARE, ID_SAVE_AS,
+    ID_SAVE_PROFILE, ID_TAB, ID_THEME, ID_VERIFY, Lang, Rect, SW_MINIMIZE, SendMessageW,
+    ShowWindow, UiState, about_dialog, autosave, browse_target, cancel_operation, checked,
+    choose_and_load_profile, combo_index, combo_items, combo_select, copy_log, export_log, layout,
+    localized_log, open_output, page_content_height, render_log, save_profile, save_profile_as,
+    select_tab, set_text, setting_help, start_operation, toggle_theme, tooltip_info, tr, unscale,
+    update_advanced, update_choices, update_statistics, wide,
 };
 
 pub(crate) fn handle_command(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
@@ -32,6 +32,14 @@ pub(crate) fn refit_settings(state: &mut UiState) {
     if Some(fitted) != state.default_tab_height && client.bottom > 0 {
         layout(state.main_window, state);
     }
+}
+
+fn handle_about_command(id: usize, state: &mut UiState) -> bool {
+    if id != ID_ABOUT_PROJECT {
+        return false;
+    }
+    about_dialog(state.main_window, state);
+    true
 }
 
 pub(crate) fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
@@ -59,7 +67,10 @@ pub(crate) fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, n
         return;
     }
 
-    if (ID_TAB..ID_TAB + 3).contains(&id) {
+    if handle_about_command(id, state) {
+        return;
+    }
+    if (ID_TAB..ID_TAB + state.tabs.len()).contains(&id) {
         if notify == BN_CLICKED {
             select_tab(state, id - ID_TAB);
         }

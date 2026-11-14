@@ -1,0 +1,40 @@
+Third-party components and licenses
+
+DVD-Audio Maker bundles its Rust implementation and several open-source components.
+
+1. Project
+  DVD-Audio Maker: GPL-3.0
+  Full license: LICENSE.txt
+
+2. FFmpeg media libraries
+  FFmpeg 9.0.2: LGPL-2.1-or-later
+  libsoxr 0.1.3: LGPL-2.1-or-later
+  Used for audio decoding, resampling, PCM checks and menu MPEG generation
+  This build enables no GPL-only components
+  Separate license: FFMPEG-LICENSE.txt
+
+3. Image and font rendering
+  Rust image stack: image, rustybuzz, swash
+  Used for image processing, menu drawing and text shaping
+  Upstream licenses: MIT / Apache-2.0, plus selected BSD, Zlib and Unicode terms
+  Full notices: NOTICE-Image.txt
+
+4. Menu and author rules
+  Menu behavior derives from dvdauthor / spumux
+  LPCM packing rules are translated from dvda-author
+  Used for DVD-Video navigation, subpictures, LPCM and IFO/AOB rules
+  Attribution and GPL-2.0-or-later notice: NOTICE-Menu.txt
+
+5. Menu fonts
+  DvdaNotoCJK-Regular.ttc
+  Used for Chinese, Japanese and Korean menu glyphs
+  License: SIL Open Font License 1.1
+
+6. Distribution notes
+  The release does not contain ffmpeg.exe, ffprobe.exe, ImageMagick command-line programs, eac3to or an external MLP encoder.
+  FFmpeg, the image stack, menu fonts and the Rust author are statically integrated.
+  When redistributing or modifying the software, retain LICENSE.txt, FFMPEG-LICENSE.txt, NOTICE-Image.txt, NOTICE-Menu.txt and this notice, and provide source or patches as required by each upstream license.
+
+7. Source and build records
+  https://github.com/Yuzuriha03/DVD-Audio-Maker
+  Author migration source and hashes: rust/crates/dvda-author/tests/fixtures/legacy-source-provenance.json

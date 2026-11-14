@@ -107,6 +107,37 @@ void main() {
     },
   );
 
+  testWidgets('LPCM hides 20-bit depth and normalizes existing 20-bit', (
+    tester,
+  ) async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    controller.settings.bits = '20';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) =>
+              Scaffold(body: AudioSection(controller: controller)),
+        ),
+      ),
+    );
+    final strings = controller.strings;
+
+    await tester.tap(find.byType(DropdownButton<String>).at(0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(strings.modeLpcm).last);
+    await tester.pumpAndSettle();
+    expect(controller.settings.audioMode, 'lpcm');
+    expect(controller.settings.bits, '24');
+
+    await tester.tap(find.byType(DropdownButton<String>).at(2));
+    await tester.pumpAndSettle();
+    expect(find.text('20 bit'), findsNothing);
+    expect(find.text('16 bit'), findsWidgets);
+    expect(find.text('24 bit'), findsWidgets);
+  });
+
   testWidgets('directory field taps open the Android system picker', (
     tester,
   ) async {
@@ -205,6 +236,34 @@ void main() {
     expect(find.text(strings.actionVerify), findsOneWidget);
     expect(find.text(strings.actionOpenOutput), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('author page exposes the bundled project license', (
+    tester,
+  ) async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: HomeScreen(controller: controller)),
+    );
+    final strings = controller.strings;
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(strings.authorCredits).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Yuzuriha03'), findsOneWidget);
+    expect(find.text(strings.bundledLicenses), findsOneWidget);
+    expect(find.text('LICENSE.txt'), findsOneWidget);
+    expect(find.text('THIRD-PARTY.txt'), findsOneWidget);
+    expect(find.text(strings.ffmpegLicenses), findsOneWidget);
+
+    await tester.ensureVisible(find.text('LICENSE.txt'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('LICENSE.txt'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('GNU GENERAL PUBLIC LICENSE'), findsWidgets);
   });
 
   testWidgets('advanced switch lives in the settings sheet', (tester) async {

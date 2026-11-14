@@ -10,6 +10,8 @@ use super::{
 pub(crate) const SAMPLE_RATES: &[i64] = &[44100, 48000, 88200, 96000, 176_400, 192_000];
 pub(crate) const SAMPLE_BITS: &[i64] = &[16, 20, 24];
 pub(crate) const SAMPLE_BITS_LABELS: &[&str] = &["16 bit", "20 bit", "24 bit"];
+pub(crate) const LPCM_SAMPLE_BITS: &[i64] = &[16, 24];
+pub(crate) const LPCM_SAMPLE_BITS_LABELS: &[&str] = &["16 bit", "24 bit"];
 pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[
     "44.1 kHz",
     "48 kHz",
@@ -53,6 +55,21 @@ pub(crate) fn mode_index(mode: &str) -> i32 {
         _ => 0,
     }
 }
+fn bits_for_mode(mode: i32) -> &'static [i64] {
+    if mode == 1 {
+        LPCM_SAMPLE_BITS
+    } else {
+        SAMPLE_BITS
+    }
+}
+
+fn selected_bits(state: &UiState) -> i64 {
+    numeric_choice(
+        state.controls.bits,
+        bits_for_mode(combo_index(state.controls.mode)),
+    )
+}
+
 pub(crate) fn mode_value(index: i32) -> &'static str {
     match index {
         1 => "lpcm",
@@ -60,9 +77,24 @@ pub(crate) fn mode_value(index: i32) -> &'static str {
         _ => "mlp-batch",
     }
 }
-pub(crate) fn update_choices(state: &UiState) {
+pub(crate) fn update_choices(state: &mut UiState) {
     let mode = combo_index(state.controls.mode);
     let imported = mode == 2;
+    if state.last_audio_mode != mode {
+        let (bits, labels) = if mode == 1 {
+            (LPCM_SAMPLE_BITS, LPCM_SAMPLE_BITS_LABELS)
+        } else {
+            (SAMPLE_BITS, SAMPLE_BITS_LABELS)
+        };
+        let current = numeric_choice(state.controls.bits, bits_for_mode(state.last_audio_mode));
+        let current = if mode == 1 && current == 20 {
+            24
+        } else {
+            current
+        };
+        populate_numeric_choice(state.controls.bits, bits, labels, current);
+        state.last_audio_mode = mode;
+    }
     set_text(
         state.controls.audio_note,
         tr(state.lang(), audio_note_key(mode)),
@@ -78,10 +110,7 @@ pub(crate) fn update_choices(state: &UiState) {
     ] {
         show_window(hwnd, imported);
     }
-    show_window(
-        state.controls.dither,
-        numeric_choice(state.controls.bits, SAMPLE_BITS) == 16,
-    );
+    show_window(state.controls.dither, selected_bits(state) == 16);
     EnableWindow(state.controls.custom_bytes, i32::from(custom_capacity));
     EnableWindow(state.controls.import_folder, i32::from(imported));
     for hwnd in [
@@ -137,6 +166,7 @@ pub(crate) fn populate(state: &mut UiState, options: &AppOptions) {
         &options.integer("GroupTrackLimit").to_string(),
     );
     combo_select(state.controls.mode, mode_index(&options.text("MlpSource")));
+    state.last_audio_mode = -1;
     set_text(
         state.controls.import_folder,
         &raw_or_environment(&raw, "DVDA_MLP_EXTERNAL_DIR"),
@@ -246,11 +276,7 @@ pub(crate) fn overrides(state: &UiState) -> Map<String, Value> {
         "MlpSampleRate",
         json!(numeric_choice(state.controls.rate, SAMPLE_RATES)),
     );
-    put(
-        &mut values,
-        "MlpBits",
-        json!(numeric_choice(state.controls.bits, SAMPLE_BITS)),
-    );
+    put(&mut values, "MlpBits", json!(selected_bits(state)));
 
     put(
         &mut values,
@@ -335,11 +361,13 @@ pub(crate) fn valid_integer(value: &str, min: i64, max: i64) -> bool {
         .is_ok_and(|n| (min..=max).contains(&n))
 }
 pub(crate) fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
+    let lpcm = combo_index(state.controls.mode) == 1;
+    let bits = selected_bits(state);
     let c = &state.controls;
     let mut error = None;
     if for_task && !SAMPLE_RATES.contains(&numeric_choice(c.rate, SAMPLE_RATES)) {
         error = Some((c.rate, tr(state.lang(), "invalid_sample_rate").into()));
-    } else if for_task && !SAMPLE_BITS.contains(&numeric_choice(c.bits, SAMPLE_BITS)) {
+    } else if for_task && (!SAMPLE_BITS.contains(&bits) || (lpcm && bits == 20)) {
         error = Some((c.bits, tr(state.lang(), "invalid_bits").into()));
     }
     for (control, key, min, max) in [

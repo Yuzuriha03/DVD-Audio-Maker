@@ -52,6 +52,8 @@ pub(super) fn tr(key: &str) -> &'static str {
         "browse" => "찾아보기…",
         "start" => "기본 설정",
         "audio" => "오디오",
+        "about" => "제작자",
+        "author_page_title" => "제작자 및 라이선스",
         "check" => "음원 검사",
         "build" => "디스크 만들기",
         "verify" => "출력 검증",
@@ -128,7 +130,25 @@ pub(super) fn tr(key: &str) -> &'static str {
             "LPCM은 오디오를 압축하지 않고 저장합니다. 빠르지만 디스크 공간을 더 사용하므로 선택한 용량이 충분한지 확인하세요."
         }
         "invalid_sample_rate" => "MLP 대상 샘플 레이트가 올바르지 않습니다.",
-        "invalid_bits" => "MLP 비트 깊이는 16, 20 또는 24여야 합니다.",
+        "invalid_bits" => "MLP 비트 깊이는 16, 20 또는 24, LPCM은 16 또는 24여야 합니다.",
+        "author_name" => "Yuzuriha03",
+        "author_role" => "독립 개발자 · 프로젝트 유지관리자",
+        "author_version" => "DVD-Audio Maker · v1.2.0",
+        "author_bio" => {
+            "DVD-Audio Maker의 제작자입니다. Rust 코어와 Windows 및 Android 클라이언트를 개발하고 유지관리합니다."
+        }
+        "project_home" => "프로젝트 홈",
+        "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
+        "author_licenses" => {
+            "포함 라이선스: LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
+        }
+        "author_license_hint" => {
+            "라이선스 파일은 프로그램 폴더에 있습니다. 라이선스 폴더 열기에서 확인하세요."
+        }
+        "open_project" => "프로젝트 홈 열기",
+        "open_licenses" => "라이선스 폴더 열기",
+        "open_ffmpeg_license" => "FFmpeg 라이선스 보기",
+        "licenses_missing" => "라이선스 폴더를 찾을 수 없습니다.",
         "invalid_integer" => "{0}에서 {1} 사이의 정수를 입력하세요.",
         "invalid_nonnegative" => "0 이상의 유한한 수를 입력하세요.",
         "invalid_title_mode" => "타이틀 그룹은 album, one 또는 양의 정수여야 합니다.",

@@ -695,9 +695,8 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         // The active tab uses the semibold font; size every tab for it.
         let mut tab_x = margin;
         for tab in &state.tabs {
-            let tab_width = (unscale(measured_text_width(hwnd, &get_text(*tab), semibold_font()))
-                + 28)
-                .max(132);
+            let tab_width =
+                (unscale(measured_text_width(hwnd, &get_text(*tab), semibold_font())) + 20).max(88);
             place(*tab, tab_x, tabs_y, tab_width, 34);
             ShowWindow(*tab, settings_visible);
             tab_x += tab_width + 6;

@@ -10,7 +10,7 @@ FLAC と ALAC/M4A の音楽から DVD-Audio ISO イメージを作成する Wind
    - Intel / AMD の PC：`DVD-Audio-Maker-v1.1-win-x64.zip`
    - Windows on ARM デバイス：`DVD-Audio-Maker-v1.1-win-arm64.zip`
 2. ZIP を任意のフォルダーに展開し、`DVD-Audio-Maker.exe` をダブルクリックします。
-3. 展開先の `LICENSE`、`THIRD-PARTY.md`、`THIRD-PARTY.en.md`、`NOTICE-Image.txt`、`NOTICE-Menu.txt` は保管してください。
+3. 展開先の `LICENSE`、`THIRD-PARTY.txt`、`THIRD-PARTY.en.txt`、`NOTICE-Image.txt`、`NOTICE-Menu.txt` は保管してください。
 
 **動作環境：** Windows 10 / 11（x64 または ARM64）。必要なコンポーネントはすべて内蔵されているため、別途ランタイムをインストールする必要はありません。EXE を置いたフォルダーには書き込み権限が必要です。ISO と一時ファイル用に、完成品と同程度の空き容量を用意してください。
 
@@ -136,7 +136,7 @@ EXE と同じフォルダーの `settings.json` に保存し、起動時に読�
 
 プロジェクトのライセンスは [LICENSE](LICENSE)、同梱コンポーネントとフォントの情報は以下を参照してください。
 
-- [第三者コンポーネント（中国語）](tools/win-build/docs/THIRD-PARTY.md)
-- [第三者コンポーネント（英語）](tools/win-build/docs/THIRD-PARTY.en.md)
+- [第三者コンポーネント（中国語）](tools/win-build/docs/THIRD-PARTY.txt)
+- [第三者コンポーネント（英語）](tools/win-build/docs/THIRD-PARTY.en.txt)
 
 配布物には `NOTICE-Image.txt` と `NOTICE-Menu.txt` も含まれます。これらも保管してください。

@@ -69,7 +69,7 @@ use controls::{
     create_controls, create_from_spec, get_text, numeric_choice, populate_numeric_choice, set_text,
     show_window, sync_combo_overlays, tooltip_info, window_class,
 };
-use dialogs::{FileKind, browse_target, file_dialog, message_box, open_output};
+use dialogs::{FileKind, about_dialog, browse_target, file_dialog, message_box, open_output};
 use draw::{
     begin_buffered_paint, buffered_label_proc, clear_window_paint_cache, combo_item_text,
     draw_owner_item, draw_text_run, fill_round_rect, finish_buffered_paint, paint_page,
@@ -265,6 +265,7 @@ const ID_MINIMIZE: usize = 6000;
 const ID_MAXIMIZE: usize = 6001;
 const ID_CLOSE: usize = 6002;
 const ID_THEME: usize = 6003;
+const ID_ABOUT_PROJECT: usize = 6004;
 const ID_SOURCE: usize = 200;
 const ID_FINAL: usize = 201;
 const ID_TITLE: usize = 202;
@@ -997,6 +998,7 @@ struct UiState {
     splitter_preview_window: Hwnd,
     advanced_controls: Vec<Hwnd>,
     advanced_hint: Hwnd,
+    last_audio_mode: i32,
     caption_minimize: Hwnd,
     caption_maximize: Hwnd,
     caption_close: Hwnd,

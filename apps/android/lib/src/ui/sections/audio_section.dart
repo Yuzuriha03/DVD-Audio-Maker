@@ -39,6 +39,7 @@ class AudioSection extends StatelessWidget {
     final strings = controller.strings;
     final settings = controller.settings;
     final imported = settings.audioMode == 'external';
+    final lpcm = settings.audioMode == 'lpcm';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -58,8 +59,12 @@ class AudioSection extends StatelessWidget {
                   strings.modeLpcm,
                   strings.modeExternal,
                 ],
-                onChanged: (value) =>
-                    controller.update(() => settings.audioMode = value),
+                onChanged: (value) => controller.update(() {
+                  settings.audioMode = value;
+                  if (value == 'lpcm' && settings.bits == '20') {
+                    settings.bits = '24';
+                  }
+                }),
               ),
               if (imported) ...<Widget>[
                 const SizedBox(height: 14),
@@ -91,8 +96,8 @@ class AudioSection extends StatelessWidget {
                 second: SettingStringDropdown(
                   label: strings.bits,
                   value: settings.bits,
-                  options: kBitDepths,
-                  labels: <String>['16 bit', '20 bit', '24 bit'],
+                  options: lpcm ? kLpcmBitDepths : kBitDepths,
+                  labels: lpcm ? kLpcmBitDepthLabels : kBitDepthLabels,
                   enabled: !imported,
                   onChanged: (value) =>
                       controller.update(() => settings.bits = value),

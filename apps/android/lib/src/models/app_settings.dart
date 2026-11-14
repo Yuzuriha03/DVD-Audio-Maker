@@ -32,6 +32,9 @@ const List<String> kSampleRateLabels = <String>[
 ];
 
 const List<String> kBitDepths = <String>['16', '20', '24'];
+const List<String> kLpcmBitDepths = <String>['16', '24'];
+const List<String> kBitDepthLabels = <String>['16 bit', '20 bit', '24 bit'];
+const List<String> kLpcmBitDepthLabels = <String>['16 bit', '24 bit'];
 
 const List<String> kAudioModes = <String>['mlp-batch', 'lpcm', 'external'];
 
@@ -234,6 +237,9 @@ class AppSettings {
       sampleRate,
     );
     bits = _allowed(kBitDepths, textValue('DVDA_MLP_BITS', bits), bits);
+    if (audioMode == 'lpcm' && bits == '20') {
+      bits = '24';
+    }
     dither16 = onOff('DVDA_DITHER_16', dither16);
     externalDir = textValue('DVDA_MLP_EXTERNAL_DIR', externalDir);
 

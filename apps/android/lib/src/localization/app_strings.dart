@@ -66,6 +66,15 @@ class AppStrings {
     'capacitySummary': 'Capacity {size}',
     'showAdvanced': 'Show advanced settings',
     'moreSettings': 'More settings',
+    'authorCredits': 'Author & licenses',
+    'authorRole': 'Independent developer · project maintainer',
+    'authorBio':
+        'Creator of DVD-Audio Maker. Maintains the Rust core plus the Windows and Android clients.',
+    'projectHome': 'Project home',
+    'flutterLicenses': 'View Flutter package licenses',
+    'ffmpegLicenses': 'FFmpeg license',
+    'bundledLicenses': 'Bundled license files',
+    'appInfo': 'App information',
     'advancedSettingsHint':
         'Controls disc grouping, image prefix, menu fonts and other advanced options.',
     'advancedHint':
@@ -205,6 +214,14 @@ class AppStrings {
     'capacitySummary': '容量 {size}',
     'showAdvanced': '显示高级设置',
     'moreSettings': '更多设置',
+    'authorCredits': '作者与许可证',
+    'authorRole': '独立开发者 · 项目维护者',
+    'authorBio': 'DVD-Audio Maker 的作者，负责 Rust 核心、Windows 与 Android 客户端的开发与维护。',
+    'projectHome': '项目主页',
+    'flutterLicenses': '查看 Flutter 依赖许可',
+    'ffmpegLicenses': 'FFmpeg 许可证',
+    'bundledLicenses': '随包许可文件',
+    'appInfo': '应用信息',
     'advancedSettingsHint': '控制光盘分组、镜像前缀、菜单字体等进阶选项。',
     'advancedHint': '这些设置已经足够制作第一张光盘。需要光盘分组、菜单字体等高级选项时，请在右上角齿轮中开启“显示高级设置”。',
     'mlpNote': 'MLP 编码会进行无损压缩，适合大多数 DVD-Audio 制作。采样率和位深按右侧设置处理。',
@@ -330,6 +347,14 @@ class AppStrings {
     'capacitySummary': '容量 {size}',
     'showAdvanced': '顯示進階設定',
     'moreSettings': '更多設定',
+    'authorCredits': '作者與授權',
+    'authorRole': '獨立開發者 · 專案維護者',
+    'authorBio': 'DVD-Audio Maker 的作者，負責 Rust 核心、Windows 與 Android 用戶端的開發與維護。',
+    'projectHome': '專案首頁',
+    'flutterLicenses': '查看 Flutter 相依套件授權',
+    'ffmpegLicenses': 'FFmpeg 授權',
+    'bundledLicenses': '隨包授權文件',
+    'appInfo': '應用程式資訊',
     'advancedSettingsHint': '控制光碟分組、映像前綴、選單字型等進階選項。',
     'advancedHint': '這些設定已足夠製作第一張光碟。需要光碟分組、選單字型等進階選項時，請在右上角齒輪中開啟「顯示進階設定」。',
     'mlpNote': 'MLP 編碼會進行無損壓縮，適合大多數 DVD-Audio 製作。取樣率和位元深度按所選設定處理。',
@@ -455,6 +480,15 @@ class AppStrings {
     'capacitySummary': '容量 {size}',
     'showAdvanced': '詳細設定を表示',
     'moreSettings': 'その他の設定',
+    'authorCredits': '作者とライセンス',
+    'authorRole': '個人開発者・プロジェクトメンテナー',
+    'authorBio':
+        'DVD-Audio Maker の作者。Rust コアと Windows / Android クライアントの開発・保守を担当しています。',
+    'projectHome': 'プロジェクトページ',
+    'flutterLicenses': 'Flutter パッケージのライセンスを表示',
+    'ffmpegLicenses': 'FFmpeg ライセンス',
+    'bundledLicenses': '同梱ライセンスファイル',
+    'appInfo': 'アプリ情報',
     'advancedSettingsHint': 'ディスクのグループ化、イメージ接頭辞、メニューフォントなどを制御します。',
     'advancedHint':
         'これらの設定だけで最初のディスクを作成できます。作業パスやメニューフォントなどを変更する場合は、上部の「詳細設定を表示」を有効にしてください。',
@@ -583,6 +617,15 @@ class AppStrings {
     'capacitySummary': '용량 {size}',
     'showAdvanced': '고급 설정 표시',
     'moreSettings': '추가 설정',
+    'authorCredits': '제작자 및 라이선스',
+    'authorRole': '독립 개발자 · 프로젝트 유지관리자',
+    'authorBio':
+        'DVD-Audio Maker의 제작자입니다. Rust 코어와 Windows 및 Android 클라이언트를 개발하고 유지관리합니다.',
+    'projectHome': '프로젝트 홈',
+    'flutterLicenses': 'Flutter 패키지 라이선스 보기',
+    'ffmpegLicenses': 'FFmpeg 라이선스',
+    'bundledLicenses': '앱에 포함된 라이선스 파일',
+    'appInfo': '앱 정보',
     'advancedSettingsHint': '디스크 그룹, 이미지 접두사, 메뉴 글꼴 등 고급 옵션을 제어합니다.',
     'advancedHint':
         '이 설정만으로 첫 디스크를 만들 수 있습니다. 작업 경로나 메뉴 글꼴 등을 변경하려면 위의 “고급 설정 표시”를 켜세요.',
@@ -744,6 +787,14 @@ class AppStrings {
   String get customBytes => _text('customBytes');
   String get showAdvanced => _text('showAdvanced');
   String get moreSettings => _text('moreSettings');
+  String get authorCredits => _text('authorCredits');
+  String get authorRole => _text('authorRole');
+  String get authorBio => _text('authorBio');
+  String get projectHome => _text('projectHome');
+  String get flutterLicenses => _text('flutterLicenses');
+  String get ffmpegLicenses => _text('ffmpegLicenses');
+  String get bundledLicenses => _text('bundledLicenses');
+  String get appInfo => _text('appInfo');
   String get advancedSettingsHint => _text('advancedSettingsHint');
   String get advancedHint => _text('advancedHint');
   String get mlpNote => _text('mlpNote');

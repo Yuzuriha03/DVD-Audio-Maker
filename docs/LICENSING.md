@@ -2,7 +2,7 @@
 
 [简体中文](LICENSING.md) | [English](LICENSING.en.md) | [日本語](LICENSING.ja.md)
 
-> 本文包含项目早期架构与分发说明。当前仓库和发布包组成以[项目说明](../README.md)及[第三方声明](../tools/win-build/docs/THIRD-PARTY.md)为准；历史流程描述不代表当前运行依赖。
+> 本文包含项目早期架构与分发说明。当前仓库和发布包组成以[项目说明](../README.md)及[第三方声明](../tools/win-build/docs/THIRD-PARTY.txt)为准；历史流程描述不代表当前运行依赖。
 
 本文档说明本仓库的许可状况、第三方组件归属，以及使用 MLP 编码时需注意的法律限制。
 

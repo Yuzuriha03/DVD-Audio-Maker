@@ -240,17 +240,17 @@ fn package(options: Args) -> Result<(), String> {
     }
     copy_first_file(
         &[
-            repository.join("THIRD-PARTY.md"),
-            repository.join("tools/win-build/docs/THIRD-PARTY.md"),
+            repository.join("THIRD-PARTY.txt"),
+            repository.join("tools/win-build/docs/THIRD-PARTY.txt"),
         ],
-        &stage.join("THIRD-PARTY.md"),
+        &stage.join("THIRD-PARTY.txt"),
     )?;
     copy_first_file(
         &[
-            repository.join("THIRD-PARTY.en.md"),
-            repository.join("tools/win-build/docs/THIRD-PARTY.en.md"),
+            repository.join("THIRD-PARTY.en.txt"),
+            repository.join("tools/win-build/docs/THIRD-PARTY.en.txt"),
         ],
-        &stage.join("THIRD-PARTY.en.md"),
+        &stage.join("THIRD-PARTY.en.txt"),
     )?;
     copy_first_file(
         &[
@@ -265,6 +265,13 @@ fn package(options: Args) -> Result<(), String> {
             author.join("menu-NOTICE.txt"),
         ],
         &stage.join("NOTICE-Menu.txt"),
+    )?;
+    copy_first_file(
+        &[
+            repository.join("FFMPEG-LICENSE.txt"),
+            repository.join("tools/win-build/docs/FFMPEG-LICENSE.txt"),
+        ],
+        &stage.join("FFMPEG-LICENSE.txt"),
     )?;
 
     for (name, path) in &inputs.files {

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../localization/app_strings.dart';
 import '../services/app_controller.dart';
+import 'author_credits_page.dart';
 import 'sections/audio_section.dart';
 import 'sections/basics_section.dart';
 import 'sections/menu_section.dart';
@@ -432,6 +433,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   _saveProfile();
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: Text(strings.authorCredits),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (context) => AuthorCreditsPage(strings: strings),
+                    ),
+                  );
+                },
+              ),
+              const Divider(height: 1),
               ListTile(
                 leading: const Icon(Icons.delete_outline),
                 title: Text(strings.discardProgress),

@@ -17,8 +17,8 @@ DVD-Audio-Maker/
   README.en.md
   README.ja.md
   LICENSE
-  THIRD-PARTY.md
-  THIRD-PARTY.en.md
+  THIRD-PARTY.txt
+  THIRD-PARTY.en.txt
   NOTICE-Image.txt
   NOTICE-Menu.txt
 ```

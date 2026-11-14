@@ -10,7 +10,7 @@ FLAC 및 ALAC/M4A 음악으로 DVD-Audio ISO 이미지를 만드는 Windows용 �
    - 일반 Intel / AMD PC: `DVD-Audio-Maker-v1.1-win-x64.zip`
    - Windows on ARM 기기: `DVD-Audio-Maker-v1.1-win-arm64.zip`
 2. ZIP 압축을 원하는 폴더에 풀고 `DVD-Audio-Maker.exe`를 더블 클릭합니다.
-3. 압축을 푼 폴더의 `LICENSE`, `THIRD-PARTY.md`, `THIRD-PARTY.en.md`, `NOTICE-Image.txt`, `NOTICE-Menu.txt` 파일은 보관하세요.
+3. 압축을 푼 폴더의 `LICENSE`, `THIRD-PARTY.txt`, `THIRD-PARTY.en.txt`, `NOTICE-Image.txt`, `NOTICE-Menu.txt` 파일은 보관하세요.
 
 **시스템 요구 사항:** Windows 10 / 11(x64 또는 ARM64). 필요한 구성 요소가 모두 내장되어 있어 별도 런타임을 설치할 필요가 없습니다. EXE가 있는 폴더에 쓰기 권한이 있어야 합니다. ISO와 임시 파일을 위해 완성품과 비슷한 크기의 여유 공간을 준비하세요.
 
@@ -136,7 +136,7 @@ EXE와 같은 폴더의 `settings.json`에 저장하고 시작할 때 읽습니�
 
 프로젝트 라이선스는 [LICENSE](LICENSE), 포함된 구성 요소와 글꼴 정보는 아래 문서를 참고하세요.
 
-- [타사 구성 요소(중국어)](tools/win-build/docs/THIRD-PARTY.md)
-- [타사 구성 요소(영어)](tools/win-build/docs/THIRD-PARTY.en.md)
+- [타사 구성 요소(중국어)](tools/win-build/docs/THIRD-PARTY.txt)
+- [타사 구성 요소(영어)](tools/win-build/docs/THIRD-PARTY.en.txt)
 
 배포 패키지에는 `NOTICE-Image.txt`와 `NOTICE-Menu.txt`도 포함됩니다. 함께 보관하세요.

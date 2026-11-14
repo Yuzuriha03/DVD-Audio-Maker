@@ -4,8 +4,8 @@ use super::layout::{DEFAULT_LOG_FLOOR, label_handle, layout_page_contents};
 use super::logs::{display_log, export_log_to, full_log, log_is_problem};
 use super::scrollbar::page_bar_metrics;
 use super::settings::{
-    SAMPLE_BITS, SAMPLE_RATES, audio_note_key, capacity_index, mode_index, mode_value,
-    valid_integer,
+    LPCM_SAMPLE_BITS, SAMPLE_BITS, SAMPLE_RATES, audio_note_key, capacity_index, mode_index,
+    mode_value, valid_integer,
 };
 use super::task::{emit_preparation_issues, set_busy_controls};
 use super::ui_test_guard;
@@ -1440,6 +1440,19 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
             *bits == 16
         );
     }
+    combo_select(ui.controls.mode, 0);
+    handle_command(parent, &mut ui, ID_MODE, CBN_SELCHANGE);
+    combo_select(ui.controls.bits, 1);
+    handle_command(parent, &mut ui, ID_BITS, CBN_SELCHANGE);
+    assert_eq!(numeric_choice(ui.controls.bits, SAMPLE_BITS), 20);
+    combo_select(ui.controls.mode, 1);
+    handle_command(parent, &mut ui, ID_MODE, CBN_SELCHANGE);
+    assert_eq!(get_text(ui.controls.bits), "24 bit");
+    assert_eq!(combo_index(ui.controls.bits), 1);
+    assert_eq!(numeric_choice(ui.controls.bits, LPCM_SAMPLE_BITS), 24);
+    combo_select(ui.controls.mode, 0);
+    handle_command(parent, &mut ui, ID_MODE, CBN_SELCHANGE);
+    assert_eq!(combo_index(ui.controls.bits), 2);
     combo_select(ui.controls.bits, 0);
     handle_command(parent, &mut ui, ID_BITS, CBN_SELCHANGE);
     assert!(!checked(ui.controls.dither));

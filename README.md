@@ -10,7 +10,7 @@
    - 普通 Intel / AMD 电脑：`DVD-Audio-Maker-v1.1-win-x64.zip`
    - Windows on ARM 设备：`DVD-Audio-Maker-v1.1-win-arm64.zip`
 2. 解压到自己的文件夹，双击 `DVD-Audio-Maker.exe`。
-3. 保留解压目录中的 `LICENSE`、`THIRD-PARTY.md`、`THIRD-PARTY.en.md`、`NOTICE-Image.txt` 和 `NOTICE-Menu.txt`。
+3. 保留解压目录中的 `LICENSE`、`THIRD-PARTY.txt`、`THIRD-PARTY.en.txt`、`NOTICE-Image.txt` 和 `NOTICE-Menu.txt`。
 
 **系统要求：** Windows 10 / 11（x64 或 ARM64）。程序已内置所需组件，不需要另外安装运行库；EXE 所在文件夹需要可写。制作 ISO 和临时文件需要足够的磁盘空间，建议预留与成品大小相当的空间。
 
@@ -136,8 +136,8 @@ GUI 中的“音源文件夹”对应 `DVDA_SRC`，“成品位置”对应 `DVD
 
 项目许可见 [LICENSE](LICENSE)。第三方组件、字体和编码器说明见：
 
-- [第三方组件说明](tools/win-build/docs/THIRD-PARTY.md)
-- [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.md)
+- [第三方组件说明](tools/win-build/docs/THIRD-PARTY.txt)
+- [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.txt)
 
 发布包内还包含 `NOTICE-Image.txt` 和 `NOTICE-Menu.txt`，请一并保留。
 

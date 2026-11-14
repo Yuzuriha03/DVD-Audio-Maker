@@ -10,7 +10,7 @@ Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP or LPCM encod
    - Intel / AMD PCs: `DVD-Audio-Maker-v1.1-win-x64.zip`
    - Windows on ARM devices: `DVD-Audio-Maker-v1.1-win-arm64.zip`
 2. Extract the ZIP to a folder of your choice and double-click `DVD-Audio-Maker.exe`.
-3. Keep `LICENSE`, `THIRD-PARTY.md`, `THIRD-PARTY.en.md`, `NOTICE-Image.txt` and `NOTICE-Menu.txt` in the extracted folder.
+3. Keep `LICENSE`, `THIRD-PARTY.txt`, `THIRD-PARTY.en.txt`, `NOTICE-Image.txt` and `NOTICE-Menu.txt` in the extracted folder.
 
 **Requirements:** Windows 10 / 11 on x64 or ARM64. All required components are built in, so no extra runtime needs to be installed. The folder containing the EXE must be writable. Building an ISO and its temporary files also needs enough free disk space; reserve roughly the size of the finished output.
 
@@ -136,8 +136,8 @@ The interface and logs support Simplified Chinese, Traditional Chinese, English,
 
 See [LICENSE](LICENSE) for the project license and these notices for bundled components and fonts:
 
-- [Third-party components (Chinese)](tools/win-build/docs/THIRD-PARTY.md)
-- [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.md)
+- [Third-party components (Chinese)](tools/win-build/docs/THIRD-PARTY.txt)
+- [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.txt)
 
 The release also includes `NOTICE-Image.txt` and `NOTICE-Menu.txt`; please keep them.
 

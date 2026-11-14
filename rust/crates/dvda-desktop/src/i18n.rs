@@ -100,6 +100,8 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "browse" => "浏览...",
             "start" => "基本设置",
             "audio" => "音频编码",
+            "about" => "作者",
+            "author_page_title" => "作者与许可证",
             "check" => "检查音源",
             "build" => "开始制作",
             "verify" => "验证成品",
@@ -174,7 +176,23 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             }
             "lpcm_note" => "LPCM 不压缩音频，速度较快但占用空间更大。请确认光盘容量足够。",
             "invalid_sample_rate" => "MLP 目标采样率无效。",
-            "invalid_bits" => "MLP 目标位深必须为 16、20 或 24。",
+            "invalid_bits" => "MLP 位深必须为 16、20 或 24；LPCM 位深必须为 16 或 24。",
+            "author_name" => "Yuzuriha03",
+            "author_role" => "独立开发者 · 项目维护者",
+            "author_version" => "DVD-Audio Maker · v1.2.0",
+            "author_bio" => {
+                "DVD-Audio Maker 的作者，负责 Rust 核心、Windows 与 Android 客户端的开发与维护。"
+            }
+            "project_home" => "项目主页",
+            "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
+            "author_licenses" => {
+                "随包许可：LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
+            }
+            "author_license_hint" => "许可证文件位于程序目录；点击“打开许可证目录”即可查看。",
+            "open_project" => "打开项目主页",
+            "open_licenses" => "打开许可证目录",
+            "open_ffmpeg_license" => "查看 FFmpeg 许可证",
+            "licenses_missing" => "未找到许可证目录。",
             "invalid_integer" => "请输入 {0} 至 {1} 的整数。",
             "invalid_nonnegative" => "请输入非负有限数值。",
             "invalid_title_mode" => "标题分组规则须为 album、one 或正整数。",
@@ -236,6 +254,8 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "browse" => "瀏覽...",
             "start" => "基本設定",
             "audio" => "音訊編碼",
+            "about" => "作者",
+            "author_page_title" => "作者與授權",
             "check" => "檢查音源",
             "build" => "開始製作",
             "verify" => "驗證成品",
@@ -310,7 +330,23 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             }
             "lpcm_note" => "LPCM 不壓縮音訊，速度較快但占用空間更大。請確認光碟容量足夠。",
             "invalid_sample_rate" => "MLP 目標取樣率無效。",
-            "invalid_bits" => "MLP 目標位深必須為 16、20 或 24。",
+            "invalid_bits" => "MLP 位深必須為 16、20 或 24；LPCM 位深必須為 16 或 24。",
+            "author_name" => "Yuzuriha03",
+            "author_role" => "獨立開發者 · 專案維護者",
+            "author_version" => "DVD-Audio Maker · v1.2.0",
+            "author_bio" => {
+                "DVD-Audio Maker 的作者，負責 Rust 核心、Windows 與 Android 用戶端的開發與維護。"
+            }
+            "project_home" => "專案首頁",
+            "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
+            "author_licenses" => {
+                "隨包授權：LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
+            }
+            "author_license_hint" => "授權文件位於程式目錄；點擊「開啟授權目錄」即可查看。",
+            "open_project" => "開啟專案首頁",
+            "open_licenses" => "開啟授權目錄",
+            "open_ffmpeg_license" => "查看 FFmpeg 授權",
+            "licenses_missing" => "找不到授權目錄。",
             "invalid_integer" => "請輸入 {0} 至 {1} 的整數。",
             "invalid_nonnegative" => "請輸入非負有限數值。",
             "invalid_title_mode" => "標題分組規則須為 album、one 或正整數。",
@@ -372,6 +408,8 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "browse" => "Browse...",
             "start" => "Basic settings",
             "audio" => "Audio",
+            "about" => "Author",
+            "author_page_title" => "Author & licenses",
             "check" => "Check sources",
             "build" => "Build discs",
             "verify" => "Verify output",
@@ -452,7 +490,27 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
                 "LPCM stores uncompressed audio. It is quick, but uses more disc space; make sure the selected capacity is sufficient."
             }
             "invalid_sample_rate" => "The MLP target sample rate is invalid.",
-            "invalid_bits" => "MLP bit depth must be 16, 20, or 24.",
+            "invalid_bits" => {
+                "MLP bit depth must be 16, 20, or 24; LPCM bit depth must be 16 or 24."
+            }
+            "author_name" => "Yuzuriha03",
+            "author_role" => "Independent developer · project maintainer",
+            "author_version" => "DVD-Audio Maker · v1.2.0",
+            "author_bio" => {
+                "Creator of DVD-Audio Maker. Maintains the Rust core plus the Windows and Android clients."
+            }
+            "project_home" => "Project home",
+            "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
+            "author_licenses" => {
+                "Bundled licenses: LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
+            }
+            "author_license_hint" => {
+                "License files ship beside the program; use Open license folder to view them."
+            }
+            "open_project" => "Open project home",
+            "open_licenses" => "Open license folder",
+            "open_ffmpeg_license" => "View FFmpeg license",
+            "licenses_missing" => "The license folder was not found.",
             "invalid_integer" => "Enter an integer from {0} to {1}.",
             "invalid_nonnegative" => "Enter a finite non-negative number.",
             "invalid_title_mode" => "Title grouping must be album, one, or a positive integer.",
@@ -514,6 +572,8 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "browse" => "参照...",
             "start" => "基本設定",
             "audio" => "音声",
+            "about" => "作者",
+            "author_page_title" => "作者とライセンス",
             "check" => "音源を検査",
             "build" => "ディスクを作成",
             "verify" => "出力を検証",
@@ -594,7 +654,27 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
                 "LPCM は非圧縮音声です。処理は速いですが容量を多く使うため、ディスク容量を確認してください。"
             }
             "invalid_sample_rate" => "MLP の目標サンプルレートが無効です。",
-            "invalid_bits" => "MLP のビット深度は 16、20、24 のいずれかです。",
+            "invalid_bits" => {
+                "MLP のビット深度は 16、20、24 のいずれか、LPCM は 16 または 24 です。"
+            }
+            "author_name" => "Yuzuriha03",
+            "author_role" => "個人開発者・プロジェクトメンテナー",
+            "author_version" => "DVD-Audio Maker · v1.2.0",
+            "author_bio" => {
+                "DVD-Audio Maker の作者。Rust コアと Windows / Android クライアントの開発・保守を担当しています。"
+            }
+            "project_home" => "プロジェクトページ",
+            "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
+            "author_licenses" => {
+                "同梱ライセンス：LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
+            }
+            "author_license_hint" => {
+                "ライセンスファイルはプログラムと同じフォルダーにあります。「ライセンスフォルダーを開く」から確認できます。"
+            }
+            "open_project" => "プロジェクトページを開く",
+            "open_licenses" => "ライセンスフォルダーを開く",
+            "open_ffmpeg_license" => "FFmpeg ライセンスを表示",
+            "licenses_missing" => "ライセンスフォルダーが見つかりません。",
             "invalid_integer" => "{0} から {1} までの整数を入力してください。",
             "invalid_nonnegative" => "0 以上の有限な数値を入力してください。",
             "invalid_title_mode" => "タイトルの区切りは album、one、または正の整数です。",
@@ -735,6 +815,20 @@ mod tests {
             "lpcm_note",
             "invalid_sample_rate",
             "invalid_bits",
+            "about",
+            "author_page_title",
+            "author_name",
+            "author_role",
+            "author_version",
+            "author_bio",
+            "project_home",
+            "project_url",
+            "author_licenses",
+            "author_license_hint",
+            "open_project",
+            "open_licenses",
+            "open_ffmpeg_license",
+            "licenses_missing",
             "invalid_integer",
             "invalid_nonnegative",
             "invalid_title_mode",

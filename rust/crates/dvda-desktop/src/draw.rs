@@ -571,8 +571,10 @@ pub(crate) unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct)
         unsafe { draw_action_button(item, false) };
         return true;
     }
-    if (ID_TAB..ID_TAB + 3).contains(&id) {
-        let active = paint_fields(hwnd).is_some_and(|paint| paint.tab_index.get() == id - ID_TAB);
+    if let Some(paint) = paint_fields(hwnd)
+        && (ID_TAB..ID_TAB + paint.pages.len()).contains(&id)
+    {
+        let active = paint.tab_index.get() == id - ID_TAB;
         unsafe { draw_tab_button(item, active) };
         return true;
     }
