@@ -140,7 +140,20 @@ impl Default for Options {
                     "Arial".into()
                 }
             } else {
-                "Courier-Bold".into()
+                // Android/Linux port: no GDI font-name resolution here, use a real font file.
+                const CANDIDATES: [&str; 3] = [
+                    "/system/fonts/NotoSansCJK-Regular.ttc",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                ];
+                CANDIDATES
+                    .iter()
+                    .map(std::path::Path::new)
+                    .find(|path| path.is_file())
+                    .map_or_else(
+                        || "Courier-Bold".into(),
+                        |path| path.to_string_lossy().into_owned(),
+                    )
             },
             font_name_jp: None,
             font_name_kr: None,

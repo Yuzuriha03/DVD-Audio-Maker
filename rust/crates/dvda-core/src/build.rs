@@ -961,8 +961,7 @@ fn independent_staging(root: &Path) -> Result<PathBuf, String> {
 fn generated() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|value| value.as_secs().to_string())
-        .unwrap_or_default()
+        .map_or_default(|value| value.as_secs().to_string())
 }
 fn error(code: &str, message: impl Into<String>) -> Value {
     json!({"Severity":2,"Code":code,"Message":message.into()})

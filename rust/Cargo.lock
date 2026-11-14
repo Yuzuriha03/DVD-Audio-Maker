@@ -206,7 +206,6 @@ version = "0.1.0"
 dependencies = [
  "dvda-bridges",
  "serde",
- "sha2",
 ]
 
 [[package]]

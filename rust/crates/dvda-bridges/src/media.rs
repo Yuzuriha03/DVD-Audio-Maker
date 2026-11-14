@@ -60,13 +60,13 @@ unsafe extern "C" fn logger(
                 level,
                 format,
                 arguments,
-                buffer.as_mut_ptr(),
+                buffer.as_mut_ptr().cast(),
                 i32::try_from(buffer.len()).expect("FFmpeg log buffer fits in i32"),
                 &raw mut print_prefix,
             );
             buffer[2047] = 0;
             if let Some(emit) = (*call).emit {
-                emit((*call).state, 2, buffer.as_ptr());
+                emit((*call).state, 2, buffer.as_ptr().cast());
             }
         });
     }
@@ -458,12 +458,12 @@ pub unsafe extern "C" fn dvdamedia_run(
             Err(error) => {
                 if error != EXIT {
                     let mut message = [0i8; 128];
-                    av_strerror(error, message.as_mut_ptr(), message.len());
+                    av_strerror(error, message.as_mut_ptr().cast(), message.len());
                     call.message(
                         2,
                         &format!(
                             "Error while decoding or processing media: {}",
-                            text(message.as_ptr())
+                            text(message.as_ptr().cast())
                         ),
                     );
                 }
@@ -499,12 +499,12 @@ pub unsafe fn audio_sink(
             Err(error) => {
                 if error != EXIT {
                     let mut message = [0i8; 128];
-                    av_strerror(error, message.as_mut_ptr(), message.len());
+                    av_strerror(error, message.as_mut_ptr().cast(), message.len());
                     call.message(
                         2,
                         &format!(
                             "Error while decoding or processing media: {}",
-                            text(message.as_ptr())
+                            text(message.as_ptr().cast())
                         ),
                     );
                 }

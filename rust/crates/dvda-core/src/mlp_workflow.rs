@@ -755,13 +755,20 @@ fn destination(source: &str, source_root: &str, output_root: &Path) -> PathBuf {
 }
 
 fn relative_or_name(source: &Path, root: &Path) -> PathBuf {
-    let source_text = source.to_string_lossy().replace('/', "\\");
-    let root_text = root
-        .to_string_lossy()
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_owned();
-    let prefix = format!("{root_text}\\");
+    #[cfg(windows)]
+    let (source_text, root_text, separator) = (
+        source.to_string_lossy().replace('/', "\\"),
+        root.to_string_lossy().replace('/', "\\"),
+        "\\",
+    );
+    #[cfg(not(windows))]
+    let (source_text, root_text, separator) = (
+        source.to_string_lossy().replace('\\', "/"),
+        root.to_string_lossy().replace('\\', "/"),
+        "/",
+    );
+    let root_text = root_text.trim_end_matches(separator).to_owned();
+    let prefix = format!("{root_text}{separator}");
     if source_text.len() > prefix.len()
         && source_text
             .get(..prefix.len())
@@ -769,7 +776,7 @@ fn relative_or_name(source: &Path, root: &Path) -> PathBuf {
     {
         return PathBuf::from(&source_text[prefix.len()..]);
     }
-    source.file_name().map(PathBuf::from).unwrap_or_default()
+    source.file_name().map_or_default(PathBuf::from)
 }
 
 fn same_identity(left: &Value, right: &Value) -> bool {
@@ -800,7 +807,7 @@ fn error(code: &str, message: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::windows::fs::OpenOptionsExt;
+    use crate::platform::OpenOptionsExt;
 
     #[derive(Default)]
     struct CheckEvents {

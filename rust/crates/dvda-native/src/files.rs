@@ -1,13 +1,19 @@
 //! Windows file operations used by publication. Moves never replace unless requested.
-use std::{ffi::OsStr, io, os::windows::ffi::OsStrExt, path::Path};
+use std::io;
+#[cfg(not(windows))]
+use std::path::Path;
+#[cfg(windows)]
+use std::{ffi::OsStr, os::windows::ffi::OsStrExt, path::Path};
 mod ordinal_case;
 
+#[cfg(windows)]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn MoveFileExW(source: *const u16, destination: *const u16, flags: u32) -> i32;
     fn CopyFileW(source: *const u16, destination: *const u16, fail_if_exists: i32) -> i32;
 }
 
+#[cfg(windows)]
 fn wide(value: &OsStr) -> io::Result<Vec<u16>> {
     let mut result: Vec<_> = value.encode_wide().collect();
     if result.contains(&0) {
@@ -21,6 +27,7 @@ fn wide(value: &OsStr) -> io::Result<Vec<u16>> {
 ///
 /// # Errors
 /// Rejects paths containing NUL and returns the Windows error when the move fails or replacement is disallowed.
+#[cfg(windows)]
 pub fn move_file(source: &Path, destination: &Path, replace: bool) -> io::Result<()> {
     let source = wide(source.as_os_str())?;
     let destination = wide(destination.as_os_str())?;
@@ -38,6 +45,7 @@ pub fn move_file(source: &Path, destination: &Path, replace: bool) -> io::Result
 ///
 /// # Errors
 /// Rejects paths containing NUL and returns the Windows error when copying fails or replacement is disallowed.
+#[cfg(windows)]
 pub fn copy_file(source: &Path, destination: &Path, replace: bool) -> io::Result<()> {
     let source = wide(source.as_os_str())?;
     let destination = wide(destination.as_os_str())?;
@@ -47,6 +55,36 @@ pub fn copy_file(source: &Path, destination: &Path, replace: bool) -> io::Result
     } else {
         Ok(())
     }
+}
+
+#[cfg(not(windows))]
+/// Move a file, optionally replacing an existing destination.
+///
+/// # Errors
+/// Returns the OS error when the move fails or replacement is disallowed.
+pub fn move_file(source: &Path, destination: &Path, replace: bool) -> io::Result<()> {
+    if !replace && destination.exists() {
+        return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+    }
+    match std::fs::rename(source, destination) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            std::fs::copy(source, destination)?;
+            std::fs::remove_file(source)
+        }
+    }
+}
+
+#[cfg(not(windows))]
+/// Copy a file, optionally replacing an existing destination.
+///
+/// # Errors
+/// Returns the OS error when copying fails or replacement is disallowed.
+pub fn copy_file(source: &Path, destination: &Path, replace: bool) -> io::Result<()> {
+    if !replace && destination.exists() {
+        return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+    }
+    std::fs::copy(source, destination).map(|_| ())
 }
 
 #[must_use]

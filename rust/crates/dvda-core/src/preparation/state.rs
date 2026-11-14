@@ -1,4 +1,5 @@
 use super::models::Patch;
+use crate::platform::OpenOptionsExt;
 use crate::{
     audio::Metadata,
     identity,
@@ -11,7 +12,6 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{Read, Write},
-    os::windows::fs::OpenOptionsExt,
     path::Path,
 };
 

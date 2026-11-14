@@ -1,11 +1,37 @@
 //! Native Rust DVD-Audio format inspection, alignment, PTS, and PCM comparison.
+#[cfg(windows)]
 pub mod compression;
+
+#[cfg(not(windows))]
+pub mod compression {
+    //! Android/Linux stub: the Win32 Cabinet compression API is unavailable.
+    use std::io;
+
+    /// # Errors
+    /// Always returns Unsupported on this platform.
+    pub fn compress(_input: &[u8]) -> io::Result<Vec<u8>> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "cabinet compression unavailable",
+        ))
+    }
+
+    /// # Errors
+    /// Always returns Unsupported on this platform.
+    pub fn decompress(_input: &[u8], _size: usize) -> io::Result<Vec<u8>> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "cabinet compression unavailable",
+        ))
+    }
+}
 pub mod disc_verify;
 pub mod encoder;
 pub mod files;
 pub mod media;
 mod mlp_formats;
 mod pcm_formats;
+#[cfg(windows)]
 pub mod process;
 
 #[cfg(test)]

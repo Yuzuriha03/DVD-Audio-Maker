@@ -237,8 +237,8 @@ pub(crate) fn encode(
         maximum_channel: channels as u32 - 1,
         ..Default::default()
     };
-    for ch in 0..channels {
-        base.coding[ch].total_width = 24;
+    for coding in base.coding.iter_mut().take(channels) {
+        coding.total_width = 24;
     }
     let mut previous = base.clone();
     let mut history: [crate::analysis::prediction::MlpPredictState; 6] = Default::default();

@@ -37,17 +37,17 @@ When changing a module, review only the affected functions and nearby exemptions
 From the repository root, after initializing the existing MSVC environment:
 
 ```powershell
-cargo +1.99.0 fmt --manifest-path rust/Cargo.toml --all -- --check
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --locked --offline -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --no-default-features --locked --offline -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc -p dvda-core --all-targets --no-default-features --locked --offline -- -D warnings"
+cargo  fmt --manifest-path rust/Cargo.toml --all -- --check
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --locked --offline -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --no-default-features --locked --offline -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc -p dvda-core --all-targets --no-default-features --locked --offline -- -D warnings"
 ```
 
 To audit suppressed diagnostics, collect results separately for each feature configuration:
 
 ```powershell
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline --message-format=json -- --force-warn clippy::pedantic"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline --message-format=json -- --force-warn clippy::pedantic"
 ```
 
 A successful expanded-audit exit does not mean zero warnings. Deduplicate by rule, file, and line of the first primary span using the same toolchain and features, and check `unfulfilled_lint_expectations`. Workspace `no-default-features` does not cover Core defaults re-enabled by dependents, so retain the separate Core check above.

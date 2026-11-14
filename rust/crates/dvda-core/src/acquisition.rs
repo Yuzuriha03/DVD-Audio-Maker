@@ -110,7 +110,7 @@ fn relative_or_file_name(source: &Path, root: &Path) -> PathBuf {
     if within_root && !remaining.as_path().as_os_str().is_empty() {
         return remaining.collect();
     }
-    source.file_name().map(PathBuf::from).unwrap_or_default()
+    source.file_name().map_or_default(PathBuf::from)
 }
 
 fn collect(root: &Path, output: &mut Vec<PathBuf>) -> Result<(), String> {

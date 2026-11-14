@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true }
-sha2 = { version = "=0.11.1", default-features = false }
 dvda-bridges = { path = "../dvda-bridges", features = ["media", "menu"] }
 
 [lints]

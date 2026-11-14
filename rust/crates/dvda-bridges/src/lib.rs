@@ -13,7 +13,7 @@ pub use ffi_optimized::{
 #[cfg(feature = "media")]
 pub use ffmpeg_pool::{FRAME_POOL, FramePool, PACKET_POOL, PacketPool, PooledFrame, PooledPacket};
 
-#[cfg(feature = "author-loader")]
+#[cfg(all(windows, feature = "author-loader"))]
 pub mod author_loader;
 #[cfg(feature = "media")]
 pub mod direct;

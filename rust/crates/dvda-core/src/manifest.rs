@@ -40,7 +40,14 @@ fn number(object: &Map<String, Value>, names: &[&str]) -> f64 {
     field(object, names).and_then(Value::as_f64).unwrap_or(0.)
 }
 fn path_text(value: &str) -> String {
-    value.replace('/', "\\")
+    #[cfg(windows)]
+    {
+        value.replace('/', "\\")
+    }
+    #[cfg(not(windows))]
+    {
+        value.replace('\\', "/")
+    }
 }
 
 fn file_size(path: &Path) -> i64 {

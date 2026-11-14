@@ -18,6 +18,7 @@
 *.jpeg
 *.png
 !assets/dvd-audio-maker.png
+!apps/android/app/src/main/res/mipmap-*/ic_launcher.png
 *.webp
 
 # 光盘镜像与目录
@@ -76,6 +77,8 @@ desktop.ini
 # ---- .NET ----
 # Rust compilation outputs; Cargo.lock remains tracked.
 rust/target/
+target/
+deps/
 
 bin/
 !rust/crates/dvda-bridges/src/bin/
@@ -99,6 +102,7 @@ DVD-Audio-Maker*.zip
 *.token
 *.pem
 *.key
+apps/android/debug.keystore
 .env
 .env.*
 settings.json
@@ -119,3 +123,6 @@ docs/*
 !docs/C17-FORMATS.md
 !docs/RUST-CLEANUP.md
 !docs/ONEFILE-PUBLISH.md
+!docs/dvda-android-port-notes.md
+!docs/dvda-parity-audit.md
+!docs/dvda-android-codebase.md

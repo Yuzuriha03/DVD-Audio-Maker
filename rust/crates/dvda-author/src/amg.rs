@@ -469,16 +469,11 @@ fn write_menu(bytes: &mut [u8], base: usize, menu: &Menu) -> Result<(), String> 
             );
         }
         put16(bytes, pgc + 160, 1);
-        for index in 0..16 {
-            put32(
-                bytes,
-                pgc + 164 + 4 * index,
-                if index < 4 {
-                    menu.palette[index]
-                } else {
-                    0x0010_8080
-                },
-            );
+        for (index, color) in menu.palette.iter().enumerate() {
+            put32(bytes, pgc + 164 + 4 * index, *color);
+        }
+        for index in 4..16 {
+            put32(bytes, pgc + 164 + 4 * index, 0x0010_8080);
         }
         put32(bytes, pgc + 228, 0x00ec_0114);
         put32(bytes, pgc + 232, 0x0116_012e);

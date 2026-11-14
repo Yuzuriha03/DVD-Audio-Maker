@@ -1,0 +1,19 @@
+[package]
+name = "dvda-android"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dvda-core = { path = "../dvda-core" }
+dvda-native = { path = "../dvda-native" }
+serde_json = "1"
+jni = "0.21"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

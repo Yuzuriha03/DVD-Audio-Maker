@@ -203,9 +203,19 @@ fn screen_text(
 }
 
 pub fn preflight(job: &Job, diagnostics: &mut Vec<Value>) {
-    let data_menu = job.author_source.join("menu");
-    if !data_menu.is_dir() {
-        diagnostics.push(json!({"Severity":2,"Code":"MENU_DATA_MISSING","Message":format!("找不到 dvda-author 菜单素材目录: {}",data_menu.display())}));
+    // Desktop packages ship the author menu assets beside the executable; the
+    // Android port links them into the process, so there is no directory.
+    #[cfg(windows)]
+    {
+        let data_menu = job.author_source.join("menu");
+        if !data_menu.is_dir() {
+            diagnostics.push(json!({"Severity":2,"Code":"MENU_DATA_MISSING","Message":format!("找不到 dvda-author 菜单素材目录: {}",data_menu.display())}));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = job;
+        let _ = diagnostics;
     }
 }
 

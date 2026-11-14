@@ -37,17 +37,17 @@
 从仓库根目录、初始化现有 MSVC 环境后运行：
 
 ```powershell
-cargo +1.99.0 fmt --manifest-path rust/Cargo.toml --all -- --check
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --locked --offline -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --no-default-features --locked --offline -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc -p dvda-core --all-targets --no-default-features --locked --offline -- -D warnings"
+cargo  fmt --manifest-path rust/Cargo.toml --all -- --check
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --locked --offline -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --no-default-features --locked --offline -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc -p dvda-core --all-targets --no-default-features --locked --offline -- -D warnings"
 ```
 
 审计被豁免的诊断时，分别收集 feature 配置：
 
 ```powershell
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline --message-format=json -- --force-warn clippy::pedantic"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline --message-format=json -- --force-warn clippy::pedantic"
 ```
 
 展开审计退出成功不代表零诊断。比较时按首个 primary span 的规则、文件和行号去重，保持相同工具链与 feature，并同时检查 `unfulfilled_lint_expectations`。workspace 的 `no-default-features` 不会覆盖依赖重新启用的 Core 默认 feature，因此必须保留上面的 Core 独立检查。

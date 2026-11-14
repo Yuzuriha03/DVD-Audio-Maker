@@ -10,6 +10,7 @@ use std::{
 
 pub type ReadRgba =
     unsafe extern "C" fn(*const c_char, *mut u8, usize, *mut u32, *mut u32) -> c_int;
+#[cfg(windows)]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     #[cfg(test)]
@@ -21,6 +22,7 @@ unsafe extern "system" {
     #[cfg(test)]
     fn HeapDestroy(heap: *mut c_void) -> c_int;
 }
+#[cfg(windows)]
 unsafe extern "C" {
     fn _errno() -> *mut c_int;
     fn _wfopen(path: *const u16, mode: *const u16) -> *mut c_void;
@@ -30,6 +32,121 @@ unsafe extern "C" {
     #[cfg(test)]
     fn _filelengthi64(file: c_int) -> i64;
 }
+#[cfg(not(windows))]
+unsafe extern "C" {
+    fn malloc(bytes: usize) -> *mut core::ffi::c_void;
+    fn realloc(object: *mut core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
+    #[link_name = "free"]
+    fn libc_free(object: *mut core::ffi::c_void);
+    fn fopen(path: *const c_char, mode: *const c_char) -> *mut core::ffi::c_void;
+    #[link_name = "fclose"]
+    fn fclose_file(file: *mut core::ffi::c_void) -> c_int;
+    #[link_name = "open"]
+    fn open_fd(path: *const c_char, flags: c_int, ...) -> c_int;
+    #[link_name = "close"]
+    fn close_fd(fd: c_int) -> c_int;
+    #[cfg(test)]
+    #[link_name = "lseek"]
+    fn lseek64_file(fd: c_int, offset: i64, whence: c_int) -> i64;
+    #[cfg(target_os = "android")]
+    #[link_name = "__errno"]
+    fn errno_location_platform() -> *mut c_int;
+    #[cfg(not(target_os = "android"))]
+    #[link_name = "__errno_location"]
+    fn errno_location_platform() -> *mut c_int;
+}
+#[cfg(not(windows))]
+unsafe fn fclose(file: *mut core::ffi::c_void) -> c_int {
+    unsafe { fclose_file(file) }
+}
+#[cfg(not(windows))]
+unsafe fn _errno() -> *mut c_int {
+    unsafe { errno_location_platform() }
+}
+#[cfg(not(windows))]
+#[allow(
+    non_snake_case,
+    reason = "Matches the Win32 heap API name used by the shared implementation"
+)]
+unsafe fn HeapAlloc(
+    _heap: *mut core::ffi::c_void,
+    _flags: u32,
+    bytes: usize,
+) -> *mut core::ffi::c_void {
+    unsafe { malloc(bytes.max(1)) }
+}
+#[cfg(not(windows))]
+#[allow(
+    non_snake_case,
+    reason = "Matches the Win32 heap API name used by the shared implementation"
+)]
+unsafe fn HeapReAlloc(
+    _heap: *mut core::ffi::c_void,
+    _flags: u32,
+    object: *mut core::ffi::c_void,
+    bytes: usize,
+) -> *mut core::ffi::c_void {
+    unsafe { realloc(object, bytes.max(1)) }
+}
+#[cfg(not(windows))]
+#[allow(
+    non_snake_case,
+    reason = "Matches the Win32 heap API name used by the shared implementation"
+)]
+unsafe fn HeapFree(
+    _heap: *mut core::ffi::c_void,
+    _flags: u32,
+    object: *mut core::ffi::c_void,
+) -> c_int {
+    unsafe { libc_free(object) };
+    1
+}
+#[cfg(not(windows))]
+unsafe fn _wfopen(path: *const u16, mode: *const u16) -> *mut core::ffi::c_void {
+    use std::ffi::CString;
+    let mut wide_path = Vec::new();
+    let mut index = 0;
+    while unsafe { *path.add(index) } != 0 {
+        wide_path.push(unsafe { *path.add(index) });
+        index += 1;
+    }
+    let mut wide_mode = Vec::new();
+    let mut index = 0;
+    while unsafe { *mode.add(index) } != 0 {
+        wide_mode.push(unsafe { *mode.add(index) });
+        index += 1;
+    }
+    let Ok(path) = CString::new(String::from_utf16_lossy(&wide_path)) else {
+        return std::ptr::null_mut();
+    };
+    let Ok(mode) = CString::new(String::from_utf16_lossy(&wide_mode)) else {
+        return std::ptr::null_mut();
+    };
+    unsafe { fopen(path.as_ptr(), mode.as_ptr()) }
+}
+#[cfg(not(windows))]
+unsafe fn _wopen(path: *const u16, _flags: c_int, mode: c_int) -> c_int {
+    use std::ffi::CString;
+    let mut wide_path = Vec::new();
+    let mut index = 0;
+    while unsafe { *path.add(index) } != 0 {
+        wide_path.push(unsafe { *path.add(index) });
+        index += 1;
+    }
+    let Ok(path) = CString::new(String::from_utf16_lossy(&wide_path)) else {
+        return -1;
+    };
+    unsafe { open_fd(path.as_ptr(), 0o2 | 0o4000, mode) }
+}
+#[cfg(not(windows))]
+unsafe fn _close(file: c_int) -> c_int {
+    unsafe { close_fd(file) }
+}
+#[cfg(all(not(windows), test))]
+unsafe fn _filelengthi64(file: c_int) -> i64 {
+    unsafe { lseek64_file(file, 0, 2) }
+}
+
 const FILE: c_int = 1;
 const DESCRIPTOR: c_int = 2;
 const DIRECTORY: c_int = 3;
@@ -81,6 +198,7 @@ unsafe fn wide(value: *const c_char) -> Result<Vec<u16>, ()> {
 /// to `own` with a matching kind, before the session ends.
 fn allocate(bytes: usize, zero: bool) -> Result<*mut c_void, ()> {
     let heap = HEAP.get();
+    #[cfg(windows)]
     if heap.is_null() {
         return Err(());
     }
@@ -99,7 +217,11 @@ unsafe fn free(object: *mut c_void) -> Result<(), ()> {
         return Ok(());
     }
     let heap = HEAP.get();
-    if heap.is_null() || unsafe { HeapFree(heap, 0, object) } == 0 {
+    #[cfg(windows)]
+    let missing = heap.is_null();
+    #[cfg(not(windows))]
+    let missing = false;
+    if missing || unsafe { HeapFree(heap, 0, object) } == 0 {
         Err(())
     } else {
         Ok(())
@@ -424,6 +546,7 @@ pub struct Dirent {
     name: [c_char; 260],
 }
 // session.h independently checks the installed MinGW header at C compile time.
+#[cfg(windows)]
 const _: () = {
     assert!(size_of::<Dirent>() == 268);
     assert!(align_of::<Dirent>() == 4);
@@ -507,8 +630,12 @@ pub unsafe extern "C" fn menu_rust_readdir(
             return 1;
         }
         directory.entry.name.fill(0);
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "c_char signedness is target-dependent; this preserves the UTF-8 bytes"
+        )]
         for (target, byte) in directory.entry.name.iter_mut().zip(name.bytes()) {
-            *target = byte.cast_signed();
+            *target = byte as c_char;
         }
         directory.entry.name_length = u16::try_from(name.len()).unwrap();
         unsafe { *output = &raw mut directory.entry };

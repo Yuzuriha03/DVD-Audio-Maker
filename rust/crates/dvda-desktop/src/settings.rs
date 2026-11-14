@@ -464,8 +464,7 @@ pub(crate) fn edited_profile_values(state: &UiState) -> Map<String, Value> {
     let mut values = state
         .base
         .as_ref()
-        .map(AppOptions::profile_values)
-        .unwrap_or_default();
+        .map_or_default(AppOptions::profile_values);
 
     for (key, value) in overrides(state) {
         let raw = match key.as_str() {
@@ -558,8 +557,7 @@ pub(crate) fn setting_help(lang: Lang, key: &str) -> String {
         serde_json::from_str(include_str!("../locales/help.json")).expect("embedded settings help")
     });
     help.get(key)
-        .map(|text| localization::translate(lang.code(), text))
-        .unwrap_or_default()
+        .map_or_default(|text| localization::translate(lang.code(), text))
 }
 
 pub(crate) fn profile_language(path: &Path) -> Option<String> {

@@ -1,324 +1,379 @@
-//! Required runtime files embedded in the GUI; user documents remain beside it.
-use crate::{hash, preparation::state};
-use serde::{Deserialize, Serialize};
+//! Required runtime files embedded in the GUI; on Android the native
+//! components are linked statically, so packing and extraction are unavailable.
+#[cfg(not(windows))]
 use std::{
-    fs, io,
-    os::windows::{
-        fs::{MetadataExt, OpenOptionsExt},
-        process::CommandExt,
-    },
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     sync::OnceLock,
-    time::{Duration, Instant},
 };
 
-static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
-const MAGIC: &[u8; 8] = b"DVDRUN01";
-const MAX_FILE: usize = 128 * 1024 * 1024;
-#[derive(Serialize, Deserialize)]
-struct Entry {
-    path: String,
-    sha256: String,
-    size: usize,
-    offset: usize,
-    length: usize,
-}
-
+#[cfg(not(windows))]
 pub fn directory() -> Option<&'static Path> {
-    DIRECTORY.get().map(PathBuf::as_path)
-}
-fn relative(path: &str) -> Result<PathBuf, String> {
-    if path.is_empty() || path.contains(['\\', ':', '\0']) {
-        return Err("Invalid runtime path".into());
-    }
-    let parsed = PathBuf::from(path);
-    if !parsed
-        .components()
-        .all(|c| matches!(c, Component::Normal(_)))
-    {
-        return Err("Invalid runtime path".into());
-    }
-    Ok(parsed)
-}
-/// # Errors
-/// Returns an error if directory traversal or file reads fail, a symlink is
-/// encountered, a file is empty or exceeds 128 MiB, or compression or metadata
-/// serialization fails.
-pub fn pack(root: &Path) -> Result<Vec<u8>, String> {
-    fn collect(root: &Path, folder: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {
-        for entry in fs::read_dir(folder)? {
-            let entry = entry?;
-            if entry.file_type()?.is_symlink() {
-                return Err(io::Error::other("Runtime symlink is not supported"));
-            }
-            if entry.file_type()?.is_dir() {
-                collect(root, &entry.path(), files)?;
-            } else {
-                files.push(entry.path().strip_prefix(root).unwrap().to_owned());
-            }
-        }
-        Ok(())
-    }
-    let mut files = Vec::new();
-    collect(root, root, &mut files).map_err(|e| e.to_string())?;
-    files.sort();
-    let mut entries = Vec::new();
-    let mut payload = Vec::new();
-    for path in files {
-        let data = fs::read(root.join(&path)).map_err(|e| e.to_string())?;
-        if data.is_empty() || data.len() > MAX_FILE {
-            return Err(format!("Invalid runtime file size: {}", path.display()));
-        }
-        let compressed = dvda_native::compression::compress(&data).map_err(|e| e.to_string())?;
-        entries.push(Entry {
-            path: path.to_string_lossy().replace('\\', "/"),
-            sha256: hash::hex_digest(&data),
-            size: data.len(),
-            offset: payload.len(),
-            length: compressed.len(),
-        });
-        payload.extend(compressed);
-    }
-    let metadata = serde_json::to_vec(&entries).map_err(|e| e.to_string())?;
-    let mut output = MAGIC.to_vec();
-    // The wire header stores the low four length bytes, including for oversized input.
-    output.extend_from_slice(&metadata.len().to_le_bytes()[..4]);
-    output.extend(metadata);
-    output.extend(payload);
-    Ok(output)
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    Some(
+        DIR.get_or_init(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(Path::to_owned))
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+        .as_path(),
+    )
 }
 
-fn safe_target(root: &Path, relative: &Path) -> Result<PathBuf, String> {
-    let mut target = root.to_owned();
-    // Reject directory junctions and symlinks, including existing leaf files.
-    for part in relative.components() {
-        target.push(part.as_os_str());
-        if let Ok(metadata) = fs::symlink_metadata(&target)
-            && metadata.file_attributes() & 0x400 != 0
-        {
-            return Err("Runtime contains a reparse point".into());
-        }
-    }
-    Ok(target)
-}
-/// # Errors
-/// Returns an error for malformed headers, metadata, paths, duplicate entries,
-/// invalid sizes or payload ranges, reparse points, cache creation/locking or
-/// file-write failures, decompression failures, or checksum mismatches.
-///
-/// # Panics
-/// The header conversion requires exactly four bytes; the checked `8..12`
-/// slice enforces that invariant before conversion.
-pub fn extract(archive: &[u8], cache: &Path) -> Result<PathBuf, String> {
-    if archive.get(..8) != Some(MAGIC.as_slice()) {
-        return Err("Invalid runtime archive header".into());
-    }
-    let length = u32::from_le_bytes(
-        archive
-            .get(8..12)
-            .ok_or("Truncated runtime archive")?
-            .try_into()
-            .unwrap(),
-    ) as usize;
-    let metadata = archive
-        .get(12..12 + length)
-        .ok_or("Truncated runtime metadata")?;
-    let entries: Vec<Entry> = serde_json::from_slice(metadata).map_err(|e| e.to_string())?;
-    if entries.is_empty() {
-        return Err("Empty runtime archive".into());
-    }
-    let payload = &archive[12 + length..];
-    let digest = hash::hex_digest(archive);
-    fs::create_dir_all(cache).map_err(|e| e.to_string())?;
-    let root = safe_target(cache, Path::new(&digest))?;
-    let lock = cache.join(format!("{digest}.lock"));
-    let started = Instant::now();
-    let _lock = loop {
-        match fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .share_mode(0)
-            .open(&lock)
-        {
-            Ok(file) => break file,
-            Err(error)
-                if error.raw_os_error() == Some(32)
-                    && started.elapsed() < Duration::from_secs(120) =>
-            {
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(error) => return Err(format!("Cannot lock runtime cache: {error}")),
-        }
-    };
-    let mut names = std::collections::HashSet::new();
-    for entry in entries {
-        let path = relative(&entry.path)?;
-        if !names.insert(entry.path.to_lowercase()) || entry.size == 0 || entry.size > MAX_FILE {
-            return Err("Invalid runtime archive entry".into());
-        }
-        let target = safe_target(&root, &path)?;
-        let end = entry
-            .offset
-            .checked_add(entry.length)
-            .ok_or("Runtime offset overflow")?;
-        let compressed = payload
-            .get(entry.offset..end)
-            .ok_or("Truncated runtime payload")?;
-        let intact = fs::metadata(&target).is_ok_and(|m| m.len() == entry.size as u64)
-            && fs::File::open(&target)
-                .and_then(hash::reader_digest)
-                .is_ok_and(|hash| hash == entry.sha256);
-        if intact {
-            continue;
-        }
-        let data = dvda_native::compression::decompress(compressed, entry.size)
-            .map_err(|e| e.to_string())?;
-        if hash::hex_digest(&data) != entry.sha256 {
-            return Err(format!("Runtime checksum mismatch: {}", entry.path));
-        }
-        state::write_bytes(&target, &data).map_err(|e| {
-            format!(
-                "Cannot write runtime file {}: {}",
-                target.display(),
-                e.message
-            )
-        })?;
-    }
-    Ok(root)
+#[cfg(not(windows))]
+pub fn pack(_root: &Path) -> Result<Vec<u8>, String> {
+    Err("embedded runtime packing is not available on this platform".into())
 }
 
-fn configure_library_search(root: &Path) -> Result<(), String> {
-    use std::{ffi::c_void, os::windows::ffi::OsStrExt};
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn SetDefaultDllDirectories(flags: u32) -> i32;
-        fn AddDllDirectory(path: *const u16) -> *mut c_void;
-    }
-    let path: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
-    if path[..path.len() - 1].contains(&0) {
-        return Err("Runtime directory contains a null character".to_owned());
-    }
-    // Keep the verified runtime directory registered for the process lifetime.
-    // Search only this directory and System32, not the current directory or PATH.
-    unsafe {
-        if SetDefaultDllDirectories(0x400 | 0x800) == 0 {
-            return Err(format!(
-                "Cannot restrict DLL search: {}",
-                io::Error::last_os_error()
-            ));
-        }
-        if AddDllDirectory(path.as_ptr()).is_null() {
-            return Err(format!(
-                "Cannot register runtime DLL directory: {}",
-                io::Error::last_os_error()
-            ));
-        }
-    }
-    Ok(())
+#[cfg(not(windows))]
+pub fn extract(_archive: &[u8], _cache: &Path) -> Result<PathBuf, String> {
+    Err("embedded runtime extraction is not available on this platform".into())
 }
 
-/// Initialize embedded components.
+/// No embedded components to initialize when they are linked statically.
 ///
 /// # Errors
-/// Returns an error if workspace creation or archive extraction fails,
-/// `SystemRoot` is unavailable, the cleanup process cannot start, DLL search
-/// configuration fails, or a nonempty runtime has already been initialized.
-/// An empty archive is a no-op.
+/// Never fails on this platform.
 ///
 /// # Safety
 /// Call once from main before any other thread or native component is started.
+#[cfg(not(windows))]
 pub unsafe fn initialize(archive: &[u8]) -> Result<(), String> {
     if archive.is_empty() {
         return Ok(());
     }
-    let workspace = crate::workspace::Workspace::create(Path::new(""), false)?;
-    let cache = workspace.path().join("runtime");
-    let root = extract(archive, &cache)?;
-    // Loaded Windows DLLs cannot be removed before the owning process exits.
-    // The helper owns only this uniquely allocated directory, never a shared cache.
-    let script = format!(
-        "Wait-Process -Id {} -ErrorAction SilentlyContinue; for ($i=0; $i -lt 30; $i++) {{ Remove-Item -LiteralPath '{}' -Recurse -Force -ErrorAction SilentlyContinue; if (-not (Test-Path -LiteralPath '{}')) {{ break }}; Start-Sleep -Milliseconds 200 }}",
-        std::process::id(),
-        workspace.path().to_string_lossy().replace('\'', "''"),
-        workspace.path().to_string_lossy().replace('\'', "''")
-    );
-    let powershell = std::env::var_os("SystemRoot")
-        .map(PathBuf::from)
-        .ok_or("SystemRoot is unavailable; cannot locate Windows PowerShell")?
-        .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
-    std::process::Command::new(powershell)
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .creation_flags(0x0800_0000)
-        .spawn()
-        .map_err(|e| format!("Cannot start runtime cleanup: {e}"))?;
-    // Keep the exclusive lease until process teardown; the helper then removes it.
-    std::mem::forget(workspace);
-    configure_library_search(&root)?;
-    // SAFETY: this startup-only call precedes all threads and native library loading.
-    unsafe {
-        std::env::set_var("DVDA_MENU_NATIVE_DIR", &root);
-    }
-    DIRECTORY
-        .set(root)
-        .map_err(|_| "Runtime already initialized".to_owned())
+    Err("embedded runtime extraction is not available on this platform".into())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn archive_reuses_repairs_and_serializes_concurrent_startup() {
-        let root = std::env::temp_dir().join(format!(
-            "dvda-runtime-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let input = root.join("input");
-        fs::create_dir_all(input.join("data")).unwrap();
-        let data = vec![42u8; 32768];
-        fs::write(input.join("codec.dll"), &data).unwrap();
-        fs::write(input.join("data/config.xml"), b"config").unwrap();
-        let archive = pack(&input).unwrap();
-        let cache = root.join("cache");
-        let output = extract(&archive, &cache).unwrap();
-        let time = fs::metadata(output.join("codec.dll"))
-            .unwrap()
-            .modified()
-            .unwrap();
-        assert_eq!(extract(&archive, &cache).unwrap(), output);
-        assert_eq!(
-            fs::metadata(output.join("codec.dll"))
+#[cfg(windows)]
+mod windows {
+    //! Required runtime files embedded in the GUI; user documents remain beside it.
+    use crate::{hash, preparation::state};
+    use serde::{Deserialize, Serialize};
+    use std::{
+        fs, io,
+        os::windows::{
+            fs::{MetadataExt, OpenOptionsExt},
+            process::CommandExt,
+        },
+        path::{Component, Path, PathBuf},
+        sync::OnceLock,
+        time::{Duration, Instant},
+    };
+
+    static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
+    const MAGIC: &[u8; 8] = b"DVDRUN01";
+    const MAX_FILE: usize = 128 * 1024 * 1024;
+    #[derive(Serialize, Deserialize)]
+    struct Entry {
+        path: String,
+        sha256: String,
+        size: usize,
+        offset: usize,
+        length: usize,
+    }
+
+    pub fn directory() -> Option<&'static Path> {
+        DIRECTORY.get().map(PathBuf::as_path)
+    }
+    fn relative(path: &str) -> Result<PathBuf, String> {
+        if path.is_empty() || path.contains(['\\', ':', '\0']) {
+            return Err("Invalid runtime path".into());
+        }
+        let parsed = PathBuf::from(path);
+        if !parsed
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)))
+        {
+            return Err("Invalid runtime path".into());
+        }
+        Ok(parsed)
+    }
+    /// # Errors
+    /// Returns an error if directory traversal or file reads fail, a symlink is
+    /// encountered, a file is empty or exceeds 128 MiB, or compression or metadata
+    /// serialization fails.
+    pub fn pack(root: &Path) -> Result<Vec<u8>, String> {
+        fn collect(root: &Path, folder: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {
+            for entry in fs::read_dir(folder)? {
+                let entry = entry?;
+                if entry.file_type()?.is_symlink() {
+                    return Err(io::Error::other("Runtime symlink is not supported"));
+                }
+                if entry.file_type()?.is_dir() {
+                    collect(root, &entry.path(), files)?;
+                } else {
+                    files.push(entry.path().strip_prefix(root).unwrap().to_owned());
+                }
+            }
+            Ok(())
+        }
+        let mut files = Vec::new();
+        collect(root, root, &mut files).map_err(|e| e.to_string())?;
+        files.sort();
+        let mut entries = Vec::new();
+        let mut payload = Vec::new();
+        for path in files {
+            let data = fs::read(root.join(&path)).map_err(|e| e.to_string())?;
+            if data.is_empty() || data.len() > MAX_FILE {
+                return Err(format!("Invalid runtime file size: {}", path.display()));
+            }
+            let compressed =
+                dvda_native::compression::compress(&data).map_err(|e| e.to_string())?;
+            entries.push(Entry {
+                path: path.to_string_lossy().replace('\\', "/"),
+                sha256: hash::hex_digest(&data),
+                size: data.len(),
+                offset: payload.len(),
+                length: compressed.len(),
+            });
+            payload.extend(compressed);
+        }
+        let metadata = serde_json::to_vec(&entries).map_err(|e| e.to_string())?;
+        let mut output = MAGIC.to_vec();
+        // The wire header stores the low four length bytes, including for oversized input.
+        output.extend_from_slice(&metadata.len().to_le_bytes()[..4]);
+        output.extend(metadata);
+        output.extend(payload);
+        Ok(output)
+    }
+
+    fn safe_target(root: &Path, relative: &Path) -> Result<PathBuf, String> {
+        let mut target = root.to_owned();
+        // Reject directory junctions and symlinks, including existing leaf files.
+        for part in relative.components() {
+            target.push(part.as_os_str());
+            if let Ok(metadata) = fs::symlink_metadata(&target)
+                && metadata.file_attributes() & 0x400 != 0
+            {
+                return Err("Runtime contains a reparse point".into());
+            }
+        }
+        Ok(target)
+    }
+    /// # Errors
+    /// Returns an error for malformed headers, metadata, paths, duplicate entries,
+    /// invalid sizes or payload ranges, reparse points, cache creation/locking or
+    /// file-write failures, decompression failures, or checksum mismatches.
+    ///
+    /// # Panics
+    /// The header conversion requires exactly four bytes; the checked `8..12`
+    /// slice enforces that invariant before conversion.
+    pub fn extract(archive: &[u8], cache: &Path) -> Result<PathBuf, String> {
+        if archive.get(..8) != Some(MAGIC.as_slice()) {
+            return Err("Invalid runtime archive header".into());
+        }
+        let length = u32::from_le_bytes(
+            archive
+                .get(8..12)
+                .ok_or("Truncated runtime archive")?
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let metadata = archive
+            .get(12..12 + length)
+            .ok_or("Truncated runtime metadata")?;
+        let entries: Vec<Entry> = serde_json::from_slice(metadata).map_err(|e| e.to_string())?;
+        if entries.is_empty() {
+            return Err("Empty runtime archive".into());
+        }
+        let payload = &archive[12 + length..];
+        let digest = hash::hex_digest(archive);
+        fs::create_dir_all(cache).map_err(|e| e.to_string())?;
+        let root = safe_target(cache, Path::new(&digest))?;
+        let lock = cache.join(format!("{digest}.lock"));
+        let started = Instant::now();
+        let _lock = loop {
+            match fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .share_mode(0)
+                .open(&lock)
+            {
+                Ok(file) => break file,
+                Err(error)
+                    if error.raw_os_error() == Some(32)
+                        && started.elapsed() < Duration::from_secs(120) =>
+                {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(error) => return Err(format!("Cannot lock runtime cache: {error}")),
+            }
+        };
+        let mut names = std::collections::HashSet::new();
+        for entry in entries {
+            let path = relative(&entry.path)?;
+            if !names.insert(entry.path.to_lowercase()) || entry.size == 0 || entry.size > MAX_FILE
+            {
+                return Err("Invalid runtime archive entry".into());
+            }
+            let target = safe_target(&root, &path)?;
+            let end = entry
+                .offset
+                .checked_add(entry.length)
+                .ok_or("Runtime offset overflow")?;
+            let compressed = payload
+                .get(entry.offset..end)
+                .ok_or("Truncated runtime payload")?;
+            let intact = fs::metadata(&target).is_ok_and(|m| m.len() == entry.size as u64)
+                && fs::File::open(&target)
+                    .and_then(hash::reader_digest)
+                    .is_ok_and(|hash| hash == entry.sha256);
+            if intact {
+                continue;
+            }
+            let data = dvda_native::compression::decompress(compressed, entry.size)
+                .map_err(|e| e.to_string())?;
+            if hash::hex_digest(&data) != entry.sha256 {
+                return Err(format!("Runtime checksum mismatch: {}", entry.path));
+            }
+            state::write_bytes(&target, &data).map_err(|e| {
+                format!(
+                    "Cannot write runtime file {}: {}",
+                    target.display(),
+                    e.message
+                )
+            })?;
+        }
+        Ok(root)
+    }
+
+    fn configure_library_search(root: &Path) -> Result<(), String> {
+        use std::{ffi::c_void, os::windows::ffi::OsStrExt};
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn SetDefaultDllDirectories(flags: u32) -> i32;
+            fn AddDllDirectory(path: *const u16) -> *mut c_void;
+        }
+        let path: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
+        if path[..path.len() - 1].contains(&0) {
+            return Err("Runtime directory contains a null character".to_owned());
+        }
+        // Keep the verified runtime directory registered for the process lifetime.
+        // Search only this directory and System32, not the current directory or PATH.
+        unsafe {
+            if SetDefaultDllDirectories(0x400 | 0x800) == 0 {
+                return Err(format!(
+                    "Cannot restrict DLL search: {}",
+                    io::Error::last_os_error()
+                ));
+            }
+            if AddDllDirectory(path.as_ptr()).is_null() {
+                return Err(format!(
+                    "Cannot register runtime DLL directory: {}",
+                    io::Error::last_os_error()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Initialize embedded components.
+    ///
+    /// # Errors
+    /// Returns an error if workspace creation or archive extraction fails,
+    /// `SystemRoot` is unavailable, the cleanup process cannot start, DLL search
+    /// configuration fails, or a nonempty runtime has already been initialized.
+    /// An empty archive is a no-op.
+    ///
+    /// # Safety
+    /// Call once from main before any other thread or native component is started.
+    pub unsafe fn initialize(archive: &[u8]) -> Result<(), String> {
+        if archive.is_empty() {
+            return Ok(());
+        }
+        let workspace = crate::workspace::Workspace::create(Path::new(""), false)?;
+        let cache = workspace.path().join("runtime");
+        let root = extract(archive, &cache)?;
+        // Loaded Windows DLLs cannot be removed before the owning process exits.
+        // The helper owns only this uniquely allocated directory, never a shared cache.
+        let script = format!(
+            "Wait-Process -Id {} -ErrorAction SilentlyContinue; for ($i=0; $i -lt 30; $i++) {{ Remove-Item -LiteralPath '{}' -Recurse -Force -ErrorAction SilentlyContinue; if (-not (Test-Path -LiteralPath '{}')) {{ break }}; Start-Sleep -Milliseconds 200 }}",
+            std::process::id(),
+            workspace.path().to_string_lossy().replace('\'', "''"),
+            workspace.path().to_string_lossy().replace('\'', "''")
+        );
+        let powershell = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .ok_or("SystemRoot is unavailable; cannot locate Windows PowerShell")?
+            .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+        std::process::Command::new(powershell)
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .map_err(|e| format!("Cannot start runtime cleanup: {e}"))?;
+        // Keep the exclusive lease until process teardown; the helper then removes it.
+        std::mem::forget(workspace);
+        configure_library_search(&root)?;
+        // SAFETY: this startup-only call precedes all threads and native library loading.
+        unsafe {
+            std::env::set_var("DVDA_MENU_NATIVE_DIR", &root);
+        }
+        DIRECTORY
+            .set(root)
+            .map_err(|_| "Runtime already initialized".to_owned())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        #[test]
+        fn archive_reuses_repairs_and_serializes_concurrent_startup() {
+            let root = std::env::temp_dir().join(format!(
+                "dvda-runtime-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let input = root.join("input");
+            fs::create_dir_all(input.join("data")).unwrap();
+            let data = vec![42u8; 32768];
+            fs::write(input.join("codec.dll"), &data).unwrap();
+            fs::write(input.join("data/config.xml"), b"config").unwrap();
+            let archive = pack(&input).unwrap();
+            let cache = root.join("cache");
+            let output = extract(&archive, &cache).unwrap();
+            let time = fs::metadata(output.join("codec.dll"))
                 .unwrap()
                 .modified()
-                .unwrap(),
-            time
-        );
-        fs::write(output.join("codec.dll"), vec![43; data.len()]).unwrap();
-        fs::OpenOptions::new()
-            .write(true)
-            .open(output.join("codec.dll"))
-            .unwrap()
-            .set_modified(time)
-            .unwrap();
-        std::thread::scope(|scope| {
-            for _ in 0..3 {
-                scope.spawn(|| extract(&archive, &cache).unwrap());
+                .unwrap();
+            assert_eq!(extract(&archive, &cache).unwrap(), output);
+            assert_eq!(
+                fs::metadata(output.join("codec.dll"))
+                    .unwrap()
+                    .modified()
+                    .unwrap(),
+                time
+            );
+            fs::write(output.join("codec.dll"), vec![43; data.len()]).unwrap();
+            fs::OpenOptions::new()
+                .write(true)
+                .open(output.join("codec.dll"))
+                .unwrap()
+                .set_modified(time)
+                .unwrap();
+            std::thread::scope(|scope| {
+                for _ in 0..3 {
+                    scope.spawn(|| extract(&archive, &cache).unwrap());
+                }
+            });
+            assert_eq!(fs::read(output.join("codec.dll")).unwrap(), data);
+            assert!(extract(&archive[..archive.len() - 1], &cache).is_err());
+            for path in [
+                "../evil",
+                "C:/evil",
+                "/evil",
+                "data/../../evil",
+                "data\\evil",
+            ] {
+                assert!(relative(path).is_err());
             }
-        });
-        assert_eq!(fs::read(output.join("codec.dll")).unwrap(), data);
-        assert!(extract(&archive[..archive.len() - 1], &cache).is_err());
-        for path in [
-            "../evil",
-            "C:/evil",
-            "/evil",
-            "data/../../evil",
-            "data\\evil",
-        ] {
-            assert!(relative(path).is_err());
+            fs::remove_dir_all(root).unwrap();
         }
-        fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(windows)]
+pub use windows::{directory, extract, initialize, pack};

@@ -52,17 +52,17 @@ dvda-toolchain.exe package --repo . --output build/release --media-runtime build
 `build/msvc-native` 中的清单记录第三方库的构建来源和哈希，应与库文件一起保留。当前静态 Rust author 需要重建 FFmpeg，不再要求 ImageMagick 或菜单 vendor。`build-rust-author.py` 使用 `--ffmpeg-runtime`、`--menu-assets` 和 `--font`；`--magick-work` / `--image-dependencies` 已退役并显式报错。清单只收录实际字体和菜单素材，不再生成或装配 ImageMagick XML 配置。静态打包验证不再要求旧图像目录。完整发布及视觉差分验收仍在进行。
 
 ```powershell
-cargo +1.99.0 fmt --manifest-path rust/Cargo.toml --all -- --check
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --locked --offline --workspace --all-targets --all-features -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --locked --offline --workspace --all-targets -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --locked --offline --workspace --all-targets --no-default-features -- -D warnings"
-cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --locked --offline -p dvda-core --all-targets --no-default-features -- -D warnings"
+cargo  fmt --manifest-path rust/Cargo.toml --all -- --check
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --locked --offline --workspace --all-targets --all-features -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --locked --offline --workspace --all-targets -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --locked --offline --workspace --all-targets --no-default-features -- -D warnings"
+cmd /d /c "call tools\win-build\rust-dev-env.cmd && cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --locked --offline -p dvda-core --all-targets --no-default-features -- -D warnings"
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-workflow.ps1
 ```
 
 工作区将 `clippy::pedantic` 保持为 `warn`，严格验收入口用 `-D warnings` 提升为错误。协议数值转换和 C 对应实现只使用带理由的局部豁免；FFmpeg 生成代码在 `build.rs` 修复，不能直接编辑 `target` 产物。
 
-审计既有豁免时，另运行 `cargo +1.99.0 clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline --message-format=json -- --force-warn clippy::pedantic`，并对 default / no-default-features 分别收集结果。这会展开被抑制的诊断，退出成功不代表零警告；比较时每条诊断只取第一个 primary span，按规则、文件和行号去重，保持相同工具链与 feature，同时检查 `unfulfilled_lint_expectations`。workspace 的 no-default-features 不会消除依赖重新启用的 Core 默认 feature，因此上面单独检查 Core 的 fallback 分支。补齐具体 Errors/Panics 契约后删除对应文档豁免，不以 `allow` 改为 `expect` 作为修复。长函数优先按独立职责拆分；共享控件注册表的 GUI 装配、平铺的配置映射、GDI 资源生命周期及顺序 WAV 解析可以保留有具体理由的函数级豁免，不为行数引入平行状态结构。MLP 的 C 对应函数边界、算术和调用关系不属于 lint 重构范围。
+审计既有豁免时，另运行 `cargo  clippy --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --workspace --all-targets --all-features --locked --offline --message-format=json -- --force-warn clippy::pedantic`，并对 default / no-default-features 分别收集结果。这会展开被抑制的诊断，退出成功不代表零警告；比较时每条诊断只取第一个 primary span，按规则、文件和行号去重，保持相同工具链与 feature，同时检查 `unfulfilled_lint_expectations`。workspace 的 no-default-features 不会消除依赖重新启用的 Core 默认 feature，因此上面单独检查 Core 的 fallback 分支。补齐具体 Errors/Panics 契约后删除对应文档豁免，不以 `allow` 改为 `expect` 作为修复。长函数优先按独立职责拆分；共享控件注册表的 GUI 装配、平铺的配置映射、GDI 资源生命周期及顺序 WAV 解析可以保留有具体理由的函数级豁免，不为行数引入平行状态结构。MLP 的 C 对应函数边界、算术和调用关系不属于 lint 重构范围。
 
 菜单 fixture 会生成菜单、索引页、静图、AUDIO_TS 和 ISO，并调用项目构建的 author。MLP 的逐字节样本对照和 PCM 比较由当前 Rust 回归覆盖；历史 C17 ABI 差分仅作为记录保留，验收入口已移除。
 

@@ -1,4 +1,5 @@
 //! Streaming PCM/metadata host for the linked Rust encoder. No output patching.
+use crate::platform::OpenOptionsExt;
 use crate::{
     formats::{self, WavLayout},
     media::{Failure, Outcome, Temporary, Timed, temporary_path},
@@ -13,7 +14,6 @@ use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
-    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -346,7 +346,7 @@ fn encode_rust(
         .error
         .iter()
         .take_while(|&&c| c != 0)
-        .map(|&c| c.cast_unsigned())
+        .map(|&c| c.to_ne_bytes()[0])
         .collect::<Vec<_>>();
     Ok(dvda_native::encoder::ResultInfo {
         status: result.status,
@@ -426,10 +426,12 @@ fn execute_with(job: &Job, caller: &mut dyn Callbacks) -> Outcome {
             ],
             callbacks: &mut callbacks,
         };
+        // Live metadata refresh is only implemented by the x86_64 encoder; other
+        // targets embed the static stamp packet captured at job start.
         let encoded = encode_rust(
             &request,
             &mut stream,
-            crate::config::trim(&job.metadata_context).is_empty(),
+            crate::config::trim(&job.metadata_context).is_empty() && cfg!(target_arch = "x86_64"),
         );
         stream.callbacks.check()?;
         let encoded = encoded.map_err(io_failure)?;

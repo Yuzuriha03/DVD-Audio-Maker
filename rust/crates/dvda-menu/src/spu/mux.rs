@@ -305,8 +305,8 @@ impl Mux {
         at += 1;
         sector[at] = u8::try_from(spu.numpal).expect("master palette is limited to 16 entries");
         at += 1;
-        for index in 0..spu.numpal {
-            let color = spu.masterpal[index];
+        for color in spu.masterpal.iter().take(spu.numpal) {
+            let color = *color;
             sector[at] = u8::try_from(color.y()).expect("Y is byte-ranged");
             sector[at + 1] = u8::try_from(color.cr()).expect("Cr is byte-ranged");
             sector[at + 2] = u8::try_from(color.cb()).expect("Cb is byte-ranged");

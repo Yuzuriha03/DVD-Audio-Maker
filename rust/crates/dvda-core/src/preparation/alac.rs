@@ -1,5 +1,6 @@
 //! ALAC inspection and repair; source bytes are never rewritten.
 use super::models::Patch;
+use crate::platform::OpenOptionsExt;
 use crate::{
     identity,
     media::{self, Failure},
@@ -11,7 +12,6 @@ use dvda_native::{
 use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Seek, SeekFrom, Write},
-    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 

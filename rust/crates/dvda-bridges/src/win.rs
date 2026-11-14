@@ -1,5 +1,8 @@
-use std::ffi::{c_char, c_void};
+#[cfg(windows)]
+use std::ffi::c_char;
+use std::ffi::c_void;
 pub type Handle = *mut c_void;
+#[cfg(windows)]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     pub fn GetActiveProcessorCount(group: u16) -> u32;
@@ -33,10 +36,12 @@ unsafe extern "system" {
     pub fn GetExitCodeProcess(process: Handle, code: *mut u32) -> i32;
     pub fn GetProcAddress(module: Handle, name: *const c_char) -> *mut c_void;
 }
+#[cfg(windows)]
 #[link(name = "shell32")]
 unsafe extern "system" {
     pub fn CommandLineToArgvW(line: *const u16, count: *mut i32) -> *mut *mut u16;
 }
+#[cfg(windows)]
 #[repr(C)]
 pub struct Startup {
     pub cb: u32,
@@ -58,6 +63,7 @@ pub struct Startup {
     pub output: Handle,
     pub error: Handle,
 }
+#[cfg(windows)]
 #[repr(C)]
 pub struct Process {
     pub process: Handle,
@@ -65,6 +71,7 @@ pub struct Process {
     pub pid: u32,
     pub tid: u32,
 }
+#[cfg(windows)]
 #[repr(C)]
 pub struct Job {
     pub process_time: i64,
@@ -86,6 +93,7 @@ pub struct Job {
 pub fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain([0]).collect()
 }
+#[cfg(windows)]
 #[must_use]
 /// Resolve the path of an already-loaded module.
 ///
@@ -106,6 +114,15 @@ pub fn module_path(name: &str) -> Option<String> {
     buf.truncate(len as usize);
     Some(String::from_utf16_lossy(&buf))
 }
+#[cfg(not(windows))]
+#[must_use]
+/// Resolve the path of the running module (Android/Linux: the executable itself).
+pub fn module_path(_name: &str) -> Option<String> {
+    std::env::current_exe()
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
 /// # Safety
 /// Pointer arguments must be valid for their documented ABI and remain live throughout the call.
 #[must_use]
@@ -142,7 +159,10 @@ fn workers_for(processors: usize, jobs: usize) -> i32 {
 }
 
 pub fn workers() -> i32 {
+    #[cfg(windows)]
     let processors = unsafe { GetActiveProcessorCount(0xffff) } as usize;
+    #[cfg(not(windows))]
+    let processors = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
     let jobs = ACTIVE_MEDIA_JOBS.load(std::sync::atomic::Ordering::Acquire);
     workers_for(processors, jobs)
 }

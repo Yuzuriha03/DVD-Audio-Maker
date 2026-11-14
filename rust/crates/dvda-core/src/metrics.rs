@@ -104,7 +104,7 @@ fn roots(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 fn sample(paths: &[PathBuf], space: &mut Space) {
-    use std::os::windows::fs::MetadataExt;
+    use crate::platform::MetadataExt;
     let mut pending = paths.to_vec();
     let mut bytes = 0u64;
     let mut visited = 0;

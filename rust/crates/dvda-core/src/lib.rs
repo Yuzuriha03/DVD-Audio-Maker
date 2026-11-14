@@ -37,6 +37,7 @@ pub mod options;
 mod parallel;
 pub mod pcm;
 pub mod planner;
+mod platform;
 pub mod preparation;
 pub mod probes;
 pub mod process;

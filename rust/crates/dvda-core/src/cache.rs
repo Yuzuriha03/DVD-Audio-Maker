@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn cache_failed_atomic_commit_keeps_prior_file_and_cleans_only_its_temporary() {
-        use std::os::windows::fs::OpenOptionsExt;
+        use crate::platform::OpenOptionsExt;
         let root = temporary_root();
         fs::create_dir_all(&root).unwrap();
         let path = root.join("cache.json");

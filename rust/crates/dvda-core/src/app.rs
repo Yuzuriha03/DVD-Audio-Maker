@@ -530,9 +530,12 @@ pub fn run_build(
             dither,
             directory: options.path("BuildDirectory").join("production-pcm"),
             signature: crate::audio::production_pcm_signature(&media, rate, bits, dither)?,
+            // The streaming MLP encoder supports live metadata refresh only on
+            // x86_64; other targets take the decode-then-batch path.
             stream_mlp: options.text("MlpSource") == "mlp-batch"
                 && crate::config::trim(&options.text("MlpMetadataContext")).is_empty()
-                && cfg!(feature = "rust-mlp"),
+                && cfg!(feature = "rust-mlp")
+                && cfg!(target_arch = "x86_64"),
         });
     }
     preparation::pipeline::ensure_ready(&preparation, &mut callbacks)

@@ -1,9 +1,9 @@
 //! Bounded file fingerprints compatible with the existing preparation cache.
+use crate::platform::{MetadataExt, OpenOptionsExt};
 use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Seek, SeekFrom},
-    os::windows::fs::{MetadataExt, OpenOptionsExt},
 };
 
 const SAMPLE_BYTES: usize = 64 * 1024;

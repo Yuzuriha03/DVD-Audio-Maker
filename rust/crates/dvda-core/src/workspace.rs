@@ -1,7 +1,7 @@
 //! Task-owned files, isolated from input folders and previously published images.
+use crate::platform::OpenOptionsExt;
 use std::{
     fs,
-    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
@@ -68,7 +68,7 @@ impl Workspace {
             if !entry.file_name().to_string_lossy().starts_with("task-")
                 || !entry.file_type().is_ok_and(|t| t.is_dir())
                 || fs::symlink_metadata(&path).is_ok_and(|m| {
-                    use std::os::windows::fs::MetadataExt;
+                    use crate::platform::MetadataExt;
                     m.file_attributes() & 0x400 != 0
                 })
                 || fs::read(path.join(".owner")).ok().as_deref() != Some(b"dvda-task-v1")
@@ -176,7 +176,7 @@ impl Drop for Workspace {
 }
 
 fn reject_reparse(path: &Path) -> Result<(), String> {
-    use std::os::windows::fs::MetadataExt;
+    use crate::platform::MetadataExt;
     for ancestor in path.ancestors() {
         if fs::symlink_metadata(ancestor)
             .map_err(|e| e.to_string())?

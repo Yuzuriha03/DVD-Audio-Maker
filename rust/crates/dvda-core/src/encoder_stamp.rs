@@ -28,6 +28,7 @@ fn packet(time: &[u8; 20], machine: &[u8]) -> Vec<u8> {
     output
 }
 
+#[cfg(windows)]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn GetComputerNameW(buffer: *mut u16, size: *mut u32) -> i32;
@@ -39,6 +40,7 @@ fn machine_fingerprint(name: &[u16]) -> String {
     }
     crate::hash::hex_digest(&identity)
 }
+#[cfg(windows)]
 fn machine_identity() -> Result<String, Failure> {
     let mut name = [0u16; 256];
     let mut length = u32::try_from(name.len()).expect("256 UTF-16 units fit in u32");
@@ -51,6 +53,16 @@ fn machine_identity() -> Result<String, Failure> {
         .filter(|name| !name.is_empty())
         .ok_or_else(|| Failure::new("InvalidData", "Invalid computer name length"))?;
     Ok(machine_fingerprint(name))
+}
+
+#[cfg(not(windows))]
+fn machine_identity() -> Result<String, Failure> {
+    let name = std::env::var("HOSTNAME")
+        .ok()
+        .or_else(|| std::fs::read_to_string("/proc/sys/kernel/hostname").ok())
+        .unwrap_or_else(|| "android".to_string());
+    let units: Vec<u16> = name.trim().encode_utf16().collect();
+    Ok(machine_fingerprint(&units))
 }
 
 pub(crate) fn current() -> Result<Stamp, Failure> {
@@ -98,6 +110,7 @@ fn format_time(now: &LocalTime) -> Result<[u8; 20], Failure> {
     );
     text.as_bytes().try_into().map_err(|_| invalid())
 }
+#[cfg(windows)]
 fn timestamp() -> Result<[u8; 20], Failure> {
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -106,6 +119,52 @@ fn timestamp() -> Result<[u8; 20], Failure> {
     let mut now = LocalTime::default();
     // SAFETY: LocalTime has the Win32 SYSTEMTIME layout and is writable.
     unsafe { GetLocalTime(&raw mut now) };
+    format_time(&now)
+}
+
+#[cfg(not(windows))]
+fn civil_from_days(days: i64) -> (i64, u16, u16) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_position = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_position + 2) / 5 + 1;
+    let month = if month_position < 10 {
+        month_position + 3
+    } else {
+        month_position - 9
+    };
+    let year = if month <= 2 { year + 1 } else { year };
+    (
+        year,
+        u16::try_from(month).unwrap_or(1),
+        u16::try_from(day).unwrap_or(1),
+    )
+}
+
+#[cfg(not(windows))]
+fn timestamp() -> Result<[u8; 20], Failure> {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| Failure::new("InvalidData", "Invalid system time"))?
+        .as_secs();
+    let days = i64::try_from(seconds / 86_400).unwrap_or(0);
+    let remainder = seconds % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    let now = LocalTime {
+        year: u16::try_from(year).unwrap_or(0),
+        month,
+        weekday: 0,
+        day,
+        hour: u16::try_from(remainder / 3_600).unwrap_or(0),
+        minute: u16::try_from((remainder % 3_600) / 60).unwrap_or(0),
+        second: u16::try_from(remainder % 60).unwrap_or(0),
+        milliseconds: 0,
+    };
     format_time(&now)
 }
 

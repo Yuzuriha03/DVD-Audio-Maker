@@ -1,4 +1,5 @@
 //! Lossless PCM storage normalization with bounded buffers and owned output.
+use crate::platform::OpenOptionsExt;
 use crate::{
     formats::{self, WavError},
     media::{Failure, Outcome, Temporary, Timed},
@@ -8,7 +9,6 @@ use serde::Deserialize;
 use std::{
     fs::OpenOptions,
     io::{Read, Seek, SeekFrom, Write},
-    os::windows::fs::OpenOptionsExt,
     path::PathBuf,
 };
 

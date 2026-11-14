@@ -1,6 +1,10 @@
 use std::{env, path::PathBuf};
 fn main() {
     let target = env::var("TARGET").expect("Cargo must provide TARGET to the bridge build script");
+    if target == "aarch64-linux-android" {
+        android_build();
+        return;
+    }
     if !matches!(
         target.as_str(),
         "x86_64-pc-windows-msvc" | "aarch64-pc-windows-msvc"
@@ -130,7 +134,7 @@ fn hex_literal(value: u64) -> String {
 }
 
 fn generate_layout(prefix: &std::path::Path) {
-    use std::{fmt::Write as _, fs, process::Command};
+    use std::{fs, process::Command};
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let target = env::var("TARGET").unwrap();
     // ARM64 Windows follows the same LLP64 data layout as x64 (8-byte pointers,
@@ -182,8 +186,14 @@ fn generate_layout(prefix: &std::path::Path) {
     println!("cargo:rerun-if-changed=layout-probe.c");
     let run = Command::new(exe).output().unwrap();
     assert!(run.status.success());
+    let code = layout_code(&run.stdout);
+    fs::write(out.join("ffmpeg-layout.rs"), code).unwrap();
+}
+
+fn layout_code(stdout: &[u8]) -> String {
+    use std::fmt::Write as _;
     let mut code = String::new();
-    for line in String::from_utf8(run.stdout).unwrap().lines() {
+    for line in String::from_utf8(stdout.to_vec()).unwrap().lines() {
         let p: Vec<_> = line.split_whitespace().collect();
         match p[0] {
             "T" => {
@@ -228,5 +238,92 @@ fn generate_layout(prefix: &std::path::Path) {
             _ => panic!("unknown ABI record"),
         }
     }
-    fs::write(out.join("ffmpeg-layout.rs"), code).unwrap();
+    code
+}
+
+fn generate_layout_gnu(include: &std::path::Path) {
+    use std::process::Command;
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let cc = env::var_os("DVDA_HOST_CC").unwrap_or_else(|| {
+        if cfg!(windows) {
+            "cl.exe".into()
+        } else {
+            "cc".into()
+        }
+    });
+    let exe = out.join(if cfg!(windows) {
+        "layout-probe-host.exe"
+    } else {
+        "layout-probe-host"
+    });
+    let mut probe = Command::new(&cc);
+    if cfg!(windows) {
+        probe
+            .args(["/nologo", "/TC", "/std:c17"])
+            .arg(format!("/I{}", include.display()))
+            .arg("layout-probe.c")
+            .arg(format!("/Fe:{}", exe.display()))
+            .arg(format!(
+                "/Fo:{}",
+                out.join("layout-probe-host.obj").display()
+            ));
+    } else {
+        probe
+            .args(["-std=c17", "-O0", "-w"])
+            .arg(format!("-I{}", include.display()))
+            .arg("layout-probe.c")
+            .arg("-o")
+            .arg(&exe);
+    }
+    let status = probe
+        .status()
+        .expect("cannot compile the host ABI layout probe");
+    assert!(status.success(), "host ABI layout probe compilation failed");
+    println!("cargo:rerun-if-changed=layout-probe.c");
+    let run = Command::new(&exe)
+        .output()
+        .expect("cannot run the host ABI layout probe");
+    assert!(run.status.success(), "host ABI layout probe failed");
+    std::fs::write(out.join("ffmpeg-layout.rs"), layout_code(&run.stdout)).unwrap();
+}
+
+fn android_build() {
+    println!("cargo:rerun-if-env-changed=DVDA_FFMPEG_PREFIX");
+    println!("cargo:rerun-if-env-changed=DVDA_HOST_CC");
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    if env::var_os("CARGO_FEATURE_MEDIA").is_none() {
+        return;
+    }
+    let prefix = PathBuf::from(
+        env::var_os("DVDA_FFMPEG_PREFIX")
+            .expect("DVDA_FFMPEG_PREFIX must name the Android FFmpeg installation"),
+    );
+    let lib_directory = prefix.join("lib");
+    println!("cargo:rustc-link-search=native={}", lib_directory.display());
+    for name in [
+        "avformat",
+        "avcodec",
+        "avutil",
+        "swresample",
+        "swscale",
+        "soxr",
+    ] {
+        let archive = lib_directory.join(format!("lib{name}.a"));
+        assert!(
+            archive.is_file(),
+            "Android FFmpeg static library is missing: {}",
+            archive.display()
+        );
+        println!("cargo:rerun-if-changed={}", archive.display());
+        println!("cargo:rustc-link-lib=static={name}");
+    }
+    for name in ["m", "dl"] {
+        println!("cargo:rustc-link-lib={name}");
+    }
+    generate_layout_gnu(&prefix.join("include"));
+    std::fs::write(
+        out.join("ffmpeg-linkage.rs"),
+        "pub const STATIC_LINKED: bool = true;\n",
+    )
+    .unwrap();
 }

@@ -59,10 +59,11 @@ pub fn combine(left: &str, right: &str) -> String {
     if right.is_empty() {
         return left.to_owned();
     }
+    let separator = if cfg!(windows) { '\\' } else { '/' };
     if left.ends_with(['/', '\\']) {
         format!("{left}{right}")
     } else {
-        format!("{left}\\{right}")
+        format!("{left}{separator}{right}")
     }
 }
 

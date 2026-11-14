@@ -174,6 +174,7 @@ pub(crate) unsafe extern "C" fn cancel(state: *mut c_void) -> i32 {
 ///
 /// # Errors
 /// Propagates module enumeration and Windows path-query failures.
+#[cfg(windows)]
 pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
     use std::os::windows::ffi::OsStringExt;
     #[link(name = "kernel32")]
@@ -241,6 +242,15 @@ pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
     paths.sort();
     paths.dedup();
     Ok(paths)
+}
+
+#[cfg(not(windows))]
+/// Android/Linux has no delay-load DLL list; the static FFmpeg image is already linked.
+///
+/// # Errors
+/// Never fails on this platform.
+pub fn loaded_dependencies() -> io::Result<Vec<std::path::PathBuf>> {
+    Ok(Vec::new())
 }
 
 pub struct Media;

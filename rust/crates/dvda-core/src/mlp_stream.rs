@@ -1,4 +1,5 @@
 use crate::media::{Failure, Outcome, Temporary, Timed, temporary_path};
+use crate::platform::OpenOptionsExt;
 use dvda_mlp::{Config, direct::StreamIo, format::Profile, metadata::Metadata};
 use dvda_native::{
     files,
@@ -7,7 +8,6 @@ use dvda_native::{
 use std::{
     fs::{File, OpenOptions},
     io::Write,
-    os::windows::fs::OpenOptionsExt,
     path::Path,
     sync::{
         Arc,
@@ -274,7 +274,7 @@ impl dvda_bridges::PcmSink for Pipeline {
                     .error
                     .iter()
                     .take_while(|&&byte| byte != 0)
-                    .map(|&byte| byte.cast_unsigned())
+                    .map(|&byte| byte.to_ne_bytes()[0])
                     .collect();
                 return Err(Failure::new(
                     "InvalidOperation",
