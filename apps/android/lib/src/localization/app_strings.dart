@@ -65,6 +65,9 @@ class AppStrings {
     'customBytes': 'Custom size (bytes)',
     'capacitySummary': 'Capacity {size}',
     'showAdvanced': 'Show advanced settings',
+    'moreSettings': 'More settings',
+    'advancedSettingsHint':
+        'Controls disc grouping, image prefix, menu fonts and other advanced options.',
     'advancedHint':
         'These settings are enough for a first disc. Enable “Show advanced settings” above for work paths, menu fonts and other advanced options.',
     'mlpNote':
@@ -107,7 +110,7 @@ class AppStrings {
     'actionBuild': 'Start build',
     'actionCancel': 'Stop task',
     'actionVerify': 'Verify disc',
-    'actionOpenOutput': 'Open output',
+    'actionOpenOutput': 'Open folder',
     'actionDiscard': 'Discard progress',
     'actionStatus': 'Status',
     'statusUnfinished': 'An unfinished build is present',
@@ -201,7 +204,9 @@ class AppStrings {
     'customBytes': '自定义容量（字节）',
     'capacitySummary': '容量 {size}',
     'showAdvanced': '显示高级设置',
-    'advancedHint': '这些设置已经足够制作第一张光盘。需要临时工作路径、菜单字体等高级选项时，请开启上方的“显示高级设置”。',
+    'moreSettings': '更多设置',
+    'advancedSettingsHint': '控制光盘分组、镜像前缀、菜单字体等进阶选项。',
+    'advancedHint': '这些设置已经足够制作第一张光盘。需要光盘分组、菜单字体等高级选项时，请在右上角齿轮中开启“显示高级设置”。',
     'mlpNote': 'MLP 编码会进行无损压缩，适合大多数 DVD-Audio 制作。采样率和位深按右侧设置处理。',
     'lpcmNote': 'LPCM 不压缩音频，速度较快但占用空间更大。请确认光盘容量足够。',
     'workDir': '临时工作目录',
@@ -235,8 +240,8 @@ class AppStrings {
     'actionPrepare': '检查音源',
     'actionBuild': '开始制作',
     'actionCancel': '停止任务',
-    'actionVerify': '验证成品',
-    'actionOpenOutput': '查看成品',
+    'actionVerify': '校验成品',
+    'actionOpenOutput': '打开目录',
     'actionDiscard': '删除进度',
     'actionStatus': '状态',
     'statusUnfinished': '存在未完成的制作',
@@ -324,7 +329,9 @@ class AppStrings {
     'customBytes': '自訂容量（位元組）',
     'capacitySummary': '容量 {size}',
     'showAdvanced': '顯示進階設定',
-    'advancedHint': '這些設定已足夠製作第一張光碟。需要暫存工作路徑、選單字型等進階選項時，請開啟上方的「顯示進階設定」。',
+    'moreSettings': '更多設定',
+    'advancedSettingsHint': '控制光碟分組、映像前綴、選單字型等進階選項。',
+    'advancedHint': '這些設定已足夠製作第一張光碟。需要光碟分組、選單字型等進階選項時，請在右上角齒輪中開啟「顯示進階設定」。',
     'mlpNote': 'MLP 編碼會進行無損壓縮，適合大多數 DVD-Audio 製作。取樣率和位元深度按所選設定處理。',
     'lpcmNote': 'LPCM 不壓縮音訊，速度較快但占用空間更大。請確認光碟容量足夠。',
     'workDir': '暫存工作目錄',
@@ -358,8 +365,8 @@ class AppStrings {
     'actionPrepare': '檢查音源',
     'actionBuild': '開始製作',
     'actionCancel': '停止任務',
-    'actionVerify': '驗證成品',
-    'actionOpenOutput': '查看成品',
+    'actionVerify': '校驗成品',
+    'actionOpenOutput': '開啟目錄',
     'actionDiscard': '刪除進度',
     'actionStatus': '狀態',
     'statusUnfinished': '存在未完成的製作',
@@ -447,6 +454,8 @@ class AppStrings {
     'customBytes': 'カスタム容量（バイト）',
     'capacitySummary': '容量 {size}',
     'showAdvanced': '詳細設定を表示',
+    'moreSettings': 'その他の設定',
+    'advancedSettingsHint': 'ディスクのグループ化、イメージ接頭辞、メニューフォントなどを制御します。',
     'advancedHint':
         'これらの設定だけで最初のディスクを作成できます。作業パスやメニューフォントなどを変更する場合は、上部の「詳細設定を表示」を有効にしてください。',
     'mlpNote':
@@ -573,6 +582,8 @@ class AppStrings {
     'customBytes': '사용자 지정 용량(바이트)',
     'capacitySummary': '용량 {size}',
     'showAdvanced': '고급 설정 표시',
+    'moreSettings': '추가 설정',
+    'advancedSettingsHint': '디스크 그룹, 이미지 접두사, 메뉴 글꼴 등 고급 옵션을 제어합니다.',
     'advancedHint':
         '이 설정만으로 첫 디스크를 만들 수 있습니다. 작업 경로나 메뉴 글꼴 등을 변경하려면 위의 “고급 설정 표시”를 켜세요.',
     'mlpNote':
@@ -732,6 +743,8 @@ class AppStrings {
   String get capacityCustom => _text('capacityCustom');
   String get customBytes => _text('customBytes');
   String get showAdvanced => _text('showAdvanced');
+  String get moreSettings => _text('moreSettings');
+  String get advancedSettingsHint => _text('advancedSettingsHint');
   String get advancedHint => _text('advancedHint');
   String get mlpNote => _text('mlpNote');
   String get lpcmNote => _text('lpcmNote');

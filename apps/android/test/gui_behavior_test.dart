@@ -165,7 +165,12 @@ void main() {
       ),
     );
     final strings = controller.strings;
+    expect(find.byType(Slider), findsNothing);
+    expect(find.text(strings.menuStills), findsNothing);
+    controller.update(() => controller.settings.menu = true);
+    await tester.pump();
     expect(find.byType(Slider), findsOneWidget);
+    expect(find.text(strings.menuStills), findsOneWidget);
     expect(find.text(strings.fontSc), findsNothing);
     expect(find.text(strings.fontJp), findsNothing);
 
@@ -177,9 +182,32 @@ void main() {
     expect(find.byIcon(Icons.folder_open), findsNWidgets(3));
   });
 
-  testWidgets('advanced switch belongs to the global app bar, not basics', (
+  testWidgets('portrait bottom bar fits and task actions stay labeled', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(393, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: HomeScreen(controller: controller)),
+    );
+    final strings = controller.strings;
+
+    expect(find.text(strings.actionPrepare), findsOneWidget);
+    expect(find.text(strings.actionBuild), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text(strings.tabTask));
+    await tester.pumpAndSettle();
+    expect(find.text(strings.actionVerify), findsOneWidget);
+    expect(find.text(strings.actionOpenOutput), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('advanced switch lives in the settings sheet', (tester) async {
     final controller = await _controller();
     addTearDown(controller.dispose);
     await tester.pumpWidget(
@@ -191,16 +219,19 @@ void main() {
       find.byKey(const ValueKey('advanced-settings-switch')),
       findsNothing,
     );
-    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('advanced-settings-switch')),
       findsOneWidget,
     );
+    expect(find.text(strings.advancedSettingsHint), findsOneWidget);
     expect(find.text(strings.isoPrefix), findsNothing);
     await tester.tap(find.byKey(const ValueKey('advanced-settings-switch')));
     await tester.pumpAndSettle();
     expect(controller.settings.advanced, isTrue);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
     expect(find.text(strings.isoPrefix), findsOneWidget);
     expect(
       find.byKey(const ValueKey('advanced-settings-switch')),

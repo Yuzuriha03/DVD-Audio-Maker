@@ -140,45 +140,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  String _sectionSubtitle(AppStrings strings) {
-    if (_index == 1) {
-      return strings.audioSubtitle;
-    }
-    if (_index == 2) {
-      return strings.menuSubtitle;
-    }
-    if (_index == 3) {
-      return strings.taskSubtitle;
-    }
-    return strings.setupSubtitle;
-  }
-
   AppBar _buildAppBar(AppStrings strings, bool wide) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return AppBar(
       titleSpacing: wide ? 28.0 : 16.0,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            strings.appTitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.4,
-            ),
-          ),
-          if (wide)
-            Text(
-              _sectionSubtitle(strings),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-        ],
+      title: Text(
+        strings.appTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.4,
+        ),
       ),
       actions: <Widget>[
         PopupMenuButton<String>(
@@ -254,61 +228,10 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: _controller.isRunning ? null : _saveProfile,
           ),
         ],
-        PopupMenuButton<String>(
-          enabled: !_controller.isRunning,
-          onSelected: (value) {
-            if (value == 'advanced') {
-              _toggleAdvanced();
-            } else if (value == 'open') {
-              _openProfile();
-            } else if (value == 'save') {
-              _saveProfile();
-            } else if (value == 'discard') {
-              _discardProgress();
-            }
-          },
-          itemBuilder: (context) => <PopupMenuEntry<String>>[
-            PopupMenuItem<String>(
-              value: 'advanced',
-              enabled: !_controller.isRunning,
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.tune),
-                title: Text(strings.showAdvanced),
-                trailing: Switch(
-                  key: const ValueKey('advanced-settings-switch'),
-                  value: _controller.settings.advanced,
-                  onChanged: null,
-                ),
-              ),
-            ),
-            if (!wide)
-              PopupMenuItem<String>(
-                value: 'open',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.folder_open),
-                  title: Text(strings.openProfile),
-                ),
-              ),
-            if (!wide)
-              PopupMenuItem<String>(
-                value: 'save',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.save_alt),
-                  title: Text(strings.saveProfile),
-                ),
-              ),
-            PopupMenuItem<String>(
-              value: 'discard',
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.delete_outline),
-                title: Text(strings.discardProgress),
-              ),
-            ),
-          ],
+        IconButton(
+          tooltip: strings.moreSettings,
+          icon: const Icon(Icons.settings_outlined),
+          onPressed: _controller.isRunning ? null : _openSettingsSheet,
         ),
         SizedBox(width: wide ? 12.0 : 4.0),
       ],
@@ -320,75 +243,30 @@ class _HomeScreenState extends State<HomeScreen> {
     final scheme = theme.colorScheme;
     final running = _controller.isRunning;
     final busy = running || _buildFlow;
-    final compact = MediaQuery.of(context).size.width < 420;
     final progressLabel = _controller.progressText.isNotEmpty
         ? _controller.progressText
         : _controller.statusText;
     final Widget trailingActions;
     if (running) {
-      trailingActions = compact
-          ? FilledButton.tonal(
-              onPressed: _controller.cancelRequested
-                  ? null
-                  : _controller.cancel,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(48, 44),
-                padding: EdgeInsets.zero,
-              ),
-              child: const Icon(Icons.stop_circle),
-            )
-          : FilledButton.tonalIcon(
-              onPressed: _controller.cancelRequested
-                  ? null
-                  : _controller.cancel,
-              icon: const Icon(Icons.stop_circle, size: 18),
-              label: Text(strings.actionCancel),
-            );
+      trailingActions = FilledButton.tonalIcon(
+        onPressed: _controller.cancelRequested ? null : _controller.cancel,
+        icon: const Icon(Icons.stop_circle, size: 18),
+        label: Text(strings.actionCancel),
+      );
     } else {
       trailingActions = Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          IconButton(
-            tooltip: strings.actionVerify,
-            onPressed: busy ? null : () => _runAction('verify'),
-            icon: const Icon(Icons.verified),
+          OutlinedButton(
+            onPressed: busy ? null : () => _runAction('prepare'),
+            child: Text(strings.actionPrepare),
           ),
-          IconButton(
-            tooltip: strings.actionOpenOutput,
-            onPressed: _openOutput,
-            icon: const Icon(Icons.open_in_new),
-          ),
-          const SizedBox(width: 4),
-          if (compact)
-            OutlinedButton(
-              onPressed: busy ? null : () => _runAction('prepare'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(48, 44),
-                padding: EdgeInsets.zero,
-              ),
-              child: const Icon(Icons.search),
-            )
-          else
-            OutlinedButton(
-              onPressed: busy ? null : () => _runAction('prepare'),
-              child: Text(strings.actionPrepare),
-            ),
           const SizedBox(width: 10),
-          if (compact)
-            FilledButton(
-              onPressed: busy ? null : _startBuild,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(48, 44),
-                padding: EdgeInsets.zero,
-              ),
-              child: const Icon(Icons.play_arrow),
-            )
-          else
-            FilledButton.icon(
-              onPressed: busy ? null : _startBuild,
-              icon: const Icon(Icons.play_arrow),
-              label: Text(strings.actionBuild),
-            ),
+          FilledButton.icon(
+            onPressed: busy ? null : _startBuild,
+            icon: const Icon(Icons.play_arrow),
+            label: Text(strings.actionBuild),
+          ),
         ],
       );
     }
@@ -506,6 +384,69 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _openSettingsSheet() async {
+    final strings = _controller.strings;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.only(bottom: 12),
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(
+                  strings.moreSettings,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              SwitchListTile(
+                key: const ValueKey('advanced-settings-switch'),
+                secondary: const Icon(Icons.tune),
+                title: Text(strings.showAdvanced),
+                subtitle: Text(strings.advancedSettingsHint),
+                value: _controller.settings.advanced,
+                onChanged: _controller.isRunning
+                    ? null
+                    : (_) => _toggleAdvanced(),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.folder_open),
+                title: Text(strings.openProfile),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openProfile();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.save_alt),
+                title: Text(strings.saveProfile),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _saveProfile();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: Text(strings.discardProgress),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _discardProgress();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   String _themeTooltip(AppStrings strings) =>
       switch (_controller.settings.theme) {
         'light' => strings.themeLight,
@@ -538,19 +479,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await _controller.cancelAndWait();
     if (mounted) {
       Navigator.of(context).pop();
-    }
-  }
-
-  Future<void> _openOutput() async {
-    try {
-      final opened = await _controller.openOutputFolder();
-      if (mounted && !opened) {
-        _showMessage(_controller.strings.noOutput, error: true);
-      }
-    } catch (error) {
-      if (mounted) {
-        _showMessage(error.toString(), error: true);
-      }
     }
   }
 

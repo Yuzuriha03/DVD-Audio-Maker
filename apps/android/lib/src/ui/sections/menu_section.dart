@@ -22,9 +22,8 @@ class MenuSection extends StatelessWidget {
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -66,86 +65,90 @@ class MenuSection extends StatelessWidget {
                 onChanged: (value) =>
                     controller.update(() => settings.menu = value),
               ),
-              ToggleTile(
-                title: strings.menuStills,
-                value: settings.stills,
-                icon: Icons.image,
-                onChanged: (value) =>
-                    controller.update(() => settings.stills = value),
-              ),
-              const SizedBox(height: 10),
-              FieldPair(
-                first: SettingTextField(
-                  label: strings.tracksPerPage,
-                  value: settings.tracksPerPage,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: <TextInputFormatter>[
-                    FilteringTextInputFormatter.digitsOnly,
-                  ],
+              if (settings.menu) ...<Widget>[
+                ToggleTile(
+                  title: strings.menuStills,
+                  value: settings.stills,
+                  icon: Icons.image,
                   onChanged: (value) =>
-                      controller.update(() => settings.tracksPerPage = value),
+                      controller.update(() => settings.stills = value),
                 ),
-                second: SettingStringDropdown(
-                  label: strings.norm,
-                  value: settings.norm,
-                  options: kVideoStandards,
-                  labels: <String>[
-                    strings.normPal,
-                    strings.normSecam,
-                    strings.normNtsc,
+                const SizedBox(height: 10),
+                FieldPair(
+                  first: SettingTextField(
+                    label: strings.tracksPerPage,
+                    value: settings.tracksPerPage,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: <TextInputFormatter>[
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
+                    onChanged: (value) =>
+                        controller.update(() => settings.tracksPerPage = value),
+                  ),
+                  second: SettingStringDropdown(
+                    label: strings.norm,
+                    value: settings.norm,
+                    options: kVideoStandards,
+                    labels: <String>[
+                      strings.normPal,
+                      strings.normSecam,
+                      strings.normNtsc,
+                    ],
+                    onChanged: (value) =>
+                        controller.update(() => settings.norm = value),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: <Widget>[
+                    Expanded(child: Text(strings.coverDim)),
+                    Text(
+                      '${settings.coverDimValue}%',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
-                  onChanged: (value) =>
-                      controller.update(() => settings.norm = value),
                 ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: <Widget>[
-                  Expanded(child: Text(strings.coverDim)),
-                  Text(
-                    '${settings.coverDimValue}%',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w700,
+                Slider(
+                  value: settings.coverDimValue.toDouble(),
+                  min: 0,
+                  max: 100,
+                  divisions: 100,
+                  label: '${settings.coverDimValue}%',
+                  onChanged: (value) => controller.update(
+                    () => settings.coverDim = value.round().toString(),
+                  ),
+                ),
+                if (settings.advanced) ...<Widget>[
+                  const SizedBox(height: 8),
+                  _fontField(
+                    context,
+                    strings.fontSc,
+                    settings.fontSc,
+                    (value) => controller.update(() => settings.fontSc = value),
+                  ),
+                  const SizedBox(height: 14),
+                  FieldPair(
+                    first: _fontField(
+                      context,
+                      strings.fontJp,
+                      settings.fontJp,
+                      (value) =>
+                          controller.update(() => settings.fontJp = value),
+                    ),
+                    second: _fontField(
+                      context,
+                      strings.fontKr,
+                      settings.fontKr,
+                      (value) =>
+                          controller.update(() => settings.fontKr = value),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  InfoBanner(text: strings.fontHelp, icon: Icons.text_fields),
                 ],
-              ),
-              Slider(
-                value: settings.coverDimValue.toDouble(),
-                min: 0,
-                max: 100,
-                divisions: 100,
-                label: '${settings.coverDimValue}%',
-                onChanged: (value) => controller.update(
-                  () => settings.coverDim = value.round().toString(),
-                ),
-              ),
-              if (settings.advanced) ...<Widget>[
-                const SizedBox(height: 8),
-                _fontField(
-                  context,
-                  strings.fontSc,
-                  settings.fontSc,
-                  (value) => controller.update(() => settings.fontSc = value),
-                ),
-                const SizedBox(height: 14),
-                FieldPair(
-                  first: _fontField(
-                    context,
-                    strings.fontJp,
-                    settings.fontJp,
-                    (value) => controller.update(() => settings.fontJp = value),
-                  ),
-                  second: _fontField(
-                    context,
-                    strings.fontKr,
-                    settings.fontKr,
-                    (value) => controller.update(() => settings.fontKr = value),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                InfoBanner(text: strings.fontHelp, icon: Icons.text_fields),
               ],
             ],
           ),

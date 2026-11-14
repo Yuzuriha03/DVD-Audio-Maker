@@ -80,61 +80,12 @@ class _TaskSectionState extends State<TaskSection> {
         ).showSnackBar(SnackBar(content: Text(controller.strings.noOutput)));
       }
     } catch (error) {
-      if (!context.mounted) {
-        return;
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
-  }
-
-  Future<void> _showStatus(BuildContext context) async {
-    final unfinished = await controller.checkUnfinished();
-    if (!context.mounted) {
-      return;
-    }
-    final strings = controller.strings;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          unfinished ? strings.statusUnfinished : strings.statusNoUnfinished,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _discard(BuildContext context) async {
-    final strings = controller.strings;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(strings.discardProgress),
-        content: Text(strings.retentionBody),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(strings.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(strings.deleteProgress),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) {
-      return;
-    }
-    final discarded = await controller.discardProgress();
-    if (!context.mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(discarded ? strings.statusDone : strings.statusFailed),
-      ),
-    );
   }
 
   String get _visibleLog {
@@ -197,6 +148,22 @@ class _TaskSectionState extends State<TaskSection> {
           title: strings.sectionStatus,
           subtitle: strings.taskSubtitle,
           icon: Icons.sync,
+          footer: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: running ? null : () => _run(context, 'verify'),
+                icon: const Icon(Icons.fact_check_outlined, size: 18),
+                label: Text(strings.actionVerify),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _openOutput(context),
+                icon: const Icon(Icons.folder_open, size: 18),
+                label: Text(strings.actionOpenOutput),
+              ),
+            ],
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -378,42 +345,6 @@ class _TaskSectionState extends State<TaskSection> {
             ),
           ),
           child: LogPanel(text: _visibleLog, emptyLabel: strings.logEmpty),
-        ),
-        const SizedBox(height: 16),
-        SectionCard(
-          title: strings.sectionActions,
-          icon: Icons.bolt,
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: <Widget>[
-              OutlinedButton.icon(
-                onPressed: running ? null : () => _run(context, 'prepare'),
-                icon: const Icon(Icons.search),
-                label: Text(strings.actionPrepare),
-              ),
-              OutlinedButton.icon(
-                onPressed: running ? null : () => _run(context, 'verify'),
-                icon: const Icon(Icons.verified),
-                label: Text(strings.actionVerify),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _openOutput(context),
-                icon: const Icon(Icons.open_in_new),
-                label: Text(strings.actionOpenOutput),
-              ),
-              OutlinedButton.icon(
-                onPressed: running ? null : () => _showStatus(context),
-                icon: const Icon(Icons.refresh),
-                label: Text(strings.actionStatus),
-              ),
-              TextButton.icon(
-                onPressed: running ? null : () => _discard(context),
-                icon: const Icon(Icons.delete_outline),
-                label: Text(strings.actionDiscard),
-              ),
-            ],
-          ),
         ),
       ],
     );
