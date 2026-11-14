@@ -4,10 +4,13 @@ import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.view.Surface
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterSurfaceView
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -37,6 +40,45 @@ class MainActivity : FlutterActivity() {
     private var saveTextFileResult: MethodChannel.Result? = null
     private var saveTextFileContent: String? = null
     private var pickFontResult: MethodChannel.Result? = null
+    private var flutterSurfaceView: FlutterSurfaceView? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        applyAdaptiveFrameRate()
+    }
+
+    override fun onFlutterSurfaceViewCreated(flutterSurfaceView: FlutterSurfaceView) {
+        super.onFlutterSurfaceViewCreated(flutterSurfaceView)
+        this.flutterSurfaceView = flutterSurfaceView
+        applyAdaptiveFrameRate()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyAdaptiveFrameRate()
+    }
+
+    /**
+     * LTPO: advertise the panel's peak rate with default compatibility and
+     * seamless-only switching. The system can still downshift for static UI.
+     */
+    private fun applyAdaptiveFrameRate() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return
+        }
+        val modes = display?.supportedModes ?: return
+        val peak = modes.maxOfOrNull { it.refreshRate } ?: return
+        runCatching {
+            val surface = flutterSurfaceView?.holder?.surface ?: return
+            if (surface.isValid) {
+                surface.setFrameRate(
+                    peak,
+                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
+                    Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS,
+                )
+            }
+        }
+    }
 
     private class SafMirrorState {
         var entries: Int = 0
