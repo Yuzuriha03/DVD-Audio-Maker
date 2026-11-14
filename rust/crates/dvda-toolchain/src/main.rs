@@ -235,50 +235,51 @@ fn package(options: Args) -> Result<(), String> {
     let runtime = candidate.root.join("runtime-input");
     fs::create_dir_all(&stage).map_err(io_error)?;
     fs::create_dir_all(&runtime).map_err(io_error)?;
-    for name in ["README.md", "README.en.md", "README.ja.md", "LICENSE"] {
-        let source = if name.starts_with("README") {
-            repository.join("tools/win-build/docs").join(name)
-        } else {
-            repository.join(name)
-        };
-        copy_file(&source, &stage.join(name))?;
+    if !options.single_exe {
+        for name in ["README.md", "README.en.md", "README.ja.md", "LICENSE"] {
+            let source = if name.starts_with("README") {
+                repository.join("tools/win-build/docs").join(name)
+            } else {
+                repository.join(name)
+            };
+            copy_file(&source, &stage.join(name))?;
+        }
+        copy_first_file(
+            &[
+                repository.join("THIRD-PARTY.txt"),
+                repository.join("tools/win-build/docs/THIRD-PARTY.txt"),
+            ],
+            &stage.join("THIRD-PARTY.txt"),
+        )?;
+        copy_first_file(
+            &[
+                repository.join("THIRD-PARTY.en.txt"),
+                repository.join("tools/win-build/docs/THIRD-PARTY.en.txt"),
+            ],
+            &stage.join("THIRD-PARTY.en.txt"),
+        )?;
+        copy_first_file(
+            &[
+                repository.join("NOTICE-Image.txt"),
+                image.join("NOTICE.txt"),
+            ],
+            &stage.join("NOTICE-Image.txt"),
+        )?;
+        copy_first_file(
+            &[
+                repository.join("NOTICE-Menu.txt"),
+                author.join("menu-NOTICE.txt"),
+            ],
+            &stage.join("NOTICE-Menu.txt"),
+        )?;
+        copy_first_file(
+            &[
+                repository.join("FFMPEG-LICENSE.txt"),
+                repository.join("tools/win-build/docs/FFMPEG-LICENSE.txt"),
+            ],
+            &stage.join("FFMPEG-LICENSE.txt"),
+        )?;
     }
-    copy_first_file(
-        &[
-            repository.join("THIRD-PARTY.txt"),
-            repository.join("tools/win-build/docs/THIRD-PARTY.txt"),
-        ],
-        &stage.join("THIRD-PARTY.txt"),
-    )?;
-    copy_first_file(
-        &[
-            repository.join("THIRD-PARTY.en.txt"),
-            repository.join("tools/win-build/docs/THIRD-PARTY.en.txt"),
-        ],
-        &stage.join("THIRD-PARTY.en.txt"),
-    )?;
-    copy_first_file(
-        &[
-            repository.join("NOTICE-Image.txt"),
-            image.join("NOTICE.txt"),
-        ],
-        &stage.join("NOTICE-Image.txt"),
-    )?;
-    copy_first_file(
-        &[
-            repository.join("NOTICE-Menu.txt"),
-            author.join("menu-NOTICE.txt"),
-        ],
-        &stage.join("NOTICE-Menu.txt"),
-    )?;
-    copy_first_file(
-        &[
-            repository.join("FFMPEG-LICENSE.txt"),
-            repository.join("tools/win-build/docs/FFMPEG-LICENSE.txt"),
-        ],
-        &stage.join("FFMPEG-LICENSE.txt"),
-    )?;
-
     for (name, path) in &inputs.files {
         copy_file(path, &runtime.join(name))?;
     }
@@ -334,9 +335,8 @@ fn package(options: Args) -> Result<(), String> {
         &candidate.root,
         &output,
         &inputs,
-        (&options.version, suffix),
+        (&options.version, suffix, options.single_exe),
         &options.target,
-        options.single_exe,
         || {
             build_gui(
                 &repository,
@@ -369,12 +369,17 @@ fn package(options: Args) -> Result<(), String> {
     } else {
         println!("[OK] Release ZIP: {}", output.join(archive_name).display());
     }
+    let published_exe = if options.single_exe {
+        output.join(format!("DVD-Audio-Maker-{}-{suffix}.exe", options.version))
+    } else {
+        output.join("DVD-Audio-Maker/DVD-Audio-Maker.exe")
+    };
     println!(
         "[OK] EXE SHA-256: {}",
-        validation::file_hash(&output.join("DVD-Audio-Maker/DVD-Audio-Maker.exe"))?
+        validation::file_hash(&published_exe)?
     );
     println!(
-        "[OK] Hash/provenance records (outside ZIP): {}",
+        "[OK] Hash/provenance records: {}",
         output.join("MANIFEST.txt").display()
     );
     Ok(())
@@ -384,9 +389,8 @@ fn finish_release(
     candidate: &Path,
     output: &Path,
     inputs: &validation::Inputs,
-    (version, suffix): (&str, &str),
+    (version, suffix, single_exe): (&str, &str, bool),
     target: &str,
-    single_exe: bool,
     build: impl FnOnce() -> Result<(), String>,
     compress: impl FnOnce(&Path, &Path) -> Result<(), String>,
 ) -> Result<(), String> {
@@ -800,9 +804,8 @@ mod tests {
                 &candidate.root,
                 &output,
                 &inputs,
-                ("v1.0", "win-x64"),
+                ("v1.0", "win-x64", false),
                 "x86_64-pc-windows-msvc",
-                false,
                 || match reason {
                     "build" => Err("build failed".into()),
                     "copy" => copy_file(
