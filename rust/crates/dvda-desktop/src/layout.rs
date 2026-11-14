@@ -5,11 +5,11 @@ use super::{
     AtomicBool, BeginDeferWindowPos, COMBO_IDS, CONTROL_RECTS, CreateSpec, DEFER_CONTROL_PAINT,
     DefWindowProcW, DeferWindowPos, EndDeferWindowPos, GWLP_USERDATA, GetAncestor, GetClientRect,
     GetDlgCtrlID, GetDlgItem, GetModuleHandleW, GetParent, GetWindowLongPtrW, GetWindowRect,
-    HEADER_HEIGHT, Hwnd, ID_BITS, ID_BROWSE_IMPORT, ID_BROWSE_WORK, ID_CAPACITY, ID_COVER,
-    ID_CUSTOM_BYTES, ID_FONT_JP, ID_FONT_KR, ID_FONT_SC, ID_GROUP_LIMIT, ID_IMPORT_FOLDER,
-    ID_ISO_PREFIX, ID_MODE, ID_NORM, ID_RATE, ID_TITLE, ID_TRACKS, ID_WORK_DIR, InvalidateRect,
-    LoadCursorW, Lparam, Lresult, MoveWindow, OnceLock, Ordering, PaintStruct, Point,
-    RDW_ALLCHILDREN, RDW_INVALIDATE, Rect, RedrawWindow, RegisterClassW, SW_HIDE, SW_SHOW,
+    HEADER_HEIGHT, Hwnd, ID_ABOUT_PROJECT, ID_BITS, ID_BROWSE_IMPORT, ID_BROWSE_WORK, ID_CAPACITY,
+    ID_COVER, ID_CUSTOM_BYTES, ID_FONT_JP, ID_FONT_KR, ID_FONT_SC, ID_GROUP_LIMIT,
+    ID_IMPORT_FOLDER, ID_ISO_PREFIX, ID_MODE, ID_NORM, ID_RATE, ID_TITLE, ID_TRACKS, ID_WORK_DIR,
+    InvalidateRect, LoadCursorW, Lparam, Lresult, MoveWindow, OnceLock, Ordering, PaintStruct,
+    Point, RDW_ALLCHILDREN, RDW_INVALIDATE, Rect, RedrawWindow, RegisterClassW, SW_HIDE, SW_SHOW,
     ScreenToClient, SendMessageW, SetWindowPos, ShowWindow, UiState, WM_CLOSE, WM_COMMAND,
     WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NOTIFY, WM_PAINT, WS_CHILD,
     WS_CLIPCHILDREN, WS_VISIBLE, WndClass, Wparam, begin_buffered_paint, browse_edit_width, c_card,
@@ -629,6 +629,16 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
             if !state.dragging_splitter {
                 InvalidateRect(button, ptr::null(), 0);
             }
+        }
+        let about = GetDlgItem(hwnd, i32::try_from(ID_ABOUT_PROJECT).unwrap());
+        let about_width = 70;
+        let about_x = language_x - 10 - about_width;
+        let header_right = header_x[2] + header_widths[2];
+        if about_x >= header_right + 8 {
+            place(about, about_x, action_toolbar_y, about_width, 28);
+            ShowWindow(about, SW_SHOW);
+        } else {
+            ShowWindow(about, SW_HIDE);
         }
         for (handle, key) in &state.buttons {
             match *key {

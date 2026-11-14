@@ -96,6 +96,8 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     let open_profile = button(parent, tr(lang, "open"), ID_OPEN_PROFILE, 750, 10, 110, 28);
     let save_profile_button = button(parent, tr(lang, "save"), ID_SAVE_PROFILE, 870, 10, 110, 28);
     let save_as_button = button(parent, tr(lang, "save_as"), ID_SAVE_AS, 870, 10, 110, 28);
+    let about_button = button(parent, tr(lang, "about"), ID_ABOUT_PROJECT, 0, 10, 70, 28);
+    buttons.push((about_button, "about"));
     let language_label = label!(
         parent,
         tr(lang, "language"),
@@ -483,16 +485,6 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         browse.insert(id, (field, BrowseKind::Font));
         browse_buttons.push(handle);
     }
-    let about = button(
-        page_menu,
-        tr(lang, "author_page_title"),
-        ID_ABOUT_PROJECT,
-        14,
-        250,
-        240,
-        28,
-    );
-    buttons.push((about, "about"));
     let operation_section = label!(
         parent,
         tr(lang, "operation_section"),

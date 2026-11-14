@@ -57,6 +57,7 @@ fn main() {
         println!("cargo:rerun-if-env-changed={name}");
     }
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    embed_licenses(&manifest_dir, &generated);
     let manifest = manifest_dir.join("app.manifest");
     let icon = manifest_dir.join("../../../assets/dvd-audio-maker.ico");
     println!("cargo:rerun-if-changed={}", icon.display());
@@ -96,6 +97,31 @@ fn main() {
     // The .res already contains the application manifest as resource 1.
     println!("cargo:rustc-link-arg=/MANIFEST:NO");
     println!("cargo:rustc-link-arg={}", resource.display());
+}
+
+fn embed_licenses(manifest_dir: &Path, generated: &Path) {
+    use std::fmt::Write as _;
+
+    let repository = manifest_dir.join("../../..");
+    let mut module = String::new();
+    for (identifier, relative) in [
+        ("PROJECT_LICENSE", "LICENSE"),
+        ("FFMPEG_LICENSE", "FFMPEG-LICENSE.txt"),
+        ("THIRD_PARTY_ZH", "tools/win-build/docs/THIRD-PARTY.txt"),
+        ("THIRD_PARTY_EN", "tools/win-build/docs/THIRD-PARTY.en.txt"),
+        ("IMAGE_NOTICES", "NOTICE-Image.txt"),
+        ("MENU_NOTICES", "NOTICE-Menu.txt"),
+    ] {
+        let path = repository.join(relative);
+        println!("cargo:rerun-if-changed={}", path.display());
+        let escaped = path.display().to_string().replace('\\', "\\\\");
+        writeln!(
+            module,
+            "pub(crate) static {identifier}: &str = include_str!(\"{escaped}\");"
+        )
+        .unwrap();
+    }
+    std::fs::write(generated.join("licenses.rs"), module).unwrap();
 }
 
 fn static_ffmpeg() -> bool {

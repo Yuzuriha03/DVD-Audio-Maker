@@ -2,61 +2,9 @@
 
 use super::{
     BrowseInfo, BrowseKind, CoTaskMemFree, GetOpenFileNameW, GetSaveFileNameW, Hwnd, Lang,
-    MessageBoxW, OpenFileName, Path, PathBuf, SHBrowseForFolderW, SHGetPathFromIDListW, SW_SHOW,
+    MessageBoxW, OpenFileName, Path, SHBrowseForFolderW, SHGetPathFromIDListW, SW_SHOW,
     ShellExecuteW, UiState, get_text, ptr, set_text, tr, wide,
 };
-
-pub(crate) fn about_dialog(hwnd: Hwnd, state: &UiState) {
-    let lang = state.lang();
-    let text = format!(
-        "{}\n{}\n\n{}\n\n{}\n\n{}\n{}",
-        tr(lang, "author_name"),
-        tr(lang, "author_role"),
-        tr(lang, "author_bio"),
-        tr(lang, "project_url"),
-        tr(lang, "author_licenses"),
-        tr(lang, "author_license_hint")
-    );
-    let answer = message_box(
-        hwnd,
-        &text,
-        tr(lang, "author_page_title"),
-        0x0000_0004 | 0x0000_0040,
-    );
-    if answer == 6 {
-        open_licenses(hwnd, state);
-    }
-}
-
-pub(crate) fn open_licenses(hwnd: Hwnd, state: &UiState) {
-    let current = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let executable = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(Path::to_path_buf));
-    let directory = executable
-        .filter(|path| path.join("LICENSE").is_file())
-        .unwrap_or(current);
-    let path = wide(&directory.to_string_lossy());
-    let verb = wide("open");
-    unsafe {
-        let result = ShellExecuteW(
-            hwnd,
-            verb.as_ptr(),
-            path.as_ptr(),
-            ptr::null(),
-            ptr::null(),
-            SW_SHOW,
-        );
-        if result as isize <= 32 {
-            message_box(
-                hwnd,
-                tr(state.lang(), "licenses_missing"),
-                "DVD-Audio Maker",
-                0x10,
-            );
-        }
-    }
-}
 
 pub(crate) fn open_output(hwnd: Hwnd, state: &UiState) {
     let path = get_text(state.controls.final_dir);
