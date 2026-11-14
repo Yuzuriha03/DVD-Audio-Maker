@@ -1,0 +1,27 @@
+name: dvda_maker
+description: DVD-Audio Maker Flutter application
+publish_to: none
+version: 1.1.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_rust_bridge: 2.13.0
+  shared_preferences: ^2.5.3
+  material_ui: ^1.11.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+# Flutter 3.50 pins these transitive packages; keep the tested patch overrides explicit.
+dependency_overrides:
+  material_color_utilities: 0.13.1
+  test_api: 0.7.15
+
+flutter:
+  uses-material-design: true

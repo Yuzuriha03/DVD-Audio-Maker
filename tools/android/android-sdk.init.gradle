@@ -1,0 +1,11 @@
+// Third-party Flutter plugins may request older platforms. Use the SDK already
+// installed for this product, before AGP finalizes each project's model.
+allprojects {
+    afterEvaluate {
+        if (plugins.hasPlugin("com.android.application") || plugins.hasPlugin("com.android.library")) {
+            def android = extensions.getByName("android")
+            android.compileSdk = 37
+            android.buildToolsVersion = "37.0.0"
+        }
+    }
+}

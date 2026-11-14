@@ -2,7 +2,7 @@ from pathlib import Path
 from PIL import Image
 
 source = Path("assets/dvd-audio-maker.png")
-root = Path("apps/android/app/src/main/res")
+root = Path("apps/android/android/app/src/main/res")
 sizes = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
 with Image.open(source) as image:
     image = image.convert("RGBA")

@@ -18,7 +18,7 @@
 *.jpeg
 *.png
 !assets/dvd-audio-maker.png
-!apps/android/app/src/main/res/mipmap-*/ic_launcher.png
+!apps/android/android/app/src/main/res/mipmap-*/ic_launcher.png
 *.webp
 
 # 光盘镜像与目录
@@ -54,6 +54,9 @@ dist/
 .venv/
 venv/
 env/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
 
 # ---- 编辑器与系统 ----
 .vscode/*
