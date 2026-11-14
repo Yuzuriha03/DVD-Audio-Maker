@@ -61,6 +61,7 @@ class MenuSection extends StatelessWidget {
             children: <Widget>[
               ToggleTile(
                 title: strings.makeMenu,
+                subtitle: strings.menuHint,
                 value: settings.menu,
                 icon: Icons.grid_view,
                 onChanged: (value) =>
@@ -69,6 +70,7 @@ class MenuSection extends StatelessWidget {
               if (settings.menu) ...<Widget>[
                 ToggleTile(
                   title: strings.menuStills,
+                  subtitle: strings.stillsHint,
                   value: settings.stills,
                   icon: Icons.image,
                   onChanged: (value) =>

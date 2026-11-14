@@ -337,6 +337,31 @@ pub(crate) fn update_advanced(state: &UiState) {
         show_window(control, show);
     }
     show_window(state.advanced_hint, !show);
+    update_menu_visibility(state);
+}
+
+pub(crate) fn update_menu_visibility(state: &UiState) {
+    let menu = checked(state.controls.menu);
+    for control in [
+        state.controls.stills,
+        state.controls.tracks,
+        state.controls.cover,
+        state.controls.norm,
+    ] {
+        show_window(control, menu);
+    }
+    for (hwnd, key) in &state.labels {
+        if matches!(
+            *key,
+            "stills" | "tracks" | "cover" | "norm" | "font_sc" | "font_jp" | "font_kr"
+        ) {
+            show_window(*hwnd, menu);
+        }
+    }
+    let advanced = checked(state.controls.advanced);
+    for hwnd in &state.browse_buttons {
+        show_window(*hwnd, menu && advanced);
+    }
 }
 pub(crate) fn update_statistics(state: &mut UiState) {
     let elapsed = state

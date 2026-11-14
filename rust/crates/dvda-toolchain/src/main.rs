@@ -29,6 +29,7 @@ struct Args {
     prebuilt: Option<PathBuf>,
     version: String,
     target: String,
+    single_exe: bool,
 }
 
 fn main() {
@@ -68,6 +69,10 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         ..Args::default()
     };
     while let Some(argument) = args.next() {
+        if argument == "--single-exe" {
+            options.single_exe = true;
+            continue;
+        }
         let value = next_arg(&mut args, &argument)?;
         match argument.as_str() {
             "--repo" => options.repository = Some(value.into()),
@@ -331,6 +336,7 @@ fn package(options: Args) -> Result<(), String> {
         &inputs,
         (&options.version, suffix),
         &options.target,
+        options.single_exe,
         || {
             build_gui(
                 &repository,
@@ -353,7 +359,16 @@ fn package(options: Args) -> Result<(), String> {
         "[OK] Release directory: {}",
         output.join("DVD-Audio-Maker").display()
     );
-    println!("[OK] Release ZIP: {}", output.join(archive_name).display());
+    if options.single_exe {
+        println!(
+            "[OK] Release EXE: {}",
+            output
+                .join(format!("DVD-Audio-Maker-{}-{suffix}.exe", options.version))
+                .display()
+        );
+    } else {
+        println!("[OK] Release ZIP: {}", output.join(archive_name).display());
+    }
     println!(
         "[OK] EXE SHA-256: {}",
         validation::file_hash(&output.join("DVD-Audio-Maker/DVD-Audio-Maker.exe"))?
@@ -371,6 +386,7 @@ fn finish_release(
     inputs: &validation::Inputs,
     (version, suffix): (&str, &str),
     target: &str,
+    single_exe: bool,
     build: impl FnOnce() -> Result<(), String>,
     compress: impl FnOnce(&Path, &Path) -> Result<(), String>,
 ) -> Result<(), String> {
@@ -381,6 +397,18 @@ fn finish_release(
         validation::validate_combined(&[&stage, &runtime], target)?;
     } else {
         validation::validate_staged(&stage, target)?;
+    }
+    if single_exe {
+        let exe_name = format!("DVD-Audio-Maker-{version}-{suffix}.exe");
+        copy_file(
+            &stage.join("DVD-Audio-Maker.exe"),
+            &candidate.join(&exe_name),
+        )?;
+        let mut relative_files = vec![PathBuf::from(&exe_name)];
+        write_records(candidate, &relative_files, inputs, version, target)?;
+        relative_files.push(PathBuf::from("MANIFEST.txt"));
+        relative_files.push(PathBuf::from("release-build.json"));
+        return publication::commit(candidate, output, &relative_files);
     }
     let archive_name = format!("DVD-Audio-Maker-{version}-{suffix}.zip");
     let archive = candidate.join(&archive_name);
@@ -604,7 +632,7 @@ fn io_error(error: impl std::fmt::Display) -> String {
 
 fn print_usage() {
     println!(
-        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--target-dir PATH] [--media-runtime PATH] [--image-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--target TRIPLE] [--version v1.0]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
+        "Usage: dvda-toolchain package [--repo PATH] [--output PATH] [--target-dir PATH] [--media-runtime PATH] [--image-runtime PATH] [--image-author PATH] [--source PATH] [--prebuilt PATH] [--target TRIPLE] [--version v1.0] [--single-exe]\n       dvda-toolchain verify-aob --source FILE [--source FILE ...] --aob FILE [--aob FILE ...] [--lpcm --title-ends 0,1,...]\n       dvda-toolchain font <extract|verify|inspect|pack|verify-collection> ..."
     );
 }
 
@@ -774,6 +802,7 @@ mod tests {
                 &inputs,
                 ("v1.0", "win-x64"),
                 "x86_64-pc-windows-msvc",
+                false,
                 || match reason {
                     "build" => Err("build failed".into()),
                     "copy" => copy_file(
