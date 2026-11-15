@@ -127,7 +127,10 @@ class AppSettings {
     return parsed;
   }
 
-  String get effectiveWorkDir => kDefaultWorkDir;
+  String appWorkDir = kDefaultWorkDir;
+  String appOutputDir = kDefaultTaskOutputDir;
+
+  String get effectiveWorkDir => appWorkDir;
 
   Map<String, String> toProfileValues() {
     final font = fontSc.trim().isEmpty ? (menu ? kDefaultFont : '') : fontSc;

@@ -137,6 +137,18 @@ class MainActivity : FlutterActivity() {
                     result.success(if (treeUri.isEmpty()) null else linkDirectory(treeUri))
                 }
             }
+            "appPaths" -> {
+                val files = runCatching { filesDir.canonicalFile }.getOrElse { filesDir }
+                val build = File(files, "build").apply { mkdirs() }
+                val output = File(files, "output").apply { mkdirs() }
+                result.success(
+                    mapOf(
+                        "filesDir" to files.absolutePath,
+                        "buildDir" to (runCatching { build.canonicalFile }.getOrElse { build }).absolutePath,
+                        "outputDir" to (runCatching { output.canonicalFile }.getOrElse { output }).absolutePath,
+                    ),
+                )
+            }
             "ensureSourceLink" -> {
                 val treeUri = call.argument<String>("treeUri").orEmpty()
                 safExecutor.execute {

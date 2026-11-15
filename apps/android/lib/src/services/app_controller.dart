@@ -219,6 +219,17 @@ class AppController extends ChangeNotifier {
     } catch (error) {
       _initError = error.toString();
     }
+    final paths = await platform.appPaths();
+    if (paths != null) {
+      final build = paths['buildDir'];
+      final output = paths['outputDir'];
+      if (build != null && build.isNotEmpty) {
+        settings.appWorkDir = build;
+      }
+      if (output != null && output.isNotEmpty) {
+        settings.appOutputDir = output;
+      }
+    }
     if (settings.sourceStagingPath.contains('/saf-links/')) {
       settings.sourceStagingPath = '';
     }
@@ -272,7 +283,7 @@ class AppController extends ChangeNotifier {
     final profile = settings.toProfileJson();
     final values = Map<String, String>.from(profile['Values']! as Map);
     values['DVDA_SRC'] = settings.sourceStagingPath;
-    values['DVDA_FINAL_DIR'] = kDefaultTaskOutputDir;
+    values['DVDA_FINAL_DIR'] = settings.appOutputDir;
     values['DVDA_BUILD_DIR'] = kDefaultWorkDir;
     values['DVDA_MLP_EXTERNAL_DIR'] = settings.externalStagingPath;
     profile['Values'] = values;
@@ -417,7 +428,7 @@ class AppController extends ChangeNotifier {
       return Future<bool>.value(false);
     }
     return platform.exportDirectory(
-      kDefaultTaskOutputDir,
+      settings.appOutputDir,
       settings.finalTreeUri,
     );
   }
