@@ -104,6 +104,7 @@ class MainActivity : FlutterActivity() {
     private class SafMirrorState {
         var entries: Int = 0
         var truncated: Boolean = false
+        var failure: String? = null
     }
 
     private data class SafChild(val uri: Uri, val isDirectory: Boolean)
@@ -131,28 +132,56 @@ class MainActivity : FlutterActivity() {
     private fun handleCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "pickDirectory" -> pickDirectory(call, result)
+            "appPaths" -> {
+                runCatching {
+                    val files = filesDir.canonicalFile
+                    if (!files.isDirectory || !files.canRead() || !files.canWrite()) {
+                        error("App files directory is not readable/writable: $files")
+                    }
+                    val build = privateChildDirectory(files, "build")
+                    val output = privateChildDirectory(files, "output")
+                    result.success(
+                        mapOf(
+                            "filesDir" to files.path,
+                            "buildDir" to build.path,
+                            "outputDir" to output.path,
+                        ),
+                    )
+                }.getOrElse {
+                    result.error("APP_PATHS", it.message ?: "Cannot prepare app directories", null)
+                }
+            }
+            "validateReadableFont" -> {
+                val path = call.argument<String>("path").orEmpty()
+                result.success(isReadableFont(path))
+            }
+            "validatePrivateDirectory" -> {
+                val path = call.argument<String>("path").orEmpty()
+                val directory = if (path.isEmpty()) null else privateSource(path)
+                result.success(directory != null && directory.isDirectory && directory.canRead())
+            }
             "linkDirectory" -> {
                 val treeUri = call.argument<String>("treeUri").orEmpty()
                 safExecutor.execute {
-                    result.success(if (treeUri.isEmpty()) null else linkDirectory(treeUri))
+                    val selection = runCatching {
+                        if (treeUri.isEmpty()) null else linkDirectory(treeUri)
+                    }.getOrElse {
+                        result.error("SAF_MIRROR", it.message ?: "Cannot read the selected folder", null)
+                        return@execute
+                    }
+                    result.success(selection)
                 }
-            }
-            "appPaths" -> {
-                val files = runCatching { filesDir.canonicalFile }.getOrElse { filesDir }
-                val build = File(files, "build").apply { mkdirs() }
-                val output = File(files, "output").apply { mkdirs() }
-                result.success(
-                    mapOf(
-                        "filesDir" to files.absolutePath,
-                        "buildDir" to (runCatching { build.canonicalFile }.getOrElse { build }).absolutePath,
-                        "outputDir" to (runCatching { output.canonicalFile }.getOrElse { output }).absolutePath,
-                    ),
-                )
             }
             "ensureSourceLink" -> {
                 val treeUri = call.argument<String>("treeUri").orEmpty()
                 safExecutor.execute {
-                    result.success(if (treeUri.isEmpty()) null else ensureDirectoryLink(treeUri))
+                    val selection = runCatching {
+                        if (treeUri.isEmpty()) null else ensureDirectoryLink(treeUri)
+                    }.getOrElse {
+                        result.error("SAF_MIRROR", it.message ?: "Cannot read the selected folder", null)
+                        return@execute
+                    }
+                    result.success(selection)
                 }
             }
             "exportDirectory" -> {
@@ -201,8 +230,8 @@ class MainActivity : FlutterActivity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                    if (directoryLinkForNative) 0 else Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
             )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 treeUriForPath(call.argument<String>("initial"))?.let { uri ->
@@ -210,7 +239,12 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
-        startActivityForResult(intent, REQUEST_DIRECTORY)
+        runCatching {
+            startActivityForResult(intent, REQUEST_DIRECTORY)
+        }.onFailure {
+            directoryResult = null
+            result.error("SAF_PICKER", it.message ?: "Cannot open the folder picker", null)
+        }
     }
 
     private fun pickProfile(result: MethodChannel.Result) {
@@ -289,23 +323,31 @@ class MainActivity : FlutterActivity() {
         )
     }.isSuccess
 
-    private fun persistTreePermission(uri: Uri) {
+    private fun persistTreePermission(uri: Uri, write: Boolean = false) {
         runCatching {
             contentResolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
         }
-        runCatching {
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-            )
+        if (write) {
+            runCatching {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
         }
     }
 
+    private fun selectionOf(uri: Uri): Map<String, String> = mapOf(
+        "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
+        "nativePath" to "",
+        "treeUri" to uri.toString(),
+    )
+
     private fun directorySelection(uri: Uri, linkForNative: Boolean): Map<String, String>? {
-        val nativePath = if (linkForNative) mirrorTree(uri) ?: return null else ""
+        val nativePath = if (linkForNative) mirrorTree(uri) else ""
         return mapOf(
             "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
             "nativePath" to nativePath,
@@ -333,37 +375,40 @@ class MainActivity : FlutterActivity() {
         val key = treeKey(uri)
         val root = File(File(filesDir, SAF_MIRROR_DIRECTORY), key)
         if (root.isDirectory && mirrorMarker(key).isFile) {
-            return mapOf(
-                "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
-                "nativePath" to root.canonicalPath,
-                "treeUri" to uri.toString(),
-            )
+            val nativePath = runCatching { root.canonicalPath }.getOrNull()
+            if (nativePath != null) {
+                return mapOf(
+                    "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
+                    "nativePath" to nativePath,
+                    "treeUri" to uri.toString(),
+                )
+            }
         }
         return linkDirectory(treeUriText)
     }
 
-    private fun mirrorTree(treeUri: Uri): String? {
+    private fun mirrorTree(treeUri: Uri): String {
         val key = treeKey(treeUri)
         val root = File(File(filesDir, SAF_MIRROR_DIRECTORY), key)
         mirrorMarker(key).delete()
         deleteTree(root)
         if (!root.mkdirs() && !root.isDirectory) {
-            return null
+            error("Cannot create the app-private folder mirror: $root")
         }
         val state = SafMirrorState()
-        return runCatching {
+        try {
             val rootId = DocumentsContract.getTreeDocumentId(treeUri)
             if (!walkTree(treeUri, rootId, root, 0, state)) {
-                error("Cannot read the granted SAF tree")
+                error(state.failure ?: "Cannot read the selected folder")
             }
             if (state.truncated) {
-                error("The granted SAF tree is too large or contains unreadable entries")
+                error(state.failure ?: "The selected folder is too large to mirror")
             }
             mirrorMarker(key).writeText("v1")
-            root.canonicalPath
-        }.getOrElse {
+            return root.canonicalPath
+        } catch (failure: Throwable) {
             deleteTree(root)
-            null
+            throw failure
         }
     }
 
@@ -376,6 +421,7 @@ class MainActivity : FlutterActivity() {
     ): Boolean {
         if (depth > MAX_SAF_DEPTH) {
             state.truncated = true
+            state.failure = "The selected folder is nested deeper than $MAX_SAF_DEPTH levels"
             return false
         }
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
@@ -392,12 +438,15 @@ class MainActivity : FlutterActivity() {
         )
         if (cursor == null) {
             state.truncated = true
+            state.failure = "Cannot list the folder ${directory.name}"
             return false
         }
         cursor.use {
             while (it.moveToNext()) {
                 if (state.entries >= MAX_SAF_ENTRIES) {
                     state.truncated = true
+                    state.failure =
+                        "The selected folder has more than $MAX_SAF_ENTRIES entries"
                     return@use
                 }
                 state.entries++
@@ -412,9 +461,11 @@ class MainActivity : FlutterActivity() {
                             walkTree(treeUri, childId, target, depth + 1, state)
                         } else {
                             state.truncated = true
+                            state.failure = "Cannot create the folder ${target.name}"
                         }
                     } else if (!copyDocument(childUri, target)) {
                         state.truncated = true
+                        state.failure = "Cannot read the file ${target.name}"
                     }
                 }
             }
@@ -502,6 +553,34 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun isReadableFont(path: String): Boolean {
+        if (path.isEmpty()) {
+            return false
+        }
+        return runCatching {
+            val file = File(path).canonicalFile
+            val allowed = if (path.startsWith("/system/fonts/")) {
+                true
+            } else {
+                val root = File(filesDir, FONT_DIRECTORY).canonicalFile
+                file.path.startsWith(root.path + File.separator)
+            }
+            allowed && file.isFile && file.canRead()
+        }.getOrDefault(false)
+    }
+
+    private fun privateChildDirectory(parent: File, name: String): File {
+        val child = File(parent, name)
+        if ((!child.isDirectory && !child.mkdirs()) || !child.canRead() || !child.canWrite()) {
+            error("App directory is not readable/writable: $child")
+        }
+        val canonical = child.canonicalFile
+        if (canonical.parentFile != parent) {
+            error("App directory escapes filesDir: $canonical")
+        }
+        return canonical
+    }
+
     private fun privateSource(sourcePath: String): File? {
         val filesRoot = runCatching { filesDir.canonicalFile }.getOrNull() ?: return null
         val direct = runCatching { File(sourcePath).canonicalFile }.getOrNull()
@@ -537,7 +616,7 @@ class MainActivity : FlutterActivity() {
         if (treeUri.scheme != ContentResolver.SCHEME_CONTENT) {
             return false
         }
-        persistTreePermission(treeUri)
+        persistTreePermission(treeUri, write = true)
         return runCatching {
             val parent = DocumentsContract.buildDocumentUriUsingTree(
                 treeUri,
@@ -555,7 +634,7 @@ class MainActivity : FlutterActivity() {
         if (children.isEmpty()) {
             return true
         }
-        val existing = childEntries(treeUri, parent)
+        val existing = childEntries(treeUri, parent) ?: return false
         val used = existing.keys.toMutableSet()
         var success = true
         for (child in children) {
@@ -607,11 +686,11 @@ class MainActivity : FlutterActivity() {
         return success
     }
 
-    private fun childEntries(treeUri: Uri, parent: Uri): MutableMap<String, SafChild> = runCatching {
+    private fun childEntries(treeUri: Uri, parent: Uri): MutableMap<String, SafChild>? = runCatching {
         val parentId = DocumentsContract.getDocumentId(parent)
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
         val entries = mutableMapOf<String, SafChild>()
-        contentResolver.query(
+        val cursor = contentResolver.query(
             childrenUri,
             arrayOf(
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -621,7 +700,8 @@ class MainActivity : FlutterActivity() {
             null,
             null,
             null,
-        )?.use { cursor ->
+        ) ?: error("Cannot query the granted output directory")
+        cursor.use {
             while (cursor.moveToNext()) {
                 val documentId = cursor.getString(0)
                 val displayName = cursor.getString(1)
@@ -635,7 +715,7 @@ class MainActivity : FlutterActivity() {
             }
         }
         entries
-    }.getOrDefault(mutableMapOf())
+    }.getOrNull()
 
     private fun createDocument(parent: Uri, mimeType: String, name: String): Uri? =
         runCatching {
@@ -739,10 +819,11 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                     return
                 }
-                persistTreePermission(uri)
-                safExecutor.execute {
-                    result.success(directorySelection(uri, linkForNative))
-                }
+                persistTreePermission(uri, write = !linkForNative)
+                // Return the selection immediately. Copying the tree into the
+                // app-private mirror happens when a task starts, so picking a
+                // large folder never looks like an ignored selection.
+                result.success(selectionOf(uri))
             }
             REQUEST_OPEN_PROFILE -> {
                 val result = openProfileResult ?: return

@@ -3,6 +3,7 @@
 //! No orchestration logic lives here: Flutter passes a desktop-compatible
 //! profile JSON and the binding calls AppOptions/run_prepare/run_build/
 //! run_verify, forwarding progress and cancellation.
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
@@ -111,21 +112,49 @@ fn outcome_with_log(
     .to_string()
 }
 
-#[frb]
-pub fn run_profile(profile_json: String, action: String) -> String {
-    CANCEL.store(false, Ordering::Relaxed);
-    DONE.store(0, Ordering::Relaxed);
-    TOTAL.store(PROGRESS_TOTAL, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "dvda-profile-{}-{}.json",
+fn temporary_profile_path(profile_json: &str) -> Result<PathBuf, String> {
+    let value: serde_json::Value = serde_json::from_str(profile_json)
+        .map_err(|error| format!("Cannot parse task profile: {error}"))?;
+    let build = value
+        .get("Values")
+        .and_then(|values| values.get("DVDA_BUILD_DIR"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("Task profile has no app-private DVDA_BUILD_DIR")?;
+    let build = PathBuf::from(build);
+    if !build.is_absolute() {
+        return Err(format!("Task build directory must be absolute: {}", build.display()));
+    }
+    let directory = build.join(".bridge");
+    std::fs::create_dir_all(&directory).map_err(|error| {
+        format!("Cannot create Android bridge directory {}: {error}", directory.display())
+    })?;
+    Ok(directory.join(format!(
+        "profile-{}-{}.json",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos()
-    ));
+    )))
+}
+
+#[frb]
+pub fn run_profile(profile_json: String, action: String) -> String {
+    CANCEL.store(false, Ordering::Relaxed);
+    DONE.store(0, Ordering::Relaxed);
+    TOTAL.store(PROGRESS_TOTAL, Ordering::Relaxed);
+    let path = match temporary_profile_path(&profile_json) {
+        Ok(path) => path,
+        Err(error) => {
+            return outcome_with_log(false, error, serde_json::Value::Null, "");
+        }
+    };
     let result = (|| -> Result<(bool, String, serde_json::Value), String> {
-        std::fs::write(&path, profile_json).map_err(|error| error.to_string())?;
+        std::fs::write(&path, profile_json).map_err(|error| {
+            format!("Cannot write task profile {}: {error}", path.display())
+        })?;
         let options = AppOptions::load(Some(&path))?;
         if let Ok(mut language) = LANGUAGE.lock() {
             *language = options.language.clone();
@@ -232,5 +261,34 @@ pub fn progress_snapshot() -> ProgressSnapshot {
         total: TOTAL.load(Ordering::Relaxed),
         text: TEXT.lock().map(|slot| slot.clone()).unwrap_or_default(),
         log: LOG.lock().map(|log| log.join("\n")).unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bridge_profile_uses_the_supplied_app_private_build_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "dvda-android-path-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let build = root.join("files").join("build");
+        let profile = serde_json::json!({"Values":{"DVDA_BUILD_DIR":build}});
+        let path = temporary_profile_path(&profile.to_string()).unwrap();
+        assert!(path.starts_with(build.join(".bridge")));
+        assert_eq!(path.extension().and_then(|value| value.to_str()), Some("json"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bridge_profile_rejects_a_missing_build_directory() {
+        let error = temporary_profile_path("{\"Values\":{}}").unwrap_err();
+        assert!(error.contains("DVDA_BUILD_DIR"));
     }
 }

@@ -150,7 +150,7 @@ void main() {
       if (call.method == 'pickDirectory') {
         return <String, Object?>{
           'displayPath': '/sdcard/Audio',
-          'nativePath': '/data/user/0/com.dvda.maker/files/linked-source',
+          'nativePath': '',
           'treeUri':
               'content://com.android.externalstorage.documents/tree/primary%3AAudio',
         };
@@ -174,11 +174,15 @@ void main() {
     expect(field.onTap, isNotNull);
     await tester.tap(find.byType(TextField).first);
     await tester.pump();
+    // The first selection must take effect immediately; the mirror is only
+    // built when a task starts.
     expect(controller.settings.source, '/sdcard/Audio');
     expect(
-      controller.settings.sourceStagingPath,
-      '/data/user/0/com.dvda.maker/files/linked-source',
+      controller.settings.sourceTreeUri,
+      'content://com.android.externalstorage.documents/tree/primary%3AAudio',
     );
+    expect(controller.settings.sourceStagingPath, isEmpty);
+    expect(controller.settings.sourceMirrorDirty, isTrue);
   });
 
   testWidgets('menu fonts stay under advanced settings like Windows', (
@@ -373,23 +377,35 @@ void main() {
     () async {
       final controller = await _controller();
       addTearDown(controller.dispose);
+      controller.settings.appFilesDir = '/data/user/999/com.dvda.maker/files';
+      controller.settings.appWorkDir =
+          '/data/user/999/com.dvda.maker/files/build';
+      controller.settings.appOutputDir =
+          '/data/user/999/com.dvda.maker/files/output';
       controller.settings.sourceStagingPath =
-          '/data/user/0/com.dvda.maker/files/linked';
+          '/data/user/999/com.dvda.maker/files/saf-mirror/source';
       controller.settings.finalTreeUri = 'content://documents/tree/output';
       controller.settings.externalStagingPath =
-          '/data/user/0/com.dvda.maker/files/external';
+          '/data/user/999/com.dvda.maker/files/saf-mirror/external';
 
       final task =
           jsonDecode(controller.buildTaskProfileJson()) as Map<String, dynamic>;
       final taskValues = task['Values'] as Map<String, dynamic>;
       expect(
         taskValues['DVDA_SRC'],
-        '/data/user/0/com.dvda.maker/files/linked',
+        '/data/user/999/com.dvda.maker/files/saf-mirror/source',
       );
-      expect(taskValues['DVDA_FINAL_DIR'], kDefaultTaskOutputDir);
+      expect(
+        taskValues['DVDA_BUILD_DIR'],
+        '/data/user/999/com.dvda.maker/files/build',
+      );
+      expect(
+        taskValues['DVDA_FINAL_DIR'],
+        '/data/user/999/com.dvda.maker/files/output',
+      );
       expect(
         taskValues['DVDA_MLP_EXTERNAL_DIR'],
-        '/data/user/0/com.dvda.maker/files/external',
+        '/data/user/999/com.dvda.maker/files/saf-mirror/external',
       );
 
       final saved =
@@ -399,6 +415,213 @@ void main() {
       expect(savedValues['DVDA_FINAL_DIR'], '/sdcard/Download/DSH-Go');
     },
   );
+
+  testWidgets('initialize drops staging paths from another app sandbox', (
+    tester,
+  ) async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    controller.settings.sourceStagingPath =
+        '/data/user/0/com.dvda.maker/files/saf-mirror/old';
+    controller.settings.externalStagingPath =
+        '/data/user/0/com.dvda.maker/files/saf-links/old';
+    controller.settings.sourceTreeUri = 'content://documents/tree/source';
+    controller.settings.fontSc = '/sdcard/fonts/unreadable.ttf';
+    controller.settings.fontJp =
+        '/data/user/999/com.dvda.maker/files/fonts/jp.ttf';
+    const channel = MethodChannel('dvda/platform');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'appPaths') {
+        return <String, Object?>{
+          'filesDir': '/data/user/999/com.dvda.maker/files',
+          'buildDir': '/data/user/999/com.dvda.maker/files/build',
+          'outputDir': '/data/user/999/com.dvda.maker/files/output',
+        };
+      }
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+
+    await controller.initialize();
+
+    expect(controller.settings.sourceStagingPath, isEmpty);
+    expect(controller.settings.externalStagingPath, isEmpty);
+    expect(
+      controller.settings.appWorkDir,
+      '/data/user/999/com.dvda.maker/files/build',
+    );
+    expect(controller.settings.sourceTreeUri, isNotEmpty);
+    expect(controller.settings.fontSc, kDefaultFont);
+    expect(
+      controller.settings.fontJp,
+      '/data/user/999/com.dvda.maker/files/fonts/jp.ttf',
+    );
+  });
+
+  testWidgets('an empty staging path is rebuilt from its SAF grant', (
+    tester,
+  ) async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    controller.settings.sourceStagingPath = '';
+    controller.settings.sourceTreeUri = 'content://documents/tree/source';
+    controller.settings.menu = true;
+    var relinked = false;
+    const channel = MethodChannel('dvda/platform');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'ensureSourceLink') {
+        relinked = true;
+        return <String, Object?>{
+          'displayPath': '/sdcard/Music',
+          'nativePath': '/data/user/0/com.dvda.maker/files/saf-mirror/rebuilt',
+          'treeUri': 'content://documents/tree/source',
+        };
+      }
+      if (call.method == 'validateReadableFont') {
+        return false;
+      }
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+
+    final outcome = await controller.runAction('prepare');
+
+    expect(relinked, isTrue);
+    expect(
+      controller.settings.sourceStagingPath,
+      '/data/user/0/com.dvda.maker/files/saf-mirror/rebuilt',
+    );
+    expect(outcome?.message, contains('menu font'));
+  });
+
+  testWidgets('a freshly picked folder rebuilds its mirror before the task', (
+    tester,
+  ) async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    controller.settings.appFilesDir = '/data/user/0/com.dvda.maker/files';
+    controller.settings.sourceTreeUri = 'content://documents/tree/source';
+    controller.settings.sourceStagingPath = '';
+    controller.settings.sourceMirrorDirty = true;
+    controller.settings.menu = true;
+    var rebuilt = false;
+    const channel = MethodChannel('dvda/platform');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'linkDirectory') {
+        rebuilt = true;
+        return <String, Object?>{
+          'displayPath': '/sdcard/Music',
+          'nativePath': '/data/user/0/com.dvda.maker/files/saf-mirror/rebuilt',
+          'treeUri': 'content://documents/tree/source',
+        };
+      }
+      if (call.method == 'validateReadableFont') {
+        return false;
+      }
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+
+    final outcome = await controller.runAction('prepare');
+
+    expect(rebuilt, isTrue);
+    expect(
+      controller.settings.sourceStagingPath,
+      '/data/user/0/com.dvda.maker/files/saf-mirror/rebuilt',
+    );
+    expect(controller.settings.sourceMirrorDirty, isFalse);
+    expect(outcome?.message, contains('menu font'));
+  });
+
+  testWidgets('a broken SAF mirror reports the platform reason', (
+    tester,
+  ) async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    controller.settings.appFilesDir = '/data/user/0/com.dvda.maker/files';
+    controller.settings.sourceTreeUri = 'content://documents/tree/broken';
+    controller.settings.sourceStagingPath = '';
+    const channel = MethodChannel('dvda/platform');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'ensureSourceLink') {
+        throw PlatformException(
+          code: 'SAF_MIRROR',
+          message: 'Cannot read the file broken.flac',
+        );
+      }
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+
+    final outcome = await controller.runAction('prepare');
+
+    expect(outcome?.ok, isFalse);
+    expect(outcome?.message, contains('Cannot read the file broken.flac'));
+    expect(controller.isRunning, isFalse);
+    expect(controller.settings.sourceStagingPath, isEmpty);
+  });
+
+  testWidgets('app path initialization failure stays readable', (tester) async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    // An unmocked platform channel would never answer inside the fake-async
+    // widget-test zone, so surface the failure through an explicit exception.
+    const channel = MethodChannel('dvda/platform');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'appPaths') {
+        throw PlatformException(
+          code: 'APP_PATHS',
+          message: 'app-private directories are unavailable',
+        );
+      }
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+
+    await controller.initialize();
+    expect(controller.initError, isNotNull);
+    controller.settings.sourceTreeUri = 'content://documents/tree/source';
+    final outcome = await controller.runAction('prepare');
+
+    expect(outcome?.ok, isFalse);
+    expect(outcome?.message, contains('app-private'));
+    expect(await controller.checkUnfinished(), isFalse);
+  });
 
   test('build validation requires SAF source and output selections', () async {
     final controller = await _controller();

@@ -105,7 +105,7 @@ class PlatformService {
     return DirectorySelection.fromMap(result);
   }
 
-  /// Rebuilds the native link tree for a persisted SAF directory.
+  /// Returns canonical app-private roots supplied by the running Android shell.
   Future<Map<String, String>?> appPaths() async {
     final result = await _invoke<Object?>('appPaths');
     if (result is! Map) {
@@ -125,11 +125,30 @@ class PlatformService {
     return DirectorySelection.fromMap(result);
   }
 
+  /// Checks that [path] is a readable directory inside the current filesDir.
+  Future<bool> validatePrivateDirectory(String path) async {
+    final result = await _invoke<Object?>(
+      'validatePrivateDirectory',
+      <String, Object?>{'path': path},
+    );
+    return result == true;
+  }
+
+  /// Rebuilds the native mirror for a persisted SAF directory.
   Future<DirectorySelection?> linkDirectory(String treeUri) async {
     final result = await _invoke<Object?>('linkDirectory', <String, Object?>{
       'treeUri': treeUri,
     });
     return DirectorySelection.fromMap(result);
+  }
+
+  /// Checks a system font or an imported font under the current filesDir.
+  Future<bool> validateReadableFont(String path) async {
+    final result = await _invoke<Object?>(
+      'validateReadableFont',
+      <String, Object?>{'path': path},
+    );
+    return result == true;
   }
 
   /// Recursively exports an app-private directory into a granted SAF tree.

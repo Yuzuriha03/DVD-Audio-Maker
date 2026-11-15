@@ -286,19 +286,48 @@ pub fn record(
 /// entry cannot be read, or a directory link leads back to an ancestor.
 pub fn enumerate_sources(root: &Path) -> Result<Vec<String>, Failure> {
     let mut result = Vec::new();
-    if !root.is_dir() {
-        return Ok(result);
+    match fs::metadata(root) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(result),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(result),
+        Err(error) => {
+            return Err(Failure::new(
+                "Io",
+                &format!("Cannot access source directory {}: {error}", root.display()),
+            ));
+        }
     }
     let mut pending = vec![(root.to_path_buf(), Vec::new())];
     while let Some((path, mut ancestors)) = pending.pop() {
         // Preserve distinct directory aliases. Only ancestor cycles are rejected.
-        let canonical = fs::canonicalize(&path)?;
+        let canonical = fs::canonicalize(&path).map_err(|error| {
+            Failure::new(
+                "Io",
+                &format!(
+                    "Cannot resolve source directory {}: {error}",
+                    path.display()
+                ),
+            )
+        })?;
         if ancestors.contains(&canonical) {
             return Err(Failure::new("Io", "Source directory contains a link cycle"));
         }
         ancestors.push(canonical);
-        for item in fs::read_dir(path)? {
-            let item = item?;
+        for item in fs::read_dir(&path).map_err(|error| {
+            Failure::new(
+                "Io",
+                &format!(
+                    "Cannot enumerate source directory {}: {error}",
+                    path.display()
+                ),
+            )
+        })? {
+            let item = item.map_err(|error| {
+                Failure::new(
+                    "Io",
+                    &format!("Cannot read an entry in {}: {error}", path.display()),
+                )
+            })?;
             let path = item.path();
             if path.is_dir() {
                 pending.push((path, ancestors.clone()));

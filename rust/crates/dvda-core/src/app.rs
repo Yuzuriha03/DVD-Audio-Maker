@@ -254,8 +254,10 @@ impl AppOptions {
     /// # Errors
     /// Returns an error if the temporary task workspace cannot be created.
     pub fn scratch_options(&self) -> Result<Self, String> {
-        let workspace =
-            std::sync::Arc::new(crate::workspace::Workspace::create(Path::new(""), false)?);
+        let workspace = std::sync::Arc::new(crate::workspace::Workspace::create(
+            &self.path("BuildDirectory"),
+            false,
+        )?);
         Ok(self.clone().bind_workspace(workspace))
     }
 
@@ -581,7 +583,10 @@ pub fn run_verify_mode(
             callbacks,
         ));
     }
-    let workspace = std::sync::Arc::new(crate::workspace::Workspace::create(Path::new(""), false)?);
+    let workspace = std::sync::Arc::new(crate::workspace::Workspace::create(
+        &options.path("BuildDirectory"),
+        false,
+    )?);
     let options = options.clone().bind_workspace(workspace);
     if matches!(mode, verify::Mode::Capacity | verify::Mode::Timeline)
         || (mode == verify::Mode::Menu && iso.is_some())

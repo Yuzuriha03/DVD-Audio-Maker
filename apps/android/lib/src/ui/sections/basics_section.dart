@@ -66,8 +66,11 @@ class BasicsSection extends StatelessWidget {
                   settings.source,
                   (selection) => controller.update(() {
                     settings.source = selection.displayPath;
-                    settings.sourceStagingPath = selection.nativePath;
                     settings.sourceTreeUri = selection.treeUri;
+                    // The mirror is built when a task starts, so the picker
+                    // never blocks on copying a large folder.
+                    settings.sourceStagingPath = '';
+                    settings.sourceMirrorDirty = true;
                   }),
                 ),
               ),

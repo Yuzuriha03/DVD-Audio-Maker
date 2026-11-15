@@ -136,6 +136,8 @@ class AppController extends ChangeNotifier {
     required this.platform,
   });
 
+  static bool _bridgeInitialized = false;
+
   final AppSettings settings;
   final SettingsStore store;
   final PlatformService platform;
@@ -155,6 +157,7 @@ class AppController extends ChangeNotifier {
   DateTime? _startedAt;
   int _elapsedSeconds = 0;
   bool _disposed = false;
+  bool _runtimePathsReady = true;
   String _lastNotificationSignature = '';
 
   TaskPhase get phase => _phase;
@@ -214,26 +217,43 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
+    if (!_bridgeInitialized) {
+      try {
+        await AppBridge.init();
+        _bridgeInitialized = true;
+      } catch (error) {
+        _initError = error.toString();
+      }
+    }
+    Map<String, String>? paths;
     try {
-      await AppBridge.init();
+      paths = await platform.appPaths();
     } catch (error) {
+      paths = null;
       _initError = error.toString();
     }
-    final paths = await platform.appPaths();
-    if (paths != null) {
-      final build = paths['buildDir'];
-      final output = paths['outputDir'];
-      if (build != null && build.isNotEmpty) {
-        settings.appWorkDir = build;
-      }
-      if (output != null && output.isNotEmpty) {
-        settings.appOutputDir = output;
-      }
+    final files = paths?['filesDir'];
+    final build = paths?['buildDir'];
+    final output = paths?['outputDir'];
+    if (files != null &&
+        files.isNotEmpty &&
+        build != null &&
+        build.isNotEmpty &&
+        output != null &&
+        output.isNotEmpty) {
+      _runtimePathsReady = true;
+      settings.appFilesDir = files;
+      settings.appWorkDir = build;
+      settings.appOutputDir = output;
+    } else {
+      _runtimePathsReady = false;
+      _initError ??= 'Cannot access the app-private working directories';
     }
-    if (settings.sourceStagingPath.contains('/saf-links/')) {
+    _normalizeFontPaths();
+    if (!_isCurrentPrivatePath(settings.sourceStagingPath)) {
       settings.sourceStagingPath = '';
     }
-    if (settings.externalStagingPath.contains('/saf-links/')) {
+    if (!_isCurrentPrivatePath(settings.externalStagingPath)) {
       settings.externalStagingPath = '';
     }
     await persistNow();
@@ -284,14 +304,14 @@ class AppController extends ChangeNotifier {
     final values = Map<String, String>.from(profile['Values']! as Map);
     values['DVDA_SRC'] = settings.sourceStagingPath;
     values['DVDA_FINAL_DIR'] = settings.appOutputDir;
-    values['DVDA_BUILD_DIR'] = kDefaultWorkDir;
+    values['DVDA_BUILD_DIR'] = settings.effectiveWorkDir;
     values['DVDA_MLP_EXTERNAL_DIR'] = settings.externalStagingPath;
     profile['Values'] = values;
     return jsonEncode(profile);
   }
 
   Future<bool> checkUnfinished() async {
-    if (isRunning) {
+    if (isRunning || !_runtimePathsReady) {
       return false;
     }
     await persistNow();
@@ -305,7 +325,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<bool> discardProgress() async {
-    if (isRunning) {
+    if (isRunning || !_runtimePathsReady) {
       return false;
     }
     await persistNow();
@@ -322,6 +342,7 @@ class AppController extends ChangeNotifier {
     if (isRunning) {
       return null;
     }
+    _normalizeFontPaths();
     final validationError = _validateAction(action);
     if (validationError != null) {
       _phase = TaskPhase.failure;
@@ -330,28 +351,39 @@ class AppController extends ChangeNotifier {
       _notify();
       return TaskOutcome.failure(validationError);
     }
-    if (!await _ensureSourceReady()) {
-      _phase = TaskPhase.failure;
-      _message = strings.selectSourceRequired;
-      _logText = _message;
-      _notify();
-      return TaskOutcome.failure(_message);
+    if (!_runtimePathsReady) {
+      return _failBeforeTask(
+        _initError ?? 'Cannot access the app-private working directories',
+      );
     }
     // Claim the running state before the first await so a double tap cannot
-    // start two concurrent native tasks.
-    _phase = TaskPhase.running;
-    _activeAction = action;
-    _cancelRequested = false;
-    _done = 0;
-    _total = 0;
-    _progressText = '';
-    _logText = '';
-    _message = '';
-    _diagnostics = const <AppDiagnostic>[];
-    _startedAt = DateTime.now();
-    _elapsedSeconds = 0;
-    _notify();
+    // start two concurrent native tasks. The SAF mirror for a newly picked
+    // folder is built here, which can take a while for a large folder.
+    _beginAction(action);
     await persistNow();
+    if (_disposed) {
+      return null;
+    }
+    if (action != 'status' && action != 'discard') {
+      final sourceError = await _ensureSourceReady();
+      if (sourceError != null) {
+        return _failBeforeTask(sourceError);
+      }
+      if (settings.audioMode == 'external') {
+        final externalError = await _ensureExternalReady();
+        if (externalError != null) {
+          return _failBeforeTask(externalError);
+        }
+      }
+      if (_cancelRequested) {
+        _applyOutcome(action, TaskOutcome.failure(''), cancelled: true);
+        return null;
+      }
+      final fontError = await _fontPathError();
+      if (fontError != null) {
+        return _failBeforeTask(fontError);
+      }
+    }
     if (_disposed) {
       return null;
     }
@@ -433,23 +465,147 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  Future<bool> _ensureSourceReady() async {
-    if (settings.sourceTreeUri.isEmpty) {
+  void _normalizeFontPaths() {
+    String normalize(String value, String fallback) {
+      final font = value.trim();
+      if (font.startsWith('${settings.appFilesDir}/fonts/')) {
+        return font;
+      }
+      return AppSettings.portableFont(font, fallback);
+    }
+
+    settings.fontSc = normalize(settings.fontSc, kDefaultFont);
+    settings.fontJp = normalize(settings.fontJp, '');
+    settings.fontKr = normalize(settings.fontKr, '');
+  }
+
+  Future<String?> _fontPathError() async {
+    if (!settings.menu) {
+      return null;
+    }
+    final paths = <String>[
+      settings.fontSc.trim().isEmpty ? kDefaultFont : settings.fontSc.trim(),
+      settings.fontJp.trim(),
+      settings.fontKr.trim(),
+    ];
+    for (final path in paths.where((path) => path.isNotEmpty)) {
+      try {
+        if (!await platform.validateReadableFont(path)) {
+          return 'Cannot read menu font: $path';
+        }
+      } catch (_) {
+        return 'Cannot read menu font: $path';
+      }
+    }
+    return null;
+  }
+
+  void _beginAction(String action) {
+    _phase = TaskPhase.running;
+    _activeAction = action;
+    _cancelRequested = false;
+    _done = 0;
+    _total = 0;
+    _progressText = '';
+    _logText = '';
+    _message = '';
+    _diagnostics = const <AppDiagnostic>[];
+    _startedAt = DateTime.now();
+    _elapsedSeconds = 0;
+    _notify();
+  }
+
+  TaskOutcome _failBeforeTask(String message) {
+    _stopPolling();
+    _startedAt = null;
+    _cancelRequested = false;
+    _phase = TaskPhase.failure;
+    _message = message;
+    _logText = message;
+    _notify();
+    return TaskOutcome.failure(message);
+  }
+
+  bool _isCurrentPrivatePath(String path) {
+    if (path.isEmpty) {
       return true;
     }
+    final root = settings.appFilesDir;
+    return root.isNotEmpty &&
+        path.startsWith('$root/saf-mirror/') &&
+        !path.contains('/saf-links/');
+  }
+
+  Future<String?> _ensureSourceReady() => _ensureNativeInput(
+    treeUri: settings.sourceTreeUri,
+    nativePath: settings.sourceStagingPath,
+    missingMessage: strings.selectSourceRequired,
+    force: settings.sourceMirrorDirty,
+    apply: (path) => settings.sourceStagingPath = path,
+    markClean: () => settings.sourceMirrorDirty = false,
+  );
+
+  Future<String?> _ensureExternalReady() => _ensureNativeInput(
+    treeUri: settings.externalTreeUri,
+    nativePath: settings.externalStagingPath,
+    missingMessage: strings.selectExternalRequired,
+    force: settings.externalMirrorDirty,
+    apply: (path) => settings.externalStagingPath = path,
+    markClean: () => settings.externalMirrorDirty = false,
+  );
+
+  /// Returns null when the app-private input for a SAF tree is ready, or the
+  /// message that must be shown when it cannot be prepared.
+  Future<String?> _ensureNativeInput({
+    required String treeUri,
+    required String nativePath,
+    required String missingMessage,
+    required bool force,
+    required ValueChanged<String> apply,
+    required VoidCallback markClean,
+  }) async {
+    if (treeUri.isEmpty) {
+      if (nativePath.isEmpty) {
+        return missingMessage;
+      }
+      if (!_isCurrentPrivatePath(nativePath)) {
+        apply('');
+        return missingMessage;
+      }
+      try {
+        if (await platform.validatePrivateDirectory(nativePath)) {
+          return null;
+        }
+      } catch (error) {
+        apply('');
+        return error.toString();
+      }
+      apply('');
+      return missingMessage;
+    }
+    DirectorySelection? linked;
     try {
-      final linked = await platform.ensureSourceLink(settings.sourceTreeUri);
-      if (linked == null || linked.nativePath.isEmpty) {
-        return false;
-      }
-      if (settings.sourceStagingPath != linked.nativePath) {
-        settings.sourceStagingPath = linked.nativePath;
-        await persistNow();
-      }
-      return true;
-    } catch (_) {
-      return false;
+      linked = force
+          ? await platform.linkDirectory(treeUri)
+          : await platform.ensureSourceLink(treeUri);
+    } catch (error) {
+      apply('');
+      markClean();
+      return error.toString();
     }
+    final path = linked?.nativePath ?? '';
+    markClean();
+    if (path.isEmpty || !_isCurrentPrivatePath(path)) {
+      apply('');
+      return linked == null
+          ? missingMessage
+          : 'Cannot read the selected folder: ${linked.displayPath}';
+    }
+    if (nativePath != path) {
+      apply(path);
+      await persistNow();
+    }
+    return null;
   }
 
   Future<bool> openOutputFolder() {
@@ -472,14 +628,15 @@ class AppController extends ChangeNotifier {
     if (action == 'status' || action == 'discard') {
       return null;
     }
-    if (settings.sourceStagingPath.isEmpty) {
+    if (settings.sourceStagingPath.isEmpty && settings.sourceTreeUri.isEmpty) {
       return strings.selectSourceRequired;
     }
     if (action != 'prepare' && settings.finalTreeUri.isEmpty) {
       return strings.selectFinalRequired;
     }
     if (settings.audioMode == 'external' &&
-        settings.externalStagingPath.isEmpty) {
+        settings.externalStagingPath.isEmpty &&
+        settings.externalTreeUri.isEmpty) {
       return strings.selectExternalRequired;
     }
     return null;

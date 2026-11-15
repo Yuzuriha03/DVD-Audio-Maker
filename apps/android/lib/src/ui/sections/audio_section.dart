@@ -21,8 +21,10 @@ class AudioSection extends StatelessWidget {
       }
       controller.update(() {
         controller.settings.externalDir = picked.displayPath;
-        controller.settings.externalStagingPath = picked.nativePath;
         controller.settings.externalTreeUri = picked.treeUri;
+        // Mirror on demand: see BasicsSection's source folder handling.
+        controller.settings.externalStagingPath = '';
+        controller.settings.externalMirrorDirty = true;
       });
     } catch (error) {
       if (!context.mounted) {

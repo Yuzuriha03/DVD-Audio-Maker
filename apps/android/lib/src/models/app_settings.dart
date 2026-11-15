@@ -7,7 +7,8 @@ const String kDefaultFont = '/system/fonts/NotoSansCJK-Regular.ttc';
 ///
 /// The Android shell keeps the historical application id
 /// `com.dvda.maker`, so the Rust core (same UID) can write this path.
-const String kDefaultWorkDir = '/data/user/0/com.dvda.maker/files/build';
+const String kDefaultAppFilesDir = '/data/user/0/com.dvda.maker/files';
+const String kDefaultWorkDir = '$kDefaultAppFilesDir/build';
 const String kDefaultTaskOutputDir = '/data/user/0/com.dvda.maker/files/output';
 
 const int kDvd5Bytes = 4707319808;
@@ -89,6 +90,19 @@ class AppSettings {
     return allowed.contains(value) ? value : fallback;
   }
 
+  static String portableFont(String value, String fallback) {
+    final font = value.trim();
+    final windowsPath = RegExp(r'^[A-Za-z]:[\\/]').hasMatch(font);
+    final publicAndroidPath =
+        font.startsWith('/sdcard/') || font.startsWith('/storage/');
+    final stalePrivatePath =
+        font.startsWith('/data/user/') || font.startsWith('/data/data/');
+    if (windowsPath || publicAndroidPath || stalePrivatePath) {
+      return fallback;
+    }
+    return font;
+  }
+
   int get discBytes {
     if (capacity == 1) {
       return kDvd9Bytes;
@@ -127,8 +141,14 @@ class AppSettings {
     return parsed;
   }
 
+  String appFilesDir = kDefaultAppFilesDir;
   String appWorkDir = kDefaultWorkDir;
   String appOutputDir = kDefaultTaskOutputDir;
+
+  /// Set when the user picks a folder, so the next task rebuilds that SAF
+  /// mirror instead of reusing a stale copy. Transient: never persisted.
+  bool sourceMirrorDirty = false;
+  bool externalMirrorDirty = false;
 
   String get effectiveWorkDir => appWorkDir;
 
@@ -251,9 +271,9 @@ class AppSettings {
     tracksPerPage = textValue('DVDA_MENU_TRACKS_PER_PAGE', tracksPerPage);
     coverDim = textValue('DVDA_MENU_COVER_DIM', coverDim);
     norm = _allowed(kVideoStandards, textValue('DVDA_MENU_NORM', norm), norm);
-    fontSc = textValue('DVDA_MENU_FONT', fontSc);
-    fontJp = textValue('DVDA_MENU_FONT_JP', fontJp);
-    fontKr = textValue('DVDA_MENU_FONT_KR', fontKr);
+    fontSc = portableFont(textValue('DVDA_MENU_FONT', fontSc), fontSc);
+    fontJp = portableFont(textValue('DVDA_MENU_FONT_JP', fontJp), fontJp);
+    fontKr = portableFont(textValue('DVDA_MENU_FONT_KR', fontKr), fontKr);
 
     if (values.containsKey('DVDA_DISC_BYTES')) {
       final raw = textValue('DVDA_DISC_BYTES', '');

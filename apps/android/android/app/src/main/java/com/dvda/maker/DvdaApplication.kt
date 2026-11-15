@@ -47,15 +47,6 @@ class DvdaApplication : Application() {
                 }
             }
         }
-        runCatching {
-            val dir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "DSH-Go",
-            )
-            if (dir.isDirectory || dir.mkdirs()) {
-                File(dir, name).writeText(text)
-            }
-        }
     }
 
     private fun installCrashHandler() {

@@ -26,7 +26,7 @@ impl Workspace {
     /// ancestor, an unowned existing task directory, or a filesystem failure
     /// while locking, creating, or resetting the task and its ownership marker.
     pub fn create_task(build: &Path, retain: bool, restart: Option<bool>) -> Result<Self, String> {
-        fs::create_dir_all(build).map_err(|e| e.to_string())?;
+        create_directories(build)?;
         reject_reparse(build)?;
         let path = build.join("unfinished-task");
         if Self::unfinished(build) && restart.is_none() {
@@ -38,7 +38,7 @@ impl Workspace {
         let task = Self::open(path, retain)?;
         if restart == Some(true) {
             fs::remove_dir_all(&task.path).map_err(|e| e.to_string())?;
-            fs::create_dir_all(&task.path).map_err(|e| e.to_string())?;
+            create_directories(&task.path)?;
             fs::write(task.path.join(".owner"), b"dvda-task-v1").map_err(|e| e.to_string())?;
         }
         Ok(task)
@@ -54,16 +54,31 @@ impl Workspace {
         let root = if resume {
             build.join("unfinished-task")
         } else {
-            std::env::temp_dir().join("DVD-Audio-Maker-tasks")
+            #[cfg(target_os = "android")]
+            {
+                scratch_root(build)?
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                scratch_root(build)
+            }
         };
         if resume {
-            fs::create_dir_all(build).map_err(|e| e.to_string())?;
+            create_directories(build)?;
             reject_reparse(build)?;
             return Self::open(root, true);
         }
-        fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        create_directories(&root)?;
         reject_reparse(&root)?;
-        for entry in fs::read_dir(&root).map_err(|e| e.to_string())?.flatten() {
+        for entry in fs::read_dir(&root)
+            .map_err(|error| {
+                format!(
+                    "Cannot enumerate task workspace {}: {error}",
+                    root.display()
+                )
+            })?
+            .flatten()
+        {
             let path = entry.path();
             if !entry.file_name().to_string_lossy().starts_with("task-")
                 || !entry.file_type().is_ok_and(|t| t.is_dir())
@@ -139,7 +154,7 @@ impl Workspace {
         if retain_unfinished && path.join(".finished").exists() {
             fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
         }
-        fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+        create_directories(&path)?;
         fs::write(path.join(".owner"), b"dvda-task-v1").map_err(|e| e.to_string())?;
         Ok(Self {
             path,
@@ -175,18 +190,57 @@ impl Drop for Workspace {
     }
 }
 
+fn create_directories(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(|error| {
+        format!(
+            "Cannot create task workspace directory {}: {error}",
+            path.display()
+        )
+    })
+}
+
+#[cfg(target_os = "android")]
+fn scratch_root(build: &Path) -> Result<PathBuf, String> {
+    if build.as_os_str().is_empty() {
+        return Err("Android task workspace requires an app-private build directory".into());
+    }
+    Ok(build.join("scratch-tasks"))
+}
+
+#[cfg(not(target_os = "android"))]
+fn scratch_root(_build: &Path) -> PathBuf {
+    std::env::temp_dir().join("DVD-Audio-Maker-tasks")
+}
+
+#[cfg(target_os = "android")]
+fn reject_reparse(path: &Path) -> Result<(), String> {
+    use crate::platform::MetadataExt;
+    // Do not stat /data, /data/user or other platform-owned ancestors. Android
+    // deliberately denies those probes on some builds, and /data/user/<id> is
+    // itself a system alias. The Flutter shell supplies only app-private roots
+    // and its SAF mirror contains regular files/directories, never symlinks.
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| format!("Cannot inspect task workspace {}: {error}", path.display()))?;
+    if metadata.file_attributes() & 0x400 != 0 {
+        return Err(format!(
+            "Task workspace cannot be a reparse point: {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
 fn reject_reparse(path: &Path) -> Result<(), String> {
     use crate::platform::MetadataExt;
     for ancestor in path.ancestors() {
-        // Android exposes the per-user app sandbox through platform aliases such as
-        // /data/user/0. These are trusted system mounts, not workspace-controlled
-        // symlinks, and every app path necessarily traverses them.
-        #[cfg(target_os = "android")]
-        if ancestor == Path::new("/data/user/0") || ancestor == Path::new("/data/data") {
-            continue;
-        }
         if fs::symlink_metadata(ancestor)
-            .map_err(|e| e.to_string())?
+            .map_err(|error| {
+                format!(
+                    "Cannot inspect task workspace {}: {error}",
+                    ancestor.display()
+                )
+            })?
             .file_attributes()
             & 0x400
             != 0
