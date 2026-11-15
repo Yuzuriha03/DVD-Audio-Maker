@@ -1,40 +1,21 @@
-//! Advisory space checks, using the same estimates as the former desktop.
-#[cfg(not(windows))]
+//! Advisory free-space checks, shared by every platform.
+//!
+//! One implementation estimates the required bytes and formats the advisories;
+//! only the two operating-system queries below differ per platform.
 use crate::{
     build::Job,
     disc::{Disc, Track},
+    workflow,
 };
-#[cfg(not(windows))]
 use dvda_native::media::Callbacks;
-#[cfg(not(windows))]
-use serde_json::Value;
-
-#[cfg(not(windows))]
-pub fn check(
-    _job: &Job,
-    _tracks: &[Track],
-    _discs: Option<&[Disc]>,
-    _caller: &mut dyn Callbacks,
-) -> Result<Vec<Value>, String> {
-    // The Android app does not surface free-space advisories; keep the hook so
-    // the build pipeline stays identical to the desktop entrypoint.
-    Ok(Vec::new())
-}
+use serde_json::{Value, json};
+use std::path::Path;
 
 #[cfg(windows)]
-mod windows {
-    //! Advisory space checks, using the same estimates as the former desktop.
-    use crate::{
-        build::Job,
-        disc::{Disc, Track},
-        workflow,
-    };
-    use dvda_native::media::Callbacks;
-    use serde_json::{Value, json};
-    use std::{
-        os::windows::ffi::OsStrExt,
-        path::{Component, Path},
-    };
+mod platform {
+    //! Win32 free-space query.
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Component, Path, PathBuf};
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -45,11 +26,13 @@ mod windows {
             free: *mut u64,
         ) -> i32;
     }
-    fn root(path: &Path) -> String {
+
+    /// Volume root (for example `C:\\`) that owns `path`.
+    pub(super) fn volume_root(path: &Path) -> String {
         let Ok(path) = std::path::absolute(path) else {
             return "?".into();
         };
-        let mut root = std::path::PathBuf::new();
+        let mut root = PathBuf::new();
         for part in path.components() {
             if matches!(part, Component::Prefix(_) | Component::RootDir) {
                 root.push(part.as_os_str());
@@ -59,7 +42,9 @@ mod windows {
         }
         root.to_string_lossy().into_owned()
     }
-    fn available(root: &str) -> Option<u64> {
+
+    /// Free bytes on the volume named by `root`, or None when unreadable.
+    pub(super) fn available(root: &str) -> Option<u64> {
         let wide: Vec<_> = std::ffi::OsStr::new(root)
             .encode_wide()
             .chain(Some(0))
@@ -76,60 +61,93 @@ mod windows {
         } != 0)
             .then_some(bytes)
     }
-    /// Returns advisory low-space diagnostics for the job's estimated volume usage.
-    /// An unavailable free-space reading is logged as unknown, not treated as an error.
-    ///
-    /// # Errors
-    /// Returns an error if requirement estimation fails, or its response is not an
-    /// array of entries with a string volume root and an unsigned byte requirement.
-    pub fn check(
-        job: &Job,
-        tracks: &[Track],
-        discs: Option<&[Disc]>,
-        caller: &mut dyn Callbacks,
-    ) -> Result<Vec<Value>, String> {
-        let groups = workflow::dispatch(
-            "disk.estimate_requirements",
-            json!({
-                "MlpSource":job.mlp_source, "MlpRoot":root(Path::new(&job.mlp_external_directory)),
-                "BuildRoot":root(&job.build_directory), "OutputRoot":root(&job.output_root),
-                "FinalRoot":root(&job.final_directory), "KeepIntermediate":job.keep_intermediate,
-                "MenuEnabled":job.menu_enabled, "SampleRate":job.mlp_sample_rate, "Bits":job.mlp_bits,
-                "Tracks":tracks,"Discs":discs
-            }),
-        )?;
-        let mut diagnostics = Vec::new();
-        for group in groups.as_array().ok_or("Invalid disk estimate")? {
-            let root = group["Root"].as_str().ok_or("Missing volume root")?;
-            let purpose = group["Purpose"].as_str().unwrap_or_default();
-            let required = group["RequiredBytes"]
-                .as_u64()
-                .ok_or("Invalid disk estimate")?;
-            if let Some(available) = available(root) {
-                caller.emit(
-                    1,
-                    &format!(
-                        "[space] {root}: {purpose}, required {required} B, available {available} B"
-                    ),
-                );
-                if available < required {
-                    let message = format!(
-                        "{root} 上“{purpose}”预计需要 {required} 字节，但仅剩 {available} 字节。估算为保守值，仅供参考。"
-                    );
-                    caller.emit(2, &message);
-                    diagnostics
-                        .push(json!({"Severity":1,"Code":"DISK_SPACE_LOW","Message":message}));
-                }
-            } else {
-                caller.emit(
-                    1,
-                    &format!("[space] {root}: {purpose}, required {required} B, available unknown"),
-                );
-            }
+}
+
+#[cfg(not(windows))]
+mod platform {
+    //! POSIX `statvfs` free-space query.
+    use std::path::{Component, Path, PathBuf};
+
+    /// Volume root (for example `/data`) that owns `path`.
+    pub(super) fn volume_root(path: &Path) -> String {
+        let Ok(path) = std::path::absolute(path) else {
+            return "?".into();
+        };
+        let mut parts = path.components();
+        let mut root = PathBuf::new();
+        if matches!(parts.next(), Some(Component::RootDir)) {
+            root.push("/");
         }
-        Ok(diagnostics)
+        if let Some(first) = parts.next() {
+            root.push(first.as_os_str());
+        }
+        root.to_string_lossy().into_owned()
+    }
+
+    /// Free bytes on the filesystem named by `root`, or None when unreadable.
+    pub(super) fn available(root: &str) -> Option<u64> {
+        let path = std::ffi::CString::new(root).ok()?;
+        // SAFETY: statvfs only reads the NUL-terminated path and fills the
+        // provided structure when it succeeds.
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        if unsafe { libc::statvfs(path.as_ptr(), &raw mut stat) } != 0 {
+            return None;
+        }
+        let free = u64::try_from(stat.f_bavail).unwrap_or(0);
+        let unit = u64::try_from(stat.f_frsize).unwrap_or(0);
+        Some(free.saturating_mul(unit))
     }
 }
 
-#[cfg(windows)]
-pub use windows::check;
+/// Returns advisory low-space diagnostics for the job's estimated volume usage.
+/// An unavailable free-space reading is logged as unknown, not treated as an error.
+///
+/// # Errors
+/// Returns an error if requirement estimation fails, or its response is not an
+/// array of entries with a string volume root and an unsigned byte requirement.
+pub fn check(
+    job: &Job,
+    tracks: &[Track],
+    discs: Option<&[Disc]>,
+    caller: &mut dyn Callbacks,
+) -> Result<Vec<Value>, String> {
+    let groups = workflow::dispatch(
+        "disk.estimate_requirements",
+        json!({
+            "MlpSource":job.mlp_source, "MlpRoot":platform::volume_root(Path::new(&job.mlp_external_directory)),
+            "BuildRoot":platform::volume_root(&job.build_directory), "OutputRoot":platform::volume_root(&job.output_root),
+            "FinalRoot":platform::volume_root(&job.final_directory), "KeepIntermediate":job.keep_intermediate,
+            "MenuEnabled":job.menu_enabled, "SampleRate":job.mlp_sample_rate, "Bits":job.mlp_bits,
+            "Tracks":tracks,"Discs":discs
+        }),
+    )?;
+    let mut diagnostics = Vec::new();
+    for group in groups.as_array().ok_or("Invalid disk estimate")? {
+        let root = group["Root"].as_str().ok_or("Missing volume root")?;
+        let purpose = group["Purpose"].as_str().unwrap_or_default();
+        let required = group["RequiredBytes"]
+            .as_u64()
+            .ok_or("Invalid disk estimate")?;
+        if let Some(available) = platform::available(root) {
+            caller.emit(
+                1,
+                &format!(
+                    "[space] {root}: {purpose}, required {required} B, available {available} B"
+                ),
+            );
+            if available < required {
+                let message = format!(
+                    "{root} 上“{purpose}”预计需要 {required} 字节，但仅剩 {available} 字节。估算为保守值，仅供参考。"
+                );
+                caller.emit(2, &message);
+                diagnostics.push(json!({"Severity":1,"Code":"DISK_SPACE_LOW","Message":message}));
+            }
+        } else {
+            caller.emit(
+                1,
+                &format!("[space] {root}: {purpose}, required {required} B, available unknown"),
+            );
+        }
+    }
+    Ok(diagnostics)
+}

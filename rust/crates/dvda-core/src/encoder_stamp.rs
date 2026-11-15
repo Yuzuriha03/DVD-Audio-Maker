@@ -123,46 +123,30 @@ fn timestamp() -> Result<[u8; 20], Failure> {
 }
 
 #[cfg(not(windows))]
-fn civil_from_days(days: i64) -> (i64, u16, u16) {
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let day_of_era = z - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_position = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_position + 2) / 5 + 1;
-    let month = if month_position < 10 {
-        month_position + 3
-    } else {
-        month_position - 9
-    };
-    let year = if month <= 2 { year + 1 } else { year };
-    (
-        year,
-        u16::try_from(month).unwrap_or(1),
-        u16::try_from(day).unwrap_or(1),
-    )
-}
-
-#[cfg(not(windows))]
 fn timestamp() -> Result<[u8; 20], Failure> {
+    // Match the Windows GetLocalTime path: the encoder stamp carries local wall
+    // time, not UTC, so both platforms describe the same moment identically.
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| Failure::new("InvalidData", "Invalid system time"))?
         .as_secs();
-    let days = i64::try_from(seconds / 86_400).unwrap_or(0);
-    let remainder = seconds % 86_400;
-    let (year, month, day) = civil_from_days(days);
+    let seconds = libc::time_t::try_from(seconds)
+        .map_err(|_| Failure::new("InvalidData", "Invalid system time"))?;
+    // SAFETY: localtime_r writes into the provided tm on success and touches no
+    // global state.
+    let mut local: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&raw const seconds, &raw mut local) }.is_null() {
+        return Err(Failure::new("InvalidData", "Invalid local system time"));
+    }
+    let width = |value: i32| u16::try_from(value).unwrap_or(0);
     let now = LocalTime {
-        year: u16::try_from(year).unwrap_or(0),
-        month,
+        year: width(local.tm_year.saturating_add(1900)),
+        month: width(local.tm_mon.saturating_add(1)),
         weekday: 0,
-        day,
-        hour: u16::try_from(remainder / 3_600).unwrap_or(0),
-        minute: u16::try_from((remainder % 3_600) / 60).unwrap_or(0),
-        second: u16::try_from(remainder % 60).unwrap_or(0),
+        day: width(local.tm_mday),
+        hour: width(local.tm_hour),
+        minute: width(local.tm_min),
+        second: width(local.tm_sec),
         milliseconds: 0,
     };
     format_time(&now)

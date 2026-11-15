@@ -333,6 +333,7 @@ dependencies = [
  "dvda-image",
  "dvda-mlp",
  "dvda-native",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

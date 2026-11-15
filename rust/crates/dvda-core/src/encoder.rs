@@ -426,12 +426,14 @@ fn execute_with(job: &Job, caller: &mut dyn Callbacks) -> Outcome {
             ],
             callbacks: &mut callbacks,
         };
-        // Live metadata refresh is only implemented by the x86_64 encoder; other
-        // targets embed the static stamp packet captured at job start.
+        // Live metadata refresh is implemented by the pipeline encoder, which now
+        // also runs on Android; other targets embed the static stamp captured at
+        // job start.
         let encoded = encode_rust(
             &request,
             &mut stream,
-            crate::config::trim(&job.metadata_context).is_empty() && cfg!(target_arch = "x86_64"),
+            crate::config::trim(&job.metadata_context).is_empty()
+                && cfg!(any(target_arch = "x86_64", target_os = "android")),
         );
         stream.callbacks.check()?;
         let encoded = encoded.map_err(io_failure)?;
