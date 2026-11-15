@@ -319,6 +319,13 @@ class AppController extends ChangeNotifier {
       _notify();
       return TaskOutcome.failure(validationError);
     }
+    if (!await _ensureSourceReady()) {
+      _phase = TaskPhase.failure;
+      _message = strings.selectSourceRequired;
+      _logText = _message;
+      _notify();
+      return TaskOutcome.failure(_message);
+    }
     // Claim the running state before the first await so a double tap cannot
     // start two concurrent native tasks.
     _phase = TaskPhase.running;
@@ -413,6 +420,25 @@ class AppController extends ChangeNotifier {
       kDefaultTaskOutputDir,
       settings.finalTreeUri,
     );
+  }
+
+  Future<bool> _ensureSourceReady() async {
+    if (settings.sourceTreeUri.isEmpty) {
+      return true;
+    }
+    try {
+      final linked = await platform.ensureSourceLink(settings.sourceTreeUri);
+      if (linked == null || linked.nativePath.isEmpty) {
+        return false;
+      }
+      if (settings.sourceStagingPath != linked.nativePath) {
+        settings.sourceStagingPath = linked.nativePath;
+        await persistNow();
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> openOutputFolder() {

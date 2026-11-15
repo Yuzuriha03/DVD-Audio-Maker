@@ -106,6 +106,13 @@ class PlatformService {
   }
 
   /// Rebuilds the native link tree for a persisted SAF directory.
+  Future<DirectorySelection?> ensureSourceLink(String treeUri) async {
+    final result = await _invoke<Object?>('ensureSourceLink', <String, Object?>{
+      'treeUri': treeUri,
+    });
+    return DirectorySelection.fromMap(result);
+  }
+
   Future<DirectorySelection?> linkDirectory(String treeUri) async {
     final result = await _invoke<Object?>('linkDirectory', <String, Object?>{
       'treeUri': treeUri,

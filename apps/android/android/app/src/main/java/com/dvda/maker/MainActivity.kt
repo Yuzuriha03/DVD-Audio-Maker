@@ -121,7 +121,6 @@ class MainActivity : FlutterActivity() {
             // Remove mirror trees and any legacy /proc/self/fd symlink trees from
             // earlier versions before the first selection is mirrored.
             safExecutor.execute {
-                deleteTree(File(filesDir, SAF_MIRROR_DIRECTORY))
                 deleteTree(File(filesDir, LEGACY_LINK_DIRECTORY))
             }
         }
@@ -136,6 +135,12 @@ class MainActivity : FlutterActivity() {
                 val treeUri = call.argument<String>("treeUri").orEmpty()
                 safExecutor.execute {
                     result.success(if (treeUri.isEmpty()) null else linkDirectory(treeUri))
+                }
+            }
+            "ensureSourceLink" -> {
+                val treeUri = call.argument<String>("treeUri").orEmpty()
+                safExecutor.execute {
+                    result.success(if (treeUri.isEmpty()) null else ensureDirectoryLink(treeUri))
                 }
             }
             "exportDirectory" -> {
@@ -305,9 +310,30 @@ class MainActivity : FlutterActivity() {
         return directorySelection(uri, true)
     }
 
+    private fun mirrorMarker(key: String): File =
+        File(File(filesDir, SAF_MIRROR_DIRECTORY), "$key.complete")
+
+    private fun ensureDirectoryLink(treeUriText: String): Map<String, String>? {
+        val uri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return null
+        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
+            return null
+        }
+        val key = treeKey(uri)
+        val root = File(File(filesDir, SAF_MIRROR_DIRECTORY), key)
+        if (root.isDirectory && mirrorMarker(key).isFile) {
+            return mapOf(
+                "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
+                "nativePath" to root.canonicalPath,
+                "treeUri" to uri.toString(),
+            )
+        }
+        return linkDirectory(treeUriText)
+    }
+
     private fun mirrorTree(treeUri: Uri): String? {
         val key = treeKey(treeUri)
         val root = File(File(filesDir, SAF_MIRROR_DIRECTORY), key)
+        mirrorMarker(key).delete()
         deleteTree(root)
         if (!root.mkdirs() && !root.isDirectory) {
             return null
@@ -321,7 +347,8 @@ class MainActivity : FlutterActivity() {
             if (state.truncated) {
                 error("The granted SAF tree is too large or contains unreadable entries")
             }
-            root.absolutePath
+            mirrorMarker(key).writeText("v1")
+            root.canonicalPath
         }.getOrElse {
             deleteTree(root)
             null
