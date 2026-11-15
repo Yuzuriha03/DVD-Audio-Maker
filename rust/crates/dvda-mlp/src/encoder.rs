@@ -392,12 +392,12 @@ pub(crate) fn analyze(
     Ok((stats.matrix, quantization))
 }
 
-#[cfg(any(test, not(target_arch = "x86_64")))]
+#[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
 pub(crate) fn pair_matrix(c: &Config, profile: &format::Profile, pcm: &[i32]) -> u32 {
     batch_stats(c, profile, pcm).map_or(0, |stats| stats.matrix)
 }
 
-#[cfg(any(test, not(target_arch = "x86_64")))]
+#[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
 pub(crate) fn quantization(
     c: &Config,
     profile: &format::Profile,

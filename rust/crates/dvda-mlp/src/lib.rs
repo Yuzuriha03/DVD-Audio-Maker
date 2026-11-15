@@ -3,7 +3,7 @@
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 mod analysis;
 mod coefficients;
 #[allow(unsafe_code)]
@@ -13,13 +13,13 @@ mod entropy;
 pub mod ffi;
 pub mod format;
 pub mod metadata;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 mod output;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 mod pipeline;
 mod predict;
 mod streaming;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 mod syntax;
 mod timing;
 

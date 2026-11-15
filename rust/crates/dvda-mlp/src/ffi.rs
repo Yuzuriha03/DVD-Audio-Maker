@@ -1,4 +1,4 @@
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_os = "android")))]
 use crate::Error;
 use crate::{Config, format::Profile, metadata::Metadata};
 use std::ffi::{c_char, c_void};
@@ -255,7 +255,7 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
     // establishes the frame width. The adapters never escape this call.
     let mut reader = unsafe { callbacks::Reader::new(read, input, c.channels as usize) };
     let mut writer = unsafe { callbacks::Writer::new(write, output) };
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
     {
         let status = crate::pipeline::host::encode_stream(
             config,
@@ -278,7 +278,7 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
             fail(result, status, "Encoding failed; discard partial output")
         }
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_os = "android")))]
     {
         if stamp_refresh.is_some() {
             return fail(

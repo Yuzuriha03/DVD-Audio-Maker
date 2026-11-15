@@ -199,23 +199,23 @@ impl GroupSource<'_> {
         reason = "Midpoint fixtures preserve signed 24-bit reconstruction and protocol-width channel arithmetic"
     )]
     fn midpoint(&mut self, low: usize, ch: usize) -> i32 {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_os = "android"))]
         let mut value = crate::analysis::arithmetic::Extended::from_f64(0.0);
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(any(target_arch = "x86_64", target_os = "android")))]
         let mut value = 0.0;
         for (i, &coefficient) in crate::coefficients::COEFFICIENTS.iter().enumerate() {
             let sample = f64::from(
                 self.sample(low as isize - i as isize, ch)
                     + self.sample(low as isize + i as isize + 1, ch),
             );
-            #[cfg(target_arch = "x86_64")]
+            #[cfg(any(target_arch = "x86_64", target_os = "android"))]
             {
                 value = value.add(
                     crate::analysis::arithmetic::Extended::from_f64(sample)
                         .mul(crate::analysis::arithmetic::Extended::from_f64(coefficient)),
                 );
             }
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(not(any(target_arch = "x86_64", target_os = "android")))]
             {
                 value += sample * coefficient;
             }
@@ -225,13 +225,13 @@ impl GroupSource<'_> {
         let dither = f64::from(i32::from((u >> 8) as i8) + i32::from(u as i8))
             * 2f64.powi(16 - self.bits as i32);
         let step = 1i64 << (24 - self.bits);
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_os = "android"))]
         let rounded = value
             .add(crate::analysis::arithmetic::Extended::from_f64(dither))
             .to_f64()
             * 2f64.powi(self.bits as i32 - 24)
             + 0.5;
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(any(target_arch = "x86_64", target_os = "android")))]
         let rounded = (value + dither) * 2f64.powi(self.bits as i32 - 24) + 0.5;
         (rounded.floor() as i64 * step).clamp(-8_388_608, 8_388_608 - step) as i32
     }
