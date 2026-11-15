@@ -192,6 +192,27 @@ class PlatformService {
     await _invoke<Object?>('ensureStorageAccess');
   }
 
+  /// Publishes the ongoing task progress in the status bar and, on
+  /// Android 16+, as a promoted ongoing Live Update.
+  Future<void> updateStatusNotification({
+    required String title,
+    required String text,
+    double? progress,
+    required bool ongoing,
+  }) async {
+    await _invoke<Object?>('updateStatusNotification', <String, Object?>{
+      'title': title,
+      'text': text,
+      'progress': progress,
+      'ongoing': ongoing,
+    });
+  }
+
+  /// Removes the task notification.
+  Future<void> clearStatusNotification() async {
+    await _invoke<Object?>('clearStatusNotification');
+  }
+
   Future<T?> _invoke<T>(
     String method, [
     Map<String, Object?>? arguments,

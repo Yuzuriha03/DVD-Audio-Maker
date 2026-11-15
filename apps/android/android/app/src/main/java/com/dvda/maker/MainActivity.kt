@@ -1,7 +1,13 @@
 package com.dvda.maker
 
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ContentResolver
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -41,10 +47,25 @@ class MainActivity : FlutterActivity() {
     private var saveTextFileContent: String? = null
     private var pickFontResult: MethodChannel.Result? = null
     private var flutterSurfaceView: FlutterSurfaceView? = null
+    private var pendingNotification: NotificationPayload? = null
+    private var notificationPermissionRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        createNotificationChannel()
         applyAdaptiveFrameRate()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_NOTIFICATIONS && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            pendingNotification?.let { postStatusNotification(it) }
+        }
+        pendingNotification = null
     }
 
     override fun onFlutterSurfaceViewCreated(flutterSurfaceView: FlutterSurfaceView) {
@@ -86,6 +107,13 @@ class MainActivity : FlutterActivity() {
     }
 
     private data class SafChild(val uri: Uri, val isDirectory: Boolean)
+
+    private data class NotificationPayload(
+        val title: String,
+        val text: String,
+        val progress: Double?,
+        val ongoing: Boolean,
+    )
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -131,6 +159,20 @@ class MainActivity : FlutterActivity() {
             "pickFont" -> pickFont(result)
             // SAF needs no broad storage permission; kept as a compatibility no-op.
             "ensureStorageAccess" -> result.success(null)
+            "updateStatusNotification" -> {
+                val payload = NotificationPayload(
+                    title = call.argument<String>("title").orEmpty(),
+                    text = call.argument<String>("text").orEmpty(),
+                    progress = call.argument<Double>("progress"),
+                    ongoing = call.argument<Boolean>("ongoing") ?: true,
+                )
+                updateStatusNotification(payload)
+                result.success(null)
+            }
+            "clearStatusNotification" -> {
+                getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+                result.success(null)
+            }
             else -> result.notImplemented()
         }
     }
@@ -759,8 +801,74 @@ class MainActivity : FlutterActivity() {
         if (parts.size < 2 || parts[1].isEmpty()) base else "$base/" + parts[1]
     }.getOrNull()
 
+    private fun createNotificationChannel() {
+        val manager = getSystemService(NotificationManager::class.java)
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            "Build progress",
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "DVD-Audio Maker build progress"
+            setShowBadge(false)
+        }
+        manager.createNotificationChannel(channel)
+    }
+
+    private fun updateStatusNotification(payload: NotificationPayload) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingNotification = payload
+            if (!notificationPermissionRequested) {
+                notificationPermissionRequested = true
+                requestPermissions(
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    REQUEST_NOTIFICATIONS,
+                )
+            }
+            return
+        }
+        postStatusNotification(payload)
+    }
+
+    private fun postStatusNotification(payload: NotificationPayload) {
+        val manager = getSystemService(NotificationManager::class.java)
+        val percent = payload.progress?.coerceIn(0.0, 1.0)?.times(100)?.toInt()
+        val indeterminate = percent == null
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_dvda)
+            .setContentTitle(payload.title.ifEmpty { "DVD-Audio Maker" })
+            .setContentText(payload.text)
+            .setContentIntent(contentIntent)
+            .setOngoing(payload.ongoing)
+            .setAutoCancel(!payload.ongoing)
+            .setOnlyAlertOnce(true)
+            .setCategory(Notification.CATEGORY_PROGRESS)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setProgress(100, percent ?: 0, indeterminate)
+        if (Build.VERSION.SDK_INT >= 36) {
+            runCatching {
+                val style = Notification.ProgressStyle()
+                if (indeterminate) style.setProgressIndeterminate(true) else style.setProgress(percent ?: 0)
+                builder.setStyle(style)
+                builder.setShortCriticalText(payload.text.take(7))
+                if (payload.ongoing) builder.setRequestPromotedOngoing(true)
+            }
+        }
+        runCatching { manager.notify(NOTIFICATION_ID, builder.build()) }
+    }
+
     companion object {
         private const val CHANNEL = "dvda/platform"
+        private const val NOTIFICATION_CHANNEL_ID = "dvda-build-status"
+        private const val NOTIFICATION_ID = 1202
+        private const val REQUEST_NOTIFICATIONS = 16
         private const val DEFAULT_PROFILE_NAME = "dvda-profile.json"
         private const val DEFAULT_TEXT_NAME = "dvda-log.txt"
         private const val DEFAULT_TEXT_MIME = "text/plain"

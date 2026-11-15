@@ -155,6 +155,7 @@ class AppController extends ChangeNotifier {
   DateTime? _startedAt;
   int _elapsedSeconds = 0;
   bool _disposed = false;
+  String _lastNotificationSignature = '';
 
   TaskPhase get phase => _phase;
   String get activeAction => _activeAction;
@@ -524,8 +525,46 @@ class AppController extends ChangeNotifier {
 
   void _notify() {
     if (!_disposed) {
+      _syncStatusNotification();
       notifyListeners();
     }
+  }
+
+  void _syncStatusNotification() {
+    final signature = [
+      _phase.name,
+      _activeAction,
+      _done,
+      _total,
+      _progressText,
+      _message,
+      _cancelRequested,
+    ].join('|');
+    if (signature == _lastNotificationSignature) {
+      return;
+    }
+    _lastNotificationSignature = signature;
+    if (_phase == TaskPhase.idle) {
+      unawaited(platform.clearStatusNotification().onError((_, _) {}));
+      return;
+    }
+    final running = _phase == TaskPhase.running;
+    final text = running && _progressText.isNotEmpty
+        ? _progressText
+        : (_message.isNotEmpty ? _message : statusText);
+    final progress = running
+        ? progressFraction
+        : (_phase == TaskPhase.success ? 1.0 : null);
+    unawaited(
+      platform
+          .updateStatusNotification(
+            title: 'DVD-Audio Maker',
+            text: text,
+            progress: progress,
+            ongoing: running,
+          )
+          .onError((_, _) {}),
+    );
   }
 
   @override
