@@ -92,26 +92,25 @@ pub fn encoding_identity(
 ) -> Result<String, String> {
     let file_hash = task_file_hash;
     let mut components = std::collections::BTreeMap::new();
-    components.insert("media".to_owned(), file_hash(media)?);
-    components.insert(
-        "linked-media-executable".to_owned(),
-        file_hash(&std::env::current_exe().map_err(|error| error.to_string())?)?,
-    );
-    let dependency_directories: Vec<PathBuf> =
-        media.parent().map(Path::to_owned).into_iter().collect();
-    let dependency_directories = {
-        let mut directories = dependency_directories;
-        if let Some(directory) = crate::runtime::directory()
-            && !directories.iter().any(|path| path == directory)
-        {
-            directories.push(directory.to_owned());
-        }
-        directories
-    };
+    let media_image = native_media_image(media);
+    components.insert("media".to_owned(), file_hash(&media_image)?);
+    components.insert("linked-media-executable".to_owned(), file_hash(&media_image)?);
     let mut dependencies = Vec::new();
-    for directory in &dependency_directories {
-        for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
-            let path = entry.map_err(|error| error.to_string())?.path();
+    for directory in dependency_directories(media) {
+        for entry in fs::read_dir(&directory).map_err(|error| {
+            format!(
+                "Cannot enumerate native dependency directory {}: {error}",
+                directory.display()
+            )
+        })? {
+            let path = entry
+                .map_err(|error| {
+                    format!(
+                        "Cannot read an entry in native dependency directory {}: {error}",
+                        directory.display()
+                    )
+                })?
+                .path();
             if path.is_file()
                 && path
                     .extension()
@@ -130,7 +129,7 @@ pub fn encoding_identity(
     add_dependency_hashes(&mut components, dependencies, &file_hash)?;
     components.insert(
         "linked-encoder-executable".to_owned(),
-        file_hash(&std::env::current_exe().map_err(|error| error.to_string())?)?,
+        file_hash(&media_image)?,
     );
     let _ = encoder;
     let context = if metadata_context.is_empty() {
@@ -141,6 +140,54 @@ pub fn encoding_identity(
     let canonical = serde_json::to_vec(&("rust-pcm-policy-v1", policy, components, context))
         .map_err(|error| error.to_string())?;
     Ok(hash::hex_digest(&canonical))
+}
+
+/// The file whose bytes identify the linked media code.
+///
+/// On Android the FFmpeg image is linked into the bridge library, while
+/// `current_exe()` is the zygote `app_process` binary. That binary is readable,
+/// but `/system/bin` is mode 0751, so listing it is denied to apps; the bridge
+/// library is used instead so dependency probing never touches system paths.
+#[cfg(target_os = "android")]
+fn native_media_image(media: &Path) -> PathBuf {
+    fn loaded_bridge_library() -> Option<PathBuf> {
+        let maps = fs::read_to_string("/proc/self/maps").ok()?;
+        maps.lines().find_map(|line| {
+            let index = line.find("libdvda_android.so")?;
+            let path = line[..index + "libdvda_android.so".len()]
+                .split_whitespace()
+                .next_back()?
+                .replace("\\040", " ");
+            let path = PathBuf::from(path);
+            path.is_file().then_some(path)
+        })
+    }
+    loaded_bridge_library().unwrap_or_else(|| media.to_path_buf())
+}
+
+#[cfg(not(target_os = "android"))]
+fn native_media_image(media: &Path) -> PathBuf {
+    media.to_path_buf()
+}
+
+/// Directories that may contain link-time media dependencies.
+///
+/// Android links the media image statically, and the process executable lives in
+/// the non-listable `/system/bin`, so there is nothing to probe there.
+#[cfg(target_os = "android")]
+fn dependency_directories(_media: &Path) -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(not(target_os = "android"))]
+fn dependency_directories(media: &Path) -> Vec<PathBuf> {
+    let mut directories: Vec<PathBuf> = media.parent().map(Path::to_owned).into_iter().collect();
+    if let Some(directory) = crate::runtime::directory()
+        && !directories.iter().any(|path| path == directory)
+    {
+        directories.push(directory.to_owned());
+    }
+    directories
 }
 
 fn media_loaded_dependencies(known: &[PathBuf], loaded: Vec<PathBuf>) -> Vec<PathBuf> {

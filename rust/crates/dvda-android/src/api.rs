@@ -140,15 +140,21 @@ fn temporary_profile_path(profile_json: &str) -> Result<PathBuf, String> {
     )))
 }
 
+
 #[frb]
 pub fn run_profile(profile_json: String, action: String) -> String {
+    // A failure before the native pipeline starts must never leave the task
+    // panel without a log line.
+    push_log(&format!("[bridge] action={action}"));
     CANCEL.store(false, Ordering::Relaxed);
     DONE.store(0, Ordering::Relaxed);
     TOTAL.store(PROGRESS_TOTAL, Ordering::Relaxed);
     let path = match temporary_profile_path(&profile_json) {
         Ok(path) => path,
         Err(error) => {
-            return outcome_with_log(false, error, serde_json::Value::Null, "");
+            push_log(&format!("[bridge] {error}"));
+            let tail = LOG.lock().map(|log| log.join("\n")).unwrap_or_default();
+            return outcome_with_log(false, error, serde_json::Value::Null, &tail);
         }
     };
     let result = (|| -> Result<(bool, String, serde_json::Value), String> {
@@ -162,6 +168,12 @@ pub fn run_profile(profile_json: String, action: String) -> String {
         if let Ok(mut log) = LOG.lock() {
             log.clear();
         }
+        push_log(&format!(
+            "[bridge] build={} src={} final={}",
+            options.path("BuildDirectory").display(),
+            options.path("SourceDirectory").display(),
+            options.path("FinalDirectory").display()
+        ));
         match action.as_str() {
             "status" => {
                 let value = serde_json::json!({
@@ -243,10 +255,11 @@ pub fn run_profile(profile_json: String, action: String) -> String {
     })();
     let _ = std::fs::remove_file(&path);
     let tail = LOG.lock().map(|log| log.join("\n")).unwrap_or_default();
-    match result {
+    let outcome = match result {
         Ok((ok, message, diagnostics)) => outcome_with_log(ok, message, diagnostics, &tail),
         Err(error) => outcome_with_log(false, error, serde_json::Value::Null, &tail),
-    }
+    };
+    outcome
 }
 
 #[frb(sync)]

@@ -155,6 +155,13 @@ class AppStrings {
     'themeLight': 'Theme: light',
     'themeDark': 'Theme: dark',
     'statistics': 'Elapsed {hours}:{minutes}:{seconds} · Notices {problems}',
+    'logStarted': 'Processing: {0}',
+    'logPcmStarted': 'Preparing audio: {0}',
+    'logPcmProgress': 'Preparing audio: {0} ({1}%)',
+    'logPcmFinished': 'Audio ready. Starting MLP encoding: {0}',
+    'logEncoded':
+        'MLP encoding completed: {0}; {1} Hz / {2} bit / {3} channels, {4} bytes',
+    'logPcmError': 'Audio conversion message: {0}; {1}',
     'progressLabel': 'Progress',
     'logLabel': 'Log',
     'logEmpty': 'No log yet.',
@@ -292,6 +299,12 @@ class AppStrings {
     'themeLight': '主题：浅色',
     'themeDark': '主题：深色',
     'statistics': '用时 {hours}:{minutes}:{seconds} · 提醒 {problems}',
+    'logStarted': '开始处理：{0}',
+    'logPcmStarted': '正在准备音频：{0}',
+    'logPcmProgress': '正在准备音频：{0}（{1}%）',
+    'logPcmFinished': '音频准备完成，开始 MLP 编码：{0}',
+    'logEncoded': 'MLP 编码完成：{0}；{1} Hz / {2} 位 / {3} 声道，{4} 字节',
+    'logPcmError': '音频转换提示：{0}；{1}',
     'progressLabel': '进度',
     'logLabel': '运行日志',
     'logEmpty': '尚无日志。',
@@ -427,6 +440,12 @@ class AppStrings {
     'themeLight': '主題：淺色',
     'themeDark': '主題：深色',
     'statistics': '用時 {hours}:{minutes}:{seconds} · 提醒 {problems}',
+    'logStarted': '開始處理：{0}',
+    'logPcmStarted': '正在準備音訊：{0}',
+    'logPcmProgress': '正在準備音訊：{0}（{1}%）',
+    'logPcmFinished': '音訊準備完成，開始 MLP 編碼：{0}',
+    'logEncoded': 'MLP 編碼完成：{0}；{1} Hz / {2} 位 / {3} 聲道，{4} 位元組',
+    'logPcmError': '音訊轉換提示：{0}；{1}',
     'progressLabel': '進度',
     'logLabel': '執行日誌',
     'logEmpty': '尚無日誌。',
@@ -566,6 +585,12 @@ class AppStrings {
     'themeLight': 'テーマ：ライト',
     'themeDark': 'テーマ：ダーク',
     'statistics': '経過時間 {hours}:{minutes}:{seconds} · 注意 {problems}',
+    'logStarted': '処理を開始：{0}',
+    'logPcmStarted': '音声を準備中：{0}',
+    'logPcmProgress': '音声を準備中：{0}（{1}%）',
+    'logPcmFinished': '音声の準備完了。MLP エンコードを開始：{0}',
+    'logEncoded': 'MLP エンコード完了：{0}；{1} Hz / {2} ビット / {3} チャンネル、{4} バイト',
+    'logPcmError': '音声変換メッセージ：{0}；{1}',
     'progressLabel': '進捗',
     'logLabel': '実行ログ',
     'logEmpty': 'ログはまだありません。',
@@ -706,6 +731,12 @@ class AppStrings {
     'themeLight': '테마: 라이트',
     'themeDark': '테마: 다크',
     'statistics': '경과 시간 {hours}:{minutes}:{seconds} · 알림 {problems}',
+    'logStarted': '처리 중: {0}',
+    'logPcmStarted': '오디오 준비 중: {0}',
+    'logPcmProgress': '오디오 준비 중: {0} ({1}%)',
+    'logPcmFinished': '오디오 준비 완료. MLP 인코딩 시작: {0}',
+    'logEncoded': 'MLP 인코딩 완료: {0}; {1} Hz / {2}비트 / {3}채널, {4}바이트',
+    'logPcmError': '오디오 변환 메시지: {0}; {1}',
     'progressLabel': '진행률',
     'logLabel': '실행 로그',
     'logEmpty': '아직 로그가 없습니다.',
@@ -768,6 +799,13 @@ class AppStrings {
         .replaceAll('{seconds}', remainder)
         .replaceAll('{problems}', problems.toString());
   }
+
+  String get logStarted => _text('logStarted');
+  String get logPcmStarted => _text('logPcmStarted');
+  String get logPcmProgress => _text('logPcmProgress');
+  String get logPcmFinished => _text('logPcmFinished');
+  String get logEncoded => _text('logEncoded');
+  String get logPcmError => _text('logPcmError');
 
   String get appTitle => _text('appTitle');
   String get appTagline => _text('appTagline');

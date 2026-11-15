@@ -623,6 +623,26 @@ void main() {
     expect(await controller.checkUnfinished(), isFalse);
   });
 
+  test('bridge log events render like the Windows client', () async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+
+    final log = controller.formatLogForDisplay(
+      '[METRIC] {"event":"start"}\n'
+      '{"Kind":"PcmFinished","Name":"Track A"}\n'
+      '{"Kind":"PcmProgress","Name":"Track A","Value":40}\n'
+      '{"Kind":"Encoded","Name":"Track A","Value":{"Rate":48000,"Bits":24,"Channels":6,"Bytes":123}}\n'
+      'plain text',
+    );
+
+    expect(log, isNot(contains('[METRIC]')));
+    expect(log, isNot(contains('"Kind"')));
+    expect(log, contains('Track A'));
+    expect(log, contains('40%'));
+    expect(log, contains('48000'));
+    expect(log, contains('plain text'));
+  });
+
   test('build validation requires SAF source and output selections', () async {
     final controller = await _controller();
     addTearDown(controller.dispose);

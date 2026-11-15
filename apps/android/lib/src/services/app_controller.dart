@@ -159,13 +159,25 @@ class AppController extends ChangeNotifier {
   bool _disposed = false;
   bool _runtimePathsReady = true;
   String _lastNotificationSignature = '';
+  String _formattedLogSource = '';
+  String _formattedLog = '';
 
   TaskPhase get phase => _phase;
   String get activeAction => _activeAction;
   int get done => _done;
   int get total => _total;
   String get progressText => _progressText;
-  String get logText => _logText;
+
+  /// Bridge log lines in the same readable form the Windows client shows:
+  /// structured [Kind] events are localized and [METRIC] diagnostics hidden.
+  String get logText {
+    if (_formattedLogSource != _logText) {
+      _formattedLogSource = _logText;
+      _formattedLog = formatLogForDisplay(_logText);
+    }
+    return _formattedLog;
+  }
+
   String get message => _message;
   List<AppDiagnostic> get diagnostics => _diagnostics;
   bool get cancelRequested => _cancelRequested;
@@ -618,7 +630,7 @@ class AppController extends ChangeNotifier {
   Future<bool> exportLog() {
     final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     return platform.saveTextFile(
-      _logText,
+      logText,
       suggestedName: 'dvda-log-$stamp.txt',
       mimeType: 'text/plain',
     );
@@ -683,17 +695,18 @@ class AppController extends ChangeNotifier {
         final elapsed = _startedAt == null
             ? _elapsedSeconds
             : DateTime.now().difference(_startedAt!).inSeconds;
+        final progressText = _displayLine(progress.text);
         final changed =
             progress.done != _done ||
             progress.total != _total ||
-            progress.text != _progressText ||
+            progressText != _progressText ||
             progress.log != _logText ||
             elapsed != _elapsedSeconds;
         if (progress.done >= _done) {
           _done = progress.done;
         }
         _total = progress.total;
-        _progressText = progress.text;
+        _progressText = progressText;
         _logText = progress.log;
         _elapsedSeconds = elapsed;
         if (changed) {
@@ -724,6 +737,101 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// Short human-readable status for the notification and Live Update.
+  ///
+  /// The bridge progress text is a JSON event line, which must never leak into
+  /// the system UI.
+  String _notificationProgressText() {
+    final label = switch (_activeAction) {
+      'prepare' => strings.actionPrepare,
+      'verify' => strings.actionVerify,
+      _ => strings.actionBuild,
+    };
+    if (_total > 0) {
+      final done = _done.clamp(0, _total);
+      return '$label $done/$_total';
+    }
+    return label;
+  }
+
+  /// Converts one bridge log line into the readable text the Windows client
+  /// shows. Returns an empty string for lines that must stay hidden.
+  String _displayLine(String raw) {
+    final line = raw.trim();
+    if (line.isEmpty || line.startsWith('[METRIC] ')) {
+      return '';
+    }
+    if (!line.startsWith('{')) {
+      return line;
+    }
+    Object? decoded;
+    try {
+      decoded = jsonDecode(line);
+    } catch (_) {
+      return line;
+    }
+    if (decoded is! Map) {
+      return line;
+    }
+    final kind = decoded['Kind'];
+    final name = decoded['Name'];
+    if (kind is! String || name is! String) {
+      return line;
+    }
+    final detail = decoded['Value'];
+    String fill(String template, List<String> values) {
+      var result = template;
+      for (var index = 0; index < values.length; index++) {
+        result = result.replaceAll('{${index + 1}}', values[index]);
+      }
+      return result.replaceAll('{0}', name);
+    }
+
+    switch (kind) {
+      case 'Started':
+        return fill(strings.logStarted, const <String>[]);
+      case 'PcmStarted':
+        return fill(strings.logPcmStarted, const <String>[]);
+      case 'PcmProgress':
+        final percent = detail is num ? detail.clamp(0, 100).toString() : '?';
+        return fill(strings.logPcmProgress, <String>[percent]);
+      case 'PcmFinished':
+        return fill(strings.logPcmFinished, const <String>[]);
+      case 'Encoded':
+        final values = <String>['?', '?', '?', '?'];
+        if (detail is Map) {
+          values[0] = '${detail['Rate'] ?? '?'}';
+          values[1] = '${detail['Bits'] ?? '?'}';
+          values[2] = '${detail['Channels'] ?? '?'}';
+          values[3] = '${detail['Bytes'] ?? '?'}';
+        }
+        return fill(strings.logEncoded, values);
+      case 'PcmError':
+        return fill(strings.logPcmError, <String>[
+          detail is String && detail.isNotEmpty ? detail : '?',
+        ]);
+      case 'Detail':
+        return detail is String && detail.isNotEmpty ? '$name: $detail' : name;
+      default:
+        return line;
+    }
+  }
+
+  /// Public for tests; the UI reads it through [logText].
+  String formatLogForDisplay(String raw) {
+    if (raw.isEmpty) {
+      return '';
+    }
+    final lines = <String>[];
+    for (final line in raw.split('\n')) {
+      final display = _displayLine(line);
+      if (display.isNotEmpty) {
+        lines.add(display);
+      }
+    }
+    return lines.join('\n');
+  }
+
   void _syncStatusNotification() {
     final signature = [
       _phase.name,
@@ -743,8 +851,8 @@ class AppController extends ChangeNotifier {
       return;
     }
     final running = _phase == TaskPhase.running;
-    final text = running && _progressText.isNotEmpty
-        ? _progressText
+    final text = running
+        ? _notificationProgressText()
         : (_message.isNotEmpty ? _message : statusText);
     final progress = running
         ? progressFraction
