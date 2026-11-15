@@ -178,6 +178,13 @@ impl Drop for Workspace {
 fn reject_reparse(path: &Path) -> Result<(), String> {
     use crate::platform::MetadataExt;
     for ancestor in path.ancestors() {
+        // Android exposes the per-user app sandbox through platform aliases such as
+        // /data/user/0. These are trusted system mounts, not workspace-controlled
+        // symlinks, and every app path necessarily traverses them.
+        #[cfg(target_os = "android")]
+        if ancestor == Path::new("/data/user/0") || ancestor == Path::new("/data/data") {
+            continue;
+        }
         if fs::symlink_metadata(ancestor)
             .map_err(|e| e.to_string())?
             .file_attributes()
