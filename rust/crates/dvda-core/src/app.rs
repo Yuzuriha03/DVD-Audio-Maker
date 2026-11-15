@@ -267,6 +267,30 @@ impl AppOptions {
         }
     }
 
+    /// Removes the resumable unfinished task left by an earlier run.
+    ///
+    /// This does not need a bound workspace: the GUI discards progress before
+    /// any task starts, so the directory is resolved from the build directory
+    /// and deleted directly.
+    ///
+    /// # Errors
+    /// Returns an error if the unfinished task directory cannot be removed.
+    pub fn discard_progress(&self) -> Result<bool, String> {
+        let build = self.path("BuildDirectory");
+        if build.as_os_str().is_empty() || !crate::workspace::Workspace::unfinished(&build) {
+            return Ok(false);
+        }
+        let path = build.join("unfinished-task");
+        std::fs::remove_dir_all(&path).map_err(|error| {
+            format!(
+                "Cannot remove the unfinished task {}: {error}",
+                path.display()
+            )
+        })?;
+        let _ = std::fs::remove_file(build.join(".unfinished-task.lease"));
+        Ok(true)
+    }
+
     pub fn finish_task(&self) {
         if let Some(workspace) = &self.workspace {
             workspace.finish();
@@ -532,12 +556,12 @@ pub fn run_build(
             dither,
             directory: options.path("BuildDirectory").join("production-pcm"),
             signature: crate::audio::production_pcm_signature(&media, rate, bits, dither)?,
-            // The streaming MLP encoder supports live metadata refresh only on
-            // x86_64; other targets take the decode-then-batch path.
+            // Streaming avoids writing and re-reading a full PCM WAV per track.
+            // Live metadata refresh stays x86_64-only in the encoder itself, so
+            // other targets stream with the static stamp captured at job start.
             stream_mlp: options.text("MlpSource") == "mlp-batch"
                 && crate::config::trim(&options.text("MlpMetadataContext")).is_empty()
-                && cfg!(feature = "rust-mlp")
-                && cfg!(target_arch = "x86_64"),
+                && cfg!(feature = "rust-mlp"),
         });
     }
     preparation::pipeline::ensure_ready(&preparation, &mut callbacks)
@@ -799,6 +823,31 @@ mod tests {
         for key in ["DVDA_MENU_FONT", "DVDA_MENU_FONT_JP", "DVDA_MENU_FONT_KR"] {
             assert_eq!(defaults[key], "");
         }
+    }
+
+    #[test]
+    fn discard_progress_removes_the_unfinished_task_directory() {
+        let root = env::temp_dir().join(format!(
+            "dvda-discard-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let build = root.join("build");
+        let task = build.join("unfinished-task");
+        std::fs::create_dir_all(&task).unwrap();
+        std::fs::write(task.join(".owner"), b"dvda-task-v1").unwrap();
+        std::fs::write(task.join("prepare-snapshot.json"), b"{}").unwrap();
+        let changes = json!({"DVDA_BUILD_DIR": build}).as_object().unwrap().clone();
+        let options = AppOptions::load(None).unwrap().with_profile_values(changes).unwrap();
+
+        assert!(options.discard_progress().unwrap());
+        assert!(!task.exists());
+        // A second discard has nothing left to remove.
+        assert!(!options.discard_progress().unwrap());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

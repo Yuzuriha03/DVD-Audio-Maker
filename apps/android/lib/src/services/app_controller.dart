@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../bridge.dart';
 import '../localization/app_strings.dart';
+import '../localization/log_events.dart';
 import '../models/app_settings.dart';
 import 'platform_service.dart';
 import 'settings_store.dart';
@@ -322,6 +323,10 @@ class AppController extends ChangeNotifier {
     return jsonEncode(profile);
   }
 
+  /// Whether a previous task left resumable progress behind.
+  ///
+  /// The bridge reports the status payload inside the outcome message, so both
+  /// the nested and the flat layout are accepted here.
   Future<bool> checkUnfinished() async {
     if (isRunning || !_runtimePathsReady) {
       return false;
@@ -329,11 +334,35 @@ class AppController extends ChangeNotifier {
     await persistNow();
     try {
       final raw = await AppBridge.runProfile(buildTaskProfileJson(), 'status');
-      final dynamic decoded = jsonDecode(raw);
-      return decoded is Map && decoded['Unfinished'] == true;
+      return unfinishedFromStatus(raw);
     } catch (_) {
       return false;
     }
+  }
+
+  /// Public for tests; the UI only consumes [checkUnfinished].
+  static bool unfinishedFromStatus(String raw) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } catch (_) {
+      return false;
+    }
+    if (decoded is! Map) {
+      return false;
+    }
+    final message = decoded['Message'];
+    if (message is String && message.trim().startsWith('{')) {
+      try {
+        final payload = jsonDecode(message);
+        if (payload is Map && payload['Unfinished'] is bool) {
+          return payload['Unfinished'] == true;
+        }
+      } catch (_) {
+        // Fall through to the flat layout below.
+      }
+    }
+    return decoded['Unfinished'] == true;
   }
 
   Future<bool> discardProgress() async {
@@ -344,7 +373,19 @@ class AppController extends ChangeNotifier {
     try {
       final raw = await AppBridge.runProfile(buildTaskProfileJson(), 'discard');
       final dynamic decoded = jsonDecode(raw);
-      return decoded is Map && decoded['Ok'] == true;
+      if (decoded is! Map || decoded['Ok'] != true) {
+        return false;
+      }
+      _phase = TaskPhase.idle;
+      _activeAction = '';
+      _message = '';
+      _logText = '';
+      _progressText = '';
+      _done = 0;
+      _total = 0;
+      _diagnostics = const <AppDiagnostic>[];
+      _notify();
+      return true;
     } catch (_) {
       return false;
     }
@@ -756,9 +797,48 @@ class AppController extends ChangeNotifier {
 
   /// Converts one bridge log line into the readable text the Windows client
   /// shows. Returns an empty string for lines that must stay hidden.
+  static const List<String> _noisePrefixes = <String>[
+    'out_time_us=',
+    'Number of samples:',
+    '[space]',
+    '[menu-cover] oversized ',
+    'WARN: Button y coordinates are odd for button ',
+  ];
+
+  static const List<String> _relevantPrefixes = <String>[
+    '[MLP-CHECK]',
+    '[MLP-PROGRESS]',
+    '[MLP-FINALIZE]',
+    '[menu-cover]',
+    '[author]',
+    '[verify]',
+    '[LPCM]',
+    '[续跑]',
+    '[恢复]',
+    '[bridge]',
+    '[TASK]',
+    '[FAIL]',
+    '[WARN]',
+    '[WAR]',
+    '[警告]',
+    '[错误]',
+    '[信息]',
+  ];
+
   String _displayLine(String raw) {
     final line = raw.trim();
     if (line.isEmpty || line.startsWith('[METRIC] ')) {
+      return '';
+    }
+    if (_noisePrefixes.any(line.startsWith)) {
+      return '';
+    }
+    if (line.startsWith('[TASK] ')) {
+      return _taskLine(line.substring('[TASK] '.length));
+    }
+    if (!line.startsWith('{') && !_relevantPrefixes.any(line.startsWith)) {
+      // The Windows client only shows classified lines; raw tool chatter stays
+      // out of the task log.
       return '';
     }
     if (!line.startsWith('{')) {
@@ -815,6 +895,21 @@ class AppController extends ChangeNotifier {
       default:
         return line;
     }
+  }
+
+  String _taskLine(String json) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(json);
+    } catch (_) {
+      return '';
+    }
+    if (decoded is! Map) {
+      return '';
+    }
+    final event = <String, Object?>{};
+    decoded.forEach((key, value) => event['$key'] = value);
+    return formatTaskEvent(event, settings.language) ?? '';
   }
 
   /// Public for tests; the UI reads it through [logText].

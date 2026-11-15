@@ -623,6 +623,23 @@ void main() {
     expect(await controller.checkUnfinished(), isFalse);
   });
 
+  test('unfinished progress is detected from the bridge status payload', () {
+    const unfinished =
+        '{"Ok":true,"Message":"{\\"Ok\\":true,\\"Unfinished\\":true}",'
+        '"Diagnostics":null,"Log":"","ProgressDone":0,"ProgressTotal":100}';
+    const finished =
+        '{"Ok":true,"Message":"{\\"Ok\\":true,\\"Unfinished\\":false}",'
+        '"Diagnostics":null,"Log":"","ProgressDone":0,"ProgressTotal":100}';
+
+    expect(AppController.unfinishedFromStatus(unfinished), isTrue);
+    expect(AppController.unfinishedFromStatus(finished), isFalse);
+    expect(
+      AppController.unfinishedFromStatus('{"Ok":true,"Unfinished":true}'),
+      isTrue,
+    );
+    expect(AppController.unfinishedFromStatus('not json'), isFalse);
+  });
+
   test('bridge log events render like the Windows client', () async {
     final controller = await _controller();
     addTearDown(controller.dispose);
@@ -632,7 +649,10 @@ void main() {
       '{"Kind":"PcmFinished","Name":"Track A"}\n'
       '{"Kind":"PcmProgress","Name":"Track A","Value":40}\n'
       '{"Kind":"Encoded","Name":"Track A","Value":{"Rate":48000,"Bits":24,"Channels":6,"Bytes":123}}\n'
-      'plain text',
+      'out_time_us=237312000\n'
+      'Number of samples: 1080000\n'
+      '[TASK] {"Action":"source_result","Current":55,"Total":149,"Name":"Lulala"}\n'
+      '[FAIL] 音源检查失败',
     );
 
     expect(log, isNot(contains('[METRIC]')));
@@ -640,7 +660,11 @@ void main() {
     expect(log, contains('Track A'));
     expect(log, contains('40%'));
     expect(log, contains('48000'));
-    expect(log, contains('plain text'));
+    expect(log, isNot(contains('out_time_us')));
+    expect(log, isNot(contains('Number of samples')));
+    expect(log, contains('55/149'));
+    expect(log, contains('Lulala'));
+    expect(log, contains('[FAIL]'));
   });
 
   test('build validation requires SAF source and output selections', () async {

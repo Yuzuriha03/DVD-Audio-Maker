@@ -66,14 +66,28 @@ impl Forward {
     }
 }
 
+/// Raw decoder statistics the Windows client hides as well.
+fn noisy_line(text: &str) -> bool {
+    text.starts_with("out_time_us=")
+        || text.starts_with("Number of samples:")
+        || text.starts_with("[space]")
+        || text.starts_with("[menu-cover] oversized ")
+        || text.starts_with("WARN: Button y coordinates are odd for button ")
+}
+
 impl Callbacks for Forward {
     fn emit(&mut self, _stream: i32, text: &str) {
         let trimmed = text.trim();
-        if !trimmed.is_empty() && !trimmed.starts_with("[METRIC]") {
+        if trimmed.is_empty() || trimmed.starts_with("[METRIC]") || noisy_line(trimmed) {
+            return;
+        }
+        // Only structured events drive the progress line; raw tool output must
+        // not overwrite the readable status.
+        if trimmed.starts_with("[TASK]") || trimmed.starts_with('{') {
             set_text(trimmed);
-            if !trimmed.starts_with("[TASK]") {
-                push_log(trimmed);
-            }
+        }
+        if !trimmed.starts_with("[TASK]") {
+            push_log(trimmed);
         }
     }
 
@@ -157,6 +171,7 @@ pub fn run_profile(profile_json: String, action: String) -> String {
             return outcome_with_log(false, error, serde_json::Value::Null, &tail);
         }
     };
+    let started = std::time::Instant::now();
     let result = (|| -> Result<(bool, String, serde_json::Value), String> {
         std::fs::write(&path, profile_json).map_err(|error| {
             format!("Cannot write task profile {}: {error}", path.display())
@@ -183,8 +198,14 @@ pub fn run_profile(profile_json: String, action: String) -> String {
                 Ok((true, value.to_string(), serde_json::Value::Null))
             }
             "discard" => {
-                options.discard_task();
-                Ok((true, "discarded".to_string(), serde_json::Value::Null))
+                // The GUI discards progress before binding a task workspace, so
+                // the bridge removes the unfinished task directory directly.
+                let discarded = options.discard_progress()?;
+                Ok((
+                    true,
+                    serde_json::json!({"Ok": true, "Discarded": discarded}).to_string(),
+                    serde_json::Value::Null,
+                ))
             }
             "prepare" => {
                 // Desktop checks sources in a scratch workspace so no unfinished
@@ -253,6 +274,13 @@ pub fn run_profile(profile_json: String, action: String) -> String {
             }
         }
     })();
+    let elapsed = started.elapsed();
+    // Visible stage timing: the Windows client shows the same numbers in its log
+    // and both platforms must be comparable when reporting speed.
+    push_log(&format!(
+        "[bridge] {action} finished in {:.1} s",
+        elapsed.as_secs_f64()
+    ));
     let _ = std::fs::remove_file(&path);
     let tail = LOG.lock().map(|log| log.join("\n")).unwrap_or_default();
     let outcome = match result {
