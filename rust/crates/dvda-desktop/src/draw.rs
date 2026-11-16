@@ -3,23 +3,26 @@
 
 use std::cell::RefCell;
 
+use super::gdi::bold_font;
+
 use super::{
     BeginPaint, BitBlt, CB_GETCURSEL, CB_GETLBTEXT, CB_GETLBTEXTLEN, COMBO_IDS,
     CreateCompatibleBitmap, CreateCompatibleDC, CreatePen, CreateSolidBrush, DT_CALCRECT,
     DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER, DeleteDC,
     DeleteObject, DrawFocusRect, DrawIconEx, DrawItemStruct, DrawTextW, Ellipse, EndPaint,
     FillRect, GetClientRect, GetParent, GetStockObject, GetTextMetricsW, GetWindowDC,
-    GetWindowLongPtrW, GetWindowRect, GradientFill, GradientRect, Handle, Hbrush, Hwnd, ID_BUILD,
-    ID_CANCEL, ID_MINIMIZE, ID_TAB, ID_THEME, IsZoomed, Lang, LineTo, Lparam, Lresult, MoveToEx,
-    ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, PaintStruct, Rect, ReleaseDC, RoundRect, SelectObject,
-    SendMessageW, SetBkMode, SetTextColor, TextMetric, TriVertex, WM_CTLCOLORBTN,
-    WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCDESTROY, WM_PAINT, WM_SETFONT, Wparam, body_brush,
-    border_brush, brush, button_hovered, c_accent, c_accent_hover, c_accent_pressed, c_accent_soft,
-    c_body, c_border, c_border_soft, c_card, c_danger, c_danger_border, c_danger_hover,
-    c_danger_pressed, c_disabled_fill, c_disabled_text, c_header_bottom, c_header_subtitle,
-    c_header_title, c_header_top, c_ink, c_muted, c_panel, c_secondary_hover, c_secondary_pressed,
-    client_rect, dark_theme, get_text, header_height, header_icon, paint_fields, panel_brush, ptr,
-    rgb, scale, semibold_font, subtitle_font, title_font, tr, ui_font, wide, win, window_class,
+    GetWindowLongPtrW, GetWindowRect, GradientFill, GradientRect, Handle, Hbrush, Hwnd,
+    ID_ABOUT_PROJECT, ID_BUILD, ID_CANCEL, ID_MINIMIZE, ID_TAB, ID_THEME, IsZoomed, Lang, LineTo,
+    Lparam, Lresult, MoveToEx, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, PaintStruct, Rect, ReleaseDC,
+    RoundRect, SelectObject, SendMessageW, SetBkMode, SetTextColor, TextMetric, TriVertex,
+    WM_CTLCOLORBTN, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCDESTROY, WM_PAINT, WM_SETFONT, Wparam,
+    body_brush, border_brush, brush, button_hovered, c_accent, c_accent_hover, c_accent_pressed,
+    c_accent_soft, c_body, c_border, c_border_soft, c_card, c_danger, c_danger_border,
+    c_danger_hover, c_danger_pressed, c_disabled_fill, c_disabled_text, c_header_bottom,
+    c_header_subtitle, c_header_title, c_header_top, c_ink, c_muted, c_panel, c_secondary_hover,
+    c_secondary_pressed, client_rect, dark_theme, get_text, header_height, header_icon,
+    paint_fields, panel_brush, ptr, rgb, scale, semibold_font, subtitle_font, title_font, tr,
+    ui_font, wide, win, window_class,
 };
 
 pub(crate) fn color16(value: u32) -> u16 {
@@ -89,6 +92,53 @@ pub(crate) fn fill_round_rect(dc: Handle, rect: &Rect, radius: i32, fill: u32, b
         SelectObject(dc, old_pen);
         DeleteObject(outer);
         DeleteObject(inner);
+    }
+}
+
+/// Square info icon for the About entry: a compact filled square with a bold
+/// "i", the same cell size/spacing as the theme and minimize controls, and no
+/// button frame or outline.
+pub(crate) unsafe fn draw_header_info_button(item: &DrawItemStruct) {
+    let hover = button_hovered(item.item);
+    let pressed = item.state & ODS_SELECTED != 0;
+    let center_y = i32::midpoint(item.rect.top, item.rect.bottom);
+    let base = header_gradient_at(center_y);
+    let background = if pressed || hover {
+        lighten(base, 18)
+    } else {
+        base
+    };
+    unsafe {
+        FillRect(item.dc, &item.rect, brush(background));
+        let center_x = i32::midpoint(item.rect.left, item.rect.right);
+        let side = scale(20).max(scale(10));
+        let half = side / 2;
+        let square = Rect {
+            left: center_x - half,
+            top: center_y - half,
+            right: center_x + half,
+            bottom: center_y - half + side,
+        };
+        FillRect(item.dc, &square, brush(c_header_title()));
+        let mut text_rect = square;
+        draw_text_run(
+            "i",
+            item.dc,
+            &mut text_rect,
+            bold_font(),
+            background,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        if item.state & ODS_FOCUS != 0 {
+            let inset = scale(4);
+            let focus = Rect {
+                left: item.rect.left + inset,
+                top: item.rect.top + inset,
+                right: item.rect.right - inset,
+                bottom: item.rect.bottom - inset,
+            };
+            DrawFocusRect(item.dc, &raw const focus);
+        }
     }
 }
 
@@ -569,6 +619,10 @@ pub(crate) unsafe fn draw_owner_item_contents(hwnd: Hwnd, item: &DrawItemStruct)
     }
     if id == ID_CANCEL {
         unsafe { draw_action_button(item, false) };
+        return true;
+    }
+    if id == ID_ABOUT_PROJECT {
+        unsafe { draw_header_info_button(item) };
         return true;
     }
     if let Some(paint) = paint_fields(hwnd)

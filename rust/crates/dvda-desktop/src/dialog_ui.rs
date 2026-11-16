@@ -288,6 +288,68 @@ pub(crate) fn create_close_button(parent: Hwnd) -> Hwnd {
     )
 }
 
+fn header_color_at(theme: &Theme, y: i32) -> u32 {
+    let height = theme.header_height().max(1);
+    let ratio = f64::from(y.clamp(0, height)) / f64::from(height);
+    let (top_r, top_g, top_b) = rgb_components(c_header_top());
+    let (bottom_r, bottom_g, bottom_b) = rgb_components(c_header_bottom());
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Interpolated RGB channels stay within 0..=255 and intentionally truncate fractional channel values"
+    )]
+    let mix = |top: u32, bottom: u32| -> u32 {
+        (f64::from(top) + (f64::from(bottom) - f64::from(top)) * ratio) as u32
+    };
+    rgb(
+        mix(top_r, bottom_r),
+        mix(top_g, bottom_g),
+        mix(top_b, bottom_b),
+    )
+}
+
+/// Caption close control: matches the borderless header caption buttons. Only
+/// keyboard focus draws an outline; default and hover states have no stroke.
+unsafe fn draw_close_button(item: &DrawItemStruct, theme: &Theme) {
+    let hover = button_hovered(item.item);
+    let center_y = i32::midpoint(item.rect.top, item.rect.bottom);
+    let background = if hover {
+        rgb(196, 43, 28)
+    } else {
+        header_color_at(theme, center_y)
+    };
+    let glyph = if hover {
+        rgb(255, 255, 255)
+    } else {
+        c_header_title()
+    };
+    unsafe {
+        FillRect(item.dc, &item.rect, brush(background));
+        let center_x = i32::midpoint(item.rect.left, item.rect.right);
+        let unit = theme.sd(6);
+        let pen = CreatePen(0, theme.sd(1).max(1), glyph);
+        if !pen.is_null() {
+            let old = SelectObject(item.dc, pen);
+            MoveToEx(item.dc, center_x - unit, center_y - unit, ptr::null_mut());
+            LineTo(item.dc, center_x + unit, center_y + unit);
+            MoveToEx(item.dc, center_x + unit, center_y - unit, ptr::null_mut());
+            LineTo(item.dc, center_x - unit, center_y + unit);
+            SelectObject(item.dc, old);
+            DeleteObject(pen);
+        }
+        if item.state & ODS_FOCUS != 0 {
+            let inset = theme.sd(4);
+            let focus = Rect {
+                left: item.rect.left + inset,
+                top: item.rect.top + inset,
+                right: item.rect.right - inset,
+                bottom: item.rect.bottom - inset,
+            };
+            DrawFocusRect(item.dc, &raw const focus);
+        }
+    }
+}
+
 /// Draws one shared owner-draw button.
 #[allow(
     clippy::too_many_lines,
@@ -299,6 +361,10 @@ pub(crate) unsafe fn draw_button(
     theme: &Theme,
     selected: bool,
 ) {
+    if kind == ButtonKind::Close {
+        unsafe { draw_close_button(item, theme) };
+        return;
+    }
     unsafe {
         let parent = GetParent(item.item);
         if !parent.is_null() {
@@ -347,23 +413,7 @@ pub(crate) unsafe fn draw_button(
                     theme.body,
                 )
             }
-            ButtonKind::Close => {
-                let fill = if hover {
-                    rgb(196, 43, 28)
-                } else {
-                    c_header_top()
-                };
-                (
-                    fill,
-                    fill,
-                    if hover {
-                        rgb(255, 255, 255)
-                    } else {
-                        c_header_title()
-                    },
-                    theme.body,
-                )
-            }
+            ButtonKind::Close => (c_body(), c_body(), c_ink(), theme.body),
             ButtonKind::ListItem => {
                 let fill = if selected {
                     c_accent_soft()
@@ -372,52 +422,27 @@ pub(crate) unsafe fn draw_button(
                 } else {
                     c_card()
                 };
-                (
-                    fill,
-                    if selected {
-                        c_accent()
-                    } else {
-                        c_border_soft()
-                    },
-                    c_ink(),
-                    theme.body,
-                )
+                (fill, fill, c_ink(), theme.body)
             }
         };
         fill_round_rect(item.dc, &item.rect, radius, fill, border);
-        if kind == ButtonKind::Close {
-            let center_x = i32::midpoint(item.rect.left, item.rect.right);
-            let center_y = i32::midpoint(item.rect.top, item.rect.bottom);
-            let unit = theme.sd(6);
-            let pen = CreatePen(0, theme.sd(1).max(1), text);
-            if !pen.is_null() {
-                let old = SelectObject(item.dc, pen);
-                MoveToEx(item.dc, center_x - unit, center_y - unit, ptr::null_mut());
-                LineTo(item.dc, center_x + unit, center_y + unit);
-                MoveToEx(item.dc, center_x + unit, center_y - unit, ptr::null_mut());
-                LineTo(item.dc, center_x - unit, center_y + unit);
-                SelectObject(item.dc, old);
-                DeleteObject(pen);
-            }
-        } else {
-            let label = get_text(item.item);
-            let mut text_rect = item.rect;
-            if kind == ButtonKind::ListItem {
-                text_rect.left += theme.sd(14);
-            }
-            draw_text_run(
-                &label,
-                item.dc,
-                &mut text_rect,
-                font,
-                text,
-                if kind == ButtonKind::ListItem {
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
-                } else {
-                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
-                },
-            );
+        let label = get_text(item.item);
+        let mut text_rect = item.rect;
+        if kind == ButtonKind::ListItem {
+            text_rect.left += theme.sd(14);
         }
+        draw_text_run(
+            &label,
+            item.dc,
+            &mut text_rect,
+            font,
+            text,
+            if kind == ButtonKind::ListItem {
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
+            } else {
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
+            },
+        );
         if item.state & ODS_FOCUS != 0 {
             let inset = theme.sd(4);
             let focus = Rect {

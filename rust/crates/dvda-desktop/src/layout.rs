@@ -595,7 +595,8 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
     let close_x = width - margin - caption_width;
     let maximize_x = close_x - caption_gap - caption_width;
     let minimize_x = maximize_x - caption_gap - caption_width;
-    let theme_x = minimize_x - caption_gap - caption_width;
+    let about_x = minimize_x - caption_gap - caption_width;
+    let theme_x = about_x - caption_gap - caption_width;
     let language_x = theme_x - 8 - language_width;
     // Main-window controls (including the pages) move in one batch; the page
     // contents follow in a second batch once the page sizes are applied.
@@ -619,27 +620,18 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
             language_width,
             120,
         );
+        let about_control = GetDlgItem(hwnd, i32::try_from(ID_ABOUT_PROJECT).unwrap());
         for (index, button) in [
             (minimize_x, state.caption_minimize),
             (maximize_x, state.caption_maximize),
             (close_x, state.caption_close),
             (theme_x, state.theme_button),
+            (about_x, about_control),
         ] {
             place(button, index, (HEADER_HEIGHT - 30) / 2, caption_width, 30);
             if !state.dragging_splitter {
                 InvalidateRect(button, ptr::null(), 0);
             }
-        }
-        let about = GetDlgItem(hwnd, i32::try_from(ID_ABOUT_PROJECT).unwrap());
-        let about_width = 70;
-        let about_x = language_x - 10 - about_width;
-        let title_right = margin + text_width("app_title") + 12;
-        let has_room = about_x >= title_right && about_x + about_width + 8 <= language_x;
-        if has_room {
-            place(about, about_x, (HEADER_HEIGHT - 28) / 2, about_width, 28);
-            ShowWindow(about, SW_SHOW);
-        } else {
-            ShowWindow(about, SW_HIDE);
         }
         for (handle, key) in &state.buttons {
             match *key {

@@ -337,6 +337,7 @@ pub(crate) fn apply_theme(hwnd: Hwnd, state: &mut UiState, dark: bool) {
             RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_FRAME,
         );
     }
+    super::about::refresh_theme();
 }
 
 pub(crate) fn toggle_theme(hwnd: Hwnd, state: &mut UiState) {

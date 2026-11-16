@@ -4,15 +4,15 @@ use super::{
     BeginPaint, ClientToScreen, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     EndPaint, FillRect, GetCapture, GetClientRect, GetCursorPos, GetDpiForWindow, GetMessageW,
     GetModuleHandleW, GetMonitorInfoW, GetProcAddress, GetSystemMetrics, GetWindowLongPtrW,
-    GetWindowPlacement, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTLEFT, HTRIGHT,
-    HTTOP, HTTOPLEFT, HTTOPRIGHT, Hwnd, LoadCursorW, Lparam, Lresult, Message, MonitorFromPoint,
-    MonitorInfo, OnceLock, PaintStruct, Point, PostQuitMessage, Rect, RegisterClassW,
-    ReleaseCapture, SW_HIDE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SendMessageW, SetCapture,
-    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos, ShowWindow,
-    SystemParametersInfoW, TranslateMessage, UiState, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_PAINT,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
-    WindowPlacement, WndClass, Wparam, brush, c_accent, c_void, ptr, scale, unscale, wide,
-    window_rect,
+    GetWindowPlacement, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT,
+    HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, Hwnd, IsZoomed, LoadCursorW, Lparam, Lresult,
+    Message, MonitorFromPoint, MonitorInfo, OnceLock, PaintStruct, Point, PostQuitMessage, Rect,
+    RegisterClassW, ReleaseCapture, SW_HIDE, SWP_NOACTIVATE, SWP_SHOWWINDOW, ScreenToClient,
+    SendMessageW, SetCapture, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPlacement,
+    SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage, UiState, WM_ERASEBKGND,
+    WM_GETMINMAXINFO, WM_PAINT, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP, WindowPlacement, WndClass, Wparam, brush, c_accent, c_void,
+    header_height, ptr, scale, unscale, wide, window_rect,
 };
 
 pub(crate) fn clamp_window_size(width: i32, height: i32) -> (i32, i32) {
@@ -32,6 +32,120 @@ pub(crate) fn clamp_window_size(width: i32, height: i32) -> (i32, i32) {
     } else {
         (width, height)
     }
+}
+
+/// Shared borderless frame handling used by the main window and About: the
+/// client covers the whole window and every outer edge is a real sizing edge.
+pub(crate) unsafe fn borderless_nccalcsize(
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
+    if wparam == 0 {
+        return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+    }
+    let rects = lparam as *mut [Rect; 3];
+    unsafe {
+        let client = (*rects)[0];
+        let pixel = Rect {
+            left: client.left,
+            top: client.top,
+            right: client.left + 1,
+            bottom: client.top + 1,
+        };
+        (*rects)[1] = pixel;
+        (*rects)[2] = pixel;
+    }
+    0x0400
+}
+
+/// Shared hit testing: 6-DIP resize border, caption band and client area.
+pub(crate) unsafe fn borderless_hit_test(
+    hwnd: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
+    let result = unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+    let x = i32::from(u16::try_from(lparam & 0xffff).unwrap().cast_signed());
+    let y = i32::from(
+        u16::try_from((lparam >> 16) & 0xffff)
+            .unwrap()
+            .cast_signed(),
+    );
+    let mut point = Point { x, y };
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    {
+        ScreenToClient(hwnd, &mut point);
+        GetClientRect(hwnd, &mut rect);
+    }
+    if IsZoomed(hwnd) == 0 {
+        let edge = scale(6).max(4);
+        let left = point.x < edge;
+        let right = point.x >= rect.right - edge;
+        let top = point.y < edge;
+        let bottom = point.y >= rect.bottom - edge;
+        if left || right || top || bottom {
+            let code = if top && left {
+                HTTOPLEFT
+            } else if top && right {
+                HTTOPRIGHT
+            } else if bottom && left {
+                HTBOTTOMLEFT
+            } else if bottom && right {
+                HTBOTTOMRIGHT
+            } else if left {
+                HTLEFT
+            } else if right {
+                HTRIGHT
+            } else if top {
+                HTTOP
+            } else {
+                HTBOTTOM
+            };
+            return code as Lresult;
+        }
+    }
+    if result == HTCLIENT as Lresult
+        && point.x >= 0
+        && point.x < rect.right
+        && point.y >= 0
+        && point.y < header_height()
+    {
+        return HTCAPTION as Lresult;
+    }
+    if result == 0 {
+        HTCLIENT as Lresult
+    } else {
+        result
+    }
+}
+
+/// Starts the same translucent outline sizing used by the main window.
+pub(crate) unsafe fn begin_outline_resize(hwnd: Hwnd, wparam: Wparam, lparam: Lparam) -> bool {
+    if !matches!(
+        u32::try_from(wparam & 0xffff_ffff).unwrap().cast_signed(),
+        HTLEFT..=HTBOTTOMRIGHT
+    ) || IsZoomed(hwnd) != 0
+    {
+        return false;
+    }
+    let origin = Point {
+        x: i32::from(u16::try_from(lparam & 0xffff).unwrap().cast_signed()),
+        y: i32::from(
+            u16::try_from((lparam >> 16) & 0xffff)
+                .unwrap()
+                .cast_signed(),
+        ),
+    };
+    unsafe { outline_resize(hwnd, wparam, origin) };
+    true
 }
 
 pub(crate) static SPLITTER_PREVIEW_CLASS_READY: OnceLock<()> = OnceLock::new();

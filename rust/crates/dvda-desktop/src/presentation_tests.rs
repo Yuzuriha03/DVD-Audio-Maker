@@ -555,6 +555,9 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                                         );
                                     }
                                 }
+                                // The About entry is a square info icon; its localized
+                                // window text is for tooltips/accessibility, not painted.
+                                "Button" if id == ID_ABOUT_PROJECT => {}
                                 "Button"
                                     if style(hwnd) & 0xf == BS_OWNERDRAW && !text.is_empty() =>
                                 {
@@ -1766,6 +1769,88 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     render_log(&mut ui);
     assert!(get_text(ui.controls.log).contains("track-00"));
     assert!(get_text(ui.controls.log).contains("summary-after-hold"));
+    // The square info entry lives inside the caption group, to the right of the
+    // language combo and its dropdown band, at every supported width/language.
+    for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja, Lang::Ko] {
+        set_language(&mut ui, lang);
+        for width in [640, 820, 1180] {
+            MoveWindow(parent, 0, 0, width, 820, 0);
+            layout(parent, &mut ui);
+            let about = GetDlgItem(parent, i32::try_from(ID_ABOUT_PROJECT).unwrap());
+            assert!(!about.is_null());
+            let about_rect = window_rect(about);
+            let language_rect = window_rect(ui.controls.language);
+            let theme_rect = window_rect(ui.theme_button);
+            let minimize_rect = window_rect(ui.caption_minimize);
+            assert_eq!(
+                about_rect.right - about_rect.left,
+                theme_rect.right - theme_rect.left,
+                "info icon width differs from theme button at {width} {}",
+                lang.code()
+            );
+            assert_eq!(
+                about_rect.bottom - about_rect.top,
+                minimize_rect.bottom - minimize_rect.top,
+                "info icon height differs from minimize at {width} {}",
+                lang.code()
+            );
+            assert_eq!(
+                language_rect.right - language_rect.left,
+                scale(104),
+                "language combo width changed at {width} {}",
+                lang.code()
+            );
+            assert!(
+                theme_rect.left >= language_rect.right + scale(8) - 1,
+                "info icon group covers the language combo at {width} {}",
+                lang.code()
+            );
+            assert!(
+                about_rect.left >= theme_rect.right + scale(1) - 1,
+                "info icon covers the theme button at {width} {}",
+                lang.code()
+            );
+            assert!(
+                minimize_rect.left >= about_rect.right + scale(1) - 1,
+                "info icon overlaps minimize at {width} {}",
+                lang.code()
+            );
+            assert!(
+                about_rect.right <= parent_rect_right(parent) - scale(18),
+                "info icon leaves the header at {width} {}",
+                lang.code()
+            );
+        }
+    }
+    // The info entry keeps keyboard access and its tooltip, and the language
+    // dropdown opens below the header without the icon covering it.
+    let about = GetDlgItem(parent, i32::try_from(ID_ABOUT_PROJECT).unwrap());
+    let about_style = u32::try_from(GetWindowLongPtrW(about, -16) & 0xffff_ffff).unwrap();
+    assert!(
+        about_style & WS_TABSTOP != 0,
+        "About info icon is not keyboard reachable"
+    );
+    assert!(ui.tooltips.iter().any(|tooltip| tooltip.key == "about"));
+    MoveWindow(parent, 0, 0, scale(640), scale(820), 0);
+    layout(parent, &mut ui);
+    SetFocus(ui.controls.language);
+    unsafe {
+        SendMessageW(ui.controls.language, 0x014f, 1, 0);
+    }
+    let mut dropped = Rect::default();
+    unsafe {
+        SendMessageW(ui.controls.language, 0x0152, 0, (&raw mut dropped) as isize);
+        SendMessageW(ui.controls.language, 0x014f, 0, 0);
+    }
+    let language_rect = window_rect(ui.controls.language);
+    let about_rect = window_rect(about);
+    if dropped.right > dropped.left {
+        assert!(
+            about_rect.bottom <= dropped.top || about_rect.left >= dropped.right,
+            "info icon covers the language dropdown"
+        );
+    }
+    assert!(language_rect.right > language_rect.left);
     // Close the per-test archive before deleting its own temporary folder.
     ui.log_file = None;
     {
@@ -2003,4 +2088,10 @@ fn window_paint_cache_throughput() {
         );
     }
     DestroyWindow(parent);
+}
+
+fn parent_rect_right(parent: Hwnd) -> i32 {
+    let mut rect = Rect::default();
+    GetClientRect(parent, &mut rect);
+    rect.right
 }

@@ -163,7 +163,11 @@ pub(crate) fn set_language(state: &mut UiState, lang: Lang) {
         set_text(*hwnd, tr(lang, "browse"));
     }
     for tooltip in &mut state.tooltips {
-        tooltip.text = wide(&setting_help(lang, tooltip.key));
+        tooltip.text = if tooltip.key == "about" {
+            wide(tr(lang, "about"))
+        } else {
+            wide(&setting_help(lang, tooltip.key))
+        };
         let info = tooltip_info(tooltip);
         unsafe {
             SendMessageW(state.tooltip_window, 0x0439, 0, &raw const info as isize);
@@ -212,4 +216,5 @@ pub(crate) fn set_language(state: &mut UiState, lang: Lang) {
     update_statistics(state);
     let main_window = state.main_window;
     layout(main_window, state);
+    super::about::refresh_language(lang);
 }

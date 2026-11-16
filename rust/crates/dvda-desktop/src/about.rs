@@ -9,15 +9,20 @@
 //! pane. Chrome, palette, fonts, buttons, DPI and keyboard ownership come from
 //! `dialog_ui`, so the page matches the main window and every other popup.
 
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, AtomicIsize, Ordering},
+};
 
 include!(concat!(env!("OUT_DIR"), "/licenses.rs"));
 
+use super::controls::caption_button;
 use super::dialog_ui::{
-    self, ButtonKind, Theme, create_button, create_close_button, create_content_host, create_label,
+    self, ButtonKind, Theme, create_button, create_content_host, create_label,
     create_page_scrollbar, measure_button,
 };
-use super::draw::{begin_window_paint, finish_window_paint};
+use super::draw::{begin_window_paint, draw_owner_item_contents, finish_window_paint};
+use super::frame::{begin_outline_resize, borderless_hit_test, borderless_nccalcsize};
 use super::*;
 
 const IDOK: usize = 1;
@@ -64,6 +69,7 @@ struct ScrollInfo {
 #[link(name = "user32")]
 unsafe extern "system" {
     fn SetScrollInfo(hwnd: Hwnd, bar: i32, info: *const ScrollInfo, redraw: i32) -> i32;
+    fn ShowScrollBar(hwnd: Hwnd, bar: i32, show: i32) -> i32;
 }
 
 #[derive(Clone, Copy)]
@@ -76,6 +82,7 @@ enum FontRole {
 
 struct AboutState {
     theme: Theme,
+    lang: Lang,
     title: String,
     name: Hwnd,
     role: Hwnd,
@@ -100,6 +107,9 @@ struct AboutState {
 }
 
 static REGISTERED: OnceLock<()> = OnceLock::new();
+static ABOUT_WINDOW: AtomicIsize = AtomicIsize::new(0);
+static ABOUT_CREATING: AtomicBool = AtomicBool::new(false);
+const SB_VERT_SCROLLBAR: i32 = 1;
 
 fn window_dpi(hwnd: Hwnd) -> u32 {
     let dpi = GetDpiForWindow(hwnd);
@@ -137,7 +147,7 @@ fn apply_fonts(state: &AboutState) {
     }
 }
 
-fn select_document(state: &mut AboutState, index: usize) {
+fn select_document(_window: Hwnd, state: &mut AboutState, index: usize) {
     let Some((name, text)) = DOCUMENTS.get(index) else {
         return;
     };
@@ -151,6 +161,7 @@ fn select_document(state: &mut AboutState, index: usize) {
             InvalidateRect(*button, ptr::null(), 0);
         }
     }
+    refresh_edit_scrollbar(state);
 }
 
 fn about_state(hwnd: Hwnd) -> Option<&'static mut AboutState> {
@@ -180,13 +191,15 @@ fn layout(window: Hwnd) {
     let margin = state.theme.sd(18);
     let header = state.theme.header_height();
     let width = (client.right - margin * 2).max(state.theme.sd(200));
-    let close_size = state.theme.sd(40);
+    let caption_width = state.theme.sd(40);
+    let caption_height = state.theme.sd(30);
+    let close_x = client.right - state.theme.sd(18) - caption_width;
     MoveWindow(
         state.close,
-        client.right - close_size,
-        (header - close_size) / 2,
-        close_size,
-        close_size,
+        close_x,
+        (header - caption_height) / 2,
+        caption_width,
+        caption_height,
         1,
     );
 
@@ -217,12 +230,12 @@ fn layout(window: Hwnd) {
 
     let footer_height = state.theme.sd(34);
     let footer_top = client.bottom - margin - footer_height;
-    let base_total = edit_top + state.theme.sd(EDIT_MIN_HEIGHT_DIP) + margin;
+    let natural_bottom = edit_top + state.theme.sd(EDIT_MIN_HEIGHT_DIP);
     let view_height = (footer_top - header).max(1);
-    let scroll_max = (base_total - footer_top).max(0);
+    let scroll_max = (natural_bottom - footer_top).max(0);
     state.scroll = state.scroll.clamp(0, scroll_max);
-    state.content_height = base_total;
-    let extra = (view_height - (base_total - header)).max(0);
+    state.content_height = natural_bottom;
+    let extra = (view_height - (natural_bottom - header)).max(0);
     let edit_height = state.theme.sd(EDIT_MIN_HEIGHT_DIP) + extra;
     let offset = |value: i32| value - header - state.scroll;
     MoveWindow(
@@ -298,7 +311,7 @@ fn layout(window: Hwnd) {
         size: u32::try_from(std::mem::size_of::<ScrollInfo>()).unwrap(),
         mask: SIF_ALL,
         minimum: 0,
-        maximum: (base_total - 1).max(0),
+        maximum: (natural_bottom - 1).max(0),
         page: u32::try_from(view_height).unwrap_or(u32::MAX),
         position: state.scroll,
         track: 0,
@@ -323,6 +336,7 @@ fn layout(window: Hwnd) {
     unsafe {
         InvalidateRect(state.page_bar, ptr::null(), 0);
     }
+    refresh_edit_scrollbar(state);
 }
 
 #[allow(
@@ -383,7 +397,7 @@ unsafe extern "system" fn about_proc(
                 let id = usize::try_from(item.control_id).unwrap_or_default();
                 if id == ID_CLOSE {
                     unsafe {
-                        dialog_ui::draw_button(item, ButtonKind::Close, &state.theme, false);
+                        draw_owner_item_contents(hwnd, item);
                     }
                     return 1;
                 }
@@ -416,7 +430,7 @@ unsafe extern "system" fn about_proc(
             if (ID_LICENSE_BASE..ID_LICENSE_BASE + DOCUMENTS.len()).contains(&id)
                 && let Some(state) = about_state(hwnd)
             {
-                select_document(state, id - ID_LICENSE_BASE);
+                select_document(hwnd, state, id - ID_LICENSE_BASE);
                 return 0;
             }
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
@@ -458,17 +472,13 @@ unsafe extern "system" fn about_proc(
             }
             0
         }
-        WM_NCHITTEST => {
-            let y = i32::from(
-                u16::try_from((lparam >> 16) & 0xffff)
-                    .unwrap()
-                    .cast_signed(),
-            );
-            let header = about_state(hwnd).map_or(0, |state| state.theme.header_height());
-            if y < header {
-                HTCAPTION as Lresult
+        WM_NCCALCSIZE => unsafe { borderless_nccalcsize(hwnd, message, wparam, lparam) },
+        WM_NCHITTEST => unsafe { borderless_hit_test(hwnd, message, wparam, lparam) },
+        WM_NCLBUTTONDOWN => {
+            if unsafe { begin_outline_resize(hwnd, wparam, lparam) } {
+                0
             } else {
-                HTCLIENT as Lresult
+                unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
             }
         }
         WM_DPICHANGED => {
@@ -515,6 +525,12 @@ unsafe extern "system" fn about_proc(
             0
         }
         WM_DESTROY => {
+            let _ = ABOUT_WINDOW.compare_exchange(
+                hwnd as isize,
+                0,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
             let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AboutState;
             if !pointer.is_null() {
                 unsafe {
@@ -605,7 +621,147 @@ fn apply_dark_scrollbars(window: Hwnd, edit: Hwnd) {
             let dark_name = wide("DarkMode_Explorer");
             SetWindowTheme(window, dark_name.as_ptr(), ptr::null());
             SetWindowTheme(edit, dark_name.as_ptr(), ptr::null());
+        } else {
+            let light_name = wide("Explorer");
+            SetWindowTheme(window, light_name.as_ptr(), ptr::null());
+            SetWindowTheme(edit, light_name.as_ptr(), ptr::null());
         }
+    }
+}
+
+fn edit_has_overflow(edit: Hwnd) -> bool {
+    const WM_GETFONT: u32 = 0x0031;
+    const EM_GETLINECOUNT: u32 = 0x00ba;
+    const EM_LINEINDEX: u32 = 0x00bb;
+    const EM_POSFROMCHAR: u32 = 0x00d6;
+    const EM_LINELENGTH: u32 = 0x00c1;
+    let mut lines = unsafe { SendMessageW(edit, EM_GETLINECOUNT, 0, 0) };
+    while lines > 1 {
+        let last = unsafe { SendMessageW(edit, EM_LINEINDEX, (lines - 1).cast_unsigned(), 0) };
+        if last < 0 || unsafe { SendMessageW(edit, EM_LINELENGTH, last.cast_unsigned(), 0) } != 0 {
+            break;
+        }
+        lines -= 1;
+    }
+    if lines < 1 {
+        return false;
+    }
+    let last_start = unsafe { SendMessageW(edit, EM_LINEINDEX, (lines - 1).cast_unsigned(), 0) };
+    if last_start < 0 {
+        return false;
+    }
+    let last_y = unsafe { SendMessageW(edit, EM_POSFROMCHAR, last_start.cast_unsigned(), 0) } >> 16;
+    let mut client = Rect::default();
+    GetClientRect(edit, &mut client);
+    let dc = CreateCompatibleDC(ptr::null_mut());
+    if dc.is_null() {
+        return false;
+    }
+    let font = unsafe { SendMessageW(edit, WM_GETFONT, 0, 0) } as Handle;
+    let mut metrics: TextMetric = unsafe { std::mem::zeroed() };
+    let old = if font.is_null() {
+        ptr::null_mut()
+    } else {
+        SelectObject(dc, font)
+    };
+    GetTextMetricsW(dc, &mut metrics);
+    if !old.is_null() {
+        SelectObject(dc, old);
+    }
+    DeleteDC(dc);
+    let text_height = metrics.height;
+    if last_y < 0 {
+        // EM_POSFROMCHAR only returns a position for a visible character; a
+        // long document's last line is off-screen, so fall back to the line
+        // count and measured line height.
+        let second = unsafe { SendMessageW(edit, EM_LINEINDEX, 1, 0) };
+        let first_y = unsafe { SendMessageW(edit, EM_POSFROMCHAR, 0, 0) } >> 16;
+        let second_y =
+            unsafe { SendMessageW(edit, EM_POSFROMCHAR, second.cast_unsigned(), 0) } >> 16;
+        let line_height = i32::try_from(second_y - first_y).unwrap_or(0);
+        return line_height > 0
+            && lines > isize::try_from(client.bottom / line_height).unwrap_or(0);
+    }
+    let content_bottom = i32::try_from(last_y).unwrap_or(i32::MAX) + text_height.max(1);
+    content_bottom > client.bottom
+}
+
+fn refresh_edit_scrollbar(state: &AboutState) {
+    let overflow = edit_has_overflow(state.edit);
+    unsafe {
+        ShowScrollBar(state.edit, SB_VERT_SCROLLBAR, i32::from(overflow));
+    }
+}
+
+fn apply_language(window: Hwnd, state: &mut AboutState, lang: Lang) {
+    state.lang = lang;
+    let title = tr(lang, "author_page_title").to_owned();
+    state.title.clone_from(&title);
+    unsafe {
+        SetWindowTextW(window, wide(&title).as_ptr());
+    }
+    set_text(state.name, tr(lang, "author_name"));
+    set_text(state.role, tr(lang, "author_role"));
+    tr(lang, "author_bio").clone_into(&mut state.bio_text);
+    set_text(state.bio, &state.bio_text);
+    state.project_text = format!("{}\n{}", tr(lang, "project_home"), tr(lang, "project_url"));
+    set_text(state.project, &state.project_text);
+    set_text(state.version, tr(lang, "author_version"));
+    state.licenses_text = license_summary(lang);
+    set_text(state.licenses, &state.licenses_text);
+    set_text(state.selected, DOCUMENTS[state.selected_index].0);
+    set_text(state.footer, tr(lang, "dialog_close"));
+    apply_fonts(state);
+    select_document(window, state, state.selected_index);
+    layout(window);
+}
+
+fn focus_about(window: Hwnd) {
+    ShowWindow(window, SW_SHOW);
+    SetForegroundWindow(window);
+    if let Some(state) = about_state(window)
+        && let Some(first) = state.license_buttons.first()
+    {
+        SetFocus(*first);
+    }
+    invalidate_about(window);
+}
+
+fn invalidate_about(window: Hwnd) {
+    unsafe {
+        RedrawWindow(
+            window,
+            ptr::null(),
+            ptr::null_mut(),
+            0x0001 | 0x0004 | 0x0010 | 0x0085,
+        );
+    }
+}
+
+/// Re-applies theme-dependent native resources to a live About page and
+/// repaints it, so switching the main window theme updates the page at once.
+pub(crate) fn refresh_theme() {
+    let window = ABOUT_WINDOW.load(Ordering::Acquire) as Hwnd;
+    if window.is_null() || IsWindow(window) == 0 {
+        return;
+    }
+    if let Some(state) = about_state(window) {
+        apply_dark_scrollbars(window, state.edit);
+        refresh_edit_scrollbar(state);
+    }
+    invalidate_about(window);
+}
+
+/// Updates a live About page after the main window language changes.
+pub(crate) fn refresh_language(lang: Lang) {
+    let window = ABOUT_WINDOW.load(Ordering::Acquire) as Hwnd;
+    if window.is_null() || IsWindow(window) == 0 {
+        return;
+    }
+    if let Some(state) = about_state(window)
+        && state.lang != lang
+    {
+        apply_language(window, state, lang);
     }
 }
 
@@ -617,6 +773,22 @@ fn apply_dark_scrollbars(window: Hwnd, edit: Hwnd) {
 )]
 pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
     register_class();
+    let existing = ABOUT_WINDOW.load(Ordering::Acquire) as Hwnd;
+    if !existing.is_null() && IsWindow(existing) != 0 {
+        if let Some(state) = about_state(existing)
+            && state.lang != lang
+        {
+            apply_language(existing, state, lang);
+        }
+        refresh_theme();
+        focus_about(existing);
+        return existing;
+    }
+    // A duplicate WM_COMMAND that re-enters during window creation must not
+    // create a second page; the first creation publishes the handle below.
+    if ABOUT_CREATING.swap(true, Ordering::AcqRel) {
+        return ptr::null_mut();
+    }
     let theme = Theme::new(parent);
     let instance = unsafe { GetModuleHandleW(ptr::null()) };
     let title = tr(lang, "author_page_title").to_owned();
@@ -628,7 +800,7 @@ pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
             0,
             wide("DVD_AUDIO_ABOUT_RUST").as_ptr(),
             title_wide.as_ptr(),
-            WS_POPUP | WS_CLIPCHILDREN,
+            WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_CLIPCHILDREN,
             0,
             0,
             width,
@@ -641,10 +813,11 @@ pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
     };
     if window.is_null() {
         theme.delete();
+        ABOUT_CREATING.store(false, Ordering::Release);
         return window;
     }
     let content = create_content_host(window);
-    let close = create_close_button(window);
+    let close = caption_button(window, ID_CLOSE);
     let mut labels: Vec<(Hwnd, FontRole)> = Vec::new();
     let mut label = |text: &str, role: FontRole| {
         let hwnd = create_label(content, text);
@@ -676,6 +849,7 @@ pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
     apply_dark_scrollbars(window, edit);
     let state = Box::new(AboutState {
         theme,
+        lang,
         title,
         name,
         role,
@@ -702,7 +876,7 @@ pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
         SetWindowLongPtrW(window, GWLP_USERDATA, Box::into_raw(state) as isize);
         if let Some(state) = about_state(window) {
             apply_fonts(state);
-            select_document(state, 0);
+            select_document(window, state, 0);
         }
         dialog_ui::center_on_owner(window, parent, width, height);
         layout(window);
@@ -713,6 +887,8 @@ pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
         {
             SetFocus(*first);
         }
+        ABOUT_WINDOW.store(window as isize, Ordering::Release);
+        ABOUT_CREATING.store(false, Ordering::Release);
     }
     window
 }
@@ -739,6 +915,40 @@ mod tests {
             maximum: u32,
             remove: u32,
         ) -> i32;
+    }
+
+    #[repr(C)]
+    struct ScrollBarInfo {
+        size: u32,
+        scroll_bar: Rect,
+        line_button: i32,
+        thumb_top: i32,
+        thumb_bottom: i32,
+        reserved: i32,
+        state: [u32; 6],
+    }
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetScrollBarInfo(hwnd: Hwnd, object: i32, info: *mut ScrollBarInfo) -> i32;
+    }
+
+    fn vertical_scrollbar_visible(hwnd: Hwnd) -> bool {
+        const OBJID_VSCROLL: i32 = -5;
+        const STATE_SYSTEM_INVISIBLE: u32 = 0x0000_8000;
+        let mut info = ScrollBarInfo {
+            size: u32::try_from(std::mem::size_of::<ScrollBarInfo>()).unwrap(),
+            scroll_bar: Rect::default(),
+            line_button: 0,
+            thumb_top: 0,
+            thumb_bottom: 0,
+            reserved: 0,
+            state: [0; 6],
+        };
+        unsafe {
+            GetScrollBarInfo(hwnd, OBJID_VSCROLL, &raw mut info);
+        }
+        info.state[0] & STATE_SYSTEM_INVISIBLE == 0
     }
 
     fn px(dpi: u32, value: i32) -> i32 {
@@ -775,14 +985,27 @@ mod tests {
         controls.extend(state.license_buttons.iter().copied());
         for control in controls {
             let rect = window_rect(control);
+            let fixed = GetParent(control) == window;
             assert!(
-                rect.left >= bounds.left
-                    && rect.right <= bounds.right
-                    && rect.top >= bounds.top
-                    && rect.bottom <= bounds.bottom,
-                "control escapes the about window at {:?}",
+                rect.left >= bounds.left && rect.right <= bounds.right,
+                "control {control:p} [{} {} {} {}] escapes about [{} {} {} {}] at dpi {:?}",
+                rect.left,
+                rect.top,
+                rect.right,
+                rect.bottom,
+                bounds.left,
+                bounds.top,
+                bounds.right,
+                bounds.bottom,
                 state.theme.dpi
             );
+            if fixed {
+                assert!(
+                    rect.top >= bounds.top && rect.bottom <= bounds.bottom,
+                    "fixed control {control:p} escapes about at dpi {:?}",
+                    state.theme.dpi
+                );
+            }
         }
         assert!(
             window_rect(state.footer).bottom <= window_rect(state.edit).bottom.max(bounds.bottom)
@@ -1052,6 +1275,121 @@ mod tests {
         };
         assert_ne!(unsafe { IsDialogMessageW(window, &raw mut tab) }, 0);
         assert_eq!(GetFocus(), second);
+        DestroyWindow(window);
+    }
+
+    #[test]
+    fn about_stays_singleton_and_reopens_after_being_closed() {
+        let _ui_test_lock = ui_test_guard();
+        let first = show_about(ptr::null_mut(), Lang::En);
+        assert!(!first.is_null());
+        let again = show_about(ptr::null_mut(), Lang::En);
+        assert_eq!(
+            again, first,
+            "duplicate About command must reuse the window"
+        );
+        DestroyWindow(first);
+        assert_eq!(IsWindow(first), 0);
+        let reopened = show_about(ptr::null_mut(), Lang::En);
+        assert!(!reopened.is_null());
+        assert_ne!(reopened, first);
+        DestroyWindow(reopened);
+    }
+
+    #[test]
+    fn page_and_reading_scrollbars_only_show_while_overflowing() {
+        let _ui_test_lock = ui_test_guard();
+        let window = show_about(ptr::null_mut(), Lang::En);
+        assert!(!window.is_null());
+        MoveWindow(window, 0, 0, 640, 520, 0);
+        let state = state(window);
+        assert!(IsWindowVisible(state.page_bar) != 0);
+        assert!(vertical_scrollbar_visible(state.edit));
+        MoveWindow(window, 0, 0, 940, 1400, 0);
+        assert_eq!(IsWindowVisible(state.page_bar), 0);
+        set_text(state.edit, "short");
+        layout(window);
+        assert!(!vertical_scrollbar_visible(state.edit));
+        set_text(state.edit, DOCUMENTS[0].1);
+        layout(window);
+        assert!(vertical_scrollbar_visible(state.edit));
+        DestroyWindow(window);
+    }
+
+    #[test]
+    fn open_about_follows_main_language_without_recreating_the_window() {
+        let _ui_test_lock = ui_test_guard();
+        let window = show_about(ptr::null_mut(), Lang::En);
+        assert!(!window.is_null());
+        refresh_language(Lang::Zh);
+        assert!(state(window).lang == Lang::Zh);
+        assert_eq!(get_text(state(window).footer), tr(Lang::Zh, "dialog_close"));
+        assert_eq!(show_about(ptr::null_mut(), Lang::Zh), window);
+        DestroyWindow(window);
+    }
+
+    #[test]
+    fn about_caption_close_reuses_main_window_close() {
+        let _ui_test_lock = ui_test_guard();
+        let window = show_about(ptr::null_mut(), Lang::En);
+        assert!(!window.is_null());
+        let state = state(window);
+        assert_eq!(GetDlgCtrlID(state.close), i32::try_from(ID_CLOSE).unwrap());
+        let close_style = u32::try_from(GetWindowLongPtrW(state.close, -16) & 0xffff_ffff).unwrap();
+        assert_eq!(close_style & WS_TABSTOP, 0);
+        assert_eq!(close_style & 0x0000_000b, 0x0000_000b);
+        let close = window_rect(state.close);
+        assert_eq!(close.bottom - close.top, state.theme.sd(30));
+        unsafe {
+            SendMessageW(window, WM_COMMAND, ID_CLOSE, 0);
+        }
+        assert_eq!(IsWindow(window), 0);
+    }
+
+    #[test]
+    fn trailing_newlines_do_not_show_the_reading_scrollbar() {
+        let _ui_test_lock = ui_test_guard();
+        let window = show_about(ptr::null_mut(), Lang::En);
+        MoveWindow(window, 0, 0, 640, 520, 0);
+        let state = state(window);
+        let text = format!("one visible line{}", "\n".repeat(40));
+        set_text(state.edit, &text);
+        layout(window);
+        assert!(!vertical_scrollbar_visible(state.edit));
+        DestroyWindow(window);
+    }
+
+    #[test]
+    fn about_uses_the_main_window_resize_frame() {
+        let _ui_test_lock = ui_test_guard();
+        let window = show_about(ptr::null_mut(), Lang::En);
+        assert!(!window.is_null());
+        let style = u32::try_from(GetWindowLongPtrW(window, -16) & 0xffff_ffff).unwrap();
+        assert_ne!(style & WS_THICKFRAME, 0, "About is not resizable");
+        let bounds = window_rect(window);
+        let right_hit = unsafe {
+            SendMessageW(
+                window,
+                WM_NCHITTEST,
+                0,
+                isize::try_from(
+                    ((bounds.top + (bounds.bottom - bounds.top) / 2) << 16)
+                        | ((bounds.right - 2) & 0xffff),
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(right_hit, HTRIGHT as Lresult);
+        let corner_hit = unsafe {
+            SendMessageW(
+                window,
+                WM_NCHITTEST,
+                0,
+                isize::try_from(((bounds.bottom - 2) << 16) | ((bounds.right - 2) & 0xffff))
+                    .unwrap(),
+            )
+        };
+        assert_eq!(corner_hit, HTBOTTOMRIGHT as Lresult);
         DestroyWindow(window);
     }
 

@@ -1,11 +1,11 @@
-//! flutter_rust_bridge bindings over the real dvda-core application entrypoints.
+//! `flutter_rust_bridge` bindings over the real dvda-core application entrypoints.
 //!
 //! No orchestration or log rules live here: Flutter passes a desktop-compatible
 //! profile JSON and the binding calls the shared `dvda_core::gui` task sequence
 //! and `dvda_core::log_view` formatting, forwarding progress and cancellation.
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use dvda_core::app::AppOptions;
 use dvda_core::gui;
@@ -52,7 +52,7 @@ fn set_text(text: &str) {
         // Keep the complete structured event: truncating it produced invalid
         // JSON that the shared formatter could not localize, so raw [TASK] JSON
         // leaked into the progress label.
-        *slot = text.to_owned();
+        text.clone_into(&mut slot);
     }
 }
 
@@ -149,8 +149,8 @@ impl gui::GuiCallbacks for Forward {
 fn outcome_with_log(
     ok: bool,
     cancelled: bool,
-    message: String,
-    diagnostics: serde_json::Value,
+    message: &str,
+    diagnostics: &serde_json::Value,
     log: &str,
     delivery_directory: Option<&std::path::Path>,
 ) -> String {
@@ -291,8 +291,10 @@ pub fn run_profile(profile_json: String, action: String) -> String {
         Ok(path) => path,
         Err(error) => {
             push_log(&format!("[bridge] {error}"));
-            let tail = LOG.lock().map(|log| log.join("\n")).unwrap_or_default();
-            return outcome_with_log(false, false, error, serde_json::Value::Null, &tail, None);
+            let tail = LOG
+                .lock()
+                .map_or_else(|_| String::new(), |log| log.join("\n"));
+            return outcome_with_log(false, false, &error, &serde_json::Value::Null, &tail, None);
         }
     };
     let started = std::time::Instant::now();
@@ -449,7 +451,9 @@ pub fn run_profile(profile_json: String, action: String) -> String {
         elapsed.as_secs_f64()
     ));
     let _ = std::fs::remove_file(&path);
-    let tail = LOG.lock().map(|log| log.join("\n")).unwrap_or_default();
+    let tail = LOG
+        .lock()
+        .map_or_else(|_| String::new(), |log| log.join("\n"));
     let result = result.map(|(ok, mut message, mut diagnostics)| {
         if let Some((actual, display)) = &source {
             message = dvda_core::gui::display_product_message(actual, Some(display), &message);
@@ -461,8 +465,8 @@ pub fn run_profile(profile_json: String, action: String) -> String {
         Ok((ok, message, diagnostics)) => outcome_with_log(
             ok,
             cancelled,
-            message,
-            diagnostics,
+            &message,
+            &diagnostics,
             &tail,
             delivery_directory.as_deref(),
         ),
@@ -473,7 +477,14 @@ pub fn run_profile(profile_json: String, action: String) -> String {
                 }
                 None => error,
             };
-            outcome_with_log(false, cancelled, error, serde_json::Value::Null, &tail, None)
+            outcome_with_log(
+                false,
+                cancelled,
+                &error,
+                &serde_json::Value::Null,
+                &tail,
+                None,
+            )
         }
     }
 }
@@ -561,8 +572,12 @@ pub fn progress_snapshot() -> ProgressSnapshot {
     ProgressSnapshot {
         done: DONE.load(Ordering::Relaxed),
         total: TOTAL.load(Ordering::Relaxed),
-        text: TEXT.lock().map(|slot| slot.clone()).unwrap_or_default(),
-        log: LOG.lock().map(|log| log.join("\n")).unwrap_or_default(),
+        text: TEXT
+            .lock()
+            .map_or_else(|_| String::new(), |slot| slot.clone()),
+        log: LOG
+            .lock()
+            .map_or_else(|_| String::new(), |log| log.join("\n")),
     }
 }
 
@@ -876,7 +891,9 @@ mod tests {
         let mut forward = Forward::stage(0, PROGRESS_TOTAL).with_source_display(&options);
         let source_path = mirror.join("a.flac");
         forward.emit(1, &format!("源文件不存在: {}", source_path.display()));
-        let log = LOG.lock().map(|log| log.join("\n")).unwrap_or_default();
+        let log = LOG
+            .lock()
+            .map_or_else(|_| String::new(), |log| log.join("\n"));
         // Host Windows uses backslashes in the remaining relative component.
         assert!(log.contains("/sdcard/Music"), "{log}");
         assert!(log.contains("a.flac"), "{log}");
@@ -920,7 +937,9 @@ mod tests {
         let mut forward = Forward::stage(0, PROGRESS_TOTAL).with_source_display(&options);
         let message = "SOURCE_MISSING: relative/path.flac";
         forward.emit(1, message);
-        let log = LOG.lock().map(|log| log.join("\n")).unwrap_or_default();
+        let log = LOG
+            .lock()
+            .map_or_else(|_| String::new(), |log| log.join("\n"));
         assert_eq!(log, message);
         std::fs::remove_dir_all(root).unwrap();
     }

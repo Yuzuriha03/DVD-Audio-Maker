@@ -9,7 +9,7 @@ use super::{
     DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DefWindowProcW, DeleteObject,
     DrawFocusRect, EM_SETLIMITTEXT, EM_SETMARGINS, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE,
     ES_READONLY, ES_WANTRETURN, EnableWindow, EndPaint, FillRect, GWLP_USERDATA, GWLP_WNDPROC,
-    GetClassNameW, GetClientRect, GetDlgCtrlID, GetFocus, GetModuleHandleW, GetParent,
+    GetClassNameW, GetClientRect, GetDlgCtrlID, GetDlgItem, GetFocus, GetModuleHandleW, GetParent,
     GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HEADER_HEIGHT, HashMap, Hmenu, Hwnd,
     ID_ABOUT_PROJECT, ID_ADVANCED, ID_BITS, ID_BROWSE_FINAL, ID_BROWSE_IMPORT, ID_BROWSE_SOURCE,
     ID_BROWSE_WORK, ID_BUILD, ID_CANCEL, ID_CAPACITY, ID_CLOSE, ID_COPY, ID_COVER, ID_CUSTOM_BYTES,
@@ -96,7 +96,13 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     let open_profile = button(parent, tr(lang, "open"), ID_OPEN_PROFILE, 750, 10, 110, 28);
     let save_profile_button = button(parent, tr(lang, "save"), ID_SAVE_PROFILE, 870, 10, 110, 28);
     let save_as_button = button(parent, tr(lang, "save_as"), ID_SAVE_AS, 870, 10, 110, 28);
-    let about_button = button(parent, tr(lang, "about"), ID_ABOUT_PROJECT, 0, 10, 70, 28);
+    let about_button = owner_draw_button(
+        parent,
+        tr(lang, "about"),
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        ID_ABOUT_PROJECT,
+        (0, 10, 40, 30),
+    );
     buttons.push((about_button, "about"));
     let language_label = label!(
         parent,
@@ -1856,6 +1862,19 @@ pub(crate) fn initialize_tooltips(parent: Hwnd, state: &mut UiState) {
             control,
             key,
             text: wide(&setting_help(state.lang(), key)),
+        };
+        let info = tooltip_info(&tooltip);
+        unsafe {
+            SendMessageW(tooltip_window, 0x0432, 0, &raw const info as isize);
+        }
+        state.tooltips.push(tooltip);
+    }
+    let about = GetDlgItem(parent, i32::try_from(ID_ABOUT_PROJECT).unwrap());
+    if !about.is_null() {
+        let tooltip = Tooltip {
+            control: about,
+            key: "about",
+            text: wide(tr(state.lang(), "about")),
         };
         let info = tooltip_info(&tooltip);
         unsafe {

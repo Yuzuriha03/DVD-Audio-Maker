@@ -7,6 +7,10 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+# Same pedantic policy as the main workspace; strict verification adds -D warnings.
+[lints.clippy]
+pedantic = "warn"
+
 [dependencies]
 dvda-core = { path = "../dvda-core" }
 dvda-native = { path = "../dvda-native" }
