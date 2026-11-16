@@ -10,5 +10,6 @@ if not exist "%MANIFEST%" (
   echo [ERROR] Rust workspace not found: %MANIFEST%
   exit /b 2
 )
-cargo run --target %TARGET% --manifest-path "%MANIFEST%" --release --offline -p dvda-toolchain -- package --repo "%ROOT%" --target "%DVDA_PACKAGE_TARGET%" %*
+rem Windows releases publish a single EXE per architecture; never a ZIP.
+cargo run --target %TARGET% --manifest-path "%MANIFEST%" --release --offline -p dvda-toolchain -- package --repo "%ROOT%" --target "%DVDA_PACKAGE_TARGET%" --single-exe %*
 exit /b %ERRORLEVEL%

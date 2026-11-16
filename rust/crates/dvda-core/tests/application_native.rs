@@ -2,11 +2,12 @@
 use dvda_core::{app, media, verify_audio};
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde_json::{Value, json};
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt;
 use std::{
     fmt::Write as _,
     fs,
     io::{Read, Seek, SeekFrom, Write},
-    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -235,10 +236,10 @@ fn task_lifecycle_cleans_success_failure_and_cancel_and_retains_only_unfinished(
     }
 }
 
+#[cfg(windows)]
 #[test]
-#[ignore = "requires source-built media/formats/author"]
+#[ignore = "requires source-built media/formats/author and Windows file-sharing semantics"]
 fn disabled_resume_and_intermediate_mode_ignore_locked_old_record() {
-    use std::os::windows::fs::OpenOptionsExt;
     let root = Scratch::new();
     sources(&root.0);
     let options = options(&root.0, "lpcm");
@@ -289,14 +290,15 @@ fn disabled_resume_and_intermediate_mode_ignore_locked_old_record() {
     );
 }
 
+#[cfg(windows)]
 struct BuildLocks {
     record: Option<PathBuf>,
     cleanup: Vec<PathBuf>,
     handles: Vec<fs::File>,
 }
+#[cfg(windows)]
 impl Callbacks for BuildLocks {
     fn emit(&mut self, _: i32, text: &str) {
-        use std::os::windows::fs::OpenOptionsExt;
         if text.starts_with("[author] disc")
             && let Some(path) = self.record.take()
         {
@@ -328,8 +330,9 @@ impl Callbacks for BuildLocks {
     }
 }
 
+#[cfg(windows)]
 #[test]
-#[ignore = "requires source-built media/formats/author"]
+#[ignore = "requires source-built media/formats/author and Windows file-sharing semantics"]
 fn resume_write_failure_warns_and_publishes_verified_iso() {
     let root = Scratch::new();
     sources(&root.0);
@@ -370,8 +373,9 @@ fn resume_write_failure_warns_and_publishes_verified_iso() {
     assert!(verified.succeeded, "{:?}", verified.diagnostics);
 }
 
+#[cfg(windows)]
 #[test]
-#[ignore = "requires source-built media/formats/author"]
+#[ignore = "requires source-built media/formats/author and Windows file-sharing semantics"]
 fn cleanup_failure_warns_and_next_build_rejects_dirty_workspace() {
     let root = Scratch::new();
     sources(&root.0);
@@ -1273,6 +1277,7 @@ fn application_manifest_log_and_sector_audit_regressions() {
     // Standalone audit and quick-check use the same real disc, no index or media.
     let inspect = |audit| dvda_core::verify::Inspection {
         final_directory: options.path("FinalDirectory"),
+        final_directory_display: None,
         iso_prefix: "regression".into(),
         manifest_path: Some(manifest_path.clone()),
         build_log_path: Some(log_path.clone()),
@@ -1340,8 +1345,9 @@ fn split_aob(iso: &Path, original: &[u8]) -> Vec<u8> {
     result
 }
 
+#[cfg(windows)]
 #[test]
-#[ignore = "requires source-built x64 media/formats/encoder/author/disc verifier"]
+#[ignore = "requires source-built x64 media/formats/encoder/author/disc verifier and Windows file-sharing semantics"]
 #[allow(
     clippy::too_many_lines,
     reason = "The ignored publication scenario keeps author failure, rollback, and existing-release checks ordered"

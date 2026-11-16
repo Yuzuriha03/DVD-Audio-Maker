@@ -283,7 +283,10 @@ pub struct GroupEvidence {
 }
 #[derive(Debug)]
 pub struct DiscEvidence {
+    /// Actual ISO path used for reads.
     pub path: PathBuf,
+    /// User-visible path; `None` keeps the actual path (Windows).
+    pub display_path: Option<PathBuf>,
     pub groups: BTreeMap<i32, GroupEvidence>,
 }
 impl DiscEvidence {
@@ -486,7 +489,8 @@ pub fn log_issues(
         }
         for (number, mut rows) in groups {
             rows.sort_by_key(|row| row.first);
-            let context = format!("{} group {number} (build log)", disc.path.display());
+            let display = disc.display_path.as_deref().unwrap_or(&disc.path);
+            let context = format!("{} group {number} (build log)", display.display());
             let evidence = disc.groups.get(&number);
             issues.extend(sector_relations(
                 &rows,

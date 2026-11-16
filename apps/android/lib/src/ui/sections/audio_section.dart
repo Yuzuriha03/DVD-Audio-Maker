@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/app_settings.dart';
 import '../../services/app_controller.dart';
 import '../../services/platform_service.dart';
+import '../formatting.dart';
 import '../widgets/common.dart';
 
 /// MLP / LPCM encoding options.
@@ -55,18 +55,16 @@ class AudioSection extends StatelessWidget {
               SettingStringDropdown(
                 label: strings.audioMode,
                 value: settings.audioMode,
-                options: kAudioModes,
+                options: withCurrent(settings.audioModes, settings.audioMode),
                 labels: <String>[
                   strings.modeMlp,
                   strings.modeLpcm,
                   strings.modeExternal,
+                  if (!settings.audioModes.contains(settings.audioMode))
+                    settings.audioMode,
                 ],
-                onChanged: (value) => controller.update(() {
-                  settings.audioMode = value;
-                  if (value == 'lpcm' && settings.bits == '20') {
-                    settings.bits = '24';
-                  }
-                }),
+                onChanged: (value) =>
+                    controller.update(() => settings.audioMode = value),
               ),
               if (imported) ...<Widget>[
                 const SizedBox(height: 14),
@@ -89,8 +87,14 @@ class AudioSection extends StatelessWidget {
                 first: SettingStringDropdown(
                   label: strings.sampleRate,
                   value: settings.sampleRate,
-                  options: kSampleRates,
-                  labels: kSampleRateLabels,
+                  options: withCurrent(
+                    settings.sampleRates,
+                    settings.sampleRate,
+                  ),
+                  labels: withCurrent(
+                    settings.sampleRateLabels,
+                    settings.sampleRate,
+                  ),
                   enabled: !imported,
                   onChanged: (value) =>
                       controller.update(() => settings.sampleRate = value),
@@ -98,8 +102,14 @@ class AudioSection extends StatelessWidget {
                 second: SettingStringDropdown(
                   label: strings.bits,
                   value: settings.bits,
-                  options: lpcm ? kLpcmBitDepths : kBitDepths,
-                  labels: lpcm ? kLpcmBitDepthLabels : kBitDepthLabels,
+                  // Only the shared allowed set is offered. An out-of-set
+                  // value (e.g. 20-bit LPCM from an imported profile) stays in
+                  // settings for the Rust invalid_bits rejection instead of
+                  // being silently rewritten.
+                  options: lpcm ? settings.lpcmBits : settings.mlpBits,
+                  labels: lpcm
+                      ? settings.lpcmBitDepthLabels
+                      : settings.bitDepthLabels,
                   enabled: !imported,
                   onChanged: (value) =>
                       controller.update(() => settings.bits = value),

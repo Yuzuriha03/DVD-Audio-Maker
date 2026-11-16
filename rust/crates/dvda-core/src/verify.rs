@@ -4,6 +4,7 @@
 //! Native Rust disc verification. It deliberately has no media-process fallback.
 use crate::{
     aob, formats,
+    gui::{display_product_message, display_product_path},
     verification::{self, DiscEvidence, GroupEvidence, issue as error, unavailable},
 };
 use dvda_native::{disc_verify::NativeDiscVerifier, media::Callbacks};
@@ -41,6 +42,9 @@ pub struct Job {
     pub media_library: PathBuf,
     pub work_directory: PathBuf,
     pub final_directory: PathBuf,
+    /// User-visible final folder for diagnostics (SAF path on Android).
+    #[serde(default)]
+    pub final_directory_display: Option<PathBuf>,
     pub iso_prefix: String,
     #[serde(default)]
     pub title: Option<String>,
@@ -191,7 +195,15 @@ fn run(
     let selected = explicit_iso.is_some();
     let isos = if let Some(iso) = explicit_iso {
         if !iso.is_file() {
-            return Err(format!("找不到成品 ISO：{}", iso.display()));
+            return Err(format!(
+                "找不到成品 ISO：{}",
+                display_product_path(
+                    &job.final_directory,
+                    job.final_directory_display.as_deref(),
+                    &iso
+                )
+                .display()
+            ));
         }
         if let Some(index) = index.as_mut() {
             index["__discs__"].as_array_mut().unwrap().retain(|disc| {
@@ -203,7 +215,13 @@ fn run(
         }
         vec![iso]
     } else {
-        find_isos(&job.final_directory, &job.iso_prefix)?
+        find_isos(&job.final_directory, &job.iso_prefix).map_err(|message| {
+            display_product_message(
+                &job.final_directory,
+                job.final_directory_display.as_deref(),
+                &message,
+            )
+        })?
     };
     if needs_index
         && index
@@ -248,6 +266,8 @@ fn run(
             timeline(
                 &isos,
                 index.as_ref(),
+                &job.final_directory,
+                job.final_directory_display.as_deref(),
                 &mut diagnostics,
                 &mut progress,
                 true,
@@ -357,7 +377,12 @@ fn verify_menus(
                 .unwrap_or_default()
                 .to_str()
                 .unwrap_or_default(),
-            &iso.to_string_lossy(),
+            &display_product_path(
+                &job.final_directory,
+                job.final_directory_display.as_deref(),
+                iso,
+            )
+            .to_string_lossy(),
         );
         let expected = index
             .and_then(|index| index["__discs__"].as_array())
@@ -641,6 +666,10 @@ fn check_cancel(caller: &mut dyn Callbacks) -> Result<(), String> {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Ordered disc-capacity checks stay together so every diagnostic is raised in the same order"
+)]
 fn capacity(
     job: &Job,
     isos: &[PathBuf],
@@ -663,7 +692,12 @@ fn capacity(
                         "ISO_CAPACITY_EXCEEDED",
                         format!(
                             "{} is {} bytes, above the configured disc capacity",
-                            iso.display(),
+                            display_product_path(
+                                &job.final_directory,
+                                job.final_directory_display.as_deref(),
+                                iso
+                            )
+                            .display(),
                             file_metadata.len()
                         ),
                     ));
@@ -701,13 +735,29 @@ fn capacity(
                         if aob == 0 {
                             diagnostics.push(error(
                                 "AOB_MISSING",
-                                format!("{} has no AOB files", iso.display()),
+                                format!(
+                                    "{} has no AOB files",
+                                    display_product_path(
+                                        &job.final_directory,
+                                        job.final_directory_display.as_deref(),
+                                        iso
+                                    )
+                                    .display()
+                                ),
                             ));
                         }
                         if ifo == 0 {
                             diagnostics.push(error(
                                 "AUDIO_IFO_MISSING",
-                                format!("{} has no group IFO files", iso.display()),
+                                format!(
+                                    "{} has no group IFO files",
+                                    display_product_path(
+                                        &job.final_directory,
+                                        job.final_directory_display.as_deref(),
+                                        iso
+                                    )
+                                    .display()
+                                ),
                             ));
                         }
                     }
@@ -716,7 +766,15 @@ fn capacity(
             }
             Err(message) => diagnostics.push(error(
                 "ISO_READ_FAILED",
-                format!("{}: {message}", iso.display()),
+                format!(
+                    "{}: {message}",
+                    display_product_path(
+                        &job.final_directory,
+                        job.final_directory_display.as_deref(),
+                        iso
+                    )
+                    .display()
+                ),
             )),
         }
     }
@@ -734,6 +792,9 @@ fn capacity(
 #[serde(rename_all = "PascalCase")]
 pub struct Inspection {
     pub final_directory: PathBuf,
+    /// User-visible final folder for diagnostics, empty on Windows.
+    #[serde(default)]
+    pub final_directory_display: Option<PathBuf>,
     pub iso_prefix: String,
     pub manifest_path: Option<PathBuf>,
     pub build_log_path: Option<PathBuf>,
@@ -748,7 +809,13 @@ pub struct Inspection {
 pub fn inspect(job: Inspection, caller: &mut dyn Callbacks) -> Outcome {
     let mut run = || -> Result<Outcome, String> {
         check_cancel(caller)?;
-        let isos = find_isos(&job.final_directory, &job.iso_prefix)?;
+        let isos = find_isos(&job.final_directory, &job.iso_prefix).map_err(|message| {
+            display_product_message(
+                &job.final_directory,
+                job.final_directory_display.as_deref(),
+                &message,
+            )
+        })?;
         let mut diagnostics = Vec::new();
         if isos.is_empty() {
             diagnostics.push(error("NO_ISO", "No published ISO images were found"));
@@ -757,6 +824,8 @@ pub fn inspect(job: Inspection, caller: &mut dyn Callbacks) -> Outcome {
         let evidence = timeline(
             &isos,
             None,
+            &job.final_directory,
+            job.final_directory_display.as_deref(),
             &mut diagnostics,
             caller,
             job.audit,
@@ -803,15 +872,31 @@ pub fn inspect(job: Inspection, caller: &mut dyn Callbacks) -> Outcome {
     clippy::too_many_lines,
     reason = "The nested ISO/group/sector audit retains shared timestamp state and ordered diagnostics; splitting the loop would obscure cancellation and first-error boundaries"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Timeline verification keeps its ordered inputs and progress scope explicit"
+)]
 fn timeline(
     isos: &[PathBuf],
     index: Option<&Value>,
+    final_root: &Path,
+    final_display: Option<&Path>,
     diagnostics: &mut Vec<Value>,
     caller: &mut dyn Callbacks,
     audit: bool,
     statistics: bool,
     metadata: &formats::IsoMetadataCache,
 ) -> Result<Vec<DiscEvidence>, String> {
+    // The diagnostics below always describe user-visible product paths; the
+    // caller supplies the actual task root and the optional display override.
+    struct Display {
+        final_directory: PathBuf,
+        final_directory_display: Option<PathBuf>,
+    }
+    let job = Display {
+        final_directory: final_root.to_path_buf(),
+        final_directory_display: final_display.map(Path::to_path_buf),
+    };
     let total_chunks = aob_chunk_total(isos, metadata);
     let mut completed_chunks = 0u64;
     let discs = index.and_then(|value| value["__discs__"].as_array());
@@ -820,6 +905,10 @@ fn timeline(
         check_cancel(caller)?;
         let mut evidence = DiscEvidence {
             path: iso.clone(),
+            display_path: job
+                .final_directory_display
+                .as_deref()
+                .map(|display| display_product_path(&job.final_directory, Some(display), iso)),
             groups: std::collections::BTreeMap::default(),
         };
         let disc = discs.and_then(|discs| {
@@ -834,7 +923,15 @@ fn timeline(
         if index.is_some() && disc.is_none() {
             diagnostics.push(error(
                 "INDEX_ISO_MISSING",
-                format!("No index entry for {}", iso.display()),
+                format!(
+                    "No index entry for {}",
+                    display_product_path(
+                        &job.final_directory,
+                        job.final_directory_display.as_deref(),
+                        iso
+                    )
+                    .display()
+                ),
             ));
         }
         let groups = disc.and_then(|disc| disc["groups"].as_array());
@@ -853,7 +950,15 @@ fn timeline(
         if actual.is_empty() {
             diagnostics.push(error(
                 "AUDIO_IFO_MISSING",
-                format!("{} has no group IFO files", iso.display()),
+                format!(
+                    "{} has no group IFO files",
+                    display_product_path(
+                        &job.final_directory,
+                        job.final_directory_display.as_deref(),
+                        iso
+                    )
+                    .display()
+                ),
             ));
         }
         if let Some(groups) = groups {
@@ -868,7 +973,15 @@ fn timeline(
             if declared != actual || declared != aob_groups {
                 diagnostics.push(error(
                     "GROUP_INDEX_MISMATCH",
-                    format!("{}: ISO groups differ from index", iso.display()),
+                    format!(
+                        "{}: ISO groups differ from index",
+                        display_product_path(
+                            &job.final_directory,
+                            job.final_directory_display.as_deref(),
+                            iso
+                        )
+                        .display()
+                    ),
                 ));
             }
         }
@@ -883,14 +996,41 @@ fn timeline(
                 Err(reason) => {
                     diagnostics.push(error(
                         "IFO_INVALID",
-                        format!("{} group {number}: {reason}", iso.display()),
+                        format!(
+                            "{} group {number}: {reason}",
+                            display_product_path(
+                                &job.final_directory,
+                                job.final_directory_display.as_deref(),
+                                iso
+                            )
+                            .display()
+                        ),
                     ));
                     continue;
                 }
             };
-            let context = format!("{} group {number} (IFO)", iso.display());
+            let context = format!(
+                "{} group {number} (IFO)",
+                display_product_path(
+                    &job.final_directory,
+                    job.final_directory_display.as_deref(),
+                    iso
+                )
+                .display()
+            );
             for issue in &parsed.issues {
-                diagnostics.push(error(issue, format!("{} group {number}", iso.display())));
+                diagnostics.push(error(
+                    issue,
+                    format!(
+                        "{} group {number}",
+                        display_product_path(
+                            &job.final_directory,
+                            job.final_directory_display.as_deref(),
+                            iso
+                        )
+                        .display()
+                    ),
+                ));
             }
             if let Some(group) = groups.and_then(|groups| {
                 groups
@@ -903,7 +1043,12 @@ fn timeline(
                         "TRACK_COUNT_MISMATCH",
                         format!(
                             "{} group {number}: IFO {}, index {expected}",
-                            iso.display(),
+                            display_product_path(
+                                &job.final_directory,
+                                job.final_directory_display.as_deref(),
+                                iso
+                            )
+                            .display(),
                             parsed.rows.len()
                         ),
                     ));
@@ -918,7 +1063,15 @@ fn timeline(
                         if count.is_none_or(|count| u16::from(parsed.maximum_still) > count) {
                             diagnostics.push(error(
                                 "STILL_REFERENCE_OUT_OF_RANGE",
-                                format!("{} group {number}", iso.display()),
+                                format!(
+                                    "{} group {number}",
+                                    display_product_path(
+                                        &job.final_directory,
+                                        job.final_directory_display.as_deref(),
+                                        iso
+                                    )
+                                    .display()
+                                ),
                             ));
                         }
                     }
@@ -950,7 +1103,15 @@ fn timeline(
             if aobs.is_empty() {
                 diagnostics.push(error(
                     "AOB_MISSING",
-                    format!("{} group {number} has no AOB", iso.display()),
+                    format!(
+                        "{} group {number} has no AOB",
+                        display_product_path(
+                            &job.final_directory,
+                            job.final_directory_display.as_deref(),
+                            iso
+                        )
+                        .display()
+                    ),
                 ));
                 evidence.groups.insert(reported_group(number), observation);
                 continue;
@@ -983,7 +1144,16 @@ fn timeline(
                     if !found || header != [0, 0, 1, 0xba] {
                         diagnostics.push(error(
                             "TRACK_NOT_PACK",
-                            format!("{} group {number} sector {}", iso.display(), row.first),
+                            format!(
+                                "{} group {number} sector {}",
+                                display_product_path(
+                                    &job.final_directory,
+                                    job.final_directory_display.as_deref(),
+                                    iso
+                                )
+                                .display(),
+                                row.first
+                            ),
                         ));
                     }
                 }
@@ -1032,7 +1202,12 @@ fn timeline(
                                     "TRACK_NOT_PACK",
                                     format!(
                                         "{} group {number} sector {}",
-                                        iso.display(),
+                                        display_product_path(
+                                            &job.final_directory,
+                                            job.final_directory_display.as_deref(),
+                                            iso
+                                        )
+                                        .display(),
                                         scanned_sectors
                                     ),
                                 ));
@@ -1061,7 +1236,12 @@ fn timeline(
                                     "PTS_MISSING",
                                     format!(
                                         "{} group {} contains a sector without PTS",
-                                        iso.display(),
+                                        display_product_path(
+                                            &job.final_directory,
+                                            job.final_directory_display.as_deref(),
+                                            iso
+                                        )
+                                        .display(),
                                         number
                                     ),
                                 ));
@@ -1100,7 +1280,14 @@ fn timeline(
                         _ => unreachable!("PTS statistics returned an unknown diagnostic"),
                     };
                     let mut issue = error(code, message);
-                    issue["Iso"] = json!(iso);
+                    issue["Iso"] = json!(
+                        display_product_path(
+                            &job.final_directory,
+                            job.final_directory_display.as_deref(),
+                            iso
+                        )
+                        .to_string_lossy()
+                    );
                     issue["Group"] = json!(number);
                     diagnostics.push(issue);
                 }
@@ -1113,7 +1300,15 @@ fn timeline(
                     if row.first >= state.sector_count || row.last >= state.sector_count {
                         diagnostics.push(error(
                             "CELL_OUT_OF_RANGE",
-                            format!("{} group {number}", iso.display()),
+                            format!(
+                                "{} group {number}",
+                                display_product_path(
+                                    &job.final_directory,
+                                    job.final_directory_display.as_deref(),
+                                    iso
+                                )
+                                .display()
+                            ),
                         ));
                     }
                 }
@@ -1126,7 +1321,12 @@ fn timeline(
                         item["Code"].as_str().unwrap_or("PTS_INVALID"),
                         format!(
                             "{} group {} has an invalid PTS timeline",
-                            iso.display(),
+                            display_product_path(
+                                &job.final_directory,
+                                job.final_directory_display.as_deref(),
+                                iso
+                            )
+                            .display(),
                             number
                         ),
                     ));
@@ -1253,7 +1453,12 @@ fn lossless_measured(
                     "SOURCE_MISSING",
                     format!(
                         "{} group {} has a missing source track",
-                        iso.display(),
+                        display_product_path(
+                            &job.final_directory,
+                            job.final_directory_display.as_deref(),
+                            iso
+                        )
+                        .display(),
                         number
                     ),
                 ));
@@ -1268,7 +1473,15 @@ fn lossless_measured(
                     .unwrap_or_default()
                     .to_str()
                     .unwrap_or_default(),
-                &format!("group {number}; {}", iso.display()),
+                &format!(
+                    "group {number}; {}",
+                    display_product_path(
+                        &job.final_directory,
+                        job.final_directory_display.as_deref(),
+                        iso
+                    )
+                    .display()
+                ),
             );
             let coded_reference = source_reference
                 && tracks
@@ -1312,7 +1525,16 @@ fn lossless_measured(
             if let Err(error_text) = result {
                 diagnostics.push(error(
                     "ISO_AUDIO_MISMATCH",
-                    format!("{} group {}: {error_text}", iso.display(), number),
+                    format!(
+                        "{} group {}: {error_text}",
+                        display_product_path(
+                            &job.final_directory,
+                            job.final_directory_display.as_deref(),
+                            iso
+                        )
+                        .display(),
+                        number
+                    ),
                 ));
             }
             pcm_tracks.extend(tracks);

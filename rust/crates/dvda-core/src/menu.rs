@@ -177,7 +177,7 @@ fn screen_text(
             .map(|track| {
                 let title = track["Title"].as_str().unwrap_or_default();
                 if title.trim().is_empty() {
-                    basename(track["SourcePath"].as_str().unwrap_or_default())
+                    basename(menu_source_path(track))
                 } else {
                     title.to_owned()
                 }
@@ -202,21 +202,59 @@ fn screen_text(
     ))
 }
 
+/// Asset source selected for the author menu build on the current platform.
+#[derive(Debug, PartialEq, Eq)]
+enum MenuAssetSource {
+    /// The release layout keeps the menu assets on disk and they are present.
+    OnDisk,
+    /// The application embeds the menu assets; no on-disk directory is part of
+    /// the contract (the Android release links them into the application).
+    Embedded,
+    /// The release layout requires an on-disk menu directory that is absent.
+    Missing(PathBuf),
+}
+
+/// Shared contract for every menu asset layout.
+///
+/// A layout either embeds the menu assets or requires them on disk. Both use the
+/// same rule: an existing `menu` directory is always accepted, and only layouts
+/// that require an on-disk directory report `MENU_DATA_MISSING` when it is
+/// absent. This keeps the Windows diagnostic, code, severity and path identical
+/// while Android never treats the `author_source` fallback resolved by `app.rs`
+/// (`runtime/data` or `exe/data`) as a missing on-disk contract.
+fn menu_asset_source(author_source: &Path, require_on_disk: bool) -> MenuAssetSource {
+    let data_menu = author_source.join("menu");
+    if data_menu.is_dir() {
+        MenuAssetSource::OnDisk
+    } else if require_on_disk {
+        MenuAssetSource::Missing(data_menu)
+    } else {
+        MenuAssetSource::Embedded
+    }
+}
+
 pub fn preflight(job: &Job, diagnostics: &mut Vec<Value>) {
-    // Desktop packages ship the author menu assets beside the executable; the
-    // Android port links them into the process, so there is no directory.
-    #[cfg(windows)]
-    {
-        let data_menu = job.author_source.join("menu");
-        if !data_menu.is_dir() {
-            diagnostics.push(json!({"Severity":2,"Code":"MENU_DATA_MISSING","Message":format!("找不到 dvda-author 菜单素材目录: {}",data_menu.display())}));
-        }
+    check_menu_assets(
+        menu_asset_source(&job.author_source, menu_assets_are_on_disk()),
+        diagnostics,
+    );
+}
+
+fn check_menu_assets(source: MenuAssetSource, diagnostics: &mut Vec<Value>) {
+    match source {
+        MenuAssetSource::OnDisk | MenuAssetSource::Embedded => {}
+        MenuAssetSource::Missing(data_menu) => diagnostics.push(json!({"Severity":2,"Code":"MENU_DATA_MISSING","Message":format!("找不到 dvda-author 菜单素材目录: {}",data_menu.display())})),
     }
-    #[cfg(not(windows))]
-    {
-        let _ = job;
-        let _ = diagnostics;
-    }
+}
+
+#[cfg(windows)]
+fn menu_assets_are_on_disk() -> bool {
+    true
+}
+
+#[cfg(not(windows))]
+fn menu_assets_are_on_disk() -> bool {
+    false
 }
 
 /// Build the on-disk menu assets consumed by the project-built author.
@@ -729,8 +767,7 @@ fn page_cover(page: &Value) -> Option<PathBuf> {
     page.get("Tracks")
         .and_then(Value::as_array)
         .and_then(|tracks| tracks.first())
-        .and_then(|track| track.get("SourcePath"))
-        .and_then(Value::as_str)
+        .map(menu_source_path)
         .and_then(|source| Path::new(source).parent())
         .and_then(find_cover)
 }
@@ -852,10 +889,23 @@ fn menu_pages(tracks: &[Value], albums: &[String], row_cap: usize) -> Result<Vec
     Ok(result)
 }
 
-fn album_of(track: &Value) -> String {
-    let source = track["SourcePath"]
-        .as_str()
+/// Source path that identifies the album for menu grouping and covers.
+///
+/// An ALAC repair writes an internal `build/alacfix/...` copy into `src`; the
+/// manifest's `orig_src` keeps the user's album folder. Audio reads keep using
+/// `SourcePath`, while menus use this identity path. Old manifests without
+/// `orig_src` keep the original `SourcePath` behavior.
+fn menu_source_path(track: &Value) -> &str {
+    track
+        .get("OriginalSourcePath")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| track.get("SourcePath").and_then(Value::as_str))
         .unwrap_or_default()
+}
+
+fn album_of(track: &Value) -> String {
+    let source = menu_source_path(track)
         .replace('\\', "/")
         .trim_end_matches('/')
         .to_owned();
@@ -1247,6 +1297,105 @@ pub fn parse_overlay_batch(request: Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unique_temp_directory(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "dvda-menu-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn repaired_alac_track_keeps_the_original_album_and_cover() {
+        let root = unique_temp_directory("orig-source");
+        let album = root.join("Music/EP");
+        fs::create_dir_all(&album).unwrap();
+        let cover = album.join("cover.jpg");
+        fs::write(&cover, b"cover").unwrap();
+        let repaired = root.join("build/alacfix/02.m4a");
+        let repaired_track = json!({
+            "Title": "02",
+            "SourcePath": repaired,
+            "OriginalSourcePath": album.join("02.m4a"),
+            "Album": "EP"
+        });
+        let normal_track = json!({
+            "Title": "01",
+            "SourcePath": album.join("01.m4a"),
+            "Album": "EP"
+        });
+        let planned = plan(json!({
+            "Disc": {"Groups": [{"Tracks": [repaired_track, normal_track]}]},
+            "MenuTracksPerPage": 12,
+            "MenuIndexMinimumAlbums": 0,
+            "Title": "Test"
+        }))
+        .unwrap();
+        assert_eq!(planned["AlbumPageCount"], 1, "{planned}");
+        assert_eq!(planned["TrackCount"], 2, "{planned}");
+        let page = &planned["AlbumPages"][0];
+        assert_eq!(page["Album"], "EP", "{planned}");
+        assert_eq!(page_cover(page), Some(cover));
+        // Old manifests have no orig_src; the legacy SourcePath behavior stays.
+        assert_eq!(
+            album_of(&json!({"SourcePath": repaired, "Album": "EP"})),
+            "alacfix"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn menu_asset_source_accepts_existing_assets_for_both_layouts() {
+        let directory = unique_temp_directory("on-disk");
+        fs::create_dir_all(directory.join("menu")).unwrap();
+        assert_eq!(menu_asset_source(&directory, true), MenuAssetSource::OnDisk);
+        assert_eq!(
+            menu_asset_source(&directory, false),
+            MenuAssetSource::OnDisk
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn menu_asset_source_reports_missing_only_when_on_disk_is_required() {
+        // An existing author_source directory without a menu child models the
+        // Android runtime/data fallback resolved by app.rs: it must not become
+        // MENU_DATA_MISSING for layouts that embed the assets.
+        let directory = unique_temp_directory("missing");
+        fs::create_dir_all(&directory).unwrap();
+        let expected = directory.join("menu");
+        assert_eq!(
+            menu_asset_source(&directory, true),
+            MenuAssetSource::Missing(expected.clone())
+        );
+        assert_eq!(
+            menu_asset_source(&directory, false),
+            MenuAssetSource::Embedded
+        );
+        let mut diagnostics = Vec::new();
+        check_menu_assets(menu_asset_source(&directory, false), &mut diagnostics);
+        assert_eq!(diagnostics, [] as [Value; 0]);
+        check_menu_assets(menu_asset_source(&directory, true), &mut diagnostics);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0]["Severity"], 2);
+        assert_eq!(diagnostics[0]["Code"], "MENU_DATA_MISSING");
+        assert_eq!(
+            diagnostics[0]["Message"].as_str().unwrap(),
+            format!("找不到 dvda-author 菜单素材目录: {}", expected.display())
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn menu_asset_layout_is_explicit_per_platform() {
+        #[cfg(windows)]
+        assert!(menu_assets_are_on_disk());
+        #[cfg(not(windows))]
+        assert!(!menu_assets_are_on_disk());
+    }
 
     #[test]
     #[ignore = "requires DVDA_TEST_COVER_ROOT with external album cover.jpg files"]

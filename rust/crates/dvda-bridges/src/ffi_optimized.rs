@@ -39,8 +39,17 @@ pub fn should_batch_process(count: usize) -> bool {
     count >= 4
 }
 
-/// Convert signed PCM samples to floats. AVX2 is selected at runtime so the
-/// same executable also works on computers without that instruction set.
+/// Convert signed PCM samples to floats.
+///
+/// AVX2 is a performance dispatch only: it is selected at runtime with
+/// `is_x86_feature_detected!` when available, and the scalar loop below is the
+/// canonical implementation on every other target. The dispatch is semantically
+/// equivalent: `conversion_matches_scalar_for_vectors_and_tail` asserts that both
+/// paths produce bit-identical `f32` results for vectors and the tail, so this
+/// `target_arch` gate never changes behavior or output.
+///
+/// The runtime check keeps one executable working on CPUs without that
+/// instruction set.
 ///
 /// # Panics
 /// Panics when input and output slices have different lengths.

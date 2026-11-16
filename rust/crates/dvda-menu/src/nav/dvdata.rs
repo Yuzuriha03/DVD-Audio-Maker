@@ -166,23 +166,63 @@ pub(crate) fn parse_sector(sector: &[u8]) -> Option<Result<DvdData, String>> {
     Some(parse(payload))
 }
 
+/// Location of the legacy C `dvdauthor` acceptance output that the
+/// navigation tests use as a bit-exact baseline.
+///
+/// The baseline (`menu.mpg` plus `导航 日本語/AUDIO_TS/AUDIO_TS.VOB`) is a build
+/// artifact of the retired C implementation, so it is not tracked by Git. Point
+/// `DVDA_MENU_BASELINE_ROOT` at a directory that holds those files; otherwise
+/// the repository-relative `build/menu-accept-old2` is used.
+#[cfg(test)]
+pub(crate) fn baseline_root() -> std::path::PathBuf {
+    std::env::var_os("DVDA_MENU_BASELINE_ROOT").map_or_else(
+        || {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../..")
+                .join("build")
+                .join("menu-accept-old2")
+        },
+        std::path::PathBuf::from,
+    )
+}
+
+/// Resolves one baseline file and names the expected path when it is absent.
+/// A baseline-backed test must fail instead of passing without its baseline.
+#[cfg(test)]
+#[track_caller]
+pub(crate) fn baseline_path(relative: &str) -> std::path::PathBuf {
+    let path = baseline_root().join(relative);
+    assert!(
+        path.is_file(),
+        "required C dvdauthor baseline fixture is missing: {}\n\
+         regenerate the menu-accept-old2 acceptance output or set \
+         DVDA_MENU_BASELINE_ROOT to the directory that contains it",
+        path.display()
+    );
+    path
+}
+
+#[cfg(test)]
+#[track_caller]
+pub(crate) fn baseline_file(relative: &str) -> Vec<u8> {
+    let path = baseline_path(relative);
+    std::fs::read(&path).unwrap_or_else(|error| {
+        panic!("baseline fixture {} is unreadable: {error}", path.display())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn sector() -> Option<Vec<u8>> {
-        let root =
-            std::path::Path::new(r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker");
-        let bytes = std::fs::read(root.join("build/menu-accept-old2/menu.mpg")).ok()?;
-        let sector = bytes.get(119 * 2048..120 * 2048)?.to_vec();
-        Some(sector)
-    }
-
     #[test]
+    #[ignore = "requires build/menu-accept-old2 baseline; set DVDA_MENU_BASELINE_ROOT"]
     fn parses_the_spu_private_sector() {
-        let Some(sector) = sector() else {
-            return;
-        };
+        let bytes = baseline_file("menu.mpg");
+        let sector = bytes
+            .get(119 * 2048..120 * 2048)
+            .expect("baseline menu.mpg must contain sector 119")
+            .to_vec();
         let data = parse_sector(&sector)
             .expect("dvdauthor-data sector")
             .unwrap();

@@ -2,15 +2,15 @@
 
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-FLAC と ALAC/M4A の音楽から DVD-Audio ISO イメージを作成する Windows アプリです。MLP / LPCM エンコード、ディスクへの自動振り分け、選曲メニュー、アルバム画像、完成品の検証に対応しています。ZIP を展開して EXE を起動するだけで使え、インストールは不要です。
+FLAC と ALAC/M4A の音楽から DVD-Audio ISO イメージを作成する Windows アプリです。MLP / LPCM エンコード、ディスクへの自動振り分け、選曲メニュー、アルバム画像、完成品の検証に対応しています。単一 EXE をダウンロードして起動するだけで使え、インストールも解凍も不要です。
 
 ## ダウンロードと起動
 
-1. [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/latest) を開き、お使いの PC に合うパッケージをダウンロードします。
-   - Intel / AMD の PC：`DVD-Audio-Maker-v1.1-win-x64.zip`
-   - Windows on ARM デバイス：`DVD-Audio-Maker-v1.1-win-arm64.zip`
-2. ZIP を任意のフォルダーに展開し、`DVD-Audio-Maker.exe` をダブルクリックします。
-3. 展開先の `LICENSE`、`THIRD-PARTY.txt`、`THIRD-PARTY.en.txt`、`NOTICE-Image.txt`、`NOTICE-Menu.txt` は保管してください。
+1. [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/latest) を開き、お使いの PC に合う単一 EXE をダウンロードします（ファイル名の `<版本>` は実際のリリースに合わせて読み替えてください）。
+   - Intel / AMD の PC：`DVD-Audio-Maker-<版本>-win-x64.exe`
+   - Windows on ARM デバイス：`DVD-Audio-Maker-<版本>-win-arm64.exe`
+2. ダウンロードした EXE を書き込み可能なフォルダーに置き、そのままダブルクリックして起動します。解凍やインストールは不要です。初回起動時は内蔵コンポーネントの準備のため少し時間がかかります。
+3. ライセンス、FFmpeg の LGPL 表示、第三者・画像・メニューの各声明はプログラムの「バージョン情報」画面に内蔵されています。
 
 **動作環境：** Windows 10 / 11（x64 または ARM64）。必要なコンポーネントはすべて内蔵されているため、別途ランタイムをインストールする必要はありません。EXE を置いたフォルダーには書き込み権限が必要です。ISO と一時ファイル用に、完成品と同程度の空き容量を用意してください。
 
@@ -139,4 +139,4 @@ EXE と同じフォルダーの `settings.json` に保存し、起動時に読�
 - [第三者コンポーネント（中国語）](tools/win-build/docs/THIRD-PARTY.txt)
 - [第三者コンポーネント（英語）](tools/win-build/docs/THIRD-PARTY.en.txt)
 
-配布物には `NOTICE-Image.txt` と `NOTICE-Menu.txt` も含まれます。これらも保管してください。
+Windows 版はライセンスと上記の声明を単一 EXE に内蔵し、「バージョン情報」画面から参照できます。リポジトリにもテキストを保持しています。

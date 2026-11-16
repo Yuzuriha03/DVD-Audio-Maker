@@ -1,0 +1,12 @@
+[package]
+name = "device-bridge-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dvda-core = { path = "../../../rust/crates/dvda-core" }
+dvda-native = { path = "../../../rust/crates/dvda-native" }
+serde_json = "1"
+
+[workspace]

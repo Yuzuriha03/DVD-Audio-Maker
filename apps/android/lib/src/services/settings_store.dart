@@ -1,12 +1,36 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
+import '../models/profile_catalog.dart';
 
 /// Persists the editable form state with `shared_preferences`.
 class SettingsStore {
   SettingsStore(this._preferences);
 
   final SharedPreferences _preferences;
+
+  static const String _deliveryCleanupPendingKey = 'delivery_cleanup_pending';
+  static const String _deliveryCleanupDetailKey = 'delivery_cleanup_detail';
+
+  /// Whether a delivered task still needs the shared finish retried.
+  bool loadDeliveryCleanupPending() =>
+      _preferences.getBool(_deliveryCleanupPendingKey) ?? false;
+
+  String loadDeliveryCleanupDetail() =>
+      _preferences.getString(_deliveryCleanupDetailKey) ?? '';
+
+  Future<void> saveDeliveryCleanupPending(
+    bool pending, {
+    String detail = '',
+  }) async {
+    await _preferences.setBool(_deliveryCleanupPendingKey, pending);
+    await _preferences.setString(
+      _deliveryCleanupDetailKey,
+      pending ? detail : '',
+    );
+  }
 
   static Future<SettingsStore> open() async {
     return SettingsStore(await SharedPreferences.getInstance());
@@ -16,7 +40,8 @@ class SettingsStore {
     final settings = AppSettings();
 
     final language = _preferences.getString('language');
-    if (language != null && kLanguages.contains(language)) {
+    final catalog = ProfileCatalog.instance;
+    if (language != null && catalog.languages.contains(language)) {
       settings.language = language;
     }
     final theme = _preferences.getString('theme') ?? 'system';
@@ -35,7 +60,6 @@ class SettingsStore {
     settings.customBytes =
         _preferences.getString('custom_bytes') ?? settings.customBytes;
     settings.advanced = _preferences.getBool('advanced') ?? settings.advanced;
-    settings.workDir = _preferences.getString('work_dir') ?? settings.workDir;
     settings.isoPrefix =
         _preferences.getString('iso_prefix') ?? settings.isoPrefix;
     settings.groupTrackLimit =
@@ -47,15 +71,15 @@ class SettingsStore {
     settings.keepTmp = _preferences.getBool('keep_tmp') ?? settings.keepTmp;
 
     final audioMode = _preferences.getString('audio_mode');
-    if (audioMode != null && kAudioModes.contains(audioMode)) {
+    if (audioMode != null && catalog.audioModes.contains(audioMode)) {
       settings.audioMode = audioMode;
     }
     final sampleRate = _preferences.getString('sample_rate');
-    if (sampleRate != null && kSampleRates.contains(sampleRate)) {
+    if (sampleRate != null && catalog.sampleRates.contains(sampleRate)) {
       settings.sampleRate = sampleRate;
     }
     final bits = _preferences.getString('bits');
-    if (bits != null && kBitDepths.contains(bits)) {
+    if (bits != null && catalog.mlpBits.contains(bits)) {
       settings.bits = bits;
     }
     settings.dither16 = _preferences.getBool('dither16') ?? settings.dither16;
@@ -73,12 +97,37 @@ class SettingsStore {
     settings.coverDim =
         _preferences.getString('cover_dim') ?? settings.coverDim;
     final norm = _preferences.getString('norm');
-    if (norm != null && kVideoStandards.contains(norm)) {
+    if (norm != null && catalog.menuNorms.contains(norm)) {
       settings.norm = norm;
     }
-    settings.fontSc = _preferences.getString('font_sc') ?? settings.fontSc;
-    settings.fontJp = _preferences.getString('font_jp') ?? settings.fontJp;
-    settings.fontKr = _preferences.getString('font_kr') ?? settings.fontKr;
+    // Older Android builds stored the system CJK collection as the preferred
+    // menu font. That preference must migrate to empty so the shared runtime
+    // font (DvdaNotoCJK) is used exactly like Windows' empty default.
+    settings.fontSc = AppSettings.migrateLegacyFont(
+      _preferences.getString('font_sc') ?? settings.fontSc,
+    );
+    settings.fontJp = AppSettings.migrateLegacyFont(
+      _preferences.getString('font_jp') ?? settings.fontJp,
+    );
+    settings.fontKr = AppSettings.migrateLegacyFont(
+      _preferences.getString('font_kr') ?? settings.fontKr,
+    );
+
+    final extras = _preferences.getString('profile_extras');
+    if (extras != null && extras.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(extras);
+        if (decoded is Map) {
+          settings.profileExtras = <String, Object>{
+            for (final entry in decoded.entries)
+              if (entry.value != null)
+                entry.key.toString(): entry.value as Object,
+          };
+        }
+      } on FormatException {
+        // A corrupt cache must not block startup; the next save rewrites it.
+      }
+    }
 
     final capacity = _preferences.getInt('capacity');
     if (capacity != null && capacity >= 0 && capacity <= 2) {
@@ -102,7 +151,6 @@ class SettingsStore {
     await _preferences.setInt('capacity', settings.capacity);
     await _preferences.setString('custom_bytes', settings.customBytes);
     await _preferences.setBool('advanced', settings.advanced);
-    await _preferences.setString('work_dir', settings.workDir);
     await _preferences.setString('iso_prefix', settings.isoPrefix);
     await _preferences.setString('group_track_limit', settings.groupTrackLimit);
     await _preferences.setString('title_mode', settings.titleMode);
@@ -126,5 +174,9 @@ class SettingsStore {
     await _preferences.setString('font_sc', settings.fontSc);
     await _preferences.setString('font_jp', settings.fontJp);
     await _preferences.setString('font_kr', settings.fontKr);
+    await _preferences.setString(
+      'profile_extras',
+      jsonEncode(settings.profileExtras),
+    );
   }
 }

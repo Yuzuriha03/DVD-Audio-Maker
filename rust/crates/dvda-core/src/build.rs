@@ -48,6 +48,10 @@ pub struct Job {
     pub temporary_root: PathBuf,
     pub iso_directory: PathBuf,
     pub final_directory: PathBuf,
+    /// User-visible final location (SAF path on Android). Logs use it when set;
+    /// Windows leaves it empty, so its output stays byte-identical.
+    #[serde(default)]
+    pub final_directory_display: Option<PathBuf>,
     pub mlp_index_path: PathBuf,
     pub build_log_path: PathBuf,
     pub title: String,
@@ -394,7 +398,12 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             }
             reset_directory(&output)?;
             reset_directory(&temporary)?;
-            remove_file(&iso).map_err(|e| format!("清理文件失败 {}: {e}", iso.display()))?;
+            remove_file(&iso).map_err(|e| {
+                format!(
+                    "清理文件失败 {}: {e}",
+                    iso_display_path(&iso, job.final_directory_display.as_deref()).display()
+                )
+            })?;
             let args = author::dispatch(
                 "author.build_args",
                 json!({
@@ -516,7 +525,9 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                 ));
                 break;
             }
-            if let Err(message) = validate_iso(&iso, job.disc_bytes) {
+            if let Err(message) =
+                validate_iso(&iso, job.disc_bytes, job.final_directory_display.as_deref())
+            {
                 diagnostics.push(error("ISO_VALIDATION_FAILED", message));
                 break;
             }
@@ -583,7 +594,12 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                 cleanup_directory(&temporary, &mut diagnostics, "TEMP_CLEANUP_FAILED");
             }
             if !job.keep_intermediate {
-                cleanup_file(&iso, &mut diagnostics, "ISO_CLEANUP_FAILED");
+                cleanup_file_display(
+                    &iso,
+                    &mut diagnostics,
+                    "ISO_CLEANUP_FAILED",
+                    job.final_directory_display.as_deref(),
+                );
                 cleanup_directory(&output, &mut diagnostics, "OUTPUT_CLEANUP_FAILED");
             }
         }
@@ -610,13 +626,17 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     if caller.cancelled() {
         return Err("Build cancelled".into());
     }
+    let final_display = job
+        .final_directory_display
+        .as_deref()
+        .unwrap_or(&job.final_directory);
     crate::task_log::emit(
         caller,
         "publish_start",
         0,
         files.len() as u64,
         "",
-        &job.final_directory.to_string_lossy(),
+        &final_display.to_string_lossy(),
     );
     let publication = crate::metrics::measure(
         "publish",
@@ -658,7 +678,14 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     let failure = publication
         .get("Failure")
         .filter(|value| !value.is_null())
-        .map(std::string::ToString::to_string);
+        .map(std::string::ToString::to_string)
+        .map(|failure| {
+            crate::gui::display_product_message(
+                &staging,
+                job.final_directory_display.as_deref(),
+                &failure,
+            )
+        });
     if let Some(failure) = failure {
         diagnostics.push(error("FINAL_PUBLICATION_FAILED", failure));
     }
@@ -673,6 +700,11 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     let succeeded = !diagnostics.iter().any(is_error) && published.len() == staged.len();
     if succeeded {
         for (index, path) in published.iter().enumerate() {
+            let display_path = crate::gui::display_product_path(
+                &job.final_directory,
+                job.final_directory_display.as_deref(),
+                Path::new(path),
+            );
             crate::task_log::emit(
                 caller,
                 "published_iso",
@@ -683,7 +715,7 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
                     .unwrap_or_default()
                     .to_str()
                     .unwrap_or_default(),
-                path,
+                &display_path.to_string_lossy(),
             );
         }
         crate::task_log::emit(
@@ -692,12 +724,17 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
             published.len() as u64,
             published.len() as u64,
             "",
-            &job.final_directory.to_string_lossy(),
+            &final_display.to_string_lossy(),
         );
     }
     if succeeded && !job.keep_intermediate {
         for (path, _) in &staged {
-            cleanup_file(path, &mut diagnostics, "ISO_CLEANUP_FAILED");
+            cleanup_file_display(
+                path,
+                &mut diagnostics,
+                "ISO_CLEANUP_FAILED",
+                job.final_directory_display.as_deref(),
+            );
         }
     }
     if succeeded && !can_resume {
@@ -718,13 +755,19 @@ fn run(job: &Job, caller: &mut dyn Callbacks) -> Result<Outcome, String> {
     })
 }
 
-fn validate_iso(iso: &Path, disc_bytes: i64) -> Result<(), String> {
+fn iso_display_path(iso: &Path, display: Option<&Path>) -> PathBuf {
+    display
+        .and_then(|directory| iso.file_name().map(|name| directory.join(name)))
+        .unwrap_or_else(|| iso.to_path_buf())
+}
+
+fn validate_iso(iso: &Path, disc_bytes: i64, display: Option<&Path>) -> Result<(), String> {
     let size = fs::metadata(iso).map_err(|e| e.to_string())?.len();
     if disc_bytes <= 0 || size > u64::try_from(disc_bytes).expect("positive disc capacity fits u64")
     {
         return Err(format!(
             "{} is {size} bytes, above the configured disc capacity",
-            iso.display()
+            iso_display_path(iso, display).display()
         ));
     }
     crate::formats::verify_dvd_audio_filesystem(iso)?;
@@ -736,7 +779,10 @@ fn validate_iso(iso: &Path, disc_bytes: i64) -> Result<(), String> {
             .iter()
             .any(|entry| entry.name.to_ascii_uppercase().ends_with(".AOB"))
     {
-        return Err(format!("ISO 缺少必要的 AUDIO_TS 文件：{}", iso.display()));
+        return Err(format!(
+            "ISO 缺少必要的 AUDIO_TS 文件：{}",
+            iso_display_path(iso, display).display()
+        ));
     }
     Ok(())
 }
@@ -915,7 +961,8 @@ fn remove_file(path: &Path) -> std::io::Result<()> {
         result => result,
     }
 }
-fn cleanup_directory(path: &Path, diagnostics: &mut Vec<Value>, code: &str) {
+/// Existing task-end directory cleanup, reused by host staging adapters.
+pub fn cleanup_directory(path: &Path, diagnostics: &mut Vec<Value>, code: &str) {
     if let Err(error) = remove_directory(path) {
         diagnostics.push(warning(
             code,
@@ -923,11 +970,19 @@ fn cleanup_directory(path: &Path, diagnostics: &mut Vec<Value>, code: &str) {
         ));
     }
 }
-fn cleanup_file(path: &Path, diagnostics: &mut Vec<Value>, code: &str) {
+fn cleanup_file_display(
+    path: &Path,
+    diagnostics: &mut Vec<Value>,
+    code: &str,
+    display: Option<&Path>,
+) {
     if let Err(error) = remove_file(path) {
         diagnostics.push(warning(
             code,
-            format!("清理文件失败 {}: {error}", path.display()),
+            format!(
+                "清理文件失败 {}: {error}",
+                iso_display_path(path, display).display()
+            ),
         ));
     }
 }
@@ -1007,6 +1062,7 @@ fn update_still_expectation(index: &Path, disc: usize, count: usize) -> Result<(
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    #[cfg(windows)]
     use std::os::windows::fs::OpenOptionsExt;
 
     struct RecordedCallbacks(RefCell<Vec<(i32, String)>>);
@@ -1095,6 +1151,7 @@ mod tests {
         assert_eq!(assets.result.unwrap(), ["ready"]);
     }
 
+    #[cfg(windows)]
     #[test]
     fn locked_iso_cleanup_warns_and_preserves_file_until_unlocked() {
         let directory = std::env::temp_dir().join(format!(
@@ -1114,7 +1171,7 @@ mod tests {
             .open(&file)
             .unwrap();
         let mut diagnostics = Vec::new();
-        cleanup_file(&file, &mut diagnostics, "ISO_CLEANUP_FAILED");
+        cleanup_file_display(&file, &mut diagnostics, "ISO_CLEANUP_FAILED", None);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0]["Code"], "ISO_CLEANUP_FAILED");
         assert_eq!(diagnostics[0]["Severity"], 1);
@@ -1133,8 +1190,8 @@ mod tests {
         }
         drop(locked);
         diagnostics.clear();
-        cleanup_file(&file, &mut diagnostics, "ISO_CLEANUP_FAILED");
-        cleanup_file(&file, &mut diagnostics, "ISO_CLEANUP_FAILED");
+        cleanup_file_display(&file, &mut diagnostics, "ISO_CLEANUP_FAILED", None);
+        cleanup_file_display(&file, &mut diagnostics, "ISO_CLEANUP_FAILED", None);
         assert_eq!(diagnostics, [] as [serde_json::Value; 0]);
         assert!(!file.exists());
         fs::remove_dir(directory).unwrap();

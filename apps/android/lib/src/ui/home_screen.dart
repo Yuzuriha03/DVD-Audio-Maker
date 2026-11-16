@@ -296,11 +296,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                   style: theme.textTheme.bodySmall,
                                 ),
                               ),
-                              if (_controller.total > 1)
+                              if (_controller.progressPercent != null)
                                 Text(
-                                  strings.progressSummary(
-                                    _controller.done.toString(),
-                                    _controller.total.toString(),
+                                  strings.progressPercent(
+                                    _controller.progressPercent!,
                                   ),
                                   style: theme.textTheme.labelSmall?.copyWith(
                                     color: scheme.primary,
@@ -447,11 +446,13 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: Text(strings.discardProgress),
+                key: const ValueKey('discard-and-cleanup'),
+                leading: const Icon(Icons.delete_sweep_outlined),
+                title: Text(strings.discardAndCleanup),
+                subtitle: Text(strings.discardAndCleanupBody),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
-                  _discardProgress();
+                  _discardProgressAndCleanup();
                 },
               ),
             ],
@@ -526,21 +527,37 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
       _reportOutcome(outcome);
-      if (outcome == null || outcome.ok) {
+      if (outcome == null) {
+        return;
+      }
+      final cancelled = _controller.isCancelled || outcome.cancelled;
+      if (outcome.ok && !cancelled) {
         return;
       }
       final stillUnfinished = await _controller.checkUnfinished();
       if (!mounted || !stillUnfinished) {
         return;
       }
+      final detail = outcome.message.isEmpty
+          ? _controller.statusText
+          : outcome.message;
       final keep = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        builder: (dialogContext) =>
-            _RetentionDialog(strings: _controller.strings),
+        builder: (dialogContext) => _RetentionDialog(
+          strings: _controller.strings,
+          cancelled: cancelled,
+          error: detail,
+        ),
       );
       if (keep == false) {
-        await _controller.discardProgress();
+        final result = await _controller.discardProgressAndCleanup();
+        if (mounted && !result.ok) {
+          _showMessage(
+            _controller.strings.discardAndCleanupFailed,
+            error: true,
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -566,10 +583,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     final strings = _controller.strings;
     if (_controller.isCancelled) {
-      _showMessage(strings.statusCancelled);
+      _showMessage('${strings.statusCancelled}: ${strings.cancelledHint}');
       return;
     }
-    final prefix = outcome.ok ? strings.resultSuccess : strings.resultFailure;
+    final prefix = outcome.ok ? strings.resultSuccess : _controller.statusText;
     final detail = outcome.message.isEmpty
         ? _controller.statusText
         : outcome.message;
@@ -616,13 +633,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _discardProgress() async {
+  Future<void> _discardProgressAndCleanup() async {
+    if (_controller.isRunning) {
+      return;
+    }
     final strings = _controller.strings;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(strings.discardProgress),
-        content: Text(strings.retentionBody),
+        icon: const Icon(Icons.delete_sweep_outlined),
+        title: Text(strings.discardAndCleanup),
+        content: Text(strings.discardAndCleanupBody),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -630,22 +651,59 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(strings.deleteProgress),
+            child: Text(strings.discardAndCleanupAction),
           ),
         ],
       ),
     );
-    if (confirmed != true) {
+    if (confirmed != true || !mounted) {
       return;
     }
-    final discarded = await _controller.discardProgress();
+    final result = await _controller.discardProgressAndCleanup();
     if (!mounted) {
       return;
     }
+    if (!result.ok) {
+      _showMessage(
+        result.error.isEmpty
+            ? strings.discardAndCleanupFailed
+            : '${strings.discardAndCleanupFailed}: ${result.error}',
+        error: true,
+      );
+      return;
+    }
+    if (!result.progressDiscarded) {
+      // No unfinished task existed; only the rebuildable internal caches were
+      // cleaned. Never claim that a progress workspace was deleted.
+      if (result.deleted.isEmpty) {
+        _showMessage(strings.cleanupInternalCachesNothing);
+        return;
+      }
+      _showMessage(
+        strings.cleanupInternalCachesDone(_formatBytes(result.freedBytes)),
+      );
+      return;
+    }
+    if (result.deleted.isEmpty) {
+      _showMessage(strings.discardAndCleanupNothing);
+      return;
+    }
     _showMessage(
-      discarded ? strings.statusDone : strings.statusFailed,
-      error: !discarded,
+      strings.discardAndCleanupDone(_formatBytes(result.freedBytes)),
     );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    }
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${bytes.toString()} B';
   }
 
   void _showMessage(String text, {bool error = false}) {
@@ -699,16 +757,30 @@ class _RecoveryDialog extends StatelessWidget {
 }
 
 class _RetentionDialog extends StatelessWidget {
-  const _RetentionDialog({required this.strings});
+  const _RetentionDialog({
+    required this.strings,
+    required this.cancelled,
+    required this.error,
+  });
 
   final AppStrings strings;
+  final bool cancelled;
+  final String error;
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      icon: const Icon(Icons.save),
-      title: Text(strings.retentionTitle),
-      content: Text(strings.retentionBody),
+      icon: Icon(cancelled ? Icons.stop_circle : Icons.error_outline),
+      title: Text(
+        cancelled
+            ? strings.retentionCancelledTitle
+            : strings.retentionFailedTitle,
+      ),
+      content: Text(
+        cancelled
+            ? strings.retentionCancelledBody
+            : strings.retentionFailedBody(error),
+      ),
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),

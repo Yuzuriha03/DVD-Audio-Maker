@@ -39,7 +39,7 @@ fn handle_about_command(id: usize, state: &mut UiState) -> bool {
     if id != ID_ABOUT_PROJECT {
         return false;
     }
-    show_about(state.main_window, state);
+    show_about(state.main_window, state.lang());
     true
 }
 

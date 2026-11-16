@@ -1,9 +1,16 @@
 //! Pure Rust MLP encoder with adaptive entropy, prediction and decorrelation.
-//! Production links this crate directly; its DLL is a development ABI adapter.
+//!
+//! Every target builds the same `analysis`/`output`/`pipeline`/`syntax`
+//! implementation; the FFI streaming entry points use that pipeline, including
+//! live metadata refresh, on Windows x64, Windows ARM64 and Android ARM64.
+//!
+//! The batch `encode`/`encode_profile` compatibility API drives the legacy
+//! access-unit builder. That builder is isolated behind `cfg(test)` as a
+//! fixture/oracle implementation and is never compiled into a production build;
+//! production output comes only from the pipeline.
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 mod analysis;
 mod coefficients;
 #[allow(unsafe_code)]
@@ -12,22 +19,23 @@ mod entropy;
 #[allow(unsafe_code)]
 pub mod ffi;
 pub mod format;
+mod header;
 pub mod metadata;
-#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 mod output;
-#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 mod pipeline;
+#[cfg(test)]
 mod predict;
 mod streaming;
-#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 mod syntax;
 mod timing;
 
 mod bitstream;
 mod config;
+#[cfg(test)]
 mod encoder;
 
 pub use config::{Config, Error};
+#[cfg(test)]
 pub use encoder::{encode, encode_profile};
 
 #[cfg(test)]

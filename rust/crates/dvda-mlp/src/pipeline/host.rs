@@ -59,7 +59,7 @@ pub(crate) fn encode_stream(
         channels,
         sample_rate: c.sample_rate,
         rate_field,
-        major: crate::encoder::major(c, profile, rate_code, rate_field, samples as u32),
+        major: crate::header::major(c, profile, rate_code, rate_field, samples as u32),
     };
     let mut order = [0; 6];
     order[..channels].copy_from_slice(&profile.order());

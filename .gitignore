@@ -13,6 +13,9 @@
 *.dsf
 *.dff
 
+# 测试媒体目录整体不跟踪；Rust 回归 fixture 已在上方单独放行。
+/testdata/
+
 # 图片（封面）
 *.jpg
 *.jpeg
@@ -99,6 +102,11 @@ tools/win-build/release-framework-dependent/
 tools/win-build/release-onefile/
 DVD-Audio-Maker*.zip
 
+# 单 EXE 发布产物（见 docs/ONEFILE-PUBLISH.md）：仅根目录输出需要忽略，不得影响 fixture。
+/MANIFEST.txt
+/release-build.json
+/DVD-Audio-Maker-*.exe
+
 # ---- 敏感信息（防误提交）----
 .git-credentials
 .netrc
@@ -129,3 +137,7 @@ docs/*
 !docs/dvda-android-port-notes.md
 !docs/dvda-parity-audit.md
 !docs/dvda-android-codebase.md
+!docs/BENCHMARKS.md
+!docs/PERFORMANCE_VERIFICATION.md
+!docs/IMAGE-MIGRATION-CLOSEOUT.md
+!docs/MLP-PARITY.md

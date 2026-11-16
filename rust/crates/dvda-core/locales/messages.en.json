@@ -5995,5 +5995,35 @@
     "Parameters": 3,
     "Nested": [],
     "English": "  Disc {0}: {1} tracks, audio {2} GiB "
+  },
+  {
+    "Source": "勾选后创建导航菜单：专辑页达到门槛时生成一级专辑索引，并为每张专辑生成二级曲目页。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Creates navigation menus: once enough album pages exist, a top-level album index is generated, with a track page for each album."
+  },
+  {
+    "Source": "仅用于二级曲目页，控制每页曲目数量。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Used only for second-level track pages; sets the number of tracks per page."
+  },
+  {
+    "Source": "仅用于播放曲目时显示静态封面，不影响菜单背景。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Shows the still cover only while a track plays; menu backgrounds are unaffected."
+  },
+  {
+    "Source": "仅用于菜单背景的专辑封面；数值越大越暗，与播放静像开关无关。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "Applies only to album covers used as menu backgrounds; higher values are darker and are unrelated to the still-picture switch."
+  },
+  {
+    "Source": "专辑页达到此数量才生成一级专辑索引；发布界面不提供修改。",
+    "Parameters": 0,
+    "Nested": [],
+    "English": "A top-level album index is generated only when this many album pages exist; the release UI does not expose this setting."
   }
 ]

@@ -241,7 +241,7 @@ fn layout_code(stdout: &[u8]) -> String {
     code
 }
 
-fn generate_layout_gnu(include: &std::path::Path) {
+fn generate_layout_gnu(include: &std::path::Path) -> Vec<u8> {
     use std::process::Command;
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let cc = env::var_os("DVDA_HOST_CC").unwrap_or_else(|| {
@@ -285,11 +285,15 @@ fn generate_layout_gnu(include: &std::path::Path) {
         .expect("cannot run the host ABI layout probe");
     assert!(run.status.success(), "host ABI layout probe failed");
     std::fs::write(out.join("ffmpeg-layout.rs"), layout_code(&run.stdout)).unwrap();
+    run.stdout
 }
 
 fn android_build() {
     println!("cargo:rerun-if-env-changed=DVDA_FFMPEG_PREFIX");
     println!("cargo:rerun-if-env-changed=DVDA_HOST_CC");
+    println!("cargo:rerun-if-env-changed=CC_aarch64_linux_android");
+    println!("cargo:rerun-if-env-changed=ANDROID_NDK_ROOT");
+    println!("cargo:rerun-if-env-changed=ANDROID_NDK_HOME");
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     if env::var_os("CARGO_FEATURE_MEDIA").is_none() {
         return;
@@ -320,10 +324,231 @@ fn android_build() {
     for name in ["m", "dl"] {
         println!("cargo:rustc-link-lib={name}");
     }
-    generate_layout_gnu(&prefix.join("include"));
+    let include = prefix.join("include");
+    let probe = generate_layout_gnu(&include);
+    verify_android_abi(&include, &probe);
     std::fs::write(
         out.join("ffmpeg-linkage.rs"),
         "pub const STATIC_LINKED: bool = true;\n",
     )
     .unwrap();
+}
+
+const TYPE_ALIASES: [(&str, &str); 10] = [
+    ("Format", "AVFormatContext"),
+    ("Stream", "AVStream"),
+    ("Parameters", "AVCodecParameters"),
+    ("Context", "AVCodecContext"),
+    ("Frame", "AVFrame"),
+    ("Packet", "AVPacket"),
+    ("Layout", "AVChannelLayout"),
+    ("Io", "AVIOContext"),
+    ("Codec", "AVCodec"),
+    ("OutputFormat", "AVOutputFormat"),
+];
+
+/// Target compiler for the Android ABI checks.
+///
+/// The host probe generates offsets with the Windows x64 ABI. Android ARM64 is
+/// LP64 while the Windows host is LLP64, so records containing unsigned long
+/// differ in size; the target compiler supplies the authoritative layout.
+fn android_target_compiler() -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    use std::ffi::OsString;
+    use std::path::Path;
+    let compiler = env::var_os("CC_aarch64_linux_android").or_else(|| {
+        let ndk = env::var_os("ANDROID_NDK_ROOT").or_else(|| env::var_os("ANDROID_NDK_HOME"))?;
+        let host = if cfg!(windows) {
+            "windows-x86_64"
+        } else if cfg!(target_os = "macos") {
+            "darwin-x86_64"
+        } else {
+            "linux-x86_64"
+        };
+        let name = if cfg!(windows) {
+            "aarch64-linux-android24-clang.cmd"
+        } else {
+            "aarch64-linux-android24-clang"
+        };
+        let candidate = PathBuf::from(ndk)
+            .join("toolchains/llvm/prebuilt")
+            .join(host)
+            .join("bin")
+            .join(name);
+        candidate.is_file().then_some(candidate.into_os_string())
+    });
+    let Some(compiler) = compiler else {
+        panic!(
+            "Android ABI verification requires the NDK target compiler; set CC_aarch64_linux_android or ANDROID_NDK_ROOT"
+        );
+    };
+    let wrapper = cfg!(windows)
+        && Path::new(&compiler).extension().is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
+        });
+    if wrapper {
+        let directory = Path::new(&compiler)
+            .parent()
+            .unwrap_or_else(|| Path::new("."));
+        (
+            directory.join("clang.exe").into_os_string(),
+            vec![OsString::from("--target=aarch64-linux-android24")],
+        )
+    } else {
+        (compiler, Vec::new())
+    }
+}
+
+fn android_command(include: &std::path::Path) -> std::process::Command {
+    let (program, prefix) = android_target_compiler();
+    let mut command = std::process::Command::new(program);
+    command
+        .args(prefix)
+        .arg("-std=c17")
+        .arg(format!("-I{}", include.display()));
+    command
+}
+
+fn tool_output_text(output: &std::process::Output) -> String {
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    text
+}
+
+fn tool_output_diagnostics(output: &std::process::Output) -> String {
+    let text = tool_output_text(output);
+    let mut lines: Vec<String> = text
+        .lines()
+        .map(|line| line.chars().take(400).collect())
+        .collect();
+    if lines.len() > 30 {
+        lines.drain(..lines.len() - 30);
+    }
+    lines.join("\n")
+}
+
+fn android_record_layouts(
+    include: &std::path::Path,
+    directory: &std::path::Path,
+) -> std::collections::BTreeMap<String, (u64, u64)> {
+    use std::fmt::Write as _;
+    let mut source =
+        String::from("#include <libavcodec/avcodec.h>\n#include <libavformat/avformat.h>\n");
+    for (index, (_, ctype)) in TYPE_ALIASES.iter().enumerate() {
+        writeln!(source, "struct {ctype} android_probe_{index};").unwrap();
+    }
+    writeln!(source, "int main(void){{return 0;}}").unwrap();
+    let source_path = directory.join("android-layout-probe.c");
+    let object_path = directory.join("android-layout-probe.o");
+    std::fs::write(&source_path, source).unwrap();
+    let output = android_command(include)
+        .args(["-Xclang", "-fdump-record-layouts", "-c"])
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&object_path)
+        .output()
+        .expect("cannot run the Android ABI layout probe");
+    assert!(
+        output.status.success(),
+        "Android ABI layout probe failed:\n{}",
+        tool_output_diagnostics(&output)
+    );
+    let mut layouts = std::collections::BTreeMap::new();
+    let mut current = None::<String>;
+    for line in tool_output_text(&output).lines() {
+        if let Some((_, name)) = line.split_once("| struct ") {
+            let name = name.trim();
+            if !name.is_empty() && !name.contains(' ') {
+                current = Some(name.to_owned());
+            }
+        }
+        if let Some(rest) = line.trim().strip_prefix("| [sizeof=")
+            && let Some(name) = current.take()
+        {
+            let rest = rest.trim_end_matches(']');
+            if let Some((size, align)) = rest.split_once(", align=")
+                && let (Ok(size), Ok(align)) = (size.parse(), align.parse())
+            {
+                layouts.insert(name, (size, align));
+            }
+        }
+    }
+    layouts
+}
+
+/// Cross-checks host-generated ABI constants against the Android target ABI and
+/// corrects opaque record sizes that differ between LLP64 and LP64.
+fn verify_android_abi(include: &std::path::Path, probe: &[u8]) {
+    use std::fmt::Write as _;
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let text = String::from_utf8_lossy(probe).into_owned();
+    let mut host_sizes = std::collections::BTreeMap::new();
+    let mut asserts = String::from(
+        "#include <stddef.h>\n#include <libavcodec/avcodec.h>\n#include <libavformat/avformat.h>\n",
+    );
+    for (alias, ctype) in TYPE_ALIASES {
+        writeln!(asserts, "typedef {ctype} {alias};").unwrap();
+    }
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        match fields.as_slice() {
+            ["T", alias, size] => {
+                host_sizes.insert((*alias).to_owned(), size.parse::<u64>().unwrap());
+            }
+            ["F", alias, field, offset] => {
+                writeln!(
+                    asserts,
+                    "_Static_assert(offsetof({alias}, {field}) == {offset}, \"{alias}.{field}\");"
+                )
+                .unwrap();
+            }
+            ["K", name, value] => {
+                writeln!(asserts, "_Static_assert({name} == {value}, \"{name}\");").unwrap();
+            }
+            [] => {}
+            _ => panic!("unexpected ABI probe record: {line}"),
+        }
+    }
+    assert!(
+        host_sizes.len() == TYPE_ALIASES.len(),
+        "host ABI probe did not report every record size"
+    );
+    let layouts = android_record_layouts(include, &out);
+    let layout_path = out.join("ffmpeg-layout.rs");
+    let mut generated = std::fs::read_to_string(&layout_path).unwrap();
+    for (alias, ctype) in TYPE_ALIASES {
+        let host = host_sizes[alias];
+        let (size, align) = layouts.get(ctype).copied().unwrap_or_else(|| {
+            panic!("Android ABI layout probe did not report {ctype}");
+        });
+        if host == size && align == 8 {
+            continue;
+        }
+        let old = format!("#[repr(C,align(8))] pub struct {alias} {{ _opaque:[u8;{host}] }}");
+        let corrected =
+            format!("#[repr(C,align({align}))] pub struct {alias} {{ _opaque:[u8;{size}] }}");
+        assert!(
+            generated.contains(&old),
+            "generated layout record for {alias} was not found"
+        );
+        generated = generated.replace(&old, &corrected);
+        println!(
+            "cargo:warning=Android ABI: {ctype} is {size} bytes on the target but {host} in the host probe; corrected"
+        );
+    }
+    std::fs::write(&layout_path, generated).unwrap();
+    let assert_path = out.join("android-abi-asserts.c");
+    let object_path = out.join("android-abi-asserts.o");
+    std::fs::write(&assert_path, asserts).unwrap();
+    let output = android_command(include)
+        .arg("-c")
+        .arg(&assert_path)
+        .arg("-o")
+        .arg(&object_path)
+        .output()
+        .expect("cannot compile the Android ABI assertions");
+    assert!(
+        output.status.success(),
+        "Android target ABI check failed:\n{}",
+        tool_output_diagnostics(&output)
+    );
 }

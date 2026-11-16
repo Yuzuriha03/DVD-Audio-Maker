@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 
 import '../../bridge.dart';
 import '../localization/app_strings.dart';
-import '../localization/log_events.dart';
 import '../models/app_settings.dart';
 import 'platform_service.dart';
 import 'settings_store.dart';
@@ -25,6 +24,7 @@ class AppDiagnostic {
 class TaskOutcome {
   const TaskOutcome({
     required this.ok,
+    this.cancelled = false,
     required this.message,
     required this.diagnostics,
     required this.log,
@@ -34,6 +34,10 @@ class TaskOutcome {
   });
 
   final bool ok;
+
+  /// True only when the shared Rust sequence reported an authoritative user
+  /// cancellation. Hosts must not infer this from an empty failure text.
+  final bool cancelled;
   final String message;
   final List<AppDiagnostic> diagnostics;
   final String log;
@@ -43,9 +47,36 @@ class TaskOutcome {
 
   bool get unfinished => raw['Unfinished'] == true;
 
+  /// Same outcome with the shared final progress (delivery/finish tail).
+  TaskOutcome withProgress(int done, int total) {
+    return TaskOutcome(
+      ok: ok,
+      cancelled: cancelled,
+      message: message,
+      diagnostics: diagnostics,
+      log: log,
+      done: done,
+      total: total,
+      raw: raw,
+    );
+  }
+
+  /// Task-owned folder holding the product while Flutter exports it to SAF.
+  ///
+  /// The shared Rust sequence sets it only when verification succeeded and the
+  /// platform still has to deliver the product.
+  String? get deliveryDirectory {
+    final value = raw['FinalDirectory'];
+    if (value is String && value.trim().isNotEmpty) {
+      return value;
+    }
+    return null;
+  }
+
   factory TaskOutcome.fromJson(Map<String, dynamic> json) {
     return TaskOutcome(
       ok: json['Ok'] == true,
+      cancelled: json['Cancelled'] == true,
       message: _stringValue(json['Message']),
       diagnostics: _parseDiagnostics(json['Diagnostics']),
       log: _stringValue(json['Log']),
@@ -64,6 +95,25 @@ class TaskOutcome {
       done: 0,
       total: 0,
       raw: const <String, dynamic>{},
+    );
+  }
+
+  /// Successful outcome for an operation the shared Rust side already finished,
+  /// such as retrying the delivery cleanup after a failed finish.
+  factory TaskOutcome.success(
+    String message, {
+    int done = 0,
+    int total = 0,
+    String log = '',
+  }) {
+    return TaskOutcome(
+      ok: true,
+      message: message,
+      diagnostics: const <AppDiagnostic>[],
+      log: log,
+      done: done,
+      total: total,
+      raw: const <String, dynamic>{'Ok': true},
     );
   }
 
@@ -130,18 +180,86 @@ class TaskOutcome {
 ///
 /// `AppBridge.runProfile` runs the Rust work off the UI thread; this class
 /// polls `AppBridge.progress()` on a timer so the interface never blocks.
+/// A formatted log view produced by the shared Rust log formatter.
+class FormattedLogView {
+  const FormattedLogView({
+    required this.text,
+    required this.problemText,
+    required this.problems,
+  });
+
+  final String text;
+  final String problemText;
+  final int problems;
+}
+
+typedef LogFormatter = FormattedLogView Function(String language, String log);
+
+/// Injectable bridge entry points so widget/SAF tests never need a live Rust
+/// library; production keeps the shared `AppBridge` implementations.
+typedef TaskBridgeRunner =
+    Future<String> Function(String profileJson, String action);
+typedef ProfileIssueValidator =
+    List<ProfileIssueView> Function(String valuesJson, bool forTask);
+typedef ProfileIssueText = String Function(String language, String code);
+typedef IsoPrefixResolver = String Function(String title);
+
+// Explicit adapters: `AppBridge.profileValidate` takes named arguments, so its
+// tear-off is not assignable to the positional typedef above.
+List<ProfileIssueView> _defaultValidateProfile(
+  String valuesJson,
+  bool forTask,
+) => AppBridge.profileValidate(valuesJson: valuesJson, forTask: forTask);
+
+/// Default formatter: classification, hiding and localization are shared in
+/// Rust, so the Flutter layer never owns log rules.
+FormattedLogView defaultLogFormatter(String language, String log) {
+  final formatted = AppBridge.formatLog(language, log);
+  return FormattedLogView(
+    text: formatted.text,
+    problemText: formatted.problemText,
+    problems: formatted.problems.toInt(),
+  );
+}
+
+enum _DiscardOutcome { deleted, nothing, failed }
+
+class _DiscardResult {
+  const _DiscardResult(this.outcome, [this.error = '']);
+
+  final _DiscardOutcome outcome;
+  final String error;
+}
+
 class AppController extends ChangeNotifier {
   AppController({
     required this.settings,
     required this.store,
     required this.platform,
-  });
+    this.logFormatter = defaultLogFormatter,
+    TaskBridgeRunner? bridgeRunProfile,
+    ProfileIssueValidator? bridgeValidateProfile,
+    ProfileIssueText? bridgeIssueMessage,
+    IsoPrefixResolver? isoPrefixResolver,
+  }) : _bridgeRunProfile = bridgeRunProfile ?? AppBridge.runProfile,
+       _bridgeValidateProfile =
+           bridgeValidateProfile ?? _defaultValidateProfile,
+       _bridgeIssueMessage =
+           bridgeIssueMessage ?? AppBridge.profileIssueMessage,
+       _isoPrefixResolver = isoPrefixResolver ?? AppBridge.profileIsoPrefix {
+    platform.onProgress = _handleIoProgress;
+  }
 
   static bool _bridgeInitialized = false;
 
   final AppSettings settings;
   final SettingsStore store;
   final PlatformService platform;
+  final LogFormatter logFormatter;
+  final TaskBridgeRunner _bridgeRunProfile;
+  final ProfileIssueValidator _bridgeValidateProfile;
+  final ProfileIssueText _bridgeIssueMessage;
+  final IsoPrefixResolver _isoPrefixResolver;
 
   TaskPhase _phase = TaskPhase.idle;
   String _activeAction = '';
@@ -150,6 +268,7 @@ class AppController extends ChangeNotifier {
   String _progressText = '';
   String _logText = '';
   String _message = '';
+  String _failureAction = '';
   List<AppDiagnostic> _diagnostics = const <AppDiagnostic>[];
   bool _cancelRequested = false;
   String? _initError;
@@ -159,9 +278,15 @@ class AppController extends ChangeNotifier {
   int _elapsedSeconds = 0;
   bool _disposed = false;
   bool _runtimePathsReady = true;
+  bool _deliveryCleanupPending = false;
+  String _cleanupDetail = '';
   String _lastNotificationSignature = '';
   String _formattedLogSource = '';
-  String _formattedLog = '';
+  FormattedLogView _formattedLog = const FormattedLogView(
+    text: '',
+    problemText: '',
+    problems: 0,
+  );
 
   TaskPhase get phase => _phase;
   String get activeAction => _activeAction;
@@ -169,14 +294,25 @@ class AppController extends ChangeNotifier {
   int get total => _total;
   String get progressText => _progressText;
 
-  /// Bridge log lines in the same readable form the Windows client shows:
-  /// structured [Kind] events are localized and [METRIC] diagnostics hidden.
+  /// Bridge log lines rendered by the shared Rust formatter, so Android and
+  /// Windows show identical text.
   String get logText {
-    if (_formattedLogSource != _logText) {
-      _formattedLogSource = _logText;
-      _formattedLog = formatLogForDisplay(_logText);
+    _ensureLogFormatted();
+    return _formattedLog.text;
+  }
+
+  /// Only the visible problem lines, also classified in Rust.
+  String get problemLogText {
+    _ensureLogFormatted();
+    return _formattedLog.problemText;
+  }
+
+  void _ensureLogFormatted() {
+    if (_formattedLogSource == _logText) {
+      return;
     }
-    return _formattedLog;
+    _formattedLogSource = _logText;
+    _formattedLog = logFormatter(settings.language, _logText);
   }
 
   String get message => _message;
@@ -185,16 +321,21 @@ class AppController extends ChangeNotifier {
   String? get initError => _initError;
   bool get isRunning => _phase == TaskPhase.running;
   bool get isCancelled => _phase == TaskPhase.cancelled;
+
+  /// True when the SAF export succeeded but the shared finish (cleanup) failed.
+  ///
+  /// The exported product exists and the task workspace is retained, so the
+  /// user can retry the cleanup without rebuilding or re-exporting.
+  bool get deliveryCleanupPending => _deliveryCleanupPending;
+
+  /// Native detail of the failed finish, kept for diagnostics.
+  String get cleanupDetail => _cleanupDetail;
   int get elapsedSeconds => _elapsedSeconds;
   int get problemCount {
-    final logged = _logText.split('\n').where((line) {
-      final lower = line.toLowerCase();
-      return lower.contains('[error]') ||
-          lower.contains('[warn]') ||
-          line.contains('[错误]') ||
-          line.contains('[警告]');
-    }).length;
-    return logged > 0 ? logged : _diagnostics.length;
+    _ensureLogFormatted();
+    return _formattedLog.problems > 0
+        ? _formattedLog.problems
+        : _diagnostics.length;
   }
 
   AppStrings get strings => AppStrings.forCode(settings.language);
@@ -213,6 +354,15 @@ class AppController extends ChangeNotifier {
     return value;
   }
 
+  /// Progress on the shared 0-100 scale, rendered as a percentage only.
+  int? get progressPercent {
+    if (_total <= 1) {
+      return null;
+    }
+    final clamped = _done.clamp(0, _total);
+    return (clamped * 100 / _total).round().clamp(0, 100);
+  }
+
   String get statusText {
     if (_phase == TaskPhase.running) {
       return _cancelRequested ? strings.statusStopping : strings.statusRunning;
@@ -221,6 +371,12 @@ class AppController extends ChangeNotifier {
       return strings.statusDone;
     }
     if (_phase == TaskPhase.failure) {
+      if (_failureAction == 'verify') {
+        return strings.statusVerifyFailed;
+      }
+      if (_failureAction.startsWith('build')) {
+        return strings.statusBuildFailed;
+      }
       return strings.statusFailed;
     }
     if (_phase == TaskPhase.cancelled) {
@@ -238,6 +394,18 @@ class AppController extends ChangeNotifier {
         _initError = error.toString();
       }
     }
+    // The bundled menu font is copied from the APK asset into app-private
+    // storage before any Rust task runs. A development build without the asset
+    // reports a warning instead of blocking the rest of the app.
+    try {
+      final fonts = await platform.ensureRuntimeFonts();
+      if (fonts != null && fonts['path'] is! String) {
+        final reason = fonts['error'] ?? 'unknown error';
+        _initError ??= 'Cannot install the bundled menu font: $reason';
+      }
+    } catch (error) {
+      _initError ??= error.toString();
+    }
     Map<String, String>? paths;
     try {
       paths = await platform.appPaths();
@@ -247,22 +415,24 @@ class AppController extends ChangeNotifier {
     }
     final files = paths?['filesDir'];
     final build = paths?['buildDir'];
-    final output = paths?['outputDir'];
     if (files != null &&
         files.isNotEmpty &&
         build != null &&
-        build.isNotEmpty &&
-        output != null &&
-        output.isNotEmpty) {
+        build.isNotEmpty) {
       _runtimePathsReady = true;
       settings.appFilesDir = files;
       settings.appWorkDir = build;
-      settings.appOutputDir = output;
     } else {
       _runtimePathsReady = false;
       _initError ??= 'Cannot access the app-private working directories';
     }
     _normalizeFontPaths();
+    // A failed delivery cleanup survives a process restart so the user can
+    // retry the shared finish without rebuilding/exporting again.
+    _deliveryCleanupPending = store.loadDeliveryCleanupPending();
+    _cleanupDetail = _deliveryCleanupPending
+        ? store.loadDeliveryCleanupDetail()
+        : '';
     if (!_isCurrentPrivatePath(settings.sourceStagingPath)) {
       settings.sourceStagingPath = '';
     }
@@ -283,7 +453,9 @@ class AppController extends ChangeNotifier {
   }
 
   void setLanguage(String code) {
-    if (isRunning || !kLanguages.contains(code) || settings.language == code) {
+    if (isRunning ||
+        !settings.languages.contains(code) ||
+        settings.language == code) {
       return;
     }
     settings.language = code;
@@ -312,11 +484,23 @@ class AppController extends ChangeNotifier {
 
   String buildProfileJson() => jsonEncode(settings.toProfileJson());
 
-  String buildTaskProfileJson() {
+  String buildTaskProfileJson({
+    String finalDirectory = '',
+    String? finalDisplay,
+  }) {
     final profile = settings.toProfileJson();
-    final values = Map<String, String>.from(profile['Values']! as Map);
+    final values = Map<String, Object>.from(profile['Values']! as Map);
     values['DVDA_SRC'] = settings.sourceStagingPath;
-    values['DVDA_FINAL_DIR'] = settings.appOutputDir;
+    // The shared sequence publishes into a task-owned transport folder and the
+    // SAF adapter exports it; the profile only carries the user-visible folder
+    // so every shared log/diagnostic names the real destination. Verification
+    // passes a temporary read mirror of the exported ISOs here instead.
+    values['DVDA_FINAL_DIR'] = finalDirectory;
+    values['DVDA_FINAL_DISPLAY_DIR'] = finalDisplay ?? settings.finalDir;
+    // Session-only SAF display path: the Android bridge maps source mirror
+    // paths in logs/diagnostics back to the user-visible folder. Windows has no
+    // such key and its output is unchanged.
+    values['DVDA_SRC_DISPLAY_DIR'] = settings.source;
     values['DVDA_BUILD_DIR'] = settings.effectiveWorkDir;
     values['DVDA_MLP_EXTERNAL_DIR'] = settings.externalStagingPath;
     profile['Values'] = values;
@@ -333,7 +517,7 @@ class AppController extends ChangeNotifier {
     }
     await persistNow();
     try {
-      final raw = await AppBridge.runProfile(buildTaskProfileJson(), 'status');
+      final raw = await _bridgeRunProfile(buildTaskProfileJson(), 'status');
       return unfinishedFromStatus(raw);
     } catch (_) {
       return false;
@@ -365,19 +549,66 @@ class AppController extends ChangeNotifier {
     return decoded['Unfinished'] == true;
   }
 
-  Future<bool> discardProgress() async {
+  /// Deletes the unfinished task through the shared discard contract.
+  ///
+  /// Reads the shared discard result.
+  ///
+  /// The Windows/Android bridge wraps the action payload in the outer
+  /// `{Ok, Message, ...}` envelope: the real `Discarded` flag lives inside the
+  /// JSON `Message` string. `Discarded:false` is a valid "no progress to delete"
+  /// result, not an error; only a failed bridge/discard keeps the pending retry
+  /// state and aborts the merged cleanup.
+  Future<_DiscardResult> _discardProgressResult() async {
     if (isRunning || !_runtimePathsReady) {
-      return false;
+      return const _DiscardResult(
+        _DiscardOutcome.failed,
+        'A task is running or the app directories are unavailable',
+      );
     }
     await persistNow();
     try {
-      final raw = await AppBridge.runProfile(buildTaskProfileJson(), 'discard');
+      final raw = await _bridgeRunProfile(buildTaskProfileJson(), 'discard');
       final dynamic decoded = jsonDecode(raw);
       if (decoded is! Map || decoded['Ok'] != true) {
-        return false;
+        return _DiscardResult(
+          _DiscardOutcome.failed,
+          _discardErrorMessage(decoded),
+        );
+      }
+      bool? discarded;
+      final topLevel = decoded['Discarded'];
+      if (topLevel is bool) {
+        discarded = topLevel;
+      } else {
+        final message = decoded['Message'];
+        if (message is Map && message['Discarded'] is bool) {
+          discarded = message['Discarded'] as bool;
+        } else if (message is String) {
+          try {
+            final inner = jsonDecode(message);
+            if (inner is Map && inner['Discarded'] is bool) {
+              discarded = inner['Discarded'] as bool;
+            }
+          } on FormatException {
+            // A malformed inner payload is a real failure below.
+          }
+        }
+      }
+      if (discarded == null) {
+        return const _DiscardResult(
+          _DiscardOutcome.failed,
+          'Cannot read the shared discard result',
+        );
+      }
+      if (!discarded) {
+        return const _DiscardResult(_DiscardOutcome.nothing);
       }
       _phase = TaskPhase.idle;
       _activeAction = '';
+      _failureAction = '';
+      _deliveryCleanupPending = false;
+      _cleanupDetail = '';
+      await _saveDeliveryCleanup();
       _message = '';
       _logText = '';
       _progressText = '';
@@ -385,11 +616,25 @@ class AppController extends ChangeNotifier {
       _total = 0;
       _diagnostics = const <AppDiagnostic>[];
       _notify();
-      return true;
-    } catch (_) {
-      return false;
+      return const _DiscardResult(_DiscardOutcome.deleted);
+    } catch (error) {
+      return _DiscardResult(_DiscardOutcome.failed, error.toString());
     }
   }
+
+  String _discardErrorMessage(Object? decoded) {
+    if (decoded is Map) {
+      final message = decoded['Message'];
+      if (message is String && message.trim().isNotEmpty) {
+        return message;
+      }
+    }
+    return 'Cannot delete the unfinished task';
+  }
+
+  /// True only when the shared action really removed a task directory.
+  Future<bool> discardProgress() async =>
+      (await _discardProgressResult()).outcome == _DiscardOutcome.deleted;
 
   Future<TaskOutcome?> runAction(String action) async {
     if (isRunning) {
@@ -409,6 +654,13 @@ class AppController extends ChangeNotifier {
         _initError ?? 'Cannot access the app-private working directories',
       );
     }
+    // The shared menu renderer reads the bundled font from app-private storage;
+    // install it from the APK asset before any Rust task starts (idempotent).
+    try {
+      await platform.ensureRuntimeFonts();
+    } catch (_) {
+      // The Rust task reports the shared font failure if the asset is missing.
+    }
     // Claim the running state before the first await so a double tap cannot
     // start two concurrent native tasks. The SAF mirror for a newly picked
     // folder is built here, which can take a while for a large folder.
@@ -417,49 +669,164 @@ class AppController extends ChangeNotifier {
     if (_disposed) {
       return null;
     }
-    if (action != 'status' && action != 'discard') {
-      final sourceError = await _ensureSourceReady();
-      if (sourceError != null) {
-        return _failBeforeTask(sourceError);
-      }
-      if (settings.audioMode == 'external') {
-        final externalError = await _ensureExternalReady();
-        if (externalError != null) {
-          return _failBeforeTask(externalError);
+    // The shared verification rebuilds its reference data from the sources when
+    // no task workspace is bound, so a standalone verify after delivery still
+    // needs the source mirror prepared. There is no product-only Android verify.
+    //
+    // Those mirrors are I/O caches: a standalone verify releases the mirrors it
+    // rebuilt in this operation's finally unless a resumable unfinished task
+    // still needs them (then they stay, matching Windows keeping the workspace).
+    final verifyMirrors = <String>[];
+    try {
+      if (action != 'status' && action != 'discard') {
+        final sourceError = await _ensureSourceReady();
+        if (sourceError != null) {
+          return _failBeforeTask(sourceError);
+        }
+        if (action == 'verify') {
+          _addMirrorCache(verifyMirrors, settings.sourceStagingPath);
+        }
+        if (settings.audioMode == 'external') {
+          final externalError = await _ensureExternalReady();
+          if (externalError != null) {
+            return _failBeforeTask(externalError);
+          }
+          if (action == 'verify') {
+            _addMirrorCache(verifyMirrors, settings.externalStagingPath);
+          }
+        }
+        if (_cancelRequested) {
+          _applyOutcome(action, TaskOutcome.failure(''), cancelled: true);
+          return null;
         }
       }
-      if (_cancelRequested) {
-        _applyOutcome(action, TaskOutcome.failure(''), cancelled: true);
+      if (_disposed) {
         return null;
       }
-      final fontError = await _fontPathError();
-      if (fontError != null) {
-        return _failBeforeTask(fontError);
+      // Verification reads the product the user actually owns. SAF is the only
+      // readable source after delivery, so the adapter mirrors just the top-level
+      // ISOs (the shared verification filters them by the profile ISO prefix), the
+      // shared Rust verification runs, and the mirror is released in finally.
+      String? verifyFinalDirectory;
+      if (action == 'verify') {
+        _progressText = strings.verifyMirroring;
+        _done = 0;
+        _total = 0;
+        _notify();
+        DirectorySelection? linked;
+        try {
+          linked = await platform.linkIsoDirectory(
+            settings.finalTreeUri,
+            isoPrefix: _effectiveIsoPrefix(),
+          );
+        } on PlatformBridgeException catch (error) {
+          if (error.code == 'SAF_CANCELLED') {
+            _applyOutcome(action, TaskOutcome.failure(''), cancelled: true);
+            return null;
+          }
+          if (error.code == 'SAF_NO_SPACE') {
+            return _failBeforeTask(strings.verifySpaceInsufficient);
+          }
+          return _failBeforeTask(error.message);
+        } catch (error) {
+          return _failBeforeTask(error.toString());
+        }
+        final nativePath = linked?.nativePath ?? '';
+        if (nativePath.isEmpty) {
+          return _failBeforeTask(
+            linked == null
+                ? strings.selectFinalRequired
+                : 'Cannot read the selected folder: ${linked.displayPath}',
+          );
+        }
+        verifyFinalDirectory = nativePath;
+      }
+      if (_disposed) {
+        return null;
+      }
+      _startPolling();
+
+      TaskOutcome outcome;
+      try {
+        final raw = await _bridgeRunProfile(
+          buildTaskProfileJson(finalDirectory: verifyFinalDirectory ?? ''),
+          action,
+        );
+        outcome = TaskOutcome.parse(raw);
+      } catch (error) {
+        outcome = TaskOutcome.failure(error.toString());
+      } finally {
+        if (verifyFinalDirectory != null) {
+          try {
+            await platform.releaseIsoDirectory(settings.finalTreeUri);
+          } catch (_) {
+            // The verification outcome stays authoritative; a leftover mirror is
+            // bounded app-private data and is replaced on the next verification.
+          }
+        }
+      }
+
+      var cancelled = false;
+      if (outcome.ok && action.startsWith('build')) {
+        final delivery = outcome.deliveryDirectory;
+        if (delivery != null) {
+          // The shared sequence owns the final 100%; while the SAF adapter
+          // exports, the bar shows the pending 99 and never 100.
+          _stopPolling();
+          _done = 99;
+          _total = 100;
+          _progressText = strings.exportingOutput;
+          _notify();
+          if (_cancelRequested) {
+            cancelled = true;
+            outcome = TaskOutcome.failure('');
+          } else {
+            final exported = await exportOutput(delivery);
+            if (exported.cancelled) {
+              cancelled = true;
+              outcome = TaskOutcome.failure('');
+            } else if (!exported.ok) {
+              outcome = TaskOutcome.failure(strings.exportFailed);
+            } else {
+              // The export adapter released this task's SAF source mirrors; drop
+              // their stale paths so the next task rebuilds them from the grant.
+              settings.sourceStagingPath = '';
+              settings.externalStagingPath = '';
+              // Only a verified export may finish the shared task. A null, failed
+              // or throwing finish is a cleanup failure: never success, keep the
+              // resumable workspace and allow a retry.
+              final finished = await finishDeliveredTask();
+              if (finished == null || !finished.ok) {
+                _deliveryCleanupPending = true;
+                _cleanupDetail = finished?.message ?? '';
+                await _saveDeliveryCleanup();
+                outcome = TaskOutcome.failure(strings.cleanupFailedRetained);
+              } else {
+                _deliveryCleanupPending = false;
+                _cleanupDetail = '';
+                await _saveDeliveryCleanup();
+                outcome = outcome.withProgress(finished.done, finished.total);
+              }
+            }
+          }
+        }
+      }
+      _stopPolling();
+      // Only the shared authoritative cancellation flag (or an adapter-level
+      // cancel that already aborted the platform I/O) may paint the outcome as
+      // a user stop. A real failure that happened after a stop request stays a
+      // failure and keeps its diagnostics.
+      if (cancelled || outcome.cancelled) {
+        _applyOutcome(action, outcome, cancelled: true);
+      } else {
+        _applyOutcome(action, outcome);
+      }
+      return outcome;
+    } finally {
+      if (action == 'verify') {
+        await _releaseVerifyMirrors(verifyMirrors);
       }
     }
-    if (_disposed) {
-      return null;
-    }
-    _startPolling();
-
-    TaskOutcome outcome;
-    try {
-      final raw = await AppBridge.runProfile(buildTaskProfileJson(), action);
-      outcome = TaskOutcome.parse(raw);
-    } catch (error) {
-      outcome = TaskOutcome.failure(error.toString());
-    }
-
-    if (outcome.ok && action.startsWith('build')) {
-      final exported = await exportOutput();
-      if (!exported) {
-        outcome = TaskOutcome.failure(strings.exportFailed);
-      }
-    }
-    _stopPolling();
-    final cancelled = _cancelRequested && !outcome.ok;
-    _applyOutcome(action, outcome, cancelled: cancelled);
-    return outcome;
   }
 
   void cancel() {
@@ -472,7 +839,23 @@ class AppController extends ChangeNotifier {
     } catch (_) {
       // The task will fail on its own if the bridge is unavailable.
     }
+    // Also abort the SAF I/O adapters: they run before/around the Rust task and
+    // otherwise keep copying a large ISO after the user pressed cancel.
+    unawaited(_cancelPlatformIo());
     _notify();
+  }
+
+  Future<void> _cancelPlatformIo() async {
+    try {
+      await platform.cancelExport();
+    } catch (_) {
+      // The next adapter call reports a real failure.
+    }
+    try {
+      await platform.cancelIsoMirror();
+    } catch (_) {
+      // The next adapter call reports a real failure.
+    }
   }
 
   Future<void> cancelAndWait() async {
@@ -508,55 +891,125 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  Future<bool> exportOutput() {
-    if (settings.finalTreeUri.isEmpty) {
-      return Future<bool>.value(false);
+  /// Runs the transactional SAF export of the task-local product.
+  ///
+  /// The adapter writes and verifies temporary SAF documents and only then
+  /// replaces the visible ISO; the app-private SAF mirrors consumed by this task
+  /// are released by the adapter itself on success.
+  Future<ExportResult> exportOutput(String sourcePath) async {
+    if (settings.finalTreeUri.isEmpty || sourcePath.isEmpty) {
+      return ExportResult.failure('NO_TARGET');
     }
-    return platform.exportDirectory(
-      settings.appOutputDir,
-      settings.finalTreeUri,
-    );
+    final cachePaths = <String>[
+      if (settings.sourceStagingPath.isNotEmpty) settings.sourceStagingPath,
+      if (settings.externalStagingPath.isNotEmpty) settings.externalStagingPath,
+    ];
+    try {
+      return await platform.exportDirectory(
+        sourcePath,
+        settings.finalTreeUri,
+        cachePaths: cachePaths,
+      );
+    } catch (error) {
+      return ExportResult.failure('EXPORT_EXCEPTION: $error');
+    }
+  }
+
+  void _addMirrorCache(List<String> mirrors, String path) {
+    if (path.isNotEmpty && !mirrors.contains(path)) {
+      mirrors.add(path);
+    }
+  }
+
+  /// Whether an unfinished task still needs the mirrors for a later
+  /// continuation; a standalone verify releases them otherwise.
+  Future<bool> _hasResumableUnfinishedTask() async {
+    if (!_runtimePathsReady) {
+      return true;
+    }
+    try {
+      await persistNow();
+      final raw = await _bridgeRunProfile(buildTaskProfileJson(), 'status');
+      return unfinishedFromStatus(raw);
+    } catch (_) {
+      // Keep the mirrors when the resumable state cannot be proven.
+      return true;
+    }
+  }
+
+  /// Releases the source/external mirrors recreated for a standalone verify.
+  ///
+  /// Uses the existing Kotlin cache adapter; no new cleanup policy lives here.
+  Future<void> _releaseVerifyMirrors(List<String> mirrors) async {
+    if (mirrors.isEmpty) {
+      return;
+    }
+    if (await _hasResumableUnfinishedTask()) {
+      return;
+    }
+    List<String> released;
+    try {
+      released = await platform.releaseTaskCaches(cachePaths: mirrors);
+    } catch (_) {
+      return;
+    }
+    if (released.isEmpty) {
+      return;
+    }
+    if (released.contains(settings.sourceStagingPath)) {
+      settings.sourceStagingPath = '';
+    }
+    if (released.contains(settings.externalStagingPath)) {
+      settings.externalStagingPath = '';
+    }
+    await persistNow();
+  }
+
+  /// The shared ISO prefix for the verification mirror filter.
+  ///
+  /// Explicit user prefix wins; otherwise the shared title derivation (the same
+  /// helper Windows publication and verify use) is called. A native library
+  /// without the helper falls back to copying top-level ISOs, which the shared
+  /// verification still filters.
+  String _effectiveIsoPrefix() {
+    if (settings.isoPrefix.trim().isNotEmpty) {
+      return settings.isoPrefix;
+    }
+    try {
+      return _isoPrefixResolver(settings.title);
+    } catch (_) {
+      return '';
+    }
   }
 
   void _normalizeFontPaths() {
     String normalize(String value, String fallback) {
-      final font = value.trim();
+      final font = AppSettings.migrateLegacyFont(value);
       if (font.startsWith('${settings.appFilesDir}/fonts/')) {
         return font;
       }
       return AppSettings.portableFont(font, fallback);
     }
 
-    settings.fontSc = normalize(settings.fontSc, kDefaultFont);
+    // Empty means "use the shared language default"; the desktop profile
+    // keeps the same empty value, so profiles stay portable across platforms.
+    settings.fontSc = normalize(settings.fontSc, '');
     settings.fontJp = normalize(settings.fontJp, '');
     settings.fontKr = normalize(settings.fontKr, '');
-  }
-
-  Future<String?> _fontPathError() async {
-    if (!settings.menu) {
-      return null;
-    }
-    final paths = <String>[
-      settings.fontSc.trim().isEmpty ? kDefaultFont : settings.fontSc.trim(),
-      settings.fontJp.trim(),
-      settings.fontKr.trim(),
-    ];
-    for (final path in paths.where((path) => path.isNotEmpty)) {
-      try {
-        if (!await platform.validateReadableFont(path)) {
-          return 'Cannot read menu font: $path';
-        }
-      } catch (_) {
-        return 'Cannot read menu font: $path';
-      }
-    }
-    return null;
   }
 
   void _beginAction(String action) {
     _phase = TaskPhase.running;
     _activeAction = action;
     _cancelRequested = false;
+    _failureAction = '';
+    if (action.startsWith('build')) {
+      // A new build owns a fresh workspace; an earlier cleanup failure must not
+      // keep offering a retry for a workspace the shared sequence replaced.
+      _deliveryCleanupPending = false;
+      _cleanupDetail = '';
+      unawaited(_saveDeliveryCleanup());
+    }
     _done = 0;
     _total = 0;
     _progressText = '';
@@ -641,6 +1094,13 @@ class AppController extends ChangeNotifier {
       linked = force
           ? await platform.linkDirectory(treeUri)
           : await platform.ensureSourceLink(treeUri);
+    } on PlatformBridgeException catch (error) {
+      apply('');
+      markClean();
+      if (error.code == 'SAF_NO_SPACE') {
+        return strings.sourceSpaceInsufficient;
+      }
+      return error.message;
     } catch (error) {
       apply('');
       markClean();
@@ -659,6 +1119,134 @@ class AppController extends ChangeNotifier {
       await persistNow();
     }
     return null;
+  }
+
+  /// Runs the shared finish tail after a verified SAF export.
+  ///
+  /// The shared sequence decides and performs the cleanup; this adapter only
+  /// tells it that the user-visible delivery completed. Failure is reported, not
+  /// swallowed: the caller shows a localized cleanup failure and keeps the
+  /// resumable workspace so the finish can be retried.
+  @protected
+  Future<TaskOutcome?> finishDeliveredTask() async {
+    if (!_runtimePathsReady) {
+      return TaskOutcome.failure(
+        'The app-private working directories are unavailable',
+      );
+    }
+    try {
+      return TaskOutcome.parse(
+        await _bridgeRunProfile(buildTaskProfileJson(), 'finish_delivery'),
+      );
+    } catch (error) {
+      return TaskOutcome.failure(error.toString());
+    }
+  }
+
+  /// Retries the shared finish tail after a failed delivery cleanup.
+  ///
+  /// The exported product is already in the user folder, so only the workspace
+  /// cleanup is repeated; success is only reported when the shared finish
+  /// reports it.
+  Future<TaskOutcome?> retryDeliveryCleanup() async {
+    if (isRunning || !_deliveryCleanupPending || !_runtimePathsReady) {
+      return null;
+    }
+    _phase = TaskPhase.running;
+    _activeAction = 'finish_delivery';
+    _cancelRequested = false;
+    _done = 99;
+    _total = 100;
+    _progressText = strings.cleanupRetrying;
+    _message = '';
+    _notify();
+    final finished = await finishDeliveredTask();
+    _stopPolling();
+    if (finished != null && finished.ok) {
+      _deliveryCleanupPending = false;
+      _cleanupDetail = '';
+      await _saveDeliveryCleanup();
+      final total = finished.total > 1 ? finished.total : 100;
+      final done = finished.done > 0 ? finished.done : total;
+      final outcome = TaskOutcome.success(
+        strings.statusDone,
+        done: done,
+        total: total,
+        log: _logText,
+      );
+      _applyOutcome('finish_delivery', outcome);
+      _notify();
+      return outcome;
+    }
+    _deliveryCleanupPending = true;
+    _cleanupDetail = finished?.message ?? '';
+    await _saveDeliveryCleanup();
+    final failure = TaskOutcome.failure(strings.cleanupFailedRetained);
+    _applyOutcome('finish_delivery', failure);
+    _notify();
+    return failure;
+  }
+
+  /// Removes known rebuildable app-private caches left by older versions.
+  ///
+  /// Explicit user-confirmed recovery only; the current task still uses the
+  /// shared finish, and user-granted SAF folders, the unfinished workspace and
+  /// exported ISOs are never deleted.
+  Future<CleanupResult> cleanupInternalCaches() async {
+    if (isRunning) {
+      return const CleanupResult(ok: false, error: 'A task is running');
+    }
+    try {
+      return await platform.cleanupInternalCaches();
+    } catch (error) {
+      return CleanupResult(ok: false, error: error.toString());
+    }
+  }
+
+  /// Deletes the unfinished task through the shared discard contract and then
+  /// releases the rebuildable app-private I/O caches through the existing
+  /// Kotlin cache adapter.
+  ///
+  /// This does not introduce a second cleanup policy: the workspace is removed
+  /// by the shared discard action and the adapters own the app-private mirrors.
+  /// A running task or an unreachable app directory fails the whole operation.
+  Future<CleanupResult> discardProgressAndCleanup() async {
+    if (isRunning || !_runtimePathsReady) {
+      return const CleanupResult(
+        ok: false,
+        error: 'A task is running or the app directories are unavailable',
+      );
+    }
+    final discard = await _discardProgressResult();
+    if (discard.outcome == _DiscardOutcome.failed) {
+      // A real discard failure keeps the pending retry state and aborts the
+      // merged cleanup; it must never look like a successful cleanup.
+      return CleanupResult(ok: false, error: discard.error);
+    }
+    final cleanup = await cleanupInternalCaches();
+    if (!cleanup.ok) {
+      return CleanupResult(
+        ok: false,
+        freedBytes: cleanup.freedBytes,
+        deleted: cleanup.deleted,
+        error: cleanup.error,
+      );
+    }
+    // No progress to delete is a valid outcome: the cache cleanup still runs.
+    final progressDiscarded = discard.outcome == _DiscardOutcome.deleted;
+    if (!progressDiscarded) {
+      // No workspace exists, so an earlier finish-cleanup retry flag is stale.
+      _deliveryCleanupPending = false;
+      _cleanupDetail = '';
+      await _saveDeliveryCleanup();
+      _notify();
+    }
+    return CleanupResult(
+      ok: true,
+      freedBytes: cleanup.freedBytes,
+      deleted: cleanup.deleted,
+      progressDiscarded: progressDiscarded,
+    );
   }
 
   Future<bool> openOutputFolder() {
@@ -681,6 +1269,24 @@ class AppController extends ChangeNotifier {
     if (action == 'status' || action == 'discard') {
       return null;
     }
+    try {
+      final issues = _bridgeValidateProfile(
+        jsonEncode(settings.toProfileValues()),
+        true,
+      );
+      if (issues.isNotEmpty) {
+        final issue = issues.first;
+        try {
+          return _bridgeIssueMessage(settings.language, issue.code);
+        } catch (_) {
+          // The bridge answered validation, so the issue code is still usable
+          // even if the message lookup is unavailable.
+          return issue.code;
+        }
+      }
+    } catch (_) {
+      // Bridge unavailable: the run itself reports the failure.
+    }
     if (settings.sourceStagingPath.isEmpty && settings.sourceTreeUri.isEmpty) {
       return strings.selectSourceRequired;
     }
@@ -700,11 +1306,17 @@ class AppController extends ChangeNotifier {
     TaskOutcome outcome, {
     bool cancelled = false,
   }) {
-    _phase = cancelled
+    final userCancelled = cancelled || outcome.cancelled;
+    _phase = userCancelled
         ? TaskPhase.cancelled
         : outcome.ok
         ? TaskPhase.success
         : TaskPhase.failure;
+    if (_phase == TaskPhase.failure) {
+      _failureAction = action;
+    } else {
+      _failureAction = '';
+    }
     _activeAction = action;
     if (_startedAt != null) {
       _elapsedSeconds = DateTime.now().difference(_startedAt!).inSeconds;
@@ -736,7 +1348,7 @@ class AppController extends ChangeNotifier {
         final elapsed = _startedAt == null
             ? _elapsedSeconds
             : DateTime.now().difference(_startedAt!).inSeconds;
-        final progressText = _displayLine(progress.text);
+        final progressText = _formatSingleLine(progress.text);
         final changed =
             progress.done != _done ||
             progress.total != _total ||
@@ -771,6 +1383,17 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  Future<void> _saveDeliveryCleanup() async {
+    try {
+      await store.saveDeliveryCleanupPending(
+        _deliveryCleanupPending,
+        detail: _cleanupDetail,
+      );
+    } catch (_) {
+      // Persistence is best effort; the in-memory state still drives the UI.
+    }
+  }
+
   void _notify() {
     if (!_disposed) {
       _syncStatusNotification();
@@ -788,143 +1411,63 @@ class AppController extends ChangeNotifier {
       'verify' => strings.actionVerify,
       _ => strings.actionBuild,
     };
-    if (_total > 0) {
-      final done = _done.clamp(0, _total);
-      return '$label $done/$_total';
+    final percent = progressPercent;
+    if (percent != null) {
+      return '$label $percent%';
     }
     return label;
   }
 
-  /// Converts one bridge log line into the readable text the Windows client
-  /// shows. Returns an empty string for lines that must stay hidden.
-  static const List<String> _noisePrefixes = <String>[
-    'out_time_us=',
-    'Number of samples:',
-    '[space]',
-    '[menu-cover] oversized ',
-    'WARN: Button y coordinates are odd for button ',
-  ];
-
-  static const List<String> _relevantPrefixes = <String>[
-    '[MLP-CHECK]',
-    '[MLP-PROGRESS]',
-    '[MLP-FINALIZE]',
-    '[menu-cover]',
-    '[author]',
-    '[verify]',
-    '[LPCM]',
-    '[续跑]',
-    '[恢复]',
-    '[bridge]',
-    '[TASK]',
-    '[FAIL]',
-    '[WARN]',
-    '[WAR]',
-    '[警告]',
-    '[错误]',
-    '[信息]',
-  ];
-
-  String _displayLine(String raw) {
-    final line = raw.trim();
-    if (line.isEmpty || line.startsWith('[METRIC] ')) {
+  /// Drops raw wire payloads; only readable text may reach the progress label.
+  @visibleForTesting
+  static String sanitizeProgressText(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) {
       return '';
     }
-    if (_noisePrefixes.any(line.startsWith)) {
+    if (trimmed.startsWith('{') || trimmed.startsWith('[TASK]')) {
       return '';
     }
-    if (line.startsWith('[TASK] ')) {
-      return _taskLine(line.substring('[TASK] '.length));
-    }
-    if (!line.startsWith('{') && !_relevantPrefixes.any(line.startsWith)) {
-      // The Windows client only shows classified lines; raw tool chatter stays
-      // out of the task log.
-      return '';
-    }
-    if (!line.startsWith('{')) {
-      return line;
-    }
-    Object? decoded;
-    try {
-      decoded = jsonDecode(line);
-    } catch (_) {
-      return line;
-    }
-    if (decoded is! Map) {
-      return line;
-    }
-    final kind = decoded['Kind'];
-    final name = decoded['Name'];
-    if (kind is! String || name is! String) {
-      return line;
-    }
-    final detail = decoded['Value'];
-    String fill(String template, List<String> values) {
-      var result = template;
-      for (var index = 0; index < values.length; index++) {
-        result = result.replaceAll('{${index + 1}}', values[index]);
-      }
-      return result.replaceAll('{0}', name);
-    }
-
-    switch (kind) {
-      case 'Started':
-        return fill(strings.logStarted, const <String>[]);
-      case 'PcmStarted':
-        return fill(strings.logPcmStarted, const <String>[]);
-      case 'PcmProgress':
-        final percent = detail is num ? detail.clamp(0, 100).toString() : '?';
-        return fill(strings.logPcmProgress, <String>[percent]);
-      case 'PcmFinished':
-        return fill(strings.logPcmFinished, const <String>[]);
-      case 'Encoded':
-        final values = <String>['?', '?', '?', '?'];
-        if (detail is Map) {
-          values[0] = '${detail['Rate'] ?? '?'}';
-          values[1] = '${detail['Bits'] ?? '?'}';
-          values[2] = '${detail['Channels'] ?? '?'}';
-          values[3] = '${detail['Bytes'] ?? '?'}';
-        }
-        return fill(strings.logEncoded, values);
-      case 'PcmError':
-        return fill(strings.logPcmError, <String>[
-          detail is String && detail.isNotEmpty ? detail : '?',
-        ]);
-      case 'Detail':
-        return detail is String && detail.isNotEmpty ? '$name: $detail' : name;
-      default:
-        return line;
-    }
+    return trimmed;
   }
 
-  String _taskLine(String json) {
-    Object? decoded;
-    try {
-      decoded = jsonDecode(json);
-    } catch (_) {
-      return '';
+  /// Progress event from the SAF export/verify adapters.
+  ///
+  /// Keeps the pending 99 while exporting and shows the ISO count while the
+  /// verification mirror is built; the shared Rust progress still owns the
+  /// final 100 after the task/finish reports it.
+  void _handleIoProgress(TaskIoProgress progress) {
+    if (!isRunning) {
+      return;
     }
-    if (decoded is! Map) {
-      return '';
+    final text = progress.kind == 'verify'
+        ? strings.verifyMirrorProgress(progress.done, progress.total)
+        : strings.exportProgress(progress.done, progress.total);
+    if (text == _progressText) {
+      return;
     }
-    final event = <String, Object?>{};
-    decoded.forEach((key, value) => event['$key'] = value);
-    return formatTaskEvent(event, settings.language) ?? '';
+    _progressText = text;
+    _notify();
   }
 
-  /// Public for tests; the UI reads it through [logText].
-  String formatLogForDisplay(String raw) {
-    if (raw.isEmpty) {
+  /// Formats one bridge progress line with the same shared formatter.
+  String _formatSingleLine(String raw) {
+    if (raw.trim().isEmpty) {
       return '';
     }
-    final lines = <String>[];
-    for (final line in raw.split('\n')) {
-      final display = _displayLine(line);
-      if (display.isNotEmpty) {
-        lines.add(display);
-      }
-    }
-    return lines.join('\n');
+    return sanitizeProgressText(logFormatter(settings.language, raw).text);
+  }
+
+  /// Test hook: seeds progress counters without a running Rust task.
+  @visibleForTesting
+  void applyProgressForTest({
+    required int done,
+    required int total,
+    String text = '',
+  }) {
+    _done = done;
+    _total = total;
+    _progressText = text;
   }
 
   void _syncStatusNotification() {
@@ -967,6 +1510,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    platform.onProgress = null;
     _stopPolling();
     _saveTimer?.cancel();
     _saveTimer = null;

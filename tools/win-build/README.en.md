@@ -1,15 +1,17 @@
-# Windows x64 build and package
+# Windows x64/ARM64 build and package
 
-The supported product is a native Rust GUI for Windows x64. It does not require a .NET runtime at run time. Native rebuilds require Rust, Visual Studio C++ x64 tools, the Windows SDK, Python and native Windows CMake. FFmpeg configure/make uses an MSYS2 shell, while every C/C++ compile and link uses MSVC.
+The supported product is a native Rust GUI for Windows x64 and Windows on ARM64 (WoA). It does not require a .NET runtime at run time. Native rebuilds require Rust, Visual Studio C++ x64 tools, the Windows SDK, Python and native Windows CMake. FFmpeg configure/make uses an MSYS2 shell, while every C/C++ compile and link uses MSVC.
 
 ## Rust build
 
-```bat
-cargo build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
-cargo fmt --manifest-path rust\Cargo.toml --all -- --check
-cargo clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 fmt --manifest-path rust\Cargo.toml --all -- --check
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 clippy --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- -D warnings
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline -- --include-ignored
 ```
+
+`cargo-msvc.ps1` initializes the MSVC environment and defaults `DVDA_FFMPEG_PREFIX` to `build\msvc-native\ffmpeg-static\install`, so these commands run in a clean shell after the native inputs below are prepared. Do not invoke bare cargo from a shell without the MSVC environment; it fails because link.exe or the FFmpeg prefix is missing.
 
 `gui.cmd`, `gui-debug.cmd`, `cli.cmd`, `build.cmd` and `verify.cmd` invoke the Rust workspace. Profiles are JSON files selected with `--profile`; `config.env`, `DVDA_CONFIG` and `--config` are unsupported.
 
@@ -17,16 +19,17 @@ The complete author runs in Rust through a shared application/CLI entry. `build-
 
 ## Native inputs
 
-The package assembler expects validated x64 directories:
+The package assembler expects validated, per-architecture directories:
 
-| Input | Default | Required content |
-| --- | --- | --- |
-| Media | `build/msvc-native/ffmpeg-static/install` | authenticated static FFmpeg and soxr archives |
-| Image | `build/image-native` | `dvda-image.dll`, XML policy/type/color files and notice |
-| Author | explicit `--image-author` | complete Rust author built with the same static FFmpeg manifest |
-| Fonts/assets | `tools/win-build/prebuilt` or explicit `--prebuilt` | prepared menu assets and CJK fonts; missing inputs fail explicitly |
+| Input | x64 default | WoA default | Required content |
+| --- | --- | --- | --- |
+| Media | `build/msvc-native/ffmpeg-static/install` | `build/msvc-native/ffmpeg-arm64/install` | authenticated static FFmpeg and soxr archives |
+| Image | `build/image-native` | `build/image-native` | `dvda-image.dll`, XML policy/type/color files and notice |
+| Author | explicit `--image-author` | explicit `--image-author` | complete Rust author built with the same static FFmpeg manifest |
+| Source/assets | explicit `--source` (data directory containing `menu/`) | explicit `--source` (data directory containing `menu/`) | menu assets |
+| Fonts/prebuilt | explicit `--prebuilt` (architecture directory containing `fonts/`) | explicit `--prebuilt` (architecture directory containing `fonts/`) | prepared CJK fonts; missing inputs fail explicitly |
 
-The packager verifies hashes, sizes, x64 architecture, the full import closure and assets. The MLP encoder is compiled directly into Rust. Image provenance must identify the Rust implementation; the local acceptance uses `build/rust-image-runtime`. Media/image adapter DLLs are development provenance inputs and are excluded from linked releases.
+The packager verifies hashes, sizes, the target PE architecture, the full import closure and assets. The MLP encoder is compiled directly into Rust. Image provenance must identify the Rust implementation; the local acceptance uses `build/rust-image-runtime`. Media/image adapter DLLs are development provenance inputs and are excluded from linked releases.
 
 FFmpeg explicitly disables native zlib. Ordinary M4A/ALAC remains supported, but
 MOV/M4A inputs with compressed `cmov` atoms are unsupported. Rebuild FFmpeg in a
@@ -56,28 +59,43 @@ Build static FFmpeg in a separate directory to preserve shared comparison builds
 python tools\win-build\build-msvc-ffmpeg.py --profile static --work-directory build\msvc-native\ffmpeg-static --msys-root D:\dev\msys64 --cmake PATH\TO\cmake.exe --source-cache build\msvc-native\ffmpeg\downloads
 ```
 
-The launch scripts default to this static prefix. Override `DVDA_FFMPEG_PREFIX`
-explicitly for shared comparison builds. Static releases extract fonts and menu
-assets only; all five FFmpeg libraries and their static CRT/dependencies are linked
-into the EXE. Static linkage alone is not a measured encoding speed improvement.
+The launch scripts default to this static prefix. Shared comparison builds remain
+available for development; packaging a shared/legacy media runtime requires an
+explicit `--ffmpeg-prefix <validated shared FFmpeg prefix>` and does not accept an
+environment-variable substitute. Static releases extract fonts and menu assets
+only; all five FFmpeg libraries and their static CRT/dependencies are linked into
+the EXE. Static linkage alone is not a measured encoding speed improvement.
 
 Format parsing, MLP CRC/parity, PCM comparison and read-only AOB disc verification are implemented in Rust. No format or verifier DLL is required; packaging no longer accepts `--formats-runtime`.
 
-## Release ZIP
+## Release (single EXE)
 
-After native inputs are available:
+Windows publishes one single EXE per architecture; no ZIP is generated or uploaded. Build the x64 packaging tool first (x64 and WoA share the same x64 tool):
 
-```bat
-tools\win-build\build-all.cmd ^
-  --media-runtime build\msvc-native\ffmpeg-static\install ^
-  --image-author build\rust-author-production ^
-  --prebuilt build\msvc-native\package-assets ^
-  --version v1.0
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --release --offline -p dvda-toolchain
 ```
 
-This calls `dvda-toolchain package` and writes `DVD-Audio-Maker-v1.0-win-x64.zip` under the ignored release directory. The staging root contains one GUI EXE with embedded runtime components and companion user documentation. It excludes .NET files, the developer CLI, PDBs, build JSON and local profiles.
+The wrapper initializes the MSVC environment and defaults DVDA_FFMPEG_PREFIX, so it runs in a clean shell once the native inputs are prepared. The packaging dvda-toolchain.exe initializes its own MSVC environment and records the validated prefix, so it can also be called from a clean shell; it requires Rust/Cargo and Python on PATH.
 
-The packager normalizes Windows extended paths before invoking `Compress-Archive`, checks the archive can be extracted, and audits the final file list. Place the three user READMEs, licenses and both NOTICE files beside the EXE in the ZIP; runtime files are embedded.
+x64:
+
+```powershell
+rust/target/x86_64-pc-windows-msvc/release/dvda-toolchain.exe package --repo . --output <output-dir> --version <version> --target x86_64-pc-windows-msvc --media-runtime build/msvc-native/ffmpeg-static/install --image-author build/gui-only-author-v1.1/x64 --prebuilt build/gui-only-author-v1.1/x64 --source build/gui-only-author-v1.1/x64/data --single-exe
+```
+
+WoA (ARM64, same x64 tool):
+
+```powershell
+rust/target/x86_64-pc-windows-msvc/release/dvda-toolchain.exe package --repo . --output <output-dir> --version <version> --target aarch64-pc-windows-msvc --media-runtime build/msvc-native/ffmpeg-arm64/install --image-author build/gui-only-author-v1.2/arm64 --prebuilt build/gui-only-author-v1.2/arm64 --source build/gui-only-author-v1.2/arm64/data --single-exe
+```
+
+- `--source` points to the data directory containing `menu/`; `--prebuilt` points to the architecture directory containing `fonts/`. Paths, target triples and output directories must match per architecture and must not be mixed.
+- Official static media runtimes need no `--ffmpeg-prefix`; shared/legacy media runtimes require an explicit `--ffmpeg-prefix <validated shared FFmpeg prefix>` (a static runtime rejects a different prefix).
+- `tools\win-build\build-all.cmd` always passes `--single-exe`; the explicit commands above are equivalent. Do not copy the EXE by hand, do not run `Compress-Archive` manually, and do not add another packaging flow.
+- `MANIFEST.txt`, `release-build.json` and `DVD-Audio-Maker-<version>-<arch>.exe` at the output root are local artifacts and stay out of Git. Release assets are only the two single EXEs. Licenses and third-party notices are embedded in the GUI About window.
+- Android releases use only `tools/android/build-flutter.ps1`; they never enter the Windows packaging flow.
+- Create the tag/Release only after the Windows x64, WoA and Android artifacts and their SHA-256 values are all ready; when rebuilding, keep the previous release log and update the SHA-256 values.
 
 ### Lossless menu font optimization
 
@@ -87,4 +105,4 @@ For the static Regular TTC containing all four SC/JP/KR/TC faces, use the build-
 .venv\Scripts\python.exe tools\win-build\optimize-menu-fonts.py build\font-sources\DvdaNotoCJK-Regular.ttc build\font-sources\optimized\DvdaNotoCJK-Regular.ttc
 ```
 
-The destination must not exist. The script compresses the shared CFF2 outlines using subroutines, shares identical collection tables, and writes only after checking all 65,535 glyph outlines, font/private parameters, glyph order, and every non-CFF2 table (excluding the dependent `head.checksumAdjustment`). Unsupported hinted or variable programs are rejected. No characters or regional faces are removed; mappings, layout, metrics and metadata remain unchanged. After native rendering acceptance and `dvda-toolchain font verify-collection`, copy the result into `build\msvc-native\package-assets\fonts\DvdaNotoCJK-Regular.ttc` before packaging. Keep the source unchanged for comparison. Raw font savings are not the same as compressed release ZIP savings.
+The destination must not exist. The script compresses the shared CFF2 outlines using subroutines, shares identical collection tables, and writes only after checking all 65,535 glyph outlines, font/private parameters, glyph order, and every non-CFF2 table (excluding the dependent `head.checksumAdjustment`). Unsupported hinted or variable programs are rejected. No characters or regional faces are removed; mappings, layout, metrics and metadata remain unchanged. After native rendering acceptance and `dvda-toolchain font verify-collection`, copy the result into `build\msvc-native\package-assets\fonts\DvdaNotoCJK-Regular.ttc` before packaging. Keep the source unchanged for comparison. Raw font savings are not the same as the size difference of the released single EXE.

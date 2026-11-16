@@ -52,7 +52,7 @@ pub(super) fn tr(key: &str) -> &'static str {
         "browse" => "찾아보기…",
         "start" => "기본 설정",
         "audio" => "오디오",
-        "about" | "author_page_title" => "정보",
+        "about" | "author_page_title" | "dialog_info_title" => "정보",
         "check" => "음원 검사",
         "build" => "디스크 만들기",
         "verify" => "출력 검증",
@@ -95,6 +95,12 @@ pub(super) fn tr(key: &str) -> &'static str {
         "failed" => "작업이 실패했습니다.",
         "cancelled" => "작업이 취소되었습니다.",
         "stopping" => "작업을 중지하는 중입니다. 잠시 기다려 주세요…",
+        "cancelled_detail" => {
+            "작업이 취소되었습니다. 사용자가 작업을 중지했습니다. 미완료 진행 상황은 유지되며 설정에서 삭제할 수 있습니다."
+        }
+        "failed_build" => "제작 실패",
+        "failed_verify" => "검증 실패",
+        "failed_prepare" => "음원 검사 실패",
         "json_filter" => "JSON 설정 프로필",
         "text_filter" => "텍스트 로그",
         "all_filter" => "모든 파일",
@@ -133,14 +139,17 @@ pub(super) fn tr(key: &str) -> &'static str {
         "author_name" => "Yuzuriha03",
         "author_role" => "독립 개발자 · 프로젝트 유지관리자",
         "author_version" => "DVD-Audio Maker · v1.2.0",
+        "dialog_ok" => "확인",
+        "dialog_close" => "닫기",
+        "dialog_error_title" => "오류",
+        "dialog_warning_title" => "경고",
         "author_bio" => {
             "DVD-Audio Maker의 제작자입니다. Rust 코어와 Windows 및 Android 클라이언트를 개발하고 유지관리합니다."
         }
         "project_home" => "프로젝트 홈",
         "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
-        "author_licenses" => {
-            "포함 라이선스: LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
-        }
+        "author_licenses" => "포함 라이선스",
+        "source_preparation_cancelled" => "소스 준비가 취소되었습니다.",
         "author_license_hint" => {
             "라이선스 파일은 프로그램 폴더에 있습니다. 라이선스 폴더 열기에서 확인하세요."
         }

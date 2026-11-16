@@ -11,7 +11,7 @@ gui-debug.cmd
 cli.cmd abi.version
 cli.cmd prepare --profile "C:\work\settings.json"
 cli.cmd build --dry-run --profile "C:\work\settings.json"
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 ```
 
 `settings.json` 是唯一的文件配置格式。`settings.local.json` 适合保存本机路径，已被 Git 忽略；也可以通过 `--profile` 使用隔离方案。`config.env`、`DVDA_CONFIG` 和 `--config` 不受支持。
@@ -32,22 +32,41 @@ GUI 只提供检查音源、制作光盘和验证成品。dry-run 仅属于开�
 
 ## VS Code
 
-使用 Rust Analyzer 和 CodeLLDB（或 WinDbg）调试 `dvda-desktop`、`dvda-cli`。`.vscode/tasks.json` 提供 workspace 构建、测试、release 构建和打包任务；`.vscode/launch.json` 提供 GUI/CLI x64 调试入口。
+使用 Rust Analyzer 和 CodeLLDB（或 WinDbg）调试 `dvda-desktop`、`dvda-cli`。`.vscode/tasks.json` 提供 workspace 构建、测试和 release 构建任务（不再提供会产出 ZIP 的打包任务；发布按 [单 EXE 发布](ONEFILE-PUBLISH.md) 执行）；`.vscode/launch.json` 提供 GUI/CLI x64 调试入口。
 
 ## 发布
 
+Windows 发布只产出单 EXE（x64 与 WoA 各一个），不生成也不上传 ZIP。先构建 x64 工具链（x64 与 WoA 共用同一个 x64 构建工具）：
+
 ```powershell
-cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --release --workspace --offline
-dvda-toolchain.exe package --repo . --output build/release --media-runtime build/msvc-native/ffmpeg-static/install --image-author build/rust-author-production --prebuilt build/release-menu-final --version v1.0
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --release --offline -p dvda-toolchain
 ```
+
+该包装脚本会初始化 MSVC 环境并默认设置 `DVDA_FFMPEG_PREFIX=build\msvc-native\ffmpeg-static\install`，因此可在干净 shell 直接执行；前提是先按 [Windows 构建说明](../tools/win-build/README.md) 准备好 Native inputs。打包命令中的 `dvda-toolchain.exe` 会自行初始化 MSVC 环境并写入已校验的 prefix，可直接在干净 shell 调用，但要求 Rust/Cargo 与 Python 在 PATH。
+
+x64：
+
+```powershell
+rust/target/x86_64-pc-windows-msvc/release/dvda-toolchain.exe package --repo . --output <输出目录> --version <版本> --target x86_64-pc-windows-msvc --media-runtime build/msvc-native/ffmpeg-static/install --image-author build/gui-only-author-v1.1/x64 --prebuilt build/gui-only-author-v1.1/x64 --source build/gui-only-author-v1.1/x64/data --single-exe
+```
+
+WoA（ARM64，使用同一个 x64 工具）：
+
+```powershell
+rust/target/x86_64-pc-windows-msvc/release/dvda-toolchain.exe package --repo . --output <输出目录> --version <版本> --target aarch64-pc-windows-msvc --media-runtime build/msvc-native/ffmpeg-arm64/install --image-author build/gui-only-author-v1.2/arm64 --prebuilt build/gui-only-author-v1.2/arm64 --source build/gui-only-author-v1.2/arm64/data --single-exe
+```
+
+`--source` 指向含 `menu/` 的 data 目录，`--prebuilt` 指向含 `fonts/` 的架构目录；三平台路径、target 与输出目录不得混用。官方 static 媒体运行时不需要 `--ffmpeg-prefix`；使用 shared/legacy 媒体运行时必须显式追加 `--ffmpeg-prefix <已验证的 shared FFmpeg 前缀>`（static 运行时会拒绝与之不同的 prefix）。Android 发布只使用 `tools/android/build-flutter.ps1`。
 
 默认 GUI 将 Rust MLP 编码器静态链接到主程序，不装配编码器 DLL。旧 `--encoder-runtime` 外部对照产物验证入口已移除，打包器只接受当前发布输入。
 
 打包器验证 Rust author 的 `author-build.json`、源码及运行资源，不再要求 `menu-build.json` 或静态菜单 vendor。开发 author EXE 不进入 GUI 的内嵌运行时；工作流测试单独构建它。缺失、清单篡改或文件不一致都在创建发布候选目录前拒绝，保留已有发行文件。
 
-发布包 `DVD-Audio-Maker-v1.0-win-x64.zip` 不包含 .NET runtime、开发 CLI、PDB、构建来源 JSON、`config.env` 或个人 profile。构建产物留在被 Git 忽略的 `build` 目录。
+发布资产为 `DVD-Audio-Maker-<版本>-win-x64.exe` 与 `-win-arm64.exe`，不包含 .NET runtime、开发 CLI、PDB、构建来源 JSON、`config.env` 或个人 profile；许可证与第三方声明内嵌在 GUI「关于」窗口。构建产物留在被 Git 忽略的 `build` 目录。三平台 SHA-256 全部就绪后才创建 tag/Release；重打包时保留原 release log 并更新 SHA-256。
 
 ## 验收
+
+以下 `cargo` 构建/测试命令需要已初始化的 MSVC 环境：请先 `call tools\win-build\rust-dev-env.cmd`，或改用 `tools\win-build\cargo-msvc.ps1`（会同时设置默认 `DVDA_FFMPEG_PREFIX`）；直接在新 shell 中运行会因缺少 `link.exe` 或 FFmpeg 前缀失败。
 
 `build/msvc-native` 中的清单记录第三方库的构建来源和哈希，应与库文件一起保留。当前静态 Rust author 需要重建 FFmpeg，不再要求 ImageMagick 或菜单 vendor。`build-rust-author.py` 使用 `--ffmpeg-runtime`、`--menu-assets` 和 `--font`；`--magick-work` / `--image-dependencies` 已退役并显式报错。清单只收录实际字体和菜单素材，不再生成或装配 ImageMagick XML 配置。静态打包验证不再要求旧图像目录。完整发布及视觉差分验收仍在进行。
 
@@ -87,7 +106,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/win-build/test-rust-wo
 cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --release --offline -p dvda-core --lib hash:: -- --skip release_files_benchmark
 ```
 
-只读 Release 文件基准通过 `DVDA_HASH_BENCH_INPUTS` 接收 JSON 文件数组，并将新 JSON 写入 `DVDA_HASH_BENCH_REPORT`。它对真实 DLL、MLP 缓存样本和发布 ZIP 测量 sha2 内存及 warm-file 摘要，采用七轮中位数；新报告仅包含 sha2 耗时，已有前后对比报告作为历史记录保留；结果只表示摘要路径，不代表冷盘或完整制盘耗时。报告保存在被 Git 忽略的 `build` 目录。`sha2` 及其传递依赖沿用上游 MIT 或 Apache-2.0 许可证。
+只读 Release 文件基准通过 `DVDA_HASH_BENCH_INPUTS` 接收 JSON 文件数组，并将新 JSON 写入 `DVDA_HASH_BENCH_REPORT`。它对真实 DLL、MLP 缓存样本和发布单 EXE（历史 ZIP 基线仅作归档对照）测量 sha2 内存及 warm-file 摘要，采用七轮中位数；新报告仅包含 sha2 耗时，已有前后对比报告作为历史记录保留；结果只表示摘要路径，不代表冷盘或完整制盘耗时。报告保存在被 Git 忽略的 `build` 目录。`sha2` 及其传递依赖沿用上游 MIT 或 Apache-2.0 许可证。
 
 
 缓存复用仍须通过源/输出指纹、编码组件身份、目标参数与完整 MLP CRC/奇偶校验；

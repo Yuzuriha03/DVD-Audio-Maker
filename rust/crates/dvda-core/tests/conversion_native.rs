@@ -5,9 +5,10 @@ use dvda_core::{
 };
 use dvda_native::media::Callbacks;
 use serde_json::json;
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt;
 use std::{
     fs,
-    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -169,23 +170,7 @@ fn converter_preserves_tags_cover_pcm_and_batch_failure_semantics() {
     let mixed = conversion::execute(&task, &mut Events::default()).unwrap();
     assert_eq!(mixed.iter().filter(|r| r.status == "OK").count(), 2);
     assert_eq!(mixed.iter().filter(|r| r.status == "FAIL").count(), 2);
-    assert!(source.exists() && broken.exists());
-    // A locked old output is preserved when the final replacement fails.
-    let destination = source.with_extension("flac");
-    let before = fs::read(&destination).unwrap();
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .share_mode(0)
-        .open(&destination)
-        .unwrap();
     task.paths = vec![source.clone()];
-    assert_eq!(
-        conversion::execute(&task, &mut Events::default()).unwrap()[0].status,
-        "FAIL"
-    );
-    drop(lock);
-    assert_eq!(fs::read(&destination).unwrap(), before);
-    assert!(source.exists());
     assert!(
         conversion::execute(
             &task,
@@ -207,7 +192,42 @@ fn converter_preserves_tags_cover_pcm_and_batch_failure_semantics() {
         .is_err()
     );
     assert!(source.exists());
+}
+
+/// Windows file-sharing semantics are the only portable way to inject the
+/// replace/delete failures these assertions require, so this scenario stays a
+/// Windows-only test; the tag/cover/PCM/cancellation assertions above remain
+/// shared with the Android test build.
+#[cfg(windows)]
+#[test]
+#[ignore = "requires source-built media and C17 formats; Windows file-sharing failure injection"]
+fn converter_locked_output_and_deletion_failure_semantics() {
+    let root = Scratch::new();
+    let source = root.0.join("cover.m4a");
+    fs::write(&source, tagged()).unwrap();
+    let broken = root.0.join("broken.m4a");
+    fs::write(&broken, include_bytes!("fixtures/alac-broken.m4a")).unwrap();
+    let mut task = job(&root.0);
+    let results = conversion::execute(&task, &mut Events::default()).unwrap();
+    assert!(results.iter().all(|r| r.status == "OK"), "{results:?}");
+    // A locked old output is preserved when the final replacement fails.
+    let destination = source.with_extension("flac");
+    let before = fs::read(&destination).unwrap();
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&destination)
+        .unwrap();
+    task.paths = vec![source.clone()];
+    assert_eq!(
+        conversion::execute(&task, &mut Events::default()).unwrap()[0].status,
+        "FAIL"
+    );
+    drop(lock);
+    assert_eq!(fs::read(&destination).unwrap(), before);
+    assert!(source.exists());
     // All conversions successful: one deletion failure does not stop later deletion.
+    task.delete_sources = true;
     task.paths = vec![source.clone(), broken.clone()];
     let lock = fs::OpenOptions::new()
         .read(true)

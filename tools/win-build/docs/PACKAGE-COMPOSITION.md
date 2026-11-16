@@ -1,6 +1,8 @@
-# 发布包组成盘点
+# 发布包组成盘点（历史，v1.1 ZIP 时代）
 
-本报告只盘点现有 ZIP 和 EXE 内嵌资源，不修改包体。数据来自 `DVD-Audio-Maker-v1.1-win-x64.zip` 与 `DVD-Audio-Maker-v1.1-win-arm64.zip`；内嵌资源按 `DVDRUN01` 元数据中的原始大小和压缩长度统计。
+> **历史记录。** 本文只盘点当时的 ZIP/EXE 组合，不是当前发布流程；当前 Windows 只发布单 EXE（x64/WoA）、Android 只发布 APK，不生成或上传 ZIP。当前发布与校验见 [Windows 单 EXE 发布](../../../docs/ONEFILE-PUBLISH.md)。
+
+本历史报告只盘点当时的 ZIP 和 EXE 内嵌资源，不修改包体。数据来自 `DVD-Audio-Maker-v1.1-win-x64.zip` 与 `DVD-Audio-Maker-v1.1-win-arm64.zip`；内嵌资源按 `DVDRUN01` 元数据中的原始大小和压缩长度统计。
 
 ## 内嵌资源（两架构相同）
 

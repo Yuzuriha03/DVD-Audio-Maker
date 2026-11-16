@@ -16,6 +16,7 @@ pub mod disk_space;
 pub mod encoder;
 mod encoder_stamp;
 pub mod formats;
+pub mod gui;
 pub mod hash;
 pub mod identity;
 pub mod ifo;
@@ -41,6 +42,7 @@ mod platform;
 pub mod preparation;
 pub mod probes;
 pub mod process;
+pub mod profile;
 pub mod publication;
 pub mod resume;
 pub mod runtime;
@@ -156,3 +158,4 @@ pub fn dispatch(operation: &str, request: Value) -> Result<Value, String> {
 }
 
 pub mod localization;
+pub mod log_view;

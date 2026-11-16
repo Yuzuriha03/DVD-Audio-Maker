@@ -1,9 +1,12 @@
 //! Regression cases from the former `DiscPublisher` contract, using real files.
 use dvda_core::dispatch;
-use serde_json::{Value, json};
+#[cfg(windows)]
+use serde_json::Value;
+use serde_json::json;
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt;
 use std::{
     fs,
-    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -32,7 +35,7 @@ impl Drop for Workspace {
 }
 
 #[test]
-fn publication_copy_stage_collision_and_locked_destination() {
+fn publication_copy_and_stage_failures() {
     let work = Workspace::new("publication-parity").unwrap();
     let source = work.path().join("source.iso");
     let destination = work.path().join("copy.iso");
@@ -45,6 +48,37 @@ fn publication_copy_stage_collision_and_locked_destination() {
     .unwrap();
     assert!(result["Failure"].is_null(), "{result}");
     assert_eq!(fs::read(&source).unwrap(), fs::read(&destination).unwrap());
+    fs::create_dir(&directory).unwrap();
+    fs::write(directory.join("disc.iso"), b"old").unwrap();
+    let result = dispatch(
+        "publish.stage",
+        json!({"Source":source,"Directory":directory,"Name":"disc.iso"}),
+    )
+    .unwrap();
+    assert!(!result["Failure"].is_null());
+    assert!(source.is_file(), "failed stage must retain source");
+    let result = dispatch(
+        "publish.stage",
+        json!({"Source":source,"Directory":directory,"Name":"staged.iso"}),
+    )
+    .unwrap();
+    assert!(result["Failure"].is_null(), "{result}");
+    assert!(!source.exists());
+    assert_eq!(
+        fs::read(directory.join("staged.iso")).unwrap(),
+        [1, 2, 3, 4]
+    );
+}
+
+/// Replacing a locked destination relies on Windows file-sharing semantics;
+/// the copy/stage contract above stays shared with the Android test build.
+#[cfg(windows)]
+#[test]
+fn publication_single_locked_destination_keeps_old_and_writes_new() {
+    let work = Workspace::new("publication-locked-parity").unwrap();
+    let source = work.path().join("source.iso");
+    let directory = work.path().join("final");
+    fs::write(&source, [1, 2, 3, 4]).unwrap();
     fs::create_dir(&directory).unwrap();
     let old = directory.join("disc.iso");
     fs::write(&old, b"old").unwrap();
@@ -66,26 +100,11 @@ fn publication_copy_stage_collision_and_locked_destination() {
         [1, 2, 3, 4]
     );
     drop(locked);
-    let result = dispatch(
-        "publish.stage",
-        json!({"Source":source,"Directory":directory,"Name":"disc.iso"}),
-    )
-    .unwrap();
-    assert!(!result["Failure"].is_null());
-    assert!(source.is_file(), "failed stage must retain source");
-    let result = dispatch(
-        "publish.stage",
-        json!({"Source":source,"Directory":directory,"Name":"staged.iso"}),
-    )
-    .unwrap();
-    assert!(result["Failure"].is_null(), "{result}");
-    assert!(!source.exists());
-    assert_eq!(
-        fs::read(directory.join("staged.iso")).unwrap(),
-        [1, 2, 3, 4]
-    );
 }
 
+/// Rollback failure injection needs a locked formal index; Windows sharing
+/// semantics are the only portable mechanism in this repository.
+#[cfg(windows)]
 #[test]
 fn publication_set_rolls_back_all_outputs_and_moved_sources() {
     for move_files in [false, true] {

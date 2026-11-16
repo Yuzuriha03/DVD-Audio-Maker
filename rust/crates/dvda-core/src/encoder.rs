@@ -358,6 +358,10 @@ fn encode_rust(
     })
 }
 
+fn live_metadata(job: &Job) -> bool {
+    crate::config::trim(&job.metadata_context).is_empty()
+}
+
 #[allow(
     clippy::needless_pass_by_value,
     reason = "The public typed encoder adapter retains its owned-job API"
@@ -426,15 +430,10 @@ fn execute_with(job: &Job, caller: &mut dyn Callbacks) -> Outcome {
             ],
             callbacks: &mut callbacks,
         };
-        // Live metadata refresh is implemented by the pipeline encoder, which now
-        // also runs on Android; other targets embed the static stamp captured at
-        // job start.
-        let encoded = encode_rust(
-            &request,
-            &mut stream,
-            crate::config::trim(&job.metadata_context).is_empty()
-                && cfg!(any(target_arch = "x86_64", target_os = "android")),
-        );
+        // The unified pipeline encoder supports live metadata refresh on every
+        // target, so the static job stamp is used only when a context file
+        // explicitly replaces it.
+        let encoded = encode_rust(&request, &mut stream, live_metadata(job));
         stream.callbacks.check()?;
         let encoded = encoded.map_err(io_failure)?;
         let length = stream.output.metadata()?.len();
@@ -480,6 +479,24 @@ fn execute_with(job: &Job, caller: &mut dyn Callbacks) -> Outcome {
 #[cfg(all(test, feature = "rust-mlp"))]
 mod rust_tests {
     use super::*;
+
+    /// The live stamp selector is a pure function of the configured context;
+    /// this test covers that helper only. It is not evidence that the encoder
+    /// runs correctly on any particular platform - the shared pipeline tests
+    /// cover the encoding path itself.
+    #[test]
+    fn live_metadata_follows_context_presence() {
+        let mut job = Job {
+            library: PathBuf::new(),
+            wave: String::new(),
+            destination: PathBuf::new(),
+            metadata_context: String::new(),
+            timeout_millis: None,
+        };
+        assert!(live_metadata(&job));
+        job.metadata_context = "metadata-context.bin".into();
+        assert!(!live_metadata(&job));
+    }
     #[test]
     fn generated_metadata_context_roundtrips_and_never_overwrites() {
         let path = std::env::temp_dir().join(format!(

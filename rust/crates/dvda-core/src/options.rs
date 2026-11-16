@@ -251,7 +251,9 @@ fn real(text: &str, fallback: f64) -> f64 {
     }
 }
 
-fn prefix(title: &str) -> String {
+/// Shared ISO filename prefix derivation used by every GUI.
+#[must_use]
+pub fn iso_prefix(title: &str) -> String {
     let mut result = String::new();
     for ch in title.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -276,19 +278,25 @@ fn put_paths(r: &Request, properties: &mut Map<String, Value>) {
     for (name, key) in [
         ("SourceDirectory", "DVDA_SRC"),
         ("FinalDirectory", "DVDA_FINAL_DIR"),
+        ("FinalDirectoryDisplay", "DVDA_FINAL_DISPLAY_DIR"),
+        ("SourceDirectoryDisplay", "DVDA_SRC_DISPLAY_DIR"),
         ("BuildDirectory", "DVDA_BUILD_DIR"),
         ("AuthorSource", "DVDA_AUTHOR_SRC"),
     ] {
         put(name, OptionValue::new(r.get(key).trim_end_matches('/')));
     }
+    put(
+        "MenuRuntimeDirectory",
+        OptionValue::new(r.get("DVDA_MENU_NATIVE_DIR")),
+    );
     put("Title", OptionValue::new(r.get("DVDA_TITLE")));
-    let iso_prefix = r.get("DVDA_ISO_PREFIX");
+    let configured_prefix = r.get("DVDA_ISO_PREFIX");
     put(
         "IsoPrefix",
-        OptionValue::new(if iso_prefix.is_empty() {
-            prefix(r.get("DVDA_TITLE"))
+        OptionValue::new(if configured_prefix.is_empty() {
+            iso_prefix(r.get("DVDA_TITLE"))
         } else {
-            iso_prefix.into()
+            configured_prefix.into()
         }),
     );
     let build = r.get("DVDA_BUILD_DIR").trim_end_matches('/');

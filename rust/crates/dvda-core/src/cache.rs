@@ -467,6 +467,10 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    /// Reproducing a failed atomic commit needs an exclusive Windows file lock on
+    /// the destination; non-Windows lease/sharing shims are advisory no-ops and
+    /// cannot force the rollback path, so this scenario stays Windows-only.
+    #[cfg(windows)]
     #[test]
     fn cache_failed_atomic_commit_keeps_prior_file_and_cleans_only_its_temporary() {
         use crate::platform::OpenOptionsExt;

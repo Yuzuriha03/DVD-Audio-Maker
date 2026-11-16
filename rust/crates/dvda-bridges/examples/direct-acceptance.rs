@@ -1,11 +1,11 @@
 use dvda_bridges::{Call, direct::MediaRequest};
-use std::ffi::{CStr, c_void};
+use std::ffi::{CStr, c_char, c_void};
 use std::io::BufReader;
 
 fn read_image(path: &str) -> std::io::Result<dvda_image::raster::Raster> {
     dvda_image::codec::decode(BufReader::new(std::fs::File::open(path)?))
 }
-unsafe extern "C" fn emit(state: *mut c_void, _: i32, text: *const i8) {
+unsafe extern "C" fn emit(state: *mut c_void, _: i32, text: *const c_char) {
     unsafe {
         (*state.cast::<Vec<String>>()).push(CStr::from_ptr(text).to_string_lossy().into_owned());
     }

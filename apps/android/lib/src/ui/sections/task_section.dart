@@ -55,20 +55,39 @@ class _TaskSectionState extends State<TaskSection> {
     }
     final strings = controller.strings;
     if (controller.isCancelled) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(strings.statusCancelled)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${strings.statusCancelled}: ${strings.cancelledHint}'),
+        ),
+      );
       return;
     }
     final prefix = outcome != null && outcome.ok
         ? strings.resultSuccess
-        : strings.resultFailure;
+        : controller.statusText;
     final detail = outcome == null || outcome.message.isEmpty
         ? controller.statusText
         : outcome.message;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('$prefix: $detail')));
+  }
+
+  Future<void> _retryCleanup(BuildContext context) async {
+    final outcome = await controller.retryDeliveryCleanup();
+    if (!context.mounted) {
+      return;
+    }
+    final strings = controller.strings;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          outcome?.ok == true
+              ? strings.statusDone
+              : strings.cleanupFailedRetained,
+        ),
+      ),
+    );
   }
 
   Future<void> _openOutput(BuildContext context) async {
@@ -92,18 +111,7 @@ class _TaskSectionState extends State<TaskSection> {
     if (!_issuesOnly) {
       return controller.logText;
     }
-    return controller.logText.split('\n').where(_isProblem).join('\n');
-  }
-
-  bool _isProblem(String line) {
-    final lower = line.toLowerCase();
-    return lower.contains('[error]') ||
-        lower.contains('[warn]') ||
-        lower.contains('failed') ||
-        line.contains('[错误]') ||
-        line.contains('[警告]') ||
-        line.contains('失败') ||
-        line.contains('失敗');
+    return controller.problemLogText;
   }
 
   Future<void> _copyLog(BuildContext context) async {
@@ -157,6 +165,13 @@ class _TaskSectionState extends State<TaskSection> {
                 icon: const Icon(Icons.fact_check_outlined, size: 18),
                 label: Text(strings.actionVerify),
               ),
+              if (controller.deliveryCleanupPending) ...<Widget>[
+                FilledButton.tonalIcon(
+                  onPressed: running ? null : () => _retryCleanup(context),
+                  icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                  label: Text(strings.retryCleanup),
+                ),
+              ],
               OutlinedButton.icon(
                 onPressed: () => _openOutput(context),
                 icon: const Icon(Icons.folder_open, size: 18),
@@ -199,7 +214,7 @@ class _TaskSectionState extends State<TaskSection> {
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
                               detail,
-                              maxLines: 3,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: scheme.onSurfaceVariant,
@@ -211,6 +226,13 @@ class _TaskSectionState extends State<TaskSection> {
                   ),
                 ],
               ),
+              if (phase == TaskPhase.cancelled) ...<Widget>[
+                const SizedBox(height: 12),
+                InfoBanner(
+                  text: strings.cancelledHint,
+                  icon: Icons.stop_circle_outlined,
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 strings.statistics(
@@ -234,13 +256,10 @@ class _TaskSectionState extends State<TaskSection> {
                 Row(
                   children: <Widget>[
                     Text(strings.progressLabel),
-                    if (controller.total > 1) ...<Widget>[
+                    if (controller.progressPercent != null) ...<Widget>[
                       const SizedBox(width: 8),
                       Text(
-                        strings.progressSummary(
-                          controller.done.toString(),
-                          controller.total.toString(),
-                        ),
+                        strings.progressPercent(controller.progressPercent!),
                         style: theme.textTheme.labelLarge?.copyWith(
                           color: scheme.primary,
                           fontWeight: FontWeight.w700,
@@ -268,6 +287,17 @@ class _TaskSectionState extends State<TaskSection> {
               ] else if (phase == TaskPhase.idle) ...<Widget>[
                 const SizedBox(height: 14),
                 InfoBanner(text: strings.tasksIdleHint, icon: Icons.lightbulb),
+              ],
+              if (controller.deliveryCleanupPending && !running) ...<Widget>[
+                const SizedBox(height: 14),
+                InfoBanner(
+                  text: controller.cleanupDetail.isEmpty
+                      ? strings.cleanupFailedRetained
+                      : '${strings.cleanupFailedRetained}\n'
+                            '${controller.cleanupDetail}',
+                  icon: Icons.cleaning_services_outlined,
+                  tone: BannerTone.error,
+                ),
               ],
               if (controller.diagnostics.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 16),

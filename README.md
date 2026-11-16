@@ -2,15 +2,15 @@
 
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-把 FLAC、ALAC/M4A 音乐制作成 DVD-Audio ISO：支持 MLP / LPCM 编码、自动分盘、选曲菜单、专辑封面和成品验证。绿色版 Windows 应用，解压即用，无需安装。
+把 FLAC、ALAC/M4A 音乐制作成 DVD-Audio ISO：支持 MLP / LPCM 编码、自动分盘、选曲菜单、专辑封面和成品验证。绿色版 Windows 应用，单文件即用，无需安装。
 
 ## 下载与安装
 
-1. 打开 [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/latest)，按系统下载：
-   - 普通 Intel / AMD 电脑：`DVD-Audio-Maker-v1.1-win-x64.zip`
-   - Windows on ARM 设备：`DVD-Audio-Maker-v1.1-win-arm64.zip`
-2. 解压到自己的文件夹，双击 `DVD-Audio-Maker.exe`。
-3. 保留解压目录中的 `LICENSE`、`THIRD-PARTY.txt`、`THIRD-PARTY.en.txt`、`NOTICE-Image.txt` 和 `NOTICE-Menu.txt`。
+1. 打开 [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/latest)，按系统下载对应的单文件程序（文件名中的 `<版本>` 以实际发布为准）：
+   - 普通 Intel / AMD 电脑：`DVD-Audio-Maker-<版本>-win-x64.exe`
+   - Windows on ARM 设备：`DVD-Audio-Maker-<版本>-win-arm64.exe`
+2. 把下载的 EXE 放到可写目录并直接双击运行；无需解压或安装。首次启动会准备内置组件，可能稍慢。
+3. 许可证、FFmpeg LGPL 与第三方/图像/菜单声明已内嵌在程序「关于」窗口，可随时查看。
 
 **系统要求：** Windows 10 / 11（x64 或 ARM64）。程序已内置所需组件，不需要另外安装运行库；EXE 所在文件夹需要可写。制作 ISO 和临时文件需要足够的磁盘空间，建议预留与成品大小相当的空间。
 
@@ -139,6 +139,6 @@ GUI 中的“音源文件夹”对应 `DVDA_SRC`，“成品位置”对应 `DVD
 - [第三方组件说明](tools/win-build/docs/THIRD-PARTY.txt)
 - [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.txt)
 
-发布包内还包含 `NOTICE-Image.txt` 和 `NOTICE-Menu.txt`，请一并保留。
+Windows 版许可证与上述声明已内嵌在程序「关于」窗口；仓库中同时保留这些文本。
 
 开发贡献与 Clippy pedantic 维护约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。

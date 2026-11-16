@@ -82,13 +82,6 @@
       "problemMatcher": []
     },
     {
-      "label": "Rust: package v1.0",
-      "type": "process",
-      "command": "${workspaceFolder}\\tools\\win-build\\build-all.cmd",
-      "args": [],
-      "problemMatcher": []
-    },
-    {
       "label": "Rust: rebuild production author",
       "type": "shell",
       "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
@@ -96,8 +89,6 @@
         "tools\\win-build\\build-rust-author.py",
         "--ffmpeg-runtime",
         "build\\msvc-native\\ffmpeg-static\\install",
-        "--magick-work",
-        "build\\msvc-native\\image",
         "--assets-runtime",
         "build\\msvc-native\\package-assets",
         "--work-directory",

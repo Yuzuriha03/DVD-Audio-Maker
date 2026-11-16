@@ -19,13 +19,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   });
 
   @protected
+  int dco_decode_CastedPrimitive_i_64(dynamic raw);
+
+  @protected
   int dco_decode_CastedPrimitive_u_64(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
 
   @protected
+  bool dco_decode_bool(dynamic raw);
+
+  @protected
+  FormattedLog dco_decode_formatted_log(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<ProfileIssue> dco_decode_list_profile_issue(dynamic raw);
+
+  @protected
+  ProfileIssue dco_decode_profile_issue(dynamic raw);
 
   @protected
   ProgressSnapshot dco_decode_progress_snapshot(dynamic raw);
@@ -40,13 +58,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void dco_decode_unit(dynamic raw);
 
   @protected
+  int sse_decode_CastedPrimitive_i_64(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_CastedPrimitive_u_64(SseDeserializer deserializer);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  FormattedLog sse_decode_formatted_log(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<ProfileIssue> sse_decode_list_profile_issue(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ProfileIssue sse_decode_profile_issue(SseDeserializer deserializer);
 
   @protected
   ProgressSnapshot sse_decode_progress_snapshot(SseDeserializer deserializer);
@@ -64,7 +102,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
-  bool sse_decode_bool(SseDeserializer deserializer);
+  void sse_encode_CastedPrimitive_i_64(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_CastedPrimitive_u_64(int self, SseSerializer serializer);
@@ -73,10 +111,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_formatted_log(FormattedLog self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_profile_issue(
+    List<ProfileIssue> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_profile_issue(ProfileIssue self, SseSerializer serializer);
 
   @protected
   void sse_encode_progress_snapshot(
@@ -95,9 +151,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_bool(bool self, SseSerializer serializer);
 }
 
 // Section: wire_class

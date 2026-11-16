@@ -167,6 +167,14 @@ class BasicsSection extends StatelessWidget {
                   onChanged: (value) =>
                       controller.update(() => settings.groupTrackLimit = value),
                 ),
+                const SizedBox(height: 6),
+                ToggleTile(
+                  title: strings.keepTmp,
+                  value: settings.keepTmp,
+                  icon: Icons.folder_copy_outlined,
+                  onChanged: (value) =>
+                      controller.update(() => settings.keepTmp = value),
+                ),
               ],
             ),
           )

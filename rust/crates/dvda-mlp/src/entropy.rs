@@ -1,4 +1,5 @@
 // Entropy codes use explicitly bounded integers and C-compatible wrapping cost arithmetic.
+#[cfg(test)]
 use crate::bitstream::Bits;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Coding {
@@ -15,6 +16,7 @@ impl Default for Coding {
         }
     }
 }
+#[cfg(test)]
 impl Coding {
     pub fn word(self, x: i32, qss: u32) -> Option<(u32, u32)> {
         let b = self.width.checked_sub(qss)?;
@@ -54,6 +56,7 @@ impl Coding {
         b.put(value, width);
     }
 }
+#[cfg(test)]
 pub(crate) fn select(samples: &[i32], qss: u32, old: Coding) -> Coding {
     select_with_context(samples, qss, old, false, 31)
 }

@@ -50,3 +50,43 @@ impl MetadataExt for std::fs::Metadata {
         }
     }
 }
+
+/// External author/runtime library directory that the shared canonical disc
+/// signature must hash.
+///
+/// Windows packages keep author/media libraries next to the executable. Android
+/// links those components statically, so there is no readable external library
+/// directory there; returning `None` lets the one shared canonical
+/// implementation keep strict permission errors for directories that *are*
+/// provided (it never suppresses `EACCES` for a real directory).
+#[must_use]
+pub fn author_library_directory(executable: &std::path::Path) -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        executable.parent().map(std::path::Path::to_path_buf)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = executable;
+        None
+    }
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::author_library_directory;
+    use std::path::Path;
+
+    #[test]
+    fn external_author_libraries_are_platform_specific() {
+        let executable = Path::new("/some/app/bin/tool");
+        let resolved = author_library_directory(executable);
+        #[cfg(windows)]
+        assert_eq!(resolved.as_deref(), executable.parent());
+        #[cfg(not(windows))]
+        assert!(
+            resolved.is_none(),
+            "statically linked layout has no library directory"
+        );
+    }
+}

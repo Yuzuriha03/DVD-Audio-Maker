@@ -1,9 +1,15 @@
 # DVD-Audio-Maker 移植 Android：实测记录（2026-11-13，手机 Ubuntu 24.04 proot）
 
+> **历史记录，不作现行基准**：本文是 2026-11-13/14 早期 JNI/proot 阶段的实测日志。
+> 其中的 NDK r28c、Ubuntu clang 交叉链接、`build-apk.sh` 手打包流程以及所有耗时/
+> 吞吐/压缩比数字，都是当时环境的记录，已被当前流程取代：构建与发布唯一入口为
+> `tools/android/build-flutter.ps1`（Flutter + flutter_rust_bridge，NDK r30，
+> minSdk/NDK API 24，compileSdk/targetSdk 37）。本文数字不得引用为现行性能基线。
+
 ## 环境
 - 主机：aarch64（Android 17 内核），6 核，15GB RAM，Ubuntu 24.04 proot
 - Rust：rustup stable 1.100.0 + target aarch64-linux-android
-- NDK：android-ndk-r28c（官方仅提供 x86_64 Linux 预编译，本机跑不了；
+- NDK（历史环境）：android-ndk-r28c（官方仅提供 x86_64 Linux 预编译，本机跑不了；
   实际用 Ubuntu clang 18 + NDK sysroot 交叉链接）
 - 源码：Yuzuriha03/DVD-Audio-Maker（GPL-3.0），clone 到 /root/workspace/dvda-port
 
@@ -14,7 +20,7 @@
 3. 端到端出 ISO：shim -> command::run -> disc.iso 815104 字节，ISO9660 CD001 有效
 4. Android .so：libdvda_shim.so 5.0MB，aarch64 ELF，导出 dvda_selftest
    NEEDED: libdl.so / libm.so / libc.so（bionic）
-5. 性能（本机 A78 类核心，通用非 SIMD 路径）：
+5. 性能（2026-11-13 本机 A78 类核心、通用非 SIMD 路径的历史实测，非现行基准）：
    - MLP 编码 96kHz/24bit/2ch：7.3x 实时，压缩比 0.59
    - AOB + ISO 写出：约 200x 实时
 
@@ -741,7 +747,7 @@ prepare（标签/解码/重采样/缓存/manifest/snapshot）→ MLP 批量编�
 - dvda-kotlin-compile.log（编译日志，0 error）
 - APK 仍需 PC/CI（aapt2 只有 x86_64），但源码已在本机通过 Kotlin/Compose 编译
 
-## 第二十四轮：在手机上打出可签名的 APK
+## 第二十四轮：在手机上打出可签名的 APK（历史，手打包流程已删除）
 
 ### 工具链（arm64 原生，不是模拟）
 - apt: aapt2 2.19、zipalign、apksigner、android-sdk-build-tools、platform-23、zip
@@ -749,7 +755,10 @@ prepare（标签/解码/重采样/缓存/manifest/snapshot）→ MLP 批量编�
 - R8/D8 8.5.35（Maven 下载的 jar，JVM 跑在 arm64）
 - framework：API 37 android-all（类型检查）+ apt 的 android-23（资源链接）
 
-### 流程（build-apk.sh）
+### 流程（build-apk.sh，历史手打包，已删除）
+
+> 该手打包流程（aapt2/kotlinc/D8/apksigner）已从仓库删除；现行唯一入口为
+> `tools/android/build-flutter.ps1`，以下仅作为历史记录保留。
 aapt2 compile res -> aapt2 link（生成 R.java、base.apk）-> javac R ->
 kotlinc（Compose 插件，jvmTarget 1.8）-> jar -> D8（多 dex）-> 加 classes.dex 与
 lib/arm64-v8a/libdvda_core.so -> zipalign -p 4 -> apksigner（debug key）-> 验证

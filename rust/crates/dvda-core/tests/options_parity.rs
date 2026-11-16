@@ -1,5 +1,6 @@
 use dvda_core::{dispatch, options};
 use serde_json::{Value, json};
+use std::path::PathBuf;
 
 fn evaluate(file: Value, environment: Value) -> Value {
     options::evaluate(options::Request {
@@ -19,15 +20,18 @@ fn option_precedence_sources_numeric_fallbacks_and_derived_paths() {
         json!({"DVDA_SRC":"C:/env/","DVDA_TITLE":""}),
     );
     let p = &result["Properties"];
-    for (key, value) in [
-        ("SourceDirectory", "C:/env"),
-        ("FinalDirectory", "D:/out"),
-        ("IsoPrefix", "DVD_Audio_2026"),
-        ("ManifestPath", "D:/work\\manifest.json"),
-        ("MlpExternalDirectory", "D:/work\\mlp"),
-    ] {
-        assert_eq!(p[key]["Value"], value);
-    }
+    let path_value = |key: &str| PathBuf::from(p[key]["Value"].as_str().unwrap());
+    assert_eq!(path_value("SourceDirectory"), PathBuf::from("C:/env"));
+    assert_eq!(path_value("FinalDirectory"), PathBuf::from("D:/out"));
+    assert_eq!(p["IsoPrefix"]["Value"], "DVD_Audio_2026");
+    assert_eq!(
+        path_value("ManifestPath"),
+        PathBuf::from("D:/work").join("manifest.json")
+    );
+    assert_eq!(
+        path_value("MlpExternalDirectory"),
+        PathBuf::from("D:/work").join("mlp")
+    );
     assert_eq!(p["DiscBytes"]["Value"], 4_707_319_808_i64);
     assert_eq!(p["PlannedDiscs"]["Value"], 0);
     assert_eq!(result["Sources"]["DVDA_SRC"], "环境变量");
@@ -42,8 +46,14 @@ fn option_precedence_sources_numeric_fallbacks_and_derived_paths() {
         json!(["DVDA_SRC", "DVDA_FINAL_DIR"])
     );
     assert_eq!(
-        empty["Properties"]["BuildDirectory"]["Value"],
-        "C:/Local\\DVD-Audio-Maker\\build"
+        PathBuf::from(
+            empty["Properties"]["BuildDirectory"]["Value"]
+                .as_str()
+                .unwrap()
+        ),
+        PathBuf::from("C:/Local")
+            .join("DVD-Audio-Maker")
+            .join("build")
     );
     assert_eq!(
         dispatch("shell.assignment", json!({"Key":"KEY","Value":"a'b\n中文"})).unwrap(),

@@ -100,6 +100,33 @@ fn startup_arguments_keep_json_alias_and_language_precedence() {
     }
     assert!(parse(&[], Some("invalid")).is_err());
     assert!(parse(&["--language", "en"], Some("invalid")).is_ok());
+    // Every alias of the five UI languages must be selectable from the start,
+    // including Traditional Chinese and Korean.
+    for (alias, expected) in [
+        ("zh-TW", "zh-TW"),
+        ("zh-Hant", "zh-TW"),
+        ("zh-HK", "zh-TW"),
+        ("zh-MO", "zh-TW"),
+        ("繁體中文", "zh-TW"),
+        ("繁体中文", "zh-TW"),
+        ("ko", "ko"),
+        ("ko-KR", "ko"),
+        ("Korean", "ko"),
+        ("한국어", "ko"),
+        ("ja-JP", "ja"),
+        ("en-GB", "en"),
+    ] {
+        assert_eq!(
+            parse(&["--language", alias], None).unwrap().language,
+            Some(expected.to_owned()),
+            "{alias}"
+        );
+        assert_eq!(
+            parse(&[], Some(alias)).unwrap().language,
+            Some(expected.to_owned()),
+            "environment {alias}"
+        );
+    }
 }
 
 #[test]
@@ -486,10 +513,10 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
     };
     let saved_dpi = UI_DPI.load(Ordering::Relaxed);
     let saved_lang = ui.lang();
-    for dpi in [96u32, 120, 144, 168] {
+    for dpi in [96u32, 120, 144, 168, 192] {
         UI_DPI.store(dpi, Ordering::Relaxed);
         rescale_ui(parent, ui);
-        for lang in [Lang::Zh, Lang::En, Lang::Ja] {
+        for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja, Lang::Ko] {
             set_language(ui, lang);
             for advanced in [false, true] {
                 check(ui.controls.advanced, advanced);
@@ -813,6 +840,24 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     assert!(!parent.is_null());
     let mut ui = create_controls(parent);
     layout(parent, &mut ui);
+    let visible = |hwnd: Hwnd| {
+        (u32::try_from(GetWindowLongPtrW(hwnd, -16) & 0xffff_ffff).unwrap()) & WS_VISIBLE != 0
+    };
+    // The everyday source and output browse buttons stay visible at startup;
+    // only the menu font pickers follow the menu/advanced switches, and the
+    // work-directory picker follows "advanced" alone.
+    for id in [ID_BROWSE_SOURCE, ID_BROWSE_FINAL] {
+        let button = GetDlgItem(ui.pages[0], i32::try_from(id).unwrap());
+        assert!(!button.is_null(), "missing browse button {id}");
+        assert!(visible(button), "browse button {id} hidden at startup");
+    }
+    assert!(
+        !visible(GetDlgItem(
+            ui.pages[0],
+            i32::try_from(ID_BROWSE_WORK).unwrap()
+        )),
+        "work-directory browse button must follow the advanced switch"
+    );
     for (combo, width) in [
         (ui.controls.capacity, 220),
         (ui.controls.norm, 260),
@@ -1756,7 +1801,7 @@ fn log_queue_applies_backpressure_and_keeps_completion_after_diagnostics() {
         match receiver.recv().unwrap() {
             WorkerEvent::Log(text) => assert_eq!(text, index.to_string()),
             WorkerEvent::Progress(_) => panic!("progress overtook a diagnostic"),
-            WorkerEvent::Retention(_) => panic!("unexpected retention request"),
+            WorkerEvent::Retention { .. } => panic!("unexpected retention request"),
             WorkerEvent::Finished(_) => panic!("completion overtook a diagnostic"),
         }
     }

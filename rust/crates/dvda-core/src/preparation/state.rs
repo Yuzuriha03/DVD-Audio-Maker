@@ -553,7 +553,47 @@ mod tests {
     }
 
     #[test]
-    fn cache_reuses_case_aliases_and_rejects_same_size_same_time_changes() {
+    fn cache_rejects_same_size_same_time_changes() {
+        let root = Scratch::new();
+        let mut cache = Cache::default();
+        let mut paths = Vec::new();
+        for name in ["z.flac", "a.flac", "\u{4e2d}\u{6587}.flac"] {
+            let path = root.0.join(name);
+            fs::write(&path, b"original").unwrap();
+            let path = path.to_str().unwrap().to_owned();
+            cache.record(
+                path.clone(),
+                Entry {
+                    identity: identity::compute(&path).unwrap(),
+                    ..Default::default()
+                },
+            );
+            paths.push(path);
+        }
+        let cache_path = root.0.join("cache.json");
+        cache.save(&cache_path).unwrap();
+        let loaded = Cache::load(&cache_path, &mut Events::default());
+        for path in &paths {
+            assert!(loaded.find(path).is_some());
+        }
+        let path = &paths[0];
+        let modified = fs::metadata(path).unwrap().modified().unwrap();
+        fs::write(path, b"modified").unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        assert!(loaded.find(path).is_none());
+    }
+
+    /// Case aliases resolve on Windows' case-insensitive filesystem; `find()` also
+    /// re-validates the identity of the aliased path, which does not exist on the
+    /// case-sensitive Android filesystem, so this scenario stays Windows-only.
+    #[cfg(windows)]
+    #[test]
+    fn cache_reuses_case_aliases() {
         let root = Scratch::new();
         let mut cache = Cache::default();
         let mut paths = Vec::new();
@@ -582,15 +622,6 @@ mod tests {
         loaded.record(path.to_ascii_uppercase(), entry);
         assert_eq!(loaded.len(), 3);
         assert_eq!(loaded.find(path).unwrap().validation.decoded, 48000);
-        let modified = fs::metadata(path).unwrap().modified().unwrap();
-        fs::write(path, b"modified").unwrap();
-        fs::OpenOptions::new()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_modified(modified)
-            .unwrap();
-        assert!(loaded.find(path).is_none());
     }
 
     #[test]

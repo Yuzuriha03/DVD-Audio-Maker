@@ -25,6 +25,14 @@ function Require-WritableDirectory([string]$Path) {
     $probe = Join-Path $directory ([Guid]::NewGuid().ToString() + '.tmp')
     try { [IO.File]::WriteAllText($probe, '') } finally { if (Test-Path -LiteralPath $probe) { Remove-Item -LiteralPath $probe } }
 }
+function Test-MenuBaseline([string]$Root) {
+    if (-not $Root -or -not (Test-Path -LiteralPath (Join-Path $Root 'menu.mpg') -PathType Leaf)) { return $false }
+    $vob = Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName 'AUDIO_TS\AUDIO_TS.VOB' } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+    return [bool]$vob
+}
 function Show-CompilerMessages($Lines) {
     foreach ($line in $Lines) {
         $message = $line | ConvertFrom-Json
@@ -53,6 +61,17 @@ if ($Mode -eq 'Functional') {
         Skip-Test 'external_covers_downscale_to_dvd_sizes' 'set DVDA_TEST_COVER_ROOT to a directory of album folders'
     }
     foreach ($name in $benchmarks) { Skip-Test $name 'manual benchmark; use -Mode Benchmarks' }
+    $menuBaselines = @(@($env:DVDA_MENU_BASELINE_ROOT, (Join-Path (Get-Location) 'build\menu-accept-old2')) |
+        Where-Object { Test-MenuBaseline $_ })
+    if ($menuBaselines.Count) {
+        $env:DVDA_MENU_BASELINE_ROOT = (Resolve-Path -LiteralPath $menuBaselines[0]).Path
+        Write-Host "Menu baseline: $env:DVDA_MENU_BASELINE_ROOT"
+    } else {
+        foreach ($name in @('generates_the_baseline_audio_ts_vob', 'scan_matches_the_c_vob_body',
+                'parses_the_spu_private_sector', 'filled_nav_packs_match_the_c_baseline')) {
+            Skip-Test $name 'requires the build/menu-accept-old2 C baseline; set DVDA_MENU_BASELINE_ROOT to a directory containing menu.mpg and the generated AUDIO_TS.VOB'
+        }
+    }
     $other = $env:DVDA_TEST_OTHER_VOLUME
     if (-not $other) {
         Skip-Test 'encoded_publication_supports_configured_staging_on_another_volume' 'set -OtherVolume to a writable directory on another volume'

@@ -6,9 +6,9 @@ use super::{
     GlobalAlloc, GlobalLock, GlobalUnlock, Hwnd, Instant, LOG_BATCH_BUDGET, LOG_BATCH_LIMIT,
     LOG_QUEUE_CAPACITY, Lang, LogLine, OpenClipboard, Ordering, Path, PathBuf, PostMessageW,
     RDW_INVALIDATE, RedrawWindow, SB_BOTTOM, SendMessageW, SetClipboardData, SetWindowTextW,
-    UiState, Value, WM_CLOSE, WM_SETREDRAW, WM_VSCROLL, WorkerEvent, Write, checked, combo_index,
-    file_dialog, finish_operation, fs, get_text, localization, message_box, presentation, ptr,
-    retention_choice, set_text, tr, update_progress, wide, win,
+    UiState, WM_CLOSE, WM_SETREDRAW, WM_VSCROLL, WorkerEvent, Write, checked, combo_index,
+    file_dialog, finish_operation, fs, get_text, localization, presentation, ptr, retention_choice,
+    set_text, tr, update_progress, wide, win,
 };
 
 pub(crate) fn open_session_log() -> std::io::Result<(fs::File, PathBuf)> {
@@ -205,8 +205,14 @@ pub(crate) fn drain_worker_logs(hwnd: Hwnd, state: &mut UiState) {
                 WorkerEvent::Log(text) => add_log(state, &text, false),
                 WorkerEvent::Progress(value) => update_progress(state, value),
                 WorkerEvent::Finished(event) => state.pending_finish = Some(event),
-                WorkerEvent::Retention(options) => {
-                    if retention_choice(state.lang()).unwrap_or(false) {
+                WorkerEvent::Retention {
+                    options,
+                    cancelled,
+                    error,
+                } => {
+                    if retention_choice(state.main_window, state.lang(), cancelled, Some(&error))
+                        .unwrap_or(false)
+                    {
                         options.discard_task();
                     }
                 }
@@ -385,6 +391,9 @@ pub(crate) fn localized_log(lang: Lang, raw: &str) -> String {
     let text = raw.trim();
     if text.is_empty() {
         return String::new();
+    }
+    if text.contains("Source preparation cancelled") {
+        return tr(lang, "source_preparation_cancelled").to_owned();
     }
     if let Some(message) = presentation::task_message(lang, text) {
         return message;
@@ -763,53 +772,12 @@ pub(crate) fn localized_detail(lang: Lang, text: &str) -> String {
     localization::translate(lang.code(), text)
 }
 
+fn localize_detail_code(language: &str, detail: &str) -> String {
+    localized_detail(Lang::from_code(language), detail)
+}
+
 pub(crate) fn batch_message(lang: Lang, raw: &str) -> Option<String> {
-    if !raw.starts_with('{') {
-        return None;
-    }
-    let value: Value = serde_json::from_str(raw).ok()?;
-    let name = value.get("Name")?.as_str()?;
-    let detail = value.get("Value").unwrap_or(&Value::Null);
-    let key = match value.get("Kind")?.as_str()? {
-        "Started" => "log_started",
-        "PcmStarted" => "log_pcm_started",
-        "PcmProgress" => "log_pcm_progress",
-        "PcmFinished" => "log_pcm_finished",
-        "Encoded" => "log_encoded",
-        "PcmError" => "log_pcm_error",
-        "Detail" => {
-            return Some(format!(
-                "{name}: {}",
-                localized_detail(lang, detail.as_str().unwrap_or_default())
-            ));
-        }
-        _ => return None,
-    };
-    let mut result = tr(lang, key).to_owned();
-    if key == "log_encoded" {
-        for (i, field) in ["Rate", "Bits", "Channels", "Bytes"].iter().enumerate() {
-            result = result.replace(
-                &format!("{{{}}}", i + 1),
-                &detail
-                    .get(field)
-                    .map_or_else(|| "?".into(), Value::to_string),
-            );
-        }
-    } else if key == "log_pcm_progress" {
-        result = result.replace(
-            "{1}",
-            &detail
-                .as_i64()
-                .map_or_else(|| "?".into(), |v| v.clamp(0, 100).to_string()),
-        );
-    } else if key == "log_pcm_error" {
-        result = result.replace(
-            "{1}",
-            &localized_detail(lang, detail.as_str().unwrap_or_default()),
-        );
-    }
-    // Substitute track names last so user data containing braces stays verbatim.
-    Some(result.replace("{0}", name))
+    dvda_core::log_view::batch_message_with(lang.code(), raw, localize_detail_code)
 }
 pub(crate) fn copy_log(state: &UiState) {
     let text = get_text(state.controls.log);
@@ -846,11 +814,12 @@ pub(crate) fn export_log(hwnd: Hwnd, state: &mut UiState) {
     };
     let result = export_log_to(state, Path::new(&path));
     if let Err(error) = result {
-        message_box(
+        super::dialog_ui::show_message(
             hwnd,
+            state.lang(),
+            super::dialog_ui::DialogKind::Error,
+            tr(state.lang(), "dialog_error_title"),
             &format!("{}{}", tr(state.lang(), "export_failed"), error),
-            "DVD-Audio Maker",
-            0x10,
         );
     } else {
         add_log(
@@ -885,8 +854,14 @@ pub(crate) fn export_log_to(state: &mut UiState, destination: &Path) -> Result<(
             WorkerEvent::Log(text) => add_log(state, &text, false),
             WorkerEvent::Progress(value) => update_progress(state, value),
             WorkerEvent::Finished(event) => state.pending_finish = Some(event),
-            WorkerEvent::Retention(options) => {
-                if retention_choice(state.lang()).unwrap_or(false) {
+            WorkerEvent::Retention {
+                options,
+                cancelled,
+                error,
+            } => {
+                if retention_choice(state.main_window, state.lang(), cancelled, Some(&error))
+                    .unwrap_or(false)
+                {
                     options.discard_task();
                 }
             }

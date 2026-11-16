@@ -9,3 +9,12 @@ String valueOrDash(String value) {
   final trimmed = value.trim();
   return trimmed.isEmpty ? '—' : trimmed;
 }
+
+/// Keeps a dropdown usable when a loaded profile holds a value outside the
+/// shared allowed list; Rust validation reports the problem when a task starts.
+List<String> withCurrent(List<String> options, String current) {
+  if (current.isEmpty || options.contains(current)) {
+    return options;
+  }
+  return <String>[...options, current];
+}

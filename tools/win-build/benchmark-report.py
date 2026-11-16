@@ -56,6 +56,26 @@ def sha_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def repository_commit(repo: Path) -> str:
+    """Return the checked-out commit from the repository given by --repo.
+
+    Trust overrides such as safe.directory (and especially a wildcard entry)
+    widen the trust boundary, so a refused command is reported with its fix
+    instead of being worked around.
+    """
+    command = ["git", "-C", str(repo), "rev-parse", "--verify", "HEAD^{commit}"]
+    completed = subprocess.run(command, text=True, encoding="utf-8",
+                               errors="replace", stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    if completed.returncode:
+        raise RuntimeError(
+            "cannot read the repository commit; fix the checkout ownership or "
+            "permissions rather than allowing it through safe.directory:\n"
+            + " ".join(command) + "\n" + completed.stderr.strip()
+        )
+    return completed.stdout.strip()
+
+
 def update_repeat(digest, block: bytes, count: int) -> None:
     for _ in range(count):
         digest.update(block)
@@ -292,7 +312,7 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     log_root = output.parent / (output.stem + "-logs")
     log_root.mkdir(exist_ok=True)
-    commit = subprocess.check_output(["git", "-c", "safe.directory=E:/yyz57/Documents/Visual Studio Code/DVD-Audio-Maker", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    commit = repository_commit(repo)
     discovery = discover(repo)
     benchmarks = []
     failed = False

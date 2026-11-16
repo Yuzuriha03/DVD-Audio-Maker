@@ -46,8 +46,8 @@
 
 ### 下载 / Download / ダウンロード
 
-- Windows（Intel/AMD）：`DVD-Audio-Maker-v1.2-win-x64.zip`
-- Windows（ARM 设备）：`DVD-Audio-Maker-v1.2-win-arm64.zip`
+- Windows（Intel/AMD）：`DVD-Audio-Maker-v1.2-win-x64.exe`（单 EXE，无 ZIP）
+- Windows（ARM 设备）：`DVD-Audio-Maker-v1.2-win-arm64.exe`（单 EXE，无 ZIP）
 - Android（ARM64）：`DVD-Audio-Maker-v1.2-android-arm64.apk`
 
 ## v1.1

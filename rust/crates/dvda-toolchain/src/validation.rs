@@ -7,10 +7,28 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// `FFmpeg` linkage of the validated media runtime. The GUI release build
+/// uses exactly this value to set or clear `DVDA_FFMPEG_PREFIX`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfmpegLinkage {
+    Static,
+    Shared,
+}
+
+impl FfmpegLinkage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Static => "static",
+            Self::Shared => "shared",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Inputs {
     pub files: BTreeMap<String, PathBuf>,
     pub records: Vec<PathBuf>,
+    pub ffmpeg_linkage: FfmpegLinkage,
 }
 
 pub fn target_machine(target: &str) -> Result<u16, String> {
@@ -19,6 +37,68 @@ pub fn target_machine(target: &str) -> Result<u16, String> {
         "aarch64-pc-windows-msvc" => Ok(0xAA64),
         other => Err(format!("Unsupported Windows target: {other}")),
     }
+}
+
+/// Authenticate an explicit `FFmpeg` installation prefix. The shared media
+/// runtime only carries DLLs, so its link-time prefix must be named separately
+/// and validated before a release candidate exists. Returns the build manifest
+/// that is recorded with the release.
+pub fn validate_ffmpeg_prefix(
+    prefix: &Path,
+    target: &str,
+    expected: FfmpegLinkage,
+) -> Result<PathBuf, String> {
+    if !prefix.is_dir() {
+        return Err(format!(
+            "FFmpeg prefix directory is missing: {}",
+            prefix.display()
+        ));
+    }
+    let manifest = prefix.join("build-manifest.json");
+    let record = read_json(&manifest)?;
+    if record["target"] != target
+        || record["toolchain"] != "msvc"
+        || record["linkage"] != expected.as_str()
+    {
+        return Err(format!(
+            "FFmpeg prefix must be an authenticated MSVC {} build for {target}: {}",
+            expected.as_str(),
+            prefix.display()
+        ));
+    }
+    if expected == FfmpegLinkage::Shared {
+        if record["profile"] != "shared" {
+            return Err(format!(
+                "Shared FFmpeg prefix must record profile=shared: {}",
+                prefix.display()
+            ));
+        }
+        for (name, version) in [
+            ("avformat", 63),
+            ("avcodec", 63),
+            ("avutil", 61),
+            ("swresample", 7),
+            ("swscale", 10),
+        ] {
+            let definition = prefix.join("lib").join(format!("{name}-{version}.def"));
+            if !definition.is_file() {
+                return Err(format!(
+                    "Shared FFmpeg prefix is missing its import definition: {}",
+                    definition.display()
+                ));
+            }
+        }
+        for header in ["libavcodec/avcodec.h", "libavformat/avformat.h"] {
+            let path = prefix.join("include").join(header);
+            if !path.is_file() {
+                return Err(format!(
+                    "Shared FFmpeg prefix is missing its public header: {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(manifest)
 }
 
 fn imports_for(bytes: &[u8], dll: bool, target: &str) -> Result<BTreeSet<String>, String> {
@@ -47,6 +127,7 @@ pub fn validate(media: &Path, image: &Path, author: &Path, target: &str) -> Resu
     let mut inputs = Inputs {
         files: BTreeMap::new(),
         records: Vec::new(),
+        ffmpeg_linkage: FfmpegLinkage::Shared,
     };
     let (media_record, media_files) = component(
         media,
@@ -149,7 +230,7 @@ fn validate_shared_media(
         return Err("Onefile media runtime must use profile=shared".into());
     }
     media_files.remove("dvda-media.dll");
-    let mut linked = validate_rust_author(author, author_record, target)?;
+    let mut linked = validate_rust_author(author, author_record, target, FfmpegLinkage::Shared)?;
     for (name, path) in media_files {
         if let Some(existing) = linked.files.get(&name) {
             if fs::read(existing).map_err(err)? != fs::read(&path).map_err(err)? {
@@ -205,7 +286,7 @@ fn validate_static_media(
             ));
         }
     }
-    let mut inputs = validate_rust_author(author, author_record, target)?;
+    let mut inputs = validate_rust_author(author, author_record, target, FfmpegLinkage::Static)?;
     inputs.records.push(manifest);
     Ok(inputs)
 }
@@ -214,7 +295,12 @@ fn validate_static_media(
     clippy::too_many_lines,
     reason = "Keep ordered author provenance and inventory checks together"
 )]
-fn validate_rust_author(author: &Path, record: &Value, target: &str) -> Result<Inputs, String> {
+fn validate_rust_author(
+    author: &Path,
+    record: &Value,
+    target: &str,
+    ffmpeg_linkage: FfmpegLinkage,
+) -> Result<Inputs, String> {
     let static_ffmpeg = record["ffmpeg_linkage"] == "static-source-built"
         && record["ffmpeg_profile"] == "build-msvc-ffmpeg.py:static";
     if record["schema_version"] != 1
@@ -331,6 +417,7 @@ fn validate_rust_author(author: &Path, record: &Value, target: &str) -> Result<I
     Ok(Inputs {
         files,
         records: vec![author.join("author-build.json")],
+        ffmpeg_linkage,
     })
 }
 
@@ -572,7 +659,7 @@ pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    fn rust_author_fixture() -> Fixture {
+    pub(crate) fn rust_author_fixture() -> Fixture {
         let fixture = Fixture::new();
         fixture.edit("image", |record| {
             record["implementation"] = "project-owned-rust".into();
@@ -683,10 +770,10 @@ pub(crate) mod tests {
             record["files"] = serde_json::json!({});
         });
         fs::remove_dir_all(fixture.root.join("image")).unwrap();
+        let inputs = fixture.validate().unwrap();
+        assert_eq!(inputs.ffmpeg_linkage, FfmpegLinkage::Static);
         assert!(
-            fixture
-                .validate()
-                .unwrap()
+            inputs
                 .files
                 .keys()
                 .all(|name| !name.as_bytes().ends_with(b".dll"))
@@ -699,6 +786,7 @@ pub(crate) mod tests {
     fn complete_rust_author_authenticates_sources_assets_and_delay_import_closure() {
         let fixture = rust_author_fixture();
         let inputs = fixture.validate().unwrap();
+        assert_eq!(inputs.ffmpeg_linkage, FfmpegLinkage::Shared);
         assert!(inputs.files.contains_key("fonts/DvdaNotoCJK-Regular.ttc"));
         assert!(inputs.files.contains_key("data/menu/silence.wav"));
         assert!(!inputs.files.contains_key("dvda-author-dev.exe"));
@@ -714,6 +802,85 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert!(fixture.validate().unwrap_err().contains("asset checksum"));
+    }
+
+    /// Minimal authenticated shared `FFmpeg` installation layout used by release
+    /// input tests: manifest, import definitions and public headers.
+    pub(crate) fn shared_ffmpeg_fixture(directory: &Path) -> PathBuf {
+        for path in ["lib", "include/libavcodec", "include/libavformat"] {
+            fs::create_dir_all(directory.join(path)).unwrap();
+        }
+        for (name, version) in [
+            ("avformat", 63),
+            ("avcodec", 63),
+            ("avutil", 61),
+            ("swresample", 7),
+            ("swscale", 10),
+        ] {
+            fs::write(
+                directory.join("lib").join(format!("{name}-{version}.def")),
+                b"EXPORTS\n",
+            )
+            .unwrap();
+        }
+        fs::write(directory.join("include/libavcodec/avcodec.h"), b"").unwrap();
+        fs::write(directory.join("include/libavformat/avformat.h"), b"").unwrap();
+        let record = serde_json::json!({
+            "target": "x86_64-pc-windows-msvc",
+            "toolchain": "msvc",
+            "profile": "shared",
+            "linkage": "shared",
+        });
+        fs::write(
+            directory.join("build-manifest.json"),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        directory.to_path_buf()
+    }
+
+    #[test]
+    fn explicit_shared_ffmpeg_prefix_requires_authenticated_msvc_install() {
+        let fixture = Fixture::new();
+        let prefix = shared_ffmpeg_fixture(&fixture.root.join("shared-ffmpeg"));
+        let manifest = prefix.join("build-manifest.json");
+        assert_eq!(
+            validate_ffmpeg_prefix(&prefix, "x86_64-pc-windows-msvc", FfmpegLinkage::Shared)
+                .unwrap(),
+            manifest
+        );
+        fs::remove_file(prefix.join("lib/avcodec-63.def")).unwrap();
+        assert!(
+            validate_ffmpeg_prefix(&prefix, "x86_64-pc-windows-msvc", FfmpegLinkage::Shared)
+                .unwrap_err()
+                .contains("import definition")
+        );
+        fs::write(prefix.join("lib/avcodec-63.def"), b"EXPORTS\n").unwrap();
+        fs::write(
+            &manifest,
+            serde_json::to_vec(&serde_json::json!({
+                "target": "aarch64-pc-windows-msvc",
+                "toolchain": "msvc",
+                "profile": "shared",
+                "linkage": "shared",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            validate_ffmpeg_prefix(&prefix, "x86_64-pc-windows-msvc", FfmpegLinkage::Shared)
+                .unwrap_err()
+                .contains("authenticated MSVC shared build")
+        );
+        assert!(
+            validate_ffmpeg_prefix(
+                &fixture.root.join("missing"),
+                "x86_64-pc-windows-msvc",
+                FfmpegLinkage::Shared
+            )
+            .unwrap_err()
+            .contains("directory is missing")
+        );
     }
 
     pub struct Fixture {

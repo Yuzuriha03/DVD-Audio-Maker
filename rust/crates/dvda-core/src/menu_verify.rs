@@ -1,7 +1,9 @@
 //! Validate the menu actually stored in an ISO, including decoded page images.
 use crate::formats::IsoEntryInfo;
 use crate::{
-    formats, media,
+    formats,
+    gui::display_product_path,
+    media,
     verification::issue,
     verify::{Job, read_iso_file},
 };
@@ -532,7 +534,12 @@ pub fn verify_with_cache(
                 .unwrap_or_default()
                 .to_str()
                 .unwrap_or_default(),
-            &iso.to_string_lossy(),
+            &display_product_path(
+                &job.final_directory,
+                job.final_directory_display.as_deref(),
+                iso,
+            )
+            .to_string_lossy(),
         );
         let image = decode_page(&mut source, &work.0, (start, end), job, caller)?;
         issues.extend(page_issues(&image, page, index_pages, albums, caller)?);

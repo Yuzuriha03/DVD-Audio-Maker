@@ -174,6 +174,7 @@ impl Timing {
     }
 }
 /// Holds at most the timing lookahead plus the AU currently being delivered.
+#[cfg(test)]
 pub(crate) struct Queue {
     timing: Timing,
     pending: std::collections::VecDeque<(Descriptor, Vec<u8>)>,
@@ -182,6 +183,7 @@ pub(crate) struct Queue {
     samples: u32,
     primed: usize,
 }
+#[cfg(test)]
 impl Queue {
     pub(crate) fn new(samples: u32) -> Self {
         Self {

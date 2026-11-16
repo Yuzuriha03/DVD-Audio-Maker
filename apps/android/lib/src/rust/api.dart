@@ -6,9 +6,9 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `outcome_with_log`, `push_log`, `set_text`
+// These functions are ignored because they are not marked as `pub`: `android_menu_runtime_directory`, `map_display_paths`, `outcome_with_log`, `push_log`, `set_text`, `stage`, `temporary_profile_path`, `with_android_menu_runtime`, `with_source_display`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Forward`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `cancelled`, `emit`, `progress`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `as_callbacks`, `cancelled`, `emit`, `product_delivery`, `progress`, `set_progress_range`
 
 Future<String> runProfile({
   required String profileJson,
@@ -20,8 +20,87 @@ Future<String> runProfile({
 
 void cancel() => RustLib.instance.api.crateApiCancel();
 
+/// Localized text for a profile validation issue code.
+String profileIssueMessage({required String language, required String code}) =>
+    RustLib.instance.api.crateApiProfileIssueMessage(
+      language: language,
+      code: code,
+    );
+
+/// Schema defaults and allowed values shared with the desktop shell.
+String profileOptions() => RustLib.instance.api.crateApiProfileOptions();
+
+/// Shared ISO prefix rule for the title selected in any GUI.
+String profileIsoPrefix({required String title}) =>
+    RustLib.instance.api.crateApiProfileIsoPrefix(title: title);
+
+/// Shared capacity rule: combo index plus optional custom byte count.
+int profileDiscBytes({required int capacity, required String customBytes}) =>
+    RustLib.instance.api.crateApiProfileDiscBytes(
+      capacity: capacity,
+      customBytes: customBytes,
+    );
+
+/// Shared profile validation. LPCM 20-bit is reported, never rewritten.
+List<ProfileIssue> profileValidate({
+  required String valuesJson,
+  required bool forTask,
+}) => RustLib.instance.api.crateApiProfileValidate(
+  valuesJson: valuesJson,
+  forTask: forTask,
+);
+
+/// Formats a whole task log for the Flutter GUI and counts problem lines.
+FormattedLog formatLog({required String language, required String log}) =>
+    RustLib.instance.api.crateApiFormatLog(language: language, log: log);
+
 ProgressSnapshot progressSnapshot() =>
     RustLib.instance.api.crateApiProgressSnapshot();
+
+/// One formatted log view. Formatting and classification happen in the
+/// shared `dvda_core::log_view` module so every GUI shows the same lines.
+class FormattedLog {
+  final String text;
+  final String problemText;
+  final int problems;
+
+  const FormattedLog({
+    required this.text,
+    required this.problemText,
+    required this.problems,
+  });
+
+  @override
+  int get hashCode => text.hashCode ^ problemText.hashCode ^ problems.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FormattedLog &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          problemText == other.problemText &&
+          problems == other.problems;
+}
+
+/// One profile validation problem; the GUI localizes `code`.
+class ProfileIssue {
+  final String key;
+  final String code;
+
+  const ProfileIssue({required this.key, required this.code});
+
+  @override
+  int get hashCode => key.hashCode ^ code.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProfileIssue &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          code == other.code;
+}
 
 class ProgressSnapshot {
   final int done;

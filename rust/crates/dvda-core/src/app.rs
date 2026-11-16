@@ -251,6 +251,25 @@ impl AppOptions {
         self
     }
 
+    /// Points the product at a task-owned delivery folder.
+    ///
+    /// SAF hosts cannot write the user's final folder from Rust; they export a
+    /// task-local copy after verification. Keeping that copy inside the bound
+    /// workspace means the existing workspace finish/discard lifecycle owns all
+    /// retention and cleanup, with no platform-specific cleanup rules. Windows
+    /// never calls this, so its final directory and output are unchanged.
+    #[must_use]
+    pub fn bind_task_delivery_directory(&self) -> Self {
+        let mut copy = self.clone();
+        if let Some(workspace) = &copy.workspace {
+            copy.values.insert(
+                "FinalDirectory".into(),
+                json!(workspace.path().join("deliver")),
+            );
+        }
+        copy
+    }
+
     /// # Errors
     /// Returns an error if the temporary task workspace cannot be created.
     pub fn scratch_options(&self) -> Result<Self, String> {
@@ -267,33 +286,31 @@ impl AppOptions {
         }
     }
 
-    /// Removes the resumable unfinished task left by an earlier run.
+    /// Removes the unfinished, finished, or partially deleted task directory.
     ///
     /// This does not need a bound workspace: the GUI discards progress before
-    /// any task starts, so the directory is resolved from the build directory
-    /// and deleted directly.
+    /// any task starts. `Ok(false)` means there was nothing to delete; deletion
+    /// failures are returned so the GUI keeps the pending cleanup retryable.
     ///
     /// # Errors
-    /// Returns an error if the unfinished task directory cannot be removed.
+    /// Returns an error for an unowned existing directory or a failed deletion.
     pub fn discard_progress(&self) -> Result<bool, String> {
-        let build = self.path("BuildDirectory");
-        if build.as_os_str().is_empty() || !crate::workspace::Workspace::unfinished(&build) {
-            return Ok(false);
-        }
-        let path = build.join("unfinished-task");
-        std::fs::remove_dir_all(&path).map_err(|error| {
-            format!(
-                "Cannot remove the unfinished task {}: {error}",
-                path.display()
-            )
-        })?;
-        let _ = std::fs::remove_file(build.join(".unfinished-task.lease"));
-        Ok(true)
+        crate::workspace::Workspace::discard_task_directory(&self.path("BuildDirectory"))
     }
 
     pub fn finish_task(&self) {
         if let Some(workspace) = &self.workspace {
             workspace.finish();
+        }
+    }
+
+    /// Finishes the bound task and removes its directory, reporting failures.
+    /// # Errors
+    /// Returns an error when the task workspace exists and cannot be removed.
+    pub fn finish_task_checked(&self) -> Result<(), String> {
+        match &self.workspace {
+            Some(workspace) => workspace.finish_and_remove(),
+            None => Ok(()),
         }
     }
 
@@ -383,10 +400,22 @@ impl AppOptions {
         } else {
             self.executable_directory.join("data")
         };
+        // The Android host injects its app-private runtime folder as a profile
+        // property; every other GUI keeps the embedded/exe-relative default.
+        // Only a menu-enabled build may validate/resolve that explicit path, so
+        // an unrelated/stale override cannot break a non-menu build.
+        let explicit_runtime = if menu_enabled {
+            let configured_runtime = self.text("MenuRuntimeDirectory");
+            if configured_runtime.is_empty() {
+                env::var_os("DVDA_MENU_NATIVE_DIR").map(PathBuf::from)
+            } else {
+                Some(PathBuf::from(configured_runtime))
+            }
+        } else {
+            None
+        };
         let menu_binary_directory = menu_runtime_directory(
-            menu_enabled
-                .then(|| env::var_os("DVDA_MENU_NATIVE_DIR").map(PathBuf::from))
-                .flatten(),
+            explicit_runtime,
             crate::runtime::directory(),
             &author_source,
             &self.executable_directory,
@@ -409,6 +438,10 @@ impl AppOptions {
             temporary_root: self.path("TemporaryRoot"),
             iso_directory: self.path("IsoDirectory"),
             final_directory: self.path("FinalDirectory"),
+            final_directory_display: {
+                let display = self.text("FinalDirectoryDisplay");
+                (!display.is_empty()).then(|| PathBuf::from(display))
+            },
             mlp_index_path: self.path("MlpIndexPath"),
             build_log_path: self.path("BuildLogPath"),
             title: self.text("Title"),
@@ -477,6 +510,10 @@ impl AppOptions {
             media_library: self.media_library()?,
             work_directory: self.path("BuildDirectory").join("verify-tmp"),
             final_directory: self.path("FinalDirectory"),
+            final_directory_display: {
+                let display = self.text("FinalDirectoryDisplay");
+                (!display.is_empty()).then(|| PathBuf::from(display))
+            },
             iso_prefix: self.text("IsoPrefix"),
             title: Some(self.text("Title")),
             menu_enabled: self.boolean("MenuEnabled"),
@@ -557,8 +594,8 @@ pub fn run_build(
             directory: options.path("BuildDirectory").join("production-pcm"),
             signature: crate::audio::production_pcm_signature(&media, rate, bits, dither)?,
             // Streaming avoids writing and re-reading a full PCM WAV per track.
-            // Live metadata refresh stays x86_64-only in the encoder itself, so
-            // other targets stream with the static stamp captured at job start.
+            // The unified pipeline encoder supports live metadata refresh on every
+            // target; a declared metadata context keeps the static stamp instead.
             stream_mlp: options.text("MlpSource") == "mlp-batch"
                 && crate::config::trim(&options.text("MlpMetadataContext")).is_empty()
                 && cfg!(feature = "rust-mlp"),
@@ -826,6 +863,53 @@ mod tests {
     }
 
     #[test]
+    fn menu_runtime_override_only_applies_to_menu_builds() {
+        let root = env::temp_dir().join(format!(
+            "dvda-menu-runtime-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let build = root.join("build");
+        let source = root.join("source");
+        std::fs::create_dir_all(&build).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        let invalid = root.join("missing-runtime");
+        let profile = |menu: &str| {
+            let path = root.join(format!("profile-{menu}.json"));
+            std::fs::write(
+                &path,
+                json!({
+                    "Version": 1,
+                    "Language": "en",
+                    "Values": {
+                        "DVDA_SRC": source,
+                        "DVDA_BUILD_DIR": build,
+                        "DVDA_MENU_NATIVE_DIR": invalid,
+                        "DVDA_MENU": menu,
+                    }
+                })
+                .to_string(),
+            )
+            .unwrap();
+            path
+        };
+        let plain = AppOptions::load(Some(&profile("off"))).unwrap();
+        assert!(
+            plain.build_job(true).is_ok(),
+            "a non-menu build must ignore the menu runtime override"
+        );
+        let menu = AppOptions::load(Some(&profile("on"))).unwrap();
+        assert!(
+            menu.build_job(true).is_err(),
+            "a menu build must validate the explicit runtime directory"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn discard_progress_removes_the_unfinished_task_directory() {
         let root = env::temp_dir().join(format!(
             "dvda-discard-{}-{}",
@@ -840,13 +924,72 @@ mod tests {
         std::fs::create_dir_all(&task).unwrap();
         std::fs::write(task.join(".owner"), b"dvda-task-v1").unwrap();
         std::fs::write(task.join("prepare-snapshot.json"), b"{}").unwrap();
-        let changes = json!({"DVDA_BUILD_DIR": build}).as_object().unwrap().clone();
-        let options = AppOptions::load(None).unwrap().with_profile_values(changes).unwrap();
+        let changes = json!({"DVDA_BUILD_DIR": build})
+            .as_object()
+            .unwrap()
+            .clone();
+        let options = AppOptions::load(None)
+            .unwrap()
+            .with_profile_values(changes)
+            .unwrap();
 
         assert!(options.discard_progress().unwrap());
         assert!(!task.exists());
         // A second discard has nothing left to remove.
         assert!(!options.discard_progress().unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discard_progress_handles_finished_leftovers_and_reports_failures() {
+        let root = env::temp_dir().join(format!(
+            "dvda-discard-residue-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let build = root.join("build");
+        let task = build.join("unfinished-task");
+        std::fs::create_dir_all(&task).unwrap();
+        std::fs::write(task.join(".finished"), b"completed").unwrap();
+        let options = AppOptions::load(None)
+            .unwrap()
+            .with_profile_values(json!({"DVDA_BUILD_DIR":build}).as_object().unwrap().clone())
+            .unwrap();
+
+        // A completed-but-not-deleted directory has no live unfinished task, but
+        // discard must still remove it and report the real result.
+        assert!(!options.has_unfinished_task());
+        assert!(options.discard_progress().unwrap());
+        assert!(!task.exists());
+        // Old/partially deleted residue may have lost both markers; explicit
+        // discard still removes the reserved task directory.
+        std::fs::create_dir_all(&task).unwrap();
+        std::fs::write(task.join("orphan.iso"), b"product").unwrap();
+        assert!(options.discard_progress().unwrap());
+        assert!(!task.exists());
+
+        #[cfg(windows)]
+        {
+            use crate::platform::OpenOptionsExt;
+            std::fs::create_dir_all(&task).unwrap();
+            std::fs::write(task.join(".owner"), b"dvda-task-v1").unwrap();
+            std::fs::write(task.join(".finished"), b"completed").unwrap();
+            let locked = task.join("locked.iso");
+            std::fs::write(&locked, b"product").unwrap();
+            let lock = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&locked)
+                .unwrap();
+            assert!(options.discard_progress().is_err());
+            assert!(task.join(".finished").exists());
+            drop(lock);
+            assert!(options.discard_progress().unwrap());
+            assert!(!task.exists());
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -880,6 +1023,7 @@ mod tests {
         let original = AppOptions::load(None).unwrap();
         let changes = json!({"DVDA_BUILD_DIR":"C:/new-work", "DVDA_MLP_EXTERNAL_DIR":"", "DVDA_MLP_SOURCE":"mlp-batch"}).as_object().unwrap().clone();
         let edited = original.with_profile_values(changes).unwrap();
+        let expected_root = Path::new("C:/new-work");
         for name in [
             "ManifestPath",
             "ReportPath",
@@ -895,10 +1039,11 @@ mod tests {
             "PrepareSnapshotPath",
             "MlpExternalDirectory",
         ] {
-            assert!(
-                edited.text(name).starts_with("C:/new-work\\"),
-                "{name}: {}",
-                edited.text(name)
+            let value = edited.text(name);
+            assert_eq!(
+                Path::new(&value).parent(),
+                Some(expected_root),
+                "{name}: {value}"
             );
         }
     }

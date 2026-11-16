@@ -20,6 +20,9 @@ pub struct Track {
     pub bits: i32,
     #[serde(default)]
     pub source_path: String,
+    /// Original user source when `source_path` points at an internal ALAC repair.
+    #[serde(default)]
+    pub original_source_path: String,
     #[serde(default)]
     pub manifest_name: String,
     #[serde(default)]

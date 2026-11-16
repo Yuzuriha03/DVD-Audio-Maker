@@ -1,5 +1,3 @@
-#[cfg(not(any(target_arch = "x86_64", target_os = "android")))]
-use crate::Error;
 use crate::{Config, format::Profile, metadata::Metadata};
 use std::ffi::{c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -189,8 +187,8 @@ unsafe fn metadata_records(config: &EncoderConfig) -> Result<Vec<Metadata>, &'st
 /// # Safety
 /// `call.config` must be null or point to a readable `EncoderConfig`. `call.read`, `call.write`,
 /// `call.input` and `call.output` must follow the `Read`/`Write` callback contracts for the whole call.
-/// `result` must be valid for writes and not aliased. A `stamp_refresh` callback is only supported on
-/// `x86_64`; other targets reject it with -1.
+/// `result` must be valid for writes and not aliased. A `stamp_refresh` callback is supported on
+/// every target; unknown-length input requires it.
 #[allow(
     clippy::cast_possible_truncation,
     clippy::too_many_lines,
@@ -255,118 +253,25 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
     // establishes the frame width. The adapters never escape this call.
     let mut reader = unsafe { callbacks::Reader::new(read, input, c.channels as usize) };
     let mut writer = unsafe { callbacks::Writer::new(write, output) };
-    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
-    {
-        let status = crate::pipeline::host::encode_stream(
-            config,
-            &c,
-            &profile,
-            &records,
-            crate::pipeline::host::HostIo {
-                read: &mut reader,
-                write: &mut writer,
-                stamp_refresh,
-            },
-            result,
-        );
-        if status == 0 {
-            0
-        } else if result.error[0] != 0 {
-            result.status = status;
-            status
-        } else {
-            fail(result, status, "Encoding failed; discard partial output")
-        }
-    }
-    #[cfg(not(any(target_arch = "x86_64", target_os = "android")))]
-    {
-        if stamp_refresh.is_some() {
-            return fail(
-                result,
-                -1,
-                "Live metadata refresh requires the x86_64 encoder",
-            );
-        }
-        let channels = config.channels as usize;
-        let samples = if config.sample_rate > 96000 {
-            160
-        } else if config.sample_rate > 48000 {
-            80
-        } else {
-            40
-        };
-        let count = config.frames.div_ceil(samples as u64) as usize;
-        let mut stamps =
-            crate::streaming::MetadataCursor::new(&records, count).expect("validated metadata");
-        // Buffer one restart interval so matrix decisions are bounded and stable.
-        let mut encoder = crate::encoder::AuEncoder::new(&c, &profile, 0);
-        let mut queue = crate::timing::Queue::new(samples as u32);
-        let mut buffer = vec![0; samples * channels * c.restart_interval];
-        let mut deliver = |bytes: Vec<u8>, result: &mut EncoderResult| -> Result<(), i32> {
-            if writer.write(&bytes).is_err() {
-                return Err(-4);
-            }
-            result.access_units += 1;
-            result.output_bytes += bytes.len() as u64;
-            Ok(())
-        };
-        for base in (0..count).step_by(c.restart_interval) {
-            let aus = (count - base).min(c.restart_interval);
-            let needed = (config.frames - result.input_frames).min((aus * samples) as u64) as usize;
-            let mut at = 0;
-            while at < needed {
-                let capacity = (needed - at).min(samples);
-                let Ok(received) = reader.read(&mut buffer[at * channels..], capacity) else {
-                    return fail(result, -3, "Input callback failed or cancelled");
-                };
-                if received == 0 {
-                    return fail(result, -3, "Input ended before the declared frame count");
-                }
-                at += received;
-                result.input_frames += received as u64;
-            }
-            encoder.matrix =
-                crate::encoder::pair_matrix(&c, &profile, &buffer[..needed * channels]);
-            encoder.quantization = crate::encoder::quantization(
-                &c,
-                &profile,
-                &buffer[..needed * channels],
-                encoder.matrix,
-            );
-            for offset in 0..aus {
-                let au = base + offset;
-                let start = offset * samples * channels;
-                let end = ((offset + 1) * samples).min(needed) * channels;
-                let bytes =
-                    match encoder.push(&buffer[start..end], stamps.next(au), au + 1 == count) {
-                        Ok(bytes) => bytes,
-                        Err(Error::InvalidPcm) => return fail(result, -3, "Invalid PCM precision"),
-                        Err(_) => return fail(result, -5, "MLP encoding failed"),
-                    };
-                match queue.push(bytes) {
-                    Ok(Some(bytes)) => {
-                        if let Err(status) = deliver(bytes, result) {
-                            return fail(result, status, "Output callback failed or cancelled");
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(_) => return fail(result, -5, "MLP decoder FIFO overflow"),
-                }
-            }
-        }
-        loop {
-            match queue.finish() {
-                Ok(Some(bytes)) => {
-                    if let Err(status) = deliver(bytes, result) {
-                        return fail(result, status, "Output callback failed or cancelled");
-                    }
-                }
-                Ok(None) => break,
-                Err(_) => return fail(result, -5, "MLP decoder FIFO overflow"),
-            }
-        }
-        result.encoded_frames = count as u64 * samples as u64;
+    let status = crate::pipeline::host::encode_stream(
+        config,
+        &c,
+        &profile,
+        &records,
+        crate::pipeline::host::HostIo {
+            read: &mut reader,
+            write: &mut writer,
+            stamp_refresh,
+        },
+        result,
+    );
+    if status == 0 {
         0
+    } else if result.error[0] != 0 {
+        result.status = status;
+        status
+    } else {
+        fail(result, status, "Encoding failed; discard partial output")
     }
 }
 
@@ -374,7 +279,7 @@ unsafe fn stream(call: StreamCall<'_>, result: &mut EncoderResult) -> i32 {
 /// # Safety
 /// `config` must point to a readable `EncoderConfig`; `read`, `input`, `write` and `output` must follow
 /// the `Read`/`Write` callback contracts for the whole call. `stamp_refresh` is only called during this
-/// call, and only on `x86_64`.
+/// call and is supported on every target.
 pub(crate) unsafe fn encode_stream_with_stamp_refresh(
     config: &EncoderConfig,
     profile: Profile,

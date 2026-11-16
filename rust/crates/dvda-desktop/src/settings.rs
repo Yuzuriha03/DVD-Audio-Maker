@@ -1,16 +1,16 @@
 //! Settings values: choices, profile load/save and validation.
 
 use super::{
-    AppOptions, EnableWindow, FileKind, GetParent, HashMap, Hwnd, Lang, Map, OnceLock, Path,
-    PathBuf, SetFocus, UiState, Value, add_log, check, checked, combo_index, combo_select,
-    file_dialog, fs, get_text, json, localization, localized_detail, numeric_choice,
+    AppOptions, BrowseKind, EnableWindow, FileKind, GetDlgCtrlID, GetParent, HashMap, Hwnd, Lang,
+    Map, OnceLock, Path, PathBuf, SetFocus, UiState, Value, add_log, check, checked, combo_index,
+    combo_select, file_dialog, fs, get_text, json, localization, localized_detail, numeric_choice,
     populate_numeric_choice, select_tab, set_language, set_text, show_window, tr, win,
 };
 
-pub(crate) const SAMPLE_RATES: &[i64] = &[44100, 48000, 88200, 96000, 176_400, 192_000];
-pub(crate) const SAMPLE_BITS: &[i64] = &[16, 20, 24];
+pub(crate) const SAMPLE_RATES: &[i64] = dvda_core::profile::SAMPLE_RATES;
+pub(crate) const SAMPLE_BITS: &[i64] = dvda_core::profile::MLP_BITS;
 pub(crate) const SAMPLE_BITS_LABELS: &[&str] = &["16 bit", "20 bit", "24 bit"];
-pub(crate) const LPCM_SAMPLE_BITS: &[i64] = &[16, 24];
+pub(crate) const LPCM_SAMPLE_BITS: &[i64] = dvda_core::profile::LPCM_BITS;
 pub(crate) const LPCM_SAMPLE_BITS_LABELS: &[&str] = &["16 bit", "24 bit"];
 pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[
     "44.1 kHz",
@@ -22,7 +22,7 @@ pub(crate) const SAMPLE_RATE_LABELS: &[&str] = &[
 ];
 
 /// Menu video standards in combo order; the option value passed to the author.
-pub(crate) const MENU_NORMS: &[&str] = &["pal", "secam", "ntsc"];
+pub(crate) const MENU_NORMS: &[&str] = dvda_core::profile::MENU_NORMS;
 
 pub(crate) fn norm_index(norm: &str) -> i32 {
     i32::try_from(
@@ -42,11 +42,7 @@ pub(crate) fn norm_value(index: i32) -> &'static str {
 }
 
 pub(crate) fn capacity_index(bytes: i64) -> i32 {
-    match bytes {
-        0 | 4_707_319_808 => 0,
-        8_540_123_136 => 1,
-        _ => 2,
-    }
+    i32::try_from(dvda_core::profile::capacity_index(bytes)).unwrap_or(2)
 }
 pub(crate) fn mode_index(mode: &str) -> i32 {
     match mode {
@@ -238,11 +234,13 @@ pub(crate) fn overrides(state: &UiState) -> Map<String, Value> {
     put(
         &mut values,
         "DiscBytes",
-        json!(match combo_index(state.controls.capacity) {
-            1 => 8_540_123_136i64,
-            2 => parse_i64(state.controls.custom_bytes, 4_707_319_808i64),
-            _ => 4_707_319_808i64,
-        }),
+        json!(dvda_core::profile::disc_bytes(
+            i64::from(combo_index(state.controls.capacity)),
+            Some(parse_i64(
+                state.controls.custom_bytes,
+                dvda_core::profile::DVD5_BYTES
+            )),
+        )),
     );
     put(
         &mut values,
@@ -359,8 +357,19 @@ pub(crate) fn update_menu_visibility(state: &UiState) {
         }
     }
     let advanced = checked(state.controls.advanced);
+    // Only the menu font pickers belong to the menu section. The source,
+    // output and import rows keep the visibility rules they had before: the
+    // ordinary browse buttons stay visible, the work-directory one follows
+    // "advanced", and the import one follows the audio mode.
     for hwnd in &state.browse_buttons {
-        show_window(*hwnd, menu && advanced);
+        let id = (GetDlgCtrlID(*hwnd) as isize).cast_unsigned();
+        let is_font_picker = state
+            .browse
+            .get(&id)
+            .is_some_and(|(_, kind)| matches!(kind, BrowseKind::Font));
+        if is_font_picker {
+            show_window(*hwnd, menu && advanced);
+        }
     }
 }
 pub(crate) fn update_statistics(state: &mut UiState) {
@@ -390,10 +399,16 @@ pub(crate) fn validate_controls(state: &mut UiState, for_task: bool) -> bool {
     let bits = selected_bits(state);
     let c = &state.controls;
     let mut error = None;
-    if for_task && !SAMPLE_RATES.contains(&numeric_choice(c.rate, SAMPLE_RATES)) {
-        error = Some((c.rate, tr(state.lang(), "invalid_sample_rate").into()));
-    } else if for_task && (!SAMPLE_BITS.contains(&bits) || (lpcm && bits == 20)) {
-        error = Some((c.bits, tr(state.lang(), "invalid_bits").into()));
+    if for_task
+        && let Some(issue) =
+            dvda_core::profile::validate_audio(numeric_choice(c.rate, SAMPLE_RATES), bits, lpcm)
+    {
+        let control = if issue.key == "DVDA_MLP_BITS" {
+            c.bits
+        } else {
+            c.rate
+        };
+        error = Some((control, tr(state.lang(), issue.code).into()));
     }
     for (control, key, min, max) in [
         (c.group_limit, "group_limit", 1, 99),

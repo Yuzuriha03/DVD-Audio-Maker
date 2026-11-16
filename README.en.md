@@ -2,15 +2,15 @@
 
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP or LPCM encoding, automatic disc splitting, track menus, album covers and output verification. A portable Windows application: extract the ZIP and run it, with no installation required.
+Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP or LPCM encoding, automatic disc splitting, track menus, album covers and output verification. A portable Windows application: download the single EXE and run it, with no installation or extraction required.
 
 ## Download and install
 
-1. Open [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/latest) and download the package for your PC:
-   - Intel / AMD PCs: `DVD-Audio-Maker-v1.1-win-x64.zip`
-   - Windows on ARM devices: `DVD-Audio-Maker-v1.1-win-arm64.zip`
-2. Extract the ZIP to a folder of your choice and double-click `DVD-Audio-Maker.exe`.
-3. Keep `LICENSE`, `THIRD-PARTY.txt`, `THIRD-PARTY.en.txt`, `NOTICE-Image.txt` and `NOTICE-Menu.txt` in the extracted folder.
+1. Open [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/latest) and download the single executable for your PC (the `<version>` part follows the actual release):
+   - Intel / AMD PCs: `DVD-Audio-Maker-<version>-win-x64.exe`
+   - Windows on ARM devices: `DVD-Audio-Maker-<version>-win-arm64.exe`
+2. Put the downloaded EXE in a writable folder and double-click it; no extraction or installation is required. The first launch prepares embedded components and may be slower.
+3. The license, FFmpeg LGPL notice and third-party/image/menu statements are embedded in the app's About window.
 
 **Requirements:** Windows 10 / 11 on x64 or ARM64. All required components are built in, so no extra runtime needs to be installed. The folder containing the EXE must be writable. Building an ISO and its temporary files also needs enough free disk space; reserve roughly the size of the finished output.
 
@@ -139,6 +139,6 @@ See [LICENSE](LICENSE) for the project license and these notices for bundled com
 - [Third-party components (Chinese)](tools/win-build/docs/THIRD-PARTY.txt)
 - [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.txt)
 
-The release also includes `NOTICE-Image.txt` and `NOTICE-Menu.txt`; please keep them.
+The Windows build embeds these notices and licenses in the About window; the texts are also kept in the repository.
 
 See [CONTRIBUTING.en.md](CONTRIBUTING.en.md) for development and Clippy pedantic maintenance guidance.

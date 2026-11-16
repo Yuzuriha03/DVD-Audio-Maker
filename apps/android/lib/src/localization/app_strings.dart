@@ -83,7 +83,6 @@ class AppStrings {
         'MLP lossless compression suits most DVD-Audio projects. Sample rate and bit depth follow the selected settings.',
     'lpcmNote':
         'LPCM is faster but uncompressed and uses more space. Check the disc capacity.',
-    'workDir': 'Work directory',
     'isoPrefix': 'Image filename prefix',
     'groupTrackLimit': 'Max tracks per group',
     'titleMode': 'Title grouping',
@@ -134,6 +133,16 @@ class AppStrings {
     'statusDone': 'Completed',
     'statusFailed': 'Failed',
     'statusCancelled': 'Cancelled',
+    'statusBuildFailed': 'Production failed',
+    'statusVerifyFailed': 'Verification failed',
+    'cancelledHint':
+        'You stopped this task. The unfinished progress was kept; you can delete it from the settings.',
+    'retentionCancelledTitle': 'Cancelled',
+    'retentionCancelledBody':
+        "You stopped this task. Keep progress to continue next time? Deleting progress removes only this task's intermediate files, not the sources or already exported ISOs.",
+    'retentionFailedTitle': 'Production failed',
+    'retentionFailedBody':
+        "Production failed: {error}. Keep progress to continue next time? Deleting progress removes only this task's intermediate files, not the sources or already exported ISOs.",
     'copyLog': 'Copy current view',
     'exportLog': 'Export full log...',
     'logCopied': 'Log copied',
@@ -188,7 +197,34 @@ class AppStrings {
     'tasksIdleHint':
         'Check sources first, then start the build. You can stop it at any time.',
     'runningHint': 'The task runs in the background; the UI stays responsive.',
-    'progressSummary': '{done} / {total}',
+    'exportingOutput': 'Exporting the finished disc to the selected folder...',
+    'exportProgress': 'Exporting ISO {done}/{total}',
+    'verifyMirroring': 'Reading the ISO images from the selected folder...',
+    'verifyMirrorProgress': 'Reading ISO {done}/{total}',
+    'verifySpaceInsufficient':
+        'Not enough internal storage to verify the disc. Free some space and try again.',
+    'sourceSpaceInsufficient':
+        'Not enough internal storage to prepare the selected folder. Free some space and try again.',
+    'cleanupFailedRetained':
+        'The disc was exported, but cleaning up the internal workspace failed. The workspace was kept so you can retry the cleanup.',
+    'retryCleanup': 'Retry cleanup',
+    'cleanupRetrying': 'Retrying the internal cleanup...',
+    'cleanupInternalCaches': 'Clean internal caches / old copies...',
+    'cleanupInternalCachesBody':
+        'Removes only rebuildable app-private data from older versions: SAF source mirrors, verification ISO mirrors and the old internal output folder. Your granted folders, exported ISOs and unfinished task workspace are kept. This does not replace the normal cleanup after a build.',
+    'cleanupInternalCachesDone': 'Cleaned internal caches: {size}',
+    'cleanupInternalCachesNothing': 'No internal caches to clean',
+    'cleanupInternalCachesFailed': 'Could not clean the internal caches',
+    'discardAndCleanup': 'Delete progress and clean up...',
+    'discardAndCleanupBody':
+        'Deletes the unfinished task workspace and rebuildable app-private data (SAF source mirrors, verification ISO mirrors and the old internal output folder). Your granted folders and exported ISOs are kept.',
+    'discardAndCleanupAction': 'Delete and clean',
+    'discardAndCleanupDone': 'Progress deleted; internal cleanup freed {size}',
+    'discardAndCleanupNothing':
+        'Progress deleted; no internal data needed cleaning',
+    'discardAndCleanupFailed':
+        'Could not delete progress or clean the internal data',
+    'progressPercent': '{percent}%',
   });
 
   static const AppStrings simplifiedChinese = AppStrings._(<String, String>{
@@ -237,7 +273,6 @@ class AppStrings {
     'advancedHint': '这些设置已经足够制作第一张光盘。需要光盘分组、菜单字体等高级选项时，请在右上角齿轮中开启“显示高级设置”。',
     'mlpNote': 'MLP 编码会进行无损压缩，适合大多数 DVD-Audio 制作。采样率和位深按右侧设置处理。',
     'lpcmNote': 'LPCM 不压缩音频，速度较快但占用空间更大。请确认光盘容量足够。',
-    'workDir': '临时工作目录',
     'isoPrefix': '镜像文件名前缀',
     'groupTrackLimit': '每组最多曲目',
     'titleMode': '标题分组',
@@ -282,6 +317,15 @@ class AppStrings {
     'statusDone': '已完成',
     'statusFailed': '失败',
     'statusCancelled': '已取消',
+    'statusBuildFailed': '制作失败',
+    'statusVerifyFailed': '验证失败',
+    'cancelledHint': '你主动停止了本次任务，未完成的进度已保留；可在设置中删除进度并清理。',
+    'retentionCancelledTitle': '已取消',
+    'retentionCancelledBody':
+        '你主动停止了本次任务。是否保留进度以便下次继续制作？删除进度只会删除此任务的中间文件，不会删除音源或已输出的 ISO。',
+    'retentionFailedTitle': '制作失败',
+    'retentionFailedBody':
+        '本次制作失败：{error}。是否保留进度以便下次继续制作？删除进度只会删除此任务的中间文件，不会删除音源或已输出的 ISO。',
     'copyLog': '复制当前内容',
     'exportLog': '导出详细日志...',
     'logCopied': '已复制日志',
@@ -329,7 +373,29 @@ class AppStrings {
     'cancel': '取消',
     'tasksIdleHint': '先检查音源，然后开始制作。制作过程可以随时停止。',
     'runningHint': '任务在后台运行，界面保持可响应。',
-    'progressSummary': '{done} / {total}',
+    'exportingOutput': '正在把成品导出到所选文件夹...',
+    'exportProgress': '正在导出 ISO {done}/{total}',
+    'verifyMirroring': '正在从所选文件夹读取 ISO 镜像...',
+    'verifyMirrorProgress': '正在读取 ISO {done}/{total}',
+    'verifySpaceInsufficient': '内部存储空间不足，无法校验成品。请释放空间后重试。',
+    'sourceSpaceInsufficient': '内部存储空间不足，无法准备所选文件夹。请释放空间后重试。',
+    'cleanupFailedRetained': '光盘已导出，但内部清理失败。工作区已保留，可重试清理。',
+    'retryCleanup': '重试清理',
+    'cleanupRetrying': '正在重试内部清理...',
+    'cleanupInternalCaches': '清理内部缓存/旧副本...',
+    'cleanupInternalCachesBody':
+        '仅删除旧版本留下的可重建应用内部数据：SAF 音源镜像、验证用 ISO 镜像和旧内部输出目录。不会删除你授权的文件夹、已导出的 ISO 和未完成任务工作区；此入口也不能代替制作结束时的正常清理。',
+    'cleanupInternalCachesDone': '已清理内部缓存：{size}',
+    'cleanupInternalCachesNothing': '没有可清理的内部缓存',
+    'cleanupInternalCachesFailed': '清理内部缓存失败',
+    'discardAndCleanup': '删除进度并清理...',
+    'discardAndCleanupBody':
+        '删除未完成任务工作区，以及可重建的应用内部数据（SAF 音源镜像、验证用 ISO 镜像和旧内部输出目录）。不会删除你授权的文件夹和已导出的 ISO。',
+    'discardAndCleanupAction': '删除并清理',
+    'discardAndCleanupDone': '已删除进度并清理内部数据：{size}',
+    'discardAndCleanupNothing': '已删除进度，没有可清理的内部数据',
+    'discardAndCleanupFailed': '删除进度或清理内部数据失败',
+    'progressPercent': '{percent}%',
   });
 
   static const AppStrings traditionalChinese = AppStrings._(<String, String>{
@@ -378,7 +444,6 @@ class AppStrings {
     'advancedHint': '這些設定已足夠製作第一張光碟。需要光碟分組、選單字型等進階選項時，請在右上角齒輪中開啟「顯示進階設定」。',
     'mlpNote': 'MLP 編碼會進行無損壓縮，適合大多數 DVD-Audio 製作。取樣率和位元深度按所選設定處理。',
     'lpcmNote': 'LPCM 不壓縮音訊，速度較快但占用空間更大。請確認光碟容量足夠。',
-    'workDir': '暫存工作目錄',
     'isoPrefix': '映像檔名前綴',
     'groupTrackLimit': '每組最多曲目',
     'titleMode': '標題分組',
@@ -423,6 +488,15 @@ class AppStrings {
     'statusDone': '已完成',
     'statusFailed': '失敗',
     'statusCancelled': '已取消',
+    'statusBuildFailed': '製作失敗',
+    'statusVerifyFailed': '驗證失敗',
+    'cancelledHint': '你主動停止了本次任務，未完成的進度已保留；可在設定中刪除進度並清理。',
+    'retentionCancelledTitle': '已取消',
+    'retentionCancelledBody':
+        '你主動停止了本次任務。是否保留進度以便下次繼續製作？刪除進度只會刪除此任務的中間檔案，不會刪除音源或已輸出的 ISO。',
+    'retentionFailedTitle': '製作失敗',
+    'retentionFailedBody':
+        '本次製作失敗：{error}。是否保留進度以便下次繼續製作？刪除進度只會刪除此任務的中間檔案，不會刪除音源或已輸出的 ISO。',
     'copyLog': '複製目前內容',
     'exportLog': '匯出詳細日誌...',
     'logCopied': '已複製日誌',
@@ -470,7 +544,29 @@ class AppStrings {
     'cancel': '取消',
     'tasksIdleHint': '先檢查音源，然後開始製作。製作過程可以隨時停止。',
     'runningHint': '任務在背景執行，介面保持可回應。',
-    'progressSummary': '{done} / {total}',
+    'exportingOutput': '正在將成品匯出到所選資料夾...',
+    'exportProgress': '正在匯出 ISO {done}/{total}',
+    'verifyMirroring': '正在從所選資料夾讀取 ISO 映像...',
+    'verifyMirrorProgress': '正在讀取 ISO {done}/{total}',
+    'verifySpaceInsufficient': '內部儲存空間不足，無法校驗成品。請釋放空間後重試。',
+    'sourceSpaceInsufficient': '內部儲存空間不足，無法準備所選資料夾。請釋放空間後重試。',
+    'cleanupFailedRetained': '光碟已匯出，但內部清理失敗。工作區已保留，可重試清理。',
+    'retryCleanup': '重試清理',
+    'cleanupRetrying': '正在重試內部清理...',
+    'cleanupInternalCaches': '清理內部快取/舊副本...',
+    'cleanupInternalCachesBody':
+        '僅刪除舊版本留下的可重建應用程式內部資料：SAF 音源鏡像、驗證用 ISO 鏡像和舊內部輸出目錄。不會刪除你授權的資料夾、已匯出的 ISO 和未完成任務工作區；此入口也不能代替製作結束時的正常清理。',
+    'cleanupInternalCachesDone': '已清理內部快取：{size}',
+    'cleanupInternalCachesNothing': '沒有可清理的內部快取',
+    'cleanupInternalCachesFailed': '清理內部快取失敗',
+    'discardAndCleanup': '刪除進度並清理...',
+    'discardAndCleanupBody':
+        '刪除未完成任務工作區，以及可重建的應用程式內部資料（SAF 音源鏡像、驗證用 ISO 鏡像和舊內部輸出目錄）。不會刪除你授權的資料夾和已匯出的 ISO。',
+    'discardAndCleanupAction': '刪除並清理',
+    'discardAndCleanupDone': '已刪除進度並清理內部資料：{size}',
+    'discardAndCleanupNothing': '已刪除進度，沒有可清理的內部資料',
+    'discardAndCleanupFailed': '刪除進度或清理內部資料失敗',
+    'progressPercent': '{percent}%',
   });
 
   static const AppStrings japanese = AppStrings._(<String, String>{
@@ -522,7 +618,6 @@ class AppStrings {
     'mlpNote':
         'MLP はロスレス圧縮で、ほとんどの DVD-Audio 制作に適しています。サンプルレートとビット深度は選択した設定に従います。',
     'lpcmNote': 'LPCM は高速ですが無圧縮のため容量を多く使用します。ディスク容量を確認してください。',
-    'workDir': '作業ディレクトリ',
     'isoPrefix': 'イメージファイル名の接頭辞',
     'groupTrackLimit': 'グループあたりの最大曲数',
     'titleMode': 'タイトルの区切り',
@@ -568,6 +663,15 @@ class AppStrings {
     'statusDone': '完了',
     'statusFailed': '失敗',
     'statusCancelled': 'キャンセル',
+    'statusBuildFailed': '作成失敗',
+    'statusVerifyFailed': '検証失敗',
+    'cancelledHint': 'ユーザーが今回のタスクを停止しました。未完了の進捗は保持され、設定から削除できます。',
+    'retentionCancelledTitle': 'キャンセルしました',
+    'retentionCancelledBody':
+        'ユーザーが今回のタスクを停止しました。次回再開するため進捗を保存しますか？削除するのはタスクの一時ファイルのみで、音源や出力済み ISO は削除しません。',
+    'retentionFailedTitle': '作成に失敗しました',
+    'retentionFailedBody':
+        '今回の作成に失敗しました：{error}。次回再開するため進捗を保存しますか？削除するのはタスクの一時ファイルのみで、音源や出力済み ISO は削除しません。',
     'copyLog': '表示をコピー',
     'exportLog': 'ログを保存...',
     'logCopied': 'ログをコピーしました',
@@ -616,7 +720,32 @@ class AppStrings {
     'cancel': 'キャンセル',
     'tasksIdleHint': 'まず音源を確認し、制作を開始します。いつでも停止できます。',
     'runningHint': 'タスクはバックグラウンドで実行され、UI は応答し続けます。',
-    'progressSummary': '{done} / {total}',
+    'exportingOutput': '完成したディスクを選択したフォルダーへエクスポートしています...',
+    'exportProgress': 'ISO をエクスポート中 {done}/{total}',
+    'verifyMirroring': '選択したフォルダーから ISO イメージを読み込んでいます...',
+    'verifyMirrorProgress': 'ISO を読み込み中 {done}/{total}',
+    'verifySpaceInsufficient':
+        '内部ストレージの空き容量が足りないため、ディスクを検証できません。容量を確保して再試行してください。',
+    'sourceSpaceInsufficient':
+        '内部ストレージの空き容量が足りないため、選択したフォルダーを準備できません。容量を確保して再試行してください。',
+    'cleanupFailedRetained':
+        'ディスクはエクスポートされましたが、内部の後片付けに失敗しました。ワークスペースは保持されているため、後片付けを再試行できます。',
+    'retryCleanup': '後片付けを再試行',
+    'cleanupRetrying': '内部の後片付けを再試行しています...',
+    'cleanupInternalCaches': '内部キャッシュ/旧コピーを削除...',
+    'cleanupInternalCachesBody':
+        '古いバージョンが残した再生成可能なアプリ内部データ（SAF ソースミラー、検証用 ISO ミラー、旧内部出力フォルダー）だけを削除します。許可したフォルダー、エクスポート済み ISO、未完了タスクのワークスペースは削除しません。制作終了時の通常の後片付けの代わりにはなりません。',
+    'cleanupInternalCachesDone': '内部キャッシュを削除しました：{size}',
+    'cleanupInternalCachesNothing': '削除できる内部キャッシュはありません',
+    'cleanupInternalCachesFailed': '内部キャッシュを削除できませんでした',
+    'discardAndCleanup': '進捗を削除して後片付け...',
+    'discardAndCleanupBody':
+        '未完了タスクのワークスペースと、再生成可能なアプリ内部データ（SAF ソースミラー、検証用 ISO ミラー、旧内部出力フォルダー）を削除します。許可したフォルダーとエクスポート済み ISO は削除しません。',
+    'discardAndCleanupAction': '削除して後片付け',
+    'discardAndCleanupDone': '進捗を削除し、内部データを整理しました：{size}',
+    'discardAndCleanupNothing': '進捗を削除しました。整理する内部データはありません',
+    'discardAndCleanupFailed': '進捗の削除または内部データの整理に失敗しました',
+    'progressPercent': '{percent}%',
   });
 
   static const AppStrings korean = AppStrings._(<String, String>{
@@ -668,7 +797,6 @@ class AppStrings {
     'mlpNote':
         'MLP 무손실 압축은 대부분의 DVD-Audio 제작에 적합합니다. 샘플 레이트와 비트 심도는 선택한 설정을 따릅니다.',
     'lpcmNote': 'LPCM은 빠르지만 압축되지 않아 더 많은 공간을 사용합니다. 디스크 용량을 확인하세요.',
-    'workDir': '작업 디렉터리',
     'isoPrefix': '이미지 파일 이름 접두사',
     'groupTrackLimit': '그룹당 최대 트랙 수',
     'titleMode': '타이틀 그룹',
@@ -714,6 +842,15 @@ class AppStrings {
     'statusDone': '완료',
     'statusFailed': '실패',
     'statusCancelled': '취소됨',
+    'statusBuildFailed': '제작 실패',
+    'statusVerifyFailed': '검증 실패',
+    'cancelledHint': '사용자가 이번 작업을 중지했습니다. 미완료 진행 상황은 유지되며 설정에서 삭제할 수 있습니다.',
+    'retentionCancelledTitle': '취소됨',
+    'retentionCancelledBody':
+        '사용자가 이번 작업을 중지했습니다. 다음에 계속할 수 있도록 진행 상황을 보관할까요? 삭제 시 이 작업의 중간 파일만 삭제하며 음원과 출력된 ISO는 삭제하지 않습니다.',
+    'retentionFailedTitle': '제작 실패',
+    'retentionFailedBody':
+        '이번 제작에 실패했습니다: {error}. 다음에 계속할 수 있도록 진행 상황을 보관할까요? 삭제 시 이 작업의 중간 파일만 삭제하며 음원과 출력된 ISO는 삭제하지 않습니다.',
     'copyLog': '현재 보기 복사',
     'exportLog': '전체 로그 남겨두기...',
     'logCopied': '로그를 복사했습니다',
@@ -762,7 +899,32 @@ class AppStrings {
     'cancel': '취소',
     'tasksIdleHint': '먼저 소스를 확인한 뒤 빌드를 시작하세요. 언제든지 중지할 수 있습니다.',
     'runningHint': '작업은 백그라운드에서 실행되며 UI는 계속 응답합니다.',
-    'progressSummary': '{done} / {total}',
+    'exportingOutput': '완성된 디스크를 선택한 폴더로 내보내는 중...',
+    'exportProgress': 'ISO 내보내는 중 {done}/{total}',
+    'verifyMirroring': '선택한 폴더에서 ISO 이미지를 읽는 중...',
+    'verifyMirrorProgress': 'ISO 읽는 중 {done}/{total}',
+    'verifySpaceInsufficient':
+        '내부 저장 공간이 부족하여 디스크를 검증할 수 없습니다. 공간을 확보한 뒤 다시 시도하세요.',
+    'sourceSpaceInsufficient':
+        '내부 저장 공간이 부족하여 선택한 폴더를 준비할 수 없습니다. 공간을 확보한 뒤 다시 시도하세요.',
+    'cleanupFailedRetained':
+        '디스크는 내보냈지만 내부 정리에 실패했습니다. 작업 공간이 유지되었으므로 정리를 다시 시도할 수 있습니다.',
+    'retryCleanup': '정리 다시 시도',
+    'cleanupRetrying': '내부 정리를 다시 시도하는 중...',
+    'cleanupInternalCaches': '내부 캐시/이전 복사본 정리...',
+    'cleanupInternalCachesBody':
+        '이전 버전이 남긴 재생성 가능한 앱 내부 데이터(SAF 소스 미러, 검증용 ISO 미러, 이전 내부 출력 폴더)만 삭제합니다. 권한을 부여한 폴더, 내보낸 ISO, 미완료 작업 공간은 삭제하지 않습니다. 이 항목은 빌드 종료 시의 일반 정리를 대신하지 않습니다.',
+    'cleanupInternalCachesDone': '내부 캐시를 정리했습니다: {size}',
+    'cleanupInternalCachesNothing': '정리할 내부 캐시가 없습니다',
+    'cleanupInternalCachesFailed': '내부 캐시를 정리하지 못했습니다',
+    'discardAndCleanup': '진행 삭제 및 정리...',
+    'discardAndCleanupBody':
+        '미완료 작업 공간과 재생성 가능한 앱 내부 데이터(SAF 소스 미러, 검증용 ISO 미러, 이전 내부 출력 폴더)를 삭제합니다. 권한을 부여한 폴더와 내보낸 ISO는 삭제하지 않습니다.',
+    'discardAndCleanupAction': '삭제 및 정리',
+    'discardAndCleanupDone': '진행을 삭제하고 내부 데이터를 정리했습니다: {size}',
+    'discardAndCleanupNothing': '진행을 삭제했습니다. 정리할 내부 데이터가 없습니다',
+    'discardAndCleanupFailed': '진행 삭제 또는 내부 데이터 정리에 실패했습니다',
+    'progressPercent': '{percent}%',
   });
 
   static AppStrings forCode(String code) {
@@ -785,9 +947,20 @@ class AppStrings {
   String capacitySummary(String size) =>
       _text('capacitySummary').replaceAll('{size}', size);
 
-  String progressSummary(String done, String total) => _text(
-    'progressSummary',
-  ).replaceAll('{done}', done).replaceAll('{total}', total);
+  String progressPercent(int percent) =>
+      _text('progressPercent').replaceAll('{percent}', percent.toString());
+
+  String exportProgress(int done, int total) => _text('exportProgress')
+      .replaceAll('{done}', done.toString())
+      .replaceAll('{total}', total.toString());
+
+  String verifyMirrorProgress(int done, int total) =>
+      _text('verifyMirrorProgress')
+          .replaceAll('{done}', done.toString())
+          .replaceAll('{total}', total.toString());
+
+  String cleanupInternalCachesDone(String size) =>
+      _text('cleanupInternalCachesDone').replaceAll('{size}', size);
 
   String statistics(int seconds, int problems) {
     final hours = (seconds ~/ 3600).toString();
@@ -851,7 +1024,6 @@ class AppStrings {
   String get advancedHint => _text('advancedHint');
   String get mlpNote => _text('mlpNote');
   String get lpcmNote => _text('lpcmNote');
-  String get workDir => _text('workDir');
   String get isoPrefix => _text('isoPrefix');
   String get groupTrackLimit => _text('groupTrackLimit');
   String get titleMode => _text('titleMode');
@@ -899,6 +1071,21 @@ class AppStrings {
   String get statusDone => _text('statusDone');
   String get statusFailed => _text('statusFailed');
   String get statusCancelled => _text('statusCancelled');
+
+  String get statusBuildFailed => _text('statusBuildFailed');
+
+  String get statusVerifyFailed => _text('statusVerifyFailed');
+
+  String get cancelledHint => _text('cancelledHint');
+
+  String get retentionCancelledTitle => _text('retentionCancelledTitle');
+
+  String get retentionCancelledBody => _text('retentionCancelledBody');
+
+  String get retentionFailedTitle => _text('retentionFailedTitle');
+
+  String retentionFailedBody(String error) =>
+      _text('retentionFailedBody').replaceAll('{error}', error);
   String get copyLog => _text('copyLog');
   String get exportLog => _text('exportLog');
   String get logCopied => _text('logCopied');
@@ -910,6 +1097,43 @@ class AppStrings {
   String get selectFinalRequired => _text('selectFinalRequired');
   String get selectExternalRequired => _text('selectExternalRequired');
   String get exportFailed => _text('exportFailed');
+
+  String get exportingOutput => _text('exportingOutput');
+
+  String get verifyMirroring => _text('verifyMirroring');
+
+  String get verifySpaceInsufficient => _text('verifySpaceInsufficient');
+
+  String get sourceSpaceInsufficient => _text('sourceSpaceInsufficient');
+
+  String get cleanupFailedRetained => _text('cleanupFailedRetained');
+
+  String get retryCleanup => _text('retryCleanup');
+
+  String get cleanupRetrying => _text('cleanupRetrying');
+
+  String get cleanupInternalCaches => _text('cleanupInternalCaches');
+
+  String get cleanupInternalCachesBody => _text('cleanupInternalCachesBody');
+
+  String get cleanupInternalCachesNothing =>
+      _text('cleanupInternalCachesNothing');
+
+  String get cleanupInternalCachesFailed =>
+      _text('cleanupInternalCachesFailed');
+
+  String get discardAndCleanup => _text('discardAndCleanup');
+
+  String get discardAndCleanupBody => _text('discardAndCleanupBody');
+
+  String get discardAndCleanupAction => _text('discardAndCleanupAction');
+
+  String get discardAndCleanupNothing => _text('discardAndCleanupNothing');
+
+  String get discardAndCleanupFailed => _text('discardAndCleanupFailed');
+
+  String discardAndCleanupDone(String size) =>
+      _text('discardAndCleanupDone').replaceAll('{size}', size);
   String get runningConfirm => _text('runningConfirm');
   String get stopAndExit => _text('stopAndExit');
   String get themeSystem => _text('themeSystem');

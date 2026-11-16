@@ -250,25 +250,21 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires build/menu-accept-old2 baseline; set DVDA_MENU_BASELINE_ROOT"]
     fn generates_the_baseline_audio_ts_vob() {
-        let root =
-            std::path::Path::new(r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker");
-        let menu = root.join("build/menu-accept-old2/menu.mpg");
-        let baseline = root.join("build/menu-accept-old2/导航 日本語/AUDIO_TS/AUDIO_TS.VOB");
-        let Ok(_) = std::fs::metadata(&menu) else {
-            return;
-        };
-        let expected = std::fs::read(&baseline).unwrap();
-        let xml = root.join("nav-test.xml");
+        let menu = super::dvdata::baseline_path("menu.mpg");
+        let expected = super::dvdata::baseline_file("导航 日本語/AUDIO_TS/AUDIO_TS.VOB");
+        let out = scratch();
+        let xml = out.join("nav-test.xml");
         let source = format!(
             "<dvdauthor jumppad=\"1\"><amgm><menus lang=\"en\"><video format=\"pal\"/><audio format=\"ac3\" lang=\"en\"/><pgc><button name=\"button01\">jump menu 1;</button><vob file=\"{}\"/></pgc></menus></amgm></dvdauthor>",
             menu.display().to_string().replace('\\', "/")
         );
         std::fs::write(&xml, source).unwrap();
-        let out = scratch();
-        let result = run(&xml, &out);
-        let _ = std::fs::remove_file(&xml);
-        result.unwrap();
+        if let Err(error) = run(&xml, &out) {
+            let _ = std::fs::remove_dir_all(&out);
+            panic!("menu generation for the baseline VOB failed: {error}");
+        }
         let generated = std::fs::read(out.join("AUDIO_TS/AUDIO_TS.VOB")).unwrap();
         let _ = std::fs::remove_dir_all(&out);
         assert_eq!(generated.len(), expected.len());

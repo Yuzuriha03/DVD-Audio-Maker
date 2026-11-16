@@ -27,9 +27,58 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     $app = Join-Path $root "apps/android"
+    # Both icon families are generated from the single master PNG by
+    # tools/android/generate-icons.py and committed; refuse to build with a
+    # missing density instead of failing later inside resource linking.
+    $iconDensities = @('mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi')
+    $icons = @()
+    foreach ($density in $iconDensities) {
+        $icons += Join-Path $app "android/app/src/main/res/mipmap-$density/ic_launcher.png"
+        $icons += Join-Path $app "android/app/src/main/res/drawable-$density/ic_stat_dvda.png"
+    }
+    $icons += Join-Path $root "assets/dvd-audio-maker.png"
+    foreach ($icon in $icons) {
+        if (-not (Test-Path -LiteralPath $icon -PathType Leaf)) {
+            throw "Icon is missing (run tools/android/generate-icons.py): $icon"
+        }
+    }
     & robocopy.exe $app $stagedApp /E /XD build .dart_tool .gradle /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
     $stageExit = $LASTEXITCODE
     if ($stageExit -ge 8) { throw "Cannot stage Flutter project in TEMP (robocopy exit $stageExit)." }
+
+    # Bundle the prepared menu font collection (the only font source on every
+    # platform) into the APK assets. Android only unpacks this asset into
+    # app-private storage; the shared Rust font resolution and fallbacks are
+    # unchanged, and no second font source is introduced.
+    $fontSha256 = "b0668861fa47b917873a1e670062f64c0ea5708b7f9db6941c4ed79fb6525131"
+    $fontCandidates = @(
+        (Join-Path $root "build/gui-only-author-v1.2/arm64/fonts/DvdaNotoCJK-Regular.ttc"),
+        (Join-Path $root "build/gui-only-author-v1.1/arm64/fonts/DvdaNotoCJK-Regular.ttc"),
+        (Join-Path $root "build/gui-only-author-v1.1/x64/fonts/DvdaNotoCJK-Regular.ttc"),
+        (Join-Path $root "build/msvc-native/package-assets/fonts/DvdaNotoCJK-Regular.ttc"),
+        (Join-Path $root "build/font-sources/optimized/DvdaNotoCJK-Regular.ttc")
+    )
+    $fontSource = $null
+    foreach ($candidate in $fontCandidates) {
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+        $hash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($hash -ne $fontSha256) {
+            throw "Menu font hash mismatch for $candidate : expected $fontSha256, got $hash. Reuse the prepared DvdaNotoCJK-Regular.ttc instead of creating another font source."
+        }
+        if ($null -eq $fontSource) { $fontSource = $candidate }
+    }
+    if ($null -eq $fontSource) {
+        throw "Prepared menu font DvdaNotoCJK-Regular.ttc is missing. Prepare it from the project font inputs before building the APK."
+    }
+    $fontTarget = Join-Path $stagedApp "android/app/src/main/assets/fonts/DvdaNotoCJK-Regular.ttc"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $fontTarget) -Force | Out-Null
+    Copy-Item -LiteralPath $fontSource -Destination $fontTarget -Force
+    $copiedFontHash = (Get-FileHash -LiteralPath $fontTarget -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($copiedFontHash -ne $fontSha256) {
+        throw "Staged menu font hash mismatch: $copiedFontHash"
+    }
+    Write-Output "Font=$fontSource"
+    Write-Output "FontSha256=$fontSha256"
 
     $gradleZip = Join-Path $root "build/gradle-9.5.0-all.zip"
     if (Test-Path -LiteralPath $gradleZip) {
@@ -48,7 +97,10 @@ try {
     $sdkInitDir = Join-Path $gradleHome "init.d"
     New-Item -ItemType Directory -Path $sdkInitDir -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $root "tools/android/android-sdk.init.gradle") -Destination (Join-Path $sdkInitDir "android-sdk.gradle") -Force
-    Write-Output "Android compileSdk=37 buildTools=37.0.0 minSdk=24 targetSdk=37"
+    $compileSdk = 37
+    $minSdk = 24
+    $targetSdk = 37
+    Write-Output "Android compileSdk=$compileSdk buildTools=37.0.0 minSdk=$minSdk targetSdk=$targetSdk"
     $env:GRADLE_USER_HOME = $gradleHome
     $flutter = Join-Path $root "build/flutter/bin/flutter.bat"
     Push-Location $stagedApp
@@ -63,8 +115,22 @@ try {
     if (-not (Test-Path -LiteralPath $builtApk)) { throw "Gradle succeeded but APK is missing: $builtApk" }
     $output = Join-Path $root "apps/android/build/app/outputs/flutter-apk"
     New-Item -ItemType Directory -Path $output -Force | Out-Null
-    Copy-Item -LiteralPath $builtApk -Destination (Join-Path $output "app-release.apk") -Force
-    Write-Output "APK=$(Join-Path $output "app-release.apk")"
+    $apk = Join-Path $output "app-release.apk"
+    Copy-Item -LiteralPath $builtApk -Destination $apk -Force
+    Write-Output "APK=$apk"
+    # Provenance record: commit, version/targets/SDK read back from the APK with
+    # aapt2, NDK revision, icon hashes and the APK SHA-256. The record states
+    # build-only verification; it never claims a device run.
+    & (Join-Path $root "tools/android/release-metadata.ps1") `
+        -ApkPath $apk `
+        -RepoRoot $root `
+        -AndroidTarget "android-arm64" `
+        -RustTarget "aarch64-linux-android" `
+        -CompileSdk $compileSdk `
+        -MinSdk $minSdk `
+        -TargetSdk $targetSdk `
+        -AndroidSdkRoot $env:ANDROID_HOME
+    Write-Output "ReleaseRecord=$(Join-Path $output "release-build.json")"
 } finally {
     $resolvedTempBase = [System.IO.Path]::GetFullPath($tempBase)
     $resolvedWorkRun = [System.IO.Path]::GetFullPath($workRun)

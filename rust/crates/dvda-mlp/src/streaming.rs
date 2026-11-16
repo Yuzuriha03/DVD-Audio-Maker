@@ -1,19 +1,19 @@
-use crate::{Error, encoder::stamp, metadata::Metadata};
+use crate::{Error, header::stamp, metadata::Metadata};
 
-#[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+#[cfg(test)]
 struct StampPacket {
     start: u64,
     bits: Vec<u32>,
     partial: bool,
 }
 
-/// Validates metadata packets and, on the fallback path, advances their bit cursor.
+/// Validates metadata packets and, in tests, advances their bit cursor.
 pub(crate) struct MetadataCursor {
-    #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+    #[cfg(test)]
     packets: Vec<StampPacket>,
-    #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+    #[cfg(test)]
     record: usize,
-    #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+    #[cfg(test)]
     position: usize,
 }
 impl MetadataCursor {
@@ -21,7 +21,7 @@ impl MetadataCursor {
         if records.is_empty() || records[0].start != 0 {
             return Err(Error::InvalidMetadata);
         }
-        #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+        #[cfg(test)]
         let mut packets = Vec::new();
         for (i, r) in records.iter().enumerate() {
             let p = &r.packet;
@@ -48,7 +48,7 @@ impl MetadataCursor {
             {
                 return Err(Error::InvalidMetadata);
             }
-            let bits = if partial {
+            if partial {
                 let mut bits = vec![1; 9];
                 let mut ones = 0;
                 for n in 0..r.valid_bits as usize {
@@ -66,29 +66,31 @@ impl MetadataCursor {
                 if end - r.start > bits.len() as u64 {
                     return Err(Error::InvalidMetadata);
                 }
-                bits
+                #[cfg(test)]
+                packets.push(StampPacket {
+                    start: r.start,
+                    bits,
+                    partial,
+                });
             } else {
-                full
-            };
-            #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
-            packets.push(StampPacket {
-                start: r.start,
-                bits,
-                partial,
-            });
-            #[cfg(all(not(test), any(target_arch = "x86_64", target_os = "android")))]
-            let _ = bits;
+                #[cfg(test)]
+                packets.push(StampPacket {
+                    start: r.start,
+                    bits: full,
+                    partial,
+                });
+            }
         }
         Ok(Self {
-            #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+            #[cfg(test)]
             packets,
-            #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+            #[cfg(test)]
             record: 0,
-            #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+            #[cfg(test)]
             position: 0,
         })
     }
-    #[cfg(any(test, not(any(target_arch = "x86_64", target_os = "android"))))]
+    #[cfg(test)]
     pub(crate) fn next(&mut self, au: usize) -> u32 {
         if self
             .packets

@@ -1,5 +1,7 @@
+#[cfg(test)]
 use std::borrow::Cow;
 
+#[cfg(test)]
 use crate::format::Profile;
 
 #[derive(Clone, Debug)]
@@ -13,11 +15,13 @@ pub struct Config {
 }
 
 /// Configuration admitted by the batch API, including its PCM shape checks.
+#[cfg(test)]
 pub(crate) struct BatchConfig<'a> {
     config: Cow<'a, Config>,
     samples_per_access_unit: u32,
 }
 
+#[cfg(test)]
 impl<'a> BatchConfig<'a> {
     pub(crate) fn new(
         config: &'a Config,

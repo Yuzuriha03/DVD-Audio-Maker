@@ -48,6 +48,7 @@ use std::{
 mod about;
 mod commands;
 mod controls;
+mod dialog_ui;
 mod dialogs;
 mod draw;
 mod frame;
@@ -70,7 +71,7 @@ use controls::{
     create_controls, create_from_spec, get_text, numeric_choice, populate_numeric_choice, set_text,
     show_window, sync_combo_overlays, tooltip_info, window_class,
 };
-use dialogs::{FileKind, browse_target, file_dialog, message_box, open_output};
+use dialogs::{FileKind, browse_target, file_dialog, open_output};
 use draw::{
     begin_buffered_paint, buffered_label_proc, clear_window_paint_cache, combo_item_text,
     draw_owner_item, draw_text_run, fill_round_rect, finish_buffered_paint, paint_page,
@@ -150,6 +151,9 @@ const WM_MOUSELEAVE: u32 = 0x02a3;
 const WM_NCDESTROY: u32 = 0x0082;
 const WM_MOUSEMOVE: u32 = 0x0200;
 const VK_RETURN: usize = 0x0d;
+const VK_ESCAPE: usize = 0x1b;
+/// `GA_ROOT`: the top-level window of a child window.
+const GA_ROOT: u32 = 2;
 const PBM_SETBARCOLOR: u32 = 0x0409;
 const PBM_SETBKCOLOR: u32 = 0x2001;
 const CB_GETDROPPEDSTATE: u32 = 0x0157;
@@ -628,6 +632,7 @@ unsafe extern "system" {
     fn SetTimer(hwnd: Hwnd, id: usize, millis: u32, callback: *const c_void) -> usize;
     safe fn KillTimer(hwnd: Hwnd, id: usize) -> i32;
     safe fn SetFocus(hwnd: Hwnd) -> Hwnd;
+    safe fn SetForegroundWindow(hwnd: Hwnd) -> i32;
     safe fn SetCapture(hwnd: Hwnd) -> Hwnd;
     safe fn ReleaseCapture() -> i32;
     safe fn GetCapture() -> Hwnd;
@@ -641,7 +646,6 @@ unsafe extern "system" {
     safe fn SetWindowPlacement(hwnd: Hwnd, placement: &WindowPlacement) -> i32;
     safe fn SetCursor(cursor: Handle) -> Handle;
     safe fn EnableWindow(hwnd: Hwnd, enable: i32) -> i32;
-    fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, flags: u32) -> i32;
     fn LoadCursorW(instance: Hinstance, name: *const u16) -> Handle;
     safe fn GetSysColorBrush(index: i32) -> Hbrush;
     fn InvalidateRect(hwnd: Hwnd, rect: *const Rect, erase: i32) -> i32;
@@ -856,7 +860,11 @@ enum WorkerEvent {
     Log(String),
     Progress(u16),
     Finished(UiEvent),
-    Retention(Box<AppOptions>),
+    Retention {
+        options: Box<AppOptions>,
+        cancelled: bool,
+        error: String,
+    },
 }
 
 struct Controls {
@@ -1082,6 +1090,18 @@ impl Callbacks for WorkerCallbacks {
     }
 }
 
+impl dvda_core::gui::GuiCallbacks for WorkerCallbacks {
+    fn set_progress_range(&mut self, start: u64, end: u64) {
+        let start = u16::try_from(start.min(100)).unwrap_or(100);
+        let end = u16::try_from(end.min(100)).unwrap_or(100);
+        WorkerCallbacks::set_progress_range(self, start, end);
+    }
+
+    fn as_callbacks(&mut self) -> &mut dyn Callbacks {
+        self
+    }
+}
+
 fn main() {
     let started = parse_startup_args(
         std::env::args().skip(1),
@@ -1102,11 +1122,13 @@ fn main() {
             .and_then(Option::as_ref)
             .and_then(|p| profile_language(p))
             .unwrap_or_else(|| "auto".into());
-        message_box(
+        let lang = startup_language(&profile_language);
+        dialog_ui::show_message(
             ptr::null_mut(),
-            &localized_detail(startup_language(&profile_language), &error),
-            "DVD-Audio Maker",
-            0x10,
+            lang,
+            dialog_ui::DialogKind::Error,
+            tr(lang, "dialog_error_title"),
+            &localized_detail(lang, &error),
         );
         std::process::exit(1);
     }
@@ -1122,7 +1144,7 @@ fn parse_startup_args(
     args: impl IntoIterator<Item = String>,
     environment_language: Option<&str>,
 ) -> Result<StartupArgs, String> {
-    let usage = "Usage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|zh-TW|ja]";
+    let usage = "Usage: DVD-Audio-Maker [--profile profile.json | --config profile.json] [--language auto|en|zh-CN|zh-TW|ja|ko]";
     let mut result = StartupArgs {
         profile: None,
         language: None,
@@ -1159,13 +1181,23 @@ fn parse_startup_args(
 }
 
 fn normalize_startup_language(value: &str) -> Result<String, String> {
+    // Accept every alias the UI itself understands so all five languages,
+    // including Traditional Chinese and Korean, can be selected from the
+    // command line or DVDA_LANGUAGE without falling back to the system locale.
     if !matches!(
         value.trim().to_ascii_lowercase().as_str(),
         "" | "auto"
             | "zh"
             | "zh-cn"
             | "zh-hans"
+            | "zh-tw"
+            | "zh-hant"
+            | "zh-hk"
+            | "zh-mo"
             | "中文"
+            | "简体中文"
+            | "繁體中文"
+            | "繁体中文"
             | "en"
             | "en-us"
             | "en-gb"
@@ -1174,6 +1206,10 @@ fn normalize_startup_language(value: &str) -> Result<String, String> {
             | "ja-jp"
             | "japanese"
             | "日本語"
+            | "ko"
+            | "ko-kr"
+            | "korean"
+            | "한국어"
     ) {
         return Err("Language must be auto, en, zh-CN, zh-TW, ja, or ko.".into());
     }
@@ -1376,41 +1412,91 @@ fn run() -> Result<(), String> {
             break;
         }
         unsafe {
-            // The primary action owns Enter, but focused text fields, drop-down
-            // lists and buttons keep their own keyboard behaviour.
-            if message.id == WM_KEYDOWN && message.wparam == VK_RETURN {
-                let focus = GetFocus();
-                if focus.is_null() {
-                    win::send_int(window, WM_COMMAND, ID_BUILD, 0);
-                    continue;
-                }
-                let class = window_class(focus);
-                if class == "Edit" {
-                    // Let the edit field consume Enter (and never start a build
-                    // while the user is editing a path or title).
-                } else if class == "ComboBox" {
-                    if win::send_int(focus, CB_GETDROPPEDSTATE, 0, 0) == 0 {
-                        win::send_int(window, WM_COMMAND, ID_BUILD, 0);
-                        continue;
-                    }
-                } else if class == "Button" {
-                    let id = GetDlgCtrlID(focus);
-                    if id > 0 {
-                        win::send_int(window, WM_COMMAND, (id as isize).cast_unsigned(), 0);
-                    }
-                    continue;
-                } else {
-                    win::send_int(window, WM_COMMAND, ID_BUILD, 0);
-                    continue;
-                }
+            if handle_keydown(&message, window, GetFocus()) {
+                continue;
             }
-            if IsDialogMessageW(window, &raw mut message) == 0 {
+            // Tab, focus and dialog keys belong to the top-level window that
+            // owns the focused control (the main window or the separate About
+            // page), never unconditionally to the main window.
+            let target = dialog_target(window, message.hwnd);
+            if IsDialogMessageW(target, &raw mut message) == 0 {
                 TranslateMessage(&message);
                 DispatchMessageW(&raw const message);
             }
         }
     }
     Ok(())
+}
+
+/// Top-level window that owns `message_window`.
+///
+/// Dialog messages (Tab, focus, default-button handling) must be processed by
+/// the window that actually owns the focused control. The About page is a
+/// separate top-level window, so falling back to the main window there dropped
+/// Tab traversal and misrouted Enter commands.
+fn dialog_target(main: Hwnd, message_window: Hwnd) -> Hwnd {
+    if message_window.is_null() {
+        return main;
+    }
+    let root = GetAncestor(message_window, GA_ROOT);
+    if root.is_null() { main } else { root }
+}
+
+/// Shared Enter/Escape shortcuts.
+///
+/// `main` is the settings window and `focus` the current keyboard focus (which
+/// may belong to another top-level window such as the About page). Returns
+/// true when the message was consumed by a shortcut.
+fn handle_keydown(message: &Message, main: Hwnd, focus: Hwnd) -> bool {
+    if message.id != WM_KEYDOWN {
+        return false;
+    }
+    if message.wparam == VK_ESCAPE {
+        let root = dialog_target(main, message.hwnd);
+        if root != main && window_class(root) == "DVD_AUDIO_ABOUT_RUST" {
+            unsafe {
+                PostMessageW(root, WM_CLOSE, 0, 0);
+            }
+            return true;
+        }
+        return false;
+    }
+    if message.wparam != VK_RETURN {
+        return false;
+    }
+    if focus.is_null() {
+        win::send_int(main, WM_COMMAND, ID_BUILD, 0);
+        return true;
+    }
+    let root = dialog_target(main, focus);
+    match window_class(focus).as_str() {
+        // Let the edit field consume Enter (and never start a build while the
+        // user is editing a path or title).
+        "Edit" => false,
+        "ComboBox" => {
+            if win::send_int(focus, CB_GETDROPPEDSTATE, 0, 0) != 0 {
+                false
+            } else {
+                if root == main {
+                    win::send_int(main, WM_COMMAND, ID_BUILD, 0);
+                }
+                true
+            }
+        }
+        "Button" => {
+            let id = GetDlgCtrlID(focus);
+            if id > 0 {
+                win::send_int(root, WM_COMMAND, (id as isize).cast_unsigned(), 0);
+            }
+            true
+        }
+        _ => {
+            if root == main {
+                win::send_int(main, WM_COMMAND, ID_BUILD, 0);
+            }
+            true
+        }
+    }
 }
 
 /// The main window's `UiState`, or `None` if `hwnd` is not the main window, is not

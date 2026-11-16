@@ -17,11 +17,11 @@ Compose/classic View 业务界面，也不使用手写 JNI 业务桥。
 
 ## 构建
 
-### Windows（推荐）
+**唯一构建/发布入口**：
 
     powershell -ExecutionPolicy Bypass -File tools/android/build-flutter.ps1
 
-脚本会加载 `tools/android/ndk-env.ps1`，编译
+脚本会加载 `tools/android/ndk-env.ps1`（NDK r30、API 24 的 clang/linker），编译
 `rust/crates/dvda-android`（`aarch64-linux-android`），把
 `libdvda_android.so` 复制到 TEMP 中的暂存工程，再用
 `build/flutter/bin/flutter.bat` 执行
@@ -30,21 +30,18 @@ Compose/classic View 业务界面，也不使用手写 JNI 业务桥。
 为避免在 TF 卡等慢速盘上展开大量小文件，脚本把 Cargo target、Gradle 缓存和 Flutter
 暂存工程放到 `%TEMP%\dvda-android-build`；每次使用独立的暂存工程，完成后只将
 `app-release.apk` 复制回项目的 `apps/android/build/app/outputs/flutter-apk/`。
+不再维护第二个 shell/手打包入口：手工复制 `.so`、aapt2/kotlinc/D8 拼包都不属于当前流程。
 
 APK 完全由 Flutter/Gradle 打包和签名，不使用二次 ZIP 重写。通过标准
 `useLegacyPackaging` 压缩 JNI 库；`stripReleaseNativeSymbols` 在 AGP 打包前剥离原生库调试符号，
-再由 AGP 正常压缩、对齐和签名。当前产物使用 v2 签名。
-当前 Android 构建使用本机 debug keystore 签名；它适合安装测试，不是商店正式发布签名。
+再由 AGP 正常压缩、对齐和签名。当前产物启用 v1+v2 签名。
+签名使用本机 debug keystore；它适合安装测试，不是商店或正式发布签名。
 
-### 已配置 NDK/Flutter 的 shell
-
-    apps/android/build-apk.sh
-
-该脚本要求 `cargo`、`flutter` 在 PATH 中，并已导出 NDK 环境变量；它只做
-Rust 编译、复制 `.so` 和 `flutter build apk`。
-
-APK 通常输出到
-`apps/android/build/app/outputs/flutter-apk/app-release.apk`。
+复制 APK 后，脚本调用 `tools/android/release-metadata.ps1` 在 APK 旁生成
+`release-build.json`，记录 commit、versionName/versionCode、`android-arm64` /
+`aarch64-linux-android`、NDK revision、compileSdk/minSdk/targetSdk、APK 字节数与
+SHA-256，并在控制台打印哈希。该记录同时写明 `"deviceVerified": false`：
+构建成功只代表编译通过，不代表已在真机运行。
 
 ### 生成 FRB Dart 绑定
 
@@ -56,6 +53,41 @@ APK 通常输出到
 配置见 `apps/android/flutter_rust_bridge.yaml`；生成目录为
 `apps/android/lib/src/rust/`。
 
+## 验证
+
+产物核对（使用本机 `build/android-sdk` 中的 build-tools）：
+
+    $apk = 'apps/android/build/app/outputs/flutter-apk/app-release.apk'
+    & build/android-sdk/build-tools/37.0.0/aapt2.exe dump badging $apk |
+        Select-String 'package:|sdkVersion|native-code'
+    & build/android-sdk/build-tools/37.0.0/apksigner.bat verify --print-certs $apk
+    Get-FileHash -Algorithm SHA256 $apk
+
+Rust bridge 门禁（`dvda-android` 被排除在 `rust` workspace 之外，`--workspace`
+不会覆盖它，必须单独运行）：
+
+    cargo clippy --manifest-path rust/crates/dvda-android/Cargo.toml `
+        --target aarch64-linux-android --all-targets -- -D warnings
+    cargo test --manifest-path rust/crates/dvda-android/Cargo.toml --lib
+
+host 测试只跑 `--lib`：`examples/dlopen.rs` 是 Android/Linux 的 dlopen 探针，
+Windows host 无法链接 `dl`。
+
+Flutter 检查（需要 `build/flutter` 的 `flutter` 在 PATH 中）：
+
+    cd apps/android
+    flutter analyze
+    flutter test
+
+真机安装与启动（用于确认 APK 能安装并启动，不代替业务链路验证）：
+
+    build/android-sdk/platform-tools/adb.exe install -r $apk
+    build/android-sdk/platform-tools/adb.exe shell am start -n com.dvda.maker/.MainActivity
+    build/android-sdk/platform-tools/adb.exe logcat -s DvdaMaker flutter
+
+以上任意一项通过都只代表对应层级通过；ARM64 真机上的完整
+prepare → 编码 → author → verify 链路需要单独在设备上执行。
+
 ## 工具链
 
 - Flutter 3.50.0 stable：官方预编译包，已解压到 `build/flutter`；不要 clone
@@ -63,6 +95,15 @@ APK 通常输出到
 - Android NDK：`build/android-ndk-r30`；`tools/android/ndk-env.ps1` 设置
   `ANDROID_NDK_ROOT`、API 24 的 clang/linker 与 `DVDA_FFMPEG_PREFIX`。
 - Rust：stable，target `aarch64-linux-android`。
+- 图标：只由 `assets/dvd-audio-maker.png` 生成，入口
+  `tools/android/generate-icons.py`（launcher mipmap + 通知栏小图标）。
+- 菜单字体：复用项目既有已准备字体 `DvdaNotoCJK-Regular.ttc`
+  （sha256 `b0668861…5131`，14,251,880 字节）。构建要求它的 x64/arm64
+  prebuilt 副本完全一致；`tools/android/build-flutter.ps1` 校验哈希后把它复制进
+  暂存工程的 `android/app/src/main/assets/fonts/`，不下载、也不新增第二字体来源。
+  缺失时先按 `tools/win-build/README.md` 的字体流程准备。
+- 发布记录：`tools/android/release-metadata.ps1` 由
+  `tools/android/build-flutter.ps1` 自动调用，输出 `release-build.json`。
 
 ## Android 约束
 
@@ -89,13 +130,40 @@ APK 通常输出到
 - 字体设置归入高级设置并支持 SAF 选择；封面暗化保留滑块
 - 日志支持仅问题过滤、复制和 SAF 导出；状态区显示运行时长与问题数
 - 平台文件操作走 `MethodChannel('dvda/platform')`：
-  `pickDirectory`、`linkDirectory`、`openProfile`、`saveProfile`、
-  `saveTextFile`、`exportDirectory`、`openOutput`、`pickFont`
+  `pickDirectory`、`linkDirectory`、`ensureSourceLink`、`linkIsoDirectory`、
+  `releaseIsoDirectory`、`exportDirectory`、`cancelExport`、
+  `cancelIsoMirror`、`releaseTaskCaches`、`ensureRuntimeFonts`、
+  `cleanupInternalCaches`、`openProfile`、`saveProfile`、`saveTextFile`、
+  `openOutput`、`pickFont`
+- SAF 导出是事务：先写临时 SAF 文档并校验长度/SHA-256，再把旧成品改名为备份、
+  用已校验文档替换；任一步失败都回滚并保留旧成品，失败不删除任务工作区。
+  只有校验通过的导出才会调用共享 finish；finish 失败显示本地化清理失败、
+  保留可恢复工作区并提供重试，绝不显示成功
+- 导出期间进度保持 99，只有共享 finish 成功才由 Rust 置为 100；导出前后与
+  ISO 镜像过程都响应取消
+- 验证按共享 ISO 前缀规则只复制预期成品 ISO 到 app-private 镜像（不再复制整个
+  输出目录的 ISO），名称保留完整可验证文件名、不截断；复制前按 64 MiB 余量检查
+  app-private 空间，带进度与取消，镜像用完即由适配器释放
+- 交付后单独验证会按需重建源/外部镜像（共享验证无 workspace 时需从源重建
+  references）；这些镜像属于 I/O 缓存，在本操作的 finally 中通过现有缓存适配器
+  释放并清空 staging，仅当仍有可续跑的 unfinished task 时保留（与 Windows 保留
+  工作区一致），不会常驻到下次导出或依赖手动清理
+- 源/外部目录镜像复制前逐文件按 64 MiB 余量检查 app-private 空间，不足时安全
+  失败、删除半成品镜像并返回本地化提示，不残留部分文件
+- 内部缓存（SAF 源镜像、验证 ISO 镜像、旧内部 output）属于可重建 I/O 缓存：
+  导出适配器在本次导出成功后释放本任务的源镜像；设置页的“删除进度并清理”是
+  唯一显式用户确认入口，一次确认后先走共享 discard 删除未完成任务工作区，再经
+  Kotlin 缓存适配器删除上述已知目录；无未完成任务时也允许单独清缓存，不删除
+  SAF 授权目录和已导出的 ISO
+- 菜单字体来自唯一项目字体母版：官方构建把准备好的 `DvdaNotoCJK-Regular.ttc`
+  打入 APK assets，Kotlin 在启动/任务前解压到
+  `files/runtime/fonts/DvdaNotoCJK-Regular.ttc`；不下载、不引入第二字体来源
 - 任务运行期间轮询 progress，不阻塞 UI；取消通过 `cancel()` 传到 dvda-core 的 Callbacks
 
 ## 验证范围
 
-- dvda-core 的完整 prepare → MLP/LPCM → author → ISO → verify 链路此前已在
-  aarch64 Android 环境跑通，详见 `docs/dvda-android-port-notes.md`。
-- 本文档描述 Flutter/FRB 构建入口；在 x64 主机编译成功不等于 ARM64 真机运行通过。
-- 当前只验证/支持 ARM64；发布签名、安装包体积与真机 UI 回归以实际构建结果为准。
+- 历史记录：早期 JNI/proot 阶段曾在 aarch64 Android 环境跑通完整链路，见
+  `docs/dvda-android-port-notes.md`（该文是历史实测记录，不代表当前 Flutter+FRB 构建）。
+- 当前 Flutter+FRB 入口产出的是编译结果与 `release-build.json`；构建成功只代表
+  编译通过，不等于 ARM64 真机运行通过，也不代表业务链路已验证。
+- 当前只发布/支持 ARM64；发布签名、安装包体积与真机 UI 回归以实际构建结果为准。

@@ -19,58 +19,11 @@ pub fn phrase(
 }
 
 pub fn problem(text: &str) -> bool {
-    let text = text.trim();
-    if text.starts_with("[METRIC] ") {
-        return false;
-    }
-    if let Some(event) = dvda_core::task_log::parse(text) {
-        return event.warning || event.action == "pcm_failed";
-    }
-    if text.starts_with('{')
-        && let Ok(event) = serde_json::from_str::<serde_json::Value>(text)
-    {
-        return match event.get("Kind").and_then(serde_json::Value::as_str) {
-            Some("PcmError") => true,
-            Some("Detail") => event
-                .get("Value")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(problem),
-            _ => false,
-        };
-    }
-    let lower = text.to_ascii_lowercase();
-    text.contains("VOLUME_ID_MISMATCH:")
-        || text.starts_with(['?'])
-        || text.starts_with("!!")
-        || [
-            "[err]",
-            "[error]",
-            "[fail]",
-            "[fatal]",
-            "[war]",
-            "[warn]",
-            "[warning]",
-            "[警告]",
-            "[错误]",
-            "warning:",
-            "warn:",
-            "[ffmpeg pcm]",
-        ]
-        .iter()
-        .any(|p| lower.starts_with(p))
-        || lower
-            .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
-            .any(|word| matches!(word, "error" | "failed" | "fatal" | "cannot"))
-        || ["could not", "no such file", "not found"]
-            .iter()
-            .any(|p| lower.contains(p))
-        || text.contains("失败")
-        || text.contains("错误")
+    dvda_core::log_view::problem(text)
 }
 
 pub fn activity_only(text: &str) -> bool {
-    text.starts_with("[PCM] ")
-        || serde_json::from_str::<serde_json::Value>(text).is_ok_and(|v| v["Kind"] == "PcmProgress")
+    dvda_core::log_view::activity_only(text)
 }
 
 #[allow(
@@ -79,14 +32,7 @@ pub fn activity_only(text: &str) -> bool {
 )]
 pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String> {
     let text = text.trim();
-    if text.starts_with("[METRIC] ") {
-        return None;
-    }
-    // Repetitive author diagnostics are retained verbatim in the archive.
-    // The coordinator emits category summaries, including warning severity.
-    if text.starts_with("[menu-cover] oversized ")
-        || text.starts_with("WARN: Button y coordinates are odd for button ")
-    {
+    if dvda_core::log_view::is_hidden_summary_header(text) {
         return None;
     }
     if let Some(message) = task_message(lang, text) {
@@ -98,12 +44,7 @@ pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String>
     if let Some(message) = group_message(lang, text) {
         return Some(message);
     }
-    if text.is_empty()
-        || activity_only(text)
-        || text.starts_with("[debug]")
-        || text.starts_with("[MLP] 临时目录:")
-        || text.starts_with("[MLP] MLP 输出目录:")
-    {
+    if dvda_core::log_view::is_hidden_summary_detail(text) {
         return None;
     }
     if text.contains("VOLUME_ID_MISMATCH:") {
@@ -185,37 +126,8 @@ pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String>
         }
         return Some(localized_log(lang, text));
     }
-    // New Rust progress prefixes replace the old pipeline's console summaries.
-    let known = [
-        "发现 ",
-        "共需重采样 ",
-        "[缓存]",
-        "[MLP]",
-        "[MLP-PROGRESS] ",
-        "[MLP-CHECK] ",
-        "[MLP DLL]",
-        "[menu-cover]",
-        "[LPCM]",
-        "[prepare]",
-        "[build]",
-        "[verify]",
-        "[author] disc ",
-        "[resume]",
-        "[menu]",
-        "[续跑]",
-        "[恢复]",
-        "总计 ",
-        "总曲目 ",
-        "第 ",
-        "容量检查：",
-        "=== 分盘结果",
-        "成品：",
-        "报告已写入:",
-        "manifest.json 已生成",
-        "[信息]",
-    ];
     let translated = localized_detail(lang, text);
-    if known.iter().any(|prefix| text.starts_with(prefix))
+    if dvda_core::log_view::is_summary_prefix(text)
         || translated != text
         || [
             "ready",
@@ -271,29 +183,13 @@ pub fn activity(lang: Lang, text: &str) -> Option<String> {
     if activity_only(text) {
         return Some(localized_log(lang, text));
     }
-    if text.starts_with("[space]")
-        || text.starts_with("Number of samples:")
-        || text.starts_with("[menu-cover] oversized ")
-        || text.starts_with("WARN: Button y coordinates are odd for button ")
-    {
+    if dvda_core::log_view::is_hidden_activity(text) {
         return None;
     }
     if problem(text) {
         return summary(lang, text, true);
     }
-    let relevant = [
-        "[MLP-CHECK]",
-        "[MLP-PROGRESS]",
-        "[MLP-FINALIZE]",
-        "[menu-cover]",
-        "[author]",
-        "[verify]",
-        "[LPCM]",
-        "[续跑]",
-        "[恢复]",
-        "[TASK]",
-    ];
-    if relevant.iter().any(|prefix| text.starts_with(prefix)) || text.starts_with('{') {
+    if dvda_core::log_view::is_activity_relevant(text) {
         return summary(lang, text, false);
     }
     None
@@ -304,388 +200,13 @@ pub fn activity(lang: Lang, text: &str) -> Option<String> {
     reason = "Keeps ordered task-message classification and complete translations together"
 )]
 pub fn task_message(lang: Lang, raw: &str) -> Option<String> {
-    let event = dvda_core::task_log::parse(raw)?;
-    let c = event.current;
-    let t = event.total;
-    let n = &event.name;
-    let d = &event.detail;
-    let position = format!("{c}/{t}");
-    let label = |zh, hant, en, ja, ko| phrase(lang, zh, hant, en, ja, ko);
-    let base = match event.action.as_str() {
-        "source_metadata" => format!(
-            "{} {position}",
-            label(
-                "读取曲目信息：",
-                "讀取曲目資訊：",
-                "Reading track information:",
-                "曲情報を読み込み中：",
-                "트랙 정보 읽는 중:"
-            )
-        ),
-        "source_decode" => format!(
-            "{} {position}",
-            label(
-                "检查音源解码：",
-                "檢查音源解碼：",
-                "Checking source decoding:",
-                "音源のデコードを確認中：",
-                "음원 디코딩 확인 중:"
-            )
-        ),
-        "source_result" => format!(
-            "{} {position}",
-            label(
-                "整理音源检查结果：",
-                "整理音源檢查結果：",
-                "Processing source check results:",
-                "音源の確認結果を整理中：",
-                "음원 검사 결과 정리 중:"
-            )
-        ),
-        "source_checked" => {
-            return Some(format!(
-                "{} {c}",
-                label(
-                    "音源检查完成，曲目数：",
-                    "音源檢查完成，曲目數：",
-                    "Source checks completed; tracks:",
-                    "音源の確認完了、曲数：",
-                    "음원 검사 완료; 트랙 수:"
-                )
-            ));
-        }
-        "disc_plan" => {
-            return Some(match lang {
-                Lang::Zh => format!("分盘规划完成：{c} 张光盘，共 {t} 首音轨。"),
-                Lang::ZhHant => format!("分碟規劃完成：{c} 張光碟，共 {t} 首音軌。"),
-                Lang::En => format!("Disc plan ready: {c} discs, {t} tracks."),
-                Lang::Ja => format!("ディスク構成を作成しました：{c} 枚、計 {t} 曲。"),
-                Lang::Ko => format!("디스크 구성 완료: 디스크 {c}개, 총 {t}곡."),
-            });
-        }
-        "author_disc" => format!(
-            "{} {position}",
-            label(
-                "制作光盘：",
-                "制作光碟：",
-                "Creating disc:",
-                "ディスク作成中：",
-                "디스크 제작 중:"
-            )
-        ),
-        "author_audio" => format!(
-            "{} {position}",
-            label(
-                "读取光盘音频：",
-                "讀取光碟音訊：",
-                "Reading disc audio:",
-                "ディスク音声を読み込み中：",
-                "디스크 오디오 읽는 중:"
-            )
-        ),
-        "author_layout" => format!(
-            "{} {position}",
-            label(
-                "分析音频布局，光盘：",
-                "分析音訊布局，光碟：",
-                "Analyzing audio layout, disc:",
-                "音声配置を解析中、ディスク：",
-                "오디오 배치 분석 중, 디스크:"
-            )
-        ),
-        "author_navigation" => format!(
-            "{} {position}",
-            label(
-                "制作光盘导航：",
-                "制作光碟導航：",
-                "Creating disc navigation:",
-                "ディスクナビゲーションを作成中：",
-                "디스크 탐색 정보 만드는 중:"
-            )
-        ),
-        "author_stills" => format!(
-            "{} {position}",
-            label(
-                "整理播放封面，光盘：",
-                "整理播放封面，光碟：",
-                "Preparing playback covers, disc:",
-                "再生用カバーを準備中、ディスク：",
-                "재생 표지 준비 중, 디스크:"
-            )
-        ),
-        "author_iso" => format!(
-            "{} {position}",
-            label(
-                "打包 ISO，光盘：",
-                "打包 ISO，光碟：",
-                "Writing ISO, disc:",
-                "ISO を作成中、ディスク：",
-                "ISO 기록 중, 디스크:"
-            )
-        ),
-        "author_check_menu" => format!(
-            "{} {position}",
-            label(
-                "检查已制作的菜单，光盘：",
-                "檢查已制作的選單，光碟：",
-                "Checking authored menus, disc:",
-                "作成済みメニューを確認中、ディスク：",
-                "제작된 메뉴 확인 중, 디스크:"
-            )
-        ),
-        "publish_start" => {
-            return Some(format!(
-                "{} {d}",
-                label(
-                    "保存成品 ISO 到：",
-                    "儲存成品 ISO 到：",
-                    "Saving finished ISOs to:",
-                    "完成 ISO の保存先：",
-                    "완성된 ISO 저장 위치:"
-                )
-            ));
-        }
-        "published_iso" => {
-            return Some(format!(
-                "{} {position} · {n}",
-                label(
-                    "ISO 已保存：",
-                    "ISO 已儲存：",
-                    "ISO saved:",
-                    "ISO を保存しました：",
-                    "ISO 저장됨:"
-                )
-            ));
-        }
-        "published_directory" => {
-            return Some(format!(
-                "{} {d}",
-                label(
-                    "成品目录：",
-                    "成品目錄：",
-                    "Output folder:",
-                    "出力フォルダー：",
-                    "출력 폴더:"
-                )
-            ));
-        }
-        "verify_timeline" => {
-            return Some(
-                label(
-                    "开始检查光盘音频时间线。",
-                    "開始檢查光碟音訊時間線。",
-                    "Checking disc audio timelines.",
-                    "ディスク音声のタイムラインを確認します。",
-                    "디스크 오디오 타임라인을 확인합니다.",
-                )
-                .into(),
-            );
-        }
-        "verify_timeline_group" => format!(
-            "{} {c}",
-            label(
-                "检查音频时间线，音轨组：",
-                "檢查音訊時間線，音軌組：",
-                "Checking audio timeline, group:",
-                "音声タイムラインを確認中、グループ：",
-                "오디오 타임라인 확인 중, 그룹:"
-            )
-        ),
-        "verify_menu_disc" => format!(
-            "{} {position}",
-            label(
-                "验证菜单，光盘：",
-                "驗證選單，光碟：",
-                "Verifying menus, disc:",
-                "メニューを検証中、ディスク：",
-                "메뉴 검증 중, 디스크:"
-            )
-        ),
-        "verify_menu_page" => format!(
-            "{} {position}",
-            label(
-                "验证菜单页：",
-                "驗證選單頁：",
-                "Verifying menu page:",
-                "メニューページを検証中：",
-                "메뉴 페이지 검증 중:"
-            )
-        ),
-        "verify_audio_files" => {
-            return Some(
-                label(
-                    "开始比对成盘音频与编码文件。",
-                    "開始比對成盤音訊與編碼檔案。",
-                    "Comparing authored audio with encoded files.",
-                    "ディスク内音声とエンコード済みファイルを比較します。",
-                    "제작된 오디오와 인코딩 파일을 비교합니다.",
-                )
-                .into(),
-            );
-        }
-        "verify_audio_group" => format!(
-            "{} {position}",
-            label(
-                "比对成盘音频，音轨组：",
-                "比對成盤音訊，音軌組：",
-                "Comparing authored audio, group:",
-                "ディスク内音声を比較中、グループ：",
-                "제작된 오디오 비교 중, 그룹:"
-            )
-        ),
-        "verify_pcm_start" => {
-            return Some(match lang {
-                Lang::Zh => format!("开始完整音频对照：0/{t} 首，自动 {c} 路并行。"),
-                Lang::ZhHant => format!("開始完整音訊對照：0/{t} 首，自動 {c} 路并行。"),
-                Lang::En => {
-                    format!("Starting full audio comparison: 0/{t} tracks, {c} automatic workers.")
-                }
-                Lang::Ja => format!("全音声の比較を開始：0/{t} 曲、自動 {c} 並列。"),
-                Lang::Ko => format!("전체 오디오 비교 시작: 0/{t}곡, 자동 병렬 작업 {c}개."),
-            });
-        }
-        "pcm_ok" => {
-            return Some(format!(
-                "{} {position} · {n} · {}",
-                label("已校验：", "已校驗：", "Verified:", "検証済み：", "검증됨:"),
-                label("一致", "一致", "match", "一致", "일치")
-            ));
-        }
-        "pcm_failed" => {
-            return Some(format!(
-                "{} {position} · {n} · {} · {d}",
-                label("已校验：", "已校驗：", "Verified:", "検証済み：", "검증됨:"),
-                label("不一致", "不一致", "mismatch", "不一致", "불일치")
-            ));
-        }
-        "oversized_summary" => {
-            return Some(match lang {
-                Lang::Zh => format!(
-                    "第 {n} 张光盘有 {c} 条播放封面超过 2 MB 的提示；已继续制作，明细见详细日志。"
-                ),
-                Lang::ZhHant => format!(
-                    "第 {n} 張光碟有 {c} 條播放封面超過 2 MB 的提示；已繼續製作，明細見詳細日志。"
-                ),
-                Lang::En => format!(
-                    "Disc {n}: {c} playback-cover size notices (over 2 MB). Creation continued; see the full log."
-                ),
-                Lang::Ja => format!(
-                    "ディスク {n}：再生用カバーが 2 MB を超える通知 {c} 件。作成を続行しました。詳細ログを参照してください。"
-                ),
-                Lang::Ko => format!(
-                    "디스크 {n}: 재생 표지가 2 MB를 초과한다는 알림 {c}개. 제작은 계속됩니다. 전체 로그를 확인하세요."
-                ),
-            });
-        }
-        "button_coordinates_seen" => {
-            return Some(match lang {
-                Lang::Zh => format!(
-                    "第 {n} 张光盘：制盘工具报告菜单按钮坐标警告，详细日志已保留，稍后汇总。"
-                ),
-                Lang::ZhHant => format!(
-                    "第 {n} 張光碟：制盤工具報告選單按鈕坐標警告，詳細日志已保留，稍后匯總。"
-                ),
-                Lang::En => format!(
-                    "Disc {n}: the author reported menu button-coordinate warnings. Details are retained; a summary will follow."
-                ),
-                Lang::Ja => format!(
-                    "ディスク {n}：メニューボタン座標の警告があります。詳細を保存し、後ほど集計します。"
-                ),
-                Lang::Ko => format!(
-                    "디스크 {n}: 메뉴 버튼 좌표 경고가 보고되었습니다. 세부 정보는 보존되며 나중에 요약됩니다."
-                ),
-            });
-        }
-        "button_coordinates" => {
-            return Some(match lang {
-                Lang::Zh => format!(
-                    "第 {n} 张光盘：菜单按钮坐标警告共 {c} 条，请结合成品校验和播放结果检查；可导出详细日志。"
-                ),
-                Lang::ZhHant => format!(
-                    "第 {n} 張光碟：選單按鈕坐標警告共 {c} 條，請結合成品校驗和播放結果檢查；可匯出詳細日志。"
-                ),
-                Lang::En => format!(
-                    "Disc {n}: {c} menu button-coordinate warnings. Review verification and playback results; export the full log for details."
-                ),
-                Lang::Ja => format!(
-                    "ディスク {n}：メニューボタン座標の警告 {c} 件。検証結果と再生を確認してください。詳細ログを保存できます。"
-                ),
-                Lang::Ko => format!(
-                    "디스크 {n}: 메뉴 버튼 좌표 경고 {c}개. 검증 및 재생 결과를 확인하세요. 전체 로그를 내보낼 수 있습니다."
-                ),
-            });
-        }
-        _ => return None,
-    };
-    Some(if n.is_empty() {
-        base
-    } else {
-        format!("{base} · {n}")
-    })
+    dvda_core::log_view::task_message(dvda_core::log_view::Lang::from_code(lang.code()), raw)
 }
 
 fn space_message(lang: Lang, text: &str) -> Option<String> {
-    let value = text.strip_prefix("[space] ")?;
-    let (head, available) = value.rsplit_once(", available ")?;
-    let (head, required) = head.rsplit_once(", required ")?;
-    let required = required.strip_suffix(" B")?.parse::<u64>().ok()?;
-    #[allow(
-        clippy::cast_precision_loss,
-        reason = "Human-readable GiB retains the existing f64 rounding to two decimals, not exact byte arithmetic"
-    )]
-    let gib = |bytes: u64| format!("{:.2} GiB", bytes as f64 / 1_073_741_824.0);
-    let available = if available == "unknown" {
-        phrase(lang, "未知", "未知", "unknown", "不明", "알 수 없음").to_owned()
-    } else {
-        let bytes = available.strip_suffix(" B")?.parse::<u64>().ok()?;
-        gib(bytes)
-    };
-    let (volume, purpose) = head.split_once(": ")?;
-    let purpose = if purpose == "MLP 编码输出" {
-        phrase(
-            lang,
-            "MLP 编码输出",
-            "MLP 編碼輸出",
-            "MLP encoding output",
-            "MLP エンコード出力",
-            "MLP 인코딩 출력",
-        )
-        .into()
-    } else if purpose == "author 中间产物与暂存 ISO + 成品 ISO 集合" {
-        phrase(
-            lang,
-            "制盘临时文件与成品 ISO",
-            "制盤暫存檔案與成品 ISO",
-            "Authoring temporary files and finished ISOs",
-            "作成用一時ファイルと完成 ISO",
-            "제작 임시 파일 및 완성된 ISO",
-        )
-        .into()
-    } else {
-        dvda_core::localization::translate(lang.code(), purpose)
-    };
-    Some(match lang {
-        Lang::Zh => format!(
-            "空间检查 · {volume} · {purpose}：预计需要 {}，可用 {available}。",
-            gib(required)
-        ),
-        Lang::ZhHant => format!(
-            "空間檢查 · {volume} · {purpose}：預計需要 {}，可用 {available}。",
-            gib(required)
-        ),
-        Lang::En => format!(
-            "Space check · {volume} · {purpose}: estimated {}, available {available}.",
-            gib(required)
-        ),
-        Lang::Ja => format!(
-            "空き容量確認 · {volume} · {purpose}：必要量の目安 {}、使用可能 {available}。",
-            gib(required)
-        ),
-        Lang::Ko => format!(
-            "공간 확인 · {volume} · {purpose}: 예상 필요 {}, 사용 가능 {available}.",
-            gib(required)
-        ),
-    })
+    // The message format and its five-language text live in the shared log
+    // renderer; Windows only adapts its own language enum.
+    dvda_core::log_view::space_message(dvda_core::log_view::Lang::from_code(lang.code()), text)
 }
 
 fn group_message(lang: Lang, text: &str) -> Option<String> {

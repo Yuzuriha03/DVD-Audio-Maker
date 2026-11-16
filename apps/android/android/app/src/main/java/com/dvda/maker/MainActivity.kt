@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.StatFs
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.view.Surface
@@ -20,11 +21,31 @@ import io.flutter.embedding.android.FlutterSurfaceView
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.net.URLConnection
+import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+
+/// Raised when the user cancels the SAF I/O adapter for export or verify.
+private class SafOperationCancelled : Exception("Cancelled by the user")
+
+/// One clean failure of the SAF export transaction; exported files are named
+/// by the code so the Dart layer only localizes the generic message.
+private class ExportFailure(val code: String, val file: String) : Exception(code)
+
+/// The app-private verification mirror would not fit in the free space.
+private class InsufficientSpaceException(
+    val requiredBytes: Long,
+    val availableBytes: Long,
+) : Exception(
+    "Not enough app-private space to verify the ISOs: "
+        + "required $requiredBytes bytes, available $availableBytes bytes",
+)
 
 /**
  * Android shell for the Flutter application.
@@ -49,10 +70,15 @@ class MainActivity : FlutterActivity() {
     private var flutterSurfaceView: FlutterSurfaceView? = null
     private var pendingNotification: NotificationPayload? = null
     private var notificationPermissionRequested = false
+    private var methodChannel: MethodChannel? = null
+    private val exportCancelled = AtomicBoolean(false)
+    private val isoMirrorCancelled = AtomicBoolean(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        createNotificationChannel()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            createNotificationChannel()
+        }
         applyAdaptiveFrameRate()
     }
 
@@ -107,7 +133,7 @@ class MainActivity : FlutterActivity() {
         var failure: String? = null
     }
 
-    private data class SafChild(val uri: Uri, val isDirectory: Boolean)
+    private data class SafChild(val uri: Uri, val name: String, val isDirectory: Boolean)
 
     private data class NotificationPayload(
         val title: String,
@@ -118,15 +144,15 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        if (startupCleanupDone.compareAndSet(false, true)) {
-            // Remove mirror trees and any legacy /proc/self/fd symlink trees from
-            // earlier versions before the first selection is mirrored.
-            safExecutor.execute {
-                deleteTree(File(filesDir, LEGACY_LINK_DIRECTORY))
-            }
-        }
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-            .setMethodCallHandler { call, result -> handleCall(call, result) }
+        // Cache cleanup is not retried on the next launch: the export adapter
+        // releases the caches of the task it delivered, and the explicit
+        // "clean internal caches" entry removes leftovers from older versions.
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        methodChannel = channel
+        channel.setMethodCallHandler { call, result -> handleCall(call, result) }
+        // Install the bundled menu font as early as the Flutter engine starts;
+        // the Dart side also awaits the same idempotent call before a task.
+        safExecutor.execute { runCatching { ensureRuntimeFonts() } }
     }
 
     private fun handleCall(call: MethodCall, result: MethodChannel.Result) {
@@ -139,12 +165,13 @@ class MainActivity : FlutterActivity() {
                         error("App files directory is not readable/writable: $files")
                     }
                     val build = privateChildDirectory(files, "build")
-                    val output = privateChildDirectory(files, "output")
+                    // The task product is published into the task-owned
+                    // workspace and exported to SAF; no app-private output
+                    // directory is created (matches Windows publication).
                     result.success(
                         mapOf(
                             "filesDir" to files.path,
                             "buildDir" to build.path,
-                            "outputDir" to output.path,
                         ),
                     )
                 }.getOrElse {
@@ -166,10 +193,59 @@ class MainActivity : FlutterActivity() {
                     val selection = runCatching {
                         if (treeUri.isEmpty()) null else linkDirectory(treeUri)
                     }.getOrElse {
-                        result.error("SAF_MIRROR", it.message ?: "Cannot read the selected folder", null)
+                        when (it) {
+                            is InsufficientSpaceException -> result.error(
+                                "SAF_NO_SPACE",
+                                it.message ?: "Not enough app-private space for the folder mirror",
+                                null,
+                            )
+                            else -> result.error(
+                                "SAF_MIRROR",
+                                it.message ?: "Cannot read the selected folder",
+                                null,
+                            )
+                        }
                         return@execute
                     }
                     result.success(selection)
+                }
+            }
+            "linkIsoDirectory" -> {
+                val treeUri = call.argument<String>("treeUri").orEmpty()
+                val isoPrefix = call.argument<String>("isoPrefix").orEmpty()
+                safExecutor.execute {
+                    val selection = runCatching {
+                        if (treeUri.isEmpty()) null else linkIsoDirectory(treeUri, isoPrefix)
+                    }.getOrElse {
+                        when (it) {
+                            is SafOperationCancelled ->
+                                result.error("SAF_CANCELLED", "Cancelled", null)
+                            is InsufficientSpaceException -> result.error(
+                                "SAF_NO_SPACE",
+                                it.message ?: "Not enough app-private space to verify the ISOs",
+                                null,
+                            )
+                            else -> result.error(
+                                "SAF_MIRROR",
+                                it.message ?: "Cannot read the selected folder",
+                                null,
+                            )
+                        }
+                        return@execute
+                    }
+                    result.success(selection)
+                }
+            }
+            "releaseIsoDirectory" -> {
+                val treeUri = call.argument<String>("treeUri").orEmpty()
+                safExecutor.execute {
+                    val released = runCatching {
+                        if (treeUri.isEmpty()) false else releaseIsoDirectory(treeUri)
+                    }.getOrElse {
+                        result.error("SAF_MIRROR", it.message ?: "Cannot clean the verification mirror", null)
+                        return@execute
+                    }
+                    result.success(released)
                 }
             }
             "ensureSourceLink" -> {
@@ -178,7 +254,18 @@ class MainActivity : FlutterActivity() {
                     val selection = runCatching {
                         if (treeUri.isEmpty()) null else ensureDirectoryLink(treeUri)
                     }.getOrElse {
-                        result.error("SAF_MIRROR", it.message ?: "Cannot read the selected folder", null)
+                        when (it) {
+                            is InsufficientSpaceException -> result.error(
+                                "SAF_NO_SPACE",
+                                it.message ?: "Not enough app-private space for the folder mirror",
+                                null,
+                            )
+                            else -> result.error(
+                                "SAF_MIRROR",
+                                it.message ?: "Cannot read the selected folder",
+                                null,
+                            )
+                        }
                         return@execute
                     }
                     result.success(selection)
@@ -187,12 +274,37 @@ class MainActivity : FlutterActivity() {
             "exportDirectory" -> {
                 val sourcePath = call.argument<String>("sourcePath").orEmpty()
                 val treeUri = call.argument<String>("treeUri").orEmpty()
+                val cachePaths =
+                    call.argument<List<*>>("cachePaths")?.filterIsInstance<String>().orEmpty()
                 safExecutor.execute {
                     result.success(
-                        sourcePath.isNotEmpty() && treeUri.isNotEmpty() &&
-                            exportDirectory(sourcePath, treeUri),
+                        if (sourcePath.isEmpty() || treeUri.isEmpty()) {
+                            exportFailure("SOURCE_MISSING", "")
+                        } else {
+                            exportDirectory(sourcePath, treeUri, cachePaths)
+                        },
                     )
                 }
+            }
+            "releaseTaskCaches" -> {
+                val paths = call.argument<List<*>>("cachePaths")
+                    ?.filterIsInstance<String>()
+                    .orEmpty()
+                safExecutor.execute { result.success(releaseTaskCaches(paths)) }
+            }
+            "cancelExport" -> {
+                exportCancelled.set(true)
+                result.success(null)
+            }
+            "cancelIsoMirror" -> {
+                isoMirrorCancelled.set(true)
+                result.success(null)
+            }
+            "ensureRuntimeFonts" -> {
+                safExecutor.execute { result.success(ensureRuntimeFonts()) }
+            }
+            "cleanupInternalCaches" -> {
+                safExecutor.execute { result.success(cleanupInternalCaches()) }
             }
             "openOutput" -> {
                 val treeUri = call.argument<String>("treeUri")
@@ -363,6 +475,147 @@ class MainActivity : FlutterActivity() {
         persistTreePermission(uri)
         return directorySelection(uri, true)
     }
+    /// Copy only the ISOs the shared verification expects (same title/prefix
+    /// rule as the shared find_isos) from a granted SAF output folder so the
+    /// shared Rust verification can read the exported product. Never copies the
+    /// whole output folder and never invents an Android-only verification mode.
+    private fun linkIsoDirectory(
+        treeUriText: String,
+        isoPrefix: String,
+    ): Map<String, String>? {
+        val uri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return null
+        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
+            return null
+        }
+        persistTreePermission(uri)
+        val nativePath = mirrorIsoTree(uri, isoPrefix)
+        return mapOf(
+            "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
+            "nativePath" to nativePath,
+            "treeUri" to uri.toString(),
+        )
+    }
+
+    private fun isoMirrorMarker(key: String): File =
+        File(File(filesDir, ISO_MIRROR_DIRECTORY), "$key.complete")
+
+    private fun isoMirrorRoot(treeUri: Uri): File {
+        val key = treeKey(treeUri)
+        return File(File(filesDir, ISO_MIRROR_DIRECTORY), key)
+    }
+
+    /// Mirrors only the ISOs the shared verification expects.
+    ///
+    /// The filter is the shared find_isos rule: an ISO file whose name starts
+    /// with the derived/explicit prefix plus "_", ends in ".iso" and carries a
+    /// numeric disc number. Different output folders holding unrelated images
+    /// are therefore never copied. The available app-private space is checked
+    /// before any copy so verification cannot fill the device.
+    private fun mirrorIsoTree(treeUri: Uri, isoPrefix: String): String {
+        val key = treeKey(treeUri)
+        val root = isoMirrorRoot(treeUri)
+        isoMirrorMarker(key).delete()
+        deleteTree(root)
+        if (!root.mkdirs() && !root.isDirectory) {
+            error("Cannot create the app-private verification folder: $root")
+        }
+        isoMirrorCancelled.set(false)
+        try {
+            val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
+            val documents = mutableListOf<Triple<Uri, String, Long?>>()
+            val cursor = contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                ),
+                null,
+                null,
+                null,
+            ) ?: error("Cannot list the selected folder")
+            cursor.use { entries ->
+                while (entries.moveToNext()) {
+                    val childId = entries.getString(0) ?: continue
+                    val mimeType = entries.getString(2)
+                    if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        continue
+                    }
+                    val displayName = entries.getString(1).orEmpty()
+                    if (!matchesSharedIsoName(displayName, isoPrefix)) {
+                        continue
+                    }
+                    if (documents.size >= MAX_SAF_ENTRIES) {
+                        error("The selected folder has too many files to verify")
+                    }
+                    val size = if (entries.isNull(3)) null else entries.getLong(3)
+                    // Keep the full verifiable name: truncating to the local
+                    // mirror bound could cut the ".iso" extension or the disc
+                    // number and make the shared verification miss the file.
+                    val name = safeSafDocumentName(displayName, ENTRY_FALLBACK_NAME)
+                    documents.add(
+                        Triple(
+                            DocumentsContract.buildDocumentUriUsingTree(treeUri, childId),
+                            name,
+                            size,
+                        ),
+                    )
+                }
+            }
+            if (documents.isEmpty()) {
+                error("No ISO images matching the current disc were found in the selected folder")
+            }
+            val required = documents.sumOf { it.third ?: 0L }
+            val available = StatFs(filesDir.path).availableBytes
+            if (required > 0L && available < required + MIRROR_SPACE_MARGIN_BYTES) {
+                throw InsufficientSpaceException(required, available)
+            }
+            documents.forEachIndexed { index, (childUri, name, _) ->
+                if (isoMirrorCancelled.get()) throw SafOperationCancelled()
+                if (!copyDocument(childUri, uniqueChild(root, name), isoMirrorCancelled)) {
+                    if (isoMirrorCancelled.get()) throw SafOperationCancelled()
+                    error("Cannot read the file $name")
+                }
+                postIoProgress(
+                    "isoMirrorProgress",
+                    mapOf("done" to index + 1, "total" to documents.size, "name" to name),
+                )
+            }
+            isoMirrorMarker(key).writeText("v1")
+            return root.canonicalPath
+        } catch (failure: Throwable) {
+            isoMirrorMarker(key).delete()
+            deleteTree(root)
+            throw failure
+        }
+    }
+
+    /// Same rule as the shared verify::find_isos name matcher.
+    private fun matchesSharedIsoName(name: String, prefix: String): Boolean {
+        if (prefix.trim().isEmpty()) {
+            return name.endsWith(".iso", ignoreCase = true)
+        }
+        val lower = name.lowercase()
+        val lowerPrefix = prefix.lowercase()
+        if (!lower.startsWith(lowerPrefix + "_") || !lower.endsWith(".iso")) {
+            return false
+        }
+        return lower.substring(lowerPrefix.length + 1, lower.length - 4).toIntOrNull() != null
+    }
+
+    private fun releaseIsoDirectory(treeUriText: String): Boolean {
+        val uri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return false
+        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
+            return false
+        }
+        isoMirrorCancelled.set(true)
+        val key = treeKey(uri)
+        isoMirrorMarker(key).delete()
+        deleteTree(isoMirrorRoot(uri))
+        return true
+    }
 
     private fun mirrorMarker(key: String): File =
         File(File(filesDir, SAF_MIRROR_DIRECTORY), "$key.complete")
@@ -452,7 +705,7 @@ class MainActivity : FlutterActivity() {
                 state.entries++
                 val childId = it.getString(0)
                 if (childId != null) {
-                    val name = safeEntryName(it.getString(1), ENTRY_FALLBACK_NAME)
+                    val name = safeSafDocumentName(it.getString(1), ENTRY_FALLBACK_NAME)
                     val mimeType = it.getString(2)
                     val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
                     val target = uniqueChild(directory, name)
@@ -473,15 +726,50 @@ class MainActivity : FlutterActivity() {
         return true
     }
 
-    private fun copyDocument(uri: Uri, target: File): Boolean {
+    private fun ensureMirrorSpace(uri: Uri) {
+        val available = StatFs(filesDir.path).availableBytes
+        val required = documentSize(uri)
+        if (required != null && required > 0L) {
+            if (available < required + MIRROR_SPACE_MARGIN_BYTES) {
+                throw InsufficientSpaceException(required, available)
+            }
+            return
+        }
+        // The provider does not report a size: still refuse to start a copy when
+        // the device is already inside the safety margin.
+        if (available < MIRROR_SPACE_MARGIN_BYTES) {
+            throw InsufficientSpaceException(0L, available)
+        }
+    }
+
+    private fun copyDocument(uri: Uri, target: File, cancel: AtomicBoolean? = null): Boolean {
+        // Per-file app-private space budget: never start a copy that cannot fit
+        // with the same 64 MiB margin the ISO verification mirror uses.
+        ensureMirrorSpace(uri)
         val parent = target.parentFile ?: return false
         parent.mkdirs()
-        val temporary = File(parent, "${target.name}.part")
+        val temporary = File(parent, target.name + ".part")
         val copied = runCatching {
-            contentResolver.openInputStream(uri)?.use { input ->
-                temporary.outputStream().use { output -> input.copyTo(output) }
-            } != null
-        }.getOrDefault(false)
+            val input = contentResolver.openInputStream(uri) ?: return@runCatching false
+            input.use { raw ->
+                BufferedInputStream(raw).use { source ->
+                    BufferedOutputStream(temporary.outputStream()).use { sink ->
+                        val buffer = ByteArray(COPY_BUFFER_BYTES)
+                        while (true) {
+                            if (cancel?.get() == true) throw SafOperationCancelled()
+                            val read = source.read(buffer)
+                            if (read < 0) break
+                            sink.write(buffer, 0, read)
+                        }
+                    }
+                }
+            }
+            true
+        }.getOrElse { failure ->
+            temporary.delete()
+            if (failure is SafOperationCancelled) throw failure
+            false
+        }
         if (!copied) {
             temporary.delete()
             return false
@@ -520,28 +808,6 @@ class MainActivity : FlutterActivity() {
             index++
         }
         return candidate
-    }
-
-    private fun safeEntryName(raw: String?, fallback: String): String {
-        val cleaned = raw.orEmpty()
-            .map { character ->
-                if (character == '/' || character == '\\' ||
-                    character.code < 0x20 || character.code == 0x7f
-                ) {
-                    '_'
-                } else {
-                    character
-                }
-            }
-            .joinToString("")
-            .trim()
-            .trim('.')
-            .take(MAX_ENTRY_NAME)
-        return when {
-            cleaned.isEmpty() -> fallback
-            cleaned == "." || cleaned == ".." -> fallback
-            else -> cleaned
-        }
     }
 
     private fun withSuffix(name: String, index: Int): String {
@@ -607,83 +873,441 @@ class MainActivity : FlutterActivity() {
         return candidate
     }
 
-    private fun exportDirectory(sourcePath: String, treeUriText: String): Boolean {
-        val source = privateSource(sourcePath) ?: return false
-        if (!source.isDirectory) {
-            return false
-        }
-        val treeUri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return false
+    private data class ExportEntry(
+        val source: File,
+        val name: String,
+        val temporary: Uri,
+        val temporaryName: String,
+        var backup: Uri? = null,
+        var finalDocument: Uri? = null,
+        var committed: Boolean = false,
+    )
+
+    /// Exports the task-local product into the granted SAF folder with the same
+    /// temporary → verify → backup → commit transaction Windows publication uses.
+    ///
+    /// A failure never truncates the previously exported ISO: the visible file is
+    /// only replaced after the whole set was copied and verified, and the
+    /// rollback restores every backup. The task workspace is not touched here, so
+    /// the shared finish still decides its retention on failure.
+    private fun exportDirectory(
+        sourcePath: String,
+        treeUriText: String,
+        cachePaths: List<String>,
+    ): Map<String, Any?> {
+        exportCancelled.set(false)
+        val source = privateSource(sourcePath) ?: return exportFailure("SOURCE_MISSING", "")
+        if (!source.isDirectory) return exportFailure("SOURCE_MISSING", "")
+        val treeUri = runCatching { Uri.parse(treeUriText) }.getOrNull()
+            ?: return exportFailure("TREE_URI_INVALID", "")
         if (treeUri.scheme != ContentResolver.SCHEME_CONTENT) {
-            return false
+            return exportFailure("TREE_URI_INVALID", "")
         }
         persistTreePermission(treeUri, write = true)
-        return runCatching {
-            val parent = DocumentsContract.buildDocumentUriUsingTree(
+        // Only the published ISO set is the product (same set Windows publication
+        // moves); unrelated or stale files in the transport folder are ignored.
+        val children = source.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".iso", ignoreCase = true) }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+        if (children.isEmpty()) return exportFailure("NO_PRODUCT_FILES", "")
+        // Product names must reach the user folder unchanged apart from unsafe
+        // characters; SAF documents may exceed the local mirror name bound.
+        val names = children.map { safeSafDocumentName(it.name, ENTRY_FALLBACK_NAME) }
+        if (names.map { it.lowercase() }.toSet().size != names.size) {
+            return exportFailure("DUPLICATE_NAMES", "")
+        }
+        val parent = runCatching {
+            DocumentsContract.buildDocumentUriUsingTree(
                 treeUri,
                 DocumentsContract.getTreeDocumentId(treeUri),
             )
-            exportInto(source, treeUri, parent, 0)
-        }.getOrDefault(false)
-    }
-
-    private fun exportInto(source: File, treeUri: Uri, parent: Uri, depth: Int): Boolean {
-        if (depth > MAX_SAF_DEPTH) {
-            return false
-        }
-        val children = source.listFiles() ?: return true
-        if (children.isEmpty()) {
-            return true
-        }
-        val existing = childEntries(treeUri, parent) ?: return false
-        val used = existing.keys.toMutableSet()
-        var success = true
-        for (child in children) {
-            if (child.isDirectory) {
-                val desired = safeEntryName(child.name, ENTRY_FALLBACK_NAME)
-                val previous = existing[desired.lowercase()]
-                val target = if (previous != null && previous.isDirectory) {
-                    previous.uri
-                } else {
-                    val name = uniqueExportName(desired, used)
-                    createDocument(
-                        parent,
-                        DocumentsContract.Document.MIME_TYPE_DIR,
-                        name,
-                    )?.also { existing[name.lowercase()] = SafChild(it, true) }
+        }.getOrNull() ?: return exportFailure("TREE_URI_INVALID", "")
+        val token = exportToken()
+        val prepared = mutableListOf<ExportEntry>()
+        return try {
+            // Recover documents left by a crash inside a previous transaction
+            // before starting a new one; the visible product must never stay
+            // only under a .backup name.
+            recoverInterruptedExport(treeUri, parent)
+            val existing = childEntries(treeUri, parent)
+                ?: throw ExportFailure("LIST_FOLDER", "")
+            // Phase 1: copy every product into a temporary SAF document and
+            // verify the stored length and SHA-256. A short write only deletes
+            // the temporary document; the visible ISO is untouched.
+            children.forEachIndexed { index, child ->
+                if (exportCancelled.get()) throw SafOperationCancelled()
+                val name = names[index]
+                val temporaryName = exportTemporaryName(name, token, index)
+                val temporary = createDocument(parent, mimeTypeFor(temporaryName), temporaryName)
+                    ?: throw ExportFailure("CREATE_TEMPORARY", name)
+                val entry = ExportEntry(child, name, temporary, temporaryName)
+                prepared.add(entry)
+                copyExportTemporary(entry)
+                postIoProgress(
+                    "exportProgress",
+                    mapOf("done" to index + 1, "total" to children.size, "name" to name),
+                )
+            }
+            if (exportCancelled.get()) throw SafOperationCancelled()
+            // Phase 2: move the old ISO to a backup, then move the verified
+            // temporary document into place. Any failure rolls the completed
+            // steps back so an interrupted export keeps the old product.
+            for ((index, entry) in prepared.withIndex()) {
+                if (exportCancelled.get()) throw SafOperationCancelled()
+                val previous = existing[entry.name.lowercase()]
+                if (previous != null && previous.isDirectory) {
+                    throw ExportFailure("TARGET_IS_FOLDER", entry.name)
                 }
-                if (target == null) {
-                    success = false
-                } else if (!exportInto(child, treeUri, target, depth + 1)) {
-                    success = false
+                if (previous != null) {
+                    val backupName = exportBackupName(entry.name, token, index)
+                    val backup = renameDocument(previous.uri, backupName)
+                        ?: throw ExportFailure("RENAME_BACKUP", entry.name)
+                    entry.backup = backup
                 }
-            } else if (child.isFile) {
-                val desired = safeEntryName(child.name, ENTRY_FALLBACK_NAME)
-                val previous = existing[desired.lowercase()]
-                val target = if (previous != null && !previous.isDirectory) {
-                    previous.uri
-                } else {
-                    val name = uniqueExportName(desired, used)
-                    createDocument(parent, mimeTypeFor(name), name)?.also {
-                        existing[name.lowercase()] = SafChild(it, false)
-                    }
-                }
-                if (target == null) {
-                    success = false
-                    continue
-                }
-                val written = runCatching {
-                    val stream = contentResolver.openOutputStream(target, "wt")
-                        ?: contentResolver.openOutputStream(target, "w")
-                    stream?.use { output ->
-                        child.inputStream().use { input -> input.copyTo(output) }
-                    } != null
-                }.getOrDefault(false)
-                if (!written) {
-                    success = false
-                }
+                val target = renameDocument(entry.temporary, entry.name)
+                    ?: throw ExportFailure("RENAME_FINAL", entry.name)
+                entry.finalDocument = target
+                entry.committed = true
+            }
+            for (entry in prepared) {
+                entry.backup?.let(::deleteDocument)
+            }
+            releaseTaskCaches(cachePaths)
+            exportSuccess(prepared.map { it.name })
+        } catch (failure: Throwable) {
+            rollbackExport(prepared)
+            when (failure) {
+                is SafOperationCancelled -> exportCancelledResult()
+                is ExportFailure -> exportFailure(failure.code, failure.file)
+                else -> exportFailure("EXPORT_FAILED", "")
             }
         }
-        return success
+    }
+
+    private fun copyExportTemporary(entry: ExportEntry) {
+        val expectedSize = entry.source.length()
+        val digest = MessageDigest.getInstance("SHA-256")
+        var written = 0L
+        val stream = contentResolver.openOutputStream(entry.temporary, "w")
+            ?: contentResolver.openOutputStream(entry.temporary, "wt")
+            ?: throw ExportFailure("OPEN_TEMPORARY", entry.name)
+        try {
+            BufferedInputStream(entry.source.inputStream()).use { input ->
+                DigestOutputStream(BufferedOutputStream(stream), digest).use { output ->
+                    val buffer = ByteArray(COPY_BUFFER_BYTES)
+                    while (true) {
+                        if (exportCancelled.get()) throw SafOperationCancelled()
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        written += read
+                    }
+                }
+            }
+        } catch (failure: Throwable) {
+            deleteDocument(entry.temporary)
+            throw failure
+        }
+        if (written != expectedSize) {
+            deleteDocument(entry.temporary)
+            throw ExportFailure("SHORT_WRITE", entry.name)
+        }
+        // The provider may not report COLUMN_SIZE for a fresh document; the
+        // stored SHA-256 check below still proves the exact length and content.
+        val reportedSize = documentSize(entry.temporary)
+        if (reportedSize != null && reportedSize != expectedSize) {
+            deleteDocument(entry.temporary)
+            throw ExportFailure("SIZE_MISMATCH", entry.name)
+        }
+        val stored = documentDigest(entry.temporary)
+        if (stored == null || !stored.contentEquals(digest.digest())) {
+            deleteDocument(entry.temporary)
+            throw ExportFailure("HASH_MISMATCH", entry.name)
+        }
+    }
+
+    private fun rollbackExport(prepared: List<ExportEntry>) {
+        for (entry in prepared.asReversed()) {
+            if (entry.committed) {
+                entry.finalDocument?.let(::deleteDocument)
+                entry.backup?.let { backup ->
+                    runCatching { renameDocument(backup, entry.name) }
+                }
+            } else {
+                entry.backup?.let { backup ->
+                    runCatching { renameDocument(backup, entry.name) }
+                }
+                deleteDocument(entry.temporary)
+            }
+        }
+    }
+
+    /// Recovers SAF documents left behind by a crash inside an earlier export
+    /// transaction.
+    ///
+    /// Written transaction documents carry our exact token pattern:
+    /// "<product>.backup-<index>-<pid>-<nanos>-<seq>" and the equivalent
+    /// "publishing" temporary. If the visible product name is missing the
+    /// backup is restored; if the visible product exists the backup is a stale
+    /// duplicate of a committed replacement and is removed. Interrupted
+    /// temporaries are deleted after backups were restored. This is export I/O
+    /// crash recovery only and never touches unrelated user documents.
+    private fun recoverInterruptedExport(treeUri: Uri, parent: Uri) {
+        val snapshot = childEntries(treeUri, parent) ?: throw ExportFailure("LIST_FOLDER", "")
+        val staleBackups = mutableListOf<Uri>()
+        for (child in snapshot.values) {
+            if (child.isDirectory) continue
+            val match = TRANSACTION_BACKUP_PATTERN.matchEntire(child.name) ?: continue
+            val base = match.groupValues[1]
+            val visible = snapshot[base.lowercase()]
+            if (visible != null && visible.isDirectory) {
+                throw ExportFailure("RECOVER_CONFLICT", base)
+            }
+            if (visible != null) {
+                staleBackups.add(child.uri)
+            } else if (renameDocument(child.uri, base) == null) {
+                throw ExportFailure("RECOVER_BACKUP", base)
+            }
+        }
+        staleBackups.forEach(::deleteDocument)
+        val restored = childEntries(treeUri, parent) ?: snapshot
+        for (child in restored.values) {
+            if (!child.isDirectory && TRANSACTION_PUBLISHING_PATTERN.matches(child.name)) {
+                deleteDocument(child.uri)
+            }
+        }
+    }
+
+    /// Releases the app-private SAF mirrors consumed by the delivered task.
+    ///
+    /// Only directories owned by this adapter are removed; user-granted SAF
+    /// folders, the unfinished workspace and the exported product are untouched.
+    private fun releaseTaskCaches(cachePaths: List<String>): List<String> {
+        val released = mutableListOf<String>()
+        for (path in cachePaths) {
+            val directory = privateSource(path) ?: continue
+            val parent = directory.parentFile?.name ?: continue
+            if (parent != SAF_MIRROR_DIRECTORY && parent != LEGACY_LINK_DIRECTORY) {
+                continue
+            }
+            deleteTree(directory)
+            // The source mirror marks a complete copy with a sibling
+            // "<key>.complete"; remove it with the cache so a stale marker
+            // cannot claim a removed mirror.
+            File(directory.parentFile, directory.name + ".complete").delete()
+            released.add(directory.path)
+        }
+        return released
+    }
+
+    private fun exportToken(): String = "%x-%x-%x".format(
+        android.os.Process.myPid(),
+        System.nanoTime(),
+        EXPORT_SEQUENCE.incrementAndGet(),
+    )
+
+    private fun exportTemporaryName(name: String, token: String, index: Int): String =
+        exportDerivedName(name, ".publishing-$index-$token")
+
+    private fun exportBackupName(name: String, token: String, index: Int): String =
+        exportDerivedName(name, ".backup-$index-$token")
+
+    /// Keeps the transaction suffix inside the SAF display-name bound even when
+    /// the product name is long; the committed document is renamed back to the
+    /// exact product name.
+    private fun exportDerivedName(name: String, suffix: String): String =
+        safeSafDocumentName(name + suffix, ENTRY_FALLBACK_NAME)
+
+    /// SAF display-name sanitizer for the user-visible product name.
+    ///
+    /// Unlike local mirror names it never truncates: the recovery pattern must
+    /// be able to restore the exact product name after a crash.
+    private fun safeSafDocumentName(raw: String?, fallback: String): String {
+        val cleaned = raw.orEmpty()
+            .map { character ->
+                if (character == '/' || character == '\\' ||
+                    character.code < 0x20 || character.code == 0x7f
+                ) {
+                    '_'
+                } else {
+                    character
+                }
+            }
+            .joinToString("")
+            .trim()
+            .trim('.')
+        return when {
+            cleaned.isEmpty() -> fallback
+            cleaned == "." || cleaned == ".." -> fallback
+            else -> cleaned
+        }
+    }
+
+    private fun exportFailure(code: String, file: String): Map<String, Any?> = mapOf(
+        "ok" to false,
+        "cancelled" to false,
+        "failureCode" to code,
+        "failureFile" to file,
+        "exported" to emptyList<String>(),
+        "freedBytes" to 0L,
+    )
+
+    private fun exportCancelledResult(): Map<String, Any?> = mapOf(
+        "ok" to false,
+        "cancelled" to true,
+        "failureCode" to "CANCELLED",
+        "failureFile" to "",
+        "exported" to emptyList<String>(),
+        "freedBytes" to 0L,
+    )
+
+    private fun exportSuccess(names: List<String>): Map<String, Any?> = mapOf(
+        "ok" to true,
+        "cancelled" to false,
+        "failureCode" to "",
+        "failureFile" to "",
+        "exported" to names,
+        "freedBytes" to 0L,
+    )
+
+    private fun renameDocument(uri: Uri, name: String): Uri? =
+        runCatching { DocumentsContract.renameDocument(contentResolver, uri, name) }.getOrNull()
+
+    private fun deleteDocument(uri: Uri) {
+        runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
+    }
+
+    private fun documentSize(uri: Uri): Long? = runCatching {
+        contentResolver.query(
+            uri,
+            arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (!cursor.moveToFirst() || cursor.isNull(0)) null else cursor.getLong(0)
+        }
+    }.getOrNull()
+
+    private fun documentDigest(uri: Uri): ByteArray? {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val input = runCatching { contentResolver.openInputStream(uri) }.getOrNull()
+            ?: return null
+        try {
+            BufferedInputStream(input).use { stream ->
+                val buffer = ByteArray(COPY_BUFFER_BYTES)
+                while (true) {
+                    if (exportCancelled.get()) throw SafOperationCancelled()
+                    val read = stream.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+        } catch (failure: SafOperationCancelled) {
+            throw failure
+        } catch (_: Throwable) {
+            return null
+        }
+        return digest.digest()
+    }
+
+    /// Installs the bundled menu font collection into app-private storage.
+    ///
+    /// The APK asset is the only font source: this is a thin I/O copy, the shared
+    /// Rust font resolution and family/fallback rules stay unchanged. The call is
+    /// idempotent and runs at startup and before a task starts.
+    private fun ensureRuntimeFonts(): Map<String, Any?> = runCatching {
+        val directory = File(File(filesDir, RUNTIME_DIRECTORY), FONT_DIRECTORY)
+        if (!directory.isDirectory && !directory.mkdirs()) {
+            error("Cannot create the runtime font directory: $directory")
+        }
+        val target = File(directory, RUNTIME_FONT_NAME)
+        val marker = File(directory, "." + RUNTIME_FONT_NAME + ".sha256")
+        // The APK asset is immutable per installed package version; storing the
+        // package update stamp means an app update replaces the extracted font
+        // while ordinary starts do not re-copy 14 MB.
+        val packageStamp = packageUpdateStamp()
+        val markerText = if (marker.isFile) {
+            runCatching { marker.readText() }.getOrDefault("")
+        } else {
+            ""
+        }
+        if (target.isFile && target.length() > 0L &&
+            markerText.substringBefore(':') == packageStamp
+        ) {
+            return@runCatching mapOf(
+                "path" to target.canonicalPath,
+                "installed" to false,
+            )
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        val temporary = File(directory, "." + RUNTIME_FONT_NAME + ".part")
+        temporary.delete()
+        assets.open(FONT_ASSET).use { raw ->
+            BufferedInputStream(raw).use { input ->
+                DigestOutputStream(BufferedOutputStream(temporary.outputStream()), digest)
+                    .use { output -> input.copyTo(output, COPY_BUFFER_BYTES) }
+            }
+        }
+        if (!temporary.renameTo(target)) {
+            temporary.delete()
+            error("Cannot install the bundled menu font")
+        }
+        marker.delete()
+        val hash = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        marker.writeText("$packageStamp:$hash")
+        mapOf("path" to target.canonicalPath, "installed" to true)
+    }.getOrElse { failure ->
+        mapOf(
+            "path" to null,
+            "installed" to false,
+            "error" to (failure.message ?: "Cannot install the bundled menu font"),
+        )
+    }
+
+    /// Explicit user-confirmed recovery for caches left by older versions.
+    ///
+    /// Only known rebuildable app-private copies (SAF mirrors, legacy link trees
+    /// and the old output folder) are removed. User-granted SAF folders, the
+    /// unfinished task workspace and exported ISOs are never touched, and this
+    /// entry never replaces the shared finish of the current task.
+    private fun packageUpdateStamp(): String = runCatching {
+        packageManager.getPackageInfo(packageName, 0).lastUpdateTime.toString()
+    }.getOrDefault("unknown")
+
+    private fun cleanupInternalCaches(): Map<String, Any?> = runCatching {
+        var freed = 0L
+        val deleted = mutableListOf<String>()
+        for (name in INTERNAL_CACHE_DIRECTORIES) {
+            val directory = File(filesDir, name)
+            if (!directory.exists()) continue
+            freed += treeBytes(directory)
+            deleteTree(directory)
+            deleted.add(name)
+        }
+        mapOf("ok" to true, "freedBytes" to freed, "deleted" to deleted)
+    }.getOrElse { failure ->
+        mapOf(
+            "ok" to false,
+            "freedBytes" to 0L,
+            "deleted" to emptyList<String>(),
+            "error" to (failure.message ?: "Cannot clean the internal caches"),
+        )
+    }
+
+    private fun treeBytes(file: File): Long {
+        if (!file.isDirectory) {
+            return if (file.isFile) file.length() else 0L
+        }
+        return file.listFiles()?.sumOf(::treeBytes) ?: 0L
+    }
+
+    private fun postIoProgress(method: String, payload: Map<String, Any?>) {
+        val channel = methodChannel ?: return
+        runOnUiThread {
+            runCatching { channel.invokeMethod(method, payload) }
+        }
     }
 
     private fun childEntries(treeUri: Uri, parent: Uri): MutableMap<String, SafChild>? = runCatching {
@@ -709,6 +1333,7 @@ class MainActivity : FlutterActivity() {
                     val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
                     entries[displayName.lowercase()] = SafChild(
                         uri,
+                        displayName,
                         cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR,
                     )
                 }
@@ -721,16 +1346,6 @@ class MainActivity : FlutterActivity() {
         runCatching {
             DocumentsContract.createDocument(contentResolver, parent, mimeType, name)
         }.getOrNull()
-
-    private fun uniqueExportName(desired: String, used: MutableSet<String>): String {
-        var candidate = desired
-        var index = 1
-        while (!used.add(candidate.lowercase())) {
-            candidate = withSuffix(desired, index)
-            index++
-        }
-        return candidate
-    }
 
     private fun mimeTypeFor(name: String): String {
         URLConnection.guessContentTypeFromName(name)?.let { return it }
@@ -922,6 +1537,7 @@ class MainActivity : FlutterActivity() {
     }.getOrNull()
 
     private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
@@ -951,6 +1567,7 @@ class MainActivity : FlutterActivity() {
         postStatusNotification(payload)
     }
 
+    @Suppress("DEPRECATION")
     private fun postStatusNotification(payload: NotificationPayload) {
         val manager = getSystemService(NotificationManager::class.java)
         val percent = payload.progress?.coerceIn(0.0, 1.0)?.times(100)?.toInt()
@@ -961,7 +1578,14 @@ class MainActivity : FlutterActivity() {
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val builder = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+        // Notification channels exist from API 26; older releases use the
+        // channel-less builder so minSdk 24 devices keep working.
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+        } else {
+            Notification.Builder(this)
+        }
+        builder
             .setSmallIcon(R.drawable.ic_stat_dvda)
             .setContentTitle(payload.title.ifEmpty { "DVD-Audio Maker" })
             .setContentText(payload.text)
@@ -1001,12 +1625,31 @@ class MainActivity : FlutterActivity() {
         private const val FONT_DIRECTORY = "fonts"
         private const val MAX_FONT_STEM = 64
         private const val SAF_MIRROR_DIRECTORY = "saf-mirror"
+        private const val ISO_MIRROR_DIRECTORY = "saf-iso-mirror"
         private const val LEGACY_LINK_DIRECTORY = "saf-links"
         private const val TREE_KEY_BYTES = 12
         private const val MAX_SAF_DEPTH = 32
         private const val MAX_SAF_ENTRIES = 4096
-        private const val MAX_ENTRY_NAME = 96
         private const val ENTRY_FALLBACK_NAME = "item"
+        private const val RUNTIME_DIRECTORY = "runtime"
+        private const val FONT_ASSET = "fonts/DvdaNotoCJK-Regular.ttc"
+        private const val RUNTIME_FONT_NAME = "DvdaNotoCJK-Regular.ttc"
+        private const val COPY_BUFFER_BYTES = 256 * 1024
+        private const val MIRROR_SPACE_MARGIN_BYTES = 64L * 1024 * 1024
+        private val TRANSACTION_BACKUP_PATTERN = Regex(
+            "^(.+)\\.backup-\\d+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+$",
+            RegexOption.IGNORE_CASE,
+        )
+        private val TRANSACTION_PUBLISHING_PATTERN = Regex(
+            "^(.+)\\.publishing-\\d+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+$",
+            RegexOption.IGNORE_CASE,
+        )
+        private val INTERNAL_CACHE_DIRECTORIES = listOf(
+            SAF_MIRROR_DIRECTORY,
+            ISO_MIRROR_DIRECTORY,
+            LEGACY_LINK_DIRECTORY,
+            "output",
+        )
         private val FONT_EXTENSIONS = setOf("ttf", "otf", "ttc")
         private val FONT_MIME_TYPES = arrayOf(
             "font/ttf",
@@ -1021,6 +1664,6 @@ class MainActivity : FlutterActivity() {
             "application/octet-stream",
         )
         private val safExecutor = Executors.newSingleThreadExecutor()
-        private val startupCleanupDone = AtomicBoolean(false)
+        private val EXPORT_SEQUENCE = AtomicLong(0)
     }
 }

@@ -144,7 +144,12 @@ impl Workspace {
             .map_err(|e| format!("Cannot lock task workspace {}: {e}", path.display()))?;
         if retain_unfinished && path.exists() {
             reject_reparse(&path)?;
-            if fs::read(path.join(".owner")).ok().as_deref() != Some(b"dvda-task-v1") {
+            // A `.finished` directory is a completed task whose deletion failed
+            // (possibly after removing `.owner`); it is safe to remove, while a
+            // live unfinished task must still prove ownership.
+            if !path.join(".finished").exists()
+                && fs::read(path.join(".owner")).ok().as_deref() != Some(b"dvda-task-v1")
+            {
                 return Err(format!(
                     "Refusing to adopt an unowned task directory: {}",
                     path.display()
@@ -152,7 +157,7 @@ impl Workspace {
             }
         }
         if retain_unfinished && path.join(".finished").exists() {
-            fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
+            remove_task_directory(&path, true)?;
         }
         create_directories(&path)?;
         fs::write(path.join(".owner"), b"dvda-task-v1").map_err(|e| e.to_string())?;
@@ -173,6 +178,54 @@ impl Workspace {
     pub fn finish(&self) {
         self.finished.store(true, Ordering::Relaxed);
     }
+
+    /// Best-effort completed marker so a partially failed delete is recognized
+    /// as our finished task on retry, even when `.owner` was already removed.
+    fn write_finished_marker(&self) {
+        if self.retain_unfinished {
+            mark_finished(&self.path);
+        }
+    }
+
+    /// Marks the task finished and removes its directory, reporting failures.
+    ///
+    /// This is the same lifecycle Drop uses; callers that must distinguish
+    /// "really removed" from "left behind" use this instead of relying on the
+    /// best-effort Drop cleanup.
+    ///
+    /// # Errors
+    /// Returns an error when the task directory exists and cannot be removed.
+    pub fn finish_and_remove(&self) -> Result<(), String> {
+        self.finish();
+        self.write_finished_marker();
+        remove_task_directory(&self.path, self.retain_unfinished)
+    }
+
+    /// Removes an unfinished, finished, or partially deleted task directory.
+    ///
+    /// Returns `Ok(false)` only when nothing exists to delete. Errors leave the
+    /// completed marker in place so the caller can retry the same lifecycle.
+    ///
+    /// # Errors
+    /// Returns an error for an unowned existing directory or a failed deletion.
+    pub fn discard_task_directory(build: &Path) -> Result<bool, String> {
+        if build.as_os_str().is_empty() {
+            return Ok(false);
+        }
+        let path = build.join("unfinished-task");
+        if !path.exists() {
+            let _ = fs::remove_file(build.join(".unfinished-task.lease"));
+            return Ok(false);
+        }
+        reject_reparse(build)?;
+        // This path is the app-reserved task directory and discard is an explicit
+        // user action: old/partially deleted leftovers without `.owner` must be
+        // removable too, while adoption by new tasks stays ownership-checked.
+        reject_reparse(&path)?;
+        remove_task_directory(&path, true)?;
+        let _ = fs::remove_file(build.join(".unfinished-task.lease"));
+        Ok(true)
+    }
 }
 impl Drop for Workspace {
     fn drop(&mut self) {
@@ -180,7 +233,7 @@ impl Drop for Workspace {
             let _ = fs::write(self.path.join(".finished"), b"completed");
         }
         if (!self.retain_unfinished || self.finished.load(Ordering::Relaxed))
-            && let Err(error) = fs::remove_dir_all(&self.path)
+            && let Err(error) = remove_task_directory(&self.path, self.retain_unfinished)
         {
             eprintln!(
                 "[cleanup] {}: {error}; retry on next startup",
@@ -190,6 +243,31 @@ impl Drop for Workspace {
     }
 }
 
+/// Writes the completed marker on a retained task directory.
+fn mark_finished(path: &Path) {
+    let _ = fs::create_dir_all(path);
+    let _ = fs::write(path.join(".finished"), b"completed");
+}
+
+/// Single safe task-directory deletion used by finish, Drop, open-retry and discard.
+///
+/// A failed delete can remove `.owner`/`.finished` before hitting a locked file;
+/// restoring the marker here keeps the leftover recognizable and retryable.
+fn remove_task_directory(path: &Path, restore_marker: bool) -> Result<(), String> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            if restore_marker {
+                mark_finished(path);
+            }
+            Err(format!(
+                "Cannot remove task workspace {}: {error}",
+                path.display()
+            ))
+        }
+    }
+}
 fn create_directories(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|error| {
         format!(
@@ -293,6 +371,9 @@ mod tests {
         assert!(Workspace::create_task(&build, false, None).is_err());
         let task = Workspace::create_task(&build, false, Some(false)).unwrap();
         assert_eq!(fs::read(task.path().join("progress")).unwrap(), b"saved");
+        // The lease is only exclusive on Windows; elsewhere the sharing shim is a
+        // no-op, so a concurrent create_task is allowed and cannot be asserted here.
+        #[cfg(windows)]
         assert!(Workspace::create_task(&build, false, Some(true)).is_err());
         drop(task);
         assert!(!path.exists());
@@ -306,6 +387,11 @@ mod tests {
         assert!(!path.exists());
     }
 
+    /// Keeping live task directories out of a later cleanup relies on the Windows
+    /// lease being exclusive. Non-Windows platforms implement the lease as an
+    /// advisory no-op, so the cleanup path would remove a live task and this
+    /// scenario is only meaningful on Windows.
+    #[cfg(windows)]
     #[test]
     fn cleanup_preserves_live_tasks_and_only_retains_unfinished_resume() {
         let first = Workspace::create(Path::new("unused"), false).unwrap();

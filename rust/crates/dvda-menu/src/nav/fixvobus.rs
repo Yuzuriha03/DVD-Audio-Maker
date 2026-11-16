@@ -482,17 +482,13 @@ mod tests {
     use super::*;
     use crate::nav::dvdata;
 
-    fn fixture() -> Option<(Vec<u8>, Vec<u8>, DvdData)> {
-        let root =
-            std::path::Path::new(r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker");
-        let input = std::fs::read(root.join("build/menu-accept-old2/menu.mpg")).ok()?;
-        let baseline =
-            std::fs::read(root.join("build/menu-accept-old2/导航 日本語/AUDIO_TS/AUDIO_TS.VOB"))
-                .ok()?;
+    fn fixture() -> (Vec<u8>, Vec<u8>, DvdData) {
+        let input = dvdata::baseline_file("menu.mpg");
+        let baseline = dvdata::baseline_file("导航 日本語/AUDIO_TS/AUDIO_TS.VOB");
         let data = dvdata::parse_sector(&input[119 * 2048..120 * 2048])
-            .unwrap()
+            .expect("baseline menu.mpg sector 119 must carry dvdauthor data")
             .unwrap();
-        Some((input, baseline, data))
+        (input, baseline, data)
     }
 
     fn commands() -> BTreeMap<String, [u8; 8]> {
@@ -530,10 +526,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires build/menu-accept-old2 baseline; set DVDA_MENU_BASELINE_ROOT"]
     fn filled_nav_packs_match_the_c_baseline() {
-        let Some((input, baseline, data)) = fixture() else {
-            return;
-        };
+        let (input, baseline, data) = fixture();
         let mut build =
             super::super::build::build(&input, super::super::build::Aspect::Unknown).unwrap();
         for (i, v) in build.vobus.iter().enumerate() {

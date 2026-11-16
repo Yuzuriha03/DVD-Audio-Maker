@@ -6,9 +6,10 @@ use dvda_core::{
 };
 use dvda_native::media::{Callbacks, Operation, OutputFormat, Request};
 use serde_json::{Value, json};
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt;
 use std::{
     fs,
-    os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -478,16 +479,19 @@ fn alac_repair_preserves_source_and_matches_valid_container() {
     );
     assert!(!root.0.join("unused").exists());
     // A locked destination cannot be replaced or left partially written.
-    fs::write(&repair.output_path, b"preserve").unwrap();
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .share_mode(0)
-        .open(&repair.output_path)
-        .unwrap();
-    assert!(alac::try_repair(&library(), path, &directory, &mut Events::default()).is_err());
-    drop(lock);
-    assert_eq!(fs::read(&repair.output_path).unwrap(), b"preserve");
-    assert_eq!(fs::read(input).unwrap(), broken);
+    #[cfg(windows)]
+    {
+        fs::write(&repair.output_path, b"preserve").unwrap();
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&repair.output_path)
+            .unwrap();
+        assert!(alac::try_repair(&library(), path, &directory, &mut Events::default()).is_err());
+        drop(lock);
+        assert_eq!(fs::read(&repair.output_path).unwrap(), b"preserve");
+        assert_eq!(fs::read(input).unwrap(), broken);
+    }
     assert_no_temporary(&root.0);
 }
 

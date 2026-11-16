@@ -14,7 +14,6 @@ pub(crate) struct Bits {
     counted_words: usize,
 }
 impl Bits {
-    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
     pub(crate) fn with_capacity(words: usize) -> Self {
         Self {
             words: Vec::with_capacity(words),
@@ -22,7 +21,7 @@ impl Bits {
         }
     }
 
-    #[cfg(all(test, any(target_arch = "x86_64", target_os = "android")))]
+    #[cfg(test)]
     pub(crate) fn counting() -> Self {
         Self {
             count_only: true,
@@ -30,17 +29,14 @@ impl Bits {
         }
     }
 
-    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
     pub(crate) fn copy_mode_from(&mut self, other: &Self) {
         self.count_only = other.count_only;
     }
 
-    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
     pub(crate) fn has_counted_words(&self) -> bool {
         self.counted_words != 0
     }
 
-    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
     pub(crate) fn fork(&self) -> Self {
         Self {
             pending: self.pending,
@@ -50,7 +46,6 @@ impl Bits {
         }
     }
 
-    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
     pub(crate) fn commit(&mut self, local: Self) {
         self.counted_words += local.counted_words;
         self.words.extend(local.words);
@@ -58,12 +53,10 @@ impl Bits {
         self.width = local.width;
     }
 
-    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
     pub(crate) fn word_len(&self) -> usize {
         self.words.len() + self.counted_words
     }
 
-    #[cfg(any(target_arch = "x86_64", target_os = "android"))]
     pub(crate) fn finish_into(self, writer: &mut Self, last: bool) {
         if self.count_only {
             writer.counted_words =

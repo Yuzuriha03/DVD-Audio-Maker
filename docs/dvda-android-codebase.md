@@ -14,7 +14,7 @@
   - `lib/src/rust/` — FRB 生成的 Dart 绑定（生成物，不手改）
   - `android/` — Android 宿主工程（Gradle、FlutterActivity、MethodChannel）
 - `deps/android-aarch64/` — 交叉编译的静态 FFmpeg/soxr 库与头文件（ARM64 Android）
-- `tools/android/` — `build-flutter.ps1`、`ndk-env.ps1`、图标生成与 CMake 工具链
+- `tools/android/` — `build-flutter.ps1`（唯一构建入口）、`ndk-env.ps1`、`generate-icons.py`、`release-metadata.ps1`
 - `build/flutter/`、`build/android-ndk-r30/` — 本地预编译 Flutter 与 NDK（不提交）
 - `testdata/` — 测试音频（FLAC/WAV/封面）
 - `docs/` — 移植记录与对齐审计
@@ -57,21 +57,26 @@ Flutter UI
 
 ## 构建
 
-Windows：
+唯一入口（Windows）：
 
     powershell -ExecutionPolicy Bypass -File tools/android/build-flutter.ps1
 
-已配置 NDK/Flutter 的 shell：
+脚本加载 `tools/android/ndk-env.ps1`（NDK r30、API 24），编译
+`rust/crates/dvda-android`（`aarch64-linux-android`），把 `libdvda_android.so`
+放进 `%TEMP%` 暂存工程的 `android/app/src/main/jniLibs/arm64-v8a/`，再执行
+`flutter build apk --release --target-platform android-arm64`。源码树不保留
+`jniLibs/` 目录。APK 输出到
+`apps/android/build/app/outputs/flutter-apk/app-release.apk`，同目录生成
+`release-build.json`（commit、version、target、NDK、SDK、APK 字节数与 SHA-256，
+并标注 `deviceVerified: false`）。
 
-    apps/android/build-apk.sh
-
-只构建 Rust 绑定（Windows PowerShell）：
+只交叉编译 Rust 绑定（不含 Gradle 打包与签名）：
 
     . tools/android/ndk-env.ps1
     cargo build --release --manifest-path rust/crates/dvda-android/Cargo.toml --target aarch64-linux-android
 
-产物复制到
-`apps/android/android/app/src/main/jniLibs/arm64-v8a/libdvda_android.so`。
+产物在 `$env:CARGO_TARGET_DIR/aarch64-linux-android/release/libdvda_android.so`；
+官方流程由 `build-flutter.ps1` 放入 TEMP 暂存工程，不复制进源码树。
 
 FRB Dart 绑定由 `apps/android/flutter_rust_bridge.yaml` 生成到
 `apps/android/lib/src/rust/`：
@@ -81,17 +86,38 @@ FRB Dart 绑定由 `apps/android/flutter_rust_bridge.yaml` 生成到
 
 生成文件不要手改。
 
+## 验证
+
+    # Rust bridge：dvda-android 被排除在 rust workspace 之外，必须单独跑
+    cargo clippy --manifest-path rust/crates/dvda-android/Cargo.toml --target aarch64-linux-android --all-targets -- -D warnings
+    cargo test --manifest-path rust/crates/dvda-android/Cargo.toml --lib
+
+host 测试用 `--lib`：`examples/dlopen.rs` 是 Android/Linux 的 dlopen 探针，
+Windows host 无法链接 `dl`。
+
+    # Flutter
+    cd apps/android
+    flutter analyze
+    flutter test
+
+    # APK 产物
+    & build/android-sdk/build-tools/37.0.0/aapt2.exe dump badging apps/android/build/app/outputs/flutter-apk/app-release.apk
+    & build/android-sdk/build-tools/37.0.0/apksigner.bat verify --print-certs apps/android/build/app/outputs/flutter-apk/app-release.apk
+    Get-FileHash -Algorithm SHA256 apps/android/build/app/outputs/flutter-apk/app-release.apk
+
+构建或静态检查通过不代表 ARM64 真机业务链路已验证。
+
 ## 当前状态与验证边界
 
-- 真 dvda-core 的完整流程已在 aarch64 Android 环境验证：
-  prepare → MLP/LPCM 编码 → 规划 → author → staging 发布 → 自动验证。
-- 已验证项见 `docs/dvda-android-port-notes.md`（菜单/索引/封面、LPCM 16/24、
-  MLP 20-bit、重采样、外部 MLP、取消/继续、五种语言等）。
-- Flutter/FRB 是本轮迁移目标；构建入口如上。x64 主机编译通过不等于 ARM64
-  真机运行通过。
+- 历史：早期 JNI/proot 阶段曾在 aarch64 Android 环境验证过 dvda-core 完整流程
+  （prepare → MLP/LPCM 编码 → 规划 → author → staging 发布 → 自动验证），
+  见 `docs/dvda-android-port-notes.md`；该文是历史实测，数字与结论不作现行基准。
+- 当前 Flutter/FRB 入口只产出编译结果与 `release-build.json`；构建成功只代表
+  编译通过，不等于 ARM64 真机运行通过。
 - 当前只发布 ARM64；x86/x86_64 未构建。正式发布签名与真机安装回归以实际构建
   结果为准。
-- 旧 JNI/Compose/手打包流程不再作为当前构建路径；历史演进仅保留在 port notes 中。
+- 旧 JNI/Compose/手打包流程（`build-apk.sh`、手写 CMake 工具链）已不再存在；
+  历史演进仅保留在 port notes 中。
 
 ## 许可
 

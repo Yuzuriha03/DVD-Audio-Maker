@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
-import '../../models/app_settings.dart';
 import '../../services/app_controller.dart';
+import '../formatting.dart';
 import '../widgets/common.dart';
 
 /// Disc menu, cover and video standard settings.
@@ -91,11 +91,16 @@ class MenuSection extends StatelessWidget {
                   second: SettingStringDropdown(
                     label: strings.norm,
                     value: settings.norm,
-                    options: kVideoStandards,
+                    options: withCurrent(
+                      settings.videoStandards,
+                      settings.norm,
+                    ),
                     labels: <String>[
                       strings.normPal,
                       strings.normSecam,
                       strings.normNtsc,
+                      if (!settings.videoStandards.contains(settings.norm))
+                        settings.norm,
                     ],
                     onChanged: (value) =>
                         controller.update(() => settings.norm = value),

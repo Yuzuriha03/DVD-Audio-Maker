@@ -16,7 +16,7 @@ gui-debug.cmd
 cli.cmd abi.version
 cli.cmd prepare --profile "C:\work\settings.json"
 cli.cmd build --dry-run --profile "C:\work\settings.json"
-cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 ```
 
 `settings.json` is the only file-based configuration format. The Git-ignored
@@ -58,15 +58,42 @@ generated in `build/mlp-encoder`; the historical `external-oracle` feature and
 comparison harness have been removed.
 
 Use Rust Analyzer and CodeLLDB (or WinDbg) for `dvda-desktop` and `dvda-cli`.
-`.vscode/tasks.json` contains workspace build, test, release and packaging
-tasks; `.vscode/launch.json` contains x64 GUI and CLI debug entries.
+`.vscode/tasks.json` contains workspace build, test and release tasks (it no
+longer has a packaging task that could produce a ZIP; release steps live in
+[the single-EXE release guide](ONEFILE-PUBLISH.md)); `.vscode/launch.json`
+contains x64 GUI and CLI debug entries.
 
 ## Release
 
+Windows releases publish one single EXE per architecture (x64 and WoA); no ZIP
+is generated or uploaded. Build the x64 packaging tool first (x64 and WoA share
+the same x64 tool):
+
 ```powershell
-cargo build --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc --release --workspace --offline
-dvda-toolchain.exe package --repo . --output build/release --media-runtime build/msvc-native/ffmpeg-static/install --image-author build/rust-author-production --prebuilt build/release-menu-final --version v1.0
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 build --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --release --offline -p dvda-toolchain
 ```
+
+The wrapper initializes the MSVC environment and defaults `DVDA_FFMPEG_PREFIX` to `build\msvc-native\ffmpeg-static\install`, so it runs in a clean shell once the [native inputs](../tools/win-build/README.en.md) are prepared. The packaging `dvda-toolchain.exe` initializes its own MSVC environment and writes the validated prefix, so it can also be called from a clean shell; it requires Rust/Cargo and Python on `PATH`.
+
+x64:
+
+```powershell
+rust/target/x86_64-pc-windows-msvc/release/dvda-toolchain.exe package --repo . --output <output-dir> --version <version> --target x86_64-pc-windows-msvc --media-runtime build/msvc-native/ffmpeg-static/install --image-author build/gui-only-author-v1.1/x64 --prebuilt build/gui-only-author-v1.1/x64 --source build/gui-only-author-v1.1/x64/data --single-exe
+```
+
+WoA (ARM64, same x64 tool):
+
+```powershell
+rust/target/x86_64-pc-windows-msvc/release/dvda-toolchain.exe package --repo . --output <output-dir> --version <version> --target aarch64-pc-windows-msvc --media-runtime build/msvc-native/ffmpeg-arm64/install --image-author build/gui-only-author-v1.2/arm64 --prebuilt build/gui-only-author-v1.2/arm64 --source build/gui-only-author-v1.2/arm64/data --single-exe
+```
+
+`--source` must point to the data directory containing `menu/`; `--prebuilt`
+must point to the architecture directory containing `fonts/`. Target triples,
+input trees and output directories must match per architecture and must not be
+mixed. Official static media runtimes need no `--ffmpeg-prefix`; shared/legacy
+media runtimes require an explicit `--ffmpeg-prefix <validated shared FFmpeg
+prefix>` (a static runtime rejects a different prefix). Android releases use
+only `tools/android/build-flutter.ps1`.
 
 The default GUI links the Rust MLP encoder into the application and ships no
 encoder DLL. The retired `--encoder-runtime` external comparison validation option has been
@@ -78,9 +105,13 @@ The standalone developer author is excluded from the GUI's embedded runtime
 and built separately by the workflow tests. Missing, tampered or mismatched
 inputs are rejected before release staging, preserving existing files.
 
-`DVD-Audio-Maker-v1.0-win-x64.zip` excludes the .NET runtime, developer CLI,
-PDBs, build-provenance JSON, `config.env` and personal profiles. Build outputs
-remain under the Git-ignored `build` directory.
+Release assets are `DVD-Audio-Maker-<version>-win-x64.exe` and
+`-win-arm64.exe`. They exclude the .NET runtime, developer CLI, PDBs,
+build-provenance JSON, `config.env` and personal profiles; licenses and
+third-party notices are embedded in the GUI About window. Build outputs remain
+under the Git-ignored `build` directory. Create the tag/Release only after the
+three-platform SHA-256 values are ready; when rebuilding, keep the previous
+release log and update the SHA-256 values.
 
 Native manifests under `build/msvc-native` describe the third-party libraries
 and their hashes. Keep them with those libraries. After deleting them, rebuild
@@ -92,6 +123,12 @@ XML configuration. Static package validation no longer requires the old image
 directory. Full release and visual differential acceptance remain in progress.
 
 ## Acceptance
+
+The `cargo` build/test commands below require an initialized MSVC environment:
+run `call tools\win-build\rust-dev-env.cmd` first, or use
+`tools\win-build\cargo-msvc.ps1` (which also sets the default
+`DVDA_FFMPEG_PREFIX`). Running them in a fresh shell fails because `link.exe` or
+the FFmpeg prefix is missing.
 
 ```powershell
 cargo  fmt --manifest-path rust/Cargo.toml --all -- --check
@@ -152,7 +189,7 @@ cargo test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --rel
 The read-only Release file benchmark accepts a JSON array through
 `DVDA_HASH_BENCH_INPUTS` and writes a new JSON report to
 `DVDA_HASH_BENCH_REPORT`. It measures sha2 memory and warm-file hashing for real
-DLLs, an MLP cache sample and the release ZIP using seven-round medians.
+DLLs, an MLP cache sample and the release single EXE (historical ZIP baselines are archive-only) using seven-round medians.
 New reports contain sha2 timings only; existing before/after reports are historical.
 Results cover the digest path only, not cold-disk or
 end-to-end authoring time. Reports stay under the Git-ignored `build` folder.

@@ -539,6 +539,7 @@ fn verification(
             dvda_core::verify::Inspection {
                 final_directory: directory
                     .map_or_else(|| options.path("FinalDirectory"), PathBuf::from),
+                final_directory_display: None,
                 iso_prefix: options.text("IsoPrefix"),
                 manifest_path: manifest
                     .map(PathBuf::from)

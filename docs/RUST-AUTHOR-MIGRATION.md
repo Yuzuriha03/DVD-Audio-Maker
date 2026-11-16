@@ -1,5 +1,7 @@
 # DVD authoring 与 ISO writer 的 Rust 实现
 
+> **历史迁移记录（更新于 2026-10-10）。** 文中 ImageMagick 依赖、旧包名/ZIP 与旧构建参数描述的是当时状态，已被当前实现取代；当前构建与发布分别以 [开发说明](DEVELOPMENT.md) 和 [单 EXE 发布](ONEFILE-PUBLISH.md) 为准。不要把这些历史描述当作当前依赖或新实测结果。
+
 ## 图像后端替换进度
 
 纯 Rust 图像库 [`dvda-image`](../rust/crates/dvda-image/src/lib.rs) 已加入 workspace，提供 RGBA 绘制、图像编解码、字体掩码、sRGB RGB8 → 单帧 Y4M 序列化及 fit/fill/强制尺寸、居中 extent 几何计算，不依赖原生库、不包含 unsafe。生产菜单准备路径已接入透明 PNG 底图生成、播放静图（93.75% 横向缩放、fit、黑色居中 extent、JPEG 92）和生成图片的解码尺寸校验；author 单帧 Y4M 输出也已接入 Rust。封面背景、打包字体探测、author 图像预处理/文字/蒙版/索引背景以及 ISO 菜单帧统计均已接入 Rust。菜单 SPU 在未提供外部 RGBA 回调时使用 `dvda-image` 解码，author 的菜单桥接不再装载图像 DLL；显式回调 ABI 仍保留。标题换行使用 Unicode 字素边界，避免拆开组合音标和 ZWJ 序列。底图写入执行 flush/sync，写入失败或完成后检测到取消时删除输出。几何规则、颜色与菜单视觉兼容仍需外部旧后端差分确认，不能视为迁移验收通过。
@@ -17,7 +19,7 @@
 | 菜单 / 静图 | 专辑页、多个索引页、按钮与导航 XML、分语言字体、图片/VOB 编排 |
 | ISO | 有界缓冲的 ISO9660 / UDF 1.02 bridge writer、原子替换、取消 |
 
-`dvda-author` 使用 Rust 标准库及 `dvda-image` 图像库；MPEG-2 编码仍通过现有 Rust bridge 调用 FFmpeg，SPU/DVD 导航由进程内 Rust 菜单实现。遗留图像 ABI、默认直接链接 feature 和发布装配仍带有 ImageMagick 依赖，尚未完成退休，不能据此宣称最终 EXE 已去除 ImageMagick。Python 构建/验收脚本和 `pycdlib` 独立读取器只用于开发，不进入 author 的运行时依赖。
+`dvda-author` 使用 Rust 标准库及 `dvda-image` 图像库；MPEG-2 编码仍通过现有 Rust bridge 调用 FFmpeg，SPU/DVD 导航由进程内 Rust 菜单实现。（历史状态，已过时：当时遗留图像 ABI、默认直接链接 feature 和发布装配仍带 ImageMagick 依赖；当前生产构建已不再依赖 ImageMagick，见 [开发说明](DEVELOPMENT.md)。）Python 构建/验收脚本和 `pycdlib` 独立读取器只用于开发，不进入 author 的运行时依赖。
 
 ## MLP 到达时间与采样时间轴
 
@@ -25,7 +27,7 @@ AU 头部第 2–3 字节是 arrival time，编码器会按压缩包大小和解
 
 ## 入口与构建
 
-Windows 下可从仓库根运行 `powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 check --manifest-path rust\Cargo.toml --workspace --all-targets --offline`。包装脚本通过 `vswhere` 初始化 MSVC x64 环境；未显式设置环境变量时，FFmpeg 默认使用 `build\msvc-native\ffmpeg-static\install`，ImageMagick 工作目录使用 `build\msvc-native\image`，其库目录使用该目录下的 `lib`。已有 `DVDA_FFMPEG_PREFIX`、`DVDA_MAGICK_WORK`、`DVDA_IMAGE_DEPS_DIR` 优先，脚本不会下载或重建依赖。VS Code 的 workspace/release 构建任务和 rust-analyzer 检查复用此入口；分析器从 `rust` 工作区启动，再由脚本切回仓库根。修改分析器或 C# 项目加载设置后，必要时执行 Reload Window，清除先前加载的第三方 DotZLib 项目诊断。
+Windows 下可从仓库根运行 `powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 check --manifest-path rust\Cargo.toml --workspace --all-targets --offline`。包装脚本通过 `vswhere` 初始化 MSVC x64 环境；未显式设置环境变量时，FFmpeg 默认使用 `build\msvc-native\ffmpeg-static\install`。历史参数 `DVDA_MAGICK_WORK`、`DVDA_IMAGE_DEPS_DIR` 与 ImageMagick 工作目录已退役并会报错；脚本不会下载或重建依赖。VS Code 的 workspace/release 构建任务和 rust-analyzer 检查复用此入口；分析器从 `rust` 工作区启动，再由脚本切回仓库根。修改分析器或 C# 项目加载设置后，必要时执行 Reload Window，清除先前加载的第三方 DotZLib 项目诊断。
 
 应用的 `build::execute` 直接调用 Rust author，不再通过 `process::execute` 启动外部制盘程序；旧配置中的 author 路径保留兼容。续跑签名绑定当前程序的完整摘要，避免复用旧 C author 的成品。
 
@@ -79,6 +81,6 @@ python tools/win-build/test-rust-iso.py --report build/rust-author-iso/acceptanc
 | 菜单与静图 | PAL/NTSC 各 13 albums、15 pages、13 stills；全部画面解码、字体、导航和 native verifier 通过；`build/rust-author-menu-production-final/report.json` |
 | 单 EXE 产品流程 | 只复制发布 GUI，清除开发覆盖并使用系统 PATH；MLP/LPCM 各两轨实际 build/verify、菜单/静图和损坏运行库自动修复通过；`build/rust-author-onefile-final.json` |
 
-发布候选包为 `build/rust-author-package/DVD-Audio-Maker-v1.0-win-x64.zip`。GUI 内嵌运行时只有 19 个第三方 DLL/配置/字体/素材文件，没有项目 adapter DLL 或开发 author EXE；完整 author 直接静态编入主程序。第三方图像/视频库的边界保持明确，不把这些库称作纯 Rust 重写。
+（历史）发布候选目录为 `build/rust-author-package/`，当时以 `DVD-Audio-Maker-v1.0-win-x64.zip` 形式记录；当前发布为单 EXE，见 [单 EXE 发布](ONEFILE-PUBLISH.md)。GUI 内嵌运行时只有 19 个第三方 DLL/配置/字体/素材文件，没有项目 adapter DLL 或开发 author EXE；完整 author 直接静态编入主程序。第三方图像/视频库的边界保持明确，不把这些库称作纯 Rust 重写。
 
 当前编码器界限为 1–9 group、每组 1–99 track、每组最多八种音频格式、1–6 声道；ASVS 固定目录容纳最多 99 个带新图片的标题，不把这个实现界限称作已证明的 DVD 规范上限。LPCM 超过 9.6 Mbit/s 会拒绝并要求先编码为 MLP。软件验收不能代替实体 DVD-Audio 播放器和烧录测试。

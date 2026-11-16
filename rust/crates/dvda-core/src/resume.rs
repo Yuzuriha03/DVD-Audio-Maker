@@ -132,7 +132,9 @@ pub fn disc_signature(job: &Job, disc: &Disc) -> Result<String, String> {
             "DiscNumber":disc.number, "VolumeId":format!("{} {}",job.title,disc.number),
             "IsoName":job.iso_name(disc.number), "Title":job.title,
             "TitleMode":job.diagnostic_title_mode, "GroupLimit":job.group_track_limit,
-            "AuthorPath":"rust-author", "AuthorLibraryDirectory":job.media_library.parent(),
+            "AuthorPath":"rust-author",
+            "AuthorLibraryDirectory":
+                crate::platform::author_library_directory(&job.media_library),
             "MenuEnabled":job.menu_enabled, "MenuTracksPerPage":job.menu_tracks_per_page,
             "MenuIndexMinimumAlbums":job.menu_index_minimum_albums, "MenuStillPictures":job.menu_still_pictures,
             "MenuLanguage":job.menu_language,

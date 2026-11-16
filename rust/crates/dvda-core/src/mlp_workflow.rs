@@ -807,6 +807,7 @@ fn error(code: &str, message: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
     use crate::platform::OpenOptionsExt;
 
     #[derive(Default)]
@@ -1100,8 +1101,26 @@ mod tests {
     }
 
     #[test]
-    fn encoded_publication_preserves_old_output_when_source_missing_or_destination_locked() {
-        let root = std::env::temp_dir().join(format!("dvda-mlp-publish-{}", std::process::id()));
+    fn encoded_publication_rejects_missing_source_and_keeps_old_output() {
+        let root =
+            std::env::temp_dir().join(format!("dvda-mlp-publish-missing-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let staged = root.join("staged.mlp");
+        let destination = root.join("old.mlp");
+        fs::write(&destination, b"old valid output").unwrap();
+        assert!(publish_encoded(&staged, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"old valid output");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Reproducing a failed publication needs an exclusive Windows file lock on the
+    /// destination; non-Windows sharing shims are advisory no-ops and cannot force
+    /// the rollback path, so this scenario stays Windows-only.
+    #[cfg(windows)]
+    #[test]
+    fn encoded_publication_preserves_old_output_when_destination_locked() {
+        let root =
+            std::env::temp_dir().join(format!("dvda-mlp-publish-locked-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let staged = root.join("staged.mlp");
         let destination = root.join("old.mlp");

@@ -4,9 +4,9 @@ Task recovery: only Start production asks Continue production / Restart producti
 
 [中文](README.md) · [日本語](README.ja.md)
 
-For Windows 10/11 x64. Extract the ZIP and run **DVD-Audio-Maker.exe**.
+For Windows 10/11 (x64 or ARM64). Download the single EXE for your architecture and run it; no extraction or installation is required.
 
-Required components are embedded and prepared automatically on first launch, which may take longer. Documentation and licenses are beside the EXE.
+Required components are embedded and prepared automatically on first launch, which may take longer. The license, FFmpeg LGPL notice and third-party/image/menu statements are embedded in the app's About window; the texts are also kept in the repository.
 
 ## Create a disc
 

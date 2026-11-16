@@ -48,7 +48,6 @@ fn bit_writer_and_checksum() {
     assert_eq!(&b.seal(false)[..2], &[0x1234, 0x5600]);
     assert_eq!(checksum(&[]), 0xa9a2);
 }
-#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 #[test]
 fn bit_writer_transactions_preserve_output_and_counting() {
     for count_only in [false, true] {
@@ -101,7 +100,6 @@ fn bit_writer_transactions_preserve_output_and_counting() {
     }
 }
 
-#[cfg(any(target_arch = "x86_64", target_os = "android"))]
 #[test]
 fn bulk_writer_matches_bitwise_reference() {
     for prefix in 0..16 {

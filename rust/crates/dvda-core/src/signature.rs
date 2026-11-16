@@ -94,7 +94,10 @@ pub fn encoding_identity(
     let mut components = std::collections::BTreeMap::new();
     let media_image = native_media_image(media);
     components.insert("media".to_owned(), file_hash(&media_image)?);
-    components.insert("linked-media-executable".to_owned(), file_hash(&media_image)?);
+    components.insert(
+        "linked-media-executable".to_owned(),
+        file_hash(&media_image)?,
+    );
     let mut dependencies = Vec::new();
     for directory in dependency_directories(media) {
         for entry in fs::read_dir(&directory).map_err(|error| {
@@ -543,7 +546,13 @@ mod tests {
             encoding_identity("policy", &media, Some(&encoder), context.to_str().unwrap()).unwrap()
         };
         let mut before = compute();
-        let paths = [&media, &context, &dependency];
+        // Android links media statically and intentionally reports no dependency
+        // directories, so codec files are only part of the identity where the
+        // platform enumerates them; media/context stay shared on every platform.
+        let mut paths = vec![&media, &context];
+        if cfg!(not(target_os = "android")) {
+            paths.push(&dependency);
+        }
         for path in paths {
             let modified = fs::metadata(path).unwrap().modified().unwrap();
             fs::write(path, b"ABCE").unwrap();
@@ -629,6 +638,46 @@ mod tests {
                 with_language(language, false)
             );
         }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn absent_author_library_directory_is_skipped_but_bad_directories_are_errors() {
+        // Android links the author statically, so the platform provider returns
+        // None and the shared canonical logic simply omits library rows.
+        let request = json!({
+            "DiscNumber":1,"VolumeId":"Title 1","IsoName":"Title_1.iso",
+            "Title":"Title","TitleMode":"album","GroupLimit":99,
+            "AuthorPath":"rust-author","AuthorLibraryDirectory":null,
+            "MenuEnabled":false,"MenuTracksPerPage":12,"MenuIndexMinimumAlbums":4,
+            "MenuStillPictures":true,"MenuCoverDim":35,"MenuFont":"font",
+            "MenuFontJapanese":"","MenuFontKorean":"","ImageLibraryDirectory":null,
+            "Tracks":[]
+        });
+        let statically_linked = build(serde_json::from_value(request.clone()).unwrap())
+            .expect("statically linked layout has no library directory to hash");
+        assert_eq!(statically_linked.len(), 64, "sha256 hex digest");
+
+        // A directory that is provided but unreadable must still fail: the fix
+        // must not suppress every permission error.
+        let root = std::env::temp_dir().join(format!(
+            "dvda-signature-lib-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("directory");
+        let not_a_directory = root.join("library.dll");
+        fs::write(&not_a_directory, [1, 2, 3]).expect("file");
+        let mut broken = request;
+        broken["AuthorLibraryDirectory"] = json!(not_a_directory);
+        let error = build(serde_json::from_value(broken).unwrap()).unwrap_err();
+        assert!(
+            error.contains("Read signature library directory"),
+            "{error}"
+        );
         let _ = fs::remove_dir_all(root);
     }
 }

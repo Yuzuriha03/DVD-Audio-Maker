@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dvda_maker/bridge.dart';
 import 'package:dvda_maker/src/localization/app_strings.dart';
 import 'package:dvda_maker/src/models/app_settings.dart';
 import 'package:dvda_maker/src/services/app_controller.dart';
@@ -13,15 +14,41 @@ import 'package:dvda_maker/src/ui/sections/task_section.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dvda_maker/src/models/profile_catalog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Future<AppController> _controller() async {
+import 'profile_catalog_fixture.dart';
+
+Future<AppController> _controller({
+  TaskBridgeRunner? bridgeRunProfile,
+  ProfileIssueValidator? bridgeValidateProfile,
+  ProfileIssueText? bridgeIssueMessage,
+}) async {
   SharedPreferences.setMockInitialValues(<String, Object>{});
   return AppController(
     settings: AppSettings(),
     store: await SettingsStore.open(),
     platform: PlatformService(),
+    bridgeRunProfile: bridgeRunProfile,
+    bridgeValidateProfile: bridgeValidateProfile,
+    bridgeIssueMessage: bridgeIssueMessage,
   );
+}
+
+/// Shared-validation/bridge double: widget tests must not need a live Rust
+/// library, and SAF tests must exercise only the platform mirror flow.
+Future<String> _bridgeOk(String profileJson, String action) async {
+  return jsonEncode(<String, Object>{
+    'Ok': true,
+    'Message': 'done',
+    'Log': '',
+    'ProgressDone': 100,
+    'ProgressTotal': 100,
+  });
+}
+
+List<ProfileIssueView> _noIssues(String valuesJson, bool forTask) {
+  return const <ProfileIssueView>[];
 }
 
 class FakeRunningController extends AppController {
@@ -33,6 +60,14 @@ class FakeRunningController extends AppController {
 
   bool running = false;
   bool stopRequested = false;
+  String fakeProgressText = '';
+  int? fakePercent;
+
+  @override
+  String get progressText => fakeProgressText;
+
+  @override
+  int? get progressPercent => fakePercent;
 
   @override
   bool get isRunning => running;
@@ -65,6 +100,9 @@ class FakeRunningController extends AppController {
 }
 
 void main() {
+  setUpAll(() => ProfileCatalog.install(testCatalog()));
+  setUp(AppBridge.resetInitializationForTests);
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
@@ -107,37 +145,40 @@ void main() {
     },
   );
 
-  testWidgets('LPCM hides 20-bit depth and normalizes existing 20-bit', (
-    tester,
-  ) async {
-    final controller = await _controller();
-    addTearDown(controller.dispose);
-    controller.settings.bits = '20';
-    await tester.pumpWidget(
-      MaterialApp(
-        home: AnimatedBuilder(
-          animation: controller,
-          builder: (context, _) =>
-              Scaffold(body: AudioSection(controller: controller)),
+  testWidgets(
+    'LPCM hides the invalid 20-bit option but preserves an external 20-bit value',
+    (tester) async {
+      final controller = await _controller();
+      addTearDown(controller.dispose);
+      // An imported profile may carry 20-bit LPCM; it must not be rewritten.
+      controller.settings.bits = '20';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AnimatedBuilder(
+            animation: controller,
+            builder: (context, _) =>
+                Scaffold(body: AudioSection(controller: controller)),
+          ),
         ),
-      ),
-    );
-    final strings = controller.strings;
+      );
+      final strings = controller.strings;
 
-    await tester.tap(find.byType(DropdownButton<String>).at(0));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(strings.modeLpcm).last);
-    await tester.pumpAndSettle();
-    expect(controller.settings.audioMode, 'lpcm');
-    expect(controller.settings.bits, '24');
+      await tester.tap(find.byType(DropdownButton<String>).at(0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(strings.modeLpcm).last);
+      await tester.pumpAndSettle();
+      expect(controller.settings.audioMode, 'lpcm');
+      // No silent 20 -> 24 rewrite: the shared Rust invalid_bits rule rejects
+      // this combination when a task starts (core/bridge tests cover it).
+      expect(controller.settings.bits, '20');
 
-    await tester.tap(find.byType(DropdownButton<String>).at(2));
-    await tester.pumpAndSettle();
-    expect(find.text('20 bit'), findsNothing);
-    expect(find.text('16 bit'), findsWidgets);
-    expect(find.text('24 bit'), findsWidgets);
-  });
-
+      await tester.tap(find.byType(DropdownButton<String>).at(2));
+      await tester.pumpAndSettle();
+      expect(find.text('20 bit'), findsNothing);
+      expect(find.text('16 bit'), findsWidgets);
+      expect(find.text('24 bit'), findsWidgets);
+    },
+  );
   testWidgets('directory field taps open the Android system picker', (
     tester,
   ) async {
@@ -289,6 +330,9 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(strings.advancedSettingsHint), findsOneWidget);
+    expect(find.byKey(const ValueKey('discard-and-cleanup')), findsOneWidget);
+    expect(find.text(strings.cleanupInternalCaches), findsNothing);
+    expect(find.text(strings.discardProgress), findsNothing);
     expect(find.text(strings.isoPrefix), findsNothing);
     await tester.tap(find.byKey(const ValueKey('advanced-settings-switch')));
     await tester.pumpAndSettle();
@@ -300,6 +344,35 @@ void main() {
       find.byKey(const ValueKey('advanced-settings-switch')),
       findsNothing,
     );
+  });
+
+  testWidgets('merged discard and cleanup lives in the settings sheet', (
+    tester,
+  ) async {
+    final controller = await _controller();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: HomeScreen(controller: controller)),
+    );
+    final strings = controller.strings;
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+
+    final tile = find.byKey(const ValueKey('discard-and-cleanup'));
+    expect(tile, findsOneWidget);
+    expect(find.text(strings.cleanupInternalCaches), findsNothing);
+    expect(find.text(strings.discardProgress), findsNothing);
+
+    await tester.ensureVisible(tile);
+    await tester.pumpAndSettle();
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+
+    expect(find.text(strings.discardAndCleanupBody), findsWidgets);
+    expect(find.text(strings.discardAndCleanupAction), findsOneWidget);
+    await tester.tap(find.text(strings.cancel).last);
+    await tester.pumpAndSettle();
   });
 
   testWidgets(
@@ -380,13 +453,13 @@ void main() {
       controller.settings.appFilesDir = '/data/user/999/com.dvda.maker/files';
       controller.settings.appWorkDir =
           '/data/user/999/com.dvda.maker/files/build';
-      controller.settings.appOutputDir =
-          '/data/user/999/com.dvda.maker/files/output';
       controller.settings.sourceStagingPath =
           '/data/user/999/com.dvda.maker/files/saf-mirror/source';
       controller.settings.finalTreeUri = 'content://documents/tree/output';
+      controller.settings.finalDir = '/sdcard/Download/out';
       controller.settings.externalStagingPath =
           '/data/user/999/com.dvda.maker/files/saf-mirror/external';
+      controller.settings.source = '/sdcard/Music';
 
       final task =
           jsonDecode(controller.buildTaskProfileJson()) as Map<String, dynamic>;
@@ -399,10 +472,12 @@ void main() {
         taskValues['DVDA_BUILD_DIR'],
         '/data/user/999/com.dvda.maker/files/build',
       );
-      expect(
-        taskValues['DVDA_FINAL_DIR'],
-        '/data/user/999/com.dvda.maker/files/output',
-      );
+      // The shared sequence owns the real task-local delivery folder; the
+      // profile never points Rust at the app-private output directory.
+      expect(taskValues['DVDA_FINAL_DIR'], isEmpty);
+      expect(taskValues['DVDA_FINAL_DISPLAY_DIR'], '/sdcard/Download/out');
+      // Session-only source display path for shared log/diagnostic mapping.
+      expect(taskValues['DVDA_SRC_DISPLAY_DIR'], '/sdcard/Music');
       expect(
         taskValues['DVDA_MLP_EXTERNAL_DIR'],
         '/data/user/999/com.dvda.maker/files/saf-mirror/external',
@@ -412,7 +487,7 @@ void main() {
           jsonDecode(controller.buildProfileJson()) as Map<String, dynamic>;
       final savedValues = saved['Values'] as Map<String, dynamic>;
       expect(savedValues['DVDA_SRC'], '/sdcard/Music');
-      expect(savedValues['DVDA_FINAL_DIR'], '/sdcard/Download/DSH-Go');
+      expect(savedValues['DVDA_FINAL_DIR'], '/sdcard/Download/out');
     },
   );
 
@@ -437,7 +512,6 @@ void main() {
         return <String, Object?>{
           'filesDir': '/data/user/999/com.dvda.maker/files',
           'buildDir': '/data/user/999/com.dvda.maker/files/build',
-          'outputDir': '/data/user/999/com.dvda.maker/files/output',
         };
       }
       return null;
@@ -458,7 +532,8 @@ void main() {
       '/data/user/999/com.dvda.maker/files/build',
     );
     expect(controller.settings.sourceTreeUri, isNotEmpty);
-    expect(controller.settings.fontSc, kDefaultFont);
+    // A stale public font path falls back to the shared platform default.
+    expect(controller.settings.fontSc, isEmpty);
     expect(
       controller.settings.fontJp,
       '/data/user/999/com.dvda.maker/files/fonts/jp.ttf',
@@ -468,11 +543,13 @@ void main() {
   testWidgets('an empty staging path is rebuilt from its SAF grant', (
     tester,
   ) async {
-    final controller = await _controller();
+    final controller = await _controller(
+      bridgeRunProfile: _bridgeOk,
+      bridgeValidateProfile: _noIssues,
+    );
     addTearDown(controller.dispose);
     controller.settings.sourceStagingPath = '';
     controller.settings.sourceTreeUri = 'content://documents/tree/source';
-    controller.settings.menu = true;
     var relinked = false;
     const channel = MethodChannel('dvda/platform');
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
@@ -485,9 +562,6 @@ void main() {
           'nativePath': '/data/user/0/com.dvda.maker/files/saf-mirror/rebuilt',
           'treeUri': 'content://documents/tree/source',
         };
-      }
-      if (call.method == 'validateReadableFont') {
-        return false;
       }
       return null;
     });
@@ -505,19 +579,22 @@ void main() {
       controller.settings.sourceStagingPath,
       '/data/user/0/com.dvda.maker/files/saf-mirror/rebuilt',
     );
-    expect(outcome?.message, contains('menu font'));
+    expect(outcome?.ok, isTrue);
+    expect(outcome?.message, 'done');
   });
 
   testWidgets('a freshly picked folder rebuilds its mirror before the task', (
     tester,
   ) async {
-    final controller = await _controller();
+    final controller = await _controller(
+      bridgeRunProfile: _bridgeOk,
+      bridgeValidateProfile: _noIssues,
+    );
     addTearDown(controller.dispose);
     controller.settings.appFilesDir = '/data/user/0/com.dvda.maker/files';
     controller.settings.sourceTreeUri = 'content://documents/tree/source';
     controller.settings.sourceStagingPath = '';
     controller.settings.sourceMirrorDirty = true;
-    controller.settings.menu = true;
     var rebuilt = false;
     const channel = MethodChannel('dvda/platform');
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
@@ -530,9 +607,6 @@ void main() {
           'nativePath': '/data/user/0/com.dvda.maker/files/saf-mirror/rebuilt',
           'treeUri': 'content://documents/tree/source',
         };
-      }
-      if (call.method == 'validateReadableFont') {
-        return false;
       }
       return null;
     });
@@ -551,9 +625,50 @@ void main() {
       '/data/user/0/com.dvda.maker/files/saf-mirror/rebuilt',
     );
     expect(controller.settings.sourceMirrorDirty, isFalse);
-    expect(outcome?.message, contains('menu font'));
+    expect(outcome?.ok, isTrue);
+    expect(outcome?.message, 'done');
   });
 
+  testWidgets(
+    'shared profile validation issues are surfaced without SAF work',
+    (tester) async {
+      final controller = await _controller(
+        bridgeValidateProfile: (valuesJson, forTask) =>
+            const <ProfileIssueView>[
+              ProfileIssueView(
+                key: 'DVDA_MENU_FONT',
+                code: 'MENU_FONT_UNAVAILABLE',
+              ),
+            ],
+        bridgeIssueMessage: (language, code) => 'menu font unavailable',
+      );
+      addTearDown(controller.dispose);
+      controller.settings.sourceStagingPath = '';
+      controller.settings.sourceTreeUri = 'content://documents/tree/source';
+      var relinked = false;
+      const channel = MethodChannel('dvda/platform');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        if (call.method == 'ensureSourceLink') {
+          relinked = true;
+        }
+        return null;
+      });
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        );
+      });
+
+      final outcome = await controller.runAction('prepare');
+
+      expect(outcome?.ok, isFalse);
+      expect(outcome?.message, 'menu font unavailable');
+      expect(relinked, isFalse);
+    },
+  );
   testWidgets('a broken SAF mirror reports the platform reason', (
     tester,
   ) async {
@@ -640,31 +755,17 @@ void main() {
     expect(AppController.unfinishedFromStatus('not json'), isFalse);
   });
 
-  test('bridge log events render like the Windows client', () async {
-    final controller = await _controller();
-    addTearDown(controller.dispose);
-
-    final log = controller.formatLogForDisplay(
-      '[METRIC] {"event":"start"}\n'
-      '{"Kind":"PcmFinished","Name":"Track A"}\n'
-      '{"Kind":"PcmProgress","Name":"Track A","Value":40}\n'
-      '{"Kind":"Encoded","Name":"Track A","Value":{"Rate":48000,"Bits":24,"Channels":6,"Bytes":123}}\n'
-      'out_time_us=237312000\n'
-      'Number of samples: 1080000\n'
-      '[TASK] {"Action":"source_result","Current":55,"Total":149,"Name":"Lulala"}\n'
-      '[FAIL] 音源检查失败',
+  test('pending delivery exposes exactly the task-local export folder', () {
+    final pending = TaskOutcome.parse(
+      '{"Ok":true,"FinalDirectory":"/data/user/0/com.dvda.maker/files/build/unfinished-task/deliver"}',
     );
-
-    expect(log, isNot(contains('[METRIC]')));
-    expect(log, isNot(contains('"Kind"')));
-    expect(log, contains('Track A'));
-    expect(log, contains('40%'));
-    expect(log, contains('48000'));
-    expect(log, isNot(contains('out_time_us')));
-    expect(log, isNot(contains('Number of samples')));
-    expect(log, contains('55/149'));
-    expect(log, contains('Lulala'));
-    expect(log, contains('[FAIL]'));
+    expect(
+      pending.deliveryDirectory,
+      '/data/user/0/com.dvda.maker/files/build/unfinished-task/deliver',
+    );
+    final delivered = TaskOutcome.parse('{"Ok":true,"FinalDirectory":null}');
+    expect(delivered.deliveryDirectory, isNull);
+    expect(TaskOutcome.parse('{"Ok":true}').deliveryDirectory, isNull);
   });
 
   test('build validation requires SAF source and output selections', () async {
@@ -680,6 +781,49 @@ void main() {
     final missingOutput = await controller.runAction('build');
     expect(missingOutput?.ok, isFalse);
     expect(missingOutput?.message, controller.strings.selectFinalRequired);
+  });
+
+  testWidgets('task progress shows readable text plus a percentage only', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final controller = FakeRunningController(
+      settings: AppSettings(),
+      store: await SettingsStore.open(),
+      platform: PlatformService(),
+    );
+    addTearDown(controller.dispose);
+    controller.running = true;
+    controller.fakeProgressText = '打包 ISO，光盘： 2/149';
+    controller.fakePercent = 65;
+    await tester.pumpWidget(
+      MaterialApp(
+        // Production keeps TaskSection inside home_screen's scroll view; the
+        // widget test supplies the same scrolling host explicitly.
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: TaskSection(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('65%'), findsOneWidget);
+    final detail = tester.widget<Text>(find.text('打包 ISO，光盘： 2/149'));
+    expect(detail.maxLines, 1);
+    expect(detail.overflow, TextOverflow.ellipsis);
+    final texts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((widget) => widget.data ?? '')
+        .join('\n');
+    expect(texts, isNot(contains('{"Action"')));
+    expect(texts, isNot(contains('[TASK]')));
+    expect(
+      RegExp(r'\b\d+\s*/\s*100\b').hasMatch(texts),
+      isFalse,
+      reason: texts,
+    );
+    expect(texts, isNot(contains('/100')));
   });
 
   test('statistics uses Windows elapsed time and problem count format', () {

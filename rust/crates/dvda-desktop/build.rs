@@ -58,10 +58,10 @@ fn main() {
     }
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     embed_licenses(&manifest_dir, &generated);
-    let manifest = manifest_dir.join("app.manifest");
+    let manifest = embed_manifest(&manifest_dir, &generated, &target);
+    let output = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let icon = manifest_dir.join("../../../assets/dvd-audio-maker.ico");
     println!("cargo:rerun-if-changed={}", icon.display());
-    let output = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let script = output.join("desktop.rc");
     let resource = output.join("desktop-resource.res");
     std::fs::write(
@@ -97,6 +97,29 @@ fn main() {
     // The .res already contains the application manifest as resource 1.
     println!("cargo:rustc-link-arg=/MANIFEST:NO");
     println!("cargo:rustc-link-arg={}", resource.display());
+}
+
+/// Writes the application manifest with the architecture of the binary that
+/// embeds it. The source manifest is shared; only the processor architecture of
+/// the assembly identities may follow the Cargo target.
+fn embed_manifest(manifest_dir: &Path, generated: &Path, target: &str) -> PathBuf {
+    let architecture = if target.starts_with("aarch64") {
+        "arm64"
+    } else {
+        "amd64"
+    };
+    let source = manifest_dir.join("app.manifest");
+    let text = std::fs::read_to_string(&source).expect("read app.manifest");
+    let destination = generated.join("app.manifest");
+    std::fs::write(
+        &destination,
+        text.replace(
+            "processorArchitecture=\"amd64\"",
+            &format!("processorArchitecture=\"{architecture}\""),
+        ),
+    )
+    .unwrap();
+    destination
 }
 
 fn embed_licenses(manifest_dir: &Path, generated: &Path) {

@@ -1,15 +1,22 @@
 //! Folder and file dialogs, the output-folder shortcut and message boxes.
 
+use super::dialog_ui::{DialogKind, show_message};
 use super::{
     BrowseInfo, BrowseKind, CoTaskMemFree, GetOpenFileNameW, GetSaveFileNameW, Hwnd, Lang,
-    MessageBoxW, OpenFileName, Path, SHBrowseForFolderW, SHGetPathFromIDListW, SW_SHOW,
-    ShellExecuteW, UiState, get_text, ptr, set_text, tr, wide,
+    OpenFileName, Path, SHBrowseForFolderW, SHGetPathFromIDListW, SW_SHOW, ShellExecuteW, UiState,
+    get_text, ptr, set_text, tr, wide,
 };
 
 pub(crate) fn open_output(hwnd: Hwnd, state: &UiState) {
     let path = get_text(state.controls.final_dir);
     if !Path::new(&path).is_dir() {
-        message_box(hwnd, tr(state.lang(), "no_output"), "DVD-Audio Maker", 0x10);
+        show_message(
+            hwnd,
+            state.lang(),
+            DialogKind::Error,
+            tr(state.lang(), "dialog_error_title"),
+            tr(state.lang(), "no_output"),
+        );
         return;
     }
     let path = wide(&path);
@@ -160,10 +167,4 @@ pub(crate) fn file_dialog(
     Some(String::from_utf16_lossy(
         &file[..file.iter().position(|v| *v == 0).unwrap_or(file.len())],
     ))
-}
-
-pub(crate) fn message_box(hwnd: Hwnd, text: &str, caption: &str, flags: u32) -> i32 {
-    let text = wide(text);
-    let caption = wide(caption);
-    unsafe { MessageBoxW(hwnd, text.as_ptr(), caption.as_ptr(), flags) }
 }

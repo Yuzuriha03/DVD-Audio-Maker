@@ -169,23 +169,13 @@ pub(crate) fn build(input: &[u8], aspect: Aspect) -> Result<Build, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn paths() -> (std::path::PathBuf, std::path::PathBuf) {
-        let root =
-            std::path::Path::new(r"C:\Users\yyz57\Documents\Visual Studio Code\DVD-Audio-Maker");
-        (
-            root.join("build/menu-accept-old2/menu.mpg"),
-            root.join("build/menu-accept-old2/导航 日本語/AUDIO_TS/AUDIO_TS.VOB"),
-        )
-    }
+    use crate::nav::dvdata::baseline_file;
 
     #[test]
+    #[ignore = "requires build/menu-accept-old2 baseline; set DVDA_MENU_BASELINE_ROOT"]
     fn scan_matches_the_c_vob_body() {
-        let (input_path, baseline_path) = paths();
-        let Ok(input) = std::fs::read(input_path) else {
-            return;
-        };
-        let baseline = std::fs::read(baseline_path).expect("baseline VOB");
+        let input = baseline_file("menu.mpg");
+        let baseline = baseline_file("导航 日本語/AUDIO_TS/AUDIO_TS.VOB");
         let build = build(&input, Aspect::Unknown).unwrap();
         assert_eq!(build.output.len(), baseline.len());
         assert_eq!(build.vobus.len(), 4);

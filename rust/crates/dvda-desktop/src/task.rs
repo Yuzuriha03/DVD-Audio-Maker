@@ -27,92 +27,115 @@ pub(crate) fn emit_preparation_issues(
     }
 }
 
-pub(crate) fn recovery_choice(lang: Lang) -> Result<bool, String> {
-    task_choice(lang, false)
+pub(crate) fn recovery_choice(owner: Hwnd, lang: Lang) -> Result<bool, String> {
+    task_choice(owner, lang, false, false, None)
 }
 
-pub(crate) fn retention_choice(lang: Lang) -> Result<bool, String> {
-    task_choice(lang, true)
+pub(crate) fn retention_choice(
+    owner: Hwnd,
+    lang: Lang,
+    cancelled: bool,
+    error: Option<&str>,
+) -> Result<bool, String> {
+    task_choice(owner, lang, true, cancelled, error)
 }
 
 #[allow(
     clippy::too_many_lines,
-    reason = "Keeps the packed TaskDialog ABI declarations, localized choices and their backing buffers together"
+    reason = "Five-language recovery and retention copy stays in one ordered table"
 )]
-pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
-    #[repr(C, packed)]
-    struct Button {
-        id: i32,
-        text: *const u16,
-    }
-    #[repr(C, packed)]
-    struct Config {
-        size: u32,
-        parent: Hwnd,
-        instance: *mut std::ffi::c_void,
-        flags: u32,
-        common: u32,
-        title: *const u16,
-        icon: *const u16,
-        instruction: *const u16,
-        content: *const u16,
-        count: u32,
-        buttons: *const Button,
-        default_button: i32,
-        radio_count: u32,
-        radios: *const Button,
-        default_radio: i32,
-        verification: *const u16,
-        expanded: *const u16,
-        expanded_control: *const u16,
-        collapsed_control: *const u16,
-        footer_icon: *const u16,
-        footer: *const u16,
-        callback: usize,
-        callback_data: isize,
-        width: u32,
-    }
-    #[link(name = "comctl32")]
-    unsafe extern "system" {
-        fn TaskDialogIndirect(
-            config: *const Config,
-            button: *mut i32,
-            radio: *mut i32,
-            verified: *mut i32,
-        ) -> i32;
-    }
-    let (title, content, continue_text, restart_text) = if retention {
+fn choice_text(
+    lang: Lang,
+    retention: bool,
+    cancelled: bool,
+) -> (&'static str, &'static str, &'static str, &'static str) {
+    if retention {
         match lang {
-            Lang::Zh => (
-                "制作未完成",
-                "是否保留本次进度，以便下次继续制作？删除进度只会删除此任务的中间文件，不会删除音源或已输出的 ISO。",
-                "保留进度",
-                "删除进度",
-            ),
-            Lang::ZhHant => (
-                "製作未完成",
-                "是否保留本次進度，以便下次繼續製作？刪除進度只會刪除此任務的中間檔案，不會刪除音源或已輸出的 ISO。",
-                "保留進度",
-                "刪除進度",
-            ),
-            Lang::Ja => (
-                "作成が完了していません",
-                "次回再開するため進捗を保存しますか？削除するのはタスクの一時ファイルのみです。",
-                "進捗を保存",
-                "進捗を削除",
-            ),
-            Lang::Ko => (
-                "제작 미완료",
-                "다음에 계속할 수 있도록 진행 상황을 보관할까요? 삭제 시 이 작업의 중간 파일만 삭제하며 음원과 출력된 ISO는 삭제하지 않습니다.",
-                "진행 상황 보관",
-                "진행 상황 삭제",
-            ),
-            Lang::En => (
-                "Production unfinished",
-                "Keep progress to continue next time? Deletion removes only this task's intermediate files, not sources or published ISOs.",
-                "Keep progress",
-                "Delete progress",
-            ),
+            Lang::Zh => {
+                if cancelled {
+                    (
+                        "已取消",
+                        "你主动停止了本次任务。是否保留进度以便下次继续制作？删除进度只会删除此任务的中间文件，不会删除音源或已输出的 ISO。",
+                        "保留进度",
+                        "删除进度",
+                    )
+                } else {
+                    (
+                        "制作失败",
+                        "本次制作失败。是否保留本次进度，以便下次继续制作？删除进度只会删除此任务的中间文件，不会删除音源或已输出的 ISO。",
+                        "保留进度",
+                        "删除进度",
+                    )
+                }
+            }
+            Lang::ZhHant => {
+                if cancelled {
+                    (
+                        "已取消",
+                        "你主動停止了本次任務。是否保留進度以便下次繼續製作？刪除進度只會刪除此任務的中間檔案，不會刪除音源或已輸出的 ISO。",
+                        "保留進度",
+                        "刪除進度",
+                    )
+                } else {
+                    (
+                        "製作失敗",
+                        "本次製作失敗。是否保留本次進度，以便下次繼續製作？刪除進度只會刪除此任務的中間檔案，不會刪除音源或已輸出的 ISO。",
+                        "保留進度",
+                        "刪除進度",
+                    )
+                }
+            }
+            Lang::Ja => {
+                if cancelled {
+                    (
+                        "キャンセルしました",
+                        "ユーザーが今回のタスクを停止しました。次回再開するため進捗を保存しますか？削除するのはタスクの一時ファイルのみで、音源や出力済み ISO は削除しません。",
+                        "進捗を保存",
+                        "進捗を削除",
+                    )
+                } else {
+                    (
+                        "作成に失敗しました",
+                        "今回の作成に失敗しました。次回再開するため進捗を保存しますか？削除するのはタスクの一時ファイルのみで、音源や出力済み ISO は削除しません。",
+                        "進捗を保存",
+                        "進捗を削除",
+                    )
+                }
+            }
+            Lang::Ko => {
+                if cancelled {
+                    (
+                        "취소됨",
+                        "사용자가 이번 작업을 중지했습니다. 다음에 계속할 수 있도록 진행 상황을 보관할까요? 삭제 시 이 작업의 중간 파일만 삭제하며 음원과 출력된 ISO는 삭제하지 않습니다.",
+                        "진행 상황 보관",
+                        "진행 상황 삭제",
+                    )
+                } else {
+                    (
+                        "제작 실패",
+                        "이번 제작에 실패했습니다. 다음에 계속할 수 있도록 진행 상황을 보관할까요? 삭제 시 이 작업의 중간 파일만 삭제하며 음원과 출력된 ISO는 삭제하지 않습니다.",
+                        "진행 상황 보관",
+                        "진행 상황 삭제",
+                    )
+                }
+            }
+            Lang::En => {
+                if cancelled {
+                    (
+                        "Cancelled",
+                        "You stopped this task. Keep progress to continue next time? Deletion removes only this task's intermediate files, not sources or published ISOs.",
+                        "Keep progress",
+                        "Delete progress",
+                    )
+                } else {
+                    (
+                        "Production failed",
+                        "Production failed. Keep progress to continue next time? Deletion removes only this task's intermediate files, not sources or published ISOs.",
+                        "Keep progress",
+                        "Delete progress",
+                    )
+                }
+            }
         }
     } else {
         match lang {
@@ -147,46 +170,41 @@ pub(crate) fn task_choice(lang: Lang, retention: bool) -> Result<bool, String> {
                 "Restart production",
             ),
         }
-    };
-    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
-    let title = wide(title);
-    let content = wide(content);
-    let continue_text = wide(continue_text);
-    let restart_text = wide(restart_text);
-    let buttons = [
-        Button {
-            id: 1001,
-            text: continue_text.as_ptr(),
-        },
-        Button {
-            id: 1002,
-            text: restart_text.as_ptr(),
-        },
-    ];
-    let mut config: Config = unsafe { std::mem::zeroed() };
-    config.size = u32::try_from(std::mem::size_of::<Config>()).unwrap();
-    config.title = title.as_ptr();
-    config.instruction = title.as_ptr();
-    config.content = content.as_ptr();
-    config.count = 2;
-    config.buttons = buttons.as_ptr();
-    config.default_button = 1001;
-    let mut button = 0;
-    let result = unsafe {
-        TaskDialogIndirect(
-            &raw const config,
-            &raw mut button,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    if result < 0 || !matches!(button, 1001 | 1002) {
-        return Err(
-            "Cannot display unfinished-task recovery choice; task files have been preserved."
-                .into(),
-        );
     }
-    Ok(button == 1002)
+}
+
+pub(crate) fn task_choice(
+    owner: Hwnd,
+    lang: Lang,
+    retention: bool,
+    cancelled: bool,
+    error: Option<&str>,
+) -> Result<bool, String> {
+    let (title, content, continue_text, restart_text) = choice_text(lang, retention, cancelled);
+    let content = match error {
+        Some(error) if !error.trim().is_empty() => {
+            let detail = localized_log(lang, error);
+            format!(
+                "{content}
+
+{detail}"
+            )
+        }
+        _ => content.to_owned(),
+    };
+    let primary = super::dialog_ui::show_choice(
+        owner,
+        lang,
+        super::dialog_ui::DialogKind::Warning,
+        title,
+        &content,
+        continue_text,
+        restart_text,
+    )
+    .ok_or_else(|| {
+        "Cannot display unfinished-task progress choice; task files have been preserved.".to_owned()
+    })?;
+    Ok(!primary)
 }
 
 #[allow(
@@ -216,12 +234,11 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
             }
         };
     options.language = state.lang().code().into();
-    let options = match if command == ID_VERIFY {
+    let options = match if command == ID_VERIFY || command == ID_PREPARE {
         Ok(options)
-    } else if command == ID_PREPARE {
-        options.scratch_options()
     } else if options.has_unfinished_task() {
-        recovery_choice(state.lang()).and_then(|restart| options.recover_task(restart))
+        recovery_choice(state.main_window, state.lang())
+            .and_then(|restart| options.recover_task(restart))
     } else {
         options.task_options()
     } {
@@ -283,111 +300,54 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
             range: (0, 100),
             last_progress: 0,
         };
-        let (ok, text) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match command {
-            ID_PREPARE => {
-                callbacks.set_progress_range(0, 100);
-                let outcome = dvda_core::app::run_prepare(&options, false, &mut callbacks);
-                if let Some(data) = &outcome.data {
-                    emit_preparation_issues(&mut callbacks, &data.issues);
-                }
-                (
-                    outcome.succeeded(),
-                    outcome.failure.map_or_else(
-                        || {
-                            tr(
-                                lang,
-                                if outcome
-                                    .data
-                                    .as_ref()
-                                    .is_some_and(|data| data.failure_count == 0)
-                                {
-                                    "done"
-                                } else {
-                                    "failed"
-                                },
-                            )
-                            .into()
-                        },
-                        |f| f.message,
-                    ),
-                )
-            }
-            ID_BUILD => {
-                callbacks.set_progress_range(0, 15);
-                let prepared = dvda_core::app::run_prepare(&options, false, &mut callbacks);
-                if let Some(data) = &prepared.data {
-                    emit_preparation_issues(&mut callbacks, &data.issues);
-                }
-                if prepared.succeeded() {
-                    callbacks.set_progress_range(15, 65);
-                    match dvda_core::app::run_build(&options, false, &mut callbacks) {
-                        Ok(result) => {
-                            emit_diagnostics(&mut callbacks, &result.diagnostics);
-                            if result.succeeded {
-                                callbacks.set_progress_range(65, 100);
-                                match dvda_core::app::run_verify(&options, &mut callbacks) {
-                                    Ok(verification) => {
-                                        emit_diagnostics(&mut callbacks, &verification.diagnostics);
-                                        (
-                                            verification.succeeded,
-                                            tr(
-                                                lang,
-                                                if verification.succeeded {
-                                                    "done"
-                                                } else {
-                                                    "failed"
-                                                },
-                                            )
-                                            .into(),
-                                        )
-                                    }
-                                    Err(error) => (false, error),
-                                }
-                            } else {
-                                (false, tr(lang, "failed").into())
-                            }
-                        }
-                        Err(error) => (false, error),
-                    }
+        let (ok, cancelled, text, failure_text) =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let shared = match command {
+                    ID_PREPARE => dvda_core::gui::GuiCommand::Prepare,
+                    ID_BUILD => dvda_core::gui::GuiCommand::Build,
+                    _ => dvda_core::gui::GuiCommand::Verify,
+                };
+                let outcome = dvda_core::gui::run_command(&options, shared, &mut callbacks);
+                emit_preparation_issues(&mut callbacks, &outcome.preparation_issues);
+                emit_diagnostics(&mut callbacks, &outcome.diagnostics);
+                let failure_text = outcome.failure.clone().unwrap_or_default();
+                let message = if outcome.cancelled {
+                    tr(lang, "cancelled_detail").to_owned()
+                } else if let Some(failure) = &outcome.failure {
+                    let label = match command {
+                        ID_BUILD => tr(lang, "failed_build"),
+                        ID_VERIFY => tr(lang, "failed_verify"),
+                        _ => tr(lang, "failed_prepare"),
+                    };
+                    format!("{label}: {failure}")
                 } else {
-                    (
-                        false,
-                        prepared
-                            .failure
-                            .map_or_else(|| tr(lang, "failed").into(), |failure| failure.message),
-                    )
-                }
-            }
-            _ => {
-                callbacks.set_progress_range(0, 100);
-                match dvda_core::app::run_verify(&options, &mut callbacks) {
-                    Ok(result) => {
-                        emit_diagnostics(&mut callbacks, &result.diagnostics);
-                        (
-                            result.succeeded,
-                            tr(lang, if result.succeeded { "done" } else { "failed" }).into(),
-                        )
-                    }
-                    Err(error) => (false, error),
-                }
-            }
-        }))
-        .unwrap_or_else(|_| (false, "任务异常终止，请查看详细日志。".into()));
-        if ok && command == ID_BUILD {
-            options.finish_task();
-        }
+                    let done = if command == ID_PREPARE {
+                        outcome.preparation_failures == Some(0)
+                    } else {
+                        outcome.succeeded
+                    };
+                    tr(lang, if done { "done" } else { "failed" }).into()
+                };
+                (outcome.succeeded, outcome.cancelled, message, failure_text)
+            }))
+            .unwrap_or_else(|_| {
+                (
+                    false,
+                    false,
+                    "任务异常终止，请查看详细日志。".into(),
+                    String::new(),
+                )
+            });
         if !ok && command == ID_BUILD {
-            let _ = callbacks
-                .logs
-                .send(WorkerEvent::Retention(Box::new(options)));
+            let _ = callbacks.logs.send(WorkerEvent::Retention {
+                options: Box::new(options),
+                cancelled,
+                error: failure_text,
+            });
         } else {
             drop(options);
         }
-        let kind = if cancel.load(Ordering::Relaxed) {
-            2
-        } else {
-            u32::from(ok)
-        };
+        let kind = if cancelled { 2 } else { u32::from(ok) };
         let _ = callbacks
             .logs
             .send(WorkerEvent::Finished(UiEvent { kind, text }));
@@ -448,7 +408,7 @@ pub(crate) fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
     };
     state.status_key = key;
     let text = if kind == 2 {
-        tr(state.lang(), "cancelled")
+        tr(state.lang(), "cancelled_detail")
     } else {
         text
     };
@@ -587,6 +547,38 @@ pub(crate) fn set_busy_controls(state: &mut UiState, busy: bool) {
             {
                 EnableWindow(*hwnd, enabled);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Lang;
+
+    #[test]
+    fn cancelled_diagnostic_is_localized_for_the_dialog_without_changing_the_raw_text() {
+        let raw = "Source preparation cancelled";
+        for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja, Lang::Ko] {
+            let displayed = localized_log(lang, raw);
+            assert_eq!(displayed, tr(lang, "source_preparation_cancelled"));
+            assert_eq!(raw, "Source preparation cancelled");
+        }
+    }
+
+    #[test]
+    fn cancelled_and_failed_retention_are_distinct_in_all_five_languages() {
+        for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja, Lang::Ko] {
+            let cancelled = choice_text(lang, true, true);
+            let failed = choice_text(lang, true, false);
+            assert_ne!(cancelled.0, failed.0, "{}", lang.code());
+            assert_ne!(cancelled.1, failed.1, "{}", lang.code());
+            assert_eq!(cancelled.2, failed.2);
+            assert_eq!(cancelled.3, failed.3);
+            let recovery = choice_text(lang, false, false);
+            assert_ne!(recovery.0, "");
+            assert_ne!(recovery.2, "");
+            assert_ne!(recovery.3, "");
         }
     }
 }

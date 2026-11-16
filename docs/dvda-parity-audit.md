@@ -1,5 +1,7 @@
 # DVD-Audio-Maker Android 移植：代码级对齐审计
 
+> **历史审计（Android 旧 shim 时代，2026-11 前）。** 当前 Android 实现为 Flutter + flutter_rust_bridge，见 [Android 代码库说明](dvda-android-codebase.md)；文中 shim、`/root/workspace/...` 路径与未对齐项不代表当前代码状态，不能当作现状或新实测。
+
 结论：**当前 Android shim 只覆盖了 Windows 版的一部分行为**（约能完成"选目录→出 ISO→基本验证"），
 按代码核对，Windows 版还有大量行为未对齐。下面每条都给出源码位置（/root/workspace/dvda-port/DVD-Audio-Maker/rust/crates/...）。
 

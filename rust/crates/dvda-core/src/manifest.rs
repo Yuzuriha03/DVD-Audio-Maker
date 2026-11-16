@@ -55,6 +55,25 @@ fn file_size(path: &Path) -> i64 {
         i64::try_from(metadata.len()).expect("Windows file sizes fit signed 64-bit offsets")
     })
 }
+/// Album identity, defaulting to the track title like the manifest writer.
+fn album_title(item: &Map<String, Value>, title: &str) -> String {
+    let album = text(item, &["album", "Album"]);
+    if album.is_empty() {
+        title.to_owned()
+    } else {
+        album
+    }
+}
+
+/// Original user source path recorded for an internally repaired ALAC track.
+fn original_source(item: &Map<String, Value>) -> String {
+    let value = text(item, &["orig_src", "OrigSrc", "original_src"]);
+    if value.is_empty() {
+        String::new()
+    } else {
+        path_text(&value)
+    }
+}
 /// Loads manifest tracks and sorts them by date, track number, and UTF-16 title.
 /// Unavailable source or MLP file metadata contributes a zero size.
 ///
@@ -83,20 +102,14 @@ pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
                 return Err("Manifest track must be an object".into());
             };
             let source = path_text(&text(item, &["src", "Source"]));
+            let original_source = original_source(item);
             let manifest_name = text(item, &["name", "Name"]);
             let mlp_path =
                 PathBuf::from(mlp_directory).join(manifest_name.replace('/', "__") + ".mlp");
             let source_size = file_size(Path::new(&source));
             let mlp_size = file_size(&mlp_path);
             let title = text(item, &["title", "Title"]);
-            let album = {
-                let value = text(item, &["album", "Album"]);
-                if value.is_empty() {
-                    title.clone()
-                } else {
-                    value
-                }
-            };
+            let album = album_title(item, &title);
             tracks.push(Track {
                 date: text(item, &["date", "Date"]),
                 track: text(item, &["track", "Track"]),
@@ -105,6 +118,7 @@ pub fn read(path: &str, mlp_directory: &str) -> Result<Vec<Track>, String> {
                 sample_rate: rate,
                 bits,
                 source_path: source,
+                original_source_path: original_source,
                 manifest_name,
                 duration: number(item, &["dur", "Duration"]),
                 resample_to: optional_integer(item, &["resample_to", "ResampleTo"]),
@@ -219,6 +233,43 @@ mod tests {
         assert_eq!(tracks[1].album, "先");
         assert_eq!(tracks[0].source_size, 3);
         assert_eq!(tracks[0].mlp_size, 4096);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn repaired_alac_track_keeps_original_source_identity() {
+        let root = std::env::temp_dir().join(format!(
+            "dvda-manifest-orig-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("mlp")).unwrap();
+        let repaired = root.join("build/alacfix/02.m4a");
+        let original = root.join("Music/EP/02.m4a");
+        fs::create_dir_all(repaired.parent().unwrap()).unwrap();
+        fs::write(&repaired, [1, 2, 3]).unwrap();
+        let manifest = root.join("manifest.json");
+        let value = serde_json::json!({"group_48000_24":{"sr":48000,"bits":24,"files":[
+            {"n":1,"src":repaired.to_string_lossy(),"orig_src":original.to_string_lossy(),"name":"g/02","title":"02","track":"2","album":"EP","dur":1.0}
+        ]}});
+        fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
+        let tracks = read(
+            &manifest.to_string_lossy(),
+            &root.join("mlp").to_string_lossy(),
+        )
+        .unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(
+            tracks[0].source_path,
+            path_text(&repaired.to_string_lossy())
+        );
+        assert_eq!(
+            tracks[0].original_source_path,
+            path_text(&original.to_string_lossy())
+        );
         let _ = fs::remove_dir_all(root);
     }
 }

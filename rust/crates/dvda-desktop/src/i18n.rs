@@ -143,6 +143,12 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "failed" => "任务失败。",
             "cancelled" => "任务已取消。",
             "stopping" => "正在停止任务，请稍候...",
+            "cancelled_detail" => {
+                "任务已取消。你主动停止了本次任务；未完成的进度已保留，可在设置中删除进度并清理。"
+            }
+            "failed_build" => "制作失败",
+            "failed_verify" => "验证失败",
+            "failed_prepare" => "音源检查失败",
             "json_filter" => "JSON 设置方案",
             "text_filter" => "文本日志",
             "all_filter" => "所有文件",
@@ -179,14 +185,18 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "author_name" => "Yuzuriha03",
             "author_role" => "独立开发者 · 项目维护者",
             "author_version" => "DVD-Audio Maker · v1.2.0",
+            "dialog_ok" => "确定",
+            "dialog_close" => "关闭",
+            "dialog_error_title" => "错误",
+            "dialog_warning_title" => "警告",
+            "dialog_info_title" => "提示",
             "author_bio" => {
                 "DVD-Audio Maker 的作者，负责 Rust 核心、Windows 与 Android 客户端的开发与维护。"
             }
             "project_home" => "项目主页",
             "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
-            "author_licenses" => {
-                "随包许可：LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
-            }
+            "author_licenses" => "随包许可",
+            "source_preparation_cancelled" => "音源准备已取消。",
             "author_license_hint" => "许可证文件位于程序目录；点击“打开许可证目录”即可查看。",
             "open_project" => "打开项目主页",
             "open_licenses" => "打开许可证目录",
@@ -296,6 +306,12 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "failed" => "任務失敗。",
             "cancelled" => "任務已取消。",
             "stopping" => "正在停止任務，請稍候...",
+            "cancelled_detail" => {
+                "任務已取消。你主動停止了本次任務；未完成的進度已保留，可在設定中刪除進度並清理。"
+            }
+            "failed_build" => "製作失敗",
+            "failed_verify" => "驗證失敗",
+            "failed_prepare" => "音源檢查失敗",
             "json_filter" => "JSON 設定方案",
             "text_filter" => "文本日志",
             "all_filter" => "所有檔案",
@@ -332,14 +348,18 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "author_name" => "Yuzuriha03",
             "author_role" => "獨立開發者 · 專案維護者",
             "author_version" => "DVD-Audio Maker · v1.2.0",
+            "dialog_ok" => "確定",
+            "dialog_close" => "關閉",
+            "dialog_error_title" => "錯誤",
+            "dialog_warning_title" => "警告",
+            "dialog_info_title" => "提示",
             "author_bio" => {
                 "DVD-Audio Maker 的作者，負責 Rust 核心、Windows 與 Android 用戶端的開發與維護。"
             }
             "project_home" => "專案首頁",
             "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
-            "author_licenses" => {
-                "隨包授權：LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
-            }
+            "author_licenses" => "隨包授權",
+            "source_preparation_cancelled" => "音源準備已取消。",
             "author_license_hint" => "授權文件位於程式目錄；點擊「開啟授權目錄」即可查看。",
             "open_project" => "開啟專案首頁",
             "open_licenses" => "開啟授權目錄",
@@ -451,6 +471,12 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "failed" => "Task failed.",
             "cancelled" => "Task cancelled.",
             "stopping" => "Stopping the task. Please wait...",
+            "cancelled_detail" => {
+                "Task cancelled. You stopped this task; the unfinished progress was kept and can be deleted from the settings."
+            }
+            "failed_build" => "Production failed",
+            "failed_verify" => "Verification failed",
+            "failed_prepare" => "Source check failed",
             "json_filter" => "JSON settings profiles",
             "text_filter" => "Text logs",
             "all_filter" => "All files",
@@ -493,14 +519,18 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "author_name" => "Yuzuriha03",
             "author_role" => "Independent developer · project maintainer",
             "author_version" => "DVD-Audio Maker · v1.2.0",
+            "dialog_ok" => "OK",
+            "dialog_close" => "Close",
+            "dialog_error_title" => "Error",
+            "dialog_warning_title" => "Warning",
+            "dialog_info_title" => "Information",
             "author_bio" => {
                 "Creator of DVD-Audio Maker. Maintains the Rust core plus the Windows and Android clients."
             }
             "project_home" => "Project home",
             "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
-            "author_licenses" => {
-                "Bundled licenses: LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
-            }
+            "author_licenses" => "Bundled licenses",
+            "source_preparation_cancelled" => "Source preparation was cancelled.",
             "author_license_hint" => {
                 "License files ship beside the program; use Open license folder to view them."
             }
@@ -569,7 +599,7 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "browse" => "参照...",
             "start" => "基本設定",
             "audio" => "音声",
-            "about" | "author_page_title" => "情報",
+            "about" | "author_page_title" | "dialog_info_title" => "情報",
             "check" => "音源を検査",
             "build" => "ディスクを作成",
             "verify" => "出力を検証",
@@ -614,6 +644,12 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "failed" => "タスクに失敗しました。",
             "cancelled" => "タスクをキャンセルしました。",
             "stopping" => "タスクを停止しています。しばらくお待ちください...",
+            "cancelled_detail" => {
+                "タスクをキャンセルしました。ユーザーがタスクを停止しました。未完了の進捗は保持され、設定から削除できます。"
+            }
+            "failed_build" => "作成に失敗しました",
+            "failed_verify" => "検証に失敗しました",
+            "failed_prepare" => "音源チェックに失敗しました",
             "json_filter" => "JSON 設定プロファイル",
             "text_filter" => "テキストログ",
             "all_filter" => "すべてのファイル",
@@ -656,14 +692,17 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "author_name" => "Yuzuriha03",
             "author_role" => "個人開発者・プロジェクトメンテナー",
             "author_version" => "DVD-Audio Maker · v1.2.0",
+            "dialog_ok" => "OK",
+            "dialog_close" => "閉じる",
+            "dialog_error_title" => "エラー",
+            "dialog_warning_title" => "警告",
             "author_bio" => {
                 "DVD-Audio Maker の作者。Rust コアと Windows / Android クライアントの開発・保守を担当しています。"
             }
             "project_home" => "プロジェクトページ",
             "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
-            "author_licenses" => {
-                "同梱ライセンス：LICENSE.txt · THIRD-PARTY.txt · NOTICE-Image.txt · NOTICE-Menu.txt"
-            }
+            "author_licenses" => "同梱ライセンス",
+            "source_preparation_cancelled" => "音源の準備を中止しました。",
             "author_license_hint" => {
                 "ライセンスファイルはプログラムと同じフォルダーにあります。「ライセンスフォルダーを開く」から確認できます。"
             }
@@ -784,6 +823,10 @@ mod tests {
             "failed",
             "cancelled",
             "stopping",
+            "cancelled_detail",
+            "failed_build",
+            "failed_verify",
+            "failed_prepare",
             "json_filter",
             "text_filter",
             "all_filter",
