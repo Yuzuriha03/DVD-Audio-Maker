@@ -96,13 +96,16 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     let open_profile = button(parent, tr(lang, "open"), ID_OPEN_PROFILE, 750, 10, 110, 28);
     let save_profile_button = button(parent, tr(lang, "save"), ID_SAVE_PROFILE, 870, 10, 110, 28);
     let save_as_button = button(parent, tr(lang, "save_as"), ID_SAVE_AS, 870, 10, 110, 28);
-    let about_button = owner_draw_button(
-        parent,
-        tr(lang, "about"),
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-        ID_ABOUT_PROJECT,
-        (0, 10, 40, 30),
-    );
+    let about_button = caption_button(parent, ID_ABOUT_PROJECT);
+    let about_style = u32::try_from(GetWindowLongPtrW(about_button, -16) & 0xffff_ffff).unwrap();
+    unsafe {
+        SetWindowLongPtrW(
+            about_button,
+            -16,
+            isize::try_from(about_style | WS_TABSTOP).unwrap(),
+        );
+    }
+    set_text(about_button, tr(lang, "about"));
     buttons.push((about_button, "about"));
     let language_label = label!(
         parent,
@@ -1140,23 +1143,19 @@ pub(crate) unsafe extern "system" fn button_proc(
     unsafe { original(hwnd, message, wparam, lparam) }
 }
 
-/// The visual state stored in a control's user data, if the control runs
-/// `owner`. Each `install_*` function sets the procedure and the user data
-/// together, so a window running one of these procedures stores that visual
-/// type. Any other window yields `None`.
-pub(crate) fn owned_visual<T>(hwnd: Hwnd, owner: WndProc) -> Option<*mut T> {
-    if GetWindowLongPtrW(hwnd, GWLP_WNDPROC) != owner as *const () as isize {
-        return None;
-    }
-    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut T;
-    (!pointer.is_null()).then_some(pointer)
-}
-
 pub(crate) fn button_hovered(hwnd: Hwnd) -> bool {
-    owned_visual::<ButtonVisual>(hwnd, button_proc)
-        // SAFETY: `owned_visual` returned the visual installed with `button_proc`,
-        // which stays alive until WM_NCDESTROY.
-        .is_some_and(|visual| unsafe { (*visual).hover })
+    // Every caller is an owner-draw button created by this crate, whose visual
+    // pointer lives until WM_NCDESTROY. Windows can return a WNDPROC thunk rather
+    // than the original Rust function pointer, so a pointer comparison here would
+    // incorrectly suppress hover for some buttons (notably the About entry).
+    let visual = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ButtonVisual;
+    // SAFETY: the construction contract above guarantees this points to a live
+    // ButtonVisual. The pointer is cleared before the visual is destroyed.
+    if visual.is_null() {
+        false
+    } else {
+        unsafe { (*visual).hover }
+    }
 }
 
 pub(crate) fn install_check_visual(hwnd: Hwnd, panel: bool) {

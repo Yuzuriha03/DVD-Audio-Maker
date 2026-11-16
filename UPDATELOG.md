@@ -22,7 +22,7 @@
 **Windows 版（x64 与 WoA · 单 EXE）**
 
 - Windows 发布改为单 EXE：下载对应架构的 EXE 后直接运行，无需解压。许可证、FFmpeg LGPL 与第三方/图像/菜单声明已内嵌到“关于”窗口，不再需要随包保存外部许可文件。
-- “关于”入口移到标题栏右上角统一按钮组，图标与相邻按钮尺寸一致；关于窗口改为可滚动的独立页面，可查看作者、项目主页、版本和全部随包许可证，窗口支持拖动位置及左右、上下和四角缩放，滚动条只在内容溢出时显示，切换语言/主题后内容立即刷新，重复打开会复用同一个窗口。
+- “关于”入口移到标题栏右上角统一按钮组，图标的尺寸、悬停、焦点和主题行为均与相邻按钮一致；关于窗口改为可滚动的独立页面，可查看作者、项目主页、版本和全部随包许可证，窗口支持拖动位置及左右、上下和四角缩放，滚动条只在内容溢出时显示，切换语言/主题后内容立即刷新，重复打开会复用同一个窗口。
 - 应用内提示、确认和选择弹窗统一为与主窗口一致的标题栏和关闭按钮，长按钮行可自动换行；键盘操作支持 Enter 触发默认按钮、Esc 取消，键盘聚焦时显示焦点框。
 - 菜单设置更清晰：菜单开关同时控制导航菜单的生成；关闭菜单后会隐藏每页曲目数、菜单视频制式、封面暗化和菜单字体等仅与菜单有关的设置。标签明确区分“菜单背景封面暗化”和“播放曲目时显示专辑封面”。
 - 音频设置中切换到 LPCM 时目标位深只提供 16 位和 24 位；原有的 20 位 LPCM 设置会回落到 24 位，20 位请使用 MLP。x64 与 WoA 均以单 EXE 发布，既有制作行为保持不变。
@@ -52,7 +52,7 @@
 **Windows edition (x64 and WoA · single EXE)**
 
 - Windows now ships as a single EXE: run the EXE for your architecture directly, with no extraction. The license, FFmpeg LGPL notice and third-party/image/menu statements are embedded in the About window; no external license files need to be kept beside the program.
-- The About entry now sits in the title bar's top-right button group and matches the neighbouring buttons in size and appearance. About is a scrollable page showing the author, project home, version and bundled licenses; it supports moving, left/right edge and corner resizing, shows scrollbars only when content overflows, refreshes immediately when language or theme changes, and reuses one window when opened again.
+- The About entry now sits in the title bar's top-right button group and matches the neighbouring buttons in size, hover, focus and theme behaviour. About is a scrollable page showing the author, project home, version and bundled licenses; it supports moving, left/right edge and corner resizing, shows scrollbars only when content overflows, refreshes immediately when language or theme changes, and reuses one window when opened again.
 - In-app message, confirmation and choice popups now share the main window's title bar and close button styling, wrap long button rows, use Enter for the default button and Esc to cancel, and show a focus ring for keyboard focus.
 - Menu settings are clearer: the menu switch controls navigation menu generation; turning menus off hides menu-only options (tracks per page, menu video standard, cover dimming, menu fonts). Labels now distinguish menu-background dimming from the cover shown during playback.
 - In audio settings, LPCM offers only 16-bit and 24-bit targets; an existing 20-bit LPCM setting falls back to 24-bit, and 20-bit output uses MLP. Both x64 and WoA ship as single EXEs, and existing authoring behavior is unchanged.
@@ -82,7 +82,7 @@
 **Windows 版（x64 / WoA · 単一 EXE）**
 
 - Windows は単一 EXE 配布になりました。アーキテクチャに合う EXE をダウンロードしてそのまま起動でき、解凍は不要です。ライセンス、FFmpeg の LGPL 表示、第三者・画像・メニューの声明は「情報」画面に内蔵され、外部のライセンスファイルを同梱する必要はありません。
-- 「情報」入口をタイトルバー右上の統一ボタングループへ移動し、隣接ボタンと同じサイズと外観にしました。情報画面はスクロール可能な独立ページで、作者、プロジェクトページ、バージョン、同梱ライセンスを表示します。左右・上下の辺および四隅からリサイズでき、内容があふれた場合のみスクロールバーを表示します。言語/テーマの変更は即時反映され、再度開いても同じウィンドウを再利用します。
+- 「情報」入口をタイトルバー右上の統一ボタングループへ移動し、隣接ボタンと同じサイズ・ホバー・フォーカス・テーマ動作にしました。情報画面はスクロール可能な独立ページで、作者、プロジェクトページ、バージョン、同梱ライセンスを表示します。左右・上下の辺および四隅からリサイズでき、内容があふれた場合のみスクロールバーを表示します。言語/テーマの変更は即時反映され、再度開いても同じウィンドウを再利用します。
 - アプリ内の通知・確認・選択ダイアログは、メインウィンドウと同じタイトルバーと閉じるボタンの体裁に統一しました。長いボタン行は折り返し、Enter で既定ボタン、Esc でキャンセル、キーボードフォーカス時はフォーカス枠を表示します。
 - メニュー設定を整理しました。メニューのスイッチがナビゲーションメニューの生成を制御し、メニューを閉じるとページごとの曲数、メニュー映像方式、カバー画像の暗さ、メニュー用フォントなどメニュー専用の設定を隠します。ラベルは「メニュー背景のカバー画像の暗さ」と「再生中のカバー表示」を区別します。
 - 音声設定で LPCM を選ぶとビット深度は 16 bit と 24 bit のみになります。既存の 20 bit LPCM 設定は 24 bit に切り替わり、20 bit は MLP を使用します。x64 と WoA はどちらも単一 EXE で配布し、既存の制作挙動は変更しません。

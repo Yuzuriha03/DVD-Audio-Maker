@@ -1831,6 +1831,36 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
         "About info icon is not keyboard reachable"
     );
     assert!(ui.tooltips.iter().any(|tooltip| tooltip.key == "about"));
+    assert!(!button_hovered(about));
+    unsafe {
+        SendMessageW(about, 0x0200, 0, 0);
+        SendMessageW(ui.theme_button, 0x0200, 0, 0);
+    }
+    assert!(
+        button_hovered(about),
+        "About info icon does not enter the same hover state as the caption buttons"
+    );
+    assert_eq!(
+        button_hovered(about),
+        button_hovered(ui.theme_button),
+        "About info icon and theme button hover states differ"
+    );
+    unsafe {
+        SendMessageW(about, 0x02a3, 0, 0);
+        SendMessageW(ui.theme_button, 0x02a3, 0, 0);
+    }
+    assert!(!button_hovered(about));
+    assert!(!button_hovered(ui.theme_button));
+    let dark = dark_theme();
+    toggle_theme(parent, &mut ui);
+    unsafe { SendMessageW(about, 0x0200, 0, 0) };
+    assert!(
+        button_hovered(about),
+        "About hover did not survive the theme change"
+    );
+    unsafe { SendMessageW(about, 0x02a3, 0, 0) };
+    toggle_theme(parent, &mut ui);
+    assert_eq!(dark_theme(), dark);
     MoveWindow(parent, 0, 0, scale(640), scale(820), 0);
     layout(parent, &mut ui);
     SetFocus(ui.controls.language);
