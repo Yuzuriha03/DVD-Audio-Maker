@@ -1390,6 +1390,39 @@ mod tests {
             )
         };
         assert_eq!(corner_hit, HTBOTTOMRIGHT as Lresult);
+        let left_hit = unsafe {
+            SendMessageW(
+                window,
+                WM_NCHITTEST,
+                0,
+                isize::try_from(
+                    ((bounds.top + (bounds.bottom - bounds.top) / 2) << 16)
+                        | ((bounds.left + 2) & 0xffff),
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(left_hit, HTLEFT as Lresult);
+        let content = state(window).content;
+        let content_right = unsafe {
+            SendMessageW(
+                content,
+                WM_NCHITTEST,
+                0,
+                isize::try_from(((bounds.top + 200) << 16) | ((bounds.right - 2) & 0xffff))
+                    .unwrap(),
+            )
+        };
+        assert_eq!(content_right, HTRIGHT as Lresult);
+        let content_left = unsafe {
+            SendMessageW(
+                content,
+                WM_NCHITTEST,
+                0,
+                isize::try_from(((bounds.top + 200) << 16) | ((bounds.left + 2) & 0xffff)).unwrap(),
+            )
+        };
+        assert_eq!(content_left, HTLEFT as Lresult);
         DestroyWindow(window);
     }
 

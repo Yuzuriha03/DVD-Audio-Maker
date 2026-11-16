@@ -20,6 +20,8 @@ use super::*;
 
 const WM_NCHITTEST_LOCAL: u32 = 0x0084;
 const WM_MOUSEWHEEL_LOCAL: u32 = 0x020a;
+const WM_NCHITTEST: u32 = 0x0084;
+const WM_NCLBUTTONDOWN: u32 = 0x00a1;
 const WS_CLIPSIBLINGS: u32 = 0x0400_0000;
 const WS_EX_CONTROLPARENT: u32 = 0x0001_0000;
 const SB_PAGEUP: i32 = 2;
@@ -797,6 +799,11 @@ unsafe extern "system" fn page_scrollbar_proc(
     }
     let visual = unsafe { &mut *pointer };
     match message {
+        WM_NCHITTEST => unsafe { SendMessageW(GetParent(hwnd), message, wparam, lparam) },
+        WM_NCLBUTTONDOWN => {
+            unsafe { SendMessageW(GetParent(hwnd), message, wparam, lparam) };
+            0
+        }
         WM_PAINT => {
             unsafe {
                 let mut paint: PaintStruct = std::mem::zeroed();
@@ -1019,6 +1026,11 @@ unsafe extern "system" fn content_host_proc(
     lparam: Lparam,
 ) -> Lresult {
     match message {
+        WM_NCHITTEST => unsafe { SendMessageW(GetParent(hwnd), message, wparam, lparam) },
+        WM_NCLBUTTONDOWN => {
+            unsafe { SendMessageW(GetParent(hwnd), message, wparam, lparam) };
+            0
+        }
         WM_PAINT => {
             unsafe {
                 let mut paint: PaintStruct = std::mem::zeroed();

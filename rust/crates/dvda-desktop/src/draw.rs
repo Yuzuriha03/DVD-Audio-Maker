@@ -3,8 +3,6 @@
 
 use std::cell::RefCell;
 
-use super::gdi::bold_font;
-
 use super::{
     BeginPaint, BitBlt, CB_GETCURSEL, CB_GETLBTEXT, CB_GETLBTEXTLEN, COMBO_IDS,
     CreateCompatibleBitmap, CreateCompatibleDC, CreatePen, CreateSolidBrush, DT_CALCRECT,
@@ -95,40 +93,50 @@ pub(crate) fn fill_round_rect(dc: Handle, rect: &Rect, radius: i32, fill: u32, b
     }
 }
 
-/// Square info icon for the About entry: a compact filled square with a bold
-/// "i", the same cell size/spacing as the theme and minimize controls, and no
-/// button frame or outline.
+/// Info glyph for the About entry. The button surface, hover state and
+/// spacing are the same as the caption buttons; only the SVG-derived "i"
+/// (round dot plus rounded vertical bar) is drawn on top.
 pub(crate) unsafe fn draw_header_info_button(item: &DrawItemStruct) {
     let hover = button_hovered(item.item);
-    let pressed = item.state & ODS_SELECTED != 0;
     let center_y = i32::midpoint(item.rect.top, item.rect.bottom);
     let base = header_gradient_at(center_y);
-    let background = if pressed || hover {
-        lighten(base, 18)
-    } else {
-        base
-    };
+    let fill = if hover { lighten(base, 18) } else { base };
+    let glyph = c_header_title();
     unsafe {
-        FillRect(item.dc, &item.rect, brush(background));
+        FillRect(item.dc, &item.rect, brush(fill));
         let center_x = i32::midpoint(item.rect.left, item.rect.right);
-        let side = scale(20).max(scale(10));
-        let half = side / 2;
-        let square = Rect {
-            left: center_x - half,
-            top: center_y - half,
-            right: center_x + half,
-            bottom: center_y - half + side,
-        };
-        FillRect(item.dc, &square, brush(c_header_title()));
-        let mut text_rect = square;
-        draw_text_run(
-            "i",
+        let total = scale(18).max(scale(8));
+        let top = center_y - total / 2;
+        let dot_radius = total * 13 / 100;
+        let dot_y = top + total * 13 / 100;
+        let bar_width = total * 23 / 100;
+        let bar_top = top + total * 34 / 100;
+        let bar_height = total * 66 / 100;
+        let pen = CreatePen(0, scale(1).max(1), glyph);
+        if pen.is_null() {
+            return;
+        }
+        let old_pen = SelectObject(item.dc, pen);
+        let old_brush = SelectObject(item.dc, brush(glyph));
+        Ellipse(
             item.dc,
-            &mut text_rect,
-            bold_font(),
-            background,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+            center_x - dot_radius,
+            dot_y - dot_radius,
+            center_x + dot_radius,
+            dot_y + dot_radius,
         );
+        RoundRect(
+            item.dc,
+            center_x - bar_width / 2,
+            bar_top,
+            center_x + bar_width / 2,
+            bar_top + bar_height,
+            bar_width,
+            bar_width,
+        );
+        SelectObject(item.dc, old_brush);
+        SelectObject(item.dc, old_pen);
+        DeleteObject(pen);
         if item.state & ODS_FOCUS != 0 {
             let inset = scale(4);
             let focus = Rect {

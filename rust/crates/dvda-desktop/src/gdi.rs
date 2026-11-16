@@ -99,9 +99,6 @@ pub(crate) fn ui_font() -> Handle {
 pub(crate) fn semibold_font() -> Handle {
     font(UI_FONT_HEIGHT, 600, 1)
 }
-pub(crate) fn bold_font() -> Handle {
-    font(UI_FONT_HEIGHT, 700, 1)
-}
 pub(crate) fn title_font() -> Handle {
     font(-25, 600, 1)
 }
