@@ -22,7 +22,9 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = true
+            // Keep native libraries uncompressed so the package supports 16 KiB
+            // page alignment required by current Google Play device requirements.
+            useLegacyPackaging = false
             excludes += setOf(
                 "armeabi-v7a/**", "x86/**", "x86_64/**",
                 "lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**",
