@@ -532,7 +532,7 @@ fn verify_android_abi(include: &std::path::Path, probe: &[u8]) {
         );
         generated = generated.replace(&old, &corrected);
         println!(
-            "cargo:warning=Android ABI: {ctype} is {size} bytes on the target but {host} in the host probe; corrected"
+            "Android ABI: {ctype} is {size} bytes on the target but {host} in the host probe; corrected"
         );
     }
     std::fs::write(&layout_path, generated).unwrap();

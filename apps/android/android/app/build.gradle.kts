@@ -5,12 +5,21 @@ plugins {
 }
 
 val localNdk = System.getenv("DVDA_ANDROID_NDK")
+val localNdkVersion = localNdk?.let { path ->
+    file("$path/source.properties").readLines()
+        .firstOrNull { it.startsWith("Pkg.Revision") }
+        ?.substringAfter('=')
+        ?.trim()
+}
 
-android {
+extensions.configure<com.android.build.api.dsl.ApplicationExtension> {
     namespace = "com.dvda.maker"
     compileSdk = 37
     if (!localNdk.isNullOrBlank()) {
         ndkPath = localNdk
+        // Match the actual installed revision. ndkPath keeps AGP on this local
+        // installation, so this consistency setting cannot request a download.
+        ndkVersion = requireNotNull(localNdkVersion)
     } else {
         ndkVersion = flutter.ndkVersion
     }

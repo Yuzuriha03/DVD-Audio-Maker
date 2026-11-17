@@ -23,10 +23,12 @@ fun ArtifactRepository.rewriteOfficialRepository() {
 beforeSettings {
     pluginManagement.repositories {
         clear()
+        // Aliyun lacks artifacts selected by the newest AGP metadata; use the
+        // verified Huawei fallback first so metadata and artifacts stay together.
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         all { rewriteOfficialRepository() }
     }
 }
@@ -35,9 +37,9 @@ settingsEvaluated {
     dependencyResolutionManagement.repositories {
         clear()
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         all { rewriteOfficialRepository() }
     }
 }

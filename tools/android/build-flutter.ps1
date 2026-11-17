@@ -1,9 +1,21 @@
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+$gradleVersion = "9.8.2"
 $env:JAVA_HOME = Join-Path $root "build/jdk17"
 $env:ANDROID_HOME = Join-Path $root "build/android-sdk"
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:PUB_HOSTED_URL = "https://pub.flutter-io.cn"
 [Environment]::SetEnvironmentVariable("DVDA_ANDROID_NDK", (Join-Path $root "build/android-ndk-r30"), "Process")
+$localNdk = Join-Path $root "build/android-ndk-r30"
+$ndkRevision = (Get-Content -LiteralPath "$localNdk/source.properties" | Where-Object { $_ -match '^Pkg\.Revision\s*=' } | Select-Object -First 1) -replace '^Pkg\.Revision\s*=\s*', ''
+$sideBySideNdk = Join-Path $root "build/android-sdk/ndk/$ndkRevision"
+if (-not (Test-Path -LiteralPath "$sideBySideNdk/source.properties" -PathType Leaf)) {
+    # AGP consults the SDK side-by-side directory once ndkVersion is set.
+    # Reuse the existing NDK locally; never invoke SDK Manager or download it.
+    New-Item -ItemType Directory -Path (Split-Path -Parent $sideBySideNdk) -Force | Out-Null
+    & robocopy.exe $localNdk $sideBySideNdk /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Cannot stage the existing NDK locally (robocopy exit $LASTEXITCODE)." }
+}
 $env:PATH = "$env:JAVA_HOME/bin;$env:ANDROID_HOME/platform-tools;$env:PATH"
 $env:GIT_CONFIG_COUNT = "1"
 $env:GIT_CONFIG_KEY_0 = "safe.directory"
@@ -15,7 +27,7 @@ $tempBase = Join-Path $env:TEMP "dvda-android-build"
 # residue. TEMP is only used for the per-run staged project.
 $env:CARGO_TARGET_DIR = Join-Path $root "build/android-cargo-target"
 $cachedGradleHome = Join-Path $root "build/gradle-home"
-$cachedGradle = Join-Path $cachedGradleHome "wrapper/dists/gradle-9.5.0-all"
+$cachedGradle = Join-Path $cachedGradleHome "wrapper/dists/gradle-$gradleVersion-all"
 $gradleHome = if (Test-Path -LiteralPath $cachedGradle -PathType Container) {
     $cachedGradleHome
 } else {
@@ -88,27 +100,27 @@ try {
     Write-Output "Font=$fontSource"
     Write-Output "FontSha256=$fontSha256"
 
-    $gradleDistributionRoot = Join-Path $root "build/gradle-home/wrapper/dists/gradle-9.5.0-all"
+    $gradleDistributionRoot = Join-Path $root "build/gradle-home/wrapper/dists/gradle-$gradleVersion-all"
     $installedGradle = Get-ChildItem -Path $gradleDistributionRoot -Directory -ErrorAction SilentlyContinue |
-        ForEach-Object { Join-Path $_.FullName "gradle-9.5.0" } |
+        ForEach-Object { Join-Path $_.FullName "gradle-$gradleVersion" } |
         Where-Object {
             (Test-Path -LiteralPath (Join-Path $_ "bin/gradle.bat") -PathType Leaf) -and
-            (Test-Path -LiteralPath (Join-Path $_ "lib/gradle-launcher-9.5.0.jar") -PathType Leaf)
+            (Test-Path -LiteralPath (Join-Path $_ "lib/gradle-launcher-$gradleVersion.jar") -PathType Leaf)
         } | Select-Object -First 1
     if ($null -ne $installedGradle) {
         # Reuse the verified unpacked distribution under its original wrapper
         # key. Do not switch to file:///, which creates a second cache key and
         # needlessly extracts thousands of small source files again.
-        $installedMarker = Join-Path (Split-Path -Parent $installedGradle) "gradle-9.5.0-all.zip.ok"
+        $installedMarker = Join-Path (Split-Path -Parent $installedGradle) "gradle-$gradleVersion-all.zip.ok"
         if (-not (Test-Path -LiteralPath $installedMarker)) {
             New-Item -ItemType File -Path $installedMarker | Out-Null
         }
         Write-Output "Gradle=$installedGradle"
     } else {
-    $gradleZip = Join-Path $root "build/gradle-9.5.0-all.zip"
+    $gradleZip = Join-Path $root "build/gradle-$gradleVersion-all.zip"
     if (-not (Test-Path -LiteralPath $gradleZip)) {
         $cachedZip = Get-ChildItem -Path $gradleDistributionRoot `
-            -Filter "gradle-9.5.0-all.zip" -File -Recurse -ErrorAction SilentlyContinue |
+            -Filter "gradle-$gradleVersion-all.zip" -File -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($null -ne $cachedZip) { $gradleZip = $cachedZip.FullName }
     }
@@ -120,11 +132,11 @@ try {
         [System.IO.File]::WriteAllText($wrapperProperties, $wrapperText)
     } else {
         # No local distribution: use the verified Huawei mirror. Aliyun's
-        # /gradle/gradle-9.5.0-all.zip currently returns 404, so it cannot serve
+        # /gradle/gradle-$gradleVersion-all.zip currently returns 404, so it cannot serve
         # as a real distribution mirror. Never fall back to services.gradle.org.
         $wrapperProperties = Join-Path $stagedApp "android/gradle/wrapper/gradle-wrapper.properties"
         $wrapperText = [System.IO.File]::ReadAllText($wrapperProperties)
-        $wrapperText = $wrapperText -replace "distributionUrl=.*", "distributionUrl=https\://mirrors.huaweicloud.com/gradle/gradle-9.5.0-all.zip"
+        $wrapperText = $wrapperText -replace "distributionUrl=.*", "distributionUrl=https\://mirrors.huaweicloud.com/gradle/gradle-$gradleVersion-all.zip"
         [System.IO.File]::WriteAllText($wrapperProperties, $wrapperText)
     }
     }
@@ -145,6 +157,10 @@ try {
     $flutter = Join-Path $root "build/flutter/bin/flutter.bat"
     Push-Location $stagedApp
     try {
+        # Resolve every Dart dependency to the latest compatible version on
+        # every official build. SDK packages still obey Flutter's constraints.
+        & $flutter pub upgrade
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $flutter build apk --release --target-platform android-arm64
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     } finally {
