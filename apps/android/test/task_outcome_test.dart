@@ -11,7 +11,11 @@ void main() {
         'Message': 'build ok',
         'Diagnostics': <dynamic>[
           <String, dynamic>{'Code': 'E1', 'Message': 'first issue'},
-          <String, dynamic>{'Code': 'E2', 'Message': 'second issue'},
+          <String, dynamic>{
+            'Code': 'E2',
+            'Message': 'second issue',
+            'Severity': 'Warning',
+          },
           'raw diagnostic',
         ],
         'Log': 'line one\nline two',
@@ -30,6 +34,8 @@ void main() {
       expect(outcome.diagnostics[0].message, 'first issue');
       expect(outcome.diagnostics[1].code, 'E2');
       expect(outcome.diagnostics[1].message, 'second issue');
+      expect(outcome.diagnostics[1].isWarning, isTrue);
+      expect(outcome.diagnostics[0].isWarning, isFalse);
       expect(outcome.diagnostics[2].code, '');
       expect(outcome.diagnostics[2].message, 'raw diagnostic');
     });

@@ -258,11 +258,6 @@ class _HomeScreenState extends State<HomeScreen> {
       trailingActions = Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          OutlinedButton(
-            onPressed: busy ? null : () => _runAction('prepare'),
-            child: Text(strings.actionPrepare),
-          ),
-          const SizedBox(width: 10),
           FilledButton.icon(
             onPressed: busy ? null : _startBuild,
             icon: const Icon(Icons.play_arrow),
@@ -538,9 +533,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted || !stillUnfinished) {
         return;
       }
-      final detail = outcome.message.isEmpty
-          ? _controller.statusText
-          : outcome.message;
+      final detail = _controller.failureDetail(outcome);
       final keep = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -564,17 +557,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _buildFlow = false);
       }
     }
-  }
-
-  Future<void> _runAction(String action) async {
-    if (_controller.isRunning || _buildFlow) {
-      return;
-    }
-    final outcome = await _controller.runAction(action);
-    if (!mounted) {
-      return;
-    }
-    _reportOutcome(outcome);
   }
 
   void _reportOutcome(TaskOutcome? outcome) {

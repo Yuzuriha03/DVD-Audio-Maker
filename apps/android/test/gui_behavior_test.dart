@@ -36,7 +36,7 @@ Future<AppController> _controller({
 }
 
 /// Shared-validation/bridge double: widget tests must not need a live Rust
-/// library, and SAF tests must exercise only the platform mirror flow.
+/// library, and SAF tests exercise only the platform adapter flow.
 Future<String> _bridgeOk(String profileJson, String action) async {
   return jsonEncode(<String, Object>{
     'Ok': true,
@@ -272,13 +272,11 @@ void main() {
     );
     final strings = controller.strings;
 
-    expect(find.text(strings.actionPrepare), findsOneWidget);
     expect(find.text(strings.actionBuild), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text(strings.tabTask));
     await tester.pumpAndSettle();
-    expect(find.text(strings.actionVerify), findsOneWidget);
     expect(find.text(strings.actionOpenOutput), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -548,6 +546,7 @@ void main() {
       bridgeValidateProfile: _noIssues,
     );
     addTearDown(controller.dispose);
+    controller.settings.finalTreeUri = 'content://tree/output';
     controller.settings.sourceStagingPath = '';
     controller.settings.sourceTreeUri = 'content://documents/tree/source';
     var relinked = false;
@@ -572,7 +571,7 @@ void main() {
       );
     });
 
-    final outcome = await controller.runAction('prepare');
+    final outcome = await controller.runAction('build_restart');
 
     expect(relinked, isTrue);
     expect(
@@ -591,6 +590,7 @@ void main() {
       bridgeValidateProfile: _noIssues,
     );
     addTearDown(controller.dispose);
+    controller.settings.finalTreeUri = 'content://tree/output';
     controller.settings.appFilesDir = '/data/user/0/com.dvda.maker/files';
     controller.settings.sourceTreeUri = 'content://documents/tree/source';
     controller.settings.sourceStagingPath = '';
@@ -617,7 +617,7 @@ void main() {
       );
     });
 
-    final outcome = await controller.runAction('prepare');
+    final outcome = await controller.runAction('build_restart');
 
     expect(rebuilt, isTrue);
     expect(
@@ -643,6 +643,7 @@ void main() {
         bridgeIssueMessage: (language, code) => 'menu font unavailable',
       );
       addTearDown(controller.dispose);
+      controller.settings.finalTreeUri = 'content://tree/output';
       controller.settings.sourceStagingPath = '';
       controller.settings.sourceTreeUri = 'content://documents/tree/source';
       var relinked = false;
@@ -662,18 +663,20 @@ void main() {
         );
       });
 
-      final outcome = await controller.runAction('prepare');
+      final outcome = await controller.runAction('build_restart');
 
       expect(outcome?.ok, isFalse);
       expect(outcome?.message, 'menu font unavailable');
       expect(relinked, isFalse);
     },
   );
+
   testWidgets('a broken SAF mirror reports the platform reason', (
     tester,
   ) async {
     final controller = await _controller();
     addTearDown(controller.dispose);
+    controller.settings.finalTreeUri = 'content://tree/output';
     controller.settings.appFilesDir = '/data/user/0/com.dvda.maker/files';
     controller.settings.sourceTreeUri = 'content://documents/tree/broken';
     controller.settings.sourceStagingPath = '';
@@ -696,7 +699,7 @@ void main() {
       );
     });
 
-    final outcome = await controller.runAction('prepare');
+    final outcome = await controller.runAction('build_restart');
 
     expect(outcome?.ok, isFalse);
     expect(outcome?.message, contains('Cannot read the file broken.flac'));
@@ -707,6 +710,7 @@ void main() {
   testWidgets('app path initialization failure stays readable', (tester) async {
     final controller = await _controller();
     addTearDown(controller.dispose);
+    controller.settings.finalTreeUri = 'content://tree/output';
     // An unmocked platform channel would never answer inside the fake-async
     // widget-test zone, so surface the failure through an explicit exception.
     const channel = MethodChannel('dvda/platform');
@@ -731,7 +735,7 @@ void main() {
     await controller.initialize();
     expect(controller.initError, isNotNull);
     controller.settings.sourceTreeUri = 'content://documents/tree/source';
-    final outcome = await controller.runAction('prepare');
+    final outcome = await controller.runAction('build_restart');
 
     expect(outcome?.ok, isFalse);
     expect(outcome?.message, contains('app-private'));

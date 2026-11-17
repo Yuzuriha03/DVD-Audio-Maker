@@ -30,9 +30,7 @@ Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP or LPCM encod
 2. **Choose the output location.** Set the ISO folder, disc title and capacity. Discs are filled in track order; when the next album does not fit, the application starts a new disc.
 3. **Choose audio settings.** “MLP encoding” is the usual choice. Pick a sample rate and bit depth that suit the source and your player. Lowering either can reduce precision; raising them does not add detail.
 4. **Configure menus.** Optionally enable track menus, album indexes and playback covers. Menu fonts are included.
-5. **Check sources.** Click “Check sources” and resolve any reported issues.
-6. **Build discs.** After the check succeeds, click “Build discs” to encode audio and create the ISOs.
-7. **Verify output.** When building finishes, click “Verify output”; after it passes, use “Open output” to find the ISO folder.
+5. **Build discs.** Click “Build discs” to check sources, encode audio, create the ISOs and verify the output automatically; after it passes, use “Open output” to find the ISO folder.
 
 “Build discs” checks sources automatically; a failed check blocks the build. You can cancel a task while it runs. Canceling does not delete discs that were already completed.
 
@@ -116,8 +114,8 @@ Not necessarily. DVD-Audio requires software or hardware that supports DVD-Audio
 **Why can't I select 20-bit LPCM?**  
 The current LPCM path supports 16 / 24 bits only; use MLP for 20-bit output. LPCM is also limited to 9.6 Mb/s.
 
-**“Check sources” fails.**  
-Review the reported track and reason, confirm the file is readable and is FLAC or M4A, and check its tags and path. Fix the issue and check again; checks do not reuse caches between tasks.
+**The pre-build source check fails.**
+Review the reported track and reason, confirm the file is readable and is FLAC or M4A, and check its tags and path. Fix the issue and restart the build.
 
 **Building or verification fails.**  
 Save the detailed log and keep the working folder. Check free disk space, write permissions and source integrity, then retry. Do not skip verification just because an ISO was produced.

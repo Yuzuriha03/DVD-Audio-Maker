@@ -77,19 +77,14 @@ pub enum Mode {
 }
 
 pub fn execute(job: Job, caller: &mut dyn Callbacks) -> Outcome {
-    execute_mode(job, Mode::All, None, caller)
+    execute_mode(job, Mode::All, caller)
 }
 #[allow(
     clippy::needless_pass_by_value,
     reason = "Public verification dispatch retains its owned request contract while private execution helpers borrow the request"
 )]
-pub fn execute_mode(
-    job: Job,
-    mode: Mode,
-    explicit_iso: Option<PathBuf>,
-    caller: &mut dyn Callbacks,
-) -> Outcome {
-    execute_with_reference(&job, mode, explicit_iso, None, caller)
+pub fn execute_mode(job: Job, mode: Mode, caller: &mut dyn Callbacks) -> Outcome {
+    execute_with_reference(&job, mode, None, caller)
 }
 
 /// Recheck ISO content against current sources, without claiming historical build-log audit.
@@ -100,17 +95,15 @@ pub fn execute_mode(
 pub fn execute_source_reference(
     job: Job,
     mode: Mode,
-    explicit_iso: Option<PathBuf>,
     reference: Value,
     caller: &mut dyn Callbacks,
 ) -> Outcome {
-    execute_with_reference(&job, mode, explicit_iso, Some(reference), caller)
+    execute_with_reference(&job, mode, Some(reference), caller)
 }
 
 fn execute_with_reference(
     job: &Job,
     mode: Mode,
-    explicit_iso: Option<PathBuf>,
     reference: Option<Value>,
     caller: &mut dyn Callbacks,
 ) -> Outcome {
@@ -119,7 +112,7 @@ fn execute_with_reference(
         vec![job.work_directory.clone()],
         0,
         caller,
-        |_, caller| execute_measured(job, mode, explicit_iso, reference, caller),
+        |_, caller| execute_measured(job, mode, reference, caller),
         |result| result.succeeded,
     )
 }
@@ -127,11 +120,10 @@ fn execute_with_reference(
 fn execute_measured(
     job: &Job,
     mode: Mode,
-    explicit_iso: Option<PathBuf>,
     reference: Option<Value>,
     caller: &mut dyn Callbacks,
 ) -> Outcome {
-    match run(job, mode, explicit_iso, reference, caller) {
+    match run(job, mode, reference, caller) {
         Ok(value) => value,
         Err(message) => Outcome {
             succeeded: false,
@@ -149,13 +141,12 @@ fn execute_measured(
 fn run(
     job: &Job,
     mode: Mode,
-    explicit_iso: Option<PathBuf>,
     reference: Option<Value>,
     caller: &mut dyn Callbacks,
 ) -> Result<Outcome, String> {
     check_cancel(caller)?;
     caller.progress(0, 100);
-    if mode == Mode::Menu && !job.menu_enabled && explicit_iso.is_none() {
+    if mode == Mode::Menu && !job.menu_enabled {
         caller.emit(1, "[跳过] 菜单已关闭，成品按预期没有菜单。");
         return Ok(Outcome {
             succeeded: true,
@@ -170,8 +161,7 @@ fn run(
         diagnostics.push(json!({"Code":"SOURCE_REFERENCE_RECHECK", "Severity":"Warning",
             "Message":"Verification uses current sources and settings; historical build-log audit is unavailable after task cleanup."}));
     }
-    let needs_index = matches!(mode, Mode::All | Mode::Lossless)
-        || (mode == Mode::Menu && explicit_iso.is_none());
+    let needs_index = matches!(mode, Mode::All | Mode::Lossless | Mode::Menu);
     let mut index = if let Some(reference) = reference {
         Some(
             resolve_source_index(reference)
@@ -187,42 +177,18 @@ fn run(
         }
     } else if matches!(mode, Mode::Timeline | Mode::Menu) {
         // An optional index can add consistency checks, but cannot prevent
-        // inspecting the actual ISO timeline or an explicitly selected menu.
+        // inspecting the actual ISO timeline or menu.
         read_index(&job.index_path).ok()
     } else {
         None
     };
-    let selected = explicit_iso.is_some();
-    let isos = if let Some(iso) = explicit_iso {
-        if !iso.is_file() {
-            return Err(format!(
-                "找不到成品 ISO：{}",
-                display_product_path(
-                    &job.final_directory,
-                    job.final_directory_display.as_deref(),
-                    &iso
-                )
-                .display()
-            ));
-        }
-        if let Some(index) = index.as_mut() {
-            index["__discs__"].as_array_mut().unwrap().retain(|disc| {
-                iso.file_name().is_some_and(|name| {
-                    name.to_string_lossy()
-                        .eq_ignore_ascii_case(&text(disc, "iso"))
-                })
-            });
-        }
-        vec![iso]
-    } else {
-        find_isos(&job.final_directory, &job.iso_prefix).map_err(|message| {
-            display_product_message(
-                &job.final_directory,
-                job.final_directory_display.as_deref(),
-                &message,
-            )
-        })?
-    };
+    let isos = find_isos(&job.final_directory, &job.iso_prefix).map_err(|message| {
+        display_product_message(
+            &job.final_directory,
+            job.final_directory_display.as_deref(),
+            &message,
+        )
+    })?;
     if needs_index
         && index
             .as_ref()
@@ -276,9 +242,7 @@ fn run(
             )?
         };
         caller.progress(35, 100);
-        // The preparation manifest describes the entire selected release. An
-        // explicit single-ISO developer request has no complete-release total.
-        if mode == Mode::All && !selected {
+        if mode == Mode::All {
             diagnostics.extend(verification::manifest_issues(
                 job.manifest_path.as_deref(),
                 &evidence,
@@ -303,18 +267,15 @@ fn run(
             diagnostics.extend(menu);
             diagnostics.extend(lossless);
         } else {
-            diagnostics.extend(verify_menus(
-                job, &isos, None, mode, selected, &metadata, caller,
-            )?);
+            diagnostics.extend(verify_menus(job, &isos, None, mode, &metadata, caller)?);
         }
     } else {
-        if mode == Mode::Menu && (index.is_some() || selected) {
+        if mode == Mode::Menu && index.is_some() {
             diagnostics.extend(verify_menus(
                 job,
                 &isos,
                 index.as_ref(),
                 mode,
-                selected,
                 &metadata,
                 caller,
             )?);
@@ -360,7 +321,6 @@ fn verify_menus(
     isos: &[PathBuf],
     index: Option<&Value>,
     mode: Mode,
-    _selected: bool,
     metadata: &formats::IsoMetadataCache,
     caller: &mut dyn Callbacks,
 ) -> Result<Vec<Value>, String> {
@@ -489,15 +449,7 @@ fn verify_menu_and_lossless(
                 stop: menu_stop,
                 logs: Vec::new(),
             };
-            let result = verify_menus(
-                job,
-                isos,
-                Some(index),
-                Mode::All,
-                false,
-                metadata,
-                &mut callbacks,
-            );
+            let result = verify_menus(job, isos, Some(index), Mode::All, metadata, &mut callbacks);
             let _ = send.send((result, callbacks.logs));
         });
         let mut lossless_diagnostics = Vec::new();
@@ -786,88 +738,6 @@ fn capacity(
     }
 }
 
-/// Standalone developer quick-check/audit needs only ISO files and optional
-/// manifest/log evidence, just like the original C# developer command.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct Inspection {
-    pub final_directory: PathBuf,
-    /// User-visible final folder for diagnostics, empty on Windows.
-    #[serde(default)]
-    pub final_directory_display: Option<PathBuf>,
-    pub iso_prefix: String,
-    pub manifest_path: Option<PathBuf>,
-    pub build_log_path: Option<PathBuf>,
-    #[serde(default = "default_true")]
-    pub allow_log_fallback: bool,
-    pub audit: bool,
-}
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "Public verification dispatch retains its owned request contract while private execution helpers borrow the request"
-)]
-pub fn inspect(job: Inspection, caller: &mut dyn Callbacks) -> Outcome {
-    let mut run = || -> Result<Outcome, String> {
-        check_cancel(caller)?;
-        let isos = find_isos(&job.final_directory, &job.iso_prefix).map_err(|message| {
-            display_product_message(
-                &job.final_directory,
-                job.final_directory_display.as_deref(),
-                &message,
-            )
-        })?;
-        let mut diagnostics = Vec::new();
-        if isos.is_empty() {
-            diagnostics.push(error("NO_ISO", "No published ISO images were found"));
-        }
-        let metadata = formats::IsoMetadataCache::default();
-        let evidence = timeline(
-            &isos,
-            None,
-            &job.final_directory,
-            job.final_directory_display.as_deref(),
-            &mut diagnostics,
-            caller,
-            job.audit,
-            false,
-            &metadata,
-        )?;
-        diagnostics.extend(verification::manifest_issues(
-            job.manifest_path.as_deref(),
-            &evidence,
-        ));
-        if job.audit {
-            diagnostics.extend(verification::log_issues(
-                job.build_log_path.as_deref(),
-                job.allow_log_fallback,
-                &evidence,
-            ));
-        } else if let Some(path) = job.build_log_path.as_ref().filter(|path| path.exists()) {
-            let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-            if verification::has_padding_failure(&text) {
-                diagnostics.push(error("PES_PADDING_FAILED", "构建日志包含 pack 补齐失败"));
-            }
-        }
-        Ok(Outcome {
-            succeeded: !diagnostics.iter().any(is_error),
-            diagnostics,
-            iso_count: reported_count(isos.len()),
-            track_count: evidence
-                .iter()
-                .map(|disc| reported_count(disc.track_count()))
-                .sum(),
-        })
-    };
-    match run() {
-        Ok(value) => value,
-        Err(message) => Outcome {
-            succeeded: false,
-            diagnostics: vec![error("VERIFY_FAILED", message)],
-            iso_count: 0,
-            track_count: 0,
-        },
-    }
-}
 #[allow(
     clippy::too_many_lines,
     reason = "The nested ISO/group/sector audit retains shared timestamp state and ordered diagnostics; splitting the loop would obscure cancellation and first-error boundaries"
@@ -1724,11 +1594,17 @@ fn verify_tracks_measured(
 
 fn track_display_name(track: &Value) -> String {
     let source = text(track, "src");
+    let descriptor = source
+        .strip_prefix("/proc/self/fd/")
+        .is_some_and(|fd| fd.parse::<i32>().is_ok());
     let mut components = source.rsplit(['/', '\\']);
     let file = components.next().unwrap_or_default();
+    let path_album = components.next().unwrap_or_default();
     let album = text(track, "album");
-    let album = if album.is_empty() {
-        components.next().unwrap_or_default()
+    let album = if descriptor && (album.is_empty() || album == "fd") {
+        ""
+    } else if album.is_empty() {
+        path_album
     } else {
         &album
     };
@@ -1798,6 +1674,28 @@ fn is_error(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn track_display_uses_original_album_for_descriptor_sources() {
+        assert_eq!(
+            track_display_name(&json!({
+                "src":"/proc/self/fd/402",
+                "orig_src":"/sdcard/Music/Album/track.mlp",
+                "album":"fd",
+                "title":"Song"
+            })),
+            "Song"
+        );
+        assert_eq!(
+            track_display_name(&json!({
+                "src":"/proc/self/fd/402",
+                "orig_src":"/sdcard/Music/Album/track.mlp",
+                "album":"Explicit album",
+                "title":"Song"
+            })),
+            "Explicit album / Song"
+        );
+    }
+
     #[test]
     fn reported_counts_preserve_signed_low_32_bit_protocol_semantics() {
         assert_eq!(reported_count(0), 0);

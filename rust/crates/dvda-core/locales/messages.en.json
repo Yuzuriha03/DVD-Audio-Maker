@@ -42,10 +42,10 @@
     "English": "      Use build.log from the last actual build for auditing."
   },
   {
-    "Source": "找不到 manifest.json，请先运行 prepare。",
+    "Source": "找不到 manifest.json，当前制作尚未生成该文件。",
     "Parameters": 0,
     "Nested": [],
-    "English": "manifest.json was not found. Run prepare first."
+    "English": "manifest.json was not found. The current build has not generated it yet."
   },
   {
     "Source": "[诊断] DVDA_ALBUM_LIMIT={0}: 仅处理 {1} 张专辑 / {2} 轨",
@@ -2419,12 +2419,6 @@
     "English": "[ERROR] Build log does not exist: {0}"
   },
   {
-    "Source": "[错误] prepare 未知参数: {0}",
-    "Parameters": 1,
-    "Nested": [],
-    "English": "[ERROR] Unknown prepare argument: {0}"
-  },
-  {
     "Source": "[配置缺失] {0}",
     "Parameters": 1,
     "Nested": [],
@@ -2475,10 +2469,10 @@
     "English": "[Preparation failed] {0}"
   },
   {
-    "Source": "用法: dvda [config|prepare|plan|build|convert|verify|quick-check|audit|aob-pts|mlp|alac|iso] [--config PATH]",
+    "Source": "用法: dvda [config|plan|build|convert|aob-pts|mlp|alac|iso] [--config PATH]",
     "Parameters": 0,
     "Nested": [],
-    "English": "Usage: dvda [config|prepare|plan|build|convert|verify|quick-check|audit|aob-pts|mlp|alac|iso] [--config PATH]"
+    "English": "Usage: dvda [config|plan|build|convert|aob-pts|mlp|alac|iso] [--config PATH]"
   },
   {
     "Source": "[错误] config 未知参数: {0}",
@@ -2895,10 +2889,10 @@
     "English": "Build complete"
   },
   {
-    "Source": "已制作 {0} 张光盘。点击“查看成品”打开保存位置，建议再运行“验证成品”。",
+    "Source": "已制作 {0} 张光盘。制作流程已自动验证成品；点击“查看成品”打开保存位置。",
     "Parameters": 1,
     "Nested": [],
-    "English": "Created {0} discs. Click \"Open output\" to open the folder, then run \"Verify output\"."
+    "English": "Created {0} discs. The build workflow has verified the output automatically. Click \"Open output\" to open the folder."
   },
   {
     "Source": "正在检查光盘容量",
@@ -4281,10 +4275,10 @@
     "English": "The authoring tool reported an issue: "
   },
   {
-    "Source": "制盘工具报告扇区位置差异。制作后请运行“验证成品”，详细信息已保留。",
+    "Source": "制盘工具报告扇区位置差异。制作流程中的成品校验会继续检查；详细信息已保留。",
     "Parameters": 0,
     "Nested": [],
-    "English": "The authoring tool reported a sector-position difference. Run \"Verify output\" after building. Details have been retained."
+    "English": "The authoring tool reported a sector-position difference. Verification within the build workflow will continue checking it. Details have been retained."
   },
   {
     "Source": "工具提示：{0}",

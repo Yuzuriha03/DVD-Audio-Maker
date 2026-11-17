@@ -71,7 +71,7 @@ fn build(
                 ("menu", Mode::Menu),
                 ("lossless", Mode::Lossless),
             ] {
-                match app::run_verify_mode(&task, mode, None, &mut quiet) {
+                match app::run_verify_mode(&task, mode, &mut quiet) {
                     Ok(outcome) => println!(
                         "  mode {label}: ok={} issues={:?}",
                         outcome.succeeded,

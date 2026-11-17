@@ -416,11 +416,8 @@ fn overall_progress_stays_monotonic_and_reserves_completion_for_success() {
 #[test]
 fn task_start_is_visible_in_summary_before_progress_events() {
     let _ui_test_lock = ui_test_guard();
-    for (lang, key) in [
-        (Lang::Zh, "started_check"),
-        (Lang::En, "started_build"),
-        (Lang::Ja, "started_verify"),
-    ] {
+    {
+        let (lang, key) = (Lang::En, "started_build");
         let lines = [LogLine {
             raw: tr(Lang::Zh, key).into(),
             problem: false,
@@ -678,9 +675,7 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
                                 win::send_int(ui.controls.status, WM_GETFONT, 0, 0) as Handle;
                             for key in [
                                 "ready",
-                                "started_check",
                                 "started_build",
-                                "started_verify",
                                 "done",
                                 "cancelled",
                                 "failed",
@@ -846,6 +841,29 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     let visible = |hwnd: Hwnd| {
         (u32::try_from(GetWindowLongPtrW(hwnd, -16) & 0xffff_ffff).unwrap()) & WS_VISIBLE != 0
     };
+    let initial_menu = checked(ui.controls.menu);
+    let initial_advanced = checked(ui.controls.advanced);
+    check(ui.controls.menu, true);
+    check(ui.controls.advanced, false);
+    update_advanced(&ui);
+    let font_labels = |ui: &UiState| {
+        ui.labels
+            .iter()
+            .filter(|(_, key)| matches!(*key, "font_sc" | "font_jp" | "font_kr"))
+            .map(|(hwnd, _)| *hwnd)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(font_labels(&ui).len(), 3);
+    assert!(font_labels(&ui).iter().all(|hwnd| !visible(*hwnd)));
+    check(ui.controls.advanced, true);
+    update_advanced(&ui);
+    assert!(font_labels(&ui).iter().all(|hwnd| visible(*hwnd)));
+    check(ui.controls.menu, false);
+    update_advanced(&ui);
+    assert!(font_labels(&ui).iter().all(|hwnd| !visible(*hwnd)));
+    check(ui.controls.menu, initial_menu);
+    check(ui.controls.advanced, initial_advanced);
+    update_advanced(&ui);
     // The everyday source and output browse buttons stay visible at startup;
     // only the menu font pickers follow the menu/advanced switches, and the
     // work-directory picker follows "advanced" alone.

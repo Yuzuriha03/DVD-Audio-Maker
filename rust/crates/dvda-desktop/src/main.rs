@@ -254,9 +254,7 @@ const ID_OPEN_PROFILE: usize = 101;
 const ID_SAVE_PROFILE: usize = 102;
 const ID_LANGUAGE: usize = 103;
 const ID_TAB: usize = 2000;
-const ID_PREPARE: usize = 105;
 const ID_BUILD: usize = 106;
-const ID_VERIFY: usize = 107;
 const ID_CANCEL: usize = 108;
 const ID_OPEN_OUTPUT: usize = 109;
 const ID_LOG_VIEW: usize = 110;
@@ -902,9 +900,7 @@ struct Controls {
     only_issues: Hwnd,
     live: Hwnd,
     log: Hwnd,
-    prepare: Hwnd,
     build: Hwnd,
-    verify: Hwnd,
     cancel: Hwnd,
     open_output: Hwnd,
     profile_origin: Hwnd,

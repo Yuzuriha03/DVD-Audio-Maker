@@ -138,6 +138,7 @@ dependencies = [
  "dvda-author",
  "dvda-image",
  "dvda-menu",
+ "libc",
  "serde_json",
 ]
 

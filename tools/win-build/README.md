@@ -13,7 +13,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.p
 
 `cargo-msvc.ps1` 初始化 MSVC 环境并默认设置 `DVDA_FFMPEG_PREFIX=build\msvc-native\ffmpeg-static\install`，上述命令可在干净 shell 执行（先按下文准备 Native inputs）。不要在没有 MSVC 环境的 shell 中直接调用裸 `cargo`，否则会因缺少 `link.exe` 或 FFmpeg 前缀失败。
 
-`gui.cmd`、`gui-debug.cmd`、`cli.cmd`、`build.cmd` 和 `verify.cmd` 都调用 Rust workspace。配置只使用 JSON 方案和 `--profile`；不支持 `config.env`、`DVDA_CONFIG` 和 `--config`。
+`gui.cmd`、`gui-debug.cmd`、`cli.cmd` 和 `build.cmd` 都调用 Rust workspace。配置只使用 JSON 方案和 `--profile`；不支持 `config.env`、`DVDA_CONFIG` 和 `--config`。
 
 完整 author 由 Rust 实现：应用进程内调用，独立 Rust CLI 复用同一流程。`build-image-author.py` 是 `build-rust-author.py` 的兼容入口，旧 C producer、源码和冻结二进制已清理。AOB、管理表、菜单/静图和 ISO 的验收记录保存在本地源码工作副本中，黄金数据的历史来源摘要仍保留。
 

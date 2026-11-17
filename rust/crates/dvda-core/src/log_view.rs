@@ -855,6 +855,12 @@ pub fn render_line(language: &str, raw: &str) -> String {
     if text.starts_with('{') || text.starts_with(task_log::PREFIX) {
         return String::new();
     }
+    if let Some(index) = text.find(['{', '['])
+        && serde_json::from_str::<Value>(&text[index..])
+            .is_ok_and(|value| value.is_object() || value.is_array())
+    {
+        return String::new();
+    }
     if is_hidden_noise(text) || is_hidden_summary_header(text) || is_hidden_summary_detail(text) {
         return String::new();
     }
@@ -973,6 +979,19 @@ mod tests {
         ] {
             assert_eq!(render_line("en", hidden), "", "{hidden}");
         }
+    }
+
+    #[test]
+    fn structured_payloads_with_a_human_prefix_are_hidden() {
+        assert_eq!(
+            render_line("zh-CN", "track: {\"Kind\":\"Finalized\",\"Track\":1}"),
+            ""
+        );
+        assert_eq!(render_line("en", "verify: [{\"event\":\"done\"}]"), "");
+        assert_eq!(
+            render_line("en", "[verify] complete 1 discs 1 tracks ok"),
+            "[verify] complete 1 discs 1 tracks ok"
+        );
     }
 
     #[test]

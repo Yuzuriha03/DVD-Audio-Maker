@@ -584,7 +584,27 @@ pub fn try_repair(
     directory: &Path,
     events: &mut dyn Callbacks,
 ) -> Result<Option<Repair>, Failure> {
-    if !supported(path) {
+    try_repair_with_logical(library, path, directory, None, events)
+}
+
+/// Variant for descriptor-backed sources: `logical_path` supplies the original
+/// extension and output filename, while all content reads still use path.
+///
+/// # Panics
+/// Requires a filename in the logical source path, matching [`try_repair`].
+///
+/// # Errors
+/// Propagates cookie scanning, packet enumeration, patch calculation, file
+/// copy/replacement failures and cancellation, matching [`try_repair`].
+pub fn try_repair_with_logical(
+    library: &Path,
+    path: &str,
+    directory: &Path,
+    logical_path: Option<&str>,
+    events: &mut dyn Callbacks,
+) -> Result<Option<Repair>, Failure> {
+    let logical = logical_path.unwrap_or(path);
+    if !supported(logical) {
         return Ok(None);
     }
     let Some(cookie) = read_cookie_file(path, events)? else {
@@ -595,7 +615,7 @@ pub fn try_repair(
     if patches.is_empty() {
         return Ok(None);
     }
-    let output = directory.join(Path::new(path).file_name().unwrap());
+    let output = directory.join(Path::new(logical).file_name().unwrap());
     if files::ordinal_ignore_case(
         &std::path::absolute(path)?.to_string_lossy(),
         &std::path::absolute(&output)?.to_string_lossy(),

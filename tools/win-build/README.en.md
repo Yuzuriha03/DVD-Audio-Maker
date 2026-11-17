@@ -13,7 +13,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.p
 
 `cargo-msvc.ps1` initializes the MSVC environment and defaults `DVDA_FFMPEG_PREFIX` to `build\msvc-native\ffmpeg-static\install`, so these commands run in a clean shell after the native inputs below are prepared. Do not invoke bare cargo from a shell without the MSVC environment; it fails because link.exe or the FFmpeg prefix is missing.
 
-`gui.cmd`, `gui-debug.cmd`, `cli.cmd`, `build.cmd` and `verify.cmd` invoke the Rust workspace. Profiles are JSON files selected with `--profile`; `config.env`, `DVDA_CONFIG` and `--config` are unsupported.
+`gui.cmd`, `gui-debug.cmd`, `cli.cmd` and `build.cmd` invoke the Rust workspace. Profiles are JSON files selected with `--profile`; `config.env`, `DVDA_CONFIG` and `--config` are unsupported.
 
 The complete author runs in Rust through a shared application/CLI entry. `build-image-author.py` delegates to `build-rust-author.py`; the retired C producer, sources and frozen binaries have been removed. Historical golden-fixture source hashes are retained. AOB, table, menu/still and ISO acceptance records are kept in the local source working copy.
 

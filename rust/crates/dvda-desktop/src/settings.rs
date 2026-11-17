@@ -348,15 +348,14 @@ pub(crate) fn update_menu_visibility(state: &UiState) {
     ] {
         show_window(control, menu);
     }
+    let advanced = checked(state.controls.advanced);
     for (hwnd, key) in &state.labels {
-        if matches!(
-            *key,
-            "stills" | "tracks" | "cover" | "norm" | "font_sc" | "font_jp" | "font_kr"
-        ) {
+        if matches!(*key, "stills" | "tracks" | "cover" | "norm") {
             show_window(*hwnd, menu);
+        } else if matches!(*key, "font_sc" | "font_jp" | "font_kr") {
+            show_window(*hwnd, menu && advanced);
         }
     }
-    let advanced = checked(state.controls.advanced);
     // Only the menu font pickers belong to the menu section. The source,
     // output and import rows keep the visibility rules they had before: the
     // ordinary browse buttons stay visible, the work-directory one follows

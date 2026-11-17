@@ -9,14 +9,13 @@
 ```bat
 gui-debug.cmd
 cli.cmd abi.version
-cli.cmd prepare --profile "C:\work\settings.json"
 cli.cmd build --dry-run --profile "C:\work\settings.json"
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 ```
 
 `settings.json` 是唯一的文件配置格式。`settings.local.json` 适合保存本机路径，已被 Git 忽略；也可以通过 `--profile` 使用隔离方案。`config.env`、`DVDA_CONFIG` 和 `--config` 不受支持。
 
-GUI 只提供检查音源、制作光盘和验证成品。dry-run 仅属于开发 CLI 诊断入口，不显示在 GUI 中。
+GUI 只提供制作光盘；制作流程内部自动检查音源并验证成品。dry-run 仅属于开发 CLI 诊断入口，不显示在 GUI 中。
 
 ## 原生组件
 
@@ -133,7 +132,7 @@ Rust 测试覆盖完整扫描、CRC 边界、对齐输出和 PCM 比较。历史
 
 批量 MLP 编码与 LPCM 准备在解码 WAV 的采样率、存储/有效位深、声道掩码、RIFF 结构与 PCM 精度均满足目标时直接复用该临时文件；否则仍执行规范化。20 位数据复用前检查低四位，保留取消检查和临时文件清理。规范化对 16→16、24→24 使用批量复制，24→20 校验后复制，32 位存储→24 位使用专用打包路径，不放宽精度校验。
 
-制作模式在需要重新完整解码时，可同步生成并规范化生产 PCM；默认 Rust MLP 直连则在该次解码中通过有界内存队列直接生成临时 MLP，不写生产 WAV。清单携带源文件/中间文件身份及目标参数、抖动和媒体组件签名，MLP/LPCM 仅在全部证据匹配时复用，否则回退原转换。显式 MLP 元数据和关闭 `rust-mlp` 的构建保留 WAV 路径；单独检查不生成 PCM。直连成品校验并行解码源和成品，经有界队列逐样本比较，不生成临时 WAV/raw，保留首个差异偏移和末尾零填充检查。ALAC cookie 扫描、包位检查与修复均使用有界文件读写，修复结果仍以临时文件原子发布。完整验证中菜单结构检查与无损内容校验并行，诊断按阶段稳定合并。
+制作模式在需要重新完整解码时，可同步生成并规范化生产 PCM；默认 Rust MLP 直连则在该次解码中通过有界内存队列直接生成临时 MLP，不写生产 WAV。清单携带源文件/中间文件身份及目标参数、抖动和媒体组件签名，MLP/LPCM 仅在全部证据匹配时复用，否则回退原转换。显式 MLP 元数据和关闭 `rust-mlp` 的构建保留 WAV 路径；准备阶段不生成 PCM。直连成品校验并行解码源和成品，经有界队列逐样本比较，不生成临时 WAV/raw，保留首个差异偏移和末尾零填充检查。ALAC cookie 扫描、包位检查与修复均使用有界文件读写，修复结果仍以临时文件原子发布。完整验证中菜单结构检查与无损内容校验并行，诊断按阶段稳定合并。
 
 WAV 容器读写统一由 `dvda-audio` 实现；`dvda-core` 只负责 DVD-Audio 参数限制和 PCM 转换。制作入口使用整数 RIFF 读取策略（拒绝重复 fmt/data，跳过附加元数据，兼容仅末尾 data 缺少对齐字节），规范化使用共享 Writer 的紧凑 RIFF 模式，保持 68 字节头及 32 位长度限制。通用媒体入口仍使用原有 RIFF/RF64 策略及带 RF64 预留区的 104 字节头。
 

@@ -26,6 +26,7 @@ beforeSettings {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         all { rewriteOfficialRepository() }
     }
 }
@@ -36,6 +37,7 @@ settingsEvaluated {
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         all { rewriteOfficialRepository() }
     }
 }
@@ -45,6 +47,7 @@ allprojects {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         all { rewriteOfficialRepository() }
     }
     // Do not add project repositories here: Flutter's included build forbids them.

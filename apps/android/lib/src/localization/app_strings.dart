@@ -118,10 +118,8 @@ class AppStrings {
     'fontJp': 'Japanese menu font',
     'fontKr': 'Korean menu font',
     'fontHelp': 'Leave blank to use the system font.',
-    'actionPrepare': 'Check sources',
     'actionBuild': 'Start build',
     'actionCancel': 'Stop task',
-    'actionVerify': 'Verify disc',
     'actionOpenOutput': 'Open folder',
     'actionDiscard': 'Discard progress',
     'actionStatus': 'Status',
@@ -134,7 +132,6 @@ class AppStrings {
     'statusFailed': 'Failed',
     'statusCancelled': 'Cancelled',
     'statusBuildFailed': 'Production failed',
-    'statusVerifyFailed': 'Verification failed',
     'cancelledHint':
         'You stopped this task. The unfinished progress was kept; you can delete it from the settings.',
     'retentionCancelledTitle': 'Cancelled',
@@ -194,15 +191,10 @@ class AppStrings {
     'profileInvalid': 'Invalid profile JSON',
     'storageHint': 'Allow storage access in system settings.',
     'cancel': 'Cancel',
-    'tasksIdleHint':
-        'Check sources first, then start the build. You can stop it at any time.',
+    'tasksIdleHint': 'Start the build when ready. You can stop it at any time.',
     'runningHint': 'The task runs in the background; the UI stays responsive.',
     'exportingOutput': 'Exporting the finished disc to the selected folder...',
     'exportProgress': 'Exporting ISO {done}/{total}',
-    'verifyMirroring': 'Reading the ISO images from the selected folder...',
-    'verifyMirrorProgress': 'Reading ISO {done}/{total}',
-    'verifySpaceInsufficient':
-        'Not enough internal storage to verify the disc. Free some space and try again.',
     'sourceSpaceInsufficient':
         'Not enough internal storage to prepare the selected folder. Free some space and try again.',
     'cleanupFailedRetained':
@@ -302,10 +294,8 @@ class AppStrings {
     'fontJp': '日文菜单字体',
     'fontKr': '韩文菜单字体',
     'fontHelp': '可留空使用系统默认字体。',
-    'actionPrepare': '检查音源',
     'actionBuild': '开始制作',
     'actionCancel': '停止任务',
-    'actionVerify': '校验成品',
     'actionOpenOutput': '打开目录',
     'actionDiscard': '删除进度',
     'actionStatus': '状态',
@@ -318,7 +308,6 @@ class AppStrings {
     'statusFailed': '失败',
     'statusCancelled': '已取消',
     'statusBuildFailed': '制作失败',
-    'statusVerifyFailed': '验证失败',
     'cancelledHint': '你主动停止了本次任务，未完成的进度已保留；可在设置中删除进度并清理。',
     'retentionCancelledTitle': '已取消',
     'retentionCancelledBody':
@@ -371,13 +360,10 @@ class AppStrings {
     'profileInvalid': '方案 JSON 格式无效',
     'storageHint': '请在系统设置中允许访问存储。',
     'cancel': '取消',
-    'tasksIdleHint': '先检查音源，然后开始制作。制作过程可以随时停止。',
+    'tasksIdleHint': '准备就绪后开始制作。制作过程可以随时停止。',
     'runningHint': '任务在后台运行，界面保持可响应。',
     'exportingOutput': '正在把成品导出到所选文件夹...',
     'exportProgress': '正在导出 ISO {done}/{total}',
-    'verifyMirroring': '正在从所选文件夹读取 ISO 镜像...',
-    'verifyMirrorProgress': '正在读取 ISO {done}/{total}',
-    'verifySpaceInsufficient': '内部存储空间不足，无法校验成品。请释放空间后重试。',
     'sourceSpaceInsufficient': '内部存储空间不足，无法准备所选文件夹。请释放空间后重试。',
     'cleanupFailedRetained': '光盘已导出，但内部清理失败。工作区已保留，可重试清理。',
     'retryCleanup': '重试清理',
@@ -473,10 +459,8 @@ class AppStrings {
     'fontJp': '日文選單字型',
     'fontKr': '韓文選單字型',
     'fontHelp': '可留空使用系統預設字型。',
-    'actionPrepare': '檢查音源',
     'actionBuild': '開始製作',
     'actionCancel': '停止任務',
-    'actionVerify': '校驗成品',
     'actionOpenOutput': '開啟目錄',
     'actionDiscard': '刪除進度',
     'actionStatus': '狀態',
@@ -489,7 +473,6 @@ class AppStrings {
     'statusFailed': '失敗',
     'statusCancelled': '已取消',
     'statusBuildFailed': '製作失敗',
-    'statusVerifyFailed': '驗證失敗',
     'cancelledHint': '你主動停止了本次任務，未完成的進度已保留；可在設定中刪除進度並清理。',
     'retentionCancelledTitle': '已取消',
     'retentionCancelledBody':
@@ -542,13 +525,10 @@ class AppStrings {
     'profileInvalid': '方案 JSON 格式無效',
     'storageHint': '請在系統設定中允許存取儲存空間。',
     'cancel': '取消',
-    'tasksIdleHint': '先檢查音源，然後開始製作。製作過程可以隨時停止。',
+    'tasksIdleHint': '準備就緒後開始製作。製作過程可以隨時停止。',
     'runningHint': '任務在背景執行，介面保持可回應。',
     'exportingOutput': '正在將成品匯出到所選資料夾...',
     'exportProgress': '正在匯出 ISO {done}/{total}',
-    'verifyMirroring': '正在從所選資料夾讀取 ISO 映像...',
-    'verifyMirrorProgress': '正在讀取 ISO {done}/{total}',
-    'verifySpaceInsufficient': '內部儲存空間不足，無法校驗成品。請釋放空間後重試。',
     'sourceSpaceInsufficient': '內部儲存空間不足，無法準備所選資料夾。請釋放空間後重試。',
     'cleanupFailedRetained': '光碟已匯出，但內部清理失敗。工作區已保留，可重試清理。',
     'retryCleanup': '重試清理',
@@ -648,10 +628,8 @@ class AppStrings {
     'fontJp': '日本語メニューフォント',
     'fontKr': '韓国語メニューフォント',
     'fontHelp': '空欄の場合はシステムフォントを使用します。',
-    'actionPrepare': 'ソースを確認',
     'actionBuild': '制作を開始',
     'actionCancel': 'タスクを停止',
-    'actionVerify': '成品を検証',
     'actionOpenOutput': '成品を開く',
     'actionDiscard': '進捗を削除',
     'actionStatus': '状態',
@@ -664,7 +642,6 @@ class AppStrings {
     'statusFailed': '失敗',
     'statusCancelled': 'キャンセル',
     'statusBuildFailed': '作成失敗',
-    'statusVerifyFailed': '検証失敗',
     'cancelledHint': 'ユーザーが今回のタスクを停止しました。未完了の進捗は保持され、設定から削除できます。',
     'retentionCancelledTitle': 'キャンセルしました',
     'retentionCancelledBody':
@@ -718,14 +695,10 @@ class AppStrings {
     'profileInvalid': 'プロファイル JSON が無効です',
     'storageHint': 'システム設定でストレージへのアクセスを許可してください。',
     'cancel': 'キャンセル',
-    'tasksIdleHint': 'まず音源を確認し、制作を開始します。いつでも停止できます。',
+    'tasksIdleHint': '準備ができたら制作を開始します。いつでも停止できます。',
     'runningHint': 'タスクはバックグラウンドで実行され、UI は応答し続けます。',
     'exportingOutput': '完成したディスクを選択したフォルダーへエクスポートしています...',
     'exportProgress': 'ISO をエクスポート中 {done}/{total}',
-    'verifyMirroring': '選択したフォルダーから ISO イメージを読み込んでいます...',
-    'verifyMirrorProgress': 'ISO を読み込み中 {done}/{total}',
-    'verifySpaceInsufficient':
-        '内部ストレージの空き容量が足りないため、ディスクを検証できません。容量を確保して再試行してください。',
     'sourceSpaceInsufficient':
         '内部ストレージの空き容量が足りないため、選択したフォルダーを準備できません。容量を確保して再試行してください。',
     'cleanupFailedRetained':
@@ -827,10 +800,8 @@ class AppStrings {
     'fontJp': '일본어 메뉴 글꼴',
     'fontKr': '한국어 메뉴 글꼴',
     'fontHelp': '비워 두면 시스템 글꼴을 사용합니다.',
-    'actionPrepare': '소스 확인',
     'actionBuild': '빌드 시작',
     'actionCancel': '작업 중지',
-    'actionVerify': '결과 검증',
     'actionOpenOutput': '결과 열기',
     'actionDiscard': '진행 삭제',
     'actionStatus': '상태',
@@ -843,7 +814,6 @@ class AppStrings {
     'statusFailed': '실패',
     'statusCancelled': '취소됨',
     'statusBuildFailed': '제작 실패',
-    'statusVerifyFailed': '검증 실패',
     'cancelledHint': '사용자가 이번 작업을 중지했습니다. 미완료 진행 상황은 유지되며 설정에서 삭제할 수 있습니다.',
     'retentionCancelledTitle': '취소됨',
     'retentionCancelledBody':
@@ -897,14 +867,10 @@ class AppStrings {
     'profileInvalid': '프로필 JSON이 올바르지 않습니다',
     'storageHint': '시스템 설정에서 저장소 접근을 허용하세요.',
     'cancel': '취소',
-    'tasksIdleHint': '먼저 소스를 확인한 뒤 빌드를 시작하세요. 언제든지 중지할 수 있습니다.',
+    'tasksIdleHint': '준비가 되면 빌드를 시작하세요. 언제든지 중지할 수 있습니다.',
     'runningHint': '작업은 백그라운드에서 실행되며 UI는 계속 응답합니다.',
     'exportingOutput': '완성된 디스크를 선택한 폴더로 내보내는 중...',
     'exportProgress': 'ISO 내보내는 중 {done}/{total}',
-    'verifyMirroring': '선택한 폴더에서 ISO 이미지를 읽는 중...',
-    'verifyMirrorProgress': 'ISO 읽는 중 {done}/{total}',
-    'verifySpaceInsufficient':
-        '내부 저장 공간이 부족하여 디스크를 검증할 수 없습니다. 공간을 확보한 뒤 다시 시도하세요.',
     'sourceSpaceInsufficient':
         '내부 저장 공간이 부족하여 선택한 폴더를 준비할 수 없습니다. 공간을 확보한 뒤 다시 시도하세요.',
     'cleanupFailedRetained':
@@ -953,11 +919,6 @@ class AppStrings {
   String exportProgress(int done, int total) => _text('exportProgress')
       .replaceAll('{done}', done.toString())
       .replaceAll('{total}', total.toString());
-
-  String verifyMirrorProgress(int done, int total) =>
-      _text('verifyMirrorProgress')
-          .replaceAll('{done}', done.toString())
-          .replaceAll('{total}', total.toString());
 
   String cleanupInternalCachesDone(String size) =>
       _text('cleanupInternalCachesDone').replaceAll('{size}', size);
@@ -1056,10 +1017,8 @@ class AppStrings {
   String get fontJp => _text('fontJp');
   String get fontKr => _text('fontKr');
   String get fontHelp => _text('fontHelp');
-  String get actionPrepare => _text('actionPrepare');
   String get actionBuild => _text('actionBuild');
   String get actionCancel => _text('actionCancel');
-  String get actionVerify => _text('actionVerify');
   String get actionOpenOutput => _text('actionOpenOutput');
   String get actionDiscard => _text('actionDiscard');
   String get actionStatus => _text('actionStatus');
@@ -1073,8 +1032,6 @@ class AppStrings {
   String get statusCancelled => _text('statusCancelled');
 
   String get statusBuildFailed => _text('statusBuildFailed');
-
-  String get statusVerifyFailed => _text('statusVerifyFailed');
 
   String get cancelledHint => _text('cancelledHint');
 
@@ -1099,10 +1056,6 @@ class AppStrings {
   String get exportFailed => _text('exportFailed');
 
   String get exportingOutput => _text('exportingOutput');
-
-  String get verifyMirroring => _text('verifyMirroring');
-
-  String get verifySpaceInsufficient => _text('verifySpaceInsufficient');
 
   String get sourceSpaceInsufficient => _text('sourceSpaceInsufficient');
 

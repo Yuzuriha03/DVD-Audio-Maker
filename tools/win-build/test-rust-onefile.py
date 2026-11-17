@@ -149,9 +149,9 @@ def main():
             if mode=="lpcm":
                 config(mode);proc,hwnd,controls=launch()
             try:
-                for action in [106,107]:
+                for action in [106]:
                     started=time.monotonic()
-                    print(f"{mode}: {'build' if action==106 else 'verify'}",flush=True)
+                    print(f"{mode}: build",flush=True)
                     # Queue commands like real input: synchronous cross-process
                     # SendMessage can reenter completion while it enables controls.
                     u.PostMessageW(hwnd,0x0111,action,controls[action])

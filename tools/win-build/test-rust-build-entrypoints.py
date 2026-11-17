@@ -62,7 +62,6 @@ int main(int argc, char **argv) {
         for script, arguments, expected in [
             ("cli.cmd", [], "|config"),
             ("cli.cmd", ["config", "--config", str(profile)], "|config|--config|" + str(profile)),
-            ("verify.cmd", ["capacity", "--profile", str(profile)], "|verify|capacity|--profile|" + str(profile)),
         ]:
             log.unlink(missing_ok=True)
             env["DVDA_SCRIPT_PREPARE_STATUS"] = "0"
@@ -75,7 +74,7 @@ int main(int argc, char **argv) {
             if "--config" in arguments:
                 assert "|--profile|" not in calls[0], calls
             results.append({"script":script, "arguments":arguments, "exit_code":result.returncode,"calls":calls})
-        for script in ("build.cmd", "cli.cmd", "gui.cmd", "gui-debug.cmd", "verify.cmd",
+        for script in ("build.cmd", "cli.cmd", "gui.cmd", "gui-debug.cmd",
                        "tools/win-build/build-all.cmd"):
             log.unlink(missing_ok=True)
             unavailable = dict(env, DVDA_VSDEVCMD=str(root / "missing-VsDevCmd.bat"),

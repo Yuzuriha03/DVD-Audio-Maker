@@ -274,7 +274,7 @@ def main():
             assert saved["DVDA_MLP_BITS"] == "24"
             records.append({"case": "audio_settings_require_explicit_correction", "rate": "48000", "bits": "24"})
 
-        case = root / "prepare"
+        case = root / "build"
         profile = case / "profile.json"
         source = case / "audio 日本語"
         write_profile(profile, {"DVDA_TITLE": "Preparation issues", "DVDA_SRC": str(source),
@@ -283,7 +283,7 @@ def main():
             hwnd, controls = ready(proc, "Preparation issues")
             subprocess.run([sys.executable, str(Path(__file__).resolve()), "--generate", str(fixture_ffmpeg), str(source)],
                 check=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            command(hwnd, controls, 105)
+            command(hwnd, controls, 106)
             wait_for(lambda: u.IsWindowEnabled(controls[106]) and "Task failed." in text(controls[115]))
             summary = text(controls[115])
             assert "[FAIL]" in summary and "48000" in summary and str(source) in summary, summary
@@ -316,9 +316,10 @@ def main():
                 languages[language] = displayed
         archives = "\n".join(p.read_text(encoding="utf-8-sig") for p in (case / "local/DVD-Audio-Maker/logs").glob("*"))
         assert "[FAIL]" in archives and str(source) in archives, archives
-        records.append({"case": "prepare_channel_issue_visible_and_archived", "summary": summary,
+        records.append({"case": "build_preparation_issue_visible_and_archived", "summary": summary,
             "detailed": detailed, "problems": problems, "languages": languages,
             "report": report, "archive_contains_issue": True})
+
 
     result = {"passed": True, "executable": str(exe), "executable_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
         "user_profile_isolated": True, "all_test_processes_closed": True, "cases": records}

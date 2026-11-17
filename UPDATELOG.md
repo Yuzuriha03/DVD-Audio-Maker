@@ -16,7 +16,7 @@
 - Android 的 MLP 编码使用与 Windows 相同的编码实现，不再走平台专用的慢速回退路径。
 - 日志支持“仅显示问题”、复制和通过系统选择器导出；状态区显示运行时长与问题数量，日志文案与 Windows 版一致。
 - “关于”页提供作者、项目主页、应用信息和随包许可证（项目许可证、FFmpeg、第三方说明、图像/菜单声明），Flutter 依赖许可也可在应用内查看。
-- 已修复：首次选择文件夹后可能丢失选择、重新选择源目录后仍使用旧内容、Android 上“检查音源”因系统目录权限失败且日志为空、删除进度无效等问题。现在任务开始前会校验并同步所选目录，日志会先记录实际使用的路径。
+- 已修复：首次选择文件夹后可能丢失选择、重新选择源目录后仍使用旧内容、Android 制作前检查因系统目录权限失败且日志为空、删除进度无效等问题。现在任务开始前会校验并同步所选目录，日志会先记录实际使用的路径。
 - 使用注意：需要 Android 7.0 及以上的 ARM64 设备；请通过系统选择器授权需要访问的目录并保持授权有效；导出较大的 ISO 前请确认目标目录空间充足。设置页的“删除进度”会清理本应用的缓存和未完成任务，但不删除你授权的目录或已导出的 ISO。当前 APK 为本地安装签名，未上架应用商店。
 
 **Windows 版（x64 与 WoA · 单 EXE）**
@@ -30,7 +30,7 @@
 **共同说明**
 
 - Android 与 Windows 使用相同的 profile 键、默认值、菜单/分盘规则、日志事件和进度阶段；界面交互按各自平台习惯呈现。
-- 制作完成后建议先执行成品验证，再交由支持 DVD-Audio 的播放器或刻录软件使用。普通 DVD-Video 播放器不保证兼容。
+- 制作完成后会自动验证成品，再交由支持 DVD-Audio 的播放器或刻录软件使用。普通 DVD-Video 播放器不保证兼容。
 
 ### English
 
@@ -46,7 +46,7 @@
 - Android MLP encoding now uses the same encoder implementation as Windows instead of a slower platform fallback path.
 - Logs support "Problems only", copy and export through the system picker; the status area shows elapsed time and issue count, and log text follows the Windows wording.
 - The About page shows the author, project home, app information and bundled licenses (project, FFmpeg, third-party, image/menu notices); Flutter dependency licenses can also be viewed in the app.
-- Fixed: a first folder selection could be dropped, an old source mirror could be reused after reselecting a folder, "Check sources" could fail with an empty log because of system-directory permissions, and Delete progress could do nothing. Chosen folders are now validated and synced before a task starts, and logs record the resolved paths first.
+- Fixed: a first folder selection could be dropped, an old source mirror could be reused after reselecting a folder, the Android pre-build source check could fail with an empty log because of system-directory permissions, and Delete progress could do nothing. Chosen folders are now validated and synced before a task starts, and logs record the resolved paths first.
 - Notes: requires Android 7.0+ on ARM64; grant folders through the system picker and keep the grants valid; check free space in the destination before exporting large ISOs. Delete progress removes the app's caches and unfinished tasks but never deletes granted folders or exported ISOs. The APK is locally signed for direct installation and is not distributed through an app store.
 
 **Windows edition (x64 and WoA · single EXE)**

@@ -276,7 +276,6 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
     let build = root.0.join("work");
     fs::write(&profile,serde_json::to_vec(&json!({"Version":1,"Language":"en","Values":{"DVDA_SRC":src,"DVDA_FINAL_DIR":out,"DVDA_BUILD_DIR":build,"DVDA_TITLE":"Developer fixture","DVDA_ISO_PREFIX":"fixture","DVDA_DISC_BYTES":"4700000000","DVDA_MENU":"off"}})).unwrap()).unwrap();
     let profile = profile.to_str().unwrap();
-    ok(run(&root.0, &["prepare", "--profile", profile, "--force"]));
     let plan = run(&root.0, &["plan", "--profile", profile]);
     assert!([Some(0), Some(1)].contains(&plan.status.code()));
     assert!(String::from_utf8_lossy(&plan.stdout).contains("Discs"));
@@ -289,12 +288,6 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
         &root.0,
         &["build", "--profile", profile, "--no-resume"],
     ));
-    for mode in ["quick", "capacity", "timeline", "lossless", "all"] {
-        ok(run(&root.0, &["verify", mode, "--profile", profile]));
-    }
-    let audit = run(&root.0, &["verify", "audit", "--profile", profile]);
-    assert_eq!(audit.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&audit.stdout).contains("BUILD_LOG_MISSING"));
     let iso = fs::read_dir(&out)
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -317,33 +310,6 @@ fn cli_conversion_audio_tools_and_disc_verification_modes() {
     let pts = run(&root.0, &["aob-pts", aob.to_str().unwrap()]);
     assert!([Some(0), Some(1)].contains(&pts.status.code()));
     assert!(String::from_utf8_lossy(&pts.stdout).contains("Statistics"));
-    ok(run(
-        &root.0,
-        &[
-            "quick-check",
-            "--profile",
-            profile,
-            "--iso-dir",
-            out.to_str().unwrap(),
-        ],
-    ));
-    assert_eq!(
-        run(
-            &root.0,
-            &[
-                "audit",
-                "--profile",
-                profile,
-                "--iso-dir",
-                out.to_str().unwrap(),
-                "--log",
-                root.0.join("absent.log").to_str().unwrap()
-            ]
-        )
-        .status
-        .code(),
-        Some(2)
-    );
     // Standalone builds clean their intermediates. Keep a scoped task alive to
     // exercise the MLP commands against real prepared output instead.
     let task = dvda_core::app::AppOptions::load(Some(Path::new(profile)))

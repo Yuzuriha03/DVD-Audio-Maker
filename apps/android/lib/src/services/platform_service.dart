@@ -1,4 +1,6 @@
+import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
+import 'saf_documents.dart';
 
 /// Failure raised by a platform picker or file action.
 class PlatformBridgeException implements Exception {
@@ -14,7 +16,7 @@ class PlatformBridgeException implements Exception {
 }
 
 /// One progress event emitted by the SAF I/O adapters while exporting or while
-/// mirroring the ISOs to verify. [kind] is "export" or "verify".
+/// exporting ISOs. [kind] identifies the adapter event.
 class TaskIoProgress {
   const TaskIoProgress({
     required this.kind,
@@ -185,9 +187,7 @@ class DirectorySelection {
 ///   (`ok`, `cancelled`, `failureCode`, `failureFile`, `exported`); the adapter
 ///   verifies temporary SAF documents before replacing the visible ISO and
 ///   releases the task's app-private mirrors after success.
-/// * `releaseTaskCaches` — args `{cachePaths: List<String>}`, releases the
-///   app-private source mirrors of one operation and returns the released paths.
-/// * `cancelExport` / `cancelIsoMirror` — no args, abort the running adapter.
+/// * `cancelExport` — no args, aborts the running transactional export.
 /// * `ensureRuntimeFonts` — no args, installs the APK font asset under
 ///   app-private runtime storage and returns `{path, installed}`.
 /// * `cleanupInternalCaches` — no args, removes known rebuildable caches from
@@ -219,8 +219,18 @@ class PlatformService {
   }
 
   final MethodChannel _channel;
+  late final SafDocumentAdapter _safDocuments = SafDocumentAdapter();
 
-  /// Receives export/verify progress events pushed by the SAF adapters.
+  /// The real shell enables descriptors on Android; host-side widget tests
+  /// keep using the mocked mirror adapter and never call the platform plugin.
+  bool get supportsSafDescriptors => Platform.isAndroid;
+
+  Future<SafDocumentCollection> openSourceDocuments(
+    String root,
+    String treeUri,
+  ) => _safDocuments.openTree(root, treeUri);
+
+  /// Receives export progress events pushed by the SAF adapter.
   void Function(TaskIoProgress progress)? onProgress;
 
   Future<Object?> _handlePlatformCall(MethodCall call) async {
@@ -243,10 +253,6 @@ class PlatformService {
     if (call.method == 'exportProgress') {
       handler(
         TaskIoProgress(kind: 'export', done: done, total: total, name: name),
-      );
-    } else if (call.method == 'isoMirrorProgress') {
-      handler(
-        TaskIoProgress(kind: 'verify', done: done, total: total, name: name),
       );
     }
     return null;
@@ -305,33 +311,6 @@ class PlatformService {
     return DirectorySelection.fromMap(result);
   }
 
-  /// Copies only the ISOs the shared verification expects into an app-private
-  /// mirror so the shared Rust verification can read the exported product.
-  ///
-  /// [isoPrefix] is the shared ISO prefix derivation (explicit prefix or
-  /// derived from the disc title); the native adapter applies the same
-  /// find_isos name rule and only copies matching ISOs. Never mirrors the whole
-  /// output directory. This is the read-side twin of [exportDirectory].
-  Future<DirectorySelection?> linkIsoDirectory(
-    String treeUri, {
-    String isoPrefix = '',
-  }) async {
-    final result = await _invoke<Object?>('linkIsoDirectory', <String, Object?>{
-      'treeUri': treeUri,
-      'isoPrefix': isoPrefix,
-    });
-    return DirectorySelection.fromMap(result);
-  }
-
-  /// Removes the temporary verification mirror for [treeUri].
-  Future<bool> releaseIsoDirectory(String treeUri) async {
-    final result = await _invoke<Object?>(
-      'releaseIsoDirectory',
-      <String, Object?>{'treeUri': treeUri},
-    );
-    return result == true;
-  }
-
   /// Checks a system font or an imported font under the current filesDir.
   Future<bool> validateReadableFont(String path) async {
     final result = await _invoke<Object?>(
@@ -361,33 +340,9 @@ class PlatformService {
     return ExportResult.fromMap(result);
   }
 
-  /// Releases app-private SAF source mirrors consumed by one operation.
-  ///
-  /// Thin wrapper over the same native cache adapter the export path uses; the
-  /// caller decides whether the mirror is still needed by a resumable task.
-  Future<List<String>> releaseTaskCaches({
-    required List<String> cachePaths,
-  }) async {
-    if (cachePaths.isEmpty) {
-      return const <String>[];
-    }
-    final result = await _invoke<Object?>(
-      'releaseTaskCaches',
-      <String, Object?>{'cachePaths': cachePaths},
-    );
-    return result is List
-        ? result.whereType<String>().toList(growable: false)
-        : const <String>[];
-  }
-
   /// Aborts a running transactional export between copy chunks.
   Future<void> cancelExport() async {
     await _invoke<Object?>('cancelExport');
-  }
-
-  /// Aborts a running verification mirror between copied ISOs.
-  Future<void> cancelIsoMirror() async {
-    await _invoke<Object?>('cancelIsoMirror');
   }
 
   /// Installs the bundled menu font collection into app-private storage.

@@ -4,16 +4,16 @@ use crate::{
         AV_CODEC_ID_PCM_F32LE, AV_CODEC_ID_PCM_F64LE, AV_CODEC_ID_PCM_S8, AV_CODEC_ID_PCM_S16LE,
         AV_CODEC_ID_PCM_S24LE, AV_CODEC_ID_PCM_S32LE, AV_CODEC_ID_PCM_U8,
         AV_DISPOSITION_ATTACHED_PIC, EINVAL, EIO, ENOMEM, EOF, EXIT, Format, INVALID, Interrupt,
-        Rational, av_channel_layout_default, av_channel_layout_from_mask, av_dict_iterate,
-        av_dict_set, av_find_input_format, av_get_bits_per_sample, av_get_media_type_string,
-        av_log_format_line2, av_log_set_callback, av_packet_alloc, av_packet_free, av_packet_unref,
-        av_read_frame, av_rescale, av_strerror, avcodec_get_name, avformat_alloc_context,
-        avformat_close_input, avformat_find_stream_info, avformat_new_stream, avformat_open_input,
-        done, streams, text,
+        Rational, av_channel_layout_default, av_channel_layout_from_mask, av_dict_free,
+        av_dict_iterate, av_dict_set, av_find_input_format, av_get_bits_per_sample,
+        av_get_media_type_string, av_log_format_line2, av_log_set_callback, av_packet_alloc,
+        av_packet_free, av_packet_unref, av_read_frame, av_rescale, av_strerror, avcodec_get_name,
+        avformat_alloc_context, avformat_close_input, avformat_find_stream_info,
+        avformat_new_stream, avformat_open_input, done, streams, text,
     },
 };
 use std::{
-    ffi::{CStr, c_char, c_void},
+    ffi::{CStr, CString, c_char, c_void},
     io::Write,
     ptr,
 };
@@ -248,6 +248,18 @@ unsafe fn cover(request: &Request, format: *mut Format) -> Result<(), i32> {
         Err(-1_381_258_232)
     }
 }
+#[cfg(target_os = "android")]
+fn input_url(path: &str) -> String {
+    path.strip_prefix("/proc/self/fd/")
+        .filter(|fd| fd.parse::<i32>().is_ok())
+        .map_or_else(|| path.to_owned(), |_| "fd:".into())
+}
+
+#[cfg(not(target_os = "android"))]
+fn input_url(path: &str) -> String {
+    path.to_owned()
+}
+
 /// # Safety
 /// `request.input` must not be NULL and must be a valid NUL-terminated string for the call.
 /// `request` must be readable for the call. `call` is registered as the interrupt callback's
@@ -269,6 +281,19 @@ unsafe fn run(
             return Err(EINVAL);
         }
         let path = text(request.input);
+        let input_url = CString::new(input_url(&path)).map_err(|_| EINVAL)?;
+        #[cfg(target_os = "android")]
+        let descriptor_number = path
+            .strip_prefix("/proc/self/fd/")
+            .filter(|value| value.parse::<i32>().is_ok())
+            .map(str::to_owned);
+        #[cfg(target_os = "android")]
+        if let Some(number) = descriptor_number.as_deref() {
+            let fd = number.parse::<i32>().map_err(|_| EINVAL)?;
+            if libc::lseek(fd, 0, libc::SEEK_SET) < 0 {
+                return Err(EIO);
+            }
+        }
         let wave_reader = if let Ok(mut source) = std::fs::File::open(&path) {
             use std::io::{Read, Seek, SeekFrom};
             let mut signature = [0; 12];
@@ -400,12 +425,25 @@ unsafe fn run(
                     _ => Err(-1_381_258_232),
                 };
             }
-            done(avformat_open_input(
+            let mut input_options: *mut c_void = ptr::null_mut();
+            #[cfg(target_os = "android")]
+            if let Some(number) = descriptor_number.as_deref() {
+                let number = CString::new(number).map_err(|_| EINVAL)?;
+                done(av_dict_set(
+                    &raw mut input_options,
+                    c"fd".as_ptr(),
+                    number.as_ptr(),
+                    0,
+                ))?;
+            }
+            let opened = avformat_open_input(
                 &raw mut format,
-                request.input,
+                input_url.as_ptr(),
                 forced,
-                ptr::null_mut(),
-            ))?;
+                &raw mut input_options,
+            );
+            av_dict_free(&raw mut input_options);
+            done(opened)?;
             done(avformat_find_stream_info(format, ptr::null_mut()))?;
             match request.operation {
                 1 => {

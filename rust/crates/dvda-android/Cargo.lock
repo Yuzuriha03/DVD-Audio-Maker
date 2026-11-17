@@ -320,6 +320,7 @@ dependencies = [
  "dvda-audio",
  "dvda-image",
  "dvda-menu",
+ "libc",
  "serde_json",
 ]
 

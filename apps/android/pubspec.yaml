@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_rust_bridge: 2.13.0
+  saf: 2.1.2
   shared_preferences: ^2.5.3
   material_ui: ^1.11.0
 

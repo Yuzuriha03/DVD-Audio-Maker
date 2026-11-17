@@ -21,6 +21,8 @@ pub struct Job {
     pub language: String,
     pub library: PathBuf,
     pub source_directory: String,
+    #[serde(default)]
+    pub source_documents: std::collections::BTreeMap<String, String>,
     pub manifest_path: PathBuf,
     pub report_path: PathBuf,
     pub prepare_cache_path: PathBuf,
@@ -47,7 +49,63 @@ pub struct Production {
 fn report_language() -> String {
     "zh-CN".into()
 }
+
+#[cfg(target_os = "android")]
+fn open_source_document(path: &str) -> std::io::Result<fs::File> {
+    use std::os::fd::FromRawFd;
+    if let Some(fd) = path
+        .strip_prefix("/proc/self/fd/")
+        .and_then(|value| value.parse::<i32>().ok())
+    {
+        let duplicated = unsafe { libc::dup(fd) };
+        if duplicated < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        return Ok(unsafe { fs::File::from_raw_fd(duplicated) });
+    }
+    fs::File::open(path)
+}
+
+#[cfg(not(target_os = "android"))]
+fn open_source_document(path: &str) -> std::io::Result<fs::File> {
+    fs::File::open(path)
+}
 impl Job {
+    fn original_source(&self, native_path: &str) -> Option<String> {
+        self.source_documents
+            .iter()
+            .find(|(_, native)| native.as_str() == native_path)
+            .map(|(logical, _)| logical.clone())
+    }
+
+    fn source_paths(&self) -> Result<Vec<String>, Failure> {
+        if self.source_documents.is_empty() {
+            return state::enumerate_sources(Path::new(&self.source_directory));
+        }
+        let mut documents = self
+            .source_documents
+            .iter()
+            .filter(|(logical, _)| {
+                Path::new(logical).extension().is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("flac") || extension.eq_ignore_ascii_case("m4a")
+                })
+            })
+            .collect::<Vec<_>>();
+        documents.sort_by(|(left, _), (right, _)| left.encode_utf16().cmp(right.encode_utf16()));
+        for (logical, native) in &documents {
+            open_source_document(native).map_err(|error| {
+                Failure::new(
+                    "Io",
+                    &format!("Cannot open SAF source document: {error}; {logical}"),
+                )
+            })?;
+        }
+        Ok(documents
+            .into_iter()
+            .map(|(_, native)| native.clone())
+            .collect())
+    }
+
     /// # Errors
     /// Returns `InvalidData` if the media-library encoding identity cannot be
     /// resolved for the preparation fingerprint.
@@ -265,7 +323,7 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
     }
     // Once preparation starts, a failed or cancelled run cannot advertise stale evidence.
     state::invalidate(&job.prepare_snapshot_path);
-    let sources = state::enumerate_sources(Path::new(&job.source_directory))?;
+    let sources = job.source_paths()?;
     events.emit(1, &format!("发现 {} 个音频文件 (FLAC/M4A)", sources.len()));
     let progress_total = (sources.len() as u64).saturating_mul(2).max(1);
     events.progress(0, progress_total);
@@ -409,7 +467,7 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                 &track.path,
             );
             let mut source = track.path.clone();
-            let mut original = None;
+            let mut original = job.original_source(&track.path);
             let mut detail = None;
             let mut patches = Vec::new();
             let expected = rules::expected_samples(track);
@@ -452,10 +510,11 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                     || (check.samples.is_some()
                         && decode_expected.is_some()
                         && check.samples != decode_expected))
-                    && let Some(repair) = alac::try_repair(
+                    && let Some(repair) = alac::try_repair_with_logical(
                         &job.library,
                         &source,
                         &job.alac_fix_directory,
+                        original.as_deref(),
                         &mut Quiet(events),
                     )?
                 {
@@ -532,8 +591,10 @@ fn run_measured(job: &Job, events: &mut dyn Callbacks) -> Result<models::Result,
                     state::record(cache, track, &source, expected, check.samples, &patches);
                 }
             }
-            let basename = crate::config::safe_basename(json!(track.path))
-                .map_err(|e| Failure::new("InvalidData", &e))?;
+            let basename = crate::config::safe_basename(json!(
+                original.as_deref().unwrap_or(track.path.as_str())
+            ))
+            .map_err(|e| Failure::new("InvalidData", &e))?;
             let duration = if track.duration.abs() < 1e16 {
                 (track.duration * 1e6).round_ties_even() / 1e6
             } else {
@@ -830,6 +891,7 @@ mod report_tests {
             language: "zh-CN".into(),
             library: PathBuf::new(),
             source_directory: root.to_string_lossy().into_owned(),
+            source_documents: std::collections::BTreeMap::new(),
             manifest_path: root.join("manifest.json"),
             report_path: root.join("report.txt"),
             prepare_cache_path: root.join("missing-cache.json"),
@@ -845,6 +907,62 @@ mod report_tests {
         assert!(repaired_targets_valid(&job, &mut Silent).unwrap());
         fs::write(&repaired, b"changed").unwrap();
         assert!(!repaired_targets_valid(&job, &mut Silent).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn descriptor_documents_preserve_logical_source_identity() {
+        let root = std::env::temp_dir().join(format!("dvda-document-map-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let first = root.join("01.m4a");
+        let second = root.join("02.flac");
+        let cover = root.join("cover.jpg");
+        fs::write(&first, b"1").unwrap();
+        fs::write(&second, b"2").unwrap();
+        fs::write(&cover, b"cover").unwrap();
+        let job = Job {
+            language: "zh-CN".into(),
+            library: PathBuf::new(),
+            source_directory: "/app-private/empty-root".into(),
+            source_documents: [
+                (
+                    "D:/Music/Album/02.flac".into(),
+                    second.to_string_lossy().into_owned(),
+                ),
+                (
+                    "D:/Music/Album/01.m4a".into(),
+                    first.to_string_lossy().into_owned(),
+                ),
+                (
+                    "D:/Music/Album/cover.jpg".into(),
+                    cover.to_string_lossy().into_owned(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            manifest_path: PathBuf::new(),
+            report_path: PathBuf::new(),
+            prepare_cache_path: PathBuf::new(),
+            prepare_snapshot_path: PathBuf::new(),
+            alac_fix_directory: PathBuf::new(),
+            mlp_source: "mlp-batch".into(),
+            prepare_cache_enabled: false,
+            loss_error_seconds: 0.0,
+            loss_warning_seconds: 0.0,
+            force_revalidation: false,
+            production: None,
+        };
+        assert_eq!(
+            job.source_paths().unwrap(),
+            vec![
+                first.to_string_lossy().into_owned(),
+                second.to_string_lossy().into_owned()
+            ]
+        );
+        assert_eq!(
+            job.original_source(&second.to_string_lossy()),
+            Some("D:/Music/Album/02.flac".into())
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

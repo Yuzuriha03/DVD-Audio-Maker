@@ -2,7 +2,7 @@
 
 ## Workspace layout
 
-- Keep user entry points, READMEs, licenses, contributor guides, and example configuration at the root. `build.cmd`, `cli.cmd`, `gui*.cmd`, and `verify.cmd` are public launchers and must not be moved for cosmetic reasons.
+- Keep user entry points, READMEs, licenses, contributor guides, and example configuration at the root. `build.cmd`, `cli.cmd`, and `gui*.cmd` are public launchers and must not be moved for cosmetic reasons.
 - `rust/` is the Cargo workspace and `rust/crates/` is organized by responsibility. Move modules only for call-graph or API reasons, never for formatting or lint counts.
 - `tools/` contains build, release, and validation scripts; `assets/` contains source resources.
 - `docs/` retains the local-development convention: only licensing and necessary guides explicitly allowlisted in `.gitignore` are version controlled. See the [development guide](docs/DEVELOPMENT.en.md) for full build and validation instructions; other specialized diagnostics remain local.

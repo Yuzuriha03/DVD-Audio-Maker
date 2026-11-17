@@ -55,34 +55,5 @@ fn main() {
     let digest = dvda_core::hash::hex_digest(formatted.text.as_bytes());
     println!("log_text_sha256={digest}");
 
-    let root = std::env::temp_dir().join(format!("dvda-probe-{}", std::process::id()));
-    std::fs::create_dir_all(&root).unwrap();
-    let profile = root.join("profile.json");
-    std::fs::write(
-        &profile,
-        serde_json::to_vec(&json!({
-            "Version": 1,
-            "Language": "en",
-            "Values": {
-                "DVDA_SRC": root.join("missing-source"),
-                "DVDA_FINAL_DIR": root.join("final"),
-                "DVDA_BUILD_DIR": root.join("build"),
-                "DVDA_TITLE": "Probe"
-            }
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    let parsed = dvda_core::app::AppOptions::load(Some(&profile)).unwrap();
-    let mut callbacks = Probe;
-    let outcome = dvda_core::gui::run_command(
-        &parsed,
-        dvda_core::gui::GuiCommand::Prepare,
-        &mut callbacks,
-    );
-    println!("prepare_succeeded={}", outcome.succeeded);
-    println!("prepare_finished={}", outcome.finished);
-    println!("prepare_failure_present={}", outcome.failure.is_some());
-    let _ = std::fs::remove_dir_all(&root);
     println!("probe=ok");
 }

@@ -743,9 +743,7 @@ pub(crate) fn localized_detail(lang: Lang, text: &str) -> String {
         "failed",
         "cancelled",
         "stopping",
-        "started_check",
         "started_build",
-        "started_verify",
     ] {
         if [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja]
             .iter()

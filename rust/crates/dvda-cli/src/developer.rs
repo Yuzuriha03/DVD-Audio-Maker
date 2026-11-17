@@ -3,7 +3,6 @@ use dvda_core::{
     app::AppOptions,
     audio, conversion, formats,
     preparation::{alac, state},
-    verify::Mode,
 };
 use dvda_native::media::Callbacks;
 use serde_json::{Value, json};
@@ -48,12 +47,8 @@ pub fn accepts(args: &[String]) -> bool {
         matches!(
             s.as_str(),
             "config"
-                | "prepare"
                 | "plan"
                 | "build"
-                | "verify"
-                | "quick-check"
-                | "audit"
                 | "convert"
                 | "m4a2flac"
                 | "alac"
@@ -144,7 +139,7 @@ fn execute(arguments: &[String]) -> Result<i32> {
     };
     if command == "help" || args.iter().any(|a| matches!(a.as_str(), "--help" | "-h")) {
         println!(
-            "Usage: dvda-cli [config|prepare|plan|build|verify|quick-check|audit|convert|aob-pts|mlp|alac|iso] [--profile settings.json] [--language zh-CN|zh-TW|en|ja|ko]\n  build [--dry-run] [--no-resume]\n  convert PATH... [--in-place] [--dry-run] [--level 0..8]\n  mlp (--check|--align) [-o DIR] [-q] FILE...\n  alac check INPUT | alac repair INPUT [OUTPUT]\n  iso list ISO [INNER] | iso extract ISO INNER OUTPUT\n  quick-check|audit [--iso-dir DIR] [--manifest FILE] [--log FILE]"
+            "Usage: dvda-cli [config|plan|build|convert|aob-pts|mlp|alac|iso] [--profile settings.json] [--language zh-CN|zh-TW|en|ja|ko]\n  build [--dry-run] [--no-resume]\n  convert PATH... [--in-place] [--dry-run] [--level 0..8]\n  mlp (--check|--align) [-o DIR] [-q] FILE...\n  alac check INPUT | alac repair INPUT [OUTPUT]\n  iso list ISO [INNER] | iso extract ISO INNER OUTPUT"
         );
         return Ok(0);
     }
@@ -160,15 +155,6 @@ fn execute(arguments: &[String]) -> Result<i32> {
     let mut events = Events(options.language.clone());
     match command.as_str() {
         "config" => configuration(&options, &mut args),
-        "prepare" => {
-            let force = flag(&mut args, "--force")?;
-            empty(&args)?;
-            let options = options.scratch_options().map_err(failure)?;
-            let result = dvda_core::app::run_prepare(&options, force, &mut events);
-            let code = i32::from(!result.succeeded());
-            print(result)?;
-            Ok(code)
-        }
         "build" => {
             let dry = flag(&mut args, "--dry-run")?;
             if flag(&mut args, "--no-resume")? {
@@ -261,9 +247,6 @@ fn execute(arguments: &[String]) -> Result<i32> {
         "plan" => {
             empty(&args)?;
             plan(&options)
-        }
-        "verify" | "quick-check" | "audit" => {
-            verification(&command, &options, &mut args, &mut events)
         }
         "convert" | "m4a2flac" => {
             let dry_run = flag(&mut args, "--dry-run")?;
@@ -500,100 +483,6 @@ fn plan(options: &AppOptions) -> Result<i32> {
     )
     .map_err(failure)?;
     let code = i32::from(result.has_errors);
-    print(result)?;
-    Ok(code)
-}
-fn verification(
-    command: &str,
-    options: &AppOptions,
-    args: &mut Vec<String>,
-    events: &mut dyn Callbacks,
-) -> Result<i32> {
-    let mode = if command == "verify" {
-        if args.first().is_some_and(|v| !v.starts_with('-')) {
-            args.remove(0)
-        } else {
-            "all".into()
-        }
-    } else {
-        command.into()
-    };
-    if mode == "config" {
-        return configuration(options, args);
-    }
-    if matches!(mode.as_str(), "quick" | "quick-check" | "audit") {
-        let directory = take(args, "--iso-dir")?;
-        let manifest = take(args, "--manifest")?;
-        let log = take(args, "--log")?;
-        empty(args)?;
-        if let Some(path) = directory.as_ref().filter(|path| !Path::new(path).is_dir()) {
-            return Err(usage(format!("[错误] ISO 目录不存在: {path}")));
-        }
-        if let Some(path) = manifest.as_ref().filter(|path| !Path::new(path).is_file()) {
-            return Err(usage(format!("[错误] manifest 不存在: {path}")));
-        }
-        if let Some(path) = log.as_ref().filter(|path| !Path::new(path).is_file()) {
-            return Err(usage(format!("[错误] 构建日志不存在: {path}")));
-        }
-        let result = dvda_core::verify::inspect(
-            dvda_core::verify::Inspection {
-                final_directory: directory
-                    .map_or_else(|| options.path("FinalDirectory"), PathBuf::from),
-                final_directory_display: None,
-                iso_prefix: options.text("IsoPrefix"),
-                manifest_path: manifest
-                    .map(PathBuf::from)
-                    .or_else(|| Some(options.path("ManifestPath"))),
-                build_log_path: log
-                    .clone()
-                    .map(PathBuf::from)
-                    .or_else(|| Some(options.path("BuildLogPath"))),
-                allow_log_fallback: log.is_none(),
-                audit: mode == "audit",
-            },
-            events,
-        );
-        return print_outcome(result);
-    }
-    let iso = take(args, "--iso")?.map(PathBuf::from);
-    empty(args)?;
-    let mode = match mode.as_str() {
-        "all" => Mode::All,
-        "capacity" => Mode::Capacity,
-        "timeline" => Mode::Timeline,
-        "menu" => Mode::Menu,
-        "lossless" => Mode::Lossless,
-        _ => return Err(usage(format!("Unsupported verification mode: {mode}"))),
-    };
-    let result = dvda_core::app::run_verify_mode(options, mode, iso, events).map_err(failure)?;
-    print_outcome(result)
-}
-fn print_outcome(result: dvda_core::verify::Outcome) -> Result<i32> {
-    let missing_material = |d: &Value| {
-        d["Unavailable"] == true
-            || matches!(
-                d["Code"].as_str(),
-                Some(
-                    "BUILD_LOG_MISSING"
-                        | "TRACK_TABLE_MISSING"
-                        | "DVDA_COMMAND_MISSING"
-                        | "DISC_LOG_MAPPING_MISSING"
-                        | "DISC_TRACK_MAPPING_MISMATCH"
-                )
-            )
-    };
-    let unavailable = result.diagnostics.iter().any(missing_material);
-    let damaged = result
-        .diagnostics
-        .iter()
-        .any(|d| d["Severity"] == 2 && !missing_material(d));
-    let code = if result.succeeded {
-        0
-    } else if unavailable && !damaged {
-        2
-    } else {
-        1
-    };
     print(result)?;
     Ok(code)
 }

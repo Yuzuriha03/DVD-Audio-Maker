@@ -752,7 +752,6 @@ fn check_application_menu_and_title_boundaries(norm: &str) {
         dvda_core::verify::execute_mode(
             options.verify_job().unwrap(),
             dvda_core::verify::Mode::Menu,
-            Some(iso.clone()),
             &mut Events::default(),
         )
     };
@@ -1065,7 +1064,6 @@ fn application_manifest_log_and_sector_audit_regressions() {
         dvda_core::verify::execute_mode(
             options.verify_job().unwrap(),
             dvda_core::verify::Mode::Menu,
-            None,
             &mut Events::default()
         )
         .succeeded
@@ -1104,7 +1102,6 @@ fn application_manifest_log_and_sector_audit_regressions() {
     let timeline = dvda_core::verify::execute_mode(
         options.verify_job().unwrap(),
         dvda_core::verify::Mode::Timeline,
-        None,
         &mut Events::default(),
     );
     assert!(timeline.succeeded, "{:?}", timeline.diagnostics);
@@ -1274,21 +1271,6 @@ fn application_manifest_log_and_sector_audit_regressions() {
     let split_result = run_verify(&options);
     assert!(split_result.succeeded, "{:?}", split_result.diagnostics);
     fs::write(&iso, &original_iso).unwrap();
-    // Standalone audit and quick-check use the same real disc, no index or media.
-    let inspect = |audit| dvda_core::verify::Inspection {
-        final_directory: options.path("FinalDirectory"),
-        final_directory_display: None,
-        iso_prefix: "regression".into(),
-        manifest_path: Some(manifest_path.clone()),
-        build_log_path: Some(log_path.clone()),
-        allow_log_fallback: false,
-        audit,
-    };
-    fs::remove_file(index_path).unwrap();
-    for audit in [false, true] {
-        let result = dvda_core::verify::inspect(inspect(audit), &mut Events::default());
-        assert!(result.succeeded, "{:?}", result.diagnostics);
-    }
 }
 
 fn set_iso_u32(bytes: &mut [u8], offset: usize, value: u32) {

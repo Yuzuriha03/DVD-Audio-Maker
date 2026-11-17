@@ -80,9 +80,9 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     expected = {
-        "zh-CN": (0, "检查音源", "开始制作", "停止任务", "只看提醒", "实时更新", "方案已保存："),
-        "en": (2, "Check sources", "Build discs", "Stop task", "Problems only", "Live update", "Profile saved: "),
-        "ja": (3, "音源を検査", "ディスクを作成", "タスクを停止", "問題のみ", "ライブ更新", "プロファイルを保存しました: "),
+        "zh-CN": (0, "开始制作", "停止任务", "只看提醒", "实时更新", "方案已保存："),
+        "en": (2, "Build discs", "Stop task", "Problems only", "Live update", "Profile saved: "),
+        "ja": (3, "ディスクを作成", "タスクを停止", "問題のみ", "ライブ更新", "プロファイルを保存しました: "),
     }
     records = []
     with tempfile.TemporaryDirectory(prefix="dvda-gui-") as temporary:
@@ -178,10 +178,9 @@ def main():
                 u.GetWindowRect(pages[0], c.byref(resized))
                 u.SetThreadDpiAwarenessContext(old_dpi)
                 assert resized.bottom < initial.bottom - 20, ("Settings/log splitter cannot be dragged", initial.bottom, resized.bottom, point.y)
-                for language, (index, check, build, stop, issues, live, saved) in expected.items():
+                for language, (index, build, stop, issues, live, saved) in expected.items():
                     u.SendMessageW(controls[103], 0x014E, index, 0)
                     u.SendMessageW(hwnd, 0x0111, 103 | (1 << 16), controls[103])
-                    assert not u.IsWindowVisible(controls[105]), "Separate prepare action should remain hidden"
                     labels = [text(controls[i]) for i in (106, 108, 111, 112)]
                     assert labels == [build, stop, issues, live], (language, labels)
                     assert text(controls[200]) == source, "Language switch modified source data"

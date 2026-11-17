@@ -48,31 +48,6 @@ class _TaskSectionState extends State<TaskSection> {
     return Icons.play_circle;
   }
 
-  Future<void> _run(BuildContext context, String action) async {
-    final outcome = await controller.runAction(action);
-    if (!context.mounted) {
-      return;
-    }
-    final strings = controller.strings;
-    if (controller.isCancelled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${strings.statusCancelled}: ${strings.cancelledHint}'),
-        ),
-      );
-      return;
-    }
-    final prefix = outcome != null && outcome.ok
-        ? strings.resultSuccess
-        : controller.statusText;
-    final detail = outcome == null || outcome.message.isEmpty
-        ? controller.statusText
-        : outcome.message;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$prefix: $detail')));
-  }
-
   Future<void> _retryCleanup(BuildContext context) async {
     final outcome = await controller.retryDeliveryCleanup();
     if (!context.mounted) {
@@ -160,11 +135,6 @@ class _TaskSectionState extends State<TaskSection> {
             spacing: 10,
             runSpacing: 10,
             children: <Widget>[
-              OutlinedButton.icon(
-                onPressed: running ? null : () => _run(context, 'verify'),
-                icon: const Icon(Icons.fact_check_outlined, size: 18),
-                label: Text(strings.actionVerify),
-              ),
               if (controller.deliveryCleanupPending) ...<Widget>[
                 FilledButton.tonalIcon(
                   onPressed: running ? null : () => _retryCleanup(context),
@@ -316,9 +286,13 @@ class _TaskSectionState extends State<TaskSection> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Icon(
-                          Icons.error_outline,
+                          item.isWarning
+                              ? Icons.warning_amber_outlined
+                              : Icons.error_outline,
                           size: 16,
-                          color: scheme.error,
+                          color: item.isWarning
+                              ? scheme.tertiary
+                              : scheme.error,
                         ),
                         const SizedBox(width: 8),
                         Expanded(

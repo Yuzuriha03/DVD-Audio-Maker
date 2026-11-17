@@ -11,8 +11,16 @@ $env:GIT_CONFIG_VALUE_0 = (Resolve-Path "$root/build/flutter").Path.Replace("\",
 
 if (-not $env:TEMP) { throw "TEMP is not set." }
 $tempBase = Join-Path $env:TEMP "dvda-android-build"
-$env:CARGO_TARGET_DIR = Join-Path $tempBase "cargo-target"
-$gradleHome = Join-Path $tempBase "gradle-home"
+# Compilation and dependency caches are build inputs, not disposable TEMP
+# residue. TEMP is only used for the per-run staged project.
+$env:CARGO_TARGET_DIR = Join-Path $root "build/android-cargo-target"
+$cachedGradleHome = Join-Path $root "build/gradle-home"
+$cachedGradle = Join-Path $cachedGradleHome "wrapper/dists/gradle-9.5.0-all"
+$gradleHome = if (Test-Path -LiteralPath $cachedGradle -PathType Container) {
+    $cachedGradleHome
+} else {
+    Join-Path $tempBase "gradle-home"
+}
 $workRun = Join-Path $tempBase ("work-" + [guid]::NewGuid().ToString("N"))
 $stagedApp = Join-Path $workRun "app"
 New-Item -ItemType Directory -Path $env:CARGO_TARGET_DIR, $gradleHome, $stagedApp -Force | Out-Null
@@ -80,13 +88,45 @@ try {
     Write-Output "Font=$fontSource"
     Write-Output "FontSha256=$fontSha256"
 
+    $gradleDistributionRoot = Join-Path $root "build/gradle-home/wrapper/dists/gradle-9.5.0-all"
+    $installedGradle = Get-ChildItem -Path $gradleDistributionRoot -Directory -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName "gradle-9.5.0" } |
+        Where-Object {
+            (Test-Path -LiteralPath (Join-Path $_ "bin/gradle.bat") -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $_ "lib/gradle-launcher-9.5.0.jar") -PathType Leaf)
+        } | Select-Object -First 1
+    if ($null -ne $installedGradle) {
+        # Reuse the verified unpacked distribution under its original wrapper
+        # key. Do not switch to file:///, which creates a second cache key and
+        # needlessly extracts thousands of small source files again.
+        $installedMarker = Join-Path (Split-Path -Parent $installedGradle) "gradle-9.5.0-all.zip.ok"
+        if (-not (Test-Path -LiteralPath $installedMarker)) {
+            New-Item -ItemType File -Path $installedMarker | Out-Null
+        }
+        Write-Output "Gradle=$installedGradle"
+    } else {
     $gradleZip = Join-Path $root "build/gradle-9.5.0-all.zip"
+    if (-not (Test-Path -LiteralPath $gradleZip)) {
+        $cachedZip = Get-ChildItem -Path $gradleDistributionRoot `
+            -Filter "gradle-9.5.0-all.zip" -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($null -ne $cachedZip) { $gradleZip = $cachedZip.FullName }
+    }
     if (Test-Path -LiteralPath $gradleZip) {
         $wrapperProperties = Join-Path $stagedApp "android/gradle/wrapper/gradle-wrapper.properties"
         $distributionUrl = ([System.Uri]$gradleZip).AbsoluteUri
         $wrapperText = [System.IO.File]::ReadAllText($wrapperProperties)
         $wrapperText = $wrapperText -replace "distributionUrl=.*", "distributionUrl=$distributionUrl"
         [System.IO.File]::WriteAllText($wrapperProperties, $wrapperText)
+    } else {
+        # No local distribution: use the verified Huawei mirror. Aliyun's
+        # /gradle/gradle-9.5.0-all.zip currently returns 404, so it cannot serve
+        # as a real distribution mirror. Never fall back to services.gradle.org.
+        $wrapperProperties = Join-Path $stagedApp "android/gradle/wrapper/gradle-wrapper.properties"
+        $wrapperText = [System.IO.File]::ReadAllText($wrapperProperties)
+        $wrapperText = $wrapperText -replace "distributionUrl=.*", "distributionUrl=https\://mirrors.huaweicloud.com/gradle/gradle-9.5.0-all.zip"
+        [System.IO.File]::WriteAllText($wrapperProperties, $wrapperText)
+    }
     }
 
     $native = Join-Path $stagedApp "android/app/src/main/jniLibs/arm64-v8a"

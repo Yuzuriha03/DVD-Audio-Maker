@@ -64,6 +64,7 @@ fn job(root: &Path) -> pipeline::Job {
         language: "zh-CN".into(),
         library: library(),
         source_directory: root.join("src").to_str().unwrap().into(),
+        source_documents: std::collections::BTreeMap::new(),
         manifest_path: build.join("manifest.json"),
         report_path: build.join("decode_report.txt"),
         prepare_cache_path: build.join("prepare-cache.json"),

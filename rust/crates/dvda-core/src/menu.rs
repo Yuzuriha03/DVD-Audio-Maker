@@ -320,7 +320,7 @@ pub fn build_assets(
             .and_then(Value::as_str)
             .unwrap_or_default();
         if !covers.contains_key(album) {
-            covers.insert(album.to_owned(), page_cover(page));
+            covers.insert(album.to_owned(), page_cover(page, &job.source_documents));
         }
     }
     let mut missing_covers = covers
@@ -763,13 +763,29 @@ fn require_frame(path: &Path, callbacks: &mut dyn Callbacks) -> Result<(), Strin
     Ok(())
 }
 
-fn page_cover(page: &Value) -> Option<PathBuf> {
-    page.get("Tracks")
+fn page_cover(
+    page: &Value,
+    source_documents: &std::collections::BTreeMap<String, String>,
+) -> Option<PathBuf> {
+    let source = page
+        .get("Tracks")
         .and_then(Value::as_array)
         .and_then(|tracks| tracks.first())
-        .map(menu_source_path)
-        .and_then(|source| Path::new(source).parent())
-        .and_then(find_cover)
+        .map(menu_source_path)?;
+    let parent = Path::new(source).parent()?;
+    if source_documents.is_empty() {
+        return find_cover(parent);
+    }
+    ["jpg", "jpeg", "png", "webp"].iter().find_map(|extension| {
+        source_documents
+            .get(
+                &parent
+                    .join(format!("cover.{extension}"))
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+            .map(PathBuf::from)
+    })
 }
 
 fn find_cover(directory: &Path) -> Option<PathBuf> {
@@ -1339,7 +1355,17 @@ mod tests {
         assert_eq!(planned["TrackCount"], 2, "{planned}");
         let page = &planned["AlbumPages"][0];
         assert_eq!(page["Album"], "EP", "{planned}");
-        assert_eq!(page_cover(page), Some(cover));
+        assert_eq!(
+            page_cover(page, &std::collections::BTreeMap::new()),
+            Some(cover.clone())
+        );
+        let documents = [(
+            album.join("cover.jpg").to_string_lossy().into_owned(),
+            cover.to_string_lossy().into_owned(),
+        )]
+        .into_iter()
+        .collect();
+        assert_eq!(page_cover(page, &documents), Some(cover));
         // Old manifests have no orig_src; the legacy SourcePath behavior stays.
         assert_eq!(
             album_of(&json!({"SourcePath": repaired, "Album": "EP"})),

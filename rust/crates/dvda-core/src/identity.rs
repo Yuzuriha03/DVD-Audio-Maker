@@ -14,6 +14,21 @@ const FILETIME_EPOCH_TICKS: u64 = 504_911_232_000_000_000;
 /// # Errors
 /// Returns the OS error if opening the file fails, including sharing conflicts.
 pub fn open_read(path: &str) -> io::Result<File> {
+    #[cfg(target_os = "android")]
+    if let Some(fd) = path
+        .strip_prefix("/proc/self/fd/")
+        .and_then(|value| value.parse::<i32>().ok())
+    {
+        use std::os::fd::FromRawFd;
+        let duplicated = unsafe { libc::dup(fd) };
+        if duplicated < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if unsafe { libc::lseek(duplicated, 0, libc::SEEK_SET) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        return Ok(unsafe { File::from_raw_fd(duplicated) });
+    }
     // Match File.OpenRead: concurrent readers are allowed, writers/deletion are not.
     OpenOptions::new().read(true).share_mode(1).open(path)
 }

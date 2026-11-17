@@ -357,6 +357,24 @@ impl AppOptions {
     pub fn source_directory(&self) -> PathBuf {
         self.path("SourceDirectory")
     }
+
+    /// Optional logical-path → native descriptor-path map supplied by an SAF
+    /// adapter. Ordinary directory profiles leave this map empty and retain the
+    /// existing recursive filesystem path behavior.
+    fn source_documents(&self) -> std::collections::BTreeMap<String, String> {
+        self.text("SourceDocuments")
+            .parse::<serde_json::Value>()
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .map_or_default(|object| {
+                object
+                    .into_iter()
+                    .filter_map(|(logical, native)| {
+                        native.as_str().map(|path| (logical, path.to_owned()))
+                    })
+                    .collect()
+            })
+    }
     /// # Errors
     /// Returns an error if the current executable path cannot be determined.
     pub fn media_library(&self) -> Result<PathBuf, String> {
@@ -431,6 +449,7 @@ impl AppOptions {
             encoder_library: encoder,
             manifest_path: self.path("ManifestPath"),
             source_root: source.to_string_lossy().into_owned(),
+            source_documents: self.source_documents(),
             mlp_source,
             mlp_external_directory: self.text("MlpExternalDirectory"),
             build_directory: self.path("BuildDirectory"),
@@ -486,6 +505,7 @@ impl AppOptions {
             language: self.language.clone(),
             library: self.media_library()?,
             source_directory: self.source_directory().to_string_lossy().into_owned(),
+            source_documents: self.source_documents(),
             manifest_path: self.path("ManifestPath"),
             report_path: self.path("ReportPath"),
             prepare_cache_path: self.path("PrepareCachePath"),
@@ -622,7 +642,7 @@ pub fn run_verify(
     options: &AppOptions,
     callbacks: &mut dyn Callbacks,
 ) -> Result<verify::Outcome, String> {
-    run_verify_mode(options, verify::Mode::All, None, callbacks)
+    run_verify_mode(options, verify::Mode::All, callbacks)
 }
 
 /// # Errors
@@ -632,32 +652,19 @@ pub fn run_verify(
 pub fn run_verify_mode(
     options: &AppOptions,
     mode: verify::Mode,
-    iso: Option<PathBuf>,
     callbacks: &mut dyn Callbacks,
 ) -> Result<verify::Outcome, String> {
     let _identity_scope = crate::signature::TaskIdentityScope::new();
     if options.workspace.is_some() {
-        return Ok(verify::execute_mode(
-            options.verify_job()?,
-            mode,
-            iso,
-            callbacks,
-        ));
+        return Ok(verify::execute_mode(options.verify_job()?, mode, callbacks));
     }
     let workspace = std::sync::Arc::new(crate::workspace::Workspace::create(
         &options.path("BuildDirectory"),
         false,
     )?);
     let options = options.clone().bind_workspace(workspace);
-    if matches!(mode, verify::Mode::Capacity | verify::Mode::Timeline)
-        || (mode == verify::Mode::Menu && iso.is_some())
-    {
-        return Ok(verify::execute_mode(
-            options.verify_job()?,
-            mode,
-            iso,
-            callbacks,
-        ));
+    if matches!(mode, verify::Mode::Capacity | verify::Mode::Timeline) {
+        return Ok(verify::execute_mode(options.verify_job()?, mode, callbacks));
     }
     preparation::pipeline::ensure_ready(&options.prepare_job(false)?, callbacks)
         .map_err(|failure| failure.message)?;
@@ -672,7 +679,6 @@ pub fn run_verify_mode(
     Ok(verify::execute_source_reference(
         options.verify_job()?,
         mode,
-        iso,
         index,
         callbacks,
     ))

@@ -86,33 +86,6 @@ fn main() {
     );
     println!("unfinished after fresh: {}", after1.has_unfinished_task());
 
-    let phase2 = with_paths(
-        &base,
-        "/tmp/lifecycle-phase2/build",
-        "/tmp/lifecycle-phase2/final",
-    );
-    let scratch = phase2.scratch_options().expect("scratch");
-    let mut quiet = Counting {
-        count: AtomicUsize::new(0),
-        final_dir: PathBuf::from("/tmp/lifecycle-phase2/final"),
-        cancel_after_iso: false,
-    };
-    let prepared = app::run_prepare(&scratch, true, &mut quiet);
-    println!(
-        "scratch prepare failure={}",
-        prepared.failure.map_or_default(|failure| failure.message)
-    );
-    scratch.discard_task();
-    let after2 = with_paths(
-        &base,
-        "/tmp/lifecycle-phase2/build",
-        "/tmp/lifecycle-phase2/final",
-    );
-    println!(
-        "unfinished after scratch check: {}",
-        after2.has_unfinished_task()
-    );
-
     let phase3 = with_paths(
         &base,
         "/tmp/lifecycle-phase3/build",

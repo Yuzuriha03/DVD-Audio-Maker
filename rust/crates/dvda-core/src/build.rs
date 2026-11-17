@@ -41,6 +41,8 @@ pub struct Job {
     pub encoder_library: Option<PathBuf>,
     pub manifest_path: PathBuf,
     pub source_root: String,
+    #[serde(default)]
+    pub source_documents: std::collections::BTreeMap<String, String>,
     pub mlp_source: String,
     pub mlp_external_directory: String,
     pub build_directory: PathBuf,

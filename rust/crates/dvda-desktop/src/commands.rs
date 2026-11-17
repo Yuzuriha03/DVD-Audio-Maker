@@ -5,13 +5,13 @@ use super::about::show_about;
 use super::{
     BN_CLICKED, CBN_SELCHANGE, GetClientRect, Hwnd, ID_ABOUT_PROJECT, ID_ADVANCED, ID_BITS,
     ID_BUILD, ID_CANCEL, ID_CAPACITY, ID_COPY, ID_EXPORT, ID_LANGUAGE, ID_LIVE, ID_LOG_VIEW,
-    ID_MENU, ID_MINIMIZE, ID_MODE, ID_ONLY_ISSUES, ID_OPEN_OUTPUT, ID_OPEN_PROFILE, ID_PREPARE,
-    ID_SAVE_AS, ID_SAVE_PROFILE, ID_TAB, ID_THEME, ID_VERIFY, Lang, Rect, SW_MINIMIZE,
-    SendMessageW, ShowWindow, UiState, autosave, browse_target, cancel_operation, checked,
-    choose_and_load_profile, combo_index, combo_items, combo_select, copy_log, export_log, layout,
-    localized_log, open_output, page_content_height, render_log, save_profile, save_profile_as,
-    select_tab, set_text, setting_help, start_operation, toggle_theme, tooltip_info, tr, unscale,
-    update_advanced, update_choices, update_statistics, wide,
+    ID_MENU, ID_MINIMIZE, ID_MODE, ID_ONLY_ISSUES, ID_OPEN_OUTPUT, ID_OPEN_PROFILE, ID_SAVE_AS,
+    ID_SAVE_PROFILE, ID_TAB, ID_THEME, Lang, Rect, SW_MINIMIZE, SendMessageW, ShowWindow, UiState,
+    autosave, browse_target, cancel_operation, checked, choose_and_load_profile, combo_index,
+    combo_items, combo_select, copy_log, export_log, layout, localized_log, open_output,
+    page_content_height, render_log, save_profile, save_profile_as, select_tab, set_text,
+    setting_help, start_operation, toggle_theme, tooltip_info, tr, unscale, update_advanced,
+    update_choices, update_statistics, wide,
 };
 
 pub(crate) fn handle_command(hwnd: Hwnd, state: &mut UiState, id: usize, notify: u16) {
@@ -119,7 +119,7 @@ pub(crate) fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, n
     if state.busy
         && matches!(
             id,
-            ID_PREPARE | ID_BUILD | ID_VERIFY | ID_OPEN_PROFILE | ID_SAVE_PROFILE | ID_SAVE_AS
+            ID_BUILD | ID_OPEN_PROFILE | ID_SAVE_PROFILE | ID_SAVE_AS
         )
     {
         return;
@@ -131,7 +131,7 @@ pub(crate) fn handle_command_inner(hwnd: Hwnd, state: &mut UiState, id: usize, n
             autosave(state);
         }
         ID_SAVE_AS => save_profile_as(hwnd, state),
-        ID_PREPARE | ID_BUILD | ID_VERIFY => start_operation(state, id),
+        ID_BUILD => start_operation(state),
         ID_CANCEL => cancel_operation(state),
         ID_OPEN_OUTPUT => open_output(hwnd, state),
         ID_COPY => copy_log(state),

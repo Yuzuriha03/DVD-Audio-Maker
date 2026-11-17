@@ -836,12 +836,7 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
             right: scale(x) + scale(width),
             bottom: top + scale(height),
         };
-        place_px(state.controls.prepare, action(margin, 1, 1, actions_px));
         place_px(state.controls.build, action(margin, 140, 34, actions_px));
-        place_px(
-            state.controls.verify,
-            action(margin + 148, 1, 1, actions_px),
-        );
         place_px(
             state.controls.cancel,
             action(margin + 148, 120, 34, actions_px),

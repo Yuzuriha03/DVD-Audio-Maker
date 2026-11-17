@@ -22,7 +22,7 @@
 - 曲号排序按文件名开头的数字，解析失败算 9999：planner.rs:197 track_number()。
 - 我们的实现：按文件夹分组、菜单标题用文件名 stem、按字节序排序。标签全丢。
 
-### 2) "检查音源"语义不同：Windows 是 prepare（真解码+编码），我们只 probe
+### 2) 制作前音源准备语义不同：Windows 是 prepare（真解码+编码），旧实现只 probe
 - app.rs:466 run_prepare -> preparation/pipeline.rs：枚举音源、读元数据、**全部解码为 PCM**、
   重采样、ALAC 修复、校验、编码 MLP、写 manifest/snapshot 与缓存。
 - 我们 check_library 只 probe 时长/声道（shim/src/planner.rs check_library）。
@@ -116,7 +116,7 @@
 
 ## 四、建议实现顺序（真要对齐行为）
 1. 标签管线：probe 出 Album/Title/Track/Date，按 Album 分组、按曲号排序；菜单/ATSI 用标签。
-2. "检查音源"改成 prepare：解码校验 + 重采样 + 编码 MLP（可只写 manifest 不发布），构建前复用。
+2. 制作前准备使用共享 prepare：解码校验 + 重采样 + 编码 MLP，构建前复用。
 3. 两阶段规划：先编码再用真实 MLP 大小 ×1.025、DiscBytes−8MiB 分盘、格式分桶、组上限/诊断码。
 4. 验证补齐：Capacity 按 ISO 总大小+卷标+AOB/IFO 计数；Timeline 按源时长与阈值；Menu 结构检查；
    All 模式串起来；诊断码/严重级。

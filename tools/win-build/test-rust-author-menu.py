@@ -250,7 +250,7 @@ def menu_palette(disc, temporary, pages):
     return True
 
 
-def run_case(runtime, output, norm, albums, verifier):
+def run_case(runtime, output, norm, albums):
     case = output / f"{norm}-{albums}albums"
     case.mkdir()
     fixtures = case / "fixtures"
@@ -305,25 +305,6 @@ def run_case(runtime, output, norm, albums, verifier):
         require('format="' + norm.upper() + '"' in document, "SPU actual norm")
         require((temporary / f"impic{page}.png").stat().st_size > 100, "Normal text overlay")
         require((temporary / f"hlpic{page}.png").stat().st_size > 100, "Highlight overlay")
-    if verifier:
-        index = case / "mlp_index.json"
-        index_data = {str(track): {"src": str(track), "mlp_source": "lpcm"} for track in tracks}
-        index_data["__discs__"] = [{"iso": image.name,
-                                  "groups": [{"group": rank + 1, "tracks": [{"mlp": str(track), "src": str(track)} for track in group]}
-                                             for rank, group in enumerate(groups)],
-                                  "menu": {"pages": albums + index_pages, "index_pages": index_pages,
-                                           "albums": albums, "stills": sum(counts)}}]
-        index.write_text(json.dumps(index_data), encoding="utf-8")
-        profile = case / "verify-profile.json"
-        profile.write_text(json.dumps({"Version": 1, "Language": "en", "Values": {
-            "DVDA_MENU": "on", "DVDA_BUILD_DIR": str(case), "DVDA_FINAL_DIR": str(case)}}), encoding="utf-8")
-        verification = subprocess.run([str(verifier), "verify", "menu", "--profile", str(profile),
-                                       "--iso", str(image)], capture_output=True)
-        (case / "menu-verify.log").write_bytes(verification.stdout + verification.stderr)
-        require(verification.returncode == 0, "Rust menu_verify failed: " + str(case / "menu-verify.log"))
-        require(b'"TrackCount": ' + str(albums).encode() in verification.stdout,
-                "Rust verifier did not load the expected menu plan")
-        checks["rust_menu_verify"] = True
     checks.update({"case": case.name, "iso_bytes": image.stat().st_size,
                    "iso_sha256": hashlib.sha256(image.read_bytes()).hexdigest(), "iso_udf_payloads_match": True})
     print("PASS " + case.name, flush=True)
@@ -335,7 +316,6 @@ def main():
     parser.add_argument("--author", type=Path, default=ROOT / "rust/target/x86_64-pc-windows-msvc/release/dvda-author-dev.exe")
     parser.add_argument("--dll-directory", type=Path, default=ROOT / "build/rust-author-iso-fullbridge")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--verifier", type=Path)
     parser.add_argument("--albums", type=int, default=2)
     parser.add_argument("--norm", choices=("pal", "ntsc", "both"), default="both")
     args = parser.parse_args()
@@ -348,11 +328,7 @@ def main():
         shutil.copy2(source, runtime / source.name)
     for name in ("policy.xml", "colors.xml"):
         shutil.copy2(args.dll_directory / name, runtime / name)
-    verifier = None
-    if args.verifier:
-        verifier = runtime / "dvda-cli.exe"
-        shutil.copy2(args.verifier, verifier)
-    cases = [run_case(runtime, output, norm, args.albums, verifier)
+    cases = [run_case(runtime, output, norm, args.albums)
              for norm in (("pal", "ntsc") if args.norm == "both" else (args.norm,))]
     (output / "report.json").write_text(json.dumps({"status": "PASS", "author_sha256": hashlib.sha256(args.author.read_bytes()).hexdigest(),
                                                      "cases": cases}, indent=2), encoding="utf-8")

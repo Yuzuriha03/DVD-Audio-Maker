@@ -7,6 +7,7 @@ import '../../bridge.dart';
 import '../localization/app_strings.dart';
 import '../models/app_settings.dart';
 import 'platform_service.dart';
+import 'saf_documents.dart';
 import 'settings_store.dart';
 
 /// Lifecycle of one `AppBridge.runProfile` invocation.
@@ -14,10 +15,17 @@ enum TaskPhase { idle, running, success, failure, cancelled }
 
 /// One diagnostic row returned by the Rust application layer.
 class AppDiagnostic {
-  const AppDiagnostic({required this.code, required this.message});
+  const AppDiagnostic({
+    required this.code,
+    required this.message,
+    this.severity = 'error',
+  });
 
   final String code;
   final String message;
+  final String severity;
+
+  bool get isWarning => severity.toLowerCase() == 'warning';
 }
 
 /// Parsed outcome of a profile action.
@@ -166,6 +174,9 @@ class TaskOutcome {
           AppDiagnostic(
             code: _stringValue(map['Code']),
             message: _stringValue(map['Message']),
+            severity: _stringValue(map['Severity'] ?? map['severity']).isEmpty
+                ? 'error'
+                : _stringValue(map['Severity'] ?? map['severity']),
           ),
         );
       } else if (item != null) {
@@ -202,7 +213,6 @@ typedef TaskBridgeRunner =
 typedef ProfileIssueValidator =
     List<ProfileIssueView> Function(String valuesJson, bool forTask);
 typedef ProfileIssueText = String Function(String language, String code);
-typedef IsoPrefixResolver = String Function(String title);
 
 // Explicit adapters: `AppBridge.profileValidate` takes named arguments, so its
 // tear-off is not assignable to the positional typedef above.
@@ -240,13 +250,11 @@ class AppController extends ChangeNotifier {
     TaskBridgeRunner? bridgeRunProfile,
     ProfileIssueValidator? bridgeValidateProfile,
     ProfileIssueText? bridgeIssueMessage,
-    IsoPrefixResolver? isoPrefixResolver,
   }) : _bridgeRunProfile = bridgeRunProfile ?? AppBridge.runProfile,
        _bridgeValidateProfile =
            bridgeValidateProfile ?? _defaultValidateProfile,
        _bridgeIssueMessage =
-           bridgeIssueMessage ?? AppBridge.profileIssueMessage,
-       _isoPrefixResolver = isoPrefixResolver ?? AppBridge.profileIsoPrefix {
+           bridgeIssueMessage ?? AppBridge.profileIssueMessage {
     platform.onProgress = _handleIoProgress;
   }
 
@@ -259,7 +267,9 @@ class AppController extends ChangeNotifier {
   final TaskBridgeRunner _bridgeRunProfile;
   final ProfileIssueValidator _bridgeValidateProfile;
   final ProfileIssueText _bridgeIssueMessage;
-  final IsoPrefixResolver _isoPrefixResolver;
+
+  static const String _safDescriptorPath = 'saf-descriptors';
+  final List<SafDocumentCollection> _documentCollections = [];
 
   TaskPhase _phase = TaskPhase.idle;
   String _activeAction = '';
@@ -371,9 +381,6 @@ class AppController extends ChangeNotifier {
       return strings.statusDone;
     }
     if (_phase == TaskPhase.failure) {
-      if (_failureAction == 'verify') {
-        return strings.statusVerifyFailed;
-      }
       if (_failureAction.startsWith('build')) {
         return strings.statusBuildFailed;
       }
@@ -484,25 +491,33 @@ class AppController extends ChangeNotifier {
 
   String buildProfileJson() => jsonEncode(settings.toProfileJson());
 
-  String buildTaskProfileJson({
-    String finalDirectory = '',
-    String? finalDisplay,
-  }) {
+  String buildTaskProfileJson() {
     final profile = settings.toProfileJson();
     final values = Map<String, Object>.from(profile['Values']! as Map);
-    values['DVDA_SRC'] = settings.sourceStagingPath;
+    values['DVDA_SRC'] = settings.sourceStagingPath == _safDescriptorPath
+        ? settings.source
+        : settings.sourceStagingPath;
+    final documentMap = <String, String>{};
+    for (final collection in _documentCollections) {
+      documentMap.addAll(collection.toProfileMap());
+    }
+    if (documentMap.isNotEmpty) {
+      values['DVDA_SOURCE_DOCUMENTS'] = jsonEncode(documentMap);
+    }
     // The shared sequence publishes into a task-owned transport folder and the
     // SAF adapter exports it; the profile only carries the user-visible folder
-    // so every shared log/diagnostic names the real destination. Verification
-    // passes a temporary read mirror of the exported ISOs here instead.
-    values['DVDA_FINAL_DIR'] = finalDirectory;
-    values['DVDA_FINAL_DISPLAY_DIR'] = finalDisplay ?? settings.finalDir;
+    // so every shared log/diagnostic names the real destination.
+    values['DVDA_FINAL_DIR'] = '';
+    values['DVDA_FINAL_DISPLAY_DIR'] = settings.finalDir;
     // Session-only SAF display path: the Android bridge maps source mirror
     // paths in logs/diagnostics back to the user-visible folder. Windows has no
     // such key and its output is unchanged.
     values['DVDA_SRC_DISPLAY_DIR'] = settings.source;
     values['DVDA_BUILD_DIR'] = settings.effectiveWorkDir;
-    values['DVDA_MLP_EXTERNAL_DIR'] = settings.externalStagingPath;
+    values['DVDA_MLP_EXTERNAL_DIR'] =
+        settings.externalStagingPath == _safDescriptorPath
+        ? settings.externalDir
+        : settings.externalStagingPath;
     profile['Values'] = values;
     return jsonEncode(profile);
   }
@@ -637,7 +652,7 @@ class AppController extends ChangeNotifier {
       (await _discardProgressResult()).outcome == _DiscardOutcome.deleted;
 
   Future<TaskOutcome?> runAction(String action) async {
-    if (isRunning) {
+    if (!action.startsWith('build') || isRunning) {
       return null;
     }
     _normalizeFontPaths();
@@ -669,30 +684,16 @@ class AppController extends ChangeNotifier {
     if (_disposed) {
       return null;
     }
-    // The shared verification rebuilds its reference data from the sources when
-    // no task workspace is bound, so a standalone verify after delivery still
-    // needs the source mirror prepared. There is no product-only Android verify.
-    //
-    // Those mirrors are I/O caches: a standalone verify releases the mirrors it
-    // rebuilt in this operation's finally unless a resumable unfinished task
-    // still needs them (then they stay, matching Windows keeping the workspace).
-    final verifyMirrors = <String>[];
     try {
       if (action != 'status' && action != 'discard') {
         final sourceError = await _ensureSourceReady();
         if (sourceError != null) {
           return _failBeforeTask(sourceError);
         }
-        if (action == 'verify') {
-          _addMirrorCache(verifyMirrors, settings.sourceStagingPath);
-        }
         if (settings.audioMode == 'external') {
           final externalError = await _ensureExternalReady();
           if (externalError != null) {
             return _failBeforeTask(externalError);
-          }
-          if (action == 'verify') {
-            _addMirrorCache(verifyMirrors, settings.externalStagingPath);
           }
         }
         if (_cancelRequested) {
@@ -703,67 +704,14 @@ class AppController extends ChangeNotifier {
       if (_disposed) {
         return null;
       }
-      // Verification reads the product the user actually owns. SAF is the only
-      // readable source after delivery, so the adapter mirrors just the top-level
-      // ISOs (the shared verification filters them by the profile ISO prefix), the
-      // shared Rust verification runs, and the mirror is released in finally.
-      String? verifyFinalDirectory;
-      if (action == 'verify') {
-        _progressText = strings.verifyMirroring;
-        _done = 0;
-        _total = 0;
-        _notify();
-        DirectorySelection? linked;
-        try {
-          linked = await platform.linkIsoDirectory(
-            settings.finalTreeUri,
-            isoPrefix: _effectiveIsoPrefix(),
-          );
-        } on PlatformBridgeException catch (error) {
-          if (error.code == 'SAF_CANCELLED') {
-            _applyOutcome(action, TaskOutcome.failure(''), cancelled: true);
-            return null;
-          }
-          if (error.code == 'SAF_NO_SPACE') {
-            return _failBeforeTask(strings.verifySpaceInsufficient);
-          }
-          return _failBeforeTask(error.message);
-        } catch (error) {
-          return _failBeforeTask(error.toString());
-        }
-        final nativePath = linked?.nativePath ?? '';
-        if (nativePath.isEmpty) {
-          return _failBeforeTask(
-            linked == null
-                ? strings.selectFinalRequired
-                : 'Cannot read the selected folder: ${linked.displayPath}',
-          );
-        }
-        verifyFinalDirectory = nativePath;
-      }
-      if (_disposed) {
-        return null;
-      }
       _startPolling();
 
       TaskOutcome outcome;
       try {
-        final raw = await _bridgeRunProfile(
-          buildTaskProfileJson(finalDirectory: verifyFinalDirectory ?? ''),
-          action,
-        );
+        final raw = await _bridgeRunProfile(buildTaskProfileJson(), action);
         outcome = TaskOutcome.parse(raw);
       } catch (error) {
         outcome = TaskOutcome.failure(error.toString());
-      } finally {
-        if (verifyFinalDirectory != null) {
-          try {
-            await platform.releaseIsoDirectory(settings.finalTreeUri);
-          } catch (_) {
-            // The verification outcome stays authoritative; a leftover mirror is
-            // bounded app-private data and is replaced on the next verification.
-          }
-        }
       }
 
       var cancelled = false;
@@ -823,9 +771,15 @@ class AppController extends ChangeNotifier {
       }
       return outcome;
     } finally {
-      if (action == 'verify') {
-        await _releaseVerifyMirrors(verifyMirrors);
-      }
+      await _closeDocumentCollections();
+    }
+  }
+
+  Future<void> _closeDocumentCollections() async {
+    final collections = List<SafDocumentCollection>.from(_documentCollections);
+    _documentCollections.clear();
+    for (final collection in collections) {
+      await collection.close();
     }
   }
 
@@ -848,11 +802,6 @@ class AppController extends ChangeNotifier {
   Future<void> _cancelPlatformIo() async {
     try {
       await platform.cancelExport();
-    } catch (_) {
-      // The next adapter call reports a real failure.
-    }
-    try {
-      await platform.cancelIsoMirror();
     } catch (_) {
       // The next adapter call reports a real failure.
     }
@@ -915,73 +864,6 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  void _addMirrorCache(List<String> mirrors, String path) {
-    if (path.isNotEmpty && !mirrors.contains(path)) {
-      mirrors.add(path);
-    }
-  }
-
-  /// Whether an unfinished task still needs the mirrors for a later
-  /// continuation; a standalone verify releases them otherwise.
-  Future<bool> _hasResumableUnfinishedTask() async {
-    if (!_runtimePathsReady) {
-      return true;
-    }
-    try {
-      await persistNow();
-      final raw = await _bridgeRunProfile(buildTaskProfileJson(), 'status');
-      return unfinishedFromStatus(raw);
-    } catch (_) {
-      // Keep the mirrors when the resumable state cannot be proven.
-      return true;
-    }
-  }
-
-  /// Releases the source/external mirrors recreated for a standalone verify.
-  ///
-  /// Uses the existing Kotlin cache adapter; no new cleanup policy lives here.
-  Future<void> _releaseVerifyMirrors(List<String> mirrors) async {
-    if (mirrors.isEmpty) {
-      return;
-    }
-    if (await _hasResumableUnfinishedTask()) {
-      return;
-    }
-    List<String> released;
-    try {
-      released = await platform.releaseTaskCaches(cachePaths: mirrors);
-    } catch (_) {
-      return;
-    }
-    if (released.isEmpty) {
-      return;
-    }
-    if (released.contains(settings.sourceStagingPath)) {
-      settings.sourceStagingPath = '';
-    }
-    if (released.contains(settings.externalStagingPath)) {
-      settings.externalStagingPath = '';
-    }
-    await persistNow();
-  }
-
-  /// The shared ISO prefix for the verification mirror filter.
-  ///
-  /// Explicit user prefix wins; otherwise the shared title derivation (the same
-  /// helper Windows publication and verify use) is called. A native library
-  /// without the helper falls back to copying top-level ISOs, which the shared
-  /// verification still filters.
-  String _effectiveIsoPrefix() {
-    if (settings.isoPrefix.trim().isNotEmpty) {
-      return settings.isoPrefix;
-    }
-    try {
-      return _isoPrefixResolver(settings.title);
-    } catch (_) {
-      return '';
-    }
-  }
-
   void _normalizeFontPaths() {
     String normalize(String value, String fallback) {
       final font = AppSettings.migrateLegacyFont(value);
@@ -1033,7 +915,7 @@ class AppController extends ChangeNotifier {
   }
 
   bool _isCurrentPrivatePath(String path) {
-    if (path.isEmpty) {
+    if (path.isEmpty || path == _safDescriptorPath) {
       return true;
     }
     final root = settings.appFilesDir;
@@ -1045,6 +927,7 @@ class AppController extends ChangeNotifier {
   Future<String?> _ensureSourceReady() => _ensureNativeInput(
     treeUri: settings.sourceTreeUri,
     nativePath: settings.sourceStagingPath,
+    displayRoot: settings.source,
     missingMessage: strings.selectSourceRequired,
     force: settings.sourceMirrorDirty,
     apply: (path) => settings.sourceStagingPath = path,
@@ -1054,6 +937,8 @@ class AppController extends ChangeNotifier {
   Future<String?> _ensureExternalReady() => _ensureNativeInput(
     treeUri: settings.externalTreeUri,
     nativePath: settings.externalStagingPath,
+    displayRoot: settings.externalDir,
+    allowDescriptors: false,
     missingMessage: strings.selectExternalRequired,
     force: settings.externalMirrorDirty,
     apply: (path) => settings.externalStagingPath = path,
@@ -1065,6 +950,8 @@ class AppController extends ChangeNotifier {
   Future<String?> _ensureNativeInput({
     required String treeUri,
     required String nativePath,
+    required String displayRoot,
+    bool allowDescriptors = true,
     required String missingMessage,
     required bool force,
     required ValueChanged<String> apply,
@@ -1088,6 +975,23 @@ class AppController extends ChangeNotifier {
       }
       apply('');
       return missingMessage;
+    }
+    if (allowDescriptors && platform.supportsSafDescriptors) {
+      try {
+        final collection = await platform.openSourceDocuments(
+          displayRoot,
+          treeUri,
+        );
+        if (collection.documents.isNotEmpty) {
+          _documentCollections.add(collection);
+          apply(_safDescriptorPath);
+          markClean();
+          return null;
+        }
+        await collection.close();
+      } catch (_) {
+        // Descriptor-less providers use the bounded mirror fallback below.
+      }
     }
     DirectorySelection? linked;
     try {
@@ -1259,7 +1163,9 @@ class AppController extends ChangeNotifier {
   Future<bool> exportLog() {
     final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     return platform.saveTextFile(
-      logText,
+      // Match Windows: export the complete task log, not the filtered widget
+      // text. The visible log panel still uses the shared readable formatter.
+      _logText,
       suggestedName: 'dvda-log-$stamp.txt',
       mimeType: 'text/plain',
     );
@@ -1290,7 +1196,7 @@ class AppController extends ChangeNotifier {
     if (settings.sourceStagingPath.isEmpty && settings.sourceTreeUri.isEmpty) {
       return strings.selectSourceRequired;
     }
-    if (action != 'prepare' && settings.finalTreeUri.isEmpty) {
+    if (settings.finalTreeUri.isEmpty) {
       return strings.selectFinalRequired;
     }
     if (settings.audioMode == 'external' &&
@@ -1299,6 +1205,28 @@ class AppController extends ChangeNotifier {
       return strings.selectExternalRequired;
     }
     return null;
+  }
+
+  /// Returns the real problem text for a failed action, rather than the generic
+  /// shared "failed" status. The shared Rust log formatter owns problem
+  /// classification, so the dialog and task page use identical wording.
+  String failureDetail(TaskOutcome outcome) {
+    final problems = outcome.log.trim().isEmpty
+        ? ''
+        : logFormatter(settings.language, outcome.log).problemText.trim();
+    if (problems.isNotEmpty) {
+      return problems;
+    }
+    final diagnostics = outcome.diagnostics
+        .where((issue) => issue.message.trim().isNotEmpty)
+        .map((issue) => issue.message.trim())
+        .join('\n');
+    if (diagnostics.isNotEmpty) {
+      return diagnostics;
+    }
+    return outcome.message.trim().isNotEmpty
+        ? outcome.message.trim()
+        : statusText;
   }
 
   void _applyOutcome(
@@ -1324,6 +1252,9 @@ class AppController extends ChangeNotifier {
     }
     _cancelRequested = false;
     _message = outcome.message;
+    if (_phase == TaskPhase.success) {
+      _progressText = '';
+    }
     _diagnostics = outcome.diagnostics;
     if (outcome.done > 0) {
       _done = outcome.done;
@@ -1349,18 +1280,19 @@ class AppController extends ChangeNotifier {
             ? _elapsedSeconds
             : DateTime.now().difference(_startedAt!).inSeconds;
         final progressText = _formatSingleLine(progress.text);
+        final progressLog = progress.log.isEmpty ? _logText : progress.log;
         final changed =
             progress.done != _done ||
             progress.total != _total ||
             progressText != _progressText ||
-            progress.log != _logText ||
+            progressLog != _logText ||
             elapsed != _elapsedSeconds;
         if (progress.done >= _done) {
           _done = progress.done;
         }
         _total = progress.total;
         _progressText = progressText;
-        _logText = progress.log;
+        _logText = progressLog;
         _elapsedSeconds = elapsed;
         if (changed) {
           _notify();
@@ -1407,8 +1339,6 @@ class AppController extends ChangeNotifier {
   /// the system UI.
   String _notificationProgressText() {
     final label = switch (_activeAction) {
-      'prepare' => strings.actionPrepare,
-      'verify' => strings.actionVerify,
       _ => strings.actionBuild,
     };
     final percent = progressPercent;
@@ -1431,18 +1361,14 @@ class AppController extends ChangeNotifier {
     return trimmed;
   }
 
-  /// Progress event from the SAF export/verify adapters.
+  /// Progress event from the transactional SAF export adapter.
   ///
-  /// Keeps the pending 99 while exporting and shows the ISO count while the
-  /// verification mirror is built; the shared Rust progress still owns the
-  /// final 100 after the task/finish reports it.
+  /// The shared Rust progress still owns the final 100 after finish reports it.
   void _handleIoProgress(TaskIoProgress progress) {
     if (!isRunning) {
       return;
     }
-    final text = progress.kind == 'verify'
-        ? strings.verifyMirrorProgress(progress.done, progress.total)
-        : strings.exportProgress(progress.done, progress.total);
+    final text = strings.exportProgress(progress.done, progress.total);
     if (text == _progressText) {
       return;
     }

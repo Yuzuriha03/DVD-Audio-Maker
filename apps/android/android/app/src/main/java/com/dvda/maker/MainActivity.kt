@@ -31,7 +31,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/// Raised when the user cancels the SAF I/O adapter for export or verify.
+/// Raised when the user cancels the SAF export adapter.
 private class SafOperationCancelled : Exception("Cancelled by the user")
 
 /// One clean failure of the SAF export transaction; exported files are named
@@ -43,7 +43,7 @@ private class InsufficientSpaceException(
     val requiredBytes: Long,
     val availableBytes: Long,
 ) : Exception(
-    "Not enough app-private space to verify the ISOs: "
+    "Not enough app-private space for the operation: "
         + "required $requiredBytes bytes, available $availableBytes bytes",
 )
 
@@ -72,7 +72,6 @@ class MainActivity : FlutterActivity() {
     private var notificationPermissionRequested = false
     private var methodChannel: MethodChannel? = null
     private val exportCancelled = AtomicBoolean(false)
-    private val isoMirrorCancelled = AtomicBoolean(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -210,44 +209,6 @@ class MainActivity : FlutterActivity() {
                     result.success(selection)
                 }
             }
-            "linkIsoDirectory" -> {
-                val treeUri = call.argument<String>("treeUri").orEmpty()
-                val isoPrefix = call.argument<String>("isoPrefix").orEmpty()
-                safExecutor.execute {
-                    val selection = runCatching {
-                        if (treeUri.isEmpty()) null else linkIsoDirectory(treeUri, isoPrefix)
-                    }.getOrElse {
-                        when (it) {
-                            is SafOperationCancelled ->
-                                result.error("SAF_CANCELLED", "Cancelled", null)
-                            is InsufficientSpaceException -> result.error(
-                                "SAF_NO_SPACE",
-                                it.message ?: "Not enough app-private space to verify the ISOs",
-                                null,
-                            )
-                            else -> result.error(
-                                "SAF_MIRROR",
-                                it.message ?: "Cannot read the selected folder",
-                                null,
-                            )
-                        }
-                        return@execute
-                    }
-                    result.success(selection)
-                }
-            }
-            "releaseIsoDirectory" -> {
-                val treeUri = call.argument<String>("treeUri").orEmpty()
-                safExecutor.execute {
-                    val released = runCatching {
-                        if (treeUri.isEmpty()) false else releaseIsoDirectory(treeUri)
-                    }.getOrElse {
-                        result.error("SAF_MIRROR", it.message ?: "Cannot clean the verification mirror", null)
-                        return@execute
-                    }
-                    result.success(released)
-                }
-            }
             "ensureSourceLink" -> {
                 val treeUri = call.argument<String>("treeUri").orEmpty()
                 safExecutor.execute {
@@ -286,18 +247,8 @@ class MainActivity : FlutterActivity() {
                     )
                 }
             }
-            "releaseTaskCaches" -> {
-                val paths = call.argument<List<*>>("cachePaths")
-                    ?.filterIsInstance<String>()
-                    .orEmpty()
-                safExecutor.execute { result.success(releaseTaskCaches(paths)) }
-            }
             "cancelExport" -> {
                 exportCancelled.set(true)
-                result.success(null)
-            }
-            "cancelIsoMirror" -> {
-                isoMirrorCancelled.set(true)
                 result.success(null)
             }
             "ensureRuntimeFonts" -> {
@@ -475,148 +426,6 @@ class MainActivity : FlutterActivity() {
         persistTreePermission(uri)
         return directorySelection(uri, true)
     }
-    /// Copy only the ISOs the shared verification expects (same title/prefix
-    /// rule as the shared find_isos) from a granted SAF output folder so the
-    /// shared Rust verification can read the exported product. Never copies the
-    /// whole output folder and never invents an Android-only verification mode.
-    private fun linkIsoDirectory(
-        treeUriText: String,
-        isoPrefix: String,
-    ): Map<String, String>? {
-        val uri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return null
-        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
-            return null
-        }
-        persistTreePermission(uri)
-        val nativePath = mirrorIsoTree(uri, isoPrefix)
-        return mapOf(
-            "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
-            "nativePath" to nativePath,
-            "treeUri" to uri.toString(),
-        )
-    }
-
-    private fun isoMirrorMarker(key: String): File =
-        File(File(filesDir, ISO_MIRROR_DIRECTORY), "$key.complete")
-
-    private fun isoMirrorRoot(treeUri: Uri): File {
-        val key = treeKey(treeUri)
-        return File(File(filesDir, ISO_MIRROR_DIRECTORY), key)
-    }
-
-    /// Mirrors only the ISOs the shared verification expects.
-    ///
-    /// The filter is the shared find_isos rule: an ISO file whose name starts
-    /// with the derived/explicit prefix plus "_", ends in ".iso" and carries a
-    /// numeric disc number. Different output folders holding unrelated images
-    /// are therefore never copied. The available app-private space is checked
-    /// before any copy so verification cannot fill the device.
-    private fun mirrorIsoTree(treeUri: Uri, isoPrefix: String): String {
-        val key = treeKey(treeUri)
-        val root = isoMirrorRoot(treeUri)
-        isoMirrorMarker(key).delete()
-        deleteTree(root)
-        if (!root.mkdirs() && !root.isDirectory) {
-            error("Cannot create the app-private verification folder: $root")
-        }
-        isoMirrorCancelled.set(false)
-        try {
-            val rootId = DocumentsContract.getTreeDocumentId(treeUri)
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
-            val documents = mutableListOf<Triple<Uri, String, Long?>>()
-            val cursor = contentResolver.query(
-                childrenUri,
-                arrayOf(
-                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    DocumentsContract.Document.COLUMN_MIME_TYPE,
-                    DocumentsContract.Document.COLUMN_SIZE,
-                ),
-                null,
-                null,
-                null,
-            ) ?: error("Cannot list the selected folder")
-            cursor.use { entries ->
-                while (entries.moveToNext()) {
-                    val childId = entries.getString(0) ?: continue
-                    val mimeType = entries.getString(2)
-                    if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        continue
-                    }
-                    val displayName = entries.getString(1).orEmpty()
-                    if (!matchesSharedIsoName(displayName, isoPrefix)) {
-                        continue
-                    }
-                    if (documents.size >= MAX_SAF_ENTRIES) {
-                        error("The selected folder has too many files to verify")
-                    }
-                    val size = if (entries.isNull(3)) null else entries.getLong(3)
-                    // Keep the full verifiable name: truncating to the local
-                    // mirror bound could cut the ".iso" extension or the disc
-                    // number and make the shared verification miss the file.
-                    val name = safeSafDocumentName(displayName, ENTRY_FALLBACK_NAME)
-                    documents.add(
-                        Triple(
-                            DocumentsContract.buildDocumentUriUsingTree(treeUri, childId),
-                            name,
-                            size,
-                        ),
-                    )
-                }
-            }
-            if (documents.isEmpty()) {
-                error("No ISO images matching the current disc were found in the selected folder")
-            }
-            val required = documents.sumOf { it.third ?: 0L }
-            val available = StatFs(filesDir.path).availableBytes
-            if (required > 0L && available < required + MIRROR_SPACE_MARGIN_BYTES) {
-                throw InsufficientSpaceException(required, available)
-            }
-            documents.forEachIndexed { index, (childUri, name, _) ->
-                if (isoMirrorCancelled.get()) throw SafOperationCancelled()
-                if (!copyDocument(childUri, uniqueChild(root, name), isoMirrorCancelled)) {
-                    if (isoMirrorCancelled.get()) throw SafOperationCancelled()
-                    error("Cannot read the file $name")
-                }
-                postIoProgress(
-                    "isoMirrorProgress",
-                    mapOf("done" to index + 1, "total" to documents.size, "name" to name),
-                )
-            }
-            isoMirrorMarker(key).writeText("v1")
-            return root.canonicalPath
-        } catch (failure: Throwable) {
-            isoMirrorMarker(key).delete()
-            deleteTree(root)
-            throw failure
-        }
-    }
-
-    /// Same rule as the shared verify::find_isos name matcher.
-    private fun matchesSharedIsoName(name: String, prefix: String): Boolean {
-        if (prefix.trim().isEmpty()) {
-            return name.endsWith(".iso", ignoreCase = true)
-        }
-        val lower = name.lowercase()
-        val lowerPrefix = prefix.lowercase()
-        if (!lower.startsWith(lowerPrefix + "_") || !lower.endsWith(".iso")) {
-            return false
-        }
-        return lower.substring(lowerPrefix.length + 1, lower.length - 4).toIntOrNull() != null
-    }
-
-    private fun releaseIsoDirectory(treeUriText: String): Boolean {
-        val uri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return false
-        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
-            return false
-        }
-        isoMirrorCancelled.set(true)
-        val key = treeKey(uri)
-        isoMirrorMarker(key).delete()
-        deleteTree(isoMirrorRoot(uri))
-        return true
-    }
-
     private fun mirrorMarker(key: String): File =
         File(File(filesDir, SAF_MIRROR_DIRECTORY), "$key.complete")
 
@@ -1625,7 +1434,6 @@ class MainActivity : FlutterActivity() {
         private const val FONT_DIRECTORY = "fonts"
         private const val MAX_FONT_STEM = 64
         private const val SAF_MIRROR_DIRECTORY = "saf-mirror"
-        private const val ISO_MIRROR_DIRECTORY = "saf-iso-mirror"
         private const val LEGACY_LINK_DIRECTORY = "saf-links"
         private const val TREE_KEY_BYTES = 12
         private const val MAX_SAF_DEPTH = 32
@@ -1646,7 +1454,6 @@ class MainActivity : FlutterActivity() {
         )
         private val INTERNAL_CACHE_DIRECTORIES = listOf(
             SAF_MIRROR_DIRECTORY,
-            ISO_MIRROR_DIRECTORY,
             LEGACY_LINK_DIRECTORY,
             "output",
         )

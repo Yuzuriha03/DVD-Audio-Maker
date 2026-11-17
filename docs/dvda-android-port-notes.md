@@ -216,7 +216,6 @@ apps/android/：Kotlin 2.2 + Jetpack Compose Material3
   -> ats_*.aob 流式 128KB 分块（处理 ;1 版本后缀）
 - 用 dvda-native::disc_verify::NativeDiscVerifier 逐轨对比 AOB 载荷与 MLP 源
 - 构建流程里自动验证（LibraryOptions.verify / ABI verify 参数 / App 开关）
-- 独立验证接口：dvda_verify_iso(iso, sources_semicolon) -> 0/-1
 - 实测：
   - 正常 ISO：3 轨 / 14077812 字节 全部通过
   - 翻转 AOB 中 1 个字节：验证失败
@@ -249,7 +248,6 @@ apps/android/：Kotlin 2.2 + Jetpack Compose Material3
   - 重启 resume=1：跳过 disc0、复用 disc1 已编码轨、只重做剩余轨，最终 2 张盘全部验证通过
 
 ### 验证扩展（对齐 Windows 的多种检查）
-- 新增 dvda_verify_iso_mode(iso, sources, mode, capacity, menu)
   - mode 0 = lossless（AOB 载荷 vs MLP 源）
   - mode 1 = 容量 + 菜单结构
 - 构建流程里在 lossless 之后再自动做容量与菜单结构检查
@@ -400,7 +398,7 @@ dvda_build_library(music_root, output_dir, rate, bits, capacity, menu, title, fo
 - 队列 UI（编辑/排序/删除任务）、任务列表历史查看
 - 成品播放（需要解码 VOB/菜单预览）
 
-## 第十三轮：LPCM 编码 + TPDF 抖动 + 检查音源（2026-11-14，goal 7/256）
+## 第十三轮：LPCM 编码 + TPDF 抖动（2026-11-14，goal 7/256）
 
 ### LPCM 编码（对齐 Windows 的“LPCM 编码”选项）
 - LibraryOptions.encoding: Mlp | Lpcm；LPCM 直接把解码后的整数 WAV 交给 author，
@@ -415,19 +413,6 @@ dvda_build_library(music_root, output_dir, rate, bits, capacity, menu, title, fo
 - LibraryOptions.dither 传给媒体解码请求（默认开）
 - 实测：同样 16bit 参数，dither 开/关产出的 ISO SHA-256 不同
   （2af821dd… vs a3c19f5a…）
-
-### 检查音源（对齐 Windows 的“检查音源”预检）
-- 新 ABI dvda_check_library(music_root, capacity, menu, buffer, size) -> JSON
-- JSON：{Ok, Albums:[{Name,Cover,EstimatedBytes,Tracks:[{Name,Duration,Channels,Ok,Issue}]}],
-  Errors, Warnings}
-- 封面图等已知图片文件不再误报“不支持的文件”
-- JNI checkLibrary；Kotlin 加“检查音源”按钮
-- 实测：
-  - 好库：Ok=true，Warnings 为空
-  - 坏库（容量 1000、含 readme.txt、无封面）：Ok=false，
-    Errors=[estimated 548416 above capacity 1000]，
-    Warnings=[unsupported file readme.txt, no cover image found]
-  - 空库：Ok=false，Errors=[No album folders with FLAC/M4A files found]
 
 ### 修掉的 PCM 对齐 bug
 - dvda-mlp 只接受 24bit 左对齐样本（16bit 要 <<8、20bit 低 4 位清零），
@@ -596,7 +581,7 @@ examples/android_smoke：
 
 ### 下一步（不再写新逻辑）
 1. 新建薄 JNI crate（只做 Kotlin<->Rust 绑定），直接调：
-   AppOptions::load、run_prepare（=检查音源）、run_build、run_verify
+   AppOptions::load，以及由 Build 流程内部执行的共享准备、制作和成品验证
 2. 用它重建 App 的 .so，替换旧 ABI；App 设置 JSON 直接喂 AppOptions
 3. 这样标签管线、两阶段规划、5 种验证、resume 签名、菜单设置、发布流程全部来自真代码
 
@@ -633,8 +618,8 @@ prepare（标签/解码/重采样/缓存/manifest/snapshot）→ MLP 批量编�
 - 旧 shim ABI 声明仍留在 NativeEngine，但已无实现；下一步按 Windows 行为重写 UI 后删除
 
 ### 下一步
-1. 按 Windows 界面重写 Compose UI：检查音源 / 开始制作 / 验证成品 / 查看成品 / 设置 / 方案，
-   调用 runProfile("prepare"|"build"|"verify")，进度轮询 progressDone/Total/Text
+1. 按 Windows 界面重写 Compose UI：开始制作 / 停止任务 / 查看成品 / 设置 / 方案，
+   调用 runProfile("build")，进度轮询 progressDone/Total/Text
 2. 删除旧 shim 时代的多余功能（队列/历史/保存日志按钮等 Windows 没有的）
 3. 打包 APK（PC/CI）并真机回归
 
@@ -643,7 +628,7 @@ prepare（标签/解码/重采样/缓存/manifest/snapshot）→ MLP 批量编�
 ### 界面
 - MainActivity 重写为 Compose，页面与控件照 dvda-desktop：
   基本设置 / 音频编码 / 光盘菜单 三个页签；高级设置开关；
-  底部：检查音源 / 开始制作 / 停止任务 / 验证成品 / 查看成品
+  底部：开始制作 / 停止任务 / 查看成品
 - 设置项覆盖桌面版全部 profile 键：SRC、FINAL_DIR、TITLE、DISC_BYTES（DVD5/DVD9/自定义）、
   BUILD_DIR、ISO_PREFIX、GROUP_TRACK_LIMIT、MLP_SOURCE（mlp/lpcm/external）、RATE、BITS、
   DITHER_16、MLP_EXTERNAL_DIR、MENU、TRACKS_PER_PAGE、STILLPICS、COVER_DIM、NORM、
@@ -694,7 +679,6 @@ prepare（标签/解码/重采样/缓存/manifest/snapshot）→ MLP 批量编�
 ### 从 GUI 源码补齐的生命周期（task.rs）
 - build 流程照桌面版：run_prepare -> run_build -> run_verify -> finish_task
   （之前 build_continue 走 run_build 不会自动验证/收尾，会残留 unfinished 任务）
-- 检查音源使用 scratch 工作区（桌面版 scratch_options），检查完就丢弃，不产生未完成任务
 - 未完成制作：status 动作查 has_unfinished_task；UI 弹“继续制作 / 重新制作”，
   分别调用 recover_task(false)/(true)
 - 失败/取消：弹“保留进度 / 删除进度”，删除调用 discard_task
@@ -704,7 +688,6 @@ prepare（标签/解码/重采样/缓存/manifest/snapshot）→ MLP 批量编�
 
 ### 真机验证（真 core，phase 隔离）
 - 正常流程：fresh lifecycle ok=true，unfinished=false
-- 检查音源：scratch prepare 成功，unfinished=false（不会冒未完成任务）
 - 取消：unfinished=true，已完成的 ISO 保留（Windows“已完成成品不删除”）
 - 继续制作：recover_task(false) -> prepare/build/verify -> finish，
   结果 ok=true、unfinished=false、ISO 存在

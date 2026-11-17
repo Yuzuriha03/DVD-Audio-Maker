@@ -34,7 +34,12 @@ $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = $clang
 $env:CC_aarch64_linux_android = $clang
 $env:AR_aarch64_linux_android = $ar
 $env:DVDA_HOST_CC = "cl.exe"
-$env:DVDA_FFMPEG_PREFIX = Join-Path $repo "deps/android-aarch64"
+$fdFfmpeg = Join-Path $repo "build/android-ffmpeg-fd/install"
+$env:DVDA_FFMPEG_PREFIX = if (Test-Path -LiteralPath (Join-Path $fdFfmpeg "lib/libavformat.a")) {
+    $fdFfmpeg
+} else {
+    Join-Path $repo "deps/android-aarch64"
+}
 $env:Path = "$bin;$env:Path"
 Write-Output "ANDROID_NDK_ROOT=$ndk"
 Write-Output "Android target=aarch64-linux-android API=24"

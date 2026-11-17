@@ -114,14 +114,14 @@ prepare → 编码 → author → verify 链路需要单独在设备上执行。
 ## 运行时契约
 
 - `AppBridge`：`init()`、`runProfile(profileJson, action)`、`progress()`、`cancel()`
-- action：`prepare` / `build` / `build_continue` / `build_restart` / `verify` /
-  `status` / `discard`
+- action：`build` / `build_continue` / `build_restart` / `status` / `discard` /
+  `finish_delivery`
 - profile JSON 与桌面版相同：`{"Version":1,"Language":"...","Values":{DVDA_*}}`
 - 功能行为与桌面版对齐，但交互采用 Android/Material 与 SAF，不照搬桌面控件
 - 不声明“所有文件访问”权限；通过 SAF 授权用户选择的目录并持久化授权
-- 源目录通过系统文件浏览器流式复制为普通私有文件供 Rust 读取，启动时复用镜像而不重复复制
+- 源目录优先通过 `saf` 插件打开文件描述符，把 `/proc/self/fd/<fd>` 直接交给共享 Rust；逻辑路径用于专辑、标题和封面，fd 仅用于实际读取
+- 不支持 fd 的提供方回退为受空间预算保护的普通私有文件镜像；不创建符号链接，不把 fd 路径跨进程保存
 - 成品生成后导出到用户授权目录
-- 不使用符号链接，避免 Rust 工作区的 reparse point 安全限制
 - 界面语言：zh-CN / zh-TW / en / ja / ko；主题通过菜单选择并持久化
 - 任务运行时锁定设置、语言和导航并自动进入任务页；返回时先确认停止再退出
 - 进度采用与桌面版一致的 0–15 / 15–65 / 65–100 阶段百分比
@@ -129,28 +129,16 @@ prepare → 编码 → author → verify 链路需要单独在设备上执行。
 - 默认不保留中间文件；外部 MLP 导入禁用采样设置，抖动仅 16-bit 显示
 - 字体设置归入高级设置并支持 SAF 选择；封面暗化保留滑块
 - 日志支持仅问题过滤、复制和 SAF 导出；状态区显示运行时长与问题数
-- 平台文件操作走 `MethodChannel('dvda/platform')`：
-  `pickDirectory`、`linkDirectory`、`ensureSourceLink`、`linkIsoDirectory`、
-  `releaseIsoDirectory`、`exportDirectory`、`cancelExport`、
-  `cancelIsoMirror`、`releaseTaskCaches`、`ensureRuntimeFonts`、
-  `cleanupInternalCaches`、`openProfile`、`saveProfile`、`saveTextFile`、
-  `openOutput`、`pickFont`
+- 平台文件操作走 `MethodChannel('dvda/platform')` 和 `saf` 插件：前者保留目录选择、
+  事务导出、镜像回退和缓存释放，后者提供源文档遍历及 fd 打开/关闭
 - SAF 导出是事务：先写临时 SAF 文档并校验长度/SHA-256，再把旧成品改名为备份、
   用已校验文档替换；任一步失败都回滚并保留旧成品，失败不删除任务工作区。
   只有校验通过的导出才会调用共享 finish；finish 失败显示本地化清理失败、
   保留可恢复工作区并提供重试，绝不显示成功
-- 导出期间进度保持 99，只有共享 finish 成功才由 Rust 置为 100；导出前后与
-  ISO 镜像过程都响应取消
-- 验证按共享 ISO 前缀规则只复制预期成品 ISO 到 app-private 镜像（不再复制整个
-  输出目录的 ISO），名称保留完整可验证文件名、不截断；复制前按 64 MiB 余量检查
-  app-private 空间，带进度与取消，镜像用完即由适配器释放
-- 交付后单独验证会按需重建源/外部镜像（共享验证无 workspace 时需从源重建
-  references）；这些镜像属于 I/O 缓存，在本操作的 finally 中通过现有缓存适配器
-  释放并清空 staging，仅当仍有可续跑的 unfinished task 时保留（与 Windows 保留
-  工作区一致），不会常驻到下次导出或依赖手动清理
-- 源/外部目录镜像复制前逐文件按 64 MiB 余量检查 app-private 空间，不足时安全
-  失败、删除半成品镜像并返回本地化提示，不残留部分文件
-- 内部缓存（SAF 源镜像、验证 ISO 镜像、旧内部 output）属于可重建 I/O 缓存：
+- 导出期间进度保持 99，只有共享 finish 成功才由 Rust 置为 100；导出响应取消
+- 源文档 fd 在操作结束时统一关闭；外部 MLP 目录保留既有镜像回退。
+- 镜像回退逐文件按 64 MiB 余量检查空间，不足时安全失败并删除半成品，不残留部分文件
+- 内部缓存（SAF 源镜像、旧内部 output）属于可重建 I/O 缓存：
   导出适配器在本次导出成功后释放本任务的源镜像；设置页的“删除进度并清理”是
   唯一显式用户确认入口，一次确认后先走共享 discard 删除未完成任务工作区，再经
   Kotlin 缓存适配器删除上述已知目录；无未完成任务时也允许单独清缓存，不删除

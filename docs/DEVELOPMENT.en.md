@@ -14,7 +14,6 @@ From the repository root:
 ```bat
 gui-debug.cmd
 cli.cmd abi.version
-cli.cmd prepare --profile "C:\work\settings.json"
 cli.cmd build --dry-run --profile "C:\work\settings.json"
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\win-build\cargo-msvc.ps1 test --manifest-path rust\Cargo.toml --target x86_64-pc-windows-msvc --workspace --offline
 ```

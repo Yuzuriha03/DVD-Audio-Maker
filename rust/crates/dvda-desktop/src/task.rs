@@ -2,11 +2,11 @@
 
 use super::{
     AppOptions, Arc, AtomicBool, Callbacks, EnableWindow, EnumChildWindows, GetClientRect, Hwnd,
-    ID_BUILD, ID_PREPARE, ID_VERIFY, Instant, IsWindowEnabled, Lang, Lparam, Ordering, PBM_SETPOS,
-    PBM_SETRANGE32, PathBuf, RDW_ALLCHILDREN, RDW_INVALIDATE, Rect, RedrawWindow, UiEvent, UiState,
-    Value, WorkerCallbacks, WorkerEvent, add_log, autosave, checked, edited_profile_values,
-    get_text, layout, localized_log, presentation, ptr, render_log, reset_task_log, set_text,
-    thread, tr, update_statistics, validate_controls, win, window_class,
+    Instant, IsWindowEnabled, Lang, Lparam, Ordering, PBM_SETPOS, PBM_SETRANGE32, PathBuf,
+    RDW_ALLCHILDREN, RDW_INVALIDATE, Rect, RedrawWindow, UiEvent, UiState, Value, WorkerCallbacks,
+    WorkerEvent, add_log, autosave, checked, edited_profile_values, get_text, layout,
+    localized_log, presentation, ptr, render_log, reset_task_log, set_text, thread, tr,
+    update_statistics, validate_controls, win, window_class,
 };
 
 pub(crate) fn emit_preparation_issues(
@@ -211,7 +211,7 @@ pub(crate) fn task_choice(
     clippy::too_many_lines,
     reason = "Keeps preparation, build, verification, retention and completion ordering in one worker lifecycle"
 )]
-pub(crate) fn start_operation(state: &mut UiState, command: usize) {
+pub(crate) fn start_operation(state: &mut UiState) {
     if !validate_controls(state, true) {
         return;
     }
@@ -234,9 +234,7 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
             }
         };
     options.language = state.lang().code().into();
-    let options = match if command == ID_VERIFY || command == ID_PREPARE {
-        Ok(options)
-    } else if options.has_unfinished_task() {
+    let options = match if options.has_unfinished_task() {
         recovery_choice(state.main_window, state.lang())
             .and_then(|restart| options.recover_task(restart))
     } else {
@@ -259,23 +257,11 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
     set_busy_controls(state, true);
     update_statistics(state);
     relayout_for_task(state);
-    for hwnd in [
-        state.controls.prepare,
-        state.controls.build,
-        state.controls.verify,
-    ] {
-        {
-            EnableWindow(hwnd, 0);
-        }
-    }
+    EnableWindow(state.controls.build, 0);
     {
         EnableWindow(state.controls.cancel, 1);
     }
-    let start_key = match command {
-        ID_PREPARE => "started_check",
-        ID_BUILD => "started_build",
-        _ => "started_verify",
-    };
+    let start_key = "started_build";
     state.status_key = start_key;
     state.activity_raw = tr(Lang::Zh, start_key).into();
     set_text(state.controls.status, tr(state.lang(), start_key));
@@ -302,30 +288,17 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
         };
         let (ok, cancelled, text, failure_text) =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let shared = match command {
-                    ID_PREPARE => dvda_core::gui::GuiCommand::Prepare,
-                    ID_BUILD => dvda_core::gui::GuiCommand::Build,
-                    _ => dvda_core::gui::GuiCommand::Verify,
-                };
-                let outcome = dvda_core::gui::run_command(&options, shared, &mut callbacks);
+                let outcome = dvda_core::gui::run_command(&options, &mut callbacks);
                 emit_preparation_issues(&mut callbacks, &outcome.preparation_issues);
                 emit_diagnostics(&mut callbacks, &outcome.diagnostics);
                 let failure_text = outcome.failure.clone().unwrap_or_default();
                 let message = if outcome.cancelled {
                     tr(lang, "cancelled_detail").to_owned()
                 } else if let Some(failure) = &outcome.failure {
-                    let label = match command {
-                        ID_BUILD => tr(lang, "failed_build"),
-                        ID_VERIFY => tr(lang, "failed_verify"),
-                        _ => tr(lang, "failed_prepare"),
-                    };
+                    let label = tr(lang, "failed_build");
                     format!("{label}: {failure}")
                 } else {
-                    let done = if command == ID_PREPARE {
-                        outcome.preparation_failures == Some(0)
-                    } else {
-                        outcome.succeeded
-                    };
+                    let done = outcome.succeeded;
                     tr(lang, if done { "done" } else { "failed" }).into()
                 };
                 (outcome.succeeded, outcome.cancelled, message, failure_text)
@@ -338,14 +311,14 @@ pub(crate) fn start_operation(state: &mut UiState, command: usize) {
                     String::new(),
                 )
             });
-        if !ok && command == ID_BUILD {
+        if ok {
+            drop(options);
+        } else {
             let _ = callbacks.logs.send(WorkerEvent::Retention {
                 options: Box::new(options),
                 cancelled,
                 error: failure_text,
             });
-        } else {
-            drop(options);
         }
         let kind = if cancelled { 2 } else { u32::from(ok) };
         let _ = callbacks
@@ -450,15 +423,7 @@ pub(crate) fn finish_operation(state: &mut UiState, kind: u32, text: &str) {
         EnableWindow(state.controls.cancel, 0);
     }
     set_busy_controls(state, false);
-    for hwnd in [
-        state.controls.prepare,
-        state.controls.build,
-        state.controls.verify,
-    ] {
-        {
-            EnableWindow(hwnd, 1);
-        }
-    }
+    EnableWindow(state.controls.build, 1);
     state.busy = false;
     update_statistics(state);
     relayout_for_task(state);

@@ -53,9 +53,7 @@ pub(super) fn tr(key: &str) -> &'static str {
         "start" => "기본 설정",
         "audio" => "오디오",
         "about" | "author_page_title" | "dialog_info_title" => "정보",
-        "check" => "음원 검사",
         "build" => "디스크 만들기",
-        "verify" => "출력 검증",
         "cancel" => "작업 중지",
         "open_output" => "출력 폴더 열기",
         "summary" => "작업 요약",
@@ -88,9 +86,7 @@ pub(super) fn tr(key: &str) -> &'static str {
         "saved" => "프로필 저장됨: ",
         "profile_missing" => "프로필이 없습니다: ",
         "profile_error" => "프로필을 불러올 수 없습니다: ",
-        "started_check" => "음원 검사 중…",
         "started_build" => "음원 검사, 디스크 제작 및 출력 검증 중…",
-        "started_verify" => "출력 검증 중…",
         "done" => "작업이 완료되었습니다.",
         "failed" => "작업이 실패했습니다.",
         "cancelled" => "작업이 취소되었습니다.",
@@ -99,8 +95,6 @@ pub(super) fn tr(key: &str) -> &'static str {
             "작업이 취소되었습니다. 사용자가 작업을 중지했습니다. 미완료 진행 상황은 유지되며 설정에서 삭제할 수 있습니다."
         }
         "failed_build" => "제작 실패",
-        "failed_verify" => "검증 실패",
-        "failed_prepare" => "음원 검사 실패",
         "json_filter" => "JSON 설정 프로필",
         "text_filter" => "텍스트 로그",
         "all_filter" => "모든 파일",

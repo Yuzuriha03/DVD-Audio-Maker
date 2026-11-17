@@ -137,9 +137,7 @@ pub fn summary(lang: Lang, text: &str, explicit_problem: bool) -> Option<String>
             "failed",
             "cancelled",
             "stopping",
-            "started_check",
             "started_build",
-            "started_verify",
             "saved",
             "profile_error",
         ]

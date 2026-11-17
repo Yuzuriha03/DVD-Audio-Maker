@@ -21,6 +21,9 @@ dvda-image = { path = "../dvda-image", optional = true }
 dvda-menu = { path = "../dvda-menu", optional = true }
 dvda-author = { path = "../dvda-author", optional = true }
 
+[target.'cfg(target_os = "android")'.dependencies]
+libc = "0.2"
+
 [build-dependencies]
 serde_json.workspace = true
 

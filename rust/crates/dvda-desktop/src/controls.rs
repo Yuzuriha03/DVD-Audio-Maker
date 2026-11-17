@@ -16,18 +16,18 @@ use super::{
     ID_DITHER, ID_EXPORT, ID_FINAL, ID_FONT_JP, ID_FONT_KR, ID_FONT_SC, ID_GROUP_LIMIT,
     ID_IMPORT_FOLDER, ID_ISO_PREFIX, ID_KEEP_FILES, ID_LANGUAGE, ID_LIVE, ID_LOG, ID_LOG_VIEW,
     ID_MAXIMIZE, ID_MENU, ID_MINIMIZE, ID_MODE, ID_NORM, ID_ONLY_ISSUES, ID_OPEN_OUTPUT,
-    ID_OPEN_PROFILE, ID_PREPARE, ID_PROFILE, ID_RATE, ID_SAVE_AS, ID_SAVE_PROFILE, ID_SOURCE,
-    ID_STILLS, ID_TAB, ID_THEME, ID_TITLE, ID_TRACKS, ID_VERIFY, ID_WORK_DIR, InvalidateRect,
-    IsWindow, IsWindowEnabled, LOG_QUEUE_CAPACITY, Lang, LineTo, Lparam, Lresult, MoveToEx, Mutex,
-    PAINT_FIELDS, PBM_SETBARCOLOR, PBM_SETBKCOLOR, PROFILE_OVERRIDE, PaintFields, PaintStruct, Rc,
-    Rect, SAMPLE_BITS_LABELS, SAMPLE_RATE_LABELS, SW_HIDE, SW_SHOW, SelectObject, SendMessageW,
-    SetFocus, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, SetWindowTheme, ShowWindow,
-    TME_LEAVE, ToolInfo, Tooltip, TrackMouseEvent, TrackMouseEventData, UiState, WM_ERASEBKGND,
-    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_NCDESTROY,
-    WM_PAINT, WM_SETFOCUS, WM_SETFONT, WS_CHILD, WS_CLIPCHILDREN, WS_TABSTOP, WS_VISIBLE, WndProc,
-    Wparam, add_log, begin_buffered_paint, body_brush, brush, buffered_label_proc, c_accent,
-    c_accent_hover, c_bar_track, c_border, c_card, c_disabled_fill, c_disabled_text, c_header_top,
-    c_ink, c_secondary_hover, combo_item_text, create_log_frame, draw_text_run, fill_round_rect,
+    ID_OPEN_PROFILE, ID_PROFILE, ID_RATE, ID_SAVE_AS, ID_SAVE_PROFILE, ID_SOURCE, ID_STILLS,
+    ID_TAB, ID_THEME, ID_TITLE, ID_TRACKS, ID_WORK_DIR, InvalidateRect, IsWindow, IsWindowEnabled,
+    LOG_QUEUE_CAPACITY, Lang, LineTo, Lparam, Lresult, MoveToEx, Mutex, PAINT_FIELDS,
+    PBM_SETBARCOLOR, PBM_SETBKCOLOR, PROFILE_OVERRIDE, PaintFields, PaintStruct, Rc, Rect,
+    SAMPLE_BITS_LABELS, SAMPLE_RATE_LABELS, SW_HIDE, SW_SHOW, SelectObject, SendMessageW, SetFocus,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, SetWindowTheme, ShowWindow, TME_LEAVE,
+    ToolInfo, Tooltip, TrackMouseEvent, TrackMouseEventData, UiState, WM_ERASEBKGND, WM_KILLFOCUS,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WM_SETFOCUS,
+    WM_SETFONT, WS_CHILD, WS_CLIPCHILDREN, WS_TABSTOP, WS_VISIBLE, WndProc, Wparam, add_log,
+    begin_buffered_paint, body_brush, brush, buffered_label_proc, c_accent, c_accent_hover,
+    c_bar_track, c_border, c_card, c_disabled_fill, c_disabled_text, c_header_top, c_ink,
+    c_secondary_hover, combo_item_text, create_log_frame, draw_text_run, fill_round_rect,
     finish_buffered_paint, install_scrollbar, open_session_log, panel_brush, parse_i64, populate,
     presentation, profile_language, ptr, scale, semibold_font, set_language, setting_help,
     show_page, small_font, startup_language, sync_channel, touch, tr, ui_font, unscale,
@@ -191,9 +191,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         only_issues: ptr::null_mut(),
         live: ptr::null_mut(),
         log: ptr::null_mut(),
-        prepare: ptr::null_mut(),
         build: ptr::null_mut(),
-        verify: ptr::null_mut(),
         cancel: ptr::null_mut(),
         open_output: ptr::null_mut(),
         profile_origin: origin,
@@ -608,11 +606,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     {
         win::send_int(log, EM_SETLIMITTEXT, 1_000_000, 0);
     }
-    // Keep the legacy command IDs for automation/tests, but expose the
-    // complete prepare-build-verify workflow through the single build action.
-    let prepare = create!(parent, "BUTTON", "", WS_CHILD, 18, 740, 145, 34, ID_PREPARE);
     let build = primary_button(parent, tr(lang, "build"), ID_BUILD, 175, 740, 145, 34);
-    let verify = create!(parent, "BUTTON", "", WS_CHILD, 332, 740, 145, 34, ID_VERIFY);
     let cancel = danger_button(parent, tr(lang, "cancel"), ID_CANCEL, 490, 740, 145, 34);
     let open_output = button(
         parent,
@@ -630,9 +624,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     c.only_issues = only_issues;
     c.live = live;
     c.log = log;
-    c.prepare = prepare;
     c.build = build;
-    c.verify = verify;
     c.cancel = cancel;
     c.open_output = open_output;
     labels.extend([(only_issues, "issues"), (live, "live")]);
@@ -640,9 +632,7 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         (open_profile, "open"),
         (save_profile_button, "save"),
         (save_as_button, "save_as"),
-        (prepare, "check"),
         (build, "build"),
-        (verify, "verify"),
         (cancel, "cancel"),
         (open_output, "open_output"),
         (copy, "copy"),

@@ -280,6 +280,7 @@ fn put_paths(r: &Request, properties: &mut Map<String, Value>) {
         ("FinalDirectory", "DVDA_FINAL_DIR"),
         ("FinalDirectoryDisplay", "DVDA_FINAL_DISPLAY_DIR"),
         ("SourceDirectoryDisplay", "DVDA_SRC_DISPLAY_DIR"),
+        ("SourceDocuments", "DVDA_SOURCE_DOCUMENTS"),
         ("BuildDirectory", "DVDA_BUILD_DIR"),
         ("AuthorSource", "DVDA_AUTHOR_SRC"),
     ] {

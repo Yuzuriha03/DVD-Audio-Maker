@@ -11,14 +11,10 @@ use crate::app::{self, AppOptions};
 use crate::preparation::models::Issue;
 use dvda_native::media::Callbacks;
 
-/// Prepare-only run (the "check sources" button) spans the whole bar.
-pub const PREPARE_ONLY_RANGE: (u64, u64) = (0, 100);
 /// Build runs preparation, production and verification in three stages.
 pub const BUILD_PREPARE_RANGE: (u64, u64) = (0, 15);
 pub const BUILD_RANGE: (u64, u64) = (15, 65);
 pub const BUILD_VERIFY_RANGE: (u64, u64) = (65, 99);
-/// Standalone verification also must not show 100% before every ISO is checked.
-pub const VERIFY_ONLY_RANGE: (u64, u64) = (0, 99);
 
 /// Callbacks plus the progress-range adapter every GUI already owns.
 ///
@@ -92,17 +88,6 @@ pub fn display_product_path(actual_root: &Path, display: Option<&Path>, path: &P
         .unwrap_or_else(|| path.to_path_buf())
 }
 
-/// One GUI task action.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GuiCommand {
-    /// Prepare sources in a scratch workspace, then discard it.
-    Prepare,
-    /// Prepare, build, verify and finish the task workspace.
-    Build,
-    /// Verify the finished task without rebuilding.
-    Verify,
-}
-
 /// Result of one GUI task action.
 #[allow(
     clippy::struct_excessive_bools,
@@ -164,43 +149,8 @@ fn failed(message: String) -> GuiOutcome {
 
 /// Runs one GUI task action with the shared stage order and progress ranges.
 #[must_use]
-pub fn run_command(
-    base: &AppOptions,
-    command: GuiCommand,
-    callbacks: &mut dyn GuiCallbacks,
-) -> GuiOutcome {
-    match command {
-        GuiCommand::Prepare => run_prepare_sequence(base, callbacks),
-        GuiCommand::Build => run_build_sequence(base, callbacks),
-        GuiCommand::Verify => run_verify_sequence(base, callbacks),
-    }
-}
-
-/// Source check: scratch workspace, prepare, discard. No task is left behind.
-#[must_use]
-pub fn run_prepare_sequence(base: &AppOptions, callbacks: &mut dyn GuiCallbacks) -> GuiOutcome {
-    callbacks.set_progress_range(PREPARE_ONLY_RANGE.0, PREPARE_ONLY_RANGE.1);
-    let scratch = match base.scratch_options() {
-        Ok(scratch) => scratch,
-        Err(error) => return failed(error),
-    };
-    let outcome = app::run_prepare(&scratch, false, callbacks.as_callbacks());
-    // The scratch workspace only exists for this check.
-    scratch.discard_task();
-    GuiOutcome {
-        succeeded: outcome.succeeded(),
-        cancelled: callbacks.cancelled() && !outcome.succeeded(),
-        failure: outcome.failure.map(|failure| failure.message),
-        diagnostics: Vec::new(),
-        preparation_issues: outcome
-            .data
-            .as_ref()
-            .map_or_else(Vec::new, |data| data.issues.clone()),
-        preparation_failures: outcome.data.as_ref().map(|data| data.failure_count),
-        finished: false,
-        delivery_directory: None,
-        pending_delivery: false,
-    }
+pub fn run_command(base: &AppOptions, callbacks: &mut dyn GuiCallbacks) -> GuiOutcome {
+    run_build_sequence(base, callbacks)
 }
 
 /// Full task: prepare → build → verify → finish, with 0/15/65/100 staging.
@@ -343,37 +293,6 @@ pub fn finish_after_delivery(base: &AppOptions, delivered: bool) -> GuiOutcome {
     }
 }
 
-/// Verification of an existing task, spanning the whole progress bar.
-#[must_use]
-pub fn run_verify_sequence(base: &AppOptions, callbacks: &mut dyn GuiCallbacks) -> GuiOutcome {
-    callbacks.set_progress_range(VERIFY_ONLY_RANGE.0, VERIFY_ONLY_RANGE.1);
-    match app::run_verify(base, callbacks.as_callbacks()) {
-        Ok(verification) => {
-            if verification.succeeded {
-                // Only the completed verification may show 100%.
-                callbacks.set_progress_range(99, 100);
-                callbacks.progress(100, 100);
-            }
-            GuiOutcome {
-                succeeded: verification.succeeded,
-                cancelled: callbacks.cancelled() && !verification.succeeded,
-                failure: None,
-                diagnostics: verification.diagnostics,
-                preparation_issues: Vec::new(),
-                preparation_failures: None,
-                finished: false,
-                delivery_directory: None,
-                pending_delivery: false,
-            }
-        }
-        Err(error) => GuiOutcome {
-            cancelled: callbacks.cancelled(),
-            failure: Some(error),
-            ..GuiOutcome::default()
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,20 +352,9 @@ mod tests {
     fn build_sequence_reports_the_staged_ranges_before_failing_early() {
         let (options, root) = empty_profile("build");
         let mut callbacks = Recorder::default();
-        let outcome = run_command(&options, GuiCommand::Build, &mut callbacks);
+        let outcome = run_command(&options, &mut callbacks);
         assert!(!outcome.finished);
         assert_eq!(callbacks.ranges.first(), Some(&BUILD_PREPARE_RANGE));
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn prepare_sequence_uses_the_whole_bar_and_discards_the_scratch_workspace() {
-        let (options, root) = empty_profile("prepare");
-        let mut callbacks = Recorder::default();
-        let outcome = run_command(&options, GuiCommand::Prepare, &mut callbacks);
-        assert!(!outcome.finished);
-        assert_eq!(callbacks.ranges, vec![PREPARE_ONLY_RANGE]);
-        assert!(!root.join("build/unfinished-task").exists());
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -564,13 +472,5 @@ mod tests {
             display_product_path(Path::new(""), Some(display), path),
             path
         );
-    }
-    #[test]
-    fn verify_sequence_uses_the_whole_bar() {
-        let (options, root) = empty_profile("verify");
-        let mut callbacks = Recorder::default();
-        let _outcome = run_command(&options, GuiCommand::Verify, &mut callbacks);
-        assert_eq!(callbacks.ranges, vec![VERIFY_ONLY_RANGE]);
-        let _ = std::fs::remove_dir_all(root);
     }
 }

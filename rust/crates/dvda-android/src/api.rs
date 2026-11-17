@@ -375,42 +375,6 @@ pub fn run_profile(profile_json: String, action: String) -> String {
                 };
                 Ok((outcome.succeeded, message, serde_json::Value::Null))
             }
-            "prepare" => {
-                // Shared GUI sequence: scratch prepare, then discard the workspace.
-                let mut forward = Forward::stage(0, PROGRESS_TOTAL).with_source_display(&options);
-                let outcome = gui::run_command(&options, gui::GuiCommand::Prepare, &mut forward);
-                cancelled = outcome.cancelled;
-                if outcome.succeeded {
-                    DONE.store(PROGRESS_TOTAL, Ordering::Relaxed);
-                }
-                let message = outcome.failure.unwrap_or_else(|| {
-                    if outcome.succeeded {
-                        gui::status_text(&options.language, true).to_owned()
-                    } else if outcome
-                        .preparation_failures
-                        .is_some_and(|failures| failures > 0)
-                    {
-                        gui::preparation_problem_text(&options.language).to_owned()
-                    } else {
-                        gui::status_text(&options.language, false).to_owned()
-                    }
-                });
-                Ok((outcome.succeeded, message, serde_json::Value::Null))
-            }
-            "verify" => {
-                let mut forward = Forward::stage(0, PROGRESS_TOTAL).with_source_display(&options);
-                let outcome = gui::run_command(&options, gui::GuiCommand::Verify, &mut forward);
-                cancelled = outcome.cancelled;
-                if outcome.succeeded {
-                    DONE.store(PROGRESS_TOTAL, Ordering::Relaxed);
-                }
-                let diagnostics =
-                    serde_json::to_value(&outcome.diagnostics).unwrap_or(serde_json::Value::Null);
-                let message = outcome.failure.unwrap_or_else(|| {
-                    gui::status_text(&options.language, outcome.succeeded).to_owned()
-                });
-                Ok((outcome.succeeded, message, diagnostics))
-            }
             _ => {
                 // Recovery policy stays a GUI decision; the shared sequence owns
                 // the prepare -> build -> verify -> finish stages and percentages.
@@ -420,7 +384,7 @@ pub fn run_profile(profile_json: String, action: String) -> String {
                     _ => options.clone(),
                 };
                 let mut forward = Forward::stage(0, PROGRESS_TOTAL).with_source_display(&options);
-                let outcome = gui::run_command(&options, gui::GuiCommand::Build, &mut forward);
+                let outcome = gui::run_command(&options, &mut forward);
                 cancelled = outcome.cancelled;
                 if outcome.succeeded {
                     // Pending SAF delivery is not a finished task yet.

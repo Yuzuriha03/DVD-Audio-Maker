@@ -321,7 +321,7 @@ fn android_build() {
         println!("cargo:rerun-if-changed={}", archive.display());
         println!("cargo:rustc-link-lib=static={name}");
     }
-    for name in ["m", "dl"] {
+    for name in ["m", "dl", "z"] {
         println!("cargo:rustc-link-lib={name}");
     }
     let include = prefix.join("include");
