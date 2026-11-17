@@ -198,8 +198,8 @@ pub(crate) fn wrapped_text_height(text: &str, font: Handle, width: i32) -> i32 {
             wide_text.as_ptr(),
             -1,
             &raw mut rect,
-            0x0010 | DT_CALCRECT | DT_NOPREFIX,
-        ); // DT_WORDBREAK
+            DT_CALCRECT | DT_NOPREFIX,
+        ); // Line breaks are already computed by wrap_label_text.
         SelectObject(dc, old);
         DeleteDC(dc);
     }

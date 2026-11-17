@@ -460,7 +460,13 @@ fn text_clipping_findings(parent: Hwnd, ui: &mut UiState) -> Vec<String> {
         unsafe {
             let dc = CreateCompatibleDC(ptr::null_mut());
             let old = SelectObject(dc, font);
-            let wide_text = wide(text);
+            let laid_out = if flags & DT_WORDBREAK != 0 {
+                super::draw::wrap_label_text(dc, text, width)
+            } else {
+                text.into()
+            };
+            let wide_text = wide(&laid_out);
+            let flags = flags & !DT_WORDBREAK;
             let mut rect = Rect {
                 left: 0,
                 top: 0,

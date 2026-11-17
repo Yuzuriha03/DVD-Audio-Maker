@@ -1005,6 +1005,13 @@ struct TextExtent {
 }
 
 unsafe extern "system" {
+    fn GetTextExtentPoint32W(
+        dc: Handle,
+        text: *const u16,
+        length: i32,
+        extent: *mut TextExtent,
+    ) -> i32;
+
     fn GetTextExtentExPointW(
         dc: Handle,
         text: *const u16,
@@ -1062,6 +1069,27 @@ fn is_cjk_letter(ch: char) -> bool {
         0x3400..=0x9fff | 0x3040..=0x30ff | 0xf900..=0xfaff)
 }
 
+fn is_semantic_boundary(ch: char) -> bool {
+    matches!(
+        ch,
+        '。' | '！'
+            | '？'
+            | '；'
+            | '，'
+            | '、'
+            | '.'
+            | '!'
+            | '?'
+            | ';'
+            | ','
+            | '”'
+            | '’'
+            | '」'
+            | '』'
+            | '》'
+    )
+}
+
 fn byte_at_utf16(text: &str, count: usize) -> usize {
     let mut units = 0;
     for (index, ch) in text.char_indices() {
@@ -1088,11 +1116,15 @@ fn choose_break(text: &str, fit: usize) -> usize {
         .next_back()
         .map_or(0, |(index, _)| index);
     let mut candidate = None;
+    let mut semantic = None;
     for (index, ch) in text.char_indices().take_while(|(index, _)| *index < fit) {
         if index == 0 {
             continue;
         }
         let previous = text[..index].chars().next_back().unwrap_or(ch);
+        if is_semantic_boundary(previous) {
+            semantic = Some(index);
+        }
         if is_closing_punctuation(ch) || is_opening_punctuation(previous) {
             continue;
         }
@@ -1109,13 +1141,22 @@ fn choose_break(text: &str, fit: usize) -> usize {
             .next_back()
             .is_some_and(is_opening_punctuation)
     {
-        candidate.unwrap_or(previous_start).max(1)
+        semantic.or(candidate).unwrap_or(previous_start).max(1)
     } else {
-        candidate.unwrap_or(fit).max(1)
+        semantic.or(candidate).unwrap_or(fit).max(1)
     }
 }
 
 fn wrap_paragraph(dc: Handle, text: &str, width: i32) -> String {
+    let full_text = wide(text);
+    let full_length = i32::try_from(full_text.len() - 1).unwrap_or(i32::MAX);
+    let mut full_extent = TextExtent::default();
+    if unsafe { GetTextExtentPoint32W(dc, full_text.as_ptr(), full_length, &raw mut full_extent) }
+        != 0
+        && full_extent.width <= width
+    {
+        return text.into();
+    }
     let mut remaining = text;
     let mut result = String::with_capacity(text.len());
     while !remaining.is_empty() {
@@ -1225,6 +1266,9 @@ pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
         let font = SendMessageW(hwnd, WM_SETFONT + 1, 0, 0) as Handle; // WM_GETFONT
         let old = SelectObject(dc, if font.is_null() { ui_font() } else { font });
         let display_text = wrap_label_text(dc, &text, rect.right - rect.left);
+        // The layout helper already inserted the intended line breaks. Letting
+        // DrawTextW wrap again would reintroduce orphaned punctuation.
+        flags &= !DT_WORDBREAK;
         let wide_text = wide(&display_text);
         let mut needed = Rect {
             left: 0,
