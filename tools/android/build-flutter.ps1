@@ -1,10 +1,11 @@
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
-$gradleVersion = "9.8.2"
+$gradleVersion = "9.5.0"
 $env:JAVA_HOME = Join-Path $root "build/jdk17"
 $env:ANDROID_HOME = Join-Path $root "build/android-sdk"
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 $env:PUB_HOSTED_URL = "https://pub.flutter-io.cn"
+$env:GRADLE_OPTS = "-Dorg.gradle.daemon=false"
 [Environment]::SetEnvironmentVariable("DVDA_ANDROID_NDK", (Join-Path $root "build/android-ndk-r30"), "Process")
 $localNdk = Join-Path $root "build/android-ndk-r30"
 $ndkRevision = (Get-Content -LiteralPath "$localNdk/source.properties" | Where-Object { $_ -match '^Pkg\.Revision\s*=' } | Select-Object -First 1) -replace '^Pkg\.Revision\s*=\s*', ''
@@ -157,9 +158,9 @@ try {
     $flutter = Join-Path $root "build/flutter/bin/flutter.bat"
     Push-Location $stagedApp
     try {
-        # Resolve every Dart dependency to the latest compatible version on
-        # every official build. SDK packages still obey Flutter's constraints.
-        & $flutter pub upgrade
+        # Flutter and its plugins use the versions resolved by the Flutter SDK
+        # and the committed lockfile; do not replace them with unrelated latest.
+        & $flutter pub get
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & $flutter build apk --release --target-platform android-arm64
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
