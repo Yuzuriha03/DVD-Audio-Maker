@@ -54,7 +54,7 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
         Lang::Zh => match key {
             "app_subtitle" => "把音乐制作成 DVD-Audio 光盘镜像",
             "advanced_hint" => {
-                "这些设置已经足够制作第一张光盘。\n需要临时工作路径、菜单字体等高级选项时，请开启上方的“显示高级设置”。"
+                "这些设置已经足够制作第一张光盘。需要临时工作路径、菜单字体等高级选项时，请开启上方的“显示高级设置”。"
             }
             "profile" => "设置方案",
             "open" => "打开方案",
@@ -211,7 +211,7 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
         Lang::ZhHant => match key {
             "app_subtitle" => "把音樂製作成 DVD-Audio 光碟映像",
             "advanced_hint" => {
-                "這些設定已經足夠製作第一張光碟。\n需要暫存工作路徑、選單字型等高級選項時，請開啟上方的“顯示高級設定”。"
+                "這些設定已經足夠製作第一張光碟。需要暫存工作路徑、選單字型等高級選項時，請開啟上方的“顯示高級設定”。"
             }
             "profile" => "設定方案",
             "open" => "打開方案",

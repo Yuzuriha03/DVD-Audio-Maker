@@ -997,6 +997,173 @@ pub(crate) unsafe extern "system" fn buffered_label_proc(
     }
 }
 
+#[repr(C)]
+#[derive(Default)]
+struct TextExtent {
+    width: i32,
+    height: i32,
+}
+
+unsafe extern "system" {
+    fn GetTextExtentExPointW(
+        dc: Handle,
+        text: *const u16,
+        length: i32,
+        max_extent: i32,
+        fit: *mut i32,
+        widths: *mut i32,
+        extent: *mut TextExtent,
+    ) -> i32;
+}
+
+fn is_closing_punctuation(ch: char) -> bool {
+    matches!(
+        ch,
+        '.' | ','
+            | '!'
+            | '?'
+            | ':'
+            | ';'
+            | ')'
+            | ']'
+            | '}'
+            | '%'
+            | '。'
+            | '，'
+            | '、'
+            | '；'
+            | '：'
+            | '？'
+            | '！'
+            | '）'
+            | '】'
+            | '》'
+            | '」'
+            | '』'
+            | '〕'
+            | '〉'
+            | '”'
+            | '’'
+            | '»'
+            | '›'
+            | '…'
+    )
+}
+
+fn is_opening_punctuation(ch: char) -> bool {
+    matches!(
+        ch,
+        '(' | '[' | '{' | '（' | '【' | '《' | '「' | '『' | '“' | '‘' | '«' | '‹'
+    )
+}
+
+fn is_cjk_letter(ch: char) -> bool {
+    matches!(ch as u32,
+        0x3400..=0x9fff | 0x3040..=0x30ff | 0xf900..=0xfaff)
+}
+
+fn byte_at_utf16(text: &str, count: usize) -> usize {
+    let mut units = 0;
+    for (index, ch) in text.char_indices() {
+        if units >= count {
+            return index;
+        }
+        units += ch.len_utf16();
+        if units > count {
+            return index;
+        }
+    }
+    text.len()
+}
+
+fn choose_break(text: &str, fit: usize) -> usize {
+    if fit == 0 {
+        return text.chars().next().map_or(text.len(), char::len_utf8);
+    }
+    let Some(next) = text.get(fit..).and_then(|tail| tail.chars().next()) else {
+        return text.len();
+    };
+    let previous_start = text[..fit]
+        .char_indices()
+        .next_back()
+        .map_or(0, |(index, _)| index);
+    let mut candidate = None;
+    for (index, ch) in text.char_indices().take_while(|(index, _)| *index < fit) {
+        if index == 0 {
+            continue;
+        }
+        let previous = text[..index].chars().next_back().unwrap_or(ch);
+        if is_closing_punctuation(ch) || is_opening_punctuation(previous) {
+            continue;
+        }
+        if previous.is_whitespace()
+            || ch.is_whitespace()
+            || (is_cjk_letter(previous) && is_cjk_letter(ch))
+        {
+            candidate = Some(index);
+        }
+    }
+    if is_closing_punctuation(next)
+        || text[..fit]
+            .chars()
+            .next_back()
+            .is_some_and(is_opening_punctuation)
+    {
+        candidate.unwrap_or(previous_start).max(1)
+    } else {
+        candidate.unwrap_or(fit).max(1)
+    }
+}
+
+fn wrap_paragraph(dc: Handle, text: &str, width: i32) -> String {
+    let mut remaining = text;
+    let mut result = String::with_capacity(text.len());
+    while !remaining.is_empty() {
+        let wide_text = wide(remaining);
+        let length = i32::try_from(wide_text.len() - 1).unwrap_or(i32::MAX);
+        let mut fit = 0;
+        let mut extent = TextExtent::default();
+        let measured = unsafe {
+            GetTextExtentExPointW(
+                dc,
+                wide_text.as_ptr(),
+                length,
+                width,
+                &raw mut fit,
+                std::ptr::null_mut(),
+                &raw mut extent,
+            )
+        };
+        if measured == 0 {
+            result.push_str(remaining);
+            break;
+        }
+        let fit = byte_at_utf16(remaining, usize::try_from(fit).unwrap_or(0));
+        if fit >= remaining.len() {
+            result.push_str(remaining);
+            break;
+        }
+        let break_at = choose_break(remaining, fit);
+        let (line, rest) = remaining.split_at(break_at);
+        result.push_str(line.trim_end_matches(char::is_whitespace));
+        result.push('\n');
+        remaining = rest.trim_start_matches(char::is_whitespace);
+    }
+    result
+}
+
+/// Wraps labels using actual font metrics without changing any visible text.
+/// The only inserted characters are real newlines at safe break positions.
+pub(crate) fn wrap_label_text(dc: Handle, text: &str, width: i32) -> String {
+    if width <= 0 {
+        return text.into();
+    }
+    text.split('\n')
+        .map(|paragraph| wrap_paragraph(dc, paragraph, width))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Vertical offset for text drawn into a box shorter than its line(s): lift
 /// it by up to the font's internal leading so the descenders stay visible and
 /// only the empty space above the glyphs is cut.
@@ -1057,7 +1224,8 @@ pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
         }
         let font = SendMessageW(hwnd, WM_SETFONT + 1, 0, 0) as Handle; // WM_GETFONT
         let old = SelectObject(dc, if font.is_null() { ui_font() } else { font });
-        let wide_text = wide(&text);
+        let display_text = wrap_label_text(dc, &text, rect.right - rect.left);
+        let wide_text = wide(&display_text);
         let mut needed = Rect {
             left: 0,
             top: 0,
@@ -1128,4 +1296,26 @@ pub(crate) fn paint_page_border(hwnd: Hwnd) {
         FillRect(dc, &edge, border_brush());
     }
     ReleaseDC(hwnd, dc);
+}
+
+#[cfg(test)]
+mod wrap_tests {
+    use super::*;
+
+    #[test]
+    fn closing_punctuation_never_starts_a_new_line() {
+        for text in [
+            "这些设置已经足够制作第一张光盘。需要临时工作路径、菜单字体等高级选项时，请开启上方的“显示高级设置”。",
+            "這些設定已經足夠製作第一張光碟。需要暫存工作路徑、選單字型等高級選項時，請開啟上方的“顯示高級設定”。",
+            "These settings are enough for a first disc. Turn on Advanced settings above for the temporary folder, menu fonts and other options.",
+            "最初のディスク作成にはこの設定で十分です。一時フォルダーやメニューフォントなどの詳細設定は、上の「詳細設定を表示」で変更できます。",
+            "처음 디스크를 만들 때는 이 설정으로 충분합니다. 임시 폴드, 메뉴 글꼴 등을 변경하려면 위의 고급 설정을 켜세요.",
+        ] {
+            let fit = text.len() - text.chars().next_back().unwrap().len_utf8();
+            let break_at = choose_break(text, fit);
+            assert!(break_at < fit, "{text}");
+            assert!(!text[break_at..].starts_with(['。', '.']), "{text}");
+            assert_eq!(format!("{}{}", &text[..break_at], &text[break_at..]), text);
+        }
+    }
 }

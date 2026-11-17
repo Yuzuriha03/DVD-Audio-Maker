@@ -183,7 +183,6 @@ pub(crate) fn wrapped_text_height(text: &str, font: Handle, width: i32) -> i32 {
     if dc.is_null() {
         return 20;
     }
-    let wide_text = wide(text);
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -192,6 +191,8 @@ pub(crate) fn wrapped_text_height(text: &str, font: Handle, width: i32) -> i32 {
     };
     unsafe {
         let old = SelectObject(dc, font);
+        let display_text = super::draw::wrap_label_text(dc, text, scale(width));
+        let wide_text = wide(&display_text);
         DrawTextW(
             dc,
             wide_text.as_ptr(),
