@@ -308,6 +308,7 @@ const COMBO_IDS: &[usize] = &[
 const HEADER_HEIGHT: i32 = 70;
 const UI_FONT_HEIGHT: i32 = -16;
 
+#[derive(Default)]
 #[repr(C)]
 struct PaintStruct {
     dc: Handle,
@@ -372,6 +373,7 @@ struct ScrollbarVisual {
     last_page: i32,
 }
 
+#[derive(Default)]
 #[repr(C)]
 struct MeasureItemStruct {
     control_type: u32,
@@ -396,6 +398,7 @@ struct WndClass {
     class_name: *const u16,
 }
 
+#[derive(Default)]
 #[repr(C)]
 struct Message {
     hwnd: Hwnd,

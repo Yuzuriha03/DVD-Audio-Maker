@@ -1214,7 +1214,7 @@ pub(crate) unsafe extern "system" fn checkbox_proc(
 /// `hwnd` must be a checkbox created by `checkbox`, and this must run inside its
 /// `WM_PAINT` (it calls `BeginPaint` and `EndPaint`).
 pub(crate) unsafe fn draw_checkbox(hwnd: Hwnd) {
-    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let mut paint = PaintStruct::default();
     let dc = unsafe { BeginPaint(hwnd, &raw mut paint) };
     let mut rect = Rect {
         left: 0,
@@ -1409,7 +1409,7 @@ pub(crate) unsafe extern "system" fn combo_arrow_proc(
     reason = "Keeps the buffered paint lifetime and GDI object restoration visible in one ordered drawing operation"
 )]
 pub(crate) unsafe fn draw_combo_arrow(hwnd: Hwnd) {
-    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let mut paint = PaintStruct::default();
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_card()) };
     let dc = buffer.memory;
     let mut rect = Rect {

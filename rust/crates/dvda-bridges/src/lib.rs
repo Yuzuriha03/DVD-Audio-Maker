@@ -7,7 +7,6 @@ mod ffmpeg_pool;
 #[cfg(feature = "media")]
 pub use ffi_optimized::{
     check_result, check_result_unchecked, convert_audio_i16_to_f32_simd, should_batch_process,
-    text_borrowed,
 };
 
 #[cfg(feature = "media")]

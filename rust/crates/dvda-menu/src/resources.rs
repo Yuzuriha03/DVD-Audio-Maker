@@ -102,40 +102,22 @@ unsafe fn HeapFree(
     1
 }
 #[cfg(not(windows))]
-unsafe fn _wfopen(path: *const u16, mode: *const u16) -> *mut core::ffi::c_void {
-    use std::ffi::CString;
-    let mut wide_path = Vec::new();
-    let mut index = 0;
-    while unsafe { *path.add(index) } != 0 {
-        wide_path.push(unsafe { *path.add(index) });
-        index += 1;
-    }
-    let mut wide_mode = Vec::new();
-    let mut index = 0;
-    while unsafe { *mode.add(index) } != 0 {
-        wide_mode.push(unsafe { *mode.add(index) });
-        index += 1;
-    }
-    let Ok(path) = CString::new(String::from_utf16_lossy(&wide_path)) else {
-        return std::ptr::null_mut();
-    };
-    let Ok(mode) = CString::new(String::from_utf16_lossy(&wide_mode)) else {
-        return std::ptr::null_mut();
-    };
+fn narrow_string(wide: &[u16]) -> std::ffi::CString {
+    // The conversion sees only units preceding the first NUL (if any).
+    let units = wide.split(|&unit| unit == 0).next().unwrap_or_default();
+    std::ffi::CString::new(String::from_utf16_lossy(units)).expect("no embedded NUL")
+}
+#[cfg(not(windows))]
+fn _wfopen(path: &[u16], mode: &[u16]) -> *mut c_void {
+    let path = narrow_string(path);
+    let mode = narrow_string(mode);
+    // SAFETY: both terminated strings live through the synchronous CRT call.
     unsafe { fopen(path.as_ptr(), mode.as_ptr()) }
 }
 #[cfg(not(windows))]
-unsafe fn _wopen(path: *const u16, _flags: c_int, mode: c_int) -> c_int {
-    use std::ffi::CString;
-    let mut wide_path = Vec::new();
-    let mut index = 0;
-    while unsafe { *path.add(index) } != 0 {
-        wide_path.push(unsafe { *path.add(index) });
-        index += 1;
-    }
-    let Ok(path) = CString::new(String::from_utf16_lossy(&wide_path)) else {
-        return -1;
-    };
+fn _wopen(path: &[u16], _flags: c_int, mode: c_int) -> c_int {
+    let path = narrow_string(path);
+    // SAFETY: path is terminated and mode has the CRT's integer argument type.
     unsafe { open_fd(path.as_ptr(), 0o2 | 0o4000, mode) }
 }
 #[cfg(not(windows))]
@@ -482,7 +464,10 @@ pub unsafe extern "C" fn menu_rust_fopen(
         let (Ok(path), Ok(mode)) = (unsafe { wide(path) }, unsafe { wide(mode) }) else {
             return 1;
         };
+        #[cfg(windows)]
         let file = unsafe { _wfopen(path.as_ptr(), mode.as_ptr()) };
+        #[cfg(not(windows))]
+        let file = _wfopen(&path, &mode);
         if !file.is_null() && unsafe { own(file, FILE) }.is_err() {
             return 1;
         }
@@ -513,7 +498,10 @@ pub unsafe extern "C" fn menu_rust_open(
         let Ok(path) = (unsafe { wide(path) }) else {
             return 1;
         };
+        #[cfg(windows)]
         let file = unsafe { _wopen(path.as_ptr(), flags | BINARY, mode) };
+        #[cfg(not(windows))]
+        let file = _wopen(&path, flags | BINARY, mode);
         if file >= 0 && unsafe { own(file as isize as *mut c_void, DESCRIPTOR) }.is_err() {
             return 1;
         }

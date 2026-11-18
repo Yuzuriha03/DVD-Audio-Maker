@@ -357,7 +357,7 @@ unsafe extern "system" fn about_proc(
         WM_PAINT => {
             if let Some(state) = about_state(hwnd) {
                 unsafe {
-                    let mut paint: PaintStruct = std::mem::zeroed();
+                    let mut paint = PaintStruct::default();
                     let buffer = begin_window_paint(hwnd, &mut paint, c_body());
                     dialog_ui::paint_chrome(
                         hwnd,
@@ -658,7 +658,7 @@ fn edit_has_overflow(edit: Hwnd) -> bool {
         return false;
     }
     let font = unsafe { SendMessageW(edit, WM_GETFONT, 0, 0) } as Handle;
-    let mut metrics: TextMetric = unsafe { std::mem::zeroed() };
+    let mut metrics = TextMetric::default();
     let old = if font.is_null() {
         ptr::null_mut()
     } else {

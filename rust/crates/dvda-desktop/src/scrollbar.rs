@@ -193,7 +193,7 @@ pub(crate) unsafe fn apply_scrollbar_value(main: Hwnd, hwnd: Hwnd, value: i32) {
 /// its `WM_PAINT`.
 pub(crate) unsafe fn draw_scrollbar(hwnd: Hwnd) {
     // Composed off-screen: the track and the thumb reach the screen together.
-    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let mut paint = PaintStruct::default();
     let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_body()) };
     let dc = buffer.memory;
     let rect = buffer.rect;

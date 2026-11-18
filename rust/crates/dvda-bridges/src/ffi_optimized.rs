@@ -1,23 +1,4 @@
 //! Small FFI helpers with checked buffer lengths and portable CPU dispatch.
-use std::ffi::c_char;
-
-/// Borrow a UTF-8 C string for the lifetime of the caller's live C object.
-///
-/// # Safety
-/// A non-null pointer must address a terminated, readable C string which stays
-/// live and immutable for the entire returned borrow.
-#[inline]
-#[must_use]
-pub unsafe fn text_borrowed<'a>(p: *const c_char) -> &'a str {
-    if p.is_null() {
-        ""
-    } else {
-        unsafe { std::ffi::CStr::from_ptr(p) }
-            .to_str()
-            .unwrap_or("")
-    }
-}
-
 /// Convert an `FFmpeg` status into a Rust result.
 ///
 /// # Errors

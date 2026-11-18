@@ -50,24 +50,11 @@ fn report_language() -> String {
     "zh-CN".into()
 }
 
-#[cfg(target_os = "android")]
 fn open_source_document(path: &str) -> std::io::Result<fs::File> {
-    use std::os::fd::FromRawFd;
-    if let Some(fd) = path
-        .strip_prefix("/proc/self/fd/")
-        .and_then(|value| value.parse::<i32>().ok())
-    {
-        let duplicated = unsafe { libc::dup(fd) };
-        if duplicated < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        return Ok(unsafe { fs::File::from_raw_fd(duplicated) });
+    #[cfg(target_os = "android")]
+    if let Some(file) = crate::identity::duplicate_source_fd(path) {
+        return file;
     }
-    fs::File::open(path)
-}
-
-#[cfg(not(target_os = "android"))]
-fn open_source_document(path: &str) -> std::io::Result<fs::File> {
     fs::File::open(path)
 }
 impl Job {

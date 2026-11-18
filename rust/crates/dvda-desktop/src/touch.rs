@@ -9,6 +9,7 @@ const GID_PAN: u32 = 4;
 const PAN_WANT: u32 = 1 | 2 | 8 | 16;
 const PAN_BLOCK: u32 = 4;
 
+#[derive(Default)]
 #[repr(C)]
 struct GestureInfo {
     size: u32,
@@ -57,6 +58,7 @@ struct Pan {
     log: bool,
 }
 
+#[derive(Default)]
 #[repr(C)]
 struct ComboInfo {
     size: u32,
@@ -74,8 +76,10 @@ unsafe extern "system" {
 }
 
 pub(super) fn install_combo(hwnd: Hwnd) {
-    let mut info: ComboInfo = unsafe { std::mem::zeroed() };
-    info.size = u32::try_from(std::mem::size_of::<ComboInfo>()).unwrap();
+    let mut info = ComboInfo {
+        size: u32::try_from(std::mem::size_of::<ComboInfo>()).unwrap(),
+        ..Default::default()
+    };
     if unsafe { GetComboBoxInfo(hwnd, &raw mut info) } != 0 {
         install(info.list, false);
     }
@@ -132,8 +136,10 @@ unsafe extern "system" fn pan_proc(
         }
     }
     if message == WM_GESTURE {
-        let mut info: GestureInfo = unsafe { std::mem::zeroed() };
-        info.size = u32::try_from(std::mem::size_of::<GestureInfo>()).unwrap();
+        let mut info = GestureInfo {
+            size: u32::try_from(std::mem::size_of::<GestureInfo>()).unwrap(),
+            ..Default::default()
+        };
         if unsafe { GetGestureInfo(lparam as Handle, &raw mut info) } != 0 && info.id == GID_PAN {
             let pan = unsafe { &mut *(data as *mut Pan) };
             if info.flags & 1 != 0 {

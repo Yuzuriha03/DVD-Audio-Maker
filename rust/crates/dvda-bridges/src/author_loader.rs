@@ -1,4 +1,4 @@
-use crate::win::{GetLastError, GetModuleFileNameW, GetProcAddress, Handle, wide};
+use crate::win::{GetLastError, GetProcAddress, Handle, wide};
 use std::{
     ffi::{c_char, c_void},
     path::PathBuf,
@@ -21,20 +21,10 @@ unsafe extern "system" {
     fn LoadLibraryExW(path: *const u16, file: Handle, flags: u32) -> Handle;
     fn FreeLibrary(module: Handle) -> i32;
 }
-/// # Safety
-/// Calls the Win32 module-file query with a null module handle and a buffer it owns.
-/// There are no pointer obligations; the function is unsafe only because it calls Win32.
-unsafe fn directory() -> Option<PathBuf> {
-    unsafe {
-        let mut path = vec![0u16; 32768];
-        let n = GetModuleFileNameW(std::ptr::null_mut(), path.as_mut_ptr(), 32768);
-        if n == 0 || n == 32768 {
-            return None;
-        }
-        path.truncate(n as usize);
-        let p = PathBuf::from(String::from_utf16_lossy(&path));
-        p.parent().map(PathBuf::from)
-    }
+fn directory() -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    let path = PathBuf::from(executable.to_string_lossy().into_owned());
+    path.parent().map(PathBuf::from)
 }
 /// # Safety
 /// `path` is converted to a NUL-terminated wide string that lives for the call.

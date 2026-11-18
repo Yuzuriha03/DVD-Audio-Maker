@@ -9,25 +9,31 @@ use std::{
 const SAMPLE_BYTES: usize = 64 * 1024;
 const FILETIME_EPOCH_TICKS: u64 = 504_911_232_000_000_000;
 
+#[cfg(target_os = "android")]
+pub(crate) fn duplicate_source_fd(path: &str) -> Option<io::Result<File>> {
+    use std::os::fd::FromRawFd;
+
+    let fd = path.strip_prefix("/proc/self/fd/")?.parse::<i32>().ok()?;
+    // SAFETY: dup accepts any integer and returns an error for an invalid descriptor.
+    let duplicated = unsafe { libc::dup(fd) };
+    Some(if duplicated < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        // SAFETY: dup returned a new, owned descriptor, transferred to File once.
+        Ok(unsafe { File::from_raw_fd(duplicated) })
+    })
+}
+
 /// Opens a file for reading while allowing only concurrent readers.
 ///
 /// # Errors
 /// Returns the OS error if opening the file fails, including sharing conflicts.
 pub fn open_read(path: &str) -> io::Result<File> {
     #[cfg(target_os = "android")]
-    if let Some(fd) = path
-        .strip_prefix("/proc/self/fd/")
-        .and_then(|value| value.parse::<i32>().ok())
-    {
-        use std::os::fd::FromRawFd;
-        let duplicated = unsafe { libc::dup(fd) };
-        if duplicated < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        if unsafe { libc::lseek(duplicated, 0, libc::SEEK_SET) } < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        return Ok(unsafe { File::from_raw_fd(duplicated) });
+    if let Some(file) = duplicate_source_fd(path) {
+        let mut file = file?;
+        file.rewind()?;
+        return Ok(file);
     }
     // Match File.OpenRead: concurrent readers are allowed, writers/deletion are not.
     OpenOptions::new().read(true).share_mode(1).open(path)

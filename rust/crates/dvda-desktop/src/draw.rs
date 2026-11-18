@@ -831,7 +831,7 @@ pub(crate) fn clear_window_paint_cache(hwnd: Hwnd) {
     reason = "Keeps buffered window painting and GDI resource restoration in their original order"
 )]
 pub(crate) unsafe fn paint_window(hwnd: Hwnd) {
-    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let mut paint = PaintStruct::default();
     let buffer = unsafe { begin_window_paint(hwnd, &mut paint, c_body()) };
     let dc = buffer.memory;
     let mut rect = Rect {
@@ -977,7 +977,7 @@ pub(crate) unsafe extern "system" fn buffered_label_proc(
         match message {
             WM_ERASEBKGND => 1,
             WM_PAINT => {
-                let mut paint = std::mem::zeroed();
+                let mut paint = PaintStruct::default();
                 let background = if window_class(GetParent(hwnd)) == "DVD_AUDIO_PAGE_RUST" {
                     c_panel()
                 } else {
@@ -1294,7 +1294,7 @@ pub(crate) unsafe fn draw_label(hwnd: Hwnd, dc: Handle) {
 pub(crate) unsafe fn paint_page(hwnd: Hwnd) {
     // Only the panel colour: the controls paint themselves and the border is
     // non-client. Unbuffered, so a scroll step fills just its uncovered strip.
-    let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+    let mut paint = PaintStruct::default();
     unsafe {
         let dc = BeginPaint(hwnd, &raw mut paint);
         FillRect(dc, &paint.paint, panel_brush());

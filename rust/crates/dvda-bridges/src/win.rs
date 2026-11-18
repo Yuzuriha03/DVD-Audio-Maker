@@ -123,19 +123,6 @@ pub fn module_path(_name: &str) -> Option<String> {
         .map(|path| path.to_string_lossy().into_owned())
 }
 
-/// # Safety
-/// Pointer arguments must be valid for their documented ABI and remain live throughout the call.
-#[must_use]
-pub unsafe fn wtext(p: *const u16) -> Vec<u16> {
-    // SAFETY: the caller guarantees a readable, NUL-terminated UTF-16 string.
-    unsafe {
-        let mut n = 0;
-        while *p.add(n) != 0 {
-            n += 1;
-        }
-        std::slice::from_raw_parts(p, n).to_vec()
-    }
-}
 static ACTIVE_MEDIA_JOBS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 pub(crate) struct MediaJobGuard;

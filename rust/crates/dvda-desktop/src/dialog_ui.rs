@@ -605,7 +605,7 @@ unsafe extern "system" fn dialog_proc(
         WM_PAINT => {
             if let Some(state) = dialog_state(hwnd) {
                 unsafe {
-                    let mut paint: PaintStruct = std::mem::zeroed();
+                    let mut paint = PaintStruct::default();
                     let buffer = begin_window_paint(hwnd, &mut paint, c_body());
                     paint_chrome(
                         hwnd,
@@ -739,6 +739,7 @@ unsafe extern "system" fn dialog_proc(
     }
 }
 
+#[derive(Default)]
 #[repr(C)]
 struct PageScrollInfo {
     size: u32,
@@ -806,11 +807,13 @@ unsafe extern "system" fn page_scrollbar_proc(
         }
         WM_PAINT => {
             unsafe {
-                let mut paint: PaintStruct = std::mem::zeroed();
+                let mut paint = PaintStruct::default();
                 let buffer = begin_window_paint(hwnd, &mut paint, c_body());
-                let mut info: PageScrollInfo = std::mem::zeroed();
-                info.size = u32::try_from(std::mem::size_of::<PageScrollInfo>()).unwrap();
-                info.mask = 0x0017;
+                let mut info = PageScrollInfo {
+                    size: u32::try_from(std::mem::size_of::<PageScrollInfo>()).unwrap(),
+                    mask: 0x0017,
+                    ..Default::default()
+                };
                 if GetScrollInfo(visual.host, 1, &raw mut info) == 0 {
                     // Fall through with zeroed metrics; the thumb is skipped.
                     info.maximum = -1;
@@ -841,9 +844,11 @@ unsafe extern "system" fn page_scrollbar_proc(
         }
         WM_ERASEBKGND => 1,
         WM_LBUTTONDOWN => {
-            let mut info: PageScrollInfo = unsafe { std::mem::zeroed() };
-            info.size = u32::try_from(std::mem::size_of::<PageScrollInfo>()).unwrap();
-            info.mask = 0x0017;
+            let mut info = PageScrollInfo {
+                size: u32::try_from(std::mem::size_of::<PageScrollInfo>()).unwrap(),
+                mask: 0x0017,
+                ..Default::default()
+            };
             unsafe {
                 GetScrollInfo(visual.host, 1, &raw mut info);
             }
@@ -873,9 +878,11 @@ unsafe extern "system" fn page_scrollbar_proc(
         }
         WM_MOUSEMOVE => {
             if visual.dragging {
-                let mut info: PageScrollInfo = unsafe { std::mem::zeroed() };
-                info.size = u32::try_from(std::mem::size_of::<PageScrollInfo>()).unwrap();
-                info.mask = 0x0017;
+                let mut info = PageScrollInfo {
+                    size: u32::try_from(std::mem::size_of::<PageScrollInfo>()).unwrap(),
+                    mask: 0x0017,
+                    ..Default::default()
+                };
                 unsafe {
                     GetScrollInfo(visual.host, 1, &raw mut info);
                 }
@@ -1033,7 +1040,7 @@ unsafe extern "system" fn content_host_proc(
         }
         WM_PAINT => {
             unsafe {
-                let mut paint: PaintStruct = std::mem::zeroed();
+                let mut paint = PaintStruct::default();
                 let buffer = begin_window_paint(hwnd, &mut paint, c_body());
                 finish_window_paint(hwnd, &paint, buffer);
             }

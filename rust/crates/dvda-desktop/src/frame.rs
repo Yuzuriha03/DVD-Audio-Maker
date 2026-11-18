@@ -162,7 +162,7 @@ pub(crate) unsafe extern "system" fn splitter_preview_proc(
 ) -> Lresult {
     match message {
         WM_PAINT => {
-            let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+            let mut paint = PaintStruct::default();
             let dc = unsafe { BeginPaint(hwnd, &raw mut paint) };
             let mut rect = Rect {
                 left: 0,
@@ -278,7 +278,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 // window as tall as the work area.
                 let mut info = MonitorInfo {
                     size: u32::try_from(std::mem::size_of::<MonitorInfo>()).unwrap(),
-                    ..std::mem::zeroed()
+                    ..Default::default()
                 };
                 if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0
                     && cursor.y <= info.monitor.top
@@ -293,7 +293,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 // screen makes the window as tall as the work area.
                 let mut info = MonitorInfo {
                     size: u32::try_from(std::mem::size_of::<MonitorInfo>()).unwrap(),
-                    ..std::mem::zeroed()
+                    ..Default::default()
                 };
                 if GetMonitorInfoW(MonitorFromPoint(cursor, 2), &mut info) != 0
                     && cursor.y >= info.monitor.bottom - 1
@@ -323,7 +323,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
         let mut current = start;
         SetCapture(hwnd);
         let mut apply = false;
-        let mut message: Message = std::mem::zeroed();
+        let mut message = Message::default();
         // WM_QUIT (GetMessageW returns 0) must reach the outer loop again, or the
         // process would keep running after the window is destroyed mid-drag.
         let mut quit = None;
@@ -412,7 +412,7 @@ pub(crate) unsafe fn outline_resize(hwnd: Hwnd, hit: usize, origin: Point) {
                 // rcNormalPosition uses workspace coordinates.
                 let mut info = MonitorInfo {
                     size: u32::try_from(std::mem::size_of::<MonitorInfo>()).unwrap(),
-                    ..std::mem::zeroed()
+                    ..Default::default()
                 };
                 let center = Point {
                     x: i32::midpoint(current.left, current.right),

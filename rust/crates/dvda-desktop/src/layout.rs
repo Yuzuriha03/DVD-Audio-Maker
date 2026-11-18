@@ -340,7 +340,7 @@ pub(crate) unsafe extern "system" fn log_frame_proc(
     match message {
         WM_ERASEBKGND => 1,
         WM_PAINT => {
-            let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+            let mut paint = PaintStruct::default();
             let buffer = unsafe { begin_buffered_paint(hwnd, &mut paint, c_card()) };
             unsafe { finish_buffered_paint(hwnd, &paint, &buffer) };
             0

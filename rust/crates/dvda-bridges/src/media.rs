@@ -36,7 +36,7 @@ pub struct Request {
     pub tags: *const *const c_char,
 }
 thread_local! {
-    static ACTIVE: std::cell::Cell<*const Call> = const { std::cell::Cell::new(ptr::null()) };
+    static ACTIVE: std::cell::Cell<Option<Call>> = const { std::cell::Cell::new(None) };
 }
 unsafe extern "C" fn logger(
     context: *mut c_void,
@@ -44,34 +44,33 @@ unsafe extern "C" fn logger(
     format: *const c_char,
     arguments: *mut c_char,
 ) {
+    if level > 16 {
+        return;
+    }
+    let Some(call) = ACTIVE.with(std::cell::Cell::get) else {
+        return;
+    };
+    let mut buffer = [0i8; 2048];
+    let mut print_prefix = 0;
+    // SAFETY: FFmpeg supplies its logging arguments; the local buffer is writable.
     unsafe {
-        if level > 16 {
-            return;
-        }
-        ACTIVE.with(|active| {
-            let call = active.get();
-            if call.is_null() {
-                return;
-            }
-            let mut buffer = [0i8; 2048];
-            let mut print_prefix = 0;
-            av_log_format_line2(
-                context,
-                level,
-                format,
-                arguments,
-                buffer.as_mut_ptr().cast(),
-                i32::try_from(buffer.len()).expect("FFmpeg log buffer fits in i32"),
-                &raw mut print_prefix,
-            );
-            buffer[2047] = 0;
-            if let Some(emit) = (*call).emit {
-                emit((*call).state, 2, buffer.as_ptr().cast());
-            }
-        });
+        av_log_format_line2(
+            context,
+            level,
+            format,
+            arguments,
+            buffer.as_mut_ptr().cast(),
+            i32::try_from(buffer.len()).expect("FFmpeg log buffer fits in i32"),
+            &raw mut print_prefix,
+        );
+    }
+    buffer[2047] = 0;
+    if let Some(emit) = call.emit {
+        // SAFETY: the active call's scoped guard keeps its callback context live.
+        unsafe { emit(call.state, 2, buffer.as_ptr().cast()) };
     }
 }
-struct ActiveGuard(*const Call);
+struct ActiveGuard(Option<Call>);
 impl Drop for ActiveGuard {
     fn drop(&mut self) {
         ACTIVE.with(|active| active.set(self.0));
@@ -486,7 +485,7 @@ pub unsafe extern "C" fn dvdamedia_run(
         };
         let _media_job = crate::win::media_job();
         av_log_set_callback(Some(logger));
-        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&raw const call)));
+        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(Some(call))));
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run(&*request, &mut call, None)
         }))
@@ -527,7 +526,7 @@ pub unsafe fn audio_sink(
         }
         let _media_job = crate::win::media_job();
         av_log_set_callback(Some(logger));
-        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(&raw const *call)));
+        let _active = ActiveGuard(ACTIVE.with(|active| active.replace(Some(*call))));
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run(request, call, Some(sink))
         }))

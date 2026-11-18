@@ -433,7 +433,7 @@ fn task_start_is_visible_in_summary_before_progress_events() {
 #[test]
 fn combo_measurement_preserves_original_item_height() {
     let _ui_test_lock = ui_test_guard();
-    let mut item: MeasureItemStruct = unsafe { std::mem::zeroed() };
+    let mut item = MeasureItemStruct::default();
     unsafe {
         window_proc(ptr::null_mut(), WM_MEASUREITEM, 0, &raw mut item as Lparam);
     }
@@ -2131,14 +2131,14 @@ fn window_paint_cache_throughput() {
         if round % 2 == 0 {
             let started = Instant::now();
             for _ in 0..CALLS {
-                let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+                let mut paint = PaintStruct::default();
                 let buffer = unsafe { begin_buffered_paint(parent, &mut paint, c_body()) };
                 unsafe { finish_buffered_paint(parent, &paint, &buffer) };
             }
             legacy_times.push(started.elapsed());
             let started = Instant::now();
             for _ in 0..CALLS {
-                let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+                let mut paint = PaintStruct::default();
                 let buffer =
                     unsafe { super::draw::begin_window_paint(parent, &mut paint, c_body()) };
                 unsafe { super::draw::finish_window_paint(parent, &paint, buffer) };
@@ -2147,7 +2147,7 @@ fn window_paint_cache_throughput() {
         } else {
             let started = Instant::now();
             for _ in 0..CALLS {
-                let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+                let mut paint = PaintStruct::default();
                 let buffer =
                     unsafe { super::draw::begin_window_paint(parent, &mut paint, c_body()) };
                 unsafe { super::draw::finish_window_paint(parent, &paint, buffer) };
@@ -2155,7 +2155,7 @@ fn window_paint_cache_throughput() {
             cached_times.push(started.elapsed());
             let started = Instant::now();
             for _ in 0..CALLS {
-                let mut paint: PaintStruct = unsafe { std::mem::zeroed() };
+                let mut paint = PaintStruct::default();
                 let buffer = unsafe { begin_buffered_paint(parent, &mut paint, c_body()) };
                 unsafe { finish_buffered_paint(parent, &paint, &buffer) };
             }
