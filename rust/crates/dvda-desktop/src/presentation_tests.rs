@@ -849,24 +849,53 @@ fn real_controls_busy_cancel_bounded_archive_and_paused_completion() {
     };
     let initial_menu = checked(ui.controls.menu);
     let initial_advanced = checked(ui.controls.advanced);
-    check(ui.controls.menu, true);
-    check(ui.controls.advanced, false);
-    update_advanced(&ui);
-    let font_labels = |ui: &UiState| {
-        ui.labels
-            .iter()
-            .filter(|(_, key)| matches!(*key, "font_sc" | "font_jp" | "font_kr"))
-            .map(|(hwnd, _)| *hwnd)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(font_labels(&ui).len(), 3);
-    assert!(font_labels(&ui).iter().all(|hwnd| !visible(*hwnd)));
-    check(ui.controls.advanced, true);
-    update_advanced(&ui);
-    assert!(font_labels(&ui).iter().all(|hwnd| visible(*hwnd)));
-    check(ui.controls.menu, false);
-    update_advanced(&ui);
-    assert!(font_labels(&ui).iter().all(|hwnd| !visible(*hwnd)));
+    let mut font_controls = vec![
+        ui.controls.font_sc,
+        ui.controls.font_jp,
+        ui.controls.font_kr,
+    ];
+    for (hwnd, key) in &ui.labels {
+        if matches!(*key, "font_sc" | "font_jp" | "font_kr") {
+            font_controls.push(*hwnd);
+        }
+    }
+    for id in [1007, 1008, 1009] {
+        let browse = GetDlgItem(ui.pages[2], id);
+        assert!(!browse.is_null());
+        font_controls.push(browse);
+    }
+    assert_eq!(font_controls.len(), 9);
+    let mut collapsed_height = None;
+    for (menu, advanced) in [
+        (false, false),
+        (false, true),
+        (true, true),
+        (true, false),
+        (false, false),
+    ] {
+        check(ui.controls.menu, menu);
+        check(ui.controls.advanced, advanced);
+        update_advanced(&ui);
+        for &control in &font_controls {
+            assert_eq!(
+                visible(control),
+                menu && advanced,
+                "menu={menu}, advanced={advanced}"
+            );
+        }
+        for control in [
+            ui.controls.stills,
+            ui.controls.tracks,
+            ui.controls.cover,
+            ui.controls.norm,
+        ] {
+            assert_eq!(visible(control), menu);
+        }
+        if !menu {
+            let height = page_content_height(ui.pages[2]);
+            assert_eq!(*collapsed_height.get_or_insert(height), height);
+        }
+    }
     check(ui.controls.menu, initial_menu);
     check(ui.controls.advanced, initial_advanced);
     update_advanced(&ui);

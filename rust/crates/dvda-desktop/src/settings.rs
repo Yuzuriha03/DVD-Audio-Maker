@@ -348,12 +348,12 @@ pub(crate) fn update_menu_visibility(state: &UiState) {
     ] {
         show_window(control, menu);
     }
-    let advanced = checked(state.controls.advanced);
+    let show_fonts = menu && checked(state.controls.advanced);
     for (hwnd, key) in &state.labels {
         if matches!(*key, "stills" | "tracks" | "cover" | "norm") {
             show_window(*hwnd, menu);
         } else if matches!(*key, "font_sc" | "font_jp" | "font_kr") {
-            show_window(*hwnd, menu && advanced);
+            show_window(*hwnd, show_fonts);
         }
     }
     // Only the menu font pickers belong to the menu section. The source,
@@ -362,12 +362,9 @@ pub(crate) fn update_menu_visibility(state: &UiState) {
     // "advanced", and the import one follows the audio mode.
     for hwnd in &state.browse_buttons {
         let id = (GetDlgCtrlID(*hwnd) as isize).cast_unsigned();
-        let is_font_picker = state
-            .browse
-            .get(&id)
-            .is_some_and(|(_, kind)| matches!(kind, BrowseKind::Font));
-        if is_font_picker {
-            show_window(*hwnd, menu && advanced);
+        if let Some((field, BrowseKind::Font)) = state.browse.get(&id) {
+            show_window(*field, show_fonts);
+            show_window(*hwnd, show_fonts);
         }
     }
 }

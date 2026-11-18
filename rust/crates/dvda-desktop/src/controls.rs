@@ -651,24 +651,8 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     let caption_close = caption_button(parent, ID_CLOSE);
     let theme_button = caption_button(parent, ID_THEME);
     // Preserve the old distinction between everyday and advanced settings.
-    let mut advanced_controls = vec![
-        c.work_dir,
-        c.iso_prefix,
-        c.group_limit,
-        c.keep_files,
-        c.font_sc,
-        c.font_jp,
-        c.font_kr,
-    ];
-    let advanced_keys = [
-        "work_dir",
-        "iso_prefix",
-        "group_limit",
-        "keep_files",
-        "font_sc",
-        "font_jp",
-        "font_kr",
-    ];
+    let mut advanced_controls = vec![c.work_dir, c.iso_prefix, c.group_limit, c.keep_files];
+    let advanced_keys = ["work_dir", "iso_prefix", "group_limit", "keep_files"];
     advanced_controls.extend(
         labels
             .iter()
