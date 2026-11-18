@@ -23,6 +23,7 @@ use super::dialog_ui::{
 };
 use super::draw::{begin_window_paint, draw_owner_item_contents, finish_window_paint};
 use super::frame::{begin_outline_resize, borderless_hit_test, borderless_nccalcsize};
+use super::updates;
 use super::*;
 
 const IDOK: usize = 1;
@@ -45,6 +46,7 @@ const EDIT_MIN_HEIGHT_DIP: i32 = 150;
 const MIN_WIDTH_DIP: i32 = 640;
 const MIN_HEIGHT_DIP: i32 = 520;
 const ID_LICENSE_BASE: usize = 7000;
+const ID_UPDATE_CHECK: usize = 7010;
 
 const DOCUMENTS: [(&str, &str); 6] = [
     ("LICENSE", PROJECT_LICENSE),
@@ -81,6 +83,7 @@ enum FontRole {
 }
 
 struct AboutState {
+    owner: Hwnd,
     theme: Theme,
     lang: Lang,
     title: String,
@@ -93,6 +96,8 @@ struct AboutState {
     selected: Hwnd,
     edit: Hwnd,
     close: Hwnd,
+    update_check: Hwnd,
+    checking_updates: bool,
     footer: Hwnd,
     page_bar: Hwnd,
     content: Hwnd,
@@ -130,6 +135,14 @@ fn clamp_minimum(desired: i32, work_area: i32, maximum: i32) -> i32 {
         desired
     };
     desired.min(limit).max(1)
+}
+
+fn version_text(lang: Lang) -> String {
+    format!(
+        "{} · {}",
+        tr(lang, "author_version"),
+        updates::display_version()
+    )
 }
 
 fn apply_fonts(state: &AboutState) {
@@ -298,6 +311,18 @@ fn layout(window: Hwnd) {
         1,
     );
     let footer_width = measure_button(&state.theme, &get_text(state.footer));
+    let update_width = measure_button(&state.theme, &get_text(state.update_check));
+    let update_width = update_width.min(
+        (client.right - margin * 2 - footer_width - state.theme.sd(8)).max(state.theme.sd(80)),
+    );
+    MoveWindow(
+        state.update_check,
+        margin,
+        footer_top,
+        update_width,
+        footer_height,
+        1,
+    );
     MoveWindow(
         state.footer,
         client.right - margin - footer_width,
@@ -423,6 +448,14 @@ unsafe extern "system" fn about_proc(
         }
         WM_COMMAND => {
             let id = wparam & 0xffff;
+            if id == ID_UPDATE_CHECK {
+                if let Some(state) = about_state(hwnd) {
+                    state.checking_updates = true;
+                    set_text(state.update_check, tr(state.lang, "checking_updates"));
+                    updates::request_check(state.owner, true, state.lang);
+                }
+                return 0;
+            }
             if id == ID_CLOSE || id == IDOK {
                 DestroyWindow(hwnd);
                 return 0;
@@ -610,6 +643,24 @@ fn license_summary(lang: Lang) -> String {
     )
 }
 
+/// Live About window, used as the owner of manual update-check dialogs.
+pub(crate) fn current_window() -> Option<Hwnd> {
+    let window = ABOUT_WINDOW.load(Ordering::Acquire) as Hwnd;
+    (!window.is_null() && IsWindow(window) != 0).then_some(window)
+}
+
+pub(crate) fn reset_update_check() {
+    let window = ABOUT_WINDOW.load(Ordering::Acquire) as Hwnd;
+    if window.is_null() || IsWindow(window) == 0 {
+        return;
+    }
+    let Some(state) = about_state(window) else {
+        return;
+    };
+    state.checking_updates = false;
+    set_text(state.update_check, tr(state.lang, "check_updates"));
+}
+
 /// Applies the main window's dark scrollbar theme to the About page and its
 /// licence reading pane; native light scrollbars would break the popup style.
 fn apply_dark_scrollbars(window: Hwnd, edit: Hwnd) {
@@ -706,7 +757,18 @@ fn apply_language(window: Hwnd, state: &mut AboutState, lang: Lang) {
     set_text(state.bio, &state.bio_text);
     state.project_text = format!("{}\n{}", tr(lang, "project_home"), tr(lang, "project_url"));
     set_text(state.project, &state.project_text);
-    set_text(state.version, tr(lang, "author_version"));
+    set_text(state.version, &version_text(lang));
+    set_text(
+        state.update_check,
+        tr(
+            lang,
+            if state.checking_updates {
+                "checking_updates"
+            } else {
+                "check_updates"
+            },
+        ),
+    );
     state.licenses_text = license_summary(lang);
     set_text(state.licenses, &state.licenses_text);
     set_text(state.selected, DOCUMENTS[state.selected_index].0);
@@ -830,7 +892,7 @@ pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
     let bio = label(&bio_text, FontRole::Body);
     let project_text = format!("{}\n{}", tr(lang, "project_home"), tr(lang, "project_url"));
     let project = label(&project_text, FontRole::Small);
-    let version = label(tr(lang, "author_version"), FontRole::Small);
+    let version = label(&version_text(lang), FontRole::Small);
     let licenses_text = license_summary(lang);
     let licenses = label(&licenses_text, FontRole::Small);
     let selected = label(DOCUMENTS[0].0, FontRole::Strong);
@@ -843,11 +905,18 @@ pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
             ButtonKind::ListItem,
         ));
     }
+    let update_check = create_button(
+        window,
+        tr(lang, "check_updates"),
+        ID_UPDATE_CHECK,
+        ButtonKind::Primary,
+    );
     let footer = create_button(window, tr(lang, "dialog_close"), IDOK, ButtonKind::Primary);
     let edit = create_license_edit(content);
     let page_bar = create_page_scrollbar(window);
     apply_dark_scrollbars(window, edit);
     let state = Box::new(AboutState {
+        owner: parent,
         theme,
         lang,
         title,
@@ -860,6 +929,8 @@ pub(crate) fn show_about(parent: Hwnd, lang: Lang) -> Hwnd {
         selected,
         edit,
         close,
+        update_check,
+        checking_updates: false,
         footer,
         page_bar,
         content,
@@ -981,6 +1052,7 @@ mod tests {
             state.edit,
             state.footer,
             state.close,
+            state.update_check,
         ];
         controls.extend(state.license_buttons.iter().copied());
         for control in controls {
@@ -1062,7 +1134,7 @@ mod tests {
             assert_eq!(get_text(state.name), tr(lang, "author_name"));
             assert_eq!(get_text(state.role), tr(lang, "author_role"));
             assert_eq!(get_text(state.bio), tr(lang, "author_bio"));
-            assert_eq!(get_text(state.version), tr(lang, "author_version"));
+            assert_eq!(get_text(state.version), version_text(lang));
             let summary = get_text(state.licenses);
             assert!(
                 summary.starts_with(tr(lang, "author_licenses")),
@@ -1183,6 +1255,16 @@ mod tests {
                 for width_dip in [640, 900] {
                     MoveWindow(window, 0, 0, px(dpi, width_dip), px(dpi, 680), 0);
                     assert_children_inside(window);
+                    let state = state(window);
+                    assert_eq!(get_text(state.update_check), tr(lang, "check_updates"));
+                    assert!(get_text(state.version).contains(&updates::display_version()));
+                    let check = window_rect(state.update_check);
+                    let close = window_rect(state.footer);
+                    assert!(check.right <= close.left);
+                    assert!(
+                        check.right - check.left
+                            >= measure_button(&state.theme, tr(lang, "check_updates"),)
+                    );
                 }
             }
             DestroyWindow(window);

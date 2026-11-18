@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
@@ -8,6 +10,7 @@ import 'src/models/profile_catalog.dart';
 import 'src/services/app_controller.dart';
 import 'src/services/platform_service.dart';
 import 'src/services/settings_store.dart';
+import 'src/services/update_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,13 +34,20 @@ Future<void> main() async {
   } catch (_) {
     settings = AppSettings();
   }
+  final platform = PlatformService();
   final controller = AppController(
     settings: settings,
     store: store,
-    platform: PlatformService(),
+    platform: platform,
   );
   await controller.initialize();
-  runApp(DvdaMakerApp(controller: controller));
+  final updateService = UpdateService.forCurrentApp(platform);
+  runApp(DvdaMakerApp(controller: controller, updateService: updateService));
+  // Background update check is independent of the production task flow and is
+  // silent for "no update", offline and parse failures.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(updateService.autoCheck(controller.strings));
+  });
 }
 
 /// Shown when the shared Rust profile catalog cannot be loaded.

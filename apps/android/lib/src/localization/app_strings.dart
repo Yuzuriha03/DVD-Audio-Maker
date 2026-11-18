@@ -75,6 +75,20 @@ class AppStrings {
     'ffmpegLicenses': 'FFmpeg license',
     'bundledLicenses': 'Bundled license files',
     'appInfo': 'App information',
+    'updateCheck': 'Check for updates',
+    'updateChecking': 'Checking for updates…',
+    'updateAvailable': 'Version {version} is available',
+    'updateUpToDate': 'You are up to date ({version})',
+    'updateCheckFailed':
+        'The update check failed (invalid response or error). Try again later.',
+    'updateCurrentVersion': 'Current version: {version}',
+    'updateDownload': 'Download',
+    'updateNetworkFailed':
+        'Network unavailable or the request timed out. Check the connection and try again.',
+    'updateClose': 'OK',
+    'updateNotificationTitle': 'Update available',
+    'updateNotificationText':
+        'Version {version} is available. Tap to download.',
     'advancedSettingsHint':
         'Controls disc grouping, image prefix, menu fonts and other advanced options.',
     'advancedHint':
@@ -261,6 +275,17 @@ class AppStrings {
     'ffmpegLicenses': 'FFmpeg 许可证',
     'bundledLicenses': '随包许可文件',
     'appInfo': '应用信息',
+    'updateCheck': '检查更新',
+    'updateChecking': '正在检查更新…',
+    'updateAvailable': '发现新版本 {version}',
+    'updateUpToDate': '已是最新版本（{version}）',
+    'updateCheckFailed': '检查更新失败（响应无效或发生错误），请稍后重试。',
+    'updateCurrentVersion': '当前版本：{version}',
+    'updateDownload': '下载',
+    'updateNetworkFailed': '网络不可用或请求超时，请检查网络连接后重试。',
+    'updateClose': '确定',
+    'updateNotificationTitle': '有可用更新',
+    'updateNotificationText': '版本 {version} 已发布，点击下载。',
     'advancedSettingsHint': '控制光盘分组、镜像前缀、菜单字体等进阶选项。',
     'advancedHint': '这些设置已经足够制作第一张光盘。需要光盘分组、菜单字体等高级选项时，请在右上角齿轮中开启“显示高级设置”。',
     'mlpNote': 'MLP 编码会进行无损压缩，适合大多数 DVD-Audio 制作。采样率和位深按右侧设置处理。',
@@ -426,6 +451,17 @@ class AppStrings {
     'ffmpegLicenses': 'FFmpeg 授權',
     'bundledLicenses': '隨包授權文件',
     'appInfo': '應用程式資訊',
+    'updateCheck': '檢查更新',
+    'updateChecking': '正在檢查更新…',
+    'updateAvailable': '發現新版本 {version}',
+    'updateUpToDate': '已是最新版本（{version}）',
+    'updateCheckFailed': '檢查更新失敗（回應無效或發生錯誤），請稍後再試。',
+    'updateCurrentVersion': '目前版本：{version}',
+    'updateDownload': '下載',
+    'updateNetworkFailed': '網路無法使用或請求逾時，請檢查網路連線後再試。',
+    'updateClose': '確定',
+    'updateNotificationTitle': '有可用更新',
+    'updateNotificationText': '版本 {version} 已發布，點擊下載。',
     'advancedSettingsHint': '控制光碟分組、映像前綴、選單字型等進階選項。',
     'advancedHint': '這些設定已足夠製作第一張光碟。需要光碟分組、選單字型等進階選項時，請在右上角齒輪中開啟「顯示進階設定」。',
     'mlpNote': 'MLP 編碼會進行無損壓縮，適合大多數 DVD-Audio 製作。取樣率和位元深度按所選設定處理。',
@@ -592,6 +628,17 @@ class AppStrings {
     'ffmpegLicenses': 'FFmpeg ライセンス',
     'bundledLicenses': '同梱ライセンスファイル',
     'appInfo': 'アプリ情報',
+    'updateCheck': 'アップデートを確認',
+    'updateChecking': 'アップデートを確認中…',
+    'updateAvailable': '新しいバージョン {version} があります',
+    'updateUpToDate': '最新バージョンです（{version}）',
+    'updateCheckFailed': 'アップデートの確認に失敗しました（応答が無効、またはエラー）。後でもう一度お試しください。',
+    'updateCurrentVersion': '現在のバージョン：{version}',
+    'updateDownload': 'ダウンロード',
+    'updateNetworkFailed': 'ネットワークに接続できないか、タイムアウトしました。接続を確認して再試行してください。',
+    'updateClose': 'OK',
+    'updateNotificationTitle': 'アップデートがあります',
+    'updateNotificationText': 'バージョン {version} が公開されました。タップしてダウンロード。',
     'advancedSettingsHint': 'ディスクのグループ化、イメージ接頭辞、メニューフォントなどを制御します。',
     'advancedHint':
         'これらの設定だけで最初のディスクを作成できます。作業パスやメニューフォントなどを変更する場合は、上部の「詳細設定を表示」を有効にしてください。',
@@ -764,6 +811,17 @@ class AppStrings {
     'ffmpegLicenses': 'FFmpeg 라이선스',
     'bundledLicenses': '앱에 포함된 라이선스 파일',
     'appInfo': '앱 정보',
+    'updateCheck': '업데이트 확인',
+    'updateChecking': '업데이트 확인 중…',
+    'updateAvailable': '새 버전 {version}이(가) 있습니다',
+    'updateUpToDate': '최신 버전입니다({version})',
+    'updateCheckFailed': '업데이트 확인에 실패했습니다(응답이 잘못되었거나 오류 발생). 나중에 다시 시도하세요.',
+    'updateCurrentVersion': '현재 버전: {version}',
+    'updateDownload': '다운로드',
+    'updateNetworkFailed': '네트워크를 사용할 수 없거나 요청 시간이 초과되었습니다. 연결을 확인하고 다시 시도하세요.',
+    'updateClose': '확인',
+    'updateNotificationTitle': '업데이트가 있습니다',
+    'updateNotificationText': '버전 {version}이(가) 출시되었습니다. 탭하여 다운로드하세요.',
     'advancedSettingsHint': '디스크 그룹, 이미지 접두사, 메뉴 글꼴 등 고급 옵션을 제어합니다.',
     'advancedHint':
         '이 설정만으로 첫 디스크를 만들 수 있습니다. 작업 경로나 메뉴 글꼴 등을 변경하려면 위의 “고급 설정 표시”를 켜세요.',
@@ -981,6 +1039,32 @@ class AppStrings {
   String get ffmpegLicenses => _text('ffmpegLicenses');
   String get bundledLicenses => _text('bundledLicenses');
   String get appInfo => _text('appInfo');
+
+  String get updateCheck => _text('updateCheck');
+
+  String get updateChecking => _text('updateChecking');
+
+  String updateAvailable(String version) =>
+      _text('updateAvailable').replaceAll('{version}', version);
+
+  String updateUpToDate(String version) =>
+      _text('updateUpToDate').replaceAll('{version}', version);
+
+  String get updateCheckFailed => _text('updateCheckFailed');
+
+  String get updateNetworkFailed => _text('updateNetworkFailed');
+
+  String get updateClose => _text('updateClose');
+
+  String updateCurrentVersion(String version) =>
+      _text('updateCurrentVersion').replaceAll('{version}', version);
+
+  String get updateDownload => _text('updateDownload');
+
+  String get updateNotificationTitle => _text('updateNotificationTitle');
+
+  String updateNotificationText(String version) =>
+      _text('updateNotificationText').replaceAll('{version}', version);
   String get advancedSettingsHint => _text('advancedSettingsHint');
   String get advancedHint => _text('advancedHint');
   String get mlpNote => _text('mlpNote');

@@ -132,7 +132,19 @@ pub(super) fn tr(key: &str) -> &'static str {
         "invalid_bits" => "MLP 비트 깊이는 16, 20 또는 24, LPCM은 16 또는 24여야 합니다.",
         "author_name" => "Yuzuriha03",
         "author_role" => "독립 개발자 · 프로젝트 유지관리자",
-        "author_version" => "DVD-Audio Maker · v1.2.0",
+        "author_version" => "DVD-Audio Maker",
+        "check_updates" => "업데이트 확인",
+        "checking_updates" => "확인 중…",
+        "update_available_title" => "새 버전 있음",
+        "update_available_message" => "새 버전 {0}이(가) 있습니다. 다운로드 페이지를 열까요?",
+        "update_download" => "다운로드",
+        "update_later" => "나중에",
+        "update_open_failed" => "다운로드 링크를 열 수 없습니다: {0}",
+        "update_none" => "사용 가능한 업데이트가 없습니다.",
+        "update_failed" => "업데이트 확인 실패: {0}",
+        "update_network_failed" => {
+            "업데이트 서버에 연결할 수 없습니다. 네트워크를 확인한 후 다시 시도하세요.\n{0}"
+        }
         "dialog_ok" => "확인",
         "dialog_close" => "닫기",
         "dialog_error_title" => "오류",

@@ -4,8 +4,8 @@
 //! profile JSON and the binding calls the shared `dvda_core::gui` task sequence
 //! and `dvda_core::log_view` formatting, forwarding progress and cancellation.
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use dvda_core::app::AppOptions;
 use dvda_core::gui;
@@ -538,12 +538,71 @@ pub fn progress_snapshot() -> ProgressSnapshot {
     }
 }
 
+/// An available package for the installed Android edition.
+pub struct AndroidUpdate {
+    pub version: String,
+    pub download_url: String,
+}
+
+#[frb(sync)]
+#[must_use]
+pub fn update_release_api_url() -> String {
+    dvda_core::updates::RELEASE_API_URL.to_owned()
+}
+
+/// Validates the fetched release and returns zero or one Android ARM64 package.
+///
+/// # Errors
+/// Returns an error if the version, release payload, or asset URL is invalid.
+#[frb(sync)]
+pub fn select_update(
+    current_version: String,
+    release_json: String,
+) -> Result<Vec<AndroidUpdate>, String> {
+    use dvda_core::updates::{Platform, select_update as select_release};
+
+    select_release(&current_version, &release_json, Platform::AndroidArm64)
+        .map(|update| {
+            update
+                .into_iter()
+                .map(|item| AndroidUpdate {
+                    version: item.version,
+                    download_url: item.download_url,
+                })
+                .collect()
+        })
+        .map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Bridge progress state is process-global; serialize tests touching it.
     static API_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn bridge_checks_installed_version_and_only_returns_android_assets() {
+        const LINK: &str = "https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/download/v1.3/DVD-Audio-Maker-v1.3-android-arm64.apk";
+        let metadata = serde_json::json!({
+            "tag_name": "v1.3", "draft": false, "prerelease": false,
+            "assets": [{
+                "name": "DVD-Audio-Maker-v1.3-android-arm64.apk",
+                "state": "uploaded", "browser_download_url": LINK,
+            }],
+        });
+        let results = select_update("1.2.0".into(), metadata.to_string()).unwrap();
+        assert_eq!(results.len(), 1);
+        let result = &results[0];
+        assert_eq!(result.version, "v1.3");
+        assert_eq!(result.download_url, LINK);
+        assert!(
+            select_update("1.3.0".into(), metadata.to_string())
+                .unwrap()
+                .is_empty()
+        );
+        assert!(select_update("1.2.0".into(), "invalid data".into()).is_err());
+    }
 
     #[test]
     fn bridge_profile_uses_the_supplied_app_private_build_directory() {

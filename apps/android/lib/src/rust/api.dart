@@ -53,6 +53,40 @@ FormattedLog formatLog({required String language, required String log}) =>
 ProgressSnapshot progressSnapshot() =>
     RustLib.instance.api.crateApiProgressSnapshot();
 
+String updateReleaseApiUrl() =>
+    RustLib.instance.api.crateApiUpdateReleaseApiUrl();
+
+/// Validates the fetched release and returns zero or one Android ARM64 package.
+///
+/// # Errors
+/// Returns an error if the version, release payload, or asset URL is invalid.
+List<AndroidUpdate> selectUpdate({
+  required String currentVersion,
+  required String releaseJson,
+}) => RustLib.instance.api.crateApiSelectUpdate(
+  currentVersion: currentVersion,
+  releaseJson: releaseJson,
+);
+
+/// An available package for the installed Android edition.
+class AndroidUpdate {
+  final String version;
+  final String downloadUrl;
+
+  const AndroidUpdate({required this.version, required this.downloadUrl});
+
+  @override
+  int get hashCode => version.hashCode ^ downloadUrl.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AndroidUpdate &&
+          runtimeType == other.runtimeType &&
+          version == other.version &&
+          downloadUrl == other.downloadUrl;
+}
+
 /// One formatted log view. Formatting and classification happen in the
 /// shared `dvda_core::log_view` module so every GUI shows the same lines.
 class FormattedLog {

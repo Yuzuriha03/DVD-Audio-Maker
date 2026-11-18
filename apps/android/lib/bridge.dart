@@ -96,6 +96,22 @@ abstract final class AppBridge {
   static String profileIssueMessage(String language, String code) =>
       rust_api.profileIssueMessage(language: language, code: code);
 
+  /// Endpoint and release selection are shared with the Windows host.
+  static String updateReleaseApiUrl() => rust_api.updateReleaseApiUrl();
+
+  static ({String version, String downloadUrl})? selectUpdate(
+    String currentVersion,
+    String releaseJson,
+  ) {
+    final updates = rust_api.selectUpdate(
+      currentVersion: currentVersion,
+      releaseJson: releaseJson,
+    );
+    if (updates.isEmpty) return null;
+    final update = updates.single;
+    return (version: update.version, downloadUrl: update.downloadUrl);
+  }
+
   /// Formats a whole task log with the shared Rust log rules.
   static rust_api.FormattedLog formatLog(String language, String log) =>
       rust_api.formatLog(language: language, log: log);

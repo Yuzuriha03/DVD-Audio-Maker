@@ -238,6 +238,10 @@ class MainActivity : FlutterActivity() {
             "openProfile" -> pickProfile(result)
             "saveProfile", "saveTextFile" -> saveTextDocument(call, result)
             "pickFont" -> pickFont(result)
+            "appVersion" -> appVersion(result)
+            "showUpdateNotification" -> showUpdateNotification(call, result)
+            "clearUpdateNotification" -> clearUpdateNotification(result)
+            "openUpdateUrl" -> openUpdateUrl(call, result)
             "updateStatusNotification" -> {
                 val payload = NotificationPayload(
                     title = call.argument<String>("title").orEmpty(),
@@ -1225,6 +1229,169 @@ class MainActivity : FlutterActivity() {
         if (parts.size < 2 || parts[1].isEmpty()) base else "$base/" + parts[1]
     }.getOrNull()
 
+    private fun appVersion(result: MethodChannel.Result) {
+        runCatching {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            @Suppress("DEPRECATION")
+            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                info.versionCode.toLong()
+            }
+            result.success(
+                mapOf(
+                    "versionName" to (info.versionName ?: ""),
+                    "versionCode" to code,
+                ),
+            )
+        }.getOrElse {
+            result.error("APP_VERSION", it.message ?: "Cannot read the package version", null)
+        }
+    }
+
+    private fun showUpdateNotification(call: MethodCall, result: MethodChannel.Result) {
+        val title = call.argument<String>("title").orEmpty()
+        val text = call.argument<String>("text").orEmpty()
+        val downloadUrl = call.argument<String>("downloadUrl").orEmpty()
+        val target = updateDownloadUri(downloadUrl)
+        if (target == null) {
+            result.success(false)
+            return
+        }
+        // Update notices never request the notification permission; when it is
+        // unavailable Dart shows a clickable in-app notice instead.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(false)
+            return
+        }
+        val manager = getSystemService(NotificationManager::class.java)
+        if (!manager.areNotificationsEnabled()) {
+            result.success(false)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            createUpdateChannel(manager)
+            // A channel the user disabled must fall back to the in-app notice.
+            if (manager.getNotificationChannel(UPDATE_CHANNEL_ID)?.importance ==
+                NotificationManager.IMPORTANCE_NONE
+            ) {
+                result.success(false)
+                return
+            }
+        }
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            REQUEST_UPDATE_LINK,
+            Intent(Intent.ACTION_VIEW, target)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, UPDATE_CHANNEL_ID)
+        } else {
+            Notification.Builder(this)
+        }
+        builder
+            .setSmallIcon(R.drawable.ic_stat_dvda)
+            .setContentTitle(title.ifEmpty { "DVD-Audio Maker" })
+            .setContentText(text)
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(Notification.CATEGORY_EVENT)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+        val posted = runCatching {
+            manager.notify(UPDATE_NOTIFICATION_ID, builder.build())
+        }.isSuccess
+        result.success(posted)
+    }
+
+    private fun clearUpdateNotification(result: MethodChannel.Result) {
+        // Only the update id is cleared; the task progress notification
+        // (NOTIFICATION_ID) stays untouched.
+        getSystemService(NotificationManager::class.java).cancel(UPDATE_NOTIFICATION_ID)
+        result.success(null)
+    }
+
+    private fun openUpdateUrl(call: MethodCall, result: MethodChannel.Result) {
+        val url = call.argument<String>("url").orEmpty()
+        val target = updateDownloadUri(url)
+        if (target == null) {
+            result.success(false)
+            return
+        }
+        result.success(
+            runCatching {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW, target)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.isSuccess,
+        )
+    }
+
+    /**
+     * Only the pinned Android ARM64 release asset:
+     * https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/download/<tag>/DVD-Audio-Maker-<tag>-android-arm64.apk
+     * with a numeric tag, no query/fragment/userinfo and no encoded path
+     * differences. Everything else is rejected so update actions can never
+     * open an arbitrary URL.
+     */
+    private fun updateDownloadUri(raw: String): Uri? {
+        val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return null
+        if (uri.scheme != "https" || uri.authority != "github.com") {
+            return null
+        }
+        if (uri.userInfo != null || uri.port != -1 || uri.query != null || uri.fragment != null) {
+            return null
+        }
+        val path = uri.path ?: return null
+        if (uri.encodedPath != path) {
+            return null
+        }
+        val prefix = "/Yuzuriha03/DVD-Audio-Maker/releases/download/"
+        if (!path.startsWith(prefix)) {
+            return null
+        }
+        val parts = path.removePrefix(prefix).split('/')
+        if (parts.size != 2) {
+            return null
+        }
+        val tag = parts[0]
+        if (!isUpdateVersionTag(tag)) {
+            return null
+        }
+        if (parts[1] != "DVD-Audio-Maker-$tag-android-arm64.apk") {
+            return null
+        }
+        return uri
+    }
+
+    /** Mirrors the shared release convention: v?X.Y or v?X.Y.Z, numeric only. */
+    private fun isUpdateVersionTag(tag: String): Boolean {
+        val parts = tag.removePrefix("v").split('.')
+        if (parts.size !in 2..3) {
+            return false
+        }
+        return parts.all { part ->
+            part.isNotEmpty() &&
+                part.all { it in '0'..'9' } &&
+                (part.length == 1 || part[0] != '0')
+        }
+    }
+
+    private fun createUpdateChannel(manager: NotificationManager) {
+        val channel = NotificationChannel(
+            UPDATE_CHANNEL_ID,
+            "App updates",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        channel.description = "Available application updates"
+        manager.createNotificationChannel(channel)
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
@@ -1301,6 +1468,9 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL = "dvda/platform"
         private const val NOTIFICATION_CHANNEL_ID = "dvda-build-status"
         private const val NOTIFICATION_ID = 1202
+        private const val UPDATE_CHANNEL_ID = "dvda-app-update"
+        private const val UPDATE_NOTIFICATION_ID = 1203
+        private const val REQUEST_UPDATE_LINK = 43
         private const val REQUEST_NOTIFICATIONS = 16
         private const val DEFAULT_PROFILE_NAME = "dvda-profile.json"
         private const val DEFAULT_TEXT_NAME = "dvda-log.txt"

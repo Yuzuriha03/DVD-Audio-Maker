@@ -17,7 +17,7 @@ use super::{
     create_controls, dark_theme, drain_worker_logs, draw_owner_item, handle_command, header_height,
     hide_splitter_preview, layout, outline_resize, paint_fields, paint_window, ptr,
     refresh_dynamic_indicators, render_log, rescale_ui, scale, state, system_prefers_dark, unscale,
-    update_splitter_preview, update_statistics, win, window_class,
+    update_splitter_preview, update_statistics, updates, win, window_class,
 };
 
 /// # Safety
@@ -56,10 +56,14 @@ pub(crate) unsafe extern "system" fn window_proc(
         DestroyWindow(hwnd);
         return 0;
     }
+    if updates::handle_notification_callback(hwnd, message, lparam) {
+        return 0;
+    }
     if message == WM_DESTROY {
         {
             KillTimer(hwnd, 1);
         }
+        updates::remove_auto_update_notification();
         PAINT_FIELDS.with(|fields| fields.borrow_mut().remove(&(hwnd as usize)));
         clear_window_paint_cache(hwnd);
         let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<UiState>;
@@ -353,6 +357,13 @@ pub(crate) unsafe extern "system" fn window_proc(
             }
             if let Some(mut state) = unsafe { state(hwnd) } {
                 rescale_ui(hwnd, &mut state);
+            }
+            0
+        }
+        updates::WM_UPDATE_CHECK_RESULT => {
+            let lang = unsafe { state(hwnd) }.map(|state| state.lang());
+            if let Some(result) = updates::take_result() {
+                updates::finish_check(hwnd, lang.unwrap_or(result.lang), result);
             }
             0
         }

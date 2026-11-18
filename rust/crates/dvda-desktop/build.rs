@@ -14,6 +14,9 @@ fn main() {
         "DVD-Audio Maker supports only Windows x64/ARM64 MSVC, got {target}"
     );
     println!("cargo:rerun-if-env-changed=DVDA_RUNTIME_ARCHIVE");
+    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let product_version = effective_product_version(&manifest_dir);
+    println!("cargo:rustc-env=DVDA_DESKTOP_PRODUCT_VERSION={product_version}");
     println!("cargo:rerun-if-env-changed=DVDA_PRODUCT_VERSION");
     let generated = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let archive = env::var_os("DVDA_RUNTIME_ARCHIVE").map_or_else(
@@ -59,7 +62,7 @@ fn main() {
             "1 24 \"{}\"\n1 ICON \"{}\"\n{}",
             manifest.display().to_string().replace('\\', "/"),
             icon.display().to_string().replace('\\', "/"),
-            version_resource()
+            version_resource(&product_version)
         ),
     )
     .unwrap();
@@ -197,20 +200,47 @@ fn resource_compiler() -> PathBuf {
     )
 }
 
+/// Effective product version used by the About page, update checks and the
+/// executable's VERSIONINFO resource. Packaged builds provide
+/// `DVDA_PRODUCT_VERSION`; development builds read the Android product version so
+/// the desktop and Android releases stay on the same product line.
+fn effective_product_version(manifest_dir: &Path) -> String {
+    if let Ok(configured) = env::var("DVDA_PRODUCT_VERSION") {
+        let configured = configured.trim();
+        if valid_product_version(configured) {
+            return configured.to_owned();
+        }
+    }
+    let pubspec = manifest_dir.join("../../../apps/android/pubspec.yaml");
+    println!("cargo:rerun-if-changed={}", pubspec.display());
+    if let Ok(text) = std::fs::read_to_string(&pubspec)
+        && let Some(line) = text
+            .lines()
+            .find(|line| line.trim_start().starts_with("version:"))
+        && let Some(value) = line.split_once(':').map(|(_, value)| value)
+    {
+        let version_name = value.trim().split('+').next().unwrap_or_default().trim();
+        if valid_product_version(version_name) {
+            return version_name.to_owned();
+        }
+    }
+    env::var("CARGO_PKG_VERSION").unwrap()
+}
+
+fn valid_product_version(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+}
+
 /// `VS_VERSION_INFO` block so the executable carries company, product and version
 /// metadata instead of shipping as an anonymous binary.
 ///
 /// The packaging toolchain forwards the release version (`v1.0`) through
 /// `DVDA_PRODUCT_VERSION`; a plain source build falls back to the crate version.
-fn version_resource() -> String {
-    let configured = env::var("DVDA_PRODUCT_VERSION").unwrap_or_default();
-    let configured = configured.trim();
-    let raw = if configured.is_empty() {
-        env::var("CARGO_PKG_VERSION").unwrap()
-    } else {
-        configured.to_owned()
-    };
-    let [major, minor, patch, build] = version_quad(&raw);
+fn version_resource(raw: &str) -> String {
+    let [major, minor, patch, build] = version_quad(raw);
     let dotted = format!("{major}.{minor}.{patch}.{build}");
     format!(
         "1 VERSIONINFO\n\

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../localization/app_strings.dart';
 import '../services/app_controller.dart';
+import '../services/update_service.dart';
 import 'author_credits_page.dart';
 import 'sections/audio_section.dart';
 import 'sections/basics_section.dart';
@@ -12,9 +13,10 @@ enum RecoveryChoice { continueBuild, restartBuild }
 
 /// Root shell: responsive navigation, profile actions and the build lifecycle.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.controller});
+  const HomeScreen({super.key, required this.controller, this.updateService});
 
   final AppController controller;
+  final UpdateService? updateService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -434,7 +436,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.of(sheetContext).pop();
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (context) => AuthorCreditsPage(strings: strings),
+                      builder: (context) => AuthorCreditsPage(
+                        strings: strings,
+                        updateService: widget.updateService,
+                      ),
                     ),
                   );
                 },

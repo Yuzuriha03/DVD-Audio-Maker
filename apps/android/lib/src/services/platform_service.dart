@@ -124,6 +124,17 @@ class CleanupResult {
   }
 }
 
+/// Installed Android package version.
+class AppVersion {
+  const AppVersion({required this.version, required this.buildNumber});
+
+  /// `PackageManager` versionName; the shared update rule compares this value.
+  final String version;
+
+  /// `PackageManager` versionCode, shown in the About page only.
+  final int buildNumber;
+}
+
 /// A directory granted through the Storage Access Framework.
 ///
 /// [treeUri] is the persistable SAF tree URI, [displayPath] is a human-readable
@@ -415,6 +426,59 @@ class PlatformService {
   Future<bool> openOutput(String treeUri) async {
     final result = await _invoke<Object?>('openOutput', <String, Object?>{
       'treeUri': treeUri,
+    });
+    return result == true;
+  }
+
+  /// Installed package versionName/versionCode from PackageManager.
+  Future<AppVersion?> appVersion() async {
+    final result = await _invoke<Object?>('appVersion');
+    if (result is! Map) {
+      return null;
+    }
+    final version = result['versionName'];
+    final code = result['versionCode'];
+    if (version is! String || version.isEmpty) {
+      return null;
+    }
+    return AppVersion(
+      version: version,
+      buildNumber: code is int ? code : int.tryParse('$code') ?? 0,
+    );
+  }
+
+  /// Posts one separate update notification. Returns false when notification
+  /// permission/channel is unavailable; the caller then shows an in-app notice
+  /// and must not request the permission itself.
+  Future<bool> showUpdateNotification({
+    required String title,
+    required String text,
+    required String downloadUrl,
+  }) async {
+    final result = await _invoke<Object?>(
+      'showUpdateNotification',
+      <String, Object?>{
+        'title': title,
+        'text': text,
+        'downloadUrl': downloadUrl,
+      },
+    );
+    return result == true;
+  }
+
+  /// Cancels the update notification only; the task progress notification uses
+  /// its own id/channel and is never touched.
+  Future<void> clearUpdateNotification() async {
+    await _invoke<Object?>('clearUpdateNotification');
+  }
+
+  /// Opens the release download URL with Android ACTION_VIEW.
+  Future<bool> openUpdateUrl(String url) async {
+    if (!url.startsWith('https://')) {
+      return false;
+    }
+    final result = await _invoke<Object?>('openUpdateUrl', <String, Object?>{
+      'url': url,
     });
     return result == true;
   }

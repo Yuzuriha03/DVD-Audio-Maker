@@ -63,6 +63,7 @@ mod scrollbar;
 mod settings;
 mod task;
 mod theme;
+mod updates;
 mod window;
 
 use commands::{handle_command, set_language};
@@ -1395,6 +1396,11 @@ fn run() -> Result<(), String> {
             );
         }
     }
+    updates::request_check(
+        window,
+        false,
+        unsafe { state(window) }.map_or(Lang::Zh, |state| state.lang()),
+    );
     let mut message = Message {
         hwnd: ptr::null_mut(),
         id: 0,

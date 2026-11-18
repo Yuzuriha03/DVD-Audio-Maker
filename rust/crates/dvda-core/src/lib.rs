@@ -48,6 +48,7 @@ pub mod resume;
 pub mod runtime;
 pub mod signature;
 pub mod task_log;
+pub mod updates;
 pub mod validation;
 pub mod verification;
 pub mod verify;
