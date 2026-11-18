@@ -2,17 +2,16 @@
 
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP or LPCM encoding, automatic disc splitting, track menus, album covers and output verification. A portable Windows application: download the single EXE and run it, with no installation or extraction required.
+Create DVD-Audio ISO images from FLAC and ALAC/M4A music. Windows and Android share the Rust authoring workflow, with MLP and LPCM encoding, import of existing MLP files, automatic disc splitting, track menus and automatic verification.
 
 ## Download and install
 
-1. Open [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/latest) and download the single executable for your PC (the `<version>` part follows the actual release):
-   - Intel / AMD PCs: `DVD-Audio-Maker-<version>-win-x64.exe`
-   - Windows on ARM devices: `DVD-Audio-Maker-<version>-win-arm64.exe`
-2. Put the downloaded EXE in a writable folder and double-click it; no extraction or installation is required. The first launch prepares embedded components and may be slower.
-3. The license, FFmpeg LGPL notice and third-party/image/menu statements are embedded in the app's About window.
+Get the file for your device from [GitHub Releases](https://github.com/Yuzuriha03/DVD-Audio-Maker/releases/latest). The filenames below are for v1.2.
 
-**Requirements:** Windows 10 / 11 on x64 or ARM64. All required components are built in, so no extra runtime needs to be installed. The folder containing the EXE must be writable. Building an ISO and its temporary files also needs enough free disk space; reserve roughly the size of the finished output.
+- **Windows 10 / 11:** use `DVD-Audio-Maker-v1.2-win-x64.exe` on Intel / AMD PCs or `DVD-Audio-Maker-v1.2-win-arm64.exe` on Windows on ARM. Run the single EXE from a writable folder; no extraction, installation or extra runtime is needed. The first launch prepares the embedded components.
+- **Android 7.0 or later (ARM64):** download and open `DVD-Audio-Maker-v1.2-android-arm64.apk`. If prompted, allow your browser or file manager to install apps from that source. The APK is distributed here for sideloading, not through Google Play.
+
+Allow enough space for intermediate files and the finished ISOs. On Android, check both app-internal storage and the selected output location.
 
 ## Features
 
@@ -22,15 +21,15 @@ Create DVD-Audio ISO images from FLAC and ALAC/M4A music, with MLP or LPCM encod
 - Track menus, album indexes and playback covers
 - Source checking before building and output verification afterwards
 - Resume an unfinished task after interruption
-- Portable settings stored next to the application; no registry entries
+- Save and open JSON profiles, copy the current log view or export the full task log
 
 ## Quick start
 
-1. **Choose the source folder.** Keep each album in its own folder; the application scans `.flac` and `.m4a` files, including subfolders. Fill in album, title, track number and date tags where possible.
+1. **Choose the source folder.** Keep each album in its own folder. The application scans recursively for `.flac` and `.m4a` files. On Android, grant access to your source and output folders with the system picker; the app does not request all-files access.
 2. **Choose the output location.** Set the ISO folder, disc title and capacity. Discs are filled in track order; when the next album does not fit, the application starts a new disc.
 3. **Choose audio settings.** “MLP encoding” is the usual choice. Pick a sample rate and bit depth that suit the source and your player. Lowering either can reduce precision; raising them does not add detail.
 4. **Configure menus.** Optionally enable track menus, album indexes and playback covers. Menu fonts are included.
-5. **Build discs.** Click “Build discs” to check sources, encode audio, create the ISOs and verify the output automatically; after it passes, use “Open output” to find the ISO folder.
+5. **Build discs.** Click “Build discs” to check sources, encode audio, create the ISOs and verify the output automatically; once the task completes, use “Open output” on Windows or open the folder from the Android task screen.
 
 “Build discs” checks sources automatically; a failed check blocks the build. You can cancel a task while it runs. Canceling does not delete discs that were already completed.
 
@@ -62,20 +61,21 @@ Music/                            ← DVDA_SRC
 ```
 
 - `DVDA_SRC` points to the library root; the application scans it recursively for `.flac` and `.m4a` files.
-- **Albums are grouped by the `Album` tag, not only by folder name.** Make the Album tag identical for every track in an album. Empty or inconsistent tags may merge tracks into one album or split them across albums.
-- Name tracks like `01 - Track.flac` and fill in the `Track` tag as well. Files are read in filename order; tags drive display and ordering.
+- Keep the `Album` tag consistent within each album folder. Name tracks like `01 - Track.flac` and fill in the `Track` tag.
 - Do not nest extra folders inside an album folder. Put the cover at the album folder root.
 - A single album may mix FLAC and M4A, but using one format per album is recommended.
 - Keep the output folder (`DVDA_FINAL_DIR`) outside the music library.
 
-In a JSON profile the keys are:
+On Windows, these fields go in a JSON profile’s `Values` object:
 
 ```json
-"DVDA_SRC": "D:/Music/MyAlbums",
-"DVDA_FINAL_DIR": "D:/DVD-Audio/Output"
+{
+  "DVDA_SRC": "D:/Music/MyAlbums",
+  "DVDA_FINAL_DIR": "D:/DVD-Audio/Output"
+}
 ```
 
-In the GUI, “Source folder” maps to `DVDA_SRC` and “Output folder” maps to `DVDA_FINAL_DIR`.
+On Android, paths in a profile do not grant access. Select the required folders on the device.
 
 ## Audio options
 
@@ -86,6 +86,7 @@ In the GUI, “Source folder” maps to `DVDA_SRC` and “Output folder” maps 
 
 **Both modes preserve the same audio quality when given identical PCM at the same sample rate, bit depth and channel layout.** LPCM does not gain detail by using more space.
 
+- If you already have compatible MLP files, choose “Import MLP” and select a folder with the same layout as the source library.
 - Target bit depth: MLP supports 16 / 20 / 24 bits; LPCM supports 16 / 24 bits. Use MLP for 20-bit output.
 - When the target is 16-bit and the source is higher than 16-bit or floating-point, TPDF dither is added by default to reduce quantization distortion. You can turn it off; sources at 16 bits or lower are never dithered.
 - If the source bit depth is higher than the target, it is converted and is not bit-perfect. To preserve it exactly, choose a target bit depth equal to or higher than the source.
@@ -101,30 +102,36 @@ In the GUI, “Source folder” maps to `DVDA_SRC` and “Output folder” maps 
 
 ## Tasks, resume and logs
 
-- By default, task data uses the system temporary folder and is removed after success, failure or normal cancellation; only finished ISOs remain.
-- If “Resume unfinished work” is enabled, an unfinished task is kept under `unfinished-task` in the selected working folder and can be resumed on the next launch; it is still removed after a successful build and verification.
-- Session logs are saved beside the EXE as `gui-timestamp-pid-sequence.log`; only the last three runs are kept.
-- For troubleshooting, switch to detailed logging or click “Save detailed log”.
+- After a failure or stop, you can keep or discard progress when prompted. If you keep it, the next time you select “Build discs,” you can resume or start over. A successful task normally cleans up its intermediate files.
+- Copying the current view and exporting the full log are separate actions. Export the full log for troubleshooting; it is not limited by the panel view or the “Problems only” filter.
+- **Windows:** session logs are stored beside the EXE as `gui-timestamp-pid-sequence.log`, with the latest three retained. Everyday settings are stored there in `settings.json`.
+- **Android:** use the system picker to open or save JSON profiles and export the full task log. Verified ISOs are exported to the granted folder; a failed export preserves the previous output and the recoverable task. Discarding progress and clearing caches does not delete granted folders or exported ISOs.
+- **Android notifications:** build progress can appear in a system notification. On Android 16 or later, Live Updates are available when the device, system settings and notification permissions allow them. In-app progress still works without notification permission.
 
 ## Troubleshooting
 
-**Can I play the ISO on an ordinary DVD player?**  
+**Can I play the ISO on an ordinary DVD player?**
+
 Not necessarily. DVD-Audio requires software or hardware that supports DVD-Audio; ordinary DVD-Video players may not play it.
 
-**Why can't I select 20-bit LPCM?**  
+**Why can't I select 20-bit LPCM?**
+
 The current LPCM path supports 16 / 24 bits only; use MLP for 20-bit output. LPCM is also limited to 9.6 Mb/s.
 
 **The pre-build source check fails.**
 Review the reported track and reason, confirm the file is readable and is FLAC or M4A, and check its tags and path. Fix the issue and restart the build.
 
-**Building or verification fails.**  
+**Building or verification fails.**
+
 Save the detailed log and keep the working folder. Check free disk space, write permissions and source integrity, then retry. Do not skip verification just because an ISO was produced.
 
-**Where are settings stored?**  
-In `settings.json` next to the EXE; it is loaded at startup and is not written to `%LOCALAPPDATA%`. The folder must be writable. “Save profile” and “Open profile” manage JSON profiles.
+**Where are settings stored?**
 
-**How do I uninstall it?**  
-Delete the application folder; no registry entries are created. Move any ISOs and logs you want to keep first.
+Windows stores everyday settings in `settings.json` beside the EXE; Android stores them in app-private storage. Both builds can save and open JSON profiles. On Android, grant access to folders through the system picker even after importing a profile.
+
+**How do I uninstall it?**
+
+On Windows, delete the application folder after moving any ISOs, profiles and logs you want to keep. On Android, uninstall from system settings. This removes private app data, not files already exported to your folders.
 
 ## Interface languages
 
@@ -137,6 +144,6 @@ See [LICENSE](LICENSE) for the project license and these notices for bundled com
 - [Third-party components (Chinese)](tools/win-build/docs/THIRD-PARTY.txt)
 - [Third-party components (English)](tools/win-build/docs/THIRD-PARTY.en.txt)
 
-The Windows build embeds these notices and licenses in the About window; the texts are also kept in the repository.
+Both Windows and Android make the bundled licenses and notices available in About.
 
-See [CONTRIBUTING.en.md](CONTRIBUTING.en.md) for development and Clippy pedantic maintenance guidance.
+See [CONTRIBUTING.en.md](CONTRIBUTING.en.md) and the [Android build and verification guide](apps/android/README.md) for development.

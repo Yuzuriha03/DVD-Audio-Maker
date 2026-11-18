@@ -29,15 +29,16 @@ Compose/classic View 业务界面，也不使用手写 JNI 业务桥。
 本地分发包和依赖缓存齐备时，可给同一脚本传 `-Offline`，按提交的 Pub 锁文件解析，
 让 Gradle 和 Cargo 只用本地缓存，并禁用 Gradle 的 SDK 自动下载。
 
-为避免在 TF 卡等慢速盘上展开大量小文件，脚本把 Cargo target、Gradle 缓存和 Flutter
-暂存工程放到 `%TEMP%\dvda-android-build`；每次使用独立的暂存工程，完成后只将
-`app-release.apk` 复制回项目的 `apps/android/build/app/outputs/flutter-apk/`。
+脚本在 `%TEMP%\dvda-android-build` 中为每次构建创建独立的 Flutter 暂存工程，
+复用 `build/android-cargo-target` 中的 Cargo 产物，并优先使用 `build/gradle-home` 中的
+本地 Gradle 分发包和缓存。完成后将 `app-release.apk` 复制回
+`apps/android/build/app/outputs/flutter-apk/`。
 不再维护第二个 shell/手打包入口：手工复制 `.so`、aapt2/kotlinc/D8 拼包都不属于当前流程。
 
-APK 完全由 Flutter/Gradle 打包和签名，不使用二次 ZIP 重写。通过标准
-`useLegacyPackaging` 压缩 JNI 库；`stripReleaseNativeSymbols` 在 AGP 打包前剥离原生库调试符号，
-再由 AGP 正常压缩、对齐和签名。当前产物启用 v1+v2 签名。
-签名使用本机 debug keystore；它适合安装测试，不是商店或正式发布签名。
+APK 由 Flutter/Gradle 打包和签名，不做二次 ZIP 重写。`useLegacyPackaging = false`，
+JNI 原生库以非压缩方式存放，发布包需核对 16 KiB 对齐。`stripReleaseNativeSymbols`
+在打包前剥离原生库的调试符号。当前脚本使用本机 debug keystore 签名，供直接安装，
+不是 Google Play 上传签名。实际签名方案和证书以 `apksigner verify` 的结果为准。
 
 复制 APK 后，脚本调用 `tools/android/release-metadata.ps1` 在 APK 旁生成
 `release-build.json`，记录 commit、versionName/versionCode、`android-arm64` /
@@ -63,6 +64,7 @@ SHA-256，并在控制台打印哈希。该记录同时写明 `"deviceVerified":
     & build/android-sdk/build-tools/37.0.0/aapt2.exe dump badging $apk |
         Select-String 'package:|sdkVersion|native-code'
     & build/android-sdk/build-tools/37.0.0/apksigner.bat verify --print-certs $apk
+    & build/android-sdk/build-tools/37.0.0/zipalign.exe -c -P 16 4 $apk
     Get-FileHash -Algorithm SHA256 $apk
 
 Rust bridge 门禁（`dvda-android` 被排除在 `rust` workspace 之外，`--workspace`
@@ -130,12 +132,12 @@ prepare → 编码 → author → verify 链路需要单独在设备上执行。
 - 不支持 fd 的提供方回退为受空间预算保护的普通私有文件镜像；不创建符号链接，不把 fd 路径跨进程保存
 - 成品生成后导出到用户授权目录
 - 界面语言：zh-CN / zh-TW / en / ja / ko；主题通过菜单选择并持久化
-- 任务运行时锁定设置、语言和导航并自动进入任务页；返回时先确认停止再退出
+- 任务运行时锁定设置、语言和导航并自动进入任务页；运行时返回会先询问是否停止任务，空闲时遵循 Android 的系统返回行为
 - 进度采用与桌面版一致的 0–15 / 15–65 / 65–100 阶段百分比
-- 高级设置位于右上角三点菜单并带文字开关；临时工作目录固定为应用私有路径，不提供设置
+- 高级设置位于右上角「更多设置」中；临时工作目录固定为应用私有路径，不提供设置
 - 默认不保留中间文件；外部 MLP 导入禁用采样设置，抖动仅 16-bit 显示
 - 字体设置归入高级设置并支持 SAF 选择；封面暗化保留滑块
-- 日志支持仅问题过滤、复制和 SAF 导出；状态区显示运行时长与问题数
+- 日志支持仅问题过滤和复制当前视图；SAF 导出的是单次任务完整日志，不受面板过滤限制。状态区显示运行时长与问题数
 - 平台文件操作走 `MethodChannel('dvda/platform')` 和 `saf` 插件：前者保留目录选择、
   事务导出、镜像回退和缓存释放，后者提供源文档遍历及 fd 打开/关闭
 - SAF 导出是事务：先写临时 SAF 文档并校验长度/SHA-256，再把旧成品改名为备份、
