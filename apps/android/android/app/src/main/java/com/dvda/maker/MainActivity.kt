@@ -24,6 +24,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
+import java.io.InputStream
 import java.net.URLConnection
 import java.security.DigestOutputStream
 import java.security.MessageDigest
@@ -62,10 +63,7 @@ class MainActivity : FlutterActivity() {
     private var directoryResult: MethodChannel.Result? = null
     private var directoryLinkForNative = false
     private var openProfileResult: MethodChannel.Result? = null
-    private var saveProfileResult: MethodChannel.Result? = null
-    private var saveProfileContent: String? = null
-    private var saveTextFileResult: MethodChannel.Result? = null
-    private var saveTextFileContent: String? = null
+    private val pendingTextSaves = mutableMapOf<Int, PendingTextSave>()
     private var pickFontResult: MethodChannel.Result? = null
     private var flutterSurfaceView: FlutterSurfaceView? = null
     private var pendingNotification: NotificationPayload? = null
@@ -126,6 +124,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private data class PendingTextSave(val result: MethodChannel.Result, val content: String)
+
     private class SafMirrorState {
         var entries: Int = 0
         var truncated: Boolean = false
@@ -177,43 +177,17 @@ class MainActivity : FlutterActivity() {
                     result.error("APP_PATHS", it.message ?: "Cannot prepare app directories", null)
                 }
             }
-            "validateReadableFont" -> {
-                val path = call.argument<String>("path").orEmpty()
-                result.success(isReadableFont(path))
-            }
             "validatePrivateDirectory" -> {
                 val path = call.argument<String>("path").orEmpty()
                 val directory = if (path.isEmpty()) null else privateSource(path)
                 result.success(directory != null && directory.isDirectory && directory.canRead())
             }
-            "linkDirectory" -> {
+            "linkDirectory", "ensureSourceLink" -> {
+                val rebuild = call.method == "linkDirectory"
                 val treeUri = call.argument<String>("treeUri").orEmpty()
                 safExecutor.execute {
                     val selection = runCatching {
-                        if (treeUri.isEmpty()) null else linkDirectory(treeUri)
-                    }.getOrElse {
-                        when (it) {
-                            is InsufficientSpaceException -> result.error(
-                                "SAF_NO_SPACE",
-                                it.message ?: "Not enough app-private space for the folder mirror",
-                                null,
-                            )
-                            else -> result.error(
-                                "SAF_MIRROR",
-                                it.message ?: "Cannot read the selected folder",
-                                null,
-                            )
-                        }
-                        return@execute
-                    }
-                    result.success(selection)
-                }
-            }
-            "ensureSourceLink" -> {
-                val treeUri = call.argument<String>("treeUri").orEmpty()
-                safExecutor.execute {
-                    val selection = runCatching {
-                        if (treeUri.isEmpty()) null else ensureDirectoryLink(treeUri)
+                        if (treeUri.isEmpty()) null else linkDirectory(treeUri, rebuild)
                     }.getOrElse {
                         when (it) {
                             is InsufficientSpaceException -> result.error(
@@ -258,16 +232,12 @@ class MainActivity : FlutterActivity() {
                 safExecutor.execute { result.success(cleanupInternalCaches()) }
             }
             "openOutput" -> {
-                val treeUri = call.argument<String>("treeUri")
-                    ?: call.argument<String>("path").orEmpty()
+                val treeUri = call.argument<String>("treeUri").orEmpty()
                 result.success(openOutput(treeUri))
             }
             "openProfile" -> pickProfile(result)
-            "saveProfile" -> saveProfile(call, result)
-            "saveTextFile" -> saveTextFile(call, result)
+            "saveProfile", "saveTextFile" -> saveTextDocument(call, result)
             "pickFont" -> pickFont(result)
-            // SAF needs no broad storage permission; kept as a compatibility no-op.
-            "ensureStorageAccess" -> result.success(null)
             "updateStatusNotification" -> {
                 val payload = NotificationPayload(
                     title = call.argument<String>("title").orEmpty(),
@@ -331,44 +301,29 @@ class MainActivity : FlutterActivity() {
         startActivityForResult(intent, REQUEST_PICK_FONT)
     }
 
-    private fun saveProfile(call: MethodCall, result: MethodChannel.Result) {
-        saveProfileResult?.success(false)
-        saveProfileResult = result
-        saveProfileContent = call.argument<String>("content").orEmpty()
+    private fun saveTextDocument(call: MethodCall, result: MethodChannel.Result) {
+        val profile = call.method == "saveProfile"
+        val requestCode = if (profile) REQUEST_SAVE_PROFILE else REQUEST_SAVE_TEXT
+        pendingTextSaves[requestCode]?.result?.success(false)
+        pendingTextSaves[requestCode] = PendingTextSave(
+            result, call.argument<String>("content").orEmpty(),
+        )
         val requested = call.argument<String>("suggestedName")?.trim()
-        val suggestedName = if (requested.isNullOrEmpty()) DEFAULT_PROFILE_NAME else requested
+        val defaultName = if (profile) DEFAULT_PROFILE_NAME else DEFAULT_TEXT_NAME
+        val requestedMime = if (profile) "application/json" else call.argument<String>("mimeType")?.trim()
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "application/json"
-            putExtra(Intent.EXTRA_TITLE, suggestedName)
+            type = if (requestedMime.isNullOrEmpty()) DEFAULT_TEXT_MIME else requestedMime
+            putExtra(Intent.EXTRA_TITLE, if (requested.isNullOrEmpty()) defaultName else requested)
         }
-        startActivityForResult(intent, REQUEST_SAVE_PROFILE)
-    }
-
-    private fun saveTextFile(call: MethodCall, result: MethodChannel.Result) {
-        saveTextFileResult?.success(false)
-        saveTextFileResult = result
-        saveTextFileContent = call.argument<String>("content").orEmpty()
-        val requested = call.argument<String>("suggestedName")?.trim()
-        val suggestedName = if (requested.isNullOrEmpty()) DEFAULT_TEXT_NAME else requested
-        val requestedMime = call.argument<String>("mimeType")?.trim()
-        val mimeType = if (requestedMime.isNullOrEmpty()) DEFAULT_TEXT_MIME else requestedMime
-        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = mimeType
-            putExtra(Intent.EXTRA_TITLE, suggestedName)
-        }
-        startActivityForResult(intent, REQUEST_SAVE_TEXT)
+        startActivityForResult(intent, requestCode)
     }
 
     private fun openOutput(treeUriText: String): Boolean {
         if (treeUriText.isBlank()) {
             return false
         }
-        val uri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return false
-        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
-            return false
-        }
+        val uri = contentUri(treeUriText) ?: return false
         val document = runCatching {
             DocumentsContract.buildDocumentUriUsingTree(
                 uri,
@@ -403,54 +358,34 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun selectionOf(uri: Uri): Map<String, String> = mapOf(
+    private fun contentUri(value: String): Uri? =
+        runCatching { Uri.parse(value) }.getOrNull()
+            ?.takeIf { it.scheme == ContentResolver.SCHEME_CONTENT }
+
+    private fun selectionOf(uri: Uri, nativePath: String = ""): Map<String, String> = mapOf(
         "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
-        "nativePath" to "",
+        "nativePath" to nativePath,
         "treeUri" to uri.toString(),
     )
 
-    private fun directorySelection(uri: Uri, linkForNative: Boolean): Map<String, String>? {
-        val nativePath = if (linkForNative) mirrorTree(uri) else ""
-        return mapOf(
-            "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
-            "nativePath" to nativePath,
-            "treeUri" to uri.toString(),
-        )
-    }
-
-    private fun linkDirectory(treeUriText: String): Map<String, String>? {
-        val uri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return null
-        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
-            return null
-        }
-        persistTreePermission(uri)
-        return directorySelection(uri, true)
-    }
     private fun mirrorMarker(key: String): File =
         File(File(filesDir, SAF_MIRROR_DIRECTORY), "$key.complete")
 
-    private fun ensureDirectoryLink(treeUriText: String): Map<String, String>? {
-        val uri = runCatching { Uri.parse(treeUriText) }.getOrNull() ?: return null
-        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
-            return null
-        }
+    private fun linkDirectory(treeUriText: String, rebuild: Boolean): Map<String, String>? {
+        val uri = contentUri(treeUriText) ?: return null
         val key = treeKey(uri)
-        val root = File(File(filesDir, SAF_MIRROR_DIRECTORY), key)
-        if (root.isDirectory && mirrorMarker(key).isFile) {
-            val nativePath = runCatching { root.canonicalPath }.getOrNull()
-            if (nativePath != null) {
-                return mapOf(
-                    "displayPath" to (treeDisplayPath(uri) ?: uri.toString()),
-                    "nativePath" to nativePath,
-                    "treeUri" to uri.toString(),
-                )
+        if (!rebuild) {
+            val root = File(File(filesDir, SAF_MIRROR_DIRECTORY), key)
+            if (root.isDirectory && mirrorMarker(key).isFile) {
+                val nativePath = runCatching { root.canonicalPath }.getOrNull()
+                if (nativePath != null) return selectionOf(uri, nativePath)
             }
         }
-        return linkDirectory(treeUriText)
+        persistTreePermission(uri)
+        return selectionOf(uri, mirrorTree(uri, key))
     }
 
-    private fun mirrorTree(treeUri: Uri): String {
-        val key = treeKey(treeUri)
+    private fun mirrorTree(treeUri: Uri, key: String): String {
         val root = File(File(filesDir, SAF_MIRROR_DIRECTORY), key)
         mirrorMarker(key).delete()
         deleteTree(root)
@@ -551,9 +486,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun copyDocument(uri: Uri, target: File, cancel: AtomicBoolean? = null): Boolean {
-        // Per-file app-private space budget: never start a copy that cannot fit
-        // with the same 64 MiB margin the ISO verification mirror uses.
+    private fun copyDocument(uri: Uri, target: File): Boolean {
+        // Keep the app-private space margin before copying each mirror file.
         ensureMirrorSpace(uri)
         val parent = target.parentFile ?: return false
         parent.mkdirs()
@@ -563,22 +497,12 @@ class MainActivity : FlutterActivity() {
             input.use { raw ->
                 BufferedInputStream(raw).use { source ->
                     BufferedOutputStream(temporary.outputStream()).use { sink ->
-                        val buffer = ByteArray(COPY_BUFFER_BYTES)
-                        while (true) {
-                            if (cancel?.get() == true) throw SafOperationCancelled()
-                            val read = source.read(buffer)
-                            if (read < 0) break
-                            sink.write(buffer, 0, read)
-                        }
+                        source.copyTo(sink, COPY_BUFFER_BYTES)
                     }
                 }
             }
             true
-        }.getOrElse { failure ->
-            temporary.delete()
-            if (failure is SafOperationCancelled) throw failure
-            false
-        }
+        }.getOrDefault(false)
         if (!copied) {
             temporary.delete()
             return false
@@ -628,22 +552,6 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun isReadableFont(path: String): Boolean {
-        if (path.isEmpty()) {
-            return false
-        }
-        return runCatching {
-            val file = File(path).canonicalFile
-            val allowed = if (path.startsWith("/system/fonts/")) {
-                true
-            } else {
-                val root = File(filesDir, FONT_DIRECTORY).canonicalFile
-                file.path.startsWith(root.path + File.separator)
-            }
-            allowed && file.isFile && file.canRead()
-        }.getOrDefault(false)
-    }
-
     private fun privateChildDirectory(parent: File, name: String): File {
         val child = File(parent, name)
         if ((!child.isDirectory && !child.mkdirs()) || !child.canRead() || !child.canWrite()) {
@@ -686,7 +594,6 @@ class MainActivity : FlutterActivity() {
         val source: File,
         val name: String,
         val temporary: Uri,
-        val temporaryName: String,
         var backup: Uri? = null,
         var finalDocument: Uri? = null,
         var committed: Boolean = false,
@@ -707,11 +614,7 @@ class MainActivity : FlutterActivity() {
         exportCancelled.set(false)
         val source = privateSource(sourcePath) ?: return exportFailure("SOURCE_MISSING", "")
         if (!source.isDirectory) return exportFailure("SOURCE_MISSING", "")
-        val treeUri = runCatching { Uri.parse(treeUriText) }.getOrNull()
-            ?: return exportFailure("TREE_URI_INVALID", "")
-        if (treeUri.scheme != ContentResolver.SCHEME_CONTENT) {
-            return exportFailure("TREE_URI_INVALID", "")
-        }
+        val treeUri = contentUri(treeUriText) ?: return exportFailure("TREE_URI_INVALID", "")
         persistTreePermission(treeUri, write = true)
         // Only the published ISO set is the product (same set Windows publication
         // moves); unrelated or stale files in the transport folder are ignored.
@@ -750,7 +653,7 @@ class MainActivity : FlutterActivity() {
                 val temporaryName = exportTemporaryName(name, token, index)
                 val temporary = createDocument(parent, mimeTypeFor(temporaryName), temporaryName)
                     ?: throw ExportFailure("CREATE_TEMPORARY", name)
-                val entry = ExportEntry(child, name, temporary, temporaryName)
+                val entry = ExportEntry(child, name, temporary)
                 prepared.add(entry)
                 copyExportTemporary(entry)
                 postIoProgress(
@@ -794,6 +697,16 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private inline fun readExportChunks(input: InputStream, consume: (ByteArray, Int) -> Unit) {
+        val buffer = ByteArray(COPY_BUFFER_BYTES)
+        while (true) {
+            if (exportCancelled.get()) throw SafOperationCancelled()
+            val size = input.read(buffer)
+            if (size < 0) return
+            consume(buffer, size)
+        }
+    }
+
     private fun copyExportTemporary(entry: ExportEntry) {
         val expectedSize = entry.source.length()
         val digest = MessageDigest.getInstance("SHA-256")
@@ -804,13 +717,9 @@ class MainActivity : FlutterActivity() {
         try {
             BufferedInputStream(entry.source.inputStream()).use { input ->
                 DigestOutputStream(BufferedOutputStream(stream), digest).use { output ->
-                    val buffer = ByteArray(COPY_BUFFER_BYTES)
-                    while (true) {
-                        if (exportCancelled.get()) throw SafOperationCancelled()
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        written += read
+                    readExportChunks(input) { buffer, size ->
+                        output.write(buffer, 0, size)
+                        written += size
                     }
                 }
             }
@@ -892,8 +801,7 @@ class MainActivity : FlutterActivity() {
     ///
     /// Only directories owned by this adapter are removed; user-granted SAF
     /// folders, the unfinished workspace and the exported product are untouched.
-    private fun releaseTaskCaches(cachePaths: List<String>): List<String> {
-        val released = mutableListOf<String>()
+    private fun releaseTaskCaches(cachePaths: List<String>) {
         for (path in cachePaths) {
             val directory = privateSource(path) ?: continue
             val parent = directory.parentFile?.name ?: continue
@@ -905,9 +813,7 @@ class MainActivity : FlutterActivity() {
             // "<key>.complete"; remove it with the cache so a stale marker
             // cannot claim a removed mirror.
             File(directory.parentFile, directory.name + ".complete").delete()
-            released.add(directory.path)
         }
-        return released
     }
 
     private fun exportToken(): String = "%x-%x-%x".format(
@@ -1005,13 +911,7 @@ class MainActivity : FlutterActivity() {
             ?: return null
         try {
             BufferedInputStream(input).use { stream ->
-                val buffer = ByteArray(COPY_BUFFER_BYTES)
-                while (true) {
-                    if (exportCancelled.get()) throw SafOperationCancelled()
-                    val read = stream.read(buffer)
-                    if (read < 0) break
-                    digest.update(buffer, 0, read)
-                }
+                readExportChunks(stream) { buffer, size -> digest.update(buffer, 0, size) }
             }
         } catch (failure: SafOperationCancelled) {
             throw failure
@@ -1262,39 +1162,19 @@ class MainActivity : FlutterActivity() {
                 }.getOrNull()
                 result.success(text)
             }
-            REQUEST_SAVE_PROFILE -> {
-                val result = saveProfileResult ?: return
-                saveProfileResult = null
-                val content = saveProfileContent.orEmpty()
-                saveProfileContent = null
+            REQUEST_SAVE_PROFILE, REQUEST_SAVE_TEXT -> {
+                val pending = pendingTextSaves.remove(requestCode) ?: return
                 val uri = data?.data
                 if (resultCode != RESULT_OK || uri == null) {
-                    result.success(false)
+                    pending.result.success(false)
                     return
                 }
                 val saved = runCatching {
                     contentResolver.openOutputStream(uri)?.use { stream ->
-                        stream.write(content.toByteArray(Charsets.UTF_8))
+                        stream.write(pending.content.toByteArray(Charsets.UTF_8))
                     } != null
                 }.getOrDefault(false)
-                result.success(saved)
-            }
-            REQUEST_SAVE_TEXT -> {
-                val result = saveTextFileResult ?: return
-                saveTextFileResult = null
-                val content = saveTextFileContent.orEmpty()
-                saveTextFileContent = null
-                val uri = data?.data
-                if (resultCode != RESULT_OK || uri == null) {
-                    result.success(false)
-                    return
-                }
-                val saved = runCatching {
-                    contentResolver.openOutputStream(uri)?.use { stream ->
-                        stream.write(content.toByteArray(Charsets.UTF_8))
-                    } != null
-                }.getOrDefault(false)
-                result.success(saved)
+                pending.result.success(saved)
             }
             REQUEST_PICK_FONT -> {
                 val result = pickFontResult ?: return

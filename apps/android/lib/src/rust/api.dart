@@ -30,10 +30,6 @@ String profileIssueMessage({required String language, required String code}) =>
 /// Schema defaults and allowed values shared with the desktop shell.
 String profileOptions() => RustLib.instance.api.crateApiProfileOptions();
 
-/// Shared ISO prefix rule for the title selected in any GUI.
-String profileIsoPrefix({required String title}) =>
-    RustLib.instance.api.crateApiProfileIsoPrefix(title: title);
-
 /// Shared capacity rule: combo index plus optional custom byte count.
 int profileDiscBytes({required int capacity, required String customBytes}) =>
     RustLib.instance.api.crateApiProfileDiscBytes(

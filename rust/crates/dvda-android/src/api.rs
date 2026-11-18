@@ -486,13 +486,6 @@ pub fn profile_options() -> String {
     dvda_core::profile::gui_options().to_string()
 }
 
-/// Shared ISO prefix rule for the title selected in any GUI.
-#[frb(sync)]
-#[must_use]
-pub fn profile_iso_prefix(title: String) -> String {
-    dvda_core::options::iso_prefix(&title)
-}
-
 /// Shared capacity rule: combo index plus optional custom byte count.
 #[frb(sync)]
 #[must_use]
@@ -571,13 +564,6 @@ mod tests {
             Some("json")
         );
         std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn bridge_iso_prefix_uses_the_shared_derivation() {
-        assert_eq!(profile_iso_prefix("My Disc!".into()), "My_Disc");
-        assert_eq!(profile_iso_prefix("  ".into()), "DVD_Audio");
-        assert_eq!(profile_iso_prefix("中文".into()), "DVD_Audio");
     }
 
     #[test]

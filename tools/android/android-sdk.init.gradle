@@ -1,3 +1,8 @@
+if (System.getenv("DVDA_ANDROID_OFFLINE") == "1") {
+    gradle.startParameter.offline = true
+    gradle.startParameter.projectProperties += ["android.builder.sdkDownload": "false"]
+}
+
 // Third-party Flutter plugins may request older platforms. Use the SDK already
 // installed for this product, before AGP finalizes each project's model.
 allprojects {

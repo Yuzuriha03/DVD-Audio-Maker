@@ -127,9 +127,8 @@ class CleanupResult {
 /// A directory granted through the Storage Access Framework.
 ///
 /// [treeUri] is the persistable SAF tree URI, [displayPath] is a human-readable
-/// path for the UI only, and [nativePath] is an absolute app-private tree that
-/// mirrors the granted directory for Rust readers. [nativePath] is empty unless
-/// the picker was asked to build the link tree.
+/// path for the UI only. [nativePath] is the absolute app-private mirror path
+/// returned when preparing a mirror; a picker result leaves it empty.
 class DirectorySelection {
   const DirectorySelection({
     required this.displayPath,
@@ -140,15 +139,11 @@ class DirectorySelection {
   /// Human-readable path for display only.
   final String displayPath;
 
-  /// Absolute app-private path linked to the SAF tree, or empty when the native
-  /// link tree was not requested.
+  /// Absolute app-private mirror path, or empty before mirror preparation.
   final String nativePath;
 
   /// Persistable `content://` tree URI.
   final String treeUri;
-
-  /// Whether [nativePath] can be handed to Rust readers.
-  bool get hasNativePath => nativePath.isNotEmpty;
 
   /// Whether the selection carries no display path.
   bool get isEmpty => displayPath.isEmpty;
@@ -179,8 +174,10 @@ class DirectorySelection {
 /// Native contract (owned by the Android shell task):
 /// * `pickDirectory` — args `{initial: String?, linkForNative: bool}`,
 ///   returns a `DirectorySelection` map, or `null` when cancelled or failed.
-/// * `linkDirectory` — args `{treeUri: String}`, rebuilds the native link
-///   tree after a restart and returns a `DirectorySelection` map, or `null`.
+/// * `linkDirectory` — args `{treeUri: String}`, rebuilds the app-private SAF
+///   mirror and returns a `DirectorySelection` map, or `null`.
+/// * `ensureSourceLink` — same arguments and result; reuses a complete mirror
+///   if available, otherwise rebuilds it.
 /// * `exportDirectory` — args `{sourcePath: String, treeUri: String,
 ///   cachePaths: a list of app-private mirrors}`, returns the transactional
 ///   export result map
@@ -201,7 +198,6 @@ class DirectorySelection {
 ///   mimeType: String}`, returns `true` when the text file was written.
 /// * `pickFont` — no args, returns the absolute path of a copied
 ///   `.ttf`/`.otf`/`.ttc` font, or `null` when cancelled or unsupported.
-/// * `ensureStorageAccess` — no args, legacy no-op.
 ///
 /// A missing plugin is treated as a no-op so the UI can still be rendered and
 /// exercised without the Android shell; result-returning helpers fall back to
@@ -260,9 +256,9 @@ class PlatformService {
 
   /// Opens the system directory picker and persists the returned SAF grant.
   ///
-  /// Set [linkForNative] when the directory will be read by Rust. The native
-  /// side then mirrors the tree under app-private storage and returns that
-  /// absolute path in [DirectorySelection.nativePath].
+  /// Set [linkForNative] to request read-only access for an input directory.
+  /// Output directories also request write access. Picking does not build a
+  /// mirror; the task only prepares one later if needed.
   Future<DirectorySelection?> pickDirectory({
     String initial = '',
     bool linkForNative = false,
@@ -309,15 +305,6 @@ class PlatformService {
       'treeUri': treeUri,
     });
     return DirectorySelection.fromMap(result);
-  }
-
-  /// Checks a system font or an imported font under the current filesDir.
-  Future<bool> validateReadableFont(String path) async {
-    final result = await _invoke<Object?>(
-      'validateReadableFont',
-      <String, Object?>{'path': path},
-    );
-    return result == true;
   }
 
   /// Exports the task-local product into a granted SAF tree as a transaction.
@@ -430,14 +417,6 @@ class PlatformService {
       'treeUri': treeUri,
     });
     return result == true;
-  }
-
-  /// Legacy entry point kept for existing callers.
-  ///
-  /// SAF needs no broad storage permission, so the Android shell treats this as
-  /// a no-op.
-  Future<void> ensureStorageAccess() async {
-    await _invoke<Object?>('ensureStorageAccess');
   }
 
   /// Publishes the ongoing task progress in the status bar and, on

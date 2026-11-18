@@ -25,7 +25,9 @@ Compose/classic View 业务界面，也不使用手写 JNI 业务桥。
 `rust/crates/dvda-android`（`aarch64-linux-android`），把
 `libdvda_android.so` 复制到 TEMP 中的暂存工程，再用
 `build/flutter/bin/flutter.bat` 执行
-`flutter build apk --release --target-platform android-arm64`。
+`flutter build apk --release --target-platform android-arm64 --no-pub`。依赖只在构建前解析一次；
+本地分发包和依赖缓存齐备时，可给同一脚本传 `-Offline`，按提交的 Pub 锁文件解析，
+让 Gradle 和 Cargo 只用本地缓存，并禁用 Gradle 的 SDK 自动下载。
 
 为避免在 TF 卡等慢速盘上展开大量小文件，脚本把 Cargo target、Gradle 缓存和 Flutter
 暂存工程放到 `%TEMP%\dvda-android-build`；每次使用独立的暂存工程，完成后只将
@@ -82,8 +84,12 @@ Flutter 检查（需要 `build/flutter` 的 `flutter` 在 PATH 中）：
 真机安装与启动（用于确认 APK 能安装并启动，不代替业务链路验证）：
 
     build/android-sdk/platform-tools/adb.exe install -r $apk
+先在一个终端抓取启动和崩溃日志，再在另一个终端启动应用：
+
+    build/android-sdk/platform-tools/adb.exe logcat -b main -b crash -s DvdaMaker AndroidRuntime flutter libc DEBUG
     build/android-sdk/platform-tools/adb.exe shell am start -n com.dvda.maker/.MainActivity
-    build/android-sdk/platform-tools/adb.exe logcat -s DvdaMaker flutter
+
+`DvdaMaker` 标记应用启动阶段；崩溃由 Android 系统记录，不另写应用私有崩溃文件。
 
 以上任意一项通过都只代表对应层级通过；ARM64 真机上的完整
 prepare → 编码 → author → verify 链路需要单独在设备上执行。

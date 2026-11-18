@@ -96,13 +96,6 @@ abstract final class AppBridge {
   static String profileIssueMessage(String language, String code) =>
       rust_api.profileIssueMessage(language: language, code: code);
 
-  /// Shared ISO filename prefix derivation for a disc title.
-  ///
-  /// The same shared rule feeds Windows publication and shared verification;
-  /// Flutter must not re-implement it.
-  static String profileIsoPrefix(String title) =>
-      rust_api.profileIsoPrefix(title: title);
-
   /// Formats a whole task log with the shared Rust log rules.
   static rust_api.FormattedLog formatLog(String language, String log) =>
       rust_api.formatLog(language: language, log: log);

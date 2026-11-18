@@ -1,10 +1,21 @@
+param([switch]$Offline)
+
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $gradleVersion = "9.5.0"
 $env:JAVA_HOME = Join-Path $root "build/jdk17"
 $env:ANDROID_HOME = Join-Path $root "build/android-sdk"
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
-$env:PUB_HOSTED_URL = "https://pub.flutter-io.cn"
+$pubArgs = @()
+if ($Offline) {
+    # Match the hosted URLs in the committed Pub lockfile and never fetch them.
+    [Environment]::SetEnvironmentVariable("PUB_HOSTED_URL", $null, "Process")
+    $env:CARGO_NET_OFFLINE = "true"
+    $env:DVDA_ANDROID_OFFLINE = "1"
+    $pubArgs = @("--offline", "--enforce-lockfile")
+} else {
+    $env:PUB_HOSTED_URL = "https://pub.flutter-io.cn"
+}
 $env:GRADLE_OPTS = "-Dorg.gradle.daemon=false"
 [Environment]::SetEnvironmentVariable("DVDA_ANDROID_NDK", (Join-Path $root "build/android-ndk-r30"), "Process")
 $localNdk = Join-Path $root "build/android-ndk-r30"
@@ -131,6 +142,8 @@ try {
         $wrapperText = [System.IO.File]::ReadAllText($wrapperProperties)
         $wrapperText = $wrapperText -replace "distributionUrl=.*", "distributionUrl=$distributionUrl"
         [System.IO.File]::WriteAllText($wrapperProperties, $wrapperText)
+    } elseif ($Offline) {
+        throw "The local Gradle $gradleVersion distribution is missing. Prepare it before an offline build."
     } else {
         # No local distribution: use the verified Huawei mirror. Aliyun's
         # /gradle/gradle-$gradleVersion-all.zip currently returns 404, so it cannot serve
@@ -160,9 +173,9 @@ try {
     try {
         # Flutter and its plugins use the versions resolved by the Flutter SDK
         # and the committed lockfile; do not replace them with unrelated latest.
-        & $flutter pub get
+        & $flutter --no-version-check pub get @pubArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $flutter build apk --release --target-platform android-arm64
+        & $flutter --no-version-check build apk --release --target-platform android-arm64 --no-pub
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     } finally {
         Pop-Location
