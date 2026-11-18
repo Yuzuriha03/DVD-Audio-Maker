@@ -1,4 +1,5 @@
 use std::{io::Read, path::Path};
+mod console;
 mod developer;
 mod process_fixture;
 

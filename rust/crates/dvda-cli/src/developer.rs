@@ -9,25 +9,8 @@ use serde_json::{Value, json};
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
 };
 
-static CANCELLED: AtomicBool = AtomicBool::new(false);
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    fn SetConsoleCtrlHandler(
-        handler: Option<unsafe extern "system" fn(u32) -> i32>,
-        add: i32,
-    ) -> i32;
-}
-extern "system" fn control(event: u32) -> i32 {
-    if event <= 1 {
-        CANCELLED.store(true, Ordering::Release);
-        1
-    } else {
-        0
-    }
-}
 struct Events(String);
 impl Callbacks for Events {
     fn emit(&mut self, stream: i32, text: &str) {
@@ -39,7 +22,7 @@ impl Callbacks for Events {
         }
     }
     fn cancelled(&mut self) -> bool {
-        CANCELLED.load(Ordering::Acquire)
+        crate::console::cancelled()
     }
 }
 pub fn accepts(args: &[String]) -> bool {
@@ -60,10 +43,7 @@ pub fn accepts(args: &[String]) -> bool {
     })
 }
 pub fn run(args: &[String]) -> i32 {
-    // SAFETY: handler accesses only a static atomic and has the Win32 callback ABI.
-    unsafe {
-        SetConsoleCtrlHandler(Some(control), 1);
-    }
+    crate::console::install_cancel_handler();
     match execute(args) {
         Ok(code) => code,
         Err((code, error)) => {

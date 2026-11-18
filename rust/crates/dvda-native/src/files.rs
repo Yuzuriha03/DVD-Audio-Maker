@@ -29,10 +29,29 @@ fn wide(value: &OsStr) -> io::Result<Vec<u16>> {
 /// Rejects paths containing NUL and returns the Windows error when the move fails or replacement is disallowed.
 #[cfg(windows)]
 pub fn move_file(source: &Path, destination: &Path, replace: bool) -> io::Result<()> {
+    // COPY_ALLOWED retains File.Move's cross-volume behavior; no replacement by default.
+    move_with_flags(source, destination, 2 | u32::from(replace))
+}
+
+/// Replace a staged publication file on the same volume, with write-through on Windows.
+///
+/// # Errors
+/// Returns the OS error when replacing the destination fails.
+pub fn replace_published_file(source: &Path, destination: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        move_with_flags(source, destination, 1 | 8)
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(source, destination)
+    }
+}
+
+#[cfg(windows)]
+fn move_with_flags(source: &Path, destination: &Path, flags: u32) -> io::Result<()> {
     let source = wide(source.as_os_str())?;
     let destination = wide(destination.as_os_str())?;
-    // COPY_ALLOWED retains File.Move's cross-volume behavior; no replacement by default.
-    let flags = 2 | u32::from(replace);
     // SAFETY: both NUL-terminated buffers remain valid for the synchronous call.
     if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), flags) } == 0 {
         Err(io::Error::last_os_error())

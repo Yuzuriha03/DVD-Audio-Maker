@@ -694,7 +694,6 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
         );
         let settings_visible = if task_only { SW_HIDE } else { SW_SHOW };
         ShowWindow(state.controls.advanced, settings_visible);
-        ShowWindow(state.controls.profile_origin, SW_HIDE);
         // The active tab uses the semibold font; size every tab for it.
         let mut tab_x = margin;
         for tab in &state.tabs {

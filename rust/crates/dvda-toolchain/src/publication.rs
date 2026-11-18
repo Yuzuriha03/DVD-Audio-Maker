@@ -145,28 +145,8 @@ fn commit_with(
     Ok(())
 }
 
-#[cfg(windows)]
 fn replace(source: &Path, destination: &Path) -> Result<(), String> {
-    use std::os::windows::ffi::OsStrExt;
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
-    }
-    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let destination: Vec<u16> = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 1 | 8) } == 0 {
-        Err(err(std::io::Error::last_os_error()))
-    } else {
-        Ok(())
-    }
-}
-#[cfg(not(windows))]
-fn replace(source: &Path, destination: &Path) -> Result<(), String> {
-    fs::rename(source, destination).map_err(err)
+    dvda_native::files::replace_published_file(source, destination).map_err(err)
 }
 fn err(error: impl std::fmt::Display) -> String {
     error.to_string()

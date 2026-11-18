@@ -159,9 +159,7 @@ pub fn disc_signature(job: &Job, disc: &Disc) -> Result<String, String> {
     if job.menu_enabled {
         for track in &disc.tracks {
             if let Some(directory) = Path::new(&track.source_path).parent() {
-                for ext in ["jpg", "jpeg", "png", "webp"] {
-                    assets.insert(directory.join(format!("cover.{ext}")));
-                }
+                assets.extend(crate::menu::cover_candidates(directory));
             }
         }
         for configured in [

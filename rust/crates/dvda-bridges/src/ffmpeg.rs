@@ -79,7 +79,6 @@ unsafe extern "C" {
     pub fn av_packet_free(p: *mut *mut Packet);
     pub fn av_packet_unref(p: *mut Packet);
     pub fn av_packet_clone(p: *const Packet) -> *mut Packet;
-    pub fn av_packet_move_ref(d: *mut Packet, s: *mut Packet);
     pub fn av_grow_packet(p: *mut Packet, size: i32) -> i32;
     pub fn av_packet_rescale_ts(p: *mut Packet, src: Rational, dst: Rational);
     pub fn av_frame_alloc() -> *mut Frame;

@@ -13,17 +13,6 @@ fn main() {
         ),
         "DVD-Audio Maker supports only Windows x64/ARM64 MSVC, got {target}"
     );
-    if env::var_os("CARGO_FEATURE_DIRECT_BRIDGES").is_some() && !static_ffmpeg() {
-        for library in [
-            "avformat-63.dll",
-            "avcodec-63.dll",
-            "avutil-61.dll",
-            "swresample-7.dll",
-            "swscale-10.dll",
-        ] {
-            println!("cargo:rustc-link-arg=/DELAYLOAD:{library}");
-        }
-    }
     println!("cargo:rerun-if-env-changed=DVDA_RUNTIME_ARCHIVE");
     println!("cargo:rerun-if-env-changed=DVDA_PRODUCT_VERSION");
     let generated = PathBuf::from(env::var_os("OUT_DIR").unwrap());
@@ -145,19 +134,6 @@ fn embed_licenses(manifest_dir: &Path, generated: &Path) {
         .unwrap();
     }
     std::fs::write(generated.join("licenses.rs"), module).unwrap();
-}
-
-fn static_ffmpeg() -> bool {
-    println!("cargo:rerun-if-env-changed=DVDA_FFMPEG_PREFIX");
-    let Some(prefix) = env::var_os("DVDA_FFMPEG_PREFIX") else {
-        return false;
-    };
-    let manifest = PathBuf::from(prefix).join("build-manifest.json");
-    println!("cargo:rerun-if-changed={}", manifest.display());
-    let bytes = std::fs::read(manifest).expect("FFmpeg build manifest required");
-    let record: serde_json::Value =
-        serde_json::from_slice(&bytes).expect("Invalid FFmpeg manifest");
-    record["linkage"] == "static"
 }
 
 fn compiler_in_path(name: &Path) -> Option<PathBuf> {

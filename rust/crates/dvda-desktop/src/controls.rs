@@ -133,19 +133,9 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
             Lang::Ko => 4,
         },
     );
-    let origin = label!(
-        parent,
-        &profile_path.to_string_lossy(),
-        "",
-        390,
-        42,
-        1030,
-        20,
-        &mut Vec::new(),
-    );
     let mut tabs = Vec::new();
     for (index, key) in ["start", "audio", "menu"].iter().enumerate() {
-        tabs.push(tab_button(
+        tabs.push(button(
             parent,
             tr(lang, key),
             ID_TAB + index,
@@ -194,7 +184,6 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
         build: ptr::null_mut(),
         cancel: ptr::null_mut(),
         open_output: ptr::null_mut(),
-        profile_origin: origin,
     };
     let page_start = create_page(parent);
     pages.push(page_start);
@@ -606,8 +595,8 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     {
         win::send_int(log, EM_SETLIMITTEXT, 1_000_000, 0);
     }
-    let build = primary_button(parent, tr(lang, "build"), ID_BUILD, 175, 740, 145, 34);
-    let cancel = danger_button(parent, tr(lang, "cancel"), ID_CANCEL, 490, 740, 145, 34);
+    let build = button(parent, tr(lang, "build"), ID_BUILD, 175, 740, 145, 34);
+    let cancel = button(parent, tr(lang, "cancel"), ID_CANCEL, 490, 740, 145, 34);
     let open_output = button(
         parent,
         tr(lang, "open_output"),
@@ -684,7 +673,6 @@ pub(crate) fn create_controls(parent: Hwnd) -> UiState {
     }
     let muted = vec![
         profile_label,
-        origin,
         operation_section,
         log_section,
         activity,
@@ -954,60 +942,6 @@ pub(crate) fn combo(parent: Hwnd, id: usize, x: i32, y: i32, w: i32, h: i32) -> 
 }
 
 pub(crate) fn button(parent: Hwnd, text: &str, id: usize, x: i32, y: i32, w: i32, h: i32) -> Hwnd {
-    owner_draw_button(
-        parent,
-        text,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-        id,
-        (x, y, w, h),
-    )
-}
-
-pub(crate) fn primary_button(
-    parent: Hwnd,
-    text: &str,
-    id: usize,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-) -> Hwnd {
-    owner_draw_button(
-        parent,
-        text,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-        id,
-        (x, y, w, h),
-    )
-}
-
-pub(crate) fn danger_button(
-    parent: Hwnd,
-    text: &str,
-    id: usize,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-) -> Hwnd {
-    owner_draw_button(
-        parent,
-        text,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-        id,
-        (x, y, w, h),
-    )
-}
-
-pub(crate) fn tab_button(
-    parent: Hwnd,
-    text: &str,
-    id: usize,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-) -> Hwnd {
     owner_draw_button(
         parent,
         text,

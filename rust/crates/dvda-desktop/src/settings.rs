@@ -476,7 +476,6 @@ pub(crate) fn save_profile(state: &mut UiState) {
     match dvda_core::app::save_profile(&path, &values, state.lang().code()) {
         Ok(()) => {
             set_text(state.controls.profile, &path.to_string_lossy());
-            set_text(state.controls.profile_origin, &path.to_string_lossy());
             state.profile_path.clone_from(&path);
             state.base = AppOptions::load(Some(&path))
                 .ok()
@@ -599,7 +598,6 @@ pub(crate) fn choose_and_load_profile(hwnd: Hwnd, state: &mut UiState) {
         Ok(options) => {
             state.profile_path.clone_from(&path);
             set_text(state.controls.profile, &path.to_string_lossy());
-            set_text(state.controls.profile_origin, &path.to_string_lossy());
             state.base = Some(options.clone());
             populate(state, &options);
             if let Some(code) = profile_language(&path) {

@@ -84,6 +84,7 @@ Flutter 检查（需要 `build/flutter` 的 `flutter` 在 PATH 中）：
 真机安装与启动（用于确认 APK 能安装并启动，不代替业务链路验证）：
 
     build/android-sdk/platform-tools/adb.exe install -r $apk
+
 先在一个终端抓取启动和崩溃日志，再在另一个终端启动应用：
 
     build/android-sdk/platform-tools/adb.exe logcat -b main -b crash -s DvdaMaker AndroidRuntime flutter libc DEBUG

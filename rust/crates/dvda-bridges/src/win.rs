@@ -7,14 +7,9 @@ pub type Handle = *mut c_void;
 unsafe extern "system" {
     pub fn GetActiveProcessorCount(group: u16) -> u32;
     pub fn GetModuleFileNameW(module: Handle, path: *mut u16, size: u32) -> u32;
-    pub fn GetModuleHandleExW(flags: u32, address: *const u16, module: *mut Handle) -> i32;
-    pub fn SetEnvironmentVariableW(name: *const u16, value: *const u16) -> i32;
     pub fn GetModuleHandleW(name: *const u16) -> Handle;
-    pub fn GetCommandLineW() -> *const u16;
-    pub fn GetStdHandle(which: u32) -> Handle;
     pub fn GetLastError() -> u32;
     pub fn CloseHandle(h: Handle) -> i32;
-    pub fn LocalFree(h: Handle) -> Handle;
     pub fn CreateJobObjectW(attr: *const c_void, name: *const u16) -> Handle;
     pub fn SetInformationJobObject(job: Handle, class: u32, info: *const c_void, size: u32) -> i32;
     pub fn AssignProcessToJobObject(job: Handle, process: Handle) -> i32;
@@ -35,11 +30,6 @@ unsafe extern "system" {
     pub fn WaitForSingleObject(handle: Handle, time: u32) -> u32;
     pub fn GetExitCodeProcess(process: Handle, code: *mut u32) -> i32;
     pub fn GetProcAddress(module: Handle, name: *const c_char) -> *mut c_void;
-}
-#[cfg(windows)]
-#[link(name = "shell32")]
-unsafe extern "system" {
-    pub fn CommandLineToArgvW(line: *const u16, count: *mut i32) -> *mut *mut u16;
 }
 #[cfg(windows)]
 #[repr(C)]

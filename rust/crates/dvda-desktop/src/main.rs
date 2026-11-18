@@ -906,7 +906,6 @@ struct Controls {
     build: Hwnd,
     cancel: Hwnd,
     open_output: Hwnd,
-    profile_origin: Hwnd,
 }
 
 /// What the paint and scrollbar code reads from the main window. It lives apart from

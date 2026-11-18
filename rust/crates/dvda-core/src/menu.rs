@@ -776,23 +776,21 @@ fn page_cover(
     if source_documents.is_empty() {
         return find_cover(parent);
     }
-    ["jpg", "jpeg", "png", "webp"].iter().find_map(|extension| {
+    cover_candidates(parent).find_map(|path| {
         source_documents
-            .get(
-                &parent
-                    .join(format!("cover.{extension}"))
-                    .to_string_lossy()
-                    .into_owned(),
-            )
+            .get(path.to_string_lossy().as_ref())
             .map(PathBuf::from)
     })
 }
 
 fn find_cover(directory: &Path) -> Option<PathBuf> {
+    cover_candidates(directory).find(|path| path.is_file())
+}
+
+pub(crate) fn cover_candidates(directory: &Path) -> impl Iterator<Item = PathBuf> + '_ {
     ["jpg", "jpeg", "png", "webp"]
-        .iter()
+        .into_iter()
         .map(|extension| directory.join(format!("cover.{extension}")))
-        .find(|path| path.is_file())
 }
 
 fn resolve_font(configured: &str, binary_directory: &Path) -> String {
