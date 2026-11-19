@@ -361,6 +361,7 @@ pub(crate) unsafe extern "system" fn window_proc(
             0
         }
         updates::WM_UPDATE_CHECK_RESULT => {
+            println!("WM_UPDATE_CHECK_RESULT received!");
             let lang = unsafe { state(hwnd) }.map(|state| state.lang());
             if let Some(result) = updates::take_result() {
                 updates::finish_check(hwnd, lang.unwrap_or(result.lang), result);

@@ -311,7 +311,9 @@ fn layout(window: Hwnd) {
         1,
     );
     let footer_width = measure_button(&state.theme, &get_text(state.footer));
-    let update_width = measure_button(&state.theme, &get_text(state.update_check));
+    let update_width = measure_button(&state.theme, tr(state.lang, "check_updates")).max(
+        measure_button(&state.theme, tr(state.lang, "checking_updates")),
+    );
     let update_width = update_width.min(
         (client.right - margin * 2 - footer_width - state.theme.sd(8)).max(state.theme.sd(80)),
     );
