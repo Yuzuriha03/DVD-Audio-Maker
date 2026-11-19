@@ -1,7 +1,7 @@
 name: dvda_maker
 description: DVD-Audio Maker Flutter application
 publish_to: none
-version: 1.3.0+3
+version: 1.2.1+3
 
 environment:
   sdk: ^3.8.0
