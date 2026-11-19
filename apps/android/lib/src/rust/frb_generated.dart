@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1380814107;
+  int get rustContentHash => -1037226447;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -77,6 +77,8 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 
 abstract class RustLibApi extends BaseApi {
   void crateApiCancel();
+
+  String crateApiFormatLine({required String language, required String text});
 
   FormattedLog crateApiFormatLog({
     required String language,
@@ -100,7 +102,7 @@ abstract class RustLibApi extends BaseApi {
     required bool forTask,
   });
 
-  ProgressSnapshot crateApiProgressSnapshot();
+  ProgressSnapshot crateApiProgressSnapshot({required int lastRevision});
 
   Future<String> crateApiRunProfile({
     required String profileJson,
@@ -146,6 +148,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "cancel", argNames: []);
 
   @override
+  String crateApiFormatLine({required String language, required String text}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(language, serializer);
+          sse_encode_String(text, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiFormatLineConstMeta,
+        argValues: [language, text],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiFormatLineConstMeta => const TaskConstMeta(
+    debugName: "format_line",
+    argNames: ["language", "text"],
+  );
+
+  @override
   FormattedLog crateApiFormatLog({
     required String language,
     required String log,
@@ -156,7 +184,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(language, serializer);
           sse_encode_String(log, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_formatted_log,
@@ -185,7 +213,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_CastedPrimitive_i_64(capacity, serializer);
           sse_encode_String(customBytes, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_CastedPrimitive_i_64,
@@ -214,7 +242,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(language, serializer);
           sse_encode_String(code, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -239,7 +267,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -266,7 +294,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(valuesJson, serializer);
           sse_encode_bool(forTask, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_profile_issue,
@@ -285,26 +313,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  ProgressSnapshot crateApiProgressSnapshot() {
+  ProgressSnapshot crateApiProgressSnapshot({required int lastRevision}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+          sse_encode_CastedPrimitive_u_64(lastRevision, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_progress_snapshot,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiProgressSnapshotConstMeta,
-        argValues: [],
+        argValues: [lastRevision],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiProgressSnapshotConstMeta =>
-      const TaskConstMeta(debugName: "progress_snapshot", argNames: []);
+  TaskConstMeta get kCrateApiProgressSnapshotConstMeta => const TaskConstMeta(
+    debugName: "progress_snapshot",
+    argNames: ["lastRevision"],
+  );
 
   @override
   Future<String> crateApiRunProfile({
@@ -320,7 +351,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 9,
             port: port_,
           );
         },
@@ -351,7 +382,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(currentVersion, serializer);
           sse_encode_String(releaseJson, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_android_update,
@@ -375,7 +406,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -484,13 +515,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ProgressSnapshot dco_decode_progress_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return ProgressSnapshot(
       done: dco_decode_CastedPrimitive_u_64(arr[0]),
       total: dco_decode_CastedPrimitive_u_64(arr[1]),
       text: dco_decode_String(arr[2]),
       log: dco_decode_String(arr[3]),
+      logRevision: dco_decode_CastedPrimitive_u_64(arr[4]),
     );
   }
 
@@ -616,11 +648,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_total = sse_decode_CastedPrimitive_u_64(deserializer);
     var var_text = sse_decode_String(deserializer);
     var var_log = sse_decode_String(deserializer);
+    var var_logRevision = sse_decode_CastedPrimitive_u_64(deserializer);
     return ProgressSnapshot(
       done: var_done,
       total: var_total,
       text: var_text,
       log: var_log,
+      logRevision: var_logRevision,
     );
   }
 
@@ -743,6 +777,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_CastedPrimitive_u_64(self.total, serializer);
     sse_encode_String(self.text, serializer);
     sse_encode_String(self.log, serializer);
+    sse_encode_CastedPrimitive_u_64(self.logRevision, serializer);
   }
 
   @protected

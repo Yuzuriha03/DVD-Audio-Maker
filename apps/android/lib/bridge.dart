@@ -16,12 +16,14 @@ class BridgeProgress {
     required this.total,
     required this.text,
     required this.log,
+    this.logRevision = 0,
   });
 
   final int done;
   final int total;
   final String text;
   final String log;
+  final int logRevision;
 }
 
 abstract final class AppBridge {
@@ -62,13 +64,14 @@ abstract final class AppBridge {
     return rust_api.runProfile(profileJson: profileJson, action: action);
   }
 
-  static BridgeProgress progress() {
-    final value = rust_api.progressSnapshot();
+  static BridgeProgress progress({required int lastRevision}) {
+    final value = rust_api.progressSnapshot(lastRevision: lastRevision);
     return BridgeProgress(
       done: value.done.toInt(),
       total: value.total.toInt(),
       text: value.text,
       log: value.log,
+      logRevision: value.logRevision.toInt(),
     );
   }
 
@@ -111,6 +114,10 @@ abstract final class AppBridge {
     final update = updates.single;
     return (version: update.version, downloadUrl: update.downloadUrl);
   }
+
+  /// Formats a single raw progress line with the shared Rust log rules.
+  static String formatLine(String language, String text) =>
+      rust_api.formatLine(language: language, text: text);
 
   /// Formats a whole task log with the shared Rust log rules.
   static rust_api.FormattedLog formatLog(String language, String log) =>

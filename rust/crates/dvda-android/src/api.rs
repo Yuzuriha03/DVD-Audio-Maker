@@ -13,6 +13,8 @@ use dvda_native::media::Callbacks;
 use flutter_rust_bridge::frb;
 
 static LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// Monotonic counter starting at 1 so `last_revision == 0` always fetches the initial log.
+static LOG_REVISION: AtomicU64 = AtomicU64::new(1);
 static CANCEL: AtomicBool = AtomicBool::new(false);
 static DONE: AtomicU64 = AtomicU64::new(0);
 static TOTAL: AtomicU64 = AtomicU64::new(PROGRESS_TOTAL);
@@ -28,6 +30,14 @@ pub struct ProgressSnapshot {
     pub total: u64,
     pub text: String,
     pub log: String,
+    pub log_revision: u64,
+}
+
+fn clear_log() {
+    if let Ok(mut log) = LOG.lock() {
+        log.clear();
+        LOG_REVISION.fetch_add(1, Ordering::Release);
+    }
 }
 
 fn push_log(text: &str) {
@@ -44,6 +54,7 @@ fn push_log(text: &str) {
             let drain = log.len() - 300;
             log.drain(..drain);
         }
+        LOG_REVISION.fetch_add(1, Ordering::Release);
     }
 }
 
@@ -275,9 +286,7 @@ pub fn run_profile(profile_json: String, action: String) -> String {
     // Start from empty bridge state. Clearing after the profile is loaded let the
     // GUI poller read the previous run's errors for a moment, which showed a
     // short-lived error flash at task start.
-    if let Ok(mut log) = LOG.lock() {
-        log.clear();
-    }
+    clear_log();
     if let Ok(mut text) = TEXT.lock() {
         text.clear();
     }
@@ -513,6 +522,13 @@ pub fn profile_validate(values_json: String, for_task: bool) -> Vec<ProfileIssue
         .collect()
 }
 
+/// Formats a single raw progress or log line with the shared Rust rules.
+#[frb(sync)]
+#[must_use]
+pub fn format_line(language: String, text: String) -> String {
+    dvda_core::log_view::render_line(&language, &text)
+}
+
 /// Formats a whole task log for the Flutter GUI and counts problem lines.
 #[frb(sync)]
 #[must_use]
@@ -524,17 +540,27 @@ pub fn format_log(language: String, log: String) -> FormattedLog {
         problems: formatted.problems,
     }
 }
+
 #[frb(sync)]
-pub fn progress_snapshot() -> ProgressSnapshot {
+#[must_use]
+pub fn progress_snapshot(last_revision: u64) -> ProgressSnapshot {
+    let current_revision = LOG_REVISION.load(Ordering::Acquire);
+    let (log_revision, log) = if current_revision == last_revision {
+        (current_revision, String::new())
+    } else {
+        LOG.lock().map_or_else(
+            |_| (current_revision, String::new()),
+            |log| (LOG_REVISION.load(Ordering::Relaxed), log.join("\n")),
+        )
+    };
     ProgressSnapshot {
         done: DONE.load(Ordering::Relaxed),
         total: TOTAL.load(Ordering::Relaxed),
         text: TEXT
             .lock()
             .map_or_else(|_| String::new(), |slot| slot.clone()),
-        log: LOG
-            .lock()
-            .map_or_else(|_| String::new(), |log| log.join("\n")),
+        log,
+        log_revision,
     }
 }
 
@@ -651,6 +677,55 @@ mod tests {
     }
 
     #[test]
+    fn progress_snapshot_skips_unchanged_log_and_advances_revision() {
+        let _guard = API_TEST_LOCK.lock().unwrap();
+        clear_log();
+        push_log("[error] first line");
+        push_log("[error] second line");
+
+        let first = progress_snapshot(0);
+        assert!(first.log_revision > 0);
+        assert!(first.log.contains("first line") && first.log.contains("second line"));
+
+        // Polling again with the same revision must skip joining and return an empty delta.
+        let unchanged = progress_snapshot(first.log_revision);
+        assert_eq!(unchanged.log_revision, first.log_revision);
+        assert_eq!(unchanged.log, "");
+
+        // Appending a new line must advance the revision and return the updated log.
+        push_log("[error] third line");
+        let updated = progress_snapshot(first.log_revision);
+        assert!(updated.log_revision > first.log_revision);
+        assert!(updated.log.contains("third line"));
+
+        // Starting a new profile run clears the ring and still advances the revision monotonically.
+        let _ = run_profile("not-a-profile".into(), "status".into());
+        let reset = progress_snapshot(updated.log_revision);
+        assert!(reset.log_revision > updated.log_revision);
+        assert!(!reset.log.contains("third line"));
+    }
+
+    #[test]
+    fn format_line_renders_single_structured_event_and_hides_noise() {
+        let event = format!(
+            "{} {}",
+            dvda_core::task_log::PREFIX,
+            serde_json::json!({
+                "Action": "disc_plan",
+                "Current": 1,
+                "Total": 2,
+                "Name": "",
+                "Detail": "",
+                "Warning": false
+            })
+        );
+        let rendered = format_line("zh-CN".into(), event);
+        assert!(rendered.contains("分盘规划完成"), "{rendered}");
+        assert!(!rendered.contains("\"Action\""), "{rendered}");
+        assert_eq!(format_line("zh-CN".into(), "out_time_us=99".into()), "");
+    }
+
+    #[test]
     fn bridge_progress_text_keeps_the_whole_structured_event() {
         let _guard = API_TEST_LOCK.lock().unwrap();
         let event = format!(
@@ -667,7 +742,7 @@ mod tests {
         );
         assert!(event.len() > 80);
         set_text(&event);
-        let snapshot = progress_snapshot();
+        let snapshot = progress_snapshot(0);
         assert_eq!(snapshot.text, event);
         let formatted = dvda_core::log_view::format_log("zh-CN", &snapshot.text);
         assert!(
@@ -698,7 +773,7 @@ mod tests {
             1,
             r#"[TASK] {"Action":"disc_plan","Current":2,"Total":149,"Name":"","Detail":""}"#,
         );
-        let snapshot = progress_snapshot();
+        let snapshot = progress_snapshot(0);
         assert!(!snapshot.log.contains("out_time_us"), "{}", snapshot.log);
         // Capacity warnings stay in the bridge ring; the shared formatter renders
         // them instead of dropping them.
@@ -758,7 +833,7 @@ mod tests {
             "stale log leaked: {second}"
         );
         assert!(!second_log.contains("stale-progress"), "{second}");
-        let snapshot = progress_snapshot();
+        let snapshot = progress_snapshot(0);
         assert!(
             !snapshot.text.contains("stale-progress"),
             "{}",

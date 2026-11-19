@@ -137,46 +137,46 @@ class SettingsStore {
   }
 
   Future<void> save(AppSettings settings) async {
-    await _preferences.setString('language', settings.language);
-    await _preferences.setString('theme', settings.theme);
-    await _preferences.setString('source', settings.source);
-    await _preferences.setString(
-      'source_staging_path',
-      settings.sourceStagingPath,
-    );
-    await _preferences.setString('source_tree_uri', settings.sourceTreeUri);
-    await _preferences.setString('final_dir', settings.finalDir);
-    await _preferences.setString('final_tree_uri', settings.finalTreeUri);
-    await _preferences.setString('title', settings.title);
-    await _preferences.setInt('capacity', settings.capacity);
-    await _preferences.setString('custom_bytes', settings.customBytes);
-    await _preferences.setBool('advanced', settings.advanced);
-    await _preferences.setString('iso_prefix', settings.isoPrefix);
-    await _preferences.setString('group_track_limit', settings.groupTrackLimit);
-    await _preferences.setString('title_mode', settings.titleMode);
-    await _preferences.setString('album_limit', settings.albumLimit);
-    await _preferences.setBool('keep_tmp', settings.keepTmp);
-    await _preferences.setString('audio_mode', settings.audioMode);
-    await _preferences.setString('sample_rate', settings.sampleRate);
-    await _preferences.setString('bits', settings.bits);
-    await _preferences.setBool('dither16', settings.dither16);
-    await _preferences.setString('external_dir', settings.externalDir);
-    await _preferences.setString(
-      'external_staging_path',
-      settings.externalStagingPath,
-    );
-    await _preferences.setString('external_tree_uri', settings.externalTreeUri);
-    await _preferences.setBool('menu', settings.menu);
-    await _preferences.setBool('stills', settings.stills);
-    await _preferences.setString('tracks_per_page', settings.tracksPerPage);
-    await _preferences.setString('cover_dim', settings.coverDim);
-    await _preferences.setString('norm', settings.norm);
-    await _preferences.setString('font_sc', settings.fontSc);
-    await _preferences.setString('font_jp', settings.fontJp);
-    await _preferences.setString('font_kr', settings.fontKr);
-    await _preferences.setString(
-      'profile_extras',
-      jsonEncode(settings.profileExtras),
-    );
+    final futures = <Future<bool>>[
+      _preferences.setString('language', settings.language),
+      _preferences.setString('theme', settings.theme),
+      _preferences.setString('source', settings.source),
+      _preferences.setString('source_staging_path', settings.sourceStagingPath),
+      _preferences.setString('source_tree_uri', settings.sourceTreeUri),
+      _preferences.setString('final_dir', settings.finalDir),
+      _preferences.setString('final_tree_uri', settings.finalTreeUri),
+      _preferences.setString('title', settings.title),
+      _preferences.setInt('capacity', settings.capacity),
+      _preferences.setString('custom_bytes', settings.customBytes),
+      _preferences.setBool('advanced', settings.advanced),
+      _preferences.setString('iso_prefix', settings.isoPrefix),
+      _preferences.setString('group_track_limit', settings.groupTrackLimit),
+      _preferences.setString('title_mode', settings.titleMode),
+      _preferences.setString('album_limit', settings.albumLimit),
+      _preferences.setBool('keep_tmp', settings.keepTmp),
+      _preferences.setString('audio_mode', settings.audioMode),
+      _preferences.setString('sample_rate', settings.sampleRate),
+      _preferences.setString('bits', settings.bits),
+      _preferences.setBool('dither16', settings.dither16),
+      _preferences.setString('external_dir', settings.externalDir),
+      _preferences.setString(
+        'external_staging_path',
+        settings.externalStagingPath,
+      ),
+      _preferences.setString('external_tree_uri', settings.externalTreeUri),
+      _preferences.setBool('menu', settings.menu),
+      _preferences.setBool('stills', settings.stills),
+      _preferences.setString('tracks_per_page', settings.tracksPerPage),
+      _preferences.setString('cover_dim', settings.coverDim),
+      _preferences.setString('norm', settings.norm),
+      _preferences.setString('font_sc', settings.fontSc),
+      _preferences.setString('font_jp', settings.fontJp),
+      _preferences.setString('font_kr', settings.fontKr),
+      _preferences.setString(
+        'profile_extras',
+        jsonEncode(settings.profileExtras),
+      ),
+    ];
+    await Future.wait(futures);
   }
 }

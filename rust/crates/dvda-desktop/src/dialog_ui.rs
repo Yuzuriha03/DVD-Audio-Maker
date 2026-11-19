@@ -33,7 +33,7 @@ const CS_DROPSHADOW: u32 = 0x0002_0000;
 const IDOK: usize = 1;
 const IDCANCEL: usize = 2;
 const RESULT_NONE: i32 = i32::MIN;
-const HEADER_TITLE: &str = "DVD-Audio Maker";
+pub(crate) const HEADER_TITLE: &str = "DVD-Audio Maker";
 
 /// Popup severity only selects the header accent and the default title.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,6 +189,7 @@ pub(crate) unsafe fn paint_chrome(
     hwnd: Hwnd,
     dc: Handle,
     theme: &Theme,
+    title: &str,
     subtitle: &str,
     accent: u32,
 ) {
@@ -248,33 +249,70 @@ pub(crate) unsafe fn paint_chrome(
             ptr::null_mut(),
             3,
         );
-        let mut title = Rect {
-            left: theme.sd(72),
-            top: theme.sd(8),
-            right: (rect.right - theme.sd(70)).max(theme.sd(160)),
-            bottom: theme.sd(42),
-        };
-        draw_text_run(
-            HEADER_TITLE,
-            dc,
-            &mut title,
-            theme.title,
-            c_header_title(),
-            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
-        );
-        let mut subtitle_rect = Rect {
-            left: theme.sd(73),
-            top: theme.sd(38),
-            right: title.right,
-            bottom: theme.sd(60),
+        paint_chrome_titles(dc, theme, rect.right, header, title, subtitle);
+    }
+}
+
+fn subtitle_header_rect(dpi: u32, right: i32, header: i32, has_title: bool) -> Rect {
+    let scale = |value: i32| -> i32 {
+        i32::try_from((i64::from(value) * i64::from(dpi) + 48) / 96).unwrap_or(i32::MAX)
+    };
+    let text_right = (right - scale(70)).max(scale(160));
+    if has_title {
+        Rect {
+            left: scale(73),
+            top: scale(38),
+            right: text_right,
+            bottom: scale(60),
+        }
+    } else {
+        Rect {
+            left: scale(72),
+            top: 0,
+            right: text_right,
+            bottom: header,
+        }
+    }
+}
+
+fn paint_chrome_titles(
+    dc: Handle,
+    theme: &Theme,
+    right: i32,
+    header: i32,
+    title: &str,
+    subtitle: &str,
+) {
+    {
+        if !title.is_empty() {
+            let mut title_rect = Rect {
+                left: theme.sd(72),
+                top: theme.sd(8),
+                right: (right - theme.sd(70)).max(theme.sd(160)),
+                bottom: theme.sd(42),
+            };
+            draw_text_run(
+                title,
+                dc,
+                &mut title_rect,
+                theme.title,
+                c_header_title(),
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
+        let mut subtitle_rect = subtitle_header_rect(theme.dpi, right, header, !title.is_empty());
+        let (font, color, align) = if title.is_empty() {
+            (theme.title, c_header_title(), DT_VCENTER)
+        } else {
+            (theme.subtitle, c_header_subtitle(), DT_TOP)
         };
         draw_text_run(
             subtitle,
             dc,
             &mut subtitle_rect,
-            theme.subtitle,
-            c_header_subtitle(),
-            DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS,
+            font,
+            color,
+            DT_LEFT | align | DT_SINGLELINE | DT_END_ELLIPSIS,
         );
     }
 }
@@ -611,6 +649,7 @@ unsafe extern "system" fn dialog_proc(
                         hwnd,
                         buffer.memory,
                         &state.theme,
+                        "",
                         &state.title,
                         state.kind.accent(),
                     );
@@ -1525,5 +1564,18 @@ mod tests {
         }
         assert_eq!(tops.len(), 1, "buttons share one footer row");
         DestroyWindow(window);
+    }
+
+    #[test]
+    fn popup_subtitle_centers_across_full_header_when_program_title_is_omitted() {
+        for dpi in [96u32, 120, 144, 168, 192] {
+            let header =
+                i32::try_from((i64::from(HEADER_HEIGHT) * i64::from(dpi) + 48) / 96).unwrap();
+            let centered = subtitle_header_rect(dpi, 640, header, false);
+            assert_eq!(centered.top, 0);
+            assert_eq!(centered.bottom, header);
+            let two_line = subtitle_header_rect(dpi, 640, header, true);
+            assert!(two_line.top > 0 && two_line.bottom < header);
+        }
     }
 }

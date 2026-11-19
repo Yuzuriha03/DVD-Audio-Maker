@@ -2,9 +2,6 @@
 
 use super::GetUserDefaultUILanguage;
 
-#[path = "i18n_ko.rs"]
-mod korean;
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Lang {
     Zh,
@@ -50,7 +47,180 @@ impl Lang {
 )]
 pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
     match lang {
-        Lang::Ko => korean::tr(key),
+        Lang::Ko => match key {
+            "app_subtitle" => "음악으로 DVD-Audio 디스크 이미지 만들기",
+            "advanced_hint" => {
+                "처음 디스크를 만들 때는 이 설정으로 충분합니다. 임시 폴더, 메뉴 글꼴 등을 변경하려면 위의 고급 설정을 켜세요."
+            }
+            "profile" => "설정 프로필",
+            "open" => "프로필 열기",
+            "save" => "프로필 저장",
+            "save_as" => "다른 이름으로 저장…",
+            "advanced" => "고급 설정",
+            "font_filter" => "글꼴 파일",
+            "title_mode" => "타이틀 그룹 (album / one / 타이틀당 곡 수)",
+            "album_limit" => "앨범 수 제한 (0 = 무제한)",
+            "language" => "언어",
+            "source" => "음원 경로",
+            "final" => "출력 경로",
+            "title" => "디스크 제목",
+            "capacity" => "디스크 용량",
+            "work_dir" => "임시 작업 경로",
+            "iso_prefix" => "ISO 파일 이름 접두사",
+            "group_limit" => "그룹당 곡 수",
+            "cache" => "음원 검사 결과 재사용",
+            "audio_mode" => "오디오 인코딩",
+            "sample_rate" => "샘플 레이트",
+            "bits" => "비트 깊이",
+            "dither16" => "16-bit 출력 디더 (권장)",
+            "menu" => "디스크 메뉴",
+            "menu_enable" => "탐색 메뉴 만들기(앨범 색인 + 트랙 페이지)",
+            "stills" => "재생 중 앨범 표지 표시",
+            "tracks" => "페이지당 트랙 수(트랙 메뉴)",
+            "cover" => "메뉴 배경 표지 어둡기 (%)",
+            "norm" => "메뉴 비디오 표준",
+            "norm_pal" => "PAL (중국, 유럽)",
+            "norm_secam" => "SECAM (프랑스, 러시아)",
+            "norm_ntsc" => "NTSC (한국, 미국, 일본)",
+            "index" => "앨범 색인 기준",
+            "font_sc" => "중국어 메뉴 글꼴",
+            "font_jp" => "일본어 메뉴 글꼴",
+            "font_kr" => "한국어 메뉴 글꼴",
+            "tools" => "기타 설정",
+            "author" => "디스크 제작 도구",
+            "keep_tmp" => "임시 파일 유지",
+            "keep_intermediate" => "중간 파일 유지",
+            "keep_files" => "임시/중간 파일 유지",
+            "loss_warn" => "길이 차이 경고 (초)",
+            "loss_error" => "길이 차이 제한 (초)",
+            "browse" => "찾아보기…",
+            "start" => "기본 설정",
+            "audio" => "오디오",
+            "about" | "author_page_title" | "dialog_info_title" => "정보",
+            "build" => "디스크 만들기",
+            "cancel" => "작업 중지",
+            "open_output" => "폴더에서 보기",
+            "summary" => "작업 요약",
+            "detail" => "상세 로그",
+            "issues" => "문제만 표시",
+            "live" => "실시간 갱신",
+            "copy" => "현재 보기 복사",
+            "export" => "전체 로그 내보내기…",
+            "ready" => "준비됨",
+            "ready_hint" => "음원 폴더와 출력 폴더를 선택한 다음 디스크 만들기를 누르세요.",
+            "operation_section" => "작업 상태",
+            "log_section" => "작업 로그",
+            "statistics" => "경과 {0}:{1}:{2} · 알림 {3}",
+            "running_confirm" => "작업이 진행 중입니다. 중지하고 종료할까요?",
+            "log_found_audio" => "오디오 파일 {0}개를 찾았습니다. 곡 정보를 읽는 중입니다.",
+            "log_resample_none" => {
+                "음원 샘플 레이트가 설정과 일치하므로 리샘플링이 필요하지 않습니다."
+            }
+            "log_resample_count" => "{0}곡의 샘플 레이트를 변환해야 합니다.",
+            "log_cache_metadata" => "음원 검사 캐시: {0}개 재사용, {1}개 재검사.",
+            "log_cache_verified" => "디코딩 검사 캐시: {0}개 재사용, {1}개 재검사.",
+            "log_encoding" => "MLP 오디오 인코딩 중: {0}",
+            "log_lpcm" => "LPCM: {0}",
+            "log_author_disc" => "디스크 {0} 제작 중.",
+            "log_loaded_tracks" => "{0}곡을 불러왔습니다. 디스크를 계획하는 중입니다.",
+            "log_total_tracks" => "{0}곡의 음원 검사를 완료했습니다.",
+            "log_report_written" => "음원 검사 보고서 저장됨: {0}",
+            "log_manifest_written" => "음원 목록 생성됨: {0}",
+            "log_warning_prefix" => "경고: ",
+            "log_error_prefix" => "오류: ",
+            "loaded" => "프로필을 불러왔습니다.",
+            "saved" => "프로필 저장됨: ",
+            "profile_missing" => "프로필이 없습니다: ",
+            "profile_error" => "프로필을 불러올 수 없습니다: ",
+            "started_build" => "음원 검사, 디스크 제작 및 출력 검증 중…",
+            "done" => "작업이 완료되었습니다.",
+            "failed" => "작업이 실패했습니다.",
+            "cancelled" => "작업이 취소되었습니다.",
+            "stopping" => "작업을 중지하는 중입니다. 잠시 기다려 주세요…",
+            "cancelled_detail" => {
+                "작업이 취소되었습니다. 사용자가 작업을 중지했습니다. 미완료 진행 상황은 유지되며 설정에서 삭제할 수 있습니다."
+            }
+            "failed_build" => "제작 실패",
+            "json_filter" => "JSON 설정 프로필",
+            "text_filter" => "텍스트 로그",
+            "all_filter" => "모든 파일",
+            "export_failed" => "로그를 저장할 수 없습니다: ",
+            "log_started" => "처리 중: {0}",
+            "log_pcm_started" => "오디오 준비 중: {0}",
+            "log_pcm_progress" => "오디오 준비 중: {0} ({1}%)",
+            "log_pcm_finished" => "오디오 준비 완료. MLP 인코딩 시작: {0}",
+            "log_encoded" => "MLP 인코딩 완료: {0}; {1} Hz / {2}비트 / {3}채널, {4}바이트",
+            "log_pcm_error" => "오디오 변환 메시지: {0}; {1}",
+            "import" => "기존 MLP 파일 가져오기",
+            "import_folder" => "MLP 파일 경로",
+            "custom" => "사용자 지정 용량",
+            "custom_bytes" => "사용자 지정 용량 (바이트)",
+            "no_output" => "출력 폴더가 아직 없습니다.",
+            "language_zh" => "简体中文",
+            "language_zh_hant" => "繁體中文",
+            "language_en" => "English",
+            "language_ja" => "日本語",
+            "language_ko" => "한국어",
+            "mlp" => "MLP 인코딩",
+            "lpcm" => "LPCM 인코딩",
+            "dvd5" => "DVD5 (4.7 GB)",
+            "dvd9" => "DVD9 (8.5 GB)",
+            "import_note" => {
+                "MLP는 무손실 압축을, LPCM은 비압축 방식을 사용합니다. MLP 파일을 가져오려면 음원 폴더 구조와 일치하는 폴더를 선택하세요."
+            }
+            "mlp_note" => {
+                "MLP는 무손실 압축으로 대부분의 DVD-Audio 프로젝트에 적합합니다. 샘플 레이트와 비트 깊이는 위의 설정을 따릅니다."
+            }
+            "lpcm_note" => {
+                "LPCM은 오디오를 압축하지 않고 저장합니다. 빠르지만 디스크 공간을 더 사용하므로 선택한 용량이 충분한지 확인하세요."
+            }
+            "invalid_sample_rate" => "MLP 대상 샘플 레이트가 올바르지 않습니다.",
+            "invalid_bits" => "MLP 비트 깊이는 16, 20 또는 24, LPCM은 16 또는 24여야 합니다.",
+            "author_name" => "Yuzuriha03",
+            "author_role" => "독립 개발자 · 프로젝트 유지관리자",
+            "author_version" => "DVD-Audio Maker",
+            "check_updates" => "업데이트 확인",
+            "checking_updates" => "확인 중…",
+            "update_available_title" => "새 버전 있음",
+            "update_available_message" => "새 버전 {0}이(가) 있습니다. 다운로드 페이지를 열까요?",
+            "update_download" => "다운로드",
+            "update_later" => "나중에",
+            "update_open_failed" => "다운로드 링크를 열 수 없습니다: {0}",
+            "update_none" => "사용 가능한 업데이트가 없습니다.",
+            "update_failed" => "업데이트 확인 실패: {0}",
+            "update_network_failed" => {
+                "업데이트 서버에 연결할 수 없습니다. 네트워크를 확인한 후 다시 시도하세요.\n{0}"
+            }
+            "dialog_ok" => "확인",
+            "dialog_close" => "닫기",
+            "dialog_error_title" => "오류",
+            "dialog_warning_title" => "경고",
+            "author_bio" => {
+                "DVD-Audio Maker의 제작자입니다. Rust 코어와 Windows 및 Android 클라이언트를 개발하고 유지관리합니다."
+            }
+            "project_home" => "프로젝트 홈",
+            "project_url" => "https://github.com/Yuzuriha03/DVD-Audio-Maker",
+            "author_licenses" => "포함 라이선스",
+            "source_preparation_cancelled" => "소스 준비가 취소되었습니다.",
+            "author_license_hint" => {
+                "라이선스 파일은 프로그램 폴더에 있습니다. 라이선스 폴더 열기에서 확인하세요."
+            }
+            "open_project" => "프로젝트 홈 열기",
+            "open_licenses" => "라이선스 폴더 열기",
+            "open_ffmpeg_license" => "FFmpeg 라이선스 보기",
+            "licenses_missing" => "라이선스 폴더를 찾을 수 없습니다.",
+            "invalid_integer" => "{0}에서 {1} 사이의 정수를 입력하세요.",
+            "invalid_nonnegative" => "0 이상의 유한한 수를 입력하세요.",
+            "invalid_title_mode" => "타이틀 그룹은 album, one 또는 양의 정수여야 합니다.",
+            "invalid_album_limit" => "0 이상의 정수를 입력하거나 비워 두세요.",
+            "select_profile" => "JSON 프로필 선택",
+            "select_log" => "로그 저장",
+            "copy_ok" => "로그를 클립보드에 복사했습니다.",
+            "external_tools" => {
+                "배포본에 필요한 구성 요소가 포함되어 있습니다. FFmpeg, ImageMagick, eac3to 또는 외부 MLP 인코더를 설치할 필요가 없습니다."
+            }
+            _ => "",
+        },
         Lang::Zh => match key {
             "app_subtitle" => "把音乐制作成 DVD-Audio 光盘镜像",
             "advanced_hint" => {
@@ -103,7 +273,7 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "about" | "author_page_title" => "关于",
             "build" => "开始制作",
             "cancel" => "停止任务",
-            "open_output" => "查看成品",
+            "open_output" => "在文件夹中显示",
             "summary" => "任务摘要",
             "detail" => "详细日志",
             "issues" => "只看提醒",
@@ -270,7 +440,7 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "about" | "author_page_title" => "關於",
             "build" => "開始製作",
             "cancel" => "停止任務",
-            "open_output" => "查看成品",
+            "open_output" => "在資料夾中顯示",
             "summary" => "任務摘要",
             "detail" => "詳細日志",
             "issues" => "只看提醒",
@@ -437,7 +607,7 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "about" | "author_page_title" => "About",
             "build" => "Build discs",
             "cancel" => "Stop task",
-            "open_output" => "Open output",
+            "open_output" => "Show in folder",
             "summary" => "Task summary",
             "detail" => "Detailed log",
             "issues" => "Problems only",
@@ -616,7 +786,7 @@ pub(crate) fn tr(lang: Lang, key: &str) -> &'static str {
             "about" | "author_page_title" | "dialog_info_title" => "情報",
             "build" => "ディスクを作成",
             "cancel" => "タスクを停止",
-            "open_output" => "出力を開く",
+            "open_output" => "フォルダーを開く",
             "summary" => "タスク概要",
             "detail" => "詳細ログ",
             "issues" => "問題のみ",

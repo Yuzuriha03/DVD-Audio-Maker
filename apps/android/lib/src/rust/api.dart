@@ -6,7 +6,7 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `android_menu_runtime_directory`, `map_display_paths`, `outcome_with_log`, `push_log`, `set_text`, `stage`, `temporary_profile_path`, `with_android_menu_runtime`, `with_source_display`
+// These functions are ignored because they are not marked as `pub`: `android_menu_runtime_directory`, `clear_log`, `map_display_paths`, `outcome_with_log`, `push_log`, `set_text`, `stage`, `temporary_profile_path`, `with_android_menu_runtime`, `with_source_display`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Forward`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `as_callbacks`, `cancelled`, `emit`, `product_delivery`, `progress`, `set_progress_range`
 
@@ -46,12 +46,16 @@ List<ProfileIssue> profileValidate({
   forTask: forTask,
 );
 
+/// Formats a single raw progress or log line with the shared Rust rules.
+String formatLine({required String language, required String text}) =>
+    RustLib.instance.api.crateApiFormatLine(language: language, text: text);
+
 /// Formats a whole task log for the Flutter GUI and counts problem lines.
 FormattedLog formatLog({required String language, required String log}) =>
     RustLib.instance.api.crateApiFormatLog(language: language, log: log);
 
-ProgressSnapshot progressSnapshot() =>
-    RustLib.instance.api.crateApiProgressSnapshot();
+ProgressSnapshot progressSnapshot({required int lastRevision}) =>
+    RustLib.instance.api.crateApiProgressSnapshot(lastRevision: lastRevision);
 
 String updateReleaseApiUrl() =>
     RustLib.instance.api.crateApiUpdateReleaseApiUrl();
@@ -137,17 +141,23 @@ class ProgressSnapshot {
   final int total;
   final String text;
   final String log;
+  final int logRevision;
 
   const ProgressSnapshot({
     required this.done,
     required this.total,
     required this.text,
     required this.log,
+    required this.logRevision,
   });
 
   @override
   int get hashCode =>
-      done.hashCode ^ total.hashCode ^ text.hashCode ^ log.hashCode;
+      done.hashCode ^
+      total.hashCode ^
+      text.hashCode ^
+      log.hashCode ^
+      logRevision.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -157,5 +167,6 @@ class ProgressSnapshot {
           done == other.done &&
           total == other.total &&
           text == other.text &&
-          log == other.log;
+          log == other.log &&
+          logRevision == other.logRevision;
 }

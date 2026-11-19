@@ -388,6 +388,7 @@ unsafe extern "system" fn about_proc(
                         hwnd,
                         buffer.memory,
                         &state.theme,
+                        dialog_ui::HEADER_TITLE,
                         &state.title,
                         c_accent(),
                     );

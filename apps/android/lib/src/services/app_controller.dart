@@ -205,6 +205,9 @@ class FormattedLogView {
 }
 
 typedef LogFormatter = FormattedLogView Function(String language, String log);
+typedef LineFormatter = String Function(String language, String line);
+typedef TaskProgressReader =
+    BridgeProgress Function({required int lastRevision});
 
 /// Injectable bridge entry points so widget/SAF tests never need a live Rust
 /// library; production keeps the shared `AppBridge` implementations.
@@ -247,10 +250,18 @@ class AppController extends ChangeNotifier {
     required this.store,
     required this.platform,
     this.logFormatter = defaultLogFormatter,
+    LineFormatter? lineFormatter,
     TaskBridgeRunner? bridgeRunProfile,
     ProfileIssueValidator? bridgeValidateProfile,
     ProfileIssueText? bridgeIssueMessage,
-  }) : _bridgeRunProfile = bridgeRunProfile ?? AppBridge.runProfile,
+    TaskProgressReader? bridgeProgress,
+  }) : _lineFormatter =
+           lineFormatter ??
+           (identical(logFormatter, defaultLogFormatter)
+               ? AppBridge.formatLine
+               : (language, line) => logFormatter(language, line).text),
+       _bridgeRunProfile = bridgeRunProfile ?? AppBridge.runProfile,
+       _bridgeProgress = bridgeProgress ?? AppBridge.progress,
        _bridgeValidateProfile =
            bridgeValidateProfile ?? _defaultValidateProfile,
        _bridgeIssueMessage =
@@ -264,9 +275,11 @@ class AppController extends ChangeNotifier {
   final SettingsStore store;
   final PlatformService platform;
   final LogFormatter logFormatter;
+  final LineFormatter _lineFormatter;
   final TaskBridgeRunner _bridgeRunProfile;
   final ProfileIssueValidator _bridgeValidateProfile;
   final ProfileIssueText _bridgeIssueMessage;
+  final TaskProgressReader _bridgeProgress;
 
   static const String _safDescriptorPath = 'saf-descriptors';
   final List<SafDocumentCollection> _documentCollections = [];
@@ -291,7 +304,11 @@ class AppController extends ChangeNotifier {
   bool _deliveryCleanupPending = false;
   String _cleanupDetail = '';
   String _lastNotificationSignature = '';
+  String _formattedLogLanguage = '';
   String _formattedLogSource = '';
+  String _rawProgressLanguage = '';
+  String _rawProgressSource = '';
+  int _logRevision = 0;
   FormattedLogView _formattedLog = const FormattedLogView(
     text: '',
     problemText: '',
@@ -318,9 +335,21 @@ class AppController extends ChangeNotifier {
   }
 
   void _ensureLogFormatted() {
-    if (_formattedLogSource == _logText) {
+    if (_logText.isEmpty) {
+      _formattedLogLanguage = settings.language;
+      _formattedLogSource = '';
+      _formattedLog = const FormattedLogView(
+        text: '',
+        problemText: '',
+        problems: 0,
+      );
       return;
     }
+    if (_formattedLogLanguage == settings.language &&
+        _formattedLogSource == _logText) {
+      return;
+    }
+    _formattedLogLanguage = settings.language;
     _formattedLogSource = _logText;
     _formattedLog = logFormatter(settings.language, _logText);
   }
@@ -626,6 +655,9 @@ class AppController extends ChangeNotifier {
       await _saveDeliveryCleanup();
       _message = '';
       _logText = '';
+      _logRevision = 0;
+      _rawProgressLanguage = '';
+      _rawProgressSource = '';
       _progressText = '';
       _done = 0;
       _total = 0;
@@ -894,6 +926,9 @@ class AppController extends ChangeNotifier {
     }
     _done = 0;
     _total = 0;
+    _logRevision = 0;
+    _rawProgressLanguage = '';
+    _rawProgressSource = '';
     _progressText = '';
     _logText = '';
     _message = '';
@@ -1275,12 +1310,26 @@ class AppController extends ChangeNotifier {
         return;
       }
       try {
-        final progress = AppBridge.progress();
+        final progress = _bridgeProgress(lastRevision: _logRevision);
         final elapsed = _startedAt == null
             ? _elapsedSeconds
             : DateTime.now().difference(_startedAt!).inSeconds;
-        final progressText = _formatSingleLine(progress.text);
-        final progressLog = progress.log.isEmpty ? _logText : progress.log;
+        final String progressText;
+        if (_rawProgressLanguage == settings.language &&
+            _rawProgressSource == progress.text) {
+          progressText = _progressText;
+        } else {
+          _rawProgressLanguage = settings.language;
+          _rawProgressSource = progress.text;
+          progressText = _formatSingleLine(progress.text);
+        }
+        String progressLog = _logText;
+        if (progress.logRevision != _logRevision) {
+          _logRevision = progress.logRevision;
+          if (progress.log.isNotEmpty) {
+            progressLog = progress.log;
+          }
+        }
         final changed =
             progress.done != _done ||
             progress.total != _total ||
@@ -1381,7 +1430,7 @@ class AppController extends ChangeNotifier {
     if (raw.trim().isEmpty) {
       return '';
     }
-    return sanitizeProgressText(logFormatter(settings.language, raw).text);
+    return sanitizeProgressText(_lineFormatter(settings.language, raw));
   }
 
   /// Test hook: seeds progress counters without a running Rust task.
@@ -1397,20 +1446,11 @@ class AppController extends ChangeNotifier {
   }
 
   void _syncStatusNotification() {
-    final signature = [
-      _phase.name,
-      _activeAction,
-      _done,
-      _total,
-      _progressText,
-      _message,
-      _cancelRequested,
-    ].join('|');
-    if (signature == _lastNotificationSignature) {
-      return;
-    }
-    _lastNotificationSignature = signature;
     if (_phase == TaskPhase.idle) {
+      if (_lastNotificationSignature == 'idle') {
+        return;
+      }
+      _lastNotificationSignature = 'idle';
       unawaited(platform.clearStatusNotification().onError((_, _) {}));
       return;
     }
@@ -1421,6 +1461,12 @@ class AppController extends ChangeNotifier {
     final progress = running
         ? progressFraction
         : (_phase == TaskPhase.success ? 1.0 : null);
+    final percentBucket = running ? (progressPercent ?? -1) : -2;
+    final signature = '${_phase.name}|$running|$percentBucket|$text';
+    if (signature == _lastNotificationSignature) {
+      return;
+    }
+    _lastNotificationSignature = signature;
     unawaited(
       platform
           .updateStatusNotification(
