@@ -835,20 +835,40 @@ pub(crate) fn layout(hwnd: Hwnd, state: &mut UiState) {
             right: scale(x) + scale(width),
             bottom: top + scale(height),
         };
-        place_px(state.controls.build, action(margin, 140, 34, actions_px));
+        let (build_width, cancel_width, action_gap) = if width < 720 {
+            // At the minimum width, keep the translated buttons and the
+            // statistics on one row without reserving unused button space.
+            let build_text = measured_text_width(hwnd, tr(lang, "build"), semibold_font());
+            (
+                (unscale(build_text) + 18).max(112),
+                (text_width("cancel") + 18).max(104),
+                4,
+            )
+        } else {
+            (140, 120, 8)
+        };
+        place_px(
+            state.controls.build,
+            action(margin, build_width, 34, actions_px),
+        );
+        let cancel_x = margin + build_width + action_gap;
         place_px(
             state.controls.cancel,
-            action(margin + 148, 120, 34, actions_px),
+            action(cancel_x, cancel_width, 34, actions_px),
         );
+        let output_x = cancel_x + cancel_width + action_gap;
+        let output_width = (text_width("open_output") + 18).max(120);
         place_px(
             state.controls.open_output,
-            action(margin + 276, 120, 34, actions_px),
+            action(output_x, output_width, 34, actions_px),
         );
-        let (statistics_x, statistics_width) = if width >= 900 {
-            (width - margin - 360, 360)
+        let statistics_x = output_x + output_width + action_gap;
+        let statistics_x = if width >= 900 {
+            statistics_x.max(width - margin - 360)
         } else {
-            (margin + 404, (width - margin * 2 - 404).max(120))
+            statistics_x
         };
+        let statistics_width = (width - margin - statistics_x).max(1);
         place_px(
             state.controls.statistics,
             action(statistics_x, statistics_width, 24, from_bottom(42)),

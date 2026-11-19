@@ -429,7 +429,7 @@ unsafe extern "system" fn about_proc(
                     }
                     return 1;
                 }
-                if id == IDOK {
+                if id == IDOK || id == ID_UPDATE_CHECK {
                     unsafe {
                         dialog_ui::draw_button(item, ButtonKind::Primary, &state.theme, false);
                     }
@@ -1242,6 +1242,46 @@ mod tests {
     }
 
     #[test]
+    fn about_paints_the_check_for_updates_button_in_both_states() {
+        let _ui_test_lock = ui_test_guard();
+        let window = show_about(ptr::null_mut(), Lang::En);
+        assert!(!window.is_null());
+        let state = state(window);
+        let dc = CreateCompatibleDC(ptr::null_mut());
+        assert!(!dc.is_null());
+        for key in ["check_updates", "checking_updates"] {
+            set_text(state.update_check, tr(state.lang, key));
+            let mut rect = Rect::default();
+            GetClientRect(state.update_check, &mut rect);
+            let item = DrawItemStruct {
+                control_type: 4, // ODT_BUTTON
+                control_id: u32::try_from(ID_UPDATE_CHECK).unwrap(),
+                item_id: 0,
+                action: 1, // ODA_DRAWENTIRE
+                state: 0,
+                item: state.update_check,
+                dc,
+                rect,
+                data: 0,
+            };
+            assert_eq!(
+                unsafe {
+                    SendMessageW(
+                        window,
+                        WM_DRAWITEM,
+                        ID_UPDATE_CHECK,
+                        (&raw const item) as isize,
+                    )
+                },
+                1,
+                "About must paint the {key} owner-drawn button"
+            );
+        }
+        DeleteDC(dc);
+        DestroyWindow(window);
+    }
+
+    #[test]
     fn about_reflows_at_five_dpis_and_five_languages() {
         let _ui_test_lock = ui_test_guard();
         for lang in [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja, Lang::Ko] {
@@ -1264,10 +1304,11 @@ mod tests {
                     let check = window_rect(state.update_check);
                     let close = window_rect(state.footer);
                     assert!(check.right <= close.left);
-                    assert!(
-                        check.right - check.left
-                            >= measure_button(&state.theme, tr(lang, "check_updates"),)
-                    );
+                    for key in ["check_updates", "checking_updates"] {
+                        assert!(
+                            check.right - check.left >= measure_button(&state.theme, tr(lang, key))
+                        );
+                    }
                 }
             }
             DestroyWindow(window);

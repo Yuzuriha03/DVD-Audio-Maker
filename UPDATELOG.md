@@ -2,19 +2,23 @@
 
 ## v1.3 (2026-11-19)
 
-### 界面优化
-*   **弹窗布局**：优化了提示与确认弹窗的顶部标题栏布局。移除了程序名文字，使弹窗更加简洁；同时优化了布局算法，确保副标题在无程序名时能完美垂直居中对齐，提升了提示弹窗的视觉专业度。
+### 中文
 
-### Android 应用修复
-*   **轮询与状态同步**：重构了 AppController 的任务轮询逻辑。修正了在日志为空但修订版本号（logRevision）更新时出现的快照替换缺陷，确保即使日志暂时为空，任务进度和状态也能保持实时增量同步。
-*   **稳定性增强**：优化了通知状态的同步逻辑，减少冗余更新。
+- **Windows「关于」**：修复「检查更新」按钮未绘制的问题。「正在检查…」和普通状态使用相同按钮宽度。窄窗口下，「在文件夹中显示」和任务统计不再裁切。
+- **Windows 弹窗**：提示与确认弹窗保留图标，把本次提示的标题在整个顶部栏内垂直居中，不再重复显示程序名。「关于」窗口不变。
+- **Android 任务界面**：将「任务与成品」改为「任务管理」，将「打开目录」改为「在文件夹中显示」。日志没有变化时不再重复传输整段日志，进度仍按原频率刷新；状态通知不重复发送相同内容。
 
-### 国际化支持
-*   **翻译完善**：修复了多语言文件（i18n.rs）中 brace 结构不匹配的问题，确保程序在各语言环境下均能稳定运行。修正了日文环境下 "Show in folder" 翻译过长导致的布局溢出问题。
+### English
 
-### 开发与打包
-*   **构建优化**：修复了 Windows 和 Android 的构建流程中的若干语法兼容性问题，并清理了打包脚本中的文件锁定阻塞，提升了打包成功率与一致性。
+- **Windows About**: Fixed the Check for updates button not being drawn. Its width stays the same while checking. The output-folder button and task statistics now fit in narrow windows.
+- **Windows dialogs**: Message and confirmation dialogs keep the app icon and vertically center the dialog title without repeating the app name. The About window is unchanged.
+- **Android tasks**: Renamed the task tab to “Task management” and the output action to “Show in folder”. Unchanged logs are no longer transferred on every progress refresh, and identical status notifications are not resent.
 
+### 日本語
+
+- **Windows の「情報」**：「更新を確認」ボタンが描画されない問題を修正しました。確認中もボタンの幅は変わりません。横幅の狭いウィンドウで、出力フォルダーを開くボタンや作業統計が途中で切れなくなりました。
+- **Windows のダイアログ**：通知・確認ダイアログではアイコンを残し、アプリ名を繰り返さず、ダイアログのタイトルを上部バーの上下中央に表示します。「情報」ウィンドウは変更していません。
+- **Android のタスク画面**：タブ名を「タスク管理」に変更し、出力先を開く操作を「フォルダーで表示」に変更しました。進捗の更新間隔は変えず、ログが変わらないときは再転送せず、同じ内容のステータス通知は再送しません。
 
 ## v1.2
 

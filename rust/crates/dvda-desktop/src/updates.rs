@@ -75,10 +75,11 @@ pub(crate) fn request_check(owner: Hwnd, manual: bool, lang: Lang) {
             return;
         };
         if let Some(result) = &mut state.result {
-            if !manual {
-                return;
+            if manual {
+                result.manual = true;
+                result.lang = lang;
             }
-            state.result = None;
+            return;
         }
         if state.running {
             state.manual |= manual;
